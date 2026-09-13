@@ -23,6 +23,13 @@
 <main id="top">
   <header class="masthead">
     <a class="brand" href="{{root}}"><img src="{{root}}assets/mark.svg" alt="" width="34" height="34"><span>PecoFence</span></a>
+    <label class="lang">
+      <span class="visually-hidden">{{t:nav.language}}</span>
+      <svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="6.3"/><path d="M1.7 8h12.6M8 1.7c-2.2 2.2-2.2 10.4 0 12.6M8 1.7c2.2 2.2 2.2 10.4 0 12.6"/></svg>
+      <select id="language-select">
+{{language_options}}
+      </select>
+    </label>
   </header>
 
   <section class="hero">
@@ -135,15 +142,7 @@
     <a href="{{docs}}/README.md">{{t:nav.docs}}</a>
     <a href="{{repository}}">{{t:nav.github}}</a>
   </div>
-  <div class="tray">
-    <label class="lang">
-      <span class="visually-hidden">{{t:nav.language}}</span>
-      <svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="6.3"/><path d="M1.7 8h12.6M8 1.7c-2.2 2.2-2.2 10.4 0 12.6M8 1.7c2.2 2.2 2.2 10.4 0 12.6"/></svg>
-      <select id="language-select">
-{{language_options}}
-      </select>
-    </label>
-  </div>
+  <div class="tray"></div>
 </nav>
 
 <script src="{{root}}assets/site.js" defer></script>

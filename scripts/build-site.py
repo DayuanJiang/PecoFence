@@ -111,9 +111,7 @@ def main():
         readme = f"{repository}/blob/main/README.md" if code == "en" else \
             f"{repository}/blob/main/docs/readme/README.{code}.md"
         language_links = "\n".join(
-            f'          <li><strong lang="{lang["code"]}">{html.escape(lang["name"])}</strong></li>' if lang is language else
-            f'          <li><a lang="{lang["code"]}" href="{root}{lang["dir"]}">{html.escape(lang["name"])}</a></li>'
-            for lang in languages
+            f'          <li lang="{lang["code"]}">{html.escape(lang["name"])}</li>' for lang in languages
         )
         language_options = "\n".join(
             f'        <option value="{lang["code"]}" data-href="{root}{lang["dir"]}"{" selected" if lang is language else ""}>'

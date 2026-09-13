@@ -63,7 +63,7 @@ kbd { border-bottom-width: 2px; }
 main { width: min(1180px, 100% - 48px); margin: 0 auto; min-width: 0; }
 
 /* Masthead ------------------------------------------------------------------ */
-.masthead { padding: 34px 0 0; }
+.masthead { padding: 30px 0 0; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .brand {
   display: inline-flex; align-items: center; gap: 12px;
   color: var(--ink); text-decoration: none; font: 600 22px/1 var(--font-display); letter-spacing: -0.3px;
@@ -209,13 +209,11 @@ main { width: min(1180px, 100% - 48px); margin: 0 auto; min-width: 0; }
   list-style: none; margin: 0 0 20px; padding: 0;
   display: flex; flex-wrap: wrap; gap: 8px 10px;
 }
-.language-list a, .language-list strong {
+.language-list li {
   display: inline-block; padding: 6px 12px; border-radius: 999px;
   border: 1px solid var(--edge-soft); background: rgba(255, 255, 255, 0.04);
-  color: var(--ink); text-decoration: none; font-weight: 500; font-size: 15px;
+  color: var(--ink); font-weight: 500; font-size: 15px;
 }
-.language-list a:hover { border-color: var(--accent); color: #fff; }
-.language-list strong { border-color: var(--accent); background: rgba(123, 210, 255, 0.14); }
 
 /* Download */
 .steps { margin: 0 0 22px; padding-left: 26px; }
@@ -254,8 +252,9 @@ ul.plain code { color: var(--ink); }
 .taskbar-links a:hover { background: rgba(255, 255, 255, 0.08); color: #fff; }
 .tray { display: flex; justify-content: flex-end; }
 .lang {
-  display: inline-flex; align-items: center; gap: 8px; padding: 0 10px; height: 36px;
-  border-radius: 6px; color: var(--ink-soft); cursor: pointer;
+  display: inline-flex; align-items: center; gap: 8px; padding: 0 12px; height: 38px;
+  border-radius: 6px; border: 1px solid var(--edge-soft); background: rgba(255, 255, 255, 0.05);
+  color: var(--ink); cursor: pointer;
 }
 .lang:hover { background: rgba(255, 255, 255, 0.08); color: #fff; }
 .lang select {
@@ -282,7 +281,8 @@ ul.plain code { color: var(--ink); }
   .details { grid-template-columns: minmax(0, 1fr); padding: 4px 22px 8px; }
   .details div:nth-last-child(-n + 2) { border-bottom: 1px solid var(--edge-soft); }
   .details div:last-child { border-bottom: 0; }
-  .taskbar { grid-template-columns: auto 1fr auto; padding: 0 10px; }
+  .taskbar { grid-template-columns: auto 1fr; padding: 0 10px; }
+  .tray { display: none; }
   .taskbar-links { justify-content: center; gap: 0; }
   .taskbar-links a { padding: 9px 10px; font-size: 14px; }
   .taskbar-links a:nth-child(3) { display: none; }
