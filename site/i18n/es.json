@@ -9,7 +9,7 @@
   "hero.headline_accent": "Todo a tu alcance.",
 
   "meta.title": "PecoFence: paneles de cristal en tu escritorio de Windows 11",
-  "meta.description": "PecoFence: alternativa gratuita y de código abierto a Stardock Fences para Windows 11. Archivos en paneles de cristal, carpetas en vivo en el escritorio y todo delante de cualquier aplicación con un atajo. Diez idiomas, ZIP portátil, licencia MIT.",
+  "meta.description": "PecoFence: alternativa gratuita y de código abierto a Stardock Fences para Windows 11. Archivos en paneles de cristal, carpetas en vivo en el escritorio y todo delante de cualquier aplicación con un atajo. Diez idiomas, ZIP portátil, licencia Apache 2.0.",
 
   "nav.features": "Míralo en acción",
   "nav.download": "Descarga",
@@ -20,7 +20,7 @@
   "hero.headline": "Un escritorio más tranquilo.",
   "hero.text": "Dale un lugar a tus archivos en elegantes paneles de cristal. Carpetas a mano, proyectos en orden y un escritorio de Windows muy tuyo.",
   "hero.download": "Descarga para Windows 11",
-  "hero.download_note": "ZIP portátil para x64. Sin cuenta ni instalador. Licencia MIT.",
+  "hero.download_note": "ZIP portátil para x64. Sin cuenta ni instalador. Licencia Apache 2.0.",
   "hero.github": "Ver el código en GitHub",
   "hero.panels_alt": "Tres grupos de PecoFence en un escritorio real: Proyectos, Creativo y Documentos, cada uno un panel de cristal translúcido con carpetas y archivos.",
   "hero.caption": "Grupos reales del escritorio de demostración, tema Fluent.",
@@ -84,7 +84,7 @@
   "footer.docs": "Documentación",
   "footer.issues": "Informar de un problema",
   "footer.contribute": "Contribuir",
-  "footer.license": "Licencia MIT",
+  "footer.license": "Licencia Apache 2.0",
   "footer.notices": "Avisos de terceros",
   "footer.copyright": "Colaboradores de PecoFence. Sin relación con Stardock."
 }

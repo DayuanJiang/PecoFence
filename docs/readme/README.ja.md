@@ -89,7 +89,7 @@ https://github.com/user-attachments/assets/6320cf28-a791-4720-9659-b4575df021a0
 
 パッケージマネージャーがお好みなら `winget install DayuanJiang.PecoFence` で同じポータブル版をインストールでき、SmartScreen の警告も出ません。
 
-**Windows 11 x64 · ポータブル ZIP · アカウント不要 · MIT ライセンス**
+**Windows 11 x64 · ポータブル ZIP · アカウント不要 · Apache 2.0 ライセンス**
 
 初回起動時に、選択した言語で「アプリ」「フォルダー」「ファイルとドキュメント」「デスクトップ」の 4 つのフェンスが作成されます。
 終了すると、Windows のデスクトップアイコンは元どおり表示されます。
@@ -116,7 +116,7 @@ https://github.com/user-attachments/assets/6320cf28-a791-4720-9659-b4575df021a0
 
 ## 自分でビルドして、自分のものに
 
-PecoFence は MIT ライセンスで公開されています。訳文の一言をより自然にすることから、
+PecoFence は Apache 2.0 ライセンスで公開されています。訳文の一言をより自然にすることから、
 デスクトップ操作の改善まで、あらゆる貢献を歓迎します。
 
 [貢献する](../../CONTRIBUTING.md) · [翻訳を改善する](../LOCALIZATION.md) · [開発ガイド](../DEVELOPMENT.md)
@@ -147,4 +147,4 @@ Copy-Item third_party/webview2/WebView2Loader.x64.dll target/release/WebView2Loa
 ---
 
 **戻ってくるのが楽しみになるデスクトップのために。**  
-[MIT ライセンス](../../LICENSE) · [サードパーティライセンス](../../third_party/README.md)
+[Apache 2.0 ライセンス](../../LICENSE) · [サードパーティライセンス](../../third_party/README.md)

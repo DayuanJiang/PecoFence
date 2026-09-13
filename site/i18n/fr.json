@@ -9,7 +9,7 @@
   "hero.headline_accent": "Tout à portée de main.",
 
   "meta.title": "PecoFence : des panneaux de verre pour le Bureau Windows 11",
-  "meta.description": "Alternative libre et gratuite à Stardock Fences pour Windows 11. Panneaux de verre pour vos fichiers, dossiers en direct sur le Bureau, tout visible d’un raccourci. Dix langues, ZIP portable, MIT.",
+  "meta.description": "Alternative libre et gratuite à Stardock Fences pour Windows 11. Panneaux de verre pour vos fichiers, dossiers en direct sur le Bureau, tout visible d’un raccourci. Dix langues, ZIP portable, Apache 2.0.",
 
   "nav.features": "En action",
   "nav.download": "Télécharger",
@@ -20,7 +20,7 @@
   "hero.headline": "Un Bureau plus calme.",
   "hero.text": "Offrez à vos fichiers une place dans de beaux panneaux de verre. Des dossiers à portée de main, des projets bien rangés, un Bureau Windows à votre image.",
   "hero.download": "Télécharger pour Windows 11",
-  "hero.download_note": "ZIP portable pour x64. Sans compte ni installateur. Licence MIT.",
+  "hero.download_note": "ZIP portable pour x64. Sans compte ni installateur. Licence Apache 2.0.",
   "hero.github": "Voir le code source sur GitHub",
   "hero.panels_alt": "Trois groupes PecoFence sur un vrai Bureau : Projets, Création et Documents, chacun un panneau de verre translucide contenant des dossiers et des fichiers.",
   "hero.caption": "De vrais groupes du Bureau de démonstration, thème Fluent.",
@@ -84,7 +84,7 @@
   "footer.docs": "Documentation",
   "footer.issues": "Signaler un problème",
   "footer.contribute": "Contribuer",
-  "footer.license": "Licence MIT",
+  "footer.license": "Licence Apache 2.0",
   "footer.notices": "Mentions tierces",
   "footer.copyright": "Contributeurs de PecoFence. Sans affiliation avec Stardock."
 }

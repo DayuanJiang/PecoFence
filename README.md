@@ -89,7 +89,7 @@ All translations are included and work offline. Your filenames and custom names 
 
 Prefer a package manager? `winget install DayuanJiang.PecoFence` installs the same portable build and skips the SmartScreen prompt.
 
-**Windows 11 x64 · Portable ZIP · No account required · MIT licensed**
+**Windows 11 x64 · Portable ZIP · No account required · Apache 2.0 licensed**
 
 The first launch creates Programs, Folders, Files and documents, and Desktop groups
 in your selected language. Windows desktop icons are restored when you exit.
@@ -117,7 +117,7 @@ in your selected language. Windows desktop icons are restored when you exit.
 
 ## Build it. Make it yours.
 
-PecoFence is MIT-licensed, and contributions are welcome—from a sharper translation
+PecoFence is Apache 2.0 licensed, and contributions are welcome—from a sharper translation
 to a better desktop interaction.
 
 [Contribute](CONTRIBUTING.md) · [Improve a translation](docs/LOCALIZATION.md) · [Development guide](docs/DEVELOPMENT.md)
@@ -150,4 +150,4 @@ is independent of the app build.
 ---
 
 **Made for a desktop you enjoy coming back to.**  
-[MIT License](LICENSE) · [Third-party notices](third_party/README.md)
+[Apache License 2.0](LICENSE) · [Third-party notices](third_party/README.md)

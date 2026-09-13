@@ -92,7 +92,7 @@ personnalisés restent intacts.
 
 Vous préférez un gestionnaire de paquets ? `winget install DayuanJiang.PecoFence` installe la même version portable et évite l’avertissement SmartScreen.
 
-**Windows 11 x64 · ZIP portable · Sans compte · Licence MIT**
+**Windows 11 x64 · ZIP portable · Sans compte · Licence Apache 2.0**
 
 Au premier lancement, PecoFence crée les groupes Applications, Dossiers, Fichiers et documents
 et Bureau dans la langue de votre choix. Les icônes du Bureau Windows réapparaissent quand vous quittez.
@@ -122,7 +122,7 @@ et Bureau dans la langue de votre choix. Les icônes du Bureau Windows réappara
 
 ## Compilez-le. Faites-le vôtre.
 
-PecoFence est sous licence MIT et les contributions sont bienvenues, d’une traduction plus juste
+PecoFence est sous licence Apache 2.0 et les contributions sont bienvenues, d’une traduction plus juste
 à une interaction mieux pensée sur le Bureau.
 
 [Contribuer](../../CONTRIBUTING.md) · [Améliorer une traduction](../LOCALIZATION.md) · [Guide de développement](../DEVELOPMENT.md)
@@ -154,4 +154,4 @@ Le projet vidéo facultatif dans `extras/` est indépendant de la compilation de
 ---
 
 **Conçu pour un Bureau où l’on a plaisir à revenir.**  
-[Licence MIT](../../LICENSE) · [Mentions tierces](../../third_party/README.md)
+[Licence Apache 2.0](../../LICENSE) · [Mentions tierces](../../third_party/README.md)

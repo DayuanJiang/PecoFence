@@ -9,7 +9,7 @@
   "hero.headline_accent": "Everything within reach.",
 
   "meta.title": "PecoFence: glass fences for your Windows 11 desktop",
-  "meta.description": "PecoFence is a free, open-source Stardock Fences alternative for Windows 11. Organize files into glass fences, keep live folders on the desktop and bring everything above any app with one shortcut. Ten languages, portable ZIP, MIT license.",
+  "meta.description": "PecoFence is a free, open-source Stardock Fences alternative for Windows 11. Organize files into glass fences, keep live folders on the desktop and bring everything above any app with one shortcut. Ten languages, portable ZIP, Apache 2.0 license.",
 
   "nav.features": "See it work",
   "nav.download": "Download",
@@ -20,7 +20,7 @@
   "hero.headline": "A calmer desktop.",
   "hero.text": "Give your files a home in beautiful glass panels. Keep folders close, projects organized, and your Windows desktop unmistakably yours.",
   "hero.download": "Download for Windows 11",
-  "hero.download_note": "Portable ZIP for x64. No account, no installer. MIT license.",
+  "hero.download_note": "Portable ZIP for x64. No account, no installer. Apache 2.0 license.",
   "hero.github": "View the source on GitHub",
   "hero.panels_alt": "Three PecoFence fences on a real desktop: Projects, Creative and Documents, each a translucent glass panel holding folders and files.",
   "hero.caption": "Real fences from the demo desktop, Fluent theme.",
@@ -84,7 +84,7 @@
   "footer.docs": "Documentation",
   "footer.issues": "Report a problem",
   "footer.contribute": "Contribute",
-  "footer.license": "MIT License",
+  "footer.license": "Apache License 2.0",
   "footer.notices": "Third-party notices",
   "footer.copyright": "PecoFence contributors. Not affiliated with Stardock."
 }

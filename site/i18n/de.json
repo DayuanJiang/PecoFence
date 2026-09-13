@@ -9,7 +9,7 @@
   "hero.headline_accent": "Alles in Reichweite.",
 
   "meta.title": "PecoFence: Glasflächen für Ihren Windows 11-Desktop",
-  "meta.description": "Kostenlose Open-Source-Alternative zu Stardock Fences für Windows 11. Dateien in Glasflächen ordnen, Live-Ordner auf dem Desktop, eine Tastenkombination holt alles nach vorn. Zehn Sprachen, portable ZIP, MIT-Lizenz.",
+  "meta.description": "Kostenlose Open-Source-Alternative zu Stardock Fences für Windows 11. Dateien in Glasflächen ordnen, Live-Ordner auf dem Desktop, eine Tastenkombination holt alles nach vorn. Zehn Sprachen, portable ZIP, Apache-2.0-Lizenz.",
   "nav.features": "In Aktion sehen",
   "nav.download": "Download",
   "nav.docs": "Dokumentation",
@@ -18,7 +18,7 @@
   "hero.headline": "Ein ruhigerer Desktop.",
   "hero.text": "Geben Sie Ihren Dateien ein Zuhause in schönen Glasflächen. Ordner griffbereit, Projekte geordnet und ein Windows-Desktop, der zu Ihnen passt.",
   "hero.download": "Für Windows 11 herunterladen",
-  "hero.download_note": "Portable ZIP für x64. Kein Konto, kein Installer. MIT-Lizenz.",
+  "hero.download_note": "Portable ZIP für x64. Kein Konto, kein Installer. Apache-2.0-Lizenz.",
   "hero.github": "Quellcode auf GitHub ansehen",
   "hero.panels_alt": "Drei PecoFence-Bereiche auf einem echten Desktop: Projekte, Kreativ und Dokumente, jeder eine durchscheinende Glasfläche mit Ordnern und Dateien.",
   "hero.caption": "Echte Bereiche vom Demo-Desktop, Fluent-Thema.",
@@ -77,7 +77,7 @@
   "footer.docs": "Dokumentation",
   "footer.issues": "Problem melden",
   "footer.contribute": "Mitwirken",
-  "footer.license": "MIT-Lizenz",
+  "footer.license": "Apache-2.0-Lizenz",
   "footer.notices": "Hinweise zu Drittanbietern",
   "footer.copyright": "PecoFence-Mitwirkende. Nicht mit Stardock verbunden."
 }

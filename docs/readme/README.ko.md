@@ -90,7 +90,7 @@ https://github.com/user-attachments/assets/6320cf28-a791-4720-9659-b4575df021a0
 
 패키지 관리자를 선호한다면 `winget install DayuanJiang.PecoFence`로 같은 포터블 빌드를 설치할 수 있고, SmartScreen 경고도 나타나지 않습니다.
 
-**Windows 11 x64 · 포터블 ZIP · 계정 불필요 · MIT 라이선스**
+**Windows 11 x64 · 포터블 ZIP · 계정 불필요 · Apache 2.0 라이선스**
 
 처음 실행하면 선택한 언어로 프로그램, 폴더, 파일 및 문서, 바탕 화면 펜스가 만들어집니다.
 종료하면 Windows 바탕 화면 아이콘이 다시 표시됩니다.
@@ -118,7 +118,7 @@ https://github.com/user-attachments/assets/6320cf28-a791-4720-9659-b4575df021a0
 
 ## 직접 빌드하고, 내 것으로
 
-PecoFence는 MIT 라이선스로 공개되어 있습니다. 더 정확한 번역 한 줄부터 더 나은
+PecoFence는 Apache 2.0 라이선스로 공개되어 있습니다. 더 정확한 번역 한 줄부터 더 나은
 바탕 화면 상호작용까지, 어떤 기여든 환영합니다.
 
 [기여하기](../../CONTRIBUTING.md) · [번역 개선하기](../LOCALIZATION.md) · [개발 가이드](../DEVELOPMENT.md)
@@ -150,4 +150,4 @@ Copy-Item third_party/webview2/WebView2Loader.x64.dll target/release/WebView2Loa
 ---
 
 **돌아오고 싶어지는 바탕 화면을 위해.**  
-[MIT 라이선스](../../LICENSE) · [타사 고지](../../third_party/README.md)
+[Apache 2.0 라이선스](../../LICENSE) · [타사 고지](../../third_party/README.md)

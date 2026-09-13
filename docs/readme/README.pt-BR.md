@@ -92,7 +92,7 @@ personalizados são preservados.
 
 Prefere um gerenciador de pacotes? `winget install DayuanJiang.PecoFence` instala a mesma versão portátil e evita o aviso do SmartScreen.
 
-**Windows 11 x64 · ZIP portátil · Sem conta · Licença MIT**
+**Windows 11 x64 · ZIP portátil · Sem conta · Licença Apache 2.0**
 
 Na primeira execução são criados os grupos Programas, Pastas, Arquivos e documentos e
 Área de trabalho no idioma escolhido. Os ícones da área de trabalho do Windows voltam
@@ -122,7 +122,7 @@ a aparecer quando você sai.
 
 ## Compile. Deixe do seu jeito.
 
-O PecoFence usa a licença MIT, e contribuições são bem-vindas: de uma tradução mais precisa
+O PecoFence usa a licença Apache 2.0, e contribuições são bem-vindas: de uma tradução mais precisa
 a uma interação melhor na área de trabalho.
 
 [Contribua](../../CONTRIBUTING.md) · [Melhore uma tradução](../LOCALIZATION.md) · [Guia de desenvolvimento](../DEVELOPMENT.md)
@@ -154,4 +154,4 @@ O projeto de vídeo opcional em `extras/` é independente da compilação do apl
 ---
 
 **Feito para uma área de trabalho à qual você gosta de voltar.**  
-[Licença MIT](../../LICENSE) · [Avisos de terceiros](../../third_party/README.md)
+[Licença Apache 2.0](../../LICENSE) · [Avisos de terceiros](../../third_party/README.md)

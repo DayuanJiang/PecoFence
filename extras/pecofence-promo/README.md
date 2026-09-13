@@ -252,5 +252,5 @@ capture developed a window-display anomaly. No simulated merge replaces it.
 Some native empty-state text and transient menus remain in the build's language;
 the film's editorial copy and sample names are English.
 
-Remotion has its own license terms. The product repository's MIT license does not
+Remotion has its own license terms. The product repository's Apache 2.0 license does not
 replace Remotion's license.

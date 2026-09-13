@@ -91,7 +91,7 @@ und eigene Bezeichnungen bleiben unverändert.
 
 Lieber ein Paketmanager? `winget install DayuanJiang.PecoFence` installiert denselben portablen Build und überspringt die SmartScreen-Abfrage.
 
-**Windows 11 x64 · Portable ZIP · Kein Konto nötig · MIT-Lizenz**
+**Windows 11 x64 · Portable ZIP · Kein Konto nötig · Apache-2.0-Lizenz**
 
 Beim ersten Start werden die Bereiche Programme, Ordner, Dateien und Dokumente sowie Desktop
 in der gewählten Sprache angelegt. Beim Beenden erscheinen die Windows-Desktopsymbole wieder.
@@ -119,7 +119,7 @@ in der gewählten Sprache angelegt. Beim Beenden erscheinen die Windows-Desktops
 
 ## Selbst bauen. Selbst gestalten.
 
-PecoFence steht unter der MIT-Lizenz, und Beiträge sind willkommen – von einer treffenderen
+PecoFence steht unter der Apache-2.0-Lizenz, und Beiträge sind willkommen – von einer treffenderen
 Übersetzung bis zu einer besseren Desktop-Interaktion.
 
 [Mitwirken](../../CONTRIBUTING.md) · [Übersetzung verbessern](../LOCALIZATION.md) · [Entwicklerhandbuch](../DEVELOPMENT.md)
@@ -151,4 +151,4 @@ Das optionale Videoprojekt in `extras/` ist vom App-Build unabhängig.
 ---
 
 **Für einen Desktop, zu dem Sie gern zurückkehren.**  
-[MIT-Lizenz](../../LICENSE) · [Hinweise zu Drittanbietern](../../third_party/README.md)
+[Apache-2.0-Lizenz](../../LICENSE) · [Hinweise zu Drittanbietern](../../third_party/README.md)

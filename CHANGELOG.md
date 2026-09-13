@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- License changed from MIT to the Apache License 2.0; a NOTICE file accompanies the LICENSE.
+
 ## 0.0.1
 
 - Renamed the product, executables and packages to PecoFence; existing configuration

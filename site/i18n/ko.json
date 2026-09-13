@@ -9,7 +9,7 @@
   "hero.headline_accent": "모든 것이 손닿는 곳에.",
 
   "meta.title": "PecoFence: Windows 11 바탕 화면의 유리 펜스",
-  "meta.description": "PecoFence: Windows 11용 무료 오픈 소스 Stardock Fences 대안. 파일을 유리 펜스에 담고 단축키 하나로 어떤 앱 위에든 불러오세요. 포터블 ZIP, MIT 라이선스.",
+  "meta.description": "PecoFence: Windows 11용 무료 오픈 소스 Stardock Fences 대안. 파일을 유리 펜스에 담고 단축키 하나로 어떤 앱 위에든 불러오세요. 포터블 ZIP, Apache 2.0 라이선스.",
 
   "nav.features": "실제 동작 보기",
   "nav.download": "다운로드",
@@ -20,7 +20,7 @@
   "hero.headline": "더 차분한 바탕 화면.",
   "hero.text": "아름다운 유리 펜스에 파일을 정리하세요. 폴더는 가까이, 프로젝트는 깔끔하게. Windows 바탕 화면을 나다운 공간으로 만드세요.",
   "hero.download": "Windows 11용 다운로드",
-  "hero.download_note": "x64 포터블 ZIP. 계정도 설치 프로그램도 필요 없습니다. MIT 라이선스.",
+  "hero.download_note": "x64 포터블 ZIP. 계정도 설치 프로그램도 필요 없습니다. Apache 2.0 라이선스.",
   "hero.github": "GitHub에서 소스 보기",
   "hero.panels_alt": "실제 바탕 화면 위의 PecoFence 펜스 세 개: 프로젝트, 크리에이티브, 문서. 각각 폴더와 파일을 담은 반투명 유리 패널입니다.",
   "hero.caption": "데모 바탕 화면의 실제 펜스, Fluent 테마.",
@@ -84,7 +84,7 @@
   "footer.docs": "문서",
   "footer.issues": "문제 신고",
   "footer.contribute": "기여하기",
-  "footer.license": "MIT 라이선스",
+  "footer.license": "Apache 2.0 라이선스",
   "footer.notices": "타사 고지",
   "footer.copyright": "PecoFence 기여자. Stardock과는 관련이 없습니다."
 }

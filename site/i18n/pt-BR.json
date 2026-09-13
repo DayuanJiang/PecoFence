@@ -9,7 +9,7 @@
   "hero.headline_accent": "Tudo ao seu alcance.",
 
   "meta.title": "PecoFence: grupos de vidro para o Windows 11",
-  "meta.description": "PecoFence: alternativa gratuita e de código aberto ao Stardock Fences para Windows 11. Grupos de vidro para seus arquivos, pastas ao vivo na área de trabalho e tudo por cima de qualquer aplicativo com um atalho. Dez idiomas, ZIP portátil, licença MIT.",
+  "meta.description": "PecoFence: alternativa gratuita e de código aberto ao Stardock Fences para Windows 11. Grupos de vidro para seus arquivos, pastas ao vivo na área de trabalho e tudo por cima de qualquer aplicativo com um atalho. Dez idiomas, ZIP portátil, licença Apache 2.0.",
 
   "nav.features": "Veja em ação",
   "nav.download": "Baixar",
@@ -20,7 +20,7 @@
   "hero.headline": "Uma área de trabalho mais tranquila.",
   "hero.text": "Dê um lugar aos seus arquivos em belos grupos de vidro. Pastas por perto, projetos organizados e uma área de trabalho do Windows com a sua cara.",
   "hero.download": "Baixar para Windows 11",
-  "hero.download_note": "ZIP portátil para x64. Sem conta, sem instalador. Licença MIT.",
+  "hero.download_note": "ZIP portátil para x64. Sem conta, sem instalador. Licença Apache 2.0.",
   "hero.github": "Veja o código-fonte no GitHub",
   "hero.panels_alt": "Três grupos do PecoFence em uma área de trabalho real: Projetos, Criativo e Documentos, cada um em um painel de vidro translúcido com pastas e arquivos.",
   "hero.caption": "Grupos reais da área de trabalho de demonstração, tema Fluent.",
@@ -84,7 +84,7 @@
   "footer.docs": "Documentação",
   "footer.issues": "Relatar um problema",
   "footer.contribute": "Contribua",
-  "footer.license": "Licença MIT",
+  "footer.license": "Licença Apache 2.0",
   "footer.notices": "Avisos de terceiros",
   "footer.copyright": "Colaboradores do PecoFence. Sem afiliação com a Stardock."
 }

@@ -9,7 +9,7 @@
   "hero.headline_accent": "把檔案放在手邊。",
 
   "meta.title": "PecoFence：Windows 11 桌面的玻璃圍欄",
-  "meta.description": "免費開源 Windows 11 桌面整理工具，Stardock Fences 的另一種選擇。玻璃圍欄收好檔案，資料夾在手邊，一鍵浮現在任何程式前。十種語言、免安裝、MIT 授權。",
+  "meta.description": "免費開源 Windows 11 桌面整理工具，Stardock Fences 的另一種選擇。玻璃圍欄收好檔案，資料夾在手邊，一鍵浮現在任何程式前。十種語言、免安裝、Apache 2.0 授權。",
 
   "nav.features": "實際操作",
   "nav.download": "下載",
@@ -20,7 +20,7 @@
   "hero.headline": "把桌面還給桌布。",
   "hero.text": "用通透的玻璃圍欄收好檔案，讓資料夾隨手可及、專案井然有序。給 Windows 桌面一點秩序，也給自己一點空間。",
   "hero.download": "下載 Windows 11 版",
-  "hero.download_note": "x64 免安裝版 ZIP，不需帳號、不用安裝程式。MIT 開源授權。",
+  "hero.download_note": "x64 免安裝版 ZIP，不需帳號、不用安裝程式。Apache 2.0 開源授權。",
   "hero.github": "在 GitHub 查看原始碼",
   "hero.panels_alt": "實際桌面上的三個 PecoFence 圍欄：專案、創作與文件，每一個都是放著資料夾和檔案的半透明玻璃面板。",
   "hero.caption": "示範桌面上的真實圍欄，使用 Fluent 主題。",
@@ -84,7 +84,7 @@
   "footer.docs": "說明文件",
   "footer.issues": "回報問題",
   "footer.contribute": "參與貢獻",
-  "footer.license": "MIT 授權條款",
+  "footer.license": "Apache 2.0 授權條款",
   "footer.notices": "第三方授權聲明",
   "footer.copyright": "PecoFence 貢獻者。與 Stardock 無任何關聯。"
 }

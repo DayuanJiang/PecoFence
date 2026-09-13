@@ -100,7 +100,7 @@ def hero(language):
         draw.rounded_rectangle((x+ox-3, y+oy-3, x+ox+4, y+oy+4), 1, fill=blue)
     draw.text((151, 39), "PecoFence", font=font(48, bold=True), fill="#f5f9ff")
     right = 1508
-    for label in reversed(["WINDOWS 11", badge, "MIT"]):
+    for label in reversed(["WINDOWS 11", badge, "APACHE 2.0"]):
         face = font(15, script=script)
         width = int(draw.textlength(label, font=face)) + 30
         draw.rounded_rectangle((right-width, 51, right, 86), 17,

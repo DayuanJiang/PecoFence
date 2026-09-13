@@ -89,7 +89,7 @@ https://github.com/user-attachments/assets/6320cf28-a791-4720-9659-b4575df021a0
 
 習慣用套件管理器？`winget install DayuanJiang.PecoFence` 安裝的是同一個免安裝版，而且不會觸發 SmartScreen 提示。
 
-**Windows 11 x64 · 免安裝版 · 不需帳號 · MIT 開源授權**
+**Windows 11 x64 · 免安裝版 · 不需帳號 · Apache 2.0 開源授權**
 
 第一次執行時，會依所選語言建立「程式」「資料夾」「檔案與文件」和「桌面」四個圍欄。
 結束程式時，Windows 桌面圖示會恢復顯示。
@@ -144,4 +144,4 @@ Copy-Item third_party/webview2/WebView2Loader.x64.dll target/release/WebView2Loa
 ---
 
 **讓每次回到桌面，都更舒服一點。**  
-[MIT 授權條款](../../LICENSE) · [第三方授權聲明](../../third_party/README.md)
+[Apache 2.0 授權條款](../../LICENSE) · [第三方授權聲明](../../third_party/README.md)

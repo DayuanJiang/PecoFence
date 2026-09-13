@@ -92,7 +92,7 @@ nombres que pongas tú se conservan.
 
 ¿Prefieres un gestor de paquetes? `winget install DayuanJiang.PecoFence` instala la misma versión portátil y evita el aviso de SmartScreen.
 
-**Windows 11 x64 · ZIP portátil · Sin cuenta · Licencia MIT**
+**Windows 11 x64 · ZIP portátil · Sin cuenta · Licencia Apache 2.0**
 
 El primer inicio crea los grupos Programas, Carpetas, Archivos y documentos y Escritorio
 en el idioma que elijas. Los iconos del escritorio de Windows se restauran al salir.
@@ -121,7 +121,7 @@ en el idioma que elijas. Los iconos del escritorio de Windows se restauran al sa
 
 ## Constrúyelo. Hazlo tuyo.
 
-PecoFence tiene licencia MIT y las contribuciones son bienvenidas: desde una traducción más
+PecoFence tiene licencia Apache 2.0 y las contribuciones son bienvenidas: desde una traducción más
 precisa hasta una interacción de escritorio mejor resuelta.
 
 [Contribuir](../../CONTRIBUTING.md) · [Mejorar una traducción](../LOCALIZATION.md) · [Guía de desarrollo](../DEVELOPMENT.md)
@@ -153,4 +153,4 @@ El proyecto de vídeo opcional en `extras/` es independiente de la compilación 
 ---
 
 **Hecho para un escritorio al que da gusto volver.**  
-[Licencia MIT](../../LICENSE) · [Avisos de terceros](../../third_party/README.md)
+[Licencia Apache 2.0](../../LICENSE) · [Avisos de terceros](../../third_party/README.md)

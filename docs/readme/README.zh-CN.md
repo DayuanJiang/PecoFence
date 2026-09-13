@@ -89,7 +89,7 @@ https://github.com/user-attachments/assets/6320cf28-a791-4720-9659-b4575df021a0
 
 习惯用包管理器？`winget install DayuanJiang.PecoFence` 安装的是同一个便携版，并且不会触发 SmartScreen 提示。
 
-**Windows 11 x64 · 便携版 · 无需账号 · MIT 开源**
+**Windows 11 x64 · 便携版 · 无需账号 · Apache 2.0 开源**
 
 首次运行会按所选语言创建“程序”“文件夹”“文件与文档”和“桌面”四个栅栏。
 退出程序时，Windows 桌面图标会恢复显示。
@@ -144,4 +144,4 @@ Copy-Item third_party/webview2/WebView2Loader.x64.dll target/release/WebView2Loa
 ---
 
 **让每次回到桌面，都更舒服一点。**  
-[MIT 许可证](../../LICENSE) · [第三方许可说明](../../third_party/README.md)
+[Apache 2.0 许可证](../../LICENSE) · [第三方许可说明](../../third_party/README.md)

@@ -9,7 +9,7 @@
   "hero.headline_accent": "すべてが手の届く場所に。",
 
   "meta.title": "PecoFence：Windows 11 デスクトップのガラスのフェンス",
-  "meta.description": "Windows 11 向けの無料・オープンソースな Stardock Fences 代替。ファイルをガラスのフェンスに整理し、ショートカットひとつでアプリの手前へ。10 言語、ポータブル ZIP、MIT ライセンス。",
+  "meta.description": "Windows 11 向けの無料・オープンソースな Stardock Fences 代替。ファイルをガラスのフェンスに整理し、ショートカットひとつでアプリの手前へ。10 言語、ポータブル ZIP、Apache 2.0 ライセンス。",
 
   "nav.features": "実際の動きを見る",
   "nav.download": "ダウンロード",
@@ -20,7 +20,7 @@
   "hero.headline": "静かなデスクトップ。",
   "hero.text": "ファイルを美しいガラスのフェンスに。フォルダーはすぐ手元に、プロジェクトはすっきり整理。Windows のデスクトップを、もっと自分らしく。",
   "hero.download": "Windows 11 版をダウンロード",
-  "hero.download_note": "x64 向けポータブル ZIP。アカウント不要、インストーラー不要。MIT ライセンス。",
+  "hero.download_note": "x64 向けポータブル ZIP。アカウント不要、インストーラー不要。Apache 2.0 ライセンス。",
   "hero.github": "GitHub でソースを見る",
   "hero.panels_alt": "実際のデスクトップに並ぶ PecoFence の 3 つのフェンス「プロジェクト」「クリエイティブ」「ドキュメント」。それぞれが半透明のガラスパネルで、フォルダーとファイルを収めています。",
   "hero.caption": "デモデスクトップ上の実際のフェンス。Fluent テーマ。",
@@ -84,7 +84,7 @@
   "footer.docs": "ドキュメント",
   "footer.issues": "問題を報告",
   "footer.contribute": "貢献する",
-  "footer.license": "MIT ライセンス",
+  "footer.license": "Apache 2.0 ライセンス",
   "footer.notices": "サードパーティライセンス",
   "footer.copyright": "PecoFence コントリビューター。Stardock とは関係ありません。"
 }
