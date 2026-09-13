@@ -96,3 +96,10 @@ in `en.json`; everything else is escaped.
 `python scripts/make-site-media.py` regenerates the clips, posters, panels and
 wallpaper from `extras/pecofence-promo/public/`, which is a local, ignored directory.
 The exported files in `site/assets/` are checked in so the site builds anywhere.
+
+## Analytics
+
+The template loads the Cloudflare Web Analytics beacon (site `pecofence.jiang.jp` in the
+Cloudflare account, token in `site/template.html`). It counts page views and Core Web
+Vitals without cookies or fingerprinting; the dashboard is under **Analytics & Logs →
+Web Analytics** in Cloudflare.
