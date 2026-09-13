@@ -1,0 +1,29 @@
+# Opens a pull request against microsoft/winget-pkgs for every published (non-draft,
+# non-prerelease) GitHub release. Requires the repository secret WINGET_TOKEN: a classic
+# personal access token with the public_repo scope, used to push to the maintainer's fork
+# of winget-pkgs and open the PR.
+name: Publish to winget
+
+on:
+  release:
+    types: [released]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to publish (for example v0.0.2)
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  winget:
+    runs-on: windows-latest
+    steps:
+      - uses: vedantmgoyal9/winget-releaser@main
+        with:
+          identifier: DayuanJiang.PecoFence
+          installers-regex: '-x64\.zip$'
+          release-tag: ${{ inputs.tag || github.event.release.tag_name }}
+          max-versions-to-keep: 5
+          token: ${{ secrets.WINGET_TOKEN }}
