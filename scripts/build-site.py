@@ -6,6 +6,7 @@ GitHub Pages. No dependencies beyond the standard library.
 """
 import argparse
 import datetime
+import hashlib
 import html
 import json
 import re
@@ -78,6 +79,11 @@ def main():
     repository = config["repository"].rstrip("/")
     docs = f"{repository}/blob/main/docs"
     template = (SITE / "template.html").read_text(encoding="utf-8")
+    # Content hash appended to the stylesheet and script URLs so browsers pick up new
+    # versions immediately despite the CDN's cache lifetime.
+    asset_version = hashlib.sha256(
+        (SITE / "assets/site.css").read_bytes() + (SITE / "assets/site.js").read_bytes()
+    ).hexdigest()[:10]
     languages = config["languages"]
     english = json.loads((SITE / "i18n/en.json").read_text(encoding="utf-8"))
 
@@ -134,6 +140,7 @@ def main():
             "language_links": language_links,
             "language_options": language_options,
             "year": str(datetime.date.today().year),
+            "v": asset_version,
         }
         page = render(template, values, strings)
         target = out / directory / "index.html"
