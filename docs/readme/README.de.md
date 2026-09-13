@@ -2,6 +2,8 @@
   <img src="../assets/hero-de.png" alt="PecoFence — Ein ruhigerer Desktop. Alles in Reichweite. Drei echte Desktop-Bereiche mit Glashintergrund." width="1280">
 </p>
 
+https://github.com/user-attachments/assets/6320cf28-a791-4720-9659-b4575df021a0
+
 <p align="center">
   <strong>Eine kostenlose Open-Source-Alternative zu Stardock Fences für Windows 11.</strong><br>
   Ordnen Sie Ihre Dateien in Glasflächen. Eine Tastenkombination holt sie über jede Anwendung.

@@ -2,6 +2,8 @@
   <img src="../assets/hero-es.png" alt="PecoFence — Un escritorio más tranquilo. Todo a tu alcance. Tres grupos reales de escritorio con fondo de cristal." width="1280">
 </p>
 
+https://github.com/user-attachments/assets/6320cf28-a791-4720-9659-b4575df021a0
+
 <p align="center">
   <strong>Una alternativa gratuita y de código abierto a Stardock Fences para Windows 11.</strong><br>
   Organiza tus archivos en paneles de cristal. Tráelos delante de cualquier aplicación con un atajo.

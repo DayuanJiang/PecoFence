@@ -2,6 +2,8 @@
   <img src="docs/assets/hero-en.png" alt="PecoFence — A calmer desktop. Everything within reach. Three real desktop groups with glass backgrounds." width="1280">
 </p>
 
+https://github.com/user-attachments/assets/6320cf28-a791-4720-9659-b4575df021a0
+
 <p align="center">
   <strong>A free, open-source Stardock Fences alternative for Windows 11.</strong><br>
   Organize your files into glass panels. Bring them above any app with one shortcut.

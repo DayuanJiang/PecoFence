@@ -2,6 +2,8 @@
   <img src="../assets/hero-pt-BR.png" alt="PecoFence — Uma área de trabalho mais tranquila. Tudo ao seu alcance. Três grupos reais na área de trabalho com fundo de vidro." width="1280">
 </p>
 
+https://github.com/user-attachments/assets/6320cf28-a791-4720-9659-b4575df021a0
+
 <p align="center">
   <strong>Uma alternativa gratuita e de código aberto ao Stardock Fences para Windows 11.</strong><br>
   Organize seus arquivos em painéis de vidro. Traga-os por cima de qualquer aplicativo com um atalho.

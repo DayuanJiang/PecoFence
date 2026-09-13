@@ -2,6 +2,8 @@
   <img src="../assets/hero-ko.png" alt="PecoFence — 더 차분한 바탕 화면. 모든 것이 손닿는 곳에. 유리 배경의 실제 바탕 화면 펜스 세 개." width="1280">
 </p>
 
+https://github.com/user-attachments/assets/6320cf28-a791-4720-9659-b4575df021a0
+
 <p align="center">
   <strong>Windows 11을 위한 무료 오픈 소스 Stardock Fences 대안.</strong><br>
   파일을 유리 패널에 정리하고, 단축키 하나로 어떤 앱 위에든 불러오세요.

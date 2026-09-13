@@ -2,6 +2,8 @@
   <img src="../assets/hero-ja.png" alt="PecoFence — 静かなデスクトップ。すべてが手の届く場所に。実際のデモデスクトップに並ぶ、ガラス背景の3つのフェンス。" width="1280">
 </p>
 
+https://github.com/user-attachments/assets/6320cf28-a791-4720-9659-b4575df021a0
+
 <p align="center">
   <strong>Windows 11 向けの無料・オープンソースな Stardock Fences 代替アプリ。</strong><br>
   ファイルをガラスのパネルに整理し、ショートカットひとつでどのアプリの手前にも呼び出せます。

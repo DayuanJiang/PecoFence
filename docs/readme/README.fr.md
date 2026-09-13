@@ -2,6 +2,8 @@
   <img src="../assets/hero-fr.png" alt="PecoFence — Un Bureau plus calme. Tout à portée de main. Trois vrais groupes de Bureau sur fond de verre." width="1280">
 </p>
 
+https://github.com/user-attachments/assets/6320cf28-a791-4720-9659-b4575df021a0
+
 <p align="center">
   <strong>Une alternative libre et gratuite à Stardock Fences pour Windows 11.</strong><br>
   Rangez vos fichiers dans des panneaux de verre. Faites-les apparaître au-dessus de n’importe quelle application d’un seul raccourci.

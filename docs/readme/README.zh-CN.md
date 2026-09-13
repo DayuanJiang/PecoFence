@@ -2,6 +2,8 @@
   <img src="../assets/hero-zh-CN.png" alt="PecoFence — 把桌面还给壁纸，把文件放在手边。实际演示桌面上的三个玻璃栅栏。" width="1280">
 </p>
 
+https://github.com/user-attachments/assets/6320cf28-a791-4720-9659-b4575df021a0
+
 <p align="center">
   <strong>免费、开源的 Windows 11 桌面整理工具，Stardock Fences 的另一种选择。</strong><br>
   用玻璃栅栏收好文件，按一下快捷键，就能在任何应用前取用。
