@@ -90,6 +90,8 @@ personnalisés restent intacts.
 3. Commencez à ranger. Un clic droit sur l’icône de la zone de notification ouvre les Paramètres
    ou quitte l’application.
 
+Vous préférez un gestionnaire de paquets ? `winget install DayuanJiang.PecoFence` installe la même version portable et évite l’avertissement SmartScreen.
+
 **Windows 11 x64 · ZIP portable · Sans compte · Licence MIT**
 
 Au premier lancement, PecoFence crée les groupes Applications, Dossiers, Fichiers et documents
@@ -111,7 +113,8 @@ et Bureau dans la langue de votre choix. Les icônes du Bureau Windows réappara
   ni les fonds d’écran vidéo.
 - Les boîtes de dialogue de Windows et les entrées tierces des menus de l’Explorateur suivent
   la langue de Windows.
-- Les versions portables actuelles ne sont pas signées.
+- Les versions portables ne sont pas signées. Si Windows SmartScreen s’affiche au premier lancement, choisissez
+  **Informations complémentaires → Exécuter quand même**. L’installation via winget évite cet avertissement.
 
 [Guide de l’édition portable](../PORTABLE.md) · [Guide des langues](../LOCALIZATION.md)
 

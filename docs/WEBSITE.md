@@ -9,7 +9,7 @@ The product page at <https://pecofence.jiang.jp> is a static site generated from
 | Path | Purpose |
 |---|---|
 | `site/template.html` | One HTML template rendered once per language |
-| `site/assets/site.css`, `site.js`, `mark.svg` | Styles, clip playback and language picker, favicon |
+| `site/assets/site.css`, `site.js`, `mark.svg` | Responsive styles, desktop preview toggle, clip playback, command copy button, language picker and favicon |
 | `site/assets/*.mp4`, `*.jpg`, `panel-*.png`, `wallpaper.jpg` | The 30-second spot (`promo.mp4`), six feature clips, posters, the three hero fences and the wallpaper, exported by `scripts/make-site-media.py` from the local promo project |
 | `site/i18n/<language>.json` | Copy for each language; `en.json` is the source and every other file must have the same keys |
 | `site/site.json` | Domain, repository URL and the language list |
@@ -17,7 +17,15 @@ The product page at <https://pecofence.jiang.jp> is a static site generated from
 The build writes `dist/site/`: `index.html` for English, one `<language>/index.html`
 per translation, the localized README hero images as Open Graph previews, `CNAME`,
 `robots.txt` and `sitemap.xml`. Pages carry `hreflang` alternates, so search engines
-send visitors to their language; the taskbar's language picker does the same by hand.
+send visitors to their language; the header's language picker and the language links
+do the same by hand. The picker preserves the current section.
+
+The page uses a light canvas with the original desktop wallpaper and product panels
+inside the hero preview. Feature videos play only while visible, with individual
+pause controls, and never autoplay when reduced motion is preferred. The preview's
+hide/show button demonstrates clearing the desktop. Installation requirements expand
+without JavaScript; clipboard copying is available on HTTPS and localhost. No external
+fonts, UI libraries or additional build dependencies are required.
 
 ## Building locally
 

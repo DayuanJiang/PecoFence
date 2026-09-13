@@ -17,6 +17,8 @@ ROOT = Path(__file__).resolve().parents[1]
 SITE = ROOT / "site"
 FEATURES = ["groups", "portal", "tabs", "peek", "hide", "rules"]
 DETAILS = ["glass", "files", "space", "back", "footprint", "safe"]
+FEATURE_ICONS = ["grid", "folder", "layers", "cursor", "expand", "spark"]
+DETAIL_ICONS = ["spark", "cursor", "expand", "restore", "feather", "shield"]
 PLACEHOLDER = re.compile(r"\{\{(t|raw):([\w.]+)\}\}|\{\{(\w+)\}\}")
 OG_LOCALES = {
     "en": "en_US", "zh-CN": "zh_CN", "zh-TW": "zh_TW", "ja": "ja_JP", "ko": "ko_KR",
@@ -41,27 +43,48 @@ def render(template, values, strings):
 
 def feature_fences(strings, root):
     parts = []
-    for name in FEATURES:
+    for name, icon in zip(FEATURES, FEATURE_ICONS):
         title = html.escape(strings[f"feature.{name}.title"])
-        parts.append(f'''      <div class="fence clip">
-        <div class="fence-title"><span>{title}</span>
-          <button class="clip-toggle" type="button" data-play="{html.escape(strings["features.play"])}" data-pause="{html.escape(strings["features.pause"])}">{PLAY}{PAUSE}</button>
+        play = html.escape(strings["features.play"], quote=True)
+        pause = html.escape(strings["features.pause"], quote=True)
+        parts.append(f'''      <article class="feature-card clip feature-{name}">
+        <div class="feature-copy">
+          <div class="feature-heading">
+            <span class="feature-icon"><svg class="icon" aria-hidden="true"><use href="#i-{icon}"/></svg></span>
+            <h3>{title}</h3>
+          </div>
+          <p>{strings[f"feature.{name}.text"]}</p>
         </div>
-        <video muted loop playsinline preload="none" poster="{root}assets/{name}.jpg" width="1290" height="495">
-          <source src="{root}assets/{name}.mp4" type="video/mp4">
-          <img class="poster" src="{root}assets/{name}.jpg" alt="" width="1290" height="495">
-        </video>
-        <div class="fence-body"><p>{strings[f"feature.{name}.text"]}</p></div>
-      </div>''')
+        <div class="feature-media">
+          <video aria-label="{title}" muted loop playsinline preload="none" poster="{root}assets/{name}.jpg" width="1290" height="495">
+            <source src="{root}assets/{name}.mp4" type="video/mp4">
+            <img class="poster" src="{root}assets/{name}.jpg" alt="" width="1290" height="495">
+          </video>
+          <button class="clip-toggle" type="button" aria-label="{play}: {title}" data-play="{play}" data-pause="{pause}" data-title="{title}" hidden>{PLAY}{PAUSE}</button>
+        </div>
+      </article>''')
     return "\n".join(parts)
 
 
 def detail_items(strings):
     return "\n".join(
-        f'        <div><dt>{html.escape(strings[f"detail.{name}.title"])}</dt>'
+        f'        <div><dt><span class="detail-icon"><svg class="icon" aria-hidden="true">'
+        f'<use href="#i-{icon}"/></svg></span><br>{html.escape(strings[f"detail.{name}.title"])}</dt>'
         f'<dd>{html.escape(strings[f"detail.{name}.text"])}</dd></div>'
-        for name in DETAILS
+        for name, icon in zip(DETAILS, DETAIL_ICONS)
     )
+
+
+def language_items(languages, current, root):
+    parts = []
+    for language in languages:
+        href = root + (language["dir"] or "./")
+        active = ' aria-current="page"' if language is current else ""
+        parts.append(
+            f'          <li lang="{language["code"]}"><a href="{href}" '
+            f'hreflang="{language["code"]}"{active}>{html.escape(language["name"])}</a></li>'
+        )
+    return "\n".join(parts)
 
 
 def main():
@@ -83,6 +106,7 @@ def main():
     # versions immediately despite the CDN's cache lifetime.
     asset_version = hashlib.sha256(
         (SITE / "assets/site.css").read_bytes() + (SITE / "assets/site.js").read_bytes()
+        + (SITE / "assets/mark.svg").read_bytes()
     ).hexdigest()[:10]
     languages = config["languages"]
     english = json.loads((SITE / "i18n/en.json").read_text(encoding="utf-8"))
@@ -116,9 +140,7 @@ def main():
         root = "../" if directory else ""
         readme = f"{repository}/blob/main/README.md" if code == "en" else \
             f"{repository}/blob/main/docs/readme/README.{code}.md"
-        language_links = "\n".join(
-            f'          <li lang="{lang["code"]}">{html.escape(lang["name"])}</li>' for lang in languages
-        )
+        language_links = language_items(languages, language, root)
         language_options = "\n".join(
             f'        <option value="{lang["code"]}" data-href="{root}{lang["dir"]}"{" selected" if lang is language else ""}>'
             f'{html.escape(lang["name"])}</option>'

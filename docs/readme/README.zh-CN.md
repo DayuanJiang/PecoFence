@@ -87,6 +87,8 @@ https://github.com/user-attachments/assets/6320cf28-a791-4720-9659-b4575df021a0
 2. **完整解压**到一个文件夹，运行 `pecofence.exe`。
 3. 开始整理。需要设置或退出时，右键系统托盘里的 PecoFence 图标。
 
+习惯用包管理器？`winget install DayuanJiang.PecoFence` 安装的是同一个便携版，并且不会触发 SmartScreen 提示。
+
 **Windows 11 x64 · 便携版 · 无需账号 · MIT 开源**
 
 首次运行会按所选语言创建“程序”“文件夹”“文件与文档”和“桌面”四个栅栏。
@@ -104,7 +106,7 @@ https://github.com/user-attachments/assets/6320cf28-a791-4720-9659-b4575df021a0
 - 已有安装会继续使用旧配置目录，保留布局、规则和备份。详见[升级说明](../UPGRADING.md)。
 - 玻璃效果采样静态桌面壁纸，不会折射其他应用窗口或视频壁纸。
 - Windows 自带对话框和第三方资源管理器菜单仍使用系统语言。
-- 当前便携版未做代码签名。
+- 便携版未做代码签名。首次运行若出现 Windows SmartScreen 提示，点击**更多信息 → 仍要运行**。通过 winget 安装不会出现该提示。
 
 [便携版说明](../PORTABLE.md) · [多语言说明](../LOCALIZATION.md)
 

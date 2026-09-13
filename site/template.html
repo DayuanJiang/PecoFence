@@ -14,114 +14,181 @@
 <meta property="og:image" content="{{origin}}/assets/hero-{{lang}}.png">
 <meta property="og:locale" content="{{og_locale}}">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="theme-color" content="#0b1b31">
-<link rel="icon" href="{{root}}assets/mark.svg" type="image/svg+xml">
+<meta name="theme-color" content="#f8faff">
+<link rel="icon" href="{{root}}assets/mark.svg?v={{v}}" type="image/svg+xml">
 <link rel="stylesheet" href="{{root}}assets/site.css?v={{v}}">
 </head>
 <body>
+<svg class="svg-sprite" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+  <symbol id="i-windows" viewBox="0 0 24 24"><path d="M3 4.5 10.5 3.5v8H3zm9-1.2L21 2v9.5h-9zM3 13h7.5v8L3 20zm9 0h9v9.5L12 21.3z" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14m-6-6 6 6-6 6"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="m9 5 11 7-11 7z" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c-5 5-5 13 0 18 5-5 5-13 0-18"/></symbol>
+  <symbol id="i-github" viewBox="0 0 24 24"><path fill="currentColor" stroke="none" d="M12 2a10 10 0 0 0-3.16 19.49c.5.09.68-.22.68-.48v-1.87c-2.78.61-3.37-1.18-3.37-1.18-.45-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.61.07-.61 1 .07 1.53 1.03 1.53 1.03.89 1.53 2.34 1.09 2.91.83.09-.65.35-1.09.64-1.34-2.22-.25-4.56-1.11-4.56-4.94 0-1.09.39-1.99 1.03-2.69-.1-.25-.45-1.27.1-2.65 0 0 .84-.27 2.75 1.03a9.6 9.6 0 0 1 5 0c1.91-1.3 2.75-1.03 2.75-1.03.55 1.38.2 2.4.1 2.65.64.7 1.03 1.6 1.03 2.69 0 3.84-2.34 4.68-4.57 4.93.36.31.68.92.68 1.85v2.77c0 .27.18.58.69.48A10 10 0 0 0 12 2Z"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="13" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h5l3 4h6a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"/></symbol>
+  <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></symbol>
+  <symbol id="i-layers" viewBox="0 0 24 24"><path d="m12 3 10 5-10 5L2 8Zm-9 10 9 5 9-5M3 18l9 5 9-5"/></symbol>
+  <symbol id="i-spark" viewBox="0 0 24 24"><path d="m12 3 2.7 6.3L21 12l-6.3 2.7L12 21l-2.7-6.3L3 12l6.3-2.7ZM20 2v4m-2-2h4"/></symbol>
+  <symbol id="i-cursor" viewBox="0 0 24 24"><path d="m5 3 14 10-7 1-3 7Z"/></symbol>
+  <symbol id="i-expand" viewBox="0 0 24 24"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5M3 3l6 6m12-6-6 6M3 21l6-6m12 6-6-6"/></symbol>
+  <symbol id="i-restore" viewBox="0 0 24 24"><path d="M3 10a9 9 0 1 1 2 8M3 4v6h6m3-3v5l3 2"/></symbol>
+  <symbol id="i-feather" viewBox="0 0 24 24"><path d="M20 4c-5-5-15 3-15 10v5h5C17 19 25 9 20 4ZM3 21 16 8M5 15h8"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6Z"/><path d="m8 12 3 3 5-6"/></symbol>
+</svg>
+<a class="skip-link" href="#main">{{t:nav.skip}}</a>
 
-<main id="top">
-  <header class="masthead">
-    <a class="brand" href="{{root}}"><img src="{{root}}assets/mark.svg" alt="" width="34" height="34"><span>PecoFence</span></a>
-    <label class="lang">
-      <span class="visually-hidden">{{t:nav.language}}</span>
-      <svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="6.3"/><path d="M1.7 8h12.6M8 1.7c-2.2 2.2-2.2 10.4 0 12.6M8 1.7c2.2 2.2 2.2 10.4 0 12.6"/></svg>
-      <select id="language-select">
+<header id="top" class="masthead">
+  <div class="container header-inner">
+    <a class="brand" href="{{root}}"><img src="{{root}}assets/mark.svg?v={{v}}" alt="" width="30" height="30"><span>PecoFence<span class="brand-dot">.</span></span></a>
+    <nav class="primary-nav" aria-label="PecoFence">
+      <a href="#features">{{t:nav.features}}</a>
+      <a href="{{docs}}/README.md">{{t:nav.docs}}</a>
+      <a href="{{repository}}"><svg class="icon" aria-hidden="true"><use href="#i-github"/></svg>{{t:nav.github}}</a>
+    </nav>
+    <div class="header-actions">
+      <label class="lang">
+        <span class="visually-hidden">{{t:nav.language}}</span>
+        <svg class="icon" aria-hidden="true"><use href="#i-globe"/></svg>
+        <select id="language-select">
 {{language_options}}
-      </select>
-    </label>
-  </header>
+        </select>
+      </label>
+      <a class="button button-small" href="#download">{{t:nav.download}}<svg class="icon" aria-hidden="true"><use href="#i-arrow"/></svg></a>
+    </div>
+  </div>
+</header>
 
-  <section class="hero">
+<main id="main">
+  <section class="hero container" aria-labelledby="hero-title">
     <div class="hero-copy">
-      <h1>{{t:hero.headline}}</h1>
+      <p class="eyebrow hero-eyebrow"><span class="status-dot"></span>{{t:hero.eyebrow}}</p>
+      <h1 id="hero-title">{{t:hero.headline}} <span>{{t:hero.headline_accent}}</span></h1>
       <p class="lede">{{t:hero.text}}</p>
-      <p class="actions">
-        <a class="button primary" href="{{releases}}">{{t:hero.download}}</a>
-        <a class="button" href="{{repository}}">{{t:hero.github}}</a>
-      </p>
+      <div class="actions hero-actions">
+        <a class="button primary" href="{{releases}}"><svg class="icon" aria-hidden="true"><use href="#i-windows"/></svg>{{t:hero.download}}<svg class="icon button-arrow" aria-hidden="true"><use href="#i-arrow"/></svg></a>
+        <a class="button secondary" href="#watch"><svg class="icon" aria-hidden="true"><use href="#i-play"/></svg>{{t:watch.title}}</a>
+      </div>
       <p class="note">{{t:hero.download_note}}</p>
     </div>
-    <figure class="desk" aria-label="{{t:hero.panels_alt}}">
-      <img class="panel p0" src="{{root}}assets/panel-0.png" alt="" width="640" height="448" fetchpriority="high">
-      <img class="panel p1" src="{{root}}assets/panel-1.png" alt="" width="640" height="448">
-      <img class="panel p2" src="{{root}}assets/panel-2.png" alt="" width="640" height="448">
-      <figcaption>{{t:hero.caption}}</figcaption>
+    <figure class="desktop-preview">
+      <div class="desk" role="img" aria-label="{{t:hero.panels_alt}}">
+        <div class="desktop-label" aria-hidden="true"><span class="status-dot"></span>PecoFence<span class="desktop-label-line"></span>Windows 11</div>
+        <div class="desktop-panels">
+          <img class="panel p0" src="{{root}}assets/panel-0.png" alt="" width="640" height="448" fetchpriority="high">
+          <img class="panel p1" src="{{root}}assets/panel-1.png" alt="" width="640" height="448">
+          <img class="panel p2" src="{{root}}assets/panel-2.png" alt="" width="640" height="448">
+        </div>
+        <p class="desktop-message" aria-hidden="true">{{t:demo.hint}}</p>
+        <div class="desktop-dock" aria-hidden="true">
+          <svg class="icon dock-windows"><use href="#i-windows"/></svg>
+          <span class="dock-divider"></span>
+          <span class="dock-active"><img src="{{root}}assets/mark.svg?v={{v}}" alt="" width="25" height="25"></span>
+          <svg class="icon dock-folder"><use href="#i-folder"/></svg>
+          <svg class="icon dock-grid"><use href="#i-grid"/></svg>
+        </div>
+      </div>
+      <figcaption class="desktop-caption">
+        <span><span class="status-dot"></span>{{t:hero.caption}}</span>
+        <button class="demo-toggle" type="button" aria-pressed="false" data-hide="{{t:demo.hide}}" data-show="{{t:demo.show}}" hidden><svg class="icon" aria-hidden="true"><use href="#i-eye"/></svg><span>{{t:demo.hide}}</span></button>
+      </figcaption>
     </figure>
   </section>
 
-  <section id="watch" class="section watch">
-    <div class="fence">
-      <div class="fence-title"><h2>{{t:watch.title}}</h2></div>
-      <video controls preload="none" playsinline poster="{{root}}assets/promo.jpg" width="1280" height="720">
+  <section id="watch" class="watch container" aria-labelledby="watch-title">
+    <div class="watch-copy">
+      <span class="section-number" aria-hidden="true">00:30 <span>↗</span></span>
+      <h2 id="watch-title">{{t:watch.title}}</h2>
+      <p>{{t:watch.text}}</p>
+      <a class="text-link" href="#features">{{t:nav.features}}<svg class="icon" aria-hidden="true"><use href="#i-arrow"/></svg></a>
+    </div>
+    <div class="tour-player">
+      <video aria-label="{{t:watch.title}}" controls preload="none" playsinline poster="{{root}}assets/promo.jpg" width="1280" height="720">
         <source src="{{root}}assets/promo.mp4" type="video/mp4">
       </video>
-      <div class="fence-body"><p class="small">{{t:watch.text}}</p></div>
     </div>
   </section>
 
-  <section id="features" class="section">
-    <h2>{{t:features.heading}}</h2>
-    <p class="intro">{{t:features.intro}}</p>
-    <div class="fences clips">
+  <section id="features" class="section features-section" aria-labelledby="features-title">
+    <div class="container">
+      <div class="section-heading">
+        <span class="section-number" aria-hidden="true">01 /</span>
+        <h2 id="features-title">{{t:features.heading}}</h2>
+        <p class="intro">{{t:features.intro}}</p>
+      </div>
+      <div class="features-grid">
 {{features}}
+      </div>
     </div>
   </section>
 
-  <section id="details" class="section">
-    <div class="fence wide">
-      <div class="fence-title"><h2>{{t:details.heading}}</h2></div>
-      <dl class="details">
+  <section id="details" class="section container" aria-labelledby="details-title">
+    <div class="section-heading">
+      <span class="section-number" aria-hidden="true">02 /</span>
+      <h2 id="details-title">{{t:details.heading}}</h2>
+    </div>
+    <dl class="details">
 {{details}}
-      </dl>
-    </div>
+    </dl>
   </section>
 
-  <section id="languages" class="section">
-    <div class="fence wide">
-      <div class="fence-title"><h2>{{t:languages.heading}}</h2></div>
-      <div class="fence-body languages">
-        <ul class="language-list">
+  <section id="languages" class="languages-section container" aria-labelledby="languages-title">
+    <div class="language-copy">
+      <span class="language-symbol" aria-hidden="true">A<span>あ</span></span>
+      <h2 id="languages-title">{{t:languages.heading}}</h2>
+      <p>{{t:languages.text}}</p>
+      <a class="text-link" href="{{readme}}">{{t:languages.readme}}<svg class="icon" aria-hidden="true"><use href="#i-arrow"/></svg></a>
+    </div>
+    <ul class="language-list">
 {{language_links}}
-        </ul>
-        <p>{{t:languages.text}}</p>
-        <p><a href="{{readme}}">{{t:languages.readme}}</a></p>
-      </div>
-    </div>
+    </ul>
   </section>
 
-  <section id="download" class="section">
-    <h2>{{t:download.heading}}</h2>
-    <div class="fences two">
-      <div class="fence">
-        <div class="fence-title"><span>{{t:download.steps_title}}</span></div>
-        <div class="fence-body">
-          <ol class="steps">
-            <li>{{raw:download.step1}}</li>
-            <li>{{raw:download.step2}}</li>
-            <li>{{raw:download.step3}}</li>
-          </ol>
-          <p class="actions"><a class="button primary" href="{{releases}}">{{t:download.button}}</a></p>
-          <p class="small">{{t:download.first_run}}</p>
+  <section id="download" class="section download-section container" aria-labelledby="download-title">
+    <div class="download-banner">
+      <div class="download-brand" aria-hidden="true"><img src="{{root}}assets/mark.svg?v={{v}}" alt="" width="44" height="44"></div>
+      <h2 id="download-title">{{t:download.heading}}</h2>
+      <p>{{t:footer.tagline}}</p>
+      <a class="button primary" href="{{releases}}"><svg class="icon" aria-hidden="true"><use href="#i-windows"/></svg>{{t:download.button}}<svg class="icon button-arrow" aria-hidden="true"><use href="#i-arrow"/></svg></a>
+      <span class="download-note">{{t:hero.download_note}}</span>
+    </div>
+    <div class="install-grid">
+      <div class="install-steps">
+        <h3>{{t:download.steps_title}}</h3>
+        <ol class="steps">
+          <li>{{raw:download.step1}}</li>
+          <li>{{raw:download.step2}}</li>
+          <li>{{raw:download.step3}}</li>
+        </ol>
+        <div class="command-install">
+          <p class="small">{{raw:download.winget}}</p>
+          <button class="copy-command" type="button" data-command="winget install DayuanJiang.PecoFence" data-copy="{{t:download.copy}}" data-copied="{{t:download.copied}}" hidden><svg class="icon" aria-hidden="true"><use href="#i-copy"/></svg><span aria-live="polite">{{t:download.copy}}</span></button>
         </div>
+        <p class="small first-run">{{t:download.first_run}}</p>
       </div>
-      <div class="fence">
-        <div class="fence-title"><span>{{t:download.requirements_heading}}</span></div>
-        <div class="fence-body">
+      <div class="requirements">
+        <details>
+          <summary>{{t:download.requirements_heading}}<span aria-hidden="true">+</span></summary>
           <ul class="plain">
             <li>{{raw:download.req1}}</li>
             <li>{{raw:download.req2}}</li>
             <li>{{raw:download.req3}}</li>
             <li>{{raw:download.req4}}</li>
           </ul>
-          <p class="small"><a href="{{docs}}/PORTABLE.md">{{t:download.portable}}</a><br><a href="{{docs}}/UPGRADING.md">{{t:download.upgrade}}</a></p>
-        </div>
+        </details>
+        <a class="resource-link" href="{{docs}}/PORTABLE.md">{{t:download.portable}}<svg class="icon" aria-hidden="true"><use href="#i-arrow"/></svg></a>
+        <a class="resource-link" href="{{docs}}/UPGRADING.md">{{t:download.upgrade}}<svg class="icon" aria-hidden="true"><use href="#i-arrow"/></svg></a>
+        <a class="resource-link" href="{{repository}}">{{t:hero.github}}<svg class="icon" aria-hidden="true"><use href="#i-github"/></svg></a>
       </div>
     </div>
   </section>
+</main>
 
-  <footer class="footer">
-    <p class="tagline">{{t:footer.tagline}}</p>
+<footer class="footer container">
+  <div class="footer-top">
+    <a class="brand" href="#top"><img src="{{root}}assets/mark.svg?v={{v}}" alt="" width="27" height="27"><span>PecoFence<span class="brand-dot">.</span></span></a>
     <ul class="footer-links">
       <li><a href="{{repository}}">{{t:footer.source}}</a></li>
       <li><a href="{{docs}}/README.md">{{t:footer.docs}}</a></li>
@@ -130,20 +197,9 @@
       <li><a href="{{repository}}/blob/main/LICENSE">{{t:footer.license}}</a></li>
       <li><a href="{{repository}}/blob/main/third_party/README.md">{{t:footer.notices}}</a></li>
     </ul>
-    <p class="small">© {{year}} {{t:footer.copyright}}</p>
-  </footer>
-</main>
-
-<nav class="taskbar" aria-label="Site">
-  <a class="taskbar-brand" href="#top"><img src="{{root}}assets/mark.svg" alt="PecoFence" width="26" height="26"></a>
-  <div class="taskbar-links">
-    <a href="#features">{{t:nav.features}}</a>
-    <a href="#download">{{t:nav.download}}</a>
-    <a href="{{docs}}/README.md">{{t:nav.docs}}</a>
-    <a href="{{repository}}">{{t:nav.github}}</a>
   </div>
-  <div class="tray"></div>
-</nav>
+  <p class="small">© {{year}} {{t:footer.copyright}}</p>
+</footer>
 
 <script src="{{root}}assets/site.js?v={{v}}" defer></script>
 </body>

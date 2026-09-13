@@ -1,4 +1,13 @@
 {
+  "nav.skip": "Skip to content",
+  "hero.eyebrow": "Free. Open source. A little more you.",
+  "demo.hide": "Hide fences",
+  "demo.show": "Show fences",
+  "demo.hint": "A little more room to breathe.",
+  "download.copy": "Copy command",
+  "download.copied": "Copied",
+  "hero.headline_accent": "Everything within reach.",
+
   "meta.title": "PecoFence: glass fences for your Windows 11 desktop",
   "meta.description": "PecoFence is a free, open-source Stardock Fences alternative for Windows 11. Organize files into glass fences, keep live folders on the desktop and bring everything above any app with one shortcut. Ten languages, portable ZIP, MIT license.",
 
@@ -8,8 +17,8 @@
   "nav.github": "GitHub",
   "nav.language": "Language",
 
-  "hero.headline": "A calmer desktop. Everything within reach.",
-  "hero.text": "PecoFence puts your files into glass fences on the Windows 11 desktop, keeps real folders one click away, and brings it all above any app with a single shortcut. Free and open source.",
+  "hero.headline": "A calmer desktop.",
+  "hero.text": "Give your files a home in beautiful glass panels. Keep folders close, projects organized, and your Windows desktop unmistakably yours.",
   "hero.download": "Download for Windows 11",
   "hero.download_note": "Portable ZIP for x64. No account, no installer. MIT license.",
   "hero.github": "View the source on GitHub",
@@ -19,7 +28,7 @@
   "watch.title": "Watch the 30-second tour",
   "watch.text": "Auto-sorting and project tabs in half a minute. Original soundtrack, no voiceover, English on-screen text.",
 
-  "features.heading": "See it work",
+  "features.heading": "Everything in its right place.",
   "features.intro": "Every clip below is PecoFence recorded on a real Windows 11 desktop with demo files.",
   "feature.groups.title": "Make a fence",
   "feature.groups.text": "Drag files in. Resize the fence and snap it beside the others.",
@@ -59,13 +68,14 @@
   "download.step1": "Download the latest <code>pecofence-&lt;version&gt;-x64.zip</code> from the releases page.",
   "download.step2": "Extract the whole ZIP into a folder and run <code>pecofence.exe</code>.",
   "download.step3": "Start organizing. The tray icon opens Settings whenever you need it.",
+  "download.winget": "Prefer the command line? <code>winget install DayuanJiang.PecoFence</code> installs the same build and skips the SmartScreen prompt.",
   "download.button": "Download the latest release",
   "download.first_run": "The first launch creates Programs, Folders, Files and documents, and Desktop fences in your language. Your desktop icons come back when you exit.",
   "download.requirements_heading": "Before you start",
   "download.req1": "Windows 11 22H2 or later, x64.",
   "download.req2": "Microsoft Edge WebView2 Runtime, which Windows 11 already includes, for the Settings window.",
   "download.req3": "Keep <code>WebView2Loader.dll</code> and <code>pecofence-watchdog.exe</code> beside the app.",
-  "download.req4": "Builds are currently unsigned. Windows may ask you to confirm the first launch.",
+  "download.req4": "Builds are unsigned. If Windows SmartScreen appears on first launch, choose More info, then Run anyway. Installing through winget avoids the prompt.",
   "download.portable": "Portable edition guide",
   "download.upgrade": "Upgrading from an earlier version",
 

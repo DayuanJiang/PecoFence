@@ -1,4 +1,13 @@
 {
+  "nav.skip": "跳到正文",
+  "hero.eyebrow": "免费开源，让桌面更像你。",
+  "demo.hide": "隐藏栅栏",
+  "demo.show": "显示栅栏",
+  "demo.hint": "留一点空白，多一点自在。",
+  "download.copy": "复制命令",
+  "download.copied": "已复制",
+  "hero.headline_accent": "把文件放在手边。",
+
   "meta.title": "PecoFence：Windows 11 桌面上的玻璃栅栏",
   "meta.description": "PecoFence 是免费开源的 Windows 11 桌面整理工具，Stardock Fences 的另一种选择。把文件收进玻璃栅栏，把真实文件夹放在桌面上，按一下快捷键就能在任何应用前取用。十种语言，便携版，MIT 许可。",
 
@@ -8,8 +17,8 @@
   "nav.github": "GitHub",
   "nav.language": "语言",
 
-  "hero.headline": "把桌面还给壁纸，把文件放在手边。",
-  "hero.text": "PecoFence 把文件收进 Windows 11 桌面上的玻璃栅栏，让真实文件夹一步可达，再用一个快捷键把它们全部浮现在当前应用前面。免费，开源。",
+  "hero.headline": "把桌面还给壁纸。",
+  "hero.text": "用通透的玻璃栅栏收好文件，让文件夹触手可及、项目井井有条。给 Windows 桌面一点秩序，也给自己一点空间。",
   "hero.download": "下载 Windows 11 版",
   "hero.download_note": "x64 便携压缩包。无需账号，无需安装。MIT 许可。",
   "hero.github": "在 GitHub 查看源码",
@@ -19,7 +28,7 @@
   "watch.title": "看 30 秒短片",
   "watch.text": "半分钟看完自动整理和项目标签页。原创配乐，无旁白，画面文字为英文。",
 
-  "features.heading": "看看实际操作",
+  "features.heading": "每一份文件，都有好去处。",
   "features.intro": "下面每一段都是 PecoFence 在真实 Windows 11 桌面上用演示文件录制的。",
   "feature.groups.title": "建一个栅栏",
   "feature.groups.text": "把文件拖进去。调整大小，吸附到其他栅栏旁边。",
@@ -59,13 +68,14 @@
   "download.step1": "在 Releases 页面下载最新的 <code>pecofence-&lt;版本&gt;-x64.zip</code>。",
   "download.step2": "把整个压缩包解压到一个文件夹，运行 <code>pecofence.exe</code>。",
   "download.step3": "开始整理。需要设置时，点系统托盘里的图标。",
+  "download.winget": "习惯命令行？<code>winget install DayuanJiang.PecoFence</code> 安装同一版本，且不会触发 SmartScreen 提示。",
   "download.button": "下载最新版本",
   "download.first_run": "首次运行会按所选语言创建“程序”“文件夹”“文件与文档”和“桌面”四个栅栏。退出时桌面图标会恢复显示。",
   "download.requirements_heading": "开始之前",
   "download.req1": "Windows 11 22H2 及以上，x64。",
   "download.req2": "设置窗口需要 Microsoft Edge WebView2 Runtime，Windows 11 已自带。",
   "download.req3": "请把 <code>WebView2Loader.dll</code> 和 <code>pecofence-watchdog.exe</code> 与主程序放在一起。",
-  "download.req4": "当前版本未做代码签名，首次运行时 Windows 可能会要求确认。",
+  "download.req4": "当前版本未做代码签名。首次运行若出现 Windows SmartScreen，点击“更多信息”再点“仍要运行”。通过 winget 安装不会有此提示。",
   "download.portable": "便携版说明",
   "download.upgrade": "从旧版本升级",
 

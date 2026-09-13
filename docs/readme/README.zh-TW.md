@@ -87,6 +87,8 @@ https://github.com/user-attachments/assets/6320cf28-a791-4720-9659-b4575df021a0
 2. 把壓縮檔**完整解壓縮**到一個資料夾，執行 `pecofence.exe`。
 3. 開始整理。需要開啟設定或結束程式時，在系統匣的 PecoFence 圖示上按右鍵。
 
+習慣用套件管理器？`winget install DayuanJiang.PecoFence` 安裝的是同一個免安裝版，而且不會觸發 SmartScreen 提示。
+
 **Windows 11 x64 · 免安裝版 · 不需帳號 · MIT 開源授權**
 
 第一次執行時，會依所選語言建立「程式」「資料夾」「檔案與文件」和「桌面」四個圍欄。
@@ -104,7 +106,7 @@ https://github.com/user-attachments/assets/6320cf28-a791-4720-9659-b4575df021a0
 - 既有安裝會沿用原本的設定目錄，保留配置、規則與備份。詳見[升級說明](../UPGRADING.md)。
 - 玻璃效果取樣的是靜態桌布，不會折射其他應用程式的視窗或動態桌布。
 - Windows 內建的對話方塊與第三方的檔案總管選單項目仍使用系統語言。
-- 目前的免安裝版尚未進行程式碼簽署。
+- 免安裝版尚未進行程式碼簽署。首次執行若出現 Windows SmartScreen 提示，請點選**其他資訊 → 仍要執行**。透過 winget 安裝不會出現此提示。
 
 [免安裝版說明](../PORTABLE.md) · [多語言說明](../LOCALIZATION.md)
 

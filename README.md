@@ -87,6 +87,8 @@ All translations are included and work offline. Your filenames and custom names 
 2. Extract the **whole ZIP** into a folder and run `pecofence.exe`.
 3. Start organizing. Right-click the tray icon whenever you need Settings or want to exit.
 
+Prefer a package manager? `winget install DayuanJiang.PecoFence` installs the same portable build and skips the SmartScreen prompt.
+
 **Windows 11 x64 · Portable ZIP · No account required · MIT licensed**
 
 The first launch creates Programs, Folders, Files and documents, and Desktop groups
@@ -106,7 +108,8 @@ in your selected language. Windows desktop icons are restored when you exit.
 - Glass uses the static desktop wallpaper. It does not refract other applications
   or live video wallpaper.
 - Windows-owned dialogs and third-party Explorer menu entries follow Windows' language.
-- Current portable builds are unsigned.
+- Portable builds are unsigned. If Windows SmartScreen appears on first launch, choose
+  **More info → Run anyway**. Installing through winget avoids the prompt.
 
 [Portable edition guide](docs/PORTABLE.md) · [Language guide](docs/LOCALIZATION.md)
 

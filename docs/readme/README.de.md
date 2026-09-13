@@ -89,6 +89,8 @@ und eigene Bezeichnungen bleiben unverändert.
 2. Entpacken Sie die **gesamte ZIP-Datei** in einen Ordner und starten Sie `pecofence.exe`.
 3. Legen Sie los. Ein Rechtsklick auf das Taskleistensymbol öffnet die Einstellungen oder beendet PecoFence.
 
+Lieber ein Paketmanager? `winget install DayuanJiang.PecoFence` installiert denselben portablen Build und überspringt die SmartScreen-Abfrage.
+
 **Windows 11 x64 · Portable ZIP · Kein Konto nötig · MIT-Lizenz**
 
 Beim ersten Start werden die Bereiche Programme, Ordner, Dateien und Dokumente sowie Desktop
@@ -108,7 +110,8 @@ in der gewählten Sprache angelegt. Beim Beenden erscheinen die Windows-Desktops
 - Das Glas verwendet das statische Desktop-Hintergrundbild. Andere Anwendungen oder
   Video-Hintergründe werden nicht gebrochen.
 - Windows-eigene Dialoge und Explorer-Menüeinträge von Drittanbietern folgen der Windows-Sprache.
-- Die aktuellen portablen Builds sind nicht signiert.
+- Portable Builds sind nicht signiert. Fragt Windows SmartScreen beim ersten Start nach, wählen Sie
+  **Weitere Informationen → Trotzdem ausführen**. Eine Installation über winget vermeidet die Abfrage.
 
 [Anleitung zur portablen Version](../PORTABLE.md) · [Sprachen und Übersetzungen](../LOCALIZATION.md)
 

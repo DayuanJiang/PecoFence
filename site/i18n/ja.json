@@ -1,4 +1,13 @@
 {
+  "nav.skip": "本文へ移動",
+  "hero.eyebrow": "無料・オープンソース。もっと自分らしく。",
+  "demo.hide": "フェンスを隠す",
+  "demo.show": "フェンスを表示",
+  "demo.hint": "余白があると、気持ちも軽く。",
+  "download.copy": "コマンドをコピー",
+  "download.copied": "コピーしました",
+  "hero.headline_accent": "すべてが手の届く場所に。",
+
   "meta.title": "PecoFence：Windows 11 デスクトップのガラスのフェンス",
   "meta.description": "Windows 11 向けの無料・オープンソースな Stardock Fences 代替。ファイルをガラスのフェンスに整理し、ショートカットひとつでアプリの手前へ。10 言語、ポータブル ZIP、MIT ライセンス。",
 
@@ -8,8 +17,8 @@
   "nav.github": "GitHub",
   "nav.language": "言語",
 
-  "hero.headline": "静かなデスクトップ。すべてが手の届く場所に。",
-  "hero.text": "PecoFence はファイルを Windows 11 デスクトップ上のガラスのフェンスに整理し、実際のフォルダーをワンクリックの距離に置き、ショートカットひとつでそのすべてをどのアプリの手前にも呼び出せます。無料・オープンソースです。",
+  "hero.headline": "静かなデスクトップ。",
+  "hero.text": "ファイルを美しいガラスのフェンスに。フォルダーはすぐ手元に、プロジェクトはすっきり整理。Windows のデスクトップを、もっと自分らしく。",
   "hero.download": "Windows 11 版をダウンロード",
   "hero.download_note": "x64 向けポータブル ZIP。アカウント不要、インストーラー不要。MIT ライセンス。",
   "hero.github": "GitHub でソースを見る",
@@ -19,7 +28,7 @@
   "watch.title": "30 秒の紹介動画",
   "watch.text": "自動整理とプロジェクトのタブを 30 秒で。オリジナル BGM、ナレーションなし、画面の文字は英語です。",
 
-  "features.heading": "実際の動きを見る",
+  "features.heading": "すべてに、ちょうどいい居場所を。",
   "features.intro": "以下のクリップはすべて、デモ用ファイルを使って実際の Windows 11 デスクトップで録画した PecoFence です。",
   "feature.groups.title": "フェンスを作る",
   "feature.groups.text": "ファイルをドラッグして入れます。サイズを変更し、隣のフェンスにスナップして揃えます。",
@@ -59,13 +68,14 @@
   "download.step1": "Releases ページから最新の <code>pecofence-&lt;バージョン&gt;-x64.zip</code> をダウンロードします。",
   "download.step2": "ZIP 全体をフォルダーに展開し、<code>pecofence.exe</code> を実行します。",
   "download.step3": "あとは整理を始めるだけ。設定はいつでもトレイアイコンから開けます。",
+  "download.winget": "コマンドラインがお好みなら <code>winget install DayuanJiang.PecoFence</code> で同じビルドをインストールでき、SmartScreen の警告も出ません。",
   "download.button": "最新リリースをダウンロード",
   "download.first_run": "初回起動時に、選択した言語で「アプリ」「フォルダー」「ファイルとドキュメント」「デスクトップ」のフェンスが作成されます。終了すると、デスクトップアイコンは元どおり表示されます。",
   "download.requirements_heading": "はじめる前に",
   "download.req1": "Windows 11 22H2 以降、x64。",
   "download.req2": "設定画面には Microsoft Edge WebView2 Runtime が必要です。Windows 11 には標準で含まれています。",
   "download.req3": "<code>WebView2Loader.dll</code> と <code>pecofence-watchdog.exe</code> は、アプリと同じフォルダーに置いたままにしてください。",
-  "download.req4": "現在のビルドはコード署名されていません。初回起動時に Windows が確認を求めることがあります。",
+  "download.req4": "ビルドはコード署名されていません。初回起動時に Windows SmartScreen が表示されたら「詳細情報」→「実行」を選んでください。winget からのインストールでは表示されません。",
   "download.portable": "ポータブル版ガイド",
   "download.upgrade": "以前のバージョンからのアップグレード",
 

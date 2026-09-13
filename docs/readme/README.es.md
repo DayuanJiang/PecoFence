@@ -90,6 +90,8 @@ nombres que pongas tú se conservan.
 3. Empieza a organizar. Haz clic derecho en el icono de la bandeja cuando necesites la Configuración
    o quieras salir.
 
+¿Prefieres un gestor de paquetes? `winget install DayuanJiang.PecoFence` instala la misma versión portátil y evita el aviso de SmartScreen.
+
 **Windows 11 x64 · ZIP portátil · Sin cuenta · Licencia MIT**
 
 El primer inicio crea los grupos Programas, Carpetas, Archivos y documentos y Escritorio
@@ -110,7 +112,8 @@ en el idioma que elijas. Los iconos del escritorio de Windows se restauran al sa
   de vídeo en directo.
 - Los cuadros de diálogo propios de Windows y las entradas de terceros en el menú del Explorador
   siguen el idioma de Windows.
-- Las compilaciones portátiles actuales no están firmadas.
+- Las versiones portátiles no están firmadas. Si Windows SmartScreen aparece en el primer inicio, elige
+  **Más información → Ejecutar de todas formas**. Instalar con winget evita el aviso.
 
 [Guía de la edición portátil](../PORTABLE.md) · [Guía de idiomas](../LOCALIZATION.md)
 

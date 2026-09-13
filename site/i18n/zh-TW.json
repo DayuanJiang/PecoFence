@@ -1,4 +1,13 @@
 {
+  "nav.skip": "跳至主要內容",
+  "hero.eyebrow": "免費開源，讓桌面更像你。",
+  "demo.hide": "隱藏圍欄",
+  "demo.show": "顯示圍欄",
+  "demo.hint": "留一點空白，多一點自在。",
+  "download.copy": "複製指令",
+  "download.copied": "已複製",
+  "hero.headline_accent": "把檔案放在手邊。",
+
   "meta.title": "PecoFence：Windows 11 桌面的玻璃圍欄",
   "meta.description": "免費開源 Windows 11 桌面整理工具，Stardock Fences 的另一種選擇。玻璃圍欄收好檔案，資料夾在手邊，一鍵浮現在任何程式前。十種語言、免安裝、MIT 授權。",
 
@@ -8,8 +17,8 @@
   "nav.github": "GitHub",
   "nav.language": "語言",
 
-  "hero.headline": "把桌面還給桌布，把檔案放在手邊。",
-  "hero.text": "PecoFence 用玻璃圍欄收好 Windows 11 桌面上的檔案，讓真實的資料夾一點就開，按一下快速鍵，就能在任何應用程式前取用。免費，而且開源。",
+  "hero.headline": "把桌面還給桌布。",
+  "hero.text": "用通透的玻璃圍欄收好檔案，讓資料夾隨手可及、專案井然有序。給 Windows 桌面一點秩序，也給自己一點空間。",
   "hero.download": "下載 Windows 11 版",
   "hero.download_note": "x64 免安裝版 ZIP，不需帳號、不用安裝程式。MIT 開源授權。",
   "hero.github": "在 GitHub 查看原始碼",
@@ -19,7 +28,7 @@
   "watch.title": "看 30 秒短片",
   "watch.text": "半分鐘看完自動整理與專案分頁。原創配樂，無旁白，畫面文字為英文。",
 
-  "features.heading": "看看它怎麼用",
+  "features.heading": "每一份檔案，都有好去處。",
   "features.intro": "以下每段影片都是 PecoFence 在真實 Windows 11 桌面上的實際操作錄影，使用示範檔案。",
   "feature.groups.title": "建一個圍欄",
   "feature.groups.text": "把檔案拖進去，縮放圍欄，再吸附到其他圍欄旁對齊。",
@@ -59,13 +68,14 @@
   "download.step1": "到 Releases 頁面下載最新的 <code>pecofence-&lt;版本&gt;-x64.zip</code>。",
   "download.step2": "把壓縮檔完整解壓縮到一個資料夾，執行 <code>pecofence.exe</code>。",
   "download.step3": "開始整理。需要設定時，隨時從系統匣圖示開啟。",
+  "download.winget": "習慣命令列？<code>winget install DayuanJiang.PecoFence</code> 安裝同一版本，且不會觸發 SmartScreen 提示。",
   "download.button": "下載最新版本",
   "download.first_run": "第一次執行時，會依所選語言建立「程式」「資料夾」「檔案與文件」和「桌面」四個圍欄。結束程式時，Windows 桌面圖示會恢復顯示。",
   "download.requirements_heading": "開始之前",
   "download.req1": "Windows 11 22H2 以上版本，x64。",
   "download.req2": "設定視窗需要 Microsoft Edge WebView2 Runtime，Windows 11 已內建。",
   "download.req3": "請將 <code>WebView2Loader.dll</code> 和 <code>pecofence-watchdog.exe</code> 與主程式放在同一個資料夾。",
-  "download.req4": "目前的版本尚未進行程式碼簽署，第一次啟動時 Windows 可能會要求你確認。",
+  "download.req4": "目前版本尚未程式碼簽署。首次執行若出現 Windows SmartScreen，請點「其他資訊」再點「仍要執行」。透過 winget 安裝不會有此提示。",
   "download.portable": "免安裝版說明",
   "download.upgrade": "從舊版升級",
 

@@ -1,4 +1,13 @@
 {
+  "nav.skip": "Aller au contenu",
+  "hero.eyebrow": "Libre. Gratuit. Un peu plus vous.",
+  "demo.hide": "Masquer les panneaux",
+  "demo.show": "Afficher les panneaux",
+  "demo.hint": "Un peu plus de place pour respirer.",
+  "download.copy": "Copier la commande",
+  "download.copied": "Copié",
+  "hero.headline_accent": "Tout à portée de main.",
+
   "meta.title": "PecoFence : des panneaux de verre pour le Bureau Windows 11",
   "meta.description": "Alternative libre et gratuite à Stardock Fences pour Windows 11. Panneaux de verre pour vos fichiers, dossiers en direct sur le Bureau, tout visible d’un raccourci. Dix langues, ZIP portable, MIT.",
 
@@ -8,8 +17,8 @@
   "nav.github": "GitHub",
   "nav.language": "Langue",
 
-  "hero.headline": "Un Bureau plus calme. Tout à portée de main.",
-  "hero.text": "PecoFence range vos fichiers dans des panneaux de verre sur le Bureau Windows 11, garde vos vrais dossiers à un clic et fait tout apparaître au-dessus de n’importe quelle application d’un seul raccourci. Libre et gratuit.",
+  "hero.headline": "Un Bureau plus calme.",
+  "hero.text": "Offrez à vos fichiers une place dans de beaux panneaux de verre. Des dossiers à portée de main, des projets bien rangés, un Bureau Windows à votre image.",
   "hero.download": "Télécharger pour Windows 11",
   "hero.download_note": "ZIP portable pour x64. Sans compte ni installateur. Licence MIT.",
   "hero.github": "Voir le code source sur GitHub",
@@ -19,7 +28,7 @@
   "watch.title": "La visite en 30 secondes",
   "watch.text": "Tri automatique et onglets de projet en une demi-minute. Bande-son originale, sans voix off, textes à l’écran en anglais.",
 
-  "features.heading": "Voyez-le en action",
+  "features.heading": "Chaque chose à sa place.",
   "features.intro": "Chaque extrait montre PecoFence enregistré sur un vrai Bureau Windows 11 avec des fichiers de démonstration.",
   "feature.groups.title": "Créez un groupe",
   "feature.groups.text": "Glissez-y des fichiers. Redimensionnez le groupe et alignez-le à côté des autres.",
@@ -59,13 +68,14 @@
   "download.step1": "Téléchargez le dernier <code>pecofence-&lt;version&gt;-x64.zip</code> depuis la page Releases.",
   "download.step2": "Extrayez l’intégralité du ZIP dans un dossier et lancez <code>pecofence.exe</code>.",
   "download.step3": "Commencez à ranger. L’icône de notification ouvre les Paramètres quand il le faut.",
+  "download.winget": "Vous préférez la ligne de commande ? <code>winget install DayuanJiang.PecoFence</code> installe la même version et évite l’avertissement SmartScreen.",
   "download.button": "Télécharger la dernière version",
   "download.first_run": "Le premier lancement crée les groupes Applications, Dossiers, Fichiers et documents et Bureau dans votre langue. Les icônes du Bureau réapparaissent quand vous quittez.",
   "download.requirements_heading": "Avant de commencer",
   "download.req1": "Windows 11 22H2 ou version ultérieure, x64.",
   "download.req2": "Microsoft Edge WebView2 Runtime, déjà inclus dans Windows 11, pour la fenêtre Paramètres.",
   "download.req3": "Conservez <code>WebView2Loader.dll</code> et <code>pecofence-watchdog.exe</code> à côté de l’application.",
-  "download.req4": "Les versions actuelles ne sont pas signées. Windows peut vous demander de confirmer le premier lancement.",
+  "download.req4": "Les versions ne sont pas signées. Si Windows SmartScreen s’affiche au premier lancement, choisissez « Informations complémentaires » puis « Exécuter quand même ». L’installation via winget évite cet avertissement.",
   "download.portable": "Guide de l’édition portable",
   "download.upgrade": "Mise à niveau depuis une version antérieure",
 
