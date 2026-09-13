@@ -80,21 +80,23 @@ fn tuned_tint(
     tint
 }
 
-/// Builds one blurred, tinted glass wallpaper image per monitor.
-pub fn build_backdrops(theme: &Theme, wallpaper_override: Option<&str>) -> Vec<MonitorBackdrop> {
-    let started = std::time::Instant::now();
-    let mut snapshot = match wallpaper::query() {
-        Ok(s) => s,
-        Err(e) => {
-            tracing::warn!(error = %e, "IDesktopWallpaper unavailable; solid backdrop");
-            return Vec::new();
-        }
-    };
+fn wallpaper_snapshot(wallpaper_override: Option<&str>) -> Result<wallpaper::WallpaperSnapshot> {
+    let mut snapshot = wallpaper::query()?;
     if let Some(p) = wallpaper_override {
         for m in &mut snapshot.monitors {
             m.path = Some(PathBuf::from(p));
         }
     }
+    Ok(snapshot)
+}
+
+/// Build from the snapshot we fingerprinted, rather than querying a possibly newer desktop.
+/// A transient decode failure leaves the last good background on screen and is retried.
+fn build_backdrops(
+    theme: &Theme,
+    snapshot: &wallpaper::WallpaperSnapshot,
+) -> Result<Vec<MonitorBackdrop>> {
+    let started = std::time::Instant::now();
     let position = match snapshot.position {
         wallpaper::Position::Center => WallpaperPosition::Center,
         wallpaper::Position::Tile => WallpaperPosition::Tile,
@@ -140,20 +142,15 @@ pub fn build_backdrops(theme: &Theme, wallpaper_override: Option<&str>) -> Vec<M
         let image = match &m.path {
             Some(p) => {
                 let decode_divisor = if theme.liquid_glass { 1 } else { 2 };
-                match wallpaper::decode_scaled(
+                let d = wallpaper::decode_scaled(
                     p,
                     (w as u32 / decode_divisor).max(1),
                     (h as u32 / decode_divisor).max(1),
-                ) {
-                    Ok(d) => Image {
-                        width: d.width,
-                        height: d.height,
-                        bgra: d.bgra,
-                    },
-                    Err(e) => {
-                        tracing::warn!(path = %p.display(), error = %e, "wallpaper decode failed");
-                        Image::solid(1, 1, snapshot.background)
-                    }
+                )?;
+                Image {
+                    width: d.width,
+                    height: d.height,
+                    bgra: d.bgra,
                 }
             }
             None => Image::solid(1, 1, snapshot.background),
@@ -170,24 +167,51 @@ pub fn build_backdrops(theme: &Theme, wallpaper_override: Option<&str>) -> Vec<M
             downscale,
         ));
     }
+    if out.is_empty() {
+        return Err(windows_core::Error::from_hresult(windows_core::HRESULT(
+            0x8000000Au32 as i32, // E_PENDING: monitor topology is not ready.
+        )));
+    }
     tracing::info!(
         ?position,
         elapsed_ms = started.elapsed().as_millis(),
         count = out.len(),
         "backdrops ready"
     );
-    out
+    Ok(out)
 }
 
 /// All fences share one material. A missing wallpaper or the diagnostic override uses the
 /// renderer's solid fallback without introducing a second user-facing material.
-pub(super) fn build_backdrop_sets(theme: &Theme, wallpaper_override: Option<&str>) -> BackdropSets {
+fn build_snapshot_backdrops(
+    theme: &Theme,
+    snapshot: &wallpaper::WallpaperSnapshot,
+    signature: &str,
+) -> Result<Rc<BackdropSets>> {
     if pecofence_core::brand::var_os("PECOFENCE_SOLID").is_some() {
-        return BackdropSets::default();
+        return Ok(Rc::new(BackdropSets::default()));
     }
-    BackdropSets {
-        acrylic: Rc::new(build_backdrops(theme, wallpaper_override)),
+    let backdrops = build_backdrops(theme, snapshot)?;
+    if signature != snapshot.signature() {
+        // Explorer finished replacing the image while WIC read it. Do not cache that read
+        // under the old metadata, or a later desktop round trip could resurrect it.
+        return Err(windows_core::Error::from_hresult(windows_core::HRESULT(
+            0x8000000Au32 as i32, // E_PENDING
+        )));
     }
+    Ok(Rc::new(BackdropSets {
+        acrylic: Rc::new(backdrops),
+    }))
+}
+
+pub(super) fn build_backdrop_sets(
+    theme: &Theme,
+    wallpaper_override: Option<&str>,
+) -> Result<(Rc<BackdropSets>, String)> {
+    let snapshot = wallpaper_snapshot(wallpaper_override)?;
+    let signature = snapshot.signature();
+    let backdrops = build_snapshot_backdrops(theme, &snapshot, &signature)?;
+    Ok((backdrops, signature))
 }
 
 pub(super) fn backdrop_mode_for(b: pecofence_core::Backdrop) -> BackdropMode {
@@ -268,16 +292,45 @@ pub(super) fn tray_icon_image(size: i32, accent: [u8; 3], _dark: bool) -> Vec<u8
 }
 
 impl App {
-    /// Rebuilds the blurred backdrops when the wallpaper (picture, slide, fit, colour) changed
-    /// since they were built. Cheap when nothing changed: one COM query, no decode.
+    /// Wallpaper-only refresh: reuse a recent desktop's pixels and preserve icon/geometry
+    /// caches. Failed reads must not advance the signature, so the next check can retry.
     pub(super) fn check_wallpaper(&mut self, reason: &str) {
-        let sig = wallpaper::signature();
-        if sig == self.wallpaper_sig {
+        let Ok(snapshot) = wallpaper_snapshot(self.wallpaper_override.as_deref()) else {
+            return;
+        };
+        let signature = snapshot.signature();
+        if self.wallpaper_sig.as_ref() == Some(&signature) {
             return;
         }
-        tracing::info!(reason, "wallpaper changed; rebuilding backdrops");
-        self.wallpaper_sig = sig;
-        self.refresh_visuals(true);
+        let started = Instant::now();
+        let cached = self.wallpaper_cache.get(&signature);
+        let cache_hit = cached.is_some();
+        let backdrops = match cached {
+            Some(backdrops) => backdrops,
+            None => match build_snapshot_backdrops(&self.ctx.theme.borrow(), &snapshot, &signature)
+            {
+                Ok(backdrops) => {
+                    self.wallpaper_cache
+                        .insert(signature.clone(), backdrops.clone());
+                    backdrops
+                }
+                Err(error) => {
+                    tracing::debug!(reason, %error, "wallpaper not ready; retaining last backdrop");
+                    return;
+                }
+            },
+        };
+        self.wallpaper_sig = Some(signature);
+        *self.ctx.backdrops.borrow_mut() = backdrops.clone();
+        for window in self.fences.values() {
+            window.set_backdrops(backdrops.clone());
+        }
+        tracing::info!(
+            reason,
+            cache_hit,
+            elapsed_ms = started.elapsed().as_millis(),
+            "wallpaper refreshed"
+        );
     }
 
     pub(super) fn on_system_settings_changed(&mut self) {
@@ -362,10 +415,22 @@ impl App {
         // The wallpaper sets are accent-independent and expensive: rebuild them only for a
         // mode change (or a forced refresh), not for a Settings › Colours retint.
         let backdrops = if theme_changed || force {
-            Rc::new(build_backdrop_sets(
-                &theme,
-                self.wallpaper_override.as_deref(),
-            ))
+            // Theme/DPI/layout changes invalidate cached material recipes and coordinates.
+            self.wallpaper_cache.clear();
+            match build_backdrop_sets(&theme, self.wallpaper_override.as_deref()) {
+                Ok((backdrops, signature)) => {
+                    self.wallpaper_cache
+                        .insert(signature.clone(), backdrops.clone());
+                    self.wallpaper_sig = Some(signature);
+                    backdrops
+                }
+                Err(error) => {
+                    tracing::warn!(%error, "backdrop refresh deferred until wallpaper is readable");
+                    self.wallpaper_sig = None;
+                    window::post_message(self.control.hwnd(), WM_APP_WALLPAPER, 0, 0);
+                    self.ctx.backdrops.borrow().clone()
+                }
+            }
         } else {
             self.ctx.backdrops.borrow().clone()
         };

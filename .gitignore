@@ -32,3 +32,7 @@
 Thumbs.db
 .idea/
 .vscode/
+
+# MSIX test-signing material
+*.pfx
+*.cer

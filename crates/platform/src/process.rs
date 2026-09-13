@@ -24,6 +24,18 @@ pub fn current_pid() -> u32 {
     unsafe { GetCurrentProcessId() }
 }
 
+/// True when running from an MSIX package (Microsoft Store install). Packaged processes
+/// get virtualized HKCU writes, so the Run-key autostart is replaced by the manifest's
+/// `windows.startupTask`, which users control under Settings > Apps > Startup.
+pub fn is_packaged() -> bool {
+    const APPMODEL_ERROR_NO_PACKAGE: i32 = 15700;
+    windows_core::link!("kernel32.dll" "system" fn GetCurrentPackageFullName(length: *mut u32, name: windows_core::PWSTR) -> i32);
+    let mut len = 0u32;
+    // SAFETY: querying the required length only; a null buffer is documented as valid.
+    let status = unsafe { GetCurrentPackageFullName(&mut len, PWSTR::null()) };
+    status != APPMODEL_ERROR_NO_PACKAGE
+}
+
 /// Starts `exe` with `args` as a detached process (no console window). Returns its pid.
 pub fn spawn_detached(exe: &str, args: &[&str]) -> Result<u32> {
     let mut cmd = format!("\"{exe}\"");

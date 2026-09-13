@@ -60,6 +60,7 @@ mod tabs;
 mod tests;
 mod testscript;
 mod visuals;
+mod wallpaper_refresh;
 
 use fences::work_areas;
 use fileops::{FileOp, FileOpThen};
@@ -68,6 +69,7 @@ use visuals::{
     backdrop_mode_for, build_backdrop_sets, fence_style_for, icon_variant_for, pick_theme_mode,
     shadow_style_for, theme_for, tray_icon_image,
 };
+use wallpaper_refresh::{BackdropCache, FIRST_CHECK_MS, RefreshSchedule};
 
 const TIMER_SAVE: usize = 40;
 const TIMER_FS: usize = 41;
@@ -86,6 +88,10 @@ const TIMER_FRAME_RETRY: usize = 47;
 const TIMER_TEST: usize = 48;
 /// Retry a completed Peek focus handoff if the App is temporarily borrowed.
 const TIMER_PEEK_FOCUS_RETRY: usize = 49;
+/// Low-frequency safety net for changes that did not produce a wallpaper notification.
+const TIMER_WALLPAPER_POLL: usize = 50;
+/// Read only the 16-byte desktop identity, never images/COM, while otherwise idle.
+const TIMER_DESKTOP_ID: usize = 51;
 const SPI_SETDESKWALLPAPER: usize = 0x0014;
 const SPI_SETWORKAREA: usize = 0x002F;
 const TRAY_ID: u32 = 1;
@@ -172,8 +178,9 @@ pub struct App {
     peek: Option<PeekOverlay>,
     /// The desktop folder could not be read at the last sync (removable / network drive).
     desktop_unavailable: bool,
-    /// `wallpaper::signature()` the current backdrops were built from.
+    /// Fingerprint of the snapshot the current backdrops were built from.
     wallpaper_sig: Option<String>,
+    wallpaper_cache: BackdropCache,
     /// The hotkey currently registered (None = registration failed or Peek disabled).
     peek_hotkey: Option<PeekHotkey>,
     /// The combination the last `sync_peek_hotkey` tried to register (the user's choice), so a
@@ -223,7 +230,14 @@ impl App {
             state.config.settings.theme_style,
             accent.as_ref(),
         );
-        let backdrops = build_backdrop_sets(&theme, args.wallpaper_override.as_deref());
+        let (backdrops, wallpaper_sig) =
+            match build_backdrop_sets(&theme, args.wallpaper_override.as_deref()) {
+                Ok((backdrops, signature)) => (backdrops, Some(signature)),
+                Err(error) => {
+                    tracing::warn!(%error, "wallpaper unavailable at startup; solid backdrop");
+                    (Rc::new(BackdropSets::default()), None)
+                }
+            };
 
         let queue = CommandQueue::new();
 
@@ -235,6 +249,19 @@ impl App {
             let fs_armed = Cell::new(false);
             let fs_flushed: Cell<Option<Instant>> = Cell::new(None);
             let peek_focus_pending: Cell<Option<usize>> = Cell::new(None);
+            // This lives outside App so nested/modal loops cannot lose a wallpaper signal.
+            let wallpaper_schedule = Rc::new(Cell::new(RefreshSchedule::default()));
+            let last_desktop_id = Cell::new(wallpaper::desktop_id());
+            let notify_wallpaper = {
+                let wallpaper_schedule = wallpaper_schedule.clone();
+                move |hwnd| {
+                    let mut schedule = wallpaper_schedule.get();
+                    if let Some(delay) = schedule.notify(Instant::now()) {
+                        window::set_timer(hwnd, TIMER_WALLPAPER, delay);
+                    }
+                    wallpaper_schedule.set(schedule);
+                }
+            };
             Box::new(
                 move |hwnd: HWND, message: u32, wparam: usize, lparam: isize| -> Option<isize> {
                     match message {
@@ -361,8 +388,30 @@ impl App {
                                         && let Some(app) = guard.as_mut()
                                     {
                                         app.check_wallpaper("notification");
+                                        let mut schedule = wallpaper_schedule.get();
+                                        if let Some(delay) = schedule.checked(Instant::now()) {
+                                            window::set_timer(hwnd, TIMER_WALLPAPER, delay);
+                                        }
+                                        wallpaper_schedule.set(schedule);
                                     } else {
-                                        window::set_timer(hwnd, TIMER_WALLPAPER, 500);
+                                        window::set_timer(hwnd, TIMER_WALLPAPER, FIRST_CHECK_MS);
+                                    }
+                                }
+                                TIMER_WALLPAPER_POLL => {
+                                    if let Ok(mut guard) = cell.try_borrow_mut()
+                                        && let Some(app) = guard.as_mut()
+                                    {
+                                        app.check_wallpaper("poll");
+                                    }
+                                }
+                                TIMER_DESKTOP_ID => {
+                                    if let Some(id) = wallpaper::desktop_id()
+                                        && last_desktop_id.replace(Some(id)) != Some(id)
+                                    {
+                                        tracing::debug!(
+                                            "desktop identity changed; checking wallpaper"
+                                        );
+                                        notify_wallpaper(hwnd);
                                     }
                                 }
                                 TIMER_CMD_RETRY => {
@@ -414,7 +463,7 @@ impl App {
                             Some(0)
                         }
                         msg::WM_SETTINGCHANGE if wparam == SPI_SETDESKWALLPAPER => {
-                            window::set_timer(hwnd, TIMER_WALLPAPER, 1500);
+                            notify_wallpaper(hwnd);
                             None
                         }
                         WM_APP_FRAME => {
@@ -428,9 +477,10 @@ impl App {
                             Some(0)
                         }
                         WM_APP_WALLPAPER => {
-                            // Registry watcher fired; Explorer may still be writing the
-                            // transcoded image, so coalesce and re-read shortly.
-                            window::set_timer(hwnd, TIMER_WALLPAPER, 1200);
+                            // Try promptly, then keep checking while Explorer publishes the
+                            // new desktop's image. Repeated notifications never delay a check.
+                            tracing::debug!(source = wparam, "wallpaper refresh signal");
+                            notify_wallpaper(hwnd);
                             Some(0)
                         }
                         msg::WM_SETTINGCHANGE if wparam == SPI_SETWORKAREA => {
@@ -532,7 +582,7 @@ impl App {
             )?,
             chrome: Rc::new(FenceChrome::new()?),
             theme: RefCell::new(theme),
-            backdrops: RefCell::new(Rc::new(backdrops)),
+            backdrops: RefCell::new(backdrops),
             anchor: anchor_cell.clone(),
             taskbar_created: desktop::taskbar_created_message(),
             icons: Rc::new(RefCell::new({
@@ -638,10 +688,15 @@ impl App {
             desktop_unavailable: false,
             cut_items: HashSet::new(),
             cut_clip_seq: 0,
-            wallpaper_sig: wallpaper::signature(),
+            wallpaper_sig,
+            wallpaper_cache: BackdropCache::default(),
         };
-        // Wallpaper changes made from Settings / a slideshow do not reliably broadcast
-        // WM_SETTINGCHANGE: watch the registry key too.
+        if let Some(signature) = app.wallpaper_sig.clone() {
+            app.wallpaper_cache
+                .insert(signature, app.ctx.backdrops.borrow().clone());
+        }
+        // Watch both wallpaper settings and virtual-desktop state; either signal starts a
+        // bounded burst of fast reads, because the image may arrive after the notification.
         {
             let control_hwnd = app.control.hwnd().0 as isize;
             if let Err(e) = wallpaper::watch_changes(move || {
@@ -659,6 +714,15 @@ impl App {
         if let Some(a) = app.anchor.borrow_mut().as_mut() {
             let q = app.queue.clone();
             a.on_peek_interrupted = Some(Box::new(move || q.push(Command::EndPeek)));
+            let control_hwnd = app.control.hwnd().0 as isize;
+            a.on_foreground_changed = Some(Box::new(move || {
+                window::post_message(
+                    HWND(control_hwnd as *mut core::ffi::c_void),
+                    WM_APP_WALLPAPER,
+                    1,
+                    0,
+                );
+            }));
         }
 
         // Desktop folder moved since last run? Re-point the item records before syncing, or
@@ -737,6 +801,10 @@ impl App {
         }
         app.state.save_if_dirty();
         window::set_coalescable_timer(app.control.hwnd(), TIMER_HOUSEKEEPING, 60_000, 5_000);
+        window::set_coalescable_timer(app.control.hwnd(), TIMER_WALLPAPER_POLL, 5_000, 500);
+        window::set_coalescable_timer(app.control.hwnd(), TIMER_DESKTOP_ID, 100, 25);
+        // Close the gap between the startup snapshot and installing the registry watchers.
+        window::post_message(app.control.hwnd(), WM_APP_WALLPAPER, 0, 0);
 
         if args.open_settings {
             app.queue.push(Command::OpenSettings);
@@ -764,8 +832,6 @@ impl App {
 
     fn housekeeping(&mut self) {
         self.check_cut_clipboard();
-        // Fallback for wallpaper changes that raised neither a broadcast nor a registry write.
-        self.check_wallpaper("housekeeping");
         if self.state.is_dirty() {
             self.state.save_if_dirty();
         }

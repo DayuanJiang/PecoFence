@@ -55,5 +55,7 @@ The release workflow checks the tag against `Cargo.toml`, verifies the project,
 builds the x64 portable archive and creates a **draft** GitHub Release with its
 ZIP and checksum. Review the release notes and publish the draft in GitHub.
 
-Current packaging is x64 and unsigned. ARM64, MSIX/Store and winget publishing are
-not configured by this workflow.
+Current packaging is x64 and unsigned. ARM64 is not configured. winget publishing runs
+from `.github/workflows/winget.yml` on published releases; the Microsoft Store package is
+built locally with `./scripts/make-msix.ps1` and uploaded in Partner Center, see
+[STORE.md](STORE.md).

@@ -1166,6 +1166,19 @@ impl FenceWindow {
         });
     }
 
+    /// A desktop switch changes the sampled pixels without changing window shape, layout,
+    /// animations or icon resources.
+    pub fn set_backdrops(&self, backdrops: Rc<BackdropSets>) {
+        self.with_view(|v| {
+            v.backdrops = backdrops;
+            v.glass_dark_text.set(None);
+            v.invalidate_backdrop();
+            if let Err(error) = v.redraw() {
+                tracing::warn!(%error, "redraw after wallpaper change failed");
+            }
+        });
+    }
+
     pub fn set_theme(&self, theme: Theme, backdrops: Rc<BackdropSets>, shadow: ShadowStyle) {
         let hwnd = self.hwnd();
         apply_window_shape(hwnd, theme.liquid_glass);

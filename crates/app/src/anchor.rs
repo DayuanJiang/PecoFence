@@ -153,6 +153,8 @@ pub struct DesktopAnchor {
     peek_shown: Vec<HWND>,
     /// Called when another application takes the foreground during a peek.
     pub on_peek_interrupted: Option<Box<dyn Fn()>>,
+    /// Foreground transitions also signal virtual-desktop switches before registry writes.
+    pub on_foreground_changed: Option<Box<dyn Fn()>>,
 }
 
 impl DesktopAnchor {
@@ -247,6 +249,7 @@ impl DesktopAnchor {
             peeking: false,
             peek_shown: Vec::new(),
             on_peek_interrupted: None,
+            on_foreground_changed: None,
         };
         anchor
             .sentinel
@@ -419,6 +422,9 @@ impl DesktopAnchor {
     }
 
     pub fn on_foreground(&mut self, hwnd: HWND) {
+        if let Some(callback) = self.on_foreground_changed.as_ref() {
+            callback();
+        }
         let root = desktop::root_ancestor(hwnd);
         let cls = desktop::class_name(root);
         if self.peeking {

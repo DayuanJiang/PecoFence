@@ -34,6 +34,9 @@ fn startup_actions(
 /// upgrading from the previous name. Remove the legacy entry only after success.
 pub fn reconcile_product(wanted: bool, development: bool) -> Result<()> {
     use pecofence_core::brand::{LEGACY_AUTOSTART, NAME};
+    if crate::process::is_packaged() {
+        return Ok(());
+    }
     let current = registered_path(NAME);
     let actions = startup_actions(
         wanted,
@@ -56,8 +59,12 @@ pub fn reconcile_product(wanted: bool, development: bool) -> Result<()> {
 }
 
 /// Explicit settings changes address both names, avoiding duplicate login launches.
+/// Store (MSIX) installs leave the registry alone: the package startup task owns autostart.
 pub fn set_product_enabled(enabled: bool) -> Result<()> {
     use pecofence_core::brand::{LEGACY_AUTOSTART, NAME};
+    if crate::process::is_packaged() {
+        return Ok(());
+    }
     set_enabled(NAME, enabled)?;
     if registered_path(LEGACY_AUTOSTART).is_some() {
         set_enabled(LEGACY_AUTOSTART, false)?;

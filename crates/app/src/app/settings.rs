@@ -445,6 +445,14 @@ impl App {
         }
         if new.autostart != old.autostart {
             let _ = pecofence_platform::autostart::set_product_enabled(new.autostart);
+            if pecofence_platform::process::is_packaged() {
+                // Store installs: Windows owns the startup task, so hand the user the switch.
+                let _ = shell::shell_execute(
+                    std::path::Path::new("ms-settings:startupapps"),
+                    None,
+                    None,
+                );
+            }
         }
         if new.hide_real_icons != old.hide_real_icons
             && !self.apply_desktop_icons_hidden(new.hide_real_icons)
