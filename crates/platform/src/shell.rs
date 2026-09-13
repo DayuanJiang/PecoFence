@@ -575,9 +575,12 @@ mod move_tests {
         let lnk = create_shortcut(&file, &base).expect("shortcut");
         assert_eq!(lnk, base.join("probe - 快捷方式.lnk"));
         assert!(lnk.exists());
+        // Canonicalize both sides: the temp directory may be an 8.3 short path (as on
+        // CI runners) while the shell stores the long form in the link.
+        let target = shortcut_target(&lnk).expect("target");
         assert_eq!(
-            shortcut_target(&lnk).map(|s| s.to_lowercase()),
-            Some(file.to_string_lossy().to_lowercase())
+            std::fs::canonicalize(&target).expect("canonical target"),
+            std::fs::canonicalize(&file).expect("canonical file")
         );
         let second = create_shortcut(&file, &base).expect("shortcut 2");
         assert_eq!(second, base.join("probe - 快捷方式 (2).lnk"));
