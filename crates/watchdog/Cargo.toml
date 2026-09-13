@@ -1,0 +1,15 @@
+[package]
+name = "pecofence-watchdog"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "pecofence-watchdog"
+path = "src/main.rs"
+
+[dependencies]
+pecofence-platform = { path = "../platform" }
+
+[lints]
+workspace = true

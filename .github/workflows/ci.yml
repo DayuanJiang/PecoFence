@@ -1,0 +1,56 @@
+name: CI
+
+permissions:
+  contents: read
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Bindings are up to date
+        run: |
+          cargo run -p tool_bindgen
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git diff --exit-code -- crates/platform/src/bindings.rs crates/render/src/comp.rs crates/render/src/gpu_bindings.rs
+      - name: Translation coverage
+        run: python scripts/check-locales.py
+      - name: README translations
+        run: python scripts/check-readme-translations.py
+      - name: Website builds
+        run: python scripts/build-site.py --out .cache/site-check
+      - name: Test (core)
+        run: cargo test --workspace
+      - name: Release build
+        run: cargo build --locked --release -p pecofence -p pecofence-watchdog
+      - name: Size gate (pecofence.exe <= 3 MB)
+        shell: pwsh
+        run: |
+          $size = (Get-Item target/release/pecofence.exe).Length
+          Write-Output "pecofence.exe = $size bytes"
+          if ($size -gt 3MB) { throw "binary too large" }
+      - name: Package
+        shell: pwsh
+        run: ./scripts/make-portable.ps1 -SkipBuild -TargetDir target
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pecofence-portable
+          path: |
+            dist/pecofence-*-x64.zip
+            dist/pecofence-*-x64.zip.sha256

@@ -1,0 +1,34 @@
+# Build outputs and local application data
+/target/
+/dist/
+/config/
+/ui/node_modules/
+/ui/dist/
+**/node_modules/
+**/__pycache__/
+*.pyc
+*.pdb
+*.dmp
+*.log
+
+# Local experiments, downloaded references and captures
+/.cache/
+**/.cache/
+**/.capture/
+/docs/_ref/
+/docs/history/
+/third_party/webview2/*.nupkg
+/third_party/webview2/build/
+/extras/pecofence-promo/public/*
+!/extras/pecofence-promo/public/README.md
+/extras/pecofence-promo/out/
+/extras/pecofence-promo/review/
+
+# Local editor and credential files
+.env
+.env.*
+!.env.example
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

@@ -1,0 +1,53 @@
+{
+  "name": "pecofence-promo",
+  "version": "1.0.0",
+  "description": "English PecoFence product videos: 30-second cold-cyan control-console spot",
+  "repository": {},
+  "license": "UNLICENSED",
+  "private": true,
+  "dependencies": {
+    "@remotion/bundler": "4.0.522",
+    "@remotion/cli": "4.0.522",
+    "@remotion/media": "4.0.522",
+    "@remotion/renderer": "4.0.522",
+    "@remotion/tailwind-v4": "4.0.522",
+    "@remotion/transitions": "4.0.522",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "remotion": "4.0.522",
+    "tailwindcss": "4.0.0"
+  },
+  "devDependencies": {
+    "@remotion/eslint-config-flat": "4.0.522",
+    "@types/react": "19.2.7",
+    "@types/web": "0.0.166",
+    "eslint": "9.19.0",
+    "prettier": "3.8.1",
+    "typescript": "5.9.3"
+  },
+  "scripts": {
+    "dev": "remotion studio --no-open",
+    "build": "remotion bundle",
+    "upgrade": "remotion upgrade",
+    "lint": "eslint src && tsc",
+    "stills": "node scripts/render.mjs --stills",
+    "render": "node scripts/render.mjs",
+    "assets": "node scripts/make-assets.mjs",
+    "features:prepare": "node scripts/prepare-feature-media.mjs",
+    "features:stills": "node scripts/render.mjs --features --stills",
+    "features:render": "node scripts/render.mjs --features",
+    "launch:prepare": "node scripts/prepare-launch-media.mjs",
+    "launch:stills": "node scripts/render.mjs --launch --stills",
+    "launch:render": "node scripts/render.mjs --launch",
+    "reviewed:prepare": "node scripts/prepare-reviewed-media.mjs",
+    "reviewed:stills": "node scripts/render.mjs --reviewed --stills",
+    "reviewed:render": "node scripts/render.mjs --reviewed",
+    "reviewed:verify": "node scripts/verify-reviewed.mjs",
+    "motion:prepare": "node scripts/prepare-motion-media.mjs",
+    "autosort:prepare": "node scripts/prepare-autosort-media.mjs",
+    "music:energy": "node scripts/make-energy-audio.mjs"
+  },
+  "sideEffects": [
+    "*.css"
+  ]
+}

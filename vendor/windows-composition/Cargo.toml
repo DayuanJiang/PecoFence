@@ -1,0 +1,30 @@
+[package]
+name = "windows-composition"
+version = "0.100.0"
+edition = "2024"
+rust-version = "1.95"
+license = "MIT OR Apache-2.0"
+description = "Windows composition library (PecoFence vendored copy: adds raw-object accessors)"
+repository = "https://github.com/microsoft/windows-rs"
+categories = ["os::windows-apis"]
+readme = "README.md"
+
+[features]
+default = ["system"]
+system = ["dep:windows-window"]
+reactor = []
+
+[dependencies]
+windows-core = "0.100"
+windows-collections = "0.100"
+windows-numerics = "0.100"
+windows-time = "0.100"
+
+[dependencies.windows-window]
+version = "0.100"
+optional = true
+
+
+[package.metadata.docs.rs]
+default-target = "x86_64-pc-windows-msvc"
+targets = []

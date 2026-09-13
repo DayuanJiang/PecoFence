@@ -1,0 +1,290 @@
+/* PecoFence product site. The page is a Windows 11 desktop: the wallpaper stays fixed,
+   content sits in glass fences, and the navigation is a taskbar along the bottom. */
+
+:root {
+  --ink: #f3f8ff;
+  --ink-soft: #b9cee2;
+  --ink-mute: #8fa9c2;
+  --accent: #7bd2ff;
+  --accent-strong: #cfeeff;
+  --glass: rgba(9, 24, 46, 0.52);
+  --glass-title: rgba(255, 255, 255, 0.045);
+  --edge: rgba(255, 255, 255, 0.15);
+  --edge-soft: rgba(255, 255, 255, 0.09);
+  --shadow: 0 24px 60px rgba(2, 10, 26, 0.5), 0 2px 6px rgba(2, 10, 26, 0.35);
+  --radius: 8px;
+  --taskbar: 60px;
+  --font: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, "Yu Gothic UI",
+    "Malgun Gothic", "Microsoft YaHei UI", "Microsoft JhengHei UI", sans-serif;
+  --font-display: "Segoe UI Variable Display", "Segoe UI", system-ui, -apple-system,
+    "Yu Gothic UI", "Malgun Gothic", "Microsoft YaHei UI", "Microsoft JhengHei UI", sans-serif;
+  --measure: 62ch;
+}
+
+* { box-sizing: border-box; }
+
+html { scroll-behavior: smooth; scroll-padding-top: 24px; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+
+body {
+  margin: 0;
+  padding: 0 0 calc(var(--taskbar) + 32px);
+  color: var(--ink);
+  font: 400 16px/1.55 var(--font);
+  background: #0b1b31;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow-wrap: break-word;
+}
+/* The wallpaper is a fixed layer so it also stays put on mobile browsers. */
+body::before {
+  content: ""; position: fixed; inset: 0; z-index: -1;
+  background: #0b1b31 url("wallpaper.jpg") center / cover no-repeat;
+}
+
+a { color: var(--accent); text-underline-offset: 3px; text-decoration-thickness: 1px; }
+a:hover { color: var(--accent-strong); }
+:focus-visible { outline: 2px solid var(--accent-strong); outline-offset: 3px; border-radius: 4px; }
+
+code, kbd {
+  font: 500 0.92em/1 var(--font);
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.09);
+  border: 1px solid var(--edge-soft);
+  white-space: nowrap;
+}
+kbd { border-bottom-width: 2px; }
+
+.visually-hidden {
+  position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+}
+
+main { width: min(1180px, 100% - 48px); margin: 0 auto; min-width: 0; }
+
+/* Masthead ------------------------------------------------------------------ */
+.masthead { padding: 34px 0 0; }
+.brand {
+  display: inline-flex; align-items: center; gap: 12px;
+  color: var(--ink); text-decoration: none; font: 600 22px/1 var(--font-display); letter-spacing: -0.3px;
+}
+
+/* Hero ---------------------------------------------------------------------- */
+.hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+  min-width: 0;
+  gap: 48px 40px;
+  align-items: center;
+  padding: 64px 0 88px;
+}
+.hero h1 {
+  margin: 0 0 20px;
+  font: 700 clamp(38px, 4.6vw, 60px)/1.06 var(--font-display);
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+  color: #fff;
+}
+/* CJK headlines carry more meaning per glyph; a slightly smaller size keeps the
+   sentence break on the full stop instead of inside a word. */
+:lang(ja) .hero h1, :lang(ko) .hero h1, :lang(zh-CN) .hero h1, :lang(zh-TW) .hero h1 {
+  font-size: clamp(32px, 3.8vw, 52px); letter-spacing: 0; line-break: strict;
+}
+:lang(ja) .hero h1 { font-size: clamp(30px, 3vw, 42px); }
+.lede { margin: 0 0 30px; max-width: var(--measure); font-size: 18px; line-height: 1.55; color: var(--ink-soft); }
+.actions { display: flex; flex-wrap: wrap; gap: 12px; margin: 0 0 14px; }
+.note { margin: 0; color: var(--ink-mute); font-size: 14px; }
+
+.button {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-height: 44px; padding: 0 20px;
+  border-radius: 6px; border: 1px solid var(--edge);
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--ink); font: 600 15px/1 var(--font); text-decoration: none;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+.button:hover { background: rgba(255, 255, 255, 0.12); color: #fff; }
+.button.primary {
+  background: var(--accent); border-color: transparent; color: #06203a;
+}
+.button.primary:hover { background: var(--accent-strong); color: #06203a; }
+
+/* The three real fences from the demo desktop, laid out like a desktop. */
+.desk {
+  position: relative; margin: 0 0 36px;
+  aspect-ratio: 16 / 11;
+  min-width: 0;
+}
+.desk .panel {
+  position: absolute;
+  width: 47%; height: auto;
+  border-radius: 6px;
+  filter: drop-shadow(0 22px 36px rgba(2, 10, 26, 0.55));
+  animation: settle 700ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.desk .p0 { left: 0; top: 0; animation-delay: 60ms; }
+.desk .p1 { right: 0; top: 15%; animation-delay: 180ms; }
+.desk .p2 { left: 7%; top: 51%; animation-delay: 300ms; }
+.desk figcaption {
+  position: absolute; left: 0; bottom: -30px;
+  font-size: 13px; color: var(--ink-mute);
+}
+@keyframes settle {
+  from { opacity: 0; transform: translateY(26px) scale(0.985); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .desk .panel { animation: none; }
+}
+
+/* Sections ------------------------------------------------------------------ */
+.section { padding: 56px 0; }
+.section h2 {
+  margin: 0 0 12px;
+  font: 700 clamp(26px, 3vw, 34px)/1.15 var(--font-display);
+  letter-spacing: -0.015em; color: #fff;
+}
+.intro { margin: 0 0 28px; max-width: var(--measure); color: var(--ink-soft); font-size: 17px; }
+.section > h2 + .fence, .section > h2 + .fences { margin-top: 28px; }
+
+/* Fences -------------------------------------------------------------------- */
+.fences { display: grid; gap: 24px; }
+.fences.clips { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.fences.two { grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); align-items: start; }
+
+.fence {
+  min-width: 0;
+  background: var(--glass);
+  border: 1px solid var(--edge);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  -webkit-backdrop-filter: blur(28px) saturate(1.3);
+  backdrop-filter: blur(28px) saturate(1.3);
+}
+.fence-title {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  min-height: 42px; padding: 0 16px;
+  background: var(--glass-title);
+  border-bottom: 1px solid var(--edge-soft);
+  font: 600 15px/1.2 var(--font); color: #fff;
+}
+.fence-title h2 { margin: 0; font: inherit; letter-spacing: 0; }
+.fence-body { padding: 20px 22px 22px; }
+.fence-body > :first-child { margin-top: 0; }
+.fence-body > :last-child { margin-bottom: 0; }
+.fence-body p { max-width: var(--measure); }
+.small { font-size: 14px; color: var(--ink-soft); }
+
+/* Featured spot */
+.watch { padding-top: 0; }
+.watch video { display: block; width: 100%; height: auto; aspect-ratio: 16 / 9; background: #050b14; }
+
+/* Feature clips */
+.clip video, .clip img.poster { display: block; width: 100%; height: auto; aspect-ratio: 1290 / 495; background: #0a1a2e; }
+.clip .fence-body { padding-top: 16px; }
+.clip p { margin: 0; color: var(--ink-soft); }
+.clip-toggle {
+  flex: none; display: inline-grid; place-items: center;
+  width: 28px; height: 28px; border-radius: 50%;
+  border: 1px solid var(--edge); background: rgba(255, 255, 255, 0.06); color: #fff; cursor: pointer;
+}
+.clip-toggle:hover { background: rgba(255, 255, 255, 0.14); }
+.clip-toggle .icon-pause { display: none; }
+.clip.is-playing .clip-toggle .icon-play { display: none; }
+.clip.is-playing .clip-toggle .icon-pause { display: block; }
+
+/* Details list */
+.details {
+  margin: 0; padding: 8px 22px 12px;
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 32px;
+}
+.details div { padding: 16px 0 18px; border-bottom: 1px solid var(--edge-soft); }
+.details div:nth-last-child(-n + 3) { border-bottom: 0; }
+.details dt { margin: 0 0 6px; font-weight: 600; color: #fff; }
+.details dd { margin: 0; color: var(--ink-soft); font-size: 15px; }
+
+/* Languages */
+.language-list {
+  list-style: none; margin: 0 0 20px; padding: 0;
+  display: flex; flex-wrap: wrap; gap: 8px 10px;
+}
+.language-list a, .language-list strong {
+  display: inline-block; padding: 6px 12px; border-radius: 999px;
+  border: 1px solid var(--edge-soft); background: rgba(255, 255, 255, 0.04);
+  color: var(--ink); text-decoration: none; font-weight: 500; font-size: 15px;
+}
+.language-list a:hover { border-color: var(--accent); color: #fff; }
+.language-list strong { border-color: var(--accent); background: rgba(123, 210, 255, 0.14); }
+
+/* Download */
+.steps { margin: 0 0 22px; padding-left: 26px; }
+.steps li { margin: 0 0 10px; padding-left: 4px; }
+.steps li::marker { color: var(--accent); font-weight: 600; }
+ul.plain { margin: 0 0 18px; padding-left: 20px; color: var(--ink-soft); }
+ul.plain li { margin: 0 0 8px; }
+ul.plain code { color: var(--ink); }
+
+/* Footer -------------------------------------------------------------------- */
+.footer { padding: 56px 0 24px; border-top: 1px solid var(--edge-soft); margin-top: 24px; }
+.tagline { margin: 0 0 16px; font: 600 20px/1.3 var(--font-display); color: #fff; }
+.footer-links { list-style: none; margin: 0 0 16px; padding: 0; display: flex; flex-wrap: wrap; gap: 6px 22px; }
+.footer-links a { color: var(--ink-soft); text-decoration: none; }
+.footer-links a:hover { color: #fff; text-decoration: underline; }
+.footer .small { margin: 0; color: var(--ink-mute); }
+
+/* Taskbar ------------------------------------------------------------------- */
+.taskbar {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 10;
+  height: var(--taskbar);
+  display: grid; grid-template-columns: 1fr auto 1fr; align-items: center;
+  padding: 0 16px;
+  background: rgba(8, 20, 38, 0.72);
+  border-top: 1px solid var(--edge-soft);
+  -webkit-backdrop-filter: blur(30px) saturate(1.4);
+  backdrop-filter: blur(30px) saturate(1.4);
+}
+.taskbar-brand { display: inline-flex; padding: 8px; border-radius: 6px; }
+.taskbar-brand:hover { background: rgba(255, 255, 255, 0.08); }
+.taskbar-links { display: flex; gap: 4px; }
+.taskbar-links a {
+  display: inline-block; padding: 9px 14px; border-radius: 6px;
+  color: var(--ink); text-decoration: none; font-weight: 500; font-size: 15px;
+}
+.taskbar-links a:hover { background: rgba(255, 255, 255, 0.08); color: #fff; }
+.tray { display: flex; justify-content: flex-end; }
+.lang {
+  display: inline-flex; align-items: center; gap: 8px; padding: 0 10px; height: 36px;
+  border-radius: 6px; color: var(--ink-soft); cursor: pointer;
+}
+.lang:hover { background: rgba(255, 255, 255, 0.08); color: #fff; }
+.lang select {
+  appearance: none; -webkit-appearance: none;
+  background: transparent; border: 0; color: inherit; font: 500 15px/1 var(--font);
+  padding: 8px 18px 8px 0; cursor: pointer;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23b9cee2' stroke-width='1.4'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right center;
+}
+.lang select option { color: #0b1b31; background: #fff; }
+
+/* Responsive ---------------------------------------------------------------- */
+@media (max-width: 960px) {
+  .hero { grid-template-columns: minmax(0, 1fr); padding: 48px 0 72px; }
+  .fences.clips, .fences.two { grid-template-columns: minmax(0, 1fr); }
+  .details { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .details div:nth-last-child(-n + 3) { border-bottom: 1px solid var(--edge-soft); }
+  .details div:nth-last-child(-n + 2) { border-bottom: 0; }
+}
+@media (max-width: 640px) {
+  main { width: min(1180px, 100% - 32px); }
+  .hero h1 { font-size: 34px; }
+  .lede { font-size: 17px; }
+  .details { grid-template-columns: minmax(0, 1fr); padding: 4px 22px 8px; }
+  .details div:nth-last-child(-n + 2) { border-bottom: 1px solid var(--edge-soft); }
+  .details div:last-child { border-bottom: 0; }
+  .taskbar { grid-template-columns: auto 1fr auto; padding: 0 10px; }
+  .taskbar-links { justify-content: center; gap: 0; }
+  .taskbar-links a { padding: 9px 10px; font-size: 14px; }
+  .taskbar-links a:nth-child(3) { display: none; }
+  code, kbd { white-space: normal; }
+}

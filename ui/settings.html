@@ -1,0 +1,923 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- PECOFENCE_LOCALE -->
+<script src="i18n.js"></script>
+<title>PecoFence 设置</title>
+<style>
+  /* Self-contained: the WebView document is embedded in the executable and works offline. */
+  :root { color-scheme: dark;
+    --text: #eef3f4; --text2: #abb9bf; --text3: #8a9ca4; --text-disabled: #65747c;
+    --sheet: #151d23; --sidebar: #10171d; --card: #1b252c; --card-hover: #202c34;
+    --card-stroke: #ffffff0e; --line: #ffffff12;
+    --control: #ffffff08; --control-hover: #ffffff10; --control-pressed: #ffffff05;
+    --control-stroke: #ffffff19; --control-strong: #6e808b; --subtle: #ffffff0c;
+    --accent: #60cdff; --accent-hover: #60cdffe6; --on-accent: #09212d;
+    --accent-soft: color-mix(in srgb, var(--accent) 10%, transparent);
+    --focus-outer: var(--accent); --focus-inner: var(--sheet);
+    --ok: #9cddba; --ok-bg: #203b32; --error: #ffb4bd; --error-bg: #442a33;
+    --shadow: 0 8px 24px #00000014; --hero: #12292d;
+    --preview-panel: #192f389c; --preview-border: #ffffff38;
+  }
+  :root.light { color-scheme: light;
+    --text: #1b303b; --text2: #526773; --text3: #556b77; --text-disabled: #8998a0;
+    --sheet: #f4f7f8; --sidebar: #eaf0f2; --card: #ffffff; --card-hover: #fbfdfe;
+    --card-stroke: #16334212; --line: #16334216;
+    --control: #f6f9fa; --control-hover: #edf3f6; --control-pressed: #e6edf0;
+    --control-stroke: #17364b26; --control-strong: #8196a3; --subtle: #17364b09;
+    --accent: #005fb8; --accent-hover: #005fb8e6; --on-accent: #fff;
+    --ok: #246845; --ok-bg: #e3f3e9; --error: #ad263c; --error-bg: #fce6e9;
+    --shadow: 0 8px 24px #1a3b4c05; --hero: #dcebea;
+    --preview-panel: #f5ffffa8; --preview-border: #ffffffa8;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; color: var(--text); background: transparent;
+    font: 14px/1.5 "Segoe UI Variable Text", "Segoe UI", "Yu Gothic UI", "Microsoft YaHei UI", "Malgun Gothic", sans-serif; user-select: none; }
+  html.no-mica body { background: var(--sheet); }
+  button, select, input { font: inherit; }
+  button, select, .toggle { cursor: pointer; }
+  button:disabled, select:disabled { cursor: default; opacity: .6; }
+  button, a, select, .card { transition: background-color .18s, border-color .18s, box-shadow .18s; }
+  .app { display: grid; grid-template-columns: 212px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); height: 100%; }
+  .ic { font-family: "Segoe Fluent Icons", "Segoe MDL2 Assets"; font-weight: 400; }
+  .brand-mark { width: 38px; height: 38px; flex: none; display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 8px;
+    border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent); border-radius: 11px; background: var(--accent-soft); color: var(--accent); }
+  .brand-mark i { background: currentColor; border-radius: 2px; }
+  .brand-mark i:nth-child(2) { opacity: .45; } .brand-mark i:nth-child(3) { opacity: .65; }
+  nav { padding: 28px 14px 20px; display: flex; flex-direction: column; gap: 6px; background: var(--sidebar); border-right: 1px solid var(--line); overflow-y: auto; }
+  .brand { display: flex; align-items: center; gap: 11px; padding: 0 10px 32px; }
+  .brand-name { font-size: 20px; line-height: 25px; font-weight: 650; letter-spacing: -.7px; }
+  .brand-sub { color: var(--text3); font-size: 8px; letter-spacing: .65px; white-space: normal; }
+  .nav-label { padding: 0 14px 8px; font-size: 11px; letter-spacing: 1px; color: var(--text3); }
+  nav a { display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 11px 14px; border-radius: 8px; color: var(--text2); text-decoration: none; position: relative; }
+  nav a .ic { font-size: 17px; width: 20px; text-align: center; }
+  nav a:hover { background: var(--subtle); color: var(--text); }
+  nav a.sel { color: var(--accent); background: var(--accent-soft); font-weight: 600; }
+  nav a.sel::before { content: ""; position: absolute; left: 0; top: 14px; width: 3px; height: 16px; border-radius: 3px; background: var(--accent); }
+  .nav-footer { margin-top: auto; padding: 32px 12px 0; color: var(--text3); font-size: 11px; }
+  .nav-footer p { margin: 0; padding-top: 6px; }
+  .nav-status { display: flex; align-items: center; gap: 7px; color: var(--text2); }
+  .status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 10%, transparent); flex: none; }
+  main { min-width: 0; padding: 32px 36px 48px; overflow-y: auto; scrollbar-gutter: stable; }
+  main > section { max-width: 1100px; margin: 0 auto; }
+  main::-webkit-scrollbar { width: 10px; }
+  main::-webkit-scrollbar-thumb { background: transparent; border: 3px solid transparent; background-clip: padding-box; border-radius: 10px; }
+  main:hover::-webkit-scrollbar-thumb { background-color: var(--control-strong); }
+  .page { display: none; } .page.on { display: block; animation: page-in .25s ease-out; }
+  @keyframes page-in { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
+  .page-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 24px; }
+  .eyebrow { color: var(--text3); font-size: 10px; font-weight: 600; letter-spacing: 1.8px; margin-bottom: 8px; }
+  h2 { font: 650 28px/1.3 "Segoe UI Variable Display", "Segoe UI", "Microsoft YaHei UI", sans-serif; margin: 0; letter-spacing: -.6px; }
+  .page-description { margin: 7px 0 0; color: var(--text2); font-size: 12px; }
+  .page-badge { color: var(--text3); font-size: 11px; white-space: nowrap; display: flex; align-items: center; gap: 6px; }
+  h3 { font-weight: 600; font-size: 14px; line-height: 20px; margin: 28px 0 12px; display: flex; align-items: center; gap: 12px; }
+  h3::after { content: ""; height: 1px; flex: 1; background: var(--line); }
+  .section-note { margin: -6px 0 14px; color: var(--text3); font-size: 12px; }
+  .hero { position: relative; isolation: isolate; overflow: hidden; min-height: 248px; padding: 30px; border-radius: 14px;
+    background: var(--hero); border: 1px solid var(--preview-border); display: grid; grid-template-columns: .95fr 1.25fr; gap: 24px; align-items: center; }
+  .hero::before, .hero::after { content: ""; position: absolute; z-index: -1; pointer-events: none; border-radius: 50%; transform: rotate(-24deg); }
+  .hero::before { width: 660px; height: 230px; left: 20%; top: 110px; background: #45796730; box-shadow: 0 -32px 0 #81ad9420, 0 -66px 0 #97c0a910, 0 -98px 0 #c0dbb806; }
+  .hero::after { width: 460px; height: 180px; right: -220px; top: -90px; border: 1px solid #aacdb923; box-shadow: 0 0 0 32px #aacdb909, 0 0 0 64px #aacdb905; }
+  .hero-copy { align-self: center; }
+  .hero-kicker { display: flex; align-items: center; gap: 7px; color: #a4cbbd; font-size: 10px; letter-spacing: 1.5px; margin-bottom: 16px; }
+  :root.light .hero-kicker { color: #416d60; }
+  .hero h3 { display: block; font-size: clamp(21px, 2.5vw, 30px); font-weight: 600; line-height: 1.55; letter-spacing: 1px; margin: 0 0 9px; }
+  .hero h3::after { display: none; }
+  .hero p { color: var(--text2); font-size: 12px; line-height: 1.8; margin: 0; max-width: 220px; }
+  .hero-caption { display: inline-flex; align-items: center; gap: 6px; margin-top: 22px; font-size: 10px; color: var(--text2); }
+  .preview { position: relative; min-width: 0; perspective: 900px; }
+  .preview-fence { position: relative; overflow: hidden; border: 1px solid var(--preview-border); border-bottom-color: #ffffff12; border-radius: 6px;
+    background: var(--preview-panel); backdrop-filter: blur(18px); box-shadow: 0 14px 32px #06171530, inset 0 1px 0 #ffffff15;
+    transition: background .2s, box-shadow .2s; }
+  .preview-fence.main-fence { width: calc(100% - 26px); transform: rotate(-3deg); z-index: 1; }
+  .preview-fence.small-fence { width: 72%; margin: -9px 0 0 auto; transform: rotate(3deg); z-index: 2; }
+  .preview-title { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 11px 13px 7px; font-size: 11px; font-weight: 600; }
+  .preview-title span:last-child { color: var(--text2); font-size: 10px; }
+  .preview-items { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 8px 12px 15px; gap: 12px 8px; }
+  .preview-item { min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 6px; color: var(--text2); font-size: 9px; white-space: nowrap; }
+  .file-icon { width: var(--preview-icon-size, 26px); height: var(--preview-icon-size, 26px); position: relative; display: grid; place-items: center; border-radius: 5px; font-size: 13px;
+    color: #eef7ff; background: #749cca; box-shadow: inset 0 1px 0 #ffffff5c, 0 3px 6px #00000012; transition: width .2s, height .2s, opacity .2s; }
+  .file-icon.folder { background: #d1ac65; } .file-icon.sheet { background: #689d88; } .file-icon.image { background: #a28fac; }
+  .file-icon::after { content: ""; position: absolute; inset: 0; border-radius: inherit; background: var(--preview-tint, transparent); opacity: var(--preview-tint-strength, .6); mix-blend-mode: color; }
+  .preview.chameleon .file-icon { filter: saturate(.35); opacity: .65; }
+  .card { min-height: 74px; padding: 16px 18px; border-radius: 9px; background: var(--card); border: 1px solid var(--card-stroke); margin-bottom: 7px;
+    display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 20px; }
+  .card:hover { background-color: var(--card-hover); }
+  .card .l { display: flex; align-items: center; gap: 14px; flex: 1 1 220px; min-width: 0; }
+  .card .l > div { min-width: 0; }
+  .card .actions { display: flex; flex-wrap: wrap; gap: 8px; max-width: 100%; }
+  .card .ic { font-size: 17px; width: 34px; height: 34px; display: grid; place-items: center; text-align: center; color: var(--text2); flex: none; border-radius: 8px; background: var(--subtle); }
+  .card .t { color: var(--text); font-size: 13px; font-weight: 500; overflow-wrap: anywhere; }
+  .card .s { color: var(--text2); font-size: 11px; line-height: 1.6; margin-top: 3px; }
+  .toggle { width: 38px; height: 22px; border-radius: 20px; border: 1px solid var(--control-strong); position: relative; background: var(--control); flex: none; transition: background-color .18s, border-color .18s; }
+  .toggle::after { content: ""; position: absolute; left: 3px; top: 3px; width: 14px; height: 14px; border-radius: 50%; background: var(--text2); transition: transform .18s; box-shadow: 0 1px 3px #0002; }
+  .toggle.on { background: var(--accent); border-color: var(--accent); }
+  .toggle.on::after { transform: translateX(16px); background: var(--on-accent); }
+  .toggle:hover { border-color: var(--text2); } .toggle.on:hover { background: var(--accent-hover); border-color: var(--accent); }
+  input[type=time], select, input[type=text], button { height: 36px; color: var(--text); border-radius: 6px; background: var(--control); border: 1px solid var(--control-stroke); font-size: 12px; max-width: 100%; }
+  select { appearance: none; padding: 0 32px 0 11px; min-width: 120px;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path d='m3 4.5 3 3 3-3' fill='none' stroke='%2391a1ab' stroke-width='1.4'/></svg>"); background-repeat: no-repeat; background-position: right 11px center; }
+  select:hover, button:hover { background-color: var(--control-hover); border-color: var(--control-strong); }
+  select option { background: var(--card); color: var(--text); }
+  input[type=text], input[type=time] { padding: 0 11px; min-width: 160px; user-select: text; }
+  input[type=text]:focus, input[type=time]:focus { border-color: var(--accent); }
+  input::placeholder { color: var(--text3); }
+  button { padding: 0 14px; min-width: 96px; font-weight: 500; }
+  button:active { background: var(--control-pressed); }
+  button:disabled, select:disabled { color: var(--text-disabled); }
+  button.accent { background: var(--accent); color: var(--on-accent); border-color: transparent; box-shadow: 0 3px 10px color-mix(in srgb, var(--accent) 10%, transparent); }
+  button.accent:hover { background: var(--accent-hover); }
+  .iconbtn { width: 32px; min-width: 0; padding: 0; background: transparent; border-color: transparent; font-family: "Segoe Fluent Icons", "Segoe MDL2 Assets"; font-size: 14px; }
+  .iconbtn:hover { background: var(--subtle); border-color: transparent; }
+  .iconbtn[data-act=del]:hover { color: var(--error); background: var(--error-bg); }
+  :focus-visible { outline: 2px solid var(--focus-outer); outline-offset: 3px; }
+  .rule { flex-direction: column; align-items: stretch; }
+  .rule .row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; }
+  .rule .row > div:first-child { flex: 1 1 180px; }
+  .rule .conds { color: var(--text2); font-size: 11px; line-height: 1.7; margin-top: 5px; overflow-wrap: anywhere; }
+  .rule .actions { display: flex; flex: none; gap: 8px; align-items: center; }
+  .rule.disabled .t, .rule.disabled .conds { color: var(--text-disabled); }
+  #ruleList { counter-reset: rule; } #ruleList .rule { position: relative; padding-left: 54px; }
+  #ruleList .rule::before { counter-increment: rule; content: counter(rule, decimal-leading-zero); position: absolute; top: 18px; left: 18px; color: var(--text3); font-size: 11px; font-variant-numeric: tabular-nums; }
+  .newrule { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; padding-top: 4px; }
+  .newrule label { display: flex; min-width: 0; flex-direction: column; gap: 8px; color: var(--text2); font-size: 12px; }
+  .newrule > label > input, .newrule > label > select { width: 100%; min-width: 0; }
+  .cats { display: flex; flex-wrap: wrap; gap: 8px 16px; }
+  .cats label { flex-direction: row; align-items: center; gap: 8px; }
+  .cats input[type=checkbox] { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); }
+  .cats input[type=text] { width: 104px; } .cats input[type=time] { min-width: 128px; }
+  .tip { display: flex; align-items: center; gap: 13px; padding: 15px 18px; border: 1px solid var(--line); border-radius: 9px; color: var(--text2); font-size: 12px; background: var(--accent-soft); margin-bottom: 20px; }
+  .tip .ic { color: var(--accent); font-size: 18px; }
+  .about-hero { display: flex; align-items: center; gap: 20px; padding: 32px; border-radius: 14px; background: var(--hero); border: 1px solid var(--line); margin-bottom: 24px; }
+  .about-hero .brand-mark { width: 64px; height: 64px; padding: 14px; gap: 6px; border-radius: 17px; }
+  .about-hero .name { font-size: 28px; font-weight: 650; letter-spacing: -.6px; }
+  .about-hero .s { color: var(--text2); font-size: 12px; margin-top: 5px; }
+  #ver { font-size: 11px; font-weight: 400; letter-spacing: 0; color: var(--text2); border: 1px solid var(--line); padding: 3px 7px; border-radius: 5px; vertical-align: middle; }
+  .about p { color: var(--text2); margin: 12px 0; font-size: 12px; }
+  .about .row { display: flex; gap: 8px; flex-wrap: wrap; margin: 20px 0 10px; }
+  code { font: 12px/1.6 "Cascadia Mono", Consolas, monospace; color: var(--text2); overflow-wrap: anywhere; user-select: text; }
+  .infobar { position: fixed; z-index: 5; left: 50%; bottom: 24px; transform: translate(-50%, 8px); min-height: 44px; border-radius: 9px; background: var(--ok-bg); border: 1px solid var(--line); box-shadow: var(--shadow);
+    max-width: calc(100% - 32px); padding: 12px 16px; overflow-wrap: anywhere; display: flex; gap: 10px; align-items: center; opacity: 0; transition: opacity .18s, transform .18s; pointer-events: none; font-size: 12px; }
+  .infobar .ic::before { content: "\E73E"; font-size: 16px; color: var(--ok); }
+  .infobar.on { opacity: 1; transform: translate(-50%, 0); }
+  .infobar.error { background: var(--error-bg); } .infobar.error .ic::before { content: "\E783"; color: var(--error); }
+  @media (min-width: 1250px) { main { padding-left: 52px; padding-right: 52px; } .hero { min-height: 275px; padding: 36px; } .preview { max-width: 390px; width: 100%; justify-self: end; } }
+  @media (max-width: 900px) {
+    .app { grid-template-columns: 184px minmax(0, 1fr); } main { padding: 26px 24px 40px; }
+    nav { padding-left: 10px; padding-right: 10px; } .brand { gap: 8px; padding-left: 7px; } .brand-name { font-size: 18px; }
+    .hero { padding: 24px; gap: 14px; } .hero h3 { font-size: 22px; } .hero p { font-size: 11px; }
+    .page-badge { display: none; } .newrule { grid-template-columns: minmax(0, 1fr); }
+  }
+  @media (max-width: 740px) {
+    .app { grid-template-columns: 158px minmax(0, 1fr); } main { padding: 24px 18px 36px; }
+    .brand-mark { width: 31px; height: 31px; padding: 6px; gap: 3px; border-radius: 8px; } .brand-name { font-size: 16px; } .brand-sub { font-size: 8px; }
+    nav a { font-size: 12px; padding-left: 10px; gap: 9px; } .nav-footer { padding-left: 8px; }
+    .hero { grid-template-columns: .9fr 1.1fr; padding: 20px; gap: 12px; min-height: 218px; }
+    .hero h3 { font-size: 19px; letter-spacing: 0; } .hero-kicker { font-size: 8px; letter-spacing: 1px; } .hero-caption { margin-top: 14px; }
+    .preview-items { padding: 7px 9px 12px; gap: 8px 4px; } .preview-title { padding: 9px; font-size: 10px; }
+    .preview-fence.main-fence { width: 95%; } .preview-fence.small-fence { width: 85%; } .preview-item { font-size: 8px; }
+    .card { padding: 14px; } .card .l { flex-basis: 200px; }
+    .card .actions { width: 100%; } .rule .actions { width: auto; } .card .l { gap: 11px; } .card .ic { width: 29px; height: 29px; }
+    .card .t { font-size: 12px; } .card .s { font-size: 11px; } .page-header { margin-bottom: 20px; } h2 { font-size: 25px; }
+  }
+  @media (max-width: 540px) {
+    .app { grid-template-columns: 64px minmax(0, 1fr); } nav { padding: 22px 8px; } .brand { padding: 0 0 22px; justify-content: center; }
+    .brand > div:last-child, .nav-label, .nav-text, .nav-footer { display: none; } nav a { justify-content: center; padding: 12px 0; }
+    main { padding: 22px 16px 32px; } .hero { grid-template-columns: 1fr; gap: 22px; } .hero h3 br { display: none; }
+    .hero-copy p { max-width: none; } .hero-caption { display: none; } .preview { width: 90%; justify-self: center; }
+    .card .l { flex-basis: 100%; } .card .actions { gap: 6px; } .about-hero { padding: 20px; gap: 14px; }
+    .about-hero .name { font-size: 23px; }
+  }
+  /* Liquid Glass is a material style; light/dark remains a separate preference. */
+  :root.liquid-glass {
+    --sheet: #242528; --sidebar: #ffffff03; --card: #ffffff05; --card-hover: #ffffff0c;
+    --card-stroke: #ffffff18; --line: #ffffff15; --control: #ffffff08;
+    --control-hover: #ffffff16; --control-stroke: #ffffff35; --hero: #303236;
+    --text: #f5f5f7; --text2: #c7c8cc; --text3: #a9aab0;
+    --preview-panel: #ffffff03; --preview-border: #ffffffb0;
+    --glass-halo: #ffffff07; --glass-halo-alt: #ffffff03;
+    --glass-label-shadow: 0 1px 3px #0009;
+  }
+  :root.liquid-glass.light {
+    --sheet: #e2e3e7; --sidebar: #ffffff12; --card: #ffffff16; --card-hover: #ffffff30;
+    --card-stroke: #ffffff65; --line: #20212616; --control: #ffffff18;
+    --control-hover: #ffffff40; --control-stroke: #ffffffb0; --hero: #d5d6dc;
+    --text: #222328; --text2: #505159; --text3: #60616a;
+    --preview-panel: #ffffff02; --preview-border: #ffffffef;
+    --glass-halo: #ffffff30; --glass-halo-alt: #ffffff05;
+    --glass-label-shadow: 0 1px 2px #ffffff90;
+  }
+  .liquid-glass .app { background: radial-gradient(ellipse at 0 0, var(--glass-halo), transparent 65%), radial-gradient(ellipse at 100% 100%, var(--glass-halo-alt), transparent 65%), var(--sheet); }
+  .liquid-glass nav { backdrop-filter: blur(2px); box-shadow: inset -1px 0 #ffffff0b; }
+  .liquid-glass nav a { border-radius: 22px; }
+  .liquid-glass nav a.sel { background: linear-gradient(140deg, #ffffff18, #ffffff03), var(--accent-soft); box-shadow: inset 0 1px #ffffff38, inset 0 -1px #ffffff08, 0 3px 8px #0000000a; }
+  .liquid-glass nav a.sel::before { display: none; }
+  .liquid-glass .card { border-radius: 18px; box-shadow: inset 0 1px #ffffff20, inset 0 -1px #00000004, 0 2px 6px #00000003; }
+  .liquid-glass button:not(.iconbtn), .liquid-glass select, .liquid-glass input[type=text], .liquid-glass input[type=time] { border-radius: 18px; }
+  .liquid-glass button:not(.iconbtn), .liquid-glass select { box-shadow: inset 0 1px 1px #ffffff60, inset 1px 2px 3px #ffffff18, inset 0 -2px 3px #00000009, 0 3px 7px #0000000a; }
+  .liquid-glass select option { background: var(--sheet); }
+  .liquid-glass .hero { border-radius: 26px; background: var(--hero); border-color: #ffffff22; box-shadow: inset 0 1px #ffffff40; }
+  .liquid-glass .hero::before { width: 72%; height: 44px; left: 42%; top: 55%; border-radius: 24px; transform: rotate(-18deg);
+    background: linear-gradient(90deg, #25bfdd, #5384d6 30%, #bd58bb 67%, #ef6690); box-shadow: none; }
+  .liquid-glass .hero::after { inset: 0; width: auto; height: auto; border: 0; border-radius: 0; transform: none;
+    background: repeating-linear-gradient(0deg, transparent 0 39px, #797b8810 39px 40px), repeating-linear-gradient(90deg, transparent 0 39px, #797b8810 39px 40px); box-shadow: none; }
+  .liquid-glass .hero-kicker { color: var(--text2); }
+  .preview-glass { display: none; pointer-events: none; }
+  .liquid-glass .preview-fence { border-radius: 24px; background: transparent; backdrop-filter: none; border-color: transparent;
+    box-shadow: 0 14px 24px -7px #15162230, 0 3px 6px -2px #15162218; }
+  .liquid-glass .preview-glass { display: block; position: absolute; inset: -20px; background: var(--preview-panel); backdrop-filter: blur(.65px) saturate(103%); }
+  .liquid-glass .preview-title, .liquid-glass .preview-items { position: relative; z-index: 1; }
+  .liquid-glass .preview-fence::before { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; z-index: 2;
+    padding: 1px; background: linear-gradient(145deg, #fffffff5, #ffffff25 36%, #53566338 58%, #ffffffcc 88%);
+    mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0); mask-composite: exclude; }
+  .liquid-glass .preview-fence::after { content: ""; position: absolute; inset: 1px; border-radius: inherit; pointer-events: none; z-index: 2;
+    background: radial-gradient(ellipse at var(--glass-light-x, 25%) 0, #ffffff07, transparent 55%);
+    box-shadow: inset 1px 2px 3px #ffffff60, inset 2px 4px 7px #ffffff20, inset -1px -2px 4px #383a471c, inset 0 -1px 1px #ffffff80; }
+  .liquid-glass .preview-title, .liquid-glass .preview-item { text-shadow: var(--glass-label-shadow); }
+  .liquid-glass .preview-item { color: var(--text); }
+  .liquid-glass .preview-title span:last-child { color: var(--text2); }
+  .liquid-glass .preview-fence:hover { box-shadow: 0 16px 26px -7px #15162238, 0 3px 6px -2px #15162218; }
+  .liquid-glass .toggle { width: 54px; height: 30px; border: 1px solid #87899140; background: #87899128; box-shadow: inset 0 1px 3px #00000012; }
+  .liquid-glass .toggle.on, .liquid-glass .toggle.on:hover { background: #34c759; border-color: #299f4930; }
+  .liquid-glass .toggle::after { width: 30px; height: 26px; left: 1px; top: 1px; border-radius: 18px; border: 1px solid #ffffffc0;
+    background: linear-gradient(150deg, #ffffff55, #ffffff0d 55%, #ffffff30); backdrop-filter: blur(.5px) saturate(115%);
+    box-shadow: inset 1px 2px 3px #ffffffa0, inset -1px -2px 3px #1e332624, 0 3px 6px #00000020; }
+  .liquid-glass .toggle.on::after { transform: translateX(20px); }
+  @media (prefers-reduced-transparency: reduce) {
+    .liquid-glass nav, .liquid-glass .card { background: var(--sheet); backdrop-filter: none; }
+    .liquid-glass .preview-glass, .liquid-glass .toggle::after { background: var(--sheet); backdrop-filter: none; filter: none !important; }
+  }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
+  @media (forced-colors: active) {
+    .brand-mark, .status-dot, .toggle { forced-color-adjust: auto; }
+    .toggle { border-color: ButtonText; } .toggle::after { background: ButtonText; } .toggle.on { background: Highlight; } .toggle.on::after { background: HighlightText; }
+    nav a.sel { outline: 2px solid Highlight; outline-offset: -2px; }
+    .preview-fence { border-color: CanvasText; background: Canvas; } .hero { border-color: CanvasText; }
+    .liquid-glass .app, .liquid-glass nav, .liquid-glass .card, .liquid-glass .hero, .liquid-glass .preview-fence { background: Canvas; border-color: CanvasText; box-shadow: none; }
+    .liquid-glass .preview-glass, .liquid-glass .preview-fence::before, .liquid-glass .preview-fence::after { display: none; }
+    .liquid-glass .toggle, .liquid-glass .toggle.on { background: Canvas; border-color: ButtonText; box-shadow: none; }
+    .liquid-glass .toggle::after { background: ButtonText; border-color: ButtonText; box-shadow: none; backdrop-filter: none; }
+    .liquid-glass .toggle.on::after { background: Highlight; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <nav aria-label="设置导航">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+      <div><div class="brand-name">PecoFence</div><div class="brand-sub">桌面整理工具</div></div>
+    </div>
+    <div class="nav-label">我的工作空间</div>
+    <a href="#general" class="sel" data-page="general" aria-label="常规" title="常规"><span class="ic">&#xE713;</span><span class="nav-text">常规</span></a>
+    <a href="#fences" data-page="fences" aria-label="栅栏" title="栅栏"><span class="ic">&#xE71D;</span><span class="nav-text">栅栏</span></a>
+    <a href="#rules" data-page="rules" aria-label="整理规则" title="整理规则"><span class="ic">&#xE8FD;</span><span class="nav-text">整理规则</span></a>
+    <a href="#layout" data-page="layout" aria-label="布局与备份" title="布局与备份"><span class="ic">&#xE7F4;</span><span class="nav-text">布局与备份</span></a>
+    <a href="#about" data-page="about" aria-label="关于" title="关于"><span class="ic">&#xE946;</span><span class="nav-text">关于</span></a>
+    <div class="nav-footer">
+      <div class="nav-status"><span class="status-dot" aria-hidden="true"></span><span>留一点空间，给专注</span></div>
+      <p id="workspaceSummary">正在连接桌面…</p>
+    </div>
+  </nav>
+  <main>
+    <section class="page on" id="page-general">
+      <header class="page-header"><div><div class="eyebrow">你的桌面，由你做主</div><h2>常规</h2><p class="page-description">从外观到习惯，让桌面更适合你。</p></div><span class="page-badge"><span class="ic">&#xE73E;</span>更改即时生效</span></header>
+      <div class="hero">
+        <div class="hero-copy">
+          <div class="hero-kicker"><span class="ic">&#xE8A9;</span> 多一点空间</div>
+          <h3>桌面井然有序，<br>专注自然发生。</h3>
+          <p>把日常收进栅栏，<br>把空间留给眼前重要的事。</p>
+          <div class="hero-caption"><span class="ic">&#xE790;</span><span>桌面效果示意</span></div>
+        </div>
+        <div class="preview" id="desktopPreview" role="img" aria-label="栅栏外观示意">
+          <div class="preview-fence main-fence" aria-hidden="true">
+            <div class="preview-title"><span>工作空间</span><span>⌃</span></div>
+            <div class="preview-items">
+              <div class="preview-item"><span class="file-icon folder ic">&#xE8B7;</span>项目文件</div>
+              <div class="preview-item"><span class="file-icon ic">&#xE8A5;</span>灵感笔记</div>
+              <div class="preview-item"><span class="file-icon sheet ic">&#xE9F9;</span>本周计划</div>
+            </div>
+          </div>
+          <div class="preview-fence small-fence" aria-hidden="true">
+            <div class="preview-title"><span>灵感收集</span><span>⌃</span></div>
+            <div class="preview-items">
+              <div class="preview-item"><span class="file-icon image ic">&#xEB9F;</span>参考图片</div>
+              <div class="preview-item"><span class="file-icon folder ic">&#xE8B7;</span>好点子</div>
+              <div class="preview-item"><span class="file-icon ic">&#xE8A5;</span>随手记录</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div id="appearanceSettings"></div>
+      <h3>桌面与启动</h3>
+      <div class="card"><div class="l"><span class="ic">&#xE7E8;</span><div><div class="t">随 Windows 启动</div><div class="s">登录后自动运行 PecoFence</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="autostart"></div></div>
+      <div class="card"><div class="l"><span class="ic">&#xE8A9;</span><div><div class="t">隐藏 Windows 桌面图标</div><div class="s">桌面项目只显示在栅栏里，未归类的进入“桌面”栅栏</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="hideRealIcons"></div></div>
+      <div class="card"><div class="l"><span class="ic">&#xE890;</span><div><div class="t">双击桌面空白处隐藏或显示栅栏</div><div class="s">再次双击恢复显示</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="quickHide.enabled"></div></div>
+      <div class="card"><div class="l"><span class="ic">&#xE7C4;</span><div><div class="t">显示桌面 (Win+D) 时</div><div class="s">保持栅栏可见，或随桌面一起隐藏</div></div></div>
+        <select data-bind="showDesktop"><option value="keepVisible">保持栅栏可见</option><option value="hideWithDesktop">随桌面隐藏</option></select></div>
+      <div id="appearanceGroup">
+      <h3>外观</h3>
+      <div class="card"><div class="l"><span class="ic">&#xE91B;</span><div><div class="t">主题风格</div><div class="s">Liquid Glass 带来通透折射、柔和高光与圆润边缘</div></div></div>
+        <select id="themeStyle" data-bind="themeStyle"><option value="fluent">Fluent · 经典</option><option value="liquidGlass">Liquid Glass · 液态玻璃</option></select></div>
+      <div class="card"><div class="l"><span class="ic">&#xE790;</span><div><div class="t">颜色模式</div><div class="s">两种主题均支持浅色、深色与跟随系统</div></div></div>
+        <select data-bind="theme"><option value="followWindowsMode">跟随 Windows 模式</option><option value="followAppMode">跟随应用模式</option><option value="light">浅色</option><option value="dark">深色</option></select></div>
+      <div class="card"><div class="l"><span class="ic">&#xE8B9;</span><div><div class="t">默认图标大小</div><div class="s">新建栅栏时使用，每个栅栏可在「栅栏」页或右键菜单中单独设置</div></div></div>
+        <select data-bind="iconSize"><option value="32">小图标</option><option value="48">中等图标</option><option value="64">较大图标</option><option value="96">大图标</option></select></div>
+      <div class="card"><div class="l"><span class="ic">&#xE790;</span><div><div class="t">图标着色</div><div class="s">给所有图标统一染上一种颜色，桌面更统一</div></div></div>
+        <div style="display:flex;gap:8px"><select id="iconTint"><option value="">不着色</option><option value="60CDFF">蓝</option><option value="10893E">绿</option><option value="F7630C">橙</option><option value="E74856">红</option><option value="8764B8">紫</option><option value="7A7574">灰</option></select>
+        <select id="iconTintStrength"><option value="0.35">弱</option><option value="0.6">中</option><option value="0.9">强</option></select></div></div>
+      <div class="card"><div class="l"><span class="ic">&#xE7B3;</span><div><div class="t">图标融入背景 (Chameleon)</div><div class="s">降低图标饱和度和不透明度，减少桌面上的视觉噪音</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="icons.chameleon"></div></div>
+      </div>
+      <div class="card"><div class="l"><span class="ic">&#xE774;</span><div><div class="t">显示语言</div><div class="s">立即切换界面语言；你的文件和自定义名称保持不变</div></div></div>
+        <select id="language" data-bind="language"><option value="system">跟随系统</option><option value="zh-CN" data-language-name>简体中文</option><option value="zh-TW" data-language-name>繁體中文</option><option value="en" data-language-name>English</option><option value="ja" data-language-name>日本語</option><option value="ko" data-language-name>한국어</option><option value="de" data-language-name>Deutsch</option><option value="fr" data-language-name>Français</option><option value="es" data-language-name>Español</option><option value="pt-BR" data-language-name>Português (Brasil)</option><option value="ru" data-language-name>Русский</option></select></div>
+      <h3>行为</h3>
+      <div class="card"><div class="l"><span class="ic">&#xE70D;</span><div><div class="t">卷起的栅栏悬停时自动展开</div><div class="s">鼠标离开后自动卷回</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="rollUp.hoverPeek"></div></div>
+      <div class="card"><div class="l"><span class="ic">&#xE7C9;</span><div><div class="t">卷起的栅栏需点击标题才展开</div><div class="s">打开后不再悬停展开；拖动标题仍可移动栅栏</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="rollUp.clickToExpand"></div></div>
+      <div class="card"><div class="l"><span class="ic">&#xE8FA;</span><div><div class="t">鼠标悬停时才显示标题栏</div><div class="s">平时只显示图标，让桌面更安静</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="rollUp.titleOnHover"></div></div>
+      <div class="card"><div class="l"><span class="ic">&#xE8C8;</span><div><div class="t">不活动时隐藏滚动条</div><div class="s">仅在鼠标位于栅栏内或滚动后短暂显示</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="rollUp.hideInactiveScrollbar"></div></div>
+      <div class="card"><div class="l"><span class="ic">&#xE8A4;</span><div><div class="t">移动栅栏时吸附对齐</div><div class="s">与其他栅栏和屏幕边缘保持 8 像素间距</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="snapping.enabled"></div></div>
+      <h3>浮现栅栏</h3>
+      <div class="card"><div class="l"><span class="ic">&#xE7C4;</span><div><div class="t">按快捷键把所有栅栏浮到窗口之上</div><div class="s">再按一次、按 Esc 或点击其他位置恢复</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="peek.enabled"></div></div>
+      <div class="card"><div class="l"><span class="ic">&#xE765;</span><div><div class="t">快捷键</div><div class="s">安装了多种输入语言时 Windows 会占用 Win+空格，此时会自动改用可用的组合</div></div></div>
+        <select data-bind="peek.hotkey"><option value="ctrlAltSpace">Ctrl + Alt + 空格</option><option value="winSpace">Win + 空格</option><option value="winShiftSpace">Win + Shift + 空格</option></select></div>
+      <div class="card"><div class="l"><span class="ic">&#xE706;</span><div><div class="t">浮现时压暗背景</div><div class="s">栅栏之外的区域变暗，更容易看清</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="peek.dim"></div></div>
+    </section>
+
+    <section class="page" id="page-fences">
+      <header class="page-header"><div><div class="eyebrow">逐个调整栅栏</div><h2>栅栏</h2><p class="page-description">逐个调整每个栅栏的外观与行为。右键栅栏选「栅栏选项…」可直接跳到这里。</p></div><span class="page-badge" id="fenceBadge"></span></header>
+      <div class="card"><div class="l"><span class="ic">&#xE71D;</span><div><div class="t">选择栅栏</div><div class="s" id="fenceHostNote">外观、锁定、自动高度作用于整个窗口</div></div></div>
+        <select id="fenceSel" aria-label="选择栅栏"></select></div>
+      <div class="card" id="fenceEmpty" style="display:none"><div class="s">桌面上还没有栅栏。托盘菜单或在桌面空白处拖出矩形即可新建。</div></div>
+      <div id="fenceBody">
+      <div class="card"><div class="l"><span class="ic">&#xE8AC;</span><div><div class="t">名称</div><div class="s">回车或离开输入框后生效</div></div></div>
+        <input type="text" id="fenceTitle" data-fence="title" maxlength="120"></div>
+      <h3>外观</h3>
+      <div class="card"><div class="l"><span class="ic">&#xE7B3;</span><div><div class="t">不透明度</div><div class="s">默认的玻璃让桌面透出来；更厚实会加一层实色</div></div></div>
+        <select id="fenceOpacity" data-fence="opacity"><option value="clear">更透明</option><option value="default">默认</option><option value="solid">更厚实</option></select></div>
+      <div class="card"><div class="l"><span class="ic">&#xE790;</span><div><div class="t">色调</div><div class="s">给玻璃染上一层颜色，标签页的色条随之变化</div></div></div>
+        <select id="fenceTint" data-fence="tint"><option value="">无</option></select></div>
+      <div class="card"><div class="l"><span class="ic">&#xE8D2;</span><div><div class="t">标题颜色</div><div class="s">跟随色调需要先选择一种色调</div></div></div>
+        <select id="fenceTitleColor" data-fence="titleColor"><option value="theme">跟随主题</option><option value="tint">跟随色调</option><option value="white">白色</option><option value="black">黑色</option></select></div>
+      <div class="card"><div class="l"><span class="ic">&#xE8E9;</span><div><div class="t">标题字号</div><div class="s">标题栏高度随字号变化</div></div></div>
+        <select id="fenceTitleSize" data-fence="titleSize"><option value="small">小</option><option value="normal">标准</option><option value="large">大</option></select></div>
+      <h3>布局</h3>
+      <div class="card"><div class="l"><span class="ic">&#xE8B9;</span><div><div class="t">图标大小</div><div class="s">也可以在栅栏内按住 Ctrl 滚动鼠标滚轮</div></div></div>
+        <select id="fenceIconSize" data-fence="iconSize"><option value="32">小图标</option><option value="48">中图标</option><option value="64">较大图标</option><option value="96">大图标</option></select></div>
+      <div class="card"><div class="l"><span class="ic">&#xE745;</span><div><div class="t">图标间距</div><div class="s">图标之间的距离</div></div></div>
+        <select id="fenceSpacing" data-fence="spacing"><option value="compact">紧凑</option><option value="normal">标准</option><option value="loose">宽松</option></select></div>
+      <div class="card"><div class="l"><span class="ic">&#xE7C4;</span><div><div class="t">自动高度</div><div class="s">高度跟随内容行数，内容增减时平滑过渡</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="autoHeight"></div></div>
+      <h3>行为</h3>
+      <div class="card"><div class="l"><span class="ic">&#xE72E;</span><div><div class="t">锁定位置和大小</div><div class="s">边框不再可拖动缩放；标题仍可点击、右键、双击</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="locked"></div></div>
+      <div class="card"><div class="l"><span class="ic">&#xE890;</span><div><div class="t">快速隐藏时保持可见</div><div class="s">双击桌面隐藏所有栅栏时，这个栅栏留在桌面上</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="excludeFromQuickHide"></div></div>
+      <div class="card"><div class="l"><span class="ic">&#xE74A;</span><div><div class="t">停靠到屏幕顶部</div><div class="s">贴到屏幕顶边并卷起，鼠标悬停时展开，像一个下拉抽屉</div></div></div><button id="fenceDock">停靠</button></div>
+      <div id="fencePortalGroup">
+      <h3>文件夹门户</h3>
+      <div class="card"><div class="l"><span class="ic">&#xE8B7;</span><div><div class="t">双击文件夹时在门户内打开</div><div class="s">关闭后双击子文件夹改为在资源管理器中打开</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="portalNavigate"></div></div>
+      <div class="card"><div class="l"><span class="ic">&#xE8B7;</span><div><div class="t">标题栏显示文件夹图标</div><div class="s">在标题前显示一个小文件夹图标</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="portalTitleIcon"></div></div>
+      </div>
+      </div>
+    </section>
+
+    <section class="page" id="page-rules">
+      <header class="page-header"><div><div class="eyebrow">少些整理，多些专注</div><h2>整理规则</h2><p class="page-description">给文件一个去处，让整理自然发生。</p></div><span class="page-badge" id="ruleSummary"></span></header>
+      <div class="card"><div class="l"><span class="ic">&#xE8FD;</span><div><div class="t">新项目出现在桌面时自动归类</div><div class="s">快捷方式目标规则优先，其余按列表顺序匹配；没有命中的进入“桌面”栅栏</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="rules.keepUpdated"></div></div>
+      <div class="card"><div class="l"><span class="ic">&#xE8AB;</span><div><div class="t">立即对桌面上的全部项目应用规则</div><div class="s">手动放置过的项目不会被移动</div></div></div><button id="applyRules">立即应用</button></div>
+      <h3>规则列表</h3>
+      <div id="ruleList"></div>
+      <h3>新建规则</h3>
+      <div class="card rule">
+        <div class="newrule">
+          <label>规则名称<input type="text" id="nrName" placeholder="例如：截图"></label>
+          <label>目标栅栏<select id="nrTarget"></select></label>
+          <label>条件类型<select id="nrKind">
+            <option value="type">文件类型</option><option value="ext">扩展名 (逗号分隔)</option>
+            <option value="contains">名称包含</option><option value="notContains">名称不包含</option><option value="startsWith">名称开头是</option><option value="endsWith">名称结尾是</option><option value="exact">名称恰好是 (含扩展名，逗号分隔)</option>
+            <option value="glob">通配符 (*.png)</option><option value="target">快捷方式目标包含</option>
+            <option value="time">创建时间在某个时段</option><option value="weekday">创建于星期</option><option value="size">大小范围 (MB)</option>
+            <option value="folders">仅文件夹</option><option value="files">仅文件</option></select></label>
+          <label id="nrValueWrap">条件值<input type="text" id="nrValue" placeholder="png, jpg"></label>
+          <div class="cats" id="nrCats" style="grid-column: 1 / -1"></div>
+          <div class="cats" id="nrTime" style="grid-column: 1 / -1; display:none"><label>从 <input type="time" id="nrFrom" value="18:00"></label><label>到 <input type="time" id="nrTo" value="06:00"></label><span class="s">结束早于开始表示跨越午夜</span></div>
+          <div class="cats" id="nrWeek" style="grid-column: 1 / -1; display:none"></div>
+          <div class="cats" id="nrSize" style="grid-column: 1 / -1; display:none"><label>至少 <input type="text" inputmode="decimal" id="nrMin" placeholder="0" style="min-width:80px"> MB</label><label>至多 <input type="text" inputmode="decimal" id="nrMax" placeholder="不限" style="min-width:80px"> MB</label></div>
+        </div>
+        <div class="row" style="justify-content:flex-end;margin-top:12px"><button class="accent" id="nrAdd" style="min-width:96px">添加规则</button></div>
+      </div>
+    </section>
+
+    <section class="page" id="page-layout">
+      <header class="page-header"><div><div class="eyebrow">留出调整的空间</div><h2>布局与备份</h2><p class="page-description">保存顺手的布局，随时回到熟悉的工作空间。</p></div></header>
+      <div class="tip"><span class="ic" aria-hidden="true">&#xE722;</span><span>准备重新布置桌面？先保存一份快照，随时可以恢复。</span></div>
+      <h3>布局快照</h3>
+      <div class="card"><div class="l"><span class="ic">&#xE722;</span><div><div class="t">保存当前布局为快照</div><div class="s">记录所有栅栏的位置、大小和内容，随时恢复</div></div></div>
+        <div class="actions" style="display:flex;gap:8px"><input type="text" id="snapName" aria-label="快照名称（可选）" placeholder="快照名称（可选）"><button class="accent" id="snapSave">保存快照</button></div></div>
+      <div id="snapList"></div>
+      <h3 id="swapHeading">多显示器</h3>
+      <div class="card" id="swapCard"><div class="l"><span class="ic">&#xE7F8;</span><div><div class="t">交换两个显示器上的栅栏</div><div class="s">把一个显示器上的全部栅栏搬到另一个，反之亦然</div></div></div>
+        <div class="actions" style="display:flex;gap:8px"><select id="swapA" aria-label="第一个显示器"></select><select id="swapB" aria-label="第二个显示器"></select><button id="swapDo">交换</button></div></div>
+      <h3>备份</h3>
+      <div class="card"><div class="l"><span class="ic">&#xE78C;</span><div><div class="t">导出 / 导入配置文件</div><div class="s">导出为 JSON 以便迁移到另一台电脑；导入前会自动保存一份快照</div></div></div>
+        <div class="actions" style="display:flex;gap:8px"><button id="cfgExport">导出…</button><button id="cfgImport">导入…</button></div></div>
+      <div id="backupList"></div>
+    </section>
+
+    <section class="page about" id="page-about">
+      <header class="page-header"><div><div class="eyebrow">让桌面更安静</div><h2>关于</h2><p class="page-description">一个轻巧、开放的桌面整理工具。</p></div></header>
+      <div class="about-hero"><div class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></div><div><div class="name">PecoFence <span id="ver"></span></div><div class="s">开源的 Windows 11 桌面栅栏整理工具</div><div class="s">自由整理，自在专注。 · MIT 许可</div></div></div>
+      <p>配置文件：<code id="cfgPath"></code></p>
+      <p id="memDetail">—</p>
+      <div class="row"><button id="openCfg">打开配置文件夹</button><button id="repairIcons">恢复显示桌面图标</button><button id="hideIconsAgain">重新隐藏桌面图标</button></div>
+      <p class="s" id="desktopIconsStatus" style="font-size:12px;line-height:16px;color:var(--text3)"></p>
+    </section>
+  </main>
+</div>
+<div class="infobar" id="toast" role="status"><span class="ic" aria-hidden="true"></span><span id="toastText"></span></div>
+<script>
+(() => {
+  const i18n = window.PecoFenceI18n;
+  const t = i18n.text, tf = i18n.format;
+  const translateStatic = i18n.capture(document);
+  translateStatic();
+  const wv = window.chrome && window.chrome.webview;
+  const send = (m) => wv && wv.postMessage(m);
+  let state = null;
+  const CATS = () => [["programs",t("程序")],["shortcuts",t("快捷方式")],["folders",t("文件夹")],["documents",t("文档")],["images",t("图片")],["music",t("音乐")],["video",t("视频")],["archives",t("压缩包")]];
+
+  // Appearance comes first, beside the preview; controls keep their existing host bindings.
+  document.getElementById('appearanceSettings').replaceWith(document.getElementById('appearanceGroup'));
+  function renderAppearance() {
+    if (!state) return;
+    const settings = state.settings, preview = document.getElementById('desktopPreview');
+    document.documentElement.classList.toggle('liquid-glass', settings.themeStyle === 'liquidGlass');
+    syncLiquidPreview(settings.themeStyle === 'liquidGlass');
+    preview.classList.toggle('chameleon', !!settings.icons.chameleon);
+    preview.style.setProperty('--preview-icon-size', ({ 32: 21, 48: 26, 64: 31, 96: 36 }[settings.iconSize] || 26) + 'px');
+    preview.style.setProperty('--preview-tint', settings.icons.tintRgb ? '#' + rgbToHex(settings.icons.tintRgb) : 'transparent');
+    preview.style.setProperty('--preview-tint-strength', settings.icons.tintStrength);
+  }
+
+  // The desktop uses cached native optics. This small preview uses a generated SVG
+  // displacement map over the backdrop only, keeping labels and icons crisp (rdev's
+  // separation of backdrop/content). Rebuild only after size or material changes.
+  let liquidObserver;
+  const liquidMaps = new Map();
+  function syncLiquidPreview(enabled) {
+    if (!enabled) {
+      liquidObserver?.disconnect();
+      liquidObserver = null;
+      return;
+    }
+    const panels = [...document.querySelectorAll('.preview-fence')];
+    panels.forEach((panel, i) => {
+      if (!liquidMaps.has(panel)) {
+        const id = 'liquid-preview-' + i;
+        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        svg.setAttribute('aria-hidden', 'true');
+        svg.style.cssText = 'position:absolute;width:0;height:0;pointer-events:none';
+        svg.innerHTML = `<defs><filter id="${id}" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">
+          <feImage result="map" preserveAspectRatio="none"/>
+          <feDisplacementMap in="SourceGraphic" in2="map" scale="30.56" xChannelSelector="R" yChannelSelector="G" result="r"/>
+          <feColorMatrix in="r" type="matrix" values="1 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0" result="red"/>
+          <feDisplacementMap in="SourceGraphic" in2="map" scale="32" xChannelSelector="R" yChannelSelector="G" result="g"/>
+          <feColorMatrix in="g" type="matrix" values="0 0 0 0 0  0 1 0 0 0  0 0 0 0 0  0 0 0 1 0" result="green"/>
+          <feDisplacementMap in="SourceGraphic" in2="map" scale="33.44" xChannelSelector="R" yChannelSelector="G" result="b"/>
+          <feColorMatrix in="b" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 1 0 0  0 0 0 1 0" result="blue"/>
+          <feBlend in="red" in2="green" mode="screen" result="rg"/>
+          <feBlend in="rg" in2="blue" mode="screen"/>
+        </filter></defs>`;
+        document.body.append(svg);
+        const layer = document.createElement('span');
+        layer.className = 'preview-glass';
+        layer.setAttribute('aria-hidden', 'true');
+        layer.style.filter = `url(#${id})`;
+        panel.prepend(layer);
+        liquidMaps.set(panel, { image: svg.querySelector('feImage'), size: '' });
+        panel.addEventListener('pointermove', e => {
+          if (!document.documentElement.classList.contains('liquid-glass') || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+          const rect = panel.getBoundingClientRect();
+          panel.style.setProperty('--glass-light-x', Math.max(0, Math.min(100, (e.clientX - rect.left) / rect.width * 100)) + '%');
+        });
+        panel.addEventListener('pointerleave', () => panel.style.removeProperty('--glass-light-x'));
+      }
+      updateLiquidMap(panel);
+    });
+    if (!liquidObserver && typeof ResizeObserver !== 'undefined') {
+      liquidObserver = new ResizeObserver(entries => entries.forEach(e => updateLiquidMap(e.target)));
+      panels.forEach(panel => liquidObserver.observe(panel));
+    }
+  }
+  function updateLiquidMap(panel) {
+    const entry = liquidMaps.get(panel);
+    const plateWidth = panel.clientWidth, plateHeight = panel.clientHeight;
+    if (!entry || !plateWidth || !plateHeight || !document.documentElement.classList.contains('liquid-glass')) return;
+    // Capture 20px beyond each edge so outward refraction has actual background to sample.
+    const width = plateWidth + 40, height = plateHeight + 40;
+    const size = width + ':' + height;
+    if (entry.size === size) return;
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(2, Math.ceil(width / 2));
+    canvas.height = Math.max(2, Math.ceil(height / 2));
+    const context = canvas.getContext('2d');
+    if (!context) return;
+    const image = context.createImageData(canvas.width, canvas.height);
+    const radius = Math.min(24, plateWidth / 2, plateHeight / 2), band = Math.min(20, plateWidth / 2, plateHeight / 2);
+    for (let y = 0; y < canvas.height; y++) {
+      for (let x = 0; x < canvas.width; x++) {
+        const dx = (x + .5) / canvas.width * width - width / 2;
+        const dy = (y + .5) / canvas.height * height - height / 2;
+        const qx = Math.abs(dx) - plateWidth / 2 + radius, qy = Math.abs(dy) - plateHeight / 2 + radius;
+        const ox = Math.max(0, qx), oy = Math.max(0, qy), len = Math.hypot(ox, oy);
+        const depth = -(len + Math.min(Math.max(qx, qy), 0) - radius);
+        const nx = len > .001 ? Math.sign(dx) * ox / len : qx > qy ? Math.sign(dx) : 0;
+        const ny = len > .001 ? Math.sign(dy) * oy / len : qx > qy ? 0 : Math.sign(dy);
+        const t = Math.max(0, Math.min(1, 1 - Math.max(0, depth) / band));
+        const bend = t * t * (3 - 2 * t) * 127;
+        const offset = (y * canvas.width + x) * 4;
+        image.data.set([128 + nx * bend, 128 + ny * bend, 128, 255], offset);
+      }
+    }
+    context.putImageData(image, 0, 0);
+    entry.image.setAttribute('href', canvas.toDataURL());
+    entry.image.setAttribute('x', '0'); entry.image.setAttribute('y', '0');
+    entry.image.setAttribute('width', width); entry.image.setAttribute('height', height);
+    entry.size = size;
+  }
+
+  // Associate custom switches and standalone comboboxes with their visible card text.
+  document.querySelectorAll('[data-bind], [data-fence]').forEach((el, i) => {
+    const card = el.closest('.card'), title = card.querySelector('.t'), help = card.querySelector('.s');
+    title.id = 'setting-title-' + i;
+    el.setAttribute('aria-labelledby', title.id);
+    if (help) { help.id = 'setting-help-' + i; el.setAttribute('aria-describedby', help.id); }
+  });
+  document.getElementById('iconTint').setAttribute('aria-label', t("图标着色"));
+  document.getElementById('iconTintStrength').setAttribute('aria-label', t("图标着色强度"));
+  document.querySelectorAll('.ic, .glyph').forEach(el => el.setAttribute('aria-hidden', 'true'));
+  document.querySelector('nav a.sel').setAttribute('aria-current', 'page');
+
+  // navigation
+  function showPage(name) {
+    const a = document.querySelector(`nav a[data-page="${name}"]`);
+    if (!a || a.classList.contains('sel')) return;
+    document.querySelectorAll('nav a').forEach(x => { x.classList.remove('sel'); x.removeAttribute('aria-current'); });
+    a.classList.add('sel');
+    a.setAttribute('aria-current', 'page');
+    document.querySelectorAll('.page').forEach(p => p.classList.toggle('on', p.id === 'page-' + name));
+    document.querySelector('main').scrollTop = 0;
+  }
+  document.querySelectorAll('nav a').forEach(a => a.addEventListener('click', e => { e.preventDefault(); showPage(a.dataset.page); }));
+
+  const get = (obj, path) => path.split('.').reduce((o, k) => (o == null ? undefined : o[k]), obj);
+  const set = (obj, path, v) => { const ks = path.split('.'); let o = obj; for (let i = 0; i < ks.length - 1; i++) o = o[ks[i]]; o[ks[ks.length - 1]] = v; };
+  const keyToggle = (el) => { el.onkeydown = (e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); el.click(); } }; };
+
+  function bindAll() {
+    document.querySelectorAll('[data-bind]').forEach(el => {
+      const path = el.dataset.bind;
+      const root = path.startsWith('rules.') ? state.rules : state.settings;
+      const p = path.startsWith('rules.') ? path.slice(6) : path;
+      const cur = get(root, p);
+      if (el.classList.contains('toggle')) {
+        el.classList.toggle('on', !!cur); el.setAttribute('aria-checked', String(!!cur));
+        el.onclick = () => { set(root, p, !get(root, p)); const on = !!get(root, p); el.classList.toggle('on', on); el.setAttribute('aria-checked', String(on)); commit(path); };
+        keyToggle(el);
+      } else if (el.tagName === 'SELECT') {
+        el.value = String(cur);
+        el.onchange = () => { const v = el.value; set(root, p, isNaN(v) || v === '' ? v : Number(v)); commit(path); };
+      }
+    });
+  }
+  const hexToRgb = (h) => [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+  const rgbToHex = (a) => a ? a.map(x => x.toString(16).padStart(2, '0')).join('').toUpperCase() : '';
+  function bindIconTint() {
+    const sel = document.getElementById('iconTint'), str = document.getElementById('iconTintStrength');
+    const tint = rgbToHex(state.settings.icons.tintRgb);
+    sel.querySelector('[data-custom]')?.remove();
+    if (tint && ![...sel.options].some(o => o.value === tint)) {
+      const option = new Option(t("自定义 #") + tint, tint);
+      option.dataset.custom = 'true'; sel.add(option);
+    }
+    sel.value = tint;
+    str.disabled = !tint;
+    const s = state.settings.icons.tintStrength;
+    str.value = s < 0.5 ? '0.35' : (s < 0.75 ? '0.6' : '0.9');
+    sel.onchange = () => { state.settings.icons.tintRgb = sel.value ? hexToRgb(sel.value) : null; str.disabled = !sel.value; commit('icons'); };
+    str.onchange = () => { state.settings.icons.tintStrength = Number(str.value); commit('icons'); };
+  }
+  function commit(path) {
+    renderAppearance();
+    if (path.startsWith('rules.')) send({ type: 'setRules', rules: state.rules });
+    else send({ type: 'patchSettings', settings: state.settings });
+  }
+
+  // 「栅栏」 page: one fence at a time; every control posts a single setFence and the host
+  // answers with a fresh state, so nothing here mutates `state` itself.
+  let fenceSel = null;
+  const fenceById = (id) => (state.fences || []).find(f => f.id === id);
+  const fenceOption = (f) => f.title + (f.kind === 'portal' ? t("（门户）") : f.kind === 'inbox' ? t("（桌面）") : '') + (f.host ? tf("（{0} 的标签页）", f.host) : '');
+  const setFence = (id, prop, value) => send({ type: 'setFence', id, prop, value });
+  function ensureOption(sel, value, label) {
+    sel.querySelector('[data-custom]')?.remove();
+    if (value && ![...sel.options].some(o => o.value === value)) {
+      const option = new Option(label, value);
+      option.dataset.custom = 'true'; sel.add(option);
+    }
+  }
+  function renderFences() {
+    const sel = document.getElementById('fenceSel');
+    const fences = state.fences || [];
+    const options = fences.map(f => `<option value="${esc(f.id)}">${esc(fenceOption(f))}</option>`).join('');
+    if (sel.innerHTML !== options) sel.innerHTML = options;
+    if (!fences.some(f => f.id === fenceSel)) fenceSel = fences.length ? fences[0].id : null;
+    sel.value = fenceSel || '';
+    sel.onchange = () => { fenceSel = sel.value; renderFences(); };
+    const f = fenceById(fenceSel);
+    document.getElementById('fenceBadge').textContent = tf("{0} 个栅栏", fences.length);
+    document.getElementById('fenceEmpty').style.display = f ? 'none' : '';
+    document.getElementById('fenceBody').style.display = f ? '' : 'none';
+    if (!f) return;
+    document.getElementById('fenceHostNote').textContent = f.host
+      ? tf("这是「{0}」窗口中的标签页；外观、锁定、自动高度作用于整个窗口", f.host)
+      : t("外观、锁定、自动高度作用于整个窗口");
+    document.getElementById('fencePortalGroup').style.display = f.portal ? '' : 'none';
+    const tintSel = document.querySelector('[data-fence=tint]');
+    const palette = `<option value="">${esc(t("无"))}</option>` + (state.tintPalette || []).map(c => `<option value="${esc(c.hex)}">${esc(t(c.name))}</option>`).join('');
+    if (tintSel.innerHTML !== palette) tintSel.innerHTML = palette;
+    document.querySelectorAll('[data-fence]').forEach(el => {
+      const prop = el.dataset.fence;
+      const cur = prop === 'portalNavigate' ? !!(f.portal && f.portal.navigate) : prop === 'portalTitleIcon' ? !!(f.portal && f.portal.titleIcon) : f[prop];
+      if (el.classList.contains('toggle')) {
+        el.classList.toggle('on', !!cur); el.setAttribute('aria-checked', String(!!cur));
+        el.onclick = () => { const on = !el.classList.contains('on'); el.classList.toggle('on', on); el.setAttribute('aria-checked', String(on)); setFence(f.id, prop, on); };
+        keyToggle(el);
+      } else if (el.tagName === 'SELECT') {
+        const value = cur == null ? '' : String(cur);
+        if (prop === 'tint') ensureOption(el, value, t("自定义 #") + value);
+        if (prop === 'titleColor') { ensureOption(el, /^[0-9A-F]{6}$/i.test(value) ? value : '', t("自定义 #") + value); el.querySelector('[value=tint]').disabled = !f.tint; }
+        el.value = value;
+        el.onchange = () => setFence(f.id, prop, prop === 'iconSize' ? Number(el.value) : prop === 'tint' ? (el.value || null) : el.value);
+      } else if (el.tagName === 'INPUT') {
+        if (document.activeElement !== el) el.value = cur;
+        el.onchange = () => { const v = el.value.trim(); if (v && v !== f.title) setFence(f.id, prop, v); else el.value = f.title; };
+        el.onkeydown = (e) => { if (e.key === 'Enter') el.blur(); if (e.key === 'Escape') { el.value = f.title; el.blur(); } };
+      }
+    });
+    document.getElementById('fenceDock').onclick = () => { setFence(f.id, 'dockTop', null); toast(t("已停靠到屏幕顶部")); };
+  }
+  function showFence(id) {
+    fenceSel = id;
+    showPage('fences');
+    if (state) renderFences();
+    document.getElementById('fenceSel').focus({ preventScroll: true });
+  }
+
+  function inboxTitle() { const f = (state.fences || []).find(f => f.kind === 'inbox'); return f ? f.title : t("桌面"); }
+  // A portal cannot hold routed items (the app routes such rules to the inbox), so it is shown as one.
+  function fenceTitle(id) { const f = (state.fences || []).find(f => f.id === id); return !f ? t("已删除的栅栏") : f.kind === 'portal' ? inboxTitle() : f.title; }
+  function targetLabel(t) { return '“' + (t === 'inbox' ? inboxTitle() : (t && t.fence) ? fenceTitle(t.fence) : '?') + '”'; }
+  const OPS = () => ({contains:t("包含"),notContains:t("不包含"),startsWith:t("开头是"),endsWith:t("结尾是"),is:t("等于")});
+  const WEEK = () => [t("周一"),t("周二"),t("周三"),t("周四"),t("周五"),t("周六"),t("周日")]; // 0 = Monday
+  const hm = (m) => String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
+  function condLabel(c) {
+    const v = c.value;
+    switch (c.cond) {
+      case 'type': return t("类型：") + v.map(x => (CATS().find(k => k[0] === x) || [x, x])[1]).join('、');
+      case 'ext': return t("扩展名：") + v.join('、');
+      case 'exactName': return t("名称为：") + v.join('、');
+      case 'name': return tf("名称{0}“{1}”", OPS()[v.op] || v.op, v.value);
+      case 'glob': return t("匹配 ") + v;
+      case 'shortcutTarget': return tf("快捷方式目标{0}“{1}”", OPS()[v.op] || t("包含"), v.value);
+      case 'foldersOnly': return t("仅文件夹");
+      case 'filesOnly': return t("仅文件");
+      case 'sizeMb': return t("大小") + (v.min != null ? ' ≥ ' + v.min + ' MB' : '') + (v.max != null ? ' ≤ ' + v.max + ' MB' : '');
+      case 'createdTime': return t("创建时间 ") + hm(v.fromMin) + '–' + hm(v.toMin);
+      case 'createdWeekday': return t("创建于 ") + v.map(d => WEEK()[d] || d).join('、');
+      case 'origin': return t("来源：") + (v === 'publicDesktop' ? t("公共桌面") : t("用户桌面"));
+      default: return c.cond;
+    }
+  }
+  function focusBookmark(list) {
+    const el = document.activeElement, row = el?.closest('[data-row-id]');
+    return row && list.contains(row) ? { id: row.dataset.rowId, act: el.dataset.act || null, index: [...list.children].indexOf(row) } : null;
+  }
+  function restoreFocus(list, bookmark) {
+    if (!bookmark) return;
+    const rows = [...list.children];
+    const row = rows.find(r => r.dataset.rowId === bookmark.id) || rows[Math.min(bookmark.index, rows.length - 1)];
+    let control = bookmark.act && row?.querySelector(`[data-act="${bookmark.act}"]`);
+    // Reaching a reorder boundary must not focus the opposite command: a repeated Enter
+    // would move the rule back again. Keep focus on the row until the user tabs onwards.
+    if (row && (!bookmark.act || control?.disabled)) {
+      row.tabIndex = -1;
+      row.setAttribute('role', 'group');
+      row.setAttribute('aria-label', row.querySelector('.t')?.textContent || '');
+      control = row;
+    }
+    control ||= row?.querySelector('[data-act]:not(:disabled)');
+    const fallback = list.id === 'ruleList' ? 'nrName' : 'snapName';
+    (control || document.getElementById(fallback))?.focus({ preventScroll: true });
+  }
+  function renderRules() {
+    const list = document.getElementById('ruleList');
+    const focus = focusBookmark(list);
+    list.innerHTML = '';
+    const rules = state.rules.list;
+    document.getElementById('ruleSummary').textContent = tf("{0} 条规则已启用", rules.filter(r => r.enabled).length);
+    if (!rules.length) list.innerHTML = `<div class="card"><div class="s">${esc(t("尚未添加规则"))}</div></div>`;
+    rules.forEach((r, i) => {
+      const div = document.createElement('div');
+      div.className = 'card rule' + (r.enabled ? '' : ' disabled');
+      div.dataset.rowId = r.id;
+      div.innerHTML = `<div class="row"><div style="min-width:0"><div class="t">${esc(r.name)}</div><div class="conds">${r.allOf.map(condLabel).map(esc).join(t("，且 "))} ${esc(t("→ 放入"))} ${esc(targetLabel(r.target))}</div></div>
+        <div class="actions"><button class="iconbtn" title="${esc(t("上移"))}" data-act="up" ${i===0?'disabled':''}>&#xE70E;</button><button class="iconbtn" title="${esc(t("下移"))}" data-act="down" ${i===rules.length-1?'disabled':''}>&#xE70D;</button><div class="toggle ${r.enabled?'on':''}" role="switch" tabindex="0" aria-checked="${r.enabled}" data-act="toggle"></div><button class="iconbtn" title="${esc(t("删除"))}" data-act="del">&#xE74D;</button></div></div>`;
+      div.querySelectorAll('[data-act]').forEach(b => {
+        const labels = { up: t("上移"), down: t("下移"), toggle: t("启用规则"), del: t("删除规则") };
+        b.setAttribute('aria-label', labels[b.dataset.act] + '：' + r.name);
+        b.onclick = () => {
+          const act = b.dataset.act;
+          if (act === 'toggle') r.enabled = !r.enabled;
+          if (act === 'del') rules.splice(i, 1);
+          if (act === 'up' && i > 0) { rules.splice(i - 1, 0, rules.splice(i, 1)[0]); }
+          if (act === 'down' && i < rules.length - 1) { rules.splice(i + 1, 0, rules.splice(i, 1)[0]); }
+          send({ type: 'setRules', rules: state.rules }); renderRules();
+        };
+        if (b.classList.contains('toggle')) keyToggle(b);
+      });
+      list.appendChild(div);
+    });
+    restoreFocus(list, focus);
+    const tgt = document.getElementById('nrTarget');
+    const selected = tgt.value;
+    const options = state.fences.filter(f => f.kind !== 'portal').map(f => `<option value="${esc(f.id)}">${esc(f.title)}</option>`).join('');
+    if (tgt.innerHTML !== options) {
+      tgt.innerHTML = options;
+      if ([...tgt.options].some(o => o.value === selected)) tgt.value = selected;
+    }
+    const cats = document.getElementById('nrCats');
+    if (!cats.children.length) cats.innerHTML = CATS().map(([k, l]) => `<label><input type="checkbox" value="${k}">${l}</label>`).join('');
+  }
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+  document.getElementById('nrKind').onchange = updateKind;
+  const WEEKDAYS = () => [['0',t("周一")],['1',t("周二")],['2',t("周三")],['3',t("周四")],['4',t("周五")],['5',t("周六")],['6',t("周日")]];
+  function updateKind() {
+    const k = document.getElementById('nrKind').value;
+    const noValue = ['type','folders','files','time','weekday','size'];
+    document.getElementById('nrValueWrap').style.display = noValue.includes(k) ? 'none' : '';
+    document.getElementById('nrCats').style.display = k === 'type' ? '' : 'none';
+    document.getElementById('nrTime').style.display = k === 'time' ? '' : 'none';
+    document.getElementById('nrWeek').style.display = k === 'weekday' ? '' : 'none';
+    document.getElementById('nrSize').style.display = k === 'size' ? '' : 'none';
+    const ph = { ext: 'png, jpg', contains: t("截图"), notContains: t("备份"), startsWith: 'IMG_', endsWith: '_final', exact: 'todo.txt, notes.md', glob: '*.png', target: 'steam' };
+    document.getElementById('nrValue').placeholder = ph[k] || '';
+    const wk = document.getElementById('nrWeek');
+    if (!wk.children.length) wk.innerHTML = WEEKDAYS().map(([v, l]) => `<label><input type="checkbox" value="${v}">${l}</label>`).join('');
+  }
+  const toMin = (hhmm) => { const [h, m] = (hhmm || '0:0').split(':').map(Number); return (h * 60 + (m || 0)) % 1440; };
+  function ruleError(text, id) {
+    toast(text, true);
+    document.getElementById(id)?.focus();
+  }
+  document.getElementById('nrAdd').onclick = () => {
+    const name = document.getElementById('nrName').value.trim() || t("新规则");
+    const target = document.getElementById('nrTarget').value;
+    if (!target) return ruleError(t("没有可用的目标栅栏"), 'nrTarget');
+    const kind = document.getElementById('nrKind').value;
+    const value = document.getElementById('nrValue').value.trim();
+    let cond, cls = 'custom';
+    const split = (v) => v.split(/[,，]+/).map(x => x.trim()).filter(Boolean);
+    if (kind === 'type') { const sel = [...document.querySelectorAll('#nrCats input:checked')].map(i => i.value); if (!sel.length) return ruleError(t("请选择至少一种类型"), 'nrKind'); cond = { cond: 'type', value: sel }; cls = 'type'; }
+    else if (kind === 'ext') { const extensions = value.split(/[,，\s]+/).map(x => x.replace(/^\./, '')).filter(Boolean); if (!extensions.length) return ruleError(t("请输入扩展名"), 'nrValue'); cond = { cond: 'ext', value: extensions }; cls = 'type'; }
+    else if (['contains','notContains','startsWith','endsWith'].includes(kind)) { if (!value) return ruleError(t("请输入关键字"), 'nrValue'); cond = { cond: 'name', value: { op: kind, value } }; cls = 'name'; }
+    else if (kind === 'exact') { const names = split(value); if (!names.length) return ruleError(t("请输入完整文件名"), 'nrValue'); cond = { cond: 'exactName', value: names }; cls = 'name'; }
+    else if (kind === 'glob') { if (!value) return ruleError(t("请输入通配符"), 'nrValue'); cond = { cond: 'glob', value }; cls = 'name'; }
+    else if (kind === 'target') { if (!value) return ruleError(t("请输入目标路径中的关键字"), 'nrValue'); cond = { cond: 'shortcutTarget', value: { op: 'contains', value } }; cls = 'target'; }
+    else if (kind === 'time') {
+      const from = document.getElementById('nrFrom'), to = document.getElementById('nrTo');
+      if (!from.value || !from.validity.valid) return ruleError(t("请输入开始时间"), 'nrFrom');
+      if (!to.value || !to.validity.valid) return ruleError(t("请输入结束时间"), 'nrTo');
+      cond = { cond: 'createdTime', value: { fromMin: toMin(from.value), toMin: toMin(to.value) } }; cls = 'time';
+    }
+    else if (kind === 'weekday') { const days = [...document.querySelectorAll('#nrWeek input:checked')].map(i => Number(i.value)); if (!days.length) return ruleError(t("请选择至少一天"), 'nrKind'); cond = { cond: 'createdWeekday', value: days }; cls = 'time'; }
+    else if (kind === 'size') {
+      const from = document.getElementById('nrMin').value.trim(), to = document.getElementById('nrMax').value.trim();
+      if (!from && !to) return ruleError(t("请填写大小范围"), 'nrMin');
+      const min = from ? Number(from) : null, max = to ? Number(to) : null;
+      if (from && (!Number.isFinite(min) || min < 0)) return ruleError(t("最小大小必须是大于或等于 0 的数字"), 'nrMin');
+      if (to && (!Number.isFinite(max) || max < 0)) return ruleError(t("最大大小必须是大于或等于 0 的数字"), 'nrMax');
+      if (min != null && max != null && min > max) return ruleError(t("最大大小不能小于最小大小"), 'nrMax');
+      cond = { cond: 'sizeMb', value: { min, max } };
+    }
+    else if (kind === 'files') cond = { cond: 'filesOnly', value: null };
+    else cond = { cond: 'foldersOnly', value: null };
+    const fence = state.fences.find(f => f.id === target);
+    state.rules.list.push({ id: crypto.randomUUID(), name, enabled: true, target: fence && fence.kind === 'inbox' ? 'inbox' : { fence: target }, allOf: [cond], priorityClass: cls });
+    send({ type: 'setRules', rules: state.rules }); renderRules(); toast(t("已添加规则"));
+    document.getElementById('nrName').value = ''; document.getElementById('nrValue').value = '';
+  };
+  document.getElementById('applyRules').onclick = () => send({ type: 'action', name: 'applyRules' });
+  document.getElementById('snapSave').onclick = () => { const n = document.getElementById('snapName').value; send({ type: 'action', name: 'saveSnapshot', snapshotName: n }); document.getElementById('snapName').value = ''; };
+  document.getElementById('cfgExport').onclick = () => send({ type: 'action', name: 'exportConfig' });
+  document.getElementById('cfgImport').onclick = () => send({ type: 'action', name: 'importConfig' });
+  document.getElementById('swapDo').onclick = () => { const a = document.getElementById('swapA').value, b = document.getElementById('swapB').value; if (a && b && a !== b) send({ type: 'action', name: 'swapMonitors', a, b }); else toast(t("请选择两个不同的显示器"), true); };
+  function renderLayout() {
+    const sl = document.getElementById('snapList');
+    const focus = focusBookmark(sl);
+    const snaps = state.snapshots || [];
+    sl.innerHTML = snaps.length ? '' : `<div class="card"><div class="s">${esc(t("尚无快照"))}</div></div>`;
+    snaps.slice().reverse().forEach(sn => {
+      const div = document.createElement('div');
+      div.className = 'card';
+      div.dataset.rowId = sn.id;
+      div.innerHTML = `<div class="l"><span class="ic" aria-hidden="true">&#xE81C;</span><div><div class="t">${esc(sn.name)}</div><div class="s">${esc(sn.date)} · ${sn.fenceCount} ${esc(t("个栅栏"))}</div></div></div>
+        <div class="actions" style="display:flex;gap:8px"><button data-act="restore">${esc(t("恢复"))}</button><button class="iconbtn" title="${esc(t("删除"))}" data-act="del">&#xE74D;</button></div>`;
+      div.querySelector('[data-act=restore]').onclick = () => send({ type: 'action', name: 'restoreSnapshot', id: sn.id });
+      div.querySelector('[data-act=del]').onclick = () => send({ type: 'action', name: 'deleteSnapshot', id: sn.id });
+      div.querySelector('[data-act=restore]').setAttribute('aria-label', t("恢复快照：") + sn.name);
+      div.querySelector('[data-act=del]').setAttribute('aria-label', t("删除快照：") + sn.name);
+      sl.appendChild(div);
+    });
+    restoreFocus(sl, focus);
+    const mons = state.monitors || [];
+    document.getElementById('swapHeading').style.display = mons.length >= 2 ? '' : 'none';
+    document.getElementById('swapCard').style.display = mons.length >= 2 ? '' : 'none';
+    const opts = mons.map(m => `<option value="${esc(m.id)}">${esc(m.label)}</option>`).join('');
+    const a = document.getElementById('swapA'), b = document.getElementById('swapB');
+    if (a.innerHTML !== opts) { a.innerHTML = opts; b.innerHTML = opts; if (mons.length >= 2) b.selectedIndex = 1; }
+    const bl = document.getElementById('backupList');
+    const backupFocus = focusBookmark(bl);
+    const backups = state.backups || [];
+    bl.innerHTML = backups.length ? '' : `<div class="card"><div class="s">${esc(t("尚无每日备份"))}</div></div>`;
+    backups.forEach(bk => {
+      const div = document.createElement('div');
+      div.className = 'card';
+      div.dataset.rowId = bk.path;
+      div.innerHTML = `<div class="l"><span class="ic" aria-hidden="true">&#xE787;</span><div><div class="t">${esc(bk.name)}</div><div class="s">${esc(t("每日自动备份"))}</div></div></div>
+        <div class="actions"><button data-act="restore">${esc(t("恢复"))}</button></div>`;
+      div.querySelector('[data-act=restore]').onclick = () => send({ type: 'action', name: 'restoreBackup', path: bk.path });
+      div.querySelector('[data-act=restore]').setAttribute('aria-label', t("恢复备份：") + bk.name);
+      bl.appendChild(div);
+    });
+    restoreFocus(bl, backupFocus);
+  }
+  document.getElementById('openCfg').onclick = () => send({ type: 'action', name: 'openConfigFolder' });
+  document.getElementById('repairIcons').onclick = () => send({ type: 'action', name: 'repairIcons' });
+  document.getElementById('hideIconsAgain').onclick = () => send({ type: 'action', name: 'hideDesktopIcons' });
+  function renderDesktopIconsStatus() {
+    const hidden = !!(state.desktopIconsHidden ?? state.settings.hideRealIcons);
+    document.getElementById('hideIconsAgain').disabled = hidden && !!state.settings.hideRealIcons;
+    document.getElementById('desktopIconsStatus').textContent = hidden
+      ? t("Windows 桌面图标已隐藏，项目显示在栅栏中。需要时可恢复显示。")
+      : t("Windows 桌面图标已显示。点击“重新隐藏桌面图标”可回到只在栅栏中显示的状态。");
+  }
+
+  let toastTimer;
+  function toast(t, error = false) { const el = document.getElementById('toast'); document.getElementById('toastText').textContent = t; el.classList.toggle('error', error); el.classList.add('on'); clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove('on'), error ? 5000 : 2400); }
+
+  function renderWorkspaceSummary(fenceCount, itemCount) {
+    document.getElementById('workspaceSummary').textContent = tf("{0} 个栅栏 · {1} 个项目", fenceCount, itemCount);
+    document.getElementById('memDetail').textContent = tf("当前占用内存 {0} MB，{1} 个栅栏，{2} 个项目。", state.memoryMb.toFixed(1), fenceCount, itemCount);
+  }
+
+  if (wv) wv.addEventListener('message', e => {
+    const m = e.data;
+    if (m.type === 'state') {
+      state = m;
+      state.settings.language ||= 'zh-CN';
+      const languageChanged = i18n.set(m.locale || 'zh-CN', m.translations);
+      translateStatic();
+      if (languageChanged) {
+        // Replace only checkbox captions, preserving in-progress rule input.
+        for (const [id, labels] of [['nrCats', CATS()], ['nrWeek', WEEKDAYS()]]) {
+          document.querySelectorAll('#' + id + ' label').forEach((label, index) => {
+            const input = label.querySelector('input');
+            if (input && labels[index]) label.replaceChildren(input, document.createTextNode(labels[index][1]));
+          });
+        }
+        document.getElementById('iconTint').setAttribute('aria-label', t("图标着色"));
+        document.getElementById('iconTintStrength').setAttribute('aria-label', t("图标着色强度"));
+      }
+      state.settings.themeStyle ||= 'fluent';
+      document.documentElement.classList.toggle('light', m.themeMode === 'light');
+      if (m.accent) {
+        document.documentElement.style.setProperty('--accent', m.accent);
+        document.documentElement.style.setProperty('--accent-hover', m.accent + 'E6');
+      }
+      document.getElementById('ver').textContent = 'v' + m.version;
+      renderWorkspaceSummary(m.fences.length, m.itemCount);
+      document.getElementById('cfgPath').textContent = m.configPath;
+      bindAll(); bindIconTint(); renderFences(); renderRules(); renderLayout(); updateKind(); renderAppearance(); renderDesktopIconsStatus();
+    } else if (m.type === 'workspaceSummary') {
+      if (!state) return;
+      state.itemCount = m.itemCount;
+      renderWorkspaceSummary(m.fenceCount, m.itemCount);
+    } else if (m.type === 'showFence') showFence(m.id);
+    else if (m.type === 'toast') toast(m.text, !!m.error);
+  });
+  send({ type: 'ready' });
+})();
+</script>
+</body>
+</html>

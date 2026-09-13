@@ -1,0 +1,56 @@
+{
+  "domain": "pecofence.jiang.jp",
+  "repository": "https://github.com/DayuanJiang/PecoFence",
+  "languages": [
+    {
+      "code": "en",
+      "name": "English",
+      "dir": ""
+    },
+    {
+      "code": "zh-CN",
+      "name": "简体中文",
+      "dir": "zh-CN/"
+    },
+    {
+      "code": "zh-TW",
+      "name": "繁體中文",
+      "dir": "zh-TW/"
+    },
+    {
+      "code": "ja",
+      "name": "日本語",
+      "dir": "ja/"
+    },
+    {
+      "code": "ko",
+      "name": "한국어",
+      "dir": "ko/"
+    },
+    {
+      "code": "de",
+      "name": "Deutsch",
+      "dir": "de/"
+    },
+    {
+      "code": "fr",
+      "name": "Français",
+      "dir": "fr/"
+    },
+    {
+      "code": "es",
+      "name": "Español",
+      "dir": "es/"
+    },
+    {
+      "code": "pt-BR",
+      "name": "Português (Brasil)",
+      "dir": "pt-BR/"
+    },
+    {
+      "code": "ru",
+      "name": "Русский",
+      "dir": "ru/"
+    }
+  ]
+}

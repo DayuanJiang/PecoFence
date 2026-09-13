@@ -1,0 +1,62 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/core",
+    "crates/platform",
+    "crates/render",
+    "crates/app",
+    "crates/watchdog",
+    "tools/bindgen",
+]
+
+[workspace.package]
+version = "0.0.1"
+edition = "2024"
+rust-version = "1.95"
+license = "MIT"
+
+[workspace.dependencies]
+windows-core = "0.100"
+windows-numerics = "0.100"
+windows-window = "0.100"
+windows-canvas = { version = "0.100", features = ["composition"] }
+windows-composition = { version = "0.100", features = ["system"] }
+windows-webview = "0.100"
+windows-bindgen = "0.100"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+uuid = { version = "1", features = ["v4", "serde"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "warn"
+
+[workspace.lints.clippy]
+undocumented_unsafe_blocks = "allow"
+too_many_arguments = "allow"
+manual_range_contains = "allow"
+type_complexity = "allow"
+collapsible_if = "allow"
+len_without_is_empty = "allow"
+manual_slice_size_calculation = "allow"
+manual_div_ceil = "allow"
+
+# Vendored copy of the upstream 0.100.0 crate with two additions (`Visual::as_raw`,
+# `Compositor::as_raw` on the `system` stack) so `crates/render` can reach Composition APIs the
+# wrapper does not expose. Drop the patch once upstream ships an equivalent accessor.
+[patch.crates-io]
+windows-composition = { path = "vendor/windows-composition" }
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+# Symbols stay in the .pdb next to the exe (not shipped) so a crash offset from WER or
+# platform::crashlog can be symbolized after the fact; the exe itself carries no debug info.
+strip = false
+debug = "line-tables-only"
+
+[profile.dev]
+opt-level = 1

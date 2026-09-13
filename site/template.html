@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="{{lang}}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{t:meta.title}}</title>
+<meta name="description" content="{{t:meta.description}}">
+<link rel="canonical" href="{{canonical}}">
+{{alternates}}
+<meta property="og:type" content="website">
+<meta property="og:title" content="{{t:meta.title}}">
+<meta property="og:description" content="{{t:meta.description}}">
+<meta property="og:url" content="{{canonical}}">
+<meta property="og:image" content="{{origin}}/assets/hero-{{lang}}.png">
+<meta property="og:locale" content="{{og_locale}}">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="theme-color" content="#0b1b31">
+<link rel="icon" href="{{root}}assets/mark.svg" type="image/svg+xml">
+<link rel="stylesheet" href="{{root}}assets/site.css">
+</head>
+<body>
+
+<main id="top">
+  <header class="masthead">
+    <a class="brand" href="{{root}}"><img src="{{root}}assets/mark.svg" alt="" width="34" height="34"><span>PecoFence</span></a>
+  </header>
+
+  <section class="hero">
+    <div class="hero-copy">
+      <h1>{{t:hero.headline}}</h1>
+      <p class="lede">{{t:hero.text}}</p>
+      <p class="actions">
+        <a class="button primary" href="{{releases}}">{{t:hero.download}}</a>
+        <a class="button" href="{{repository}}">{{t:hero.github}}</a>
+      </p>
+      <p class="note">{{t:hero.download_note}}</p>
+    </div>
+    <figure class="desk" aria-label="{{t:hero.panels_alt}}">
+      <img class="panel p0" src="{{root}}assets/panel-0.png" alt="" width="640" height="448" fetchpriority="high">
+      <img class="panel p1" src="{{root}}assets/panel-1.png" alt="" width="640" height="448">
+      <img class="panel p2" src="{{root}}assets/panel-2.png" alt="" width="640" height="448">
+      <figcaption>{{t:hero.caption}}</figcaption>
+    </figure>
+  </section>
+
+  <section id="watch" class="section watch">
+    <div class="fence">
+      <div class="fence-title"><h2>{{t:watch.title}}</h2></div>
+      <video controls preload="none" playsinline poster="{{root}}assets/promo.jpg" width="1280" height="720">
+        <source src="{{root}}assets/promo.mp4" type="video/mp4">
+      </video>
+      <div class="fence-body"><p class="small">{{t:watch.text}}</p></div>
+    </div>
+  </section>
+
+  <section id="features" class="section">
+    <h2>{{t:features.heading}}</h2>
+    <p class="intro">{{t:features.intro}}</p>
+    <div class="fences clips">
+{{features}}
+    </div>
+  </section>
+
+  <section id="details" class="section">
+    <div class="fence wide">
+      <div class="fence-title"><h2>{{t:details.heading}}</h2></div>
+      <dl class="details">
+{{details}}
+      </dl>
+    </div>
+  </section>
+
+  <section id="languages" class="section">
+    <div class="fence wide">
+      <div class="fence-title"><h2>{{t:languages.heading}}</h2></div>
+      <div class="fence-body languages">
+        <ul class="language-list">
+{{language_links}}
+        </ul>
+        <p>{{t:languages.text}}</p>
+        <p><a href="{{readme}}">{{t:languages.readme}}</a></p>
+      </div>
+    </div>
+  </section>
+
+  <section id="download" class="section">
+    <h2>{{t:download.heading}}</h2>
+    <div class="fences two">
+      <div class="fence">
+        <div class="fence-title"><span>{{t:download.steps_title}}</span></div>
+        <div class="fence-body">
+          <ol class="steps">
+            <li>{{raw:download.step1}}</li>
+            <li>{{raw:download.step2}}</li>
+            <li>{{raw:download.step3}}</li>
+          </ol>
+          <p class="actions"><a class="button primary" href="{{releases}}">{{t:download.button}}</a></p>
+          <p class="small">{{t:download.first_run}}</p>
+        </div>
+      </div>
+      <div class="fence">
+        <div class="fence-title"><span>{{t:download.requirements_heading}}</span></div>
+        <div class="fence-body">
+          <ul class="plain">
+            <li>{{raw:download.req1}}</li>
+            <li>{{raw:download.req2}}</li>
+            <li>{{raw:download.req3}}</li>
+            <li>{{raw:download.req4}}</li>
+          </ul>
+          <p class="small"><a href="{{docs}}/PORTABLE.md">{{t:download.portable}}</a><br><a href="{{docs}}/UPGRADING.md">{{t:download.upgrade}}</a></p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer class="footer">
+    <p class="tagline">{{t:footer.tagline}}</p>
+    <ul class="footer-links">
+      <li><a href="{{repository}}">{{t:footer.source}}</a></li>
+      <li><a href="{{docs}}/README.md">{{t:footer.docs}}</a></li>
+      <li><a href="{{repository}}/issues">{{t:footer.issues}}</a></li>
+      <li><a href="{{repository}}/blob/main/CONTRIBUTING.md">{{t:footer.contribute}}</a></li>
+      <li><a href="{{repository}}/blob/main/LICENSE">{{t:footer.license}}</a></li>
+      <li><a href="{{repository}}/blob/main/third_party/README.md">{{t:footer.notices}}</a></li>
+    </ul>
+    <p class="small">© {{year}} {{t:footer.copyright}}</p>
+  </footer>
+</main>
+
+<nav class="taskbar" aria-label="Site">
+  <a class="taskbar-brand" href="#top"><img src="{{root}}assets/mark.svg" alt="PecoFence" width="26" height="26"></a>
+  <div class="taskbar-links">
+    <a href="#features">{{t:nav.features}}</a>
+    <a href="#download">{{t:nav.download}}</a>
+    <a href="{{docs}}/README.md">{{t:nav.docs}}</a>
+    <a href="{{repository}}">{{t:nav.github}}</a>
+  </div>
+  <div class="tray">
+    <label class="lang">
+      <span class="visually-hidden">{{t:nav.language}}</span>
+      <svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="6.3"/><path d="M1.7 8h12.6M8 1.7c-2.2 2.2-2.2 10.4 0 12.6M8 1.7c2.2 2.2 2.2 10.4 0 12.6"/></svg>
+      <select id="language-select">
+{{language_options}}
+      </select>
+    </label>
+  </div>
+</nav>
+
+<script src="{{root}}assets/site.js" defer></script>
+</body>
+</html>

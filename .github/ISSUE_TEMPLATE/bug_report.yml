@@ -1,0 +1,22 @@
+name: Bug report
+description: Report a reproducible problem in PecoFence
+body:
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: PecoFence version, Windows build, display scaling and interface language
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: What did you do, what happened, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Optional diagnostics
+      description: Relevant log excerpts or screenshots. Remove personal filenames and paths before sharing.

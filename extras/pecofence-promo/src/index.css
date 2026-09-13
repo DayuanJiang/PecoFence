@@ -1,0 +1,7 @@
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  font-family: "Segoe UI Variable", "Segoe UI", Arial, sans-serif;
+  color: #142338;
+  -webkit-font-smoothing: antialiased;
+}
