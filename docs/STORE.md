@@ -32,6 +32,14 @@ Local install test: import `dist/pecofence-test-signing.cer` into
 `Add-AppxPackage dist/pecofence-<version>-x64-testsigned.msix`. Exit the running
 PecoFence first; both builds share the single-instance mutex.
 
+## Certification notes
+
+- Submission 1 (2026-09-14) failed policy 10.2.4.1 because the binaries imported
+  `VCRUNTIME140.dll` from the Visual C++ Redistributable. `.cargo/config.toml` now links
+  the MSVC runtime statically (`+crt-static`); verify with a dependency scan before
+  uploading that only `api-ms-win-crt-*` (Universal CRT, part of Windows) and system DLLs
+  remain.
+
 ## Behavior differences in the packaged build
 
 - Autostart: HKCU writes are virtualized inside the package, so the Run-key code is
