@@ -134,16 +134,19 @@ impl FenceViewState {
                         std::slice::from_ref(&t),
                     ));
                 }
-                if !it.is_folder {
+                // Namespace items (Recycle Bin, ...) have neither a size nor a date.
+                if !pecofence_platform::shell::is_namespace_path(&it.path) {
+                    if !it.is_folder {
+                        s.push_str(&pecofence_core::i18n::format(
+                            "\n大小: {0}",
+                            &[fileinfo::format_size_kb(it.size, false).to_string()],
+                        ));
+                    }
                     s.push_str(&pecofence_core::i18n::format(
-                        "\n大小: {0}",
-                        &[fileinfo::format_size_kb(it.size, false).to_string()],
+                        "\n修改日期: {0}",
+                        &[fileinfo::format_local_datetime(it.mtime).to_string()],
                     ));
                 }
-                s.push_str(&pecofence_core::i18n::format(
-                    "\n修改日期: {0}",
-                    &[fileinfo::format_local_datetime(it.mtime).to_string()],
-                ));
                 Some(s)
             }
         }

@@ -340,7 +340,7 @@
   "把一个显示器上的全部栅栏搬到另一个，反之亦然": "Exchange all fences between the selected displays",
   "导出为 JSON 以便迁移到另一台电脑；导入前会自动保存一份快照": "Export JSON to move settings to another PC; a snapshot is saved before import",
   "登录后自动运行 PecoFence": "Run PecoFence automatically after sign-in",
-  "桌面项目只显示在栅栏里，未归类的进入“桌面”栅栏": "Show desktop items in fences; unassigned items go to the Desktop fence",
+  "桌面项目只显示在栅栏里，未归类的进入“桌面”栅栏；回收站等系统图标也会出现在“桌面”栅栏中": "Show desktop items in fences; unassigned items go to the Desktop fence, and system icons such as the Recycle Bin appear there too",
   "再次双击恢复显示": "Double-click again to show",
   "保持栅栏可见，或随桌面一起隐藏": "Keep fences visible or hide them with the desktop",
   "新项目出现在桌面时自动归类": "Automatically organize new desktop items",

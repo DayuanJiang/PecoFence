@@ -113,7 +113,13 @@ impl App {
             tracing::info!(reason, "desktop folder is back");
             self.desktop_unavailable = false;
         }
-        let entries = shell::enumerate_desktop();
+        let mut entries = shell::enumerate_desktop();
+        // With the real icons hidden, the Recycle Bin and the other special desktop items would
+        // be unreachable: surface the ones Windows shows inside the inbox fence. When the
+        // setting is off they drop out of the listing and are orphaned (hidden) at once.
+        if self.state.config.settings.hide_real_icons && !self.no_hide_icons {
+            entries.extend(shell::enumerate_special_desktop_items());
+        }
         let report = self.state.sync_desktop(&entries);
         tracing::debug!(reason, items = entries.len(), ?report, "desktop synced");
         report

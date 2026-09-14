@@ -455,6 +455,7 @@
     // ---- theme detection
     RegGetValueW
     HKEY_CURRENT_USER
+    HKEY_LOCAL_MACHINE
     RRF_RT_REG_DWORD
     RegNotifyChangeKeyValue
     RegOpenKeyExW
@@ -732,8 +733,34 @@
     // ---- details view: type names, local date/time formatting
     SHGetFileInfoW
     SHFILEINFOW
+    SHQueryRecycleBinW
+    SHQUERYRBINFO
+    GetLogicalDrives
+    GetDriveTypeW
+    DRIVE_FIXED
+
+    // ---- shell change notifications (Recycle Bin state, desktop namespace)
+    SHChangeNotifyRegister
+    SHChangeNotifyDeregister
+    SHChangeNotifyEntry
+    SHCNRF_ShellLevel
+    SHCNRF_NewDelivery
+    SHCNE_UPDATEDIR
+    SHCNE_UPDATEITEM
+    SHCNE_UPDATEIMAGE
+    SHCNE_CREATE
+    SHCNE_DELETE
+    SHCNE_MKDIR
+    SHCNE_RMDIR
+    SHCNE_RENAMEITEM
+    SHCNE_RENAMEFOLDER
+    SHCNE_ATTRIBUTES
+    SHCNE_ASSOCCHANGED
+    SHChangeNotification_Lock
+    SHChangeNotification_Unlock
     SHGFI_TYPENAME
     SHGFI_USEFILEATTRIBUTES
+    SHGFI_PIDL
     FILE_ATTRIBUTE_NORMAL
     FILETIME
     SYSTEMTIME

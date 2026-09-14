@@ -1,7 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.0.2
 
+- While Windows desktop icons are hidden, the special desktop items the user has enabled in Windows (Recycle Bin, This PC, User's Files, Network, Control Panel) appear in the Desktop fence: double-click opens them, the shell context menu works (Empty Recycle Bin, Properties), files dropped on the Recycle Bin are recycled, and the Recycle Bin icon follows its contents (also when files are recycled from elsewhere).
+- Version bump for the Microsoft Store resubmission; package identity requires a new version per upload.
+- Executables link the C runtime statically; the Visual C++ Redistributable is no longer required (Store policy 10.2.4.1).
 - License changed from MIT to the Apache License 2.0; a NOTICE file accompanies the LICENSE.
 
 ## 0.0.1

@@ -174,6 +174,10 @@ impl App {
         let Some(it) = self.state.item(item) else {
             return;
         };
+        if it.is_namespace() {
+            // The Recycle Bin and friends have no file to rename.
+            return;
+        }
         let current = it.display_name.clone();
         let select_end = crate::rename::rename_select_len(
             &current,
@@ -217,6 +221,9 @@ impl App {
 
     /// Renames the file behind an item to `name` (+ the hidden extension Explorer would keep).
     pub(super) fn rename_item_file(&mut self, item: ItemId, name: &str) {
+        if self.state.item(item).is_some_and(|it| it.is_namespace()) {
+            return;
+        }
         let name = name.trim();
         if name.is_empty()
             || name
@@ -302,6 +309,17 @@ impl App {
         }
     }
 
+    /// The selection's paths for the shell; see [`shell::paths_for_shell`].
+    pub(super) fn shell_paths_of(&self, items: &[ItemId]) -> Vec<PathBuf> {
+        shell::paths_for_shell(
+            items
+                .iter()
+                .filter_map(|id| self.state.item(*id))
+                .filter_map(|it| it.key.as_path().map(PathBuf::from))
+                .collect(),
+        )
+    }
+
     /// Runs one of the shell's canonical verbs (`delete`, `cut`, `copy`, `properties`) on the
     /// selection as if picked from Explorer's menu. `shift` = Shift held (permanent delete).
     pub(super) fn shell_verb_on_items(
@@ -311,11 +329,12 @@ impl App {
         verb: &str,
         shift: bool,
     ) -> bool {
-        let paths: Vec<PathBuf> = items
-            .iter()
-            .filter_map(|id| self.state.item(*id))
-            .filter_map(|it| it.key.as_path().map(PathBuf::from))
-            .collect();
+        let mut paths = self.shell_paths_of(items);
+        if matches!(verb, "delete" | "cut" | "copy") {
+            // The Recycle Bin cannot be deleted, cut or copied, and the other special items
+            // only pretend to (their "delete" hides the desktop icon): leave them to Windows.
+            paths.retain(|p| !shell::is_namespace_path(p));
+        }
         if paths.is_empty() {
             return false;
         }
@@ -483,9 +502,11 @@ impl App {
     /// as source or target means a real file move (portal = folder view).
     pub(super) fn move_items(&mut self, items: &[ItemId], to: FenceId) {
         if self.state.portal_path(to).is_some() {
+            // Namespace items cannot be moved into a folder; they stay where they are.
             let paths: Vec<PathBuf> = items
                 .iter()
                 .filter_map(|id| self.state.item(*id))
+                .filter(|it| !it.is_namespace())
                 .filter_map(|it| it.key.as_path().map(PathBuf::from))
                 .collect();
             self.move_files_into_portal(paths, to);

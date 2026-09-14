@@ -110,6 +110,13 @@ impl App {
         if paths.is_empty() {
             return;
         }
+        if shell::is_recycle_bin_path(&dest) {
+            // Only a move recycles; the fence window already clamps the effect to Move.
+            if mode == TransferMode::Move {
+                self.recycle_paths(paths, owner_fence);
+            }
+            return;
+        }
         if mode == TransferMode::Link {
             let made = self.create_shortcuts_in(&paths, &dest);
             tracing::info!(count = made.len(), dest = %dest.display(), "shortcuts placed into folder");
@@ -132,6 +139,26 @@ impl App {
                 sources: paths,
             },
         });
+    }
+
+    /// Files dropped on the Recycle Bin item: the shell's `delete` verb, as when dropping on
+    /// Explorer's own bin (its confirmation dialog; Shift held = permanent).
+    fn recycle_paths(&mut self, paths: Vec<PathBuf>, owner_fence: FenceId) {
+        let owner = self
+            .window_for(owner_fence)
+            .map(|w| w.hwnd())
+            .unwrap_or(self.control.hwnd());
+        let refs: Vec<&Path> = paths.iter().map(|p| p.as_path()).collect();
+        let permanent = window::key_down(msg::VK_SHIFT);
+        match ShellContextMenu::for_paths(&refs)
+            .and_then(|mut m| m.invoke_verb("delete", owner, window::cursor_pos(), permanent))
+        {
+            Ok(true) => {
+                tracing::info!(count = paths.len(), permanent, "dropped on the Recycle Bin")
+            }
+            Ok(false) => tracing::warn!("the shell offers no delete verb for the dropped files"),
+            Err(e) => tracing::warn!(error = %e, "recycling dropped files failed"),
+        }
     }
 
     /// Browser link dropped on a fence: write the Internet Shortcut Explorer would write and file

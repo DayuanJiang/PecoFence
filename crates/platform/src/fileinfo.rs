@@ -6,26 +6,51 @@ use crate::wide::to_wide;
 use std::path::Path;
 use windows_core::{PCWSTR, PWSTR};
 
-/// Explorer's "类型" column text for a path. Uses the extension/registry only
-/// (`SHGFI_USEFILEATTRIBUTES`), so it never touches the disk and is cheap enough for the UI
-/// thread. Folders report the shell's folder type name.
+/// Explorer's "类型" column text for a path. Files use the extension/registry only
+/// (`SHGFI_USEFILEATTRIBUTES`), so the disk is never touched and the call is cheap enough for
+/// the UI thread. Folders report the shell's folder type name. Namespace items (`::{CLSID}`)
+/// are parsed to an id list first: the shell does not resolve their names by string here.
 pub fn type_name(path: &Path, is_folder: bool) -> Option<String> {
     let w = to_wide(&path.to_string_lossy());
     let mut info = SHFILEINFOW::default();
-    let attrs = if is_folder {
-        FILE_ATTRIBUTE_DIRECTORY as u32
+    let ok = if crate::shell::is_namespace_path(path) {
+        let mut pidl: LPITEMIDLIST = std::ptr::null_mut();
+        // SAFETY: the string outlives the call; the id list is freed below.
+        let hr =
+            unsafe { SHParseDisplayName(PCWSTR(w.as_ptr()), None, &mut pidl, SFGAOF(0), None) };
+        if hr.is_err() || pidl.is_null() {
+            return None;
+        }
+        // SAFETY: with SHGFI_PIDL the first argument is the id list; `info` is a live
+        // out-struct of the declared size.
+        let ok = unsafe {
+            SHGetFileInfoW(
+                PCWSTR(pidl.cast()),
+                0,
+                Some(&mut info),
+                size_of::<SHFILEINFOW>() as u32,
+                (SHGFI_TYPENAME | SHGFI_PIDL) as u32,
+            )
+        };
+        // SAFETY: the id list came from SHParseDisplayName.
+        unsafe { ILFree(Some(pidl)) };
+        ok
     } else {
-        FILE_ATTRIBUTE_NORMAL as u32
-    };
-    // SAFETY: the string outlives the call; `info` is a live out-struct of the declared size.
-    let ok = unsafe {
-        SHGetFileInfoW(
-            PCWSTR(w.as_ptr()),
-            attrs,
-            Some(&mut info),
-            size_of::<SHFILEINFOW>() as u32,
-            (SHGFI_TYPENAME | SHGFI_USEFILEATTRIBUTES) as u32,
-        )
+        let attrs = if is_folder {
+            FILE_ATTRIBUTE_DIRECTORY as u32
+        } else {
+            FILE_ATTRIBUTE_NORMAL as u32
+        };
+        // SAFETY: the string outlives the call; `info` is a live out-struct of the declared size.
+        unsafe {
+            SHGetFileInfoW(
+                PCWSTR(w.as_ptr()),
+                attrs,
+                Some(&mut info),
+                size_of::<SHFILEINFOW>() as u32,
+                (SHGFI_TYPENAME | SHGFI_USEFILEATTRIBUTES) as u32,
+            )
+        }
     };
     if ok == 0 {
         return None;

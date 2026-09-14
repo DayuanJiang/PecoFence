@@ -3,7 +3,7 @@
 use crate::anchor::{self, AnchorCell, DesktopAnchor, ShowDesktopBehavior, ZMode};
 use crate::commands::{
     Command, CommandQueue, TransferMode, WM_APP_COMMAND, WM_APP_FRAME, WM_APP_FS_CHANGED,
-    WM_APP_PEEK_FOCUSED, WM_APP_TRAY, WM_APP_WALLPAPER,
+    WM_APP_PEEK_FOCUSED, WM_APP_SHELL_CHANGED, WM_APP_TRAY, WM_APP_WALLPAPER,
 };
 use crate::fence_window::{
     BackdropMode, BackdropSets, Behavior, FenceContext, FenceWindow, ItemView, TabView,
@@ -23,6 +23,7 @@ use pecofence_platform::frameclock::FrameClock;
 use pecofence_platform::hotkey;
 use pecofence_platform::shell;
 use pecofence_platform::shell_menu::ShellContextMenu;
+use pecofence_platform::shell_notify::ShellChangeWatch;
 use pecofence_platform::sysparams;
 use pecofence_platform::tray::{self, PopupMenu, TrayIcon};
 use pecofence_platform::watcher::{DirWatcher, FsEvent};
@@ -149,6 +150,9 @@ pub struct App {
     queue: CommandQueue,
     tray: Option<TrayIcon>,
     _watchers: Vec<DirWatcher>,
+    /// Shell change notifications for the Recycle Bin and the desktop namespace, which no
+    /// folder watcher sees (`None` when the shell refused the registration).
+    _shell_watch: Option<ShellChangeWatch>,
     /// One watcher per folder-portal fence on the folder it currently shows (kept in sync by
     /// `ensure_portal_watchers`; navigating swaps the watcher).
     portal_watchers: HashMap<FenceId, (PathBuf, DirWatcher)>,
@@ -290,7 +294,13 @@ impl App {
                             }
                             Some(0)
                         }
-                        WM_APP_FS_CHANGED => {
+                        WM_APP_FS_CHANGED | WM_APP_SHELL_CHANGED => {
+                            if message == WM_APP_SHELL_CHANGED {
+                                // The shell's own notice (Recycle Bin filled or emptied, a
+                                // desktop namespace item toggled): release its payload and
+                                // treat it like a folder change.
+                                ShellChangeWatch::release(wparam, lparam);
+                            }
                             // Explorer reacts to a folder change within a frame or two; a file
                             // the shell just moved onto the desktop (drag-out from a portal)
                             // must be filed as fast. Coalesce for one short window, never
@@ -646,6 +656,10 @@ impl App {
             }
         }
 
+        let shell_watch = ShellChangeWatch::register_desktop(control.hwnd(), WM_APP_SHELL_CHANGED)
+            .map_err(|e| tracing::warn!(error = %e, "shell change notifications unavailable"))
+            .ok();
+
         let settings_class = SettingsHost::register_class()?;
         let peek_class = PeekOverlay::register_class()?;
 
@@ -658,6 +672,7 @@ impl App {
             queue,
             tray,
             _watchers: watchers,
+            _shell_watch: shell_watch,
             portal_watchers: HashMap::new(),
             fs_pending,
             fileops_done: Arc::new(Mutex::new(Vec::new())),
@@ -835,10 +850,16 @@ impl App {
         if self.state.is_dirty() {
             self.state.save_if_dirty();
         }
-        if self.desktop_unavailable && shell::desktop_available() {
+        // While the special desktop items are shown, re-read them once a minute as well: a
+        // change in Windows' own "Desktop icon settings" leaves no folder event behind, and the
+        // shell notification channel may be unavailable.
+        let special_items_shown = self.state.config.settings.hide_real_icons && !self.no_hide_icons;
+        if (self.desktop_unavailable && shell::desktop_available()) || special_items_shown {
             let report = self.sync_desktop_if_available("housekeeping");
             if report.changed() {
                 self.refresh_all();
+                self.schedule_save();
+                self.push_workspace_summary();
             }
         }
         let changed_dpi: Vec<FenceId> = self
@@ -867,6 +888,7 @@ impl App {
                 );
                 self.state.config.settings.hide_real_icons = false;
                 self.settings_mutated();
+                self.desktop_icons_setting_changed();
                 if let Some(t) = &self.tray {
                     t.show_info(
                         "PecoFence",

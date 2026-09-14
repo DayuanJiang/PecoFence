@@ -221,7 +221,8 @@ pub(super) fn on_mousemove(
             v.selected.insert(item);
         }
         let ids = v.selected_ids();
-        let paths = v.selected_paths();
+        // A Recycle Bin dragged together with files would empty the CF_HDROP for every target.
+        let paths = pecofence_platform::shell::paths_for_shell(v.selected_paths());
         let from = v.active;
         let from_portal = v.is_portal;
         v.ole_drag = true;

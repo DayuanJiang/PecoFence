@@ -565,14 +565,14 @@ impl FenceViewState {
             }
             if details {
                 if item.date_label.is_none() {
-                    item.date_label = Some(fileinfo::format_local_datetime(item.mtime));
+                    item.date_label = Some(item.date_text());
                 }
                 if item.type_label.is_none() {
                     item.type_label =
                         Some(fileinfo::type_name(&item.path, item.is_folder).unwrap_or_default());
                 }
                 if item.size_label.is_none() {
-                    item.size_label = Some(fileinfo::format_size_kb(item.size, item.is_folder));
+                    item.size_label = Some(item.size_text());
                 }
             }
         }

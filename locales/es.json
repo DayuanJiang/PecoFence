@@ -340,7 +340,7 @@
   "把一个显示器上的全部栅栏搬到另一个，反之亦然": "Intercambiar todos los grupos entre las pantallas elegidas",
   "导出为 JSON 以便迁移到另一台电脑；导入前会自动保存一份快照": "Exportar JSON para otro PC; se guarda una instantánea antes de importar",
   "登录后自动运行 PecoFence": "Ejecutar PecoFence automáticamente al iniciar sesión",
-  "桌面项目只显示在栅栏里，未归类的进入“桌面”栅栏": "Mostrar elementos en grupos; los no clasificados van al grupo Escritorio",
+  "桌面项目只显示在栅栏里，未归类的进入“桌面”栅栏；回收站等系统图标也会出现在“桌面”栅栏中": "Mostrar los elementos del escritorio solo en grupos; los no clasificados van al grupo «Escritorio», igual que iconos del sistema como la Papelera de reciclaje",
   "再次双击恢复显示": "Doble clic de nuevo para mostrar",
   "保持栅栏可见，或随桌面一起隐藏": "Mantener los grupos visibles u ocultarlos con el escritorio",
   "新项目出现在桌面时自动归类": "Organizar automáticamente nuevos elementos del escritorio",

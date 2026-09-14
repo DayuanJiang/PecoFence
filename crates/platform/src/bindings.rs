@@ -658,6 +658,14 @@ pub unsafe fn GetDpiForWindow(hwnd: HWND) -> u32 {
     unsafe { GetDpiForWindow(hwnd) }
 }
 #[inline]
+pub unsafe fn GetDriveTypeW<P0>(lprootpathname: P0) -> u32
+where
+    P0: windows_core::Param<windows_core::PCWSTR>,
+{
+    windows_core::link!("kernel32.dll" "system" fn GetDriveTypeW(lprootpathname : windows_core::PCWSTR) -> u32);
+    unsafe { GetDriveTypeW(lprootpathname.param().abi()) }
+}
+#[inline]
 pub unsafe fn GetExitCodeProcess(hprocess: HANDLE, lpexitcode: *mut u32) -> windows_core::BOOL {
     windows_core::link!("kernel32.dll" "system" fn GetExitCodeProcess(hprocess : HANDLE, lpexitcode : *mut u32) -> windows_core::BOOL);
     unsafe { GetExitCodeProcess(hprocess, lpexitcode as _) }
@@ -694,6 +702,11 @@ pub unsafe fn GetKeyboardLayout(idthread: u32) -> HKL {
 pub unsafe fn GetLastError() -> u32 {
     windows_core::link!("kernel32.dll" "system" fn GetLastError() -> u32);
     unsafe { GetLastError() }
+}
+#[inline]
+pub unsafe fn GetLogicalDrives() -> u32 {
+    windows_core::link!("kernel32.dll" "system" fn GetLogicalDrives() -> u32);
+    unsafe { GetLogicalDrives() }
 }
 #[inline]
 pub unsafe fn GetMenuItemCount(hmenu: Option<HMENU>) -> i32 {
@@ -1471,6 +1484,45 @@ where
     }
 }
 #[inline]
+pub unsafe fn SHChangeNotification_Lock(
+    hchange: HANDLE,
+    dwprocid: u32,
+    pppidl: *mut *mut LPITEMIDLIST,
+    plevent: Option<*mut i32>,
+) -> HANDLE {
+    windows_core::link!("shell32.dll" "system" fn SHChangeNotification_Lock(hchange : HANDLE, dwprocid : u32, pppidl : *mut *mut LPITEMIDLIST, plevent : *mut i32) -> HANDLE);
+    unsafe {
+        SHChangeNotification_Lock(
+            hchange,
+            dwprocid,
+            pppidl as _,
+            plevent.unwrap_or(core::mem::zeroed()) as _,
+        )
+    }
+}
+#[inline]
+pub unsafe fn SHChangeNotification_Unlock(hlock: HANDLE) -> windows_core::BOOL {
+    windows_core::link!("shell32.dll" "system" fn SHChangeNotification_Unlock(hlock : HANDLE) -> windows_core::BOOL);
+    unsafe { SHChangeNotification_Unlock(hlock) }
+}
+#[inline]
+pub unsafe fn SHChangeNotifyDeregister(ulid: u32) -> windows_core::BOOL {
+    windows_core::link!("shell32.dll" "system" fn SHChangeNotifyDeregister(ulid : u32) -> windows_core::BOOL);
+    unsafe { SHChangeNotifyDeregister(ulid) }
+}
+#[inline]
+pub unsafe fn SHChangeNotifyRegister(
+    hwnd: HWND,
+    fsources: i32,
+    fevents: i32,
+    wmsg: u32,
+    centries: i32,
+    pshcne: *const SHChangeNotifyEntry,
+) -> u32 {
+    windows_core::link!("shell32.dll" "system" fn SHChangeNotifyRegister(hwnd : HWND, fsources : i32, fevents : i32, wmsg : u32, centries : i32, pshcne : *const SHChangeNotifyEntry) -> u32);
+    unsafe { SHChangeNotifyRegister(hwnd, fsources, fevents, wmsg, centries, pshcne) }
+}
+#[inline]
 pub unsafe fn SHCreateDefaultContextMenu<T>(pdcm: *const DEFCONTEXTMENU) -> windows_core::Result<T>
 where
     T: windows_core::Interface,
@@ -1661,6 +1713,17 @@ where
             psfgaoout.unwrap_or(core::mem::zeroed()) as _,
         )
     }
+}
+#[inline]
+pub unsafe fn SHQueryRecycleBinW<P0>(
+    pszrootpath: P0,
+    pshqueryrbinfo: *mut SHQUERYRBINFO,
+) -> windows_core::HRESULT
+where
+    P0: windows_core::Param<windows_core::PCWSTR>,
+{
+    windows_core::link!("shell32.dll" "system" fn SHQueryRecycleBinW(pszrootpath : windows_core::PCWSTR, pshqueryrbinfo : *mut SHQUERYRBINFO) -> windows_core::HRESULT);
+    unsafe { SHQueryRecycleBinW(pszrootpath.param().abi(), pshqueryrbinfo as _) }
 }
 #[inline]
 pub unsafe fn ScreenToClient(hwnd: HWND, lppoint: *mut POINT) -> windows_core::BOOL {
@@ -2769,6 +2832,7 @@ pub const DQTYPE_THREAD_CURRENT: DISPATCHERQUEUE_THREAD_TYPE = 2;
 pub const DQTYPE_THREAD_DEDICATED: DISPATCHERQUEUE_THREAD_TYPE = 1;
 pub const DRAGDROP_S_CANCEL: windows_core::HRESULT = windows_core::HRESULT(0x40101_u32 as _);
 pub const DRAGDROP_S_DROP: windows_core::HRESULT = windows_core::HRESULT(0x40100_u32 as _);
+pub const DRIVE_FIXED: i32 = 3;
 pub const DROPEFFECT_COPY: i32 = 1;
 pub const DROPEFFECT_LINK: i32 = 4;
 pub const DROPEFFECT_MOVE: i32 = 2;
@@ -3086,6 +3150,7 @@ pub struct HINSTANCE(pub *mut core::ffi::c_void);
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub struct HKEY(pub *mut core::ffi::c_void);
 pub const HKEY_CURRENT_USER: HKEY = HKEY(-2147483647 as _);
+pub const HKEY_LOCAL_MACHINE: HKEY = HKEY(-2147483646 as _);
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub struct HKL(pub *mut core::ffi::c_void);
@@ -14592,7 +14657,26 @@ pub const SEE_MASK_NOASYNC: i32 = 256;
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub struct SFGAOF(pub u32);
+pub const SHCNE_ASSOCCHANGED: i32 = 134217728;
+pub const SHCNE_ATTRIBUTES: i32 = 2048;
+pub const SHCNE_CREATE: i32 = 2;
+pub const SHCNE_DELETE: i32 = 4;
+pub const SHCNE_MKDIR: i32 = 8;
+pub const SHCNE_RENAMEFOLDER: i32 = 131072;
+pub const SHCNE_RENAMEITEM: i32 = 1;
+pub const SHCNE_RMDIR: i32 = 16;
+pub const SHCNE_UPDATEDIR: i32 = 4096;
+pub const SHCNE_UPDATEIMAGE: i32 = 32768;
+pub const SHCNE_UPDATEITEM: i32 = 8192;
+pub const SHCNRF_NewDelivery: i32 = 32768;
+pub const SHCNRF_ShellLevel: i32 = 2;
 pub type SHCONTF = u32;
+#[repr(C, packed(1))]
+#[derive(Clone, Copy, Default)]
+pub struct SHChangeNotifyEntry {
+    pub pidl: LPCITEMIDLIST,
+    pub fRecursive: windows_core::BOOL,
+}
 #[repr(C, packed(1))]
 #[cfg(target_arch = "x86")]
 #[derive(Clone, Copy)]
@@ -14752,6 +14836,7 @@ impl Default for SHFILEINFOW {
     }
 }
 pub type SHGDNF = u32;
+pub const SHGFI_PIDL: i32 = 8;
 pub const SHGFI_TYPENAME: i32 = 1024;
 pub const SHGFI_USEFILEATTRIBUTES: i32 = 16;
 #[repr(C, packed(1))]
@@ -14764,6 +14849,26 @@ impl Default for SHITEMID {
     fn default() -> Self {
         unsafe { core::mem::zeroed() }
     }
+}
+#[repr(C, packed(1))]
+#[cfg(target_arch = "x86")]
+#[derive(Clone, Copy, Default)]
+pub struct SHQUERYRBINFO {
+    pub cbSize: u32,
+    pub i64Size: i64,
+    pub i64NumItems: i64,
+}
+#[repr(C)]
+#[cfg(any(
+    target_arch = "aarch64",
+    target_arch = "arm64ec",
+    target_arch = "x86_64"
+))]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct SHQUERYRBINFO {
+    pub cbSize: u32,
+    pub i64Size: i64,
+    pub i64NumItems: i64,
 }
 pub type SIATTRIBFLAGS = u32;
 pub type SICHINTF = u32;

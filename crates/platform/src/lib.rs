@@ -43,6 +43,7 @@ pub mod rawinput;
 pub mod shell;
 pub mod shell_icons;
 pub mod shell_menu;
+pub mod shell_notify;
 pub mod sysparams;
 pub mod theme;
 pub mod tooltip;

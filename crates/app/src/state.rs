@@ -554,6 +554,10 @@ impl AppState {
     /// Rules only run automatically while "新项目出现在桌面时自动归类" is on; otherwise new
     /// items go to the inbox until the user applies the rules by hand.
     fn route_decision(&self, entry: &DesktopEntry) -> Decision {
+        // The Recycle Bin and friends are not files: they always live in the inbox ("桌面").
+        if entry.origin == EntryOrigin::Namespace {
+            return Decision::Default(Target::Inbox);
+        }
         if self.config.rules.keep_updated {
             self.config.rules.evaluate(&Self::facts_for(entry))
         } else {
@@ -617,6 +621,7 @@ impl AppState {
             origin: match entry.origin {
                 EntryOrigin::UserDesktop => Origin::UserDesktop,
                 EntryOrigin::PublicDesktop => Origin::PublicDesktop,
+                EntryOrigin::Namespace => Origin::Namespace,
             },
             is_hidden: false,
             is_system: false,
@@ -685,6 +690,7 @@ impl AppState {
                 origin: match entry.origin {
                     EntryOrigin::UserDesktop => Origin::UserDesktop,
                     EntryOrigin::PublicDesktop => Origin::PublicDesktop,
+                    EntryOrigin::Namespace => Origin::Namespace,
                 },
                 display_name,
                 file_id: None,
@@ -803,6 +809,10 @@ impl AppState {
                     .cmp(&std::cmp::Reverse(b.1.open_count))
                     .then_with(|| natural_cmp(&a.1.display_name, &b.1.display_name))
             }),
+        }
+        if fence.view.sort != SortMode::Manual {
+            // Explorer keeps the Recycle Bin and friends ahead of files whatever the order.
+            items.sort_by_key(|(_, it)| !it.is_namespace());
         }
         if fence.view.reverse {
             items.reverse();
@@ -1206,6 +1216,9 @@ impl AppState {
     pub fn apply_rules_all(&mut self, entries: &[DesktopEntry]) -> usize {
         let mut moved = 0;
         for entry in entries {
+            if entry.origin == EntryOrigin::Namespace {
+                continue;
+            }
             let key = ItemKey::from_path(&entry.path.to_string_lossy());
             let Some(&id) = self.catalog.get(&key) else {
                 continue;
@@ -1238,6 +1251,9 @@ impl AppState {
     pub fn apply_rules_to(&mut self, ids: &[ItemId], entries: &[DesktopEntry]) -> Vec<FenceId> {
         let mut touched = Vec::new();
         for entry in entries {
+            if entry.origin == EntryOrigin::Namespace {
+                continue;
+            }
             let key = ItemKey::from_path(&entry.path.to_string_lossy());
             let Some(&id) = self.catalog.get(&key) else {
                 continue;

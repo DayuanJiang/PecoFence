@@ -43,6 +43,9 @@ pub fn public_desktop() -> Option<PathBuf> {
 pub enum EntryOrigin {
     UserDesktop,
     PublicDesktop,
+    /// A shell namespace item such as the Recycle Bin: no file behind it, `path` holds the
+    /// parsing name (`::{CLSID}`).
+    Namespace,
 }
 
 /// A file or folder on one of the desktop folders.
@@ -81,6 +84,182 @@ pub fn enumerate_desktop() -> Vec<DesktopEntry> {
     ] {
         let Some(dir) = dir else { continue };
         enumerate_dir_into(&dir, origin, &mut out);
+    }
+    out
+}
+
+/// The shell namespace items Windows can draw on the desktop and whether Windows shows them
+/// by default: `(CLSID, shown by default)`. Users toggle them in "Desktop icon settings".
+const SPECIAL_DESKTOP_ITEMS: [(&str, bool); 5] = [
+    (RECYCLE_BIN_CLSID, true),
+    ("{20D04FE0-3AEA-1069-A2D8-08002B30309D}", false), // This PC
+    ("{59031a47-3f72-44a7-89c5-5595fe6b30ee}", false), // User's Files
+    ("{F02C1A0D-BE21-4350-88B0-7367FC96EF3C}", false), // Network
+    ("{5399E694-6CE5-4D6C-8FCE-1D8870FDCBA0}", false), // Control Panel
+];
+pub const RECYCLE_BIN_CLSID: &str = "{645FF040-5081-101B-9F08-00AA002F954E}";
+const DESKTOP_ICON_SETTINGS_KEY: &str =
+    r"Software\Microsoft\Windows\CurrentVersion\Explorer\HideDesktopIcons\NewStartPanel";
+/// Group Policy "Remove X icon from desktop": `{CLSID} = 1` here hides it regardless of the
+/// user's own choice.
+const NON_ENUM_POLICY_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Policies\NonEnum";
+
+/// True for a shell parsing name of a namespace item (`::{CLSID}`) rather than a file path.
+pub fn is_namespace_path(path: &Path) -> bool {
+    path.to_string_lossy().starts_with("::{")
+}
+
+/// True for the Recycle Bin's parsing name in any letter case (item keys are lower-cased).
+pub fn is_recycle_bin_path(path: &Path) -> bool {
+    path.to_string_lossy()
+        .strip_prefix("::")
+        .is_some_and(|clsid| clsid.eq_ignore_ascii_case(RECYCLE_BIN_CLSID))
+}
+
+/// The paths of a selection as handed to the shell (context menu, verbs, drag data). The
+/// shell serves one parent folder at a time, and namespace items live under the desktop root
+/// while files live under their folder: a selection holding both keeps only the files.
+pub fn paths_for_shell(paths: Vec<PathBuf>) -> Vec<PathBuf> {
+    let mixed =
+        paths.iter().any(|p| is_namespace_path(p)) && paths.iter().any(|p| !is_namespace_path(p));
+    if !mixed {
+        return paths;
+    }
+    paths
+        .into_iter()
+        .filter(|p| !is_namespace_path(p))
+        .collect()
+}
+
+/// Reads `HKxx\key\name` as a DWORD; `None` when absent or not a DWORD.
+fn reg_dword(root: HKEY, key: &str, name: &str) -> Option<u32> {
+    let key = to_wide(key);
+    let name = to_wide(name);
+    let mut value: u32 = 0;
+    let mut size = size_of::<u32>() as u32;
+    // SAFETY: the strings outlive the call; `value` is a live DWORD-sized out buffer.
+    let status = unsafe {
+        RegGetValueW(
+            root,
+            PCWSTR(key.as_ptr()),
+            PCWSTR(name.as_ptr()),
+            RRF_RT_REG_DWORD as u32,
+            None,
+            Some((&mut value as *mut u32).cast()),
+            Some(&mut size),
+        )
+    };
+    (status.0 == 0).then_some(value)
+}
+
+/// Whether Windows hides `clsid` from the desktop, the way Explorer decides it: a policy entry
+/// wins, then the user's "Desktop icon settings" (HKCU, HKLM as fallback), then the Windows
+/// default (only the Recycle Bin is shown out of the box).
+fn desktop_icon_hidden_in_windows(clsid: &str, default_visible: bool) -> bool {
+    for root in [HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE] {
+        if reg_dword(root, NON_ENUM_POLICY_KEY, clsid).is_some_and(|v| v != 0) {
+            return true;
+        }
+    }
+    for root in [HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE] {
+        if let Some(v) = reg_dword(root, DESKTOP_ICON_SETTINGS_KEY, clsid) {
+            return v != 0;
+        }
+    }
+    !default_visible
+}
+
+/// Whether the Recycle Bin holds anything (decides between the full and empty icon). Each
+/// fixed drive is asked on its own: the all-drives form fails as a whole when one volume
+/// (card reader without media, offline mapped drive) cannot answer. When no drive answers,
+/// the last known state is kept rather than flipping to "empty".
+pub fn recycle_bin_has_items() -> bool {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    static LAST_KNOWN: AtomicBool = AtomicBool::new(false);
+    // SAFETY: no arguments; returns a bitmask.
+    let drives = unsafe { GetLogicalDrives() };
+    let mut answered = false;
+    let mut full = false;
+    for i in 0..26u32 {
+        if drives & (1 << i) == 0 {
+            continue;
+        }
+        let root = to_wide(&format!("{}:\\", (b'A' + i as u8) as char));
+        // SAFETY: the string is NUL-terminated and outlives the call.
+        if unsafe { GetDriveTypeW(PCWSTR(root.as_ptr())) } != DRIVE_FIXED as u32 {
+            continue;
+        }
+        let mut info = SHQUERYRBINFO {
+            cbSize: size_of::<SHQUERYRBINFO>() as u32,
+            ..Default::default()
+        };
+        // SAFETY: `info` is a live struct with `cbSize` set; `root` is a NUL-terminated path.
+        if unsafe { SHQueryRecycleBinW(PCWSTR(root.as_ptr()), &mut info) }.is_ok() {
+            answered = true;
+            if info.i64NumItems > 0 {
+                full = true;
+                break;
+            }
+        }
+    }
+    if answered {
+        LAST_KNOWN.store(full, Ordering::Relaxed);
+        full
+    } else {
+        LAST_KNOWN.load(Ordering::Relaxed)
+    }
+}
+
+/// The special desktop items the user has enabled in Windows (Recycle Bin, This PC, ...), as
+/// entries whose `path` is the shell parsing name. Hiding the real desktop icons hides these
+/// too, so the inbox fence shows them instead. The Recycle Bin's `mtime` encodes whether it
+/// holds anything, so its icon is re-read when the state flips. Display names are fixed for
+/// the session (they follow the Windows display language), so the shell is asked only once.
+pub fn enumerate_special_desktop_items() -> Vec<DesktopEntry> {
+    use std::collections::HashMap;
+    use std::sync::{Mutex, OnceLock};
+    static NAMES: OnceLock<Mutex<HashMap<&'static str, String>>> = OnceLock::new();
+    let names = NAMES.get_or_init(Default::default);
+    let cached_name = |clsid: &str| {
+        names
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(clsid)
+            .cloned()
+    };
+    let mut out = Vec::new();
+    for (clsid, default_visible) in SPECIAL_DESKTOP_ITEMS {
+        if desktop_icon_hidden_in_windows(clsid, default_visible) {
+            continue;
+        }
+        let path = PathBuf::from(format!("::{clsid}"));
+        let name = cached_name(clsid).or_else(|| {
+            let name = display_name(&path)?;
+            names
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .insert(clsid, name.clone());
+            Some(name)
+        });
+        // The shell cannot resolve the item (feature removed on this edition): skip it.
+        let Some(file_name) = name else {
+            continue;
+        };
+        let mtime = if clsid == RECYCLE_BIN_CLSID && recycle_bin_has_items() {
+            1
+        } else {
+            0
+        };
+        out.push(DesktopEntry {
+            path,
+            file_name,
+            origin: EntryOrigin::Namespace,
+            is_folder: false,
+            attributes: 0,
+            mtime,
+            size: 0,
+            created: 0,
+        });
     }
     out
 }
@@ -589,5 +768,69 @@ mod move_tests {
         let flnk = create_shortcut(&folder, &base).expect("folder shortcut");
         assert_eq!(flnk, base.join("sub.dir - 快捷方式.lnk"));
         let _ = std::fs::remove_dir_all(&base);
+    }
+}
+
+#[cfg(test)]
+mod namespace_tests {
+    use super::*;
+
+    #[test]
+    fn parsing_names_are_recognized() {
+        assert!(is_namespace_path(Path::new(
+            "::{645FF040-5081-101B-9F08-00AA002F954E}"
+        )));
+        assert!(!is_namespace_path(Path::new(
+            r"C:\Users\me\Desktop\notes.txt"
+        )));
+        assert!(!is_namespace_path(Path::new("")));
+        assert!(is_recycle_bin_path(Path::new(
+            "::{645ff040-5081-101b-9f08-00aa002f954e}"
+        )));
+        assert!(!is_recycle_bin_path(Path::new(
+            "::{20D04FE0-3AEA-1069-A2D8-08002B30309D}"
+        )));
+    }
+
+    #[test]
+    fn mixed_selections_keep_only_files_for_the_shell() {
+        let bin = PathBuf::from(format!("::{RECYCLE_BIN_CLSID}"));
+        let file = PathBuf::from(r"C:\Users\me\Desktop\notes.txt");
+        assert_eq!(paths_for_shell(vec![bin.clone()]), vec![bin.clone()]);
+        assert_eq!(paths_for_shell(vec![file.clone()]), vec![file.clone()]);
+        assert_eq!(paths_for_shell(vec![bin, file.clone()]), vec![file]);
+    }
+
+    /// The Recycle Bin resolves through the same parsing-name path as files: display name and
+    /// icon come back, so it can be drawn and launched like any other item.
+    #[test]
+    fn recycle_bin_resolves_like_a_file() {
+        let _com = crate::com::OleGuard::init().expect("COM");
+        let bin = PathBuf::from(format!("::{RECYCLE_BIN_CLSID}"));
+        let name = display_name(&bin).expect("recycle bin display name");
+        assert!(!name.is_empty() && !name.starts_with("::"), "{name}");
+        let image = shell_image(&bin, 32, true).expect("recycle bin icon");
+        assert!(image.width > 0 && image.height > 0);
+        // Querying the bin never fails on a desktop session; the answer itself may be either.
+        let _ = recycle_bin_has_items();
+        assert_eq!(
+            crate::fileinfo::type_name(&bin, false)
+                .as_deref()
+                .map(str::is_empty),
+            Some(false),
+            "the shell names the bin's type"
+        );
+    }
+
+    /// Every special item comes back as a namespace entry with a shell-provided name.
+    #[test]
+    fn special_items_are_namespace_entries() {
+        let _com = crate::com::OleGuard::init().expect("COM");
+        for entry in enumerate_special_desktop_items() {
+            assert!(is_namespace_path(&entry.path), "{:?}", entry.path);
+            assert_eq!(entry.origin, EntryOrigin::Namespace);
+            assert!(!entry.is_folder);
+            assert!(!entry.file_name.is_empty());
+        }
     }
 }

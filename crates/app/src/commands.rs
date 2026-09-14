@@ -27,6 +27,9 @@ pub const WM_APP_SET_VISIBLE: u32 = msg::WM_APP + 10;
 /// Posted to the control window after Peek's background focus handoff completes. `wparam` is
 /// the dimmer HWND, so a stale completion from an earlier Peek can be ignored.
 pub const WM_APP_PEEK_FOCUSED: u32 = msg::WM_APP + 11;
+/// Posted by the shell (`SHChangeNotifyRegister`) when the Recycle Bin's contents or the
+/// desktop namespace changed; `wparam`/`lparam` carry the notification to release.
+pub const WM_APP_SHELL_CHANGED: u32 = msg::WM_APP + 12;
 
 /// What a file drop does with the dropped paths (Explorer's Move / Copy / Create shortcut, the
 /// effect the drop target reported).

@@ -51,6 +51,16 @@ pub(super) fn effect_for(key_state: u32, allowed: u32) -> DropEffect {
     dragdrop::resolve(dragdrop::modifier_effect(key_state), allowed)
 }
 
+/// The effect for a drop into `folder`: the modifiers decide, except over the Recycle Bin
+/// item, which only ever moves (recycles), as Explorer's own bin does.
+pub(super) fn folder_effect(folder: Option<&Path>, key_state: u32, allowed: u32) -> DropEffect {
+    if folder.is_some_and(pecofence_platform::shell::is_recycle_bin_path) {
+        dragdrop::resolve(DropEffect::Move, allowed)
+    } else {
+        effect_for(key_state, allowed)
+    }
+}
+
 pub(super) fn transfer_mode(effect: DropEffect) -> Option<TransferMode> {
     match effect {
         DropEffect::None => None,
@@ -138,7 +148,8 @@ pub(super) fn right_drag_menu(
 }
 
 /// Drops paths that already live in `folder`, are `folder` itself or contain it (a folder can
-/// neither be moved into itself nor into one of its own subfolders).
+/// neither be moved into itself nor into one of its own subfolders). Namespace items (the
+/// Recycle Bin, ...) are not files and are dropped as well.
 pub fn filter_folder_paths(paths: Vec<PathBuf>, folder: &Path) -> Vec<PathBuf> {
     let folder_key = ItemKey::from_path(&folder.to_string_lossy());
     let Some(fk) = folder_key.as_path().map(str::to_string) else {
@@ -146,6 +157,7 @@ pub fn filter_folder_paths(paths: Vec<PathBuf>, folder: &Path) -> Vec<PathBuf> {
     };
     paths
         .into_iter()
+        .filter(|p| !pecofence_platform::shell::is_namespace_path(p))
         .filter(|p| {
             let key = ItemKey::from_path(&p.to_string_lossy());
             let Some(k) = key.as_path() else {
@@ -327,7 +339,11 @@ impl FenceDropHandler {
                     // modifiers (our own source offers every effect, so no clipping needed).
                     DropEffect::Move
                 } else {
-                    effect_for(key_state, allowed)
+                    let folder = spot
+                        .folder
+                        .and_then(|i| v.items.get(i))
+                        .map(|it| it.path.as_path());
+                    folder_effect(folder, key_state, allowed)
                 }
             }
         };
@@ -526,7 +542,7 @@ impl DropHandler for FenceDropHandler {
                         // Only a folder target honours the modifiers (our own source offers
                         // every effect, so `allowed` never clips them).
                         let paths = filter_folder_paths(d.paths, &folder);
-                        let effect = effect_for(key_state, allowed);
+                        let effect = folder_effect(Some(&folder), key_state, allowed);
                         let (Some(mode), false) = (transfer_mode(effect), paths.is_empty()) else {
                             break 'resolve DropEffect::None;
                         };
@@ -557,7 +573,7 @@ impl DropHandler for FenceDropHandler {
                     if paths.is_empty() {
                         break 'resolve DropEffect::None;
                     }
-                    let mut effect = effect_for(key_state, allowed);
+                    let mut effect = folder_effect(folder.as_deref(), key_state, allowed);
                     if effect == DropEffect::None {
                         // The source offers nothing we can do with files (LINK-only, say).
                         break 'resolve DropEffect::None;
@@ -571,10 +587,15 @@ impl DropHandler for FenceDropHandler {
                     }
                     if right {
                         drop_image(effect);
-                        let choices = right_drag_choices(
-                            &[DropEffect::Move, DropEffect::Copy, DropEffect::Link],
-                            allowed,
-                        );
+                        let candidates: &[DropEffect] = if folder
+                            .as_deref()
+                            .is_some_and(pecofence_platform::shell::is_recycle_bin_path)
+                        {
+                            &[DropEffect::Move]
+                        } else {
+                            &[DropEffect::Move, DropEffect::Copy, DropEffect::Link]
+                        };
+                        let choices = right_drag_choices(candidates, allowed);
                         effect = right_drag_menu(hwnd, pt, effect, &choices);
                     }
                     let Some(mode) = transfer_mode(effect) else {
@@ -645,7 +666,8 @@ impl FenceViewState {
     }
 
     /// A folder item under a client-pixel point that is not one of `exclude` (the items being
-    /// dragged): Explorer moves dropped files into it.
+    /// dragged): Explorer moves dropped files into it. The Recycle Bin item counts too (a drop
+    /// on it recycles).
     pub(super) fn folder_drop_target(
         &self,
         x_px: i32,
@@ -654,7 +676,8 @@ impl FenceViewState {
     ) -> Option<usize> {
         let i = self.hit_item(x_px, y_px)?;
         let it = self.items.get(i)?;
-        (it.is_folder && !exclude.contains(&it.id)).then_some(i)
+        let target = it.is_folder || pecofence_platform::shell::is_recycle_bin_path(&it.path);
+        (target && !exclude.contains(&it.id)).then_some(i)
     }
 
     /// Resolves what a drag at screen point (sx, sy) targets in this window.

@@ -403,6 +403,7 @@ impl App {
         if self.apply_desktop_icons_hidden(hidden) {
             self.state.config.settings.hide_real_icons = hidden;
             self.settings_mutated();
+            self.desktop_icons_setting_changed();
             self.settings_toast(if hidden {
                 pecofence_core::i18n::text("Windows 桌面图标已重新隐藏。")
             } else {
@@ -414,6 +415,14 @@ impl App {
                 "桌面图标状态未能更改，请等待资源管理器恢复后重试。",
             ));
         }
+    }
+
+    /// The special desktop items (Recycle Bin, ...) enter or leave the inbox fence together
+    /// with the hide-real-icons setting: resync now rather than at the next folder event.
+    pub(super) fn desktop_icons_setting_changed(&mut self) {
+        self.sync_desktop_if_available("hide-real-icons toggled");
+        self.refresh_all();
+        self.push_workspace_summary();
     }
 
     fn apply_desktop_icons_hidden(&self, hidden: bool) -> bool {
@@ -462,6 +471,7 @@ impl App {
                 "桌面图标状态未能更改，请稍后重试。",
             ));
         }
+        let icons_toggled = new.hide_real_icons != old.hide_real_icons;
         if new.quick_hide.enabled != old.quick_hide.enabled
             && let Some(a) = self.anchor.borrow_mut().as_mut()
         {
@@ -509,6 +519,9 @@ impl App {
         self.state.mark_dirty();
         self.schedule_save();
         self.sync_peek_hotkey();
+        if icons_toggled {
+            self.desktop_icons_setting_changed();
+        }
         if icons_changed {
             self.apply_icon_variant();
         }

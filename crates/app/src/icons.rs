@@ -296,6 +296,17 @@ impl IconCache {
 /// Decides how an item's icon is cached: per-extension for ordinary documents, per-file for
 /// things whose icon depends on content (executables, shortcuts, images, folders with icons).
 pub fn icon_key_for(path: &Path, is_folder: bool, mtime: i64) -> (IconKey, bool) {
+    // Namespace items have no extension; each one has its own icon, and the Recycle Bin's
+    // changes with its contents (encoded in `mtime`).
+    if pecofence_platform::shell::is_namespace_path(path) {
+        return (
+            IconKey::ByContent {
+                path: path.to_string_lossy().to_lowercase(),
+                mtime,
+            },
+            true,
+        );
+    }
     let ext = path
         .extension()
         .map(|e| format!(".{}", e.to_string_lossy().to_lowercase()))
@@ -380,5 +391,22 @@ mod tests {
             .suffix(),
             "#c"
         );
+    }
+}
+
+#[cfg(test)]
+mod namespace_icon_tests {
+    use super::*;
+
+    /// Namespace items get a per-item content key (no extension to share) whose `mtime` carries
+    /// the Recycle Bin's empty/full state, and they are icons rather than thumbnails.
+    #[test]
+    fn namespace_items_use_content_keys() {
+        let bin = Path::new("::{645FF040-5081-101B-9F08-00AA002F954E}");
+        let (empty, icon_only) = icon_key_for(bin, false, 0);
+        let (full, _) = icon_key_for(bin, false, 1);
+        assert!(icon_only);
+        assert!(matches!(&empty, IconKey::ByContent { path, mtime: 0 } if path.starts_with("::{")));
+        assert_ne!(empty, full);
     }
 }

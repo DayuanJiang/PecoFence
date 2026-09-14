@@ -165,6 +165,11 @@ impl App {
             return;
         }
         let menu = PopupMenu::new();
+        // Namespace items (Recycle Bin, ...) have no file: rename and "open location" are off.
+        let single_namespace = matches!(
+            items[..],
+            [only] if self.state.item(only).is_some_and(|it| it.is_namespace())
+        );
         menu.item(
             CMD_ITEM_OPEN,
             pecofence_core::i18n::text("打开\tEnter"),
@@ -175,19 +180,19 @@ impl App {
             CMD_ITEM_LOCATION,
             pecofence_core::i18n::text("打开文件所在位置"),
             false,
-            items.len() != 1,
+            items.len() != 1 || single_namespace,
         )
         .item(
             CMD_ITEM_RENAME,
             pecofence_core::i18n::text("重命名\tF2"),
             false,
-            items.len() != 1,
+            items.len() != 1 || single_namespace,
         )
         .item(
             CMD_ITEM_DELETE,
             pecofence_core::i18n::text("删除\tDelete"),
             false,
-            false,
+            single_namespace,
         )
         .separator();
         let single_folder: Option<PathBuf> = match items[..] {
@@ -247,11 +252,7 @@ impl App {
         );
         menu.separator();
         // Explorer's own menu (send to / copy / delete / pin / extensions …) appended below ours.
-        let paths: Vec<PathBuf> = items
-            .iter()
-            .filter_map(|id| self.state.item(*id))
-            .filter_map(|it| it.key.as_path().map(PathBuf::from))
-            .collect();
+        let paths = self.shell_paths_of(&items);
         let mut shell_menu =
             ShellContextMenu::for_paths(&paths.iter().map(|p| p.as_path()).collect::<Vec<_>>())
                 .ok();
@@ -293,7 +294,15 @@ impl App {
             if let Err(e) = sm.invoke(cmd, owner, POINT { x, y }, shift) {
                 tracing::warn!(error = %e, %verb, "shell verb failed");
             }
-            // Deletions / moves are picked up by the desktop watcher; nothing else to do here.
+            // Deletions / moves are picked up by the desktop watcher. What a namespace item's
+            // verb changes (Empty Recycle Bin, hide This PC) arrives as a shell notification;
+            // a resync is requested here too in case that channel is unavailable.
+            if items
+                .iter()
+                .any(|id| self.state.item(*id).is_some_and(|it| it.is_namespace()))
+            {
+                window::post_message(self.control.hwnd(), WM_APP_FS_CHANGED, 0, 0);
+            }
             return;
         }
         drop(shell_menu);
@@ -305,6 +314,7 @@ impl App {
             }
             CMD_ITEM_LOCATION => {
                 if let Some(item) = items.first().and_then(|id| self.state.item(*id))
+                    && !item.is_namespace()
                     && let Some(p) = item.key.as_path()
                 {
                     let _ = std::process::Command::new("explorer.exe")

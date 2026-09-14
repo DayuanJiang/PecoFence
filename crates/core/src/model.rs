@@ -567,6 +567,12 @@ impl ItemKey {
             ItemKey::Pidl(_) => None,
         }
     }
+
+    /// A shell namespace item (Recycle Bin, This PC, ...) keyed by its `::{CLSID}` parsing
+    /// name: no file behind it, so rename, portal and location commands do not apply.
+    pub fn is_namespace(&self) -> bool {
+        matches!(self, ItemKey::Path(p) if p.starts_with("::{"))
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -608,6 +614,13 @@ pub struct Item {
     /// How often the item was launched from a fence ("按打开次数" sorting).
     #[serde(default)]
     pub open_count: u32,
+}
+
+impl Item {
+    /// See [`ItemKey::is_namespace`].
+    pub fn is_namespace(&self) -> bool {
+        self.key.is_namespace()
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -1351,5 +1364,22 @@ mod tests {
         });
         assert_eq!(c.layout_for(&["a".into(), "b".into()]), Some(0));
         assert_eq!(c.layout_for(&["a".into()]), None);
+    }
+}
+
+#[cfg(test)]
+mod namespace_key_tests {
+    use super::*;
+
+    #[test]
+    fn namespace_keys_are_detected_after_normalization() {
+        let bin = ItemKey::from_path("::{645FF040-5081-101B-9F08-00AA002F954E}");
+        assert!(bin.is_namespace());
+        assert_eq!(
+            bin.as_path(),
+            Some("::{645ff040-5081-101b-9f08-00aa002f954e}")
+        );
+        assert!(!ItemKey::from_path(r"C:\Users\me\Desktop\a.txt").is_namespace());
+        assert!(!ItemKey::Pidl("AAAA".into()).is_namespace());
     }
 }

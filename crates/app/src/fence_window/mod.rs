@@ -164,6 +164,24 @@ pub struct ItemView {
 }
 
 impl ItemView {
+    /// Details "修改日期" text; namespace items (Recycle Bin, ...) have none.
+    fn date_text(&self) -> String {
+        if pecofence_platform::shell::is_namespace_path(&self.path) {
+            String::new()
+        } else {
+            fileinfo::format_local_datetime(self.mtime)
+        }
+    }
+
+    /// Details "大小" text; namespace items have none.
+    fn size_text(&self) -> String {
+        if pecofence_platform::shell::is_namespace_path(&self.path) {
+            String::new()
+        } else {
+            fileinfo::format_size_kb(self.size, self.is_folder)
+        }
+    }
+
     pub fn new(
         id: ItemId,
         path: PathBuf,

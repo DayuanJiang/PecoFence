@@ -51,20 +51,20 @@ impl FenceViewState {
         let mut w = pecofence_render::text::measure_width(caption, fmt) + 12.0;
         for item in &mut self.items {
             let label = match col {
-                DetailColumn::Date => item
-                    .date_label
-                    .get_or_insert_with(|| fileinfo::format_local_datetime(item.mtime))
-                    .clone(),
+                DetailColumn::Date => {
+                    let text = item.date_text();
+                    item.date_label.get_or_insert(text).clone()
+                }
                 DetailColumn::Type => item
                     .type_label
                     .get_or_insert_with(|| {
                         fileinfo::type_name(&item.path, item.is_folder).unwrap_or_default()
                     })
                     .clone(),
-                _ => item
-                    .size_label
-                    .get_or_insert_with(|| fileinfo::format_size_kb(item.size, item.is_folder))
-                    .clone(),
+                _ => {
+                    let text = item.size_text();
+                    item.size_label.get_or_insert(text).clone()
+                }
             };
             w = w.max(pecofence_render::text::measure_width(&label, fmt));
         }
