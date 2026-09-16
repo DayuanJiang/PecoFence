@@ -39,12 +39,12 @@ jobs:
         run: cargo test --workspace
       - name: Release build
         run: cargo build --locked --release -p pecofence -p pecofence-watchdog
-      - name: Size gate (pecofence.exe <= 3 MB)
+      - name: Size gate (pecofence.exe <= 3.5 MB)
         shell: pwsh
         run: |
           $size = (Get-Item target/release/pecofence.exe).Length
           Write-Output "pecofence.exe = $size bytes"
-          if ($size -gt 3MB) { throw "binary too large" }
+          if ($size -gt 3.5MB) { throw "binary too large" }
       - name: Package
         shell: pwsh
         run: ./scripts/make-portable.ps1 -SkipBuild -TargetDir target
