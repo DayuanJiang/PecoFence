@@ -121,6 +121,13 @@ pub fn local_time_parts(unix: i64) -> Option<(u16, u8)> {
     Some((minutes, weekday))
 }
 
+/// Local calendar date (year, month 1..=12, day 1..=31) of a Unix time — the input of the
+/// "按时间分组" bucketing in `pecofence_core::date_group`.
+pub fn local_civil_date(unix: i64) -> Option<(i32, u8, u8)> {
+    let st = local_system_time(unix)?;
+    Some((i32::from(st.wYear), st.wMonth as u8, st.wDay as u8))
+}
+
 fn local_system_time(unix: i64) -> Option<SYSTEMTIME> {
     // FILETIME: 100-ns intervals since 1601-01-01.
     let ticks = unix.checked_add(11_644_473_600)?.checked_mul(10_000_000)?;
@@ -192,6 +199,13 @@ mod tests {
         assert_eq!(weekday, 0, "2026-09-07 is a Monday → 0");
         let (_m, sunday) = local_time_parts(1_788_782_400 + 6 * 86_400).unwrap();
         assert_eq!(sunday, 6);
+    }
+
+    #[test]
+    fn civil_dates_are_local() {
+        // 2026-09-07 12:00 UTC stays on the 7th in every zone within ±12 h.
+        assert_eq!(local_civil_date(1_788_782_400), Some((2026, 9, 7)));
+        assert_eq!(local_civil_date(-99_999_999_999), None);
     }
 
     #[test]

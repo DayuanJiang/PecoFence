@@ -960,6 +960,7 @@ impl FenceViewState {
                     .collect();
                 let content = ContentDraw {
                     items: &items,
+                    group_headers: &[],
                     icon_size: self.icon_size as f32,
                     label_lines: self.label_lines,
                     line_h: grid.metrics.line_h,
@@ -1008,6 +1009,7 @@ impl FenceViewState {
                     .collect();
                 let draw = RowsDraw {
                     rows: &rows,
+                    group_headers: &[],
                     columns: RowColumns {
                         name_x: cols.name_x - l,
                         name_w: cols.name_w,

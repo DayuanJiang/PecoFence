@@ -1508,11 +1508,40 @@ impl AppState {
         }
     }
 
+    /// Any order but by date ends "按时间分组" (sections only make sense in date order).
     pub fn set_sort(&mut self, id: FenceId, sort: SortMode) {
-        if let Some(f) = self.fence_mut(id)
-            && f.view.sort != sort
-        {
+        let Some(f) = self.fence_mut(id) else {
+            return;
+        };
+        let mut changed = false;
+        if f.view.sort != sort {
             f.view.sort = sort;
+            changed = true;
+        }
+        if sort != SortMode::Date && f.view.group_by_date {
+            f.view.group_by_date = false;
+            changed = true;
+        }
+        if changed {
+            self.dirty = true;
+        }
+    }
+
+    /// "按时间分组"; turning it on also sorts by date.
+    pub fn set_group_by_date(&mut self, id: FenceId, on: bool) {
+        let Some(f) = self.fence_mut(id) else {
+            return;
+        };
+        let mut changed = false;
+        if f.view.group_by_date != on {
+            f.view.group_by_date = on;
+            changed = true;
+        }
+        if on && f.view.sort != SortMode::Date {
+            f.view.sort = SortMode::Date;
+            changed = true;
+        }
+        if changed {
             self.dirty = true;
         }
     }

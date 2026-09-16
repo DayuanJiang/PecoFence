@@ -661,7 +661,10 @@ impl FenceViewState {
         let scale = self.scale();
         let width_dip = cw as f32 / scale;
         let height_dip = ch as f32 / scale;
-        let grid = Grid::new(self.grid_metrics(), width_dip, self.items.len());
+        let layout = self.layout(width_dip);
+        let ItemLayout::Grid(grid) = &layout else {
+            return Ok(());
+        };
         let max_scroll = grid.max_scroll(height_dip);
         self.scroll_y = self.scroll_y.clamp(0.0, max_scroll);
         self.ensure_icons_and_labels(grid.metrics.cell_w);
@@ -758,9 +761,11 @@ impl FenceViewState {
                 full_label: if unfold == Some(i) { full } else { None },
             }
         }));
+        let group_headers = group_header_draws(&layout, scroll, 0.0);
         let scrollbar = self.scrollbar_draw();
         let content = ContentDraw {
             items: &cells,
+            group_headers: &group_headers,
             icon_size: self.icon_size as f32,
             label_lines: self.label_lines,
             line_h: grid.metrics.line_h,
@@ -802,7 +807,7 @@ impl FenceViewState {
         let scale = self.scale();
         let width_dip = cw as f32 / scale;
         let height_dip = ch as f32 / scale;
-        let layout = ItemLayout::rows(metrics, width_dip, self.items.len());
+        let layout = self.layout(width_dip);
         let view_h = (height_dip - metrics.header_h).max(1.0);
         let max_scroll = layout.max_scroll(view_h);
         self.scroll_y = self.scroll_y.clamp(0.0, max_scroll);
@@ -909,6 +914,7 @@ impl FenceViewState {
                 icon_alpha: item.icon_fade.map_or(1.0, |t| t.value_at(now)),
             }
         }));
+        let group_headers = group_header_draws(&layout, scroll, metrics.header_h);
         let scrollbar = self.scrollbar_draw();
         let empty_text = Some(self.empty_text());
         let marquee = self.marquee_rect_dip().map(|m| Rect {
@@ -919,6 +925,7 @@ impl FenceViewState {
         });
         let draw = RowsDraw {
             rows: &rows,
+            group_headers: &group_headers,
             columns: RowColumns {
                 name_x: cols.name_x,
                 name_w: cols.name_w,
@@ -978,4 +985,34 @@ impl FenceViewState {
         self.note_content_fades(now);
         Ok(())
     }
+}
+
+/// Localised caption of a "按时间分组" section (literal keys keep `check-locales.py` honest).
+pub(super) fn bucket_caption(bucket: DateBucket) -> &'static str {
+    match bucket {
+        DateBucket::Today => pecofence_core::i18n::text("今天"),
+        DateBucket::Yesterday => pecofence_core::i18n::text("昨天"),
+        DateBucket::ThisWeek => pecofence_core::i18n::text("本周"),
+        DateBucket::ThisMonth => pecofence_core::i18n::text("本月"),
+        DateBucket::Earlier => pecofence_core::i18n::text("更早"),
+    }
+}
+
+/// Section headers of `layout` in surface DIPs: scrolled by `scroll` and, for rows, pushed
+/// below the fixed column header by `header_h` (the same offset the row cells get). Headers
+/// are static: item motion glides the items, the bands stay where the new layout puts them.
+pub(super) fn group_header_draws(
+    layout: &ItemLayout,
+    scroll: f32,
+    header_h: f32,
+) -> Vec<GroupHeaderDraw<'static>> {
+    layout
+        .headers()
+        .into_iter()
+        .map(|h| GroupHeaderDraw {
+            y: h.rect.y - scroll + header_h,
+            h: h.rect.h,
+            text: bucket_caption(h.bucket),
+        })
+        .collect()
 }

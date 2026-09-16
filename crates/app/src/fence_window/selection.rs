@@ -130,20 +130,18 @@ impl FenceViewState {
         }
         let scale = self.scale();
         let (cw, _) = self.content_size_px();
-        let cols = self.layout(cw as f32 / scale).columns().max(1) as i32;
-        let n = self.items.len() as i32;
+        let layout = self.layout(cw as f32 / scale);
+        let n = self.items.len();
         let cur = match self.anchor_index {
-            Some(i) => i as i32,
+            Some(i) => i.min(n - 1),
             None => {
                 self.cursor_to(0, mode);
                 return;
             }
         };
-        let mut next = cur + dx + dy * cols;
-        if dy != 0 && (next < 0 || next >= n) {
-            next = cur; // no wrap between rows
-        }
-        let next = next.clamp(0, n - 1) as usize;
+        // Rows step to the nearest column of the row above / below, across "按时间分组"
+        // headers; no wrap between rows.
+        let next = layout.neighbour(cur, dx, dy, n).unwrap_or(cur);
         self.cursor_to(next, mode);
     }
 
@@ -175,19 +173,21 @@ impl FenceViewState {
         let scale = self.scale();
         let (cw, ch) = self.content_size_px();
         let layout = self.layout(cw as f32 / scale);
-        let cols = layout.columns().max(1) as i32;
         let view_h = ch as f32 / scale - layout.fixed_top();
         let rows_per_page = ((view_h / layout.row_step()).floor() as i32).max(1);
-        let n = self.items.len() as i32;
+        let n = self.items.len();
         let cur = match self.anchor_index {
-            Some(i) => i as i32,
+            Some(i) => i.min(n - 1),
             None => {
-                let t = if dir > 0 { 0 } else { (n - 1) as usize };
+                let t = if dir > 0 { 0 } else { n - 1 };
                 self.cursor_to(t, mode);
                 return;
             }
         };
-        let target = (cur + dir * rows_per_page * cols).clamp(0, n - 1) as usize;
+        // A whole page of rows when there is one; the first / last item otherwise.
+        let target = layout
+            .neighbour(cur, 0, dir * rows_per_page, n)
+            .unwrap_or(if dir > 0 { n - 1 } else { 0 });
         // One viewport of rows, animated; `cursor_to` then only retargets if the item still
         // ends up outside the destination viewport.
         let page = dir as f32 * rows_per_page as f32 * layout.row_step();

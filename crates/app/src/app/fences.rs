@@ -50,6 +50,7 @@ impl App {
             let tabs = self.tab_views(fence.id);
             if let Some(w) = self.fences.get(&fence.id) {
                 w.set_tabs(tabs, active);
+                w.set_group_by_date(shown.view.group_by_date);
                 w.set_items(items);
                 // The window may have been kept across a layout switch (same FenceId, other
                 // per-fence view flags): push every persisted flag, not just items/title.
@@ -117,6 +118,8 @@ impl App {
             if active == id
                 && let Some(f) = self.state.fence(id)
             {
+                // Grouping first: the layout glide must target the new sections.
+                w.set_group_by_date(f.view.group_by_date);
                 w.set_items(self.item_views(f));
                 w.set_sort_indicator(f.view.sort, f.view.reverse);
             }
@@ -186,6 +189,7 @@ impl App {
                     .unwrap_or(crate::layout::DetailColumns::DEFAULT_WIDTHS),
             );
             w.set_columns_visible(shown.view.columns_visible.unwrap_or([true; 3]));
+            w.set_group_by_date(shown.view.group_by_date);
             w.set_sort_indicator(shown.view.sort, shown.view.reverse);
             w.set_auto_height(f.view.auto_height);
             if w.is_rolled() != f.rolled_up {
@@ -208,6 +212,7 @@ impl App {
                 && let Some(w) = self.fences.get(&id)
             {
                 w.set_tabs(self.tab_views(id), active);
+                w.set_group_by_date(f.view.group_by_date);
                 w.set_items(self.item_views(f));
             }
             self.apply_auto_height(id);

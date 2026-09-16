@@ -122,14 +122,37 @@ impl FenceViewState {
             .with_spacing(self.spacing)
     }
 
+    /// "按时间分组" sections of the current items as delivered (sorted, possibly reversed):
+    /// contiguous runs of one date bucket; the leading namespace items form a headerless run.
+    /// Empty when grouping is off.
+    pub(super) fn group_spans(&self) -> Vec<GroupSpan> {
+        if !self.group_by_date || self.items.is_empty() {
+            return Vec::new();
+        }
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_secs() as i64);
+        let Some((y, m, d)) = fileinfo::local_civil_date(now) else {
+            return Vec::new();
+        };
+        let today = CivilDate::new(y, m, d);
+        group_spans(
+            self.items
+                .iter()
+                .map(|it| it.local_date.map(|d| date_bucket(d, today))),
+        )
+    }
+
     pub(super) fn layout(&self, width_dip: f32) -> ItemLayout {
+        let spans = self.group_spans();
+        let n = self.items.len();
         match self.layout {
             ViewLayout::Icons => {
-                ItemLayout::Grid(Grid::new(self.grid_metrics(), width_dip, self.items.len()))
+                ItemLayout::Grid(Grid::grouped(self.grid_metrics(), width_dip, n, &spans))
             }
-            ViewLayout::List => ItemLayout::rows(RowMetrics::list(), width_dip, self.items.len()),
+            ViewLayout::List => ItemLayout::rows_grouped(RowMetrics::list(), width_dip, n, &spans),
             ViewLayout::Details => {
-                ItemLayout::rows(RowMetrics::details(), width_dip, self.items.len())
+                ItemLayout::rows_grouped(RowMetrics::details(), width_dip, n, &spans)
             }
         }
     }
@@ -255,8 +278,11 @@ impl FenceViewState {
         let scale = self.scale();
         let (cw, _) = self.content_size_px();
         let layout = self.layout(cw as f32 / scale);
-        let rows = layout.row_count().max(1) as f32;
-        let content = layout.fixed_top() + layout.top_pad() * 2.0 + rows * layout.row_step();
+        // Header bands and per-group row blocks included; an empty fence keeps one row.
+        let content = layout.fixed_top()
+            + layout
+                .content_height()
+                .max(layout.top_pad() * 2.0 + layout.row_step());
         let desired = self.title_h_px() + (content * scale).ceil() as i32 + 2;
         let rect = window::window_rect(self.hwnd);
         monitors::query(monitors::monitor_from_window(self.hwnd)).map_or(desired, |monitor| {

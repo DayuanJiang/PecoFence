@@ -1,5 +1,7 @@
 //! Icon grid layout in DIPs: cell geometry, hit testing, scrolling extents.
 
+use pecofence_core::DateBucket;
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct GridMetrics {
     pub icon: f32,
@@ -87,37 +89,320 @@ impl CellRect {
     }
 }
 
+/// Height of a "按时间分组" section header band (DIPs): 24 keeps the 4 px grid and sits just
+/// under the 28 DIP details header and row height.
+pub const GROUP_HEADER_H: f32 = 24.0;
+
+/// A contiguous run of the (already sorted) items shown as one section: under a dated header,
+/// or — for the leading namespace items (Recycle Bin …) that have no date — under none.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct GroupSpan {
+    pub first: usize,
+    pub len: usize,
+    pub bucket: Option<DateBucket>,
+}
+
+impl GroupSpan {
+    pub fn has_header(&self) -> bool {
+        self.bucket.is_some()
+    }
+}
+
+/// Splits the items into runs of equal bucket, in delivered order (`reverse` may flip the
+/// sort, so runs are detected rather than assumed descending). Empty input = no spans.
+pub fn group_spans(buckets: impl IntoIterator<Item = Option<DateBucket>>) -> Vec<GroupSpan> {
+    let mut spans: Vec<GroupSpan> = Vec::new();
+    for (i, bucket) in buckets.into_iter().enumerate() {
+        match spans.last_mut() {
+            Some(last) if last.bucket == bucket => last.len += 1,
+            _ => spans.push(GroupSpan {
+                first: i,
+                len: 1,
+                bucket,
+            }),
+        }
+    }
+    spans
+}
+
+/// A section header to draw: its band in scrollable-content DIPs and the group it heads.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct GroupHeader {
+    pub rect: CellRect,
+    pub group: usize,
+    pub bucket: DateBucket,
+}
+
+/// Vertical structure shared by the icon grid and the row layouts: every group is an optional
+/// header band followed by a block of whole rows of `cols` cells, `row_h` tall. Ungrouped =
+/// one headerless group holding everything, which reproduces the plain grid exactly.
+#[derive(Clone, Debug)]
+pub struct Bands {
+    cols: usize,
+    row_h: f32,
+    count: usize,
+    groups: Vec<Band>,
+    content_height: f32,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct Band {
+    span: GroupSpan,
+    /// Top of the header band (== `rows_y` without a header).
+    top: f32,
+    rows_y: f32,
+    rows: usize,
+}
+
+impl Band {
+    fn end(&self) -> usize {
+        self.span.first + self.span.len
+    }
+
+    fn bottom(&self, row_h: f32) -> f32 {
+        self.rows_y + self.rows as f32 * row_h
+    }
+}
+
+impl Bands {
+    fn new(cols: usize, row_h: f32, pad_y: f32, count: usize, spans: &[GroupSpan]) -> Self {
+        let cols = cols.max(1);
+        let single = [GroupSpan {
+            first: 0,
+            len: count,
+            bucket: None,
+        }];
+        // The spans must tile 0..count; anything else falls back to the plain layout.
+        let tiles = spans.first().is_some_and(|s| s.first == 0)
+            && spans
+                .windows(2)
+                .all(|w| w[0].first + w[0].len == w[1].first)
+            && spans.last().is_some_and(|s| s.first + s.len == count);
+        let spans: &[GroupSpan] = if tiles { spans } else { &single };
+        let mut y = pad_y;
+        let mut groups = Vec::with_capacity(spans.len());
+        for &span in spans {
+            let top = y;
+            if span.has_header() {
+                y += GROUP_HEADER_H;
+            }
+            let rows = span.len.div_ceil(cols);
+            groups.push(Band {
+                span,
+                top,
+                rows_y: y,
+                rows,
+            });
+            y += rows as f32 * row_h;
+        }
+        Self {
+            cols,
+            row_h,
+            count,
+            groups,
+            content_height: y + pad_y,
+        }
+    }
+
+    fn total_rows(&self) -> usize {
+        self.groups.iter().map(|g| g.rows).sum()
+    }
+
+    fn is_grouped(&self) -> bool {
+        self.groups.len() > 1 || self.groups[0].span.has_header()
+    }
+
+    /// Index of the band holding `index`; indices past the end land in the last band (the
+    /// insertion caret after the last item).
+    fn band_index(&self, index: usize) -> usize {
+        self.groups
+            .iter()
+            .position(|g| index < g.end())
+            .unwrap_or(self.groups.len() - 1)
+    }
+
+    /// (band index, row in the band, column) of `index`.
+    fn place(&self, index: usize) -> (usize, usize, usize) {
+        let gi = self.band_index(index);
+        let local = index.saturating_sub(self.groups[gi].span.first);
+        (gi, local / self.cols, local % self.cols)
+    }
+
+    fn cell_y(&self, index: usize) -> f32 {
+        let (gi, row, _) = self.place(index);
+        self.groups[gi].rows_y + row as f32 * self.row_h
+    }
+
+    fn band_at(&self, y: f32) -> Option<&Band> {
+        self.groups
+            .iter()
+            .find(|g| y >= g.top && y < g.bottom(self.row_h))
+    }
+
+    /// Item at column `col` under `y`: None inside a header band, in the empty tail of a
+    /// group's last row, or outside every band (so a point never maps into another group).
+    fn hit(&self, col: usize, y: f32) -> Option<usize> {
+        let g = self.band_at(y)?;
+        if y < g.rows_y || col >= self.cols {
+            return None;
+        }
+        let row = ((y - g.rows_y) / self.row_h).floor() as usize;
+        let i = g.span.first + row * self.cols + col;
+        (row < g.rows && i < g.end()).then_some(i)
+    }
+
+    /// Band for an insertion point: the one under `y`, else the first / last.
+    fn band_near(&self, y: f32) -> &Band {
+        self.band_at(y).unwrap_or_else(|| {
+            if y < self.groups[0].top {
+                &self.groups[0]
+            } else {
+                &self.groups[self.groups.len() - 1]
+            }
+        })
+    }
+
+    /// Insertion slot from a floored row and the caller's rounded column, clamped to the
+    /// group under the point (grouping never applies to Manual sort, so this only matters for
+    /// the single headerless group, where it is the plain-grid formula).
+    fn insertion(&self, y: f32, col: usize) -> usize {
+        let g = self.band_near(y);
+        let row = ((y - g.rows_y) / self.row_h).floor().max(0.0) as usize;
+        (g.span.first + row * self.cols + col.min(self.cols)).min(g.end())
+    }
+
+    /// Row variant: the nearest row boundary.
+    fn insertion_rounded(&self, y: f32) -> usize {
+        let g = self.band_near(y);
+        let row = ((y - g.rows_y) / self.row_h).round().max(0.0) as usize;
+        (g.span.first + row).min(g.end())
+    }
+
+    fn headers(&self, width: f32) -> Vec<GroupHeader> {
+        self.groups
+            .iter()
+            .enumerate()
+            .filter_map(|(i, g)| {
+                Some(GroupHeader {
+                    rect: CellRect {
+                        x: 0.0,
+                        y: g.top,
+                        w: width,
+                        h: GROUP_HEADER_H,
+                    },
+                    group: i,
+                    bucket: g.span.bucket?,
+                })
+            })
+            .collect()
+    }
+
+    /// Header band of the group `index` opens, if it has one.
+    fn header_of_first(&self, index: usize, width: f32) -> Option<CellRect> {
+        let g = self.groups.iter().find(|g| index < g.end())?;
+        (g.span.first == index && g.span.has_header()).then_some(CellRect {
+            x: 0.0,
+            y: g.top,
+            w: width,
+            h: GROUP_HEADER_H,
+        })
+    }
+
+    /// The row `steps` rows (signed) away from the row of `index`, crossing group boundaries:
+    /// (band index, row), or None when the list ends before all steps are taken.
+    fn row_step(&self, index: usize, steps: i32) -> Option<(usize, usize)> {
+        let (mut gi, mut row, _) = self.place(index);
+        for _ in 0..steps.unsigned_abs() {
+            if steps > 0 {
+                if row + 1 < self.groups[gi].rows {
+                    row += 1;
+                } else {
+                    gi = (gi + 1..self.groups.len()).find(|&j| self.groups[j].rows > 0)?;
+                    row = 0;
+                }
+            } else if row > 0 {
+                row -= 1;
+            } else {
+                gi = (0..gi).rev().find(|&j| self.groups[j].rows > 0)?;
+                row = self.groups[gi].rows - 1;
+            }
+        }
+        Some((gi, row))
+    }
+
+    /// Item indices in row `row` of band `gi`.
+    fn row_items(&self, gi: usize, row: usize) -> std::ops::Range<usize> {
+        let g = &self.groups[gi];
+        let start = g.span.first + row * self.cols;
+        start..(start + self.cols).min(g.end())
+    }
+
+    fn neighbour(
+        &self,
+        index: usize,
+        dx: i32,
+        dy: i32,
+        count: usize,
+        centre_x: impl Fn(usize) -> f32,
+    ) -> Option<usize> {
+        let count = count.min(self.count);
+        if count == 0 || index >= count {
+            return None;
+        }
+        if dy == 0 {
+            let last = count as i64 - 1;
+            return Some((index as i64 + i64::from(dx)).clamp(0, last) as usize);
+        }
+        let (gi, row) = self.row_step(index, dy)?;
+        let cx = centre_x(index);
+        self.row_items(gi, row)
+            .filter(|&i| i < count)
+            .min_by(|&a, &b| {
+                (centre_x(a) - cx)
+                    .abs()
+                    .total_cmp(&(centre_x(b) - cx).abs())
+            })
+    }
+}
+
 /// Lays out `count` items inside a content area of `width` DIPs (below the title bar), with
 /// vertical scroll offset `scroll_y`. Returns cell rects in content-local DIPs (already scrolled).
+/// With group spans, every group starts a fresh row block under its header band.
 pub struct Grid {
     pub metrics: GridMetrics,
     pub columns: usize,
+    /// Rows over all groups.
     #[allow(dead_code)]
     pub rows: usize,
     pub content_height: f32,
+    bands: Bands,
 }
 
 impl Grid {
+    #[cfg(test)]
     pub fn new(metrics: GridMetrics, width: f32, count: usize) -> Self {
+        Self::grouped(metrics, width, count, &[])
+    }
+
+    pub fn grouped(metrics: GridMetrics, width: f32, count: usize, spans: &[GroupSpan]) -> Self {
         let usable = (width - metrics.pad_x * 2.0).max(metrics.cell_w);
         let columns = ((usable / metrics.cell_w).floor() as usize).max(1);
-        let rows = count.div_ceil(columns);
-        let content_height = metrics.pad_y * 2.0 + rows as f32 * metrics.cell_h;
+        let bands = Bands::new(columns, metrics.cell_h, metrics.pad_y, count, spans);
         Self {
             metrics,
             columns,
-            rows,
-            content_height,
+            rows: bands.total_rows(),
+            content_height: bands.content_height,
+            bands,
         }
     }
 
     /// Rect of item `index` in content coordinates (before scrolling).
     pub fn cell(&self, index: usize) -> CellRect {
-        let col = index % self.columns;
-        let row = index / self.columns;
+        let (gi, row, col) = self.bands.place(index);
         CellRect {
             x: self.metrics.pad_x + col as f32 * self.metrics.cell_w,
-            y: self.metrics.pad_y + row as f32 * self.metrics.cell_h,
+            y: self.bands.groups[gi].rows_y + row as f32 * self.metrics.cell_h,
             w: self.metrics.cell_w,
             h: self.metrics.cell_h,
         }
@@ -129,11 +414,10 @@ impl Grid {
             return None;
         }
         let col = ((x - self.metrics.pad_x) / self.metrics.cell_w).floor() as usize;
-        let row = ((y - self.metrics.pad_y) / self.metrics.cell_h).floor() as usize;
         if col >= self.columns {
             return None;
         }
-        let idx = row * self.columns + col;
+        let idx = self.bands.hit(col, y)?;
         (idx < count && self.cell(idx).contains(x, y)).then_some(idx)
     }
 
@@ -147,12 +431,13 @@ impl Grid {
         if count == 0 {
             return 0;
         }
-        let row = (((y - self.metrics.pad_y) / self.metrics.cell_h)
-            .floor()
-            .max(0.0)) as usize;
         let colf = ((x - self.metrics.pad_x) / self.metrics.cell_w).max(0.0);
-        let col = colf.round() as usize;
-        (row * self.columns + col.min(self.columns)).min(count)
+        self.bands.insertion(y, colf.round() as usize).min(count)
+    }
+
+    fn centre_x(&self, index: usize) -> f32 {
+        let c = self.cell(index);
+        c.x + c.w / 2.0
     }
 }
 
@@ -318,19 +603,46 @@ pub enum ItemLayout {
     Rows {
         metrics: RowMetrics,
         width: f32,
-        count: usize,
+        bands: Bands,
     },
 }
 
 impl ItemLayout {
+    #[cfg(test)]
     pub fn rows(metrics: RowMetrics, width: f32, count: usize) -> Self {
+        Self::rows_grouped(metrics, width, count, &[])
+    }
+
+    pub fn rows_grouped(
+        metrics: RowMetrics,
+        width: f32,
+        count: usize,
+        spans: &[GroupSpan],
+    ) -> Self {
         Self::Rows {
             metrics,
             width,
-            count,
+            bands: Bands::new(1, metrics.row_h, metrics.pad_y, count, spans),
         }
     }
 
+    fn bands(&self) -> &Bands {
+        match self {
+            Self::Grid(g) => &g.bands,
+            Self::Rows { bands, .. } => bands,
+        }
+    }
+
+    /// Full content width the header bands span (rows know it; the grid's headers run from
+    /// its left pad to the right edge of the last column).
+    fn header_width(&self) -> f32 {
+        match self {
+            Self::Grid(g) => g.metrics.pad_x * 2.0 + g.columns as f32 * g.metrics.cell_w,
+            Self::Rows { width, .. } => *width,
+        }
+    }
+
+    #[cfg(test)]
     pub fn columns(&self) -> usize {
         match self {
             Self::Grid(g) => g.columns,
@@ -338,21 +650,29 @@ impl ItemLayout {
         }
     }
 
+    #[cfg(test)]
     pub fn row_count(&self) -> usize {
-        match self {
-            Self::Grid(g) => g.rows,
-            Self::Rows { count, .. } => *count,
-        }
+        self.bands().total_rows()
+    }
+
+    /// Items are shown under "按时间分组" section headers.
+    pub fn is_grouped(&self) -> bool {
+        self.bands().is_grouped()
+    }
+
+    /// Section headers in scrollable-content coordinates (below the fixed details header).
+    pub fn headers(&self) -> Vec<GroupHeader> {
+        self.bands().headers(self.header_width())
+    }
+
+    /// The header band item `index` opens a group under, if any (scroll-into-view reveals it).
+    pub fn group_header_of(&self, index: usize) -> Option<CellRect> {
+        self.bands().header_of_first(index, self.header_width())
     }
 
     /// Scrollable content height, excluding a fixed details header.
     pub fn content_height(&self) -> f32 {
-        match self {
-            Self::Grid(g) => g.content_height,
-            Self::Rows { metrics, count, .. } => {
-                metrics.pad_y * 2.0 + *count as f32 * metrics.row_h
-            }
-        }
+        self.bands().content_height
     }
 
     /// Height of the part that does not scroll (details header).
@@ -382,12 +702,26 @@ impl ItemLayout {
     pub fn cell(&self, index: usize) -> CellRect {
         match self {
             Self::Grid(g) => g.cell(index),
-            Self::Rows { metrics, width, .. } => CellRect {
+            Self::Rows {
+                metrics,
+                width,
+                bands,
+            } => CellRect {
                 x: 0.0,
-                y: metrics.pad_y + index as f32 * metrics.row_h,
+                y: bands.cell_y(index),
                 w: *width,
                 h: metrics.row_h,
             },
+        }
+    }
+
+    /// Keyboard neighbour of `index`: `dx` steps along the list (clamped to its ends); `dy`
+    /// rows up / down — the item of the target row whose centre is nearest horizontally,
+    /// crossing group headers — or None when there is no such row (no wrap between rows).
+    pub fn neighbour(&self, index: usize, dx: i32, dy: i32, count: usize) -> Option<usize> {
+        match self {
+            Self::Grid(g) => g.bands.neighbour(index, dx, dy, count, |i| g.centre_x(i)),
+            Self::Rows { bands, .. } => bands.neighbour(index, dx, dy, count, |_| 0.0),
         }
     }
 
@@ -395,10 +729,7 @@ impl ItemLayout {
     pub fn insertion_index(&self, x: f32, y: f32, count: usize) -> usize {
         match self {
             Self::Grid(g) => g.insertion_index(x, y, count),
-            Self::Rows { metrics, .. } => {
-                let row = ((y - metrics.pad_y) / metrics.row_h).round().max(0.0) as usize;
-                row.min(count)
-            }
+            Self::Rows { bands, .. } => bands.insertion_rounded(y).min(count),
         }
     }
 
@@ -416,7 +747,8 @@ impl ItemLayout {
                         h: c.h,
                     };
                 }
-                if index < count || !index.is_multiple_of(g.columns) {
+                let (_, _, col) = g.bands.place(index);
+                if index < count || col != 0 {
                     let c = g.cell(index);
                     CellRect {
                         x: (c.x - 1.0).max(0.0),
@@ -437,9 +769,12 @@ impl ItemLayout {
             }
             Self::Rows { metrics, width, .. } => {
                 let y = if index < count {
-                    metrics.pad_y + index as f32 * metrics.row_h
+                    self.cell(index).y
+                } else if count == 0 {
+                    metrics.pad_y
                 } else {
-                    metrics.pad_y + count as f32 * metrics.row_h
+                    let c = self.cell(count - 1);
+                    c.y + c.h
                 };
                 CellRect {
                     x: 0.0,
@@ -455,12 +790,15 @@ impl ItemLayout {
     pub fn hit_test(&self, x: f32, y: f32, count: usize) -> Option<usize> {
         match self {
             Self::Grid(g) => g.hit_test(x, y, count),
-            Self::Rows { metrics, width, .. } => {
+            Self::Rows {
+                metrics,
+                width,
+                bands,
+            } => {
                 if y < metrics.pad_y || x < 0.0 || x >= *width {
                     return None;
                 }
-                let i = ((y - metrics.pad_y) / metrics.row_h).floor() as usize;
-                (i < count).then_some(i)
+                bands.hit(0, y).filter(|&i| i < count)
             }
         }
     }
@@ -632,5 +970,251 @@ mod tests {
         assert_eq!(l.hit_test(10.0, 1.0, 5), None);
         assert_eq!(l.hit_test(10.0, c.y + 1000.0, 5), None);
         assert_eq!(l.content_height(), 4.0 * 2.0 + 5.0 * 28.0);
+    }
+
+    fn overlaps(a: CellRect, b: CellRect) -> bool {
+        a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
+    }
+
+    /// Two headerless namespace items, five 今天, one 更早, in a 4-column grid.
+    fn grouped_grid() -> (GridMetrics, ItemLayout) {
+        let m = GridMetrics::for_icon_size(48, 2);
+        let spans = group_spans(
+            [None, None]
+                .into_iter()
+                .chain(std::iter::repeat_n(Some(DateBucket::Today), 5))
+                .chain([Some(DateBucket::Earlier)]),
+        );
+        assert_eq!(spans.len(), 3);
+        (m, ItemLayout::Grid(Grid::grouped(m, 320.0, 8, &spans)))
+    }
+
+    #[test]
+    fn group_spans_detects_runs_in_delivered_order() {
+        let spans = group_spans([
+            None,
+            Some(DateBucket::Earlier),
+            Some(DateBucket::Earlier),
+            Some(DateBucket::Today),
+        ]);
+        assert_eq!(
+            spans,
+            vec![
+                GroupSpan {
+                    first: 0,
+                    len: 1,
+                    bucket: None
+                },
+                GroupSpan {
+                    first: 1,
+                    len: 2,
+                    bucket: Some(DateBucket::Earlier)
+                },
+                GroupSpan {
+                    first: 3,
+                    len: 1,
+                    bucket: Some(DateBucket::Today)
+                },
+            ]
+        );
+        assert!(group_spans(std::iter::empty()).is_empty());
+    }
+
+    #[test]
+    fn grouped_grid_stacks_header_bands_and_row_blocks() {
+        let (m, l) = grouped_grid();
+        assert!(l.is_grouped());
+        assert_eq!(l.columns(), 4);
+        let headers = l.headers();
+        assert_eq!(headers.len(), 2, "the namespace run has no header");
+        // Namespace run: one row at the top pad; then the 今天 header, two rows (4 + 1);
+        // then the 更早 header and its single row.
+        assert_eq!(l.cell(0).y, m.pad_y);
+        assert_eq!(l.cell(1).x, m.pad_x + m.cell_w);
+        assert_eq!(headers[0].rect.y, m.pad_y + m.cell_h);
+        assert_eq!(headers[0].rect.h, GROUP_HEADER_H);
+        assert_eq!(headers[0].bucket, DateBucket::Today);
+        assert_eq!(headers[0].group, 1);
+        assert_eq!(l.cell(2).y, headers[0].rect.y + GROUP_HEADER_H);
+        assert_eq!(l.cell(2).x, m.pad_x, "each group starts a fresh row");
+        assert_eq!(l.cell(5).x, m.pad_x + 3.0 * m.cell_w);
+        assert_eq!(l.cell(6).y, l.cell(2).y + m.cell_h);
+        assert_eq!(l.cell(6).x, m.pad_x);
+        assert_eq!(headers[1].rect.y, l.cell(6).y + m.cell_h);
+        assert_eq!(headers[1].bucket, DateBucket::Earlier);
+        assert_eq!(l.cell(7).y, headers[1].rect.y + GROUP_HEADER_H);
+        assert_eq!(l.row_count(), 4);
+        assert_eq!(
+            l.content_height(),
+            m.pad_y * 2.0 + 4.0 * m.cell_h + 2.0 * GROUP_HEADER_H
+        );
+        assert_eq!(l.max_scroll(100.0), l.content_height() - 100.0);
+        for i in 0..8 {
+            for j in 0..8 {
+                assert!(i == j || !overlaps(l.cell(i), l.cell(j)), "{i} vs {j}");
+            }
+            for h in &headers {
+                assert!(!overlaps(l.cell(i), h.rect), "{i} under a header");
+            }
+        }
+    }
+
+    #[test]
+    fn grouped_grid_hit_tests_never_cross_groups() {
+        let (m, l) = grouped_grid();
+        for i in 0..8 {
+            let c = l.cell(i);
+            assert_eq!(l.hit_test(c.x + c.w / 2.0, c.y + c.h / 2.0, 8), Some(i));
+            assert_eq!(l.hit_test(c.x + 1.0, c.y + 1.0, 8), Some(i));
+        }
+        for h in l.headers() {
+            assert_eq!(l.hit_test(10.0, h.rect.y + 1.0, 8), None);
+            assert_eq!(l.hit_test(300.0, h.rect.y + h.rect.h - 0.5, 8), None);
+        }
+        // Empty tail of a short row: right of the two namespace items, right of item 6.
+        let c0 = l.cell(0);
+        assert_eq!(l.hit_test(c0.x + 2.0 * c0.w + 5.0, c0.y + 5.0, 8), None);
+        let c6 = l.cell(6);
+        assert_eq!(l.hit_test(c6.x + c6.w + 5.0, c6.y + 5.0, 8), None);
+        assert_eq!(l.hit_test(c6.x + 3.0 * c6.w + 5.0, c6.y + 5.0, 8), None);
+        // Below everything.
+        assert_eq!(l.hit_test(10.0, l.content_height() + 1.0, 8), None);
+        let _ = m;
+    }
+
+    #[test]
+    fn neighbour_crosses_group_headers_by_nearest_column() {
+        let (_, l) = grouped_grid();
+        assert_eq!(l.neighbour(0, 0, 1, 8), Some(2), "down into 今天 row 0");
+        assert_eq!(l.neighbour(1, 0, 1, 8), Some(3));
+        assert_eq!(
+            l.neighbour(5, 0, 1, 8),
+            Some(6),
+            "short row: nearest column"
+        );
+        assert_eq!(l.neighbour(3, 0, -1, 8), Some(1));
+        assert_eq!(
+            l.neighbour(4, 0, -1, 8),
+            Some(1),
+            "nearest when the row above is short"
+        );
+        assert_eq!(l.neighbour(6, 0, -1, 8), Some(2));
+        assert_eq!(l.neighbour(7, 0, -1, 8), Some(6));
+        assert_eq!(l.neighbour(7, 0, 1, 8), None, "no wrap past the last row");
+        assert_eq!(l.neighbour(0, 0, -1, 8), None);
+        assert_eq!(
+            l.neighbour(1, 1, 0, 8),
+            Some(2),
+            "right crosses into the next group"
+        );
+        assert_eq!(l.neighbour(7, 1, 0, 8), Some(7), "clamped at the end");
+        assert_eq!(l.neighbour(0, -1, 0, 8), Some(0));
+        assert_eq!(l.neighbour(0, 0, 3, 8), Some(7), "three rows down");
+        assert_eq!(l.neighbour(0, 0, 4, 8), None, "page past the end");
+        assert_eq!(l.neighbour(7, 0, -3, 8), Some(0));
+        assert_eq!(l.neighbour(8, 0, 1, 8), None);
+        // Plain grid: the old `cur ± cols` arithmetic.
+        let plain = ItemLayout::Grid(Grid::new(GridMetrics::for_icon_size(48, 2), 320.0, 10));
+        assert_eq!(plain.neighbour(1, 0, 1, 10), Some(5));
+        assert_eq!(plain.neighbour(6, 0, -1, 10), Some(2));
+        // A short last row takes the nearest column instead of refusing to move.
+        assert_eq!(plain.neighbour(7, 0, 1, 10), Some(9));
+        assert_eq!(plain.neighbour(9, 0, 1, 10), None);
+        assert_eq!(plain.neighbour(9, 1, 0, 10), Some(9));
+        let rows = ItemLayout::rows(RowMetrics::list(), 200.0, 3);
+        assert_eq!(rows.neighbour(0, 0, 1, 3), Some(1));
+        assert_eq!(rows.neighbour(2, 0, 1, 3), None);
+    }
+
+    #[test]
+    fn plain_grid_is_one_headerless_group() {
+        let m = GridMetrics::for_icon_size(48, 2);
+        let plain = Grid::new(m, 320.0, 7);
+        let one = Grid::grouped(
+            m,
+            320.0,
+            7,
+            &[GroupSpan {
+                first: 0,
+                len: 7,
+                bucket: None,
+            }],
+        );
+        // Spans that do not tile the items are ignored rather than trusted.
+        let broken = Grid::grouped(
+            m,
+            320.0,
+            7,
+            &[GroupSpan {
+                first: 0,
+                len: 3,
+                bucket: Some(DateBucket::Today),
+            }],
+        );
+        for g in [&plain, &one, &broken] {
+            assert_eq!(g.columns, 4);
+            assert_eq!(g.rows, 2);
+            assert_eq!(g.content_height, m.pad_y * 2.0 + 2.0 * m.cell_h);
+            for i in 0..7 {
+                assert_eq!(g.cell(i), plain.cell(i));
+                assert_eq!(
+                    g.cell(i),
+                    CellRect {
+                        x: m.pad_x + (i % 4) as f32 * m.cell_w,
+                        y: m.pad_y + (i / 4) as f32 * m.cell_h,
+                        w: m.cell_w,
+                        h: m.cell_h,
+                    }
+                );
+            }
+        }
+        let l = ItemLayout::Grid(one);
+        assert!(!l.is_grouped());
+        assert!(l.headers().is_empty());
+        assert_eq!(l.group_header_of(0), None);
+        let empty = ItemLayout::Grid(Grid::new(m, 320.0, 0));
+        assert_eq!(empty.content_height(), m.pad_y * 2.0);
+        assert_eq!(empty.insertion_caret(0, 0).y, m.pad_y);
+    }
+
+    #[test]
+    fn grouped_rows_layout_interleaves_header_bands() {
+        let spans = group_spans([
+            Some(DateBucket::Today),
+            Some(DateBucket::Today),
+            Some(DateBucket::Yesterday),
+        ]);
+        let l = ItemLayout::rows_grouped(RowMetrics::details(), 300.0, 3, &spans);
+        let m = RowMetrics::details();
+        let headers = l.headers();
+        assert_eq!(headers.len(), 2);
+        assert_eq!(headers[0].rect.y, m.pad_y);
+        assert_eq!(headers[0].rect.w, 300.0);
+        assert_eq!(l.cell(0).y, m.pad_y + GROUP_HEADER_H);
+        assert_eq!(l.cell(1).y, l.cell(0).y + m.row_h);
+        assert_eq!(headers[1].rect.y, l.cell(1).y + m.row_h);
+        assert_eq!(l.cell(2).y, headers[1].rect.y + GROUP_HEADER_H);
+        assert_eq!(
+            l.content_height(),
+            m.pad_y * 2.0 + 3.0 * m.row_h + 2.0 * GROUP_HEADER_H
+        );
+        assert_eq!(l.fixed_top(), m.header_h);
+        for h in &headers {
+            assert_eq!(l.hit_test(10.0, h.rect.y + 2.0, 3), None);
+        }
+        for i in 0..3 {
+            let c = l.cell(i);
+            assert_eq!(l.hit_test(10.0, c.y + c.h / 2.0, 3), Some(i));
+        }
+        assert_eq!(l.group_header_of(0), Some(headers[0].rect));
+        assert_eq!(l.group_header_of(1), None);
+        assert_eq!(l.group_header_of(2), Some(headers[1].rect));
+        assert_eq!(l.insertion_caret(3, 3).y, l.cell(2).y + m.row_h - 1.0);
+        assert_eq!(
+            l.neighbour(1, 0, 1, 3),
+            Some(2),
+            "down across the 昨天 header"
+        );
+        assert_eq!(l.neighbour(2, 0, -1, 3), Some(1));
     }
 }

@@ -658,6 +658,11 @@ pub(super) fn on_sizing(
         ),
     };
     let rolled = v.rolled_up;
+    // "按时间分组" interleaves header bands with the rows: no whole-row rhythm to snap to.
+    let grouped = v.group_by_date && {
+        let (cw, _) = v.content_size_px();
+        v.layout(cw as f32 / scale).is_grouped()
+    };
     let title_h = v.title_h_px();
     drop(guard);
     // SAFETY: lParam is the RECT* being sized for this message.
@@ -681,7 +686,7 @@ pub(super) fn on_sizing(
         // A rolled fence is exactly one title bar tall whatever edge is
         // dragged (keyboard SC_SIZE can still send top / bottom codes).
         rect.bottom = rect.top + title_h;
-    } else {
+    } else if !grouped {
         let h = (rect.bottom - rect.top) as f32;
         let rows = ((h - fixed_px) / row_px).round().max(1.0);
         let snapped_h = (fixed_px + rows * row_px).round() as i32;

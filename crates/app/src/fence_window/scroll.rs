@@ -251,9 +251,11 @@ impl FenceViewState {
     pub(super) fn scroll_into_view(&mut self, index: usize, animate: bool) {
         let (layout, view_h) = self.scroll_extent();
         let cell = layout.cell(index);
+        // The first item of a "按时间分组" section brings its header along.
+        let top = layout.group_header_of(index).map_or(cell.y, |h| h.y);
         let base = self.scroll_target();
-        let target = if cell.y < base {
-            cell.y - layout.top_pad()
+        let target = if top < base {
+            top - layout.top_pad()
         } else if cell.y + cell.h > base + view_h {
             cell.y + cell.h + layout.top_pad() - view_h
         } else {

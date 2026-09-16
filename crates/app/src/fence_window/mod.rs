@@ -9,10 +9,14 @@ use crate::commands::{
 };
 use crate::icons::{IconCache, Lookup};
 use crate::layout::{
-    CellRect, DetailColumn, DetailColumns, Grid, GridMetrics, ItemLayout, RowMetrics,
+    CellRect, DetailColumn, DetailColumns, Grid, GridMetrics, GroupSpan, ItemLayout, RowMetrics,
+    group_spans,
 };
 use crate::shadow::{ShadowStyle, ShadowWindow};
-use pecofence_core::{FenceId, IconKey, ItemId, ItemKey, SortMode, Spacing, ViewLayout};
+use pecofence_core::{
+    CivilDate, DateBucket, FenceId, IconKey, ItemId, ItemKey, SortMode, Spacing, ViewLayout,
+    date_bucket,
+};
 use pecofence_platform::dragdrop::{
     self as dragdrop, DragImage, DragPoint, DropEffect, DropHandler, DropImage,
     DropTargetRegistration, IDataObject,
@@ -26,8 +30,8 @@ use pecofence_platform::window::{
 };
 use pecofence_platform::{HWND, RECT, desktop, dwm, monitors, msg};
 use pecofence_render::fence_chrome::{
-    Backdrop, BackdropCrop, ContentDraw, FenceChrome, FenceStyle, HeaderColumn, ItemCell, RowCell,
-    RowColumns, RowsDraw, ScrollbarDraw, TabDraw, TitleDeco, TitleState,
+    Backdrop, BackdropCrop, ContentDraw, FenceChrome, FenceStyle, GroupHeaderDraw, HeaderColumn,
+    ItemCell, RowCell, RowColumns, RowsDraw, ScrollbarDraw, TabDraw, TitleDeco, TitleState,
 };
 use pecofence_render::motion::{self, Curve, Fades, Motion, Prop, Tween};
 use pecofence_render::{
@@ -148,6 +152,8 @@ pub struct ItemView {
     /// Last write time (Unix seconds) and size in bytes, for the details columns.
     pub mtime: i64,
     pub size: u64,
+    /// Local calendar day of `mtime` ("按时间分组" sections); namespace items have none.
+    local_date: Option<CivilDate>,
     /// Label fitted to the cell width (computed lazily).
     label: Option<String>,
     /// Details columns, formatted lazily (locale date, shell type name, KB size).
@@ -192,6 +198,11 @@ impl ItemView {
         mtime: i64,
         size: u64,
     ) -> Self {
+        let local_date = if pecofence_platform::shell::is_namespace_path(&path) {
+            None
+        } else {
+            fileinfo::local_civil_date(mtime).map(|(y, m, d)| CivilDate::new(y, m, d))
+        };
         Self {
             id,
             path,
@@ -201,6 +212,7 @@ impl ItemView {
             icon_only,
             mtime,
             size,
+            local_date,
             label: None,
             date_label: None,
             type_label: None,

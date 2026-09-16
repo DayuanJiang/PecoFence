@@ -38,6 +38,7 @@ const CMD_FENCE_SORT_DATE: u32 = 323;
 const CMD_FENCE_SORT_SIZE: u32 = 324;
 const CMD_FENCE_SORT_REVERSE: u32 = 325;
 const CMD_FENCE_SORT_OPENED: u32 = 326;
+const CMD_FENCE_SORT_GROUP: u32 = 327;
 const CMD_FENCE_LOCK: u32 = 333;
 const CMD_FENCE_RENAME: u32 = 330;
 /// Opens the settings page on the 「栅栏」 tab for this fence.
@@ -492,6 +493,13 @@ impl App {
                 pecofence_core::i18n::text("倒序"),
                 f.view.reverse,
                 false,
+            )
+            .separator()
+            .item(
+                CMD_FENCE_SORT_GROUP,
+                pecofence_core::i18n::text("按时间分组"),
+                f.view.group_by_date,
+                false,
             );
         menu.submenu(pecofence_core::i18n::text("排序方式"), sort_menu);
         let new_menu = PopupMenu::new();
@@ -698,6 +706,13 @@ impl App {
             }
             CMD_FENCE_SORT_REVERSE => {
                 self.state.set_reverse(fence, !f.view.reverse);
+                self.refresh_fence(fence);
+                self.schedule_save();
+            }
+            CMD_FENCE_SORT_GROUP => {
+                // Also switches to date order; `refresh_fence` pushes the flag, the re-sorted
+                // items, the header indicator and the auto height.
+                self.state.set_group_by_date(fence, !f.view.group_by_date);
                 self.refresh_fence(fence);
                 self.schedule_save();
             }

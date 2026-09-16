@@ -383,6 +383,10 @@ pub struct FenceView {
     /// Details columns shown (修改日期, 类型, 大小); None = all.
     #[serde(default)]
     pub columns_visible: Option<[bool; 3]>,
+    /// "按时间分组": items under 今天 / 昨天 / 本周 / 本月 / 更早 section headers (all
+    /// layouts). Implies `sort == Date`.
+    #[serde(default)]
+    pub group_by_date: bool,
 }
 
 impl Default for FenceView {
@@ -397,6 +401,7 @@ impl Default for FenceView {
             spacing: Spacing::Normal,
             column_widths: None,
             columns_visible: None,
+            group_by_date: false,
         }
     }
 }

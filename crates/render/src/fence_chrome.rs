@@ -52,6 +52,16 @@ pub struct FenceChrome {
     /// Title at 12 / 16 px for the per-fence "title size" option (`title_format` is 14).
     title_format_small: TextFormat,
     title_format_large: TextFormat,
+    /// "按时间分组" section captions: Caption 12 / 600, leading, vertically centred.
+    group_format: TextFormat,
+}
+
+/// A "按时间分组" section header band in surface DIPs (already scrolled; for rows already
+/// offset below the fixed column header, like the rows themselves).
+pub struct GroupHeaderDraw<'a> {
+    pub y: f32,
+    pub h: f32,
+    pub text: &'a str,
 }
 
 /// A wallpaper crop for one fence. The bitmap is uploaded once per `key` (a per-window cache
@@ -206,6 +216,8 @@ impl ScrollbarDraw {
 
 pub struct RowsDraw<'a> {
     pub rows: &'a [RowCell<'a>],
+    /// Section headers interleaved with the rows (drawn in the scrolling band).
+    pub group_headers: &'a [GroupHeaderDraw<'a>],
     pub columns: RowColumns,
     pub icon_size: f32,
     /// 0 for the List layout (no header).
@@ -512,6 +524,24 @@ fn draw_legible_text(
     session.draw_text(text, format, rect, brush);
 }
 
+/// The hairline of a "按时间分组" section header: from 8 DIPs after the caption's end
+/// (`text_end`) to `right`, one device pixel, vertically centred on the band.
+fn draw_group_rule(
+    session: &DrawingSession<'_>,
+    px: Px,
+    header: &GroupHeaderDraw<'_>,
+    text_end: f32,
+    right: f32,
+    line: &Brush,
+) {
+    let x0 = px.snap(text_end + 8.0);
+    let x1 = px.snap(right);
+    if x1 > x0 {
+        let y = px.snap(header.y + header.h / 2.0);
+        session.fill_rect(&Rect::from_xywh(x0, y, x1 - x0, px.hair()), line);
+    }
+}
+
 /// Rotation of the ChevronUp glyph (degrees) for a roll progress 0 (expanded) ..= 1 (rolled):
 /// half a turn, so the resting rolled state is ChevronDown.
 pub fn chevron_angle(roll_t: f32) -> f32 {
@@ -537,6 +567,8 @@ const HOT_SELECTED_LIFT: f32 = 0x0D as f32 / 255.0;
 
 pub struct ContentDraw<'a> {
     pub items: &'a [ItemCell<'a>],
+    /// Section headers between the row blocks of grouped items.
+    pub group_headers: &'a [GroupHeaderDraw<'a>],
     pub icon_size: f32,
     pub label_lines: u8,
     pub line_h: f32,
@@ -953,6 +985,10 @@ impl FenceChrome {
             .with_alignment(TextAlignment::Leading)
             .with_paragraph_alignment(ParagraphAlignment::Center)
             .with_word_wrapping(WordWrapping::NoWrap);
+        let group_format = TextFormat::with_weight(FONT_SMALL, 12.0, FontWeight(600))?
+            .with_alignment(TextAlignment::Leading)
+            .with_paragraph_alignment(ParagraphAlignment::Center)
+            .with_word_wrapping(WordWrapping::NoWrap);
         let chrome = Self {
             title_format,
             count_format,
@@ -966,6 +1002,7 @@ impl FenceChrome {
             title_glyph_format,
             title_format_small,
             title_format_large,
+            group_format,
         };
         // Labels follow the desktop's icon-title font from the start (12 px / 16 stays the
         // fallback when the system call fails).
@@ -1040,6 +1077,11 @@ impl FenceChrome {
     /// Single-line row text format (for fitting names to the name column).
     pub fn row_format(&self) -> &TextFormat {
         &self.row_format
+    }
+
+    /// "按时间分组" section caption format (12 px semibold, like the small title).
+    pub fn group_format(&self) -> &TextFormat {
+        &self.group_format
     }
 
     /// Does a tab caption fit its pill of width `w` without ellipsis (tooltip decision)?
@@ -1679,6 +1721,31 @@ impl FenceChrome {
         };
 
         let mut paint_rows = || -> Result<()> {
+            // Section headers scroll with the rows, under the fixed column header. The caption
+            // starts where the 名称 caption does; the hairline runs from its end to the margin.
+            if !rows.group_headers.is_empty() {
+                let line = session.create_solid_brush(theme.stroke)?;
+                let text_x = cols.name_x + 4.0;
+                let right = width - 8.0;
+                for (i, h) in rows.group_headers.iter().enumerate() {
+                    if h.y + h.h <= header_h || h.y > height {
+                        continue;
+                    }
+                    let text_w = crate::text::measure_width(h.text, &self.group_format)
+                        .min((right - text_x).max(1.0))
+                        .max(1.0);
+                    paint_text(
+                        h.text,
+                        &self.group_format,
+                        Rect::from_xywh(text_x, h.y, text_w, h.h),
+                        0x30000 + i as u128,
+                        true,
+                        1.0,
+                        false,
+                    );
+                    draw_group_rule(session, px, h, text_x + text_w, right, &line);
+                }
+            }
             let mut visible_slot = 0u128;
             for row in rows.rows {
                 if row.y + row.h <= header_h || row.y > height {
@@ -1961,6 +2028,45 @@ impl FenceChrome {
         let selected_stroke = session.create_solid_brush(theme.selection_stroke)?;
         let label = session.create_solid_brush(theme.text_primary)?;
         let label_dim = session.create_solid_brush(theme.text_secondary)?;
+
+        // "按时间分组" section headers: secondary caption flush with the label inset, then an
+        // Explorer-style hairline to the right margin. Static bands (the items glide), painted
+        // first so an unfolded label may overdraw them like it overdraws the row below.
+        if !content.group_headers.is_empty() {
+            let line = session.create_solid_brush(theme.stroke)?;
+            // The same local halo the labels get over mixed wallpaper.
+            let halo = if theme.liquid_glass {
+                Some(session.create_solid_brush(if theme.text_secondary.r > 0.5 {
+                    ColorF::new(0.0, 0.0, 0.0, 0.28)
+                } else {
+                    ColorF::new(1.0, 1.0, 1.0, 0.28)
+                })?)
+            } else {
+                None
+            };
+            let spread = 1.0 / scale.max(1.0);
+            let text_x = ICON_LABEL_SIDE_INSET;
+            let right = width - 8.0;
+            for h in content.group_headers {
+                if h.y + h.h <= 0.0 || h.y > height {
+                    continue;
+                }
+                let text_w = crate::text::measure_width(h.text, &self.group_format)
+                    .min((right - text_x).max(1.0))
+                    .max(1.0);
+                let rect = Rect::from_xywh(text_x, h.y, text_w, h.h);
+                draw_legible_text(
+                    session,
+                    h.text,
+                    &self.group_format,
+                    &rect,
+                    &label_dim,
+                    halo.as_ref(),
+                    spread,
+                );
+                draw_group_rule(session, px, h, text_x + text_w, right, &line);
+            }
+        }
 
         // The cell whose label unfolds is painted after every other cell: like the desktop's
         // focused icon it overdraws the row below.

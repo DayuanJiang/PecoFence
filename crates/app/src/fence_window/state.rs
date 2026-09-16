@@ -110,6 +110,8 @@ pub struct FenceViewState {
     /// Current sort, for the details header indicator.
     pub(super) sort: SortMode,
     pub(super) sort_reverse: bool,
+    /// Items sit under 今天 / 昨天 / … section headers (FenceView.group_by_date).
+    pub(super) group_by_date: bool,
     pub(super) header_hover: Option<DetailColumn>,
     /// Details column widths (修改日期, 类型, 大小) in DIPs.
     pub(super) column_widths: [f32; 3],

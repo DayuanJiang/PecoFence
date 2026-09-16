@@ -162,6 +162,7 @@ impl FenceWindow {
             layout: ViewLayout::Icons,
             sort: SortMode::Manual,
             sort_reverse: false,
+            group_by_date: false,
             header_hover: None,
             column_widths: DetailColumns::DEFAULT_WIDTHS,
             columns_visible: [true; 3],
@@ -963,6 +964,20 @@ impl FenceWindow {
                     let _ = v.redraw_content();
                 }
             }
+        });
+    }
+
+    /// "按时间分组": the items sit under 今天 / 昨天 / 本周 / 本月 / 更早 section headers, in
+    /// every layout. Push it before `set_items` so the layout glide targets the new sections.
+    pub fn set_group_by_date(&self, on: bool) {
+        self.with_view(|v| {
+            if v.group_by_date == on {
+                return;
+            }
+            v.group_by_date = on;
+            // The cells a running glide was computed for no longer exist.
+            v.snap_item_motion();
+            let _ = v.redraw_content();
         });
     }
 
