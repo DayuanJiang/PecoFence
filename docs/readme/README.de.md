@@ -85,6 +85,10 @@ und eigene Bezeichnungen bleiben unverändert.
 
 ## PecoFence herunterladen
 
+<a href="https://apps.microsoft.com/detail/9MV6WG3XNWSX?mode=direct"><img src="https://get.microsoft.com/images/de%20dark.svg" alt="Aus dem Microsoft Store herunterladen" width="200"></a>
+
+Die Microsoft-Store-Version ist von Microsoft signiert, aktualisiert sich automatisch und zeigt keine SmartScreen-Abfrage. Lieber ein einfaches ZIP? Der portable Build unten ist dieselbe App.
+
 1. Öffnen Sie die **Releases**-Seite dieses Repositorys und laden Sie `pecofence-<Version>-x64.zip` herunter.
 2. Entpacken Sie die **gesamte ZIP-Datei** in einen Ordner und starten Sie `pecofence.exe`.
 3. Legen Sie los. Ein Rechtsklick auf das Taskleistensymbol öffnet die Einstellungen oder beendet PecoFence.
@@ -111,7 +115,7 @@ in der gewählten Sprache angelegt. Beim Beenden erscheinen die Windows-Desktops
   Video-Hintergründe werden nicht gebrochen.
 - Windows-eigene Dialoge und Explorer-Menüeinträge von Drittanbietern folgen der Windows-Sprache.
 - Portable Builds sind nicht signiert. Fragt Windows SmartScreen beim ersten Start nach, wählen Sie
-  **Weitere Informationen → Trotzdem ausführen**. Eine Installation über winget vermeidet die Abfrage.
+  **Weitere Informationen → Trotzdem ausführen**. Eine Installation über den Microsoft Store oder winget vermeidet die Abfrage.
 
 [Anleitung zur portablen Version](../PORTABLE.md) · [Sprachen und Übersetzungen](../LOCALIZATION.md)
 

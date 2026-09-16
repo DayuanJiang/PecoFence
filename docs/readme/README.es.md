@@ -85,6 +85,10 @@ nombres que pongas tú se conservan.
 
 ## Descarga PecoFence
 
+<a href="https://apps.microsoft.com/detail/9MV6WG3XNWSX?mode=direct"><img src="https://get.microsoft.com/images/es%20dark.svg" alt="Consíguelo en Microsoft Store" width="200"></a>
+
+La versión de Microsoft Store está firmada por Microsoft, se actualiza sola y nunca muestra el aviso de SmartScreen. ¿Prefieres un ZIP? La versión portátil de abajo es la misma aplicación.
+
 1. Abre la página de **Releases** de este repositorio y descarga `pecofence-<versión>-x64.zip`.
 2. Extrae el **ZIP completo** en una carpeta y ejecuta `pecofence.exe`.
 3. Empieza a organizar. Haz clic derecho en el icono de la bandeja cuando necesites la Configuración
@@ -113,7 +117,7 @@ en el idioma que elijas. Los iconos del escritorio de Windows se restauran al sa
 - Los cuadros de diálogo propios de Windows y las entradas de terceros en el menú del Explorador
   siguen el idioma de Windows.
 - Las versiones portátiles no están firmadas. Si Windows SmartScreen aparece en el primer inicio, elige
-  **Más información → Ejecutar de todas formas**. Instalar con winget evita el aviso.
+  **Más información → Ejecutar de todas formas**. Instalar desde Microsoft Store o con winget evita el aviso.
 
 [Guía de la edición portátil](../PORTABLE.md) · [Guía de idiomas](../LOCALIZATION.md)
 

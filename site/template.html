@@ -68,7 +68,8 @@
       <h1 id="hero-title">{{t:hero.headline}} <span>{{t:hero.headline_accent}}</span></h1>
       <p class="lede">{{t:hero.text}}</p>
       <div class="actions hero-actions">
-        <a class="button primary" href="{{releases}}"><svg class="icon" aria-hidden="true"><use href="#i-windows"/></svg>{{t:hero.download}}<svg class="icon button-arrow" aria-hidden="true"><use href="#i-arrow"/></svg></a>
+        <a class="button primary" href="https://apps.microsoft.com/detail/9MV6WG3XNWSX?mode=direct"><svg class="icon" aria-hidden="true"><use href="#i-windows"/></svg>{{t:store.button}}<svg class="icon button-arrow" aria-hidden="true"><use href="#i-arrow"/></svg></a>
+        <a class="button secondary" href="{{releases}}">{{t:hero.download}}</a>
         <a class="button secondary" href="#watch"><svg class="icon" aria-hidden="true"><use href="#i-play"/></svg>{{t:watch.title}}</a>
       </div>
       <p class="note">{{t:hero.download_note}}</p>
@@ -151,8 +152,11 @@
       <div class="download-brand" aria-hidden="true"><img src="{{root}}assets/mark.svg?v={{v}}" alt="" width="44" height="44"></div>
       <h2 id="download-title">{{t:download.heading}}</h2>
       <p>{{t:footer.tagline}}</p>
-      <a class="button primary" href="{{releases}}"><svg class="icon" aria-hidden="true"><use href="#i-windows"/></svg>{{t:download.button}}<svg class="icon button-arrow" aria-hidden="true"><use href="#i-arrow"/></svg></a>
-      <span class="download-note">{{t:hero.download_note}}</span>
+      <div class="actions download-actions">
+        <a class="button primary" href="https://apps.microsoft.com/detail/9MV6WG3XNWSX?mode=direct"><svg class="icon" aria-hidden="true"><use href="#i-windows"/></svg>{{t:store.button}}<svg class="icon button-arrow" aria-hidden="true"><use href="#i-arrow"/></svg></a>
+        <a class="button secondary" href="{{releases}}">{{t:download.button}}</a>
+      </div>
+      <span class="download-note">{t:hero.download_note}</span>
     </div>
     <div class="install-grid">
       <div class="install-steps">

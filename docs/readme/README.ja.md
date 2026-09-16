@@ -83,6 +83,10 @@ https://github.com/user-attachments/assets/6320cf28-a791-4720-9659-b4575df021a0
 
 ## はじめる
 
+<a href="https://apps.microsoft.com/detail/9MV6WG3XNWSX?mode=direct"><img src="https://get.microsoft.com/images/ja%20dark.svg" alt="Microsoft Store から入手" width="200"></a>
+
+Microsoft Store 版は Microsoft によって署名され、自動で更新され、SmartScreen の警告も表示されません。ZIP が良ければ、下のポータブル版も同じアプリです。
+
 1. このリポジトリの **Releases** ページから `pecofence-<バージョン>-x64.zip` をダウンロードします。
 2. **ZIP 全体**をフォルダーに展開し、`pecofence.exe` を実行します。
 3. あとは整理を始めるだけ。設定を開くときや終了するときは、トレイアイコンを右クリックしてください。
@@ -108,7 +112,7 @@ https://github.com/user-attachments/assets/6320cf28-a791-4720-9659-b4575df021a0
 - ガラス効果は静止画の壁紙をもとに描画されます。他のアプリのウィンドウや動画壁紙は
   屈折・透過しません。
 - Windows 標準のダイアログや、サードパーティ製のエクスプローラーメニュー項目は Windows の言語で表示されます。
-- ポータブル版はコード署名されていません。初回起動時に Windows SmartScreen が表示された場合は**詳細情報 → 実行**を選んでください。winget からのインストールではこの警告は出ません。
+- ポータブル版はコード署名されていません。初回起動時に Windows SmartScreen が表示された場合は**詳細情報 → 実行**を選んでください。Microsoft Store または winget からのインストールではこの警告は出ません。
 
 [ポータブル版ガイド](../PORTABLE.md) · [言語ガイド](../LOCALIZATION.md)
 

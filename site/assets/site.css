@@ -107,6 +107,7 @@ kbd { white-space: nowrap; box-shadow: 0 2px 0 var(--edge); font-family: var(--f
 .hero h1 > span { display: block; color: var(--accent); }
 .lede { max-width: 620px; margin: 24px auto 27px; color: var(--ink-soft); font-size: 17px; line-height: 1.75; text-wrap: pretty; }
 .hero-actions { justify-content: center; }
+.download-actions { justify-content: center; }
 .note { margin: 16px 0 0; color: var(--ink-mute); font-size: 12px; }
 :lang(ja) .hero h1, :lang(ko) .hero h1, :lang(zh-CN) .hero h1, :lang(zh-TW) .hero h1 {
   font-size: clamp(32px, 4.8vw, 60px); line-height: 1.28; letter-spacing: -.025em; line-break: strict;
@@ -304,7 +305,7 @@ h2 { margin: 0; font: 650 clamp(28px, 3.4vw, 40px)/1.22 var(--font-display); let
   .hero h1 { font-size: clamp(32px, 8vw, 42px); }
   :lang(ja) .hero h1, :lang(ko) .hero h1, :lang(zh-CN) .hero h1, :lang(zh-TW) .hero h1 { font-size: clamp(27px, 7.5vw, 38px); }
   .lede { margin-block: 19px 22px; padding-inline: 5px; font-size: 14px; line-height: 1.8; }
-  .hero-actions { flex-direction: column; align-items: stretch; max-width: 330px; margin-inline: auto; gap: 9px; }
+  .hero-actions, .download-actions { flex-direction: column; align-items: stretch; max-width: 330px; margin-inline: auto; gap: 9px; }
   .button { min-height: 48px; padding: 11px 17px; font-size: 13px; }
   .note { max-width: 310px; margin-inline: auto; font-size: 10px; }
   .desktop-preview { margin-top: 30px; }

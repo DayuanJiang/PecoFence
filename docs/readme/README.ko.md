@@ -84,6 +84,10 @@ https://github.com/user-attachments/assets/6320cf28-a791-4720-9659-b4575df021a0
 
 ## PecoFence 시작하기
 
+<a href="https://apps.microsoft.com/detail/9MV6WG3XNWSX?mode=direct"><img src="https://get.microsoft.com/images/ko%20dark.svg" alt="Microsoft Store에서 받기" width="200"></a>
+
+Microsoft Store 버전은 Microsoft가 서명하고 자동으로 업데이트되며 SmartScreen 경고가 나타나지 않습니다. ZIP을 원한다면 아래 포터블 빌드도 같은 앱입니다.
+
 1. 이 저장소의 **Releases** 페이지에서 `pecofence-<버전>-x64.zip`을 다운로드합니다.
 2. **ZIP 전체**를 한 폴더에 풀고 `pecofence.exe`를 실행합니다.
 3. 이제 정리를 시작하세요. 설정을 열거나 종료하려면 트레이 아이콘을 오른쪽 클릭하면 됩니다.
@@ -110,7 +114,7 @@ https://github.com/user-attachments/assets/6320cf28-a791-4720-9659-b4575df021a0
   굴절하지 않습니다.
 - Windows 자체 대화 상자와 타사 파일 탐색기 메뉴 항목은 Windows 언어를 따릅니다.
 - 포터블 빌드는 코드 서명이 되어 있지 않습니다. 첫 실행 때 Windows SmartScreen이 나타나면 **추가 정보 → 실행**을 선택하세요.
-  winget으로 설치하면 이 경고가 나타나지 않습니다.
+  Microsoft Store나 winget으로 설치하면 이 경고가 나타나지 않습니다.
 
 [포터블 버전 안내](../PORTABLE.md) · [언어 안내](../LOCALIZATION.md)
 

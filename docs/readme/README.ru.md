@@ -84,6 +84,10 @@ https://github.com/user-attachments/assets/6320cf28-a791-4720-9659-b4575df021a0
 
 ## Скачать PecoFence
 
+<a href="https://apps.microsoft.com/detail/9MV6WG3XNWSX?mode=direct"><img src="https://get.microsoft.com/images/ru%20dark.svg" alt="Загрузить из Microsoft Store" width="200"></a>
+
+Версия из Microsoft Store подписана Microsoft, обновляется автоматически и не показывает предупреждение SmartScreen. Нужен просто ZIP? Портативная сборка ниже — то же приложение.
+
 1. Откройте страницу **Releases** этого репозитория и скачайте `pecofence-<версия>-x64.zip`.
 2. Распакуйте **весь ZIP-архив** в папку и запустите `pecofence.exe`.
 3. Начинайте наводить порядок. Настройки и выход — по правому щелчку на значке в трее.
@@ -110,7 +114,7 @@ https://github.com/user-attachments/assets/6320cf28-a791-4720-9659-b4575df021a0
   и видеообои.
 - Системные диалоги Windows и сторонние пункты меню Проводника отображаются на языке Windows.
 - Портативные сборки не подписаны. Если при первом запуске появится Windows SmartScreen, выберите
-  **Подробнее → Выполнить в любом случае**. При установке через winget предупреждения нет.
+  **Подробнее → Выполнить в любом случае**. При установке из Microsoft Store или через winget предупреждения нет.
 
 [Портативная версия](../PORTABLE.md) · [Языки и переводы](../LOCALIZATION.md)
 

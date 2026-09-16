@@ -83,6 +83,10 @@ All translations are included and work offline. Your filenames and custom names 
 
 ## Get PecoFence
 
+<a href="https://apps.microsoft.com/detail/9MV6WG3XNWSX?mode=direct"><img src="https://get.microsoft.com/images/en-us%20dark.svg" alt="Get it from Microsoft Store" width="200"></a>
+
+The Microsoft Store edition is signed by Microsoft, updates automatically and never shows a SmartScreen prompt. Prefer a plain ZIP? The portable build below is the same app.
+
 1. Open this repository's **Releases** page and download `pecofence-<version>-x64.zip`.
 2. Extract the **whole ZIP** into a folder and run `pecofence.exe`.
 3. Start organizing. Right-click the tray icon whenever you need Settings or want to exit.
@@ -109,7 +113,7 @@ in your selected language. Windows desktop icons are restored when you exit.
   or live video wallpaper.
 - Windows-owned dialogs and third-party Explorer menu entries follow Windows' language.
 - Portable builds are unsigned. If Windows SmartScreen appears on first launch, choose
-  **More info → Run anyway**. Installing through winget avoids the prompt.
+  **More info → Run anyway**. Installing from the Microsoft Store or through winget avoids the prompt.
 
 [Portable edition guide](docs/PORTABLE.md) · [Language guide](docs/LOCALIZATION.md)
 

@@ -85,6 +85,10 @@ personnalisés restent intacts.
 
 ## Télécharger PecoFence
 
+<a href="https://apps.microsoft.com/detail/9MV6WG3XNWSX?mode=direct"><img src="https://get.microsoft.com/images/fr%20dark.svg" alt="Télécharger dans le Microsoft Store" width="200"></a>
+
+La version Microsoft Store est signée par Microsoft, se met à jour automatiquement et n’affiche jamais l’avertissement SmartScreen. Vous préférez un simple ZIP ? La version portable ci-dessous est la même application.
+
 1. Ouvrez la page **Releases** de ce dépôt et téléchargez `pecofence-<version>-x64.zip`.
 2. Extrayez **l’intégralité du ZIP** dans un dossier et lancez `pecofence.exe`.
 3. Commencez à ranger. Un clic droit sur l’icône de la zone de notification ouvre les Paramètres
@@ -114,7 +118,7 @@ et Bureau dans la langue de votre choix. Les icônes du Bureau Windows réappara
 - Les boîtes de dialogue de Windows et les entrées tierces des menus de l’Explorateur suivent
   la langue de Windows.
 - Les versions portables ne sont pas signées. Si Windows SmartScreen s’affiche au premier lancement, choisissez
-  **Informations complémentaires → Exécuter quand même**. L’installation via winget évite cet avertissement.
+  **Informations complémentaires → Exécuter quand même**. L’installation via le Microsoft Store ou winget évite cet avertissement.
 
 [Guide de l’édition portable](../PORTABLE.md) · [Guide des langues](../LOCALIZATION.md)
 
