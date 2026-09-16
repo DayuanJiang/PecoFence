@@ -668,6 +668,25 @@ mod tests {
     }
 
     #[test]
+    fn idle_template_rule_is_recognised_for_ordering() {
+        let f = Uuid::new_v4();
+        let cleanup = Template::Cleanup.rule(f);
+        let installers = Template::Installers.rule(f);
+        assert!(
+            cleanup
+                .all_of
+                .iter()
+                .any(|c| matches!(c, Cond::IdleDays { .. }))
+        );
+        assert!(
+            !installers
+                .all_of
+                .iter()
+                .any(|c| matches!(c, Cond::IdleDays { .. }))
+        );
+    }
+
+    #[test]
     fn glob_and_time_conditions() {
         assert!(glob_match("*.PNG", "shot.png"));
         assert!(glob_match("report-??.docx", "report-01.docx"));

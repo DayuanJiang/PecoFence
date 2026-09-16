@@ -492,7 +492,8 @@ impl App {
     /// "快速添加" from the settings page: a template's fence beside the inbox plus its rule,
     /// applied to the desktop right away. A template added before just gets shown.
     pub(super) fn add_template(&mut self, template: pecofence_core::rules::Template) {
-        let inbox = self.state.inbox_id();
+        // The inbox may be a tab: its window is the host's.
+        let inbox = self.state.inbox_id().map(|id| self.state.host_of(id));
         let centre = |r: RECT| ((r.left + r.right) / 2, (r.top + r.bottom) / 2);
         let (x, y) = inbox
             .and_then(|id| self.fences.get(&id))

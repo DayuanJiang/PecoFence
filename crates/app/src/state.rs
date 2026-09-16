@@ -1,7 +1,7 @@
 //! Application state: config + layout selection + desktop item catalog + rule routing.
 
 use pecofence_core::geometry::{self, PxRect, WorkArea};
-use pecofence_core::rules::{Decision, RuleSet, Target, Template};
+use pecofence_core::rules::{Cond, Decision, RuleSet, Target, Template};
 use pecofence_core::{
     AssignedBy, Config, ConfigStore, Fence, FenceId, FenceKind, IconKey, Item, ItemId, ItemKey,
     ItemRef, ItemSourceSpec, Layout, LoadOutcome, MonitorIdentity, Origin, SortMode,
@@ -1238,6 +1238,16 @@ impl AppState {
 
     /// Re-runs the rules over every item (user assignments are respected).
     pub fn apply_rules_all(&mut self, entries: &[DesktopEntry]) -> usize {
+        self.apply_rules_filtered(entries, false)
+    }
+
+    /// The hourly sweep for clock-dependent rules: only an item whose winning rule has an
+    /// idle-days condition moves, so a later-added type rule still waits for "立即应用".
+    pub fn apply_idle_rules(&mut self, entries: &[DesktopEntry]) -> usize {
+        self.apply_rules_filtered(entries, true)
+    }
+
+    fn apply_rules_filtered(&mut self, entries: &[DesktopEntry], idle_only: bool) -> usize {
         let mut moved = 0;
         for entry in entries {
             if entry.origin == EntryOrigin::Namespace {
@@ -1256,6 +1266,20 @@ impl AppState {
                 continue;
             }
             let decision = self.config.rules.evaluate(&self.facts_for(entry));
+            if idle_only {
+                let by_idle_rule = match decision {
+                    Decision::Route { rule, .. } => self
+                        .config
+                        .rules
+                        .list
+                        .iter()
+                        .any(|r| r.id == rule && Self::has_idle_cond(r)),
+                    _ => false,
+                };
+                if !by_idle_rule {
+                    continue;
+                }
+            }
             if let Some((fence, by)) = self.target_fence(decision)
                 && self.config.assign(self.layout, id, fence, by).is_some()
             {
@@ -1593,9 +1617,28 @@ impl AppState {
             return Err(existing);
         }
         let id = self.new_fence(&template.title(), rect).ok_or(None)?;
-        self.config.rules.list.insert(0, template.rule(id));
+        let rule = template.rule(id);
+        // Idle-days rules must stay ahead of the type-only ones ("待清理" before "安装包"),
+        // otherwise a plain type rule claims every installer first and the idle rule never fires.
+        let at = if Self::has_idle_cond(&rule) {
+            0
+        } else {
+            self.config
+                .rules
+                .list
+                .iter()
+                .take_while(|r| Self::has_idle_cond(r))
+                .count()
+        };
+        self.config.rules.list.insert(at, rule);
         self.dirty = true;
         Ok(id)
+    }
+
+    fn has_idle_cond(rule: &pecofence_core::rules::Rule) -> bool {
+        rule.all_of
+            .iter()
+            .any(|c| matches!(c, Cond::IdleDays { .. }))
     }
 
     /// Deletes a fence; its items go back to the inbox. The inbox itself cannot be deleted.

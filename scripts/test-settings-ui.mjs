@@ -73,7 +73,10 @@ function bridge() {
           // Mirror the host: a new fence plus its rule at the top of the list.
           const id = 'tpl-' + message.template;
           state.fences.push({ id, title: message.template, kind: 'virtual', host: null, iconSize: 48, spacing: 'normal', autoHeight: false, locked: false, excludeFromQuickHide: false, opacity: 'default', tint: null, titleColor: 'theme', titleSize: 'normal', portal: null });
-          state.rules.list.unshift({ id: 'rule-' + id, name: message.template, enabled: true, target: { fence: id }, allOf: [{ cond: 'type', value: ['installers', 'archives'] }, { cond: 'idleDays', value: { min: 30 } }], priorityClass: 'type', template: message.template });
+          const idle = message.template === 'cleanup';
+          const allOf = idle ? [{ cond: 'type', value: ['installers', 'archives'] }, { cond: 'idleDays', value: { min: 30 } }] : [{ cond: 'type', value: [message.template] }];
+          const at = idle ? 0 : state.rules.list.findIndex(r => !r.allOf.some(c => c.cond === 'idleDays'));
+          state.rules.list.splice(at < 0 ? state.rules.list.length : at, 0, { id: 'rule-' + id, name: message.template, enabled: true, target: { fence: id }, allOf, priorityClass: 'type', template: message.template });
         }
         if (message.type === 'setFence') {
           // Mirror the host: a portal flag lands in `portal`, everything else on the fence.

@@ -879,7 +879,7 @@ impl App {
         if idle_rules_due {
             self.idle_rules_checked = Some(Instant::now());
             let entries = shell::enumerate_desktop();
-            let moved = self.state.apply_rules_all(&entries);
+            let moved = self.state.apply_idle_rules(&entries);
             if moved > 0 {
                 tracing::info!(moved, "idle-days rules re-applied");
                 self.refresh_all();
