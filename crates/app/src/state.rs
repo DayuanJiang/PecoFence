@@ -1,7 +1,7 @@
 //! Application state: config + layout selection + desktop item catalog + rule routing.
 
 use pecofence_core::geometry::{self, PxRect, WorkArea};
-use pecofence_core::rules::{Decision, RuleSet, Target};
+use pecofence_core::rules::{Decision, RuleSet, Target, Template};
 use pecofence_core::{
     AssignedBy, Config, ConfigStore, Fence, FenceId, FenceKind, IconKey, Item, ItemId, ItemKey,
     ItemRef, ItemSourceSpec, Layout, LoadOutcome, MonitorIdentity, Origin, SortMode,
@@ -559,7 +559,7 @@ impl AppState {
             return Decision::Default(Target::Inbox);
         }
         if self.config.rules.keep_updated {
-            self.config.rules.evaluate(&Self::facts_for(entry))
+            self.config.rules.evaluate(&self.facts_for(entry))
         } else {
             Decision::Default(Target::Inbox)
         }
@@ -597,7 +597,27 @@ impl AppState {
         }
     }
 
-    fn facts_for(entry: &DesktopEntry) -> pecofence_core::ItemFacts {
+    fn facts_for(&self, entry: &DesktopEntry) -> pecofence_core::ItemFacts {
+        let last_opened = self
+            .catalog
+            .get(&ItemKey::from_path(&entry.path.to_string_lossy()))
+            .and_then(|id| self.config.items.get(id))
+            .and_then(|it| it.last_opened);
+        Self::facts_at(entry, last_opened, pecofence_core::now_unix())
+    }
+
+    /// Whole days between `now` and the later of last write and last open; `None` when the
+    /// file reports no time at all.
+    fn idle_days(mtime: i64, last_opened: Option<i64>, now: i64) -> Option<u32> {
+        let last = mtime.max(last_opened.unwrap_or(0));
+        (last > 0).then(|| ((now - last).max(0) / 86_400) as u32)
+    }
+
+    fn facts_at(
+        entry: &DesktopEntry,
+        last_opened: Option<i64>,
+        now: i64,
+    ) -> pecofence_core::ItemFacts {
         let lower = entry.file_name.to_lowercase();
         let (shortcut_target, shortcut_target_ext) = if lower.ends_with(".lnk") {
             let t = shell::shortcut_target(&entry.path);
@@ -625,6 +645,7 @@ impl AppState {
             },
             is_hidden: false,
             is_system: false,
+            idle_days: Self::idle_days(entry.mtime, last_opened, now),
         }
     }
 
@@ -701,6 +722,7 @@ impl AppState {
                 orphaned_since: None,
                 size: entry.size,
                 open_count: 0,
+                last_opened: None,
             };
             let id = item.id;
             self.config.items.insert(id, item);
@@ -824,6 +846,7 @@ impl AppState {
     pub fn note_opened(&mut self, id: ItemId) {
         if let Some(it) = self.config.items.get_mut(&id) {
             it.open_count = it.open_count.saturating_add(1);
+            it.last_opened = Some(pecofence_core::now_unix());
             self.dirty = true;
         }
     }
@@ -1048,6 +1071,7 @@ impl AppState {
                 orphaned_since: None,
                 size: entry.size,
                 open_count: 0,
+                last_opened: None,
             };
             new_items.push(item.clone());
             self.portal_items.insert(item_id, item);
@@ -1231,7 +1255,7 @@ impl AppState {
             {
                 continue;
             }
-            let decision = self.config.rules.evaluate(&Self::facts_for(entry));
+            let decision = self.config.rules.evaluate(&self.facts_for(entry));
             if let Some((fence, by)) = self.target_fence(decision)
                 && self.config.assign(self.layout, id, fence, by).is_some()
             {
@@ -1266,7 +1290,7 @@ impl AppState {
                 .iter()
                 .find(|f| f.contains_item(id))
                 .map(|f| f.id);
-            let decision = self.config.rules.evaluate(&Self::facts_for(entry));
+            let decision = self.config.rules.evaluate(&self.facts_for(entry));
             if let Some((fence, by)) = self.target_fence(decision)
                 && Some(fence) != from
                 && self.config.assign(self.layout, id, fence, by).is_some()
@@ -1516,6 +1540,35 @@ impl AppState {
         Some(id)
     }
 
+    /// "快速添加": a fence for `template` at `rect` plus its rule, inserted ahead of the
+    /// existing rules so it wins over the broader first-run presets (an installer is also a
+    /// program). `Err(existing)` when the template was added before; `existing` is the fence
+    /// its rule still points to, if any.
+    pub fn add_template(
+        &mut self,
+        template: Template,
+        rect: RECT,
+    ) -> Result<FenceId, Option<FenceId>> {
+        let key = template.key();
+        if let Some(rule) = self
+            .config
+            .rules
+            .list
+            .iter()
+            .find(|r| r.template.as_deref() == Some(key))
+        {
+            let existing = match rule.target {
+                Target::Fence(id) => self.routable_fence(id),
+                Target::Inbox => self.inbox_id(),
+            };
+            return Err(existing);
+        }
+        let id = self.new_fence(&template.title(), rect).ok_or(None)?;
+        self.config.rules.list.insert(0, template.rule(id));
+        self.dirty = true;
+        Ok(id)
+    }
+
     /// Deletes a fence; its items go back to the inbox. The inbox itself cannot be deleted.
     pub fn delete_fence(&mut self, id: FenceId) -> bool {
         let Some(inbox) = self.inbox_id() else {
@@ -1679,6 +1732,7 @@ mod tests {
             orphaned_since: None,
             size: 0,
             open_count: 0,
+            last_opened: None,
         };
         let id = item.id;
         state.catalog.insert(item.key.clone(), id);

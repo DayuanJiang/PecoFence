@@ -36,3 +36,6 @@ Thumbs.db
 # MSIX test-signing material
 *.pfx
 *.cer
+
+# Claude Code session files and agent worktrees
+.claude/

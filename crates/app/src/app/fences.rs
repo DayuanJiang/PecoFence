@@ -484,6 +484,50 @@ impl App {
         }
     }
 
+    /// "快速添加" from the settings page: a template's fence beside the inbox plus its rule,
+    /// applied to the desktop right away. A template added before just gets shown.
+    pub(super) fn add_template(&mut self, template: pecofence_core::rules::Template) {
+        let inbox = self.state.inbox_id();
+        let centre = |r: RECT| ((r.left + r.right) / 2, (r.top + r.bottom) / 2);
+        let (x, y) = inbox
+            .and_then(|id| self.fences.get(&id))
+            .map(|w| centre(w.rect()))
+            .or_else(|| {
+                self.state
+                    .work_areas
+                    .first()
+                    .map(|w| ((w.left + w.right) / 2, (w.top + w.bottom) / 2))
+            })
+            .unwrap_or((0, 0));
+        let rect = self.place_new_fence(3, 200.0, x, y, inbox);
+        match self.state.add_template(template, rect) {
+            Ok(id) => {
+                self.resync_windows();
+                if let Some(w) = self.fences.get(&id) {
+                    w.show(true);
+                }
+                let entries = shell::enumerate_desktop();
+                let moved = self.state.apply_rules_all(&entries);
+                self.refresh_all();
+                self.schedule_save();
+                self.push_settings_state();
+                self.settings_toast(&pecofence_core::i18n::format(
+                    "已添加“{0}”，整理了 {1} 个项目",
+                    &[template.title(), moved.to_string()],
+                ));
+            }
+            Err(existing) => {
+                self.settings_toast(&pecofence_core::i18n::format(
+                    "“{0}”已存在",
+                    &[template.title()],
+                ));
+                if let Some(id) = existing {
+                    self.post_show_fence(id);
+                }
+            }
+        }
+    }
+
     pub(super) fn create_fence_at(&mut self, rect: RECT) {
         if let Some(id) = self
             .state

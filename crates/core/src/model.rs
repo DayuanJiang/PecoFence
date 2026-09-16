@@ -614,6 +614,9 @@ pub struct Item {
     /// How often the item was launched from a fence ("按打开次数" sorting).
     #[serde(default)]
     pub open_count: u32,
+    /// Unix seconds of the last launch from a fence (the "闲置天数" rule condition).
+    #[serde(default)]
+    pub last_opened: Option<i64>,
 }
 
 impl Item {
@@ -1116,6 +1119,7 @@ mod tests {
             orphaned_since: None,
             size: 0,
             open_count: 0,
+            last_opened: None,
         };
         f.items.push(ItemRef {
             item_id: item.id,

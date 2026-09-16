@@ -51,6 +51,10 @@ pub struct Rule {
     /// All conditions must hold (AND).
     pub all_of: Vec<Cond>,
     pub priority_class: Class,
+    /// The "快速添加" template this rule came from (see [`Template::key`]), so the template
+    /// is offered once even after the user renames the rule.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub template: Option<String>,
 }
 
 impl Rule {
@@ -70,10 +74,12 @@ impl Rule {
             .any(|c| matches!(c, Cond::Name { .. } | Cond::Glob(_) | Cond::ExactName(_)))
         {
             Class::Name
-        } else if all_of
-            .iter()
-            .any(|c| matches!(c, Cond::CreatedTime { .. } | Cond::CreatedWeekday(_)))
-        {
+        } else if all_of.iter().any(|c| {
+            matches!(
+                c,
+                Cond::CreatedTime { .. } | Cond::CreatedWeekday(_) | Cond::IdleDays { .. }
+            )
+        }) {
             Class::Time
         } else {
             Class::Custom
@@ -85,6 +91,7 @@ impl Rule {
             target,
             all_of,
             priority_class,
+            template: None,
         }
     }
 }
@@ -100,6 +107,10 @@ pub enum TypeCategory {
     Video,
     Archives,
     Shortcuts,
+    /// Setup packages: `.msi`/`.msix`/`.appx` families and `.exe` files whose name says
+    /// setup/install. Listed after `Programs` in the enum but matched first when a rule using
+    /// it precedes the Programs rule (first match wins).
+    Installers,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -141,6 +152,11 @@ pub enum Cond {
     /// 0 = Monday … 6 = Sunday.
     CreatedWeekday(Vec<u8>),
     Origin(Origin),
+    /// Days since the item was last written or last opened from a fence, whichever is later,
+    /// is at least `min`. Never matches when the age is unknown.
+    IdleDays {
+        min: u32,
+    },
 }
 
 /// Everything the engine may look at for one item.
@@ -159,6 +175,8 @@ pub struct ItemFacts {
     pub origin: Origin,
     pub is_hidden: bool,
     pub is_system: bool,
+    /// Whole days since the later of last write and last open; `None` when unknown.
+    pub idle_days: Option<u32>,
 }
 
 /// Extensions that are never routed (downloads in flight, Office lock files…).
@@ -267,6 +285,21 @@ fn category_matches(cat: TypeCategory, facts: &ItemFacts) -> bool {
                     ".zip" | ".7z" | ".rar" | ".tar" | ".gz" | ".bz2" | ".xz" | ".iso" | ".cab"
                 )
         }
+        TypeCategory::Installers => {
+            if facts.is_folder {
+                return false;
+            }
+            match ext.as_str() {
+                ".msi" | ".msix" | ".msixbundle" | ".appx" | ".appxbundle" | ".appinstaller" => {
+                    true
+                }
+                ".exe" => {
+                    let name = facts.file_name.to_lowercase();
+                    name.contains("setup") || name.contains("install")
+                }
+                _ => false,
+            }
+        }
     }
 }
 
@@ -348,6 +381,7 @@ pub fn cond_matches(cond: &Cond, facts: &ItemFacts) -> bool {
             .map(|d| days.contains(&d))
             .unwrap_or(false),
         Cond::Origin(o) => facts.origin == *o,
+        Cond::IdleDays { min } => facts.idle_days.is_some_and(|d| d >= *min),
     }
 }
 
@@ -390,6 +424,14 @@ impl RuleSet {
         Decision::Default(self.default_target)
     }
 
+    /// Whether any enabled rule depends on the clock (idle days), so it must be re-run
+    /// periodically rather than only when the desktop changes.
+    pub fn has_idle_rules(&self) -> bool {
+        self.list
+            .iter()
+            .any(|r| r.enabled && r.all_of.iter().any(|c| matches!(c, Cond::IdleDays { .. })))
+    }
+
     /// Stardock-style first-run presets: 程序 / 文件夹 / 文件与文档 (+ 下载 by name).
     pub fn default_presets(programs: FenceId, folders: FenceId, documents: FenceId) -> Self {
         Self {
@@ -422,6 +464,83 @@ impl RuleSet {
                 ),
             ],
         }
+    }
+}
+
+/// Idle threshold of the "待清理" template: installers and archives untouched this long are
+/// gathered (never deleted) so the user can decide about them.
+pub const CLEANUP_IDLE_DAYS: u32 = 30;
+
+/// "快速添加" presets: one click creates a fence and the rule that fills it. Titles are
+/// localized when the template is applied and stored as plain data, like the first-run fences.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Template {
+    Images,
+    Music,
+    Video,
+    Archives,
+    Installers,
+    /// Installers and archives idle for [`CLEANUP_IDLE_DAYS`]: gathered, not deleted.
+    Cleanup,
+}
+
+impl Template {
+    pub const ALL: [Template; 6] = [
+        Template::Images,
+        Template::Music,
+        Template::Video,
+        Template::Archives,
+        Template::Installers,
+        Template::Cleanup,
+    ];
+
+    /// Stable identifier used by the settings page and stored in [`Rule::template`].
+    pub fn key(self) -> &'static str {
+        match self {
+            Template::Images => "images",
+            Template::Music => "music",
+            Template::Video => "video",
+            Template::Archives => "archives",
+            Template::Installers => "installers",
+            Template::Cleanup => "cleanup",
+        }
+    }
+
+    pub fn parse(key: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|t| t.key() == key)
+    }
+
+    /// Fence title and rule name in the current UI language.
+    pub fn title(self) -> String {
+        crate::i18n::text(match self {
+            Template::Images => "图片",
+            Template::Music => "音乐",
+            Template::Video => "视频",
+            Template::Archives => "压缩包",
+            Template::Installers => "安装包",
+            Template::Cleanup => "待清理",
+        })
+        .to_string()
+    }
+
+    /// The rule that fills `fence`, tagged with this template's key.
+    pub fn rule(self, fence: FenceId) -> Rule {
+        let conds = match self {
+            Template::Images => vec![Cond::Type(vec![TypeCategory::Images])],
+            Template::Music => vec![Cond::Type(vec![TypeCategory::Music])],
+            Template::Video => vec![Cond::Type(vec![TypeCategory::Video])],
+            Template::Archives => vec![Cond::Type(vec![TypeCategory::Archives])],
+            Template::Installers => vec![Cond::Type(vec![TypeCategory::Installers])],
+            Template::Cleanup => vec![
+                Cond::Type(vec![TypeCategory::Installers, TypeCategory::Archives]),
+                Cond::IdleDays {
+                    min: CLEANUP_IDLE_DAYS,
+                },
+            ],
+        };
+        let mut rule = Rule::new(&self.title(), Target::Fence(fence), conds);
+        rule.template = Some(self.key().to_string());
+        rule
     }
 }
 
@@ -493,6 +612,59 @@ mod tests {
         assert!(
             matches!(rs.evaluate(&f), Decision::Route { target: Target::Fence(t), .. } if t == b)
         );
+    }
+
+    #[test]
+    fn installers_are_setup_packages_and_setup_named_exes() {
+        let is = |name: &str| category_matches(TypeCategory::Installers, &facts(name));
+        assert!(is("vlc-3.0.21-win64.msi"));
+        assert!(is("App.msixbundle"));
+        assert!(is("Steam-Setup.exe"));
+        assert!(is("node-v22-x64-installer.exe"));
+        assert!(!is("notepad.exe"));
+        assert!(!is("setup.txt"));
+        let mut folder = facts("Setup");
+        folder.is_folder = true;
+        assert!(!category_matches(TypeCategory::Installers, &folder));
+    }
+
+    #[test]
+    fn idle_days_needs_a_known_age() {
+        let c = Cond::IdleDays { min: 30 };
+        let mut f = facts("old-setup.exe");
+        assert!(!cond_matches(&c, &f), "unknown age never matches");
+        f.idle_days = Some(29);
+        assert!(!cond_matches(&c, &f));
+        f.idle_days = Some(30);
+        assert!(cond_matches(&c, &f));
+    }
+
+    #[test]
+    fn cleanup_template_gathers_only_idle_installers_and_archives() {
+        let fence = Uuid::new_v4();
+        let rule = Template::Cleanup.rule(fence);
+        assert_eq!(rule.template.as_deref(), Some("cleanup"));
+        assert_eq!(rule.priority_class, Class::Type);
+        let rs = RuleSet {
+            list: vec![rule],
+            ..Default::default()
+        };
+        let mut old_zip = facts("backup.zip");
+        old_zip.idle_days = Some(45);
+        assert!(
+            matches!(rs.evaluate(&old_zip), Decision::Route { target: Target::Fence(t), .. } if t == fence)
+        );
+        let mut fresh_zip = facts("backup.zip");
+        fresh_zip.idle_days = Some(2);
+        assert_eq!(fresh_zip.file_name, "backup.zip");
+        assert_eq!(rs.evaluate(&fresh_zip), Decision::Default(Target::Inbox));
+        let mut old_doc = facts("thesis.docx");
+        old_doc.idle_days = Some(400);
+        assert_eq!(rs.evaluate(&old_doc), Decision::Default(Target::Inbox));
+        assert!(rs.has_idle_rules());
+        assert!(!RuleSet::default_presets(fence, fence, fence).has_idle_rules());
+        assert_eq!(Template::parse("cleanup"), Some(Template::Cleanup));
+        assert_eq!(Template::parse("nope"), None);
     }
 
     #[test]

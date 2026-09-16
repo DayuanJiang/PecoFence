@@ -69,6 +69,12 @@ function bridge() {
           state.desktopIconsHidden = state.settings.hideRealIcons;
         }
         if (message.type === 'setRules') state.rules = structuredClone(message.rules);
+        if (message.name === 'addTemplate' && !state.rules.list.some(r => r.template === message.template)) {
+          // Mirror the host: a new fence plus its rule at the top of the list.
+          const id = 'tpl-' + message.template;
+          state.fences.push({ id, title: message.template, kind: 'virtual', host: null, iconSize: 48, spacing: 'normal', autoHeight: false, locked: false, excludeFromQuickHide: false, opacity: 'default', tint: null, titleColor: 'theme', titleSize: 'normal', portal: null });
+          state.rules.list.unshift({ id: 'rule-' + id, name: message.template, enabled: true, target: { fence: id }, allOf: [{ cond: 'type', value: ['installers', 'archives'] }, { cond: 'idleDays', value: { min: 30 } }], priorityClass: 'type', template: message.template });
+        }
         if (message.type === 'setFence') {
           // Mirror the host: a portal flag lands in `portal`, everything else on the fence.
           const fence = state.fences.find(f => f.id === message.id);
@@ -289,6 +295,25 @@ async function runTests() {
     assert(doc.activeElement.dataset.act === 'toggle', 'Toggle lost focus');
     assert(doc.activeElement.getAttribute('aria-checked') === 'false', 'Space did not toggle');
     assert(doc.getElementById('nrTarget').value === 'fence-b', 'Reorder reset draft target');
+  });
+  await test('Quick-add templates post addTemplate once and render the new rule', async () => {
+    doc = await reset();
+    rulesPage(doc);
+    const before = ruleCount(doc);
+    doc.querySelector('#templates [data-template=cleanup]').click(); await settle();
+    const sent = frame.contentWindow.testMessages.filter(m => m.name === 'addTemplate');
+    assert(sent.length === 1 && sent[0].template === 'cleanup', 'addTemplate not posted');
+    assert(ruleCount(doc) === before + 1, 'Template rule not rendered');
+    const conds = doc.querySelector('#ruleList [data-row-id] .conds').textContent;
+    assert(conds.includes('30') && conds.includes('安装包'), 'Template conditions not labelled: ' + conds);
+    doc.querySelector('#templates [data-template=cleanup]').click(); await settle();
+    assert(ruleCount(doc) === before + 1, 'Second click duplicated the template rule');
+    change(doc, 'nrKind', 'idle');
+    assert(doc.getElementById('nrIdle').style.display === '', 'Idle-days input hidden');
+    doc.getElementById('nrIdleDays').value = '0';
+    await add(doc);
+    assert(errorShown(doc), 'Zero idle days accepted');
+    doc = await reset(); rulesPage(doc); // the template fence must not leak into later fixture-count checks
   });
   await test('Reaching a reorder boundary never focuses the opposite action', async () => {
     const up = doc.querySelector('[data-row-id="rule-a"] [data-act=up]');

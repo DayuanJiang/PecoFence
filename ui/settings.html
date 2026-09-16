@@ -384,6 +384,12 @@
       <header class="page-header"><div><div class="eyebrow">少些整理，多些专注</div><h2>整理规则</h2><p class="page-description">给文件一个去处，让整理自然发生。</p></div><span class="page-badge" id="ruleSummary"></span></header>
       <div class="card"><div class="l"><span class="ic">&#xE8FD;</span><div><div class="t">新项目出现在桌面时自动归类</div><div class="s">快捷方式目标规则优先，其余按列表顺序匹配；没有命中的进入“桌面”栅栏</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="rules.keepUpdated"></div></div>
       <div class="card"><div class="l"><span class="ic">&#xE8AB;</span><div><div class="t">立即对桌面上的全部项目应用规则</div><div class="s">手动放置过的项目不会被移动</div></div></div><button id="applyRules">立即应用</button></div>
+      <h3>快速添加</h3>
+      <div class="card"><div class="l"><span class="ic">&#xE710;</span><div><div class="t">一键创建栅栏并添加规则</div><div class="s">“待清理”只归拢 30 天没用过的安装包和压缩包，不删除任何文件</div></div></div></div>
+      <div class="row" id="templates" style="flex-wrap:wrap;gap:8px;margin:-4px 0 16px">
+        <button data-template="images">图片</button><button data-template="music">音乐</button><button data-template="video">视频</button>
+        <button data-template="archives">压缩包</button><button data-template="installers">安装包</button><button data-template="cleanup">待清理</button>
+      </div>
       <h3>规则列表</h3>
       <div id="ruleList"></div>
       <h3>新建规则</h3>
@@ -396,11 +402,13 @@
             <option value="contains">名称包含</option><option value="notContains">名称不包含</option><option value="startsWith">名称开头是</option><option value="endsWith">名称结尾是</option><option value="exact">名称恰好是 (含扩展名，逗号分隔)</option>
             <option value="glob">通配符 (*.png)</option><option value="target">快捷方式目标包含</option>
             <option value="time">创建时间在某个时段</option><option value="weekday">创建于星期</option><option value="size">大小范围 (MB)</option>
+            <option value="idle">闲置天数 (未修改也未打开)</option>
             <option value="folders">仅文件夹</option><option value="files">仅文件</option></select></label>
           <label id="nrValueWrap">条件值<input type="text" id="nrValue" placeholder="png, jpg"></label>
           <div class="cats" id="nrCats" style="grid-column: 1 / -1"></div>
           <div class="cats" id="nrTime" style="grid-column: 1 / -1; display:none"><label>从 <input type="time" id="nrFrom" value="18:00"></label><label>到 <input type="time" id="nrTo" value="06:00"></label><span class="s">结束早于开始表示跨越午夜</span></div>
           <div class="cats" id="nrWeek" style="grid-column: 1 / -1; display:none"></div>
+          <div class="cats" id="nrIdle" style="grid-column: 1 / -1; display:none"><label>闲置至少 <input type="number" id="nrIdleDays" value="30" min="1" style="min-width:80px"> 天</label></div>
           <div class="cats" id="nrSize" style="grid-column: 1 / -1; display:none"><label>至少 <input type="text" inputmode="decimal" id="nrMin" placeholder="0" style="min-width:80px"> MB</label><label>至多 <input type="text" inputmode="decimal" id="nrMax" placeholder="不限" style="min-width:80px"> MB</label></div>
         </div>
         <div class="row" style="justify-content:flex-end;margin-top:12px"><button class="accent" id="nrAdd" style="min-width:96px">添加规则</button></div>
@@ -443,7 +451,7 @@
   const wv = window.chrome && window.chrome.webview;
   const send = (m) => wv && wv.postMessage(m);
   let state = null;
-  const CATS = () => [["programs",t("程序")],["shortcuts",t("快捷方式")],["folders",t("文件夹")],["documents",t("文档")],["images",t("图片")],["music",t("音乐")],["video",t("视频")],["archives",t("压缩包")]];
+  const CATS = () => [["programs",t("程序")],["shortcuts",t("快捷方式")],["folders",t("文件夹")],["documents",t("文档")],["images",t("图片")],["music",t("音乐")],["video",t("视频")],["archives",t("压缩包")],["installers",t("安装包")]];
 
   // Appearance comes first, beside the preview; controls keep their existing host bindings.
   document.getElementById('appearanceSettings').replaceWith(document.getElementById('appearanceGroup'));
@@ -695,6 +703,7 @@
       case 'createdTime': return t("创建时间 ") + hm(v.fromMin) + '–' + hm(v.toMin);
       case 'createdWeekday': return t("创建于 ") + v.map(d => WEEK()[d] || d).join('、');
       case 'origin': return t("来源：") + (v === 'publicDesktop' ? t("公共桌面") : t("用户桌面"));
+      case 'idleDays': return tf("闲置 ≥ {0} 天", v.min);
       default: return c.cond;
     }
   }
@@ -764,12 +773,13 @@
   const WEEKDAYS = () => [['0',t("周一")],['1',t("周二")],['2',t("周三")],['3',t("周四")],['4',t("周五")],['5',t("周六")],['6',t("周日")]];
   function updateKind() {
     const k = document.getElementById('nrKind').value;
-    const noValue = ['type','folders','files','time','weekday','size'];
+    const noValue = ['type','folders','files','time','weekday','size','idle'];
     document.getElementById('nrValueWrap').style.display = noValue.includes(k) ? 'none' : '';
     document.getElementById('nrCats').style.display = k === 'type' ? '' : 'none';
     document.getElementById('nrTime').style.display = k === 'time' ? '' : 'none';
     document.getElementById('nrWeek').style.display = k === 'weekday' ? '' : 'none';
     document.getElementById('nrSize').style.display = k === 'size' ? '' : 'none';
+    document.getElementById('nrIdle').style.display = k === 'idle' ? '' : 'none';
     const ph = { ext: 'png, jpg', contains: t("截图"), notContains: t("备份"), startsWith: 'IMG_', endsWith: '_final', exact: 'todo.txt, notes.md', glob: '*.png', target: 'steam' };
     document.getElementById('nrValue').placeholder = ph[k] || '';
     const wk = document.getElementById('nrWeek');
@@ -810,6 +820,11 @@
       if (min != null && max != null && min > max) return ruleError(t("最大大小不能小于最小大小"), 'nrMax');
       cond = { cond: 'sizeMb', value: { min, max } };
     }
+    else if (kind === 'idle') {
+      const days = Number(document.getElementById('nrIdleDays').value);
+      if (!Number.isFinite(days) || days < 1) return ruleError(t("请输入闲置天数"), 'nrIdleDays');
+      cond = { cond: 'idleDays', value: { min: Math.floor(days) } }; cls = 'time';
+    }
     else if (kind === 'files') cond = { cond: 'filesOnly', value: null };
     else cond = { cond: 'foldersOnly', value: null };
     const fence = state.fences.find(f => f.id === target);
@@ -818,6 +833,7 @@
     document.getElementById('nrName').value = ''; document.getElementById('nrValue').value = '';
   };
   document.getElementById('applyRules').onclick = () => send({ type: 'action', name: 'applyRules' });
+  document.querySelectorAll('#templates [data-template]').forEach(b => { b.onclick = () => send({ type: 'action', name: 'addTemplate', template: b.dataset.template }); });
   document.getElementById('snapSave').onclick = () => { const n = document.getElementById('snapName').value; send({ type: 'action', name: 'saveSnapshot', snapshotName: n }); document.getElementById('snapName').value = ''; };
   document.getElementById('cfgExport').onclick = () => send({ type: 'action', name: 'exportConfig' });
   document.getElementById('cfgImport').onclick = () => send({ type: 'action', name: 'importConfig' });

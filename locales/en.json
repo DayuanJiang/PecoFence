@@ -416,5 +416,17 @@
   "\n修改日期: {0}": "\nDate modified: {0}",
   "Win + Shift + 空格": "Win + Shift + Space",
   "重命名…": "Rename…",
-  "Ctrl+Alt+空格": "Ctrl+Alt+Space"
+  "Ctrl+Alt+空格": "Ctrl+Alt+Space",
+  "快速添加": "Quick add",
+  "安装包": "Installers",
+  "待清理": "To clean up",
+  "一键创建栅栏并添加规则": "Create a fence and its rule in one click",
+  "“待清理”只归拢 30 天没用过的安装包和压缩包，不删除任何文件": "“To clean up” only gathers installers and archives unused for 30 days; nothing is deleted",
+  "闲置 ≥ {0} 天": "Idle ≥ {0} days",
+  "闲置天数 (未修改也未打开)": "Idle days (neither modified nor opened)",
+  "闲置至少": "Idle for at least",
+  "天": "days",
+  "请输入闲置天数": "Enter the number of idle days",
+  "已添加“{0}”，整理了 {1} 个项目": "Added “{0}” and organized {1} items",
+  "“{0}”已存在": "“{0}” already exists"
 }

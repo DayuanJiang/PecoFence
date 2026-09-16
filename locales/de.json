@@ -416,5 +416,17 @@
   "\n修改日期: {0}": "\nÄnderungsdatum: {0}",
   "Win + Shift + 空格": "Win + Shift + Leertaste",
   "重命名…": "Umbenennen…",
-  "Ctrl+Alt+空格": "Ctrl+Alt+Leertaste"
+  "Ctrl+Alt+空格": "Ctrl+Alt+Leertaste",
+  "快速添加": "Schnell hinzufügen",
+  "安装包": "Installationspakete",
+  "待清理": "Aufräumen",
+  "一键创建栅栏并添加规则": "Bereich samt Regel mit einem Klick anlegen",
+  "“待清理”只归拢 30 天没用过的安装包和压缩包，不删除任何文件": "„Aufräumen“ sammelt nur 30 Tage ungenutzte Installationspakete und Archive; gelöscht wird nichts",
+  "闲置 ≥ {0} 天": "≥ {0} Tage ungenutzt",
+  "闲置天数 (未修改也未打开)": "Ungenutzte Tage (weder geändert noch geöffnet)",
+  "闲置至少": "Ungenutzt seit mindestens",
+  "天": "Tage",
+  "请输入闲置天数": "Bitte die Anzahl ungenutzter Tage eingeben",
+  "已添加“{0}”，整理了 {1} 个项目": "„{0}“ hinzugefügt, {1} Elemente einsortiert",
+  "“{0}”已存在": "„{0}“ ist bereits vorhanden"
 }

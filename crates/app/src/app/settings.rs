@@ -316,6 +316,15 @@ impl App {
                         &[moved.to_string()],
                     ));
                 }
+                Some("addTemplate") => {
+                    if let Some(template) = v
+                        .get("template")
+                        .and_then(|t| t.as_str())
+                        .and_then(pecofence_core::rules::Template::parse)
+                    {
+                        self.add_template(template);
+                    }
+                }
                 Some("openConfigFolder") => {
                     let dir = self.state.config_path();
                     if let Some(dir) = dir.parent() {

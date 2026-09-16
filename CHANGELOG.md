@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Settings → Organizing rules → Quick add: one click creates a fence and its rule for Images, Music, Videos, Archives, Installers, or "To clean up" (installers and archives unused for 30 days; gathered, never deleted).
+- New rule condition "idle days": the item was neither modified nor opened from a fence for N days. Rules using it are re-run hourly.
+- New file type category "Installers": .msi/.msix/.appx packages and setup/install-named .exe files.
 ## 0.0.2
 
 - While Windows desktop icons are hidden, the special desktop items the user has enabled in Windows (Recycle Bin, This PC, User's Files, Network, Control Panel) appear in the Desktop fence: double-click opens them, the shell context menu works (Empty Recycle Bin, Properties), files dropped on the Recycle Bin are recycled, and the Recycle Bin icon follows its contents (also when files are recycled from elsewhere).
