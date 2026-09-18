@@ -11,7 +11,11 @@ package after certification, so no code-signing certificate is needed.
 - `packaging/msix/identity.json`: the identity Partner Center assigned
   (Product management > Product identity). These values are not secret and must match
   the manifest exactly or the upload is rejected.
-- `scripts/make-msix-assets.py`: renders every Store/tile PNG from `site/assets/mark.svg`.
+- `scripts/make-msix-assets.py`: renders every Store/tile PNG from `site/assets/mark.svg` in
+  the app-icon style (white mark on the indigo `#4768DE` rounded plate, the manifest
+  `BackgroundColor`); `--preview .cache/icon-sheet.png` writes a contact sheet.
+  `scripts/make-app-icon.py` renders the same icon into `crates/app/assets/pecofence.ico`,
+  which `crates/app/build.rs` embeds into both executables.
 - `scripts/make-msix.ps1`: builds, stages, indexes resources (MakePri) and packs
   (MakeAppx) into `dist/pecofence-<version>-x64.msix`.
 

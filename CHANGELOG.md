@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Consistent app icon: Store tiles, exe icon and taskbar icon share the white-on-indigo mark.
+
 ## 0.0.3
 
 - Fence context menu → Sort → "Group by date": items are shown under Today / Yesterday / This week / This month / Earlier headers in the icon, list and details layouts.

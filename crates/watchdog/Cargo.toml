@@ -3,6 +3,8 @@ name = "pecofence-watchdog"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+description = "PecoFence watchdog: restores the Windows desktop icons if PecoFence exits abnormally."
+build = "build.rs"
 
 [[bin]]
 name = "pecofence-watchdog"
