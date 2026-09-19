@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.0.5
 
 - Fence corners are 8 DIP in both materials (Fluent was 4, Liquid Glass 24), matching Windows 11 windows. Title-bar controls follow.
 - Settings: the Liquid Glass switch is 44×24 instead of the oversized 54×30.
