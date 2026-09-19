@@ -52,8 +52,9 @@ git push origin v0.0.1
 ```
 
 The release workflow checks the tag against `Cargo.toml`, verifies the project,
-builds the x64 portable archive and creates a **draft** GitHub Release with its
-ZIP and checksum. Review the release notes and publish the draft in GitHub.
+builds the x64 portable archive and publishes the GitHub Release with its ZIP
+and checksum right away (pushing a `v*` tag is the publish action; the winget
+workflow then opens the manifest PR). Edit the generated notes afterwards if needed.
 
 Current packaging is x64 and unsigned. ARM64 is not configured. winget publishing runs
 from `.github/workflows/winget.yml` on published releases; the Microsoft Store package is
