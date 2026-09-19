@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Fence corners are 8 DIP in both materials (Fluent was 4, Liquid Glass 24), matching Windows 11 windows. Title-bar controls follow.
+- Settings: the Liquid Glass switch is 44×24 instead of the oversized 54×30.
+
 ## 0.0.4
 
 - Fence context menu → Sort → "Group by date": items are shown under Today / Yesterday / This week / This month / Earlier headers in the icon, list and details layouts.

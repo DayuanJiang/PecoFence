@@ -82,7 +82,7 @@ pub struct GlassOptics {
 impl Default for GlassOptics {
     fn default() -> Self {
         Self {
-            radius: 24.0,
+            radius: 8.0,
             bezel: 20.0,
             refraction: 16.0,
             dispersion: 0.045,

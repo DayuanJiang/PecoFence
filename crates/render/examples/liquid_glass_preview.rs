@@ -33,10 +33,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Exercise the actual Windows clip API: reuse during collapse/resize, remove on switching
     // to Fluent, then reinstall. This creates no HWND or visible desktop surface.
     for (w, h) in [(530.0, 368.0), (530.0, 36.0), (1060.0, 72.0)] {
-        motion.clip_rounded(&root, w, h, 24.0)?;
+        motion.clip_rounded(&root, w, h, 8.0)?;
     }
     motion.clear_clip(&root)?;
-    motion.clip_rounded(&root, 530.0, 368.0, 24.0)?;
+    motion.clip_rounded(&root, 530.0, 368.0, 8.0)?;
     println!("Composition rounded clip: resize, collapse and style switch OK");
     let dest = std::env::args()
         .nth(1)
@@ -125,7 +125,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for (index, (left, top, w, h, radius, title)) in [
         (94, 231, 164, 104, 52.0, ""),
         (122, 410, 104, 104, 52.0, ""),
-        (362, 210, 530, 368, 24.0, "工作空间"),
+        (362, 210, 530, 368, 8.0, "工作空间"),
     ]
     .into_iter()
     .enumerate()

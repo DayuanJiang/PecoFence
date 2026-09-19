@@ -88,7 +88,7 @@
   .hero p { color: var(--text2); font-size: 12px; line-height: 1.8; margin: 0; max-width: 220px; }
   .hero-caption { display: inline-flex; align-items: center; gap: 6px; margin-top: 22px; font-size: 10px; color: var(--text2); }
   .preview { position: relative; min-width: 0; perspective: 900px; }
-  .preview-fence { position: relative; overflow: hidden; border: 1px solid var(--preview-border); border-bottom-color: #ffffff12; border-radius: 6px;
+  .preview-fence { position: relative; overflow: hidden; border: 1px solid var(--preview-border); border-bottom-color: #ffffff12; border-radius: 8px;
     background: var(--preview-panel); backdrop-filter: blur(18px); box-shadow: 0 14px 32px #06171530, inset 0 1px 0 #ffffff15;
     transition: background .2s, box-shadow .2s; }
   .preview-fence.main-fence { width: calc(100% - 26px); transform: rotate(-3deg); z-index: 1; }
@@ -225,7 +225,7 @@
     background: repeating-linear-gradient(0deg, transparent 0 39px, #797b8810 39px 40px), repeating-linear-gradient(90deg, transparent 0 39px, #797b8810 39px 40px); box-shadow: none; }
   .liquid-glass .hero-kicker { color: var(--text2); }
   .preview-glass { display: none; pointer-events: none; }
-  .liquid-glass .preview-fence { border-radius: 24px; background: transparent; backdrop-filter: none; border-color: transparent;
+  .liquid-glass .preview-fence { border-radius: 8px; background: transparent; backdrop-filter: none; border-color: transparent;
     box-shadow: 0 14px 24px -7px #15162230, 0 3px 6px -2px #15162218; }
   .liquid-glass .preview-glass { display: block; position: absolute; inset: -20px; background: var(--preview-panel); backdrop-filter: blur(.65px) saturate(103%); }
   .liquid-glass .preview-title, .liquid-glass .preview-items { position: relative; z-index: 1; }
@@ -239,12 +239,12 @@
   .liquid-glass .preview-item { color: var(--text); }
   .liquid-glass .preview-title span:last-child { color: var(--text2); }
   .liquid-glass .preview-fence:hover { box-shadow: 0 16px 26px -7px #15162238, 0 3px 6px -2px #15162218; }
-  .liquid-glass .toggle { width: 54px; height: 30px; border: 1px solid #87899140; background: #87899128; box-shadow: inset 0 1px 3px #00000012; }
+  .liquid-glass .toggle { width: 44px; height: 24px; border: 1px solid #87899140; background: #87899128; box-shadow: inset 0 1px 3px #00000012; }
   .liquid-glass .toggle.on, .liquid-glass .toggle.on:hover { background: #34c759; border-color: #299f4930; }
-  .liquid-glass .toggle::after { width: 30px; height: 26px; left: 1px; top: 1px; border-radius: 18px; border: 1px solid #ffffffc0;
+  .liquid-glass .toggle::after { width: 24px; height: 20px; left: 1px; top: 1px; border-radius: 12px; border: 1px solid #ffffffc0;
     background: linear-gradient(150deg, #ffffff55, #ffffff0d 55%, #ffffff30); backdrop-filter: blur(.5px) saturate(115%);
     box-shadow: inset 1px 2px 3px #ffffffa0, inset -1px -2px 3px #1e332624, 0 3px 6px #00000020; }
-  .liquid-glass .toggle.on::after { transform: translateX(20px); }
+  .liquid-glass .toggle.on::after { transform: translateX(16px); }
   @media (prefers-reduced-transparency: reduce) {
     .liquid-glass nav, .liquid-glass .card { background: var(--sheet); backdrop-filter: none; }
     .liquid-glass .preview-glass, .liquid-glass .toggle::after { background: var(--sheet); backdrop-filter: none; filter: none !important; }

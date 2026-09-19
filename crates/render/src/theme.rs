@@ -61,8 +61,8 @@ pub struct Theme {
     pub focus_inner: ColorF,
     /// The opaque accent the selection tokens derive from (tray icon, settings page brand).
     pub accent: ColorF,
-    /// Window corner radius in DIPs: Fluent uses 4, Liquid Glass uses a 24 DIP
-    /// compositor clip shared by the lens and shadow.
+    /// Window corner radius in DIPs. Both materials use 8, the Windows 11 top-level window
+    /// radius; Liquid Glass additionally clips the composition root to it (lens and shadow).
     pub corner_radius: f32,
     /// Title bar height in DIPs.
     pub title_height: f32,
@@ -96,7 +96,7 @@ impl Theme {
             focus_outer: ColorF::from_rgba8(0xFF, 0xFF, 0xFF, 0xFF),
             focus_inner: ColorF::from_rgba8(0x00, 0x00, 0x00, 0xB3),
             accent: ColorF::from_rgba8(0x60, 0xCD, 0xFF, 0xFF),
-            corner_radius: 4.0,
+            corner_radius: 8.0,
             title_height: 36.0,
         }
     }
@@ -128,7 +128,7 @@ impl Theme {
             focus_outer: ColorF::from_rgba8(0x00, 0x00, 0x00, 0xE4),
             focus_inner: ColorF::from_rgba8(0xFF, 0xFF, 0xFF, 0xB3),
             accent: ColorF::from_rgba8(0x00, 0x5F, 0xB8, 0xFF),
-            corner_radius: 4.0,
+            corner_radius: 8.0,
             title_height: 36.0,
         }
     }
@@ -164,7 +164,7 @@ impl Theme {
     /// The composition root clips to this radius, including content and height animations.
     pub const fn with_liquid_glass(mut self) -> Self {
         self.liquid_glass = true;
-        self.corner_radius = 24.0;
+        self.corner_radius = 8.0;
         self.glass_rim_top = ColorF::from_rgba8(0xFF, 0xFF, 0xFF, 0xCD);
         match self.mode {
             ThemeMode::Dark => {
@@ -369,7 +369,7 @@ mod tests {
             assert_eq!(glass.accent_rgb8(), base.accent_rgb8());
             assert_eq!(glass.selection_fill, base.selection_fill);
             assert!(glass.acrylic_tint().blur_sigma_dip < base.acrylic_tint().blur_sigma_dip);
-            assert_eq!(glass.corner_radius, 24.0);
+            assert_eq!(glass.corner_radius, 8.0);
             assert_eq!(glass.title_height, base.title_height);
             assert!(!base.liquid_glass);
         }
