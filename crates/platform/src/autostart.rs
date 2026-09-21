@@ -14,24 +14,29 @@ struct StartupActions {
     remove_legacy: bool,
 }
 
+/// `current_is_this_exe`: `None` when nothing is registered, `Some(true)` when the entry
+/// already launches this executable, `Some(false)` when it launches another copy (an older
+/// release in a different folder, or a deleted one).
 fn startup_actions(
     wanted: bool,
     development: bool,
-    current_valid: Option<bool>,
+    current_is_this_exe: Option<bool>,
     legacy: bool,
 ) -> StartupActions {
     if development {
         return StartupActions::default();
     }
     StartupActions {
-        register_current: wanted && current_valid != Some(true),
-        remove_current: !wanted && current_valid.is_some(),
+        register_current: wanted && current_is_this_exe != Some(true),
+        remove_current: !wanted && current_is_this_exe.is_some(),
         remove_legacy: legacy,
     }
 }
 
-/// Preserve a working PecoFence registration, or register this release when
-/// upgrading from the previous name. Remove the legacy entry only after success.
+/// The release that is running owns login startup: an entry pointing at another copy (an
+/// older version left in Downloads, a moved folder) is re-pointed here, so upgrading by
+/// unzipping a new build and launching it is enough. Also adopts the previous product
+/// name's entry and removes it only after the new one is written.
 pub fn reconcile_product(wanted: bool, development: bool) -> Result<()> {
     use pecofence_core::brand::{LEGACY_AUTOSTART, NAME};
     if crate::process::is_packaged() {
@@ -43,7 +48,7 @@ pub fn reconcile_product(wanted: bool, development: bool) -> Result<()> {
         development,
         current
             .as_deref()
-            .map(|path| std::path::Path::new(path).exists()),
+            .map(|path| same_executable(path, &exe_path())),
         registered_path(LEGACY_AUTOSTART).is_some(),
     );
     if actions.register_current {
@@ -70,6 +75,15 @@ pub fn set_product_enabled(enabled: bool) -> Result<()> {
         set_enabled(LEGACY_AUTOSTART, false)?;
     }
     Ok(())
+}
+
+/// Whether two paths name the same file. Canonical paths first (case, 8.3 names, symlinks),
+/// then a case-insensitive comparison when one of them no longer exists.
+fn same_executable(a: &str, b: &str) -> bool {
+    match (std::fs::canonicalize(a), std::fs::canonicalize(b)) {
+        (Ok(x), Ok(y)) => x == y,
+        _ => a.eq_ignore_ascii_case(b),
+    }
 }
 
 /// Full path of the running executable.
@@ -188,7 +202,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn startup_rename_keeps_working_new_entries_and_removes_duplicates() {
+    fn startup_follows_the_running_release_and_removes_duplicates() {
         assert_eq!(
             startup_actions(true, false, None, true),
             StartupActions {
@@ -204,7 +218,20 @@ mod tests {
                 ..Default::default()
             }
         );
+        // Registered to another copy (older version elsewhere, or deleted): take over.
         assert!(startup_actions(true, false, Some(false), false).register_current);
+    }
+
+    #[test]
+    fn same_executable_ignores_case_and_tolerates_missing_files() {
+        let exe = std::env::current_exe().unwrap();
+        let text = exe.to_string_lossy().to_string();
+        assert!(same_executable(&text, &text.to_uppercase()));
+        assert!(!same_executable(&text, r"C:\nowhere\pecofence.exe"));
+        assert!(same_executable(
+            r"C:\nowhere\PecoFence.exe",
+            r"c:\NOWHERE\pecofence.exe"
+        ));
     }
 
     #[test]

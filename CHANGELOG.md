@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Start with Windows now follows the release you launch: an entry still pointing at an older copy (for example one left in Downloads) is re-pointed to the running executable.
+
 ## 0.0.5
 
 - Fence corners are 8 DIP in both materials (Fluent was 4, Liquid Glass 24), matching Windows 11 windows. Title-bar controls follow.
