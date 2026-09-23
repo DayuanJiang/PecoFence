@@ -1,0 +1,68 @@
+{
+  "en-US": {
+    "shortDescription": "Less clutter. More space. Organize your Windows 11 desktop with glass panels, automatic sorting and files one shortcut away. Free and open source.",
+    "description": "A calmer desktop. Everything within reach.\n\nGive every project a place. PecoFence organizes your Windows 11 desktop into glass panels, so your files stay close and your wallpaper has room to breathe.\n\nLESS TIME SORTING\nSet rules for file types, names, age or size. New desktop files appear in the right group automatically. Automatic grouping leaves their locations on disk unchanged.\n\nYOUR FILES, ONE SHORTCUT AWAY\nPress Ctrl + Alt + Space to bring your groups above the current app. Grab what you need, then press Esc to return.\n\nA SPACE FOR EVERY PROJECT\nCombine related groups into tabs. Switch in a click, or drag a tab out into a separate panel. Keep a live folder on the desktop and browse its subfolders in place.\n\nMAKE ROOM FOR FOCUS\nDouble-click empty desktop space to hide your groups and again to bring them back. Roll a panel up to its title bar and hover to expand it.\n\nGLASS THAT FITS YOUR DESKTOP\nChoose Fluent or Liquid Glass, light or dark, then adjust each panel's color and opacity. Save your layout with snapshots and backups.\n\nFree and open source under Apache 2.0. No app account required. Ten built-in display languages, available offline. Designed for Windows 11 x64.\n\nPecoFence uses real files: file operations you initiate, including moves, renames and deletions, affect files on disk. Your normal Windows desktop icons return when the app exits.",
+    "features": [
+      "Automatic desktop organization with rules for types, names, age and size",
+      "Ctrl + Alt + Space brings your desktop groups above the current app",
+      "Tabbed groups and live folder portals",
+      "Fluent and Liquid Glass themes with per-panel colors and opacity",
+      "Double-click to hide groups; roll panels up to their titles",
+      "Layout snapshots, daily backups and configuration export",
+      "Free, open source and available in ten display languages"
+    ],
+    "keywords": ["desktop organizer", "desktop icons", "glass panels", "file organization", "folder portal", "desktop tabs", "productivity"],
+    "captions": [
+      "A home for every project. Actual Liquid Glass demo with documents, folders and image thumbnails.",
+      "Your files above the current app: Ctrl + Alt + Space. The background project board is a staged demo window.",
+      "Work and Art, in one panel. Switch projects with tabs and drag a tab out when you need more space.",
+      "New files, already in place. Extension rules automatically grouped Notes.txt and Coast.png without moving either file.",
+      "A live folder on your desktop. Browse project assets and subfolders in place. Fluent theme."
+    ],
+    "trailerTitle": "PecoFence — less clutter, more space"
+  },
+  "zh-CN": {
+    "shortDescription": "桌面清爽，灵感自在。用玻璃栅栏收好文件，按规则自动整理，一个快捷键就能取用。免费开源的 Windows 11 桌面整理工具。",
+    "description": "把桌面还给壁纸，把文件放在手边。\n\n项目资料、临时截图、待读文档，都有自己的位置。PecoFence 用通透的玻璃栅栏整理 Windows 11 桌面，让你少找文件，多一点从容。\n\n少一点手动整理\n按文件类型、名称、时间或大小设置规则，新文件自动归入对应栅栏。自动归类只改变显示分组，不移动磁盘上的文件。\n\n需要的文件，一键就到眼前\n按 Ctrl + Alt + Space，栅栏浮现在当前应用上方。取用文件后按 Esc，即可回到工作中。\n\n一个项目，一处空间\n把相关栅栏合成标签页，点一下切换项目。需要更多空间时，把标签拖出来独立摆放。也可以把真实文件夹放到桌面上，直接浏览其中的子文件夹。\n\n想专注时，让桌面留白\n双击桌面空白处隐藏全部栅栏，再双击恢复。还可以把栅栏卷成标题，鼠标悬停时展开。\n\n配得上你的壁纸\nFluent 与 Liquid Glass 两种玻璃主题，支持深浅色模式，以及每个栅栏独立的色调和透明度。喜欢的布局，可以用快照和备份留住。\n\n免费开源，Apache 2.0 许可。无需应用账号。内置十种显示语言，离线可用。适用于 Windows 11 x64。\n\n栅栏中的文件是真实文件：主动执行的移动、重命名和删除会作用于磁盘上的文件。退出应用后，Windows 原有桌面图标恢复显示。",
+    "features": [
+      "按文件类型、名称、时间和大小自动整理桌面",
+      "Ctrl + Alt + Space 让栅栏浮现在当前应用上方",
+      "标签页分组与实时文件夹门户",
+      "Fluent / Liquid Glass 主题，独立调整色调与透明度",
+      "双击隐藏栅栏，卷起标题，悬停展开",
+      "布局快照、每日备份与配置导出",
+      "免费开源，支持十种显示语言"
+    ],
+    "keywords": ["桌面整理", "桌面分组", "桌面图标", "玻璃栅栏", "自动整理", "文件夹门户", "效率工具"],
+    "captions": [
+      "每个项目，都有自己的位置。Liquid Glass 真实演示界面，展示文档、文件夹与图片缩略图。",
+      "按 Ctrl + Alt + Space，让文件浮现在当前应用前面。背景项目看板是用于演示的独立窗口。",
+      "Work 与 Art，收在同一个栅栏。点击标签切换项目，也可以把标签拖出来独立摆放。",
+      "新文件，自动归位。扩展名规则将 Notes.txt 和 Coast.png 分到对应栅栏，文件位置不变。",
+      "文件夹就在桌面上。直接浏览项目资料与子文件夹，内容实时更新。Fluent 主题。"
+    ],
+    "trailerTitle": "PecoFence：桌面清爽，灵感自在（英文画面文字）"
+  },
+  "ja": {
+    "shortDescription": "すっきり整う。気持ちに余白。ガラスのフェンスと自動整理で、Windows 11 のデスクトップをもっと使いやすく。無料・オープンソース。",
+    "description": "デスクトップに余白を。必要なファイルは手の届く場所に。\n\nプロジェクトの資料、スクリーンショット、あとで読む文書。PecoFence は Windows 11 のデスクトップをガラスのフェンスで整理し、ファイルにも壁紙にも居場所をつくります。\n\n整理の手間を減らす\nファイルの種類、名前、日時、サイズでルールを設定。新しいファイルが自動で適切なグループに表示されます。自動整理ではディスク上のファイルの場所を変えません。\n\nショートカットひとつで手前に\nCtrl + Alt + Space で、現在のアプリの前にフェンスを表示。ファイルを取り出したら、Esc で作業に戻れます。\n\nプロジェクトごとに、ひとつの場所\n関連するフェンスをタブにまとめ、クリックで切り替え。タブを外へドラッグすると独立したフェンスになります。実際のフォルダーをデスクトップに置き、その場でサブフォルダーを開くこともできます。\n\n集中したいときは、すっきりと\nデスクトップの何もない場所をダブルクリックするとフェンスを非表示に。もう一度で元に戻ります。タイトルバーだけに折りたたみ、マウスを重ねて展開することもできます。\n\n壁紙に似合うガラス\nFluent と Liquid Glass、ライトとダークを選べます。フェンスごとに色と不透明度を調整し、レイアウトはスナップショットやバックアップで保存。\n\nApache 2.0 ライセンスの無料・オープンソースアプリです。アプリ用アカウントは不要。10 言語を内蔵し、オフラインで利用できます。Windows 11 x64 向け。\n\nフェンス内のファイルは実際のファイルです。自分で実行した移動、名前の変更、削除はディスク上のファイルに反映されます。アプリを終了すると Windows の通常のデスクトップアイコンが戻ります。",
+    "features": [
+      "種類、名前、日時、サイズによるデスクトップの自動整理",
+      "Ctrl + Alt + Space で現在のアプリの前にフェンスを表示",
+      "タブ付きグループとライブフォルダーポータル",
+      "Fluent / Liquid Glass とフェンスごとの外観設定",
+      "ダブルクリックで非表示、タイトルに折りたたみ",
+      "レイアウトのスナップショットと毎日のバックアップ",
+      "無料・オープンソース、10 言語に対応"
+    ],
+    "keywords": ["デスクトップ整理", "デスクトップアイコン", "ファイル整理", "フォルダー", "自動整理", "タブ", "仕事効率化"],
+    "captions": [
+      "プロジェクトごとに居場所を。文書、フォルダー、画像のサムネイルを表示した実際の Liquid Glass デモ画面。",
+      "Ctrl + Alt + Space で、現在のアプリの前にファイルを表示。背景のプロジェクトボードはデモ用の別ウィンドウです。",
+      "Work と Art をひとつのフェンスに。タブで切り替え、必要なら外へドラッグして独立させられます。",
+      "新しいファイルも自動で整理。拡張子ルールが Notes.txt と Coast.png を振り分け、ファイルの場所は変えません。",
+      "フォルダーをデスクトップに。プロジェクトの資料とサブフォルダーをその場で閲覧。Fluent テーマ。"
+    ],
+    "trailerTitle": "PecoFence — すっきり整う、気持ちに余白（画面内テキストは英語）"
+  }
+}

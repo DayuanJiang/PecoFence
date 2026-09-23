@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" fill="none">
+  <defs>
+    <linearGradient id="field" x1="150" y1="0" x2="1760" y2="1080" gradientUnits="userSpaceOnUse"><stop stop-color="#0d1930"/><stop offset=".56" stop-color="#173c74"/><stop offset="1" stop-color="#10213f"/></linearGradient>
+    <radialGradient id="glow"><stop stop-color="#6398ff" stop-opacity=".6"/><stop offset="1" stop-color="#4268ef" stop-opacity="0"/></radialGradient>
+    <linearGradient id="glass" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#aacfff" stop-opacity=".35"/><stop offset=".48" stop-color="#5880ee" stop-opacity=".13"/><stop offset="1" stop-color="#80aaff" stop-opacity=".48"/></linearGradient>
+    <linearGradient id="rim" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#eaf6ff" stop-opacity=".9"/><stop offset=".4" stop-color="#b0d2ff" stop-opacity=".06"/><stop offset=".78" stop-color="#719dff" stop-opacity=".15"/><stop offset="1" stop-color="#d5efff" stop-opacity=".9"/></linearGradient>
+    <linearGradient id="tile" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#f3f8ff"/><stop offset="1" stop-color="#a9c5ff"/></linearGradient>
+    <linearGradient id="mint" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#c0f1e7"/><stop offset="1" stop-color="#62b6cb"/></linearGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#fff0c7"/><stop offset="1" stop-color="#e5b572"/></linearGradient>
+    <filter id="shadow" x="-60%" y="-60%" width="220%" height="240%"><feDropShadow dx="0" dy="40" stdDeviation="35" flood-color="#030d2b" flood-opacity=".55"/></filter>
+    <filter id="soft"><feGaussianBlur stdDeviation="6"/></filter>
+  </defs>
+  <path fill="url(#field)" d="M0 0h1920v1080H0z"/>
+  <ellipse cx="1080" cy="430" rx="1040" ry="730" fill="url(#glow)"/>
+  <path d="M-120 990C550 870 1080 330 2020 290" stroke="#72a7ff" stroke-opacity=".16" stroke-width="30" filter="url(#soft)"/>
+  <path d="M-120 990C550 870 1080 330 2020 290" stroke="#99c7ff" stroke-opacity=".18" stroke-width="2"/>
+  <!-- The bracket-and-four-tile motif extends the existing mark.svg, not the app UI. -->
+  <g transform="translate(678 112) rotate(8 282 282)" filter="url(#shadow)">
+    <rect x="0" y="0" width="564" height="564" rx="94" fill="url(#glass)" stroke="url(#rim)" stroke-width="3"/>
+    <g stroke="#dceaff" stroke-width="14" stroke-linecap="round" stroke-opacity=".85">
+      <path d="M227 85h-87a55 55 0 0 0-55 55v87M337 85h87a55 55 0 0 1 55 55v87M85 337v87a55 55 0 0 0 55 55h87M479 337v87a55 55 0 0 1-55 55h-87"/>
+    </g>
+    <rect x="178" y="178" width="84" height="84" rx="21" fill="url(#tile)"/>
+    <rect x="302" y="178" width="84" height="84" rx="21" fill="url(#tile)" opacity=".6"/>
+    <rect x="178" y="302" width="84" height="84" rx="21" fill="url(#tile)" opacity=".6"/>
+    <rect x="302" y="302" width="84" height="84" rx="21" fill="url(#tile)"/>
+  </g>
+  <g transform="translate(292 242) rotate(-13 130 130)" filter="url(#shadow)">
+    <rect width="264" height="264" rx="53" fill="url(#glass)" stroke="url(#rim)" stroke-width="2"/>
+    <rect x="52" y="52" width="62" height="62" rx="16" fill="url(#mint)"/>
+    <rect x="150" y="52" width="62" height="62" rx="16" fill="url(#mint)" opacity=".55"/>
+    <rect x="52" y="150" width="62" height="62" rx="16" fill="url(#mint)" opacity=".55"/>
+    <rect x="150" y="150" width="62" height="62" rx="16" fill="url(#mint)"/>
+  </g>
+  <g transform="translate(1400 284) rotate(17 120 120)" filter="url(#shadow)">
+    <rect width="240" height="240" rx="48" fill="url(#glass)" stroke="url(#rim)" stroke-width="2"/>
+    <rect x="51" y="51" width="56" height="56" rx="15" fill="url(#gold)"/>
+    <rect x="133" y="51" width="56" height="56" rx="15" fill="url(#gold)" opacity=".5"/>
+    <rect x="51" y="133" width="56" height="56" rx="15" fill="url(#gold)" opacity=".5"/>
+    <rect x="133" y="133" width="56" height="56" rx="15" fill="url(#gold)"/>
+  </g>
+  <g fill="#adcaff" opacity=".22">
+    <rect x="549" y="123" width="32" height="32" rx="9" transform="rotate(16 565 139)"/>
+    <rect x="1286" y="160" width="45" height="45" rx="12" transform="rotate(-16 1308 182)"/>
+    <rect x="587" y="626" width="42" height="42" rx="11" transform="rotate(-20 608 647)"/>
+    <rect x="1342" y="583" width="30" height="30" rx="8" transform="rotate(22 1357 598)"/>
+  </g>
+</svg>

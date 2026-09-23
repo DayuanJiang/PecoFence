@@ -61,8 +61,15 @@ PecoFence first; both builds share the single-instance mutex.
    URL), display mode PC, support URL and website.
 3. Age ratings: IARC questionnaire, utility with no user-generated or online content.
 4. Packages: upload `dist/pecofence-<version>-x64.msix`.
-5. Store listings: en-US, zh-CN, ja. Screenshots are the demo-desktop captures under
-   `extras/pecofence-promo/public/` (2560×1440 PNG, no overlaid text).
+5. Store listings: all ten app languages (en-US, zh-CN, zh-TW, ja, ko, de, fr, es,
+   pt-BR, ru). Review the second revision at
+   `dist/store-listing-v2/index.html`. Rebuild from its local native captures with
+   `uv run --with pillow python scripts/make-store-v2.py`.
+   Its `PecoFence-store-v2.zip` contains five native screenshots, matching localized
+   captions and copy, 1920×1080 Super hero art, and a 300×300 app icon.
+   The separate campaign images contain added headlines and are for design review
+   or promotion, not the Store screenshot fields. The existing 30-second trailer
+   remains under `dist/store-listing/trailer/`. See [revision 2](store/V2.md).
 6. Submission options: certification notes explaining that the app hides the real
    desktop icons by design and restores them on exit (Restore Windows desktop icons in
    the tray menu).

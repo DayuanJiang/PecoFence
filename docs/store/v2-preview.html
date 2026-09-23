@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PecoFence · 第二版商店页面预览</title>
+<style>
+:root{color-scheme:light;font-family:"Segoe UI","Microsoft YaHei",sans-serif;color:#24252a;background:#f3f3f3}
+body{overflow-wrap:break-word}.review-bar>div:first-child{min-width:0}.review-bar strong{display:block;margin-bottom:4px}.review-actions{flex-wrap:wrap}.side-feature{line-height:1.7}
+@media(max-width:620px){.review-bar{flex-direction:column;align-items:stretch!important}.review-actions{justify-content:flex-start!important}.review-actions a{display:inline-block!important;flex-basis:100%}.review-actions select{max-width:220px}}
+*{box-sizing:border-box}body{margin:0}button,select{font:inherit}button{cursor:pointer}a{color:#0067c0;text-underline-offset:4px}img{max-width:100%}[hidden]{display:none!important}
+:focus-visible{outline:3px solid #3979d5;outline-offset:4px}.review-bar{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:13px 32px;background:#202a40;color:#edf1fa;font-size:12px;position:relative;z-index:5}.review-bar strong{font-size:13px}.review-bar a{color:#d6e4ff;text-decoration:none}.review-actions{display:flex;align-items:center;gap:22px}.review-actions select{background:#34415c;color:#fff;border:1px solid #657086;border-radius:5px;padding:5px 9px;max-width:140px}
+.store-header{display:flex;align-items:center;gap:38px;padding:21px max(32px,calc((100vw - 1220px)/2));background:#fff;font-size:14px}.store-brand{display:flex;align-items:center;gap:12px;white-space:nowrap;font-size:20px}.ms-mark{display:grid;grid-template-columns:repeat(2,10px);gap:2px}.ms-mark i{width:10px;height:10px;background:#f35325}.ms-mark i:nth-child(2){background:#81bc06}.ms-mark i:nth-child(3){background:#05a6f0}.ms-mark i:nth-child(4){background:#ffba08}.store-brand small{border-left:1px solid #aaa;padding-left:15px;margin-left:4px;font-size:17px}.store-nav{display:flex;gap:26px;color:#555;font-size:13px}.store-nav span:first-child{color:#0067c0}.search{margin-left:auto;width:360px;padding:9px 20px;border:1px solid #bbb;border-radius:22px;color:#777;font-size:12px}.container{width:min(1220px,calc(100% - 64px));margin:auto}
+.product{position:relative;min-height:470px;isolation:isolate;overflow:hidden;padding:88px 0 54px}.product::before{content:"";position:absolute;inset:0;z-index:-2;background:#eeecee url("art/super-hero-1920x1080.png") right center/auto 570px no-repeat}.product::after{content:"";position:absolute;inset:0;z-index:-1;background:linear-gradient(90deg,#f4f1f0 4%,#f4f1f0f5 27%,#f4f1f09c 49%,transparent 77%),linear-gradient(0deg,#f3f3f3,transparent 35%)}
+.product-title{display:flex;gap:22px;align-items:center}.app-icon{width:90px;height:90px}.product h1{margin:0 0 6px;font-size:31px;font-weight:600;line-height:1.2}.publisher{color:#0067c0;font-size:14px}.category{font-size:12px;color:#5d636c;margin-top:8px}.description-short{max-width:495px;line-height:1.7;font-size:14px;margin:24px 0}.product-actions{display:flex;flex-wrap:wrap;gap:12px;align-items:center}.get,.get-alt{min-height:44px;padding:11px 40px;font-size:14px;font-weight:600;text-decoration:none;border-radius:4px}.get{background:#0067c0;color:white;border:1px solid #0067c0}.get:hover{background:#0056a0}.get-alt{background:#ffffff80;border:1px solid #ccc;color:#28303b;padding-inline:18px}.facts{font-size:12px;color:#606573;margin-top:22px}
+.store-body{display:grid;grid-template-columns:minmax(0,1fr) 250px;gap:42px;padding-bottom:70px}.section{background:#fff;border:1px solid #dedee4;border-radius:9px;padding:22px;margin-bottom:20px;box-shadow:0 2px 5px #121c3910}.section h2{font-size:17px;margin:0 0 20px;padding-bottom:17px;border-bottom:1px solid #eee;font-weight:600}.screenshot-strip{display:flex;gap:13px;overflow-x:auto;scroll-snap-type:x proximity;padding-bottom:11px;scrollbar-width:thin;scrollbar-color:#b1b9c5 transparent}.shot{border:0;background:none;padding:0;flex:0 0 355px;scroll-snap-align:start;text-align:left;color:inherit}.shot img{display:block;width:355px;aspect-ratio:16/9;object-fit:contain;border-radius:7px;border:1px solid #d5d6df;transition:box-shadow .2s}.shot:hover img{box-shadow:0 3px 10px #20305d33}.shot span{display:block;max-width:355px;font-size:12px;color:#5c6373;margin-top:10px;line-height:1.6}.section .hint{color:#6c7380;font-size:12px;margin:16px 0 0}
+.readable{font-size:14px;line-height:1.9;color:#404650;white-space:pre-line;max-width:750px}.side{padding-top:22px}.side h2{font-size:17px;margin:0 0 25px}.side-feature{padding:18px 0;border-bottom:1px solid #ddd;font-size:14px}.side-feature small{display:block;color:#707785;font-size:12px;margin-top:7px;line-height:1.7}.side-footnote{font-size:12px;line-height:1.8;color:#737987;margin-top:28px}
+.gallery-only{display:none}.gallery-header{margin:45px auto 34px}.gallery-header h1{font-size:38px;letter-spacing:-.04em;margin:0 0 12px}.gallery-header p{color:#687185;font-size:14px;line-height:1.8}.gallery-grid{display:grid;gap:40px;max-width:1180px;margin:0 auto 70px}.gallery-grid figure{margin:0}.gallery-grid img{width:100%;display:block;border-radius:13px;border:1px solid #d5d8df}.gallery-grid figcaption{display:flex;gap:18px;align-items:baseline;justify-content:space-between;font-size:14px;color:#606a7d;padding:14px 3px}.gallery-grid figcaption a{flex-shrink:0}
+body[data-mode="gallery"] .store-only{display:none}body[data-mode="gallery"] .gallery-only{display:block}
+dialog{padding:0;border:0;background:transparent;max-width:calc(100vw - 60px);max-height:calc(100vh - 50px);overflow:visible;color:white}dialog::backdrop{background:#121829df;backdrop-filter:blur(7px)}.lightbox-image{display:block;max-width:min(1450px,calc(100vw - 90px));max-height:calc(100vh - 170px);width:auto;height:auto;object-fit:contain;border-radius:10px}.lightbox-caption{font-size:14px;line-height:1.7;text-align:center;max-width:1000px;margin:17px auto 0;color:#e5e9f3}.lightbox-close{position:absolute;right:0;top:-45px;width:34px;height:34px;border:1px solid #ffffff70;border-radius:50%;background:#fff;color:#293247;font-size:23px;line-height:1}.lightbox-controls{display:flex;align-items:center;justify-content:center;gap:25px;margin-top:14px}.lightbox-controls button{color:#fff;border:1px solid #7382a0;background:#ffffff15;border-radius:8px;min-width:44px;min-height:36px;font-size:20px}.lightbox-controls output{font-size:12px}
+@media(max-width:1000px){.store-body{grid-template-columns:1fr;gap:0}.side{display:none}.search{width:230px}.store-nav{display:none}.product{padding-top:65px}.product::after{background:linear-gradient(90deg,#f4f1f0 5%,#f4f1f0d9 45%,#f4f1f023 100%),linear-gradient(0deg,#f3f3f3,transparent 50%)}}
+@media(max-width:620px){.container{width:calc(100% - 32px)}.review-bar{padding:12px 16px;align-items:flex-start;gap:12px}.review-bar strong{display:block;margin-bottom:5px}.review-actions{gap:10px;flex-wrap:wrap;justify-content:flex-end}.review-actions a{display:none}.store-header{padding:18px 16px}.store-brand{font-size:17px}.search{display:none}.product{padding-top:42px;min-height:440px}.product h1{font-size:29px}.app-icon{width:76px;height:76px}.product-title{gap:16px}.description-short{font-size:13px;max-width:360px;margin-top:25px}.product::after{background:linear-gradient(90deg,#f4f1f0f5 0%,#f4f1f0c9 100%),linear-gradient(0deg,#f3f3f3,transparent 45%)}.section{padding:17px}.shot{flex-basis:285px}.shot img{width:285px}.shot span{max-width:285px}.get{padding-inline:30px}.get-alt{font-size:12px;padding-inline:13px}.gallery-header{margin-top:30px}.gallery-header h1{font-size:29px}.gallery-grid{gap:28px}.gallery-grid figcaption{font-size:12px;display:block}.gallery-grid figcaption a{display:inline-block;margin-top:9px}.lightbox-image{max-width:calc(100vw - 32px);max-height:calc(100vh - 240px)}dialog{max-width:calc(100vw - 32px)}.lightbox-caption{font-size:12px}}
+@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
+</style>
+</head>
+<body data-mode="store" data-assets="upload">
+<div class="review-bar">
+  <div><strong data-i18n="reviewTitle">第二版 · 本地设计预览</strong><span data-i18n="reviewNote">模拟商店布局，尚未发布。</span></div>
+  <div class="review-actions">
+    <a id="mode-link" href="gallery.html">看整套大图 ↗</a>
+    <label><select id="asset-kind" data-i18n-aria="assets" aria-label="素材类型"><option value="upload" data-i18n="upload">原生商店截图</option><option value="campaign" data-i18n="campaign">宣传排版</option></select></label>
+    <label><select id="language" data-i18n-aria="language" aria-label="语言">{{LANGUAGE_OPTIONS}}</select></label>
+  </div>
+</div>
+<div class="store-only">
+<header class="store-header">
+  <div class="store-brand"><span class="ms-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>Microsoft <small>Store</small></div>
+  <div class="store-nav"><span data-i18n="home">主页</span><span data-i18n="apps">应用</span><span data-i18n="games">游戏</span><span data-i18n="themes">主题</span></div>
+  <div class="search" data-i18n="search" aria-hidden="true">搜索应用、游戏及更多内容</div>
+</header>
+<section class="product"><div class="container">
+  <div class="product-title"><img class="app-icon" src="art/app-icon-300x300.png" alt=""><div><h1>PecoFence</h1><div class="publisher">Dayuan Jiang</div><div class="category" data-i18n="category">高效工作</div></div></div>
+  <p class="description-short" id="short"></p>
+  <div class="product-actions"><a class="get" data-i18n="get" href="https://apps.microsoft.com/detail/9MV6WG3XNWSX" target="_blank" rel="noopener">获取</a><a class="get-alt" data-i18n="galleryLink" href="gallery.html">看整套大图 ↗</a></div>
+  <p class="facts" data-i18n="facts">免费 · 开源 · Windows 11 x64</p>
+</div></section>
+<div class="store-body container"><main>
+<section class="section"><h2 data-i18n="screenshots">屏幕截图</h2><div id="screenshots" class="screenshot-strip"></div><p class="hint" id="asset-note"></p><p class="hint"><a href="PecoFence-store-v2.zip" data-i18n="downloadZip" download>下载商店素材包 ZIP</a></p></section>
+<section class="section"><h2 data-i18n="description">说明</h2><div class="readable" id="description"></div></section>
+</main><aside class="side"><h2 data-i18n="features">各就其位。</h2><div id="side-features"></div><p class="side-footnote" data-i18n="reviewNote">这是用于评审的布局模拟。</p></aside></div>
+</div>
+<main class="gallery-only container"><header class="gallery-header"><h1 data-i18n="galleryTitle">第二版，完整看。</h1><p data-i18n="galleryIntro"></p><p data-i18n="campaignNote"></p></header><div class="gallery-grid" id="gallery"></div></main>
+<dialog id="lightbox" data-i18n-aria="lightbox" aria-label="截图预览"><button class="lightbox-close" type="button" data-i18n-aria="close" aria-label="关闭">×</button><img class="lightbox-image" alt=""><p class="lightbox-caption"></p><div class="lightbox-controls"><button id="previous" type="button" data-i18n-aria="previous" aria-label="上一张">←</button><output id="counter"></output><button id="next" type="button" data-i18n-aria="next" aria-label="下一张">→</button></div></dialog>
+<script>
+"use strict";
+const COPY={{DATA}};
+const STORE_COPY={{STORE_DATA}};
+const UI={{UI_DATA}};
+const NAMES={{NAMES}};
+const picker=document.getElementById("language");
+const assetPicker=document.getElementById("asset-kind");
+const box=document.getElementById("lightbox");
+const parameters=new URLSearchParams(location.search);
+let language=Object.hasOwn(COPY,parameters.get("lang"))?parameters.get("lang"):"zh-CN";
+let current=0,lastTrigger;
+let assetKind=["upload","campaign"].includes(parameters.get("assets"))?parameters.get("assets"):document.body.dataset.assets;
+assetPicker.value=assetKind;
+picker.value=language;
+function copy(){return (assetKind==="upload"?STORE_COPY:COPY)[language]}
+function path(i){return (assetKind==="upload"?"upload/screenshots/":"screenshots/"+language+"/")+NAMES[i]+".png"}
+function show(i){current=(i+NAMES.length)%NAMES.length;box.querySelector("img").src=path(current);box.querySelector("img").alt=copy().captions[current];box.querySelector("p").textContent=copy().captions[current];document.getElementById("counter").textContent=(current+1)+" / "+NAMES.length}
+function open(i,trigger){lastTrigger=trigger;show(i);box.showModal()}
+function render(){
+  const content=copy();
+  const ui=UI[language];
+  document.documentElement.lang=language;
+  document.title="PecoFence · "+ui.reviewTitle;
+  document.querySelectorAll("[data-i18n]").forEach(element=>{
+    element.textContent=ui[element.dataset.i18n];
+  });
+  document.querySelectorAll("[data-i18n-aria]").forEach(element=>{
+    element.setAttribute("aria-label",ui[element.dataset.i18nAria]);
+  });
+  const modeLink=document.getElementById("mode-link");
+  const galleryMode=document.body.dataset.mode==="gallery";
+  modeLink.textContent=galleryMode?ui.storeLink:ui.galleryLink;
+  modeLink.href=(galleryMode?"index.html":"gallery.html")+"?lang="+encodeURIComponent(language)+"&assets="+assetKind;
+  document.querySelector(".get-alt").href="gallery.html?lang="+encodeURIComponent(language)+"&assets=campaign";
+  document.getElementById("short").textContent=content.short;
+  document.getElementById("description").textContent=STORE_COPY[language].description;
+  document.getElementById("asset-note").textContent=assetKind==="upload"?ui.uploadNote:ui.campaignNote;
+  const features=document.getElementById("side-features");
+  features.replaceChildren();
+  STORE_COPY[language].features.slice(0,3).forEach(text=>{
+    const item=document.createElement("div");item.className="side-feature";item.textContent=text;features.append(item);
+  });
+  document.getElementById("screenshots").replaceChildren();
+  document.getElementById("gallery").replaceChildren();
+  NAMES.forEach((name,i)=>{
+    const button=document.createElement("button");
+    button.type="button";button.className="shot";
+    button.setAttribute("aria-label",content.titles[i].replace("\n"," "));
+    const image=document.createElement("img");
+    image.src=path(i);image.alt=content.captions[i];image.width=1920;image.height=1080;
+    button.append(image);
+    const title=document.createElement("span");
+    title.textContent=content.titles[i].replace("\n"," ");button.append(title);
+    button.addEventListener("click",()=>open(i,button));
+    document.getElementById("screenshots").append(button);
+    const fig=document.createElement("figure");
+    const full=image.cloneNode(true);full.loading="lazy";fig.append(full);
+    const cap=document.createElement("figcaption");
+    const text=document.createElement("span");
+    text.textContent=String(i+1).padStart(2,"0")+" / "+content.captions[i];
+    const download=document.createElement("a");
+    download.href=path(i);download.download=name+".png";download.textContent=ui.downloadPng;
+    cap.append(text,download);fig.append(cap);document.getElementById("gallery").append(fig);
+  });
+  if(box.open)show(current);
+}
+picker.addEventListener("change",()=>{language=picker.value;render()});
+assetPicker.addEventListener("change",()=>{assetKind=assetPicker.value;render()});
+box.querySelector(".lightbox-close").addEventListener("click",()=>box.close());
+box.addEventListener("close",()=>lastTrigger?.focus());
+box.addEventListener("click",event=>{if(event.target===box)box.close()});
+document.getElementById("previous").addEventListener("click",()=>show(current-1));
+document.getElementById("next").addEventListener("click",()=>show(current+1));
+box.addEventListener("keydown",event=>{if(event.key==="ArrowRight"){event.preventDefault();show(current+1)}if(event.key==="ArrowLeft"){event.preventDefault();show(current-1)}});
+render();
+</script>
+</body>
+</html>
