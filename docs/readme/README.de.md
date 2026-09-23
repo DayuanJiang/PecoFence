@@ -1,16 +1,16 @@
 <p align="center">
-  <img src="../assets/hero-de.png" alt="PecoFence — Ein ruhigerer Desktop. Alles in Reichweite. Drei echte Desktop-Bereiche mit Glashintergrund." width="1280">
+  <img src="../assets/hero-de.png" alt="PecoFence — Projektordner, eine echte PDF und eigene Designstudien in nativen Liquid-Glass-Panels." width="1280">
 </p>
 
-https://github.com/user-attachments/assets/6320cf28-a791-4720-9659-b4575df021a0
 
 <p align="center">
   <strong>Eine kostenlose Open-Source-Alternative zu Stardock Fences für Windows 11.</strong><br>
-  Ordnen Sie Ihre Dateien in Glasflächen. Eine Tastenkombination holt sie über jede Anwendung.
+  Mehr Platz für das Wesentliche. Ordne Dateien in Glas-Panels, wechsle Projekte per Tab und hol deinen Desktop mit einem Tastenkürzel nach vorn. Kostenlos und quelloffen für Windows 11.
 </p>
 
 <p align="center">
-  <a href="#pecofence-herunterladen"><strong>PecoFence herunterladen →</strong></a>
+  <a href="https://pecofence.jiang.jp/de/"><strong>Website</strong></a>
+  &nbsp;·&nbsp; <a href="#pecofence-herunterladen"><strong>PecoFence herunterladen →</strong></a>
   &nbsp;·&nbsp; <a href="#pecofence-in-aktion">In Aktion sehen</a>
   &nbsp;·&nbsp; <a href="../README.md">Dokumentation</a>
 </p>
@@ -41,6 +41,8 @@ wieder nützlich wird.
 | Legen Sie für jedes Projekt einen Bereich an. Ziehen, skalieren und einrasten lassen. | Holen Sie einen Live-Ordner auf den Desktop. Stöbern Sie in Unterordnern und sehen Sie Änderungen sofort. | Ein Doppelklick auf den Desktop blendet alle Gruppen aus. Ein zweiter holt sie zurück. |
 
 ## PecoFence in Aktion
+
+https://github.com/user-attachments/assets/6320cf28-a791-4720-9659-b4575df021a0
 
 ### Ein Fenster. Mehrere Arbeitsbereiche.
 

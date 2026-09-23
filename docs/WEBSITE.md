@@ -9,28 +9,37 @@ The product page at <https://pecofence.jiang.jp> is a static site generated from
 | Path | Purpose |
 |---|---|
 | `site/template.html` | One HTML template rendered once per language |
-| `site/assets/site.css`, `site.js`, `mark.svg` | Responsive styles, desktop preview toggle, clip playback, command copy button, language picker and favicon |
+| `site/assets/site.css`, `site.js`, `mark.svg` | Responsive styles, desktop preview toggle, accessible feature tabs, clip playback, command copy button, language picker and favicon |
 | `site/assets/*.mp4`, `*.jpg`, `panel-*.png`, `wallpaper.jpg` | The 30-second spot (`promo.mp4`), six feature clips, posters, the three hero fences and the wallpaper, exported by `scripts/make-site-media.py` from the local promo project |
+| `site/assets/showcase-*.webp`, `showcase-wallpaper.jpg` | Native panel crops and the original wallpaper from the revision-2 Store scene |
 | `site/i18n/<language>.json` | Copy for each language; `en.json` is the source and every other file must have the same keys |
 | `site/site.json` | Domain, repository URL and the language list |
 
 The build writes `dist/site/`: `index.html` for English, one `<language>/index.html`
-per translation, the localized README hero images as Open Graph previews, `CNAME`,
+per translation, the localized README hero images as Open Graph and Twitter previews, `CNAME`,
 `robots.txt` and `sitemap.xml`. Pages carry `hreflang` alternates, so search engines
 send visitors to their language; the header's language picker and the language links
 do the same by hand. The picker preserves the current section.
 
-The page uses a light canvas with the original desktop wallpaper and product panels
-inside the hero preview. Feature videos play only while visible, with individual
-pause controls, and never autoplay when reduced motion is preferred. The preview's
-hide/show button demonstrates clearing the desktop. Installation requirements expand
-without JavaScript; clipboard copying is available on HTTPS and localhost. No external
-fonts, UI libraries or additional build dependencies are required.
+The page pairs a warm paper-and-lavender hero with a light reading canvas. Native
+Liquid Glass panel crops (`showcase-*.webp`) sit beside the headline and primary
+Store download link. They show Projects, Inspiration and Today from the revision-2
+capture; their composition on the website is editorial.
+The portable download is a secondary text link and the film has a separate play action.
+
+The feature gallery shows one large native scene cover at a time, with click and Left/Right/Home/End
+keyboard navigation. With JavaScript disabled all six clips appear with native video
+controls. Five covers come from the revision-2 desktop, Peek, tabs, automatic sorting
+and folder scenes; the hide/show cover remains a frame from its existing recording.
+Videos play on request and pause when hidden or offscreen. The preview's hide/show button
+demonstrates clearing the desktop. Installation requirements expand without JavaScript;
+clipboard copying is available on HTTPS and localhost. No external fonts, UI libraries
+or additional build dependencies are required.
 
 ## Building locally
 
 ```powershell
-python scripts/build-site.py
+uv run python scripts/build-site.py
 ```
 
 Open `dist/site/index.html` in a browser. `--base http://localhost:8000` rewrites the
@@ -48,7 +57,7 @@ Cloudflare account.
 ### Deploy from this machine
 
 ```powershell
-python scripts/build-site.py --strict
+uv run python scripts/build-site.py --strict
 npx wrangler pages deploy dist/site --project-name pecofence --branch main
 ```
 
@@ -93,9 +102,17 @@ in `en.json`; everything else is escaped.
 
 ## Refreshing media
 
-`python scripts/make-site-media.py` regenerates the clips, posters, panels and
+`uv run --with pillow python scripts/make-site-media.py` regenerates the clips, posters, panels and
 wallpaper from `extras/pecofence-promo/public/`, which is a local, ignored directory.
+Revision-2 scene captures and original wallpaper under `.cache/store-v2/` supply the
+current hero and feature covers. Add `--stills-only` to update only these images
+without re-encoding the unchanged videos.
 The exported files in `site/assets/` are checked in so the site builds anywhere.
+
+`uv run --with pillow python scripts/make-readme-media.py --stills-only` regenerates
+the ten README/share images from that same desktop and the shared copy under
+`docs/store/v2-i18n/`. The generated share URLs contain each image's content hash,
+and Open Graph/Twitter metadata declares the corresponding localized image.
 
 ## Analytics
 

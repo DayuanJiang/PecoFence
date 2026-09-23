@@ -1,16 +1,16 @@
 <p align="center">
-  <img src="../assets/hero-ko.png" alt="PecoFence — 더 차분한 바탕 화면. 모든 것이 손닿는 곳에. 유리 배경의 실제 바탕 화면 펜스 세 개." width="1280">
+  <img src="../assets/hero-ko.png" alt="PecoFence — 실제 Liquid Glass 패널에 프로젝트 폴더, PDF와 직접 만든 디자인 이미지를 담았습니다." width="1280">
 </p>
 
-https://github.com/user-attachments/assets/6320cf28-a791-4720-9659-b4575df021a0
 
 <p align="center">
   <strong>Windows 11을 위한 무료 오픈 소스 Stardock Fences 대안.</strong><br>
-  파일을 유리 패널에 정리하고, 단축키 하나로 어떤 앱 위에든 불러오세요.
+  바탕 화면은 여유롭게, 파일은 가까이에. 유리 패널과 프로젝트 탭, 자동 정리로 파일을 관리하고 단축키 하나로 불러오세요. Windows 11용 무료 오픈 소스 앱입니다.
 </p>
 
 <p align="center">
-  <a href="#pecofence-시작하기"><strong>PecoFence 시작하기 →</strong></a>
+  <a href="https://pecofence.jiang.jp/ko/"><strong>공식 웹사이트</strong></a>
+  &nbsp;·&nbsp; <a href="#pecofence-시작하기"><strong>PecoFence 시작하기 →</strong></a>
   &nbsp;·&nbsp; <a href="#실제-동작-보기">실제 동작 보기</a>
   &nbsp;·&nbsp; <a href="../README.md">문서</a>
 </p>
@@ -41,6 +41,8 @@ https://github.com/user-attachments/assets/6320cf28-a791-4720-9659-b4575df021a0
 | 프로젝트마다 펜스를 만들고, 끌어서 옮기고 크기를 조절하고 맞춤으로 딱 맞게 정렬하세요. | 실제 폴더를 바탕 화면 위에 그대로 올려 두세요. 하위 폴더를 탐색할 수 있고, 변경 사항은 바로 반영됩니다. | 바탕 화면을 두 번 클릭하면 펜스가 모두 숨겨지고, 다시 두 번 클릭하면 돌아옵니다. |
 
 ## 실제 동작 보기
+
+https://github.com/user-attachments/assets/6320cf28-a791-4720-9659-b4575df021a0
 
 ### 창은 하나, 작업 공간은 여러 개
 

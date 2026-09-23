@@ -1,16 +1,16 @@
 <p align="center">
-  <img src="../assets/hero-fr.png" alt="PecoFence — Un Bureau plus calme. Tout à portée de main. Trois vrais groupes de Bureau sur fond de verre." width="1280">
+  <img src="../assets/hero-fr.png" alt="PecoFence — Dossiers de projet, véritable PDF et créations graphiques originales dans des panneaux Liquid Glass natifs." width="1280">
 </p>
 
-https://github.com/user-attachments/assets/6320cf28-a791-4720-9659-b4575df021a0
 
 <p align="center">
   <strong>Une alternative libre et gratuite à Stardock Fences pour Windows 11.</strong><br>
-  Rangez vos fichiers dans des panneaux de verre. Faites-les apparaître au-dessus de n’importe quelle application d’un seul raccourci.
+  Faites place à l’essentiel. Rangez vos fichiers dans des panneaux de verre, passez d’un projet à l’autre par onglets et retrouvez votre bureau d’un raccourci. Gratuit et open source pour Windows 11.
 </p>
 
 <p align="center">
-  <a href="#télécharger-pecofence"><strong>Télécharger PecoFence →</strong></a>
+  <a href="https://pecofence.jiang.jp/fr/"><strong>Site web</strong></a>
+  &nbsp;·&nbsp; <a href="#télécharger-pecofence"><strong>Télécharger PecoFence →</strong></a>
   &nbsp;·&nbsp; <a href="#voyez-le-en-action">Voyez-le en action</a>
   &nbsp;·&nbsp; <a href="../README.md">Documentation</a>
 </p>
@@ -41,6 +41,8 @@ votre Bureau à nouveau utile.
 | Créez un groupe par projet. Déplacez-le, redimensionnez-le et alignez-le d’un geste. | Posez un dossier en direct sur votre Bureau. Parcourez ses sous-dossiers et voyez les changements au moment où ils se produisent. | Double-cliquez sur le Bureau pour masquer vos groupes. Double-cliquez à nouveau pour les retrouver. |
 
 ## Voyez-le en action
+
+https://github.com/user-attachments/assets/6320cf28-a791-4720-9659-b4575df021a0
 
 ### Une fenêtre. Plusieurs espaces de travail.
 

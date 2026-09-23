@@ -1,16 +1,16 @@
 <p align="center">
-  <img src="../assets/hero-ja.png" alt="PecoFence — 静かなデスクトップ。すべてが手の届く場所に。実際のデモデスクトップに並ぶ、ガラス背景の3つのフェンス。" width="1280">
+  <img src="../assets/hero-ja.png" alt="PecoFence — フォルダー、実際の PDF、オリジナルのデザイン画像を表示した Liquid Glass の実画面。" width="1280">
 </p>
 
-https://github.com/user-attachments/assets/6320cf28-a791-4720-9659-b4575df021a0
 
 <p align="center">
   <strong>Windows 11 向けの無料・オープンソースな Stardock Fences 代替アプリ。</strong><br>
-  ファイルをガラスのパネルに整理し、ショートカットひとつでどのアプリの手前にも呼び出せます。
+  ファイルに居場所を。デスクトップに余白を。ガラスのフェンス、プロジェクトのタブ、自動整理で、必要なものをいつも手元に。Windows 11 向けの無料・オープンソースアプリ。
 </p>
 
 <p align="center">
-  <a href="#はじめる"><strong>PecoFence をはじめる →</strong></a>
+  <a href="https://pecofence.jiang.jp/ja/"><strong>公式サイト</strong></a>
+  &nbsp;·&nbsp; <a href="#はじめる"><strong>PecoFence をはじめる →</strong></a>
   &nbsp;·&nbsp; <a href="#実際の動きを見る">実際の動きを見る</a>
   &nbsp;·&nbsp; <a href="../README.md">ドキュメント</a>
 </p>
@@ -40,6 +40,8 @@ https://github.com/user-attachments/assets/6320cf28-a791-4720-9659-b4575df021a0
 | プロジェクトごとにフェンスを作成。ドラッグやサイズ変更、スナップで思いどおりの位置に収まります。 | 実際のフォルダーをデスクトップ上のフェンスとして表示。サブフォルダーへ移動でき、中身の変化もその場で反映されます。 | デスクトップをダブルクリックするとフェンスがすべて隠れ、もう一度ダブルクリックすれば戻ってきます。 |
 
 ## 実際の動きを見る
+
+https://github.com/user-attachments/assets/6320cf28-a791-4720-9659-b4575df021a0
 
 ### ひとつのウィンドウに、複数のワークスペース
 

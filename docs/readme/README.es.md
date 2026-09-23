@@ -1,16 +1,16 @@
 <p align="center">
-  <img src="../assets/hero-es.png" alt="PecoFence — Un escritorio más tranquilo. Todo a tu alcance. Tres grupos reales de escritorio con fondo de cristal." width="1280">
+  <img src="../assets/hero-es.png" alt="PecoFence — Carpetas de proyecto, un PDF real y diseños originales en paneles nativos de Liquid Glass." width="1280">
 </p>
 
-https://github.com/user-attachments/assets/6320cf28-a791-4720-9659-b4575df021a0
 
 <p align="center">
   <strong>Una alternativa gratuita y de código abierto a Stardock Fences para Windows 11.</strong><br>
-  Organiza tus archivos en paneles de cristal. Tráelos delante de cualquier aplicación con un atajo.
+  Haz sitio para lo que importa. Organiza archivos en paneles de cristal, cambia de proyecto con pestañas y accede al escritorio con un atajo. Gratis y de código abierto para Windows 11.
 </p>
 
 <p align="center">
-  <a href="#descarga-pecofence"><strong>Descarga PecoFence →</strong></a>
+  <a href="https://pecofence.jiang.jp/es/"><strong>Sitio web</strong></a>
+  &nbsp;·&nbsp; <a href="#descarga-pecofence"><strong>Descarga PecoFence →</strong></a>
   &nbsp;·&nbsp; <a href="#míralo-en-acción">Míralo en acción</a>
   &nbsp;·&nbsp; <a href="../README.md">Documentación</a>
 </p>
@@ -41,6 +41,8 @@ a ser útil.
 | Crea un grupo para cada proyecto. Arrástralo, cambia su tamaño y ajústalo en su sitio. | Coloca una carpeta en vivo sobre el escritorio. Navega por sus subcarpetas y ve los cambios al momento. | Haz doble clic en el escritorio para ocultar los grupos. Vuelve a hacer doble clic para recuperarlos. |
 
 ## Míralo en acción
+
+https://github.com/user-attachments/assets/6320cf28-a791-4720-9659-b4575df021a0
 
 ### Una ventana. Varios espacios de trabajo.
 

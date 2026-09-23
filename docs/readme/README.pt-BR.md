@@ -1,16 +1,16 @@
 <p align="center">
-  <img src="../assets/hero-pt-BR.png" alt="PecoFence — Uma área de trabalho mais tranquila. Tudo ao seu alcance. Três grupos reais na área de trabalho com fundo de vidro." width="1280">
+  <img src="../assets/hero-pt-BR.png" alt="PecoFence — Pastas de projetos, um PDF real e estudos gráficos originais em painéis nativos do Liquid Glass." width="1280">
 </p>
 
-https://github.com/user-attachments/assets/6320cf28-a791-4720-9659-b4575df021a0
 
 <p align="center">
   <strong>Uma alternativa gratuita e de código aberto ao Stardock Fences para Windows 11.</strong><br>
-  Organize seus arquivos em painéis de vidro. Traga-os por cima de qualquer aplicativo com um atalho.
+  Mais espaço para o que importa. Organize arquivos em painéis de vidro, troque de projeto com abas e acesse a área de trabalho com um atalho. Grátis e de código aberto para Windows 11.
 </p>
 
 <p align="center">
-  <a href="#baixe-o-pecofence"><strong>Baixe o PecoFence →</strong></a>
+  <a href="https://pecofence.jiang.jp/pt-BR/"><strong>Site oficial</strong></a>
+  &nbsp;·&nbsp; <a href="#baixe-o-pecofence"><strong>Baixe o PecoFence →</strong></a>
   &nbsp;·&nbsp; <a href="#veja-em-ação">Veja em ação</a>
   &nbsp;·&nbsp; <a href="../README.md">Documentação</a>
 </p>
@@ -41,6 +41,8 @@ trabalho voltar a ser útil.
 | Crie um grupo para cada projeto. Arraste, redimensione e encaixe no lugar. | Coloque uma pasta ao vivo na área de trabalho. Navegue pelas subpastas e veja as mudanças na hora. | Clique duas vezes na área de trabalho para ocultar os grupos. Clique duas vezes de novo para trazê-los de volta. |
 
 ## Veja em ação
+
+https://github.com/user-attachments/assets/6320cf28-a791-4720-9659-b4575df021a0
 
 ### Uma janela. Vários espaços de trabalho.
 

@@ -11,10 +11,16 @@
 <meta property="og:title" content="{{t:meta.title}}">
 <meta property="og:description" content="{{t:meta.description}}">
 <meta property="og:url" content="{{canonical}}">
-<meta property="og:image" content="{{origin}}/assets/hero-{{lang}}.png">
+<meta property="og:image" content="{{hero_image}}">
+<meta property="og:image:width" content="1600">
+<meta property="og:image:height" content="900">
+<meta property="og:image:alt" content="{{t:hero.panels_alt}}">
 <meta property="og:locale" content="{{og_locale}}">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="theme-color" content="#f8faff">
+<meta name="twitter:title" content="{{t:meta.title}}">
+<meta name="twitter:description" content="{{t:meta.description}}">
+<meta name="twitter:image" content="{{hero_image}}">
+<meta name="theme-color" content="#f6f7fb">
 <link rel="icon" href="{{root}}assets/mark.svg?v={{v}}" type="image/svg+xml">
 <link rel="stylesheet" href="{{root}}assets/site.css?v={{v}}">
 </head>
@@ -62,6 +68,7 @@
 </header>
 
 <main id="main">
+  <div class="hero-shell">
   <section class="hero container" aria-labelledby="hero-title">
     <div class="hero-copy">
       <p class="eyebrow hero-eyebrow"><span class="status-dot"></span>{{t:hero.eyebrow}}</p>
@@ -69,27 +76,18 @@
       <p class="lede">{{t:hero.text}}</p>
       <div class="actions hero-actions">
         <a class="button primary" href="https://apps.microsoft.com/detail/9MV6WG3XNWSX?mode=direct"><svg class="icon" aria-hidden="true"><use href="#i-windows"/></svg>{{t:store.button}}<svg class="icon button-arrow" aria-hidden="true"><use href="#i-arrow"/></svg></a>
-        <a class="button secondary" href="{{releases}}">{{t:hero.download}}</a>
-        <a class="button secondary" href="#watch"><svg class="icon" aria-hidden="true"><use href="#i-play"/></svg>{{t:watch.title}}</a>
+        <a class="hero-watch" href="#watch"><span class="play-disc"><svg class="icon" aria-hidden="true"><use href="#i-play"/></svg></span>{{t:watch.title}}</a>
       </div>
-      <p class="note">{{t:hero.download_note}}</p>
+      <div class="hero-meta"><span>Windows 11 · x64</span><span class="meta-divider" aria-hidden="true"></span><a href="{{releases}}">{{t:hero.download}} <span aria-hidden="true">↗</span></a></div>
     </div>
     <figure class="desktop-preview">
       <div class="desk" role="img" aria-label="{{t:hero.panels_alt}}">
-        <div class="desktop-label" aria-hidden="true"><span class="status-dot"></span>PecoFence<span class="desktop-label-line"></span>Windows 11</div>
         <div class="desktop-panels">
-          <img class="panel p0" src="{{root}}assets/panel-0.png" alt="" width="640" height="448" fetchpriority="high">
-          <img class="panel p1" src="{{root}}assets/panel-1.png" alt="" width="640" height="448">
-          <img class="panel p2" src="{{root}}assets/panel-2.png" alt="" width="640" height="448">
+          <img class="panel p0" src="{{root}}assets/showcase-work.webp" alt="" width="680" height="590" fetchpriority="high">
+          <img class="panel p1" src="{{root}}assets/showcase-art.webp" alt="" width="880" height="715">
+          <img class="panel p2" src="{{root}}assets/showcase-folder.webp" alt="" width="675" height="355">
         </div>
         <p class="desktop-message" aria-hidden="true">{{t:demo.hint}}</p>
-        <div class="desktop-dock" aria-hidden="true">
-          <svg class="icon dock-windows"><use href="#i-windows"/></svg>
-          <span class="dock-divider"></span>
-          <span class="dock-active"><img src="{{root}}assets/mark.svg?v={{v}}" alt="" width="25" height="25"></span>
-          <svg class="icon dock-folder"><use href="#i-folder"/></svg>
-          <svg class="icon dock-grid"><use href="#i-grid"/></svg>
-        </div>
       </div>
       <figcaption class="desktop-caption">
         <span><span class="status-dot"></span>{{t:hero.caption}}</span>
@@ -97,6 +95,8 @@
       </figcaption>
     </figure>
   </section>
+  <div class="hero-bottom container" aria-hidden="true"><span>PecoFence</span><span>Fluent &amp; Liquid Glass</span><span>Apache 2.0</span></div>
+  </div>
 
   <section id="watch" class="watch container" aria-labelledby="watch-title">
     <div class="watch-copy">
@@ -118,6 +118,9 @@
         <span class="section-number" aria-hidden="true">01 /</span>
         <h2 id="features-title">{{t:features.heading}}</h2>
         <p class="intro">{{t:features.intro}}</p>
+      </div>
+      <div class="feature-picker" role="tablist" aria-label="{{t:nav.features}}" hidden>
+{{feature_tabs}}
       </div>
       <div class="features-grid">
 {{features}}
@@ -156,7 +159,7 @@
         <a class="button primary" href="https://apps.microsoft.com/detail/9MV6WG3XNWSX?mode=direct"><svg class="icon" aria-hidden="true"><use href="#i-windows"/></svg>{{t:store.button}}<svg class="icon button-arrow" aria-hidden="true"><use href="#i-arrow"/></svg></a>
         <a class="button secondary" href="{{releases}}">{{t:download.button}}</a>
       </div>
-      <span class="download-note">{t:hero.download_note}</span>
+      <span class="download-note">{{t:hero.download_note}}</span>
     </div>
     <div class="install-grid">
       <div class="install-steps">

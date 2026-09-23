@@ -10,6 +10,46 @@
     });
   }
 
+  // Without JS every feature remains visible; enhance to a keyboard-friendly gallery.
+  var picker = document.querySelector(".feature-picker");
+  if (picker) {
+    var tabs = Array.prototype.slice.call(picker.querySelectorAll('[role="tab"]'));
+    function activateTab(tab, focus) {
+      tabs.forEach(function (item) {
+        var active = item === tab;
+        var panel = document.getElementById(item.getAttribute("aria-controls"));
+        item.setAttribute("aria-selected", String(active));
+        item.tabIndex = active ? 0 : -1;
+        panel.hidden = !active;
+        panel.setAttribute("role", "tabpanel");
+        panel.setAttribute("aria-labelledby", item.id);
+        panel.tabIndex = 0;
+        if (!active) panel.querySelector("video").pause();
+      });
+      if (focus) {
+        tab.focus({ preventScroll: true });
+        tab.scrollIntoView({ block: "nearest", inline: "nearest" });
+      }
+    }
+    picker.hidden = false;
+    picker.closest(".features-section").classList.add("features-enhanced");
+    tabs.forEach(function (tab, index) {
+      tab.addEventListener("click", function () { activateTab(tab, false); });
+      tab.addEventListener("keydown", function (event) {
+        var next;
+        if (event.key === "ArrowRight") next = (index + 1) % tabs.length;
+        if (event.key === "ArrowLeft") next = (index + tabs.length - 1) % tabs.length;
+        if (event.key === "Home") next = 0;
+        if (event.key === "End") next = tabs.length - 1;
+        if (next !== undefined) {
+          event.preventDefault();
+          activateTab(tabs[next], true);
+        }
+      });
+    });
+    activateTab(tabs[0], false);
+  }
+
   // A small, optional demonstration of hiding desktop fences.
   var preview = document.querySelector(".desktop-preview");
   var demoToggle = document.querySelector(".demo-toggle");
@@ -52,15 +92,14 @@
     });
   }
 
-  // Feature clips play while at least half visible and pause off-screen. They never
-  // start on their own when the user prefers reduced motion. The button on each
-  // fence toggles playback and remembers a deliberate pause.
-  var reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  // Start with the new native scene covers. Play recordings only on request,
+  // and pause them when the reader moves away.
   var videos = Array.prototype.slice.call(document.querySelectorAll(".clip video"));
   videos.forEach(function (video) {
     var fence = video.closest(".clip");
     var toggle = fence.querySelector(".clip-toggle");
     toggle.hidden = false;
+    video.controls = false;
     function reflect() {
       fence.classList.toggle("is-playing", !video.paused);
       var action = toggle.getAttribute(video.paused ? "data-play" : "data-pause");
@@ -79,13 +118,11 @@
     video.addEventListener("pause", reflect);
     reflect();
   });
-  if (!reduce && "IntersectionObserver" in window) {
+  if ("IntersectionObserver" in window) {
     var observer = new IntersectionObserver(function (entries) {
       entries.forEach(function (entry) {
         var video = entry.target;
-        if (entry.isIntersecting && entry.intersectionRatio >= 0.5) {
-          if (!document.hidden && video.getAttribute("data-user-paused") !== "1") video.play().catch(function () {});
-        } else if (!video.paused) {
+        if ((!entry.isIntersecting || entry.intersectionRatio < 0.5) && !video.paused) {
           video.pause();
         }
       });
@@ -96,11 +133,6 @@
   document.addEventListener("visibilitychange", function () {
     if (document.hidden) {
       document.querySelectorAll("video").forEach(function (video) { video.pause(); });
-    } else if (observer) {
-      videos.forEach(function (video) {
-        observer.unobserve(video);
-        observer.observe(video);
-      });
     }
   });
 })();

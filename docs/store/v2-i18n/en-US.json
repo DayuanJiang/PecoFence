@@ -1,0 +1,59 @@
+{
+  "label": "A HOME FOR YOUR WINDOWS 11 DESKTOP",
+  "titles": [
+    "Make room for what matters.",
+    "Your files. Without losing your flow.",
+    "One panel. Every project.",
+    "New files.\nRight place.",
+    "Two moods. Your desktop."
+  ],
+  "sub": [
+    "Projects, inspiration, everyday files. Beautifully in order.",
+    "Bring your desktop files above the app you are working in.",
+    "From project files to inspiration. Just switch tabs.",
+    "Set a rule by file type.\nLet PecoFence handle the sorting.",
+    "Light or dark. Make your groups feel at home on your wallpaper."
+  ],
+  "captions": [
+    "Project folders, a real PDF and original design studies in native Liquid Glass panels.",
+    "Peek brings groups above a demonstration document window. Ctrl + Alt + Space to open, Esc to return.",
+    "Two actual states of the same native tabbed group: Projects and Inspiration.",
+    "New Form study.png and Launch checklist.md files were grouped by extension rules without changing their paths or contents.",
+    "The same design files on two real desktops, using light and dark Liquid Glass setups."
+  ],
+  "short": "Make room for what matters. Organize files in glass panels, switch projects with tabs and bring your desktop into reach with one shortcut. Free and open source.",
+  "uploadCaptions": [
+    "Projects, inspiration and everyday files, each in its own native Liquid Glass group.",
+    "Peek brings desktop groups above a demonstration document window. Ctrl + Alt + Space to open, Esc to return.",
+    "Projects and Inspiration share one panel. Inspiration is selected; click a tab to switch.",
+    "New PNG and Markdown files have been automatically grouped into Images and Documents by extension rules.",
+    "Liquid Glass on a dark wallpaper, with project folders, design references and everyday documents within reach."
+  ],
+  "labels": {
+    "projects": "PROJECTS",
+    "inspiration": "INSPIRATION",
+    "autosort": "AUTO-SORT",
+    "light": "LIGHT",
+    "dark": "DARK"
+  },
+  "description": "A calmer desktop. Everything within reach.\n\nGive every project a place. PecoFence organizes your Windows 11 desktop into glass panels, so your files stay close and your wallpaper has room to breathe.\n\nLESS TIME SORTING\nSet rules for file types, names, age or size. New desktop files appear in the right group automatically. Automatic grouping leaves their locations on disk unchanged.\n\nYOUR FILES, ONE SHORTCUT AWAY\nPress Ctrl + Alt + Space to bring your groups above the current app. Grab what you need, then press Esc to return.\n\nA SPACE FOR EVERY PROJECT\nCombine related groups into tabs. Switch in a click, or drag a tab out into a separate panel. Keep a live folder on the desktop and browse its subfolders in place.\n\nMAKE ROOM FOR FOCUS\nDouble-click empty desktop space to hide your groups and again to bring them back. Roll a panel up to its title bar and hover to expand it.\n\nGLASS THAT FITS YOUR DESKTOP\nChoose Fluent or Liquid Glass, light or dark, then adjust each panel's color and opacity. Save your layout with snapshots and backups.\n\nFree and open source under Apache 2.0. No app account required. Ten built-in display languages, available offline. Designed for Windows 11 x64.\n\nPecoFence uses real files: file operations you initiate, including moves, renames and deletions, affect files on disk. Your normal Windows desktop icons return when the app exits.",
+  "features": [
+    "Automatic desktop organization with rules for types, names, age and size",
+    "Ctrl + Alt + Space brings your desktop groups above the current app",
+    "Tabbed groups and live folder portals",
+    "Fluent and Liquid Glass themes with per-panel colors and opacity",
+    "Double-click to hide groups; roll panels up to their titles",
+    "Layout snapshots, daily backups and configuration export",
+    "Free, open source and available in ten display languages"
+  ],
+  "keywords": [
+    "desktop organizer",
+    "desktop icons",
+    "glass panels",
+    "file organization",
+    "folder portal",
+    "desktop tabs",
+    "productivity"
+  ],
+  "trailerTitle": "PecoFence — less clutter, more space"
+}

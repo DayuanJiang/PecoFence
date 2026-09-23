@@ -1,16 +1,16 @@
 <p align="center">
-  <img src="../assets/hero-zh-CN.png" alt="PecoFence — 把桌面还给壁纸，把文件放在手边。实际演示桌面上的三个玻璃栅栏。" width="1280">
+  <img src="../assets/hero-zh-CN.png" alt="PecoFence — 项目文件夹、PDF 和设计海报，收在原生 Liquid Glass 栅栏中。" width="1280">
 </p>
 
-https://github.com/user-attachments/assets/6320cf28-a791-4720-9659-b4575df021a0
 
 <p align="center">
   <strong>免费、开源的 Windows 11 桌面整理工具，Stardock Fences 的另一种选择。</strong><br>
-  用玻璃栅栏收好文件，按一下快捷键，就能在任何应用前取用。
+  把桌面还给壁纸，把文件放在手边。玻璃栅栏、项目标签页、自动整理，一个快捷键随时取用。免费开源，适用于 Windows 11。
 </p>
 
 <p align="center">
-  <a href="#开始使用"><strong>下载使用 →</strong></a>
+  <a href="https://pecofence.jiang.jp/zh-CN/"><strong>官网</strong></a>
+  &nbsp;·&nbsp; <a href="#开始使用"><strong>下载使用 →</strong></a>
   &nbsp;·&nbsp; <a href="#看看它怎么用">看看实际操作</a>
   &nbsp;·&nbsp; <a href="../README.md">项目文档</a>
 </p>
@@ -40,6 +40,8 @@ https://github.com/user-attachments/assets/6320cf28-a791-4720-9659-b4575df021a0
 | 给工作、设计或常用资料各建一个栅栏，拖动、缩放、吸附对齐。 | 把真实文件夹变成桌面上的窗口；可以进入子文件夹，内容变化自动同步。 | 双击桌面空白处隐藏全部栅栏，再次双击恢复。需要文件时叫回来，想看壁纸时收起来。 |
 
 ## 看看它怎么用
+
+https://github.com/user-attachments/assets/6320cf28-a791-4720-9659-b4575df021a0
 
 ### 一个窗口，几种工作状态
 
