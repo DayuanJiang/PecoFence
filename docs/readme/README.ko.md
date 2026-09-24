@@ -5,14 +5,14 @@
 
 <p align="center">
   <strong>Windows 11을 위한 무료 오픈 소스 Stardock Fences 대안.</strong><br>
-  바탕 화면은 여유롭게, 파일은 가까이에. 유리 패널과 프로젝트 탭, 자동 정리로 파일을 관리하고 단축키 하나로 불러오세요. Windows 11용 무료 오픈 소스 앱입니다. 아니면 AI 에이전트에게 맡기기만 하면 됩니다.
+  유리 패널에 파일을 모으고 탭으로 프로젝트를 전환하세요. 내장 CLI를 통해 AI 도우미에게 레이아웃, 모양, 자동 정리 규칙 설정도 맡길 수 있습니다.
 </p>
 
 <p align="center">
   <a href="https://pecofence.jiang.jp/ko/"><strong>공식 웹사이트</strong></a>
   &nbsp;·&nbsp; <a href="#pecofence-시작하기"><strong>PecoFence 시작하기 →</strong></a>
+  &nbsp;·&nbsp; <a href="#원하는-데스크톱을-ai에게-말하세요"><strong>AI + CLI</strong></a>
   &nbsp;·&nbsp; <a href="#실제-동작-보기">실제 동작 보기</a>
-  &nbsp;·&nbsp; <a href="#ai에게-정리를-맡기세요">AI 에이전트</a>
   &nbsp;·&nbsp; <a href="../README.md">문서</a>
 </p>
 
@@ -30,6 +30,47 @@
 </p>
 
 ---
+
+<a id="ai에게-정리를-맡기세요"></a>
+
+## 원하는 데스크톱을 AI에게 말하세요
+
+**CLI 기본 제공. AI가 데스크톱을 설정합니다.**
+
+데스크톱을 어떻게 사용하고 싶은지 AI 에이전트에게 알려 주세요. 함께 제공되는 `pecofence-cli`를 통해 Claude Code, Codex, Cursor가 현재 설정을 읽고 PecoFence에 직접 변경 사항을 적용할 수 있습니다.
+
+- **말로 요청하고 바로 설정하세요.** 테마, 투명도, 아이콘 크기, 전역 설정을 바꾸거나 모든 펜스를 한 번에 조정할 수 있습니다.
+- **한 번 정리하면 이후에는 자동으로.** 프로젝트별 펜스를 만들고 아이콘을 정리하세요. 규칙을 추가하면 새 파일도 자동으로 분류됩니다.
+- **마음에 드는 설정을 저장하세요.** 스냅샷으로 펜스 레이아웃을 저장하고, 구성 내보내기와 가져오기로 설정, 규칙, 레이아웃을 저장하고 복원할 수 있습니다.
+
+**사용 중인 AI 에이전트로 시작하세요**
+
+PecoFence를 실행한 뒤, 아래 요청을 AI 코딩 에이전트에 붙여 넣으세요.
+
+> pecofence-cli로 데스크톱을 설정해 주세요. 먼저 pecofence-cli skill과 pecofence-cli describe를 읽고 현재 설정과 펜스를 확인해 주세요. 변경 전에 구성을 백업하고, 다크 모드로 전환한 다음 모든 펜스를 좀 더 투명하게 해 주세요.
+
+CLI는 앱에 포함되어 있습니다. Microsoft Store 버전은 `pecofence-cli`를 PATH에 추가합니다. 포터블 ZIP에서는 에이전트에게 `pecofence-cli.exe`의 전체 경로를 알려 주세요.
+
+<details>
+<summary><strong>코딩 에이전트와의 대화 예시</strong></summary>
+
+> 바탕 화면의 PDF를 Docs 펜스에 모으고 새 PDF도 자동으로 넣어 줘. 다크 모드로 바꾸고 펜스를 좀 더 투명하게 해 줘.
+
+```powershell
+pecofence-cli config export "$env:USERPROFILE\pecofence-before-ai.json"
+pecofence-cli snapshot save before-cleanup
+pecofence-cli fence create --title Docs
+pecofence-cli rule add --name PDFs --ext pdf --to Docs --index 0
+pecofence-cli rule apply
+pecofence-cli settings set theme dark
+pecofence-cli fence set --all opacity clear
+```
+
+</details>
+
+AI와 스크립트를 위한 인터페이스: `describe`는 명령 목록과 JSON Schema를, `skill`은 에이전트 가이드를 출력합니다. JSON 결과로 실제 변경 내용을 확인하고, 구조화된 앱 오류를 바탕으로 다음 작업을 결정할 수 있습니다.
+
+[CLI 시작 가이드 →](../CLI.md#start-with-your-ai-agent)
 
 ## 모든 것에 제자리를
 
@@ -65,36 +106,18 @@ https://github.com/user-attachments/assets/6320cf28-a791-4720-9659-b4575df021a0
 
 | 경험 | 이렇게 달라집니다 |
 | :--- | :--- |
+| **AI + CLI** | `pecofence-cli` — **말로 요청하고 바로 설정하세요.** 테마, 투명도, 아이콘 크기, 전역 설정을 바꾸거나 모든 펜스를 한 번에 조정할 수 있습니다. |
 | **정리는 덜** | 파일 유형, 확장자, 이름, 와일드카드, 바로 가기 대상, 시간과 크기로 규칙을 정해 두면 새 파일이 알아서 제 펜스를 찾아갑니다. |
 | **바탕 화면에 어울리는 유리** | Fluent와 Liquid Glass 테마, 밝게/어둡게 모드, 펜스별 색조와 불투명도, 아이콘 색조. |
 | **익숙한 파일 다루기** | 파일 탐색기 우클릭 메뉴, 끌어서 놓기, 복사/붙여넣기, 다중 선택, 썸네일, 아이콘/목록/자세히 보기. |
 | **필요할 때는 공간을** | 펜스를 제목만 남기고 접어 두고, 마우스를 올리면 펼치세요. 마음에 드는 배치는 잠가 둘 수 있습니다. |
 | **되돌아갈 길** | 배치 스냅샷, 매일 자동 백업, 설정 내보내기 / 가져오기, 디스플레이 간 펜스 교환. |
 | **가벼운 존재감** | Rust로 만든 네이티브 앱. WebView2 설정 패널은 필요할 때만 로드됩니다. |
-| **AI 에이전트와 함께** | `pecofence-cli`는 JSON으로 대화하므로 Claude Code, Codex, Cursor가 펜스를 만들고 아이콘을 옮기고 규칙을 대신 작성할 수 있습니다. |
 
 자동 정리 규칙은 파일을 원래 위치에 그대로 둡니다. 직접 파일을 옮길 때는
 파일 탐색기에서처럼 실제 파일이 이동합니다.
 
 [전체 기능 목록 보기 →](../FEATURES.md)
-
-## AI에게 정리를 맡기세요
-
-PecoFence에는 Claude Code, Codex, Cursor 같은 AI 코딩 에이전트를 위해 만든 명령줄 도구 `pecofence-cli`가 함께 들어 있습니다. 모든 명령이 JSON으로 대화하고, 실제로 무엇이 바뀌었는지 알려 주며, 에이전트가 대응할 수 있는 방식으로 오류를 설명합니다. 원하는 바탕 화면을 말로 설명하면 에이전트가 명령을 실행합니다.
-
-> "PDF를 모두 Docs 펜스에 넣고 계속 그렇게 유지해 줘. 펜스도 조금 더 투명하게 해 줘."
-
-```
-pecofence-cli snapshot save before-cleanup
-pecofence-cli fence create --title Docs --rect 100,100,600,400
-pecofence-cli rule add --name PDFs --ext pdf --to Docs
-pecofence-cli rule apply
-pecofence-cli fence set --all opacity clear
-```
-
-펜스, 아이콘, 규칙, 설정, 스냅샷, 설정 파일까지 모두 다룰 수 있고, 모든 단계는 배치 스냅샷으로 되돌릴 수 있습니다. 에이전트에게 사용법을 알려 주려면 `pecofence-cli skill`을 실행해 출력 내용을 에이전트의 스킬 폴더에 저장하거나, 함께 출력되는 세 줄짜리 스니펫을 `AGENTS.md`에 붙여 넣으세요. Microsoft Store 버전은 `pecofence-cli`를 PATH에 등록하고, 포터블 ZIP은 자체 폴더에서 실행합니다.
-
-[명령줄 참조 →](../CLI.md)
 
 ## 내 언어로
 

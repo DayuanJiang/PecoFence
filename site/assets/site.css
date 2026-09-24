@@ -1712,12 +1712,37 @@ h2 {
     }
 }
 
-/* AI agents: copy beside a terminal transcript */
+/* AI configuration is a primary entry point, directly after the hero. */
+.hero-eyebrow {
+    padding: 8px 12px;
+    border: 1px solid #66599d35;
+    border-radius: 8px;
+    background: #ffffff75;
+    color: #554582;
+    text-decoration: none
+}
+
+.hero-eyebrow .icon {
+    width: 15px;
+    height: 15px
+}
+
+.hero-actions .secondary {
+    background: #ffffff85;
+    border-color: #66599d40;
+    color: #554582
+}
+
+.agents-section {
+    background: linear-gradient(145deg, #eff1fc, #f8f9fd 65%);
+    border-bottom: 1px solid var(--edge)
+}
+
 .agents {
     display: grid;
-    grid-template-columns: .9fr 1.1fr;
+    grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr);
     align-items: center;
-    gap: 90px
+    gap: 36px 70px
 }
 
 .agents-copy {
@@ -1733,6 +1758,67 @@ h2 {
     color: var(--ink-soft);
     font-size: 14px;
     line-height: 1.85
+}
+
+.agents-tools {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 24px
+}
+
+.agents-tools span {
+    padding: 4px 11px;
+    border: 1px solid #ced7ef;
+    border-radius: 6px;
+    background: #ffffff80;
+    color: #3b4e78;
+    font-size: 12px;
+    font-weight: 600
+}
+
+.agents-start {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr);
+    gap: 32px 70px;
+    align-items: start;
+    padding-top: 32px;
+    border-top: 1px solid #d4dcef
+}
+
+.agents-start h3 {
+    margin: 0 0 12px;
+    font: 600 23px/1.35 var(--font-display);
+    letter-spacing: -.025em
+}
+
+.agents-start p {
+    margin: 0 0 12px;
+    color: var(--ink-soft);
+    font-size: 14px
+}
+
+.agents-start .small {
+    font-size: 12px
+}
+
+.agent-prompt {
+    padding: 22px 24px;
+    border: 1px solid #cad5ee;
+    border-radius: 12px;
+    background: #ffffffbf
+}
+
+.agent-prompt p {
+    color: var(--ink);
+    overflow-wrap: anywhere
+}
+
+.agents-contract {
+    grid-column: 1 / -1;
+    margin: 0;
+    max-width: 960px
 }
 
 .agents-points {
@@ -1775,6 +1861,7 @@ h2 {
 }
 
 .terminal {
+    min-width: 0;
     margin: 0;
     overflow: hidden;
     border-radius: 14px;
@@ -1800,9 +1887,10 @@ h2 {
 
 .terminal-bar em {
     margin-left: auto;
-    color: #6f82a8;
+    color: #aebbd6;
     font: 500 11px/1 "Cascadia Code", Consolas, monospace;
-    letter-spacing: .08em
+    line-height: 1.6;
+    text-align: right
 }
 
 .terminal-body {
@@ -1857,18 +1945,16 @@ h2 {
     color: #d7e0f2
 }
 
-.terminal-out {
-    color: #7fc6a6
-}
-
 @media(max-width:1100px) {
-    .agents {
-        gap: 50px
+    .agents,
+    .agents-start {
+        column-gap: 40px
     }
 }
 
 @media(max-width:840px) {
-    .agents {
+    .agents,
+    .agents-start {
         grid-template-columns: 1fr;
         gap: 30px
     }

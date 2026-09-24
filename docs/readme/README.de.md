@@ -5,14 +5,14 @@
 
 <p align="center">
   <strong>Eine kostenlose Open-Source-Alternative zu Stardock Fences für Windows 11.</strong><br>
-  Mehr Platz für das Wesentliche. Ordne Dateien in Glas-Panels, wechsle Projekte per Tab und hol deinen Desktop mit einem Tastenkürzel nach vorn. Kostenlos und quelloffen für Windows 11. Oder bitte einfach deinen KI-Agenten darum.
+  Sammle Dateien in Glas-Panels, wechsle Projekte per Tab und lass deinen KI-Agenten Layout, Aussehen und Sortierregeln über die integrierte CLI einstellen.
 </p>
 
 <p align="center">
   <a href="https://pecofence.jiang.jp/de/"><strong>Website</strong></a>
   &nbsp;·&nbsp; <a href="#pecofence-herunterladen"><strong>PecoFence herunterladen →</strong></a>
+  &nbsp;·&nbsp; <a href="#dein-desktop-von-deiner-ki-eingerichtet"><strong>AI + CLI</strong></a>
   &nbsp;·&nbsp; <a href="#pecofence-in-aktion">In Aktion sehen</a>
-  &nbsp;·&nbsp; <a href="#lassen-sie-ihre-ki-aufräumen">KI-Agenten</a>
   &nbsp;·&nbsp; <a href="../README.md">Dokumentation</a>
 </p>
 
@@ -30,6 +30,47 @@
 </p>
 
 ---
+
+<a id="lassen-sie-ihre-ki-aufräumen"></a>
+
+## Dein Desktop. Von deiner KI eingerichtet
+
+**CLI inklusive. Bereit für deinen KI-Agenten.**
+
+Sag deinem KI-Agenten, wie du deinen Desktop nutzen möchtest. Mit der mitgelieferten `pecofence-cli` können Claude Code, Codex und Cursor deine aktuelle Konfiguration lesen und Änderungen direkt in PecoFence anwenden.
+
+- **Mit eigenen Worten konfigurieren.** Ändere Design, Transparenz, Symbolgröße und globale Einstellungen oder passe alle Bereiche auf einmal an.
+- **Einmal sortieren, dauerhaft Ordnung halten.** Erstelle Projektbereiche, ordne Symbole zu und lege Regeln an, die neue Dateien automatisch einsortieren.
+- **Deine Einrichtung bewahren.** Snapshots speichern Bereichslayouts; der Konfigurationsexport und -import sichert Einstellungen, Regeln und Layouts und stellt sie wieder her.
+
+**Mit deinem KI-Agenten ausprobieren**
+
+Starte PecoFence und füge diese Anfrage in deinen KI-Coding-Agenten ein:
+
+> Konfiguriere meinen Desktop mit pecofence-cli. Lies zuerst pecofence-cli skill und pecofence-cli describe und prüfe dann meine aktuellen Einstellungen und Bereiche. Sichere die Konfiguration vor Änderungen. Aktiviere den dunklen Modus und mache alle Bereiche transparenter.
+
+Die CLI ist enthalten. Die Microsoft-Store-Version fügt `pecofence-cli` zum PATH hinzu. Beim portablen ZIP gib deinem Agenten den vollständigen Pfad zu `pecofence-cli.exe`.
+
+<details>
+<summary><strong>Beispielgespräch mit einem Coding-Agenten</strong></summary>
+
+> Sammle die PDFs auf meinem Desktop in einem Docs-Bereich und sortiere neue PDFs automatisch dort ein. Aktiviere den dunklen Modus und mache die Bereiche transparenter.
+
+```powershell
+pecofence-cli config export "$env:USERPROFILE\pecofence-before-ai.json"
+pecofence-cli snapshot save before-cleanup
+pecofence-cli fence create --title Docs
+pecofence-cli rule add --name PDFs --ext pdf --to Docs --index 0
+pecofence-cli rule apply
+pecofence-cli settings set theme dark
+pecofence-cli fence set --all opacity clear
+```
+
+</details>
+
+Für Agenten und Skripte: `describe` liefert den Befehlskatalog und JSON-Schemas, `skill` den Agenten-Leitfaden. JSON-Ergebnisse zeigen die Änderungen; strukturierte Anwendungsfehler helfen dem Agenten, den nächsten Schritt zu wählen.
+
+[Erste Schritte mit der CLI →](../CLI.md#start-with-your-ai-agent)
 
 ## Alles bekommt seinen Platz
 
@@ -65,36 +106,18 @@ Greifen Sie sich, was Sie brauchen, und kehren Sie mit **Esc** zurück.
 
 | Erlebnis | Was dahintersteckt |
 | :--- | :--- |
+| **AI + CLI** | `pecofence-cli` — **Mit eigenen Worten konfigurieren.** Ändere Design, Transparenz, Symbolgröße und globale Einstellungen oder passe alle Bereiche auf einmal an. |
 | **Weniger sortieren** | Regeln nach Dateityp, Endung, Name, Platzhalter, Verknüpfungsziel, Zeit und Größe. Neue Dateien finden ihren Bereich von selbst. |
 | **Glas, das zu Ihrem Desktop passt** | Die Themen Fluent und Liquid Glass, heller und dunkler Modus, Farbton, Deckkraft und Symbolfärbung je Bereich. |
 | **Vertraute Dateiverwaltung** | Explorer-Kontextmenüs, Drag & Drop, Kopieren/Einfügen, Mehrfachauswahl, Miniaturansichten sowie Symbol-, Listen- und Detailansicht. |
 | **Platz, wenn Sie ihn brauchen** | Klappen Sie einen Bereich bis auf den Titel ein. Zum Ausklappen einfach darüberfahren. Sperren Sie ein Layout, das Ihnen gefällt. |
 | **Ein Weg zurück** | Layout-Momentaufnahmen, tägliche Sicherungen, Import/Export der Konfiguration und Tausch zwischen Bildschirmen. |
 | **Ein kleiner Fußabdruck** | Eine native Rust-Anwendung; die WebView2-Einstellungen werden nur bei Bedarf geladen. |
-| **Arbeitet mit Ihrem KI-Agenten** | `pecofence-cli` spricht JSON, sodass Claude Code, Codex oder Cursor Bereiche anlegen, Symbole verschieben und Regeln für Sie schreiben können. |
 
 Automatische Sortierregeln lassen Dateien an ihrem ursprünglichen Speicherort. Verschiebungen,
 die Sie selbst anstoßen, funktionieren wie im Explorer.
 
 [Die vollständige Funktionsliste →](../FEATURES.md)
-
-## Lassen Sie Ihre KI aufräumen
-
-PecoFence bringt `pecofence-cli` mit, eine Kommandozeile für KI-Coding-Agenten wie Claude Code, Codex und Cursor. Jeder Befehl spricht JSON, meldet, ob sich tatsächlich etwas geändert hat, und erklärt Fehler so, dass ein Agent darauf reagieren kann. Sie beschreiben den Desktop, den Sie sich wünschen; der Agent führt die Befehle aus.
-
-> „Leg alle meine PDFs in einen Bereich Docs, halte das so, und mach die Bereiche etwas transparenter.“
-
-```
-pecofence-cli snapshot save before-cleanup
-pecofence-cli fence create --title Docs --rect 100,100,600,400
-pecofence-cli rule add --name PDFs --ext pdf --to Docs
-pecofence-cli rule apply
-pecofence-cli fence set --all opacity clear
-```
-
-Bereiche, Symbole, Regeln, Einstellungen, Momentaufnahmen und Konfigurationsdateien sind alle erreichbar, und jeder Schritt lässt sich über eine Layout-Momentaufnahme rückgängig machen. Um Ihren Agenten startklar zu machen, führen Sie `pecofence-cli skill` aus und speichern die Ausgabe in seinem Skills-Ordner, oder fügen Sie den dreizeiligen Schnipsel, den der Befehl ausgibt, in Ihre `AGENTS.md` ein. Die Microsoft-Store-Version legt `pecofence-cli` auf Ihren PATH; das portable ZIP führt es aus seinem eigenen Ordner aus.
-
-[Kommandozeilen-Referenz →](../CLI.md)
 
 ## Spricht Ihre Sprache
 

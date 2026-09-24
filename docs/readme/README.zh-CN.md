@@ -5,14 +5,14 @@
 
 <p align="center">
   <strong>免费、开源的 Windows 11 桌面整理工具，Stardock Fences 的另一种选择。</strong><br>
-  把桌面还给壁纸，把文件放在手边。玻璃栅栏、项目标签页、自动整理，一个快捷键随时取用。免费开源，适用于 Windows 11。或者，直接交给你的 AI 助手去做。
+  用玻璃栅栏收好文件，用标签页切换项目，还能让 AI 助手通过内置 CLI，直接调整布局、外观和自动整理规则。
 </p>
 
 <p align="center">
   <a href="https://pecofence.jiang.jp/zh-CN/"><strong>官网</strong></a>
   &nbsp;·&nbsp; <a href="#开始使用"><strong>下载使用 →</strong></a>
+  &nbsp;·&nbsp; <a href="#桌面怎么配告诉-ai-就好"><strong>AI + CLI</strong></a>
   &nbsp;·&nbsp; <a href="#看看它怎么用">看看实际操作</a>
-  &nbsp;·&nbsp; <a href="#让-ai-帮你整理">AI 助手</a>
   &nbsp;·&nbsp; <a href="../README.md">项目文档</a>
 </p>
 
@@ -30,6 +30,47 @@
 </p>
 
 ---
+
+<a id="让-ai-帮你整理"></a>
+
+## 桌面怎么配，告诉 AI 就好
+
+**内置 CLI，让 AI 直接配置桌面**
+
+把你想要的桌面告诉 AI 助手。PecoFence 自带 `pecofence-cli`，Claude Code、Codex、Cursor 可以读取当前配置，并直接在 PecoFence 中执行修改。
+
+- **说出需求，直接改配置。** 切换主题、透明度、图标大小和全局设置，也能一次调整所有栅栏。
+- **整理一次，以后自动归位。** 创建项目栅栏、整理图标，再添加规则，让新文件自动进入对应栅栏。
+- **喜欢的配置，保存下来。** 用快照保存栅栏布局，用配置导入导出保存和恢复设置、规则与布局。
+
+**现在就让你的 AI 助手试试**
+
+启动 PecoFence，把下面这段话发给你的 AI 编程助手：
+
+> 请用 pecofence-cli 帮我配置桌面。先阅读 pecofence-cli skill 和 pecofence-cli describe，再查看当前设置与栅栏。修改前先备份配置，然后切换为深色模式，并把所有栅栏调得更透明。
+
+CLI 已随应用附带。Microsoft Store 版会把 `pecofence-cli` 加入 PATH；使用便携版时，告诉助手 `pecofence-cli.exe` 的完整路径即可。
+
+<details>
+<summary><strong>与编程助手的对话示例</strong></summary>
+
+> 把桌面上的 PDF 放进 Docs 栅栏，以后的 PDF 也自动归进去，切成深色模式，再把栅栏调得更透明一点。
+
+```powershell
+pecofence-cli config export "$env:USERPROFILE\pecofence-before-ai.json"
+pecofence-cli snapshot save before-cleanup
+pecofence-cli fence create --title Docs
+pecofence-cli rule add --name PDFs --ext pdf --to Docs --index 0
+pecofence-cli rule apply
+pecofence-cli settings set theme dark
+pecofence-cli fence set --all opacity clear
+```
+
+</details>
+
+为 AI 和脚本提供清晰接口：`describe` 输出命令目录与 JSON Schema，`skill` 输出使用指南。JSON 结果报告实际改动，结构化的应用错误帮助助手决定下一步。
+
+[查看 CLI 上手指南 →](../CLI.md#start-with-your-ai-agent)
 
 ## 给每件事，留一个位置
 
@@ -64,36 +105,18 @@ https://github.com/user-attachments/assets/6320cf28-a791-4720-9659-b4575df021a0
 
 | 体验 | 能做什么 |
 | :--- | :--- |
+| **AI + CLI** | `pecofence-cli` — **说出需求，直接改配置。** 切换主题、透明度、图标大小和全局设置，也能一次调整所有栅栏。 |
 | **少一点手动整理** | 按类型、扩展名、名称、通配符、快捷方式目标、时间和大小设置规则，新文件自动找到位置。 |
 | **配得上你的壁纸** | Fluent 与 Liquid Glass 两种风格，支持深浅色、单独色调、不透明度和图标着色。 |
 | **熟悉的文件操作** | 资源管理器右键菜单、拖放、复制粘贴、多选、缩略图，以及图标／列表／详细信息视图。 |
 | **用时展开，闲时收好** | 把栅栏卷成标题条，鼠标悬停即可展开；也可以锁定已经摆好的位置。 |
 | **喜欢的布局，留得住** | 保存布局快照、每日自动备份、导入导出配置、交换两个显示器上的栅栏。 |
 | **轻巧地待在桌面上** | Rust 编写的原生应用，WebView2 设置面板按需加载。 |
-| **和你的 AI 助手搭档** | `pecofence-cli` 以 JSON 交流，Claude Code、Codex 或 Cursor 可以替你创建栅栏、移动图标、编写规则。 |
 
 自动整理只改变文件所属的栅栏，保留文件原来的位置。
 你主动发起的移动、重命名和删除，则像资源管理器一样操作真实文件。
 
 [查看完整功能清单 →](../FEATURES.md)
-
-## 让 AI 帮你整理
-
-PecoFence 附带 `pecofence-cli`，一个专为 Claude Code、Codex、Cursor 等 AI 编程助手打造的命令行工具。每条命令都以 JSON 交流，会报告是否真的改动了什么，并用助手能够据此行动的方式说明错误。你描述想要的桌面，命令交给助手来执行。
-
-> “把我所有的 PDF 放进一个叫 Docs 的栅栏，以后也保持这样，再把栅栏调得更透明一点。”
-
-```
-pecofence-cli snapshot save before-cleanup
-pecofence-cli fence create --title Docs --rect 100,100,600,400
-pecofence-cli rule add --name PDFs --ext pdf --to Docs
-pecofence-cli rule apply
-pecofence-cli fence set --all opacity clear
-```
-
-栅栏、图标、规则、设置、快照和配置文件都可以操作，每一步都能通过布局快照撤销。要让助手上手，运行 `pecofence-cli skill`，把输出保存到它的 skills 文件夹；或者把它打印出的三行片段粘贴进你的 `AGENTS.md`。Microsoft Store 版会把 `pecofence-cli` 加入 PATH；便携版则直接从自己的文件夹运行。
-
-[命令行参考 →](../CLI.md)
 
 ## 用你熟悉的语言
 

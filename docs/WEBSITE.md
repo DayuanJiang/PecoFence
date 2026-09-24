@@ -9,7 +9,7 @@ The product page at <https://pecofence.jiang.jp> is a static site generated from
 | Path | Purpose |
 |---|---|
 | `site/template.html` | One HTML template rendered once per language |
-| `site/assets/site.css`, `site.js`, `mark.svg` | Responsive styles, desktop preview toggle, accessible feature tabs, clip playback, command copy button, language picker and favicon |
+| `site/assets/site.css`, `site.js`, `mark.svg` | Responsive styles, desktop preview toggle, accessible feature tabs, clip playback, AI prompt and install command copy buttons, language picker and favicon |
 | `site/assets/*.mp4`, `*.jpg`, `panel-*.png`, `wallpaper.jpg` | The 30-second spot (`promo.mp4`), six feature clips, posters, the three hero fences and the wallpaper, exported by `scripts/make-site-media.py` from the local promo project |
 | `site/assets/showcase-*.webp`, `showcase-wallpaper.jpg` | Native panel crops and the original wallpaper from the revision-2 Store scene |
 | `site/i18n/<language>.json` | Copy for each language; `en.json` is the source and every other file must have the same keys |
@@ -26,6 +26,13 @@ Liquid Glass panel crops (`showcase-*.webp`) sit beside the headline and primary
 Store download link. They show Projects, Inspiration and Today from the revision-2
 capture; their composition on the website is editorial.
 The portable download is a secondary text link and the film has a separate play action.
+
+The hero also links directly to AI configuration through its CLI badge and a secondary action.
+The AI + CLI section follows the hero, before the film and feature gallery. It presents settings,
+organization rules and configuration backup as everyday uses, alongside an illustrative PowerShell
+workflow and a localized prompt readers can copy into their coding agent. The CLI guide supplies
+the detailed setup instructions. Both copy buttons have independent feedback and select their own
+text if clipboard access fails; the prompt and install command remain readable without JavaScript.
 
 The feature gallery shows one large native scene cover at a time, with click and Left/Right/Home/End
 keyboard navigation. With JavaScript disabled all six clips appear with native video

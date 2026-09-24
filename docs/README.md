@@ -1,5 +1,6 @@
 # Documentation
 
+- [Let your AI agent configure PecoFence: quick start and examples](CLI.md#start-with-your-ai-agent)
 - [Upgrading to PecoFence](UPGRADING.md)
 - [Development and verification](DEVELOPMENT.md)
 - [Languages and translation contributions](LOCALIZATION.md)

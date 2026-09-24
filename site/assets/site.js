@@ -65,8 +65,8 @@
     });
   }
 
-  var copy = document.querySelector(".copy-command");
-  if (copy && navigator.clipboard && window.isSecureContext) {
+  document.querySelectorAll(".copy-command").forEach(function (copy) {
+    if (!navigator.clipboard || !window.isSecureContext) return;
     copy.hidden = false;
     var copyReset;
     copy.addEventListener("click", function () {
@@ -79,18 +79,19 @@
           copy.querySelector("use").setAttribute("href", "#i-copy");
         }, 2200);
       }).catch(function () {
-        // The command remains selectable if browser permissions block copying.
-        var code = document.querySelector(".command-install code");
-        if (code) {
+        // Keep the corresponding prompt or command selectable when copying is blocked.
+        var container = copy.closest("[data-copy-container]");
+        var content = container && (container.querySelector("code") || container.querySelector("[data-copy-content]"));
+        if (content) {
           var range = document.createRange();
-          range.selectNodeContents(code);
+          range.selectNodeContents(content);
           var selection = window.getSelection();
           selection.removeAllRanges();
           selection.addRange(range);
         }
       });
     });
-  }
+  });
 
   // Start with the new native scene covers. Play recordings only on request,
   // and pause them when the reader moves away.

@@ -5,14 +5,14 @@
 
 <p align="center">
   <strong>A free, open-source Stardock Fences alternative for Windows 11.</strong><br>
-  Make room for what matters. Organize files in glass panels, switch projects with tabs and bring your desktop into reach with one shortcut. Free and open source. Or just ask your AI agent to do it.
+  Keep files in glass panels, switch projects with tabs, and ask your AI agent to configure the layout, appearance and sorting rules through the built-in CLI.
 </p>
 
 <p align="center">
   <a href="https://pecofence.jiang.jp/"><strong>Website</strong></a>
   &nbsp;·&nbsp; <a href="#get-pecofence"><strong>Get PecoFence →</strong></a>
+  &nbsp;·&nbsp; <a href="#your-desktop-configured-by-your-ai"><strong>AI + CLI</strong></a>
   &nbsp;·&nbsp; <a href="#see-it-in-action">See it in action</a>
-  &nbsp;·&nbsp; <a href="#ask-your-ai-to-organize-it">AI agents</a>
   &nbsp;·&nbsp; <a href="docs/README.md">Documentation</a>
 </p>
 
@@ -30,6 +30,47 @@
 </p>
 
 ---
+
+<a id="ask-your-ai-to-organize-it"></a>
+
+## Your desktop. Configured by your AI
+
+**Built-in CLI. Ready for your AI agent.**
+
+Tell your AI agent how you want your desktop to work. The bundled `pecofence-cli` lets Claude Code, Codex and Cursor read your current setup and apply changes directly in PecoFence.
+
+- **Configure it in your own words.** Change themes, transparency, icon sizes and global settings, or adjust every fence at once.
+- **Organize once. Keep it organized.** Create project fences, arrange icons and add rules that sort new files automatically.
+- **Save a setup you like.** Use snapshots for fence layouts and configuration export/import for settings, rules and layouts.
+
+**Try it with your AI agent**
+
+Open PecoFence, then paste this request into your AI coding agent:
+
+> Use pecofence-cli to configure my desktop. First read pecofence-cli skill and pecofence-cli describe, then inspect my current settings and fences. Back up my configuration before changes. Switch to dark mode and make all fences more transparent.
+
+The CLI is included. The Microsoft Store edition adds `pecofence-cli` to PATH. With the portable ZIP, give your agent the path to `pecofence-cli.exe`.
+
+<details>
+<summary><strong>Example conversation with a coding agent</strong></summary>
+
+> Put my desktop PDFs in a Docs fence, keep new PDFs there, switch to dark mode and make the fences more transparent.
+
+```powershell
+pecofence-cli config export "$env:USERPROFILE\pecofence-before-ai.json"
+pecofence-cli snapshot save before-cleanup
+pecofence-cli fence create --title Docs
+pecofence-cli rule add --name PDFs --ext pdf --to Docs --index 0
+pecofence-cli rule apply
+pecofence-cli settings set theme dark
+pecofence-cli fence set --all opacity clear
+```
+
+</details>
+
+Built for agents and scripts: `describe` exposes the command catalog and JSON Schemas; `skill` prints the agent guide. JSON results report what changed, and structured application errors help the agent choose its next step.
+
+[Get started with the CLI →](docs/CLI.md#start-with-your-ai-agent)
 
 ## Give everything a place
 
@@ -64,36 +105,18 @@ Grab what you need, then press **Esc** to return.
 
 | Experience | What you get |
 | :--- | :--- |
+| **AI + CLI** | `pecofence-cli` — **Configure it in your own words.** Change themes, transparency, icon sizes and global settings, or adjust every fence at once. |
 | **Less sorting** | Rules for file types, extensions, names, wildcards, shortcut targets, time and size. New files find their group automatically. |
 | **Glass that fits your desktop** | Fluent and Liquid Glass themes, light/dark modes, per-fence colors, opacity and icon tinting. |
 | **Familiar file handling** | Explorer context menus, drag and drop, copy/paste, multi-select, thumbnails and icon/list/details views. |
 | **Space when you need it** | Roll a fence up to its title. Hover to expand. Lock a layout you like. |
 | **A way back** | Layout snapshots, daily backups, configuration import/export and display swapping. |
 | **A small footprint** | A native Rust application; the WebView2 settings panel loads on demand. |
-| **Works with your AI agent** | `pecofence-cli` speaks JSON, so Claude Code, Codex or Cursor can build fences, move icons and write rules for you. |
 
 Automatic organizing rules keep files in their original locations. File moves you
 initiate work like they do in Explorer.
 
 [Explore the complete feature list →](docs/FEATURES.md)
-
-## Ask your AI to organize it
-
-PecoFence ships `pecofence-cli`, a command line built for AI coding agents such as Claude Code, Codex and Cursor. Every command speaks JSON, reports whether anything actually changed and explains errors in a way an agent can act on. You describe the desktop you want; the agent runs the commands.
-
-> "Put all my PDFs into a Docs fence, keep it that way, and make the fences a bit more transparent."
-
-```
-pecofence-cli snapshot save before-cleanup
-pecofence-cli fence create --title Docs --rect 100,100,600,400
-pecofence-cli rule add --name PDFs --ext pdf --to Docs
-pecofence-cli rule apply
-pecofence-cli fence set --all opacity clear
-```
-
-Fences, icons, rules, settings, snapshots and configuration files are all reachable, and every step can be undone from a layout snapshot. To get your agent started, run `pecofence-cli skill` and save the output into its skills folder, or paste the three-line snippet it prints into your `AGENTS.md`. The Microsoft Store edition puts `pecofence-cli` on your PATH; the portable ZIP runs it from its own folder.
-
-[Command-line reference →](docs/CLI.md)
 
 ## Speaks your language
 

@@ -5,14 +5,14 @@
 
 <p align="center">
   <strong>Windows 11 向けの無料・オープンソースな Stardock Fences 代替アプリ。</strong><br>
-  ファイルに居場所を。デスクトップに余白を。ガラスのフェンス、プロジェクトのタブ、自動整理で、必要なものをいつも手元に。Windows 11 向けの無料・オープンソースアプリ。あるいは、AI エージェントに頼むだけ。
+  ガラスのフェンスにファイルをまとめ、タブでプロジェクトを切り替え。内蔵 CLI を通じて、AI にレイアウトや外観、自動整理ルールの設定も任せられます。
 </p>
 
 <p align="center">
   <a href="https://pecofence.jiang.jp/ja/"><strong>公式サイト</strong></a>
   &nbsp;·&nbsp; <a href="#はじめる"><strong>PecoFence をはじめる →</strong></a>
+  &nbsp;·&nbsp; <a href="#理想のデスクトップをai-に伝えよう"><strong>AI + CLI</strong></a>
   &nbsp;·&nbsp; <a href="#実際の動きを見る">実際の動きを見る</a>
-  &nbsp;·&nbsp; <a href="#ai-に整理を任せる">AI エージェント</a>
   &nbsp;·&nbsp; <a href="../README.md">ドキュメント</a>
 </p>
 
@@ -30,6 +30,47 @@
 </p>
 
 ---
+
+<a id="ai-に整理を任せる"></a>
+
+## 理想のデスクトップを、AI に伝えよう
+
+**CLI を標準搭載。AI がデスクトップを設定。**
+
+デスクトップをどう使いたいか、AI エージェントに伝えるだけ。付属の `pecofence-cli` を使えば、Claude Code、Codex、Cursor が現在の設定を読み取り、PecoFence に直接変更を適用できます。
+
+- **いつもの言葉で設定。** テーマ、透明度、アイコンサイズ、全体設定を変更。すべてのフェンスをまとめて調整することもできます。
+- **一度整理したら、あとは自動。** プロジェクト用のフェンスを作り、アイコンを整理。ルールを追加すれば、新しいファイルも自動で分類されます。
+- **気に入った設定を保存。** フェンスのレイアウトはスナップショットで、設定・ルール・レイアウト全体は構成のエクスポートとインポートで保存・復元できます。
+
+**お使いの AI エージェントで試す**
+
+PecoFence を起動し、次の依頼を AI コーディングエージェントに貼り付けてください。
+
+> pecofence-cli でデスクトップを設定してください。まず pecofence-cli skill と pecofence-cli describe を読み、現在の設定とフェンスを確認してください。変更前に構成をバックアップし、ダークモードに切り替えて、すべてのフェンスをもう少し透明にしてください。
+
+CLI はアプリに付属しています。Microsoft Store 版では `pecofence-cli` が PATH に追加されます。ポータブル版では `pecofence-cli.exe` のフルパスをエージェントに伝えてください。
+
+<details>
+<summary><strong>コーディングエージェントとの会話例</strong></summary>
+
+> デスクトップの PDF を Docs フェンスにまとめて、今後の PDF も自動で分類して。ダークモードに切り替えて、フェンスをもう少し透明にして。
+
+```powershell
+pecofence-cli config export "$env:USERPROFILE\pecofence-before-ai.json"
+pecofence-cli snapshot save before-cleanup
+pecofence-cli fence create --title Docs
+pecofence-cli rule add --name PDFs --ext pdf --to Docs --index 0
+pecofence-cli rule apply
+pecofence-cli settings set theme dark
+pecofence-cli fence set --all opacity clear
+```
+
+</details>
+
+AI とスクリプト向けのインターフェース。`describe` はコマンド一覧と JSON Schema、`skill` はエージェント向けガイドを出力します。JSON の結果で変更内容を確認でき、構造化されたアプリのエラーから次の操作を判断できます。
+
+[CLI スタートガイド →](../CLI.md#start-with-your-ai-agent)
 
 ## すべてのものに、居場所を
 
@@ -64,36 +105,18 @@ https://github.com/user-attachments/assets/6320cf28-a791-4720-9659-b4575df021a0
 
 | 体験 | できること |
 | :--- | :--- |
+| **AI + CLI** | `pecofence-cli` — **いつもの言葉で設定。** テーマ、透明度、アイコンサイズ、全体設定を変更。すべてのフェンスをまとめて調整することもできます。 |
 | **整理の手間を減らす** | ファイルの種類、拡張子、名前、ワイルドカード、ショートカットのリンク先、時刻、サイズでルールを設定。新しいファイルは自動で行き先のフェンスに収まります。 |
 | **壁紙になじむガラス** | Fluent と Liquid Glass の 2 つのテーマ、ライト／ダークモード、フェンスごとの色合い、不透明度、アイコンの着色。 |
 | **慣れた操作のまま** | エクスプローラーの右クリックメニュー、ドラッグ＆ドロップ、コピー／貼り付け、複数選択、サムネイル、アイコン／一覧／詳細の表示切替。 |
 | **必要なときだけ広げる** | フェンスをタイトルだけに折りたたみ、ホバーで展開。気に入った配置は位置とサイズを固定できます。 |
 | **いつでも元に戻せる** | レイアウトのスナップショット、毎日の自動バックアップ、設定のエクスポート・インポート、ディスプレイ間のフェンス交換。 |
 | **軽く、小さく** | Rust で書かれたネイティブアプリ。WebView2 の設定パネルは必要なときだけ読み込まれます。 |
-| **AI エージェントと一緒に** | `pecofence-cli` は JSON で応答するので、Claude Code、Codex、Cursor がフェンスの作成、アイコンの移動、ルールの作成を代わりに行えます。 |
 
 自動整理のルールは、ファイルを元の場所から動かしません。
 自分で行った移動などの操作は、エクスプローラーと同じように実際のファイルに反映されます。
 
 [機能一覧をすべて見る →](../FEATURES.md)
-
-## AI に整理を任せる
-
-PecoFence には `pecofence-cli` が付属しています。Claude Code、Codex、Cursor などの AI コーディングエージェント向けに作られたコマンドラインです。すべてのコマンドが JSON で応答し、実際に何かが変わったかどうかを報告し、エージェントが対処できる形でエラーを説明します。あなたは望むデスクトップを言葉にするだけ。コマンドはエージェントが実行します。
-
-> 「PDF を全部 Docs というフェンスに入れて、今後もそのままにして、フェンスをもう少し透明にして。」
-
-```
-pecofence-cli snapshot save before-cleanup
-pecofence-cli fence create --title Docs --rect 100,100,600,400
-pecofence-cli rule add --name PDFs --ext pdf --to Docs
-pecofence-cli rule apply
-pecofence-cli fence set --all opacity clear
-```
-
-フェンス、アイコン、ルール、設定、スナップショット、設定ファイルのすべてを操作でき、どの手順もレイアウトのスナップショットから元に戻せます。エージェントに使い方を教えるには、`pecofence-cli skill` を実行して出力をエージェントの skills フォルダーに保存するか、表示される 3 行のスニペットを `AGENTS.md` に貼り付けてください。Microsoft Store 版は `pecofence-cli` を PATH に追加します。ポータブル版は自分のフォルダーから実行します。
-
-[コマンドラインリファレンス →](../CLI.md)
 
 ## あなたの言語で
 

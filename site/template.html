@@ -50,8 +50,8 @@
   <div class="container header-inner">
     <a class="brand" href="{{root}}"><img src="{{root}}assets/mark.svg?v={{v}}" alt="" width="30" height="30"><span>PecoFence<span class="brand-dot">.</span></span></a>
     <nav class="primary-nav" aria-label="PecoFence">
-      <a href="#features">{{t:nav.features}}</a>
       <a href="#agents">{{t:nav.agents}}</a>
+      <a href="#features">{{t:nav.features}}</a>
       <a href="{{docs}}/README.md">{{t:nav.docs}}</a>
       <a href="{{repository}}"><svg class="icon" aria-hidden="true"><use href="#i-github"/></svg>{{t:nav.github}}</a>
     </nav>
@@ -72,11 +72,12 @@
   <div class="hero-shell">
   <section class="hero container" aria-labelledby="hero-title">
     <div class="hero-copy">
-      <p class="eyebrow hero-eyebrow"><span class="status-dot"></span>{{t:hero.eyebrow}}</p>
+      <a class="eyebrow hero-eyebrow" href="#agents"><span class="status-dot"></span>{{t:hero.eyebrow}}<svg class="icon" aria-hidden="true"><use href="#i-arrow"/></svg></a>
       <h1 id="hero-title">{{t:hero.headline}} <span>{{t:hero.headline_accent}}</span></h1>
       <p class="lede">{{t:hero.text}}</p>
       <div class="actions hero-actions">
         <a class="button primary" href="https://apps.microsoft.com/detail/9MV6WG3XNWSX?mode=direct"><svg class="icon" aria-hidden="true"><use href="#i-windows"/></svg>{{t:store.button}}<svg class="icon button-arrow" aria-hidden="true"><use href="#i-arrow"/></svg></a>
+        <a class="button secondary" href="#agents"><svg class="icon" aria-hidden="true"><use href="#i-spark"/></svg>{{t:hero.agents}}</a>
         <a class="hero-watch" href="#watch"><span class="play-disc"><svg class="icon" aria-hidden="true"><use href="#i-play"/></svg></span>{{t:watch.title}}</a>
       </div>
       <div class="hero-meta"><span>Windows 11 · x64</span><span class="meta-divider" aria-hidden="true"></span><a href="{{releases}}">{{t:hero.download}} <span aria-hidden="true">↗</span></a></div>
@@ -99,6 +100,49 @@
   <div class="hero-bottom container" aria-hidden="true"><span>PecoFence</span><span>Fluent &amp; Liquid Glass</span><span>Apache 2.0</span></div>
   </div>
 
+  <section id="agents" class="section agents-section" aria-labelledby="agents-title">
+    <div class="agents container">
+      <div class="agents-copy">
+        <span class="section-number" aria-hidden="true">01 / AI + CLI</span>
+        <h2 id="agents-title">{{t:agents.heading}}</h2>
+        <p>{{t:agents.text}}</p>
+        <div class="agents-tools"><span>Claude Code</span><span>Codex</span><span>Cursor</span></div>
+        <ul class="agents-points">
+          <li>{{raw:agents.point1}}</li>
+          <li>{{raw:agents.point2}}</li>
+          <li>{{raw:agents.point3}}</li>
+        </ul>
+        <a class="text-link" href="{{docs}}/CLI.md#start-with-your-ai-agent">{{t:agents.docs}}<svg class="icon" aria-hidden="true"><use href="#i-arrow"/></svg></a>
+      </div>
+      <figure class="terminal" aria-label="{{t:agents.terminal_label}}">
+        <figcaption class="terminal-bar"><span aria-hidden="true"></span><span aria-hidden="true"></span><span aria-hidden="true"></span><em>{{t:agents.terminal_label}}</em></figcaption>
+        <div class="terminal-body">
+          <p class="terminal-turn"><span class="terminal-who">{{t:agents.you}}</span>{{t:agents.prompt}}</p>
+          <p class="terminal-turn terminal-turn-agent"><span class="terminal-who">{{t:agents.agent}}</span>{{t:agents.reply}}</p>
+<pre tabindex="0"><code><span class="terminal-cmd">$ pecofence-cli config export "$env:USERPROFILE\pecofence-before-ai.json"</span>
+<span class="terminal-cmd">$ pecofence-cli snapshot save before-cleanup</span>
+<span class="terminal-cmd">$ pecofence-cli fence create --title Docs</span>
+<span class="terminal-cmd">$ pecofence-cli rule add --name PDFs --ext pdf --to Docs --index 0</span>
+<span class="terminal-cmd">$ pecofence-cli rule apply</span>
+<span class="terminal-cmd">$ pecofence-cli settings set theme dark</span>
+<span class="terminal-cmd">$ pecofence-cli fence set --all opacity clear</span></code></pre>
+        </div>
+      </figure>
+      <div class="agents-start">
+        <div>
+          <h3>{{t:agents.start_title}}</h3>
+          <p>{{t:agents.start_text}}</p>
+          <p class="small">{{raw:agents.setup}}</p>
+        </div>
+        <div class="agent-prompt" data-copy-container>
+          <p data-copy-content>{{t:agents.starter}}</p>
+          <button class="copy-command" type="button" data-command="{{t:agents.starter}}" data-copy="{{t:agents.copy}}" data-copied="{{t:download.copied}}" hidden><svg class="icon" aria-hidden="true"><use href="#i-copy"/></svg><span aria-live="polite">{{t:agents.copy}}</span></button>
+        </div>
+      </div>
+      <p class="agents-contract small">{{raw:agents.contract}}</p>
+    </div>
+  </section>
+
   <section id="watch" class="watch container" aria-labelledby="watch-title">
     <div class="watch-copy">
       <span class="section-number" aria-hidden="true">00:30 <span>↗</span></span>
@@ -116,7 +160,7 @@
   <section id="features" class="section features-section" aria-labelledby="features-title">
     <div class="container">
       <div class="section-heading">
-        <span class="section-number" aria-hidden="true">01 /</span>
+        <span class="section-number" aria-hidden="true">02 /</span>
         <h2 id="features-title">{{t:features.heading}}</h2>
         <p class="intro">{{t:features.intro}}</p>
       </div>
@@ -131,39 +175,12 @@
 
   <section id="details" class="section container" aria-labelledby="details-title">
     <div class="section-heading">
-      <span class="section-number" aria-hidden="true">02 /</span>
+      <span class="section-number" aria-hidden="true">03 /</span>
       <h2 id="details-title">{{t:details.heading}}</h2>
     </div>
     <dl class="details">
 {{details}}
     </dl>
-  </section>
-
-  <section id="agents" class="section agents container" aria-labelledby="agents-title">
-    <div class="agents-copy">
-      <span class="section-number" aria-hidden="true">03 /</span>
-      <h2 id="agents-title">{{t:agents.heading}}</h2>
-      <p>{{t:agents.text}}</p>
-      <ul class="agents-points">
-        <li>{{raw:agents.point1}}</li>
-        <li>{{raw:agents.point2}}</li>
-        <li>{{raw:agents.point3}}</li>
-      </ul>
-      <a class="text-link" href="{{docs}}/CLI.md">{{t:agents.docs}}<svg class="icon" aria-hidden="true"><use href="#i-arrow"/></svg></a>
-    </div>
-    <figure class="terminal" aria-label="{{t:agents.terminal_label}}">
-      <figcaption class="terminal-bar" aria-hidden="true"><span></span><span></span><span></span><em>pecofence-cli</em></figcaption>
-      <div class="terminal-body">
-        <p class="terminal-turn"><span class="terminal-who">{{t:agents.you}}</span>{{t:agents.prompt}}</p>
-        <p class="terminal-turn terminal-turn-agent"><span class="terminal-who">{{t:agents.agent}}</span>{{t:agents.reply}}</p>
-<pre><code><span class="terminal-cmd">$ pecofence-cli snapshot save before-cleanup</span>
-<span class="terminal-cmd">$ pecofence-cli fence create --title Docs --rect 100,100,600,400</span>
-<span class="terminal-cmd">$ pecofence-cli rule add --name PDFs --ext pdf --to Docs</span>
-<span class="terminal-cmd">$ pecofence-cli rule apply</span>
-<span class="terminal-out">{"changed": true, "moved": 14}</span>
-<span class="terminal-cmd">$ pecofence-cli fence set --all opacity clear</span></code></pre>
-      </div>
-    </figure>
   </section>
 
   <section id="languages" class="languages-section container" aria-labelledby="languages-title">
@@ -197,8 +214,8 @@
           <li>{{raw:download.step2}}</li>
           <li>{{raw:download.step3}}</li>
         </ol>
-        <div class="command-install">
-          <p class="small">{{raw:download.winget}}</p>
+        <div class="command-install" data-copy-container>
+          <p class="small" data-copy-content>{{raw:download.winget}}</p>
           <button class="copy-command" type="button" data-command="winget install DayuanJiang.PecoFence" data-copy="{{t:download.copy}}" data-copied="{{t:download.copied}}" hidden><svg class="icon" aria-hidden="true"><use href="#i-copy"/></svg><span aria-live="polite">{{t:download.copy}}</span></button>
         </div>
         <p class="small first-run">{{t:download.first_run}}</p>
