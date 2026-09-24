@@ -211,6 +211,45 @@ pub fn is_temporary(file_name: &str) -> bool {
     lower.starts_with("~$") || TEMPORARY_EXTS.iter().any(|e| lower.ends_with(e))
 }
 
+/// The categories in the order [`classify`] reports them. A `.lnk` to a program counts as a
+/// program (as the rules do); a plain `setup.exe` is a program before it is an installer.
+pub const CLASSIFY_ORDER: &[TypeCategory] = &[
+    TypeCategory::Folders,
+    TypeCategory::Programs,
+    TypeCategory::Installers,
+    TypeCategory::Shortcuts,
+    TypeCategory::Documents,
+    TypeCategory::Images,
+    TypeCategory::Music,
+    TypeCategory::Video,
+    TypeCategory::Archives,
+];
+
+/// The first category of [`CLASSIFY_ORDER`] the item falls in, using exactly the tests the
+/// `type` rule condition uses; `None` for anything the rules have no name for.
+pub fn classify(facts: &ItemFacts) -> Option<TypeCategory> {
+    CLASSIFY_ORDER
+        .iter()
+        .copied()
+        .find(|cat| category_matches(*cat, facts))
+}
+
+/// The camelCase wire name of a category (`programs`, `folders`, …), as the `type` condition
+/// spells it in JSON.
+pub fn category_name(cat: TypeCategory) -> &'static str {
+    match cat {
+        TypeCategory::Programs => "programs",
+        TypeCategory::Folders => "folders",
+        TypeCategory::Documents => "documents",
+        TypeCategory::Images => "images",
+        TypeCategory::Music => "music",
+        TypeCategory::Video => "video",
+        TypeCategory::Archives => "archives",
+        TypeCategory::Shortcuts => "shortcuts",
+        TypeCategory::Installers => "installers",
+    }
+}
+
 fn category_matches(cat: TypeCategory, facts: &ItemFacts) -> bool {
     let ext = ext_of(&facts.file_name);
     let target_ext = facts.shortcut_target_ext.as_deref().unwrap_or("");
@@ -561,6 +600,38 @@ mod tests {
             origin: Origin::UserDesktop,
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn classify_names_the_first_matching_category() {
+        let kind = |name: &str| classify(&facts(name)).map(category_name);
+        assert_eq!(kind("report.PDF"), Some("documents"));
+        assert_eq!(kind("photo.jpeg"), Some("images"));
+        assert_eq!(kind("song.mp3"), Some("music"));
+        assert_eq!(kind("clip.mkv"), Some("video"));
+        assert_eq!(kind("bundle.7z"), Some("archives"));
+        assert_eq!(kind("tool.exe"), Some("programs"));
+        // setup.exe is a program first, an installer second; .msi is a program too.
+        assert_eq!(kind("setup.exe"), Some("programs"));
+        assert_eq!(kind("thing.msix"), Some("installers"));
+        assert_eq!(kind("page.url"), Some("shortcuts"));
+        assert_eq!(kind("readme"), None);
+        assert_eq!(kind("data.xyz"), None);
+        let mut folder = facts("Projects");
+        folder.is_folder = true;
+        assert_eq!(classify(&folder).map(category_name), Some("folders"));
+        // A .lnk to a program is a program; to a document, a shortcut.
+        let mut lnk = facts("Steam.lnk");
+        lnk.shortcut_target_ext = Some(".exe".into());
+        assert_eq!(classify(&lnk).map(category_name), Some("programs"));
+        lnk.shortcut_target_ext = Some(".docx".into());
+        assert_eq!(classify(&lnk).map(category_name), Some("shortcuts"));
+        // Every category has a name and the names are the serde spellings.
+        for cat in CLASSIFY_ORDER {
+            let json = serde_json::to_value(cat).unwrap();
+            assert_eq!(json.as_str().unwrap(), category_name(*cat));
+        }
+        assert_eq!(CLASSIFY_ORDER.len(), 9);
     }
 
     #[test]

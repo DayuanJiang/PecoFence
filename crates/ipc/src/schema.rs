@@ -19,6 +19,9 @@ pub const SCHEMA_NAMES: &[&str] = &[
     "Cond",
     "RuleListDto",
     "BackupDto",
+    "PlannedMoveDto",
+    "EventDto",
+    "Config",
 ];
 
 fn to_value<T: JsonSchema>() -> Value {
@@ -42,6 +45,9 @@ pub fn schema(name: &str) -> Option<Value> {
         "Cond" => to_value::<pecofence_core::rules::Cond>(),
         "RuleListDto" => to_value::<crate::RuleListDto>(),
         "BackupDto" => to_value::<crate::BackupDto>(),
+        "PlannedMoveDto" => to_value::<crate::PlannedMoveDto>(),
+        "EventDto" => to_value::<crate::EventDto>(),
+        "Config" => to_value::<pecofence_core::Config>(),
         _ => return None,
     })
 }

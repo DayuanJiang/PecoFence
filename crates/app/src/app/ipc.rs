@@ -8,17 +8,53 @@
 use super::*;
 use crate::ipc_server::Pending;
 use fence_options::{layout_name, parse_fence_prop, sort_name};
+use items::RenameError;
 use pecofence_core::geometry;
-use pecofence_core::rules::Rule;
+use pecofence_core::rules::{self, Rule};
 use pecofence_core::{AssignedBy, Fence, Item, ItemSourceSpec, Settings, Snapshot};
 use pecofence_ipc::selector::{self, SelectorError};
 use pecofence_ipc::{
-    BackupDto, ErrorCode, FenceDto, IpcError, ItemDto, Method, MonitorDto, PROTOCOL_VERSION,
-    PortalDto, Rect, Response, RuleEntry, RuleListDto, SnapshotDto, StatusDto, dotted_to_pointer,
-    mutation,
+    BIG_MOVE_SNAPSHOT_ITEMS, BackupDto, EVENT_HEARTBEAT_SECS, EVENT_NAMES, ErrorCode, EventDto,
+    FenceDto, IpcError, ItemDto, MAX_SUBSCRIBERS, Method, MonitorDto, PROTOCOL_VERSION,
+    PlannedMoveDto, PortalDto, Rect, Response, RuleEntry, RuleListDto, SnapshotDto, StatusDto,
+    dotted_to_pointer, mutation,
 };
 use serde_json::{Value, json};
+use std::sync::mpsc;
 use uuid::Uuid;
+
+/// Poll interval of the event stream while at least one `events.subscribe` client is connected.
+const EVENT_TICK_MS: u32 = 500;
+/// `FenceDto` fields left out of `fence.changed` detection: they follow the window during
+/// animations and item events already report membership.
+const EVENT_IGNORED_FENCE_FIELDS: &[&str] = &["windowRect", "itemCount"];
+
+/// One `events.subscribe` client: the connection thread's reply channel plus its filter.
+pub(super) struct IpcSubscriber {
+    reply: mpsc::Sender<Response>,
+    fence: Option<FenceId>,
+    events: Option<Vec<String>>,
+    seq: u64,
+}
+
+/// What an item looked like at the last tick (cheap to rebuild; the full [`ItemDto`] is only
+/// produced for the items an event is about).
+#[derive(Clone, Debug, PartialEq)]
+pub(super) struct ItemSig {
+    fence: FenceId,
+    fence_title: String,
+    name: String,
+    path: Option<String>,
+    is_folder: bool,
+    is_namespace: bool,
+}
+
+/// The fences and items as of the last tick; diffed against the present to produce events.
+#[derive(Default)]
+pub(super) struct EventState {
+    fences: HashMap<FenceId, FenceDto>,
+    items: HashMap<ItemId, ItemSig>,
+}
 
 /// Newest `auto-cli-*` snapshots kept; older ones go when a new one is taken.
 const AUTO_SNAPSHOTS_KEPT: usize = 3;
@@ -361,7 +397,15 @@ impl App {
                 continue;
             }
             let started = Instant::now();
-            let mut response = self.handle_ipc(&request.method);
+            let mut response = match &request.method {
+                // Streams need the connection's channel; every other method is stateless.
+                Method::EventsSubscribe { fence, events } => {
+                    self.ipc_warnings.clear();
+                    self.ipc_subscribe(fence.as_deref(), events.as_deref(), reply.clone())
+                        .into()
+                }
+                other => self.handle_ipc(other),
+            };
             if request.method.is_mutation() && response.ok {
                 // Persist before replying so the caller can rely on the file; the deferred
                 // save the mutation scheduled is redundant now.
@@ -380,6 +424,10 @@ impl App {
                 );
             }
             let _ = reply.send(response);
+            if request.method.is_mutation() && !self.ipc_subscribers.is_empty() {
+                // Push what this command changed right away instead of at the next tick.
+                self.ipc_events_tick();
+            }
         }
     }
 
@@ -516,6 +564,14 @@ impl App {
             }
 
             Method::ItemsMove { items, to } => self.ipc_move_items(items, to),
+            Method::ItemsRename {
+                item,
+                name,
+                keep_ext,
+            } => self.ipc_rename_item(item, name, *keep_ext),
+            Method::EventsSubscribe { .. } => Err(IpcError::internal(
+                "events.subscribe must be handled by the request pump",
+            )),
 
             Method::SettingsPatch { path, value } => {
                 // No auto snapshot: snapshots hold layouts only and could not undo this.
@@ -589,26 +645,31 @@ impl App {
                     json!({ "rules": to_json(&self.rule_list_dto())? }),
                 ))
             }
-            Method::RulesApply => {
-                // Re-filing every desktop item rewrites memberships: keep a way back, but not
-                // when nothing moved (the engine has no dry run, so the snapshot is taken first
-                // and dropped again when it turns out unnecessary).
-                let snapshot = self.auto_snapshot();
+            Method::RulesApply { dry_run } => {
                 let entries = shell::enumerate_desktop();
+                let plan = self.state.plan_rules(&entries, false);
+                let moves: Vec<PlannedMoveDto> =
+                    plan.iter().map(|m| self.planned_move_dto(m)).collect();
+                if *dry_run {
+                    return Ok(json!({
+                        "changed": false,
+                        "dryRun": true,
+                        "moved": moves.len(),
+                        "moves": to_json(&moves)?,
+                    }));
+                }
+                // Re-filing every desktop item rewrites memberships: keep a way back, but only
+                // when something is going to move.
+                let snapshot = (!plan.is_empty()).then(|| self.auto_snapshot()).flatten();
                 let moved = self.state.apply_rules_all(&entries);
                 self.refresh_all();
                 self.schedule_save();
                 self.push_settings_state();
-                let snapshot = if moved > 0 {
-                    snapshot
-                } else {
-                    if let Some(id) = snapshot {
-                        self.state.delete_snapshot(id);
-                    }
-                    self.ipc_warnings.retain(|w| w != SNAPSHOT_LIMIT_WARNING);
-                    None
-                };
-                Ok(mutation(moved > 0, snapshot, json!({ "moved": moved })))
+                Ok(mutation(
+                    moved > 0,
+                    snapshot,
+                    json!({ "dryRun": false, "moved": moved, "moves": to_json(&moves)? }),
+                ))
             }
 
             Method::SnapshotsSave { name } => {
@@ -1090,36 +1151,178 @@ impl App {
             if only.is_some_and(|id| id != f.id) {
                 continue;
             }
-            let is_portal = f.kind == FenceKind::FolderPortal;
             for it in self.state.items_of(f) {
-                let assigned_by = if is_portal {
-                    "portal"
-                } else {
-                    match f
-                        .items
-                        .iter()
-                        .find(|r| r.item_id == it.id)
-                        .map(|r| &r.assigned_by)
-                    {
-                        Some(AssignedBy::User) => "user",
-                        Some(AssignedBy::Rule(_)) => "rule",
-                        Some(AssignedBy::Migration) | None => "migration",
-                    }
-                };
-                out.push(ItemDto {
-                    id: it.id,
-                    name: it.display_name.clone(),
-                    path: (!it.is_namespace())
-                        .then(|| it.key.as_path().map(str::to_string))
-                        .flatten(),
-                    is_folder: it.is_folder,
-                    fence: f.id,
-                    fence_title: f.title.clone(),
-                    assigned_by: assigned_by.to_string(),
-                });
+                out.push(self.item_dto(f, it));
             }
         }
         out
+    }
+
+    /// `assignedBy` and the filing rule's name for an item of `f`.
+    fn assignment_of(&self, f: &Fence, item: ItemId) -> (&'static str, Option<String>) {
+        if f.kind == FenceKind::FolderPortal {
+            return ("portal", None);
+        }
+        match f
+            .items
+            .iter()
+            .find(|r| r.item_id == item)
+            .map(|r| &r.assigned_by)
+        {
+            Some(AssignedBy::User) => ("user", None),
+            Some(AssignedBy::Rule(id)) => (
+                "rule",
+                Some(
+                    self.state
+                        .config
+                        .rules
+                        .list
+                        .iter()
+                        .find(|r| r.id == *id)
+                        .map(|r| r.name.clone())
+                        .unwrap_or_else(|| id.to_string()),
+                ),
+            ),
+            Some(AssignedBy::Migration) | None => ("migration", None),
+        }
+    }
+
+    /// The CLI's view of one item: identity, category, file metadata and where it is filed.
+    /// Reads the file's creation time and resolves shortcut targets, so it is built per call,
+    /// not cached.
+    pub(super) fn item_dto(&self, f: &Fence, it: &Item) -> ItemDto {
+        let (assigned_by, rule) = self.assignment_of(f, it.id);
+        let path = (!it.is_namespace())
+            .then(|| it.key.as_path().map(str::to_string))
+            .flatten();
+        let key_file_name = path
+            .as_deref()
+            .and_then(|p| p.rsplit('\\').next())
+            .unwrap_or_default();
+        // The key is lower-cased; the display name has the real spelling minus the hidden
+        // extension, which the suffix puts back.
+        let file_name = if path.is_some() {
+            format!(
+                "{}{}",
+                it.display_name,
+                crate::rename::rename_hidden_suffix(&it.display_name, key_file_name, it.is_folder)
+            )
+        } else {
+            it.display_name.clone()
+        };
+        let ext = if it.is_folder || it.is_namespace() {
+            String::new()
+        } else {
+            rules::ext_of(&file_name)
+        };
+        let shortcut_target = match (path.as_deref(), ext.as_str()) {
+            (Some(p), ".lnk") => shell::shortcut_target(Path::new(p)),
+            (Some(p), ".url") => shell::url_shortcut_target(Path::new(p)),
+            _ => None,
+        };
+        let kind = if it.is_namespace() {
+            "namespace".to_string()
+        } else {
+            let facts = pecofence_core::ItemFacts {
+                file_name: file_name.clone(),
+                is_folder: it.is_folder,
+                size_bytes: it.size,
+                shortcut_target: shortcut_target.clone(),
+                shortcut_target_ext: match ext.as_str() {
+                    ".lnk" => shortcut_target.as_deref().map(rules::ext_of),
+                    ".url" => Some(".url".into()),
+                    _ => None,
+                },
+                ..Default::default()
+            };
+            rules::classify(&facts)
+                .map(rules::category_name)
+                .unwrap_or("other")
+                .to_string()
+        };
+        let created = path
+            .as_deref()
+            .and_then(|p| std::fs::metadata(p).ok())
+            .and_then(|m| m.created().ok())
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_secs() as i64);
+        ItemDto {
+            id: it.id,
+            name: it.display_name.clone(),
+            file_name,
+            path,
+            is_folder: it.is_folder,
+            kind,
+            ext,
+            size: it.size,
+            modified: (it.mtime > 0).then_some(it.mtime),
+            created,
+            open_count: it.open_count,
+            last_opened: it.last_opened,
+            shortcut_target,
+            fence: f.id,
+            fence_title: f.title.clone(),
+            assigned_by: assigned_by.to_string(),
+            rule,
+        }
+    }
+
+    /// `{"item": ItemDto}` for a mutation result.
+    fn item_extra(&self, id: ItemId) -> IpcResult {
+        let Some((f, it)) = self.locate_item(id) else {
+            return Err(IpcError::internal(format!("item {id} vanished")));
+        };
+        Ok(json!({ "item": to_json(&self.item_dto(f, it))? }))
+    }
+
+    /// The fence an item is listed in, with the item.
+    fn locate_item(&self, id: ItemId) -> Option<(&Fence, &Item)> {
+        self.state.fences().iter().find_map(|f| {
+            self.state
+                .items_of(f)
+                .into_iter()
+                .find(|it| it.id == id)
+                .map(|it| (f, it))
+        })
+    }
+
+    fn planned_move_dto(&self, m: &crate::state::PlannedRuleMove) -> PlannedMoveDto {
+        let title = |id: FenceId| {
+            self.state
+                .fence(id)
+                .map(|f| f.title.clone())
+                .unwrap_or_default()
+        };
+        let item = self.state.item(m.item);
+        let (rule, rule_name) = match m.by {
+            AssignedBy::Rule(id) => (
+                Some(id),
+                self.state
+                    .config
+                    .rules
+                    .list
+                    .iter()
+                    .find(|r| r.id == id)
+                    .map(|r| r.name.clone()),
+            ),
+            _ => (None, None),
+        };
+        let from = m.from.or_else(|| self.state.inbox_id()).unwrap_or_default();
+        PlannedMoveDto {
+            item: m.item,
+            name: item.map(|it| it.display_name.clone()).unwrap_or_default(),
+            path: item.and_then(|it| {
+                (!it.is_namespace())
+                    .then(|| it.key.as_path().map(str::to_string))
+                    .flatten()
+            }),
+            from,
+            from_title: title(from),
+            to: m.to,
+            to_title: title(m.to),
+            rule,
+            rule_name,
+        }
     }
 
     fn rule_entry(&self, index: usize, rule: &Rule) -> RuleEntry {
@@ -1513,15 +1716,357 @@ impl App {
         if accepted.is_empty() {
             return Ok(mutation(false, None, json!({ "moved": 0, "to": to })));
         }
+        // A large re-filing of desktop items is a layout change worth a way back. Real file
+        // moves (a portal on either side) are not: a snapshot could not undo them.
+        let membership_only =
+            !into_portal && accepted.iter().all(|id| !self.state.is_portal_item(*id));
+        let snapshot = (membership_only && accepted.len() >= BIG_MOVE_SNAPSHOT_ITEMS)
+            .then(|| self.auto_snapshot())
+            .flatten();
         // Portal sources / targets move real files on a worker thread; the fences update when
         // the shell reports back.
         self.move_items(&accepted, to);
         self.push_settings_state();
         Ok(mutation(
             true,
-            None,
+            snapshot,
             json!({ "moved": accepted.len(), "to": to }),
         ))
+    }
+
+    /// `items.rename`: a real rename inside the item's folder (see [`App::rename_item_to`]).
+    fn ipc_rename_item(&mut self, sel: &str, name: &str, keep_ext: bool) -> IpcResult {
+        let id = self.resolve_item(sel)?;
+        let Some((_, it)) = self.locate_item(id) else {
+            return Err(IpcError::internal(format!("item {id} vanished")));
+        };
+        if it.is_namespace() {
+            return Err(unsupported(format!(
+                "{:?} is a shell namespace item (This PC, Recycle Bin, …) and has no file to rename",
+                it.display_name
+            )));
+        }
+        let Some(old_path) = it.key.as_path() else {
+            return Err(unsupported(format!("{:?} has no path", it.display_name)));
+        };
+        let old_file_name = old_path.rsplit('\\').next().unwrap_or(old_path).to_string();
+        let is_folder = it.is_folder;
+        let name = name.trim();
+        let target = if is_folder || !keep_ext {
+            name.to_string()
+        } else {
+            let old_ext = rules::ext_of(&old_file_name);
+            if old_ext.is_empty() || rules::ext_of(name) == old_ext {
+                name.to_string()
+            } else {
+                format!("{name}{old_ext}")
+            }
+        };
+        if target.eq_ignore_ascii_case(&old_file_name) && target == old_file_name {
+            return Ok(mutation(false, None, self.item_extra(id)?));
+        }
+        let new_path = self.rename_item_to(id, &target).map_err(|e| match e {
+            RenameError::Unsupported => unsupported(format!("{sel:?} cannot be renamed")),
+            RenameError::InvalidName => IpcError::invalid_value(
+                format!("{target:?} is not a valid file name"),
+                &["a non-empty name without \\ / : * ? \" < > |"],
+            ),
+            RenameError::Exists => IpcError::new(
+                ErrorCode::InvalidValue,
+                format!("{target:?} already exists in that folder"),
+            )
+            .hint("Pick another name, or move the existing item first"),
+            RenameError::Io(msg) => IpcError::internal(format!("rename failed: {msg}")),
+        })?;
+        // Portal ids are path hashes and change with the name; desktop ids are stable.
+        let new_id = if self.state.item(id).is_some() {
+            id
+        } else {
+            crate::state::portal_item_id(&new_path.to_string_lossy())
+        };
+        self.push_settings_state();
+        Ok(mutation(
+            true,
+            None,
+            json!({
+                "item": self.item_extra(new_id).ok().and_then(|v| v.get("item").cloned()).unwrap_or(Value::Null),
+                "path": new_path.to_string_lossy(),
+            }),
+        ))
+    }
+
+    // ---- event stream --------------------------------------------------------------------
+
+    /// `events.subscribe`: registers the connection as a stream. The first tick's baseline is
+    /// taken now, so the client sees only what changes after it subscribed.
+    fn ipc_subscribe(
+        &mut self,
+        fence: Option<&str>,
+        events: Option<&[String]>,
+        reply: mpsc::Sender<Response>,
+    ) -> IpcResult {
+        if self.ipc_subscribers.len() >= MAX_SUBSCRIBERS {
+            return Err(IpcError::new(
+                ErrorCode::LimitReached,
+                format!("{MAX_SUBSCRIBERS} event streams are already open"),
+            )
+            .hint("Stop one of the running `pecofence-cli watch` processes"));
+        }
+        let fence_id = fence.map(|sel| self.resolve_fence(sel)).transpose()?;
+        let events: Option<Vec<String>> = match events {
+            None => None,
+            Some(list) => {
+                let mut names = Vec::new();
+                for name in list {
+                    let name = name.trim().to_ascii_lowercase();
+                    if !EVENT_NAMES.contains(&name.as_str()) {
+                        return Err(IpcError::invalid_value(
+                            format!("unknown event {name:?}"),
+                            EVENT_NAMES,
+                        ));
+                    }
+                    if !names.contains(&name) {
+                        names.push(name);
+                    }
+                }
+                (!names.is_empty()).then_some(names)
+            }
+        };
+        if self.ipc_subscribers.is_empty() {
+            self.ipc_event_state = Some(self.event_state());
+            self.ipc_last_event = Instant::now();
+            window::set_timer(self.control.hwnd(), TIMER_IPC_EVENTS, EVENT_TICK_MS);
+        }
+        self.ipc_subscribers.push(IpcSubscriber {
+            reply,
+            fence: fence_id,
+            events: events.clone(),
+            seq: 0,
+        });
+        tracing::info!(target: "pecofence::ipc", subscribers = self.ipc_subscribers.len(), "event stream opened");
+        Ok(json!({
+            "subscribed": true,
+            "fence": fence_id,
+            "events": events.unwrap_or_else(|| EVENT_NAMES.iter().map(|s| s.to_string()).collect()),
+            "heartbeatSecs": EVENT_HEARTBEAT_SECS,
+        }))
+    }
+
+    /// The present fences and items in the shape the diff needs.
+    fn event_state(&self) -> EventState {
+        let mut state = EventState::default();
+        for f in self.state.fences() {
+            state.fences.insert(f.id, self.fence_dto(f));
+            for it in self.state.items_of(f) {
+                state.items.insert(
+                    it.id,
+                    ItemSig {
+                        fence: f.id,
+                        fence_title: f.title.clone(),
+                        name: it.display_name.clone(),
+                        path: (!it.is_namespace())
+                            .then(|| it.key.as_path().map(str::to_string))
+                            .flatten(),
+                        is_folder: it.is_folder,
+                        is_namespace: it.is_namespace(),
+                    },
+                );
+            }
+        }
+        state
+    }
+
+    /// An `ItemDto` for an item that is gone: what the last tick knew, no file metadata.
+    fn removed_item_dto(id: ItemId, sig: &ItemSig) -> ItemDto {
+        let file_name = sig
+            .path
+            .as_deref()
+            .and_then(|p| p.rsplit('\\').next())
+            .map(str::to_string)
+            .unwrap_or_else(|| sig.name.clone());
+        let ext = if sig.is_folder || sig.is_namespace {
+            String::new()
+        } else {
+            rules::ext_of(&file_name)
+        };
+        ItemDto {
+            id,
+            name: sig.name.clone(),
+            file_name,
+            path: sig.path.clone(),
+            is_folder: sig.is_folder,
+            kind: if sig.is_namespace {
+                "namespace".into()
+            } else if sig.is_folder {
+                "folders".into()
+            } else {
+                "other".into()
+            },
+            ext,
+            size: 0,
+            modified: None,
+            created: None,
+            open_count: 0,
+            last_opened: None,
+            shortcut_target: None,
+            fence: sig.fence,
+            fence_title: sig.fence_title.clone(),
+            assigned_by: "removed".into(),
+            rule: None,
+        }
+    }
+
+    /// `FenceDto` fields (camelCase) whose value differs, ignoring the animated ones.
+    fn fence_changed_fields(old: &FenceDto, new: &FenceDto) -> Vec<String> {
+        let (Ok(Value::Object(a)), Ok(Value::Object(b))) =
+            (serde_json::to_value(old), serde_json::to_value(new))
+        else {
+            return Vec::new();
+        };
+        a.iter()
+            .filter(|(k, v)| {
+                !EVENT_IGNORED_FENCE_FIELDS.contains(&k.as_str()) && b.get(*k) != Some(v)
+            })
+            .map(|(k, _)| k.clone())
+            .collect()
+    }
+
+    /// Diffs the present against the last tick, sends the resulting events to every subscriber
+    /// whose filter admits them, and drops subscribers whose connection has gone. A quiet
+    /// subscription gets a `heartbeat` every [`EVENT_HEARTBEAT_SECS`] so a vanished client is
+    /// noticed within that time. Runs from the tick timer and right after CLI mutations.
+    pub(super) fn ipc_events_tick(&mut self) {
+        if self.ipc_subscribers.is_empty() {
+            window::kill_timer(self.control.hwnd(), TIMER_IPC_EVENTS);
+            self.ipc_event_state = None;
+            return;
+        }
+        let now_state = self.event_state();
+        let Some(prev) = self.ipc_event_state.take() else {
+            self.ipc_event_state = Some(now_state);
+            return;
+        };
+        let ts = pecofence_core::now_unix();
+        let blank = |event: &str| EventDto {
+            seq: 0,
+            ts,
+            event: event.to_string(),
+            item: None,
+            from: None,
+            from_title: None,
+            fence: None,
+            changed: Vec::new(),
+        };
+        let mut events: Vec<EventDto> = Vec::new();
+        for (id, cur) in &now_state.fences {
+            match prev.fences.get(id) {
+                None => events.push(EventDto {
+                    fence: Some(cur.clone()),
+                    ..blank("fence.created")
+                }),
+                Some(old) => {
+                    let changed = Self::fence_changed_fields(old, cur);
+                    if !changed.is_empty() {
+                        events.push(EventDto {
+                            fence: Some(cur.clone()),
+                            changed,
+                            ..blank("fence.changed")
+                        });
+                    }
+                }
+            }
+        }
+        for (id, old) in &prev.fences {
+            if !now_state.fences.contains_key(id) {
+                events.push(EventDto {
+                    fence: Some(old.clone()),
+                    ..blank("fence.deleted")
+                });
+            }
+        }
+        for (id, sig) in &now_state.items {
+            let dto = || {
+                self.locate_item(*id)
+                    .map(|(f, it)| self.item_dto(f, it))
+                    .unwrap_or_else(|| Self::removed_item_dto(*id, sig))
+            };
+            match prev.items.get(id) {
+                None => events.push(EventDto {
+                    item: Some(dto()),
+                    ..blank("item.added")
+                }),
+                Some(old) if old.fence != sig.fence => events.push(EventDto {
+                    item: Some(dto()),
+                    from: Some(old.fence),
+                    from_title: Some(old.fence_title.clone()),
+                    ..blank("item.moved")
+                }),
+                Some(_) => {}
+            }
+        }
+        for (id, old) in &prev.items {
+            if !now_state.items.contains_key(id) {
+                events.push(EventDto {
+                    item: Some(Self::removed_item_dto(*id, old)),
+                    ..blank("item.removed")
+                });
+            }
+        }
+        self.ipc_event_state = Some(now_state);
+        if events.is_empty() {
+            if self.ipc_last_event.elapsed() < Duration::from_secs(EVENT_HEARTBEAT_SECS) {
+                return;
+            }
+            events.push(blank("heartbeat"));
+        }
+        self.ipc_last_event = Instant::now();
+        let mut gone = Vec::new();
+        for (i, sub) in self.ipc_subscribers.iter_mut().enumerate() {
+            for ev in &events {
+                if !Self::event_admitted(sub, ev) {
+                    continue;
+                }
+                sub.seq += 1;
+                let mut ev = ev.clone();
+                ev.seq = sub.seq;
+                let line = match serde_json::to_value(&ev) {
+                    Ok(v) => Response::ok(v),
+                    Err(e) => Response::err(IpcError::internal(format!("event: {e}"))),
+                };
+                if sub.reply.send(line).is_err() {
+                    gone.push(i);
+                    break;
+                }
+            }
+        }
+        for i in gone.into_iter().rev() {
+            self.ipc_subscribers.remove(i);
+            tracing::info!(target: "pecofence::ipc", subscribers = self.ipc_subscribers.len(), "event stream closed");
+        }
+        if self.ipc_subscribers.is_empty() {
+            window::kill_timer(self.control.hwnd(), TIMER_IPC_EVENTS);
+            self.ipc_event_state = None;
+        }
+    }
+
+    /// Whether `ev` passes a subscriber's `fence` / `events` filter (heartbeats always do).
+    fn event_admitted(sub: &IpcSubscriber, ev: &EventDto) -> bool {
+        if ev.event == "heartbeat" {
+            return true;
+        }
+        if let Some(list) = &sub.events
+            && !list.contains(&ev.event)
+        {
+            return false;
+        }
+        match sub.fence {
+            None => true,
+            Some(f) => {
+                ev.fence.as_ref().is_some_and(|d| d.id == f)
+                    || ev.item.as_ref().is_some_and(|i| i.fence == f)
+                    || ev.from == Some(f)
+            }
+        }
     }
 
     fn ipc_add_rule(

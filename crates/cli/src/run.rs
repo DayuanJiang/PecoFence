@@ -13,7 +13,7 @@ use crate::cli::{
     SettingsCmd, SnapshotCmd,
 };
 use crate::output::Reply;
-use crate::{client, describe};
+use crate::{client, describe, local, output};
 
 const SET_USAGE: &str =
     "Usage: pecofence-cli fence set <FENCE> <PROP> <VALUE>  |  fence set --all <PROP> <VALUE>";
@@ -25,6 +25,8 @@ type Send<'a> = &'a dyn Fn(Method) -> Result<Response, IpcError>;
 pub struct Ctx {
     pub instance: Option<String>,
     pub timeout_ms: u32,
+    /// Indented JSON (streamed `watch` lines honour it too).
+    pub pretty: bool,
 }
 
 impl Ctx {
@@ -39,9 +41,19 @@ impl Ctx {
 
 fn reply_from(response: Response) -> Result<Reply, IpcError> {
     if !response.ok {
-        return Err(response.error.unwrap_or_else(|| {
-            IpcError::internal("PecoFence reported a failure without details")
-        }));
+        let mut error = response
+            .error
+            .unwrap_or_else(|| IpcError::internal("PecoFence reported a failure without details"));
+        // A method this CLI knows but the app does not: same protocol version, older app.
+        if error.code == ErrorCode::Usage
+            && error.message.contains("unknown variant")
+            && error.hint.as_deref().is_none_or(|h| !h.contains("older"))
+        {
+            error = error.hint(
+                "The running PecoFence is older than this CLI and lacks this command; update the app",
+            );
+        }
+        return Err(error);
     }
     Ok(Reply {
         result: response.result.unwrap_or(Value::Null),
@@ -85,6 +97,31 @@ pub fn run(ctx: &Ctx, command: Command) -> Result<Reply, IpcError> {
         Command::Config {
             cmd: ConfigCmd::Import { file },
         } => ctx.call(Method::ConfigImport { path: file }),
+        Command::Config {
+            cmd: ConfigCmd::Check { file },
+        } => {
+            let path = match file {
+                Some(f) => std::path::PathBuf::from(f),
+                None => paths(ctx).config,
+            };
+            let (report, failed) = local::check_config(&path)?;
+            Ok(Reply {
+                result: report,
+                warning: None,
+                partial_failure: failed,
+            })
+        }
+        Command::Paths => Ok(Reply::new(paths(ctx).to_json())),
+        Command::Log { follow, lines } => {
+            local::print_log(&paths(ctx).log, lines, follow)?;
+            std::process::exit(0);
+        }
+        Command::Watch {
+            fence,
+            events,
+            once,
+            heartbeat,
+        } => watch(ctx, fence, events, once, heartbeat),
         Command::Backup {
             cmd: BackupCmd::List,
         } => ctx.call(Method::BackupsList),
@@ -95,6 +132,60 @@ pub fn run(ctx: &Ctx, command: Command) -> Result<Reply, IpcError> {
             cmd: PeekCmd::Start,
         } => ctx.call(Method::PeekStart),
         Command::Peek { cmd: PeekCmd::End } => ctx.call(Method::PeekEnd),
+    }
+}
+
+/// Where the app keeps its files: asks a running instance first (`status.get`), otherwise the
+/// default locations.
+fn paths(ctx: &Ctx) -> local::Paths {
+    let from_status = ctx
+        .call(Method::StatusGet)
+        .ok()
+        .and_then(|r| r.result["configPath"].as_str().map(str::to_string));
+    local::resolve(ctx.instance.as_deref(), from_status)
+}
+
+/// `watch`: prints each event as one JSON document (`--once`: returns the first as the result).
+/// Heartbeats are dropped unless asked for. The stream ends only when the app closes it, which
+/// is reported as an error (exit 1) so a script loop notices.
+fn watch(
+    ctx: &Ctx,
+    fence: Option<String>,
+    events: Vec<String>,
+    once: bool,
+    heartbeat: bool,
+) -> Result<Reply, IpcError> {
+    let events: Vec<String> = events
+        .into_iter()
+        .map(|e| e.trim().to_string())
+        .filter(|e| !e.is_empty())
+        .collect();
+    let method = Method::EventsSubscribe {
+        fence,
+        events: (!events.is_empty()).then_some(events),
+    };
+    let mut first: Option<Value> = None;
+    let pretty = ctx.pretty;
+    let finished = client::stream(ctx.instance.as_deref(), method, ctx.timeout_ms, |line| {
+        let payload = match reply_from(line) {
+            Ok(reply) => reply.payload(),
+            Err(error) => output::error_payload(&error),
+        };
+        if !heartbeat && payload["event"] == "heartbeat" {
+            return true;
+        }
+        if once {
+            first = Some(payload);
+            return false;
+        }
+        output::print_text(&output::render(&payload, pretty), true);
+        true
+    })?;
+    match (finished, first) {
+        (true, Some(event)) => Ok(Reply::new(event)),
+        (true, None) => Ok(Reply::new(Value::Null)),
+        (false, _) => Err(IpcError::internal("PecoFence closed the event stream")
+            .hint("The app exited or was restarted; run `pecofence-cli watch` again")),
     }
 }
 
@@ -271,7 +362,22 @@ fn for_each_fence(send: Send<'_>, make: impl Fn(String) -> Method) -> Result<Rep
 
 fn run_item(ctx: &Ctx, cmd: ItemCmd) -> Result<Reply, IpcError> {
     match cmd {
-        ItemCmd::List { fence } => ctx.call(Method::ItemsList { fence }),
+        ItemCmd::List { fence, kind, ext } => {
+            let reply = ctx.call(Method::ItemsList { fence })?;
+            Ok(Reply {
+                result: filter_items(reply.result, kind.as_deref(), ext.as_deref()),
+                ..reply
+            })
+        }
+        ItemCmd::Rename {
+            item,
+            name,
+            keep_ext,
+        } => ctx.call(Method::ItemsRename {
+            item,
+            name,
+            keep_ext,
+        }),
         ItemCmd::Move {
             items,
             glob,
@@ -304,6 +410,39 @@ fn run_item(ctx: &Ctx, cmd: ItemCmd) -> Result<Reply, IpcError> {
             ctx.call(Method::ItemsMove { items, to })
         }
     }
+}
+
+/// `item list --kind/--ext`: keeps the items whose `kind` equals `kind` and/or whose `ext`
+/// equals `ext` (dot optional, case-insensitive). Anything that is not a list passes through.
+pub fn filter_items(list: Value, kind: Option<&str>, ext: Option<&str>) -> Value {
+    let (Value::Array(items), true) = (list.clone(), kind.is_some() || ext.is_some()) else {
+        return list;
+    };
+    let kind = kind.map(|k| k.trim().to_ascii_lowercase());
+    let ext = ext.map(|e| {
+        let e = e.trim().to_ascii_lowercase();
+        if e.is_empty() || e.starts_with('.') {
+            e
+        } else {
+            format!(".{e}")
+        }
+    });
+    Value::Array(
+        items
+            .into_iter()
+            .filter(|item| {
+                kind.as_deref().is_none_or(|k| {
+                    item["kind"]
+                        .as_str()
+                        .is_some_and(|v| v.eq_ignore_ascii_case(k))
+                }) && ext.as_deref().is_none_or(|e| {
+                    item["ext"]
+                        .as_str()
+                        .is_some_and(|v| v.eq_ignore_ascii_case(e))
+                })
+            })
+            .collect(),
+    )
 }
 
 /// Ids of the items whose file name (last path component, with extension) or display name
@@ -395,7 +534,7 @@ fn run_rule(ctx: &Ctx, cmd: RuleCmd) -> Result<Reply, IpcError> {
             })?;
             ctx.call(Method::RulesSet { rules })
         }
-        RuleCmd::Apply => ctx.call(Method::RulesApply),
+        RuleCmd::Apply { dry_run } => ctx.call(Method::RulesApply { dry_run }),
     }
 }
 
@@ -570,6 +709,53 @@ mod tests {
             {"id": "d", "name": "photo", "path": "C:\\Users\\me\\Desktop\\photo.jpeg", "assignedBy": "migration"},
             {"id": "p", "name": "invoice", "path": "D:\\Portal\\invoice.pdf", "assignedBy": "portal"},
         ])
+    }
+
+    #[test]
+    fn item_filters_match_kind_and_ext() {
+        let list = json!([
+            {"id": "a", "kind": "documents", "ext": ".pdf"},
+            {"id": "b", "kind": "documents", "ext": ".docx"},
+            {"id": "c", "kind": "images", "ext": ".png"},
+            {"id": "d", "kind": "folders", "ext": ""},
+        ]);
+        let ids = |v: Value| -> Vec<String> {
+            v.as_array()
+                .unwrap()
+                .iter()
+                .map(|i| i["id"].as_str().unwrap().to_string())
+                .collect()
+        };
+        assert_eq!(
+            ids(filter_items(list.clone(), Some("Documents"), None)),
+            vec!["a", "b"]
+        );
+        assert_eq!(
+            ids(filter_items(list.clone(), None, Some("pdf"))),
+            vec!["a"]
+        );
+        assert_eq!(
+            ids(filter_items(list.clone(), None, Some(".PNG"))),
+            vec!["c"]
+        );
+        assert_eq!(
+            ids(filter_items(list.clone(), Some("documents"), Some("docx"))),
+            vec!["b"]
+        );
+        assert_eq!(ids(filter_items(list.clone(), None, None)).len(), 4);
+        assert_eq!(filter_items(json!(null), Some("x"), None), json!(null));
+    }
+
+    #[test]
+    fn older_app_unknown_method_gets_an_update_hint() {
+        let err = reply_from(Response::err(IpcError::usage(
+            "invalid request: unknown variant `items.rename`, expected one of ...",
+        )))
+        .unwrap_err();
+        assert_eq!(err.code, ErrorCode::Usage);
+        assert!(err.hint.as_deref().unwrap().contains("older"), "{err:?}");
+        let err = reply_from(Response::err(IpcError::usage("empty request"))).unwrap_err();
+        assert!(err.hint.is_none());
     }
 
     #[test]

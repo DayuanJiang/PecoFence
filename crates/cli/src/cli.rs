@@ -93,6 +93,39 @@ pub enum Command {
         #[command(subcommand)]
         cmd: PeekCmd,
     },
+    /// Stream desktop events as JSON lines (item added/removed/moved, fence created/deleted/changed) until Ctrl+C
+    #[command(
+        after_help = "Example: pecofence-cli watch --fence inbox --once\n         pecofence-cli watch --events item.added,item.moved\n\nEach line is an EventDto (`describe --schema EventDto`); a heartbeat arrives every 30 s on a quiet\nstream and is hidden unless --heartbeat. Typical use: a script waits with --once, then runs a batch."
+    )]
+    Watch {
+        /// Only items entering or leaving this fence, and that fence's own events
+        #[arg(long, value_name = "FENCE", help = FENCE_HELP)]
+        fence: Option<String>,
+        /// Event kinds, comma-separated: item.added,item.removed,item.moved,fence.created,fence.deleted,fence.changed
+        #[arg(long, value_name = "EVENT,...", value_delimiter = ',')]
+        events: Vec<String>,
+        /// Exit after the first event (printed as the result)
+        #[arg(long)]
+        once: bool,
+        /// Print heartbeat lines too
+        #[arg(long)]
+        heartbeat: bool,
+    },
+    /// Print the app's log file as text (not JSON); -f keeps following it until Ctrl+C
+    #[command(
+        after_help = "Example: pecofence-cli log -n 100\n         pecofence-cli log --follow"
+    )]
+    Log {
+        /// Keep printing new lines as they are written
+        #[arg(long, short = 'f')]
+        follow: bool,
+        /// Number of trailing lines to print first (0 = whole file)
+        #[arg(long, short = 'n', value_name = "N", default_value_t = 50)]
+        lines: usize,
+    },
+    /// Where PecoFence keeps its files: config, backups, log, crash dumps (works offline)
+    #[command(after_help = "Example: pecofence-cli paths")]
+    Paths,
 }
 
 #[derive(Subcommand, Debug)]
@@ -257,11 +290,32 @@ pub enum FenceCmd {
 
 #[derive(Subcommand, Debug)]
 pub enum ItemCmd {
-    /// Items of every fence, or of one fence
-    #[command(after_help = "Example: pecofence-cli item list --fence Work")]
+    /// Items of every fence, or of one fence, with kind, ext, size, modified, created, openCount, lastOpened, shortcutTarget
+    #[command(
+        after_help = "Example: pecofence-cli item list --fence Work\n         pecofence-cli item list --fence inbox --kind documents --ext pdf"
+    )]
     List {
         #[arg(long, value_name = "FENCE", help = FENCE_HELP)]
         fence: Option<String>,
+        /// Only items of this kind: folders, programs, installers, shortcuts, documents, images, music, video, archives, namespace, other
+        #[arg(long, value_name = "KIND")]
+        kind: Option<String>,
+        /// Only items with this extension (pdf or .pdf; case-insensitive)
+        #[arg(long, value_name = "EXT")]
+        ext: Option<String>,
+    },
+    /// Rename the file behind an item (a real rename on disk, like F2)
+    #[command(
+        after_help = "Example: pecofence-cli item rename \"C:\\Users\\me\\Desktop\\IMG_2031.pdf\" \"2026-09 electricity bill\"\n         pecofence-cli item rename notes notes.md --keep-ext false\n\nThe current extension is kept unless NAME already ends with it; --keep-ext false renames verbatim."
+    )]
+    Rename {
+        /// Item id, full path, or unique display name
+        item: String,
+        /// New name (extension added automatically unless --keep-ext false)
+        name: String,
+        /// Keep the current extension
+        #[arg(long, value_name = "BOOL", default_value_t = true, action = clap::ArgAction::Set)]
+        keep_ext: bool,
     },
     /// Move items into a fence (into or out of a folder portal moves the real files)
     #[command(
@@ -356,9 +410,15 @@ pub enum RuleCmd {
         /// Path to a RuleSet JSON file, or - for stdin
         file: String,
     },
-    /// Re-file every desktop item through the rules now
-    #[command(after_help = "Example: pecofence-cli rule apply")]
-    Apply,
+    /// Re-file every desktop item through the rules now; --dry-run only lists what would move
+    #[command(
+        after_help = "Example: pecofence-cli rule apply --dry-run\n         pecofence-cli rule apply"
+    )]
+    Apply {
+        /// Report the moves without making them (no snapshot, nothing changes)
+        #[arg(long)]
+        dry_run: bool,
+    },
 }
 
 #[derive(Args, Debug)]
@@ -457,6 +517,14 @@ pub enum ConfigCmd {
     Import {
         /// Absolute path of a `config export` file or a config.json
         file: String,
+    },
+    /// Validate a config.json or export file without the app: parse, then cross-check rule targets, portal folders, tabs, $schema
+    #[command(
+        after_help = "Example: pecofence-cli config check C:\\Users\\me\\Desktop\\pecofence.json\n         pecofence-cli config check            (the running or default config.json)\n\nExit 0 = loads and no errors (warnings may be listed); exit 1 = the app would reject it or a problem was found."
+    )]
+    Check {
+        /// File to check (default: the config.json in use, see `paths`)
+        file: Option<String>,
     },
 }
 
@@ -650,6 +718,38 @@ mod tests {
         assert!(parse(&["fence", "move", "Work", "--monitor", "m", "--x", "1"]).is_err());
         assert!(parse(&["fence", "resize", "Work"]).is_err());
         assert!(parse(&["fence", "resize", "Work", "--h", "300"]).is_ok());
+    }
+
+    #[test]
+    fn new_leaves_parse() {
+        assert!(parse(&["watch"]).is_ok());
+        assert!(parse(&["watch", "--fence", "inbox", "--once", "--heartbeat"]).is_ok());
+        let cli = parse(&["watch", "--events", "item.added,item.moved"]).unwrap();
+        match cli.command {
+            Command::Watch { events, .. } => assert_eq!(events, vec!["item.added", "item.moved"]),
+            other => panic!("{other:?}"),
+        }
+        assert!(parse(&["log"]).is_ok());
+        assert!(parse(&["log", "-f", "-n", "10"]).is_ok());
+        assert!(parse(&["paths"]).is_ok());
+        assert!(parse(&["config", "check"]).is_ok());
+        assert!(parse(&["config", "check", "C:\\x.json"]).is_ok());
+        assert!(parse(&["rule", "apply", "--dry-run"]).is_ok());
+        let cli = parse(&["item", "rename", "a", "b"]).unwrap();
+        match cli.command {
+            Command::Item {
+                cmd: ItemCmd::Rename { keep_ext, .. },
+            } => assert!(keep_ext),
+            other => panic!("{other:?}"),
+        }
+        let cli = parse(&["item", "rename", "a", "b.txt", "--keep-ext", "false"]).unwrap();
+        match cli.command {
+            Command::Item {
+                cmd: ItemCmd::Rename { keep_ext, .. },
+            } => assert!(!keep_ext),
+            other => panic!("{other:?}"),
+        }
+        assert!(parse(&["item", "list", "--kind", "documents", "--ext", "pdf"]).is_ok());
     }
 
     #[test]

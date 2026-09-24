@@ -168,13 +168,95 @@ pub struct ItemDto {
     pub id: Uuid,
     /// Display name as shown under the icon (usually without the extension).
     pub name: String,
+    /// File name with extension (`Report.pdf`, `Steam.lnk`); the display name for namespace items.
+    pub file_name: String,
     /// Full path; `null` for shell namespace items.
     pub path: Option<String>,
     pub is_folder: bool,
+    /// Category by the same tests the `type` rule condition uses: `folders` | `programs` |
+    /// `installers` | `shortcuts` | `documents` | `images` | `music` | `video` | `archives`;
+    /// `namespace` for This PC / Recycle Bin and friends; `other` when no category fits.
+    pub kind: String,
+    /// Lower-case extension with the dot (`.pdf`), empty for folders and namespace items.
+    pub ext: String,
+    /// Bytes (0 for folders).
+    pub size: u64,
+    /// Last write time, Unix seconds (`null` when unknown).
+    pub modified: Option<i64>,
+    /// Creation time, Unix seconds (`null` when the file cannot be read right now).
+    pub created: Option<i64>,
+    /// Launches from a fence since PecoFence started tracking the item.
+    pub open_count: u32,
+    /// Unix seconds of the last launch from a fence (`null` = never).
+    pub last_opened: Option<i64>,
+    /// Resolved target of a `.lnk` (path) or `.url` (URL); `null` otherwise.
+    pub shortcut_target: Option<String>,
     pub fence: Uuid,
     pub fence_title: String,
     /// `user` | `rule` | `migration` | `portal` (folder portal contents are not assigned).
     pub assigned_by: String,
+    /// Name of the rule that filed the item (`assignedBy == "rule"`), or its id when the rule
+    /// has since been deleted; `null` otherwise.
+    pub rule: Option<String>,
+}
+
+/// One move `rules.apply` would make (`dryRun: true`) or made.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "describe", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct PlannedMoveDto {
+    pub item: Uuid,
+    pub name: String,
+    pub path: Option<String>,
+    pub from: Uuid,
+    pub from_title: String,
+    pub to: Uuid,
+    pub to_title: String,
+    /// The matching rule; `null` when the item goes to the default target.
+    pub rule: Option<Uuid>,
+    pub rule_name: Option<String>,
+}
+
+/// Names `events.subscribe` can emit; `heartbeat` keeps an idle subscription alive.
+pub const EVENT_NAMES: &[&str] = &[
+    "item.added",
+    "item.removed",
+    "item.moved",
+    "fence.created",
+    "fence.deleted",
+    "fence.changed",
+    "heartbeat",
+];
+
+/// Seconds between `heartbeat` events on an otherwise quiet subscription.
+pub const EVENT_HEARTBEAT_SECS: u64 = 30;
+
+/// One line of an `events.subscribe` stream (the `result` of an `ok` response).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "describe", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct EventDto {
+    /// Increases by one per event on this subscription (gaps mean the client missed nothing;
+    /// the stream is never trimmed).
+    pub seq: u64,
+    /// Unix seconds.
+    pub ts: i64,
+    /// One of [`EVENT_NAMES`].
+    pub event: String,
+    /// `item.*` events: the item as it is now (`item.removed`: as it was last seen).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub item: Option<ItemDto>,
+    /// `item.moved`: the fence the item left.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from: Option<Uuid>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from_title: Option<String>,
+    /// `fence.*` events: the fence as it is now (`fence.deleted`: as it was last seen).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fence: Option<FenceDto>,
+    /// `fence.changed`: the `FenceDto` fields whose value changed (`title`, `rect`, `rolledUp`, …).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub changed: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

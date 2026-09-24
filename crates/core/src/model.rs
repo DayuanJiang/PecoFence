@@ -6,6 +6,10 @@ use uuid::Uuid;
 
 pub const SCHEMA_VERSION: u32 = 1;
 
+/// Published JSON Schema of `config.json` (`pecofence-cli describe --schema Config` prints the
+/// same document). Written into the file's `$schema` field so editors validate and complete it.
+pub const CONFIG_SCHEMA_URL: &str = "https://pecofence.jiang.jp/schema/config.json";
+
 pub type FenceId = Uuid;
 pub type ItemId = Uuid;
 pub type RuleId = Uuid;
@@ -14,6 +18,10 @@ pub type RuleId = Uuid;
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct Config {
+    /// `$schema`: URL of the JSON Schema this file follows ([`CONFIG_SCHEMA_URL`]); informative
+    /// only, the app ignores its value.
+    #[serde(rename = "$schema", default, skip_serializing_if = "Option::is_none")]
+    pub schema: Option<String>,
     pub schema_version: u32,
     pub settings: Settings,
     /// Global item table keyed by id.
@@ -31,6 +39,7 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
+            schema: None,
             schema_version: SCHEMA_VERSION,
             settings: Settings::default(),
             items: HashMap::new(),

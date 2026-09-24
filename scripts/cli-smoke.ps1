@@ -232,6 +232,75 @@ try {
     $r = Invoke-Cli @("fence", "show-all")
     Check "show-all again -> changed:false" ($r.Code -eq 0 -and (Json $r.Out).changed -eq $false) "$($r.Out) $($r.Err)"
 
+    # 7a. Item metadata, rename and events, all inside a scratch folder portal (never the desktop).
+    $portalDir = Join-Path $stage "portal"
+    New-Item -ItemType Directory -Path $portalDir | Out-Null
+    Set-Content -LiteralPath (Join-Path $portalDir "Report.pdf") -Value "smoke" -Encoding Ascii
+    Set-Content -LiteralPath (Join-Path $portalDir "notes.txt") -Value "smoke" -Encoding Ascii
+    $r = Invoke-Cli @("fence", "create", "--portal", $portalDir, "--title", "SmokePortal $instance")
+    $pc = Json $r.Out
+    $portalId = $pc.fence.id
+    Check "portal create" ($r.Code -eq 0 -and $pc.fence.kind -eq "portal") "$($r.Out) $($r.Err)"
+    Start-Sleep -Milliseconds 800
+    $r = Invoke-Cli @("item", "list", "--fence", $portalId)
+    $items = @(Json $r.Out)
+    $pdf = $items | Where-Object { $_.fileName -eq "Report.pdf" } | Select-Object -First 1
+    Check "portal item list has both files" ($r.Code -eq 0 -and $items.Count -eq 2) "$($r.Out) $($r.Err)"
+    Check "item metadata: kind documents, ext .pdf, size, modified, created" ($pdf.kind -eq "documents" -and $pdf.ext -eq ".pdf" -and $pdf.size -gt 0 -and $pdf.modified -gt 0 -and $pdf.created -gt 0 -and $pdf.assignedBy -eq "portal") ($pdf | ConvertTo-Json -Compress)
+    $r = Invoke-Cli @("item", "list", "--fence", $portalId, "--ext", "txt")
+    Check "item list --ext filters client-side" ($r.Code -eq 0 -and @(Json $r.Out).Count -eq 1 -and @(Json $r.Out)[0].fileName -eq "notes.txt") "$($r.Out) $($r.Err)"
+    $r = Invoke-Cli @("item", "list", "--fence", $portalId, "--kind", "images")
+    Check "item list --kind with no match is an empty list" ($r.Code -eq 0 -and $r.Out -eq "[]") "$($r.Out) $($r.Err)"
+    $r = Invoke-Cli @("item", "rename", (Join-Path $portalDir "Report.pdf"), "2026-09 electricity bill")
+    $rn = Json $r.Out
+    Check "item rename keeps the extension" ($r.Code -eq 0 -and $rn.changed -eq $true -and (Test-Path (Join-Path $portalDir "2026-09 electricity bill.pdf")) -and -not (Test-Path (Join-Path $portalDir "Report.pdf"))) "$($r.Out) $($r.Err)"
+    Check "item rename returns the renamed item" ($rn.item.fileName -eq "2026-09 electricity bill.pdf") "$($r.Out)"
+    $r = Invoke-Cli @("item", "rename", (Join-Path $portalDir "notes.txt"), "notes.md", "--keep-ext", "false")
+    Check "item rename --keep-ext false renames verbatim" ($r.Code -eq 0 -and (Test-Path (Join-Path $portalDir "notes.md"))) "$($r.Out) $($r.Err)"
+    $r = Invoke-Cli @("item", "rename", (Join-Path $portalDir "notes.md"), "2026-09 electricity bill.pdf", "--keep-ext", "false")
+    Check "item rename onto an existing name -> invalid_value" ($r.Code -eq 1 -and (Json $r.Err).error.code -eq "invalid_value") "code=$($r.Code) $($r.Err)"
+    $r = Invoke-Cli @("item", "rename", (Join-Path $portalDir "notes.md"), "bad:name")
+    Check "item rename with a forbidden character -> invalid_value" ($r.Code -eq 1 -and (Json $r.Err).error.code -eq "invalid_value") "code=$($r.Code) $($r.Err)"
+    $r = Invoke-Cli @("rule", "apply", "--dry-run")
+    $dr = Json $r.Out
+    Check "rule apply --dry-run changes nothing and lists moves" ($r.Code -eq 0 -and $dr.dryRun -eq $true -and $dr.changed -eq $false -and $null -ne $dr.moves) "$($r.Out) $($r.Err)"
+
+    # Events: a watcher waiting on the portal sees the file that appears in it.
+    $wpsi = New-Object System.Diagnostics.ProcessStartInfo
+    $wpsi.FileName = $cli
+    $wpsi.Arguments = "--compact watch --fence $portalId --events item.added --once"
+    $wpsi.UseShellExecute = $false
+    $wpsi.RedirectStandardOutput = $true
+    $wpsi.RedirectStandardError = $true
+    $wpsi.StandardOutputEncoding = [Text.Encoding]::UTF8
+    $wpsi.StandardErrorEncoding = [Text.Encoding]::UTF8
+    $watch = [System.Diagnostics.Process]::Start($wpsi)
+    $wOut = $watch.StandardOutput.ReadToEndAsync()
+    $wErr = $watch.StandardError.ReadToEndAsync()
+    Start-Sleep -Milliseconds 700
+    Set-Content -LiteralPath (Join-Path $portalDir "arrived.png") -Value "smoke" -Encoding Ascii
+    $watchDone = $watch.WaitForExit(8000)
+    if (-not $watchDone) { $watch.Kill() }
+    $watch.WaitForExit()
+    $watchText = $wOut.Result.Trim()
+    $ev = Json $watchText
+    Check "watch --once exits on the first event" ($watchDone -and $watch.ExitCode -eq 0) "exit=$($watch.ExitCode) out=$watchText err=$($wErr.Result.Trim())"
+    Check "watch event is item.added for arrived.png in the portal" ($ev.event -eq "item.added" -and $ev.item.fileName -eq "arrived.png" -and $ev.item.fence -eq $portalId -and $ev.seq -ge 1) $watchText
+    $r = Invoke-Cli @("watch", "--events", "nope")
+    Check "watch with an unknown event -> invalid_value" ($r.Code -eq 1 -and (Json $r.Err).error.code -eq "invalid_value") "code=$($r.Code) $($r.Err)"
+    $r = Invoke-Cli @("fence", "delete", $portalId)
+    Check "portal delete" ($r.Code -eq 0) "$($r.Out) $($r.Err)"
+
+    # 7a'. Offline helpers: paths, log, config check.
+    $r = Invoke-Cli @("paths")
+    $pp = Json $r.Out
+    Check "paths reports the running instance's config" ($r.Code -eq 0 -and $pp.running -eq $true -and $pp.source -eq "status" -and $pp.configExists -eq $true -and $pp.logExists -eq $true) "$($r.Out) $($r.Err)"
+    $r = Invoke-Cli @("log", "-n", "5")
+    Check "log prints text" ($r.Code -eq 0 -and $r.Out.Length -gt 0 -and -not $r.Out.StartsWith("{")) "code=$($r.Code) $($r.Err)"
+    $r = Invoke-Cli @("config", "check")
+    $ck = Json $r.Out
+    Check "config check of the live config passes" ($r.Code -eq 0 -and $ck.ok -eq $true -and $ck.schema -eq "https://pecofence.jiang.jp/schema/config.json") "$($r.Out) $($r.Err)"
+
     # 7b. Config export / import round trip and backups.
     $exportPath = Join-Path $stage "export.json"
     $r = Invoke-Cli @("config", "export", $exportPath)
@@ -247,6 +316,10 @@ try {
     Set-Content -LiteralPath (Join-Path $stage "bad.json") -Value "{ not json" -Encoding Ascii
     $r = Invoke-Cli @("config", "import", (Join-Path $stage "bad.json"))
     Check "config import garbage -> validation_failed" ($r.Code -eq 1 -and (Json $r.Err).error.code -eq "validation_failed") "code=$($r.Code) $($r.Err)"
+    $r = Invoke-Cli @("config", "check", (Join-Path $stage "bad.json"))
+    Check "config check garbage -> validation_failed exit 1" ($r.Code -eq 1 -and (Json $r.Err).error.code -eq "validation_failed") "code=$($r.Code) $($r.Err)"
+    $r = Invoke-Cli @("config", "check", $exportPath)
+    Check "config check of the export passes" ($r.Code -eq 0 -and (Json $r.Out).ok -eq $true) "$($r.Out) $($r.Err)"
     $r = Invoke-Cli @("backup", "list")
     Check "backup list ok" ($r.Code -eq 0) "$($r.Err)"
     $r = Invoke-Cli @("backup", "restore", $exportPath)

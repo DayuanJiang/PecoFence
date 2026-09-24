@@ -77,6 +77,87 @@ pub fn send(instance: Option<&str>, method: Method, timeout_ms: u32) -> Result<R
     }
 }
 
+/// Sends a stream request (`events.subscribe`) and hands every following line to `on_line`
+/// until it returns `false` (done: `Ok(true)`), the server closes the connection
+/// (`Ok(false)`), or the first reply is an error / not delivered within `timeout_ms`. The
+/// acknowledging first reply itself is not passed on.
+pub fn stream(
+    instance: Option<&str>,
+    method: Method,
+    timeout_ms: u32,
+    mut on_line: impl FnMut(Response) -> bool,
+) -> Result<bool, IpcError> {
+    let timeout_ms = timeout_ms.max(MIN_TIMEOUT_MS);
+    let name = ipc_pipe_name(instance);
+    let request = Request::new(method).with_timeout(timeout_ms);
+    let mut line = serde_json::to_string(&request)
+        .map_err(|e| IpcError::internal(format!("cannot encode request: {e}")))?;
+    line.push('\n');
+    let (tx, rx) = mpsc::channel::<Result<Response, IpcError>>();
+    thread::Builder::new()
+        .name("pipe-stream".into())
+        .spawn(move || {
+            let mut pipe = match open(&name) {
+                Ok(p) => p,
+                Err(e) => {
+                    let _ = tx.send(Err(e));
+                    return;
+                }
+            };
+            if let Err(e) = pipe.write_all(line.as_bytes()).and_then(|_| pipe.flush()) {
+                let _ = tx.send(Err(match e.raw_os_error() {
+                    Some(ERROR_BROKEN_PIPE) | Some(ERROR_NO_DATA) => closed(),
+                    _ => IpcError::internal(format!("cannot write to {name}: {e}")),
+                }));
+                return;
+            }
+            let mut reader = BufReader::new(pipe);
+            loop {
+                let mut reply = String::new();
+                match reader.read_line(&mut reply) {
+                    Ok(0) => return,
+                    Ok(_) => {}
+                    Err(e) if e.raw_os_error() == Some(ERROR_BROKEN_PIPE) => return,
+                    Err(e) => {
+                        let _ = tx.send(Err(IpcError::internal(format!(
+                            "cannot read from {name}: {e}"
+                        ))));
+                        return;
+                    }
+                }
+                let parsed = serde_json::from_str::<Response>(reply.trim_end())
+                    .map_err(|e| IpcError::internal(format!("malformed line from PecoFence: {e}")));
+                if tx.send(parsed).is_err() {
+                    return;
+                }
+            }
+        })
+        .map_err(|e| IpcError::internal(format!("cannot start I/O thread: {e}")))?;
+    // The acknowledgement is bounded like any request; events come whenever they come.
+    let first = match rx.recv_timeout(Duration::from_millis(u64::from(timeout_ms)) + TIMEOUT_SLACK)
+    {
+        Ok(result) => result?,
+        Err(_) => {
+            return Err(IpcError::new(
+                ErrorCode::Timeout,
+                format!("no reply from PecoFence within {timeout_ms} ms"),
+            )
+            .hint(TIMEOUT_HINT));
+        }
+    };
+    if !first.ok {
+        return Err(first.error.unwrap_or_else(|| {
+            IpcError::internal("PecoFence declined the subscription without details")
+        }));
+    }
+    while let Ok(result) = rx.recv() {
+        if !on_line(result?) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
 fn exchange(name: &str, line: &str) -> Result<Response, IpcError> {
     let mut pipe = open(name)?;
     pipe.write_all(line.as_bytes())
@@ -164,6 +245,21 @@ mod tests {
         assert_eq!(err.code, ErrorCode::NotRunning);
         assert_eq!(err.code.exit_code(), 3);
         assert_eq!(err.hint.as_deref(), Some(NOT_RUNNING_HINT));
+    }
+
+    #[test]
+    fn stream_to_a_missing_instance_is_not_running() {
+        let err = stream(
+            Some("pecofence-cli-unit-test-nosuch"),
+            Method::EventsSubscribe {
+                fence: None,
+                events: None,
+            },
+            500,
+            |_| true,
+        )
+        .unwrap_err();
+        assert_eq!(err.code, ErrorCode::NotRunning);
     }
 
     #[test]

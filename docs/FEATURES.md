@@ -2,6 +2,14 @@
 
 以当前源代码为准。「怎么用」一列写的是默认操作方式；凡带「设置」的在托盘菜单 → 设置… 里，凡带「栅栏菜单」的是在栅栏标题栏或空白处右键，「栅栏选项」是栅栏菜单 → 栅栏选项…（即 设置 → 栅栏 页，逐个栅栏调整外观 / 布局 / 行为），「项目菜单」是在图标上右键。
 
+## AI + CLI：把桌面配置交给助手
+
+PecoFence 内置 `pecofence-cli`，Claude Code、Codex、Cursor 等能运行本地命令的 AI 助手可以读取现有设置，直接配置正在运行的 PecoFence。你可以让助手切换主题、批量调整透明度和图标大小、创建栅栏与标签页、整理图标、编写自动规则，以及导入导出配置。
+
+启动 PecoFence 后，把需求交给助手，例如：“先阅读 `pecofence-cli skill` 和 `pecofence-cli describe`，查看并备份我的配置，再切换为深色模式，把所有栅栏调得更透明。”Microsoft Store 版通过 PATH 调用；便携版需告诉助手 `pecofence-cli.exe` 的完整路径。
+
+JSON 输出报告实际改动，命令目录与 JSON Schema 帮助助手发现可用操作和参数。布局快照保存栅栏布局；全局设置和规则通过配置导入导出备份与恢复。详见 [CLI 上手指南与完整参考](CLI.md#start-with-your-ai-agent)。
+
 ## 1. 栅栏基础
 
 | 功能 | 怎么用 | 备注 |
@@ -121,10 +129,10 @@
 | 桌面文件夹迁移 | 自动 | 桌面搬到 OneDrive / 其他盘后记录自动跟随；桌面盘不可用时不丢记录 |
 | 随 Windows 启动 | 设置 → 随 Windows 启动 | 只登记正式版路径 |
 | 恢复显示桌面图标 | 设置 → 关于 → 恢复显示桌面图标；托盘菜单 → 修复桌面图标 | 应急 |
-| 配置位置 | `%APPDATA%\PecoFence\config.json`；`--portable` 时放 exe 旁 | 设置 → 关于可直接打开 |
+| 配置位置 | `%APPDATA%\PecoFence\config.json`；`--portable` 时放 exe 旁 | 设置 → 关于可直接打开；文件首行 `$schema` 指向 https://pecofence.jiang.jp/schema/config.json（`pecofence-cli describe --schema Config` 同一份），编辑器可据此补全校验 |
 | 日志 | `%LOCALAPPDATA%\PecoFence\pecofence.log` | `RUST_LOG` 控制级别；panic 与未处理异常（异常码、`module+rva` 调用栈）也写在这里，崩溃同时留下 `crash-<实例>-<ticks>.dmp` |
 | 命令行 | `--portable` `--no-hide-icons` `--light` `--dark` `--open-settings` `--portal <文件夹>` `--wallpaper <图片>` `--exit-after <ms>` `--dump-stats` `--test-script <文件>` | `PECOFENCE_INSTANCE=<名字>` 可再开一个独立实例；`--test-script` 用脚本驱动测试实例（sleep / dump / quick-hide / quick-show / peek / roll / unroll / detach / merge / delete / new-fence / drop-desktop / move / transfer / create-file / delete-file / crash / exit），`dump` 把每个栅栏窗口的不透明度、淡入淡出阶段、阴影 alpha、可见性写入日志 |
-| 命令行工具（pecofence-cli） | 同包附带 `pecofence-cli.exe`；在终端执行 `pecofence-cli fence list` / `fence create --title 工作 --rect 100,100,600,400` / `fence set <栅栏> layout list` / `item move --glob "*.pdf" --to 文档` / `settings set peek.enabled false` / `rule add --name PDF --ext pdf --to 文档` / `snapshot save 备份` / `config export C:\x.json` 等；`describe` 输出机器可读的命令目录与 JSON Schema，`skill` 输出给 Claude Code / Codex 用的 SKILL.md | 通过命名管道 `\.\pipe\PecoFence[.<实例>]` 驱动**正在运行**的实例，一次连接一条 JSON 请求；输出全部为 JSON（非终端时单行），写操作返回 `changed` 表示是否真的改了（重复执行幂等）；退出码 0 成功 / 1 应用报错 / 2 用法错误 / 3 未运行 / 4 超时；栅栏可用 id、≥6 位 id 前缀或标题指定；删栏（含项目）、整体替换规则或设置、恢复快照前自动存 `auto-cli-*` 快照（保留 3 个）；`config export/import <路径>` 与 `backup list/restore` 直接按路径导入导出配置、恢复每日备份；Store 版通过应用执行别名进入 PATH；详见 [CLI.md](CLI.md) |
+| 命令行工具（pecofence-cli） | 同包附带 `pecofence-cli.exe`；在终端执行 `pecofence-cli fence list` / `fence create --title 工作 --rect 100,100,600,400` / `fence set <栅栏> layout list` / `item move --glob "*.pdf" --from inbox --to 文档` / `settings set theme dark` / `rule add --name PDF --ext pdf --to 文档` / `snapshot save 备份` / `config export C:\x.json` 等；`item list` 带 kind / ext / size / modified / created / openCount / lastOpened / shortcutTarget 元数据（`--kind` `--ext` 过滤），`item rename` 重命名图标背后的文件（默认保留扩展名），`rule apply --dry-run` 只列出将要移动的项目，`watch --fence inbox --once` 阻塞到下一个桌面事件（item.added / removed / moved、fence.created / deleted / changed，每 30 s 心跳）后退出供脚本触发批处理，`config check` 离线校验配置文件（规则目标、门户路径、标签宿主、`$schema`），`log -f` 跟随日志，`paths` 列出配置 / 备份 / 日志 / 崩溃 dump 位置；`describe` 输出机器可读的命令目录与 JSON Schema，`skill` 输出给 AI 助手用的 SKILL.md | 通过命名管道 `\\.\pipe\PecoFence[.<实例>]` 驱动**正在运行**的实例；结果为 JSON，修改应用状态的操作返回 `changed`，已符合目标状态时为 `false`；退出码 0 成功 / 1 应用报错 / 2 用法错误 / 3 未运行 / 4 超时；超时后先读取状态再决定是否重试；栅栏可用 id、≥6 位 id 前缀或标题指定；删栏（含项目）、应用规则（有项目变动）、一次搬移 ≥ 20 个桌面项目、恢复快照前会自动保存布局快照，达到 20 个快照上限时返回警告，不挤占用户快照；快照不覆盖全局设置、规则或真实文件移动；配置导入导出与每日备份另行保存设置、规则和布局；Store 版通过应用执行别名进入 PATH；详见 [CLI.md](CLI.md) |
 
 ## 8. 明确不做
 

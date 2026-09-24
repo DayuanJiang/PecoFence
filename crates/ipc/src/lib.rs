@@ -176,9 +176,23 @@ pub enum Method {
 
     // ---- items ----------------------------------------------------------------------
     /// Move items (by id, full path, or unique display name) into a fence. Moving into or out of
-    /// a folder portal moves the real files. Result: `{changed, moved: n, to: uuid}`.
+    /// a folder portal moves the real files. A batch of [`BIG_MOVE_SNAPSHOT_ITEMS`] or more
+    /// desktop items into a virtual fence is preceded by an automatic layout snapshot
+    /// (`snapshotId`). Result: `{changed, moved: n, to: uuid, snapshotId?}`.
     #[serde(rename = "items.move")]
     ItemsMove { items: Vec<String>, to: String },
+    /// Rename the file behind an item (a real rename on disk, like F2 in a fence). With
+    /// `keepExt` (default) the current extension is kept unless `name` already ends with it;
+    /// `keepExt: false` uses `name` verbatim. Folders are always renamed verbatim. Namespace
+    /// items (This PC, Recycle Bin) are `unsupported`; a name that exists already is
+    /// `invalid_value`. Result: `{changed, item: ItemDto}`.
+    #[serde(rename = "items.rename")]
+    ItemsRename {
+        item: String,
+        name: String,
+        #[serde(default = "default_true")]
+        keep_ext: bool,
+    },
 
     // ---- settings / rules / snapshots ------------------------------------------------
     /// Set one value at a dotted camelCase path (`peek.enabled`, `quickHide.enabled`,
@@ -213,9 +227,14 @@ pub enum Method {
     /// Reorder: place `rule` at 0-based `to`. Result: `{changed, rules: RuleListDto}`.
     #[serde(rename = "rules.move")]
     RulesMove { rule: String, to: usize },
-    /// Re-file every desktop item through the rules now. Result: `{changed, moved: n}`.
+    /// Re-file every desktop item through the rules now. With `dryRun` nothing moves and no
+    /// snapshot is taken; `moves` lists what would happen. Result:
+    /// `{changed, dryRun, moved: n, moves: [PlannedMoveDto], snapshotId?}`.
     #[serde(rename = "rules.apply")]
-    RulesApply,
+    RulesApply {
+        #[serde(default)]
+        dry_run: bool,
+    },
     /// Result: `{changed, snapshot: SnapshotDto}`.
     #[serde(rename = "snapshots.save")]
     SnapshotsSave { name: String },
@@ -255,7 +274,32 @@ pub enum Method {
     /// Open the Settings window. Result: `{changed: true}`.
     #[serde(rename = "settings.openUi")]
     SettingsOpenUi,
+
+    // ---- events ---------------------------------------------------------------------
+    /// Turn the connection into an event stream: the first reply is
+    /// `{subscribed: true, fence?, events}`; every later line is an `ok` response whose
+    /// `result` is an [`EventDto`], until the client closes the pipe. `fence` limits item events
+    /// to items entering or leaving that fence and fence events to that fence; `events` limits
+    /// the kinds (see [`EVENT_NAMES`]; `heartbeat` is always sent). At most
+    /// [`MAX_SUBSCRIBERS`] streams at a time (`limit_reached`).
+    #[serde(rename = "events.subscribe")]
+    EventsSubscribe {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        fence: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        events: Option<Vec<String>>,
+    },
 }
+
+fn default_true() -> bool {
+    true
+}
+
+/// `items.move` batches of at least this many desktop items get an automatic layout snapshot.
+pub const BIG_MOVE_SNAPSHOT_ITEMS: usize = 20;
+
+/// Concurrent `events.subscribe` streams the app serves.
+pub const MAX_SUBSCRIBERS: usize = 4;
 
 impl Method {
     /// Wire name (`fences.create`).
@@ -282,6 +326,7 @@ impl Method {
                 | Method::ItemsList { .. }
                 | Method::SettingsGet { .. }
                 | Method::RulesGet
+                | Method::RulesApply { dry_run: true }
                 | Method::SnapshotsList
                 | Method::BackupsList
                 | Method::ConfigExport { .. }
@@ -289,7 +334,14 @@ impl Method {
                 | Method::SettingsOpenUi
                 | Method::PeekStart
                 | Method::PeekEnd
+                | Method::EventsSubscribe { .. }
         )
+    }
+
+    /// Whether a successful reply is followed by a stream of further lines on the same
+    /// connection (see [`Method::EventsSubscribe`]).
+    pub fn is_stream(&self) -> bool {
+        matches!(self, Method::EventsSubscribe { .. })
     }
 }
 
@@ -575,6 +627,24 @@ mod tests {
                 items: vec!["C:\\x.pdf".into()],
                 to: "Docs".into(),
             },
+            Method::ItemsRename {
+                item: "C:\\x.pdf".into(),
+                name: "report".into(),
+                keep_ext: true,
+            },
+            Method::ItemsRename {
+                item: "a".into(),
+                name: "b.txt".into(),
+                keep_ext: false,
+            },
+            Method::EventsSubscribe {
+                fence: None,
+                events: None,
+            },
+            Method::EventsSubscribe {
+                fence: Some("inbox".into()),
+                events: Some(vec!["item.added".into()]),
+            },
             Method::SettingsPatch {
                 path: "peek.enabled".into(),
                 value: Value::Bool(false),
@@ -600,7 +670,8 @@ mod tests {
                 rule: "PDFs".into(),
                 to: 2,
             },
-            Method::RulesApply,
+            Method::RulesApply { dry_run: false },
+            Method::RulesApply { dry_run: true },
             Method::SnapshotsSave { name: "x".into() },
             Method::SnapshotsRestore { id: "x".into() },
             Method::SnapshotsDelete { id: "x".into() },
@@ -664,10 +735,49 @@ mod tests {
     }
 
     #[test]
+    fn rules_apply_and_rename_defaults_are_optional_on_the_wire() {
+        // An older CLI sends `rules.apply` without params (the server adds `{}`).
+        let back: Request =
+            serde_json::from_str(r#"{"protocol":1,"method":"rules.apply","params":{}}"#).unwrap();
+        assert_eq!(back.method, Method::RulesApply { dry_run: false });
+        let back: Request = serde_json::from_str(
+            r#"{"protocol":1,"method":"items.rename","params":{"item":"a","name":"b"}}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            back.method,
+            Method::ItemsRename {
+                item: "a".into(),
+                name: "b".into(),
+                keep_ext: true
+            }
+        );
+        let text = serde_json::to_string(&Method::RulesApply { dry_run: true }).unwrap();
+        assert!(text.contains(r#""dryRun":true"#), "{text}");
+    }
+
+    #[test]
+    fn only_subscribe_streams() {
+        for m in every_method() {
+            assert_eq!(
+                m.is_stream(),
+                matches!(m, Method::EventsSubscribe { .. }),
+                "{m:?}"
+            );
+            if m.is_stream() {
+                assert!(!m.is_mutation());
+            }
+        }
+        assert!(EVENT_NAMES.contains(&"heartbeat"));
+        assert!(EVENT_NAMES.contains(&"item.added"));
+    }
+
+    #[test]
     fn read_only_methods_are_not_mutations() {
         assert!(!Method::FencesList.is_mutation());
         assert!(!Method::SettingsOpenUi.is_mutation());
-        assert!(Method::RulesApply.is_mutation());
+        assert!(Method::RulesApply { dry_run: false }.is_mutation());
+        assert!(!Method::RulesApply { dry_run: true }.is_mutation());
         assert!(
             Method::FencesSetOption {
                 fence: "a".into(),

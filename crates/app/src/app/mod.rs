@@ -93,6 +93,8 @@ const TIMER_TEST: usize = 48;
 const TIMER_PEEK_FOCUS_RETRY: usize = 49;
 /// Low-frequency safety net for changes that did not produce a wallpaper notification.
 const TIMER_WALLPAPER_POLL: usize = 50;
+/// `events.subscribe` diff tick while at least one CLI stream is open (see `ipc.rs`).
+const TIMER_IPC_EVENTS: usize = 53;
 /// Read only the 16-byte desktop identity, never images/COM, while otherwise idle.
 const TIMER_DESKTOP_ID: usize = 51;
 const SPI_SETDESKWALLPAPER: usize = 0x0014;
@@ -169,6 +171,11 @@ pub struct App {
     _ipc: Option<IpcServer>,
     /// Warnings the CLI handler being run has queued for its reply (see `ipc.rs`).
     ipc_warnings: Vec<String>,
+    /// Open `events.subscribe` streams and the last tick's state they are diffed against.
+    ipc_subscribers: Vec<ipc::IpcSubscriber>,
+    ipc_event_state: Option<ipc::EventState>,
+    /// When the last event (or heartbeat) went out to the streams.
+    ipc_last_event: Instant,
     /// `PECOFENCE_INSTANCE` of this process (reported by `status.get`).
     instance: Option<String>,
     settings: Option<SettingsHost>,
@@ -391,6 +398,13 @@ impl App {
                                         && let Some(app) = guard.as_mut()
                                     {
                                         app.housekeeping();
+                                    }
+                                }
+                                TIMER_IPC_EVENTS => {
+                                    if let Ok(mut guard) = cell.try_borrow_mut()
+                                        && let Some(app) = guard.as_mut()
+                                    {
+                                        app.ipc_events_tick();
                                     }
                                 }
                                 TIMER_ICONS => {
@@ -701,6 +715,9 @@ impl App {
             ipc_pending,
             _ipc: ipc,
             ipc_warnings: Vec::new(),
+            ipc_subscribers: Vec::new(),
+            ipc_event_state: None,
+            ipc_last_event: Instant::now(),
             instance: args.instance.clone(),
             settings: None,
             settings_focus_fence: None,

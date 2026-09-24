@@ -1,6 +1,6 @@
 ---
 name: pecofence-cli
-description: Configure PecoFence (Windows desktop fences) from the terminal: list/create/move fences, move icons, set options, rules, snapshots. Use when the user asks to organise their desktop icons or change PecoFence settings.
+description: Configure PecoFence (Windows desktop fences) from the terminal: list/create/move fences, move and rename icons with file metadata, set options, rules (with dry run), snapshots, event stream. Use when the user asks to organise their desktop icons or change PecoFence settings.
 ---
 
 # pecofence-cli
@@ -11,8 +11,9 @@ Every command prints JSON; nothing else. Run `pecofence-cli <command> --help` wh
 ## When to use / not to use
 
 - Use for: creating, moving, resizing, renaming, deleting fences; moving desktop icons between fences;
-  per-fence options (layout, icon size, opacity, lock, roll-up); global settings; auto-sorting rules;
-  layout snapshots; quick-hide / show / Peek.
+  renaming the files behind icons; per-fence options (layout, icon size, opacity, lock, roll-up);
+  global settings; auto-sorting rules (with `--dry-run`); layout snapshots; quick-hide / show /
+  Peek; waiting for desktop changes (`watch --once`); checking a config file (`config check`).
 - Do not use for: installing PecoFence, editing `config.json` by hand (the app owns that file), moving
   files outside the desktop.
 
@@ -25,14 +26,18 @@ Every command prints JSON; nothing else. Run `pecofence-cli <command> --help` wh
 4. `pecofence-cli fence list` — get fence ids and titles before addressing anything. The desktop
    itself is the fence with `"kind": "inbox"`; its title follows the user's language (Desktop, 桌面,
    デスクトップ, ...), so never match on it: the selector `inbox` always addresses it.
+5. `pecofence-cli item list --fence inbox` — every item with `kind` (folders/programs/installers/
+   shortcuts/documents/images/music/video/archives/namespace/other), `ext`, `size`, `modified`,
+   `created`, `openCount`, `lastOpened`, `shortcutTarget`, `fileName`, `path`. Sort by these first;
+   open a file (read a PDF's first page, look at an image) only when name and kind are not enough.
 
 ## Output contract
 
 - stdout: the result as JSON (single line when piped). Mutations return `{"changed": bool, ...}`;
   `changed:false` means it was already so — not an error.
 - `snapshotId` appears only on the commands that take an automatic layout snapshot first:
-  `fence delete` (when the fence has items), `rule apply` (when it moves something) and
-  `snapshot restore`. Snapshots cover fence layouts only (fences, geometry, item membership), never
+  `fence delete` (when the fence has items), `rule apply` (when it moves something), `item move`
+  (20 or more desktop items changing fence) and `snapshot restore`. Snapshots cover fence layouts only (fences, geometry, item membership), never
   settings or rules, so `settings set` and `rule import` return no `snapshotId`.
 - stderr on failure: `{"error":{"code":"fence_not_found","message":"...","hint":"...","details":{...}}}`.
   Follow `hint`; `details.candidates` / `details.allowed` / `details.expected` are machine-readable.
@@ -49,6 +54,7 @@ Every command prints JSON; nothing else. Run `pecofence-cli <command> --help` wh
   unique substring). `ambiguous_fence` lists candidates. Prefer ids after the first `fence list`.
   `inbox` is a fixed alias for the desktop fence, whatever its title (`--fence inbox`, `--to inbox`).
 - Item: id, full path, or unique display name; `item move --glob "*.pdf"` matches file names.
+  `item list --kind documents --ext pdf` filters on the client.
 - Rule: id, 0-based index, or name.
 - Snapshot: id or unique id prefix. `snapshot save` returns `snapshot.id`; keep it and restore by id.
   A name works only while it is unique; with several snapshots of the same name the call fails with
@@ -72,8 +78,13 @@ pecofence-cli fence move Work --x 1200 --y 80              # or --rect x,y,w,h /
 pecofence-cli fence set Work layout list                   # iconSize 48 | opacity clear | locked true
 pecofence-cli fence set Work tint "#ff8800"                # quote colours (see Quoting)
 pecofence-cli fence set --all locked true                  # one call per fence, summary in .results
-pecofence-cli item list --fence inbox                      # desktop items with id, name, path, fence
+pecofence-cli item list --fence inbox                      # id, name, path, kind, ext, size, modified, created, openCount, shortcutTarget
 pecofence-cli item move --glob "*.pdf" --from inbox --to Docs   # or item ids / paths / names
+pecofence-cli item rename "C:\Users\me\Desktop\IMG_2031.pdf" "2026-09 electricity bill"   # keeps .pdf
+pecofence-cli rule apply --dry-run                         # what the rules would move, nothing changes
+pecofence-cli watch --fence inbox --once                   # block until one item lands on the desktop
+pecofence-cli config check                                 # lint the config in use (offline)
+pecofence-cli paths                                        # config, backups, log, crash dumps
 pecofence-cli settings set peek.enabled false              # dotted camelCase path, JSON value
 pecofence-cli rule add --name PDFs --ext pdf --to Docs && pecofence-cli rule apply
 pecofence-cli snapshot save before-cleanup                 # note .snapshot.id; restore with: snapshot restore <id>
@@ -92,6 +103,10 @@ pecofence-cli snapshot save before-cleanup                 # note .snapshot.id; 
   pair `--glob` with `--from`. Check `fence list` for `"kind": "portal"` before choosing `--to`.
 - Prefer `fence set --all`, `item move --glob --from`, and `rule add` + `rule apply` over many tiny
   calls. `--all` skips hosted tabs (`"skipped": "tab"` in `.results`); address the host fence.
+- `item rename` changes the file's name on disk (undo: rename it back). It keeps the extension
+  unless `--keep-ext false`; never strip or change an extension unless the user asked for it.
+- Prefer `rule apply --dry-run` before `rule apply` when rules were just added or changed; show
+  the `moves` list to the user if it is long or surprising.
 - Deleting a fence returns its items to the desktop fence and removes rules that target it.
 - Do not retry a command that timed out (exit 4) blindly: check `fence list` first; the app drops
   expired requests, but the state may already have changed.
@@ -110,6 +125,30 @@ pecofence-cli item move --glob "*.lnk" --from inbox --to Games     # e.g. game s
 pecofence-cli item move "C:\Users\me\Desktop\Q3 plan.docx" "budget" --to Work
 pecofence-cli item move --glob "*.tmp" --from inbox --to Temp
 ```
+
+**"My desktop is a mess: group it into something meaningful"**
+```
+pecofence-cli snapshot save before-cleanup       # keep .snapshot.id
+pecofence-cli item list --fence inbox            # read kind, ext, modified, created, shortcutTarget for every item
+# Group by what the metadata says (projects by name prefix, invoices/statements by name, screenshots
+# by ext+created, installers by kind). Only for files whose name says nothing, read the file
+# (a PDF's first page, an image) and decide.
+pecofence-cli fence create --title "Thesis"   --rect 40,40,520,360
+pecofence-cli fence create --title "Finance"  --rect 600,40,520,360
+pecofence-cli item move <ids or paths...> --to Thesis
+pecofence-cli item rename "C:\Users\me\Desktop\IMG_2031.pdf" "2026-09 electricity bill"   # meaningful names
+pecofence-cli item move --glob "*bill*" --from inbox --to Finance
+pecofence-cli rule add --name Invoices --name-contains invoice --to Finance   # keep it that way
+pecofence-cli rule apply --dry-run && pecofence-cli rule apply
+```
+Report what you grouped and why; leave anything you are unsure about in the desktop fence.
+
+**"Organise new downloads when they arrive"** (a script or scheduled task, not a resident agent)
+```
+pecofence-cli watch --fence inbox --events item.added --once   # exits 0 with the event when a file lands
+pecofence-cli item list --fence inbox                          # then run one batch as above
+```
+Loop the two steps in a script; the agent runs only for the batch, not while waiting.
 
 **"Put every PDF into a Docs fence and keep it that way"**
 ```
@@ -140,6 +179,8 @@ pecofence-cli fence list | jq '[.[] | {title, opacity, locked}]'   # verify
 - `settings set autostart ...` on the Microsoft Store build opens Windows' Startup Apps page instead.
 - `--instance <name>` / `PECOFENCE_INSTANCE` address a separately started test instance only; normal
   users never need it.
+- Only `describe`, `skill`, `paths`, `log` and `config check` work without the app. `log` prints
+  text, everything else JSON. `watch` never returns on its own; use `--once` from scripts.
 
 ## AGENTS.md snippet
 

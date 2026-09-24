@@ -82,8 +82,15 @@ impl ConfigStore {
 
     /// Writes the config as pretty JSON to an arbitrary path (export).
     pub fn export_to(cfg: &Config, path: &Path) -> io::Result<()> {
-        let json = serde_json::to_string_pretty(cfg).map_err(io::Error::other)?;
-        fs::write(path, json)
+        fs::write(path, Self::to_json(cfg)?)
+    }
+
+    /// The file text: pretty JSON with the `$schema` field pointing at the published schema
+    /// (serde_json sorts keys, and `$` sorts first, so it is the first line after the brace).
+    fn to_json(cfg: &Config) -> io::Result<String> {
+        let mut cfg = cfg.clone();
+        cfg.schema = Some(crate::model::CONFIG_SCHEMA_URL.to_string());
+        serde_json::to_string_pretty(&cfg).map_err(io::Error::other)
     }
 
     /// Loads with fallbacks: primary → .bak → newest daily backup → default.
@@ -119,7 +126,7 @@ impl ConfigStore {
     pub fn save(&self, cfg: &Config) -> io::Result<()> {
         validate(cfg).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
         fs::create_dir_all(&self.dir)?;
-        let json = serde_json::to_string_pretty(cfg).map_err(io::Error::other)?;
+        let json = Self::to_json(cfg)?;
         {
             let mut f = fs::File::create(self.tmp_path())?;
             io::Write::write_all(&mut f, json.as_bytes())?;
@@ -196,6 +203,215 @@ pub fn validate(cfg: &Config) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+/// Severity of a [`lint`] finding.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LintLevel {
+    /// The app would refuse or silently drop this.
+    Error,
+    /// Loads, but something will not behave as the file suggests.
+    Warning,
+}
+
+/// One finding of [`lint`].
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Lint {
+    pub level: LintLevel,
+    pub message: String,
+    /// What the finding is about (`rule:<name>`, `fence:<title>`, `layout:<n>`, `file`).
+    pub subject: String,
+}
+
+fn lint_at(out: &mut Vec<Lint>, level: LintLevel, subject: impl Into<String>, message: String) {
+    out.push(Lint {
+        level,
+        message,
+        subject: subject.into(),
+    });
+}
+
+/// Cross-checks a configuration that already passed [`validate`] for things that load but will
+/// not work as written: rules whose target fence exists in no layout, portals whose folder is
+/// gone, tabs hosted by a missing fence, duplicate fence ids, memberships of unknown items, more
+/// snapshots than the app keeps, a missing or foreign `$schema`. Pure apart from the folder
+/// existence checks; safe to run on an exported file without the app.
+pub fn lint(cfg: &Config) -> Vec<Lint> {
+    use crate::model::FenceKind;
+    use crate::rules::Target;
+    let mut out = Vec::new();
+    match cfg.schema.as_deref() {
+        None => lint_at(
+            &mut out,
+            LintLevel::Warning,
+            "file",
+            format!(
+                "no \"$schema\" field; add {:?} for editor validation",
+                crate::model::CONFIG_SCHEMA_URL
+            ),
+        ),
+        Some(url) if url != crate::model::CONFIG_SCHEMA_URL => lint_at(
+            &mut out,
+            LintLevel::Warning,
+            "file",
+            format!(
+                "\"$schema\" is {url:?}; PecoFence publishes {:?}",
+                crate::model::CONFIG_SCHEMA_URL
+            ),
+        ),
+        Some(_) => {}
+    }
+    if cfg.layouts.is_empty() {
+        lint_at(
+            &mut out,
+            LintLevel::Warning,
+            "file",
+            "no layouts: the app will create a default one on load".into(),
+        );
+    }
+    let mut all_fences: Vec<(&crate::model::Fence, usize)> = Vec::new();
+    for (li, layout) in cfg.layouts.iter().enumerate() {
+        let subject = format!("layout:{li}");
+        if layout.fences.iter().all(|f| f.kind != FenceKind::Inbox) {
+            lint_at(
+                &mut out,
+                LintLevel::Warning,
+                &subject,
+                "no inbox fence; the app adds one on load".into(),
+            );
+        }
+        let mut seen = std::collections::HashSet::new();
+        for f in &layout.fences {
+            if !seen.insert(f.id) {
+                lint_at(
+                    &mut out,
+                    LintLevel::Error,
+                    format!("fence:{}", f.title),
+                    format!("fence id {} appears twice in layout {li}", f.id),
+                );
+            }
+            all_fences.push((f, li));
+        }
+        for f in &layout.fences {
+            let subject = format!("fence:{}", f.title);
+            if let Some(host) = f.tab_host {
+                match layout.fences.iter().find(|h| h.id == host) {
+                    None => lint_at(
+                        &mut out,
+                        LintLevel::Warning,
+                        &subject,
+                        format!(
+                            "hosted by tab host {host}, which is not in layout {li}; shown as its own window"
+                        ),
+                    ),
+                    Some(h) if h.tab_host.is_some() => lint_at(
+                        &mut out,
+                        LintLevel::Warning,
+                        &subject,
+                        format!("tab host {:?} is itself a tab", h.title),
+                    ),
+                    Some(_) => {}
+                }
+            }
+            if let crate::model::ItemSourceSpec::Folder { path, .. } = &f.source
+                && !Path::new(path).is_dir()
+            {
+                lint_at(
+                    &mut out,
+                    LintLevel::Warning,
+                    &subject,
+                    format!(
+                        "portal folder {path:?} does not exist (or is not reachable from here)"
+                    ),
+                );
+            }
+            if f.kind == FenceKind::FolderPortal
+                && !matches!(f.source, crate::model::ItemSourceSpec::Folder { .. })
+            {
+                lint_at(
+                    &mut out,
+                    LintLevel::Error,
+                    &subject,
+                    "portal fence without a folder source".into(),
+                );
+            }
+            let unknown = f
+                .items
+                .iter()
+                .filter(|r| !cfg.items.contains_key(&r.item_id))
+                .count();
+            if unknown > 0 {
+                lint_at(
+                    &mut out,
+                    LintLevel::Warning,
+                    &subject,
+                    format!(
+                        "{unknown} membership entr{} refer to items missing from \"items\"; they are ignored",
+                        if unknown == 1 { "y" } else { "ies" }
+                    ),
+                );
+            }
+        }
+    }
+    for rule in &cfg.rules.list {
+        if let Target::Fence(id) = rule.target {
+            match all_fences.iter().find(|(f, _)| f.id == id) {
+                None => lint_at(
+                    &mut out,
+                    LintLevel::Warning,
+                    format!("rule:{}", rule.name),
+                    format!(
+                        "target fence {id} exists in no layout; matches fall back to the inbox"
+                    ),
+                ),
+                Some((f, _)) if f.kind == FenceKind::FolderPortal => lint_at(
+                    &mut out,
+                    LintLevel::Error,
+                    format!("rule:{}", rule.name),
+                    format!(
+                        "target {:?} is a folder portal; rules can only target virtual fences or the inbox",
+                        f.title
+                    ),
+                ),
+                Some(_) => {}
+            }
+        }
+        if rule.all_of.is_empty() {
+            lint_at(
+                &mut out,
+                LintLevel::Warning,
+                format!("rule:{}", rule.name),
+                "no conditions: the rule never matches".into(),
+            );
+        }
+    }
+    if let Target::Fence(id) = cfg.rules.default_target
+        && !all_fences.iter().any(|(f, _)| f.id == id)
+    {
+        lint_at(
+            &mut out,
+            LintLevel::Warning,
+            "rules",
+            format!(
+                "defaultTarget fence {id} exists in no layout; unmatched items go to the inbox"
+            ),
+        );
+    }
+    if cfg.snapshots.len() > crate::model::MAX_SNAPSHOTS {
+        lint_at(
+            &mut out,
+            LintLevel::Warning,
+            "snapshots",
+            format!(
+                "{} snapshots; the app keeps at most {}",
+                cfg.snapshots.len(),
+                crate::model::MAX_SNAPSHOTS
+            ),
+        );
+    }
+    out
 }
 
 /// Schema migration chain (currently identity).
@@ -303,7 +519,13 @@ mod tests {
         let preferred = parent.join(crate::brand::NAME);
         let selected = ConfigStore::with_legacy(&preferred, old.dir());
         assert_eq!(selected.dir(), old.dir());
-        let loaded = selected.load().into_config();
+        let mut loaded = selected.load().into_config();
+        // Saving stamps the published schema URL; everything else is untouched.
+        assert_eq!(
+            loaded.schema.as_deref(),
+            Some(crate::model::CONFIG_SCHEMA_URL)
+        );
+        loaded.schema = None;
         assert_eq!(
             serde_json::to_value(loaded).unwrap(),
             serde_json::to_value(config).unwrap()
@@ -345,6 +567,94 @@ mod tests {
             ..f
         });
         assert!(validate(&c).is_err());
+    }
+
+    #[test]
+    fn saved_file_starts_with_the_schema_field_and_loads_back() {
+        let store = ConfigStore::new(tmpdir("schema"));
+        store.save(&sample()).unwrap();
+        let text = fs::read_to_string(store.primary_path()).unwrap();
+        let second_line = text.lines().nth(1).unwrap_or_default();
+        assert!(second_line.contains("\"$schema\""), "{second_line}");
+        assert!(text.contains(crate::model::CONFIG_SCHEMA_URL));
+        let cfg = ConfigStore::parse_file(&store.primary_path()).unwrap();
+        assert_eq!(cfg.schema.as_deref(), Some(crate::model::CONFIG_SCHEMA_URL));
+        // A file without the field (older versions) still loads.
+        let stripped = text.replacen(
+            &format!("\"$schema\": \"{}\",", crate::model::CONFIG_SCHEMA_URL),
+            "",
+            1,
+        );
+        assert!(!stripped.contains("$schema"));
+        let cfg: Config = serde_json::from_str(&stripped).unwrap();
+        assert_eq!(cfg.schema, None);
+    }
+
+    #[test]
+    fn lint_finds_dangling_targets_and_folders() {
+        use crate::rules::{Cond, Rule, Target, TypeCategory};
+        let mut c = sample();
+        let inbox = c.layouts[0].fences[0].id;
+        // Valid rule to the inbox, a rule to a fence that exists nowhere, a rule without
+        // conditions, a portal whose folder is gone, a tab hosted by a missing fence.
+        c.rules.list.push(Rule::new(
+            "ok",
+            Target::Fence(inbox),
+            vec![Cond::Type(vec![TypeCategory::Images])],
+        ));
+        let ghost = uuid::Uuid::new_v4();
+        c.rules.list.push(Rule::new(
+            "ghost",
+            Target::Fence(ghost),
+            vec![Cond::Type(vec![TypeCategory::Video])],
+        ));
+        c.rules.list.push(Rule::new("empty", Target::Inbox, vec![]));
+        let geometry = c.layouts[0].fences[0].geometry.clone();
+        let mut portal = Fence::new("Gone", FenceKind::FolderPortal, geometry.clone());
+        portal.source = ItemSourceSpec::Folder {
+            path: "Z:\\definitely\\missing\\folder".into(),
+            recursive: false,
+            filter: None,
+        };
+        let portal_id = portal.id;
+        c.layouts[0].fences.push(portal);
+        let mut tab = Fence::new("Tab", FenceKind::Virtual, geometry);
+        tab.tab_host = Some(ghost);
+        c.layouts[0].fences.push(tab);
+        c.rules.list.push(Rule::new(
+            "to-portal",
+            Target::Fence(portal_id),
+            vec![Cond::FoldersOnly],
+        ));
+        assert!(validate(&c).is_ok(), "lint covers what validate does not");
+
+        let lints = lint(&c);
+        let subjects: Vec<&str> = lints.iter().map(|l| l.subject.as_str()).collect();
+        assert!(subjects.contains(&"file"), "$schema missing: {lints:?}");
+        assert!(subjects.contains(&"rule:ghost"), "{lints:?}");
+        assert!(subjects.contains(&"rule:empty"), "{lints:?}");
+        assert!(subjects.contains(&"fence:Gone"), "{lints:?}");
+        assert!(subjects.contains(&"fence:Tab"), "{lints:?}");
+        assert!(!subjects.contains(&"rule:ok"), "{lints:?}");
+        let errors: Vec<&Lint> = lints
+            .iter()
+            .filter(|l| l.level == LintLevel::Error)
+            .collect();
+        assert_eq!(errors.len(), 1, "{errors:?}");
+        assert_eq!(errors[0].subject, "rule:to-portal");
+
+        // A clean, saved-and-reloaded config lints without findings.
+        let store = ConfigStore::new(tmpdir("lint-clean"));
+        let mut clean = sample();
+        let clean_inbox = clean.layouts[0].fences[0].id;
+        clean.rules.list.push(Rule::new(
+            "ok",
+            Target::Fence(clean_inbox),
+            vec![Cond::Type(vec![TypeCategory::Images])],
+        ));
+        store.save(&clean).unwrap();
+        let reloaded = ConfigStore::parse_file(&store.primary_path()).unwrap();
+        assert_eq!(lint(&reloaded), Vec::<Lint>::new());
     }
 
     #[test]

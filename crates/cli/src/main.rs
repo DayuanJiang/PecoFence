@@ -6,6 +6,7 @@
 mod cli;
 mod client;
 mod describe;
+mod local;
 mod output;
 mod run;
 
@@ -31,6 +32,7 @@ fn main() {
     let ctx = run::Ctx {
         instance,
         timeout_ms: cli.timeout,
+        pretty,
     };
     let is_describe_catalog = matches!(cli.command, cli::Command::Describe { schema: None });
     let code = match run::run(&ctx, cli.command) {

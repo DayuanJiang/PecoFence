@@ -9,7 +9,7 @@ pub mod i18n;
 pub mod model;
 pub mod rules;
 
-pub use config_store::{ConfigStore, LoadOutcome};
+pub use config_store::{ConfigStore, Lint, LintLevel, LoadOutcome};
 pub use date_group::{CivilDate, DateBucket, date_bucket};
 pub use model::*;
 pub use rules::{Cond, Decision, ItemFacts, Rule, RuleSet, StrOp, Target, TypeCategory};

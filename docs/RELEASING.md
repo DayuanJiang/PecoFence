@@ -65,3 +65,17 @@ Current packaging is x64 and unsigned. ARM64 is not configured. winget publishin
 from `.github/workflows/winget.yml` on published releases; the Microsoft Store package is
 built locally with `./scripts/make-msix.ps1` and uploaded in Partner Center, see
 [STORE.md](STORE.md).
+
+## Config JSON Schema on the website
+
+`config.json` carries `"$schema": "https://pecofence.jiang.jp/schema/config.json"`. That file is
+`site/schema/config.json`, copied into `dist/site/schema/` by `scripts/build-site.py`. Regenerate
+it whenever `Config`, `Settings`, `Fence`, `Rule`/`Cond` or another model type changes, then deploy
+the site:
+
+```powershell
+cargo build -p pecofence-cli
+target\debug\pecofence-cli.exe describe --schema Config --compact | Set-Content -Encoding utf8 -NoNewline site\schema\config.json
+```
+
+`pecofence-cli config check` warns when a file's `$schema` differs from the published URL.

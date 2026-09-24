@@ -156,10 +156,7 @@ fn listen_loop(
         let pending = pending.clone();
         let spawned = std::thread::Builder::new()
             .name("pecofence-ipc-conn".into())
-            .spawn(move || {
-                serve(connection, control, &pending);
-                counter.fetch_sub(1, Ordering::SeqCst);
-            });
+            .spawn(move || serve(connection, control, &pending, &counter));
         if let Err(error) = spawned {
             active.fetch_sub(1, Ordering::SeqCst);
             tracing::warn!(target: "pecofence::ipc", %error, "connection thread failed to start");
@@ -209,8 +206,13 @@ impl Drop for IoDeadline {
     }
 }
 
-/// One connection: read a line, validate, wait for the UI thread, reply.
-fn serve(connection: File, control: isize, pending: &PendingQueue) {
+/// One connection: read a line, validate, wait for the UI thread, reply. A stream method
+/// (`events.subscribe`) then keeps the connection: every further `Response` the UI thread
+/// sends down the same channel is written as one line until the client closes the pipe (the
+/// write fails) or the UI thread drops its sender. `active` (the connection-slot counter) is
+/// released as soon as the request is answered, so an open stream does not occupy one of the
+/// [`MAX_CONNECTIONS`] slots (the UI thread caps streams separately).
+fn serve(connection: File, control: isize, pending: &PendingQueue, active: &AtomicUsize) {
     let started = Instant::now();
     let thread = ThreadHandle::current().map(Arc::new);
     if thread.is_none() {
@@ -220,19 +222,22 @@ fn serve(connection: File, control: isize, pending: &PendingQueue) {
         let _deadline = IoDeadline::arm(&thread, READ_DEADLINE);
         read_request(&connection)
     };
-    let (method, response, flush) = match read {
+    let (method, response, flush, stream) = match read {
         Err(ReadError::PeerGone) => {
             tracing::debug!(target: "pecofence::ipc", ms = started.elapsed().as_secs_f32() * 1000.0, "client left before sending a request");
+            active.fetch_sub(1, Ordering::SeqCst);
             return;
         }
         Err(ReadError::TimedOut) => {
             tracing::info!(target: "pecofence::ipc", "no request within the deadline; connection dropped");
+            active.fetch_sub(1, Ordering::SeqCst);
             return;
         }
         // A malformed request came from a live client: answer, but do not wait for it to read.
-        Err(ReadError::Rejected(error)) => (String::from("-"), Response::err(error), false),
+        Err(ReadError::Rejected(error)) => (String::from("-"), Response::err(error), false, None),
         Ok(request) => {
             let method = request.method.name();
+            let is_stream = request.method.is_stream();
             let timeout = Duration::from_millis(u64::from(request.timeout_ms)) + REPLY_GRACE;
             let (tx, rx) = mpsc::channel();
             if let Ok(mut q) = pending.lock() {
@@ -255,19 +260,44 @@ fn serve(connection: File, control: isize, pending: &PendingQueue) {
                         .hint("Close any open PecoFence menu or dialog and retry"),
                 ),
             };
-            (method, response, true)
+            let stream = (is_stream && response.ok).then_some(rx);
+            (method, response, stream.is_none(), stream)
         }
     };
-    {
+    let written = {
         let _deadline = IoDeadline::arm(&thread, WRITE_DEADLINE);
-        write_reply(&connection, &response, flush);
-    }
+        write_reply(&connection, &response, flush)
+    };
     tracing::info!(
         target: "pecofence::ipc",
         method,
         ok = response.ok,
         ms = started.elapsed().as_secs_f32() * 1000.0,
         "request"
+    );
+    active.fetch_sub(1, Ordering::SeqCst);
+    let Some(rx) = stream else {
+        return;
+    };
+    if !written {
+        return;
+    }
+    let mut lines = 0u64;
+    while let Ok(event) = rx.recv() {
+        let _deadline = IoDeadline::arm(&thread, WRITE_DEADLINE);
+        if !write_reply(&connection, &event, false) {
+            break;
+        }
+        lines += 1;
+    }
+    // Either the client left (write failed; the UI thread notices at its next send) or the app
+    // is shutting down (sender dropped). Flush what the client may still be reading.
+    pipe::finish(&connection);
+    tracing::info!(
+        target: "pecofence::ipc",
+        lines,
+        secs = started.elapsed().as_secs_f32(),
+        "event stream ended"
     );
 }
 
@@ -383,16 +413,17 @@ fn usage(message: impl Into<String>) -> IpcError {
     )
 }
 
-/// Writes the reply line. With `flush`, waits until the client has read it before the instance
-/// is disconnected (bounded by the caller's [`IoDeadline`]); without, the bytes stay readable
-/// until the client closes or the connection is dropped. Write errors are ignored
-/// (`ERROR_NO_DATA`: the client already left; `ERROR_OPERATION_ABORTED`: the deadline).
-fn write_reply(connection: &File, response: &Response, flush: bool) {
+/// Writes the reply line; `true` when the bytes went out. With `flush`, waits until the client
+/// has read it before the instance is disconnected (bounded by the caller's [`IoDeadline`]);
+/// without, the bytes stay readable until the client closes or the connection is dropped. Write
+/// errors are not reported to anyone (`ERROR_NO_DATA`: the client already left;
+/// `ERROR_OPERATION_ABORTED`: the deadline).
+fn write_reply(connection: &File, response: &Response, flush: bool) -> bool {
     let mut bytes = match serde_json::to_vec(response) {
         Ok(b) => b,
         Err(error) => {
             tracing::warn!(target: "pecofence::ipc", %error, "reply could not be serialized");
-            return;
+            return false;
         }
     };
     bytes.push(b'\n');
@@ -401,11 +432,12 @@ fn write_reply(connection: &File, response: &Response, flush: bool) {
         if !pipe::is_peer_gone(&error) && !pipe::is_cancelled(&error) {
             tracing::debug!(target: "pecofence::ipc", %error, "reply write failed");
         }
-        return;
+        return false;
     }
     if flush {
         pipe::finish(connection);
     }
+    true
 }
 
 #[cfg(test)]

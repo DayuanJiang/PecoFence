@@ -38,6 +38,16 @@ pub struct SyncReport {
     pub updated: usize,
 }
 
+/// One move the rule engine would make (see [`AppState::plan_rules`]).
+#[derive(Clone, Debug, PartialEq)]
+pub struct PlannedRuleMove {
+    pub item: ItemId,
+    /// The fence the item is in now (`None`: not a member of any fence yet).
+    pub from: Option<FenceId>,
+    pub to: FenceId,
+    pub by: AssignedBy,
+}
+
 impl SyncReport {
     pub fn changed(&self) -> bool {
         self.added + self.removed + self.updated > 0
@@ -1259,7 +1269,28 @@ impl AppState {
     }
 
     fn apply_rules_filtered(&mut self, entries: &[DesktopEntry], idle_only: bool) -> usize {
+        let plan = self.plan_rules(entries, idle_only);
         let mut moved = 0;
+        for m in plan {
+            if self
+                .config
+                .assign(self.layout, m.item, m.to, m.by)
+                .is_some()
+            {
+                moved += 1;
+            }
+        }
+        if moved > 0 {
+            self.dirty = true;
+        }
+        moved
+    }
+
+    /// What [`apply_rules_all`](Self::apply_rules_all) would do, without doing it: one entry per
+    /// item that is not pinned by a manual placement and whose rule target differs from the
+    /// fence it is in now (`idle_only`: see [`apply_idle_rules`](Self::apply_idle_rules)).
+    pub fn plan_rules(&self, entries: &[DesktopEntry], idle_only: bool) -> Vec<PlannedRuleMove> {
+        let mut plan = Vec::new();
         for entry in entries {
             if entry.origin == EntryOrigin::Namespace {
                 continue;
@@ -1291,16 +1322,21 @@ impl AppState {
                     continue;
                 }
             }
-            if let Some((fence, by)) = self.target_fence(decision)
-                && self.config.assign(self.layout, id, fence, by).is_some()
-            {
-                moved += 1;
+            let Some((to, by)) = self.target_fence(decision) else {
+                continue;
+            };
+            let from = current.map(|f| f.id);
+            if from == Some(to) {
+                continue;
             }
+            plan.push(PlannedRuleMove {
+                item: id,
+                from,
+                to,
+                by,
+            });
         }
-        if moved > 0 {
-            self.dirty = true;
-        }
-        moved
+        plan
     }
 
     /// Re-files `ids` by the rules as if they had just arrived on the desktop (the user dragged

@@ -150,8 +150,14 @@ pub const COMMANDS: &[Entry] = &[
     entry!(
         "item list",
         Some("items.list"),
-        "Items of every fence or of --fence",
+        "Items of every fence or of --fence, with kind/ext/size/modified/created/openCount/lastOpened/shortcutTarget; --kind/--ext filter client-side",
         "pecofence-cli item list --fence Work"
+    ),
+    entry!(
+        "item rename",
+        Some("items.rename"),
+        "Rename the file behind an item on disk; keeps the extension unless --keep-ext false",
+        "pecofence-cli item rename \"C:\\Users\\me\\Desktop\\IMG_2031.pdf\" \"2026-09 electricity bill\""
     ),
     entry!(
         "item move",
@@ -222,8 +228,8 @@ pub const COMMANDS: &[Entry] = &[
     entry!(
         "rule apply",
         Some("rules.apply"),
-        "Re-file every desktop item through the rules now",
-        "pecofence-cli rule apply"
+        "Re-file every desktop item through the rules now (auto snapshot when something moves); --dry-run lists the moves without making them",
+        "pecofence-cli rule apply --dry-run"
     ),
     entry!(
         "snapshot list",
@@ -262,6 +268,12 @@ pub const COMMANDS: &[Entry] = &[
         "pecofence-cli config import C:\\Users\\me\\Desktop\\pecofence.json"
     ),
     entry!(
+        "config check",
+        None,
+        "Validate a config.json / export file offline: parse like the app, then lint rule targets, portal folders, tabs, $schema (exit 1 on errors)",
+        "pecofence-cli config check C:\\Users\\me\\Desktop\\pecofence.json"
+    ),
+    entry!(
         "backup list",
         Some("backups.list"),
         "Daily config backups the app keeps (path, name), newest first",
@@ -284,6 +296,24 @@ pub const COMMANDS: &[Entry] = &[
         Some("peek.end"),
         "End Peek",
         "pecofence-cli peek end"
+    ),
+    entry!(
+        "watch",
+        Some("events.subscribe"),
+        "Stream EventDto JSON lines (item.added/removed/moved, fence.created/deleted/changed) until Ctrl+C; --fence/--events filter, --once exits after the first",
+        "pecofence-cli watch --fence inbox --once"
+    ),
+    entry!(
+        "log",
+        None,
+        "Print the tail of the app's log as text (not JSON); -f follows, -n lines",
+        "pecofence-cli log -n 100"
+    ),
+    entry!(
+        "paths",
+        None,
+        "Where PecoFence keeps config.json, backups, the log and crash dumps (offline; asks a running instance first)",
+        "pecofence-cli paths"
     ),
 ];
 
@@ -369,7 +399,8 @@ pub const NOTES: &[&str] = &[
     "Shell quoting: values starting with #, [ or * or containing spaces need quotes (Git Bash treats #ff8800 as a comment): fence set Work tint \"#ff8800\" or tint '\"#ff8800\"'. Negative numbers work bare: settings set snapping.gapPx -4.",
     "Settings paths are dotted camelCase (peek.enabled, quickHide.delayMs, rollUp.hoverPeek, snapping.gapPx, iconSize, theme, themeStyle, hideRealIcons, autostart, icons.chameleon); see describe --schema Settings.",
     "fence set props: title (or fence rename), iconSize 32|48|64|96, spacing compact|normal|loose, autoHeight, locked, excludeFromQuickHide, opacity default|clear|solid, tint \"#RRGGBB\"|null, titleColor theme|tint|white|black|\"#RRGGBB\", titleSize small|normal|large, layout icons|list|details, sort manual|name|type|date|size|openCount, reverse, groupByDate, labelLines, portalNavigate, portalTitleIcon. --string keeps numeric-looking text (title 2024) a string.",
-    "The app must be running; the CLI never edits config.json. --instance <name> only addresses a test instance started with PECOFENCE_INSTANCE=<name>.",
+    "The app must be running; the CLI never edits config.json. --instance <name> only addresses a test instance started with PECOFENCE_INSTANCE=<name>. Offline exceptions: describe, skill, paths, log, config check.",
+    "watch streams one EventDto per line (describe --schema EventDto) and never returns by itself; use --once from scripts (wait for one event, then run a batch such as item list + item move). Heartbeats every 30 s are hidden unless --heartbeat. item list carries kind/ext/size/modified/created/openCount/lastOpened/shortcutTarget so most items can be sorted without opening them. items.move of 20+ desktop items takes an automatic snapshot (snapshotId).",
 ];
 
 pub fn catalog() -> Value {

@@ -3,6 +3,19 @@
 
 use super::*;
 
+/// Why [`App::rename_item_to`] declined.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) enum RenameError {
+    /// Namespace item, or no path / parent folder to rename within.
+    Unsupported,
+    /// Empty, `.`/`..`, or contains a character Windows forbids in file names.
+    InvalidName,
+    /// Another entry of that name is already in the folder.
+    Exists,
+    /// The filesystem refused (message).
+    Io(String),
+}
+
 impl App {
     pub(super) fn item_views(&self, fence: &pecofence_core::Fence) -> Vec<ItemView> {
         self.state
@@ -220,92 +233,117 @@ impl App {
     }
 
     /// Renames the file behind an item to `name` (+ the hidden extension Explorer would keep).
+    /// The inline-edit path: problems are toasted, nothing is returned.
     pub(super) fn rename_item_file(&mut self, item: ItemId, name: &str) {
-        if self.state.item(item).is_some_and(|it| it.is_namespace()) {
-            return;
-        }
-        let name = name.trim();
-        if name.is_empty()
-            || name
-                .chars()
-                .any(|c| matches!(c, '\\' | '/' | ':' | '*' | '?' | '"' | '<' | '>' | '|'))
-        {
-            if let Some(t) = &self.tray {
-                t.show_info(
-                    "PecoFence",
-                    pecofence_core::i18n::text("名称不能为空，也不能包含 \\ / : * ? \" < > |"),
-                    true,
-                );
-            }
-            return;
-        }
         let Some(it) = self.state.item(item) else {
             return;
         };
-        let Some(old) = it.key.as_path().map(PathBuf::from) else {
+        if it.is_namespace() {
             return;
-        };
-        let display = it.display_name.clone();
-        let file_name = old
-            .file_name()
-            .map(|f| f.to_string_lossy().to_string())
+        }
+        let name = name.trim();
+        // `old` is a lower-cased ItemKey, not the file's displayed spelling.
+        if name == it.display_name {
+            return;
+        }
+        let file_name = it
+            .key
+            .as_path()
+            .and_then(|p| p.rsplit('\\').next())
             .unwrap_or_default();
         // Explorer's editing name drops `.lnk` / hidden extensions: keep whatever it dropped.
-        let suffix = crate::rename::rename_hidden_suffix(&display, &file_name, it.is_folder);
-        let Some(parent) = old.parent() else { return };
-        let new = parent.join(format!("{name}{suffix}"));
-        // `old` is a lower-cased ItemKey, not the file's displayed spelling.
-        if name == display {
-            return;
+        let suffix = crate::rename::rename_hidden_suffix(&it.display_name, file_name, it.is_folder);
+        let toast = match self.rename_item_to(item, &format!("{name}{suffix}")) {
+            Ok(_) | Err(RenameError::Unsupported) => None,
+            Err(RenameError::InvalidName) => Some(
+                pecofence_core::i18n::text("名称不能为空，也不能包含 \\ / : * ? \" < > |")
+                    .to_string(),
+            ),
+            Err(RenameError::Exists) => {
+                Some(pecofence_core::i18n::text("此文件夹中已有同名项目。").to_string())
+            }
+            Err(RenameError::Io(e)) => Some(pecofence_core::i18n::format("重命名失败：{0}", &[e])),
+        };
+        if let (Some(text), Some(t)) = (toast, &self.tray) {
+            t.show_info("PecoFence", &text, true);
         }
-        if new.exists()
-            && ItemKey::from_path(&new.to_string_lossy())
-                != ItemKey::from_path(&old.to_string_lossy())
+    }
+
+    /// Renames the file behind `item` to `file_name` (the complete new file name, extension
+    /// included) inside its folder and updates the item table, views and portal ids. Shared by
+    /// inline editing and the CLI; returns the new path.
+    pub(super) fn rename_item_to(
+        &mut self,
+        item: ItemId,
+        file_name: &str,
+    ) -> std::result::Result<PathBuf, RenameError> {
+        let Some(it) = self.state.item(item) else {
+            return Err(RenameError::Unsupported);
+        };
+        if it.is_namespace() {
+            return Err(RenameError::Unsupported);
+        }
+        let file_name = file_name.trim();
+        if file_name.is_empty()
+            || file_name == "."
+            || file_name == ".."
+            || file_name
+                .chars()
+                .any(|c| matches!(c, '\\' | '/' | ':' | '*' | '?' | '"' | '<' | '>' | '|'))
         {
-            if let Some(t) = &self.tray {
-                t.show_info(
-                    "PecoFence",
-                    pecofence_core::i18n::text("此文件夹中已有同名项目。"),
-                    true,
-                );
-            }
-            return;
+            return Err(RenameError::InvalidName);
         }
-        match std::fs::rename(&old, &new) {
-            Ok(()) => {
-                tracing::info!(from = %old.display(), to = %new.display(), "item renamed");
-                if self.state.is_portal_item(item) {
-                    // Portal ids are path hashes. Update the old view's identity before
-                    // the folder refresh so rename does not clear selection and focus.
-                    let new_id = crate::state::portal_item_id(&new.to_string_lossy());
-                    for w in self.fences.values() {
-                        w.rekey_item(item, new_id);
-                    }
-                    self.refresh_portals_in(&[parent.to_path_buf()]);
-                } else if self.state.rename_item(&old, &new) {
-                    let fences: Vec<FenceId> = self.state.fences().iter().map(|f| f.id).collect();
-                    for f in fences {
-                        if self
-                            .state
-                            .fence(f)
-                            .is_some_and(|fe| fe.items.iter().any(|r| r.item_id == item))
-                        {
-                            self.refresh_fence(f);
-                        }
-                    }
-                    self.schedule_save();
-                }
+        let Some(old) = it.key.as_path().map(PathBuf::from) else {
+            return Err(RenameError::Unsupported);
+        };
+        let Some(parent) = old.parent().map(Path::to_path_buf) else {
+            return Err(RenameError::Unsupported);
+        };
+        let new = parent.join(file_name);
+        if ItemKey::from_path(&new.to_string_lossy()) == ItemKey::from_path(&old.to_string_lossy())
+        {
+            // Same name, possibly different case: a no-op for the item table, but the file's
+            // spelling may change.
+            if old.file_name() != new.file_name() {
+                std::fs::rename(&old, &new).map_err(|e| RenameError::Io(e.to_string()))?;
+                self.refresh_fences_with(item);
             }
-            Err(e) => {
-                tracing::warn!(error = %e, "rename failed");
-                if let Some(t) = &self.tray {
-                    t.show_info(
-                        "PecoFence",
-                        &pecofence_core::i18n::format("重命名失败：{0}", &[e.to_string()]),
-                        true,
-                    );
-                }
+            return Ok(new);
+        }
+        if new.exists() {
+            return Err(RenameError::Exists);
+        }
+        std::fs::rename(&old, &new).map_err(|e| {
+            tracing::warn!(error = %e, "rename failed");
+            RenameError::Io(e.to_string())
+        })?;
+        tracing::info!(from = %old.display(), to = %new.display(), "item renamed");
+        if self.state.is_portal_item(item) {
+            // Portal ids are path hashes. Update the old view's identity before the folder
+            // refresh so rename does not clear selection and focus.
+            let new_id = crate::state::portal_item_id(&new.to_string_lossy());
+            for w in self.fences.values() {
+                w.rekey_item(item, new_id);
             }
+            self.refresh_portals_in(&[parent]);
+        } else if self.state.rename_item(&old, &new) {
+            self.refresh_fences_with(item);
+            self.schedule_save();
+        }
+        Ok(new)
+    }
+
+    /// Re-renders every fence that lists `item`.
+    fn refresh_fences_with(&mut self, item: ItemId) {
+        let fences: Vec<FenceId> = self
+            .state
+            .fences()
+            .iter()
+            .filter(|f| f.items.iter().any(|r| r.item_id == item))
+            .map(|f| f.id)
+            .collect();
+        for f in fences {
+            self.refresh_fence(f);
         }
     }
 

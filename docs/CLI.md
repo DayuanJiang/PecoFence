@@ -5,6 +5,53 @@ PecoFence instance that is already running on your desktop and prints JSON, so i
 well for people in a terminal and for coding agents (Claude Code, Codex, ...). It never edits
 `config.json` itself; if the app is not running it says so and exits with code 3.
 
+## Start with your AI agent
+
+Describe the result you want in Claude Code, Codex, Cursor or another coding agent that can run
+local commands. The CLI lets the agent inspect your desktop and apply settings, arrange fences,
+organize icons and create sorting rules in the running app.
+
+1. Install and open PecoFence. The CLI is included in both the Microsoft Store edition and the
+   portable ZIP; see [Install and PATH](#install-and-path) below.
+2. Open your AI coding agent. For the portable edition, include the full path to
+   `pecofence-cli.exe` in your request.
+3. Paste this request:
+
+> Use pecofence-cli to configure my desktop. First read pecofence-cli skill and pecofence-cli
+> describe, then inspect my current settings and fences. Back up my configuration before changes.
+> Switch to dark mode and make all fences more transparent.
+
+You can also ask it to:
+
+- **Set up a project:** create a Work fence, choose its position and icon size, and group related
+  fences as tabs.
+- **Keep files organized:** put desktop PDFs in a Docs fence and create a rule for future PDFs.
+- **Reuse your setup:** export the configuration, save a layout snapshot, or restore a previous
+  configuration.
+
+`pecofence-cli skill` supplies the usage guide and `pecofence-cli describe` supplies the command
+catalog and JSON Schemas. The agent can read both directly; to make the guide available in future
+sessions, save it as a skill using the [coding-agent instructions](#for-coding-agents).
+
+### Example: change appearance from PowerShell
+
+With PecoFence running and the CLI on PATH:
+
+```powershell
+pecofence-cli settings get
+pecofence-cli fence list
+pecofence-cli config export "$env:USERPROFILE\pecofence-before-ai.json"
+pecofence-cli settings set theme dark
+pecofence-cli fence set --all opacity clear
+pecofence-cli settings get theme
+pecofence-cli fence list
+```
+
+The export includes settings, rules and layouts. Choose a fresh export filename if you want to
+keep an earlier backup; export overwrites the destination. Layout snapshots cover fence layouts,
+not global settings or rules. Neither a configuration export nor a layout snapshot backs up file
+contents or undoes real file moves through folder portals.
+
 ## Install and PATH
 
 - **Microsoft Store build**: `pecofence-cli` is on `PATH` through an App Execution Alias, so any
@@ -61,8 +108,9 @@ unique id prefix, or a name (only while that name is unique).
 | `fence detach <FENCE>` | `pecofence-cli fence detach Games` |
 | `fence hide-all` / `fence show-all` | `pecofence-cli fence hide-all` |
 | `fence open-options <FENCE>` | `pecofence-cli fence open-options Work` |
-| `item list [--fence <FENCE>]` | `pecofence-cli item list --fence inbox` |
+| `item list [--fence <FENCE>] [--kind <KIND>] [--ext <EXT>]` | `pecofence-cli item list --fence inbox --kind documents` |
 | `item move (<ITEM>... \| --glob <PATTERN> [--from <FENCE>]) --to <FENCE>` | `pecofence-cli item move --glob "*.pdf" --from inbox --to Docs` |
+| `item rename <ITEM> <NAME> [--keep-ext false]` | `pecofence-cli item rename "C:\Users\me\Desktop\IMG_2031.pdf" "2026-09 electricity bill"` |
 | `settings get [PATH]` | `pecofence-cli settings get peek.enabled` |
 | `settings set <PATH> <VALUE> [--string]` | `pecofence-cli settings set peek.enabled false` |
 | `settings open-ui` | `pecofence-cli settings open-ui` |
@@ -72,16 +120,20 @@ unique id prefix, or a name (only while that name is unique).
 | `rule enable <RULE>` / `rule disable <RULE>` | `pecofence-cli rule disable 0` |
 | `rule move <RULE> --to <INDEX>` | `pecofence-cli rule move PDFs --to 0` |
 | `rule import <FILE\|->` | `pecofence-cli rule import rules.json` |
-| `rule apply` | `pecofence-cli rule apply` |
+| `rule apply [--dry-run]` | `pecofence-cli rule apply --dry-run` |
 | `snapshot list` | `pecofence-cli snapshot list` |
 | `snapshot save <NAME>` | `pecofence-cli snapshot save before-cleanup` |
 | `snapshot restore <ID>` | `pecofence-cli snapshot restore 3f9c2a1e` |
 | `snapshot delete <ID>` | `pecofence-cli snapshot delete 3f9c2a1e` |
 | `config export <FILE>` | `pecofence-cli config export C:\Users\me\Desktop\pecofence.json` (absolute path, overwrites) |
 | `config import <FILE>` | `pecofence-cli config import C:\Users\me\Desktop\pecofence.json` (replaces everything; layout snapshotted first) |
+| `config check [FILE]` | `pecofence-cli config check C:\Users\me\Desktop\pecofence.json` (offline; defaults to the config in use) |
 | `backup list` | `pecofence-cli backup list` (daily backups beside config.json, newest first) |
 | `backup restore <FILE>` | `pecofence-cli backup restore "C:\Users\me\AppData\Roaming\PecoFence\backups\2026-09-23.json"` (a path from `backup list`) |
 | `peek start` / `peek end` | `pecofence-cli peek start` |
+| `watch [--fence <FENCE>] [--events <E,...>] [--once] [--heartbeat]` | `pecofence-cli watch --fence inbox --once` |
+| `log [-f] [-n <N>]` | `pecofence-cli log -n 100` (text, not JSON) |
+| `paths` | `pecofence-cli paths` (config, backups, log, crash dumps; offline) |
 
 `fence create --portal <DIR>` shows a folder as a fence; `--title` is optional there and defaults to
 the folder name.
@@ -93,6 +145,27 @@ theme/tint/white/black/`"#RRGGBB"`, `titleSize` small/normal/large, `layout` ico
 `sort` manual/name/type/date/size/openCount, `reverse`, `groupByDate`, `labelLines`,
 `portalNavigate`, `portalTitleIcon`. `--all` applies the option to every fence one call at a time and
 skips tabs hosted inside another fence (their options belong to the host).
+
+`item list` describes every item with `kind` (`folders`, `programs`, `installers`, `shortcuts`,
+`documents`, `images`, `music`, `video`, `archives`, `namespace`, `other`; the same tests the `type`
+rule condition uses), `ext`, `size`, `modified`, `created` (Unix seconds), `openCount`, `lastOpened`,
+`shortcutTarget` (resolved `.lnk` path or `.url` URL), `fileName`, `assignedBy` and `rule` (the rule
+that filed it). `--kind` and `--ext` filter the list on the client. Most of a messy desktop can be
+sorted from these fields alone; open a file only when the name and kind do not say enough.
+
+`item rename <ITEM> <NAME>` renames the file on disk inside its folder (the same operation as F2 in
+a fence; works for portal items too). The current extension is kept unless `NAME` already ends with
+it; `--keep-ext false` renames verbatim; folders are always renamed verbatim. A name that exists
+already, or one with `\ / : * ? " < > |`, is `invalid_value`; shell namespace items (This PC,
+Recycle Bin) are `unsupported`.
+
+`rule apply --dry-run` returns `{"dryRun": true, "changed": false, "moved": n, "moves": [...]}`
+where each move has `item`, `name`, `path`, `from`/`fromTitle`, `to`/`toTitle`, `rule`/`ruleName`
+(`null` = the default target). Nothing moves and no snapshot is taken. Without `--dry-run` the same
+`moves` list describes what happened.
+
+`rule add --index 0` inserts the new rule ahead of existing rules in the same priority class, so a
+PDF rule can take precedence over an existing Documents rule. Without `--index`, the rule is appended.
 
 `rule add` conditions (all must match): `--ext pdf,docx`, `--type programs,folders,documents,images,
 music,video,archives,shortcuts,installers`, `--name-contains`, `--name-not-contains`, `--starts-with`,
@@ -131,14 +204,57 @@ reason `item move --glob` without `--from` never touches items shown by a portal
 a rule, always pair `--glob` with `--from`, and check `fence list` for `"kind": "portal"` before
 choosing `--to`.
 
+## Watching for changes
+
+`pecofence-cli watch` turns the connection into an event stream and prints one JSON document per
+event until you stop it (Ctrl+C) or the app exits (then it fails with exit 1 so a script loop can
+restart it). Events: `item.added`, `item.removed`, `item.moved` (with `from`/`fromTitle`),
+`fence.created`, `fence.deleted`, `fence.changed` (with `changed`: the `FenceDto` fields that
+differ, e.g. `title`, `rect`, `rolledUp`). Each carries the current `item` (an `ItemDto`) or
+`fence` (a `FenceDto`), a per-stream `seq` and `ts`. `--fence <FENCE>` limits item events to items
+entering or leaving that fence and fence events to that fence; `--events a,b` limits the kinds. A
+`heartbeat` every 30 s keeps a quiet stream alive and is hidden unless `--heartbeat`. At most four
+streams are open at a time (`limit_reached`). `describe --schema EventDto` has the exact shape.
+
+The intended use is not a long-running agent but a trigger: `watch --fence inbox --once` blocks
+until one item lands on the desktop and exits 0 with that event as its output; a script or a
+scheduled task then runs one batch (`item list`, decide, `item move` / `item rename`) and goes back
+to waiting. Events are produced by diffing the app's state every 500 ms (and right after each CLI
+mutation), so an item that is renamed on disk shows up as `item.removed` + `item.added`.
+
+## Offline commands
+
+Everything talks to the running app except `describe`, `skill`, `paths`, `log` and `config check`:
+
+- `paths` prints where the files are: `config` (from the running instance when one answers,
+  `"source": "status"`; else the default `%APPDATA%\PecoFence\config.json`, `"source": "default"`),
+  `configDir`, `backupsDir`, `log` (`%LOCALAPPDATA%\PecoFence\pecofence[.<instance>].log`),
+  `logDir`, and the `crashDumps` (`crash-*.dmp`) found there.
+- `log [-n N] [-f]` prints the last `N` lines of that log as plain text (the one command whose
+  stdout is not JSON) and, with `-f`, follows it like `tail -f` until Ctrl+C. A restarted app
+  truncates the file; `-f` starts over from the top when that happens.
+- `config check [FILE]` parses and validates a `config.json` or `config export` file exactly like
+  the app would (exit 1 with `validation_failed` when the app would refuse it), then lints what
+  loads but will not work: rules whose target fence exists in no layout, rules targeting a folder
+  portal (error), rules without conditions, portals whose folder is missing, tabs hosted by a
+  missing fence, memberships of unknown items, more than 20 snapshots, a missing or foreign
+  `$schema`. Output: `{"ok", "path", "schema", "summary": {...}, "problems": [{"level":
+  "error"|"warning", "subject", "message"}]}`; exit 1 when any problem is an error. Run it before
+  `config import`.
+
+`config.json` (and every export) starts with `"$schema": "https://pecofence.jiang.jp/schema/config.json"`,
+the JSON Schema that `describe --schema Config` prints, so editors validate and complete the file.
+The app ignores the field's value.
+
 ## Output contract
 
 - Success: the result on stdout. Read-only commands return the object or array itself; every mutating
   command returns `{"changed": bool, ...}` plus the affected object (`fence`, `rule`, `settings`,
   ...). `changed: false` means the state was already as requested; it is not an error.
 - `snapshotId` is present only on the commands that take an automatic layout snapshot first:
-  `fence delete` when the fence has items, `rule apply` when it moves something, and
-  `snapshot restore`. Snapshots record fence layouts (fences, geometry, item membership) only, never
+  `fence delete` when the fence has items, `rule apply` when it moves something,
+  `item move` when 20 or more desktop items change fence (not for file moves through a portal),
+  and `snapshot restore`. Snapshots record fence layouts (fences, geometry, item membership) only, never
   settings or rules, so `settings set` and `rule import` do not return one. Automatic snapshots never
   evict user snapshots: at the 20-snapshot limit none is taken and the result carries a `warning`.
 - Batches (`fence set --all`, `fence roll --all`, `fence unroll --all`) return
@@ -180,7 +296,7 @@ choosing `--to`.
 | `invalid_value` | A parameter is out of range or not one of `details.allowed` (also: off-screen or oversized rects, names over 256 characters, a non-UTF-8 rules file). |
 | `invalid_path` | The `settings` path does not exist in Settings. |
 | `validation_failed` | The patched object did not deserialize; `details.expected` says what was expected. |
-| `limit_reached` | The maximum number of fences or snapshots already exists. |
+| `limit_reached` | The maximum number of fences or snapshots already exists, or four `watch` streams are already open. |
 | `unsupported` | The operation does not apply to this target (inbox fence, hosted tab, ...). |
 | `internal` | Unexpected failure in the app or in the transport. |
 
@@ -222,12 +338,20 @@ instance and needs neither.
   condition.
 - Changing `autostart` on the Microsoft Store build opens Windows' Startup Apps settings page instead
   of flipping the value silently (packaged apps cannot register themselves).
-- The CLI does not work while the app is not running; there is no offline mode.
+- Only `describe`, `skill`, `paths`, `log` and `config check` work while the app is not running;
+  the CLI never edits `config.json` itself.
 
 ## For coding agents
 
-`pecofence-cli skill` prints a SKILL.md written for Claude Code / Codex (when to use the tool, output
-contract, safety rules, recipes). Save it into your skills folder, e.g.
-`pecofence-cli skill > .claude/skills/pecofence-cli/SKILL.md`, and paste the short AGENTS.md snippet at
-its end into your project's `AGENTS.md`. `pecofence-cli describe` prints the machine-readable catalog
-the skill refers to.
+`pecofence-cli skill` prints a SKILL.md written for coding agents (when to use the tool, output
+contract, safety rules, recipes). Save it in your agent's skills folder. For example, from a
+project in PowerShell:
+
+```powershell
+New-Item -ItemType Directory -Force .claude/skills/pecofence-cli
+pecofence-cli skill | Set-Content -Encoding utf8 .claude/skills/pecofence-cli/SKILL.md
+```
+
+Use the skills location your agent supports; `.claude/skills/` is the Claude Code example. You can
+also copy the short AGENTS.md snippet at the end of the guide into your project's `AGENTS.md`.
+`pecofence-cli describe` prints the machine-readable catalog the guide refers to.

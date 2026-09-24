@@ -129,6 +129,9 @@ def main():
             raise SystemExit(f"Refusing to replace a directory without a generated index.html: {out}")
         shutil.rmtree(out)
     shutil.copytree(SITE / "assets", out / "assets")
+    # JSON Schemas referenced from config files (`$schema`); see docs/RELEASING.md.
+    if (SITE / "schema").is_dir():
+        shutil.copytree(SITE / "schema", out / "schema")
     for language in languages:
         hero = ROOT / "docs/assets" / f"hero-{language['code']}.png"
         if hero.exists():
