@@ -8,6 +8,10 @@ license.workspace = true
 serde = { workspace = true }
 serde_json = { workspace = true }
 uuid = { workspace = true }
+schemars = { workspace = true, optional = true }
+
+[features]
+schema = ["dep:schemars"]
 
 [lints]
 workspace = true

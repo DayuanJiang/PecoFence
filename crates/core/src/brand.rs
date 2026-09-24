@@ -29,15 +29,25 @@ pub fn var(name: &str) -> Result<String, VarError> {
 /// Hold both names so a renamed build and an older executable cannot concurrently
 /// manage the same desktop. Named test instances remain independent of the main app.
 pub fn instance_mutex_names(instance: Option<&str>) -> [String; 2] {
-    let suffix = instance
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(|value| format!(".{value}"))
-        .unwrap_or_default();
+    let suffix = instance_suffix(instance);
     [
         format!(r"Local\PecoFence.SingleInstance{suffix}"),
         format!(r"Local\openFence.SingleInstance{suffix}"),
     ]
+}
+
+/// Named pipe the CLI (`pecofence-cli`) talks to; one per instance, like the mutex.
+pub fn ipc_pipe_name(instance: Option<&str>) -> String {
+    format!(r"\\.\pipe\PecoFence{}", instance_suffix(instance))
+}
+
+/// `.name` for a named (test) instance, empty for the main one; whitespace-only = main.
+fn instance_suffix(instance: Option<&str>) -> String {
+    instance
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| format!(".{value}"))
+        .unwrap_or_default()
 }
 
 #[cfg(test)]
@@ -76,5 +86,12 @@ mod tests {
         assert_eq!(named[0], r"Local\PecoFence.SingleInstance.test");
         assert_eq!(named[1], r"Local\openFence.SingleInstance.test");
         assert_ne!(main, named);
+    }
+
+    #[test]
+    fn pipe_name_follows_the_instance_suffix() {
+        assert_eq!(ipc_pipe_name(None), r"\\.\pipe\PecoFence");
+        assert_eq!(ipc_pipe_name(Some(" ")), r"\\.\pipe\PecoFence");
+        assert_eq!(ipc_pipe_name(Some(" test ")), r"\\.\pipe\PecoFence.test");
     }
 }

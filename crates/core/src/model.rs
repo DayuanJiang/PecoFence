@@ -11,6 +11,7 @@ pub type ItemId = Uuid;
 pub type RuleId = Uuid;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct Config {
     pub schema_version: u32,
@@ -43,6 +44,7 @@ impl Default for Config {
 
 /// A named copy of every layout (fence geometry, membership, view flags) taken at `ts`.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct Snapshot {
     pub id: Uuid,
@@ -54,6 +56,7 @@ pub struct Snapshot {
 pub const MAX_SNAPSHOTS: usize = 20;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct Settings {
     #[serde(default = "crate::i18n::Language::legacy_default")]
@@ -86,6 +89,7 @@ pub struct Settings {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct PeekSettings {
     pub enabled: bool,
@@ -108,6 +112,7 @@ impl Default for PeekSettings {
 /// Win+Shift/Ctrl+Space) for the input-language switcher whenever more than one keyboard
 /// layout is installed, so Ctrl+Alt+Space is the default and the others are offered.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub enum PeekHotkey {
     WinSpace,
@@ -141,6 +146,7 @@ impl Default for Settings {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub enum Backdrop {
     /// One material for all fences. Older configurations and snapshots still load.
@@ -149,6 +155,7 @@ pub enum Backdrop {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub enum ThemeSetting {
     FollowWindowsMode,
@@ -158,6 +165,7 @@ pub enum ThemeSetting {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub enum ThemeStyle {
     #[default]
@@ -166,6 +174,7 @@ pub enum ThemeStyle {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub enum ShowDesktopSetting {
     KeepVisible,
@@ -173,6 +182,7 @@ pub enum ShowDesktopSetting {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub enum ZOrderSetting {
     InsertAboveHost,
@@ -180,6 +190,7 @@ pub enum ZOrderSetting {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct QuickHideSettings {
     pub enabled: bool,
@@ -207,6 +218,7 @@ impl Default for QuickHideSettings {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub enum QuickHideScope {
     All,
@@ -215,6 +227,7 @@ pub enum QuickHideScope {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct RollUpSettings {
     pub double_click_title: bool,
@@ -250,6 +263,7 @@ impl Default for RollUpSettings {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct SnappingSettings {
     pub enabled: bool,
@@ -271,6 +285,7 @@ impl Default for SnappingSettings {
 
 /// Identifies a monitor across sessions.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct MonitorIdentity {
     /// Device path (`GSM1388#4&125707d6&0&UID8388688`), falling back to `\\.\DISPLAYn`.
@@ -281,6 +296,7 @@ pub struct MonitorIdentity {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct Layout {
     /// Sorted monitor identities; a layout applies when the current set matches by device path.
@@ -289,6 +305,7 @@ pub struct Layout {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub enum FenceKind {
     Virtual,
@@ -298,6 +315,7 @@ pub enum FenceKind {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase", tag = "kind")]
 pub enum ItemSourceSpec {
     Desktop,
@@ -311,6 +329,7 @@ pub enum ItemSourceSpec {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub enum Anchor {
     LeftTop,
@@ -326,6 +345,7 @@ pub enum Anchor {
 
 /// Fence geometry relative to a monitor's work area, in DIPs (plan §7.4).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct NormGeometry {
     pub monitor: String,
@@ -339,6 +359,7 @@ pub struct NormGeometry {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub enum SortMode {
     Manual,
@@ -352,6 +373,7 @@ pub enum SortMode {
 
 /// How a fence lays out its items (Fences 6 "view style").
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub enum ViewLayout {
     /// Icon grid with labels underneath.
@@ -364,6 +386,7 @@ pub enum ViewLayout {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct FenceView {
     pub icon_size: u32,
@@ -407,6 +430,7 @@ impl Default for FenceView {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct AppearanceOverride {
     /// Colour wash over the glass (Fences per-fence colour).
@@ -421,6 +445,7 @@ pub struct AppearanceOverride {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub enum TitleSize {
     Small,
@@ -431,6 +456,7 @@ pub enum TitleSize {
 
 /// Distance between icons in the grid (Fences "icon spacing").
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub enum Spacing {
     Compact,
@@ -441,6 +467,7 @@ pub enum Spacing {
 
 /// Global icon rendering tweaks (Fences "Icon Tint" / "Chameleon").
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct IconSettings {
     /// Colourise every icon toward this colour.
@@ -462,6 +489,7 @@ impl Default for IconSettings {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct Fence {
     pub id: FenceId,
@@ -531,6 +559,7 @@ impl Fence {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub enum AssignedBy {
     User,
@@ -539,6 +568,7 @@ pub enum AssignedBy {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct ItemRef {
     pub item_id: ItemId,
@@ -548,6 +578,7 @@ pub struct ItemRef {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub enum ItemKey {
     /// Lower-cased, normalized absolute path.
@@ -581,6 +612,7 @@ impl ItemKey {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub enum Origin {
     #[default]
@@ -590,6 +622,7 @@ pub enum Origin {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub enum IconKey {
     /// Icon shared by extension (documents, most files).
@@ -599,6 +632,7 @@ pub enum IconKey {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct Item {
     pub id: ItemId,
@@ -632,6 +666,7 @@ impl Item {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct Assignment {
     pub ts: i64,

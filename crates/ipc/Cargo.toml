@@ -1,0 +1,20 @@
+[package]
+name = "pecofence-ipc"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Wire protocol shared by PecoFence and pecofence-cli (named-pipe JSON requests)."
+
+[dependencies]
+pecofence-core = { path = "../core" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+schemars = { workspace = true, optional = true }
+
+[features]
+# JSON Schema export for `pecofence-cli describe`; the app never enables it.
+describe = ["dep:schemars", "pecofence-core/schema"]
+
+[lints]
+workspace = true
