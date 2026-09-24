@@ -5,13 +5,14 @@
 
 <p align="center">
   <strong>A free, open-source Stardock Fences alternative for Windows 11.</strong><br>
-  Make room for what matters. Organize files in glass panels, switch projects with tabs and bring your desktop into reach with one shortcut. Free and open source.
+  Make room for what matters. Organize files in glass panels, switch projects with tabs and bring your desktop into reach with one shortcut. Free and open source. Or just ask your AI agent to do it.
 </p>
 
 <p align="center">
   <a href="https://pecofence.jiang.jp/"><strong>Website</strong></a>
   &nbsp;·&nbsp; <a href="#get-pecofence"><strong>Get PecoFence →</strong></a>
   &nbsp;·&nbsp; <a href="#see-it-in-action">See it in action</a>
+  &nbsp;·&nbsp; <a href="#ask-your-ai-to-organize-it">AI agents</a>
   &nbsp;·&nbsp; <a href="docs/README.md">Documentation</a>
 </p>
 
@@ -69,11 +70,30 @@ Grab what you need, then press **Esc** to return.
 | **Space when you need it** | Roll a fence up to its title. Hover to expand. Lock a layout you like. |
 | **A way back** | Layout snapshots, daily backups, configuration import/export and display swapping. |
 | **A small footprint** | A native Rust application; the WebView2 settings panel loads on demand. |
+| **Works with your AI agent** | `pecofence-cli` speaks JSON, so Claude Code, Codex or Cursor can build fences, move icons and write rules for you. |
 
 Automatic organizing rules keep files in their original locations. File moves you
 initiate work like they do in Explorer.
 
 [Explore the complete feature list →](docs/FEATURES.md)
+
+## Ask your AI to organize it
+
+PecoFence ships `pecofence-cli`, a command line built for AI coding agents such as Claude Code, Codex and Cursor. Every command speaks JSON, reports whether anything actually changed and explains errors in a way an agent can act on. You describe the desktop you want; the agent runs the commands.
+
+> "Put all my PDFs into a Docs fence, keep it that way, and make the fences a bit more transparent."
+
+```
+pecofence-cli snapshot save before-cleanup
+pecofence-cli fence create --title Docs --rect 100,100,600,400
+pecofence-cli rule add --name PDFs --ext pdf --to Docs
+pecofence-cli rule apply
+pecofence-cli fence set --all opacity clear
+```
+
+Fences, icons, rules, settings, snapshots and configuration files are all reachable, and every step can be undone from a layout snapshot. To get your agent started, run `pecofence-cli skill` and save the output into its skills folder, or paste the three-line snippet it prints into your `AGENTS.md`. The Microsoft Store edition puts `pecofence-cli` on your PATH; the portable ZIP runs it from its own folder.
+
+[Command-line reference →](docs/CLI.md)
 
 ## Speaks your language
 

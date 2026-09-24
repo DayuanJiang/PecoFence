@@ -5,13 +5,14 @@
 
 <p align="center">
   <strong>Uma alternativa gratuita e de código aberto ao Stardock Fences para Windows 11.</strong><br>
-  Mais espaço para o que importa. Organize arquivos em painéis de vidro, troque de projeto com abas e acesse a área de trabalho com um atalho. Grátis e de código aberto para Windows 11.
+  Mais espaço para o que importa. Organize arquivos em painéis de vidro, troque de projeto com abas e acesse a área de trabalho com um atalho. Grátis e de código aberto para Windows 11. Ou simplesmente peça ao seu agente de IA.
 </p>
 
 <p align="center">
   <a href="https://pecofence.jiang.jp/pt-BR/"><strong>Site oficial</strong></a>
   &nbsp;·&nbsp; <a href="#baixe-o-pecofence"><strong>Baixe o PecoFence →</strong></a>
   &nbsp;·&nbsp; <a href="#veja-em-ação">Veja em ação</a>
+  &nbsp;·&nbsp; <a href="#peça-à-sua-ia-para-organizar">Agentes de IA</a>
   &nbsp;·&nbsp; <a href="../README.md">Documentação</a>
 </p>
 
@@ -70,11 +71,30 @@ Pegue o que precisa e pressione **Esc** para voltar.
 | **Espaço quando você precisa** | Recolha um grupo até o título. Passe o mouse para expandir. Bloqueie um layout que você gostou. |
 | **Um caminho de volta** | Instantâneos de layout, backups diários, importação e exportação da configuração e troca entre monitores. |
 | **Leve de verdade** | Um aplicativo nativo em Rust; o painel de configurações em WebView2 só carrega quando necessário. |
+| **Funciona com o seu agente de IA** | O `pecofence-cli` fala JSON, então Claude Code, Codex ou Cursor podem criar grupos, mover ícones e escrever regras por você. |
 
 As regras de organização automática mantêm os arquivos onde eles estão. As movimentações
 que você mesmo inicia funcionam como no Explorador de Arquivos.
 
 [Conheça a lista completa de recursos →](../FEATURES.md)
+
+## Peça à sua IA para organizar
+
+O PecoFence inclui o `pecofence-cli`, uma linha de comando feita para agentes de programação com IA como Claude Code, Codex e Cursor. Cada comando fala JSON, informa se algo realmente mudou e explica os erros de um jeito que o agente consegue resolver. Você descreve a área de trabalho que quer; o agente executa os comandos.
+
+> “Coloque todos os meus PDFs em um grupo Docs, mantenha assim e deixe os grupos um pouco mais transparentes.”
+
+```
+pecofence-cli snapshot save before-cleanup
+pecofence-cli fence create --title Docs --rect 100,100,600,400
+pecofence-cli rule add --name PDFs --ext pdf --to Docs
+pecofence-cli rule apply
+pecofence-cli fence set --all opacity clear
+```
+
+Grupos, ícones, regras, configurações, instantâneos e arquivos de configuração estão todos ao alcance, e cada passo pode ser desfeito a partir de um instantâneo de layout. Para colocar seu agente para trabalhar, execute `pecofence-cli skill` e salve a saída na pasta de skills dele, ou cole no seu `AGENTS.md` o trecho de três linhas que ele imprime. A edição da Microsoft Store coloca o `pecofence-cli` no seu PATH; o ZIP portátil o executa a partir da própria pasta.
+
+[Referência da linha de comando →](../CLI.md)
 
 ## Fala a sua língua
 

@@ -5,13 +5,14 @@
 
 <p align="center">
   <strong>Windows 11 向けの無料・オープンソースな Stardock Fences 代替アプリ。</strong><br>
-  ファイルに居場所を。デスクトップに余白を。ガラスのフェンス、プロジェクトのタブ、自動整理で、必要なものをいつも手元に。Windows 11 向けの無料・オープンソースアプリ。
+  ファイルに居場所を。デスクトップに余白を。ガラスのフェンス、プロジェクトのタブ、自動整理で、必要なものをいつも手元に。Windows 11 向けの無料・オープンソースアプリ。あるいは、AI エージェントに頼むだけ。
 </p>
 
 <p align="center">
   <a href="https://pecofence.jiang.jp/ja/"><strong>公式サイト</strong></a>
   &nbsp;·&nbsp; <a href="#はじめる"><strong>PecoFence をはじめる →</strong></a>
   &nbsp;·&nbsp; <a href="#実際の動きを見る">実際の動きを見る</a>
+  &nbsp;·&nbsp; <a href="#ai-に整理を任せる">AI エージェント</a>
   &nbsp;·&nbsp; <a href="../README.md">ドキュメント</a>
 </p>
 
@@ -69,11 +70,30 @@ https://github.com/user-attachments/assets/6320cf28-a791-4720-9659-b4575df021a0
 | **必要なときだけ広げる** | フェンスをタイトルだけに折りたたみ、ホバーで展開。気に入った配置は位置とサイズを固定できます。 |
 | **いつでも元に戻せる** | レイアウトのスナップショット、毎日の自動バックアップ、設定のエクスポート・インポート、ディスプレイ間のフェンス交換。 |
 | **軽く、小さく** | Rust で書かれたネイティブアプリ。WebView2 の設定パネルは必要なときだけ読み込まれます。 |
+| **AI エージェントと一緒に** | `pecofence-cli` は JSON で応答するので、Claude Code、Codex、Cursor がフェンスの作成、アイコンの移動、ルールの作成を代わりに行えます。 |
 
 自動整理のルールは、ファイルを元の場所から動かしません。
 自分で行った移動などの操作は、エクスプローラーと同じように実際のファイルに反映されます。
 
 [機能一覧をすべて見る →](../FEATURES.md)
+
+## AI に整理を任せる
+
+PecoFence には `pecofence-cli` が付属しています。Claude Code、Codex、Cursor などの AI コーディングエージェント向けに作られたコマンドラインです。すべてのコマンドが JSON で応答し、実際に何かが変わったかどうかを報告し、エージェントが対処できる形でエラーを説明します。あなたは望むデスクトップを言葉にするだけ。コマンドはエージェントが実行します。
+
+> 「PDF を全部 Docs というフェンスに入れて、今後もそのままにして、フェンスをもう少し透明にして。」
+
+```
+pecofence-cli snapshot save before-cleanup
+pecofence-cli fence create --title Docs --rect 100,100,600,400
+pecofence-cli rule add --name PDFs --ext pdf --to Docs
+pecofence-cli rule apply
+pecofence-cli fence set --all opacity clear
+```
+
+フェンス、アイコン、ルール、設定、スナップショット、設定ファイルのすべてを操作でき、どの手順もレイアウトのスナップショットから元に戻せます。エージェントに使い方を教えるには、`pecofence-cli skill` を実行して出力をエージェントの skills フォルダーに保存するか、表示される 3 行のスニペットを `AGENTS.md` に貼り付けてください。Microsoft Store 版は `pecofence-cli` を PATH に追加します。ポータブル版は自分のフォルダーから実行します。
+
+[コマンドラインリファレンス →](../CLI.md)
 
 ## あなたの言語で
 

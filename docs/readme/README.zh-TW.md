@@ -5,13 +5,14 @@
 
 <p align="center">
   <strong>免費、開源的 Windows 11 桌面整理工具，Stardock Fences 的另一種選擇。</strong><br>
-  把桌面留給桌布，把檔案放在手邊。玻璃圍欄、專案分頁、自動整理，一個快速鍵隨時取用。免費開源，適用於 Windows 11。
+  把桌面留給桌布，把檔案放在手邊。玻璃圍欄、專案分頁、自動整理，一個快速鍵隨時取用。免費開源，適用於 Windows 11。或者，直接交給你的 AI 助理去做。
 </p>
 
 <p align="center">
   <a href="https://pecofence.jiang.jp/zh-TW/"><strong>官方網站</strong></a>
   &nbsp;·&nbsp; <a href="#開始使用"><strong>下載使用 →</strong></a>
   &nbsp;·&nbsp; <a href="#看看它怎麼用">看看實際操作</a>
+  &nbsp;·&nbsp; <a href="#讓-ai-幫你整理">AI 助理</a>
   &nbsp;·&nbsp; <a href="../README.md">專案文件</a>
 </p>
 
@@ -69,11 +70,30 @@ https://github.com/user-attachments/assets/6320cf28-a791-4720-9659-b4575df021a0
 | **要用時展開，不用時收合** | 把圍欄收合成一條標題列，游標停留就展開；也可以鎖定已經擺好的位置與大小。 |
 | **喜歡的配置留得住** | 儲存配置快照、每日自動備份、匯入匯出設定、交換兩個顯示器上的圍欄。 |
 | **輕巧地待在桌面上** | 以 Rust 撰寫的原生應用程式，WebView2 設定面板需要時才載入。 |
+| **和你的 AI 助理搭配** | `pecofence-cli` 以 JSON 溝通，Claude Code、Codex 或 Cursor 都能替你建立圍欄、移動圖示、撰寫規則。 |
 
 自動整理只改變檔案所屬的圍欄，檔案原本的位置不會變動。
 你自己發起的移動、重新命名和刪除，則和檔案總管一樣直接作用在真實檔案上。
 
 [查看完整功能清單 →](../FEATURES.md)
+
+## 讓 AI 幫你整理
+
+PecoFence 附帶 `pecofence-cli`，這是專為 Claude Code、Codex、Cursor 等 AI 程式開發助理打造的命令列工具。每個指令都以 JSON 溝通，會回報是否真的改動了什麼，並以助理能據以處理的方式說明錯誤。你描述想要的桌面，指令交給助理執行。
+
+> 「把我所有的 PDF 放進一個叫 Docs 的圍欄，之後也一直保持，再把圍欄調得更透明一點。」
+
+```
+pecofence-cli snapshot save before-cleanup
+pecofence-cli fence create --title Docs --rect 100,100,600,400
+pecofence-cli rule add --name PDFs --ext pdf --to Docs
+pecofence-cli rule apply
+pecofence-cli fence set --all opacity clear
+```
+
+圍欄、圖示、規則、設定、快照和設定檔都能操作，每一步都可以透過配置快照復原。要讓助理上手，執行 `pecofence-cli skill`，把輸出存進它的 skills 資料夾；或者把它印出的三行片段貼進你的 `AGENTS.md`。Microsoft Store 版會把 `pecofence-cli` 加入 PATH；免安裝版則直接在自己的資料夾中執行。
+
+[命令列參考 →](../CLI.md)
 
 ## 用你熟悉的語言
 

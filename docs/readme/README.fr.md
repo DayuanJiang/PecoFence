@@ -5,13 +5,14 @@
 
 <p align="center">
   <strong>Une alternative libre et gratuite à Stardock Fences pour Windows 11.</strong><br>
-  Faites place à l’essentiel. Rangez vos fichiers dans des panneaux de verre, passez d’un projet à l’autre par onglets et retrouvez votre bureau d’un raccourci. Gratuit et open source pour Windows 11.
+  Faites place à l’essentiel. Rangez vos fichiers dans des panneaux de verre, passez d’un projet à l’autre par onglets et retrouvez votre bureau d’un raccourci. Gratuit et open source pour Windows 11. Ou demandez simplement à votre agent IA de le faire.
 </p>
 
 <p align="center">
   <a href="https://pecofence.jiang.jp/fr/"><strong>Site web</strong></a>
   &nbsp;·&nbsp; <a href="#télécharger-pecofence"><strong>Télécharger PecoFence →</strong></a>
   &nbsp;·&nbsp; <a href="#voyez-le-en-action">Voyez-le en action</a>
+  &nbsp;·&nbsp; <a href="#demandez-à-votre-ia-de-ranger">Agents IA</a>
   &nbsp;·&nbsp; <a href="../README.md">Documentation</a>
 </p>
 
@@ -70,11 +71,30 @@ en cours. Prenez ce qu’il vous faut, puis appuyez sur **Échap** pour y reveni
 | **De la place quand il en faut** | Repliez un groupe sur son titre. Survolez-le pour le développer. Verrouillez une disposition qui vous convient. |
 | **Un retour toujours possible** | Instantanés de disposition, sauvegardes quotidiennes, import/export de la configuration et échange entre écrans. |
 | **Une empreinte légère** | Une application native en Rust ; le panneau Paramètres en WebView2 se charge à la demande. |
+| **Compatible avec votre agent IA** | `pecofence-cli` parle JSON : Claude Code, Codex ou Cursor peuvent créer des groupes, déplacer des icônes et écrire des règles pour vous. |
 
 Les règles de classement automatique laissent les fichiers à leur emplacement d’origine.
 Les déplacements que vous lancez vous-même se comportent comme dans l’Explorateur.
 
 [Découvrir la liste complète des fonctionnalités →](../FEATURES.md)
+
+## Demandez à votre IA de ranger
+
+PecoFence est livré avec `pecofence-cli`, une ligne de commande conçue pour les agents de codage IA comme Claude Code, Codex et Cursor. Chaque commande parle JSON, indique si quelque chose a réellement changé et explique les erreurs d’une façon exploitable par un agent. Vous décrivez le Bureau que vous voulez ; l’agent exécute les commandes.
+
+> « Mets tous mes PDF dans un groupe Docs, fais en sorte que ça le reste, et rends les groupes un peu plus transparents. »
+
+```
+pecofence-cli snapshot save before-cleanup
+pecofence-cli fence create --title Docs --rect 100,100,600,400
+pecofence-cli rule add --name PDFs --ext pdf --to Docs
+pecofence-cli rule apply
+pecofence-cli fence set --all opacity clear
+```
+
+Groupes, icônes, règles, paramètres, instantanés et fichiers de configuration sont tous accessibles, et chaque étape peut être annulée depuis un instantané de disposition. Pour mettre votre agent en route, exécutez `pecofence-cli skill` et enregistrez la sortie dans son dossier de skills, ou collez l’extrait de trois lignes qu’il affiche dans votre `AGENTS.md`. La version Microsoft Store place `pecofence-cli` dans votre PATH ; le ZIP portable l’exécute depuis son propre dossier.
+
+[Référence de la ligne de commande →](../CLI.md)
 
 ## PecoFence parle votre langue
 

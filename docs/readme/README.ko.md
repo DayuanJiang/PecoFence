@@ -5,13 +5,14 @@
 
 <p align="center">
   <strong>Windows 11을 위한 무료 오픈 소스 Stardock Fences 대안.</strong><br>
-  바탕 화면은 여유롭게, 파일은 가까이에. 유리 패널과 프로젝트 탭, 자동 정리로 파일을 관리하고 단축키 하나로 불러오세요. Windows 11용 무료 오픈 소스 앱입니다.
+  바탕 화면은 여유롭게, 파일은 가까이에. 유리 패널과 프로젝트 탭, 자동 정리로 파일을 관리하고 단축키 하나로 불러오세요. Windows 11용 무료 오픈 소스 앱입니다. 아니면 AI 에이전트에게 맡기기만 하면 됩니다.
 </p>
 
 <p align="center">
   <a href="https://pecofence.jiang.jp/ko/"><strong>공식 웹사이트</strong></a>
   &nbsp;·&nbsp; <a href="#pecofence-시작하기"><strong>PecoFence 시작하기 →</strong></a>
   &nbsp;·&nbsp; <a href="#실제-동작-보기">실제 동작 보기</a>
+  &nbsp;·&nbsp; <a href="#ai에게-정리를-맡기세요">AI 에이전트</a>
   &nbsp;·&nbsp; <a href="../README.md">문서</a>
 </p>
 
@@ -70,11 +71,30 @@ https://github.com/user-attachments/assets/6320cf28-a791-4720-9659-b4575df021a0
 | **필요할 때는 공간을** | 펜스를 제목만 남기고 접어 두고, 마우스를 올리면 펼치세요. 마음에 드는 배치는 잠가 둘 수 있습니다. |
 | **되돌아갈 길** | 배치 스냅샷, 매일 자동 백업, 설정 내보내기 / 가져오기, 디스플레이 간 펜스 교환. |
 | **가벼운 존재감** | Rust로 만든 네이티브 앱. WebView2 설정 패널은 필요할 때만 로드됩니다. |
+| **AI 에이전트와 함께** | `pecofence-cli`는 JSON으로 대화하므로 Claude Code, Codex, Cursor가 펜스를 만들고 아이콘을 옮기고 규칙을 대신 작성할 수 있습니다. |
 
 자동 정리 규칙은 파일을 원래 위치에 그대로 둡니다. 직접 파일을 옮길 때는
 파일 탐색기에서처럼 실제 파일이 이동합니다.
 
 [전체 기능 목록 보기 →](../FEATURES.md)
+
+## AI에게 정리를 맡기세요
+
+PecoFence에는 Claude Code, Codex, Cursor 같은 AI 코딩 에이전트를 위해 만든 명령줄 도구 `pecofence-cli`가 함께 들어 있습니다. 모든 명령이 JSON으로 대화하고, 실제로 무엇이 바뀌었는지 알려 주며, 에이전트가 대응할 수 있는 방식으로 오류를 설명합니다. 원하는 바탕 화면을 말로 설명하면 에이전트가 명령을 실행합니다.
+
+> "PDF를 모두 Docs 펜스에 넣고 계속 그렇게 유지해 줘. 펜스도 조금 더 투명하게 해 줘."
+
+```
+pecofence-cli snapshot save before-cleanup
+pecofence-cli fence create --title Docs --rect 100,100,600,400
+pecofence-cli rule add --name PDFs --ext pdf --to Docs
+pecofence-cli rule apply
+pecofence-cli fence set --all opacity clear
+```
+
+펜스, 아이콘, 규칙, 설정, 스냅샷, 설정 파일까지 모두 다룰 수 있고, 모든 단계는 배치 스냅샷으로 되돌릴 수 있습니다. 에이전트에게 사용법을 알려 주려면 `pecofence-cli skill`을 실행해 출력 내용을 에이전트의 스킬 폴더에 저장하거나, 함께 출력되는 세 줄짜리 스니펫을 `AGENTS.md`에 붙여 넣으세요. Microsoft Store 버전은 `pecofence-cli`를 PATH에 등록하고, 포터블 ZIP은 자체 폴더에서 실행합니다.
+
+[명령줄 참조 →](../CLI.md)
 
 ## 내 언어로
 

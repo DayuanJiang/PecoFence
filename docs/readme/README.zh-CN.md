@@ -5,13 +5,14 @@
 
 <p align="center">
   <strong>免费、开源的 Windows 11 桌面整理工具，Stardock Fences 的另一种选择。</strong><br>
-  把桌面还给壁纸，把文件放在手边。玻璃栅栏、项目标签页、自动整理，一个快捷键随时取用。免费开源，适用于 Windows 11。
+  把桌面还给壁纸，把文件放在手边。玻璃栅栏、项目标签页、自动整理，一个快捷键随时取用。免费开源，适用于 Windows 11。或者，直接交给你的 AI 助手去做。
 </p>
 
 <p align="center">
   <a href="https://pecofence.jiang.jp/zh-CN/"><strong>官网</strong></a>
   &nbsp;·&nbsp; <a href="#开始使用"><strong>下载使用 →</strong></a>
   &nbsp;·&nbsp; <a href="#看看它怎么用">看看实际操作</a>
+  &nbsp;·&nbsp; <a href="#让-ai-帮你整理">AI 助手</a>
   &nbsp;·&nbsp; <a href="../README.md">项目文档</a>
 </p>
 
@@ -69,11 +70,30 @@ https://github.com/user-attachments/assets/6320cf28-a791-4720-9659-b4575df021a0
 | **用时展开，闲时收好** | 把栅栏卷成标题条，鼠标悬停即可展开；也可以锁定已经摆好的位置。 |
 | **喜欢的布局，留得住** | 保存布局快照、每日自动备份、导入导出配置、交换两个显示器上的栅栏。 |
 | **轻巧地待在桌面上** | Rust 编写的原生应用，WebView2 设置面板按需加载。 |
+| **和你的 AI 助手搭档** | `pecofence-cli` 以 JSON 交流，Claude Code、Codex 或 Cursor 可以替你创建栅栏、移动图标、编写规则。 |
 
 自动整理只改变文件所属的栅栏，保留文件原来的位置。
 你主动发起的移动、重命名和删除，则像资源管理器一样操作真实文件。
 
 [查看完整功能清单 →](../FEATURES.md)
+
+## 让 AI 帮你整理
+
+PecoFence 附带 `pecofence-cli`，一个专为 Claude Code、Codex、Cursor 等 AI 编程助手打造的命令行工具。每条命令都以 JSON 交流，会报告是否真的改动了什么，并用助手能够据此行动的方式说明错误。你描述想要的桌面，命令交给助手来执行。
+
+> “把我所有的 PDF 放进一个叫 Docs 的栅栏，以后也保持这样，再把栅栏调得更透明一点。”
+
+```
+pecofence-cli snapshot save before-cleanup
+pecofence-cli fence create --title Docs --rect 100,100,600,400
+pecofence-cli rule add --name PDFs --ext pdf --to Docs
+pecofence-cli rule apply
+pecofence-cli fence set --all opacity clear
+```
+
+栅栏、图标、规则、设置、快照和配置文件都可以操作，每一步都能通过布局快照撤销。要让助手上手，运行 `pecofence-cli skill`，把输出保存到它的 skills 文件夹；或者把它打印出的三行片段粘贴进你的 `AGENTS.md`。Microsoft Store 版会把 `pecofence-cli` 加入 PATH；便携版则直接从自己的文件夹运行。
+
+[命令行参考 →](../CLI.md)
 
 ## 用你熟悉的语言
 

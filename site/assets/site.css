@@ -1711,3 +1711,178 @@ h2 {
         transition: none !important
     }
 }
+
+/* AI agents: copy beside a terminal transcript */
+.agents {
+    display: grid;
+    grid-template-columns: .9fr 1.1fr;
+    align-items: center;
+    gap: 90px
+}
+
+.agents-copy {
+    max-width: 460px
+}
+
+.agents-copy h2 {
+    font-size: clamp(29px, 3vw, 41px)
+}
+
+.agents-copy>p {
+    margin: 23px 0 22px;
+    color: var(--ink-soft);
+    font-size: 14px;
+    line-height: 1.85
+}
+
+.agents-points {
+    margin: 0 0 26px;
+    padding: 0;
+    list-style: none;
+    display: grid;
+    gap: 14px
+}
+
+.agents-points li {
+    position: relative;
+    padding-left: 22px;
+    color: var(--ink-soft);
+    font-size: 14px;
+    line-height: 1.75
+}
+
+.agents-points li::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: .62em;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--accent)
+}
+
+.agents-points strong {
+    color: var(--ink);
+    font-weight: 600
+}
+
+.agents-points code {
+    font: 500 12.5px/1 "Cascadia Code", Consolas, monospace;
+    padding: 2px 6px;
+    border-radius: 6px;
+    background: #eef1f8
+}
+
+.terminal {
+    margin: 0;
+    overflow: hidden;
+    border-radius: 14px;
+    background: #0b172d;
+    color: #d7e0f2;
+    box-shadow: 0 22px 44px -24px #16295165
+}
+
+.terminal-bar {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 12px 16px;
+    background: #101f3a
+}
+
+.terminal-bar span {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #2c3d5f
+}
+
+.terminal-bar em {
+    margin-left: auto;
+    color: #6f82a8;
+    font: 500 11px/1 "Cascadia Code", Consolas, monospace;
+    letter-spacing: .08em
+}
+
+.terminal-body {
+    padding: 22px 24px 26px;
+    font: 400 13px/1.7 "Cascadia Code", Consolas, monospace
+}
+
+.terminal-turn {
+    margin: 0 0 12px;
+    font: 400 14px/1.7 var(--font-display);
+    color: #eef2fb
+}
+
+.terminal-turn-agent {
+    color: #aebbd6
+}
+
+.terminal-who {
+    display: inline-block;
+    min-width: 58px;
+    margin-right: 10px;
+    padding: 1px 8px;
+    border-radius: 999px;
+    background: #1c2d4d;
+    color: #9db4e6;
+    font: 600 11px/1.7 var(--font-display);
+    letter-spacing: .04em;
+    text-align: center;
+    vertical-align: 1px
+}
+
+.terminal-body pre {
+    margin: 16px 0 0;
+    padding-top: 16px;
+    border-top: 1px solid #1c2d4d;
+    overflow-x: auto;
+    white-space: pre
+}
+
+.terminal-body code {
+    display: block;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    overflow-wrap: normal
+}
+
+.terminal-cmd {
+    color: #d7e0f2
+}
+
+.terminal-out {
+    color: #7fc6a6
+}
+
+@media(max-width:1100px) {
+    .agents {
+        gap: 50px
+    }
+}
+
+@media(max-width:840px) {
+    .agents {
+        grid-template-columns: 1fr;
+        gap: 30px
+    }
+
+    .agents-copy {
+        max-width: none
+    }
+
+    .agents-copy h2 {
+        font-size: 30px
+    }
+
+    .terminal-body {
+        padding: 18px 18px 22px;
+        font-size: 12px
+    }
+}
