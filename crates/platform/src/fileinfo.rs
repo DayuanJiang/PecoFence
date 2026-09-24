@@ -128,6 +128,18 @@ pub fn local_civil_date(unix: i64) -> Option<(i32, u8, u8)> {
     Some((i32::from(st.wYear), st.wMonth as u8, st.wDay as u8))
 }
 
+/// Unix seconds → `yyyy-mm-dd HH:MM:SS` in the local time zone (sortable, locale-independent;
+/// used for generated names). Empty for out-of-range values.
+pub fn format_local_timestamp(unix: i64) -> String {
+    let Some(st) = local_system_time(unix) else {
+        return String::new();
+    };
+    format!(
+        "{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
+        st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond
+    )
+}
+
 fn local_system_time(unix: i64) -> Option<SYSTEMTIME> {
     // FILETIME: 100-ns intervals since 1601-01-01.
     let ticks = unix.checked_add(11_644_473_600)?.checked_mul(10_000_000)?;

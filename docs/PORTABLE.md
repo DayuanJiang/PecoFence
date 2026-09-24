@@ -8,6 +8,7 @@ Extract the complete ZIP and run `pecofence.exe`. Keep these files together:
 - `pecofence.exe`
 - `pecofence-watchdog.exe`
 - `WebView2Loader.dll`
+- `pecofence-cli.exe` (optional command-line control, see below)
 
 Windows 11 x64 and Microsoft Edge WebView2 Runtime are required.
 
@@ -28,6 +29,10 @@ initiate—moving, renaming, copying and deleting—operate on real files.
 
 Exit restores Windows desktop icons. If needed, use **Restore Windows desktop
 icons** from the tray menu or Settings → About.
+
+`pecofence-cli.exe` lets a terminal or an AI coding agent configure the running app:
+`pecofence-cli fence list`, `pecofence-cli describe`. Run it from this folder or add the
+folder to PATH. `SKILL.md` describes the tool for agents such as Claude Code or Codex.
 
 The ZIP is an unsigned portable build. It does not contain your configuration.
 Languages work offline; the glass background uses static desktop wallpaper.

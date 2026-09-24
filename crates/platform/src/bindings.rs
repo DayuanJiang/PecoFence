@@ -87,6 +87,14 @@ pub unsafe fn CoUninitialize() {
     unsafe { CoUninitialize() }
 }
 #[inline]
+pub unsafe fn ConnectNamedPipe(
+    hnamedpipe: HANDLE,
+    lpoverlapped: Option<*mut OVERLAPPED>,
+) -> windows_core::BOOL {
+    windows_core::link!("kernel32.dll" "system" fn ConnectNamedPipe(hnamedpipe : HANDLE, lpoverlapped : *mut OVERLAPPED) -> windows_core::BOOL);
+    unsafe { ConnectNamedPipe(hnamedpipe, lpoverlapped.unwrap_or(core::mem::zeroed()) as _) }
+}
+#[inline]
 pub unsafe fn CreateBitmap(
     nwidth: i32,
     nheight: i32,
@@ -268,6 +276,34 @@ where
     }
 }
 #[inline]
+pub unsafe fn CreateNamedPipeW<P0>(
+    lpname: P0,
+    dwopenmode: u32,
+    dwpipemode: u32,
+    nmaxinstances: u32,
+    noutbuffersize: u32,
+    ninbuffersize: u32,
+    ndefaulttimeout: u32,
+    lpsecurityattributes: Option<*const SECURITY_ATTRIBUTES>,
+) -> HANDLE
+where
+    P0: windows_core::Param<windows_core::PCWSTR>,
+{
+    windows_core::link!("kernel32.dll" "system" fn CreateNamedPipeW(lpname : windows_core::PCWSTR, dwopenmode : u32, dwpipemode : u32, nmaxinstances : u32, noutbuffersize : u32, ninbuffersize : u32, ndefaulttimeout : u32, lpsecurityattributes : *const SECURITY_ATTRIBUTES) -> HANDLE);
+    unsafe {
+        CreateNamedPipeW(
+            lpname.param().abi(),
+            dwopenmode,
+            dwpipemode,
+            nmaxinstances,
+            noutbuffersize,
+            ninbuffersize,
+            ndefaulttimeout,
+            lpsecurityattributes.unwrap_or(core::mem::zeroed()) as _,
+        )
+    }
+}
+#[inline]
 pub unsafe fn CreatePopupMenu() -> HMENU {
     windows_core::link!("user32.dll" "system" fn CreatePopupMenu() -> HMENU);
     unsafe { CreatePopupMenu() }
@@ -395,6 +431,11 @@ pub unsafe fn DestroyMenu(hmenu: HMENU) -> windows_core::BOOL {
 pub unsafe fn DestroyWindow(hwnd: HWND) -> windows_core::BOOL {
     windows_core::link!("user32.dll" "system" fn DestroyWindow(hwnd : HWND) -> windows_core::BOOL);
     unsafe { DestroyWindow(hwnd) }
+}
+#[inline]
+pub unsafe fn DisconnectNamedPipe(hnamedpipe: HANDLE) -> windows_core::BOOL {
+    windows_core::link!("kernel32.dll" "system" fn DisconnectNamedPipe(hnamedpipe : HANDLE) -> windows_core::BOOL);
+    unsafe { DisconnectNamedPipe(hnamedpipe) }
 }
 #[inline]
 pub unsafe fn DispatchMessageW(lpmsg: *const MSG) -> LRESULT {
@@ -538,6 +579,11 @@ where
 {
     windows_core::link!("user32.dll" "system" fn FindWindowW(lpclassname : windows_core::PCWSTR, lpwindowname : windows_core::PCWSTR) -> HWND);
     unsafe { FindWindowW(lpclassname.param().abi(), lpwindowname.param().abi()) }
+}
+#[inline]
+pub unsafe fn FlushFileBuffers(hfile: HANDLE) -> windows_core::BOOL {
+    windows_core::link!("kernel32.dll" "system" fn FlushFileBuffers(hfile : HANDLE) -> windows_core::BOOL);
+    unsafe { FlushFileBuffers(hfile) }
 }
 #[inline]
 pub unsafe fn GetAncestor(hwnd: HWND, gaflags: u32) -> HWND {
@@ -2931,7 +2977,10 @@ pub const EM_SETSEL: i32 = 177;
 pub const EN_CHANGE: i32 = 768;
 pub const EN_KILLFOCUS: i32 = 512;
 pub const ERROR_ALREADY_EXISTS: i32 = 183;
+pub const ERROR_BROKEN_PIPE: i32 = 109;
 pub const ERROR_NOTIFY_ENUM_DIR: i32 = 1022;
+pub const ERROR_NO_DATA: i32 = 232;
+pub const ERROR_PIPE_CONNECTED: i32 = 535;
 pub const ES_AUTOHSCROLL: i32 = 128;
 pub const EVENT_OBJECT_DESTROY: i32 = 32769;
 pub const EVENT_SYSTEM_FOREGROUND: i32 = 3;
@@ -3012,6 +3061,7 @@ pub const FILE_ATTRIBUTE_NORMAL: i32 = 128;
 pub const FILE_ATTRIBUTE_REPARSE_POINT: i32 = 1024;
 pub const FILE_ATTRIBUTE_SYSTEM: i32 = 4;
 pub const FILE_FLAG_BACKUP_SEMANTICS: i32 = 33554432;
+pub const FILE_FLAG_FIRST_PIPE_INSTANCE: i32 = 524288;
 pub const FILE_FLAG_OVERLAPPED: i32 = 1073741824;
 pub const FILE_LIST_DIRECTORY: i32 = 1;
 pub const FILE_NOTIFY_CHANGE_ATTRIBUTES: i32 = 4;
@@ -14432,6 +14482,12 @@ pub type PFUNCTION_TABLE_ACCESS_ROUTINE64 =
     Option<unsafe extern "system" fn(ahprocess: HANDLE, addrbase: u64) -> *mut core::ffi::c_void>;
 pub type PGET_MODULE_BASE_ROUTINE64 =
     Option<unsafe extern "system" fn(hprocess: HANDLE, address: u64) -> u64>;
+pub const PIPE_ACCESS_DUPLEX: i32 = 3;
+pub const PIPE_READMODE_BYTE: i32 = 0;
+pub const PIPE_REJECT_REMOTE_CLIENTS: i32 = 8;
+pub const PIPE_TYPE_BYTE: i32 = 0;
+pub const PIPE_UNLIMITED_INSTANCES: i32 = 255;
+pub const PIPE_WAIT: i32 = 0;
 pub type PMINIDUMP_USER_STREAM = *mut MINIDUMP_USER_STREAM;
 pub const PM_REMOVE: i32 = 1;
 pub type PNUMA_NODE_RELATIONSHIP = *mut NUMA_NODE_RELATIONSHIP;

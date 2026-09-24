@@ -13,7 +13,7 @@ if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
   $env:PATH = (Join-Path $env:USERPROFILE ".cargo\bin") + ";" + $env:PATH
 }
 if (-not $SkipBuild) {
-  cargo build --locked --release -p pecofence -p pecofence-watchdog --target-dir $TargetDir
+  cargo build --locked --release -p pecofence -p pecofence-watchdog -p pecofence-cli --target-dir $TargetDir
   if ($LASTEXITCODE -ne 0) { throw "cargo build failed" }
 }
 
@@ -30,11 +30,13 @@ New-Item -ItemType Directory -Path $stage | Out-Null
 $release = Join-Path $TargetDir "release"
 Copy-Item -LiteralPath (Join-Path $release "pecofence.exe") -Destination $stage
 Copy-Item -LiteralPath (Join-Path $release "pecofence-watchdog.exe") -Destination $stage
+Copy-Item -LiteralPath (Join-Path $release "pecofence-cli.exe") -Destination $stage
 Copy-Item -LiteralPath "third_party/webview2/WebView2Loader.x64.dll" -Destination (Join-Path $stage "WebView2Loader.dll")
 Copy-Item -LiteralPath "third_party/webview2/LICENSE.txt" -Destination (Join-Path $stage "LICENSE-WebView2Loader.txt")
 Copy-Item -LiteralPath "LICENSE" -Destination $stage
 Copy-Item -LiteralPath "docs/PORTABLE.md" -Destination (Join-Path $stage "README.md")
 Copy-Item -LiteralPath "docs/UPGRADING.md" -Destination (Join-Path $stage "UPGRADING.md")
+Copy-Item -LiteralPath "skills/pecofence-cli/SKILL.md" -Destination (Join-Path $stage "SKILL.md")
 & $Python scripts/write-license-notices.py (Join-Path $stage "THIRD-PARTY-LICENSES.txt")
 if ($LASTEXITCODE -ne 0) { throw "License notice generation failed" }
 

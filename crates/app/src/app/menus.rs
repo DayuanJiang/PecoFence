@@ -720,7 +720,7 @@ impl App {
             CMD_FENCE_OPTIONS => self.open_fence_options(fence),
             CMD_FENCE_NEW => {
                 let rect = self.place_new_fence(3, 200.0, x, y, Some(host));
-                self.create_fence_at(rect);
+                self.create_fence_at(rect, None);
             }
             CMD_FENCE_DELETE => self.delete_fence(fence),
             _ => return,
@@ -813,7 +813,7 @@ impl App {
             false,
         );
         if menu.show_context(owner, pt.x, pt.y) == CMD_NEW_FENCE_HERE {
-            self.create_fence_at(rect);
+            self.create_fence_at(rect, None);
         }
     }
 }

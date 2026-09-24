@@ -180,6 +180,7 @@ impl App {
                 w.set_icon_size(shown.view.icon_size);
             }
             w.set_layout(shown.view.layout);
+            w.set_label_lines(shown.view.label_lines);
             w.set_is_inbox(shown.kind == FenceKind::Inbox);
             w.set_spacing(shown.view.spacing);
             w.set_column_widths(
@@ -534,17 +535,20 @@ impl App {
         }
     }
 
-    pub(super) fn create_fence_at(&mut self, rect: RECT) {
-        if let Some(id) = self
-            .state
-            .new_fence(pecofence_core::i18n::text("新栅栏"), rect)
-        {
-            self.resync_windows();
-            if let Some(w) = self.fences.get(&id) {
-                w.show(true);
-            }
-            self.schedule_save();
+    /// Creates a virtual fence at `rect` (physical px); `title` defaults to the localized
+    /// "新栅栏". Returns the new id (None when there is no monitor to place it on).
+    pub(super) fn create_fence_at(&mut self, rect: RECT, title: Option<&str>) -> Option<FenceId> {
+        let title = title
+            .map(str::trim)
+            .filter(|t| !t.is_empty())
+            .unwrap_or_else(|| pecofence_core::i18n::text("新栅栏"));
+        let id = self.state.new_fence(title, rect)?;
+        self.resync_windows();
+        if let Some(w) = self.fences.get(&id) {
+            w.show(true);
         }
+        self.schedule_save();
+        Some(id)
     }
 
     /// Deletes a fence (or a tab); a host's tabs become windows of their own again.
@@ -597,7 +601,7 @@ impl App {
 
     pub(super) fn new_fence_near(&mut self, x: i32, y: i32) {
         let rect = self.place_new_fence(3, 200.0, x, y, None);
-        self.create_fence_at(rect);
+        self.create_fence_at(rect, None);
     }
 
     /// Work area (device px) containing the point, else the primary one.
@@ -713,6 +717,16 @@ impl App {
         let fence = self.state.host_of(fence);
         if let Some(w) = self.fences.get(&fence) {
             let rolled = !w.is_rolled();
+            self.set_roll(fence, rolled);
+        }
+    }
+
+    /// Rolls up / expands the host window to an explicit state. Unlike [`Self::toggle_roll`]
+    /// this does not read the window's animated flag, so two quick requests (the CLI) cannot
+    /// undo each other while the 167 ms roll animation is still running.
+    pub(super) fn set_roll(&mut self, fence: FenceId, rolled: bool) {
+        let fence = self.state.host_of(fence);
+        if let Some(w) = self.fences.get(&fence) {
             w.set_rolled(rolled);
             if let Some(f) = self.state.fence_mut(fence) {
                 f.rolled_up = rolled;

@@ -7,10 +7,11 @@
 <Package
   xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
   xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:uap5="http://schemas.microsoft.com/appx/manifest/uap/windows10/5"
   xmlns:uap10="http://schemas.microsoft.com/appx/manifest/uap/windows10/10"
   xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
   xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
-  IgnorableNamespaces="uap uap10 desktop rescap">
+  IgnorableNamespaces="uap uap5 uap10 desktop rescap">
 
   <Identity
     Name="__IDENTITY_NAME__"
@@ -68,6 +69,13 @@
         <desktop:Extension Category="windows.startupTask" Executable="pecofence.exe" EntryPoint="Windows.FullTrustApplication">
           <desktop:StartupTask TaskId="PecoFenceStartup" Enabled="true" DisplayName="PecoFence" />
         </desktop:Extension>
+        <!-- `pecofence-cli` on PATH for terminals and coding agents; users can turn the alias
+             off under Settings > Apps > Advanced app settings > App execution aliases. -->
+        <uap5:Extension Category="windows.appExecutionAlias" Executable="pecofence-cli.exe" EntryPoint="Windows.FullTrustApplication">
+          <uap5:AppExecutionAlias>
+            <uap5:ExecutionAlias Alias="pecofence-cli.exe" />
+          </uap5:AppExecutionAlias>
+        </uap5:Extension>
       </Extensions>
     </Application>
   </Applications>

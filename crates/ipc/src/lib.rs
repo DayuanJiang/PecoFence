@@ -70,7 +70,12 @@ impl Request {
 /// case-insensitive substring); see [`selector::resolve`].
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "describe", derive(schemars::JsonSchema))]
-#[serde(tag = "method", content = "params", rename_all = "camelCase")]
+#[serde(
+    tag = "method",
+    content = "params",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum Method {
     // ---- read-only -------------------------------------------------------------------
     /// Version, pid, config path, counters. Result: [`StatusDto`].

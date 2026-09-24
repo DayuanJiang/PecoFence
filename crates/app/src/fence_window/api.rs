@@ -625,6 +625,22 @@ impl FenceWindow {
         });
     }
 
+    /// Lines of label text under each icon (1-3): refit the labels and relayout at once.
+    pub fn set_label_lines(&self, lines: u8) {
+        self.with_view(|v| {
+            if v.label_lines == lines {
+                return;
+            }
+            v.label_lines = lines;
+            for item in &mut v.items {
+                item.label = None;
+            }
+            v.unfold_cache = None;
+            v.snap_item_motion();
+            let _ = v.redraw();
+        });
+    }
+
     /// The system icon-title font changed (font or Accessibility text size): fitted labels
     /// are stale and the cell grid has a new height, so refit and relayout at once (a DPI-like
     /// snap, no transition). Icons stay cached.

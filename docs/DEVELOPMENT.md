@@ -47,6 +47,11 @@ opens an isolated portable Settings window, changes all ten languages through th
 real IPC handler, and checks saved preferences and preservation of names/autostart.
 It keeps its generated configuration and report under `.cache/`.
 
+`powershell -File scripts/cli-smoke.ps1` starts an isolated `PECOFENCE_INSTANCE=clitest`
+instance from a scratch copy of the debug binaries and drives it with `pecofence-cli`
+(create, move, resize, set options, settings, rules, snapshots, delete), asserting the JSON
+replies and exit codes. It never touches the real configuration or desktop icons.
+
 ## Architecture
 
 | Directory | Responsibility |
@@ -56,6 +61,8 @@ It keeps its generated configuration and report under `.cache/`.
 | `crates/render` | Direct2D/Composition drawing, motion and glass |
 | `crates/app` | Native windows, input, application state and Settings IPC |
 | `crates/watchdog` | Restores desktop icons after an abnormal app exit |
+| `crates/ipc` | Wire protocol shared by the app and the CLI: methods, DTOs, selectors, JSON Schema export |
+| `crates/cli` | `pecofence-cli.exe`: console front end that drives a running instance over a named pipe (see [CLI.md](CLI.md)) |
 | `ui` | Offline settings HTML and localization helper embedded into the executable |
 | `locales` | Shared native and settings messages |
 | `site` | Static product website, built by `scripts/build-site.py` (see [WEBSITE.md](WEBSITE.md)) |

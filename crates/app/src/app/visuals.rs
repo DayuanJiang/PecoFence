@@ -471,6 +471,7 @@ impl App {
                     open_settings: false,
                     portal: None,
                     test_script: None,
+                    instance: None,
                 },
             )
         });

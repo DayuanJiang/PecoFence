@@ -8,6 +8,7 @@ mod app;
 mod commands;
 mod fence_window;
 mod icons;
+mod ipc_server;
 mod layout;
 mod peek;
 mod rename;
@@ -39,6 +40,7 @@ fn parse_args() -> app::Args {
         open_settings: has("--open-settings"),
         portal: value("--portal"),
         test_script: value("--test-script"),
+        instance: None,
     }
 }
 
@@ -104,7 +106,7 @@ fn main() -> Result<()> {
         pecofence_platform::crashlog::install(dir, instance.trim());
     }
 
-    let args = parse_args();
+    let mut args = parse_args();
     let exit_after = args.exit_after_ms;
 
     window::set_process_dpi_awareness_v2();
@@ -113,6 +115,11 @@ fn main() -> Result<()> {
     // `PECOFENCE_INSTANCE=<name>` runs a second, independent instance (developer testing with
     // `--portable`); the default name keeps one PecoFence per session.
     let instance_name = pecofence_core::brand::var("PECOFENCE_INSTANCE").ok();
+    args.instance = instance_name
+        .as_deref()
+        .map(str::trim)
+        .filter(|n| !n.is_empty())
+        .map(str::to_string);
     let [current_name, legacy_name] =
         pecofence_core::brand::instance_mutex_names(instance_name.as_deref());
     let Some(_instance) = window::SingleInstance::acquire(&current_name) else {

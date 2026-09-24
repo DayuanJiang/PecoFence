@@ -5,6 +5,7 @@
 - [Languages and translation contributions](LOCALIZATION.md)
 - [Preparing and publishing a release](RELEASING.md)
 - [Portable edition instructions](PORTABLE.md)
+- [Command-line control for terminals and AI agents](CLI.md)
 - [Product website: build and publishing](WEBSITE.md)
 - [Complete feature list, in Chinese](FEATURES.md)
 - [README in other languages](readme/) — the root README is English; translations live in `docs/readme/`

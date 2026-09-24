@@ -9,6 +9,7 @@ use crate::fence_window::{
     BackdropMode, BackdropSets, Behavior, FenceContext, FenceWindow, ItemView, TabView,
 };
 use crate::icons::{IconCache, IconVariant, WM_APP_ICON_READY};
+use crate::ipc_server::{IpcServer, PendingQueue};
 use crate::peek::PeekOverlay;
 use crate::settings_host::{SettingsHost, WebEnvironment};
 use crate::shadow::{ShadowStyle, ShadowWindow};
@@ -38,7 +39,7 @@ use pecofence_render::{
     BitmapCache, Image, MonitorBackdrop, RenderStack, Theme, ThemeMode, WallpaperPosition,
 };
 use std::cell::{Cell, RefCell};
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
@@ -49,6 +50,7 @@ mod dnd;
 mod fence_options;
 mod fences;
 mod fileops;
+mod ipc;
 mod items;
 mod menus;
 mod motion;
@@ -134,6 +136,8 @@ pub struct Args {
     pub portal: Option<String>,
     /// `--test-script <file>`: drive the app from a script (see `testscript.rs`).
     pub test_script: Option<String>,
+    /// `PECOFENCE_INSTANCE` (trimmed, non-empty) of this process; names the IPC pipe.
+    pub instance: Option<String>,
 }
 
 pub struct App {
@@ -159,6 +163,12 @@ pub struct App {
     fs_pending: Arc<Mutex<Vec<FsEvent>>>,
     /// Finished shell file operations from the worker threads (see `fileops.rs`).
     fileops_done: fileops::FileOpResults,
+    /// CLI requests waiting for the UI thread (see `ipc_server.rs` / `ipc.rs`).
+    ipc_pending: PendingQueue,
+    /// The named-pipe listener; `None` when the pipe name was unavailable.
+    _ipc: Option<IpcServer>,
+    /// `PECOFENCE_INSTANCE` of this process (reported by `status.get`).
+    instance: Option<String>,
     settings: Option<SettingsHost>,
     /// Fence to select on the settings page once it reports `ready` (opened via 栅栏选项…).
     settings_focus_fence: Option<FenceId>,
@@ -665,6 +675,14 @@ impl App {
         let settings_class = SettingsHost::register_class()?;
         let peek_class = PeekOverlay::register_class()?;
 
+        // CLI named pipe: requests land in `ipc_pending`, the control window is poked.
+        let ipc_pending: PendingQueue = Arc::new(Mutex::new(VecDeque::new()));
+        let ipc = IpcServer::start(
+            &pecofence_core::brand::ipc_pipe_name(args.instance.as_deref()),
+            control.hwnd(),
+            ipc_pending.clone(),
+        );
+
         let mut app = App {
             state,
             ctx,
@@ -678,6 +696,9 @@ impl App {
             portal_watchers: HashMap::new(),
             fs_pending,
             fileops_done: Arc::new(Mutex::new(Vec::new())),
+            ipc_pending,
+            _ipc: ipc,
+            instance: args.instance.clone(),
             settings: None,
             settings_focus_fence: None,
             web_env: None,
@@ -928,6 +949,7 @@ impl App {
     pub fn process_commands(&mut self) {
         self.check_cut_clipboard();
         self.drain_fileops();
+        self.drain_ipc();
         for _ in 0..8 {
             let cmds = self.queue.drain();
             if cmds.is_empty() {

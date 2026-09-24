@@ -46,6 +46,201 @@ fn parse_hex(s: &str) -> Option<[u8; 3]> {
     Some([(v >> 16) as u8, (v >> 8) as u8, v as u8])
 }
 
+/// Every property `parse_fence_prop` accepts (the order the error message lists them in).
+pub(super) const FENCE_PROPS: &[&str] = &[
+    "title",
+    "iconSize",
+    "spacing",
+    "autoHeight",
+    "locked",
+    "excludeFromQuickHide",
+    "opacity",
+    "tint",
+    "titleColor",
+    "titleSize",
+    "layout",
+    "sort",
+    "reverse",
+    "groupByDate",
+    "labelLines",
+    "portalNavigate",
+    "portalTitleIcon",
+];
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum TitleColorChoice {
+    Theme,
+    /// Follow the fence tint.
+    Tint,
+    Rgb([u8; 3]),
+}
+
+/// One per-fence option, parsed and range-checked (shared by the settings page's `setFence`
+/// and the CLI's `fences.setOption`).
+#[derive(Clone, Debug, PartialEq)]
+pub(super) enum FenceProp {
+    Title(String),
+    IconSize(u32),
+    Spacing(Spacing),
+    AutoHeight(bool),
+    Locked(bool),
+    ExcludeFromQuickHide(bool),
+    /// None = the global default; otherwise a preset (see `OPACITY_CLEAR` / `OPACITY_SOLID`).
+    Opacity(Option<f32>),
+    Tint(Option<[u8; 3]>),
+    TitleColor(TitleColorChoice),
+    /// None = normal.
+    TitleSize(Option<TitleSize>),
+    PortalNavigate(bool),
+    PortalTitleIcon(bool),
+    Layout(ViewLayout),
+    Sort(SortMode),
+    Reverse(bool),
+    GroupByDate(bool),
+    LabelLines(u8),
+}
+
+/// Parses `prop` / `value` as the settings page and `fence get` spell them. Unknown property
+/// → `invalid_value` listing every property; a bad value → `invalid_value` listing what the
+/// property accepts.
+pub(super) fn parse_fence_prop(
+    prop: &str,
+    value: &serde_json::Value,
+) -> std::result::Result<FenceProp, pecofence_ipc::IpcError> {
+    use pecofence_ipc::IpcError;
+    let bad = |allowed: &[&str]| {
+        IpcError::invalid_value(
+            format!("{prop} cannot be {value}; allowed: {}", allowed.join(", ")),
+            allowed,
+        )
+    };
+    let as_bool = || value.as_bool().ok_or_else(|| bad(&["true", "false"]));
+    let as_str = |allowed: &[&str]| value.as_str().ok_or_else(|| bad(allowed));
+    Ok(match prop {
+        "title" => {
+            let title = as_str(&["<non-empty string>"])?.trim();
+            if title.is_empty() {
+                return Err(bad(&["<non-empty string>"]));
+            }
+            FenceProp::Title(title.to_string())
+        }
+        "iconSize" => {
+            const ALLOWED: &[&str] = &["32", "48", "64", "96"];
+            match value.as_u64() {
+                Some(size @ (32 | 48 | 64 | 96)) => FenceProp::IconSize(size as u32),
+                _ => return Err(bad(ALLOWED)),
+            }
+        }
+        "spacing" => {
+            const ALLOWED: &[&str] = &["compact", "normal", "loose"];
+            FenceProp::Spacing(match as_str(ALLOWED)? {
+                "compact" => Spacing::Compact,
+                "normal" => Spacing::Normal,
+                "loose" => Spacing::Loose,
+                _ => return Err(bad(ALLOWED)),
+            })
+        }
+        "autoHeight" => FenceProp::AutoHeight(as_bool()?),
+        "locked" => FenceProp::Locked(as_bool()?),
+        "excludeFromQuickHide" => FenceProp::ExcludeFromQuickHide(as_bool()?),
+        "opacity" => {
+            const ALLOWED: &[&str] = &["default", "clear", "solid"];
+            FenceProp::Opacity(match as_str(ALLOWED)? {
+                "default" => None,
+                "clear" => Some(OPACITY_CLEAR),
+                "solid" => Some(OPACITY_SOLID),
+                _ => return Err(bad(ALLOWED)),
+            })
+        }
+        "tint" => {
+            const ALLOWED: &[&str] = &["#RRGGBB", "null"];
+            FenceProp::Tint(match value {
+                serde_json::Value::Null => None,
+                serde_json::Value::String(s) if s.is_empty() => None,
+                serde_json::Value::String(s) => Some(parse_hex(s).ok_or_else(|| bad(ALLOWED))?),
+                _ => return Err(bad(ALLOWED)),
+            })
+        }
+        "titleColor" => {
+            const ALLOWED: &[&str] = &["theme", "tint", "white", "black", "#RRGGBB"];
+            FenceProp::TitleColor(match as_str(ALLOWED)? {
+                "theme" => TitleColorChoice::Theme,
+                "tint" => TitleColorChoice::Tint,
+                "white" => TitleColorChoice::Rgb([0xFF, 0xFF, 0xFF]),
+                "black" => TitleColorChoice::Rgb([0x00, 0x00, 0x00]),
+                other => TitleColorChoice::Rgb(parse_hex(other).ok_or_else(|| bad(ALLOWED))?),
+            })
+        }
+        "titleSize" => {
+            const ALLOWED: &[&str] = &["small", "normal", "large"];
+            FenceProp::TitleSize(match as_str(ALLOWED)? {
+                "small" => Some(TitleSize::Small),
+                "normal" => None,
+                "large" => Some(TitleSize::Large),
+                _ => return Err(bad(ALLOWED)),
+            })
+        }
+        "layout" => {
+            const ALLOWED: &[&str] = &["icons", "list", "details"];
+            FenceProp::Layout(match as_str(ALLOWED)? {
+                "icons" => ViewLayout::Icons,
+                "list" => ViewLayout::List,
+                "details" => ViewLayout::Details,
+                _ => return Err(bad(ALLOWED)),
+            })
+        }
+        "sort" => {
+            const ALLOWED: &[&str] = &["manual", "name", "type", "date", "size", "openCount"];
+            FenceProp::Sort(match as_str(ALLOWED)? {
+                "manual" => SortMode::Manual,
+                "name" => SortMode::Name,
+                "type" => SortMode::Type,
+                "date" => SortMode::Date,
+                "size" => SortMode::Size,
+                "openCount" => SortMode::OpenCount,
+                _ => return Err(bad(ALLOWED)),
+            })
+        }
+        "reverse" => FenceProp::Reverse(as_bool()?),
+        "groupByDate" => FenceProp::GroupByDate(as_bool()?),
+        "labelLines" => {
+            const ALLOWED: &[&str] = &["1", "2", "3"];
+            match value.as_u64() {
+                Some(n @ 1..=3) => FenceProp::LabelLines(n as u8),
+                _ => return Err(bad(ALLOWED)),
+            }
+        }
+        "portalNavigate" => FenceProp::PortalNavigate(as_bool()?),
+        "portalTitleIcon" => FenceProp::PortalTitleIcon(as_bool()?),
+        _ => {
+            return Err(IpcError::invalid_value(
+                format!("unknown fence property {prop:?}"),
+                FENCE_PROPS,
+            ));
+        }
+    })
+}
+
+/// String forms of `FenceView.layout` / `.sort` as the page, `fence get` and `fence set` use.
+pub(super) fn layout_name(layout: ViewLayout) -> &'static str {
+    match layout {
+        ViewLayout::Icons => "icons",
+        ViewLayout::List => "list",
+        ViewLayout::Details => "details",
+    }
+}
+
+pub(super) fn sort_name(sort: SortMode) -> &'static str {
+    match sort {
+        SortMode::Manual => "manual",
+        SortMode::Name => "name",
+        SortMode::Type => "type",
+        SortMode::Date => "date",
+        SortMode::Size => "size",
+        SortMode::OpenCount => "openCount",
+    }
+}
+
 impl App {
     pub(super) fn set_fence_auto_height(&mut self, fence: FenceId, on: bool) {
         let host = self.state.host_of(fence);
@@ -256,80 +451,112 @@ impl App {
             return;
         };
         let value = v.get("value").cloned().unwrap_or(serde_json::Value::Null);
-        let as_bool = || value.as_bool().unwrap_or(false);
-        let as_str = || value.as_str().unwrap_or("");
-        match prop {
-            "title" => {
-                let title = as_str().trim();
-                if !title.is_empty() {
-                    self.state.rename_fence(fence, title);
-                    self.refresh_fence(fence);
-                    if let Some(w) = self.window_for(fence) {
-                        w.redraw();
-                    }
-                    self.schedule_save();
+        if prop == "dockTop" {
+            // An action, not a property (the CLI has `fences.dockTop`); the page still sends
+            // it through `setFence`.
+            self.dock_to_top(self.state.host_of(fence));
+        } else {
+            match parse_fence_prop(prop, &value) {
+                Ok(p) => {
+                    self.apply_fence_prop(fence, p);
                 }
-            }
-            "iconSize" => {
-                if let Some(size) = value.as_u64()
-                    && matches!(size, 32 | 48 | 64 | 96)
-                {
-                    self.apply_icon_size(fence, size as u32);
+                Err(error) => {
+                    tracing::warn!(prop, %error, "bad fence property from settings page");
+                    return;
                 }
-            }
-            "spacing" => {
-                let spacing = match as_str() {
-                    "compact" => Spacing::Compact,
-                    "loose" => Spacing::Loose,
-                    _ => Spacing::Normal,
-                };
-                self.set_fence_spacing(fence, spacing);
-            }
-            "autoHeight" => self.set_fence_auto_height(fence, as_bool()),
-            "locked" => self.set_fence_locked(fence, as_bool()),
-            "excludeFromQuickHide" => self.set_fence_quick_hide_excluded(fence, as_bool()),
-            "opacity" => {
-                let op = match as_str() {
-                    "clear" => Some(OPACITY_CLEAR),
-                    "solid" => Some(OPACITY_SOLID),
-                    _ => None,
-                };
-                self.set_fence_opacity(fence, op);
-            }
-            "tint" => {
-                let tint = value.as_str().and_then(parse_hex);
-                self.set_fence_tint(fence, tint);
-            }
-            "titleColor" => {
-                let host = self.state.host_of(fence);
-                let (tint, _, _) = self.style_of(host);
-                let (_, _, title_size) = self.style_of(fence);
-                let title_rgb = match as_str() {
-                    "theme" => None,
-                    "tint" => tint,
-                    "white" => Some([0xFF, 0xFF, 0xFF]),
-                    "black" => Some([0x00, 0x00, 0x00]),
-                    other => parse_hex(other),
-                };
-                self.set_fence_title_style(fence, title_rgb, title_size);
-            }
-            "titleSize" => {
-                let (_, title_rgb, _) = self.style_of(fence);
-                let size = match as_str() {
-                    "small" => Some(TitleSize::Small),
-                    "large" => Some(TitleSize::Large),
-                    _ => None,
-                };
-                self.set_fence_title_style(fence, title_rgb, size);
-            }
-            "portalNavigate" => self.set_fence_portal_navigate(fence, as_bool()),
-            "portalTitleIcon" => self.set_fence_title_icon(fence, as_bool()),
-            "dockTop" => self.dock_to_top(self.state.host_of(fence)),
-            _ => {
-                tracing::warn!(prop, "unknown fence property from settings page");
-                return;
             }
         }
         self.push_settings_state();
+    }
+
+    /// Applies one parsed property to `fence` (window-level ones act on its host, see the
+    /// module docs). Returns whether the persisted state actually changed.
+    pub(super) fn apply_fence_prop(&mut self, fence: FenceId, prop: FenceProp) -> bool {
+        let host = self.state.host_of(fence);
+        let before = (
+            self.state.fence(fence).cloned(),
+            self.state.fence(host).cloned(),
+        );
+        match prop {
+            FenceProp::Title(title) => {
+                self.state.rename_fence(fence, &title);
+                self.refresh_fence(fence);
+                if let Some(w) = self.window_for(fence) {
+                    w.redraw();
+                }
+                self.schedule_save();
+            }
+            FenceProp::IconSize(size) => self.apply_icon_size(fence, size),
+            FenceProp::Spacing(spacing) => self.set_fence_spacing(fence, spacing),
+            FenceProp::AutoHeight(on) => self.set_fence_auto_height(fence, on),
+            FenceProp::Locked(on) => self.set_fence_locked(fence, on),
+            FenceProp::ExcludeFromQuickHide(on) => self.set_fence_quick_hide_excluded(fence, on),
+            FenceProp::Opacity(op) => self.set_fence_opacity(fence, op),
+            FenceProp::Tint(tint) => self.set_fence_tint(fence, tint),
+            FenceProp::TitleColor(choice) => {
+                let (tint, _, _) = self.style_of(host);
+                let (_, _, title_size) = self.style_of(fence);
+                let title_rgb = match choice {
+                    TitleColorChoice::Theme => None,
+                    TitleColorChoice::Tint => tint,
+                    TitleColorChoice::Rgb(rgb) => Some(rgb),
+                };
+                self.set_fence_title_style(fence, title_rgb, title_size);
+            }
+            FenceProp::TitleSize(size) => {
+                let (_, title_rgb, _) = self.style_of(fence);
+                self.set_fence_title_style(fence, title_rgb, size);
+            }
+            FenceProp::PortalNavigate(on) => self.set_fence_portal_navigate(fence, on),
+            FenceProp::PortalTitleIcon(on) => self.set_fence_title_icon(fence, on),
+            FenceProp::Layout(layout) => {
+                // Same steps as the fence menu's 视图 items.
+                self.state.set_layout(fence, layout);
+                if let Some(w) = self.window_for(fence)
+                    && w.active_fence() == fence
+                {
+                    w.set_layout(layout);
+                }
+                self.apply_column_snap(fence);
+                self.apply_auto_height(fence);
+                self.schedule_save();
+            }
+            FenceProp::Sort(sort) => {
+                self.state.set_sort(fence, sort);
+                self.refresh_fence(fence);
+                self.schedule_save();
+            }
+            FenceProp::Reverse(on) => {
+                self.state.set_reverse(fence, on);
+                self.refresh_fence(fence);
+                self.schedule_save();
+            }
+            FenceProp::GroupByDate(on) => {
+                self.state.set_group_by_date(fence, on);
+                self.refresh_fence(fence);
+                self.schedule_save();
+            }
+            FenceProp::LabelLines(lines) => {
+                if let Some(f) = self.state.fence_mut(fence)
+                    && f.view.label_lines != lines
+                {
+                    f.view.label_lines = lines;
+                    self.state.mark_dirty();
+                }
+                if let Some(w) = self.window_for(fence)
+                    && w.active_fence() == fence
+                {
+                    w.set_label_lines(lines);
+                }
+                self.apply_column_snap(fence);
+                self.apply_auto_height(fence);
+                self.schedule_save();
+            }
+        }
+        let after = (
+            self.state.fence(fence).cloned(),
+            self.state.fence(host).cloned(),
+        );
+        before != after
     }
 }

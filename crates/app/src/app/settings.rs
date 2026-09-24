@@ -284,25 +284,9 @@ impl App {
             }
             Some("setRules") => {
                 if let Some(rules) = v.get("rules").cloned()
-                    && let Ok(mut rules) = serde_json::from_value::<pecofence_core::RuleSet>(rules)
+                    && let Ok(rules) = serde_json::from_value::<pecofence_core::RuleSet>(rules)
                 {
-                    // A folder portal never shows `fence.items`: a rule routing into one would
-                    // make matched items vanish from every fence. Fall back to the inbox.
-                    let targets = std::iter::once(&mut rules.default_target)
-                        .chain(rules.list.iter_mut().map(|r| &mut r.target));
-                    for t in targets {
-                        if let Target::Fence(id) = *t
-                            && self
-                                .state
-                                .fence(id)
-                                .is_some_and(|f| f.kind == FenceKind::FolderPortal)
-                        {
-                            *t = Target::Inbox;
-                        }
-                    }
-                    self.state.config.rules = rules;
-                    self.state.mark_dirty();
-                    self.schedule_save();
+                    self.set_rules(rules);
                 }
             }
             Some("action") => match v.get("name").and_then(|n| n.as_str()) {
@@ -349,6 +333,7 @@ impl App {
                         if self
                             .state
                             .restore_snapshot_with_backup(id, pecofence_core::i18n::text("恢复前"))
+                            .is_some()
                         {
                             self.end_peek_now();
                             self.relayout_from_state();
@@ -404,6 +389,27 @@ impl App {
             },
             _ => {}
         }
+    }
+
+    /// Replaces the rule set (settings page / CLI). A folder portal never shows `fence.items`:
+    /// a rule routing into one would make matched items vanish from every fence, so such
+    /// targets fall back to the inbox.
+    pub(super) fn set_rules(&mut self, mut rules: pecofence_core::RuleSet) {
+        let targets = std::iter::once(&mut rules.default_target)
+            .chain(rules.list.iter_mut().map(|r| &mut r.target));
+        for t in targets {
+            if let Target::Fence(id) = *t
+                && self
+                    .state
+                    .fence(id)
+                    .is_some_and(|f| f.kind == FenceKind::FolderPortal)
+            {
+                *t = Target::Inbox;
+            }
+        }
+        self.state.config.rules = rules;
+        self.state.mark_dirty();
+        self.schedule_save();
     }
 
     /// Both rescue buttons and the tray use the same idempotent operation. A second

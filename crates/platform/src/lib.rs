@@ -38,6 +38,7 @@ pub mod locale;
 pub mod memstats;
 pub mod monitors;
 pub mod msg;
+pub mod pipe;
 pub mod process;
 pub mod rawinput;
 pub mod shell;

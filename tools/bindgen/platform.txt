@@ -342,6 +342,22 @@
     PROCESS_MEMORY_COUNTERS_EX
     PROCESS_MEMORY_COUNTERS
 
+    // ---- CLI named pipe (pecofence-cli IPC)
+    CreateNamedPipeW
+    ConnectNamedPipe
+    DisconnectNamedPipe
+    FlushFileBuffers
+    PIPE_ACCESS_DUPLEX
+    FILE_FLAG_FIRST_PIPE_INSTANCE
+    PIPE_TYPE_BYTE
+    PIPE_READMODE_BYTE
+    PIPE_WAIT
+    PIPE_REJECT_REMOTE_CLIENTS
+    PIPE_UNLIMITED_INSTANCES
+    ERROR_PIPE_CONNECTED
+    ERROR_NO_DATA
+    ERROR_BROKEN_PIPE
+
     // ---- misc
     MessageBoxW
     MB_OK

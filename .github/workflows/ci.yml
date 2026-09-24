@@ -38,7 +38,7 @@ jobs:
       - name: Test (core)
         run: cargo test --workspace
       - name: Release build
-        run: cargo build --locked --release -p pecofence -p pecofence-watchdog
+        run: cargo build --locked --release -p pecofence -p pecofence-watchdog -p pecofence-cli
       - name: Size gate (pecofence.exe <= 3.5 MB)
         shell: pwsh
         run: |

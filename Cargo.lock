@@ -277,8 +277,10 @@ name = "pecofence"
 version = "0.0.5"
 dependencies = [
  "pecofence-core",
+ "pecofence-ipc",
  "pecofence-platform",
  "pecofence-render",
+ "serde",
  "serde_json",
  "tracing",
  "tracing-subscriber",

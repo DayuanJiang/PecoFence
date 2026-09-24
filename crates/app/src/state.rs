@@ -173,15 +173,17 @@ impl AppState {
 
     /// Restores a snapshot's layouts (settings, rules and items stay as they are) after saving
     /// a `backup_name` snapshot of the current ones. The target is looked up first, so the
-    /// backup's eviction at `MAX_SNAPSHOTS` can never remove it. Returns false (and saves
-    /// nothing) when `id` is unknown.
-    pub fn restore_snapshot_with_backup(&mut self, id: uuid::Uuid, backup_name: &str) -> bool {
-        let Some(snap) = self.config.snapshots.iter().find(|s| s.id == id).cloned() else {
-            return false;
-        };
-        self.save_snapshot(backup_name);
+    /// backup's eviction at `MAX_SNAPSHOTS` can never remove it. Returns the backup's id, or
+    /// None (and saves nothing) when `id` is unknown.
+    pub fn restore_snapshot_with_backup(
+        &mut self,
+        id: uuid::Uuid,
+        backup_name: &str,
+    ) -> Option<uuid::Uuid> {
+        let snap = self.config.snapshots.iter().find(|s| s.id == id).cloned()?;
+        let backup = self.save_snapshot(backup_name);
         self.apply_snapshot_layouts(snap.layouts);
-        true
+        Some(backup)
     }
 
     fn apply_snapshot_layouts(&mut self, layouts: Vec<pecofence_core::Layout>) {
