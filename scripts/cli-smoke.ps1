@@ -237,5 +237,9 @@ finally {
 }
 
 Write-Host ""
-Write-Host "$($script:checks - $script:failures)/$($script:checks) checks passed; log: $env:LOCALAPPDATA\PecoFence\pecofence.$instance.log"
-if ($script:failures -gt 0) { exit 1 }
+if ($script:failures -gt 0) {
+    Write-Host "$($script:checks - $script:failures)/$($script:checks) checks passed; log: $env:LOCALAPPDATA\PecoFence\pecofence.$instance.log"
+    exit 1
+}
+Write-Host "$($script:checks)/$($script:checks) checks passed"
+Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction SilentlyContinue
