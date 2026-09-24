@@ -14,7 +14,7 @@ Every command prints JSON; nothing else. Run `pecofence-cli <command> --help` wh
   per-fence options (layout, icon size, opacity, lock, roll-up); global settings; auto-sorting rules;
   layout snapshots; quick-hide / show / Peek.
 - Do not use for: installing PecoFence, editing `config.json` by hand (the app owns that file), moving
-  files outside the desktop, or anything needing a file dialog (config import/export).
+  files outside the desktop.
 
 ## Bootstrap
 
@@ -129,7 +129,8 @@ pecofence-cli fence list | jq '[.[] | {title, opacity, locked}]'   # verify
 
 ## Limits
 
-- No file dialogs: config import/export and backup restore stay in the GUI.
+- `config import` / `backup restore` replace everything (settings, rules, layouts); the current layout is
+  snapshotted first, but settings and rules are not covered by snapshots. Export first: `config export <abs path>`.
 - Tabs hosted inside another fence share the host's window: `fence move/resize` on a tab fails with
   `unsupported`, `--all` batches skip tabs; address the host fence or `fence detach` first.
 - Coordinates are physical pixels in virtual-screen space (multi-monitor: monitors left of the

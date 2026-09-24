@@ -78,6 +78,16 @@ pub enum Command {
         #[command(subcommand)]
         cmd: SnapshotCmd,
     },
+    /// Configuration file export / import
+    Config {
+        #[command(subcommand)]
+        cmd: ConfigCmd,
+    },
+    /// Daily configuration backups the app keeps
+    Backup {
+        #[command(subcommand)]
+        cmd: BackupCmd,
+    },
     /// Peek (float every fence above other windows)
     Peek {
         #[command(subcommand)]
@@ -426,6 +436,43 @@ pub enum SnapshotCmd {
     Delete {
         /// Snapshot id, unique id prefix, or (unique) name
         id: String,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum ConfigCmd {
+    /// Write the complete configuration (settings, rules, layouts, snapshots) to a JSON file
+    #[command(
+        after_help = "Example: pecofence-cli config export C:\\Users\\me\\Desktop\\pecofence.json
+         (absolute path; an existing file is overwritten)"
+    )]
+    Export {
+        /// Absolute path of the file to write
+        file: String,
+    },
+    /// Replace the configuration with a JSON file (the current layout is snapshotted first)
+    #[command(
+        after_help = "Example: pecofence-cli config import C:\\Users\\me\\Desktop\\pecofence.json"
+    )]
+    Import {
+        /// Absolute path of a `config export` file or a config.json
+        file: String,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum BackupCmd {
+    /// Daily backups beside config.json, newest first
+    #[command(after_help = "Example: pecofence-cli backup list")]
+    List,
+    /// Restore one of the listed backups (the current layout is snapshotted first)
+    #[command(
+        after_help = "Example: pecofence-cli backup restore \"C:\\Users\\me\\AppData\\Roaming\\PecoFence\\backups\\2026-09-23.json\"
+         (a path exactly as printed by `backup list`)"
+    )]
+    Restore {
+        /// A path from `backup list`
+        file: String,
     },
 }
 

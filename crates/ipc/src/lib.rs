@@ -228,6 +228,24 @@ pub enum Method {
     #[serde(rename = "snapshots.delete")]
     SnapshotsDelete { id: String },
 
+    // ---- configuration files -----------------------------------------------------------
+    /// Write the complete configuration (settings, rules, layouts, items, snapshots) as
+    /// pretty JSON to an absolute `path` (overwritten). Result: `{path, bytes}`.
+    #[serde(rename = "config.export")]
+    ConfigExport { path: String },
+    /// Replace the configuration with the file at `path` (a `config export` file or a
+    /// `config.json`); the current layout is snapshotted first. Result:
+    /// `{changed, imported: path, snapshotId?}`.
+    #[serde(rename = "config.import")]
+    ConfigImport { path: String },
+    /// Daily backups the app keeps beside `config.json` (newest first). Result: `[BackupDto]`.
+    #[serde(rename = "backups.list")]
+    BackupsList,
+    /// Restore one of the files from `backups.list` (its exact `path`); the current layout is
+    /// snapshotted first. Result: `{changed, restored: path, snapshotId?}`.
+    #[serde(rename = "backups.restore")]
+    BackupsRestore { path: String },
+
     // ---- other ----------------------------------------------------------------------
     /// Float every fence above other windows (Peek). Result: `{changed}`.
     #[serde(rename = "peek.start")]
@@ -265,6 +283,8 @@ impl Method {
                 | Method::SettingsGet { .. }
                 | Method::RulesGet
                 | Method::SnapshotsList
+                | Method::BackupsList
+                | Method::ConfigExport { .. }
                 | Method::FencesOpenOptions { .. }
                 | Method::SettingsOpenUi
                 | Method::PeekStart
@@ -584,6 +604,16 @@ mod tests {
             Method::SnapshotsSave { name: "x".into() },
             Method::SnapshotsRestore { id: "x".into() },
             Method::SnapshotsDelete { id: "x".into() },
+            Method::ConfigExport {
+                path: "C:\\tmp\\x.json".into(),
+            },
+            Method::ConfigImport {
+                path: "C:\\tmp\\x.json".into(),
+            },
+            Method::BackupsList,
+            Method::BackupsRestore {
+                path: "C:\\tmp\\x.json".into(),
+            },
             Method::PeekStart,
             Method::PeekEnd,
             Method::SettingsOpenUi,

@@ -232,6 +232,26 @@ try {
     $r = Invoke-Cli @("fence", "show-all")
     Check "show-all again -> changed:false" ($r.Code -eq 0 -and (Json $r.Out).changed -eq $false) "$($r.Out) $($r.Err)"
 
+    # 7b. Config export / import round trip and backups.
+    $exportPath = Join-Path $stage "export.json"
+    $r = Invoke-Cli @("config", "export", $exportPath)
+    $ex = Json $r.Out
+    Check "config export writes the file" ($r.Code -eq 0 -and (Test-Path $exportPath) -and $ex.bytes -gt 100) "$($r.Out) $($r.Err)"
+    $r = Invoke-Cli @("config", "export", "relative.json")
+    Check "config export relative path -> invalid_value" ($r.Code -eq 1 -and (Json $r.Err).error.code -eq "invalid_value") "code=$($r.Code) $($r.Err)"
+    $r = Invoke-Cli @("config", "import", $exportPath)
+    $im = Json $r.Out
+    Check "config import round trip" ($r.Code -eq 0 -and $im.changed -eq $true -and $im.imported) "$($r.Out) $($r.Err)"
+    $r = Invoke-Cli @("fence", "get", $id)
+    Check "fence survives export/import" ($r.Code -eq 0 -and (Json $r.Out).id -eq $id) "$($r.Out) $($r.Err)"
+    Set-Content -LiteralPath (Join-Path $stage "bad.json") -Value "{ not json" -Encoding Ascii
+    $r = Invoke-Cli @("config", "import", (Join-Path $stage "bad.json"))
+    Check "config import garbage -> validation_failed" ($r.Code -eq 1 -and (Json $r.Err).error.code -eq "validation_failed") "code=$($r.Code) $($r.Err)"
+    $r = Invoke-Cli @("backup", "list")
+    Check "backup list ok" ($r.Code -eq 0) "$($r.Err)"
+    $r = Invoke-Cli @("backup", "restore", $exportPath)
+    Check "backup restore of a non-backup -> invalid_value" ($r.Code -eq 1 -and (Json $r.Err).error.code -eq "invalid_value") "code=$($r.Code) $($r.Err)"
+
     # 8. Delete; inbox protected.
     $r = Invoke-Cli @("fence", "delete", $id)
     Check "fence delete" ($r.Code -eq 0 -and (Json $r.Out).changed -eq $true) "$($r.Out) $($r.Err)"

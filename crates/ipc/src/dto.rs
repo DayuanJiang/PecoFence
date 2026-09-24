@@ -188,6 +188,17 @@ pub struct SnapshotDto {
     pub fence_count: usize,
 }
 
+/// A daily configuration backup kept beside `config.json`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "describe", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct BackupDto {
+    /// Full path; pass it verbatim to `backups.restore`.
+    pub path: String,
+    /// File stem (`2026-09-24`).
+    pub name: String,
+}
+
 /// One rule plus its position and the resolved target title.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "describe", derive(schemars::JsonSchema))]

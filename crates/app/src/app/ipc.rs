@@ -13,8 +13,9 @@ use pecofence_core::rules::Rule;
 use pecofence_core::{AssignedBy, Fence, Item, ItemSourceSpec, Settings, Snapshot};
 use pecofence_ipc::selector::{self, SelectorError};
 use pecofence_ipc::{
-    ErrorCode, FenceDto, IpcError, ItemDto, Method, MonitorDto, PROTOCOL_VERSION, PortalDto, Rect,
-    Response, RuleEntry, RuleListDto, SnapshotDto, StatusDto, dotted_to_pointer, mutation,
+    BackupDto, ErrorCode, FenceDto, IpcError, ItemDto, Method, MonitorDto, PROTOCOL_VERSION,
+    PortalDto, Rect, Response, RuleEntry, RuleListDto, SnapshotDto, StatusDto, dotted_to_pointer,
+    mutation,
 };
 use serde_json::{Value, json};
 use uuid::Uuid;
@@ -32,6 +33,20 @@ pub(super) const MIN_EXPIRY_MS: u64 = 100;
 pub(super) const INBOX_ALIAS: &str = "inbox";
 
 type IpcResult = std::result::Result<Value, IpcError>;
+
+/// A trimmed absolute path, or `invalid_value` (relative paths would resolve against the app's
+/// working directory, not the caller's).
+fn absolute_path(path: &str) -> std::result::Result<std::path::PathBuf, IpcError> {
+    let p = std::path::PathBuf::from(path.trim());
+    if path.trim().is_empty() || !p.is_absolute() {
+        return Err(IpcError::new(
+            ErrorCode::InvalidValue,
+            format!("{path:?} is not an absolute path"),
+        )
+        .hint("Pass a full path such as C:\\Users\\<you>\\Desktop\\pecofence.json"));
+    }
+    Ok(p)
+}
 
 /// Trimmed `value` as a title / rule name / snapshot name: `invalid_value` when blank or over
 /// [`MAX_NAME_CHARS`].
@@ -658,6 +673,25 @@ impl App {
                 Ok(mutation(changed, None, json!({ "deleted": target })))
             }
 
+            Method::ConfigExport { path } => self.ipc_config_export(path),
+            Method::ConfigImport { path } => self.ipc_config_import(path),
+            Method::BackupsList => {
+                let list: Vec<BackupDto> = self
+                    .state
+                    .backup_files()
+                    .iter()
+                    .map(|p| BackupDto {
+                        path: p.to_string_lossy().into_owned(),
+                        name: p
+                            .file_stem()
+                            .map(|s| s.to_string_lossy().into_owned())
+                            .unwrap_or_default(),
+                    })
+                    .collect();
+                to_json(&list)
+            }
+            Method::BackupsRestore { path } => self.ipc_backup_restore(path),
+
             Method::PeekStart => {
                 let idle = self.peek.as_ref().is_none_or(|p| p.is_closing());
                 if idle {
@@ -736,6 +770,88 @@ impl App {
             format!("no snapshot matches {sel:?}"),
         )
         .hint("Run `pecofence-cli snapshot list` and use the id or the exact name")
+    }
+
+    /// `config.export`: the complete configuration as pretty JSON at an absolute path.
+    fn ipc_config_export(&mut self, path: &str) -> IpcResult {
+        let target = absolute_path(path)?;
+        if target.is_dir() {
+            return Err(IpcError::new(
+                ErrorCode::InvalidValue,
+                format!("{} is a directory; pass a file path", target.display()),
+            ));
+        }
+        if !target.parent().is_some_and(|dir| dir.is_dir()) {
+            return Err(IpcError::new(
+                ErrorCode::InvalidValue,
+                format!("the folder of {} does not exist", target.display()),
+            ));
+        }
+        self.state.save_if_dirty();
+        pecofence_core::ConfigStore::export_to(&self.state.config, &target).map_err(|e| {
+            IpcError::internal(format!("could not write {}: {e}", target.display()))
+        })?;
+        let bytes = std::fs::metadata(&target).map(|m| m.len()).unwrap_or(0);
+        Ok(json!({ "path": target.to_string_lossy(), "bytes": bytes }))
+    }
+
+    /// `config.import`: replace the configuration with a file (same path as the GUI's import).
+    fn ipc_config_import(&mut self, path: &str) -> IpcResult {
+        let source = absolute_path(path)?;
+        if !source.is_file() {
+            return Err(IpcError::new(
+                ErrorCode::InvalidValue,
+                format!("{} is not a file", source.display()),
+            ));
+        }
+        self.ipc_adopt_file(&source, "imported", "导入配置")
+    }
+
+    /// `backups.restore`: only files the app itself wrote (the same guard as the settings page).
+    fn ipc_backup_restore(&mut self, path: &str) -> IpcResult {
+        let wanted = path.trim().to_lowercase();
+        let backups = self.state.backup_files();
+        let Some(source) = backups
+            .iter()
+            .find(|p| p.to_string_lossy().to_lowercase() == wanted)
+            .cloned()
+        else {
+            return Err(IpcError::new(
+                ErrorCode::InvalidValue,
+                format!("{path:?} is not one of PecoFence's backups"),
+            )
+            .hint("Run `pecofence-cli backup list` and pass one of its paths verbatim")
+            .details(json!({
+                "allowed": backups.iter().map(|p| p.to_string_lossy()).collect::<Vec<_>>()
+            })));
+        };
+        self.ipc_adopt_file(&source, "restored", "恢复备份")
+    }
+
+    /// Shared tail of import and backup restore: validate the file, snapshot the current
+    /// layout (never evicting a user snapshot), then adopt it exactly like the GUI does.
+    fn ipc_adopt_file(
+        &mut self,
+        source: &std::path::Path,
+        key: &str,
+        what_key: &'static str,
+    ) -> IpcResult {
+        let cfg = pecofence_core::ConfigStore::parse_file(source).map_err(|e| {
+            IpcError::new(
+                ErrorCode::ValidationFailed,
+                format!(
+                    "{} is not a usable PecoFence configuration: {e}",
+                    source.display()
+                ),
+            )
+        })?;
+        let snapshot = self.auto_snapshot();
+        self.adopt_config(cfg, pecofence_core::i18n::text(what_key));
+        Ok(mutation(
+            true,
+            snapshot,
+            json!({ key: source.to_string_lossy() }),
+        ))
     }
 
     fn resolve_snapshot(&self, sel: &str) -> std::result::Result<Uuid, IpcError> {

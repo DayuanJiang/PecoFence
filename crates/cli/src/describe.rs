@@ -250,6 +250,30 @@ pub const COMMANDS: &[Entry] = &[
         "pecofence-cli snapshot delete 3f9c2a1e"
     ),
     entry!(
+        "config export",
+        Some("config.export"),
+        "Write the whole configuration to an absolute JSON path (overwrites)",
+        "pecofence-cli config export C:\\Users\\me\\Desktop\\pecofence.json"
+    ),
+    entry!(
+        "config import",
+        Some("config.import"),
+        "Replace the configuration from a JSON file; the current layout is snapshotted first",
+        "pecofence-cli config import C:\\Users\\me\\Desktop\\pecofence.json"
+    ),
+    entry!(
+        "backup list",
+        Some("backups.list"),
+        "Daily config backups the app keeps (path, name), newest first",
+        "pecofence-cli backup list"
+    ),
+    entry!(
+        "backup restore",
+        Some("backups.restore"),
+        "Restore a backup by the exact path from `backup list`; the current layout is snapshotted first",
+        "pecofence-cli backup restore C:\\Users\\me\\AppData\\Roaming\\PecoFence\\backups\\2026-09-23.json"
+    ),
+    entry!(
         "peek start",
         Some("peek.start"),
         "Float every fence above other windows",

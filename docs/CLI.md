@@ -77,6 +77,10 @@ unique id prefix, or a name (only while that name is unique).
 | `snapshot save <NAME>` | `pecofence-cli snapshot save before-cleanup` |
 | `snapshot restore <ID>` | `pecofence-cli snapshot restore 3f9c2a1e` |
 | `snapshot delete <ID>` | `pecofence-cli snapshot delete 3f9c2a1e` |
+| `config export <FILE>` | `pecofence-cli config export C:\Users\me\Desktop\pecofence.json` (absolute path, overwrites) |
+| `config import <FILE>` | `pecofence-cli config import C:\Users\me\Desktop\pecofence.json` (replaces everything; layout snapshotted first) |
+| `backup list` | `pecofence-cli backup list` (daily backups beside config.json, newest first) |
+| `backup restore <FILE>` | `pecofence-cli backup restore "C:\Users\me\AppData\Roaming\PecoFence\backups\2026-09-23.json"` (a path from `backup list`) |
 | `peek start` / `peek end` | `pecofence-cli peek start` |
 
 `fence create --portal <DIR>` shows a folder as a fence; `--title` is optional there and defaults to
@@ -207,7 +211,9 @@ instance and needs neither.
 
 ## Limits
 
-- No file dialogs: configuration import/export and backup restore remain GUI-only.
+- `config import` and `backup restore` replace the whole configuration (settings, rules, layouts). The
+  current layout is snapshotted first, but snapshots do not cover settings or rules; run
+  `config export` first if you may want the old values back.
 - Tabs hosted inside another fence's window share its geometry: `fence move`/`resize` on a tab fails
   with `unsupported` (address the host fence, or `fence detach` first), and `--all` batches skip tabs.
 - Deleting a fence also deletes the rules that target it; its items return to the desktop fence.

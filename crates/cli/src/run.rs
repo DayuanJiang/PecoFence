@@ -9,7 +9,8 @@ use serde_json::{Value, json};
 
 use crate::cli::split_set_args;
 use crate::cli::{
-    Command, FenceCmd, ItemCmd, MonitorCmd, PeekCmd, RuleAddArgs, RuleCmd, SettingsCmd, SnapshotCmd,
+    BackupCmd, Command, ConfigCmd, FenceCmd, ItemCmd, MonitorCmd, PeekCmd, RuleAddArgs, RuleCmd,
+    SettingsCmd, SnapshotCmd,
 };
 use crate::output::Reply;
 use crate::{client, describe};
@@ -78,6 +79,18 @@ pub fn run(ctx: &Ctx, command: Command) -> Result<Reply, IpcError> {
         Command::Settings { cmd } => run_settings(ctx, cmd),
         Command::Rule { cmd } => run_rule(ctx, cmd),
         Command::Snapshot { cmd } => run_snapshot(ctx, cmd),
+        Command::Config {
+            cmd: ConfigCmd::Export { file },
+        } => ctx.call(Method::ConfigExport { path: file }),
+        Command::Config {
+            cmd: ConfigCmd::Import { file },
+        } => ctx.call(Method::ConfigImport { path: file }),
+        Command::Backup {
+            cmd: BackupCmd::List,
+        } => ctx.call(Method::BackupsList),
+        Command::Backup {
+            cmd: BackupCmd::Restore { file },
+        } => ctx.call(Method::BackupsRestore { path: file }),
         Command::Peek {
             cmd: PeekCmd::Start,
         } => ctx.call(Method::PeekStart),
