@@ -357,6 +357,23 @@
     ERROR_PIPE_CONNECTED
     ERROR_NO_DATA
     ERROR_BROKEN_PIPE
+    ERROR_OPERATION_ABORTED
+    // per-connection I/O deadlines + listener wake-up
+    CancelSynchronousIo
+    OpenThread
+    THREAD_TERMINATE
+    // pipe DACL: SYSTEM, Administrators and the current user only
+    SECURITY_ATTRIBUTES
+    PSECURITY_DESCRIPTOR
+    ConvertStringSecurityDescriptorToSecurityDescriptorW
+    SDDL_REVISION_1
+    OpenProcessToken
+    GetTokenInformation
+    TokenUser
+    TOKEN_USER
+    TOKEN_QUERY
+    ConvertSidToStringSidW
+    LocalFree
 
     // ---- misc
     MessageBoxW

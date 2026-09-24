@@ -186,6 +186,15 @@ impl AppState {
         Some(backup)
     }
 
+    /// Restores a snapshot's layouts without taking a backup first. False when `id` is unknown.
+    pub fn restore_snapshot(&mut self, id: uuid::Uuid) -> bool {
+        let Some(snap) = self.config.snapshots.iter().find(|s| s.id == id).cloned() else {
+            return false;
+        };
+        self.apply_snapshot_layouts(snap.layouts);
+        true
+    }
+
     fn apply_snapshot_layouts(&mut self, layouts: Vec<pecofence_core::Layout>) {
         self.config.layouts = layouts;
         self.layout = 0;

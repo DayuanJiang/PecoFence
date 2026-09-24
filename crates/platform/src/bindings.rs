@@ -36,6 +36,11 @@ pub unsafe fn CancelIoEx(
     unsafe { CancelIoEx(hfile, lpoverlapped.unwrap_or(core::mem::zeroed()) as _) }
 }
 #[inline]
+pub unsafe fn CancelSynchronousIo(hthread: HANDLE) -> windows_core::BOOL {
+    windows_core::link!("kernel32.dll" "system" fn CancelSynchronousIo(hthread : HANDLE) -> windows_core::BOOL);
+    unsafe { CancelSynchronousIo(hthread) }
+}
+#[inline]
 pub unsafe fn ClientToScreen(hwnd: HWND, lppoint: *mut POINT) -> windows_core::BOOL {
     windows_core::link!("user32.dll" "system" fn ClientToScreen(hwnd : HWND, lppoint : *mut POINT) -> windows_core::BOOL);
     unsafe { ClientToScreen(hwnd, lppoint as _) }
@@ -93,6 +98,34 @@ pub unsafe fn ConnectNamedPipe(
 ) -> windows_core::BOOL {
     windows_core::link!("kernel32.dll" "system" fn ConnectNamedPipe(hnamedpipe : HANDLE, lpoverlapped : *mut OVERLAPPED) -> windows_core::BOOL);
     unsafe { ConnectNamedPipe(hnamedpipe, lpoverlapped.unwrap_or(core::mem::zeroed()) as _) }
+}
+#[inline]
+pub unsafe fn ConvertSidToStringSidW(
+    sid: PSID,
+    stringsid: *mut windows_core::PWSTR,
+) -> windows_core::BOOL {
+    windows_core::link!("advapi32.dll" "system" fn ConvertSidToStringSidW(sid : PSID, stringsid : *mut windows_core::PWSTR) -> windows_core::BOOL);
+    unsafe { ConvertSidToStringSidW(sid, stringsid as _) }
+}
+#[inline]
+pub unsafe fn ConvertStringSecurityDescriptorToSecurityDescriptorW<P0>(
+    stringsecuritydescriptor: P0,
+    stringsdrevision: u32,
+    securitydescriptor: *mut PSECURITY_DESCRIPTOR,
+    securitydescriptorsize: Option<*mut u32>,
+) -> windows_core::BOOL
+where
+    P0: windows_core::Param<windows_core::PCWSTR>,
+{
+    windows_core::link!("advapi32.dll" "system" fn ConvertStringSecurityDescriptorToSecurityDescriptorW(stringsecuritydescriptor : windows_core::PCWSTR, stringsdrevision : u32, securitydescriptor : *mut PSECURITY_DESCRIPTOR, securitydescriptorsize : *mut u32) -> windows_core::BOOL);
+    unsafe {
+        ConvertStringSecurityDescriptorToSecurityDescriptorW(
+            stringsecuritydescriptor.param().abi(),
+            stringsdrevision,
+            securitydescriptor as _,
+            securitydescriptorsize.unwrap_or(core::mem::zeroed()) as _,
+        )
+    }
 }
 #[inline]
 pub unsafe fn CreateBitmap(
@@ -930,6 +963,25 @@ where
     }
 }
 #[inline]
+pub unsafe fn GetTokenInformation(
+    tokenhandle: HANDLE,
+    tokeninformationclass: TOKEN_INFORMATION_CLASS,
+    tokeninformation: Option<*mut core::ffi::c_void>,
+    tokeninformationlength: u32,
+    returnlength: *mut u32,
+) -> windows_core::BOOL {
+    windows_core::link!("advapi32.dll" "system" fn GetTokenInformation(tokenhandle : HANDLE, tokeninformationclass : TOKEN_INFORMATION_CLASS, tokeninformation : *mut core::ffi::c_void, tokeninformationlength : u32, returnlength : *mut u32) -> windows_core::BOOL);
+    unsafe {
+        GetTokenInformation(
+            tokenhandle,
+            tokeninformationclass,
+            tokeninformation.unwrap_or(core::mem::zeroed()) as _,
+            tokeninformationlength,
+            returnlength as _,
+        )
+    }
+}
+#[inline]
 pub unsafe fn GetWindow(hwnd: HWND, ucmd: u32) -> HWND {
     windows_core::link!("user32.dll" "system" fn GetWindow(hwnd : HWND, ucmd : u32) -> HWND);
     unsafe { GetWindow(hwnd, ucmd) }
@@ -1073,6 +1125,11 @@ where
     }
 }
 #[inline]
+pub unsafe fn LocalFree(hmem: HLOCAL) -> HLOCAL {
+    windows_core::link!("kernel32.dll" "system" fn LocalFree(hmem : HLOCAL) -> HLOCAL);
+    unsafe { LocalFree(hmem) }
+}
+#[inline]
 pub unsafe fn MapVirtualKeyExW(ucode: u32, umaptype: u32, dwhkl: Option<HKL>) -> u32 {
     windows_core::link!("user32.dll" "system" fn MapVirtualKeyExW(ucode : u32, umaptype : u32, dwhkl : HKL) -> u32);
     unsafe { MapVirtualKeyExW(ucode, umaptype, dwhkl.unwrap_or(core::mem::zeroed()) as _) }
@@ -1178,6 +1235,20 @@ pub unsafe fn OleUninitialize() {
 pub unsafe fn OpenProcess(dwdesiredaccess: u32, binherithandle: bool, dwprocessid: u32) -> HANDLE {
     windows_core::link!("kernel32.dll" "system" fn OpenProcess(dwdesiredaccess : u32, binherithandle : windows_core::BOOL, dwprocessid : u32) -> HANDLE);
     unsafe { OpenProcess(dwdesiredaccess, binherithandle.into(), dwprocessid) }
+}
+#[inline]
+pub unsafe fn OpenProcessToken(
+    processhandle: HANDLE,
+    desiredaccess: u32,
+    tokenhandle: *mut HANDLE,
+) -> windows_core::BOOL {
+    windows_core::link!("advapi32.dll" "system" fn OpenProcessToken(processhandle : HANDLE, desiredaccess : u32, tokenhandle : *mut HANDLE) -> windows_core::BOOL);
+    unsafe { OpenProcessToken(processhandle, desiredaccess, tokenhandle as _) }
+}
+#[inline]
+pub unsafe fn OpenThread(dwdesiredaccess: u32, binherithandle: bool, dwthreadid: u32) -> HANDLE {
+    windows_core::link!("kernel32.dll" "system" fn OpenThread(dwdesiredaccess : u32, binherithandle : windows_core::BOOL, dwthreadid : u32) -> HANDLE);
+    unsafe { OpenThread(dwdesiredaccess, binherithandle.into(), dwthreadid) }
 }
 #[inline]
 pub unsafe fn OutputDebugStringW<P0>(lpoutputstring: P0)
@@ -2980,6 +3051,7 @@ pub const ERROR_ALREADY_EXISTS: i32 = 183;
 pub const ERROR_BROKEN_PIPE: i32 = 109;
 pub const ERROR_NOTIFY_ENUM_DIR: i32 = 1022;
 pub const ERROR_NO_DATA: i32 = 232;
+pub const ERROR_OPERATION_ABORTED: i32 = 995;
 pub const ERROR_PIPE_CONNECTED: i32 = 535;
 pub const ES_AUTOHSCROLL: i32 = 128;
 pub const EVENT_OBJECT_DESTROY: i32 = 32769;
@@ -3204,6 +3276,7 @@ pub const HKEY_LOCAL_MACHINE: HKEY = HKEY(-2147483646 as _);
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub struct HKL(pub *mut core::ffi::c_void);
+pub type HLOCAL = HANDLE;
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub struct HMENU(pub *mut core::ffi::c_void);
@@ -14572,6 +14645,12 @@ pub struct PROPERTYKEY {
     pub fmtid: windows_core::GUID,
     pub pid: u32,
 }
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub struct PSECURITY_DESCRIPTOR(pub *mut core::ffi::c_void);
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub struct PSID(pub *mut core::ffi::c_void);
 pub type PTOP_LEVEL_EXCEPTION_FILTER =
     Option<unsafe extern "system" fn(exceptioninfo: *const EXCEPTION_POINTERS) -> i32>;
 pub type PTRANSLATE_ADDRESS_ROUTINE64 = Option<
@@ -14700,6 +14779,7 @@ pub const RI_MOUSE_LEFT_BUTTON_UP: i32 = 2;
 pub const RRF_RT_REG_DWORD: i32 = 16;
 pub const SC_MOVE: i32 = 61456;
 pub const SC_SIZE: i32 = 61440;
+pub const SDDL_REVISION_1: i32 = 1;
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct SECURITY_ATTRIBUTES {
@@ -14928,6 +15008,12 @@ pub struct SHQUERYRBINFO {
 }
 pub type SIATTRIBFLAGS = u32;
 pub type SICHINTF = u32;
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct SID_AND_ATTRIBUTES {
+    pub Sid: PSID,
+    pub Attributes: u32,
+}
 pub type SIGDN = i32;
 pub const SIGDN_FILESYSPATH: SIGDN = -2147123200;
 pub const SIGDN_NORMALDISPLAY: SIGDN = 0;
@@ -15075,6 +15161,7 @@ pub const S_FALSE: windows_core::HRESULT = windows_core::HRESULT(0x1_u32 as _);
 pub const S_OK: windows_core::HRESULT = windows_core::HRESULT(0x0_u32 as _);
 pub const ShellLink: windows_core::GUID =
     windows_core::GUID::from_u128(0x00021401_0000_0000_c000_000000000046);
+pub const THREAD_TERMINATE: i32 = 1;
 pub type TIMERPROC =
     Option<unsafe extern "system" fn(param0: HWND, param1: u32, param2: usize, param3: u32)>;
 pub const TIMERV_DEFAULT_COALESCING: i32 = 0;
@@ -15097,6 +15184,13 @@ impl Default for TIME_ZONE_INFORMATION {
 }
 pub const TME_LEAVE: i32 = 2;
 pub const TME_NONCLIENT: i32 = 16;
+pub type TOKEN_INFORMATION_CLASS = i32;
+pub const TOKEN_QUERY: i32 = 8;
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct TOKEN_USER {
+    pub User: SID_AND_ATTRIBUTES,
+}
 pub const TOOLTIPS_CLASSW: windows_core::PCWSTR = windows_core::w!("tooltips_class32");
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -15141,6 +15235,7 @@ pub struct TTTOOLINFOW {
 }
 pub type TYMED = i32;
 pub const TYMED_HGLOBAL: TYMED = 1;
+pub const TokenUser: TOKEN_INFORMATION_CLASS = 1;
 pub const ULW_ALPHA: i32 = 2;
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]

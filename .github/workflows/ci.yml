@@ -38,7 +38,10 @@ jobs:
       - name: Test (core)
         run: cargo test --workspace
       - name: Release build
-        run: cargo build --locked --release -p pecofence -p pecofence-watchdog -p pecofence-cli
+        run: |
+          cargo build --locked --release -p pecofence -p pecofence-watchdog
+          # Separate invocation so the CLI's schemars feature is not unified into the app.
+          cargo build --locked --release -p pecofence-cli
       - name: Size gate (pecofence.exe <= 3.5 MB)
         shell: pwsh
         run: |

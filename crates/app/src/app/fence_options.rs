@@ -118,11 +118,8 @@ pub(super) fn parse_fence_prop(
     let as_str = |allowed: &[&str]| value.as_str().ok_or_else(|| bad(allowed));
     Ok(match prop {
         "title" => {
-            let title = as_str(&["<non-empty string>"])?.trim();
-            if title.is_empty() {
-                return Err(bad(&["<non-empty string>"]));
-            }
-            FenceProp::Title(title.to_string())
+            let title = as_str(&["<non-empty string>"])?;
+            FenceProp::Title(super::ipc::checked_name("title", title)?)
         }
         "iconSize" => {
             const ALLOWED: &[&str] = &["32", "48", "64", "96"];

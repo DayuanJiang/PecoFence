@@ -56,6 +56,11 @@ builds the x64 portable archive and publishes the GitHub Release with its ZIP
 and checksum right away (pushing a `v*` tag is the publish action; the winget
 workflow then opens the manifest PR). Edit the generated notes afterwards if needed.
 
+The winget workflow copies the previous manifest, so after the first release that ships
+`pecofence-cli.exe` add it once to the portable manifest by hand: a second
+`NestedInstallerFiles` entry (`RelativeFilePath: pecofence-cli.exe`,
+`PortableCommandAlias: pecofence-cli`) next to `pecofence.exe`.
+
 Current packaging is x64 and unsigned. ARM64 is not configured. winget publishing runs
 from `.github/workflows/winget.yml` on published releases; the Microsoft Store package is
 built locally with `./scripts/make-msix.ps1` and uploaded in Partner Center, see

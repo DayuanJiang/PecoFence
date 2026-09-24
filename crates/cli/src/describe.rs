@@ -4,6 +4,9 @@ use pecofence_ipc::schema::{SCHEMA_NAMES, schema};
 use pecofence_ipc::{ErrorCode, IpcError, PROTOCOL_VERSION};
 use serde_json::{Value, json};
 
+#[cfg(test)]
+use pecofence_ipc::Method;
+
 /// One CLI leaf: command, wire method (`None` for client-only commands), summary, example.
 pub struct Entry {
     pub command: &'static str,
@@ -63,7 +66,7 @@ pub const COMMANDS: &[Entry] = &[
     entry!(
         "fence create",
         Some("fences.create"),
-        "New virtual fence (--rect/--monitor) or folder portal (--portal)",
+        "New virtual fence (--rect/--monitor) or folder portal (--portal DIR, --title optional)",
         "pecofence-cli fence create --title Work --rect 100,100,600,400"
     ),
     entry!(
@@ -93,7 +96,7 @@ pub const COMMANDS: &[Entry] = &[
     entry!(
         "fence set",
         Some("fences.setOption"),
-        "Per-fence option; --all applies to every fence one by one",
+        "Per-fence option (--string forces text); --all applies to every fence one by one, skipping hosted tabs",
         "pecofence-cli fence set Work layout list"
     ),
     entry!(
@@ -153,7 +156,7 @@ pub const COMMANDS: &[Entry] = &[
     entry!(
         "item move",
         Some("items.move"),
-        "Move items (id, path, or name) or --glob matches into --to",
+        "Move items (id, path, or name) or --glob matches into --to; into/out of a folder portal moves real files (--glob skips portal items unless --from names the portal)",
         "pecofence-cli item move --glob \"*.pdf\" --to Docs"
     ),
     entry!(
@@ -231,20 +234,20 @@ pub const COMMANDS: &[Entry] = &[
     entry!(
         "snapshot save",
         Some("snapshots.save"),
-        "Save the current layout",
+        "Save the current fence layout; keep the returned snapshot.id for restore",
         "pecofence-cli snapshot save before-cleanup"
     ),
     entry!(
         "snapshot restore",
         Some("snapshots.restore"),
-        "Restore (the current layout is snapshotted first)",
-        "pecofence-cli snapshot restore before-cleanup"
+        "Restore by id (names only while unique); the current layout is snapshotted first",
+        "pecofence-cli snapshot restore 3f9c2a1e"
     ),
     entry!(
         "snapshot delete",
         Some("snapshots.delete"),
-        "Delete a snapshot",
-        "pecofence-cli snapshot delete before-cleanup"
+        "Delete a snapshot by id (or unique name)",
+        "pecofence-cli snapshot delete 3f9c2a1e"
     ),
     entry!(
         "peek start",
@@ -336,10 +339,12 @@ pub const NOTES: &[&str] = &[
     "Output is JSON only: the result on stdout, {\"error\":{code,message,hint?,details?}} on stderr. Pretty on a terminal, one line otherwise (--pretty/--compact).",
     "Exit codes: 0 ok, 1 the app returned an error (or part of a --all/--glob batch failed), 2 usage, 3 not running, 4 timeout.",
     "Coordinates are physical pixels in virtual-screen space (primary monitor top-left = 0,0; monitors to the left are negative).",
-    "Mutations return {changed:bool, ...}; changed:false means the state was already as requested and is not an error. Destructive ones add snapshotId (auto snapshot taken first).",
-    "Fence selectors: id, unique id prefix (>=6 hex), or title (exact, then unique substring). Rules: id, 0-based index, or name. Snapshots: id or name.",
+    "Mutations return {changed:bool, ...}; changed:false means the state was already as requested and is not an error. fence delete (with items), rules.apply (when it moves something) and snapshot restore take an automatic layout snapshot first and add snapshotId; settings and rules are not covered by snapshots.",
+    "Fence selectors: id, unique id prefix (>=6 hex), or title (exact, then unique substring); `inbox` always means the desktop fence (kind == \"inbox\" in fence list), whatever its title. Rules: id, 0-based index, or name. Snapshots: id, unique id prefix, or name (fails with snapshot_not_found when several share it; use snapshot.id from snapshot save).",
+    "Folder portals show real files: item move into or out of a portal is an Explorer file move (undo only via Explorer Ctrl+Z; snapshots do not revert it). item move --glob without --from skips portal items; pass --from <portal> to include them.",
+    "Shell quoting: values starting with #, [ or * or containing spaces need quotes (Git Bash treats #ff8800 as a comment): fence set Work tint \"#ff8800\" or tint '\"#ff8800\"'. Negative numbers work bare: settings set snapping.gapPx -4.",
     "Settings paths are dotted camelCase (peek.enabled, quickHide.delayMs, rollUp.hoverPeek, snapping.gapPx, iconSize, theme, themeStyle, hideRealIcons, autostart, icons.chameleon); see describe --schema Settings.",
-    "fence set props: iconSize 32|48|64|96, spacing compact|normal|loose, autoHeight, locked, excludeFromQuickHide, opacity default|clear|solid, tint #RRGGBB|null, titleColor theme|tint|white|black|#RRGGBB, titleSize small|normal|large, layout icons|list|details, sort manual|name|type|date|size|openCount, reverse, groupByDate, labelLines, portalNavigate, portalTitleIcon.",
+    "fence set props: title (or fence rename), iconSize 32|48|64|96, spacing compact|normal|loose, autoHeight, locked, excludeFromQuickHide, opacity default|clear|solid, tint \"#RRGGBB\"|null, titleColor theme|tint|white|black|\"#RRGGBB\", titleSize small|normal|large, layout icons|list|details, sort manual|name|type|date|size|openCount, reverse, groupByDate, labelLines, portalNavigate, portalTitleIcon. --string keeps numeric-looking text (title 2024) a string.",
     "The app must be running; the CLI never edits config.json. --instance <name> only addresses a test instance started with PECOFENCE_INSTANCE=<name>.",
 ];
 
@@ -379,10 +384,18 @@ pub fn catalog() -> Value {
 pub fn run(schema_name: Option<&str>) -> Result<Value, IpcError> {
     match schema_name {
         None => Ok(catalog()),
-        Some(name) => schema(name).ok_or_else(|| {
-            IpcError::invalid_value(format!("unknown schema {name:?}"), SCHEMA_NAMES)
-                .hint("Run `pecofence-cli describe` and pick one of .schemas")
-        }),
+        Some(name) => {
+            let wanted = name.trim();
+            let canonical = SCHEMA_NAMES
+                .iter()
+                .find(|n| n.eq_ignore_ascii_case(wanted))
+                .and_then(|n| schema(n));
+            canonical.ok_or_else(|| {
+                IpcError::usage(format!("unknown schema {name:?}"))
+                    .hint("Run `pecofence-cli describe` and pick one of .schemas")
+                    .details(json!({ "allowed": SCHEMA_NAMES }))
+            })
+        }
     }
 }
 
@@ -545,10 +558,106 @@ mod tests {
     }
 
     #[test]
-    fn unknown_schema_is_invalid_value() {
+    fn unknown_schema_is_a_usage_error_and_names_are_case_insensitive() {
         let err = run(Some("Nope")).unwrap_err();
-        assert_eq!(err.code, ErrorCode::InvalidValue);
+        assert_eq!(err.code, ErrorCode::Usage);
+        assert_eq!(err.code.exit_code(), 2);
         assert_eq!(err.details.unwrap()["allowed"], json!(SCHEMA_NAMES));
-        assert!(run(Some("Settings")).unwrap().is_object());
+        let canonical = run(Some("Settings")).unwrap();
+        assert!(canonical.is_object());
+        assert_eq!(run(Some("settings")).unwrap(), canonical);
+        assert_eq!(run(Some("SETTINGS")).unwrap(), canonical);
+        assert_eq!(
+            run(Some(" fencedto ")).unwrap(),
+            run(Some("FenceDto")).unwrap()
+        );
+    }
+
+    /// Minimal shell-words: whitespace separates, double or single quotes group (and are
+    /// dropped). Enough for the examples, which never nest quotes.
+    fn shell_words(line: &str) -> Vec<String> {
+        let mut words = Vec::new();
+        let mut cur = String::new();
+        let mut quote: Option<char> = None;
+        let mut in_word = false;
+        for c in line.chars() {
+            match (quote, c) {
+                (Some(q), c) if c == q => quote = None,
+                (Some(_), c) => cur.push(c),
+                (None, '"' | '\'') => {
+                    quote = Some(c);
+                    in_word = true;
+                }
+                (None, c) if c.is_whitespace() => {
+                    if in_word {
+                        words.push(std::mem::take(&mut cur));
+                        in_word = false;
+                    }
+                }
+                (None, c) => {
+                    cur.push(c);
+                    in_word = true;
+                }
+            }
+        }
+        assert!(quote.is_none(), "unbalanced quotes in {line:?}");
+        if in_word {
+            words.push(cur);
+        }
+        words
+    }
+
+    #[test]
+    fn every_example_parses() {
+        use clap::Parser;
+        for e in COMMANDS {
+            let words = shell_words(e.example);
+            assert_eq!(words[0], "pecofence-cli", "{}", e.example);
+            crate::cli::Cli::try_parse_from(&words)
+                .unwrap_or_else(|err| panic!("{}: {err}", e.example));
+        }
+        assert_eq!(shell_words(r#"a "b c" 'd' e"#), vec!["a", "b c", "d", "e"]);
+    }
+
+    /// Leaves of the clap tree as space-joined paths (`fence set`, `peek start`, ...).
+    fn clap_leaves(cmd: &clap::Command, prefix: &str, out: &mut BTreeSet<String>) {
+        let subs: Vec<&clap::Command> = cmd.get_subcommands().collect();
+        if subs.is_empty() {
+            out.insert(prefix.to_string());
+            return;
+        }
+        for sub in subs {
+            let path = if prefix.is_empty() {
+                sub.get_name().to_string()
+            } else {
+                format!("{prefix} {}", sub.get_name())
+            };
+            clap_leaves(sub, &path, out);
+        }
+    }
+
+    #[test]
+    fn catalog_lists_every_clap_leaf_and_nothing_else() {
+        use clap::CommandFactory;
+        let mut leaves = BTreeSet::new();
+        clap_leaves(&crate::cli::Cli::command(), "", &mut leaves);
+        let listed: BTreeSet<String> = COMMANDS.iter().map(|e| e.command.to_string()).collect();
+        assert_eq!(listed, leaves);
+    }
+
+    #[test]
+    fn catalog_methods_are_real_wire_names() {
+        // Every method string in the catalog must be one the protocol enum serialises.
+        let wire: BTreeSet<String> = {
+            let mut set = BTreeSet::new();
+            collect_dotted(&schema("Request").unwrap(), &mut set);
+            set
+        };
+        for e in COMMANDS {
+            if let Some(m) = e.method {
+                assert!(wire.contains(m), "{m} is not a Method");
+            }
+        }
+        assert_eq!(Method::FencesList.name(), "fences.list");
     }
 }

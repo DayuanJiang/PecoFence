@@ -22,10 +22,178 @@ fn url_shortcut_names_prefer_the_browser_title() {
 
 mod ipc {
     use super::super::fence_options::{FenceProp, parse_fence_prop};
-    use super::super::ipc::{AUTO_SNAPSHOT_PREFIX, patch_settings_path, prune_auto_snapshots};
-    use pecofence_core::{Settings, Snapshot, ViewLayout};
-    use pecofence_ipc::ErrorCode;
+    use super::super::ipc::{
+        AUTO_SNAPSHOT_PREFIX, MAX_NAME_CHARS, MIN_EXPIRY_MS, auto_snapshot_slot,
+        check_rule_conditions, checked_name, is_inbox_alias, patch_settings_path,
+        prune_auto_snapshots, request_expiry, rolled_back_settings, validate_rect,
+    };
+    use pecofence_core::geometry::WorkArea;
+    use pecofence_core::{Cond, MAX_SNAPSHOTS, Settings, Snapshot, ViewLayout};
+    use pecofence_ipc::{ErrorCode, Rect};
     use serde_json::json;
+    use std::time::Duration;
+
+    fn work(device: &str, left: i32, top: i32, w: i32, h: i32, dpi: u32) -> WorkArea {
+        WorkArea {
+            device_path: device.into(),
+            left,
+            top,
+            right: left + w,
+            bottom: top + h,
+            dpi,
+            mon_left: left,
+            mon_top: top,
+            mon_right: left + w,
+            mon_bottom: top + h + 40,
+        }
+    }
+
+    fn two_monitors() -> Vec<WorkArea> {
+        vec![
+            work("primary", 0, 0, 1920, 1040, 96),
+            // A 150 % monitor to the left, taller than the primary.
+            work("left", -2560, -200, 2560, 1400, 144),
+        ]
+    }
+
+    fn rect(x: i32, y: i32, w: i32, h: i32) -> Rect {
+        Rect { x, y, w, h }
+    }
+
+    #[test]
+    fn rect_validation_accepts_rects_centred_on_a_monitor() {
+        let areas = two_monitors();
+        assert_eq!(
+            validate_rect(rect(100, 100, 300, 200), &areas)
+                .unwrap()
+                .device_path,
+            "primary"
+        );
+        // Hanging off the edge is fine as long as the centre is on screen.
+        assert_eq!(
+            validate_rect(rect(-2700, 0, 400, 300), &areas)
+                .unwrap()
+                .device_path,
+            "left"
+        );
+        // Minimum size scales with the monitor's DPI: 64x36 DIP is 96x54 px at 150 %.
+        assert!(validate_rect(rect(-1000, 500, 64, 36), &areas).is_err());
+        assert!(validate_rect(rect(-1000, 500, 96, 54), &areas).is_ok());
+        assert!(validate_rect(rect(500, 500, 64, 36), &areas).is_ok());
+    }
+
+    #[test]
+    fn rect_validation_rejects_overflow_offscreen_and_bad_sizes() {
+        let areas = two_monitors();
+        let err = validate_rect(rect(i32::MAX - 10, 0, 300, 200), &areas).unwrap_err();
+        assert_eq!(err.code, ErrorCode::InvalidValue);
+        assert!(err.message.contains("overflow"), "{}", err.message);
+        let err = validate_rect(rect(0, i32::MAX, 300, 200), &areas).unwrap_err();
+        assert!(err.message.contains("overflow"), "{}", err.message);
+
+        let err = validate_rect(rect(0, 0, 0, 200), &areas).unwrap_err();
+        assert_eq!(err.code, ErrorCode::InvalidValue);
+        assert!(err.message.contains("positive"), "{}", err.message);
+        assert!(validate_rect(rect(0, 0, 300, -1), &areas).is_err());
+
+        // Centre below both monitors' work areas (on the primary's taskbar strip).
+        let err = validate_rect(rect(100, 1030, 300, 200), &areas).unwrap_err();
+        assert_eq!(err.code, ErrorCode::InvalidValue);
+        assert_eq!(
+            err.message,
+            "rect centre is outside every monitor's work area"
+        );
+        let details = err.details.unwrap();
+        assert_eq!(details["workAreas"].as_array().unwrap().len(), 2);
+        assert_eq!(details["centre"], json!({ "x": 250, "y": 1130 }));
+        // Far to the right of everything.
+        assert!(validate_rect(rect(5000, 0, 300, 200), &areas).is_err());
+        // Nothing connected.
+        assert!(validate_rect(rect(0, 0, 300, 200), &[]).is_err());
+
+        // Too small on the primary (36 px wide) and too large (over 8192 DIP).
+        let err = validate_rect(rect(500, 500, 36, 100), &areas).unwrap_err();
+        assert_eq!(err.code, ErrorCode::InvalidValue);
+        assert!(
+            err.message.contains("outside the allowed range"),
+            "{}",
+            err.message
+        );
+        assert!(validate_rect(rect(-4000, 500, 9000, 9000), &areas).is_err());
+        // 8192 DIP at 150 % is 12288 px: allowed on the left monitor, whose work area holds
+        // the centre (-1280, 500); the same size is over the limit on the 96 dpi primary.
+        assert!(validate_rect(rect(-7424, -5644, 12288, 12288), &areas).is_ok());
+        assert!(validate_rect(rect(-5184, -5624, 12288, 12288), &areas).is_err());
+    }
+
+    #[test]
+    fn names_are_trimmed_and_length_limited() {
+        assert_eq!(checked_name("title", "  Work  ").unwrap(), "Work");
+        let err = checked_name("title", "   ").unwrap_err();
+        assert_eq!(err.code, ErrorCode::InvalidValue);
+        assert!(err.message.contains("title"), "{}", err.message);
+        let just_fits = "字".repeat(MAX_NAME_CHARS);
+        assert_eq!(checked_name("rule name", &just_fits).unwrap(), just_fits);
+        let too_long = "x".repeat(MAX_NAME_CHARS + 1);
+        let err = checked_name("snapshot name", &too_long).unwrap_err();
+        assert_eq!(err.code, ErrorCode::InvalidValue);
+        assert!(err.message.contains("257"), "{}", err.message);
+        assert_eq!(err.details.unwrap()["max"], json!(MAX_NAME_CHARS));
+        // Surrounding whitespace does not count.
+        let padded = format!("  {}  ", "y".repeat(MAX_NAME_CHARS));
+        assert!(checked_name("title", &padded).is_ok());
+        // parse_fence_prop("title") goes through the same check.
+        let err = parse_fence_prop("title", &json!(too_long)).unwrap_err();
+        assert_eq!(err.code, ErrorCode::InvalidValue);
+    }
+
+    #[test]
+    fn tiny_timeouts_still_run_once() {
+        assert_eq!(request_expiry(0), Duration::from_millis(MIN_EXPIRY_MS));
+        assert_eq!(request_expiry(50), Duration::from_millis(MIN_EXPIRY_MS));
+        assert_eq!(request_expiry(15_000), Duration::from_millis(15_000));
+    }
+
+    #[test]
+    fn rules_need_a_condition() {
+        let err = check_rule_conditions(&[]).unwrap_err();
+        assert_eq!(err.code, ErrorCode::InvalidValue);
+        assert!(
+            err.message.contains("at least one condition"),
+            "{}",
+            err.message
+        );
+        assert!(check_rule_conditions(&[Cond::Ext(vec![".pdf".into()])]).is_ok());
+    }
+
+    #[test]
+    fn inbox_alias_is_case_insensitive() {
+        assert!(is_inbox_alias("inbox"));
+        assert!(is_inbox_alias(" INBOX "));
+        assert!(is_inbox_alias("Inbox"));
+        assert!(!is_inbox_alias("inbox2"));
+        assert!(!is_inbox_alias("桌面"));
+    }
+
+    #[test]
+    fn rolled_back_settings_names_the_kept_keys() {
+        // Asked to show the real icons (default: hidden), but Explorer refused.
+        let requested = Settings {
+            hide_real_icons: false,
+            icon_size: 64,
+            ..Default::default()
+        };
+        let applied = Settings {
+            icon_size: 64,
+            ..Default::default()
+        };
+        assert!(applied.hide_real_icons);
+        assert_eq!(
+            rolled_back_settings(&requested, &applied),
+            vec!["hideRealIcons".to_string()]
+        );
+        assert!(rolled_back_settings(&applied, &applied).is_empty());
+    }
 
     #[test]
     fn settings_patch_sets_a_nested_bool() {
@@ -178,5 +346,49 @@ mod ipc {
             ["mine", "auto-cli-b", "yours", "auto-cli-c", "auto-cli-d"]
         );
         assert!(prune_auto_snapshots(&mut list, 3).is_empty());
+    }
+
+    #[test]
+    fn auto_snapshot_makes_room_by_pruning_its_own_kind_only() {
+        // Full list: MAX-2 user snapshots plus two auto ones. Pruning to KEPT-1 (= 2) removes
+        // nothing, so there is no room: no snapshot, no eviction.
+        let mut list: Vec<Snapshot> = (0..MAX_SNAPSHOTS - 2)
+            .map(|i| snap(&format!("mine {i}"), i as i64))
+            .collect();
+        list.push(snap(&format!("{AUTO_SNAPSHOT_PREFIX}a"), 100));
+        list.push(snap(&format!("{AUTO_SNAPSHOT_PREFIX}b"), 101));
+        let before: Vec<uuid::Uuid> = list.iter().map(|s| s.id).collect();
+        assert!(!auto_snapshot_slot(&mut list));
+        let after: Vec<uuid::Uuid> = list.iter().map(|s| s.id).collect();
+        assert_eq!(after, before, "nothing may be evicted when no slot opens");
+
+        // Three auto snapshots in a full list: the oldest goes, a slot opens, every user
+        // snapshot survives.
+        let mut list: Vec<Snapshot> = (0..MAX_SNAPSHOTS - 3)
+            .map(|i| snap(&format!("mine {i}"), i as i64))
+            .collect();
+        let users: Vec<uuid::Uuid> = list.iter().map(|s| s.id).collect();
+        list.push(snap(&format!("{AUTO_SNAPSHOT_PREFIX}a"), 100));
+        let oldest_auto = list.last().unwrap().id;
+        list.push(snap(&format!("{AUTO_SNAPSHOT_PREFIX}b"), 101));
+        list.push(snap(&format!("{AUTO_SNAPSHOT_PREFIX}c"), 102));
+        assert!(auto_snapshot_slot(&mut list));
+        assert_eq!(list.len(), MAX_SNAPSHOTS - 1);
+        assert!(list.iter().all(|s| s.id != oldest_auto));
+        assert!(users.iter().all(|u| list.iter().any(|s| s.id == *u)));
+
+        // Full list of user snapshots only: refused, untouched.
+        let mut list: Vec<Snapshot> = (0..MAX_SNAPSHOTS)
+            .map(|i| snap(&format!("mine {i}"), i as i64))
+            .collect();
+        let before: Vec<uuid::Uuid> = list.iter().map(|s| s.id).collect();
+        assert!(!auto_snapshot_slot(&mut list));
+        let after: Vec<uuid::Uuid> = list.iter().map(|s| s.id).collect();
+        assert_eq!(after, before);
+
+        // Plenty of room: nothing pruned beyond the rotation, slot granted.
+        let mut list = vec![snap("mine", 1)];
+        assert!(auto_snapshot_slot(&mut list));
+        assert_eq!(list.len(), 1);
     }
 }

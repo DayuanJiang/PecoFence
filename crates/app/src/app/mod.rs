@@ -167,6 +167,8 @@ pub struct App {
     ipc_pending: PendingQueue,
     /// The named-pipe listener; `None` when the pipe name was unavailable.
     _ipc: Option<IpcServer>,
+    /// Warnings the CLI handler being run has queued for its reply (see `ipc.rs`).
+    ipc_warnings: Vec<String>,
     /// `PECOFENCE_INSTANCE` of this process (reported by `status.get`).
     instance: Option<String>,
     settings: Option<SettingsHost>,
@@ -698,6 +700,7 @@ impl App {
             fileops_done: Arc::new(Mutex::new(Vec::new())),
             ipc_pending,
             _ipc: ipc,
+            ipc_warnings: Vec::new(),
             instance: args.instance.clone(),
             settings: None,
             settings_focus_fence: None,

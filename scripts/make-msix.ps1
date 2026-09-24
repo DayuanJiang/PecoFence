@@ -38,8 +38,12 @@ if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
   $env:PATH = (Join-Path $env:USERPROFILE ".cargo\bin") + ";" + $env:PATH
 }
 if (-not $SkipBuild) {
-  cargo build --locked --release -p pecofence -p pecofence-watchdog -p pecofence-cli --target-dir $TargetDir
+  cargo build --locked --release -p pecofence -p pecofence-watchdog --target-dir $TargetDir
   if ($LASTEXITCODE -ne 0) { throw "cargo build failed" }
+  # Separate invocation: building the CLI together with the app would unify its `describe`
+  # feature (schemars) into pecofence.exe.
+  cargo build --locked --release -p pecofence-cli --target-dir $TargetDir
+  if ($LASTEXITCODE -ne 0) { throw "cargo build (pecofence-cli) failed" }
 }
 
 if (-not $Version) {

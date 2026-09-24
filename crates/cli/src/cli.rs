@@ -108,9 +108,9 @@ pub enum FenceCmd {
         after_help = "Example: pecofence-cli fence create --title Work --rect 100,100,600,400"
     )]
     Create {
-        /// Title of the new fence
-        #[arg(long, value_name = "TITLE")]
-        title: String,
+        /// Title of the new fence (defaults to the folder name with --portal)
+        #[arg(long, value_name = "TITLE", required_unless_present = "portal")]
+        title: Option<String>,
         #[arg(long, value_name = "X,Y,W,H", value_parser = Rect::parse, allow_hyphen_values = true, help = RECT_HELP)]
         rect: Option<Rect>,
         /// Monitor id (see `monitor list`) to place the fence on when --rect is omitted
@@ -175,18 +175,21 @@ pub enum FenceCmd {
         #[arg(long, group = "size")]
         h: Option<i32>,
     },
-    /// Set a per-fence option (iconSize, spacing, autoHeight, locked, excludeFromQuickHide, opacity, tint, titleColor, titleSize, layout, sort, reverse, groupByDate, labelLines, portalNavigate, portalTitleIcon)
+    /// Set a per-fence option (title, iconSize, spacing, autoHeight, locked, excludeFromQuickHide, opacity, tint, titleColor, titleSize, layout, sort, reverse, groupByDate, labelLines, portalNavigate, portalTitleIcon); `fence rename` is the friendlier way to set title
     #[command(
         override_usage = "pecofence-cli fence set [OPTIONS] <FENCE> <PROP> <VALUE>\n       pecofence-cli fence set [OPTIONS] --all <PROP> <VALUE>",
-        after_help = "Arguments:\n  <FENCE>  Fence: id, unique id prefix (>=6 hex), or title (exact, then unique substring)\n  <PROP>   Option name as shown by `fence get`\n  <VALUE>  JSON value or bare text: 48, true, list, \"#ff8800\", null\n\nExample: pecofence-cli fence set Work layout list\n         pecofence-cli fence set --all opacity clear"
+        after_help = "Arguments:\n  <FENCE>  Fence: id, unique id prefix (>=6 hex), or title (exact, then unique substring)\n  <PROP>   Option name as shown by `fence get` (title: prefer `fence rename`)\n  <VALUE>  JSON value or bare text: 48, true, list, null; quote # colours: \"#ff8800\" or '\"#ff8800\"'\n\nExample: pecofence-cli fence set Work layout list\n         pecofence-cli fence set Work tint \"#ff8800\"\n         pecofence-cli fence set --all opacity clear"
     )]
     Set {
         /// FENCE PROP VALUE, or PROP VALUE with --all
-        #[arg(value_name = "ARGS", num_args = 2..=3, required = true, hide = true)]
+        #[arg(value_name = "ARGS", num_args = 2..=3, required = true, hide = true, allow_negative_numbers = true)]
         args: Vec<String>,
-        /// Apply to every fence (one call per fence)
+        /// Apply to every fence (one call per fence; hosted tabs are skipped)
         #[arg(long)]
         all: bool,
+        /// Treat VALUE as a string even if it parses as JSON (e.g. title 2024)
+        #[arg(long)]
+        string: bool,
     },
     /// Roll a fence up to its title bar
     #[command(after_help = "Example: pecofence-cli fence roll Work")]
@@ -288,7 +291,8 @@ pub enum SettingsCmd {
     Set {
         /// Dotted camelCase path (see `describe --schema Settings`)
         path: String,
-        /// JSON value or bare text: 48, true, dark, null
+        /// JSON value or bare text: 48, true, dark, null, -4
+        #[arg(allow_negative_numbers = true)]
         value: String,
         /// Treat VALUE as a string even if it parses as JSON
         #[arg(long)]
@@ -411,15 +415,16 @@ pub enum SnapshotCmd {
         name: String,
     },
     /// Restore a snapshot (the current layout is snapshotted first)
-    #[command(after_help = "Example: pecofence-cli snapshot restore before-cleanup")]
+    #[command(after_help = "Example: pecofence-cli snapshot restore 3f9c2a1e
+         (snapshot.id or a unique id prefix from `snapshot save` / `snapshot list`; a name works only while it is unique)")]
     Restore {
-        /// Snapshot id, unique id prefix, or name
+        /// Snapshot id, unique id prefix, or (unique) name
         id: String,
     },
     /// Delete a snapshot
-    #[command(after_help = "Example: pecofence-cli snapshot delete before-cleanup")]
+    #[command(after_help = "Example: pecofence-cli snapshot delete 3f9c2a1e")]
     Delete {
-        /// Snapshot id, unique id prefix, or name
+        /// Snapshot id, unique id prefix, or (unique) name
         id: String,
     },
 }
@@ -439,7 +444,10 @@ pub fn split_set_args(args: &[String], all: bool) -> Result<(Option<&str>, &str,
     match (args, all) {
         ([prop, value], true) => Ok((None, prop, value)),
         ([fence, prop, value], false) => Ok((Some(fence), prop, value)),
-        ([_, _], false) => Err("missing FENCE: pass a fence selector or --all".into()),
+        ([_, _], false) => Err(
+            "missing FENCE: pass a fence selector or --all; values starting with # or containing spaces must be quoted, e.g. tint '\"#ff8800\"' or tint \"#ff8800\""
+                .into(),
+        ),
         ([_, _, _], true) => Err("--all cannot be combined with a FENCE".into()),
         _ => Err("expected FENCE PROP VALUE".into()),
     }
@@ -485,7 +493,7 @@ mod tests {
         let cli = parse(&["fence", "set", "--all", "iconSize", "48"]).unwrap();
         match cli.command {
             Command::Fence {
-                cmd: FenceCmd::Set { args, all },
+                cmd: FenceCmd::Set { args, all, .. },
             } => {
                 assert!(all);
                 assert_eq!(
@@ -498,7 +506,7 @@ mod tests {
         let cli = parse(&["fence", "set", "Work", "layout", "list"]).unwrap();
         match cli.command {
             Command::Fence {
-                cmd: FenceCmd::Set { args, all },
+                cmd: FenceCmd::Set { args, all, .. },
             } => {
                 assert!(!all);
                 assert_eq!(
@@ -517,6 +525,72 @@ mod tests {
         assert!(parse(&["fence", "roll"]).is_err());
         assert!(parse(&["fence", "roll", "--all"]).is_ok());
         assert!(parse(&["fence", "roll", "Work", "--all"]).is_err());
+    }
+
+    #[test]
+    fn missing_fence_error_explains_shell_quoting() {
+        // Git Bash turned `tint #ff8800` into `tint` alone; the error must say why.
+        let two: Vec<String> = vec!["tint".into(), "titleColor".into()];
+        let msg = split_set_args(&two, false).unwrap_err();
+        assert!(msg.starts_with("missing FENCE"), "{msg}");
+        assert!(msg.contains("must be quoted"), "{msg}");
+        assert!(msg.contains(r##"'"#ff8800"'"##), "{msg}");
+        assert!(msg.contains(r##""#ff8800""##), "{msg}");
+    }
+
+    #[test]
+    fn negative_values_and_string_flag_are_accepted() {
+        let cli = parse(&["settings", "set", "snapping.gapPx", "-4"]).unwrap();
+        match cli.command {
+            Command::Settings {
+                cmd:
+                    SettingsCmd::Set {
+                        path,
+                        value,
+                        string,
+                    },
+            } => {
+                assert_eq!(
+                    (path.as_str(), value.as_str(), string),
+                    ("snapping.gapPx", "-4", false)
+                );
+            }
+            other => panic!("{other:?}"),
+        }
+        let cli = parse(&["fence", "set", "Work", "labelLines", "-1"]).unwrap();
+        match cli.command {
+            Command::Fence {
+                cmd: FenceCmd::Set { args, all, string },
+            } => {
+                assert_eq!(args, vec!["Work", "labelLines", "-1"]);
+                assert!(!all && !string);
+            }
+            other => panic!("{other:?}"),
+        }
+        let cli = parse(&["fence", "set", "Work", "title", "2024", "--string"]).unwrap();
+        match cli.command {
+            Command::Fence {
+                cmd: FenceCmd::Set { string, .. },
+            } => assert!(string),
+            other => panic!("{other:?}"),
+        }
+        assert!(parse(&["fence", "set", "--string", "--all", "title", "x"]).is_ok());
+    }
+
+    #[test]
+    fn portal_create_does_not_need_a_title() {
+        let cli = parse(&["fence", "create", "--portal", "C:\\Users\\me\\Downloads"]).unwrap();
+        match cli.command {
+            Command::Fence {
+                cmd: FenceCmd::Create { title, portal, .. },
+            } => {
+                assert_eq!(title, None);
+                assert_eq!(portal.as_deref(), Some("C:\\Users\\me\\Downloads"));
+            }
+            other => panic!("{other:?}"),
+        }
+        assert!(parse(&["fence", "create", "--rect", "1,2,3,4"]).is_err());
+        assert!(parse(&["fence", "create", "--title", "Dl", "--portal", "D:\\x"]).is_ok());
     }
 
     #[test]

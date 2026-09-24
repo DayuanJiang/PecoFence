@@ -67,7 +67,10 @@ impl Request {
 ///
 /// Fence selectors (`fence`, `into`, `tab`, `to`, rule targets) accept a full UUID, a unique
 /// UUID prefix of at least six hex digits, or a title (exact match first, then a unique
-/// case-insensitive substring); see [`selector::resolve`].
+/// case-insensitive substring); see [`selector::resolve`]. The alias `inbox` (any case)
+/// always names the inbox fence, whatever its localized title.
+///
+/// Titles, rule names and snapshot names must be 1 to 256 characters after trimming.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "describe", derive(schemars::JsonSchema))]
 #[serde(
@@ -179,17 +182,20 @@ pub enum Method {
 
     // ---- settings / rules / snapshots ------------------------------------------------
     /// Set one value at a dotted camelCase path (`peek.enabled`, `quickHide.enabled`,
-    /// `iconSize`); `path: ""` replaces the whole `Settings` object. Result:
-    /// `{changed, settings: Settings, snapshotId?}`.
+    /// `iconSize`); `path: ""` replaces the whole `Settings` object. No snapshot is taken
+    /// (snapshots hold layouts, not settings); keep the old `settings.get` output to undo. A
+    /// value the app had to keep unchanged (e.g. `hideRealIcons` when Explorer refused) is
+    /// reported in `warning`. Result: `{changed, settings: Settings}`.
     #[serde(rename = "settings.patch")]
     SettingsPatch { path: String, value: Value },
-    /// Replace the whole rule set. Result: `{changed, rules: RuleListDto, snapshotId?}`.
+    /// Replace the whole rule set. No snapshot is taken (snapshots hold layouts, not rules);
+    /// keep the old `rules.get` output to undo. Result: `{changed, rules: RuleListDto}`.
     #[serde(rename = "rules.set")]
     RulesSet {
         rules: pecofence_core::rules::RuleSet,
     },
-    /// Append (or insert at `index`) a rule; `target` is a fence selector or `inbox`.
-    /// Result: `{changed, rule: RuleEntry}`.
+    /// Append (or insert at `index`) a rule; `target` is a fence selector or `inbox`; `allOf`
+    /// needs at least one condition. Result: `{changed, rule: RuleEntry}`.
     #[serde(rename = "rules.add")]
     RulesAdd {
         name: String,
@@ -214,7 +220,8 @@ pub enum Method {
     #[serde(rename = "snapshots.save")]
     SnapshotsSave { name: String },
     /// `id` = snapshot id (or unique prefix) or name. A snapshot of the current layout is
-    /// taken first. Result: `{changed, restored: uuid, snapshotId}`.
+    /// taken first unless the list is full of user snapshots (then `warning` says so and
+    /// `snapshotId` is absent). Result: `{changed, restored: uuid, snapshotId?}`.
     #[serde(rename = "snapshots.restore")]
     SnapshotsRestore { id: String },
     /// Result: `{changed, deleted: uuid}`.

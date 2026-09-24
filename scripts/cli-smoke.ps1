@@ -30,6 +30,9 @@ foreach ($f in "pecofence.exe", "pecofence-watchdog.exe", "pecofence-cli.exe") {
     Copy-Item (Join-Path $bin $f) $stage
 }
 Copy-Item (Join-Path $root "third_party/webview2/WebView2Loader.x64.dll") (Join-Path $stage "WebView2Loader.dll")
+# Redirect the app's data folders for this process only; restored in the finally block so a
+# dot-sourced or `&`-invoked run does not leave the caller's session pointing at a scratch dir.
+$savedEnv = @{ PECOFENCE_INSTANCE = $env:PECOFENCE_INSTANCE; LOCALAPPDATA = $env:LOCALAPPDATA; APPDATA = $env:APPDATA; RUST_LOG = $env:RUST_LOG }
 $env:PECOFENCE_INSTANCE = $instance
 $env:LOCALAPPDATA = Join-Path $stage "local-appdata"
 $env:APPDATA = Join-Path $stage "roaming-appdata"
@@ -161,6 +164,25 @@ try {
     $r = Invoke-Cli @("fence", "rename", $id, "$title renamed")
     Check "fence rename" ($r.Code -eq 0 -and (Json $r.Out).fence.title -eq "$title renamed") "$($r.Out) $($r.Err)"
 
+    # 3b. Review follow-ups: colour values, --string, --all, inbox alias, rect validation.
+    $r = Invoke-Cli @("fence", "set", $id, "tint", "#FF8800")
+    Check "fence set tint #FF8800" ($r.Code -eq 0 -and (Json $r.Out).fence.tint -eq "#FF8800") "$($r.Out) $($r.Err)"
+    $r = Invoke-Cli @("fence", "set", $id, "title", "2024", "--string")
+    Check "fence set title 2024 --string" ($r.Code -eq 0 -and (Json $r.Out).fence.title -eq "2024") "$($r.Out) $($r.Err)"
+    $r = Invoke-Cli @("fence", "set", "--all", "locked", "false")
+    $b = Json $r.Out
+    Check "fence set --all returns results" ($r.Code -eq 0 -and @($b.results).Count -ge 1 -and $null -ne $b.changed) "$($r.Out) $($r.Err)"
+    $r = Invoke-Cli @("fence", "get", "inbox")
+    Check "fence get inbox alias" ($r.Code -eq 0 -and (Json $r.Out).kind -eq "inbox") "$($r.Out) $($r.Err)"
+    $r = Invoke-Cli @("fence", "move", $id, "--rect", "999999,999999,300,200")
+    Check "off-screen rect -> invalid_value" ($r.Code -eq 1 -and (Json $r.Err).error.code -eq "invalid_value") "code=$($r.Code) $($r.Err)"
+    $r = Invoke-Cli @("fence", "create", "--title", "x", "--rect", "2147483000,0,300,200")
+    Check "overflowing rect -> invalid_value" ($r.Code -eq 1 -and (Json $r.Err).error.code -eq "invalid_value") "code=$($r.Code) $($r.Err)"
+    $r = Invoke-Cli @("settings", "set", "snapping.gapPx", "-4")
+    Check "settings set negative number" ($r.Code -eq 0 -and (Json $r.Out).settings.snapping.gapPx -eq -4) "$($r.Out) $($r.Err)"
+    $r = Invoke-Cli @("rule", "add", "--name", "Empty", "--to", "inbox", "--json", "[]")
+    Check "rule add without conditions rejected" ($r.Code -ne 0) "$($r.Out)"
+
     # 4. Settings.
     $r = Invoke-Cli @("settings", "get", "peek.enabled")
     Check "settings get peek.enabled is bool" ($r.Code -eq 0 -and ($r.Out -eq "true" -or $r.Out -eq "false")) "$($r.Out) $($r.Err)"
@@ -234,11 +256,16 @@ finally {
     Start-Sleep -Milliseconds 300
     Get-Process pecofence-watchdog -ErrorAction SilentlyContinue |
         Where-Object { $_.Path -like "$stage*" } | Stop-Process -Force -ErrorAction SilentlyContinue
+    $logPath = Join-Path $env:LOCALAPPDATA "PecoFence\pecofence.$instance.log"
+    foreach ($k in $savedEnv.Keys) {
+        if ($null -eq $savedEnv[$k]) { Remove-Item -Path "Env:$k" -ErrorAction SilentlyContinue }
+        else { Set-Item -Path "Env:$k" -Value $savedEnv[$k] }
+    }
 }
 
 Write-Host ""
 if ($script:failures -gt 0) {
-    Write-Host "$($script:checks - $script:failures)/$($script:checks) checks passed; log: $env:LOCALAPPDATA\PecoFence\pecofence.$instance.log"
+    Write-Host "$($script:checks - $script:failures)/$($script:checks) checks passed; log: $logPath"
     exit 1
 }
 Write-Host "$($script:checks)/$($script:checks) checks passed"

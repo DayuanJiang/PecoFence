@@ -22,8 +22,111 @@ use uuid::Uuid;
 /// Newest `auto-cli-*` snapshots kept; older ones go when a new one is taken.
 const AUTO_SNAPSHOTS_KEPT: usize = 3;
 pub(super) const AUTO_SNAPSHOT_PREFIX: &str = "auto-cli-";
+/// Longest fence title, rule name or snapshot name accepted over IPC (chars).
+pub(super) const MAX_NAME_CHARS: usize = 256;
+/// Warning attached when the snapshot list is full of user snapshots.
+const SNAPSHOT_LIMIT_WARNING: &str = "snapshot limit reached; no automatic snapshot taken";
+/// Shortest request lifetime honoured by `drain_ipc` (a `--timeout 0` request still runs once).
+pub(super) const MIN_EXPIRY_MS: u64 = 100;
+/// Fence selector alias for the inbox fence, independent of the UI language.
+pub(super) const INBOX_ALIAS: &str = "inbox";
 
 type IpcResult = std::result::Result<Value, IpcError>;
+
+/// Trimmed `value` as a title / rule name / snapshot name: `invalid_value` when blank or over
+/// [`MAX_NAME_CHARS`].
+pub(super) fn checked_name(what: &str, value: &str) -> std::result::Result<String, IpcError> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return Err(IpcError::invalid_value(
+            format!("{what} must not be empty"),
+            &["<non-empty string>"],
+        ));
+    }
+    let len = trimmed.chars().count();
+    if len > MAX_NAME_CHARS {
+        return Err(IpcError::invalid_value(
+            format!("{what} is {len} characters long; at most {MAX_NAME_CHARS} are allowed"),
+            &[&format!("<string of 1 to {MAX_NAME_CHARS} characters>")],
+        )
+        .details(json!({ "max": MAX_NAME_CHARS, "length": len })));
+    }
+    Ok(trimmed.to_string())
+}
+
+fn work_area_json(w: &geometry::WorkArea) -> Value {
+    json!({
+        "monitor": w.device_path,
+        "x": w.left,
+        "y": w.top,
+        "w": w.right - w.left,
+        "h": w.bottom - w.top,
+        "dpi": w.dpi,
+    })
+}
+
+/// Pure: checks a `fences.create` / `fences.setBounds` rectangle and returns the work area its
+/// centre falls in. Rejects (`invalid_value`) non-positive or overflowing sizes, a centre that
+/// is on no connected monitor's work area, and a width/height under the fence minimum or over
+/// the maximum (DIP limits scaled by that monitor's DPI).
+pub(super) fn validate_rect(
+    rect: Rect,
+    work_areas: &[geometry::WorkArea],
+) -> std::result::Result<geometry::WorkArea, IpcError> {
+    if rect.w <= 0 || rect.h <= 0 {
+        return Err(IpcError::invalid_value(
+            "rect width and height must be positive",
+            &["w > 0", "h > 0"],
+        ));
+    }
+    let (Some(right), Some(bottom)) = (rect.x.checked_add(rect.w), rect.y.checked_add(rect.h))
+    else {
+        return Err(IpcError::invalid_value(
+            "rect coordinates overflow: x + w and y + h must fit in a 32-bit integer",
+            &["x + w <= 2147483647", "y + h <= 2147483647"],
+        ));
+    };
+    // Midpoint without overflow: both ends are valid i32 now.
+    let cx = rect.x + (right - rect.x) / 2;
+    let cy = rect.y + (bottom - rect.y) / 2;
+    let Some(work) = work_areas
+        .iter()
+        .find(|w| cx >= w.left && cx < w.right && cy >= w.top && cy < w.bottom)
+    else {
+        let areas: Vec<Value> = work_areas.iter().map(work_area_json).collect();
+        let ids: Vec<String> = work_areas
+            .iter()
+            .map(|w| format!("{}: {}", w.device_path, work_area_json(w)))
+            .collect();
+        let ids: Vec<&str> = ids.iter().map(String::as_str).collect();
+        return Err(IpcError::invalid_value(
+            "rect centre is outside every monitor's work area",
+            &ids,
+        )
+        .hint("Run `pecofence-cli monitor list`; the rect is in physical pixels of the virtual screen")
+        .details(json!({ "centre": { "x": cx, "y": cy }, "workAreas": areas })));
+    };
+    let scale = work.scale();
+    let min_w = (geometry::MIN_W_DIP * scale).ceil() as i32;
+    let min_h = (geometry::MIN_H_DIP * scale).ceil() as i32;
+    let max = (geometry::MAX_DIP * scale).floor() as i32;
+    if rect.w < min_w || rect.h < min_h || rect.w > max || rect.h > max {
+        return Err(IpcError::invalid_value(
+            format!(
+                "rect size {}x{} is outside the allowed range on {} ({}x{} to {}x{} px at {} dpi)",
+                rect.w, rect.h, work.device_path, min_w, min_h, max, max, work.dpi
+            ),
+            &[
+                &format!("{min_w} <= w <= {max}"),
+                &format!("{min_h} <= h <= {max}"),
+            ],
+        )
+        .details(json!({
+            "minW": min_w, "minH": min_h, "max": max, "dpi": work.dpi, "monitor": work.device_path
+        })));
+    }
+    Ok(work.clone())
+}
 
 fn to_json<T: serde::Serialize>(v: &T) -> IpcResult {
     serde_json::to_value(v).map_err(|e| IpcError::internal(format!("serialization failed: {e}")))
@@ -148,6 +251,65 @@ fn auto_snapshot_name() -> String {
     )
 }
 
+/// Pure half of [`App::auto_snapshot`]: prunes `auto-cli-*` entries down to
+/// `AUTO_SNAPSHOTS_KEPT - 1` (making room for the one about to be taken) and reports whether
+/// a slot under `MAX_SNAPSHOTS` is free. `false` means the list is full of snapshots the user
+/// saved, which an automatic one must never evict.
+pub(super) fn auto_snapshot_slot(snapshots: &mut Vec<Snapshot>) -> bool {
+    prune_auto_snapshots(snapshots, AUTO_SNAPSHOTS_KEPT.saturating_sub(1));
+    snapshots.len() < pecofence_core::MAX_SNAPSHOTS
+}
+
+/// How long a queued request stays runnable: the client's timeout, but never under
+/// [`MIN_EXPIRY_MS`] (`--timeout 0` must still run once; the pipe round trip alone takes a
+/// few milliseconds).
+pub(super) fn request_expiry(timeout_ms: u32) -> Duration {
+    Duration::from_millis(u64::from(timeout_ms).max(MIN_EXPIRY_MS))
+}
+
+/// Whether a fence selector is the language-independent inbox alias.
+pub(super) fn is_inbox_alias(sel: &str) -> bool {
+    sel.trim().eq_ignore_ascii_case(INBOX_ALIAS)
+}
+
+/// `rules.add` needs at least one condition; an empty `allOf` would match everything.
+pub(super) fn check_rule_conditions(
+    all_of: &[pecofence_core::Cond],
+) -> std::result::Result<(), IpcError> {
+    if all_of.is_empty() {
+        return Err(IpcError::invalid_value(
+            "a rule needs at least one condition in allOf",
+            &["allOf: [<condition>, ...]"],
+        )
+        .hint("Run `pecofence-cli describe rules.add` for the condition shapes"));
+    }
+    Ok(())
+}
+
+/// Response with `warning` appended (several are joined with `; `).
+fn add_warning(mut response: Response, warning: &str) -> Response {
+    response.warning = Some(match response.warning.take() {
+        Some(existing) => format!("{existing}; {warning}"),
+        None => warning.to_string(),
+    });
+    response
+}
+
+/// Top-level camelCase keys whose value in `applied` differs from `requested` (the settings
+/// `apply_settings` kept at their old value).
+pub(super) fn rolled_back_settings(requested: &Settings, applied: &Settings) -> Vec<String> {
+    let (Ok(Value::Object(want)), Ok(Value::Object(got))) = (
+        serde_json::to_value(requested),
+        serde_json::to_value(applied),
+    ) else {
+        return Vec::new();
+    };
+    want.iter()
+        .filter(|(k, v)| got.get(*k) != Some(v))
+        .map(|(k, _)| k.clone())
+        .collect()
+}
+
 fn snapshot_dto(s: &Snapshot) -> SnapshotDto {
     SnapshotDto {
         id: s.id,
@@ -174,7 +336,7 @@ impl App {
         } in batch
         {
             let method = request.method.name();
-            if arrived.elapsed() > Duration::from_millis(u64::from(request.timeout_ms)) {
+            if arrived.elapsed() > request_expiry(request.timeout_ms) {
                 tracing::debug!(
                     target: "pecofence::ipc",
                     method,
@@ -190,7 +352,7 @@ impl App {
                 // save the mutation scheduled is redundant now.
                 window::kill_timer(self.control.hwnd(), TIMER_SAVE);
                 if self.state.is_dirty() && !self.state.save_if_dirty() {
-                    response = response.with_warning("applied but not saved: see the log");
+                    response = add_warning(response, "applied but not saved: see the log");
                 }
             }
             let spent = started.elapsed();
@@ -206,8 +368,17 @@ impl App {
         }
     }
 
+    /// Runs one method; warnings the handler queued (`ipc_warnings`) ride along on success.
     pub(super) fn handle_ipc(&mut self, m: &Method) -> Response {
-        self.ipc_dispatch(m).into()
+        self.ipc_warnings.clear();
+        let mut response: Response = self.ipc_dispatch(m).into();
+        if response.ok {
+            for w in std::mem::take(&mut self.ipc_warnings) {
+                response = add_warning(response, &w);
+            }
+        }
+        self.ipc_warnings.clear();
+        response
     }
 
     fn ipc_dispatch(&mut self, m: &Method) -> IpcResult {
@@ -310,16 +481,17 @@ impl App {
             Method::FencesMerge { fence, into } => self.ipc_merge(fence, into),
             Method::FencesDetach { tab } => self.ipc_detach(tab),
             Method::FencesSetVisible { visible } => {
-                let hidden = self
-                    .anchor
-                    .borrow()
-                    .as_ref()
-                    .map(|a| a.fences_hidden())
-                    .unwrap_or(false);
-                let changed = hidden == *visible;
-                if changed {
+                let Some(hidden) = self.fences_hidden() else {
+                    return Err(unsupported(
+                        "fences cannot be hidden or shown right now: the desktop anchor is not ready",
+                    )
+                    .hint("Retry in a moment"));
+                };
+                if hidden == *visible {
                     self.toggle_all_fences();
                 }
+                // Only what the anchor actually did counts.
+                let changed = self.fences_hidden() != Some(hidden);
                 Ok(mutation(changed, None, json!({ "visible": visible })))
             }
             Method::FencesOpenOptions { fence } => {
@@ -331,27 +503,36 @@ impl App {
             Method::ItemsMove { items, to } => self.ipc_move_items(items, to),
 
             Method::SettingsPatch { path, value } => {
+                // No auto snapshot: snapshots hold layouts only and could not undo this.
                 let before = self.state.config.settings.clone();
-                let new = patch_settings_path(&before, path, value.clone())?;
-                let whole = dotted_to_pointer(path).is_empty();
-                let snapshot = (whole && new != before).then(|| self.auto_snapshot());
-                self.apply_settings(new);
-                let changed = self.state.config.settings != before;
+                let requested = patch_settings_path(&before, path, value.clone())?;
+                self.apply_settings(requested.clone());
+                let after = &self.state.config.settings;
+                let changed = *after != before;
+                // `apply_settings` keeps the old value when a side effect fails (e.g. Explorer
+                // refused to hide the desktop icons); say so instead of silently not changing.
+                let rolled_back = rolled_back_settings(&requested, after);
+                if !rolled_back.is_empty() {
+                    self.ipc_warnings.push(format!(
+                        "PecoFence rolled back {}: the change could not be applied (see the log)",
+                        rolled_back.join(", ")
+                    ));
+                }
                 Ok(mutation(
                     changed,
-                    snapshot,
+                    None,
                     json!({ "settings": to_json(&self.state.config.settings)? }),
                 ))
             }
             Method::RulesSet { rules } => {
+                // No auto snapshot: snapshots hold layouts, not rules.
                 let before = self.state.config.rules.clone();
-                let snapshot = (*rules != before).then(|| self.auto_snapshot());
                 self.set_rules(rules.clone());
                 let changed = self.state.config.rules != before;
                 self.push_settings_state();
                 Ok(mutation(
                     changed,
-                    snapshot,
+                    None,
                     json!({ "rules": to_json(&self.rule_list_dto())? }),
                 ))
             }
@@ -395,7 +576,8 @@ impl App {
             }
             Method::RulesApply => {
                 // Re-filing every desktop item rewrites memberships: keep a way back, but not
-                // when nothing moved.
+                // when nothing moved (the engine has no dry run, so the snapshot is taken first
+                // and dropped again when it turns out unnecessary).
                 let snapshot = self.auto_snapshot();
                 let entries = shell::enumerate_desktop();
                 let moved = self.state.apply_rules_all(&entries);
@@ -403,15 +585,19 @@ impl App {
                 self.schedule_save();
                 self.push_settings_state();
                 let snapshot = if moved > 0 {
-                    Some(snapshot)
+                    snapshot
                 } else {
-                    self.state.delete_snapshot(snapshot);
+                    if let Some(id) = snapshot {
+                        self.state.delete_snapshot(id);
+                    }
+                    self.ipc_warnings.retain(|w| w != SNAPSHOT_LIMIT_WARNING);
                     None
                 };
                 Ok(mutation(moved > 0, snapshot, json!({ "moved": moved })))
             }
 
             Method::SnapshotsSave { name } => {
+                let name = checked_name("snapshot name", name)?;
                 if self.state.config.snapshots.len() >= pecofence_core::MAX_SNAPSHOTS {
                     return Err(IpcError::new(
                         ErrorCode::LimitReached,
@@ -422,7 +608,7 @@ impl App {
                     )
                     .hint("Delete one with `pecofence-cli snapshot delete <id>` first"));
                 }
-                let id = self.state.save_snapshot(name);
+                let id = self.state.save_snapshot(&name);
                 self.schedule_save();
                 self.push_settings_state();
                 let snap = self
@@ -437,12 +623,22 @@ impl App {
             }
             Method::SnapshotsRestore { id } => {
                 let target = self.resolve_snapshot(id)?;
-                // The backup the existing mechanism takes is this call's auto snapshot.
-                let backup = self
-                    .state
-                    .restore_snapshot_with_backup(target, &auto_snapshot_name())
-                    .ok_or_else(|| self.snapshot_not_found(id))?;
-                prune_auto_snapshots(&mut self.state.config.snapshots, AUTO_SNAPSHOTS_KEPT);
+                // The backup the existing mechanism takes is this call's auto snapshot; when
+                // the list is full of the user's snapshots the layout is restored without one
+                // (warned) rather than evicting theirs.
+                let backup = if auto_snapshot_slot(&mut self.state.config.snapshots) {
+                    Some(
+                        self.state
+                            .restore_snapshot_with_backup(target, &auto_snapshot_name())
+                            .ok_or_else(|| self.snapshot_not_found(id))?,
+                    )
+                } else {
+                    if !self.state.restore_snapshot(target) {
+                        return Err(self.snapshot_not_found(id));
+                    }
+                    self.ipc_warnings.push(SNAPSHOT_LIMIT_WARNING.to_string());
+                    None
+                };
                 self.end_peek_now();
                 self.relayout_from_state();
                 // Portals restored with the snapshot need enumerating; stale runtime state of
@@ -450,7 +646,7 @@ impl App {
                 self.refresh_portals();
                 self.schedule_save();
                 self.push_settings_state();
-                Ok(mutation(true, Some(backup), json!({ "restored": target })))
+                Ok(mutation(true, backup, json!({ "restored": target })))
             }
             Method::SnapshotsDelete { id } => {
                 let target = self.resolve_snapshot(id)?;
@@ -487,7 +683,14 @@ impl App {
 
     // ---- selectors -----------------------------------------------------------------------
 
+    /// Fence selector; the alias `inbox` (any case) names the inbox fence whatever its
+    /// localized title.
     fn resolve_fence(&self, sel: &str) -> std::result::Result<FenceId, IpcError> {
+        if is_inbox_alias(sel)
+            && let Some(id) = self.state.inbox_id()
+        {
+            return Ok(id);
+        }
         selector::resolve(
             self.state.fences().iter().map(|f| (f.id, f.title.as_str())),
             sel,
@@ -830,11 +1033,21 @@ impl App {
 
     // ---- helpers -------------------------------------------------------------------------
 
-    /// `auto-cli-<yyyy-mm-dd HH:MM:SS>` snapshot of the current layouts, keeping only the newest few.
-    fn auto_snapshot(&mut self) -> Uuid {
-        let id = self.state.save_snapshot(&auto_snapshot_name());
-        prune_auto_snapshots(&mut self.state.config.snapshots, AUTO_SNAPSHOTS_KEPT);
-        id
+    /// `auto-cli-<yyyy-mm-dd HH:MM:SS>` snapshot of the current layouts, keeping only the newest
+    /// few. Older auto snapshots make room first; when the list is still full of the user's own
+    /// snapshots none is taken (a warning is queued) rather than evicting one of theirs.
+    fn auto_snapshot(&mut self) -> Option<Uuid> {
+        if !auto_snapshot_slot(&mut self.state.config.snapshots) {
+            self.ipc_warnings.push(SNAPSHOT_LIMIT_WARNING.to_string());
+            return None;
+        }
+        // Room is guaranteed now, so `save_snapshot`'s eviction cannot trigger.
+        Some(self.state.save_snapshot(&auto_snapshot_name()))
+    }
+
+    /// Quick-hide state; `None` before the desktop anchor exists.
+    fn fences_hidden(&self) -> Option<bool> {
+        self.anchor.borrow().as_ref().map(|a| a.fences_hidden())
     }
 
     fn rules_mutated(&mut self) {
@@ -865,17 +1078,14 @@ impl App {
         monitor: Option<&str>,
         portal: Option<&str>,
     ) -> IpcResult {
-        if let Some(r) = rect
-            && (r.w <= 0 || r.h <= 0)
-        {
-            return Err(IpcError::invalid_value(
-                "rect width and height must be positive",
-                &["w > 0", "h > 0"],
-            ));
-        }
+        let title = title.map(|t| checked_name("title", t)).transpose()?;
+        let title = title.as_deref();
         // Centre to place the fence around when no rect was given.
         let (cx, cy) = match rect {
-            Some(r) => (r.x + r.w / 2, r.y + r.h / 2),
+            Some(r) => {
+                validate_rect(r, &self.state.work_areas)?;
+                (r.x + r.w / 2, r.y + r.h / 2)
+            }
             None => {
                 let ids: Vec<&str> = self
                     .state
@@ -997,7 +1207,8 @@ impl App {
         }
         // Memberships are about to move back to the inbox: keep a way back.
         let snapshot = (f.kind != FenceKind::FolderPortal && !self.state.items_of(&f).is_empty())
-            .then(|| self.auto_snapshot());
+            .then(|| self.auto_snapshot())
+            .flatten();
         self.delete_fence(id);
         if self.state.fence(id).is_some() {
             return Err(IpcError::internal(
@@ -1014,12 +1225,7 @@ impl App {
         if let Some(host) = before.tab_host {
             return Err(self.tab_unsupported(&before, host));
         }
-        if rect.w <= 0 || rect.h <= 0 {
-            return Err(IpcError::invalid_value(
-                "rect width and height must be positive",
-                &["w > 0", "h > 0"],
-            ));
-        }
+        validate_rect(rect, &self.state.work_areas)?;
         let Some(w) = self.fences.get(&id) else {
             return Err(IpcError::internal("the fence has no window"));
         };
@@ -1070,11 +1276,20 @@ impl App {
             return Ok(mutation(false, None, self.fence_extra(id)?));
         }
         // Like `swap_monitors`: map onto the other work area keeping the anchored gaps, then
-        // store the geometry re-normalised there.
-        let px = geometry::denormalize(&f.geometry, &work);
-        let geo = geometry::normalize(px, &work);
-        if let Some(fm) = self.state.fence_mut(id) {
-            fm.geometry = geo;
+        // store the geometry re-normalised there. The tabs this window hosts share its place
+        // on screen, so their saved geometry travels too (they have no window of their own to
+        // report a move).
+        for member in self.state.tabs_of(id) {
+            let Some(geo) = self
+                .state
+                .fence(member)
+                .map(|m| geometry::normalize(geometry::denormalize(&m.geometry, &work), &work))
+            else {
+                continue;
+            };
+            if let Some(fm) = self.state.fence_mut(member) {
+                fm.geometry = geo;
+            }
         }
         self.state.mark_dirty();
         self.end_peek_now();
@@ -1153,17 +1368,43 @@ impl App {
             .into_iter()
             .filter(|id| located.get(id) != Some(&to))
             .collect();
-        if moving.is_empty() {
+        // What `move_items` will actually act on: into a portal only real files go (the
+        // Recycle Bin and friends are not files); into a virtual fence, desktop items change
+        // membership and portal items are moved out as files.
+        let into_portal = self.state.portal_path(to).is_some();
+        let (accepted, skipped): (Vec<ItemId>, Vec<ItemId>) = moving.iter().partition(|id| {
+            let Some(it) = self.state.item(**id) else {
+                return false;
+            };
+            if into_portal {
+                !it.is_namespace() && it.key.as_path().is_some()
+            } else {
+                self.state.is_portal_item(**id) || self.state.config.items.contains_key(id)
+            }
+        });
+        if !skipped.is_empty() {
+            let names: Vec<String> = skipped
+                .iter()
+                .filter_map(|id| self.state.item(*id))
+                .map(|it| it.display_name.clone())
+                .collect();
+            self.ipc_warnings.push(format!(
+                "{} item(s) cannot go into a folder and stayed where they are: {}",
+                skipped.len(),
+                names.join(", ")
+            ));
+        }
+        if accepted.is_empty() {
             return Ok(mutation(false, None, json!({ "moved": 0, "to": to })));
         }
         // Portal sources / targets move real files on a worker thread; the fences update when
         // the shell reports back.
-        self.move_items(&moving, to);
+        self.move_items(&accepted, to);
         self.push_settings_state();
         Ok(mutation(
             true,
             None,
-            json!({ "moved": moving.len(), "to": to }),
+            json!({ "moved": accepted.len(), "to": to }),
         ))
     }
 
@@ -1174,14 +1415,9 @@ impl App {
         all_of: &[pecofence_core::Cond],
         index: Option<usize>,
     ) -> IpcResult {
-        let name = name.trim();
-        if name.is_empty() {
-            return Err(IpcError::invalid_value(
-                "rule name must not be empty",
-                &["<non-empty string>"],
-            ));
-        }
-        let target = if target.trim().eq_ignore_ascii_case("inbox") {
+        let name = checked_name("rule name", name)?;
+        check_rule_conditions(all_of)?;
+        let target = if is_inbox_alias(target) {
             Target::Inbox
         } else {
             let id = self.resolve_fence(target)?;
@@ -1193,7 +1429,7 @@ impl App {
             }
             Target::Fence(id)
         };
-        let rule = Rule::new(name, target, all_of.to_vec());
+        let rule = Rule::new(&name, target, all_of.to_vec());
         let list = &mut self.state.config.rules.list;
         let at = index.map_or(list.len(), |i| i.min(list.len()));
         list.insert(at, rule.clone());

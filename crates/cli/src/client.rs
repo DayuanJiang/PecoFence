@@ -25,9 +25,16 @@ const NOT_FOUND_RETRIES: u32 = 5;
 const NOT_FOUND_DELAY: Duration = Duration::from_millis(50);
 const BUSY_RETRIES: u32 = 4;
 const BUSY_WAIT_MS: u32 = 2000;
-/// Extra wait on top of the request's own timeout, so the server's own timeout reply (which
-/// it sends after exactly `timeout_ms`) has a chance to arrive first.
+/// Extra wait on top of the request's own timeout. The server's own `timeout` reply is not
+/// what this covers: it comes only after `timeout_ms` plus a 5 s grace, i.e. after we have
+/// long given up. The slack exists for the boundary case where the UI thread picks the request
+/// up just before its expiry check (`age > timeout_ms`) would have dropped it: the command then
+/// runs, and the reply arrives shortly after `timeout_ms`; without the slack we would report a
+/// timeout for a command that did execute.
 const TIMEOUT_SLACK: Duration = Duration::from_millis(1500);
+/// Shortest wait the CLI accepts; the server clamps `timeout_ms` the same way, so an agent
+/// passing `--timeout 0` cannot make every request expire before it runs.
+pub const MIN_TIMEOUT_MS: u32 = 100;
 
 #[link(name = "kernel32")]
 unsafe extern "system" {
@@ -43,6 +50,7 @@ pub const TIMEOUT_HINT: &str =
 /// itself be `ok: false`; transport failures are mapped to `not_running` / `timeout` /
 /// `internal`.
 pub fn send(instance: Option<&str>, method: Method, timeout_ms: u32) -> Result<Response, IpcError> {
+    let timeout_ms = timeout_ms.max(MIN_TIMEOUT_MS);
     let name = ipc_pipe_name(instance);
     let request = Request::new(method).with_timeout(timeout_ms);
     let mut line = serde_json::to_string(&request)
@@ -156,5 +164,13 @@ mod tests {
         assert_eq!(err.code, ErrorCode::NotRunning);
         assert_eq!(err.code.exit_code(), 3);
         assert_eq!(err.hint.as_deref(), Some(NOT_RUNNING_HINT));
+    }
+
+    #[test]
+    fn zero_timeout_is_clamped_not_instant() {
+        // With a real 0 ms wait the not-found retries alone would outlast the deadline and the
+        // error would be `timeout`; the clamp keeps it a clear `not_running`.
+        let err = send(Some("pecofence-cli-unit-test-nosuch"), Method::StatusGet, 0).unwrap_err();
+        assert_eq!(err.code, ErrorCode::NotRunning);
     }
 }

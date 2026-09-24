@@ -17,15 +17,22 @@ use crate::{client, describe};
 const SET_USAGE: &str =
     "Usage: pecofence-cli fence set <FENCE> <PROP> <VALUE>  |  fence set --all <PROP> <VALUE>";
 
+/// The transport used by batches: one method in, one server envelope (or a transport error)
+/// out. A closure so tests can drive `for_each_fence` without a pipe.
+type Send<'a> = &'a dyn Fn(Method) -> Result<Response, IpcError>;
+
 pub struct Ctx {
     pub instance: Option<String>,
     pub timeout_ms: u32,
 }
 
 impl Ctx {
+    fn send(&self, method: Method) -> Result<Response, IpcError> {
+        client::send(self.instance.as_deref(), method, self.timeout_ms)
+    }
+
     fn call(&self, method: Method) -> Result<Reply, IpcError> {
-        let response = client::send(self.instance.as_deref(), method, self.timeout_ms)?;
-        reply_from(response)
+        reply_from(self.send(method)?)
     }
 }
 
@@ -40,6 +47,15 @@ fn reply_from(response: Response) -> Result<Reply, IpcError> {
         warning: response.warning,
         partial_failure: false,
     })
+}
+
+/// Errors that concern the connection rather than one fence: repeating the call for the next
+/// fence would only repeat the failure, so batches stop at the first one.
+fn is_transport_error(code: ErrorCode) -> bool {
+    matches!(
+        code,
+        ErrorCode::NotRunning | ErrorCode::Timeout | ErrorCode::Busy | ErrorCode::VersionMismatch
+    )
 }
 
 pub fn run(ctx: &Ctx, command: Command) -> Result<Reply, IpcError> {
@@ -81,7 +97,7 @@ fn run_fence(ctx: &Ctx, cmd: FenceCmd) -> Result<Reply, IpcError> {
             monitor,
             portal,
         } => ctx.call(Method::FencesCreate {
-            title: Some(title),
+            title,
             rect,
             monitor,
             portal,
@@ -124,13 +140,13 @@ fn run_fence(ctx: &Ctx, cmd: FenceCmd) -> Result<Reply, IpcError> {
             }
             ctx.call(Method::FencesSetBounds { fence: id, rect })
         }
-        FenceCmd::Set { args, all } => {
+        FenceCmd::Set { args, all, string } => {
             let (fence, prop, value) =
                 split_set_args(&args, all).map_err(|m| IpcError::usage(m).hint(SET_USAGE))?;
-            let value = parse_value(value, false);
+            let value = parse_value(value, string);
             let prop = prop.to_string();
             if all {
-                for_each_fence(ctx, |fence| Method::FencesSetOption {
+                for_each_fence(&|m| ctx.send(m), |fence| Method::FencesSetOption {
                     fence,
                     prop: prop.clone(),
                     value: value.clone(),
@@ -156,7 +172,10 @@ fn run_fence(ctx: &Ctx, cmd: FenceCmd) -> Result<Reply, IpcError> {
 
 fn roll(ctx: &Ctx, fence: Option<String>, all: bool, rolled: bool) -> Result<Reply, IpcError> {
     if all {
-        for_each_fence(ctx, |fence| Method::FencesRoll { fence, rolled })
+        for_each_fence(&|m| ctx.send(m), |fence| Method::FencesRoll {
+            fence,
+            rolled,
+        })
     } else {
         ctx.call(Method::FencesRoll {
             fence: fence.unwrap_or_default(),
@@ -166,7 +185,8 @@ fn roll(ctx: &Ctx, fence: Option<String>, all: bool, rolled: bool) -> Result<Rep
 }
 
 /// `fences.get`, returning the fence's id (so later calls skip selector resolution) and its
-/// expanded rectangle.
+/// expanded rectangle. The server reports a `rect` for hosted tabs too (the host's); only a
+/// fence whose monitor is disconnected has none.
 fn current_rect(ctx: &Ctx, fence: &str) -> Result<(String, Rect), IpcError> {
     let dto = ctx
         .call(Method::FencesGet {
@@ -181,37 +201,37 @@ fn current_rect(ctx: &Ctx, fence: &str) -> Result<(String, Rect), IpcError> {
     match serde_json::from_value::<Option<Rect>>(dto["rect"].clone()) {
         Ok(Some(rect)) => Ok((id, rect)),
         _ => {
-            let hint = match dto["tabHost"].as_str() {
-                Some(host) => format!(
-                    "The fence is a tab hosted by fence {host}; move or resize the host instead"
-                ),
-                None => "Its monitor is disconnected; reconnect it or use --monitor".to_string(),
-            };
+            let monitor = dto["monitor"].as_str().unwrap_or("?");
             Err(IpcError::new(
                 ErrorCode::Unsupported,
-                format!("fence {title:?} has no geometry of its own"),
+                format!("fence {title:?} has no on-screen geometry: its monitor {monitor} is disconnected"),
             )
-            .hint(hint))
+            .hint(
+                "Reconnect that monitor, or `fence move <FENCE> --monitor <ID>` (see `monitor list`) to bring the fence to a connected one",
+            ))
         }
     }
 }
 
-/// `fences.list`, then one call per fence. Never stops early; the summary says what failed.
-fn for_each_fence(ctx: &Ctx, make: impl Fn(String) -> Method) -> Result<Reply, IpcError> {
-    let list = ctx.call(Method::FencesList)?.result;
+/// `fences.list`, then one call per fence. Hosted tabs are skipped (their options and roll
+/// state belong to the host). A per-fence server error is recorded and the batch goes on; a
+/// transport error (`not_running`, `timeout`, `busy`, `version_mismatch`) aborts it at once,
+/// since every following call would fail the same way.
+fn for_each_fence(send: Send<'_>, make: impl Fn(String) -> Method) -> Result<Reply, IpcError> {
+    let list = reply_from(send(Method::FencesList)?)?.result;
     let fences = list.as_array().cloned().unwrap_or_default();
-    let targets = fences.iter().map(|f| {
-        (
-            f["id"].as_str().unwrap_or_default().to_string(),
-            f["title"].as_str().unwrap_or_default().to_string(),
-        )
-    });
     let mut results = Vec::new();
     let mut changed = false;
     let mut failed = false;
     let mut warnings = Vec::new();
-    for (id, title) in targets {
-        match ctx.call(make(id.clone())) {
+    for f in &fences {
+        let id = f["id"].as_str().unwrap_or_default().to_string();
+        let title = f["title"].as_str().unwrap_or_default().to_string();
+        if f["tabHost"].is_string() {
+            results.push(json!({ "fence": id, "title": title, "skipped": "tab" }));
+            continue;
+        }
+        match send(make(id.clone())).and_then(reply_from) {
             Ok(reply) => {
                 let this_changed = reply.result["changed"].as_bool().unwrap_or(false);
                 changed |= this_changed;
@@ -220,6 +240,7 @@ fn for_each_fence(ctx: &Ctx, make: impl Fn(String) -> Method) -> Result<Reply, I
                 }
                 results.push(json!({ "fence": id, "title": title, "changed": this_changed }));
             }
+            Err(error) if is_transport_error(error.code) => return Err(error),
             Err(error) => {
                 failed = true;
                 results.push(json!({ "fence": id, "title": title, "error": error }));
@@ -247,14 +268,22 @@ fn run_item(ctx: &Ctx, cmd: ItemCmd) -> Result<Reply, IpcError> {
             let items = match glob {
                 None => items,
                 Some(pattern) => {
+                    // Without --from the pattern runs over every fence, including folder
+                    // portals, whose items are real files: moving them would move the files
+                    // out of the folder. Portal items are therefore only taken when the caller
+                    // named the fence (`--from`) and that fence is the portal itself, which is
+                    // the only fence `items.list` reports them under.
+                    let include_portal = from.is_some();
                     let list = ctx.call(Method::ItemsList { fence: from })?.result;
-                    let ids = glob_item_ids(&pattern, &list);
+                    let ids = glob_item_ids(&pattern, &list, include_portal);
                     if ids.is_empty() {
                         return Err(IpcError::new(
                             ErrorCode::ItemNotFound,
                             format!("no item matches {pattern:?}"),
                         )
-                        .hint("Run `pecofence-cli item list` to see names and paths"));
+                        .hint(
+                            "Run `pecofence-cli item list` to see names and paths; items inside a folder portal are only matched with --from <that portal>",
+                        ));
                     }
                     ids
                 }
@@ -265,12 +294,14 @@ fn run_item(ctx: &Ctx, cmd: ItemCmd) -> Result<Reply, IpcError> {
 }
 
 /// Ids of the items whose file name (last path component, with extension) or display name
-/// matches `pattern`.
-pub fn glob_item_ids(pattern: &str, list: &Value) -> Vec<String> {
+/// matches `pattern`. Items shown by a folder portal (`assignedBy == "portal"`, i.e. real
+/// files of that folder) are left out unless `include_portal`.
+pub fn glob_item_ids(pattern: &str, list: &Value, include_portal: bool) -> Vec<String> {
     list.as_array()
         .map(|items| {
             items
                 .iter()
+                .filter(|item| include_portal || item["assignedBy"].as_str() != Some("portal"))
                 .filter(|item| {
                     let file_name = item["path"]
                         .as_str()
@@ -338,7 +369,8 @@ fn run_rule(ctx: &Ctx, cmd: RuleCmd) -> Result<Reply, IpcError> {
         }),
         RuleCmd::Move { rule, to } => ctx.call(Method::RulesMove { rule, to }),
         RuleCmd::Import { file } => {
-            let text = read_file_or_stdin(&file)?;
+            let bytes = read_file_or_stdin(&file)?;
+            let text = decode_utf8_text(&bytes, &file)?;
             let rules: RuleSet = serde_json::from_str(&text).map_err(|e| {
                 IpcError::new(
                     ErrorCode::ValidationFailed,
@@ -354,17 +386,44 @@ fn run_rule(ctx: &Ctx, cmd: RuleCmd) -> Result<Reply, IpcError> {
     }
 }
 
-fn read_file_or_stdin(file: &str) -> Result<String, IpcError> {
+fn read_file_or_stdin(file: &str) -> Result<Vec<u8>, IpcError> {
     if file == "-" {
-        let mut text = String::new();
+        let mut bytes = Vec::new();
         std::io::stdin()
-            .read_to_string(&mut text)
+            .read_to_end(&mut bytes)
             .map_err(|e| IpcError::internal(format!("cannot read stdin: {e}")))?;
-        Ok(text)
+        Ok(bytes)
     } else {
-        std::fs::read_to_string(file)
+        std::fs::read(file)
             .map_err(|e| IpcError::new(ErrorCode::InvalidValue, format!("cannot read {file}: {e}")))
     }
+}
+
+const UTF8_HINT: &str = "Save the file as UTF-8 (PowerShell: `| Set-Content -Encoding utf8`)";
+
+/// Text of a JSON file as written by common Windows tools: a UTF-8 BOM is dropped, UTF-16
+/// (what `>` redirection produces in Windows PowerShell 5) is rejected with a fix, anything
+/// else must be valid UTF-8.
+pub fn decode_utf8_text(bytes: &[u8], source: &str) -> Result<String, IpcError> {
+    let has_utf16_bom = bytes.starts_with(&[0xFF, 0xFE]) || bytes.starts_with(&[0xFE, 0xFF]);
+    // JSON text never contains NUL; UTF-16 text that is mostly ASCII is about half NULs.
+    let nul_count = bytes.iter().filter(|b| **b == 0).count();
+    let mostly_nul = bytes.len() >= 4 && nul_count * 4 >= bytes.len();
+    if has_utf16_bom || mostly_nul {
+        return Err(IpcError::new(
+            ErrorCode::InvalidValue,
+            format!("{source} is UTF-16 encoded; the CLI reads UTF-8"),
+        )
+        .hint(UTF8_HINT));
+    }
+    let bytes = bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(bytes);
+    String::from_utf8(bytes.to_vec()).map_err(|e| {
+        IpcError::new(
+            ErrorCode::InvalidValue,
+            format!("{source} is not valid UTF-8: {e}"),
+        )
+        .hint(UTF8_HINT)
+    })
 }
 
 pub const TYPE_NAMES: &[(&str, TypeCategory)] = &[
@@ -471,6 +530,8 @@ fn run_snapshot(ctx: &Ctx, cmd: SnapshotCmd) -> Result<Reply, IpcError> {
 
 #[cfg(test)]
 mod tests {
+    use std::cell::RefCell;
+
     use super::*;
 
     #[test]
@@ -488,21 +549,232 @@ mod tests {
         assert_eq!(parse_value("true", true), json!("true"));
     }
 
+    fn item_list() -> Value {
+        json!([
+            {"id": "a", "name": "Report", "path": "C:\\Users\\me\\Desktop\\Report.PDF", "assignedBy": "user"},
+            {"id": "b", "name": "notes", "path": "C:/Users/me/Desktop/notes.txt", "assignedBy": "rule"},
+            {"id": "c", "name": "This PC", "path": null, "assignedBy": "user"},
+            {"id": "d", "name": "photo", "path": "C:\\Users\\me\\Desktop\\photo.jpeg", "assignedBy": "migration"},
+            {"id": "p", "name": "invoice", "path": "D:\\Portal\\invoice.pdf", "assignedBy": "portal"},
+        ])
+    }
+
     #[test]
     fn glob_matches_file_name_or_display_name_case_insensitively() {
-        let list = json!([
-            {"id": "a", "name": "Report", "path": "C:\\Users\\me\\Desktop\\Report.PDF"},
-            {"id": "b", "name": "notes", "path": "C:/Users/me/Desktop/notes.txt"},
-            {"id": "c", "name": "This PC", "path": null},
-            {"id": "d", "name": "photo", "path": "C:\\Users\\me\\Desktop\\photo.jpeg"},
+        let list = item_list();
+        assert_eq!(glob_item_ids("*.pdf", &list, false), vec!["a"]);
+        assert_eq!(glob_item_ids("*.jp?g", &list, false), vec!["d"]);
+        assert_eq!(glob_item_ids("this pc", &list, false), vec!["c"]);
+        assert_eq!(glob_item_ids("n*", &list, false), vec!["b"]);
+        assert_eq!(glob_item_ids("*", &list, false).len(), 4);
+        assert!(glob_item_ids("*.exe", &list, false).is_empty());
+        assert!(glob_item_ids("*", &json!(null), false).is_empty());
+    }
+
+    #[test]
+    fn glob_skips_portal_items_unless_asked_for() {
+        let list = item_list();
+        // Without --from: the portal's real file is never picked up by a desktop-wide glob.
+        assert_eq!(glob_item_ids("*.pdf", &list, false), vec!["a"]);
+        assert_eq!(
+            glob_item_ids("invoice*", &list, false),
+            Vec::<String>::new()
+        );
+        // With --from <portal>: the caller named the folder, so its files are fair game.
+        assert_eq!(glob_item_ids("*.pdf", &list, true), vec!["a", "p"]);
+        assert_eq!(glob_item_ids("*", &list, true).len(), 5);
+    }
+
+    // ---- for_each_fence -----------------------------------------------------------------
+
+    fn fence(id: &str, title: &str, tab_host: Option<&str>) -> Value {
+        json!({ "id": id, "title": title, "tabHost": tab_host })
+    }
+
+    fn fence_of(method: &Method) -> &str {
+        match method {
+            Method::FencesSetOption { fence, .. } | Method::FencesRoll { fence, .. } => fence,
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+
+    /// A fake transport: `fences.list` returns `fences`, every other call is answered by
+    /// `answer(fence_id)`; the ids called are recorded in order.
+    fn fake<'a>(
+        fences: Value,
+        calls: &'a RefCell<Vec<String>>,
+        answer: impl Fn(&str) -> Result<Response, IpcError> + 'a,
+    ) -> impl Fn(Method) -> Result<Response, IpcError> + 'a {
+        move |method| {
+            if method == Method::FencesList {
+                return Ok(Response::ok(fences.clone()));
+            }
+            let id = fence_of(&method).to_string();
+            calls.borrow_mut().push(id.clone());
+            answer(&id)
+        }
+    }
+
+    fn set_locked(fence: String) -> Method {
+        Method::FencesSetOption {
+            fence,
+            prop: "locked".into(),
+            value: json!(true),
+        }
+    }
+
+    #[test]
+    fn batch_aggregates_changed_and_skips_hosted_tabs() {
+        let fences = json!([
+            fence("a", "A", None),
+            fence("b", "B", Some("a")),
+            fence("c", "C", None),
         ]);
-        assert_eq!(glob_item_ids("*.pdf", &list), vec!["a"]);
-        assert_eq!(glob_item_ids("*.jp?g", &list), vec!["d"]);
-        assert_eq!(glob_item_ids("this pc", &list), vec!["c"]);
-        assert_eq!(glob_item_ids("n*", &list), vec!["b"]);
-        assert_eq!(glob_item_ids("*", &list).len(), 4);
-        assert!(glob_item_ids("*.exe", &list).is_empty());
-        assert!(glob_item_ids("*", &json!(null)).is_empty());
+        let calls = RefCell::new(Vec::new());
+        let send = fake(fences, &calls, |id| {
+            Ok(Response::ok(json!({ "changed": id == "c" })))
+        });
+        let reply = for_each_fence(&send, set_locked).unwrap();
+        assert_eq!(*calls.borrow(), vec!["a", "c"]);
+        assert!(!reply.partial_failure);
+        assert_eq!(reply.warning, None);
+        assert_eq!(
+            reply.result,
+            json!({
+                "changed": true,
+                "results": [
+                    { "fence": "a", "title": "A", "changed": false },
+                    { "fence": "b", "title": "B", "skipped": "tab" },
+                    { "fence": "c", "title": "C", "changed": true },
+                ]
+            })
+        );
+
+        let calls = RefCell::new(Vec::new());
+        let send = fake(json!([fence("a", "A", None)]), &calls, |_| {
+            Ok(Response::ok(json!({ "changed": false })).with_warning("not saved"))
+        });
+        let reply = for_each_fence(&send, set_locked).unwrap();
+        assert_eq!(reply.result["changed"], json!(false));
+        assert_eq!(reply.warning.as_deref(), Some("A: not saved"));
+    }
+
+    #[test]
+    fn batch_records_server_errors_and_goes_on() {
+        let fences = json!([
+            fence("a", "A", None),
+            fence("b", "B", None),
+            fence("c", "C", None),
+        ]);
+        let calls = RefCell::new(Vec::new());
+        let send = fake(fences, &calls, |id| {
+            if id == "b" {
+                Ok(Response::err(IpcError::new(
+                    ErrorCode::Unsupported,
+                    "inbox fence",
+                )))
+            } else {
+                Ok(Response::ok(json!({ "changed": true })))
+            }
+        });
+        let reply = for_each_fence(&send, set_locked).unwrap();
+        assert_eq!(*calls.borrow(), vec!["a", "b", "c"]);
+        assert!(reply.partial_failure, "exit code 1");
+        assert_eq!(reply.result["changed"], json!(true));
+        let results = reply.result["results"].as_array().unwrap();
+        assert_eq!(results.len(), 3);
+        assert_eq!(results[1]["error"]["code"], "unsupported");
+        assert!(results[1].get("changed").is_none());
+        assert_eq!(results[2]["changed"], json!(true));
+    }
+
+    #[test]
+    fn batch_aborts_on_transport_errors() {
+        for code in [
+            ErrorCode::Timeout,
+            ErrorCode::NotRunning,
+            ErrorCode::Busy,
+            ErrorCode::VersionMismatch,
+        ] {
+            let fences = json!([
+                fence("a", "A", None),
+                fence("b", "B", None),
+                fence("c", "C", None),
+            ]);
+            let calls = RefCell::new(Vec::new());
+            let send = fake(fences, &calls, |id| {
+                if id == "b" {
+                    Err(IpcError::new(code, "transport"))
+                } else {
+                    Ok(Response::ok(json!({ "changed": true })))
+                }
+            });
+            let err = for_each_fence(&send, |f| Method::FencesRoll {
+                fence: f,
+                rolled: true,
+            })
+            .unwrap_err();
+            assert_eq!(err.code, code);
+            assert_eq!(*calls.borrow(), vec!["a", "b"], "{code:?}: stopped at b");
+        }
+        assert_eq!(ErrorCode::Timeout.exit_code(), 4);
+        assert_eq!(ErrorCode::NotRunning.exit_code(), 3);
+        assert_eq!(ErrorCode::Busy.exit_code(), 1);
+
+        // A failing `fences.list` is the same error, not an empty batch.
+        let send = |_: Method| -> Result<Response, IpcError> {
+            Err(IpcError::new(ErrorCode::NotRunning, "no pipe"))
+        };
+        assert_eq!(
+            for_each_fence(&send, set_locked).unwrap_err().code,
+            ErrorCode::NotRunning
+        );
+    }
+
+    // ---- rule import text -----------------------------------------------------------------
+
+    #[test]
+    fn rule_import_strips_bom_and_rejects_utf16() {
+        let plain = br#"{"rules":[]}"#;
+        assert_eq!(decode_utf8_text(plain, "f").unwrap(), r#"{"rules":[]}"#);
+        let mut bom = vec![0xEF, 0xBB, 0xBF];
+        bom.extend_from_slice(plain);
+        assert_eq!(decode_utf8_text(&bom, "f").unwrap(), r#"{"rules":[]}"#);
+
+        let utf16le: Vec<u8> = [0xFF, 0xFE]
+            .into_iter()
+            .chain("{}".encode_utf16().flat_map(u16::to_le_bytes))
+            .collect();
+        let err = decode_utf8_text(&utf16le, "rules.json").unwrap_err();
+        assert_eq!(err.code, ErrorCode::InvalidValue);
+        assert!(err.message.contains("UTF-16"), "{}", err.message);
+        assert!(
+            err.hint
+                .as_deref()
+                .unwrap()
+                .contains("Set-Content -Encoding utf8"),
+            "{:?}",
+            err.hint
+        );
+
+        let utf16be: Vec<u8> = [0xFE, 0xFF]
+            .into_iter()
+            .chain("{}".encode_utf16().flat_map(u16::to_be_bytes))
+            .collect();
+        assert_eq!(
+            decode_utf8_text(&utf16be, "f").unwrap_err().code,
+            ErrorCode::InvalidValue
+        );
+
+        // No BOM, but every other byte is NUL: still UTF-16.
+        let bare_utf16: Vec<u8> =
+            r#"{"rules":[]}"#.encode_utf16().flat_map(u16::to_le_bytes).collect();
+        let err = decode_utf8_text(&bare_utf16, "f").unwrap_err();
+        assert!(err.message.contains("UTF-16"));
+
+        let err = decode_utf8_text(&[0xC3, 0x28, b'{', b'}'], "f").unwrap_err();
+        assert_eq!(err.code, ErrorCode::InvalidValue);
+        assert!(err.message.contains("UTF-8"));
     }
 
     fn add_args() -> RuleAddArgs {
@@ -622,5 +894,16 @@ mod tests {
             warning: None,
         };
         assert_eq!(reply_from(bare).unwrap().result, Value::Null);
+    }
+
+    #[test]
+    fn transport_errors_are_the_connection_level_codes() {
+        assert!(is_transport_error(ErrorCode::NotRunning));
+        assert!(is_transport_error(ErrorCode::Timeout));
+        assert!(is_transport_error(ErrorCode::Busy));
+        assert!(is_transport_error(ErrorCode::VersionMismatch));
+        assert!(!is_transport_error(ErrorCode::FenceNotFound));
+        assert!(!is_transport_error(ErrorCode::Unsupported));
+        assert!(!is_transport_error(ErrorCode::Internal));
     }
 }

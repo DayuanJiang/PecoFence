@@ -3,16 +3,21 @@
 //! [`PendingQueue`] + `WM_APP_COMMAND` (the same worker→UI pattern as `fileops.rs`) and writes
 //! the reply back. Nothing here touches app state; see `app/ipc.rs` for the UI-thread half.
 //!
+//! Every blocking pipe operation runs under an [`IoDeadline`]: a client that connects and
+//! never sends, or never reads its reply, is cut off after a few seconds instead of holding a
+//! thread (and one of the [`MAX_CONNECTIONS`] slots) for ever.
+//!
 //! The release profile aborts on panic, so no I/O result is ever unwrapped on these threads.
 
 use crate::commands::WM_APP_COMMAND;
 use pecofence_ipc::{ErrorCode, IpcError, MAX_REQUEST_BYTES, PROTOCOL_VERSION, Request, Response};
 use pecofence_platform::HWND;
-use pecofence_platform::pipe::{self, PipeListener};
+use pecofence_platform::pipe::{self, PipeListener, ThreadHandle};
 use pecofence_platform::window;
 use std::collections::VecDeque;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Read, Write};
+use std::os::windows::io::AsRawHandle;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
@@ -21,9 +26,18 @@ use std::time::{Duration, Instant};
 
 /// Connections served at the same time; anything beyond is told `busy` at once.
 const MAX_CONNECTIONS: usize = 8;
+/// `busy` replies in flight at the same time; further connections are dropped unanswered so a
+/// flood cannot grow the thread count without bound.
+const MAX_BUSY_REPLIES: usize = 8;
 /// Grace on top of the client's own timeout before a connection thread gives up waiting for
 /// the UI thread (the client has left by then).
 const REPLY_GRACE: Duration = Duration::from_secs(5);
+/// A client must deliver its request line within this long after connecting.
+const READ_DEADLINE: Duration = Duration::from_secs(10);
+/// A client must have read its reply within this long after it was written.
+const WRITE_DEADLINE: Duration = Duration::from_secs(5);
+/// Pause after a failed pipe-instance creation before the listener tries again.
+const CREATE_BACKOFF: Duration = Duration::from_millis(100);
 
 /// A parsed request waiting for the UI thread.
 pub struct Pending {
@@ -77,10 +91,15 @@ impl IpcServer {
 }
 
 impl Drop for IpcServer {
+    /// Stops the listener and waits for it. The thread may be blocked in `ConnectNamedPipe`:
+    /// a self-connection releases it when an instance is waiting, cancelling its I/O releases
+    /// it when none is (creation failed). Connection threads are detached and bounded by their
+    /// deadlines; they are not waited for.
     fn drop(&mut self) {
         self.stop.store(true, Ordering::SeqCst);
-        pipe::connect_self(&self.name);
         if let Some(t) = self.listener.take() {
+            pipe::connect_self(&self.name);
+            ThreadHandle::cancel_io_on_raw(t.as_raw_handle());
             let _ = t.join();
         }
     }
@@ -93,6 +112,7 @@ fn listen_loop(
     pending: PendingQueue,
 ) {
     let active = Arc::new(AtomicUsize::new(0));
+    let busy = Arc::new(AtomicUsize::new(0));
     while !stop.load(Ordering::SeqCst) {
         let connection = match listener.accept() {
             Ok(c) => c,
@@ -101,7 +121,11 @@ fn listen_loop(
                     break;
                 }
                 tracing::warn!(target: "pecofence::ipc", %error, "accept failed");
-                std::thread::sleep(Duration::from_millis(100));
+                if !listener.is_listening() {
+                    // No instance could be created: wait before trying again, but stay
+                    // responsive to the stop flag.
+                    std::thread::sleep(CREATE_BACKOFF);
+                }
                 continue;
             }
         };
@@ -109,17 +133,20 @@ fn listen_loop(
             break;
         }
         if active.load(Ordering::SeqCst) >= MAX_CONNECTIONS {
+            if busy.load(Ordering::SeqCst) >= MAX_BUSY_REPLIES {
+                tracing::warn!(target: "pecofence::ipc", "connection flood; dropped unanswered");
+                continue;
+            }
+            busy.fetch_add(1, Ordering::SeqCst);
+            let counter = busy.clone();
             let spawned = std::thread::Builder::new()
                 .name("pecofence-ipc-busy".into())
                 .spawn(move || {
-                    let error = IpcError::new(
-                        ErrorCode::Busy,
-                        format!("{MAX_CONNECTIONS} CLI connections are already being served"),
-                    )
-                    .hint("Retry in a moment");
-                    write_reply(&connection, &Response::err(error));
+                    serve_busy(connection);
+                    counter.fetch_sub(1, Ordering::SeqCst);
                 });
             if let Err(error) = spawned {
+                busy.fetch_sub(1, Ordering::SeqCst);
                 tracing::warn!(target: "pecofence::ipc", %error, "busy-reply thread failed to start");
             }
             continue;
@@ -141,11 +168,69 @@ fn listen_loop(
     tracing::debug!(target: "pecofence::ipc", "listener stopped");
 }
 
+/// Cancels the calling thread's blocking pipe I/O when it is still running after `after`.
+/// Disarmed (and the pending cancel suppressed) on drop.
+struct IoDeadline {
+    armed: Arc<Mutex<bool>>,
+}
+
+impl IoDeadline {
+    fn arm(thread: &Option<Arc<ThreadHandle>>, after: Duration) -> Self {
+        let armed = Arc::new(Mutex::new(true));
+        if let Some(thread) = thread {
+            let flag = armed.clone();
+            let thread = thread.clone();
+            let spawned = std::thread::Builder::new()
+                .name("pecofence-ipc-deadline".into())
+                .spawn(move || {
+                    std::thread::sleep(after);
+                    // Holding the lock across the cancel means a disarm cannot slip in between
+                    // the check and the call, so the cancel never hits a later operation.
+                    if let Ok(still_armed) = flag.lock()
+                        && *still_armed
+                    {
+                        thread.cancel_io();
+                        tracing::debug!(target: "pecofence::ipc", after_ms = after.as_millis() as u64, "connection I/O deadline hit");
+                    }
+                });
+            if let Err(error) = spawned {
+                tracing::warn!(target: "pecofence::ipc", %error, "deadline thread failed to start; connection runs unbounded");
+            }
+        }
+        Self { armed }
+    }
+}
+
+impl Drop for IoDeadline {
+    fn drop(&mut self) {
+        if let Ok(mut armed) = self.armed.lock() {
+            *armed = false;
+        }
+    }
+}
+
 /// One connection: read a line, validate, wait for the UI thread, reply.
 fn serve(connection: File, control: isize, pending: &PendingQueue) {
     let started = Instant::now();
-    let (method, response) = match read_request(&connection) {
-        Err(error) => (String::from("-"), Response::err(error)),
+    let thread = ThreadHandle::current().map(Arc::new);
+    if thread.is_none() {
+        tracing::warn!(target: "pecofence::ipc", "no thread handle; connection deadlines disabled");
+    }
+    let read = {
+        let _deadline = IoDeadline::arm(&thread, READ_DEADLINE);
+        read_request(&connection)
+    };
+    let (method, response, flush) = match read {
+        Err(ReadError::PeerGone) => {
+            tracing::debug!(target: "pecofence::ipc", ms = started.elapsed().as_secs_f32() * 1000.0, "client left before sending a request");
+            return;
+        }
+        Err(ReadError::TimedOut) => {
+            tracing::info!(target: "pecofence::ipc", "no request within the deadline; connection dropped");
+            return;
+        }
+        // A malformed request came from a live client: answer, but do not wait for it to read.
+        Err(ReadError::Rejected(error)) => (String::from("-"), Response::err(error), false),
         Ok(request) => {
             let method = request.method.name();
             let timeout = Duration::from_millis(u64::from(request.timeout_ms)) + REPLY_GRACE;
@@ -170,10 +255,13 @@ fn serve(connection: File, control: isize, pending: &PendingQueue) {
                         .hint("Close any open PecoFence menu or dialog and retry"),
                 ),
             };
-            (method, response)
+            (method, response, true)
         }
     };
-    write_reply(&connection, &response);
+    {
+        let _deadline = IoDeadline::arm(&thread, WRITE_DEADLINE);
+        write_reply(&connection, &response, flush);
+    }
     tracing::info!(
         target: "pecofence::ipc",
         method,
@@ -183,28 +271,69 @@ fn serve(connection: File, control: isize, pending: &PendingQueue) {
     );
 }
 
-fn read_request(connection: &File) -> Result<Request, IpcError> {
+/// Over the connection limit: take the request line (so the client's own write has completed
+/// and it is reading), answer `busy`, close. Both steps are bounded; nothing is flushed.
+fn serve_busy(connection: File) {
+    let thread = ThreadHandle::current().map(Arc::new);
+    {
+        let _deadline = IoDeadline::arm(&thread, READ_DEADLINE);
+        let mut sink = Vec::new();
+        let mut reader = BufReader::new((&connection).take(MAX_REQUEST_BYTES));
+        if reader.read_until(b'\n', &mut sink).is_err() {
+            return;
+        }
+    }
+    let error = IpcError::new(
+        ErrorCode::Busy,
+        format!("{MAX_CONNECTIONS} CLI connections are already being served"),
+    )
+    .hint("Retry in a moment");
+    let _deadline = IoDeadline::arm(&thread, WRITE_DEADLINE);
+    write_reply(&connection, &Response::err(error), false);
+}
+
+/// Why no request could be read from a connection.
+#[derive(Debug)]
+enum ReadError {
+    /// The client closed (or never wrote and vanished): nothing to answer.
+    PeerGone,
+    /// The read deadline cancelled the wait.
+    TimedOut,
+    /// Bytes arrived but were not a valid request: this is the reply.
+    Rejected(IpcError),
+}
+
+impl From<IpcError> for ReadError {
+    fn from(e: IpcError) -> Self {
+        ReadError::Rejected(e)
+    }
+}
+
+/// Reads and validates one request line from `connection` (at most [`MAX_REQUEST_BYTES`]).
+fn read_request(connection: impl Read) -> Result<Request, ReadError> {
     let mut line = String::new();
     let mut reader = BufReader::new(connection.take(MAX_REQUEST_BYTES));
     match reader.read_line(&mut line) {
-        Ok(0) => return Err(usage("empty request")),
+        Ok(0) => return Err(ReadError::PeerGone),
         Ok(_) => {}
         Err(error) if error.kind() == std::io::ErrorKind::InvalidData => {
-            return Err(usage("request is not valid UTF-8"));
+            return Err(usage("request is not valid UTF-8").into());
         }
-        Err(error) => return Err(usage(format!("could not read the request: {error}"))),
+        Err(error) if pipe::is_cancelled(&error) => return Err(ReadError::TimedOut),
+        Err(error) if pipe::is_peer_gone(&error) => return Err(ReadError::PeerGone),
+        Err(error) => return Err(usage(format!("could not read the request: {error}")).into()),
     }
     if !line.ends_with('\n') && line.len() as u64 >= MAX_REQUEST_BYTES {
-        return Err(usage(format!("request exceeds {MAX_REQUEST_BYTES} bytes")));
+        return Err(usage(format!("request exceeds {MAX_REQUEST_BYTES} bytes")).into());
     }
     let text = line.trim();
     if text.is_empty() {
-        return Err(usage("empty request"));
+        return Err(usage("empty request").into());
     }
     let value: serde_json::Value =
         serde_json::from_str(text).map_err(|e| usage(format!("request is not valid JSON: {e}")))?;
     if !value.is_object() {
-        return Err(usage("request must be a JSON object"));
+        return Err(usage("request must be a JSON object").into());
     }
     match value.get("protocol").and_then(serde_json::Value::as_u64) {
         Some(v) if v == u64::from(PROTOCOL_VERSION) => {}
@@ -219,9 +348,10 @@ fn read_request(connection: &File) -> Result<Request, IpcError> {
             .hint(format!(
                 "Update pecofence-cli to match PecoFence {}, or restart PecoFence",
                 env!("CARGO_PKG_VERSION")
-            )));
+            ))
+            .into());
         }
-        None => return Err(usage("missing \"protocol\" field")),
+        None => return Err(usage("missing \"protocol\" field").into()),
     }
     // Struct-variant methods whose parameters are all optional (`items.list`, `settings.get`)
     // still need a `params` object for serde; accept its absence as `{}`.
@@ -242,7 +372,7 @@ fn read_request(connection: &File) -> Result<Request, IpcError> {
         Ok(request) => Ok(request),
         Err(first) => match retry.map(serde_json::from_value::<Request>) {
             Some(Ok(request)) => Ok(request),
-            _ => Err(usage(format!("invalid request: {first}"))),
+            _ => Err(usage(format!("invalid request: {first}")).into()),
         },
     }
 }
@@ -253,9 +383,11 @@ fn usage(message: impl Into<String>) -> IpcError {
     )
 }
 
-/// Writes the reply line and lets the client read it before the instance is disconnected.
-/// Write errors are ignored (`ERROR_NO_DATA`: the client already left).
-fn write_reply(connection: &File, response: &Response) {
+/// Writes the reply line. With `flush`, waits until the client has read it before the instance
+/// is disconnected (bounded by the caller's [`IoDeadline`]); without, the bytes stay readable
+/// until the client closes or the connection is dropped. Write errors are ignored
+/// (`ERROR_NO_DATA`: the client already left; `ERROR_OPERATION_ABORTED`: the deadline).
+fn write_reply(connection: &File, response: &Response, flush: bool) {
     let mut bytes = match serde_json::to_vec(response) {
         Ok(b) => b,
         Err(error) => {
@@ -265,10 +397,130 @@ fn write_reply(connection: &File, response: &Response) {
     };
     bytes.push(b'\n');
     let mut writer = connection;
-    if let Err(error) = writer.write_all(&bytes)
-        && !pipe::is_peer_gone(&error)
-    {
-        tracing::debug!(target: "pecofence::ipc", %error, "reply write failed");
+    if let Err(error) = writer.write_all(&bytes) {
+        if !pipe::is_peer_gone(&error) && !pipe::is_cancelled(&error) {
+            tracing::debug!(target: "pecofence::ipc", %error, "reply write failed");
+        }
+        return;
     }
-    pipe::finish(connection);
+    if flush {
+        pipe::finish(connection);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pecofence_ipc::Method;
+
+    fn read(text: &str) -> Result<Request, ReadError> {
+        read_request(text.as_bytes())
+    }
+
+    fn rejected(text: &str) -> IpcError {
+        match read(text) {
+            Err(ReadError::Rejected(e)) => e,
+            other => panic!("expected a rejection for {text:?}, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn valid_requests_parse() {
+        let req = read("{\"protocol\":1,\"method\":\"status.get\"}\n").unwrap();
+        assert_eq!(req.method, Method::StatusGet);
+        assert_eq!(req.timeout_ms, pecofence_ipc::DEFAULT_TIMEOUT_MS);
+        // A missing trailing newline is fine when the client closes the pipe.
+        let req = read("{\"protocol\":1,\"timeoutMs\":7,\"method\":\"peek.end\"}").unwrap();
+        assert_eq!(req.method, Method::PeekEnd);
+        assert_eq!(req.timeout_ms, 7);
+    }
+
+    #[test]
+    fn missing_params_is_retried_as_an_empty_object() {
+        let req = read("{\"protocol\":1,\"method\":\"items.list\"}\n").unwrap();
+        assert_eq!(req.method, Method::ItemsList { fence: None });
+        let req = read("{\"protocol\":1,\"method\":\"settings.get\"}\n").unwrap();
+        assert_eq!(req.method, Method::SettingsGet { path: None });
+        // A method that does need a parameter is still refused.
+        let err = rejected("{\"protocol\":1,\"method\":\"fences.get\"}\n");
+        assert_eq!(err.code, ErrorCode::Usage);
+        assert!(
+            err.message.starts_with("invalid request"),
+            "{}",
+            err.message
+        );
+    }
+
+    #[test]
+    fn protocol_mismatch_is_reported_as_such() {
+        let err = rejected("{\"protocol\":2,\"method\":\"status.get\"}\n");
+        assert_eq!(err.code, ErrorCode::VersionMismatch);
+        assert!(err.message.contains("protocol 2"), "{}", err.message);
+        assert!(err.hint.is_some());
+        let err = rejected("{\"method\":\"status.get\"}\n");
+        assert_eq!(err.code, ErrorCode::Usage);
+        assert!(err.message.contains("protocol"), "{}", err.message);
+    }
+
+    #[test]
+    fn garbage_is_usage() {
+        for text in ["nonsense\n", "[1,2]\n", "   \n", "{\"protocol\":1}\n"] {
+            let err = rejected(text);
+            assert_eq!(err.code, ErrorCode::Usage, "{text:?}");
+            assert!(err.hint.as_deref().unwrap_or("").contains("status.get"));
+        }
+        assert!(matches!(read(""), Err(ReadError::PeerGone)));
+    }
+
+    #[test]
+    fn non_utf8_is_usage() {
+        let bytes: &[u8] = b"{\"protocol\":1,\"method\":\"\xff\xfe\"}\n";
+        match read_request(bytes) {
+            Err(ReadError::Rejected(e)) => {
+                assert_eq!(e.code, ErrorCode::Usage);
+                assert!(e.message.contains("UTF-8"), "{}", e.message);
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn oversized_line_is_usage() {
+        let mut text = String::from("{\"protocol\":1,\"method\":\"status.get\",\"pad\":\"");
+        text.push_str(&"x".repeat(MAX_REQUEST_BYTES as usize + 16));
+        text.push_str("\"}\n");
+        let err = rejected(&text);
+        assert_eq!(err.code, ErrorCode::Usage);
+        assert!(err.message.contains("exceeds"), "{}", err.message);
+    }
+
+    #[test]
+    fn cancelled_and_broken_reads_are_not_answered() {
+        struct Failing(i32);
+        impl Read for Failing {
+            fn read(&mut self, _: &mut [u8]) -> std::io::Result<usize> {
+                Err(std::io::Error::from_raw_os_error(self.0))
+            }
+        }
+        assert!(matches!(
+            read_request(Failing(995)),
+            Err(ReadError::TimedOut)
+        ));
+        assert!(matches!(
+            read_request(Failing(109)),
+            Err(ReadError::PeerGone)
+        ));
+    }
+
+    #[test]
+    fn deadline_disarms_on_drop() {
+        let thread = ThreadHandle::current().map(Arc::new);
+        let deadline = IoDeadline::arm(&thread, Duration::from_millis(20));
+        let flag = deadline.armed.clone();
+        drop(deadline);
+        assert!(!*flag.lock().unwrap());
+        std::thread::sleep(Duration::from_millis(60));
+        // Blocking on a pipe read now must not be interrupted by the expired watchdog.
+        assert!(!*flag.lock().unwrap());
+    }
 }
