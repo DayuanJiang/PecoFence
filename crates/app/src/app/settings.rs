@@ -228,6 +228,7 @@ impl App {
             "version": env!("CARGO_PKG_VERSION"),
             "configPath": self.state.config_path().to_string_lossy(),
             "autostartAvailable": !self.runtime.portable(),
+            "updates": self.updater.snapshot(),
             "memoryMb": mem_mb,
             "itemCount": self.state.workspace_item_count(),
             "themeMode": if self.theme_mode == ThemeMode::Dark { "dark" } else { "light" },
@@ -326,6 +327,10 @@ impl App {
                 }
             }
             Some("action") => match v.get("name").and_then(|n| n.as_str()) {
+                Some(
+                    name @ ("checkUpdates" | "downloadUpdate" | "installUpdate" | "recoverUpdate"
+                    | "openReleases"),
+                ) => self.update_action(name),
                 Some("applyRules") => {
                     let entries = shell::enumerate_desktop();
                     let moved = self.state.apply_rules_all(&entries);

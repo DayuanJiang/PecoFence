@@ -216,7 +216,11 @@ def main():
             retained[path] = path.read_bytes()
         # Prove installed program files really are replaced on upgrade.
         (installed / "pecofence-cli.exe").write_bytes(b"stale binary fixture")
+        # The validated distribution identity must not be rewritten mid-upgrade.
+        os.utime(marker_file, (946684800, 946684800))
+        marker_stamp = marker_file.stat().st_mtime_ns
         setup(new, "upgrade")
+        assert marker_file.stat().st_mtime_ns == marker_stamp
         assert Path(reg_value(uninstall_key, "InstallLocation")) == installed
         assert reg_value(uninstall_key, "DisplayVersion") == "0.0.2"
         assert (installed / "pecofence-cli.exe").read_bytes() == (payload / "pecofence-cli.exe").read_bytes()

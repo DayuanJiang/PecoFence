@@ -10,6 +10,7 @@ pub mod i18n;
 pub mod model;
 pub mod rules;
 pub mod runtime_paths;
+pub mod updates;
 
 pub use config_store::{ConfigStore, Lint, LintLevel, LoadOutcome};
 pub use date_group::{CivilDate, DateBucket, date_bucket};

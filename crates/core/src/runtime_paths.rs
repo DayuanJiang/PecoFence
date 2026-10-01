@@ -15,6 +15,8 @@ pub struct RuntimePaths {
     pub crash_dir: PathBuf,
     pub webview_data_dir: PathBuf,
     pub recovery_marker: PathBuf,
+    /// Updater downloads, worker scripts and portable recovery backups.
+    pub updates_dir: PathBuf,
     /// Optional candidate for `ConfigStore::with_legacy`; never present in portable mode.
     pub legacy_config_dir: Option<PathBuf>,
     /// Only non-portable callers may adopt an outstanding pre-rename recovery marker.
@@ -60,6 +62,7 @@ impl RuntimePaths {
                 crash_dir: data.join("crashes"),
                 webview_data_dir: data.join("WebView2Profiles").join(profile),
                 recovery_marker: data.join("recovery").join(marker_name),
+                updates_dir: data.join("updates"),
                 legacy_config_dir: None,
                 legacy_recovery_marker: None,
             });
@@ -74,6 +77,7 @@ impl RuntimePaths {
             crash_dir: data.clone(),
             webview_data_dir: data.join("WebView2Profiles").join(profile),
             recovery_marker: data.join(&marker_name),
+            updates_dir: data.join("updates"),
             legacy_config_dir: Some(roaming.join(brand::LEGACY_DATA_DIR)),
             legacy_recovery_marker: Some(local.join(brand::LEGACY_DATA_DIR).join(marker_name)),
         })
@@ -128,6 +132,7 @@ mod tests {
             paths.crash_dir.clone(),
             paths.webview_data_dir.clone(),
             paths.recovery_marker.clone(),
+            paths.updates_dir.clone(),
         ]
     }
 
@@ -140,6 +145,7 @@ mod tests {
         assert_eq!(paths.backups_dir(), root.join("config/backups"));
         assert_eq!(paths.log_file, root.join("data/logs/pecofence.log"));
         assert_eq!(paths.crash_dir, root.join("data/crashes"));
+        assert_eq!(paths.updates_dir, root.join("data/updates"));
         assert_eq!(
             paths.webview_data_dir,
             root.join("data/WebView2Profiles/default")
@@ -194,6 +200,7 @@ mod tests {
             assert_eq!(paths.backups_dir(), roaming.join("PecoFence/backups"));
             assert_eq!(paths.log_file, local.join("PecoFence/pecofence.log"));
             assert_eq!(paths.crash_dir, local.join("PecoFence"));
+            assert_eq!(paths.updates_dir, local.join("PecoFence/updates"));
             assert_eq!(
                 paths.webview_data_dir,
                 local.join("PecoFence/WebView2Profiles/default")

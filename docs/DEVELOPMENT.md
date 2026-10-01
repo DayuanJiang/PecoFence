@@ -47,6 +47,7 @@ keeps the existing Store behavior.
 | Crash dumps | `data/crashes/` | `%LOCALAPPDATA%/PecoFence/` |
 | WebView2 data | `data/WebView2Profiles/default/` | `%LOCALAPPDATA%/PecoFence/WebView2Profiles/default/` |
 | Desktop recovery marker | `data/recovery/icons-hidden.marker` | `%LOCALAPPDATA%/PecoFence/icons-hidden.marker` |
+| Update work files | `data/updates/` | `%LOCALAPPDATA%/PecoFence/updates/` |
 
 Named instances have separate log/marker names and WebView2 profiles, but share
 config within a copy. Non-portable modes may reuse pre-rename `OpenFence` data;
@@ -117,7 +118,7 @@ CI uses the pinned URL/SHA-256 in `packaging/inno/toolchain.json`.
 For a fork, pass `-Repository owner/repo` and pass the same value to the test with
 `--repository owner/repo`. The default is `GITHUB_REPOSITORY`, then
 `DayuanJiang/PecoFence` outside Actions. This sets installer links and package
-provenance; it does not add an updater or change application identity. Fork setup
+provenance and the manual updater's repository; it does not change application identity. Fork setup
 EXEs still target the same installed PecoFence product. Use the test script for
 isolated validation instead of installing a fork package over a real installation.
 
@@ -131,6 +132,44 @@ these synthetic test installers. Manually inspect the setup wizard and supported
 Windows/DPI combinations before release.
 
 ## Architecture
+
+### Manual updater
+
+`core::updates` validates release identity, stable version ordering and exact asset
+names/URLs. `app::updates` owns the asynchronous Settings state and polls a child
+worker without blocking the UI. `platform::updates` starts Windows PowerShell 5.1
+from its system location with no visible console and the embedded
+`scripts/runtime/update-worker.ps1`. Arguments and the saved plan are data, never
+interpolated executable expressions. The package payload is unchanged.
+
+The worker bounds HTTPS responses and redirects, verifies size/SHA-256, validates
+the portable ZIP allowlist and rejects links/junctions before writes. Installation
+requires a separate confirmed action. A handoff captures the exact parent process;
+the worker waits for normal exit, and portable replacements hold the normal and
+legacy instance mutexes. Each original program file is backed up and flushed before
+a durable `applying` journal authorizes replacement. Recovery validates all backups
+before restoring, is idempotent, and never falls back to AppData for portable data.
+Installer recovery re-runs the retained verified setup through its normal guards.
+
+After building the release app/watchdog/CLI, run:
+
+```powershell
+powershell -NoProfile -File scripts/test-updates.ps1 -TargetDir target/package
+```
+
+Fixtures stay in `.cache/update-tests-*/`; only test-created child processes are
+terminated. Tests cover checksum/size errors, ZIP traversal and mode/source mixups,
+retained user data, failed replacements, corrupted recovery backups, and abrupt
+termination during backup, journaling, replacement and rollback. Every abrupt-stop
+case recovers in a fresh process. Setup launch is replaced by a fixture, so the
+tests do not install over a real copy or modify its registry. The existing installer
+integration suite separately checks real Inno Setup behavior. Actual power loss and
+hardware/filesystem failure are outside this simulation.
+
+Settings browser tests also cover manual checks, busy states, verification, explicit
+installation confirmation, cancellation, Store restrictions and both recovery modes.
+Do not publish fake releases to test these paths; the worker tests inject transport
+and process boundaries only in their separate harness, without production bypasses.
 
 | Directory | Responsibility |
 |---|---|

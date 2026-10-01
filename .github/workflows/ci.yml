@@ -62,6 +62,9 @@ jobs:
         env:
           PACKAGE_REPOSITORY: ${{ github.repository }}
         run: python scripts/test-windows-packaging.py --target-dir target --repository "$env:PACKAGE_REPOSITORY"
+      - name: Offline updater and crash recovery tests
+        shell: powershell
+        run: ./scripts/test-updates.ps1 -TargetDir target
       - uses: actions/upload-artifact@v4
         with:
           name: pecofence-windows

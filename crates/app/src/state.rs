@@ -1826,7 +1826,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!(
             "pecofence-state-test-{}-{}",
             std::process::id(),
-            pecofence_core::now_unix()
+            uuid::Uuid::new_v4()
         ));
         let mut state = AppState {
             config: Config::default(),

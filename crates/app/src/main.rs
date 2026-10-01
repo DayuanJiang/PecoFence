@@ -19,6 +19,7 @@ mod runtime;
 mod settings_host;
 mod shadow;
 mod state;
+mod updates;
 
 use pecofence_platform::com::OleGuard;
 use pecofence_platform::window;

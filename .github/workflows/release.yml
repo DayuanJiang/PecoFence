@@ -49,6 +49,9 @@ jobs:
         env:
           PACKAGE_REPOSITORY: ${{ github.repository }}
         run: python scripts/test-windows-packaging.py --repository "$env:PACKAGE_REPOSITORY"
+      - name: Offline updater and crash recovery tests
+        shell: powershell
+        run: ./scripts/test-updates.ps1
       - name: Publish GitHub Release
         shell: pwsh
         env:

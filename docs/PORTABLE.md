@@ -50,6 +50,7 @@ they are not included in the ZIP:
     │   └── crash-<instance>-<ticks>.dmp  // Created after a captured native crash
     ├── WebView2Profiles/
     │   └── default/                      // Settings browser data and cache
+    ├── updates/                          // Update packages, workers and recovery backups
     └── recovery/
         └── icons-hidden.marker           // Present while desktop icons need restoration
 ```
@@ -85,5 +86,13 @@ folder to PATH. `SKILL.md` describes the tool for agents such as Claude Code or 
 
 The ZIP is an unsigned portable build. It does not contain your configuration.
 Languages work offline; the glass background uses static desktop wallpaper.
-`release-info.json` identifies the package's version and release repository;
-it does not enable automatic updates. Keep `config/` and `data/` when upgrading.
+`release-info.json` selects the version and repository used by **Settings → About →
+Check for updates**. Checks and downloads run only when requested. After verifying
+the download, **Install and restart** asks for confirmation, saves settings and
+closes the app before replacing the packaged program files. `config/`, `data/`
+and unrelated files are retained. Updates never switch this copy to the installer.
+
+Windows PowerShell 5.1 (included with Windows) runs the update worker. If policy
+blocks it, use the manual ZIP upgrade procedure in [UPGRADING.md](UPGRADING.md).
+That guide also explains recovery after an interrupted update. Do not move the
+folder or delete `data/updates/` while an update or recovery is pending.

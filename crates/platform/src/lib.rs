@@ -49,6 +49,7 @@ pub mod sysparams;
 pub mod theme;
 pub mod tooltip;
 pub mod tray;
+pub mod updates;
 pub mod wallpaper;
 pub mod watcher;
 pub mod wide;

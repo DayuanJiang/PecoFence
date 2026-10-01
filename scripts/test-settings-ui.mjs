@@ -38,6 +38,7 @@ const fixture = {
   backups: [{ name: '2026-09-09', path: 'C:\\PecoFence\\backups\\2026-09-09.json' }],
   monitors: [{ id: 'one', label: 'Display 1' }, { id: 'two', label: 'Display 2' }],
   desktopIconsHidden: false,
+  updates: { phase: 'idle', mode: 'portable', repository: 'Contributor/PecoFence', busy: false },
   version: 'test', configPath: 'C:\\PecoFence\\config.json', memoryMb: 28, itemCount: 12,
   themeMode: 'dark', accent: '#60CDFF',
 };
@@ -50,6 +51,7 @@ function bridge() {
   window.testSummary = (itemCount) => receive({ data: { type: 'workspaceSummary', fenceCount: state.fences.length, itemCount } });
   window.testRefresh = () => receive({ data: structuredClone(state) });
   window.testState = state;
+  window.testUpdates = updates => { state.updates = structuredClone(updates); receive({data:{type:'updates',updates:structuredClone(updates)}}); };
   window.chrome = {
     webview: {
       addEventListener(_type, handler) { receive = handler; },
@@ -127,6 +129,65 @@ async function runTests() {
   const errorShown = doc => doc.getElementById('toast').classList.contains('error');
   const current = () => frame.contentWindow.testState;
   let doc = await reset();
+
+  await test('Update checks are manual and cannot repeat while busy', async () => {
+    assert(!frame.contentWindow.testMessages.some(m => m.name === 'checkUpdates'), 'Startup contacted the update service');
+    doc.querySelector('[data-page=about]').click();
+    doc.getElementById('updateCheck').click();
+    await settle();
+    assert(frame.contentWindow.testMessages.filter(m => m.name === 'checkUpdates').length === 1, 'Check action not sent');
+    frame.contentWindow.testUpdates({phase:'checking',mode:'portable',repository:'Contributor/PecoFence',busy:true});
+    doc.getElementById('updateCheck').click();
+    assert(doc.getElementById('updateCheck').disabled, 'Busy check remains enabled');
+    assert(frame.contentWindow.testMessages.filter(m => m.name === 'checkUpdates').length === 1, 'Duplicate request sent');
+  });
+  await test('Download verification cannot enable installation early', async () => {
+    frame.contentWindow.testUpdates({phase:'downloading',mode:'portable',busy:true,progress:{phase:'verifying',received:100,total:100}});
+    assert(doc.getElementById('updateProgress').value === 1, 'Download progress missing');
+    assert(doc.getElementById('updateInstall').hidden, '100% download offered unverified installation');
+    assert(doc.getElementById('updateStatus').textContent.includes('SHA-256'), 'Verification state missing');
+  });
+  await test('Installation needs explicit confirmation; cancellation preserves the app', async () => {
+    frame.contentWindow.testUpdates({phase:'ready',mode:'portable',busy:false,repository:'Contributor/PecoFence',release:{version:'0.2.0',bytes:1048576}});
+    assert(doc.getElementById('updateVersion').textContent.includes('0.2.0') && doc.getElementById('updateVersion').textContent.includes('1.0 MiB') && !doc.getElementById('updateVersion').textContent.includes('{'), 'Version/size placeholders not formatted');
+    doc.getElementById('updateInstall').click();
+    assert(doc.getElementById('updateConfirm').open, 'Confirmation did not open');
+    assert(!frame.contentWindow.testMessages.some(m => m.name === 'installUpdate'), 'Installed without confirmation');
+    doc.getElementById('updateCancel').click();
+    assert(!doc.getElementById('updateConfirm').open, 'Cancel did not dismiss confirmation');
+    assert(!frame.contentWindow.testMessages.some(m => m.name === 'installUpdate'), 'Cancel sent install');
+    doc.getElementById('updateInstall').click();
+    doc.getElementById('updateAccept').click();
+    assert(frame.contentWindow.testMessages.filter(m => m.name === 'installUpdate').length === 1, 'Confirmed install not sent once');
+    await settle();
+  });
+  await test('MSIX and unmarked copies do not offer GitHub downloads', async () => {
+    frame.contentWindow.testUpdates({phase:'store',mode:'msix',busy:false});
+    assert(doc.getElementById('updateCheck').hidden && doc.getElementById('updateDownload').hidden && doc.getElementById('updateInstall').hidden, 'Store edition offered a GitHub update');
+    assert(doc.getElementById('updateReleases').textContent.includes('Microsoft Store'), 'Missing Store link');
+    frame.contentWindow.testUpdates({phase:'disabled',mode:'unmarked',busy:false});
+    assert(doc.getElementById('updateCheck').hidden && doc.getElementById('updateReleases').hidden, 'Unmarked build guessed an update source');
+  });
+  await test('Recovery distinguishes portable rollback from installed setup repair', async () => {
+    frame.contentWindow.testUpdates({phase:'recovery',mode:'installed',busy:false});
+    doc.getElementById('updateRecover').click();
+    assert(doc.getElementById('updateConfirm').open && doc.getElementById('updateConfirmText').textContent.includes('安装精灵'), 'Installer recovery offered file rollback');
+    doc.getElementById('updateCancel').click();
+    frame.contentWindow.testUpdates({phase:'recovery',mode:'portable',busy:false});
+    doc.getElementById('updateRecover').click();
+    assert(doc.getElementById('updateConfirmText').textContent.includes('备份'), 'Portable recovery lacks backup explanation');
+    doc.getElementById('updateAccept').click();
+    assert(frame.contentWindow.testMessages.filter(m => m.name === 'recoverUpdate').length === 1, 'Recovery not confirmed');
+    await settle();
+  });
+  await test('Update status is plain text and does not rebuild settings drafts', async () => {
+    rulesPage(doc);
+    doc.getElementById('nrName').value = 'Keep my draft';
+    frame.contentWindow.testUpdates({phase:'error',mode:'portable',repository:'<img src=x>',detail:'<img src=x onerror=alert(1)>',busy:false});
+    assert(!doc.querySelector('#updateDetail img') && !doc.querySelector('#updateSource img'), 'Update metadata interpreted as HTML');
+    assert(doc.getElementById('nrName').value === 'Keep my draft', 'Update progress replaced settings draft');
+    doc = await reset();
+  });
 
   await test('All settings switches and selects have accessible names', async () => {
     for (const el of doc.querySelectorAll('[data-bind], [data-fence], #iconTint, #iconTintStrength, #fenceSel')) {

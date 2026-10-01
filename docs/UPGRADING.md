@@ -28,7 +28,80 @@ The Microsoft Store/MSIX edition continues to use package identity.
 
 Setup cannot convert a portable/nonempty unrelated folder in place. Its generated
 installed marker must remain unchanged. Numeric version downgrades are blocked;
-prerelease suffixes are not ordered. There is no in-app GitHub update downloader.
+prerelease suffixes are not ordered by Setup.
+
+## Updates from Settings
+
+In a marked release package, open **Settings → About → Check for updates**.
+The repository shown there comes from `release-info.json`; fork packages check
+their own repository without editing source code. Missing or mismatched metadata
+disables this feature instead of silently using the upstream repository. Source
+builds, legacy unmarked ZIPs and named test instances do not install updates.
+The MSIX edition offers a Microsoft Store link and never downloads GitHub packages.
+
+1. Check for a newer public stable release and review its release notes.
+2. Choose **Download update**. The matching setup EXE or portable ZIP, its size,
+   `.sha256` sidecar and optional GitHub API digest must agree. A missing package,
+   checksum or failed request is an error, not an up-to-date result.
+3. Wait for verification (and portable extraction) to finish. A download at 100%
+   is not yet ready to install. Completed verified downloads can be selected after
+   restarting the same copy.
+4. Choose **Install and restart**, then confirm. The app saves settings and exits
+   normally, allowing desktop icons to be restored before the worker proceeds.
+5. Installed copies open the interactive setup wizard. Portable copies replace
+   only the twelve files shipped in the ZIP, retaining all other files. Successful
+   updates restart PecoFence and open Settings.
+
+There are no startup checks, background scheduling, private-repository credentials,
+automatic installation, prerelease selection or downgrades. SHA-256 detects file
+corruption; it is not a publisher signature. Only use packages from a repository
+you trust. HTTPS certificates remain validated. Windows PowerShell 5.1 is required
+for the worker; Rust, Python and Inno Setup are not required on user machines.
+
+## Recovering after a crash or forced shutdown
+
+Update state is stored beside portable data in `data/updates/<attempt-id>/`, or
+under `%LOCALAPPDATA%/PecoFence/updates/<attempt-id>/` for installed copies. An
+attempt keeps `plan.json`, `update-worker.ps1`, the verified downloaded package,
+worker logs, and a durable transaction record. Portable attempts also keep
+`backup/`, containing the original managed program files and their recorded hashes.
+Configuration and other user data are not part of this program-file transaction.
+
+- **Before file replacement:** a partial download or incomplete backup does not
+  modify the running program. Check and download again.
+- **During portable replacement or rollback:** the next launch offers **Restore
+  previous version**. Recovery first checks every backup hash, then restores all
+  original program files. It can resume after another interruption during recovery.
+  Corrupt or missing backups stop recovery without deleting the remaining backups.
+- **During Setup:** the next launch offers **Run setup again**. It verifies and
+  re-runs the retained installer for the registered installation. It does not copy
+  portable files over an Inno Setup installation or alter its uninstall records.
+
+If PecoFence cannot launch, close any remaining PecoFence copies and use Windows
+PowerShell to run the saved worker. Set `$attempt` to the full existing attempt
+directory, not the example below:
+
+```powershell
+$attempt = 'D:\Apps\PecoFence\data\updates\<attempt-id>'
+& "$attempt\update-worker.ps1" -Action Recover -Plan "$attempt\plan.json"
+```
+
+For an installed copy, choose its attempt below `%LOCALAPPDATA%\PecoFence\updates`
+instead. The recovery command does not require the old process ID to still exist.
+If local script policy blocks it, retain the attempt directory and use the manual
+ZIP/Setup procedure above; do not weaken system policy to run the script.
+
+Keep the original directory in place until update or recovery finishes. If a
+portable directory was moved while recovery was pending, move the whole directory
+back to its original location first. Completed updates have no pending transaction
+and the portable folder can be moved normally. Update files and successful rollback
+backups are retained for inspection; after confirming the app works and no recovery
+is pending, close it before deleting an old attempt directory to reclaim space.
+
+The automated tests forcibly terminate an isolated worker at multiple durable
+checkpoints and recover in a fresh process. This models lost process state after a
+reboot; it does not certify recovery from hardware failure, filesystem damage or
+storage devices that fail to persist flushed writes. Keep independent data backups.
 
 ## Existing installed and pre-rename data
 

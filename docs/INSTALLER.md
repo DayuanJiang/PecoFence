@@ -51,6 +51,7 @@ appear as needed rather than all being created by Setup:
     ├── crash-<instance>-<ticks>.dmp      // Created after a captured native crash
     ├── WebView2Profiles/
     │   └── default/                      // Settings browser data and cache
+    ├── updates/                          // Verified setup downloads and update state
     └── icons-hidden.marker               // Present while desktop icons need restoration
 ```
 
@@ -71,12 +72,23 @@ finish, then run the newer installer. Setup reuses the registered installation
 directory and updates its files. It refuses to overwrite a portable or unrelated
 nonempty folder. To change the installation directory, uninstall first.
 Numeric version downgrades are blocked; prerelease suffixes are not ordered.
+Upgrades validate and retain the existing `deployment.json`; they do not rewrite
+this fixed distribution identity while replacing the versioned program files.
 
 Remove PecoFence through Windows Settings > Apps > Installed apps. Uninstall removes
 its installed files and shortcuts, and removes a startup entry only when it points
 exactly to this installed executable. Configuration, backups, logs and other user
 data are retained. Files you added to the installation folder are also retained.
 
-There is no in-app update downloader. Download a newer installer from the same
-repository's Releases page. `release-info.json` records the package's repository
-and version for identification; it does not enable automatic updates.
+**Settings → About → Check for updates** checks the repository recorded in
+`release-info.json`. Downloading and installing are separate user actions.
+**Install and restart** asks for confirmation, saves settings, closes the app,
+then opens the verified setup EXE at the registered installation location.
+The wizard stays interactive. No silent or scheduled installation is performed.
+
+The updater requires Windows PowerShell 5.1, included with Windows. If an update
+is interrupted, the verified installer is retained under
+`%LOCALAPPDATA%\PecoFence\updates\<attempt-id>`. The next launch offers to run
+setup again. Installed copies are repaired through Setup, never by restoring
+portable program files. See [UPGRADING.md](UPGRADING.md) for recovery when the app
+cannot start. The Microsoft Store edition continues using Store updates.

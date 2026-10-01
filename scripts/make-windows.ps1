@@ -83,7 +83,7 @@ try {
   Copy-Item -LiteralPath "skills/pecofence-cli/SKILL.md" -Destination (Join-Path $common "SKILL.md")
   & $Python scripts/write-license-notices.py (Join-Path $common "THIRD-PARTY-LICENSES.txt")
   if ($LASTEXITCODE -ne 0) { throw "License notice generation failed" }
-  # Provenance only; the app does not implement a GitHub updater.
+  # Package provenance and the repository used by the manual in-app updater.
   $info = [ordered]@{ schema = 1; repository = $Repository; version = $Version; tag = "v$Version" }
   [IO.File]::WriteAllText((Join-Path $common "release-info.json"), ($info | ConvertTo-Json) + "`n", $utf8)
 

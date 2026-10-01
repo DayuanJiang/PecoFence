@@ -217,6 +217,15 @@
   .about-head .brand-mark { width: 56px; height: 56px; }
   .about-head .name { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; font-size: 20px; line-height: 28px; font-weight: 600; }
   .about-head .s { color: var(--text2); font-size: 12px; line-height: 16px; margin-top: 2px; }
+  .update-card { display: block; }
+  .update-card [hidden] { display: none !important; }
+  .update-card .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  .update-card .s, #updateDetail { overflow-wrap: anywhere; }
+  #updateDetail { color: var(--error); white-space: pre-wrap; user-select: text; }
+  #updateProgress { width: 100%; margin-top: 12px; accent-color: var(--accent); }
+  #updateConfirm { width: min(440px, calc(100vw - 48px)); padding: 24px; background: var(--sheet); color: var(--text); border: 1px solid var(--card-stroke); border-radius: var(--r-card); box-shadow: var(--shadow); }
+  #updateConfirm::backdrop { background: #0008; }
+  #updateConfirm .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 24px; }
   #ver { font-size: 12px; line-height: 18px; font-weight: 400; color: var(--text2); border: 1px solid var(--control-stroke); padding: 0 6px; border-radius: 4px; }
   code { font: 12px/16px "Cascadia Mono", Consolas, monospace; color: var(--text2); overflow-wrap: anywhere; user-select: text; }
 
@@ -434,6 +443,21 @@
         <svg class="brand-mark" viewBox="0 0 64 64" aria-hidden="true"><path d="M27 8H14a6 6 0 0 0-6 6v13M37 8h13a6 6 0 0 1 6 6v13M8 37v13a6 6 0 0 0 6 6h13M56 37v13a6 6 0 0 1-6 6H37" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round"/><rect x="22" y="22" width="8" height="8" rx="2" fill="currentColor"/><rect x="35" y="22" width="8" height="8" rx="2" fill="currentColor" opacity=".65"/><rect x="22" y="35" width="8" height="8" rx="2" fill="currentColor" opacity=".65"/><rect x="35" y="35" width="8" height="8" rx="2" fill="currentColor"/></svg>
         <div><div class="name">PecoFence <span id="ver"></span></div><div class="s">开源的 Windows 11 桌面栅栏整理工具</div><div class="s">Apache 2.0 许可</div><div class="s" id="memDetail">—</div></div>
       </div>
+      <div class="card update-card">
+        <div class="t">软件更新</div>
+        <div class="s" id="updateStatus" role="status" aria-live="polite"></div>
+        <div class="s" id="updateSource"></div>
+        <div class="s" id="updateVersion"></div>
+        <progress id="updateProgress" max="1" aria-label="更新下载进度" hidden></progress>
+        <div class="s" id="updateDetail"></div>
+        <div class="actions">
+          <button id="updateCheck">检查更新</button>
+          <button id="updateDownload" hidden>下载更新</button>
+          <button id="updateInstall" hidden>安装并重新启动</button>
+          <button id="updateRecover" hidden>恢复原版本</button>
+          <button id="updateReleases" hidden>发行说明</button>
+        </div>
+      </div>
       <div class="card"><div class="l"><span class="ic">&#xE8A5;</span><div><div class="t">配置文件</div><div class="s"><code id="cfgPath"></code></div></div></div><button id="openCfg">打开配置文件夹</button></div>
       <h3>故障排除</h3>
       <div class="card"><div class="l"><span class="ic">&#xE90F;</span><div><div class="t">Windows 桌面图标</div><div class="s" id="desktopIconsStatus"></div></div></div>
@@ -442,6 +466,11 @@
   </main>
 </div>
 <div class="infobar" id="toast" role="status"><span class="ic" aria-hidden="true"></span><span id="toastText"></span></div>
+<dialog id="updateConfirm" aria-labelledby="updateConfirmTitle" aria-describedby="updateConfirmText">
+  <h2 id="updateConfirmTitle">安装更新</h2>
+  <p id="updateConfirmText"></p>
+  <div class="actions"><button id="updateCancel" autofocus>取消</button><button id="updateAccept">继续</button></div>
+</dialog>
 <script>
 (() => {
   const i18n = window.PecoFenceI18n;
@@ -465,6 +494,75 @@
   const wv = window.chrome && window.chrome.webview;
   const send = (m) => wv && wv.postMessage(m);
   let state = null;
+  let pendingUpdateAction = null;
+  function renderUpdates() {
+    const u = state?.updates || { phase: 'disabled' };
+    const phase = u.phase;
+    const messages = {
+      idle: t("手动检查新版本；下载完成后仍需确认安装。"),
+      checking: t("正在检查更新…"),
+      upToDate: t("当前已是最新稳定版本。"),
+      noRelease: t("此仓库尚无可用的公开稳定版本。"),
+      available: t("发现新版本。请查看发行说明后下载。"),
+      downloading: t("正在下载更新…"),
+      ready: t("下载已验证，可以安装。"),
+      applying: t("正在准备更新，请稍候…"),
+      error: t("更新失败。请检查下方信息后重试。"),
+      disabled: t("此副本不支持程序内更新。请使用包含发行信息的完整安装版或免安装版。"),
+      store: t("此版本的更新由 Microsoft Store 管理。"),
+      recovery: t("上次免安装版更新中断。请先恢复原版本。"),
+    };
+    let message = messages[phase] || messages.disabled;
+    if (phase === 'recovery' && u.mode === 'installed') message = t("上次安装未完成。请重新运行已验证的安装精灵以修复安装。");
+    if (phase === 'downloading' && u.progress?.phase === 'verifying') message = t("正在验证文件大小和 SHA-256…");
+    if (phase === 'downloading' && u.progress?.phase === 'extracting') message = t("正在解压并验证程序文件…");
+    document.getElementById('updateStatus').textContent = message;
+    document.getElementById('updateSource').textContent = u.repository ? tf("更新来源：{0}", u.repository) : '';
+    document.getElementById('updateVersion').textContent = u.release ? tf("版本 {0} · {1} MiB", u.release.version, (u.release.bytes / 1048576).toFixed(1)) : '';
+    document.getElementById('updateDetail').textContent = u.detail || '';
+    const check = document.getElementById('updateCheck');
+    check.hidden = ['store', 'disabled', 'recovery'].includes(phase);
+    check.disabled = !!u.busy;
+    for (const [id, enabledPhase] of [['updateDownload','available'], ['updateInstall','ready'], ['updateRecover','recovery']]) {
+      const button = document.getElementById(id);
+      button.hidden = phase !== enabledPhase;
+      button.disabled = !!u.busy;
+    }
+    const releases = document.getElementById('updateReleases');
+    releases.hidden = !u.repository && phase !== 'store';
+    releases.textContent = phase === 'store' ? t("打开 Microsoft Store") : t("发行说明");
+    document.getElementById('updateRecover').textContent = u.mode === 'installed' ? t("重新运行安装精灵") : t("恢复原版本");
+    const progress = document.getElementById('updateProgress');
+    progress.hidden = phase !== 'downloading';
+    const total = u.progress?.total;
+    if (total > 0) progress.value = Math.min(1, Math.max(0, u.progress.received / total));
+    else progress.removeAttribute('value');
+  }
+  function requestUpdateInstall(recovery) {
+    const u = state?.updates;
+    if (!u || u.busy || u.phase !== (recovery ? 'recovery' : 'ready')) return;
+    pendingUpdateAction = recovery ? 'recoverUpdate' : 'installUpdate';
+    document.getElementById('updateConfirmTitle').textContent = recovery ? (u.mode === 'installed' ? t("重新运行安装精灵") : t("恢复原版本")) : t("安装更新");
+    document.getElementById('updateConfirmText').textContent = recovery && u.mode !== 'installed'
+      ? t("PecoFence 将关闭并恢复备份的程序文件，保留设置和用户数据。是否继续？")
+      : u.mode === 'installed'
+        ? t("PecoFence 将保存设置并关闭，然后打开安装精灵。完成后重新启动。是否继续？")
+        : t("PecoFence 将保存设置并关闭，替换程序文件后重新启动。设置和用户数据会保留。是否继续？");
+    document.getElementById('updateConfirm').showModal();
+  }
+  document.getElementById('updateCheck').onclick = () => { if (!state?.updates?.busy) send({type:'action',name:'checkUpdates'}); };
+  document.getElementById('updateDownload').onclick = () => { if (state?.updates?.phase === 'available' && !state.updates.busy) send({type:'action',name:'downloadUpdate'}); };
+  document.getElementById('updateInstall').onclick = () => requestUpdateInstall(false);
+  document.getElementById('updateRecover').onclick = () => requestUpdateInstall(true);
+  document.getElementById('updateReleases').onclick = () => send({type:'action',name:'openReleases'});
+  document.getElementById('updateCancel').onclick = () => { pendingUpdateAction = null; document.getElementById('updateConfirm').close(); };
+  document.getElementById('updateConfirm').addEventListener('cancel', () => { pendingUpdateAction = null; });
+  document.getElementById('updateAccept').onclick = () => {
+    const action = pendingUpdateAction;
+    pendingUpdateAction = null;
+    document.getElementById('updateConfirm').close();
+    if (action && !state?.updates?.busy && state?.updates?.phase === (action === 'recoverUpdate' ? 'recovery' : 'ready')) send({type:'action',name:action});
+  };
   const CATS = () => [["programs",t("程序")],["shortcuts",t("快捷方式")],["folders",t("文件夹")],["documents",t("文档")],["images",t("图片")],["music",t("音乐")],["video",t("视频")],["archives",t("压缩包")],["installers",t("安装包")]];
 
   // The theme-style tiles preview the icon settings (size, tint, Chameleon) in place.
@@ -1007,7 +1105,11 @@
       document.getElementById('ver').textContent = 'v' + m.version;
       renderWorkspaceSummary(m.fences.length, m.itemCount);
       document.getElementById('cfgPath').textContent = m.configPath;
-      bindAll(); bindThemeStyle(); bindIconTint(); renderDependents(); renderFences(); renderRules(); renderLayout(); updateKind(); renderAppearance(); renderDesktopIconsStatus();
+      bindAll(); bindThemeStyle(); bindIconTint(); renderDependents(); renderFences(); renderRules(); renderLayout(); updateKind(); renderAppearance(); renderDesktopIconsStatus(); renderUpdates();
+    } else if (m.type === 'updates') {
+      if (!state) return;
+      state.updates = m.updates;
+      renderUpdates();
     } else if (m.type === 'workspaceSummary') {
       if (!state) return;
       state.itemCount = m.itemCount;

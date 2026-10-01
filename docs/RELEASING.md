@@ -10,6 +10,7 @@ python scripts/check-locales.py
 python scripts/check-readme-translations.py
 ./scripts/make-windows.ps1
 python scripts/test-windows-packaging.py
+powershell -NoProfile -File scripts/test-updates.ps1
 python scripts/package-source.py
 ```
 
@@ -25,10 +26,18 @@ the same release binaries; the Store/MSIX script keeps its separate staging path
 
 For fork testing, pass `-Repository owner/repo` to packaging and
 `--repository owner/repo` to the test. Actions always passes `github.repository`. This selects
-installer support/release links and package provenance without editing tracked
+installer support/release links, package provenance and the manual updater's
+repository without editing tracked
 source URLs. Locally, the default is `GITHUB_REPOSITORY`, then `DayuanJiang/PecoFence`.
-It does not change the installer's application identity or implement automatic
+It does not change the installer's application identity or schedule automatic
 updates. Keep fork tests isolated with the test script.
+
+The updater queries the repository's latest public stable release and requires a
+`v<major>.<minor>.<patch>` tag, the exact distribution asset name and its matching
+`.sha256` sidecar. Publish all four assets together. Drafts, prereleases, renamed
+assets and older ZIP naming schemes are not update candidates. The API digest,
+when present, must agree with the sidecar. Do not edit a shipped package's
+`release-info.json` to switch release channels or repositories.
 
 The source exporter creates
 `dist/github-source/PecoFence/` and a separate source ZIP. It includes existing

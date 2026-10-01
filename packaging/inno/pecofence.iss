@@ -75,7 +75,9 @@ Source: "{#PayloadDir}\pecofence.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#PayloadDir}\pecofence-watchdog.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#PayloadDir}\pecofence-cli.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#PayloadDir}\WebView2Loader.dll"; DestDir: "{app}"; Flags: ignoreversion
-Source: "{#PayloadDir}\deployment.json"; DestDir: "{app}"; Flags: ignoreversion
+; PrepareToInstall validates this immutable marker on upgrades. Retain it so an
+; interrupted upgrade cannot truncate the identity needed to run setup again.
+Source: "{#PayloadDir}\deployment.json"; DestDir: "{app}"; Flags: onlyifdoesntexist
 Source: "{#PayloadDir}\release-info.json"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#PayloadDir}\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#PayloadDir}\LICENSE-WebView2Loader.txt"; DestDir: "{app}"; Flags: ignoreversion

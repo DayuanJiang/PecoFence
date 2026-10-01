@@ -64,6 +64,7 @@ mod tabs;
 #[cfg(test)]
 mod tests;
 mod testscript;
+mod updates;
 mod visuals;
 mod wallpaper_refresh;
 
@@ -115,6 +116,7 @@ const TRAY_RETRY_MS: u32 = 2_000;
 const TIMER_SHUTDOWN_CANCELLED: usize = 58;
 /// Rebuilding the GPU device failed (driver reset in progress): try again, backing off.
 const TIMER_DEVICE_RETRY: usize = 59;
+const TIMER_UPDATES: usize = 60;
 const DEVICE_RETRY_FIRST_MS: u32 = 1_000;
 const DEVICE_RETRY_MAX_MS: u32 = 30_000;
 const WALLPAPER_PREWARM_DELAY_MS: u32 = 3_000;
@@ -164,6 +166,7 @@ pub struct Args {
 }
 
 pub struct App {
+    updater: crate::updates::Updater,
     runtime: crate::runtime::Runtime,
     state: AppState,
     ctx: Rc<FenceContext>,
@@ -412,6 +415,13 @@ impl App {
                         }
                         msg::WM_TIMER => {
                             match wparam {
+                                TIMER_UPDATES => {
+                                    if let Ok(mut guard) = cell.try_borrow_mut()
+                                        && let Some(app) = guard.as_mut()
+                                    {
+                                        app.poll_updates();
+                                    }
+                                }
                                 TIMER_SAVE => {
                                     if let Ok(mut guard) = cell.try_borrow_mut()
                                         && let Some(app) = guard.as_mut()
@@ -846,6 +856,7 @@ impl App {
         );
 
         let mut app = App {
+            updater: crate::updates::Updater::new(&runtime, args.instance.as_deref()),
             runtime,
             state,
             ctx,
@@ -1507,6 +1518,7 @@ impl App {
     }
 
     pub fn shutdown(&mut self) {
+        self.updater.cancel();
         self.end_peek_now();
         self.save_config();
         self.fences.clear();
