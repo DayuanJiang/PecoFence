@@ -164,6 +164,7 @@ pub struct Args {
 }
 
 pub struct App {
+    runtime: crate::runtime::Runtime,
     state: AppState,
     ctx: Rc<FenceContext>,
     fences: HashMap<FenceId, FenceWindow>,
@@ -261,7 +262,7 @@ fn command_name(cmd: &Command) -> String {
 
 impl App {
     /// Creates everything and returns the shared cell the control window drives.
-    pub fn create(args: Args) -> Result<AppCell> {
+    pub fn create(args: Args, runtime: crate::runtime::Runtime) -> Result<AppCell> {
         let cell: AppCell = Rc::new(RefCell::new(None));
 
         let stack = Rc::new(RenderStack::new()?);
@@ -275,7 +276,7 @@ impl App {
         for w in &areas {
             tracing::info!(name = %w.device_path, dpi = w.dpi, work = ?(w.left, w.top, w.right, w.bottom), "monitor");
         }
-        let state = AppState::load(areas, args.portable);
+        let state = AppState::load(areas, &runtime.paths);
         tracing::info!(path = %state.config_path().display(), first_run = state.first_run, fences = state.fences().len(), "config loaded");
         if let Some(p) = &state.recovered_from {
             tracing::warn!(from = %p.display(), "config recovered from backup");
@@ -416,7 +417,7 @@ impl App {
                                         && let Some(app) = guard.as_mut()
                                     {
                                         window::kill_timer(hwnd, TIMER_SAVE);
-                                        app.state.save_if_dirty();
+                                        app.save_config();
                                     } else {
                                         // Busy (modal loop): retry shortly instead of dropping.
                                         window::set_timer(hwnd, TIMER_SAVE, 500);
@@ -655,7 +656,7 @@ impl App {
                             if let Ok(mut guard) = cell.try_borrow_mut()
                                 && let Some(app) = guard.as_mut()
                             {
-                                app.state.save_if_dirty();
+                                app.save_config();
                                 if let Some(a) = app.anchor.borrow_mut().as_mut() {
                                     a.restore_desktop_icons();
                                 }
@@ -704,6 +705,7 @@ impl App {
             behavior,
             state.config.settings.quick_hide.enabled,
             &sentinel_class,
+            &runtime.paths,
         )?;
         std::mem::forget(sentinel_class);
         if let Some(a) = anchor_cell.borrow_mut().as_mut() {
@@ -844,6 +846,7 @@ impl App {
         );
 
         let mut app = App {
+            runtime,
             state,
             ctx,
             fences: HashMap::new(),
@@ -1024,7 +1027,7 @@ impl App {
         }
         // Portable/development runs do not change login startup. Normal releases
         // adopt the renamed entry while keeping an existing working PecoFence copy.
-        if !args.portable {
+        if !app.runtime.portable() {
             if let Err(error) = pecofence_platform::autostart::reconcile_product(
                 app.state.config.settings.autostart,
                 cfg!(debug_assertions),
@@ -1032,7 +1035,7 @@ impl App {
                 tracing::warn!(%error, "autostart reconciliation failed");
             }
         }
-        app.state.save_if_dirty();
+        app.save_config();
         window::set_coalescable_timer(app.control.hwnd(), TIMER_HOUSEKEEPING, 60_000, 5_000);
         window::set_coalescable_timer(app.control.hwnd(), TIMER_WALLPAPER_POLL, 5_000, 500);
         window::set_coalescable_timer(app.control.hwnd(), TIMER_DESKTOP_ID, 100, 25);
@@ -1066,7 +1069,7 @@ impl App {
     fn housekeeping(&mut self) {
         self.check_cut_clipboard();
         if self.state.is_dirty() {
-            self.state.save_if_dirty();
+            self.save_config();
         }
         // While the special desktop items are shown, re-read them once a minute as well: a
         // change in Windows' own "Desktop icon settings" leaves no folder event behind, and the
@@ -1458,7 +1461,7 @@ impl App {
                 }
             }
             Command::Quit => {
-                self.state.save_if_dirty();
+                self.save_config();
                 if let Some(a) = self.anchor.borrow_mut().as_mut() {
                     a.restore_desktop_icons();
                 }
@@ -1505,7 +1508,7 @@ impl App {
 
     pub fn shutdown(&mut self) {
         self.end_peek_now();
-        self.state.save_if_dirty();
+        self.save_config();
         self.fences.clear();
         self.dying.clear();
         if let Some(a) = self.anchor.borrow_mut().as_mut() {

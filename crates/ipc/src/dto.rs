@@ -75,12 +75,27 @@ pub struct StatusDto {
     /// `PECOFENCE_INSTANCE` of the answering process; `null` for the main instance.
     pub instance: Option<String>,
     pub config_path: String,
+    /// Absent on older apps. Current apps report every distribution-dependent path.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runtime_paths: Option<RuntimePathsDto>,
     pub fence_count: usize,
     pub item_count: usize,
     pub memory_mb: f64,
     /// `light` | `dark`.
     pub theme_mode: String,
     pub desktop_icons_hidden: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "describe", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimePathsDto {
+    pub distribution: String,
+    pub root: String,
+    pub log_file: String,
+    pub crash_dir: String,
+    pub webview_data_dir: String,
+    pub recovery_marker: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

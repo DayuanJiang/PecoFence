@@ -134,6 +134,25 @@ async function runTests() {
       assert(label?.trim(), 'Unnamed control: ' + (el.id || el.dataset.bind));
     }
   });
+  await test('Portable autostart cannot be activated by pointer or keyboard', async () => {
+    current().autostartAvailable = false;
+    current().settings.autostart = true; // imported preference, never effective here
+    frame.contentWindow.testRefresh();
+    const el = doc.querySelector('[data-bind="autostart"]');
+    const count = frame.contentWindow.testMessages.length;
+    assert(el.getAttribute('aria-disabled') === 'true' && el.tabIndex === -1, 'Switch is still interactive');
+    assert(el.getAttribute('aria-checked') === 'false', 'Inactive preference shown as enabled');
+    assert(!doc.querySelector('[data-portable-autostart-help]').hidden, 'Missing explanation');
+    el.click();
+    el.dispatchEvent(new frame.contentWindow.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    assert(frame.contentWindow.testMessages.length === count, 'Portable switch sent a patch');
+    current().autostartAvailable = true;
+    frame.contentWindow.testRefresh();
+    assert(el.getAttribute('aria-disabled') === 'false' && el.tabIndex === 0, 'Installed switch stayed disabled');
+    assert(el.getAttribute('aria-checked') === 'true', 'Saved preference was modified');
+    current().settings.autostart = false;
+    frame.contentWindow.testRefresh();
+  });
   await test('Notification icons render glyphs rather than escaped code text', async () => {
     const toast = doc.getElementById('toast');
     const icon = toast.querySelector('.ic');

@@ -18,6 +18,17 @@ pub enum DistributionMode {
     Unmarked,
 }
 
+impl DistributionMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Portable => "portable",
+            Self::Installed => "installed",
+            Self::Msix => "msix",
+            Self::Unmarked => "unmarked",
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Distribution {
     root: PathBuf,

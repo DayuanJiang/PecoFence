@@ -20,9 +20,52 @@ The WebView2 loader is imported at process startup and must be next to the execu
 even if Settings is not opened. The watchdog should also be packaged beside the app.
 
 For an isolated test instance, use a separate directory, `--portable`,
-`--no-hide-icons` and a unique `PECOFENCE_INSTANCE`. Keep autostart disabled in its
-configuration. Portable startup leaves the Windows autostart entry alone.
+`--no-hide-icons` and a unique `PECOFENCE_INSTANCE`.
 `--exit-after <milliseconds>` closes a smoke-test instance automatically.
+
+### Distribution data paths
+
+The app and CLI read `deployment.json` beside their executables, independently of
+the working directory. Both distributions use the same binaries. To test automatic
+portable detection, place this UTF-8 file beside a scratch copy of the binaries:
+
+```json
+{"schema":1,"appId":"PecoFence","mode":"portable"}
+```
+
+`mode: "installed"` selects the existing profile-directory layout. Without a
+marker, source builds and existing ZIPs retain their previous behavior; the GUI's
+`--portable` flag remains supported. An invalid marker, an installed marker with
+`--portable`, or portable mode inside MSIX is an error. MSIX identity otherwise
+keeps the existing Store behavior.
+
+| Data | Portable (relative to the executable) | Installed / unmarked / MSIX |
+|---|---|---|
+| Config and backups | `config/` | `%APPDATA%/PecoFence/` |
+| Log | `data/logs/pecofence.log` | `%LOCALAPPDATA%/PecoFence/pecofence.log` |
+| Crash dumps | `data/crashes/` | `%LOCALAPPDATA%/PecoFence/` |
+| WebView2 data | `data/WebView2Profiles/default/` | `%LOCALAPPDATA%/PecoFence/WebView2Profiles/default/` |
+| Desktop recovery marker | `data/recovery/icons-hidden.marker` | `%LOCALAPPDATA%/PecoFence/icons-hidden.marker` |
+
+Named instances have separate log/marker names and WebView2 profiles, but share
+config within a copy. Non-portable modes may reuse pre-rename `OpenFence` data;
+portable mode never does. Required directories and existing config/log files must
+be writable. Startup failures show the selected path and cause, without falling
+back to AppData or Temp. Close the app and its helper/browser processes before
+moving a portable folder. Desktop items, portal targets and user-chosen exports
+continue to refer to their original external locations.
+
+Portable mode disables the Settings autostart control and rejects autostart
+changes through IPC or config import without touching either Run-key entry.
+Installed and portable copies retain the shared single-instance mutex to prevent
+two copies from managing the desktop simultaneously. A CLI with a deployment
+marker verifies the connected server's executable directory before sending any
+request; use the CLI beside the running copy.
+
+`python scripts/test-distribution-smoke.py` exercises automatic detection,
+local paths, relocation, cross-copy CLI rejection, autostart isolation and blocked
+startup paths using disposable copies under `.cache/` and fake profile directories.
+Build the debug binaries first. This test does not hide the real desktop icons.
 
 ## Verification
 

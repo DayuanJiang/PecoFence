@@ -24,6 +24,39 @@ pub fn current_pid() -> u32 {
     unsafe { GetCurrentProcessId() }
 }
 
+/// Identify the server on this exact connection before the CLI sends a command.
+/// https://learn.microsoft.com/windows/win32/api/winbase/nf-winbase-getnamedpipeserverprocessid
+pub fn pipe_server_executable(pipe: &std::fs::File) -> Result<std::path::PathBuf> {
+    use std::os::windows::ffi::OsStringExt;
+    use std::os::windows::io::AsRawHandle;
+    windows_core::link!("kernel32.dll" "system" fn GetNamedPipeServerProcessId(pipe: HANDLE, pid: *mut u32) -> i32);
+    windows_core::link!("kernel32.dll" "system" fn QueryFullProcessImageNameW(process: HANDLE, flags: u32, name: PWSTR, length: *mut u32) -> i32);
+    let mut pid = 0;
+    let mut name = vec![0u16; 32768];
+    let mut length = name.len() as u32;
+    // SAFETY: pipe is borrowed and live; buffers have their stated lengths. The process
+    // is opened only for image-name queries and closed on both success and failure.
+    unsafe {
+        if GetNamedPipeServerProcessId(HANDLE(pipe.as_raw_handle()), &mut pid) == 0 {
+            return Err(Error::from_thread());
+        }
+        let process = OpenProcess(0x1000, false, pid); // PROCESS_QUERY_LIMITED_INFORMATION
+        if process.0.is_null() {
+            return Err(Error::from_thread());
+        }
+        let result =
+            if QueryFullProcessImageNameW(process, 0, PWSTR(name.as_mut_ptr()), &mut length) == 0 {
+                Err(Error::from_thread())
+            } else {
+                Ok(std::path::PathBuf::from(std::ffi::OsString::from_wide(
+                    &name[..length as usize],
+                )))
+            };
+        let _ = CloseHandle(process);
+        result
+    }
+}
+
 /// True when running from an MSIX package (Microsoft Store install). Packaged processes
 /// get virtualized HKCU writes, so the Run-key autostart is replaced by the manifest's
 /// `windows.startupTask`, which users control under Settings > Apps > Startup.

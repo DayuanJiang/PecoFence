@@ -446,6 +446,21 @@ pub fn confirm(owner: HWND, text: &str, caption: &str) -> bool {
     }
 }
 
+/// Startup failure before the app has a tray or settings window.
+pub fn show_startup_error(text: &str, caption: &str) {
+    let text = to_wide(text);
+    let caption = to_wide(caption);
+    // SAFETY: NUL-terminated strings outlive this modal call; no app state exists yet.
+    unsafe {
+        MessageBoxW(
+            None,
+            PCWSTR(text.as_ptr()),
+            PCWSTR(caption.as_ptr()),
+            (MB_OK | MB_ICONERROR | MB_SETFOREGROUND) as u32,
+        );
+    }
+}
+
 /// Is the given virtual key currently down?
 pub fn key_down(vk: u32) -> bool {
     // SAFETY: plain FFI call.

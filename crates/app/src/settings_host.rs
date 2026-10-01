@@ -11,7 +11,7 @@ use pecofence_platform::window::{
 use pecofence_platform::{HWND, RECT, dwm, monitors, msg};
 use pecofence_render::ThemeMode;
 use std::cell::RefCell;
-use std::path::PathBuf;
+use std::path::Path;
 use std::rc::Rc;
 use windows_core::Result;
 use windows_webview::{Controller, Environment, EnvironmentOptions, WebView};
@@ -20,18 +20,6 @@ pub const SETTINGS_CLASS: &str = "PecoFence.Settings";
 const SETTINGS_HTML: &str = include_str!("../../../ui/settings.html");
 const I18N_JS: &str = include_str!("../../../ui/i18n.js");
 
-fn profile_name(instance: Option<&str>) -> String {
-    use std::hash::{Hash, Hasher};
-    let Some(instance) = instance.map(str::trim).filter(|name| !name.is_empty()) else {
-        return "default".into();
-    };
-    // Instance names are not filesystem paths. Hash them to avoid separators,
-    // invalid Windows filename characters and collisions from lossy sanitizing.
-    let mut hash = std::collections::hash_map::DefaultHasher::new();
-    instance.hash(&mut hash);
-    format!("instance-{:016x}", hash.finish())
-}
-
 /// The WebView2 environment. Kept alive across opens (warm start ≈ 200 ms); the browser
 /// processes exit by themselves when no controller is alive.
 pub struct WebEnvironment {
@@ -39,19 +27,7 @@ pub struct WebEnvironment {
 }
 
 impl WebEnvironment {
-    pub fn create() -> Result<Self> {
-        let user_data = std::env::var_os("LOCALAPPDATA")
-            .map(PathBuf::from)
-            .unwrap_or_else(std::env::temp_dir)
-            .join("PecoFence")
-            // Keep independent instances from sharing incompatible controller options.
-            .join("WebView2Profiles")
-            .join(profile_name(
-                pecofence_core::brand::var("PECOFENCE_INSTANCE")
-                    .ok()
-                    .as_deref(),
-            ));
-        let _ = std::fs::create_dir_all(&user_data);
+    pub fn create(user_data: &Path) -> Result<Self> {
         let options =
             EnvironmentOptions::new().user_data_folder(user_data.to_string_lossy().to_string());
         tracing::debug!("settings: creating WebView2 environment");
