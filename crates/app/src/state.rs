@@ -18,6 +18,7 @@ pub struct AppState {
     store: ConfigStore,
     pub layout: usize,
     dirty: bool,
+    pub save_error: Option<String>,
     catalog: HashMap<ItemKey, ItemId>,
     /// Runtime-only items of folder portals (never persisted; rebuilt from the folder).
     portal_items: HashMap<ItemId, Item>,
@@ -56,34 +57,12 @@ impl SyncReport {
     }
 }
 
-fn config_dir(portable: bool) -> PathBuf {
-    if portable {
-        let exe = std::env::current_exe().unwrap_or_default();
-        return exe
-            .parent()
-            .map(|p| p.join("config"))
-            .unwrap_or_else(|| PathBuf::from("config"));
-    }
-    std::env::var_os("APPDATA")
-        .map(PathBuf::from)
-        .unwrap_or_else(std::env::temp_dir)
-        .join("PecoFence")
-}
-
 impl AppState {
-    pub fn load(work_areas: Vec<WorkArea>, portable: bool) -> Self {
-        let directory = config_dir(portable);
-        let store = if portable {
-            ConfigStore::new(&directory)
-        } else {
-            ConfigStore::with_legacy(
-                &directory,
-                directory.with_file_name(pecofence_core::brand::LEGACY_DATA_DIR),
-            )
-        };
-        if store.dir() != directory {
-            tracing::info!(path = %store.dir().display(), "reusing pre-rename configuration");
-        }
+    pub fn load(
+        work_areas: Vec<WorkArea>,
+        paths: &pecofence_core::runtime_paths::RuntimePaths,
+    ) -> Self {
+        let store = ConfigStore::from_runtime_paths(paths);
         let (outcome, unreadable_moved_to) = store.load_reporting();
         let (config, first_run, recovered_from) = match outcome {
             LoadOutcome::Primary(c) => (c, false, None),
@@ -101,6 +80,7 @@ impl AppState {
             store,
             layout: 0,
             dirty: false,
+            save_error: None,
             catalog: HashMap::new(),
             portal_items: HashMap::new(),
             portal_members: HashMap::new(),
@@ -564,11 +544,13 @@ impl AppState {
         match self.store.save(&self.config) {
             Ok(()) => {
                 self.dirty = false;
+                self.save_error = None;
                 tracing::debug!(path = %self.store.primary_path().display(), "config saved");
                 true
             }
             Err(e) => {
-                tracing::error!(error = %e, "config save failed");
+                self.save_error = Some(format!("{}: {e}", self.store.primary_path().display()));
+                tracing::error!(path = %self.store.primary_path().display(), error = %e, "config save failed");
                 false
             }
         }
@@ -1844,13 +1826,14 @@ mod tests {
         let dir = std::env::temp_dir().join(format!(
             "pecofence-state-test-{}-{}",
             std::process::id(),
-            pecofence_core::now_unix()
+            uuid::Uuid::new_v4()
         ));
         let mut state = AppState {
             config: Config::default(),
             store: ConfigStore::new(dir),
             layout: 0,
             dirty: false,
+            save_error: None,
             catalog: HashMap::new(),
             portal_items: HashMap::new(),
             portal_members: HashMap::new(),

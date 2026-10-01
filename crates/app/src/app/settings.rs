@@ -35,7 +35,7 @@ impl App {
         self.sync_peek_hotkey();
         self.apply_icon_variant();
         self.refresh_visuals(true);
-        self.state.save_if_dirty();
+        self.save_config();
         self.push_settings_state();
         self.settings_toast(&pecofence_core::i18n::format("已{0}", &[what.to_string()]));
     }
@@ -52,7 +52,7 @@ impl App {
             &name,
         ) {
             Ok(Some(path)) => {
-                self.state.save_if_dirty();
+                self.save_config();
                 match pecofence_core::ConfigStore::export_to(&self.state.config, &path) {
                     Ok(()) => self.settings_toast(&pecofence_core::i18n::format(
                         "已导出到 {0}",
@@ -109,7 +109,17 @@ impl App {
             return;
         }
         if self.web_env.is_none() {
-            match WebEnvironment::create() {
+            if let Err(error) =
+                crate::runtime::writable_directory(&self.runtime.paths.webview_data_dir)
+            {
+                tracing::error!(%error, "WebView2 data directory is not writable");
+                let message = pecofence_core::i18n::format("无法写入程序数据：{0}", &[error]);
+                if let Some(tray) = &self.tray {
+                    tray.show_info("PecoFence", &message, true);
+                }
+                return;
+            }
+            match WebEnvironment::create(&self.runtime.paths.webview_data_dir) {
                 Ok(env) => self.web_env = Some(env),
                 Err(e) => {
                     tracing::error!(error = %e, "WebView2 environment failed");
@@ -217,6 +227,8 @@ impl App {
             "tintPalette": fence_options::tint_palette_json(),
             "version": env!("CARGO_PKG_VERSION"),
             "configPath": self.state.config_path().to_string_lossy(),
+            "autostartAvailable": !self.runtime.portable(),
+            "updates": self.updater.snapshot(),
             "memoryMb": mem_mb,
             "itemCount": self.state.workspace_item_count(),
             "themeMode": if self.theme_mode == ThemeMode::Dark { "dark" } else { "light" },
@@ -261,6 +273,22 @@ impl App {
         }
     }
 
+    pub(super) fn save_config(&mut self) -> bool {
+        let previous = self.state.save_error.clone();
+        let saved = self.state.save_if_dirty();
+        if let Some(error) = &self.state.save_error
+            && previous.as_ref() != Some(error)
+        {
+            let message =
+                pecofence_core::i18n::format("无法写入程序数据：{0}", std::slice::from_ref(error));
+            self.settings_error(&message);
+            if let Some(tray) = &self.tray {
+                tray.show_info("PecoFence", &message, true);
+            }
+        }
+        saved
+    }
+
     fn settings_error(&self, text: &str) {
         if let Some(h) = &self.settings {
             h.post_json(
@@ -299,6 +327,10 @@ impl App {
                 }
             }
             Some("action") => match v.get("name").and_then(|n| n.as_str()) {
+                Some(
+                    name @ ("checkUpdates" | "downloadUpdate" | "installUpdate" | "recoverUpdate"
+                    | "openReleases"),
+                ) => self.update_action(name),
                 Some("applyRules") => {
                     let entries = shell::enumerate_desktop();
                     let moved = self.state.apply_rules_all(&entries);
@@ -475,6 +507,14 @@ impl App {
         let old = self.state.config.settings.clone();
         if new == old {
             return;
+        }
+        if new.autostart != old.autostart && self.runtime.portable() {
+            new.autostart = old.autostart;
+            self.ipc_warnings
+                .push("Autostart is unavailable in portable mode".into());
+            self.settings_error(pecofence_core::i18n::text(
+                "免安装版不支持随 Windows 启动。",
+            ));
         }
         if new.autostart != old.autostart {
             let _ = pecofence_platform::autostart::set_product_enabled(new.autostart);

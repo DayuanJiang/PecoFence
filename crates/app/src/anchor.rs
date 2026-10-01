@@ -142,25 +142,13 @@ struct DesktopIcons {
 }
 
 impl DesktopIcons {
-    fn new() -> Self {
-        let base = std::env::var_os("LOCALAPPDATA")
-            .map(PathBuf::from)
-            .unwrap_or_else(std::env::temp_dir)
-            .join("PecoFence");
-        // A second (test) instance keeps its own marker so it never adopts the main one's.
-        let marker = match pecofence_core::brand::var("PECOFENCE_INSTANCE") {
-            Ok(n) if !n.trim().is_empty() => format!("icons-hidden.{}.marker", n.trim()),
-            _ => "icons-hidden.marker".to_string(),
-        };
-        let current = base.join(&marker);
-        let legacy = base
-            .with_file_name(pecofence_core::brand::LEGACY_DATA_DIR)
-            .join(&marker);
-        let marker = if !current.exists() && legacy.exists() {
-            legacy
-        } else {
-            current
-        };
+    fn new(paths: &pecofence_core::runtime_paths::RuntimePaths) -> Self {
+        let marker = paths
+            .legacy_recovery_marker
+            .as_ref()
+            .filter(|legacy| !paths.recovery_marker.exists() && legacy.exists())
+            .unwrap_or(&paths.recovery_marker)
+            .clone();
         Self {
             we_hid_them: false,
             marker,
@@ -210,6 +198,7 @@ impl DesktopAnchor {
         behavior: ShowDesktopBehavior,
         quick_hide_enabled: bool,
         sentinel_class: &WindowClass,
+        paths: &pecofence_core::runtime_paths::RuntimePaths,
     ) -> Result<AnchorCell> {
         let cell: AnchorCell = Rc::new(RefCell::new(None));
         let generation = desktop::detect_generation();
@@ -285,7 +274,7 @@ impl DesktopAnchor {
             retry_step: 0,
             _hook: hook,
             quick: QuickHide::default(),
-            icons: DesktopIcons::new(),
+            icons: DesktopIcons::new(paths),
             quick_hide_enabled,
             test_hook: None,
             quit_requested: false,
@@ -813,10 +802,16 @@ impl DesktopAnchor {
             }
             return true;
         }
-        if let Some(dir) = self.icons.marker.parent() {
-            let _ = std::fs::create_dir_all(dir);
+        let written = self
+            .icons
+            .marker
+            .parent()
+            .map_or(Ok(()), std::fs::create_dir_all)
+            .and_then(|_| std::fs::write(&self.icons.marker, b"pecofence hid desktop icons\n"));
+        if let Err(error) = written {
+            tracing::error!(path = %self.icons.marker.display(), %error, "cannot write desktop recovery marker; leaving icons visible");
+            return false;
         }
-        let _ = std::fs::write(&self.icons.marker, b"pecofence hid desktop icons\n");
         match shell_icons::set_desktop_icons_hidden(true, h.def_view, h.host) {
             Some(true) => {
                 self.icons.we_hid_them = true;
@@ -972,5 +967,47 @@ impl Drop for DesktopAnchor {
     fn drop(&mut self) {
         self.restore_desktop_icons();
         self.set_raw_input_sink(false);
+    }
+}
+
+#[cfg(test)]
+mod distribution_tests {
+    use super::DesktopIcons;
+    use pecofence_core::distribution::Distribution;
+    use pecofence_core::runtime_paths::RuntimePaths;
+
+    #[test]
+    fn only_non_portable_copies_adopt_legacy_recovery_markers() {
+        let root = std::env::temp_dir().join(format!("pecofence-marker-{}", uuid::Uuid::new_v4()));
+        let legacy = root.join("Local/OpenFence/icons-hidden.marker");
+        std::fs::create_dir_all(legacy.parent().unwrap()).unwrap();
+        std::fs::write(&legacy, b"previous run").unwrap();
+        for portable in [true, false] {
+            let distribution =
+                Distribution::resolve(&root.join("copy/pecofence.exe"), None, portable, false)
+                    .unwrap();
+            let paths = RuntimePaths::resolve(
+                &distribution,
+                Some(&root.join("Roaming")),
+                Some(&root.join("Local")),
+                None,
+            )
+            .unwrap();
+            let icons = DesktopIcons::new(&paths);
+            assert_eq!(
+                icons.marker,
+                if portable {
+                    paths.recovery_marker.clone()
+                } else {
+                    legacy.clone()
+                }
+            );
+            assert!(!icons.we_hid_them);
+            std::fs::create_dir_all(paths.recovery_marker.parent().unwrap()).unwrap();
+            std::fs::write(&paths.recovery_marker, b"current run").unwrap();
+            assert_eq!(DesktopIcons::new(&paths).marker, paths.recovery_marker);
+        }
+        assert_eq!(std::fs::read(&legacy).unwrap(), b"previous run");
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

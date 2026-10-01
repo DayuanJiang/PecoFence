@@ -18,13 +18,14 @@ permissions:
 
 jobs:
   winget:
-    if: ${{ github.event_name == 'workflow_dispatch' || !github.event.release.prerelease }}
+    # Fork releases must not publish updates to the upstream package identifier.
+    if: ${{ github.repository == 'DayuanJiang/PecoFence' && (github.event_name == 'workflow_dispatch' || !github.event.release.prerelease) }}
     runs-on: windows-latest
     steps:
       - uses: vedantmgoyal9/winget-releaser@main
         with:
           identifier: DayuanJiang.PecoFence
-          installers-regex: '-x64\.zip$'
+          installers-regex: '-x64-portable\.zip$'
           release-tag: ${{ inputs.tag || github.event.release.tag_name }}
           max-versions-to-keep: 5
           token: ${{ secrets.WINGET_TOKEN }}

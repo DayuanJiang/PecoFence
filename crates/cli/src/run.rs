@@ -102,7 +102,7 @@ pub fn run(ctx: &Ctx, command: Command) -> Result<Reply, IpcError> {
         } => {
             let path = match file {
                 Some(f) => std::path::PathBuf::from(f),
-                None => paths(ctx).config,
+                None => paths(ctx)?.config,
             };
             let (report, failed) = local::check_config(&path)?;
             Ok(Reply {
@@ -111,9 +111,9 @@ pub fn run(ctx: &Ctx, command: Command) -> Result<Reply, IpcError> {
                 partial_failure: failed,
             })
         }
-        Command::Paths => Ok(Reply::new(paths(ctx).to_json())),
+        Command::Paths => Ok(Reply::new(paths(ctx)?.to_json())),
         Command::Log { follow, lines } => {
-            local::print_log(&paths(ctx).log, lines, follow)?;
+            local::print_log(&paths(ctx)?.log, lines, follow)?;
             std::process::exit(0);
         }
         Command::Watch {
@@ -137,12 +137,16 @@ pub fn run(ctx: &Ctx, command: Command) -> Result<Reply, IpcError> {
 
 /// Where the app keeps its files: asks a running instance first (`status.get`), otherwise the
 /// default locations.
-fn paths(ctx: &Ctx) -> local::Paths {
-    let from_status = ctx
-        .call(Method::StatusGet)
-        .ok()
-        .and_then(|r| r.result["configPath"].as_str().map(str::to_string));
-    local::resolve(ctx.instance.as_deref(), from_status)
+fn paths(ctx: &Ctx) -> Result<local::Paths, IpcError> {
+    let status = match ctx.call(Method::StatusGet) {
+        Ok(reply) => Some(
+            serde_json::from_value(reply.result)
+                .map_err(|e| IpcError::internal(format!("invalid status reply: {e}")))?,
+        ),
+        Err(error) if error.code == ErrorCode::NotRunning => None,
+        Err(error) => return Err(error),
+    };
+    local::resolve(ctx.instance.as_deref(), status)
 }
 
 /// `watch`: prints each event as one JSON document (`--once`: returns the first as the result).

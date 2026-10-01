@@ -133,9 +133,11 @@ und eigene Bezeichnungen bleiben unverändert.
 
 Die Microsoft-Store-Version ist von Microsoft signiert, aktualisiert sich automatisch und zeigt keine SmartScreen-Abfrage. Lieber ein einfaches ZIP? Der portable Build unten ist dieselbe App.
 
-1. Öffnen Sie die **Releases**-Seite dieses Repositorys und laden Sie `pecofence-<Version>-x64.zip` herunter.
+1. Öffnen Sie die **Releases**-Seite dieses Repositorys und laden Sie `pecofence-v<Version>-x64-portable.zip` herunter.
 2. Entpacken Sie die **gesamte ZIP-Datei** in einen Ordner und starten Sie `pecofence.exe`.
 3. Legen Sie los. Ein Rechtsklick auf das Taskleistensymbol öffnet die Einstellungen oder beendet PecoFence.
+
+Für einen Installationsassistenten laden Sie `pecofence-v<version>-x64-setup.exe` von derselben Releases-Seite herunter. Er installiert für Ihren Windows-Benutzer und speichert Daten in AppData.
 
 Lieber ein Paketmanager? `winget install DayuanJiang.PecoFence` installiert denselben portablen Build und überspringt die SmartScreen-Abfrage.
 
@@ -151,17 +153,17 @@ in der gewählten Sprache angelegt. Beim Beenden erscheinen die Windows-Desktops
   die vollständige Matrix aus älteren Versionen und Multi-Monitor-Hardware ist noch in Arbeit.
 - Für die Einstellungen wird die Microsoft Edge WebView2 Runtime benötigt. Lassen Sie die
   mitgelieferten `WebView2Loader.dll` und `pecofence-watchdog.exe` neben der App liegen.
-- Die Konfiguration liegt in `%APPDATA%\PecoFence\config.json`. Mit `--portable` gestartet,
-  bleibt sie in einem Ordner `config` neben der ausführbaren Datei.
-- Bestehende Installationen behalten ihr bisheriges Konfigurationsverzeichnis.
-  Siehe [Upgrade-Anleitung](../UPGRADING.md).
+- Die installierte Version speichert ihre Konfiguration in `%APPDATA%\PecoFence\config.json`.
+- Das portable ZIP speichert die Konfiguration automatisch in `config/` neben der EXE; Logs, Absturzabbilder, Browserdaten und Wiederherstellungsmarker liegen in `data/`.
+  `--portable` ist nicht nötig. Der portable Modus kann Windows-Autostarteinträge nicht ändern.
+- Die installierte Version und die Store-Version behalten vorhandene Profildaten. Lesen Sie vor dem Wechsel von älteren ZIPs zum neuen portablen Layout die [Upgrade-Anleitung](../UPGRADING.md).
 - Das Glas verwendet das statische Desktop-Hintergrundbild. Andere Anwendungen oder
   Video-Hintergründe werden nicht gebrochen.
 - Windows-eigene Dialoge und Explorer-Menüeinträge von Drittanbietern folgen der Windows-Sprache.
 - Portable Builds sind nicht signiert. Fragt Windows SmartScreen beim ersten Start nach, wählen Sie
   **Weitere Informationen → Trotzdem ausführen**. Eine Installation über den Microsoft Store oder winget vermeidet die Abfrage.
 
-[Anleitung zur portablen Version](../PORTABLE.md) · [Sprachen und Übersetzungen](../LOCALIZATION.md)
+[Anleitung zur portablen Version](../PORTABLE.md) · [Sprachen und Übersetzungen](../LOCALIZATION.md) · [Windows-Installationsanleitung](../INSTALLER.md)
 
 </details>
 

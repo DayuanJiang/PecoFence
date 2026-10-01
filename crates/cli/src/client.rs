@@ -195,7 +195,10 @@ fn open(name: &str) -> Result<std::fs::File, IpcError> {
             .security_qos_flags(SECURITY_IDENTIFICATION)
             .open(name);
         let err = match attempt {
-            Ok(file) => return Ok(file),
+            Ok(file) => {
+                validate_server(&file)?;
+                return Ok(file);
+            }
             Err(e) => e,
         };
         match err.raw_os_error() {
@@ -228,6 +231,28 @@ fn open(name: &str) -> Result<std::fs::File, IpcError> {
             }
         }
     }
+}
+
+fn validate_server(pipe: &std::fs::File) -> Result<(), IpcError> {
+    let distribution = crate::local::distribution()?;
+    if distribution.mode() == pecofence_core::distribution::DistributionMode::Unmarked {
+        // Keep the standalone/developer CLI's existing ability to control a running app.
+        return Ok(());
+    }
+    let executable = pecofence_platform::process::pipe_server_executable(pipe)
+        .map_err(|e| IpcError::internal(format!("cannot identify PecoFence on this pipe: {e}")))?;
+    let root = executable
+        .parent()
+        .ok_or_else(|| IpcError::internal("server directory missing"))?;
+    let expected = std::fs::canonicalize(distribution.root())
+        .map_err(|e| IpcError::internal(e.to_string()))?;
+    let actual = std::fs::canonicalize(root).map_err(|e| IpcError::internal(e.to_string()))?;
+    if expected != actual {
+        return Err(IpcError::new(ErrorCode::VersionMismatch,
+            format!("The running PecoFence belongs to {} instead of {}", root.display(), distribution.root().display()))
+            .hint("Close the other copy and start pecofence.exe beside this CLI, or use the CLI beside the running copy"));
+    }
+    Ok(())
 }
 
 #[cfg(test)]

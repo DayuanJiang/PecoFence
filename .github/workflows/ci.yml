@@ -40,20 +40,37 @@ jobs:
       - name: Release build
         run: |
           cargo build --locked --release -p pecofence -p pecofence-watchdog
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           # Separate invocation so the CLI's schemars feature is not unified into the app.
           cargo build --locked --release -p pecofence-cli
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Size gate (pecofence.exe <= 3.5 MB)
         shell: pwsh
         run: |
           $size = (Get-Item target/release/pecofence.exe).Length
           Write-Output "pecofence.exe = $size bytes"
           if ($size -gt 3.5MB) { throw "binary too large" }
+      - name: Install pinned Inno Setup compiler
+        shell: pwsh
+        run: ./scripts/setup-inno-ci.ps1
       - name: Package
         shell: pwsh
-        run: ./scripts/make-portable.ps1 -SkipBuild -TargetDir target
+        env:
+          PACKAGE_REPOSITORY: ${{ github.repository }}
+        run: ./scripts/make-windows.ps1 -SkipBuild -TargetDir target -Repository $env:PACKAGE_REPOSITORY
+      - name: Package and installer smoke tests
+        env:
+          PACKAGE_REPOSITORY: ${{ github.repository }}
+        run: python scripts/test-windows-packaging.py --target-dir target --repository "$env:PACKAGE_REPOSITORY"
+      - name: Offline updater and crash recovery tests
+        shell: powershell
+        run: ./scripts/test-updates.ps1 -TargetDir target
       - uses: actions/upload-artifact@v4
         with:
-          name: pecofence-portable
+          name: pecofence-windows
+          if-no-files-found: error
           path: |
-            dist/pecofence-*-x64.zip
-            dist/pecofence-*-x64.zip.sha256
+            dist/pecofence-v*-x64-portable.zip
+            dist/pecofence-v*-x64-portable.zip.sha256
+            dist/pecofence-v*-x64-setup.exe
+            dist/pecofence-v*-x64-setup.exe.sha256

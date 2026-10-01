@@ -495,8 +495,14 @@ impl App {
                 // Persist before replying so the caller can rely on the file; the deferred
                 // save the mutation scheduled is redundant now.
                 window::kill_timer(self.control.hwnd(), TIMER_SAVE);
-                if self.state.is_dirty() && !self.state.save_if_dirty() {
-                    response = add_warning(response, "applied but not saved: see the log");
+                if self.state.is_dirty() && !self.save_config() {
+                    response = add_warning(
+                        response,
+                        &format!(
+                            "applied but not saved: {}",
+                            self.state.save_error.as_deref().unwrap_or("see the log")
+                        ),
+                    );
                 }
             }
             let spent = started.elapsed();
@@ -968,7 +974,7 @@ impl App {
                 format!("the folder of {} does not exist", target.display()),
             ));
         }
-        self.state.save_if_dirty();
+        self.save_config();
         pecofence_core::ConfigStore::export_to(&self.state.config, &target).map_err(|e| {
             IpcError::internal(format!("could not write {}: {e}", target.display()))
         })?;
@@ -1131,6 +1137,29 @@ impl App {
             pid: std::process::id(),
             instance: self.instance.clone(),
             config_path: self.state.config_path().to_string_lossy().into_owned(),
+            runtime_paths: Some(pecofence_ipc::RuntimePathsDto {
+                distribution: self.runtime.distribution.mode().as_str().into(),
+                root: self
+                    .runtime
+                    .distribution
+                    .root()
+                    .to_string_lossy()
+                    .into_owned(),
+                log_file: self.runtime.paths.log_file.to_string_lossy().into_owned(),
+                crash_dir: self.runtime.paths.crash_dir.to_string_lossy().into_owned(),
+                webview_data_dir: self
+                    .runtime
+                    .paths
+                    .webview_data_dir
+                    .to_string_lossy()
+                    .into_owned(),
+                recovery_marker: self
+                    .runtime
+                    .paths
+                    .recovery_marker
+                    .to_string_lossy()
+                    .into_owned(),
+            }),
             fence_count: self.state.fences().len(),
             item_count: self.state.workspace_item_count(),
             memory_mb,
