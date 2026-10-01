@@ -12,6 +12,7 @@ path = "src/main.rs"
 
 [dependencies]
 pecofence-core = { path = "../core" }
+pecofence-platform = { path = "../platform" }
 pecofence-ipc = { path = "../ipc", features = ["describe"] }
 clap = { workspace = true }
 serde = { workspace = true }

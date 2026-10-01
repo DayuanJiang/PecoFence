@@ -133,10 +133,12 @@ nombres que pongas tú se conservan.
 
 La versión de Microsoft Store está firmada por Microsoft, se actualiza sola y nunca muestra el aviso de SmartScreen. ¿Prefieres un ZIP? La versión portátil de abajo es la misma aplicación.
 
-1. Abre la página de **Releases** de este repositorio y descarga `pecofence-<versión>-x64.zip`.
+1. Abre la página de **Releases** de este repositorio y descarga `pecofence-v<versión>-x64-portable.zip`.
 2. Extrae el **ZIP completo** en una carpeta y ejecuta `pecofence.exe`.
 3. Empieza a organizar. Haz clic derecho en el icono de la bandeja cuando necesites la Configuración
    o quieras salir.
+
+Para usar un asistente de instalación, descarga `pecofence-v<version>-x64-setup.exe` desde la misma página Releases. Instala la aplicación para tu usuario de Windows y guarda los datos en AppData.
 
 ¿Prefieres un gestor de paquetes? `winget install DayuanJiang.PecoFence` instala la misma versión portátil y evita el aviso de SmartScreen.
 
@@ -152,10 +154,10 @@ en el idioma que elijas. Los iconos del escritorio de Windows se restauran al sa
   en 25H2; la matriz completa de versiones anteriores y hardware multipantalla sigue en curso.
 - La Configuración necesita Microsoft Edge WebView2 Runtime. Mantén `WebView2Loader.dll` y
   `pecofence-watchdog.exe`, incluidos en el ZIP, junto a la aplicación.
-- La configuración se guarda en `%APPDATA%\PecoFence\config.json`. Inicia con `--portable`
-  para guardarla en una carpeta `config` junto al ejecutable.
-- Las instalaciones existentes conservan su directorio de configuración anterior.
-  Consulta la [guía de actualización](../UPGRADING.md).
+- La versión instalada guarda la configuración en `%APPDATA%\PecoFence\config.json`.
+- El ZIP portátil guarda automáticamente la configuración en `config/` junto al ejecutable, y los registros, volcados de errores, datos del navegador y marcadores de recuperación en `data/`.
+  No hace falta `--portable`; el modo portátil no puede modificar las entradas de inicio de Windows.
+- Las versiones instalada y Store conservan los datos existentes del perfil. Antes de cambiar de un ZIP antiguo a la nueva estructura portátil, consulta la [guía de actualización](../UPGRADING.md).
 - El cristal usa el fondo de pantalla estático. No refracta otras aplicaciones ni fondos
   de vídeo en directo.
 - Los cuadros de diálogo propios de Windows y las entradas de terceros en el menú del Explorador
@@ -163,7 +165,7 @@ en el idioma que elijas. Los iconos del escritorio de Windows se restauran al sa
 - Las versiones portátiles no están firmadas. Si Windows SmartScreen aparece en el primer inicio, elige
   **Más información → Ejecutar de todas formas**. Instalar desde Microsoft Store o con winget evita el aviso.
 
-[Guía de la edición portátil](../PORTABLE.md) · [Guía de idiomas](../LOCALIZATION.md)
+[Guía de la edición portátil](../PORTABLE.md) · [Guía de idiomas](../LOCALIZATION.md) · [Guía del instalador de Windows](../INSTALLER.md)
 
 </details>
 

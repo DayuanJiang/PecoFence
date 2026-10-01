@@ -6,6 +6,7 @@
 - [Languages and translation contributions](LOCALIZATION.md)
 - [Preparing and publishing a release](RELEASING.md)
 - [Portable edition instructions](PORTABLE.md)
+- [Windows installer instructions](INSTALLER.md)
 - [Command-line control for terminals and AI agents](CLI.md)
 - [Product website: build and publishing](WEBSITE.md)
 - [Complete feature list, in Chinese](FEATURES.md)

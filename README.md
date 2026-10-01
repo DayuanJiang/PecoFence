@@ -131,9 +131,11 @@ All translations are included and work offline. Your filenames and custom names 
 
 The Microsoft Store edition is signed by Microsoft, updates automatically and never shows a SmartScreen prompt. Prefer a plain ZIP? The portable build below is the same app.
 
-1. Open this repository's **Releases** page and download `pecofence-<version>-x64.zip`.
+1. Open this repository's **Releases** page and download `pecofence-v<version>-x64-portable.zip`.
 2. Extract the **whole ZIP** into a folder and run `pecofence.exe`.
 3. Start organizing. Right-click the tray icon whenever you need Settings or want to exit.
+
+For a setup wizard, download `pecofence-v<version>-x64-setup.exe` from the same Releases page. It installs for your Windows user and keeps data in AppData.
 
 Prefer a package manager? `winget install DayuanJiang.PecoFence` installs the same portable build and skips the SmartScreen prompt.
 
@@ -149,17 +151,19 @@ in your selected language. Windows desktop icons are restored when you exit.
   the full older-version and multi-display hardware matrix is still in progress.
 - Microsoft Edge WebView2 Runtime is required for Settings. Keep the bundled
   `WebView2Loader.dll` and `pecofence-watchdog.exe` beside the app.
-- Configuration lives in `%APPDATA%\PecoFence\config.json`. Launch with
-  `--portable` to keep it in a `config` folder beside the executable.
-- Existing installations keep their previous configuration directory.
-  See the [upgrade guide](docs/UPGRADING.md).
+- The installed edition saves configuration in `%APPDATA%\PecoFence\config.json`.
+- The portable ZIP automatically keeps configuration in `config/` and logs, crash dumps,
+  browser data and recovery markers in `data/` beside the executable. No `--portable`
+  argument is needed; portable mode cannot change Windows startup entries.
+- Installed and Store editions retain existing profile data. Older ZIP users
+  should read the [upgrade guide](docs/UPGRADING.md) before switching to the new portable layout.
 - Glass uses the static desktop wallpaper. It does not refract other applications
   or live video wallpaper.
 - Windows-owned dialogs and third-party Explorer menu entries follow Windows' language.
 - Portable builds are unsigned. If Windows SmartScreen appears on first launch, choose
   **More info → Run anyway**. Installing from the Microsoft Store or through winget avoids the prompt.
 
-[Portable edition guide](docs/PORTABLE.md) · [Language guide](docs/LOCALIZATION.md)
+[Portable edition guide](docs/PORTABLE.md) · [Language guide](docs/LOCALIZATION.md) · [Windows installer guide](docs/INSTALLER.md)
 
 </details>
 

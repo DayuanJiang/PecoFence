@@ -76,7 +76,7 @@ def main():
     script.write_text("\n".join(lines), encoding="utf-8")
     run("--open-settings", "--test-script", str(script), "--exit-after", "18000")
     saved = json.loads(config_path.read_text(encoding="utf-8"))
-    log_path = Path(environment["LOCALAPPDATA"]) / "PecoFence" / f"pecofence.{instance}.log"
+    log_path = stage / "data/logs" / f"pecofence.{instance}.log"
     log = log_path.read_text(encoding="utf-8")
     assert "settings: page ready" in log, "Embedded Settings document did not initialize"
     for language in LANGUAGES:

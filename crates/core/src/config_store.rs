@@ -40,6 +40,14 @@ impl ConfigStore {
         Self { dir: dir.into() }
     }
 
+    /// Share the same legacy selection rules between the app and offline CLI.
+    pub fn from_runtime_paths(paths: &crate::runtime_paths::RuntimePaths) -> Self {
+        match &paths.legacy_config_dir {
+            Some(legacy) => Self::with_legacy(&paths.config_dir, legacy),
+            None => Self::new(&paths.config_dir),
+        }
+    }
+
     /// Reuse an existing installation's data in place. No copying, rewriting or
     /// renaming of user files is needed just because the product name changed.
     pub fn with_legacy(preferred: impl Into<PathBuf>, legacy: impl Into<PathBuf>) -> Self {

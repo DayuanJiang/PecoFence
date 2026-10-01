@@ -2,6 +2,7 @@
 #
 #   powershell -File scripts/cli-smoke.ps1                 # uses target/debug binaries
 #   powershell -File scripts/cli-smoke.ps1 -Profile release
+#   powershell -File scripts/cli-smoke.ps1 -BinDir target/package/release
 #
 # Copies pecofence.exe, pecofence-watchdog.exe, pecofence-cli.exe and WebView2Loader.dll into a
 # scratch folder under .cache/, points LOCALAPPDATA/APPDATA there, and starts the app as
@@ -10,13 +11,14 @@
 # replies and exit codes. Exit code 0 = all checks passed.
 param(
     [ValidateSet("debug", "release")] [string]$Profile = "debug",
-    [int]$LifetimeMs = 120000
+    [int]$LifetimeMs = 120000,
+    [string]$BinDir = ""
 )
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
 
-$bin = Join-Path $root "target/$Profile"
+$bin = if ($BinDir) { (Resolve-Path -LiteralPath $BinDir).Path } else { Join-Path $root "target/$Profile" }
 foreach ($f in "pecofence.exe", "pecofence-watchdog.exe", "pecofence-cli.exe") {
     if (-not (Test-Path (Join-Path $bin $f))) {
         throw "missing $bin/$f - build first: cargo build -p pecofence -p pecofence-watchdog -p pecofence-cli" + $(if ($Profile -eq "release") { " --release" } else { "" })
@@ -83,7 +85,7 @@ Check "not running -> error.code not_running" ($e.error.code -eq "not_running") 
 
 # 1. Start the isolated instance.
 $app = Start-Process -FilePath (Join-Path $stage "pecofence.exe") -WorkingDirectory $stage `
-    -ArgumentList @("--portable", "--no-hide-icons", "--exit-after", "$LifetimeMs") -PassThru
+    -ArgumentList @("--portable", "--no-hide-icons", "--exit-after", "$LifetimeMs") -WindowStyle Hidden -PassThru
 try {
     $deadline = (Get-Date).AddSeconds(30)
     do {
@@ -438,7 +440,7 @@ finally {
     Start-Sleep -Milliseconds 300
     Get-Process pecofence-watchdog -ErrorAction SilentlyContinue |
         Where-Object { $_.Path -like "$stage*" } | Stop-Process -Force -ErrorAction SilentlyContinue
-    $logPath = Join-Path $env:LOCALAPPDATA "PecoFence\pecofence.$instance.log"
+    $logPath = Join-Path $stage "data\logs\pecofence.$instance.log"
     foreach ($k in $savedEnv.Keys) {
         if ($null -eq $savedEnv[$k]) { Remove-Item -Path "Env:$k" -ErrorAction SilentlyContinue }
         else { Set-Item -Path "Env:$k" -Value $savedEnv[$k] }
@@ -451,4 +453,7 @@ if ($script:failures -gt 0) {
     exit 1
 }
 Write-Host "$($script:checks)/$($script:checks) checks passed"
-Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction SilentlyContinue
+$stagePath = [IO.Path]::GetFullPath($stage)
+$cachePath = [IO.Path]::GetFullPath((Join-Path $root '.cache')) + [IO.Path]::DirectorySeparatorChar
+if (-not $stagePath.StartsWith($cachePath, [StringComparison]::OrdinalIgnoreCase)) { throw "Unsafe test cleanup path: $stagePath" }
+Remove-Item -LiteralPath $stagePath -Recurse -Force -ErrorAction SilentlyContinue

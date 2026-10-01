@@ -421,3 +421,19 @@ ZIP build, put its folder on `PATH` (see *Install and PATH*) so the agent can ca
 by name (and a permission rule such as Claude Code's `Bash(pecofence-cli:*)` matches it). You can
 also copy the short AGENTS.md snippet at the end of the guide into your project's `AGENTS.md`.
 `pecofence-cli describe` prints the machine-readable catalog the guide refers to.
+
+### Distribution-aware diagnostics
+
+`paths` and `log` use the app's reported runtime paths when it is running, or the
+shared `deployment.json` rules when it is offline. Offline discovery does not
+create directories. `paths` also reports `distribution`, `crashDir`,
+`webviewDataDir` and `recoveryMarker`; crash dumps are read from `crashDir`, which
+is separate from the log directory in portable mode. `status` has an additive
+`runtimePaths` object on current apps; it is absent on older versions.
+
+A CLI shipped with a deployment marker only connects to an app in its own
+directory. If another copy is running, commands fail with `version_mismatch`
+instead of reading or changing that copy's data. Unmarked development/standalone
+CLIs retain their existing connection behavior. See
+[distribution data paths](DEVELOPMENT.md#distribution-data-paths) for the layout
+and legacy `--portable` compatibility.

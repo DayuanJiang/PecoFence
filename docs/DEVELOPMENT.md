@@ -7,6 +7,7 @@
 - Visual Studio Build Tools with the Desktop development with C++ workload and Windows SDK.
 - Microsoft Edge WebView2 Runtime to use Settings.
 - Python 3 for catalog checks/source packaging; Node.js for the settings browser tests.
+- Inno Setup 7 for the setup EXE; packaging tests use Python 3.11+ (CI uses 3.12).
 
 ## Build and run
 
@@ -20,9 +21,52 @@ The WebView2 loader is imported at process startup and must be next to the execu
 even if Settings is not opened. The watchdog should also be packaged beside the app.
 
 For an isolated test instance, use a separate directory, `--portable`,
-`--no-hide-icons` and a unique `PECOFENCE_INSTANCE`. Keep autostart disabled in its
-configuration. Portable startup leaves the Windows autostart entry alone.
+`--no-hide-icons` and a unique `PECOFENCE_INSTANCE`.
 `--exit-after <milliseconds>` closes a smoke-test instance automatically.
+
+### Distribution data paths
+
+The app and CLI read `deployment.json` beside their executables, independently of
+the working directory. Both distributions use the same binaries. To test automatic
+portable detection, place this UTF-8 file beside a scratch copy of the binaries:
+
+```json
+{"schema":1,"appId":"PecoFence","mode":"portable"}
+```
+
+`mode: "installed"` selects the existing profile-directory layout. Without a
+marker, source builds and existing ZIPs retain their previous behavior; the GUI's
+`--portable` flag remains supported. An invalid marker, an installed marker with
+`--portable`, or portable mode inside MSIX is an error. MSIX identity otherwise
+keeps the existing Store behavior.
+
+| Data | Portable (relative to the executable) | Installed / unmarked / MSIX |
+|---|---|---|
+| Config and backups | `config/` | `%APPDATA%/PecoFence/` |
+| Log | `data/logs/pecofence.log` | `%LOCALAPPDATA%/PecoFence/pecofence.log` |
+| Crash dumps | `data/crashes/` | `%LOCALAPPDATA%/PecoFence/` |
+| WebView2 data | `data/WebView2Profiles/default/` | `%LOCALAPPDATA%/PecoFence/WebView2Profiles/default/` |
+| Desktop recovery marker | `data/recovery/icons-hidden.marker` | `%LOCALAPPDATA%/PecoFence/icons-hidden.marker` |
+
+Named instances have separate log/marker names and WebView2 profiles, but share
+config within a copy. Non-portable modes may reuse pre-rename `OpenFence` data;
+portable mode never does. Required directories and existing config/log files must
+be writable. Startup failures show the selected path and cause, without falling
+back to AppData or Temp. Close the app and its helper/browser processes before
+moving a portable folder. Desktop items, portal targets and user-chosen exports
+continue to refer to their original external locations.
+
+Portable mode disables the Settings autostart control and rejects autostart
+changes through IPC or config import without touching either Run-key entry.
+Installed and portable copies retain the shared single-instance mutex to prevent
+two copies from managing the desktop simultaneously. A CLI with a deployment
+marker verifies the connected server's executable directory before sending any
+request; use the CLI beside the running copy.
+
+`python scripts/test-distribution-smoke.py` exercises automatic detection,
+local paths, relocation, cross-copy CLI rejection, autostart isolation and blocked
+startup paths using disposable copies under `.cache/` and fake profile directories.
+Build the debug binaries first. This test does not hide the real desktop icons.
 
 ## Verification
 
@@ -51,6 +95,40 @@ It keeps its generated configuration and report under `.cache/`.
 instance from a scratch copy of the debug binaries and drives it with `pecofence-cli`
 (create, move, resize, set options, settings, rules, snapshots, delete), asserting the JSON
 replies and exit codes. It never touches the real configuration or desktop icons.
+
+## Windows packaging
+
+```powershell
+./scripts/make-windows.ps1
+python scripts/test-windows-packaging.py
+```
+
+This builds the app/watchdog and CLI in separate Cargo invocations, then packages
+identical binaries as a portable ZIP and an Inno Setup installer. Reuse a current
+release build with `-SkipBuild -TargetDir target/package`. `-Format Portable` avoids
+requiring Inno Setup; `scripts/make-portable.ps1` remains a compatibility entry point.
+`-Format Installer` builds only setup. No MSIX staging directory is reused.
+
+The compiler is found through `-Iscc`, `ISCC`, PATH or common Inno Setup 7 install
+locations. `-Python` accepts a Python executable path, including one returned by
+`uv python find 3.12`. Packaging does not install development tools locally.
+CI uses the pinned URL/SHA-256 in `packaging/inno/toolchain.json`.
+
+For a fork, pass `-Repository owner/repo` and pass the same value to the test with
+`--repository owner/repo`. The default is `GITHUB_REPOSITORY`, then
+`DayuanJiang/PecoFence` outside Actions. This sets installer links and package
+provenance; it does not add an updater or change application identity. Fork setup
+EXEs still target the same installed PecoFence product. Use the test script for
+isolated validation instead of installing a fork package over a real installation.
+
+The packaging test checks ZIP contents, markers, binary equality and checksums.
+It then compiles the production `.iss` with a random **test-only** identity and two
+synthetic versions, installs to `.cache/`, upgrades and uninstalls. It exercises
+shortcuts, startup ownership, retained data, mutex blocking and destination/version
+guards without starting PecoFence. Temporary test shortcuts/registry entries are
+cleaned up; reports and logs remain under `.cache/installer-*/`. Never distribute
+these synthetic test installers. Manually inspect the setup wizard and supported
+Windows/DPI combinations before release.
 
 ## Architecture
 

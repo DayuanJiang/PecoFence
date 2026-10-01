@@ -309,7 +309,7 @@
       <div class="card"><div class="l"><span class="ic">&#xE774;</span><div><div class="t">显示语言</div><div class="s">立即切换界面语言；你的文件和自定义名称保持不变</div></div></div>
         <select id="language" data-bind="language"><option value="system">跟随系统</option><option value="zh-CN" data-language-name>简体中文</option><option value="zh-TW" data-language-name>繁體中文</option><option value="en" data-language-name>English</option><option value="ja" data-language-name>日本語</option><option value="ko" data-language-name>한국어</option><option value="de" data-language-name>Deutsch</option><option value="fr" data-language-name>Français</option><option value="es" data-language-name>Español</option><option value="pt-BR" data-language-name>Português (Brasil)</option><option value="ru" data-language-name>Русский</option></select></div>
       <h3>桌面与启动</h3>
-      <div class="card"><div class="l"><span class="ic">&#xE7E8;</span><div><div class="t">随 Windows 启动</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="autostart"></div></div>
+      <div class="card"><div class="l"><span class="ic">&#xE7E8;</span><div><div class="t">随 Windows 启动</div><div class="s" data-portable-autostart-help hidden>免安装版不支持随 Windows 启动。</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="autostart"></div></div>
       <div class="card"><div class="l"><span class="ic">&#xE8A9;</span><div><div class="t">隐藏 Windows 桌面图标</div><div class="s">桌面项目只显示在栅栏里，未归类的进入“桌面”栅栏；回收站等系统图标也会出现在“桌面”栅栏中</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="hideRealIcons"></div></div>
       <div class="card"><div class="l"><span class="ic">&#xE890;</span><div><div class="t">双击桌面空白处隐藏或显示栅栏</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="quickHide.enabled"></div></div>
       <div class="card"><div class="l"><span class="ic">&#xE7C4;</span><div><div class="t">显示桌面 (Win+D) 时</div></div></div>
@@ -606,6 +606,14 @@
   // what Peek's switch turns on. Gap, whole-cell sizing and dimming apply without them.
   const DEPENDENT = [['snapping.guideLines', 'snapping.enabled'], ['peek.hotkey', 'peek.enabled']];
   function renderDependents() {
+    const autostart = document.querySelector('[data-bind="autostart"]');
+    const available = state.autostartAvailable !== false;
+    autostart.closest('.card').classList.toggle('disabled', !available);
+    autostart.setAttribute('aria-disabled', String(!available));
+    autostart.tabIndex = available ? 0 : -1;
+    // A saved preference from an imported file is not active in portable mode.
+    if (!available) { autostart.classList.remove('on'); autostart.setAttribute('aria-checked', 'false'); }
+    document.querySelector('[data-portable-autostart-help]').hidden = available;
     for (const [child, master] of DEPENDENT) {
       const on = !!get(state.settings, master), el = document.querySelector(`[data-bind="${child}"]`);
       el.closest('.card').classList.toggle('disabled', !on);

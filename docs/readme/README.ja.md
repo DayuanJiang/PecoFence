@@ -131,9 +131,11 @@ AI とスクリプト向けのインターフェース。`describe` はコマン
 
 Microsoft Store 版は Microsoft によって署名され、自動で更新され、SmartScreen の警告も表示されません。ZIP が良ければ、下のポータブル版も同じアプリです。
 
-1. このリポジトリの **Releases** ページから `pecofence-<バージョン>-x64.zip` をダウンロードします。
+1. このリポジトリの **Releases** ページから `pecofence-v<バージョン>-x64-portable.zip` をダウンロードします。
 2. **ZIP 全体**をフォルダーに展開し、`pecofence.exe` を実行します。
 3. あとは整理を始めるだけ。設定を開くときや終了するときは、トレイアイコンを右クリックしてください。
+
+セットアップウィザードを使う場合は、同じ Releases ページから `pecofence-v<version>-x64-setup.exe` をダウンロードしてください。現在の Windows ユーザー向けにインストールし、データは AppData に保存します。
 
 パッケージマネージャーがお好みなら `winget install DayuanJiang.PecoFence` で同じポータブル版をインストールでき、SmartScreen の警告も出ません。
 
@@ -149,16 +151,16 @@ Microsoft Store 版は Microsoft によって署名され、自動で更新さ�
   旧バージョンやマルチディスプレイ構成の網羅的な検証は進行中です。
 - 設定画面には Microsoft Edge WebView2 Runtime が必要です。同梱の `WebView2Loader.dll` と
   `pecofence-watchdog.exe` は、アプリと同じフォルダーに置いたままにしてください。
-- 設定は `%APPDATA%\PecoFence\config.json` に保存されます。`--portable` を付けて起動すると、
-  実行ファイルの隣にある `config` フォルダーに保存されます。
-- 既存のインストールでは、以前の設定フォルダーがそのまま使われます。
-  詳しくは[アップグレードガイド](../UPGRADING.md)をご覧ください。
+- インストール版の設定は `%APPDATA%\PecoFence\config.json` に保存されます。
+- ポータブル ZIP は、設定を実行ファイルの隣の `config/` に、ログ、クラッシュダンプ、ブラウザーデータ、復元マーカーを `data/` に自動保存します。
+  `--portable` は不要です。ポータブルモードでは Windows の自動起動項目を変更できません。
+- インストール版と Store 版は既存のユーザーデータを引き継ぎます。旧 ZIP から新しいポータブル構成に移行する前に、[アップグレードガイド](../UPGRADING.md)をご覧ください。
 - ガラス効果は静止画の壁紙をもとに描画されます。他のアプリのウィンドウや動画壁紙は
   屈折・透過しません。
 - Windows 標準のダイアログや、サードパーティ製のエクスプローラーメニュー項目は Windows の言語で表示されます。
 - ポータブル版はコード署名されていません。初回起動時に Windows SmartScreen が表示された場合は**詳細情報 → 実行**を選んでください。Microsoft Store または winget からのインストールではこの警告は出ません。
 
-[ポータブル版ガイド](../PORTABLE.md) · [言語ガイド](../LOCALIZATION.md)
+[ポータブル版ガイド](../PORTABLE.md) · [言語ガイド](../LOCALIZATION.md) · [Windows インストール版ガイド](../INSTALLER.md)
 
 </details>
 

@@ -1,15 +1,13 @@
-//! Commands that work without the app (or mostly so): `paths`, `log`, `config check`. They
-//! know where PecoFence keeps its files the same way the app does (`%LOCALAPPDATA%\PecoFence`
-//! for the log and crash dumps, `%APPDATA%\PecoFence` for `config.json` unless a running
-//! instance says otherwise, e.g. `--portable`).
+//! Read-only diagnostics using the same distribution paths as the app.
 
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use pecofence_core::brand;
 use pecofence_core::config_store::{self, LintLevel};
-use pecofence_ipc::{ErrorCode, IpcError};
+use pecofence_core::distribution::Distribution;
+use pecofence_core::runtime_paths::RuntimePaths;
+use pecofence_ipc::{ErrorCode, IpcError, StatusDto};
 use serde_json::{Value, json};
 
 /// Where the files are (or would be). `config` comes from a running instance when one answers
@@ -22,6 +20,10 @@ pub struct Paths {
     pub config: PathBuf,
     pub log: PathBuf,
     pub log_dir: PathBuf,
+    pub crash_dir: PathBuf,
+    pub webview_data_dir: PathBuf,
+    pub recovery_marker: PathBuf,
+    pub distribution: String,
 }
 
 impl Paths {
@@ -37,7 +39,7 @@ impl Paths {
     }
 
     pub fn crash_dumps(&self) -> Vec<PathBuf> {
-        let mut dumps: Vec<PathBuf> = std::fs::read_dir(&self.log_dir)
+        let mut dumps: Vec<PathBuf> = std::fs::read_dir(&self.crash_dir)
             .map(|rd| {
                 rd.filter_map(|e| e.ok().map(|e| e.path()))
                     .filter(|p| {
@@ -66,71 +68,84 @@ impl Paths {
             "logExists": self.log.is_file(),
             "logDir": self.log_dir,
             "crashDumps": self.crash_dumps(),
+            "crashDir": self.crash_dir,
+            "webviewDataDir": self.webview_data_dir,
+            "recoveryMarker": self.recovery_marker,
+            "distribution": self.distribution,
         })
     }
 }
 
-/// Pure: the default locations from the two profile folders and the instance name (the app's
-/// `log_file_path` / `ConfigStore::with_legacy` rules, without touching the disk for the config).
-pub fn default_paths(
-    local_appdata: Option<&Path>,
-    appdata: Option<&Path>,
-    instance: Option<&str>,
-    legacy_config_exists: impl Fn(&Path) -> bool,
-) -> (PathBuf, PathBuf, PathBuf) {
-    let local = local_appdata
-        .map(Path::to_path_buf)
-        .unwrap_or_else(|| PathBuf::from("."));
-    let roaming = appdata
-        .map(Path::to_path_buf)
-        .unwrap_or_else(|| PathBuf::from("."));
-    let log_dir = local.join(brand::NAME);
-    let log_name = match instance.map(str::trim).filter(|s| !s.is_empty()) {
-        Some(n) => format!("pecofence.{n}.log"),
-        None => "pecofence.log".to_string(),
-    };
-    let preferred = roaming.join(brand::NAME);
-    let legacy = roaming.join(brand::LEGACY_DATA_DIR);
-    let config_dir = if !legacy_config_exists(&preferred) && legacy_config_exists(&legacy) {
-        legacy
-    } else {
-        preferred
-    };
-    (
-        config_dir.join("config.json"),
-        log_dir.join(log_name),
-        log_dir,
+/// Shared discovery also rejects malformed deployment markers for offline commands.
+pub fn distribution() -> Result<Distribution, IpcError> {
+    let executable = std::env::current_exe().map_err(|e| IpcError::internal(e.to_string()))?;
+    Distribution::detect(
+        &executable,
+        false,
+        pecofence_platform::process::is_packaged(),
     )
+    .map_err(|e| IpcError::new(ErrorCode::InvalidValue, e))
 }
 
-/// Resolves the paths, asking a running instance for its config path first (`status.get`).
-pub fn resolve(instance: Option<&str>, status_config_path: Option<String>) -> Paths {
-    let local = std::env::var_os("LOCALAPPDATA").map(PathBuf::from);
-    let roaming = std::env::var_os("APPDATA").map(PathBuf::from);
-    let has_data = |dir: &Path| {
-        dir.join("config.json").is_file()
-            || dir.join("config.bak").is_file()
-            || dir.join("backups").is_dir()
-    };
-    let (default_config, log, log_dir) =
-        default_paths(local.as_deref(), roaming.as_deref(), instance, has_data);
-    match status_config_path {
-        Some(p) => Paths {
+/// Read-only discovery; an offline CLI never creates data directories.
+pub fn resolve(instance: Option<&str>, status: Option<StatusDto>) -> Result<Paths, IpcError> {
+    let distribution = distribution()?;
+    if let Some(status) = &status
+        && let Some(paths) = &status.runtime_paths
+    {
+        return Ok(Paths {
             instance: instance.map(str::to_string),
             running: true,
             source: "status",
-            config: PathBuf::from(p),
-            log,
-            log_dir,
-        },
-        None => Paths {
-            instance: instance.map(str::to_string),
-            running: false,
-            source: "default",
-            config: default_config,
-            log,
-            log_dir,
-        },
+            config: status.config_path.clone().into(),
+            log: paths.log_file.clone().into(),
+            log_dir: Path::new(&paths.log_file)
+                .parent()
+                .unwrap_or(Path::new(""))
+                .into(),
+            crash_dir: paths.crash_dir.clone().into(),
+            webview_data_dir: paths.webview_data_dir.clone().into(),
+            recovery_marker: paths.recovery_marker.clone().into(),
+            distribution: paths.distribution.clone(),
+        });
+    }
+    let local = std::env::var_os("LOCALAPPDATA").map(PathBuf::from);
+    let roaming = std::env::var_os("APPDATA").map(PathBuf::from);
+    let paths = RuntimePaths::resolve(
+        &distribution,
+        roaming.as_deref(),
+        local.as_deref(),
+        instance,
+    )
+    .map_err(|e| IpcError::new(ErrorCode::InvalidValue, e))?;
+    let mut result = planned_paths(instance, &paths, distribution.mode().as_str());
+    if let Some(status) = status {
+        if distribution.mode() == pecofence_core::distribution::DistributionMode::Portable {
+            return Err(IpcError::new(
+                ErrorCode::VersionMismatch,
+                "The running app does not report portable runtime paths",
+            )
+            .hint("Update the app and CLI together"));
+        }
+        result.config = status.config_path.into();
+        result.running = true;
+        result.source = "status";
+    }
+    Ok(result)
+}
+
+fn planned_paths(instance: Option<&str>, paths: &RuntimePaths, mode: &str) -> Paths {
+    Paths {
+        instance: instance.map(str::to_string),
+        running: false,
+        source: "default",
+        config: pecofence_core::ConfigStore::from_runtime_paths(paths).primary_path(),
+        log: paths.log_file.clone(),
+        log_dir: paths.log_file.parent().unwrap().into(),
+        crash_dir: paths.crash_dir.clone(),
+        webview_data_dir: paths.webview_data_dir.clone(),
+        recovery_marker: paths.recovery_marker.clone(),
+        distribution: mode.into(),
     }
 }
 
@@ -262,34 +277,30 @@ mod tests {
     use super::*;
 
     #[test]
-    fn default_paths_follow_the_apps_rules() {
-        let local = Path::new("C:\\Users\\me\\AppData\\Local");
-        let roaming = Path::new("C:\\Users\\me\\AppData\\Roaming");
-        let (config, log, log_dir) = default_paths(Some(local), Some(roaming), None, |_| false);
-        assert_eq!(
-            config,
-            PathBuf::from("C:\\Users\\me\\AppData\\Roaming\\PecoFence\\config.json")
+    fn offline_portable_paths_do_not_adopt_installed_config_or_scan_its_dumps() {
+        let root =
+            std::env::temp_dir().join(format!("pecofence-cli-paths-{}", uuid::Uuid::new_v4()));
+        let distro = Distribution::resolve(&root.join("pecofence.exe"), None, true, false).unwrap();
+        let runtime = RuntimePaths::resolve(&distro, None, None, Some("test")).unwrap();
+        let paths = planned_paths(Some("test"), &runtime, "portable");
+        assert!(
+            !root.exists(),
+            "offline discovery must not create directories"
         );
-        assert_eq!(
-            log,
-            PathBuf::from("C:\\Users\\me\\AppData\\Local\\PecoFence\\pecofence.log")
-        );
-        assert_eq!(
-            log_dir,
-            PathBuf::from("C:\\Users\\me\\AppData\\Local\\PecoFence")
-        );
-
-        // A named instance logs to its own file; the config folder is shared.
-        let (_, log, _) = default_paths(Some(local), Some(roaming), Some(" test "), |_| false);
-        assert!(log.ends_with("pecofence.test.log"), "{log:?}");
-
-        // Legacy data folder is used only when the new one has nothing.
-        let (config, _, _) = default_paths(Some(local), Some(roaming), None, |dir| {
-            dir.ends_with("OpenFence")
-        });
-        assert!(config.ends_with("OpenFence\\config.json"), "{config:?}");
-        let (config, _, _) = default_paths(Some(local), Some(roaming), None, |_| true);
-        assert!(config.ends_with("PecoFence\\config.json"), "{config:?}");
+        assert_eq!(paths.config, root.join("config/config.json"));
+        assert_eq!(paths.log, root.join("data/logs/pecofence.test.log"));
+        std::fs::create_dir_all(&paths.crash_dir).unwrap();
+        std::fs::create_dir_all(&paths.log_dir).unwrap();
+        let dump = paths.crash_dir.join("crash-test-1.dmp");
+        std::fs::write(&dump, b"dump").unwrap();
+        std::fs::write(
+            paths.log_dir.join("crash-test-2.dmp"),
+            b"not in dump directory",
+        )
+        .unwrap();
+        assert_eq!(paths.crash_dumps(), vec![dump]);
+        assert_eq!(paths.to_json()["distribution"], "portable");
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

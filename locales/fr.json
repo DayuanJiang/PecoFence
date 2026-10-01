@@ -425,5 +425,8 @@
   "最多只能有 {0} 个栅栏（含标签页），请先删除或合并一些。": "Vous pouvez avoir au plus {0} groupes (onglets compris). Supprimez-en ou fusionnez-en d’abord.",
   "要删除栅栏“{0}”吗？": "Supprimer le groupe « {0} » ?",
   "其中的 {0} 个图标会回到“{1}”栅栏，文件本身不受影响。": "Ses icônes ({0}) retournent dans le groupe « {1} ». Les fichiers eux-mêmes ne sont pas touchés.",
-  "指向它的 {0} 条规则也会一并删除。": "Les règles qui le ciblent ({0}) sont aussi supprimées."
+  "指向它的 {0} 条规则也会一并删除。": "Les règles qui le ciblent ({0}) sont aussi supprimées.",
+  "无法启动 PecoFence：{0}": "Impossible de démarrer PecoFence : {0}",
+  "无法写入程序数据：{0}": "Impossible d’écrire les données de l’application : {0}",
+  "免安装版不支持随 Windows 启动。": "Le démarrage avec Windows n’est pas disponible en mode portable."
 }
