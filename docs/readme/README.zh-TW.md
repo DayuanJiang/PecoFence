@@ -131,9 +131,11 @@ pecofence-cli fence set --all opacity clear
 
 Microsoft Store 版由微軟簽署、自動更新，不會出現 SmartScreen 提示。想要純壓縮檔？下面的免安裝版是同一個程式。
 
-1. 到本儲存庫的 **Releases** 頁面下載 `pecofence-<版本>-x64.zip`。
+1. 到本儲存庫的 **Releases** 頁面下載 `pecofence-v<版本>-x64-portable.zip`。
 2. 把壓縮檔**完整解壓縮**到一個資料夾，執行 `pecofence.exe`。
 3. 開始整理。需要開啟設定或結束程式時，在系統匣的 PecoFence 圖示上按右鍵。
+
+如需安裝精靈，請在同一 Releases 頁面下載 `pecofence-v<version>-x64-setup.exe`。它會為目前的 Windows 使用者安裝，並將資料保存在 AppData。
 
 習慣用套件管理器？`winget install DayuanJiang.PecoFence` 安裝的是同一個免安裝版，而且不會觸發 SmartScreen 提示。
 
@@ -149,14 +151,15 @@ Microsoft Store 版由微軟簽署、自動更新，不會出現 SmartScreen 提
   舊版 Windows 與多顯示器硬體組合的完整回歸測試仍在進行中。
 - 設定面板需要 Microsoft Edge WebView2 Runtime。
   請將壓縮檔內的 `WebView2Loader.dll`、`pecofence-watchdog.exe` 與主程式放在同一個資料夾。
-- 設定儲存在 `%APPDATA%\PecoFence\config.json`。
-  以 `--portable` 啟動，可改為儲存在程式旁的 `config` 資料夾。
-- 既有安裝會沿用原本的設定目錄，保留配置、規則與備份。詳見[升級說明](../UPGRADING.md)。
+- 安裝版將設定儲存在 `%APPDATA%\PecoFence\config.json`。
+- 免安裝 ZIP 自動將設定儲存在程式旁的 `config/`，日誌、crash dump、瀏覽器資料及恢復標記儲存在 `data/`。
+  不需 `--portable` 參數；免安裝模式無法修改 Windows 開機啟動項目。
+- 安裝版與 Store 版沿用既有使用者資料。舊 ZIP 使用者切換至新版免安裝目錄前，請先閱讀[升級說明](../UPGRADING.md)。
 - 玻璃效果取樣的是靜態桌布，不會折射其他應用程式的視窗或動態桌布。
 - Windows 內建的對話方塊與第三方的檔案總管選單項目仍使用系統語言。
 - 免安裝版尚未進行程式碼簽署。首次執行若出現 Windows SmartScreen 提示，請點選**其他資訊 → 仍要執行**。透過 Microsoft Store 或 winget 安裝不會出現此提示。
 
-[免安裝版說明](../PORTABLE.md) · [多語言說明](../LOCALIZATION.md)
+[免安裝版說明](../PORTABLE.md) · [多語言說明](../LOCALIZATION.md) · [Windows 安裝版說明](../INSTALLER.md)
 
 </details>
 

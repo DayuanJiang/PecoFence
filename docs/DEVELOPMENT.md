@@ -7,6 +7,7 @@
 - Visual Studio Build Tools with the Desktop development with C++ workload and Windows SDK.
 - Microsoft Edge WebView2 Runtime to use Settings.
 - Python 3 for catalog checks/source packaging; Node.js for the settings browser tests.
+- Inno Setup 7 for the setup EXE; packaging tests use Python 3.11+ (CI uses 3.12).
 
 ## Build and run
 
@@ -94,6 +95,40 @@ It keeps its generated configuration and report under `.cache/`.
 instance from a scratch copy of the debug binaries and drives it with `pecofence-cli`
 (create, move, resize, set options, settings, rules, snapshots, delete), asserting the JSON
 replies and exit codes. It never touches the real configuration or desktop icons.
+
+## Windows packaging
+
+```powershell
+./scripts/make-windows.ps1
+python scripts/test-windows-packaging.py
+```
+
+This builds the app/watchdog and CLI in separate Cargo invocations, then packages
+identical binaries as a portable ZIP and an Inno Setup installer. Reuse a current
+release build with `-SkipBuild -TargetDir target/package`. `-Format Portable` avoids
+requiring Inno Setup; `scripts/make-portable.ps1` remains a compatibility entry point.
+`-Format Installer` builds only setup. No MSIX staging directory is reused.
+
+The compiler is found through `-Iscc`, `ISCC`, PATH or common Inno Setup 7 install
+locations. `-Python` accepts a Python executable path, including one returned by
+`uv python find 3.12`. Packaging does not install development tools locally.
+CI uses the pinned URL/SHA-256 in `packaging/inno/toolchain.json`.
+
+For a fork, pass `-Repository owner/repo` and pass the same value to the test with
+`--repository owner/repo`. The default is `GITHUB_REPOSITORY`, then
+`DayuanJiang/PecoFence` outside Actions. This sets installer links and package
+provenance; it does not add an updater or change application identity. Fork setup
+EXEs still target the same installed PecoFence product. Use the test script for
+isolated validation instead of installing a fork package over a real installation.
+
+The packaging test checks ZIP contents, markers, binary equality and checksums.
+It then compiles the production `.iss` with a random **test-only** identity and two
+synthetic versions, installs to `.cache/`, upgrades and uninstalls. It exercises
+shortcuts, startup ownership, retained data, mutex blocking and destination/version
+guards without starting PecoFence. Temporary test shortcuts/registry entries are
+cleaned up; reports and logs remain under `.cache/installer-*/`. Never distribute
+these synthetic test installers. Manually inspect the setup wizard and supported
+Windows/DPI combinations before release.
 
 ## Architecture
 

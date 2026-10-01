@@ -1,25 +1,74 @@
 # PecoFence portable edition
 
-Upgrading from the previous name? Exit the old application first and keep your
-existing `config` directory. See the included [upgrade guide](UPGRADING.md).
+Before replacing an older ZIP, read the included [upgrade guide](UPGRADING.md).
+Older ZIPs could use AppData; this distribution does not automatically adopt it.
 
-Extract the complete ZIP and run `pecofence.exe`. Keep these files together:
+Extract the complete ZIP and run `pecofence.exe`. Keep the program files together
+as shown below; moving only the executable is not enough.
 
-- `pecofence.exe`
-- `pecofence-watchdog.exe`
-- `WebView2Loader.dll`
-- `pecofence-cli.exe` (optional command-line control, see below)
-
-Windows 11 x64 and Microsoft Edge WebView2 Runtime are required.
+Windows 11 22H2 or later and Microsoft Edge WebView2 Runtime are required.
 
 Right-click the tray icon to open Settings or exit. Under General, choose your
 display language: English, Simplified/Traditional Chinese, Japanese, Korean,
 German, French, Spanish, Portuguese (Brazil), Russian or Follow system.
 
-By default, settings are saved in `%APPDATA%\PecoFence\config.json`. Launch with
-`--portable` to use a `config` folder beside the executable.
-Portable startup does not synchronize Windows' autostart entry; changing the
-autostart toggle in Settings remains an explicit opt-in/out.
+## Program files and user data
+
+The ZIP contains these program files in the extraction folder:
+
+```text
+<portable-directory>/                     // Complete ZIP extraction folder
+├── pecofence.exe                         // Desktop application
+├── pecofence-watchdog.exe                // Restores desktop icons after an abnormal exit
+├── pecofence-cli.exe                     // Command-line control
+├── WebView2Loader.dll                    // Loader for the Settings browser
+├── deployment.json                       // Selects portable mode; do not edit or remove
+├── release-info.json                     // Package version and release repository
+├── README.md                             // This portable edition guide
+├── UPGRADING.md                          // Upgrade and migration instructions
+├── SKILL.md                              // CLI instructions for AI agents
+├── LICENSE                               // Project license
+├── LICENSE-WebView2Loader.txt            // WebView2 Loader license
+└── THIRD-PARTY-LICENSES.txt              // Dependency license notices
+```
+
+Double-clicking the app automatically keeps its settings and working data in the
+same folder. The following directories and files are created as needed at runtime;
+they are not included in the ZIP:
+
+```text
+<portable-directory>/
+├── config/
+│   ├── config.json                       // Settings, layouts, rules and snapshots
+│   ├── config.bak                        // Previous saved configuration
+│   └── backups/
+│       └── YYYY-MM-DD.json               // Daily configuration backups
+└── data/
+    ├── logs/
+    │   └── pecofence.log                 // Application log
+    ├── crashes/
+    │   └── crash-<instance>-<ticks>.dmp  // Created after a captured native crash
+    ├── WebView2Profiles/
+    │   └── default/                      // Settings browser data and cache
+    └── recovery/
+        └── icons-hidden.marker           // Present while desktop icons need restoration
+```
+
+The tree shows the default instance. Named instances use separate log/marker names
+and browser profile directories, while sharing this copy's `config/` directory.
+Configuration writes can also create temporary or recovery files inside `config/`.
+
+The folder must be writable. A storage failure displays an error; the app never
+falls back to AppData or Temp. It does not read installed or pre-rename OpenFence
+data. Windows startup is disabled for this edition, and its Settings/CLI cannot
+change the installed edition's startup entries. `--portable` remains accepted
+for compatibility but is unnecessary for this ZIP.
+
+Exit the app and wait for its watchdog/browser processes to finish before moving
+the whole folder. Its own data paths follow the folder's new location; desktop
+items, portal targets and user-chosen import/export paths remain external.
+
+## Using PecoFence
 
 Double-click empty desktop space to hide/show fences. **Ctrl+Alt+Space** brings
 them above other windows. Drag a title to move a fence; double-click it to roll up.
@@ -36,3 +85,5 @@ folder to PATH. `SKILL.md` describes the tool for agents such as Claude Code or 
 
 The ZIP is an unsigned portable build. It does not contain your configuration.
 Languages work offline; the glass background uses static desktop wallpaper.
+`release-info.json` identifies the package's version and release repository;
+it does not enable automatic updates. Keep `config/` and `data/` when upgrading.

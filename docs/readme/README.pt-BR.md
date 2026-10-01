@@ -133,10 +133,12 @@ personalizados são preservados.
 
 A versão da Microsoft Store é assinada pela Microsoft, atualiza sozinha e nunca mostra o aviso do SmartScreen. Prefere um ZIP? A versão portátil abaixo é o mesmo aplicativo.
 
-1. Abra a página **Releases** deste repositório e baixe `pecofence-<versão>-x64.zip`.
+1. Abra a página **Releases** deste repositório e baixe `pecofence-v<versão>-x64-portable.zip`.
 2. Extraia o **ZIP inteiro** para uma pasta e execute `pecofence.exe`.
 3. Comece a organizar. Clique com o botão direito no ícone da bandeja sempre que precisar
    das Configurações ou quiser sair.
+
+Para usar um assistente de instalação, baixe `pecofence-v<version>-x64-setup.exe` na mesma página Releases. Ele instala para seu usuário do Windows e mantém os dados no AppData.
 
 Prefere um gerenciador de pacotes? `winget install DayuanJiang.PecoFence` instala a mesma versão portátil e evita o aviso do SmartScreen.
 
@@ -153,10 +155,10 @@ a aparecer quando você sai.
   a matriz completa de versões antigas e configurações com vários monitores ainda está em andamento.
 - O Microsoft Edge WebView2 Runtime é necessário para as Configurações. Mantenha
   `WebView2Loader.dll` e `pecofence-watchdog.exe` na mesma pasta do aplicativo.
-- A configuração fica em `%APPDATA%\PecoFence\config.json`. Inicie com
-  `--portable` para mantê-la em uma pasta `config` ao lado do executável.
-- Instalações existentes continuam usando o diretório de configuração anterior.
-  Veja o [guia de atualização](../UPGRADING.md).
+- A versão instalada salva a configuração em `%APPDATA%\PecoFence\config.json`.
+- O ZIP portátil salva automaticamente a configuração em `config/` ao lado do executável, e logs, despejos de falha, dados do navegador e marcadores de recuperação em `data/`.
+  Não é preciso usar `--portable`; o modo portátil não pode alterar as entradas de inicialização do Windows.
+- As versões instalada e Store mantêm os dados existentes do perfil. Antes de migrar de um ZIP antigo para a nova estrutura portátil, leia o [guia de atualização](../UPGRADING.md).
 - O vidro usa o papel de parede estático. Ele não refrata outros aplicativos
   nem papéis de parede em vídeo.
 - Caixas de diálogo do Windows e entradas de terceiros no menu do Explorador de Arquivos
@@ -164,7 +166,7 @@ a aparecer quando você sai.
 - As versões portáteis não são assinadas. Se o Windows SmartScreen aparecer na primeira execução, escolha
   **Mais informações → Executar assim mesmo**. Instalar pela Microsoft Store ou pelo winget evita o aviso.
 
-[Guia da edição portátil](../PORTABLE.md) · [Guia de idiomas](../LOCALIZATION.md)
+[Guia da edição portátil](../PORTABLE.md) · [Guia de idiomas](../LOCALIZATION.md) · [Guia do instalador do Windows](../INSTALLER.md)
 
 </details>
 

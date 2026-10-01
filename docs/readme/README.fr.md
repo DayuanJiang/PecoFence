@@ -133,10 +133,12 @@ personnalisés restent intacts.
 
 La version Microsoft Store est signée par Microsoft, se met à jour automatiquement et n’affiche jamais l’avertissement SmartScreen. Vous préférez un simple ZIP ? La version portable ci-dessous est la même application.
 
-1. Ouvrez la page **Releases** de ce dépôt et téléchargez `pecofence-<version>-x64.zip`.
+1. Ouvrez la page **Releases** de ce dépôt et téléchargez `pecofence-v<version>-x64-portable.zip`.
 2. Extrayez **l’intégralité du ZIP** dans un dossier et lancez `pecofence.exe`.
 3. Commencez à ranger. Un clic droit sur l’icône de la zone de notification ouvre les Paramètres
    ou quitte l’application.
+
+Pour utiliser un assistant d’installation, téléchargez `pecofence-v<version>-x64-setup.exe` depuis la même page Releases. Il installe l’application pour votre utilisateur Windows et conserve les données dans AppData.
 
 Vous préférez un gestionnaire de paquets ? `winget install DayuanJiang.PecoFence` installe la même version portable et évite l’avertissement SmartScreen.
 
@@ -153,10 +155,10 @@ et Bureau dans la langue de votre choix. Les icônes du Bureau Windows réappara
   est encore en cours.
 - Microsoft Edge WebView2 Runtime est nécessaire pour les Paramètres. Conservez
   `WebView2Loader.dll` et `pecofence-watchdog.exe` fournis dans le ZIP à côté de l’application.
-- La configuration est enregistrée dans `%APPDATA%\PecoFence\config.json`. Lancez l’application
-  avec `--portable` pour la garder dans un dossier `config` à côté de l’exécutable.
-- Les installations existantes conservent leur ancien dossier de configuration.
-  Consultez le [guide de mise à niveau](../UPGRADING.md).
+- La version installée enregistre sa configuration dans `%APPDATA%\PecoFence\config.json`.
+- Le ZIP portable place automatiquement la configuration dans `config/` à côté de l’exécutable, et les journaux, vidages mémoire, données du navigateur et marqueurs de restauration dans `data/`.
+  L’argument `--portable` est inutile ; le mode portable ne peut pas modifier les entrées de démarrage de Windows.
+- Les versions installée et Store conservent les données du profil existant. Avant de passer d’un ancien ZIP à la nouvelle organisation portable, consultez le [guide de mise à niveau](../UPGRADING.md).
 - Le verre s’appuie sur le fond d’écran statique. Il ne réfracte ni les autres applications
   ni les fonds d’écran vidéo.
 - Les boîtes de dialogue de Windows et les entrées tierces des menus de l’Explorateur suivent
@@ -164,7 +166,7 @@ et Bureau dans la langue de votre choix. Les icônes du Bureau Windows réappara
 - Les versions portables ne sont pas signées. Si Windows SmartScreen s’affiche au premier lancement, choisissez
   **Informations complémentaires → Exécuter quand même**. L’installation via le Microsoft Store ou winget évite cet avertissement.
 
-[Guide de l’édition portable](../PORTABLE.md) · [Guide des langues](../LOCALIZATION.md)
+[Guide de l’édition portable](../PORTABLE.md) · [Guide des langues](../LOCALIZATION.md) · [Guide d’installation Windows](../INSTALLER.md)
 
 </details>
 
