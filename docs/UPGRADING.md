@@ -52,7 +52,7 @@ The MSIX edition offers a Microsoft Store link and never downloads GitHub packag
    only the twelve files shipped in the ZIP, retaining all other files. Successful
    updates restart PecoFence and open Settings.
 
-There are no startup checks, background scheduling, private-repository credentials,
+There are no automatic update checks or downloads, private-repository credentials,
 automatic installation, prerelease selection or downgrades. SHA-256 detects file
 corruption; it is not a publisher signature. Only use packages from a repository
 you trust. HTTPS certificates remain validated. Windows PowerShell 5.1 is required
@@ -94,14 +94,46 @@ ZIP/Setup procedure above; do not weaken system policy to run the script.
 Keep the original directory in place until update or recovery finishes. If a
 portable directory was moved while recovery was pending, move the whole directory
 back to its original location first. Completed updates have no pending transaction
-and the portable folder can be moved normally. Update files and successful rollback
-backups are retained for inspection; after confirming the app works and no recovery
-is pending, close it before deleting an old attempt directory to reclaim space.
+and the portable folder can be moved normally.
 
 The automated tests forcibly terminate an isolated worker at multiple durable
 checkpoints and recover in a fresh process. This models lost process state after a
 reboot; it does not certify recovery from hardware failure, filesystem damage or
 storage devices that fail to persist flushed writes. Keep independent data backups.
+
+## Automatic cleanup of update files
+
+After the app has initialized and run for 30 seconds, local maintenance checks its
+update directory. It also runs after update checks/downloads and at most hourly
+while idle. This does not contact GitHub or install anything. It shares the update
+lock, so it cannot delete files being used by an update or recovery worker.
+
+- A completed installation is acknowledged only by a running app from the same
+  directory, distribution and repository, at that version or newer. Its downloaded
+  ZIP/Setup and extracted payloads are then removed. If the app cannot start, these
+  files and recovery backups are retained.
+- Keep the most recent verified portable backup for up to **30 days after startup
+  acknowledgement**. A corrupt newer backup never evicts the last verified backup.
+  Retained backups support inspection/manual repair; there is no post-update
+  downgrade button.
+- Keep at most **10 historical attempt records for 7 days**, plus the current
+  maintenance record and the record accompanying a retained backup.
+- Keep the selected verified download, or otherwise the newest reusable download,
+  until it is installed or superseded. Remove duplicate, corrupt and abandoned
+  downloads that never changed the live program files.
+- Pending portable recovery and interrupted Setup are never removed automatically,
+  regardless of age. Unknown files, links, damaged records and attempts belonging
+  to another source or installation are retained. This can exceed the normal limits.
+  In particular, records still naming a previous portable-folder location are
+  retained when ownership cannot be confirmed after a move.
+
+Deletion first renames an obsolete attempt to `.cleanup-<attempt-id>` under the
+same updates directory. If cleanup is interrupted, the next maintenance run can
+finish it from its saved ownership record. Only known updater files are removed;
+configuration, configuration backups, application logs, WebView2 profiles and
+user-added files are not cleanup targets. Inspect the application log for cleanup
+results. Close the app before manually removing retained diagnostic attempts, and
+never remove an attempt whose update or recovery is still pending.
 
 ## Existing installed and pre-rename data
 

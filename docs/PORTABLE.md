@@ -96,3 +96,8 @@ Windows PowerShell 5.1 (included with Windows) runs the update worker. If policy
 blocks it, use the manual ZIP upgrade procedure in [UPGRADING.md](UPGRADING.md).
 That guide also explains recovery after an interrupted update. Do not move the
 folder or delete `data/updates/` while an update or recovery is pending.
+
+Update downloads and extracted files are cleaned after successful startup. The most
+recent verified program backup is retained for up to 30 days; pending recovery and
+user data remain protected. See [UPGRADING.md](UPGRADING.md#automatic-cleanup-of-update-files)
+for the complete retention policy.

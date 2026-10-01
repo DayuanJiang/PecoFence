@@ -8,6 +8,7 @@ use std::path::Path;
 use std::process::{Child, Command, Stdio};
 
 const WORKER: &str = include_str!("../../../scripts/runtime/update-worker.ps1");
+const CLEANUP: &str = include_str!("../../../scripts/runtime/update-cleanup.ps1");
 
 /// Refuse redirects through directory junctions and symlinks before the app itself
 /// creates any update files. The worker repeats this check before every operation.
@@ -45,7 +46,10 @@ pub fn write_plan(path: &Path, bytes: &[u8]) -> Result<(), String> {
 }
 
 pub fn start(stage: &Path, operation: &str) -> Result<Child, String> {
-    if !matches!(operation, "Check" | "Download" | "Apply" | "Recover") {
+    if !matches!(
+        operation,
+        "Check" | "Download" | "Apply" | "Recover" | "Cleanup"
+    ) {
         return Err("Unknown updater operation".into());
     }
     plain_path(stage)?;
@@ -53,6 +57,9 @@ pub fn start(stage: &Path, operation: &str) -> Result<Child, String> {
     plain_path(&worker)?;
     // Always use the script embedded in this binary, including recovery after restart.
     write_plan(&worker, WORKER.as_bytes())?;
+    if operation == "Cleanup" {
+        write_plan(&stage.join("update-cleanup.ps1"), CLEANUP.as_bytes())?;
+    }
     let windows = std::env::var_os("SystemRoot").ok_or("SystemRoot is unavailable")?;
     let powershell = Path::new(&windows).join("System32/WindowsPowerShell/v1.0/powershell.exe");
     let log = stage.join(format!("{operation}.log"));

@@ -49,16 +49,25 @@ impl App {
                     settings.close();
                 }
                 window::post_quit(0);
+                return;
             } else {
                 self.updater.cancel();
                 self.updater
                     .fail("Could not save settings before the update".into());
             }
         }
+        self.updater.maybe_cleanup();
         if !self.updater.busy() {
             window::kill_timer(self.control.hwnd(), TIMER_UPDATES);
         }
         if self.updater.snapshot() != before {
+            self.push_update_state();
+        }
+    }
+
+    pub(super) fn maintain_updates(&mut self) {
+        if self.updater.maybe_cleanup() {
+            window::set_timer(self.control.hwnd(), TIMER_UPDATES, 250);
             self.push_update_state();
         }
     }

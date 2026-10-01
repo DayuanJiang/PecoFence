@@ -151,6 +151,21 @@ a durable `applying` journal authorizes replacement. Recovery validates all back
 before restoring, is idempotent, and never falls back to AppData for portable data.
 Installer recovery re-runs the retained verified setup through its normal guards.
 
+Local cache maintenance starts only after a 30-second message-loop delay; it never
+initiates network access. `update-cleanup.ps1` is embedded beside the worker and
+staged only for a Cleanup action. The worker checks the caller's executable path,
+product version and lifetime and holds the same update lock before acknowledging
+completed transactions. The app preserves its selected-download state while a
+separate cleanup job runs. Failed maintenance is logged and retried later.
+
+Maintenance retains one verified portable backup for 30 days after acknowledgement,
+10 historical records for 7 days, and one reusable download. Unresolved transactions,
+unconfirmed installations, unknown contents and mismatched ownership are protected.
+Known obsolete attempts are atomically renamed to `.cleanup-<id>` before deletion;
+their ownership record is deleted last. Backup compaction also persists its intent
+before deleting files, so an interrupted cleanup is not mistaken for corrupt
+recovery data. See [UPGRADING.md](UPGRADING.md) for retention exceptions.
+
 After building the release app/watchdog/CLI, run:
 
 ```powershell
@@ -165,6 +180,12 @@ case recovers in a fresh process. Setup launch is replaced by a fixture, so the
 tests do not install over a real copy or modify its registry. The existing installer
 integration suite separately checks real Inno Setup behavior. Actual power loss and
 hardware/filesystem failure are outside this simulation.
+
+The same command sources `test-update-cleanup.ps1`. Cleanup tests cover startup
+acknowledgement, retention limits, selected downloads, corrupted backups, installer
+isolation, unknown files/junctions, mutual exclusion, and forced process termination
+during backup compaction and directory deletion. A compiled fixture host exercises
+the staged worker and its startup-delay check without launching a real app instance.
 
 Settings browser tests also cover manual checks, busy states, verification, explicit
 installation confirmation, cancellation, Store restrictions and both recovery modes.

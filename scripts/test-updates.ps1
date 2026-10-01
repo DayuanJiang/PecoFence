@@ -365,5 +365,7 @@ Run-Test 'Redirects through a directory junction are rejected before writing' {
   Assert-Test (-not [IO.File]::Exists((Join-Path $other 'file.json'))) 'A write followed the junction'
 }
 
+. (Join-Path $PSScriptRoot 'test-update-cleanup.ps1')
+
 Write-UpdateJson (Join-Path $testRoot 'report.json') @{ passed=$results.Count; tests=@($results); network='offline fixtures'; actualInstallerLaunched=$false }
 Write-Output "$($results.Count) updater tests passed. Report: $testRoot\report.json"

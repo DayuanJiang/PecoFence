@@ -2,7 +2,7 @@
 # Inputs are JSON data, never interpolated into executable PowerShell expressions.
 [CmdletBinding()]
 param(
-  [ValidateSet('Check', 'Download', 'Apply', 'Recover')][string]$Action,
+  [ValidateSet('Check', 'Download', 'Apply', 'Recover', 'Cleanup')][string]$Action,
   [string]$Plan,
   [int]$ParentPid = 0
 )
@@ -340,11 +340,21 @@ function Start-UpdateInstaller([string]$Stage, $Data) {
 function Invoke-UpdateWorker([string]$Operation, [string]$PlanPath, [int]$WaitForPid = 0) {
   $stage = [IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($PlanPath))
   $data = Read-UpdatePlan $PlanPath ($Operation -ne 'Recover')
-  $lock = [IO.File]::Open((Join-Path ([IO.Path]::GetDirectoryName($stage)) 'update.lock'), [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
+  $lockPath = Assert-PlainPath (Join-Path ([IO.Path]::GetDirectoryName($stage)) 'update.lock')
+  $lock = [IO.File]::Open($lockPath, [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
   $desktopLocks = @()
   $parentProcess = $null
   try {
-    if ($Operation -eq 'Check') {
+    if ($Operation -eq 'Cleanup') {
+      if ($WaitForPid -le 0) { throw 'Cleanup requires a running application.' }
+      $parentProcess = [Diagnostics.Process]::GetProcessById($WaitForPid)
+      if ($parentProcess.MainModule.FileName -ine (Join-Path $data.root 'pecofence.exe') -or ([DateTime]::UtcNow - $parentProcess.StartTime.ToUniversalTime()).TotalSeconds -lt 30) { throw 'Cleanup requires a matching application that has started successfully.' }
+      Assert-ExecutableVersion $parentProcess.MainModule.FileName $data.currentVersion
+      . (Join-Path $PSScriptRoot 'update-cleanup.ps1')
+      $report = Invoke-UpdateCleanup $stage $data
+      Write-UpdateJson (Join-Path $stage 'result.json') @{status='ok';cleanup=$report}
+      return
+    } elseif ($Operation -eq 'Check') {
       try { Receive-UpdateFile "https://api.github.com/repos/$($data.repository)/releases/latest" (Join-Path $stage 'release.json') 2MB }
       catch {
         # PowerShell wraps .NET method failures in MethodInvocationException.

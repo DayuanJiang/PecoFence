@@ -21,11 +21,21 @@ pub struct Updater {
     recovery: Option<PathBuf>,
     job: Option<Job>,
     progress: Value,
+    cleanup: Option<CleanupJob>,
+    started: Instant,
+    cleanup_due: bool,
+    last_cleanup: Option<Instant>,
 }
 
 struct Job {
     child: Child,
     operation: &'static str,
+    started: Instant,
+}
+
+struct CleanupJob {
+    child: Child,
+    stage: PathBuf,
     started: Instant,
 }
 
@@ -56,6 +66,10 @@ impl Updater {
             recovery: None,
             job: None,
             progress: Value::Null,
+            cleanup: None,
+            started: Instant::now(),
+            cleanup_due: true,
+            last_cleanup: None,
         };
         if mode == DistributionMode::Msix {
             updater.phase = "store".into();
@@ -163,12 +177,12 @@ impl Updater {
             "phase": self.phase, "detail": self.detail, "mode": self.mode.as_str(),
             "repository": self.source.as_ref().map(|info| &info.repository),
             "release": self.release, "progress": self.progress,
-            "directory": self.directory, "busy": self.job.is_some(),
+            "directory": self.directory, "busy": self.busy(),
         })
     }
 
     pub fn busy(&self) -> bool {
-        self.job.is_some()
+        self.job.is_some() || self.cleanup.is_some()
     }
 
     pub fn open_release_url(&self) -> Option<String> {
@@ -184,6 +198,11 @@ impl Updater {
     }
 
     fn new_stage(&mut self) -> Result<(), String> {
+        self.stage = Some(self.create_stage()?);
+        Ok(())
+    }
+
+    fn create_stage(&self) -> Result<PathBuf, String> {
         pecofence_platform::updates::plain_path(&self.root)?;
         pecofence_platform::updates::plain_path(&self.directory)?;
         crate::runtime::writable_directory(&self.directory)?;
@@ -191,8 +210,7 @@ impl Updater {
             .directory
             .join(uuid::Uuid::new_v4().simple().to_string());
         fs::create_dir(&stage).map_err(|e| e.to_string())?;
-        self.stage = Some(stage);
-        Ok(())
+        Ok(stage)
     }
 
     fn write_plan(&self) -> Result<(), String> {
@@ -236,6 +254,7 @@ impl Updater {
             operation,
             started: Instant::now(),
         });
+        self.cleanup_due = true;
         self.detail.clear();
         self.progress = Value::Null;
         self.phase = match operation {
@@ -307,9 +326,102 @@ impl Updater {
         self.detail = error;
     }
 
+    fn cleanup_is_due(&self) -> bool {
+        !self.busy()
+            && self.source.is_some()
+            && self.recovery.is_none()
+            && self.started.elapsed() >= Duration::from_secs(30)
+            && (self.cleanup_due
+                || self
+                    .last_cleanup
+                    .is_none_or(|last| last.elapsed() >= Duration::from_secs(3600)))
+    }
+
+    /// Called from a delayed message-loop timer, never during startup discovery.
+    /// This local maintenance does not check for, download, or apply updates.
+    pub fn maybe_cleanup(&mut self) -> bool {
+        if !self.cleanup_is_due() {
+            return false;
+        }
+        self.cleanup_due = false;
+        self.last_cleanup = Some(Instant::now());
+        if !self.directory.is_dir() {
+            return false;
+        }
+        let result = (|| -> Result<CleanupJob, String> {
+            let source = self.source.as_ref().unwrap();
+            let current = ReleaseInfo::parse(
+                &read_text(&self.root.join(updates::METADATA_FILE), 16384)?,
+                env!("CARGO_PKG_VERSION"),
+            )?;
+            if &current != source {
+                return Err("Package metadata changed; cleanup deferred".into());
+            }
+            let stage = self.create_stage()?;
+            let protected = (self.phase == "ready")
+                .then(|| self.stage.as_ref().and_then(|p| p.file_name()))
+                .flatten()
+                .and_then(|name| name.to_str());
+            pecofence_platform::updates::write_plan(
+                &stage.join("plan.json"),
+                json!({"schema":1,"root":self.root,"mode":self.mode.as_str(),
+                    "repository":source.repository,"currentVersion":source.version,
+                    "release":null,"protectedAttempt":protected})
+                .to_string()
+                .as_bytes(),
+            )?;
+            Ok(CleanupJob {
+                child: pecofence_platform::updates::start(&stage, "Cleanup")?,
+                stage,
+                started: Instant::now(),
+            })
+        })();
+        match result {
+            Ok(job) => {
+                self.cleanup = Some(job);
+                true
+            }
+            Err(error) => {
+                tracing::warn!(%error, "update cleanup deferred");
+                false
+            }
+        }
+    }
+
+    fn poll_cleanup(&mut self) {
+        let job = self.cleanup.as_mut().unwrap();
+        let result = match job.child.try_wait() {
+            Ok(None) if job.started.elapsed() < Duration::from_secs(120) => return,
+            Ok(Some(status)) => read_json(&job.stage.join("result.json")).and_then(|value| {
+                if status.success() && value["status"] == "ok" {
+                    Ok(value["cleanup"].clone())
+                } else {
+                    Err(value["message"]
+                        .as_str()
+                        .unwrap_or("Cleanup worker failed")
+                        .to_owned())
+                }
+            }),
+            _ => {
+                let _ = job.child.kill();
+                let _ = job.child.wait();
+                Err("Cleanup interrupted; remaining files will be checked later".into())
+            }
+        };
+        self.cleanup.take();
+        match result {
+            Ok(report) => tracing::info!(%report, "update cleanup finished"),
+            Err(error) => tracing::warn!(%error, "update cleanup deferred"),
+        }
+    }
+
     /// Returns true only after a validated apply/recovery worker has captured our
     /// process handle and is waiting for normal shutdown. Transfer its ownership.
     pub fn poll(&mut self) -> bool {
+        if self.cleanup.is_some() {
+            self.poll_cleanup();
+            return false;
+        }
         let Some(job) = self.job.as_mut() else {
             return false;
         };
@@ -382,6 +494,10 @@ impl Updater {
     }
 
     pub fn cancel(&mut self) {
+        if let Some(mut job) = self.cleanup.take() {
+            let _ = job.child.kill();
+            let _ = job.child.wait();
+        }
         if let Some(mut job) = self.job.take() {
             let _ = job.child.kill();
             let _ = job.child.wait();
@@ -464,6 +580,10 @@ mod tests {
         let fixture = Fixture::new("portable");
         let updater = Updater::new(&fixture.0, None);
         assert_eq!(updater.phase, "idle");
+        assert!(
+            !updater.cleanup_is_due(),
+            "cleanup must wait for the message loop"
+        );
         assert!(!updater.busy());
         assert!(!updater.directory.exists());
         assert_eq!(
@@ -511,6 +631,8 @@ mod tests {
             .unwrap();
             let mut updater = Updater::new(&fixture.0, None);
             assert_eq!(updater.phase, "recovery");
+            updater.started = Instant::now() - Duration::from_secs(60);
+            assert!(!updater.cleanup_is_due(), "pending recovery blocks cleanup");
             assert_eq!(updater.recovery.as_ref(), Some(&stage));
             assert!(updater.begin("Check").is_err());
             assert!(updater.begin("Download").is_err());
@@ -564,5 +686,42 @@ mod tests {
                 .contains("metadata changed")
         );
         assert!(!updater.directory.exists());
+    }
+
+    #[test]
+    fn cleanup_waits_for_startup_and_is_throttled_without_network() {
+        let fixture = Fixture::new("portable");
+        let mut updater = Updater::new(&fixture.0, None);
+        assert!(!updater.maybe_cleanup());
+        assert!(!updater.directory.exists());
+        updater.started = Instant::now() - Duration::from_secs(31);
+        assert!(updater.cleanup_is_due());
+        assert!(
+            !updater.maybe_cleanup(),
+            "no cache means no worker or writes"
+        );
+        assert!(!updater.directory.exists());
+        assert!(!updater.cleanup_is_due());
+        updater.last_cleanup = Some(Instant::now() - Duration::from_secs(3601));
+        assert!(updater.cleanup_is_due());
+        updater.source = None;
+        assert!(!updater.cleanup_is_due());
+    }
+
+    #[test]
+    fn changed_identity_defers_cleanup_without_changing_update_ui_state() {
+        let fixture = Fixture::new("portable");
+        let stage = fixture.saved_download();
+        let mut updater = Updater::new(&fixture.0, None);
+        let before = updater.snapshot();
+        updater.started = Instant::now() - Duration::from_secs(31);
+        fs::write(
+            fixture.0.distribution.root().join(updates::METADATA_FILE),
+            "changed",
+        )
+        .unwrap();
+        assert!(!updater.maybe_cleanup());
+        assert_eq!(updater.snapshot(), before);
+        assert!(stage.join("verified.json").is_file());
     }
 }

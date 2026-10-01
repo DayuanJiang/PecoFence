@@ -92,3 +92,8 @@ is interrupted, the verified installer is retained under
 setup again. Installed copies are repaired through Setup, never by restoring
 portable program files. See [UPGRADING.md](UPGRADING.md) for recovery when the app
 cannot start. The Microsoft Store edition continues using Store updates.
+
+After the updated app starts successfully, maintenance removes the downloaded
+setup EXE and bounds historical update logs. Interrupted installations retain their
+setup and recovery records. Configuration and WebView2 data are unaffected; see
+[UPGRADING.md](UPGRADING.md#automatic-cleanup-of-update-files).

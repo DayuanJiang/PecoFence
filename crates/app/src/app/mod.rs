@@ -117,6 +117,7 @@ const TIMER_SHUTDOWN_CANCELLED: usize = 58;
 /// Rebuilding the GPU device failed (driver reset in progress): try again, backing off.
 const TIMER_DEVICE_RETRY: usize = 59;
 const TIMER_UPDATES: usize = 60;
+const TIMER_UPDATE_CLEANUP: usize = 61;
 const DEVICE_RETRY_FIRST_MS: u32 = 1_000;
 const DEVICE_RETRY_MAX_MS: u32 = 30_000;
 const WALLPAPER_PREWARM_DELAY_MS: u32 = 3_000;
@@ -420,6 +421,13 @@ impl App {
                                         && let Some(app) = guard.as_mut()
                                     {
                                         app.poll_updates();
+                                    }
+                                }
+                                TIMER_UPDATE_CLEANUP => {
+                                    if let Ok(mut guard) = cell.try_borrow_mut()
+                                        && let Some(app) = guard.as_mut()
+                                    {
+                                        app.maintain_updates();
                                     }
                                 }
                                 TIMER_SAVE => {
@@ -1048,6 +1056,7 @@ impl App {
         }
         app.save_config();
         window::set_coalescable_timer(app.control.hwnd(), TIMER_HOUSEKEEPING, 60_000, 5_000);
+        window::set_coalescable_timer(app.control.hwnd(), TIMER_UPDATE_CLEANUP, 30_000, 2_000);
         window::set_coalescable_timer(app.control.hwnd(), TIMER_WALLPAPER_POLL, 5_000, 500);
         window::set_coalescable_timer(app.control.hwnd(), TIMER_DESKTOP_ID, 100, 25);
         // Close the gap between the startup snapshot and installing the registry watchers.
