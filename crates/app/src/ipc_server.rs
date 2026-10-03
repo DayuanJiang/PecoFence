@@ -20,7 +20,7 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::os::windows::io::AsRawHandle;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
@@ -168,40 +168,62 @@ fn listen_loop(
 /// Cancels the calling thread's blocking pipe I/O when it is still running after `after`.
 /// Disarmed (and the pending cancel suppressed) on drop.
 struct IoDeadline {
-    armed: Arc<Mutex<bool>>,
+    armed: Arc<(Mutex<bool>, Condvar)>,
+    worker: Option<JoinHandle<()>>,
 }
 
 impl IoDeadline {
     fn arm(thread: &Option<Arc<ThreadHandle>>, after: Duration) -> Self {
-        let armed = Arc::new(Mutex::new(true));
-        if let Some(thread) = thread {
+        let armed = Arc::new((Mutex::new(true), Condvar::new()));
+        let worker = if let Some(thread) = thread {
             let flag = armed.clone();
             let thread = thread.clone();
             let spawned = std::thread::Builder::new()
                 .name("pecofence-ipc-deadline".into())
                 .spawn(move || {
-                    std::thread::sleep(after);
+                    let (lock, wake) = &*flag;
+                    let Ok(armed) = lock.lock() else {
+                        return;
+                    };
+                    let Ok((still_armed, elapsed)) =
+                        wake.wait_timeout_while(armed, after, |armed| *armed)
+                    else {
+                        return;
+                    };
                     // Holding the lock across the cancel means a disarm cannot slip in between
                     // the check and the call, so the cancel never hits a later operation.
-                    if let Ok(still_armed) = flag.lock()
-                        && *still_armed
-                    {
+                    if elapsed.timed_out() && *still_armed {
                         thread.cancel_io();
                         tracing::debug!(target: "pecofence::ipc", after_ms = after.as_millis() as u64, "connection I/O deadline hit");
                     }
                 });
-            if let Err(error) = spawned {
-                tracing::warn!(target: "pecofence::ipc", %error, "deadline thread failed to start; connection runs unbounded");
+            match spawned {
+                Ok(worker) => Some(worker),
+                Err(error) => {
+                    tracing::warn!(target: "pecofence::ipc", %error, "deadline thread failed to start; connection runs unbounded");
+                    None
+                }
             }
-        }
-        Self { armed }
+        } else {
+            None
+        };
+        Self { armed, worker }
     }
 }
 
 impl Drop for IoDeadline {
     fn drop(&mut self) {
-        if let Ok(mut armed) = self.armed.lock() {
-            *armed = false;
+        {
+            let (lock, wake) = &*self.armed;
+            if let Ok(mut armed) = lock.lock() {
+                *armed = false;
+                wake.notify_one();
+            }
+        }
+        // The connection cannot enter its next operation until its previous deadline
+        // has stopped and released the thread handle. Never join while holding `armed`.
+        if let Some(worker) = self.worker.take() {
+            let _ = worker.join();
         }
     }
 }
@@ -550,9 +572,53 @@ mod tests {
         let deadline = IoDeadline::arm(&thread, Duration::from_millis(20));
         let flag = deadline.armed.clone();
         drop(deadline);
-        assert!(!*flag.lock().unwrap());
+        assert!(!*flag.0.lock().unwrap());
         std::thread::sleep(Duration::from_millis(60));
         // Blocking on a pipe read now must not be interrupted by the expired watchdog.
-        assert!(!*flag.lock().unwrap());
+        assert!(!*flag.0.lock().unwrap());
+    }
+
+    #[test]
+    fn completed_io_wakes_and_joins_its_deadline_instead_of_waiting_for_timeout() {
+        let thread = Arc::new(ThreadHandle::current().expect("current thread handle"));
+        let deadline = IoDeadline::arm(&Some(thread.clone()), Duration::from_secs(10));
+        assert!(deadline.worker.is_some(), "deadline worker must start");
+        let started = Instant::now();
+        drop(deadline);
+        assert!(
+            started.elapsed() < Duration::from_secs(2),
+            "completed I/O kept its deadline sleeping"
+        );
+        assert_eq!(
+            Arc::strong_count(&thread),
+            1,
+            "worker retained the I/O thread"
+        );
+    }
+
+    #[test]
+    fn deadline_still_cancels_a_stalled_native_pipe_read() {
+        let name = format!(r"\\.\pipe\PecoFence.deadline-test-{}", uuid::Uuid::new_v4());
+        let mut listener = PipeListener::bind(&name).unwrap();
+        let (done, result) = mpsc::channel();
+        let server = std::thread::spawn(move || {
+            let connection = listener.accept().unwrap();
+            let thread = ThreadHandle::current().map(Arc::new);
+            assert!(thread.is_some());
+            let deadline = IoDeadline::arm(&thread, Duration::from_millis(50));
+            let request = read_request(&connection);
+            drop(deadline);
+            done.send(matches!(request, Err(ReadError::TimedOut)))
+                .unwrap();
+        });
+        let client = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(&name)
+            .unwrap();
+        let cancelled = result.recv_timeout(Duration::from_secs(3));
+        drop(client);
+        server.join().unwrap();
+        assert!(cancelled.unwrap(), "deadline must cancel the blocked read");
     }
 }
