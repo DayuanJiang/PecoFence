@@ -193,3 +193,5 @@ is independent of the app build.
 
 **Made for a desktop you enjoy coming back to.**  
 [Apache License 2.0](LICENSE) · [Third-party notices](third_party/README.md)
+
+Thanks to the [LINUX DO](https://linux.do) community.
