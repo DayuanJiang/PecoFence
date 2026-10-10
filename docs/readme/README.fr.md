@@ -71,17 +71,9 @@ Pour les agents et les scripts : `describe` fournit le catalogue de commandes et
 
 ## Une place pour chaque chose
 
-Projets en cours, captures d’écran, lectures pour plus tard : donnez à chacun son groupe,
-disposé comme vous travaillez. PecoFence ajoute juste ce qu’il faut de structure pour rendre
-votre Bureau à nouveau utile.
-
 <p align="center">
   <img src="../assets/hero-fr.png" alt="PecoFence — Des dossiers de projet, un vrai PDF et des créations graphiques originales dans des groupes Liquid Glass natifs." width="1280">
 </p>
-
-| **Regroupez votre travail** | **Gardez vos dossiers à portée de main** | **Libérez de l’espace** |
-| :--- | :--- | :--- |
-| Créez un groupe par projet. Déplacez-le, redimensionnez-le et alignez-le d’un geste. | Posez un dossier en direct sur votre Bureau. Parcourez ses sous-dossiers et voyez les changements au moment où ils se produisent. | Double-cliquez sur le Bureau pour masquer vos groupes. Double-cliquez à nouveau pour les retrouver. |
 
 ## Voyez-le en action
 
@@ -109,7 +101,8 @@ en cours. Prenez ce qu’il vous faut, puis appuyez sur **Échap** pour y reveni
 | **Moins de tri** | Des règles par type de fichier, extension, nom, motif, cible de raccourci, date et taille. Les nouveaux fichiers trouvent leur groupe tout seuls. |
 | **Un verre assorti à votre fond d’écran** | Thèmes Fluent et Liquid Glass, modes clair et sombre, couleur, opacité et teinte des icônes réglables groupe par groupe. |
 | **Des fichiers qui se manipulent comme d’habitude** | Menus contextuels de l’Explorateur, glisser-déposer, copier-coller, sélection multiple, miniatures et affichages Icônes, Liste ou Détails. |
-| **De la place quand il en faut** | Repliez un groupe sur son titre. Survolez-le pour le développer. Verrouillez une disposition qui vous convient. |
+| **Gardez vos dossiers à portée de main** | Posez un dossier en direct sur votre Bureau. Parcourez ses sous-dossiers et voyez les changements au moment où ils se produisent. |
+| **De la place quand il en faut** | Repliez un groupe sur son titre. Survolez-le pour le développer. Verrouillez une disposition qui vous convient. Double-cliquez sur le Bureau pour masquer vos groupes. Double-cliquez à nouveau pour les retrouver. |
 | **Un retour toujours possible** | Instantanés de disposition, sauvegardes quotidiennes, import/export de la configuration et échange entre écrans. |
 | **Une empreinte légère** | Une application native en Rust qui occupe environ 40 Mo de mémoire au repos (d’après le Gestionnaire des tâches). La fenêtre Paramètres en WebView2 se charge à la demande. |
 
@@ -122,40 +115,19 @@ Les déplacements que vous lancez vous-même se comportent comme dans l’Explor
 
 <a href="https://apps.microsoft.com/detail/9MV6WG3XNWSX?mode=direct"><img src="https://get.microsoft.com/images/fr%20dark.svg" alt="Télécharger dans le Microsoft Store" width="200"></a>
 
-La version Microsoft Store est signée par Microsoft, se met à jour automatiquement et n’affiche jamais l’avertissement SmartScreen. Vous préférez un simple ZIP ? La version portable ci-dessous est la même application.
+La version Microsoft Store est signée par Microsoft, se met à jour automatiquement et n’affiche jamais l’avertissement SmartScreen. La même application est aussi disponible sous ces formes :
 
-1. Ouvrez la page **Releases** de ce dépôt et téléchargez `pecofence-v<version>-x64-portable.zip`.
-2. Extrayez **l’intégralité du ZIP** dans un dossier et lancez `pecofence.exe`.
-3. Commencez à ranger. Un clic droit sur l’icône de la zone de notification ouvre les Paramètres
-   ou quitte l’application.
-
-Vous préférez un programme d’installation ? `pecofence-v<version>-x64-setup.exe`, sur la même page, installe PecoFence pour votre compte Windows, avec une entrée dans le menu Démarrer et un programme de désinstallation. Il utilise les mêmes réglages que le ZIP.
-
-Vous préférez un gestionnaire de paquets ? `winget install DayuanJiang.PecoFence` installe la même version portable et évite l’avertissement SmartScreen.
-
-**Windows 11 x64 · Environ 40 Mo de mémoire · ZIP portable · Sans compte · Licence Apache 2.0**
-
-Au premier lancement, PecoFence crée les groupes Applications, Dossiers, Fichiers et documents
-et Bureau dans la langue de votre choix. Les icônes du Bureau Windows réapparaissent quand vous quittez.
+- **ZIP portable** : téléchargez `pecofence-v<version>-x64-portable.zip` depuis la page **Releases** de ce dépôt, extrayez **l’intégralité du ZIP** dans un dossier et lancez `pecofence.exe`.
+- **Programme d’installation** : `pecofence-v<version>-x64-setup.exe`, sur la même page, installe PecoFence pour votre compte Windows, avec une entrée dans le menu Démarrer et un programme de désinstallation.
+- **winget** : `winget install DayuanJiang.PecoFence` installe la version portable et évite l’avertissement SmartScreen.
 
 <details>
 <summary><strong>Configuration requise, réglages et quelques remarques utiles</strong></summary>
 
-- Conçu pour Windows 11 22H2 et versions ultérieures. La plupart des tests natifs ont été menés
-  sur 25H2 ; la matrice complète des versions plus anciennes et des configurations multi-écrans
-  est encore en cours.
-- Microsoft Edge WebView2 Runtime est nécessaire pour les Paramètres. Conservez
-  `WebView2Loader.dll` et `pecofence-watchdog.exe` fournis dans le ZIP à côté de l’application.
-- La configuration est enregistrée dans `%APPDATA%\PecoFence\config.json`. Lancez l’application
-  avec `--portable` pour la garder dans un dossier `config` à côté de l’exécutable.
-- Les installations existantes conservent leur ancien dossier de configuration.
-  Consultez le [guide de mise à niveau](../UPGRADING.md).
-- Le verre s’appuie sur le fond d’écran statique. Il ne réfracte ni les autres applications
-  ni les fonds d’écran vidéo.
-- Les boîtes de dialogue de Windows et les entrées tierces des menus de l’Explorateur suivent
-  la langue de Windows.
-- Les versions portables ne sont pas signées. Si Windows SmartScreen s’affiche au premier lancement, choisissez
-  **Informations complémentaires → Exécuter quand même**. L’installation via le Microsoft Store ou winget évite cet avertissement.
+- Windows 11 22H2 ou version ultérieure. Microsoft Edge WebView2 Runtime est nécessaire pour les Paramètres.
+- Au premier lancement, PecoFence crée les groupes Applications, Dossiers, Fichiers et documents et Bureau dans la langue de votre choix. Les icônes du Bureau Windows réapparaissent quand vous quittez.
+- La configuration est enregistrée dans `%APPDATA%\PecoFence\config.json`. Lancez l’application avec `--portable` pour la garder dans un dossier `config` à côté de l’exécutable.
+- Le ZIP et le programme d’installation ne sont pas signés. Si Windows SmartScreen s’affiche au premier lancement, choisissez **Informations complémentaires → Exécuter quand même**.
 
 [Guide de l’édition portable](../PORTABLE.md) · [Guide des langues](../LOCALIZATION.md) · [Guide d’installation Windows](../INSTALLER.md)
 
@@ -167,31 +139,6 @@ PecoFence est sous licence Apache 2.0 et les contributions sont bienvenues, d’
 à une interaction mieux pensée sur le Bureau.
 
 [Contribuer](../../CONTRIBUTING.md) · [Améliorer une traduction](../LOCALIZATION.md) · [Guide de développement](../DEVELOPMENT.md)
-
-<details>
-<summary><strong>Compiler depuis les sources</strong></summary>
-
-Installez Rust stable ainsi que Visual Studio Build Tools avec la charge de travail C++ et le SDK Windows.
-
-```powershell
-cargo build --locked --release
-Copy-Item third_party/webview2/WebView2Loader.x64.dll target/release/WebView2Loader.dll
-```
-
-Créez un ZIP portable prêt à distribuer :
-
-```powershell
-./scripts/make-portable.ps1
-```
-
-L’espace de travail se compose de `crates/` pour l’application native, `ui/` pour les Paramètres,
-`locales/` pour les traductions et `scripts/` pour la vérification et l’empaquetage.
-Le site du produit se trouve dans `site/`, et le projet vidéo facultatif dans `extras/`
-est indépendant de la compilation de l’application.
-
-[Instructions de publication](../RELEASING.md) · [Organisation des sources](../DEVELOPMENT.md#architecture)
-
-</details>
 
 ---
 
