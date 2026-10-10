@@ -71,17 +71,9 @@ AI와 스크립트를 위한 인터페이스: `describe`는 명령 목록과 JSO
 
 ## 모든 것에 제자리를
 
-진행 중인 프로젝트, 방금 찍은 스크린샷, 나중에 읽을 자료를 각자의 펜스에 담아
-내가 일하는 방식대로 배치하세요. PecoFence는 꼭 필요한 만큼만 정리해
-바탕 화면을 다시 쓸모 있게 만들어 줍니다.
-
 <p align="center">
   <img src="../assets/hero-ko.png" alt="PecoFence — 프로젝트 폴더, PDF와 직접 만든 디자인 이미지를 Liquid Glass 펜스에 담았습니다." width="1280">
 </p>
-
-| **프로젝트별로 묶기** | **폴더를 가까이에** | **공간 비우기** |
-| :--- | :--- | :--- |
-| 프로젝트마다 펜스를 만들고, 끌어서 옮기거나 크기를 조절해 다른 펜스 옆에 착 맞춰 두세요. | 실제 폴더를 바탕 화면 위에 그대로 올려 두세요. 하위 폴더를 탐색할 수 있고, 변경 사항은 바로 반영됩니다. | 바탕 화면을 두 번 클릭하면 펜스가 모두 숨겨지고, 다시 두 번 클릭하면 돌아옵니다. |
 
 ## 실제 동작 보기
 
@@ -109,7 +101,8 @@ AI와 스크립트를 위한 인터페이스: `describe`는 명령 목록과 JSO
 | **정리는 규칙에 맡기세요** | 파일 유형, 확장자, 이름, 와일드카드, 바로 가기 대상, 시간과 크기로 규칙을 정해 두면 새 파일이 알아서 제 펜스를 찾아갑니다. |
 | **바탕 화면에 어울리는 유리** | Fluent와 Liquid Glass 테마, 밝은/어두운 모드, 펜스별 색조와 불투명도, 아이콘 색조. |
 | **익숙한 파일 다루기** | 파일 탐색기 오른쪽 클릭 메뉴, 끌어서 놓기, 복사/붙여넣기, 다중 선택, 썸네일, 아이콘/목록/자세히 보기. |
-| **필요할 때는 공간을** | 펜스를 제목만 남기고 접어 두고, 마우스를 올리면 펼치세요. 마음에 드는 배치는 잠가 둘 수 있습니다. |
+| **폴더를 가까이에** | 실제 폴더를 바탕 화면 위에 그대로 올려 두세요. 하위 폴더를 탐색할 수 있고, 변경 사항은 바로 반영됩니다. |
+| **필요할 때는 공간을** | 펜스를 제목만 남기고 접어 두고, 마우스를 올리면 펼치세요. 마음에 드는 배치는 잠가 둘 수 있습니다. 바탕 화면을 두 번 클릭하면 펜스가 모두 숨겨지고, 다시 두 번 클릭하면 돌아옵니다. |
 | **되돌아갈 길** | 배치 스냅샷, 매일 자동 백업, 설정 내보내기 / 가져오기, 디스플레이 간 펜스 교환. |
 | **가볍고 빠르게** | Rust로 만든 네이티브 앱. 대기 중 메모리 사용량은 작업 관리자 기준 약 40 MB입니다. WebView2 설정 화면은 열 때만 로드됩니다. |
 
@@ -122,37 +115,19 @@ AI와 스크립트를 위한 인터페이스: `describe`는 명령 목록과 JSO
 
 <a href="https://apps.microsoft.com/detail/9MV6WG3XNWSX?mode=direct"><img src="https://get.microsoft.com/images/ko%20dark.svg" alt="Microsoft Store에서 받기" width="200"></a>
 
-Microsoft Store 버전은 Microsoft가 서명하고 자동으로 업데이트되며 SmartScreen 경고가 나타나지 않습니다. ZIP 파일이 편하다면 아래 포터블 빌드를 받으세요. 같은 앱입니다.
+Microsoft Store 버전은 Microsoft가 서명하고 자동으로 업데이트되며 SmartScreen 경고가 나타나지 않습니다. 같은 앱을 다음 방법으로도 설치할 수 있습니다.
 
-1. 이 저장소의 **Releases** 페이지에서 `pecofence-v<버전>-x64-portable.zip`을 다운로드합니다.
-2. **ZIP 전체**를 한 폴더에 풀고 `pecofence.exe`를 실행합니다.
-3. 이제 정리를 시작하세요. 설정을 열거나 종료하려면 트레이 아이콘을 오른쪽 클릭하면 됩니다.
-
-설치 프로그램이 편하다면 같은 페이지의 `pecofence-v<버전>-x64-setup.exe`를 사용하세요. 현재 사용자에게만 설치되고 시작 메뉴 항목과 제거 프로그램이 추가됩니다. 설정은 ZIP 버전과 함께 씁니다.
-
-패키지 관리자가 편하다면 `winget install DayuanJiang.PecoFence`로 같은 포터블 빌드를 설치할 수 있고, SmartScreen 경고도 나타나지 않습니다.
-
-**Windows 11 x64 · 메모리 약 40 MB · 포터블 ZIP · 계정 불필요 · Apache 2.0 라이선스**
-
-처음 실행하면 선택한 언어로 “프로그램”, “폴더”, “파일 및 문서”, “바탕 화면” 펜스가 만들어집니다.
-종료하면 Windows 바탕 화면 아이콘이 다시 표시됩니다.
+- **포터블 ZIP**: 이 저장소의 **Releases** 페이지에서 `pecofence-v<버전>-x64-portable.zip`을 다운로드하고, **ZIP 전체**를 한 폴더에 풀어 `pecofence.exe`를 실행합니다.
+- **설치 프로그램**: 같은 페이지의 `pecofence-v<버전>-x64-setup.exe`는 현재 사용자에게만 설치되며 시작 메뉴 항목과 제거 프로그램이 추가됩니다.
+- **winget**: `winget install DayuanJiang.PecoFence`로 포터블 빌드를 설치할 수 있고, SmartScreen 경고도 나타나지 않습니다.
 
 <details>
 <summary><strong>요구 사항, 설정 위치, 알아 두면 좋은 점</strong></summary>
 
-- Windows 11 22H2 이상을 대상으로 합니다. 실제 기기 테스트는 주로 25H2에서 진행했으며,
-  이전 버전과 여러 디스플레이 하드웨어 조합은 아직 검증 중입니다.
-- 설정 화면에는 Microsoft Edge WebView2 Runtime이 필요합니다. 함께 제공되는
-  `WebView2Loader.dll`과 `pecofence-watchdog.exe`는 앱 옆에 그대로 두세요.
-- 설정은 `%APPDATA%\PecoFence\config.json`에 저장됩니다. `--portable`로 실행하면
-  실행 파일 옆의 `config` 폴더에 보관합니다.
-- 기존 설치는 이전 설정 폴더를 그대로 사용합니다.
-  [업그레이드 안내](../UPGRADING.md)를 참고하세요.
-- 유리 효과는 정적인 배경 화면만 반영합니다. 다른 앱 창이나 동영상 배경 화면은
-  유리에 비치지 않습니다.
-- Windows 자체 대화 상자와 타사 파일 탐색기 메뉴 항목은 Windows 표시 언어를 따릅니다.
-- 포터블 빌드는 코드 서명이 되어 있지 않습니다. 첫 실행 때 Windows SmartScreen이 나타나면 **추가 정보 → 실행**을 선택하세요.
-  Microsoft Store나 winget으로 설치하면 이 경고가 나타나지 않습니다.
+- Windows 11 22H2 이상에서 동작합니다. 설정 화면에는 Microsoft Edge WebView2 Runtime이 필요합니다.
+- 처음 실행하면 선택한 언어로 “프로그램”, “폴더”, “파일 및 문서”, “바탕 화면” 펜스가 만들어집니다. 종료하면 Windows 바탕 화면 아이콘이 다시 표시됩니다.
+- 설정은 `%APPDATA%\PecoFence\config.json`에 저장됩니다. `--portable`로 실행하면 실행 파일 옆의 `config` 폴더에 보관합니다.
+- 포터블 빌드와 설치 프로그램은 코드 서명이 되어 있지 않습니다. 첫 실행 때 Windows SmartScreen이 나타나면 **추가 정보 → 실행**을 선택하세요.
 
 [포터블 버전 안내](../PORTABLE.md) · [언어 안내](../LOCALIZATION.md) · [Windows 설치 버전 안내](../INSTALLER.md)
 
@@ -164,30 +139,6 @@ PecoFence는 Apache 2.0 라이선스로 공개되어 있습니다. 더 정확한
 바탕 화면 상호작용까지, 어떤 기여든 환영합니다.
 
 [기여하기](../../CONTRIBUTING.md) · [번역 개선하기](../LOCALIZATION.md) · [개발 가이드](../DEVELOPMENT.md)
-
-<details>
-<summary><strong>소스에서 빌드하기</strong></summary>
-
-Rust stable과 C++ 워크로드 및 Windows SDK가 포함된 Visual Studio Build Tools를 설치합니다.
-
-```powershell
-cargo build --locked --release
-Copy-Item third_party/webview2/WebView2Loader.x64.dll target/release/WebView2Loader.dll
-```
-
-배포용 포터블 ZIP 만들기:
-
-```powershell
-./scripts/make-portable.ps1
-```
-
-워크스페이스에서 네이티브 앱은 `crates/`, 설정 화면은 `ui/`, 번역은 `locales/`,
-검증 및 패키징 스크립트는 `scripts/`에 있습니다.
-제품 웹사이트는 `site/`에 있으며, `extras/`의 선택적 동영상 프로젝트는 앱 빌드와 무관합니다.
-
-[릴리스 안내](../RELEASING.md) · [소스 구조](../DEVELOPMENT.md#architecture)
-
-</details>
 
 ---
 

@@ -71,16 +71,9 @@ pecofence-cli fence set --all opacity clear
 
 ## 给每件事留一个位置
 
-正在做的项目、刚存下的截图、准备晚点看的资料——各自放进一个栅栏，
-按你的习惯摆好。桌面上的东西依然顺手，也终于有了秩序。
-
 <p align="center">
   <img src="../assets/hero-zh-CN.png" alt="PecoFence — 项目文件夹、PDF 和设计海报，收在 Liquid Glass 栅栏里。" width="1280">
 </p>
-
-| **按项目收好** | **把文件夹放在手边** | **随时让出空间** |
-| :--- | :--- | :--- |
-| 给工作、设计或常用资料各建一个栅栏，拖动、缩放、吸附对齐。 | 把真实文件夹变成桌面上的窗口；可以进入子文件夹，内容变化自动同步。 | 双击桌面空白处隐藏全部栅栏，再次双击恢复。需要文件时叫回来，想看壁纸时收起来。 |
 
 ## 看看它怎么用
 
@@ -108,7 +101,8 @@ pecofence-cli fence set --all opacity clear
 | **少一点手动整理** | 按类型、扩展名、名称、通配符、快捷方式目标、时间和大小设置规则，新文件自动找到位置。 |
 | **配得上你的壁纸** | Fluent 与 Liquid Glass 两种风格，支持深浅色；每个栅栏可单独设置色调和不透明度，还能给图标着色。 |
 | **熟悉的文件操作** | 资源管理器右键菜单、拖放、复制粘贴、多选、缩略图，以及图标／列表／详细信息视图。 |
-| **用时展开，闲时收好** | 把栅栏收起成一条标题栏，鼠标悬停即可展开；也可以锁定已经摆好的位置和大小。 |
+| **把文件夹放在手边** | 把真实文件夹变成桌面上的窗口；可以进入子文件夹，内容变化自动同步。 |
+| **用时展开，闲时收好** | 把栅栏收起成一条标题栏，鼠标悬停即可展开；也可以锁定已经摆好的位置和大小。双击桌面空白处隐藏全部栅栏，再次双击恢复。 |
 | **喜欢的布局，留得住** | 保存布局快照、每日自动备份、导入导出配置、交换两个显示器上的栅栏。 |
 | **轻巧地待在桌面上** | Rust 编写的原生应用，空闲时内存占用约 40 MB（任务管理器显示）。WebView2 设置面板按需加载。 |
 
@@ -121,34 +115,19 @@ pecofence-cli fence set --all opacity clear
 
 <a href="https://apps.microsoft.com/detail/9MV6WG3XNWSX?mode=direct"><img src="https://get.microsoft.com/images/zh-cn%20dark.svg" alt="从 Microsoft Store 获取" width="200"></a>
 
-Microsoft Store 版由微软签名，自动更新，不会出现 SmartScreen 提示。想要纯压缩包？下面的便携版是同一个程序。
+Microsoft Store 版由微软签名，自动更新，不会出现 SmartScreen 提示。同一个程序也可以这样安装：
 
-1. 在本仓库的 **Releases** 页面下载 `pecofence-v<版本>-x64-portable.zip`。
-2. **完整解压**到一个文件夹，运行 `pecofence.exe`。
-3. 开始整理。需要设置或退出时，右键系统托盘里的 PecoFence 图标。
-
-想用安装包？同一页面上的 `pecofence-v<版本>-x64-setup.exe` 只为当前用户安装，会添加开始菜单项和卸载程序，设置和 ZIP 版通用。
-
-习惯用包管理器？`winget install DayuanJiang.PecoFence` 安装的是同一个便携版，并且不会触发 SmartScreen 提示。
-
-**Windows 11 x64 · 内存约 40 MB · 便携版 · 无需账号 · Apache 2.0 开源**
-
-首次运行会按所选语言创建“程序”“文件夹”“文件与文档”和“桌面”四个栅栏。
-退出程序时，Windows 桌面图标会恢复显示。
+- **便携版 ZIP**：在本仓库的 **Releases** 页面下载 `pecofence-v<版本>-x64-portable.zip`，**完整解压**到一个文件夹，运行 `pecofence.exe`。
+- **安装包**：同一页面上的 `pecofence-v<版本>-x64-setup.exe` 只为当前用户安装，会添加开始菜单项和卸载程序。
+- **winget**：`winget install DayuanJiang.PecoFence` 安装的是便携版，不会触发 SmartScreen 提示。
 
 <details>
 <summary><strong>系统要求、配置位置与使用说明</strong></summary>
 
-- 支持 Windows 11 22H2 及以上版本。目前主要在 25H2 上测试，
-  旧版 Windows 和各种多显示器组合还在陆续测试。
-- 设置面板需要 Microsoft Edge WebView2 Runtime。
-  请将压缩包里的 `WebView2Loader.dll`、`pecofence-watchdog.exe` 与主程序放在一起。
-- 配置保存在 `%APPDATA%\PecoFence\config.json`。
-  用 `--portable` 启动，可改为保存在程序旁的 `config` 文件夹。
-- 从旧版升级会沿用原来的配置目录，布局、规则和备份都在。详见[升级说明](../UPGRADING.md)。
-- 玻璃效果只取自静态桌面壁纸，不会透出其他应用窗口，也不支持视频壁纸。
-- Windows 自带对话框和第三方资源管理器菜单仍使用系统语言。
-- 便携版未做代码签名。首次运行若出现 Windows SmartScreen 提示，点击**更多信息 → 仍要运行**。通过 Microsoft Store 或 winget 安装不会出现该提示。
+- 支持 Windows 11 22H2 及以上版本。设置面板需要 Microsoft Edge WebView2 Runtime。
+- 首次运行会按所选语言创建“程序”“文件夹”“文件与文档”和“桌面”四个栅栏。退出程序时，Windows 桌面图标会恢复显示。
+- 配置保存在 `%APPDATA%\PecoFence\config.json`。用 `--portable` 启动，可改为保存在程序旁的 `config` 文件夹。
+- 便携版和安装包都没有代码签名。首次运行若出现 Windows SmartScreen 提示，点击**更多信息 → 仍要运行**。
 
 [便携版说明](../PORTABLE.md) · [多语言说明](../LOCALIZATION.md) · [Windows 安装版说明](../INSTALLER.md)
 
@@ -159,29 +138,6 @@ Microsoft Store 版由微软签名，自动更新，不会出现 SmartScreen 提
 改进一句翻译、修好一次拖拽、让某个日常操作更顺手，都很欢迎。
 
 [参与贡献](../../CONTRIBUTING.md) · [完善翻译](../LOCALIZATION.md) · [开发文档](../DEVELOPMENT.md)
-
-<details>
-<summary><strong>从源码构建</strong></summary>
-
-安装 Rust stable、Visual Studio Build Tools 的 C++ 工作负载和 Windows SDK，然后运行：
-
-```powershell
-cargo build --locked --release
-Copy-Item third_party/webview2/WebView2Loader.x64.dll target/release/WebView2Loader.dll
-```
-
-生成便携发布包：
-
-```powershell
-./scripts/make-portable.ps1
-```
-
-原生应用位于 `crates/`，设置面板在 `ui/`，翻译在 `locales/`，
-验证与打包脚本在 `scripts/`。产品网站在 `site/`，`extras/` 下的宣传视频工程不参与应用构建。
-
-[发布指南](../RELEASING.md) · [源码结构](../DEVELOPMENT.md#architecture)
-
-</details>
 
 ---
 

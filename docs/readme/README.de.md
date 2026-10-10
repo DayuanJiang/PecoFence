@@ -71,17 +71,9 @@ Für Agenten und Skripte: `describe` liefert den Befehlskatalog und JSON-Schemas
 
 ## Alles bekommt seinen Platz
 
-Projekte, Screenshots, Lesestoff für später – alles bekommt einen eigenen Bereich, angeordnet,
-wie du arbeitest. PecoFence bringt gerade so viel Struktur auf den Desktop, dass er
-wieder nützlich wird.
-
 <p align="center">
   <img src="../assets/hero-de.png" alt="PecoFence — Projektordner, ein echtes PDF und eigene Designstudien in nativen Liquid-Glass-Bereichen." width="1280">
 </p>
-
-| **Arbeit gruppieren** | **Ordner in Reichweite** | **Platz schaffen** |
-| :--- | :--- | :--- |
-| Leg für jedes Projekt einen Bereich an. Ziehen, skalieren und einrasten lassen. | Hol dir einen Live-Ordner auf den Desktop. Stöbere in Unterordnern und sieh Änderungen sofort. | Ein Doppelklick auf den Desktop blendet alle Bereiche aus. Ein zweiter holt sie zurück. |
 
 ## PecoFence in Aktion
 
@@ -109,7 +101,8 @@ Hol dir, was du brauchst, und kehre mit **Esc** zurück.
 | **Weniger sortieren** | Regeln nach Dateityp, Endung, Name, Platzhalter, Verknüpfungsziel, Zeit und Größe. Neue Dateien finden ihren Bereich von selbst. |
 | **Glas, das zu deinem Desktop passt** | Die Designs Fluent und Liquid Glass, heller und dunkler Modus, Farbton, Deckkraft und Symbolfärbung je Bereich. |
 | **Vertraute Dateiverwaltung** | Explorer-Kontextmenüs, Drag & Drop, Kopieren/Einfügen, Mehrfachauswahl, Miniaturansichten sowie Symbol-, Listen- und Detailansicht. |
-| **Platz, wenn du ihn brauchst** | Klappe einen Bereich bis auf den Titel ein. Zum Ausklappen einfach mit der Maus darauf zeigen. Sperre ein Layout, das dir gefällt. |
+| **Ordner in Reichweite** | Hol dir einen Live-Ordner auf den Desktop. Stöbere in Unterordnern und sieh Änderungen sofort. |
+| **Platz, wenn du ihn brauchst** | Klappe einen Bereich bis auf den Titel ein. Zum Ausklappen einfach mit der Maus darauf zeigen. Sperre ein Layout, das dir gefällt. Ein Doppelklick auf den Desktop blendet alle Bereiche aus. Ein zweiter holt sie zurück. |
 | **Ein Weg zurück** | Layout-Momentaufnahmen, tägliche Sicherungen, Import/Export der Konfiguration und Tausch zwischen Bildschirmen. |
 | **Ein kleiner Fußabdruck** | Eine native Rust-Anwendung, die im Leerlauf etwa 40 MB Arbeitsspeicher belegt (laut Task-Manager). Das Einstellungsfenster (WebView2) wird erst bei Bedarf geladen. |
 
@@ -122,37 +115,19 @@ die du selbst anstößt, funktionieren wie im Explorer.
 
 <a href="https://apps.microsoft.com/detail/9MV6WG3XNWSX?mode=direct"><img src="https://get.microsoft.com/images/de%20dark.svg" alt="Im Microsoft Store herunterladen" width="200"></a>
 
-Die Microsoft-Store-Version ist von Microsoft signiert, aktualisiert sich automatisch und zeigt keine SmartScreen-Abfrage. Lieber ein einfaches ZIP? Der portable Build unten ist dieselbe App.
+Die Microsoft-Store-Version ist von Microsoft signiert, aktualisiert sich automatisch und zeigt keine SmartScreen-Abfrage. Dieselbe App gibt es auch als:
 
-1. Öffne die **Releases**-Seite dieses Repositorys und lade `pecofence-v<Version>-x64-portable.zip` herunter.
-2. Entpacke die **gesamte ZIP-Datei** in einen Ordner und starte `pecofence.exe`.
-3. Leg los. Über einen Rechtsklick auf das Taskleistensymbol öffnest du die Einstellungen oder beendest PecoFence.
-
-Lieber mit Installer? `pecofence-v<Version>-x64-setup.exe` auf derselben Seite installiert PecoFence für dein Windows-Konto, mit Startmenü-Eintrag und Deinstallationsprogramm. Die Einstellungen teilt es mit der ZIP-Version.
-
-Lieber per Paketmanager? `winget install DayuanJiang.PecoFence` installiert denselben portablen Build und überspringt die SmartScreen-Abfrage.
-
-**Windows 11 x64 · Etwa 40 MB Arbeitsspeicher · Portables ZIP · Kein Konto nötig · Apache-2.0-Lizenz**
-
-Beim ersten Start werden die Bereiche „Programme“, „Ordner“, „Dateien und Dokumente“ und „Desktop“
-in der gewählten Sprache angelegt. Beim Beenden erscheinen die Windows-Desktopsymbole wieder.
+- **Portables ZIP**: Lade `pecofence-v<Version>-x64-portable.zip` von der **Releases**-Seite dieses Repositorys herunter, entpacke die **gesamte ZIP-Datei** in einen Ordner und starte `pecofence.exe`.
+- **Installer**: `pecofence-v<Version>-x64-setup.exe` auf derselben Seite installiert PecoFence für dein Windows-Konto, mit Startmenü-Eintrag und Deinstallationsprogramm.
+- **winget**: `winget install DayuanJiang.PecoFence` installiert den portablen Build und überspringt die SmartScreen-Abfrage.
 
 <details>
 <summary><strong>Systemvoraussetzungen, Konfiguration und ein paar nützliche Hinweise</strong></summary>
 
-- Entwickelt für Windows 11 22H2 und neuer. Getestet wurde bisher vor allem unter 25H2;
-  Tests mit älteren Versionen und mehreren Bildschirmen laufen noch.
-- Für die Einstellungen wird die Microsoft Edge WebView2 Runtime benötigt. Lass die
-  mitgelieferten `WebView2Loader.dll` und `pecofence-watchdog.exe` neben der App liegen.
-- Die Konfiguration liegt in `%APPDATA%\PecoFence\config.json`. Mit `--portable` gestartet,
-  bleibt sie in einem Ordner `config` neben der ausführbaren Datei.
-- Bestehende Installationen behalten ihr bisheriges Konfigurationsverzeichnis.
-  Siehe [Upgrade-Anleitung](../UPGRADING.md).
-- Das Glas zeigt nur das statische Desktop-Hintergrundbild. Andere Fenster und
-  Video-Hintergründe scheinen nicht durch.
-- Windows-eigene Dialoge und Explorer-Menüeinträge von Drittanbietern folgen der Windows-Sprache.
-- Portable Builds sind nicht signiert. Fragt Windows SmartScreen beim ersten Start nach, wähle
-  **Weitere Informationen → Trotzdem ausführen**. Eine Installation über den Microsoft Store oder winget vermeidet die Abfrage.
+- Windows 11 22H2 oder neuer. Für die Einstellungen wird die Microsoft Edge WebView2 Runtime benötigt.
+- Beim ersten Start werden die Bereiche „Programme“, „Ordner“, „Dateien und Dokumente“ und „Desktop“ in der gewählten Sprache angelegt. Beim Beenden erscheinen die Windows-Desktopsymbole wieder.
+- Die Konfiguration liegt in `%APPDATA%\PecoFence\config.json`. Mit `--portable` gestartet, bleibt sie in einem Ordner `config` neben der ausführbaren Datei.
+- ZIP und Installer sind nicht signiert. Fragt Windows SmartScreen beim ersten Start nach, wähle **Weitere Informationen → Trotzdem ausführen**.
 
 [Anleitung zur portablen Version](../PORTABLE.md) · [Sprachen und Übersetzungen](../LOCALIZATION.md) · [Windows-Installationsanleitung](../INSTALLER.md)
 
@@ -164,31 +139,6 @@ PecoFence steht unter der Apache-2.0-Lizenz, und Beiträge sind willkommen – v
 Übersetzung bis zu einer besseren Desktop-Interaktion.
 
 [Mitwirken](../../CONTRIBUTING.md) · [Übersetzung verbessern](../LOCALIZATION.md) · [Entwicklerhandbuch](../DEVELOPMENT.md)
-
-<details>
-<summary><strong>Aus dem Quellcode bauen</strong></summary>
-
-Installiere Rust stable sowie die Visual Studio Build Tools mit C++-Workload und Windows SDK.
-
-```powershell
-cargo build --locked --release
-Copy-Item third_party/webview2/WebView2Loader.x64.dll target/release/WebView2Loader.dll
-```
-
-Ein portables ZIP zum Weitergeben erstellen:
-
-```powershell
-./scripts/make-portable.ps1
-```
-
-Der Workspace gliedert sich in `crates/` für die native App, `ui/` für die Einstellungen,
-`locales/` für Übersetzungen und `scripts/` für Prüfung und Paketierung.
-Die Produkt-Website liegt in `site/`, und das optionale Videoprojekt in `extras/`
-ist vom App-Build unabhängig.
-
-[Release-Anleitung](../RELEASING.md) · [Quellcode-Struktur](../DEVELOPMENT.md#architecture)
-
-</details>
 
 ---
 
