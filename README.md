@@ -86,19 +86,19 @@ the way you work. PecoFence adds just enough structure to make your desktop usef
 
 ### One fence. Multiple workspaces.
 
-Keep related fences together as tabs. Switch from Work to Art in a click,
+Keep related fences together as tabs. Switch from Project to Ideas in a click,
 then drag a tab out when you want the extra room.
 
-![Switching between Work and Art, then detaching a tab into its own fence.](docs/assets/tabs.gif)
+![Merging two fences into tabs, switching between Project and Ideas, then dragging a tab out into its own fence.](docs/assets/tabs.gif)
 
 ### Your desktop, one shortcut away.
 
 Press **Ctrl + Alt + Space** to bring your fences above the current application.
 Grab what you need, then press **Esc** to return.
 
-![Peek brings your fences above an application; Esc returns to it.](docs/assets/peek.gif)
+![Peek brings your fences above an application; a click outside or opening a file returns to it.](docs/assets/peek.gif)
 
-<sub>Recorded in PecoFence using demo files and the Fluent theme. GIFs loop automatically.</sub>
+<sub>Animations from the <a href="https://pecofence.jiang.jp/manual/">user manual</a>. GIFs loop automatically.</sub>
 
 ## Small details that add up
 

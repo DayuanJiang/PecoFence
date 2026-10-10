@@ -1,7 +1,7 @@
 """Build README and share artwork from the revision-2 native desktop capture.
 
-Requires Pillow and FFmpeg. The original recordings remain in the optional local
-video project; the small, selected PNG/GIF outputs are checked in under docs/assets.
+Requires Pillow and FFmpeg. The hero capture and the manual lesson renders stay
+local; the small, selected PNG/GIF outputs are checked in under docs/assets.
 One hero image is rendered per README language (see HERO_TEXT).
 """
 import argparse
@@ -12,7 +12,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
 ROOT = Path(__file__).resolve().parents[1]
-PROMO = ROOT / "extras/pecofence-promo"
+TRAILERS = ROOT / ".cache/store-trailers/out/en"
 OUTPUT = ROOT / "docs/assets"
 FONTS = Path("C:/Windows/Fonts")
 
@@ -64,24 +64,19 @@ def hero(language):
     image.save(OUTPUT / f"hero-{language}.png", optimize=True)
 
 
-def gif(name, start, duration):
-    # The crop keeps the real app and keyboard callouts, excluding the video's
-    # English chapter headings so the same recording works in both READMEs.
+def gif(lesson):
+    # The English manual lesson as rendered for the Store trailers, step captions
+    # included; every README language shares it.
     filters = (
-        "crop=1760:720:80:255,fps=12,scale=960:-2:flags=lanczos,split[a][b];"
-        "[a]palettegen=max_colors=128:stats_mode=diff[p];"
-        "[b][p]paletteuse=dither=bayer:bayer_scale=3"
+        "fps=12,scale=800:-2:flags=lanczos,split[a][b];"
+        "[a]palettegen=max_colors=96:stats_mode=diff[p];"
+        "[b][p]paletteuse=dither=bayer:bayer_scale=4:diff_mode=rectangle"
     )
-    recording = PROMO / "out/PecoFence-features-en-1080p.mp4"
-    if not recording.exists():
-        # These branding-free crops can reuse the original pre-rename recording.
-        recording = PROMO / "out/openFence-features-en-1080p.mp4"
     subprocess.run([
         "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
-        "-ss", str(start), "-t", str(duration),
-        "-i", str(recording),
+        "-i", str(TRAILERS / f"{lesson}.mp4"),
         "-filter_complex", filters, "-an", "-loop", "0",
-        str(OUTPUT / f"{name}.gif"),
+        str(OUTPUT / f"{lesson}.gif"),
     ], check=True)
 
 
@@ -95,8 +90,8 @@ def main():
     for language in args.languages:
         hero(language)
     if not args.stills_only:
-        gif("tabs", 40.0, 9.7)
-        gif("peek", 50.8, 10.0)
+        gif("tabs")
+        gif("peek")
     for path in sorted(OUTPUT.glob("*")):
         if path.is_file():
             print(f"{path.name}: {path.stat().st_size / 1024:.0f} KiB")

@@ -87,19 +87,19 @@ trabalho voltar a ser útil.
 
 ### Uma janela. Vários espaços de trabalho.
 
-Mantenha grupos relacionados juntos como abas. Passe de Work para Art com um clique
+Mantenha grupos relacionados juntos como abas. Passe de Project para Ideas com um clique
 e arraste uma aba para fora quando precisar de mais espaço.
 
-![Alternando entre Work e Art e depois separando uma aba em um grupo independente.](../assets/tabs.gif)
+![Dois grupos viram abas, alternando entre Project e Ideas, e depois uma aba é separada em um grupo independente.](../assets/tabs.gif)
 
 ### Sua área de trabalho a um atalho de distância.
 
 Pressione **Ctrl + Alt + Espaço** para espiar seus grupos por cima do aplicativo atual.
 Pegue o que precisa e pressione **Esc** para voltar.
 
-![O recurso Espiar traz os grupos por cima de um aplicativo; Esc volta ao aplicativo.](../assets/peek.gif)
+![O recurso Espiar traz os grupos por cima de um aplicativo; um clique fora ou abrir um arquivo volta ao aplicativo.](../assets/peek.gif)
 
-<sub>Gravado no PecoFence com arquivos de demonstração e o tema Fluent. Os GIFs se repetem automaticamente.</sub>
+<sub>Animações do <a href="https://pecofence.jiang.jp/pt-BR/manual/">manual</a>. Os GIFs se repetem automaticamente.</sub>
 
 ## Pequenos detalhes que fazem diferença no dia a dia
 

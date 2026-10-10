@@ -88,18 +88,18 @@ wieder nützlich wird.
 ### Ein Bereich. Viele Projekte.
 
 Halte zusammengehörige Bereiche als Tabs beisammen. Wechsle mit einem Klick
-von Work zu Art und zieh einen Tab heraus, wenn du mehr Platz brauchst.
+von Project zu Ideas und zieh einen Tab heraus, wenn du mehr Platz brauchst.
 
-![Wechsel zwischen Work und Art, dann wird ein Tab als eigener Bereich abgetrennt.](../assets/tabs.gif)
+![Zwei Bereiche werden zu Tabs zusammengeführt, dann Wechsel zwischen Project und Ideas; zuletzt wird ein Tab wieder als eigener Bereich herausgezogen.](../assets/tabs.gif)
 
 ### Dein Desktop – nur eine Tastenkombination entfernt.
 
 Drücke **Strg + Alt + Leertaste**, um deine Bereiche vor die aktuelle Anwendung zu holen.
 Hol dir, was du brauchst, und kehre mit **Esc** zurück.
 
-![Hervorholen bringt die Desktop-Bereiche über eine Anwendung; Esc kehrt zur Anwendung zurück.](../assets/peek.gif)
+![Hervorholen bringt die Desktop-Bereiche über eine Anwendung; ein Klick daneben oder das Öffnen einer Datei kehrt zur Anwendung zurück.](../assets/peek.gif)
 
-<sub>Aufgenommen in PecoFence mit Demo-Dateien und dem Fluent-Design. Die GIFs laufen in Endlosschleife.</sub>
+<sub>Animationen aus dem <a href="https://pecofence.jiang.jp/de/manual/">Handbuch</a>. Die GIFs laufen in Endlosschleife.</sub>
 
 ## Kleine Details, die den Alltag leichter machen
 

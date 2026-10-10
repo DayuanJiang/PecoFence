@@ -87,19 +87,19 @@ a ser útil.
 
 ### Una ventana. Varios espacios de trabajo.
 
-Mantén juntos los grupos relacionados como pestañas. Pasa de Work a Art con un clic y,
+Mantén juntos los grupos relacionados como pestañas. Pasa de Project a Ideas con un clic y,
 cuando necesites más espacio, arrastra una pestaña fuera para convertirla en su propio grupo.
 
-![Cambio entre Work y Art y separación de una pestaña en un grupo independiente.](../assets/tabs.gif)
+![Dos grupos se unen en pestañas, se cambia entre Project e Ideas y luego una pestaña se separa en un grupo independiente.](../assets/tabs.gif)
 
 ### Tu escritorio, a un atajo de distancia.
 
 Presiona **Ctrl + Alt + Espacio** y la vista rápida trae tus grupos por encima de la aplicación actual.
 Toma lo que necesites y presiona **Esc** para volver.
 
-![La vista rápida muestra los grupos del escritorio sobre una aplicación; Esc devuelve a la aplicación.](../assets/peek.gif)
+![La vista rápida muestra los grupos del escritorio sobre una aplicación; un clic fuera o abrir un archivo devuelve a la aplicación.](../assets/peek.gif)
 
-<sub>Grabado en PecoFence con archivos de demostración y el tema Fluent. Los GIF se repiten automáticamente.</sub>
+<sub>Animaciones del <a href="https://pecofence.jiang.jp/es/manual/">manual</a>. Los GIF se repiten automáticamente.</sub>
 
 ## Pequeños detalles que mejoran el día a día
 

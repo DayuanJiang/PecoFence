@@ -7,18 +7,16 @@ These selected assets are part of the public documentation:
   `docs/readme/`). The screenshot shows Liquid Glass with Projects, Inspiration,
   and Today groups. The headline and subline use the same copy as the Store
   campaign in `docs/store/v2-i18n/`. These images also serve as website share previews.
-- `tabs.gif`: native tab switching and detaching.
-- `peek.gif`: native Peek activation and returning to the application.
+- `tabs.gif`: the manual's Tabs lesson (merge two fences, switch tabs, drag one out).
+- `peek.gif`: the manual's Peek lesson (fences above a window, back behind it).
 
-The GIFs remain cropped, resized excerpts of the existing 75-second feature film,
-using the Fluent theme.
-They use demonstration files and contain no footage of the user's working desktop.
+The GIFs are the English user-manual animations (`site/manual/`), shared by every
+README language, at 800×450 and 12 fps with the step captions.
 The screenshots' panels have not been redrawn.
 
 Regenerate still images with
 `uv run --with pillow python scripts/make-readme-media.py --stills-only` using the
 original local capture `.cache/store-v2/native/overview.png`. Omit `--stills-only`
-to also regenerate the GIFs using FFmpeg and the recordings under
-`extras/pecofence-promo/`. Generated preview pages and
-contact sheets stay under `.cache/`; the full recordings remain excluded from
-the source export.
+to also regenerate the GIFs using FFmpeg from the English Store trailer renders
+`.cache/store-trailers/out/en/<lesson>.mp4` (made by `.cache/store-trailers/render.py`);
+pass `--languages` with no value to skip the hero images.
