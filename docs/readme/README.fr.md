@@ -87,19 +87,19 @@ votre Bureau à nouveau utile.
 
 ### Une fenêtre. Plusieurs espaces de travail.
 
-Rassemblez les groupes qui vont ensemble sous forme d’onglets. Passez de Work à Art en un clic,
+Rassemblez les groupes qui vont ensemble sous forme d’onglets. Passez de Project à Ideas en un clic,
 puis détachez un onglet quand vous avez besoin de plus de place.
 
-![Passage de Work à Art, puis détachement d’un onglet en groupe indépendant.](../assets/tabs.gif)
+![Deux groupes fusionnés en onglets, passage de Project à Ideas, puis détachement d’un onglet en groupe indépendant.](../assets/tabs.gif)
 
 ### Votre Bureau à portée de raccourci.
 
 Avec l’aperçu des groupes, **Ctrl + Alt + Espace** affiche vos groupes au-dessus de l’application
 en cours. Prenez ce qu’il vous faut, puis appuyez sur **Échap** pour y revenir.
 
-![L’aperçu des groupes affiche les groupes du Bureau au-dessus d’une application ; Échap ramène à l’application.](../assets/peek.gif)
+![L’aperçu des groupes affiche les groupes du Bureau au-dessus d’une application ; un clic à côté ou l’ouverture d’un fichier ramène à l’application.](../assets/peek.gif)
 
-<sub>Enregistré dans PecoFence avec des fichiers de démonstration et le thème Fluent. Les GIF bouclent automatiquement.</sub>
+<sub>Animations tirées du <a href="https://pecofence.jiang.jp/fr/manual/">manuel</a>. Les GIF bouclent automatiquement.</sub>
 
 ## Les petits détails qui changent le quotidien
 

@@ -86,19 +86,19 @@ pecofence-cli fence set --all opacity clear
 
 ### 一个栅栏，切换多个项目
 
-把相关栅栏合成标签页，点一下就能从 Work 切到 Art。
+把相关栅栏合成标签页，点一下就能从 Project 切到 Ideas。
 需要同时看两组文件时，把标签页拖出来，就变回两个独立栅栏。
 
-![在 Work 与 Art 标签之间切换，再拖出标签，拆成独立栅栏。](../assets/tabs.gif)
+![把两个栅栏合成标签页，在 Project 和 Ideas 之间切换，再把标签拖出来，拆回独立栅栏。](../assets/tabs.gif)
 
 ### 文件就在当前应用前面
 
 按 **Ctrl + Alt + 空格** 速览栅栏，所有栅栏显示在当前应用上方。
 取用需要的文件后，按 **Esc** 回去接着工作。
 
-![用快捷键速览栅栏，栅栏显示在应用上方，再按 Esc 返回应用。](../assets/peek.gif)
+![用快捷键速览栅栏，栅栏显示在应用上方；点一下栅栏外面或打开文件，就回到应用。](../assets/peek.gif)
 
-<sub>以上为 PecoFence 的实际操作录屏，使用演示文件和 Fluent 主题。动图会自动循环播放。</sub>
+<sub>动图来自<a href="https://pecofence.jiang.jp/zh-CN/manual/">使用手册</a>，会自动循环播放。</sub>
 
 ## 日常好用，藏在这些细节里
 

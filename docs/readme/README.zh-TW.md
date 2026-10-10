@@ -86,19 +86,19 @@ pecofence-cli fence set --all opacity clear
 
 ### 一個圍欄，切換多個專案
 
-把相關的圍欄合併成分頁，點一下就能從 Work 切到 Art。
+把相關的圍欄合併成分頁，點一下就能從 Project 切到 Ideas。
 需要同時看兩組檔案時，把分頁拖出來，就變回兩個獨立的圍欄。
 
-![在 Work 與 Art 分頁之間切換，再把分頁拖出來，拆成獨立圍欄。](../assets/tabs.gif)
+![把兩個圍欄合併成分頁，在 Project 與 Ideas 之間切換，再把分頁拖出來，拆回獨立圍欄。](../assets/tabs.gif)
 
 ### 檔案就在目前應用程式前面
 
 按下 **Ctrl + Alt + 空白鍵** 預覽圍欄，所有圍欄會顯示在目前的應用程式上方。
 拿到需要的檔案後，按 **Esc** 回去繼續工作。
 
-![用快速鍵預覽圍欄，讓圍欄顯示在應用程式上方，再按 Esc 返回應用程式。](../assets/peek.gif)
+![用快速鍵預覽圍欄，讓圍欄顯示在應用程式上方；點一下圍欄外面或開啟檔案，就回到應用程式。](../assets/peek.gif)
 
-<sub>以上為 PecoFence 的實際操作錄影，使用示範檔案與 Fluent 主題。GIF 動畫會自動重複播放。</sub>
+<sub>動畫取自<a href="https://pecofence.jiang.jp/zh-TW/manual/">使用手冊</a>，會自動重複播放。</sub>
 
 ## 好用之處藏在細節裡
 
