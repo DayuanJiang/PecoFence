@@ -974,6 +974,11 @@ pub unsafe fn GetSystemMetricsForDpi(nindex: i32, dpi: u32) -> i32 {
     unsafe { GetSystemMetricsForDpi(nindex, dpi) }
 }
 #[inline]
+pub unsafe fn GetTextFaceW(hdc: HDC, c: i32, lpname: Option<windows_core::PWSTR>) -> i32 {
+    windows_core::link!("gdi32.dll" "system" fn GetTextFaceW(hdc : HDC, c : i32, lpname : windows_core::PWSTR) -> i32);
+    unsafe { GetTextFaceW(hdc, c, lpname.unwrap_or(core::mem::zeroed()) as _) }
+}
+#[inline]
 pub unsafe fn GetTickCount64() -> u64 {
     windows_core::link!("kernel32.dll" "system" fn GetTickCount64() -> u64);
     unsafe { GetTickCount64() }

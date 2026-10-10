@@ -6,7 +6,7 @@ package after certification, so no code-signing certificate is needed.
 ## Files
 
 - `packaging/msix/AppxManifest.xml`: manifest template. `runFullTrust` (desktop hooks,
-  icon host, tray), Windows 11 minimum (`10.0.22000.0`), x64, a `windows.startupTask`
+  icon host, tray), Windows 10 2004 minimum (`10.0.19041.0`), x64, a `windows.startupTask`
   for run-at-logon, tile assets under `Assets\`.
 - `packaging/msix/identity.json`: the identity Partner Center assigned
   (Product management > Product identity). These values are not secret and must match

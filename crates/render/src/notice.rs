@@ -2,7 +2,7 @@
 //! glyph on an opaque card (the app's `notice.rs` owns the window). Sizes follow the Windows 11
 //! toast: 360 DIPs wide, Body Strong 14 title, Body 14 message, a 32 DIP button.
 
-use crate::theme::{FONT_ICONS, FONT_TEXT, Theme, with_alpha};
+use crate::theme::{Theme, font_icons, font_text, with_alpha};
 use windows_canvas::{
     ColorF, DrawingSession, FontWeight, ParagraphAlignment, Rect, RoundedRect, TextAlignment,
     TextFormat, TextLayout, WordWrapping,
@@ -81,25 +81,25 @@ impl NoticeCard {
             body: body.to_string(),
             action: action.to_string(),
             title_format: wrapping(TextFormat::with_locale(
-                FONT_TEXT,
+                font_text(),
                 14.0,
                 FontWeight(600),
                 locale,
             )?),
             body_format: wrapping(TextFormat::with_locale(
-                FONT_TEXT,
+                font_text(),
                 14.0,
                 FontWeight::NORMAL,
                 locale,
             )?),
             button_format: centred(TextFormat::with_locale(
-                FONT_TEXT,
+                font_text(),
                 14.0,
                 FontWeight::NORMAL,
                 locale,
             )?),
             glyph_format: centred(TextFormat::with_locale(
-                FONT_ICONS,
+                font_icons(),
                 10.0,
                 FontWeight::NORMAL,
                 locale,

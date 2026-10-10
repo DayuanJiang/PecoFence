@@ -54,7 +54,7 @@ impl EditControl {
             if hwnd.0.is_null() {
                 return Err(Error::from_thread());
             }
-            let face = to_wide("Segoe UI Variable Text");
+            let face = to_wide(crate::fonts::text_face());
             let font = CreateFontW(
                 -(14.0 * dpi as f32 / 96.0).round() as i32,
                 0,

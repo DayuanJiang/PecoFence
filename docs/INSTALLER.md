@@ -1,6 +1,6 @@
 # PecoFence Windows installer
 
-Run `pecofence-v<version>-x64-setup.exe` on Windows 11 22H2 or later.
+Run `pecofence-v<version>-x64-setup.exe` on Windows 10 22H2 or Windows 11.
 The installer is unsigned. Microsoft Edge WebView2 Runtime is required for Settings;
 the installer includes the loader DLL, but does not download the runtime.
 

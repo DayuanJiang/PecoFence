@@ -132,7 +132,7 @@ Lieber mit Installer? `pecofence-v<Version>-x64-setup.exe` auf derselben Seite i
 
 Lieber per Paketmanager? `winget install DayuanJiang.PecoFence` installiert denselben portablen Build und überspringt die SmartScreen-Abfrage.
 
-**Windows 11 x64 · Etwa 40 MB Arbeitsspeicher · Portables ZIP · Kein Konto nötig · Apache-2.0-Lizenz**
+**Windows 10 22H2 / Windows 11 x64 · Etwa 40 MB Arbeitsspeicher · Portables ZIP · Kein Konto nötig · Apache-2.0-Lizenz**
 
 Beim ersten Start werden die Bereiche „Programme“, „Ordner“, „Dateien und Dokumente“ und „Desktop“
 in der gewählten Sprache angelegt. Beim Beenden erscheinen die Windows-Desktopsymbole wieder.
@@ -140,9 +140,12 @@ in der gewählten Sprache angelegt. Beim Beenden erscheinen die Windows-Desktops
 <details>
 <summary><strong>Systemvoraussetzungen, Konfiguration und ein paar nützliche Hinweise</strong></summary>
 
-- Entwickelt für Windows 11 22H2 und neuer. Getestet wurde bisher vor allem unter 25H2;
-  Tests mit älteren Versionen und mehreren Bildschirmen laufen noch.
-- Für die Einstellungen wird die Microsoft Edge WebView2 Runtime benötigt. Lass die
+- Läuft unter Windows 10 22H2 und Windows 11 22H2 oder neuer. Getestet wurde bisher vor allem
+  unter Windows 11 25H2; Tests mit älteren Versionen und mehreren Bildschirmen laufen noch. Unter
+  Windows 10 wird Text in Segoe UI und Symbole in Segoe MDL2 Assets gezeichnet, Einstellungs- und
+  Hinweisfenster haben eckige Ecken.
+- Für die Einstellungen wird die Microsoft Edge WebView2 Runtime benötigt. Windows 11 bringt sie
+  mit; unter Windows 10 installiere sie von Microsoft, falls sich die Einstellungen nicht öffnen. Lass die
   mitgelieferten `WebView2Loader.dll` und `pecofence-watchdog.exe` neben der App liegen.
 - Die Konfiguration liegt in `%APPDATA%\PecoFence\config.json`. Mit `--portable` gestartet,
   bleibt sie in einem Ordner `config` neben der ausführbaren Datei.

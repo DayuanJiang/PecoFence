@@ -71,3 +71,36 @@ jobs:
             dist/pecofence-v*-x64-portable.zip.sha256
             dist/pecofence-v*-x64-setup.exe
             dist/pecofence-v*-x64-setup.exe.sha256
+
+  # Windows Server 2022 (build 20348) stands in for Windows 10: no Segoe UI Variable, no Segoe
+  # Fluent Icons and none of the Windows 11 DWM attributes. The job builds, runs the tests and
+  # exercises the packaging and installer smoke test on that platform.
+  windows-10-proxy:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Test (core)
+        run: cargo test --workspace
+      - name: Release build
+        run: |
+          cargo build --locked --release -p pecofence -p pecofence-watchdog
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo build --locked --release -p pecofence-cli
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Install pinned Inno Setup compiler
+        shell: pwsh
+        run: ./scripts/setup-inno-ci.ps1
+      - name: Package
+        shell: pwsh
+        env:
+          PACKAGE_REPOSITORY: ${{ github.repository }}
+        run: ./scripts/make-windows.ps1 -SkipBuild -TargetDir target -Repository $env:PACKAGE_REPOSITORY
+      - name: Package and installer smoke tests
+        env:
+          PACKAGE_REPOSITORY: ${{ github.repository }}
+        run: python scripts/test-windows-packaging.py --target-dir target --repository "$env:PACKAGE_REPOSITORY"

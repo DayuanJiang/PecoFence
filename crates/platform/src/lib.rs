@@ -43,6 +43,7 @@ pub mod dwm;
 pub mod edit;
 pub mod filedialog;
 pub mod fileinfo;
+pub mod fonts;
 pub mod frameclock;
 pub mod hotkey;
 pub mod http;

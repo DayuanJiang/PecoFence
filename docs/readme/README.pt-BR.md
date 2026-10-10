@@ -133,7 +133,7 @@ Prefere um instalador? O `pecofence-v<versão>-x64-setup.exe`, na mesma página,
 
 Prefere um gerenciador de pacotes? `winget install DayuanJiang.PecoFence` instala a mesma versão portátil e evita o aviso do SmartScreen.
 
-**Windows 11 x64 · Cerca de 40 MB de memória · ZIP portátil · Sem conta · Licença Apache 2.0**
+**Windows 10 22H2 / Windows 11 x64 · Cerca de 40 MB de memória · ZIP portátil · Sem conta · Licença Apache 2.0**
 
 Na primeira execução são criados os grupos “Programas”, “Pastas”, “Arquivos e documentos” e
 “Área de trabalho” no idioma escolhido. Os ícones da área de trabalho do Windows voltam
@@ -142,9 +142,12 @@ a aparecer quando você sai.
 <details>
 <summary><strong>Requisitos, configuração e algumas observações úteis</strong></summary>
 
-- Feito para o Windows 11 22H2 ou mais recente. A maioria dos testes foi feita no 25H2;
-  os testes em versões mais antigas e com vários monitores ainda estão em andamento.
-- O Microsoft Edge WebView2 Runtime é necessário para as Configurações. Mantenha
+- Funciona no Windows 10 22H2 e no Windows 11 22H2 ou mais recente. A maioria dos testes foi feita
+  no Windows 11 25H2; os testes em versões mais antigas e com vários monitores ainda estão em
+  andamento. No Windows 10, o texto usa Segoe UI e os ícones Segoe MDL2 Assets, e as janelas de
+  Configurações e de avisos têm cantos retos.
+- O Microsoft Edge WebView2 Runtime é necessário para as Configurações. O Windows 11 já o inclui;
+  no Windows 10, instale-o pelo site da Microsoft se as Configurações não abrirem. Mantenha
   `WebView2Loader.dll` e `pecofence-watchdog.exe` na mesma pasta do aplicativo.
 - A configuração fica em `%APPDATA%\PecoFence\config.json`. Inicie com
   `--portable` para mantê-la em uma pasta `config` ao lado do executável.

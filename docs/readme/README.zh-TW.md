@@ -131,7 +131,7 @@ Microsoft Store 版由微軟簽署、自動更新，不會出現 SmartScreen 提
 
 習慣用套件管理器？`winget install DayuanJiang.PecoFence` 安裝的是同一個免安裝版，而且不會觸發 SmartScreen 提示。
 
-**Windows 11 x64 · 記憶體約 40 MB · 免安裝版 · 不需帳號 · Apache 2.0 開源授權**
+**Windows 10 22H2 / Windows 11 x64 · 記憶體約 40 MB · 免安裝版 · 不需帳號 · Apache 2.0 開源授權**
 
 第一次執行時，會依所選語言建立「程式」「資料夾」「檔案與文件」和「桌面」四個圍欄。
 結束程式時，Windows 桌面圖示會恢復顯示。
@@ -139,9 +139,10 @@ Microsoft Store 版由微軟簽署、自動更新，不會出現 SmartScreen 提
 <details>
 <summary><strong>系統需求、設定檔位置與使用說明</strong></summary>
 
-- 支援 Windows 11 22H2 以上版本。目前主要在 25H2 上測試，
-  舊版 Windows 與各種多螢幕組合仍在陸續測試中。
-- 設定面板需要 Microsoft Edge WebView2 Runtime。
+- 支援 Windows 10 22H2 與 Windows 11 22H2 以上版本。目前主要在 Windows 11 25H2 上測試，
+  舊版 Windows 與各種多螢幕組合仍在陸續測試中。Windows 10 上文字使用 Segoe UI、圖示使用
+  Segoe MDL2 Assets，設定視窗與提示視窗是直角。
+- 設定面板需要 Microsoft Edge WebView2 Runtime，Windows 11 已內建，Windows 10 若無法開啟設定請從微軟官網安裝。
   請將壓縮檔內的 `WebView2Loader.dll`、`pecofence-watchdog.exe` 與主程式放在同一個資料夾。
 - 設定儲存在 `%APPDATA%\PecoFence\config.json`。
   以 `--portable` 啟動，可改為儲存在程式旁的 `config` 資料夾。

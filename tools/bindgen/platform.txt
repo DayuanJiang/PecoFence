@@ -768,6 +768,7 @@
     GetWindowTextW
     GetWindowTextLengthW
     CreateFontW
+    GetTextFaceW
     CreateSolidBrush
     SetTextColor
     SetBkColor
