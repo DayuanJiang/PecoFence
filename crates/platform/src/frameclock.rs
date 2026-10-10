@@ -1,4 +1,5 @@
-//! A frame tick aligned with the compositor (`DCompositionWaitForCompositorClock`).
+//! A frame tick aligned with the compositor (`DCompositionWaitForCompositorClock`, or
+//! `DwmFlush` on Windows 10, which does not have the compositor clock).
 //!
 //! Compositor-side animations (opacity, offset, clip…) never need this. It exists for the few
 //! values that are rasterised *inside* a Direct2D surface each frame — a hover highlight
@@ -11,9 +12,11 @@
 //! app costs nothing.
 
 use crate::bindings::*;
+use crate::wide::to_wide;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
+use windows_core::{PCSTR, PCWSTR};
 
 /// A missing compositor tick must not hold a short client animation past its endpoint.
 const COMPOSITOR_TIMEOUT_MS: u32 = 16;
@@ -21,6 +24,35 @@ const COMPOSITOR_TIMEOUT_MS: u32 = 16;
 const IMMEDIATE_WAIT: Duration = Duration::from_millis(1);
 /// Pace that fast-return path without limiting a real high-refresh compositor signal.
 const FALLBACK_FRAME: Duration = Duration::from_micros(8_333);
+
+/// `DCompositionWaitForCompositorClock(count, handles, timeout_ms)`.
+type WaitForCompositorClock = unsafe extern "system" fn(u32, *const HANDLE, u32) -> u32;
+
+/// The compositor clock exists from Windows 11 on. It is looked up at run time so the
+/// executable still loads on Windows 10.
+fn compositor_clock() -> Option<WaitForCompositorClock> {
+    let name = to_wide("dcomp.dll");
+    // SAFETY: loading a system DLL by name from System32 and looking up an export; the
+    // transmute matches the documented signature of that export.
+    unsafe {
+        let dll = LoadLibraryExW(
+            PCWSTR(name.as_ptr()),
+            None,
+            LOAD_LIBRARY_SEARCH_SYSTEM32 as u32,
+        );
+        if dll.0.is_null() {
+            return None;
+        }
+        let proc = GetProcAddress(
+            dll,
+            PCSTR(c"DCompositionWaitForCompositorClock".as_ptr().cast()),
+        )?;
+        Some(std::mem::transmute::<
+            unsafe extern "system" fn() -> isize,
+            WaitForCompositorClock,
+        >(proc))
+    }
+}
 
 struct Shared {
     armed: AtomicBool,
@@ -47,6 +79,10 @@ impl FrameClock {
         std::thread::Builder::new()
             .name("frame-clock".into())
             .spawn(move || {
+                let clock = compositor_clock();
+                if clock.is_none() {
+                    tracing::info!("compositor clock unavailable; pacing frames with DwmFlush");
+                }
                 loop {
                     {
                         let mut guard = worker.wake.lock().unwrap();
@@ -60,10 +96,21 @@ impl FrameClock {
                         return;
                     }
                     let wait_started = Instant::now();
-                    // SAFETY: no handles, plain timeout wait. A real compositor signal keeps
-                    // the display's native cadence; timeout bounds a missing signal to 60 Hz.
-                    let waited =
-                        unsafe { DCompositionWaitForCompositorClock(None, COMPOSITOR_TIMEOUT_MS) };
+                    let waited = match clock {
+                        // SAFETY: no handles, plain timeout wait. A real compositor signal
+                        // keeps the display's native cadence; timeout bounds a missing signal
+                        // to 60 Hz.
+                        Some(wait) => unsafe { wait(0, std::ptr::null(), COMPOSITOR_TIMEOUT_MS) },
+                        // Windows 10: block until the next desktop composition pass.
+                        // SAFETY: plain FFI call without arguments.
+                        None => {
+                            if unsafe { DwmFlush() }.is_ok() {
+                                0
+                            } else {
+                                WAIT_FAILED
+                            }
+                        }
+                    };
                     let waited_for = wait_started.elapsed();
                     if waited == WAIT_FAILED || waited_for < IMMEDIATE_WAIT {
                         // On unsupported or fast-returning implementations, prevent a busy loop

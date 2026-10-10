@@ -417,20 +417,6 @@ where
     }
 }
 #[inline]
-pub unsafe fn DCompositionWaitForCompositorClock(
-    handles: Option<&[HANDLE]>,
-    timeoutinms: u32,
-) -> u32 {
-    windows_core::link!("dcomp.dll" "system" fn DCompositionWaitForCompositorClock(count : u32, handles : *const HANDLE, timeoutinms : u32) -> u32);
-    unsafe {
-        DCompositionWaitForCompositorClock(
-            handles.map_or(0, |slice| slice.len().try_into().unwrap()),
-            handles.map_or(core::ptr::null(), |slice| slice.as_ptr()),
-            timeoutinms,
-        )
-    }
-}
-#[inline]
 pub unsafe fn DefSubclassProc(hwnd: HWND, umsg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     windows_core::link!("comctl32.dll" "system" fn DefSubclassProc(hwnd : HWND, umsg : u32, wparam : WPARAM, lparam : LPARAM) -> LRESULT);
     unsafe { DefSubclassProc(hwnd, umsg, wparam, lparam) }
@@ -1167,6 +1153,20 @@ where
         LoadIconW(
             hinstance.unwrap_or(core::mem::zeroed()) as _,
             lpiconname.param().abi(),
+        )
+    }
+}
+#[inline]
+pub unsafe fn LoadLibraryExW<P0>(lplibfilename: P0, hfile: Option<HANDLE>, dwflags: u32) -> HMODULE
+where
+    P0: windows_core::Param<windows_core::PCWSTR>,
+{
+    windows_core::link!("kernel32.dll" "system" fn LoadLibraryExW(lplibfilename : windows_core::PCWSTR, hfile : HANDLE, dwflags : u32) -> HMODULE);
+    unsafe {
+        LoadLibraryExW(
+            lplibfilename.param().abi(),
+            hfile.unwrap_or(core::mem::zeroed()) as _,
+            dwflags,
         )
     }
 }
@@ -14093,6 +14093,7 @@ pub const KEY_SET_VALUE: i32 = 2;
 pub const KF_FLAG_DEFAULT: KNOWN_FOLDER_FLAG = 0;
 pub type KNOWNFOLDERID = windows_core::GUID;
 pub type KNOWN_FOLDER_FLAG = u32;
+pub const LOAD_LIBRARY_SEARCH_SYSTEM32: i32 = 2048;
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct LOGFONTW {

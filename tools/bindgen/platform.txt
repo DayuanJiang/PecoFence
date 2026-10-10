@@ -287,7 +287,8 @@
     DwmExtendFrameIntoClientArea
     DwmIsCompositionEnabled
     DwmFlush
-    DCompositionWaitForCompositorClock
+    LoadLibraryExW
+    LOAD_LIBRARY_SEARCH_SYSTEM32
     WAIT_FAILED
     MARGINS
     DWMWA_NCRENDERING_POLICY
