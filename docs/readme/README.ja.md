@@ -127,15 +127,15 @@ Microsoft Store 版は Microsoft によって署名され、自動で更新さ�
 
 パッケージマネージャーがお好みなら `winget install DayuanJiang.PecoFence` で同じポータブル版をインストールでき、SmartScreen の警告も出ません。
 
-**Windows 11 x64 · メモリ約 40 MB · ポータブル ZIP · アカウント不要 · Apache 2.0 ライセンス**
+**Windows 10 22H2 / Windows 11 x64 · メモリ約 40 MB · ポータブル ZIP · アカウント不要 · Apache 2.0 ライセンス**
 
 初回起動時に、選択した言語で「アプリ」「フォルダー」「ファイルとドキュメント」「デスクトップ」の 4 つのフェンスが作成されます。終了すると、Windows のデスクトップアイコンは元どおり表示されます。
 
 <details>
 <summary><strong>動作環境、設定ファイルの場所、知っておきたいこと</strong></summary>
 
-- Windows 11 22H2 以降を対象としています。ネイティブ環境でのテストは主に 25H2 で行っており、旧バージョンやマルチディスプレイ構成の網羅的な検証は進行中です。
-- 設定画面には Microsoft Edge WebView2 Runtime が必要です。同梱の `WebView2Loader.dll` と `pecofence-watchdog.exe` は、アプリと同じフォルダーに置いたままにしてください。
+- Windows 10 22H2 と Windows 11 22H2 以降を対象としています。ネイティブ環境でのテストは主に Windows 11 25H2 で行っており、旧バージョンやマルチディスプレイ構成の網羅的な検証は進行中です。Windows 10 では文字は Segoe UI、アイコンは Segoe MDL2 Assets で描かれ、設定ウィンドウと通知ウィンドウの角は丸くなりません。
+- 設定画面には Microsoft Edge WebView2 Runtime が必要です。Windows 11 には標準で含まれていますが、Windows 10 で設定が開かない場合は Microsoft のサイトからインストールしてください。同梱の `WebView2Loader.dll` と `pecofence-watchdog.exe` は、アプリと同じフォルダーに置いたままにしてください。
 - 設定は `%APPDATA%\PecoFence\config.json` に保存されます。`--portable` を付けて起動すると、実行ファイルの隣にある `config` フォルダーに保存されます。
 - 既存のインストールでは、以前の設定フォルダーがそのまま使われます。詳しくは[アップグレードガイド](../UPGRADING.md)をご覧ください。
 - ガラス効果は静止画の壁紙をもとに描画されます。ほかのアプリのウィンドウや動画壁紙は、ガラス越しには映りません。

@@ -10,7 +10,7 @@ Extract the complete ZIP and run `pecofence.exe`. Keep these files together:
 - `WebView2Loader.dll`
 - `pecofence-cli.exe` (optional command-line control, see below)
 
-Windows 11 x64 and Microsoft Edge WebView2 Runtime are required.
+Windows 10 22H2 or Windows 11 (x64) and Microsoft Edge WebView2 Runtime are required.
 
 Right-click the tray icon to open Settings or exit. Under General, choose your
 display language: English, Simplified/Traditional Chinese, Japanese, Korean,

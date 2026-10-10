@@ -5,7 +5,7 @@
 use crate::backdrop::Image;
 use crate::bitmaps::BitmapCache;
 use crate::panel::Clip;
-use crate::theme::{FONT_SMALL, FONT_TEXT, Theme, lerp, with_alpha};
+use crate::theme::{Theme, font_small, font_text, lerp, with_alpha};
 use std::cell::RefCell;
 use std::rc::Rc;
 use windows_canvas::{
@@ -1114,7 +1114,7 @@ fn draw_item_icon(
     } else if failed {
         // No icon obtainable (broken shortcut, missing handler): a generic document glyph
         // from Segoe Fluent Icons instead of a permanent grey tile.
-        let glyph_format = TextFormat::new(crate::theme::FONT_ICONS, size * 0.72)?
+        let glyph_format = TextFormat::new(crate::theme::font_icons(), size * 0.72)?
             .with_alignment(TextAlignment::Center)
             .with_paragraph_alignment(ParagraphAlignment::Center)
             .with_word_wrapping(WordWrapping::NoWrap);
@@ -1240,37 +1240,37 @@ impl FenceChrome {
         let locale = text_locale();
         // WinUI type ramp: Body Strong 14/600 for the title, Caption 12 (Small optical size) for
         // labels and the rolled item count, Body 14 for the empty state. No letter-spacing.
-        let title_format = TextFormat::with_locale(FONT_TEXT, 14.0, FontWeight(600), locale)?
+        let title_format = TextFormat::with_locale(font_text(), 14.0, FontWeight(600), locale)?
             .with_alignment(TextAlignment::Leading)
             .with_paragraph_alignment(ParagraphAlignment::Center)
             .with_word_wrapping(WordWrapping::NoWrap);
-        let count_format = TextFormat::with_locale(FONT_SMALL, 12.0, FontWeight::NORMAL, locale)?
+        let count_format = TextFormat::with_locale(font_small(), 12.0, FontWeight::NORMAL, locale)?
             .with_alignment(TextAlignment::Trailing)
             .with_paragraph_alignment(ParagraphAlignment::Center)
             .with_word_wrapping(WordWrapping::NoWrap);
         let label_font = RefCell::new(LabelFont {
-            format: Self::build_label_format(FONT_SMALL, 12.0, FontWeight(400))?,
+            format: Self::build_label_format(font_small(), 12.0, FontWeight(400))?,
             family: "Segoe UI".to_string(),
             size: 12.0,
             weight: 400,
             line_h: DEFAULT_LABEL_LINE_H,
         });
         let glyph_format =
-            TextFormat::with_locale(crate::theme::FONT_ICONS, 12.0, FontWeight::NORMAL, locale)?
+            TextFormat::with_locale(crate::theme::font_icons(), 12.0, FontWeight::NORMAL, locale)?
                 .with_alignment(TextAlignment::Center)
                 .with_paragraph_alignment(ParagraphAlignment::Center)
                 .with_word_wrapping(WordWrapping::NoWrap);
-        let row_format = TextFormat::with_locale(FONT_SMALL, 12.0, FontWeight::NORMAL, locale)?
+        let row_format = TextFormat::with_locale(font_small(), 12.0, FontWeight::NORMAL, locale)?
             .with_alignment(TextAlignment::Leading)
             .with_paragraph_alignment(ParagraphAlignment::Center)
             .with_word_wrapping(WordWrapping::NoWrap);
         let row_format_right =
-            TextFormat::with_locale(FONT_SMALL, 12.0, FontWeight::NORMAL, locale)?
+            TextFormat::with_locale(font_small(), 12.0, FontWeight::NORMAL, locale)?
                 .with_alignment(TextAlignment::Trailing)
                 .with_paragraph_alignment(ParagraphAlignment::Center)
                 .with_word_wrapping(WordWrapping::NoWrap);
         let sort_glyph_format =
-            TextFormat::with_locale(crate::theme::FONT_ICONS, 8.0, FontWeight::NORMAL, locale)?
+            TextFormat::with_locale(crate::theme::font_icons(), 8.0, FontWeight::NORMAL, locale)?
                 .with_alignment(TextAlignment::Center)
                 .with_paragraph_alignment(ParagraphAlignment::Center)
                 .with_word_wrapping(WordWrapping::NoWrap);
@@ -1283,35 +1283,36 @@ impl FenceChrome {
             )
         };
         let tab_formats = [
-            tab_format(FONT_SMALL, 12.0)?,
-            tab_format(FONT_TEXT, 14.0)?,
-            tab_format(FONT_TEXT, 16.0)?,
-            tab_format(FONT_TEXT, 18.0)?,
+            tab_format(font_small(), 12.0)?,
+            tab_format(font_text(), 14.0)?,
+            tab_format(font_text(), 16.0)?,
+            tab_format(font_text(), 18.0)?,
         ];
-        let empty_format = TextFormat::with_locale(FONT_TEXT, 14.0, FontWeight::NORMAL, locale)?
+        let empty_format = TextFormat::with_locale(font_text(), 14.0, FontWeight::NORMAL, locale)?
             .with_alignment(TextAlignment::Center)
             .with_paragraph_alignment(ParagraphAlignment::Top)
             .with_word_wrapping(WordWrapping::Wrap);
         let title_glyph_format =
-            TextFormat::with_locale(crate::theme::FONT_ICONS, 14.0, FontWeight::NORMAL, locale)?
+            TextFormat::with_locale(crate::theme::font_icons(), 14.0, FontWeight::NORMAL, locale)?
                 .with_alignment(TextAlignment::Center)
                 .with_paragraph_alignment(ParagraphAlignment::Center)
                 .with_word_wrapping(WordWrapping::NoWrap);
         let title_format_small =
-            TextFormat::with_locale(FONT_SMALL, 12.0, FontWeight(600), locale)?
+            TextFormat::with_locale(font_small(), 12.0, FontWeight(600), locale)?
                 .with_alignment(TextAlignment::Leading)
                 .with_paragraph_alignment(ParagraphAlignment::Center)
                 .with_word_wrapping(WordWrapping::NoWrap);
-        let title_format_large = TextFormat::with_locale(FONT_TEXT, 16.0, FontWeight(600), locale)?
-            .with_alignment(TextAlignment::Leading)
-            .with_paragraph_alignment(ParagraphAlignment::Center)
-            .with_word_wrapping(WordWrapping::NoWrap);
+        let title_format_large =
+            TextFormat::with_locale(font_text(), 16.0, FontWeight(600), locale)?
+                .with_alignment(TextAlignment::Leading)
+                .with_paragraph_alignment(ParagraphAlignment::Center)
+                .with_word_wrapping(WordWrapping::NoWrap);
         let title_format_xlarge =
-            TextFormat::with_locale(FONT_TEXT, 18.0, FontWeight(600), locale)?
+            TextFormat::with_locale(font_text(), 18.0, FontWeight(600), locale)?
                 .with_alignment(TextAlignment::Leading)
                 .with_paragraph_alignment(ParagraphAlignment::Center)
                 .with_word_wrapping(WordWrapping::NoWrap);
-        let group_format = TextFormat::with_locale(FONT_SMALL, 12.0, FontWeight(600), locale)?
+        let group_format = TextFormat::with_locale(font_small(), 12.0, FontWeight(600), locale)?
             .with_alignment(TextAlignment::Leading)
             .with_paragraph_alignment(ParagraphAlignment::Center)
             .with_word_wrapping(WordWrapping::NoWrap);
@@ -1361,7 +1362,7 @@ impl FenceChrome {
             }
         }
         let face = if family.eq_ignore_ascii_case("Segoe UI") {
-            FONT_SMALL
+            font_small()
         } else {
             family
         };

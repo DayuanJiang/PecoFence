@@ -224,7 +224,7 @@ fn glyph_bitmap(glyph: char, px: i32, color: u32) -> Option<HBITMAP> {
             let _ = DeleteDC(mem);
             return None;
         }
-        let face = to_wide("Segoe Fluent Icons");
+        let face = to_wide(crate::fonts::icon_face());
         let font = CreateFontW(
             -px,
             0,

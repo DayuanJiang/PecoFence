@@ -100,7 +100,14 @@ mod glyph {
     pub const UNLOCK: char = '\u{E785}';
     pub const DELETE: char = '\u{E74D}';
     pub const VIEW: char = '\u{E890}';
-    pub const HIDE: char = '\u{ED1A}';
+    /// Hide (Fluent ED1A). Segoe MDL2 Assets has no crossed-out eye, so Windows 10 shows RedEye.
+    pub fn hide() -> char {
+        if pecofence_platform::fonts::fluent_icons() {
+            '\u{ED1A}'
+        } else {
+            '\u{E7B3}'
+        }
+    }
     pub const TASK_VIEW: char = '\u{E7C4}';
     pub const BROOM: char = '\u{EA99}';
     pub const MONITOR: char = '\u{E7F4}';
@@ -127,7 +134,7 @@ impl App {
             false,
             false,
         )
-        .icon(if hidden { glyph::VIEW } else { glyph::HIDE })
+        .icon(if hidden { glyph::VIEW } else { glyph::hide() })
         .item(
             CMD_NEW_FENCE,
             pecofence_core::i18n::text("新建栅栏"),

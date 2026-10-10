@@ -132,7 +132,7 @@ Microsoft Store 버전은 Microsoft가 서명하고 자동으로 업데이트되
 
 패키지 관리자가 편하다면 `winget install DayuanJiang.PecoFence`로 같은 포터블 빌드를 설치할 수 있고, SmartScreen 경고도 나타나지 않습니다.
 
-**Windows 11 x64 · 메모리 약 40 MB · 포터블 ZIP · 계정 불필요 · Apache 2.0 라이선스**
+**Windows 10 22H2 / Windows 11 x64 · 메모리 약 40 MB · 포터블 ZIP · 계정 불필요 · Apache 2.0 라이선스**
 
 처음 실행하면 선택한 언어로 “프로그램”, “폴더”, “파일 및 문서”, “바탕 화면” 펜스가 만들어집니다.
 종료하면 Windows 바탕 화면 아이콘이 다시 표시됩니다.
@@ -140,9 +140,11 @@ Microsoft Store 버전은 Microsoft가 서명하고 자동으로 업데이트되
 <details>
 <summary><strong>요구 사항, 설정 위치, 알아 두면 좋은 점</strong></summary>
 
-- Windows 11 22H2 이상을 대상으로 합니다. 실제 기기 테스트는 주로 25H2에서 진행했으며,
-  이전 버전과 여러 디스플레이 하드웨어 조합은 아직 검증 중입니다.
-- 설정 화면에는 Microsoft Edge WebView2 Runtime이 필요합니다. 함께 제공되는
+- Windows 10 22H2와 Windows 11 22H2 이상을 대상으로 합니다. 실제 기기 테스트는 주로 Windows 11 25H2에서
+  진행했으며, 이전 버전과 여러 디스플레이 하드웨어 조합은 아직 검증 중입니다. Windows 10에서는 글꼴로
+  Segoe UI, 아이콘으로 Segoe MDL2 Assets를 사용하며 설정 창과 알림 창의 모서리가 둥글지 않습니다.
+- 설정 화면에는 Microsoft Edge WebView2 Runtime이 필요합니다. Windows 11에는 포함되어 있고, Windows 10에서
+  설정이 열리지 않으면 Microsoft 사이트에서 설치하세요. 함께 제공되는
   `WebView2Loader.dll`과 `pecofence-watchdog.exe`는 앱 옆에 그대로 두세요.
 - 설정은 `%APPDATA%\PecoFence\config.json`에 저장됩니다. `--portable`로 실행하면
   실행 파일 옆의 `config` 폴더에 보관합니다.

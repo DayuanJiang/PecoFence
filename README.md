@@ -131,7 +131,7 @@ Prefer an installer? `pecofence-v<version>-x64-setup.exe` on the same page insta
 
 Prefer a package manager? `winget install DayuanJiang.PecoFence` installs the same portable build and skips the SmartScreen prompt.
 
-**Windows 11 x64 · About 40 MB of memory · Portable ZIP · No account required · Apache 2.0 licensed**
+**Windows 10 22H2 / Windows 11 x64 · About 40 MB of memory · Portable ZIP · No account required · Apache 2.0 licensed**
 
 The first launch creates four fences in your selected language: Programs, Folders,
 Files and documents, and Desktop. Windows desktop icons are restored when you exit.
@@ -139,9 +139,12 @@ Files and documents, and Desktop. Windows desktop icons are restored when you ex
 <details>
 <summary><strong>Requirements, configuration and a few useful notes</strong></summary>
 
-- Designed for Windows 11 22H2 and later. Most hands-on testing has been on 25H2;
-  the full older-version and multi-display hardware matrix is still in progress.
-- Microsoft Edge WebView2 Runtime is required for Settings. Keep the bundled
+- Runs on Windows 10 22H2 and Windows 11 22H2 or later. Most hands-on testing has been on
+  Windows 11 25H2; the full older-version and multi-display hardware matrix is still in
+  progress. Windows 10 draws text in Segoe UI and icons in Segoe MDL2 Assets, and its
+  Settings and notice windows have square corners.
+- Microsoft Edge WebView2 Runtime is required for Settings. Windows 11 includes it; on
+  Windows 10 install it from Microsoft if Settings does not open. Keep the bundled
   `WebView2Loader.dll` and `pecofence-watchdog.exe` beside the app.
 - Configuration lives in `%APPDATA%\PecoFence\config.json`. Launch with
   `--portable` to keep it in a `config` folder beside the executable.
