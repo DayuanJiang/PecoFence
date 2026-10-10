@@ -240,6 +240,7 @@ pub(super) fn on_mousemove(
                     })
                 });
                 // Nested message loop until the button is released.
+                crate::peek::set_drag_click_through(true);
                 let effect = dragdrop::do_drag_drop(hwnd, &obj, dragdrop::ALL_EFFECTS);
                 drag_returned = Some(Instant::now());
                 INTERNAL_DRAG.with(|s| *s.borrow_mut() = None);
@@ -251,9 +252,11 @@ pub(super) fn on_mousemove(
             }
         };
         // Where it landed, resolved before re-borrowing: WindowFromPoint
-        // sends WM_NCHITTEST to our own windows synchronously.
+        // sends WM_NCHITTEST to our own windows synchronously. The Peek
+        // dimmer stays see-through until then, so it is not the answer.
         let pt = window::cursor_pos();
         let target = desktop::root_ancestor(desktop::window_from_point(pt.x, pt.y));
+        crate::peek::set_drag_click_through(false);
         let class = desktop::class_name(target);
         let on_desktop = matches!(
             class.as_str(),
