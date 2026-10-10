@@ -111,7 +111,7 @@ Pegue o que precisa e pressione **Esc** para voltar.
 | **Arquivos do jeito que você conhece** | Menus de contexto do Explorador de Arquivos, arrastar e soltar, copiar e colar, seleção múltipla, miniaturas e exibição em ícones, lista ou detalhes. |
 | **Espaço quando você precisa** | Recolha um grupo até o título. Passe o mouse para expandir. Bloqueie o layout quando estiver do seu jeito. |
 | **Um caminho de volta** | Instantâneos de layout, backups diários, importação e exportação da configuração e troca de grupos entre monitores. |
-| **Leve de verdade** | Um aplicativo nativo em Rust; o painel de configurações em WebView2 só carrega quando necessário. |
+| **Leve de verdade** | Um aplicativo nativo em Rust que, ocioso, usa cerca de 40 MB de memória (segundo o Gerenciador de Tarefas). O painel de configurações em WebView2 só carrega quando necessário. |
 
 As regras de organização automática mantêm os arquivos onde eles estão. As movimentações
 que você mesmo inicia funcionam como no Explorador de Arquivos.
@@ -133,7 +133,7 @@ Prefere um instalador? O `pecofence-v<versão>-x64-setup.exe`, na mesma página,
 
 Prefere um gerenciador de pacotes? `winget install DayuanJiang.PecoFence` instala a mesma versão portátil e evita o aviso do SmartScreen.
 
-**Windows 11 x64 · ZIP portátil · Sem conta · Licença Apache 2.0**
+**Windows 11 x64 · Cerca de 40 MB de memória · ZIP portátil · Sem conta · Licença Apache 2.0**
 
 Na primeira execução são criados os grupos “Programas”, “Pastas”, “Arquivos e documentos” e
 “Área de trabalho” no idioma escolhido. Os ícones da área de trabalho do Windows voltam
