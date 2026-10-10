@@ -111,7 +111,7 @@ en cours. Prenez ce qu’il vous faut, puis appuyez sur **Échap** pour y reveni
 | **Des fichiers qui se manipulent comme d’habitude** | Menus contextuels de l’Explorateur, glisser-déposer, copier-coller, sélection multiple, miniatures et affichages Icônes, Liste ou Détails. |
 | **De la place quand il en faut** | Repliez un groupe sur son titre. Survolez-le pour le développer. Verrouillez une disposition qui vous convient. |
 | **Un retour toujours possible** | Instantanés de disposition, sauvegardes quotidiennes, import/export de la configuration et échange entre écrans. |
-| **Une empreinte légère** | Une application native en Rust ; la fenêtre Paramètres en WebView2 se charge à la demande. |
+| **Une empreinte légère** | Une application native en Rust qui occupe environ 40 Mo de mémoire au repos (d’après le Gestionnaire des tâches). La fenêtre Paramètres en WebView2 se charge à la demande. |
 
 Les règles de classement automatique laissent les fichiers à leur emplacement d’origine.
 Les déplacements que vous lancez vous-même se comportent comme dans l’Explorateur.
@@ -133,7 +133,7 @@ Vous préférez un programme d’installation ? `pecofence-v<version>-x64-setup.
 
 Vous préférez un gestionnaire de paquets ? `winget install DayuanJiang.PecoFence` installe la même version portable et évite l’avertissement SmartScreen.
 
-**Windows 11 x64 · ZIP portable · Sans compte · Licence Apache 2.0**
+**Windows 11 x64 · Environ 40 Mo de mémoire · ZIP portable · Sans compte · Licence Apache 2.0**
 
 Au premier lancement, PecoFence crée les groupes Applications, Dossiers, Fichiers et documents
 et Bureau dans la langue de votre choix. Les icônes du Bureau Windows réapparaissent quand vous quittez.

@@ -111,7 +111,7 @@ Toma lo que necesites y presiona **Esc** para volver.
 | **Archivos como siempre** | Menús contextuales del Explorador de archivos, arrastrar y soltar, copiar y pegar, selección múltiple, miniaturas y vistas de iconos, lista y detalles. |
 | **Espacio cuando lo necesitas** | Contrae un grupo hasta su título. Pasa el cursor para expandirlo. Bloquea la distribución que te gusta. |
 | **Siempre puedes volver atrás** | Instantáneas de distribución, copias de seguridad diarias, importación y exportación de la configuración e intercambio entre pantallas. |
-| **Huella mínima** | Una aplicación nativa escrita en Rust; el panel de Configuración en WebView2 se carga solo cuando hace falta. |
+| **Huella mínima** | Una aplicación nativa escrita en Rust que en reposo ocupa unos 40 MB de memoria (según el Administrador de tareas). El panel de Configuración en WebView2 se carga solo cuando hace falta. |
 
 Las reglas de organización automática dejan los archivos en su ubicación original. Los movimientos
 que inicias tú funcionan igual que en el Explorador de archivos.
@@ -133,7 +133,7 @@ La versión de Microsoft Store está firmada por Microsoft, se actualiza sola y 
 
 ¿Prefieres un gestor de paquetes? `winget install DayuanJiang.PecoFence` instala la misma versión portátil y evita el aviso de SmartScreen.
 
-**Windows 11 x64 · ZIP portátil · Sin cuenta · Licencia Apache 2.0**
+**Windows 11 x64 · Unos 40 MB de memoria · ZIP portátil · Sin cuenta · Licencia Apache 2.0**
 
 El primer inicio crea los grupos «Programas», «Carpetas», «Archivos y documentos» y «Escritorio»
 en el idioma que elijas. Los iconos del escritorio de Windows se restauran al salir.

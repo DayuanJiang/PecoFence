@@ -110,7 +110,7 @@ Grab what you need, then press **Esc** to return.
 | **Familiar file handling** | File Explorer context menus, drag and drop, copy/paste, multi-select, thumbnails and icon/list/details views. |
 | **Space when you need it** | Roll a fence up to its title. Hover to expand. Lock a layout you like. |
 | **A way back** | Layout snapshots, daily backups, configuration import/export and swapping fences between displays. |
-| **A small footprint** | A native Rust application; the WebView2 settings panel loads on demand. |
+| **A small footprint** | A native Rust application that idles at about 40 MB of memory in Task Manager. The WebView2 settings panel loads on demand. |
 
 Automatic sorting rules keep files in their original locations. File moves you
 initiate work like they do in File Explorer.
@@ -131,7 +131,7 @@ Prefer an installer? `pecofence-v<version>-x64-setup.exe` on the same page insta
 
 Prefer a package manager? `winget install DayuanJiang.PecoFence` installs the same portable build and skips the SmartScreen prompt.
 
-**Windows 11 x64 · Portable ZIP · No account required · Apache 2.0 licensed**
+**Windows 11 x64 · About 40 MB of memory · Portable ZIP · No account required · Apache 2.0 licensed**
 
 The first launch creates four fences in your selected language: Programs, Folders,
 Files and documents, and Desktop. Windows desktop icons are restored when you exit.

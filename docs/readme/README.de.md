@@ -111,7 +111,7 @@ Hol dir, was du brauchst, und kehre mit **Esc** zurück.
 | **Vertraute Dateiverwaltung** | Explorer-Kontextmenüs, Drag & Drop, Kopieren/Einfügen, Mehrfachauswahl, Miniaturansichten sowie Symbol-, Listen- und Detailansicht. |
 | **Platz, wenn du ihn brauchst** | Klappe einen Bereich bis auf den Titel ein. Zum Ausklappen einfach mit der Maus darauf zeigen. Sperre ein Layout, das dir gefällt. |
 | **Ein Weg zurück** | Layout-Momentaufnahmen, tägliche Sicherungen, Import/Export der Konfiguration und Tausch zwischen Bildschirmen. |
-| **Ein kleiner Fußabdruck** | Eine native Rust-Anwendung; das Einstellungsfenster (WebView2) wird erst bei Bedarf geladen. |
+| **Ein kleiner Fußabdruck** | Eine native Rust-Anwendung, die im Leerlauf etwa 40 MB Arbeitsspeicher belegt (laut Task-Manager). Das Einstellungsfenster (WebView2) wird erst bei Bedarf geladen. |
 
 Automatische Sortierregeln lassen Dateien an ihrem ursprünglichen Speicherort. Verschiebungen,
 die du selbst anstößt, funktionieren wie im Explorer.
@@ -132,7 +132,7 @@ Lieber mit Installer? `pecofence-v<Version>-x64-setup.exe` auf derselben Seite i
 
 Lieber per Paketmanager? `winget install DayuanJiang.PecoFence` installiert denselben portablen Build und überspringt die SmartScreen-Abfrage.
 
-**Windows 11 x64 · Portables ZIP · Kein Konto nötig · Apache-2.0-Lizenz**
+**Windows 11 x64 · Etwa 40 MB Arbeitsspeicher · Portables ZIP · Kein Konto nötig · Apache-2.0-Lizenz**
 
 Beim ersten Start werden die Bereiche „Programme“, „Ordner“, „Dateien und Dokumente“ und „Desktop“
 in der gewählten Sprache angelegt. Beim Beenden erscheinen die Windows-Desktopsymbole wieder.
