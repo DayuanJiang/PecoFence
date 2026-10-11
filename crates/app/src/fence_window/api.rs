@@ -239,6 +239,7 @@ impl FenceWindow {
             anchor_index: None,
             range_anchor: None,
             device_lost: false,
+            redraw_failed: false,
             drop_hover: false,
             roll_anim: None,
             roll_t: Tween::at(rolled_up as u8 as f32, Instant::now()),
@@ -318,7 +319,63 @@ impl FenceWindow {
     /// Shows the window with a 167 ms fade; `entrance` (a fence that did not exist a moment
     /// ago: new, torn off, new portal) adds the Fluent 0.97 → 1 scale. No-op when visible.
     pub fn show(&self, entrance: bool) {
+        if self.startup_visibility_held() {
+            return;
+        }
         show_with_fade(&self.view, self.hwnd(), entrance);
+    }
+
+    fn startup_visibility_held(&self) -> bool {
+        self.anchor
+            .borrow()
+            .as_ref()
+            .is_some_and(|anchor| anchor.startup_visibility_held())
+    }
+
+    /// The login handoff needs an opaque first frame; `show(false)` still starts at opacity 0.
+    /// Use this only for startup. Later user-driven show/hide operations keep their animation.
+    pub fn show_immediate(&self) {
+        if self.startup_visibility_held() {
+            return;
+        }
+        if self.prepare_startup_frame() {
+            self.window.show_no_activate();
+        }
+    }
+
+    /// Submit full-opacity material while the HWND is still hidden.
+    pub fn prepare_startup_frame(&self) -> bool {
+        {
+            let mut guard = self.view.borrow_mut();
+            let Some(v) = guard.as_mut() else {
+                return false;
+            };
+            if v.retired {
+                return false;
+            }
+            if v.redraw_failed && !v.device_lost && v.redraw().is_err() {
+                return false;
+            }
+            window::kill_timer(self.hwnd(), TIMER_VISIBILITY_FINISH);
+            v.vis_gen += 1;
+            v.vis_fade = None;
+            v.vis_deadline = None;
+            v.reset_root();
+        }
+        true
+    }
+
+    pub fn ready_for_desktop_takeover(&self) -> bool {
+        desktop::is_visible(self.hwnd())
+            && !desktop::is_cloaked(self.hwnd())
+            && self.ready_for_startup_material()
+    }
+
+    pub fn ready_for_startup_material(&self) -> bool {
+        self.view
+            .borrow()
+            .as_ref()
+            .is_some_and(|v| !v.retired && !v.device_lost && !v.redraw_failed)
     }
 
     /// Fades the window out (167 ms, shrinking to 0.97) ahead of its destruction. Returns

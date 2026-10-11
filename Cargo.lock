@@ -328,6 +328,7 @@ dependencies = [
  "windows-collections",
  "windows-composition",
  "windows-core",
+ "windows-future",
  "windows-numerics",
  "windows-time",
 ]

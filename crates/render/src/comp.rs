@@ -7618,6 +7618,17 @@ impl Compositor {
             .and_then(|| windows_core::imp::Type::from_abi(result__))
         }
     }
+    pub(crate) fn RequestCommitAsync(&self) -> windows_core::Result<windows_future::IAsyncAction> {
+        let this = &windows_core::Interface::cast::<ICompositor5>(self)?;
+        unsafe {
+            let mut result__ = core::mem::zeroed();
+            (windows_core::Interface::vtable(this).RequestCommitAsync)(
+                windows_core::Interface::as_raw(this),
+                &mut result__,
+            )
+            .and_then(|| windows_core::imp::Type::from_abi(result__))
+        }
+    }
     pub(crate) fn CreateGeometricClipWithGeometry<P0>(
         &self,
         geometry: P0,
@@ -10835,6 +10846,14 @@ pub struct ICompositor5_Vtbl {
     CreatePathKeyFrameAnimation: usize,
     CreateRectangleGeometry: usize,
     pub CreateRoundedRectangleGeometry: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        *mut *mut core::ffi::c_void,
+    ) -> windows_core::HRESULT,
+    CreateShapeVisual: usize,
+    CreateSpriteShape: usize,
+    CreateSpriteShapeWithGeometry: usize,
+    CreateViewBox: usize,
+    pub RequestCommitAsync: unsafe extern "system" fn(
         *mut core::ffi::c_void,
         *mut *mut core::ffi::c_void,
     ) -> windows_core::HRESULT,

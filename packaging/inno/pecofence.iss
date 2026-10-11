@@ -13,6 +13,8 @@
 #define ProductName "PecoFence"
 #define CurrentRunName "PecoFence"
 #define LegacyRunName "openFence"
+#define CurrentTaskName "PecoFence"
+#define LegacyTaskName "openFence"
 #define AppMutexNames "Local\PecoFence.SingleInstance,Local\openFence.SingleInstance"
 ; Integration tests compile this same script with an isolated identity. The public
 ; packaging command never sets TestIdentity; test installers must never be shipped.
@@ -21,6 +23,8 @@
   #define ProductName "PecoFence Installer Test " + TestIdentity
   #define CurrentRunName ProductId
   #define LegacyRunName ProductId + ".legacy"
+  #define CurrentTaskName ProductId + ".task"
+  #define LegacyTaskName ProductId + ".legacy-task"
   #define AppMutexNames "Local\" + ProductId
 #endif
 
@@ -276,20 +280,209 @@ begin
     Result := CustomMessage('InvalidDestination');
 end;
 
+function StartupExecutable(const Command: String): String;
+var
+  Value: String;
+  ClosingQuote, Space: Integer;
+begin
+  Value := Trim(Command);
+  if (Length(Value) > 0) and (Value[1] = '"') then begin
+    ClosingQuote := Pos('"', Copy(Value, 2, Length(Value) - 1));
+    if ClosingQuote > 0 then
+      Result := Copy(Value, 2, ClosingQuote - 1)
+    else
+      Result := Copy(Value, 2, Length(Value) - 1);
+  end else begin
+    Space := Pos(' ', Value);
+    if Space > 0 then
+      Result := Copy(Value, 1, Space - 1)
+    else
+      Result := Value;
+  end;
+end;
+
 procedure RemoveOwnedStartupValue(const Name: String);
 var
   Command, Executable: String;
 begin
   Executable := ExpandConstant('{app}\pecofence.exe');
   if RegQueryStringValue(HKCU, RunKey, Name, Command) then
-    if (CompareText(Trim(Command), Executable) = 0) or
-      (CompareText(Trim(Command), '"' + Executable + '"') = 0) then
+    if CompareText(StartupExecutable(Command), Executable) = 0 then
       RegDeleteValue(HKCU, RunKey, Name);
+end;
+
+function DecodeUtf16Le(const Bytes: AnsiString): String;
+var
+  I, First: Integer;
+  Code: Word;
+begin
+  Result := '';
+  First := 1;
+  if (Length(Bytes) >= 2) and (Ord(Bytes[1]) = $FF) and (Ord(Bytes[2]) = $FE) then
+    First := 3;
+  I := First;
+  while I + 1 <= Length(Bytes) do begin
+    Code := Ord(Bytes[I]) + (Ord(Bytes[I + 1]) shl 8);
+    Result := Result + Chr(Code);
+    I := I + 2;
+  end;
+end;
+
+function IsUtf8(const Bytes: AnsiString): Boolean;
+var
+  I, J, Need, Value: Integer;
+begin
+  I := 1;
+  while I <= Length(Bytes) do begin
+    Value := Ord(Bytes[I]);
+    if Value <= $7F then
+      Need := 0
+    else if (Value >= $C2) and (Value <= $DF) then
+      Need := 1
+    else if (Value >= $E0) and (Value <= $EF) then
+      Need := 2
+    else if (Value >= $F0) and (Value <= $F4) then
+      Need := 3
+    else begin
+      Result := False;
+      Exit;
+    end;
+    if I + Need > Length(Bytes) then begin
+      Result := False;
+      Exit;
+    end;
+    for J := 1 to Need do
+      if (Ord(Bytes[I + J]) < $80) or (Ord(Bytes[I + J]) > $BF) then begin
+        Result := False;
+        Exit;
+      end;
+    I := I + Need + 1;
+  end;
+  Result := True;
+end;
+
+function DecodeTaskXml(const Bytes: AnsiString): String;
+begin
+  { schtasks declares UTF-16 in the XML prologue, but its redirected console output is
+    commonly UTF-8 or the active ANSI code page and has no BOM. Only use UTF-16 decoding
+    when the bytes prove it; otherwise let Inno convert the AnsiString using Windows' code page. }
+  if (Length(Bytes) >= 2) and (Ord(Bytes[1]) = $FF) and (Ord(Bytes[2]) = $FE) then
+    Result := DecodeUtf16Le(Bytes)
+  else if (Length(Bytes) >= 3) and (Ord(Bytes[1]) = $EF) and
+    (Ord(Bytes[2]) = $BB) and (Ord(Bytes[3]) = $BF) then
+    Result := UTF8Decode(Copy(Bytes, 4, Length(Bytes) - 3))
+  else if IsUtf8(Bytes) then
+    Result := UTF8Decode(Bytes)
+  else
+    Result := Bytes;
+end;
+
+function QueryTaskXml(const Name: String; var Xml: String): Boolean;
+var
+  FileName, Parameters: String;
+  Raw: AnsiString;
+  ExitCode: Integer;
+begin
+  FileName := AddBackslash(ExpandConstant('{tmp}')) + 'pecofence-task.xml';
+  Parameters := '/C ""' + ExpandConstant('{sys}\schtasks.exe') +
+    '" /Query /TN "' + Name + '" /XML > "' + FileName + '""';
+  Xml := '';
+  Raw := '';
+  Result := Exec(ExpandConstant('{sys}\cmd.exe'), Parameters, '', SW_HIDE,
+    ewWaitUntilTerminated, ExitCode) and (ExitCode = 0) and FileExists(FileName) and
+    LoadStringFromFile(FileName, Raw);
+  if Result then
+    Xml := DecodeTaskXml(Raw);
+  DeleteFile(FileName);
+end;
+
+function XmlElement(const Xml, Name: String): String;
+var
+  OpenTag, CloseTag: String;
+  StartAt, EndAt, RelativeEnd: Integer;
+begin
+  Result := '';
+  OpenTag := '<' + Name + '>';
+  CloseTag := '</' + Name + '>';
+  StartAt := Pos(OpenTag, Xml);
+  if StartAt = 0 then
+    Exit;
+  StartAt := StartAt + Length(OpenTag);
+  RelativeEnd := Pos(CloseTag, Copy(Xml, StartAt, Length(Xml) - StartAt + 1));
+  if RelativeEnd > 0 then
+    EndAt := StartAt + RelativeEnd - 1
+  else
+    EndAt := 0;
+  if EndAt > StartAt then
+    Result := Copy(Xml, StartAt, EndAt - StartAt);
+end;
+
+function XmlUnescape(const Value: String): String;
+begin
+  Result := Value;
+  StringChangeEx(Result, '&quot;', '"', True);
+  StringChangeEx(Result, '&apos;', '''', True);
+  StringChangeEx(Result, '&lt;', '<', True);
+  StringChangeEx(Result, '&gt;', '>', True);
+  StringChangeEx(Result, '&amp;', '&', True);
+end;
+
+function Unquote(const Value: String): String;
+begin
+  Result := Trim(Value);
+  if (Length(Result) >= 2) and (Result[1] = '"') and
+    (Result[Length(Result)] = '"') then
+    Result := Copy(Result, 2, Length(Result) - 2);
+end;
+
+function HasPortableArgument(const Arguments: String): Boolean;
+var
+  Normalized: String;
+begin
+  { Be conservative about ownership when a user has added other switches or quoted
+    --portable. A portable owner must survive uninstalling the installed copy. }
+  Normalized := Lowercase(Arguments);
+  StringChangeEx(Normalized, '"', '', True);
+  StringChangeEx(Normalized, #9, ' ', True);
+  Result := Pos(' --portable ', ' ' + Normalized + ' ') > 0;
+end;
+
+procedure RemoveOwnedStartupTask(const Name: String);
+var
+  Xml, Actions, Action, Command, Arguments, Executable: String;
+  ResultCode: Integer;
+begin
+  { A portable copy or another installation may use the same task name. Only remove a task
+    whose Exec command belongs to this install directory. }
+  if not QueryTaskXml(Name, Xml) then
+    Exit;
+  Actions := XmlElement(Xml, 'Actions');
+  { Actions has a Context attribute in tasks generated by PecoFence. Match the Exec
+    block directly, but preserve any task customized to contain multiple actions. }
+  if Actions = '' then
+    Actions := Xml;
+  Action := XmlElement(Actions, 'Exec');
+  if (Action = '') or
+    (Pos('<Exec>', Copy(Actions, Pos('<Exec>', Actions) + 6, Length(Actions))) > 0) or
+    (Pos('<ComHandler', Actions) > 0) then
+    Exit;
+  Command := Unquote(XmlUnescape(XmlElement(Action, 'Command')));
+  Arguments := Trim(XmlUnescape(XmlElement(Action, 'Arguments')));
+  if (Command = '') or HasPortableArgument(Arguments) then
+    Exit;
+  Executable := ExpandConstant('{app}\pecofence.exe');
+  if CompareText(RemoveBackslashUnlessRoot(ExpandFileName(Command)),
+    RemoveBackslashUnlessRoot(ExpandFileName(Executable))) <> 0 then
+    Exit;
+  Exec(ExpandConstant('{sys}\schtasks.exe'),
+    '/Delete /TN "' + Name + '" /F', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
   if CurUninstallStep = usPostUninstall then begin
+    RemoveOwnedStartupTask('{#CurrentTaskName}');
+    RemoveOwnedStartupTask('{#LegacyTaskName}');
     RemoveOwnedStartupValue('{#CurrentRunName}');
     RemoveOwnedStartupValue('{#LegacyRunName}');
   end;

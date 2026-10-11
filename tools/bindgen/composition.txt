@@ -11,6 +11,7 @@
     Windows.UI.Composition.ICompositor2
     Windows.UI.Composition.ICompositor4
     Windows.UI.Composition.ICompositor5.CreateRoundedRectangleGeometry
+    Windows.UI.Composition.ICompositor5.RequestCommitAsync
     Windows.UI.Composition.ICompositor6.CreateGeometricClipWithGeometry
     Windows.UI.Composition.ICompositorStatics
     Windows.UI.Composition.CompositionObject

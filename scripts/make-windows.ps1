@@ -8,6 +8,7 @@ param(
   [string]$Python = "python",
   [string]$Repository = "",
   [string]$Iscc = "",
+  [ValidatePattern('^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$')][string]$StagingTag = "",
   [switch]$SkipBuild
 )
 Set-StrictMode -Version Latest
@@ -70,6 +71,8 @@ try {
 
   $distRoot = Join-Path $root "dist"
   $stagingRoot = [IO.Path]::GetFullPath((Join-Path $distRoot ".staging"))
+  # Allow another package build while a developer is running an earlier staged binary.
+  if ($StagingTag) { $stagingRoot = Join-Path $stagingRoot $StagingTag }
   $baseName = "pecofence-v$Version-x64"
   $common = Join-Path $stagingRoot "$baseName-common"
   Reset-Stage $common

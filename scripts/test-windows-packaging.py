@@ -6,6 +6,7 @@ the production setup EXE or launches PecoFence. Reports/logs stay under .cache/.
 import argparse
 import ctypes
 from ctypes import wintypes
+import html
 import hashlib
 import json
 import os
@@ -14,6 +15,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 import tomllib
 import uuid
@@ -32,6 +34,40 @@ PAYLOAD = {
 HIDDEN = subprocess.STARTUPINFO()
 HIDDEN.dwFlags |= subprocess.STARTF_USESHOWWINDOW
 HIDDEN.wShowWindow = 0
+
+
+def task_xml(name):
+    result = subprocess.run(["schtasks.exe", "/Query", "/TN", name, "/XML"],
+                            startupinfo=HIDDEN, capture_output=True, timeout=15)
+    return result.stdout if result.returncode == 0 else None
+
+
+def delete_task(name):
+    subprocess.run(["schtasks.exe", "/Delete", "/TN", name, "/F"],
+                   startupinfo=HIDDEN, capture_output=True, timeout=15)
+
+
+def create_task(name, executable, arguments="", extra_executable=None):
+    user = os.environ.get("USERNAME", "")
+    domain = os.environ.get("USERDOMAIN", "")
+    user_id = f"{domain}\\{user}" if domain and user else user
+    argument_xml = f"<Arguments>{html.escape(arguments)}</Arguments>" if arguments else ""
+    extra_action = (f"<Exec><Command>{html.escape(str(extra_executable))}</Command></Exec>"
+                    if extra_executable else "")
+    xml = f'''<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <Triggers><LogonTrigger><Enabled>true</Enabled><UserId>{html.escape(user_id)}</UserId></LogonTrigger></Triggers>
+  <Principals><Principal id="Author"><UserId>{html.escape(user_id)}</UserId><LogonType>InteractiveToken</LogonType><RunLevel>LeastPrivilege</RunLevel></Principal></Principals>
+  <Settings><MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy><DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries><StopIfGoingOnBatteries>false</StopIfGoingOnBatteries><StartWhenAvailable>false</StartWhenAvailable><RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable><RunOnlyIfIdle>false</RunOnlyIfIdle><ExecutionTimeLimit>PT0S</ExecutionTimeLimit><Priority>3</Priority></Settings>
+  <Actions Context="Author"><Exec><Command>{html.escape(str(executable))}</Command>{argument_xml}</Exec>{extra_action}</Actions>
+</Task>
+'''.encode("utf-16")
+    path = Path(tempfile.gettempdir()) / f"pecofence-installer-test-{uuid.uuid4().hex}.xml"
+    path.write_bytes(xml)
+    try:
+        run(["schtasks.exe", "/Create", "/TN", name, "/XML", path, "/F"])
+    finally:
+        path.unlink(missing_ok=True)
 
 
 def digest(data):
@@ -84,12 +120,15 @@ def main():
     parser.add_argument("--target-dir", type=Path, default=ROOT / "target/package")
     parser.add_argument("--repository", default=os.getenv("GITHUB_REPOSITORY") or "DayuanJiang/PecoFence")
     parser.add_argument("--iscc", help="ISCC.exe; default: the ISCC variable, PATH, then common install folders")
+    parser.add_argument("--staging-tag", default="", help="StagingTag used by make-windows.ps1")
     args = parser.parse_args()
     iscc = find_iscc(args.iscc)
     version = tomllib.loads((ROOT / "Cargo.toml").read_text(encoding="utf-8"))["workspace"]["package"]["version"]
     base = f"pecofence-v{version}-x64"
     dist = ROOT / "dist"
-    payload = dist / ".staging" / f"{base}-installed"
+    if args.staging_tag and not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", args.staging_tag):
+        parser.error("Invalid --staging-tag")
+    payload = dist / ".staging" / args.staging_tag / f"{base}-installed"
     passed = []
 
     for suffix in ("portable.zip", "setup.exe"):
@@ -112,6 +151,7 @@ def main():
     product_name = f"PecoFence Installer Test {identity}"
     uninstall_key = UNINSTALL + "\\" + product_id + "_is1"
     run_names = (product_id, product_id + ".legacy")
+    task_names = (product_id + ".task", product_id + ".legacy-task")
     stage = ROOT / ".cache" / f"installer-{identity}"
     stage.mkdir(parents=True)
     installed = stage / "installed copy"
@@ -119,8 +159,10 @@ def main():
     shutil.copytree(payload, fixture)
     report = stage / "report.json"
     actual_startup = {name: reg_value(RUN, name) for name in ("PecoFence", "openFence")}
+    actual_tasks = {name: task_xml(name) for name in ("PecoFence", "openFence")}
     assert reg_value(uninstall_key, "InstallLocation") is None
     assert all(reg_value(RUN, name) is None for name in run_names)
+    assert all(task_xml(name) is None for name in task_names)
     desktop_link = shell_folder(0x10) / f"{product_name}.lnk"
     menu_group = shell_folder(0x02) / product_name
     assert not desktop_link.exists() and not menu_group.exists()
@@ -189,6 +231,7 @@ def main():
         assert desktop_link.is_file() and (menu_group / f"{product_name}.lnk").is_file()
         for name in PAYLOAD:
             assert (installed / name).read_bytes() == (payload / name).read_bytes()
+        assert all(task_xml(name) is None for name in task_names), "Setup registered a startup task"
         passed.append("per-user install, exact payload, shortcuts, fork links and no setup autostart")
 
         setup(new, "reject-relocation", f"/DIR={stage / 'other install'}", success=False)
@@ -238,13 +281,17 @@ def main():
         with winreg.CreateKey(winreg.HKEY_CURRENT_USER, RUN) as key:
             winreg.SetValueEx(key, run_names[0], 0, winreg.REG_SZ, f'"{installed / "pecofence.exe"}"')
             winreg.SetValueEx(key, run_names[1], 0, winreg.REG_SZ, other_command)
+        create_task(task_names[0], installed / "pecofence.exe")
+        create_task(task_names[1], installed / "pecofence.exe", '--no-hide-icons "--portable"')
         uninstall("uninstall")
         assert not any((installed / name).exists() for name in PAYLOAD)
         assert not desktop_link.exists() and not menu_group.exists()
         assert all(p.read_bytes() == data for p, data in retained.items())
         assert reg_value(RUN, run_names[0]) is None
         assert reg_value(RUN, run_names[1]) == other_command
-        passed.append("uninstall removes managed files/shortcuts, keeps data and another copy's startup entry")
+        assert task_xml(task_names[0]) is None, "Uninstall kept the installed copy's startup task"
+        assert task_xml(task_names[1]) is not None, "Uninstall removed a portable startup task"
+        passed.append("uninstall removes managed files/shortcuts, keeps data and other startup owners")
 
         # A folder an older ZIP was extracted into (the default directory, for some users).
         extracted = stage / "extracted zip"
@@ -263,8 +310,19 @@ def main():
         relocated = stage / "new location"
         setup(new, "reinstall-after-deleted-folder", f"/DIR={relocated}")
         assert Path(reg_value(uninstall_key, "InstallLocation")) == relocated
+        create_task(task_names[0], stage / "another copy/pecofence.exe")
+        foreign_task = task_xml(task_names[0])
+        assert foreign_task is not None
+        create_task(task_names[1], relocated / "pecofence.exe",
+                    extra_executable=stage / "another copy/pecofence.exe")
+        mixed_task = task_xml(task_names[1])
+        assert mixed_task is not None
         uninstall("uninstall-reinstalled")
         assert not (relocated / "pecofence.exe").exists()
+        assert task_xml(task_names[0]) == foreign_task, "Uninstall changed another directory's task"
+        assert task_xml(task_names[1]) == mixed_task, "Uninstall changed a task with mixed owners"
+        passed.append("uninstall preserves a startup task owned by another directory")
+        passed.append("uninstall preserves a task with multiple actions")
         passed.append("a registration whose folder was deleted does not block a new location")
     finally:
         # The only persistent writes outside .cache belong to this generated test ID.
@@ -277,7 +335,10 @@ def main():
                         winreg.DeleteValue(key, name)
                     except FileNotFoundError:
                         pass
+            for name in task_names:
+                delete_task(name)
             assert {name: reg_value(RUN, name) for name in actual_startup} == actual_startup
+            assert {name: task_xml(name) for name in actual_tasks} == actual_tasks
             report.write_text(json.dumps({"passed": passed, "testIdentity": product_id}, indent=2), encoding="utf-8")
             print(f"{len(passed)} packaging/installer checks passed; report: {report}")
 

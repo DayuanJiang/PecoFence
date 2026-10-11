@@ -21,8 +21,10 @@ The WebView2 loader is imported at process startup and must be next to the execu
 even if Settings is not opened. The watchdog should also be packaged beside the app.
 
 For an isolated test instance, use a separate directory, `--portable`,
-`--no-hide-icons` and a unique `PECOFENCE_INSTANCE`. Keep autostart disabled in its
-configuration. Portable startup leaves the Windows autostart entry alone.
+`--no-hide-icons` and a unique `PECOFENCE_INSTANCE`. Named instances skip automatic
+startup reconciliation. Keep autostart disabled and do not toggle its setting when
+testing, since an explicit settings change still updates the user's startup task. Portable
+startup includes `--portable` in the task or Run-key fallback when explicitly enabled.
 `--exit-after <milliseconds>` closes a smoke-test instance automatically.
 
 ## Verification
@@ -48,6 +50,21 @@ opens an isolated portable Settings window, changes all ten languages through th
 real IPC handler, and checks saved preferences and preservation of names/autostart.
 It keeps its generated configuration and report under `.cache/`.
 
+`python scripts/test-startup-smoke.py` checks concurrent wallpaper preparation,
+hidden-material and visible-frame Composition commits, full-opacity fences,
+portable restart, valid/corrupt disk caches, a display notification sent only to
+the test process, and missing-then-available wallpaper recovery. It asserts that
+incomplete windows remain hidden through anchor retries. It uses named instances and
+`--no-hide-icons`, reads production startup registrations only to assert they remain
+unchanged, and saves reports under `.cache/startup-smoke-*/`. It does not simulate
+Windows logon or test actual Explorer icon takeover. See [STARTUP.md](STARTUP.md)
+for the real-logon checklist, phase logs and the research behind the implementation.
+
+`cargo test -p pecofence-platform isolated_task_registration_round_trip -- --ignored`
+explicitly checks the production XML writer and scheduler registration using a unique
+`PecoFence.StartupTest.*` name, then deletes that task. Its action points to the test
+runner, never the production application. The regular workspace test run skips it.
+
 `powershell -File scripts/cli-smoke.ps1` starts an isolated `PECOFENCE_INSTANCE=clitest`
 instance from a scratch copy of the debug binaries and drives it with `pecofence-cli`
 (create, move, resize, set options, settings, rules, snapshots, delete), asserting the JSON
@@ -65,6 +82,10 @@ identical binaries as a portable ZIP and an Inno Setup installer. Reuse a curren
 release build with `-SkipBuild -TargetDir target/package`. `-Format Portable` avoids
 requiring Inno Setup; `scripts/make-portable.ps1` remains a compatibility entry point.
 `-Format Installer` builds only setup. No MSIX staging directory is reused.
+When running an earlier staged binary, pass `-StagingTag your-test-name` to keep
+that directory intact, then use the matching `--staging-tag your-test-name` in the
+packaging test. Install the setup for logon testing; a staging directory is not a
+permanent autostart location.
 
 The compiler is found through `-Iscc`, `ISCC`, PATH or common Inno Setup 7 install
 locations (`scripts/find-iscc.ps1`, which the packaging test also uses). `-Python` accepts a Python executable path, including one returned by
@@ -81,8 +102,9 @@ isolated validation instead of installing a fork package over a real installatio
 The packaging test checks the ZIP and setup payloads, binary equality and checksums.
 It then compiles the production `.iss` with a random **test-only** identity and two
 synthetic versions, installs to `.cache/`, upgrades and uninstalls. It exercises
-shortcuts, startup ownership, retained data, mutex blocking, destination/version
-guards and upgrading a folder that holds an extracted ZIP, without starting PecoFence. Temporary test shortcuts/registry entries are
+shortcuts, Run-key and Task Scheduler startup ownership, retained data, mutex blocking,
+destination/version guards and upgrading a folder that holds an extracted ZIP, without
+starting PecoFence. Temporary test shortcuts/registry entries/tasks are
 cleaned up; reports and logs remain under `.cache/installer-*/`. Never distribute
 these synthetic test installers. Manually inspect the setup wizard and supported
 Windows/DPI combinations before release.

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Windows startup now uses a current-user Task Scheduler logon task at Above Normal priority, with the Run key as a fallback. Portable startup keeps `--portable` so it reopens the right configuration. Startup registration runs in the background, allowing the window message loop to start promptly.
+- Wallpaper preparation now starts alongside graphics initialization, with a validated on-disk startup cache and background contrast sampling. Fences remain hidden until their real material is committed, then appear without a fade; Explorer's icons are hidden after the visible frame is committed. This removes the intentional dark placeholder stage. A taskbar work-area change no longer discards the prepared wallpaper and starts decoding again. Missing wallpaper or failed presentation leaves Explorer's icons available.
+- The previous-run recovery marker is checked before the current run can create it, avoiding a false abnormal-exit notification. The watchdog preserves the marker if Explorer could not restore the icons.
+- Startup registration preserves existing entries if both Task Scheduler and the Run-key fallback fail. Transient presentation/redraw failures retain Explorer and retry after a backoff; uninstall preserves portable tasks and tasks with multiple actions. This change does not guarantee a seamless cold logon: the original desktop can still appear before fences are ready.
+
 ## 0.1.5
 
 - 「打开配置文件夹」 opens the right folder in the Store edition (#45). Windows keeps what a Store app writes under %APPDATA% in the package's own `LocalCache\Roaming` folder, and Explorer cannot see the file at the %APPDATA% path, so the button opened Documents. The settings page (and `pecofence-cli status` / `paths`) now show the real location, and the button opens it with config.json selected.

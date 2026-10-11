@@ -25,11 +25,15 @@ fn main() {
     }
     // Give Explorer a moment, then restore if still hidden.
     std::thread::sleep(std::time::Duration::from_millis(300));
-    let generation = desktop::detect_generation();
-    if let Some(host) = desktop::resolve_icon_host(generation)
-        && shell_icons::desktop_icons_hidden()
-    {
-        let _ = shell_icons::set_desktop_icons_hidden(false, host.def_view, host.host);
+    if shell_icons::desktop_icons_hidden() {
+        let generation = desktop::detect_generation();
+        let Some(host) = desktop::resolve_icon_host(generation) else {
+            return; // Explorer may be exiting; keep ownership for the next run.
+        };
+        if shell_icons::set_desktop_icons_hidden(false, host.def_view, host.host) != Some(false) {
+            return;
+        }
     }
+    // Only successful restoration (or icons already visible) releases recovery ownership.
     let _ = std::fs::remove_file(&marker);
 }

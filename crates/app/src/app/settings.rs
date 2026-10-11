@@ -499,6 +499,11 @@ impl App {
     }
 
     fn apply_desktop_icons_hidden(&self, hidden: bool) -> bool {
+        if hidden && !self.desktop_takeover_ready {
+            // A settings/IPC request during startup is applied by the first-frame handoff.
+            // While presentation is retrying, keep Explorer usable until a frame is ready.
+            return self.startup_handoff.is_some();
+        }
         let mut guard = self.anchor.borrow_mut();
         let Some(a) = guard.as_mut() else {
             return false;
@@ -526,7 +531,14 @@ impl App {
             return;
         }
         if new.autostart != old.autostart {
-            let _ = pecofence_platform::autostart::set_product_enabled(new.autostart);
+            if let Err(error) = pecofence_platform::autostart::set_product_enabled(
+                pecofence_platform::autostart::StartupSpec {
+                    enabled: new.autostart,
+                    portable: self.portable,
+                },
+            ) {
+                tracing::warn!(%error, "autostart setting could not be reconciled");
+            }
             if pecofence_platform::process::is_packaged() {
                 // Store installs: Windows owns the startup task, so hand the user the switch.
                 let _ = shell::shell_execute(

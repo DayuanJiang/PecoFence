@@ -137,6 +137,7 @@ impl App {
                 w.show(true);
             }
         }
+        self.invalidate_startup_presentation();
         self.push_settings_state();
     }
 
@@ -383,9 +384,13 @@ impl App {
 
     pub(super) fn on_display_changed(&mut self) {
         self.end_peek_now();
-        self.state.work_areas = work_areas();
+        let fresh = work_areas();
+        let wallpaper_mapping_changed =
+            super::visuals::wallpaper_mapping_changed(&self.state.work_areas, &fresh);
+        self.state.work_areas = fresh;
         self.state.ensure_layout();
         // A different monitor set may select a different layout: sync windows first.
+        let previous: Vec<HWND> = self.fences.values().map(FenceWindow::hwnd).collect();
         self.sync_fence_windows();
         for fence in self.state.fences().to_vec() {
             if let Some(w) = self.fences.get(&fence.id) {
@@ -411,8 +416,30 @@ impl App {
         for w in self.fences.values() {
             w.repaint_shadow();
         }
-        // Wallpaper regions moved with the monitors: rebuild the backdrops unconditionally.
-        self.refresh_visuals(true);
+        // Do not leave replacement windows hidden until an anchor retry notices them. A
+        // monitor transition gets an opaque frame; preserve an explicit quick-hide state.
+        let hidden = self
+            .anchor
+            .borrow()
+            .as_ref()
+            .is_some_and(DesktopAnchor::fences_hidden);
+        if !hidden && self.startup_handoff.is_none() {
+            for w in self.fences.values() {
+                if !previous.contains(&w.hwnd()) {
+                    w.show_immediate();
+                }
+            }
+        }
+        if let Some(anchor) = self.anchor.borrow_mut().as_mut() {
+            anchor.reanchor("display layout updated");
+        }
+        // The taskbar changes the work area during logon, but wallpaper pixels are mapped to
+        // full monitor bounds. Keep an in-flight decode (and icon caches) in that case.
+        if !wallpaper_mapping_changed {
+            tracing::info!("work-area-only change; keeping prepared wallpaper");
+        }
+        self.refresh_visuals(wallpaper_mapping_changed);
+        self.invalidate_startup_presentation();
     }
 
     pub fn toggle_all_fences(&mut self) {

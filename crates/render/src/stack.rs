@@ -2,11 +2,27 @@
 
 use pecofence_platform::HWND;
 use std::cell::RefCell;
+use std::sync::{Arc, Mutex};
+use std::time::Instant;
 use windows_canvas::{GpuDevice, RenderTarget};
 use windows_composition::{
     CompositionGraphicsDevice, Compositor, DesktopWindowTarget, DispatcherQueueController,
 };
-use windows_core::Result;
+use windows_core::{Interface, Result};
+
+/// Keeps the first commit alive and records presentation completion independently of the UI
+/// message queue. A missed/reentrant notification can therefore be retried safely.
+pub struct PendingPresentation {
+    _commit: windows_future::IAsyncAction,
+    result: Arc<Mutex<Option<Result<()>>>>,
+    pub started: Instant,
+}
+
+impl PendingPresentation {
+    pub fn take_result(&self) -> Option<Result<()>> {
+        self.result.lock().unwrap_or_else(|e| e.into_inner()).take()
+    }
+}
 
 enum QueueOwner {
     /// Queue created by `windows-composition` (DQTAT_COM_ASTA).
@@ -58,6 +74,7 @@ pub(crate) fn note_draw() {
 }
 
 fn create_gpu(compositor: &Compositor, generation: u32) -> Result<(Gpu, bool)> {
+    let started = Instant::now();
     let (device, is_warp) = match GpuDevice::new() {
         Ok(d) => (d, false),
         Err(e) => {
@@ -65,7 +82,17 @@ fn create_gpu(compositor: &Compositor, generation: u32) -> Result<(Gpu, bool)> {
             (GpuDevice::new_warp()?, true)
         }
     };
+    tracing::info!(
+        elapsed_ms = started.elapsed().as_millis(),
+        is_warp,
+        "render phase: graphics device ready"
+    );
+    let started = Instant::now();
     let graphics = device.create_graphics_device(compositor)?;
+    tracing::info!(
+        elapsed_ms = started.elapsed().as_millis(),
+        "render phase: composition graphics device ready"
+    );
     Ok((
         Gpu {
             device,
@@ -78,6 +105,7 @@ fn create_gpu(compositor: &Compositor, generation: u32) -> Result<(Gpu, bool)> {
 
 impl RenderStack {
     pub fn new() -> Result<Self> {
+        let started = Instant::now();
         let (queue, queue_path) = match DispatcherQueueController::create_on_current_thread() {
             Ok(q) => (QueueOwner::Wrapper(q), "wrapper(DQTAT_COM_ASTA)"),
             Err(e) => {
@@ -91,7 +119,16 @@ impl RenderStack {
                 )
             }
         };
+        tracing::info!(
+            elapsed_ms = started.elapsed().as_millis(),
+            "render phase: dispatcher queue ready"
+        );
+        let started = Instant::now();
         let compositor = Compositor::new()?;
+        tracing::info!(
+            elapsed_ms = started.elapsed().as_millis(),
+            "render phase: compositor ready"
+        );
         let (gpu, is_warp) = create_gpu(&compositor, 0)?;
         Ok(Self {
             _queue: queue,
@@ -99,6 +136,63 @@ impl RenderStack {
             gpu: RefCell::new(gpu),
             is_warp,
             queue_path,
+        })
+    }
+
+    /// Commits the visual tree, then waits for DWM presentation away from the UI thread.
+    /// The caller must keep pumping messages: RequestCommitAsync completion is dispatched by
+    /// the window loop. ShowWindow alone does not mean a Composition surface is on screen.
+    pub fn present_first_frame(
+        &self,
+        notify: impl FnOnce() + Send + 'static,
+    ) -> Result<PendingPresentation> {
+        let compositor: crate::comp::Compositor = self.compositor.as_raw().cast()?;
+        let commit = compositor.RequestCommitAsync()?;
+        let started = Instant::now();
+        let result = Arc::new(Mutex::new(None));
+        let completed = result.clone();
+        let completion = Arc::new(Mutex::new(Some(notify)));
+        commit.when(move |outcome| {
+            if let Err(error) = outcome {
+                *completed.lock().unwrap_or_else(|e| e.into_inner()) = Some(Err(error));
+                if let Some(notify) = completion.lock().unwrap_or_else(|e| e.into_inner()).take() {
+                    notify();
+                }
+                return;
+            }
+            tracing::info!(
+                elapsed_ms = started.elapsed().as_millis(),
+                "startup phase: composition commit completed"
+            );
+            let worker_result = completed.clone();
+            let worker_notify = completion.clone();
+            if let Err(error) = std::thread::Builder::new()
+                .name("pecofence-first-frame".into())
+                .spawn(move || {
+                    let outcome = pecofence_platform::dwm::flush();
+                    *worker_result.lock().unwrap_or_else(|e| e.into_inner()) = Some(outcome);
+                    if let Some(notify) = worker_notify
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .take()
+                    {
+                        notify();
+                    }
+                })
+            {
+                tracing::warn!(%error, "first-frame presentation worker failed to start");
+                *completed.lock().unwrap_or_else(|e| e.into_inner()) = Some(Err(
+                    windows_core::Error::from_hresult(windows_core::HRESULT(0x80004005u32 as i32)),
+                ));
+                if let Some(notify) = completion.lock().unwrap_or_else(|e| e.into_inner()).take() {
+                    notify();
+                }
+            }
+        })?;
+        Ok(PendingPresentation {
+            _commit: commit,
+            result,
+            started,
         })
     }
 

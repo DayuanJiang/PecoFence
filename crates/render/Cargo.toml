@@ -12,6 +12,7 @@ windows-canvas = { workspace = true }
 windows-composition = { workspace = true }
 windows-collections = "0.100"
 windows-time = "0.100"
+windows-future = "0.100"
 bezier_easing = "0.3"
 pecofence-platform = { path = "../platform" }
 tracing = { workspace = true }

@@ -3,7 +3,8 @@
 use crate::anchor::{self, AnchorCell, DesktopAnchor, ShowDesktopBehavior, ZMode};
 use crate::commands::{
     Command, CommandQueue, TransferMode, WM_APP_COMMAND, WM_APP_FRAME, WM_APP_FS_CHANGED,
-    WM_APP_PEEK_FOCUSED, WM_APP_PREWARM_DONE, WM_APP_SHELL_CHANGED, WM_APP_TRAY, WM_APP_WALLPAPER,
+    WM_APP_PEEK_FOCUSED, WM_APP_PREWARM_DONE, WM_APP_SHELL_CHANGED, WM_APP_STARTUP_PRESENTED,
+    WM_APP_STARTUP_WALLPAPER_DONE, WM_APP_TRAY, WM_APP_WALLPAPER,
 };
 use crate::fence_window::{
     BackdropMode, BackdropSets, Behavior, FenceContext, FenceWindow, ItemView, TabView,
@@ -62,6 +63,7 @@ mod portals;
 mod push;
 mod rating;
 mod settings;
+mod startup;
 mod sync;
 mod tabs;
 #[cfg(test)]
@@ -69,14 +71,15 @@ mod tests;
 mod testscript;
 mod updates;
 mod visuals;
+mod wallpaper_disk_cache;
 mod wallpaper_refresh;
 
 use fences::work_areas;
 use fileops::{FileOp, FileOpThen};
 use peek::peek_hotkey_label;
 use visuals::{
-    backdrop_mode_for, build_backdrop_sets, fence_style_for, icon_variant_for, pick_theme_mode,
-    shadow_style_for, theme_for, tray_icon_image,
+    backdrop_mode_for, fence_style_for, icon_variant_for, pick_theme_mode, shadow_style_for,
+    theme_for, tray_icon_image,
 };
 use wallpaper_refresh::{BackdropCache, FIRST_CHECK_MS, RefreshSchedule, supersedes};
 
@@ -114,6 +117,10 @@ const GPU_TRIM_IDLE_MS: u32 = 3_000;
 /// this long (every signal re-arms it), and finishes a prepared one.
 const TIMER_WALLPAPER_PREWARM: usize = 55;
 const TIMER_PREWARM_FINISH: usize = 56;
+/// Retries applying a completed startup wallpaper when a modal handler temporarily owns App.
+const TIMER_STARTUP_WALLPAPER_RETRY: usize = 60;
+/// Polls the actual first-frame completion, including when its message arrived reentrantly.
+const TIMER_STARTUP_PRESENTED: usize = 61;
 /// The tray icon could not be added (taskbar not ready, or the App was busy on
 /// `TaskbarCreated`): try again.
 const TIMER_TRAY_RETRY: usize = 57;
@@ -239,6 +246,8 @@ pub struct App {
     frame_run: FrameRun,
     /// `--no-hide-icons`: keep Explorer's icons visible this run without persisting the choice.
     no_hide_icons: bool,
+    /// Whether this process uses the executable-adjacent portable configuration directory.
+    portable: bool,
     /// `--light` / `--dark`: pin the theme this run.
     theme_override: Option<ThemeMode>,
     peek_class: WindowClass,
@@ -251,6 +260,9 @@ pub struct App {
     /// Fingerprint of the snapshot the current backdrops were built from.
     wallpaper_sig: Option<String>,
     wallpaper_cache: BackdropCache,
+    startup_wallpaper: Option<visuals::StartupWallpaperJob>,
+    startup_handoff: Option<startup::StartupHandoff>,
+    desktop_takeover_ready: bool,
     /// Another virtual desktop's wallpaper being decoded ahead of a switch there.
     prewarm: Option<visuals::PrewarmJob>,
     /// The hotkey currently registered (None = registration failed or Peek disabled).
@@ -276,14 +288,8 @@ fn command_name(cmd: &Command) -> String {
 impl App {
     /// Creates everything and returns the shared cell the control window drives.
     pub fn create(args: Args) -> Result<AppCell> {
+        let startup_started = Instant::now();
         let cell: AppCell = Rc::new(RefCell::new(None));
-
-        let stack = Rc::new(RenderStack::new()?);
-        tracing::info!(
-            queue = stack.queue_path,
-            warp = stack.is_warp,
-            "composition stack ready"
-        );
 
         let areas = work_areas();
         for w in &areas {
@@ -298,6 +304,44 @@ impl App {
             tracing::warn!(to = %p.display(), "config.json unreadable; kept aside");
         }
 
+        let queue = CommandQueue::new();
+
+        // Create the desktop anchor early so it can resolve the Explorer host and keep the
+        // eventual fence block anchored. Icon takeover is deliberately deferred until after the
+        // first fence frame is visible, so a slow graphics initialization cannot leave a blank
+        // desktop between Explorer and PecoFence.
+        let sentinel_class = anchor::register_sentinel_class()?;
+        let zmode = match state.config.settings.zorder {
+            ZOrderSetting::InsertAboveHost => ZMode::InsertAboveHost,
+            ZOrderSetting::HwndBottom => ZMode::HwndBottom,
+        };
+        let behavior = match state.config.settings.show_desktop {
+            ShowDesktopSetting::KeepVisible => ShowDesktopBehavior::KeepVisible,
+            ShowDesktopSetting::HideWithDesktop => ShowDesktopBehavior::HideWithDesktop,
+        };
+        let anchor_cell = DesktopAnchor::create(
+            zmode,
+            behavior,
+            state.config.settings.quick_hide.enabled,
+            &sentinel_class,
+        )?;
+        std::mem::forget(sentinel_class);
+        // Capture the marker before this run can create it. The marker is kept while icons are
+        // hidden, so checking it later without this snapshot would report the current run as a
+        // previous unclean shutdown.
+        let stale_marker_present = anchor_cell
+            .borrow()
+            .as_ref()
+            .is_some_and(|a| a.stale_marker_present());
+        tracing::debug!(stale_marker_present, "startup icon marker state captured");
+        if let Some(a) = anchor_cell.borrow_mut().as_mut() {
+            a.hold_startup_visibility(true);
+            let q = queue.clone();
+            a.on_marquee = Some(Box::new(move |event| {
+                q.push(Command::DesktopMarquee(event))
+            }));
+        }
+
         let theme_mode = pick_theme_mode(state.config.settings.theme, &args);
         let accent = systheme::accent_palette();
         let theme = theme_for(
@@ -305,16 +349,24 @@ impl App {
             state.config.settings.theme_style,
             accent.as_ref(),
         );
-        let (backdrops, wallpaper_sig) =
-            match build_backdrop_sets(&theme, args.wallpaper_override.as_deref()) {
-                Ok((backdrops, signature)) => (backdrops, Some(signature)),
-                Err(error) => {
-                    tracing::warn!(%error, "wallpaper unavailable at startup; solid backdrop");
-                    (Rc::new(BackdropSets::default()), None)
-                }
-            };
-
-        let queue = CommandQueue::new();
+        // Overlap Explorer/WIC/disk work with graphics and window initialization. No HWND is
+        // needed by this worker; the result slot is polled once the control window exists.
+        let startup_wallpaper = visuals::StartupWallpaperJob::spawn(
+            theme,
+            args.wallpaper_override.clone(),
+            visuals::startup_wallpaper_cache_path(&state),
+            0,
+            None,
+        );
+        tracing::info!("startup phase: initializing render stack");
+        let stack = Rc::new(RenderStack::new()?);
+        tracing::info!(
+            queue = stack.queue_path,
+            warp = stack.is_warp,
+            "composition stack ready"
+        );
+        let backdrops = Rc::new(BackdropSets::default());
+        let wallpaper_sig: Option<String> = None;
 
         // Control window: timers, tray callbacks, command pump.
         let control_class = WindowClass::register("PecoFence.Control", ClassOptions::default())?;
@@ -392,6 +444,26 @@ impl App {
                         }
                         WM_APP_PREWARM_DONE => {
                             window::set_timer(hwnd, TIMER_PREWARM_FINISH, 1);
+                            Some(0)
+                        }
+                        WM_APP_STARTUP_WALLPAPER_DONE => {
+                            if let Ok(mut guard) = cell.try_borrow_mut()
+                                && let Some(app) = guard.as_mut()
+                            {
+                                app.finish_startup_wallpaper();
+                            } else {
+                                window::set_timer(hwnd, TIMER_STARTUP_WALLPAPER_RETRY, 50);
+                            }
+                            Some(0)
+                        }
+                        WM_APP_STARTUP_PRESENTED => {
+                            if let Ok(mut guard) = cell.try_borrow_mut()
+                                && let Some(app) = guard.as_mut()
+                            {
+                                app.check_startup_presentation();
+                            } else {
+                                window::set_timer(hwnd, TIMER_STARTUP_PRESENTED, 50);
+                            }
                             Some(0)
                         }
                         WM_APP_ICON_READY => {
@@ -482,6 +554,23 @@ impl App {
                                         }
                                     } else {
                                         window::set_timer(hwnd, wparam, 200);
+                                    }
+                                }
+                                TIMER_STARTUP_WALLPAPER_RETRY => {
+                                    window::kill_timer(hwnd, TIMER_STARTUP_WALLPAPER_RETRY);
+                                    if let Ok(mut guard) = cell.try_borrow_mut()
+                                        && let Some(app) = guard.as_mut()
+                                    {
+                                        app.finish_startup_wallpaper();
+                                    } else {
+                                        window::set_timer(hwnd, TIMER_STARTUP_WALLPAPER_RETRY, 50);
+                                    }
+                                }
+                                TIMER_STARTUP_PRESENTED => {
+                                    if let Ok(mut guard) = cell.try_borrow_mut()
+                                        && let Some(app) = guard.as_mut()
+                                    {
+                                        app.check_startup_presentation();
                                     }
                                 }
                                 TIMER_HOUSEKEEPING => {
@@ -730,30 +819,6 @@ impl App {
         queue.attach(&control);
         std::mem::forget(control_class); // class lives for the process
 
-        // Desktop anchor (z-order, show desktop, quick hide, icon hiding).
-        let sentinel_class = anchor::register_sentinel_class()?;
-        let zmode = match state.config.settings.zorder {
-            ZOrderSetting::InsertAboveHost => ZMode::InsertAboveHost,
-            ZOrderSetting::HwndBottom => ZMode::HwndBottom,
-        };
-        let behavior = match state.config.settings.show_desktop {
-            ShowDesktopSetting::KeepVisible => ShowDesktopBehavior::KeepVisible,
-            ShowDesktopSetting::HideWithDesktop => ShowDesktopBehavior::HideWithDesktop,
-        };
-        let anchor_cell = DesktopAnchor::create(
-            zmode,
-            behavior,
-            state.config.settings.quick_hide.enabled,
-            &sentinel_class,
-        )?;
-        std::mem::forget(sentinel_class);
-        if let Some(a) = anchor_cell.borrow_mut().as_mut() {
-            let q = queue.clone();
-            a.on_marquee = Some(Box::new(move |event| {
-                q.push(Command::DesktopMarquee(event))
-            }));
-        }
-
         let motion = Rc::new(Motion::new(&stack)?);
         motion.set_enabled(sysparams::client_area_animation());
         let frames = {
@@ -925,6 +990,7 @@ impl App {
             frame_prev: None,
             frame_run: FrameRun::default(),
             no_hide_icons: args.no_hide_icons,
+            portable: args.portable,
             theme_override: if args.light {
                 Some(ThemeMode::Light)
             } else if args.dark {
@@ -949,6 +1015,12 @@ impl App {
             cut_clip_seq: 0,
             wallpaper_sig,
             wallpaper_cache: BackdropCache::default(),
+            startup_wallpaper,
+            desktop_takeover_ready: false,
+            startup_handoff: Some(startup::StartupHandoff::new(
+                startup_started,
+                stale_marker_present,
+            )),
             prewarm: None,
         };
         if let Some(signature) = app.wallpaper_sig.clone() {
@@ -1026,8 +1098,17 @@ impl App {
         });
         window::set_timer(control, TIMER_GPU_TRIM, GPU_TRIM_IDLE_MS);
         // Initial desktop sync + windows.
+        let sync_started = Instant::now();
         app.sync_desktop_if_available("startup");
         app.state.refresh_all_portals();
+        tracing::info!(
+            elapsed_ms = sync_started.elapsed().as_millis(),
+            "startup phase: desktop and portal sync complete"
+        );
+        let windows_started = Instant::now();
+        // If the concurrent worker already finished, create windows with the final material
+        // directly. Otherwise draw them hidden and install the result from the message loop.
+        app.finish_startup_wallpaper();
         app.sync_fence_windows();
         // Fences never stay on top of each other: pull apart any overlap the layout brings.
         app.settle_unplaced(true);
@@ -1043,56 +1124,35 @@ impl App {
         if let Some(a) = app.anchor.borrow_mut().as_mut() {
             a.reanchor("startup");
         }
-        for f in app.fences.values() {
-            f.show(false);
+        tracing::info!(
+            count = app.fences.len(),
+            elapsed_ms = windows_started.elapsed().as_millis(),
+            "startup phase: fence windows prepared"
+        );
+        if let Some(startup) = app.startup_handoff.as_mut() {
+            startup.windows_prepared = true;
         }
-        if let Some(a) = app.anchor.borrow_mut().as_mut() {
-            a.reanchor("after show");
-            tracing::debug!(
-                "z-order after show:
-{}",
-                a.zorder_report(false)
-            );
-            if a.stale_marker_present() {
-                tracing::warn!(
-                    "stale icons-hidden marker found: previous run did not restore icons"
-                );
-                if let Some(t) = &app.tray {
-                    t.show_info(
-                        "PecoFence",
-                        pecofence_core::i18n::text(
-                            "上次 PecoFence 没有正常退出，桌面图标没能恢复显示。现在已重新接管。",
-                        ),
-                        true,
-                    );
-                }
-            }
-            if app.state.config.settings.hide_real_icons && !app.no_hide_icons {
-                // At logon Explorer's desktop may not be ready yet: retried from the anchor's
-                // periodic check; housekeeping resets the setting if it never succeeds.
-                a.request_hide_desktop_icons();
-            }
-        }
-        // Portable/development runs do not change login startup. Normal releases
-        // adopt the renamed entry while keeping an existing working PecoFence copy.
-        if !args.portable {
-            if let Err(error) = pecofence_platform::autostart::reconcile_product(
-                app.state.config.settings.autostart,
+        app.request_startup_presentation();
+        // Portable mode is a first-class startup target: when enabled, the task carries
+        // --portable so a logon restart reads the executable-adjacent configuration directory.
+        if app.instance.is_none()
+            && let Err(error) = pecofence_platform::autostart::reconcile_product_in_background(
+                pecofence_platform::autostart::StartupSpec {
+                    enabled: app.state.config.settings.autostart,
+                    portable: app.portable,
+                },
                 cfg!(debug_assertions),
-            ) {
-                tracing::warn!(%error, "autostart reconciliation failed");
-            }
+            )
+        {
+            tracing::warn!(%error, "autostart reconciliation failed");
         }
-        app.state.save_if_dirty();
+        app.schedule_save();
         window::set_coalescable_timer(app.control.hwnd(), TIMER_HOUSEKEEPING, 60_000, 5_000);
         window::set_coalescable_timer(app.control.hwnd(), TIMER_WALLPAPER_POLL, 5_000, 500);
         window::set_coalescable_timer(app.control.hwnd(), TIMER_DESKTOP_ID, 100, 25);
         // Close the gap between the startup snapshot and installing the registry watchers.
         window::post_message(app.control.hwnd(), WM_APP_WALLPAPER, 0, 0);
 
-        app.remove_old_update_downloads();
-        // Last of the startup balloons, so it is the one left showing.
-        app.offer_crash_feedback();
         if args.open_settings {
             app.queue.push(Command::OpenSettings);
         }
@@ -1110,6 +1170,10 @@ impl App {
             }
         }
         *cell.borrow_mut() = Some(app);
+        tracing::info!(
+            elapsed_ms = startup_started.elapsed().as_millis(),
+            "startup phase: ready to pump messages"
+        );
         Ok(cell)
     }
 
@@ -1543,6 +1607,7 @@ impl App {
         tracing::info!("shutdown cancelled");
         if self.state.config.settings.hide_real_icons
             && !self.no_hide_icons
+            && self.desktop_takeover_ready
             && let Some(a) = self.anchor.borrow_mut().as_mut()
         {
             a.request_hide_desktop_icons();

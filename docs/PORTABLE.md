@@ -18,8 +18,10 @@ German, French, Spanish, Portuguese (Brazil), Russian or Follow system.
 
 By default, settings are saved in `%APPDATA%\PecoFence\config.json`. Launch with
 `--portable` to use a `config` folder beside the executable.
-Portable startup does not synchronize Windows' autostart entry; changing the
-autostart toggle in Settings remains an explicit opt-in/out.
+When **Start with Windows** is enabled in Settings, portable mode registers a
+Task Scheduler logon task that starts this executable with `--portable`, so it
+continues using the `config` folder beside the executable. If task registration
+is unavailable, PecoFence falls back to the Windows Run key with the same argument.
 
 Double-click empty desktop space to hide/show fences. **Ctrl+Alt+Space** brings
 them above other windows. Drag a title to move a fence; double-click it to roll up.

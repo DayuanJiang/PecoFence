@@ -180,6 +180,8 @@ pub struct DesktopAnchor {
     host: Option<IconHost>,
     sentinel: Window,
     fences: Vec<(HWND, Option<HWND>)>,
+    /// Startup owns visibility until the real material has been drawn in every fence.
+    startup_visibility_held: bool,
     show_desktop_active: bool,
     retry_step: usize,
     _hook: Option<WinEventHook>,
@@ -284,6 +286,7 @@ impl DesktopAnchor {
             host: None,
             sentinel,
             fences: Vec::new(),
+            startup_visibility_held: false,
             show_desktop_active: false,
             retry_step: 0,
             _hook: hook,
@@ -310,6 +313,14 @@ impl DesktopAnchor {
         if !self.fences.iter().any(|(h, _)| *h == hwnd) {
             self.fences.push((hwnd, shadow));
         }
+    }
+
+    pub fn hold_startup_visibility(&mut self, hold: bool) {
+        self.startup_visibility_held = hold;
+    }
+
+    pub fn startup_visibility_held(&self) -> bool {
+        self.startup_visibility_held
     }
 
     pub fn unregister_fence(&mut self, hwnd: HWND) {
@@ -541,7 +552,7 @@ impl DesktopAnchor {
     /// Peek (Fences Win+Space): float every fence into the topmost band above `over` (the
     /// dimmer windows, if any) and pause anchoring; `false` restores the desktop z-band.
     pub fn set_peek(&mut self, on: bool, over: &[HWND]) {
-        if on == self.peeking {
+        if self.startup_visibility_held || on == self.peeking {
             return;
         }
         self.peeking = on;
@@ -585,7 +596,7 @@ impl DesktopAnchor {
 
     /// Re-anchors only if the host changed or our block is no longer directly above it.
     fn ensure_anchored(&mut self, reason: &'static str) {
-        if self.peeking {
+        if self.startup_visibility_held || self.peeking {
             return;
         }
         // A hide that failed at startup (desktop not ready) is retried on every tick, not only
@@ -780,6 +791,9 @@ impl DesktopAnchor {
     }
 
     pub fn toggle_fences_hidden(&mut self) {
+        if self.startup_visibility_held {
+            return;
+        }
         let hide = !self.quick.fences_hidden;
         self.quick.fences_hidden = hide;
         for (w, shadow) in self.fences.clone() {

@@ -7,9 +7,11 @@ the installer includes the loader DLL, but does not download the runtime.
 Installation is for the current Windows user, without administrator privileges.
 The default location is `%LOCALAPPDATA%\Programs\PecoFence`. A Start menu shortcut
 is created; a desktop shortcut is optional. The installer does not add the CLI to
-PATH and does not write a startup entry itself. **Start with Windows** is on by
-default: PecoFence registers it when it runs, and the switch is in Settings. The
-entry always points to the copy that ran last.
+PATH and does not register autostart itself. **Start with Windows** is on by
+default: when PecoFence runs, it registers a current-user Task Scheduler logon task
+at Above Normal priority, without requiring administrator rights. If task
+registration fails, it falls back to the Windows Run key. The registration points
+to the copy that ran last.
 
 ## Program files and user data
 
@@ -71,9 +73,11 @@ Setup also accepts a folder you previously extracted the ZIP into, such as
 other files there alone. It refuses any other folder that already contains files.
 
 Remove PecoFence through Windows Settings > Apps > Installed apps. Uninstall removes
-the installed program files and shortcuts, and removes the startup entry only when
-it points to this installed executable. Configuration, backups, logs and files you
-added to the installation folder are kept.
+the installed program files and shortcuts, and removes its Task Scheduler task only
+when the task has one executable action pointing to this installed copy and does
+not use `--portable`. Tasks with multiple actions are retained. It applies the same path
+ownership check to Run-key fallback values. Configuration, backups, logs and files
+you added to the installation folder are kept.
 
 **Settings > About > Check for updates** asks GitHub for the latest release. To
 install it, PecoFence downloads the new setup and runs it; PecoFence closes meanwhile

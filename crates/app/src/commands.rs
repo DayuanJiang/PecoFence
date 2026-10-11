@@ -32,6 +32,11 @@ pub const WM_APP_PEEK_FOCUSED: u32 = msg::WM_APP + 11;
 pub const WM_APP_SHELL_CHANGED: u32 = msg::WM_APP + 12;
 /// Posted by the worker that decoded another virtual desktop's wallpaper in advance.
 pub const WM_APP_PREWARM_DONE: u32 = msg::WM_APP + 13;
+/// Posted by the startup wallpaper worker after the first visible fence frame can use the
+/// decoded backdrop.
+pub const WM_APP_STARTUP_WALLPAPER_DONE: u32 = msg::WM_APP + 14;
+/// First visual-tree commit and DWM presentation completed (result retained by App).
+pub const WM_APP_STARTUP_PRESENTED: u32 = msg::WM_APP + 15;
 
 /// What a file drop does with the dropped paths (Explorer's Move / Copy / Create shortcut, the
 /// effect the drop target reported).

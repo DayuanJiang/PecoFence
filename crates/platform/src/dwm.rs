@@ -3,6 +3,13 @@
 use crate::bindings::*;
 use windows_core::Result;
 
+/// Waits for queued changes from this process to reach a displayed DWM frame. Call after
+/// committing the WinRT visual tree, on a worker so a busy compositor cannot stall the UI.
+pub fn flush() -> Result<()> {
+    // SAFETY: process-wide synchronization; no handles or borrowed memory are passed.
+    unsafe { DwmFlush().ok() }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CornerPreference {
     Default,

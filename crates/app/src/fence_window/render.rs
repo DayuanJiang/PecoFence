@@ -660,11 +660,15 @@ impl FenceViewState {
     }
 
     pub fn redraw(&mut self) -> Result<()> {
-        self.draw_chrome_panel()?;
-        if self.rolled_up && self.roll_anim.is_none() {
-            return Ok(());
-        }
-        self.redraw_content()
+        let result = self.draw_chrome_panel().and_then(|_| {
+            if self.rolled_up && self.roll_anim.is_none() {
+                Ok(())
+            } else {
+                self.redraw_content()
+            }
+        });
+        self.redraw_failed = result.is_err();
+        result
     }
 
     pub(super) fn columns_for(&self, width_dip: f32) -> DetailColumns {

@@ -2,6 +2,25 @@
 
 use super::*;
 
+/// Taskbar insets do not affect wallpaper mapping. Monitor order is not meaningful either.
+pub(super) fn wallpaper_mapping_changed(before: &[WorkArea], after: &[WorkArea]) -> bool {
+    let key = |a: &WorkArea| {
+        (
+            a.device_path.to_lowercase(),
+            a.mon_left,
+            a.mon_top,
+            a.mon_right,
+            a.mon_bottom,
+            a.dpi,
+        )
+    };
+    let mut before: Vec<_> = before.iter().map(key).collect();
+    let mut after: Vec<_> = after.iter().map(key).collect();
+    before.sort();
+    after.sort();
+    before != after
+}
+
 /// The theme for `mode`, retinted with the user's accent when it could be read (WinUI
 /// AccentFillColorDefault: AccentLight2 on dark, AccentDark1 on light).
 pub(super) fn theme_for(
@@ -99,7 +118,7 @@ fn file_stamp(path: &std::path::Path) -> Option<(u64, u64)> {
 
 /// Everything needed to build one monitor's backdrop. `Send`, so another virtual desktop's
 /// wallpaper can be decoded on a worker thread.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct MonitorRecipe {
     path: Option<PathBuf>,
     position: WallpaperPosition,
@@ -107,6 +126,7 @@ struct MonitorRecipe {
     top: i32,
     width: i32,
     height: i32,
+    dpi: u32,
     background: [u8; 3],
     tint: pecofence_render::backdrop::MicaTint,
     downscale: u32,
@@ -162,6 +182,17 @@ impl MonitorRecipe {
     }
 
     fn finish(self, image: Image, liquid_glass: bool) -> MonitorBackdrop {
+        let sample = liquid_glass.then(|| image.downscale_box(8));
+        let stamp = self.path.as_deref().map(file_stamp);
+        self.finish_prepared(image, sample, stamp)
+    }
+
+    fn finish_prepared(
+        self,
+        image: Image,
+        sample: Option<Image>,
+        stamp: Option<Option<(u64, u64)>>,
+    ) -> MonitorBackdrop {
         let backdrop = MonitorBackdrop {
             left: self.left,
             top: self.top,
@@ -171,13 +202,12 @@ impl MonitorRecipe {
             image,
             gpu: None,
         };
-        if !liquid_glass {
+        let Some(sample) = sample else {
             return backdrop;
-        }
+        };
         // A rebuild must reproduce these pixels: a file rewritten in place since is a new
         // wallpaper (the next check replaces the whole set), not this one.
-        let stamp = self.path.as_deref().map(file_stamp);
-        backdrop.into_gpu_backed(8, move || {
+        backdrop.into_gpu_backed_with_sample(8, sample, move || {
             if self.path.as_deref().map(file_stamp) != stamp {
                 tracing::info!("wallpaper file changed; not rebuilding the old set");
                 return None;
@@ -242,6 +272,7 @@ fn monitor_recipes(theme: &Theme, snapshot: &wallpaper::WallpaperSnapshot) -> Ve
             top: m.rect.top,
             width: w,
             height: h,
+            dpi,
             background: snapshot.background,
             tint,
             // Clear glass needs wallpaper detail for refraction. Acrylic intentionally
@@ -324,6 +355,169 @@ pub(super) struct PrewarmJob {
     snapshot: wallpaper::WallpaperSnapshot,
     recipes: Vec<MonitorRecipe>,
     result: Arc<Mutex<Option<std::result::Result<Vec<Image>, String>>>>,
+}
+
+/// Plain data produced off-thread; COM objects and GPU resources stay on their owning threads.
+struct StartupWallpaperResult {
+    signature: String,
+    recipes: Vec<MonitorRecipe>,
+    images: Vec<PreparedWallpaperImage>,
+    ready_at: Instant,
+}
+
+struct PreparedWallpaperImage {
+    image: Image,
+    sample: Option<Image>,
+    stamp: Option<Option<(u64, u64)>>,
+}
+
+/// Discover and decode the first wallpaper away from the UI thread. Even querying Explorer
+/// and enumerating monitors can stall during logon, before WIC starts reading the image.
+pub(super) struct StartupWallpaperJob {
+    generation: u64,
+    liquid_glass: bool,
+    /// A completed/failed job holds the slot until its retry is due, so notification storms
+    /// cannot bypass the retry delay and start a new worker for every broadcast.
+    retry_after: Option<Instant>,
+    result: Arc<Mutex<Option<std::result::Result<StartupWallpaperResult, String>>>>,
+}
+
+pub(super) fn startup_wallpaper_cache_path(state: &AppState) -> PathBuf {
+    state
+        .config_path()
+        .parent()
+        .unwrap_or(Path::new("."))
+        .join("cache/startup-wallpaper.bin")
+}
+
+impl StartupWallpaperJob {
+    pub(super) fn spawn(
+        theme: Theme,
+        wallpaper_override: Option<String>,
+        cache_path: PathBuf,
+        generation: u64,
+        control: Option<isize>,
+    ) -> Option<Self> {
+        if pecofence_core::brand::var_os("PECOFENCE_SOLID").is_some() {
+            return None;
+        }
+        let result = Arc::new(Mutex::new(None));
+        let result_for_thread = result.clone();
+        tracing::info!("startup wallpaper discovery and decode queued in background");
+        let spawned = std::thread::Builder::new()
+            .name("pecofence-startup-wallpaper".into())
+            .spawn(move || {
+                let prepared = pecofence_platform::com::MtaGuard::init()
+                    .and_then(|_com| {
+                        load_startup_wallpaper(&theme, wallpaper_override.as_deref(), &cache_path)
+                    })
+                    .map_err(|error| error.to_string());
+                if let Ok(mut slot) = result_for_thread.lock() {
+                    *slot = Some(prepared);
+                }
+                if let Some(control) = control {
+                    window::post_message(
+                        HWND(control as *mut core::ffi::c_void),
+                        WM_APP_STARTUP_WALLPAPER_DONE,
+                        0,
+                        0,
+                    );
+                }
+            });
+        let retry_after = match spawned {
+            Ok(_) => None,
+            Err(error) => {
+                tracing::warn!(%error, "startup wallpaper worker failed to start");
+                Some(Instant::now() + Duration::from_secs(1))
+            }
+        };
+        Some(Self {
+            generation,
+            liquid_glass: theme.liquid_glass,
+            retry_after,
+            result,
+        })
+    }
+}
+
+fn load_startup_wallpaper(
+    theme: &Theme,
+    wallpaper_override: Option<&str>,
+    cache_path: &Path,
+) -> Result<StartupWallpaperResult> {
+    let started = Instant::now();
+    let snapshot = wallpaper_snapshot(wallpaper_override)?;
+    let signature = snapshot.signature();
+    let recipes = monitor_recipes(theme, &snapshot);
+    if recipes.is_empty() {
+        return Err(pending());
+    }
+    tracing::info!(
+        elapsed_ms = started.elapsed().as_millis(),
+        "startup wallpaper metadata ready in background"
+    );
+    // Recipe Debug output is only an exact cache key, never parsed. Bump the cache schema
+    // when image preparation changes. DPI is included through the scaled material recipe.
+    let key = format!(
+        "{:?}|{}|{:?}|{:?}",
+        theme.mode,
+        signature,
+        recipes,
+        recipes.iter().map(|r| r.dpi).collect::<Vec<_>>()
+    );
+    let sizes: Vec<_> = recipes
+        .iter()
+        .map(|r| {
+            (
+                (r.width as u32 / r.downscale).max(1),
+                (r.height as u32 / r.downscale).max(1),
+            )
+        })
+        .collect();
+    let cached = wallpaper_disk_cache::read(cache_path, &key, &sizes);
+    let cache_hit = cached.is_some();
+    let images = match cached {
+        Some(images) => images,
+        None => recipes
+            .iter()
+            .map(MonitorRecipe::build_image)
+            .collect::<Result<Vec<_>>>()?,
+    };
+    // Re-query off-thread too: Explorer may publish a different picture or replace a file
+    // while decoding. Do not install those pixels under a now-stale signature.
+    if snapshot.signature() != signature
+        || wallpaper_snapshot(wallpaper_override)?.signature() != signature
+    {
+        return Err(pending());
+    }
+    if !cache_hit && let Err(error) = wallpaper_disk_cache::write(cache_path, &key, &images) {
+        tracing::debug!(%error, "startup wallpaper disk cache not saved");
+    }
+    let images = recipes
+        .iter()
+        .zip(images)
+        .map(|(recipe, image)| PreparedWallpaperImage {
+            sample: theme.liquid_glass.then(|| image.downscale_box(8)),
+            stamp: recipe.path.as_deref().map(file_stamp),
+            image,
+        })
+        .collect();
+    // Cache I/O and sampling can also overlap a slideshow write. Never associate the old
+    // pixels with a newer file stamp captured for the GPU reload closure.
+    if snapshot.signature() != signature {
+        return Err(pending());
+    }
+    tracing::info!(
+        cache_hit,
+        elapsed_ms = started.elapsed().as_millis(),
+        "startup wallpaper prepared in background"
+    );
+    Ok(StartupWallpaperResult {
+        signature,
+        recipes,
+        images,
+        ready_at: Instant::now(),
+    })
 }
 
 /// The other virtual desktops' pictures laid out like `current` (same position, colour and
@@ -518,6 +712,115 @@ pub(super) fn tray_icon_image(size: i32, _accent: [u8; 3], _dark: bool) -> Vec<u
 }
 
 impl App {
+    /// Retries or refreshes the wallpaper independently of the first-frame handoff.
+    pub(super) fn start_initial_wallpaper_load(&mut self) {
+        if self.wallpaper_sig.is_some() || self.startup_wallpaper.is_some() {
+            return;
+        }
+        if pecofence_core::brand::var_os("PECOFENCE_SOLID").is_some() {
+            // The diagnostic solid mode intentionally avoids touching the wallpaper at all.
+            return;
+        }
+        self.startup_wallpaper = StartupWallpaperJob::spawn(
+            *self.ctx.theme.borrow(),
+            self.wallpaper_override.clone(),
+            startup_wallpaper_cache_path(&self.state),
+            self.wallpaper_cache.generation(),
+            Some(self.control.hwnd().0 as isize),
+        );
+        window::set_timer(self.control.hwnd(), TIMER_STARTUP_WALLPAPER_RETRY, 50);
+    }
+
+    /// Installs a completed startup backdrop without blocking the UI thread on image decoding.
+    pub(super) fn finish_startup_wallpaper(&mut self) {
+        let Some(mut job) = self.startup_wallpaper.take() else {
+            // This timer also retries transient Explorer/WIC failures, at a bounded rate.
+            self.start_initial_wallpaper_load();
+            return;
+        };
+        if let Some(retry_after) = job.retry_after {
+            if let Some(remaining) = retry_after.checked_duration_since(Instant::now()) {
+                window::set_timer(
+                    self.control.hwnd(),
+                    TIMER_STARTUP_WALLPAPER_RETRY,
+                    remaining.as_millis().clamp(1, 1_000) as u32,
+                );
+                self.startup_wallpaper = Some(job);
+            } else {
+                self.start_initial_wallpaper_load();
+            }
+            return;
+        }
+        let Some(result) = job.result.lock().ok().and_then(|mut slot| slot.take()) else {
+            self.startup_wallpaper = Some(job);
+            window::set_timer(self.control.hwnd(), TIMER_STARTUP_WALLPAPER_RETRY, 50);
+            return;
+        };
+        let theme = *self.ctx.theme.borrow();
+        if job.generation != self.wallpaper_cache.generation()
+            || job.liquid_glass != theme.liquid_glass
+        {
+            tracing::debug!("startup wallpaper result became stale after a visual change");
+            if self.wallpaper_sig.is_none() {
+                self.start_initial_wallpaper_load();
+            }
+            return;
+        }
+        let prepared = match result {
+            Ok(prepared) => prepared,
+            Err(error) => {
+                tracing::warn!(%error, "startup wallpaper unavailable; retaining backdrop and retrying");
+                job.retry_after = Some(Instant::now() + Duration::from_secs(1));
+                self.startup_wallpaper = Some(job);
+                window::set_timer(self.control.hwnd(), TIMER_STARTUP_WALLPAPER_RETRY, 1_000);
+                return;
+            }
+        };
+        let install_started = Instant::now();
+        tracing::info!(
+            queue_ms = prepared.ready_at.elapsed().as_millis(),
+            "startup wallpaper applying prepared pixels"
+        );
+        let count = prepared.images.len();
+        let backdrops = Rc::new(BackdropSets {
+            acrylic: Rc::new(
+                prepared
+                    .recipes
+                    .into_iter()
+                    .zip(prepared.images)
+                    .map(|(recipe, prepared)| {
+                        recipe.finish_prepared(prepared.image, prepared.sample, prepared.stamp)
+                    })
+                    .collect(),
+            ),
+        });
+        tracing::info!(
+            elapsed_ms = install_started.elapsed().as_millis(),
+            "startup wallpaper wrappers ready"
+        );
+        self.wallpaper_sig = Some(prepared.signature.clone());
+        self.wallpaper_cache
+            .insert(prepared.signature, backdrops.clone());
+        *self.ctx.backdrops.borrow_mut() = backdrops.clone();
+        for window in self.fences.values() {
+            let redraw_started = Instant::now();
+            window.set_backdrops(backdrops.clone());
+            tracing::info!(hwnd = ?window.hwnd(), elapsed_ms = redraw_started.elapsed().as_millis(), "startup wallpaper fence redraw complete");
+        }
+        tracing::info!(
+            count,
+            elapsed_ms = install_started.elapsed().as_millis(),
+            "startup wallpaper ready; fences updated"
+        );
+        self.request_startup_presentation();
+        // Let the newly installed backdrop paint before querying other desktops' pictures.
+        window::set_timer(
+            self.control.hwnd(),
+            TIMER_WALLPAPER_PREWARM,
+            WALLPAPER_PREWARM_DELAY_MS,
+        );
+    }
+
     /// Starts decoding the nearest other virtual desktop's wallpaper that is not cached yet,
     /// if the cache has room for it without evicting a visited desktop.
     pub(super) fn prewarm_wallpapers(&mut self) {
@@ -667,6 +970,17 @@ impl App {
     /// Wallpaper-only refresh: reuse a recent desktop's pixels and preserve icon/geometry
     /// caches. Failed reads must not advance the signature, so the next check can retry.
     pub(super) fn check_wallpaper(&mut self, reason: &str) {
+        if self.startup_wallpaper.is_some() {
+            // The initial decode is already running off-thread; avoid starting a synchronous
+            // duplicate when the normal startup notification arrives first.
+            return;
+        }
+        if self.wallpaper_sig.is_none() {
+            // A startup read can race Explorer's wallpaper publication. Keep that retry off the
+            // UI thread too; the first visible frame should remain responsive in this case.
+            self.start_initial_wallpaper_load();
+            return;
+        }
         let Ok(snapshot) = wallpaper_snapshot(self.wallpaper_override.as_deref()) else {
             return;
         };
@@ -710,6 +1024,7 @@ impl App {
             elapsed_ms = started.elapsed().as_millis(),
             "wallpaper refreshed"
         );
+        self.invalidate_startup_presentation();
     }
 
     pub(super) fn on_system_settings_changed(&mut self) {
@@ -793,6 +1108,10 @@ impl App {
         }
         let theme_changed = mode != self.theme_mode || style_changed;
         let theme = theme_for(mode, style, accent.as_ref());
+        // A logon display notification can arrive after the first wallpaper finished. Forced
+        // layout/settings refreshes must still avoid synchronous decoding while windows move.
+        let startup_pending =
+            force || self.startup_wallpaper.is_some() || self.wallpaper_sig.is_none();
         // The wallpaper sets are accent-independent and expensive: rebuild them only for a
         // mode change (or a forced refresh), not for a Settings › Colours retint.
         let backdrops = if theme_changed || force {
@@ -803,18 +1122,32 @@ impl App {
                 TIMER_WALLPAPER_PREWARM,
                 WALLPAPER_PREWARM_DELAY_MS,
             );
-            match build_backdrop_sets(&theme, self.wallpaper_override.as_deref()) {
-                Ok((backdrops, signature)) => {
-                    self.wallpaper_cache
-                        .insert(signature.clone(), backdrops.clone());
-                    self.wallpaper_sig = Some(signature);
-                    backdrops
-                }
-                Err(error) => {
-                    tracing::warn!(%error, "backdrop refresh deferred until wallpaper is readable");
-                    self.wallpaper_sig = None;
-                    window::post_message(self.control.hwnd(), WM_APP_WALLPAPER, 0, 0);
-                    self.ctx.backdrops.borrow().clone()
+            if pecofence_core::brand::var_os("PECOFENCE_SOLID").is_some() {
+                self.wallpaper_sig = None;
+                Rc::new(BackdropSets::default())
+            } else if startup_pending {
+                // Display/theme broadcasts often arrive immediately after logon. Going through
+                // the synchronous path here would undo the first wallpaper's background load.
+                // Keep the current pixels until the latest recipe is ready. Retain any running
+                // job: its invalid generation makes completion restart once, without spawning
+                // overlapping decodes for every display notification.
+                self.wallpaper_sig = None;
+                tracing::info!("startup backdrop refresh queued; retaining current frame");
+                self.ctx.backdrops.borrow().clone()
+            } else {
+                match build_backdrop_sets(&theme, self.wallpaper_override.as_deref()) {
+                    Ok((backdrops, signature)) => {
+                        self.wallpaper_cache
+                            .insert(signature.clone(), backdrops.clone());
+                        self.wallpaper_sig = Some(signature);
+                        backdrops
+                    }
+                    Err(error) => {
+                        tracing::warn!(%error, "backdrop refresh deferred until wallpaper is readable");
+                        self.wallpaper_sig = None;
+                        window::post_message(self.control.hwnd(), WM_APP_WALLPAPER, 0, 0);
+                        self.ctx.backdrops.borrow().clone()
+                    }
                 }
             }
         } else {
@@ -844,6 +1177,12 @@ impl App {
         // Leaving Liquid Glass stops the draws that would otherwise release old textures.
         self.ctx.bitmaps.borrow_mut().prune_wallpapers();
         tracing::info!(?mode, ?style, accent = ?accent.map(|a| a.accent), "theme refreshed");
+        if startup_pending && (theme_changed || force) {
+            // Capture the updated theme, after every visible fence has adopted it. A still
+            // running worker keeps ownership of the slot until its stale result is discarded.
+            self.start_initial_wallpaper_load();
+        }
+        self.invalidate_startup_presentation();
     }
 
     /// Global icon tint / chameleon changed: flush the caches and let icons reload processed.
@@ -855,6 +1194,53 @@ impl App {
                 w.drop_icons();
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod topology_tests {
+    use super::*;
+
+    fn area(id: &str) -> WorkArea {
+        WorkArea {
+            device_path: id.into(),
+            gdi_name: id.into(),
+            left: 0,
+            top: 0,
+            right: 2560,
+            bottom: 1440,
+            mon_left: 0,
+            mon_top: 0,
+            mon_right: 2560,
+            mon_bottom: 1440,
+            dpi: 144,
+        }
+    }
+
+    #[test]
+    fn taskbar_insets_and_monitor_order_preserve_wallpaper() {
+        let before = vec![area("monitor1"), area("monitor2")];
+        let mut after = before.clone();
+        after[0].bottom -= 72;
+        after[1].left += 72;
+        after.reverse();
+        assert!(!wallpaper_mapping_changed(&before, &after));
+    }
+
+    #[test]
+    fn topology_or_dpi_changes_invalidate_wallpaper() {
+        let before = vec![area("monitor1")];
+        for field in 0..4 {
+            let mut after = before.clone();
+            match field {
+                0 => after[0].dpi = 192,
+                1 => after[0].mon_right = 3840,
+                2 => after[0].mon_left = -2560,
+                _ => after[0].device_path = "replacement".into(),
+            }
+            assert!(wallpaper_mapping_changed(&before, &after));
+        }
+        assert!(wallpaper_mapping_changed(&before, &[]));
     }
 }
 

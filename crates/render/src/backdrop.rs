@@ -680,11 +680,30 @@ impl MonitorBackdrop {
     /// `sample_factor` times smaller for CPU sampling. `rebuild` must reproduce the same
     /// full-resolution image.
     pub fn into_gpu_backed(
-        mut self,
+        self,
         sample_factor: u32,
         rebuild: impl Fn() -> Option<Image> + 'static,
     ) -> Self {
         let sample = self.image.downscale_box(sample_factor);
+        self.into_gpu_backed_with_sample(sample_factor, sample, rebuild)
+    }
+
+    /// Uses a sampling image prepared on a worker, avoiding a full-image CPU pass on the UI
+    /// thread. `sample` must be `image.downscale_box(sample_factor)`.
+    pub fn into_gpu_backed_with_sample(
+        mut self,
+        sample_factor: u32,
+        sample: Image,
+        rebuild: impl Fn() -> Option<Image> + 'static,
+    ) -> Self {
+        debug_assert_eq!(
+            sample.width,
+            self.image.width.div_ceil(sample_factor.max(1))
+        );
+        debug_assert_eq!(
+            sample.height,
+            self.image.height.div_ceil(sample_factor.max(1))
+        );
         let full = std::mem::replace(&mut self.image, sample);
         self.gpu = Some(GpuPixels::new(self.downscale, full, rebuild));
         self.downscale *= sample_factor.max(1);

@@ -11,6 +11,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 LANGUAGES = ("en", "ja", "zh-TW", "ko", "de", "fr", "es", "pt-BR", "ru", "zh-CN")
+HIDDEN = subprocess.STARTUPINFO()
+HIDDEN.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+HIDDEN.wShowWindow = 0
 
 
 def autostart_value():
@@ -22,6 +25,16 @@ def autostart_value():
         except FileNotFoundError:
             values[name] = None
     return values
+
+
+def startup_task_xml(name):
+    result = subprocess.run(
+        ["schtasks.exe", "/Query", "/TN", name, "/XML"],
+        startupinfo=HIDDEN,
+        capture_output=True,
+        timeout=15,
+    )
+    return result.stdout if result.returncode == 0 else None
 
 
 def main():
@@ -44,6 +57,7 @@ def main():
         environment.pop("PECOFENCE_INSTANCE", None)
         environment["OPENFENCE_INSTANCE"] = instance
     before = autostart_value()
+    before_tasks = {name: startup_task_xml(name) for name in ("PecoFence", "openFence")}
 
     def run(*extra):
         result = subprocess.run(
@@ -64,6 +78,8 @@ def main():
     custom_title = "名称 {1} custom"
     config["layouts"][0]["fences"][0]["title"] = custom_title
     config_path.write_text(json.dumps(config, ensure_ascii=False), encoding="utf-8")
+    assert autostart_value() == before
+    assert {name: startup_task_xml(name) for name in before_tasks} == before_tasks
     lines = ["sleep 1200"]
     for language in LANGUAGES:
         settings["language"] = language
@@ -84,8 +100,11 @@ def main():
     assert saved["settings"]["language"] == "zh-CN", "Language preference was not saved"
     assert saved["layouts"][0]["fences"][0]["title"] == custom_title, "Custom fence name changed"
     assert autostart_value() == before, "Portable test changed the installed autostart entry"
+    assert {name: startup_task_xml(name) for name in before_tasks} == before_tasks, \
+        "Portable test changed the installed startup task"
     report = {"passed": True, "languages": LANGUAGES, "settings_ready": True,
-              "preference_saved": True, "custom_name_preserved": True, "autostart_preserved": True}
+              "preference_saved": True, "custom_name_preserved": True,
+              "autostart_preserved": True, "startup_tasks_preserved": True}
     (stage / "report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
     print(f"PASS: native Settings initialized; {len(LANGUAGES)} live switches; configuration, names and autostart verified")
     print(f"Report: {stage / 'report.json'}")

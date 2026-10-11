@@ -236,6 +236,8 @@ pub struct FenceViewState {
     pub(super) range_anchor: Option<usize>,
     /// A draw hit `DXGI_ERROR_DEVICE_REMOVED`; surfaces must be recreated (task 6).
     pub(super) device_lost: bool,
+    /// A failed full redraw must not authorize the startup desktop handoff.
+    pub(super) redraw_failed: bool,
     pub(super) drop_hover: bool,
     pub(super) roll_anim: Option<RollAnim>,
     /// Roll progress 0 (expanded) ..= 1 (rolled), phase-locked with the roll's height tween
