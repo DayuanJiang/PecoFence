@@ -48,13 +48,16 @@ upgrade in Settings → 布局与备份 (the files are in the `backups` folder n
 
 ## Windows startup
 
-A normal release launch registers the `PecoFence` startup entry when required.
-The legacy `openFence` entry is removed only after a replacement was registered
-successfully, or when startup is disabled. When startup is on, the running release
-points the entry at its own executable, so the copy that ran last starts with Windows.
+A normal release launch registers the `PecoFence` logon task in Task Scheduler.
+It starts at sign-in, 20 to 30 seconds before Explorer gets to the Run key on a PC
+with a few startup programs. When startup is on, the running release points the
+task at its own executable, so the copy that ran last starts with Windows. Earlier
+versions' `PecoFence` and `openFence` Run-key entries are removed; the Run key is
+used only when Task Scheduler refuses the task.
 
-Portable and development launches do not change startup entries. Changing the
-autostart switch in Settings remains an explicit opt-in/out.
+Portable and development launches do not change startup at launch. Turning the
+switch on in a portable copy's Settings registers the task with `--portable`, so it
+reads the `config` folder beside it again.
 
 ## Environment overrides
 

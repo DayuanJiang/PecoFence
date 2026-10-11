@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- PecoFence starts with Windows right at sign-in. It used to wait in Explorer's queue of startup programs, 20 to 45 seconds on a PC with a few of them, while the plain desktop showed. It now registers a Task Scheduler logon task, re-pointed at the copy that runs, and falls back to the Run key only when Task Scheduler refuses. A portable copy whose switch is turned on starts with `--portable` again. The Store edition adds the same task while its switch in Windows' Startup apps is on; the task expires 30 days after the last launch, so uninstalling leaves nothing behind for long. Uninstalling the installed edition removes its own task.
+
 - Fences stay in view after Win+D (「显示桌面」) on Windows 11 24H2 and later (#74). There Explorer raises the desktop window itself over every window, and PecoFence re-inserted the fences "just above" it, which could leave them underneath it, covered by the wallpaper, with nothing in the log. While the desktop is shown, the fences now float above it the way Peek shows them, and drop back behind the apps as soon as a window comes to the front; both moments are in the log. 「随桌面一起隐藏」 (`showDesktop = hideWithDesktop`) still hides the fences together with the windows.
 
 ## 0.1.5

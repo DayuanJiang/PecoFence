@@ -239,6 +239,8 @@ pub struct App {
     frame_run: FrameRun,
     /// `--no-hide-icons`: keep Explorer's icons visible this run without persisting the choice.
     no_hide_icons: bool,
+    /// `--portable`: the logon task must pass it on to read the `config` folder again.
+    portable: bool,
     /// `--light` / `--dark`: pin the theme this run.
     theme_override: Option<ThemeMode>,
     peek_class: WindowClass,
@@ -925,6 +927,7 @@ impl App {
             frame_prev: None,
             frame_run: FrameRun::default(),
             no_hide_icons: args.no_hide_icons,
+            portable: args.portable,
             theme_override: if args.light {
                 Some(ThemeMode::Light)
             } else if args.dark {
@@ -1073,15 +1076,13 @@ impl App {
                 a.request_hide_desktop_icons();
             }
         }
-        // Portable/development runs do not change login startup. Normal releases
-        // adopt the renamed entry while keeping an existing working PecoFence copy.
+        // Portable/development runs do not change login startup at launch; the running
+        // release re-points the logon task at itself.
         if !args.portable {
-            if let Err(error) = pecofence_platform::autostart::reconcile_product(
+            pecofence_platform::autostart::reconcile_product(
                 app.state.config.settings.autostart,
                 cfg!(debug_assertions),
-            ) {
-                tracing::warn!(%error, "autostart reconciliation failed");
-            }
+            );
         }
         app.state.save_if_dirty();
         window::set_coalescable_timer(app.control.hwnd(), TIMER_HOUSEKEEPING, 60_000, 5_000);

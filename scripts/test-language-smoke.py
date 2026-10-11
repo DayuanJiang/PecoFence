@@ -21,6 +21,9 @@ def autostart_value():
                 values[name] = winreg.QueryValueEx(key, name)
         except FileNotFoundError:
             values[name] = None
+    task = subprocess.run(["schtasks", "/Query", "/TN", "PecoFence", "/XML"], capture_output=True,
+                          text=True, errors="replace", creationflags=subprocess.CREATE_NO_WINDOW)
+    values["task"] = task.stdout if task.returncode == 0 else None
     return values
 
 

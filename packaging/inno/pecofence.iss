@@ -13,6 +13,7 @@
 #define ProductName "PecoFence"
 #define CurrentRunName "PecoFence"
 #define LegacyRunName "openFence"
+#define TaskName "PecoFence"
 #define AppMutexNames "Local\PecoFence.SingleInstance,Local\openFence.SingleInstance"
 ; Integration tests compile this same script with an isolated identity. The public
 ; packaging command never sets TestIdentity; test installers must never be shipped.
@@ -21,6 +22,7 @@
   #define ProductName "PecoFence Installer Test " + TestIdentity
   #define CurrentRunName ProductId
   #define LegacyRunName ProductId + ".legacy"
+  #define TaskName ProductId
   #define AppMutexNames "Local\" + ProductId
 #endif
 
@@ -287,9 +289,29 @@ begin
       RegDeleteValue(HKCU, RunKey, Name);
 end;
 
+{ The logon task the app registers, only while it starts this installation: a portable or
+  Store copy may have taken the same name over since. }
+procedure RemoveOwnedStartupTask(const Name: String);
+var
+  Service, Folder, Actions: Variant;
+begin
+  try
+    Service := CreateOleObject('Schedule.Service');
+    Service.Connect();
+    Folder := Service.GetFolder('\');
+    Actions := Folder.GetTask(Name).Definition.Actions;
+    if (Actions.Count = 1) and (CompareText(RemoveQuotes(Actions.Item(1).Path),
+      ExpandConstant('{app}\pecofence.exe')) = 0) then
+      Folder.DeleteTask(Name, 0);
+  except
+    { No such task, or not one that starts a program: nothing of ours to remove. }
+  end;
+end;
+
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
   if CurUninstallStep = usPostUninstall then begin
+    RemoveOwnedStartupTask('{#TaskName}');
     RemoveOwnedStartupValue('{#CurrentRunName}');
     RemoveOwnedStartupValue('{#LegacyRunName}');
   end;

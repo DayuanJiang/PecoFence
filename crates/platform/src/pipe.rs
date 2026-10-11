@@ -169,7 +169,7 @@ pub fn owner_only_sddl(user_sid: &str) -> String {
 }
 
 /// String SID (`S-1-5-21-…`) of the account this process runs as.
-fn current_user_sid() -> Result<String> {
+pub(crate) fn current_user_sid() -> Result<String> {
     struct Token(HANDLE);
     impl Drop for Token {
         fn drop(&mut self) {

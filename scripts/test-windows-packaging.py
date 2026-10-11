@@ -56,6 +56,18 @@ def run(command, *, success=True):
     return result
 
 
+def task_command(name):
+    """The program a scheduled task starts, or None without such a task."""
+    result = subprocess.run(["schtasks", "/Query", "/TN", name, "/XML"], startupinfo=HIDDEN,
+                            capture_output=True, text=True, errors="replace")
+    found = re.search(r"<Command>(.*?)</Command>", result.stdout)
+    return found and found.group(1).strip('"') if result.returncode == 0 else None
+
+
+def create_task(name, exe):
+    run(["schtasks", "/Create", "/F", "/TN", name, "/TR", f'"{exe}"', "/SC", "ONCE", "/ST", "00:00"])
+
+
 def shell_folder(csidl):
     path = ctypes.create_unicode_buffer(260)
     shell = ctypes.WinDLL("shell32")
@@ -119,8 +131,10 @@ def main():
     shutil.copytree(payload, fixture)
     report = stage / "report.json"
     actual_startup = {name: reg_value(RUN, name) for name in ("PecoFence", "openFence")}
+    actual_task = task_command("PecoFence")
     assert reg_value(uninstall_key, "InstallLocation") is None
     assert all(reg_value(RUN, name) is None for name in run_names)
+    assert task_command(product_id) is None
     desktop_link = shell_folder(0x10) / f"{product_name}.lnk"
     menu_group = shell_folder(0x02) / product_name
     assert not desktop_link.exists() and not menu_group.exists()
@@ -238,13 +252,15 @@ def main():
         with winreg.CreateKey(winreg.HKEY_CURRENT_USER, RUN) as key:
             winreg.SetValueEx(key, run_names[0], 0, winreg.REG_SZ, f'"{installed / "pecofence.exe"}"')
             winreg.SetValueEx(key, run_names[1], 0, winreg.REG_SZ, other_command)
+        create_task(product_id, installed / "pecofence.exe")
         uninstall("uninstall")
         assert not any((installed / name).exists() for name in PAYLOAD)
         assert not desktop_link.exists() and not menu_group.exists()
         assert all(p.read_bytes() == data for p, data in retained.items())
         assert reg_value(RUN, run_names[0]) is None
         assert reg_value(RUN, run_names[1]) == other_command
-        passed.append("uninstall removes managed files/shortcuts, keeps data and another copy's startup entry")
+        assert task_command(product_id) is None, "Uninstall kept its own logon task"
+        passed.append("uninstall removes managed files/shortcuts, its logon task, keeps data and another copy's startup entry")
 
         # A folder an older ZIP was extracted into (the default directory, for some users).
         extracted = stage / "extracted zip"
@@ -263,9 +279,13 @@ def main():
         relocated = stage / "new location"
         setup(new, "reinstall-after-deleted-folder", f"/DIR={relocated}")
         assert Path(reg_value(uninstall_key, "InstallLocation")) == relocated
+        other_copy = stage / "another copy/pecofence.exe"
+        create_task(product_id, other_copy)
         uninstall("uninstall-reinstalled")
         assert not (relocated / "pecofence.exe").exists()
-        passed.append("a registration whose folder was deleted does not block a new location")
+        assert task_command(product_id) == str(other_copy), "Uninstall removed another copy's logon task"
+        passed.append("a registration whose folder was deleted does not block a new location; "
+                      "another copy's logon task survives the uninstall")
     finally:
         # The only persistent writes outside .cache belong to this generated test ID.
         try:
@@ -277,7 +297,10 @@ def main():
                         winreg.DeleteValue(key, name)
                     except FileNotFoundError:
                         pass
+            subprocess.run(["schtasks", "/Delete", "/F", "/TN", product_id], startupinfo=HIDDEN,
+                           capture_output=True)
             assert {name: reg_value(RUN, name) for name in actual_startup} == actual_startup
+            assert task_command("PecoFence") == actual_task
             report.write_text(json.dumps({"passed": passed, "testIdentity": product_id}, indent=2), encoding="utf-8")
             print(f"{len(passed)} packaging/installer checks passed; report: {report}")
 

@@ -49,6 +49,12 @@ PecoFence first; both builds share the single-instance mutex.
 - Autostart: HKCU writes are virtualized inside the package, so the Run-key code is
   skipped (`process::is_packaged()`). The manifest startup task is enabled by default and
   users manage it under Settings > Apps > Startup; the in-app toggle opens that page.
+  Explorer runs packaged startup tasks after the whole Run key, 30 to 45 seconds after
+  sign-in on a PC with a few startup programs. While that switch is on, each launch also
+  registers a `PecoFence` logon task that starts the `pecofence.exe` execution alias with
+  `--logon-task` at sign-in. The task expires 30 days after the last launch and Task
+  Scheduler then deletes it, which covers uninstalling (MSIX runs no code of ours). A
+  task launch that finds the switch turned off removes the task and exits.
 - Configuration: `%APPDATA%\PecoFence\config.json` is written into the package's
   virtualized AppData (`%LOCALAPPDATA%\Packages\DayuanJiang.PecoFence_0bme5nfnaj27p\`).
   An existing portable config is read on first launch but changes stay in the package.

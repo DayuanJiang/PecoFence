@@ -526,7 +526,7 @@ impl App {
             return;
         }
         if new.autostart != old.autostart {
-            let _ = pecofence_platform::autostart::set_product_enabled(new.autostart);
+            pecofence_platform::autostart::set_product_enabled(new.autostart, self.portable);
             if pecofence_platform::process::is_packaged() {
                 // Store installs: Windows owns the startup task, so hand the user the switch.
                 let _ = shell::shell_execute(

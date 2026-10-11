@@ -68,6 +68,48 @@ impl IInitializeWithWindow_Vtbl {
 }
 impl windows_core::RuntimeName for IInitializeWithWindow {}
 windows_core::imp::define_interface!(
+    IStartupTask,
+    IStartupTask_Vtbl,
+    0xf75c23c8_b5f2_4f6c_88dd_36cb1d599d17
+);
+impl windows_core::RuntimeType for IStartupTask {
+    const SIGNATURE: windows_core::imp::ConstBuffer =
+        windows_core::imp::ConstBuffer::for_interface::<Self>();
+    const NAME: windows_core::imp::ConstBuffer =
+        windows_core::imp::ConstBuffer::from_slice(b"Windows.ApplicationModel.IStartupTask");
+}
+#[repr(C)]
+pub struct IStartupTask_Vtbl {
+    pub base__: windows_core::IInspectable_Vtbl,
+    RequestEnableAsync: usize,
+    Disable: usize,
+    pub State: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        *mut StartupTaskState,
+    ) -> windows_core::HRESULT,
+}
+windows_core::imp::define_interface!(
+    IStartupTaskStatics,
+    IStartupTaskStatics_Vtbl,
+    0xee5b60bd_a148_41a7_b26e_e8b88a1e62f8
+);
+impl windows_core::RuntimeType for IStartupTaskStatics {
+    const SIGNATURE: windows_core::imp::ConstBuffer =
+        windows_core::imp::ConstBuffer::for_interface::<Self>();
+    const NAME: windows_core::imp::ConstBuffer =
+        windows_core::imp::ConstBuffer::from_slice(b"Windows.ApplicationModel.IStartupTaskStatics");
+}
+#[repr(C)]
+pub struct IStartupTaskStatics_Vtbl {
+    pub base__: windows_core::IInspectable_Vtbl,
+    GetForCurrentPackageAsync: usize,
+    pub GetAsync: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        *mut core::ffi::c_void,
+        *mut *mut core::ffi::c_void,
+    ) -> windows_core::HRESULT,
+}
+windows_core::imp::define_interface!(
     IStoreContext,
     IStoreContext_Vtbl,
     0xac98b6be_f4fd_4912_babd_5035e5e8bcab
@@ -158,6 +200,79 @@ pub const QUNS_NOT_PRESENT: QUERY_USER_NOTIFICATION_STATE = 1;
 pub const QUNS_PRESENTATION_MODE: QUERY_USER_NOTIFICATION_STATE = 4;
 pub const QUNS_QUIET_TIME: QUERY_USER_NOTIFICATION_STATE = 6;
 pub const QUNS_RUNNING_D3D_FULL_SCREEN: QUERY_USER_NOTIFICATION_STATE = 3;
+#[repr(transparent)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StartupTask(windows_core::IUnknown);
+windows_core::imp::interface_hierarchy!(
+    StartupTask,
+    windows_core::IUnknown,
+    windows_core::IInspectable
+);
+impl StartupTask {
+    pub(crate) fn State(&self) -> windows_core::Result<StartupTaskState> {
+        unsafe {
+            let mut result__ = core::mem::zeroed();
+            (windows_core::Interface::vtable(self).State)(
+                windows_core::Interface::as_raw(self),
+                &mut result__,
+            )
+            .map(|| result__)
+        }
+    }
+    pub(crate) fn GetAsync(
+        taskid: &windows_core::HSTRING,
+    ) -> windows_core::Result<windows_future::IAsyncOperation<Self>> {
+        Self::IStartupTaskStatics(|this| unsafe {
+            let mut result__ = core::mem::zeroed();
+            (windows_core::Interface::vtable(this).GetAsync)(
+                windows_core::Interface::as_raw(this),
+                core::mem::transmute_copy(taskid),
+                &mut result__,
+            )
+            .and_then(|| windows_core::imp::Type::from_abi(result__))
+        })
+    }
+    fn IStartupTaskStatics<R, F: FnOnce(&IStartupTaskStatics) -> windows_core::Result<R>>(
+        callback: F,
+    ) -> windows_core::Result<R> {
+        static SHARED: windows_core::imp::FactoryCache<StartupTask, IStartupTaskStatics> =
+            windows_core::imp::FactoryCache::new();
+        SHARED.call(callback)
+    }
+}
+impl windows_core::RuntimeType for StartupTask {
+    const SIGNATURE: windows_core::imp::ConstBuffer =
+        windows_core::imp::ConstBuffer::for_class::<Self, IStartupTask>();
+}
+unsafe impl windows_core::Interface for StartupTask {
+    type Vtable = <IStartupTask as windows_core::Interface>::Vtable;
+    const IID: windows_core::GUID = <IStartupTask as windows_core::Interface>::IID;
+}
+impl windows_core::RuntimeName for StartupTask {
+    const NAME: &'static str = "Windows.ApplicationModel.StartupTask";
+}
+unsafe impl Send for StartupTask {}
+unsafe impl Sync for StartupTask {}
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct StartupTaskState(pub i32);
+impl StartupTaskState {
+    pub const Disabled: Self = Self(0);
+    pub const DisabledByUser: Self = Self(1);
+    pub const Enabled: Self = Self(2);
+    pub const DisabledByPolicy: Self = Self(3);
+    pub const EnabledByPolicy: Self = Self(4);
+}
+impl windows_core::imp::TypeKind for StartupTaskState {
+    type TypeKind = windows_core::imp::CopyType;
+}
+impl windows_core::RuntimeType for StartupTaskState {
+    const SIGNATURE: windows_core::imp::ConstBuffer = windows_core::imp::ConstBuffer::from_slice(
+        b"enum(Windows.ApplicationModel.StartupTaskState;i4)",
+    );
+    const NAME: windows_core::imp::ConstBuffer =
+        windows_core::imp::ConstBuffer::from_slice(b"Windows.ApplicationModel.StartupTaskState");
+}
 #[repr(transparent)]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StoreContext(windows_core::IUnknown);

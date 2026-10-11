@@ -164,6 +164,13 @@ fn main() -> Result<()> {
     if let Some(dir) = log_dir() {
         pecofence_platform::crashlog::install(dir, instance.as_deref().unwrap_or("main"));
     }
+    // Started by the Store edition's logon task after the user turned startup off in Windows.
+    if std::env::args().any(|a| a == pecofence_platform::autostart::LOGON_TASK_ARG)
+        && pecofence_platform::autostart::logon_task_unwanted()
+    {
+        tracing::info!("startup is off in Windows; logon task removed");
+        return Ok(());
+    }
 
     let mut args = parse_args();
     args.instance = instance;

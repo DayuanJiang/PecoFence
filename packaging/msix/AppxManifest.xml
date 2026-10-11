@@ -69,6 +69,13 @@
         <desktop:Extension Category="windows.startupTask" Executable="pecofence.exe" EntryPoint="Windows.FullTrustApplication">
           <desktop:StartupTask TaskId="PecoFenceStartup" Enabled="true" DisplayName="PecoFence" />
         </desktop:Extension>
+        <!-- A fixed path for the logon task (autostart.rs): it starts with Windows' startup switch
+             on, earlier than the manifest task above, which Explorer runs after the Run key. -->
+        <uap5:Extension Category="windows.appExecutionAlias" Executable="pecofence.exe" EntryPoint="Windows.FullTrustApplication">
+          <uap5:AppExecutionAlias>
+            <uap5:ExecutionAlias Alias="pecofence.exe" />
+          </uap5:AppExecutionAlias>
+        </uap5:Extension>
         <!-- `pecofence-cli` on PATH for terminals and coding agents; users can turn the alias
              off under Settings > Apps > Advanced app settings > App execution aliases. -->
         <uap5:Extension Category="windows.appExecutionAlias" Executable="pecofence-cli.exe" EntryPoint="Windows.FullTrustApplication">

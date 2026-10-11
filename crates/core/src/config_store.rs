@@ -474,11 +474,16 @@ pub fn migrate(mut cfg: Config) -> Config {
 /// Local-date string without pulling in a date crate (civil-from-days algorithm, UTC-based;
 /// backups are named for humans so the timezone offset is irrelevant).
 pub fn today_yyyy_mm_dd() -> String {
+    date_in_days(0)
+}
+
+/// The UTC date `offset` days from today, as `YYYY-MM-DD`.
+pub fn date_in_days(offset: i64) -> String {
     let secs = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0);
-    let days = secs.div_euclid(86_400);
+    let days = secs.div_euclid(86_400) + offset;
     let z = days + 719_468;
     let era = z.div_euclid(146_097);
     let doe = z - era * 146_097;
