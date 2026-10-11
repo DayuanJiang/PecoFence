@@ -400,7 +400,12 @@ impl App {
 
     pub(super) fn set_fence_title_icon(&mut self, fence: FenceId, show: bool) {
         self.state.set_hide_title_icon(fence, !show);
-        self.apply_portal_deco(self.state.host_of(fence));
+        let host = self.state.host_of(fence);
+        // The tab pills carry the glyph too: push the strip so they follow at once.
+        if let Some(w) = self.fences.get(&host) {
+            w.set_tabs(self.tab_views(host), self.state.active_tab_of(host));
+        }
+        self.apply_portal_deco(host);
         self.schedule_save();
     }
 

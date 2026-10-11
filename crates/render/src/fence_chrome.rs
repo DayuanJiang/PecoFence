@@ -409,6 +409,8 @@ pub struct TabDraw<'a> {
     pub title: &'a str,
     pub title_size: u8,
     pub title_color: Option<ColorF>,
+    /// A folder portal tab: its folder glyph is drawn before the caption (`TAB_ICON_W` wider).
+    pub folder_icon: bool,
     pub active: bool,
     /// PointerOver pill alpha 0..=1.
     pub hover: f32,
@@ -439,6 +441,14 @@ pub fn header_control_radius(theme: &Theme, rect: Rect) -> f32 {
     } else {
         4.0
     }
+}
+
+/// Room a folder glyph takes before a tab caption (DIPs).
+const TAB_ICON_W: f32 = 20.0;
+
+/// Width the folder glyph adds before a tab caption: `TAB_ICON_W` for a folder tab, else 0.
+pub fn tab_icon_w(folder_icon: bool) -> f32 {
+    if folder_icon { TAB_ICON_W } else { 0.0 }
 }
 
 pub fn tab_text_padding(theme: &Theme) -> f32 {
@@ -1416,9 +1426,17 @@ impl FenceChrome {
     }
 
     /// Does a tab caption fit its pill of width `w` without ellipsis (tooltip decision)?
-    pub fn tab_title_fits(&self, title: &str, w: f32, size: u8, theme: &Theme) -> bool {
-        let text_w = crate::text::measure_width(title, self.tab_format(size));
-        text_w <= (w - tab_text_inset(theme, w, text_w)).max(0.0)
+    pub fn tab_title_fits(
+        &self,
+        title: &str,
+        w: f32,
+        size: u8,
+        folder_icon: bool,
+        theme: &Theme,
+    ) -> bool {
+        let content_w =
+            crate::text::measure_width(title, self.tab_format(size)) + tab_icon_w(folder_icon);
+        content_w <= (w - tab_text_inset(theme, w, content_w)).max(0.0)
     }
 
     /// Draws the chrome into a `width` x `height` DIP area whose origin is (0, 0). `scale` is
@@ -1689,9 +1707,11 @@ impl FenceChrome {
                     marker(tab.x, tab.w, color, ta * 0.7)?;
                 }
                 let fmt = self.tab_format(tab.title_size);
-                let padding =
-                    tab_text_inset(theme, tab.w, crate::text::measure_width(tab.title, fmt));
-                let fitted = crate::text::fit_width(tab.title, fmt, (tab.w - padding).max(0.0));
+                let icon_w = tab_icon_w(tab.folder_icon);
+                let title_w = crate::text::measure_width(tab.title, fmt);
+                let padding = tab_text_inset(theme, tab.w, title_w + icon_w);
+                let text_room = (tab.w - padding - icon_w).max(0.0);
+                let fitted = crate::text::fit_width(tab.title, fmt, text_room);
                 let foreground =
                     header_foreground(&backdrop, theme, tab.key, rect, scale, opacity, style.tint);
                 let color = if tab.pressed && !tab.dragging {
@@ -1708,19 +1728,31 @@ impl FenceChrome {
                 if let Some(halo) = &halo {
                     halo.set_color(halo_color(color, ta));
                 }
-                draw_caption(
-                    session,
-                    &fitted,
-                    fmt,
-                    &Rect::from_xywh(
+                let caption_rect = if tab.folder_icon {
+                    // Glyph and caption form one unit centred in the pill. An unelided caption
+                    // keeps the width measured above (no second text layout).
+                    let text_w = if fitted == tab.title {
+                        title_w
+                    } else {
+                        crate::text::measure_width(&fitted, fmt)
+                    };
+                    let ux = tab.x + ((tab.w - icon_w - text_w) * 0.5).max(padding * 0.5);
+                    session.draw_text(
+                        "\u{E8B7}",
+                        &self.title_glyph_format,
+                        &Rect::from_xywh(ux - 2.0, 0.0, icon_w, title_h),
+                        &brush,
+                    );
+                    Rect::from_xywh(ux + icon_w, 0.0, text_w + 1.0, title_h)
+                } else {
+                    Rect::from_xywh(
                         tab.x + padding * 0.5,
                         0.0,
                         (tab.w - padding).max(0.0),
                         title_h,
-                    ),
-                    &brush,
-                    halo.as_ref(),
-                );
+                    )
+                };
+                draw_caption(session, &fitted, fmt, &caption_rect, &brush, halo.as_ref());
             }
         } else {
             let mut x = 16.0;
@@ -2586,13 +2618,13 @@ mod tests {
             // padding shrinks so the two characters still fit.
             let squeezed = caption + TAB_TEXT_MIN_PADDING + 1.0;
             assert!(tab_text_inset(&theme, squeezed, caption) < full);
-            assert!(chrome.tab_title_fits("游戏", squeezed, 1, &theme));
+            assert!(chrome.tab_title_fits("游戏", squeezed, 1, false, &theme));
             // Below the minimum padding the caption is elided, never drawn over the edge.
             assert_eq!(
                 tab_text_inset(&theme, caption, caption),
                 TAB_TEXT_MIN_PADDING
             );
-            assert!(!chrome.tab_title_fits("游戏", caption, 1, &theme));
+            assert!(!chrome.tab_title_fits("游戏", caption, 1, false, &theme));
         }
     }
 

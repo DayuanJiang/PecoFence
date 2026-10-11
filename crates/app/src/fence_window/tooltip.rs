@@ -122,7 +122,7 @@ impl FenceViewState {
                 let (_, w) = *self.tab_rects().get(i)?;
                 (!self
                     .chrome
-                    .tab_title_fits(&t.title, w, t.title_size, &self.theme))
+                    .tab_title_fits(&t.title, w, t.title_size, t.folder_icon, &self.theme))
                 .then(|| t.title.clone())
             }
             TipTarget::Item(i) => {

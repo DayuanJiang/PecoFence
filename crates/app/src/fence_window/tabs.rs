@@ -378,47 +378,40 @@ impl FenceViewState {
         (TAB_LEFT, (width - reserve).max(TAB_LEFT))
     }
 
-    /// Natural pill width per tab (caption + 16 padding, clamped to [48, 160] DIPs). Measuring
-    /// a caption builds a DirectWrite layout, so widths are cached by caption: a reorder, a
-    /// merge hint or a redraw re-uses them and only a new / renamed caption is measured. The
-    /// cache also tracks title size and the theme's control padding.
+    /// Natural pill width per tab (caption + folder glyph + 16 padding, clamped to [48, 160]
+    /// DIPs). Measuring a caption builds a DirectWrite layout, so widths are cached by caption:
+    /// a reorder, a merge hint or a redraw re-uses them and only a new / renamed caption is
+    /// measured. The cache also tracks title size, folder glyph and the theme's control padding.
     pub(super) fn tab_natural_widths(&self) -> Vec<f32> {
         let mut cache = self.tab_natural_w.borrow_mut();
-        let hit = cache.len() == self.tabs.len()
-            && cache
-                .iter()
-                .zip(&self.tabs)
-                .all(|((c, size, glass, _), t)| {
-                    *c == t.title && *size == t.title_size && *glass == self.theme.liquid_glass
-                });
+        let glass = self.theme.liquid_glass;
+        let same = |(c, size, g, icon, _): &(String, u8, bool, bool, f32), t: &TabView| {
+            *c == t.title && *size == t.title_size && *g == glass && *icon == t.folder_icon
+        };
+        let hit =
+            cache.len() == self.tabs.len() && cache.iter().zip(&self.tabs).all(|(e, t)| same(e, t));
         if !hit {
             let fresh: Vec<_> = self
                 .tabs
                 .iter()
                 .map(|t| {
-                    let w = cache
-                        .iter()
-                        .find(|(c, size, glass, _)| {
-                            *c == t.title
-                                && *size == t.title_size
-                                && *glass == self.theme.liquid_glass
-                        })
-                        .map_or_else(
-                            || {
-                                (pecofence_render::text::measure_width(
-                                    &t.title,
-                                    self.chrome.tab_format(t.title_size),
-                                ) + pecofence_render::fence_chrome::tab_text_padding(&self.theme))
-                                .clamp(TAB_MIN_W, TAB_MAX_W)
-                            },
-                            |(_, _, _, w)| *w,
-                        );
-                    (t.title.clone(), t.title_size, self.theme.liquid_glass, w)
+                    let w = cache.iter().find(|e| same(e, t)).map_or_else(
+                        || {
+                            (pecofence_render::text::measure_width(
+                                &t.title,
+                                self.chrome.tab_format(t.title_size),
+                            ) + pecofence_render::fence_chrome::tab_icon_w(t.folder_icon)
+                                + pecofence_render::fence_chrome::tab_text_padding(&self.theme))
+                            .clamp(TAB_MIN_W, TAB_MAX_W)
+                        },
+                        |(_, _, _, _, w)| *w,
+                    );
+                    (t.title.clone(), t.title_size, glass, t.folder_icon, w)
                 })
                 .collect();
             *cache = fresh;
         }
-        cache.iter().map(|(_, _, _, w)| *w).collect()
+        cache.iter().map(|(_, _, _, _, w)| *w).collect()
     }
 
     /// The strip slot a fence dragged over this title at screen `x` would be inserted at (WinUI

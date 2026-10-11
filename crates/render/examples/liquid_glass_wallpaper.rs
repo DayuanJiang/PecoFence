@@ -142,6 +142,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     title,
                     title_size,
                     title_color: None,
+                    folder_icon: false,
                     active: i == if tab_mode == "second" { 1 } else { 0 },
                     hover: if tab_mode == "hover" && i == 1 {
                         1.0

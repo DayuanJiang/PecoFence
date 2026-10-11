@@ -779,6 +779,7 @@ impl FenceWindow {
                         && a.color == b.color
                         && a.title_size == b.title_size
                         && a.title_color == b.title_color
+                        && a.folder_icon == b.folder_icon
                 });
             let same_set = v.tabs.len() == tabs.len()
                 && v.tabs.iter().all(|t| tabs.iter().any(|n| n.id == t.id));
