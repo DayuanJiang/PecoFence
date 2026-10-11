@@ -265,6 +265,7 @@ impl FenceWindow {
             plate_reveal: Tween::at(1.0, Instant::now()),
             plate_inset_px: 0,
             plate_alpha: 1.0,
+            laid_title_h: 0,
             peeking: false,
             behavior: ctx.behavior.clone(),
         };

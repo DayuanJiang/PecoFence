@@ -247,8 +247,8 @@ impl FenceViewState {
             let dur = self.anim_dur(motion::FAST);
             self.plate_reveal.retarget(plate, dur, Curve::Linear, now);
         }
-        let plate_top =
-            self.theme.title_height * (1.0 - self.title_reveal.value_at(now).clamp(0.0, 1.0));
+        let plate_top = self.title_h_px() as f32 / self.scale()
+            * (1.0 - self.title_reveal.value_at(now).clamp(0.0, 1.0));
         let plate_clear = 1.0 - self.plate_reveal.value_at(now).clamp(0.0, 1.0);
         let f = &mut self.chrome_fades;
         f.set(animate, ChromeKey::Title, title_visible as u8 as f32, now);
@@ -297,6 +297,7 @@ impl FenceViewState {
             merge_hint: self.merge_t.value_at(now),
             plate_top,
             plate_clear,
+            rows: self.tab_rows(),
         }
     }
 
@@ -311,8 +312,37 @@ impl FenceViewState {
             .snap(ChromeKey::Count, self.roll_target() as u8 as f32, now);
     }
 
+    /// The tab strip wrapped onto more or fewer rows without a resize (a tab added, renamed or
+    /// reordered, a merge gap opened, a theme change): the content moves under the new title
+    /// area, and a rolled window's height follows it. Left alone while the height animates;
+    /// the animation lays the panels out when it lands.
+    pub(super) fn sync_title_rows(&mut self) {
+        if self.height_animating() {
+            return;
+        }
+        let title_h = self.title_h_px();
+        let (w, h) = self.chrome_panel.size_px();
+        if self.rolled_up && !self.peeking && h != title_h {
+            window::post_message(self.hwnd, WM_APP_TITLE_ROWS, 0, 0);
+        }
+        if title_h == self.laid_title_h {
+            return;
+        }
+        let relaid = self.layout_panels(w, h).and_then(|_| {
+            if self.rolled_up && !self.peeking {
+                Ok(())
+            } else {
+                self.redraw_content()
+            }
+        });
+        if let Err(e) = relaid {
+            tracing::warn!(error = %e, "relayout for the tab rows failed");
+        }
+    }
+
     /// Draws the chrome (backdrop, tabs or title, rim, chevron).
     pub(super) fn draw_chrome_panel(&mut self) -> Result<()> {
+        self.sync_title_rows();
         let now = Instant::now();
         let state = self.title_state(now);
         // DIP height the crop covers (taller than the surface mid height animation).
@@ -370,9 +400,10 @@ impl FenceViewState {
             self.pill_anim = None;
         }
         // Active pill mid-glide: drawn at the tweened place instead of on the active tab.
-        let pill = self
-            .pill_anim
-            .map(|(x, w)| (x.value_at(now), w.value_at(now)));
+        let pill = self.pill_anim.map(|(x, w)| {
+            let (x, row) = self.tab_unfold(x.value_at(now));
+            (x, w.value_at(now), row)
+        });
         if self
             .pill_anim
             .is_some_and(|(x, w)| x.is_done(now) && w.is_done(now))
@@ -393,20 +424,24 @@ impl FenceViewState {
             .iter()
             .zip(rects.iter())
             .enumerate()
-            .map(|(i, (t, (x, w)))| TabDraw {
-                key: t.id.as_u128(),
-                x: xs.get(i).copied().unwrap_or(*x),
-                w: *w,
-                title: &t.title,
-                title_size: t.title_size,
-                title_color: t.title_color,
-                active: i == active,
-                hover: self.chrome_fades.value(&ChromeKey::Tab(i), now),
-                pressed: pressed_tab == Some(i),
-                color: t.color.map(|c| ColorF::from_rgba8(c[0], c[1], c[2], 0xFF)),
-                drop_target: self.chrome_fades.value(&ChromeKey::TabDrop(i), now),
-                dragging: dragging == Some(i),
-                alpha: 1.0 - self.chrome_fades.value(&ChromeKey::TabNew(t.id), now),
+            .map(|(i, (t, (x, w)))| {
+                let (x, row) = self.tab_unfold(xs.get(i).copied().unwrap_or(*x));
+                TabDraw {
+                    key: t.id.as_u128(),
+                    x,
+                    w: *w,
+                    row,
+                    title: &t.title,
+                    title_size: t.title_size,
+                    title_color: t.title_color,
+                    active: i == active,
+                    hover: self.chrome_fades.value(&ChromeKey::Tab(i), now),
+                    pressed: pressed_tab == Some(i),
+                    color: t.color.map(|c| ColorF::from_rgba8(c[0], c[1], c[2], 0xFF)),
+                    drop_target: self.chrome_fades.value(&ChromeKey::TabDrop(i), now),
+                    dragging: dragging == Some(i),
+                    alpha: 1.0 - self.chrome_fades.value(&ChromeKey::TabNew(t.id), now),
+                }
             })
             .collect();
         let ok = self.chrome_panel.draw(self.dpi, |session, wd, hd| {
@@ -528,6 +563,7 @@ impl FenceViewState {
         self.update_shape_clip(w, h)?;
         self.chrome_panel.resize(w, h)?;
         let title_h = self.title_h_px();
+        self.laid_title_h = title_h;
         let content_h = (h - title_h).max(1);
         self.content_panel.resize(w, content_h)?;
         self.content_panel

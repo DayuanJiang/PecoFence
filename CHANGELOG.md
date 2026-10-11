@@ -4,6 +4,7 @@
 
 - Fences stay in view after Win+D (「显示桌面」) on Windows 11 24H2 and later (#74). There Explorer raises the desktop window itself over every window, and PecoFence re-inserted the fences "just above" it, which could leave them underneath it, covered by the wallpaper, with nothing in the log. While the desktop is shown, the fences now float above it the way Peek shows them, and drop back behind the apps as soon as a window comes to the front; both moments are in the log. 「随桌面一起隐藏」 (`showDesktop = hideWithDesktop`) still hides the fences together with the windows.
 - The mouse wheel switches tabs (#77). Scrolling over the title row of a fence with tabs moves to the next tab (down) or the previous one (up), one tab per notch, stopping at the first and last tab.
+- Tabs that no longer fit in the width of a fence wrap onto a second title row (and a third, and so on) instead of squeezing every tab name until it is cut off. The icons move down to make room, and the rows come back together as the fence is widened again. Tabs can still be dragged to reorder them, from one row to another as well.
 
 ## 0.1.5
 

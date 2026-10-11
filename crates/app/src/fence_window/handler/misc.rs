@@ -103,6 +103,26 @@ pub(super) fn on_app_tab_swap_done(
     Some(0)
 }
 
+pub(super) fn on_app_title_rows(
+    h: &HandlerCtx,
+    hwnd: HWND,
+    _wparam: usize,
+    _lparam: isize,
+) -> Option<isize> {
+    let HandlerCtx { view, .. } = h;
+    let resize = view.borrow().as_ref().and_then(|v| {
+        let r = window::window_rect(hwnd);
+        let th = v.title_h_px();
+        (v.rolled_up && !v.peeking && !v.height_animating() && r.bottom - r.top != th)
+            .then_some((r, th))
+    });
+    // No borrow held: the resize sends WM_SIZE, which lays the panels out again.
+    if let Some((r, th)) = resize {
+        let _ = window::set_window_bounds(hwnd, r.left, r.top, r.right - r.left, th);
+    }
+    Some(0)
+}
+
 pub(super) fn on_app_fade_done(
     h: &HandlerCtx,
     hwnd: HWND,

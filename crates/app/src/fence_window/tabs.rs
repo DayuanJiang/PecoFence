@@ -150,16 +150,65 @@ pub(super) fn merge_slot_for(x: f32, rects: &[(f32, f32)]) -> usize {
 /// already clamped), `available` the room between `TAB_LEFT` and the chevron zone. A phantom
 /// pill of `TAB_MERGE_GAP_W` at slot `gap` takes part in the proportional shrink and the
 /// spacing but is not emitted, so the result has exactly one (x, w) per entry of `natural`.
+#[cfg(test)]
 pub(super) fn tab_strip_rects(
     natural: &[f32],
     gap: Option<usize>,
     available: f32,
 ) -> Vec<(f32, f32)> {
-    // (natural width, is the phantom gap)
+    tab_strip_shrunk(&with_merge_gap(natural, gap), available)
+        .into_iter()
+        .map(|(x, w, _)| (x, w))
+        .collect()
+}
+
+/// (natural width, is the phantom merge gap) per pill of the strip.
+fn with_merge_gap(natural: &[f32], gap: Option<usize>) -> Vec<(f32, bool)> {
     let mut natural: Vec<(f32, bool)> = natural.iter().map(|n| (*n, false)).collect();
     if let Some(g) = gap {
         natural.insert(g.min(natural.len()), (TAB_MERGE_GAP_W, true));
     }
+    natural
+}
+
+/// Lays the tab strip out over as many title rows as it needs: the pills keep their natural
+/// widths and the ones that no longer fit in a row move to the next (a pill wider than a whole
+/// row is shrunk to it), so captions stay readable however narrow the fence gets. A row too
+/// narrow for even the smallest pill keeps the single-row proportional shrink (captions
+/// ellipsize). Same inputs as `tab_strip_rects`; returns (x, w, row) per entry of `natural`,
+/// x along its row, and the row count (the merge gap's row included).
+pub(super) fn tab_strip_rows(
+    natural: &[f32],
+    gap: Option<usize>,
+    available: f32,
+) -> (Vec<(f32, f32, usize)>, usize) {
+    let natural = with_merge_gap(natural, gap);
+    let available = available.max(0.0);
+    let total = natural.iter().map(|(n, _)| *n).sum::<f32>()
+        + TAB_GAP * natural.len().saturating_sub(1) as f32;
+    if total <= available || available < TAB_MIN_W {
+        return (tab_strip_shrunk(&natural, available), 1);
+    }
+    let mut x = TAB_LEFT;
+    let mut row = 0;
+    let rects = natural
+        .iter()
+        .filter_map(|(n, phantom)| {
+            let w = n.min(available);
+            if x > TAB_LEFT && x + w > TAB_LEFT + available + 0.001 {
+                row += 1;
+                x = TAB_LEFT;
+            }
+            let r = (x, w, row);
+            x += w + TAB_GAP;
+            (!phantom).then_some(r)
+        })
+        .collect();
+    (rects, row + 1)
+}
+
+/// One row holding the whole strip: every pill shrinks proportionally once it does not fit.
+fn tab_strip_shrunk(natural: &[(f32, bool)], available: f32) -> Vec<(f32, f32, usize)> {
     let available = available.max(0.0);
     let gap_w = TAB_GAP.min(available / natural.len().max(1) as f32 * 0.2);
     let gaps = gap_w * natural.len().saturating_sub(1) as f32;
@@ -174,7 +223,7 @@ pub(super) fn tab_strip_rects(
         .iter()
         .filter_map(|(n, phantom)| {
             let w = (n * factor).max(0.0);
-            let r = (x, w);
+            let r = (x, w, 0);
             x += w + gap_w;
             (!phantom).then_some(r)
         })
@@ -326,56 +375,121 @@ impl FenceViewState {
         })
     }
 
-    /// Tab header rects (x, w) in DIPs along the title row; empty unless there are 2+ tabs.
-    /// Natural width = caption + 16 padding, clamped to [48, 160]; when the strip does not fit
-    /// beside the chevron zone every tab shrinks proportionally (captions ellipsize).
+    /// Tab header rects (x, w) in DIPs; empty unless there are 2+ tabs. Natural width is the
+    /// caption plus 16 padding, clamped to [48, 160]; a strip that does not fit beside the
+    /// chevron zone wraps onto further title rows (`tab_strip_rows`). The x is a strip
+    /// coordinate: row r starts at `r * tab_row_stride()`, so the strip order is the x order
+    /// across rows and the reorder, merge-slot and slide arithmetic work on one line
+    /// (`tab_unfold` splits it).
     pub(super) fn tab_rects(&self) -> Vec<(f32, f32)> {
         self.tab_rects_with_gap(self.merge_gap)
     }
 
-    /// `tab_rects` with an explicit insertion gap (`tab_strip_rects`): pure arithmetic over the
+    /// `tab_rects` with an explicit insertion gap (`tab_strip_rows`): pure arithmetic over the
     /// cached natural widths, so it is cheap enough for every pointer move of a merge drag.
     pub(super) fn tab_rects_with_gap(&self, gap: Option<usize>) -> Vec<(f32, f32)> {
-        if self.tabs.len() < 2 {
-            return Vec::new();
-        }
-        let (_, end) = self.tab_strip_bounds();
-        let available = (end - TAB_LEFT).max(0.0);
-        let natural = self.tab_natural_widths();
-        // 标题对齐 moves the strip as a whole. The offset is measured without the merge gap, so
-        // opening the gap never shifts the slots under the pointer; the gap squeezes the pills
-        // into the room before the chevron zone instead.
-        let shift = match self.behavior.title_align.get() {
-            pecofence_core::TitleAlign::Left => 0.0,
-            align => {
-                let resting = tab_strip_rects(&natural, None, available);
-                let span = resting.last().map_or(0.0, |(x, w)| x + w - TAB_LEFT);
-                let width = self.chrome_panel.size_px().0 as f32 / self.scale();
-                pecofence_render::fence_chrome::aligned_x(align, width, TAB_LEFT, end, span)
-                    - TAB_LEFT
-            }
-        };
-        tab_strip_rects(&natural, gap, available - shift)
-            .into_iter()
-            .map(|(x, w)| (x + shift, w))
-            .collect()
+        self.tab_layout(gap).0
     }
 
-    fn tab_strip_bounds(&self) -> (f32, f32) {
-        let width = self.chrome_panel.size_px().0 as f32 / self.scale();
-        // Rolled: the item count sits before the chevron; the strip must end before it. The
-        // target state, so the pills slide there during the roll (`start_roll_anim`).
-        let reserve = if self.roll_target() {
-            TAB_RIGHT_RESERVE
-                + pecofence_render::fence_chrome::header_count_width(
-                    width,
-                    self.tabs.len(),
-                    self.deco.title_x(),
-                )
-        } else {
-            TAB_RIGHT_RESERVE
+    /// Title rows the tab strip occupies (1 without a strip).
+    pub(super) fn tab_rows(&self) -> usize {
+        self.tab_layout(self.merge_gap).1
+    }
+
+    /// Horizontal distance between two rows in strip coordinates: the fence width, so a pill
+    /// sliding from the end of one row to the next leaves on the right and enters on the left.
+    pub(super) fn tab_row_stride(&self) -> f32 {
+        (self.chrome_panel.size_px().0 as f32 / self.scale()).max(1.0)
+    }
+
+    /// Splits a strip coordinate into (x along the row, row).
+    pub(super) fn tab_unfold(&self, x: f32) -> (f32, usize) {
+        let stride = self.tab_row_stride();
+        let row = (x / stride).floor().max(0.0);
+        (x - row * stride, row as usize)
+    }
+
+    /// The strip coordinate under a client-pixel point (its row from y, clamped to the strip).
+    pub(super) fn tab_strip_x(&self, x_px: i32, y_px: i32) -> f32 {
+        let scale = self.scale();
+        let rows = self.tab_rows();
+        let row = (y_px as f32 / scale / self.theme.title_height)
+            .floor()
+            .clamp(0.0, rows.saturating_sub(1) as f32);
+        row * self.tab_row_stride() + x_px as f32 / scale
+    }
+
+    fn tab_layout(&self, gap: Option<usize>) -> (Vec<(f32, f32)>, usize) {
+        if self.tabs.len() < 2 {
+            return (Vec::new(), 1);
+        }
+        let natural = self.tab_natural_widths();
+        let end = self.tab_strip_end(&natural);
+        let available = (end - TAB_LEFT).max(0.0);
+        let (rects, rows) = tab_strip_rows(&natural, gap, available);
+        let span = |rects: &[(f32, f32, usize)], row: usize| {
+            rects
+                .iter()
+                .filter(|r| r.2 == row)
+                .map(|(x, w, _)| x + w - TAB_LEFT)
+                .fold(0.0, f32::max)
         };
-        (TAB_LEFT, (width - reserve).max(TAB_LEFT))
+        // 标题对齐 moves each row as a whole. The offset is measured without the merge gap, so
+        // opening the gap never shifts the slots under the pointer; it only shrinks to keep a
+        // row the gap widened inside the room before the chevron zone.
+        let align = self.behavior.title_align.get();
+        let gapless;
+        let resting = match (align, gap) {
+            (pecofence_core::TitleAlign::Left, _) => None,
+            (_, None) => Some((rects.as_slice(), rows)),
+            (_, Some(_)) => {
+                gapless = tab_strip_rows(&natural, None, available);
+                Some((gapless.0.as_slice(), gapless.1))
+            }
+        };
+        let width = self.chrome_panel.size_px().0 as f32 / self.scale();
+        let shift = |row: usize| -> f32 {
+            let Some((resting, resting_rows)) = resting else {
+                return 0.0;
+            };
+            let unit = if row < resting_rows {
+                span(resting, row)
+            } else {
+                span(&rects, row)
+            };
+            let x = pecofence_render::fence_chrome::aligned_x(align, width, TAB_LEFT, end, unit);
+            (x - TAB_LEFT).clamp(0.0, (available - span(&rects, row)).max(0.0))
+        };
+        let stride = self.tab_row_stride();
+        let laid = rects
+            .iter()
+            .map(|&(x, w, row)| (row as f32 * stride + x + shift(row), w))
+            .collect();
+        (laid, rows)
+    }
+
+    /// Right end of every tab row (DIPs): before the chevron zone, and on a rolled fence also
+    /// before its item count while the whole strip still fits on one row beside it (the count
+    /// is hidden otherwise, so rolling never changes the row count). The target state, so the
+    /// pills slide there during the roll (`start_roll_anim`).
+    fn tab_strip_end(&self, natural: &[f32]) -> f32 {
+        let width = self.chrome_panel.size_px().0 as f32 / self.scale();
+        let end = (width - TAB_RIGHT_RESERVE).max(TAB_LEFT);
+        if !self.roll_target() {
+            return end;
+        }
+        let count = pecofence_render::fence_chrome::header_count_width(
+            width,
+            self.tabs.len(),
+            self.deco.title_x(),
+        );
+        let rolled_end = (end - count).max(TAB_LEFT);
+        let span = natural.iter().sum::<f32>() + TAB_GAP * natural.len().saturating_sub(1) as f32;
+        if TAB_LEFT + span <= rolled_end {
+            rolled_end
+        } else {
+            end
+        }
     }
 
     /// Natural pill width per tab (caption + 16 padding, clamped to [48, 160] DIPs). Measuring
@@ -464,7 +578,7 @@ impl FenceViewState {
         if y_px < 0 || y_px >= self.title_h_px() {
             return None;
         }
-        let x = x_px as f32 / self.scale();
+        let x = self.tab_strip_x(x_px, y_px);
         let rects = self.tab_rects();
         let xs = self.tab_draw_xs(Instant::now());
         if let Some(drag) = &self.tab_drag
@@ -509,14 +623,17 @@ impl FenceViewState {
     }
 
     /// The dragged pill's painted x (None when the strip is gone, or while the press has not
-    /// left the drag threshold: the pill sits in its slot like a clicked tab's).
+    /// left the drag threshold: the pill sits in its slot like a clicked tab's). It rides along
+    /// the row under the pointer (`pointer_x` is a strip coordinate).
     pub(super) fn dragged_tab_x(&self, td: &TabDrag, rects: &[(f32, f32)]) -> Option<f32> {
         if !td.moved {
             return None;
         }
         let (_, w) = *rects.get(td.index)?;
-        let (first, end) = self.tab_strip_bounds();
-        Some(dragged_tab_x(td.pointer_x, td.grab_dx, w, first, end))
+        let end = self.tab_strip_end(&self.tab_natural_widths());
+        let (x, row) = self.tab_unfold(td.pointer_x);
+        let row = row.min(self.tab_rows().saturating_sub(1));
+        Some(row as f32 * self.tab_row_stride() + dragged_tab_x(x, td.grab_dx, w, TAB_LEFT, end))
     }
 
     /// After the strip order changed: every tab whose painted x (`prev`, by id) differs from

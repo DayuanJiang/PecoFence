@@ -284,6 +284,9 @@ pub struct FenceViewState {
     /// and the shadow follow them (`sync_plate_shape`).
     pub(super) plate_inset_px: i32,
     pub(super) plate_alpha: f32,
+    /// Title area height (device px) the panels were last laid out for: a tab strip that
+    /// wraps onto more or fewer rows moves the content (`sync_title_rows`).
+    pub(super) laid_title_h: i32,
     /// Temporarily expanded by hovering a rolled fence (state stays "rolled" for persistence).
     pub(super) peeking: bool,
     pub(super) behavior: Rc<Behavior>,
@@ -357,8 +360,9 @@ impl FenceViewState {
         }
     }
 
+    /// The title area: one row, or one per row of a tab strip that wraps (`tab_rows`).
     pub(super) fn title_h_px(&self) -> i32 {
-        (self.theme.title_height * self.scale()).round() as i32
+        (self.theme.title_height * self.tab_rows() as f32 * self.scale()).round() as i32
     }
 
     /// Size of the content surface. Equal to the window minus the title bar after every

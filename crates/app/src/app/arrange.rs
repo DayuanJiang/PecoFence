@@ -46,7 +46,15 @@ impl App {
             crate::layout::GridMetrics::for_icon_size(shown.view.icon_size, shown.view.label_lines)
                 .with_line_h(self.ctx.chrome.label_line_h())
                 .with_spacing(shown.view.spacing);
-        let title_h = (self.ctx.theme.borrow().title_height * scale).round();
+        // The window's own title area: a tab strip that wraps adds title rows.
+        let title_h = self
+            .fences
+            .get(&id)
+            .and_then(|w| w.resting_heights_px())
+            .map_or_else(
+                || (self.ctx.theme.borrow().title_height * scale).round(),
+                |(title_h, _)| title_h as f32,
+            );
         let cells = self.state.config.settings.snapping.size_to_cells;
         let rows = match shown.view.layout {
             ViewLayout::Icons => None,

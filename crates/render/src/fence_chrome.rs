@@ -340,6 +340,9 @@ pub struct TitleState {
     /// How far a fully transparent fence (外观 → 全透明) has cleared its plate: 0 = drawn,
     /// 1 = no glass, tint or rim at all (the resting look away from the pointer).
     pub plate_clear: f32,
+    /// Title rows a wrapped tab strip takes (`TabDraw::row`), the merge gap's included; 0 and
+    /// 1 both mean one row.
+    pub rows: usize,
 }
 
 impl TitleDeco {
@@ -406,6 +409,9 @@ pub struct TabDraw<'a> {
     pub key: u128,
     pub x: f32,
     pub w: f32,
+    /// Title row the pill sits on: a strip too wide for the fence wraps onto further rows,
+    /// each `Theme::title_height` tall (`TitleState::rows`).
+    pub row: usize,
     pub title: &'a str,
     pub title_size: u8,
     pub title_color: Option<ColorF>,
@@ -566,6 +572,7 @@ fn draw_plate(
     pill_a: f32,
     hover: f32,
     style: FenceStyle,
+    title_h: f32,
 ) -> Result<()> {
     let px = Px::new(scale);
     let plate_top = outer.top;
@@ -683,7 +690,7 @@ fn draw_plate(
         if style.tint_title_only {
             // Only the title row (what of it the fold leaves): the plate's rounded top
             // corners, a straight bottom edge where the icons start.
-            let band = theme.title_height.min(height) - plate_top;
+            let band = title_h.min(height) - plate_top;
             if band > 0.0 {
                 let edge = band / outer.height().max(1.0);
                 let soft = (px.hair() / outer.height().max(1.0)).min(1.0 - edge.min(1.0));
@@ -1442,7 +1449,7 @@ impl FenceChrome {
         roll_t: f32,
         opacity: f32,
         tabs: &[TabDraw<'_>],
-        pill: Option<(f32, f32)>,
+        pill: Option<(f32, f32, usize)>,
         deco: TitleDeco,
         state: TitleState,
         style: FenceStyle,
@@ -1467,7 +1474,9 @@ impl FenceChrome {
         } else {
             state.title.clamp(0.0, 1.0)
         };
-        let title_h = theme.title_height.min(height);
+        // One row per wrapped line of tabs; the chevron and the rolled count stay on the first.
+        let row_h = theme.title_height.min(height);
+        let title_h = (row_h * state.rows.max(1) as f32).min(height);
         let pill_a = state.hover * title_a;
 
         if plate_a > 0.0 {
@@ -1486,6 +1495,7 @@ impl FenceChrome {
                 pill_a,
                 state.hover,
                 style,
+                title_h,
             )?;
         }
 
@@ -1575,6 +1585,18 @@ impl FenceChrome {
         } else {
             0.0
         };
+        // A first row of tabs that reaches into the caption's place hides it (the strip only
+        // makes room for it while it fits on one row).
+        let count_left = width - TitleDeco::CHEVRON_W - TitleDeco::CHEVRON_RIGHT_MARGIN - count_w;
+        let count_w = if tabs.len() > 1
+            && tabs
+                .iter()
+                .any(|t| t.row == 0 && !t.dragging && t.x + t.w > count_left + 0.5)
+        {
+            0.0
+        } else {
+            count_w
+        };
         // The title's ellipsis point moves with the caption fade instead of stepping when
         // the fade ends: the reserve is the caption's width scaled by its alpha (held at the
         // full width while rolling up, so the caption never fades in over the title).
@@ -1585,9 +1607,10 @@ impl FenceChrome {
         };
         if tabs.len() > 1 {
             let inset = if theme.liquid_glass { 4.0 } else { 6.0 };
-            let pill_h = (title_h - inset * 2.0).max(0.0);
-            let tab_rect = |x, w| Rect::from_xywh(x, inset, w, pill_h);
-            let marker = |x: f32, w: f32, color: ColorF, alpha: f32| -> Result<()> {
+            let pill_h = (row_h - inset * 2.0).max(0.0);
+            let row_top = |row: usize| row as f32 * row_h;
+            let tab_rect = |x, w, row| Rect::from_xywh(x, row_top(row) + inset, w, pill_h);
+            let marker = |x: f32, w: f32, row: usize, color: ColorF, alpha: f32| -> Result<()> {
                 let marker_w = (w - 24.0).clamp(0.0, 20.0);
                 if marker_w > 0.0 {
                     let brush = session.create_solid_brush(with_alpha(color, alpha))?;
@@ -1595,7 +1618,7 @@ impl FenceChrome {
                         &RoundedRect::uniform(
                             Rect::from_xywh(
                                 x + (w - marker_w) * 0.5,
-                                title_h - inset - 3.0,
+                                row_top(row) + row_h - inset - 3.0,
                                 marker_w,
                                 2.0,
                             ),
@@ -1618,14 +1641,14 @@ impl FenceChrome {
                         theme,
                         scale,
                         tab.key,
-                        tab_rect(tab.x, tab.w),
+                        tab_rect(tab.x, tab.w, tab.row),
                         0.16 + 0.32 * tab.hover + 0.3 * tab.drop_target,
                         title_a * tab.alpha.clamp(0.0, 1.0),
                     )?;
                 }
             }
-            if let Some((x, w)) = pill {
-                let rect = tab_rect(x, w);
+            if let Some((x, w, row)) = pill {
+                let rect = tab_rect(x, w, row);
                 if theme.liquid_glass {
                     draw_header_glass(session, &backdrop, theme, scale, 0, rect, 0.78, title_a)?;
                 } else {
@@ -1641,7 +1664,7 @@ impl FenceChrome {
                     .find(|t| t.active)
                     .and_then(|t| t.color)
                     .unwrap_or(theme.accent);
-                marker(x, w, color, title_a)?;
+                marker(x, w, row, color, title_a)?;
             }
             // A dragged tab (lens, marker and caption) is always above its neighbours.
             for tab in tabs
@@ -1653,7 +1676,7 @@ impl FenceChrome {
                 if ta <= 0.0 {
                     continue;
                 }
-                let rect = tab_rect(tab.x, tab.w);
+                let rect = tab_rect(tab.x, tab.w, tab.row);
                 let radius = header_control_radius(theme, rect);
                 if pill.is_none() && (tab.active || tab.pressed || tab.dragging) {
                     if theme.liquid_glass {
@@ -1682,11 +1705,11 @@ impl FenceChrome {
                 }
                 // A persistent marker identifies the selected tab even on uniform wallpaper.
                 if pill.is_none() && tab.active {
-                    marker(tab.x, tab.w, tab.color.unwrap_or(theme.accent), ta)?;
+                    marker(tab.x, tab.w, tab.row, tab.color.unwrap_or(theme.accent), ta)?;
                 } else if !tab.active
                     && let Some(color) = tab.color
                 {
-                    marker(tab.x, tab.w, color, ta * 0.7)?;
+                    marker(tab.x, tab.w, tab.row, color, ta * 0.7)?;
                 }
                 let fmt = self.tab_format(tab.title_size);
                 let padding =
@@ -1714,9 +1737,9 @@ impl FenceChrome {
                     fmt,
                     &Rect::from_xywh(
                         tab.x + padding * 0.5,
-                        0.0,
+                        row_top(tab.row),
                         (tab.w - padding).max(0.0),
-                        title_h,
+                        row_h,
                     ),
                     &brush,
                     halo.as_ref(),
@@ -1812,7 +1835,7 @@ impl FenceChrome {
                 width - TitleDeco::CHEVRON_W - TitleDeco::CHEVRON_RIGHT_MARGIN - count_w,
                 0.0,
                 count_w - 4.0,
-                title_h,
+                row_h,
             );
             let foreground =
                 header_foreground(&backdrop, theme, 6, count_rect, scale, opacity, style.tint);
@@ -1847,7 +1870,7 @@ impl FenceChrome {
             state.hover.clamp(0.0, 1.0)
         } * title_a;
         if chevron_a > 0.0 {
-            let box_r = TitleDeco::chevron_box(width, title_h);
+            let box_r = TitleDeco::chevron_box(width, row_h);
             let foreground =
                 header_foreground(&backdrop, theme, 7, box_r, scale, opacity, style.tint);
             if theme.liquid_glass && (state.chevron_pressed || state.chevron_hover > 0.0) {

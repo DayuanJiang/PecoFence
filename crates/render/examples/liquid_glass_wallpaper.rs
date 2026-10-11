@@ -139,6 +139,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     key: 100 + i as u128,
                     x,
                     w,
+                    row: 0,
                     title,
                     title_size,
                     title_color: None,

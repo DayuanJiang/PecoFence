@@ -269,6 +269,63 @@ fn narrow_tab_strips_cannot_cover_the_chevron_or_count() {
         }
     }
 }
+
+/// A strip too wide for the fence wraps onto further rows at natural widths instead of
+/// squeezing every caption, and stays on one row while it fits.
+#[test]
+fn tab_strip_wraps_onto_rows() {
+    let natural = [100.0, 60.0, 120.0, 80.0];
+    // 100 + 4 + 60 + 4 + 120 + 4 + 80 = 372
+    let (rects, rows) = tab_strip_rows(&natural, None, 372.0);
+    assert_eq!(rows, 1);
+    assert!(rects.iter().all(|r| r.2 == 0));
+    let (rects, rows) = tab_strip_rows(&natural, None, 250.0);
+    assert_eq!(rows, 2);
+    assert_eq!(
+        rects,
+        vec![
+            (TAB_LEFT, 100.0, 0),
+            (TAB_LEFT + 104.0, 60.0, 0),
+            (TAB_LEFT, 120.0, 1),
+            (TAB_LEFT + 124.0, 80.0, 1),
+        ]
+    );
+    let (rects, rows) = tab_strip_rows(&natural, None, 110.0);
+    assert_eq!(rows, 4);
+    assert_eq!(
+        rects[2],
+        (TAB_LEFT, 110.0, 2),
+        "wider than a row: shrunk to it"
+    );
+    // The merge gap takes a place in the wrap (and may open a row) but is not emitted.
+    assert_eq!(tab_strip_rows(&natural, None, 220.0).1, 2);
+    let (rects, rows) = tab_strip_rows(&natural, Some(3), 220.0);
+    assert_eq!(rects.len(), 4);
+    assert_eq!(rows, 3);
+    assert_eq!(rects[3], (TAB_LEFT, 80.0, 2));
+    // Narrower than the smallest pill: one row, shrunk as before.
+    let (rects, rows) = tab_strip_rows(&natural, None, 40.0);
+    assert_eq!(rows, 1);
+    assert_eq!(rects.len(), 4);
+    for count in 2..=10 {
+        let natural = vec![120.0; count];
+        for available in [24.0, 48.0, 84.0, 140.0, 320.0, 1000.0] {
+            for gap in [None, Some(0), Some(count / 2), Some(count)] {
+                let (rects, rows) = tab_strip_rows(&natural, gap, available);
+                assert_eq!(rects.len(), count);
+                for &(x, w, row) in &rects {
+                    assert!(row < rows);
+                    assert!(x >= TAB_LEFT && w >= 0.0);
+                    assert!(x + w <= TAB_LEFT + available + 0.001);
+                }
+                // Strip order reads left to right, then row by row.
+                assert!(rects.windows(2).all(|r| {
+                    r[0].2 < r[1].2 || (r[0].2 == r[1].2 && r[0].0 + r[0].1 <= r[1].0 + 0.001)
+                }));
+            }
+        }
+    }
+}
 /// Right-drag menu offers only what both the source and this target can do, in Explorer's
 /// order.
 /// Explorer: Ctrl+dragging one item of a multi-selection copies the whole selection; the

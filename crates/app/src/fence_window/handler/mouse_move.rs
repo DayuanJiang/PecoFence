@@ -105,9 +105,15 @@ pub(super) fn on_mousemove(
         let sy = td.start.1;
         let index = td.index;
         let (w_px, _) = v.chrome_panel.size_px();
-        // Leaving the title row vertically (or the window sideways) tears the
+        // A wrapped strip lets the tab move between its rows: the threshold
+        // counts from the strip's first and last row.
+        let row_px = (v.theme.title_height * v.scale()).round().max(1.0) as i32;
+        let start_row = sy.clamp(0, v.title_h_px() - 1) / row_px;
+        let rows_below = v.tab_rows() as i32 - 1 - start_row;
+        let (up, down) = (far + start_row * row_px, far + rows_below.max(0) * row_px);
+        // Leaving the title rows vertically (or the window sideways) tears the
         // tab off; moving along the strip reorders it.
-        if (y - sy).abs() > far || x < 0 || x >= w_px {
+        if sy - y > up || y - sy > down || x < 0 || x >= w_px {
             let tab = v.tabs.get(index).map(|t| t.id);
             v.tab_drag = None;
             v.tab_slide.clear();
@@ -150,7 +156,7 @@ pub(super) fn on_mousemove(
         // step, repeated so a fast sweep can cross several neighbours in one
         // message; `tab_reorder_step` is stable for any pair of widths.
         let now = Instant::now();
-        let pointer_x = x as f32 / v.scale();
+        let pointer_x = v.tab_strip_x(x, y);
         if let Some(td) = v.tab_drag.as_mut() {
             td.moved = true;
             td.pointer_x = pointer_x;

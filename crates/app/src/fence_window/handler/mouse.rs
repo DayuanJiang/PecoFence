@@ -130,7 +130,7 @@ pub(super) fn on_lbuttondown(
                     tab: tab.id,
                 });
             }
-            let pointer_x = x as f32 / v.scale();
+            let pointer_x = v.tab_strip_x(x, y);
             let slot_x = v
                 .tab_draw_xs(Instant::now())
                 .get(t)
