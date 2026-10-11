@@ -219,10 +219,52 @@ impl Theme {
 
     /// The solid veil used by the "more opaque" preset. Share the recipe with
     /// foreground selection so text is evaluated against the material actually drawn.
+    /// Fluent only: Liquid Glass gets its opacity from [`Theme::liquid_level`].
     pub fn opacity_veil(self, opacity: f32) -> ColorF {
+        if self.liquid_glass {
+            return ColorF::TRANSPARENT;
+        }
         ColorF {
             a: ((opacity.clamp(0.4, 1.8) - 1.0) * 0.7).clamp(0.0, 0.6),
             ..self.solid_fill
+        }
+    }
+
+    /// Modelled on iOS 27's Liquid Glass slider: towards Tinted, more frost and fill, slightly
+    /// less lensing; the lens itself never fades. Shared with foreground selection.
+    pub fn liquid_level(self, opacity: f32) -> GlassLevel {
+        let t = liquid_glass_position(opacity);
+        let rgba = |rgb: u32, a: f32| ColorF {
+            r: ((rgb >> 16) & 0xFF) as f32 / 255.0,
+            g: ((rgb >> 8) & 0xFF) as f32 / 255.0,
+            b: (rgb & 0xFF) as f32 / 255.0,
+            a,
+        };
+        // Tuned for the desktop: iOS's own light glass reads as a creamy wash at rest.
+        let fills = match self.mode {
+            ThemeMode::Light => [
+                rgba(0xFFFFFF, 0.02),
+                rgba(0xFFFFFF, 0.07),
+                rgba(0xF7F7FA, 0.22),
+            ],
+            ThemeMode::Dark => [
+                rgba(0xFFFFFF, 0.02),
+                rgba(0x4D4D52, 0.10),
+                rgba(0x38383D, 0.22),
+            ],
+        };
+        let mut fill = across(t, fills[0], fills[1], fills[2], lerp);
+        // Floating fences keep their near-opaque backing.
+        if self.glass_layer_fill.a > fill.a {
+            fill = self.glass_layer_fill;
+        }
+        let scalar =
+            |c: f32, r: f32, tinted: f32| across(t, c, r, tinted, |a, b, t| a + (b - a) * t);
+        GlassLevel {
+            frost_sigma_dip: scalar(1.0, 4.0, 8.0),
+            refraction: scalar(1.14, 1.0, 0.86),
+            light: scalar(1.4, 1.0, 1.0),
+            fill,
         }
     }
 
@@ -304,8 +346,13 @@ impl Theme {
         }
         let luminance = |c: ColorF| 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
         let mut brightness = sum / count.max(1) as f32;
-        let mut layer = self.glass_layer_fill;
-        layer.a *= opacity.clamp(0.4, 1.0);
+        let layer = if self.liquid_glass {
+            self.liquid_level(opacity).fill
+        } else {
+            let mut layer = self.glass_layer_fill;
+            layer.a *= opacity.clamp(0.4, 1.0);
+            layer
+        };
         for overlay in [
             Some(layer),
             Some(self.opacity_veil(opacity)),
@@ -363,6 +410,36 @@ impl Theme {
     pub fn accent_rgb8(&self) -> [u8; 3] {
         let c = |v: f32| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
         [c(self.accent.r), c(self.accent.g), c(self.accent.b)]
+    }
+}
+
+/// One position on the Liquid Glass slider (see [`Theme::liquid_level`]).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct GlassLevel {
+    /// Blur applied before refraction (DIP).
+    pub frost_sigma_dip: f32,
+    /// Lens and rim light multipliers (1 = Regular).
+    pub refraction: f32,
+    pub light: f32,
+    pub fill: ColorF,
+}
+
+/// 0 ("More Clear") to 1 ("More Tinted"): 更透明 0.55 is the left end, the default 1.0 the
+/// middle and 更厚实 1.6 the right end.
+pub fn liquid_glass_position(opacity: f32) -> f32 {
+    let o = opacity.clamp(0.55, 1.6);
+    if o <= 1.0 {
+        0.5 * (o - 0.55) / 0.45
+    } else {
+        0.5 + 0.5 * (o - 1.0) / 0.6
+    }
+}
+
+fn across<T: Copy>(t: f32, clear: T, regular: T, tinted: T, mix: impl Fn(T, T, f32) -> T) -> T {
+    if t <= 0.5 {
+        mix(clear, regular, t * 2.0)
+    } else {
+        mix(regular, tinted, (t - 0.5) * 2.0)
     }
 }
 
@@ -480,7 +557,7 @@ mod tests {
     #[test]
     fn glass_foreground_accounts_for_opacity_and_tint_without_changing_material() {
         let dark = Theme::dark().with_liquid_glass().with_accent([0, 120, 212]);
-        let bright = crate::Image::solid(16, 16, [180, 180, 180]);
+        let bright = crate::Image::solid(16, 16, [158, 158, 158]);
         assert!(dark.over_glass(&bright).text_primary.r < 0.2);
         let veiled = dark.over_glass_with_appearance(&bright, 1.6, None);
         assert!(veiled.text_primary.r > 0.9);
@@ -488,7 +565,7 @@ mod tests {
         assert_eq!(veiled.accent_rgb8(), dark.accent_rgb8());
         assert_eq!(veiled.focus_outer, Theme::dark().focus_outer);
         let light = Theme::light().with_liquid_glass();
-        let dim = crate::Image::solid(16, 16, [110, 110, 110]);
+        let dim = crate::Image::solid(16, 16, [125, 125, 125]);
         assert!(light.over_glass(&dim).text_primary.r > 0.9);
         assert!(
             light
@@ -497,7 +574,7 @@ mod tests {
                 .r
                 < 0.2
         );
-        let mid = crate::Image::solid(16, 16, [165, 165, 165]);
+        let mid = crate::Image::solid(16, 16, [185, 185, 185]);
         let tinted =
             dark.over_glass_with_appearance(&mid, 1.0, Some(ColorF::new(0.0, 0.0, 0.0, 1.0)));
         assert!(tinted.text_primary.r > 0.9);
@@ -509,6 +586,46 @@ mod tests {
                 .text_primary,
             fluent.text_primary
         );
+    }
+
+    #[test]
+    fn liquid_presets_sit_on_the_slider_with_default_in_the_middle() {
+        let close = |a: f32, b: f32| (a - b).abs() < 1e-4;
+        assert!(close(liquid_glass_position(0.55), 0.0));
+        assert!(close(liquid_glass_position(1.0), 0.5));
+        assert!(close(liquid_glass_position(1.6), 1.0));
+        assert!(close(liquid_glass_position(0.2), 0.0));
+        assert!(close(liquid_glass_position(2.0), 1.0));
+        assert!(close(liquid_glass_position(0.0), 0.0));
+        assert!(close(liquid_glass_position(9.0), 1.0));
+    }
+
+    #[test]
+    fn liquid_level_frosts_and_tints_towards_tinted_and_never_fades_the_lens() {
+        for mode in [ThemeMode::Light, ThemeMode::Dark] {
+            let glass = Theme::for_mode(mode).with_liquid_glass();
+            let regular = glass.liquid_level(1.0);
+            assert_eq!(regular.frost_sigma_dip, 4.0);
+            assert_eq!(regular.refraction, 1.0);
+            assert_eq!(regular.light, 1.0);
+            let mut previous = glass.liquid_level(0.2);
+            assert!(
+                previous.frost_sigma_dip > 0.0,
+                "even the clear end keeps some frost"
+            );
+            for step in 1..=18 {
+                let level = glass.liquid_level(0.2 + 0.1 * step as f32);
+                assert!(level.frost_sigma_dip >= previous.frost_sigma_dip);
+                assert!(level.fill.a >= previous.fill.a);
+                assert!(level.refraction <= previous.refraction);
+                assert!(level.light <= previous.light);
+                previous = level;
+            }
+            assert!(previous.fill.a > 0.2);
+            let floating = glass.with_floating_backing();
+            assert!(floating.liquid_level(0.2).fill.a > 0.9);
+            assert_eq!(glass.opacity_veil(1.8).a, 0.0);
+        }
     }
 
     #[test]
@@ -543,7 +660,7 @@ mod tests {
 fn glass_text_keeps_its_ink_near_threshold_then_switches_on_a_clear_boundary() {
     let base = Theme::light().with_liquid_glass();
     let mut previous = Some(true);
-    for gray in [144, 138, 148, 139, 146] {
+    for gray in [134, 128, 138, 129, 136] {
         let image = crate::Image::solid(31, 29, [gray; 3]);
         let foreground = base.over_glass_with_previous_ink(&image, 1.0, None, previous);
         assert!(
@@ -553,13 +670,13 @@ fn glass_text_keeps_its_ink_near_threshold_then_switches_on_a_clear_boundary() {
         previous = Some(foreground.text_primary.r < 0.5);
     }
     let dark = base.over_glass_with_previous_ink(
-        &crate::Image::solid(31, 29, [80; 3]),
+        &crate::Image::solid(31, 29, [60; 3]),
         1.0,
         None,
         previous,
     );
     assert!(dark.text_primary.r > 0.9);
-    for gray in [138, 148, 144] {
+    for gray in [128, 138, 134] {
         let foreground = base.over_glass_with_previous_ink(
             &crate::Image::solid(31, 29, [gray; 3]),
             1.0,

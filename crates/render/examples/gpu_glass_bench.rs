@@ -1,7 +1,8 @@
 //! Exercises the real D2D effect graph, cache invalidation and completed-frame timings.
 use pecofence_render::{
-    Image, MonitorBackdrop,
+    Image, MonitorBackdrop, Theme,
     gpu_glass::{GpuGlass, WallpaperCache},
+    theme::GlassLevel,
 };
 use std::{rc::Rc, time::Instant};
 use windows_canvas::{ColorF, GpuDevice, Rect};
@@ -23,6 +24,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let gpu = GpuDevice::new_or_warp()?;
     let mut cache = WallpaperCache::default();
     let mut glass = GpuGlass::default();
+    let level = Theme::light().with_liquid_glass().liquid_level(1.0);
     let background = source(Image::solid(1600, 1200, [80; 3]));
     let target = gpu.create_render_target(260, 160)?;
     target.draw(|s| {
@@ -35,6 +37,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             0.0,
             1.0,
             24.0,
+            level,
             1.0,
             0.0,
         )
@@ -59,16 +62,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             0.0,
             1.0,
             24.0,
+            level,
             0.5,
             0.0,
         )
     })?;
     let pixels = target.read_pixels()?;
-    println!("half-opacity centre: {:?}", &pixels[centre..centre + 4]);
+    println!("half-alpha centre: {:?}", &pixels[centre..centre + 4]);
     for value in &pixels[centre..centre + 3] {
         assert!(
             (*value as i32 - 40).abs() <= 1,
-            "opacity must scale premultiplied RGB"
+            "the plate reveal must scale premultiplied RGB"
         );
     }
     assert!((pixels[centre + 3] as i32 - 128).abs() <= 1);
@@ -87,6 +91,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             pixel[..3].fill(if (i % 800 + i / 800) % 2 == 0 { 0 } else { 255 });
         }
         let checker = source(checker);
+        let unfrosted = GlassLevel {
+            frost_sigma_dip: 0.0,
+            ..level
+        };
         target.draw(|s| {
             s.clear(ColorF::TRANSPARENT);
             renderer.draw(
@@ -97,22 +105,46 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 0.0,
                 1.0,
                 24.0,
+                unfrosted,
                 1.0,
                 0.0,
             )
         })?;
         let pixels = target.read_pixels()?;
-        // kube's clear glass: the flat face shows the wallpaper pixel for pixel.
+        // kube's clear glass: without frost the flat face shows the wallpaper pixel for pixel.
         assert_eq!(
             [pixels[centre], pixels[centre + 4]],
             [0, 255],
-            "the clear centre must not be blurred or moved"
+            "the lens must not move the flat centre"
         );
         assert_eq!(
             pixels[centre + 3],
             255,
             "the centre must not be a transparent hole"
         );
+        target.draw(|s| {
+            s.clear(ColorF::TRANSPARENT);
+            renderer.draw(
+                s,
+                &mut cache,
+                &checker,
+                [-200, 80, 260, 160],
+                0.0,
+                1.0,
+                24.0,
+                level,
+                1.0,
+                0.0,
+            )
+        })?;
+        let pixels = target.read_pixels()?;
+        println!("frosted checker centre: {:?}", &pixels[centre..centre + 8]);
+        for value in [pixels[centre], pixels[centre + 4]] {
+            assert!(
+                (value as i32 - 127).abs() <= 3,
+                "the level's frost must diffuse pixel detail"
+            );
+        }
         let mut ramp = Image::solid(800, 500, [0; 3]);
         for (i, pixel) in ramp.bgra.as_chunks_mut::<4>().0.iter_mut().enumerate() {
             pixel[..3].fill((i % 800 / 4) as u8);
@@ -130,6 +162,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     0.0,
                     1.0,
                     24.0,
+                    level,
                     1.0,
                     0.0,
                 )
@@ -188,6 +221,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     0.0,
                     1.0,
                     24.0,
+                    level,
                     1.0,
                     0.0,
                 )
@@ -209,6 +243,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     0.0,
                     scale,
                     radius,
+                    level,
                     1.0,
                     0.0,
                 )
@@ -235,6 +270,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 0.0,
                 1.0,
                 24.0,
+                level,
                 1.0,
                 0.0,
             )
@@ -268,6 +304,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     0.0,
                     1.0,
                     24.0,
+                    level,
                     1.0,
                     0.0,
                 )
@@ -284,6 +321,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     0.0,
                     1.0,
                     24.0,
+                    level,
                     1.0,
                     0.0,
                 )?;
@@ -335,6 +373,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 0.0,
                 2.0,
                 24.0,
+                level,
                 1.0,
                 0.0,
             )
@@ -355,6 +394,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     0.0,
                     2.0,
                     24.0,
+                    level,
                     1.0,
                     0.0,
                 )
@@ -395,6 +435,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     0.0,
                     2.0,
                     16.0,
+                    level,
                     1.0,
                     0.0,
                 )

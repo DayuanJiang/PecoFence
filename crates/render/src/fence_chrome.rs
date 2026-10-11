@@ -5,7 +5,7 @@
 use crate::backdrop::Image;
 use crate::bitmaps::BitmapCache;
 use crate::panel::Clip;
-use crate::theme::{Theme, font_small, font_text, lerp, with_alpha};
+use crate::theme::{Theme, ThemeMode, font_small, font_text, lerp, with_alpha};
 use std::cell::RefCell;
 use std::rc::Rc;
 use windows_canvas::{
@@ -583,6 +583,7 @@ fn draw_plate(
             // A folded title row moves the lens (and its bezel) down to the plate top.
             let inset = (plate_top * scale).round() as i32;
             let lens = [rect[0], rect[1] + inset, rect[2], (rect[3] - inset).max(1)];
+            let level = theme.liquid_level(opacity);
             let result = material.borrow_mut().draw(
                 session,
                 &mut bitmaps.glass_wallpaper,
@@ -591,7 +592,8 @@ fn draw_plate(
                 inset as f32,
                 scale,
                 radius,
-                opacity.min(1.0) * plate_a,
+                level,
+                plate_a,
                 hover,
             );
             if let Err(error) = result {
@@ -606,9 +608,7 @@ fn draw_plate(
                 let fill = session.create_solid_brush(with_alpha(fallback, plate_a))?;
                 session.fill_rounded_rect(&RoundedRect::uniform(outer, radius), &fill);
             } else {
-                let mut c = theme.glass_layer_fill;
-                c.a *= opacity.min(1.0) * plate_a;
-                let layer = session.create_solid_brush(c)?;
+                let layer = session.create_solid_brush(with_alpha(level.fill, plate_a))?;
                 session.fill_rect(&outer, &layer);
             }
         }
@@ -637,15 +637,15 @@ fn draw_plate(
             } else {
                 bitmaps.get_or_upload(session, crop.key, crop.image)?
             };
-            let alpha = if theme.liquid_glass {
-                opacity.min(1.0)
+            let (alpha, fill) = if theme.liquid_glass {
+                (1.0, theme.liquid_level(opacity).fill)
             } else {
-                glass_alpha(opacity)
+                let mut c = theme.glass_layer_fill;
+                c.a *= opacity.min(1.0);
+                (glass_alpha(opacity), c)
             };
             session.draw_bitmap(&bitmap, &crop_rect(&crop), alpha * plate_a);
-            let mut c = theme.glass_layer_fill;
-            c.a *= opacity.min(1.0) * plate_a;
-            let layer = session.create_solid_brush(c)?;
+            let layer = session.create_solid_brush(with_alpha(fill, plate_a))?;
             session.fill_rect(&outer, &layer);
             // Acrylic grain: tile the noise texture at exactly one texel per device pixel.
             if !theme.liquid_glass {
@@ -673,7 +673,7 @@ fn draw_plate(
         }
     }
 
-    if opacity > 1.0 {
+    if opacity > 1.0 && !theme.liquid_glass {
         let veil = session.create_solid_brush(with_alpha(theme.opacity_veil(opacity), plate_a))?;
         session.fill_rounded_rect(&RoundedRect::uniform(outer, radius), &veil);
     }
@@ -726,6 +726,21 @@ fn draw_plate(
     // A single 1 px rim, lit from the upper left and snapped to device pixels at every DPI.
     let rim_rect = px.ring(outer, radius);
     if sampled_material && theme.liquid_glass {
+        // iOS 27's darkened edge, just inside the specular rim.
+        let shade = if theme.mode == ThemeMode::Dark {
+            0.5
+        } else {
+            0.08
+        };
+        let hair = px.hair();
+        let inner = Rect {
+            left: outer.left + hair,
+            top: outer.top + hair,
+            right: (outer.right - hair).max(outer.left + hair),
+            bottom: (outer.bottom - hair).max(outer.top + hair),
+        };
+        let edge = session.create_solid_brush(ColorF::new(0.0, 0.0, 0.0, shade * plate_a))?;
+        session.draw_rounded_rect(&px.ring(inner, (radius - hair).max(0.0)), &edge, hair);
         // The GPU material lights its own rim (kube's specular ring).
         if !matches!(backdrop, Backdrop::GpuGlass { .. }) {
             let saved = session.transform();
@@ -1450,7 +1465,12 @@ impl FenceChrome {
         session.clear(ColorF::TRANSPARENT);
         let px = Px::new(scale);
         // Per-fence opacity: <1 thins the layer over the glass, >1 adds a solid veil on top.
-        let opacity = opacity.clamp(0.4, 1.8);
+        // Liquid Glass maps the whole valid range onto its slider instead.
+        let opacity = if theme.liquid_glass {
+            opacity.clamp(0.2, 2.0)
+        } else {
+            opacity.clamp(0.4, 1.8)
+        };
         // The plate is the whole surface, or only the part below the title row while title on
         // hover keeps that row folded away (the compositor clip cuts the surface at its top).
         // A fully transparent fence fades the whole plate with `plate_a`.
