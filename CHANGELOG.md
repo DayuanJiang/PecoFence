@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-## 0.1.6
+## 0.2.0
 
 - PecoFence runs on Windows 10 22H2 too: the ZIP, the installer and the Store edition. Windows 10 has neither Segoe UI Variable nor Segoe Fluent Icons, so there the fences, menus and Settings use Segoe UI and Segoe MDL2 Assets.
 - Deleting a big folder from a fence no longer freezes the fences (#92). Windows' delete can keep going for many seconds after the folder is already in the Recycle Bin, longer still with a full Recycle Bin or an antivirus checking every file, and until it ended no fence responded. It now runs in the background, with the same confirmation, Recycle Bin and Shift+Delete behaviour as before; the same goes for files dropped on the Recycle Bin icon in a fence.
