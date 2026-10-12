@@ -388,6 +388,7 @@ impl App {
 
     /// Runs one of the shell's canonical verbs (`delete`, `cut`, `copy`, `properties`) on the
     /// selection as if picked from Explorer's menu. `shift` = Shift held (permanent delete).
+    /// `delete` runs on a worker thread (see [`App::start_shell_delete`]).
     pub(super) fn shell_verb_on_items(
         &mut self,
         fence: FenceId,
@@ -408,6 +409,10 @@ impl App {
             .window_for(fence)
             .map(|w| w.hwnd())
             .unwrap_or(self.control.hwnd());
+        if verb == "delete" {
+            self.start_shell_delete(paths, owner, shift);
+            return true;
+        }
         let refs: Vec<&std::path::Path> = paths.iter().map(|p| p.as_path()).collect();
         match ShellContextMenu::for_paths(&refs)
             .and_then(|mut m| m.invoke_verb(verb, owner, window::cursor_pos(), shift))

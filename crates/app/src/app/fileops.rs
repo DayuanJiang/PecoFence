@@ -30,6 +30,8 @@ pub(super) enum FileOpThen {
     /// A rename the filesystem refused, retried through the shell for its permission prompt.
     /// The folder watcher pairs the rename, so the item keeps its fence.
     Rename,
+    /// The shell's own delete; the folder watchers take the items away.
+    Delete { count: usize, permanent: bool },
 }
 
 pub(super) struct FileOp {
@@ -67,6 +69,26 @@ impl App {
         self.run_fileop(Some(owner), FileOpThen::Rename, move |owner| {
             shell::rename_with_prompt(&path, &new_name, owner)
         });
+    }
+
+    /// The shell's `delete` verb on `paths` (Recycle Bin, or permanent with Shift, with
+    /// Explorer's own dialogs) on a worker thread. It can return many seconds after the files
+    /// are gone (a full Recycle Bin, an antivirus checking each file), and on the UI thread
+    /// every fence stopped responding until then (#92).
+    pub(super) fn start_shell_delete(&mut self, paths: Vec<PathBuf>, owner: HWND, permanent: bool) {
+        let count = paths.len();
+        let pt = window::cursor_pos();
+        tracing::info!(count, permanent, "shell delete started");
+        self.run_fileop(
+            Some(owner),
+            FileOpThen::Delete { count, permanent },
+            move |owner| {
+                let refs: Vec<&Path> = paths.iter().map(|p| p.as_path()).collect();
+                ShellContextMenu::for_paths(&refs).and_then(|mut m| {
+                    m.invoke_verb("delete", owner.unwrap_or_default(), pt, permanent)
+                })
+            },
+        );
     }
 
     fn run_fileop(
@@ -190,6 +212,11 @@ impl App {
                 }
                 self.refresh_portals();
             }
+            FileOpThen::Delete { count, permanent } => match &result {
+                Ok(true) => tracing::info!(count, permanent, "shell delete finished"),
+                Ok(false) => tracing::warn!("shell menu offers no delete verb"),
+                Err(e) => tracing::warn!(error = %e, "shell delete failed"),
+            },
             FileOpThen::Rename => match &result {
                 Ok(true) => tracing::info!("item renamed through the shell"),
                 Ok(false) => tracing::info!("rename cancelled by user"),
