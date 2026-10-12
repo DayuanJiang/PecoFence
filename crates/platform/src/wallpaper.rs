@@ -180,22 +180,27 @@ pub fn desktop_wallpapers() -> Vec<([u8; 16], Option<PathBuf>)> {
 /// The virtual desktop `hwnd` is on, `None` when Explorer does not say (the desktop itself,
 /// windows shown on every desktop, a failed call). Requires COM on this thread.
 pub fn window_desktop(hwnd: HWND) -> Option<u128> {
+    use std::mem::ManuallyDrop;
+    // Never released at exit: thread-local destructors run inside ExitProcess, where releasing
+    // Explorer's object waits for an RPC reply that never comes. The process then hangs for
+    // good, holding the single-instance mutex, and PecoFence cannot start again.
     thread_local! {
-        static MANAGER: std::cell::RefCell<Option<IVirtualDesktopManager>> =
+        static MANAGER: std::cell::RefCell<Option<ManuallyDrop<IVirtualDesktopManager>>> =
             const { std::cell::RefCell::new(None) };
     }
     MANAGER.with_borrow_mut(|manager| {
         if manager.is_none() {
             // SAFETY: standard COM activation.
-            *manager =
-                unsafe { CoCreateInstance(&VirtualDesktopManager, None, CLSCTX_ALL as u32) }.ok();
+            *manager = unsafe { CoCreateInstance(&VirtualDesktopManager, None, CLSCTX_ALL as u32) }
+                .ok()
+                .map(ManuallyDrop::new);
         }
         // SAFETY: COM call on a live interface.
         match unsafe { manager.as_ref()?.GetWindowDesktopId(hwnd) } {
             Ok(id) => Some(id.to_u128()).filter(|&id| id != 0),
             Err(_) => {
                 // Explorer restarted, perhaps: ask a new object next time.
-                *manager = None;
+                drop(manager.take().map(ManuallyDrop::into_inner));
                 None
             }
         }
