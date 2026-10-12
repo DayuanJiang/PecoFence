@@ -211,7 +211,20 @@ impl ConfigStore {
             let _ = fs::remove_file(self.bak_path());
             let _ = fs::rename(&primary, self.bak_path());
         }
-        fs::rename(self.tmp_path(), &primary).map_err(at("replace config.json"))?;
+        match fs::rename(self.tmp_path(), &primary) {
+            Ok(()) => {}
+            // The Store edition sees %APPDATA% merged with its package's copy, and Windows
+            // refuses renames in it when %APPDATA% was moved to another drive (the .bak
+            // rotation above fails too). Write the file in place, keeping the old one as .bak.
+            Err(e) if e.kind() == io::ErrorKind::CrossesDevices => {
+                if primary.exists() {
+                    let _ = fs::copy(&primary, self.bak_path());
+                }
+                fs::write(&primary, &json).map_err(at("write config.json"))?;
+                let _ = fs::remove_file(self.tmp_path());
+            }
+            Err(e) => return Err(at("replace config.json")(e)),
+        }
         self.daily_backup(&json).map_err(at("daily backup"))?;
         Ok(())
     }
