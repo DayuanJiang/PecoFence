@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+## 0.1.6
+
+- PecoFence runs on Windows 10 22H2 too: the ZIP, the installer and the Store edition. Windows 10 has neither Segoe UI Variable nor Segoe Fluent Icons, so there the fences, menus and Settings use Segoe UI and Segoe MDL2 Assets.
 - Deleting a big folder from a fence no longer freezes the fences (#92). Windows' delete can keep going for many seconds after the folder is already in the Recycle Bin, longer still with a full Recycle Bin or an antivirus checking every file, and until it ended no fence responded. It now runs in the background, with the same confirmation, Recycle Bin and Shift+Delete behaviour as before; the same goes for files dropped on the Recycle Bin icon in a fence.
 - Peek can search the fences. While they float in a Peek, start typing: a search box opens in the upper middle of the screen under the pointer, the icons whose name contains the text (in any letter case, file extension included) are highlighted in every fence, and the others fade back. Up and Down step through the matches, Enter opens the highlighted one, and Esc ends the Peek. A rolled-up fence with matches opens, and a fence whose matches are in another tab switches to it, until the search ends. Each tab shows how many matches it holds in a small badge, and tabs without any fade.
 - Double-clicking the empty desktop and dragging a box on it work right after PecoFence starts, also when the desktop is already the active window (a start at sign-in before any window opens). Until now they only began to work once another window had been active and the desktop was clicked again.
