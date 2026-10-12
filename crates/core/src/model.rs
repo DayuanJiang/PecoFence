@@ -311,6 +311,10 @@ pub struct RollUpSettings {
     /// out of its way and slide back when it rolls up. The saved positions stay where they were.
     #[serde(default = "default_true")]
     pub push_neighbors: bool,
+    /// Resting the pointer on a tab of a tabbed fence for the hover delay switches to it, as a
+    /// click would.
+    #[serde(default)]
+    pub switch_tab_on_hover: bool,
 }
 
 impl Default for RollUpSettings {
@@ -325,6 +329,7 @@ impl Default for RollUpSettings {
             title_on_hover: false,
             hide_inactive_scrollbar: false,
             push_neighbors: true,
+            switch_tab_on_hover: false,
         }
     }
 }

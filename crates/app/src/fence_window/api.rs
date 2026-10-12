@@ -147,6 +147,9 @@ impl FenceWindow {
             header_fades: Fades::new(motion::FASTER, motion::FASTER, Curve::Linear),
             chrome_fades: Fades::new(motion::FASTER, motion::FASTER, Curve::Linear),
             drop_fades: Fades::new(motion::FASTER, motion::FASTER, Curve::Linear),
+            search: None,
+            search_dim: Fades::new(motion::FASTER, motion::FASTER, Curve::Linear),
+            search_expanded: false,
             drop_wash: Tween::at(0.0, Instant::now()),
             caret_alpha: Tween::at(0.0, Instant::now()),
             caret_shown: None,
@@ -178,6 +181,7 @@ impl FenceWindow {
             scroll_y: 0.0,
             scroll_memory: HashMap::new(),
             scroll_restore: None,
+            select_after_nav: None,
             scroll_anim: None,
             dpi,
             theme,
@@ -185,6 +189,7 @@ impl FenceWindow {
             backdrops: ctx.backdrops.borrow().clone(),
             backdrop_crop: None,
             backdrop_rect: None,
+            backdrop_origin: None,
             backdrop_key: format!("backdrop:{:x}", hwnd.0 as isize),
             gpu_glass: RefCell::new(pecofence_render::gpu_glass::GpuGlass::default()),
             chrome_panel,
@@ -230,6 +235,7 @@ impl FenceWindow {
             cut: HashSet::new(),
             wheel_zoom_accum: 0,
             wheel_tab_accum: 0,
+            tab_hover_switch: None,
             auto_height,
             locked: false,
             backdrop_override: None,
@@ -583,6 +589,23 @@ impl FenceWindow {
         }
     }
 
+    /// The window already shows exactly `items` (same order, names, icons and details).
+    pub fn shows_items(&self, items: &[ItemView]) -> bool {
+        self.view.borrow().as_ref().is_some_and(|v| {
+            v.items.len() == items.len()
+                && v.items.iter().zip(items).all(|(a, b)| {
+                    a.id == b.id
+                        && a.name == b.name
+                        && a.path == b.path
+                        && a.is_folder == b.is_folder
+                        && a.icon_key == b.icon_key
+                        && a.icon_only == b.icon_only
+                        && a.mtime == b.mtime
+                        && a.size == b.size
+                })
+        })
+    }
+
     /// Replaces the item list with layout motion (see `FenceViewState::replace_items`).
     pub fn set_items(&self, items: Vec<ItemView>) {
         self.with_view(|v| {
@@ -606,9 +629,37 @@ impl FenceWindow {
                 // (the redraw clamps to its content; `set_layout` consumes the value).
                 v.scroll_y = s;
             }
+            if let Some((id, ring)) = v.select_after_nav.take()
+                && let Some(i) = v.items.iter().position(|it| it.id == id)
+            {
+                v.select_only(i);
+                v.focus_visible = ring;
+                if !v.rolled_up {
+                    v.scroll_into_view(i, false);
+                }
+            }
             let _ = v.redraw();
             // The item under a stationary pointer may have changed: re-hit-test from the loop.
             v.request_hover_refresh();
+        });
+    }
+
+    /// Portal navigation, before the new folder's items arrive: the page swaps like a tab
+    /// switch (`dir` +1 = into a subfolder, sliding in from the right; -1 = up / home, from the
+    /// left) and the new folder starts at the top. `select` (the folder just left by 上一级)
+    /// is selected by the next `set_items`.
+    pub fn begin_portal_navigation(&self, dir: i8, select: Option<ItemId>) {
+        self.with_view(|v| {
+            v.scroll_anim = None;
+            v.scroll_y = 0.0;
+            v.select_after_nav = select.map(|id| (id, v.focus_visible));
+            if !v.rolled_up
+                && !v.height_animating()
+                && v.motion.enabled()
+                && desktop::is_visible(v.hwnd)
+            {
+                v.begin_content_swap(dir);
+            }
         });
     }
 
@@ -628,6 +679,7 @@ impl FenceWindow {
                 v.item_hover.prune(now, |id| *id != old);
                 v.item_sel.prune(now, |id| *id != old);
                 v.drop_fades.prune(now, |id| *id != old);
+                v.search_dim.prune(now, |id| *id != old);
                 if v.renaming == Some(old) {
                     v.renaming = Some(new);
                 }
@@ -661,6 +713,62 @@ impl FenceWindow {
                 v.cut = cut.clone();
                 let _ = v.redraw_content();
             }
+        });
+    }
+
+    /// Peek search marks (None = drawn as usual). The current match glides into view; a
+    /// rolled-up fence with matches expands like a hover peek and rolls back up once it has
+    /// none (or the search ends).
+    pub fn set_search_marks(&self, marks: Option<SearchMarks>) {
+        self.with_view(|v| {
+            if v.search == marks {
+                return;
+            }
+            let expand = marks.as_ref().is_some_and(|m| !m.matches.is_empty());
+            let current = marks.as_ref().and_then(|m| m.current);
+            // The tab badges change the pill widths: the pills slide to their new places.
+            let tabs_changed = v.tabs.len() > 1
+                && v.search.as_ref().map(|m| &m.tab_hits) != marks.as_ref().map(|m| &m.tab_hits);
+            let now = Instant::now();
+            let prev: Vec<(FenceId, f32)> = if tabs_changed {
+                v.tabs
+                    .iter()
+                    .map(|t| t.id)
+                    .zip(v.tab_draw_xs(now))
+                    .collect()
+            } else {
+                Vec::new()
+            };
+            v.search = marks;
+            if tabs_changed {
+                if v.tab_drag.is_none() {
+                    v.sync_tab_slides(&prev, now);
+                }
+                let _ = v.redraw_chrome_only();
+            }
+            if expand && !v.search_expanded {
+                if v.peeking {
+                    v.search_expanded = true;
+                } else if v.rolled_up && v.roll_anim.is_none() && !v.retired {
+                    v.peeking = true;
+                    v.search_expanded = true;
+                    if v.expanded_h_px <= v.title_h_px() {
+                        v.expanded_h_px = v.title_h_px() + (200.0 * v.scale()) as i32;
+                    }
+                    v.start_roll_anim(false);
+                }
+            } else if !expand && v.search_expanded {
+                // The hover-peek close countdown rolls it back up (unless the pointer is on it).
+                v.search_expanded = false;
+                v.resume_peek_close();
+            }
+            if v.rolled_up {
+                return;
+            }
+            if let Some(i) = current.and_then(|id| v.items.iter().position(|it| it.id == id)) {
+                v.scroll_into_view(i, true);
+            }
+            let _ = v.redraw_content();
         });
     }
 
@@ -716,6 +824,9 @@ impl FenceWindow {
 
     pub fn set_title(&self, title: &str) {
         self.with_view(|v| {
+            if v.title == title {
+                return;
+            }
             v.title = title.to_string();
             let _ = v.redraw();
         });
@@ -724,7 +835,7 @@ impl FenceWindow {
     pub fn set_icon_size(&self, size: u32) {
         self.with_view(|v| {
             v.icon_size = size;
-            v.drop_icons_for_reload();
+            v.reload_icons_and_labels();
             v.snap_item_motion();
             let _ = v.redraw();
         });
@@ -1073,7 +1184,7 @@ impl FenceWindow {
             v.header_hover = None;
             v.header_fades.clear();
             v.reset_item_fades();
-            v.drop_icons_for_reload();
+            v.reload_icons_and_labels();
             v.snap_item_motion();
             let _ = v.redraw();
         });
@@ -1357,10 +1468,19 @@ impl FenceWindow {
     /// animations or icon resources.
     pub fn set_backdrops(&self, backdrops: Rc<BackdropSets>) {
         self.with_view(|v| {
+            let old_ink = v.material_foreground().text_primary;
             v.backdrops = backdrops;
             v.glass_dark_text.set(None);
             v.invalidate_backdrop();
-            if let Err(error) = v.redraw() {
+            // The content only follows the backdrop through its ink (as in `on_move`).
+            let result = if old_ink != v.material_foreground().text_primary
+                || (v.theme.liquid_glass && v.row_metrics().is_some())
+            {
+                v.redraw()
+            } else {
+                v.redraw_chrome_only()
+            };
+            if let Err(error) = result {
                 tracing::warn!(%error, "redraw after wallpaper change failed");
             }
         });
@@ -1450,8 +1570,9 @@ impl FenceWindow {
     /// Redraws only if icons are still missing (used after the icon worker delivers results).
     pub fn redraw_if_pending_icons(&self) {
         self.with_view(|v| {
-            if v.has_pending_icons() {
-                let _ = v.redraw();
+            // Icons live on the content surface only, hidden while rolled up (as in `redraw`).
+            if v.has_pending_icons() && !(v.rolled_up && v.roll_anim.is_none()) {
+                let _ = v.redraw_content();
             }
         });
     }

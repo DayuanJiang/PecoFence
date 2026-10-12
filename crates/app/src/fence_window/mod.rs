@@ -126,6 +126,8 @@ pub struct Behavior {
     pub title_align: std::cell::Cell<pecofence_core::TitleAlign>,
     /// Scrollbar drawn only while hovered / shortly after scrolling.
     pub hide_inactive_scrollbar: std::cell::Cell<bool>,
+    /// Resting the pointer on another tab switches to it (`rollUp.switchTabOnHover`).
+    pub switch_tab_on_hover: std::cell::Cell<bool>,
     /// `SPI_GETWHEELSCROLLLINES`: rows per wheel notch; `u32::MAX` (`WHEEL_PAGESCROLL`) = one
     /// viewport, 0 = the wheel does not scroll. Refreshed on WM_SETTINGCHANGE.
     pub wheel_lines: std::cell::Cell<u32>,
@@ -264,12 +266,27 @@ pub struct ItemView {
     type_label: Option<String>,
     size_label: Option<String>,
     icon: Option<Rc<Image>>,
+    /// Pixel size `icon` was extracted at. After an icon-size, layout or DPI change the old
+    /// bitmap stays up, scaled into the new box, until the new size arrives; its GPU upload
+    /// is keyed by this size, never by the size being shown.
+    icon_px: u32,
     icon_failed: bool,
     /// The icon lookup came back pending at least once: when it finally lands the bitmap
     /// cross-fades in over the loading tile (a synchronous cache hit shows at once).
     icon_waited: bool,
     /// Bitmap opacity 0 → 1 (167 ms linear) after an asynchronous icon arrived.
     icon_fade: Option<Tween>,
+}
+
+/// Peek search marks for one fence: matching items are highlighted, every other item dims, and
+/// `current` (what Enter opens) is drawn selected with a focus ring. A rolled-up fence with
+/// matches expands until they are gone. `tab_hits` counts the matches in each tab: a tab with
+/// some shows the number in a badge, a tab without any dims.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct SearchMarks {
+    pub matches: HashSet<ItemId>,
+    pub current: Option<ItemId>,
+    pub tab_hits: HashMap<FenceId, usize>,
 }
 
 impl ItemView {
@@ -280,6 +297,11 @@ impl ItemView {
         } else {
             fileinfo::format_local_datetime(self.mtime)
         }
+    }
+
+    /// The icon for `px` is still to come: none yet, or only one of another size.
+    fn wants_icon(&self, px: u32) -> bool {
+        (self.icon.is_none() || self.icon_px != px) && !self.icon_failed
     }
 
     /// Details "大小" text; namespace items have none.
@@ -321,6 +343,7 @@ impl ItemView {
             type_label: None,
             size_label: None,
             icon: None,
+            icon_px: 0,
             icon_failed: false,
             icon_waited: false,
             icon_fade: None,

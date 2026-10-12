@@ -7,6 +7,8 @@ use pecofence_platform::window::{
 };
 use pecofence_platform::{HWND, RECT, msg};
 use pecofence_render::Image;
+use std::cell::RefCell;
+use std::rc::{Rc, Weak};
 use windows_core::Result;
 
 pub const SHADOW_CLASS: &str = "PecoFence.Shadow";
@@ -281,10 +283,37 @@ impl ShadowTemplate {
     }
 }
 
+thread_local! {
+    /// Templates in use, by (DPI, style): every fence on a monitor shares one.
+    static TEMPLATES: RefCell<Vec<((u32, [u32; 4]), Weak<ShadowTemplate>)>> =
+        const { RefCell::new(Vec::new()) };
+}
+
+/// The template for `dpi` and `style`, built once while any shadow window holds it.
+fn shared_template(dpi: u32, scale: f32, style: &ShadowStyle) -> Rc<ShadowTemplate> {
+    let key = (
+        dpi,
+        [style.sigma, style.offset_y, style.opacity, style.radius].map(f32::to_bits),
+    );
+    TEMPLATES.with_borrow_mut(|templates| {
+        templates.retain(|(_, t)| t.strong_count() > 0);
+        if let Some(t) = templates
+            .iter()
+            .find(|(k, _)| *k == key)
+            .and_then(|(_, t)| t.upgrade())
+        {
+            return t;
+        }
+        let t = Rc::new(ShadowTemplate::build(scale, style));
+        templates.push((key, Rc::downgrade(&t)));
+        t
+    })
+}
+
 pub struct ShadowWindow {
     window: Window,
     style: ShadowStyle,
-    template: Option<(u32, ShadowTemplate)>,
+    template: Option<(u32, Rc<ShadowTemplate>)>,
     /// Horizontal-only template for the current short body height (DPI, body height): a
     /// rolled fence is 36 DIP tall, under the two-corner minimum of `template`, so its width
     /// changes would otherwise re-run the full Gaussian.
@@ -429,7 +458,7 @@ impl ShadowWindow {
             return;
         }
         if self.template.as_ref().is_none_or(|(d, _)| *d != dpi) {
-            self.template = Some((dpi, ShadowTemplate::build(scale, &self.style)));
+            self.template = Some((dpi, shared_template(dpi, scale, &self.style)));
         }
         let tpl = &self.template.as_ref().unwrap().1;
         let min_body = tpl.min_body();

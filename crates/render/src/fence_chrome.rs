@@ -55,6 +55,8 @@ pub struct FenceChrome {
     title_format_xlarge: TextFormat,
     /// "按时间分组" section captions: Caption 12 / 600, leading, vertically centred.
     group_format: TextFormat,
+    /// Tab match badge number: 11 / 600, centred.
+    badge_format: TextFormat,
 }
 
 /// A "按时间分组" section header band in surface DIPs (already scrolled; for rows already
@@ -424,10 +426,19 @@ pub struct TabDraw<'a> {
     pub dragging: bool,
     /// Whole-pill opacity 0..=1 (a tab that just joined the strip fades in).
     pub alpha: f32,
+    /// Peek search: how many matches this tab holds, drawn as an accent badge after the
+    /// caption (see [`FenceChrome::tab_badge_width`]).
+    pub badge: Option<&'a str>,
 }
 
 /// Width of the "N 项" caption a rolled fence shows before its chevron (DIPs).
 pub const ROLLED_COUNT_W: f32 = 64.0;
+
+/// Tab match badge (WinUI InfoBadge): 16 DIPs high, 5 DIPs of padding beside the number, 6 DIPs
+/// after the caption.
+const TAB_BADGE_H: f32 = 16.0;
+const TAB_BADGE_PAD: f32 = 5.0;
+const TAB_BADGE_GAP: f32 = 6.0;
 
 /// Nested controls share the fence's radius, inset from its outer edge and limited by
 /// their own height. This also applies to hover, pressed, drop and merge feedback.
@@ -1331,6 +1342,10 @@ impl FenceChrome {
             .with_alignment(TextAlignment::Leading)
             .with_paragraph_alignment(ParagraphAlignment::Center)
             .with_word_wrapping(WordWrapping::NoWrap);
+        let badge_format = TextFormat::with_locale(font_small(), 11.0, FontWeight(600), locale)?
+            .with_alignment(TextAlignment::Center)
+            .with_paragraph_alignment(ParagraphAlignment::Center)
+            .with_word_wrapping(WordWrapping::NoWrap);
         let chrome = Self {
             title_format,
             count_format,
@@ -1346,6 +1361,7 @@ impl FenceChrome {
             title_format_large,
             title_format_xlarge,
             group_format,
+            badge_format,
         };
         // Labels follow the desktop's icon-title font from the start (12 px / 16 stays the
         // fallback when the system call fails).
@@ -1418,6 +1434,13 @@ impl FenceChrome {
     /// Layout, drawing and tooltip fitting all use the same title size.
     pub fn tab_format(&self, size: u8) -> &TextFormat {
         &self.tab_formats[usize::from(size.min(3))]
+    }
+
+    /// Width a match badge reading `text` adds to a tab pill, its gap to the caption included.
+    pub fn tab_badge_width(&self, text: &str) -> f32 {
+        (crate::text::measure_width(text, &self.badge_format) + 2.0 * TAB_BADGE_PAD)
+            .max(TAB_BADGE_H)
+            + TAB_BADGE_GAP
     }
 
     /// Single-line row text format (for fitting names to the name column).
@@ -1700,18 +1723,37 @@ impl FenceChrome {
                     let ring = session.create_solid_brush(with_alpha(theme.selection_stroke, a))?;
                     session.draw_rounded_rect(&px.ring(rect, radius), &ring, px.hair());
                 }
-                // A persistent marker identifies the selected tab even on uniform wallpaper.
+                let fmt = self.tab_format(tab.title_size);
+                let badge_w = tab.badge.map_or(0.0, |b| self.tab_badge_width(b));
+                let padding = tab_text_inset(
+                    theme,
+                    tab.w - badge_w,
+                    crate::text::measure_width(tab.title, fmt),
+                );
+                let caption_w = (tab.w - badge_w - padding).max(0.0);
+                let fitted = crate::text::fit_width(tab.title, fmt, caption_w);
+                // With a badge, caption and badge are centred in the pill as one group.
+                let shown_w = if tab.badge.is_some() {
+                    crate::text::measure_width(&fitted, fmt).min(caption_w)
+                } else {
+                    caption_w
+                };
+                let caption_x = tab.x + (tab.w - shown_w - badge_w) * 0.5;
+                // A persistent marker identifies the selected tab even on uniform wallpaper. It
+                // stays under the caption when a badge widens the pill.
+                let (marker_x, marker_w) = if tab.badge.is_some() {
+                    let w = tab.w - badge_w;
+                    (caption_x + (shown_w - w) * 0.5, w)
+                } else {
+                    (tab.x, tab.w)
+                };
                 if pill.is_none() && tab.active {
-                    marker(tab.x, tab.w, tab.color.unwrap_or(theme.accent), ta)?;
+                    marker(marker_x, marker_w, tab.color.unwrap_or(theme.accent), ta)?;
                 } else if !tab.active
                     && let Some(color) = tab.color
                 {
-                    marker(tab.x, tab.w, color, ta * 0.7)?;
+                    marker(marker_x, marker_w, color, ta * 0.7)?;
                 }
-                let fmt = self.tab_format(tab.title_size);
-                let padding =
-                    tab_text_inset(theme, tab.w, crate::text::measure_width(tab.title, fmt));
-                let fitted = crate::text::fit_width(tab.title, fmt, (tab.w - padding).max(0.0));
                 let foreground =
                     header_foreground(&backdrop, theme, tab.key, rect, scale, opacity, style.tint);
                 let color = if tab.pressed && !tab.dragging {
@@ -1732,15 +1774,29 @@ impl FenceChrome {
                     session,
                     &fitted,
                     fmt,
-                    &Rect::from_xywh(
-                        tab.x + padding * 0.5,
-                        0.0,
-                        (tab.w - padding).max(0.0),
-                        title_h,
-                    ),
+                    &Rect::from_xywh(caption_x, 0.0, shown_w, title_h),
                     &brush,
                     halo.as_ref(),
                 );
+                if let Some(badge) = tab.badge {
+                    let r = Rect::from_xywh(
+                        caption_x + shown_w + TAB_BADGE_GAP,
+                        ((title_h - TAB_BADGE_H) * 0.5).round(),
+                        badge_w - TAB_BADGE_GAP,
+                        TAB_BADGE_H,
+                    );
+                    let fill = session.create_solid_brush(with_alpha(theme.accent, ta))?;
+                    session.fill_rounded_rect(&RoundedRect::uniform(r, TAB_BADGE_H * 0.5), &fill);
+                    // TextOnAccentFillColorPrimary: black on the light dark-mode accent,
+                    // white on the deep light-mode one.
+                    let on_accent = if theme.mode == crate::theme::ThemeMode::Dark {
+                        ColorF::from_rgba8(0, 0, 0, 0xFF)
+                    } else {
+                        ColorF::from_rgba8(0xFF, 0xFF, 0xFF, 0xFF)
+                    };
+                    let text = session.create_solid_brush(with_alpha(on_accent, ta))?;
+                    session.draw_text(badge, &self.badge_format, &r, &text);
+                }
             }
         } else {
             let mut x = 16.0;
@@ -1959,20 +2015,21 @@ impl FenceChrome {
                           muted: bool,
                           alpha: f32,
                           right: bool| {
-            let measured = crate::text::measure_width(text, format)
-                .min(rect.width())
-                .max(1.0);
-            let area = Rect::from_xywh(
-                if right {
-                    rect.right - measured
-                } else {
-                    rect.left
-                },
-                rect.top + theme.title_height,
-                measured,
-                rect.height(),
-            );
+            // Only the glass backdrop samples under the text; measuring builds a layout.
             let foreground = backdrop.map_or(*theme, |(background, opacity, tint)| {
+                let measured = crate::text::measure_width(text, format)
+                    .min(rect.width())
+                    .max(1.0);
+                let area = Rect::from_xywh(
+                    if right {
+                        rect.right - measured
+                    } else {
+                        rect.left
+                    },
+                    rect.top + theme.title_height,
+                    measured,
+                    rect.height(),
+                );
                 header_foreground(background, theme, key, area, scale, opacity, tint)
             });
             let color = if muted {

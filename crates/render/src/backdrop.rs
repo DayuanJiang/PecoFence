@@ -97,6 +97,12 @@ impl Image {
     /// Resamples into a `dst_w` x `dst_h` image where destination pixel (x, y) maps to the
     /// source rectangle `src` (in source pixels, may extend outside; outside = `bg`).
     fn resample_region(&self, src: [f32; 4], dst_w: u32, dst_h: u32, bg: [u8; 3]) -> Image {
+        if src == [0.0, 0.0, self.width as f32, self.height as f32]
+            && (dst_w, dst_h) == (self.width, self.height)
+        {
+            // 1:1 (clear glass, a monitor-sized picture): every sample lands on its pixel.
+            return self.clone();
+        }
         let mut out = Vec::with_capacity((dst_w * dst_h * 4) as usize);
         let sw = src[2] - src[0];
         let sh = src[3] - src[1];
@@ -288,6 +294,13 @@ impl Image {
         let tb = tint.b * 255.0;
         let tint_lum = 0.2126 * tr + 0.7152 * tg + 0.0722 * tb;
         let noise_amp = noise.clamp(0.0, 0.2) * 255.0;
+        if a == 0.0 && lo == 0.0 && noise_amp == 0.0 && (chroma - 1.0).abs() <= f32::EPSILON {
+            // Clear glass: every step below leaves the colour as it is.
+            for p in self.bgra.as_chunks_mut::<4>().0 {
+                p[3] = 255;
+            }
+            return;
+        }
         let mut seed: u32 = 0x9E37_79B9;
         for p in self.bgra.as_chunks_mut::<4>().0 {
             seed ^= seed << 13;
@@ -694,9 +707,15 @@ impl MonitorBackdrop {
     /// Crops the backdrop under a screen rectangle (virtual-screen pixels).
     pub fn crop_screen_rect(&self, x: i32, y: i32, w: i32, h: i32) -> Image {
         let d = self.downscale as i32;
-        let lx = (x - self.left) / d;
-        let ly = (y - self.top) / d;
+        let (_, _, lx, ly) = self.crop_origin(x, y);
         self.image.crop(lx, ly, (w / d).max(1), (h / d).max(1))
+    }
+
+    /// Where `crop_screen_rect` starts for a rectangle at `x`, `y`: this monitor's origin and
+    /// the image pixel. Equal origins (and sizes) cut equal crops.
+    pub fn crop_origin(&self, x: i32, y: i32) -> (i32, i32, i32, i32) {
+        let d = self.downscale as i32;
+        (self.left, self.top, (x - self.left) / d, (y - self.top) / d)
     }
 }
 
@@ -733,6 +752,41 @@ pub fn noise_tile() -> &'static Image {
 #[cfg(test)]
 mod pixel_regressions {
     use super::*;
+
+    #[test]
+    fn one_to_one_resample_and_clear_tint_keep_every_pixel() {
+        let (w, h) = (37u32, 23u32);
+        let mut seed = 0x1234_5678u32;
+        let bgra = (0..w * h * 4)
+            .map(|i| {
+                seed ^= seed << 13;
+                seed ^= seed >> 17;
+                seed ^= seed << 5;
+                if i % 4 == 3 { 255 } else { (seed >> 24) as u8 }
+            })
+            .collect();
+        let img = Image {
+            width: w,
+            height: h,
+            bgra,
+        };
+        // What the general path samples for each destination pixel of a 1:1 mapping.
+        let mut expected = Vec::new();
+        for y in 0..h {
+            let sy = (y as f32 + 0.5) / h as f32 * h as f32;
+            for x in 0..w {
+                let sx = (x as f32 + 0.5) / w as f32 * w as f32;
+                expected.extend_from_slice(&img.sample(sx - 0.5, sy - 0.5));
+            }
+        }
+        let mapped = map_wallpaper(&img, WallpaperPosition::Fill, w, h, 1, [0, 0, 0]);
+        assert_eq!(mapped.bgra, expected);
+        assert_eq!(mapped.bgra, img.bgra);
+        let mut tinted = mapped.clone();
+        let t = MicaTint::LIQUID_DARK;
+        tinted.tint(t.color, t.luminosity_opacity, t.noise, t.chroma);
+        assert_eq!(tinted.bgra, img.bgra);
+    }
 
     #[test]
     fn gpu_backed_backdrop_samples_small_and_hands_out_full_pixels_once() {

@@ -651,7 +651,8 @@ fn narrow_tab_crossing_a_wide_one_is_stable() {
 }
 
 /// Layout motion is a rearrangement effect: it runs for sorts / reorders / a few adds or
-/// removes and snaps for refills (tab switch, portal navigation) or an empty start.
+/// removes and snaps for refills (tab switch, portal navigation); the first items of an empty
+/// fence fade in.
 #[test]
 fn layout_motion_applies_only_to_rearrangements() {
     assert!(layout_motion_applies(0, 10, 10));
@@ -659,8 +660,8 @@ fn layout_motion_applies_only_to_rearrangements() {
     assert!(layout_motion_applies(5, 10, 10));
     assert!(!layout_motion_applies(6, 10, 10));
     assert!(!layout_motion_applies(20, 10, 10));
-    assert!(!layout_motion_applies(0, 0, 5));
-    // Removing everything is a refill too.
+    assert!(layout_motion_applies(5, 0, 5));
+    // Removing everything still snaps.
     assert!(!layout_motion_applies(10, 10, 0));
 }
 
@@ -1204,4 +1205,17 @@ fn wheel_over_tabs_steps_and_stops_at_the_ends() {
     assert_eq!(wheel_tab_target(3, 4, -1), 3);
     assert_eq!(wheel_tab_target(3, 4, -9), 3);
     assert_eq!(wheel_tab_target(2, 4, 0), 2);
+}
+
+/// Hover switching aims at another tab only: not the active one, not with the setting off,
+/// a single tab, a title rename open, or no tab under the pointer.
+#[test]
+fn hover_switches_only_to_another_tab() {
+    assert_eq!(hover_switch_target(Some(2), 0, 3, true, false), Some(2));
+    assert_eq!(hover_switch_target(Some(0), 0, 3, true, false), None);
+    assert_eq!(hover_switch_target(Some(2), 0, 3, false, false), None);
+    assert_eq!(hover_switch_target(Some(2), 0, 3, true, true), None);
+    assert_eq!(hover_switch_target(Some(0), 1, 1, true, false), None);
+    assert_eq!(hover_switch_target(Some(5), 0, 3, true, false), None);
+    assert_eq!(hover_switch_target(None, 0, 3, true, false), None);
 }

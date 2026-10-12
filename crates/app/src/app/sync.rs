@@ -121,6 +121,10 @@ impl App {
         // be unreachable: surface the ones Windows shows inside the inbox fence. When the
         // setting is off they drop out of the listing and are orphaned (hidden) at once.
         if self.state.config.settings.hide_real_icons && !self.no_hide_icons {
+            if self._shell_watch.is_none() {
+                // No change notices for the Recycle Bin: ask it every time.
+                shell::recycle_bin_changed();
+            }
             entries.extend(shell::enumerate_special_desktop_items());
         }
         let report = self.state.sync_desktop(&entries);
@@ -137,6 +141,7 @@ impl App {
             self.state.refresh_portal(active);
             self.ensure_portal_watchers();
         } else {
+            shell::recycle_bin_changed();
             let report = self.sync_desktop_if_available("manual refresh");
             self.route_pending_creation();
             if report.changed() {

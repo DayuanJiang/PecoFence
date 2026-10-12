@@ -240,9 +240,9 @@ impl SettingsHost {
             s.controller = Some(controller);
             s.webview = Some(webview);
         }
-        window::show_normal(hwnd);
-        tracing::debug!(visible = window.is_visible(), "settings: host window shown");
-        // The controller is created while the host is still hidden and stays invisible until told.
+        // The controller is created while the host is still hidden and stays invisible until
+        // told. The host itself is shown once the page reports `ready` (`App::on_settings_message`):
+        // shown at once, it was white until WebView2 painted, even in dark mode.
         if let Some(c) = state.borrow().controller.as_ref() {
             let _ = c.set_visible(true);
         }

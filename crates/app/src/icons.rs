@@ -7,7 +7,7 @@ use pecofence_platform::com::OleGuard;
 use pecofence_platform::shell;
 use pecofence_platform::window;
 use pecofence_render::Image;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::mpsc::{Receiver, Sender, channel};
@@ -73,6 +73,9 @@ struct Request {
     size_px: u32,
     icon_only: bool,
     variant: IconVariant,
+    /// Tells a result apart from one of an earlier request for the same key that
+    /// `set_variant` or `invalidate` dropped while it was in flight.
+    id: u64,
 }
 
 /// An extraction in flight (or waiting for a retry), with how often it has failed so far.
@@ -91,7 +94,21 @@ const RETRY_DELAYS_MS: [u64; 3] = [400, 1500, 4000];
 struct Ready {
     key: String,
     size_px: u32,
+    id: u64,
     image: Option<Image>,
+    /// HRESULT of a failed extraction.
+    error: Option<i32>,
+}
+
+/// Extraction outcomes since the last summary line (see `IconCache::drain_results`).
+#[derive(Default)]
+struct IconStats {
+    ok: u32,
+    failed: u32,
+    retried: u32,
+    /// Images the shell handed back smaller than asked for (drawn scaled up).
+    smaller: u32,
+    first_error: Option<i32>,
 }
 
 pub enum Lookup {
@@ -109,6 +126,8 @@ pub struct IconCache {
     tx: Sender<Request>,
     rx: Receiver<Ready>,
     variant: IconVariant,
+    stats: IconStats,
+    next_id: u64,
 }
 
 impl IconCache {
@@ -135,22 +154,26 @@ impl IconCache {
                             guard.recv()
                         };
                         let Ok(req) = req else { break };
-                        let image = shell::shell_image(&req.path, req.size_px, req.icon_only)
-                            .ok()
-                            .map(|img| {
-                                let mut image = Image {
-                                    width: img.width,
-                                    height: img.height,
-                                    bgra: img.bgra,
-                                };
-                                req.variant.apply(&mut image);
-                                image
-                            });
+                        let (image, error) =
+                            match shell::shell_image(&req.path, req.size_px, req.icon_only) {
+                                Ok(img) => {
+                                    let mut image = Image {
+                                        width: img.width,
+                                        height: img.height,
+                                        bgra: img.bgra,
+                                    };
+                                    req.variant.apply(&mut image);
+                                    (Some(image), None)
+                                }
+                                Err(e) => (None, Some(e.code().0)),
+                            };
                         if done_tx
                             .send(Ready {
                                 key: req.key,
                                 size_px: req.size_px,
+                                id: req.id,
                                 image,
+                                error,
                             })
                             .is_err()
                         {
@@ -172,6 +195,8 @@ impl IconCache {
             tx,
             rx,
             variant: IconVariant::default(),
+            stats: IconStats::default(),
+            next_id: 0,
         }
     }
 
@@ -206,12 +231,14 @@ impl IconCache {
             return Lookup::Ready(entry.clone());
         }
         if !self.pending.contains_key(&k) {
+            self.next_id += 1;
             let req = Request {
                 key: k.0.clone(),
                 path: path.to_path_buf(),
                 size_px,
                 icon_only,
                 variant: self.variant,
+                id: self.next_id,
             };
             let _ = self.tx.send(req.clone());
             self.pending.insert(k, InFlight { req, attempts: 0 });
@@ -235,25 +262,68 @@ impl IconCache {
         let now = Instant::now();
         while let Ok(r) = self.rx.try_recv() {
             let k = (r.key, r.size_px);
-            if r.image.is_none()
-                && let Some(f) = self.pending.get_mut(&k)
-                && f.attempts < RETRY_ATTEMPTS
-                && f.req.path.exists()
-            {
+            let Some(f) = self.pending.get_mut(&k).filter(|f| f.req.id == r.id) else {
+                // Dropped while in flight: an old variant, or a file whose icon changed.
+                continue;
+            };
+            if let Some(e) = r.error {
+                self.stats.first_error.get_or_insert(e);
+            }
+            if r.image.is_none() && f.attempts < RETRY_ATTEMPTS && f.req.path.exists() {
                 // Still there but not extractable right now: try again later, and keep the
                 // entry pending so the windows keep showing the loading tile instead of the
                 // failure placeholder.
                 let delay = RETRY_DELAYS_MS[f.attempts as usize % RETRY_DELAYS_MS.len()];
                 f.attempts += 1;
                 tracing::debug!(key = %k.0, attempt = f.attempts, delay_ms = delay, "icon extraction failed; retrying");
+                self.stats.retried += 1;
                 self.retry.push((now + Duration::from_millis(delay), k));
                 continue;
+            }
+            match &r.image {
+                Some(img) => {
+                    self.stats.ok += 1;
+                    // Bigger images come back scaled down to the box, smaller ones get drawn
+                    // scaled up.
+                    if img.width.max(img.height) < k.1 {
+                        self.stats.smaller += 1;
+                    }
+                }
+                None => self.stats.failed += 1,
             }
             self.pending.remove(&k);
             self.map.insert(k, r.image.map(Rc::new));
             n += 1;
         }
+        if self.pending.is_empty() {
+            self.log_stats();
+        }
         n
+    }
+
+    /// One line per burst of extractions (startup, an icon size change, new files), once
+    /// nothing is pending any more; at info only when something went wrong.
+    fn log_stats(&mut self) {
+        let s = std::mem::take(&mut self.stats);
+        if s.ok + s.failed == 0 {
+            return;
+        }
+        let error = s
+            .first_error
+            .map(|e| format!("{:#010x}", e as u32))
+            .unwrap_or_default();
+        if s.failed + s.retried + s.smaller > 0 {
+            tracing::info!(
+                ok = s.ok,
+                failed = s.failed,
+                retried = s.retried,
+                smaller = s.smaller,
+                error = %error,
+                "icons extracted"
+            );
+        } else {
+            tracing::debug!(ok = s.ok, "icons extracted");
+        }
     }
 
     /// Re-queues the retries that are due; returns how long until the next one (None = no
@@ -287,10 +357,54 @@ impl IconCache {
         self.retry.retain(|(_, (k, _))| !hit(k));
     }
 
+    /// Drops the per-file icons nothing can show again: older versions of a file that changed
+    /// since (`live` holds every item's current `cache_key`) and files that are gone. A file
+    /// still on disk keeps its icon (a portal may go back to its folder), and so do namespace
+    /// items (the Recycle Bin flips between two) and per-extension icons. Returns the keys
+    /// dropped, for `is_dropped_draw_key`.
+    pub fn sweep(&mut self, live: &HashSet<String>) -> HashSet<String> {
+        let live_paths: HashSet<&str> = live.iter().filter_map(|k| file_key_path(k)).collect();
+        let suffix = self.variant.suffix();
+        let mut dropped = HashSet::new();
+        for (k, _) in self.map.keys() {
+            let Some(base) = k.strip_suffix(&suffix) else {
+                continue;
+            };
+            let Some(path) = file_key_path(base) else {
+                continue;
+            };
+            if live.contains(base) || path.starts_with("::") {
+                continue;
+            }
+            if live_paths.contains(path) || !Path::new(path).exists() {
+                dropped.insert(base.to_string());
+            }
+        }
+        if !dropped.is_empty() {
+            self.map
+                .retain(|(k, _), _| !k.strip_suffix(&suffix).is_some_and(|b| dropped.contains(b)));
+        }
+        dropped
+    }
+
+    /// A `draw_key` of an icon `sweep` dropped.
+    pub fn is_dropped_draw_key(&self, key: &str, dropped: &HashSet<String>) -> bool {
+        key.rsplit_once('@')
+            .and_then(|(k, _)| k.strip_suffix(&self.variant.suffix()))
+            .is_some_and(|b| dropped.contains(b))
+    }
+
     #[allow(dead_code)]
     pub fn len(&self) -> usize {
         self.map.len()
     }
+}
+
+/// The path in a per-file `cache_key` (`file:{path}:{mtime}`).
+fn file_key_path(key: &str) -> Option<&str> {
+    key.strip_prefix("file:")?
+        .rsplit_once(':')
+        .map(|(path, _)| path)
 }
 
 /// Decides how an item's icon is cached: per-extension for ordinary documents, per-file for
@@ -320,7 +434,6 @@ pub fn icon_key_for(path: &Path, is_folder: bool, mtime: i64) -> (IconKey, bool)
                 | ".ico"
                 | ".cur"
                 | ".appref-ms"
-                | ".msi"
                 | ".scr"
                 | ".png"
                 | ".jpg"
@@ -335,7 +448,6 @@ pub fn icon_key_for(path: &Path, is_folder: bool, mtime: i64) -> (IconKey, bool)
                 | ".mkv"
                 | ".mov"
                 | ".avi"
-                | ".pdf"
         );
     let thumbnail_capable = matches!(
         ext.as_str(),
@@ -367,6 +479,85 @@ pub fn icon_key_for(path: &Path, is_folder: bool, mtime: i64) -> (IconKey, bool)
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sweep_drops_old_versions_and_gone_files_only() {
+        let dir = std::env::temp_dir().join(format!("pf-icon-sweep-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let kept = dir.join("kept.lnk");
+        std::fs::write(&kept, b"x").unwrap();
+        let kept = kept.to_string_lossy().to_lowercase();
+        let gone = dir.join("gone.lnk").to_string_lossy().to_lowercase();
+        let changed = dir.join("changed.exe").to_string_lossy().to_lowercase();
+        let mut cache = IconCache::new(HWND::default());
+        let keys = [
+            format!("file:{changed}:1"), // older version of a live item
+            format!("file:{changed}:2"), // live
+            format!("file:{gone}:5"),    // no item, no file
+            format!("file:{kept}:7"),    // no item, file still there (portal folder left)
+            "file:::{645ff040-5081-101b-9f08-00aa002f954e}:0".to_string(), // Recycle Bin, empty
+            "ext:.txt".to_string(),
+        ];
+        for k in &keys {
+            cache.map.insert((k.clone(), 96), None);
+        }
+        let live: HashSet<String> = [format!("file:{changed}:2")].into_iter().collect();
+        let dropped = cache.sweep(&live);
+        let mut left: Vec<&str> = cache.map.keys().map(|(k, _)| k.as_str()).collect();
+        left.sort();
+        let mut want = vec![
+            keys[1].as_str(),
+            keys[3].as_str(),
+            keys[4].as_str(),
+            keys[5].as_str(),
+        ];
+        want.sort();
+        assert_eq!(left, want);
+        assert!(cache.is_dropped_draw_key(&format!("file:{gone}:5@96"), &dropped));
+        assert!(!cache.is_dropped_draw_key(&format!("file:{kept}:7@96"), &dropped));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn results_of_dropped_requests_are_not_cached() {
+        let mut cache = IconCache::new(HWND::default());
+        let (done, rx) = channel();
+        cache.rx = rx;
+        let key = IconKey::ByExt(".pf-test".into());
+        let path = Path::new("C:\\pf-test.pf-test");
+        let ready = |id, k: &str| Ready {
+            key: k.to_string(),
+            size_px: 96,
+            id,
+            image: Some(Image::solid(1, 1, [0; 3])),
+            error: None,
+        };
+        // The first request is dropped in flight and asked again; only the second one counts.
+        assert!(matches!(cache.get(&key, path, 96, false), Lookup::Pending));
+        cache.invalidate(&key);
+        assert!(matches!(cache.get(&key, path, 96, false), Lookup::Pending));
+        done.send(ready(1, "ext:.pf-test")).unwrap();
+        assert_eq!(cache.drain_results(), 0);
+        assert!(matches!(cache.get(&key, path, 96, false), Lookup::Pending));
+        done.send(ready(2, "ext:.pf-test")).unwrap();
+        assert_eq!(cache.drain_results(), 1);
+        assert!(matches!(
+            cache.get(&key, path, 96, false),
+            Lookup::Ready(Some(_))
+        ));
+        // A result for a variant that was switched away from stays out of the cache.
+        assert!(matches!(
+            cache.get(&IconKey::ByExt(".pf-other".into()), path, 96, false),
+            Lookup::Pending
+        ));
+        cache.set_variant(IconVariant {
+            chameleon: true,
+            ..IconVariant::default()
+        });
+        done.send(ready(3, "ext:.pf-other")).unwrap();
+        assert_eq!(cache.drain_results(), 0);
+        assert_eq!(cache.len(), 0);
+    }
 
     #[test]
     fn variant_suffix_ignores_strength_without_tint() {

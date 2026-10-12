@@ -527,6 +527,10 @@
     KF_FLAG_DEFAULT
     SHCreateItemFromParsingName
     IShellItem
+    IEnumShellItems
+    BHID_EnumItems
+    IVirtualDesktopManager
+    VirtualDesktopManager
     IShellItemImageFactory
     SIIGBF_RESIZETOFIT
     SIIGBF_BIGGERSIZEOK
@@ -534,6 +538,7 @@
     SIIGBF_THUMBNAILONLY
     SIIGBF_INCACHEONLY
     SIGDN_PARENTRELATIVEEDITING
+    SIGDN_PARENTRELATIVEPARSING
     SIGDN_NORMALDISPLAY
     SIGDN_FILESYSPATH
     ShellExecuteExW
@@ -862,6 +867,19 @@
     VK_SPACE
     GetKeyboardLayout
     MapVirtualKeyExW
+
+    // ---- Peek search box (a GDI-painted popup around an EDIT control)
+    BeginPaint
+    EndPaint
+    PAINTSTRUCT
+    FillRect
+    InvalidateRect
+    SetBkMode
+    TRANSPARENT
+    DT_LEFT
+    DT_RIGHT
+    DT_END_ELLIPSIS
+    VK_DOWN
 
     // ---- GDI for the layered shadow window
     CreateCompatibleDC

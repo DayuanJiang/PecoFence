@@ -165,6 +165,24 @@ pub fn child_windows(parent: HWND) -> Vec<(HWND, String, RECT, bool)> {
     out
 }
 
+/// The top-level windows of `class`, in z-order (top to bottom): what filtering
+/// `top_level_windows` by `class_name` gives, without a class lookup per window.
+pub fn windows_of_class(class: &str) -> Vec<HWND> {
+    let class = to_wide(class);
+    let mut out = Vec::new();
+    let mut prev: Option<HWND> = None;
+    loop {
+        // SAFETY: plain FFI enumeration; the string outlives the call.
+        let next = unsafe { FindWindowExW(None, prev, PCWSTR(class.as_ptr()), PCWSTR::null()) };
+        if next.0.is_null() {
+            break;
+        }
+        out.push(next);
+        prev = Some(next);
+    }
+    out
+}
+
 /// Enumerates top-level windows in z-order (top to bottom).
 pub fn top_level_windows() -> Vec<HWND> {
     let mut out: Vec<HWND> = Vec::new();
@@ -270,12 +288,7 @@ const E_ACCESS_DENIED: windows_core::HRESULT = windows_core::HRESULT(0x8007_0005
 pub fn insert_above(hwnd: HWND, host: HWND) -> Result<()> {
     // SAFETY: plain FFI calls on caller-supplied handles.
     unsafe {
-        let mut above = GetWindow(host, GW_HWNDPREV as u32);
-        // Nonvisual windows can sit directly above Progman. A minimized elevated
-        // terminal may reject relative placement even though it paints no surface.
-        while !above.0.is_null() && above != hwnd && !has_visible_surface(above) {
-            above = GetWindow(above, GW_HWNDPREV as u32);
-        }
+        let above = surface_window_above(host, hwnd);
         if above == hwnd {
             return Ok(());
         }
@@ -294,6 +307,21 @@ pub fn insert_above(hwnd: HWND, host: HWND) -> Result<()> {
             }
             placed => placed,
         }
+    }
+}
+
+/// The lowest window above `host` that paints a surface, which `insert_above` places `hwnd`
+/// under; `hwnd` itself when it comes first, a null HWND when there is none.
+pub fn surface_window_above(host: HWND, hwnd: HWND) -> HWND {
+    // SAFETY: plain FFI calls on caller-supplied handles.
+    unsafe {
+        let mut above = GetWindow(host, GW_HWNDPREV as u32);
+        // Nonvisual windows can sit directly above Progman. A minimized elevated
+        // terminal may reject relative placement even though it paints no surface.
+        while !above.0.is_null() && above != hwnd && !has_visible_surface(above) {
+            above = GetWindow(above, GW_HWNDPREV as u32);
+        }
+        above
     }
 }
 

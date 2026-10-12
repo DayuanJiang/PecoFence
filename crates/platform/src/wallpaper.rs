@@ -177,6 +177,44 @@ pub fn desktop_wallpapers() -> Vec<([u8; 16], Option<PathBuf>)> {
         .collect()
 }
 
+/// The virtual desktop `hwnd` is on, `None` when Explorer does not say (the desktop itself,
+/// windows shown on every desktop, a failed call). Requires COM on this thread.
+pub fn window_desktop(hwnd: HWND) -> Option<u128> {
+    use std::mem::ManuallyDrop;
+    // Never released at exit: thread-local destructors run inside ExitProcess, where releasing
+    // Explorer's object waits for an RPC reply that never comes. The process then hangs for
+    // good, holding the single-instance mutex, and PecoFence cannot start again.
+    thread_local! {
+        static MANAGER: std::cell::RefCell<Option<ManuallyDrop<IVirtualDesktopManager>>> =
+            const { std::cell::RefCell::new(None) };
+    }
+    MANAGER.with_borrow_mut(|manager| {
+        if manager.is_none() {
+            // SAFETY: standard COM activation.
+            *manager = unsafe { CoCreateInstance(&VirtualDesktopManager, None, CLSCTX_ALL as u32) }
+                .ok()
+                .map(ManuallyDrop::new);
+        }
+        // SAFETY: COM call on a live interface.
+        match unsafe { manager.as_ref()?.GetWindowDesktopId(hwnd) } {
+            Ok(id) => Some(id.to_u128()).filter(|&id| id != 0),
+            Err(_) => {
+                // Explorer restarted, perhaps: ask a new object next time.
+                drop(manager.take().map(ManuallyDrop::into_inner));
+                None
+            }
+        }
+    })
+}
+
+/// Whether a virtual-desktop switch can change the picture: more than one desktop, and they
+/// do not all keep the same one (one without a picture of its own differs from one with;
+/// Windows 10 keeps none per desktop). A hint like [`desktop_wallpapers`].
+pub fn desktops_differ() -> bool {
+    let desktops = desktop_wallpapers();
+    desktops.len() > 1 && desktops.iter().any(|(_, path)| *path != desktops[0].1)
+}
+
 /// Watch both wallpaper settings and Explorer's virtual-desktop state. The latter is only
 /// an opportunistic trigger (an Explorer implementation detail); callers must keep a poll
 /// fallback and re-query IDesktopWallpaper before displaying anything.
@@ -205,6 +243,24 @@ pub fn watch_changes(on_change: impl Fn() + Send + 'static) -> Result<()> {
     result
 }
 
+/// What `RegNotifyChangeKeyValue` returns once the watched key was deleted.
+const ERROR_KEY_DELETED: i32 = 1018;
+
+fn open_notify_key(path: &[u16]) -> Option<HKEY> {
+    let mut key = HKEY::default();
+    // SAFETY: out-pointer references a local; the string outlives the call.
+    let status = unsafe {
+        RegOpenKeyExW(
+            HKEY_CURRENT_USER,
+            PCWSTR(path.as_ptr()),
+            None,
+            ACCESS_MASK(KEY_NOTIFY as u32),
+            &mut key,
+        )
+    };
+    (status.0 == 0).then_some(key)
+}
+
 fn watch_registry_key(
     path: &str,
     subtree: bool,
@@ -212,26 +268,15 @@ fn watch_registry_key(
     on_change: impl Fn() + Send + 'static,
 ) -> Result<()> {
     let key_path = to_wide(path);
-    let mut key = HKEY::default();
-    // SAFETY: out-pointer references a local; the string outlives the call.
-    let status = unsafe {
-        RegOpenKeyExW(
-            HKEY_CURRENT_USER,
-            PCWSTR(key_path.as_ptr()),
-            None,
-            ACCESS_MASK(KEY_NOTIFY as u32),
-            &mut key,
-        )
-    };
-    if status.0 != 0 {
+    let Some(key) = open_notify_key(&key_path) else {
         return Err(windows_core::Error::from_hresult(E_FAIL));
-    }
+    };
     let raw = key.0 as isize;
     let thread = std::thread::Builder::new()
         .name(name.into())
         .stack_size(64 * 1024)
         .spawn(move || {
-            let key = HKEY(raw as *mut core::ffi::c_void);
+            let mut key = HKEY(raw as *mut core::ffi::c_void);
             tracing::debug!(?key, subtree, "wallpaper registry watcher started");
             loop {
                 // SAFETY: synchronous wait on a key we opened; returns when a value changes.
@@ -244,16 +289,29 @@ fn watch_registry_key(
                         false,
                     )
                 };
-                if st.0 != 0 {
+                if st.0 == 0 {
+                    tracing::debug!(?key, "wallpaper registry change received");
+                    on_change();
+                    continue;
+                }
+                // SAFETY: closing the key we opened.
+                unsafe {
+                    let _ = RegCloseKey(key);
+                }
+                if st.0 != ERROR_KEY_DELETED {
                     tracing::warn!(status = st.0, ?key, "wallpaper registry watcher stopped");
                     break;
                 }
-                tracing::debug!(?key, "wallpaper registry change received");
+                // Explorer replaced the key: watch the one that is there now, and report the
+                // changes missed meanwhile.
+                key = loop {
+                    std::thread::sleep(std::time::Duration::from_secs(2));
+                    if let Some(key) = open_notify_key(&key_path) {
+                        break key;
+                    }
+                };
+                tracing::info!(?key, "wallpaper registry watcher reopened its key");
                 on_change();
-            }
-            // SAFETY: closing the key we opened.
-            unsafe {
-                let _ = RegCloseKey(key);
             }
         });
     if thread.is_err() {

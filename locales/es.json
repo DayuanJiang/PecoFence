@@ -148,6 +148,7 @@
   "收起的栅栏需点击标题才展开": "Expandir solo al hacer clic en el título",
   "展开时把下面的栅栏推开": "Desplazar hacia abajo los grupos de debajo al expandir",
   "鼠标悬停时才显示标题栏": "Mostrar el título solo al pasar el cursor",
+  "鼠标悬停时切换标签页": "Cambiar de pestaña al pasar el cursor",
   "自动隐藏滚动条": "Ocultar automáticamente las barras de desplazamiento",
   "移动栅栏时吸附对齐": "Ajustar grupos al moverlos",
   "拖动时吸附到其他栅栏、屏幕边缘和屏幕中线；按住 Alt 可暂时不吸附": "Ajustar a otros grupos, a los bordes y a las líneas centrales de la pantalla al arrastrar; mantén presionada la tecla Alt para moverlo libremente",
@@ -290,6 +291,7 @@
   "开启后不再悬停展开；拖动标题仍可移动栅栏": "Al activarlo, ya no se expanden al pasar el cursor; puedes seguir arrastrando el título para mover el grupo",
   "收起后它们会回到原位": "Vuelven a su sitio cuando el grupo se contrae",
   "平时只显示图标，让桌面更清爽；每个栅栏可在“栅栏”页单独设置": "Solo se ven los iconos hasta que pasas el cursor; puedes cambiarlo en cada grupo desde la página Grupos",
+  "鼠标在标签页上停留片刻就切换过去，不用点击": "Deja el cursor un momento sobre una pestaña para cambiar a ella sin hacer clic",
   "鼠标移到栅栏上或滚动时才显示": "Solo aparecen al pasar el cursor sobre el grupo o al desplazarte",
   "按快捷键让所有栅栏显示在窗口前面": "Mostrar todos los grupos delante de las ventanas con un atajo de teclado",
   "再按一次、按 Esc 或点击其他位置返回": "Presiona de nuevo el atajo, presiona Esc o haz clic en otro lugar para volver",
@@ -488,5 +490,10 @@
   "在 Microsoft Store 评分": "Valorar en Microsoft Store",
   "在 GitHub 点 Star": "Dar una estrella en GitHub",
   "在 Microsoft Store 给它打个分，几秒钟就好。": "Valóralo en Microsoft Store. Solo lleva unos segundos.",
-  "去评分": "Valorar"
+  "去评分": "Valorar",
+  "使用手册": "Manual",
+  "每个功能都有动画演示": "Cada función con una breve animación",
+  "桌面整理好了": "Tu escritorio está ordenado",
+  "文件都没有移动，只是显示在栅栏里。\n在桌面空白处拖出一个框可新建栅栏，双击空白处可隐藏或显示栅栏。": "Tus archivos no se han movido; los grupos solo los muestran.\nDibuja un recuadro en un área vacía del escritorio para crear un grupo, o haz doble clic en ella para ocultar o mostrar los grupos.",
+  "没有匹配的文件": "Ningún archivo coincide"
 }

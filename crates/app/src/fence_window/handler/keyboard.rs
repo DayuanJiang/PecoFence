@@ -177,6 +177,8 @@ pub(super) fn on_keydown(
             }
         }
         VK_BACK if v.deco.up_button => {
+            // Keyboard navigation: the folder it returns to shows the focus ring.
+            v.focus_visible = true;
             queue.push(Command::PortalUp(v.active));
         }
         k if k == msg::VK_DELETE => {
@@ -255,8 +257,8 @@ pub(super) fn on_syskeydown(
     if !alt {
         return None;
     }
-    let guard = view.borrow();
-    let v = guard.as_ref()?;
+    let mut guard = view.borrow_mut();
+    let v = guard.as_mut()?;
     if vk == msg::VK_RETURN {
         let ids = v.selected_ids();
         if !ids.is_empty() {
@@ -268,6 +270,7 @@ pub(super) fn on_syskeydown(
         return Some(0);
     }
     if vk == VK_UP && v.deco.up_button {
+        v.focus_visible = true;
         queue.push(Command::PortalUp(v.active));
         return Some(0);
     }

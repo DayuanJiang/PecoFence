@@ -26,6 +26,11 @@ impl GridSteps {
         h.max((self.fixed + self.row).round() as i32)
     }
 
+    /// Height of `rows` whole rows.
+    pub fn rows_height(&self, rows: u32) -> i32 {
+        (self.fixed + rows as f32 * self.row).round() as i32
+    }
+
     /// Widest width that fits in `w`: whole columns with `cells`, else `w`; one column at least.
     pub fn floor_width(&self, w: i32) -> i32 {
         let Some((cell, pad)) = self.cols else {
@@ -226,8 +231,81 @@ impl App {
         self.record_bounds(id, r, true, h);
     }
 
+    /// First run: the default column is sized to what the rules sorted into it, in whole rows,
+    /// and restacked from the top. Fixed heights left a half-cut row in one fence and mostly
+    /// empty plates in the others.
+    pub(super) fn fit_first_run_column(&mut self) {
+        let ids: Vec<FenceId> = self.state.fences().iter().map(|f| f.id).collect();
+        let Some(hwnd) = ids
+            .first()
+            .and_then(|id| self.fences.get(id))
+            .map(|w| w.hwnd())
+        else {
+            return;
+        };
+        let Some(monitor) = monitors::query(monitors::monitor_from_window(hwnd)) else {
+            return;
+        };
+        let scale = monitors::dpi_for_window(hwnd).max(96) as f32 / 96.0;
+        let gap = (16.0 * scale).round() as i32;
+        let mut want = Vec::new();
+        for &id in &ids {
+            let (Some(w), Some(steps)) = (self.fences.get(&id), self.grid_steps(id, scale)) else {
+                return;
+            };
+            let Some(fit) = w.fit_report() else {
+                return;
+            };
+            // Every row, not `fitting_height_px`: that stops at the work area's bottom from
+            // where the fence sits before the restack.
+            want.push((steps.rows_height(fit.rows.max(1) as u32), steps));
+        }
+        // One row each, then one more row each in turn while it fits: fences with a few
+        // icons stop at their fitting height, the others share the rest of the column.
+        let work = monitor.work_area;
+        let mut left = work.bottom - work.top - gap * (ids.len() as i32 + 1);
+        let mut rows = vec![1; ids.len()];
+        let mut heights: Vec<i32> = want
+            .iter()
+            .map(|(fit, s)| s.rows_height(1).min(*fit))
+            .collect();
+        left -= heights.iter().sum::<i32>();
+        let mut grew = true;
+        while grew {
+            grew = false;
+            for ((h, n), (fit, steps)) in heights.iter_mut().zip(&mut rows).zip(&want) {
+                let taller = steps.rows_height(*n + 1).min(*fit);
+                if taller > *h && taller - *h <= left {
+                    left -= taller - *h;
+                    *h = taller;
+                    *n += 1;
+                    grew = true;
+                }
+            }
+        }
+        let mut top = work.top + gap;
+        for (&id, h) in ids.iter().zip(heights) {
+            let Some(w) = self.fences.get(&id) else {
+                continue;
+            };
+            let r = w.rect();
+            let rect = RECT {
+                left: r.left,
+                top,
+                right: r.right,
+                bottom: top + h,
+            };
+            w.set_bounds(rect);
+            w.apply_height(h, false);
+            self.record_bounds(id, rect, false, h);
+            top += h + gap;
+        }
+        self.schedule_save();
+    }
+
     /// Icon-size change on a fixed-height fence: the height follows the content (no band of
-    /// empty rows after shrinking the icons), growing only as far as the next fence below.
+    /// empty rows after shrinking the icons), growing only as far as the next fence below. The
+    /// bottom edge glides there like an auto-height fence's.
     pub(super) fn fit_height_to_content(&mut self, id: FenceId) {
         let id = self.state.host_of(id);
         if self.state.fence(id).is_none_or(|f| f.view.auto_height) {
@@ -256,7 +334,7 @@ impl App {
         if h == r.bottom - r.top {
             return;
         }
-        let rect = w.apply_height(h, false);
+        let rect = w.apply_height(h, true);
         self.record_bounds(id, rect, false, h);
         self.schedule_save();
     }

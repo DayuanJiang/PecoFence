@@ -229,18 +229,32 @@ impl App {
 
     pub(super) fn portal_enter(&mut self, fence: FenceId, dir: &std::path::Path) {
         if self.state.portal_enter(fence, dir) {
-            self.after_portal_navigation(fence);
+            self.after_portal_navigation(fence, 1, None);
         }
     }
 
+    /// One level up selects the folder just left, as in Explorer.
     pub(super) fn portal_up(&mut self, fence: FenceId) {
+        let left = self.state.portal_path(fence);
         if self.state.portal_up(fence) {
-            self.after_portal_navigation(fence);
+            let left = left.map(|p| crate::state::portal_item_id(&p.to_string_lossy()));
+            self.after_portal_navigation(fence, -1, left);
         }
     }
 
-    pub(super) fn after_portal_navigation(&mut self, fence: FenceId) {
+    /// `dir` and `select` as in [`FenceWindow::begin_portal_navigation`].
+    pub(super) fn after_portal_navigation(
+        &mut self,
+        fence: FenceId,
+        dir: i8,
+        select: Option<ItemId>,
+    ) {
         self.ensure_portal_watchers();
+        if let Some(w) = self.window_for(fence)
+            && w.active_fence() == fence
+        {
+            w.begin_portal_navigation(dir, select);
+        }
         self.refresh_fence(fence);
         let host = self.state.host_of(fence);
         self.apply_portal_deco(host);

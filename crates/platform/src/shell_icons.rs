@@ -5,9 +5,12 @@
 //! persists the state itself (registry `HideIcons`) and the menu stays in sync.
 
 use crate::bindings::*;
+use crate::wide::to_wide;
+use windows_core::PCWSTR;
 
 const HIDE_ICONS_BIT: u32 = 1 << 12; // SHELLSTATE::fHideIcons
 const CMD_TOGGLE_DESKTOP_ICONS: usize = 0x7402;
+const LVM_GETSELECTEDCOUNT: u32 = 0x1000 + 50; // LVM_FIRST + 50
 
 /// True when the shell currently hides desktop icons.
 pub fn desktop_icons_hidden() -> bool {
@@ -48,6 +51,35 @@ pub fn toggle_desktop_icons(def_view: HWND, fallback: HWND) -> bool {
         )
     };
     ok.0 != 0
+}
+
+/// How many desktop icons are selected in Explorer's list view under `def_view`; None when
+/// there is no view or Explorer did not answer.
+pub fn desktop_selected_count(def_view: HWND) -> Option<usize> {
+    if def_view.0.is_null() {
+        return None;
+    }
+    let class = to_wide("SysListView32");
+    // SAFETY: the string outlives the call.
+    let list =
+        unsafe { FindWindowExW(Some(def_view), None, PCWSTR(class.as_ptr()), PCWSTR::null()) };
+    if list.0.is_null() {
+        return None;
+    }
+    let mut count: usize = 0;
+    // SAFETY: plain FFI call with a timeout; Explorer owns the list view.
+    let ok = unsafe {
+        SendMessageTimeoutW(
+            list,
+            LVM_GETSELECTEDCOUNT,
+            WPARAM(0),
+            LPARAM(0),
+            SMTO_ABORTIFHUNG as u32,
+            200,
+            Some(&mut count),
+        )
+    };
+    (ok.0 != 0).then_some(count)
 }
 
 /// Sets the hidden state, toggling only when it differs. Returns the state read back afterwards.

@@ -28,8 +28,8 @@ pub struct FenceViewState {
     /// tabbed strip): the strip opens a `TAB_MERGE_GAP_W` gap there and the neighbours slide
     /// aside. None = no hint, or a plain (single-tab) title.
     pub(super) merge_gap: Option<usize>,
-    /// Natural pill widths by caption, see `tab_natural_widths`.
-    pub(super) tab_natural_w: RefCell<Vec<(String, u8, bool, f32)>>,
+    /// Natural pill widths by caption (and search badge), see `tab_natural_widths`.
+    pub(super) tab_natural_w: RefCell<Vec<(String, u8, bool, Option<String>, f32)>>,
     /// Tab head under an OLE drag (highlighted like a folder drop target; not the hover).
     pub(super) drop_tab: Option<usize>,
     /// Drag dwell timer: the rolled-fence unroll is armed.
@@ -79,6 +79,12 @@ pub struct FenceViewState {
     pub(super) chrome_fades: Fades<ChromeKey>,
     /// Drop-target fade per item (a folder under a drag), 83 ms both ways.
     pub(super) drop_fades: Fades<ItemId>,
+    /// Peek search marks (None = no search) and the per-item dimming they fade (83 ms).
+    pub(super) search: Option<SearchMarks>,
+    pub(super) search_dim: Fades<ItemId>,
+    /// A Peek search holds this fence open (a hover peek that does not close until the search
+    /// has no matches here any more).
+    pub(super) search_expanded: bool,
     /// Fence-wide drop wash + ring alpha (83 ms in, 167 ms out).
     pub(super) drop_wash: Tween,
     /// Insertion caret alpha (83 ms) and the slot it is (still) drawn at while fading out.
@@ -137,6 +143,9 @@ pub struct FenceViewState {
     /// Offset to re-apply once the new tab's items have arrived (`set_items`); `set_layout`
     /// consumes it, so a tab switch whose tabs differ in layout keeps the restored offset.
     pub(super) scroll_restore: Option<f32>,
+    /// Portal 上一级: the folder just left, which the parent's `set_items` selects and scrolls
+    /// into view (Explorer), with the focus ring if it was showing.
+    pub(super) select_after_nav: Option<(ItemId, bool)>,
     /// Smooth-scroll client tween (the offset is rasterised into the D2D content surface, so
     /// the surface is redrawn per frame from `tick`). Its target is where pending input
     /// accumulates: a second wheel notch retargets from the anticipated end, not from the
@@ -151,6 +160,9 @@ pub struct FenceViewState {
     /// Screen rect (left, top, width, height) `backdrop_crop` was cut for. While the height
     /// animates the crop covers the taller end, so the per-frame chrome draws reuse it.
     pub(super) backdrop_rect: Option<(i32, i32, i32, i32)>,
+    /// Acrylic: `MonitorBackdrop::crop_origin` of `backdrop_crop` (a move within one texel of
+    /// the quarter-size image cuts the same pixels).
+    pub(super) backdrop_origin: Option<(i32, i32, i32, i32)>,
     /// `BitmapCache` key of the uploaded crop (per window; dropped whenever the crop changes).
     pub(super) backdrop_key: String,
     pub(super) gpu_glass: RefCell<pecofence_render::gpu_glass::GpuGlass>,
@@ -218,6 +230,8 @@ pub struct FenceViewState {
     pub(super) wheel_zoom_accum: i32,
     /// Wheel-over-tabs accumulator: one tab per whole notch (touchpads deliver fractions).
     pub(super) wheel_tab_accum: i32,
+    /// The tab TIMER_TAB_HOVER will switch to while the pointer stays on it.
+    pub(super) tab_hover_switch: Option<usize>,
     /// Fence height follows the item grid (FenceView.auto_height).
     pub(super) auto_height: bool,
     /// Mouse move/resize disabled (menu "锁定位置和大小").
@@ -300,8 +314,8 @@ impl FenceViewState {
         self.dpi as f32 / 96.0
     }
 
-    /// Adopts a new DPI: rescales the remembered expanded height and drops DPI-dependent
-    /// caches (icons, fitted labels). Returns true when something changed.
+    /// Adopts a new DPI: rescales the remembered expanded height, refits the labels and reloads
+    /// the icons at the new pixel size. Returns true when something changed.
     pub(super) fn apply_dpi(&mut self, new_dpi: u32) -> bool {
         let new_dpi = new_dpi.max(96);
         if new_dpi == self.dpi {
@@ -314,7 +328,7 @@ impl FenceViewState {
         // the same physical rectangle, so geometry alone cannot validate the old crop.
         self.backdrop_rect = None;
         self.expanded_h_px = (self.expanded_h_px as f32 * new_dpi as f32 / old).round() as i32;
-        self.drop_icons_for_reload();
+        self.reload_icons_and_labels();
         self.snap_item_motion();
         // The infotip window scales its max width from the owner DPI at creation: rebuild it
         // on the next show.
@@ -323,10 +337,11 @@ impl FenceViewState {
         true
     }
 
-    /// Drops every cached icon and fitted label (they reload lazily, without a cross-fade).
-    pub(super) fn drop_icons_for_reload(&mut self) {
+    /// Drops every fitted label and lets the icons reload lazily at the current size. Each icon
+    /// keeps its old bitmap, drawn scaled into the new box, until the new one replaces it
+    /// without a cross-fade (Explorer does the same): the icons never blank out in between.
+    pub(super) fn reload_icons_and_labels(&mut self) {
         for item in &mut self.items {
-            item.icon = None;
             item.icon_failed = false;
             item.icon_waited = false;
             item.icon_fade = None;

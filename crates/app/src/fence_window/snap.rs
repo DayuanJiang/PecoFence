@@ -16,18 +16,16 @@ pub(super) fn merge_target_under_cursor_excluding(me: HWND, also: HWND) -> Optio
 }
 
 pub(super) fn merge_target_at(me: HWND, also: HWND, point: (i32, i32)) -> Option<HWND> {
-    desktop::top_level_windows().into_iter().find(|&w| {
-        if w == me
-            || w == also
-            || desktop::class_name(w) != anchor::FENCE_CLASS
-            || !desktop::is_visible(w)
-        {
-            return false;
-        }
-        let r = window::window_rect(w);
-        let title_h = (36.0 * monitors::dpi_for_window(w).max(96) as f32 / 96.0) as i32;
-        point.0 >= r.left && point.0 < r.right && point.1 >= r.top && point.1 < r.top + title_h
-    })
+    desktop::windows_of_class(anchor::FENCE_CLASS)
+        .into_iter()
+        .find(|&w| {
+            if w == me || w == also || !desktop::is_visible(w) {
+                return false;
+            }
+            let r = window::window_rect(w);
+            let title_h = (36.0 * monitors::dpi_for_window(w).max(96) as f32 / 96.0) as i32;
+            point.0 >= r.left && point.0 < r.right && point.1 >= r.top && point.1 < r.top + title_h
+        })
 }
 
 thread_local! {
@@ -121,11 +119,9 @@ pub(super) fn hide_drag_feedback(behavior: &Behavior) {
 
 /// Screen rectangles of the other fence windows that are showing.
 pub(super) fn other_fence_rects(me: HWND) -> Vec<RECT> {
-    desktop::top_level_windows()
+    desktop::windows_of_class(anchor::FENCE_CLASS)
         .into_iter()
-        .filter(|&w| {
-            w != me && desktop::class_name(w) == anchor::FENCE_CLASS && desktop::is_visible(w)
-        })
+        .filter(|&w| w != me && desktop::is_visible(w))
         .map(window::window_rect)
         .collect()
 }

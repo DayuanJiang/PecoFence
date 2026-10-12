@@ -10,13 +10,30 @@ thread_local! {
         const { std::cell::RefCell::new(None) };
 }
 
+/// One log line per monitor, at startup and after every display change.
+pub(super) fn log_monitors(areas: &[WorkArea]) {
+    for w in areas {
+        tracing::info!(
+            name = %w.device_path,
+            dpi = w.dpi,
+            size = ?(w.mon_right - w.mon_left, w.mon_bottom - w.mon_top),
+            work = ?(w.left, w.top, w.right, w.bottom),
+            "monitor"
+        );
+    }
+}
+
 pub(super) fn work_areas() -> Vec<WorkArea> {
     #[cfg(debug_assertions)]
     if let Some(areas) = TEST_MONITORS.with_borrow(Clone::clone) {
         return areas;
     }
     let targets = monitors::display_targets();
-    monitors::enumerate()
+    // The primary monitor first: the first-run column and every "no monitor matched" fallback
+    // take `first()`, and Windows enumerates in display-number order.
+    let mut found = monitors::enumerate();
+    found.sort_by_key(|m| !m.primary);
+    found
         .into_iter()
         .map(|m| WorkArea {
             device_path: monitor_id(
@@ -254,9 +271,15 @@ impl App {
             if let Some(f) = self.state.fence(active)
                 && let Some(w) = self.fences.get(&id)
             {
+                // A fence the change did not touch keeps its view: no redraw, and its hover,
+                // press and type-ahead stay (asked before `set_tabs`, which may switch tabs).
+                let items = self.item_views(f);
+                let unchanged = w.active_fence() == active && w.shows_items(&items);
                 w.set_tabs(self.tab_views(id), active);
                 w.set_group_by_date(f.view.group_by_date);
-                w.set_items(self.item_views(f));
+                if !unchanged {
+                    w.set_items(items);
+                }
             }
             self.apply_auto_height(id);
         }
@@ -384,7 +407,16 @@ impl App {
     pub(super) fn on_display_changed(&mut self) {
         self.end_peek_now();
         self.state.work_areas = work_areas();
+        let layouts = self.state.config.layouts.len();
         self.state.ensure_layout();
+        log_monitors(&self.state.work_areas);
+        tracing::info!(
+            monitors = self.state.work_areas.len(),
+            new_setup = self.state.config.layouts.len() > layouts,
+            layout = self.state.layout,
+            fences_to_place = self.state.unplaced.len(),
+            "display changed"
+        );
         // A different monitor set may select a different layout: sync windows first.
         self.sync_fence_windows();
         for fence in self.state.fences().to_vec() {
@@ -610,6 +642,13 @@ impl App {
         Some(id)
     }
 
+    /// A fence made from a menu: its title opens for editing, as Explorer's 新建文件夹 does.
+    pub(super) fn create_fence_with_rename(&mut self, rect: RECT) {
+        if let Some(id) = self.create_fence_at(rect, None) {
+            self.begin_rename(id);
+        }
+    }
+
     /// False (with a tray notice) when the layout already holds `MAX_FENCES`.
     pub(super) fn fence_room_or_notice(&self) -> bool {
         if !self.state.fence_limit_reached() {
@@ -732,7 +771,7 @@ impl App {
 
     pub(super) fn new_fence_near(&mut self, x: i32, y: i32) {
         let rect = self.place_new_fence(3, 200.0, x, y, None);
-        self.create_fence_at(rect, None);
+        self.create_fence_with_rename(rect);
     }
 
     /// Work area (device px) containing the point, else the primary one.

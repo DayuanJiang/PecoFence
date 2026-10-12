@@ -66,14 +66,9 @@ pub(super) fn press_ends_selection(
 
 /// Screen rectangles of the showing fence windows outside the group (`me` and `members`).
 pub(super) fn fence_rects_outside(me: HWND, members: &[GroupMember]) -> Vec<RECT> {
-    desktop::top_level_windows()
+    desktop::windows_of_class(anchor::FENCE_CLASS)
         .into_iter()
-        .filter(|&w| {
-            w != me
-                && !members.iter().any(|m| m.hwnd == w)
-                && desktop::class_name(w) == anchor::FENCE_CLASS
-                && desktop::is_visible(w)
-        })
+        .filter(|&w| w != me && !members.iter().any(|m| m.hwnd == w) && desktop::is_visible(w))
         .map(window::window_rect)
         .collect()
 }

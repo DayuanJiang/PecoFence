@@ -46,6 +46,11 @@ impl BitmapCache {
         self.map.remove(key);
     }
 
+    /// Keeps the keyed bitmaps `keep` accepts (wallpaper uploads are not keyed).
+    pub fn retain(&mut self, mut keep: impl FnMut(&str) -> bool) {
+        self.map.retain(|k, _| keep(k));
+    }
+
     /// Drops the keyed bitmaps (icons, crops) but keeps wallpaper uploads: those are keyed
     /// by their backdrop set and cost a full decode to redo once their pixels are released.
     pub fn clear_keyed(&mut self) {

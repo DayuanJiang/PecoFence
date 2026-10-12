@@ -20,6 +20,26 @@ fn url_shortcut_names_prefer_the_browser_title() {
     );
 }
 
+/// Peek search matches the shown name or the file name (its extension may be hidden), ignoring
+/// case; namespace items match by their shown name only.
+#[test]
+fn peek_search_matches_names_and_hidden_extensions() {
+    use super::peek::search_matches;
+    let report = Some(r"c:\users\me\desktop\report 2026.pdf");
+    assert!(search_matches("Report 2026", report, "port 20"));
+    assert!(search_matches("Report 2026", report, ".pdf"));
+    assert!(!search_matches("Report 2026", report, "docx"));
+    assert!(search_matches(
+        "会议记录.docx",
+        Some(r"c:\d\会议记录.docx"),
+        "记录"
+    ));
+    let bin = Some("::{645ff040-5081-101b-9f08-00aa002f954e}");
+    assert!(search_matches("回收站", bin, "回收"));
+    assert!(!search_matches("回收站", bin, "645"));
+    assert!(search_matches("Shell item", None, "shell"));
+}
+
 mod ipc {
     use super::super::fence_options::{FenceProp, parse_fence_prop};
     use super::super::ipc::{

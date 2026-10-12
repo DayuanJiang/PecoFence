@@ -36,11 +36,13 @@ const REPEATS_SHOWN: u32 = 3;
 /// fails `tests::callsites_are_shareable` until the binding is reviewed and listed there.
 const CODE_TEXT_FIELDS: &[&str] = &[
     "at",
+    "behavior",
     "class",
     "command",
     "effect",
     "family",
     "generation",
+    "hotkey",
     "language",
     "memory",
     "method",
@@ -55,8 +57,10 @@ const CODE_TEXT_FIELDS: &[&str] = &[
     "reason",
     "report",
     "stack",
+    "storage",
     "style",
     "verb",
+    "wanted",
     "what",
 ];
 
@@ -560,12 +564,16 @@ mod tests {
     /// fence name, a title or anything else the user typed.
     const REVIEWED: &[(&str, &str)] = &[
         ("at", "%locate(address)"),     // crashlog: `module+rva`
-        ("class", "%class"),            // window class under the cursor
+        ("at", "script"),               // settings page script: fixed names
+        ("behavior", "?behavior"),      // ShowDesktopBehavior enum
+        ("class", "%class"),            // window class (under the cursor / above the desktop)
+        ("class", "%cls"),              // class of the window that ended a peek
         ("command", "name"),            // `Command` variant name
         ("effect", "?effect"),          // DropEffect enum
         ("family", "%f.family"),        // installed font family
         ("generation", "?generation"),  // DesktopGeneration enum
         ("generation", "generation"),   // GPU device generation (u64)
+        ("hotkey", "?c"),               // PeekHotkey enum
         ("language", "language.tag()"), // BCP 47 tag of a Language variant
         ("location", "%location"),      // panic `file:line`
         ("memory", "%m.summary()"),     // MemoryStats::summary: numbers only
@@ -581,10 +589,14 @@ mod tests {
         ("reason", "reason"),           // `&'static str` reasons (reanchor / sync)
         ("report", "?report"),          // SyncReport: counts
         ("stack", "%frames.join(\"\\n\")"), // crashlog: `module+rva` per frame
+        ("storage", "state.storage_kind()"), // fixed names of the config folder's kind
         ("style", "?style"),            // backdrop style enum
         ("verb", "verb"),               // shell verb (canonical name)
         ("verb", "%verb"),
-        ("what", "what"), // `&'static str` operation names
+        ("wanted", "?h"),   // PeekHotkey enum
+        ("what", "what"),   // `&'static str` operation names
+        ("what", "e.step"), // ConfigStore::save step name
+        ("what", "kind"),   // JavaScript error type from a fixed list
     ];
 
     struct Callsite {

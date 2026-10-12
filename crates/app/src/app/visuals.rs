@@ -303,6 +303,102 @@ fn build_snapshot_backdrops(
     }))
 }
 
+/// The startup backdrops, decoded on a worker thread while the rest of startup runs; `finish`
+/// waits for them before the first fence window is created.
+pub(super) struct StartupBackdrops {
+    snapshot: wallpaper::WallpaperSnapshot,
+    signature: String,
+    recipes: Vec<MonitorRecipe>,
+    worker: Option<std::thread::JoinHandle<std::result::Result<Vec<Image>, String>>>,
+}
+
+impl StartupBackdrops {
+    pub(super) fn start(theme: &Theme, wallpaper_override: Option<&str>) -> Result<Self> {
+        let snapshot = wallpaper_snapshot(wallpaper_override)?;
+        let signature = snapshot.signature();
+        let recipes = if pecofence_core::brand::var_os("PECOFENCE_SOLID").is_some() {
+            Vec::new()
+        } else {
+            monitor_recipes(theme, &snapshot)
+        };
+        let worker = {
+            let recipes = recipes.clone();
+            std::thread::Builder::new()
+                .name("pecofence-wallpaper-startup".into())
+                .spawn(move || {
+                    pecofence_platform::com::MtaGuard::init()
+                        .and_then(|_com| {
+                            recipes
+                                .iter()
+                                .map(MonitorRecipe::build_image)
+                                .collect::<Result<Vec<_>>>()
+                        })
+                        .map_err(|error| error.to_string())
+                })
+                .ok()
+        };
+        Ok(Self {
+            snapshot,
+            signature,
+            recipes,
+            worker,
+        })
+    }
+
+    /// What `build_backdrop_sets` returns, from the worker's images (built here if the thread
+    /// could not start).
+    pub(super) fn finish(self, theme: &Theme) -> Result<(Rc<BackdropSets>, String)> {
+        let Self {
+            snapshot,
+            signature,
+            recipes,
+            worker,
+        } = self;
+        if pecofence_core::brand::var_os("PECOFENCE_SOLID").is_some() {
+            return Ok((Rc::new(BackdropSets::default()), signature));
+        }
+        let started = std::time::Instant::now();
+        let failed = |message: String| {
+            windows_core::Error::new(windows_core::HRESULT(0x8000_4005_u32 as i32), message)
+        };
+        let images = match worker {
+            Some(worker) => worker
+                .join()
+                .map_err(|_| failed("wallpaper worker panicked".into()))?
+                .map_err(failed)?,
+            None => recipes
+                .iter()
+                .map(MonitorRecipe::build_image)
+                .collect::<Result<Vec<_>>>()?,
+        };
+        let backdrops: Vec<MonitorBackdrop> = recipes
+            .into_iter()
+            .zip(images)
+            .map(|(recipe, image)| recipe.finish(image, theme.liquid_glass))
+            .collect();
+        if backdrops.is_empty() {
+            return Err(pending());
+        }
+        tracing::info!(
+            position = ?snapshot.position,
+            waited_ms = started.elapsed().as_millis(),
+            count = backdrops.len(),
+            "backdrops ready"
+        );
+        if signature != snapshot.signature() {
+            // Explorer finished replacing the image while WIC read it (as in
+            // `build_snapshot_backdrops`).
+            return Err(pending());
+        }
+        Ok((
+            Rc::new(BackdropSets {
+                acrylic: Rc::new(backdrops),
+            }),
+            signature,
+        ))
+    }
+}
+
 pub(super) fn build_backdrop_sets(
     theme: &Theme,
     wallpaper_override: Option<&str>,

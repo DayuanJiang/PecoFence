@@ -31,6 +31,7 @@ fn main() {
     {
         return;
     }
+    link_options(&out_dir);
     let Some(rc) = find_rc() else {
         println!("cargo:warning=rc.exe not found (Windows SDK); building without an embedded icon");
         return;
@@ -60,6 +61,44 @@ fn main() {
         ),
     }
 }
+
+/// Memory: DLLs a process needs only now and then are delay-loaded (WinHTTP for the update
+/// check; user32 and shell32 in the watchdog, which needs them once the app has exited), and
+/// the app runs on the segment heap, which packaged (Store) apps get by default. The manifest
+/// holds nothing else, so DPI awareness, common controls and OS compatibility are unchanged.
+fn link_options(out_dir: &Path) {
+    let package = env::var("CARGO_PKG_NAME").unwrap_or_default();
+    let delayed: &[&str] = match package.as_str() {
+        "pecofence" => &["winhttp.dll"],
+        "pecofence-watchdog" => &["user32.dll", "shell32.dll"],
+        _ => &[],
+    };
+    for dll in delayed {
+        println!("cargo:rustc-link-arg-bins=/DELAYLOAD:{dll}");
+    }
+    if !delayed.is_empty() {
+        println!("cargo:rustc-link-arg-bins=delayimp.lib");
+    }
+    if package == "pecofence" {
+        let manifest = out_dir.join("pecofence.manifest");
+        std::fs::write(&manifest, SEGMENT_HEAP_MANIFEST).expect("write manifest");
+        println!("cargo:rustc-link-arg-bins=/MANIFEST:EMBED");
+        println!(
+            "cargo:rustc-link-arg-bins=/MANIFESTINPUT:{}",
+            manifest.display()
+        );
+    }
+}
+
+const SEGMENT_HEAP_MANIFEST: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0" xmlns:asmv3="urn:schemas-microsoft-com:asm.v3">
+  <asmv3:application>
+    <asmv3:windowsSettings xmlns="http://schemas.microsoft.com/SMI/2020/WindowsSettings">
+      <heapType>SegmentHeap</heapType>
+    </asmv3:windowsSettings>
+  </asmv3:application>
+</assembly>
+"#;
 
 /// The resource script: icon 1 plus a VERSIONINFO block derived from the Cargo manifest.
 fn rc_source(ico: &Path) -> String {

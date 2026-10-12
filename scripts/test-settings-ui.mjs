@@ -17,7 +17,7 @@ const fixture = {
     autostart: false, hideRealIcons: false, quickHide: { enabled: true },
     showDesktop: 'keepVisible', theme: 'dark', themeStyle: 'fluent', titleAlign: 'left', backdrop: 'acrylic', iconSize: 48,
     icons: { tintRgb: null, tintStrength: 0.6, chameleon: false },
-    rollUp: { hoverPeek: true, clickToExpand: false, pushNeighbors: true, titleOnHover: false, hideInactiveScrollbar: false },
+    rollUp: { hoverPeek: true, clickToExpand: false, pushNeighbors: true, titleOnHover: false, hideInactiveScrollbar: false, switchTabOnHover: false },
     snapping: { enabled: true, gapPx: 8, sizeToCells: false, guideLines: true }, peek: { enabled: true, dim: true, hotkey: 'ctrlAltSpace' },
   },
   rules: {
@@ -192,7 +192,10 @@ async function runTests() {
     assert(doc.getElementById('fenceTintTitleOnly').style.display === 'none', 'Title-only tint offered without a tint');
     assert(doc.getElementById('fenceTabColor').style.display === 'none', 'Tab colour offered for a fence without tabs');
     assert(doc.querySelector('[data-fence=titleColor] [value=tint]').disabled, 'Follow-tint offered without a tint');
+    const tintHint = doc.getElementById('fenceTitleColor').closest('.card').querySelector('.s');
+    assert(!tintHint.hidden, 'Choose-a-tint hint missing without a tint');
     change(doc, 'fenceSel', 'inbox');
+    assert(tintHint.hidden, 'Choose-a-tint hint shown although the fence has a tint');
     assert(doc.querySelector('[data-fence=locked]').classList.contains('on'), 'Lock state not shown');
     assert(doc.getElementById('fenceHideEmpty').style.display === '' && doc.querySelector('[data-fence=hideWhenEmpty]').classList.contains('on'), 'Inbox hide-when-empty not shown');
     assert(doc.getElementById('fenceTintTitleOnly').style.display === '' && doc.querySelector('[data-fence=tintTitleOnly]').classList.contains('on'), 'Title-only tint not shown');
@@ -292,6 +295,7 @@ async function runTests() {
     assert(ruleCount(doc) === count + 1, 'Valid range was rejected');
     const value = current().rules.list.at(-1).allOf[0].value;
     assert(value.min === null && value.max === 0, 'Blank or zero bound changed meaning');
+    assert(current().rules.list.at(-1).name === '大小 ≤ 0 MB', 'Unnamed rule not named after its condition');
   });
   for (const kind of ['ext', 'exact']) {
     await test('Rejects separator-only ' + kind + ' values', async () => {
@@ -617,9 +621,9 @@ async function runTests() {
     assert(messages().length === 1 && messages()[0].a === 'two' && messages()[0].b === 'one', 'Display selections reset or swapped incorrectly');
   });
 
-  await test('The Store rating button appears only in the Store edition; both support buttons post', async () => {
+  await test('The Store rating button appears only in the Store edition; the manual and support buttons post', async () => {
     doc.querySelector('[data-page=about]').click();
-    const rate = doc.getElementById('rateStore'), star = doc.getElementById('starRepo');
+    const rate = doc.getElementById('rateStore'), star = doc.getElementById('starRepo'), manual = doc.getElementById('openManual');
     current().storeEdition = false;
     frame.contentWindow.testRefresh(); await settle();
     assert(rate.hidden && !star.hidden, 'Rating offered outside the Store edition');
@@ -627,8 +631,8 @@ async function runTests() {
     frame.contentWindow.testRefresh(); await settle();
     assert(!rate.hidden && rate.offsetWidth > 0, 'Rating button missing in the Store edition');
     const actions = () => frame.contentWindow.testMessages.filter(m => m.type === 'action').map(m => m.name);
-    rate.click(); star.click(); await settle();
-    assert(actions().slice(-2).join() === 'rateInStore,openRepository', 'Support buttons did not post their actions');
+    manual.click(); rate.click(); star.click(); await settle();
+    assert(actions().slice(-3).join() === 'openManual,rateInStore,openRepository', 'About buttons did not post their actions');
     current().storeEdition = false;
     frame.contentWindow.testRefresh();
   });
@@ -678,12 +682,12 @@ async function runTests() {
     const show = async update => { current().update = update; frame.contentWindow.testUpdate(update); await settle(); };
     const installer = { edition: 'installer', version: '0.1.4', hasSetup: true };
     await show({ ...installer, state: 'idle', version: null });
-    assert(!card.hidden && button.textContent === '检查更新' && !button.disabled && status.textContent === '', 'Idle card wrong');
+    assert(!card.hidden && button.textContent === '检查更新' && !button.disabled && !button.classList.contains('accent') && status.textContent === '', 'Idle card wrong');
     button.click(); assert(lastAction() === 'checkUpdate', 'Check not requested');
     await show({ ...installer, state: 'checking', version: null });
     assert(button.disabled && status.textContent === '正在检查更新…', 'Checking state wrong');
     await show({ ...installer, state: 'available' });
-    assert(status.textContent.startsWith('有新版本 0.1.4。') && button.textContent === '下载并安装', 'Available (installer) wrong: ' + status.textContent);
+    assert(status.textContent.startsWith('有新版本 0.1.4。') && button.textContent === '下载并安装' && button.classList.contains('accent'), 'Available (installer) wrong: ' + status.textContent);
     button.click(); assert(lastAction() === 'installUpdate', 'Install not requested');
     await show({ ...installer, state: 'downloading' });
     assert(button.disabled && button.textContent === '下载并安装' && status.textContent === '正在下载新版本…', 'Downloading state wrong');
@@ -771,6 +775,16 @@ async function runTests() {
     assert(requests[0].body.crash === true, 'Crash flag not sent');
     assert(doc.getElementById('fbCrashNote').hidden, 'Crash note stays after the report went out');
     current().crashed = false;
+  });
+  await test('Script errors reach the host as their type and position, without the message', async () => {
+    doc = await reset();
+    const failing = doc.createElement('script');
+    failing.textContent = "throw new TypeError('C:/Users/jane.doe/taxes.pdf')";
+    doc.body.append(failing);
+    await settle();
+    const sent = frame.contentWindow.testMessages.filter(m => m.name === 'pageError');
+    assert(sent.length === 1 && sent[0].kind === 'TypeError' && sent[0].line > 0, 'Script error not reported: ' + JSON.stringify(sent));
+    assert(!JSON.stringify(sent).includes('jane'), 'The error message reached the host: ' + JSON.stringify(sent));
   });
 
   await test('All ten languages switch live without changing user names or draft inputs', async () => {

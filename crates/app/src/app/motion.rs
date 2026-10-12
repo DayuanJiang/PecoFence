@@ -100,6 +100,19 @@ impl App {
         }
     }
 
+    /// `TIMER_STARTUP_TRIM`: retried while a frame was drawn in the last second, so an
+    /// animation never pays for the pages it touches again.
+    pub(super) fn trim_after_startup(&mut self) {
+        if self
+            .frame_prev
+            .is_some_and(|t| t.elapsed() < Duration::from_secs(1))
+        {
+            window::set_timer(self.control.hwnd(), TIMER_STARTUP_TRIM, GPU_TRIM_IDLE_MS);
+            return;
+        }
+        pecofence_platform::memstats::trim_working_set();
+    }
+
     pub(super) fn on_icons_ready(&mut self) {
         let (n, next_retry) = {
             let mut icons = self.ctx.icons.borrow_mut();
@@ -155,13 +168,14 @@ impl App {
         if more {
             self.ctx.frames.request();
         } else {
-            // End of an animation run: one summary line, at info when it stuttered (a gap of
-            // more than ~2 frames at 143 Hz / 1 frame at 60 Hz, or a frame that took longer
-            // than a 143 Hz period to produce).
+            // End of an animation run: one summary line, at info when it stuttered visibly (a
+            // gap of two 60 Hz frames, or a frame that took longer than a 60 Hz period to
+            // produce). Smaller hitches stay at debug: at 60 Hz a normal frame's jitter
+            // already passes 17 ms, and those lines filled most of the feedback logs.
             let r = &self.frame_run;
             let total = now.duration_since(r.started.unwrap_or(now));
             let ms = |d: Duration| (d.as_secs_f32() * 1000.0 * 10.0).round() / 10.0;
-            if r.max_gap > Duration::from_millis(17) || r.max_frame > Duration::from_millis(7) {
+            if r.max_gap > Duration::from_millis(33) || r.max_frame > Duration::from_millis(16) {
                 tracing::info!(
                     frames = r.frames + 1,
                     total_ms = ms(total),

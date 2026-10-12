@@ -12,6 +12,44 @@ pub(super) fn snap_gap_dip(snapping: &pecofence_core::SnappingSettings) -> i32 {
     snapping.gap_px.clamp(0, MAX_SNAP_GAP_DIP)
 }
 
+/// A script error on the settings page (`pageError`): its JavaScript error type and position
+/// go to the log as fixed names and numbers; the page never sends the message, which can
+/// quote what the user typed.
+fn log_page_error(v: &serde_json::Value) {
+    const KINDS: &[&str] = &[
+        "Error",
+        "TypeError",
+        "ReferenceError",
+        "RangeError",
+        "SyntaxError",
+        "URIError",
+        "EvalError",
+        "AggregateError",
+    ];
+    let text = |key: &str| v.get(key).and_then(|k| k.as_str()).unwrap_or("");
+    let kind = KINDS
+        .iter()
+        .find(|&&k| k == text("kind"))
+        .copied()
+        .unwrap_or("other");
+    let file = text("file");
+    let script = if file.ends_with("i18n.js") {
+        "i18n.js"
+    } else if file.is_empty() {
+        "none"
+    } else {
+        "settings page"
+    };
+    let number = |key: &str| v.get(key).and_then(|n| n.as_u64()).unwrap_or(0);
+    tracing::warn!(
+        what = kind,
+        at = script,
+        line = number("line"),
+        col = number("col"),
+        "settings page script error"
+    );
+}
+
 /// Where a wholesale configuration came from: names its toast and the undo snapshot.
 #[derive(Clone, Copy)]
 pub(super) enum ConfigSource {
@@ -303,12 +341,29 @@ impl App {
             Some("ready") => {
                 tracing::info!("settings: page ready");
                 self.push_settings_state();
+                // The first `ready` shows the window; a reload's leaves it as the user left it.
+                if let Some(h) = self
+                    .settings
+                    .as_ref()
+                    .filter(|h| !desktop::is_visible(h.hwnd()))
+                {
+                    window::show_normal(h.hwnd());
+                    window::bring_to_front(h.hwnd());
+                }
                 if let Some(fence) = self.settings_focus_fence.take() {
                     self.post_show_fence(fence);
                 }
                 self.show_pending_feedback();
             }
             Some("setFence") => self.on_set_fence(&v),
+            Some("ringFence") => {
+                let host = v
+                    .get("id")
+                    .and_then(|i| i.as_str())
+                    .and_then(|i| uuid::Uuid::parse_str(i).ok())
+                    .map(|id| self.state.host_of(id));
+                self.set_settings_ring(host);
+            }
             Some("patchSettings") => {
                 let Some(new_settings) = v.get("settings").cloned() else {
                     return;
@@ -433,12 +488,14 @@ impl App {
                 Some(name @ ("feedbackInfo" | "feedbackResult")) => {
                     self.on_feedback_action(name, &v);
                 }
+                Some("pageError") => log_page_error(&v),
                 Some(name @ ("checkUpdate" | "installUpdate" | "openReleasePage")) => {
                     self.on_update_action(name);
                 }
                 Some("repairIcons") => self.set_desktop_icons_hidden(false),
                 Some("hideDesktopIcons") => self.set_desktop_icons_hidden(true),
                 Some("rateInStore") => self.open_store_rating(),
+                Some("openManual") => self.open_manual(),
                 Some("openRepository") => {
                     let url = pecofence_core::brand::REPOSITORY_URL;
                     let _ = shell::shell_execute(std::path::Path::new(url), None, None);
@@ -582,6 +639,10 @@ impl App {
             .behavior
             .hide_inactive_scrollbar
             .set(new.roll_up.hide_inactive_scrollbar);
+        self.ctx
+            .behavior
+            .switch_tab_on_hover
+            .set(new.roll_up.switch_tab_on_hover);
         // The rows fill the height only with 「调整大小时按整行整列对齐」 on: relay them out.
         let chrome_changed = new.roll_up.title_on_hover != old.roll_up.title_on_hover
             || new.title_align != old.title_align

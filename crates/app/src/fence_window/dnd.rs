@@ -1086,12 +1086,12 @@ impl FenceViewState {
             m31: 0.0,
             m32: 0.0,
         };
-        let icon_px = (self.icon_dip() * scale).round() as u32;
         let keys: Vec<String> = {
             let icons = self.icons.borrow();
             cells
                 .iter()
-                .map(|(i, _)| icons.draw_key(&self.items[*i].icon_key, icon_px))
+                .map(|(i, _)| &self.items[*i])
+                .map(|it| icons.draw_key(&it.icon_key, it.icon_px))
                 .collect()
         };
         let drawn = match &layout {

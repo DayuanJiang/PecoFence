@@ -96,22 +96,15 @@ impl App {
                 )
                 && store::user_accepts_notifications()
         };
-        if !ready || self.rating.failed || self.rating.notice.is_some() {
+        if !ready || self.rating.failed || self.rating.notice.is_some() || self.welcome.is_some() {
             return;
         }
-        let locale = match pecofence_core::i18n::language().tag() {
-            "zh-CN" => "zh-CN",
-            "zh-TW" => "zh-TW",
-            "ja" => "ja-JP",
-            "ko" => "ko-KR",
-            _ => "en-US",
-        };
         match crate::notice::Notice::show(
             &self.ctx,
             pecofence_core::i18n::text("喜欢 PecoFence 吗？"),
             pecofence_core::i18n::text("在 Microsoft Store 给它打个分，几秒钟就好。"),
             pecofence_core::i18n::text("去评分"),
-            locale,
+            crate::notice::locale(),
         ) {
             Ok(notice) => {
                 self.rating.notice = Some(notice);
@@ -127,8 +120,15 @@ impl App {
         }
     }
 
-    /// The rating notice was clicked or went away.
+    /// A notice was clicked or went away. The welcome and the rating offer never show at
+    /// the same time.
     pub(super) fn on_notice(&mut self, event: crate::notice::NoticeEvent) {
+        if self.welcome.take().is_some() {
+            if event == crate::notice::NoticeEvent::Action {
+                self.open_manual();
+            }
+            return;
+        }
         self.rating.notice = None;
         if event == crate::notice::NoticeEvent::Action {
             self.open_store_rating();

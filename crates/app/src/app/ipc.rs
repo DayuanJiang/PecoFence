@@ -873,7 +873,7 @@ impl App {
             Method::PeekEnd => {
                 let active = self.peek.as_ref().is_some_and(|p| !p.is_closing());
                 if active {
-                    self.end_peek();
+                    self.end_peek("pecofence-cli");
                 }
                 Ok(mutation(active, None, Value::Null))
             }

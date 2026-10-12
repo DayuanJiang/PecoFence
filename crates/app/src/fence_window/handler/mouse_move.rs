@@ -42,7 +42,8 @@ pub(super) fn on_mousemove(
             v.frames.request();
         }
         v.update_marquee_selection();
-        let _ = v.redraw();
+        // The band and the selection are drawn on the content surface only.
+        let _ = v.redraw_content();
         return Some(0);
     }
     if let Some(sd) = v.scroll_drag.as_ref() {
@@ -382,6 +383,23 @@ pub(super) fn on_mousemove(
         || std::mem::replace(&mut v.chevron_hovered, chev) != chev
         || std::mem::replace(&mut v.tab_hover, tab) != tab;
     let on_control = up || chev || tab.is_some();
+    // With 「鼠标悬停时切换标签页」 on, resting on another tab switches to it after the hover
+    // delay; moving onto a different tab restarts the wait.
+    let switch_to = hover_switch_target(
+        tab,
+        v.active_index(),
+        v.tabs.len(),
+        behavior.switch_tab_on_hover.get(),
+        v.title_renaming,
+    );
+    if switch_to != v.tab_hover_switch {
+        v.tab_hover_switch = switch_to;
+        if switch_to.is_some() {
+            window::set_timer(hwnd, TIMER_TAB_HOVER, Tooltip::hover_delay_ms());
+        } else {
+            window::kill_timer(hwnd, TIMER_TAB_HOVER);
+        }
+    }
     // The divider's SizeWE cursor is set by WM_SETCURSOR before this message.
     let divider = v.divider_hit(x, y);
     // The scrollbar's hot zone wins over the item under it. Nothing

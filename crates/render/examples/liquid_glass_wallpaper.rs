@@ -157,6 +157,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     },
                     dragging: false,
                     alpha: 1.0,
+                    badge: None,
                 };
                 x += w + 4.0;
                 tab

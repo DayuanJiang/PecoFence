@@ -73,6 +73,12 @@ fn config_dir(portable: bool) -> PathBuf {
         .join("PecoFence")
 }
 
+/// Whether `path` really lives in the Store package's private copy of %APPDATA% (see
+/// `AppState::config_path_on_disk`).
+fn in_package_folder(path: &Path) -> bool {
+    std::fs::canonicalize(path).is_ok_and(|real| real.to_string_lossy().contains(r"\Packages\"))
+}
+
 impl AppState {
     pub fn load(work_areas: Vec<WorkArea>, portable: bool) -> Self {
         let directory = config_dir(portable);
@@ -138,6 +144,26 @@ impl AppState {
                 }
             }
             Err(_) => path,
+        }
+    }
+
+    /// Where the configuration lives, as a fixed name for the log and feedback: the portable
+    /// folder next to the program, %APPDATA% (under the old OpenFence name when that is
+    /// reused), or the Store package's private copy of %APPDATA%.
+    pub fn storage_kind(&self) -> &'static str {
+        let dir = self.store.dir();
+        if dir == config_dir(true) {
+            return "portable";
+        }
+        let in_package = in_package_folder(&self.store.primary_path()) || in_package_folder(dir);
+        let old_name = dir
+            .file_name()
+            .is_some_and(|n| n == std::ffi::OsStr::new(pecofence_core::brand::LEGACY_DATA_DIR));
+        match (in_package, old_name) {
+            (false, false) => "appdata",
+            (false, true) => "appdata, old folder name",
+            (true, false) => "store package",
+            (true, true) => "store package, old folder name",
         }
     }
 
@@ -427,24 +453,19 @@ impl AppState {
 
     /// Stardock-style first-run layout: right column 程序 / 文件夹 / 文件与文档 / 桌面(inbox).
     fn default_fences(&mut self) -> Vec<Fence> {
-        let work = self
-            .work_areas
-            .iter()
-            .find(|w| w.device_path.ends_with("DISPLAY1") || true)
-            .cloned()
-            .unwrap_or(WorkArea {
-                device_path: "primary".into(),
-                gdi_name: String::new(),
-                left: 0,
-                top: 0,
-                right: 1920,
-                bottom: 1040,
-                dpi: 96,
-                mon_left: 0,
-                mon_top: 0,
-                mon_right: 1920,
-                mon_bottom: 1040,
-            });
+        let work = self.work_areas.first().cloned().unwrap_or(WorkArea {
+            device_path: "primary".into(),
+            gdi_name: String::new(),
+            left: 0,
+            top: 0,
+            right: 1920,
+            bottom: 1040,
+            dpi: 96,
+            mon_left: 0,
+            mon_top: 0,
+            mon_right: 1920,
+            mon_bottom: 1040,
+        });
         let ww = work.width_dip();
         let wh = work.height_dip();
         // Exactly three icon columns at the default icon size, so the column snap applied by
@@ -642,6 +663,17 @@ impl AppState {
         self.dirty
     }
 
+    /// `IconCache::cache_key` of every item a fence can show (desktop records and the
+    /// portals' current folder contents).
+    pub fn icon_keys(&self) -> HashSet<String> {
+        self.config
+            .items
+            .values()
+            .chain(self.portal_items.values())
+            .map(|item| crate::icons::IconCache::cache_key(&item.icon_key))
+            .collect()
+    }
+
     pub fn save_if_dirty(&mut self) -> bool {
         if !self.dirty {
             return false;
@@ -653,7 +685,15 @@ impl AppState {
                 true
             }
             Err(e) => {
-                tracing::error!(error = %e, "config save failed");
+                // Where config.json and its temp file really are: one inside the Store
+                // package's copy of %APPDATA% and one outside would explain a refused rename.
+                tracing::error!(
+                    what = e.step,
+                    error = %e.error,
+                    config_in_package = in_package_folder(&self.store.primary_path()),
+                    temp_in_package = in_package_folder(&self.store.tmp_path()),
+                    "config save failed"
+                );
                 false
             }
         }
@@ -1142,20 +1182,35 @@ impl AppState {
             .iter()
             .map(|it| ((it.key.clone(), it.mtime), it.display_name.clone()))
             .collect();
-        let mut ids = Vec::new();
-        let mut new_items = Vec::new();
-        for entry in shell::enumerate_folder(&dir) {
-            let path_str = entry.path.to_string_lossy().to_string();
-            let item_id = portal_item_id(&path_str);
-            let (icon_key, _) =
-                crate::icons::icon_key_for(&entry.path, entry.is_folder, entry.mtime);
-            let key = ItemKey::from_path(&path_str);
-            let display_name = known
+        let known_name = |key: &ItemKey, entry: &DesktopEntry| {
+            known
                 .get(&(key.clone(), entry.mtime))
                 // ItemKey ignores case. A case-only rename leaves that key and mtime
                 // unchanged, but the old display spelling must not be reused.
                 .filter(|name| entry.file_name.starts_with(name.as_str()))
                 .cloned()
+        };
+        let entries = shell::enumerate_folder(&dir);
+        let unnamed = entries
+            .iter()
+            .filter(|e| known_name(&ItemKey::from_path(&e.path.to_string_lossy()), e).is_none())
+            .count();
+        // A first read (startup, a subfolder entered) names the whole folder in one go.
+        let listed = if unnamed > 2 {
+            shell::display_names_in(&dir)
+        } else {
+            HashMap::new()
+        };
+        let mut ids = Vec::new();
+        let mut new_items = Vec::new();
+        for entry in entries {
+            let path_str = entry.path.to_string_lossy().to_string();
+            let item_id = portal_item_id(&path_str);
+            let (icon_key, _) =
+                crate::icons::icon_key_for(&entry.path, entry.is_folder, entry.mtime);
+            let key = ItemKey::from_path(&path_str);
+            let display_name = known_name(&key, &entry)
+                .or_else(|| listed.get(&entry.file_name.to_lowercase()).cloned())
                 .unwrap_or_else(|| {
                     shell::display_name(&entry.path).unwrap_or_else(|| {
                         if entry.is_folder {
@@ -1952,10 +2007,13 @@ mod tests {
     }
 
     fn state_on(work_areas: Vec<WorkArea>) -> AppState {
+        // One folder per test: tests saving at the same time shared config.json.tmp before.
+        static NEXT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
         let dir = std::env::temp_dir().join(format!(
-            "pecofence-state-test-{}-{}",
+            "pecofence-state-test-{}-{}-{}",
             std::process::id(),
-            pecofence_core::now_unix()
+            pecofence_core::now_unix(),
+            NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
         ));
         let mut state = AppState {
             config: Config::default(),

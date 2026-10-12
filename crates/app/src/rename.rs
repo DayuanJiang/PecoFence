@@ -181,6 +181,7 @@ fn begin_rename_at(
         w,
         h,
         dpi,
+        14.0,
         &current,
         mode == ThemeMode::Dark,
         on_key,

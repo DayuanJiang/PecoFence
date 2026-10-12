@@ -239,7 +239,17 @@ pub enum Command {
     ToggleAllFences,
     /// Peek hotkey: float all fences above the current windows (again = end).
     TogglePeek,
-    EndPeek,
+    /// End the peek; the reason (a fixed text) goes to the log.
+    EndPeek(&'static str),
+    /// Text typed during a Peek while the search box did not have the keyboard yet: opens the
+    /// box with it, or adds it to the box.
+    PeekSearchType(String),
+    /// The Peek search box text changed.
+    PeekSearchChanged,
+    /// Up / Down in the search box: highlight the previous (-1) or next (+1) match.
+    PeekSearchStep(i32),
+    /// Enter in the search box: open the highlighted match.
+    PeekSearchOpen,
     ApplyRulesNow,
     OpenSettings,
     /// Settings window on the 「栅栏」 page with this fence selected.
