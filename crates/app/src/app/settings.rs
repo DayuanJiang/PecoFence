@@ -639,6 +639,10 @@ impl App {
             .behavior
             .hide_inactive_scrollbar
             .set(new.roll_up.hide_inactive_scrollbar);
+        self.ctx
+            .behavior
+            .switch_tab_on_hover
+            .set(new.roll_up.switch_tab_on_hover);
         // The rows fill the height only with 「调整大小时按整行整列对齐」 on: relay them out.
         let chrome_changed = new.roll_up.title_on_hover != old.roll_up.title_on_hover
             || new.title_align != old.title_align
