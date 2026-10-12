@@ -1206,3 +1206,16 @@ fn wheel_over_tabs_steps_and_stops_at_the_ends() {
     assert_eq!(wheel_tab_target(3, 4, -9), 3);
     assert_eq!(wheel_tab_target(2, 4, 0), 2);
 }
+
+/// Hover switching aims at another tab only: not the active one, not with the setting off,
+/// a single tab, a title rename open, or no tab under the pointer.
+#[test]
+fn hover_switches_only_to_another_tab() {
+    assert_eq!(hover_switch_target(Some(2), 0, 3, true, false), Some(2));
+    assert_eq!(hover_switch_target(Some(0), 0, 3, true, false), None);
+    assert_eq!(hover_switch_target(Some(2), 0, 3, false, false), None);
+    assert_eq!(hover_switch_target(Some(2), 0, 3, true, true), None);
+    assert_eq!(hover_switch_target(Some(0), 1, 1, true, false), None);
+    assert_eq!(hover_switch_target(Some(5), 0, 3, true, false), None);
+    assert_eq!(hover_switch_target(None, 0, 3, true, false), None);
+}

@@ -893,6 +893,9 @@ impl App {
                 hide_inactive_scrollbar: std::cell::Cell::new(
                     state.config.settings.roll_up.hide_inactive_scrollbar,
                 ),
+                switch_tab_on_hover: std::cell::Cell::new(
+                    state.config.settings.roll_up.switch_tab_on_hover,
+                ),
                 wheel_lines: std::cell::Cell::new(sysparams::wheel_scroll_lines()),
                 drop_preview: std::cell::RefCell::new(
                     crate::drop_preview::DropPreview::create()

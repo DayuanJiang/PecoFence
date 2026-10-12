@@ -230,6 +230,8 @@ pub struct FenceViewState {
     pub(super) wheel_zoom_accum: i32,
     /// Wheel-over-tabs accumulator: one tab per whole notch (touchpads deliver fractions).
     pub(super) wheel_tab_accum: i32,
+    /// The tab TIMER_TAB_HOVER will switch to while the pointer stays on it.
+    pub(super) tab_hover_switch: Option<usize>,
     /// Fence height follows the item grid (FenceView.auto_height).
     pub(super) auto_height: bool,
     /// Mouse move/resize disabled (menu "锁定位置和大小").

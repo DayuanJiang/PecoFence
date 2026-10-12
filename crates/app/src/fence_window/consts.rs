@@ -39,6 +39,9 @@ pub(super) const TIMER_SCROLL_REPEAT: usize = 41;
 pub(super) const TIMER_DRAG_PEEK: usize = 42;
 pub(super) const TIMER_VISIBILITY_FINISH: usize = 43;
 pub(super) const TIMER_CONTENT_FINISH: usize = 44;
+/// The pointer rests on another tab with `rollUp.switchTabOnHover` on: switch to it after the
+/// hover delay.
+pub(super) const TIMER_TAB_HOVER: usize = 45;
 /// DWM can suspend completion callbacks for fully occluded windows. UI state must still
 /// settle after the longest (250 ms) transition, independently of compositor visibility.
 pub(super) const COMPOSITION_FINISH_MS: u32 = 400;
