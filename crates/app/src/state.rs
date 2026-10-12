@@ -2007,10 +2007,13 @@ mod tests {
     }
 
     fn state_on(work_areas: Vec<WorkArea>) -> AppState {
+        // One folder per test: tests saving at the same time shared config.json.tmp before.
+        static NEXT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
         let dir = std::env::temp_dir().join(format!(
-            "pecofence-state-test-{}-{}",
+            "pecofence-state-test-{}-{}-{}",
             std::process::id(),
-            pecofence_core::now_unix()
+            pecofence_core::now_unix(),
+            NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
         ));
         let mut state = AppState {
             config: Config::default(),
