@@ -148,17 +148,9 @@ impl App {
             .window_for(owner_fence)
             .map(|w| w.hwnd())
             .unwrap_or(self.control.hwnd());
-        let refs: Vec<&Path> = paths.iter().map(|p| p.as_path()).collect();
         let permanent = window::key_down(msg::VK_SHIFT);
-        match ShellContextMenu::for_paths(&refs)
-            .and_then(|mut m| m.invoke_verb("delete", owner, window::cursor_pos(), permanent))
-        {
-            Ok(true) => {
-                tracing::info!(count = paths.len(), permanent, "dropped on the Recycle Bin")
-            }
-            Ok(false) => tracing::warn!("the shell offers no delete verb for the dropped files"),
-            Err(e) => tracing::warn!(error = %e, "recycling dropped files failed"),
-        }
+        tracing::info!(count = paths.len(), permanent, "dropped on the Recycle Bin");
+        self.start_shell_delete(paths, owner, permanent);
     }
 
     /// The shell's folder drop target took a drop onto `to` (Outlook mail, a Start-menu app): a
