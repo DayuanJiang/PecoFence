@@ -82,6 +82,19 @@ pub(super) fn wheel_tab_target(cur: usize, n: usize, notches: i32) -> usize {
     (cur as i64 - notches as i64).clamp(0, last) as usize
 }
 
+/// The tab a pointer resting on strip index `hovered` switches to with
+/// `rollUp.switchTabOnHover` (`enabled`): any tab but the active one of a strip with two or
+/// more, unless the title is being renamed.
+pub(super) fn hover_switch_target(
+    hovered: Option<usize>,
+    active: usize,
+    n: usize,
+    enabled: bool,
+    renaming: bool,
+) -> Option<usize> {
+    hovered.filter(|&i| enabled && !renaming && n > 1 && i < n && i != active)
+}
+
 /// What a cancelled drag (Esc / right button) needs done once the borrow is released.
 pub(super) enum DragCancel {
     /// A tab drag along the strip: the order was restored in place.

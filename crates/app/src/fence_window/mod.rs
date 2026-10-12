@@ -126,6 +126,8 @@ pub struct Behavior {
     pub title_align: std::cell::Cell<pecofence_core::TitleAlign>,
     /// Scrollbar drawn only while hovered / shortly after scrolling.
     pub hide_inactive_scrollbar: std::cell::Cell<bool>,
+    /// Resting the pointer on another tab switches to it (`rollUp.switchTabOnHover`).
+    pub switch_tab_on_hover: std::cell::Cell<bool>,
     /// `SPI_GETWHEELSCROLLLINES`: rows per wheel notch; `u32::MAX` (`WHEEL_PAGESCROLL`) = one
     /// viewport, 0 = the wheel does not scroll. Refreshed on WM_SETTINGCHANGE.
     pub wheel_lines: std::cell::Cell<u32>,

@@ -235,6 +235,7 @@ impl FenceWindow {
             cut: HashSet::new(),
             wheel_zoom_accum: 0,
             wheel_tab_accum: 0,
+            tab_hover_switch: None,
             auto_height,
             locked: false,
             backdrop_override: None,

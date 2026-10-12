@@ -250,6 +250,9 @@ impl FenceWindow {
                     msg::WM_TIMER if wparam == TIMER_DRAG_PEEK => {
                         timers::on_timer_drag_peek(h, hwnd, wparam, lparam)
                     }
+                    msg::WM_TIMER if wparam == TIMER_TAB_HOVER => {
+                        timers::on_timer_tab_hover(h, hwnd, wparam, lparam)
+                    }
 
                     msg::WM_TIMER if wparam == TIMER_SCROLLBAR => {
                         timers::on_timer_scrollbar(h, hwnd, wparam, lparam)
