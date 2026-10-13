@@ -3,7 +3,8 @@
 use crate::anchor::{self, AnchorCell, DesktopAnchor, ShowDesktopBehavior, ZMode};
 use crate::commands::{
     Command, CommandQueue, TransferMode, WM_APP_COMMAND, WM_APP_FRAME, WM_APP_FS_CHANGED,
-    WM_APP_PEEK_FOCUSED, WM_APP_PREWARM_DONE, WM_APP_SHELL_CHANGED, WM_APP_TRAY, WM_APP_WALLPAPER,
+    WM_APP_LIVE_WALLPAPER, WM_APP_PEEK_FOCUSED, WM_APP_PREWARM_DONE, WM_APP_SHELL_CHANGED,
+    WM_APP_TRAY, WM_APP_WALLPAPER,
 };
 use crate::fence_window::{
     BackdropMode, BackdropSets, Behavior, FenceContext, FenceWindow, ItemView, SearchMarks, TabView,
@@ -57,6 +58,7 @@ mod fileops;
 mod group;
 mod ipc;
 mod items;
+mod live_wallpaper;
 mod menus;
 mod motion;
 mod peek;
@@ -134,6 +136,9 @@ const DEVICE_RETRY_FIRST_MS: u32 = 1_000;
 /// ~3 MB.
 const TIMER_IDLE_TRIM: usize = 60;
 const IDLE_TRIM_MS: u32 = 30_000;
+/// The live wallpaper capture worker finished (`WM_APP_LIVE_WALLPAPER`); retried while the App
+/// is borrowed.
+const TIMER_LIVE_CAPTURED: usize = 61;
 const DEVICE_RETRY_MAX_MS: u32 = 30_000;
 const WALLPAPER_PREWARM_DELAY_MS: u32 = 3_000;
 const SPI_SETDESKWALLPAPER: usize = 0x0014;
@@ -273,6 +278,9 @@ pub struct App {
     wallpaper_cache: BackdropCache,
     /// Another virtual desktop's wallpaper being decoded ahead of a switch there.
     prewarm: Option<visuals::PrewarmJob>,
+    /// Monitors a live wallpaper covers, and the capture of them in progress.
+    live: Vec<live_wallpaper::LiveWallpaper>,
+    live_capture: Option<live_wallpaper::LiveCapture>,
     /// The hotkey currently registered (None = registration failed or Peek disabled).
     peek_hotkey: Option<PeekHotkey>,
     /// The combination the last `sync_peek_hotkey` tried to register (the user's choice), so a
@@ -449,6 +457,16 @@ impl App {
                             window::set_timer(hwnd, TIMER_PREWARM_FINISH, 1);
                             Some(0)
                         }
+                        WM_APP_LIVE_WALLPAPER => {
+                            if wparam == 0 {
+                                window::set_timer(hwnd, TIMER_LIVE_CAPTURED, 1);
+                            } else if let Ok(mut guard) = cell.try_borrow_mut()
+                                && let Some(app) = guard.as_mut()
+                            {
+                                app.capture_live_wallpapers(live_wallpaper::LIVE_FRONT_REFRESH);
+                            }
+                            Some(0)
+                        }
                         WM_APP_ICON_READY => {
                             window::set_timer(hwnd, TIMER_ICONS, 40);
                             Some(0)
@@ -533,15 +551,17 @@ impl App {
                                         app.trim_if_idle();
                                     }
                                 }
-                                TIMER_WALLPAPER_PREWARM | TIMER_PREWARM_FINISH => {
+                                TIMER_WALLPAPER_PREWARM
+                                | TIMER_PREWARM_FINISH
+                                | TIMER_LIVE_CAPTURED => {
                                     if let Ok(mut guard) = cell.try_borrow_mut()
                                         && let Some(app) = guard.as_mut()
                                     {
                                         window::kill_timer(hwnd, wparam);
-                                        if wparam == TIMER_PREWARM_FINISH {
-                                            app.finish_prewarm();
-                                        } else {
-                                            app.prewarm_wallpapers();
+                                        match wparam {
+                                            TIMER_PREWARM_FINISH => app.finish_prewarm(),
+                                            TIMER_LIVE_CAPTURED => app.finish_live_capture(),
+                                            _ => app.prewarm_wallpapers(),
                                         }
                                     } else {
                                         window::set_timer(hwnd, wparam, 200);
@@ -1044,6 +1064,8 @@ impl App {
             wallpaper_sig: None,
             wallpaper_cache: BackdropCache::default(),
             prewarm: None,
+            live: Vec::new(),
+            live_capture: None,
         };
         // Watch both wallpaper settings and virtual-desktop state; either signal starts a
         // bounded burst of fast reads, because the image may arrive after the notification.
@@ -1073,6 +1095,15 @@ impl App {
                     WM_APP_WALLPAPER,
                     1,
                     foreground.0 as isize,
+                );
+            }));
+            // A live wallpaper's backdrop catches up with what the desktop shows now.
+            a.on_desktop_front = Some(Box::new(move || {
+                window::post_message(
+                    HWND(control_hwnd as *mut core::ffi::c_void),
+                    WM_APP_LIVE_WALLPAPER,
+                    1,
+                    0,
                 );
             }));
         }

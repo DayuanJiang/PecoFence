@@ -204,6 +204,9 @@ pub struct DesktopAnchor {
     /// Foreground transitions also signal virtual-desktop switches before registry writes
     /// (called with the new foreground window).
     pub on_foreground_changed: Option<Box<dyn Fn(HWND)>>,
+    /// The desktop came to the front: clicked, or shown with Win+D (which Windows 10 does not
+    /// always report as a foreground change).
+    pub on_desktop_front: Option<Box<dyn Fn()>>,
     /// The last refused placement above the host (window above it, HRESULT), logged once until
     /// the cause changes or the placement works again.
     anchor_refused: Option<(isize, i32)>,
@@ -322,6 +325,7 @@ impl DesktopAnchor {
             peek_shown: Vec::new(),
             on_peek_interrupted: None,
             on_foreground_changed: None,
+            on_desktop_front: None,
             anchor_refused: None,
             topmost_refused: false,
         };
@@ -553,6 +557,9 @@ impl DesktopAnchor {
         if !self.show_desktop_active {
             if self.desktop_is_raised_over_us() && self.is_desktop_window(foreground) {
                 self.show_desktop_active = true;
+                if let Some(callback) = self.on_desktop_front.as_ref() {
+                    callback();
+                }
                 match self.behavior {
                     ShowDesktopBehavior::KeepVisible => {
                         tracing::info!("show desktop: floating the fences above the raised desktop")
@@ -634,6 +641,9 @@ impl DesktopAnchor {
         tracing::debug!(?hwnd, %cls, is_desktop, raised, "foreground changed");
 
         if is_desktop {
+            if let Some(callback) = self.on_desktop_front.as_ref() {
+                callback();
+            }
             self.set_raw_input_sink(true);
             let pt = window::cursor_pos();
             self.quick.pending_click = Some((Instant::now(), pt));
