@@ -143,7 +143,8 @@ const HOTKEY_PEEK: i32 = 1;
 
 /// How long a fence-menu "新建" keeps its claim on the next desktop item (plan §5.8).
 const PENDING_CREATION_SECS: u64 = 15;
-/// How long a shell drop onto a virtual fence claims what appears on the desktop afterwards.
+/// How long a shell drop onto a virtual fence claims the shortcuts that appear on the desktop
+/// afterwards.
 const SHELL_DROP_CLAIM_SECS: u64 = 5;
 
 /// Frame cadence of one animation run (from the first requested frame to the frame nothing
@@ -250,8 +251,9 @@ pub struct App {
     accent: Option<systheme::AccentPalette>,
     wallpaper_override: Option<String>,
     pending_routes: Vec<PendingRoute>,
-    /// The virtual fence a shell drop just went to, and when: desktop entries added in the next
-    /// `SHELL_DROP_CLAIM_SECS` go into it (the shell writes some after `Drop` returned).
+    /// The virtual fence a shell drop just went to, and when: the first desktop change batch
+    /// within `SHELL_DROP_CLAIM_SECS` that adds shortcuts puts them into it (the shell writes
+    /// some after `Drop` returned), see `on_fs_changed`.
     shell_drop_claim: Option<(FenceId, Instant)>,
     /// Previous frame's timestamp while an animation runs (frame-gap diagnostics).
     frame_prev: Option<Instant>,

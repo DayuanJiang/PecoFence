@@ -443,13 +443,6 @@ pub fn shell_image(path: &Path, size_px: u32, icon_only: bool) -> Result<ShellIm
     {
         return Ok(img);
     }
-    // The Recycle Bin: full or empty as PecoFence last found it (see `recycle_bin_icon_source`).
-    if is_recycle_bin_path(path)
-        && let Some((file, index)) = recycle_bin_icon_source(recycle_bin_has_items())
-        && let Some(img) = icon_file_image(&file, index, size_px)
-    {
-        return Ok(img);
-    }
     let item = shell_item(path)?;
     let factory: IShellItemImageFactory = item.cast()?;
     let mut flags = SIIGBF_BIGGERSIZEOK as u32;
@@ -514,6 +507,13 @@ fn url_icon(path: &Path, size_px: u32) -> Option<ShellImage> {
     icon_file_image(&file, index, size_px)
 }
 
+/// The Recycle Bin's `full` or empty icon at `size_px` (see `recycle_bin_icon_source`); None
+/// when neither DefaultIcon key names one that can be extracted (`shell_image` then).
+pub fn recycle_bin_image(full: bool, size_px: u32) -> Option<ShellImage> {
+    let (file, index) = recycle_bin_icon_source(full)?;
+    icon_file_image(&file, index, size_px)
+}
+
 /// The Recycle Bin's full or empty icon (`file`, `index`) from the `full` / `empty` entries of
 /// its DefaultIcon key, the user's own (Desktop icon settings) before the Windows default. The
 /// shell's extraction reads the key's default value instead, which Explorer switches only some
@@ -563,9 +563,9 @@ fn reg_string(root: HKEY, key: &str, name: &str) -> Option<String> {
     if status.0 != 0 {
         return None;
     }
-    // `size` is that of the unexpanded value: the string ends at the first NUL.
-    let chars = (size as usize / 2).min(buf.len());
-    let len = buf[..chars].iter().position(|&c| c == 0).unwrap_or(chars);
+    // `size` can be that of the unexpanded value, shorter than the expanded one when a
+    // variable stands for a longer path: the string ends at the first NUL of the zeroed buffer.
+    let len = buf.iter().position(|&c| c == 0).unwrap_or(buf.len());
     let s = String::from_utf16_lossy(&buf[..len]);
     let s = s.trim();
     (!s.is_empty()).then(|| s.to_string())

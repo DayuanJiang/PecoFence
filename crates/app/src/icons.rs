@@ -76,6 +76,9 @@ struct Request {
     /// Tells a result apart from one of an earlier request for the same key that
     /// `set_variant` or `invalidate` dropped while it was in flight.
     id: u64,
+    /// The Recycle Bin: full or empty as its key says (`mtime` 1 or 0), so the picture matches
+    /// the key even when the bin changed while the request waited.
+    recycle_bin_full: Option<bool>,
 }
 
 /// An extraction in flight (or waiting for a retry), with how often it has failed so far.
@@ -155,19 +158,24 @@ impl IconCache {
                             guard.recv()
                         };
                         let Ok(req) = req else { break };
-                        let (image, error) =
-                            match shell::shell_image(&req.path, req.size_px, req.icon_only) {
-                                Ok(img) => {
-                                    let mut image = Image {
-                                        width: img.width,
-                                        height: img.height,
-                                        bgra: img.bgra,
-                                    };
-                                    req.variant.apply(&mut image);
-                                    (Some(image), None)
-                                }
-                                Err(e) => (None, Some(e.code().0)),
-                            };
+                        let bin = req
+                            .recycle_bin_full
+                            .and_then(|full| shell::recycle_bin_image(full, req.size_px));
+                        let (image, error) = match bin.map_or_else(
+                            || shell::shell_image(&req.path, req.size_px, req.icon_only),
+                            Ok,
+                        ) {
+                            Ok(img) => {
+                                let mut image = Image {
+                                    width: img.width,
+                                    height: img.height,
+                                    bgra: img.bgra,
+                                };
+                                req.variant.apply(&mut image);
+                                (Some(image), None)
+                            }
+                            Err(e) => (None, Some(e.code().0)),
+                        };
                         if done_tx
                             .send(Ready {
                                 key: req.key,
@@ -233,6 +241,12 @@ impl IconCache {
         }
         if !self.pending.contains_key(&k) {
             self.next_id += 1;
+            let recycle_bin_full = match key {
+                IconKey::ByContent { mtime, .. } if shell::is_recycle_bin_path(path) => {
+                    Some(*mtime != 0)
+                }
+                _ => None,
+            };
             let req = Request {
                 key: k.0.clone(),
                 path: path.to_path_buf(),
@@ -240,6 +254,7 @@ impl IconCache {
                 icon_only,
                 variant: self.variant,
                 id: self.next_id,
+                recycle_bin_full,
             };
             let _ = self.tx.send(req.clone());
             self.pending.insert(k, InFlight { req, attempts: 0 });
