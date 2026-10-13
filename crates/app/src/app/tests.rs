@@ -317,6 +317,14 @@ mod ipc {
         assert_eq!(patched.peek.custom_hotkey.as_deref(), Some("nonsense"));
         let patched = patch_settings_path(&stored, "peek.customHotkey", json!(null)).unwrap();
         assert_eq!(patched.peek.custom_hotkey, None);
+        // Setting peek.hotkey picks that one, even the Ctrl+Alt+Space a custom shortcut keeps
+        // there for older versions.
+        let mut custom = current.clone();
+        custom.peek.custom_hotkey = Some("Ctrl+Shift+F".into());
+        for value in ["ctrlAltSpace", "winShiftSpace"] {
+            let patched = patch_settings_path(&custom, "peek.hotkey", json!(value)).unwrap();
+            assert_eq!(patched.peek.custom_hotkey, None, "{value}");
+        }
     }
 
     #[test]

@@ -315,6 +315,9 @@ pub(super) fn patch_settings_path(
             })?;
         // Written the way the settings page writes it (Ctrl+Alt+Space as peek.hotkey).
         settings.peek.set_hotkey(h);
+    } else if pointer == "/peek/hotkey" || settings.peek.hotkey != current.peek.hotkey {
+        // One of the 0.2.0 choices: a custom shortcut left in place would override it.
+        settings.peek.custom_hotkey = None;
     }
     if !matches!(settings.icon_size, 32 | 48 | 64 | 96) {
         return Err(IpcError::new(
