@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Opening a file from a fence hands the program the name as it is spelled on disk (feedback #25). For `ABC.zip` the program was given `abc.zip` and showed that name, because PecoFence remembers each icon by its lower-cased path, so that it finds the file in any letter case, and opened that path. Each icon now also keeps its spelling on disk, which is used for opening (in folder portals too), for the paths `pecofence-cli` lists and for renaming: an icon whose extension Windows hides, renamed from 「SCAN」 to 「Bill」, becomes `Bill.PDF` instead of `Bill.pdf`. Finding files still ignores letter case.
 - PecoFence keeps less memory between uses. Half a minute after the fences last drew something, it hands the memory the last use touched back to Windows, every time instead of only once after startup; what it needs again comes back on its own, with no visible delay (the first animation after a pause measured the same as before). On a 4K monitor the memory Task Manager shows for PecoFence at rest stays at about 2 to 5 MB, where it used to grow to about 28 MB after some hours of use. Settings, Peek and a name being edited keep their memory while they are open.
 
 ## 0.2.0
