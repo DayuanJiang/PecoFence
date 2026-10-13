@@ -127,6 +127,39 @@ impl RenderStack {
         }
     }
 
+    /// The adapter the fences render on, for feedback reports: its name and the version of its
+    /// user-mode driver (`AMD Radeon(TM) Graphics, driver 32.0.21025.10016`).
+    pub fn adapter(&self) -> Option<String> {
+        use crate::gpu_bindings as b;
+        use windows_core::Interface;
+        let gpu = self.gpu.borrow();
+        let dxgi: b::IDXGIDevice = gpu.device.d3d_device().cast().ok()?;
+        // SAFETY: plain DXGI queries on a live device; `desc` is a local of the stated type.
+        unsafe {
+            let adapter = dxgi.GetAdapter().ok()?;
+            let mut desc = b::DXGI_ADAPTER_DESC::default();
+            adapter.GetDesc(&mut desc).ok().ok()?;
+            let len = desc.Description.iter().position(|&c| c == 0);
+            let name = String::from_utf16_lossy(&desc.Description[..len.unwrap_or(128)]);
+            // DXGI answers for the D3D10-era IDXGIDevice with the driver's version (the one
+            // Device Manager shows); it refuses the newer interfaces.
+            let driver = match adapter.CheckInterfaceSupport(&b::IDXGIDevice::IID) {
+                Ok(v) => {
+                    let v = v as u64;
+                    format!(
+                        "{}.{}.{}.{}",
+                        v >> 48,
+                        (v >> 32) & 0xFFFF,
+                        (v >> 16) & 0xFFFF,
+                        v & 0xFFFF
+                    )
+                }
+                Err(_) => "unknown".to_string(),
+            };
+            Some(format!("{}, driver {driver}", name.trim()))
+        }
+    }
+
     /// This process's GPU memory in bytes on the device's adapter, `(local, non_local)`: what
     /// Task Manager shows as dedicated and shared GPU memory. On integrated GPUs local is
     /// system memory too.

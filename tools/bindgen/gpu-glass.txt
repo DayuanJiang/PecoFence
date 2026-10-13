@@ -5,6 +5,8 @@
     ID2D1DeviceContext
     IDXGIDevice
     IDXGIDevice3
+    IDXGIAdapter
+    DXGI_ADAPTER_DESC
     IDXGIAdapter3
     DXGI_QUERY_VIDEO_MEMORY_INFO
     DXGI_MEMORY_SEGMENT_GROUP_LOCAL

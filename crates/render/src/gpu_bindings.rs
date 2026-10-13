@@ -862,6 +862,24 @@ pub struct DWRITE_GLYPH_RUN_DESCRIPTION {
     pub textPosition: u32,
 }
 pub type DWRITE_MEASURING_MODE = i32;
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct DXGI_ADAPTER_DESC {
+    pub Description: [u16; 128],
+    pub VendorId: u32,
+    pub DeviceId: u32,
+    pub SubSysId: u32,
+    pub Revision: u32,
+    pub DedicatedVideoMemory: usize,
+    pub DedicatedSystemMemory: usize,
+    pub SharedSystemMemory: usize,
+    pub AdapterLuid: LUID,
+}
+impl Default for DXGI_ADAPTER_DESC {
+    fn default() -> Self {
+        unsafe { core::mem::zeroed() }
+    }
+}
 pub type DXGI_FORMAT = i32;
 pub const DXGI_FORMAT_A8_UNORM: DXGI_FORMAT = 65;
 pub const DXGI_FORMAT_B8G8R8A8_UNORM: DXGI_FORMAT = 87;
@@ -8693,12 +8711,60 @@ impl core::ops::Deref for IDXGIAdapter {
     }
 }
 windows_core::imp::interface_hierarchy!(IDXGIAdapter, windows_core::IUnknown, IDXGIObject);
+impl IDXGIAdapter {
+    pub(crate) unsafe fn EnumOutputs(
+        &self,
+        output: u32,
+        ppoutput: *mut Option<IDXGIOutput>,
+    ) -> windows_core::HRESULT {
+        unsafe {
+            (windows_core::Interface::vtable(self).EnumOutputs)(
+                windows_core::Interface::as_raw(self),
+                output,
+                core::mem::transmute(ppoutput),
+            )
+        }
+    }
+    pub(crate) unsafe fn GetDesc(&self, pdesc: *mut DXGI_ADAPTER_DESC) -> windows_core::HRESULT {
+        unsafe {
+            (windows_core::Interface::vtable(self).GetDesc)(
+                windows_core::Interface::as_raw(self),
+                pdesc as _,
+            )
+        }
+    }
+    pub(crate) unsafe fn CheckInterfaceSupport(
+        &self,
+        interfacename: *const windows_core::GUID,
+    ) -> windows_core::Result<i64> {
+        unsafe {
+            let mut result__ = core::mem::zeroed();
+            (windows_core::Interface::vtable(self).CheckInterfaceSupport)(
+                windows_core::Interface::as_raw(self),
+                interfacename,
+                &mut result__,
+            )
+            .map(|| result__)
+        }
+    }
+}
 #[repr(C)]
 pub struct IDXGIAdapter_Vtbl {
     pub base__: IDXGIObject_Vtbl,
-    EnumOutputs: usize,
-    GetDesc: usize,
-    CheckInterfaceSupport: usize,
+    pub EnumOutputs: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        u32,
+        *mut *mut core::ffi::c_void,
+    ) -> windows_core::HRESULT,
+    pub GetDesc: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        *mut DXGI_ADAPTER_DESC,
+    ) -> windows_core::HRESULT,
+    pub CheckInterfaceSupport: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        *const windows_core::GUID,
+        *mut i64,
+    ) -> windows_core::HRESULT,
 }
 impl windows_core::RuntimeName for IDXGIAdapter {}
 windows_core::imp::define_interface!(
@@ -9092,6 +9158,35 @@ pub struct IDXGIObject_Vtbl {
 }
 impl windows_core::RuntimeName for IDXGIObject {}
 windows_core::imp::define_interface!(
+    IDXGIOutput,
+    IDXGIOutput_Vtbl,
+    0xae02eedb_c735_4690_8d52_5a8dc20213aa
+);
+impl core::ops::Deref for IDXGIOutput {
+    type Target = IDXGIObject;
+    fn deref(&self) -> &Self::Target {
+        unsafe { core::mem::transmute(self) }
+    }
+}
+windows_core::imp::interface_hierarchy!(IDXGIOutput, windows_core::IUnknown, IDXGIObject);
+#[repr(C)]
+pub struct IDXGIOutput_Vtbl {
+    pub base__: IDXGIObject_Vtbl,
+    GetDesc: usize,
+    GetDisplayModeList: usize,
+    FindClosestMatchingMode: usize,
+    WaitForVBlank: usize,
+    TakeOwnership: usize,
+    ReleaseOwnership: usize,
+    GetGammaControlCapabilities: usize,
+    SetGammaControl: usize,
+    GetGammaControl: usize,
+    SetDisplaySurface: usize,
+    GetDisplaySurfaceData: usize,
+    GetFrameStatistics: usize,
+}
+impl windows_core::RuntimeName for IDXGIOutput {}
+windows_core::imp::define_interface!(
     IDXGISurface,
     IDXGISurface_Vtbl,
     0xcafcb56c_6ac3_4889_bf47_9e23bbd260ec
@@ -9188,6 +9283,12 @@ pub struct IWICImagingFactory_Vtbl {
     CreateQueryWriterFromReader: usize,
 }
 impl windows_core::RuntimeName for IWICImagingFactory {}
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct LUID {
+    pub LowPart: u32,
+    pub HighPart: i32,
+}
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct RECT {
