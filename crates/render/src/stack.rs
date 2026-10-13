@@ -127,6 +127,28 @@ impl RenderStack {
         }
     }
 
+    /// This process's GPU memory in bytes on the device's adapter, `(local, non_local)`: what
+    /// Task Manager shows as dedicated and shared GPU memory. On integrated GPUs local is
+    /// system memory too.
+    pub fn gpu_memory(&self) -> Option<(u64, u64)> {
+        use crate::gpu_bindings as b;
+        use windows_core::Interface;
+        let gpu = self.gpu.borrow();
+        let dxgi: b::IDXGIDevice = gpu.device.d3d_device().cast().ok()?;
+        let adapter: b::IDXGIAdapter3 = unsafe { dxgi.GetAdapter() }.ok()?.cast().ok()?;
+        let usage = |group| {
+            let mut info = b::DXGI_QUERY_VIDEO_MEMORY_INFO::default();
+            unsafe { adapter.QueryVideoMemoryInfo(0, group, &mut info) }
+                .ok()
+                .map(|()| info.CurrentUsage)
+                .ok()
+        };
+        Some((
+            usage(b::DXGI_MEMORY_SEGMENT_GROUP_LOCAL)?,
+            usage(b::DXGI_MEMORY_SEGMENT_GROUP_NON_LOCAL)?,
+        ))
+    }
+
     /// The current composition graphics device (allocates drawing surfaces).
     pub fn graphics(&self) -> CompositionGraphicsDevice {
         self.gpu.borrow().graphics.clone()

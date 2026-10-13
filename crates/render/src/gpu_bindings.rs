@@ -866,12 +866,40 @@ pub type DXGI_FORMAT = i32;
 pub const DXGI_FORMAT_A8_UNORM: DXGI_FORMAT = 65;
 pub const DXGI_FORMAT_B8G8R8A8_UNORM: DXGI_FORMAT = 87;
 pub const DXGI_FORMAT_R16G16B16A16_FLOAT: DXGI_FORMAT = 10;
+pub type DXGI_MEMORY_SEGMENT_GROUP = i32;
+pub const DXGI_MEMORY_SEGMENT_GROUP_LOCAL: DXGI_MEMORY_SEGMENT_GROUP = 0;
+pub const DXGI_MEMORY_SEGMENT_GROUP_NON_LOCAL: DXGI_MEMORY_SEGMENT_GROUP = 1;
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct DXGI_QUERY_VIDEO_MEMORY_INFO {
+    pub Budget: u64,
+    pub CurrentUsage: u64,
+    pub AvailableForReservation: u64,
+    pub CurrentReservation: u64,
+}
+pub type DXGI_RESIDENCY = i32;
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct DXGI_SAMPLE_DESC {
     pub Count: u32,
     pub Quality: u32,
 }
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct DXGI_SHARED_RESOURCE {
+    pub Handle: HANDLE,
+}
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct DXGI_SURFACE_DESC {
+    pub Width: u32,
+    pub Height: u32,
+    pub Format: DXGI_FORMAT,
+    pub SampleDesc: DXGI_SAMPLE_DESC,
+}
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub struct DXGI_USAGE(pub u32);
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub struct HANDLE(pub *mut core::ffi::c_void);
@@ -8654,6 +8682,198 @@ pub struct IDWriteTextLayout_Vtbl {
 }
 impl windows_core::RuntimeName for IDWriteTextLayout {}
 windows_core::imp::define_interface!(
+    IDXGIAdapter,
+    IDXGIAdapter_Vtbl,
+    0x2411e7e1_12ac_4ccf_bd14_9798e8534dc0
+);
+impl core::ops::Deref for IDXGIAdapter {
+    type Target = IDXGIObject;
+    fn deref(&self) -> &Self::Target {
+        unsafe { core::mem::transmute(self) }
+    }
+}
+windows_core::imp::interface_hierarchy!(IDXGIAdapter, windows_core::IUnknown, IDXGIObject);
+#[repr(C)]
+pub struct IDXGIAdapter_Vtbl {
+    pub base__: IDXGIObject_Vtbl,
+    EnumOutputs: usize,
+    GetDesc: usize,
+    CheckInterfaceSupport: usize,
+}
+impl windows_core::RuntimeName for IDXGIAdapter {}
+windows_core::imp::define_interface!(
+    IDXGIAdapter1,
+    IDXGIAdapter1_Vtbl,
+    0x29038f61_3839_4626_91fd_086879011a05
+);
+impl core::ops::Deref for IDXGIAdapter1 {
+    type Target = IDXGIAdapter;
+    fn deref(&self) -> &Self::Target {
+        unsafe { core::mem::transmute(self) }
+    }
+}
+windows_core::imp::interface_hierarchy!(
+    IDXGIAdapter1,
+    windows_core::IUnknown,
+    IDXGIObject,
+    IDXGIAdapter
+);
+#[repr(C)]
+pub struct IDXGIAdapter1_Vtbl {
+    pub base__: IDXGIAdapter_Vtbl,
+    GetDesc1: usize,
+}
+impl windows_core::RuntimeName for IDXGIAdapter1 {}
+windows_core::imp::define_interface!(
+    IDXGIAdapter2,
+    IDXGIAdapter2_Vtbl,
+    0x0aa1ae0a_fa0e_4b84_8644_e05ff8e5acb5
+);
+impl core::ops::Deref for IDXGIAdapter2 {
+    type Target = IDXGIAdapter1;
+    fn deref(&self) -> &Self::Target {
+        unsafe { core::mem::transmute(self) }
+    }
+}
+windows_core::imp::interface_hierarchy!(
+    IDXGIAdapter2,
+    windows_core::IUnknown,
+    IDXGIObject,
+    IDXGIAdapter,
+    IDXGIAdapter1
+);
+#[repr(C)]
+pub struct IDXGIAdapter2_Vtbl {
+    pub base__: IDXGIAdapter1_Vtbl,
+    GetDesc2: usize,
+}
+impl windows_core::RuntimeName for IDXGIAdapter2 {}
+windows_core::imp::define_interface!(
+    IDXGIAdapter3,
+    IDXGIAdapter3_Vtbl,
+    0x645967a4_1392_4310_a798_8053ce3e93fd
+);
+impl core::ops::Deref for IDXGIAdapter3 {
+    type Target = IDXGIAdapter2;
+    fn deref(&self) -> &Self::Target {
+        unsafe { core::mem::transmute(self) }
+    }
+}
+windows_core::imp::interface_hierarchy!(
+    IDXGIAdapter3,
+    windows_core::IUnknown,
+    IDXGIObject,
+    IDXGIAdapter,
+    IDXGIAdapter1,
+    IDXGIAdapter2
+);
+impl IDXGIAdapter3 {
+    pub(crate) unsafe fn RegisterHardwareContentProtectionTeardownStatusEvent(
+        &self,
+        hevent: HANDLE,
+    ) -> windows_core::Result<u32> {
+        unsafe {
+            let mut result__ = core::mem::zeroed();
+            (windows_core::Interface::vtable(self)
+                .RegisterHardwareContentProtectionTeardownStatusEvent)(
+                windows_core::Interface::as_raw(self),
+                hevent,
+                &mut result__,
+            )
+            .map(|| result__)
+        }
+    }
+    pub(crate) unsafe fn UnregisterHardwareContentProtectionTeardownStatus(&self, dwcookie: u32) {
+        unsafe {
+            (windows_core::Interface::vtable(self)
+                .UnregisterHardwareContentProtectionTeardownStatus)(
+                windows_core::Interface::as_raw(self),
+                dwcookie,
+            );
+        }
+    }
+    pub(crate) unsafe fn QueryVideoMemoryInfo(
+        &self,
+        nodeindex: u32,
+        memorysegmentgroup: DXGI_MEMORY_SEGMENT_GROUP,
+        pvideomemoryinfo: *mut DXGI_QUERY_VIDEO_MEMORY_INFO,
+    ) -> windows_core::HRESULT {
+        unsafe {
+            (windows_core::Interface::vtable(self).QueryVideoMemoryInfo)(
+                windows_core::Interface::as_raw(self),
+                nodeindex,
+                memorysegmentgroup,
+                pvideomemoryinfo as _,
+            )
+        }
+    }
+    pub(crate) unsafe fn SetVideoMemoryReservation(
+        &self,
+        nodeindex: u32,
+        memorysegmentgroup: DXGI_MEMORY_SEGMENT_GROUP,
+        reservation: u64,
+    ) -> windows_core::HRESULT {
+        unsafe {
+            (windows_core::Interface::vtable(self).SetVideoMemoryReservation)(
+                windows_core::Interface::as_raw(self),
+                nodeindex,
+                memorysegmentgroup,
+                reservation,
+            )
+        }
+    }
+    pub(crate) unsafe fn RegisterVideoMemoryBudgetChangeNotificationEvent(
+        &self,
+        hevent: HANDLE,
+    ) -> windows_core::Result<u32> {
+        unsafe {
+            let mut result__ = core::mem::zeroed();
+            (windows_core::Interface::vtable (self) . RegisterVideoMemoryBudgetChangeNotificationEvent)(windows_core::Interface::as_raw (self) , hevent , & mut result__ ,) . map (|| result__)
+        }
+    }
+    pub(crate) unsafe fn UnregisterVideoMemoryBudgetChangeNotification(&self, dwcookie: u32) {
+        unsafe {
+            (windows_core::Interface::vtable(self).UnregisterVideoMemoryBudgetChangeNotification)(
+                windows_core::Interface::as_raw(self),
+                dwcookie,
+            );
+        }
+    }
+}
+#[repr(C)]
+pub struct IDXGIAdapter3_Vtbl {
+    pub base__: IDXGIAdapter2_Vtbl,
+    pub RegisterHardwareContentProtectionTeardownStatusEvent:
+        unsafe extern "system" fn(
+            *mut core::ffi::c_void,
+            HANDLE,
+            *mut u32,
+        ) -> windows_core::HRESULT,
+    pub UnregisterHardwareContentProtectionTeardownStatus:
+        unsafe extern "system" fn(*mut core::ffi::c_void, u32),
+    pub QueryVideoMemoryInfo: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        u32,
+        DXGI_MEMORY_SEGMENT_GROUP,
+        *mut DXGI_QUERY_VIDEO_MEMORY_INFO,
+    ) -> windows_core::HRESULT,
+    pub SetVideoMemoryReservation: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        u32,
+        DXGI_MEMORY_SEGMENT_GROUP,
+        u64,
+    ) -> windows_core::HRESULT,
+    pub RegisterVideoMemoryBudgetChangeNotificationEvent:
+        unsafe extern "system" fn(
+            *mut core::ffi::c_void,
+            HANDLE,
+            *mut u32,
+        ) -> windows_core::HRESULT,
+    pub UnregisterVideoMemoryBudgetChangeNotification:
+        unsafe extern "system" fn(*mut core::ffi::c_void, u32),
+}
+impl windows_core::RuntimeName for IDXGIAdapter3 {}
+windows_core::imp::define_interface!(
     IDXGIDevice,
     IDXGIDevice_Vtbl,
     0x54ec77fa_1377_44e6_8c32_88fd5f44c84c
@@ -8665,14 +8885,95 @@ impl core::ops::Deref for IDXGIDevice {
     }
 }
 windows_core::imp::interface_hierarchy!(IDXGIDevice, windows_core::IUnknown, IDXGIObject);
+impl IDXGIDevice {
+    pub(crate) unsafe fn GetAdapter(&self) -> windows_core::Result<IDXGIAdapter> {
+        unsafe {
+            let mut result__ = core::mem::zeroed();
+            (windows_core::Interface::vtable(self).GetAdapter)(
+                windows_core::Interface::as_raw(self),
+                &mut result__,
+            )
+            .and_then(|| windows_core::imp::Type::from_abi(result__))
+        }
+    }
+    pub(crate) unsafe fn CreateSurface(
+        &self,
+        pdesc: *const DXGI_SURFACE_DESC,
+        numsurfaces: u32,
+        usage: DXGI_USAGE,
+        psharedresource: Option<*const DXGI_SHARED_RESOURCE>,
+        ppsurface: *mut Option<IDXGISurface>,
+    ) -> windows_core::HRESULT {
+        unsafe {
+            (windows_core::Interface::vtable(self).CreateSurface)(
+                windows_core::Interface::as_raw(self),
+                pdesc,
+                numsurfaces,
+                usage,
+                psharedresource.unwrap_or(core::mem::zeroed()) as _,
+                core::mem::transmute(ppsurface),
+            )
+        }
+    }
+    pub(crate) unsafe fn QueryResourceResidency(
+        &self,
+        ppresources: *const Option<windows_core::IUnknown>,
+        presidencystatus: *mut DXGI_RESIDENCY,
+        numresources: u32,
+    ) -> windows_core::HRESULT {
+        unsafe {
+            (windows_core::Interface::vtable(self).QueryResourceResidency)(
+                windows_core::Interface::as_raw(self),
+                core::mem::transmute(ppresources),
+                presidencystatus as _,
+                numresources,
+            )
+        }
+    }
+    pub(crate) unsafe fn SetGPUThreadPriority(&self, priority: i32) -> windows_core::HRESULT {
+        unsafe {
+            (windows_core::Interface::vtable(self).SetGPUThreadPriority)(
+                windows_core::Interface::as_raw(self),
+                priority,
+            )
+        }
+    }
+    pub(crate) unsafe fn GetGPUThreadPriority(&self) -> windows_core::Result<i32> {
+        unsafe {
+            let mut result__ = core::mem::zeroed();
+            (windows_core::Interface::vtable(self).GetGPUThreadPriority)(
+                windows_core::Interface::as_raw(self),
+                &mut result__,
+            )
+            .map(|| result__)
+        }
+    }
+}
 #[repr(C)]
 pub struct IDXGIDevice_Vtbl {
     pub base__: IDXGIObject_Vtbl,
-    GetAdapter: usize,
-    CreateSurface: usize,
-    QueryResourceResidency: usize,
-    SetGPUThreadPriority: usize,
-    GetGPUThreadPriority: usize,
+    pub GetAdapter: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        *mut *mut core::ffi::c_void,
+    ) -> windows_core::HRESULT,
+    pub CreateSurface: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        *const DXGI_SURFACE_DESC,
+        u32,
+        DXGI_USAGE,
+        *const DXGI_SHARED_RESOURCE,
+        *mut *mut core::ffi::c_void,
+    ) -> windows_core::HRESULT,
+    pub QueryResourceResidency: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        *const *mut core::ffi::c_void,
+        *mut DXGI_RESIDENCY,
+        u32,
+    ) -> windows_core::HRESULT,
+    pub SetGPUThreadPriority:
+        unsafe extern "system" fn(*mut core::ffi::c_void, i32) -> windows_core::HRESULT,
+    pub GetGPUThreadPriority:
+        unsafe extern "system" fn(*mut core::ffi::c_void, *mut i32) -> windows_core::HRESULT,
 }
 impl windows_core::RuntimeName for IDXGIDevice {}
 windows_core::imp::define_interface!(

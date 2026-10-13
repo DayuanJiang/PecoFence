@@ -135,6 +135,8 @@ const DEVICE_RETRY_FIRST_MS: u32 = 1_000;
 const TIMER_IDLE_TRIM: usize = 60;
 const IDLE_TRIM_MS: u32 = 30_000;
 const DEVICE_RETRY_MAX_MS: u32 = 30_000;
+/// Growth of private commit plus GPU memory that logs a memory line before the hour is up.
+const MEMORY_LOG_GROWTH: u64 = 64 << 20;
 const WALLPAPER_PREWARM_DELAY_MS: u32 = 3_000;
 const SPI_SETDESKWALLPAPER: usize = 0x0014;
 const SPI_SETWORKAREA: usize = 0x002F;
@@ -268,6 +270,8 @@ pub struct App {
     desktop_unavailable: bool,
     /// Last run of the rules that depend on the clock ("闲置天数"); see `housekeeping`.
     idle_rules_checked: Option<Instant>,
+    /// When the last memory line was logged and the total it showed; see `log_memory`.
+    memory_logged: Option<(Instant, u64)>,
     /// Fingerprint of the snapshot the current backdrops were built from.
     wallpaper_sig: Option<String>,
     wallpaper_cache: BackdropCache,
@@ -1047,6 +1051,7 @@ impl App {
             peek_hotkey_wanted: None,
             desktop_unavailable: false,
             idle_rules_checked: None,
+            memory_logged: None,
             cut_items: HashSet::new(),
             cut_clip_seq: 0,
             wallpaper_sig: None,
@@ -1331,6 +1336,39 @@ impl App {
             }
         }
         self.offer_rating_if_due();
+        self.log_memory();
+    }
+
+    /// One line with the process's memory: on the first housekeeping tick, then hourly, and
+    /// whenever the total grew by `MEMORY_LOG_GROWTH` since the last line, so a log sent with
+    /// a high Task Manager number shows when it grew and in which kind of memory.
+    fn log_memory(&mut self) {
+        let Ok(m) = pecofence_platform::memstats::MemoryStats::current() else {
+            return;
+        };
+        let gpu = self.ctx.stack.gpu_memory();
+        let (gpu_local, gpu_shared) = gpu.unwrap_or_default();
+        let total = m.private_commit as u64 + gpu_local + gpu_shared;
+        let due = match self.memory_logged {
+            None => true,
+            Some((at, logged)) => {
+                at.elapsed() >= Duration::from_secs(3600)
+                    || total >= logged.saturating_add(MEMORY_LOG_GROWTH)
+            }
+        };
+        if !due {
+            return;
+        }
+        self.memory_logged = Some((Instant::now(), total));
+        let mb = |b: u64| (b as f64 / (1u64 << 20) as f64 * 10.0).round() / 10.0;
+        // The GPU fields are left out when the query failed: no zero that looks measured.
+        tracing::info!(
+            private_ws_mb = mb(m.private_working_set as u64),
+            commit_mb = mb(m.private_commit as u64),
+            gpu_local_mb = gpu.map(|(local, _)| mb(local)),
+            gpu_shared_mb = gpu.map(|(_, shared)| mb(shared)),
+            "memory"
+        );
     }
 
     /// Drains and executes queued commands. Loops because handlers may enqueue more.
