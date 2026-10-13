@@ -334,9 +334,12 @@ impl App {
         let new = parent.join(file_name);
         if ItemKey::from_path(&new.to_string_lossy()) == ItemKey::from_path(&old.to_string_lossy())
         {
-            // Same name, another case: a no-op for the item table, but the file's spelling
-            // changes. (Callers already skipped unchanged names.)
+            // Same name, another case: the item keeps its key, its path and name take the new
+            // spelling. (Callers already skipped unchanged names.)
             std::fs::rename(&old, &new).map_err(rename_error)?;
+            if self.state.rename_item(&old, &new) {
+                self.schedule_save();
+            }
             self.refresh_fences_with(item);
             return Ok(new);
         }
