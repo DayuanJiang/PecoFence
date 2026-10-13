@@ -70,7 +70,14 @@ fn start_log(
 ) -> Option<std::fs::File> {
     use pecofence_core::brand::log_file_name;
     let path = dir.join(log_file_name(instance, current));
-    let _ = std::fs::rename(&path, dir.join(log_file_name(instance, previous)));
+    let prev = dir.join(log_file_name(instance, previous));
+    // The Store edition installed on another drive cannot rename files in its copy of
+    // %LOCALAPPDATA% (os error 17): keep a copy instead.
+    if let Err(e) = std::fs::rename(&path, &prev)
+        && e.kind() == std::io::ErrorKind::CrossesDevices
+    {
+        let _ = std::fs::copy(&path, &prev);
+    }
     std::fs::File::create(path).ok()
 }
 
