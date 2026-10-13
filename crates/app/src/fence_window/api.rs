@@ -1190,6 +1190,26 @@ impl FenceWindow {
         });
     }
 
+    /// Tab switch, after `set_tabs` and before the incoming tab's items arrive: takes that
+    /// tab's icon size and layout without drawing the outgoing items again, so the new items
+    /// are drawn, and their icons extracted, at their own size from the first frame (not at
+    /// the outgoing tab's, which the icon cache does not keep for them).
+    pub fn set_incoming_tab_view(&self, icon_size: u32, layout: ViewLayout) {
+        self.with_view(|v| {
+            if v.icon_size == icon_size && v.layout == layout {
+                return;
+            }
+            if v.layout != layout {
+                v.header_hover = None;
+                v.header_fades.clear();
+            }
+            v.icon_size = icon_size;
+            v.layout = layout;
+            v.reload_icons_and_labels();
+            v.snap_item_motion();
+        });
+    }
+
     /// Current sort, shown by the details header (chevron on the active column).
     pub fn set_sort_indicator(&self, sort: SortMode, reverse: bool) {
         self.with_view(|v| {
