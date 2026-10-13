@@ -3,7 +3,6 @@
 
 use crate::bindings::*;
 use crate::desktop::{class_name, is_cloaked, is_visible, shell_window, window_pid};
-use crate::wallpaper::DecodedImage;
 use crate::window::window_rect;
 use windows_core::PCWSTR;
 
@@ -60,16 +59,34 @@ pub fn covering(live: &[(HWND, RECT)], monitor: RECT) -> Option<(HWND, RECT)> {
     })
 }
 
-/// The window's rectangle and its current pixels as opaque BGRA. PrintWindow with
-/// PW_RENDERFULLCONTENT is the one way that gets video and web players on Windows 10 and 11
-/// without side effects; it blocks while DWM draws the window (50 to 130 ms for a 4K window),
-/// so call it off the UI thread. All black when the window drew nothing.
-pub fn capture(hwnd: HWND) -> Option<(RECT, DecodedImage)> {
+/// The window's rectangle and what `read` makes of its current pixels (`width` x `height`
+/// BGRA rows, alpha undefined), read where PrintWindow drew them: a copy of a 4K window would
+/// be 33 MB. PrintWindow with PW_RENDERFULLCONTENT is the one way that gets video and web
+/// players on Windows 10 and 11 without side effects; it blocks while DWM draws the window
+/// (50 to 130 ms for a 4K window), so call it off the UI thread. All black when the window
+/// drew nothing. `None` when the window's thread does not answer within 3 s (a player that
+/// hangs, or one suspended while it pauses): PrintWindow waits for that thread, without limit.
+pub fn capture<T>(hwnd: HWND, read: impl FnOnce(&[u8], u32, u32) -> T) -> Option<(RECT, T)> {
     windows_core::link!("user32.dll" "system" fn PrintWindow(hwnd: HWND, hdc: HDC, flags: u32) -> windows_core::BOOL);
     const PW_RENDERFULLCONTENT: u32 = 2;
     let rect = window_rect(hwnd);
     let (w, h) = (rect.right - rect.left, rect.bottom - rect.top);
     if w <= 0 || h <= 0 {
+        return None;
+    }
+    // SAFETY: a message with a timeout; WM_NULL does nothing.
+    let answered = unsafe {
+        SendMessageTimeoutW(
+            hwnd,
+            WM_NULL as u32,
+            WPARAM(0),
+            LPARAM(0),
+            SMTO_BLOCK as u32,
+            3000,
+            None,
+        )
+    };
+    if answered.0 == 0 {
         return None;
     }
     // SAFETY: GDI objects created and released here; the DIB's bits are read while selected.
@@ -95,22 +112,17 @@ pub fn capture(hwnd: HWND) -> Option<(RECT, DecodedImage)> {
         }
         let old = SelectObject(dc, HGDIOBJ(dib.0));
         let drawn = PrintWindow(hwnd, dc, PW_RENDERFULLCONTENT).as_bool();
-        let bgra = drawn.then(|| {
-            let mut bgra =
-                std::slice::from_raw_parts(bits.cast::<u8>(), (w * h * 4) as usize).to_vec();
-            for px in bgra.as_chunks_mut::<4>().0 {
-                px[3] = 255;
-            }
-            bgra
+        let pixels = drawn.then(|| {
+            let len = w as usize * h as usize * 4;
+            read(
+                std::slice::from_raw_parts(bits.cast::<u8>(), len),
+                w as u32,
+                h as u32,
+            )
         });
         SelectObject(dc, old);
         let _ = DeleteObject(HGDIOBJ(dib.0));
         let _ = DeleteDC(dc);
-        let image = DecodedImage {
-            width: w as u32,
-            height: h as u32,
-            bgra: bgra?,
-        };
-        Some((rect, image))
+        Some((rect, pixels?))
     }
 }

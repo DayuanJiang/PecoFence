@@ -117,9 +117,22 @@ pub(super) struct MonitorRecipe {
     decode_divisor: u32,
     /// A capture of the live wallpaper covering this monitor, shown instead of the picture.
     pub(super) live: Option<Arc<Image>>,
+    /// Liquid Glass: the blur that frosts a capture (see `show_live`), at this monitor's DPI.
+    frost_blur: Option<f32>,
 }
 
 impl MonitorRecipe {
+    /// Shows `capture` instead of the picture. A capture is a still picture: through clear
+    /// glass it would not line up with the video moving around the fence, so Liquid Glass
+    /// frosts it like Fluent does, and drops the detail the frost hides.
+    pub(super) fn show_live(&mut self, capture: Arc<Image>) {
+        if let Some(blur) = self.frost_blur {
+            self.tint.blur_sigma_dip = blur;
+            self.downscale = 4;
+        }
+        self.live = Some(capture);
+    }
+
     pub(super) fn rect(&self) -> RECT {
         RECT {
             left: self.left,
@@ -260,17 +273,9 @@ pub(super) fn monitor_recipes(
         } else {
             tuned_tint(theme.acrylic_tint())
         };
-        let live = live
-            .iter()
-            .find(|l| l.monitor == m.rect)
-            .and_then(|l| l.image.clone());
-        if theme.liquid_glass && live.is_some() {
-            // A capture is a still picture: through clear glass it would not line up with the
-            // video moving around the fence. Frost it like Fluent does.
-            tint.blur_sigma_dip = pecofence_render::backdrop::MicaTint::ACRYLIC_DARK.blur_sigma_dip;
-        }
-        tint.blur_sigma_dip *= dpi as f32 / 96.0;
-        out.push(MonitorRecipe {
+        let scale = dpi as f32 / 96.0;
+        tint.blur_sigma_dip *= scale;
+        let mut recipe = MonitorRecipe {
             path: m.path.clone(),
             position,
             left: m.rect.left,
@@ -279,16 +284,23 @@ pub(super) fn monitor_recipes(
             height: h,
             background: snapshot.background,
             tint,
-            // Clear glass needs wallpaper detail for refraction. Acrylic and frosted glass
-            // intentionally discard it.
-            downscale: if theme.liquid_glass && live.is_none() {
-                1
-            } else {
-                4
-            },
+            // Clear glass needs wallpaper detail for refraction. Acrylic intentionally
+            // discards it.
+            downscale: if theme.liquid_glass { 1 } else { 4 },
             decode_divisor: if theme.liquid_glass { 1 } else { 2 },
-            live,
-        });
+            live: None,
+            frost_blur: theme.liquid_glass.then_some(
+                pecofence_render::backdrop::MicaTint::ACRYLIC_DARK.blur_sigma_dip * scale,
+            ),
+        };
+        if let Some(image) = live
+            .iter()
+            .find(|l| l.monitor == m.rect)
+            .and_then(|l| l.image.clone())
+        {
+            recipe.show_live(image);
+        }
+        out.push(recipe);
     }
     out
 }

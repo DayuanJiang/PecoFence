@@ -1,8 +1,8 @@
 //! Live wallpapers (Wallpaper Engine, Lively, ...) hide the Windows wallpaper behind their
 //! player window, so the backdrops show captures of that window instead (feedback #24). A
-//! capture is a still picture: Liquid Glass frosts it (see `monitor_recipes`), and it is taken
-//! again for a new window, when the desktop comes to the front, and once a minute while a fence
-//! on that monitor can be seen.
+//! capture is a still picture: Liquid Glass frosts it (see `MonitorRecipe::show_live`), and it
+//! is taken again for a new window, when the desktop comes to the front, and once a minute
+//! while a fence on that monitor can be seen.
 
 use super::visuals::{MonitorRecipe, backdrop_signature, monitor_recipes, wallpaper_snapshot};
 use super::*;
@@ -20,6 +20,8 @@ const LIVE_SETTLE_REFRESH: Duration = Duration::from_secs(3);
 /// Switching to another wallpaper, a player can close a moment before the next one shows: a
 /// monitor goes back to the Windows wallpaper once its window is missing this long.
 const LIVE_GONE_AFTER: Duration = Duration::from_secs(2);
+/// A capture taking longer than this is given up (see `capture_live_wallpapers`).
+const LIVE_CAPTURE_GIVE_UP: Duration = Duration::from_secs(30);
 /// Captures are kept this many times smaller than the monitor: Fluent builds its backdrop at
 /// that size, and frosted glass shows no more detail.
 const CAPTURE_DOWNSCALE: u32 = 4;
@@ -58,36 +60,30 @@ pub(super) struct LiveCapture {
     result: Arc<Mutex<Option<std::result::Result<Built, String>>>>,
 }
 
-/// The window's rectangle and pixels (see `live_wallpaper::capture`); `None` when it drew
-/// nothing.
+/// The window's rectangle and opaque pixels, `CAPTURE_DOWNSCALE` times smaller (see
+/// `live_wallpaper::capture`); `None` when it drew nothing.
 fn capture(hwnd: isize) -> Option<(RECT, Image)> {
-    let (rect, d) = live_wallpaper::capture(HWND(hwnd as *mut core::ffi::c_void))?;
-    let drawn = d
-        .bgra
-        .as_chunks::<4>()
-        .0
-        .iter()
-        .any(|p| p[..3] != [0, 0, 0]);
-    let image = Image {
-        width: d.width,
-        height: d.height,
-        bgra: d.bgra,
-    };
+    let (rect, mut image) = live_wallpaper::capture(
+        HWND(hwnd as *mut core::ffi::c_void),
+        |bgra, width, height| Image::downscale_pixels(bgra, width, height, CAPTURE_DOWNSCALE),
+    )?;
+    let mut drawn = false;
+    for px in image.bgra.as_chunks_mut::<4>().0 {
+        drawn |= px[..3] != [0, 0, 0];
+        px[3] = 255;
+    }
     drawn.then_some((rect, image))
 }
 
-/// `monitor`'s part of a capture of the window at `window`, `CAPTURE_DOWNSCALE` times smaller.
+/// `monitor`'s part of a capture of the window at `window`.
 fn monitor_part(window: RECT, shot: &Image, monitor: RECT) -> Image {
-    if window == monitor {
-        return shot.downscale_box(CAPTURE_DOWNSCALE);
-    }
+    let d = CAPTURE_DOWNSCALE as i32;
     shot.crop(
-        monitor.left - window.left,
-        monitor.top - window.top,
-        monitor.right - monitor.left,
-        monitor.bottom - monitor.top,
+        (monitor.left - window.left) / d,
+        (monitor.top - window.top) / d,
+        (monitor.right - monitor.left + d - 1) / d,
+        (monitor.bottom - monitor.top + d - 1) / d,
     )
-    .downscale_box(CAPTURE_DOWNSCALE)
 }
 
 /// On the worker: captures each monitor's target window (once per window, which may span
@@ -104,7 +100,7 @@ fn capture_and_build(work: Vec<(MonitorRecipe, Option<isize>)>) -> Result<Built>
             }
             let shot = shots.iter().find(|(h, _)| *h == hwnd);
             if let Some((_, Some((window, image)))) = shot {
-                recipe.live = Some(Arc::new(monitor_part(*window, image, recipe.rect())));
+                recipe.show_live(Arc::new(monitor_part(*window, image, recipe.rect())));
                 captured = Some(hwnd);
             }
         }
@@ -115,7 +111,8 @@ fn capture_and_build(work: Vec<(MonitorRecipe, Option<isize>)>) -> Result<Built>
 }
 
 /// The foreground window's rectangle when it belongs to another program than Explorer and this
-/// one: covering a whole monitor, it is a full-screen game, video or presentation.
+/// one. The fences sit under other programs' windows: it hides the fences inside it, and a
+/// maximized or full-screen window every fence on its monitor.
 fn foreground_rect() -> Option<RECT> {
     let root = desktop::root_ancestor(desktop::foreground_window());
     let pid = desktop::window_pid(root);
@@ -186,7 +183,7 @@ impl App {
 
     /// Starts a worker capturing the live wallpapers that are due: a new window, or no attempt
     /// for `min_age` (shorter while the window settles), on a monitor where a fence is shown
-    /// and no full-screen window covers the desktop.
+    /// and not hidden behind the foreground window.
     pub(super) fn capture_live_wallpapers(&mut self, min_age: Duration) {
         let due = |l: &LiveWallpaper| {
             let min_age = if l.since.elapsed() < LIVE_SETTLE {
@@ -197,20 +194,35 @@ impl App {
             l.attempted
                 .is_none_or(|(hwnd, at)| hwnd != l.hwnd || at.elapsed() >= min_age)
         };
+        // PrintWindow waits for the player's thread: a job that does not come back is given up
+        // (its late result is ignored), so it cannot stop every later capture.
+        if self
+            .live_capture
+            .as_ref()
+            .is_some_and(|job| job.started.elapsed() >= LIVE_CAPTURE_GIVE_UP)
+        {
+            tracing::warn!("live wallpaper capture did not finish; starting again");
+            self.live_capture = None;
+        }
         if self.live_capture.is_some()
             || !self.live.iter().any(due)
             || pecofence_core::brand::var_os("PECOFENCE_SOLID").is_some()
         {
             return;
         }
+        let foreground = foreground_rect();
         let fences: Vec<RECT> = self
             .fences
             .values()
             .map(FenceWindow::hwnd)
             .filter(|&h| desktop::is_visible(h) && !desktop::is_cloaked(h))
             .map(window::window_rect)
+            .filter(|f| {
+                !foreground.is_some_and(|g| {
+                    g.left <= f.left && g.top <= f.top && g.right >= f.right && g.bottom >= f.bottom
+                })
+            })
             .collect();
-        let foreground = foreground_rect();
         let now = Instant::now();
         let mut targets = Vec::new();
         for l in self.live.iter_mut().filter(|l| due(l)) {
@@ -218,10 +230,7 @@ impl App {
             let shown = fences.iter().any(|f| {
                 f.left < m.right && f.right > m.left && f.top < m.bottom && f.bottom > m.top
             });
-            let covered = foreground.is_some_and(|f| {
-                f.left <= m.left && f.top <= m.top && f.right >= m.right && f.bottom >= m.bottom
-            });
-            if shown && !covered {
+            if shown {
                 l.attempted = Some((l.hwnd, now));
                 targets.push((m, l.hwnd));
             }
