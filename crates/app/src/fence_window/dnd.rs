@@ -497,9 +497,9 @@ impl DropHandler for FenceDropHandler {
     ) -> DropEffect {
         let internal = Self::internal().is_some();
         // OneDrive's desktop icon names its folder as a file, but the folder cannot move: like
-        // This PC, the desktop's own items go to the shell.
+        // This PC, a drag of only the desktop's own items goes to the shell.
         let hdrop = (dragdrop::has_hdrop(data)
-            && (internal || !dragdrop::has_desktop_namespace_item(data)))
+            && (internal || !dragdrop::only_desktop_namespace_items(data)))
         .then(|| dragdrop::hdrop_paths(data));
         self.kind = classify_drop(
             internal,
