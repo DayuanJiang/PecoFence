@@ -131,7 +131,15 @@ pub struct PeekSettings {
     pub enabled: bool,
     /// Dim everything behind the fences while peeking.
     pub dim: bool,
+    /// The shortcut as versions up to 0.2.0 store it; `customHotkey` replaces it when set.
     pub hotkey: PeekHotkey,
+    /// Any other shortcut, as text such as `"Ctrl+Shift+F"` or `"Win+Alt+Space"`: modifiers
+    /// (Win, Ctrl, Alt, Shift; Ctrl, Alt or Win needed) and a letter, digit, F1 to F24, Num0 to
+    /// Num9, Space, Enter, Tab, Esc, Backspace, Insert, Delete, Home, End, PageUp, PageDown or
+    /// an arrow key (Left, Up, Right, Down). `null` = use `hotkey`. Text that is not a usable
+    /// shortcut is ignored the same way.
+    #[serde(default)]
+    pub custom_hotkey: Option<String>,
 }
 
 impl Default for PeekSettings {
@@ -140,13 +148,32 @@ impl Default for PeekSettings {
             enabled: true,
             dim: true,
             hotkey: PeekHotkey::CtrlAltSpace,
+            custom_hotkey: None,
         }
     }
 }
 
-/// Peek hotkey choices. Fences uses Win+Space, but Windows reserves Win+Space (and
-/// Win+Shift/Ctrl+Space) for the input-language switcher whenever more than one keyboard
-/// layout is installed, so Ctrl+Alt+Space is the default and the others are offered.
+impl PeekSettings {
+    /// The shortcut the user chose: `customHotkey` when it holds a usable one, else `hotkey`.
+    pub fn chosen_hotkey(&self) -> crate::hotkey::Hotkey {
+        self.custom_hotkey
+            .as_deref()
+            .and_then(|t| crate::hotkey::Hotkey::parse(t).and_then(|h| h.check()).ok())
+            .unwrap_or_else(|| self.hotkey.combo())
+    }
+
+    /// Makes `h` the chosen shortcut. Ctrl+Alt+Space is written as `hotkey` alone, so the file
+    /// reads the same in every version; any other goes to `customHotkey`, with `hotkey` set to
+    /// Ctrl+Alt+Space for the versions that do not know that field.
+    pub fn set_hotkey(&mut self, h: crate::hotkey::Hotkey) {
+        self.hotkey = PeekHotkey::CtrlAltSpace;
+        self.custom_hotkey = (h != crate::hotkey::CTRL_ALT_SPACE).then(|| h.to_string());
+    }
+}
+
+/// The shortcuts versions up to 0.2.0 offered. Fences uses Win+Space, but Windows 10 and 11
+/// keep Win+Space and Win+Shift+Space for the input switcher even with a single keyboard
+/// layout, so a file that names one of them gets a fallback.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
@@ -155,6 +182,17 @@ pub enum PeekHotkey {
     #[default]
     CtrlAltSpace,
     WinShiftSpace,
+}
+
+impl PeekHotkey {
+    pub fn combo(self) -> crate::hotkey::Hotkey {
+        use crate::hotkey::{ALT, CTRL, Hotkey, SHIFT, WIN};
+        match self {
+            Self::WinSpace => Hotkey::new(WIN, 0x20),
+            Self::CtrlAltSpace => Hotkey::new(CTRL | ALT, 0x20),
+            Self::WinShiftSpace => Hotkey::new(WIN | SHIFT, 0x20),
+        }
+    }
 }
 
 impl Default for Settings {
@@ -1405,6 +1443,54 @@ mod tests {
         // 'İ' lower-cases to "i\u{307}", a spelling NTFS never matches back.
         let key = ItemKey::from_path("C:/Users/İbrahim/Desktop/Plan.TXT");
         assert_eq!(key.as_path(), Some("c:\\users\\İbrahim\\desktop\\plan.txt"));
+    }
+
+    #[test]
+    fn peek_shortcuts_read_in_both_directions() {
+        use crate::hotkey::{CTRL_ALT_SPACE, Hotkey};
+        // What 0.2.0 reads of `peek` (it ignores fields it does not know).
+        #[derive(Deserialize)]
+        struct PeekV020 {
+            hotkey: PeekHotkey,
+        }
+        let win_alt_space = Hotkey::parse("Win+Alt+Space").unwrap();
+        let mut peek = PeekSettings::default();
+        peek.set_hotkey(win_alt_space);
+        let json = serde_json::to_value(&peek).unwrap();
+        assert_eq!(json["customHotkey"], "Win+Alt+Space");
+        let old: PeekV020 = serde_json::from_value(json.clone()).unwrap();
+        assert_eq!(old.hotkey, PeekHotkey::CtrlAltSpace);
+        let back: PeekSettings = serde_json::from_value(json).unwrap();
+        assert_eq!(back.chosen_hotkey(), win_alt_space);
+        // Ctrl+Alt+Space is stored the way 0.2.0 stores it.
+        peek.set_hotkey(CTRL_ALT_SPACE);
+        assert_eq!(peek, PeekSettings::default());
+        assert_eq!(
+            serde_json::to_value(&peek).unwrap()["customHotkey"],
+            serde_json::Value::Null
+        );
+
+        // A 0.2.0 file keeps its Win+Space as the choice; the app falls back while Windows
+        // holds it.
+        let v020: PeekSettings = serde_json::from_value(serde_json::json!({
+            "enabled": true, "dim": true, "hotkey": "winSpace"
+        }))
+        .unwrap();
+        assert_eq!(v020.custom_hotkey, None);
+        assert_eq!(v020.chosen_hotkey().to_string(), "Win+Space");
+        // Text that is no usable shortcut leaves `hotkey` in charge.
+        for text in ["Ctrl+Space", "Win+L", "Ctrl+Alt+", "nonsense", ""] {
+            let peek = PeekSettings {
+                custom_hotkey: Some(text.into()),
+                hotkey: PeekHotkey::WinShiftSpace,
+                ..PeekSettings::default()
+            };
+            assert_eq!(
+                peek.chosen_hotkey().to_string(),
+                "Win+Shift+Space",
+                "{text}"
+            );
+        }
     }
 
     #[test]

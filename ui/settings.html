@@ -157,6 +157,26 @@
   .iconbtn:disabled { background: transparent; border-color: transparent; }
   .iconbtn[data-act=del]:hover { color: var(--error); background: var(--error-bg); }
 
+  /* Peek shortcut: key caps in a box that records the next combination (styled as a focused
+     text box meanwhile); the quick choices are toggle buttons. */
+  .hotkey-edit { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 16px; max-width: 100%; }
+  .hotkey-box { display: inline-flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 200px; padding: 0 10px 0 4px; }
+  .hotkey-box .keys { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; min-width: 0; }
+  .hotkey-box kbd { font: 600 12px/22px "Segoe UI Variable Text", "Segoe UI", var(--font-cjk), sans-serif; min-width: 26px; padding: 0 7px; border-radius: 3px; text-align: center; color: var(--on-accent); background: var(--accent); }
+  .hotkey-box .prompt { padding: 0 7px; color: var(--text3); }
+  .hotkey-box .ic { font-size: 14px; color: var(--text2); }
+  .hotkey-box.recording, .hotkey-box.recording:hover { background-color: var(--card); border-bottom: 2px solid var(--accent); }
+  .hotkey-box.recording .ic { visibility: hidden; }
+  .hotkey-box.recording:focus-visible { outline: none; }
+  .hotkey-box:disabled kbd { color: var(--text-disabled); background: var(--control-disabled); outline: 1px solid var(--control-stroke); }
+  .hotkey-win { display: flex; align-items: center; gap: 8px; }
+  .hotkey-win input { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); }
+  .disabled .hotkey-win { color: var(--text-disabled); }
+  .card .s.error { color: var(--error); } .card .s.caution { color: var(--caution); }
+  button[aria-pressed=true] { background: var(--accent); color: var(--on-accent); border-color: transparent; }
+  button[aria-pressed=true]:hover { background: var(--accent-hover); }
+  button[aria-pressed=true]:disabled { background: var(--control-disabled); color: var(--text-disabled); border-color: var(--control-stroke); }
+
   /* Theme style tiles double as the live preview of the icon settings below them. */
   .style-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; padding-left: 40px; }
   .tile { position: relative; display: flex; flex-direction: column; gap: 8px; padding: 8px 8px 10px; border-radius: 6px;
@@ -374,8 +394,13 @@
       <h3>速览栅栏</h3>
       <div class="group">
         <div class="card"><div class="l"><span class="ic">&#xE8A1;</span><div><div class="t">按快捷键让所有栅栏显示在窗口前面</div><div class="s">再按一次、按 Esc 或点击其他位置返回</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="peek.enabled"></div></div>
-        <div class="card child"><div class="l"><div><div class="t">快捷键</div><div class="s">安装了多种输入语言时 Windows 会占用 Win+空格，此时会自动改用可用的组合</div></div></div>
-          <select data-bind="peek.hotkey"><option value="ctrlAltSpace">Ctrl + Alt + 空格</option><option value="winSpace">Win + 空格</option><option value="winShiftSpace">Win + Shift + 空格</option></select></div>
+        <div class="card child" id="peekHotkeyCard"><div class="l"><div><div class="t" id="peekHotkeyTitle">快捷键</div><div class="s" id="peekHotkeyHelp" aria-live="polite"></div></div></div>
+          <div class="hotkey-edit">
+            <button type="button" class="hotkey-box" id="peekHotkey" aria-labelledby="peekHotkeyTitle peekHotkeyKeys" aria-describedby="peekHotkeyHelp"><span class="keys" id="peekHotkeyKeys"></span><span class="ic">&#xE70F;</span></button>
+            <label class="hotkey-win"><input type="checkbox" id="peekHotkeyWin">包含 Win 键</label>
+          </div></div>
+        <div class="card child" id="peekPresetCard"><div class="l"><div><div class="t" id="peekPresetTitle">常用组合</div></div></div>
+          <div class="actions" id="peekPresets" role="group" aria-labelledby="peekPresetTitle"></div></div>
       </div>
       <div class="card"><div class="l"><span class="ic">&#xE708;</span><div><div class="t">速览时调暗背景</div><div class="s">栅栏之外的区域变暗，更容易看清</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="peek.dim"></div></div>
     </section>
@@ -678,9 +703,10 @@
       }
     });
   }
-  // Only these rows depend on their master switch: guide lines need snapping, and the hotkey is
-  // what Peek's switch turns on. Gap, whole-cell sizing and dimming apply without them.
-  const DEPENDENT = [['snapping.guideLines', 'snapping.enabled'], ['peek.hotkey', 'peek.enabled']];
+  // Only these rows depend on their master switch: guide lines need snapping, and the shortcut
+  // rows (renderPeekHotkey) are what Peek's switch turns on. Gap, whole-cell sizing and dimming
+  // apply without them.
+  const DEPENDENT = [['snapping.guideLines', 'snapping.enabled']];
   function renderDependents() {
     for (const [child, master] of DEPENDENT) {
       const on = !!get(state.settings, master), el = document.querySelector(`[data-bind="${child}"]`);
@@ -688,7 +714,89 @@
       if (el.tagName === 'SELECT') el.disabled = !on;
       else { el.tabIndex = on ? 0 : -1; el.setAttribute('aria-disabled', String(!on)); }
     }
+    renderPeekHotkey();
   }
+
+  // 速览栅栏 › 快捷键: the box records the next combination, the host checks it, tries
+  // RegisterHotKey and answers with peekHotkeyResult (plus a fresh state once saved). Windows
+  // takes many Win combinations before the page sees them, so the checkbox adds Win instead.
+  const MOD_ALT = 1, MOD_CTRL = 2, MOD_SHIFT = 4, MOD_WIN = 8;
+  const hkBox = document.getElementById('peekHotkey'), hkKeys = document.getElementById('peekHotkeyKeys');
+  const hkWin = document.getElementById('peekHotkeyWin'), hkHelp = document.getElementById('peekHotkeyHelp');
+  let hkRecording = false, hkHeld = 0, hkError = '';
+  const heldMods = e => (e.altKey ? MOD_ALT : 0) | (e.ctrlKey ? MOD_CTRL : 0) | (e.shiftKey ? MOD_SHIFT : 0) | (e.metaKey ? MOD_WIN : 0);
+  const modNames = mods => [[MOD_WIN, 'Win'], [MOD_CTRL, t("键名\x04Ctrl")], [MOD_ALT, 'Alt'], [MOD_SHIFT, t("键名\x04Shift")]]
+    .filter(([bit]) => mods & bit).map(([, name]) => name);
+  const keyCaps = keys => keys.map(k => `<kbd>${esc(k)}</kbd>`).join('');
+  const sameKey = (a, b) => a.mods === b.mods && a.vk === b.vk;
+  function renderPeekHotkey() {
+    const p = state && state.peekHotkey;
+    if (!p) return;
+    const on = !!state.settings.peek.enabled, shown = p.active || p.chosen;
+    if (!on && hkRecording) stopRecording();
+    for (const id of ['peekHotkeyCard', 'peekPresetCard']) document.getElementById(id).classList.toggle('disabled', !on);
+    hkBox.disabled = hkWin.disabled = !on;
+    hkBox.classList.toggle('recording', hkRecording);
+    const held = hkHeld | (hkWin.checked ? MOD_WIN : 0);
+    hkKeys.innerHTML = !hkRecording ? keyCaps(shown.keys)
+      : keyCaps(modNames(held)) + `<span class="prompt">${esc(held ? '…' : t("按下组合键…"))}</span>`;
+    // The checkbox belongs to the recording; the key caps show whether the shortcut has Win.
+    if (!hkRecording) hkWin.checked = false;
+    let help = t("点击方框，按下想用的组合键。要用 Win 键，请勾选“包含 Win 键”"), tone = '';
+    if (hkError) { help = hkError; tone = 'error'; }
+    else if (hkRecording) help = t("请按下组合键，按 Esc 取消");
+    else if (on && !p.active) { help = tf("{0} 和备用的组合都已被占用，请换一个", p.chosen.label); tone = 'error'; }
+    else if (on && !sameKey(p.active, p.chosen)) { help = tf("{0} 已被占用，现在使用 {1}", p.chosen.label, p.active.label); tone = 'caution'; }
+    hkHelp.textContent = help;
+    hkHelp.className = 's' + (tone ? ' ' + tone : '');
+    // Quick choices: one button each, reused so that a refresh keeps the focus on it.
+    const presets = document.getElementById('peekPresets');
+    p.presets.forEach((k, i) => {
+      let b = presets.children[i];
+      if (!b) {
+        b = document.createElement('button');
+        b.type = 'button';
+        b.onclick = () => { hkError = ''; send({ type: 'action', name: 'setPeekHotkey', mods: Number(b.dataset.mods), vk: Number(b.dataset.vk) }); };
+        presets.append(b);
+      }
+      b.dataset.mods = k.mods; b.dataset.vk = k.vk;
+      b.textContent = k.keys.join(' + ');
+      b.setAttribute('aria-pressed', String(sameKey(k, shown)));
+      b.disabled = !on;
+    });
+  }
+  function startRecording() {
+    if (hkRecording || hkBox.disabled) return;
+    hkRecording = true; hkHeld = 0; hkError = '';
+    send({ type: 'action', name: 'peekHotkeyRecording', on: true });
+    renderPeekHotkey();
+  }
+  function stopRecording() {
+    if (!hkRecording) return;
+    hkRecording = false; hkHeld = 0; hkError = '';
+    send({ type: 'action', name: 'peekHotkeyRecording', on: false });
+    renderPeekHotkey();
+  }
+  hkBox.onclick = startRecording;
+  hkBox.addEventListener('blur', stopRecording);
+  // Clicking the checkbox while recording must not take the focus away from the box.
+  document.querySelector('.hotkey-win').addEventListener('mousedown', e => { if (hkRecording) e.preventDefault(); });
+  hkBox.addEventListener('keydown', e => {
+    if (!hkRecording) return;
+    const held = heldMods(e);
+    // Tab still moves on; Esc cancels.
+    if (e.key === 'Tab' && !held) { stopRecording(); return; }
+    e.preventDefault();
+    if (e.key === 'Escape' && !held) { stopRecording(); return; }
+    hkHeld = held;
+    if (['Control', 'Alt', 'Shift', 'Meta', 'OS', 'AltGraph'].includes(e.key)) { renderPeekHotkey(); return; }
+    if (e.repeat) return;
+    // keyCode is the Windows virtual-key code, which RegisterHotKey takes.
+    send({ type: 'action', name: 'setPeekHotkey', mods: held | (hkWin.checked ? MOD_WIN : 0), vk: e.keyCode });
+  });
+  hkBox.addEventListener('keyup', e => { if (hkRecording) { hkHeld = heldMods(e); renderPeekHotkey(); } });
+  // Ticking Win starts a recording with it; clearing it during one drops it again.
+  hkWin.onchange = () => { startRecording(); renderPeekHotkey(); hkBox.focus(); };
   const hexToRgb = (h) => [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
   const rgbToHex = (a) => a ? a.map(x => x.toString(16).padStart(2, '0')).join('').toUpperCase() : '';
 
@@ -1203,6 +1311,13 @@
     else if (m.type === 'showFeedback') showFeedback(!!m.crash);
     else if (m.type === 'toast') toast(m.text, !!m.error);
     else if (m.type === 'update') { update = m.update; renderUpdate(); }
+    else if (m.type === 'peekHotkeyResult') {
+      // Saved: recording is over (the host registered the new shortcut). Refused: the page
+      // keeps recording and says why.
+      hkError = m.ok ? '' : m.text || '';
+      if (m.ok) { hkRecording = false; hkHeld = 0; }
+      renderPeekHotkey();
+    }
   });
   send({ type: 'ready' });
 })();

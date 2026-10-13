@@ -573,7 +573,8 @@ mod tests {
         ("family", "%f.family"),        // installed font family
         ("generation", "?generation"),  // DesktopGeneration enum
         ("generation", "generation"),   // GPU device generation (u64)
-        ("hotkey", "?c"),               // PeekHotkey enum
+        ("hotkey", "%c"),               // Hotkey: modifier and key names ("Ctrl+Alt+Space")
+        ("hotkey", "%h"),               // Hotkey
         ("language", "language.tag()"), // BCP 47 tag of a Language variant
         ("location", "%location"),      // panic `file:line`
         ("memory", "%m.summary()"),     // MemoryStats::summary: numbers only
@@ -593,7 +594,7 @@ mod tests {
         ("style", "?style"),            // backdrop style enum
         ("verb", "verb"),               // shell verb (canonical name)
         ("verb", "%verb"),
-        ("wanted", "?h"),   // PeekHotkey enum
+        ("wanted", "%h"),   // Hotkey
         ("what", "what"),   // `&'static str` operation names
         ("what", "e.step"), // ConfigStore::save step name
         ("what", "kind"),   // JavaScript error type from a fixed list

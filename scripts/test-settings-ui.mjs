@@ -40,6 +40,15 @@ const fixture = {
   desktopIconsHidden: false,
   version: 'test', configPath: 'C:\\PecoFence\\config.json', memoryMb: 28, itemCount: 12,
   themeMode: 'dark', accent: '#60CDFF',
+  peekHotkey: {
+    chosen: { mods: 3, vk: 32, keys: ['Ctrl', 'Alt', '空格'], label: 'Ctrl+Alt+空格' },
+    active: { mods: 3, vk: 32, keys: ['Ctrl', 'Alt', '空格'], label: 'Ctrl+Alt+空格' },
+    presets: [
+      { mods: 3, vk: 32, keys: ['Ctrl', 'Alt', '空格'], label: 'Ctrl+Alt+空格' },
+      { mods: 9, vk: 32, keys: ['Win', 'Alt', '空格'], label: 'Win+Alt+空格' },
+      { mods: 6, vk: 32, keys: ['Ctrl', 'Shift', '空格'], label: 'Ctrl+Shift+空格' },
+    ],
+  },
 };
 
 function bridge() {
@@ -72,6 +81,20 @@ function bridge() {
           state.desktopIconsHidden = state.settings.hideRealIcons;
         }
         if (message.type === 'setRules') state.rules = structuredClone(message.rules);
+        if (message.name === 'setPeekHotkey') {
+          const names = [[8, 'Win'], [2, 'Ctrl'], [1, 'Alt'], [4, 'Shift']].filter(([bit]) => message.mods & bit).map(([, n]) => n);
+          const keys = [...names, message.vk === 32 ? '空格' : String.fromCharCode(message.vk)];
+          const combo = { mods: message.mods, vk: message.vk, keys, label: keys.join('+') };
+          // Win+Shift+Space stands for a combination Windows holds.
+          const text = !(message.mods & 11) ? '快捷键需要包含 Ctrl、Alt 或 Win'
+            : message.mods === 12 && message.vk === 32 ? combo.label + ' 已被 Windows 或其他程序占用，请换一个' : null;
+          if (!text) {
+            state.peekHotkey.chosen = state.peekHotkey.active = combo;
+            state.settings.peek.customHotkey = message.mods === 3 && message.vk === 32 ? null : combo.label;
+            setTimeout(window.testRefresh, 0);
+          }
+          setTimeout(() => receive({ data: { type: 'peekHotkeyResult', ok: !text, text } }), 0);
+        }
         if (message.name === 'addTemplate' && !state.rules.list.some(r => r.template === message.template)) {
           // Mirror the host: a new fence plus its rule at the top of the list.
           const id = 'tpl-' + message.template;
@@ -451,7 +474,7 @@ async function runTests() {
     assert(!current().settings.autostart && shown().join() === '关', 'Caption did not follow the switch');
   });
   await test('Dependent rows are disabled while their master switch is off', async () => {
-    const guides = doc.querySelector('[data-bind="snapping.guideLines"]'), hotkey = doc.querySelector('[data-bind="peek.hotkey"]');
+    const guides = doc.querySelector('[data-bind="snapping.guideLines"]'), hotkey = doc.getElementById('peekHotkey');
     doc.querySelector('[data-bind="snapping.enabled"]').click(); await settle();
     assert(!current().settings.snapping.enabled && guides.closest('.card').classList.contains('disabled'), 'Guide lines stay active without snapping');
     const before = current().settings.snapping.guideLines;
@@ -462,9 +485,10 @@ async function runTests() {
     doc.querySelector('[data-bind="snapping.enabled"]').click(); await settle();
     assert(!guides.closest('.card').classList.contains('disabled') && guides.tabIndex === 0, 'Guide lines did not return');
     doc.querySelector('[data-bind="peek.enabled"]').click(); await settle();
-    assert(hotkey.disabled && !doc.querySelector('[data-bind="peek.dim"]').closest('.card').classList.contains('disabled'), 'Peek hotkey/dim dependency wrong');
+    assert(hotkey.disabled && doc.getElementById('peekHotkeyWin').disabled && [...doc.querySelectorAll('#peekPresets button')].every(b => b.disabled)
+      && !doc.querySelector('[data-bind="peek.dim"]').closest('.card').classList.contains('disabled'), 'Peek hotkey/dim dependency wrong');
     doc.querySelector('[data-bind="peek.enabled"]').click(); await settle();
-    assert(!hotkey.disabled, 'Hotkey stayed disabled');
+    assert(!hotkey.disabled && !doc.getElementById('peekPresetCard').classList.contains('disabled'), 'Hotkey stayed disabled');
   });
   await test('Colour swatches drive the hidden selects and keep keyboard focus', async () => {
     const swatches = doc.getElementById('iconTintSwatches');
@@ -787,6 +811,70 @@ async function runTests() {
     assert(!JSON.stringify(sent).includes('jane'), 'The error message reached the host: ' + JSON.stringify(sent));
   });
 
+  const hotkeyText = () => [...doc.querySelectorAll('#peekHotkeyKeys kbd')].map(k => k.textContent).join('+');
+  const press = (target, key, keyCode, mods = {}) => target.dispatchEvent(new frame.contentWindow.KeyboardEvent('keydown', { key, keyCode, bubbles: true, cancelable: true, ...mods }));
+  const sent = name => win().testMessages.filter(m => m.name === name);
+  const win = () => frame.contentWindow;
+  await test('The Peek shortcut box records a combination and shows what the host saved', async () => {
+    doc = await reset();
+    const box = doc.getElementById('peekHotkey');
+    assert(hotkeyText() === 'Ctrl+Alt+空格' && !doc.getElementById('peekHotkeyWin').checked, 'Active shortcut not shown: ' + hotkeyText());
+    assert(doc.getElementById('peekHotkeyHelp').textContent.includes('包含 Win 键'), 'Help does not mention the Win checkbox');
+    box.focus(); box.click(); await settle();
+    assert(box.classList.contains('recording') && sent('peekHotkeyRecording').at(-1)?.on === true, 'Recording did not start');
+    press(box, 'Control', 17, { ctrlKey: true });
+    assert(hotkeyText() === 'Ctrl', 'Held modifiers are not shown: ' + hotkeyText());
+    press(box, 'k', 75, { ctrlKey: true, altKey: true }); await settle();
+    const set = sent('setPeekHotkey').at(-1);
+    assert(set && set.mods === 3 && set.vk === 75, 'Wrong combination sent: ' + JSON.stringify(set));
+    assert(!box.classList.contains('recording') && hotkeyText() === 'Ctrl+Alt+K', 'Saved shortcut not shown: ' + hotkeyText());
+    assert(current().settings.peek.customHotkey === 'Ctrl+Alt+K', 'Shortcut not saved');
+    assert(![...doc.querySelectorAll('#peekPresets button')].some(b => b.getAttribute('aria-pressed') === 'true'), 'A quick choice still looks selected');
+  });
+  await test('A refused shortcut keeps recording with the reason; Esc cancels', async () => {
+    doc = await reset();
+    const box = doc.getElementById('peekHotkey'), help = doc.getElementById('peekHotkeyHelp'), winBox = doc.getElementById('peekHotkeyWin');
+    box.focus(); box.click(); await settle();
+    press(box, 'k', 75); await settle();
+    assert(help.classList.contains('error') && help.textContent.includes('Ctrl、Alt 或 Win') && box.classList.contains('recording'), 'No-modifier refusal not shown: ' + help.textContent);
+    // Win comes from the checkbox: Windows keeps Win+Space before the page sees it.
+    winBox.click(); await settle();
+    assert(winBox.checked && box.classList.contains('recording') && doc.activeElement === box && hotkeyText() === 'Win', 'Win checkbox did not start a Win recording');
+    press(box, ' ', 32, { shiftKey: true }); await settle();
+    assert(sent('setPeekHotkey').at(-1).mods === 12, 'Win was not added');
+    assert(help.textContent.includes('已被 Windows 或其他程序占用') && box.classList.contains('recording'), 'Taken combination not reported: ' + help.textContent);
+    press(box, 'Escape', 27); await settle();
+    assert(!box.classList.contains('recording') && sent('peekHotkeyRecording').at(-1).on === false, 'Esc did not end the recording');
+    assert(!winBox.checked && hotkeyText() === 'Ctrl+Alt+空格' && !help.classList.contains('error'), 'Cancel did not restore the shortcut');
+    assert(current().settings.peek.customHotkey == null, 'A refused shortcut was saved');
+  });
+  await test('Quick choices set the shortcut; a fallback says which one is in use', async () => {
+    doc = await reset();
+    const presets = [...doc.querySelectorAll('#peekPresets button')];
+    assert(presets.length === 3 && presets[0].getAttribute('aria-pressed') === 'true' && presets[1].textContent === 'Win + Alt + 空格', 'Quick choices wrong');
+    presets[1].focus(); presets[1].click(); await settle();
+    assert(sent('setPeekHotkey').at(-1).mods === 9 && hotkeyText() === 'Win+Alt+空格', 'Quick choice not applied: ' + hotkeyText());
+    assert(presets[1].getAttribute('aria-pressed') === 'true' && doc.activeElement === presets[1], 'Selected quick choice lost its state or focus');
+    // A shortcut with Win does not tick the box for the next recording.
+    const box = doc.getElementById('peekHotkey'), winBox = doc.getElementById('peekHotkeyWin');
+    assert(!winBox.checked, 'Win checkbox ticked outside a recording');
+    box.focus(); box.click(); await settle();
+    winBox.click(); await settle();
+    assert(winBox.checked && hotkeyText() === 'Win', 'Ticking Win during a recording failed');
+    winBox.click(); await settle();
+    assert(!winBox.checked && box.classList.contains('recording') && doc.activeElement === box, 'Clearing Win ended the recording');
+    press(box, 'k', 75, { ctrlKey: true, altKey: true }); await settle();
+    assert(sent('setPeekHotkey').at(-1).mods === 3 && hotkeyText() === 'Ctrl+Alt+K', 'Win stayed in the next recording');
+    // A 0.2.0 file with Win+Space: Windows holds it, Ctrl+Alt+Space works instead.
+    current().peekHotkey.chosen = { mods: 8, vk: 32, keys: ['Win', '空格'], label: 'Win+空格' };
+    current().peekHotkey.active = current().peekHotkey.presets[0];
+    win().testRefresh(); await settle();
+    const help = doc.getElementById('peekHotkeyHelp');
+    assert(hotkeyText() === 'Ctrl+Alt+空格' && help.classList.contains('caution') && help.textContent.includes('Win+空格') && help.textContent.includes('Ctrl+Alt+空格'), 'Fallback not explained: ' + help.textContent);
+    current().peekHotkey.active = null;
+    win().testRefresh(); await settle();
+    assert(help.classList.contains('error') && hotkeyText() === 'Win+空格', 'All-taken state not shown: ' + help.textContent);
+  });
   await test('All ten languages switch live without changing user names or draft inputs', async () => {
     doc = await reset();
     const win = frame.contentWindow;

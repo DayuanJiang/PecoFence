@@ -285,6 +285,7 @@ impl App {
             "themeMode": if self.theme_mode == ThemeMode::Dark { "dark" } else { "light" },
             "accent": accent,
             "update": self.update_json(),
+            "peekHotkey": self.peek_hotkey_json(),
         })
         .to_string()
     }
@@ -340,6 +341,8 @@ impl App {
         match v.get("type").and_then(|t| t.as_str()) {
             Some("ready") => {
                 tracing::info!("settings: page ready");
+                // A reload in the middle of recording a shortcut never says it ended.
+                self.resume_peek_hotkey();
                 self.push_settings_state();
                 // The first `ready` shows the window; a reload's leaves it as the user left it.
                 if let Some(h) = self
@@ -491,6 +494,17 @@ impl App {
                 Some("pageError") => log_page_error(&v),
                 Some(name @ ("checkUpdate" | "installUpdate" | "openReleasePage")) => {
                     self.on_update_action(name);
+                }
+                Some("setPeekHotkey") => {
+                    let number = |key: &str| v.get(key).and_then(|n| n.as_u64()).unwrap_or(0);
+                    self.set_peek_hotkey_from_page(number("mods") as u32, number("vk") as u32);
+                }
+                Some("peekHotkeyRecording") => {
+                    if v.get("on").and_then(|o| o.as_bool()).unwrap_or(false) {
+                        self.pause_peek_hotkey();
+                    } else {
+                        self.resume_peek_hotkey();
+                    }
                 }
                 Some("repairIcons") => self.set_desktop_icons_hidden(false),
                 Some("hideDesktopIcons") => self.set_desktop_icons_hidden(true),
