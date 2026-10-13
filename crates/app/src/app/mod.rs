@@ -1341,7 +1341,8 @@ impl App {
         let Ok(m) = pecofence_platform::memstats::MemoryStats::current() else {
             return;
         };
-        let (gpu_local, gpu_shared) = self.ctx.stack.gpu_memory().unwrap_or_default();
+        let gpu = self.ctx.stack.gpu_memory();
+        let (gpu_local, gpu_shared) = gpu.unwrap_or_default();
         let total = m.private_commit as u64 + gpu_local + gpu_shared;
         let due = match self.memory_logged {
             None => true,
@@ -1355,11 +1356,12 @@ impl App {
         }
         self.memory_logged = Some((Instant::now(), total));
         let mb = |b: u64| (b as f64 / (1u64 << 20) as f64 * 10.0).round() / 10.0;
+        // The GPU fields are left out when the query failed: no zero that looks measured.
         tracing::info!(
             private_ws_mb = mb(m.private_working_set as u64),
             commit_mb = mb(m.private_commit as u64),
-            gpu_local_mb = mb(gpu_local),
-            gpu_shared_mb = mb(gpu_shared),
+            gpu_local_mb = gpu.map(|(local, _)| mb(local)),
+            gpu_shared_mb = gpu.map(|(_, shared)| mb(shared)),
             "memory"
         );
     }

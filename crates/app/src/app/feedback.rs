@@ -183,13 +183,18 @@ impl App {
         // pages Windows trimmed, GPU memory the surfaces and textures.
         const MB: f64 = 1024.0 * 1024.0;
         let mem = pecofence_platform::memstats::MemoryStats::current().unwrap_or_default();
-        let (gpu_local, gpu_shared) = self.ctx.stack.gpu_memory().unwrap_or_default();
+        let gpu = match self.ctx.stack.gpu_memory() {
+            Some((local, shared)) => format!(
+                "GPU {:.1} MB dedicated, {:.1} MB shared",
+                local as f64 / MB,
+                shared as f64 / MB,
+            ),
+            None => "GPU unknown".to_string(),
+        };
         let memory = format!(
-            "{:.1} MB (commit {:.1} MB, GPU {:.1} MB dedicated, {:.1} MB shared)",
+            "{:.1} MB (commit {:.1} MB, {gpu})",
             mem.private_working_set as f64 / MB,
             mem.private_commit as f64 / MB,
-            gpu_local as f64 / MB,
-            gpu_shared as f64 / MB,
         );
         // The settings that change how the fences sit on the desktop.
         let behavior = format!(
