@@ -273,7 +273,7 @@ impl App {
             CMD_ITEM_LOCATION => {
                 if let Some(item) = items.first().and_then(|id| self.state.item(*id))
                     && !item.is_namespace()
-                    && let Some(p) = item.key.as_path()
+                    && let Some(p) = item.path()
                 {
                     use std::os::windows::process::CommandExt;
                     // `/select,"<path>"`: quoted as a whole (what `arg` does for a name with
@@ -317,7 +317,7 @@ impl App {
                 .state
                 .item(*only)
                 .filter(|it| it.is_folder)
-                .and_then(|it| it.key.as_path().map(PathBuf::from)),
+                .and_then(|it| it.path().map(PathBuf::from)),
             _ => None,
         }
     }
