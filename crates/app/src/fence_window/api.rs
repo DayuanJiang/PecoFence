@@ -1583,6 +1583,11 @@ impl FenceWindow {
                     }
                 }
             }
+            // A removed item still fading out holds the old picture and would put it back into
+            // the GPU cache under the same key: its fade ends now.
+            let leaving = v.leaving.len();
+            v.leaving.retain(|l| !replaced.contains(&l.icon_key));
+            any |= v.leaving.len() != leaving;
             if any && !(v.rolled_up && v.roll_anim.is_none()) {
                 let _ = v.redraw_content();
             }
