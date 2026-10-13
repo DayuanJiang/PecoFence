@@ -343,6 +343,8 @@ impl AppState {
                 let rest = rest.to_string();
                 let moved = format!("{new_prefix}{rest}");
                 item.key = ItemKey::Path(moved.clone());
+                // The next desktop sync brings the new spelling.
+                item.path = None;
                 if let IconKey::ByContent { path, .. } = &mut item.icon_key {
                     *path = moved;
                 }
@@ -828,6 +830,13 @@ impl AppState {
                         item.size = entry.size;
                         changed = true;
                     }
+                    // The key ignores case: a case-only rename (or a file from an older
+                    // version) brings the on-disk spelling here.
+                    let path = entry.path.to_string_lossy();
+                    if item.path.as_deref() != Some(&*path) {
+                        item.path = Some(path.into_owned());
+                        changed = true;
+                    }
                     if changed {
                         report.updated += 1;
                         self.dirty = true;
@@ -873,6 +882,7 @@ impl AppState {
                 size: entry.size,
                 open_count: 0,
                 last_opened: None,
+                path: Some(entry.path.to_string_lossy().into_owned()),
             };
             let id = item.id;
             self.config.items.insert(id, item);
@@ -1237,6 +1247,7 @@ impl AppState {
                 size: entry.size,
                 open_count: 0,
                 last_opened: None,
+                path: Some(path_str),
             };
             new_items.push(item.clone());
             self.portal_items.insert(item_id, item);
@@ -1309,6 +1320,7 @@ impl AppState {
             .map(|m| m.is_dir())
             .unwrap_or(item.is_folder);
         item.key = new_key.clone();
+        item.path = Some(new.to_string_lossy().into_owned());
         item.is_folder = is_folder;
         item.display_name = shell::display_name(new).unwrap_or_else(|| {
             new.file_stem()
@@ -2222,6 +2234,7 @@ mod tests {
             size: 0,
             open_count: 0,
             last_opened: None,
+            path: None,
         };
         let id = item.id;
         state.catalog.insert(item.key.clone(), id);
@@ -2358,6 +2371,46 @@ mod tests {
             size: 0,
             created: 1,
         }
+    }
+
+    /// Feedback #25: `ABC.zip` was opened and listed as `abc.zip`.
+    #[test]
+    fn items_keep_the_on_disk_spelling_and_match_any_case() {
+        let mut state = test_state();
+        let fence = state.fences()[0].id;
+        // An item saved by an older version has only the folded key, until the sync.
+        let old = add_item(&mut state, fence, "readme");
+        assert_eq!(
+            state.item(old).unwrap().path(),
+            Some(r"c:\users\me\desktop\readme.txt")
+        );
+        state.sync_desktop(&[desktop_entry("README.txt"), desktop_entry("ABC.zip")]);
+        assert_eq!(
+            state.item(old).unwrap().path(),
+            Some("C:/Users/Me/Desktop/README.txt")
+        );
+        let id = state
+            .item_by_path(Path::new(r"c:\users\me\desktop\abc.ZIP"))
+            .unwrap();
+        assert_eq!(
+            state.item(id).unwrap().path(),
+            Some("C:/Users/Me/Desktop/ABC.zip")
+        );
+        // A case-only rename keeps the item and hands out the new spelling.
+        let report = state.sync_desktop(&[desktop_entry("README.txt"), desktop_entry("Abc.zip")]);
+        assert_eq!((report.added, report.removed, report.updated), (0, 0, 1));
+        assert_eq!(
+            state.item(id).unwrap().path(),
+            Some("C:/Users/Me/Desktop/Abc.zip")
+        );
+        assert!(state.rename_item(
+            Path::new("C:/Users/Me/Desktop/Abc.zip"),
+            Path::new("C:/Users/Me/Desktop/aBC.zip")
+        ));
+        assert_eq!(
+            state.item(id).unwrap().path(),
+            Some("C:/Users/Me/Desktop/aBC.zip")
+        );
     }
 
     #[test]

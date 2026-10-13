@@ -322,10 +322,11 @@ impl App {
 
         // Elevation decides which windows the fences may be placed under; the delay after
         // Explorer shows how long a launch at sign-in waited.
+        let after_explorer_s = seconds_after_explorer();
         tracing::info!(
             packaged = process::is_packaged(),
             elevated = ?process::is_elevated(process::current_pid()),
-            after_explorer_s = ?seconds_after_explorer(),
+            after_explorer_s = ?after_explorer_s,
             "process started"
         );
         let stack = Rc::new(RenderStack::new()?);
@@ -873,6 +874,11 @@ impl App {
             icons: Rc::new(RefCell::new({
                 let mut c = IconCache::new(control.hwnd());
                 c.set_variant(icon_variant_for(&state.config.settings.icons));
+                // Started at sign-in (or before Explorer): the shell's first answers may be
+                // placeholders.
+                if after_explorer_s.is_none_or(|s| s < 300.0) {
+                    c.recheck_after_start();
+                }
                 c
             })),
             bitmaps: Rc::new(RefCell::new(BitmapCache::new())),
