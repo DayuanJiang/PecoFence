@@ -3,6 +3,7 @@
 ## Unreleased
 
 - PecoFence keeps less memory between uses. Half a minute after the fences last drew something, it hands the memory the last use touched back to Windows, every time instead of only once after startup; what it needs again comes back on its own, with no visible delay (the first animation after a pause measured the same as before). On a 4K monitor the memory Task Manager shows for PecoFence at rest stays at about 2 to 5 MB, where it used to grow to about 28 MB after some hours of use. Settings, Peek and a name being edited keep their memory while they are open.
+- Photo thumbnails and icons no longer pile up in memory. PecoFence keeps the icons its fences show, in every tab and at the current icon size, and lets the others go a few seconds after a change: another icon size or screen scaling, a folder a portal has left, a fence closed or deleted, files deleted from the desktop. Ten folder portals of 300 photos each, opened and closed one after the other, used to leave about 190 MB in use for as long as the photos existed; now PecoFence is back at about 12 MB after each one. Going back into a folder reads its icons again, so a big folder of photos may show grey tiles for a moment.
 
 ## 0.2.0
 

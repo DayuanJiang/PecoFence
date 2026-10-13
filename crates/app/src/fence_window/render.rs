@@ -623,7 +623,7 @@ impl FenceViewState {
     /// `label_w` is the width the label must fit: the cell width for icons, the name column's
     /// text width for rows. Changing it drops every fitted label.
     pub(super) fn ensure_icons_and_labels(&mut self, label_w: f32) {
-        let icon_px = (self.icon_dip() * self.scale()).round() as u32;
+        let icon_px = self.icon_px();
         if (self.label_w - label_w).abs() > 0.5 {
             self.label_w = label_w;
             for item in &mut self.items {
@@ -696,7 +696,7 @@ impl FenceViewState {
 
     /// True when some item is still waiting for its icon.
     pub fn has_pending_icons(&self) -> bool {
-        let px = (self.icon_dip() * self.scale()).round() as u32;
+        let px = self.icon_px();
         self.items.iter().any(|i| i.wants_icon(px))
     }
 

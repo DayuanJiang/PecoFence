@@ -1249,16 +1249,10 @@ impl App {
         if self.state.is_dirty() {
             self.state.save_if_dirty();
         }
-        // Icons of files that changed or vanished since: free their pixels.
-        {
-            let mut icons = self.ctx.icons.borrow_mut();
-            let dropped = icons.sweep(&self.state.icon_keys());
-            if !dropped.is_empty() {
-                self.ctx
-                    .bitmaps
-                    .borrow_mut()
-                    .retain(|key| !icons.is_dropped_draw_key(key, &dropped));
-            }
+        // Icons no window needs any more, if a change left some behind without a redraw; the
+        // GPU trim then frees the released uploads.
+        if self.prune_icons() {
+            window::set_timer(self.control.hwnd(), TIMER_GPU_TRIM, GPU_TRIM_IDLE_MS);
         }
         // While the special desktop items are shown, re-read them once a minute as well: a
         // change in Windows' own "Desktop icon settings" leaves no folder event behind, and the

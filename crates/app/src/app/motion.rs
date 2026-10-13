@@ -16,6 +16,8 @@ impl App {
         if w.retire() {
             self.dying.push(w);
         }
+        // Its icons may be needed nowhere now: the GPU trim prunes them (see `prune_icons`).
+        window::set_timer(self.control.hwnd(), TIMER_GPU_TRIM, GPU_TRIM_IDLE_MS);
     }
 
     /// `DXGI_ERROR_DEVICE_REMOVED`: rebuild the device, drop GPU bitmaps, recreate every surface.
@@ -93,11 +95,51 @@ impl App {
             window::set_timer(self.control.hwnd(), TIMER_GPU_TRIM, GPU_TRIM_IDLE_MS);
             return;
         }
+        // Before the trim, which then frees the GPU memory of the bitmaps dropped here.
+        self.prune_icons();
         self.ctx.bitmaps.borrow_mut().prune_wallpapers();
         // Diagnostic: keep every GPU cache (compare glitches with and without the trim).
         if pecofence_core::brand::var_os("PECOFENCE_NO_GPU_TRIM").is_none() {
             self.ctx.stack.trim();
         }
+    }
+
+    /// Drops every icon no fence window needs (see `needed_icons`) from the icon cache and its
+    /// GPU uploads. Runs when drawing has gone quiet: whatever made icons unneeded (an icon
+    /// size, layout or DPI change, a portal navigating, a fence closed or deleted, files
+    /// removed) redrew a fence or retired its window, and by then the new icons have replaced
+    /// the old ones on screen. Returns whether GPU bitmaps were released.
+    pub(super) fn prune_icons(&mut self) -> bool {
+        let needed = self.needed_icons();
+        let icons = self.ctx.icons.borrow_mut().retain_needed(&needed);
+        let mut bitmaps = self.ctx.bitmaps.borrow_mut();
+        let before = bitmaps.len();
+        bitmaps.retain(|key| !IconCache::is_draw_key(key) || needed.contains(key));
+        let uploads = before - bitmaps.len();
+        if icons + uploads > 0 {
+            tracing::debug!(
+                icons,
+                uploads,
+                kept = needed.len(),
+                "unneeded icons dropped"
+            );
+        }
+        uploads > 0
+    }
+
+    /// `IconCache::draw_key`s of what the fence windows show or can switch to at once: their
+    /// items at the current icon size and DPI, and the items of their other tabs at those
+    /// tabs' own size, so a tab switch stays instant.
+    fn needed_icons(&self) -> HashSet<String> {
+        let icons = self.ctx.icons.borrow();
+        let mut needed = HashSet::new();
+        for (&host, w) in &self.fences {
+            w.needed_icons(&icons, &mut needed);
+            for (key, px) in self.state.tab_icons(host, w.active_fence(), w.dpi()) {
+                needed.insert(icons.draw_key(key, px));
+            }
+        }
+        needed
     }
 
     /// `TIMER_IDLE_TRIM`: retried while a frame was drawn in the last second, so an animation

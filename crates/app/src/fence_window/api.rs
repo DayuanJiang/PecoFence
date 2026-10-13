@@ -1232,6 +1232,24 @@ impl FenceWindow {
             .unwrap_or(48)
     }
 
+    pub fn dpi(&self) -> u32 {
+        self.view.borrow().as_ref().map(|v| v.dpi).unwrap_or(96)
+    }
+
+    /// Adds the `IconCache::draw_key`s this window draws or is about to draw to `out`: every
+    /// item at the current icon size, and at the size it still shows until that one arrives.
+    pub fn needed_icons(&self, icons: &IconCache, out: &mut HashSet<String>) {
+        if let Some(v) = self.view.borrow().as_ref() {
+            let px = v.icon_px();
+            for item in &v.items {
+                out.insert(icons.draw_key(&item.icon_key, px));
+                if item.icon.is_some() && item.icon_px != px {
+                    out.insert(icons.draw_key(&item.icon_key, item.icon_px));
+                }
+            }
+        }
+    }
+
     /// Ends a peek without rolling back (the fence stays expanded).
     pub fn commit_expanded(&self) {
         self.with_view(|v| {
