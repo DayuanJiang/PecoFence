@@ -326,10 +326,11 @@ impl App {
 
         // Elevation decides which windows the fences may be placed under; the delay after
         // Explorer shows how long a launch at sign-in waited.
+        let after_explorer_s = seconds_after_explorer();
         tracing::info!(
             packaged = process::is_packaged(),
             elevated = ?process::is_elevated(process::current_pid()),
-            after_explorer_s = ?seconds_after_explorer(),
+            after_explorer_s = ?after_explorer_s,
             "process started"
         );
         let stack = Rc::new(RenderStack::new()?);
@@ -877,6 +878,11 @@ impl App {
             icons: Rc::new(RefCell::new({
                 let mut c = IconCache::new(control.hwnd());
                 c.set_variant(icon_variant_for(&state.config.settings.icons));
+                // Started at sign-in (or before Explorer): the shell's first answers may be
+                // placeholders.
+                if after_explorer_s.is_none_or(|s| s < 300.0) {
+                    c.recheck_after_start();
+                }
                 c
             })),
             bitmaps: Rc::new(RefCell::new(BitmapCache::new())),
@@ -973,11 +979,13 @@ impl App {
 
         // CLI named pipe: requests land in `ipc_pending`, the control window is poked.
         let ipc_pending: PendingQueue = Arc::new(Mutex::new(VecDeque::new()));
-        let ipc = IpcServer::start(
-            &pecofence_core::brand::ipc_pipe_name(args.instance.as_deref()),
-            control.hwnd(),
-            ipc_pending.clone(),
-        );
+        let ipc = match pecofence_platform::pipe::ipc_pipe_name(args.instance.as_deref()) {
+            Ok(name) => IpcServer::start(&name, control.hwnd(), ipc_pending.clone()),
+            Err(error) => {
+                tracing::warn!(target: "pecofence::ipc", %error, "user SID unavailable; CLI disabled");
+                None
+            }
+        };
         let rating = rating::RatingPrompt::load(
             state.config_path().parent().unwrap_or(Path::new(".")),
             pecofence_platform::process::is_packaged(),
@@ -1183,7 +1191,7 @@ impl App {
             }
             if app.state.config.settings.hide_real_icons && !app.no_hide_icons {
                 // At logon Explorer's desktop may not be ready yet: retried from the anchor's
-                // periodic check; housekeeping resets the setting if it never succeeds.
+                // periodic check; housekeeping tells the user if it never succeeds.
                 a.request_hide_desktop_icons();
             }
         }
@@ -1303,8 +1311,8 @@ impl App {
         for window in self.fences.values() {
             window.check_dpi();
         }
-        // Startup hide that kept failing: converge to the same end state as apply_settings
-        // (setting reflects reality, user is told) instead of silently showing the toggle on.
+        // Startup hide that kept failing: stop retrying for this run and tell the user. The
+        // setting stays on, so the next start (or turning it off and on) tries again.
         if self.state.config.settings.hide_real_icons {
             let gave_up = self
                 .anchor
@@ -1316,11 +1324,8 @@ impl App {
                     a.cancel_pending_hide();
                 }
                 tracing::warn!(
-                    "hiding desktop icons kept failing after startup; turning the setting off"
+                    "hiding desktop icons kept failing after startup; trying again at the next start"
                 );
-                self.state.config.settings.hide_real_icons = false;
-                self.settings_mutated();
-                self.desktop_icons_setting_changed();
                 if let Some(t) = &self.tray {
                     t.show_info(
                         "PecoFence",

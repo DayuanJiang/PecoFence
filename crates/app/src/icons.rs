@@ -82,6 +82,8 @@ struct Request {
 struct InFlight {
     req: Request,
     attempts: u32,
+    /// Asked again for an icon already cached (`recheck_after_start`).
+    recheck: bool,
 }
 
 /// Extraction failures on a file that still exists are retried: the shell hands back nothing
@@ -90,6 +92,14 @@ struct InFlight {
 /// first and repaint when the extraction eventually succeeds; here the loading tile stays up.
 const RETRY_ATTEMPTS: u32 = 3;
 const RETRY_DELAYS_MS: [u64; 3] = [400, 1500, 4000];
+
+/// A start at sign-in asks the shell while it is still busy: a shortcut can answer "not yet
+/// available" (E_PENDING) until after the retries above gave up, and one whose target drive
+/// is not mounted yet comes back with the generic program icon. Explorer's desktop shows what
+/// its icon cache kept from the last session meanwhile, and repaints. After such a start every
+/// icon is asked again at these times (seconds after start); one that comes back different
+/// replaces the picture shown.
+const RECHECK_AFTER_START_S: [u64; 3] = [30, 120, 600];
 
 struct Ready {
     key: String,
@@ -108,6 +118,9 @@ struct IconStats {
     retried: u32,
     /// Images the shell handed back smaller than asked for (drawn scaled up).
     smaller: u32,
+    /// Re-checks done after a start at sign-in, and how many of them changed the picture.
+    rechecked: u32,
+    replaced: u32,
     first_error: Option<i32>,
 }
 
@@ -123,6 +136,12 @@ pub struct IconCache {
     pending: HashMap<(String, u32), InFlight>,
     /// Failed extractions waiting to be re-queued (`due`, key); `flush_retries` sends them.
     retry: Vec<(Instant, (String, u32))>,
+    /// Times of the re-check passes still to come (`recheck_after_start`), and the icons to
+    /// ask again at the next one (no thumbnails).
+    recheck_at: Vec<Instant>,
+    recheck: Vec<Request>,
+    /// Cache keys whose picture a re-check replaced, for `take_replaced`.
+    replaced: Vec<(String, u32)>,
     tx: Sender<Request>,
     rx: Receiver<Ready>,
     variant: IconVariant,
@@ -192,6 +211,9 @@ impl IconCache {
             map: HashMap::new(),
             pending: HashMap::new(),
             retry: Vec::new(),
+            recheck_at: Vec::new(),
+            recheck: Vec::new(),
+            replaced: Vec::new(),
             tx,
             rx,
             variant: IconVariant::default(),
@@ -241,7 +263,14 @@ impl IconCache {
                 id: self.next_id,
             };
             let _ = self.tx.send(req.clone());
-            self.pending.insert(k, InFlight { req, attempts: 0 });
+            self.pending.insert(
+                k,
+                InFlight {
+                    req,
+                    attempts: 0,
+                    recheck: false,
+                },
+            );
         }
         Lookup::Pending
     }
@@ -266,6 +295,12 @@ impl IconCache {
                 // Dropped while in flight: an old variant, or a file whose icon changed.
                 continue;
             };
+            if f.recheck {
+                let req = f.req.clone();
+                self.pending.remove(&k);
+                self.finish_recheck(k, req, r.image);
+                continue;
+            }
             if let Some(e) = r.error {
                 self.stats.first_error.get_or_insert(e);
             }
@@ -291,6 +326,9 @@ impl IconCache {
                 }
                 None => self.stats.failed += 1,
             }
+            if f.req.icon_only && !self.recheck_at.is_empty() {
+                self.recheck.push(f.req.clone());
+            }
             self.pending.remove(&k);
             self.map.insert(k, r.image.map(Rc::new));
             n += 1;
@@ -301,33 +339,71 @@ impl IconCache {
         n
     }
 
+    /// A re-check came back: keeps the picture shown unless the shell now hands back a
+    /// different one (a failure keeps it too).
+    fn finish_recheck(&mut self, k: (String, u32), req: Request, image: Option<Image>) {
+        self.stats.rechecked += 1;
+        if let Some(img) = image
+            && let Some(shown) = self.map.get_mut(&k)
+            && shown.as_ref().is_none_or(|s| {
+                (s.width, s.height) != (img.width, img.height) || s.bgra != img.bgra
+            })
+        {
+            *shown = Some(Rc::new(img));
+            self.stats.replaced += 1;
+            self.replaced.push(k);
+        }
+        if !self.recheck_at.is_empty() {
+            self.recheck.push(req);
+        }
+    }
+
+    /// Asks every icon (not the thumbnails) again at `RECHECK_AFTER_START_S`.
+    pub fn recheck_after_start(&mut self) {
+        let now = Instant::now();
+        self.recheck_at = RECHECK_AFTER_START_S
+            .iter()
+            .map(|s| now + Duration::from_secs(*s))
+            .collect();
+    }
+
+    /// Draw keys (see `draw_key`) of the icons re-checks replaced since the last call.
+    pub fn take_replaced(&mut self) -> HashSet<String> {
+        self.replaced
+            .drain(..)
+            .map(|(k, px)| format!("{k}@{px}"))
+            .collect()
+    }
+
     /// One line per burst of extractions (startup, an icon size change, new files), once
     /// nothing is pending any more; at info only when something went wrong.
     fn log_stats(&mut self) {
         let s = std::mem::take(&mut self.stats);
-        if s.ok + s.failed == 0 {
+        if s.ok + s.failed + s.rechecked == 0 {
             return;
         }
         let error = s
             .first_error
             .map(|e| format!("{:#010x}", e as u32))
             .unwrap_or_default();
-        if s.failed + s.retried + s.smaller > 0 {
+        if s.failed + s.retried + s.smaller + s.replaced > 0 {
             tracing::info!(
                 ok = s.ok,
                 failed = s.failed,
                 retried = s.retried,
                 smaller = s.smaller,
+                rechecked = s.rechecked,
+                replaced = s.replaced,
                 error = %error,
                 "icons extracted"
             );
         } else {
-            tracing::debug!(ok = s.ok, "icons extracted");
+            tracing::debug!(ok = s.ok, rechecked = s.rechecked, "icons extracted");
         }
     }
 
-    /// Re-queues the retries that are due; returns how long until the next one (None = no
-    /// retries outstanding), so the caller can arm a timer.
+    /// Re-queues the retries and the re-check pass that are due; returns how long until the
+    /// next one (None = nothing outstanding), so the caller can arm a timer.
     pub fn flush_retries(&mut self) -> Option<Duration> {
         let now = Instant::now();
         let mut i = 0;
@@ -341,9 +417,35 @@ impl IconCache {
                 i += 1;
             }
         }
+        if self.recheck_at.first().is_some_and(|t| *t <= now) {
+            self.recheck_at.remove(0);
+            for req in std::mem::take(&mut self.recheck) {
+                let k = (req.key.clone(), req.size_px);
+                // Dropped since (`invalidate`, `sweep`, `set_variant`) or asked for afresh.
+                if !self.map.contains_key(&k) || self.pending.contains_key(&k) {
+                    continue;
+                }
+                self.next_id += 1;
+                let req = Request {
+                    id: self.next_id,
+                    ..req
+                };
+                let _ = self.tx.send(req.clone());
+                self.pending.insert(
+                    k,
+                    InFlight {
+                        req,
+                        attempts: RETRY_ATTEMPTS,
+                        recheck: true,
+                    },
+                );
+            }
+        }
         self.retry
             .iter()
-            .map(|(due, _)| due.saturating_duration_since(now))
+            .map(|(due, _)| due)
+            .chain(self.recheck_at.first())
+            .map(|due| due.saturating_duration_since(now))
             .min()
     }
 
@@ -557,6 +659,59 @@ mod tests {
         done.send(ready(3, "ext:.pf-other")).unwrap();
         assert_eq!(cache.drain_results(), 0);
         assert_eq!(cache.len(), 0);
+    }
+
+    #[test]
+    fn rechecks_after_start_replace_changed_pictures_only() {
+        let mut cache = IconCache::new(HWND::default());
+        let (done, rx) = channel();
+        cache.rx = rx;
+        cache.recheck_after_start();
+        let path = Path::new("C:\\pf-test-missing.lnk");
+        let keys: Vec<String> = (0..3).map(|i| format!("ext:.pf-recheck{i}")).collect();
+        let answer = |cache: &mut IconCache, k: &str, image: Option<u8>| {
+            let id = cache.pending[&(k.to_string(), 48)].req.id;
+            done.send(Ready {
+                key: k.to_string(),
+                size_px: 48,
+                id,
+                image: image.map(|v| Image::solid(1, 1, [v; 3])),
+                error: None,
+            })
+            .unwrap();
+            cache.drain_results();
+        };
+        // First answers: a generic picture, a failure (no file, so no quick retry), the real one.
+        for (k, first) in keys.iter().zip([Some(1), None, Some(3)]) {
+            let key = IconKey::ByExt(k.trim_start_matches("ext:").to_string());
+            assert!(matches!(cache.get(&key, path, 48, true), Lookup::Pending));
+            answer(&mut cache, k, first);
+        }
+        assert!(cache.take_replaced().is_empty());
+        assert!(
+            cache
+                .flush_retries()
+                .is_some_and(|d| d > Duration::from_secs(20))
+        );
+        for pass in 0..RECHECK_AFTER_START_S.len() {
+            cache.recheck_at[0] = Instant::now();
+            cache.flush_retries();
+            assert_eq!(cache.pending.len(), 3);
+            // The shell now has the real pictures; the third one did not change.
+            for (k, now) in keys.iter().zip([Some(9), Some(9), Some(3)]) {
+                answer(&mut cache, k, now);
+            }
+            let replaced = cache.take_replaced();
+            if pass == 0 {
+                let want: HashSet<String> = keys[..2].iter().map(|k| format!("{k}@48")).collect();
+                assert_eq!(replaced, want);
+            } else {
+                assert!(replaced.is_empty());
+            }
+        }
+        assert!(cache.map[&(keys[1].clone(), 48)].is_some());
+        // Done: nothing left to ask, no timer.
+        assert!(cache.flush_retries().is_none() && cache.recheck.is_empty());
     }
 
     #[test]
