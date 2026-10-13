@@ -278,10 +278,10 @@ dependencies = [
  "clap",
  "pecofence-core",
  "pecofence-ipc",
+ "pecofence-platform",
  "serde",
  "serde_json",
  "uuid",
- "windows-sys",
 ]
 
 [[package]]
