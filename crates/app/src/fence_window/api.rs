@@ -1567,6 +1567,28 @@ impl FenceWindow {
         });
     }
 
+    /// The icon cache has new pictures for these draw keys (`IconCache::take_replaced`):
+    /// items showing one of them, or its failure placeholder, take the new one.
+    pub fn reload_icons(&self, replaced: &HashSet<String>) {
+        self.with_view(|v| {
+            let px = (v.icon_dip() * v.scale()).round() as u32;
+            let mut any = false;
+            {
+                let icons = v.icons.borrow();
+                for item in &mut v.items {
+                    if replaced.contains(&icons.draw_key(&item.icon_key, px)) {
+                        item.icon_px = 0;
+                        item.icon_failed = false;
+                        any = true;
+                    }
+                }
+            }
+            if any && !(v.rolled_up && v.roll_anim.is_none()) {
+                let _ = v.redraw_content();
+            }
+        });
+    }
+
     /// Redraws only if icons are still missing (used after the icon worker delivers results).
     pub fn redraw_if_pending_icons(&self) {
         self.with_view(|v| {

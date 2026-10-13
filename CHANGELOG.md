@@ -3,6 +3,7 @@
 ## Unreleased
 
 - PecoFence keeps less memory between uses. Half a minute after the fences last drew something, it hands the memory the last use touched back to Windows, every time instead of only once after startup; what it needs again comes back on its own, with no visible delay (the first animation after a pause measured the same as before). On a 4K monitor the memory Task Manager shows for PecoFence at rest stays at about 2 to 5 MB, where it used to grow to about 28 MB after some hours of use. Settings, Peek and a name being edited keep their memory while they are open.
+- After a restart, shortcuts in the fences no longer stay a plain page icon (or Windows' blank program icon) instead of their own (feedback #11). PecoFence starts while Windows is still busy signing in: it can answer "not ready yet" for a shortcut's icon for longer than PecoFence waited, or hand back the blank icon while the drive a shortcut points to is not there yet, and that first answer stayed until the file changed or PecoFence restarted. Explorer's desktop shows the icons it remembered from last time meanwhile. After a start at sign-in, PecoFence now asks for every icon again half a minute, two minutes and ten minutes later and swaps in the ones that came back different; the log counts them.
 
 ## 0.2.0
 
