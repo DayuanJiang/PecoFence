@@ -606,6 +606,21 @@ pub unsafe fn FillRect(hdc: HDC, lprc: *const RECT, hbr: HBRUSH) -> i32 {
     unsafe { FillRect(hdc, lprc, hbr) }
 }
 #[inline]
+pub unsafe fn FindResourceW<P1, P2>(hmodule: Option<HMODULE>, lpname: P1, lptype: P2) -> HRSRC
+where
+    P1: windows_core::Param<windows_core::PCWSTR>,
+    P2: windows_core::Param<windows_core::PCWSTR>,
+{
+    windows_core::link!("kernel32.dll" "system" fn FindResourceW(hmodule : HMODULE, lpname : windows_core::PCWSTR, lptype : windows_core::PCWSTR) -> HRSRC);
+    unsafe {
+        FindResourceW(
+            hmodule.unwrap_or(core::mem::zeroed()) as _,
+            lpname.param().abi(),
+            lptype.param().abi(),
+        )
+    }
+}
+#[inline]
 pub unsafe fn FindWindowExW<P2, P3>(
     hwndparent: Option<HWND>,
     hwndchildafter: Option<HWND>,
@@ -1201,9 +1216,19 @@ where
     }
 }
 #[inline]
+pub unsafe fn LoadResource(hmodule: Option<HMODULE>, hresinfo: HRSRC) -> HGLOBAL {
+    windows_core::link!("kernel32.dll" "system" fn LoadResource(hmodule : HMODULE, hresinfo : HRSRC) -> HGLOBAL);
+    unsafe { LoadResource(hmodule.unwrap_or(core::mem::zeroed()) as _, hresinfo) }
+}
+#[inline]
 pub unsafe fn LocalFree(hmem: HLOCAL) -> HLOCAL {
     windows_core::link!("kernel32.dll" "system" fn LocalFree(hmem : HLOCAL) -> HLOCAL);
     unsafe { LocalFree(hmem) }
+}
+#[inline]
+pub unsafe fn LockResource(hresdata: HGLOBAL) -> *mut core::ffi::c_void {
+    windows_core::link!("kernel32.dll" "system" fn LockResource(hresdata : HGLOBAL) -> *mut core::ffi::c_void);
+    unsafe { LockResource(hresdata) }
 }
 #[inline]
 pub unsafe fn MapVirtualKeyExW(ucode: u32, umaptype: u32, dwhkl: Option<HKL>) -> u32 {
@@ -2231,6 +2256,11 @@ pub unsafe fn Shell_NotifyIconW(
 pub unsafe fn ShowWindow(hwnd: HWND, ncmdshow: i32) -> windows_core::BOOL {
     windows_core::link!("user32.dll" "system" fn ShowWindow(hwnd : HWND, ncmdshow : i32) -> windows_core::BOOL);
     unsafe { ShowWindow(hwnd, ncmdshow) }
+}
+#[inline]
+pub unsafe fn SizeofResource(hmodule: Option<HMODULE>, hresinfo: HRSRC) -> u32 {
+    windows_core::link!("kernel32.dll" "system" fn SizeofResource(hmodule : HMODULE, hresinfo : HRSRC) -> u32);
+    unsafe { SizeofResource(hmodule.unwrap_or(core::mem::zeroed()) as _, hresinfo) }
 }
 #[inline]
 pub unsafe fn StackWalk64(
@@ -3733,6 +3763,9 @@ pub struct HPALETTE(pub *mut core::ffi::c_void);
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub struct HRAWINPUT(pub *mut core::ffi::c_void);
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub struct HRSRC(pub *mut core::ffi::c_void);
 pub const HTBOTTOM: i32 = 15;
 pub const HTBOTTOMLEFT: i32 = 16;
 pub const HTBOTTOMRIGHT: i32 = 17;
@@ -15543,6 +15576,7 @@ pub const RI_MOUSE_LEFT_BUTTON_UP: i32 = 2;
 pub const RI_MOUSE_RIGHT_BUTTON_DOWN: i32 = 4;
 pub const RI_MOUSE_RIGHT_BUTTON_UP: i32 = 8;
 pub const RRF_RT_REG_DWORD: i32 = 16;
+pub const RT_VERSION: windows_core::PCWSTR = windows_core::PCWSTR(16 as _);
 pub const SC_MOVE: i32 = 61456;
 pub const SC_SIZE: i32 = 61440;
 pub const SDDL_REVISION_1: i32 = 1;

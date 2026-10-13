@@ -862,16 +862,51 @@ pub struct DWRITE_GLYPH_RUN_DESCRIPTION {
     pub textPosition: u32,
 }
 pub type DWRITE_MEASURING_MODE = i32;
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct DXGI_ADAPTER_DESC {
+    pub Description: [u16; 128],
+    pub VendorId: u32,
+    pub DeviceId: u32,
+    pub SubSysId: u32,
+    pub Revision: u32,
+    pub DedicatedVideoMemory: usize,
+    pub DedicatedSystemMemory: usize,
+    pub SharedSystemMemory: usize,
+    pub AdapterLuid: LUID,
+}
+impl Default for DXGI_ADAPTER_DESC {
+    fn default() -> Self {
+        unsafe { core::mem::zeroed() }
+    }
+}
 pub type DXGI_FORMAT = i32;
 pub const DXGI_FORMAT_A8_UNORM: DXGI_FORMAT = 65;
 pub const DXGI_FORMAT_B8G8R8A8_UNORM: DXGI_FORMAT = 87;
 pub const DXGI_FORMAT_R16G16B16A16_FLOAT: DXGI_FORMAT = 10;
+pub type DXGI_RESIDENCY = i32;
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct DXGI_SAMPLE_DESC {
     pub Count: u32,
     pub Quality: u32,
 }
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct DXGI_SHARED_RESOURCE {
+    pub Handle: HANDLE,
+}
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct DXGI_SURFACE_DESC {
+    pub Width: u32,
+    pub Height: u32,
+    pub Format: DXGI_FORMAT,
+    pub SampleDesc: DXGI_SAMPLE_DESC,
+}
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub struct DXGI_USAGE(pub u32);
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub struct HANDLE(pub *mut core::ffi::c_void);
@@ -8654,6 +8689,74 @@ pub struct IDWriteTextLayout_Vtbl {
 }
 impl windows_core::RuntimeName for IDWriteTextLayout {}
 windows_core::imp::define_interface!(
+    IDXGIAdapter,
+    IDXGIAdapter_Vtbl,
+    0x2411e7e1_12ac_4ccf_bd14_9798e8534dc0
+);
+impl core::ops::Deref for IDXGIAdapter {
+    type Target = IDXGIObject;
+    fn deref(&self) -> &Self::Target {
+        unsafe { core::mem::transmute(self) }
+    }
+}
+windows_core::imp::interface_hierarchy!(IDXGIAdapter, windows_core::IUnknown, IDXGIObject);
+impl IDXGIAdapter {
+    pub(crate) unsafe fn EnumOutputs(
+        &self,
+        output: u32,
+        ppoutput: *mut Option<IDXGIOutput>,
+    ) -> windows_core::HRESULT {
+        unsafe {
+            (windows_core::Interface::vtable(self).EnumOutputs)(
+                windows_core::Interface::as_raw(self),
+                output,
+                core::mem::transmute(ppoutput),
+            )
+        }
+    }
+    pub(crate) unsafe fn GetDesc(&self, pdesc: *mut DXGI_ADAPTER_DESC) -> windows_core::HRESULT {
+        unsafe {
+            (windows_core::Interface::vtable(self).GetDesc)(
+                windows_core::Interface::as_raw(self),
+                pdesc as _,
+            )
+        }
+    }
+    pub(crate) unsafe fn CheckInterfaceSupport(
+        &self,
+        interfacename: *const windows_core::GUID,
+    ) -> windows_core::Result<i64> {
+        unsafe {
+            let mut result__ = core::mem::zeroed();
+            (windows_core::Interface::vtable(self).CheckInterfaceSupport)(
+                windows_core::Interface::as_raw(self),
+                interfacename,
+                &mut result__,
+            )
+            .map(|| result__)
+        }
+    }
+}
+#[repr(C)]
+pub struct IDXGIAdapter_Vtbl {
+    pub base__: IDXGIObject_Vtbl,
+    pub EnumOutputs: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        u32,
+        *mut *mut core::ffi::c_void,
+    ) -> windows_core::HRESULT,
+    pub GetDesc: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        *mut DXGI_ADAPTER_DESC,
+    ) -> windows_core::HRESULT,
+    pub CheckInterfaceSupport: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        *const windows_core::GUID,
+        *mut i64,
+    ) -> windows_core::HRESULT,
+}
+impl windows_core::RuntimeName for IDXGIAdapter {}
+windows_core::imp::define_interface!(
     IDXGIDevice,
     IDXGIDevice_Vtbl,
     0x54ec77fa_1377_44e6_8c32_88fd5f44c84c
@@ -8665,14 +8768,95 @@ impl core::ops::Deref for IDXGIDevice {
     }
 }
 windows_core::imp::interface_hierarchy!(IDXGIDevice, windows_core::IUnknown, IDXGIObject);
+impl IDXGIDevice {
+    pub(crate) unsafe fn GetAdapter(&self) -> windows_core::Result<IDXGIAdapter> {
+        unsafe {
+            let mut result__ = core::mem::zeroed();
+            (windows_core::Interface::vtable(self).GetAdapter)(
+                windows_core::Interface::as_raw(self),
+                &mut result__,
+            )
+            .and_then(|| windows_core::imp::Type::from_abi(result__))
+        }
+    }
+    pub(crate) unsafe fn CreateSurface(
+        &self,
+        pdesc: *const DXGI_SURFACE_DESC,
+        numsurfaces: u32,
+        usage: DXGI_USAGE,
+        psharedresource: Option<*const DXGI_SHARED_RESOURCE>,
+        ppsurface: *mut Option<IDXGISurface>,
+    ) -> windows_core::HRESULT {
+        unsafe {
+            (windows_core::Interface::vtable(self).CreateSurface)(
+                windows_core::Interface::as_raw(self),
+                pdesc,
+                numsurfaces,
+                usage,
+                psharedresource.unwrap_or(core::mem::zeroed()) as _,
+                core::mem::transmute(ppsurface),
+            )
+        }
+    }
+    pub(crate) unsafe fn QueryResourceResidency(
+        &self,
+        ppresources: *const Option<windows_core::IUnknown>,
+        presidencystatus: *mut DXGI_RESIDENCY,
+        numresources: u32,
+    ) -> windows_core::HRESULT {
+        unsafe {
+            (windows_core::Interface::vtable(self).QueryResourceResidency)(
+                windows_core::Interface::as_raw(self),
+                core::mem::transmute(ppresources),
+                presidencystatus as _,
+                numresources,
+            )
+        }
+    }
+    pub(crate) unsafe fn SetGPUThreadPriority(&self, priority: i32) -> windows_core::HRESULT {
+        unsafe {
+            (windows_core::Interface::vtable(self).SetGPUThreadPriority)(
+                windows_core::Interface::as_raw(self),
+                priority,
+            )
+        }
+    }
+    pub(crate) unsafe fn GetGPUThreadPriority(&self) -> windows_core::Result<i32> {
+        unsafe {
+            let mut result__ = core::mem::zeroed();
+            (windows_core::Interface::vtable(self).GetGPUThreadPriority)(
+                windows_core::Interface::as_raw(self),
+                &mut result__,
+            )
+            .map(|| result__)
+        }
+    }
+}
 #[repr(C)]
 pub struct IDXGIDevice_Vtbl {
     pub base__: IDXGIObject_Vtbl,
-    GetAdapter: usize,
-    CreateSurface: usize,
-    QueryResourceResidency: usize,
-    SetGPUThreadPriority: usize,
-    GetGPUThreadPriority: usize,
+    pub GetAdapter: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        *mut *mut core::ffi::c_void,
+    ) -> windows_core::HRESULT,
+    pub CreateSurface: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        *const DXGI_SURFACE_DESC,
+        u32,
+        DXGI_USAGE,
+        *const DXGI_SHARED_RESOURCE,
+        *mut *mut core::ffi::c_void,
+    ) -> windows_core::HRESULT,
+    pub QueryResourceResidency: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        *const *mut core::ffi::c_void,
+        *mut DXGI_RESIDENCY,
+        u32,
+    ) -> windows_core::HRESULT,
+    pub SetGPUThreadPriority:
+        unsafe extern "system" fn(*mut core::ffi::c_void, i32) -> windows_core::HRESULT,
+    pub GetGPUThreadPriority:
+        unsafe extern "system" fn(*mut core::ffi::c_void, *mut i32) -> windows_core::HRESULT,
 }
 impl windows_core::RuntimeName for IDXGIDevice {}
 windows_core::imp::define_interface!(
@@ -8791,6 +8975,35 @@ pub struct IDXGIObject_Vtbl {
 }
 impl windows_core::RuntimeName for IDXGIObject {}
 windows_core::imp::define_interface!(
+    IDXGIOutput,
+    IDXGIOutput_Vtbl,
+    0xae02eedb_c735_4690_8d52_5a8dc20213aa
+);
+impl core::ops::Deref for IDXGIOutput {
+    type Target = IDXGIObject;
+    fn deref(&self) -> &Self::Target {
+        unsafe { core::mem::transmute(self) }
+    }
+}
+windows_core::imp::interface_hierarchy!(IDXGIOutput, windows_core::IUnknown, IDXGIObject);
+#[repr(C)]
+pub struct IDXGIOutput_Vtbl {
+    pub base__: IDXGIObject_Vtbl,
+    GetDesc: usize,
+    GetDisplayModeList: usize,
+    FindClosestMatchingMode: usize,
+    WaitForVBlank: usize,
+    TakeOwnership: usize,
+    ReleaseOwnership: usize,
+    GetGammaControlCapabilities: usize,
+    SetGammaControl: usize,
+    GetGammaControl: usize,
+    SetDisplaySurface: usize,
+    GetDisplaySurfaceData: usize,
+    GetFrameStatistics: usize,
+}
+impl windows_core::RuntimeName for IDXGIOutput {}
+windows_core::imp::define_interface!(
     IDXGISurface,
     IDXGISurface_Vtbl,
     0xcafcb56c_6ac3_4889_bf47_9e23bbd260ec
@@ -8887,6 +9100,12 @@ pub struct IWICImagingFactory_Vtbl {
     CreateQueryWriterFromReader: usize,
 }
 impl windows_core::RuntimeName for IWICImagingFactory {}
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct LUID {
+    pub LowPart: u32,
+    pub HighPart: i32,
+}
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct RECT {

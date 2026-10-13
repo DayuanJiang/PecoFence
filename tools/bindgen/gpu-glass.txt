@@ -4,6 +4,9 @@
     ID2D1Device
     ID2D1DeviceContext
     IDXGIDevice3
+    IDXGIDevice
+    IDXGIAdapter
+    DXGI_ADAPTER_DESC
     ID3D11Device
     ID3D11DeviceContext
     ID2D1Effect

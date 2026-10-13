@@ -246,6 +246,7 @@ impl App {
                 self.state.workspace_item_count()
             ),
             "memory": format!("{mem_mb:.1} MB"),
+            "gpu": fact(self.ctx.stack.adapter().unwrap_or_else(|| "unknown".to_string())),
         });
         let mut log = String::new();
         if self.feedback.previous_run_crashed
