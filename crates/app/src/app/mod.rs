@@ -1184,7 +1184,7 @@ impl App {
             }
             if app.state.config.settings.hide_real_icons && !app.no_hide_icons {
                 // At logon Explorer's desktop may not be ready yet: retried from the anchor's
-                // periodic check; housekeeping resets the setting if it never succeeds.
+                // periodic check; housekeeping tells the user if it never succeeds.
                 a.request_hide_desktop_icons();
             }
         }
@@ -1304,8 +1304,8 @@ impl App {
         for window in self.fences.values() {
             window.check_dpi();
         }
-        // Startup hide that kept failing: converge to the same end state as apply_settings
-        // (setting reflects reality, user is told) instead of silently showing the toggle on.
+        // Startup hide that kept failing: stop retrying for this run and tell the user. The
+        // setting stays on, so the next start (or turning it off and on) tries again.
         if self.state.config.settings.hide_real_icons {
             let gave_up = self
                 .anchor
@@ -1317,11 +1317,8 @@ impl App {
                     a.cancel_pending_hide();
                 }
                 tracing::warn!(
-                    "hiding desktop icons kept failing after startup; turning the setting off"
+                    "hiding desktop icons kept failing after startup; trying again at the next start"
                 );
-                self.state.config.settings.hide_real_icons = false;
-                self.settings_mutated();
-                self.desktop_icons_setting_changed();
                 if let Some(t) = &self.tray {
                     t.show_info(
                         "PecoFence",
