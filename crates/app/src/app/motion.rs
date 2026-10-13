@@ -100,17 +100,34 @@ impl App {
         }
     }
 
-    /// `TIMER_STARTUP_TRIM`: retried while a frame was drawn in the last second, so an
-    /// animation never pays for the pages it touches again.
-    pub(super) fn trim_after_startup(&mut self) {
+    /// `TIMER_IDLE_TRIM`: retried while a frame was drawn in the last second, so an animation
+    /// never pays for the pages it touches again, and while Settings, Peek or an inline rename
+    /// is open (they are in use without drawing a fence).
+    pub(super) fn trim_if_idle(&mut self) {
         if self
             .frame_prev
             .is_some_and(|t| t.elapsed() < Duration::from_secs(1))
         {
-            window::set_timer(self.control.hwnd(), TIMER_STARTUP_TRIM, GPU_TRIM_IDLE_MS);
+            window::set_timer(self.control.hwnd(), TIMER_IDLE_TRIM, GPU_TRIM_IDLE_MS);
             return;
         }
+        if self.settings.is_some()
+            || self.peek.is_some()
+            || crate::rename::active_target().is_some()
+        {
+            window::set_timer(self.control.hwnd(), TIMER_IDLE_TRIM, IDLE_TRIM_MS);
+            return;
+        }
+        let before = pecofence_platform::memstats::MemoryStats::current().ok();
+        let started = Instant::now();
         pecofence_platform::memstats::trim_working_set();
+        if let Some(m) = before {
+            tracing::debug!(
+                private_ws_mb = m.private_working_set / (1 << 20),
+                ms = started.elapsed().as_secs_f32() * 1000.0,
+                "working set handed back"
+            );
+        }
     }
 
     pub(super) fn on_icons_ready(&mut self) {
