@@ -546,6 +546,35 @@ pub fn has_shell_items(data: &IDataObject) -> bool {
     .any(|fmt| unsafe { data.QueryGetData(fmt).is_ok() })
 }
 
+/// Does the drag hold one of the desktop's own namespace items (This PC, the Recycle Bin,
+/// OneDrive, the user's folder)? The icons of OneDrive and of the user's folder also name that
+/// folder in `CF_HDROP`, but the folder is not theirs to move (moving OneDrive's fails with
+/// "0x80004001 Not implemented").
+pub fn has_desktop_namespace_item(data: &IDataObject) -> bool {
+    let fmt = hglobal_format(registered_format(
+        "Shell IDList Array",
+        &SHELL_IDLIST_FORMAT,
+    ));
+    hglobal_bytes(data, &fmt).is_some_and(|b| ida_has_root_item(&b))
+}
+
+/// Reads a `CIDA` (item count, then the offsets of the parent's ID list and of each item's):
+/// the parent is the desktop (an empty list) and an item is a root namespace item (its first
+/// ID has type 0x1F).
+fn ida_has_root_item(b: &[u8]) -> bool {
+    let u32_at = |i: usize| {
+        b.get(i..i + 4)
+            .map(|s| u32::from_le_bytes([s[0], s[1], s[2], s[3]]) as usize)
+    };
+    let Some(count) = u32_at(0) else {
+        return false;
+    };
+    let on_desktop = u32_at(4).and_then(|o| b.get(o..o + 2)) == Some(&[0, 0][..]);
+    on_desktop
+        && (1..=count.min(1 << 16))
+            .any(|k| u32_at(4 + 4 * k).and_then(|o| b.get(o + 2)) == Some(&0x1F))
+}
+
 /// Hands a drop to the shell's own drop target for `folder` — what dropping onto that folder's
 /// icon in Explorer runs — for data we do not take apart ourselves (see [`has_shell_items`]):
 /// the shell writes the mail as `.msg`, creates the Start-menu app's shortcut, asks about name
@@ -1038,6 +1067,25 @@ mod effect_tests {
         assert!(!same_volume(Some(r"\\nas\share"), Some(desk)));
         assert!(same_volume(None, Some(desk)));
         assert!(same_volume(Some("e:"), None));
+    }
+
+    /// A `CIDA` from the desktop: OneDrive (a root item, type 0x1F) among files (type 0x32).
+    #[test]
+    fn root_items_are_found_in_a_desktop_ida() {
+        // count 2; offsets: parent 16, items 18 and 24; parent = empty list; each item one ID
+        // (cb 4: cb, type, one byte) and its terminator.
+        let ida = |first: u8, parent_cb: u8| {
+            let mut b = vec![2, 0, 0, 0, 16, 0, 0, 0, 18, 0, 0, 0, 24, 0, 0, 0];
+            b.extend([parent_cb, 0]);
+            b.extend([4, 0, 0x32, 0, 0, 0]);
+            b.extend([4, 0, first, 0, 0, 0]);
+            b
+        };
+        assert!(ida_has_root_item(&ida(0x1F, 0)));
+        assert!(!ida_has_root_item(&ida(0x31, 0)));
+        // Not on the desktop (a folder's items): no root item there.
+        assert!(!ida_has_root_item(&ida(0x1F, 4)));
+        assert!(!ida_has_root_item(&[2, 0, 0]));
     }
 
     #[test]

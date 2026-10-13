@@ -127,6 +127,16 @@ fn marquee_rect(a: POINT, b: POINT) -> RECT {
     }
 }
 
+/// A press on one of Windows' own desktop icons (they show while 「隐藏 Windows 桌面图标」 is off)
+/// selects, opens or drags that icon: it starts no marquee and counts for no quick hide.
+fn on_icon(hit: HWND, pt: POINT) -> bool {
+    let on = shell_icons::desktop_icon_hovered(hit);
+    if on {
+        tracing::debug!(?pt, "press on a Windows desktop icon");
+    }
+    on
+}
+
 /// Ctrl or Shift is down (physical state; the desktop, not us, has the keyboard focus).
 fn additive_modifier() -> bool {
     window::key_down_async(msg::VK_CONTROL) || window::key_down_async(msg::VK_SHIFT)
@@ -825,12 +835,13 @@ impl DesktopAnchor {
         }
     }
 
-    /// The left button is down at `pt`. On the bare desktop (not over one of our windows) a
-    /// marquee may start there while the fences show; returns false anywhere else.
+    /// The left button is down at `pt`. On the bare desktop (not over one of our windows or one
+    /// of Windows' own icons) a marquee may start there while the fences show; returns false
+    /// anywhere else.
     fn begin_marquee(&mut self, pt: POINT) -> bool {
         let hit = desktop::window_from_point(pt.x, pt.y);
         let root = desktop::root_ancestor(hit);
-        if self.all_windows().contains(&root) || !self.is_desktop_window(hit) {
+        if self.all_windows().contains(&root) || !self.is_desktop_window(hit) || on_icon(hit, pt) {
             self.quick.marquee_origin = None;
             self.quick.marquee_live = false;
             return false;

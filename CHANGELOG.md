@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- With 「隐藏 Windows 桌面图标」 off, Windows' own desktop icons work next to the fences again (feedback #20, #27). PecoFence took a press on one of them for a press on empty desktop: double-clicking an icon opened it and also hid all fences, and dragging an icon selected every fence its path crossed. A press on a Windows icon now starts no double-click hide and no box. Dragging the OneDrive (or user folder) desktop icon onto a fence no longer tries to move that folder and fails with "0x80004001 Not implemented"; it makes a shortcut to it, as dropping This PC does.
 - PecoFence keeps less memory between uses. Half a minute after the fences last drew something, it hands the memory the last use touched back to Windows, every time instead of only once after startup; what it needs again comes back on its own, with no visible delay (the first animation after a pause measured the same as before). On a 4K monitor the memory Task Manager shows for PecoFence at rest stays at about 2 to 5 MB, where it used to grow to about 28 MB after some hours of use. Settings, Peek and a name being edited keep their memory while they are open.
 
 ## 0.2.0
