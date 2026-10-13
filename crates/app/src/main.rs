@@ -150,10 +150,13 @@ fn show_running_settings(instance: Option<&str>) {
     const STARTUP: std::time::Duration = std::time::Duration::from_secs(30);
     pecofence_platform::process::allow_foreground_handoff();
     let request = pecofence_ipc::Request::new(pecofence_ipc::Method::SettingsOpenUi);
+    let Ok(name) = pecofence_platform::pipe::ipc_pipe_name(instance) else {
+        return;
+    };
     let pipe = std::fs::OpenOptions::new()
         .write(true)
         .security_qos_flags(SECURITY_IDENTIFICATION)
-        .open(pecofence_core::brand::ipc_pipe_name(instance));
+        .open(name);
     let Ok(mut pipe) = pipe else {
         return;
     };

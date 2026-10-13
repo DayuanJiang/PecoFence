@@ -51,7 +51,7 @@ pub const TIMEOUT_HINT: &str =
 /// `internal`.
 pub fn send(instance: Option<&str>, method: Method, timeout_ms: u32) -> Result<Response, IpcError> {
     let timeout_ms = timeout_ms.max(MIN_TIMEOUT_MS);
-    let name = ipc_pipe_name(instance);
+    let name = pipe_name(instance)?;
     let request = Request::new(method).with_timeout(timeout_ms);
     let mut line = serde_json::to_string(&request)
         .map_err(|e| IpcError::internal(format!("cannot encode request: {e}")))?;
@@ -88,7 +88,7 @@ pub fn stream(
     mut on_line: impl FnMut(Response) -> bool,
 ) -> Result<bool, IpcError> {
     let timeout_ms = timeout_ms.max(MIN_TIMEOUT_MS);
-    let name = ipc_pipe_name(instance);
+    let name = pipe_name(instance)?;
     let request = Request::new(method).with_timeout(timeout_ms);
     let mut line = serde_json::to_string(&request)
         .map_err(|e| IpcError::internal(format!("cannot encode request: {e}")))?;
@@ -180,6 +180,61 @@ fn exchange(name: &str, line: &str) -> Result<Response, IpcError> {
     })
 }
 
+/// The pipe of the app running under this user's account ([`ipc_pipe_name`]).
+fn pipe_name(instance: Option<&str>) -> Result<String, IpcError> {
+    let sid = current_user_sid()
+        .map_err(|e| IpcError::internal(format!("cannot read the current user's SID: {e}")))?;
+    Ok(ipc_pipe_name(&sid, instance))
+}
+
+/// String SID (`S-1-5-21-…`) of the account this process runs as.
+fn current_user_sid() -> std::io::Result<String> {
+    use windows_sys::Win32::Foundation::{CloseHandle, HANDLE, LocalFree};
+    use windows_sys::Win32::Security::Authorization::ConvertSidToStringSidW;
+    use windows_sys::Win32::Security::{GetTokenInformation, TOKEN_QUERY, TOKEN_USER, TokenUser};
+    use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
+
+    let mut token: HANDLE = std::ptr::null_mut();
+    // SAFETY: GetCurrentProcess is a pseudo handle; `token` receives a handle closed below.
+    if unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token) } == 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    // TOKEN_USER and the SID it points to (at most 68 bytes); u64 keeps it pointer-aligned.
+    let mut buffer = [0u64; 32];
+    let mut needed = 0u32;
+    // SAFETY: the buffer is writable for the size passed; the token is ours.
+    let ok = unsafe {
+        GetTokenInformation(
+            token,
+            TokenUser,
+            buffer.as_mut_ptr().cast(),
+            std::mem::size_of_val(&buffer) as u32,
+            &mut needed,
+        )
+    };
+    let error = std::io::Error::last_os_error();
+    // SAFETY: we own the token handle.
+    unsafe { CloseHandle(token) };
+    if ok == 0 {
+        return Err(error);
+    }
+    // SAFETY: the call above filled the buffer with a TOKEN_USER whose Sid points inside it.
+    let sid = unsafe { (*buffer.as_ptr().cast::<TOKEN_USER>()).User.Sid };
+    let mut text = std::ptr::null_mut();
+    // SAFETY: `sid` points into `buffer`; `text` receives a NUL-terminated LocalAlloc string.
+    if unsafe { ConvertSidToStringSidW(sid, &mut text) } == 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    // SAFETY: `text` is NUL-terminated and freed exactly once, after it was copied.
+    let result = unsafe {
+        let len = (0..).take_while(|&i| *text.add(i) != 0).count();
+        let s = String::from_utf16_lossy(std::slice::from_raw_parts(text, len));
+        LocalFree(text.cast());
+        s
+    };
+    Ok(result)
+}
+
 fn closed() -> IpcError {
     IpcError::internal("connection closed by PecoFence")
         .hint("Check the app's log; if it crashed, start it again")
@@ -260,6 +315,20 @@ mod tests {
         )
         .unwrap_err();
         assert_eq!(err.code, ErrorCode::NotRunning);
+    }
+
+    #[test]
+    fn pipe_name_carries_this_users_sid() {
+        let name = pipe_name(Some("x")).expect("token query");
+        let sid = name
+            .strip_prefix(r"\\.\pipe\PecoFence.")
+            .and_then(|rest| rest.strip_suffix(".x"))
+            .unwrap_or_default();
+        assert!(sid.starts_with("S-1-"), "{name}");
+        assert!(
+            sid.split('-').skip(1).all(|p| p.parse::<u64>().is_ok()),
+            "{name}"
+        );
     }
 
     #[test]
