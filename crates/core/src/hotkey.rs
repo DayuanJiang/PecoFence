@@ -224,14 +224,19 @@ impl std::fmt::Display for Hotkey {
 
 pub const CTRL_ALT_SPACE: Hotkey = Hotkey::new(CTRL | ALT, SPACE);
 
-/// The quick choices on the settings page, which are also the fallbacks when the chosen
-/// shortcut is taken. Windows 10 and 11 keep Win+Space and Win+Shift+Space for the input
-/// switcher even with a single keyboard layout; these three are free on both.
+/// The quick choices on the settings page. Windows 10 and 11 keep Win+Space and
+/// Win+Shift+Space for the input switcher even with a single keyboard layout; these three are
+/// free on both.
 pub const PRESETS: [Hotkey; 3] = [
     CTRL_ALT_SPACE,
     Hotkey::new(WIN | ALT, SPACE),
     Hotkey::new(CTRL | SHIFT, SPACE),
 ];
+
+/// What Peek uses when the chosen shortcut is taken. Ctrl+Shift+Space is only taken when the
+/// user picks it: Excel, Visual Studio, VS Code and JetBrains IDEs use it, and a registered
+/// shortcut takes it from every program.
+pub const FALLBACKS: [Hotkey; 2] = [PRESETS[0], PRESETS[1]];
 
 #[cfg(test)]
 mod tests {

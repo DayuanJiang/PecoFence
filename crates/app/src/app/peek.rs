@@ -2,7 +2,7 @@
 //! end, and the search across all fences (`peek_search.rs` is its box).
 
 use super::*;
-use pecofence_core::hotkey::{PRESETS, Problem};
+use pecofence_core::hotkey::{FALLBACKS, PRESETS, Problem};
 
 /// A shortcut as the tray menu and messages show it: `Ctrl+Alt+空格`.
 pub(super) fn peek_hotkey_label(h: Hotkey) -> String {
@@ -90,9 +90,9 @@ impl App {
             self.peek_hotkey = None;
         }
         if let Some(h) = want {
-            // The chosen combination first, then the presets: Windows keeps Win+Space and
+            // The chosen combination first, then the fallbacks: Windows keeps Win+Space and
             // Win+Shift+Space (older files may name them), so a fallback keeps Peek usable.
-            let registered = std::iter::once(h).chain(PRESETS).find(|c| {
+            let registered = std::iter::once(h).chain(FALLBACKS).find(|c| {
                 hotkey::register(hwnd, HOTKEY_PEEK, c.mods | hotkey::mods::NOREPEAT, c.vk)
             });
             match registered {
