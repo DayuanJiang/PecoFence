@@ -126,10 +126,14 @@ const TIMER_SHUTDOWN_CANCELLED: usize = 58;
 /// Rebuilding the GPU device failed (driver reset in progress): try again, backing off.
 const TIMER_DEVICE_RETRY: usize = 59;
 const DEVICE_RETRY_FIRST_MS: u32 = 1_000;
-/// Once, after startup has settled: hands the memory only startup touched back to Windows
-/// (`memstats::trim_working_set`), waiting while anything draws.
-const TIMER_STARTUP_TRIM: usize = 60;
-const STARTUP_TRIM_MS: u32 = 30_000;
+/// Re-armed by every panel draw, like `TIMER_GPU_TRIM`: once drawing has been quiet this long,
+/// hands the memory the last burst of work touched back to Windows
+/// (`memstats::trim_working_set`). While memory is plentiful Windows leaves a normal-priority
+/// process's pages resident, so without it Task Manager keeps counting everything any earlier
+/// interaction touched (~28 MB after hours of use on a 4K PC), although an idle app touches
+/// ~3 MB.
+const TIMER_IDLE_TRIM: usize = 60;
+const IDLE_TRIM_MS: u32 = 30_000;
 const DEVICE_RETRY_MAX_MS: u32 = 30_000;
 const WALLPAPER_PREWARM_DELAY_MS: u32 = 3_000;
 const SPI_SETDESKWALLPAPER: usize = 0x0014;
@@ -521,12 +525,12 @@ impl App {
                                         app.trim_gpu_if_idle();
                                     }
                                 }
-                                TIMER_STARTUP_TRIM => {
+                                TIMER_IDLE_TRIM => {
                                     if let Ok(mut guard) = cell.try_borrow_mut()
                                         && let Some(app) = guard.as_mut()
                                     {
-                                        window::kill_timer(hwnd, TIMER_STARTUP_TRIM);
-                                        app.trim_after_startup();
+                                        window::kill_timer(hwnd, TIMER_IDLE_TRIM);
+                                        app.trim_if_idle();
                                     }
                                 }
                                 TIMER_WALLPAPER_PREWARM | TIMER_PREWARM_FINISH => {
@@ -1107,13 +1111,14 @@ impl App {
             }
         }
         // Installed before the first fence draws, and armed once: an idle startup with no
-        // later draw must still release its scratch memory.
+        // later draw must still release its scratch memory and hand its pages back.
         let control = app.control.hwnd();
         pecofence_render::stack::set_draw_hook(move || {
-            window::set_timer(control, TIMER_GPU_TRIM, GPU_TRIM_IDLE_MS)
+            window::set_timer(control, TIMER_GPU_TRIM, GPU_TRIM_IDLE_MS);
+            window::set_timer(control, TIMER_IDLE_TRIM, IDLE_TRIM_MS);
         });
         window::set_timer(control, TIMER_GPU_TRIM, GPU_TRIM_IDLE_MS);
-        window::set_timer(control, TIMER_STARTUP_TRIM, STARTUP_TRIM_MS);
+        window::set_timer(control, TIMER_IDLE_TRIM, IDLE_TRIM_MS);
         // Initial desktop sync + windows.
         app.sync_desktop_if_available("startup");
         app.state.refresh_all_portals();
