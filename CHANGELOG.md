@@ -3,6 +3,7 @@
 ## Unreleased
 
 - PecoFence keeps less memory between uses. Half a minute after the fences last drew something, it hands the memory the last use touched back to Windows, every time instead of only once after startup; what it needs again comes back on its own, with no visible delay (the first animation after a pause measured the same as before). On a 4K monitor the memory Task Manager shows for PecoFence at rest stays at about 2 to 5 MB, where it used to grow to about 28 MB after some hours of use. Settings, Peek and a name being edited keep their memory while they are open.
+- A report of PecoFence using far more memory than usual (a user saw 366 MB in Task Manager) can now say where it went. Task Manager's number only counts what sits in RAM right now, so the report's memory line also gives the memory PecoFence has reserved and its graphics memory (dedicated and shared), and the diagnostic log gets a memory line once an hour and whenever these grew by 64 MB, so the log shows when the growth happened and next to what.
 
 ## 0.2.0
 

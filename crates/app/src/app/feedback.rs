@@ -179,9 +179,18 @@ impl App {
             })
             .collect();
         let settings = &self.state.config.settings;
-        let mem_mb = pecofence_platform::memstats::MemoryStats::current()
-            .map(|m| m.private_working_set as f64 / (1024.0 * 1024.0))
-            .unwrap_or(0.0);
+        // Task Manager's number first, then where else memory sits: private commit counts
+        // pages Windows trimmed, GPU memory the surfaces and textures.
+        const MB: f64 = 1024.0 * 1024.0;
+        let mem = pecofence_platform::memstats::MemoryStats::current().unwrap_or_default();
+        let (gpu_local, gpu_shared) = self.ctx.stack.gpu_memory().unwrap_or_default();
+        let memory = format!(
+            "{:.1} MB (commit {:.1} MB, GPU {:.1} MB dedicated, {:.1} MB shared)",
+            mem.private_working_set as f64 / MB,
+            mem.private_commit as f64 / MB,
+            gpu_local as f64 / MB,
+            gpu_shared as f64 / MB,
+        );
         // The settings that change how the fences sit on the desktop.
         let behavior = format!(
             "showDesktop {:?}, zorder {:?}, hideIcons {}, quickHide {}, peek {} (dim {}, {:?}), autostart {}, iconSize {}",
@@ -245,7 +254,7 @@ impl App {
                 self.state.fences().len(),
                 self.state.workspace_item_count()
             ),
-            "memory": format!("{mem_mb:.1} MB"),
+            "memory": memory,
         });
         let mut log = String::new();
         if self.feedback.previous_run_crashed
