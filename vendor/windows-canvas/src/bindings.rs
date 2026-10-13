@@ -211,11 +211,7 @@ pub struct DWRITE_HIT_TEST_METRICS {
     pub isText: windows_core::BOOL,
     pub isTrimmed: windows_core::BOOL,
 }
-pub type DWRITE_FLOW_DIRECTION = i32;
-pub const DWRITE_FLOW_DIRECTION_RIGHT_TO_LEFT: DWRITE_FLOW_DIRECTION = 3;
 pub type DWRITE_MEASURING_MODE = i32;
-pub type DWRITE_READING_DIRECTION = i32;
-pub const DWRITE_READING_DIRECTION_TOP_TO_BOTTOM: DWRITE_READING_DIRECTION = 2;
 pub type DWRITE_PARAGRAPH_ALIGNMENT = i32;
 pub const DWRITE_PARAGRAPH_ALIGNMENT_CENTER: DWRITE_PARAGRAPH_ALIGNMENT = 2;
 pub const DWRITE_PARAGRAPH_ALIGNMENT_FAR: DWRITE_PARAGRAPH_ALIGNMENT = 1;
@@ -2264,28 +2260,6 @@ impl IDWriteTextFormat {
             )
         }
     }
-    pub(crate) unsafe fn SetReadingDirection(
-        &self,
-        readingdirection: DWRITE_READING_DIRECTION,
-    ) -> windows_core::HRESULT {
-        unsafe {
-            (windows_core::Interface::vtable(self).SetReadingDirection)(
-                windows_core::Interface::as_raw(self),
-                readingdirection,
-            )
-        }
-    }
-    pub(crate) unsafe fn SetFlowDirection(
-        &self,
-        flowdirection: DWRITE_FLOW_DIRECTION,
-    ) -> windows_core::HRESULT {
-        unsafe {
-            (windows_core::Interface::vtable(self).SetFlowDirection)(
-                windows_core::Interface::as_raw(self),
-                flowdirection,
-            )
-        }
-    }
 }
 #[repr(C)]
 pub struct IDWriteTextFormat_Vtbl {
@@ -2302,14 +2276,8 @@ pub struct IDWriteTextFormat_Vtbl {
         *mut core::ffi::c_void,
         DWRITE_WORD_WRAPPING,
     ) -> windows_core::HRESULT,
-    pub SetReadingDirection: unsafe extern "system" fn(
-        *mut core::ffi::c_void,
-        DWRITE_READING_DIRECTION,
-    ) -> windows_core::HRESULT,
-    pub SetFlowDirection: unsafe extern "system" fn(
-        *mut core::ffi::c_void,
-        DWRITE_FLOW_DIRECTION,
-    ) -> windows_core::HRESULT,
+    SetReadingDirection: usize,
+    SetFlowDirection: usize,
     SetIncrementalTabStop: usize,
     SetTrimming: usize,
     SetLineSpacing: usize,

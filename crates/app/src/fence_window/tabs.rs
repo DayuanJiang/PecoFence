@@ -168,10 +168,20 @@ pub(super) fn tab_strip_rects(
     gap: Option<usize>,
     available: f32,
 ) -> Vec<(f32, f32)> {
+    tab_strip_rects_with(natural, gap.map(|g| (g, TAB_MERGE_GAP_W)), available)
+}
+
+/// `tab_strip_rects` with the phantom gap's slot and length given (the left column opens one
+/// row).
+pub(super) fn tab_strip_rects_with(
+    natural: &[f32],
+    gap: Option<(usize, f32)>,
+    available: f32,
+) -> Vec<(f32, f32)> {
     // (natural width, is the phantom gap)
     let mut natural: Vec<(f32, bool)> = natural.iter().map(|n| (*n, false)).collect();
-    if let Some(g) = gap {
-        natural.insert(g.min(natural.len()), (TAB_MERGE_GAP_W, true));
+    if let Some((g, len)) = gap {
+        natural.insert(g.min(natural.len()), (len, true));
     }
     let available = available.max(0.0);
     let gap_w = TAB_GAP.min(available / natural.len().max(1) as f32 * 0.2);
@@ -227,23 +237,12 @@ impl FenceViewState {
         if incoming.resize(cw, ch).is_err() {
             return;
         }
-        let (left, title_h) = (self.content_x as f32, self.title_h_px() as f32);
+        let (left, top) = (self.content_x as f32, self.content_y as f32);
         let slide = dir.signum() as f32 * TAB_SLIDE_DIP * self.scale();
-        // A page coming down from above would cover the title row (the panels sit above the
-        // chrome): its top is clipped by as much as it is raised, and the clip opens with the
-        // same curve as the slide, so its visible edge stays at the title row's bottom.
-        let from_above = self.tabs_on_rail() && slide < 0.0;
-        if from_above {
-            let _ = self
-                .motion
-                .clip_insets(&incoming.visual, 0.0, -slide, 0.0, 0.0);
-        } else {
-            let _ = self.motion.clear_clip(&incoming.visual);
-        }
         if self.tabs_on_rail() {
-            incoming.visual.set_offset(left, title_h + slide, 0.0);
+            incoming.visual.set_offset(left, top + slide, 0.0);
         } else {
-            incoming.visual.set_offset(left + slide, title_h, 0.0);
+            incoming.visual.set_offset(left + slide, top, 0.0);
         }
         incoming.visual.set_opacity(0.0);
         incoming.visual.set_visible(true);
@@ -261,10 +260,7 @@ impl FenceViewState {
             || {
                 motion.fade_to(&o, 0.0, motion::FASTER, Curve::Linear)?;
                 motion.fade_to(&n, 1.0, motion::FASTER, Curve::Linear)?;
-                if from_above {
-                    motion.animate_clip_top(&n, 0.0, motion::FAST, Curve::Decelerate)?;
-                }
-                motion.move_to(&n, left, title_h, motion::FAST, Curve::Decelerate)
+                motion.move_to(&n, left, top, motion::FAST, Curve::Decelerate)
             },
             done,
         );
@@ -293,9 +289,8 @@ impl FenceViewState {
         let n = &self.content_panel.visual;
         let _ = self.motion.stop(n, Prop::Opacity);
         let _ = self.motion.stop(n, Prop::Offset);
-        let _ = self.motion.clear_clip(n);
         n.set_opacity(1.0);
-        n.set_offset(self.content_x as f32, self.title_h_px() as f32, 0.0);
+        n.set_offset(self.content_x as f32, self.content_y as f32, 0.0);
     }
 
     /// Takes an outgoing panel out of the tree and keeps it (at most two) for the next swap.
@@ -362,10 +357,10 @@ impl FenceViewState {
     }
 
     /// Tab header rects (x, w) in DIPs along the strip; empty unless there are 2+ tabs. In the
-    /// title row x is the window x; in the left column (`tabs_on_rail`) it is the window y and
-    /// w the pill's height. Natural length = caption + 16 padding, clamped to [48, 160]; when
-    /// the strip does not fit (beside the chevron zone, or in the column) every tab shrinks
-    /// proportionally (captions ellipsize).
+    /// title row x is the window x and the natural width is the caption + 16 padding, clamped
+    /// to [48, 160]; in the left column (`tabs_on_rail`) x is the window y and every row is
+    /// `RAIL_ROW_H` tall. When the strip does not fit (beside the chevron zone, or in the
+    /// column) every tab shrinks proportionally (captions ellipsize).
     pub(super) fn tab_rects(&self) -> Vec<(f32, f32)> {
         self.tab_rects_with_gap(self.merge_gap)
     }
@@ -379,9 +374,10 @@ impl FenceViewState {
         let (start, end) = self.tab_strip_bounds();
         let natural = self.tab_natural_widths();
         if self.tabs_on_rail() {
-            // The column fills from its top; 标题对齐 moves only the title row.
+            // The column fills from its top; 标题对齐 only moves a title row. A merge opens
+            // one row there.
             let shift = start - TAB_LEFT;
-            return tab_strip_rects(&natural, gap, end - start)
+            return tab_strip_rects_with(&natural, gap.map(|g| (g, RAIL_ROW_H)), end - start)
                 .into_iter()
                 .map(|(y, h)| (y + shift, h))
                 .collect();
@@ -409,9 +405,9 @@ impl FenceViewState {
     /// Start and end of the strip, in DIPs along it.
     fn tab_strip_bounds(&self) -> (f32, f32) {
         if self.tabs_on_rail() {
-            let top = self.theme.title_height + TAB_RAIL_PAD;
-            let bottom = self.theme.title_height + self.rail_len() - TAB_RAIL_PAD;
-            return (top, bottom.max(top));
+            // Under the free strip at the top, above the room the collapse chevron takes.
+            let bottom = self.rail_len() - RAIL_BOTTOM;
+            return (RAIL_TOP, bottom.max(RAIL_TOP));
         }
         let width = self.chrome_panel.size_px().0 as f32 / self.scale();
         // Rolled: the item count sits before the chevron; the strip must end before it. The
@@ -439,18 +435,74 @@ impl FenceViewState {
         self.tabs.len() > 1 && !self.tabs_on_rail()
     }
 
-    /// Width of the tab column in DIPs (0 without one); it grows with the largest caption size.
+    /// Width of the tab column in DIPs (0 without one), as measured by `sync_rail`.
     pub(super) fn rail_w(&self) -> f32 {
+        if self.tabs_on_rail() {
+            self.rail_dip
+        } else {
+            0.0
+        }
+    }
+
+    /// The column's width for the current tabs: the longest caption (semibold, as the shown
+    /// tab draws it) with its row's insets and a colour dot's room, 96 to 160 DIPs and at most
+    /// 45 % of the expanded fence, so the items keep their room.
+    pub(super) fn measure_rail_w(&self) -> f32 {
         if !self.tabs_on_rail() {
             return 0.0;
         }
-        let size = self
+        let widest = self
             .tabs
             .iter()
-            .map(|t| t.title_size.min(3))
-            .max()
-            .unwrap_or(1);
-        TAB_RAIL_W + 2.0 * f32::from(size)
+            .map(|t| {
+                pecofence_render::text::measure_width(
+                    &t.title,
+                    self.chrome.tab_format(t.title_size),
+                )
+            })
+            .fold(0.0, f32::max);
+        let dot = if self.tabs.iter().any(|t| t.color.is_some()) {
+            TAB_RAIL_DOT_ROOM
+        } else {
+            0.0
+        };
+        let room = TAB_RAIL_TEXT_ROOM + RAIL_ROW_INSET + RAIL_ROW_RIGHT;
+        let fence = self.expanded_w_px as f32 / self.scale();
+        (widest + dot + room)
+            .clamp(TAB_RAIL_MIN_W, TAB_RAIL_MAX_W)
+            .min((fence * 0.45).max(TAB_RAIL_MIN_W))
+            .round()
+    }
+
+    /// Height above the content: the title row, or nothing beside a left tab column (the
+    /// column is the fence's title bar).
+    pub(super) fn head_px(&self) -> i32 {
+        if self.tabs_on_rail() {
+            0
+        } else {
+            self.title_h_px()
+        }
+    }
+
+    /// Window height (device px) of a rolled fence: its title row, or (tabs on the left) the
+    /// column collapsed to fit every tab and the chevron, at most the expanded height.
+    pub(super) fn rolled_h_px(&self) -> i32 {
+        if self.tabs_on_rail() {
+            self.rail_fit_height_px()
+                .min(self.expanded_h_px)
+                .max(self.title_h_px())
+        } else {
+            self.title_h_px()
+        }
+    }
+
+    /// Window width (device px) of a rolled fence: its expanded width, or the left column's.
+    pub(super) fn rolled_w_px(&self) -> i32 {
+        if self.tabs_on_rail() {
+            self.rail_px()
+        } else {
+            self.expanded_w_px
+        }
     }
 
     /// `rail_w` in device pixels: where the content starts once laid out (`content_x`).
@@ -458,13 +510,15 @@ impl FenceViewState {
         (self.rail_w() * self.scale()).round() as i32
     }
 
-    /// Height of the tab column in DIPs: the content's. A rolled fence keeps the column of its
-    /// expanded height, so the hidden pills do not squash and then slide back as it expands.
+    /// Height of the tab column in DIPs: the window's. While the fence collapses or expands
+    /// the content keeps its expanded size, and so do the tab rows (only the chevron under them
+    /// follows the moving bottom edge).
     fn rail_len(&self) -> f32 {
-        let px = if self.rolled_up && self.roll_anim.is_none() {
-            self.expanded_h_px - self.title_h_px()
+        let h = self.chrome_panel.size_px().1;
+        let px = if self.roll_anim.is_some() {
+            h.max(self.content_size_px().1)
         } else {
-            self.content_size_px().1
+            h
         };
         px.max(0) as f32 / self.scale()
     }
@@ -476,38 +530,42 @@ impl FenceViewState {
         along as f32 / self.scale()
     }
 
-    /// The tab column appeared, went away or changed width (tabs merged or split off,
-    /// 标签栏位置, caption size): the content moves beside it, keeping its height. Returns
-    /// whether anything changed; the caller redraws.
+    /// The tab column appeared, went away or changed width (tabs merged or split off, renamed,
+    /// 标签栏位置): the column is measured again and the content moves beside it (the title row
+    /// goes with the column and comes back without it). Returns whether the content moved; the
+    /// caller redraws.
     pub(super) fn sync_rail(&mut self) -> bool {
-        let left = self.rail_px();
-        if left == self.content_x {
+        self.rail_dip = self.measure_rail_w();
+        let (left, top) = (self.rail_px(), self.head_px());
+        if (left, top) == (self.content_x, self.content_y) {
             return false;
         }
         self.finish_content_swap_now();
-        self.content_x = left;
         let (w, _) = self.chrome_panel.size_px();
         let (_, ch) = self.content_panel.size_px();
+        let ch = (ch + self.content_y - top).max(1);
+        self.content_x = left;
+        self.content_y = top;
         let _ = self.content_panel.resize((w - left).max(1), ch);
         self.content_panel
             .visual
-            .set_offset(left as f32, self.title_h_px() as f32, 0.0);
+            .set_offset(left as f32, top as f32, 0.0);
         // The cells moved and changed width: no glide from the old grid.
         self.snap_item_motion();
         true
     }
 
-    /// Natural pill length per tab along the strip (caption + 16 padding, clamped to [48, 160]
-    /// DIPs, plus the Peek search badge). A vertical caption is as long as the same text set
-    /// horizontally: Han characters advance one em either way and Latin is turned on its side.
-    /// Measuring a caption builds a DirectWrite layout, so lengths are cached by caption: a
-    /// reorder, a merge hint or a redraw re-uses them and only a new / renamed caption is
-    /// measured. The cache also tracks title size, the theme's control padding, the strip's
-    /// direction and the badge.
+    /// Natural pill width per tab (caption + 16 padding, clamped to [48, 160] DIPs, plus the
+    /// Peek search badge); in the left column every row is `RAIL_ROW_H` tall. Measuring a
+    /// caption builds a DirectWrite layout, so widths are cached by caption: a reorder, a merge
+    /// hint or a redraw re-uses them and only a new / renamed caption is measured. The cache
+    /// also tracks title size, the theme's control padding and the badge.
     pub(super) fn tab_natural_widths(&self) -> Vec<f32> {
+        if self.tabs_on_rail() {
+            return vec![RAIL_ROW_H; self.tabs.len()];
+        }
         let mut cache = self.tab_natural_w.borrow_mut();
-        // (Liquid Glass padding, left column)
-        let glass = (self.theme.liquid_glass, self.tabs_on_rail());
+        let glass = self.theme.liquid_glass;
         let badges: Vec<Option<String>> = self.tabs.iter().map(|t| self.tab_badge(t.id)).collect();
         let hit =
             cache.len() == self.tabs.len()
@@ -536,7 +594,7 @@ impl FenceViewState {
                                 .clamp(TAB_MIN_W, TAB_MAX_W)
                                     + badge
                                         .as_deref()
-                                        .map_or(0.0, |b| self.chrome.tab_badge_len(b, glass.1))
+                                        .map_or(0.0, |b| self.chrome.tab_badge_width(b))
                             },
                             |(_, _, _, _, w)| *w,
                         );
@@ -564,10 +622,9 @@ impl FenceViewState {
 
     /// The strip slot a fence dragged over this title at screen point `at` would be inserted
     /// at (WinUI TabView's GetTabInsertionIndex rule, see `merge_slot_for`); `tabs.len()` =
-    /// append. A plain title (fewer than two tabs) always appends, and so does the title row
-    /// above a left tab column. Hit-tests the pills where they are drawn — around the open
-    /// gap, shifted and shrunk by it — so the gap sits exactly where the pointer is over the
-    /// strip and stays put while the pointer is inside it.
+    /// append. A plain title (fewer than two tabs) always appends. Hit-tests the pills where
+    /// they are drawn — around the open gap, shifted and shrunk by it — so the gap sits exactly
+    /// where the pointer is over the strip and stays put while the pointer is inside it.
     pub(super) fn merge_slot_at(&self, (x_screen, y_screen): (i32, i32)) -> usize {
         // Menu/script merges have no pointer position and append. Handle the sentinel
         // before screen→client subtraction; MIN - positive_left overflows in debug.
@@ -576,11 +633,7 @@ impl FenceViewState {
         }
         let r = window::window_rect(self.hwnd);
         let along = if self.tabs_on_rail() {
-            let y = y_screen.saturating_sub(r.top);
-            if y < self.title_h_px() {
-                return self.tabs.len();
-            }
-            y
+            y_screen.saturating_sub(r.top)
         } else {
             x_screen.saturating_sub(r.left)
         };
@@ -612,7 +665,8 @@ impl FenceViewState {
     /// Tab header under a client-pixel point.
     pub(super) fn tab_at(&self, x_px: i32, y_px: i32) -> Option<usize> {
         let on_strip = if self.tabs_on_rail() {
-            !self.rolled_up && x_px >= 0 && x_px < self.rail_px() && y_px >= self.title_h_px()
+            // The column stays when the fence collapses to it.
+            x_px >= 0 && x_px < self.rail_px() && y_px >= 0
         } else {
             y_px >= 0 && y_px < self.title_h_px()
         };

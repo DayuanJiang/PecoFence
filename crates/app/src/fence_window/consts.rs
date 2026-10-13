@@ -92,10 +92,12 @@ pub(super) const TAB_GAP: f32 = 4.0;
 pub(super) const TAB_LEFT: f32 = 8.0;
 /// Right-hand title space reserved for the chevron / rolled item count.
 pub(super) const TAB_RIGHT_RESERVE: f32 = 44.0;
-/// Width of the left tab column with 12 DIP captions; each larger caption size adds 2.
-pub(super) const TAB_RAIL_W: f32 = 34.0;
-/// Space above the first and below the last pill of the left tab column.
-pub(super) const TAB_RAIL_PAD: f32 = 4.0;
+/// Left tab column width limits (DIPs) and what a row needs beside its caption: 10 before
+/// it and 8 after, 14 more before it when a tab shows a colour dot.
+pub(super) const TAB_RAIL_MIN_W: f32 = 96.0;
+pub(super) const TAB_RAIL_MAX_W: f32 = 160.0;
+pub(super) const TAB_RAIL_TEXT_ROOM: f32 = 18.0;
+pub(super) const TAB_RAIL_DOT_ROOM: f32 = 14.0;
 /// Width of the insertion gap a tabbed strip opens for a fence dragged over it (WinUI TabView's
 /// default tab width; the merged tab is laid out for real once it lands).
 pub(super) const TAB_MERGE_GAP_W: f32 = 96.0;

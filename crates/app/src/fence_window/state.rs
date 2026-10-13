@@ -29,7 +29,7 @@ pub struct FenceViewState {
     /// aside. None = no hint, or a plain (single-tab) title.
     pub(super) merge_gap: Option<usize>,
     /// Natural pill widths by caption (and search badge), see `tab_natural_widths`.
-    pub(super) tab_natural_w: RefCell<Vec<(String, u8, (bool, bool), Option<String>, f32)>>,
+    pub(super) tab_natural_w: RefCell<Vec<(String, u8, bool, Option<String>, f32)>>,
     /// Tab head under an OLE drag (highlighted like a folder drop target; not the hover).
     pub(super) drop_tab: Option<usize>,
     /// Drag dwell timer: the rolled-fence unroll is armed.
@@ -168,10 +168,20 @@ pub struct FenceViewState {
     pub(super) gpu_glass: RefCell<pecofence_render::gpu_glass::GpuGlass>,
     pub(super) chrome_panel: Panel,
     pub(super) content_panel: Panel,
-    /// Device px from the window's left edge to the content panel: the left tab column's width
-    /// as last laid out (`layout_panels`, `sync_rail`), 0 without one. Client points become
-    /// content points by subtracting it (and the title height).
+    /// Device px from the window's top-left corner to the content panel as last laid out
+    /// (`layout_panels`, `sync_rail`): the left tab column's width (0 without one) and the
+    /// title row's height (0 beside a left tab column). Client points become content points by
+    /// subtracting them.
     pub(super) content_x: i32,
+    pub(super) content_y: i32,
+    /// The left tab column's width in DIPs as last measured (`sync_rail`).
+    pub(super) rail_dip: f32,
+    /// Expanded window width (device px): what a fence collapsed to its left tab column
+    /// returns to, and the width the layout records for it.
+    pub(super) expanded_w_px: i32,
+    /// The window is collapsed (or collapsing) to its left tab column: it is as narrow as the
+    /// column, and `expanded_w_px` keeps its width.
+    pub(super) column_collapsed: bool,
     pub(super) _target: DesktopWindowTarget,
     /// Root of the window's visual tree: whole-window fades / scales animate this.
     pub(super) root: ContainerVisual,
@@ -335,6 +345,7 @@ impl FenceViewState {
         // the same physical rectangle, so geometry alone cannot validate the old crop.
         self.backdrop_rect = None;
         self.expanded_h_px = (self.expanded_h_px as f32 * new_dpi as f32 / old).round() as i32;
+        self.expanded_w_px = (self.expanded_w_px as f32 * new_dpi as f32 / old).round() as i32;
         self.reload_icons_and_labels();
         self.snap_item_motion();
         // The infotip window scales its max width from the owner DPI at creation: rebuild it

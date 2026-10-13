@@ -113,10 +113,7 @@ pub(super) fn on_app_tab_rail(
     let rail = view
         .try_borrow()
         .ok()
-        .and_then(|g| {
-            g.as_ref()
-                .map(|v| if v.rolled_up { 0 } else { v.content_x })
-        })
+        .and_then(|g| g.as_ref().map(|v| v.content_x))
         .unwrap_or(0);
     Some(rail as isize)
 }

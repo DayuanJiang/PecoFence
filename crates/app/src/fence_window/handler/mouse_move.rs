@@ -428,8 +428,13 @@ pub(super) fn on_mousemove(
     };
     let header_changed = std::mem::replace(&mut v.header_hover, header) != header;
     // Client-area pointer inside the title row (a control's box) still
-    // counts as hovering the row, so the pill / chevron do not drop.
-    let in_title = y < v.title_h_px();
+    // counts as hovering the row, so the pill / chevron do not drop; a
+    // left tab column is the title bar.
+    let in_title = if v.tabs_on_rail() {
+        x < v.content_x
+    } else {
+        y < v.title_h_px()
+    };
     let (item_changed, title_changed) = v.set_hover(hit, in_title);
     if chrome_changed || title_changed {
         let _ = v.redraw_chrome_only();

@@ -161,7 +161,7 @@ pub(super) fn on_lbuttondown(
             queue.push(Command::RaiseFence(hwnd));
             return Some(0);
         }
-        let in_content = !v.rolled_up && y >= v.title_h_px() && x >= v.content_x;
+        let in_content = !v.rolled_up && y >= v.content_y && x >= v.content_x;
         if let Some(col) = v.divider_hit(x, y) {
             v.col_drag = Some(ColDrag {
                 col,
@@ -749,12 +749,12 @@ pub(super) fn on_mousewheel(
                 y: msg::hi_i16(lparam),
             },
         );
-        let over_title = pt.y >= 0
-            && (pt.y < v.title_h_px()
-                || (pt.x >= 0
-                    && pt.x < v.content_x
-                    && pt.y < v.chrome_panel.size_px().1
-                    && !v.rolled_up));
+        // A left tab column is the title bar (it stays when the fence collapses to it).
+        let over_title = if v.tabs_on_rail() {
+            pt.x >= 0 && pt.x < v.content_x && pt.y >= 0 && pt.y < v.chrome_panel.size_px().1
+        } else {
+            pt.y >= 0 && pt.y < v.title_h_px()
+        };
         let lbutton = wparam & msg::MK_LBUTTON as usize != 0;
         if v.tabs.len() > 1 && over_title && !lbutton && !v.title_renaming && v.roll_anim.is_none()
         {

@@ -33,8 +33,8 @@ pub const WM_APP_SHELL_CHANGED: u32 = msg::WM_APP + 12;
 /// Posted by the worker that decoded another virtual desktop's wallpaper in advance.
 pub const WM_APP_PREWARM_DONE: u32 = msg::WM_APP + 13;
 /// Sent to a fence window while another fence is dragged over it: returns the width in device
-/// px of its left tab column (0 when it has none or is rolled up), which takes a merge drop
-/// like the title row.
+/// px of its left tab column (0 without one). Such a fence has no title row; its column takes
+/// the merge drop instead, also while the fence is collapsed to it.
 pub const WM_APP_TAB_RAIL: u32 = msg::WM_APP + 14;
 
 /// What a file drop does with the dropped paths (Explorer's Move / Copy / Create shortcut, the

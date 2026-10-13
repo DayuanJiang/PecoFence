@@ -69,7 +69,8 @@ pub(super) fn on_nchittest(
     };
     let scale = v.scale();
     let border = (RESIZE_BORDER_DIP * scale).round() as i32;
-    let title_h = v.title_h_px();
+    // Beside a left tab column there is no title row: the column is the title bar.
+    let title_h = if v.tabs_on_rail() { 0 } else { v.title_h_px() };
     let rect = window::window_rect(hwnd);
     let left = x - rect.left;
     let top = y - rect.top;
@@ -81,18 +82,19 @@ pub(super) fn on_nchittest(
         return Some(msg::HTNOWHERE);
     }
     let rolled = v.rolled_up;
-    // Tab headers take clicks (switch / drag out); the rest of the title
-    // row keeps moving the window, and so does the free part of a left tab
-    // column.
-    if top < title_h
-        && left >= border
-        && right > border
-        && (v.tab_at(left, top).is_some() || v.up_button_at(left, top) || v.chevron_at(left, top))
-    {
-        return Some(msg::HTCLIENT);
-    }
-    let in_rail = !rolled && top >= title_h && left < v.content_x;
-    if in_rail && left >= border && bottom > border && v.tab_at(left, top).is_some() {
+    // Tab headers and the title bar's buttons take clicks (switch / drag out,
+    // up, roll); the rest of the title row moves the window, and so does the
+    // free part of a left tab column. A fence collapsed to its column has no
+    // resize edges.
+    let in_rail = left < v.content_x;
+    let on_control =
+        v.tab_at(left, top).is_some() || v.up_button_at(left, top) || v.chevron_at(left, top);
+    let clear_of_edges = if in_rail {
+        rolled || (left >= border && bottom > border)
+    } else {
+        top < title_h && left >= border && right > border
+    };
+    if on_control && clear_of_edges {
         return Some(msg::HTCLIENT);
     }
     if v.locked {
@@ -102,6 +104,10 @@ pub(super) fn on_nchittest(
         } else {
             msg::HTCLIENT
         });
+    }
+    if rolled && v.tabs_on_rail() {
+        // Collapsed to the column: it only moves.
+        return Some(msg::HTCAPTION);
     }
     if rolled {
         // Title-only (Fences): only the width resizes; the rest of the strip,
@@ -151,10 +157,10 @@ pub(super) fn on_ncmousemove(
     let mut guard = view.borrow_mut();
     if let Some(v) = guard.as_mut() {
         v.set_mouse_inside(true);
-        // The free part of a left tab column moves the window too, but it is not the title.
+        // Beside a left tab column the column is the title bar (the only caption area there).
         let top = window::window_rect(hwnd).top;
-        let is_title =
-            wparam as isize == msg::HTCAPTION && msg::hi_i16(lparam) - top < v.title_h_px();
+        let is_title = wparam as isize == msg::HTCAPTION
+            && (v.tabs_on_rail() || msg::hi_i16(lparam) - top < v.title_h_px());
         let (item, title) = v.set_hover(None, is_title);
         if title {
             let _ = v.redraw_chrome_only();
@@ -680,7 +686,8 @@ pub(super) fn on_sizing(h: &HandlerCtx, hwnd: HWND, wparam: usize, lparam: isize
     let v = guard.as_ref()?;
     let scale = v.scale();
     let metrics = v.grid_metrics();
-    let title_h = v.title_h_px();
+    // Above the rows: the title row, nothing beside a left tab column.
+    let title_h = v.head_px();
     let slack = FIT_SLACK_PX as f32;
     // Rows (List / Details): rows below the title (+ fixed header), free width.
     let (cols, rows, min_w) = match v.row_metrics() {
@@ -718,7 +725,7 @@ pub(super) fn on_sizing(h: &HandlerCtx, hwnd: HWND, wparam: usize, lparam: isize
         rows: (cells && !grouped).then_some(rows),
         min_w,
         min_h: (rows.fixed + rows.step).round() as i32,
-        rolled_h: v.rolled_up.then_some(title_h),
+        rolled_h: v.rolled_up.then(|| v.rolled_h_px()),
     };
     drop(guard);
     // SAFETY: lParam is the RECT* being sized for this message.

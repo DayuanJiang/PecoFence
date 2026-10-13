@@ -226,8 +226,8 @@ pub enum TitleAlign {
     Right,
 }
 
-/// Where a tabbed fence shows its tabs: side by side in the title row, or stacked in a column
-/// on its left with vertical captions (the title row then shows the current tab's name).
+/// Where a tabbed fence shows its tabs: side by side in the title row, or listed in a column
+/// on its left that takes the title row's place (rolled up, the fence shrinks to the column).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]

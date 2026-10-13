@@ -319,7 +319,7 @@
   "收起后它们会回到原位": "Ils reprennent leur place quand le groupe se replie",
   "平时只显示图标，让桌面更清爽；每个栅栏可在“栅栏”页单独设置": "Seules les icônes restent visibles ; réglable pour chaque groupe dans la page « Groupes »",
   "鼠标在标签页上停留片刻就切换过去，不用点击": "Laissez le pointeur un instant sur un onglet pour y passer sans cliquer",
-  "有多个标签页时，标签排在标题栏里，或在左侧竖排成一列": "Les onglets s’alignent dans la barre de titre, ou s’empilent dans une colonne à gauche, leur nom à la verticale",
+  "有多个标签页时，标签排在标题栏里，或在栅栏左侧排成一列": "Les onglets s’alignent dans la barre de titre, ou s’empilent dans une colonne à gauche",
   "鼠标移到栅栏上或滚动时才显示": "Visibles seulement au survol du groupe ou pendant le défilement",
   "按快捷键让所有栅栏显示在窗口前面": "Afficher tous les groupes devant les fenêtres avec un raccourci",
   "再按一次、按 Esc 或点击其他位置返回": "Appuyez de nouveau sur le raccourci ou sur Échap, ou cliquez ailleurs pour revenir",

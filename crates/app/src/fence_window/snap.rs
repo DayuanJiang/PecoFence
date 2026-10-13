@@ -28,12 +28,20 @@ pub(super) fn merge_target_at(me: HWND, also: HWND, point: (i32, i32)) -> Option
             if point.0 < r.left || point.0 >= r.right || point.1 < r.top || point.1 >= r.bottom {
                 return false;
             }
+            // A fence with a left tab column has no title row: the column takes the drop.
             // This process's fence windows share its UI thread, so the message is a direct
             // call; another instance's windows (which cannot take a merge anyway) are never
             // sent it, as a hung one would block the drag.
-            point.1 < r.top + title_h
-                || (desktop::window_pid(w) == std::process::id()
-                    && point.0 < r.left + window::send_message(w, WM_APP_TAB_RAIL, 0, 0) as i32)
+            let rail = if desktop::window_pid(w) == std::process::id() {
+                window::send_message(w, WM_APP_TAB_RAIL, 0, 0) as i32
+            } else {
+                0
+            };
+            if rail > 0 {
+                point.0 < r.left + rail
+            } else {
+                point.1 < r.top + title_h
+            }
         })
 }
 

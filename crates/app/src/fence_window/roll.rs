@@ -14,6 +14,8 @@ pub(super) fn roll_target_of(rolling_to: Option<bool>, rolled_up: bool) -> bool 
 /// cross-fades on the compositor).
 pub(super) struct RollAnim {
     pub(super) height: Tween,
+    /// A fence with a left tab column collapses to that column: its width moves too.
+    pub(super) width: Option<Tween>,
     pub(super) rolled_at_end: bool,
 }
 
@@ -318,10 +320,13 @@ impl FenceViewState {
         true
     }
 
-    /// Title on hover for this fence: its own choice, else the global setting.
+    /// Title on hover for this fence: its own choice, else the global setting. A fence whose
+    /// tabs are on the left has no title row to fold away.
     pub(super) fn title_on_hover(&self) -> bool {
-        self.title_on_hover_override
-            .unwrap_or_else(|| self.behavior.title_on_hover.get())
+        !self.tabs_on_rail()
+            && self
+                .title_on_hover_override
+                .unwrap_or_else(|| self.behavior.title_on_hover.get())
     }
 
     /// Whether the title row is shown right now (title-on-hover rule): also while another
@@ -357,6 +362,14 @@ impl FenceViewState {
             || self.title_renaming
     }
 
+    /// End width (device px) of a collapse to (or expand from) a left tab column in flight.
+    pub(super) fn width_target_px(&self) -> Option<i32> {
+        self.roll_anim
+            .as_ref()
+            .and_then(|a| a.width)
+            .map(|w| w.target().round() as i32)
+    }
+
     /// End height (device px) of the roll / auto-height tween in flight.
     pub(super) fn height_target_px(&self) -> Option<i32> {
         self.roll_anim
@@ -390,10 +403,20 @@ impl FenceViewState {
         // The roll owns the height (and the content panel) from here on.
         self.height_anim = None;
         self.finish_content_swap_now();
-        let cur_h = window::window_rect(self.hwnd);
-        let cur_h = cur_h.bottom - cur_h.top;
+        let cur = window::window_rect(self.hwnd);
+        let (cur_w, cur_h) = (cur.right - cur.left, cur.bottom - cur.top);
+        // A fence with a left tab column collapses to the column (its title bar) rather than
+        // to a title row: the width moves with the height.
+        let to_w = self.tabs_on_rail().then(|| {
+            if rolled {
+                self.rolled_w_px()
+            } else {
+                self.expanded_w_px
+            }
+        });
+        self.column_collapsed = rolled && to_w.is_some();
         let to_h = if rolled {
-            self.title_h_px()
+            self.rolled_h_px()
         } else if self.auto_height {
             // Items may have changed while rolled (the remembered height is stale then): expand
             // straight to the fitting height so the settle does not add a second glide.
@@ -417,14 +440,14 @@ impl FenceViewState {
         } else {
             self.rolled_up = false;
             // Rasterise the content once at its final size; the growing HWND reveals it.
-            let (w, _) = self.chrome_panel.size_px();
-            let title_h = self.title_h_px();
+            let w = to_w.unwrap_or_else(|| self.chrome_panel.size_px().0);
+            let top = self.content_y;
             let _ = self
                 .content_panel
-                .resize((w - self.content_x).max(1), (to_h - title_h).max(1));
+                .resize((w - self.content_x).max(1), (to_h - top).max(1));
             self.content_panel
                 .visual
-                .set_offset(self.content_x as f32, title_h as f32, 0.0);
+                .set_offset(self.content_x as f32, top as f32, 0.0);
             if !mid_roll {
                 self.content_panel.visual.set_opacity(0.0);
             }
@@ -452,6 +475,7 @@ impl FenceViewState {
             height: self
                 .motion
                 .tween(cur_h as f32, to_h as f32, dur, curve, now),
+            width: to_w.map(|w| self.motion.tween(cur_w as f32, w as f32, dur, curve, now)),
             rolled_at_end: rolled,
         });
         // Chevron angle (and anything else reading the roll progress) moves with the height:
@@ -493,7 +517,7 @@ impl FenceViewState {
             }
         }
         let (w, ch) = self.content_panel.size_px();
-        let target_ch = (to_h - self.title_h_px()).max(1);
+        let target_ch = (to_h - self.content_y).max(1);
         if target_ch > ch {
             let _ = self.content_panel.resize(w, target_ch);
             let _ = self.redraw_content();

@@ -51,9 +51,13 @@ impl App {
             crate::layout::GridMetrics::for_icon_size(shown.view.icon_size, shown.view.label_lines)
                 .with_line_h(self.ctx.chrome.label_line_h())
                 .with_spacing(shown.view.spacing);
-        let title_h = (self.ctx.theme.borrow().title_height * scale).round();
-        // A left tab column sits before the first icon column.
+        // A left tab column sits before the first icon column, and replaces the title row.
         let rail = self.fences.get(&id).map_or(0.0, |w| w.tab_rail_dip());
+        let title_h = if rail > 0.0 {
+            0.0
+        } else {
+            (self.ctx.theme.borrow().title_height * scale).round()
+        };
         let cells = self.state.config.settings.snapping.size_to_cells;
         let rows = match shown.view.layout {
             ViewLayout::Icons => None,
@@ -214,7 +218,8 @@ impl App {
         let Some(w) = self.fences.get(&id) else {
             return;
         };
-        let r = w.rect();
+        // Collapsed to its left tab column, the fence expands to its own width too.
+        let r = w.footprint_rect();
         let expanded = w.expanded_height_px();
         let scale = monitors::dpi_for_window(w.hwnd()).max(96) as f32 / 96.0;
         let (Some(limit), Some(steps)) =

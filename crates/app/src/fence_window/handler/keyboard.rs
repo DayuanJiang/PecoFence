@@ -301,7 +301,7 @@ pub(super) fn on_contextmenu(
         queue.push(Command::FenceMenu {
             fence: v.active,
             x: win.left + v.content_x + pad,
-            y: win.top + v.title_h_px() + pad,
+            y: win.top + v.content_y + pad,
         });
         return Some(0);
     }

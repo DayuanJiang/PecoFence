@@ -195,6 +195,10 @@ impl FenceWindow {
             chrome_panel,
             content_panel,
             content_x: 0,
+            content_y: (theme.title_height * dpi as f32 / 96.0).round() as i32,
+            rail_dip: 0.0,
+            expanded_w_px: bounds.right - bounds.left,
+            column_collapsed: false,
             _target: target,
             root,
             chrome: ctx.chrome.clone(),
@@ -572,11 +576,21 @@ impl FenceWindow {
             v.peeking = false;
             v.rolled_up = rolled;
             v.expanded_h_px = expanded_h;
+            v.expanded_w_px = rect.right - rect.left;
+            v.column_collapsed = rolled && v.tabs_on_rail();
+            v.rail_dip = v.measure_rail_w();
             v.roll_t = Tween::at(rolled as u8 as f32, Instant::now());
             let _ = v.motion.stop(&v.content_panel.visual, Prop::Opacity);
             v.content_panel.visual.set_opacity(1.0);
             v.content_panel.visual.set_visible(!rolled);
-            rect.bottom = rect.top + if rolled { v.title_h_px() } else { expanded_h };
+            if rolled {
+                rect.bottom = rect.top + v.rolled_h_px();
+                if v.column_collapsed {
+                    rect.right = rect.left + v.rolled_w_px();
+                }
+            } else {
+                rect.bottom = rect.top + expanded_h;
+            }
         });
         self.set_bounds(rect);
         self.with_view(|v| {
@@ -585,6 +599,16 @@ impl FenceWindow {
                 .and_then(|_| v.redraw());
             v.update_shadow_now();
         });
+    }
+
+    /// Moves the window to the saved expanded rect `rect`. Rolled, it keeps its rolled size there
+    /// (the title row, or the left tab column it is collapsed to) and expands to `rect` later.
+    pub fn place_saved(&self, rect: RECT, rolled: bool) {
+        if rolled {
+            self.restore_geometry(rect, true, rect.bottom - rect.top);
+        } else {
+            self.set_bounds(rect);
+        }
     }
 
     pub(super) fn with_view(&self, f: impl FnOnce(&mut FenceViewState)) {
@@ -1028,8 +1052,14 @@ impl FenceWindow {
     pub fn sync_tab_bar(&self) {
         self.with_view(|v| {
             // A tab drag or merge gap measured along the old axis ends here (only the CLI can
-            // change the setting mid-drag); the button release then finds nothing to commit.
-            v.tab_drag = None;
+            // change the setting mid-drag); the dragged tab goes back to its slot and the button
+            // release then finds nothing to commit.
+            if let Some(td) = v.tab_drag.take()
+                && td.index < v.tabs.len()
+            {
+                let t = v.tabs.remove(td.index);
+                v.tabs.insert(td.start_index.min(v.tabs.len()), t);
+            }
             v.merge_gap = None;
             v.pressed = None;
             v.tab_slide.clear();
@@ -1296,7 +1326,85 @@ impl FenceWindow {
         let v = guard.as_ref()?;
         let title = v.title_h_px();
         let rolled = v.roll_target() || v.peeking;
-        Some((title, if rolled { title } else { v.expanded_h_px }))
+        Some((
+            title,
+            if rolled {
+                v.rolled_h_px()
+            } else {
+                v.expanded_h_px
+            },
+        ))
+    }
+
+    /// Screen rect of tab `tab`'s row in the left tab column (None without a column): where the
+    /// rename box goes.
+    pub fn rail_row_screen_rect(&self, tab: FenceId) -> Option<RECT> {
+        let guard = self.view.try_borrow().ok()?;
+        let v = guard.as_ref()?;
+        if !v.tabs_on_rail() {
+            return None;
+        }
+        let i = v.tabs.iter().position(|t| t.id == tab)?;
+        let (y, h) = *v.tab_rects().get(i)?;
+        let s = v.scale();
+        let win = self.rect();
+        let at = |dip: f32| (dip * s).round() as i32;
+        Some(RECT {
+            left: win.left + at(RAIL_ROW_INSET),
+            top: win.top + at(y),
+            right: win.left + at(v.rail_w() - RAIL_ROW_RIGHT),
+            bottom: win.top + at(y + h),
+        })
+    }
+
+    /// Window rect, as wide as the fence expands to while it is collapsed to its left tab column:
+    /// the room automatic placement keeps clear.
+    pub fn footprint_rect(&self) -> RECT {
+        let mut r = self.rect();
+        if let Some(ew) = self.collapsed_expanded_width_px() {
+            r.right = r.left + ew;
+        }
+        r
+    }
+
+    /// Width the window expands to while it is collapsed to its left tab column (None
+    /// otherwise: the window has its expanded width).
+    pub fn collapsed_expanded_width_px(&self) -> Option<i32> {
+        let guard = self.view.try_borrow().ok()?;
+        let v = guard.as_ref()?;
+        v.column_collapsed.then_some(v.expanded_w_px)
+    }
+
+    /// A rolled fence whose tabs changed (added, removed, renamed, or 标签栏位置 switched)
+    /// takes its rolled size again: the left tab column it is collapsed to, or its title row at
+    /// the expanded width. Returns the new window rect when it changed.
+    pub fn settle_rolled_size(&self) -> Option<RECT> {
+        let (w, h) = {
+            let mut guard = self.view.borrow_mut();
+            let v = guard.as_mut()?;
+            if !v.rolled_up || v.peeking || v.roll_anim.is_some() || v.retired {
+                return None;
+            }
+            let (cur_w, _) = window::window_rect_size(v.hwnd);
+            let w = if v.tabs_on_rail() {
+                v.rail_dip = v.measure_rail_w();
+                v.rail_px()
+            } else if v.column_collapsed {
+                v.expanded_w_px
+            } else {
+                cur_w
+            };
+            v.column_collapsed = v.tabs_on_rail();
+            (w, v.rolled_h_px())
+        };
+        let r = self.rect();
+        if (r.right - r.left, r.bottom - r.top) == (w, h) {
+            return None;
+        }
+        // No borrow held: WM_SIZE lays the panels out at the new size.
+        let _ = self.window.set_bounds(r.left, r.top, w, h);
+        self.with_view(|v| v.update_shadow_now());
+        Some(window::window_rect(self.hwnd()))
     }
 
     /// Windows a title or tear-off drag driven by this window moves right now (the dragged one

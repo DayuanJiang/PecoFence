@@ -311,7 +311,8 @@ impl App {
         let Some(steps) = self.grid_steps(id, scale) else {
             return;
         };
-        if !steps.cells {
+        // Collapsed to its left tab column, the window is as wide as the column.
+        if !steps.cells || w.collapsed_expanded_width_px().is_some() {
             return;
         }
         let mut width = r.right - r.left;
@@ -384,6 +385,16 @@ impl App {
         let Some(w) = self.fences.get(&id) else {
             return;
         };
+        // A rolled fence follows its tabs: collapsed to the left tab column, or back to a title
+        // row at its expanded width.
+        if let Some(rect) = w.settle_rolled_size() {
+            let expanded = w.expanded_height_px();
+            self.record_bounds(id, rect, true, expanded);
+            self.schedule_save();
+        }
+        let Some(w) = self.fences.get(&id) else {
+            return;
+        };
         // A fence without auto height still grows once to show a new left tab column (taken
         // on every pass, so a request left by an auto-height fence does not fire later).
         let rail = w.take_rail_growth_px();
@@ -427,17 +438,15 @@ impl App {
                 let px = self.state.fence_px_rect(&fence);
                 // State, not the window: sync_fence_windows has just made the window agree, and
                 // a fence rolled in the old layout but expanded in the new one needs px.height().
-                let h = if fence.rolled_up {
-                    window::window_rect_size(w.hwnd()).1
-                } else {
-                    px.height()
-                };
-                w.set_bounds(RECT {
-                    left: px.left,
-                    top: px.top,
-                    right: px.right,
-                    bottom: px.top + h,
-                });
+                w.place_saved(
+                    RECT {
+                        left: px.left,
+                        top: px.top,
+                        right: px.right,
+                        bottom: px.bottom,
+                    },
+                    fence.rolled_up,
+                );
             }
         }
         // Fences new to these monitors (or whose monitor is gone) move out of the others' way;
@@ -501,17 +510,15 @@ impl App {
         for fence in self.state.host_fences() {
             if let Some(w) = self.fences.get(&fence.id) {
                 let px = self.state.fence_px_rect(&fence);
-                let h = if fence.rolled_up {
-                    window::window_rect_size(w.hwnd()).1
-                } else {
-                    px.height()
-                };
-                w.set_bounds(RECT {
-                    left: px.left,
-                    top: px.top,
-                    right: px.right,
-                    bottom: px.top + h,
-                });
+                w.place_saved(
+                    RECT {
+                        left: px.left,
+                        top: px.top,
+                        right: px.right,
+                        bottom: px.bottom,
+                    },
+                    fence.rolled_up,
+                );
             }
             self.apply_fence_view(fence.id);
         }
@@ -571,6 +578,7 @@ impl App {
                     .fence(fence)
                     .map(|f| f.title.clone())
                     .unwrap_or_default(),
+                w.rail_row_screen_rect(fence),
                 self.queue.clone(),
                 self.theme_mode,
             );
@@ -820,7 +828,7 @@ impl App {
 
     pub(super) fn overlaps_fence(&self, r: &RECT, gap: i32) -> bool {
         self.fences.values().any(|f| {
-            let o = f.rect();
+            let o = f.footprint_rect();
             r.left < o.right - gap / 2
                 && r.right > o.left + gap / 2
                 && r.top < o.bottom - gap / 2
@@ -855,7 +863,10 @@ impl App {
             bottom: top + h,
         };
         let mut candidates = Vec::new();
-        if let Some(src) = near.and_then(|id| self.fences.get(&id)).map(|f| f.rect()) {
+        if let Some(src) = near
+            .and_then(|id| self.fences.get(&id))
+            .map(|f| f.footprint_rect())
+        {
             candidates.push(at(src.right + gap, src.top));
             candidates.push(at(src.left - gap - w, src.top));
             candidates.push(at(src.left, src.bottom + gap));

@@ -134,20 +134,6 @@ impl TextFormat {
         self
     }
 
-    /// Lays text out vertically (PecoFence patch): lines run top to bottom and follow each other
-    /// right to left, as in Chinese and Japanese vertical writing. Han and kana stand upright,
-    /// Latin text turns 90° clockwise. [`TextAlignment`] then aligns along the column and
-    /// [`ParagraphAlignment`] across it.
-    pub fn with_vertical_reading(self) -> Self {
-        unsafe {
-            _ = self
-                .raw
-                .SetReadingDirection(DWRITE_READING_DIRECTION_TOP_TO_BOTTOM);
-            _ = self.raw.SetFlowDirection(DWRITE_FLOW_DIRECTION_RIGHT_TO_LEFT);
-        }
-        self
-    }
-
     /// Returns the underlying `IDWriteTextFormat`.
     pub fn raw(&self) -> &IDWriteTextFormat {
         &self.raw
