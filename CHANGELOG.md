@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 「隐藏 Windows 桌面图标」 stays on when hiding the icons fails at startup (feedback #20). When Explorer's desktop did not respond for half a minute after PecoFence started, PecoFence said 「无法隐藏桌面图标，请稍后再试。」 and also switched the setting off, so every later start left the Windows icons on the desktop as well as in the fences, although nobody had chosen that. It still shows the notice and stops trying for that run, but the setting stays on: the next start tries again, and so does turning the setting off and on.
 - PecoFence keeps less memory between uses. Half a minute after the fences last drew something, it hands the memory the last use touched back to Windows, every time instead of only once after startup; what it needs again comes back on its own, with no visible delay (the first animation after a pause measured the same as before). On a 4K monitor the memory Task Manager shows for PecoFence at rest stays at about 2 to 5 MB, where it used to grow to about 28 MB after some hours of use. Settings, Peek and a name being edited keep their memory while they are open.
 
 ## 0.2.0
