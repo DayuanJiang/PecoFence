@@ -73,6 +73,10 @@ pub(super) fn search_matches(name: &str, path: Option<&str>, query: &str) -> boo
 impl App {
     /// Registers / re-registers / drops the Peek hotkey to match the settings.
     pub(super) fn sync_peek_hotkey(&mut self) {
+        // The settings page is recording a shortcut: `resume_peek_hotkey` syncs once it ends.
+        if self.peek_hotkey_paused {
+            return;
+        }
         let peek = &self.state.config.settings.peek;
         let want = peek.enabled.then(|| peek.chosen_hotkey());
         // While a fallback is registered `want != peek_hotkey`, so every sync (startup, preset,
@@ -83,7 +87,6 @@ impl App {
         let prev = self.peek_hotkey;
         let choice_changed = want != self.peek_hotkey_wanted;
         self.peek_hotkey_wanted = want;
-        self.peek_hotkey_paused = false;
         let hwnd = self.control.hwnd();
         if self.peek_hotkey.is_some() {
             hotkey::unregister(hwnd, HOTKEY_PEEK);
@@ -163,7 +166,8 @@ impl App {
         if !std::mem::take(&mut self.peek_hotkey_paused) {
             return;
         }
-        if let Some(h) = self.peek_hotkey
+        let before = self.peek_hotkey;
+        if let Some(h) = before
             && !hotkey::register(
                 self.control.hwnd(),
                 HOTKEY_PEEK,
@@ -171,9 +175,13 @@ impl App {
                 h.vk,
             )
         {
-            // Another program took it meanwhile: go through the fallbacks again.
+            // Another program took it meanwhile: the sync goes through the fallbacks again.
             self.peek_hotkey = None;
-            self.sync_peek_hotkey();
+        }
+        // Settings applied during the recording (pecofence-cli, say) take effect now.
+        self.sync_peek_hotkey();
+        if self.peek_hotkey != before {
+            self.push_settings_state();
         }
     }
 
