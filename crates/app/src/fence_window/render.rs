@@ -421,11 +421,18 @@ impl FenceViewState {
             self.pill_anim = None;
         }
         let deco = self.deco;
-        let style = FenceStyle {
+        let mut style = FenceStyle {
             title_align: self.behavior.title_align.get(),
             tab_rail: self.rail_w(),
             ..self.style
         };
+        if let Some(t) = self.tabs.get(self.active_index())
+            && self.tabs_on_rail()
+        {
+            // The title row names the shown tab, in that tab's own caption size and colour.
+            style.title_size = t.title_size;
+            style.title_color = t.title_color;
+        }
         let pressed_tab = match self.pressed {
             Some(PressTarget::Tab(t)) if self.press_inside => Some(t),
             _ => None,
@@ -1063,6 +1070,7 @@ impl FenceViewState {
             insert_caret: self.insert_caret_dip(metrics.header_h),
             insert_caret_alpha: self.caret_alpha.value_at(now),
             selection_inactive: self.selection_inactive_now(now),
+            origin_x: self.content_x as f32 / self.scale(),
         };
         let theme = self.material_foreground();
         let chrome = self.chrome.clone();

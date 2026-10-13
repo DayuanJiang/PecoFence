@@ -750,7 +750,11 @@ pub(super) fn on_mousewheel(
             },
         );
         let over_title = pt.y >= 0
-            && (pt.y < v.title_h_px() || (pt.x >= 0 && pt.x < v.content_x && !v.rolled_up));
+            && (pt.y < v.title_h_px()
+                || (pt.x >= 0
+                    && pt.x < v.content_x
+                    && pt.y < v.chrome_panel.size_px().1
+                    && !v.rolled_up));
         let lbutton = wparam & msg::MK_LBUTTON as usize != 0;
         if v.tabs.len() > 1 && over_title && !lbutton && !v.title_renaming && v.roll_anim.is_none()
         {

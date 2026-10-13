@@ -913,12 +913,17 @@ impl FenceWindow {
                 .collect();
             let old_ids: Vec<FenceId> = v.tabs.iter().map(|t| t.id).collect();
             let had_strip = v.tabs.len() > 1;
+            // A new window gets its tabs here for the first time: what it was saved with.
+            let first = v.tabs.is_empty();
+            let rail_fit = v.rail_fit_height_px();
             v.tabs = tabs;
             v.active = active;
             // A left tab column comes with the second tab and goes with the last but one.
             let rail_changed = v.sync_rail();
-            if rail_changed || !same_titles {
-                v.rail_grow = v.tabs_on_rail();
+            // Only a column that needs more room than before (a new tab, a longer caption)
+            // asks the height pass to grow the fence; a reorder, a colour or a start does not.
+            if !first && v.rail_fit_height_px() > rail_fit {
+                v.rail_grow = true;
             }
             if !same_titles {
                 // Reorder, rename, or a tab added / removed (merge, tear-off, close): the
@@ -1022,6 +1027,11 @@ impl FenceWindow {
     /// 标签栏位置 changed: the tabs move between the title row and the left column.
     pub fn sync_tab_bar(&self) {
         self.with_view(|v| {
+            // A tab drag or merge gap measured along the old axis ends here (only the CLI can
+            // change the setting mid-drag); the button release then finds nothing to commit.
+            v.tab_drag = None;
+            v.merge_gap = None;
+            v.pressed = None;
             v.tab_slide.clear();
             v.tab_settle = None;
             v.pill_anim = None;
@@ -1416,6 +1426,11 @@ impl FenceWindow {
     /// Height the window should have when auto-height is on (None when off / rolled).
     pub fn auto_height_px(&self) -> Option<i32> {
         self.view.borrow().as_ref().and_then(|v| v.auto_height_px())
+    }
+
+    /// Width of the left tab column in DIPs (0 without one).
+    pub fn tab_rail_dip(&self) -> f32 {
+        self.view.borrow().as_ref().map_or(0.0, |v| v.rail_w())
     }
 
     /// See `FenceViewState::take_rail_growth_px`: the height a fence grows to once so its left

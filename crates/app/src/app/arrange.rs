@@ -52,6 +52,8 @@ impl App {
                 .with_line_h(self.ctx.chrome.label_line_h())
                 .with_spacing(shown.view.spacing);
         let title_h = (self.ctx.theme.borrow().title_height * scale).round();
+        // A left tab column sits before the first icon column.
+        let rail = self.fences.get(&id).map_or(0.0, |w| w.tab_rail_dip());
         let cells = self.state.config.settings.snapping.size_to_cells;
         let rows = match shown.view.layout {
             ViewLayout::Icons => None,
@@ -66,7 +68,7 @@ impl App {
                 fixed: title_h + (rm.header_h + rm.pad_y * 2.0) * scale + FIT_SLACK_PX as f32,
             },
             None => GridSteps {
-                cols: Some((metrics.cell_w * scale, metrics.pad_x * 2.0 * scale)),
+                cols: Some((metrics.cell_w * scale, (metrics.pad_x * 2.0 + rail) * scale)),
                 cells,
                 row: metrics.cell_h * scale,
                 fixed: title_h + metrics.pad_y * 2.0 * scale + FIT_SLACK_PX as f32,

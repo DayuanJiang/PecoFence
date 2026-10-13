@@ -229,6 +229,17 @@ impl FenceViewState {
         }
         let (left, title_h) = (self.content_x as f32, self.title_h_px() as f32);
         let slide = dir.signum() as f32 * TAB_SLIDE_DIP * self.scale();
+        // A page coming down from above would cover the title row (the panels sit above the
+        // chrome): its top is clipped by as much as it is raised, and the clip opens with the
+        // same curve as the slide, so its visible edge stays at the title row's bottom.
+        let from_above = self.tabs_on_rail() && slide < 0.0;
+        if from_above {
+            let _ = self
+                .motion
+                .clip_insets(&incoming.visual, 0.0, -slide, 0.0, 0.0);
+        } else {
+            let _ = self.motion.clear_clip(&incoming.visual);
+        }
         if self.tabs_on_rail() {
             incoming.visual.set_offset(left, title_h + slide, 0.0);
         } else {
@@ -250,6 +261,9 @@ impl FenceViewState {
             || {
                 motion.fade_to(&o, 0.0, motion::FASTER, Curve::Linear)?;
                 motion.fade_to(&n, 1.0, motion::FASTER, Curve::Linear)?;
+                if from_above {
+                    motion.animate_clip_top(&n, 0.0, motion::FAST, Curve::Decelerate)?;
+                }
                 motion.move_to(&n, left, title_h, motion::FAST, Curve::Decelerate)
             },
             done,
@@ -279,6 +293,7 @@ impl FenceViewState {
         let n = &self.content_panel.visual;
         let _ = self.motion.stop(n, Prop::Opacity);
         let _ = self.motion.stop(n, Prop::Offset);
+        let _ = self.motion.clear_clip(n);
         n.set_opacity(1.0);
         n.set_offset(self.content_x as f32, self.title_h_px() as f32, 0.0);
     }

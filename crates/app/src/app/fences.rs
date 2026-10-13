@@ -384,8 +384,10 @@ impl App {
         let Some(w) = self.fences.get(&id) else {
             return;
         };
-        // A fence without auto height still grows once to show a new left tab column.
-        let Some(mut h) = w.auto_height_px().or_else(|| w.take_rail_growth_px()) else {
+        // A fence without auto height still grows once to show a new left tab column (taken
+        // on every pass, so a request left by an auto-height fence does not fire later).
+        let rail = w.take_rail_growth_px();
+        let Some(mut h) = w.auto_height_px().or(rail) else {
             return;
         };
         let r = w.rect();

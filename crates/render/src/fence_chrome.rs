@@ -243,6 +243,9 @@ pub struct RowsDraw<'a> {
     pub insert_caret_alpha: f32,
     /// 0 = accent selection (active window), 1 = neutral grey (another window is active).
     pub selection_inactive: f32,
+    /// Window x (DIPs) of the surface's left edge: the left tab column's width, else 0. The
+    /// glass behind the text is sampled in window coordinates.
+    pub origin_x: f32,
 }
 
 /// Pixel snapping for hairlines. The panel applies a uniform DIP→px scale, so a 1 DIP stroke
@@ -2117,11 +2120,12 @@ impl FenceChrome {
                     .min(rect.width())
                     .max(1.0);
                 let area = Rect::from_xywh(
-                    if right {
-                        rect.right - measured
-                    } else {
-                        rect.left
-                    },
+                    rows.origin_x
+                        + if right {
+                            rect.right - measured
+                        } else {
+                            rect.left
+                        },
                     rect.top + theme.title_height,
                     measured,
                     rect.height(),

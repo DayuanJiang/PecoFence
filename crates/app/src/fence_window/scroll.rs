@@ -568,7 +568,9 @@ impl FenceViewState {
         let cy = pt.y - r.top;
         let (top, bottom) = self.marquee_band_px();
         let zone_px = (DRAG_SCROLL_ZONE_DIP * self.scale()) as i32;
-        let zone = drag_scroll_zone(cy, top, bottom, zone_px).filter(|_| self.scroll_max() > 0.0);
+        // Over a left tab column the drag aims at a tab pill, not at the item area's edge.
+        let zone = drag_scroll_zone(cy, top, bottom, zone_px)
+            .filter(|_| self.scroll_max() > 0.0 && pt.x - r.left >= self.content_x);
         let Some((dir, depth)) = zone else {
             if self.drag_scroll.take().is_some() && self.snap_scroll() {
                 // Auto-scroll ended between pixels: `content_busy` makes the next tick redraw

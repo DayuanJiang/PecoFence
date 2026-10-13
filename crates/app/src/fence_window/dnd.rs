@@ -1195,6 +1195,8 @@ impl FenceViewState {
                     insert_caret: None,
                     insert_caret_alpha: 0.0,
                     selection_inactive: 0.0,
+                    // No glass behind a drag image.
+                    origin_x: 0.0,
                 };
                 rt.draw(|session| {
                     session.set_transform(&transform);

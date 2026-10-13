@@ -296,7 +296,7 @@ impl FenceViewState {
     /// regardless of the roll state (the expand animation targets it directly).
     pub(super) fn fitting_height_px(&self) -> i32 {
         let desired = self.desired_height_px(&self.current_layout());
-        self.bounded_height_px(desired)
+        self.bounded_height_px(desired.max(self.rail_fit_height_px()))
     }
 
     /// The item layout at the content surface's current width, rows at their own height.
@@ -305,16 +305,14 @@ impl FenceViewState {
         self.natural_layout(cw as f32 / self.scale())
     }
 
-    /// Window height (device px) that shows every row of `layout`, and every pill of a left tab
-    /// column, ignoring the work area.
+    /// Window height (device px) that shows every row of `layout`, ignoring the work area.
     fn desired_height_px(&self, layout: &ItemLayout) -> i32 {
         // Header bands and per-group row blocks included; an empty fence keeps one row.
         let content = layout.fixed_top()
             + layout
                 .content_height()
                 .max(layout.top_pad() * 2.0 + layout.row_step());
-        (self.title_h_px() + (content * self.scale()).ceil() as i32 + FIT_SLACK_PX)
-            .max(self.rail_fit_height_px())
+        self.title_h_px() + (content * self.scale()).ceil() as i32 + FIT_SLACK_PX
     }
 
     /// Window height (device px) that shows every pill of the left tab column at its natural
@@ -338,6 +336,7 @@ impl FenceViewState {
             return None;
         }
         if self.auto_height || !self.tabs_on_rail() {
+            // Auto height fits the column by itself.
             return None;
         }
         let want = self.bounded_height_px(self.rail_fit_height_px());
@@ -352,7 +351,8 @@ impl FenceViewState {
         FitReport {
             columns: layout.columns(),
             rows: layout.row_count(),
-            fitting_height_px: self.bounded_height_px(desired),
+            // The fitting height shows a left tab column too; `overflow` stays about items.
+            fitting_height_px: self.bounded_height_px(desired.max(self.rail_fit_height_px())),
             overflow: desired > self.expanded_h_px,
         }
     }

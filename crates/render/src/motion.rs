@@ -349,6 +349,15 @@ impl Motion {
         clip.StartAnimation(&HSTRING::from("BottomInset"), &self.scalar(to, dur, curve)?)
     }
 
+    /// Animates the top inset of an existing inset clip on `v` (see [`Motion::animate_clip_bottom`]).
+    pub fn animate_clip_top(&self, v: &Visual, to: f32, dur: Duration, curve: Curve) -> Result<()> {
+        let clip = raw_visual(v)?.Clip()?.cast::<comp::InsetClip>()?;
+        if !self.enabled.get() {
+            return clip.SetTopInset(to);
+        }
+        clip.StartAnimation(&HSTRING::from("TopInset"), &self.scalar(to, dur, curve)?)
+    }
+
     pub fn clear_clip(&self, v: &Visual) -> Result<()> {
         raw_visual(v)?.SetClip(None::<&comp::CompositionClip>)
     }
