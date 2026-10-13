@@ -29,7 +29,7 @@ pub struct FenceViewState {
     /// aside. None = no hint, or a plain (single-tab) title.
     pub(super) merge_gap: Option<usize>,
     /// Natural pill widths by caption (and search badge), see `tab_natural_widths`.
-    pub(super) tab_natural_w: RefCell<Vec<(String, u8, bool, Option<String>, f32)>>,
+    pub(super) tab_natural_w: RefCell<Vec<(String, u8, (bool, bool), Option<String>, f32)>>,
     /// Tab head under an OLE drag (highlighted like a folder drop target; not the hover).
     pub(super) drop_tab: Option<usize>,
     /// Drag dwell timer: the rolled-fence unroll is armed.
@@ -168,6 +168,10 @@ pub struct FenceViewState {
     pub(super) gpu_glass: RefCell<pecofence_render::gpu_glass::GpuGlass>,
     pub(super) chrome_panel: Panel,
     pub(super) content_panel: Panel,
+    /// Device px from the window's left edge to the content panel: the left tab column's width
+    /// as last laid out (`layout_panels`, `sync_rail`), 0 without one. Client points become
+    /// content points by subtracting it (and the title height).
+    pub(super) content_x: i32,
     pub(super) _target: DesktopWindowTarget,
     /// Root of the window's visual tree: whole-window fades / scales animate this.
     pub(super) root: ContainerVisual,
@@ -234,6 +238,9 @@ pub struct FenceViewState {
     pub(super) tab_hover_switch: Option<usize>,
     /// Fence height follows the item grid (FenceView.auto_height).
     pub(super) auto_height: bool,
+    /// The left tab column appeared or grew (a tab joined, a caption changed, 标签栏位置): the
+    /// next height pass lets a fence too short for it grow (`take_rail_growth_px`).
+    pub(super) rail_grow: bool,
     /// Mouse move/resize disabled (menu "锁定位置和大小").
     pub(super) locked: bool,
     /// Per-fence material override; None follows the global setting.

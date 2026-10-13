@@ -5,7 +5,8 @@
 
 use crate::anchor::{self, AnchorCell};
 use crate::commands::{
-    Command, CommandQueue, TransferMode, WM_APP_FADE_DONE, WM_APP_SET_VISIBLE, WM_APP_TAB_SWAP_DONE,
+    Command, CommandQueue, TransferMode, WM_APP_FADE_DONE, WM_APP_SET_VISIBLE, WM_APP_TAB_RAIL,
+    WM_APP_TAB_SWAP_DONE,
 };
 use crate::icons::{IconCache, Lookup};
 use crate::layout::{
@@ -124,6 +125,8 @@ pub struct Behavior {
     pub title_on_hover: std::cell::Cell<bool>,
     /// Title (or tab strip) position in the title row (`titleAlign`).
     pub title_align: std::cell::Cell<pecofence_core::TitleAlign>,
+    /// Tabs in the title row or in a column on the left (`tabBar`).
+    pub tab_bar: std::cell::Cell<pecofence_core::TabBar>,
     /// Scrollbar drawn only while hovered / shortly after scrolling.
     pub hide_inactive_scrollbar: std::cell::Cell<bool>,
     /// Resting the pointer on another tab switches to it (`rollUp.switchTabOnHover`).

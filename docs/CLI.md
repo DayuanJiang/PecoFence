@@ -214,6 +214,8 @@ is rejected with `invalid_value` and the hint to re-save it (`| Set-Content -Enc
 `settings set` paths are dotted camelCase keys of the Settings object, e.g. `iconSize`, `theme`,
 `themeStyle`, `hideRealIcons`, `autostart`, `peek.enabled`, `quickHide.enabled`,
 `titleAlign` (left/center/right: the title and tab strip in every title row),
+`tabBar` (top/left: a fence with two or more tabs shows them in its title row, or stacked in a
+column on its left with vertical names; default top),
 `rollUp.hoverPeek`, `rollUp.clickToExpand`, `rollUp.pushNeighbors` (an expanded fence pushes the
 fences stacked below it down and they slide back when it rolls up; their `rect` stays where it was,
 default on), `rollUp.titleOnHover` (the title row folds away until the

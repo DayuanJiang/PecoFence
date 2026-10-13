@@ -1808,7 +1808,7 @@ impl App {
         self.handle(Command::MergeFence {
             fence: a,
             into: hwnd,
-            x: i32::MIN,
+            at: (i32::MIN, i32::MIN),
         });
         let changed = self.state.host_of(a) == host;
         self.push_settings_state();

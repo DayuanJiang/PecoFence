@@ -659,19 +659,22 @@ impl App {
         if tabs.len() >= 2 || !other_hosts.is_empty() {
             let tab_menu = PopupMenu::new();
             if tabs.len() >= 2 {
+                // A left tab column moves its tabs up and down.
+                let (earlier, later) =
+                    if self.ctx.behavior.tab_bar.get() == pecofence_core::TabBar::Left {
+                        (
+                            pecofence_core::i18n::text("上移"),
+                            pecofence_core::i18n::text("下移"),
+                        )
+                    } else {
+                        (
+                            pecofence_core::i18n::text("左移"),
+                            pecofence_core::i18n::text("右移"),
+                        )
+                    };
                 tab_menu
-                    .item(
-                        CMD_TAB_MOVE_LEFT,
-                        pecofence_core::i18n::text("左移"),
-                        false,
-                        tab_idx == 0,
-                    )
-                    .item(
-                        CMD_TAB_MOVE_RIGHT,
-                        pecofence_core::i18n::text("右移"),
-                        false,
-                        tab_idx + 1 >= tabs.len(),
-                    )
+                    .item(CMD_TAB_MOVE_LEFT, earlier, false, tab_idx == 0)
+                    .item(CMD_TAB_MOVE_RIGHT, later, false, tab_idx + 1 >= tabs.len())
                     .item(
                         CMD_TAB_DETACH,
                         pecofence_core::i18n::text("拆出为独立栅栏"),

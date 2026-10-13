@@ -103,6 +103,24 @@ pub(super) fn on_app_tab_swap_done(
     Some(0)
 }
 
+pub(super) fn on_app_tab_rail(
+    h: &HandlerCtx,
+    _hwnd: HWND,
+    _wparam: usize,
+    _lparam: isize,
+) -> Option<isize> {
+    let HandlerCtx { view, .. } = h;
+    let rail = view
+        .try_borrow()
+        .ok()
+        .and_then(|g| {
+            g.as_ref()
+                .map(|v| if v.rolled_up { 0 } else { v.content_x })
+        })
+        .unwrap_or(0);
+    Some(rail as isize)
+}
+
 pub(super) fn on_app_fade_done(
     h: &HandlerCtx,
     hwnd: HWND,

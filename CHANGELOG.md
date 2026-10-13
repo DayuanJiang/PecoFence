@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Tabs can stand in a column on the left of a fence (#72): set 「标签栏位置」 to 「左侧」 (Settings › 常规, or `pecofence-cli settings set tabBar left`) and a fence with two or more tabs lists them from top to bottom with vertical names (Chinese and Japanese upright, Latin turned on its side), so many tabs no longer squeeze each other's names in the title row. The title row then shows the current tab's name, and the icons sit to the right of the column. Switching, dragging to reorder (up and down), tearing a tab off (sideways), dropping a fence onto the column at a chosen place, dropping files on a tab, the wheel and switching on hover all work in the column as they do in the title row. When the column appears or gets longer, a fence too short to show every tab's name grows to fit, as far as the fence below it or the bottom of the screen. The default stays 「顶部」.
+
 ## 0.2.0
 
 - PecoFence runs on Windows 10 22H2 too: the ZIP, the installer and the Store edition. Windows 10 has neither Segoe UI Variable nor Segoe Fluent Icons, so there the fences, menus and Settings use Segoe UI and Segoe MDL2 Assets.

@@ -103,12 +103,18 @@ pub(super) fn on_mousemove(
         // it follows the pointer along the strip (TabView), so press_inside
         // is not tracked for PressTarget::Tab; tear-off clears it below.
         let far = (TAB_DETACH_DIP * v.scale()) as i32;
-        let sy = td.start.1;
+        let (sx, sy) = td.start;
         let index = td.index;
-        let (w_px, _) = v.chrome_panel.size_px();
+        let (w_px, h_px) = v.chrome_panel.size_px();
         // Leaving the title row vertically (or the window sideways) tears the
-        // tab off; moving along the strip reorders it.
-        if (y - sy).abs() > far || x < 0 || x >= w_px {
+        // tab off; moving along the strip reorders it. A left tab column is
+        // left sideways, or through the window's top or bottom edge.
+        let torn = if v.tabs_on_rail() {
+            (x - sx).abs() > far || y < 0 || y >= h_px
+        } else {
+            (y - sy).abs() > far || x < 0 || x >= w_px
+        };
+        if torn {
             let tab = v.tabs.get(index).map(|t| t.id);
             v.tab_drag = None;
             v.tab_slide.clear();
@@ -140,7 +146,6 @@ pub(super) fn on_mousemove(
         // the active pill exactly as a click does) and nothing is redrawn.
         if !td.moved {
             let (tx, ty) = window::drag_threshold();
-            let sx = td.start.0;
             if (x - sx).abs() <= tx && (y - sy).abs() <= ty {
                 return Some(0);
             }
@@ -151,7 +156,7 @@ pub(super) fn on_mousemove(
         // step, repeated so a fast sweep can cross several neighbours in one
         // message; `tab_reorder_step` is stable for any pair of widths.
         let now = Instant::now();
-        let pointer_x = x as f32 / v.scale();
+        let pointer_x = v.tab_axis(x, y);
         if let Some(td) = v.tab_drag.as_mut() {
             td.moved = true;
             td.pointer_x = pointer_x;

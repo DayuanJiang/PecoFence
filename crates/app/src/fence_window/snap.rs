@@ -5,7 +5,8 @@
 use super::*;
 use crate::drag_guides::GuideLine;
 
-/// Another fence's window whose title row is under the cursor (drag-to-merge target).
+/// Another fence's window whose title row or left tab column is under the cursor
+/// (drag-to-merge target).
 pub(super) fn merge_target_under_cursor(me: HWND) -> Option<HWND> {
     merge_target_under_cursor_excluding(me, HWND(std::ptr::null_mut()))
 }
@@ -24,7 +25,12 @@ pub(super) fn merge_target_at(me: HWND, also: HWND, point: (i32, i32)) -> Option
             }
             let r = window::window_rect(w);
             let title_h = (36.0 * monitors::dpi_for_window(w).max(96) as f32 / 96.0) as i32;
-            point.0 >= r.left && point.0 < r.right && point.1 >= r.top && point.1 < r.top + title_h
+            if point.0 < r.left || point.0 >= r.right || point.1 < r.top || point.1 >= r.bottom {
+                return false;
+            }
+            // Fence windows share this thread: the message is a direct call.
+            point.1 < r.top + title_h
+                || point.0 < r.left + window::send_message(w, WM_APP_TAB_RAIL, 0, 0) as i32
         })
 }
 

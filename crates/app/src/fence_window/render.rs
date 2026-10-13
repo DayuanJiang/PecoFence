@@ -379,7 +379,11 @@ impl FenceViewState {
             _ => Backdrop::Solid,
         };
         let bitmaps = self.bitmaps.clone();
-        let title = self.title.clone();
+        // With the tabs in the left column the title row names the tab being shown.
+        let title = match self.tabs.get(self.active_index()) {
+            Some(t) if self.tabs_on_rail() => t.title.clone(),
+            _ => self.title.clone(),
+        };
         let rolled = self.roll_target();
         // A roll set / cancelled without the animation (reduced motion, retire, external
         // geometry) leaves the progress tween behind: rest it at the settled state.
@@ -419,6 +423,7 @@ impl FenceViewState {
         let deco = self.deco;
         let style = FenceStyle {
             title_align: self.behavior.title_align.get(),
+            tab_rail: self.rail_w(),
             ..self.style
         };
         let pressed_tab = match self.pressed {
@@ -572,7 +577,8 @@ impl FenceViewState {
         self.update_backdrop();
     }
 
-    /// Lays out the content panel below the title bar and resizes both surfaces.
+    /// Lays out the content panel below the title bar (and beside a left tab column) and
+    /// resizes both surfaces.
     pub(super) fn layout_panels(&mut self, w: i32, h: i32) -> Result<()> {
         // A content swap still moving would be laid out at the wrong size: settle it first.
         self.finish_content_swap_now();
@@ -583,10 +589,12 @@ impl FenceViewState {
         self.chrome_panel.resize(w, h)?;
         let title_h = self.title_h_px();
         let content_h = (h - title_h).max(1);
-        self.content_panel.resize(w, content_h)?;
+        self.content_x = self.rail_px();
+        self.content_panel
+            .resize((w - self.content_x).max(1), content_h)?;
         self.content_panel
             .visual
-            .set_offset(0.0, title_h as f32, 0.0);
+            .set_offset(self.content_x as f32, title_h as f32, 0.0);
         self.content_panel
             .visual
             .set_visible(!self.rolled_up || self.roll_anim.is_some());

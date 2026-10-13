@@ -419,10 +419,12 @@ impl FenceViewState {
             // Rasterise the content once at its final size; the growing HWND reveals it.
             let (w, _) = self.chrome_panel.size_px();
             let title_h = self.title_h_px();
-            let _ = self.content_panel.resize(w, (to_h - title_h).max(1));
+            let _ = self
+                .content_panel
+                .resize((w - self.content_x).max(1), (to_h - title_h).max(1));
             self.content_panel
                 .visual
-                .set_offset(0.0, title_h as f32, 0.0);
+                .set_offset(self.content_x as f32, title_h as f32, 0.0);
             if !mid_roll {
                 self.content_panel.visual.set_opacity(0.0);
             }
@@ -456,7 +458,9 @@ impl FenceViewState {
         // same duration and curve, continuous when a roll is reversed mid-flight.
         self.roll_t
             .retarget(rolled as u8 as f32, self.anim_dur(dur), curve, now);
-        if self.tabs.len() > 1 && self.tab_drag.is_none() {
+        // A left tab column keeps its pills where they are (it has no item count to make room
+        // for, and it is hidden while rolled).
+        if self.tabs.len() > 1 && self.tab_drag.is_none() && !self.tabs_on_rail() {
             self.sync_tab_slides(&prev, now);
         }
         self.frames.request();

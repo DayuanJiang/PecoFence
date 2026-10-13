@@ -28,7 +28,7 @@ fn window_drag_keeps_the_latest_sample_and_release_before_first_frame() {
         offset: (20, 10),
         offset_dpi: 96,
         merge_target: 0,
-        merge_x: i32::MIN,
+        merge_at: (i32::MIN, i32::MIN),
         moved_once: false,
         origin: WindowDragOrigin::Caption {
             rect: RECT::default(),

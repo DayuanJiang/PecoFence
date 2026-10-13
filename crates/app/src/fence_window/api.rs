@@ -194,6 +194,7 @@ impl FenceWindow {
             gpu_glass: RefCell::new(pecofence_render::gpu_glass::GpuGlass::default()),
             chrome_panel,
             content_panel,
+            content_x: 0,
             _target: target,
             root,
             chrome: ctx.chrome.clone(),
@@ -237,6 +238,7 @@ impl FenceWindow {
             wheel_tab_accum: 0,
             tab_hover_switch: None,
             auto_height,
+            rail_grow: false,
             locked: false,
             backdrop_override: None,
             opacity: 1.0,
@@ -377,7 +379,7 @@ impl FenceWindow {
             },
         );
         format!(
-            "title={:?} opacity={:.2} scale={:.3} fade={fade} retired={} rolled={} rolling={} peeking={} items={} tabs={} selected={} focused={:?} shadow_visible={} shadow_alpha={} layout={:?} locked={} auto_height={} active={} scroll={:.1} client={:?} client_offset=({},{}) chrome={:?} glass={:?} wallpaper_uploads={} title_size={} tab_fonts={:?} tab_rects={:?} capture={} tab_drag={} window_drag={} detach_pending={} plate_inset={} plate_alpha={:.2} mouse_inside={}",
+            "title={:?} opacity={:.2} scale={:.3} fade={fade} retired={} rolled={} rolling={} peeking={} items={} tabs={} selected={} focused={:?} shadow_visible={} shadow_alpha={} layout={:?} locked={} auto_height={} active={} scroll={:.1} client={:?} client_offset=({},{}) chrome={:?} glass={:?} wallpaper_uploads={} title_size={} tab_fonts={:?} tab_rects={:?} content_x={} content={:?} capture={} tab_drag={} window_drag={} detach_pending={} plate_inset={} plate_alpha={:.2} mouse_inside={}",
             v.title,
             v.root.opacity(),
             v.root.scale().x,
@@ -410,6 +412,8 @@ impl FenceWindow {
                 .map(|t| (&t.title, t.title_size))
                 .collect::<Vec<_>>(),
             v.tab_rects(),
+            v.content_x,
+            v.content_panel.size_px(),
             window::get_capture() == self.hwnd(),
             v.tab_drag.is_some(),
             v.remote_drag.is_some(),
@@ -911,6 +915,11 @@ impl FenceWindow {
             let had_strip = v.tabs.len() > 1;
             v.tabs = tabs;
             v.active = active;
+            // A left tab column comes with the second tab and goes with the last but one.
+            let rail_changed = v.sync_rail();
+            if rail_changed || !same_titles {
+                v.rail_grow = v.tabs_on_rail();
+            }
             if !same_titles {
                 // Reorder, rename, or a tab added / removed (merge, tear-off, close): the
                 // survivors slide from where they were painted into their new slots (WinUI
@@ -1004,6 +1013,21 @@ impl FenceWindow {
                 v.drop_tab = None;
                 let _ = v.redraw_chrome_only();
             }
+            if rail_changed {
+                let _ = v.redraw();
+            }
+        });
+    }
+
+    /// 标签栏位置 changed: the tabs move between the title row and the left column.
+    pub fn sync_tab_bar(&self) {
+        self.with_view(|v| {
+            v.tab_slide.clear();
+            v.tab_settle = None;
+            v.pill_anim = None;
+            v.sync_rail();
+            v.rail_grow = v.tabs_on_rail();
+            let _ = v.redraw();
         });
     }
 
@@ -1038,7 +1062,7 @@ impl FenceWindow {
                 offset: (pt.x - r.left, pt.y - r.top),
                 offset_dpi: monitors::dpi_for_window(hwnd),
                 merge_target: 0,
-                merge_x: i32::MIN,
+                merge_at: (i32::MIN, i32::MIN),
                 moved_once: false,
                 origin: WindowDragOrigin::Tab(Box::new(change)),
                 group: Vec::new(),
@@ -1063,11 +1087,11 @@ impl FenceWindow {
 
     /// Highlights (or clears) this window's title as a drag-to-merge target: the wash + ring
     /// fade in over 83 ms and out over 167 ms, and a tabbed strip opens an insertion gap at
-    /// the slot under pointer screen `x` (neighbours slide 167 ms). Cheap when nothing changed:
-    /// the hint is re-sent for every pointer move along the target.
-    pub fn set_merge_hint(&self, on: bool, x: i32) {
+    /// the slot under pointer screen point `at` (neighbours slide 167 ms). Cheap when nothing
+    /// changed: the hint is re-sent for every pointer move along the target.
+    pub fn set_merge_hint(&self, on: bool, at: (i32, i32)) {
         self.with_view(|v| {
-            let mut changed = v.set_merge_gap(on.then_some(x));
+            let mut changed = v.set_merge_gap(on.then_some(at));
             if v.merge_hint != on {
                 v.merge_hint = on;
                 let (to, dur) = if on {
@@ -1085,13 +1109,13 @@ impl FenceWindow {
         });
     }
 
-    /// Where a fence dropped on this title at pointer screen `x` lands in the strip (the slot
-    /// the merge gap sits at); `tabs.len()` = append.
-    pub fn merge_slot_at(&self, x: i32) -> usize {
+    /// Where a fence dropped on this title at pointer screen point `at` lands in the strip (the
+    /// slot the merge gap sits at); `tabs.len()` = append.
+    pub fn merge_slot_at(&self, at: (i32, i32)) -> usize {
         self.view
             .borrow()
             .as_ref()
-            .map_or(usize::MAX, |v| v.merge_slot_at(x))
+            .map_or(usize::MAX, |v| v.merge_slot_at(at))
     }
 
     /// Details column widths (修改日期, 类型, 大小) for the fence being shown.
@@ -1392,6 +1416,15 @@ impl FenceWindow {
     /// Height the window should have when auto-height is on (None when off / rolled).
     pub fn auto_height_px(&self) -> Option<i32> {
         self.view.borrow().as_ref().and_then(|v| v.auto_height_px())
+    }
+
+    /// See `FenceViewState::take_rail_growth_px`: the height a fence grows to once so its left
+    /// tab column shows every tab.
+    pub fn take_rail_growth_px(&self) -> Option<i32> {
+        self.view
+            .borrow_mut()
+            .as_mut()
+            .and_then(|v| v.take_rail_growth_px())
     }
 
     /// Columns, rows and fitting height of the fence currently shown ([`Self::active_fence`]).

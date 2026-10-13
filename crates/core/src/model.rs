@@ -97,6 +97,9 @@ pub struct Settings {
     /// Where every fence's title (or tab strip) sits in its title row.
     #[serde(default)]
     pub title_align: TitleAlign,
+    /// Where a fence with two or more tabs shows them.
+    #[serde(default)]
+    pub tab_bar: TabBar,
     pub icon_size: u32,
     pub quick_hide: QuickHideSettings,
     pub roll_up: RollUpSettings,
@@ -165,6 +168,7 @@ impl Default for Settings {
             theme: ThemeSetting::FollowWindowsMode,
             theme_style: ThemeStyle::Fluent,
             title_align: TitleAlign::Left,
+            tab_bar: TabBar::Top,
             icon_size: 48,
             quick_hide: QuickHideSettings::default(),
             roll_up: RollUpSettings::default(),
@@ -220,6 +224,17 @@ pub enum TitleAlign {
     Left,
     Center,
     Right,
+}
+
+/// Where a tabbed fence shows its tabs: side by side in the title row, or stacked in a column
+/// on its left with vertical captions (the title row then shows the current tab's name).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase")]
+pub enum TabBar {
+    #[default]
+    Top,
+    Left,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -1434,9 +1449,11 @@ mod tests {
         let mut json = serde_json::to_value(Settings::default()).unwrap();
         json.as_object_mut().unwrap().remove("themeStyle");
         json.as_object_mut().unwrap().remove("titleAlign");
+        json.as_object_mut().unwrap().remove("tabBar");
         let legacy: Settings = serde_json::from_value(json).unwrap();
         assert_eq!(legacy.theme_style, ThemeStyle::Fluent);
         assert_eq!(legacy.title_align, TitleAlign::Left);
+        assert_eq!(legacy.tab_bar, TabBar::Top);
         for mode in [
             ThemeSetting::Light,
             ThemeSetting::Dark,

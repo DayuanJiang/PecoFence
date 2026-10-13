@@ -130,7 +130,7 @@ pub(super) fn on_lbuttondown(
                     tab: tab.id,
                 });
             }
-            let pointer_x = x as f32 / v.scale();
+            let pointer_x = v.tab_axis(x, y);
             let slot_x = v
                 .tab_draw_xs(Instant::now())
                 .get(t)
@@ -161,7 +161,7 @@ pub(super) fn on_lbuttondown(
             queue.push(Command::RaiseFence(hwnd));
             return Some(0);
         }
-        let in_content = !v.rolled_up && y >= v.title_h_px();
+        let in_content = !v.rolled_up && y >= v.title_h_px() && x >= v.content_x;
         if let Some(col) = v.divider_hit(x, y) {
             v.col_drag = Some(ColDrag {
                 col,
@@ -313,7 +313,7 @@ pub(super) fn on_lbuttonup(
         if drag.merge_target != 0 {
             queue.push(Command::MergeHint {
                 target: HWND(std::ptr::null_mut()),
-                x: 0,
+                at: (0, 0),
             });
         }
         if !drag.group.is_empty() {
@@ -322,11 +322,10 @@ pub(super) fn on_lbuttonup(
         } else if let Some(into) =
             merge_target_at(drag.hwnd, HWND::default(), (release.x, release.y))
         {
-            let x = release.x;
             queue.push(Command::MergeFence {
                 fence: drag.fence,
                 into,
-                x,
+                at: (release.x, release.y),
             });
         } else {
             queue.push(Command::FenceDropped(drag.fence));
@@ -493,7 +492,7 @@ pub(super) fn on_capturechanged(
             if rd.merge_target != 0 {
                 queue.push(Command::MergeHint {
                     target: HWND(std::ptr::null_mut()),
-                    x: 0,
+                    at: (0, 0),
                 });
             }
         }
@@ -740,9 +739,9 @@ pub(super) fn on_mousewheel(
             }
             return Some(0);
         }
-        // Wheel over the title row of a tabbed fence: one tab per whole notch, accumulated
-        // for touchpads. A held left button (tab, column or title drag, marquee) and a tab
-        // title rename keep the tab where it is.
+        // Wheel over the title row (or the left tab column) of a tabbed fence: one tab per
+        // whole notch, accumulated for touchpads. A held left button (tab, column or title
+        // drag, marquee) and a tab title rename keep the tab where it is.
         let pt = window::screen_to_client(
             hwnd,
             pecofence_platform::POINT {
@@ -750,7 +749,8 @@ pub(super) fn on_mousewheel(
                 y: msg::hi_i16(lparam),
             },
         );
-        let over_title = pt.y >= 0 && pt.y < v.title_h_px();
+        let over_title = pt.y >= 0
+            && (pt.y < v.title_h_px() || (pt.x >= 0 && pt.x < v.content_x && !v.rolled_up));
         let lbutton = wparam & msg::MK_LBUTTON as usize != 0;
         if v.tabs.len() > 1 && over_title && !lbutton && !v.title_renaming && v.roll_anim.is_none()
         {

@@ -453,7 +453,13 @@ impl FenceViewState {
         let title_h = self.title_h_px() as f32;
         let (cw, _) = self.content_size_px();
         let fixed = self.layout(cw as f32 / scale).fixed_top();
-        let to_dip = |(x, y): (i32, i32)| (x as f32 / scale, (y as f32 - title_h) / scale - fixed);
+        let left = self.content_x as f32;
+        let to_dip = |(x, y): (i32, i32)| {
+            (
+                (x as f32 - left) / scale,
+                (y as f32 - title_h) / scale - fixed,
+            )
+        };
         let (x0, y0) = to_dip(m.start);
         // The start corner is anchored to the content, so scrolling under the band keeps it on
         // the same items.

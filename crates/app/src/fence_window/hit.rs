@@ -78,6 +78,7 @@ impl FenceViewState {
             return false;
         }
         let (cw, _) = self.content_size_px();
+        let x_px = x_px - self.content_x;
         if x_px < 0 || x_px >= cw {
             return false;
         }
@@ -85,9 +86,10 @@ impl FenceViewState {
         y >= 0.0 && y < RowMetrics::details().header_h
     }
 
-    /// Is the client-pixel point on the portal "up" button?
+    /// Is the client-pixel point on the portal "up" button? A tab strip in the title row has
+    /// none; with the tabs in the left column the row is the shown tab's title.
     pub(super) fn up_button_at(&self, x_px: i32, y_px: i32) -> bool {
-        if !self.deco.up_button || self.tabs.len() > 1 {
+        if !self.deco.up_button || self.title_row_strip() {
             return false;
         }
         let scale = self.scale();
@@ -200,7 +202,7 @@ impl FenceViewState {
         }
         let (cw, _) = self.content_size_px();
         self.columns_for(cw as f32 / scale)
-            .column_at(x_px as f32 / scale)
+            .column_at((x_px - self.content_x) as f32 / scale)
     }
 
     /// Details header divider under a client-pixel point (resize grip).
@@ -215,7 +217,7 @@ impl FenceViewState {
         }
         let (cw, _) = self.content_size_px();
         self.columns_for(cw as f32 / scale)
-            .divider_at(x_px as f32 / scale)
+            .divider_at((x_px - self.content_x) as f32 / scale)
     }
 
     pub(super) fn column_width(&self, col: DetailColumn) -> f32 {
@@ -272,10 +274,11 @@ impl FenceViewState {
                 )
             }
         };
+        let win_left = win.left + self.content_x;
         Some(RECT {
-            left: win.left + (left * scale) as i32,
+            left: win_left + (left * scale) as i32,
             top: win.top + title_h + (top * scale) as i32,
-            right: win.left + (right * scale) as i32,
+            right: win_left + (right * scale) as i32,
             bottom: win.top + title_h + (bottom * scale) as i32,
         })
     }
@@ -302,14 +305,43 @@ impl FenceViewState {
         self.natural_layout(cw as f32 / self.scale())
     }
 
-    /// Window height (device px) that shows every row of `layout`, ignoring the work area.
+    /// Window height (device px) that shows every row of `layout`, and every pill of a left tab
+    /// column, ignoring the work area.
     fn desired_height_px(&self, layout: &ItemLayout) -> i32 {
         // Header bands and per-group row blocks included; an empty fence keeps one row.
         let content = layout.fixed_top()
             + layout
                 .content_height()
                 .max(layout.top_pad() * 2.0 + layout.row_step());
-        self.title_h_px() + (content * self.scale()).ceil() as i32 + FIT_SLACK_PX
+        (self.title_h_px() + (content * self.scale()).ceil() as i32 + FIT_SLACK_PX)
+            .max(self.rail_fit_height_px())
+    }
+
+    /// Window height (device px) that shows every pill of the left tab column at its natural
+    /// length; 0 without a column.
+    pub(super) fn rail_fit_height_px(&self) -> i32 {
+        if !self.tabs_on_rail() {
+            return 0;
+        }
+        let natural = self.tab_natural_widths();
+        let gaps = TAB_GAP * natural.len().saturating_sub(1) as f32;
+        let len = natural.iter().sum::<f32>() + gaps + 2.0 * TAB_RAIL_PAD;
+        self.title_h_px() + (len * self.scale()).ceil() as i32
+    }
+
+    /// Once after the left tab column appeared or grew: the expanded height (device px) that
+    /// shows all of it, when the fence is shorter. Auto-height fences already fit it, and a
+    /// fence is never made shorter; it can still be sized smaller by hand afterwards (the
+    /// pills then shrink). A rolled fence keeps the request until it is expanded.
+    pub(super) fn take_rail_growth_px(&mut self) -> Option<i32> {
+        if self.rolled_up || self.roll_anim.is_some() || !std::mem::take(&mut self.rail_grow) {
+            return None;
+        }
+        if self.auto_height || !self.tabs_on_rail() {
+            return None;
+        }
+        let want = self.bounded_height_px(self.rail_fit_height_px());
+        (want > self.expanded_h_px).then_some(want)
     }
 
     /// Columns, rows and the fitting height of the shown items at the current width, and
@@ -339,19 +371,29 @@ impl FenceViewState {
     }
 
     /// Test hook: the screen point over the first item whose name contains `name` (a drop onto
-    /// a folder item), the inverse of `hit_item`.
+    /// a folder item), the inverse of `hit_item`; `tab:<title>` is the middle of that tab's pill.
     #[cfg(debug_assertions)]
     pub(super) fn test_item_point(&self, name: &str) -> Option<(i32, i32)> {
-        let i = self.items.iter().position(|it| it.name.contains(name))?;
         let scale = self.scale();
+        let r = window::window_rect(self.hwnd);
+        if let Some(title) = name.strip_prefix("tab:") {
+            let i = self.tabs.iter().position(|t| t.title.contains(title))?;
+            let (x, w) = *self.tab_rects().get(i)?;
+            let along = ((x + w / 2.0) * scale).round() as i32;
+            return Some(if self.tabs_on_rail() {
+                (r.left + self.content_x / 2, r.top + along)
+            } else {
+                (r.left + along, r.top + self.title_h_px() / 2)
+            });
+        }
+        let i = self.items.iter().position(|it| it.name.contains(name))?;
         let (cw, _) = self.content_size_px();
         let layout = self.layout(cw as f32 / scale);
         let c = layout.cell(i);
         let x = c.x + c.w.min(40.0) / 2.0;
         let y = c.y - self.scroll_y + layout.fixed_top() + c.h / 2.0;
-        let r = window::window_rect(self.hwnd);
         Some((
-            r.left + (x * scale).round() as i32,
+            r.left + self.content_x + (x * scale).round() as i32,
             r.top + self.title_h_px() + (y * scale).round() as i32,
         ))
     }
@@ -363,12 +405,12 @@ impl FenceViewState {
         }
         let scale = self.scale();
         let title_h = self.title_h_px();
-        if y_px < title_h {
+        if y_px < title_h || x_px < self.content_x {
             return None;
         }
         let (cw, _) = self.content_size_px();
         let layout = self.layout(cw as f32 / scale);
-        let x = x_px as f32 / scale;
+        let x = (x_px - self.content_x) as f32 / scale;
         let y = (y_px - title_h) as f32 / scale - layout.fixed_top();
         if y < 0.0 {
             return None;
