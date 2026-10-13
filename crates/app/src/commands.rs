@@ -148,10 +148,13 @@ pub enum Command {
     },
     /// A drop onto `to` was handed to the shell's folder drop target (Outlook mail, a
     /// Start-menu app): the portals show what landed in their folders; `landed` are the desktop
-    /// entries a virtual fence's drop created, to be filed into `to`.
+    /// entries a virtual fence's drop created, to be filed into `to`. `on_desktop`: the drop
+    /// went to the desktop folder (a virtual fence), so what the shell writes there a moment
+    /// later goes into `to` too.
     ShellDrop {
         to: FenceId,
         landed: Vec<PathBuf>,
+        on_desktop: bool,
     },
     /// Right-click on the Details header: column visibility menu at screen coordinates.
     HeaderMenu {

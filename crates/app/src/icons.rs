@@ -84,10 +84,11 @@ struct InFlight {
     attempts: u32,
 }
 
-/// Extraction failures on a file that still exists are retried: the shell hands back nothing
-/// while a file is being moved in (OneDrive materialises it a moment later), while a copy is
-/// still writing, or when the icon handler was busy. Explorer's views show the generic icon
-/// first and repaint when the extraction eventually succeeds; here the loading tile stays up.
+/// Extraction failures on a file that still exists (or a namespace item such as This PC) are
+/// retried: the shell hands back nothing while a file is being moved in (OneDrive materialises
+/// it a moment later), while a copy is still writing, or when the icon handler was busy
+/// (`E_PENDING`). Explorer's views show the generic icon first and repaint when the extraction
+/// eventually succeeds; here the loading tile stays up.
 const RETRY_ATTEMPTS: u32 = 3;
 const RETRY_DELAYS_MS: [u64; 3] = [400, 1500, 4000];
 
@@ -269,7 +270,10 @@ impl IconCache {
             if let Some(e) = r.error {
                 self.stats.first_error.get_or_insert(e);
             }
-            if r.image.is_none() && f.attempts < RETRY_ATTEMPTS && f.req.path.exists() {
+            if r.image.is_none()
+                && f.attempts < RETRY_ATTEMPTS
+                && (f.req.path.exists() || shell::is_namespace_path(&f.req.path))
+            {
                 // Still there but not extractable right now: try again later, and keep the
                 // entry pending so the windows keep showing the loading tile instead of the
                 // failure placeholder.
@@ -557,6 +561,35 @@ mod tests {
         done.send(ready(3, "ext:.pf-other")).unwrap();
         assert_eq!(cache.drain_results(), 0);
         assert_eq!(cache.len(), 0);
+    }
+
+    /// A namespace item has no file to check for: a failed extraction (`E_PENDING` from the
+    /// shell) is retried instead of leaving the failure glyph for the rest of the session.
+    #[test]
+    fn failed_namespace_icons_are_retried() {
+        let mut cache = IconCache::new(HWND::default());
+        let (done, rx) = channel();
+        cache.rx = rx;
+        let this_pc = Path::new("::{20D04FE0-3AEA-1069-A2D8-08002B30309D}");
+        let (key, _) = icon_key_for(this_pc, false, 0);
+        assert!(matches!(
+            cache.get(&key, this_pc, 48, true),
+            Lookup::Pending
+        ));
+        done.send(Ready {
+            key: IconCache::cache_key(&key),
+            size_px: 48,
+            id: 1,
+            image: None,
+            error: Some(0x8000_000Au32 as i32),
+        })
+        .unwrap();
+        assert_eq!(cache.drain_results(), 0);
+        assert_eq!(cache.retry.len(), 1);
+        assert!(matches!(
+            cache.get(&key, this_pc, 48, true),
+            Lookup::Pending
+        ));
     }
 
     #[test]

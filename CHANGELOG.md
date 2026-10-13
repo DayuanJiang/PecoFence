@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- This PC and the Recycle Bin show the right icons in a fence and go where they are dropped (feedback #27). Once the Recycle Bin first filled, its icon stayed the empty bin for the rest of the session, because right after a file is recycled Windows still hands out the empty picture; it now switches between its full and empty icons (your own ones, if you changed them in Windows' desktop icon settings) as soon as PecoFence sees the change. An icon Windows could not hand over at that moment, as can happen to This PC right after PecoFence starts, stayed a blank page; it is now asked for again. And with the Windows desktop icons showing, dragging This PC or the Recycle Bin from the desktop onto a fence put the shortcut Windows makes (「此电脑 - 快捷方式」) into whichever fence the rules picked; it now goes into the fence you dropped it on.
 - PecoFence keeps less memory between uses. Half a minute after the fences last drew something, it hands the memory the last use touched back to Windows, every time instead of only once after startup; what it needs again comes back on its own, with no visible delay (the first animation after a pause measured the same as before). On a 4K monitor the memory Task Manager shows for PecoFence at rest stays at about 2 to 5 MB, where it used to grow to about 28 MB after some hours of use. Settings, Peek and a name being edited keep their memory while they are open.
 
 ## 0.2.0

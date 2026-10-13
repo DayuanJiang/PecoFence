@@ -675,7 +675,11 @@ impl DropHandler for FenceDropHandler {
                         let landed = before
                             .map(|b| shell_drop_landed(&dest, &b, &dir_entries(&dest), &names))
                             .unwrap_or_default();
-                        self.queue.push(Command::ShellDrop { to, landed });
+                        self.queue.push(Command::ShellDrop {
+                            to,
+                            landed,
+                            on_desktop,
+                        });
                     }
                     effect
                 }
