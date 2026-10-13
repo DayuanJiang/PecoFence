@@ -193,6 +193,10 @@ pub struct App {
     /// GPU recovery retry: one is armed (`TIMER_DEVICE_RETRY`), and the delay of the next one.
     device_retry_pending: bool,
     device_retry_ms: u32,
+    /// GPU memory at the first idle point after startup or the last rebuild that handed it
+    /// back, and when that rebuild ran (`motion::hand_back_gpu_memory`).
+    gpu_baseline: Option<u64>,
+    gpu_rebuilt: Option<Instant>,
     /// `--test-script` state while a script runs.
     test: Option<testscript::TestScript>,
     /// Selection kept by a Ctrl / Shift desktop marquee in progress (empty for a plain one);
@@ -1043,6 +1047,8 @@ impl App {
             dying: Vec::new(),
             device_retry_pending: false,
             device_retry_ms: DEVICE_RETRY_FIRST_MS,
+            gpu_baseline: None,
+            gpu_rebuilt: None,
             test: None,
             marquee_base: None,
             marquee_band: None,

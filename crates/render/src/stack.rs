@@ -194,11 +194,12 @@ impl RenderStack {
     }
 
     /// Rebuilds the D3D/D2D device and the composition graphics device after device loss
-    /// (sleep, driver update). Callers must then recreate every drawing surface.
+    /// (sleep, driver update), or to hand back GPU memory the old device kept. Callers must
+    /// then recreate every drawing surface.
     pub fn recover(&self) -> Result<()> {
         let generation = self.gpu.borrow().generation + 1;
         let (gpu, is_warp) = create_gpu(&self.compositor, generation)?;
-        tracing::warn!(generation, is_warp, "GPU device rebuilt after device loss");
+        tracing::info!(generation, is_warp, "GPU device rebuilt");
         *self.gpu.borrow_mut() = gpu;
         Ok(())
     }
