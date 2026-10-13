@@ -29,14 +29,15 @@ pub fn install(dump_dir: PathBuf, instance: &str) {
     }
 }
 
-/// The loaded module containing `addr`, if any.
+/// The loaded module containing `addr`, if any. It stays loaded until the process ends:
+/// another thread cannot unload it while the filter reads its version resource.
 fn module_at(addr: u64) -> Option<HMODULE> {
     let mut module = HMODULE::default();
-    // SAFETY: querying the module containing `addr`; the module's refcount is left unchanged.
+    // SAFETY: querying the module containing `addr`; pinning it is harmless in a process that
+    // is crashing.
     let found = unsafe {
         GetModuleHandleExW(
-            (GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT)
-                as u32,
+            (GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_PIN) as u32,
             PCWSTR(addr as usize as *const u16),
             &mut module,
         )
