@@ -245,8 +245,6 @@ pub struct App {
     /// Open `events.subscribe` streams and the last tick's state they are diffed against.
     ipc_subscribers: Vec<ipc::IpcSubscriber>,
     ipc_event_state: Option<ipc::EventState>,
-    /// When the last event (or heartbeat) went out to the streams.
-    ipc_last_event: Instant,
     /// `PECOFENCE_INSTANCE` of this process (reported by `status.get`).
     instance: Option<String>,
     settings: Option<SettingsHost>,
@@ -1075,7 +1073,6 @@ impl App {
             ipc_warnings: Vec::new(),
             ipc_subscribers: Vec::new(),
             ipc_event_state: None,
-            ipc_last_event: Instant::now(),
             instance: args.instance.clone(),
             settings: None,
             settings_focus_fence: None,
