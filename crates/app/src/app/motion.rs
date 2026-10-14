@@ -190,11 +190,10 @@ impl App {
 
     /// At an idle point: once this process's GPU memory grew by `GPU_REBUILD_GROWTH` over its
     /// baseline (read at the first idle point after startup and after each rebuild), rebuilds
-    /// the render stack the way device loss does. Every relayout of the shown items (icon
-    /// size, spacing, label lines, layout) leaves memory in the GPU driver that no trim gives
-    /// back, about 8 MB per icon size change on a 4K RTX 4070 and up to 40 MB under Liquid
-    /// Glass; a new device starts without it. On integrated GPUs this is system memory. WARP
-    /// and the basic display adapter report 0, so nothing is rebuilt there.
+    /// the render stack the way device loss does. DirectComposition and the GPU driver keep
+    /// some memory no trim gives back (each new surface size, Liquid Glass resources sized to
+    /// every glide frame); a new device starts without it. On integrated GPUs this is system
+    /// memory. WARP and the basic display adapter report 0, so nothing is rebuilt there.
     fn hand_back_gpu_memory(&mut self) {
         let Some((local, shared)) = self.ctx.stack.gpu_memory() else {
             return;
