@@ -496,6 +496,31 @@ pub fn map_wallpaper(
     wallpaper.resample_region(src, dst_w, dst_h, background)
 }
 
+/// Span: one picture covers the bounding box of all monitors (`span_w` x `span_h` pixels) the
+/// way Fill covers one monitor. Returns, downscaled by `downscale`, the part a `mon_w` x
+/// `mon_h` monitor at `x`, `y` in that box shows.
+pub fn map_span(
+    wallpaper: &Image,
+    span_w: u32,
+    span_h: u32,
+    x: u32,
+    y: u32,
+    mon_w: u32,
+    mon_h: u32,
+    downscale: u32,
+    background: [u8; 3],
+) -> Image {
+    let downscale = downscale.max(1);
+    let (ww, wh) = (wallpaper.width as f32, wallpaper.height as f32);
+    let scale = (span_w as f32 / ww).max(span_h as f32 / wh);
+    // The box's centre crop of the picture, as in Fill, then this monitor's part of it.
+    let x0 = (ww - span_w as f32 / scale) / 2.0 + x as f32 / scale;
+    let y0 = (wh - span_h as f32 / scale) / 2.0 + y as f32 / scale;
+    let src = [x0, y0, x0 + mon_w as f32 / scale, y0 + mon_h as f32 / scale];
+    let (dst_w, dst_h) = ((mon_w / downscale).max(1), (mon_h / downscale).max(1));
+    wallpaper.resample_region(src, dst_w, dst_h, background)
+}
+
 /// Material recipe applied to the blurred wallpaper (Mica and Acrylic share the pipeline).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct MicaTint {
@@ -850,6 +875,27 @@ mod pixel_regressions {
         let small = ramp.downscale_box(4);
         assert_eq!(small.px(2, 1)[0], 85); // columns 8 and 9: (80 + 90) / 2, rounded
         assert_eq!(small.px(0, 1)[0], 15); // columns 0..3
+    }
+
+    #[test]
+    fn span_gives_each_monitor_its_part_of_one_picture() {
+        let mut image = Image::solid(8, 2, [0, 0, 0]);
+        for (i, p) in image.bgra.as_chunks_mut::<4>().0.iter_mut().enumerate() {
+            p[0] = (i % 8) as u8 * 10;
+        }
+        let blue = |image: &Image| image.bgra.chunks(4).map(|p| p[0]).collect::<Vec<_>>();
+        // Two 4 x 2 monitors side by side: the left half and the right half.
+        let left = map_span(&image, 8, 2, 0, 0, 4, 2, 1, [0, 0, 0]);
+        let right = map_span(&image, 8, 2, 4, 0, 4, 2, 1, [0, 0, 0]);
+        assert_eq!(blue(&left), [0, 10, 20, 30, 0, 10, 20, 30]);
+        assert_eq!(blue(&right), [40, 50, 60, 70, 40, 50, 60, 70]);
+        // A single monitor: the same pixels as Fill.
+        for (w, h) in [(8, 2), (4, 4), (12, 3)] {
+            assert_eq!(
+                map_span(&image, w, h, 0, 0, w, h, 2, [0, 0, 0]).bgra,
+                map_wallpaper(&image, WallpaperPosition::Fill, w, h, 2, [0, 0, 0]).bgra
+            );
+        }
     }
 
     #[test]

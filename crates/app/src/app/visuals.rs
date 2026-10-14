@@ -111,6 +111,8 @@ pub(super) struct MonitorRecipe {
     top: i32,
     width: i32,
     height: i32,
+    /// The bounding box of all monitors, which a Span picture covers.
+    span: RECT,
     background: [u8; 3],
     tint: pecofence_render::backdrop::MicaTint,
     downscale: u32,
@@ -150,6 +152,11 @@ impl MonitorRecipe {
             (Some(live), _) => (&**live, WallpaperPosition::Stretch),
             (None, Some(p)) => {
                 let (w, h) = (self.width as u32, self.height as u32);
+                let span = &self.span;
+                let (span_w, span_h) = (
+                    (span.right - span.left) as u32,
+                    (span.bottom - span.top) as u32,
+                );
                 let d = match self.position {
                     // One picture pixel is one screen pixel: a smaller decode would shrink it.
                     WallpaperPosition::Center | WallpaperPosition::Tile => {
@@ -160,18 +167,40 @@ impl MonitorRecipe {
                             self.position == WallpaperPosition::Center,
                         )?
                     }
+                    WallpaperPosition::Span => wallpaper::decode_scaled(
+                        p,
+                        (span_w / self.decode_divisor).max(1),
+                        (span_h / self.decode_divisor).max(1),
+                    )?,
                     _ => wallpaper::decode_scaled(
                         p,
                         (w / self.decode_divisor).max(1),
                         (h / self.decode_divisor).max(1),
                     )?,
                 };
-                decoded = Image {
+                let picture = Image {
                     width: d.width,
                     height: d.height,
                     bgra: d.bgra,
                 };
-                (&decoded, self.position)
+                if self.position == WallpaperPosition::Span {
+                    // This monitor's part, already at the backdrop's size.
+                    decoded = pecofence_render::backdrop::map_span(
+                        &picture,
+                        span_w,
+                        span_h,
+                        (self.left - span.left) as u32,
+                        (self.top - span.top) as u32,
+                        w,
+                        h,
+                        self.downscale,
+                        self.background,
+                    );
+                    (&decoded, WallpaperPosition::Stretch)
+                } else {
+                    decoded = picture;
+                    (&decoded, self.position)
+                }
             }
             (None, None) => {
                 decoded = Image::solid(1, 1, self.background);
@@ -255,6 +284,19 @@ pub(super) fn monitor_recipes(
         wallpaper::Position::Span => WallpaperPosition::Span,
     };
     let infos = monitors::enumerate();
+    // The bounding box of the monitors (not the disconnected outputs, see below).
+    let span = snapshot
+        .monitors
+        .iter()
+        .map(|m| m.rect)
+        .filter(|r| r.right > r.left && r.bottom > r.top)
+        .reduce(|a, b| RECT {
+            left: a.left.min(b.left),
+            top: a.top.min(b.top),
+            right: a.right.max(b.right),
+            bottom: a.bottom.max(b.bottom),
+        })
+        .unwrap_or_default();
     let mut out = Vec::new();
     for m in &snapshot.monitors {
         let w = m.rect.right - m.rect.left;
@@ -294,6 +336,7 @@ pub(super) fn monitor_recipes(
             top: m.rect.top,
             width: w,
             height: h,
+            span,
             background: snapshot.background,
             tint,
             // Clear glass keeps wallpaper detail for refraction, at half the monitor's
