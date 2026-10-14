@@ -629,6 +629,15 @@ impl App {
                 ShowDesktopSetting::HideWithDesktop => ShowDesktopBehavior::HideWithDesktop,
             };
         }
+        if new.zorder != old.zorder
+            && let Some(a) = self.anchor.borrow_mut().as_mut()
+        {
+            a.mode = match new.zorder {
+                ZOrderSetting::InsertAboveHost => ZMode::InsertAboveHost,
+                ZOrderSetting::HwndBottom => ZMode::HwndBottom,
+            };
+            a.reanchor("zorder changed");
+        }
         self.ctx.behavior.hover_peek.set(new.roll_up.hover_peek);
         self.ctx.behavior.snapping.set(new.snapping.enabled);
         self.ctx
