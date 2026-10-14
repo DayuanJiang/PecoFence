@@ -1536,13 +1536,19 @@ impl App {
                 for w in self.fences.values() {
                     w.set_merge_hint(false, (0, 0));
                 }
+                // The dragged window's tabs in their order (attach_tab adds them in storage
+                // order, which may interleave them with the target's tabs).
+                let moved = self.state.tabs_of(fence);
                 if let Some(host) = host
                     && host != fence
                     && self.state.attach_tab(fence, host)
                 {
                     if let Some(index) = index {
-                        // Land where the gap was, so the neighbours do not move again.
-                        self.state.reorder_tab(host, fence, index);
+                        // Land where the gap was, so the neighbours do not move again, and
+                        // keep the dragged window's tabs together in their order.
+                        for (k, tab) in moved.iter().enumerate() {
+                            self.state.reorder_tab(host, *tab, index + k);
+                        }
                     }
                     self.resync_windows();
                     self.apply_fence_view(host);
