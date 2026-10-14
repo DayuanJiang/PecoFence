@@ -275,6 +275,15 @@ pub(super) fn on_nclbuttondown(
             let mut guard = view.borrow_mut();
             if let Some(v) = guard.as_mut() {
                 if v.locked {
+                    // No drag, but a click on a rolled title still expands it (the drag
+                    // handed over in WM_NCMOUSEMOVE is refused by WM_SYSCOMMAND).
+                    if behavior.click_to_expand.get()
+                        && v.rolled_up
+                        && !v.peeking
+                        && v.roll_anim.is_none()
+                    {
+                        v.click_pending = Some(start);
+                    }
                     return Some(0);
                 }
                 if v.theme.liquid_glass {
@@ -543,6 +552,14 @@ pub(super) fn on_entersizemove(
     let (r, pt) = (window::window_rect(hwnd), window::cursor_pos());
     let caption = move_start.take();
     let (start_x, start_y) = caption.unwrap_or((pt.x, pt.y));
+    h.move_cancelled.set(false);
+    // Esc cancels a title drag, but the system move loop hears the keyboard only while this
+    // window has the focus, which a title press never grants: for the length of the drag Esc
+    // is a hotkey (WM_HOTKEY reaches `cancel_move`; the right button gets there through
+    // WM_RBUTTONDOWN, which the loop dispatches).
+    if caption.is_some() {
+        hotkey::register(hwnd, HOTKEY_MOVE_ESC, 0, msg::VK_ESCAPE);
+    }
     // A title drag (not a resize) of a selected fence takes the rest of the selection along.
     *h.group.borrow_mut() = if caption.is_some() {
         group_members(&h.behavior, hwnd)
@@ -582,6 +599,7 @@ pub(super) fn on_exitsizemove(
     } = h;
     let fence_id = h.fence_id;
     in_size_move.set(false);
+    hotkey::unregister(hwnd, HOTKEY_MOVE_ESC);
     // A title drag, not a resize. (Comparing sizes would call a move onto a monitor with
     // another scale a resize: WM_DPICHANGED rescales the window inside the loop.)
     let moved = h
@@ -594,7 +612,8 @@ pub(super) fn on_exitsizemove(
     let at_enter = rect_at_enter.get();
     // Esc in the system move loop restores the rect but leaves the cursor
     // where it is (possibly on another fence's title): never merge then.
-    let cancelled = rect == at_enter || window::key_down(msg::VK_ESCAPE);
+    let esc = window::key_down(msg::VK_ESCAPE) || h.move_cancelled.get();
+    let cancelled = rect == at_enter || esc;
     let group = std::mem::take(&mut *h.group.borrow_mut());
     let merge_into = if moved && !cancelled && group.is_empty() {
         merge_target_under_cursor(hwnd)
@@ -603,7 +622,7 @@ pub(super) fn on_exitsizemove(
     };
     if !group.is_empty() && cancelled {
         restore_members(&group);
-        if rect == at_enter && !window::key_down(msg::VK_ESCAPE) {
+        if rect == at_enter && !esc {
             // A title click without a drag: the selection ends, as a click elsewhere would.
             queue.push(Command::ClearFenceSelection);
         }
@@ -772,6 +791,14 @@ pub(super) fn on_moving(
         rect_at_enter,
         ..
     } = h;
+    // SAFETY: lParam is the RECT* of the window being dragged for this
+    // message.
+    let rect = unsafe { &mut *(lparam as *mut RECT) };
+    if h.move_cancelled.get() {
+        // Cancelled (`cancel_move`): the loop keeps asking until the button is released.
+        *rect = rect_at_enter.get();
+        return Some(1);
+    }
     let group = h.group.borrow().clone();
     let grab_dpi = h.grab_dpi.get();
     // Drag-to-merge: light up the title of the fence under the cursor.
@@ -781,9 +808,6 @@ pub(super) fn on_moving(
         None
     };
     let target = merge.map_or(0, |h| h.0 as isize);
-    // SAFETY: lParam is the RECT* of the window being dragged for this
-    // message.
-    let rect = unsafe { &mut *(lparam as *mut RECT) };
     // Start from where the cursor says the window is (grab offset kept), not
     // from the previous, possibly snapped, position.
     let pt = window::cursor_pos();
@@ -845,6 +869,42 @@ pub(super) fn on_moving(
         });
     }
     Some(1)
+}
+
+/// Esc (WM_HOTKEY) or the right button during a title drag in the system move loop: the fence
+/// and its group go back to where the press found them and stay there (`on_moving`) until the
+/// loop ends with the button's release. Nothing for a resize or a drag cancelled already.
+pub(super) fn cancel_move(h: &HandlerCtx, hwnd: HWND) {
+    let moving = h
+        .behavior
+        .size_move
+        .borrow()
+        .as_ref()
+        .is_some_and(|m| m.moving && m.hwnd == hwnd);
+    if !moving || h.move_cancelled.replace(true) {
+        return;
+    }
+    hide_drag_feedback(&h.behavior);
+    if h.merge_target.replace(0) != 0 {
+        h.queue.push(Command::MergeHint {
+            target: HWND(std::ptr::null_mut()),
+            at: (0, 0),
+        });
+    }
+    let group = h.group.borrow().clone();
+    restore_members(&group);
+    let r = h.rect_at_enter.get();
+    let _ = window::set_window_bounds(hwnd, r.left, r.top, r.right - r.left, r.bottom - r.top);
+}
+
+pub(super) fn on_hotkey_move_esc(
+    h: &HandlerCtx,
+    hwnd: HWND,
+    _wparam: usize,
+    _lparam: isize,
+) -> Option<isize> {
+    cancel_move(h, hwnd);
+    Some(0)
 }
 
 pub(super) fn on_dpichanged(

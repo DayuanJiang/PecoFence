@@ -125,7 +125,7 @@ impl FenceWindow {
             tab_settle: None,
             drop_tab: None,
             drag_peek_armed: false,
-            rbutton_swallow: false,
+            rbutton_press: None,
             renaming: None,
             title_renaming: false,
             unfold_cache: None,

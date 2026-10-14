@@ -13,6 +13,9 @@ pub(super) const SEARCH_TAB_DIM_ALPHA: f32 = 0.4;
 /// Corner radius DWM gives a Fluent fence (DWMWCP_ROUNDSMALL; the shadow casts the same one):
 /// the root clip matches it while a folded title row moves the plate's top edge down.
 pub(super) const FLUENT_WINDOW_RADIUS_DIP: f32 = 4.0;
+/// Esc registered as a hotkey on the fence for the length of a title drag in the system move
+/// loop (`on_entersizemove`): the loop hears the keyboard only while the fence has the focus.
+pub(super) const HOTKEY_MOVE_ESC: i32 = 1;
 pub(super) const TIMER_PEEK_OPEN: usize = 31;
 pub(super) const TIMER_PEEK_CLOSE: usize = 32;
 pub(super) const TIMER_SHADOW: usize = 33;
@@ -74,6 +77,8 @@ pub(super) const TYPE_AHEAD_TIMEOUT: Duration = Duration::from_millis(1000);
 pub(super) const SCROLLBAR_HOT_DIP: f32 = 12.0;
 pub(super) const WM_NCLBUTTONUP: u32 = 0x00A2;
 pub(super) const WM_NCRBUTTONDOWN: u32 = 0x00A4;
+/// The second right press of a double-click (CS_DBLCLKS): a press like any other for the fence.
+pub(super) const WM_RBUTTONDBLCLK: u32 = 0x0206;
 /// `SC_MOVE | HTCAPTION`: starts the caption drag loop as if the title had just been pressed.
 pub const SC_MOVE_CAPTION: usize = 0xF012;
 
