@@ -317,7 +317,9 @@ impl App {
         if it.is_namespace() {
             return Err(RenameError::Unsupported);
         }
-        let file_name = file_name.trim();
+        // Win32 drops trailing dots and spaces from a name: strip them here too, or the
+        // record would be keyed "note." for a file that is "note" on disk.
+        let file_name = file_name.trim().trim_end_matches(['.', ' ']);
         if file_name.is_empty()
             || file_name == "."
             || file_name == ".."
