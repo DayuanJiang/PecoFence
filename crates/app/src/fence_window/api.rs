@@ -1190,6 +1190,26 @@ impl FenceWindow {
         });
     }
 
+    /// Tab switch, after `set_tabs` and before the incoming tab's items arrive: takes that
+    /// tab's icon size and layout without drawing the outgoing items again, so the new items
+    /// are drawn, and their icons extracted, at their own size from the first frame; the icon
+    /// cache keeps an inactive tab's icons at that size only.
+    pub fn set_incoming_tab_view(&self, icon_size: u32, layout: ViewLayout) {
+        self.with_view(|v| {
+            if v.icon_size == icon_size && v.layout == layout {
+                return;
+            }
+            if v.layout != layout {
+                v.header_hover = None;
+                v.header_fades.clear();
+            }
+            v.icon_size = icon_size;
+            v.layout = layout;
+            v.reload_icons_and_labels();
+            v.snap_item_motion();
+        });
+    }
+
     /// Current sort, shown by the details header (chevron on the active column).
     pub fn set_sort_indicator(&self, sort: SortMode, reverse: bool) {
         self.with_view(|v| {
@@ -1230,6 +1250,24 @@ impl FenceWindow {
             .as_ref()
             .map(|v| v.icon_size)
             .unwrap_or(48)
+    }
+
+    pub fn dpi(&self) -> u32 {
+        self.view.borrow().as_ref().map(|v| v.dpi).unwrap_or(96)
+    }
+
+    /// Adds the `IconCache::draw_key`s this window draws or is about to draw to `out`: every
+    /// item at the current icon size, and at the size it still shows until that one arrives.
+    pub fn needed_icons(&self, icons: &IconCache, out: &mut HashSet<String>) {
+        if let Some(v) = self.view.borrow().as_ref() {
+            let px = crate::layout::icon_px(v.layout, v.icon_size, v.dpi);
+            for item in &v.items {
+                out.insert(icons.draw_key(&item.icon_key, px));
+                if item.icon.is_some() && item.icon_px != px {
+                    out.insert(icons.draw_key(&item.icon_key, item.icon_px));
+                }
+            }
+        }
     }
 
     /// Ends a peek without rolling back (the fence stays expanded).
