@@ -106,6 +106,10 @@ pub(super) struct HandlerCtx {
     /// Original caption press carried by SC_MOVE. The cursor can already be farther along
     /// the drag by the time Windows enters its modal move loop.
     pub(super) move_start: Cell<Option<(i32, i32)>>,
+    /// Esc (WM_HOTKEY) or the right button cancelled the title drag in the system move loop
+    /// (`nc::cancel_move`): the fence and its group are back at `rect_at_enter` and stay there
+    /// until the loop ends.
+    pub(super) move_cancelled: Cell<bool>,
     /// Cursor position relative to the window's top-left when the move began. WM_MOVING
     /// rebuilds the rect from it every frame, so a snap displacement never accumulates (the
     /// system would otherwise keep adding mouse deltas to the *snapped* rect and the window
@@ -142,6 +146,7 @@ impl FenceWindow {
             in_size_move: Cell::new(false),
             rect_at_enter: Cell::new(RECT::default()),
             move_start: Cell::new(None),
+            move_cancelled: Cell::new(false),
             grab_offset: Cell::new((0, 0)),
             grab_dpi: Cell::new(96),
             merge_target: Cell::new(0isize),
@@ -222,6 +227,9 @@ impl FenceWindow {
                     WM_APP_FADE_DONE => misc::on_app_fade_done(h, hwnd, wparam, lparam),
                     msg::WM_ENTERSIZEMOVE => nc::on_entersizemove(h, hwnd, wparam, lparam),
                     msg::WM_EXITSIZEMOVE => nc::on_exitsizemove(h, hwnd, wparam, lparam),
+                    msg::WM_HOTKEY if wparam as i32 == HOTKEY_MOVE_ESC => {
+                        nc::on_hotkey_move_esc(h, hwnd, wparam, lparam)
+                    }
                     msg::WM_TIMER if wparam == TIMER_RENAME => {
                         timers::on_timer_rename(h, hwnd, wparam, lparam)
                     }

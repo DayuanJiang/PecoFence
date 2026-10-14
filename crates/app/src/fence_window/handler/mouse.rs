@@ -620,6 +620,12 @@ pub(super) fn on_rbuttondown(
     lparam: isize,
 ) -> Option<isize> {
     let HandlerCtx { view, queue, .. } = h;
+    if h.in_size_move.get() {
+        // A title drag in the system move loop: the right button cancels it (as it does the
+        // Liquid Glass drag below); the release finds no press and opens no menu.
+        super::nc::cancel_move(h, hwnd);
+        return Some(0);
+    }
     if window::get_capture() != hwnd {
         if let Some(v) = view.borrow_mut().as_mut() {
             v.rbutton_press = Some((msg::lo_i16(lparam), msg::hi_i16(lparam)));

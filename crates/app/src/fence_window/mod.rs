@@ -29,7 +29,7 @@ use pecofence_platform::tray::PopupMenu;
 use pecofence_platform::window::{
     self, MessageHandler, StandardCursor, Window, WindowBuilder, WindowClass, style,
 };
-use pecofence_platform::{HWND, RECT, desktop, dwm, monitors, msg};
+use pecofence_platform::{HWND, RECT, desktop, dwm, hotkey, monitors, msg};
 use pecofence_render::fence_chrome::{
     Backdrop, BackdropCrop, ContentDraw, FenceChrome, FenceStyle, GroupHeaderDraw, HeaderColumn,
     ItemCell, RAIL_BOTTOM, RAIL_COLLAPSED_BOTTOM, RAIL_ROW_H, RAIL_ROW_INSET, RAIL_ROW_RIGHT,
