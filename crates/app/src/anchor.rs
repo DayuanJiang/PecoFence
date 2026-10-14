@@ -999,8 +999,8 @@ impl DesktopAnchor {
         false
     }
 
-    /// True after the retry budget was exhausted without success (caller should reset the
-    /// setting and tell the user).
+    /// True after the retry budget was exhausted without success (caller should stop the
+    /// retries and tell the user).
     pub fn hide_desktop_icons_gave_up(&self) -> bool {
         self.icons.pending && self.icons.pending_attempts >= HIDE_ICONS_MAX_ATTEMPTS
     }

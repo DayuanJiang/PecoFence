@@ -39,9 +39,14 @@ pub fn instance_mutex_names(instance: Option<&str>) -> [String; 2] {
     ]
 }
 
-/// Named pipe the CLI (`pecofence-cli`) talks to; one per instance, like the mutex.
-pub fn ipc_pipe_name(instance: Option<&str>) -> String {
-    format!(r"\\.\pipe\PecoFence{}", instance_suffix(instance))
+/// Named pipe the CLI (`pecofence-cli`) talks to: `PecoFence.<user SID>[.<instance>]`. Pipe
+/// names are machine-wide, so the SID keeps two signed-in accounts apart, while the same user
+/// in another session (ssh) still reaches their own instance.
+pub fn ipc_pipe_name(user_sid: &str, instance: Option<&str>) -> String {
+    format!(
+        r"\\.\pipe\PecoFence.{user_sid}{}",
+        instance_suffix(instance)
+    )
 }
 
 /// [`log_file_name`] suffixes: this run's log, the previous run's, and the shareable log (only
@@ -104,10 +109,21 @@ mod tests {
     }
 
     #[test]
-    fn pipe_name_follows_the_instance_suffix() {
-        assert_eq!(ipc_pipe_name(None), r"\\.\pipe\PecoFence");
-        assert_eq!(ipc_pipe_name(Some(" ")), r"\\.\pipe\PecoFence");
-        assert_eq!(ipc_pipe_name(Some(" test ")), r"\\.\pipe\PecoFence.test");
+    fn pipe_name_carries_the_user_sid_and_the_instance_suffix() {
+        let sid = "S-1-5-21-1-2-3-1001";
+        assert_eq!(
+            ipc_pipe_name(sid, None),
+            r"\\.\pipe\PecoFence.S-1-5-21-1-2-3-1001"
+        );
+        assert_eq!(ipc_pipe_name(sid, Some(" ")), ipc_pipe_name(sid, None));
+        assert_eq!(
+            ipc_pipe_name(sid, Some(" test ")),
+            r"\\.\pipe\PecoFence.S-1-5-21-1-2-3-1001.test"
+        );
+        assert_ne!(
+            ipc_pipe_name(sid, None),
+            ipc_pipe_name("S-1-5-21-1-2-3-1002", None)
+        );
     }
 
     #[test]
