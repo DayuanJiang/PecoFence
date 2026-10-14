@@ -616,4 +616,34 @@ mod ipc {
         assert!(auto_snapshot_slot(&mut list, None));
         assert_eq!(list.len(), 1);
     }
+
+    #[test]
+    fn page_auto_snapshots_make_room_from_automatic_ones_only() {
+        use super::super::settings::auto_snapshot_room;
+        let before_restore = pecofence_core::i18n::text("恢复快照前");
+        // Not full: nothing goes.
+        let mut list = vec![snap("home", 1), snap(before_restore, 2)];
+        assert!(auto_snapshot_room(&mut list, None));
+        assert_eq!(list.len(), 2);
+
+        // Full: the oldest automatic one goes (not the restore target), never the user's.
+        let mut list: Vec<Snapshot> = vec![snap("home", 0), snap(before_restore, 1)];
+        let target = list[1].id;
+        list.push(snap(before_restore, 2));
+        let next = list[2].id;
+        list.extend((3..MAX_SNAPSHOTS).map(|i| snap(&format!("mine {i}"), i as i64)));
+        assert_eq!(list.len(), MAX_SNAPSHOTS);
+        assert!(auto_snapshot_room(&mut list, Some(target)));
+        assert_eq!(list.len(), MAX_SNAPSHOTS - 1);
+        assert!(list.iter().all(|s| s.id != next));
+        assert!(list.iter().any(|s| s.id == target));
+        assert_eq!(list[0].name, "home");
+
+        // Full of the user's own: refused, untouched.
+        let mut list: Vec<Snapshot> = (0..MAX_SNAPSHOTS)
+            .map(|i| snap(&format!("mine {i}"), i as i64))
+            .collect();
+        assert!(!auto_snapshot_room(&mut list, None));
+        assert_eq!(list.len(), MAX_SNAPSHOTS);
+    }
 }

@@ -184,13 +184,16 @@ impl AppState {
             config.items = std::mem::take(&mut self.config.items);
         }
         // Snapshots are local history, including the "…前" undo snapshot the caller just took:
-        // never let an import / backup file wipe them. Merge the file's by id, oldest first.
+        // never let an import / backup file wipe them. The file's own (by id) fill the free
+        // slots, newest first; the list stays oldest first.
         let mut snaps = std::mem::take(&mut self.config.snapshots);
-        for s in std::mem::take(&mut config.snapshots) {
-            if !snaps.iter().any(|x| x.id == s.id) {
-                snaps.push(s);
-            }
-        }
+        let mut incoming: Vec<_> = std::mem::take(&mut config.snapshots)
+            .into_iter()
+            .filter(|s| !snaps.iter().any(|x| x.id == s.id))
+            .collect();
+        incoming.sort_by_key(|s| std::cmp::Reverse(s.ts));
+        incoming.truncate(pecofence_core::MAX_SNAPSHOTS.saturating_sub(snaps.len()));
+        snaps.extend(incoming);
         snaps.sort_by_key(|s| s.ts);
         while snaps.len() > pecofence_core::MAX_SNAPSHOTS {
             snaps.remove(0);
@@ -2059,6 +2062,30 @@ mod tests {
             right: left + w,
             bottom: top + h,
         }
+    }
+
+    #[test]
+    fn an_imported_file_never_pushes_local_snapshots_out() {
+        let snap = |name: String, ts: i64| pecofence_core::Snapshot {
+            id: uuid::Uuid::new_v4(),
+            name,
+            ts,
+            layouts: Vec::new(),
+        };
+        let mut state = test_state();
+        state.config.snapshots = vec![snap("home".into(), 1), snap("work".into(), 2)];
+        let local: Vec<uuid::Uuid> = state.config.snapshots.iter().map(|s| s.id).collect();
+        let mut file = state.config.clone();
+        file.snapshots = (0..pecofence_core::MAX_SNAPSHOTS)
+            .map(|i| snap(format!("file {i}"), 100 + i as i64))
+            .collect();
+        let newest = file.snapshots.last().unwrap().id;
+        state.replace_config(file);
+        let kept = &state.config.snapshots;
+        assert_eq!(kept.len(), pecofence_core::MAX_SNAPSHOTS);
+        assert!(local.iter().all(|id| kept.iter().any(|s| s.id == *id)));
+        assert!(kept.iter().any(|s| s.id == newest));
+        assert!(kept.windows(2).all(|w| w[0].ts <= w[1].ts));
     }
 
     /// Issue #24: unplugging the big monitor, working on the laptop, plugging it back in.
