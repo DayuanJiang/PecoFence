@@ -426,6 +426,42 @@ pub struct DecodedImage {
 /// `max_width` x `max_height`. The scaler is attached directly to the frame so the full-size
 /// bitmap is never materialized.
 pub fn decode_scaled(path: &Path, max_width: u32, max_height: u32) -> Result<DecodedImage> {
+    decode(path, |w, h| {
+        let scale = (max_width as f32 / w as f32)
+            .min(max_height as f32 / h as f32)
+            .min(1.0);
+        let dst_w = ((w as f32 * scale).round() as u32).max(1);
+        let dst_h = ((h as f32 * scale).round() as u32).max(1);
+        ((dst_w, dst_h), [0, 0, dst_w, dst_h])
+    })
+}
+
+/// Decodes `path` at its own size and keeps at most `max_width` x `max_height` pixels of it:
+/// the middle when `centered`, else the top-left corner. That is all a monitor of that size
+/// shows of a centred or a tiled picture.
+pub fn decode_native(
+    path: &Path,
+    max_width: u32,
+    max_height: u32,
+    centered: bool,
+) -> Result<DecodedImage> {
+    decode(path, |w, h| {
+        let (cw, ch) = (w.min(max_width.max(1)), h.min(max_height.max(1)));
+        let (x, y) = if centered {
+            ((w - cw) / 2, (h - ch) / 2)
+        } else {
+            (0, 0)
+        };
+        ((w, h), [x, y, cw, ch])
+    })
+}
+
+/// The WIC pipeline of both: `size` maps the picture's size to the size it is scaled to and
+/// the part of the scaled picture (x, y, width, height) that is copied out.
+fn decode(
+    path: &Path,
+    size: impl FnOnce(u32, u32) -> ((u32, u32), [u32; 4]),
+) -> Result<DecodedImage> {
     let wide: Vec<u16> = path.as_os_str().encode_wide_nul();
     // SAFETY: standard WIC pipeline; every interface is owned for the duration of the call.
     unsafe {
@@ -444,11 +480,7 @@ pub fn decode_scaled(path: &Path, max_width: u32, max_height: u32) -> Result<Dec
         if w == 0 || h == 0 {
             return Err(windows_core::Error::from_hresult(E_FAIL));
         }
-        let scale = (max_width as f32 / w as f32)
-            .min(max_height as f32 / h as f32)
-            .min(1.0);
-        let dst_w = ((w as f32 * scale).round() as u32).max(1);
-        let dst_h = ((h as f32 * scale).round() as u32).max(1);
+        let ((dst_w, dst_h), [x, y, out_w, out_h]) = size(w, h);
 
         let scaler = factory.CreateBitmapScaler()?;
         scaler
@@ -466,21 +498,27 @@ pub fn decode_scaled(path: &Path, max_width: u32, max_height: u32) -> Result<Dec
             )
             .ok()?;
         let source: IWICBitmapSource = converter.cast()?;
-        let stride = dst_w * 4;
-        let mut bgra = vec![0u8; (stride * dst_h) as usize];
+        let stride = out_w * 4;
+        let mut bgra = vec![0u8; (stride * out_h) as usize];
+        let rect = WICRect {
+            X: x as i32,
+            Y: y as i32,
+            Width: out_w as i32,
+            Height: out_h as i32,
+        };
         // The generated wrapper mis-projects CopyPixels' buffer as a return value; call the
         // vtable slot directly.
         (Interface::vtable(&source).CopyPixels)(
             Interface::as_raw(&source),
-            core::ptr::null(),
+            &rect,
             stride,
             bgra.len() as u32,
             bgra.as_mut_ptr(),
         )
         .ok()?;
         Ok(DecodedImage {
-            width: dst_w,
-            height: dst_h,
+            width: out_w,
+            height: out_h,
             bgra,
         })
     }

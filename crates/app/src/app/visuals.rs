@@ -149,11 +149,23 @@ impl MonitorRecipe {
             // The capture is this monitor's part of the window already.
             (Some(live), _) => (&**live, WallpaperPosition::Stretch),
             (None, Some(p)) => {
-                let d = wallpaper::decode_scaled(
-                    p,
-                    (self.width as u32 / self.decode_divisor).max(1),
-                    (self.height as u32 / self.decode_divisor).max(1),
-                )?;
+                let (w, h) = (self.width as u32, self.height as u32);
+                let d = match self.position {
+                    // One picture pixel is one screen pixel: a smaller decode would shrink it.
+                    WallpaperPosition::Center | WallpaperPosition::Tile => {
+                        wallpaper::decode_native(
+                            p,
+                            w,
+                            h,
+                            self.position == WallpaperPosition::Center,
+                        )?
+                    }
+                    _ => wallpaper::decode_scaled(
+                        p,
+                        (w / self.decode_divisor).max(1),
+                        (h / self.decode_divisor).max(1),
+                    )?,
+                };
                 decoded = Image {
                     width: d.width,
                     height: d.height,
@@ -286,8 +298,9 @@ pub(super) fn monitor_recipes(
             tint,
             // Clear glass keeps wallpaper detail for refraction, at half the monitor's
             // resolution (a quarter of the texture memory; the GPU scales it up with linear
-            // filtering, which the glass shows no sharper). Acrylic discards the detail. The
-            // picture is decoded at full size here so Center and Tile keep its native scale.
+            // filtering, which the glass shows no sharper). Acrylic discards the detail. A
+            // picture scaled to the monitor is decoded at most at the monitor's size (Acrylic:
+            // half of it); Center and Tile decode it at its own scale (`build_image`).
             downscale: if theme.liquid_glass { 2 } else { 4 },
             decode_divisor: if theme.liquid_glass { 1 } else { 2 },
             live: None,
