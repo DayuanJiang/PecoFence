@@ -836,6 +836,12 @@ impl AppState {
                         item.size = entry.size;
                         changed = true;
                     }
+                    // A deleted file's record is reused by a folder of the same name (or the
+                    // other way round) while it is still catalogued.
+                    if item.is_folder != entry.is_folder {
+                        item.is_folder = entry.is_folder;
+                        changed = true;
+                    }
                     // The key ignores case: a case-only rename (or a file from an older
                     // version) brings the on-disk spelling here.
                     let path = entry.path.to_string_lossy();
@@ -2534,6 +2540,22 @@ mod tests {
         state.forget_orphan_at(&desk("c.txt"));
         assert!(!state.rename_item(&desk("b.txt"), &desk("c.txt")));
         assert_eq!(state.item_id_for_path(&desk("c.txt")), Some(live));
+    }
+
+    #[test]
+    fn a_record_reused_by_a_folder_of_the_same_name_becomes_a_folder() {
+        let path = PathBuf::from("C:/Users/Me/Desktop/proj");
+        let mut state = test_state();
+        state.sync_desktop(&[desktop_entry("proj")]);
+        let id = state.item_id_for_path(&path).unwrap();
+        assert!(!state.config.items[&id].is_folder);
+        // Deleted, then a folder of that name within the week: the record is reused.
+        state.sync_desktop(&[]);
+        let mut folder = desktop_entry("proj");
+        folder.is_folder = true;
+        state.sync_desktop(&[folder]);
+        assert_eq!(state.item_id_for_path(&path), Some(id));
+        assert!(state.config.items[&id].is_folder);
     }
 
     /// Issue #39: the inbox cannot be deleted, but 为空时自动隐藏 keeps an empty one out of sight.
