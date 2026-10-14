@@ -174,6 +174,7 @@ impl FenceWindow {
             columns_visible: [true; 3],
             col_drag: None,
             is_portal: false,
+            portal_missing: false,
             label_w: 0.0,
             hover: None,
             title_hover: false,
@@ -1177,6 +1178,7 @@ impl FenceWindow {
         folder_icon: bool,
         up_button: bool,
         navigate_folders: bool,
+        folder_missing: bool,
         portal_folder: Option<PathBuf>,
     ) {
         self.with_view(|v| {
@@ -1185,11 +1187,12 @@ impl FenceWindow {
                 up_button,
             };
             let changed = v.deco != deco || v.navigate_folders != navigate_folders;
-            let portal_changed = v.is_portal != is_portal;
+            let portal_changed = v.is_portal != is_portal || v.portal_missing != folder_missing;
             v.deco = deco;
             v.navigate_folders = navigate_folders;
             v.portal_folder = portal_folder;
             v.is_portal = is_portal;
+            v.portal_missing = folder_missing;
             if !up_button {
                 v.up_hovered = false;
                 if v.pressed == Some(PressTarget::Up) {
@@ -1201,7 +1204,8 @@ impl FenceWindow {
                 let _ = v.redraw_chrome_only();
             }
             if portal_changed && v.items.is_empty() && !v.rolled_up {
-                // The empty-state wording differs for a folder portal.
+                // The empty-state wording differs for a folder portal, and for a folder that
+                // cannot be found.
                 let _ = v.redraw_content();
             }
         });

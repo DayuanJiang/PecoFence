@@ -259,6 +259,8 @@ impl FenceViewState {
             pecofence_core::i18n::text("没有未归类的项目")
         } else if self.drop_hover {
             pecofence_core::i18n::text("松开即可放入")
+        } else if self.is_portal && self.portal_missing {
+            pecofence_core::i18n::text("找不到此文件夹。")
         } else if self.is_portal {
             pecofence_core::i18n::text("此文件夹为空。")
         } else {

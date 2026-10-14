@@ -25,6 +25,8 @@ pub struct AppState {
     portal_members: HashMap<FenceId, Vec<ItemId>>,
     /// Portal fence → subfolder it has navigated into (absent = its root folder).
     portal_cwd: HashMap<FenceId, PathBuf>,
+    /// Portals whose folder could not be found at the last read.
+    portal_missing: HashSet<FenceId>,
     pub work_areas: Vec<WorkArea>,
     /// Fences with no spot saved on the current monitors (see [`Self::ensure_layout`]): they
     /// sit where their spot elsewhere puts them until the App moves them out of the others' way.
@@ -114,6 +116,7 @@ impl AppState {
             portal_items: HashMap::new(),
             portal_members: HashMap::new(),
             portal_cwd: HashMap::new(),
+            portal_missing: HashSet::new(),
             work_areas,
             unplaced: Vec::new(),
             first_run,
@@ -1051,6 +1054,11 @@ impl AppState {
         self.portal_cwd.contains_key(&id)
     }
 
+    /// True when the portal's folder could not be found at the last read.
+    pub fn portal_missing(&self, id: FenceId) -> bool {
+        self.portal_missing.contains(&id)
+    }
+
     /// Navigates a portal into `dir` (must be inside its root). Returns false if refused.
     pub fn portal_enter(&mut self, id: FenceId, dir: &Path) -> bool {
         let Some(root) = self.portal_root(id) else {
@@ -1191,6 +1199,14 @@ impl AppState {
             return false;
         };
         let started = std::time::Instant::now();
+        // A folder that is gone lists as empty; the fence must say which of the two it is.
+        let was_missing = self.portal_missing.contains(&id);
+        let missing = !dir.is_dir();
+        if missing {
+            self.portal_missing.insert(id);
+        } else {
+            self.portal_missing.remove(&id);
+        }
         let old_items = self.evict_portal_members(id);
         // Display names survive a re-read: asking the shell costs several ms per item on a
         // OneDrive folder, and an unchanged file (same path, same mtime) has the same name.
@@ -1259,7 +1275,7 @@ impl AppState {
             self.portal_items.insert(item_id, item);
             ids.push(item_id);
         }
-        let changed = old_items != new_items;
+        let changed = old_items != new_items || missing != was_missing;
         let ms = started.elapsed().as_secs_f32() * 1000.0;
         if changed {
             tracing::info!(%id, folder = %dir.display(), count = ids.len(), ms, "portal refreshed");
@@ -1290,6 +1306,7 @@ impl AppState {
         for id in stale {
             self.evict_portal_members(id);
             self.portal_cwd.remove(&id);
+            self.portal_missing.remove(&id);
         }
         portals
             .into_iter()
@@ -1903,6 +1920,7 @@ impl AppState {
         };
         let removed = self.config.layouts[self.layout].fences.remove(pos);
         self.portal_cwd.remove(&id);
+        self.portal_missing.remove(&id);
         self.evict_portal_members(id);
         let ids: Vec<ItemId> = removed.items.iter().map(|r| r.item_id).collect();
         for item in ids {
@@ -2042,6 +2060,7 @@ mod tests {
             portal_items: HashMap::new(),
             portal_members: HashMap::new(),
             portal_cwd: HashMap::new(),
+            portal_missing: HashSet::new(),
             work_areas,
             unplaced: Vec::new(),
             first_run: true,
@@ -2374,6 +2393,23 @@ mod tests {
         assert!(state.portal_up(fence));
         assert_eq!(state.display_title(state.fence(fence).unwrap()), root_title);
         assert!(!state.portal_up(fence));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn portal_reports_a_missing_folder_and_recovers() {
+        let root = std::env::temp_dir().join(format!("pecofence-portal-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let mut state = test_state();
+        let fence = state.new_portal_fence(&root, RECT::default()).unwrap();
+        assert!(!state.portal_missing(fence));
+        // Nothing to list before or after: only the missing flag can make this a change.
+        std::fs::remove_dir(&root).unwrap();
+        assert!(state.refresh_portal(fence));
+        assert!(state.portal_missing(fence));
+        std::fs::create_dir_all(&root).unwrap();
+        assert!(state.refresh_portal(fence));
+        assert!(!state.portal_missing(fence));
         std::fs::remove_dir_all(root).unwrap();
     }
 
