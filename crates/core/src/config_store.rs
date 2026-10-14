@@ -94,7 +94,9 @@ impl ConfigStore {
     /// Reads and validates any config file (import / backup restore), with the reason on error.
     pub fn parse_file(path: &Path) -> Result<Config, String> {
         let text = fs::read_to_string(path).map_err(|e| e.to_string())?;
-        let cfg: Config = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+        // Windows PowerShell 5.1 `Set-Content -Encoding utf8` and Notepad can add a BOM.
+        let text = text.strip_prefix('\u{feff}').unwrap_or(&text);
+        let cfg: Config = serde_json::from_str(text).map_err(|e| e.to_string())?;
         validate(&cfg)?;
         Ok(migrate(cfg))
     }
@@ -632,6 +634,17 @@ mod tests {
         store.save(&sample()).unwrap();
         store.save(&sample()).unwrap();
         assert_eq!(fs::read_to_string(&moved).unwrap(), text);
+        assert!(matches!(store.load(), LoadOutcome::Primary(_)));
+    }
+
+    #[test]
+    fn primary_with_a_utf8_bom_loads() {
+        let store = ConfigStore::new(tmpdir("bom"));
+        store.save(&sample()).unwrap();
+        let mut bytes = vec![0xEF, 0xBB, 0xBF];
+        bytes.extend(fs::read(store.primary_path()).unwrap());
+        fs::write(store.primary_path(), bytes).unwrap();
+        assert!(ConfigStore::parse_file(&store.primary_path()).is_ok());
         assert!(matches!(store.load(), LoadOutcome::Primary(_)));
     }
 
