@@ -203,7 +203,12 @@ impl App {
             path = dir.join(format!("{base} ({n}).url"));
             n += 1;
         }
-        match std::fs::write(&path, format!("[InternetShortcut]\r\nURL={url}\r\n")) {
+        // `create_new`: a file another program put there since the check is not truncated.
+        let written = std::fs::File::create_new(&path).and_then(|mut f| {
+            use std::io::Write;
+            f.write_all(format!("[InternetShortcut]\r\nURL={url}\r\n").as_bytes())
+        });
+        match written {
             Ok(()) => {
                 tracing::info!(path = %path.display(), %to, "internet shortcut created from a link drop");
                 if portal_dir.is_some() {

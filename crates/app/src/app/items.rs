@@ -21,10 +21,10 @@ pub(super) enum RenameError {
 
 fn rename_error(e: std::io::Error) -> RenameError {
     tracing::warn!(error = %e, "rename failed");
-    if e.kind() == std::io::ErrorKind::PermissionDenied {
-        RenameError::Denied(e.to_string())
-    } else {
-        RenameError::Io(e.to_string())
+    match e.kind() {
+        std::io::ErrorKind::PermissionDenied => RenameError::Denied(e.to_string()),
+        std::io::ErrorKind::AlreadyExists => RenameError::Exists,
+        _ => RenameError::Io(e.to_string()),
     }
 }
 
@@ -71,7 +71,8 @@ impl App {
         let created = if folder {
             std::fs::create_dir(&path)
         } else {
-            std::fs::write(&path, b"")
+            // `create_new`: a file another program put there since the check is not truncated.
+            std::fs::File::create_new(&path).map(drop)
         };
         match created {
             Ok(()) => {
@@ -340,7 +341,7 @@ impl App {
         {
             // Same name, another case: the item keeps its key, its path and name take the new
             // spelling. (Callers already skipped unchanged names.)
-            std::fs::rename(&old, &new).map_err(rename_error)?;
+            shell::rename_no_replace(&old, &new).map_err(rename_error)?;
             if self.state.rename_item(&old, &new) {
                 self.schedule_save();
             }
@@ -350,7 +351,8 @@ impl App {
         if new.exists() {
             return Err(RenameError::Exists);
         }
-        std::fs::rename(&old, &new).map_err(rename_error)?;
+        // Not `std::fs::rename`: that would replace a file created at `new` since the check.
+        shell::rename_no_replace(&old, &new).map_err(rename_error)?;
         tracing::info!(from = %old.display(), to = %new.display(), "item renamed");
         if self.state.is_portal_item(item) {
             // Portal ids are path hashes. Update the old view's identity before the folder

@@ -791,6 +791,19 @@ pub fn rename_with_prompt(path: &Path, new_name: &str, owner: Option<HWND>) -> R
     }
 }
 
+/// Renames `from` to `to`. `std::fs::rename` replaces a file already at `to`; this fails with
+/// `ErrorKind::AlreadyExists` instead, so a rename never overwrites another file.
+pub fn rename_no_replace(from: &Path, to: &Path) -> std::io::Result<()> {
+    let (from, to) = (path_wide(from), path_wide(to));
+    // SAFETY: plain FFI call; both strings are NUL-terminated and outlive it.
+    let ok = unsafe { MoveFileExW(PCWSTR(from.as_ptr()), PCWSTR(to.as_ptr()), 0) };
+    if ok.as_bool() {
+        Ok(())
+    } else {
+        Err(std::io::Error::last_os_error())
+    }
+}
+
 /// Opens an item with the shell (default verb), or runs `verb` (`"runas"`, `"properties"`,
 /// `"openas"`…).
 pub fn shell_execute(path: &Path, verb: Option<&str>, owner: Option<HWND>) -> Result<()> {
@@ -1019,6 +1032,23 @@ mod move_tests {
             .collect();
         names.sort();
         assert_eq!(names, ["renamed.lnk", "renamed.txt"]);
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn rename_no_replace_keeps_an_existing_target() {
+        let base = std::env::temp_dir().join(format!("pecofence-mv-{}", std::process::id()));
+        std::fs::create_dir_all(&base).unwrap();
+        let (a, b) = (base.join("a.txt"), base.join("b.txt"));
+        std::fs::write(&a, b"a").unwrap();
+        std::fs::write(&b, b"b").unwrap();
+        let err = rename_no_replace(&a, &b).expect_err("b.txt must not be replaced");
+        assert_eq!(err.kind(), std::io::ErrorKind::AlreadyExists);
+        assert_eq!(std::fs::read(&b).unwrap(), b"b");
+        // A case-only rename is the same file and goes through.
+        rename_no_replace(&a, &base.join("A.txt")).expect("case change");
+        rename_no_replace(&base.join("A.txt"), &base.join("c.txt")).expect("plain rename");
+        assert_eq!(std::fs::read(base.join("c.txt")).unwrap(), b"a");
         let _ = std::fs::remove_dir_all(&base);
     }
 }
