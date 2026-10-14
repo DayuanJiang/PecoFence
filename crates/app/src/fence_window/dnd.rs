@@ -451,9 +451,10 @@ impl FenceDropHandler {
                 if spot.self_drop {
                     // Same-folder drag: Explorer shows "not allowed" too.
                     DropEffect::None
-                } else if internal.is_some() && spot.folder.is_none() {
-                    // Fence membership has no copy / link; only a folder target honours the
-                    // modifiers (our own source offers every effect, so no clipping needed).
+                } else if internal.is_some() && v.drop_folder(&spot).is_none() {
+                    // Fence membership has no copy / link; only a folder target (a folder
+                    // item, or a portal's folder) honours the modifiers (our own source offers
+                    // every effect, so no clipping needed).
                     DropEffect::Move
                 } else {
                     let folder = spot
@@ -744,6 +745,22 @@ impl DropHandler for FenceDropHandler {
                     }
                     if to == d.from {
                         break 'resolve DropEffect::None;
+                    }
+                    if let (false, Some(dest)) = (on_desktop, dest) {
+                        // The target is a portal, a folder: the modifiers decide (Ctrl copies,
+                        // Alt links) as for a drop onto a folder item.
+                        let paths = filter_folder_paths(d.paths, &dest);
+                        let effect = folder_effect(None, key_state, allowed, same_volume);
+                        let (Some(mode), false) = (transfer_mode(effect), paths.is_empty()) else {
+                            break 'resolve DropEffect::None;
+                        };
+                        self.queue.push(Command::DropIntoFolder {
+                            paths,
+                            folder: dest,
+                            fence: active,
+                            mode,
+                        });
+                        break 'resolve effect;
                     }
                     self.queue.push(Command::MoveItems { items: d.items, to });
                     DropEffect::Move
