@@ -126,6 +126,9 @@ const TIMER_TRAY_RETRY: usize = 57;
 const TRAY_RETRY_MS: u32 = 2_000;
 /// WM_ENDSESSION(FALSE) arrived while the App was borrowed: hide the icons again shortly.
 const TIMER_SHUTDOWN_CANCELLED: usize = 58;
+/// A theme, accent or system settings change arrived while the App was borrowed: apply it
+/// shortly.
+const TIMER_SYSTEM_SETTINGS_RETRY: usize = 52;
 /// Rebuilding the GPU device failed (driver reset in progress): try again, backing off.
 const TIMER_DEVICE_RETRY: usize = 59;
 const DEVICE_RETRY_FIRST_MS: u32 = 1_000;
@@ -702,6 +705,16 @@ impl App {
                                         window::set_timer(hwnd, TIMER_SHUTDOWN_CANCELLED, 250);
                                     }
                                 }
+                                TIMER_SYSTEM_SETTINGS_RETRY => {
+                                    window::kill_timer(hwnd, TIMER_SYSTEM_SETTINGS_RETRY);
+                                    if let Ok(mut guard) = cell.try_borrow_mut()
+                                        && let Some(app) = guard.as_mut()
+                                    {
+                                        app.on_system_settings_changed();
+                                    } else {
+                                        window::set_timer(hwnd, TIMER_SYSTEM_SETTINGS_RETRY, 250);
+                                    }
+                                }
                                 TIMER_TRAY_RETRY => {
                                     window::kill_timer(hwnd, TIMER_TRAY_RETRY);
                                     let shown = cell
@@ -790,6 +803,9 @@ impl App {
                                 && let Some(app) = guard.as_mut()
                             {
                                 app.on_system_settings_changed();
+                            } else {
+                                // A menu or dialog runs; Windows does not repeat the broadcast.
+                                window::set_timer(hwnd, TIMER_SYSTEM_SETTINGS_RETRY, 250);
                             }
                             None
                         }
