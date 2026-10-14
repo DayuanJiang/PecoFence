@@ -101,10 +101,14 @@ impl App {
         if report.changed() || renamed > 0 {
             tracing::info!(?report, "desktop resynced");
             // Renamed / modified files may have new icons; a file that just arrived (moved in
-            // by the shell) may have been extracted while it was still landing.
+            // by the shell) may have been extracted while it was still landing. Once per item:
+            // a file being written reports several events, and each invalidation scans the
+            // whole icon and bitmap caches.
+            let mut invalidated: HashSet<ItemId> = HashSet::new();
             for ev in &events {
                 if let FsEvent::Modified(p) | FsEvent::RenamedNew(p) | FsEvent::Added(p) = ev
                     && let Some(id) = self.state.item_by_path(p)
+                    && invalidated.insert(id)
                     && let Some(item) = self.state.item(id)
                 {
                     self.ctx.icons.borrow_mut().invalidate(&item.icon_key);
