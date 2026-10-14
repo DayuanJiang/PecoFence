@@ -278,7 +278,8 @@ const E_ACCESS_DENIED: windows_core::HRESULT = windows_core::HRESULT(0x8007_0005
 
 /// Inserts `hwnd` directly above `host` in the z-order: below the lowest window above `host`
 /// that paints a surface, or at the top of the normal band when there is none (HWND_BOTTOM
-/// would put `hwnd` under a raised `host`).
+/// would put `hwnd` under a raised `host`) or when that window is topmost: with no app window
+/// open it is the taskbar, and a window inserted after a topmost one becomes topmost itself.
 ///
 /// Placing a window below one of an elevated process (an app run as administrator, lowest
 /// above the desktop) is refused by UIPI, which would leave `hwnd` wherever it is — over every
@@ -292,7 +293,11 @@ pub fn insert_above(hwnd: HWND, host: HWND) -> Result<()> {
         if above == hwnd {
             return Ok(());
         }
-        let insert_after = if above.0.is_null() { HWND_TOP } else { above };
+        let insert_after = if above.0.is_null() || is_topmost(above) {
+            HWND_TOP
+        } else {
+            above
+        };
         match SetWindowPos(hwnd, Some(insert_after), 0, 0, 0, 0, ANCHOR_FLAGS).ok() {
             Err(e)
                 if e.code() == E_ACCESS_DENIED
