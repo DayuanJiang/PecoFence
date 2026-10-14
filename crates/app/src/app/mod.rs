@@ -811,12 +811,14 @@ impl App {
                                 window::set_timer(hwnd, TIMER_TRAY_RETRY, 250);
                             }
                             // The new Explorer knows nothing of the old shell change
-                            // registration. Drop that one before registering again: the new
-                            // Explorer may hand out the same id.
+                            // registration. Its id is not deregistered: the new Explorer may
+                            // have handed the same number to another program, or to one of its
+                            // own views. Should the old registration still be alive, the
+                            // duplicate notices merge in the same 60 ms batch.
                             if let Ok(mut guard) = cell.try_borrow_mut()
                                 && let Some(app) = guard.as_mut()
                             {
-                                app._shell_watch = None;
+                                std::mem::forget(app._shell_watch.take());
                                 app._shell_watch =
                                     ShellChangeWatch::register_desktop(hwnd, WM_APP_SHELL_CHANGED)
                                         .map_err(|e| {
