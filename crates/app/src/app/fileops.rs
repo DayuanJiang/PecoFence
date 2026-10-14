@@ -144,9 +144,13 @@ impl App {
     }
 
     /// A move that may have been a paste of cut files finished (`paste_into`): the clipboard
-    /// is emptied once the files moved; after a cancel or failure they stay on it.
+    /// is emptied once the files moved; after a cancel or failure they stay on it. Something
+    /// copied or cut meanwhile (the move can take minutes) is left alone.
     fn settle_cut_paste(&mut self, moved: bool) {
-        if std::mem::take(&mut self.cut_paste_pending) && moved {
+        if let Some(seq) = self.cut_paste_seq.take()
+            && moved
+            && clipboard::sequence() == seq
+        {
             self.finish_cut_paste();
         }
     }
