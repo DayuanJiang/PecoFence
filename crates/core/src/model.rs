@@ -784,8 +784,9 @@ pub enum ItemKey {
 impl ItemKey {
     /// Normalizes a filesystem path into the canonical key form.
     pub fn from_path(path: &str) -> Self {
-        // The key doubles as the path the shell opens: a letter whose lowercase is more than
-        // one char ('İ' → "i\u{307}") stays as it is, or NTFS would not find the file.
+        // The key is the path the shell opens while an item has no `Item::path` yet: a letter
+        // whose lowercase is more than one char ('İ' → "i\u{307}") stays as it is, or NTFS
+        // would not find the file.
         let mut s: String = path
             .replace('/', "\\")
             .chars()
@@ -862,12 +863,22 @@ pub struct Item {
     /// Unix seconds of the last launch from a fence (the "闲置天数" rule condition).
     #[serde(default)]
     pub last_opened: Option<i64>,
+    /// The path as spelled on disk (`ABC.zip`); `key` is its case-folded form for matching.
+    /// Missing in older files until the next desktop sync.
+    #[serde(default)]
+    pub path: Option<String>,
 }
 
 impl Item {
     /// See [`ItemKey::is_namespace`].
     pub fn is_namespace(&self) -> bool {
         self.key.is_namespace()
+    }
+
+    /// The path to hand to the shell and other programs (open, drag, copy, CLI): the on-disk
+    /// spelling, else the case-folded key.
+    pub fn path(&self) -> Option<&str> {
+        self.path.as_deref().or_else(|| self.key.as_path())
     }
 }
 
@@ -1445,6 +1456,22 @@ mod tests {
         assert_eq!(key.as_path(), Some("c:\\users\\İbrahim\\desktop\\plan.txt"));
     }
 
+    /// Feedback #25: programs got `abc.zip` for `ABC.zip`. The on-disk spelling goes out; an
+    /// item saved without it falls back to the key.
+    #[test]
+    fn items_hand_out_the_on_disk_spelling() {
+        let json = r#"{"id":"6f1c2a4e-0000-4000-8000-000000000001","key":{"path":"c:\\d\\abc.zip"},
+            "origin":"userDesktop","displayName":"ABC","mtime":1,"isFolder":false,"attrs":0,
+            "iconKey":{"byExt":".zip"}}"#;
+        let mut item: Item = serde_json::from_str(json).unwrap();
+        assert_eq!(item.path(), Some("c:\\d\\abc.zip"));
+        item.path = Some(r"C:\D\ABC.zip".into());
+        assert_eq!(item.path(), Some(r"C:\D\ABC.zip"));
+        assert_eq!(item.key, ItemKey::from_path(r"C:\D\ABC.zip"));
+        let back: Item = serde_json::from_value(serde_json::to_value(&item).unwrap()).unwrap();
+        assert_eq!(back.path(), Some(r"C:\D\ABC.zip"));
+    }
+
     #[test]
     fn peek_shortcuts_read_in_both_directions() {
         use crate::hotkey::{CTRL_ALT_SPACE, Hotkey};
@@ -1621,6 +1648,7 @@ mod tests {
             size: 0,
             open_count: 0,
             last_opened: None,
+            path: Some("C:/Users/Me/Desktop/Report.docx".into()),
         };
         f.items.push(ItemRef {
             item_id: item.id,

@@ -10,6 +10,30 @@ impl App {
             .map(|mut p| p.drain(..).collect())
             .unwrap_or_default();
         tracing::debug!(count = events.len(), "desktop change batch");
+        // What a shell drop onto a virtual fence writes after the fact (a shortcut per item)
+        // goes into that fence: the new shortcuts of the first batch that has any. Other files
+        // that land meanwhile, and paths already routed elsewhere, are left alone.
+        if let Some((fence, since)) = self.shell_drop_claim {
+            if since.elapsed() > Duration::from_secs(SHELL_DROP_CLAIM_SECS) {
+                self.shell_drop_claim = None;
+            } else if let Some(desktop) = shell::user_desktop() {
+                for ev in &events {
+                    if let FsEvent::Added(p) = ev
+                        && p.parent() == Some(desktop.as_path())
+                        && p.extension().is_some_and(|e| e.eq_ignore_ascii_case("lnk"))
+                        && !self.pending_routes.iter().any(|r| r.path == *p)
+                    {
+                        self.pending_routes.push(PendingRoute {
+                            fence,
+                            path: p.clone(),
+                            since: Instant::now(),
+                            rename: false,
+                        });
+                        self.shell_drop_claim = None;
+                    }
+                }
+            }
+        }
         // Pair RENAMED_OLD/RENAMED_NEW so the item keeps its fence membership.
         let mut pending_old: Option<PathBuf> = None;
         let mut renamed = 0usize;

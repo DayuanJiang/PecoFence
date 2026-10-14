@@ -500,15 +500,84 @@ fn url_icon_source(path: &Path) -> Option<(PathBuf, i32)> {
     file.map(|f| (f, index))
 }
 
-/// The icon of an Internet shortcut at `size_px`, extracted from its `IconFile` the way
-/// Explorer does (`SHDefExtractIcon` picks the nearest image and scales it). None when the
+/// The icon of an Internet shortcut at `size_px`, extracted from its `IconFile`. None when the
 /// .url names no icon, the icon file is gone or extraction fails.
 fn url_icon(path: &Path, size_px: u32) -> Option<ShellImage> {
     let (file, index) = url_icon_source(path)?;
+    icon_file_image(&file, index, size_px)
+}
+
+/// The Recycle Bin's `full` or empty icon at `size_px` (see `recycle_bin_icon_source`); None
+/// when neither DefaultIcon key names one that can be extracted (`shell_image` then).
+pub fn recycle_bin_image(full: bool, size_px: u32) -> Option<ShellImage> {
+    let (file, index) = recycle_bin_icon_source(full)?;
+    icon_file_image(&file, index, size_px)
+}
+
+/// The Recycle Bin's full or empty icon (`file`, `index`) from the `full` / `empty` entries of
+/// its DefaultIcon key, the user's own (Desktop icon settings) before the Windows default. The
+/// shell's extraction reads the key's default value instead, which Explorer switches only some
+/// time after the bin filled or emptied: asked right after a file was recycled it still hands
+/// back the empty bin, and that image would stay cached as the full one.
+fn recycle_bin_icon_source(full: bool) -> Option<(PathBuf, i32)> {
+    let name = if full { "full" } else { "empty" };
+    [
+        (
+            HKEY_CURRENT_USER,
+            r"Software\Microsoft\Windows\CurrentVersion\Explorer\CLSID",
+        ),
+        (HKEY_LOCAL_MACHINE, r"SOFTWARE\Classes\CLSID"),
+    ]
+    .into_iter()
+    .find_map(|(root, clsids)| {
+        let key = format!(r"{clsids}\{RECYCLE_BIN_CLSID}\DefaultIcon");
+        let location = reg_string(root, &key, name)?;
+        let (file, index) = location.rsplit_once(',').unwrap_or((&location, "0"));
+        Some((
+            PathBuf::from(file.trim().trim_matches('"')),
+            index.trim().parse().ok()?,
+        ))
+    })
+}
+
+/// Reads `HKxx\key\name` as a string, environment variables expanded; `None` when absent or
+/// empty.
+fn reg_string(root: HKEY, key: &str, name: &str) -> Option<String> {
+    const RRF_RT_REG_SZ: u32 = 0x02;
+    let key = to_wide(key);
+    let name = to_wide(name);
+    let mut buf = [0u16; 1024];
+    let mut size = (buf.len() * 2) as u32;
+    // SAFETY: the strings outlive the call; `buf` is a live out buffer of `size` bytes.
+    let status = unsafe {
+        RegGetValueW(
+            root,
+            PCWSTR(key.as_ptr()),
+            PCWSTR(name.as_ptr()),
+            RRF_RT_REG_SZ,
+            None,
+            Some(buf.as_mut_ptr().cast()),
+            Some(&mut size),
+        )
+    };
+    if status.0 != 0 {
+        return None;
+    }
+    // `size` can be that of the unexpanded value, shorter than the expanded one when a
+    // variable stands for a longer path: the string ends at the first NUL of the zeroed buffer.
+    let len = buf.iter().position(|&c| c == 0).unwrap_or(buf.len());
+    let s = String::from_utf16_lossy(&buf[..len]);
+    let s = s.trim();
+    (!s.is_empty()).then(|| s.to_string())
+}
+
+/// Icon `index` of `file` at `size_px`, extracted the way Explorer does (`SHDefExtractIcon`
+/// picks the nearest image and scales it). None when the file is gone or extraction fails.
+fn icon_file_image(file: &Path, index: i32, size_px: u32) -> Option<ShellImage> {
     if !file.exists() {
         return None;
     }
-    let wide = path_wide(&file);
+    let wide = path_wide(file);
     let mut hicon = HICON::default();
     // SAFETY: NUL-terminated path outlives the call; the icon is destroyed after conversion.
     unsafe {
@@ -1003,6 +1072,20 @@ mod namespace_tests {
             Some(false),
             "the shell names the bin's type"
         );
+    }
+
+    /// The bin's full and empty icons come from its own DefaultIcon entries, not from whatever
+    /// state the shell last noticed.
+    #[test]
+    fn recycle_bin_has_a_full_and_an_empty_icon() {
+        let _com = crate::com::OleGuard::init().expect("COM");
+        let full = recycle_bin_icon_source(true).expect("full icon entry");
+        let empty = recycle_bin_icon_source(false).expect("empty icon entry");
+        assert_ne!(full, empty);
+        for (file, index) in [full, empty] {
+            let image = icon_file_image(&file, index, 48).expect("bin icon");
+            assert_eq!((image.width, image.height), (48, 48), "{file:?},{index}");
+        }
     }
 
     /// Every special item comes back as a namespace entry with a shell-provided name.

@@ -35,6 +35,7 @@ const REPEATS_SHOWN: u32 = 3;
 /// Fields whose text the code itself defines. Binding one of these names to a new expression
 /// fails `tests::callsites_are_shareable` until the binding is reviewed and listed there.
 const CODE_TEXT_FIELDS: &[&str] = &[
+    "access",
     "at",
     "behavior",
     "class",
@@ -563,6 +564,7 @@ mod tests {
     /// removed. Before adding one, check that the value cannot hold a path, a file / folder /
     /// fence name, a title or anything else the user typed.
     const REVIEWED: &[(&str, &str)] = &[
+        ("access", "access"),           // crashlog: read / write / execute / other
         ("at", "%locate(address)"),     // crashlog: `module+rva`
         ("at", "script"),               // settings page script: fixed names
         ("behavior", "?behavior"),      // ShowDesktopBehavior enum

@@ -181,8 +181,13 @@ impl Image {
 
     /// Averages each `factor` x `factor` block (edge blocks may be partial).
     pub fn downscale_box(&self, factor: u32) -> Image {
+        Self::downscale_pixels(&self.bgra, self.width, self.height, factor)
+    }
+
+    /// [`Image::downscale_box`] of `width` x `height` BGRA pixels held elsewhere (a bitmap).
+    pub fn downscale_pixels(pixels: &[u8], width: u32, height: u32, factor: u32) -> Image {
         let factor = factor.max(1) as usize;
-        let (sw, sh) = (self.width as usize, self.height as usize);
+        let (sw, sh) = (width as usize, height as usize);
         let width = sw.div_ceil(factor);
         let height = sh.div_ceil(factor);
         let mut bgra = Vec::with_capacity(width * height * 4);
@@ -192,7 +197,7 @@ impl Image {
             let rows = by * factor..((by + 1) * factor).min(sh);
             let row_count = rows.len() as u32;
             for y in rows {
-                let row = &self.bgra[y * sw * 4..(y + 1) * sw * 4];
+                let row = &pixels[y * sw * 4..(y + 1) * sw * 4];
                 for (x, px) in row.as_chunks::<4>().0.iter().enumerate() {
                     let sum = &mut sums[x / factor * 4..x / factor * 4 + 4];
                     for c in 0..4 {

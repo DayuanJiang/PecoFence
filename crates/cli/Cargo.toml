@@ -13,6 +13,8 @@ path = "src/main.rs"
 [dependencies]
 pecofence-core = { path = "../core" }
 pecofence-ipc = { path = "../ipc", features = ["describe"] }
+# The pipe name with the user's SID, computed as the app does (client.rs).
+pecofence-platform = { path = "../platform" }
 clap = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

@@ -34,7 +34,7 @@ impl App {
             .items_of(fence)
             .into_iter()
             .map(|it| {
-                let path = PathBuf::from(it.key.as_path().unwrap_or(""));
+                let path = PathBuf::from(it.path().unwrap_or(""));
                 let (_, icon_only) = crate::icons::icon_key_for(&path, it.is_folder, it.mtime);
                 ItemView::new(
                     it.id,
@@ -144,7 +144,7 @@ impl App {
             .iter()
             .filter(|id| self.state.is_portal_item(**id))
             .filter_map(|id| self.state.item(*id))
-            .filter_map(|it| it.key.as_path().map(PathBuf::from))
+            .filter_map(|it| it.path().map(PathBuf::from))
             .collect();
         if paths.is_empty() {
             return;
@@ -255,18 +255,17 @@ impl App {
             return;
         }
         let name = name.trim();
-        // `old` is a lower-cased ItemKey, not the file's displayed spelling.
+        // `old` is the file name (hidden extension included), not the displayed spelling.
         if name == it.display_name {
             return;
         }
         let file_name = it
-            .key
-            .as_path()
+            .path()
             .and_then(|p| p.rsplit('\\').next())
             .unwrap_or_default();
         // Explorer's editing name drops `.lnk` / hidden extensions: keep whatever it dropped.
         let suffix = crate::rename::rename_hidden_suffix(&it.display_name, file_name, it.is_folder);
-        let old = it.key.as_path().map(PathBuf::from);
+        let old = it.path().map(PathBuf::from);
         let new_name = format!("{name}{suffix}");
         let toast = match self.rename_item_to(item, &new_name) {
             Ok(_) | Err(RenameError::Unsupported) => None,
@@ -326,7 +325,7 @@ impl App {
         {
             return Err(RenameError::InvalidName);
         }
-        let Some(old) = it.key.as_path().map(PathBuf::from) else {
+        let Some(old) = it.path().map(PathBuf::from) else {
             return Err(RenameError::Unsupported);
         };
         let Some(parent) = old.parent().map(Path::to_path_buf) else {
@@ -335,9 +334,12 @@ impl App {
         let new = parent.join(file_name);
         if ItemKey::from_path(&new.to_string_lossy()) == ItemKey::from_path(&old.to_string_lossy())
         {
-            // Same name, another case: a no-op for the item table, but the file's spelling
-            // changes. (`old` is the lower-cased key: callers already skipped unchanged names.)
+            // Same name, another case: the item keeps its key, its path and name take the new
+            // spelling. (Callers already skipped unchanged names.)
             std::fs::rename(&old, &new).map_err(rename_error)?;
+            if self.state.rename_item(&old, &new) {
+                self.schedule_save();
+            }
             self.refresh_fences_with(item);
             return Ok(new);
         }
@@ -381,7 +383,7 @@ impl App {
             items
                 .iter()
                 .filter_map(|id| self.state.item(*id))
-                .filter_map(|it| it.key.as_path().map(PathBuf::from))
+                .filter_map(|it| it.path().map(PathBuf::from))
                 .collect(),
         )
     }
@@ -447,7 +449,7 @@ impl App {
         if let Some(p) = items
             .first()
             .and_then(|id| self.state.item(*id))
-            .and_then(|it| it.key.as_path().map(PathBuf::from))
+            .and_then(|it| it.path().map(PathBuf::from))
         {
             let owner = self
                 .window_for(fence)
@@ -537,7 +539,7 @@ impl App {
             && self.state.fence(fence).is_some_and(|f| f.portal_navigate)
             && let Some(it) = self.state.item(item)
             && it.is_folder
-            && let Some(p) = it.key.as_path().map(PathBuf::from)
+            && let Some(p) = it.path().map(PathBuf::from)
         {
             self.portal_enter(fence, &p);
             return;
@@ -545,7 +547,7 @@ impl App {
         let Some(path) = self
             .state
             .item(item)
-            .and_then(|it| it.key.as_path().map(PathBuf::from))
+            .and_then(|it| it.path().map(PathBuf::from))
         else {
             return;
         };
@@ -578,7 +580,7 @@ impl App {
                 .iter()
                 .filter_map(|id| self.state.item(*id))
                 .filter(|it| !it.is_namespace())
-                .filter_map(|it| it.key.as_path().map(PathBuf::from))
+                .filter_map(|it| it.path().map(PathBuf::from))
                 .collect();
             self.move_files_into_portal(paths, to);
             return;

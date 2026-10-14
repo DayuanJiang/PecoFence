@@ -48,6 +48,7 @@ pub mod frameclock;
 pub mod hotkey;
 pub mod http;
 pub mod layered;
+pub mod live_wallpaper;
 pub mod locale;
 pub mod memstats;
 pub mod monitors;
