@@ -431,15 +431,17 @@ impl FenceDropHandler {
         v.apply_drop_feedback(Some(spot));
         v.update_drag_dwell(self.behavior.hover_peek.get());
         v.update_drag_scroll(pt);
+        let on_bin = spot
+            .folder
+            .and_then(|i| v.items.get(i))
+            .is_some_and(|it| pecofence_platform::shell::is_recycle_bin_path(&it.path));
         let effect = match self.kind {
             DropKind::None => DropEffect::None,
+            // A link is written as a new file: into a folder item, but not into the bin.
+            DropKind::Url if on_bin => DropEffect::None,
             // A browser usually offers COPY|LINK: Link when it may, else the best it allows.
             DropKind::Url => dragdrop::resolve(DropEffect::Link, allowed),
             DropKind::Shell => {
-                let on_bin = spot
-                    .folder
-                    .and_then(|i| v.items.get(i))
-                    .is_some_and(|it| pecofence_platform::shell::is_recycle_bin_path(&it.path));
                 if on_bin {
                     // A mail or a Start-menu app cannot be recycled.
                     DropEffect::None
@@ -657,6 +659,12 @@ impl DropHandler for FenceDropHandler {
                     let Some(url) = dragdrop::inet_url(data) else {
                         break 'resolve DropEffect::None;
                     };
+                    if folder
+                        .as_deref()
+                        .is_some_and(pecofence_platform::shell::is_recycle_bin_path)
+                    {
+                        break 'resolve DropEffect::None;
+                    }
                     let mut effect = dragdrop::resolve(DropEffect::Link, allowed);
                     if effect == DropEffect::None {
                         break 'resolve DropEffect::None;
@@ -669,7 +677,12 @@ impl DropHandler for FenceDropHandler {
                         }
                     }
                     let name = dragdrop::file_group_descriptor_name(data);
-                    self.queue.push(Command::ExternalUrlDrop { url, name, to });
+                    self.queue.push(Command::ExternalUrlDrop {
+                        url,
+                        name,
+                        to,
+                        folder,
+                    });
                     effect
                 }
                 DropKind::Shell => {

@@ -148,11 +148,13 @@ pub enum Command {
         mode: TransferMode,
     },
     /// A link dragged from a browser onto a fence: create an Internet Shortcut (.url) like
-    /// Explorer does, and file it into `to`.
+    /// Explorer does, and file it into `to` (or write it into `folder`, the folder item it was
+    /// dropped on).
     ExternalUrlDrop {
         url: String,
         name: Option<String>,
         to: FenceId,
+        folder: Option<PathBuf>,
     },
     /// A drop onto `to` was handed to the shell's folder drop target (Outlook mail, a
     /// Start-menu app): the portals show what landed in their folders; `landed` are the desktop

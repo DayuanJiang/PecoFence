@@ -1668,7 +1668,12 @@ impl App {
                     self.move_items(&ids, to);
                 }
             }
-            Command::ExternalUrlDrop { url, name, to } => self.create_url_shortcut(url, name, to),
+            Command::ExternalUrlDrop {
+                url,
+                name,
+                to,
+                folder,
+            } => self.create_url_shortcut(url, name, to, folder),
             Command::ShellDrop {
                 to,
                 landed,
