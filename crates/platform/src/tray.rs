@@ -401,9 +401,8 @@ impl PopupMenu {
     pub fn submenu(&self, text: &str, sub: PopupMenu) -> &Self {
         let w = to_wide(text);
         let h = sub.hmenu;
-        self.bitmaps
-            .borrow_mut()
-            .append(&mut sub.bitmaps.borrow_mut());
+        // `take` leaves `sub` an empty Vec without a buffer for `forget` to leak.
+        self.bitmaps.borrow_mut().extend(sub.bitmaps.take());
         std::mem::forget(sub);
         // SAFETY: string outlives the call; submenu handle is now owned by the parent.
         unsafe {
