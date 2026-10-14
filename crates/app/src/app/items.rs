@@ -296,10 +296,10 @@ impl App {
                 }
                 None => Some(pecofence_core::i18n::format("重命名失败：{0}", &[e])),
             },
-            Err(RenameError::InvalidName) => Some(
-                pecofence_core::i18n::text("名称不能为空，也不能包含 \\ / : * ? \" < > |")
-                    .to_string(),
-            ),
+            Err(RenameError::InvalidName) => {
+                self.invalid_name_toast();
+                None
+            }
             Err(RenameError::Exists) => {
                 Some(pecofence_core::i18n::text("此文件夹中已有同名项目。").to_string())
             }
@@ -307,6 +307,17 @@ impl App {
         };
         if let (Some(text), Some(t)) = (toast, &self.tray) {
             t.show_info("PecoFence", &text, true);
+        }
+    }
+
+    /// The toast for a name no file can have (the inline editor's Enter and commit paths).
+    pub(super) fn invalid_name_toast(&self) {
+        if let Some(t) = &self.tray {
+            t.show_info(
+                "PecoFence",
+                pecofence_core::i18n::text("名称不能为空，也不能包含 \\ / : * ? \" < > |"),
+                true,
+            );
         }
     }
 
@@ -327,11 +338,7 @@ impl App {
         // Win32 drops trailing dots and spaces from a name: strip them here too, or the
         // record would be keyed "note." for a file that is "note" on disk.
         let file_name = file_name.trim().trim_end_matches(['.', ' ']);
-        if file_name.is_empty()
-            || file_name
-                .chars()
-                .any(|c| matches!(c, '\\' | '/' | ':' | '*' | '?' | '"' | '<' | '>' | '|'))
-        {
+        if crate::rename::invalid_file_name(file_name) {
             return Err(RenameError::InvalidName);
         }
         let Some(old) = it.path().map(PathBuf::from) else {
