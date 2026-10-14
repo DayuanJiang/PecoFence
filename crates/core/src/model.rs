@@ -2,7 +2,7 @@
 
 use crate::geometry::{WorkArea, monitor_model};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 
 pub const SCHEMA_VERSION: u32 = 1;
@@ -1406,6 +1406,26 @@ impl Config {
         }
     }
 
+    /// Drops what a broken or hand-merged file lists twice in a layout, keeping the first: a
+    /// fence id seen before, and a membership of an item that an earlier fence (or an earlier
+    /// entry of the same one) holds already. True when something was dropped.
+    pub fn drop_duplicates(&mut self) -> bool {
+        let mut changed = false;
+        for layout in &mut self.layouts {
+            let mut fences = HashSet::new();
+            let before = layout.fences.len();
+            layout.fences.retain(|f| fences.insert(f.id));
+            changed |= layout.fences.len() != before;
+            let mut items = HashSet::new();
+            for f in &mut layout.fences {
+                let before = f.items.len();
+                f.items.retain(|r| items.insert(r.item_id));
+                changed |= f.items.len() != before;
+            }
+        }
+        changed
+    }
+
     pub fn fence_mut(&mut self, layout: usize, id: FenceId) -> Option<&mut Fence> {
         self.layouts
             .get_mut(layout)?
@@ -1735,6 +1755,48 @@ mod tests {
         assert_eq!(c.fence_of_item(0, item), Some(aid));
         assert_eq!(c.undo_log.len(), 1);
         assert!(c.assign(0, item, aid, AssignedBy::User).is_none());
+    }
+
+    #[test]
+    fn duplicates_from_a_broken_file_keep_their_first_entry() {
+        let mut c = Config::default();
+        let a = Fence::new("A", FenceKind::Virtual, geo());
+        let b = Fence::new("B", FenceKind::Inbox, geo());
+        let mut dup = Fence::new("Dup", FenceKind::Virtual, geo());
+        dup.id = a.id;
+        let (aid, bid) = (a.id, b.id);
+        c.layouts.push(Layout {
+            shown: 0,
+            fingerprint: vec![],
+            fences: vec![a, b, dup],
+        });
+        let (x, y) = (Uuid::new_v4(), Uuid::new_v4());
+        let member = |item_id| ItemRef {
+            item_id,
+            manual_index: None,
+            assigned_by: AssignedBy::User,
+        };
+        c.layouts[0].fences[0].items = vec![member(x), member(x)];
+        c.layouts[0].fences[1].items = vec![member(y), member(x)];
+        c.layouts[0].fences[2].items = vec![member(y)];
+        // Another layout lists the same fences and items: that is no duplicate.
+        c.layouts.push(c.layouts[0].clone());
+        c.layouts[1].fences.truncate(2);
+        c.layouts[1].fences[0].items.truncate(1);
+        c.layouts[1].fences[1].items.truncate(1);
+        let clean = c.layouts[1].clone();
+
+        assert!(c.drop_duplicates());
+        let titles: Vec<&str> = c.layouts[0]
+            .fences
+            .iter()
+            .map(|f| f.title.as_str())
+            .collect();
+        assert_eq!(titles, ["A", "B"]);
+        assert_eq!(c.fence_mut(0, aid).unwrap().items, vec![member(x)]);
+        assert_eq!(c.fence_mut(0, bid).unwrap().items, vec![member(y)]);
+        assert_eq!(c.layouts[1].fences, clean.fences);
+        assert!(!c.drop_duplicates());
     }
 
     #[test]

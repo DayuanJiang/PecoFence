@@ -141,6 +141,10 @@ impl AppState {
             unreadable_moved_to,
         };
         state.rebuild_catalog();
+        if state.config.drop_duplicates() {
+            tracing::warn!("duplicate fences or memberships in the configuration dropped");
+            state.dirty = true;
+        }
         state.ensure_layout();
         state.normalize_tabs();
         state
@@ -209,6 +213,7 @@ impl AppState {
             snaps.remove(0);
         }
         config.snapshots = snaps;
+        config.drop_duplicates();
         self.config = config;
         self.rebuild_catalog();
         self.layout = 0;
@@ -2204,6 +2209,19 @@ mod tests {
         assert!(local.iter().all(|id| kept.iter().any(|s| s.id == *id)));
         assert!(kept.iter().any(|s| s.id == newest));
         assert!(kept.windows(2).all(|w| w[0].ts <= w[1].ts));
+    }
+
+    #[test]
+    fn an_imported_file_shows_a_fence_listed_twice_once() {
+        let mut state = test_state();
+        let mut file = state.config.clone();
+        let mut copy = file.layouts[0].fences[0].clone();
+        copy.title = "Dup".into();
+        file.layouts[0].fences.push(copy);
+        let fences = file.layouts[0].fences.len();
+        state.replace_config(file);
+        assert_eq!(state.fences().len(), fences - 1);
+        assert!(state.fences().iter().all(|f| f.title != "Dup"));
     }
 
     /// Issue #24: unplugging the big monitor, working on the laptop, plugging it back in.
