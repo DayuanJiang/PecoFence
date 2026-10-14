@@ -2327,6 +2327,18 @@ impl App {
                     from_title: Some(old.fence_title.clone()),
                     ..blank("item.moved")
                 }),
+                // Renamed on disk: the item keeps its record, and the stream shows the old file
+                // removed and the new one added.
+                Some(old) if old.path != sig.path => {
+                    events.push(EventDto {
+                        item: Some(Self::removed_item_dto(*id, old)),
+                        ..blank("item.removed")
+                    });
+                    events.push(EventDto {
+                        item: Some(dto()),
+                        ..blank("item.added")
+                    });
+                }
                 Some(_) => {}
             }
         }
