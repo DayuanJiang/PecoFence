@@ -531,6 +531,7 @@ impl App {
                 return;
             }
         }
+        let running = self.fileops_running;
         self.handle(Command::ExternalDrop {
             paths,
             to: fence,
@@ -541,11 +542,23 @@ impl App {
             },
         });
         if cut {
-            // Explorer empties the clipboard after pasting cut files.
-            clipboard::clear();
-            self.cut_items.clear();
-            self.push_cut_items();
+            if self.fileops_running > running {
+                // Foreign files are still being moved by a worker: emptied when it succeeds,
+                // so a cancelled conflict dialog leaves the files on the clipboard for another
+                // try (`on_fileop_done`).
+                self.cut_paste_pending = true;
+            } else {
+                self.finish_cut_paste();
+            }
         }
+    }
+
+    /// Explorer empties the clipboard after pasting cut files.
+    pub(super) fn finish_cut_paste(&mut self) {
+        self.cut_paste_pending = false;
+        clipboard::clear();
+        self.cut_items.clear();
+        self.push_cut_items();
     }
 
     pub(super) fn launch(&mut self, item: ItemId) {

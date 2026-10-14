@@ -312,6 +312,9 @@ pub struct App {
     /// clears the dimming.
     cut_items: HashSet<ItemId>,
     cut_clip_seq: u32,
+    /// A paste of cut files is still being moved by a worker thread: the clipboard is emptied
+    /// when it succeeds (see `paste_into`).
+    cut_paste_pending: bool,
 }
 
 pub type AppCell = Rc<RefCell<Option<App>>>;
@@ -1096,6 +1099,7 @@ impl App {
             memory_logged: None,
             cut_items: HashSet::new(),
             cut_clip_seq: 0,
+            cut_paste_pending: false,
             wallpaper_sig: None,
             wallpaper_cache: BackdropCache::default(),
             prewarm: None,
