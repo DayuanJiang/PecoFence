@@ -51,10 +51,6 @@ impl App {
                 _ => pending_old = None,
             }
         }
-        let t0 = Instant::now();
-        let report = self.sync_desktop_if_available("fs change");
-        let t_sync = t0.elapsed();
-        self.route_pending_creation();
         // Only the portals showing a folder this batch touched are re-read (each re-read asks
         // the shell for the names of new entries; a buffer overflow re-reads everything).
         let mut dirs: Vec<PathBuf> = Vec::new();
@@ -75,6 +71,22 @@ impl App {
                 }
             }
         }
+        // A batch that touched only portal folders (a download landing in one) leaves the
+        // desktop alone; an empty batch is a shell notice or a menu asking to look again.
+        let desktops = [shell::user_desktop(), shell::public_desktop()];
+        let touches_desktop = all
+            || dirs.is_empty()
+            || dirs
+                .iter()
+                .any(|d| desktops.iter().flatten().any(|x| x == d));
+        let t0 = Instant::now();
+        let report = if touches_desktop {
+            self.sync_desktop_if_available("fs change")
+        } else {
+            crate::state::SyncReport::default()
+        };
+        let t_sync = t0.elapsed();
+        self.route_pending_creation();
         if all {
             self.refresh_portals();
         } else {
