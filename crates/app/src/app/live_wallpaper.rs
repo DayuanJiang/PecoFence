@@ -20,7 +20,8 @@ const LIVE_SETTLE_REFRESH: Duration = Duration::from_secs(3);
 /// Switching to another wallpaper, a player can close a moment before the next one shows: a
 /// monitor goes back to the Windows wallpaper once its window is missing this long.
 const LIVE_GONE_AFTER: Duration = Duration::from_secs(2);
-/// A capture taking longer than this is given up (see `capture_live_wallpapers`).
+/// A capture whose result has not come back after this is given up once its worker has ended
+/// (see `capture_live_wallpapers`).
 const LIVE_CAPTURE_GIVE_UP: Duration = Duration::from_secs(30);
 /// Captures are kept this many times smaller than the monitor: Fluent builds its backdrop at
 /// that size, and frosted glass shows no more detail.
@@ -58,6 +59,7 @@ pub(super) struct LiveCapture {
     file_signature: String,
     started: Instant,
     result: Arc<Mutex<Option<std::result::Result<Built, String>>>>,
+    thread: std::thread::JoinHandle<()>,
 }
 
 /// The window's rectangle and opaque pixels, `CAPTURE_DOWNSCALE` times smaller (see
@@ -194,14 +196,13 @@ impl App {
             l.attempted
                 .is_none_or(|(hwnd, at)| hwnd != l.hwnd || at.elapsed() >= min_age)
         };
-        // PrintWindow waits for the player's thread: a job that does not come back is given up
-        // (its late result is ignored), so it cannot stop every later capture.
-        if self
-            .live_capture
-            .as_ref()
-            .is_some_and(|job| job.started.elapsed() >= LIVE_CAPTURE_GIVE_UP)
-        {
-            tracing::warn!("live wallpaper capture did not finish; starting again");
+        // A job whose worker ended without a result coming back is given up, so it cannot stop
+        // every later capture. One still waiting in PrintWindow for the player's thread is
+        // kept: a new worker would wait there too, each with a thread and a full-size bitmap.
+        if self.live_capture.as_ref().is_some_and(|job| {
+            job.started.elapsed() >= LIVE_CAPTURE_GIVE_UP && job.thread.is_finished()
+        }) {
+            tracing::warn!("live wallpaper capture brought no result; starting again");
             self.live_capture = None;
         }
         if self.live_capture.is_some()
@@ -270,10 +271,13 @@ impl App {
                     );
                 })
         };
-        if let Err(error) = spawned {
-            tracing::warn!(%error, "live wallpaper capture thread failed to start");
-            return;
-        }
+        let thread = match spawned {
+            Ok(thread) => thread,
+            Err(error) => {
+                tracing::warn!(%error, "live wallpaper capture thread failed to start");
+                return;
+            }
+        };
         self.live_capture = Some(LiveCapture {
             shown: self.wallpaper_sig.clone(),
             generation: self.wallpaper_cache.generation(),
@@ -281,6 +285,7 @@ impl App {
             snapshot,
             started: now,
             result,
+            thread,
         });
     }
 
