@@ -471,19 +471,7 @@ pub fn shell_image(path: &Path, size_px: u32, icon_only: bool) -> Result<ShellIm
 /// tap would alias and shimmer instead. Exact-size returns are left untouched.
 /// `IconFile=` / `IconIndex=` of an Internet shortcut, when the file names an icon.
 fn url_icon_source(path: &Path) -> Option<(PathBuf, i32)> {
-    let bytes = std::fs::read(path).ok()?;
-    // .url files are ANSI or UTF-8 in practice; a UTF-16 one starts with a BOM.
-    let text = if bytes.starts_with(&[0xFF, 0xFE]) {
-        let units: Vec<u16> = bytes[2..]
-            .as_chunks::<2>()
-            .0
-            .iter()
-            .map(|c| u16::from_le_bytes(*c))
-            .collect();
-        String::from_utf16_lossy(&units)
-    } else {
-        String::from_utf8_lossy(&bytes).into_owned()
-    };
+    let text = url_file_text(path)?;
     let mut file = None;
     let mut index = 0;
     for line in text.lines() {
@@ -498,6 +486,23 @@ fn url_icon_source(path: &Path) -> Option<(PathBuf, i32)> {
         }
     }
     file.map(|f| (f, index))
+}
+
+/// The text of an Internet shortcut (`.url`).
+fn url_file_text(path: &Path) -> Option<String> {
+    let bytes = std::fs::read(path).ok()?;
+    // .url files are ANSI or UTF-8 in practice; a UTF-16 one starts with a BOM.
+    Some(if bytes.starts_with(&[0xFF, 0xFE]) {
+        let units: Vec<u16> = bytes[2..]
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|c| u16::from_le_bytes(*c))
+            .collect();
+        String::from_utf16_lossy(&units)
+    } else {
+        String::from_utf8_lossy(&bytes).into_owned()
+    })
 }
 
 /// The icon of an Internet shortcut at `size_px`, extracted from its `IconFile`. None when the
@@ -919,9 +924,43 @@ pub fn unique_path(dir: &Path, base: &str, ext: &str) -> PathBuf {
 
 /// Reads a `.url` internet shortcut's URL.
 pub fn url_shortcut_target(path: &Path) -> Option<String> {
-    let text = std::fs::read_to_string(path).ok()?;
+    let text = url_file_text(path)?;
     text.lines()
         .find_map(|l| l.strip_prefix("URL=").map(|u| u.trim().to_string()))
+}
+
+#[cfg(test)]
+mod url_tests {
+    use super::url_shortcut_target;
+
+    /// PowerShell 5.1 writes UTF-16 with a BOM; an ANSI file may hold bytes that are not UTF-8.
+    #[test]
+    fn url_target_reads_utf16_and_ansi_files() {
+        let dir = std::env::temp_dir().join(format!("pecofence-url-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let utf16 = dir.join("utf16.url");
+        let mut bytes = vec![0xFF, 0xFE];
+        for unit in "[InternetShortcut]\r\nURL=https://github.com/\r\n".encode_utf16() {
+            bytes.extend(unit.to_le_bytes());
+        }
+        std::fs::write(&utf16, bytes).unwrap();
+        // IconFile names 桌面 in GBK.
+        let ansi = dir.join("ansi.url");
+        std::fs::write(
+            &ansi,
+            b"[InternetShortcut]\r\nURL=https://example.com/\r\nIconFile=C:\\\xd7\xc0\xc3\xe6\\a.ico\r\n",
+        )
+        .unwrap();
+        assert_eq!(
+            url_shortcut_target(&utf16).as_deref(),
+            Some("https://github.com/")
+        );
+        assert_eq!(
+            url_shortcut_target(&ansi).as_deref(),
+            Some("https://example.com/")
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
 
 #[cfg(test)]
