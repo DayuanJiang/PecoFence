@@ -124,9 +124,9 @@ pub(super) fn on_timer_scroll_repeat(
         return Some(0);
     };
     // Hit-test against the thumb at the glide's destination, so paging
-    // stops as soon as the thumb is going to sit under the pointer (Win32
-    // stops when the hit test changes; the pointer sliding off the bar
-    // pauses and resumes). An arrow keeps stepping one row while the
+    // pauses as soon as the thumb is going to sit under the pointer (Win32
+    // pauses while the hit test differs, the pointer sliding off the bar
+    // included, and resumes). An arrow keeps stepping one row while the
     // pointer stays on it. Repeat steps use the 83 ms cap so the offset
     // reaches each page / row before the next 50 ms tick (Win32 pages at
     // once); a 333 ms glide retargeted every tick would trail the thumb by
@@ -148,8 +148,9 @@ pub(super) fn on_timer_scroll_repeat(
                 window::set_timer(hwnd, TIMER_SCROLL_REPEAT, SCROLL_PAGE_REPEAT_MS);
             }
         }
-        Some(_) => window::kill_timer(hwnd, TIMER_SCROLL_REPEAT),
-        None => window::set_timer(hwnd, TIMER_SCROLL_REPEAT, SCROLL_PAGE_REPEAT_MS),
+        // Another part or off the bar: paused, it resumes once the pointer is back on `side`
+        // (the thumb that caught up with the pointer, or the pointer dragged further along).
+        _ => window::set_timer(hwnd, TIMER_SCROLL_REPEAT, SCROLL_PAGE_REPEAT_MS),
     }
     Some(0)
 }

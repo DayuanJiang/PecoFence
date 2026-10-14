@@ -359,7 +359,11 @@ impl FenceViewState {
         let (cw, _) = self.content_size_px();
         let x = (x_px - self.content_x) as f32 / scale;
         let y = (y_px - title_h) as f32 / scale;
-        if x < cw as f32 / scale - SCROLLBAR_HOT_DIP || y < g.band_top || y > g.band_top + g.band_h
+        // Captured pointers can be beyond the right edge: off the bar there too.
+        if x < cw as f32 / scale - SCROLLBAR_HOT_DIP
+            || x >= cw as f32 / scale
+            || y < g.band_top
+            || y > g.band_top + g.band_h
         {
             return None;
         }
