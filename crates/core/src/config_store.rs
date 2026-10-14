@@ -208,10 +208,11 @@ impl ConfigStore {
             f.sync_all().map_err(at("flush temp file"))?;
         }
         let primary = self.primary_path();
+        let mut rotated = false;
         if primary.exists() {
             // Best effort: keep the previous good file as .bak.
             let _ = fs::remove_file(self.bak_path());
-            let _ = fs::rename(&primary, self.bak_path());
+            rotated = fs::rename(&primary, self.bak_path()).is_ok();
         }
         match fs::rename(self.tmp_path(), &primary) {
             Ok(()) => {}
@@ -229,7 +230,13 @@ impl ConfigStore {
                 f.sync_all().map_err(at("flush config.json"))?;
                 let _ = fs::remove_file(self.tmp_path());
             }
-            Err(e) => return Err(at("replace config.json")(e)),
+            Err(e) => {
+                // Put the previous file back: a load never looks at the temp file.
+                if rotated {
+                    let _ = fs::rename(self.bak_path(), &primary);
+                }
+                return Err(at("replace config.json")(e));
+            }
         }
         self.daily_backup(&json).map_err(at("daily backup"))?;
         Ok(())
