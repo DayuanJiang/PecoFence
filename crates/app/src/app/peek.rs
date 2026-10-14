@@ -1,28 +1,61 @@
-//! Peek: hotkey registration with fallbacks, toggle / end, hotkey label helpers, and the search
-//! across all fences (`peek_search.rs` is its box).
+//! Peek: hotkey registration with fallbacks, the shortcut field on the settings page, toggle /
+//! end, and the search across all fences (`peek_search.rs` is its box).
 
 use super::*;
+use pecofence_core::hotkey::{FALLBACKS, PRESETS, Problem};
 
-/// `RegisterHotKey` arguments for a Peek hotkey choice.
-pub(super) fn peek_hotkey_args(h: PeekHotkey) -> (u32, u32) {
-    match h {
-        PeekHotkey::WinSpace => (hotkey::mods::WIN | hotkey::mods::NOREPEAT, hotkey::VK_SPACE),
-        PeekHotkey::CtrlAltSpace => (
-            hotkey::mods::CONTROL | hotkey::mods::ALT | hotkey::mods::NOREPEAT,
-            hotkey::VK_SPACE,
-        ),
-        PeekHotkey::WinShiftSpace => (
-            hotkey::mods::WIN | hotkey::mods::SHIFT | hotkey::mods::NOREPEAT,
-            hotkey::VK_SPACE,
-        ),
-    }
+/// A shortcut as the tray menu and messages show it: `Ctrl+Alt+空格`.
+pub(super) fn peek_hotkey_label(h: Hotkey) -> String {
+    hotkey_keys(h).join("+")
 }
 
-pub(super) fn peek_hotkey_label(h: PeekHotkey) -> &'static str {
-    match h {
-        PeekHotkey::WinSpace => pecofence_core::i18n::text("Win+空格"),
-        PeekHotkey::CtrlAltSpace => pecofence_core::i18n::text("Ctrl+Alt+空格"),
-        PeekHotkey::WinShiftSpace => pecofence_core::i18n::text("Win+Shift+空格"),
+/// The key names of `h` in the interface language, one per key cap.
+fn hotkey_keys(h: Hotkey) -> Vec<String> {
+    h.parts()
+        .into_iter()
+        .map(|part| {
+            match part.as_str() {
+                "Ctrl" => pecofence_core::i18n::text("键名\x04Ctrl"),
+                "Shift" => pecofence_core::i18n::text("键名\x04Shift"),
+                "Space" => pecofence_core::i18n::text("空格"),
+                "Enter" => pecofence_core::i18n::text("键名\x04Enter"),
+                "Esc" => pecofence_core::i18n::text("键名\x04Esc"),
+                "Backspace" => pecofence_core::i18n::text("键名\x04Backspace"),
+                "Insert" => pecofence_core::i18n::text("键名\x04Insert"),
+                "Delete" => pecofence_core::i18n::text("键名\x04Delete"),
+                "Home" => pecofence_core::i18n::text("键名\x04Home"),
+                "End" => pecofence_core::i18n::text("键名\x04End"),
+                "PageUp" => pecofence_core::i18n::text("键名\x04PageUp"),
+                "PageDown" => pecofence_core::i18n::text("键名\x04PageDown"),
+                "Left" => "←",
+                "Up" => "↑",
+                "Right" => "→",
+                "Down" => "↓",
+                // Win, Alt, Tab, letters, digits, F1 to F24, Num0 to Num9.
+                _ => return part,
+            }
+            .to_string()
+        })
+        .collect()
+}
+
+/// Why the settings page cannot use `h`, in the interface language.
+fn hotkey_problem_text(problem: Problem, h: Hotkey) -> String {
+    match problem {
+        Problem::Malformed | Problem::UnsupportedKey => {
+            pecofence_core::i18n::text("这个键不能用在快捷键里，请换一个").to_string()
+        }
+        Problem::NoModifier => {
+            pecofence_core::i18n::text("快捷键需要包含 Ctrl、Alt 或 Win").to_string()
+        }
+        Problem::WinAlone => pecofence_core::i18n::text(
+            "Windows 保留了 Win 加单个键的组合，请再加上 Ctrl、Alt 或 Shift",
+        )
+        .to_string(),
+        Problem::Reserved => pecofence_core::i18n::format(
+            "{0} 是 Windows 常用的快捷键，请换一个",
+            &[peek_hotkey_label(h)],
+        ),
     }
 }
 
@@ -40,13 +73,12 @@ pub(super) fn search_matches(name: &str, path: Option<&str>, query: &str) -> boo
 impl App {
     /// Registers / re-registers / drops the Peek hotkey to match the settings.
     pub(super) fn sync_peek_hotkey(&mut self) {
-        let want = self
-            .state
-            .config
-            .settings
-            .peek
-            .enabled
-            .then_some(self.state.config.settings.peek.hotkey);
+        // The settings page is recording a shortcut: `resume_peek_hotkey` syncs once it ends.
+        if self.peek_hotkey_paused {
+            return;
+        }
+        let peek = &self.state.config.settings.peek;
+        let want = peek.enabled.then(|| peek.chosen_hotkey());
         // While a fallback is registered `want != peek_hotkey`, so every sync (startup, preset,
         // settings apply) retries the preferred combination first and switches back once free.
         if want == self.peek_hotkey {
@@ -61,29 +93,17 @@ impl App {
             self.peek_hotkey = None;
         }
         if let Some(h) = want {
-            // The chosen combination first, then the others: Win+Space family combinations are
-            // reserved by Windows on multi-layout systems, so a fallback keeps Peek usable.
-            let candidates = [
-                h,
-                PeekHotkey::CtrlAltSpace,
-                PeekHotkey::WinShiftSpace,
-                PeekHotkey::WinSpace,
-            ];
-            let mut registered = None;
-            for c in candidates {
-                let (mods, vk) = peek_hotkey_args(c);
-                if hotkey::register(hwnd, HOTKEY_PEEK, mods, vk) {
-                    registered = Some(c);
-                    break;
-                }
-            }
+            // The chosen combination first, then the fallbacks: Windows keeps Win+Space and
+            // Win+Shift+Space (older files may name them), so a fallback keeps Peek usable.
+            let registered = std::iter::once(h).chain(FALLBACKS).find(|c| {
+                hotkey::register(hwnd, HOTKEY_PEEK, c.mods | hotkey::mods::NOREPEAT, c.vk)
+            });
             match registered {
                 Some(c) => {
                     self.peek_hotkey = Some(c);
-                    // The enum names: the labels are translated text the shareable log omits.
-                    tracing::info!(hotkey = ?c, "peek hotkey registered");
+                    tracing::info!(hotkey = %c, "peek hotkey registered");
                     if c != h {
-                        tracing::warn!(wanted = ?h, "peek hotkey taken; using fallback");
+                        tracing::warn!(wanted = %h, "peek hotkey taken; using fallback");
                         // The user's choice stays in settings (it is retried on every sync);
                         // toast only when the effective combination actually changed.
                         if (Some(c) != prev || choice_changed)
@@ -93,10 +113,7 @@ impl App {
                                 "PecoFence",
                                 &pecofence_core::i18n::format(
                                     "快捷键 {0} 已被系统或其他程序占用，“速览栅栏”改用 {1}。",
-                                    &[
-                                        peek_hotkey_label(h).to_string(),
-                                        peek_hotkey_label(c).to_string(),
-                                    ],
+                                    &[peek_hotkey_label(h), peek_hotkey_label(c)],
                                 ),
                                 false,
                             );
@@ -119,6 +136,105 @@ impl App {
                 }
             }
         }
+    }
+
+    /// Whether `h` can be the Peek hotkey right now: it is ours already, or `RegisterHotKey`
+    /// takes it (and it is released again at once).
+    pub(super) fn peek_hotkey_free(&self, h: Hotkey) -> bool {
+        if self.peek_hotkey == Some(h) {
+            return true;
+        }
+        let hwnd = self.control.hwnd();
+        let free = hotkey::register(hwnd, HOTKEY_PROBE, h.mods | hotkey::mods::NOREPEAT, h.vk);
+        if free {
+            hotkey::unregister(hwnd, HOTKEY_PROBE);
+        }
+        free
+    }
+
+    /// The settings page started recording a shortcut: release ours so that pressing it
+    /// reaches the page instead of starting a Peek.
+    pub(super) fn pause_peek_hotkey(&mut self) {
+        if !self.peek_hotkey_paused && self.peek_hotkey.is_some() {
+            hotkey::unregister(self.control.hwnd(), HOTKEY_PEEK);
+            self.peek_hotkey_paused = true;
+        }
+    }
+
+    /// Recording ended (or the settings window went away): register the shortcut again.
+    pub(super) fn resume_peek_hotkey(&mut self) {
+        if !std::mem::take(&mut self.peek_hotkey_paused) {
+            return;
+        }
+        let before = self.peek_hotkey;
+        if let Some(h) = before
+            && !hotkey::register(
+                self.control.hwnd(),
+                HOTKEY_PEEK,
+                h.mods | hotkey::mods::NOREPEAT,
+                h.vk,
+            )
+        {
+            // Another program took it meanwhile: the sync goes through the fallbacks again.
+            self.peek_hotkey = None;
+        }
+        // Settings applied during the recording (pecofence-cli, say) take effect now.
+        self.sync_peek_hotkey();
+        if self.peek_hotkey != before {
+            self.push_settings_state();
+        }
+    }
+
+    /// 「快捷键」 on the settings page: a recorded key press or a quick choice. A combination
+    /// that is refused or taken leaves the settings as they are and the page keeps recording.
+    pub(super) fn set_peek_hotkey_from_page(&mut self, mods: u32, vk: u32) {
+        let recording = self.peek_hotkey_paused;
+        self.resume_peek_hotkey();
+        let h = Hotkey::new(mods, vk);
+        let refused = match h.check() {
+            Err(problem) => Some(hotkey_problem_text(problem, h)),
+            Ok(_) if !self.peek_hotkey_free(h) => {
+                tracing::info!(hotkey = %h, "peek hotkey refused: taken");
+                Some(pecofence_core::i18n::format(
+                    "{0} 已被 Windows 或其他程序占用，请换一个",
+                    &[peek_hotkey_label(h)],
+                ))
+            }
+            Ok(_) => None,
+        };
+        match &refused {
+            Some(_) if recording => self.pause_peek_hotkey(),
+            Some(_) => {}
+            None => {
+                let mut settings = self.state.config.settings.clone();
+                settings.peek.set_hotkey(h);
+                self.apply_settings(settings);
+            }
+        }
+        if let Some(host) = &self.settings {
+            host.post_json(
+                &serde_json::json!({ "type": "peekHotkeyResult", "ok": refused.is_none(), "text": refused })
+                    .to_string(),
+            );
+        }
+    }
+
+    /// `peekHotkey` of the settings state: the chosen shortcut, the one registered (`null`
+    /// when Peek is off or every combination is taken) and the quick choices.
+    pub(super) fn peek_hotkey_json(&self) -> serde_json::Value {
+        let combo = |h: Hotkey| {
+            serde_json::json!({
+                "mods": h.mods,
+                "vk": h.vk,
+                "keys": hotkey_keys(h),
+                "label": peek_hotkey_label(h),
+            })
+        };
+        serde_json::json!({
+            "chosen": combo(self.state.config.settings.peek.chosen_hotkey()),
+            "active": self.peek_hotkey.map(combo),
+            "presets": PRESETS.map(combo),
+        })
     }
 
     /// Peek: fences float above everything (over a dimmer) until ended.

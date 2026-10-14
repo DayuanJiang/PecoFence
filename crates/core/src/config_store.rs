@@ -487,6 +487,16 @@ pub fn lint(cfg: &Config) -> Vec<Lint> {
             ),
         );
     }
+    if let Some(text) = &cfg.settings.peek.custom_hotkey
+        && let Err(problem) = crate::hotkey::Hotkey::parse(text).and_then(|h| h.check())
+    {
+        lint_at(
+            &mut out,
+            LintLevel::Warning,
+            "settings",
+            format!("peek.customHotkey {text:?} is not used ({problem}); Peek uses peek.hotkey"),
+        );
+    }
     if cfg.snapshots.len() > crate::model::MAX_SNAPSHOTS {
         lint_at(
             &mut out,

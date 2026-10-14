@@ -16,8 +16,9 @@ use crate::settings_host::{SettingsHost, WebEnvironment};
 use crate::shadow::{ShadowStyle, ShadowWindow};
 use crate::state::AppState;
 use pecofence_core::geometry::WorkArea;
+use pecofence_core::hotkey::Hotkey;
 use pecofence_core::{
-    FenceId, FenceKind, ItemId, ItemKey, PeekHotkey, ShowDesktopSetting, SortMode, Spacing, Target,
+    FenceId, FenceKind, ItemId, ItemKey, ShowDesktopSetting, SortMode, Spacing, Target,
     ThemeSetting, TitleSize, ViewLayout, ZOrderSetting,
 };
 use pecofence_platform::clipboard;
@@ -147,6 +148,8 @@ const SPI_SETDESKWALLPAPER: usize = 0x0014;
 const SPI_SETWORKAREA: usize = 0x002F;
 const TRAY_ID: u32 = 1;
 const HOTKEY_PEEK: i32 = 1;
+/// Registered for a moment to learn whether a shortcut the user picks is free.
+const HOTKEY_PROBE: i32 = 2;
 
 /// How long a fence-menu "新建" keeps its claim on the next desktop item (plan §5.8).
 const PENDING_CREATION_SECS: u64 = 15;
@@ -293,10 +296,13 @@ pub struct App {
     live: Vec<live_wallpaper::LiveWallpaper>,
     live_capture: Option<live_wallpaper::LiveCapture>,
     /// The hotkey currently registered (None = registration failed or Peek disabled).
-    peek_hotkey: Option<PeekHotkey>,
+    peek_hotkey: Option<Hotkey>,
     /// The combination the last `sync_peek_hotkey` tried to register (the user's choice), so a
     /// persisting conflict does not re-toast on every settings apply.
-    peek_hotkey_wanted: Option<PeekHotkey>,
+    peek_hotkey_wanted: Option<Hotkey>,
+    /// The settings page is recording a new shortcut: `peek_hotkey` is unregistered meanwhile,
+    /// so pressing it reaches the page instead of starting a Peek.
+    peek_hotkey_paused: bool,
     /// Items put on the clipboard with 剪切 (drawn dimmed) and the clipboard sequence number at
     /// that moment: any later clipboard change (Explorer pasted, something else was copied)
     /// clears the dimming.
@@ -1077,6 +1083,7 @@ impl App {
             marquee_draws_band: false,
             peek_hotkey: None,
             peek_hotkey_wanted: None,
+            peek_hotkey_paused: false,
             desktop_unavailable: false,
             idle_rules_checked: None,
             memory_logged: None,
@@ -1759,6 +1766,7 @@ impl App {
                 if self.settings.as_ref().is_some_and(|h| h.hwnd() == hwnd) {
                     self.settings = None;
                     self.set_settings_ring(None);
+                    self.resume_peek_hotkey();
                 }
             }
             Command::FadeOutDone(hwnd) => {
