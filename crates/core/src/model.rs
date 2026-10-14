@@ -176,7 +176,7 @@ impl PeekSettings {
 
 /// The shortcuts versions up to 0.2.0 offered. Fences uses Win+Space, but Windows 10 and 11
 /// keep Win+Space and Win+Shift+Space for the input switcher even with a single keyboard
-/// layout, so a file that names one of them gets a fallback.
+/// layout, so a file that names one of them loads with Ctrl+Alt+Space (`config_store::migrate`).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
@@ -1532,8 +1532,7 @@ mod tests {
             serde_json::Value::Null
         );
 
-        // A 0.2.0 file keeps its Win+Space as the choice; the app falls back while Windows
-        // holds it.
+        // A 0.2.0 file reads its Win+Space as the choice (`config_store::migrate` replaces it).
         let v020: PeekSettings = serde_json::from_value(serde_json::json!({
             "enabled": true, "dim": true, "hotkey": "winSpace"
         }))
