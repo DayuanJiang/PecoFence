@@ -9,7 +9,7 @@ use crate::layout::{FIT_SLACK_PX, clearance};
 /// Details rows) and rows below the fixed title / header part. With `cells` off
 /// (`snapping.sizeToCells`) sizes are free and only the one-row minimum applies; on, the
 /// automatic size changes take whole cells, but a height held short by a fence below is kept
-/// exactly (the rows share the rest, see `ItemLayout::fill_rows`).
+/// exactly (the rest stays empty under the whole rows, see `ItemLayout::whole_rows_h`).
 #[derive(Clone, Copy, Debug)]
 pub(super) struct GridSteps {
     /// Column width and total horizontal padding.

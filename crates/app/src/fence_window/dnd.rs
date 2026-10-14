@@ -1170,10 +1170,20 @@ impl FenceViewState {
                     insert_caret: None,
                     insert_caret_alpha: 0.0,
                     selection_inactive: 0.0,
+                    items_bottom: f32::INFINITY,
                 };
                 rt.draw(|session| {
                     session.set_transform(&transform);
-                    chrome.draw_content(session, &theme, scale, &mut bitmaps, bw, bh, &content)
+                    chrome.draw_content(
+                        session,
+                        None,
+                        &theme,
+                        scale,
+                        &mut bitmaps,
+                        bw,
+                        bh,
+                        &content,
+                    )
                 })
             }
             ItemLayout::Rows { metrics, .. } => {
@@ -1230,6 +1240,7 @@ impl FenceViewState {
                     // No glass behind a drag image.
                     origin_x: 0.0,
                     origin_y: 0.0,
+                    rows_bottom: f32::INFINITY,
                 };
                 rt.draw(|session| {
                     session.set_transform(&transform);

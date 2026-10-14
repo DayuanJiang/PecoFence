@@ -1353,8 +1353,8 @@ impl App {
                 self.schedule_save();
             }
         }
-        // A DPI that settled late re-lays the window out; its rectangle stays (the rows and
-        // columns share the rest, so it still shows whole icons).
+        // A DPI that settled late re-lays the window out; its rectangle stays (it still shows
+        // whole icons: the columns share the rest, the rows leave it empty).
         for window in self.fences.values() {
             window.check_dpi();
         }

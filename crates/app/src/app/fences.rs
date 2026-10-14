@@ -301,8 +301,8 @@ impl App {
     /// multiples of icons"): the width becomes whole icon columns and a fixed height whole rows.
     /// Interactive resizing snaps in WM_SIZING; this applies the same rule to the explicit
     /// changes of the cell size (icon size, spacing, layout, label lines). Other sizes still
-    /// show whole icons (the rows and columns share the rest), so loading, DPI changes, tabs
-    /// and switching the setting on keep the saved rectangle. Off, sizes are free.
+    /// show whole icons (the columns share the rest, the rows leave it empty), so loading, DPI
+    /// changes, tabs and switching the setting on keep the saved rectangle. Off, sizes are free.
     pub(super) fn apply_cell_snap(&mut self, id: FenceId) {
         let id = self.state.host_of(id);
         let Some(f) = self.state.fence(id).cloned() else {

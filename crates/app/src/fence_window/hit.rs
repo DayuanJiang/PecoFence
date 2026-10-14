@@ -172,20 +172,9 @@ impl FenceViewState {
         )
     }
 
-    /// The item layout at `width_dip`. With 「调整大小时按整行整列对齐」 its rows fill the
-    /// viewport's height, so any fence height shows whole icons.
+    /// The item layout at `width_dip`. Its rows keep their pitch at any fence height; with
+    /// 「调整大小时按整行整列对齐」 the viewport shows only the whole rows (`scroll_view_h`).
     pub(super) fn layout(&self, width_dip: f32) -> ItemLayout {
-        let layout = self.natural_layout(width_dip);
-        if !self.behavior.size_to_cells.get() {
-            return layout;
-        }
-        let view_h =
-            (self.viewport_h_px() - FIT_SLACK_PX) as f32 / self.scale() - layout.fixed_top();
-        layout.fill_rows(view_h)
-    }
-
-    /// The item layout at `width_dip` with rows at their own height (fitting heights).
-    fn natural_layout(&self, width_dip: f32) -> ItemLayout {
         let spans = self.group_spans();
         let n = self.items.len();
         match self.layout {
@@ -283,11 +272,7 @@ impl FenceViewState {
             ItemLayout::Rows { metrics, .. } => {
                 let cols = self.columns_for(width_dip);
                 let text_x = cols.name_x + metrics.icon + 8.0;
-                // Centred in a row grown to the pitch.
-                let top = cell.y - self.scroll_y
-                    + metrics.header_h
-                    + (cell.h - metrics.row_h) / 2.0
-                    + 2.0;
+                let top = cell.y - self.scroll_y + metrics.header_h + 2.0;
                 (
                     text_x - 4.0,
                     top,
@@ -321,14 +306,14 @@ impl FenceViewState {
         self.bounded_height_px(desired.max(self.rail_fit_height_px()))
     }
 
-    /// The item layout at the content surface's current width, rows at their own height. A
-    /// fence collapsed (or collapsing) to its left tab column uses the width it expands to.
+    /// The item layout at the content surface's current width. A fence collapsed (or
+    /// collapsing) to its left tab column uses the width it expands to.
     fn current_layout(&self) -> ItemLayout {
         let (mut cw, _) = self.content_size_px();
         if self.tabs_on_rail() && (self.rolled_up || self.roll_anim.is_some()) {
             cw = (self.expanded_w_px - self.rail_px()).max(1);
         }
-        self.natural_layout(cw as f32 / self.scale())
+        self.layout(cw as f32 / self.scale())
     }
 
     /// Window height (device px) that shows every row of `layout`, ignoring the work area.
@@ -437,7 +422,8 @@ impl FenceViewState {
         let layout = self.layout(cw as f32 / scale);
         let x = (x_px - self.content_x) as f32 / scale;
         let y = (y_px - title_h) as f32 / scale - layout.fixed_top();
-        if y < 0.0 {
+        // Under the whole rows (「调整大小时按整行整列对齐」) nothing shows.
+        if y < 0.0 || y >= self.scroll_view_h(&layout) {
             return None;
         }
         layout.hit_test(x, y + self.scroll_y, self.items.len())
