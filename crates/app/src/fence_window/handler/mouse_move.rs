@@ -393,9 +393,9 @@ pub(super) fn on_mousemove(
     let up = v.up_button_at(x, y);
     let chev = v.chevron_at(x, y);
     let tab = v.tab_at(x, y);
-    let chrome_changed = std::mem::replace(&mut v.up_hovered, up) != up
-        || std::mem::replace(&mut v.chevron_hovered, chev) != chev
-        || std::mem::replace(&mut v.tab_hover, tab) != tab;
+    let chrome_changed = (std::mem::replace(&mut v.up_hovered, up) != up)
+        | (std::mem::replace(&mut v.chevron_hovered, chev) != chev)
+        | (std::mem::replace(&mut v.tab_hover, tab) != tab);
     let on_control = up || chev || tab.is_some();
     // With 「鼠标悬停时切换标签页」 on, resting on another tab switches to it after the hover
     // delay; moving onto a different tab restarts the wait.
