@@ -413,6 +413,11 @@ impl App {
             // Folder-watcher debounce state (see WM_APP_FS_CHANGED / TIMER_FS).
             let fs_armed = Cell::new(false);
             let fs_flushed: Cell<Option<Instant>> = Cell::new(None);
+            // The pending batch must sync the desktop even if its events all lie in portal
+            // folders: a shell notice or a menu asked for it.
+            let fs_desktop = Cell::new(false);
+            // TIMER_ICONS is armed for a batch of results (see WM_APP_ICON_READY).
+            let icons_armed = Cell::new(false);
             let peek_focus_pending: Cell<Option<usize>> = Cell::new(None);
             // A display change is waiting out DISPLAY_SETTLE_MS on TIMER_WORKAREA.
             let display_settling = Cell::new(false);
@@ -468,9 +473,15 @@ impl App {
                                 // desktop namespace item toggled): release its payload and
                                 // treat it like a folder change.
                                 ShellChangeWatch::release(wparam, lparam);
+                                // The Recycle Bin may have changed: ask it at the next sync.
+                                // Plain folder events leave the cached answer alone (asking
+                                // touches every fixed drive); without this channel the sync
+                                // itself asks every time.
+                                shell::recycle_bin_changed();
                             }
-                            // A file may have gone to the Recycle Bin: ask it at the next sync.
-                            shell::recycle_bin_changed();
+                            if message == WM_APP_SHELL_CHANGED || wparam != 0 {
+                                fs_desktop.set(true);
+                            }
                             // Explorer reacts to a folder change within a frame or two; a file
                             // the shell just moved onto the desktop (drag-out from a portal)
                             // must be filed as fast. Coalesce for one short window, never
@@ -500,7 +511,12 @@ impl App {
                             Some(0)
                         }
                         WM_APP_ICON_READY => {
-                            window::set_timer(hwnd, TIMER_ICONS, 40);
+                            // One timer per batch: SetTimer restarts a running timer, so arming
+                            // it for every result would hold the drain back for as long as the
+                            // workers keep finishing icons less than 40 ms apart.
+                            if !icons_armed.replace(true) {
+                                window::set_timer(hwnd, TIMER_ICONS, 40);
+                            }
                             Some(0)
                         }
                         msg::WM_HOTKEY if wparam as i32 == HOTKEY_PEEK => {
@@ -560,7 +576,7 @@ impl App {
                                     {
                                         window::kill_timer(hwnd, TIMER_FS);
                                         fs_armed.set(false);
-                                        app.on_fs_changed();
+                                        app.on_fs_changed(fs_desktop.take());
                                         fs_flushed.set(Some(Instant::now()));
                                     } else {
                                         // Busy (modal loop): retry shortly; stays armed.
@@ -617,6 +633,7 @@ impl App {
                                     if let Ok(mut guard) = cell.try_borrow_mut()
                                         && let Some(app) = guard.as_mut()
                                     {
+                                        icons_armed.set(false);
                                         window::kill_timer(hwnd, TIMER_ICONS);
                                         app.on_icons_ready();
                                     } else {

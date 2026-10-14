@@ -143,6 +143,15 @@ impl App {
         uploads > 0
     }
 
+    /// Drops the icon extractions no fence window waits for any more, keeping the cached
+    /// icons: when a fence's icon size changes or a portal navigates, the new icons would
+    /// otherwise queue behind the old requests until `prune_icons` runs, and that waits for
+    /// the drawing to go quiet, which every icon arriving postpones.
+    pub(super) fn drop_unneeded_icon_requests(&self) {
+        let needed = self.needed_icons();
+        self.ctx.icons.borrow_mut().drop_unneeded_requests(&needed);
+    }
+
     /// `IconCache::draw_key`s of what the fence windows show or can switch to at once: their
     /// items at the current icon size and DPI, and the items of their other tabs at those
     /// tabs' own size, so a tab switch stays instant.

@@ -827,6 +827,41 @@ impl AppState {
         let mut report = SyncReport::default();
         let now = pecofence_core::now_unix();
         let mut seen: HashSet<ItemId> = HashSet::new();
+        // One pass over the fences instead of a search per entry (quadratic on a crowded
+        // desktop).
+        let in_fence: HashSet<ItemId> = self
+            .fences()
+            .iter()
+            .flat_map(|f| f.items.iter().map(|r| r.item_id))
+            .collect();
+        // Naming new entries one at a time costs several ms each on a OneDrive desktop: a batch
+        // of them (first run, an unpacked archive) is named per folder in one go, as
+        // `refresh_portal` does.
+        let mut new_dirs: Vec<&Path> = Vec::new();
+        let mut new_count = 0usize;
+        for entry in entries {
+            if entry.origin == EntryOrigin::Namespace
+                || self
+                    .catalog
+                    .contains_key(&ItemKey::from_path(&entry.path.to_string_lossy()))
+            {
+                continue;
+            }
+            new_count += 1;
+            if let Some(d) = entry.path.parent()
+                && !new_dirs.contains(&d)
+            {
+                new_dirs.push(d);
+            }
+        }
+        let listed: HashMap<&Path, HashMap<String, String>> = if new_count > 2 {
+            new_dirs
+                .iter()
+                .map(|d| (*d, shell::display_names_in(d)))
+                .collect()
+        } else {
+            HashMap::new()
+        };
 
         for entry in entries {
             let key = ItemKey::from_path(&entry.path.to_string_lossy());
@@ -868,7 +903,7 @@ impl AppState {
                     }
                 }
                 // An item that exists but is in no fence (e.g. its fence was deleted) → route.
-                if self.config.fence_of_item(self.layout, id).is_none() {
+                if !in_fence.contains(&id) {
                     let decision = self.route_decision(entry);
                     if let Some((fence, by)) = self.target_fence(decision) {
                         self.config.assign(self.layout, id, fence, by);
@@ -878,17 +913,24 @@ impl AppState {
                 continue;
             }
             // New item.
-            let display_name = shell::display_name(&entry.path).unwrap_or_else(|| {
-                let stem = Path::new(&entry.file_name)
-                    .file_stem()
-                    .map(|s| s.to_string_lossy().to_string())
-                    .unwrap_or_else(|| entry.file_name.clone());
-                if entry.is_folder {
-                    entry.file_name.clone()
-                } else {
-                    stem
-                }
-            });
+            let display_name = entry
+                .path
+                .parent()
+                .and_then(|d| listed.get(d))
+                .and_then(|names| names.get(&entry.file_name.to_lowercase()))
+                .cloned()
+                .or_else(|| shell::display_name(&entry.path))
+                .unwrap_or_else(|| {
+                    let stem = Path::new(&entry.file_name)
+                        .file_stem()
+                        .map(|s| s.to_string_lossy().to_string())
+                        .unwrap_or_else(|| entry.file_name.clone());
+                    if entry.is_folder {
+                        entry.file_name.clone()
+                    } else {
+                        stem
+                    }
+                });
             let item = Item {
                 id: uuid::Uuid::new_v4(),
                 key: key.clone(),
@@ -983,9 +1025,9 @@ impl AppState {
             .len()
     }
 
-    /// Items of `fence` in display order (orphans hidden).
-    pub fn items_of(&self, fence: &Fence) -> Vec<&Item> {
-        let mut items: Vec<(Option<&ItemRef>, &Item)> = if fence.kind == FenceKind::FolderPortal {
+    /// Items of `fence` with their refs, as stored (orphans hidden), before any sort.
+    fn fence_members<'s, 'f>(&'s self, fence: &'f Fence) -> Vec<(Option<&'f ItemRef>, &'s Item)> {
+        if fence.kind == FenceKind::FolderPortal {
             self.portal_members
                 .get(&fence.id)
                 .map(|ids| {
@@ -1001,7 +1043,18 @@ impl AppState {
                 .filter_map(|r| self.config.items.get(&r.item_id).map(|it| (Some(r), it)))
                 .filter(|(_, it)| it.orphaned_since.is_none())
                 .collect()
-        };
+        }
+    }
+
+    /// Items of `fence` in no particular order (orphans hidden): for callers that only need
+    /// the set, without the sort `items_of` pays for.
+    pub fn unsorted_items_of<'s>(&'s self, fence: &Fence) -> impl Iterator<Item = &'s Item> {
+        self.fence_members(fence).into_iter().map(|(_, it)| it)
+    }
+
+    /// Items of `fence` in display order (orphans hidden).
+    pub fn items_of(&self, fence: &Fence) -> Vec<&Item> {
+        let mut items = self.fence_members(fence);
         match fence.view.sort {
             SortMode::Manual => items.sort_by_key(|(r, it)| {
                 (
@@ -1210,10 +1263,10 @@ impl AppState {
     /// other portal references leave `portal_items`. Returns the old items for diffing.
     fn evict_portal_members(&mut self, id: FenceId) -> Vec<Item> {
         let old_ids = self.portal_members.remove(&id).unwrap_or_default();
+        let shared: HashSet<ItemId> = self.portal_members.values().flatten().copied().collect();
         let mut old = Vec::with_capacity(old_ids.len());
         for i in &old_ids {
-            let shared = self.portal_members.values().any(|v| v.contains(i));
-            let item = if shared {
+            let item = if shared.contains(i) {
                 self.portal_items.get(i).cloned()
             } else {
                 self.portal_items.remove(i)

@@ -265,6 +265,8 @@ impl App {
             w.begin_portal_navigation(dir, select);
         }
         self.refresh_fence(fence);
+        // The folder just left may still have icons queued; they would delay this one's.
+        self.drop_unneeded_icon_requests();
         let host = self.state.host_of(fence);
         self.apply_portal_deco(host);
         self.push_workspace_summary();

@@ -76,7 +76,9 @@ impl App {
         self.refresh_portal_fences(&changed);
     }
 
-    pub(super) fn on_fs_changed(&mut self) {
+    /// `desktop`: the batch carries a shell notice or a menu's request, so the desktop is
+    /// synced whatever folders its events name.
+    pub(super) fn on_fs_changed(&mut self, desktop: bool) {
         let events: Vec<FsEvent> = self
             .fs_pending
             .lock()
@@ -124,10 +126,6 @@ impl App {
                 _ => pending_old = None,
             }
         }
-        let t0 = Instant::now();
-        let report = self.sync_desktop_if_available("fs change");
-        let t_sync = t0.elapsed();
-        self.route_pending_creation();
         // Only the portals showing a folder this batch touched are re-read (each re-read asks
         // the shell for the names of new entries; a buffer overflow re-reads everything).
         let mut dirs: Vec<PathBuf> = Vec::new();
@@ -148,6 +146,24 @@ impl App {
                 }
             }
         }
+        // A batch that touched only portal folders (a download landing in one) leaves the
+        // desktop alone, unless a shell notice (the Recycle Bin after a delete in that portal)
+        // or a menu landed in the same batch; an empty batch is one of those on its own.
+        let desktops = [shell::user_desktop(), shell::public_desktop()];
+        let touches_desktop = desktop
+            || all
+            || dirs.is_empty()
+            || dirs
+                .iter()
+                .any(|d| desktops.iter().flatten().any(|x| x == d));
+        let t0 = Instant::now();
+        let report = if touches_desktop {
+            self.sync_desktop_if_available("fs change")
+        } else {
+            crate::state::SyncReport::default()
+        };
+        let t_sync = t0.elapsed();
+        self.route_pending_creation();
         if all {
             self.refresh_portals();
         } else {
@@ -162,11 +178,15 @@ impl App {
         if report.changed() || renamed > 0 {
             tracing::info!(?report, "desktop resynced");
             // Renamed / modified files may have new icons; a file that just arrived (moved in
-            // by the shell) may have been extracted while it was still landing.
+            // by the shell) may have been extracted while it was still landing. Once per icon
+            // key: a file being written reports several events, documents of one type share
+            // a key, and each invalidation scans the whole icon and bitmap caches.
+            let mut invalidated: HashSet<pecofence_core::IconKey> = HashSet::new();
             for ev in &events {
                 if let FsEvent::Modified(p) | FsEvent::RenamedNew(p) | FsEvent::Added(p) = ev
                     && let Some(id) = self.state.item_by_path(p)
                     && let Some(item) = self.state.item(id)
+                    && invalidated.insert(item.icon_key.clone())
                 {
                     self.ctx.icons.borrow_mut().invalidate(&item.icon_key);
                     // Draw keys are `<cache_key><variant>@<px>`: drop every size / variant.

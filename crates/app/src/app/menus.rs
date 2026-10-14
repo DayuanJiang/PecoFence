@@ -258,7 +258,7 @@ impl App {
                 .iter()
                 .any(|id| self.state.item(*id).is_some_and(|it| it.is_namespace()))
             {
-                window::post_message(self.control.hwnd(), WM_APP_FS_CHANGED, 0, 0);
+                window::post_message(self.control.hwnd(), WM_APP_FS_CHANGED, 1, 0);
             }
             return;
         }
