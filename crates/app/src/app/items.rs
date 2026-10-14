@@ -153,9 +153,12 @@ impl App {
         if paths.is_empty() {
             return;
         }
+        // A desktop file of the same name is not the one being moved: no route for it (see the
+        // external drop in `handle`).
         let routed: Vec<PathBuf> = paths
             .iter()
             .filter_map(|p| p.file_name().map(|n| desktop.join(n)))
+            .filter(|p| self.state.live_item_by_path(p).is_none())
             .collect();
         for path in &routed {
             self.pending_routes.push(PendingRoute {

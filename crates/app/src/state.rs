@@ -1330,6 +1330,17 @@ impl AppState {
             .copied()
     }
 
+    /// The item at `path` if its file is on the desktop right now (a deleted file's record,
+    /// kept for a while, does not count).
+    pub fn live_item_by_path(&self, path: &Path) -> Option<ItemId> {
+        let id = self.item_by_path(path)?;
+        self.config
+            .items
+            .get(&id)
+            .is_some_and(|it| it.orphaned_since.is_none())
+            .then_some(id)
+    }
+
     /// Re-keys an item after a rename so it stays in its fence. Returns false if unknown.
     pub fn rename_item(&mut self, old: &Path, new: &Path) -> bool {
         let old_key = ItemKey::from_path(&old.to_string_lossy());

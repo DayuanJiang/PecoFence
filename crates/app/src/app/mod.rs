@@ -1633,9 +1633,13 @@ impl App {
                     // Like Fences: dropping a file from elsewhere onto a fence moves it to the
                     // desktop and puts it in that fence (a PendingRoute bypasses the rules).
                     if let Some(desktop) = shell::user_desktop() {
+                        // A desktop file of the same name is not the one being dropped: a
+                        // route would move it into `to` as soon as any watcher batch arrives,
+                        // before the conflict dialog is even answered.
                         let routed: Vec<PathBuf> = foreign
                             .iter()
                             .filter_map(|p| p.file_name().map(|n| desktop.join(n)))
+                            .filter(|p| self.state.live_item_by_path(p).is_none())
                             .collect();
                         for path in &routed {
                             self.pending_routes.push(PendingRoute {
