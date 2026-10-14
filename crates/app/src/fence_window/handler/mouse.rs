@@ -488,6 +488,7 @@ pub(super) fn on_capturechanged(
     let mut guard = view.borrow_mut();
     if let Some(v) = guard.as_mut() {
         v.drag = None;
+        v.rbutton_press = None;
         v.clear_pressed();
         if v.detach_pending || v.remote_drag.is_some() {
             tracing::info!(
@@ -608,33 +609,28 @@ pub(super) fn on_lbuttondblclk(
     Some(0)
 }
 
-// The other button during a tab drag / tear-off cancels it (as it does for
-// an OLE drag); the WM_RBUTTONUP that follows must not open a menu.
+// A plain press takes the capture so the release pairs with it (see
+// `rbutton_press`). The other button during a tab drag / tear-off cancels it
+// (as it does for an OLE drag); the WM_RBUTTONUP that follows then finds no
+// press and opens no menu.
 pub(super) fn on_rbuttondown(
     h: &HandlerCtx,
     hwnd: HWND,
     _wparam: usize,
-    _lparam: isize,
+    lparam: isize,
 ) -> Option<isize> {
     let HandlerCtx { view, queue, .. } = h;
-    // A swallow left over from a cancel whose WM_RBUTTONUP went to another
-    // window (tear-off: the pointer was over the torn-off window, which the
-    // cancel destroyed) must not eat this click's menu.
-    if let Ok(mut guard) = view.try_borrow_mut()
-        && let Some(v) = guard.as_mut()
-    {
-        v.rbutton_swallow = false;
-    }
     if window::get_capture() != hwnd {
-        return None;
-    }
-    let cancel = view.borrow_mut().as_mut().and_then(|v| {
-        let c = v.cancel_tab_or_remote_drag();
-        if c.is_some() {
-            v.rbutton_swallow = true;
+        if let Some(v) = view.borrow_mut().as_mut() {
+            v.rbutton_press = Some((msg::lo_i16(lparam), msg::hi_i16(lparam)));
         }
-        c
-    });
+        window::set_capture(hwnd);
+        return Some(0);
+    }
+    let cancel = view
+        .borrow_mut()
+        .as_mut()
+        .and_then(|v| v.cancel_tab_or_remote_drag());
     match cancel {
         Some(c) => {
             finish_drag_cancel(c, queue, &h.behavior);
@@ -653,13 +649,25 @@ pub(super) fn on_rbuttonup(
     let HandlerCtx { view, queue, .. } = h;
     let x = msg::lo_i16(lparam);
     let y = msg::hi_i16(lparam);
+    let press = view
+        .borrow_mut()
+        .as_mut()
+        .and_then(|v| v.rbutton_press.take());
+    let Some((px, py)) = press else {
+        return Some(0);
+    };
+    if window::get_capture() == hwnd {
+        // ReleaseCapture sends WM_CAPTURECHANGED synchronously: no borrow held.
+        window::release_capture();
+    }
+    let (tx, ty) = window::drag_threshold();
+    if (x - px).abs() > tx || (y - py).abs() > ty {
+        return Some(0);
+    }
     let mut guard = view.borrow_mut();
     let Some(v) = guard.as_mut() else {
         return Some(0);
     };
-    if std::mem::take(&mut v.rbutton_swallow) {
-        return Some(0);
-    }
     let pt = window::cursor_pos();
     v.cancel_pending_rename();
     v.hide_tip();

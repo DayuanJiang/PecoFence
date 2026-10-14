@@ -34,8 +34,10 @@ pub struct FenceViewState {
     pub(super) drop_tab: Option<usize>,
     /// Drag dwell timer: the rolled-fence unroll is armed.
     pub(super) drag_peek_armed: bool,
-    /// A right button press cancelled a drag: swallow the WM_RBUTTONUP that follows.
-    pub(super) rbutton_swallow: bool,
+    /// Client point of a plain right button press, which took the capture: the release opens a
+    /// menu only when it pairs with one here and the pointer stayed on it (a right drag onto
+    /// another item or fence opens nothing, and a cancel press records none).
+    pub(super) rbutton_press: Option<(i32, i32)>,
     /// Item whose inline rename edit is open: its label stays folded under the edit box.
     pub(super) renaming: Option<ItemId>,
     /// The fence-title rename popup is open (a hover peek stays expanded under it).
