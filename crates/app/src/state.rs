@@ -919,15 +919,36 @@ impl AppState {
             }
         }
         for id in to_remove {
-            if let Some(item) = self.config.items.remove(&id) {
-                self.catalog.remove(&item.key);
-            }
-            for f in &mut self.config.layouts[self.layout].fences {
-                f.items.retain(|r| r.item_id != id);
-            }
-            self.dirty = true;
+            self.remove_item_record(id);
         }
         report
+    }
+
+    /// Removes a desktop item's record from the table, the catalog and the fences.
+    fn remove_item_record(&mut self, id: ItemId) {
+        if let Some(item) = self.config.items.remove(&id) {
+            self.catalog.remove(&item.key);
+        }
+        for f in &mut self.config.layouts[self.layout].fences {
+            f.items.retain(|r| r.item_id != id);
+        }
+        self.dirty = true;
+    }
+
+    /// Before the user renames an item to `path`: a file of that name deleted less than seven
+    /// days ago still has its (orphaned) record, which would take the renamed file for the old
+    /// one at the next sync and move it into the old file's fence. Drop that record.
+    pub fn forget_orphan_at(&mut self, path: &Path) {
+        let key = ItemKey::from_path(&path.to_string_lossy());
+        if let Some(&id) = self.catalog.get(&key)
+            && self
+                .config
+                .items
+                .get(&id)
+                .is_some_and(|it| it.orphaned_since.is_some())
+        {
+            self.remove_item_record(id);
+        }
     }
 
     /// Live workspace entries, including the current contents of folder portals.
@@ -2489,6 +2510,30 @@ mod tests {
         assert_eq!(state.item_id_for_path(&desk("report.txt")), Some(doc));
         assert_eq!(state.config.fence_of_item(0, doc), Some(work));
         assert!(state.config.items[&copy].orphaned_since.is_some());
+    }
+
+    /// b.txt deleted, then a.txt renamed to b.txt within the week: the deleted file's record
+    /// must not claim the renamed file and pull it into the old file's fence.
+    #[test]
+    fn a_rename_over_a_recently_deleted_name_keeps_the_item_in_its_fence() {
+        let desk = |name: &str| PathBuf::from(format!("C:/Users/Me/Desktop/{name}"));
+        let mut state = test_state();
+        let (inbox, work) = (state.inbox_id().unwrap(), state.fences()[1].id);
+        let gone = add_item(&mut state, inbox, "b");
+        state.config.items.get_mut(&gone).unwrap().orphaned_since = Some(1);
+        let kept = add_item(&mut state, work, "a");
+        state.forget_orphan_at(&desk("b.txt"));
+        assert!(state.rename_item(&desk("a.txt"), &desk("b.txt")));
+        state.sync_desktop(&[desktop_entry("b.txt")]);
+        assert_eq!(state.item_id_for_path(&desk("b.txt")), Some(kept));
+        assert_eq!(state.config.fence_of_item(0, kept), Some(work));
+        assert!(!state.config.items.contains_key(&gone));
+        assert!(state.fences().iter().all(|f| !f.contains_item(gone)));
+        // A live file of that name keeps its record; the rename is refused as before.
+        let live = add_item(&mut state, inbox, "c");
+        state.forget_orphan_at(&desk("c.txt"));
+        assert!(!state.rename_item(&desk("b.txt"), &desk("c.txt")));
+        assert_eq!(state.item_id_for_path(&desk("c.txt")), Some(live));
     }
 
     /// Issue #39: the inbox cannot be deleted, but 为空时自动隐藏 keeps an empty one out of sight.
