@@ -398,6 +398,9 @@ impl App {
         let queue = CommandQueue::new();
         // Whether a virtual-desktop switch can change the picture (see `sync_desktops_differ`).
         let desktops_differ = Rc::new(Cell::new(false));
+        // The desktop anchor once it exists: WM_QUERYENDSESSION shows the real icons again
+        // through it while a menu or dialog holds the App.
+        let session_anchor: Rc<std::cell::OnceCell<AnchorCell>> = Rc::default();
 
         // Control window: timers, tray callbacks, command pump.
         let control_class = WindowClass::register("PecoFence.Control", ClassOptions::default())?;
@@ -414,6 +417,7 @@ impl App {
             let wallpaper_schedule = Rc::new(Cell::new(RefreshSchedule::default()));
             let last_desktop_id = Cell::new(wallpaper::desktop_id());
             let desktops_differ = desktops_differ.clone();
+            let session_anchor = session_anchor.clone();
             // Virtual desktop of the last foreground window (see WM_APP_WALLPAPER).
             let last_foreground_desktop: Cell<Option<u128>> = Cell::new(None);
             let notify_wallpaper = {
@@ -835,6 +839,12 @@ impl App {
                                 if let Some(a) = app.anchor.borrow_mut().as_mut() {
                                     a.restore_desktop_icons();
                                 }
+                            } else if let Some(anchor) = session_anchor.get()
+                                && let Ok(mut guard) = anchor.try_borrow_mut()
+                                && let Some(a) = guard.as_mut()
+                            {
+                                // The session may end before the menu or dialog returns.
+                                a.restore_desktop_icons();
                             }
                             Some(1)
                         }
@@ -891,6 +901,7 @@ impl App {
             &sentinel_class,
         )?;
         std::mem::forget(sentinel_class);
+        let _ = session_anchor.set(anchor_cell.clone());
         if let Some(a) = anchor_cell.borrow_mut().as_mut() {
             let q = queue.clone();
             a.on_marquee = Some(Box::new(move |event| {
