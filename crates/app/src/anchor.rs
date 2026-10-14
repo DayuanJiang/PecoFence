@@ -728,6 +728,9 @@ impl DesktopAnchor {
                     set_fence_visible(h, shadow, false);
                 }
             });
+            // Show desktop may have ended during the peek, which suspends its checks; left
+            // active, the fences would float above the window that came to the front.
+            self.check_show_desktop();
             self.reanchor("peek off");
             tracing::info!("peek off");
         }
