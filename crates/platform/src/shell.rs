@@ -755,14 +755,24 @@ pub fn transfer_to_folder(
                 op.MoveItem(&item, &dest_item, PCWSTR::null(), None).ok()?;
             }
         }
-        op.PerformOperations().ok()?;
-        let aborted = op
-            .GetAnyOperationsAborted()
-            .map(|b| b.as_bool())
-            .unwrap_or(false);
-        Ok(!aborted)
+        // Cancel in the shell's conflict or error dialog, or a declined administrator prompt,
+        // fails the operation too: report that as a cancel, not an error.
+        let performed = op.PerformOperations();
+        if op.GetAnyOperationsAborted().is_ok_and(|b| b.as_bool())
+            || performed == COPYENGINE_E_USER_CANCELLED
+            || performed == E_CANCELLED
+        {
+            return Ok(false);
+        }
+        performed.ok()?;
+        Ok(true)
     }
 }
+
+const COPYENGINE_E_USER_CANCELLED: windows_core::HRESULT =
+    windows_core::HRESULT(0x8027_0000_u32 as i32);
+/// HRESULT_FROM_WIN32(ERROR_CANCELLED).
+const E_CANCELLED: windows_core::HRESULT = windows_core::HRESULT(0x8007_04C7_u32 as i32);
 
 /// Renames `path` to `new_name` (the complete file name) with the shell's file operation, so
 /// a folder the user may not write to (the Public Desktop) gets Explorer's own
