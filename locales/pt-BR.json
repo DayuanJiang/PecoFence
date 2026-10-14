@@ -346,6 +346,7 @@
   "Windows 桌面图标已显示。点“重新隐藏桌面图标”，图标就只在栅栏里显示。": "Os ícones da área de trabalho do Windows estão visíveis. Use “Ocultar novamente os ícones da área de trabalho” para mostrar os itens só nos grupos.",
   "桌面图标已显示，可点击“重新隐藏桌面图标”恢复隐藏。": "Os ícones da área de trabalho estão visíveis. Para ocultá-los, use “Ocultar novamente os ícones da área de trabalho”.",
   "桌面图标状态未能更改，请稍后重试。": "Não foi possível alterar a visibilidade dos ícones. Tente novamente.",
+  "未能更改“随 Windows 启动”，请稍后重试。": "Não foi possível alterar “Iniciar com o Windows”. Tente novamente.",
   "桌面图标状态未能更改，请等待资源管理器恢复后重试。": "Não foi possível alterar os ícones. Aguarde o Explorador de Arquivos voltar a responder e tente novamente.",
   "无法隐藏桌面图标，请稍后再试。": "Não foi possível ocultar os ícones. Tente mais tarde.",
   "桌面文件夹暂时无法访问（位于移动磁盘或网络位置），各项目所在的栅栏和位置都会保留。": "A pasta da área de trabalho está inacessível no momento (unidade removível ou local de rede). O grupo e a posição de cada item serão mantidos.",

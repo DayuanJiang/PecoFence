@@ -607,8 +607,13 @@ impl App {
             return;
         }
         if new.autostart != old.autostart {
-            let _ = pecofence_platform::autostart::set_product_enabled(new.autostart);
-            if pecofence_platform::process::is_packaged() {
+            if let Err(e) = pecofence_platform::autostart::set_product_enabled(new.autostart) {
+                tracing::warn!(error = %e, "autostart change failed");
+                new.autostart = old.autostart;
+                self.settings_error(pecofence_core::i18n::text(
+                    "未能更改“随 Windows 启动”，请稍后重试。",
+                ));
+            } else if pecofence_platform::process::is_packaged() {
                 // Store installs: Windows owns the startup task, so hand the user the switch.
                 let _ = shell::shell_execute(
                     std::path::Path::new("ms-settings:startupapps"),

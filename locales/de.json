@@ -346,6 +346,7 @@
   "Windows 桌面图标已显示。点“重新隐藏桌面图标”，图标就只在栅栏里显示。": "Windows-Desktopsymbole sind sichtbar. Mit „Windows-Desktopsymbole wieder ausblenden“ erscheinen Elemente nur noch in Bereichen.",
   "桌面图标已显示，可点击“重新隐藏桌面图标”恢复隐藏。": "Desktopsymbole sind sichtbar. Mit „Windows-Desktopsymbole wieder ausblenden“ blendest du sie wieder aus.",
   "桌面图标状态未能更改，请稍后重试。": "Sichtbarkeit der Desktopsymbole konnte nicht geändert werden. Bitte erneut versuchen.",
+  "未能更改“随 Windows 启动”，请稍后重试。": "„Mit Windows starten“ konnte nicht geändert werden. Bitte erneut versuchen.",
   "桌面图标状态未能更改，请等待资源管理器恢复后重试。": "Desktopsymbole konnten nicht geändert werden. Warte, bis der Explorer wieder läuft, und versuche es dann erneut.",
   "无法隐藏桌面图标，请稍后再试。": "Desktopsymbole konnten nicht ausgeblendet werden. Später erneut versuchen.",
   "桌面文件夹暂时无法访问（位于移动磁盘或网络位置），各项目所在的栅栏和位置都会保留。": "Der Desktop-Ordner ist vorübergehend nicht erreichbar (Wechseldatenträger oder Netzwerk). Bereiche und Positionen der Elemente bleiben erhalten.",
