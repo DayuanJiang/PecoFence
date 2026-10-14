@@ -99,8 +99,10 @@ pub(super) fn on_lbuttondown(
         let Some(v) = guard.as_mut() else {
             return Some(0);
         };
-        // Any new press cancels an armed slow-double-click rename.
+        // Any new press cancels an armed slow-double-click rename. A plain press is no
+        // double-click: a click that expanded the fence no longer swallows the next one.
         v.cancel_pending_rename();
+        v.suppress_dblclk = false;
         v.hide_tip();
         // Mouse interaction hides the keyboard focus ring (Explorer). The
         // ring lives on the content surface: arms that do not repaint it
@@ -339,7 +341,12 @@ pub(super) fn on_lbuttonup(
                 let tab_drag = v.tab_drag.take().map(|td| {
                     // The pill settles from under the pointer into its slot.
                     v.settle_dragged_tab(&td);
-                    (td.index, td.start_index, v.tabs.get(td.index).map(|t| t.id))
+                    (
+                        td.index,
+                        td.start_index,
+                        v.tabs.get(td.index).map(|t| t.id),
+                        td.moved,
+                    )
                 });
                 (
                     v.drag.take(),
@@ -359,7 +366,7 @@ pub(super) fn on_lbuttonup(
         queue.push(Command::SetColumnWidths { fence, widths });
     }
     // A tab dragged past its neighbours: persist the new strip order.
-    if let Some((index, start, Some(tab))) = tab_drag
+    if let Some((index, start, Some(tab), _)) = tab_drag
         && index != start
     {
         queue.push(Command::ReorderTab {
@@ -412,6 +419,19 @@ pub(super) fn on_lbuttonup(
                 } else {
                     queue.push(Command::ToggleRollUp(fence_id));
                 }
+            }
+            // A fence collapsed to its left tab column has no chevron: a click on a tab (not
+            // a drag) expands it on that tab, which the press already switched to.
+            PressTarget::Tab(_)
+                if matches!(tab_drag, Some((.., false)))
+                    && v.column_collapsed
+                    && v.rolled_up
+                    && v.roll_anim.is_none() =>
+            {
+                // The next press may arrive as WM_LBUTTONDBLCLK; it must not collapse the
+                // fence this click just expanded.
+                v.suppress_dblclk = true;
+                queue.push(Command::ToggleRollUp(fence_id));
             }
             _ => {}
         }
@@ -581,7 +601,7 @@ pub(super) fn on_lbuttondblclk(
             } else {
                 queue.push(Command::LaunchItem(item.id));
             }
-        } else if v.tab_at(x, y).is_some() {
+        } else if v.tab_at(x, y).is_some() && !std::mem::take(&mut v.suppress_dblclk) {
             queue.push(Command::ToggleRollUp(fence_id));
         }
     }

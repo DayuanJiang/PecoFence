@@ -510,6 +510,7 @@ impl FenceWindow {
                     "down" => (msg::WM_LBUTTONDOWN, 1, (x, y)),
                     "move" => (msg::WM_MOUSEMOVE, 1, (x, y)),
                     "up" => (msg::WM_LBUTTONUP, 0, (x, y)),
+                    "dblclk" => (msg::WM_LBUTTONDBLCLK, 1, (x, y)),
                     "caption-down" => {
                         let p = window::client_to_screen(hwnd, pecofence_platform::POINT { x, y });
                         (msg::WM_NCLBUTTONDOWN, msg::HTCAPTION as usize, (p.x, p.y))

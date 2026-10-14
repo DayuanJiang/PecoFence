@@ -329,12 +329,15 @@ pub struct FenceStyle {
 
 /// Left tab column metrics (DIPs): the free strip above the first tab (a handle to drag the
 /// fence by), each tab row's height, its inset from the window's left edge and from the
-/// divider, and the room under the last tab that holds the collapse chevron.
+/// divider, and the room under the last tab that holds the collapse chevron. Collapsed to the
+/// column the fence has no chevron (a tab click expands it): the last tab keeps the top strip's
+/// room under it.
 pub const RAIL_TOP: f32 = 8.0;
 pub const RAIL_ROW_H: f32 = 32.0;
 pub const RAIL_ROW_INSET: f32 = 4.0;
 pub const RAIL_ROW_RIGHT: f32 = 6.0;
 pub const RAIL_BOTTOM: f32 = 44.0;
+pub const RAIL_COLLAPSED_BOTTOM: f32 = RAIL_TOP;
 
 /// Title-row decorations of a folder portal: a folder glyph before the title and, once the
 /// portal has navigated into a subfolder, an "up" button at the far left.
@@ -397,11 +400,14 @@ impl TitleDeco {
     }
 
     /// The collapse chevron of a left tab column `rail_w` wide in a window `height` tall,
-    /// centred in the room under the tabs (`RAIL_BOTTOM`); the app hit-tests the same box.
-    pub fn rail_chevron_box(rail_w: f32, height: f32) -> Rect {
+    /// centred in the room under the tabs (`RAIL_BOTTOM`), never above the last tab's end
+    /// `rows_end`: while the fence collapses or expands the moving bottom edge hides it instead
+    /// of it sliding over the tab. The app hit-tests the same box.
+    pub fn rail_chevron_box(rail_w: f32, height: f32, rows_end: f32) -> Rect {
+        let gap = (RAIL_BOTTOM - Self::CHEVRON_W) * 0.5;
         Rect::from_xywh(
             ((rail_w - Self::CHEVRON_W) * 0.5).max(0.0),
-            height - Self::CHEVRON_W - (RAIL_BOTTOM - Self::CHEVRON_W) * 0.5,
+            (height - Self::CHEVRON_W - gap).max(rows_end + gap),
             Self::CHEVRON_W,
             Self::CHEVRON_W,
         )
@@ -920,6 +926,24 @@ fn draw_group_rule(
 /// half a turn, so the resting rolled state is ChevronDown.
 pub fn chevron_angle(roll_t: f32) -> f32 {
     180.0 * roll_t.clamp(0.0, 1.0)
+}
+
+/// How selected a row of a left tab column looks (0..=1): the shown tab while the fence is
+/// `expanded` (1 - roll progress; a collapsed column shows its tabs alike), a dragged tab always.
+pub fn rail_selected(active: bool, dragging: bool, expanded: f32) -> f32 {
+    if dragging {
+        1.0
+    } else if active {
+        expanded.clamp(0.0, 1.0)
+    } else {
+        0.0
+    }
+}
+
+/// Opacity of a left tab column's chevron: the column's hover, faded out by the roll progress
+/// (0 expanded ..= 1 collapsed to the column, which has no chevron).
+pub fn rail_chevron_alpha(hover: f32, roll_t: f32) -> f32 {
+    hover.clamp(0.0, 1.0) * (1.0 - roll_t.clamp(0.0, 1.0))
 }
 
 /// `BitmapCache` key of the acrylic noise tile (one upload per device).
@@ -1701,14 +1725,13 @@ impl FenceChrome {
                 deco,
                 state,
             )?;
-            // ChevronLeft (E76B) collapses the fence to its column and turns to point right,
-            // the way it expands, as the fence collapses; shown like the title row's chevron.
-            let chevron_a = if rolled_up || roll_t > 0.0 {
-                1.0
-            } else {
-                state.hover.clamp(0.0, 1.0)
-            };
-            let box_r = TitleDeco::rail_chevron_box(style.tab_rail, height);
+            // ChevronLeft (E76B) collapses the fence to its column, revealed with the column's
+            // hover like the title row's chevron. A collapsed column has none (a tab click
+            // expands it): the chevron turns as it fades out with the collapse, and back in
+            // as the fence expands.
+            let chevron_a = rail_chevron_alpha(state.hover, roll_t);
+            let rows_end = tabs.iter().map(|t| t.x + t.w).fold(0.0, f32::max);
+            let box_r = TitleDeco::rail_chevron_box(style.tab_rail, height, rows_end);
             return self.draw_chevron(
                 session, &backdrop, theme, scale, opacity, style.tint, box_r, "\u{E76B}",
                 chevron_a, state, roll_t,
@@ -2143,8 +2166,9 @@ impl FenceChrome {
     /// title bar when its tabs are on the left. Each tab is a 32 DIP row inset 4 DIPs from the
     /// window edge (WinUI NavigationView items), a hairline separates neighbours, the shown tab
     /// is semibold on the selection fill (`pill` while it glides to a newly selected tab), and
-    /// a tab's own colour is a 6 DIP dot before its name. `divider_a` fades the line between
-    /// the column and the items (gone once the fence has collapsed to the column).
+    /// a tab's own colour is a 6 DIP dot before its name. `expanded` (1 - roll progress) fades
+    /// the line between the column and the items and the shown tab's selection fill, semibold
+    /// caption and up button: a fence collapsed to the column shows its tabs alike.
     #[allow(clippy::too_many_arguments)]
     fn draw_tab_list(
         &self,
@@ -2159,7 +2183,7 @@ impl FenceChrome {
         halo: Option<&Brush>,
         rail_w: f32,
         height: f32,
-        divider_a: f32,
+        expanded: f32,
         deco: TitleDeco,
         state: TitleState,
     ) -> Result<()> {
@@ -2173,9 +2197,10 @@ impl FenceChrome {
             }
         };
         // The divider stops short of the window's rounded corners.
-        if divider_a > 0.0 {
+        let expanded = expanded.clamp(0.0, 1.0);
+        if expanded > 0.0 {
             let inset = theme.corner_radius.max(8.0);
-            let brush = session.create_solid_brush(line(0.18 * divider_a.min(1.0)))?;
+            let brush = session.create_solid_brush(line(0.18 * expanded))?;
             session.fill_rect(
                 &Rect::from_xywh(
                     px.snap(rail_w) - px.hair(),
@@ -2223,7 +2248,7 @@ impl FenceChrome {
             }
         };
         if let Some((y, h)) = pill {
-            selected(row(y, h), 1.0)?;
+            selected(row(y, h), expanded)?;
         }
         let colored = tabs.iter().any(|t| t.color.is_some());
         let text_left = if colored { 24.0 } else { 10.0 };
@@ -2239,14 +2264,21 @@ impl FenceChrome {
             }
             let rect = row(tab.x, tab.w);
             let radius = header_control_radius(theme, rect);
-            if pill.is_none() && (tab.active || tab.dragging) {
-                selected(rect, ta)?;
-            } else if tab.pressed {
-                let fill = session.create_solid_brush(with_alpha(theme.subtle_pressed, ta))?;
+            // How selected the row looks, and how much of that its own fill shows (none while
+            // the pill glides). Press and hover feedback take the rest: on every row of a
+            // collapsed column, the shown tab's included.
+            let sel = rail_selected(tab.active, tab.dragging, expanded);
+            let own = if pill.is_none() { sel } else { 0.0 };
+            if own > 0.0 {
+                selected(rect, ta * own)?;
+            }
+            if tab.pressed && own < 1.0 {
+                let a = ta * (1.0 - own);
+                let fill = session.create_solid_brush(with_alpha(theme.subtle_pressed, a))?;
                 session.fill_rounded_rect(&RoundedRect::uniform(rect, radius), &fill);
-            } else if tab.hover > 0.0 && !tab.active {
-                let fill =
-                    session.create_solid_brush(with_alpha(theme.subtle_hover, tab.hover * ta))?;
+            } else if tab.hover > 0.0 && sel < 1.0 {
+                let a = tab.hover * ta * (1.0 - sel);
+                let fill = session.create_solid_brush(with_alpha(theme.subtle_hover, a))?;
                 session.fill_rounded_rect(&RoundedRect::uniform(rect, radius), &fill);
             }
             if tab.drop_target > 0.0 {
@@ -2273,31 +2305,36 @@ impl FenceChrome {
             } else {
                 tab.title_color.unwrap_or(foreground.text_primary)
             };
-            let brush = session.create_solid_brush(with_alpha(color, ta))?;
-            if let Some(halo) = halo {
-                halo.set_color(halo_color(color, ta));
-            }
-            let fmt = self.rail_title_format(tab.title_size, tab.active || tab.dragging);
-            // A navigated portal's up button ends the shown tab's row.
+            // A navigated portal's up button ends the shown tab's row (its room stays while the
+            // fence collapses, so the caption does not re-fit at the end).
             let up = tab.active && deco.up_button;
             let room = self.rail_title_room(rail_w, colored, tab.badge, up);
-            let fitted = crate::text::fit_width(tab.title, fmt, room);
-            draw_caption(
-                session,
-                &fitted,
-                fmt,
-                &Rect::from_xywh(rect.left + text_left, rect.top, room, rect.height()),
-                &brush,
-                halo,
-            );
-            if up {
+            let caption = Rect::from_xywh(rect.left + text_left, rect.top, room, rect.height());
+            // The shown tab's semibold caption cross-fades to the others' regular weight as the
+            // fence collapses to the column.
+            for (strong, a) in [(true, sel), (false, 1.0 - sel)] {
+                let a = a * ta;
+                if a <= 0.0 {
+                    continue;
+                }
+                let brush = session.create_solid_brush(with_alpha(color, a))?;
+                if let Some(halo) = halo {
+                    halo.set_color(halo_color(color, a));
+                }
+                let fmt = self.rail_title_format(tab.title_size, strong);
+                let fitted = crate::text::fit_width(tab.title, fmt, room);
+                draw_caption(session, &fitted, fmt, &caption, &brush, halo);
+            }
+            // Like the selection fill, the up button is gone from a collapsed column.
+            let up_a = ta * expanded;
+            if up && up_a > 0.0 {
                 // Up (Segoe Fluent E74A): SubtleFill on hover, SubtleFillColorTertiary while
                 // pressed, as in the title row.
                 let box_r = TitleDeco::rail_up_box(rect);
                 let fill = if state.up_pressed {
-                    Some(with_alpha(theme.subtle_pressed, ta))
+                    Some(with_alpha(theme.subtle_pressed, up_a))
                 } else if state.up_hover > 0.0 {
-                    Some(with_alpha(theme.subtle_hover, state.up_hover * ta))
+                    Some(with_alpha(theme.subtle_hover, state.up_hover * up_a))
                 } else {
                     None
                 };
@@ -2311,7 +2348,7 @@ impl FenceChrome {
                     } else {
                         foreground.text_secondary
                     },
-                    ta,
+                    up_a,
                 ))?;
                 session.draw_text("\u{E74A}", &self.glyph_format, &box_r, &glyph);
             }
@@ -3058,6 +3095,41 @@ mod tests {
         // Overshooting curves stay inside the half turn.
         assert_eq!(chevron_angle(1.2), 180.0);
         assert_eq!(chevron_angle(-0.1), 0.0);
+    }
+
+    /// The column's chevron is centred in the room under the tabs; while the window is shorter
+    /// than that (mid collapse or expand) it stays under the last tab, hidden by the bottom edge.
+    #[test]
+    fn rail_chevron_stays_under_the_last_tab() {
+        let r = TitleDeco::rail_chevron_box(100.0, 200.0, 76.0);
+        assert_eq!((r.left, r.top, r.width()), (34.0, 162.0, 32.0));
+        assert_eq!(TitleDeco::rail_chevron_box(100.0, 84.0, 76.0).top, 82.0);
+    }
+
+    /// Collapsed to its column, a fence marks no tab as the shown one; a dragged tab keeps its
+    /// fill throughout.
+    #[test]
+    fn collapsed_column_shows_its_tabs_alike() {
+        assert_eq!(rail_selected(true, false, 1.0), 1.0);
+        assert_eq!(rail_selected(true, false, 0.25), 0.25);
+        assert_eq!(rail_selected(true, false, 0.0), 0.0);
+        assert_eq!(rail_selected(false, false, 1.0), 0.0);
+        assert_eq!(rail_selected(false, true, 0.0), 1.0);
+        assert_eq!(rail_selected(true, false, 1.3), 1.0);
+    }
+
+    /// A left tab column shows its chevron on hover while expanded and none once collapsed to
+    /// the column; in between it fades with the roll, never popping at either end.
+    #[test]
+    fn rail_chevron_fades_with_the_collapse() {
+        assert_eq!(rail_chevron_alpha(1.0, 0.0), 1.0);
+        assert_eq!(rail_chevron_alpha(0.0, 0.0), 0.0);
+        assert_eq!(rail_chevron_alpha(1.0, 1.0), 0.0);
+        assert_eq!(rail_chevron_alpha(1.0, 0.25), 0.75);
+        assert_eq!(rail_chevron_alpha(0.5, 0.5), 0.25);
+        // Overshooting curves stay inside 0..=1.
+        assert_eq!(rail_chevron_alpha(1.0, 1.2), 0.0);
+        assert_eq!(rail_chevron_alpha(1.0, -0.1), 1.0);
     }
 
     /// The thumb keeps its centre while it widens, and that centre is the 12 DIP track's

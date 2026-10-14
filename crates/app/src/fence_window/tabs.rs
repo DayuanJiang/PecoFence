@@ -159,6 +159,13 @@ pub(super) fn merge_slot_for(x: f32, rects: &[(f32, f32)]) -> usize {
     rects.len()
 }
 
+/// Length (DIPs) of a left tab column showing `n` rows at their natural height: the free strip
+/// above them, the gaps between them and `bottom` under the last one.
+pub(super) fn rail_len_for(n: usize, bottom: f32) -> f32 {
+    let n = n as f32;
+    RAIL_TOP + n * RAIL_ROW_H + (n - 1.0).max(0.0) * TAB_GAP + bottom
+}
+
 /// Lays the tab strip out along the title row: `natural` are the pills' natural widths (DIPs,
 /// already clamped), `available` the room between `TAB_LEFT` and the chevron zone. A phantom
 /// pill of `TAB_MERGE_GAP_W` at slot `gap` takes part in the proportional shrink and the
@@ -405,8 +412,9 @@ impl FenceViewState {
     /// Start and end of the strip, in DIPs along it.
     fn tab_strip_bounds(&self) -> (f32, f32) {
         if self.tabs_on_rail() {
-            // Under the free strip at the top, above the room the collapse chevron takes.
-            let bottom = self.rail_len() - RAIL_BOTTOM;
+            // Under the free strip at the top, above the room the collapse chevron takes (a
+            // column the fence is collapsed to has no chevron).
+            let bottom = self.rail_len() - self.rail_bottom();
             return (RAIL_TOP, bottom.max(RAIL_TOP));
         }
         let width = self.chrome_panel.size_px().0 as f32 / self.scale();
@@ -485,14 +493,24 @@ impl FenceViewState {
     }
 
     /// Window height (device px) of a rolled fence: its title row, or (tabs on the left) the
-    /// column collapsed to fit every tab and the chevron, at most the expanded height.
+    /// column collapsed to fit every tab, at most the expanded height.
     pub(super) fn rolled_h_px(&self) -> i32 {
         if self.tabs_on_rail() {
-            self.rail_fit_height_px()
+            self.rail_rows_height_px(RAIL_COLLAPSED_BOTTOM)
                 .min(self.expanded_h_px)
                 .max(self.title_h_px())
         } else {
             self.title_h_px()
+        }
+    }
+
+    /// Room under the last row of the left tab column (DIPs): the chevron's, or once the fence
+    /// is collapsed to the column (it has no chevron then) the same strip as above the first.
+    fn rail_bottom(&self) -> f32 {
+        if self.column_collapsed {
+            RAIL_COLLAPSED_BOTTOM
+        } else {
+            RAIL_BOTTOM
         }
     }
 
