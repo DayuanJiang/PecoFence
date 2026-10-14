@@ -150,16 +150,32 @@ pub(super) fn snap_offset(v: f32, scale: f32) -> f32 {
 }
 
 impl FenceViewState {
-    /// Scrollable layout and viewport height (DIPs) of the content panel. While the fence is
-    /// rolled up the panel is 1 px tall, so the viewport is the remembered expanded height
-    /// instead: the offset the user left stays within the real range and the fence unrolls
-    /// exactly where it was (a collapsed container has no viewport of its own).
+    /// Scrollable layout and viewport height (DIPs) of the content panel (`scroll_view_h`).
     pub(super) fn scroll_extent(&self) -> (ItemLayout, f32) {
-        let scale = self.scale();
         let (cw, _) = self.content_size_px();
-        let layout = self.layout(cw as f32 / scale);
-        let view_h = (self.viewport_h_px() as f32 / scale - layout.fixed_top()).max(1.0);
+        let layout = self.layout(cw as f32 / self.scale());
+        let view_h = self.scroll_view_h(&layout);
         (layout, view_h)
+    }
+
+    /// Height (DIPs) of the band below the fixed header. While the fence is rolled up the
+    /// panel is 1 px tall, so the band is the remembered expanded height instead: the offset
+    /// the user left stays within the real range and the fence unrolls exactly where it was
+    /// (a collapsed container has no viewport of its own).
+    pub(super) fn band_h(&self, layout: &ItemLayout) -> f32 {
+        (self.viewport_h_px() as f32 / self.scale() - layout.fixed_top()).max(1.0)
+    }
+
+    /// Viewport (DIPs below the fixed header) the items scroll in: the band, or with
+    /// 「调整大小时按整行整列对齐」 only the whole rows in it. The rows never move with the
+    /// fence height then; the height left over stays empty under the last whole row.
+    pub(super) fn scroll_view_h(&self, layout: &ItemLayout) -> f32 {
+        let band_h = self.band_h(layout);
+        if self.behavior.size_to_cells.get() {
+            layout.whole_rows_h(band_h)
+        } else {
+            band_h
+        }
     }
 
     /// Height (device px) of the content viewport, header included: the content panel, or
@@ -302,15 +318,17 @@ impl FenceViewState {
         if max_scroll <= 0.0 {
             return None;
         }
+        // The bar spans the whole band, the empty height under the whole rows included.
         let band_top = layout.fixed_top();
-        let (track_top, track_h) = scrollbar_track(band_top, view_h);
+        let band_h = self.band_h(&layout);
+        let (track_top, track_h) = scrollbar_track(band_top, band_h);
         let content_h = layout.content_height();
         let thumb_h = scrollbar_thumb_h(track_h, view_h, content_h);
         let thumb_y =
             track_top + (track_h - thumb_h) * (scroll_y.clamp(0.0, max_scroll) / max_scroll);
         Some(ScrollbarGeom {
             band_top,
-            band_h: view_h,
+            band_h,
             track_top,
             track_h,
             thumb_y,

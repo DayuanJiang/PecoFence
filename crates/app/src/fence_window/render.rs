@@ -785,16 +785,15 @@ impl FenceViewState {
         if self.row_metrics().is_some() {
             return self.redraw_rows();
         }
-        let (cw, ch) = self.content_size_px();
+        let (cw, _) = self.content_size_px();
         let scale = self.scale();
         let width_dip = cw as f32 / scale;
-        let height_dip = ch as f32 / scale;
         let layout = self.layout(width_dip);
         let ItemLayout::Grid(grid) = &layout else {
             return Ok(());
         };
-        let max_scroll = grid.max_scroll(height_dip);
-        self.scroll_y = self.scroll_y.clamp(0.0, max_scroll);
+        let view_h = self.scroll_view_h(&layout);
+        self.scroll_y = self.scroll_y.clamp(0.0, grid.max_scroll(view_h));
         self.ensure_icons_and_labels(grid.metrics.cell_w);
 
         let now = Instant::now();
@@ -905,21 +904,25 @@ impl FenceViewState {
             insert_caret: self.insert_caret_dip(0.0),
             insert_caret_alpha: self.caret_alpha.value_at(now),
             selection_inactive: self.selection_inactive_now(now),
+            items_bottom: view_h,
         };
         let theme = self.material_foreground();
         let chrome = self.chrome.clone();
         let bitmaps = self.bitmaps.clone();
-        let ok = self.content_panel.draw(self.dpi, |session, wd, hd| {
-            chrome.draw_content(
-                session,
-                &theme,
-                scale,
-                &mut bitmaps.borrow_mut(),
-                wd,
-                hd,
-                &content,
-            )
-        })?;
+        let ok = self
+            .content_panel
+            .draw_ex(self.dpi, |session, clip, wd, hd| {
+                chrome.draw_content(
+                    session,
+                    Some(clip),
+                    &theme,
+                    scale,
+                    &mut bitmaps.borrow_mut(),
+                    wd,
+                    hd,
+                    &content,
+                )
+            })?;
         self.note_draw_result(ok);
         self.note_content_fades(now);
         Ok(())
@@ -930,14 +933,12 @@ impl FenceViewState {
         let Some(metrics) = self.row_metrics() else {
             return Ok(());
         };
-        let (cw, ch) = self.content_size_px();
+        let (cw, _) = self.content_size_px();
         let scale = self.scale();
         let width_dip = cw as f32 / scale;
-        let height_dip = ch as f32 / scale;
         let layout = self.layout(width_dip);
-        let view_h = (height_dip - metrics.header_h).max(1.0);
-        let max_scroll = layout.max_scroll(view_h);
-        self.scroll_y = self.scroll_y.clamp(0.0, max_scroll);
+        let view_h = self.scroll_view_h(&layout);
+        self.scroll_y = self.scroll_y.clamp(0.0, layout.max_scroll(view_h));
         let cols = self.columns_for(width_dip);
         let text_w = (cols.name_w - metrics.icon - 8.0 - 4.0).max(20.0);
         self.ensure_icons_and_labels(text_w);
@@ -1074,6 +1075,7 @@ impl FenceViewState {
             selection_inactive: self.selection_inactive_now(now),
             origin_x: self.content_x as f32 / self.scale(),
             origin_y: self.content_y as f32 / self.scale(),
+            rows_bottom: metrics.header_h + view_h,
         };
         let theme = self.material_foreground();
         let chrome = self.chrome.clone();

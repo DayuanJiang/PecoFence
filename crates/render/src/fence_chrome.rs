@@ -252,6 +252,9 @@ pub struct RowsDraw<'a> {
     /// sampled in window coordinates.
     pub origin_x: f32,
     pub origin_y: f32,
+    /// The rows end here (surface DIPs): 「调整大小时按整行整列对齐」 leaves the height under
+    /// the whole rows empty. `f32::INFINITY` = the surface's bottom.
+    pub rows_bottom: f32,
 }
 
 /// Pixel snapping for hairlines. The panel applies a uniform DIP→px scale, so a 1 DIP stroke
@@ -958,6 +961,9 @@ pub struct ContentDraw<'a> {
     pub insert_caret_alpha: f32,
     /// 0 = accent selection (active window), 1 = neutral grey (another window is active).
     pub selection_inactive: f32,
+    /// The items end here (surface DIPs): 「调整大小时按整行整列对齐」 leaves the height under
+    /// the whole rows empty. `f32::INFINITY` = the surface's bottom.
+    pub items_bottom: f32,
 }
 
 /// The brushes an item-state pass needs, created once per content draw. The per-item alphas
@@ -2525,13 +2531,15 @@ impl FenceChrome {
             }
             Ok(())
         };
+        let bottom = rows.rows_bottom.min(height);
         match clip {
-            Some(clip) if header_h > 0.0 => {
+            Some(clip) if header_h > 0.0 || bottom < height => {
                 // A row scrolled partly under the fixed header must not paint through its
                 // captions. The header has no opaque fill (the surface is transparent over the
-                // backdrop), so clip the rows to the band below it instead.
+                // backdrop), so clip the rows to the band below it instead (and above the
+                // empty height under the whole rows).
                 clip.scoped(
-                    &Rect::from_xywh(0.0, header_h, width, (height - header_h).max(0.0)),
+                    &Rect::from_xywh(0.0, header_h, width, (bottom - header_h).max(0.0)),
                     paint_rows,
                 )?;
             }
@@ -2686,10 +2694,12 @@ impl FenceChrome {
     }
 
     /// Draws the item grid into a content surface of `width` x `height` DIPs (origin 0,0).
+    /// `clip` cuts the items off at `content.items_bottom`.
     #[allow(clippy::too_many_arguments)]
     pub fn draw_content(
         &self,
         session: &DrawingSession<'_>,
+        clip: Option<&Clip<'_>>,
         theme: &Theme,
         scale: f32,
         bitmaps: &mut BitmapCache,
@@ -2714,67 +2724,77 @@ impl FenceChrome {
         let label = session.create_solid_brush(theme.text_primary)?;
         let label_dim = session.create_solid_brush(theme.text_secondary)?;
 
-        // "按时间分组" section headers: secondary caption flush with the label inset, then an
-        // Explorer-style hairline to the right margin. Static bands (the items glide), painted
-        // first so an unfolded label may overdraw them like it overdraws the row below.
-        if !content.group_headers.is_empty() {
-            let line = session.create_solid_brush(theme.stroke)?;
-            // The same local halo the labels get over mixed wallpaper.
-            let halo = if theme.liquid_glass || theme.text_halo {
-                Some(session.create_solid_brush(if theme.text_secondary.r > 0.5 {
-                    ColorF::new(0.0, 0.0, 0.0, 0.28)
+        let mut paint_items = || -> Result<()> {
+            // "按时间分组" section headers: secondary caption flush with the label inset, then an
+            // Explorer-style hairline to the right margin. Static bands (the items glide), painted
+            // first so an unfolded label may overdraw them like it overdraws the row below.
+            if !content.group_headers.is_empty() {
+                let line = session.create_solid_brush(theme.stroke)?;
+                // The same local halo the labels get over mixed wallpaper.
+                let halo = if theme.liquid_glass || theme.text_halo {
+                    Some(session.create_solid_brush(if theme.text_secondary.r > 0.5 {
+                        ColorF::new(0.0, 0.0, 0.0, 0.28)
+                    } else {
+                        ColorF::new(1.0, 1.0, 1.0, 0.28)
+                    })?)
                 } else {
-                    ColorF::new(1.0, 1.0, 1.0, 0.28)
-                })?)
-            } else {
-                None
-            };
-            let spread = 1.0 / scale.max(1.0);
-            let text_x = ICON_LABEL_SIDE_INSET;
-            let right = width - 8.0;
-            for h in content.group_headers {
-                if h.y + h.h <= 0.0 || h.y > height {
+                    None
+                };
+                let spread = 1.0 / scale.max(1.0);
+                let text_x = ICON_LABEL_SIDE_INSET;
+                let right = width - 8.0;
+                for h in content.group_headers {
+                    if h.y + h.h <= 0.0 || h.y > height {
+                        continue;
+                    }
+                    let text_w = crate::text::measure_width(h.text, &self.group_format)
+                        .min((right - text_x).max(1.0))
+                        .max(1.0);
+                    let rect = Rect::from_xywh(text_x, h.y, text_w, h.h);
+                    draw_legible_text(
+                        session,
+                        h.text,
+                        &self.group_format,
+                        &rect,
+                        &label_dim,
+                        halo.as_ref(),
+                        spread,
+                    );
+                    draw_group_rule(session, px, h, text_x + text_w, right, &line);
+                }
+            }
+
+            // The cell whose label unfolds is painted after every other cell: like the desktop's
+            // focused icon it overdraws the row below.
+            let mut deferred: Option<&ItemCell<'_>> = None;
+            for cell in content.items {
+                if cell.y + cell.h < 0.0 || cell.y > height {
                     continue;
                 }
-                let text_w = crate::text::measure_width(h.text, &self.group_format)
-                    .min((right - text_x).max(1.0))
-                    .max(1.0);
-                let rect = Rect::from_xywh(text_x, h.y, text_w, h.h);
-                draw_legible_text(
-                    session,
-                    h.text,
-                    &self.group_format,
-                    &rect,
-                    &label_dim,
-                    halo.as_ref(),
-                    spread,
-                );
-                draw_group_rule(session, px, h, text_x + text_w, right, &line);
+                if cell.full_label.is_some() && deferred.is_none() {
+                    deferred = Some(cell);
+                    continue;
+                }
+                self.draw_cell(
+                    session, theme, bitmaps, &state, px, content, cell, &label, &label_dim, None,
+                )?;
             }
-        }
-
-        // The cell whose label unfolds is painted after every other cell: like the desktop's
-        // focused icon it overdraws the row below.
-        let mut deferred: Option<&ItemCell<'_>> = None;
-        for cell in content.items {
-            if cell.y + cell.h < 0.0 || cell.y > height {
-                continue;
+            if let Some(cell) = deferred {
+                // The caller measured the unfolded text when it fitted it (`fit_lines_counted`):
+                // no second layout per frame here.
+                let unfold = cell.full_label.map(|(text, lines)| (text, lines.max(1)));
+                self.draw_cell(
+                    session, theme, bitmaps, &state, px, content, cell, &label, &label_dim, unfold,
+                )?;
             }
-            if cell.full_label.is_some() && deferred.is_none() {
-                deferred = Some(cell);
-                continue;
-            }
-            self.draw_cell(
-                session, theme, bitmaps, &state, px, content, cell, &label, &label_dim, None,
-            )?;
-        }
-        if let Some(cell) = deferred {
-            // The caller measured the unfolded text when it fitted it (`fit_lines_counted`):
-            // no second layout per frame here.
-            let unfold = cell.full_label.map(|(text, lines)| (text, lines.max(1)));
-            self.draw_cell(
-                session, theme, bitmaps, &state, px, content, cell, &label, &label_dim, unfold,
-            )?;
+            Ok(())
+        };
+        match clip {
+            Some(clip) if content.items_bottom < height => clip.scoped(
+                &Rect::from_xywh(0.0, 0.0, width, content.items_bottom.max(0.0)),
+                paint_items,
+            )?,
+            _ => paint_items()?,
         }
 
         if let Some(m) = content.marquee

@@ -231,10 +231,7 @@ impl FenceViewState {
         if self.items.is_empty() {
             return;
         }
-        let scale = self.scale();
-        let (cw, ch) = self.content_size_px();
-        let layout = self.layout(cw as f32 / scale);
-        let view_h = ch as f32 / scale - layout.fixed_top();
+        let (layout, view_h) = self.scroll_extent();
         let rows_per_page = ((view_h / layout.row_step()).floor() as i32).max(1);
         let n = self.items.len();
         let cur = match self.anchor_index {
@@ -479,9 +476,12 @@ impl FenceViewState {
         let Some(r) = self.marquee_rect_dip() else {
             return;
         };
-        let scale = self.scale();
-        let (cw, _) = self.content_size_px();
-        let grid = self.layout(cw as f32 / scale);
+        let (grid, view_h) = self.scroll_extent();
+        // Items under the whole rows (「调整大小时按整行整列对齐」) are hidden: not banded.
+        let r = Rect {
+            bottom: r.bottom.min(view_h),
+            ..r
+        };
         let scroll = self.scroll_y;
         let (base, mode) = match self.marquee.as_ref() {
             Some(m) => (m.base.clone(), m.mode),

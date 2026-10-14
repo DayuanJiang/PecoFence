@@ -679,8 +679,9 @@ pub(super) fn on_sizing(h: &HandlerCtx, hwnd: HWND, wparam: usize, lparam: isize
     let HandlerCtx { view, behavior, .. } = h;
     // 「调整大小时按整行整列对齐」 (snapping.sizeToCells, Fences' "sized to even multiples of
     // icons"): the width takes whole icon columns and the height whole rows, except where an
-    // edge lines up with another fence (the rows and columns then share the rest). Off, sizes
-    // are free (one column / one row at least).
+    // edge lines up with another fence (the columns then share the rest of the width, the rest
+    // of the height stays empty under the whole rows). Off, sizes are free (one column / one
+    // row at least).
     let cells = behavior.size_to_cells.get();
     let guard = view.try_borrow().ok()?;
     let v = guard.as_ref()?;
