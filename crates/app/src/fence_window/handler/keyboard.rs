@@ -203,9 +203,15 @@ pub(super) fn on_keydown(
             if !h.behavior.selection.borrow().is_empty() {
                 queue.push(Command::ClearFenceSelection);
             }
+            // A divider drag: the column gets its width back (Explorer).
+            let col_drag = v.col_drag.take();
+            if let Some(cd) = &col_drag {
+                v.set_column_width(cd.col, cd.start_w);
+            }
             release = v.end_marquee()
                 || v.drag.take().is_some()
                 || v.end_scrollbar_press()
+                || col_drag.is_some()
                 || v.clear_pressed().is_some();
             let _ = v.redraw_content();
         }
