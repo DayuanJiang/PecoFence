@@ -1203,11 +1203,12 @@ impl App {
     fn fence_dto_with(&self, f: &Fence, measure: bool) -> FenceDto {
         let host_id = self.state.host_of(f.id);
         let host = self.state.fence(host_id).unwrap_or(f);
+        // A tab keeps its own geometry from before the merge; it is on screen where its host is.
         let connected = self
             .state
             .work_areas
             .iter()
-            .any(|w| w.device_path == f.geometry.monitor);
+            .any(|w| w.device_path == host.geometry.monitor);
         let opts = self.fence_options_json(f);
         let text = |key: &str| {
             opts.get(key)
@@ -1256,7 +1257,7 @@ impl App {
             window_rect: (connected && f.tab_host.is_none())
                 .then(|| self.fences.get(&f.id).map(|w| rect_of(w.rect())))
                 .flatten(),
-            monitor: f.geometry.monitor.clone(),
+            monitor: host.geometry.monitor.clone(),
             monitor_connected: connected,
             geometry: f.geometry.clone(),
             rolled_up: host.rolled_up,
