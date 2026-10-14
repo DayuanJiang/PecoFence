@@ -115,6 +115,7 @@
   "已导出到 {0}": "Exported to {0}",
   "已保存快照": "Snapshot saved",
   "已恢复快照": "Snapshot restored",
+  "快照已达上限（{0} 个），未保存新快照。请删除不需要的快照。": "You have reached the limit of {0} snapshots, so no new snapshot was saved. Delete the ones you no longer need.",
   "已导入配置": "Configuration imported",
   "已恢复备份": "Backup restored",
   "已按规则整理 {0} 个项目": "Rules applied. Items sorted: {0}",

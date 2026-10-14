@@ -111,6 +111,7 @@
   "已导出到 {0}": "Exportado a {0}",
   "已保存快照": "Instantánea guardada",
   "已恢复快照": "Instantánea restaurada",
+  "快照已达上限（{0} 个），未保存新快照。请删除不需要的快照。": "Has llegado al límite de {0} instantáneas, así que no se guardó ninguna nueva. Elimina las que ya no necesites.",
   "已按规则整理 {0} 个项目": "Elementos organizados por reglas: {0}",
   "显示器 {0} ({1}×{2})": "Pantalla {0} ({1}×{2})",
   "这两个显示器上没有栅栏": "No hay grupos en estas dos pantallas",

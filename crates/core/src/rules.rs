@@ -385,7 +385,8 @@ pub fn cond_matches(cond: &Cond, facts: &ItemFacts) -> bool {
     match cond {
         Cond::Type(cats) => cats.iter().any(|c| category_matches(*c, facts)),
         Cond::Ext(exts) => {
-            let ext = ext_of(&facts.file_name);
+            // A suffix match, so `tar.gz` and dot files such as `.gitignore` match too.
+            let name = facts.file_name.to_lowercase();
             exts.iter().any(|e| {
                 let e = e.to_lowercase();
                 let e = if e.starts_with('.') {
@@ -393,7 +394,7 @@ pub fn cond_matches(cond: &Cond, facts: &ItemFacts) -> bool {
                 } else {
                     format!(".{e}")
                 };
-                e == ext
+                name.ends_with(&e)
             })
         }
         Cond::ExactName(names) => names
@@ -704,6 +705,19 @@ mod tests {
         let mut folder = facts("Setup");
         folder.is_folder = true;
         assert!(!category_matches(TypeCategory::Installers, &folder));
+    }
+
+    #[test]
+    fn ext_conditions_match_multi_part_extensions_and_dot_files() {
+        let ext = |e: &str, name: &str| cond_matches(&Cond::Ext(vec![e.into()]), &facts(name));
+        assert!(ext("pdf", "Report.PDF"));
+        assert!(ext(".pdf", "report.pdf"));
+        assert!(!ext("pdf", "report.pdf.txt"));
+        assert!(ext("tar.gz", "archive.tar.gz"));
+        assert!(ext("gz", "archive.tar.gz"));
+        assert!(!ext("tar.gz", "archive.gz"));
+        assert!(ext("gitignore", ".gitignore"));
+        assert!(!ext("pdf", "pdf"));
     }
 
     #[test]

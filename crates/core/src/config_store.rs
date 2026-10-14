@@ -94,7 +94,9 @@ impl ConfigStore {
     /// Reads and validates any config file (import / backup restore), with the reason on error.
     pub fn parse_file(path: &Path) -> Result<Config, String> {
         let text = fs::read_to_string(path).map_err(|e| e.to_string())?;
-        let cfg: Config = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+        // Windows PowerShell 5.1 `Set-Content -Encoding utf8` and Notepad can add a BOM.
+        let text = text.strip_prefix('\u{feff}').unwrap_or(&text);
+        let cfg: Config = serde_json::from_str(text).map_err(|e| e.to_string())?;
         validate(&cfg)?;
         Ok(migrate(cfg))
     }
@@ -127,6 +129,16 @@ impl ConfigStore {
     /// would otherwise turn it into `config.bak` and delete it on the next save.
     pub fn load_reporting(&self) -> (LoadOutcome, Option<PathBuf>) {
         let primary = self.primary_path();
+        // Antivirus, backup and sync tools can hold the file open without read sharing for a
+        // moment; wait for them before the file counts as unreadable.
+        for _ in 0..5 {
+            match fs::File::open(&primary) {
+                Err(e) if e.kind() != io::ErrorKind::NotFound => {
+                    std::thread::sleep(std::time::Duration::from_millis(300))
+                }
+                _ => break,
+            }
+        }
         let quarantined = match Self::parse_file(&primary) {
             Ok(c) => return (LoadOutcome::Primary(c), None),
             Err(_) if !primary.exists() => None,
@@ -206,10 +218,11 @@ impl ConfigStore {
             f.sync_all().map_err(at("flush temp file"))?;
         }
         let primary = self.primary_path();
+        let mut rotated = false;
         if primary.exists() {
             // Best effort: keep the previous good file as .bak.
             let _ = fs::remove_file(self.bak_path());
-            let _ = fs::rename(&primary, self.bak_path());
+            rotated = fs::rename(&primary, self.bak_path()).is_ok();
         }
         match fs::rename(self.tmp_path(), &primary) {
             Ok(()) => {}
@@ -227,7 +240,13 @@ impl ConfigStore {
                 f.sync_all().map_err(at("flush config.json"))?;
                 let _ = fs::remove_file(self.tmp_path());
             }
-            Err(e) => return Err(at("replace config.json")(e)),
+            Err(e) => {
+                // Put the previous file back: a load never looks at the temp file.
+                if rotated {
+                    let _ = fs::rename(self.bak_path(), &primary);
+                }
+                return Err(at("replace config.json")(e));
+            }
         }
         self.daily_backup(&json).map_err(at("daily backup"))?;
         Ok(())
@@ -633,6 +652,38 @@ mod tests {
         store.save(&sample()).unwrap();
         assert_eq!(fs::read_to_string(&moved).unwrap(), text);
         assert!(matches!(store.load(), LoadOutcome::Primary(_)));
+    }
+
+    #[test]
+    fn primary_with_a_utf8_bom_loads() {
+        let store = ConfigStore::new(tmpdir("bom"));
+        store.save(&sample()).unwrap();
+        let mut bytes = vec![0xEF, 0xBB, 0xBF];
+        bytes.extend(fs::read(store.primary_path()).unwrap());
+        fs::write(store.primary_path(), bytes).unwrap();
+        assert!(ConfigStore::parse_file(&store.primary_path()).is_ok());
+        assert!(matches!(store.load(), LoadOutcome::Primary(_)));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn primary_unreadable_for_a_moment_still_loads() {
+        use std::os::unix::fs::PermissionsExt;
+        let store = ConfigStore::new(tmpdir("locked"));
+        store.save(&sample()).unwrap();
+        let path = store.primary_path();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o000)).unwrap();
+        let unlock = std::thread::spawn({
+            let path = path.clone();
+            move || {
+                std::thread::sleep(std::time::Duration::from_millis(400));
+                fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
+            }
+        });
+        let (outcome, moved) = store.load_reporting();
+        unlock.join().unwrap();
+        assert!(matches!(outcome, LoadOutcome::Primary(_)), "{outcome:?}");
+        assert_eq!(moved, None);
     }
 
     #[test]
