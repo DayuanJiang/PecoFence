@@ -21,7 +21,8 @@ pub struct MonitorWallpaper {
     pub monitor_id: String,
     /// Monitor rectangle in virtual-screen coordinates.
     pub rect: RECT,
-    /// Image path, if a picture wallpaper is set for this monitor.
+    /// Image path, if a picture wallpaper is set for this monitor: Windows' own copy of the
+    /// picture when the file it was set from is gone.
     pub path: Option<PathBuf>,
 }
 
@@ -162,19 +163,49 @@ pub fn desktop_wallpapers() -> Vec<([u8; 16], Option<PathBuf>)> {
         .map(|chunk| {
             let id = *chunk;
             let key = format!(r"{DESKTOPS_KEY}\Desktops\{}", guid_string(&id));
-            let path = registry_value(&key, "Wallpaper", RRF_RT_REG_SZ).and_then(|data| {
-                let wide: Vec<u16> = data
-                    .as_chunks::<2>()
-                    .0
-                    .iter()
-                    .map(|c| u16::from_le_bytes([c[0], c[1]]))
-                    .take_while(|&c| c != 0)
-                    .collect();
-                (!wide.is_empty()).then(|| PathBuf::from(String::from_utf16_lossy(&wide)))
-            });
+            let path =
+                registry_value(&key, "Wallpaper", RRF_RT_REG_SZ).and_then(|data| utf16_path(&data));
             (id, path)
         })
         .collect()
+}
+
+/// The NUL-terminated UTF-16LE path at the start of `data`, `None` when it is empty.
+fn utf16_path(data: &[u8]) -> Option<PathBuf> {
+    let wide: Vec<u16> = data
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|c| u16::from_le_bytes([c[0], c[1]]))
+        .take_while(|&c| c != 0)
+        .collect();
+    (!wide.is_empty()).then(|| PathBuf::from(String::from_utf16_lossy(&wide)))
+}
+
+/// The copy Windows made of the picture `path` when it was set as the wallpaper, for a
+/// picture deleted or moved since (a wallpaper app that set it from a temporary file): the
+/// desktop keeps showing that copy. `Themes\TranscodedWallpaper` is the picture of all
+/// monitors, `Themes\Transcoded_000`, `_001` … one per monitor when they show different
+/// pictures; `Control Panel\Desktop\TranscodedImageCache` (`_000` …) records each copy's
+/// source path, in UTF-16 from byte 24.
+fn windows_copy(path: &Path) -> Option<PathBuf> {
+    const RRF_RT_REG_BINARY: u32 = 0x08;
+    let themes = PathBuf::from(std::env::var_os("APPDATA")?).join(r"Microsoft\Windows\Themes");
+    let wanted = path.to_string_lossy();
+    std::fs::read_dir(themes).ok()?.flatten().find_map(|entry| {
+        let name = entry.file_name().into_string().ok()?;
+        let value = match name.strip_prefix("Transcoded_") {
+            Some(index) => format!("TranscodedImageCache_{index}"),
+            None if name == "TranscodedWallpaper" => "TranscodedImageCache".into(),
+            None => return None,
+        };
+        let data = registry_value(r"Control Panel\Desktop", &value, RRF_RT_REG_BINARY)?;
+        let source = utf16_path(data.get(24..)?)?;
+        source
+            .to_string_lossy()
+            .eq_ignore_ascii_case(&wanted)
+            .then(|| entry.path())
+    })
 }
 
 /// The virtual desktop `hwnd` is on, `None` when Explorer does not say (the desktop itself,
@@ -358,7 +389,14 @@ pub fn query() -> Result<WallpaperSnapshot> {
             // that distinction so a switch-in-progress cannot replace good pixels with black.
             let path = if rect.right > rect.left && rect.bottom > rect.top {
                 let path = take_string(dw.GetWallpaper(PCWSTR(id_w.as_ptr()))?);
-                (!path.is_empty()).then(|| PathBuf::from(path))
+                (!path.is_empty()).then(|| {
+                    let path = PathBuf::from(path);
+                    if path.is_file() {
+                        path
+                    } else {
+                        windows_copy(&path).unwrap_or(path)
+                    }
+                })
             } else {
                 None
             };
