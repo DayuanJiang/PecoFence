@@ -220,6 +220,10 @@ impl App {
             tracing::warn!(error = %e, "render stack rebuild for GPU memory failed");
             return;
         }
+        if self.fences.values().any(|w| w.device_lost()) {
+            // A window got no new surfaces (logged there): the device-loss retry rebuilds again.
+            self.schedule_device_retry();
+        }
         self.gpu_baseline = None;
         let after = self.ctx.stack.gpu_memory().map_or(0, |(l, s)| l + s);
         tracing::info!(
