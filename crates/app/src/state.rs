@@ -75,6 +75,23 @@ fn config_dir(portable: bool) -> PathBuf {
         .join("PecoFence")
 }
 
+/// `path` as the file system spells it (real casing, symlinks and junctions resolved), without
+/// the `\\?\` prefix canonicalize adds. A network share or a mapped drive comes back as
+/// `\\?\UNC\server\share\…`, which must turn into `\\server\share\…`, not a relative path.
+/// `path` itself when it cannot be resolved.
+pub fn canonical_path(path: PathBuf) -> PathBuf {
+    match std::fs::canonicalize(&path) {
+        Ok(real) => {
+            let s = real.to_string_lossy();
+            match s.strip_prefix(r"\\?\UNC\") {
+                Some(unc) => PathBuf::from(format!(r"\\{unc}")),
+                None => PathBuf::from(s.strip_prefix(r"\\?\").unwrap_or(&s)),
+            }
+        }
+        Err(_) => path,
+    }
+}
+
 /// Whether `path` really lives in the Store package's private copy of %APPDATA% (see
 /// `AppState::config_path_on_disk`).
 fn in_package_folder(path: &Path) -> bool {
@@ -137,17 +154,7 @@ impl AppState {
     /// land in its `LocalCache\Roaming`, so only this process sees the file at the %APPDATA%
     /// path; the final path of the opened file names the real one.
     pub fn config_path_on_disk(&self) -> PathBuf {
-        let path = self.config_path();
-        match std::fs::canonicalize(&path) {
-            Ok(real) => {
-                let s = real.to_string_lossy();
-                match s.strip_prefix(r"\\?\UNC\") {
-                    Some(unc) => PathBuf::from(format!(r"\\{unc}")),
-                    None => PathBuf::from(s.strip_prefix(r"\\?\").unwrap_or(&s)),
-                }
-            }
-            Err(_) => path,
-        }
+        canonical_path(self.config_path())
     }
 
     /// Where the configuration lives, as a fixed name for the log and feedback: the portable
