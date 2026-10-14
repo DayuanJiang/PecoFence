@@ -127,10 +127,13 @@ pub fn rename_hidden_suffix(display_name: &str, file_name: &str, is_folder: bool
 /// reserved character.
 pub fn invalid_file_name(name: &str) -> bool {
     let name = name.trim().trim_end_matches(['.', ' ']);
-    name.is_empty()
-        || name
-            .chars()
-            .any(|c| matches!(c, '\\' | '/' | ':' | '*' | '?' | '"' | '<' | '>' | '|'))
+    name.is_empty() || has_reserved_char(name)
+}
+
+/// The characters Explorer refuses in a file name.
+pub fn has_reserved_char(name: &str) -> bool {
+    name.chars()
+        .any(|c| matches!(c, '\\' | '/' | ':' | '*' | '?' | '"' | '<' | '>' | '|'))
 }
 
 /// Opens the rename popup over an item's label rectangle (screen pixels). `select_end` limits
@@ -244,13 +247,14 @@ fn begin_rename_at(
 fn on_key(vk: u32) -> bool {
     match vk {
         k if k == msg::VK_RETURN => {
-            // Explorer keeps the editor open on a name no file can have; the App says why.
+            // Explorer keeps the editor open on a name with a reserved character; the App says
+            // why. An emptied box commits as before (`rename_item_file` keeps the name then).
             let kept = ACTIVE.with(|a| {
                 let a = a.borrow();
                 let Some(s) = a.as_ref() else {
                     return false;
                 };
-                if matches!(s.target, RenameTarget::Item(_)) && invalid_file_name(&s.edit.text()) {
+                if matches!(s.target, RenameTarget::Item(_)) && has_reserved_char(&s.edit.text()) {
                     s.queue.push(Command::RenameItemInvalid);
                     return true;
                 }
@@ -299,7 +303,7 @@ pub fn end_active(commit: bool) {
 
 #[cfg(test)]
 mod tests {
-    use super::{invalid_file_name, rename_hidden_suffix, rename_select_len};
+    use super::{has_reserved_char, invalid_file_name, rename_hidden_suffix, rename_select_len};
 
     #[test]
     fn names_no_file_can_have_are_invalid() {
@@ -313,6 +317,12 @@ mod tests {
         assert!(!invalid_file_name("report.txt"));
         // Trailing dots and spaces are dropped by Win32, not refused.
         assert!(!invalid_file_name("note. "));
+        // The editor's Enter only holds back reserved characters: an emptied box commits.
+        assert!(has_reserved_char("bad:name"));
+        assert!(has_reserved_char("a|b"));
+        assert!(!has_reserved_char(""));
+        assert!(!has_reserved_char("..."));
+        assert!(!has_reserved_char("note"));
     }
 
     #[test]
