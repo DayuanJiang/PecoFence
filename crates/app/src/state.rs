@@ -1207,10 +1207,10 @@ impl AppState {
     /// other portal references leave `portal_items`. Returns the old items for diffing.
     fn evict_portal_members(&mut self, id: FenceId) -> Vec<Item> {
         let old_ids = self.portal_members.remove(&id).unwrap_or_default();
+        let shared: HashSet<ItemId> = self.portal_members.values().flatten().copied().collect();
         let mut old = Vec::with_capacity(old_ids.len());
         for i in &old_ids {
-            let shared = self.portal_members.values().any(|v| v.contains(i));
-            let item = if shared {
+            let item = if shared.contains(i) {
                 self.portal_items.get(i).cloned()
             } else {
                 self.portal_items.remove(i)
