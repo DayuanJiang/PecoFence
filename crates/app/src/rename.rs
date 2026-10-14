@@ -97,8 +97,9 @@ pub fn rename_select_len(editing_name: &str, path: &str, is_folder: bool) -> Opt
     Some(editing_name.encode_utf16().count() - suffix.encode_utf16().count())
 }
 
-/// The extension hidden by the shell's display name must survive rename. Item paths are
-/// case-folded, so comparing them to the visible name must ignore case too.
+/// The extension hidden by the shell's display name must survive rename. Older item paths are
+/// case-folded, so comparing them to the visible name must ignore case too; the suffix keeps
+/// the file's own spelling (`.JPG`).
 pub fn rename_hidden_suffix(display_name: &str, file_name: &str, is_folder: bool) -> String {
     if is_folder {
         return String::new();
@@ -107,7 +108,13 @@ pub fn rename_hidden_suffix(display_name: &str, file_name: &str, is_folder: bool
     let display_lower = display_name.to_lowercase();
     file_lower
         .strip_prefix(&display_lower)
-        .map(str::to_string)
+        .map(|tail| {
+            file_name
+                .get(file_name.len().saturating_sub(tail.len())..)
+                .filter(|t| t.to_lowercase() == tail)
+                .unwrap_or(tail)
+                .to_string()
+        })
         .unwrap_or_else(|| {
             std::path::Path::new(file_name)
                 .extension()
@@ -277,6 +284,9 @@ mod tests {
         );
         assert_eq!(rename_hidden_suffix("Docs.Backup", "docs.backup", true), "");
         assert_eq!(rename_hidden_suffix("报告.PDF", "报告.pdf", false), "");
+        // Feedback #25: the hidden extension keeps its case on disk.
+        assert_eq!(rename_hidden_suffix("ABC", "ABC.ZIP", false), ".ZIP");
+        assert_eq!(rename_hidden_suffix("abc", "ABC.Zip", false), ".Zip");
     }
 
     #[test]

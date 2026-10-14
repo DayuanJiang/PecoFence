@@ -11,6 +11,7 @@ use windows_core::PCWSTR;
 const HIDE_ICONS_BIT: u32 = 1 << 12; // SHELLSTATE::fHideIcons
 const CMD_TOGGLE_DESKTOP_ICONS: usize = 0x7402;
 const LVM_GETSELECTEDCOUNT: u32 = 0x1000 + 50; // LVM_FIRST + 50
+const LVM_GETHOTITEM: u32 = 0x1000 + 61; // LVM_FIRST + 61
 
 /// True when the shell currently hides desktop icons.
 pub fn desktop_icons_hidden() -> bool {
@@ -80,6 +81,29 @@ pub fn desktop_selected_count(def_view: HWND) -> Option<usize> {
         )
     };
     (ok.0 != 0).then_some(count)
+}
+
+/// True when the pointer is on one of Windows' own desktop icons: `window` (what
+/// `WindowFromPoint` found under it) is Explorer's desktop list view, and the icon it tracks for
+/// its hover highlight is set. False for its empty space, any other window, or no answer.
+pub fn desktop_icon_hovered(window: HWND) -> bool {
+    if crate::desktop::class_name(window) != "SysListView32" {
+        return false;
+    }
+    let mut item = usize::MAX;
+    // SAFETY: plain FFI call with a timeout; Explorer owns the list view.
+    unsafe {
+        SendMessageTimeoutW(
+            window,
+            LVM_GETHOTITEM,
+            WPARAM(0),
+            LPARAM(0),
+            SMTO_ABORTIFHUNG as u32,
+            200,
+            Some(&mut item),
+        );
+    }
+    (item as isize) >= 0
 }
 
 /// Sets the hidden state, toggling only when it differs. Returns the state read back afterwards.

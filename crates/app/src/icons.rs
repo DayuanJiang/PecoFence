@@ -76,20 +76,34 @@ struct Request {
     /// Tells a result apart from one of an earlier request for the same key that
     /// `set_variant` or `invalidate` dropped while it was in flight.
     id: u64,
+    /// The Recycle Bin: full or empty as its key says (`mtime` 1 or 0), so the picture matches
+    /// the key even when the bin changed while the request waited.
+    recycle_bin_full: Option<bool>,
 }
 
 /// An extraction in flight (or waiting for a retry), with how often it has failed so far.
 struct InFlight {
     req: Request,
     attempts: u32,
+    /// Asked again for an icon already cached (`recheck_after_start`).
+    recheck: bool,
 }
 
-/// Extraction failures on a file that still exists are retried: the shell hands back nothing
-/// while a file is being moved in (OneDrive materialises it a moment later), while a copy is
-/// still writing, or when the icon handler was busy. Explorer's views show the generic icon
-/// first and repaint when the extraction eventually succeeds; here the loading tile stays up.
+/// Extraction failures on a file that still exists (or a namespace item such as This PC) are
+/// retried: the shell hands back nothing while a file is being moved in (OneDrive materialises
+/// it a moment later), while a copy is still writing, or when the icon handler was busy
+/// (`E_PENDING`). Explorer's views show the generic icon first and repaint when the extraction
+/// eventually succeeds; here the loading tile stays up.
 const RETRY_ATTEMPTS: u32 = 3;
 const RETRY_DELAYS_MS: [u64; 3] = [400, 1500, 4000];
+
+/// A start at sign-in asks the shell while it is still busy: a shortcut can answer "not yet
+/// available" (E_PENDING) until after the retries above gave up, and one whose target drive
+/// is not mounted yet comes back with the generic program icon. Explorer's desktop shows what
+/// its icon cache kept from the last session meanwhile, and repaints. After such a start every
+/// icon is asked again at these times (seconds after start); one that comes back different
+/// replaces the picture shown.
+const RECHECK_AFTER_START_S: [u64; 3] = [30, 120, 600];
 
 struct Ready {
     key: String,
@@ -108,6 +122,9 @@ struct IconStats {
     retried: u32,
     /// Images the shell handed back smaller than asked for (drawn scaled up).
     smaller: u32,
+    /// Re-checks done after a start at sign-in, and how many of them changed the picture.
+    rechecked: u32,
+    replaced: u32,
     first_error: Option<i32>,
 }
 
@@ -123,6 +140,12 @@ pub struct IconCache {
     pending: HashMap<(String, u32), InFlight>,
     /// Failed extractions waiting to be re-queued (`due`, key); `flush_retries` sends them.
     retry: Vec<(Instant, (String, u32))>,
+    /// Times of the re-check passes still to come (`recheck_after_start`), and the icons to
+    /// ask again at the next one (no thumbnails).
+    recheck_at: Vec<Instant>,
+    recheck: Vec<Request>,
+    /// Cache keys whose picture a re-check replaced, for `take_replaced`.
+    replaced: Vec<(String, u32)>,
     tx: Sender<Request>,
     rx: Receiver<Ready>,
     variant: IconVariant,
@@ -154,19 +177,24 @@ impl IconCache {
                             guard.recv()
                         };
                         let Ok(req) = req else { break };
-                        let (image, error) =
-                            match shell::shell_image(&req.path, req.size_px, req.icon_only) {
-                                Ok(img) => {
-                                    let mut image = Image {
-                                        width: img.width,
-                                        height: img.height,
-                                        bgra: img.bgra,
-                                    };
-                                    req.variant.apply(&mut image);
-                                    (Some(image), None)
-                                }
-                                Err(e) => (None, Some(e.code().0)),
-                            };
+                        let bin = req
+                            .recycle_bin_full
+                            .and_then(|full| shell::recycle_bin_image(full, req.size_px));
+                        let (image, error) = match bin.map_or_else(
+                            || shell::shell_image(&req.path, req.size_px, req.icon_only),
+                            Ok,
+                        ) {
+                            Ok(img) => {
+                                let mut image = Image {
+                                    width: img.width,
+                                    height: img.height,
+                                    bgra: img.bgra,
+                                };
+                                req.variant.apply(&mut image);
+                                (Some(image), None)
+                            }
+                            Err(e) => (None, Some(e.code().0)),
+                        };
                         if done_tx
                             .send(Ready {
                                 key: req.key,
@@ -192,6 +220,9 @@ impl IconCache {
             map: HashMap::new(),
             pending: HashMap::new(),
             retry: Vec::new(),
+            recheck_at: Vec::new(),
+            recheck: Vec::new(),
+            replaced: Vec::new(),
             tx,
             rx,
             variant: IconVariant::default(),
@@ -232,6 +263,12 @@ impl IconCache {
         }
         if !self.pending.contains_key(&k) {
             self.next_id += 1;
+            let recycle_bin_full = match key {
+                IconKey::ByContent { mtime, .. } if shell::is_recycle_bin_path(path) => {
+                    Some(*mtime != 0)
+                }
+                _ => None,
+            };
             let req = Request {
                 key: k.0.clone(),
                 path: path.to_path_buf(),
@@ -239,9 +276,17 @@ impl IconCache {
                 icon_only,
                 variant: self.variant,
                 id: self.next_id,
+                recycle_bin_full,
             };
             let _ = self.tx.send(req.clone());
-            self.pending.insert(k, InFlight { req, attempts: 0 });
+            self.pending.insert(
+                k,
+                InFlight {
+                    req,
+                    attempts: 0,
+                    recheck: false,
+                },
+            );
         }
         Lookup::Pending
     }
@@ -266,10 +311,19 @@ impl IconCache {
                 // Dropped while in flight: an old variant, or a file whose icon changed.
                 continue;
             };
+            if f.recheck {
+                let req = f.req.clone();
+                self.pending.remove(&k);
+                self.finish_recheck(k, req, r.image);
+                continue;
+            }
             if let Some(e) = r.error {
                 self.stats.first_error.get_or_insert(e);
             }
-            if r.image.is_none() && f.attempts < RETRY_ATTEMPTS && f.req.path.exists() {
+            if r.image.is_none()
+                && f.attempts < RETRY_ATTEMPTS
+                && (f.req.path.exists() || shell::is_namespace_path(&f.req.path))
+            {
                 // Still there but not extractable right now: try again later, and keep the
                 // entry pending so the windows keep showing the loading tile instead of the
                 // failure placeholder.
@@ -291,6 +345,9 @@ impl IconCache {
                 }
                 None => self.stats.failed += 1,
             }
+            if f.req.icon_only && !self.recheck_at.is_empty() {
+                self.recheck.push(f.req.clone());
+            }
             self.pending.remove(&k);
             self.map.insert(k, r.image.map(Rc::new));
             n += 1;
@@ -301,33 +358,71 @@ impl IconCache {
         n
     }
 
+    /// A re-check came back: keeps the picture shown unless the shell now hands back a
+    /// different one (a failure keeps it too).
+    fn finish_recheck(&mut self, k: (String, u32), req: Request, image: Option<Image>) {
+        self.stats.rechecked += 1;
+        if let Some(img) = image
+            && let Some(shown) = self.map.get_mut(&k)
+            && shown.as_ref().is_none_or(|s| {
+                (s.width, s.height) != (img.width, img.height) || s.bgra != img.bgra
+            })
+        {
+            *shown = Some(Rc::new(img));
+            self.stats.replaced += 1;
+            self.replaced.push(k);
+        }
+        if !self.recheck_at.is_empty() {
+            self.recheck.push(req);
+        }
+    }
+
+    /// Asks every icon (not the thumbnails) again at `RECHECK_AFTER_START_S`.
+    pub fn recheck_after_start(&mut self) {
+        let now = Instant::now();
+        self.recheck_at = RECHECK_AFTER_START_S
+            .iter()
+            .map(|s| now + Duration::from_secs(*s))
+            .collect();
+    }
+
+    /// Draw keys (see `draw_key`) of the icons re-checks replaced since the last call.
+    pub fn take_replaced(&mut self) -> HashSet<String> {
+        self.replaced
+            .drain(..)
+            .map(|(k, px)| format!("{k}@{px}"))
+            .collect()
+    }
+
     /// One line per burst of extractions (startup, an icon size change, new files), once
     /// nothing is pending any more; at info only when something went wrong.
     fn log_stats(&mut self) {
         let s = std::mem::take(&mut self.stats);
-        if s.ok + s.failed == 0 {
+        if s.ok + s.failed + s.rechecked == 0 {
             return;
         }
         let error = s
             .first_error
             .map(|e| format!("{:#010x}", e as u32))
             .unwrap_or_default();
-        if s.failed + s.retried + s.smaller > 0 {
+        if s.failed + s.retried + s.smaller + s.replaced > 0 {
             tracing::info!(
                 ok = s.ok,
                 failed = s.failed,
                 retried = s.retried,
                 smaller = s.smaller,
+                rechecked = s.rechecked,
+                replaced = s.replaced,
                 error = %error,
                 "icons extracted"
             );
         } else {
-            tracing::debug!(ok = s.ok, "icons extracted");
+            tracing::debug!(ok = s.ok, rechecked = s.rechecked, "icons extracted");
         }
     }
 
-    /// Re-queues the retries that are due; returns how long until the next one (None = no
-    /// retries outstanding), so the caller can arm a timer.
+    /// Re-queues the retries and the re-check pass that are due; returns how long until the
+    /// next one (None = nothing outstanding), so the caller can arm a timer.
     pub fn flush_retries(&mut self) -> Option<Duration> {
         let now = Instant::now();
         let mut i = 0;
@@ -341,9 +436,35 @@ impl IconCache {
                 i += 1;
             }
         }
+        if self.recheck_at.first().is_some_and(|t| *t <= now) {
+            self.recheck_at.remove(0);
+            for req in std::mem::take(&mut self.recheck) {
+                let k = (req.key.clone(), req.size_px);
+                // Dropped since (`invalidate`, `sweep`, `set_variant`) or asked for afresh.
+                if !self.map.contains_key(&k) || self.pending.contains_key(&k) {
+                    continue;
+                }
+                self.next_id += 1;
+                let req = Request {
+                    id: self.next_id,
+                    ..req
+                };
+                let _ = self.tx.send(req.clone());
+                self.pending.insert(
+                    k,
+                    InFlight {
+                        req,
+                        attempts: RETRY_ATTEMPTS,
+                        recheck: true,
+                    },
+                );
+            }
+        }
         self.retry
             .iter()
-            .map(|(due, _)| due.saturating_duration_since(now))
+            .map(|(due, _)| due)
+            .chain(self.recheck_at.first())
+            .map(|due| due.saturating_duration_since(now))
             .min()
     }
 
@@ -357,54 +478,29 @@ impl IconCache {
         self.retry.retain(|(_, (k, _))| !hit(k));
     }
 
-    /// Drops the per-file icons nothing can show again: older versions of a file that changed
-    /// since (`live` holds every item's current `cache_key`) and files that are gone. A file
-    /// still on disk keeps its icon (a portal may go back to its folder), and so do namespace
-    /// items (the Recycle Bin flips between two) and per-extension icons. Returns the keys
-    /// dropped, for `is_dropped_draw_key`.
-    pub fn sweep(&mut self, live: &HashSet<String>) -> HashSet<String> {
-        let live_paths: HashSet<&str> = live.iter().filter_map(|k| file_key_path(k)).collect();
-        let suffix = self.variant.suffix();
-        let mut dropped = HashSet::new();
-        for (k, _) in self.map.keys() {
-            let Some(base) = k.strip_suffix(&suffix) else {
-                continue;
-            };
-            let Some(path) = file_key_path(base) else {
-                continue;
-            };
-            if live.contains(base) || path.starts_with("::") {
-                continue;
-            }
-            if live_paths.contains(path) || !Path::new(path).exists() {
-                dropped.insert(base.to_string());
-            }
-        }
-        if !dropped.is_empty() {
-            self.map
-                .retain(|(k, _), _| !k.strip_suffix(&suffix).is_some_and(|b| dropped.contains(b)));
-        }
-        dropped
+    /// Keeps only the icons in `needed` (`draw_key`s of what the fence windows show or can
+    /// switch to, see `App::needed_icons`): other sizes and DPIs, folders a portal has left,
+    /// items no fence shows and older versions of changed files go, and so do extractions
+    /// nobody waits for any more. A window that asks again gets the icon extracted again.
+    /// Returns how many cached icons were dropped.
+    pub fn retain_needed(&mut self, needed: &HashSet<String>) -> usize {
+        let before = self.map.len();
+        let keep = |(k, px): &(String, u32)| needed.contains(&format!("{k}@{px}"));
+        self.map.retain(|k, _| keep(k));
+        self.pending.retain(|k, _| keep(k));
+        self.retry.retain(|(_, k)| keep(k));
+        before - self.map.len()
     }
 
-    /// A `draw_key` of an icon `sweep` dropped.
-    pub fn is_dropped_draw_key(&self, key: &str, dropped: &HashSet<String>) -> bool {
-        key.rsplit_once('@')
-            .and_then(|(k, _)| k.strip_suffix(&self.variant.suffix()))
-            .is_some_and(|b| dropped.contains(b))
+    /// A `draw_key`: an icon upload in the bitmap cache, which also holds backdrop crops.
+    pub fn is_draw_key(key: &str) -> bool {
+        key.starts_with("file:") || key.starts_with("ext:")
     }
 
     #[allow(dead_code)]
     pub fn len(&self) -> usize {
         self.map.len()
     }
-}
-
-/// The path in a per-file `cache_key` (`file:{path}:{mtime}`).
-fn file_key_path(key: &str) -> Option<&str> {
-    key.strip_prefix("file:")?
-        .rsplit_once(':')
-        .map(|(path, _)| path)
 }
 
 /// Decides how an item's icon is cached: per-extension for ordinary documents, per-file for
@@ -480,42 +576,65 @@ pub fn icon_key_for(path: &Path, is_folder: bool, mtime: i64) -> (IconKey, bool)
 mod tests {
     use super::*;
 
+    /// Only what a window needs stays: the size it shows now, for the items it shows. Other
+    /// sizes, a folder a portal left, an older version of a changed file and extractions
+    /// nobody waits for go; backdrop crops in the bitmap cache are not icons.
     #[test]
-    fn sweep_drops_old_versions_and_gone_files_only() {
-        let dir = std::env::temp_dir().join(format!("pf-icon-sweep-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let kept = dir.join("kept.lnk");
-        std::fs::write(&kept, b"x").unwrap();
-        let kept = kept.to_string_lossy().to_lowercase();
-        let gone = dir.join("gone.lnk").to_string_lossy().to_lowercase();
-        let changed = dir.join("changed.exe").to_string_lossy().to_lowercase();
+    fn retain_needed_keeps_only_the_needed_sizes_and_items() {
         let mut cache = IconCache::new(HWND::default());
-        let keys = [
-            format!("file:{changed}:1"), // older version of a live item
-            format!("file:{changed}:2"), // live
-            format!("file:{gone}:5"),    // no item, no file
-            format!("file:{kept}:7"),    // no item, file still there (portal folder left)
-            "file:::{645ff040-5081-101b-9f08-00aa002f954e}:0".to_string(), // Recycle Bin, empty
-            "ext:.txt".to_string(),
-        ];
-        for k in &keys {
-            cache.map.insert((k.clone(), 96), None);
+        cache.set_variant(IconVariant {
+            chameleon: true,
+            ..IconVariant::default()
+        });
+        let file = |path: &str, mtime| IconKey::ByContent {
+            path: path.into(),
+            mtime,
+        };
+        let shown = file("c:\\pics\\a.jpg", 2);
+        let older = file("c:\\pics\\a.jpg", 1);
+        let left = file("c:\\pics\\sub\\b.jpg", 1);
+        let txt = IconKey::ByExt(".txt".into());
+        let suffix = cache.variant.suffix();
+        for (key, px) in [
+            (&shown, 48),
+            (&shown, 96),
+            (&older, 48),
+            (&left, 48),
+            (&txt, 72),
+        ] {
+            let k = format!("{}{suffix}", IconCache::cache_key(key));
+            cache.map.insert((k, px), None);
         }
-        let live: HashSet<String> = [format!("file:{changed}:2")].into_iter().collect();
-        let dropped = cache.sweep(&live);
-        let mut left: Vec<&str> = cache.map.keys().map(|(k, _)| k.as_str()).collect();
-        left.sort();
-        let mut want = vec![
-            keys[1].as_str(),
-            keys[3].as_str(),
-            keys[4].as_str(),
-            keys[5].as_str(),
-        ];
+        // Still extracting: one icon a window waits for, one nobody needs any more.
+        let path = Path::new("c:\\pf-test-missing.jpg");
+        assert!(matches!(
+            cache.get(&shown, path, 72, false),
+            Lookup::Pending
+        ));
+        assert!(matches!(cache.get(&left, path, 96, false), Lookup::Pending));
+        let needed: HashSet<String> = [
+            cache.draw_key(&shown, 48),
+            cache.draw_key(&shown, 72),
+            cache.draw_key(&txt, 72),
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(cache.retain_needed(&needed), 3);
+        let mut kept: Vec<String> = cache
+            .map
+            .keys()
+            .map(|(k, px)| format!("{k}@{px}"))
+            .collect();
+        kept.sort();
+        let mut want = vec![cache.draw_key(&shown, 48), cache.draw_key(&txt, 72)];
         want.sort();
-        assert_eq!(left, want);
-        assert!(cache.is_dropped_draw_key(&format!("file:{gone}:5@96"), &dropped));
-        assert!(!cache.is_dropped_draw_key(&format!("file:{kept}:7@96"), &dropped));
-        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(kept, want);
+        let pending: Vec<u32> = cache.pending.keys().map(|(_, px)| *px).collect();
+        assert_eq!(pending, vec![72]);
+        assert!(IconCache::is_draw_key(&cache.draw_key(&left, 96)));
+        assert!(IconCache::is_draw_key(&cache.draw_key(&txt, 20)));
+        assert!(!IconCache::is_draw_key("backdrop:noise"));
+        assert!(!IconCache::is_draw_key("backdrop:1a2b3c"));
     }
 
     #[test]
@@ -557,6 +676,88 @@ mod tests {
         done.send(ready(3, "ext:.pf-other")).unwrap();
         assert_eq!(cache.drain_results(), 0);
         assert_eq!(cache.len(), 0);
+    }
+
+    /// A namespace item has no file to check for: a failed extraction (`E_PENDING` from the
+    /// shell) is retried instead of leaving the failure glyph for the rest of the session.
+    #[test]
+    fn failed_namespace_icons_are_retried() {
+        let mut cache = IconCache::new(HWND::default());
+        let (done, rx) = channel();
+        cache.rx = rx;
+        let this_pc = Path::new("::{20D04FE0-3AEA-1069-A2D8-08002B30309D}");
+        let (key, _) = icon_key_for(this_pc, false, 0);
+        assert!(matches!(
+            cache.get(&key, this_pc, 48, true),
+            Lookup::Pending
+        ));
+        done.send(Ready {
+            key: IconCache::cache_key(&key),
+            size_px: 48,
+            id: 1,
+            image: None,
+            error: Some(0x8000_000Au32 as i32),
+        })
+        .unwrap();
+        assert_eq!(cache.drain_results(), 0);
+        assert_eq!(cache.retry.len(), 1);
+        assert!(matches!(
+            cache.get(&key, this_pc, 48, true),
+            Lookup::Pending
+        ));
+    }
+
+    #[test]
+    fn rechecks_after_start_replace_changed_pictures_only() {
+        let mut cache = IconCache::new(HWND::default());
+        let (done, rx) = channel();
+        cache.rx = rx;
+        cache.recheck_after_start();
+        let path = Path::new("C:\\pf-test-missing.lnk");
+        let keys: Vec<String> = (0..3).map(|i| format!("ext:.pf-recheck{i}")).collect();
+        let answer = |cache: &mut IconCache, k: &str, image: Option<u8>| {
+            let id = cache.pending[&(k.to_string(), 48)].req.id;
+            done.send(Ready {
+                key: k.to_string(),
+                size_px: 48,
+                id,
+                image: image.map(|v| Image::solid(1, 1, [v; 3])),
+                error: None,
+            })
+            .unwrap();
+            cache.drain_results();
+        };
+        // First answers: a generic picture, a failure (no file, so no quick retry), the real one.
+        for (k, first) in keys.iter().zip([Some(1), None, Some(3)]) {
+            let key = IconKey::ByExt(k.trim_start_matches("ext:").to_string());
+            assert!(matches!(cache.get(&key, path, 48, true), Lookup::Pending));
+            answer(&mut cache, k, first);
+        }
+        assert!(cache.take_replaced().is_empty());
+        assert!(
+            cache
+                .flush_retries()
+                .is_some_and(|d| d > Duration::from_secs(20))
+        );
+        for pass in 0..RECHECK_AFTER_START_S.len() {
+            cache.recheck_at[0] = Instant::now();
+            cache.flush_retries();
+            assert_eq!(cache.pending.len(), 3);
+            // The shell now has the real pictures; the third one did not change.
+            for (k, now) in keys.iter().zip([Some(9), Some(9), Some(3)]) {
+                answer(&mut cache, k, now);
+            }
+            let replaced = cache.take_replaced();
+            if pass == 0 {
+                let want: HashSet<String> = keys[..2].iter().map(|k| format!("{k}@48")).collect();
+                assert_eq!(replaced, want);
+            } else {
+                assert!(replaced.is_empty());
+            }
+        }
+        assert!(cache.map[&(keys[1].clone(), 48)].is_some());
+        // Done: nothing left to ask, no timer.
+        assert!(cache.flush_retries().is_none() && cache.recheck.is_empty());
     }
 
     #[test]

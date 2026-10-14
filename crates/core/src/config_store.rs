@@ -211,7 +211,24 @@ impl ConfigStore {
             let _ = fs::remove_file(self.bak_path());
             let _ = fs::rename(&primary, self.bak_path());
         }
-        fs::rename(self.tmp_path(), &primary).map_err(at("replace config.json"))?;
+        match fs::rename(self.tmp_path(), &primary) {
+            Ok(()) => {}
+            // The Store edition sees %APPDATA% merged with its package's copy, and Windows
+            // refuses renames in it when %APPDATA% was moved to another drive (the .bak
+            // rotation above fails too). Write the file in place, keeping the old one as .bak.
+            // Without that copy a torn write would leave nothing readable, so it must succeed;
+            // the new file is flushed like the temp file before the temp file goes.
+            Err(e) if e.kind() == io::ErrorKind::CrossesDevices => {
+                if primary.exists() {
+                    fs::copy(&primary, self.bak_path()).map_err(at("keep config.bak"))?;
+                }
+                let mut f = fs::File::create(&primary).map_err(at("write config.json"))?;
+                io::Write::write_all(&mut f, json.as_bytes()).map_err(at("write config.json"))?;
+                f.sync_all().map_err(at("flush config.json"))?;
+                let _ = fs::remove_file(self.tmp_path());
+            }
+            Err(e) => return Err(at("replace config.json")(e)),
+        }
         self.daily_backup(&json).map_err(at("daily backup"))?;
         Ok(())
     }
@@ -468,6 +485,16 @@ pub fn lint(cfg: &Config) -> Vec<Lint> {
             format!(
                 "defaultTarget fence {id} exists in no layout; unmatched items go to the inbox"
             ),
+        );
+    }
+    if let Some(text) = &cfg.settings.peek.custom_hotkey
+        && let Err(problem) = crate::hotkey::Hotkey::parse(text).and_then(|h| h.check())
+    {
+        lint_at(
+            &mut out,
+            LintLevel::Warning,
+            "settings",
+            format!("peek.customHotkey {text:?} is not used ({problem}); Peek uses peek.hotkey"),
         );
     }
     if cfg.snapshots.len() > crate::model::MAX_SNAPSHOTS {

@@ -157,8 +157,18 @@ impl App {
     /// portal or folder target only needs its listing refreshed; for a virtual fence what the
     /// shell put on the desktop (`landed`) goes straight into `to` (a PendingRoute bypasses the
     /// rules and waits for files the shell is still copying).
-    pub(super) fn shell_drop_landed(&mut self, to: FenceId, landed: Vec<PathBuf>) {
+    pub(super) fn shell_drop_landed(
+        &mut self,
+        to: FenceId,
+        landed: Vec<PathBuf>,
+        on_desktop: bool,
+    ) {
         tracing::info!(%to, landed = landed.len(), "shell drop finished");
+        if on_desktop && landed.is_empty() {
+            // Some drops are written only after `Drop` returned (the shortcut to This PC or the
+            // Recycle Bin dragged off the Windows desktop): claim those, see `on_fs_changed`.
+            self.shell_drop_claim = Some((to, Instant::now()));
+        }
         if landed.is_empty() {
             self.refresh_portals();
             return;

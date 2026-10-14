@@ -65,10 +65,15 @@ contents or undoes real file moves through folder portals.
 
 ## How it talks to the app
 
-The app listens on the named pipe `\\.\pipe\PecoFence` (or `\\.\pipe\PecoFence.<instance>` for a
-named test instance). Every CLI call opens one connection, sends one JSON request line, reads one
-JSON response line and exits; there is no daemon and nothing stays resident. Requests are executed on
-the app's UI thread, so while a PecoFence context menu or dialog is open the reply waits; after
+The app listens on the named pipe `\\.\pipe\PecoFence.<SID>` (or `\\.\pipe\PecoFence.<SID>.<instance>`
+for a named test instance), where `<SID>` is the security identifier of the Windows account it runs
+as (`S-1-5-21-...`, shown by `whoami /user`). Pipe names are shared by the whole computer; the SID
+keeps the PecoFence of two accounts signed in at the same time apart, and the CLI reaches the
+instance of the account it runs as from any session, an ssh login included. Only that account,
+SYSTEM and elevated administrators can open the pipe.
+
+Every CLI call opens one connection, sends one JSON request line, reads one JSON response line and
+exits; there is no daemon and nothing stays resident. Requests are executed on the app's UI thread, so while a PecoFence context menu or dialog is open the reply waits; after
 `--timeout` (default 15 s) the CLI gives up with exit code 4 and the app discards the request instead
 of running it late. A request the app picked up right before that deadline may still have run, so
 after an exit 4 read the state back (`fence list`) before retrying a mutation.
@@ -223,7 +228,13 @@ default on), `rollUp.titleOnHover` (the title row folds away until the
 pointer is over the fence; for every fence whose `titleOnHover` is `default`), `snapping.enabled`, `snapping.gapPx` (the gap, in DIPs,
 fences keep to each other and the screen edges while snapping; 0 to 64, default 8),
 `snapping.sizeToCells` (resizing keeps whole icon columns and rows), `snapping.guideLines`
-(alignment guides while dragging, default on), `icons.chameleon`.
+(alignment guides while dragging, default on), `icons.chameleon`, `peek.customHotkey` (the Peek
+shortcut as text such as `Ctrl+Shift+F` or `Win+Alt+Space`: Ctrl, Alt or Win plus a letter, digit,
+F1 to F24, Num0 to Num9, Space, Enter, Tab, Esc, Backspace, Insert, Delete, Home, End, PageUp,
+PageDown or an arrow key; `null` goes back to `peek.hotkey`, whose default is Ctrl+Alt+Space, and
+setting `peek.hotkey` clears it). A
+combination Windows or another program holds is refused with `validation_failed`, like common
+Windows shortcuts (Ctrl+Space, Alt+Tab, Win plus one key).
 `describe --schema Settings` lists them all with their allowed values (the name is matched
 case-insensitively; an unknown name is a `usage` error listing `details.allowed`).
 
@@ -343,7 +354,7 @@ The app ignores the field's value.
 
 | `code` | Meaning |
 |---|---|
-| `not_running` | No PecoFence instance is listening on the pipe (checked by the CLI). |
+| `not_running` | No PecoFence instance of this Windows account is listening on the pipe (checked by the CLI). |
 | `timeout` | No reply within `--timeout`; the app is probably inside a menu or dialog. |
 | `busy` | Too many concurrent CLI connections; retry shortly. |
 | `usage` | Malformed request, unknown method, missing or mistyped parameter. |
@@ -396,7 +407,7 @@ be undone. Snapshots do not include settings, rules, or files moved through port
 ## Test instances
 
 `PECOFENCE_INSTANCE=<name> pecofence.exe ...` starts an independent instance with its own pipe
-`\\.\pipe\PecoFence.<name>`. `pecofence-cli --instance <name>` (or the same environment variable)
+`\\.\pipe\PecoFence.<SID>.<name>`. `pecofence-cli --instance <name>` (or the same environment variable)
 addresses it. This exists for development and automated tests; a normal installation has exactly one
 instance and needs neither.
 

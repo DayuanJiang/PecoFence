@@ -179,18 +179,18 @@ pub(super) fn validate_rect(
     Ok(work.clone())
 }
 
-/// File name with extension as the user spells it. The key is lower-cased; the display name
-/// has the real spelling minus the hidden extension, which the suffix puts back. Namespace
-/// items (no path) keep their display name.
+/// File name with extension as the user spells it. The display name has the real spelling
+/// minus the hidden extension, which the suffix puts back (the path of an item from an older
+/// file is still the lower-cased key). Namespace items (no path) keep their display name.
 fn item_file_name(it: &Item) -> String {
-    let Some(path) = (!it.is_namespace()).then(|| it.key.as_path()).flatten() else {
+    let Some(path) = (!it.is_namespace()).then(|| it.path()).flatten() else {
         return it.display_name.clone();
     };
-    let key_file_name = path.rsplit('\\').next().unwrap_or_default();
+    let path_file_name = path.rsplit('\\').next().unwrap_or_default();
     format!(
         "{}{}",
         it.display_name,
-        crate::rename::rename_hidden_suffix(&it.display_name, key_file_name, it.is_folder)
+        crate::rename::rename_hidden_suffix(&it.display_name, path_file_name, it.is_folder)
     )
 }
 
@@ -294,13 +294,31 @@ pub(super) fn patch_settings_path(
         };
         *slot = value;
     }
-    let settings: Settings = serde_json::from_value(root).map_err(|e| {
+    let mut settings: Settings = serde_json::from_value(root).map_err(|e| {
         IpcError::new(
             ErrorCode::ValidationFailed,
             format!("settings rejected: {e}"),
         )
         .details(json!({ "expected": e.to_string() }))
     })?;
+    if settings.peek.custom_hotkey != current.peek.custom_hotkey
+        && let Some(text) = settings.peek.custom_hotkey.clone()
+    {
+        let h = pecofence_core::hotkey::Hotkey::parse(&text)
+            .and_then(|h| h.check())
+            .map_err(|problem| {
+                IpcError::new(
+                    ErrorCode::ValidationFailed,
+                    format!("peek.customHotkey {text:?} cannot be used: {problem}"),
+                )
+                .hint("Examples: Ctrl+Shift+F, Win+Alt+Space, Ctrl+Alt+F9; null = use peek.hotkey")
+            })?;
+        // Written the way the settings page writes it (Ctrl+Alt+Space as peek.hotkey).
+        settings.peek.set_hotkey(h);
+    } else if pointer == "/peek/hotkey" || settings.peek.hotkey != current.peek.hotkey {
+        // One of the 0.2.0 choices: a custom shortcut left in place would override it.
+        settings.peek.custom_hotkey = None;
+    }
     if !matches!(settings.icon_size, 32 | 48 | 64 | 96) {
         return Err(IpcError::new(
             ErrorCode::ValidationFailed,
@@ -685,6 +703,15 @@ impl App {
                 // No auto snapshot: snapshots hold layouts only and could not undo this.
                 let before = self.state.config.settings.clone();
                 let requested = patch_settings_path(&before, path, value.clone())?;
+                // A new Peek shortcut must be free, as on the settings page.
+                let h = requested.peek.chosen_hotkey();
+                if h != before.peek.chosen_hotkey() && !self.peek_hotkey_free(h) {
+                    return Err(IpcError::new(
+                        ErrorCode::ValidationFailed,
+                        format!("{h} is already used by Windows or another program"),
+                    )
+                    .hint("Pick another shortcut; Windows keeps Win+Space and Win+Shift+Space"));
+                }
                 self.apply_settings(requested.clone());
                 let after = &self.state.config.settings;
                 let changed = *after != before;
@@ -1092,7 +1119,7 @@ impl App {
                         json!({
                             "id": it.id,
                             "name": it.display_name,
-                            "path": it.key.as_path(),
+                            "path": it.path(),
                             "fence": f.id,
                             "fenceTitle": f.title,
                         })
@@ -1347,7 +1374,7 @@ impl App {
     pub(super) fn item_dto(&self, f: &Fence, it: &Item) -> ItemDto {
         let (assigned_by, rule) = self.assignment_of(f, it.id);
         let path = (!it.is_namespace())
-            .then(|| it.key.as_path().map(str::to_string))
+            .then(|| it.path().map(str::to_string))
             .flatten();
         let file_name = item_file_name(it);
         let ext = if it.is_folder || it.is_namespace() {
@@ -1456,7 +1483,7 @@ impl App {
             name: item.map(|it| it.display_name.clone()).unwrap_or_default(),
             path: item.and_then(|it| {
                 (!it.is_namespace())
-                    .then(|| it.key.as_path().map(str::to_string))
+                    .then(|| it.path().map(str::to_string))
                     .flatten()
             }),
             from,
@@ -1860,7 +1887,7 @@ impl App {
                 return Err(IpcError::internal(format!("item {id} vanished")));
             };
             let path = (!it.is_namespace())
-                .then(|| it.key.as_path().map(str::to_string))
+                .then(|| it.path().map(str::to_string))
                 .flatten();
             // Into a portal only real files go (the Recycle Bin and friends are not files);
             // into a virtual fence, desktop items change membership and portal items are moved
@@ -2020,7 +2047,7 @@ impl App {
                 it.display_name
             )));
         }
-        let Some(old_path) = it.key.as_path() else {
+        let Some(old_path) = it.path() else {
             return Err(unsupported(format!("{:?} has no path", it.display_name)));
         };
         let old_file_name = old_path.rsplit('\\').next().unwrap_or(old_path).to_string();
@@ -2033,7 +2060,9 @@ impl App {
             if old_ext.is_empty() || rules::ext_of(name) == old_ext {
                 name.to_string()
             } else {
-                format!("{name}{old_ext}")
+                // `ext_of` lower-cases; the file keeps its own spelling (`.PDF`).
+                let disk_ext = old_file_name.rfind('.').map_or("", |i| &old_file_name[i..]);
+                format!("{name}{disk_ext}")
             }
         };
         if target == item_file_name(it) {
@@ -2141,7 +2170,7 @@ impl App {
                         fence_title: f.title.clone(),
                         name: it.display_name.clone(),
                         path: (!it.is_namespace())
-                            .then(|| it.key.as_path().map(str::to_string))
+                            .then(|| it.path().map(str::to_string))
                             .flatten(),
                         is_folder: it.is_folder,
                         is_namespace: it.is_namespace(),

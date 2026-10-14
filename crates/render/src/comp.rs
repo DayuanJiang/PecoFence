@@ -3144,6 +3144,16 @@ windows_core::imp::interface_hierarchy!(
 );
 windows_core::imp::required_hierarchy!(CompositionCommitBatch, CompositionObject);
 impl CompositionCommitBatch {
+    pub(crate) fn IsEnded(&self) -> windows_core::Result<bool> {
+        unsafe {
+            let mut result__ = core::mem::zeroed();
+            (windows_core::Interface::vtable(self).IsEnded)(
+                windows_core::Interface::as_raw(self),
+                &mut result__,
+            )
+            .map(|| result__)
+        }
+    }
     pub(crate) fn Compositor(&self) -> windows_core::Result<Compositor> {
         let this = &windows_core::Interface::cast::<ICompositionObject>(self)?;
         unsafe {
@@ -9939,6 +9949,9 @@ impl windows_core::RuntimeType for ICompositionCommitBatch {
 #[repr(C)]
 pub struct ICompositionCommitBatch_Vtbl {
     pub base__: windows_core::IInspectable_Vtbl,
+    IsActive: usize,
+    pub IsEnded:
+        unsafe extern "system" fn(*mut core::ffi::c_void, *mut bool) -> windows_core::HRESULT,
 }
 windows_core::imp::define_interface!(
     ICompositionEasingFunction,

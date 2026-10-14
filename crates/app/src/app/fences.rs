@@ -161,12 +161,17 @@ impl App {
         let host = self.state.host_of(id);
         let active = self.state.active_tab_of(host);
         if let Some(w) = self.fences.get(&host) {
+            let switching = w.active_fence() != active;
             w.set_tabs(self.tab_views(host), active);
             if active == id
                 && let Some(f) = self.state.fence(id)
             {
                 // Grouping first: the layout glide must target the new sections.
                 w.set_group_by_date(f.view.group_by_date);
+                if switching {
+                    // After `set_tabs`, whose content swap draws the outgoing items once more.
+                    w.set_incoming_tab_view(f.view.icon_size, f.view.layout);
+                }
                 w.set_items(self.item_views(f));
                 w.set_sort_indicator(f.view.sort, f.view.reverse);
             }

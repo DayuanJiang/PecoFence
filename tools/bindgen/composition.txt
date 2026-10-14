@@ -71,6 +71,7 @@
     Windows.UI.Composition.CompositionScopedBatch
     Windows.UI.Composition.ICompositionScopedBatch
     Windows.UI.Composition.CompositionBatchCompletedEventArgs
+    Windows.UI.Composition.ICompositionCommitBatch.IsEnded
     Windows.UI.Composition.CompositionBatchTypes
     Windows.UI.Composition.AnimationIterationBehavior
     Windows.UI.Composition.AnimationStopBehavior

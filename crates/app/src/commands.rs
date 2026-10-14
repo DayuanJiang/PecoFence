@@ -32,10 +32,12 @@ pub const WM_APP_PEEK_FOCUSED: u32 = msg::WM_APP + 11;
 pub const WM_APP_SHELL_CHANGED: u32 = msg::WM_APP + 12;
 /// Posted by the worker that decoded another virtual desktop's wallpaper in advance.
 pub const WM_APP_PREWARM_DONE: u32 = msg::WM_APP + 13;
+/// wparam 0: the live wallpaper capture worker finished; 1: the desktop came to the front.
+pub const WM_APP_LIVE_WALLPAPER: u32 = msg::WM_APP + 14;
 /// Sent to a fence window while another fence is dragged over it: returns the width in device
 /// px of its left tab column (0 without one). Such a fence has no title row; its column takes
 /// the merge drop instead, also while the fence is collapsed to it.
-pub const WM_APP_TAB_RAIL: u32 = msg::WM_APP + 14;
+pub const WM_APP_TAB_RAIL: u32 = msg::WM_APP + 15;
 
 /// What a file drop does with the dropped paths (Explorer's Move / Copy / Create shortcut, the
 /// effect the drop target reported).
@@ -154,10 +156,13 @@ pub enum Command {
     },
     /// A drop onto `to` was handed to the shell's folder drop target (Outlook mail, a
     /// Start-menu app): the portals show what landed in their folders; `landed` are the desktop
-    /// entries a virtual fence's drop created, to be filed into `to`.
+    /// entries a virtual fence's drop created, to be filed into `to`. `on_desktop`: the drop
+    /// went to the desktop folder (a virtual fence), so what the shell writes there a moment
+    /// later goes into `to` too.
     ShellDrop {
         to: FenceId,
         landed: Vec<PathBuf>,
+        on_desktop: bool,
     },
     /// Right-click on the Details header: column visibility menu at screen coordinates.
     HeaderMenu {

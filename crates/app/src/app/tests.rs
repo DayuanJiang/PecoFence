@@ -294,6 +294,40 @@ mod ipc {
     }
 
     #[test]
+    fn settings_patch_checks_and_normalizes_the_custom_peek_shortcut() {
+        let current = Settings::default();
+        let patched =
+            patch_settings_path(&current, "peek.customHotkey", json!("ctrl + shift + f")).unwrap();
+        assert_eq!(patched.peek.custom_hotkey.as_deref(), Some("Ctrl+Shift+F"));
+        // Ctrl+Alt+Space is the preset every version reads.
+        let mut legacy = current.clone();
+        legacy.peek.hotkey = pecofence_core::PeekHotkey::WinSpace;
+        let patched =
+            patch_settings_path(&legacy, "peek.customHotkey", json!("Ctrl+Alt+Space")).unwrap();
+        assert_eq!(patched.peek, current.peek);
+        for text in ["Ctrl+Space", "Win+L", "Shift+F", "Ctrl+Alt+Ä", "Ctrl+Alt"] {
+            let err = patch_settings_path(&current, "peek.customHotkey", json!(text)).unwrap_err();
+            assert_eq!(err.code, ErrorCode::ValidationFailed, "{text}");
+            assert!(err.message.contains("cannot be used"), "{}", err.message);
+        }
+        // Back to the preset; an unusable value already in the file does not block other paths.
+        let mut stored = current.clone();
+        stored.peek.custom_hotkey = Some("nonsense".into());
+        let patched = patch_settings_path(&stored, "peek.dim", json!(false)).unwrap();
+        assert_eq!(patched.peek.custom_hotkey.as_deref(), Some("nonsense"));
+        let patched = patch_settings_path(&stored, "peek.customHotkey", json!(null)).unwrap();
+        assert_eq!(patched.peek.custom_hotkey, None);
+        // Setting peek.hotkey picks that one, even the Ctrl+Alt+Space a custom shortcut keeps
+        // there for older versions.
+        let mut custom = current.clone();
+        custom.peek.custom_hotkey = Some("Ctrl+Shift+F".into());
+        for value in ["ctrlAltSpace", "winShiftSpace"] {
+            let patched = patch_settings_path(&custom, "peek.hotkey", json!(value)).unwrap();
+            assert_eq!(patched.peek.custom_hotkey, None, "{value}");
+        }
+    }
+
+    #[test]
     fn settings_patch_replaces_the_whole_object() {
         let wanted = Settings {
             icon_size: 64,

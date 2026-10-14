@@ -61,7 +61,7 @@ impl MemoryStats {
 
 /// Hands this process's working set back to Windows. The pages stay in memory on the standby
 /// list and return on their next touch, so only what is used again comes back: memory that
-/// only startup needed stops counting in Task Manager.
+/// only startup or an earlier interaction needed stops counting in Task Manager.
 pub fn trim_working_set() {
     windows_core::link!("kernel32.dll" "system" fn K32EmptyWorkingSet(process: HANDLE) -> windows_core::BOOL);
     // SAFETY: the pseudo handle of this process.
