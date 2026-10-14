@@ -235,6 +235,21 @@ pub(super) fn on_mousemove(
         // ReleaseCapture sends WM_CAPTURECHANGED synchronously: no borrow held.
         window::release_capture();
         let refs: Vec<&Path> = paths.iter().map(|p| p.as_path()).collect();
+        // Explorer's desktop (24H2's Progman, or one showing its icons) takes a drop on its
+        // empty space as a move into the folder the files already are in ("The source and
+        // destination file names are the same", and our thread waits until that dialog
+        // closes), or for This PC and the Recycle Bin as "create a shortcut here". Released
+        // there without Ctrl / Alt, the drag ends in the drop source instead and the items go
+        // back to the inbox. A Windows icon that takes the drop (a folder) still gets it; a
+        // portal's files really move to the desktop.
+        let skip_drop = (!from_portal).then(|| -> dragdrop::SkipDrop {
+            Box::new(|keys| {
+                let (hit, _, on_desktop) = window_under_cursor();
+                on_desktop
+                    && dragdrop::modifier_effect(keys, true) == DropEffect::Move
+                    && !pecofence_platform::shell_icons::desktop_icon_drop_target(hit)
+            })
+        });
         let mut drag_returned: Option<Instant> = None;
         let effect = match dragdrop::data_object_for_paths(&refs) {
             Ok(obj) => {
@@ -247,7 +262,7 @@ pub(super) fn on_mousemove(
                 });
                 // Nested message loop until the button is released.
                 crate::peek::set_drag_click_through(true);
-                let effect = dragdrop::do_drag_drop(hwnd, &obj, dragdrop::ALL_EFFECTS);
+                let effect = dragdrop::do_drag_drop(hwnd, &obj, dragdrop::ALL_EFFECTS, skip_drop);
                 drag_returned = Some(Instant::now());
                 INTERNAL_DRAG.with(|s| *s.borrow_mut() = None);
                 Some(effect)
@@ -260,14 +275,8 @@ pub(super) fn on_mousemove(
         // Where it landed, resolved before re-borrowing: WindowFromPoint
         // sends WM_NCHITTEST to our own windows synchronously. The Peek
         // dimmer stays see-through until then, so it is not the answer.
-        let pt = window::cursor_pos();
-        let target = desktop::root_ancestor(desktop::window_from_point(pt.x, pt.y));
+        let (_, class, on_desktop) = window_under_cursor();
         crate::peek::set_drag_click_through(false);
-        let class = desktop::class_name(target);
-        let on_desktop = matches!(
-            class.as_str(),
-            "Progman" | "WorkerW" | "SHELLDLL_DefView" | "SysListView32"
-        );
         let mut guard = view.borrow_mut();
         let Some(v) = guard.as_mut() else {
             return Some(0);
@@ -291,9 +300,9 @@ pub(super) fn on_mousemove(
         match effect {
             // Esc / right button: Explorer cancels outright, so do we.
             Some(r) if !r.dropped => {}
-            // Bare desktop (its hidden ListView accepts nothing, so the
-            // effect is None): Explorer's same-folder drop leaves desktop
-            // items alone, so keep "back to the inbox". A Ctrl / Alt drop
+            // Bare desktop (`skip_drop` ended the drag there, or a hidden
+            // ListView accepted nothing, so the effect is None): keep
+            // "back to the inbox". A Ctrl / Alt drop
             // means duplicate, not relocate. A portal's files really moved
             // there; the desktop watcher files them.
             Some(r)
@@ -462,4 +471,17 @@ pub(super) fn on_mousemove(
     }
     window::track_mouse_leave(hwnd);
     Some(0)
+}
+
+/// The window under the pointer, the class of its top-level window and whether that is the
+/// desktop. WindowFromPoint sends WM_NCHITTEST to our own windows synchronously: no borrow held.
+fn window_under_cursor() -> (HWND, String, bool) {
+    let pt = window::cursor_pos();
+    let hit = desktop::window_from_point(pt.x, pt.y);
+    let class = desktop::class_name(desktop::root_ancestor(hit));
+    let on_desktop = matches!(
+        class.as_str(),
+        "Progman" | "WorkerW" | "SHELLDLL_DefView" | "SysListView32"
+    );
+    (hit, class, on_desktop)
 }
