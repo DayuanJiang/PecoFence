@@ -1146,6 +1146,26 @@ impl Layout {
                 changed = true;
             }
         }
+        // Pass 1b: a fence whose host chain never reaches an unhosted fence sits in a cycle
+        // (only a hand-edited file has one); pass 2 would never end on it.
+        for i in 0..self.fences.len() {
+            let mut cur = self.fences[i].tab_host;
+            let mut steps = 0;
+            while let Some(h) = cur
+                && steps <= ids.len()
+            {
+                cur = self
+                    .fences
+                    .iter()
+                    .find(|f| f.id == h)
+                    .and_then(|f| f.tab_host);
+                steps += 1;
+            }
+            if cur.is_some() {
+                self.fences[i].tab_host = None;
+                changed = true;
+            }
+        }
         // Pass 2: flatten chains — a host that is itself hosted moves its tabs up to its host.
         loop {
             let chain: Option<(FenceId, FenceId)> = self.fences.iter().find_map(|f| {
@@ -1869,6 +1889,28 @@ mod tests {
         assert!(l.normalize_tabs());
         assert_eq!(l.host_of(bid), bid);
         assert_eq!(l.tabs_of(bid), vec![bid]);
+        assert!(!l.normalize_tabs());
+    }
+
+    #[test]
+    fn tabs_normalize_ends_on_a_host_cycle() {
+        let mut a = Fence::new("A", FenceKind::Virtual, geo());
+        let mut b = Fence::new("B", FenceKind::Virtual, geo());
+        let mut c = Fence::new("C", FenceKind::Virtual, geo());
+        let (aid, bid, cid) = (a.id, b.id, c.id);
+        // A points into the cycle B -> C -> B and comes first, as in a hand-edited file.
+        a.tab_host = Some(bid);
+        b.tab_host = Some(cid);
+        c.tab_host = Some(bid);
+        let mut l = Layout {
+            shown: 0,
+            fingerprint: vec![],
+            fences: vec![a, b, c],
+        };
+        assert!(l.normalize_tabs());
+        assert_eq!(l.host_of(aid), aid);
+        assert_eq!(l.host_of(cid), bid);
+        assert_eq!(l.tabs_of(bid), vec![bid, cid]);
         assert!(!l.normalize_tabs());
     }
 
