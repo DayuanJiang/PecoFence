@@ -151,6 +151,10 @@ pub struct IconCache {
     replaced: Vec<(String, u32)>,
     tx: Sender<Request>,
     rx: Receiver<Ready>,
+    /// Ids of the queued requests still wanted. A request dropped from `pending` while it
+    /// waited in the channel (an icon size change, a folder left) is skipped by the workers
+    /// instead of holding up the icons that are wanted now.
+    live: Arc<Mutex<HashSet<u64>>>,
     variant: IconVariant,
     stats: IconStats,
     next_id: u64,
@@ -162,10 +166,12 @@ impl IconCache {
         let (tx, work_rx) = channel::<Request>();
         let (done_tx, rx) = channel::<Ready>();
         let work_rx = Arc::new(Mutex::new(work_rx));
+        let live: Arc<Mutex<HashSet<u64>>> = Arc::new(Mutex::new(HashSet::new()));
         let notify_raw = notify.0 as isize;
         for i in 0..WORKERS {
             let work_rx = work_rx.clone();
             let done_tx = done_tx.clone();
+            let live = live.clone();
             let _ = std::thread::Builder::new()
                 .name(format!("pecofence-icons-{i}"))
                 .stack_size(256 * 1024)
@@ -180,6 +186,13 @@ impl IconCache {
                             guard.recv()
                         };
                         let Ok(req) = req else { break };
+                        if !live
+                            .lock()
+                            .unwrap_or_else(|e| e.into_inner())
+                            .contains(&req.id)
+                        {
+                            continue;
+                        }
                         let bin = req
                             .recycle_bin_full
                             .and_then(|full| shell::recycle_bin_image(full, req.size_px));
@@ -231,6 +244,7 @@ impl IconCache {
             replaced: Vec::new(),
             tx,
             rx,
+            live,
             variant: IconVariant::default(),
             stats: IconStats::default(),
             next_id: 0,
@@ -247,8 +261,31 @@ impl IconCache {
         self.variant = variant;
         self.map.clear();
         self.pending.clear();
+        self.live_lock().clear();
         self.retry.clear();
         true
+    }
+
+    fn live_lock(&self) -> std::sync::MutexGuard<'_, HashSet<u64>> {
+        self.live.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// Queues `req` for the workers.
+    fn send(&self, req: &Request) {
+        self.live_lock().insert(req.id);
+        let _ = self.tx.send(req.clone());
+    }
+
+    /// Drops the pending entries `keep` rejects; the workers skip their queued requests.
+    fn drop_pending(&mut self, keep: impl Fn(&(String, u32)) -> bool) {
+        let mut live = self.live.lock().unwrap_or_else(|e| e.into_inner());
+        self.pending.retain(|k, f| {
+            let keep = keep(k);
+            if !keep {
+                live.remove(&f.req.id);
+            }
+            keep
+        });
     }
 
     pub fn cache_key(key: &IconKey) -> String {
@@ -284,7 +321,7 @@ impl IconCache {
                 id: self.next_id,
                 recycle_bin_full,
             };
-            let _ = self.tx.send(req.clone());
+            self.send(&req);
             self.pending.insert(
                 k,
                 InFlight {
@@ -312,6 +349,7 @@ impl IconCache {
         let mut n = 0;
         let now = Instant::now();
         while let Ok(r) = self.rx.try_recv() {
+            self.live_lock().remove(&r.id);
             let k = (r.key, r.size_px);
             let Some(f) = self.pending.get_mut(&k).filter(|f| f.req.id == r.id) else {
                 // Dropped while in flight: an old variant, or a file whose icon changed.
@@ -433,7 +471,7 @@ impl IconCache {
             if self.retry[i].0 <= now {
                 let (_, k) = self.retry.swap_remove(i);
                 if let Some(f) = self.pending.get(&k) {
-                    let _ = self.tx.send(f.req.clone());
+                    self.send(&f.req);
                 }
             } else {
                 i += 1;
@@ -452,7 +490,7 @@ impl IconCache {
                     id: self.next_id,
                     ..req
                 };
-                let _ = self.tx.send(req.clone());
+                self.send(&req);
                 self.pending.insert(
                     k,
                     InFlight {
@@ -477,7 +515,7 @@ impl IconCache {
             (k.starts_with(&prefix) && k[prefix.len()..].starts_with(['#'])) || k == prefix
         };
         self.map.retain(|(k, _), _| !hit(k));
-        self.pending.retain(|(k, _), _| !hit(k));
+        self.drop_pending(|(k, _)| !hit(k));
         self.retry.retain(|(_, (k, _))| !hit(k));
     }
 
@@ -490,7 +528,7 @@ impl IconCache {
         let before = self.map.len();
         let keep = |(k, px): &(String, u32)| needed.contains(&format!("{k}@{px}"));
         self.map.retain(|k, _| keep(k));
-        self.pending.retain(|k, _| keep(k));
+        self.drop_pending(keep);
         self.retry.retain(|(_, k)| keep(k));
         before - self.map.len()
     }
@@ -680,6 +718,41 @@ mod tests {
         done.send(ready(3, "ext:.pf-other")).unwrap();
         assert_eq!(cache.drain_results(), 0);
         assert_eq!(cache.len(), 0);
+    }
+
+    /// Requests dropped while they wait in the channel are no longer wanted: the workers skip
+    /// them (see the `live` set), so a new icon size does not queue behind the old one.
+    #[test]
+    fn dropped_requests_leave_the_live_set() {
+        let mut cache = IconCache::new(HWND::default());
+        let path = Path::new("C:\\pf-test.pf-test");
+        let a = IconKey::ByExt(".pf-live-a".into());
+        let b = IconKey::ByExt(".pf-live-b".into());
+        assert!(matches!(cache.get(&a, path, 48, false), Lookup::Pending));
+        assert!(matches!(cache.get(&a, path, 96, false), Lookup::Pending));
+        assert!(matches!(cache.get(&b, path, 48, false), Lookup::Pending));
+        let ids: Vec<u64> = cache.pending.values().map(|f| f.req.id).collect();
+        assert_eq!(cache.live_lock().len(), 3);
+        assert!(ids.iter().all(|id| cache.live_lock().contains(id)));
+        // Another size for `a`: its two old requests are dropped, `b`'s stays wanted.
+        let needed: HashSet<String> = [cache.draw_key(&a, 72), cache.draw_key(&b, 48)]
+            .into_iter()
+            .collect();
+        cache.retain_needed(&needed);
+        let b_id = cache.pending[&(IconCache::cache_key(&b), 48)].req.id;
+        assert_eq!(
+            cache.live_lock().iter().copied().collect::<Vec<_>>(),
+            vec![b_id]
+        );
+        cache.invalidate(&b);
+        assert!(cache.live_lock().is_empty());
+        // The variant switch drops everything queued.
+        assert!(matches!(cache.get(&a, path, 72, false), Lookup::Pending));
+        cache.set_variant(IconVariant {
+            chameleon: true,
+            ..IconVariant::default()
+        });
+        assert!(cache.live_lock().is_empty());
     }
 
     /// A namespace item has no file to check for: a failed extraction (`E_PENDING` from the
