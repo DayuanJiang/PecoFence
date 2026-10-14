@@ -502,15 +502,18 @@ impl RowMetrics {
     }
 }
 
-/// Icon edge in physical pixels on a monitor of `dpi`, the size icons are extracted at:
-/// `icon_size` DIPs in the Icons layout, the rows' small icon otherwise.
-pub fn icon_px(layout: ViewLayout, icon_size: u32, dpi: u32) -> u32 {
-    let dip = match layout {
+/// Icon edge in DIPs for a view layout: `icon_size` in Icons, the rows' small icon otherwise.
+pub fn icon_dip(layout: ViewLayout, icon_size: u32) -> f32 {
+    match layout {
         ViewLayout::Icons => icon_size as f32,
         ViewLayout::List => RowMetrics::list().icon,
         ViewLayout::Details => RowMetrics::details().icon,
-    };
-    (dip * (dpi as f32 / 96.0)).round() as u32
+    }
+}
+
+/// Icon edge in physical pixels on a monitor of `dpi`: the size icons are extracted at.
+pub fn icon_px(layout: ViewLayout, icon_size: u32, dpi: u32) -> u32 {
+    (icon_dip(layout, icon_size) * (dpi as f32 / 96.0)).round() as u32
 }
 
 /// Column split of the details view for a content width (DIPs). Narrow fences drop the type,

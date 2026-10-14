@@ -170,9 +170,9 @@ impl FenceViewState {
         }
     }
 
-    /// Pixel size of the icons for the current layout and DPI (rows use a small 20 DIP icon).
-    pub(super) fn icon_px(&self) -> u32 {
-        crate::layout::icon_px(self.layout, self.icon_size, self.dpi)
+    /// Icon edge in DIPs for the current layout (rows use a small 20 DIP icon).
+    pub(super) fn icon_dip(&self) -> f32 {
+        crate::layout::icon_dip(self.layout, self.icon_size)
     }
 
     pub(super) fn row_metrics(&self) -> Option<RowMetrics> {

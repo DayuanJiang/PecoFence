@@ -1192,8 +1192,8 @@ impl FenceWindow {
 
     /// Tab switch, after `set_tabs` and before the incoming tab's items arrive: takes that
     /// tab's icon size and layout without drawing the outgoing items again, so the new items
-    /// are drawn, and their icons extracted, at their own size from the first frame (not at
-    /// the outgoing tab's, which the icon cache does not keep for them).
+    /// are drawn, and their icons extracted, at their own size from the first frame; the icon
+    /// cache keeps an inactive tab's icons at that size only.
     pub fn set_incoming_tab_view(&self, icon_size: u32, layout: ViewLayout) {
         self.with_view(|v| {
             if v.icon_size == icon_size && v.layout == layout {
@@ -1260,7 +1260,7 @@ impl FenceWindow {
     /// item at the current icon size, and at the size it still shows until that one arrives.
     pub fn needed_icons(&self, icons: &IconCache, out: &mut HashSet<String>) {
         if let Some(v) = self.view.borrow().as_ref() {
-            let px = v.icon_px();
+            let px = crate::layout::icon_px(v.layout, v.icon_size, v.dpi);
             for item in &v.items {
                 out.insert(icons.draw_key(&item.icon_key, px));
                 if item.icon.is_some() && item.icon_px != px {
