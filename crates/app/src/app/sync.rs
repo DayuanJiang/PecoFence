@@ -3,7 +3,9 @@
 use super::*;
 
 impl App {
-    pub(super) fn on_fs_changed(&mut self) {
+    /// `desktop`: the batch carries a shell notice or a menu's request, so the desktop is
+    /// synced whatever folders its events name.
+    pub(super) fn on_fs_changed(&mut self, desktop: bool) {
         let events: Vec<FsEvent> = self
             .fs_pending
             .lock()
@@ -72,9 +74,11 @@ impl App {
             }
         }
         // A batch that touched only portal folders (a download landing in one) leaves the
-        // desktop alone; an empty batch is a shell notice or a menu asking to look again.
+        // desktop alone, unless a shell notice (the Recycle Bin after a delete in that portal)
+        // or a menu landed in the same batch; an empty batch is one of those on its own.
         let desktops = [shell::user_desktop(), shell::public_desktop()];
-        let touches_desktop = all
+        let touches_desktop = desktop
+            || all
             || dirs.is_empty()
             || dirs
                 .iter()

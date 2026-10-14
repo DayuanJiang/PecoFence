@@ -404,6 +404,9 @@ impl App {
             // Folder-watcher debounce state (see WM_APP_FS_CHANGED / TIMER_FS).
             let fs_armed = Cell::new(false);
             let fs_flushed: Cell<Option<Instant>> = Cell::new(None);
+            // The pending batch must sync the desktop even if its events all lie in portal
+            // folders: a shell notice or a menu asked for it.
+            let fs_desktop = Cell::new(false);
             // TIMER_ICONS is armed for a batch of results (see WM_APP_ICON_READY).
             let icons_armed = Cell::new(false);
             let peek_focus_pending: Cell<Option<usize>> = Cell::new(None);
@@ -465,6 +468,9 @@ impl App {
                                 // touches every fixed drive); without this channel the sync
                                 // itself asks every time.
                                 shell::recycle_bin_changed();
+                            }
+                            if message == WM_APP_SHELL_CHANGED || wparam != 0 {
+                                fs_desktop.set(true);
                             }
                             // Explorer reacts to a folder change within a frame or two; a file
                             // the shell just moved onto the desktop (drag-out from a portal)
@@ -560,7 +566,7 @@ impl App {
                                     {
                                         window::kill_timer(hwnd, TIMER_FS);
                                         fs_armed.set(false);
-                                        app.on_fs_changed();
+                                        app.on_fs_changed(fs_desktop.take());
                                         fs_flushed.set(Some(Instant::now()));
                                     } else {
                                         // Busy (modal loop): retry shortly; stays armed.

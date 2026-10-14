@@ -10,6 +10,8 @@ use std::path::PathBuf;
 use std::rc::Rc;
 
 pub const WM_APP_COMMAND: u32 = msg::WM_APP + 1;
+/// A folder watcher queued events; `wparam != 0` asks for a desktop sync whatever the batch
+/// holds (a menu verb that changed a namespace item).
 pub const WM_APP_FS_CHANGED: u32 = msg::WM_APP + 2;
 pub const WM_APP_TRAY: u32 = msg::WM_APP + 3;
 /// The wallpaper registry key changed (worker thread → UI thread).
