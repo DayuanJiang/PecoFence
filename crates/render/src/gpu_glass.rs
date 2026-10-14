@@ -456,8 +456,12 @@ impl GpuGlass {
         let saved = session.transform();
         self.controls
             .retain(|key, control| *key < 5 || control.frame + 1 >= self.stats.frames);
-        self.text_inks
-            .retain(|_, (_, frame)| *frame + 1 >= self.stats.frames);
+        // Rows, column captions and section headers (keys 0x10000 to 0x3FFFF) are drawn on
+        // the content surface, which does not count frames: chrome-only frames (a title hover)
+        // must not forget their ink. Visible slots bound how many there are.
+        self.text_inks.retain(|key, (_, frame)| {
+            (0x10000..0x40000).contains(key) || *frame + 1 >= self.stats.frames
+        });
         session.set_transform(&Matrix3x2::identity());
         self.origin_y = origin_y;
         let result = self.draw_inner(
