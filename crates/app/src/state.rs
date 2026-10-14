@@ -1206,14 +1206,7 @@ impl AppState {
             return false;
         };
         let started = std::time::Instant::now();
-        // A folder that is gone lists as empty; the fence must say which of the two it is.
         let was_missing = self.portal_missing.contains(&id);
-        let missing = !dir.is_dir();
-        if missing {
-            self.portal_missing.insert(id);
-        } else {
-            self.portal_missing.remove(&id);
-        }
         let old_items = self.evict_portal_members(id);
         // Display names survive a re-read: asking the shell costs several ms per item on a
         // OneDrive folder, and an unchanged file (same path, same mtime) has the same name.
@@ -1230,6 +1223,14 @@ impl AppState {
                 .cloned()
         };
         let entries = shell::enumerate_folder(&dir);
+        // A folder that is gone lists as empty; the fence must say which of the two it is. Only
+        // an empty listing asks (one more round trip on an unreachable share otherwise).
+        let missing = entries.is_empty() && !dir.is_dir();
+        if missing {
+            self.portal_missing.insert(id);
+        } else {
+            self.portal_missing.remove(&id);
+        }
         let unnamed = entries
             .iter()
             .filter(|e| known_name(&ItemKey::from_path(&e.path.to_string_lossy()), e).is_none())
