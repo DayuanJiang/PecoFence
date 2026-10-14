@@ -266,7 +266,7 @@ impl App {
         match cmd {
             CMD_ITEM_OPEN => {
                 for id in &items {
-                    self.launch(*id);
+                    self.launch(*id, fence);
                 }
             }
             CMD_ITEM_LOCATION => {

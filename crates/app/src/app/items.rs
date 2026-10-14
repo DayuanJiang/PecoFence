@@ -533,15 +533,20 @@ impl App {
         }
     }
 
-    pub(super) fn launch(&mut self, item: ItemId) {
-        // A folder inside a navigating portal opens in place (Fences "Navigate").
-        if let Some(fence) = self.state.portal_of_item(item)
-            && self.state.fence(fence).is_some_and(|f| f.portal_navigate)
+    /// Opens `item`, which the user picked in fence `from`.
+    pub(super) fn launch(&mut self, item: ItemId, from: FenceId) {
+        // A folder inside a navigating portal opens in place (Fences "Navigate"). Two portals
+        // can show the same folder, so only the one the item was opened from navigates.
+        if self
+            .state
+            .fence(from)
+            .is_some_and(|f| f.kind == FenceKind::FolderPortal && f.portal_navigate)
+            && self.state.is_portal_item(item)
             && let Some(it) = self.state.item(item)
             && it.is_folder
             && let Some(p) = it.path().map(PathBuf::from)
         {
-            self.portal_enter(fence, &p);
+            self.portal_enter(from, &p);
             return;
         }
         let Some(path) = self
