@@ -63,7 +63,11 @@ pub enum Command {
     ToggleRollUp(FenceId),
     /// A hover-peeked fence was double-clicked: keep it expanded.
     CommitExpanded(FenceId),
-    LaunchItem(ItemId),
+    /// Open `item` from fence `from` (a folder opens in place when `from` is a navigating portal).
+    LaunchItem {
+        item: ItemId,
+        from: FenceId,
+    },
     /// Move `items` into `to` (internal drag or menu).
     MoveItems {
         items: Vec<ItemId>,

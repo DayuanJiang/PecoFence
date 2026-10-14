@@ -128,6 +128,8 @@ pub struct FenceViewState {
     pub(super) col_drag: Option<ColDrag>,
     /// The fence shown is a folder portal (sort-only: no manual arrangement).
     pub(super) is_portal: bool,
+    /// The portal's folder could not be found (its empty state says so).
+    pub(super) portal_missing: bool,
     /// Width the cached labels were fitted for; a change invalidates them.
     pub(super) label_w: f32,
     pub(super) hover: Option<usize>,

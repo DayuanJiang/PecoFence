@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::JoinHandle;
+use std::time::Duration;
 use windows_core::{Error, PCWSTR, Result};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -64,7 +65,16 @@ impl DirWatcher {
                 .name(format!("pecofence-watch-{}", dir.display()))
                 .stack_size(256 * 1024)
                 .spawn(move || watch_loop(handle, dir, stop, on_events))
-                .map_err(|e| Error::new(windows_core::HRESULT(E_FAIL.0), e.to_string()))?
+        };
+        let thread = match thread {
+            Ok(t) => t,
+            Err(e) => {
+                // SAFETY: no thread took the handle.
+                unsafe {
+                    let _ = CloseHandle(handle.0);
+                }
+                return Err(Error::new(windows_core::HRESULT(E_FAIL.0), e.to_string()));
+            }
         };
         Ok(Self {
             handle,
@@ -72,16 +82,27 @@ impl DirWatcher {
             thread: Some(thread),
         })
     }
+
+    /// False once the watcher thread has exited (its folder was deleted, renamed or unmounted).
+    pub fn is_running(&self) -> bool {
+        self.thread.as_ref().is_some_and(|t| !t.is_finished())
+    }
 }
 
 impl Drop for DirWatcher {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::SeqCst);
-        // SAFETY: cancels the blocking ReadDirectoryChangesW on the watcher thread, then closes.
-        unsafe {
-            let _ = CancelIoEx(self.handle.0, None);
-        }
         if let Some(t) = self.thread.take() {
+            // A cancel that lands between two ReadDirectoryChangesW calls finds nothing to
+            // abort, and the next call would block until the folder changes: repeat it until
+            // the thread has seen `stop`.
+            while !t.is_finished() {
+                // SAFETY: cancels the blocking ReadDirectoryChangesW on the watcher thread.
+                unsafe {
+                    let _ = CancelIoEx(self.handle.0, None);
+                }
+                std::thread::sleep(Duration::from_millis(1));
+            }
             let _ = t.join();
         }
         // SAFETY: handle is no longer used by any thread.

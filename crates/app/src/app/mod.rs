@@ -224,7 +224,8 @@ pub struct App {
     control: Window,
     queue: CommandQueue,
     tray: Option<TrayIcon>,
-    _watchers: Vec<DirWatcher>,
+    /// The user's and the public desktop folder (restarted by `revive_watchers`).
+    watchers: Vec<DirWatcher>,
     /// Shell change notifications for the Recycle Bin and the desktop namespace, which no
     /// folder watcher sees (`None` when the shell refused the registration).
     _shell_watch: Option<ShellChangeWatch>,
@@ -827,6 +828,22 @@ impl App {
                             if shown != Some(true) {
                                 window::set_timer(hwnd, TIMER_TRAY_RETRY, 250);
                             }
+                            // The new Explorer knows nothing of the old shell change
+                            // registration. Its id is not deregistered: the new Explorer may
+                            // have handed the same number to another program, or to one of its
+                            // own views. Should the old registration still be alive, the
+                            // duplicate notices merge in the same 60 ms batch.
+                            if let Ok(mut guard) = cell.try_borrow_mut()
+                                && let Some(app) = guard.as_mut()
+                            {
+                                std::mem::forget(app._shell_watch.take());
+                                app._shell_watch =
+                                    ShellChangeWatch::register_desktop(hwnd, WM_APP_SHELL_CHANGED)
+                                        .map_err(|e| {
+                                            tracing::warn!(error = %e, "shell change notifications unavailable")
+                                        })
+                                        .ok();
+                            }
                             Some(0)
                         }
                         msg::WM_QUERYENDSESSION => {
@@ -1010,28 +1027,7 @@ impl App {
 
         // Watchers.
         let fs_pending: Arc<Mutex<Vec<FsEvent>>> = Arc::new(Mutex::new(Vec::new()));
-        let mut watchers = Vec::new();
-        for dir in [shell::user_desktop(), shell::public_desktop()]
-            .into_iter()
-            .flatten()
-        {
-            let pending = fs_pending.clone();
-            let control_hwnd = control.hwnd().0 as isize;
-            match DirWatcher::start(&dir, move |events| {
-                if let Ok(mut p) = pending.lock() {
-                    p.extend(events);
-                }
-                window::post_message(
-                    HWND(control_hwnd as *mut core::ffi::c_void),
-                    WM_APP_FS_CHANGED,
-                    0,
-                    0,
-                );
-            }) {
-                Ok(w) => watchers.push(w),
-                Err(e) => tracing::warn!(dir = %dir.display(), error = %e, "watcher failed"),
-            }
-        }
+        let watchers = sync::start_desktop_watchers(control.hwnd(), &fs_pending);
 
         let shell_watch = ShellChangeWatch::register_desktop(control.hwnd(), WM_APP_SHELL_CHANGED)
             .map_err(|e| tracing::warn!(error = %e, "shell change notifications unavailable"))
@@ -1062,7 +1058,7 @@ impl App {
             control,
             queue,
             tray,
-            _watchers: watchers,
+            watchers,
             _shell_watch: shell_watch,
             portal_watchers: HashMap::new(),
             fs_pending,
@@ -1344,6 +1340,7 @@ impl App {
         if self.prune_icons() {
             window::set_timer(self.control.hwnd(), TIMER_GPU_TRIM, GPU_TRIM_IDLE_MS);
         }
+        self.revive_watchers();
         // While the special desktop items are shown, re-read them once a minute as well: a
         // change in Windows' own "Desktop icon settings" leaves no folder event behind, and the
         // shell notification channel may be unavailable.
@@ -1505,7 +1502,7 @@ impl App {
                 // rule like every other path that expands a fence.
                 self.apply_auto_height(fence);
             }
-            Command::LaunchItem(item) => self.launch(item),
+            Command::LaunchItem { item, from } => self.launch(item, from),
             Command::MoveItems { items, to } => self.move_items(&items, to),
             Command::ReorderItems {
                 fence,

@@ -19,6 +19,7 @@ impl App {
             is_portal && !f.hide_title_icon,
             is_portal && self.state.portal_navigated(active),
             is_portal && f.portal_navigate,
+            is_portal && self.state.portal_missing(active),
             self.state.portal_path(active),
         );
         if let Some(h) = self.state.fence(host) {
@@ -39,25 +40,17 @@ impl App {
             .iter()
             .filter_map(|f| self.state.portal_path(f.id).map(|p| (f.id, p)))
             .collect();
+        // An exited watcher (its folder was deleted, renamed or unmounted) is kept here: every
+        // batch ends up in this function, and a share that cannot deliver change notices fails
+        // and posts an Overflow at once, so dropping it here would restart it without end.
+        // F5 and `revive_watchers` (once a minute) drop exited watchers before calling this.
         self.portal_watchers
             .retain(|id, (path, _)| portals.iter().any(|(pid, p)| pid == id && p == path));
         for (id, dir) in portals {
             if self.portal_watchers.contains_key(&id) {
                 continue;
             }
-            let pending = self.fs_pending.clone();
-            let control_hwnd = self.control.hwnd().0 as isize;
-            match DirWatcher::start(&dir, move |events| {
-                if let Ok(mut p) = pending.lock() {
-                    p.extend(events);
-                }
-                window::post_message(
-                    HWND(control_hwnd as *mut core::ffi::c_void),
-                    WM_APP_FS_CHANGED,
-                    0,
-                    0,
-                );
-            }) {
+            match sync::start_watcher(&dir, self.control.hwnd(), self.fs_pending.clone()) {
                 Ok(w) => {
                     self.portal_watchers.insert(id, (dir, w));
                 }
@@ -146,12 +139,7 @@ impl App {
             return;
         }
         // Item keys are case-folded; store the folder with its real casing.
-        let folder = std::fs::canonicalize(&folder)
-            .map(|c| {
-                let s = c.to_string_lossy().to_string();
-                PathBuf::from(s.strip_prefix(r"\\?\").unwrap_or(&s))
-            })
-            .unwrap_or(folder);
+        let folder = crate::state::canonical_path(folder);
         if let Some(existing) = self
             .state
             .fences()
@@ -210,9 +198,7 @@ impl App {
             }
         }
         self.ensure_portal_watchers();
-        for id in changed {
-            self.refresh_fence(id);
-        }
+        self.refresh_portal_fences(&changed);
     }
 
     /// Re-reads every portal folder (startup, overflow, layout changes) and redraws the ones
@@ -222,7 +208,30 @@ impl App {
         // refresh_portal may have reset a vanished subfolder back to the root: drop the stale
         // watcher on the old path and start one on the folder now shown.
         self.ensure_portal_watchers();
-        for id in changed {
+        self.refresh_portal_fences(&changed);
+    }
+
+    /// Redraws the portals whose re-read found a change, and every other portal showing one of
+    /// the same folders: two portals on one folder share its items, so the second re-read finds
+    /// them already updated and reports no change of its own.
+    pub(super) fn refresh_portal_fences(&mut self, changed: &[FenceId]) {
+        let dirs: Vec<String> = changed
+            .iter()
+            .filter_map(|id| self.state.portal_path(*id))
+            .map(|p| p.to_string_lossy().to_lowercase())
+            .collect();
+        let ids: Vec<FenceId> = self
+            .state
+            .fences()
+            .iter()
+            .filter(|f| {
+                self.state
+                    .portal_path(f.id)
+                    .is_some_and(|p| dirs.contains(&p.to_string_lossy().to_lowercase()))
+            })
+            .map(|f| f.id)
+            .collect();
+        for id in ids {
             self.refresh_fence(id);
         }
     }

@@ -359,11 +359,11 @@ impl App {
 
     /// Enter in the search box: open the highlighted match and end the Peek.
     pub(super) fn open_peek_hit(&mut self) {
-        let Some(&(_, _, item)) = self.peek_hits.get(self.peek_hit) else {
+        let Some(&(_, tab, item)) = self.peek_hits.get(self.peek_hit) else {
             return;
         };
         self.end_peek("search match opened");
-        self.launch(item);
+        self.launch(item, tab);
     }
 
     /// Shows the matches: each fence switches to the tab holding its highlighted match, else

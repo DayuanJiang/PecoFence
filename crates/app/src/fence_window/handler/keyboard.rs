@@ -171,7 +171,10 @@ pub(super) fn on_keydown(
                 }),
                 None => {
                     for id in ids {
-                        queue.push(Command::LaunchItem(id));
+                        queue.push(Command::LaunchItem {
+                            item: id,
+                            from: v.active,
+                        });
                     }
                 }
             }

@@ -90,6 +90,7 @@
   "没有未归类的项目": "No unassigned items",
   "松开即可放入": "Release to drop here",
   "此文件夹为空。": "This folder is empty.",
+  "找不到此文件夹。": "This folder cannot be found.",
   "将项目拖到此处": "Drag items here",
   "{0} 项": "{0}",
   "红": "Red",

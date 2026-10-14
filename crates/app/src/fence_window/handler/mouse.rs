@@ -599,7 +599,10 @@ pub(super) fn on_lbuttondblclk(
                     path: item.path.clone(),
                 });
             } else {
-                queue.push(Command::LaunchItem(item.id));
+                queue.push(Command::LaunchItem {
+                    item: item.id,
+                    from: v.active,
+                });
             }
         } else if v.tab_at(x, y).is_some() && !std::mem::take(&mut v.suppress_dblclk) {
             queue.push(Command::ToggleRollUp(fence_id));

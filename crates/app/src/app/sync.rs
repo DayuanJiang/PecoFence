@@ -2,7 +2,80 @@
 
 use super::*;
 
+/// Starts a watcher on `dir` whose batches land in `pending` and poke the control window.
+pub(super) fn start_watcher(
+    dir: &Path,
+    control: HWND,
+    pending: Arc<Mutex<Vec<FsEvent>>>,
+) -> Result<DirWatcher> {
+    let control_hwnd = control.0 as isize;
+    DirWatcher::start(dir, move |events| {
+        if let Ok(mut p) = pending.lock() {
+            p.extend(events);
+        }
+        window::post_message(
+            HWND(control_hwnd as *mut core::ffi::c_void),
+            WM_APP_FS_CHANGED,
+            0,
+            0,
+        );
+    })
+}
+
+/// Watchers on the user's and the public desktop folder.
+pub(super) fn start_desktop_watchers(
+    control: HWND,
+    pending: &Arc<Mutex<Vec<FsEvent>>>,
+) -> Vec<DirWatcher> {
+    let mut watchers = Vec::new();
+    for dir in [shell::user_desktop(), shell::public_desktop()]
+        .into_iter()
+        .flatten()
+    {
+        match start_watcher(&dir, control, pending.clone()) {
+            Ok(w) => watchers.push(w),
+            Err(e) => tracing::warn!(dir = %dir.display(), error = %e, "watcher failed"),
+        }
+    }
+    watchers
+}
+
 impl App {
+    /// A watcher exits when its folder is deleted, renamed or unmounted. Once a minute, watch
+    /// the folders that are back again and show what they hold now.
+    pub(super) fn revive_watchers(&mut self) {
+        // Empty: the desktop was unreachable at startup (a network location) and none started.
+        let dead = self.watchers.is_empty() || self.watchers.iter().any(|w| !w.is_running());
+        if dead && shell::desktop_available() {
+            self.watchers = start_desktop_watchers(self.control.hwnd(), &self.fs_pending);
+            window::post_message(self.control.hwnd(), WM_APP_FS_CHANGED, 0, 0);
+        }
+        self.portal_watchers.retain(|_, (_, w)| w.is_running());
+        // Portals without a watcher, plus those last read as missing: a folder renamed away
+        // and back keeps its watcher alive, and any batch meanwhile may have started one on a
+        // folder that came back without re-reading it.
+        let stale: Vec<FenceId> = self
+            .state
+            .fences()
+            .iter()
+            .filter(|f| {
+                self.state.portal_path(f.id).is_some()
+                    && (!self.portal_watchers.contains_key(&f.id)
+                        || self.state.portal_missing(f.id))
+            })
+            .map(|f| f.id)
+            .collect();
+        if stale.is_empty() {
+            return;
+        }
+        self.ensure_portal_watchers();
+        let changed: Vec<FenceId> = stale
+            .into_iter()
+            .filter(|id| self.portal_watchers.contains_key(id) && self.state.refresh_portal(*id))
+            .collect();
+        self.refresh_portal_fences(&changed);
+    }
+
     pub(super) fn on_fs_changed(&mut self) {
         let events: Vec<FsEvent> = self
             .fs_pending
@@ -161,8 +234,11 @@ impl App {
     pub(super) fn manual_refresh(&mut self, fence: FenceId) {
         let host = self.state.host_of(fence);
         let active = self.state.active_tab_of(host);
-        if self.state.portal_path(active).is_some() {
+        let portal = self.state.portal_path(active).is_some();
+        if portal {
             self.state.refresh_portal(active);
+            // A watcher that exited with its folder is started again now that the user asks.
+            self.portal_watchers.retain(|_, (_, w)| w.is_running());
             self.ensure_portal_watchers();
         } else {
             shell::recycle_bin_changed();
@@ -186,7 +262,12 @@ impl App {
                 bitmaps.remove_prefix(&IconCache::cache_key(&k));
             }
         }
-        self.refresh_fence(active);
+        if portal {
+            // Another portal on the same folder shares the items just re-read.
+            self.refresh_portal_fences(&[active]);
+        } else {
+            self.refresh_fence(active);
+        }
         if let Some(w) = self.fences.get(&host) {
             w.drop_icons();
         }
