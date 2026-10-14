@@ -413,6 +413,19 @@ pub(super) fn on_nclbuttondblclk(
     None
 }
 
+// A right press in the non-client area (WM_NCRBUTTONDOWN, or WM_NCRBUTTONDBLCLK for the second
+// press of a double-click) is remembered so the release pairs with it (`ncrbutton_press`);
+// DefWindowProc still sees it.
+pub(super) fn on_ncrbuttondown(
+    h: &HandlerCtx,
+    _hwnd: HWND,
+    _wparam: usize,
+    _lparam: isize,
+) -> Option<isize> {
+    h.ncrbutton_press.set(true);
+    None
+}
+
 pub(super) fn on_ncrbuttonup(
     h: &HandlerCtx,
     hwnd: HWND,
@@ -426,6 +439,12 @@ pub(super) fn on_ncrbuttonup(
         ..
     } = h;
     let fence_id = h.fence_id;
+    // The right button that cancelled a tab tear-off or an item drag is released over
+    // whichever fence is under the pointer (the torn-off one, still fading out, sits with
+    // its title row under it): no press here, no menu.
+    if !h.ncrbutton_press.replace(false) {
+        return Some(0);
+    }
     if wparam as isize == msg::HTCAPTION {
         // The peek must not open under the TrackPopupMenuEx loop.
         window::kill_timer(hwnd, TIMER_PEEK_OPEN);

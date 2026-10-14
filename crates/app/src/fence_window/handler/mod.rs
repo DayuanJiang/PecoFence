@@ -110,6 +110,11 @@ pub(super) struct HandlerCtx {
     /// (`nc::cancel_move`): the fence and its group are back at `rect_at_enter` and stay there
     /// until the loop ends.
     pub(super) move_cancelled: Cell<bool>,
+    /// A right press reached this window's title row (WM_NCRBUTTONDOWN): the release that
+    /// follows opens the fence menu. A release without it (the right button cancelled a tab
+    /// tear-off or an item drag, and the window under the pointer gets the release) opens
+    /// none, as `rbutton_press` does for the client area.
+    pub(super) ncrbutton_press: Cell<bool>,
     /// Cursor position relative to the window's top-left when the move began. WM_MOVING
     /// rebuilds the rect from it every frame, so a snap displacement never accumulates (the
     /// system would otherwise keep adding mouse deltas to the *snapped* rect and the window
@@ -147,6 +152,7 @@ impl FenceWindow {
             rect_at_enter: Cell::new(RECT::default()),
             move_start: Cell::new(None),
             move_cancelled: Cell::new(false),
+            ncrbutton_press: Cell::new(false),
             grab_offset: Cell::new((0, 0)),
             grab_dpi: Cell::new(96),
             merge_target: Cell::new(0isize),
@@ -204,6 +210,9 @@ impl FenceWindow {
                     msg::WM_NCLBUTTONDOWN => nc::on_nclbuttondown(h, hwnd, wparam, lparam),
                     WM_NCLBUTTONUP => nc::on_nclbuttonup(h, hwnd, wparam, lparam),
                     msg::WM_NCLBUTTONDBLCLK => nc::on_nclbuttondblclk(h, hwnd, wparam, lparam),
+                    WM_NCRBUTTONDOWN | WM_NCRBUTTONDBLCLK => {
+                        nc::on_ncrbuttondown(h, hwnd, wparam, lparam)
+                    }
                     msg::WM_NCRBUTTONUP => nc::on_ncrbuttonup(h, hwnd, wparam, lparam),
                     msg::WM_MOUSEMOVE => mouse_move::on_mousemove(h, hwnd, wparam, lparam),
                     msg::WM_MOUSELEAVE => mouse::on_mouseleave(h, hwnd, wparam, lparam),
