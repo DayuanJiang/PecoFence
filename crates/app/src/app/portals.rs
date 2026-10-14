@@ -39,25 +39,16 @@ impl App {
             .iter()
             .filter_map(|f| self.state.portal_path(f.id).map(|p| (f.id, p)))
             .collect();
-        self.portal_watchers
-            .retain(|id, (path, _)| portals.iter().any(|(pid, p)| pid == id && p == path));
+        // A watcher whose folder was deleted, renamed or unmounted has exited: drop it so the
+        // folder is watched again as soon as it is back (F5, a batch, or `revive_watchers`).
+        self.portal_watchers.retain(|id, (path, w)| {
+            w.is_running() && portals.iter().any(|(pid, p)| pid == id && p == path)
+        });
         for (id, dir) in portals {
             if self.portal_watchers.contains_key(&id) {
                 continue;
             }
-            let pending = self.fs_pending.clone();
-            let control_hwnd = self.control.hwnd().0 as isize;
-            match DirWatcher::start(&dir, move |events| {
-                if let Ok(mut p) = pending.lock() {
-                    p.extend(events);
-                }
-                window::post_message(
-                    HWND(control_hwnd as *mut core::ffi::c_void),
-                    WM_APP_FS_CHANGED,
-                    0,
-                    0,
-                );
-            }) {
+            match sync::start_watcher(&dir, self.control.hwnd(), self.fs_pending.clone()) {
                 Ok(w) => {
                     self.portal_watchers.insert(id, (dir, w));
                 }

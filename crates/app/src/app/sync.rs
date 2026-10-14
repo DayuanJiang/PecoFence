@@ -2,7 +2,75 @@
 
 use super::*;
 
+/// Starts a watcher on `dir` whose batches land in `pending` and poke the control window.
+pub(super) fn start_watcher(
+    dir: &Path,
+    control: HWND,
+    pending: Arc<Mutex<Vec<FsEvent>>>,
+) -> Result<DirWatcher> {
+    let control_hwnd = control.0 as isize;
+    DirWatcher::start(dir, move |events| {
+        if let Ok(mut p) = pending.lock() {
+            p.extend(events);
+        }
+        window::post_message(
+            HWND(control_hwnd as *mut core::ffi::c_void),
+            WM_APP_FS_CHANGED,
+            0,
+            0,
+        );
+    })
+}
+
+/// Watchers on the user's and the public desktop folder.
+pub(super) fn start_desktop_watchers(
+    control: HWND,
+    pending: &Arc<Mutex<Vec<FsEvent>>>,
+) -> Vec<DirWatcher> {
+    let mut watchers = Vec::new();
+    for dir in [shell::user_desktop(), shell::public_desktop()]
+        .into_iter()
+        .flatten()
+    {
+        match start_watcher(&dir, control, pending.clone()) {
+            Ok(w) => watchers.push(w),
+            Err(e) => tracing::warn!(dir = %dir.display(), error = %e, "watcher failed"),
+        }
+    }
+    watchers
+}
+
 impl App {
+    /// A watcher exits when its folder is deleted, renamed or unmounted. Once a minute, watch
+    /// the folders that are back again and show what they hold now.
+    pub(super) fn revive_watchers(&mut self) {
+        // Empty: the desktop was unreachable at startup (a network location) and none started.
+        let dead = self.watchers.is_empty() || self.watchers.iter().any(|w| !w.is_running());
+        if dead && shell::desktop_available() {
+            self.watchers = start_desktop_watchers(self.control.hwnd(), &self.fs_pending);
+            window::post_message(self.control.hwnd(), WM_APP_FS_CHANGED, 0, 0);
+        }
+        self.portal_watchers.retain(|_, (_, w)| w.is_running());
+        let unwatched: Vec<FenceId> = self
+            .state
+            .fences()
+            .iter()
+            .filter(|f| {
+                self.state.portal_path(f.id).is_some() && !self.portal_watchers.contains_key(&f.id)
+            })
+            .map(|f| f.id)
+            .collect();
+        if unwatched.is_empty() {
+            return;
+        }
+        self.ensure_portal_watchers();
+        for id in unwatched {
+            if self.portal_watchers.contains_key(&id) && self.state.refresh_portal(id) {
+                self.refresh_fence(id);
+            }
+        }
+    }
+
     pub(super) fn on_fs_changed(&mut self) {
         let events: Vec<FsEvent> = self
             .fs_pending
