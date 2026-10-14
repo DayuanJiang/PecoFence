@@ -404,6 +404,8 @@ impl App {
             // Folder-watcher debounce state (see WM_APP_FS_CHANGED / TIMER_FS).
             let fs_armed = Cell::new(false);
             let fs_flushed: Cell<Option<Instant>> = Cell::new(None);
+            // TIMER_ICONS is armed for a batch of results (see WM_APP_ICON_READY).
+            let icons_armed = Cell::new(false);
             let peek_focus_pending: Cell<Option<usize>> = Cell::new(None);
             // A display change is waiting out DISPLAY_SETTLE_MS on TIMER_WORKAREA.
             let display_settling = Cell::new(false);
@@ -493,7 +495,12 @@ impl App {
                             Some(0)
                         }
                         WM_APP_ICON_READY => {
-                            window::set_timer(hwnd, TIMER_ICONS, 40);
+                            // One timer per batch: SetTimer restarts a running timer, so arming
+                            // it for every result would hold the drain back for as long as the
+                            // workers keep finishing icons less than 40 ms apart.
+                            if !icons_armed.replace(true) {
+                                window::set_timer(hwnd, TIMER_ICONS, 40);
+                            }
                             Some(0)
                         }
                         msg::WM_HOTKEY if wparam as i32 == HOTKEY_PEEK => {
@@ -610,6 +617,7 @@ impl App {
                                     if let Ok(mut guard) = cell.try_borrow_mut()
                                         && let Some(app) = guard.as_mut()
                                     {
+                                        icons_armed.set(false);
                                         window::kill_timer(hwnd, TIMER_ICONS);
                                         app.on_icons_ready();
                                     } else {
