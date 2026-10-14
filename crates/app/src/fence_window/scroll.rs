@@ -254,6 +254,8 @@ impl FenceViewState {
     /// floating over the wrong row. Taking `renaming` here keeps a second notch from posting
     /// again; the popup itself closes from the command loop, outside this borrow.
     pub(super) fn dismiss_rename_for_scroll(&mut self) {
+        // A slow double-click's armed rename would open on an item scrolled out of view.
+        self.cancel_pending_rename();
         if self.renaming.take().is_some() {
             self.queue.push(Command::EndItemRename { commit: true });
         }
