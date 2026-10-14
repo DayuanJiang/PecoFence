@@ -14,7 +14,7 @@ use pecofence_platform::window::{
 use pecofence_platform::{HWND, RECT, desktop, dwm, monitors, msg};
 use pecofence_render::motion::{self, Curve, Motion, Tween};
 use pecofence_render::notice::{NoticeCard, NoticeHit, NoticeLayout, WIDTH};
-use pecofence_render::{ContainerVisual, DesktopWindowTarget, Panel, Theme};
+use pecofence_render::{ContainerVisual, DesktopWindowTarget, Panel, RenderStack, Theme};
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::Instant;
@@ -53,6 +53,7 @@ pub enum NoticeEvent {
 
 struct View {
     panel: Panel,
+    stack: Rc<RenderStack>,
     card: NoticeCard,
     layout: NoticeLayout,
     theme: Theme,
@@ -79,10 +80,18 @@ impl View {
         window::set_timer(hwnd, TIMER_FADE, 16);
     }
 
-    fn redraw(&self) {
-        let _ = self.panel.draw(self.dpi, |s, _, _| {
+    /// False when the GPU device is gone and a surface from the stack's current device (the
+    /// app rebuilds it when a fence loses it too) cannot be drawn either.
+    fn redraw(&mut self) -> bool {
+        self.draw() || (self.panel.recreate(&self.stack).is_ok() && self.draw())
+    }
+
+    /// False on device loss.
+    fn draw(&self) -> bool {
+        let drawn = self.panel.draw(self.dpi, |s, _, _| {
             self.card.draw(s, &self.layout, &self.theme, self.hover)
         });
+        !matches!(drawn, Ok(false))
     }
 
     fn hit(&self, lparam: isize) -> NoticeHit {
@@ -166,6 +175,7 @@ impl Notice {
         shadow.set_alpha(0);
         let shared = Rc::new(RefCell::new(View {
             panel,
+            stack: ctx.stack.clone(),
             card,
             layout,
             theme: *ctx.theme.borrow(),
@@ -177,7 +187,7 @@ impl Notice {
             fade: Some(Tween::at(0.0, Instant::now())),
             closing: false,
         }));
-        shared.borrow().redraw();
+        shared.borrow_mut().redraw();
         *view.borrow_mut() = Some(shared.clone());
 
         window.show_no_activate();
@@ -224,7 +234,11 @@ fn handle(
         let mut v = view.borrow_mut();
         if v.hover != hit {
             v.hover = hit;
-            v.redraw();
+            if !v.redraw() {
+                // A card that cannot be drawn any more goes away instead of staying blank.
+                drop(v);
+                fade_out(hwnd, view);
+            }
         }
     };
     if view.borrow().closing && m != msg::WM_TIMER {

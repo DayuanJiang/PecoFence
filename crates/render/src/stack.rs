@@ -57,13 +57,14 @@ pub(crate) fn note_draw() {
     });
 }
 
-fn create_gpu(compositor: &Compositor, generation: u32) -> Result<(Gpu, bool)> {
+fn create_gpu(compositor: &Compositor, generation: u32, allow_warp: bool) -> Result<(Gpu, bool)> {
     let (device, is_warp) = match GpuDevice::new() {
         Ok(d) => (d, false),
-        Err(e) => {
+        Err(e) if allow_warp => {
             tracing::warn!(error = %e, "hardware D3D11 device failed; using WARP");
             (GpuDevice::new_warp()?, true)
         }
+        Err(e) => return Err(e),
     };
     let graphics = device.create_graphics_device(compositor)?;
     Ok((
@@ -92,7 +93,7 @@ impl RenderStack {
             }
         };
         let compositor = Compositor::new()?;
-        let (gpu, is_warp) = create_gpu(&compositor, 0)?;
+        let (gpu, is_warp) = create_gpu(&compositor, 0, true)?;
         Ok(Self {
             _queue: queue,
             compositor,
@@ -196,10 +197,12 @@ impl RenderStack {
 
     /// Rebuilds the D3D/D2D device and the composition graphics device after device loss
     /// (sleep, driver update), or to hand back GPU memory the old device kept. Callers must
-    /// then recreate every drawing surface.
-    pub fn recover(&self) -> Result<()> {
+    /// then recreate every drawing surface. A stack that started on hardware falls back to
+    /// WARP only with `allow_warp`; otherwise a hardware device that cannot be created yet is
+    /// an error, so the caller retries instead of drawing on the CPU until PecoFence restarts.
+    pub fn recover(&self, allow_warp: bool) -> Result<()> {
         let generation = self.gpu.borrow().generation + 1;
-        let (gpu, is_warp) = create_gpu(&self.compositor, generation)?;
+        let (gpu, is_warp) = create_gpu(&self.compositor, generation, allow_warp || self.is_warp)?;
         tracing::info!(generation, is_warp, "GPU device rebuilt");
         *self.gpu.borrow_mut() = gpu;
         Ok(())
