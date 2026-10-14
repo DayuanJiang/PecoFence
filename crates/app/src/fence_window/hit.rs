@@ -124,9 +124,18 @@ impl FenceViewState {
     pub(super) fn chevron_at(&self, x_px: i32, y_px: i32) -> bool {
         let scale = self.scale();
         let (w_px, h_px) = self.chrome_panel.size_px();
-        // Under the tabs of a left tab column (the fence's title bar).
+        // Under the tabs of a left tab column (the fence's title bar). Collapsed to the column
+        // there is none: a tab click expands the fence.
+        if self.column_collapsed {
+            return false;
+        }
         let r = if self.tabs_on_rail() {
-            TitleDeco::rail_chevron_box(self.rail_w(), h_px as f32 / scale)
+            let rows_end = self
+                .tab_rects()
+                .iter()
+                .map(|(y, h)| y + h)
+                .fold(0.0, f32::max);
+            TitleDeco::rail_chevron_box(self.rail_w(), h_px as f32 / scale, rows_end)
         } else {
             TitleDeco::chevron_box(w_px as f32 / scale, self.theme.title_height)
         };
@@ -344,12 +353,15 @@ impl FenceViewState {
     /// Window height (device px) that shows every row of the left tab column, the free strip
     /// above them and the chevron under them; 0 without a column.
     pub(super) fn rail_fit_height_px(&self) -> i32 {
+        self.rail_rows_height_px(RAIL_BOTTOM)
+    }
+
+    /// `rail_fit_height_px` with `bottom` DIPs under the last row instead of the chevron's room.
+    pub(super) fn rail_rows_height_px(&self, bottom: f32) -> i32 {
         if !self.tabs_on_rail() {
             return 0;
         }
-        let n = self.tabs.len() as f32;
-        let len = RAIL_TOP + n * RAIL_ROW_H + (n - 1.0).max(0.0) * TAB_GAP + RAIL_BOTTOM;
-        (len * self.scale()).ceil() as i32
+        (rail_len_for(self.tabs.len(), bottom) * self.scale()).ceil() as i32
     }
 
     /// Once after the left tab column appeared or grew: the expanded height (device px) that

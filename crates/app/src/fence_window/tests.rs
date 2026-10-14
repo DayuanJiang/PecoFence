@@ -267,6 +267,15 @@ fn drag_image_footprint_limit() {
     assert_eq!(DRAG_IMAGE_MAX_ITEMS, 4);
 }
 
+/// A fence collapsed to its left tab column keeps no room for the chevron under the tabs: two
+/// tabs take 84 DIP instead of the expanded column's 120.
+#[test]
+fn collapsed_tab_column_has_no_chevron_room() {
+    assert_eq!(rail_len_for(2, RAIL_BOTTOM), 120.0);
+    assert_eq!(rail_len_for(2, RAIL_COLLAPSED_BOTTOM), 84.0);
+    assert_eq!(rail_len_for(3, RAIL_COLLAPSED_BOTTOM), 120.0);
+}
+
 #[test]
 fn narrow_tab_strips_cannot_cover_the_chevron_or_count() {
     for count in 2..=10 {

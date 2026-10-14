@@ -326,12 +326,15 @@ pub struct FenceStyle {
 
 /// Left tab column metrics (DIPs): the free strip above the first tab (a handle to drag the
 /// fence by), each tab row's height, its inset from the window's left edge and from the
-/// divider, and the room under the last tab that holds the collapse chevron.
+/// divider, and the room under the last tab that holds the collapse chevron. Collapsed to the
+/// column the fence has no chevron (a tab click expands it): the last tab keeps the top strip's
+/// room under it.
 pub const RAIL_TOP: f32 = 8.0;
 pub const RAIL_ROW_H: f32 = 32.0;
 pub const RAIL_ROW_INSET: f32 = 4.0;
 pub const RAIL_ROW_RIGHT: f32 = 6.0;
 pub const RAIL_BOTTOM: f32 = 44.0;
+pub const RAIL_COLLAPSED_BOTTOM: f32 = RAIL_TOP;
 
 /// Title-row decorations of a folder portal: a folder glyph before the title and, once the
 /// portal has navigated into a subfolder, an "up" button at the far left.
@@ -394,11 +397,14 @@ impl TitleDeco {
     }
 
     /// The collapse chevron of a left tab column `rail_w` wide in a window `height` tall,
-    /// centred in the room under the tabs (`RAIL_BOTTOM`); the app hit-tests the same box.
-    pub fn rail_chevron_box(rail_w: f32, height: f32) -> Rect {
+    /// centred in the room under the tabs (`RAIL_BOTTOM`), never above the last tab's end
+    /// `rows_end`: while the fence collapses or expands the moving bottom edge hides it instead
+    /// of it sliding over the tab. The app hit-tests the same box.
+    pub fn rail_chevron_box(rail_w: f32, height: f32, rows_end: f32) -> Rect {
+        let gap = (RAIL_BOTTOM - Self::CHEVRON_W) * 0.5;
         Rect::from_xywh(
             ((rail_w - Self::CHEVRON_W) * 0.5).max(0.0),
-            height - Self::CHEVRON_W - (RAIL_BOTTOM - Self::CHEVRON_W) * 0.5,
+            (height - Self::CHEVRON_W - gap).max(rows_end + gap),
             Self::CHEVRON_W,
             Self::CHEVRON_W,
         )
@@ -917,6 +923,12 @@ fn draw_group_rule(
 /// half a turn, so the resting rolled state is ChevronDown.
 pub fn chevron_angle(roll_t: f32) -> f32 {
     180.0 * roll_t.clamp(0.0, 1.0)
+}
+
+/// Opacity of a left tab column's chevron: the column's hover, faded out by the roll progress
+/// (0 expanded ..= 1 collapsed to the column, which has no chevron).
+pub fn rail_chevron_alpha(hover: f32, roll_t: f32) -> f32 {
+    hover.clamp(0.0, 1.0) * (1.0 - roll_t.clamp(0.0, 1.0))
 }
 
 /// `BitmapCache` key of the acrylic noise tile (one upload per device).
@@ -1695,14 +1707,13 @@ impl FenceChrome {
                 deco,
                 state,
             )?;
-            // ChevronLeft (E76B) collapses the fence to its column and turns to point right,
-            // the way it expands, as the fence collapses; shown like the title row's chevron.
-            let chevron_a = if rolled_up || roll_t > 0.0 {
-                1.0
-            } else {
-                state.hover.clamp(0.0, 1.0)
-            };
-            let box_r = TitleDeco::rail_chevron_box(style.tab_rail, height);
+            // ChevronLeft (E76B) collapses the fence to its column, revealed with the column's
+            // hover like the title row's chevron. A collapsed column has none (a tab click
+            // expands it): the chevron turns as it fades out with the collapse, and back in
+            // as the fence expands.
+            let chevron_a = rail_chevron_alpha(state.hover, roll_t);
+            let rows_end = tabs.iter().map(|t| t.x + t.w).fold(0.0, f32::max);
+            let box_r = TitleDeco::rail_chevron_box(style.tab_rail, height, rows_end);
             return self.draw_chevron(
                 session, &backdrop, theme, scale, opacity, style.tint, box_r, "\u{E76B}",
                 chevron_a, state, roll_t,
@@ -3038,6 +3049,29 @@ mod tests {
         // Overshooting curves stay inside the half turn.
         assert_eq!(chevron_angle(1.2), 180.0);
         assert_eq!(chevron_angle(-0.1), 0.0);
+    }
+
+    /// The column's chevron is centred in the room under the tabs; while the window is shorter
+    /// than that (mid collapse or expand) it stays under the last tab, hidden by the bottom edge.
+    #[test]
+    fn rail_chevron_stays_under_the_last_tab() {
+        let r = TitleDeco::rail_chevron_box(100.0, 200.0, 76.0);
+        assert_eq!((r.left, r.top, r.width()), (34.0, 162.0, 32.0));
+        assert_eq!(TitleDeco::rail_chevron_box(100.0, 84.0, 76.0).top, 82.0);
+    }
+
+    /// A left tab column shows its chevron on hover while expanded and none once collapsed to
+    /// the column; in between it fades with the roll, never popping at either end.
+    #[test]
+    fn rail_chevron_fades_with_the_collapse() {
+        assert_eq!(rail_chevron_alpha(1.0, 0.0), 1.0);
+        assert_eq!(rail_chevron_alpha(0.0, 0.0), 0.0);
+        assert_eq!(rail_chevron_alpha(1.0, 1.0), 0.0);
+        assert_eq!(rail_chevron_alpha(1.0, 0.25), 0.75);
+        assert_eq!(rail_chevron_alpha(0.5, 0.5), 0.25);
+        // Overshooting curves stay inside 0..=1.
+        assert_eq!(rail_chevron_alpha(1.0, 1.2), 0.0);
+        assert_eq!(rail_chevron_alpha(1.0, -0.1), 1.0);
     }
 
     /// The thumb keeps its centre while it widens, and that centre is the 12 DIP track's
