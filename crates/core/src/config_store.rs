@@ -129,6 +129,16 @@ impl ConfigStore {
     /// would otherwise turn it into `config.bak` and delete it on the next save.
     pub fn load_reporting(&self) -> (LoadOutcome, Option<PathBuf>) {
         let primary = self.primary_path();
+        // Antivirus, backup and sync tools can hold the file open without read sharing for a
+        // moment; wait for them before the file counts as unreadable.
+        for _ in 0..5 {
+            match fs::File::open(&primary) {
+                Err(e) if e.kind() != io::ErrorKind::NotFound => {
+                    std::thread::sleep(std::time::Duration::from_millis(300))
+                }
+                _ => break,
+            }
+        }
         let quarantined = match Self::parse_file(&primary) {
             Ok(c) => return (LoadOutcome::Primary(c), None),
             Err(_) if !primary.exists() => None,
@@ -653,6 +663,27 @@ mod tests {
         fs::write(store.primary_path(), bytes).unwrap();
         assert!(ConfigStore::parse_file(&store.primary_path()).is_ok());
         assert!(matches!(store.load(), LoadOutcome::Primary(_)));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn primary_unreadable_for_a_moment_still_loads() {
+        use std::os::unix::fs::PermissionsExt;
+        let store = ConfigStore::new(tmpdir("locked"));
+        store.save(&sample()).unwrap();
+        let path = store.primary_path();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o000)).unwrap();
+        let unlock = std::thread::spawn({
+            let path = path.clone();
+            move || {
+                std::thread::sleep(std::time::Duration::from_millis(400));
+                fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
+            }
+        });
+        let (outcome, moved) = store.load_reporting();
+        unlock.join().unwrap();
+        assert!(matches!(outcome, LoadOutcome::Primary(_)), "{outcome:?}");
+        assert_eq!(moved, None);
     }
 
     #[test]
