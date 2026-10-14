@@ -810,6 +810,20 @@ impl App {
                             if shown != Some(true) {
                                 window::set_timer(hwnd, TIMER_TRAY_RETRY, 250);
                             }
+                            // The new Explorer knows nothing of the old shell change
+                            // registration. Drop that one before registering again: the new
+                            // Explorer may hand out the same id.
+                            if let Ok(mut guard) = cell.try_borrow_mut()
+                                && let Some(app) = guard.as_mut()
+                            {
+                                app._shell_watch = None;
+                                app._shell_watch =
+                                    ShellChangeWatch::register_desktop(hwnd, WM_APP_SHELL_CHANGED)
+                                        .map_err(|e| {
+                                            tracing::warn!(error = %e, "shell change notifications unavailable")
+                                        })
+                                        .ok();
+                            }
                             Some(0)
                         }
                         msg::WM_QUERYENDSESSION => {
