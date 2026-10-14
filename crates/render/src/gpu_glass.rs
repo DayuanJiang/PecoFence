@@ -469,7 +469,11 @@ impl GpuGlass {
         );
         session.set_transform(&saved);
         if let Err(error) = &result {
-            if !windows_canvas::is_device_lost(error.code()) {
+            // E_OUTOFMEMORY, D3DERR_OUTOFVIDEOMEMORY: this frame is solid, the next tries again.
+            let out_of_memory = [0x8007000Eu32, 0x8876017C].contains(&(error.code().0 as u32));
+            if out_of_memory {
+                tracing::debug!(%error, "GPU glass out of memory for this frame");
+            } else if !windows_canvas::is_device_lost(error.code()) {
                 tracing::warn!(%error, "GPU glass unavailable; using readable solid material");
                 self.failed = true;
             }
