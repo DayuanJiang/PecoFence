@@ -113,7 +113,9 @@ impl App {
     }
 
     /// A fence the user dropped onto another one moves the shortest way to a free spot on its
-    /// monitor (the snapping gap kept); with no free spot it stays where it was dropped.
+    /// monitor (the snapping gap kept); with no free spot it stays where it was dropped. One
+    /// dropped partly off the work area (a torn-off tab follows the pointer to the screen
+    /// edge) is pulled back in the same way, where a restart would place it anyway.
     pub(super) fn move_out_of_overlap(&mut self, fence: FenceId) {
         let id = self.state.host_of(fence);
         let Some(w) = self.fences.get(&id) else {
@@ -122,9 +124,6 @@ impl App {
         let r = w.rect();
         let gap = self.gap_px(w.hwnd());
         let others = self.other_fence_rects(id);
-        if !others.iter().any(|o| clearance::overlaps(&r, o, gap)) {
-            return;
-        }
         let Some(wa) = self.work_area_at((r.left + r.right) / 2, (r.top + r.bottom) / 2) else {
             return;
         };
@@ -134,8 +133,15 @@ impl App {
             right: wa.right,
             bottom: wa.bottom,
         };
+        let off_screen = r.left < work.left
+            || r.top < work.top
+            || r.right > work.right
+            || r.bottom > work.bottom;
+        if !off_screen && !others.iter().any(|o| clearance::overlaps(&r, o, gap)) {
+            return;
+        }
         if let Some(spot) = clearance::nearest_free(&r, &others, &work, gap) {
-            tracing::info!(%id, from = ?(r.left, r.top), to = ?(spot.left, spot.top), "fence moved out of an overlap");
+            tracing::info!(%id, off_screen, from = ?(r.left, r.top), to = ?(spot.left, spot.top), "fence moved out of an overlap");
             self.relocate(id, spot);
         }
     }
