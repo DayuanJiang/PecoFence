@@ -1,5 +1,7 @@
 //! Theme / accent / backdrop / icon-variant / shadow / tray-glyph helpers and visual refresh.
 
+use super::live_wallpaper::{LIVE_REFRESH, LiveWallpaper};
+use super::wallpaper_refresh::LIVE_MARK;
 use super::*;
 
 /// The theme for `mode`, retinted with the user's accent when it could be read (WinUI
@@ -80,7 +82,9 @@ fn tuned_tint(
     tint
 }
 
-fn wallpaper_snapshot(wallpaper_override: Option<&str>) -> Result<wallpaper::WallpaperSnapshot> {
+pub(super) fn wallpaper_snapshot(
+    wallpaper_override: Option<&str>,
+) -> Result<wallpaper::WallpaperSnapshot> {
     let mut snapshot = wallpaper::query()?;
     if let Some(p) = wallpaper_override {
         for m in &mut snapshot.monitors {
@@ -100,7 +104,7 @@ fn file_stamp(path: &std::path::Path) -> Option<(u64, u64)> {
 /// Everything needed to build one monitor's backdrop. `Send`, so another virtual desktop's
 /// wallpaper can be decoded on a worker thread.
 #[derive(Clone)]
-struct MonitorRecipe {
+pub(super) struct MonitorRecipe {
     path: Option<PathBuf>,
     position: WallpaperPosition,
     left: i32,
@@ -111,29 +115,60 @@ struct MonitorRecipe {
     tint: pecofence_render::backdrop::MicaTint,
     downscale: u32,
     decode_divisor: u32,
+    /// A capture of the live wallpaper covering this monitor, shown instead of the picture.
+    pub(super) live: Option<Arc<Image>>,
+    /// Liquid Glass: the blur that frosts a capture (see `show_live`), at this monitor's DPI.
+    frost_blur: Option<f32>,
 }
 
 impl MonitorRecipe {
+    /// Shows `capture` instead of the picture. A capture is a still picture: through clear
+    /// glass it would not line up with the video moving around the fence, so Liquid Glass
+    /// frosts it like Fluent does, and drops the detail the frost hides.
+    pub(super) fn show_live(&mut self, capture: Arc<Image>) {
+        if let Some(blur) = self.frost_blur {
+            self.tint.blur_sigma_dip = blur;
+            self.downscale = 4;
+        }
+        self.live = Some(capture);
+    }
+
+    pub(super) fn rect(&self) -> RECT {
+        RECT {
+            left: self.left,
+            top: self.top,
+            right: self.left + self.width,
+            bottom: self.top + self.height,
+        }
+    }
+
     /// Decode, map, blur and tint: the expensive part (~360 ms for a 4K picture).
-    fn build_image(&self) -> Result<Image> {
-        let image = match &self.path {
-            Some(p) => {
+    pub(super) fn build_image(&self) -> Result<Image> {
+        let decoded;
+        let (image, position) = match (&self.live, &self.path) {
+            // The capture is this monitor's part of the window already.
+            (Some(live), _) => (&**live, WallpaperPosition::Stretch),
+            (None, Some(p)) => {
                 let d = wallpaper::decode_scaled(
                     p,
                     (self.width as u32 / self.decode_divisor).max(1),
                     (self.height as u32 / self.decode_divisor).max(1),
                 )?;
-                Image {
+                decoded = Image {
                     width: d.width,
                     height: d.height,
                     bgra: d.bgra,
-                }
+                };
+                (&decoded, self.position)
             }
-            None => Image::solid(1, 1, self.background),
+            (None, None) => {
+                decoded = Image::solid(1, 1, self.background);
+                (&decoded, self.position)
+            }
         };
         let MonitorBackdrop { image, .. } = MonitorBackdrop::build(
-            &image,
-            self.position,
+            image,
+            position,
             self.left,
             self.top,
             self.width,
@@ -161,7 +196,7 @@ impl MonitorRecipe {
         }
     }
 
-    fn finish(self, image: Image, liquid_glass: bool) -> MonitorBackdrop {
+    pub(super) fn finish(self, image: Image, liquid_glass: bool) -> MonitorBackdrop {
         let backdrop = MonitorBackdrop {
             left: self.left,
             top: self.top,
@@ -193,8 +228,12 @@ impl MonitorRecipe {
     }
 }
 
-/// One recipe per live monitor of `snapshot`.
-fn monitor_recipes(theme: &Theme, snapshot: &wallpaper::WallpaperSnapshot) -> Vec<MonitorRecipe> {
+/// One recipe per live monitor of `snapshot`, with the captures of `live` wallpapers.
+pub(super) fn monitor_recipes(
+    theme: &Theme,
+    snapshot: &wallpaper::WallpaperSnapshot,
+    live: &[LiveWallpaper],
+) -> Vec<MonitorRecipe> {
     let position = match snapshot.position {
         wallpaper::Position::Center => WallpaperPosition::Center,
         wallpaper::Position::Tile => WallpaperPosition::Tile,
@@ -234,8 +273,9 @@ fn monitor_recipes(theme: &Theme, snapshot: &wallpaper::WallpaperSnapshot) -> Ve
         } else {
             tuned_tint(theme.acrylic_tint())
         };
-        tint.blur_sigma_dip *= dpi as f32 / 96.0;
-        out.push(MonitorRecipe {
+        let scale = dpi as f32 / 96.0;
+        tint.blur_sigma_dip *= scale;
+        let mut recipe = MonitorRecipe {
             path: m.path.clone(),
             position,
             left: m.rect.left,
@@ -248,9 +288,36 @@ fn monitor_recipes(theme: &Theme, snapshot: &wallpaper::WallpaperSnapshot) -> Ve
             // discards it.
             downscale: if theme.liquid_glass { 1 } else { 4 },
             decode_divisor: if theme.liquid_glass { 1 } else { 2 },
-        });
+            live: None,
+            frost_blur: theme.liquid_glass.then_some(
+                pecofence_render::backdrop::MicaTint::ACRYLIC_DARK.blur_sigma_dip * scale,
+            ),
+        };
+        if let Some(image) = live
+            .iter()
+            .find(|l| l.monitor == m.rect)
+            .and_then(|l| l.image.clone())
+        {
+            recipe.show_live(image);
+        }
+        out.push(recipe);
     }
     out
+}
+
+/// `snapshot`'s signature, plus the monitors whose backdrop shows a live wallpaper's capture.
+pub(super) fn backdrop_signature(
+    snapshot: &wallpaper::WallpaperSnapshot,
+    live: &[LiveWallpaper],
+) -> String {
+    let mut signature = snapshot.signature();
+    for m in live.iter().filter(|l| l.image.is_some()).map(|l| l.monitor) {
+        signature.push_str(&format!(
+            "{LIVE_MARK}{},{},{},{}",
+            m.left, m.top, m.right, m.bottom
+        ));
+    }
+    signature
 }
 
 /// E_PENDING: the monitor topology or the wallpaper is not ready yet.
@@ -263,10 +330,11 @@ fn pending() -> windows_core::Error {
 fn build_backdrops(
     theme: &Theme,
     snapshot: &wallpaper::WallpaperSnapshot,
+    live: &[LiveWallpaper],
 ) -> Result<Vec<MonitorBackdrop>> {
     let started = std::time::Instant::now();
     let mut out = Vec::new();
-    for recipe in monitor_recipes(theme, snapshot) {
+    for recipe in monitor_recipes(theme, snapshot, live) {
         let image = recipe.build_image()?;
         out.push(recipe.finish(image, theme.liquid_glass));
     }
@@ -287,13 +355,14 @@ fn build_backdrops(
 fn build_snapshot_backdrops(
     theme: &Theme,
     snapshot: &wallpaper::WallpaperSnapshot,
+    live: &[LiveWallpaper],
     signature: &str,
 ) -> Result<Rc<BackdropSets>> {
     if pecofence_core::brand::var_os("PECOFENCE_SOLID").is_some() {
         return Ok(Rc::new(BackdropSets::default()));
     }
-    let backdrops = build_backdrops(theme, snapshot)?;
-    if signature != snapshot.signature() {
+    let backdrops = build_backdrops(theme, snapshot, live)?;
+    if signature != backdrop_signature(snapshot, live) {
         // Explorer finished replacing the image while WIC read it. Do not cache that read
         // under the old metadata, or a later desktop round trip could resurrect it.
         return Err(pending());
@@ -319,7 +388,7 @@ impl StartupBackdrops {
         let recipes = if pecofence_core::brand::var_os("PECOFENCE_SOLID").is_some() {
             Vec::new()
         } else {
-            monitor_recipes(theme, &snapshot)
+            monitor_recipes(theme, &snapshot, &[])
         };
         let worker = {
             let recipes = recipes.clone();
@@ -402,10 +471,11 @@ impl StartupBackdrops {
 pub(super) fn build_backdrop_sets(
     theme: &Theme,
     wallpaper_override: Option<&str>,
+    live: &[LiveWallpaper],
 ) -> Result<(Rc<BackdropSets>, String)> {
     let snapshot = wallpaper_snapshot(wallpaper_override)?;
-    let signature = snapshot.signature();
-    let backdrops = build_snapshot_backdrops(theme, &snapshot, &signature)?;
+    let signature = backdrop_signature(&snapshot, live);
+    let backdrops = build_snapshot_backdrops(theme, &snapshot, live, &signature)?;
     Ok((backdrops, signature))
 }
 
@@ -653,7 +723,7 @@ impl App {
             {
                 continue;
             }
-            let recipes = monitor_recipes(&theme, &candidate);
+            let recipes = monitor_recipes(&theme, &candidate, &[]);
             let bytes = recipes.iter().map(MonitorRecipe::estimated_bytes).sum();
             if recipes.is_empty() || !self.wallpaper_cache.has_room(bytes) {
                 tracing::debug!(bytes, "no room to prepare another desktop's wallpaper");
@@ -760,13 +830,21 @@ impl App {
         self.prewarm_wallpapers();
     }
 
-    /// Wallpaper-only refresh: reuse a recent desktop's pixels and preserve icon/geometry
-    /// caches. Failed reads must not advance the signature, so the next check can retry.
+    /// A wallpaper signal or the 5 s poll: follows the Windows wallpaper and the live
+    /// wallpapers over it, and captures those that are due.
     pub(super) fn check_wallpaper(&mut self, reason: &str) {
         let Ok(snapshot) = wallpaper_snapshot(self.wallpaper_override.as_deref()) else {
             return;
         };
-        let signature = snapshot.signature();
+        self.detect_live_wallpapers(&snapshot);
+        self.show_wallpaper(&snapshot, reason);
+        self.capture_live_wallpapers(LIVE_REFRESH);
+    }
+
+    /// Wallpaper-only refresh: reuse a recent desktop's pixels and preserve icon/geometry
+    /// caches. Failed reads must not advance the signature, so the next check can retry.
+    fn show_wallpaper(&mut self, snapshot: &wallpaper::WallpaperSnapshot, reason: &str) {
+        let signature = backdrop_signature(snapshot, &self.live);
         if self.wallpaper_sig.as_ref() == Some(&signature) {
             return;
         }
@@ -782,8 +860,12 @@ impl App {
         let cache_hit = cached.is_some();
         let backdrops = match cached {
             Some(backdrops) => backdrops,
-            None => match build_snapshot_backdrops(&self.ctx.theme.borrow(), &snapshot, &signature)
-            {
+            None => match build_snapshot_backdrops(
+                &self.ctx.theme.borrow(),
+                snapshot,
+                &self.live,
+                &signature,
+            ) {
                 Ok(backdrops) => {
                     self.wallpaper_cache
                         .insert(signature.clone(), backdrops.clone());
@@ -899,7 +981,7 @@ impl App {
                 TIMER_WALLPAPER_PREWARM,
                 WALLPAPER_PREWARM_DELAY_MS,
             );
-            match build_backdrop_sets(&theme, self.wallpaper_override.as_deref()) {
+            match build_backdrop_sets(&theme, self.wallpaper_override.as_deref(), &self.live) {
                 Ok((backdrops, signature)) => {
                     self.wallpaper_cache
                         .insert(signature.clone(), backdrops.clone());

@@ -3,7 +3,8 @@
 use crate::anchor::{self, AnchorCell, DesktopAnchor, ShowDesktopBehavior, ZMode};
 use crate::commands::{
     Command, CommandQueue, TransferMode, WM_APP_COMMAND, WM_APP_FRAME, WM_APP_FS_CHANGED,
-    WM_APP_PEEK_FOCUSED, WM_APP_PREWARM_DONE, WM_APP_SHELL_CHANGED, WM_APP_TRAY, WM_APP_WALLPAPER,
+    WM_APP_LIVE_WALLPAPER, WM_APP_PEEK_FOCUSED, WM_APP_PREWARM_DONE, WM_APP_SHELL_CHANGED,
+    WM_APP_TRAY, WM_APP_WALLPAPER,
 };
 use crate::fence_window::{
     BackdropMode, BackdropSets, Behavior, FenceContext, FenceWindow, ItemView, SearchMarks, TabView,
@@ -15,8 +16,9 @@ use crate::settings_host::{SettingsHost, WebEnvironment};
 use crate::shadow::{ShadowStyle, ShadowWindow};
 use crate::state::AppState;
 use pecofence_core::geometry::WorkArea;
+use pecofence_core::hotkey::Hotkey;
 use pecofence_core::{
-    FenceId, FenceKind, ItemId, ItemKey, PeekHotkey, ShowDesktopSetting, SortMode, Spacing, Target,
+    FenceId, FenceKind, ItemId, ItemKey, ShowDesktopSetting, SortMode, Spacing, Target,
     ThemeSetting, TitleSize, ViewLayout, ZOrderSetting,
 };
 use pecofence_platform::clipboard;
@@ -57,6 +59,7 @@ mod fileops;
 mod group;
 mod ipc;
 mod items;
+mod live_wallpaper;
 mod menus;
 mod motion;
 mod peek;
@@ -134,6 +137,9 @@ const DEVICE_RETRY_FIRST_MS: u32 = 1_000;
 /// ~3 MB.
 const TIMER_IDLE_TRIM: usize = 60;
 const IDLE_TRIM_MS: u32 = 30_000;
+/// The live wallpaper capture worker finished (`WM_APP_LIVE_WALLPAPER`); retried while the App
+/// is borrowed.
+const TIMER_LIVE_CAPTURED: usize = 61;
 const DEVICE_RETRY_MAX_MS: u32 = 30_000;
 /// Growth of private commit plus GPU memory that logs a memory line before the hour is up.
 const MEMORY_LOG_GROWTH: u64 = 64 << 20;
@@ -142,9 +148,14 @@ const SPI_SETDESKWALLPAPER: usize = 0x0014;
 const SPI_SETWORKAREA: usize = 0x002F;
 const TRAY_ID: u32 = 1;
 const HOTKEY_PEEK: i32 = 1;
+/// Registered for a moment to learn whether a shortcut the user picks is free.
+const HOTKEY_PROBE: i32 = 2;
 
 /// How long a fence-menu "新建" keeps its claim on the next desktop item (plan §5.8).
 const PENDING_CREATION_SECS: u64 = 15;
+/// How long a shell drop onto a virtual fence claims the shortcuts that appear on the desktop
+/// afterwards.
+const SHELL_DROP_CLAIM_SECS: u64 = 5;
 
 /// Frame cadence of one animation run (from the first requested frame to the frame nothing
 /// moves any more), for the "animation run stuttered" diagnostics.
@@ -254,6 +265,10 @@ pub struct App {
     accent: Option<systheme::AccentPalette>,
     wallpaper_override: Option<String>,
     pending_routes: Vec<PendingRoute>,
+    /// The virtual fence a shell drop just went to, and when: the first desktop change batch
+    /// within `SHELL_DROP_CLAIM_SECS` that adds shortcuts puts them into it (the shell writes
+    /// some after `Drop` returned), see `on_fs_changed`.
+    shell_drop_claim: Option<(FenceId, Instant)>,
     /// Previous frame's timestamp while an animation runs (frame-gap diagnostics).
     frame_prev: Option<Instant>,
     /// Cadence statistics of the animation run in progress.
@@ -281,11 +296,17 @@ pub struct App {
     wallpaper_cache: BackdropCache,
     /// Another virtual desktop's wallpaper being decoded ahead of a switch there.
     prewarm: Option<visuals::PrewarmJob>,
+    /// Monitors a live wallpaper covers, and the capture of them in progress.
+    live: Vec<live_wallpaper::LiveWallpaper>,
+    live_capture: Option<live_wallpaper::LiveCapture>,
     /// The hotkey currently registered (None = registration failed or Peek disabled).
-    peek_hotkey: Option<PeekHotkey>,
+    peek_hotkey: Option<Hotkey>,
     /// The combination the last `sync_peek_hotkey` tried to register (the user's choice), so a
     /// persisting conflict does not re-toast on every settings apply.
-    peek_hotkey_wanted: Option<PeekHotkey>,
+    peek_hotkey_wanted: Option<Hotkey>,
+    /// The settings page is recording a new shortcut: `peek_hotkey` is unregistered meanwhile,
+    /// so pressing it reaches the page instead of starting a Peek.
+    peek_hotkey_paused: bool,
     /// Items put on the clipboard with 剪切 (drawn dimmed) and the clipboard sequence number at
     /// that moment: any later clipboard change (Explorer pasted, something else was copied)
     /// clears the dimming.
@@ -458,6 +479,16 @@ impl App {
                             window::set_timer(hwnd, TIMER_PREWARM_FINISH, 1);
                             Some(0)
                         }
+                        WM_APP_LIVE_WALLPAPER => {
+                            if wparam == 0 {
+                                window::set_timer(hwnd, TIMER_LIVE_CAPTURED, 1);
+                            } else if let Ok(mut guard) = cell.try_borrow_mut()
+                                && let Some(app) = guard.as_mut()
+                            {
+                                app.capture_live_wallpapers(live_wallpaper::LIVE_FRONT_REFRESH);
+                            }
+                            Some(0)
+                        }
                         WM_APP_ICON_READY => {
                             window::set_timer(hwnd, TIMER_ICONS, 40);
                             Some(0)
@@ -542,15 +573,17 @@ impl App {
                                         app.trim_if_idle();
                                     }
                                 }
-                                TIMER_WALLPAPER_PREWARM | TIMER_PREWARM_FINISH => {
+                                TIMER_WALLPAPER_PREWARM
+                                | TIMER_PREWARM_FINISH
+                                | TIMER_LIVE_CAPTURED => {
                                     if let Ok(mut guard) = cell.try_borrow_mut()
                                         && let Some(app) = guard.as_mut()
                                     {
                                         window::kill_timer(hwnd, wparam);
-                                        if wparam == TIMER_PREWARM_FINISH {
-                                            app.finish_prewarm();
-                                        } else {
-                                            app.prewarm_wallpapers();
+                                        match wparam {
+                                            TIMER_PREWARM_FINISH => app.finish_prewarm(),
+                                            TIMER_LIVE_CAPTURED => app.finish_live_capture(),
+                                            _ => app.prewarm_wallpapers(),
                                         }
                                     } else {
                                         window::set_timer(hwnd, wparam, 200);
@@ -1029,6 +1062,7 @@ impl App {
             accent,
             wallpaper_override: args.wallpaper_override.clone(),
             pending_routes: Vec::new(),
+            shell_drop_claim: None,
             frame_prev: None,
             frame_run: FrameRun::default(),
             no_hide_icons: args.no_hide_icons,
@@ -1055,6 +1089,7 @@ impl App {
             marquee_draws_band: false,
             peek_hotkey: None,
             peek_hotkey_wanted: None,
+            peek_hotkey_paused: false,
             desktop_unavailable: false,
             idle_rules_checked: None,
             memory_logged: None,
@@ -1063,6 +1098,8 @@ impl App {
             wallpaper_sig: None,
             wallpaper_cache: BackdropCache::default(),
             prewarm: None,
+            live: Vec::new(),
+            live_capture: None,
         };
         // Watch both wallpaper settings and virtual-desktop state; either signal starts a
         // bounded burst of fast reads, because the image may arrive after the notification.
@@ -1092,6 +1129,15 @@ impl App {
                     WM_APP_WALLPAPER,
                     1,
                     foreground.0 as isize,
+                );
+            }));
+            // A live wallpaper's backdrop catches up with what the desktop shows now.
+            a.on_desktop_front = Some(Box::new(move || {
+                window::post_message(
+                    HWND(control_hwnd as *mut core::ffi::c_void),
+                    WM_APP_LIVE_WALLPAPER,
+                    1,
+                    0,
                 );
             }));
         }
@@ -1618,7 +1664,11 @@ impl App {
                 }
             }
             Command::ExternalUrlDrop { url, name, to } => self.create_url_shortcut(url, name, to),
-            Command::ShellDrop { to, landed } => self.shell_drop_landed(to, landed),
+            Command::ShellDrop {
+                to,
+                landed,
+                on_desktop,
+            } => self.shell_drop_landed(to, landed, on_desktop),
             Command::FenceMenu { fence, x, y } => self.show_fence_menu(fence, x, y),
             Command::HeaderMenu { fence, x, y } => self.show_header_menu(fence, x, y),
             Command::ItemMenu { fence, items, x, y } => self.show_item_menu(fence, items, x, y),
@@ -1716,6 +1766,7 @@ impl App {
                 if self.settings.as_ref().is_some_and(|h| h.hwnd() == hwnd) {
                     self.settings = None;
                     self.set_settings_ring(None);
+                    self.resume_peek_hotkey();
                 }
             }
             Command::FadeOutDone(hwnd) => {

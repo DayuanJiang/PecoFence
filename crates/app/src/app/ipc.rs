@@ -294,13 +294,31 @@ pub(super) fn patch_settings_path(
         };
         *slot = value;
     }
-    let settings: Settings = serde_json::from_value(root).map_err(|e| {
+    let mut settings: Settings = serde_json::from_value(root).map_err(|e| {
         IpcError::new(
             ErrorCode::ValidationFailed,
             format!("settings rejected: {e}"),
         )
         .details(json!({ "expected": e.to_string() }))
     })?;
+    if settings.peek.custom_hotkey != current.peek.custom_hotkey
+        && let Some(text) = settings.peek.custom_hotkey.clone()
+    {
+        let h = pecofence_core::hotkey::Hotkey::parse(&text)
+            .and_then(|h| h.check())
+            .map_err(|problem| {
+                IpcError::new(
+                    ErrorCode::ValidationFailed,
+                    format!("peek.customHotkey {text:?} cannot be used: {problem}"),
+                )
+                .hint("Examples: Ctrl+Shift+F, Win+Alt+Space, Ctrl+Alt+F9; null = use peek.hotkey")
+            })?;
+        // Written the way the settings page writes it (Ctrl+Alt+Space as peek.hotkey).
+        settings.peek.set_hotkey(h);
+    } else if pointer == "/peek/hotkey" || settings.peek.hotkey != current.peek.hotkey {
+        // One of the 0.2.0 choices: a custom shortcut left in place would override it.
+        settings.peek.custom_hotkey = None;
+    }
     if !matches!(settings.icon_size, 32 | 48 | 64 | 96) {
         return Err(IpcError::new(
             ErrorCode::ValidationFailed,
@@ -685,6 +703,15 @@ impl App {
                 // No auto snapshot: snapshots hold layouts only and could not undo this.
                 let before = self.state.config.settings.clone();
                 let requested = patch_settings_path(&before, path, value.clone())?;
+                // A new Peek shortcut must be free, as on the settings page.
+                let h = requested.peek.chosen_hotkey();
+                if h != before.peek.chosen_hotkey() && !self.peek_hotkey_free(h) {
+                    return Err(IpcError::new(
+                        ErrorCode::ValidationFailed,
+                        format!("{h} is already used by Windows or another program"),
+                    )
+                    .hint("Pick another shortcut; Windows keeps Win+Space and Win+Shift+Space"));
+                }
                 self.apply_settings(requested.clone());
                 let after = &self.state.config.settings;
                 let changed = *after != before;

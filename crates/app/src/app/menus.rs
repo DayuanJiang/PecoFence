@@ -150,10 +150,9 @@ impl App {
         .item(
             CMD_PEEK,
             &match self.peek_hotkey {
-                Some(h) => pecofence_core::i18n::format(
-                    "速览所有栅栏\t{0}",
-                    &[peek_hotkey_label(h).to_string()],
-                ),
+                Some(h) => {
+                    pecofence_core::i18n::format("速览所有栅栏\t{0}", &[peek_hotkey_label(h)])
+                }
                 None => pecofence_core::i18n::text("速览所有栅栏").to_string(),
             },
             false,

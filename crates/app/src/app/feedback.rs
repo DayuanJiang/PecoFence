@@ -198,14 +198,16 @@ impl App {
         );
         // The settings that change how the fences sit on the desktop.
         let behavior = format!(
-            "showDesktop {:?}, zorder {:?}, hideIcons {}, quickHide {}, peek {} (dim {}, {:?}), autostart {}, iconSize {}",
+            "showDesktop {:?}, zorder {:?}, hideIcons {}, quickHide {}, peek {} (dim {}, {}, active {}), autostart {}, iconSize {}",
             settings.show_desktop,
             settings.zorder,
             on_off(settings.hide_real_icons),
             on_off(settings.quick_hide.enabled),
             on_off(settings.peek.enabled),
             on_off(settings.peek.dim),
-            settings.peek.hotkey,
+            settings.peek.chosen_hotkey(),
+            self.peek_hotkey
+                .map_or_else(|| "none".to_string(), |h| h.to_string()),
             on_off(settings.autostart),
             settings.icon_size,
         );

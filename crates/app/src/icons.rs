@@ -76,6 +76,9 @@ struct Request {
     /// Tells a result apart from one of an earlier request for the same key that
     /// `set_variant` or `invalidate` dropped while it was in flight.
     id: u64,
+    /// The Recycle Bin: full or empty as its key says (`mtime` 1 or 0), so the picture matches
+    /// the key even when the bin changed while the request waited.
+    recycle_bin_full: Option<bool>,
 }
 
 /// An extraction in flight (or waiting for a retry), with how often it has failed so far.
@@ -86,10 +89,11 @@ struct InFlight {
     recheck: bool,
 }
 
-/// Extraction failures on a file that still exists are retried: the shell hands back nothing
-/// while a file is being moved in (OneDrive materialises it a moment later), while a copy is
-/// still writing, or when the icon handler was busy. Explorer's views show the generic icon
-/// first and repaint when the extraction eventually succeeds; here the loading tile stays up.
+/// Extraction failures on a file that still exists (or a namespace item such as This PC) are
+/// retried: the shell hands back nothing while a file is being moved in (OneDrive materialises
+/// it a moment later), while a copy is still writing, or when the icon handler was busy
+/// (`E_PENDING`). Explorer's views show the generic icon first and repaint when the extraction
+/// eventually succeeds; here the loading tile stays up.
 const RETRY_ATTEMPTS: u32 = 3;
 const RETRY_DELAYS_MS: [u64; 3] = [400, 1500, 4000];
 
@@ -173,19 +177,24 @@ impl IconCache {
                             guard.recv()
                         };
                         let Ok(req) = req else { break };
-                        let (image, error) =
-                            match shell::shell_image(&req.path, req.size_px, req.icon_only) {
-                                Ok(img) => {
-                                    let mut image = Image {
-                                        width: img.width,
-                                        height: img.height,
-                                        bgra: img.bgra,
-                                    };
-                                    req.variant.apply(&mut image);
-                                    (Some(image), None)
-                                }
-                                Err(e) => (None, Some(e.code().0)),
-                            };
+                        let bin = req
+                            .recycle_bin_full
+                            .and_then(|full| shell::recycle_bin_image(full, req.size_px));
+                        let (image, error) = match bin.map_or_else(
+                            || shell::shell_image(&req.path, req.size_px, req.icon_only),
+                            Ok,
+                        ) {
+                            Ok(img) => {
+                                let mut image = Image {
+                                    width: img.width,
+                                    height: img.height,
+                                    bgra: img.bgra,
+                                };
+                                req.variant.apply(&mut image);
+                                (Some(image), None)
+                            }
+                            Err(e) => (None, Some(e.code().0)),
+                        };
                         if done_tx
                             .send(Ready {
                                 key: req.key,
@@ -254,6 +263,12 @@ impl IconCache {
         }
         if !self.pending.contains_key(&k) {
             self.next_id += 1;
+            let recycle_bin_full = match key {
+                IconKey::ByContent { mtime, .. } if shell::is_recycle_bin_path(path) => {
+                    Some(*mtime != 0)
+                }
+                _ => None,
+            };
             let req = Request {
                 key: k.0.clone(),
                 path: path.to_path_buf(),
@@ -261,6 +276,7 @@ impl IconCache {
                 icon_only,
                 variant: self.variant,
                 id: self.next_id,
+                recycle_bin_full,
             };
             let _ = self.tx.send(req.clone());
             self.pending.insert(
@@ -304,7 +320,10 @@ impl IconCache {
             if let Some(e) = r.error {
                 self.stats.first_error.get_or_insert(e);
             }
-            if r.image.is_none() && f.attempts < RETRY_ATTEMPTS && f.req.path.exists() {
+            if r.image.is_none()
+                && f.attempts < RETRY_ATTEMPTS
+                && (f.req.path.exists() || shell::is_namespace_path(&f.req.path))
+            {
                 // Still there but not extractable right now: try again later, and keep the
                 // entry pending so the windows keep showing the loading tile instead of the
                 // failure placeholder.
@@ -657,6 +676,35 @@ mod tests {
         done.send(ready(3, "ext:.pf-other")).unwrap();
         assert_eq!(cache.drain_results(), 0);
         assert_eq!(cache.len(), 0);
+    }
+
+    /// A namespace item has no file to check for: a failed extraction (`E_PENDING` from the
+    /// shell) is retried instead of leaving the failure glyph for the rest of the session.
+    #[test]
+    fn failed_namespace_icons_are_retried() {
+        let mut cache = IconCache::new(HWND::default());
+        let (done, rx) = channel();
+        cache.rx = rx;
+        let this_pc = Path::new("::{20D04FE0-3AEA-1069-A2D8-08002B30309D}");
+        let (key, _) = icon_key_for(this_pc, false, 0);
+        assert!(matches!(
+            cache.get(&key, this_pc, 48, true),
+            Lookup::Pending
+        ));
+        done.send(Ready {
+            key: IconCache::cache_key(&key),
+            size_px: 48,
+            id: 1,
+            image: None,
+            error: Some(0x8000_000Au32 as i32),
+        })
+        .unwrap();
+        assert_eq!(cache.drain_results(), 0);
+        assert_eq!(cache.retry.len(), 1);
+        assert!(matches!(
+            cache.get(&key, this_pc, 48, true),
+            Lookup::Pending
+        ));
     }
 
     #[test]

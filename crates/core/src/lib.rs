@@ -5,6 +5,7 @@ pub mod brand;
 pub mod config_store;
 pub mod date_group;
 pub mod geometry;
+pub mod hotkey;
 pub mod i18n;
 pub mod model;
 pub mod rules;
