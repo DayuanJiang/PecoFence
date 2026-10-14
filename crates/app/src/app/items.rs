@@ -328,8 +328,6 @@ impl App {
         // record would be keyed "note." for a file that is "note" on disk.
         let file_name = file_name.trim().trim_end_matches(['.', ' ']);
         if file_name.is_empty()
-            || file_name == "."
-            || file_name == ".."
             || file_name
                 .chars()
                 .any(|c| matches!(c, '\\' | '/' | ':' | '*' | '?' | '"' | '<' | '>' | '|'))
@@ -343,6 +341,10 @@ impl App {
             return Err(RenameError::Unsupported);
         };
         let new = parent.join(file_name);
+        if new == old {
+            // Only trailing dots or spaces differed ("note" to "note."): nothing to rename.
+            return Ok(new);
+        }
         if ItemKey::from_path(&new.to_string_lossy()) == ItemKey::from_path(&old.to_string_lossy())
         {
             // Same name, another case: the item keeps its key, its path and name take the new
