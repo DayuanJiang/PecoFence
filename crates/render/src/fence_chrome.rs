@@ -2447,6 +2447,24 @@ impl FenceChrome {
             }
             draw_legible_text(session, text, format, &rect, brush, halo.as_ref(), spread);
         };
+        // Dates, types, sizes and the column captions are not shortened like the names: each
+        // is clipped to its column so a long one does not run into the next.
+        let paint_clipped = |text: &str,
+                             format: &TextFormat,
+                             rect: Rect,
+                             key: u128,
+                             alpha: f32,
+                             right: bool|
+         -> Result<()> {
+            let paint = || {
+                paint_text(text, format, rect, key, true, alpha, right);
+                Ok(())
+            };
+            match clip {
+                Some(clip) => clip.scoped(&rect, paint),
+                None => paint(),
+            }
+        };
 
         let mut paint_rows = || -> Result<()> {
             // Section headers scroll with the rows, under the fixed column header. The caption
@@ -2532,37 +2550,34 @@ impl FenceChrome {
                     false,
                 );
                 if let Some((x, w)) = cols.date {
-                    paint_text(
+                    paint_clipped(
                         row.date,
                         &self.row_format,
                         Rect::from_xywh(x, row.y, w, row.h),
                         key + 1,
-                        true,
                         alpha,
                         false,
-                    );
+                    )?;
                 }
                 if let Some((x, w)) = cols.type_ {
-                    paint_text(
+                    paint_clipped(
                         row.type_name,
                         &self.row_format,
                         Rect::from_xywh(x, row.y, w, row.h),
                         key + 2,
-                        true,
                         alpha,
                         false,
-                    );
+                    )?;
                 }
                 if let Some((x, w)) = cols.size {
-                    paint_text(
+                    paint_clipped(
                         row.size,
                         &self.row_format_right,
                         Rect::from_xywh(x, row.y, w, row.h),
                         key + 3,
-                        true,
                         alpha,
                         true,
-                    );
+                    )?;
                 }
                 visible_slot += 1;
             }
@@ -2656,15 +2671,14 @@ impl FenceChrome {
                 } else {
                     &self.row_format
                 };
-                paint_text(
+                paint_clipped(
                     text,
                     fmt,
                     Rect::from_xywh(x, 0.0, w, header_h - 1.0),
                     0x20000 + index as u128,
-                    true,
                     1.0,
                     right,
-                );
+                )?;
                 if rows.sort_column == Some(col) {
                     // 8 px chevron flush with the header top, horizontally centred in the cell
                     // (the Win32 header control's sort arrow), same grey as the captions.
