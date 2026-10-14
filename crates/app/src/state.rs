@@ -814,6 +814,41 @@ impl AppState {
         let mut report = SyncReport::default();
         let now = pecofence_core::now_unix();
         let mut seen: HashSet<ItemId> = HashSet::new();
+        // One pass over the fences instead of a search per entry (quadratic on a crowded
+        // desktop).
+        let in_fence: HashSet<ItemId> = self
+            .fences()
+            .iter()
+            .flat_map(|f| f.items.iter().map(|r| r.item_id))
+            .collect();
+        // Naming new entries one at a time costs several ms each on a OneDrive desktop: a batch
+        // of them (first run, an unpacked archive) is named per folder in one go, as
+        // `refresh_portal` does.
+        let mut new_dirs: Vec<&Path> = Vec::new();
+        let mut new_count = 0usize;
+        for entry in entries {
+            if entry.origin == EntryOrigin::Namespace
+                || self
+                    .catalog
+                    .contains_key(&ItemKey::from_path(&entry.path.to_string_lossy()))
+            {
+                continue;
+            }
+            new_count += 1;
+            if let Some(d) = entry.path.parent()
+                && !new_dirs.contains(&d)
+            {
+                new_dirs.push(d);
+            }
+        }
+        let listed: HashMap<&Path, HashMap<String, String>> = if new_count > 2 {
+            new_dirs
+                .iter()
+                .map(|d| (*d, shell::display_names_in(d)))
+                .collect()
+        } else {
+            HashMap::new()
+        };
 
         for entry in entries {
             let key = ItemKey::from_path(&entry.path.to_string_lossy());
@@ -849,7 +884,7 @@ impl AppState {
                     }
                 }
                 // An item that exists but is in no fence (e.g. its fence was deleted) → route.
-                if self.config.fence_of_item(self.layout, id).is_none() {
+                if !in_fence.contains(&id) {
                     let decision = self.route_decision(entry);
                     if let Some((fence, by)) = self.target_fence(decision) {
                         self.config.assign(self.layout, id, fence, by);
@@ -859,17 +894,24 @@ impl AppState {
                 continue;
             }
             // New item.
-            let display_name = shell::display_name(&entry.path).unwrap_or_else(|| {
-                let stem = Path::new(&entry.file_name)
-                    .file_stem()
-                    .map(|s| s.to_string_lossy().to_string())
-                    .unwrap_or_else(|| entry.file_name.clone());
-                if entry.is_folder {
-                    entry.file_name.clone()
-                } else {
-                    stem
-                }
-            });
+            let display_name = entry
+                .path
+                .parent()
+                .and_then(|d| listed.get(d))
+                .and_then(|names| names.get(&entry.file_name.to_lowercase()))
+                .cloned()
+                .or_else(|| shell::display_name(&entry.path))
+                .unwrap_or_else(|| {
+                    let stem = Path::new(&entry.file_name)
+                        .file_stem()
+                        .map(|s| s.to_string_lossy().to_string())
+                        .unwrap_or_else(|| entry.file_name.clone());
+                    if entry.is_folder {
+                        entry.file_name.clone()
+                    } else {
+                        stem
+                    }
+                });
             let item = Item {
                 id: uuid::Uuid::new_v4(),
                 key: key.clone(),
