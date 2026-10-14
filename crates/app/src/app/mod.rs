@@ -458,9 +458,12 @@ impl App {
                                 // desktop namespace item toggled): release its payload and
                                 // treat it like a folder change.
                                 ShellChangeWatch::release(wparam, lparam);
+                                // The Recycle Bin may have changed: ask it at the next sync.
+                                // Plain folder events leave the cached answer alone (asking
+                                // touches every fixed drive); without this channel the sync
+                                // itself asks every time.
+                                shell::recycle_bin_changed();
                             }
-                            // A file may have gone to the Recycle Bin: ask it at the next sync.
-                            shell::recycle_bin_changed();
                             // Explorer reacts to a folder change within a frame or two; a file
                             // the shell just moved onto the desktop (drag-out from a portal)
                             // must be filed as fast. Coalesce for one short window, never
