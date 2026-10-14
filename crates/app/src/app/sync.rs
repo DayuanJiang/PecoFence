@@ -64,11 +64,11 @@ impl App {
             return;
         }
         self.ensure_portal_watchers();
-        for id in unwatched {
-            if self.portal_watchers.contains_key(&id) && self.state.refresh_portal(id) {
-                self.refresh_fence(id);
-            }
-        }
+        let changed: Vec<FenceId> = unwatched
+            .into_iter()
+            .filter(|id| self.portal_watchers.contains_key(id) && self.state.refresh_portal(*id))
+            .collect();
+        self.refresh_portal_fences(&changed);
     }
 
     pub(super) fn on_fs_changed(&mut self) {

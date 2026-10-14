@@ -201,9 +201,7 @@ impl App {
             }
         }
         self.ensure_portal_watchers();
-        for id in changed {
-            self.refresh_fence(id);
-        }
+        self.refresh_portal_fences(&changed);
     }
 
     /// Re-reads every portal folder (startup, overflow, layout changes) and redraws the ones
@@ -213,7 +211,30 @@ impl App {
         // refresh_portal may have reset a vanished subfolder back to the root: drop the stale
         // watcher on the old path and start one on the folder now shown.
         self.ensure_portal_watchers();
-        for id in changed {
+        self.refresh_portal_fences(&changed);
+    }
+
+    /// Redraws the portals whose re-read found a change, and every other portal showing one of
+    /// the same folders: two portals on one folder share its items, so the second re-read finds
+    /// them already updated and reports no change of its own.
+    pub(super) fn refresh_portal_fences(&mut self, changed: &[FenceId]) {
+        let dirs: Vec<String> = changed
+            .iter()
+            .filter_map(|id| self.state.portal_path(*id))
+            .map(|p| p.to_string_lossy().to_lowercase())
+            .collect();
+        let ids: Vec<FenceId> = self
+            .state
+            .fences()
+            .iter()
+            .filter(|f| {
+                self.state
+                    .portal_path(f.id)
+                    .is_some_and(|p| dirs.contains(&p.to_string_lossy().to_lowercase()))
+            })
+            .map(|f| f.id)
+            .collect();
+        for id in ids {
             self.refresh_fence(id);
         }
     }
