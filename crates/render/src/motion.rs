@@ -419,9 +419,11 @@ impl Motion {
             .raw
             .CreateScopedBatch(comp::CompositionBatchTypes::Animation)?;
         // Subscribe before End: a batch may complete as soon as it is ended (no animations, or
-        // animations disabled by the system), and `EventRevoker` unsubscribes on drop, so it is
-        // forgotten (fire-and-forget) — the handler lives as long as the batch object.
-        batch.Completed(move |_, _| done())?.forget();
+        // animations disabled by the system). `EventRevoker` unsubscribes on drop, so only the
+        // token is kept: the handler lives as long as the batch, which the compositor holds
+        // until it completes. `forget` would also keep the revoker's reference to the batch,
+        // leaking every batch and its handler.
+        let _ = batch.Completed(move |_, _| done())?.into_token();
         let result = start();
         batch.End()?;
         result

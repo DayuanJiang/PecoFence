@@ -109,6 +109,7 @@ impl RenderStack {
     pub fn trim(&self) {
         use crate::gpu_bindings as b;
         use windows_core::Interface;
+        crate::panel::release_retired_surfaces();
         let gpu = self.gpu.borrow();
         let result = (|| -> Result<()> {
             let d2d: b::ID2D1Device = gpu.device.d2d_device().cast()?;
@@ -194,11 +195,12 @@ impl RenderStack {
     }
 
     /// Rebuilds the D3D/D2D device and the composition graphics device after device loss
-    /// (sleep, driver update). Callers must then recreate every drawing surface.
+    /// (sleep, driver update), or to hand back GPU memory the old device kept. Callers must
+    /// then recreate every drawing surface.
     pub fn recover(&self) -> Result<()> {
         let generation = self.gpu.borrow().generation + 1;
         let (gpu, is_warp) = create_gpu(&self.compositor, generation)?;
-        tracing::warn!(generation, is_warp, "GPU device rebuilt after device loss");
+        tracing::info!(generation, is_warp, "GPU device rebuilt");
         *self.gpu.borrow_mut() = gpu;
         Ok(())
     }

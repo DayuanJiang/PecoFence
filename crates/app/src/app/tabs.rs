@@ -190,7 +190,7 @@ impl App {
 
     pub(super) fn cancel_tab_detach(&mut self, change: pecofence_core::TabDetach) {
         for window in self.fences.values() {
-            window.set_merge_hint(false, 0);
+            window.set_merge_hint(false, (0, 0));
         }
         if !self.state.cancel_tab_detach(&change) {
             return;

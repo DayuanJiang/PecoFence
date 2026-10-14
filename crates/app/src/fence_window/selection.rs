@@ -450,10 +450,16 @@ impl FenceViewState {
     pub(super) fn marquee_rect_dip(&self) -> Option<Rect> {
         let m = self.marquee.as_ref()?;
         let scale = self.scale();
-        let title_h = self.title_h_px() as f32;
+        let title_h = self.content_y as f32;
         let (cw, _) = self.content_size_px();
         let fixed = self.layout(cw as f32 / scale).fixed_top();
-        let to_dip = |(x, y): (i32, i32)| (x as f32 / scale, (y as f32 - title_h) / scale - fixed);
+        let left = self.content_x as f32;
+        let to_dip = |(x, y): (i32, i32)| {
+            (
+                (x as f32 - left) / scale,
+                (y as f32 - title_h) / scale - fixed,
+            )
+        };
         let (x0, y0) = to_dip(m.start);
         // The start corner is anchored to the content, so scrolling under the band keeps it on
         // the same items.
@@ -501,8 +507,8 @@ impl FenceViewState {
         let scale = self.scale();
         let (cw, ch) = self.content_size_px();
         let fixed = self.layout(cw as f32 / scale).fixed_top();
-        let top = self.title_h_px() + (fixed * scale) as i32;
-        (top, self.title_h_px() + ch)
+        let top = self.content_y + (fixed * scale) as i32;
+        (top, self.content_y + ch)
     }
 
     /// Updates the item / title-row hover; returns `(item_changed, title_changed)` so the

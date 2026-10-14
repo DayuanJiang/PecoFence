@@ -1742,12 +1742,8 @@ impl App {
         let rolled = w.is_rolled();
         // An explicit place is where the fence rests, even at the top a push gave it.
         self.ctx.behavior.release_push(w.hwnd());
-        if rolled {
-            w.restore_geometry(full, true, rect.h);
-        } else {
-            w.set_bounds(full);
-            w.apply_height(rect.h, false);
-        }
+        // Also ends a roll in flight, whose tween would otherwise put its own size back.
+        w.restore_geometry(full, rolled, rect.h);
         self.record_bounds(id, full, rolled, rect.h);
         self.apply_auto_height(id);
         self.schedule_save();
@@ -1835,7 +1831,7 @@ impl App {
         self.handle(Command::MergeFence {
             fence: a,
             into: hwnd,
-            x: i32::MIN,
+            at: (i32::MIN, i32::MIN),
         });
         let changed = self.state.host_of(a) == host;
         self.push_settings_state();

@@ -88,26 +88,39 @@ impl FenceWindow {
             let Some(v) = guard.as_mut() else {
                 return false;
             };
+            // A collapse to a left tab column (or an expand from it) also moves the width.
+            let width = v
+                .roll_anim
+                .as_ref()
+                .and_then(|a| a.width)
+                .map(|t| t.value_at(now).round() as i32);
             let height = v
                 .roll_anim
                 .as_ref()
                 .map(|a| (a.height, Some(a.rolled_at_end)))
                 .or_else(|| v.height_anim.map(|t| (t, None)))
                 .map(|(t, rolled)| (t.value_at(now).round() as i32, t.is_done(now), rolled));
-            // If height changes, WM_SIZE will render the new chrome. Drawing hover
-            // feedback here would first publish the same frame at the previous height.
-            let draw_chrome =
-                !moved && height.is_none_or(|(h, _, _)| h == window::window_rect_size(hwnd).1);
+            // If the size changes, WM_SIZE will render the new chrome. Drawing hover
+            // feedback here would first publish the same frame at the previous size.
+            let draw_chrome = !moved
+                && height.is_none_or(|(h, _, _)| {
+                    let (cur_w, cur_h) = window::window_rect_size(hwnd);
+                    h == cur_h && width.is_none_or(|w| w == cur_w)
+                });
             let more = v.tick(now, draw_chrome);
-            (height, more)
+            (
+                height.map(|(h, done, rolled)| (width, h, done, rolled)),
+                more,
+            )
         };
         // Phase 2: window geometry with no borrow held (WM_SIZE re-enters the handler; while
         // an animation runs it only redraws the chrome and moves the shadow).
-        let Some((h, done, rolled_at_end)) = height else {
+        let Some((w, h, done, rolled_at_end)) = height else {
             return more;
         };
         let r = window::window_rect(hwnd);
-        let _ = window::set_window_bounds(hwnd, r.left, r.top, r.right - r.left, h);
+        let w = w.unwrap_or(r.right - r.left);
+        let _ = window::set_window_bounds(hwnd, r.left, r.top, w, h);
         if !done {
             return true;
         }

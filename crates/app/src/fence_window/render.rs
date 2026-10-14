@@ -352,13 +352,14 @@ impl FenceViewState {
     pub(super) fn draw_chrome_panel(&mut self) -> Result<()> {
         let now = Instant::now();
         let state = self.title_state(now);
-        // DIP height the crop covers (taller than the surface mid height animation).
-        let crop_h = self
-            .backdrop_rect
-            .map_or(0.0, |(_, _, _, h)| h as f32 / self.scale());
+        // DIP size the crop covers (larger than the surface mid size animation).
+        let (crop_w, crop_h) = self.backdrop_rect.map_or((0.0, 0.0), |(_, _, w, h)| {
+            (w as f32 / self.scale(), h as f32 / self.scale())
+        });
         let crop = self.backdrop_crop.as_ref().map(|img| BackdropCrop {
             image: img,
             key: &self.backdrop_key,
+            width: crop_w,
             height: crop_h,
         });
         let wallpaper = self.backdrops.for_mode(self.backdrop_mode()).clone();
@@ -419,6 +420,7 @@ impl FenceViewState {
         let deco = self.deco;
         let style = FenceStyle {
             title_align: self.behavior.title_align.get(),
+            tab_rail: self.rail_w(),
             ..self.style
         };
         let pressed_tab = match self.pressed {
@@ -509,22 +511,28 @@ impl FenceViewState {
     /// Also accepts a pending pure move, so the GPU surface is prepared before Windows
     /// changes the HWND position. Only a tiny contrast sample is computed on the CPU.
     pub(super) fn update_backdrop_at(&mut self, r: RECT) -> bool {
-        let w = r.right - r.left;
+        let mut w = r.right - r.left;
         let mut h = r.bottom - r.top;
         // Liquid Glass's displacement field is rebuilt by the GPU renderer only on
         // size/DPI changes; position changes retain every uploaded image.
-        if !self.theme.liquid_glass
-            && let Some(target) = self.height_target_px()
-        {
-            h = h.max(target);
+        if !self.theme.liquid_glass {
+            if let Some(target) = self.height_target_px() {
+                h = h.max(target);
+            }
+            // Collapsing to a left tab column (or expanding from it) moves the width too.
+            if let Some(target) = self.width_target_px() {
+                w = w.max(target);
+            }
         }
+        let shrinking = !self.theme.liquid_glass && self.height_animating();
         if self.backdrop_crop.is_some()
             && let Some((l, t, cw, ch)) = self.backdrop_rect
-            && (l, t, cw) == (r.left, r.top, w)
-            && (ch == h || (!self.theme.liquid_glass && self.height_animating() && ch >= h))
+            && (l, t) == (r.left, r.top)
+            && (cw == w || (shrinking && cw >= w))
+            && (ch == h || (shrinking && ch >= h))
         {
-            // Same rect, or a collapse / shrink whose crop (cut for the taller start) still
-            // covers the visible band: the surface clips it.
+            // Same rect, or a collapse / shrink whose crop (cut for the larger start) still
+            // covers the visible part: the surface clips it.
             return false;
         }
         let want = (r.left, r.top, w, h);
@@ -572,7 +580,8 @@ impl FenceViewState {
         self.update_backdrop();
     }
 
-    /// Lays out the content panel below the title bar and resizes both surfaces.
+    /// Lays out the content panel below the title bar (and beside a left tab column) and
+    /// resizes both surfaces.
     pub(super) fn layout_panels(&mut self, w: i32, h: i32) -> Result<()> {
         // A content swap still moving would be laid out at the wrong size: settle it first.
         self.finish_content_swap_now();
@@ -581,12 +590,20 @@ impl FenceViewState {
             .set_center(&self.root, w as f32 / 2.0, h as f32 / 2.0);
         self.update_shape_clip(w, h)?;
         self.chrome_panel.resize(w, h)?;
-        let title_h = self.title_h_px();
-        let content_h = (h - title_h).max(1);
-        self.content_panel.resize(w, content_h)?;
+        // A fence collapsed (or collapsing) to its left tab column keeps the width it returns
+        // to; the column's width follows the expanded fence.
+        if !self.column_collapsed && self.roll_anim.as_ref().is_none_or(|a| a.width.is_none()) {
+            self.expanded_w_px = w;
+        }
+        self.rail_dip = self.measure_rail_w();
+        self.content_x = self.rail_px();
+        self.content_y = self.head_px();
+        let content_h = (h - self.content_y).max(1);
+        self.content_panel
+            .resize((w - self.content_x).max(1), content_h)?;
         self.content_panel
             .visual
-            .set_offset(0.0, title_h as f32, 0.0);
+            .set_offset(self.content_x as f32, self.content_y as f32, 0.0);
         self.content_panel
             .visual
             .set_visible(!self.rolled_up || self.roll_anim.is_some());
@@ -1055,6 +1072,8 @@ impl FenceViewState {
             insert_caret: self.insert_caret_dip(metrics.header_h),
             insert_caret_alpha: self.caret_alpha.value_at(now),
             selection_inactive: self.selection_inactive_now(now),
+            origin_x: self.content_x as f32 / self.scale(),
+            origin_y: self.content_y as f32 / self.scale(),
         };
         let theme = self.material_foreground();
         let chrome = self.chrome.clone();

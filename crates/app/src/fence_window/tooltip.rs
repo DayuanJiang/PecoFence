@@ -119,11 +119,23 @@ impl FenceViewState {
             TipTarget::Up => Some(pecofence_core::i18n::text("向上").to_string()),
             TipTarget::Tab(i) => {
                 let t = self.tabs.get(i)?;
-                let (_, w) = *self.tab_rects().get(i)?;
-                (!self
-                    .chrome
-                    .tab_title_fits(&t.title, w, t.title_size, &self.theme))
-                .then(|| t.title.clone())
+                let fits = if self.tabs_on_rail() {
+                    // A row of the left column is as wide as the column, whatever its height.
+                    let active = t.id == self.active;
+                    let colored = self.tabs.iter().any(|t| t.color.is_some());
+                    let badge = self.tab_badge(t.id);
+                    let up = active && self.deco.up_button;
+                    let room =
+                        self.chrome
+                            .rail_title_room(self.rail_w(), colored, badge.as_deref(), up);
+                    self.chrome
+                        .rail_title_fits(&t.title, room, t.title_size, active)
+                } else {
+                    let (_, w) = *self.tab_rects().get(i)?;
+                    self.chrome
+                        .tab_title_fits(&t.title, w, t.title_size, &self.theme)
+                };
+                (!fits).then(|| t.title.clone())
             }
             TipTarget::Item(i) => {
                 let it = self.items.get(i)?;

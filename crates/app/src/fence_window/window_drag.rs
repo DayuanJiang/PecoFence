@@ -136,9 +136,9 @@ pub(super) fn flush_window_drag(
         let Some(drag) = v.remote_drag.as_mut().filter(|d| d.hwnd == target_hwnd) else {
             return false;
         };
-        let changed = drag.merge_target != target || (target != 0 && drag.merge_x != point.0);
+        let changed = drag.merge_target != target || (target != 0 && drag.merge_at != point);
         drag.merge_target = target;
-        drag.merge_x = point.0;
+        drag.merge_at = point;
         if rect != old {
             drag.applied += 1;
         }
@@ -165,7 +165,7 @@ pub(super) fn flush_window_drag(
     if hint_changed {
         queue.push(Command::MergeHint {
             target: HWND(target as *mut core::ffi::c_void),
-            x: point.0,
+            at: point,
         });
     }
     tracing::trace!(target: "pecofence::drag_frame", requests, applied, finish = release.is_some(),

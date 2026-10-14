@@ -34,28 +34,44 @@ struct RenameSession {
     committed: bool,
 }
 
-/// Opens (or re-targets) the rename popup over `fence_hwnd`'s title bar.
+/// Opens (or re-targets) the rename popup over `fence_hwnd`'s title bar, or over `row` (screen
+/// rect of the tab's row in a left tab column).
 pub fn begin_inline_rename(
     fence_hwnd: HWND,
     fence: FenceId,
     current: String,
+    row: Option<RECT>,
     queue: CommandQueue,
     mode: ThemeMode,
 ) {
     let r = window::window_rect(fence_hwnd);
     let dpi = monitors::dpi_for_window(fence_hwnd).max(96);
     let scale = dpi as f32 / 96.0;
-    let x = r.left + (8.0 * scale) as i32;
-    let y = r.top + (4.0 * scale) as i32;
-    let w = ((r.right - r.left) - (52.0 * scale) as i32).max((80.0 * scale) as i32);
     let h = (24.0 * scale) as i32;
+    let rect = match row {
+        Some(row) => {
+            let top = (row.top + row.bottom - h) / 2;
+            RECT {
+                left: row.left,
+                top,
+                right: row.right,
+                bottom: top + h,
+            }
+        }
+        None => {
+            let x = r.left + (8.0 * scale) as i32;
+            let y = r.top + (4.0 * scale) as i32;
+            let w = ((r.right - r.left) - (52.0 * scale) as i32).max((80.0 * scale) as i32);
+            RECT {
+                left: x,
+                top: y,
+                right: x + w,
+                bottom: y + h,
+            }
+        }
+    };
     begin_rename_at(
-        RECT {
-            left: x,
-            top: y,
-            right: x + w,
-            bottom: y + h,
-        },
+        rect,
         dpi,
         RenameTarget::Fence(fence),
         current,

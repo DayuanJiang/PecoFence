@@ -15,7 +15,7 @@ const fixture = {
   settings: {
     language: 'zh-CN',
     autostart: false, hideRealIcons: false, quickHide: { enabled: true },
-    showDesktop: 'keepVisible', theme: 'dark', themeStyle: 'fluent', titleAlign: 'left', backdrop: 'acrylic', iconSize: 48,
+    showDesktop: 'keepVisible', theme: 'dark', themeStyle: 'fluent', titleAlign: 'left', tabBar: 'top', backdrop: 'acrylic', iconSize: 48,
     icons: { tintRgb: null, tintStrength: 0.6, chameleon: false },
     rollUp: { hoverPeek: true, clickToExpand: false, pushNeighbors: true, titleOnHover: false, hideInactiveScrollbar: false, switchTabOnHover: false },
     snapping: { enabled: true, gapPx: 8, sizeToCells: false, guideLines: true }, peek: { enabled: true, dim: true, hotkey: 'ctrlAltSpace' },
@@ -531,6 +531,17 @@ async function runTests() {
     const sent = frame.contentWindow.testMessages.filter(m => m.type === 'setFence').at(-1);
     assert(sent.id === 'fence-a' && sent.prop === 'opacity' && sent.value === 'transparent', 'Fully transparent not posted');
     assert(doc.querySelector('[data-fence=opacity]').value === 'transparent', 'Refreshed opacity not reflected');
+  });
+  await test('Tab bar position is shown and posted', async () => {
+    doc.querySelector('[data-page=general]').click();
+    const bar = doc.querySelector('[data-bind=tabBar]');
+    assert(bar.value === 'top', 'Saved tab bar position not shown');
+    for (const value of ['left', 'top']) {
+      bar.value = value;
+      bar.dispatchEvent(new frame.contentWindow.Event('change', { bubbles: true }));
+      await settle();
+      assert(current().settings.tabBar === value, 'Tab bar position not posted: ' + value);
+    }
   });
   await test('Rule rows are compact and the new-rule form opens when needed', async () => {
     doc = await reset();

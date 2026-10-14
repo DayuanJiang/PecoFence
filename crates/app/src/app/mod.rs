@@ -204,6 +204,10 @@ pub struct App {
     /// GPU recovery retry: one is armed (`TIMER_DEVICE_RETRY`), and the delay of the next one.
     device_retry_pending: bool,
     device_retry_ms: u32,
+    /// GPU memory at the first idle point after startup or the last rebuild that handed it
+    /// back, and when that rebuild ran (`motion::hand_back_gpu_memory`).
+    gpu_baseline: Option<u64>,
+    gpu_rebuilt: Option<Instant>,
     /// `--test-script` state while a script runs.
     test: Option<testscript::TestScript>,
     /// Selection kept by a Ctrl / Shift desktop marquee in progress (empty for a plain one);
@@ -937,6 +941,7 @@ impl App {
                 ),
                 title_on_hover: std::cell::Cell::new(state.config.settings.roll_up.title_on_hover),
                 title_align: std::cell::Cell::new(state.config.settings.title_align),
+                tab_bar: std::cell::Cell::new(state.config.settings.tab_bar),
                 hide_inactive_scrollbar: std::cell::Cell::new(
                     state.config.settings.roll_up.hide_inactive_scrollbar,
                 ),
@@ -1077,6 +1082,8 @@ impl App {
             dying: Vec::new(),
             device_retry_pending: false,
             device_retry_ms: DEVICE_RETRY_FIRST_MS,
+            gpu_baseline: None,
+            gpu_rebuilt: None,
             test: None,
             marquee_base: None,
             marquee_band: None,
@@ -1308,16 +1315,10 @@ impl App {
         if self.state.is_dirty() {
             self.state.save_if_dirty();
         }
-        // Icons of files that changed or vanished since: free their pixels.
-        {
-            let mut icons = self.ctx.icons.borrow_mut();
-            let dropped = icons.sweep(&self.state.icon_keys());
-            if !dropped.is_empty() {
-                self.ctx
-                    .bitmaps
-                    .borrow_mut()
-                    .retain(|key| !icons.is_dropped_draw_key(key, &dropped));
-            }
+        // Icons no window needs any more, if a change left some behind without a redraw; the
+        // GPU trim then frees the released uploads.
+        if self.prune_icons() {
+            window::set_timer(self.control.hwnd(), TIMER_GPU_TRIM, GPU_TRIM_IDLE_MS);
         }
         // While the special desktop items are shown, re-read them once a minute as well: a
         // change in Windows' own "Desktop icon settings" leaves no folder event behind, and the
@@ -1517,19 +1518,19 @@ impl App {
                 self.state.set_column_widths(fence, widths);
                 self.schedule_save();
             }
-            Command::MergeHint { target, x } => {
+            Command::MergeHint { target, at } => {
                 for w in self.fences.values() {
-                    w.set_merge_hint(!target.0.is_null() && w.hwnd() == target, x);
+                    w.set_merge_hint(!target.0.is_null() && w.hwnd() == target, at);
                 }
             }
-            Command::MergeFence { fence, into, x } => {
+            Command::MergeFence { fence, into, at } => {
                 // The slot the gap sat at (read before the hints — and the gap — are cleared).
                 let host = self.fence_of_hwnd(into);
                 let index = host
                     .and_then(|h| self.fences.get(&h))
-                    .map(|w| w.merge_slot_at(x));
+                    .map(|w| w.merge_slot_at(at));
                 for w in self.fences.values() {
-                    w.set_merge_hint(false, 0);
+                    w.set_merge_hint(false, (0, 0));
                 }
                 if let Some(host) = host
                     && host != fence
