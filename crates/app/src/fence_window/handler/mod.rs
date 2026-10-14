@@ -49,7 +49,7 @@ pub(super) fn finish_drag_cancel(cancel: DragCancel, queue: &CommandQueue, behav
         if hinted {
             queue.push(Command::MergeHint {
                 target: HWND(std::ptr::null_mut()),
-                x: 0,
+                at: (0, 0),
             });
         }
     };
@@ -115,9 +115,9 @@ pub(super) struct HandlerCtx {
     /// scale resizes the window (WM_DPICHANGED), and the offset has to scale with it.
     pub(super) grab_dpi: Cell<u32>,
     pub(super) merge_target: Cell<isize>,
-    /// Pointer screen x last reported with the merge hint (the target strip opens its
+    /// Pointer screen point last reported with the merge hint (the target strip opens its
     /// insertion gap at that slot; re-sent only when the slot could have changed).
-    pub(super) merge_x: Cell<i32>,
+    pub(super) merge_at: Cell<(i32, i32)>,
     /// The other selected fences moving along with this one in the system move loop (a title
     /// drag of a fence in the desktop selection); empty otherwise.
     pub(super) group: RefCell<Vec<GroupMember>>,
@@ -145,7 +145,7 @@ impl FenceWindow {
             grab_offset: Cell::new((0, 0)),
             grab_dpi: Cell::new(96),
             merge_target: Cell::new(0isize),
-            merge_x: Cell::new(i32::MIN),
+            merge_at: Cell::new((i32::MIN, i32::MIN)),
             group: RefCell::new(Vec::new()),
         };
         let trace_test_input = cfg!(debug_assertions)
@@ -218,6 +218,7 @@ impl FenceWindow {
                     msg::WM_SHOWWINDOW => misc::on_showwindow(h, hwnd, wparam, lparam),
                     WM_APP_SET_VISIBLE => misc::on_app_set_visible(h, hwnd, wparam, lparam),
                     WM_APP_TAB_SWAP_DONE => misc::on_app_tab_swap_done(h, hwnd, wparam, lparam),
+                    WM_APP_TAB_RAIL => misc::on_app_tab_rail(h, hwnd, wparam, lparam),
                     WM_APP_FADE_DONE => misc::on_app_fade_done(h, hwnd, wparam, lparam),
                     msg::WM_ENTERSIZEMOVE => nc::on_entersizemove(h, hwnd, wparam, lparam),
                     msg::WM_EXITSIZEMOVE => nc::on_exitsizemove(h, hwnd, wparam, lparam),

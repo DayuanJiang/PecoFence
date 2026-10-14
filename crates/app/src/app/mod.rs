@@ -941,6 +941,7 @@ impl App {
                 ),
                 title_on_hover: std::cell::Cell::new(state.config.settings.roll_up.title_on_hover),
                 title_align: std::cell::Cell::new(state.config.settings.title_align),
+                tab_bar: std::cell::Cell::new(state.config.settings.tab_bar),
                 hide_inactive_scrollbar: std::cell::Cell::new(
                     state.config.settings.roll_up.hide_inactive_scrollbar,
                 ),
@@ -1517,19 +1518,19 @@ impl App {
                 self.state.set_column_widths(fence, widths);
                 self.schedule_save();
             }
-            Command::MergeHint { target, x } => {
+            Command::MergeHint { target, at } => {
                 for w in self.fences.values() {
-                    w.set_merge_hint(!target.0.is_null() && w.hwnd() == target, x);
+                    w.set_merge_hint(!target.0.is_null() && w.hwnd() == target, at);
                 }
             }
-            Command::MergeFence { fence, into, x } => {
+            Command::MergeFence { fence, into, at } => {
                 // The slot the gap sat at (read before the hints — and the gap — are cleared).
                 let host = self.fence_of_hwnd(into);
                 let index = host
                     .and_then(|h| self.fences.get(&h))
-                    .map(|w| w.merge_slot_at(x));
+                    .map(|w| w.merge_slot_at(at));
                 for w in self.fences.values() {
-                    w.set_merge_hint(false, 0);
+                    w.set_merge_hint(false, (0, 0));
                 }
                 if let Some(host) = host
                     && host != fence

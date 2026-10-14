@@ -34,6 +34,10 @@ pub const WM_APP_SHELL_CHANGED: u32 = msg::WM_APP + 12;
 pub const WM_APP_PREWARM_DONE: u32 = msg::WM_APP + 13;
 /// wparam 0: the live wallpaper capture worker finished; 1: the desktop came to the front.
 pub const WM_APP_LIVE_WALLPAPER: u32 = msg::WM_APP + 14;
+/// Sent to a fence window while another fence is dragged over it: returns the width in device
+/// px of its left tab column (0 without one). Such a fence has no title row; its column takes
+/// the merge drop instead, also while the fence is collapsed to it.
+pub const WM_APP_TAB_RAIL: u32 = msg::WM_APP + 15;
 
 /// What a file drop does with the dropped paths (Explorer's Move / Copy / Create shortcut, the
 /// effect the drop target reported).
@@ -89,18 +93,20 @@ pub enum Command {
         path: PathBuf,
     },
     PortalUp(FenceId),
-    /// A fence window is being dragged over `target`'s title (null = none): highlight it and,
-    /// on a tabbed target, open the insertion gap at pointer screen `x`.
+    /// A fence window is being dragged over `target`'s title or left tab column (null = none):
+    /// highlight it and, on a tabbed target, open the insertion gap at pointer screen point
+    /// `at`.
     MergeHint {
         target: HWND,
-        x: i32,
+        at: (i32, i32),
     },
-    /// A fence window was dropped on another fence's title at pointer screen `x`: merge it
-    /// there as a tab, inserted at the slot under the pointer.
+    /// A fence window was dropped on another fence's title or tab column at pointer screen
+    /// point `at`: merge it there as a tab, inserted at the slot under the pointer
+    /// (`i32::MIN` = no pointer: appended).
     MergeFence {
         fence: FenceId,
         into: HWND,
-        x: i32,
+        at: (i32, i32),
     },
     /// Details header divider dragged: persist the (修改日期, 类型, 大小) widths.
     SetColumnWidths {

@@ -374,7 +374,7 @@ impl App {
                             self.queue.push(Command::MergeFence {
                                 fence: a,
                                 into: w.hwnd(),
-                                x: i32::MIN,
+                                at: (i32::MIN, i32::MIN),
                             });
                         }
                     }

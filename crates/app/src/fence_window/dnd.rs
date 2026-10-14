@@ -827,8 +827,9 @@ impl FenceViewState {
         if self.rolled_up || self.sort != SortMode::Manual || self.is_portal {
             return None;
         }
-        let title_h = self.title_h_px();
+        let title_h = self.content_y;
         let (cw, ch) = self.content_size_px();
+        let x_px = x_px - self.content_x;
         if x_px < 0 || x_px >= cw || y_px < title_h || y_px >= title_h + ch {
             return None;
         }
@@ -1096,8 +1097,8 @@ impl FenceViewState {
         let win = window::window_rect(self.hwnd);
         let (px, py) = self.ole_drag_press;
         let (press_x, press_y) = (win.left + px, win.top + py);
-        let origin_x = win.left + (l * scale).round() as i32;
-        let origin_y = win.top + self.title_h_px() + (t * scale).round() as i32;
+        let origin_x = win.left + self.content_x + (l * scale).round() as i32;
+        let origin_y = win.top + self.content_y + (t * scale).round() as i32;
         if press_x < origin_x
             || press_x >= origin_x + w_px as i32
             || press_y < origin_y
@@ -1226,6 +1227,9 @@ impl FenceViewState {
                     insert_caret: None,
                     insert_caret_alpha: 0.0,
                     selection_inactive: 0.0,
+                    // No glass behind a drag image.
+                    origin_x: 0.0,
+                    origin_y: 0.0,
                 };
                 rt.draw(|session| {
                     session.set_transform(&transform);

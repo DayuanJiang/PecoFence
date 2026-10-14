@@ -69,7 +69,8 @@ pub(super) fn on_nchittest(
     };
     let scale = v.scale();
     let border = (RESIZE_BORDER_DIP * scale).round() as i32;
-    let title_h = v.title_h_px();
+    // Beside a left tab column there is no title row: the column is the title bar.
+    let title_h = if v.tabs_on_rail() { 0 } else { v.title_h_px() };
     let rect = window::window_rect(hwnd);
     let left = x - rect.left;
     let top = y - rect.top;
@@ -81,22 +82,32 @@ pub(super) fn on_nchittest(
         return Some(msg::HTNOWHERE);
     }
     let rolled = v.rolled_up;
-    // Tab headers take clicks (switch / drag out); the rest of the title
-    // row keeps moving the window.
-    if top < title_h
-        && left >= border
-        && right > border
-        && (v.tab_at(left, top).is_some() || v.up_button_at(left, top) || v.chevron_at(left, top))
-    {
+    // Tab headers and the title bar's buttons take clicks (switch / drag out,
+    // up, roll); the rest of the title row moves the window, and so does the
+    // free part of a left tab column. A fence collapsed to its column has no
+    // resize edges.
+    let in_rail = left < v.content_x;
+    let on_control =
+        v.tab_at(left, top).is_some() || v.up_button_at(left, top) || v.chevron_at(left, top);
+    let clear_of_edges = if in_rail {
+        rolled || (left >= border && bottom > border)
+    } else {
+        top < title_h && left >= border && right > border
+    };
+    if on_control && clear_of_edges {
         return Some(msg::HTCLIENT);
     }
     if v.locked {
         // Locked: no resize edges; the title still takes clicks/menus.
-        return Some(if top < title_h {
+        return Some(if top < title_h || in_rail {
             msg::HTCAPTION
         } else {
             msg::HTCLIENT
         });
+    }
+    if rolled && v.tabs_on_rail() {
+        // Collapsed to the column: it only moves.
+        return Some(msg::HTCAPTION);
     }
     if rolled {
         // Title-only (Fences): only the width resizes; the rest of the strip,
@@ -123,7 +134,7 @@ pub(super) fn on_nchittest(
         (_, true, _, _) => msg::HTRIGHT,
         (_, _, true, _) => msg::HTTOP,
         (_, _, _, true) => msg::HTBOTTOM,
-        _ if top < title_h => msg::HTCAPTION,
+        _ if top < title_h || in_rail => msg::HTCAPTION,
         _ => msg::HTCLIENT,
     };
     Some(code)
@@ -146,7 +157,10 @@ pub(super) fn on_ncmousemove(
     let mut guard = view.borrow_mut();
     if let Some(v) = guard.as_mut() {
         v.set_mouse_inside(true);
-        let is_title = wparam as isize == msg::HTCAPTION;
+        // Beside a left tab column the column is the title bar (the only caption area there).
+        let top = window::window_rect(hwnd).top;
+        let is_title = wparam as isize == msg::HTCAPTION
+            && (v.tabs_on_rail() || msg::hi_i16(lparam) - top < v.title_h_px());
         let (item, title) = v.set_hover(None, is_title);
         if title {
             let _ = v.redraw_chrome_only();
@@ -271,7 +285,7 @@ pub(super) fn on_nclbuttondown(
                         offset: (start.0 - rect.left, start.1 - rect.top),
                         offset_dpi: monitors::dpi_for_window(hwnd),
                         merge_target: 0,
-                        merge_x: i32::MIN,
+                        merge_at: (i32::MIN, i32::MIN),
                         moved_once: false,
                         origin: WindowDragOrigin::Caption {
                             rect,
@@ -516,7 +530,7 @@ pub(super) fn on_entersizemove(
         move_start,
         grab_offset,
         merge_target,
-        merge_x,
+        merge_at,
         ..
     } = h;
     in_size_move.set(true);
@@ -545,7 +559,7 @@ pub(super) fn on_entersizemove(
     grab_offset.set((start_x - r.left, start_y - r.top));
     h.grab_dpi.set(monitors::dpi_for_window(hwnd));
     merge_target.set(0);
-    merge_x.set(i32::MIN);
+    merge_at.set((i32::MIN, i32::MIN));
     window::kill_timer(hwnd, TIMER_PEEK_OPEN);
     window::kill_timer(hwnd, TIMER_PEEK_CLOSE);
     peek_armed.set(false);
@@ -597,7 +611,7 @@ pub(super) fn on_exitsizemove(
     if merge_target.replace(0) != 0 {
         queue.push(Command::MergeHint {
             target: HWND(std::ptr::null_mut()),
-            x: 0,
+            at: (0, 0),
         });
     }
     let peeking = {
@@ -620,10 +634,11 @@ pub(super) fn on_exitsizemove(
     }
     queue_bounds_changed(queue, &h.behavior, fence_id, hwnd);
     if let Some(into) = merge_into {
+        let pt = window::cursor_pos();
         queue.push(Command::MergeFence {
             fence: fence_id,
             into,
-            x: window::cursor_pos().x,
+            at: (pt.x, pt.y),
         });
     } else if moved && !cancelled {
         queue.push(Command::FenceDropped(fence_id));
@@ -671,7 +686,8 @@ pub(super) fn on_sizing(h: &HandlerCtx, hwnd: HWND, wparam: usize, lparam: isize
     let v = guard.as_ref()?;
     let scale = v.scale();
     let metrics = v.grid_metrics();
-    let title_h = v.title_h_px();
+    // Above the rows: the title row, nothing beside a left tab column.
+    let title_h = v.head_px();
     let slack = FIT_SLACK_PX as f32;
     // Rows (List / Details): rows below the title (+ fixed header), free width.
     let (cols, rows, min_w) = match v.row_metrics() {
@@ -684,8 +700,9 @@ pub(super) fn on_sizing(h: &HandlerCtx, hwnd: HWND, wparam: usize, lparam: isize
             1,
         ),
         None => {
+            // A left tab column sits before the first column.
             let cols = Cells {
-                fixed: metrics.pad_x * 2.0 * scale,
+                fixed: metrics.pad_x * 2.0 * scale + v.content_x as f32,
                 step: (metrics.cell_w * scale).max(1.0),
             };
             (
@@ -708,7 +725,7 @@ pub(super) fn on_sizing(h: &HandlerCtx, hwnd: HWND, wparam: usize, lparam: isize
         rows: (cells && !grouped).then_some(rows),
         min_w,
         min_h: (rows.fixed + rows.step).round() as i32,
-        rolled_h: v.rolled_up.then_some(title_h),
+        rolled_h: v.rolled_up.then(|| v.rolled_h_px()),
     };
     drop(guard);
     // SAFETY: lParam is the RECT* being sized for this message.
@@ -750,7 +767,7 @@ pub(super) fn on_moving(
         behavior,
         grab_offset,
         merge_target,
-        merge_x,
+        merge_at,
         rect_at_enter,
         ..
     } = h;
@@ -819,11 +836,11 @@ pub(super) fn on_moving(
     // Re-sent while the pointer moves along a target's strip so the
     // insertion gap follows it (cheap: the target ignores an unchanged slot).
     let target_changed = merge_target.replace(target) != target;
-    if target_changed || (target != 0 && merge_x.replace(pt.x) != pt.x) {
-        merge_x.set(pt.x);
+    if target_changed || (target != 0 && merge_at.replace((pt.x, pt.y)) != (pt.x, pt.y)) {
+        merge_at.set((pt.x, pt.y));
         queue.push(Command::MergeHint {
             target: HWND(target as *mut core::ffi::c_void),
-            x: pt.x,
+            at: (pt.x, pt.y),
         });
     }
     Some(1)

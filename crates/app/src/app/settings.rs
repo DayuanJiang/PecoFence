@@ -649,6 +649,7 @@ impl App {
             .title_on_hover
             .set(new.roll_up.title_on_hover);
         self.ctx.behavior.title_align.set(new.title_align);
+        self.ctx.behavior.tab_bar.set(new.tab_bar);
         self.ctx
             .behavior
             .hide_inactive_scrollbar
@@ -665,6 +666,17 @@ impl App {
         if chrome_changed {
             for w in self.fences.values() {
                 w.redraw();
+            }
+        }
+        if new.tab_bar != old.tab_bar {
+            // The tab column takes (or gives back) width beside the items, and an auto-height
+            // fence grows to show every tab in it.
+            let hosts: Vec<FenceId> = self.fences.keys().copied().collect();
+            for host in hosts {
+                if let Some(w) = self.fences.get(&host) {
+                    w.sync_tab_bar();
+                }
+                self.apply_auto_height(host);
             }
         }
         self.ctx

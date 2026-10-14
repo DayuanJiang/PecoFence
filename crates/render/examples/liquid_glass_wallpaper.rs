@@ -189,6 +189,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     BackdropCrop {
                         image: &refracted,
                         key: "plate",
+                        width: w as f32 / scale,
                         height: h as f32 / scale,
                     },
                     scale,

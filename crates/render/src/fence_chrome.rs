@@ -45,6 +45,9 @@ pub struct FenceChrome {
     sort_glyph_format: TextFormat,
     /// Same face, size and weight as standalone titles, centred inside their controls.
     tab_formats: [TextFormat; 4],
+    /// The left tab column's resting captions: regular weight, leading (the shown tab uses
+    /// the semibold title format).
+    tab_list_formats: [TextFormat; 4],
     /// Empty-state text: Body 14, top-aligned (Explorer "This folder is empty.").
     empty_format: TextFormat,
     /// 14 px Fluent glyph beside the title (portal folder icon).
@@ -75,6 +78,9 @@ pub struct GroupHeaderDraw<'a> {
 pub struct BackdropCrop<'a> {
     pub image: &'a Image,
     pub key: &'a str,
+    /// DIP size the crop covers, from the window's top left (wider or taller than the surface
+    /// while the window shrinks or grows).
+    pub width: f32,
     pub height: f32,
 }
 
@@ -241,6 +247,11 @@ pub struct RowsDraw<'a> {
     pub insert_caret_alpha: f32,
     /// 0 = accent selection (active window), 1 = neutral grey (another window is active).
     pub selection_inactive: f32,
+    /// Window position (DIPs) of the surface's top-left corner: the left tab column's width
+    /// and the title row's height (0 beside a left tab column). The glass behind the text is
+    /// sampled in window coordinates.
+    pub origin_x: f32,
+    pub origin_y: f32,
 }
 
 /// Pixel snapping for hairlines. The panel applies a uniform DIP→px scale, so a 1 DIP stroke
@@ -307,7 +318,20 @@ pub struct FenceStyle {
     pub title_size: u8,
     /// Title position in the row (the global 标题对齐 setting).
     pub title_align: pecofence_core::TitleAlign,
+    /// Width in DIPs of the left tab column (标签栏位置 → 左侧, two or more tabs). The column
+    /// is the fence's title bar, so there is no title row; 0 = the tabs, if any, run along the
+    /// title row.
+    pub tab_rail: f32,
 }
+
+/// Left tab column metrics (DIPs): the free strip above the first tab (a handle to drag the
+/// fence by), each tab row's height, its inset from the window's left edge and from the
+/// divider, and the room under the last tab that holds the collapse chevron.
+pub const RAIL_TOP: f32 = 8.0;
+pub const RAIL_ROW_H: f32 = 32.0;
+pub const RAIL_ROW_INSET: f32 = 4.0;
+pub const RAIL_ROW_RIGHT: f32 = 6.0;
+pub const RAIL_BOTTOM: f32 = 44.0;
 
 /// Title-row decorations of a folder portal: a folder glyph before the title and, once the
 /// portal has navigated into a subfolder, an "up" button at the far left.
@@ -366,6 +390,28 @@ impl TitleDeco {
             (title_h - Self::CHEVRON_W) / 2.0,
             Self::CHEVRON_W,
             Self::CHEVRON_W,
+        )
+    }
+
+    /// The collapse chevron of a left tab column `rail_w` wide in a window `height` tall,
+    /// centred in the room under the tabs (`RAIL_BOTTOM`); the app hit-tests the same box.
+    pub fn rail_chevron_box(rail_w: f32, height: f32) -> Rect {
+        Rect::from_xywh(
+            ((rail_w - Self::CHEVRON_W) * 0.5).max(0.0),
+            height - Self::CHEVRON_W - (RAIL_BOTTOM - Self::CHEVRON_W) * 0.5,
+            Self::CHEVRON_W,
+            Self::CHEVRON_W,
+        )
+    }
+
+    /// The portal up button at the end of the shown tab's `row` in a left tab column; the app
+    /// hit-tests the same box.
+    pub fn rail_up_box(row: Rect) -> Rect {
+        Rect::from_xywh(
+            row.right - 26.0,
+            row.top + (row.height() - 24.0) * 0.5,
+            24.0,
+            24.0,
         )
     }
 
@@ -580,10 +626,11 @@ fn draw_plate(
 ) -> Result<()> {
     let px = Px::new(scale);
     let plate_top = outer.top;
-    // The crop is anchored at the window top and may cover more than the surface (height
+    // The crop is anchored at the window's top left and may cover more than the surface (size
     // animation): the surface clips it, and the compositor clip cuts it at a folded top.
-    let crop_rect =
-        |crop: &BackdropCrop<'_>| Rect::from_xywh(0.0, 0.0, width, crop.height.max(height));
+    let crop_rect = |crop: &BackdropCrop<'_>| {
+        Rect::from_xywh(0.0, 0.0, crop.width.max(width), crop.height.max(height))
+    };
     match *backdrop {
         Backdrop::GpuGlass {
             material,
@@ -691,7 +738,22 @@ fn draw_plate(
     if let Some(mut tint) = style.tint {
         // Per-fence colour: a translucent wash so the glass still reads as glass.
         tint.a = 0.22 * plate_a;
-        if style.tint_title_only {
+        if style.tint_title_only && style.tab_rail > 0.0 {
+            // A left tab column is the title bar: the plate's rounded left corners, a straight
+            // right edge where the icons start.
+            let edge = (style.tab_rail / outer.width().max(1.0)).min(1.0);
+            let soft = (px.hair() / outer.width().max(1.0)).min(1.0 - edge);
+            let wash = session.create_linear_gradient(
+                Vector2::new(outer.left, 0.0),
+                Vector2::new(outer.right, 0.0),
+                &[
+                    GradientStop::new(0.0, tint),
+                    GradientStop::new(edge, tint),
+                    GradientStop::new(edge + soft, ColorF::TRANSPARENT),
+                ],
+            )?;
+            session.fill_rounded_rect(&RoundedRect::uniform(outer, radius), &wash);
+        } else if style.tint_title_only {
             // Only the title row (what of it the fold leaves): the plate's rounded top
             // corners, a straight bottom edge where the icons start.
             let band = theme.title_height.min(height) - plate_top;
@@ -1299,6 +1361,20 @@ impl FenceChrome {
             tab_format(font_text(), 16.0)?,
             tab_format(font_text(), 18.0)?,
         ];
+        let list_format = |face, size| -> Result<TextFormat> {
+            Ok(
+                TextFormat::with_locale(face, size, FontWeight::NORMAL, locale)?
+                    .with_alignment(TextAlignment::Leading)
+                    .with_paragraph_alignment(ParagraphAlignment::Center)
+                    .with_word_wrapping(WordWrapping::NoWrap),
+            )
+        };
+        let tab_list_formats = [
+            list_format(font_small(), 12.0)?,
+            list_format(font_text(), 14.0)?,
+            list_format(font_text(), 16.0)?,
+            list_format(font_text(), 18.0)?,
+        ];
         let empty_format = TextFormat::with_locale(font_text(), 14.0, FontWeight::NORMAL, locale)?
             .with_alignment(TextAlignment::Center)
             .with_paragraph_alignment(ParagraphAlignment::Top)
@@ -1340,6 +1416,7 @@ impl FenceChrome {
             row_format_right,
             sort_glyph_format,
             tab_formats,
+            tab_list_formats,
             empty_format,
             title_glyph_format,
             title_format_small,
@@ -1444,6 +1521,37 @@ impl FenceChrome {
         text_w <= (w - tab_text_inset(theme, w, text_w)).max(0.0)
     }
 
+    /// Width a caption gets in a row of a `rail_w` DIP left tab column: after the colour dot's
+    /// room when any tab has a colour, before the badge and the portal up button.
+    pub fn rail_title_room(
+        &self,
+        rail_w: f32,
+        colored: bool,
+        badge: Option<&str>,
+        up: bool,
+    ) -> f32 {
+        let row_w = (rail_w - RAIL_ROW_INSET - RAIL_ROW_RIGHT).max(0.0);
+        let text_left = if colored { 24.0 } else { 10.0 };
+        let badge_w = badge.map_or(0.0, |b| self.tab_badge_width(b) - TAB_BADGE_GAP);
+        let badge_gap = if badge_w > 0.0 { 6.0 } else { 0.0 };
+        let up_w = if up { 26.0 } else { 0.0 };
+        (row_w - text_left - 8.0 - badge_w - badge_gap - up_w).max(0.0)
+    }
+
+    /// Caption format of a left tab column row: semibold for the shown tab.
+    fn rail_title_format(&self, size: u8, active: bool) -> &TextFormat {
+        if active {
+            self.title_format(size)
+        } else {
+            &self.tab_list_formats[usize::from(size.min(3))]
+        }
+    }
+
+    /// `title` shows whole in `room` DIPs of a left tab column row.
+    pub fn rail_title_fits(&self, title: &str, room: f32, size: u8, active: bool) -> bool {
+        crate::text::measure_width(title, self.rail_title_format(size, active)) <= room
+    }
+
     /// Draws the chrome into a `width` x `height` DIP area whose origin is (0, 0). `scale` is
     /// the DIP→device-pixel factor (hairline snapping); `state` carries the sampled fades.
     /// `rolled_up` is the state the fence is rolling to (or resting in) and `roll_t` the roll
@@ -1492,6 +1600,8 @@ impl FenceChrome {
         };
         let title_h = theme.title_height.min(height);
         let pill_a = state.hover * title_a;
+        // Two or more tabs on the left: the column is the title bar, there is no title row.
+        let column = style.tab_rail > 0.0 && tabs.len() > 1;
 
         if plate_a > 0.0 {
             draw_plate(
@@ -1533,7 +1643,17 @@ impl FenceChrome {
             // fading in over 83 ms and out over 167 ms.
             let a = state.merge_hint.min(1.0);
             let wash = session.create_solid_brush(with_alpha(theme.drop_highlight, a))?;
-            let row = Rect::from_xywh(4.0, 4.0, (width - 8.0).max(0.0), (title_h - 8.0).max(0.0));
+            // Over the left tab column when that is the title bar.
+            let row = if column {
+                Rect::from_xywh(
+                    4.0,
+                    4.0,
+                    (style.tab_rail - 8.0).max(0.0),
+                    (height - 8.0).max(0.0),
+                )
+            } else {
+                Rect::from_xywh(4.0, 4.0, (width - 8.0).max(0.0), (title_h - 8.0).max(0.0))
+            };
             let radius = header_control_radius(theme, row);
             if theme.liquid_glass {
                 draw_header_glass(session, &backdrop, theme, scale, 2, row, 0.5, a)?;
@@ -1551,6 +1671,41 @@ impl FenceChrome {
             session.fill_rect(
                 &Rect::from_xywh(width * 0.5 - 2.0, height * 0.5 + 6.0, 4.0, 4.0),
                 &marker,
+            );
+        }
+        if column {
+            let halo = if theme.text_halo {
+                Some(session.create_solid_brush(ColorF::TRANSPARENT)?)
+            } else {
+                None
+            };
+            self.draw_tab_list(
+                session,
+                &backdrop,
+                theme,
+                scale,
+                opacity,
+                style.tint,
+                tabs,
+                pill,
+                halo.as_ref(),
+                style.tab_rail,
+                height,
+                1.0 - roll_t.clamp(0.0, 1.0),
+                deco,
+                state,
+            )?;
+            // ChevronLeft (E76B) collapses the fence to its column and turns to point right,
+            // the way it expands, as the fence collapses; shown like the title row's chevron.
+            let chevron_a = if rolled_up || roll_t > 0.0 {
+                1.0
+            } else {
+                state.hover.clamp(0.0, 1.0)
+            };
+            let box_r = TitleDeco::rail_chevron_box(style.tab_rail, height);
+            return self.draw_chevron(
+                session, &backdrop, theme, scale, opacity, style.tint, box_r, "\u{E76B}",
+                chevron_a, state, roll_t,
             );
         }
         if title_a <= 0.0 {
@@ -1902,57 +2057,278 @@ impl FenceChrome {
         } else {
             state.hover.clamp(0.0, 1.0)
         } * title_a;
-        if chevron_a > 0.0 {
-            let box_r = TitleDeco::chevron_box(width, title_h);
-            let foreground =
-                header_foreground(&backdrop, theme, 7, box_r, scale, opacity, style.tint);
-            if theme.liquid_glass && (state.chevron_pressed || state.chevron_hover > 0.0) {
-                draw_header_glass(
-                    session,
-                    &backdrop,
-                    theme,
-                    scale,
-                    4,
-                    box_r,
-                    if state.chevron_pressed { 0.85 } else { 0.45 },
-                    chevron_a
-                        * if state.chevron_pressed {
-                            1.0
-                        } else {
-                            state.chevron_hover
-                        },
-                )?;
-            } else if state.chevron_pressed {
-                let pill =
-                    session.create_solid_brush(with_alpha(theme.subtle_pressed, chevron_a))?;
-                session.fill_rounded_rect(&RoundedRect::uniform(box_r, 4.0), &pill);
-            } else if state.chevron_hover > 0.0 {
-                let pill = session.create_solid_brush(with_alpha(
-                    theme.subtle_hover,
-                    state.chevron_hover * chevron_a,
-                ))?;
-                session.fill_rounded_rect(&RoundedRect::uniform(box_r, 4.0), &pill);
-            }
-            let color = if state.chevron_pressed {
-                foreground.text_tertiary
+        let box_r = TitleDeco::chevron_box(width, title_h);
+        self.draw_chevron(
+            session, &backdrop, theme, scale, opacity, style.tint, box_r, "\u{E70E}", chevron_a,
+            state, roll_t,
+        )
+    }
+
+    /// The roll chevron (`glyph`, turned 180° by the roll progress `roll_t`) in its 32×32
+    /// button box at opacity `chevron_a`: per-control hover pill and pressed fill like a Fluent
+    /// transparent icon button, tertiary at rest and secondary as its row is hovered.
+    #[allow(clippy::too_many_arguments)]
+    fn draw_chevron(
+        &self,
+        session: &DrawingSession<'_>,
+        backdrop: &Backdrop<'_>,
+        theme: &Theme,
+        scale: f32,
+        opacity: f32,
+        tint: Option<ColorF>,
+        box_r: Rect,
+        glyph: &str,
+        chevron_a: f32,
+        state: TitleState,
+        roll_t: f32,
+    ) -> Result<()> {
+        if chevron_a <= 0.0 {
+            return Ok(());
+        }
+        let foreground = header_foreground(backdrop, theme, 7, box_r, scale, opacity, tint);
+        if theme.liquid_glass && (state.chevron_pressed || state.chevron_hover > 0.0) {
+            draw_header_glass(
+                session,
+                backdrop,
+                theme,
+                scale,
+                4,
+                box_r,
+                if state.chevron_pressed { 0.85 } else { 0.45 },
+                chevron_a
+                    * if state.chevron_pressed {
+                        1.0
+                    } else {
+                        state.chevron_hover
+                    },
+            )?;
+        } else if state.chevron_pressed {
+            let pill = session.create_solid_brush(with_alpha(theme.subtle_pressed, chevron_a))?;
+            session.fill_rounded_rect(&RoundedRect::uniform(box_r, 4.0), &pill);
+        } else if state.chevron_hover > 0.0 {
+            let pill = session.create_solid_brush(with_alpha(
+                theme.subtle_hover,
+                state.chevron_hover * chevron_a,
+            ))?;
+            session.fill_rounded_rect(&RoundedRect::uniform(box_r, 4.0), &pill);
+        }
+        let color = if state.chevron_pressed {
+            foreground.text_tertiary
+        } else {
+            lerp(
+                foreground.text_tertiary,
+                foreground.text_secondary,
+                state.hover,
+            )
+        };
+        let brush = session.create_solid_brush(with_alpha(color, chevron_a))?;
+        let saved = session.transform();
+        let centre = Vector2::new(
+            box_r.left + box_r.width() / 2.0,
+            box_r.top + box_r.height() / 2.0,
+        );
+        session.set_transform(&(Matrix3x2::rotation_around(chevron_angle(roll_t), centre) * saved));
+        session.draw_text(glyph, &self.glyph_format, &box_r, &brush);
+        session.set_transform(&saved);
+        Ok(())
+    }
+
+    /// Draws a left tab column `rail_w` DIPs wide down the whole window (`height`): the fence's
+    /// title bar when its tabs are on the left. Each tab is a 32 DIP row inset 4 DIPs from the
+    /// window edge (WinUI NavigationView items), a hairline separates neighbours, the shown tab
+    /// is semibold on the selection fill (`pill` while it glides to a newly selected tab), and
+    /// a tab's own colour is a 6 DIP dot before its name. `divider_a` fades the line between
+    /// the column and the items (gone once the fence has collapsed to the column).
+    #[allow(clippy::too_many_arguments)]
+    fn draw_tab_list(
+        &self,
+        session: &DrawingSession<'_>,
+        backdrop: &Backdrop<'_>,
+        theme: &Theme,
+        scale: f32,
+        opacity: f32,
+        tint: Option<ColorF>,
+        tabs: &[TabDraw<'_>],
+        pill: Option<(f32, f32)>,
+        halo: Option<&Brush>,
+        rail_w: f32,
+        height: f32,
+        divider_a: f32,
+        deco: TitleDeco,
+        state: TitleState,
+    ) -> Result<()> {
+        let px = Px::new(scale);
+        let dark = theme.mode == crate::theme::ThemeMode::Dark;
+        let line = |alpha: f32| {
+            if dark {
+                ColorF::new(1.0, 1.0, 1.0, alpha)
             } else {
-                lerp(
-                    foreground.text_tertiary,
-                    foreground.text_secondary,
-                    state.hover,
-                )
+                ColorF::new(0.0, 0.0, 0.0, alpha)
+            }
+        };
+        // The divider stops short of the window's rounded corners.
+        if divider_a > 0.0 {
+            let inset = theme.corner_radius.max(8.0);
+            let brush = session.create_solid_brush(line(0.18 * divider_a.min(1.0)))?;
+            session.fill_rect(
+                &Rect::from_xywh(
+                    px.snap(rail_w) - px.hair(),
+                    inset,
+                    px.hair(),
+                    (height - inset * 2.0).max(0.0),
+                ),
+                &brush,
+            );
+        }
+        let row = |y: f32, h: f32| {
+            Rect::from_xywh(
+                RAIL_ROW_INSET,
+                y,
+                (rail_w - RAIL_ROW_INSET - RAIL_ROW_RIGHT).max(0.0),
+                h,
+            )
+        };
+        let separator = session.create_solid_brush(line(if dark { 0.16 } else { 0.13 }))?;
+        for pair in tabs.windows(2) {
+            if pair[0].dragging || pair[1].dragging {
+                continue;
+            }
+            let r = row(pair[0].x, pair[0].w);
+            let y = px.snap((pair[0].x + pair[0].w + pair[1].x) * 0.5);
+            let a = pair[0].alpha.min(pair[1].alpha).clamp(0.0, 1.0);
+            if a > 0.0 {
+                separator.set_color(line(if dark { 0.16 } else { 0.13 } * a));
+                session.fill_rect(
+                    &Rect::from_xywh(r.left + 10.0, y, (r.width() - 20.0).max(0.0), px.hair()),
+                    &separator,
+                );
+            }
+        }
+        let selected = |rect: Rect, a: f32| -> Result<()> {
+            if theme.liquid_glass {
+                draw_header_glass(session, backdrop, theme, scale, 0, rect, 0.78, a)
+            } else {
+                let fill = session.create_solid_brush(with_alpha(theme.tab_active_fill, a))?;
+                session.fill_rounded_rect(
+                    &RoundedRect::uniform(rect, header_control_radius(theme, rect)),
+                    &fill,
+                );
+                Ok(())
+            }
+        };
+        if let Some((y, h)) = pill {
+            selected(row(y, h), 1.0)?;
+        }
+        let colored = tabs.iter().any(|t| t.color.is_some());
+        let text_left = if colored { 24.0 } else { 10.0 };
+        // A dragged tab is always above its neighbours.
+        for tab in tabs
+            .iter()
+            .filter(|t| !t.dragging)
+            .chain(tabs.iter().filter(|t| t.dragging))
+        {
+            let ta = tab.alpha.clamp(0.0, 1.0);
+            if ta <= 0.0 {
+                continue;
+            }
+            let rect = row(tab.x, tab.w);
+            let radius = header_control_radius(theme, rect);
+            if pill.is_none() && (tab.active || tab.dragging) {
+                selected(rect, ta)?;
+            } else if tab.pressed {
+                let fill = session.create_solid_brush(with_alpha(theme.subtle_pressed, ta))?;
+                session.fill_rounded_rect(&RoundedRect::uniform(rect, radius), &fill);
+            } else if tab.hover > 0.0 && !tab.active {
+                let fill =
+                    session.create_solid_brush(with_alpha(theme.subtle_hover, tab.hover * ta))?;
+                session.fill_rounded_rect(&RoundedRect::uniform(rect, radius), &fill);
+            }
+            if tab.drop_target > 0.0 {
+                let a = tab.drop_target.min(1.0) * ta;
+                let fill = session.create_solid_brush(with_alpha(theme.selection_fill, a))?;
+                session.fill_rounded_rect(&RoundedRect::uniform(rect, radius), &fill);
+                let ring = session.create_solid_brush(with_alpha(theme.selection_stroke, a))?;
+                session.draw_rounded_rect(&px.ring(rect, radius), &ring, px.hair());
+            }
+            if let Some(color) = tab.color {
+                let dot = Rect::from_xywh(
+                    rect.left + 10.0,
+                    rect.top + rect.height() * 0.5 - 3.0,
+                    6.0,
+                    6.0,
+                );
+                let brush = session.create_solid_brush(with_alpha(color, ta))?;
+                session.fill_rounded_rect(&RoundedRect::uniform(dot, 3.0), &brush);
+            }
+            let foreground =
+                header_foreground(backdrop, theme, tab.key, rect, scale, opacity, tint);
+            let color = if tab.pressed && !tab.dragging {
+                foreground.text_secondary
+            } else {
+                tab.title_color.unwrap_or(foreground.text_primary)
             };
-            let brush = session.create_solid_brush(with_alpha(color, chevron_a))?;
-            let saved = session.transform();
-            let centre = Vector2::new(
-                box_r.left + box_r.width() / 2.0,
-                box_r.top + box_r.height() / 2.0,
+            let brush = session.create_solid_brush(with_alpha(color, ta))?;
+            if let Some(halo) = halo {
+                halo.set_color(halo_color(color, ta));
+            }
+            let fmt = self.rail_title_format(tab.title_size, tab.active || tab.dragging);
+            // A navigated portal's up button ends the shown tab's row.
+            let up = tab.active && deco.up_button;
+            let room = self.rail_title_room(rail_w, colored, tab.badge, up);
+            let fitted = crate::text::fit_width(tab.title, fmt, room);
+            draw_caption(
+                session,
+                &fitted,
+                fmt,
+                &Rect::from_xywh(rect.left + text_left, rect.top, room, rect.height()),
+                &brush,
+                halo,
             );
-            session.set_transform(
-                &(Matrix3x2::rotation_around(chevron_angle(roll_t), centre) * saved),
-            );
-            session.draw_text("\u{E70E}", &self.glyph_format, &box_r, &brush);
-            session.set_transform(&saved);
+            if up {
+                // Up (Segoe Fluent E74A): SubtleFill on hover, SubtleFillColorTertiary while
+                // pressed, as in the title row.
+                let box_r = TitleDeco::rail_up_box(rect);
+                let fill = if state.up_pressed {
+                    Some(with_alpha(theme.subtle_pressed, ta))
+                } else if state.up_hover > 0.0 {
+                    Some(with_alpha(theme.subtle_hover, state.up_hover * ta))
+                } else {
+                    None
+                };
+                if let Some(fill) = fill {
+                    let brush = session.create_solid_brush(fill)?;
+                    session.fill_rounded_rect(&RoundedRect::uniform(box_r, 4.0), &brush);
+                }
+                let glyph = session.create_solid_brush(with_alpha(
+                    if state.up_pressed {
+                        foreground.text_tertiary
+                    } else {
+                        foreground.text_secondary
+                    },
+                    ta,
+                ))?;
+                session.draw_text("\u{E74A}", &self.glyph_format, &box_r, &glyph);
+            }
+            if let Some(badge) = tab.badge {
+                let badge_w = self.tab_badge_width(badge) - TAB_BADGE_GAP;
+                let up_w = if up { 26.0 } else { 0.0 };
+                let r = Rect::from_xywh(
+                    rect.right - 8.0 - badge_w - up_w,
+                    rect.top + ((rect.height() - TAB_BADGE_H) * 0.5).round(),
+                    badge_w,
+                    TAB_BADGE_H,
+                );
+                let fill = session.create_solid_brush(with_alpha(theme.accent, ta))?;
+                session.fill_rounded_rect(&RoundedRect::uniform(r, TAB_BADGE_H * 0.5), &fill);
+                // TextOnAccentFillColorPrimary, as on the title-row pills.
+                let on_accent = if dark {
+                    ColorF::from_rgba8(0, 0, 0, 0xFF)
+                } else {
+                    ColorF::from_rgba8(0xFF, 0xFF, 0xFF, 0xFF)
+                };
+                let text = session.create_solid_brush(with_alpha(on_accent, ta))?;
+                session.draw_text(badge, &self.badge_format, &r, &text);
+            }
         }
         Ok(())
     }
@@ -2001,12 +2377,13 @@ impl FenceChrome {
                     .min(rect.width())
                     .max(1.0);
                 let area = Rect::from_xywh(
-                    if right {
-                        rect.right - measured
-                    } else {
-                        rect.left
-                    },
-                    rect.top + theme.title_height,
+                    rows.origin_x
+                        + if right {
+                            rect.right - measured
+                        } else {
+                            rect.left
+                        },
+                    rect.top + rows.origin_y,
                     measured,
                     rect.height(),
                 );

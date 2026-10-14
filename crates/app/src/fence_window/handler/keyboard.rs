@@ -300,8 +300,8 @@ pub(super) fn on_contextmenu(
         let pad = (8.0 * v.scale()) as i32;
         queue.push(Command::FenceMenu {
             fence: v.active,
-            x: win.left + pad,
-            y: win.top + v.title_h_px() + pad,
+            x: win.left + v.content_x + pad,
+            y: win.top + v.content_y + pad,
         });
         return Some(0);
     }

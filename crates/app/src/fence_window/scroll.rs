@@ -166,8 +166,8 @@ impl FenceViewState {
     /// while rolled up the remembered expanded height below the title (see `scroll_extent`).
     pub(super) fn viewport_h_px(&self) -> i32 {
         if self.rolled_up && self.roll_anim.is_none() {
-            let title_h = self.title_h_px();
-            self.expanded_h_px.max(title_h + 40) - title_h
+            let head = self.head_px();
+            self.expanded_h_px.max(head + 40) - head
         } else {
             self.content_size_px().1
         }
@@ -332,14 +332,14 @@ impl FenceViewState {
         y_px: i32,
         scroll_y: f32,
     ) -> Option<(ScrollHit, ScrollbarGeom)> {
-        let title_h = self.title_h_px();
+        let title_h = self.content_y;
         if y_px < title_h {
             return None;
         }
         let g = self.scrollbar_geometry_for(scroll_y)?;
         let scale = self.scale();
         let (cw, _) = self.content_size_px();
-        let x = x_px as f32 / scale;
+        let x = (x_px - self.content_x) as f32 / scale;
         let y = (y_px - title_h) as f32 / scale;
         if x < cw as f32 / scale - SCROLLBAR_HOT_DIP || y < g.band_top || y > g.band_top + g.band_h
         {
@@ -568,7 +568,9 @@ impl FenceViewState {
         let cy = pt.y - r.top;
         let (top, bottom) = self.marquee_band_px();
         let zone_px = (DRAG_SCROLL_ZONE_DIP * self.scale()) as i32;
-        let zone = drag_scroll_zone(cy, top, bottom, zone_px).filter(|_| self.scroll_max() > 0.0);
+        // Over a left tab column the drag aims at a tab pill, not at the item area's edge.
+        let zone = drag_scroll_zone(cy, top, bottom, zone_px)
+            .filter(|_| self.scroll_max() > 0.0 && pt.x - r.left >= self.content_x);
         let Some((dir, depth)) = zone else {
             if self.drag_scroll.take().is_some() && self.snap_scroll() {
                 // Auto-scroll ended between pixels: `content_busy` makes the next tick redraw

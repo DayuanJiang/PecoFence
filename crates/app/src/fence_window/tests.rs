@@ -28,7 +28,7 @@ fn window_drag_keeps_the_latest_sample_and_release_before_first_frame() {
         offset: (20, 10),
         offset_dpi: 96,
         merge_target: 0,
-        merge_x: i32::MIN,
+        merge_at: (i32::MIN, i32::MIN),
         moved_once: false,
         origin: WindowDragOrigin::Caption {
             rect: RECT::default(),
@@ -239,6 +239,21 @@ fn merge_slot_on_drawn_strip_is_stable() {
         tab_strip_rects(&[80.0], Some(9), 500.0),
         vec![(TAB_LEFT, 80.0)]
     );
+}
+
+/// A merge into a left tab column collapsed to fit its rows opens one row: the rows shrink by a
+/// quarter for three tabs, where a title-row-wide gap would halve them.
+#[test]
+fn merge_gap_in_left_column_is_one_row() {
+    let rows = [RAIL_ROW_H; 3];
+    let fit = 3.0 * RAIL_ROW_H + 2.0 * TAB_GAP;
+    let drawn = tab_strip_rects_with(&rows, Some((1, RAIL_ROW_H)), fit);
+    assert_eq!(drawn.len(), 3);
+    for (_, h) in &drawn {
+        assert!(*h > RAIL_ROW_H * 0.7, "row squeezed to {h}");
+    }
+    // The second row moves down past the gap.
+    assert!(drawn[1].0 > drawn[0].0 + drawn[0].1 + RAIL_ROW_H * 0.7);
 }
 
 /// The shell's stack + count badge takes over for large footprints; small ones lift off in
