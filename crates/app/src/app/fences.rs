@@ -193,6 +193,10 @@ impl App {
         };
         if self.fences.contains_key(&inbox) == self.state.hidden_inbox().is_some() {
             self.resync_windows();
+            // While it had no window, another fence may have grown or moved over its spot.
+            if self.fences.contains_key(&inbox) {
+                self.move_out_of_overlap(inbox);
+            }
         }
     }
 

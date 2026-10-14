@@ -531,10 +531,17 @@ pub fn lint(cfg: &Config) -> Vec<Lint> {
     out
 }
 
-/// Schema migration chain (currently identity).
+/// Schema migration chain, and choices this version no longer offers.
 pub fn migrate(mut cfg: Config) -> Config {
     if cfg.schema_version < SCHEMA_VERSION {
         cfg.schema_version = SCHEMA_VERSION;
+    }
+    // 0.2.0 offered Win+Space and Win+Shift+Space, which Windows keeps for the input switcher:
+    // Peek never got them, and a file still choosing one showed the fallback notice at every
+    // start. It takes the default (a usable `customHotkey` stays the choice).
+    let peek = &mut cfg.settings.peek;
+    if peek.chosen_hotkey() == peek.hotkey.combo() {
+        peek.hotkey = crate::model::PeekHotkey::CtrlAltSpace;
     }
     cfg
 }
@@ -752,6 +759,20 @@ mod tests {
             ..f
         });
         assert!(validate(&c).is_err());
+    }
+
+    #[test]
+    fn a_win_space_peek_shortcut_from_0_2_0_loads_as_the_default() {
+        let mut c = sample();
+        c.settings.peek.hotkey = PeekHotkey::WinSpace;
+        assert_eq!(migrate(c.clone()).settings.peek, PeekSettings::default());
+        c.settings.peek.hotkey = PeekHotkey::WinShiftSpace;
+        assert_eq!(migrate(c.clone()).settings.peek, PeekSettings::default());
+        // A usable custom shortcut is the choice; `hotkey` is only for older versions then.
+        c.settings.peek.custom_hotkey = Some("Ctrl+Shift+F".into());
+        let peek = migrate(c).settings.peek;
+        assert_eq!(peek.hotkey, PeekHotkey::WinShiftSpace);
+        assert_eq!(peek.chosen_hotkey().to_string(), "Ctrl+Shift+F");
     }
 
     #[test]

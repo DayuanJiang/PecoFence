@@ -1272,6 +1272,10 @@
   if (wv) wv.addEventListener('message', e => {
     const m = e.data;
     if (m.type === 'state') {
+      // A refused shortcut's message goes once the shortcut or Peek's switch changes (the CLI,
+      // the switch on this page).
+      const was = state && state.peekHotkey ? [state.settings.peek.enabled, state.peekHotkey.chosen] : null;
+      if (was && m.peekHotkey && (was[0] !== m.settings.peek.enabled || !sameKey(was[1], m.peekHotkey.chosen))) hkError = '';
       state = m;
       state.settings.language ||= 'zh-CN';
       const languageChanged = i18n.set(m.locale || 'zh-CN', m.translations);

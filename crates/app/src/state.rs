@@ -416,7 +416,9 @@ impl AppState {
             base
         });
         let mut unplaced = if source == target {
-            Vec::new()
+            // Import / snapshot restore run this twice before the App settles them: keep the
+            // fences the first pass found no spot for.
+            std::mem::take(&mut self.unplaced)
         } else {
             self.config.carry_fences(source, target)
         };
@@ -824,6 +826,16 @@ impl AppState {
     /// rule set; missing items are marked orphaned (membership kept) and garbage-collected
     /// after seven days.
     pub fn sync_desktop(&mut self, entries: &[DesktopEntry]) -> SyncReport {
+        self.sync_desktop_partly_read(entries, &[])
+    }
+
+    /// [`Self::sync_desktop`] with a listing that could not read the `unread` desktop folders
+    /// in full: their items missing from it are not orphaned.
+    pub fn sync_desktop_partly_read(
+        &mut self,
+        entries: &[DesktopEntry],
+        unread: &[EntryOrigin],
+    ) -> SyncReport {
         let mut report = SyncReport::default();
         let now = pecofence_core::now_unix();
         let mut seen: HashSet<ItemId> = HashSet::new();
@@ -964,9 +976,17 @@ impl AppState {
         }
 
         // Orphans.
+        let unread: Vec<Origin> = unread
+            .iter()
+            .map(|o| match o {
+                EntryOrigin::UserDesktop => Origin::UserDesktop,
+                EntryOrigin::PublicDesktop => Origin::PublicDesktop,
+                EntryOrigin::Namespace => Origin::Namespace,
+            })
+            .collect();
         let mut to_remove = Vec::new();
         for (id, item) in self.config.items.iter_mut() {
-            if seen.contains(id) {
+            if seen.contains(id) || unread.contains(&item.origin) {
                 continue;
             }
             match item.orphaned_since {
@@ -2206,6 +2226,23 @@ mod tests {
         assert!(kept.windows(2).all(|w| w[0].ts <= w[1].ts));
     }
 
+    /// An import saved at another resolution: relayout_from_state runs ensure_layout again,
+    /// and the fences with no spot here must still be moved apart after that.
+    #[test]
+    fn an_imported_layout_keeps_its_fences_to_place() {
+        let id = "GSM7787#5&2C948443&0&UID24832";
+        let mut state = state_on(vec![monitor(id, 0, 3840, 2064, 192)]);
+        let mut file = state.config.clone();
+        file.layouts[0].fingerprint[0].screen_px = [1920, 1080];
+        file.layouts[0].fingerprint[0].dpi = 96;
+        state.replace_config(file);
+        let n = state.fences().len();
+        assert!(n > 0);
+        assert_eq!(state.unplaced.len(), n);
+        state.ensure_layout();
+        assert_eq!(state.unplaced.len(), n);
+    }
+
     /// Issue #24: unplugging the big monitor, working on the laptop, plugging it back in.
     #[test]
     fn every_monitor_set_shows_the_same_fences_at_its_own_spots() {
@@ -2675,6 +2712,24 @@ mod tests {
         state.forget_orphan_at(&desk("c.txt"));
         assert!(!state.rename_item(&desk("b.txt"), &desk("c.txt")));
         assert_eq!(state.item_id_for_path(&desk("c.txt")), Some(live));
+    }
+
+    /// The public desktop could not be read: its files stay, the user's deleted one goes.
+    #[test]
+    fn a_desktop_folder_that_could_not_be_read_orphans_nothing() {
+        let mut state = test_state();
+        let mut public = desktop_entry("shared.txt");
+        public.path = PathBuf::from("C:/Users/Public/Desktop/shared.txt");
+        public.origin = EntryOrigin::PublicDesktop;
+        state.sync_desktop(&[desktop_entry("mine.txt"), public.clone()]);
+        let shared = state.item_id_for_path(&public.path).unwrap();
+        let mine = state
+            .item_id_for_path(Path::new("C:/Users/Me/Desktop/mine.txt"))
+            .unwrap();
+        let report = state.sync_desktop_partly_read(&[], &[EntryOrigin::PublicDesktop]);
+        assert_eq!(report.removed, 1);
+        assert!(state.config.items[&shared].orphaned_since.is_none());
+        assert!(state.config.items[&mine].orphaned_since.is_some());
     }
 
     #[test]

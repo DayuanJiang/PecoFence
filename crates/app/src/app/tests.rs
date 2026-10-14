@@ -287,6 +287,23 @@ mod ipc {
         assert_eq!(err.code, ErrorCode::ValidationFailed);
         assert_eq!(err.details.unwrap()["expected"], json!([32, 48, 64, 96]));
 
+        // Numbers the app would clamp: the ranges it clamps to.
+        for (path, value) in [
+            ("snapping.gapPx", json!(1000)),
+            ("snapping.gapPx", json!(-3)),
+            ("icons.tintStrength", json!(5)),
+            ("icons.tintStrength", json!(-1)),
+        ] {
+            let err = patch_settings_path(&Settings::default(), path, value).unwrap_err();
+            assert_eq!(err.code, ErrorCode::ValidationFailed, "{path}");
+        }
+        let patched = patch_settings_path(&Settings::default(), "snapping.gapPx", json!(64));
+        assert_eq!(patched.unwrap().snapping.gap_px, 64);
+        // One already stored outside them does not block other paths.
+        let mut stored = Settings::default();
+        stored.snapping.gap_px = 1000;
+        assert!(patch_settings_path(&stored, "peek.dim", json!(false)).is_ok());
+
         // Enum paths: the serde error names the variants.
         let err = patch_settings_path(&Settings::default(), "theme", json!("neon")).unwrap_err();
         assert_eq!(err.code, ErrorCode::ValidationFailed);
