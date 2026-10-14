@@ -109,6 +109,7 @@ impl RenderStack {
     pub fn trim(&self) {
         use crate::gpu_bindings as b;
         use windows_core::Interface;
+        crate::panel::release_retired_surfaces();
         let gpu = self.gpu.borrow();
         let result = (|| -> Result<()> {
             let d2d: b::ID2D1Device = gpu.device.d2d_device().cast()?;
