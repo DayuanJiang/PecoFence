@@ -105,15 +105,15 @@ impl App {
         if report.changed() || renamed > 0 {
             tracing::info!(?report, "desktop resynced");
             // Renamed / modified files may have new icons; a file that just arrived (moved in
-            // by the shell) may have been extracted while it was still landing. Once per item:
-            // a file being written reports several events, and each invalidation scans the
-            // whole icon and bitmap caches.
-            let mut invalidated: HashSet<ItemId> = HashSet::new();
+            // by the shell) may have been extracted while it was still landing. Once per icon
+            // key: a file being written reports several events, documents of one type share
+            // a key, and each invalidation scans the whole icon and bitmap caches.
+            let mut invalidated: HashSet<pecofence_core::IconKey> = HashSet::new();
             for ev in &events {
                 if let FsEvent::Modified(p) | FsEvent::RenamedNew(p) | FsEvent::Added(p) = ev
                     && let Some(id) = self.state.item_by_path(p)
-                    && invalidated.insert(id)
                     && let Some(item) = self.state.item(id)
+                    && invalidated.insert(item.icon_key.clone())
                 {
                     self.ctx.icons.borrow_mut().invalidate(&item.icon_key);
                     // Draw keys are `<cache_key><variant>@<px>`: drop every size / variant.
