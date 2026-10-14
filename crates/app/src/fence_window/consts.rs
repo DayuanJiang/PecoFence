@@ -77,6 +77,8 @@ pub(super) const TYPE_AHEAD_TIMEOUT: Duration = Duration::from_millis(1000);
 pub(super) const SCROLLBAR_HOT_DIP: f32 = 12.0;
 pub(super) const WM_NCLBUTTONUP: u32 = 0x00A2;
 pub(super) const WM_NCRBUTTONDOWN: u32 = 0x00A4;
+/// The second right press of a double-click (CS_DBLCLKS): a press like any other for the fence.
+pub(super) const WM_RBUTTONDBLCLK: u32 = 0x0206;
 /// `SC_MOVE | HTCAPTION`: starts the caption drag loop as if the title had just been pressed.
 pub const SC_MOVE_CAPTION: usize = 0xF012;
 

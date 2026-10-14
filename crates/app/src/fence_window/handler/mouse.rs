@@ -609,7 +609,8 @@ pub(super) fn on_lbuttondblclk(
     Some(0)
 }
 
-// A plain press takes the capture so the release pairs with it (see
+// A plain press (WM_RBUTTONDOWN, or WM_RBUTTONDBLCLK for the second press of
+// a double-click) takes the capture so the release pairs with it (see
 // `rbutton_press`). The other button during a tab drag / tear-off cancels it
 // (as it does for an OLE drag); the WM_RBUTTONUP that follows then finds no
 // press and opens no menu.

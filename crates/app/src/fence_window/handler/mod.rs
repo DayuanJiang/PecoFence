@@ -215,7 +215,9 @@ impl FenceWindow {
                     msg::WM_SYSKEYDOWN => keyboard::on_syskeydown(h, hwnd, wparam, lparam),
                     msg::WM_CONTEXTMENU => keyboard::on_contextmenu(h, hwnd, wparam, lparam),
                     msg::WM_LBUTTONDBLCLK => mouse::on_lbuttondblclk(h, hwnd, wparam, lparam),
-                    msg::WM_RBUTTONDOWN => mouse::on_rbuttondown(h, hwnd, wparam, lparam),
+                    msg::WM_RBUTTONDOWN | WM_RBUTTONDBLCLK => {
+                        mouse::on_rbuttondown(h, hwnd, wparam, lparam)
+                    }
                     msg::WM_RBUTTONUP => mouse::on_rbuttonup(h, hwnd, wparam, lparam),
                     msg::WM_MOUSEWHEEL => mouse::on_mousewheel(h, hwnd, wparam, lparam),
                     msg::WM_SIZE => nc::on_size(h, hwnd, wparam, lparam),
