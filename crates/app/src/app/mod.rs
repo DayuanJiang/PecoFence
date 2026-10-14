@@ -3,7 +3,8 @@
 use crate::anchor::{self, AnchorCell, DesktopAnchor, ShowDesktopBehavior, ZMode};
 use crate::commands::{
     Command, CommandQueue, TransferMode, WM_APP_COMMAND, WM_APP_FRAME, WM_APP_FS_CHANGED,
-    WM_APP_PEEK_FOCUSED, WM_APP_PREWARM_DONE, WM_APP_SHELL_CHANGED, WM_APP_TRAY, WM_APP_WALLPAPER,
+    WM_APP_LIVE_WALLPAPER, WM_APP_PEEK_FOCUSED, WM_APP_PREWARM_DONE, WM_APP_SHELL_CHANGED,
+    WM_APP_TRAY, WM_APP_WALLPAPER,
 };
 use crate::fence_window::{
     BackdropMode, BackdropSets, Behavior, FenceContext, FenceWindow, ItemView, SearchMarks, TabView,
@@ -57,6 +58,7 @@ mod fileops;
 mod group;
 mod ipc;
 mod items;
+mod live_wallpaper;
 mod menus;
 mod motion;
 mod peek;
@@ -134,7 +136,12 @@ const DEVICE_RETRY_FIRST_MS: u32 = 1_000;
 /// ~3 MB.
 const TIMER_IDLE_TRIM: usize = 60;
 const IDLE_TRIM_MS: u32 = 30_000;
+/// The live wallpaper capture worker finished (`WM_APP_LIVE_WALLPAPER`); retried while the App
+/// is borrowed.
+const TIMER_LIVE_CAPTURED: usize = 61;
 const DEVICE_RETRY_MAX_MS: u32 = 30_000;
+/// Growth of private commit plus GPU memory that logs a memory line before the hour is up.
+const MEMORY_LOG_GROWTH: u64 = 64 << 20;
 const WALLPAPER_PREWARM_DELAY_MS: u32 = 3_000;
 const SPI_SETDESKWALLPAPER: usize = 0x0014;
 const SPI_SETWORKAREA: usize = 0x002F;
@@ -275,11 +282,16 @@ pub struct App {
     desktop_unavailable: bool,
     /// Last run of the rules that depend on the clock ("闲置天数"); see `housekeeping`.
     idle_rules_checked: Option<Instant>,
+    /// When the last memory line was logged and the total it showed; see `log_memory`.
+    memory_logged: Option<(Instant, u64)>,
     /// Fingerprint of the snapshot the current backdrops were built from.
     wallpaper_sig: Option<String>,
     wallpaper_cache: BackdropCache,
     /// Another virtual desktop's wallpaper being decoded ahead of a switch there.
     prewarm: Option<visuals::PrewarmJob>,
+    /// Monitors a live wallpaper covers, and the capture of them in progress.
+    live: Vec<live_wallpaper::LiveWallpaper>,
+    live_capture: Option<live_wallpaper::LiveCapture>,
     /// The hotkey currently registered (None = registration failed or Peek disabled).
     peek_hotkey: Option<PeekHotkey>,
     /// The combination the last `sync_peek_hotkey` tried to register (the user's choice), so a
@@ -329,10 +341,11 @@ impl App {
 
         // Elevation decides which windows the fences may be placed under; the delay after
         // Explorer shows how long a launch at sign-in waited.
+        let after_explorer_s = seconds_after_explorer();
         tracing::info!(
             packaged = process::is_packaged(),
             elevated = ?process::is_elevated(process::current_pid()),
-            after_explorer_s = ?seconds_after_explorer(),
+            after_explorer_s = ?after_explorer_s,
             "process started"
         );
         let stack = Rc::new(RenderStack::new()?);
@@ -456,6 +469,16 @@ impl App {
                             window::set_timer(hwnd, TIMER_PREWARM_FINISH, 1);
                             Some(0)
                         }
+                        WM_APP_LIVE_WALLPAPER => {
+                            if wparam == 0 {
+                                window::set_timer(hwnd, TIMER_LIVE_CAPTURED, 1);
+                            } else if let Ok(mut guard) = cell.try_borrow_mut()
+                                && let Some(app) = guard.as_mut()
+                            {
+                                app.capture_live_wallpapers(live_wallpaper::LIVE_FRONT_REFRESH);
+                            }
+                            Some(0)
+                        }
                         WM_APP_ICON_READY => {
                             window::set_timer(hwnd, TIMER_ICONS, 40);
                             Some(0)
@@ -540,15 +563,17 @@ impl App {
                                         app.trim_if_idle();
                                     }
                                 }
-                                TIMER_WALLPAPER_PREWARM | TIMER_PREWARM_FINISH => {
+                                TIMER_WALLPAPER_PREWARM
+                                | TIMER_PREWARM_FINISH
+                                | TIMER_LIVE_CAPTURED => {
                                     if let Ok(mut guard) = cell.try_borrow_mut()
                                         && let Some(app) = guard.as_mut()
                                     {
                                         window::kill_timer(hwnd, wparam);
-                                        if wparam == TIMER_PREWARM_FINISH {
-                                            app.finish_prewarm();
-                                        } else {
-                                            app.prewarm_wallpapers();
+                                        match wparam {
+                                            TIMER_PREWARM_FINISH => app.finish_prewarm(),
+                                            TIMER_LIVE_CAPTURED => app.finish_live_capture(),
+                                            _ => app.prewarm_wallpapers(),
                                         }
                                     } else {
                                         window::set_timer(hwnd, wparam, 200);
@@ -880,6 +905,11 @@ impl App {
             icons: Rc::new(RefCell::new({
                 let mut c = IconCache::new(control.hwnd());
                 c.set_variant(icon_variant_for(&state.config.settings.icons));
+                // Started at sign-in (or before Explorer): the shell's first answers may be
+                // placeholders.
+                if after_explorer_s.is_none_or(|s| s < 300.0) {
+                    c.recheck_after_start();
+                }
                 c
             })),
             bitmaps: Rc::new(RefCell::new(BitmapCache::new())),
@@ -976,11 +1006,13 @@ impl App {
 
         // CLI named pipe: requests land in `ipc_pending`, the control window is poked.
         let ipc_pending: PendingQueue = Arc::new(Mutex::new(VecDeque::new()));
-        let ipc = IpcServer::start(
-            &pecofence_core::brand::ipc_pipe_name(args.instance.as_deref()),
-            control.hwnd(),
-            ipc_pending.clone(),
-        );
+        let ipc = match pecofence_platform::pipe::ipc_pipe_name(args.instance.as_deref()) {
+            Ok(name) => IpcServer::start(&name, control.hwnd(), ipc_pending.clone()),
+            Err(error) => {
+                tracing::warn!(target: "pecofence::ipc", %error, "user SID unavailable; CLI disabled");
+                None
+            }
+        };
         let rating = rating::RatingPrompt::load(
             state.config_path().parent().unwrap_or(Path::new(".")),
             pecofence_platform::process::is_packaged(),
@@ -1047,11 +1079,14 @@ impl App {
             peek_hotkey_wanted: None,
             desktop_unavailable: false,
             idle_rules_checked: None,
+            memory_logged: None,
             cut_items: HashSet::new(),
             cut_clip_seq: 0,
             wallpaper_sig: None,
             wallpaper_cache: BackdropCache::default(),
             prewarm: None,
+            live: Vec::new(),
+            live_capture: None,
         };
         // Watch both wallpaper settings and virtual-desktop state; either signal starts a
         // bounded burst of fast reads, because the image may arrive after the notification.
@@ -1081,6 +1116,15 @@ impl App {
                     WM_APP_WALLPAPER,
                     1,
                     foreground.0 as isize,
+                );
+            }));
+            // A live wallpaper's backdrop catches up with what the desktop shows now.
+            a.on_desktop_front = Some(Box::new(move || {
+                window::post_message(
+                    HWND(control_hwnd as *mut core::ffi::c_void),
+                    WM_APP_LIVE_WALLPAPER,
+                    1,
+                    0,
                 );
             }));
         }
@@ -1186,7 +1230,7 @@ impl App {
             }
             if app.state.config.settings.hide_real_icons && !app.no_hide_icons {
                 // At logon Explorer's desktop may not be ready yet: retried from the anchor's
-                // periodic check; housekeeping resets the setting if it never succeeds.
+                // periodic check; housekeeping tells the user if it never succeeds.
                 a.request_hide_desktop_icons();
             }
         }
@@ -1306,8 +1350,8 @@ impl App {
         for window in self.fences.values() {
             window.check_dpi();
         }
-        // Startup hide that kept failing: converge to the same end state as apply_settings
-        // (setting reflects reality, user is told) instead of silently showing the toggle on.
+        // Startup hide that kept failing: stop retrying for this run and tell the user. The
+        // setting stays on, so the next start (or turning it off and on) tries again.
         if self.state.config.settings.hide_real_icons {
             let gave_up = self
                 .anchor
@@ -1319,11 +1363,8 @@ impl App {
                     a.cancel_pending_hide();
                 }
                 tracing::warn!(
-                    "hiding desktop icons kept failing after startup; turning the setting off"
+                    "hiding desktop icons kept failing after startup; trying again at the next start"
                 );
-                self.state.config.settings.hide_real_icons = false;
-                self.settings_mutated();
-                self.desktop_icons_setting_changed();
                 if let Some(t) = &self.tray {
                     t.show_info(
                         "PecoFence",
@@ -1334,6 +1375,39 @@ impl App {
             }
         }
         self.offer_rating_if_due();
+        self.log_memory();
+    }
+
+    /// One line with the process's memory: on the first housekeeping tick, then hourly, and
+    /// whenever the total grew by `MEMORY_LOG_GROWTH` since the last line, so a log sent with
+    /// a high Task Manager number shows when it grew and in which kind of memory.
+    fn log_memory(&mut self) {
+        let Ok(m) = pecofence_platform::memstats::MemoryStats::current() else {
+            return;
+        };
+        let gpu = self.ctx.stack.gpu_memory();
+        let (gpu_local, gpu_shared) = gpu.unwrap_or_default();
+        let total = m.private_commit as u64 + gpu_local + gpu_shared;
+        let due = match self.memory_logged {
+            None => true,
+            Some((at, logged)) => {
+                at.elapsed() >= Duration::from_secs(3600)
+                    || total >= logged.saturating_add(MEMORY_LOG_GROWTH)
+            }
+        };
+        if !due {
+            return;
+        }
+        self.memory_logged = Some((Instant::now(), total));
+        let mb = |b: u64| (b as f64 / (1u64 << 20) as f64 * 10.0).round() / 10.0;
+        // The GPU fields are left out when the query failed: no zero that looks measured.
+        tracing::info!(
+            private_ws_mb = mb(m.private_working_set as u64),
+            commit_mb = mb(m.private_commit as u64),
+            gpu_local_mb = gpu.map(|(local, _)| mb(local)),
+            gpu_shared_mb = gpu.map(|(_, shared)| mb(shared)),
+            "memory"
+        );
     }
 
     /// Drains and executes queued commands. Loops because handlers may enqueue more.

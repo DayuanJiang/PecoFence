@@ -1,4 +1,4 @@
-//! Named-pipe server side of the CLI IPC (`\\.\pipe\PecoFence[.<instance>]`).
+//! Named-pipe server side of the CLI IPC (`\\.\pipe\PecoFence.<user SID>[.<instance>]`).
 //!
 //! One pipe instance serves one connection. [`PipeListener`] keeps exactly one instance waiting
 //! in `ConnectNamedPipe` at all times: the next instance is created *before* a connected one is
@@ -166,6 +166,14 @@ fn create_instance(
 /// protected DACL (no inherited entries) and no other ACEs.
 pub fn owner_only_sddl(user_sid: &str) -> String {
     format!("D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GA;;;{user_sid})")
+}
+
+/// [`pecofence_core::brand::ipc_pipe_name`] for the account this process runs as.
+pub fn ipc_pipe_name(instance: Option<&str>) -> Result<String> {
+    Ok(pecofence_core::brand::ipc_pipe_name(
+        &current_user_sid()?,
+        instance,
+    ))
 }
 
 /// String SID (`S-1-5-21-…`) of the account this process runs as.

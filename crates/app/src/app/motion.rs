@@ -131,18 +131,34 @@ impl App {
     }
 
     pub(super) fn on_icons_ready(&mut self) {
-        let (n, next_retry) = {
+        let (n, next_retry, replaced) = {
             let mut icons = self.ctx.icons.borrow_mut();
-            (icons.drain_results(), icons.flush_retries())
+            (
+                icons.drain_results(),
+                icons.flush_retries(),
+                icons.take_replaced(),
+            )
         };
+        if !replaced.is_empty() {
+            // A re-check after a start at sign-in brought a different picture: the old one's
+            // GPU copy goes, and the windows showing it look it up again.
+            self.ctx
+                .bitmaps
+                .borrow_mut()
+                .retain(|key| !replaced.contains(key));
+            for w in self.fences.values() {
+                w.reload_icons(&replaced);
+            }
+        }
         if n > 0 {
             for w in self.fences.values() {
                 w.redraw_if_pending_icons();
             }
         }
         if let Some(d) = next_retry {
-            // Failed extractions waiting for another attempt: come back when the first is due.
-            let ms = d.as_millis().clamp(50, 10_000) as u32;
+            // Failed extractions waiting for another attempt, or the next re-check pass: come
+            // back when the first is due.
+            let ms = d.as_millis().clamp(50, 600_000) as u32;
             window::set_timer(self.control.hwnd(), TIMER_ICONS, ms);
         }
     }

@@ -7,7 +7,7 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 
-use pecofence_ipc::{ErrorCode, IpcError, Method, Request, Response, ipc_pipe_name};
+use pecofence_ipc::{ErrorCode, IpcError, Method, Request, Response};
 
 /// `SECURITY_IDENTIFICATION`: the server may learn who we are but cannot impersonate us. std's
 /// `security_qos_flags` ORs `SECURITY_SQOS_PRESENT` in by itself (so that the zero-valued
@@ -51,7 +51,7 @@ pub const TIMEOUT_HINT: &str =
 /// `internal`.
 pub fn send(instance: Option<&str>, method: Method, timeout_ms: u32) -> Result<Response, IpcError> {
     let timeout_ms = timeout_ms.max(MIN_TIMEOUT_MS);
-    let name = ipc_pipe_name(instance);
+    let name = pipe_name(instance)?;
     let request = Request::new(method).with_timeout(timeout_ms);
     let mut line = serde_json::to_string(&request)
         .map_err(|e| IpcError::internal(format!("cannot encode request: {e}")))?;
@@ -88,7 +88,7 @@ pub fn stream(
     mut on_line: impl FnMut(Response) -> bool,
 ) -> Result<bool, IpcError> {
     let timeout_ms = timeout_ms.max(MIN_TIMEOUT_MS);
-    let name = ipc_pipe_name(instance);
+    let name = pipe_name(instance)?;
     let request = Request::new(method).with_timeout(timeout_ms);
     let mut line = serde_json::to_string(&request)
         .map_err(|e| IpcError::internal(format!("cannot encode request: {e}")))?;
@@ -180,6 +180,13 @@ fn exchange(name: &str, line: &str) -> Result<Response, IpcError> {
     })
 }
 
+/// The pipe of the app running under this user's account, computed by the same function the
+/// app uses.
+fn pipe_name(instance: Option<&str>) -> Result<String, IpcError> {
+    pecofence_platform::pipe::ipc_pipe_name(instance)
+        .map_err(|e| IpcError::internal(format!("cannot read the current user's SID: {e}")))
+}
+
 fn closed() -> IpcError {
     IpcError::internal("connection closed by PecoFence")
         .hint("Check the app's log; if it crashed, start it again")
@@ -260,6 +267,20 @@ mod tests {
         )
         .unwrap_err();
         assert_eq!(err.code, ErrorCode::NotRunning);
+    }
+
+    #[test]
+    fn pipe_name_carries_this_users_sid() {
+        let name = pipe_name(Some("x")).expect("token query");
+        let sid = name
+            .strip_prefix(r"\\.\pipe\PecoFence.")
+            .and_then(|rest| rest.strip_suffix(".x"))
+            .unwrap_or_default();
+        assert!(sid.starts_with("S-1-"), "{name}");
+        assert!(
+            sid.split('-').skip(1).all(|p| p.parse::<u64>().is_ok()),
+            "{name}"
+        );
     }
 
     #[test]

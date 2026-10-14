@@ -8,6 +8,9 @@ use std::time::{Duration, Instant};
 pub(super) const FIRST_CHECK_MS: u32 = 50;
 const RETRY_MS: u32 = 100;
 const SETTLE_MS: u64 = 2_000;
+/// Starts a monitor's part of a backdrop signature whose backdrop shows a live wallpaper's
+/// capture (no path holds `|`).
+pub(super) const LIVE_MARK: &str = "|live@";
 
 #[derive(Clone, Copy, Default)]
 pub(super) struct RefreshSchedule {
@@ -171,8 +174,9 @@ impl BackdropCache {
     pub(super) fn insert(&mut self, signature: String, backdrops: Rc<BackdropSets>) {
         self.remove(&signature);
         let bytes = Self::set_bytes(&backdrops);
-        // Very large monitor sets can still be displayed without retaining another copy.
-        if self.max_entries == 0 || bytes > self.max_bytes {
+        // Very large monitor sets can still be displayed without retaining another copy. A
+        // live wallpaper's capture is never shown again once replaced.
+        if self.max_entries == 0 || bytes > self.max_bytes || signature.contains(LIVE_MARK) {
             return;
         }
         while self.entries.len() >= self.max_entries || self.bytes + bytes > self.max_bytes {
@@ -275,6 +279,9 @@ mod tests {
         assert!(cache.get("b").is_some());
         cache.insert("b".into(), backdrop(1));
         assert_eq!(cache.bytes, 4);
+        // A set showing a live wallpaper's capture is never kept.
+        cache.insert(format!("b{LIVE_MARK}0,0,1,1"), backdrop(1));
+        assert_eq!(cache.entries.len(), 1);
         cache.clear();
         assert!(cache.get("b").is_none());
         assert_eq!(cache.bytes, 0);

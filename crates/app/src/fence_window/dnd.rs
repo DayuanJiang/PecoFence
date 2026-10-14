@@ -80,6 +80,31 @@ pub(super) fn shell_effect(key_state: u32, allowed: u32) -> DropEffect {
     dragdrop::resolve(dragdrop::modifier_effect(key_state, false), allowed)
 }
 
+/// The dropped file paths. Dragged off the desktop, OneDrive's and the user folder's icons put
+/// their folder into the list, which is not theirs to move: next to them only the paths in a
+/// desktop folder (the desktop's own files) stay.
+fn dropped_paths(data: &IDataObject, internal: bool) -> Vec<PathBuf> {
+    let paths = dragdrop::hdrop_paths(data);
+    if internal || !dragdrop::has_desktop_namespace_item(data) {
+        return paths;
+    }
+    let desktops = [
+        pecofence_platform::shell::user_desktop(),
+        pecofence_platform::shell::public_desktop(),
+    ];
+    paths
+        .into_iter()
+        .filter(|p| {
+            p.parent().is_some_and(|parent| {
+                desktops
+                    .iter()
+                    .flatten()
+                    .any(|d| parent.as_os_str().eq_ignore_ascii_case(d.as_os_str()))
+            })
+        })
+        .collect()
+}
+
 /// The entries directly in `dir` (the desktop, before and after a shell drop).
 fn dir_entries(dir: &Path) -> HashSet<PathBuf> {
     std::fs::read_dir(dir)
@@ -495,9 +520,12 @@ impl DropHandler for FenceDropHandler {
         pt: DragPoint,
         allowed: u32,
     ) -> DropEffect {
-        let hdrop = dragdrop::has_hdrop(data).then(|| dragdrop::hdrop_paths(data));
+        let internal = Self::internal().is_some();
+        // A drag of only the desktop's own items (This PC, OneDrive) has no paths left: it goes
+        // to the shell, which makes their shortcuts.
+        let hdrop = dragdrop::has_hdrop(data).then(|| dropped_paths(data, internal));
         self.kind = classify_drop(
-            Self::internal().is_some(),
+            internal,
             hdrop.as_deref(),
             || dragdrop::has_inet_url(data),
             || dragdrop::has_shell_items(data),
@@ -721,7 +749,7 @@ impl DropHandler for FenceDropHandler {
                     DropEffect::Move
                 }
                 DropKind::Files => {
-                    let paths = dragdrop::hdrop_paths(data);
+                    let paths = dropped_paths(data, Self::internal().is_some());
                     if paths.is_empty() {
                         break 'resolve DropEffect::None;
                     }

@@ -179,18 +179,18 @@ pub(super) fn validate_rect(
     Ok(work.clone())
 }
 
-/// File name with extension as the user spells it. The key is lower-cased; the display name
-/// has the real spelling minus the hidden extension, which the suffix puts back. Namespace
-/// items (no path) keep their display name.
+/// File name with extension as the user spells it. The display name has the real spelling
+/// minus the hidden extension, which the suffix puts back (the path of an item from an older
+/// file is still the lower-cased key). Namespace items (no path) keep their display name.
 fn item_file_name(it: &Item) -> String {
-    let Some(path) = (!it.is_namespace()).then(|| it.key.as_path()).flatten() else {
+    let Some(path) = (!it.is_namespace()).then(|| it.path()).flatten() else {
         return it.display_name.clone();
     };
-    let key_file_name = path.rsplit('\\').next().unwrap_or_default();
+    let path_file_name = path.rsplit('\\').next().unwrap_or_default();
     format!(
         "{}{}",
         it.display_name,
-        crate::rename::rename_hidden_suffix(&it.display_name, key_file_name, it.is_folder)
+        crate::rename::rename_hidden_suffix(&it.display_name, path_file_name, it.is_folder)
     )
 }
 
@@ -1092,7 +1092,7 @@ impl App {
                         json!({
                             "id": it.id,
                             "name": it.display_name,
-                            "path": it.key.as_path(),
+                            "path": it.path(),
                             "fence": f.id,
                             "fenceTitle": f.title,
                         })
@@ -1347,7 +1347,7 @@ impl App {
     pub(super) fn item_dto(&self, f: &Fence, it: &Item) -> ItemDto {
         let (assigned_by, rule) = self.assignment_of(f, it.id);
         let path = (!it.is_namespace())
-            .then(|| it.key.as_path().map(str::to_string))
+            .then(|| it.path().map(str::to_string))
             .flatten();
         let file_name = item_file_name(it);
         let ext = if it.is_folder || it.is_namespace() {
@@ -1456,7 +1456,7 @@ impl App {
             name: item.map(|it| it.display_name.clone()).unwrap_or_default(),
             path: item.and_then(|it| {
                 (!it.is_namespace())
-                    .then(|| it.key.as_path().map(str::to_string))
+                    .then(|| it.path().map(str::to_string))
                     .flatten()
             }),
             from,
@@ -1864,7 +1864,7 @@ impl App {
                 return Err(IpcError::internal(format!("item {id} vanished")));
             };
             let path = (!it.is_namespace())
-                .then(|| it.key.as_path().map(str::to_string))
+                .then(|| it.path().map(str::to_string))
                 .flatten();
             // Into a portal only real files go (the Recycle Bin and friends are not files);
             // into a virtual fence, desktop items change membership and portal items are moved
@@ -2024,7 +2024,7 @@ impl App {
                 it.display_name
             )));
         }
-        let Some(old_path) = it.key.as_path() else {
+        let Some(old_path) = it.path() else {
             return Err(unsupported(format!("{:?} has no path", it.display_name)));
         };
         let old_file_name = old_path.rsplit('\\').next().unwrap_or(old_path).to_string();
@@ -2037,7 +2037,9 @@ impl App {
             if old_ext.is_empty() || rules::ext_of(name) == old_ext {
                 name.to_string()
             } else {
-                format!("{name}{old_ext}")
+                // `ext_of` lower-cases; the file keeps its own spelling (`.PDF`).
+                let disk_ext = old_file_name.rfind('.').map_or("", |i| &old_file_name[i..]);
+                format!("{name}{disk_ext}")
             }
         };
         if target == item_file_name(it) {
@@ -2145,7 +2147,7 @@ impl App {
                         fence_title: f.title.clone(),
                         name: it.display_name.clone(),
                         path: (!it.is_namespace())
-                            .then(|| it.key.as_path().map(str::to_string))
+                            .then(|| it.path().map(str::to_string))
                             .flatten(),
                         is_folder: it.is_folder,
                         is_namespace: it.is_namespace(),
