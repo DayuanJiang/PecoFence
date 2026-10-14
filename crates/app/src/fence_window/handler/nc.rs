@@ -122,13 +122,18 @@ pub(super) fn on_nchittest(
     }
     // The overlay scrollbar's 12 DIP strip lies under the right resize border: while the
     // content scrolls, the bar takes the pointer in the content area and the border keeps only
-    // the outermost few DIPs there.
-    let right_border =
-        if top >= title_h.max(border) && !in_rail && bottom > border && v.scroll_max() > 0.0 {
-            (SCROLLBAR_RESIZE_BORDER_DIP * scale).round() as i32
-        } else {
-            border
-        };
+    // the outermost few DIPs there. (`scroll_max` lays the content out: asked only near the
+    // right edge.)
+    let right_border = if right <= border
+        && top >= title_h.max(border)
+        && !in_rail
+        && bottom > border
+        && v.scroll_max() > 0.0
+    {
+        (SCROLLBAR_RESIZE_BORDER_DIP * scale).round() as i32
+    } else {
+        border
+    };
     let code = match (
         left < border,
         right <= right_border,
