@@ -112,6 +112,9 @@ struct Ready {
     image: Option<Image>,
     /// HRESULT of a failed extraction.
     error: Option<i32>,
+    /// After a failure: the file (or namespace item) is still there, so a retry makes sense.
+    /// Checked on the worker: a path on an unreachable share blocks for the SMB timeout.
+    still_there: bool,
 }
 
 /// Extraction outcomes since the last summary line (see `IconCache::drain_results`).
@@ -195,6 +198,8 @@ impl IconCache {
                             }
                             Err(e) => (None, Some(e.code().0)),
                         };
+                        let still_there = image.is_none()
+                            && (req.path.exists() || shell::is_namespace_path(&req.path));
                         if done_tx
                             .send(Ready {
                                 key: req.key,
@@ -202,6 +207,7 @@ impl IconCache {
                                 id: req.id,
                                 image,
                                 error,
+                                still_there,
                             })
                             .is_err()
                         {
@@ -320,10 +326,7 @@ impl IconCache {
             if let Some(e) = r.error {
                 self.stats.first_error.get_or_insert(e);
             }
-            if r.image.is_none()
-                && f.attempts < RETRY_ATTEMPTS
-                && (f.req.path.exists() || shell::is_namespace_path(&f.req.path))
-            {
+            if r.image.is_none() && f.attempts < RETRY_ATTEMPTS && r.still_there {
                 // Still there but not extractable right now: try again later, and keep the
                 // entry pending so the windows keep showing the loading tile instead of the
                 // failure placeholder.
@@ -650,6 +653,7 @@ mod tests {
             id,
             image: Some(Image::solid(1, 1, [0; 3])),
             error: None,
+            still_there: false,
         };
         // The first request is dropped in flight and asked again; only the second one counts.
         assert!(matches!(cache.get(&key, path, 96, false), Lookup::Pending));
@@ -697,6 +701,7 @@ mod tests {
             id: 1,
             image: None,
             error: Some(0x8000_000Au32 as i32),
+            still_there: true,
         })
         .unwrap();
         assert_eq!(cache.drain_results(), 0);
@@ -723,6 +728,7 @@ mod tests {
                 id,
                 image: image.map(|v| Image::solid(1, 1, [v; 3])),
                 error: None,
+                still_there: false,
             })
             .unwrap();
             cache.drain_results();
