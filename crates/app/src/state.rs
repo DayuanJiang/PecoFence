@@ -416,7 +416,9 @@ impl AppState {
             base
         });
         let mut unplaced = if source == target {
-            Vec::new()
+            // Import / snapshot restore run this twice before the App settles them: keep the
+            // fences the first pass found no spot for.
+            std::mem::take(&mut self.unplaced)
         } else {
             self.config.carry_fences(source, target)
         };
@@ -2204,6 +2206,23 @@ mod tests {
         assert!(local.iter().all(|id| kept.iter().any(|s| s.id == *id)));
         assert!(kept.iter().any(|s| s.id == newest));
         assert!(kept.windows(2).all(|w| w[0].ts <= w[1].ts));
+    }
+
+    /// An import saved at another resolution: relayout_from_state runs ensure_layout again,
+    /// and the fences with no spot here must still be moved apart after that.
+    #[test]
+    fn an_imported_layout_keeps_its_fences_to_place() {
+        let id = "GSM7787#5&2C948443&0&UID24832";
+        let mut state = state_on(vec![monitor(id, 0, 3840, 2064, 192)]);
+        let mut file = state.config.clone();
+        file.layouts[0].fingerprint[0].screen_px = [1920, 1080];
+        file.layouts[0].fingerprint[0].dpi = 96;
+        state.replace_config(file);
+        let n = state.fences().len();
+        assert!(n > 0);
+        assert_eq!(state.unplaced.len(), n);
+        state.ensure_layout();
+        assert_eq!(state.unplaced.len(), n);
     }
 
     /// Issue #24: unplugging the big monitor, working on the laptop, plugging it back in.
