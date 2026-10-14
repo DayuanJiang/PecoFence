@@ -870,18 +870,19 @@ fn draw_caption(
     brush: &Brush,
     halo: Option<&Brush>,
 ) {
-    if let Some(halo) = halo {
-        for (dx, dy) in [(-0.75, 0.0), (0.75, 0.0), (0.0, -0.75), (0.0, 0.75)] {
-            let r = Rect {
-                left: rect.left + dx,
-                top: rect.top + dy,
-                right: rect.right + dx,
-                bottom: rect.bottom + dy,
-            };
-            session.draw_text(text, format, &r, halo);
-        }
+    let Some(halo) = halo else {
+        session.draw_text(text, format, rect, brush);
+        return;
+    };
+    // Shaped once for the five passes: `draw_text` lays the text out anew on every call.
+    let Ok(layout) = TextLayout::new(text, format, rect.width(), rect.height()) else {
+        session.draw_text(text, format, rect, brush);
+        return;
+    };
+    for (dx, dy) in [(-0.75, 0.0), (0.75, 0.0), (0.0, -0.75), (0.0, 0.75)] {
+        session.draw_text_layout(Vector2::new(rect.left + dx, rect.top + dy), &layout, halo);
     }
-    session.draw_text(text, format, rect, brush);
+    session.draw_text_layout(Vector2::new(rect.left, rect.top), &layout, brush);
 }
 
 fn draw_legible_text(
@@ -1007,6 +1008,8 @@ struct StateBrushes {
     /// fading in cost no brush allocations per frame.
     scratch_a: Brush,
     scratch_b: Brush,
+    /// The label halo over wallpaper (Liquid Glass, text_halo), recoloured per cell.
+    halo: Brush,
 }
 
 impl StateBrushes {
@@ -1019,7 +1022,14 @@ impl StateBrushes {
             focus_inner: session.create_solid_brush(theme.focus_inner)?,
             scratch_a: session.create_solid_brush(theme.text_primary)?,
             scratch_b: session.create_solid_brush(theme.text_secondary)?,
+            halo: session.create_solid_brush(halo_color(theme.text_primary, 1.0))?,
         })
+    }
+
+    /// `halo` recoloured to `c`.
+    fn halo(&self, c: ColorF) -> &Brush {
+        self.halo.set_color(c);
+        &self.halo
     }
 
     /// `scratch_a` recoloured to `c`.
@@ -2966,18 +2976,15 @@ impl FenceChrome {
         };
         // A local halo protects labels over mixed light/dark wallpaper (Liquid Glass, a fully
         // transparent plate). It does not frost or darken the glass between icons.
-        let halo = if theme.liquid_glass || theme.text_halo {
-            Some(session.create_solid_brush(halo_color(theme.text_primary, alpha))?)
-        } else {
-            None
-        };
+        let halo = (theme.liquid_glass || theme.text_halo)
+            .then(|| state.halo(halo_color(theme.text_primary, alpha)));
         draw_caption(
             session,
             text,
             &self.label_font.borrow().format,
             &label_rect,
             brush,
-            halo.as_ref(),
+            halo,
         );
 
         Ok(())
