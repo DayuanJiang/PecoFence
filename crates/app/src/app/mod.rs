@@ -1545,9 +1545,14 @@ impl App {
                 {
                     if let Some(index) = index {
                         // Land where the gap was, so the neighbours do not move again, and
-                        // keep the dragged window's tabs together in their order.
+                        // keep the dragged window's tabs together in their order. First to
+                        // the end in order (a host without a hand-made order lists them in
+                        // creation order, possibly ahead of the gap), then into the gap.
+                        for tab in &moved {
+                            self.state.reorder_tab(host, *tab, usize::MAX);
+                        }
                         for (k, tab) in moved.iter().enumerate() {
-                            self.state.reorder_tab(host, *tab, index + k);
+                            self.state.reorder_tab(host, *tab, index.saturating_add(k));
                         }
                     }
                     self.resync_windows();
