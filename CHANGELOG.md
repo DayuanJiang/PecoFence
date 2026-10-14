@@ -3,6 +3,7 @@
 ## Unreleased
 
 - PecoFence keeps less memory between uses. Half a minute after the fences last drew something, it hands the memory the last use touched back to Windows, every time instead of only once after startup; what it needs again comes back on its own, with no visible delay (the first animation after a pause measured the same as before). On a 4K monitor the memory Task Manager shows for PecoFence at rest stays at about 2 to 5 MB, where it used to grow to about 28 MB after some hours of use. Settings, Peek and a name being edited keep their memory while they are open.
+- Changing a fence's icon size, spacing, label lines or view reuses the graphics memory the fence already has. Until now each change kept about one fence picture's worth of video memory until PecoFence restarted: on a 4K monitor twelve icon size changes added about 100 MB in Fluent and about 220 MB in Liquid Glass, and the total grew with every change. It now stays where the first change left it.
 
 ## 0.2.0
 
