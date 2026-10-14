@@ -1295,6 +1295,25 @@ pub unsafe fn MonitorFromWindow(hwnd: HWND, dwflags: u32) -> HMONITOR {
     unsafe { MonitorFromWindow(hwnd, dwflags) }
 }
 #[inline]
+pub unsafe fn MoveFileExW<P0, P1>(
+    lpexistingfilename: P0,
+    lpnewfilename: P1,
+    dwflags: u32,
+) -> windows_core::BOOL
+where
+    P0: windows_core::Param<windows_core::PCWSTR>,
+    P1: windows_core::Param<windows_core::PCWSTR>,
+{
+    windows_core::link!("kernel32.dll" "system" fn MoveFileExW(lpexistingfilename : windows_core::PCWSTR, lpnewfilename : windows_core::PCWSTR, dwflags : u32) -> windows_core::BOOL);
+    unsafe {
+        MoveFileExW(
+            lpexistingfilename.param().abi(),
+            lpnewfilename.param().abi(),
+            dwflags,
+        )
+    }
+}
+#[inline]
 pub unsafe fn MoveWindow(
     hwnd: HWND,
     x: i32,

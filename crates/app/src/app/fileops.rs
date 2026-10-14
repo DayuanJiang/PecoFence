@@ -143,6 +143,18 @@ impl App {
         }
     }
 
+    /// A move that may have been a paste of cut files finished (`paste_into`): the clipboard
+    /// is emptied once the files moved; after a cancel or failure they stay on it. Something
+    /// copied or cut meanwhile (the move can take minutes) is left alone.
+    fn settle_cut_paste(&mut self, moved: bool) {
+        if let Some(seq) = self.cut_paste_seq.take()
+            && moved
+            && clipboard::sequence() == seq
+        {
+            self.finish_cut_paste();
+        }
+    }
+
     fn on_fileop_done(&mut self, then: FileOpThen, result: std::result::Result<bool, String>) {
         match then {
             FileOpThen::IntoFolder {
@@ -150,6 +162,7 @@ impl App {
                 copy,
                 sources,
             } => {
+                self.settle_cut_paste(matches!(result, Ok(true)));
                 match &result {
                     Ok(true) => {
                         tracing::info!(count = sources.len(), copy, dest = %dest.display(), "placed into folder")
@@ -175,29 +188,32 @@ impl App {
                 }
                 self.refresh_portals_in(&dirs);
             }
-            FileOpThen::ToDesktop { routed, copy, what } => match result {
-                Ok(true) => {
-                    tracing::info!(count = routed.len(), copy, what, "files transferred");
-                    // The expiry counts from the end of the copy for files still to appear.
-                    for r in self.pending_routes.iter_mut() {
-                        if routed.contains(&r.path) {
-                            r.since = Instant::now();
+            FileOpThen::ToDesktop { routed, copy, what } => {
+                self.settle_cut_paste(matches!(result, Ok(true)));
+                match result {
+                    Ok(true) => {
+                        tracing::info!(count = routed.len(), copy, what, "files transferred");
+                        // The expiry counts from the end of the copy for files still to appear.
+                        for r in self.pending_routes.iter_mut() {
+                            if routed.contains(&r.path) {
+                                r.since = Instant::now();
+                            }
                         }
                     }
+                    Ok(false) => {
+                        tracing::info!("move to desktop cancelled by user");
+                        self.pending_routes.retain(|r| !routed.contains(&r.path));
+                    }
+                    Err(e) => {
+                        tracing::warn!(error = %e, "move to desktop failed");
+                        self.pending_routes.retain(|r| !routed.contains(&r.path));
+                        self.toast(pecofence_core::i18n::format(
+                            "移动到桌面失败：{0}",
+                            std::slice::from_ref(&e),
+                        ));
+                    }
                 }
-                Ok(false) => {
-                    tracing::info!("move to desktop cancelled by user");
-                    self.pending_routes.retain(|r| !routed.contains(&r.path));
-                }
-                Err(e) => {
-                    tracing::warn!(error = %e, "move to desktop failed");
-                    self.pending_routes.retain(|r| !routed.contains(&r.path));
-                    self.toast(pecofence_core::i18n::format(
-                        "移动到桌面失败：{0}",
-                        std::slice::from_ref(&e),
-                    ));
-                }
-            },
+            }
             FileOpThen::Duplicate => {
                 match &result {
                     Ok(true) => tracing::info!("pasted duplicates"),

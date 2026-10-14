@@ -314,6 +314,10 @@ pub struct App {
     /// clears the dimming.
     cut_items: HashSet<ItemId>,
     cut_clip_seq: u32,
+    /// A paste of cut files is still being moved by a worker thread, and the clipboard
+    /// sequence number at the paste: the clipboard is emptied when the move succeeds, unless
+    /// something else was put on it meanwhile (see `paste_into`).
+    cut_paste_seq: Option<u32>,
 }
 
 pub type AppCell = Rc<RefCell<Option<App>>>;
@@ -1116,6 +1120,7 @@ impl App {
             memory_logged: None,
             cut_items: HashSet::new(),
             cut_clip_seq: 0,
+            cut_paste_seq: None,
             wallpaper_sig: None,
             wallpaper_cache: BackdropCache::default(),
             prewarm: None,
@@ -1553,13 +1558,24 @@ impl App {
                 for w in self.fences.values() {
                     w.set_merge_hint(false, (0, 0));
                 }
+                // The dragged window's tabs in their order (attach_tab adds them in storage
+                // order, which may interleave them with the target's tabs).
+                let moved = self.state.tabs_of(fence);
                 if let Some(host) = host
                     && host != fence
                     && self.state.attach_tab(fence, host)
                 {
                     if let Some(index) = index {
-                        // Land where the gap was, so the neighbours do not move again.
-                        self.state.reorder_tab(host, fence, index);
+                        // Land where the gap was, so the neighbours do not move again, and
+                        // keep the dragged window's tabs together in their order. First to
+                        // the end in order (a host without a hand-made order lists them in
+                        // creation order, possibly ahead of the gap), then into the gap.
+                        for tab in &moved {
+                            self.state.reorder_tab(host, *tab, usize::MAX);
+                        }
+                        for (k, tab) in moved.iter().enumerate() {
+                            self.state.reorder_tab(host, *tab, index.saturating_add(k));
+                        }
                     }
                     self.resync_windows();
                     self.apply_fence_view(host);
@@ -1654,9 +1670,13 @@ impl App {
                     // Like Fences: dropping a file from elsewhere onto a fence moves it to the
                     // desktop and puts it in that fence (a PendingRoute bypasses the rules).
                     if let Some(desktop) = shell::user_desktop() {
+                        // A desktop file of the same name is not the one being dropped: a
+                        // route would move it into `to` as soon as any watcher batch arrives,
+                        // before the conflict dialog is even answered.
                         let routed: Vec<PathBuf> = foreign
                             .iter()
                             .filter_map(|p| p.file_name().map(|n| desktop.join(n)))
+                            .filter(|p| self.state.live_item_by_path(p).is_none())
                             .collect();
                         for path in &routed {
                             self.pending_routes.push(PendingRoute {
@@ -1685,7 +1705,12 @@ impl App {
                     self.move_items(&ids, to);
                 }
             }
-            Command::ExternalUrlDrop { url, name, to } => self.create_url_shortcut(url, name, to),
+            Command::ExternalUrlDrop {
+                url,
+                name,
+                to,
+                folder,
+            } => self.create_url_shortcut(url, name, to, folder),
             Command::ShellDrop {
                 to,
                 landed,

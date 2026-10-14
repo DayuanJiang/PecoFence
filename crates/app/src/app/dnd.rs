@@ -190,10 +190,18 @@ impl App {
     }
 
     /// Browser link dropped on a fence: write the Internet Shortcut Explorer would write and file
-    /// it into `to` (desktop items route through a PendingRoute; a portal's folder shows it).
-    pub(super) fn create_url_shortcut(&mut self, url: String, name: Option<String>, to: FenceId) {
+    /// it into `to` (desktop items route through a PendingRoute; a portal's folder shows it), or
+    /// into `folder` when it was dropped onto a folder item.
+    pub(super) fn create_url_shortcut(
+        &mut self,
+        url: String,
+        name: Option<String>,
+        to: FenceId,
+        folder: Option<PathBuf>,
+    ) {
         let portal_dir = self.state.portal_path(to);
-        let Some(dir) = portal_dir.clone().or_else(shell::user_desktop) else {
+        let on_desktop = folder.is_none() && portal_dir.is_none();
+        let Some(dir) = folder.or(portal_dir).or_else(shell::user_desktop) else {
             return;
         };
         let base = url_shortcut_base_name(name.as_deref(), &url);
@@ -203,10 +211,16 @@ impl App {
             path = dir.join(format!("{base} ({n}).url"));
             n += 1;
         }
-        match std::fs::write(&path, format!("[InternetShortcut]\r\nURL={url}\r\n")) {
+        // `create_new`: a file another program put there since the check is not truncated.
+        let written = std::fs::File::create_new(&path).and_then(|mut f| {
+            use std::io::Write;
+            f.write_all(format!("[InternetShortcut]\r\nURL={url}\r\n").as_bytes())
+        });
+        match written {
             Ok(()) => {
                 tracing::info!(path = %path.display(), %to, "internet shortcut created from a link drop");
-                if portal_dir.is_some() {
+                if !on_desktop {
+                    // Not a desktop item: the portals showing that folder list it.
                     self.refresh_portals();
                     return;
                 }

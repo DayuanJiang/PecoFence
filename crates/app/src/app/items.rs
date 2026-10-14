@@ -21,10 +21,10 @@ pub(super) enum RenameError {
 
 fn rename_error(e: std::io::Error) -> RenameError {
     tracing::warn!(error = %e, "rename failed");
-    if e.kind() == std::io::ErrorKind::PermissionDenied {
-        RenameError::Denied(e.to_string())
-    } else {
-        RenameError::Io(e.to_string())
+    match e.kind() {
+        std::io::ErrorKind::PermissionDenied => RenameError::Denied(e.to_string()),
+        std::io::ErrorKind::AlreadyExists => RenameError::Exists,
+        _ => RenameError::Io(e.to_string()),
     }
 }
 
@@ -71,7 +71,8 @@ impl App {
         let created = if folder {
             std::fs::create_dir(&path)
         } else {
-            std::fs::write(&path, b"")
+            // `create_new`: a file another program put there since the check is not truncated.
+            std::fs::File::create_new(&path).map(drop)
         };
         match created {
             Ok(()) => {
@@ -130,6 +131,9 @@ impl App {
         for (id, fence, rename) in landed {
             self.move_items(&[id], fence);
             if rename {
+                // The rules may have filed the item here already: then nothing moved, the
+                // window does not list it yet, and the label the edit box needs has no rect.
+                self.refresh_fence(fence);
                 self.begin_item_rename(fence, id);
             }
         }
@@ -149,9 +153,12 @@ impl App {
         if paths.is_empty() {
             return;
         }
+        // A desktop file of the same name is not the one being moved: no route for it (see the
+        // external drop in `handle`).
         let routed: Vec<PathBuf> = paths
             .iter()
             .filter_map(|p| p.file_name().map(|n| desktop.join(n)))
+            .filter(|p| self.state.live_item_by_path(p).is_none())
             .collect();
         for path in &routed {
             self.pending_routes.push(PendingRoute {
@@ -255,8 +262,10 @@ impl App {
             return;
         }
         let name = name.trim();
-        // `old` is the file name (hidden extension included), not the displayed spelling.
-        if name == it.display_name {
+        // `old` is the file name (hidden extension included), not the displayed spelling. An
+        // emptied box keeps the name, as in Explorer (else the hidden suffix alone, ".txt" or
+        // ".lnk", would become the whole name).
+        if name.is_empty() || name == it.display_name {
             return;
         }
         let file_name = it
@@ -315,10 +324,10 @@ impl App {
         if it.is_namespace() {
             return Err(RenameError::Unsupported);
         }
-        let file_name = file_name.trim();
+        // Win32 drops trailing dots and spaces from a name: strip them here too, or the
+        // record would be keyed "note." for a file that is "note" on disk.
+        let file_name = file_name.trim().trim_end_matches(['.', ' ']);
         if file_name.is_empty()
-            || file_name == "."
-            || file_name == ".."
             || file_name
                 .chars()
                 .any(|c| matches!(c, '\\' | '/' | ':' | '*' | '?' | '"' | '<' | '>' | '|'))
@@ -332,11 +341,15 @@ impl App {
             return Err(RenameError::Unsupported);
         };
         let new = parent.join(file_name);
+        if new == old {
+            // Only trailing dots or spaces differed ("note" to "note."): nothing to rename.
+            return Ok(new);
+        }
         if ItemKey::from_path(&new.to_string_lossy()) == ItemKey::from_path(&old.to_string_lossy())
         {
             // Same name, another case: the item keeps its key, its path and name take the new
             // spelling. (Callers already skipped unchanged names.)
-            std::fs::rename(&old, &new).map_err(rename_error)?;
+            shell::rename_no_replace(&old, &new).map_err(rename_error)?;
             if self.state.rename_item(&old, &new) {
                 self.schedule_save();
             }
@@ -346,7 +359,8 @@ impl App {
         if new.exists() {
             return Err(RenameError::Exists);
         }
-        std::fs::rename(&old, &new).map_err(rename_error)?;
+        // Not `std::fs::rename`: that would replace a file created at `new` since the check.
+        shell::rename_no_replace(&old, &new).map_err(rename_error)?;
         tracing::info!(from = %old.display(), to = %new.display(), "item renamed");
         if self.state.is_portal_item(item) {
             // Portal ids are path hashes. Update the old view's identity before the folder
@@ -356,9 +370,12 @@ impl App {
                 w.rekey_item(item, new_id);
             }
             self.refresh_portals_in(&[parent]);
-        } else if self.state.rename_item(&old, &new) {
-            self.refresh_fences_with(item);
-            self.schedule_save();
+        } else {
+            self.state.forget_orphan_at(&new);
+            if self.state.rename_item(&old, &new) {
+                self.refresh_fences_with(item);
+                self.schedule_save();
+            }
         }
         Ok(new)
     }
@@ -516,6 +533,7 @@ impl App {
                 return;
             }
         }
+        let running = self.fileops_running;
         self.handle(Command::ExternalDrop {
             paths,
             to: fence,
@@ -526,11 +544,24 @@ impl App {
             },
         });
         if cut {
-            // Explorer empties the clipboard after pasting cut files.
-            clipboard::clear();
-            self.cut_items.clear();
-            self.push_cut_items();
+            if self.fileops_running > running {
+                // Foreign files are still being moved by a worker: emptied when it succeeds,
+                // so a cancelled conflict dialog leaves the files on the clipboard for another
+                // try (`on_fileop_done`). The sequence number tells whether the clipboard
+                // still holds this paste by then.
+                self.cut_paste_seq = Some(clipboard::sequence());
+            } else {
+                self.finish_cut_paste();
+            }
         }
+    }
+
+    /// Explorer empties the clipboard after pasting cut files.
+    pub(super) fn finish_cut_paste(&mut self) {
+        self.cut_paste_seq = None;
+        clipboard::clear();
+        self.cut_items.clear();
+        self.push_cut_items();
     }
 
     /// Opens `item`, which the user picked in fence `from`.
