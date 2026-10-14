@@ -40,11 +40,12 @@ impl App {
             .iter()
             .filter_map(|f| self.state.portal_path(f.id).map(|p| (f.id, p)))
             .collect();
-        // A watcher whose folder was deleted, renamed or unmounted has exited: drop it so the
-        // folder is watched again as soon as it is back (F5, a batch, or `revive_watchers`).
-        self.portal_watchers.retain(|id, (path, w)| {
-            w.is_running() && portals.iter().any(|(pid, p)| pid == id && p == path)
-        });
+        // An exited watcher (its folder was deleted, renamed or unmounted) is kept here: every
+        // batch ends up in this function, and a share that cannot deliver change notices fails
+        // and posts an Overflow at once, so dropping it here would restart it without end.
+        // F5 and `revive_watchers` (once a minute) drop exited watchers before calling this.
+        self.portal_watchers
+            .retain(|id, (path, _)| portals.iter().any(|(pid, p)| pid == id && p == path));
         for (id, dir) in portals {
             if self.portal_watchers.contains_key(&id) {
                 continue;

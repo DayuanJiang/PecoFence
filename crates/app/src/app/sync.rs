@@ -51,20 +51,25 @@ impl App {
             window::post_message(self.control.hwnd(), WM_APP_FS_CHANGED, 0, 0);
         }
         self.portal_watchers.retain(|_, (_, w)| w.is_running());
-        let unwatched: Vec<FenceId> = self
+        // Portals without a watcher, plus those last read as missing: a folder renamed away
+        // and back keeps its watcher alive, and any batch meanwhile may have started one on a
+        // folder that came back without re-reading it.
+        let stale: Vec<FenceId> = self
             .state
             .fences()
             .iter()
             .filter(|f| {
-                self.state.portal_path(f.id).is_some() && !self.portal_watchers.contains_key(&f.id)
+                self.state.portal_path(f.id).is_some()
+                    && (!self.portal_watchers.contains_key(&f.id)
+                        || self.state.portal_missing(f.id))
             })
             .map(|f| f.id)
             .collect();
-        if unwatched.is_empty() {
+        if stale.is_empty() {
             return;
         }
         self.ensure_portal_watchers();
-        let changed: Vec<FenceId> = unwatched
+        let changed: Vec<FenceId> = stale
             .into_iter()
             .filter(|id| self.portal_watchers.contains_key(id) && self.state.refresh_portal(*id))
             .collect();
@@ -229,8 +234,11 @@ impl App {
     pub(super) fn manual_refresh(&mut self, fence: FenceId) {
         let host = self.state.host_of(fence);
         let active = self.state.active_tab_of(host);
-        if self.state.portal_path(active).is_some() {
+        let portal = self.state.portal_path(active).is_some();
+        if portal {
             self.state.refresh_portal(active);
+            // A watcher that exited with its folder is started again now that the user asks.
+            self.portal_watchers.retain(|_, (_, w)| w.is_running());
             self.ensure_portal_watchers();
         } else {
             shell::recycle_bin_changed();
@@ -254,7 +262,12 @@ impl App {
                 bitmaps.remove_prefix(&IconCache::cache_key(&k));
             }
         }
-        self.refresh_fence(active);
+        if portal {
+            // Another portal on the same folder shares the items just re-read.
+            self.refresh_portal_fences(&[active]);
+        } else {
+            self.refresh_fence(active);
+        }
         if let Some(w) = self.fences.get(&host) {
             w.drop_icons();
         }
