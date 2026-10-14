@@ -85,6 +85,9 @@ impl PeekOverlay {
         for m in monitors::enumerate() {
             let handler: MessageHandler = {
                 let queue = queue.clone();
+                // First half of a character beyond U+FFFF (an emoji): WM_CHAR brings each
+                // UTF-16 unit on its own.
+                let high_surrogate = std::cell::Cell::new(None);
                 Box::new(
                     move |hwnd: HWND, message: u32, wparam: usize, lparam: isize| {
                         match message {
@@ -126,7 +129,13 @@ impl PeekOverlay {
                             // Typing searches the fences: the first characters open the search
                             // box (which then takes the keyboard). A leading space does not.
                             msg::WM_CHAR => {
-                                if let Some(ch) = char::from_u32(wparam as u32)
+                                let unit = wparam as u16;
+                                if (0xD800..0xDC00).contains(&unit) {
+                                    high_surrogate.set(Some(unit));
+                                    return Some(0);
+                                }
+                                let units = high_surrogate.take().into_iter().chain([unit]);
+                                if let Some(Ok(ch)) = char::decode_utf16(units).last()
                                     && !ch.is_control()
                                     && ch != ' '
                                 {

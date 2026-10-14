@@ -132,12 +132,11 @@ impl App {
 
     /// Opens the settings window at the 「反馈」 form (on 「关于」); `crash` says it reports the last crash.
     pub(super) fn open_feedback(&mut self, crash: bool) {
-        let already_open = self.settings.is_some();
         self.open_settings();
-        if self.settings.is_none() {
+        let Some(host) = &self.settings else {
             return;
-        }
-        if already_open {
+        };
+        if host.ready {
             self.post_show_feedback(crash);
         } else {
             // The page is still loading; `ready` delivers the state and then this.

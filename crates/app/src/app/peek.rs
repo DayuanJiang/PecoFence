@@ -209,6 +209,13 @@ impl App {
                 let mut settings = self.state.config.settings.clone();
                 settings.peek.set_hotkey(h);
                 self.apply_settings(settings);
+                // The choice already in the settings changes nothing above, but while a
+                // fallback stands in for it, it is free again now: switch back.
+                let before = self.peek_hotkey;
+                self.sync_peek_hotkey();
+                if self.peek_hotkey != before {
+                    self.push_settings_state();
+                }
             }
         }
         if let Some(host) = &self.settings {

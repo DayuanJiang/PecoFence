@@ -163,9 +163,10 @@ impl IconCache {
         for i in 0..WORKERS {
             let work_rx = work_rx.clone();
             let done_tx = done_tx.clone();
+            // Default stack: the shell's and third-party icon and thumbnail handlers run on
+            // this thread. (Only touched pages are committed.)
             let _ = std::thread::Builder::new()
                 .name(format!("pecofence-icons-{i}"))
-                .stack_size(256 * 1024)
                 .spawn(move || {
                     // Single-threaded apartment on purpose: the shell's icon handlers for
                     // Internet shortcuts (.url → IconFile) hand back the generic document icon

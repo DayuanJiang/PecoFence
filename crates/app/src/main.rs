@@ -72,11 +72,20 @@ fn start_log(
     let path = dir.join(log_file_name(instance, current));
     let prev = dir.join(log_file_name(instance, previous));
     // The Store edition installed on another drive cannot rename files in its copy of
-    // %LOCALAPPDATA% (os error 17): keep a copy instead.
-    if let Err(e) = std::fs::rename(&path, &prev)
-        && e.kind() == std::io::ErrorKind::CrossesDevices
-    {
-        let _ = std::fs::copy(&path, &prev);
+    // %LOCALAPPDATA% (os error 17), and a viewer that holds the log without delete sharing
+    // blocks the rename too: keep a copy instead.
+    let kept = match std::fs::rename(&path, &prev) {
+        Ok(()) => true,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => true,
+        Err(_) => std::fs::copy(&path, &prev).is_ok(),
+    };
+    if !kept {
+        // Write on after the last run's lines rather than erase them.
+        return std::fs::OpenOptions::new()
+            .append(true)
+            .create(true)
+            .open(path)
+            .ok();
     }
     std::fs::File::create(path).ok()
 }

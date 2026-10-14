@@ -126,6 +126,9 @@ const TIMER_TRAY_RETRY: usize = 57;
 const TRAY_RETRY_MS: u32 = 2_000;
 /// WM_ENDSESSION(FALSE) arrived while the App was borrowed: hide the icons again shortly.
 const TIMER_SHUTDOWN_CANCELLED: usize = 58;
+/// A theme, accent or system settings change arrived while the App was borrowed: apply it
+/// shortly.
+const TIMER_SYSTEM_SETTINGS_RETRY: usize = 52;
 /// Rebuilding the GPU device failed (driver reset in progress): try again, backing off.
 const TIMER_DEVICE_RETRY: usize = 59;
 const DEVICE_RETRY_FIRST_MS: u32 = 1_000;
@@ -242,8 +245,6 @@ pub struct App {
     /// Open `events.subscribe` streams and the last tick's state they are diffed against.
     ipc_subscribers: Vec<ipc::IpcSubscriber>,
     ipc_event_state: Option<ipc::EventState>,
-    /// When the last event (or heartbeat) went out to the streams.
-    ipc_last_event: Instant,
     /// `PECOFENCE_INSTANCE` of this process (reported by `status.get`).
     instance: Option<String>,
     settings: Option<SettingsHost>,
@@ -395,6 +396,9 @@ impl App {
         let queue = CommandQueue::new();
         // Whether a virtual-desktop switch can change the picture (see `sync_desktops_differ`).
         let desktops_differ = Rc::new(Cell::new(false));
+        // The desktop anchor once it exists: WM_QUERYENDSESSION shows the real icons again
+        // through it while a menu or dialog holds the App.
+        let session_anchor: Rc<std::cell::OnceCell<AnchorCell>> = Rc::default();
 
         // Control window: timers, tray callbacks, command pump.
         let control_class = WindowClass::register("PecoFence.Control", ClassOptions::default())?;
@@ -411,6 +415,7 @@ impl App {
             let wallpaper_schedule = Rc::new(Cell::new(RefreshSchedule::default()));
             let last_desktop_id = Cell::new(wallpaper::desktop_id());
             let desktops_differ = desktops_differ.clone();
+            let session_anchor = session_anchor.clone();
             // Virtual desktop of the last foreground window (see WM_APP_WALLPAPER).
             let last_foreground_desktop: Cell<Option<u128>> = Cell::new(None);
             let notify_wallpaper = {
@@ -702,6 +707,16 @@ impl App {
                                         window::set_timer(hwnd, TIMER_SHUTDOWN_CANCELLED, 250);
                                     }
                                 }
+                                TIMER_SYSTEM_SETTINGS_RETRY => {
+                                    window::kill_timer(hwnd, TIMER_SYSTEM_SETTINGS_RETRY);
+                                    if let Ok(mut guard) = cell.try_borrow_mut()
+                                        && let Some(app) = guard.as_mut()
+                                    {
+                                        app.on_system_settings_changed();
+                                    } else {
+                                        window::set_timer(hwnd, TIMER_SYSTEM_SETTINGS_RETRY, 250);
+                                    }
+                                }
                                 TIMER_TRAY_RETRY => {
                                     window::kill_timer(hwnd, TIMER_TRAY_RETRY);
                                     let shown = cell
@@ -790,6 +805,9 @@ impl App {
                                 && let Some(app) = guard.as_mut()
                             {
                                 app.on_system_settings_changed();
+                            } else {
+                                // A menu or dialog runs; Windows does not repeat the broadcast.
+                                window::set_timer(hwnd, TIMER_SYSTEM_SETTINGS_RETRY, 250);
                             }
                             None
                         }
@@ -819,6 +837,12 @@ impl App {
                                 if let Some(a) = app.anchor.borrow_mut().as_mut() {
                                     a.restore_desktop_icons();
                                 }
+                            } else if let Some(anchor) = session_anchor.get()
+                                && let Ok(mut guard) = anchor.try_borrow_mut()
+                                && let Some(a) = guard.as_mut()
+                            {
+                                // The session may end before the menu or dialog returns.
+                                a.restore_desktop_icons();
                             }
                             Some(1)
                         }
@@ -875,6 +899,7 @@ impl App {
             &sentinel_class,
         )?;
         std::mem::forget(sentinel_class);
+        let _ = session_anchor.set(anchor_cell.clone());
         if let Some(a) = anchor_cell.borrow_mut().as_mut() {
             let q = queue.clone();
             a.on_marquee = Some(Box::new(move |event| {
@@ -1048,7 +1073,6 @@ impl App {
             ipc_warnings: Vec::new(),
             ipc_subscribers: Vec::new(),
             ipc_event_state: None,
-            ipc_last_event: Instant::now(),
             instance: args.instance.clone(),
             settings: None,
             settings_focus_fence: None,

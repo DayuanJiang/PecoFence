@@ -697,7 +697,10 @@ impl DesktopAnchor {
                     let _ = desktop::set_topmost(*w, true);
                 }
                 for (f, shadow) in s.fences.clone() {
-                    if !desktop::is_visible(f) {
+                    // One that quick hide is still fading out is visible until the fade ends.
+                    let quick_hidden =
+                        s.quick.fences_hidden && !s.quick_hide_excluded.contains(&(f.0 as isize));
+                    if !desktop::is_visible(f) || quick_hidden {
                         // Quick-hidden: fade it in for the peek (its shadow follows on its own).
                         set_fence_visible(f, shadow, true);
                         s.peek_shown.push(f);
@@ -725,6 +728,9 @@ impl DesktopAnchor {
                     set_fence_visible(h, shadow, false);
                 }
             });
+            // Show desktop may have ended during the peek, which suspends its checks; left
+            // active, the fences would float above the window that came to the front.
+            self.check_show_desktop();
             self.reanchor("peek off");
             tracing::info!("peek off");
         }

@@ -35,6 +35,8 @@ pub(super) struct IpcSubscriber {
     fence: Option<FenceId>,
     events: Option<Vec<String>>,
     seq: u64,
+    /// When this stream last got an event or a heartbeat.
+    last_sent: Instant,
 }
 
 /// What an item looked like at the last tick (cheap to rebuild; the full [`ItemDto`] is only
@@ -2140,7 +2142,6 @@ impl App {
         };
         if self.ipc_subscribers.is_empty() {
             self.ipc_event_state = Some(self.event_state());
-            self.ipc_last_event = Instant::now();
             window::set_timer(self.control.hwnd(), TIMER_IPC_EVENTS, EVENT_TICK_MS);
         }
         self.ipc_subscribers.push(IpcSubscriber {
@@ -2148,6 +2149,7 @@ impl App {
             fence: fence_id,
             events: events.clone(),
             seq: 0,
+            last_sent: Instant::now(),
         });
         tracing::info!(target: "pecofence::ipc", subscribers = self.ipc_subscribers.len(), "event stream opened");
         Ok(json!({
@@ -2320,16 +2322,20 @@ impl App {
             }
         }
         self.ipc_event_state = Some(now_state);
-        if events.is_empty() {
-            if self.ipc_last_event.elapsed() < Duration::from_secs(EVENT_HEARTBEAT_SECS) {
-                return;
-            }
-            events.push(blank("heartbeat"));
-        }
-        self.ipc_last_event = Instant::now();
+        // Per stream: one whose filter admits none of the events still needs its heartbeat,
+        // or a client that went away keeps its slot while other events flow.
+        let heartbeat = [blank("heartbeat")];
         let mut gone = Vec::new();
         for (i, sub) in self.ipc_subscribers.iter_mut().enumerate() {
-            for ev in &events {
+            let mut batch: &[EventDto] = &events;
+            if !events.iter().any(|ev| Self::event_admitted(sub, ev)) {
+                if sub.last_sent.elapsed() < Duration::from_secs(EVENT_HEARTBEAT_SECS) {
+                    continue;
+                }
+                batch = &heartbeat;
+            }
+            sub.last_sent = Instant::now();
+            for ev in batch {
                 if !Self::event_admitted(sub, ev) {
                     continue;
                 }

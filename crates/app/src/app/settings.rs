@@ -212,6 +212,12 @@ impl App {
         if self.web_env.is_none() {
             match WebEnvironment::create() {
                 Ok(env) => self.web_env = Some(env),
+                // WebView2's wait for its callback pumps messages and ends with this empty
+                // error when it takes a WM_QUIT (the session ends): quit after all.
+                Err(e) if e.code().is_ok() => {
+                    window::post_quit(0);
+                    return;
+                }
                 Err(e) => {
                     tracing::error!(error = %e, "WebView2 environment failed");
                     if let Some(t) = &self.tray {
@@ -245,6 +251,7 @@ impl App {
                 );
                 self.settings = Some(host);
             }
+            Err(e) if e.code().is_ok() => window::post_quit(0),
             Err(e) => {
                 tracing::error!(error = %e, "settings window failed");
                 if let Some(t) = &self.tray {
@@ -380,6 +387,9 @@ impl App {
         match v.get("type").and_then(|t| t.as_str()) {
             Some("ready") => {
                 tracing::info!("settings: page ready");
+                if let Some(h) = self.settings.as_mut() {
+                    h.ready = true;
+                }
                 // A reload in the middle of recording a shortcut never says it ended.
                 self.resume_peek_hotkey();
                 self.push_settings_state();
@@ -647,8 +657,13 @@ impl App {
             return;
         }
         if new.autostart != old.autostart {
-            let _ = pecofence_platform::autostart::set_product_enabled(new.autostart);
-            if pecofence_platform::process::is_packaged() {
+            if let Err(e) = pecofence_platform::autostart::set_product_enabled(new.autostart) {
+                tracing::warn!(error = %e, "autostart change failed");
+                new.autostart = old.autostart;
+                self.settings_error(pecofence_core::i18n::text(
+                    "未能更改“随 Windows 启动”，请稍后重试。",
+                ));
+            } else if pecofence_platform::process::is_packaged() {
                 // Store installs: Windows owns the startup task, so hand the user the switch.
                 let _ = shell::shell_execute(
                     std::path::Path::new("ms-settings:startupapps"),
@@ -670,6 +685,10 @@ impl App {
             && let Some(a) = self.anchor.borrow_mut().as_mut()
         {
             a.quick_hide_enabled = new.quick_hide.enabled;
+            // Switched off while the fences are hidden: a double-click can no longer show them.
+            if !a.quick_hide_enabled && a.fences_hidden() {
+                a.toggle_fences_hidden();
+            }
         }
         if new.show_desktop != old.show_desktop
             && let Some(a) = self.anchor.borrow_mut().as_mut()
@@ -678,6 +697,15 @@ impl App {
                 ShowDesktopSetting::KeepVisible => ShowDesktopBehavior::KeepVisible,
                 ShowDesktopSetting::HideWithDesktop => ShowDesktopBehavior::HideWithDesktop,
             };
+        }
+        if new.zorder != old.zorder
+            && let Some(a) = self.anchor.borrow_mut().as_mut()
+        {
+            a.mode = match new.zorder {
+                ZOrderSetting::InsertAboveHost => ZMode::InsertAboveHost,
+                ZOrderSetting::HwndBottom => ZMode::HwndBottom,
+            };
+            a.reanchor("zorder changed");
         }
         self.ctx.behavior.hover_peek.set(new.roll_up.hover_peek);
         self.ctx.behavior.snapping.set(new.snapping.enabled);

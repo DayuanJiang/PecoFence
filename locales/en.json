@@ -371,6 +371,7 @@
   "Windows 桌面图标已显示。点“重新隐藏桌面图标”，图标就只在栅栏里显示。": "Windows desktop icons are visible. Use “Hide Windows desktop icons again” to show items only in fences.",
   "桌面图标已显示，可点击“重新隐藏桌面图标”恢复隐藏。": "Desktop icons are visible. Use “Hide Windows desktop icons again” to hide them.",
   "桌面图标状态未能更改，请稍后重试。": "Couldn't change desktop icon visibility. Try again later.",
+  "未能更改“随 Windows 启动”，请稍后重试。": "Couldn't change “Start with Windows”. Try again later.",
   "桌面图标状态未能更改，请等待资源管理器恢复后重试。": "Couldn't change desktop icon visibility. Wait for File Explorer to recover, then try again.",
   "无法隐藏桌面图标，请稍后再试。": "Couldn't hide desktop icons. Try again later.",
   "桌面文件夹暂时无法访问（位于移动磁盘或网络位置），各项目所在的栅栏和位置都会保留。": "Your Desktop folder can't be reached right now (removable drive or network location). Every item keeps its fence and position.",
