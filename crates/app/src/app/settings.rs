@@ -620,6 +620,10 @@ impl App {
             && let Some(a) = self.anchor.borrow_mut().as_mut()
         {
             a.quick_hide_enabled = new.quick_hide.enabled;
+            // Switched off while the fences are hidden: a double-click can no longer show them.
+            if !a.quick_hide_enabled && a.fences_hidden() {
+                a.toggle_fences_hidden();
+            }
         }
         if new.show_desktop != old.show_desktop
             && let Some(a) = self.anchor.borrow_mut().as_mut()
