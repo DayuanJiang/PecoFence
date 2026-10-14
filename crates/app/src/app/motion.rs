@@ -93,7 +93,11 @@ impl App {
                 )));
             }
         }
-        self.ctx.stack.recover()
+        // WARP only once the retries have backed off to their longest wait (about half a
+        // minute of failed hardware rebuilds): a driver still resetting gets its GPU back.
+        self.ctx
+            .stack
+            .recover(self.device_retry_ms >= DEVICE_RETRY_MAX_MS)
     }
 
     /// Drawing has been quiet for `GPU_TRIM_IDLE_MS`. An animation still running keeps its
