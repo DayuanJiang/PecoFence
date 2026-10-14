@@ -826,6 +826,16 @@ impl AppState {
     /// rule set; missing items are marked orphaned (membership kept) and garbage-collected
     /// after seven days.
     pub fn sync_desktop(&mut self, entries: &[DesktopEntry]) -> SyncReport {
+        self.sync_desktop_partly_read(entries, &[])
+    }
+
+    /// [`Self::sync_desktop`] with a listing that could not read the `unread` desktop folders
+    /// in full: their items missing from it are not orphaned.
+    pub fn sync_desktop_partly_read(
+        &mut self,
+        entries: &[DesktopEntry],
+        unread: &[EntryOrigin],
+    ) -> SyncReport {
         let mut report = SyncReport::default();
         let now = pecofence_core::now_unix();
         let mut seen: HashSet<ItemId> = HashSet::new();
@@ -966,9 +976,17 @@ impl AppState {
         }
 
         // Orphans.
+        let unread: Vec<Origin> = unread
+            .iter()
+            .map(|o| match o {
+                EntryOrigin::UserDesktop => Origin::UserDesktop,
+                EntryOrigin::PublicDesktop => Origin::PublicDesktop,
+                EntryOrigin::Namespace => Origin::Namespace,
+            })
+            .collect();
         let mut to_remove = Vec::new();
         for (id, item) in self.config.items.iter_mut() {
-            if seen.contains(id) {
+            if seen.contains(id) || unread.contains(&item.origin) {
                 continue;
             }
             match item.orphaned_since {
@@ -2694,6 +2712,24 @@ mod tests {
         state.forget_orphan_at(&desk("c.txt"));
         assert!(!state.rename_item(&desk("b.txt"), &desk("c.txt")));
         assert_eq!(state.item_id_for_path(&desk("c.txt")), Some(live));
+    }
+
+    /// The public desktop could not be read: its files stay, the user's deleted one goes.
+    #[test]
+    fn a_desktop_folder_that_could_not_be_read_orphans_nothing() {
+        let mut state = test_state();
+        let mut public = desktop_entry("shared.txt");
+        public.path = PathBuf::from("C:/Users/Public/Desktop/shared.txt");
+        public.origin = EntryOrigin::PublicDesktop;
+        state.sync_desktop(&[desktop_entry("mine.txt"), public.clone()]);
+        let shared = state.item_id_for_path(&public.path).unwrap();
+        let mine = state
+            .item_id_for_path(Path::new("C:/Users/Me/Desktop/mine.txt"))
+            .unwrap();
+        let report = state.sync_desktop_partly_read(&[], &[EntryOrigin::PublicDesktop]);
+        assert_eq!(report.removed, 1);
+        assert!(state.config.items[&shared].orphaned_since.is_none());
+        assert!(state.config.items[&mine].orphaned_since.is_some());
     }
 
     #[test]

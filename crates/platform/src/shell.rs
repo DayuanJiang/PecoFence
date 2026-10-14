@@ -96,15 +96,24 @@ pub fn desktop_available() -> bool {
 
 /// Lists desktop entries, skipping hidden/system files and `desktop.ini`.
 pub fn enumerate_desktop() -> Vec<DesktopEntry> {
+    enumerate_desktop_reporting().0
+}
+
+/// [`enumerate_desktop`], plus the desktop folders it could not read in full (access denied,
+/// an error part way): some of what they hold is missing from the list.
+pub fn enumerate_desktop_reporting() -> (Vec<DesktopEntry>, Vec<EntryOrigin>) {
     let mut out = Vec::new();
+    let mut unread = Vec::new();
     for (dir, origin) in [
         (user_desktop(), EntryOrigin::UserDesktop),
         (public_desktop(), EntryOrigin::PublicDesktop),
     ] {
         let Some(dir) = dir else { continue };
-        enumerate_dir_into(&dir, origin, &mut out);
+        if !enumerate_dir_into(&dir, origin, &mut out) {
+            unread.push(origin);
+        }
     }
-    out
+    (out, unread)
 }
 
 /// The shell namespace items Windows can draw on the desktop and whether Windows shows them
@@ -343,12 +352,20 @@ pub fn enumerate_folder(dir: &Path) -> Vec<DesktopEntry> {
     out
 }
 
-fn enumerate_dir_into(dir: &Path, origin: EntryOrigin, out: &mut Vec<DesktopEntry>) {
+/// False when `dir` could not be read in full.
+fn enumerate_dir_into(dir: &Path, origin: EntryOrigin, out: &mut Vec<DesktopEntry>) -> bool {
     let Ok(rd) = std::fs::read_dir(dir) else {
-        return;
+        return false;
     };
-    for entry in rd.flatten() {
-        let Ok(meta) = entry.metadata() else { continue };
+    let mut complete = true;
+    for entry in rd {
+        let Ok(entry) = entry else {
+            return false;
+        };
+        let Ok(meta) = entry.metadata() else {
+            complete = false;
+            continue;
+        };
         let attrs = meta.file_attributes();
         if attrs & (FILE_ATTRIBUTE_HIDDEN as u32 | FILE_ATTRIBUTE_SYSTEM as u32) != 0 {
             continue;
@@ -368,6 +385,7 @@ fn enumerate_dir_into(dir: &Path, origin: EntryOrigin, out: &mut Vec<DesktopEntr
             created: filetime_to_unix(meta.creation_time()),
         });
     }
+    complete
 }
 
 /// Reads one entry (for watcher events). `None` if it vanished or is hidden/system.
