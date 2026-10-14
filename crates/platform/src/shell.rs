@@ -109,14 +109,20 @@ pub fn enumerate_desktop() -> Vec<DesktopEntry> {
 
 /// The shell namespace items Windows can draw on the desktop and whether Windows shows them
 /// by default: `(CLSID, shown by default)`. Users toggle them in "Desktop icon settings".
-const SPECIAL_DESKTOP_ITEMS: [(&str, bool); 5] = [
+const SPECIAL_DESKTOP_ITEMS: [(&str, bool); 6] = [
     (RECYCLE_BIN_CLSID, true),
     ("{20D04FE0-3AEA-1069-A2D8-08002B30309D}", false), // This PC
     ("{59031a47-3f72-44a7-89c5-5595fe6b30ee}", false), // User's Files
     ("{F02C1A0D-BE21-4350-88B0-7367FC96EF3C}", false), // Network
     ("{5399E694-6CE5-4D6C-8FCE-1D8870FDCBA0}", false), // Control Panel
+    (SPOTLIGHT_CLSID, true),
 ];
 pub const RECYCLE_BIN_CLSID: &str = "{645FF040-5081-101B-9F08-00AA002F954E}";
+/// Windows Spotlight's "Learn about this picture": Windows adds it to the desktop namespace
+/// only while Spotlight is the background.
+const SPOTLIGHT_CLSID: &str = "{2CC5CA98-6485-489A-920E-B3E88A6CCCE3}";
+const DESKTOP_NAMESPACE_KEY: &str =
+    r"Software\Microsoft\Windows\CurrentVersion\Explorer\Desktop\NameSpace";
 const DESKTOP_ICON_SETTINGS_KEY: &str =
     r"Software\Microsoft\Windows\CurrentVersion\Explorer\HideDesktopIcons\NewStartPanel";
 /// Group Policy "Remove X icon from desktop": `{CLSID} = 1` here hides it regardless of the
@@ -186,6 +192,31 @@ fn desktop_icon_hidden_in_windows(clsid: &str, default_visible: bool) -> bool {
         }
     }
     !default_visible
+}
+
+/// Whether `clsid` is registered in the desktop's namespace (HKCU or HKLM).
+fn in_desktop_namespace(clsid: &str) -> bool {
+    let path = to_wide(&format!(r"{DESKTOP_NAMESPACE_KEY}\{clsid}"));
+    [HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE]
+        .into_iter()
+        .any(|root| {
+            let mut key = HKEY::default();
+            // SAFETY: the string outlives the call; `key` is a local out-pointer, closed below.
+            unsafe {
+                let status = RegOpenKeyExW(
+                    root,
+                    PCWSTR(path.as_ptr()),
+                    None,
+                    ACCESS_MASK(KEY_QUERY_VALUE as u32),
+                    &mut key,
+                );
+                if status.0 != 0 {
+                    return false;
+                }
+                let _ = RegCloseKey(key);
+            }
+            true
+        })
 }
 
 /// The Recycle Bin is asked again (see `recycle_bin_has_items`) only after this (a folder
@@ -268,7 +299,9 @@ pub fn enumerate_special_desktop_items() -> Vec<DesktopEntry> {
     };
     let mut out = Vec::new();
     for (clsid, default_visible) in SPECIAL_DESKTOP_ITEMS {
-        if desktop_icon_hidden_in_windows(clsid, default_visible) {
+        if desktop_icon_hidden_in_windows(clsid, default_visible)
+            || (clsid == SPOTLIGHT_CLSID && !in_desktop_namespace(clsid))
+        {
             continue;
         }
         let path = PathBuf::from(format!("::{clsid}"));
