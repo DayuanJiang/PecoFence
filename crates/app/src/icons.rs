@@ -526,11 +526,20 @@ impl IconCache {
     /// Returns how many cached icons were dropped.
     pub fn retain_needed(&mut self, needed: &HashSet<String>) -> usize {
         let before = self.map.len();
+        self.map
+            .retain(|(k, px), _| needed.contains(&format!("{k}@{px}")));
+        self.drop_unneeded_requests(needed);
+        before - self.map.len()
+    }
+
+    /// Drops the extractions nobody waits for any more (`needed` as in [`Self::retain_needed`])
+    /// and keeps every cached icon. An icon size change or a portal navigating calls this at
+    /// once: the GPU trim prunes the same requests, but only when drawing has gone quiet, and
+    /// every icon that arrives meanwhile redraws a fence.
+    pub fn drop_unneeded_requests(&mut self, needed: &HashSet<String>) {
         let keep = |(k, px): &(String, u32)| needed.contains(&format!("{k}@{px}"));
-        self.map.retain(|k, _| keep(k));
         self.drop_pending(keep);
         self.retry.retain(|(_, k)| keep(k));
-        before - self.map.len()
     }
 
     /// A `draw_key`: an icon upload in the bitmap cache, which also holds backdrop crops.
@@ -734,11 +743,19 @@ mod tests {
         let ids: Vec<u64> = cache.pending.values().map(|f| f.req.id).collect();
         assert_eq!(cache.live_lock().len(), 3);
         assert!(ids.iter().all(|id| cache.live_lock().contains(id)));
-        // Another size for `a`: its two old requests are dropped, `b`'s stays wanted.
+        // Another size for `a` (what an icon size change drops at once): its two old requests
+        // go, `b`'s stays wanted, and a cached icon nobody needs stays too.
+        let unneeded = (
+            format!("{}{}", IconCache::cache_key(&a), cache.variant.suffix()),
+            32,
+        );
+        cache.map.insert(unneeded.clone(), None);
         let needed: HashSet<String> = [cache.draw_key(&a, 72), cache.draw_key(&b, 48)]
             .into_iter()
             .collect();
-        cache.retain_needed(&needed);
+        cache.drop_unneeded_requests(&needed);
+        assert!(cache.map.contains_key(&unneeded));
+        assert_eq!(cache.pending.len(), 1);
         let b_id = cache.pending[&(IconCache::cache_key(&b), 48)].req.id;
         assert_eq!(
             cache.live_lock().iter().copied().collect::<Vec<_>>(),

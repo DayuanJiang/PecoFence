@@ -548,6 +548,8 @@ impl App {
         {
             w.set_icon_size(size);
         }
+        // The old size's extractions still queued would delay the new size's.
+        self.drop_unneeded_icon_requests();
         self.apply_cell_snap(fence);
         self.fit_height_to_content(fence);
         self.apply_auto_height(fence);
