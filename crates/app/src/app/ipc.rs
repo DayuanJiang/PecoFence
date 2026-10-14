@@ -1261,7 +1261,7 @@ impl App {
             geometry: f.geometry.clone(),
             rolled_up: host.rolled_up,
             locked: host.locked,
-            item_count: self.state.items_of(f).len(),
+            item_count: self.state.unsorted_items_of(f).count(),
             tab_host: f.tab_host,
             tabs: if f.tab_host.is_none() {
                 self.state
