@@ -546,22 +546,22 @@ pub fn has_shell_items(data: &IDataObject) -> bool {
     .any(|fmt| unsafe { data.QueryGetData(fmt).is_ok() })
 }
 
-/// Does the drag hold only the desktop's own namespace items (This PC, the Recycle Bin,
-/// OneDrive, the user's folder)? The icons of OneDrive and of the user's folder also name that
-/// folder in `CF_HDROP`, but the folder is not theirs to move (moving OneDrive's fails with
-/// "0x80004001 Not implemented"). False when files come along: they keep the file route.
-pub fn only_desktop_namespace_items(data: &IDataObject) -> bool {
+/// Does a drag off the desktop hold one of the desktop's own namespace items (This PC, the
+/// Recycle Bin, OneDrive, the user's folder)? The icons of OneDrive and of the user's folder
+/// also name that folder in `CF_HDROP`, but the folder is not theirs to move (moving OneDrive's
+/// fails with "0x80004001 Not implemented").
+pub fn has_desktop_namespace_item(data: &IDataObject) -> bool {
     let fmt = hglobal_format(registered_format(
         "Shell IDList Array",
         &SHELL_IDLIST_FORMAT,
     ));
-    hglobal_bytes(data, &fmt).is_some_and(|b| ida_all_root_items(&b))
+    hglobal_bytes(data, &fmt).is_some_and(|b| ida_has_root_item(&b))
 }
 
 /// Reads a `CIDA` (item count, then the offsets of the parent's ID list and of each item's):
-/// the parent is the desktop (an empty list) and every item is a root namespace item (its first
+/// the parent is the desktop (an empty list) and an item is a root namespace item (its first
 /// ID has type 0x1F).
-fn ida_all_root_items(b: &[u8]) -> bool {
+fn ida_has_root_item(b: &[u8]) -> bool {
     let u32_at = |i: usize| {
         b.get(i..i + 4)
             .map(|s| u32::from_le_bytes([s[0], s[1], s[2], s[3]]) as usize)
@@ -570,10 +570,9 @@ fn ida_all_root_items(b: &[u8]) -> bool {
         return false;
     };
     let on_desktop = u32_at(4).and_then(|o| b.get(o..o + 2)) == Some(&[0, 0][..]);
-    count > 0
-        && on_desktop
+    on_desktop
         && (1..=count.min(1 << 16))
-            .all(|k| u32_at(4 + 4 * k).and_then(|o| b.get(o + 2)) == Some(&0x1F))
+            .any(|k| u32_at(4 + 4 * k).and_then(|o| b.get(o + 2)) == Some(&0x1F))
 }
 
 /// Hands a drop to the shell's own drop target for `folder` — what dropping onto that folder's
@@ -1082,14 +1081,14 @@ mod effect_tests {
             b.extend([4, 0, second, 0, 0, 0]);
             b
         };
-        assert!(ida_all_root_items(&ida(0x1F, 0x1F, 0)));
-        // OneDrive among files: the files keep the file route.
-        assert!(!ida_all_root_items(&ida(0x32, 0x1F, 0)));
-        assert!(!ida_all_root_items(&ida(0x32, 0x31, 0)));
+        assert!(ida_has_root_item(&ida(0x1F, 0x1F, 0)));
+        // OneDrive among files.
+        assert!(ida_has_root_item(&ida(0x32, 0x1F, 0)));
+        assert!(!ida_has_root_item(&ida(0x32, 0x31, 0)));
         // Not on the desktop (a folder's items): no root item there.
-        assert!(!ida_all_root_items(&ida(0x1F, 0x1F, 4)));
-        assert!(!ida_all_root_items(&[2, 0, 0]));
-        assert!(!ida_all_root_items(&[0, 0, 0, 0, 8, 0, 0, 0, 0, 0]));
+        assert!(!ida_has_root_item(&ida(0x1F, 0x1F, 4)));
+        assert!(!ida_has_root_item(&[2, 0, 0]));
+        assert!(!ida_has_root_item(&[0, 0, 0, 0, 8, 0, 0, 0, 0, 0]));
     }
 
     #[test]
