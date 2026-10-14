@@ -2,6 +2,22 @@
 
 use super::*;
 
+/// `folder` with its real casing (item keys are case-folded) and without the `\\?\` prefix
+/// canonicalize adds. A folder on a network share or a mapped drive comes back as
+/// `\\?\UNC\server\share\…`, which must turn into `\\server\share\…`, not a relative path.
+pub(super) fn canonical_folder(folder: PathBuf) -> PathBuf {
+    match std::fs::canonicalize(&folder) {
+        Ok(real) => {
+            let s = real.to_string_lossy();
+            match s.strip_prefix(r"\\?\UNC\") {
+                Some(unc) => PathBuf::from(format!(r"\\{unc}")),
+                None => PathBuf::from(s.strip_prefix(r"\\?\").unwrap_or(&s)),
+            }
+        }
+        Err(_) => folder,
+    }
+}
+
 impl App {
     /// Pushes the shown fence's portal decorations (folder glyph, up button, navigate flag) and
     /// its display title into the host window.
@@ -136,13 +152,7 @@ impl App {
             }
             return;
         }
-        // Item keys are case-folded; store the folder with its real casing.
-        let folder = std::fs::canonicalize(&folder)
-            .map(|c| {
-                let s = c.to_string_lossy().to_string();
-                PathBuf::from(s.strip_prefix(r"\\?\").unwrap_or(&s))
-            })
-            .unwrap_or(folder);
+        let folder = canonical_folder(folder);
         if let Some(existing) = self
             .state
             .fences()

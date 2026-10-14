@@ -1649,12 +1649,7 @@ impl App {
             )
             .hint("Pass the full path of a folder for --portal"));
         }
-        let canonical = std::fs::canonicalize(&folder)
-            .map(|c| {
-                let s = c.to_string_lossy().to_string();
-                PathBuf::from(s.strip_prefix(r"\\?\").unwrap_or(&s))
-            })
-            .unwrap_or(folder);
+        let canonical = portals::canonical_folder(folder);
         let wanted = canonical.to_string_lossy().to_lowercase();
         let existing_portal = |app: &App| {
             app.state
