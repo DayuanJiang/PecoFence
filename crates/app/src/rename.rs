@@ -174,10 +174,13 @@ fn begin_rename_at(
     let created = CLASS.with(|c| {
         let c = c.borrow();
         let class = c.as_ref()?;
+        // Topmost: during Peek and Win+D the fences float in the topmost band, and a normal
+        // popup would open behind its fence, seen only faintly through the glass (#99). The
+        // popup closes as soon as it loses focus, so it never stays over another app.
         WindowBuilder::new(class)
             .title("rename")
             .style(style::POPUP)
-            .ex_style(style::EX_TOOLWINDOW)
+            .ex_style(style::EX_TOOLWINDOW | style::EX_TOPMOST)
             .bounds(x, y, w, h)
             .create(handler)
             .ok()
