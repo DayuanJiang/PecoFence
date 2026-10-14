@@ -255,8 +255,10 @@ impl App {
             return;
         }
         let name = name.trim();
-        // `old` is the file name (hidden extension included), not the displayed spelling.
-        if name == it.display_name {
+        // `old` is the file name (hidden extension included), not the displayed spelling. An
+        // emptied box keeps the name, as in Explorer (else the hidden suffix alone, ".txt" or
+        // ".lnk", would become the whole name).
+        if name.is_empty() || name == it.display_name {
             return;
         }
         let file_name = it
