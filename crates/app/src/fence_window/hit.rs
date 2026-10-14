@@ -172,11 +172,7 @@ impl FenceViewState {
 
     /// Icon edge in DIPs for the current layout (rows use a small 20 DIP icon).
     pub(super) fn icon_dip(&self) -> f32 {
-        match self.layout {
-            ViewLayout::Icons => self.icon_size as f32,
-            ViewLayout::List => RowMetrics::list().icon,
-            ViewLayout::Details => RowMetrics::details().icon,
-        }
+        crate::layout::icon_dip(self.layout, self.icon_size)
     }
 
     pub(super) fn row_metrics(&self) -> Option<RowMetrics> {

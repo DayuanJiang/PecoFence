@@ -8,6 +8,12 @@ use super::*;
 pub(super) static TEST_FAILING_RECOVERIES: std::sync::atomic::AtomicU32 =
     std::sync::atomic::AtomicU32::new(0);
 
+/// GPU memory (dedicated plus shared) this process may gain over its baseline before an idle
+/// point rebuilds the render stack to hand it back (`hand_back_gpu_memory`).
+const GPU_REBUILD_GROWTH: u64 = 64 << 20;
+/// The shortest time between two of those rebuilds.
+const GPU_REBUILD_MIN_GAP: Duration = Duration::from_secs(300);
+
 impl App {
     /// A fence window that is no longer needed (deleted, merged into another window as a tab)
     /// fades out before it is destroyed; until then it lives in `dying`.
@@ -16,6 +22,8 @@ impl App {
         if w.retire() {
             self.dying.push(w);
         }
+        // Its icons may be needed nowhere now: the GPU trim prunes them (see `prune_icons`).
+        window::set_timer(self.control.hwnd(), TIMER_GPU_TRIM, GPU_TRIM_IDLE_MS);
     }
 
     /// `DXGI_ERROR_DEVICE_REMOVED`: rebuild the device, drop GPU bitmaps, recreate every surface.
@@ -26,14 +34,10 @@ impl App {
             self.device_retry_ms = DEVICE_RETRY_FIRST_MS;
             return;
         }
-        if let Err(e) = self.rebuild_stack() {
+        if let Err(e) = self.rebuild_render_stack() {
             tracing::error!(error = %e, "render stack recovery failed");
             self.schedule_device_retry();
             return;
-        }
-        self.ctx.bitmaps.borrow_mut().clear();
-        for w in self.fences.values() {
-            w.recreate_surfaces(&self.ctx.stack);
         }
         if self.fences.values().any(|w| w.device_lost()) {
             // A window got no new surfaces (logged there): rebuild everything again later.
@@ -66,6 +70,16 @@ impl App {
         self.recover_device();
     }
 
+    /// A new GPU device, then new surfaces for every window, redrawn at once.
+    fn rebuild_render_stack(&mut self) -> windows_core::Result<()> {
+        self.rebuild_stack()?;
+        self.ctx.bitmaps.borrow_mut().clear();
+        for w in self.fences.values() {
+            w.recreate_surfaces(&self.ctx.stack);
+        }
+        Ok(())
+    }
+
     fn rebuild_stack(&self) -> windows_core::Result<()> {
         #[cfg(debug_assertions)]
         {
@@ -93,6 +107,8 @@ impl App {
             window::set_timer(self.control.hwnd(), TIMER_GPU_TRIM, GPU_TRIM_IDLE_MS);
             return;
         }
+        // Before the trim, which then frees the GPU memory of the bitmaps dropped here.
+        self.prune_icons();
         self.ctx.bitmaps.borrow_mut().prune_wallpapers();
         // Diagnostic: keep every GPU cache (compare glitches with and without the trim).
         if pecofence_core::brand::var_os("PECOFENCE_NO_GPU_TRIM").is_none() {
@@ -100,9 +116,48 @@ impl App {
         }
     }
 
+    /// Drops every icon no fence window needs (see `needed_icons`) from the icon cache and its
+    /// GPU uploads. Runs when drawing has gone quiet: whatever made icons unneeded (an icon
+    /// size, layout or DPI change, a portal navigating, a fence closed or deleted, files
+    /// removed) redrew a fence or retired its window, and by then the new icons have replaced
+    /// the old ones on screen. Returns whether GPU bitmaps were released.
+    pub(super) fn prune_icons(&mut self) -> bool {
+        let needed = self.needed_icons();
+        let icons = self.ctx.icons.borrow_mut().retain_needed(&needed);
+        let mut bitmaps = self.ctx.bitmaps.borrow_mut();
+        let before = bitmaps.len();
+        bitmaps.retain(|key| !IconCache::is_draw_key(key) || needed.contains(key));
+        let uploads = before - bitmaps.len();
+        if icons + uploads > 0 {
+            tracing::debug!(
+                icons,
+                uploads,
+                kept = needed.len(),
+                "unneeded icons dropped"
+            );
+        }
+        uploads > 0
+    }
+
+    /// `IconCache::draw_key`s of what the fence windows show or can switch to at once: their
+    /// items at the current icon size and DPI, and the items of their other tabs at those
+    /// tabs' own size, so a tab switch stays instant.
+    fn needed_icons(&self) -> HashSet<String> {
+        let icons = self.ctx.icons.borrow();
+        let mut needed = HashSet::new();
+        for (&host, w) in &self.fences {
+            w.needed_icons(&icons, &mut needed);
+            for (key, px) in self.state.tab_icons(host, w.active_fence(), w.dpi()) {
+                needed.insert(icons.draw_key(key, px));
+            }
+        }
+        needed
+    }
+
     /// `TIMER_IDLE_TRIM`: retried while a frame was drawn in the last second, so an animation
     /// never pays for the pages it touches again, and while Settings, Peek or an inline rename
-    /// is open (they are in use without drawing a fence).
+    /// is open or a drag, move or resize holds the mouse button (they are in use without
+    /// drawing a fence).
     pub(super) fn trim_if_idle(&mut self) {
         if self
             .frame_prev
@@ -114,10 +169,13 @@ impl App {
         if self.settings.is_some()
             || self.peek.is_some()
             || crate::rename::active_target().is_some()
+            || self.ctx.behavior.size_move.borrow().is_some()
+            || window::key_down(msg::VK_LBUTTON)
         {
             window::set_timer(self.control.hwnd(), TIMER_IDLE_TRIM, IDLE_TRIM_MS);
             return;
         }
+        self.hand_back_gpu_memory();
         let before = pecofence_platform::memstats::MemoryStats::current().ok();
         let started = Instant::now();
         pecofence_platform::memstats::trim_working_set();
@@ -128,6 +186,51 @@ impl App {
                 "working set handed back"
             );
         }
+    }
+
+    /// At an idle point: once this process's GPU memory grew by `GPU_REBUILD_GROWTH` over its
+    /// baseline (read at the first idle point after startup and after each rebuild), rebuilds
+    /// the render stack the way device loss does. DirectComposition and the GPU driver keep
+    /// some memory no trim gives back (each new surface size, Liquid Glass resources sized to
+    /// every glide frame); a new device starts without it. On integrated GPUs this is system
+    /// memory. WARP and the basic display adapter report 0, so nothing is rebuilt there.
+    fn hand_back_gpu_memory(&mut self) {
+        let Some((local, shared)) = self.ctx.stack.gpu_memory() else {
+            return;
+        };
+        let used = local + shared;
+        let mb = |b: u64| (b as f64 / (1u64 << 20) as f64 * 10.0).round() / 10.0;
+        let Some(baseline) = self.gpu_baseline else {
+            tracing::debug!(gpu_mb = mb(used), "GPU memory baseline");
+            self.gpu_baseline = Some(used);
+            return;
+        };
+        if used < baseline.saturating_add(GPU_REBUILD_GROWTH)
+            || self
+                .gpu_rebuilt
+                .is_some_and(|t| t.elapsed() < GPU_REBUILD_MIN_GAP)
+        {
+            return;
+        }
+        let started = Instant::now();
+        self.gpu_rebuilt = Some(started);
+        if let Err(e) = self.rebuild_render_stack() {
+            // Nothing was replaced: the old device keeps drawing.
+            tracing::warn!(error = %e, "render stack rebuild for GPU memory failed");
+            return;
+        }
+        if self.fences.values().any(|w| w.device_lost()) {
+            // A window got no new surfaces (logged there): the device-loss retry rebuilds again.
+            self.schedule_device_retry();
+        }
+        self.gpu_baseline = None;
+        let after = self.ctx.stack.gpu_memory().map_or(0, |(l, s)| l + s);
+        tracing::info!(
+            before_mb = mb(used),
+            after_mb = mb(after),
+            ms = (started.elapsed().as_secs_f32() * 1000.0).round(),
+            "render stack rebuilt to hand back GPU memory"
+        );
     }
 
     pub(super) fn on_icons_ready(&mut self) {

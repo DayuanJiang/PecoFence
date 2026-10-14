@@ -180,22 +180,22 @@ impl MonitorRecipe {
         Ok(image)
     }
 
-    /// The backdrop around an image from [`MonitorRecipe::build_image`]. Clear glass keeps
-    /// full-resolution pixels (a solid colour is monitor-sized too) only until the GPU upload;
-    /// contrast sampling uses a copy 8x smaller. Uploading again (device loss) re-decodes.
     /// Bytes a set with this monitor adds to the backdrop cache (see `BackdropCache`).
     fn estimated_bytes(&self) -> usize {
         let w = (self.width as usize).div_ceil(self.downscale as usize);
         let h = (self.height as usize).div_ceil(self.downscale as usize);
         let full = w * h * 4;
-        if self.downscale == 1 {
-            // Clear glass: the full image plus its 8x sampling copy.
+        if self.frost_blur.is_some() {
+            // Clear glass: the image the GPU upload takes plus its 8x sampling copy.
             full + w.div_ceil(8) * h.div_ceil(8) * 4
         } else {
             full
         }
     }
 
+    /// The backdrop around an image from [`MonitorRecipe::build_image`]. Clear glass keeps the
+    /// half-resolution pixels (a solid colour is monitor-sized too) only until the GPU upload;
+    /// contrast sampling uses a copy 8x smaller. Uploading again (device loss) re-decodes.
     pub(super) fn finish(self, image: Image, liquid_glass: bool) -> MonitorBackdrop {
         let backdrop = MonitorBackdrop {
             left: self.left,
@@ -284,9 +284,11 @@ pub(super) fn monitor_recipes(
             height: h,
             background: snapshot.background,
             tint,
-            // Clear glass needs wallpaper detail for refraction. Acrylic intentionally
-            // discards it.
-            downscale: if theme.liquid_glass { 1 } else { 4 },
+            // Clear glass keeps wallpaper detail for refraction, at half the monitor's
+            // resolution (a quarter of the texture memory; the GPU scales it up with linear
+            // filtering, which the glass shows no sharper). Acrylic discards the detail. The
+            // picture is decoded at full size here so Center and Tile keep its native scale.
+            downscale: if theme.liquid_glass { 2 } else { 4 },
             decode_divisor: if theme.liquid_glass { 1 } else { 2 },
             live: None,
             frost_blur: theme.liquid_glass.then_some(
@@ -1021,6 +1023,11 @@ impl App {
         }
         // Leaving Liquid Glass stops the draws that would otherwise release old textures.
         self.ctx.bitmaps.borrow_mut().prune_wallpapers();
+        if style_changed {
+            // Liquid Glass needs about 60 MB more GPU memory than Fluent: the next idle point
+            // reads the new style's baseline instead of rebuilding the render stack for it.
+            self.gpu_baseline = None;
+        }
         tracing::info!(?mode, ?style, accent = ?accent.map(|a| a.accent), "theme refreshed");
     }
 

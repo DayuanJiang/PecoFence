@@ -1,12 +1,16 @@
 //! A sprite visual backed by a Direct2D drawing surface, sized in physical pixels and drawn
 //! in device-independent pixels.
 
+use crate::comp;
 use crate::stack::RenderStack;
+use std::cell::RefCell;
 use windows_canvas::{
     DrawingSession, ID2D1DeviceContext, Matrix3x2, Rect, check_device_lost, is_device_lost,
 };
-use windows_composition::{CompositionDrawingSurface, SpriteVisual};
-use windows_core::Result;
+use windows_composition::{
+    CompositionDrawingSurface, CompositionGraphicsDevice, Compositor, SpriteVisual,
+};
+use windows_core::{Interface, Result};
 
 /// Clip control for the surface being drawn (see [`Panel::draw_ex`]). windows-canvas has no
 /// clip API, so this reaches the device context behind the session.
@@ -38,11 +42,33 @@ impl Drop for EndDrawGuard<'_> {
     }
 }
 
+thread_local! {
+    /// Surfaces that `Panel::resize` took off their visual while their last update was still
+    /// waiting for the composition commit, each with the commit batch of that update.
+    static RETIRED: RefCell<Vec<(CompositionDrawingSurface, comp::CompositionCommitBatch)>> =
+        const { RefCell::new(Vec::new()) };
+}
+
+/// Releases the retired surfaces whose last update has been committed.
+pub fn release_retired_surfaces() {
+    RETIRED.with(|r| {
+        if let Ok(mut r) = r.try_borrow_mut() {
+            r.retain(|(_, batch)| !batch.IsEnded().unwrap_or(true));
+        }
+    });
+}
+
 pub struct Panel {
     pub visual: SpriteVisual,
     surface: CompositionDrawingSurface,
     width_px: i32,
     height_px: i32,
+    /// Make the replacement surface and its brush in `resize`.
+    graphics: CompositionGraphicsDevice,
+    compositor: Compositor,
+    raw_compositor: comp::Compositor,
+    /// The commit batch of the last draw; until it has ended, that update is still pending.
+    drawn_in: RefCell<Option<comp::CompositionCommitBatch>>,
 }
 
 impl Panel {
@@ -56,6 +82,10 @@ impl Panel {
             surface,
             width_px: 1,
             height_px: 1,
+            graphics: stack.graphics(),
+            compositor: stack.compositor.clone(),
+            raw_compositor: stack.compositor.as_raw().cast()?,
+            drawn_in: RefCell::new(None),
         })
     }
 
@@ -72,17 +102,47 @@ impl Panel {
         self.visual
             .set_brush(&stack.compositor.create_surface_brush(&surface));
         self.surface = surface;
+        self.graphics = stack.graphics();
+        self.drawn_in.get_mut().take();
         Ok(())
     }
 
     /// Resizes the backing surface (physical pixels). Contents must be redrawn afterwards.
+    ///
+    /// A surface drawn earlier in the same composition batch is not resized. When such a
+    /// pending update is thrown away (by `Resize`, or by dropping the surface) and the panel is
+    /// drawn again before the commit, DirectComposition keeps the update's GPU memory for as
+    /// long as the graphics device lives: one surface's worth per relayout, where a fence
+    /// redraws for its new icon size and then snaps to whole cells. The panel gets a new
+    /// surface instead, and the old one is released once its update has been committed.
     pub fn resize(&mut self, width_px: i32, height_px: i32) -> Result<bool> {
         let width_px = width_px.max(1);
         let height_px = height_px.max(1);
         if (width_px, height_px) == (self.width_px, self.height_px) {
             return Ok(false);
         }
-        self.surface.resize(width_px, height_px)?;
+        release_retired_surfaces();
+        let pending = self
+            .drawn_in
+            .get_mut()
+            .take()
+            .filter(|batch| !batch.IsEnded().unwrap_or(true));
+        if let Some(batch) = pending {
+            let surface = self
+                .graphics
+                .create_drawing_surface(width_px as f32, height_px as f32)?;
+            self.visual
+                .set_brush(&self.compositor.create_surface_brush(&surface));
+            let old = std::mem::replace(&mut self.surface, surface);
+            RETIRED.with(|r| r.borrow_mut().push((old, batch)));
+            tracing::debug!(
+                width_px,
+                height_px,
+                "surface replaced: its update is not committed yet"
+            );
+        } else {
+            self.surface.resize(width_px, height_px)?;
+        }
         self.visual.set_size(width_px as f32, height_px as f32);
         self.width_px = width_px;
         self.height_px = height_px;
@@ -117,6 +177,11 @@ impl Panel {
             Err(e) => return Err(e),
         };
         let guard = EndDrawGuard(&self.surface);
+        release_retired_surfaces();
+        *self.drawn_in.borrow_mut() = self
+            .raw_compositor
+            .GetCommitBatch(comp::CompositionBatchTypes::Animation)
+            .ok();
         let draw_result = {
             let session = DrawingSession::from_borrowed_context_with_dpi(
                 &context,

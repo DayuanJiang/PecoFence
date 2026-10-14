@@ -665,14 +665,20 @@ impl AppState {
         self.dirty
     }
 
-    /// `IconCache::cache_key` of every item a fence can show (desktop records and the
-    /// portals' current folder contents).
-    pub fn icon_keys(&self) -> HashSet<String> {
-        self.config
-            .items
-            .values()
-            .chain(self.portal_items.values())
-            .map(|item| crate::icons::IconCache::cache_key(&item.icon_key))
+    /// Icons `host`'s window can switch to without waiting: the items of its tabs other than
+    /// `shown` (the window reports those itself), each with that tab's icon edge in pixels on
+    /// a monitor of `dpi`. Orphaned records show nowhere, so their icons are not wanted.
+    pub fn tab_icons(&self, host: FenceId, shown: FenceId, dpi: u32) -> Vec<(&IconKey, u32)> {
+        self.tabs_of(host)
+            .into_iter()
+            .filter(|&tab| tab != shown)
+            .filter_map(|tab| self.fence(tab))
+            .flat_map(|f| {
+                let px = crate::layout::icon_px(f.view.layout, f.view.icon_size, dpi);
+                self.items_of(f)
+                    .into_iter()
+                    .map(move |item| (&item.icon_key, px))
+            })
             .collect()
     }
 
@@ -2283,6 +2289,47 @@ mod tests {
         assert!(state.cancel_tab_detach(&change));
         assert!(state.dirty);
         assert_eq!(state.fences(), before.as_slice());
+    }
+
+    /// A window keeps the icons of its other tabs at each tab's own size on its DPI; the tab
+    /// it shows reports its items itself, and orphaned records are not shown anywhere.
+    #[test]
+    fn tab_icons_cover_the_other_tabs_at_their_own_size() {
+        let mut state = test_state();
+        let (a, b, c) = (
+            state.fences()[0].id,
+            state.fences()[1].id,
+            state.fences()[2].id,
+        );
+        let d = state
+            .new_fence("Elsewhere", rect(600, 600, 300, 200))
+            .unwrap();
+        let keyed = |state: &mut AppState, fence, name: &str| {
+            let id = add_item(state, fence, name);
+            let key = IconKey::ByContent {
+                path: format!("c:/pics/{name}.jpg"),
+                mtime: 1,
+            };
+            state.config.items.get_mut(&id).unwrap().icon_key = key.clone();
+            (id, key)
+        };
+        keyed(&mut state, a, "shown");
+        let (_, big) = keyed(&mut state, b, "big");
+        let (_, row) = keyed(&mut state, c, "row");
+        let (gone, _) = keyed(&mut state, c, "gone");
+        keyed(&mut state, d, "elsewhere");
+        state.config.items.get_mut(&gone).unwrap().orphaned_since = Some(1);
+        state.fence_mut(b).unwrap().view.icon_size = 96;
+        state.fence_mut(c).unwrap().view.layout = pecofence_core::ViewLayout::Details;
+        state.attach_tab(b, a);
+        state.attach_tab(c, a);
+        let mut got = state.tab_icons(a, a, 144);
+        got.sort_by_key(|(_, px)| *px);
+        assert_eq!(got, vec![(&row, 30), (&big, 144)]);
+        // Showing another tab: the host's items join, at the host's own size.
+        let got = state.tab_icons(a, b, 96);
+        assert_eq!(got.len(), 2);
+        assert!(got.iter().all(|(k, _)| *k != &big));
     }
 
     #[test]

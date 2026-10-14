@@ -1,6 +1,6 @@
 //! Icon grid layout in DIPs: cell geometry, hit testing, scrolling extents.
 
-use pecofence_core::DateBucket;
+use pecofence_core::{DateBucket, ViewLayout};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct GridMetrics {
@@ -500,6 +500,20 @@ impl RowMetrics {
             pad_y: 4.0,
         }
     }
+}
+
+/// Icon edge in DIPs for a view layout: `icon_size` in Icons, the rows' small icon otherwise.
+pub fn icon_dip(layout: ViewLayout, icon_size: u32) -> f32 {
+    match layout {
+        ViewLayout::Icons => icon_size as f32,
+        ViewLayout::List => RowMetrics::list().icon,
+        ViewLayout::Details => RowMetrics::details().icon,
+    }
+}
+
+/// Icon edge in physical pixels on a monitor of `dpi`: the size icons are extracted at.
+pub fn icon_px(layout: ViewLayout, icon_size: u32, dpi: u32) -> u32 {
+    (icon_dip(layout, icon_size) * (dpi as f32 / 96.0)).round() as u32
 }
 
 /// Column split of the details view for a content width (DIPs). Narrow fences drop the type,
