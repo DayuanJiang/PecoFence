@@ -1447,13 +1447,16 @@ impl App {
 
     /// The fence an item is listed in, with the item.
     fn locate_item(&self, id: ItemId) -> Option<(&Fence, &Item)> {
-        self.state.fences().iter().find_map(|f| {
-            self.state
-                .items_of(f)
-                .into_iter()
-                .find(|it| it.id == id)
-                .map(|it| (f, it))
-        })
+        let it = self
+            .state
+            .item(id)
+            .filter(|it| it.orphaned_since.is_none())?;
+        let fence = if self.state.is_portal_item(id) {
+            self.state.portal_of_item(id)
+        } else {
+            self.state.config.fence_of_item(self.state.layout, id)
+        }?;
+        self.state.fence(fence).map(|f| (f, it))
     }
 
     fn planned_move_dto(&self, m: &crate::state::PlannedRuleMove) -> PlannedMoveDto {
@@ -2162,7 +2165,7 @@ impl App {
         let mut state = EventState::default();
         for f in self.state.fences() {
             state.fences.insert(f.id, self.fence_dto_with(f, false));
-            for it in self.state.items_of(f) {
+            for it in self.state.unsorted_items_of(f) {
                 state.items.insert(
                     it.id,
                     ItemSig {

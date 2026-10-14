@@ -985,9 +985,9 @@ impl AppState {
             .len()
     }
 
-    /// Items of `fence` in display order (orphans hidden).
-    pub fn items_of(&self, fence: &Fence) -> Vec<&Item> {
-        let mut items: Vec<(Option<&ItemRef>, &Item)> = if fence.kind == FenceKind::FolderPortal {
+    /// Items of `fence` with their refs, as stored (orphans hidden), before any sort.
+    fn fence_members<'s, 'f>(&'s self, fence: &'f Fence) -> Vec<(Option<&'f ItemRef>, &'s Item)> {
+        if fence.kind == FenceKind::FolderPortal {
             self.portal_members
                 .get(&fence.id)
                 .map(|ids| {
@@ -1003,7 +1003,18 @@ impl AppState {
                 .filter_map(|r| self.config.items.get(&r.item_id).map(|it| (Some(r), it)))
                 .filter(|(_, it)| it.orphaned_since.is_none())
                 .collect()
-        };
+        }
+    }
+
+    /// Items of `fence` in no particular order (orphans hidden): for callers that only need
+    /// the set, without the sort `items_of` pays for.
+    pub fn unsorted_items_of<'s>(&'s self, fence: &Fence) -> impl Iterator<Item = &'s Item> {
+        self.fence_members(fence).into_iter().map(|(_, it)| it)
+    }
+
+    /// Items of `fence` in display order (orphans hidden).
+    pub fn items_of(&self, fence: &Fence) -> Vec<&Item> {
+        let mut items = self.fence_members(fence);
         match fence.view.sort {
             SortMode::Manual => items.sort_by_key(|(r, it)| {
                 (
