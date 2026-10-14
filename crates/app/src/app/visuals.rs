@@ -939,6 +939,11 @@ impl App {
         }
         // Leaving Liquid Glass stops the draws that would otherwise release old textures.
         self.ctx.bitmaps.borrow_mut().prune_wallpapers();
+        if style_changed {
+            // Liquid Glass needs about 60 MB more GPU memory than Fluent: the next idle point
+            // reads the new style's baseline instead of rebuilding the render stack for it.
+            self.gpu_baseline = None;
+        }
         tracing::info!(?mode, ?style, accent = ?accent.map(|a| a.accent), "theme refreshed");
     }
 
