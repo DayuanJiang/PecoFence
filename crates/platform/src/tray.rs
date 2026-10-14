@@ -9,6 +9,7 @@ use windows_core::{Error, PCWSTR, Result};
 
 windows_core::link!("user32.dll" "system" fn GetMenuState(hmenu: HMENU, uid: u32, uflags: u32) -> u32);
 windows_core::link!("user32.dll" "system" fn GetMenuStringW(hmenu: HMENU, uiditem: u32, lpstring: windows_core::PWSTR, cchmax: i32, flags: u32) -> i32);
+windows_core::link!("user32.dll" "system" fn EndMenu() -> windows_core::BOOL);
 
 /// Microseconds spent in [`PopupMenu`]s so far (`TrackPopupMenuEx` waits for the user).
 static MENU_TIME_US: AtomicU64 = AtomicU64::new(0);
@@ -17,6 +18,14 @@ static MENU_TIME_US: AtomicU64 = AtomicU64::new(0);
 /// the user's time in it out.
 pub fn time_in_menus() -> Duration {
     Duration::from_micros(MENU_TIME_US.load(Ordering::Relaxed))
+}
+
+/// Closes the popup menu this thread shows, if any (its `TrackPopupMenuEx` returns 0).
+pub fn end_menu() {
+    // SAFETY: plain FFI call.
+    unsafe {
+        let _ = EndMenu();
+    }
 }
 
 /// Creates a 32-bit icon from premultiplied BGRA pixels.

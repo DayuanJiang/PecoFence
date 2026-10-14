@@ -426,6 +426,7 @@ impl App {
             let last_desktop_id = Cell::new(wallpaper::desktop_id());
             let desktops_differ = desktops_differ.clone();
             let session_anchor = session_anchor.clone();
+            let queue = queue.clone();
             // Virtual desktop of the last foreground window (see WM_APP_WALLPAPER).
             let last_foreground_desktop: Cell<Option<u128>> = Cell::new(None);
             let notify_wallpaper = {
@@ -902,6 +903,13 @@ impl App {
                             // (WM_QUERYENDSESSION saved and showed the icons). Staying makes
                             // Windows wait, then kill it and report a hang.
                             tracing::info!(close_app = lparam & 1 != 0, "session ending: quitting");
+                            if cell.try_borrow_mut().is_err() {
+                                // A menu holds the App, and its loop keeps running past the
+                                // quit below: close it, then quit as 退出 does (saving first)
+                                // once the App is free again.
+                                tray::end_menu();
+                                queue.push(Command::Quit);
+                            }
                             window::post_quit(0);
                             Some(0)
                         }
