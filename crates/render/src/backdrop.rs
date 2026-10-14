@@ -709,11 +709,31 @@ impl MonitorBackdrop {
         self
     }
 
-    /// Crops the backdrop under a screen rectangle (virtual-screen pixels).
+    /// Crops the backdrop under a screen rectangle (virtual-screen pixels). The part off this
+    /// monitor repeats its edge pixels: the crop is drawn over the whole window, so a smaller
+    /// one would be stretched.
     pub fn crop_screen_rect(&self, x: i32, y: i32, w: i32, h: i32) -> Image {
         let d = self.downscale as i32;
         let (_, _, lx, ly) = self.crop_origin(x, y);
-        self.image.crop(lx, ly, (w / d).max(1), (h / d).max(1))
+        let (cw, ch) = ((w / d).max(1), (h / d).max(1));
+        let image = &self.image;
+        let (iw, ih) = (image.width as i32, image.height as i32);
+        if lx >= 0 && ly >= 0 && lx + cw <= iw && ly + ch <= ih {
+            return image.crop(lx, ly, cw, ch);
+        }
+        let mut bgra = Vec::with_capacity((cw * ch * 4) as usize);
+        for row in ly..ly + ch {
+            let line = row.clamp(0, ih - 1) * iw;
+            for col in lx..lx + cw {
+                let i = ((line + col.clamp(0, iw - 1)) * 4) as usize;
+                bgra.extend_from_slice(&image.bgra[i..i + 4]);
+            }
+        }
+        Image {
+            width: cw as u32,
+            height: ch as u32,
+            bgra,
+        }
     }
 
     /// Where `crop_screen_rect` starts for a rectangle at `x`, `y`: this monitor's origin and
@@ -830,6 +850,34 @@ mod pixel_regressions {
         let small = ramp.downscale_box(4);
         assert_eq!(small.px(2, 1)[0], 85); // columns 8 and 9: (80 + 90) / 2, rounded
         assert_eq!(small.px(0, 1)[0], 15); // columns 0..3
+    }
+
+    #[test]
+    fn crop_off_the_monitor_keeps_its_size_and_repeats_the_edge() {
+        let mut image = Image::solid(4, 3, [0, 0, 0]);
+        for (i, p) in image.bgra.as_chunks_mut::<4>().0.iter_mut().enumerate() {
+            p[0] = i as u8;
+        }
+        let backdrop = MonitorBackdrop {
+            left: 100,
+            top: 0,
+            width: 8,
+            height: 6,
+            downscale: 2,
+            image,
+            gpu: None,
+        };
+        let blue = |crop: &Image| crop.bgra.chunks(4).map(|p| p[0]).collect::<Vec<_>>();
+        // Inside: the plain crop.
+        assert_eq!(blue(&backdrop.crop_screen_rect(102, 2, 4, 2)), [5, 6]);
+        // One texel off the monitor on the left, the right and the bottom: still 6 x 3, the
+        // image's pixels where they are, the edges repeated around them.
+        let crop = backdrop.crop_screen_rect(98, 2, 12, 6);
+        assert_eq!((crop.width, crop.height), (6, 3));
+        assert_eq!(
+            blue(&crop),
+            [4, 4, 5, 6, 7, 7, 8, 8, 9, 10, 11, 11, 8, 8, 9, 10, 11, 11]
+        );
     }
 
     #[test]
