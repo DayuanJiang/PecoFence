@@ -75,8 +75,12 @@ pub(super) const DRAG_SCROLL_ARM: Duration = Duration::from_millis(50);
 pub(super) const TYPE_AHEAD_TIMEOUT: Duration = Duration::from_millis(1000);
 /// Pointer within this many DIPs of the right edge counts as "on the scrollbar".
 pub(super) const SCROLLBAR_HOT_DIP: f32 = 12.0;
+/// Right resize border left beside a shown scrollbar (the expanded thumb ends 3 DIP from the
+/// edge; the rest of the 12 DIP strip belongs to the bar).
+pub(super) const SCROLLBAR_RESIZE_BORDER_DIP: f32 = 3.0;
 pub(super) const WM_NCLBUTTONUP: u32 = 0x00A2;
 pub(super) const WM_NCRBUTTONDOWN: u32 = 0x00A4;
+pub(super) const WM_NCRBUTTONDBLCLK: u32 = 0x00A6;
 /// The second right press of a double-click (CS_DBLCLKS): a press like any other for the fence.
 pub(super) const WM_RBUTTONDBLCLK: u32 = 0x0206;
 /// `SC_MOVE | HTCAPTION`: starts the caption drag loop as if the title had just been pressed.

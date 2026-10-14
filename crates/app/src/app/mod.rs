@@ -1780,6 +1780,7 @@ impl App {
                 self.end_item_rename_visuals();
                 self.rename_item_file(item, &name);
             }
+            Command::RenameItemInvalid => self.invalid_name_toast(),
             Command::EndItemRename { commit } => crate::rename::end_active(commit),
             Command::DeleteItems {
                 fence,

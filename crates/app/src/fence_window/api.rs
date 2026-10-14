@@ -853,13 +853,20 @@ impl FenceWindow {
     }
 
     pub fn set_title(&self, title: &str) {
+        let mut changed = false;
         self.with_view(|v| {
             if v.title == title {
                 return;
             }
             v.title = title.to_string();
+            changed = true;
             let _ = v.redraw();
         });
+        if changed {
+            // UI Automation / screen readers read the window text. SetWindowText sends
+            // WM_SETTEXT synchronously: called with no borrow of the view held.
+            window::set_title(self.hwnd(), title);
+        }
     }
 
     pub fn set_icon_size(&self, size: u32) {

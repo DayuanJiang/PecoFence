@@ -120,9 +120,23 @@ pub(super) fn on_nchittest(
             msg::HTCAPTION
         });
     }
+    // The overlay scrollbar's 12 DIP strip lies under the right resize border: while the
+    // content scrolls, the bar takes the pointer in the content area and the border keeps only
+    // the outermost few DIPs there. (`scroll_max` lays the content out: asked only near the
+    // right edge.)
+    let right_border = if right <= border
+        && top >= title_h.max(border)
+        && !in_rail
+        && bottom > border
+        && v.scroll_max() > 0.0
+    {
+        (SCROLLBAR_RESIZE_BORDER_DIP * scale).round() as i32
+    } else {
+        border
+    };
     let code = match (
         left < border,
-        right <= border,
+        right <= right_border,
         top < border,
         bottom <= border,
     ) {
@@ -399,6 +413,19 @@ pub(super) fn on_nclbuttondblclk(
     None
 }
 
+// A right press in the non-client area (WM_NCRBUTTONDOWN, or WM_NCRBUTTONDBLCLK for the second
+// press of a double-click) is remembered so the release pairs with it (`ncrbutton_press`);
+// DefWindowProc still sees it.
+pub(super) fn on_ncrbuttondown(
+    h: &HandlerCtx,
+    _hwnd: HWND,
+    _wparam: usize,
+    _lparam: isize,
+) -> Option<isize> {
+    h.ncrbutton_press.set(true);
+    None
+}
+
 pub(super) fn on_ncrbuttonup(
     h: &HandlerCtx,
     hwnd: HWND,
@@ -412,6 +439,12 @@ pub(super) fn on_ncrbuttonup(
         ..
     } = h;
     let fence_id = h.fence_id;
+    // The right button that cancelled a tab tear-off or an item drag is released over
+    // whichever fence is under the pointer (the torn-off one, still fading out, sits with
+    // its title row under it): no press here, no menu.
+    if !h.ncrbutton_press.replace(false) {
+        return Some(0);
+    }
     if wparam as isize == msg::HTCAPTION {
         // The peek must not open under the TrackPopupMenuEx loop.
         window::kill_timer(hwnd, TIMER_PEEK_OPEN);

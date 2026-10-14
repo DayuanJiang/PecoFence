@@ -231,6 +231,9 @@ pub enum Command {
         item: ItemId,
         name: String,
     },
+    /// Enter in the rename popup with a name holding a reserved character: the editor stays
+    /// open, the App says why.
+    RenameItemInvalid,
     /// Close the open inline rename popup (the view scrolled under it): commit or cancel.
     EndItemRename {
         commit: bool,
