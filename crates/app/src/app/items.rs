@@ -131,6 +131,9 @@ impl App {
         for (id, fence, rename) in landed {
             self.move_items(&[id], fence);
             if rename {
+                // The rules may have filed the item here already: then nothing moved, the
+                // window does not list it yet, and the label the edit box needs has no rect.
+                self.refresh_fence(fence);
                 self.begin_item_rename(fence, id);
             }
         }
