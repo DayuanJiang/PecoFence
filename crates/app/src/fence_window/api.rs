@@ -858,6 +858,8 @@ impl FenceWindow {
                 return;
             }
             v.title = title.to_string();
+            // UI Automation / screen readers read the window text.
+            window::set_title(v.hwnd, title);
             let _ = v.redraw();
         });
     }
