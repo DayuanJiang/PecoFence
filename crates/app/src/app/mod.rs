@@ -150,6 +150,9 @@ const HOTKEY_PEEK: i32 = 1;
 
 /// How long a fence-menu "新建" keeps its claim on the next desktop item (plan §5.8).
 const PENDING_CREATION_SECS: u64 = 15;
+/// How long a shell drop onto a virtual fence claims the shortcuts that appear on the desktop
+/// afterwards.
+const SHELL_DROP_CLAIM_SECS: u64 = 5;
 
 /// Frame cadence of one animation run (from the first requested frame to the frame nothing
 /// moves any more), for the "animation run stuttered" diagnostics.
@@ -255,6 +258,10 @@ pub struct App {
     accent: Option<systheme::AccentPalette>,
     wallpaper_override: Option<String>,
     pending_routes: Vec<PendingRoute>,
+    /// The virtual fence a shell drop just went to, and when: the first desktop change batch
+    /// within `SHELL_DROP_CLAIM_SECS` that adds shortcuts puts them into it (the shell writes
+    /// some after `Drop` returned), see `on_fs_changed`.
+    shell_drop_claim: Option<(FenceId, Instant)>,
     /// Previous frame's timestamp while an animation runs (frame-gap diagnostics).
     frame_prev: Option<Instant>,
     /// Cadence statistics of the animation run in progress.
@@ -1045,6 +1052,7 @@ impl App {
             accent,
             wallpaper_override: args.wallpaper_override.clone(),
             pending_routes: Vec::new(),
+            shell_drop_claim: None,
             frame_prev: None,
             frame_run: FrameRun::default(),
             no_hide_icons: args.no_hide_icons,
@@ -1649,7 +1657,11 @@ impl App {
                 }
             }
             Command::ExternalUrlDrop { url, name, to } => self.create_url_shortcut(url, name, to),
-            Command::ShellDrop { to, landed } => self.shell_drop_landed(to, landed),
+            Command::ShellDrop {
+                to,
+                landed,
+                on_desktop,
+            } => self.shell_drop_landed(to, landed, on_desktop),
             Command::FenceMenu { fence, x, y } => self.show_fence_menu(fence, x, y),
             Command::HeaderMenu { fence, x, y } => self.show_header_menu(fence, x, y),
             Command::ItemMenu { fence, items, x, y } => self.show_item_menu(fence, items, x, y),
