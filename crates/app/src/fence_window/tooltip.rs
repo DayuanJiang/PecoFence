@@ -129,7 +129,13 @@ impl FenceViewState {
                         self.chrome
                             .rail_title_room(self.rail_w(), colored, badge.as_deref(), up);
                     self.chrome
-                        .rail_title_fits(&t.title, room, t.title_size, active)
+                        // Collapsed to the column, the shown tab is drawn like the others.
+                        .rail_title_fits(
+                            &t.title,
+                            room,
+                            t.title_size,
+                            active && !self.column_collapsed,
+                        )
                 } else {
                     let (_, w) = *self.tab_rects().get(i)?;
                     self.chrome

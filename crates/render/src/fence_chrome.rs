@@ -925,6 +925,18 @@ pub fn chevron_angle(roll_t: f32) -> f32 {
     180.0 * roll_t.clamp(0.0, 1.0)
 }
 
+/// How selected a row of a left tab column looks (0..=1): the shown tab while the fence is
+/// `expanded` (1 - roll progress; a collapsed column shows its tabs alike), a dragged tab always.
+pub fn rail_selected(active: bool, dragging: bool, expanded: f32) -> f32 {
+    if dragging {
+        1.0
+    } else if active {
+        expanded.clamp(0.0, 1.0)
+    } else {
+        0.0
+    }
+}
+
 /// Opacity of a left tab column's chevron: the column's hover, faded out by the roll progress
 /// (0 expanded ..= 1 collapsed to the column, which has no chevron).
 pub fn rail_chevron_alpha(hover: f32, roll_t: f32) -> f32 {
@@ -2148,8 +2160,9 @@ impl FenceChrome {
     /// title bar when its tabs are on the left. Each tab is a 32 DIP row inset 4 DIPs from the
     /// window edge (WinUI NavigationView items), a hairline separates neighbours, the shown tab
     /// is semibold on the selection fill (`pill` while it glides to a newly selected tab), and
-    /// a tab's own colour is a 6 DIP dot before its name. `divider_a` fades the line between
-    /// the column and the items (gone once the fence has collapsed to the column).
+    /// a tab's own colour is a 6 DIP dot before its name. `expanded` (1 - roll progress) fades
+    /// the line between the column and the items and the shown tab's selection fill, semibold
+    /// caption and up button: a fence collapsed to the column shows its tabs alike.
     #[allow(clippy::too_many_arguments)]
     fn draw_tab_list(
         &self,
@@ -2164,7 +2177,7 @@ impl FenceChrome {
         halo: Option<&Brush>,
         rail_w: f32,
         height: f32,
-        divider_a: f32,
+        expanded: f32,
         deco: TitleDeco,
         state: TitleState,
     ) -> Result<()> {
@@ -2178,9 +2191,10 @@ impl FenceChrome {
             }
         };
         // The divider stops short of the window's rounded corners.
-        if divider_a > 0.0 {
+        let expanded = expanded.clamp(0.0, 1.0);
+        if expanded > 0.0 {
             let inset = theme.corner_radius.max(8.0);
-            let brush = session.create_solid_brush(line(0.18 * divider_a.min(1.0)))?;
+            let brush = session.create_solid_brush(line(0.18 * expanded))?;
             session.fill_rect(
                 &Rect::from_xywh(
                     px.snap(rail_w) - px.hair(),
@@ -2228,7 +2242,7 @@ impl FenceChrome {
             }
         };
         if let Some((y, h)) = pill {
-            selected(row(y, h), 1.0)?;
+            selected(row(y, h), expanded)?;
         }
         let colored = tabs.iter().any(|t| t.color.is_some());
         let text_left = if colored { 24.0 } else { 10.0 };
@@ -2244,14 +2258,21 @@ impl FenceChrome {
             }
             let rect = row(tab.x, tab.w);
             let radius = header_control_radius(theme, rect);
-            if pill.is_none() && (tab.active || tab.dragging) {
-                selected(rect, ta)?;
-            } else if tab.pressed {
-                let fill = session.create_solid_brush(with_alpha(theme.subtle_pressed, ta))?;
+            // How selected the row looks, and how much of that its own fill shows (none while
+            // the pill glides). Press and hover feedback take the rest: on every row of a
+            // collapsed column, the shown tab's included.
+            let sel = rail_selected(tab.active, tab.dragging, expanded);
+            let own = if pill.is_none() { sel } else { 0.0 };
+            if own > 0.0 {
+                selected(rect, ta * own)?;
+            }
+            if tab.pressed && own < 1.0 {
+                let a = ta * (1.0 - own);
+                let fill = session.create_solid_brush(with_alpha(theme.subtle_pressed, a))?;
                 session.fill_rounded_rect(&RoundedRect::uniform(rect, radius), &fill);
-            } else if tab.hover > 0.0 && !tab.active {
-                let fill =
-                    session.create_solid_brush(with_alpha(theme.subtle_hover, tab.hover * ta))?;
+            } else if tab.hover > 0.0 && sel < 1.0 {
+                let a = tab.hover * ta * (1.0 - sel);
+                let fill = session.create_solid_brush(with_alpha(theme.subtle_hover, a))?;
                 session.fill_rounded_rect(&RoundedRect::uniform(rect, radius), &fill);
             }
             if tab.drop_target > 0.0 {
@@ -2278,31 +2299,36 @@ impl FenceChrome {
             } else {
                 tab.title_color.unwrap_or(foreground.text_primary)
             };
-            let brush = session.create_solid_brush(with_alpha(color, ta))?;
-            if let Some(halo) = halo {
-                halo.set_color(halo_color(color, ta));
-            }
-            let fmt = self.rail_title_format(tab.title_size, tab.active || tab.dragging);
-            // A navigated portal's up button ends the shown tab's row.
+            // A navigated portal's up button ends the shown tab's row (its room stays while the
+            // fence collapses, so the caption does not re-fit at the end).
             let up = tab.active && deco.up_button;
             let room = self.rail_title_room(rail_w, colored, tab.badge, up);
-            let fitted = crate::text::fit_width(tab.title, fmt, room);
-            draw_caption(
-                session,
-                &fitted,
-                fmt,
-                &Rect::from_xywh(rect.left + text_left, rect.top, room, rect.height()),
-                &brush,
-                halo,
-            );
-            if up {
+            let caption = Rect::from_xywh(rect.left + text_left, rect.top, room, rect.height());
+            // The shown tab's semibold caption cross-fades to the others' regular weight as the
+            // fence collapses to the column.
+            for (strong, a) in [(true, sel), (false, 1.0 - sel)] {
+                let a = a * ta;
+                if a <= 0.0 {
+                    continue;
+                }
+                let brush = session.create_solid_brush(with_alpha(color, a))?;
+                if let Some(halo) = halo {
+                    halo.set_color(halo_color(color, a));
+                }
+                let fmt = self.rail_title_format(tab.title_size, strong);
+                let fitted = crate::text::fit_width(tab.title, fmt, room);
+                draw_caption(session, &fitted, fmt, &caption, &brush, halo);
+            }
+            // Like the selection fill, the up button is gone from a collapsed column.
+            let up_a = ta * expanded;
+            if up && up_a > 0.0 {
                 // Up (Segoe Fluent E74A): SubtleFill on hover, SubtleFillColorTertiary while
                 // pressed, as in the title row.
                 let box_r = TitleDeco::rail_up_box(rect);
                 let fill = if state.up_pressed {
-                    Some(with_alpha(theme.subtle_pressed, ta))
+                    Some(with_alpha(theme.subtle_pressed, up_a))
                 } else if state.up_hover > 0.0 {
-                    Some(with_alpha(theme.subtle_hover, state.up_hover * ta))
+                    Some(with_alpha(theme.subtle_hover, state.up_hover * up_a))
                 } else {
                     None
                 };
@@ -2316,7 +2342,7 @@ impl FenceChrome {
                     } else {
                         foreground.text_secondary
                     },
-                    ta,
+                    up_a,
                 ))?;
                 session.draw_text("\u{E74A}", &self.glyph_format, &box_r, &glyph);
             }
@@ -3058,6 +3084,18 @@ mod tests {
         let r = TitleDeco::rail_chevron_box(100.0, 200.0, 76.0);
         assert_eq!((r.left, r.top, r.width()), (34.0, 162.0, 32.0));
         assert_eq!(TitleDeco::rail_chevron_box(100.0, 84.0, 76.0).top, 82.0);
+    }
+
+    /// Collapsed to its column, a fence marks no tab as the shown one; a dragged tab keeps its
+    /// fill throughout.
+    #[test]
+    fn collapsed_column_shows_its_tabs_alike() {
+        assert_eq!(rail_selected(true, false, 1.0), 1.0);
+        assert_eq!(rail_selected(true, false, 0.25), 0.25);
+        assert_eq!(rail_selected(true, false, 0.0), 0.0);
+        assert_eq!(rail_selected(false, false, 1.0), 0.0);
+        assert_eq!(rail_selected(false, true, 0.0), 1.0);
+        assert_eq!(rail_selected(true, false, 1.3), 1.0);
     }
 
     /// A left tab column shows its chevron on hover while expanded and none once collapsed to

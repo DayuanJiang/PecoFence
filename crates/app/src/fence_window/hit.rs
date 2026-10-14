@@ -106,8 +106,11 @@ impl FenceViewState {
     }
 
     /// The portal up button in a left tab column (DIPs): at the end of the shown tab's row, as
-    /// drawn (`TitleDeco::rail_up_box`).
+    /// drawn (`TitleDeco::rail_up_box`). A column the fence is collapsed to has none.
     pub(super) fn rail_up_box(&self) -> Option<Rect> {
+        if self.column_collapsed {
+            return None;
+        }
         let i = self.active_index();
         let (_, h) = *self.tab_rects().get(i)?;
         let y = *self.tab_draw_xs(Instant::now()).get(i)?;
