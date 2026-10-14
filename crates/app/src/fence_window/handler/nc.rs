@@ -275,6 +275,15 @@ pub(super) fn on_nclbuttondown(
             let mut guard = view.borrow_mut();
             if let Some(v) = guard.as_mut() {
                 if v.locked {
+                    // No drag, but a click on a rolled title still expands it (the drag
+                    // handed over in WM_NCMOUSEMOVE is refused by WM_SYSCOMMAND).
+                    if behavior.click_to_expand.get()
+                        && v.rolled_up
+                        && !v.peeking
+                        && v.roll_anim.is_none()
+                    {
+                        v.click_pending = Some(start);
+                    }
                     return Some(0);
                 }
                 if v.theme.liquid_glass {
