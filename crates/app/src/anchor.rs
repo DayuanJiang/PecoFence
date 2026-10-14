@@ -697,7 +697,10 @@ impl DesktopAnchor {
                     let _ = desktop::set_topmost(*w, true);
                 }
                 for (f, shadow) in s.fences.clone() {
-                    if !desktop::is_visible(f) {
+                    // One that quick hide is still fading out is visible until the fade ends.
+                    let quick_hidden =
+                        s.quick.fences_hidden && !s.quick_hide_excluded.contains(&(f.0 as isize));
+                    if !desktop::is_visible(f) || quick_hidden {
                         // Quick-hidden: fade it in for the peek (its shadow follows on its own).
                         set_fence_visible(f, shadow, true);
                         s.peek_shown.push(f);
