@@ -348,6 +348,9 @@ impl App {
         match v.get("type").and_then(|t| t.as_str()) {
             Some("ready") => {
                 tracing::info!("settings: page ready");
+                if let Some(h) = self.settings.as_mut() {
+                    h.ready = true;
+                }
                 // A reload in the middle of recording a shortcut never says it ended.
                 self.resume_peek_hotkey();
                 self.push_settings_state();

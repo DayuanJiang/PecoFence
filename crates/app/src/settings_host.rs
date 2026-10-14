@@ -79,6 +79,8 @@ pub struct SettingsHost {
     state: Rc<RefCell<HostState>>,
     /// DWM Mica is active behind a transparent page.
     mica: bool,
+    /// The page reported `ready`: messages posted from now on reach its script.
+    pub ready: bool,
     /// Caption icons (small/big); destroyed with the host.
     icons: Vec<pecofence_platform::tray::OwnedIcon>,
     _registrations: Vec<windows_webview::EventRegistration>,
@@ -250,6 +252,7 @@ impl SettingsHost {
             window,
             state,
             mica,
+            ready: false,
             icons: Vec::new(),
             _registrations: registrations,
         })
