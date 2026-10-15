@@ -40,6 +40,8 @@ pub const WM_APP_LIVE_WALLPAPER: u32 = msg::WM_APP + 14;
 /// px of its left tab column (0 without one). Such a fence has no title row; its column takes
 /// the merge drop instead, also while the fence is collapsed to it.
 pub const WM_APP_TAB_RAIL: u32 = msg::WM_APP + 15;
+/// The startup wallpaper worker finished after the fences went up (worker thread → UI thread).
+pub const WM_APP_STARTUP_BACKDROPS: u32 = msg::WM_APP + 16;
 
 /// What a file drop does with the dropped paths (Explorer's Move / Copy / Create shortcut, the
 /// effect the drop target reported).

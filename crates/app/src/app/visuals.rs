@@ -430,74 +430,148 @@ fn build_snapshot_backdrops(
     }))
 }
 
-/// The startup backdrops, decoded on a worker thread while the rest of startup runs; `finish`
-/// waits for them before the first fence window is created.
-pub(super) struct StartupBackdrops {
+/// What the startup worker read and decoded.
+struct StartupResult {
     snapshot: wallpaper::WallpaperSnapshot,
+    /// `snapshot.signature()` as read right after the query (see `take`).
     signature: String,
     recipes: Vec<MonitorRecipe>,
-    worker: Option<std::thread::JoinHandle<std::result::Result<Vec<Image>, String>>>,
+    images: Vec<Image>,
+}
+
+/// How long `StartupBackdrops::finish` waits for Explorer to answer the wallpaper query before
+/// the fences go up with the solid backdrop. A responsive Explorer answers within a few ms; at
+/// logon or after a large copy it has taken seconds.
+const STARTUP_WALLPAPER_WAIT: Duration = Duration::from_millis(150);
+
+/// The startup backdrops: the wallpaper query (a COM call into Explorer) and the decode run on
+/// a worker thread while the rest of startup runs. `finish` waits for them before the first
+/// fence window is created, unless Explorer is slow to answer: the fences then start with the
+/// solid backdrop and `App::finish_startup_backdrops` swaps the glass in when it arrives.
+pub(super) struct StartupBackdrops {
+    result: Arc<Mutex<Option<std::result::Result<StartupResult, String>>>>,
+    /// One message when the query has been answered, one when the decode is done.
+    stages: std::sync::mpsc::Receiver<()>,
+    /// The control window the worker notifies when it finishes after `finish` stopped waiting.
+    notify: Arc<std::sync::atomic::AtomicIsize>,
 }
 
 impl StartupBackdrops {
-    pub(super) fn start(theme: &Theme, wallpaper_override: Option<&str>) -> Result<Self> {
-        let snapshot = wallpaper_snapshot(wallpaper_override)?;
-        let signature = snapshot.signature();
-        let recipes = if pecofence_core::brand::var_os("PECOFENCE_SOLID").is_some() {
-            Vec::new()
-        } else {
-            monitor_recipes(theme, &snapshot, &[])
+    pub(super) fn start(theme: &Theme, wallpaper_override: Option<&str>) -> Self {
+        let result = Arc::new(Mutex::new(None));
+        let (stage_tx, stages) = std::sync::mpsc::channel();
+        let notify = Arc::new(std::sync::atomic::AtomicIsize::new(0));
+        let theme = *theme;
+        let wallpaper_override = wallpaper_override.map(str::to_string);
+        let work = {
+            let result = result.clone();
+            let notify = notify.clone();
+            move || {
+                let outcome = pecofence_platform::com::MtaGuard::init().and_then(|_com| {
+                    let snapshot = wallpaper_snapshot(wallpaper_override.as_deref());
+                    let _ = stage_tx.send(());
+                    let snapshot = snapshot?;
+                    let signature = snapshot.signature();
+                    let recipes = if pecofence_core::brand::var_os("PECOFENCE_SOLID").is_some() {
+                        Vec::new()
+                    } else {
+                        monitor_recipes(&theme, &snapshot, &[])
+                    };
+                    let images = recipes
+                        .iter()
+                        .map(MonitorRecipe::build_image)
+                        .collect::<Result<Vec<_>>>()?;
+                    Ok(StartupResult {
+                        snapshot,
+                        signature,
+                        recipes,
+                        images,
+                    })
+                });
+                if let Ok(mut slot) = result.lock() {
+                    *slot = Some(outcome.map_err(|error| error.to_string()));
+                }
+                let _ = stage_tx.send(());
+                let control = notify.load(std::sync::atomic::Ordering::Acquire);
+                if control != 0 {
+                    window::post_message(
+                        HWND(control as *mut core::ffi::c_void),
+                        WM_APP_STARTUP_BACKDROPS,
+                        0,
+                        0,
+                    );
+                }
+            }
         };
-        let worker = {
-            let recipes = recipes.clone();
-            std::thread::Builder::new()
-                .name("pecofence-wallpaper-startup".into())
-                .spawn(move || {
-                    pecofence_platform::com::MtaGuard::init()
-                        .and_then(|_com| {
-                            recipes
-                                .iter()
-                                .map(MonitorRecipe::build_image)
-                                .collect::<Result<Vec<_>>>()
-                        })
-                        .map_err(|error| error.to_string())
-                })
-                .ok()
-        };
-        Ok(Self {
-            snapshot,
-            signature,
-            recipes,
-            worker,
-        })
+        if let Err(error) = std::thread::Builder::new()
+            .name("pecofence-wallpaper-startup".into())
+            .spawn(work)
+        {
+            tracing::warn!(%error, "wallpaper startup thread failed to start");
+        }
+        Self {
+            result,
+            stages,
+            notify,
+        }
     }
 
-    /// What `build_backdrop_sets` returns, from the worker's images (built here if the thread
-    /// could not start).
-    pub(super) fn finish(self, theme: &Theme) -> Result<(Rc<BackdropSets>, String)> {
-        let Self {
-            snapshot,
-            signature,
-            recipes,
-            worker,
-        } = self;
-        if pecofence_core::brand::var_os("PECOFENCE_SOLID").is_some() {
-            return Ok((Rc::new(BackdropSets::default()), signature));
-        }
+    /// What `build_backdrop_sets` returns, plus the snapshot, from the worker's result. `None`
+    /// when Explorer has not answered the query within `STARTUP_WALLPAPER_WAIT`: the worker
+    /// then posts `WM_APP_STARTUP_BACKDROPS` to `control` when it is done.
+    pub(super) fn finish(
+        &mut self,
+        theme: &Theme,
+        control: HWND,
+    ) -> Option<Result<(Rc<BackdropSets>, wallpaper::WallpaperSnapshot, String)>> {
+        use std::sync::mpsc::RecvTimeoutError;
         let started = std::time::Instant::now();
+        match self.stages.recv_timeout(STARTUP_WALLPAPER_WAIT) {
+            Ok(()) => {}
+            Err(RecvTimeoutError::Disconnected) => return Some(self.take(theme, started)),
+            Err(RecvTimeoutError::Timeout) => {
+                self.notify
+                    .store(control.0 as isize, std::sync::atomic::Ordering::Release);
+                // The answer may have arrived while the window handle was being stored.
+                if self.stages.try_recv().is_err() {
+                    tracing::info!(
+                        waited_ms = started.elapsed().as_millis(),
+                        "wallpaper not answered yet; fences start with the solid backdrop"
+                    );
+                    return None;
+                }
+            }
+        }
+        // Explorer answered: the decode is waited for as before, so the fences come up with
+        // the glass in place.
+        let _ = self.stages.recv();
+        Some(self.take(theme, started))
+    }
+
+    /// Builds the sets from the finished worker's result.
+    pub(super) fn take(
+        &mut self,
+        theme: &Theme,
+        started: std::time::Instant,
+    ) -> Result<(Rc<BackdropSets>, wallpaper::WallpaperSnapshot, String)> {
         let failed = |message: String| {
             windows_core::Error::new(windows_core::HRESULT(0x8000_4005_u32 as i32), message)
         };
-        let images = match worker {
-            Some(worker) => worker
-                .join()
-                .map_err(|_| failed("wallpaper worker panicked".into()))?
-                .map_err(failed)?,
-            None => recipes
-                .iter()
-                .map(MonitorRecipe::build_image)
-                .collect::<Result<Vec<_>>>()?,
-        };
+        let result = self
+            .result
+            .lock()
+            .ok()
+            .and_then(|mut slot| slot.take())
+            .ok_or_else(|| failed("wallpaper worker ended without a result".into()))?;
+        let StartupResult {
+            snapshot,
+            signature,
+            recipes,
+            images,
+        } = result.map_err(failed)?;
+        if pecofence_core::brand::var_os("PECOFENCE_SOLID").is_some() {
+            return Ok((Rc::new(BackdropSets::default()), snapshot, signature));
+        }
         let backdrops: Vec<MonitorBackdrop> = recipes
             .into_iter()
             .zip(images)
@@ -521,6 +595,7 @@ impl StartupBackdrops {
             Rc::new(BackdropSets {
                 acrylic: Rc::new(backdrops),
             }),
+            snapshot,
             signature,
         ))
     }
@@ -829,6 +904,30 @@ impl App {
                 result,
             });
             return;
+        }
+    }
+
+    /// The startup wallpaper worker finished after the fences went up with the solid backdrop
+    /// (Explorer was slow to answer): the glass comes in now, as for a wallpaper change.
+    pub(super) fn finish_startup_backdrops(&mut self) {
+        let Some(mut job) = self.startup_backdrops.take() else {
+            return;
+        };
+        let theme = *self.ctx.theme.borrow();
+        let control = self.control.hwnd();
+        match job.take(&theme, Instant::now()) {
+            Ok((backdrops, snapshot, signature)) => {
+                self.wallpaper_cache.insert(signature, backdrops);
+                self.show_wallpaper(&snapshot, "startup");
+                // The registry watchers were up before this snapshot was taken, so only the
+                // other desktops are left to prepare (as the normal startup path does).
+                window::set_timer(control, TIMER_WALLPAPER_PREWARM, WALLPAPER_PREWARM_DELAY_MS);
+            }
+            Err(error) => {
+                tracing::warn!(%error, "wallpaper unavailable at startup; solid backdrop");
+                // Not readable: keep trying as for a signal (as the normal startup path does).
+                window::post_message(control, WM_APP_WALLPAPER, 0, 0);
+            }
         }
     }
 
