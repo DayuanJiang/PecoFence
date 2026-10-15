@@ -3,7 +3,7 @@
 //! `fence set`.
 
 use pecofence_core::NormGeometry;
-use pecofence_core::rules::{Rule, Target};
+use pecofence_core::rules::{Rule, Target, Unmatched};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -380,6 +380,8 @@ pub struct RuleListDto {
     pub default_target: Target,
     /// New desktop items are filed automatically.
     pub keep_updated: bool,
+    /// Where applying the rules puts an item already in a fence that no rule matches.
+    pub unmatched: Unmatched,
     pub list: Vec<RuleEntry>,
 }
 

@@ -29,6 +29,8 @@ pub struct Config {
     pub items: HashMap<ItemId, Item>,
     /// One layout per monitor configuration.
     pub layouts: Vec<Layout>,
+    #[serde(with = "crate::rules::saved")]
+    #[cfg_attr(feature = "schema", schemars(with = "crate::rules::RuleSet"))]
     pub rules: crate::rules::RuleSet,
     #[serde(default)]
     pub undo_log: Vec<Assignment>,

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- A rule can take every file the other rules left (#71, also asked in #69 and #70). The new condition 「普通文件」 (Settings › 整理规则 › 新建规则 › 条件类型, or `pecofence-cli rule add --plain-files`) matches any file that is not a folder, a program, a shortcut, This PC or the Recycle Bin. Rules go by first match, so a 「普通文件」 rule at the end of the list collects whatever the archive, document and image rules before it did not take, `.sql`, `.html` and unknown extensions included, and programs and shortcuts never land in it. Settings adds a new 「普通文件」 rule at the end of the list, where such a rule belongs; every other new rule still goes first. A configuration with such a rule still opens in 0.2.1, which reads the rule as 「仅文件」.
+- Icons that no rule matches can stay in their fence when the rules are applied (#71, #69). The new setting 「没有命中规则的项目」 (Settings › 整理规则) has 「回到“桌面”栅栏」, the default and the behaviour until now, and 「留在当前栅栏」. With 「留在当前栅栏」, 「立即应用」, the tray's 「立即应用整理规则」 and `pecofence-cli rule apply` (and its `--dry-run`) leave such an icon where it is, so turning off the rule that filed your shortcuts no longer sends them back to 「桌面」. Icons new on the desktop that no rule matches still go to 「桌面」. In `rule list` and `rule import` it is `"unmatched": "stay"` (default `"defaultTarget"`).
 - `.tsv` files count as documents, like `.csv`, so the 「文件与文档」 rule and other document rules file them (feedback #28).
 
 ## 0.2.1

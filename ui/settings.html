@@ -453,6 +453,8 @@
     <section class="page" id="page-rules">
       <header class="page-header"><h2>整理规则</h2></header>
       <div class="card"><div class="l"><span class="ic">&#xE8CB;</span><div><div class="t">新项目出现在桌面时自动归类</div><div class="s">先看快捷方式目标规则，再按列表顺序匹配；都不符合的放进“桌面”栅栏</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="rules.keepUpdated"></div></div>
+      <div class="card"><div class="l"><span class="ic">&#xE718;</span><div><div class="t">没有命中规则的项目</div><div class="s">应用规则时，已在某个栅栏里但不符合任何规则的项目放在哪里；不符合规则的新项目总是放进“桌面”栅栏</div></div></div>
+        <select data-bind="rules.unmatched"><option value="defaultTarget">回到“桌面”栅栏</option><option value="stay">留在当前栅栏</option></select></div>
       <div class="card"><div class="l"><span class="ic">&#xE8AB;</span><div><div class="t">立即对桌面上的全部项目应用规则</div><div class="s">手动摆放过的项目保持原位</div></div></div><button id="applyRules">立即应用</button></div>
       <h3>快速添加</h3>
       <div class="card stack"><div class="l"><span class="ic">&#xE8F4;</span><div><div class="t">一键创建栅栏并添加规则</div><div class="s">“待清理”只归拢 30 天没用过的安装包和压缩包，不删除任何文件</div></div></div>
@@ -473,7 +475,7 @@
             <option value="glob">通配符（*.png）</option><option value="target">快捷方式目标包含</option>
             <option value="time">创建时段</option><option value="weekday">创建于星期几</option><option value="size">大小范围（MB）</option>
             <option value="idle">闲置天数（未修改也未打开）</option>
-            <option value="folders">仅文件夹</option><option value="files">仅文件</option></select></label>
+            <option value="folders">仅文件夹</option><option value="files">仅文件</option><option value="plain">普通文件（程序和快捷方式除外）</option></select></label>
           <label id="nrValueWrap">条件值<input type="text" id="nrValue" placeholder="png, jpg"></label>
           <div class="cats" id="nrCats" style="grid-column: 1 / -1"></div>
           <div class="cats" id="nrTime" style="grid-column: 1 / -1; display:none"><label>从 <input type="time" id="nrFrom" value="18:00"></label><label>到 <input type="time" id="nrTo" value="06:00"></label><span class="s">结束时间早于开始时间，表示跨过午夜</span></div>
@@ -978,6 +980,7 @@
       case 'shortcutTarget': return (TARGET_OPS[v.op] || TARGET_OPS.contains)(v.value);
       case 'foldersOnly': return t("仅文件夹");
       case 'filesOnly': return t("仅文件");
+      case 'plainFiles': return t("普通文件");
       case 'sizeMb': return v.min != null && v.max != null ? tf("大小 {0}–{1} MB", v.min, v.max)
         : v.min != null ? tf("大小 ≥ {0} MB", v.min) : v.max != null ? tf("大小 ≤ {0} MB", v.max) : t("大小");
       case 'createdTime': return tf("创建时间 {0}–{1}", hm(v.from_min), hm(v.to_min));
@@ -1057,7 +1060,7 @@
   const WEEKDAYS = () => [['0',t("周一")],['1',t("周二")],['2',t("周三")],['3',t("周四")],['4',t("周五")],['5',t("周六")],['6',t("周日")]];
   function updateKind() {
     const k = document.getElementById('nrKind').value;
-    const noValue = ['type','folders','files','time','weekday','size','idle'];
+    const noValue = ['type','folders','files','plain','time','weekday','size','idle'];
     document.getElementById('nrValueWrap').style.display = noValue.includes(k) ? 'none' : '';
     document.getElementById('nrCats').style.display = k === 'type' ? '' : 'none';
     document.getElementById('nrTime').style.display = k === 'time' ? '' : 'none';
@@ -1117,13 +1120,16 @@
       cond = { cond: 'idleDays', value: { min: Math.floor(days) } }; cls = 'time';
     }
     else if (kind === 'files') cond = { cond: 'filesOnly', value: null };
+    else if (kind === 'plain') cond = { cond: 'plainFiles', value: null };
     else cond = { cond: 'foldersOnly', value: null };
     const fence = state.fences.find(f => f.id === target);
     // An unnamed rule is called after its condition, so the list does not fill with identical names.
     const name = document.getElementById('nrName').value.trim() || condLabel(cond);
     // Rules match in list order: at the end, the new rule would sit behind the broad first-run
-    // ones ("Files and documents") and rarely fire.
-    state.rules.list.unshift({ id: newId(), name, enabled: true, target: fence && fence.kind === 'inbox' ? 'inbox' : { fence: target }, allOf: [cond], priorityClass: cls });
+    // ones ("Files and documents") and rarely fire. A plain-files rule is the catch-all that
+    // takes what the rules before it leave, so it goes last.
+    const rule = { id: newId(), name, enabled: true, target: fence && fence.kind === 'inbox' ? 'inbox' : { fence: target }, allOf: [cond], priorityClass: cls };
+    if (kind === 'plain') state.rules.list.push(rule); else state.rules.list.unshift(rule);
     send({ type: 'setRules', rules: state.rules }); renderRules(); toast(t("已添加规则"));
     document.getElementById('nrName').value = ''; document.getElementById('nrValue').value = '';
   };

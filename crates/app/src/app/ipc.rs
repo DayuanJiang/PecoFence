@@ -1536,6 +1536,7 @@ impl App {
         RuleListDto {
             default_target: rules.default_target,
             keep_updated: rules.keep_updated,
+            unmatched: rules.unmatched,
             list: rules
                 .list
                 .iter()
