@@ -304,6 +304,8 @@ pub struct App {
     /// Monitors a live wallpaper covers, and the capture of them in progress.
     live: Vec<live_wallpaper::LiveWallpaper>,
     live_capture: Option<live_wallpaper::LiveCapture>,
+    /// The worker of a given-up capture that has not returned yet (one at most).
+    live_abandoned: Option<std::thread::JoinHandle<()>>,
     /// The hotkey currently registered (None = registration failed or Peek disabled).
     peek_hotkey: Option<Hotkey>,
     /// The combination the last `sync_peek_hotkey` tried to register (the user's choice), so a
@@ -1147,6 +1149,7 @@ impl App {
             prewarm: None,
             live: Vec::new(),
             live_capture: None,
+            live_abandoned: None,
         };
         // Watch both wallpaper settings and virtual-desktop state; either signal starts a
         // bounded burst of fast reads, because the image may arrive after the notification.
