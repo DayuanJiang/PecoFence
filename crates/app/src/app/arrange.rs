@@ -297,15 +297,22 @@ impl App {
             }
         }
         let mut top = work.top + gap;
+        // Fences the column has no room for (a small screen at a high scale) start another
+        // column to the left of it.
+        let mut shift = 0;
         for (&id, h) in ids.iter().zip(heights) {
             let Some(w) = self.fences.get(&id) else {
                 continue;
             };
             let r = w.rect();
+            if top + h > work.bottom - gap && top > work.top + gap {
+                shift += r.right - r.left + gap;
+                top = work.top + gap;
+            }
             let rect = RECT {
-                left: r.left,
+                left: r.left - shift,
                 top,
-                right: r.right,
+                right: r.right - shift,
                 bottom: top + h,
             };
             w.set_bounds(rect);
