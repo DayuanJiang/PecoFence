@@ -35,6 +35,7 @@ struct Gpu {
     device: GpuDevice,
     graphics: CompositionGraphicsDevice,
     generation: u32,
+    is_warp: bool,
 }
 
 thread_local! {
@@ -72,6 +73,7 @@ fn create_gpu(compositor: &Compositor, generation: u32, allow_warp: bool) -> Res
             device,
             graphics,
             generation,
+            is_warp,
         },
         is_warp,
     ))
@@ -187,6 +189,12 @@ impl RenderStack {
     /// The current composition graphics device (allocates drawing surfaces).
     pub fn graphics(&self) -> CompositionGraphicsDevice {
         self.gpu.borrow().graphics.clone()
+    }
+
+    /// True while a stack that started on the GPU draws with WARP: the hardware device could
+    /// not be created when the lost one was replaced.
+    pub fn on_fallback_warp(&self) -> bool {
+        !self.is_warp && self.gpu.borrow().is_warp
     }
 
     /// Increments every time the device is rebuilt; surfaces created under an older generation
