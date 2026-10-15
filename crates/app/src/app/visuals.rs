@@ -1222,6 +1222,9 @@ impl App {
         } else {
             self.ctx.backdrops.borrow().clone()
         };
+        if mode != self.theme_mode {
+            tray::set_dark_menus(mode == ThemeMode::Dark);
+        }
         self.theme_mode = mode;
         self.accent = accent;
         *self.ctx.theme.borrow_mut() = theme;

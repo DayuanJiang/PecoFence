@@ -3,9 +3,9 @@
 use crate::bindings::*;
 use crate::wide::to_wide;
 use std::cell::RefCell;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
-use windows_core::{Error, PCWSTR, Result};
+use windows_core::{Error, PCSTR, PCWSTR, Result};
 
 windows_core::link!("user32.dll" "system" fn GetMenuState(hmenu: HMENU, uid: u32, uflags: u32) -> u32);
 windows_core::link!("user32.dll" "system" fn GetMenuStringW(hmenu: HMENU, uiditem: u32, lpstring: windows_core::PWSTR, cchmax: i32, flags: u32) -> i32);
@@ -26,6 +26,52 @@ pub fn end_menu() {
     unsafe {
         let _ = EndMenu();
     }
+}
+
+/// The popup menus are dark ([`set_dark_menus`]): item glyphs take the dark menu's text colours.
+static DARK_MENUS: AtomicBool = AtomicBool::new(false);
+
+/// Draws this process's popup menus dark or light from the next one on, the shell's entries
+/// and submenus included. Windows documents no switch for this: uxtheme exports it by ordinal
+/// only (135 `SetPreferredAppMode`, 136 `FlushMenuThemes`), and before Windows 10 1903 (build
+/// 18362) ordinal 135 is another function, so older builds keep their light menus.
+pub fn set_dark_menus(dark: bool) {
+    /// `PreferredAppMode::ForceDark` / `ForceLight`.
+    const FORCE_DARK: i32 = 2;
+    const FORCE_LIGHT: i32 = 3;
+    if crate::desktop::os_build() < 18362 {
+        return;
+    }
+    let name = to_wide("uxtheme.dll");
+    // SAFETY: loading a system DLL from System32 and looking up two exports by ordinal; the
+    // transmutes match their signatures on every build that has them (checked above).
+    unsafe {
+        let dll = LoadLibraryExW(
+            PCWSTR(name.as_ptr()),
+            None,
+            LOAD_LIBRARY_SEARCH_SYSTEM32 as u32,
+        );
+        if dll.0.is_null() {
+            return;
+        }
+        let (Some(set_mode), Some(flush)) = (
+            GetProcAddress(dll, PCSTR(135 as *const u8)),
+            GetProcAddress(dll, PCSTR(136 as *const u8)),
+        ) else {
+            return;
+        };
+        let set_mode = std::mem::transmute::<
+            unsafe extern "system" fn() -> isize,
+            unsafe extern "system" fn(i32) -> i32,
+        >(set_mode);
+        let flush = std::mem::transmute::<
+            unsafe extern "system" fn() -> isize,
+            unsafe extern "system" fn(),
+        >(flush);
+        set_mode(if dark { FORCE_DARK } else { FORCE_LIGHT });
+        flush();
+    }
+    DARK_MENUS.store(dark, Ordering::Relaxed);
 }
 
 /// Creates a 32-bit icon from premultiplied BGRA pixels.
@@ -377,12 +423,16 @@ impl PopupMenu {
         // SAFETY: plain FFI calls on a menu we own; the bitmap outlives the menu (`Drop`).
         unsafe {
             let px = GetSystemMetricsForDpi(SM_CXSMICON, dpi);
-            let disabled = GetMenuState(self.hmenu, pos, MF_BYPOSITION as u32) & MF_GRAYED as u32;
-            let color = GetSysColor(if disabled != 0 {
-                COLOR_GRAYTEXT
-            } else {
-                COLOR_MENUTEXT
-            });
+            let disabled =
+                GetMenuState(self.hmenu, pos, MF_BYPOSITION as u32) & MF_GRAYED as u32 != 0;
+            // A dark menu's text is white, its disabled text grey; the system colours stay
+            // the light menu's.
+            let color = match (DARK_MENUS.load(Ordering::Relaxed), disabled) {
+                (true, false) => 0xFF_FFFF,
+                (true, true) => 0x6D_6D6D,
+                (false, true) => GetSysColor(COLOR_GRAYTEXT),
+                (false, false) => GetSysColor(COLOR_MENUTEXT),
+            };
             let Some(bitmap) = glyph_bitmap(glyph, px, color) else {
                 return self;
             };

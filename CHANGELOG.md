@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Menus follow the colour mode (feedback #3). When 「颜色模式」 (Settings › 常规) comes out dark, the fence menu, an icon's menu with Windows' own entries in it, their submenus and the tray menu are dark too, and light when it comes out light. A change of the mode, also one PecoFence follows from Windows, shows from the next menu on. Windows 10 before version 1903 keeps light menus.
+
 ## 0.2.1
 
 - Tabs can stand in a column on the left of a fence (#72): set 「标签栏位置」 to 「左侧」 (Settings › 常规, or `pecofence-cli settings set tabBar left`) and a fence with two or more tabs lists them from top to bottom, one name per row, like the vertical tabs of Firefox and Edge, so many tabs no longer squeeze each other's names. The column is as wide as the longest name needs (96 to 160 DIPs) and takes the place of the title row: drag the fence by its empty part, double-click it or press the button at its bottom to roll the fence up, right-click it for the fence menu, drop another fence on it to merge them. Rolled up, the fence shrinks to the column alone, just tall enough for its tabs, its rounded corners kept through the animation; every tab looks the same there, and a click on one expands the fence back to its own size on that tab (the button at the bottom, the selection fill and the bold name of the tab shown last only appear while the fence is expanded). Switching, dragging to reorder (up and down), tearing a tab off (sideways), dropping files on a tab, the wheel and switching on hover all work in the column. When the column appears or gets longer, a fence too short to show every tab grows to fit, as far as the fence below it or the bottom of the screen. The default stays 「顶部」.
