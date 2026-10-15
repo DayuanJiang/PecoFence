@@ -302,7 +302,8 @@ Everything talks to the running app except `describe`, `skill`, `paths`, `log` a
   the app would (exit 1 with `validation_failed` when the app would refuse it), then lints what
   loads but will not work: rules whose target fence exists in no layout, rules targeting a folder
   portal (error), rules without conditions, portals whose folder is missing, tabs hosted by a
-  missing fence, memberships of unknown items, more than 20 snapshots, a missing or foreign
+  missing fence, fence sizes outside 1 to 8192 DIP (the app clamps them when it loads the file),
+  memberships of unknown items, more than 20 snapshots, a missing or foreign
   `$schema`. Output: `{"ok", "path", "schema", "summary": {...}, "problems": [{"level":
   "error"|"warning", "subject", "message"}]}`; exit 1 when any problem is an error. Run it before
   `config import`.

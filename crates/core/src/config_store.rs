@@ -1,6 +1,7 @@
 //! Config persistence: atomic writes, `.bak` rotation, daily backups, load fallbacks (plan §7.5).
 
-use crate::model::{Config, SCHEMA_VERSION};
+use crate::geometry::MAX_DIP;
+use crate::model::{Config, NormGeometry, SCHEMA_VERSION};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -293,12 +294,6 @@ pub fn validate(cfg: &Config) -> Result<(), String> {
             if !(g.w.is_finite() && g.h.is_finite() && g.x.is_finite() && g.y.is_finite()) {
                 return Err(format!("fence {} has non-finite geometry", f.title));
             }
-            if g.w < 1.0 || g.h < 1.0 || g.w > 8192.0 || g.h > 8192.0 {
-                return Err(format!(
-                    "fence {} has out-of-range size {}x{}",
-                    f.title, g.w, g.h
-                ));
-            }
             // The presets are 0.55 ("更透明"), 1.6 ("更厚实" = a veil) and 0 ("全透明").
             if let Some(a) = &f.appearance
                 && let Some(o) = a.opacity
@@ -310,6 +305,25 @@ pub fn validate(cfg: &Config) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+/// `g`'s size clamped to 1 to 8192 DIP each way.
+fn size_in_range(g: &NormGeometry) -> (f32, f32) {
+    (g.w.clamp(1.0, MAX_DIP), g.h.clamp(1.0, MAX_DIP))
+}
+
+/// Brings fence sizes outside 1 to 8192 DIP (a hand-edited file) into that range, for the app
+/// to load or import the file with just those sizes changed. True when one changed.
+pub fn clamp_sizes(cfg: &mut Config) -> bool {
+    let mut changed = false;
+    for f in cfg.layouts.iter_mut().flat_map(|l| &mut l.fences) {
+        let (w, h) = size_in_range(&f.geometry);
+        if (w, h) != (f.geometry.w, f.geometry.h) {
+            (f.geometry.w, f.geometry.h) = (w, h);
+            changed = true;
+        }
+    }
+    changed
 }
 
 /// Severity of a [`lint`] finding.
@@ -342,9 +356,10 @@ fn lint_at(out: &mut Vec<Lint>, level: LintLevel, subject: impl Into<String>, me
 
 /// Cross-checks a configuration that already passed [`validate`] for things that load but will
 /// not work as written: rules whose target fence exists in no layout, portals whose folder is
-/// gone, tabs hosted by a missing fence, duplicate fence ids, memberships of unknown items, more
-/// snapshots than the app keeps, a missing or foreign `$schema`. Pure apart from the folder
-/// existence checks; safe to run on an exported file without the app.
+/// gone, tabs hosted by a missing fence, duplicate fence ids, fence sizes the app clamps,
+/// memberships of unknown items, more snapshots than the app keeps, a missing or foreign
+/// `$schema`. Pure apart from the folder existence checks; safe to run on an exported file
+/// without the app.
 pub fn lint(cfg: &Config) -> Vec<Lint> {
     use crate::model::FenceKind;
     use crate::rules::Target;
@@ -431,6 +446,19 @@ pub fn lint(cfg: &Config) -> Vec<Lint> {
                     &subject,
                     format!(
                         "portal folder {path:?} does not exist (or is not reachable from here)"
+                    ),
+                );
+            }
+            let g = &f.geometry;
+            let (w, h) = size_in_range(g);
+            if (w, h) != (g.w, g.h) {
+                lint_at(
+                    &mut out,
+                    LintLevel::Warning,
+                    &subject,
+                    format!(
+                        "size {}x{} is out of range; the app changes it to {w}x{h}",
+                        g.w, g.h
                     ),
                 );
             }
@@ -752,6 +780,49 @@ mod tests {
             ..f
         });
         assert!(validate(&c).is_err());
+    }
+
+    #[test]
+    fn an_out_of_range_size_costs_only_that_size() {
+        // A hand edit: one fence 1e9 wide and -500 tall, another 0 tall. The file still loads
+        // as it is, `config check` warns, and the sizes come into range.
+        let store = ConfigStore::new(tmpdir("sizes"));
+        let mut c = sample();
+        let mut b = Fence::new(
+            "B",
+            FenceKind::Virtual,
+            c.layouts[0].fences[0].geometry.clone(),
+        );
+        b.geometry.h = 0.0;
+        c.layouts[0].fences[0].geometry.w = 1e9;
+        c.layouts[0].fences[0].geometry.h = -500.0;
+        c.layouts[0].fences.push(b);
+        fs::create_dir_all(store.dir()).unwrap();
+        fs::write(store.primary_path(), serde_json::to_string(&c).unwrap()).unwrap();
+        let (outcome, moved) = store.load_reporting();
+        let LoadOutcome::Primary(mut loaded) = outcome else {
+            panic!("{outcome:?}");
+        };
+        assert_eq!(moved, None);
+        let lints = lint(&loaded);
+        let sizes: Vec<&Lint> = lints
+            .iter()
+            .filter(|l| l.message.starts_with("size "))
+            .collect();
+        assert_eq!(sizes.len(), 2, "{lints:?}");
+        assert_eq!(sizes[0].subject, "fence:A");
+        assert_eq!(sizes[1].subject, "fence:B");
+        assert!(sizes.iter().all(|l| l.level == LintLevel::Warning));
+        assert!(clamp_sizes(&mut loaded));
+        let g = &loaded.layouts[0].fences[0].geometry;
+        assert_eq!((g.w, g.h), (8192.0, 1.0));
+        assert_eq!(loaded.layouts[0].fences[1].geometry.h, 1.0);
+        assert!(!clamp_sizes(&mut loaded));
+        assert!(
+            lint(&loaded)
+                .iter()
+                .all(|l| !l.message.starts_with("size "))
+        );
     }
 
     #[test]

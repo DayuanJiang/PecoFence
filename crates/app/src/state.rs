@@ -145,6 +145,10 @@ impl AppState {
             tracing::warn!("duplicate fences or memberships in the configuration dropped");
             state.dirty = true;
         }
+        if pecofence_core::config_store::clamp_sizes(&mut state.config) {
+            tracing::warn!("fence sizes out of range in the configuration clamped");
+            state.dirty = true;
+        }
         state.ensure_layout();
         state.normalize_tabs();
         state
@@ -214,6 +218,7 @@ impl AppState {
         }
         config.snapshots = snaps;
         config.drop_duplicates();
+        pecofence_core::config_store::clamp_sizes(&mut config);
         self.config = config;
         self.rebuild_catalog();
         self.layout = 0;
