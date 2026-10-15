@@ -880,13 +880,14 @@ pub fn rename_with_prompt(path: &Path, new_name: &str, owner: Option<HWND>) -> R
     }
 }
 
-/// `path` for a file API: as is up to MAX_PATH, beyond that in the `\\?\` form `std::fs` uses
-/// (`\\?\C:\…`, `\\?\UNC\server\share\…`), without which the call fails on a long path.
+/// `path` for a file API: as is when short, beyond that in the `\\?\` form `std::fs` uses
+/// (`\\?\C:\…`, `\\?\UNC\server\share\…`), without which the call fails on a long path. The
+/// threshold is std's: 248 UTF-16 units including the NUL (the limit for a folder).
 fn long_path_wide(path: &Path) -> Vec<u16> {
     use std::os::windows::ffi::OsStrExt;
     use std::path::{Component, Prefix};
     let plain = path_wide(path);
-    if plain.len() < 260 {
+    if plain.len() < 248 {
         return plain;
     }
     // The prefix turns normalisation off, so the path must be absolute and clean first.
@@ -1084,7 +1085,8 @@ mod path_tests {
     use super::long_path_wide;
     use std::path::Path;
 
-    /// Only a path of MAX_PATH or more gets the prefix; a network path keeps one backslash.
+    /// Only a long path (248 UTF-16 units with the NUL, as in std) gets the prefix; a network
+    /// path keeps one backslash.
     #[test]
     fn long_paths_get_the_verbatim_prefix() {
         let wide = |s: &str| {
