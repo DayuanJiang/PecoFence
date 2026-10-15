@@ -224,8 +224,9 @@ pub struct App {
     control: Window,
     queue: CommandQueue,
     tray: Option<TrayIcon>,
-    /// The user's and the public desktop folder (restarted by `revive_watchers`).
-    watchers: Vec<DirWatcher>,
+    /// The user's and the public desktop folder, each with its watcher (restarted per folder
+    /// by `revive_watchers`).
+    watchers: Vec<(PathBuf, DirWatcher)>,
     /// Shell change notifications for the Recycle Bin and the desktop namespace, which no
     /// folder watcher sees (`None` when the shell refused the registration).
     _shell_watch: Option<ShellChangeWatch>,
@@ -1058,7 +1059,8 @@ impl App {
 
         // Watchers.
         let fs_pending: Arc<Mutex<Vec<FsEvent>>> = Arc::new(Mutex::new(Vec::new()));
-        let watchers = sync::start_desktop_watchers(control.hwnd(), &fs_pending);
+        let watchers =
+            sync::start_desktop_watchers(sync::desktop_folders(), control.hwnd(), &fs_pending);
 
         let shell_watch = ShellChangeWatch::register_desktop(control.hwnd(), WM_APP_SHELL_CHANGED)
             .map_err(|e| tracing::warn!(error = %e, "shell change notifications unavailable"))

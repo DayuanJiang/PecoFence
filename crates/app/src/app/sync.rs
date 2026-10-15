@@ -22,18 +22,24 @@ pub(super) fn start_watcher(
     })
 }
 
-/// Watchers on the user's and the public desktop folder.
-pub(super) fn start_desktop_watchers(
-    control: HWND,
-    pending: &Arc<Mutex<Vec<FsEvent>>>,
-) -> Vec<DirWatcher> {
-    let mut watchers = Vec::new();
-    for dir in [shell::user_desktop(), shell::public_desktop()]
+/// The user's and the public desktop folder.
+pub(super) fn desktop_folders() -> Vec<PathBuf> {
+    [shell::user_desktop(), shell::public_desktop()]
         .into_iter()
         .flatten()
-    {
+        .collect()
+}
+
+/// Watchers on the desktop folders `dirs`, each with its folder.
+pub(super) fn start_desktop_watchers(
+    dirs: Vec<PathBuf>,
+    control: HWND,
+    pending: &Arc<Mutex<Vec<FsEvent>>>,
+) -> Vec<(PathBuf, DirWatcher)> {
+    let mut watchers = Vec::new();
+    for dir in dirs {
         match start_watcher(&dir, control, pending.clone()) {
-            Ok(w) => watchers.push(w),
+            Ok(w) => watchers.push((dir, w)),
             Err(e) => tracing::warn!(dir = %dir.display(), error = %e, "watcher failed"),
         }
     }
@@ -44,11 +50,21 @@ impl App {
     /// A watcher exits when its folder is deleted, renamed or unmounted. Once a minute, watch
     /// the folders that are back again and show what they hold now.
     pub(super) fn revive_watchers(&mut self) {
-        // Empty: the desktop was unreachable at startup (a network location) and none started.
-        let dead = self.watchers.is_empty() || self.watchers.iter().any(|w| !w.is_running());
-        if dead && shell::desktop_available() {
-            self.watchers = start_desktop_watchers(self.control.hwnd(), &self.fs_pending);
-            window::post_message(self.control.hwnd(), WM_APP_FS_CHANGED, 0, 0);
+        // A desktop folder without a running watcher: unreachable at startup (a network
+        // location) or its watcher exited. Per folder, since the public desktop's watcher may
+        // well run while the user's never started; only a folder readable now is tried.
+        self.watchers.retain(|(_, w)| w.is_running());
+        let back: Vec<PathBuf> = desktop_folders()
+            .into_iter()
+            .filter(|d| !self.watchers.iter().any(|(p, _)| p == d))
+            .filter(|d| std::fs::read_dir(d).is_ok())
+            .collect();
+        if !back.is_empty() {
+            let started = start_desktop_watchers(back, self.control.hwnd(), &self.fs_pending);
+            if !started.is_empty() {
+                self.watchers.extend(started);
+                window::post_message(self.control.hwnd(), WM_APP_FS_CHANGED, 0, 0);
+            }
         }
         self.portal_watchers.retain(|_, (_, w)| w.is_running());
         // Portals without a watcher, plus those last read as missing: a folder renamed away
