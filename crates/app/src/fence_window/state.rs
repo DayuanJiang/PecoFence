@@ -101,6 +101,9 @@ pub struct FenceViewState {
     /// A fade was still running when the surface was last drawn: `tick` redraws it.
     pub(super) content_busy: bool,
     pub(super) chrome_busy: bool,
+    /// The window moved in the system move loop since the last frame: `tick` re-crops the
+    /// backdrop once for the frame instead of once per pointer message.
+    pub(super) move_pending: bool,
     /// Mouse is somewhere over the window (title or content) — drives title-on-hover and the
     /// inactive-scrollbar rule.
     pub(super) mouse_inside: bool,
