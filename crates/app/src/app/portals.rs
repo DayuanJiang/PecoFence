@@ -46,16 +46,34 @@ impl App {
         // F5 and `revive_watchers` (once a minute) drop exited watchers before calling this.
         self.portal_watchers
             .retain(|id, (path, _)| portals.iter().any(|(pid, p)| pid == id && p == path));
+        self.watcher_retry
+            .retain(|dir, _| portals.iter().any(|(_, p)| p == dir));
         for (id, dir) in portals {
-            if self.portal_watchers.contains_key(&id) {
+            if self.portal_watchers.contains_key(&id)
+                || self
+                    .watcher_retry
+                    .get(&dir)
+                    .is_some_and(|(_, at)| *at > Instant::now())
+            {
                 continue;
             }
+            let started = Instant::now();
             match sync::start_watcher(&dir, self.control.hwnd(), self.fs_pending.clone()) {
                 Ok(w) => {
                     self.portal_watchers.insert(id, (dir, w));
                 }
                 Err(e) => {
-                    tracing::warn!(dir = %dir.display(), error = %e, "portal watcher failed")
+                    tracing::warn!(dir = %dir.display(), error = %e, "portal watcher failed");
+                    // Opening a folder on an unreachable share blocks the UI thread until the
+                    // network gives up, and this runs on every batch and once a minute: such
+                    // a folder waits twice as long before each further try, up to an hour. A
+                    // local folder that is gone fails at once and is tried every time.
+                    if started.elapsed() > Duration::from_secs(1) {
+                        let failures = self.watcher_retry.get(&dir).map_or(1, |(n, _)| n + 1);
+                        let wait = Duration::from_secs(60 << failures.min(6));
+                        self.watcher_retry
+                            .insert(dir, (failures, Instant::now() + wait));
+                    }
                 }
             }
         }

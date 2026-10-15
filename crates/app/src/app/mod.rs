@@ -233,6 +233,9 @@ pub struct App {
     /// One watcher per folder-portal fence on the folder it currently shows (kept in sync by
     /// `ensure_portal_watchers`; navigating swaps the watcher).
     portal_watchers: HashMap<FenceId, (PathBuf, DirWatcher)>,
+    /// Portal folders whose watcher could not be started after a long wait (an unreachable
+    /// network share): how many times, and when to try again (see `ensure_portal_watchers`).
+    watcher_retry: HashMap<PathBuf, (u32, Instant)>,
     fs_pending: Arc<Mutex<Vec<FsEvent>>>,
     /// Finished shell file operations from the worker threads (see `fileops.rs`).
     fileops_done: fileops::FileOpResults,
@@ -1094,6 +1097,7 @@ impl App {
             watchers,
             _shell_watch: shell_watch,
             portal_watchers: HashMap::new(),
+            watcher_retry: HashMap::new(),
             fs_pending,
             fileops_done: Arc::new(Mutex::new(Vec::new())),
             fileops_running: 0,

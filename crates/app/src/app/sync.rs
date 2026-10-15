@@ -279,8 +279,12 @@ impl App {
         let portal = self.state.portal_path(active).is_some();
         if portal {
             self.state.refresh_portal(active);
-            // A watcher that exited with its folder is started again now that the user asks.
+            // A watcher that exited with its folder is started again now that the user asks,
+            // an unreachable folder's too.
             self.portal_watchers.retain(|_, (_, w)| w.is_running());
+            if let Some(dir) = self.state.portal_path(active) {
+                self.watcher_retry.remove(&dir);
+            }
             self.ensure_portal_watchers();
         } else {
             shell::recycle_bin_changed();
