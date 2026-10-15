@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Menus follow the colour mode (feedback #3). When 「颜色模式」 (Settings › 常规) comes out dark, the fence menu, an icon's menu with Windows' own entries in it, their submenus and the tray menu are dark too, and light when it comes out light. A change of the mode, also one PecoFence follows from Windows, shows from the next menu on. Windows 10 before version 1903 keeps light menus.
+- Space opens QuickLook's preview of the selected icon in a fence, as it does on the desktop and in Explorer, while QuickLook (github.com/QL-Win/QuickLook) runs (feedback #2, #3). Space again closes it, the arrow keys show the icon they move to in the open preview, and Esc closes it. A space typed right after letters, while picking an icon by typing its name, still belongs to the name, and Ctrl+Space still adds the focused icon to the selection or takes it out. Without QuickLook, Space does nothing, as before.
 
 ## 0.2.1
 
