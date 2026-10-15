@@ -377,12 +377,9 @@ impl App {
                 w.rekey_item(item, new_id);
             }
             self.refresh_portals_in(&[parent]);
-        } else {
-            self.state.forget_orphan_at(&new);
-            if self.state.rename_item(&old, &new) {
-                self.refresh_fences_with(item);
-                self.schedule_save();
-            }
+        } else if self.state.rename_item(&old, &new) {
+            self.refresh_fences_with(item);
+            self.schedule_save();
         }
         Ok(new)
     }

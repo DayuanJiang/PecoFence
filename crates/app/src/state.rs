@@ -1026,22 +1026,6 @@ impl AppState {
         self.dirty = true;
     }
 
-    /// Before the user renames an item to `path`: a file of that name deleted less than seven
-    /// days ago still has its (orphaned) record, which would take the renamed file for the old
-    /// one at the next sync and move it into the old file's fence. Drop that record.
-    pub fn forget_orphan_at(&mut self, path: &Path) {
-        let key = ItemKey::from_path(&path.to_string_lossy());
-        if let Some(&id) = self.catalog.get(&key)
-            && self
-                .config
-                .items
-                .get(&id)
-                .is_some_and(|it| it.orphaned_since.is_some())
-        {
-            self.remove_item_record(id);
-        }
-    }
-
     /// Live workspace entries, including the current contents of folder portals.
     /// The same file mirrored by several fences is counted once.
     pub fn workspace_item_count(&self) -> usize {
@@ -1462,8 +1446,25 @@ impl AppState {
         let to_temp = new
             .file_name()
             .is_some_and(|n| pecofence_core::rules::is_temporary(&n.to_string_lossy()));
-        if to_temp || (new_key != old_key && self.catalog.contains_key(&new_key)) {
+        if to_temp {
             return false;
+        }
+        if new_key != old_key
+            && let Some(&at_new) = self.catalog.get(&new_key)
+        {
+            // A file of the new name deleted less than seven days ago still has its (orphaned)
+            // record, which would take the renamed file for the old one at the next sync and
+            // move it into the old file's fence: drop that record and rename. A live record
+            // at the new name keeps the rename refused.
+            let orphan = self
+                .config
+                .items
+                .get(&at_new)
+                .is_some_and(|it| it.orphaned_since.is_some());
+            if !orphan || !self.catalog.contains_key(&old_key) {
+                return false;
+            }
+            self.remove_item_record(at_new);
         }
         let Some(id) = self.catalog.remove(&old_key) else {
             return false;
@@ -2723,7 +2724,6 @@ mod tests {
         let gone = add_item(&mut state, inbox, "b");
         state.config.items.get_mut(&gone).unwrap().orphaned_since = Some(1);
         let kept = add_item(&mut state, work, "a");
-        state.forget_orphan_at(&desk("b.txt"));
         assert!(state.rename_item(&desk("a.txt"), &desk("b.txt")));
         state.sync_desktop(&[desktop_entry("b.txt")]);
         assert_eq!(state.item_id_for_path(&desk("b.txt")), Some(kept));
@@ -2732,9 +2732,14 @@ mod tests {
         assert!(state.fences().iter().all(|f| !f.contains_item(gone)));
         // A live file of that name keeps its record; the rename is refused as before.
         let live = add_item(&mut state, inbox, "c");
-        state.forget_orphan_at(&desk("c.txt"));
         assert!(!state.rename_item(&desk("b.txt"), &desk("c.txt")));
         assert_eq!(state.item_id_for_path(&desk("c.txt")), Some(live));
+        // A rename from a name no record has (the watcher reporting a file it never listed)
+        // leaves an orphaned record at the new name alone.
+        let gone = add_item(&mut state, inbox, "d");
+        state.config.items.get_mut(&gone).unwrap().orphaned_since = Some(1);
+        assert!(!state.rename_item(&desk("unknown.txt"), &desk("d.txt")));
+        assert!(state.config.items.contains_key(&gone));
     }
 
     /// The public desktop could not be read: its files stay, the user's deleted one goes.
