@@ -418,6 +418,7 @@
   "按下组合键…": "Appuyez sur les touches…",
   "点击方框，按下想用的组合键。要用 Win 键，请勾选“包含 Win 键”": "Cliquez dans la zone, puis appuyez sur le raccourci voulu. Pour un raccourci avec Win, cochez « Inclure la touche Win ».",
   "请按下组合键，按 Esc 取消": "Appuyez sur le raccourci, ou sur Échap pour annuler.",
+  "没有反应？这个组合键可能已被其他程序占用，请换一个": "Rien ne se passe ? Une autre application utilise peut-être ce raccourci. Choisissez-en un autre.",
   "{0} 和备用的组合都已被占用，请换一个": "{0} et les raccourcis de secours sont tous déjà utilisés. Choisissez-en un autre.",
   "{0} 已被占用，现在使用 {1}": "{0} est déjà utilisé : {1} le remplace pour l’instant.",
   "删除\tDelete": "Supprimer\tSuppr",

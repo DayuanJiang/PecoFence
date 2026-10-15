@@ -725,12 +725,19 @@
   const MOD_ALT = 1, MOD_CTRL = 2, MOD_SHIFT = 4, MOD_WIN = 8;
   const hkBox = document.getElementById('peekHotkey'), hkKeys = document.getElementById('peekHotkeyKeys');
   const hkWin = document.getElementById('peekHotkeyWin'), hkHelp = document.getElementById('peekHotkeyHelp');
-  let hkRecording = false, hkHeld = 0, hkError = '';
+  let hkRecording = false, hkHeld = 0, hkError = '', hkQuiet = false, hkQuietTimer = 0;
   const heldMods = e => (e.altKey ? MOD_ALT : 0) | (e.ctrlKey ? MOD_CTRL : 0) | (e.shiftKey ? MOD_SHIFT : 0) | (e.metaKey ? MOD_WIN : 0);
   const modNames = mods => [[MOD_WIN, 'Win'], [MOD_CTRL, t("键名\x04Ctrl")], [MOD_ALT, 'Alt'], [MOD_SHIFT, t("键名\x04Shift")]]
     .filter(([bit]) => mods & bit).map(([, name]) => name);
   const keyCaps = keys => keys.map(k => `<kbd>${esc(k)}</kbd>`).join('');
   const sameKey = (a, b) => a.mods === b.mods && a.vk === b.vk;
+  // A combination another program holds never reaches the page, only its modifiers do: when
+  // keys stop arriving during a recording, the help line says the combination may be taken.
+  function waitForKeys(on) {
+    clearTimeout(hkQuietTimer);
+    hkQuiet = false;
+    if (on) hkQuietTimer = setTimeout(() => { hkQuiet = true; renderPeekHotkey(); }, 3000);
+  }
   function renderPeekHotkey() {
     const p = state && state.peekHotkey;
     if (!p) return;
@@ -746,6 +753,7 @@
     if (!hkRecording) hkWin.checked = false;
     let help = t("点击方框，按下想用的组合键。要用 Win 键，请勾选“包含 Win 键”"), tone = '';
     if (hkError) { help = hkError; tone = 'error'; }
+    else if (hkRecording && hkQuiet) { help = t("没有反应？这个组合键可能已被其他程序占用，请换一个"); tone = 'caution'; }
     else if (hkRecording) help = t("请按下组合键，按 Esc 取消");
     else if (on && !p.active) { help = tf("{0} 和备用的组合都已被占用，请换一个", p.chosen.label); tone = 'error'; }
     else if (on && !sameKey(p.active, p.chosen)) { help = tf("{0} 已被占用，现在使用 {1}", p.chosen.label, p.active.label); tone = 'caution'; }
@@ -769,13 +777,13 @@
   }
   function startRecording() {
     if (hkRecording || hkBox.disabled) return;
-    hkRecording = true; hkHeld = 0; hkError = '';
+    hkRecording = true; hkHeld = 0; hkError = ''; waitForKeys(false);
     send({ type: 'action', name: 'peekHotkeyRecording', on: true });
     renderPeekHotkey();
   }
   function stopRecording() {
     if (!hkRecording) return;
-    hkRecording = false; hkHeld = 0; hkError = '';
+    hkRecording = false; hkHeld = 0; hkError = ''; waitForKeys(false);
     send({ type: 'action', name: 'peekHotkeyRecording', on: false });
     renderPeekHotkey();
   }
@@ -791,6 +799,7 @@
     e.preventDefault();
     if (e.key === 'Escape' && !held) { stopRecording(); return; }
     hkHeld = held;
+    waitForKeys(true);
     if (['Control', 'Alt', 'Shift', 'Meta', 'OS', 'AltGraph'].includes(e.key)) { renderPeekHotkey(); return; }
     if (e.repeat) return;
     // keyCode is the Windows virtual-key code, which RegisterHotKey takes.
@@ -1321,7 +1330,7 @@
       // Saved: recording is over (the host registered the new shortcut). Refused: the page
       // keeps recording and says why.
       hkError = m.ok ? '' : m.text || '';
-      if (m.ok) { hkRecording = false; hkHeld = 0; }
+      if (m.ok) { hkRecording = false; hkHeld = 0; waitForKeys(false); }
       renderPeekHotkey();
     }
   });

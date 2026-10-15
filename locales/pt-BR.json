@@ -394,6 +394,7 @@
   "按下组合键…": "Pressione as teclas…",
   "点击方框，按下想用的组合键。要用 Win 键，请勾选“包含 Win 键”": "Clique na caixa e pressione o atalho desejado. Para usar a tecla Win, marque “Incluir a tecla Win”.",
   "请按下组合键，按 Esc 取消": "Pressione o atalho ou Esc para cancelar.",
+  "没有反应？这个组合键可能已被其他程序占用，请换一个": "Nada acontece? Talvez outro aplicativo esteja usando este atalho. Escolha outro.",
   "{0} 和备用的组合都已被占用，请换一个": "{0} e os atalhos alternativos estão todos em uso. Escolha outro.",
   "{0} 已被占用，现在使用 {1}": "{0} está em uso, então por enquanto vale {1}.",
   "删除\tDelete": "Excluir\tDelete",
