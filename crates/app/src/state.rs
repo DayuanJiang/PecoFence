@@ -834,7 +834,15 @@ impl AppState {
             is_hidden: false,
             is_system: false,
             idle_days: Self::idle_days(entry.mtime, last_opened, now),
+            age_secs: Self::age_secs(entry.created, entry.mtime, now),
         }
+    }
+
+    /// Seconds since the later of creation and last write; `None` when the file reports no
+    /// time at all.
+    fn age_secs(created: i64, mtime: i64, now: i64) -> Option<u64> {
+        let last = created.max(mtime);
+        (last > 0).then(|| (now - last).max(0) as u64)
     }
 
     /// Reconciles the item table with the current desktop contents. New items are routed by the
@@ -1468,7 +1476,7 @@ impl AppState {
         // the sync finds the file again.
         let to_temp = new
             .file_name()
-            .is_some_and(|n| pecofence_core::rules::is_temporary(&n.to_string_lossy()));
+            .is_some_and(|n| pecofence_core::rules::is_temporary(&n.to_string_lossy(), None));
         if to_temp || (new_key != old_key && self.catalog.contains_key(&new_key)) {
             return false;
         }
@@ -2718,6 +2726,26 @@ mod tests {
         assert_eq!(state.item_id_for_path(&desk("report.txt")), Some(doc));
         assert_eq!(state.config.fence_of_item(0, doc), Some(work));
         assert!(state.config.items[&copy].orphaned_since.is_some());
+        // A sync that catches the fresh copy mid-save puts it in no fence; a .tmp that has been
+        // around for a while, or a .bak, shows like any other file.
+        let mut fresh = desktop_entry("~WRD0002.tmp");
+        fresh.created = pecofence_core::now_unix();
+        fresh.mtime = fresh.created;
+        state.sync_desktop(&[desktop_entry("report.txt"), fresh]);
+        let tmp = state.item_id_for_path(&desk("~WRD0002.tmp")).unwrap();
+        assert!(state.fences().iter().all(|f| !f.contains_item(tmp)));
+        state.sync_desktop(&[
+            desktop_entry("report.txt"),
+            desktop_entry("leftover.tmp"),
+            desktop_entry("notes.bak"),
+        ]);
+        for name in ["leftover.tmp", "notes.bak"] {
+            let id = state.item_id_for_path(&desk(name)).unwrap();
+            assert!(
+                state.config.fence_of_item(0, id).is_some(),
+                "{name} shows nowhere"
+            );
+        }
     }
 
     /// b.txt deleted, then a.txt renamed to b.txt within the week: the deleted file's record

@@ -184,12 +184,12 @@ pub struct ItemFacts {
     pub is_system: bool,
     /// Whole days since the later of last write and last open; `None` when unknown.
     pub idle_days: Option<u32>,
+    /// Seconds since the later of creation and last write; `None` when unknown.
+    pub age_secs: Option<u64>,
 }
 
-/// Extensions that are never routed (downloads in flight, Office lock files…).
+/// Extensions that are never routed (downloads in flight).
 pub const TEMPORARY_EXTS: &[&str] = &[
-    ".tmp",
-    ".bak",
     ".crdownload",
     ".part",
     ".partial",
@@ -205,10 +205,17 @@ pub fn ext_of(file_name: &str) -> String {
     }
 }
 
-/// Is this a temporary/in-flight file that rules must skip?
-pub fn is_temporary(file_name: &str) -> bool {
+/// How long a `.tmp` file must have lasted before the rules route it: an Office "safe save"
+/// writes one and renames it over the document in the same moment.
+pub const TMP_SETTLE_SECS: u64 = 60;
+
+/// Is this a temporary/in-flight file that rules must skip? Office lock files and downloads in
+/// flight always; a `.tmp` until it has lasted [`TMP_SETTLE_SECS`] (`age_secs` unknown: not yet).
+pub fn is_temporary(file_name: &str, age_secs: Option<u64>) -> bool {
     let lower = file_name.to_lowercase();
-    lower.starts_with("~$") || TEMPORARY_EXTS.iter().any(|e| lower.ends_with(e))
+    lower.starts_with("~$")
+        || TEMPORARY_EXTS.iter().any(|e| lower.ends_with(e))
+        || (lower.ends_with(".tmp") && !age_secs.is_some_and(|s| s >= TMP_SETTLE_SECS))
 }
 
 /// The categories in the order [`classify`] reports them. A `.lnk` to a program counts as a
@@ -445,7 +452,7 @@ pub enum Decision {
 
 impl RuleSet {
     pub fn evaluate(&self, facts: &ItemFacts) -> Decision {
-        if is_temporary(&facts.file_name)
+        if is_temporary(&facts.file_name, facts.age_secs)
             || facts.is_system
             || facts.file_name.eq_ignore_ascii_case("desktop.ini")
         {
@@ -641,6 +648,29 @@ mod tests {
         assert_eq!(rs.evaluate(&facts("setup.exe.crdownload")), Decision::Skip);
         assert_eq!(rs.evaluate(&facts("~$report.docx")), Decision::Skip);
         assert_eq!(rs.evaluate(&facts("desktop.ini")), Decision::Skip);
+    }
+
+    /// A `.bak` is a file like any other; a `.tmp` too once it has lasted a while (Word's
+    /// `~WRD0000.tmp` is renamed over the document in the same moment).
+    #[test]
+    fn tmp_files_are_skipped_only_while_fresh_and_bak_files_are_routed() {
+        let rs = RuleSet::default();
+        assert_eq!(
+            rs.evaluate(&facts("notes.bak")),
+            Decision::Default(Target::Inbox)
+        );
+        let mut tmp = facts("~WRD0000.tmp");
+        assert_eq!(rs.evaluate(&tmp), Decision::Skip);
+        tmp.age_secs = Some(TMP_SETTLE_SECS - 1);
+        assert_eq!(rs.evaluate(&tmp), Decision::Skip);
+        tmp.age_secs = Some(TMP_SETTLE_SECS);
+        assert_eq!(rs.evaluate(&tmp), Decision::Default(Target::Inbox));
+        // Age makes no difference to the other temporary names.
+        let mut lock = facts("~$report.docx");
+        lock.age_secs = Some(3600);
+        assert_eq!(rs.evaluate(&lock), Decision::Skip);
+        assert!(is_temporary("Report.TMP", None));
+        assert!(!is_temporary("Report.TMP", Some(TMP_SETTLE_SECS)));
     }
 
     #[test]
