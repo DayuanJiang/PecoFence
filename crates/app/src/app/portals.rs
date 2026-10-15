@@ -60,6 +60,7 @@ impl App {
             let started = Instant::now();
             match sync::start_watcher(&dir, self.control.hwnd(), self.fs_pending.clone()) {
                 Ok(w) => {
+                    self.watcher_retry.remove(&dir);
                     self.portal_watchers.insert(id, (dir, w));
                 }
                 Err(e) => {
