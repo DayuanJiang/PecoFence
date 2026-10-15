@@ -1244,17 +1244,22 @@ impl App {
         // Initial desktop sync + windows.
         app.sync_desktop_if_available("startup");
         app.state.refresh_all_portals();
+        let mut startup_snapshot = None;
         match startup_backdrops.finish(&app.ctx.theme.borrow(), app.control.hwnd()) {
-            Some(Ok((backdrops, _, signature))) => {
+            Some(Ok((backdrops, snapshot, signature))) => {
                 *app.ctx.backdrops.borrow_mut() = backdrops.clone();
                 app.wallpaper_cache.insert(signature.clone(), backdrops);
                 app.wallpaper_sig = Some(signature);
+                startup_snapshot = Some(snapshot);
             }
             Some(Err(error)) => {
                 tracing::warn!(%error, "wallpaper unavailable at startup; solid backdrop");
             }
             // Explorer is slow to answer: the fences go up now, the glass follows.
-            None => app.startup_backdrops = Some(startup_backdrops),
+            None => {
+                startup_backdrops.generation = app.wallpaper_cache.generation();
+                app.startup_backdrops = Some(startup_backdrops);
+            }
         }
         app.sync_fence_windows();
         if app.state.first_run {
@@ -1326,8 +1331,12 @@ impl App {
         if let Some(signature) = app.wallpaper_sig.clone() {
             // One check (no signal arrived, so no follow-ups), then prepare the other desktops.
             // The check asks Explorer from a worker: it is busy hiding the desktop icons right
-            // now (0.8 s for 1000 icons), and the UI thread would wait on it that long.
+            // now (0.8 s for 1000 icons), and the UI thread would wait on it that long. The
+            // rest of the check (live wallpapers) runs on the startup read right away.
             verify_wallpaper_later(app.control.hwnd(), signature);
+            if let Some(snapshot) = &startup_snapshot {
+                app.follow_snapshot(snapshot, "startup");
+            }
             window::set_timer(
                 app.control.hwnd(),
                 TIMER_WALLPAPER_PREWARM,

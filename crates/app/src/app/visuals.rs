@@ -444,28 +444,38 @@ struct StartupResult {
 /// logon or after a large copy it has taken seconds.
 const STARTUP_WALLPAPER_WAIT: Duration = Duration::from_millis(150);
 
+/// Shared between the startup worker and the UI thread. One lock covers both fields, so exactly
+/// one side acts on the outcome: `finish` takes it when it is already there, otherwise it leaves
+/// the control window for the worker to post to.
+#[derive(Default)]
+struct StartupSlot {
+    outcome: Option<std::result::Result<StartupResult, String>>,
+    /// The control window (`HWND` as isize) to post `WM_APP_STARTUP_BACKDROPS` to; 0 while
+    /// `finish` still waits.
+    notify: isize,
+}
+
 /// The startup backdrops: the wallpaper query (a COM call into Explorer) and the decode run on
 /// a worker thread while the rest of startup runs. `finish` waits for them before the first
 /// fence window is created, unless Explorer is slow to answer: the fences then start with the
 /// solid backdrop and `App::finish_startup_backdrops` swaps the glass in when it arrives.
 pub(super) struct StartupBackdrops {
-    result: Arc<Mutex<Option<std::result::Result<StartupResult, String>>>>,
+    slot: Arc<Mutex<StartupSlot>>,
     /// One message when the query has been answered, one when the decode is done.
     stages: std::sync::mpsc::Receiver<()>,
-    /// The control window the worker notifies when it finishes after `finish` stopped waiting.
-    notify: Arc<std::sync::atomic::AtomicIsize>,
+    /// `BackdropCache::generation` when `finish` gave up waiting: a theme or layout change
+    /// since makes the late result stale.
+    pub(super) generation: u64,
 }
 
 impl StartupBackdrops {
     pub(super) fn start(theme: &Theme, wallpaper_override: Option<&str>) -> Self {
-        let result = Arc::new(Mutex::new(None));
+        let slot: Arc<Mutex<StartupSlot>> = Arc::default();
         let (stage_tx, stages) = std::sync::mpsc::channel();
-        let notify = Arc::new(std::sync::atomic::AtomicIsize::new(0));
         let theme = *theme;
         let wallpaper_override = wallpaper_override.map(str::to_string);
         let work = {
-            let result = result.clone();
-            let notify = notify.clone();
+            let slot = slot.clone();
             move || {
                 let outcome = pecofence_platform::com::MtaGuard::init().and_then(|_com| {
                     let snapshot = wallpaper_snapshot(wallpaper_override.as_deref());
@@ -488,14 +498,17 @@ impl StartupBackdrops {
                         images,
                     })
                 });
-                if let Ok(mut slot) = result.lock() {
-                    *slot = Some(outcome.map_err(|error| error.to_string()));
-                }
+                let notify = match slot.lock() {
+                    Ok(mut slot) => {
+                        slot.outcome = Some(outcome.map_err(|error| error.to_string()));
+                        slot.notify
+                    }
+                    Err(_) => 0,
+                };
                 let _ = stage_tx.send(());
-                let control = notify.load(std::sync::atomic::Ordering::Acquire);
-                if control != 0 {
+                if notify != 0 {
                     window::post_message(
-                        HWND(control as *mut core::ffi::c_void),
+                        HWND(notify as *mut core::ffi::c_void),
                         WM_APP_STARTUP_BACKDROPS,
                         0,
                         0,
@@ -510,9 +523,9 @@ impl StartupBackdrops {
             tracing::warn!(%error, "wallpaper startup thread failed to start");
         }
         Self {
-            result,
+            slot,
             stages,
-            notify,
+            generation: 0,
         }
     }
 
@@ -530,16 +543,22 @@ impl StartupBackdrops {
             Ok(()) => {}
             Err(RecvTimeoutError::Disconnected) => return Some(self.take(theme, started)),
             Err(RecvTimeoutError::Timeout) => {
-                self.notify
-                    .store(control.0 as isize, std::sync::atomic::Ordering::Release);
-                // The answer may have arrived while the window handle was being stored.
-                if self.stages.try_recv().is_err() {
+                let waiting = match self.slot.lock() {
+                    Ok(mut slot) if slot.outcome.is_none() => {
+                        slot.notify = control.0 as isize;
+                        true
+                    }
+                    _ => false,
+                };
+                if waiting {
                     tracing::info!(
                         waited_ms = started.elapsed().as_millis(),
                         "wallpaper not answered yet; fences start with the solid backdrop"
                     );
                     return None;
                 }
+                // The worker finished just now (the lock decides, so it will not post as well).
+                return Some(self.take(theme, started));
             }
         }
         // Explorer answered: the decode is waited for as before, so the fences come up with
@@ -558,10 +577,10 @@ impl StartupBackdrops {
             windows_core::Error::new(windows_core::HRESULT(0x8000_4005_u32 as i32), message)
         };
         let result = self
-            .result
+            .slot
             .lock()
             .ok()
-            .and_then(|mut slot| slot.take())
+            .and_then(|mut slot| slot.outcome.take())
             .ok_or_else(|| failed("wallpaper worker ended without a result".into()))?;
         let StartupResult {
             snapshot,
@@ -941,12 +960,21 @@ impl App {
         let Some(mut job) = self.startup_backdrops.take() else {
             return;
         };
-        let theme = *self.ctx.theme.borrow();
         let control = self.control.hwnd();
+        if job.generation != self.wallpaper_cache.generation() || self.wallpaper_sig.is_some() {
+            // A theme or layout change, or a wallpaper check, got there first (as in
+            // `finish_prewarm`): a read from before it must not be cached or shown.
+            tracing::debug!("startup wallpaper arrived late and is stale; discarded");
+            if self.wallpaper_sig.is_none() {
+                window::post_message(control, WM_APP_WALLPAPER, 0, 0);
+            }
+            return;
+        }
+        let theme = *self.ctx.theme.borrow();
         match job.take(&theme, Instant::now()) {
             Ok((backdrops, snapshot, signature)) => {
                 self.wallpaper_cache.insert(signature, backdrops);
-                self.show_wallpaper(&snapshot, "startup");
+                self.follow_snapshot(&snapshot, "startup");
                 // The registry watchers were up before this snapshot was taken, so only the
                 // other desktops are left to prepare (as the normal startup path does).
                 window::set_timer(control, TIMER_WALLPAPER_PREWARM, WALLPAPER_PREWARM_DELAY_MS);
@@ -1022,8 +1050,18 @@ impl App {
         let Ok(snapshot) = wallpaper_snapshot(self.wallpaper_override.as_deref()) else {
             return;
         };
-        self.detect_live_wallpapers(&snapshot);
-        self.show_wallpaper(&snapshot, reason);
+        self.follow_snapshot(&snapshot, reason);
+    }
+
+    /// What a check does once the wallpaper has been read (also run on the startup snapshot,
+    /// whose read happened on a worker).
+    pub(super) fn follow_snapshot(
+        &mut self,
+        snapshot: &wallpaper::WallpaperSnapshot,
+        reason: &str,
+    ) {
+        self.detect_live_wallpapers(snapshot);
+        self.show_wallpaper(snapshot, reason);
         self.capture_live_wallpapers(LIVE_REFRESH);
     }
 
