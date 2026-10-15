@@ -175,6 +175,9 @@ pub(super) fn on_lbuttondown(
                 let _ = v.redraw_content();
             }
             drop(guard);
+            // Like a content click, the press grants the focus session: Esc cancelling the
+            // drag has to reach this window.
+            focus_session(view, hwnd);
             window::set_capture(hwnd);
             window::set_standard_cursor(StandardCursor::SizeWE);
             return Some(0);
