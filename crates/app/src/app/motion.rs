@@ -77,6 +77,7 @@ impl App {
         for w in self.fences.values() {
             w.recreate_surfaces(&self.ctx.stack);
         }
+        self.redraw_notices();
         Ok(())
     }
 
