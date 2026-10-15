@@ -453,8 +453,8 @@ impl FenceViewState {
     }
 
     /// The column's width for the current tabs: the longest caption (semibold, as the shown
-    /// tab draws it) with its row's insets and a colour dot's room, 96 to 160 DIPs and at most
-    /// 45 % of the expanded fence, so the items keep their room.
+    /// tab draws it) with its row's insets, a colour dot's and a folder glyph's room, 96 to 160
+    /// DIPs and at most 45 % of the expanded fence, so the items keep their room.
     pub(super) fn measure_rail_w(&self) -> f32 {
         if !self.tabs_on_rail() {
             return 0.0;
@@ -474,9 +474,11 @@ impl FenceViewState {
         } else {
             0.0
         };
+        let glyph =
+            pecofence_render::fence_chrome::tab_icon_w(self.tabs.iter().any(|t| t.folder_icon));
         let room = TAB_RAIL_TEXT_ROOM + RAIL_ROW_INSET + RAIL_ROW_RIGHT;
         let fence = self.expanded_w_px as f32 / self.scale();
-        (widest + dot + room)
+        (widest + dot + glyph + room)
             .clamp(TAB_RAIL_MIN_W, TAB_RAIL_MAX_W)
             .min((fence * 0.45).max(TAB_RAIL_MIN_W))
             .round()

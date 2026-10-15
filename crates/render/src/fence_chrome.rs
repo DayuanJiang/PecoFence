@@ -516,6 +516,13 @@ const TAB_ICON_W: f32 = 20.0;
 pub fn tab_icon_w(folder_icon: bool) -> f32 {
     if folder_icon { TAB_ICON_W } else { 0.0 }
 }
+
+/// Where captions start in a left tab column row: after the colour dot when any tab has a
+/// colour, and after the folder glyph when any tab has one, so the names stay aligned.
+fn rail_text_left(colored: bool, folders: bool) -> f32 {
+    (if colored { 24.0 } else { 10.0 }) + tab_icon_w(folders)
+}
+
 pub fn tab_text_padding(theme: &Theme) -> f32 {
     if theme.liquid_glass { 24.0 } else { 16.0 }
 }
@@ -1579,16 +1586,18 @@ impl FenceChrome {
     }
 
     /// Width a caption gets in a row of a `rail_w` DIP left tab column: after the colour dot's
-    /// room when any tab has a colour, before the badge and the portal up button.
+    /// room when any tab has a colour and the folder glyph's when any tab has one, before the
+    /// badge and the portal up button.
     pub fn rail_title_room(
         &self,
         rail_w: f32,
         colored: bool,
+        folders: bool,
         badge: Option<&str>,
         up: bool,
     ) -> f32 {
         let row_w = (rail_w - RAIL_ROW_INSET - RAIL_ROW_RIGHT).max(0.0);
-        let text_left = if colored { 24.0 } else { 10.0 };
+        let text_left = rail_text_left(colored, folders);
         let badge_w = badge.map_or(0.0, |b| self.tab_badge_width(b) - TAB_BADGE_GAP);
         let badge_gap = if badge_w > 0.0 { 6.0 } else { 0.0 };
         let up_w = if up { 26.0 } else { 0.0 };
@@ -2290,7 +2299,8 @@ impl FenceChrome {
             selected(row(y, h), expanded)?;
         }
         let colored = tabs.iter().any(|t| t.color.is_some());
-        let text_left = if colored { 24.0 } else { 10.0 };
+        let folders = tabs.iter().any(|t| t.folder_icon);
+        let text_left = rail_text_left(colored, folders);
         // A dragged tab is always above its neighbours.
         for tab in tabs
             .iter()
@@ -2347,8 +2357,22 @@ impl FenceChrome {
             // A navigated portal's up button ends the shown tab's row (its room stays while the
             // fence collapses, so the caption does not re-fit at the end).
             let up = tab.active && deco.up_button;
-            let room = self.rail_title_room(rail_w, colored, tab.badge, up);
+            let room = self.rail_title_room(rail_w, colored, folders, tab.badge, up);
             let caption = Rect::from_xywh(rect.left + text_left, rect.top, room, rect.height());
+            if tab.folder_icon {
+                let brush = session.create_solid_brush(with_alpha(color, ta))?;
+                session.draw_text(
+                    "\u{E8B7}",
+                    &self.title_glyph_format,
+                    &Rect::from_xywh(
+                        caption.left - TAB_ICON_W - 2.0,
+                        rect.top,
+                        TAB_ICON_W,
+                        rect.height(),
+                    ),
+                    &brush,
+                );
+            }
             // The shown tab's semibold caption cross-fades to the others' regular weight as the
             // fence collapses to the column.
             for (strong, a) in [(true, sel), (false, 1.0 - sel)] {
@@ -3134,7 +3158,24 @@ mod tests {
                 TAB_TEXT_MIN_PADDING
             );
             assert!(!chrome.tab_title_fits("游戏", caption, 1, false, &theme));
+            // A folder tab's glyph takes its room from the caption.
+            assert!(chrome.tab_title_fits("游戏", squeezed + TAB_ICON_W, 1, true, &theme));
+            assert!(!chrome.tab_title_fits("游戏", squeezed, 1, true, &theme));
         }
+    }
+
+    #[test]
+    fn left_column_names_stay_aligned_after_a_dot_and_a_folder_glyph() {
+        assert_eq!(rail_text_left(false, false), 10.0);
+        assert_eq!(rail_text_left(true, false), 24.0);
+        assert_eq!(rail_text_left(false, true), 10.0 + TAB_ICON_W);
+        assert_eq!(rail_text_left(true, true), 24.0 + TAB_ICON_W);
+        let chrome = FenceChrome::new().unwrap();
+        assert_eq!(
+            chrome.rail_title_room(160.0, true, false, None, false)
+                - chrome.rail_title_room(160.0, true, true, None, false),
+            TAB_ICON_W
+        );
     }
 
     #[test]

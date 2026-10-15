@@ -123,11 +123,16 @@ impl FenceViewState {
                     // A row of the left column is as wide as the column, whatever its height.
                     let active = t.id == self.active;
                     let colored = self.tabs.iter().any(|t| t.color.is_some());
+                    let folders = self.tabs.iter().any(|t| t.folder_icon);
                     let badge = self.tab_badge(t.id);
                     let up = active && self.deco.up_button;
-                    let room =
-                        self.chrome
-                            .rail_title_room(self.rail_w(), colored, badge.as_deref(), up);
+                    let room = self.chrome.rail_title_room(
+                        self.rail_w(),
+                        colored,
+                        folders,
+                        badge.as_deref(),
+                        up,
+                    );
                     self.chrome
                         // Collapsed to the column, the shown tab is drawn like the others.
                         .rail_title_fits(
