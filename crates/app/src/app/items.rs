@@ -554,9 +554,10 @@ impl App {
             if self.fileops_running > running {
                 // Foreign files are still being moved by a worker: emptied when it succeeds,
                 // so a cancelled conflict dialog leaves the files on the clipboard for another
-                // try (`on_fileop_done`). The sequence number tells whether the clipboard
-                // still holds this paste by then.
-                self.cut_paste_seq = Some(clipboard::sequence());
+                // try (`on_fileop_done`). The serial names that operation (another transfer
+                // finishing first must not settle this paste); the sequence number tells
+                // whether the clipboard still holds this paste by then.
+                self.cut_paste = Some((self.fileop_serial, clipboard::sequence()));
             } else {
                 self.finish_cut_paste();
             }
@@ -565,7 +566,7 @@ impl App {
 
     /// Explorer empties the clipboard after pasting cut files.
     pub(super) fn finish_cut_paste(&mut self) {
-        self.cut_paste_seq = None;
+        self.cut_paste = None;
         clipboard::clear();
         self.cut_items.clear();
         self.push_cut_items();

@@ -237,6 +237,8 @@ pub struct App {
     fileops_done: fileops::FileOpResults,
     /// File operations still running: their PendingRoutes must not expire mid-copy.
     fileops_running: usize,
+    /// Serial of the last file operation started (`run_fileop`).
+    fileop_serial: u64,
     /// CLI requests waiting for the UI thread (see `ipc_server.rs` / `ipc.rs`).
     ipc_pending: PendingQueue,
     /// The named-pipe listener; `None` when the pipe name was unavailable.
@@ -314,10 +316,10 @@ pub struct App {
     /// clears the dimming.
     cut_items: HashSet<ItemId>,
     cut_clip_seq: u32,
-    /// A paste of cut files is still being moved by a worker thread, and the clipboard
-    /// sequence number at the paste: the clipboard is emptied when the move succeeds, unless
-    /// something else was put on it meanwhile (see `paste_into`).
-    cut_paste_seq: Option<u32>,
+    /// A paste of cut files is still being moved by a worker thread: the serial of that file
+    /// operation and the clipboard sequence number at the paste. The clipboard is emptied when
+    /// the move succeeds, unless something else was put on it meanwhile (see `paste_into`).
+    cut_paste: Option<(u64, u32)>,
 }
 
 pub type AppCell = Rc<RefCell<Option<App>>>;
@@ -1093,6 +1095,7 @@ impl App {
             fs_pending,
             fileops_done: Arc::new(Mutex::new(Vec::new())),
             fileops_running: 0,
+            fileop_serial: 0,
             ipc_pending,
             _ipc: ipc,
             ipc_warnings: Vec::new(),
@@ -1145,7 +1148,7 @@ impl App {
             memory_logged: None,
             cut_items: HashSet::new(),
             cut_clip_seq: 0,
-            cut_paste_seq: None,
+            cut_paste: None,
             wallpaper_sig: None,
             wallpaper_cache: BackdropCache::default(),
             prewarm: None,
