@@ -241,11 +241,15 @@ pub(super) fn on_ncmouseleave(
         window::kill_timer(hwnd, TIMER_PEEK_OPEN);
         peek_armed.set(false);
     }
+    // A press on the title row pairs only with a release there: once the pointer has left the
+    // non-client area (into the chevron, a tab, another window) the release goes elsewhere,
+    // and a later release on the title must not act on the old press.
+    h.ncrbutton_press.set(false);
     let mut guard = view.borrow_mut();
     if let Some(v) = guard.as_mut() {
+        v.click_pending = None;
         if !inside {
             v.set_mouse_inside(false);
-            v.click_pending = None;
         }
         if v.title_hover {
             v.title_hover = false;
