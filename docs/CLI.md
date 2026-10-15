@@ -217,7 +217,10 @@ array of `Cond` objects (`describe --schema Cond`) for everything else (size, cr
 is rejected with `invalid_value` and the hint to re-save it (`| Set-Content -Encoding utf8`).
 
 `settings set` paths are dotted camelCase keys of the Settings object, e.g. `iconSize`, `theme`,
-`themeStyle`, `hideRealIcons`, `autostart`, `peek.enabled`, `quickHide.enabled`,
+`themeStyle`, `hideRealIcons`, `hideInboxWhenIconsShown` (while `hideRealIcons` is off, the inbox
+fence shows no window and its items only show among the Windows desktop icons; a tab or a host of
+tabs stays; default off), `offerNewFence` (a rectangle drawn on empty desktop that touches no fence
+offers 「在此新建栅栏」; default on), `autostart`, `peek.enabled`, `quickHide.enabled`,
 `titleAlign` (left/center/right: the title and tab strip in every title row),
 `tabBar` (top/left: a fence with two or more tabs shows them in its title row, or lists them in a
 column on its left that takes the title row's place; rolled up, such a fence shrinks to the

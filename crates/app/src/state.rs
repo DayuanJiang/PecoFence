@@ -673,8 +673,9 @@ impl AppState {
             .map(|f| f.id)
     }
 
-    /// The inbox while 为空时自动隐藏 keeps it without a window: the flag is on, it shows no
-    /// items, and it is a window of its own (a tab, or a host of tabs, stays).
+    /// The inbox while it is kept without a window: 为空时自动隐藏 is on and it shows no items,
+    /// or 显示 Windows 桌面图标时隐藏“桌面”栅栏 is on while the Windows icons show. Only a
+    /// window of its own hides (a tab, or a host of tabs, stays).
     pub fn hidden_inbox(&self) -> Option<FenceId> {
         let f = self.fences().iter().find(|f| f.kind == FenceKind::Inbox)?;
         let empty = !f.items.iter().any(|r| {
@@ -683,7 +684,11 @@ impl AppState {
                 .get(&r.item_id)
                 .is_some_and(|it| it.orphaned_since.is_none())
         });
-        (f.hide_when_empty && empty && f.tab_host.is_none() && self.tabs_of(f.id).len() <= 1)
+        let settings = &self.config.settings;
+        let for_windows_icons = settings.hide_inbox_when_icons_shown && !settings.hide_real_icons;
+        (((f.hide_when_empty && empty) || for_windows_icons)
+            && f.tab_host.is_none()
+            && self.tabs_of(f.id).len() <= 1)
             .then_some(f.id)
     }
 
@@ -2852,6 +2857,28 @@ mod tests {
         state.detach_tab(other);
         assert_eq!(state.hidden_inbox(), Some(inbox));
         state.set_hide_when_empty(inbox, false);
+        assert_eq!(state.hidden_inbox(), None);
+    }
+
+    /// Feedback #4 and #21: with the Windows icons shown, the inbox can stay out of sight even
+    /// while it holds items; hiding the Windows icons again brings it back.
+    #[test]
+    fn the_inbox_hides_while_the_windows_icons_show_when_asked() {
+        let mut state = test_state();
+        let inbox = state.inbox_id().unwrap();
+        let other = state.fences().iter().find(|f| f.id != inbox).unwrap().id;
+        add_item(&mut state, inbox, "new");
+        state.config.settings.hide_inbox_when_icons_shown = true;
+        assert!(state.config.settings.hide_real_icons);
+        assert_eq!(state.hidden_inbox(), None, "the Windows icons are hidden");
+        state.config.settings.hide_real_icons = false;
+        assert_eq!(state.hidden_inbox(), Some(inbox));
+        // As a tab, or with tabs of its own, it is part of a window that stays.
+        state.attach_tab(other, inbox);
+        assert_eq!(state.hidden_inbox(), None);
+        state.detach_tab(other);
+        assert_eq!(state.hidden_inbox(), Some(inbox));
+        state.config.settings.hide_inbox_when_icons_shown = false;
         assert_eq!(state.hidden_inbox(), None);
     }
 

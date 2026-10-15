@@ -3,7 +3,7 @@
 //! the selection, and a click on the desktop or on any fence ends it. Selected fences wear a
 //! white ring, like the other drag feedback; a title drag of one of them moves them all
 //! (`fence_window::group`). A marquee that touches no fence and selects no Windows icon still
-//! offers a new fence there.
+//! offers a new fence there, unless 「在桌面空白处拖出矩形时提供“在此新建栅栏”」 is off.
 
 use super::*;
 use crate::anchor::{MARQUEE_MIN_PX, MarqueeEvent};
@@ -40,9 +40,12 @@ impl App {
                     tracing::info!(count, "fences selected on the desktop");
                 } else if rect.right - rect.left >= MARQUEE_MIN_PX
                     && rect.bottom - rect.top >= MARQUEE_MIN_PX
-                    && !self.desktop_icons_selected()
                 {
-                    self.offer_new_fence(rect);
+                    if !self.state.config.settings.offer_new_fence {
+                        tracing::info!("desktop marquee touched no fence; new fence offer is off");
+                    } else if !self.desktop_icons_selected() {
+                        self.offer_new_fence(rect);
+                    }
                 }
             }
             MarqueeEvent::Cancelled => {
