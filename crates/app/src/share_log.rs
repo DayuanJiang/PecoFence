@@ -357,6 +357,7 @@ impl Sink {
         if self.written >= limit {
             return;
         }
+        let before = self.written;
         self.written += line.len() as u64;
         let line = if self.written < limit {
             line
@@ -366,6 +367,12 @@ impl Sink {
             "(size limit reached: only errors are recorded from here on)\n"
         };
         let _ = self.out.write_all(line.as_bytes());
+        // An error line can be the one that ends the room for the other levels.
+        if before < MAX_BYTES && (MAX_BYTES..limit).contains(&self.written) {
+            let _ = self
+                .out
+                .write_all(b"(size limit reached: only errors are recorded from here on)\n");
+        }
     }
 }
 
@@ -592,6 +599,28 @@ mod tests {
         assert!(text.contains("size limit reached"));
         assert!(!text.contains("dropped"));
         assert!(text.ends_with("PANIC location=crates/app/src/x.rs:1:2\n"));
+    }
+
+    #[test]
+    fn an_error_line_that_reaches_the_size_limit_says_so() {
+        let out = Shared::default();
+        let mut sink = Sink {
+            out: Box::new(out.clone()),
+            written: 0,
+            run: None,
+        };
+        let filler = format!("t  INFO pecofence: {}\n", "x".repeat(1000));
+        while sink.written + (filler.len() as u64) < MAX_BYTES {
+            sink.write(Level::INFO, &filler);
+        }
+        let error = format!("t ERROR pecofence: {}\n", "e".repeat(2000));
+        sink.write(Level::ERROR, &error);
+        sink.write(Level::INFO, "t  INFO pecofence: dropped\n");
+        let text = String::from_utf8(out.0.lock().unwrap().clone()).unwrap();
+        assert!(!text.contains("dropped"));
+        assert!(text.ends_with(&format!(
+            "{error}(size limit reached: only errors are recorded from here on)\n"
+        )));
     }
 
     // ---- Source audit: every info / warn / error callsite in the workspace -------------------
