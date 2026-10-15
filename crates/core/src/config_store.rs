@@ -131,10 +131,11 @@ impl ConfigStore {
     pub fn load_reporting(&self) -> (LoadOutcome, Option<PathBuf>) {
         let primary = self.primary_path();
         // Antivirus, backup and sync tools can hold the file open without read sharing for a
-        // moment; wait for them before the file counts as unreadable.
-        for _ in 0..5 {
+        // moment (ERROR_SHARING_VIOLATION, ERROR_LOCK_VIOLATION); wait for them before the
+        // file counts as unreadable.
+        for attempt in 1..=5 {
             match fs::File::open(&primary) {
-                Err(e) if e.kind() != io::ErrorKind::NotFound => {
+                Err(e) if attempt < 5 && matches!(e.raw_os_error(), Some(32 | 33)) => {
                     std::thread::sleep(std::time::Duration::from_millis(300))
                 }
                 _ => break,
@@ -721,25 +722,38 @@ mod tests {
         assert!(matches!(store.load(), LoadOutcome::Primary(_)));
     }
 
-    #[cfg(unix)]
+    #[cfg(windows)]
     #[test]
-    fn primary_unreadable_for_a_moment_still_loads() {
-        use std::os::unix::fs::PermissionsExt;
+    fn primary_locked_for_a_moment_still_loads() {
+        use std::os::windows::fs::OpenOptionsExt;
         let store = ConfigStore::new(tmpdir("locked"));
         store.save(&sample()).unwrap();
-        let path = store.primary_path();
-        fs::set_permissions(&path, fs::Permissions::from_mode(0o000)).unwrap();
-        let unlock = std::thread::spawn({
-            let path = path.clone();
-            move || {
-                std::thread::sleep(std::time::Duration::from_millis(400));
-                fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
-            }
+        // Held without sharing, as a scanner does: opens fail with ERROR_SHARING_VIOLATION.
+        let lock = fs::OpenOptions::new()
+            .read(true)
+            .share_mode(0)
+            .open(store.primary_path())
+            .unwrap();
+        let unlock = std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(400));
+            drop(lock);
         });
         let (outcome, moved) = store.load_reporting();
         unlock.join().unwrap();
         assert!(matches!(outcome, LoadOutcome::Primary(_)), "{outcome:?}");
         assert_eq!(moved, None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn primary_without_read_access_is_not_waited_for() {
+        use std::os::unix::fs::PermissionsExt;
+        let store = ConfigStore::new(tmpdir("denied"));
+        store.save(&sample()).unwrap();
+        fs::set_permissions(store.primary_path(), fs::Permissions::from_mode(0o000)).unwrap();
+        let started = std::time::Instant::now();
+        let _ = store.load_reporting();
+        assert!(started.elapsed() < std::time::Duration::from_millis(1000));
     }
 
     #[test]

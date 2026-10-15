@@ -135,6 +135,13 @@ impl App {
         }
     }
 
+    /// After a render stack rebuild: the notice on screen draws on the new device.
+    pub(super) fn redraw_notices(&self) {
+        for notice in self.welcome.iter().chain(&self.rating.notice) {
+            notice.redraw();
+        }
+    }
+
     /// The Store's rating dialog, centred on the settings window when it is open, otherwise
     /// on the screen with the pointer. Falls back to the product's review page in the Store.
     pub(super) fn open_store_rating(&mut self) {

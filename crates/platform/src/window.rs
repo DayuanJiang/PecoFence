@@ -579,12 +579,22 @@ pub fn set_coalescable_timer(hwnd: HWND, id: usize, interval_ms: u32, tolerance_
     }
 }
 
+/// Set once [`post_quit`] or [`quit_after`] posted WM_QUIT: a nested message loop that took it
+/// can tell its caller to quit after all.
+static QUIT_POSTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Whether this process asked its UI thread to quit.
+pub fn quit_posted() -> bool {
+    QUIT_POSTED.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 /// Posts WM_QUIT to the calling (UI) thread after `ms` milliseconds (test tooling).
 pub fn quit_after(ms: u32) {
     // SAFETY: plain FFI call.
     let thread = unsafe { GetCurrentThreadId() };
     std::thread::spawn(move || {
         std::thread::sleep(std::time::Duration::from_millis(ms as u64));
+        QUIT_POSTED.store(true, std::sync::atomic::Ordering::Relaxed);
         // SAFETY: posting to a thread id obtained above.
         unsafe {
             let _ = PostThreadMessageW(thread, WM_QUIT as u32, WPARAM(0), LPARAM(0));
@@ -610,6 +620,25 @@ impl SingleInstance {
                 return None;
             }
             Some(Self(h))
+        }
+    }
+
+    /// Whether a running instance holds `name`. Never creates it: a mutex held even for a
+    /// moment would turn away an instance starting then.
+    pub fn is_held(name: &str) -> bool {
+        windows_core::link!("kernel32.dll" "system" fn OpenMutexW(access: u32, inherit: windows_core::BOOL, name: PCWSTR) -> HANDLE);
+        const SYNCHRONIZE: u32 = 0x0010_0000;
+        const ERROR_ACCESS_DENIED: u32 = 5;
+        let w = to_wide(name);
+        // SAFETY: plain FFI calls; the handle is closed at once.
+        unsafe {
+            let h = OpenMutexW(SYNCHRONIZE, false.into(), PCWSTR(w.as_ptr()));
+            if h.0.is_null() {
+                // An elevated instance's mutex can exist without granting this process access.
+                return GetLastError() == ERROR_ACCESS_DENIED;
+            }
+            let _ = CloseHandle(h);
+            true
         }
     }
 }
@@ -818,6 +847,7 @@ pub fn pump_messages() -> bool {
 }
 
 pub fn post_quit(code: i32) {
+    QUIT_POSTED.store(true, std::sync::atomic::Ordering::Relaxed);
     // SAFETY: plain FFI call.
     unsafe { PostQuitMessage(code) };
 }

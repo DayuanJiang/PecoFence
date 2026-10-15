@@ -422,8 +422,10 @@ impl App {
         if host.ready {
             self.post_show_fence(fence);
         } else {
-            // The page is still loading; `ready` delivers the state and then the latest of these.
+            // The page is still loading; `ready` delivers the state and then the latest
+            // request: this fence, or the feedback form.
             self.settings_focus_fence = Some(fence);
+            self.feedback.focus = None;
         }
     }
 

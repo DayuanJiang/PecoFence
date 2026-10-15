@@ -205,6 +205,18 @@ impl Notice {
             _class: class,
         })
     }
+
+    /// The app rebuilt the render stack (device loss): the card moves to a surface of the new
+    /// device, or goes away when it cannot be drawn there either.
+    pub fn redraw(&self) {
+        let drawn = {
+            let mut v = self.view.borrow_mut();
+            v.closing || v.redraw()
+        };
+        if !drawn {
+            fade_out(self.window.hwnd(), &self.view);
+        }
+    }
 }
 
 impl Drop for Notice {
@@ -234,11 +246,9 @@ fn handle(
         let mut v = view.borrow_mut();
         if v.hover != hit {
             v.hover = hit;
-            if !v.redraw() {
-                // A card that cannot be drawn any more goes away instead of staying blank.
-                drop(v);
-                fade_out(hwnd, view);
-            }
+            // A failure means the device is gone and the app has not rebuilt the stack yet;
+            // its rebuild redraws the card (`Notice::redraw`).
+            v.redraw();
         }
     };
     if view.borrow().closing && m != msg::WM_TIMER {

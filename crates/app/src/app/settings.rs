@@ -186,15 +186,14 @@ impl App {
     pub(super) fn restore_from_file(&mut self, path: &std::path::Path, source: ConfigSource) {
         match pecofence_core::ConfigStore::parse_file(path) {
             Ok(cfg) => {
-                // Keep a snapshot of what we are replacing so the step can be undone.
-                let backup = auto_snapshot_room(&mut self.state.config.snapshots, None);
-                if backup {
-                    self.state.save_snapshot(source.before());
-                }
-                self.adopt_config(cfg, source);
-                if !backup {
+                // Keep a snapshot of what we are replacing so the step can be undone; a list
+                // full of the user's own snapshots has no room for it, so nothing is replaced.
+                if !auto_snapshot_room(&mut self.state.config.snapshots, None) {
                     self.settings_error(&snapshot_limit_text());
+                    return;
                 }
+                self.state.save_snapshot(source.before());
+                self.adopt_config(cfg, source);
             }
             Err(e) => self.settings_error(&pecofence_core::i18n::format(
                 "无法使用此文件：{0}",
@@ -212,9 +211,9 @@ impl App {
         if self.web_env.is_none() {
             match WebEnvironment::create() {
                 Ok(env) => self.web_env = Some(env),
-                // WebView2's wait for its callback pumps messages and ends with this empty
-                // error when it takes a WM_QUIT (the session ends): quit after all.
-                Err(e) if e.code().is_ok() => {
+                // WebView2's wait for its callback pumps messages and ends with an error when
+                // it takes a WM_QUIT (the session ends): quit after all.
+                Err(_) if window::quit_posted() => {
                     window::post_quit(0);
                     return;
                 }
@@ -251,7 +250,7 @@ impl App {
                 );
                 self.settings = Some(host);
             }
-            Err(e) if e.code().is_ok() => window::post_quit(0),
+            Err(_) if window::quit_posted() => window::post_quit(0),
             Err(e) => {
                 tracing::error!(error = %e, "settings window failed");
                 if let Some(t) = &self.tray {
@@ -487,16 +486,16 @@ impl App {
                         && self.state.config.snapshots.iter().any(|s| s.id == id)
                     {
                         // Snapshot of the current state first, so "restore" is reversible;
-                        // a list full of the user's own snapshots gets none.
-                        let backup = auto_snapshot_room(&mut self.state.config.snapshots, Some(id));
-                        if backup {
-                            self.state.restore_snapshot_with_backup(
-                                id,
-                                pecofence_core::i18n::text("恢复快照前"),
-                            );
-                        } else {
-                            self.state.restore_snapshot(id);
+                        // a list full of the user's own snapshots has no room for it, so
+                        // nothing is restored.
+                        if !auto_snapshot_room(&mut self.state.config.snapshots, Some(id)) {
+                            self.settings_error(&snapshot_limit_text());
+                            return;
                         }
+                        self.state.restore_snapshot_with_backup(
+                            id,
+                            pecofence_core::i18n::text("恢复快照前"),
+                        );
                         self.end_peek_now();
                         self.relayout_from_state();
                         // Portals restored with the snapshot need enumerating; stale
@@ -504,11 +503,7 @@ impl App {
                         self.refresh_portals();
                         self.schedule_save();
                         self.push_settings_state();
-                        if backup {
-                            self.settings_toast(pecofence_core::i18n::text("已恢复快照"));
-                        } else {
-                            self.settings_error(&snapshot_limit_text());
-                        }
+                        self.settings_toast(pecofence_core::i18n::text("已恢复快照"));
                     }
                 }
                 Some("deleteSnapshot") => {

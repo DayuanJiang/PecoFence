@@ -28,9 +28,13 @@ impl App {
 
     /// `DXGI_ERROR_DEVICE_REMOVED`: rebuild the device, drop GPU bitmaps, recreate every surface.
     /// A failure (the driver is still resetting) is retried on a timer: a window that lost its
-    /// device reports it only once, so nothing else would ever try again.
+    /// device reports it only once, so nothing else would ever try again. When WARP had to
+    /// stand in for the GPU, the retries ask for the hardware device again until they have
+    /// backed off to their longest wait (about half a minute).
     pub(super) fn recover_device(&mut self) {
-        if !self.fences.values().any(|w| w.device_lost()) {
+        let back_to_gpu =
+            self.ctx.stack.on_fallback_warp() && self.device_retry_ms < DEVICE_RETRY_MAX_MS;
+        if !self.fences.values().any(|w| w.device_lost()) && !back_to_gpu {
             self.device_retry_ms = DEVICE_RETRY_FIRST_MS;
             return;
         }
@@ -39,8 +43,9 @@ impl App {
             self.schedule_device_retry();
             return;
         }
-        if self.fences.values().any(|w| w.device_lost()) {
-            // A window got no new surfaces (logged there): rebuild everything again later.
+        if self.fences.values().any(|w| w.device_lost()) || self.ctx.stack.on_fallback_warp() {
+            // A window got no new surfaces (logged there), or WARP draws: rebuild everything
+            // again later.
             self.schedule_device_retry();
         } else {
             self.device_retry_ms = DEVICE_RETRY_FIRST_MS;
@@ -77,6 +82,7 @@ impl App {
         for w in self.fences.values() {
             w.recreate_surfaces(&self.ctx.stack);
         }
+        self.redraw_notices();
         Ok(())
     }
 
@@ -93,11 +99,11 @@ impl App {
                 )));
             }
         }
-        // WARP only once the retries have backed off to their longest wait (about half a
-        // minute of failed hardware rebuilds): a driver still resetting gets its GPU back.
-        self.ctx
-            .stack
-            .recover(self.device_retry_ms >= DEVICE_RETRY_MAX_MS)
+        // Windows that lost their device draw at once, with WARP while the driver still
+        // resets. A rebuild nothing waits for (back to the GPU, handing back GPU memory) keeps
+        // the current device unless the hardware one can be created.
+        let lost = self.fences.values().any(|w| w.device_lost());
+        self.ctx.stack.recover(lost)
     }
 
     /// Drawing has been quiet for `GPU_TRIM_IDLE_MS`. An animation still running keeps its

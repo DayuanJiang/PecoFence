@@ -20,8 +20,8 @@ const LIVE_SETTLE_REFRESH: Duration = Duration::from_secs(3);
 /// Switching to another wallpaper, a player can close a moment before the next one shows: a
 /// monitor goes back to the Windows wallpaper once its window is missing this long.
 const LIVE_GONE_AFTER: Duration = Duration::from_secs(2);
-/// A capture whose result has not come back after this is given up once its worker has ended
-/// (see `capture_live_wallpapers`).
+/// A capture whose result has not come back after this is given up (see
+/// `capture_live_wallpapers`).
 const LIVE_CAPTURE_GIVE_UP: Duration = Duration::from_secs(30);
 /// Captures are kept this many times smaller than the monitor: Fluent builds its backdrop at
 /// that size, and frosted glass shows no more detail.
@@ -196,14 +196,21 @@ impl App {
             l.attempted
                 .is_none_or(|(hwnd, at)| hwnd != l.hwnd || at.elapsed() >= min_age)
         };
-        // A job whose worker ended without a result coming back is given up, so it cannot stop
-        // every later capture. One still waiting in PrintWindow for the player's thread is
-        // kept: a new worker would wait there too, each with a thread and a full-size bitmap.
-        if self.live_capture.as_ref().is_some_and(|job| {
-            job.started.elapsed() >= LIVE_CAPTURE_GIVE_UP && job.thread.is_finished()
+        // A job whose result has not come back is given up, so it cannot stop every later
+        // capture. Its worker may still wait in PrintWindow for the player's thread, with a
+        // full-size bitmap: while one given-up worker still waits, the next job is kept.
+        let abandoned_waits = self
+            .live_abandoned
+            .as_ref()
+            .is_some_and(|thread| !thread.is_finished());
+        if let Some(job) = self.live_capture.take_if(|job| {
+            job.started.elapsed() >= LIVE_CAPTURE_GIVE_UP
+                && (job.thread.is_finished() || !abandoned_waits)
         }) {
             tracing::warn!("live wallpaper capture brought no result; starting again");
-            self.live_capture = None;
+            if !job.thread.is_finished() {
+                self.live_abandoned = Some(job.thread);
+            }
         }
         if self.live_capture.is_some()
             || !self.live.iter().any(due)
