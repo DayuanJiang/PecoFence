@@ -4,7 +4,7 @@ use crate::anchor::{self, AnchorCell, DesktopAnchor, ShowDesktopBehavior, ZMode}
 use crate::commands::{
     Command, CommandQueue, TransferMode, WM_APP_COMMAND, WM_APP_FRAME, WM_APP_FS_CHANGED,
     WM_APP_LIVE_WALLPAPER, WM_APP_PEEK_FOCUSED, WM_APP_PREWARM_DONE, WM_APP_SHELL_CHANGED,
-    WM_APP_TRAY, WM_APP_WALLPAPER,
+    WM_APP_STARTUP_BACKDROPS, WM_APP_TRAY, WM_APP_WALLPAPER,
 };
 use crate::fence_window::{
     BackdropMode, BackdropSets, Behavior, FenceContext, FenceWindow, ItemView, SearchMarks, TabView,
@@ -82,7 +82,7 @@ use fileops::{FileOp, FileOpThen};
 use peek::peek_hotkey_label;
 use visuals::{
     StartupBackdrops, backdrop_mode_for, fence_style_for, icon_variant_for, pick_theme_mode,
-    shadow_style_for, theme_for, tray_icon_image,
+    shadow_style_for, theme_for, tray_icon_image, verify_wallpaper_later,
 };
 use wallpaper_refresh::{BackdropCache, FIRST_CHECK_MS, RefreshSchedule, supersedes};
 
@@ -146,6 +146,8 @@ const TIMER_LIVE_CAPTURED: usize = 61;
 /// `TaskbarCreated` arrived while the App was borrowed: renew the shell change registration
 /// shortly.
 const TIMER_SHELL_WATCH_RETRY: usize = 62;
+/// The startup wallpaper worker finished late (see `StartupBackdrops`).
+const TIMER_STARTUP_BACKDROPS: usize = 63;
 const DEVICE_RETRY_MAX_MS: u32 = 30_000;
 /// Growth of private commit plus GPU memory that logs a memory line before the hour is up.
 const MEMORY_LOG_GROWTH: u64 = 64 << 20;
@@ -307,6 +309,8 @@ pub struct App {
     wallpaper_cache: BackdropCache,
     /// Another virtual desktop's wallpaper being decoded ahead of a switch there.
     prewarm: Option<visuals::PrewarmJob>,
+    /// The startup wallpaper worker, while Explorer has not answered it (see `StartupBackdrops`).
+    startup_backdrops: Option<StartupBackdrops>,
     /// Monitors a live wallpaper covers, and the capture of them in progress.
     live: Vec<live_wallpaper::LiveWallpaper>,
     live_capture: Option<live_wallpaper::LiveCapture>,
@@ -407,7 +411,8 @@ impl App {
             accent.as_ref(),
         );
         // Decoded on a worker while the rest of startup runs; in place before the first fence.
-        let startup_backdrops = StartupBackdrops::start(&theme, args.wallpaper_override.as_deref());
+        let mut startup_backdrops =
+            StartupBackdrops::start(&theme, args.wallpaper_override.as_deref());
 
         let queue = CommandQueue::new();
         // Whether a virtual-desktop switch can change the picture (see `sync_desktops_differ`).
@@ -506,6 +511,10 @@ impl App {
                                 let delay = if storm { FS_STORM_MS } else { FS_DEBOUNCE_MS };
                                 window::set_timer(hwnd, TIMER_FS, delay as u32);
                             }
+                            Some(0)
+                        }
+                        WM_APP_STARTUP_BACKDROPS => {
+                            window::set_timer(hwnd, TIMER_STARTUP_BACKDROPS, 1);
                             Some(0)
                         }
                         WM_APP_PREWARM_DONE => {
@@ -614,7 +623,8 @@ impl App {
                                 TIMER_WALLPAPER_PREWARM
                                 | TIMER_PREWARM_FINISH
                                 | TIMER_LIVE_CAPTURED
-                                | TIMER_SHELL_WATCH_RETRY => {
+                                | TIMER_SHELL_WATCH_RETRY
+                                | TIMER_STARTUP_BACKDROPS => {
                                     if let Ok(mut guard) = cell.try_borrow_mut()
                                         && let Some(app) = guard.as_mut()
                                     {
@@ -623,6 +633,9 @@ impl App {
                                             TIMER_PREWARM_FINISH => app.finish_prewarm(),
                                             TIMER_LIVE_CAPTURED => app.finish_live_capture(),
                                             TIMER_SHELL_WATCH_RETRY => app.renew_shell_watch(),
+                                            TIMER_STARTUP_BACKDROPS => {
+                                                app.finish_startup_backdrops()
+                                            }
                                             _ => app.prewarm_wallpapers(),
                                         }
                                     } else {
@@ -1156,6 +1169,7 @@ impl App {
             wallpaper_sig: None,
             wallpaper_cache: BackdropCache::default(),
             prewarm: None,
+            startup_backdrops: None,
             live: Vec::new(),
             live_capture: None,
             live_abandoned: None,
@@ -1246,16 +1260,21 @@ impl App {
         // Initial desktop sync + windows.
         app.sync_desktop_if_available("startup");
         app.state.refresh_all_portals();
-        let startup_backdrops =
-            startup_backdrops.and_then(|job| job.finish(&app.ctx.theme.borrow()));
-        match startup_backdrops {
-            Ok((backdrops, signature)) => {
+        let mut startup_snapshot = None;
+        match startup_backdrops.finish(&app.ctx.theme.borrow(), app.control.hwnd()) {
+            Some(Ok((backdrops, snapshot, signature))) => {
                 *app.ctx.backdrops.borrow_mut() = backdrops.clone();
                 app.wallpaper_cache.insert(signature.clone(), backdrops);
                 app.wallpaper_sig = Some(signature);
+                startup_snapshot = Some(snapshot);
             }
-            Err(error) => {
+            Some(Err(error)) => {
                 tracing::warn!(%error, "wallpaper unavailable at startup; solid backdrop");
+            }
+            // Explorer is slow to answer: the fences go up now, the glass follows.
+            None => {
+                startup_backdrops.generation = app.wallpaper_cache.generation();
+                app.startup_backdrops = Some(startup_backdrops);
             }
         }
         app.sync_fence_windows();
@@ -1325,15 +1344,21 @@ impl App {
         window::set_coalescable_timer(app.control.hwnd(), TIMER_WALLPAPER_POLL, 5_000, 500);
         sync_desktops_differ(app.control.hwnd(), &desktops_differ);
         // Close the gap between the startup snapshot and installing the registry watchers.
-        if app.wallpaper_sig.is_some() {
+        if let Some(signature) = app.wallpaper_sig.clone() {
             // One check (no signal arrived, so no follow-ups), then prepare the other desktops.
-            window::set_timer(app.control.hwnd(), TIMER_WALLPAPER, FIRST_CHECK_MS);
+            // The check asks Explorer from a worker: it is busy hiding the desktop icons right
+            // now (0.8 s for 1000 icons), and the UI thread would wait on it that long. The
+            // rest of the check (live wallpapers) runs on the startup read right away.
+            verify_wallpaper_later(app.control.hwnd(), signature);
+            if let Some(snapshot) = &startup_snapshot {
+                app.follow_snapshot(snapshot, "startup");
+            }
             window::set_timer(
                 app.control.hwnd(),
                 TIMER_WALLPAPER_PREWARM,
                 WALLPAPER_PREWARM_DELAY_MS,
             );
-        } else {
+        } else if app.startup_backdrops.is_none() {
             // Not readable yet (Explorer still starting): keep trying as for a signal.
             window::post_message(app.control.hwnd(), WM_APP_WALLPAPER, 0, 0);
         }

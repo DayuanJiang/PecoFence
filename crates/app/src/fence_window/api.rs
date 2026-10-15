@@ -176,6 +176,7 @@ impl FenceWindow {
             is_portal: false,
             portal_missing: false,
             label_w: 0.0,
+            icons_pending: false,
             hover: None,
             title_hover: false,
             selected: HashSet::new(),

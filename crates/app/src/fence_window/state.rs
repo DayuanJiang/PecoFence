@@ -134,6 +134,9 @@ pub struct FenceViewState {
     pub(super) portal_missing: bool,
     /// Width the cached labels were fitted for; a change invalidates them.
     pub(super) label_w: f32,
+    /// An item near the viewport was still waiting for its icon at the last content draw
+    /// (`ensure_icons_and_labels`): a delivered batch then redraws this window.
+    pub(super) icons_pending: bool,
     pub(super) hover: Option<usize>,
     pub(super) title_hover: bool,
     pub(super) selected: HashSet<usize>,
