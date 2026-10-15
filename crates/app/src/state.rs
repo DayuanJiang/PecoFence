@@ -1212,12 +1212,14 @@ impl AppState {
         }
     }
 
-    /// The portal (if any) whose current folder contains this runtime item.
+    /// The portal (if any) whose current folder contains this runtime item: the first in layout
+    /// order when two portals show the same folder.
     pub fn portal_of_item(&self, item: ItemId) -> Option<FenceId> {
-        self.portal_members
-            .iter()
-            .find(|(_, ids)| ids.contains(&item))
-            .map(|(f, _)| *f)
+        self.fences().iter().map(|f| f.id).find(|f| {
+            self.portal_members
+                .get(f)
+                .is_some_and(|ids| ids.contains(&item))
+        })
     }
 
     pub fn set_portal_navigate(&mut self, id: FenceId, on: bool) {
