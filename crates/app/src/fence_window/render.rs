@@ -655,8 +655,10 @@ impl FenceViewState {
     }
 
     /// `label_w` is the width the label must fit: the cell width for icons, the name column's
-    /// text width for rows. Changing it drops every fitted label.
-    pub(super) fn ensure_icons_and_labels(&mut self, label_w: f32) {
+    /// text width for rows. Changing it drops every fitted label. Icons are asked for the items
+    /// `near` the viewport only; the others get theirs when they scroll in (a crowded fence
+    /// would otherwise extract every thumbnail at startup).
+    pub(super) fn ensure_icons_and_labels(&mut self, label_w: f32, near: impl Fn(usize) -> bool) {
         let icon_px = (self.icon_dip() * self.scale()).round() as u32;
         if (self.label_w - label_w).abs() > 0.5 {
             self.label_w = label_w;
@@ -669,8 +671,8 @@ impl FenceViewState {
         let now = Instant::now();
         let mut started = false;
         let mut icons = self.icons.borrow_mut();
-        for item in &mut self.items {
-            if item.wants_icon(icon_px) {
+        for (i, item) in self.items.iter_mut().enumerate() {
+            if item.wants_icon(icon_px) && near(i) {
                 match icons.get(&item.icon_key, &item.path, icon_px, item.icon_only) {
                     Lookup::Ready(Some(img)) => {
                         item.icon = Some(img);
@@ -811,13 +813,17 @@ impl FenceViewState {
         };
         let view_h = self.scroll_view_h(&layout);
         self.scroll_y = self.scroll_y.clamp(0.0, grid.max_scroll(view_h));
-        self.ensure_icons_and_labels(grid.metrics.cell_w);
+        let scroll = self.scroll_y;
+        // The rows in view plus one viewport above and below.
+        self.ensure_icons_and_labels(grid.metrics.cell_w, |i| {
+            let c = grid.cell(i);
+            c.y + c.h > scroll - view_h && c.y < scroll + 2.0 * view_h
+        });
 
         let now = Instant::now();
         self.prune_content_motion(now);
         self.sync_scrollbar_alpha();
         let alphas = self.item_alphas(now);
-        let scroll = self.scroll_y;
         let dragging = self.ole_drag;
         let cut = self.cut.clone();
         let pressed = match self.pressed {
@@ -847,11 +853,27 @@ impl FenceViewState {
                 .filter(|c| c.id == id)
                 .map(|c| (c.text.as_str(), c.lines))
         });
+        // Only the cells in the viewport are prepared (`draw_content` skips the others anyway);
+        // an item gliding in from outside counts where it is drawn.
+        let placed: Vec<(usize, f32, f32, f32)> = self
+            .items
+            .iter()
+            .enumerate()
+            .filter_map(|(i, item)| {
+                let c = grid.cell(i);
+                let (x, y, alpha) = match self.item_motion.get(&item.id) {
+                    Some(m) => (m.x.value_at(now), m.y.value_at(now), m.alpha.value_at(now)),
+                    None => (c.x, c.y, 1.0),
+                };
+                let y = y - scroll;
+                (y + c.h >= 0.0 && y <= view_h).then_some((i, x, y, alpha))
+            })
+            .collect();
         let keys: Vec<String> = {
             let icons = self.icons.borrow();
-            self.items
+            placed
                 .iter()
-                .map(|i| icons.draw_key(&i.icon_key, i.icon_px))
+                .map(|&(i, ..)| icons.draw_key(&self.items[i].icon_key, self.items[i].icon_px))
                 .collect()
         };
         // Removed items fade out beneath everything else (painted first).
@@ -878,18 +900,15 @@ impl FenceViewState {
                 full_label: None,
             })
             .collect();
-        cells.extend(self.items.iter().enumerate().map(|(i, item)| {
+        cells.extend(placed.iter().zip(&keys).map(|(&(i, x, y, alpha), key)| {
+            let item = &self.items[i];
             let c = grid.cell(i);
-            let (x, y, alpha) = match self.item_motion.get(&item.id) {
-                Some(m) => (m.x.value_at(now), m.y.value_at(now), m.alpha.value_at(now)),
-                None => (c.x, c.y, 1.0),
-            };
             ItemCell {
                 x,
-                y: y - scroll,
+                y,
                 w: c.w,
                 h: c.h,
-                icon_key: &keys[i],
+                icon_key: key,
                 icon: item.icon.as_deref(),
                 label: item.label.as_deref().unwrap_or(&item.name),
                 hover: alphas[i].0,
@@ -958,13 +977,17 @@ impl FenceViewState {
         self.scroll_y = self.scroll_y.clamp(0.0, layout.max_scroll(view_h));
         let cols = self.columns_for(width_dip);
         let text_w = (cols.name_w - metrics.icon - 8.0 - 4.0).max(20.0);
-        self.ensure_icons_and_labels(text_w);
+        let scroll = self.scroll_y;
+        // The rows in view plus one viewport above and below.
+        self.ensure_icons_and_labels(text_w, |i| {
+            let c = layout.cell(i);
+            c.y + c.h > scroll - view_h && c.y < scroll + 2.0 * view_h
+        });
 
         let now = Instant::now();
         self.prune_content_motion(now);
         self.sync_scrollbar_alpha();
         let alphas = self.item_alphas(now);
-        let scroll = self.scroll_y;
         let dragging = self.ole_drag;
         let cut = self.cut.clone();
         let pressed_item = match self.pressed {
@@ -1001,11 +1024,28 @@ impl FenceViewState {
             self.header_fades.clear();
             Vec::new()
         };
+        // Only the rows in the viewport are prepared (`draw_rows` skips the others anyway); a
+        // row gliding in from outside counts where it is drawn.
+        let placed: Vec<(usize, f32, f32)> = self
+            .items
+            .iter()
+            .enumerate()
+            .filter_map(|(i, item)| {
+                let c = layout.cell(i);
+                let (y, alpha) = match self.item_motion.get(&item.id) {
+                    Some(m) => (m.y.value_at(now), m.alpha.value_at(now)),
+                    None => (c.y, 1.0),
+                };
+                let y = y - scroll + metrics.header_h;
+                (y + c.h > metrics.header_h && y <= metrics.header_h + view_h)
+                    .then_some((i, y, alpha))
+            })
+            .collect();
         let keys: Vec<String> = {
             let icons = self.icons.borrow();
-            self.items
+            placed
                 .iter()
-                .map(|i| icons.draw_key(&i.icon_key, i.icon_px))
+                .map(|&(i, ..)| icons.draw_key(&self.items[i].icon_key, self.items[i].icon_px))
                 .collect()
         };
         // Removed rows fade out beneath everything else (painted first).
@@ -1032,16 +1072,13 @@ impl FenceViewState {
                 icon_alpha: 1.0,
             })
             .collect();
-        rows.extend(self.items.iter().enumerate().map(|(i, item)| {
+        rows.extend(placed.iter().zip(&keys).map(|(&(i, y, alpha), key)| {
+            let item = &self.items[i];
             let c = layout.cell(i);
-            let (y, alpha) = match self.item_motion.get(&item.id) {
-                Some(m) => (m.y.value_at(now), m.alpha.value_at(now)),
-                None => (c.y, 1.0),
-            };
             RowCell {
-                y: y - scroll + metrics.header_h,
+                y,
                 h: c.h,
-                icon_key: &keys[i],
+                icon_key: key,
                 icon: item.icon.as_deref(),
                 name: item.label.as_deref().unwrap_or(&item.name),
                 date: item.date_label.as_deref().unwrap_or(""),
