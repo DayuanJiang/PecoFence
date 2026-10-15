@@ -1111,7 +1111,9 @@
     const fence = state.fences.find(f => f.id === target);
     // An unnamed rule is called after its condition, so the list does not fill with identical names.
     const name = document.getElementById('nrName').value.trim() || condLabel(cond);
-    state.rules.list.push({ id: newId(), name, enabled: true, target: fence && fence.kind === 'inbox' ? 'inbox' : { fence: target }, allOf: [cond], priorityClass: cls });
+    // Rules match in list order: at the end, the new rule would sit behind the broad first-run
+    // ones ("Files and documents") and rarely fire.
+    state.rules.list.unshift({ id: newId(), name, enabled: true, target: fence && fence.kind === 'inbox' ? 'inbox' : { fence: target }, allOf: [cond], priorityClass: cls });
     send({ type: 'setRules', rules: state.rules }); renderRules(); toast(t("已添加规则"));
     document.getElementById('nrName').value = ''; document.getElementById('nrValue').value = '';
   };
