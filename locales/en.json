@@ -456,6 +456,7 @@
   "、": ", ",
   "“{0}”": "“{0}”",
   "无法读取配置文件（可能是较新版本的 PecoFence 写入的），原文件已改名为 {0}。": "Couldn't read the configuration file (a newer version of PecoFence may have written it). The original was renamed to {0}.",
+  "无法保存配置，退出后更改会丢失。请检查这个文件夹能否写入：{0}": "Can't save the configuration, so changes will be lost when PecoFence exits. Check that this folder can be written to: {0}",
   "最多只能有 {0} 个栅栏（含标签页），请先删除或合并一些。": "You can have at most {0} fences (tabs included). Delete or merge some first.",
   "要删除栅栏“{0}”吗？": "Delete the fence “{0}”?",
   "其中的 {0} 个图标会回到“{1}”栅栏，文件本身不受影响。": "Icons in this fence: {0}. They'll go back to the “{1}” fence; the files themselves won't be affected.",

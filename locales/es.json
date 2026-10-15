@@ -432,6 +432,7 @@
   "、": ", ",
   "“{0}”": "«{0}»",
   "无法读取配置文件（可能是较新版本的 PecoFence 写入的），原文件已改名为 {0}。": "No se pudo leer el archivo de configuración (puede que lo haya escrito una versión más reciente de PecoFence). Se cambió el nombre del archivo original a {0}.",
+  "无法保存配置，退出后更改会丢失。请检查这个文件夹能否写入：{0}": "No se puede guardar la configuración y los cambios se perderán al salir. Comprueba que se pueda escribir en esta carpeta: {0}",
   "最多只能有 {0} 个栅栏（含标签页），请先删除或合并一些。": "Puedes tener como máximo {0} grupos (incluidas las pestañas). Elimina o fusiona algunos primero.",
   "要删除栅栏“{0}”吗？": "¿Eliminar el grupo «{0}»?",
   "其中的 {0} 个图标会回到“{1}”栅栏，文件本身不受影响。": "Sus iconos ({0}) volverán al grupo «{1}». Los archivos no se verán afectados.",
