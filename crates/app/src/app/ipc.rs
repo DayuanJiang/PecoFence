@@ -2321,14 +2321,9 @@ impl App {
                     item: Some(dto()),
                     ..blank("item.added")
                 }),
-                Some(old) if old.fence != sig.fence => events.push(EventDto {
-                    item: Some(dto()),
-                    from: Some(old.fence),
-                    from_title: Some(old.fence_title.clone()),
-                    ..blank("item.moved")
-                }),
                 // Renamed on disk: the item keeps its record, and the stream shows the old file
-                // removed and the new one added.
+                // removed and the new one added (also when it changed fence in the same tick:
+                // the added event names the new fence).
                 Some(old) if old.path != sig.path => {
                     events.push(EventDto {
                         item: Some(Self::removed_item_dto(*id, old)),
@@ -2339,6 +2334,12 @@ impl App {
                         ..blank("item.added")
                     });
                 }
+                Some(old) if old.fence != sig.fence => events.push(EventDto {
+                    item: Some(dto()),
+                    from: Some(old.fence),
+                    from_title: Some(old.fence_title.clone()),
+                    ..blank("item.moved")
+                }),
                 Some(_) => {}
             }
         }

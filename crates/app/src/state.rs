@@ -149,6 +149,10 @@ impl AppState {
             tracing::warn!("fence sizes out of range in the configuration clamped");
             state.dirty = true;
         }
+        if pecofence_core::config_store::repair_unc_portals(&mut state.config) {
+            tracing::info!("network portal paths saved by 0.2.1 repaired");
+            state.dirty = true;
+        }
         state.ensure_layout();
         state.normalize_tabs();
         state
@@ -219,6 +223,7 @@ impl AppState {
         config.snapshots = snaps;
         config.drop_duplicates();
         pecofence_core::config_store::clamp_sizes(&mut config);
+        pecofence_core::config_store::repair_unc_portals(&mut config);
         self.config = config;
         self.rebuild_catalog();
         self.layout = 0;
@@ -1228,12 +1233,14 @@ impl AppState {
         }
     }
 
-    /// The portal (if any) whose current folder contains this runtime item.
+    /// The portal (if any) whose current folder contains this runtime item: the first in layout
+    /// order when two portals show the same folder.
     pub fn portal_of_item(&self, item: ItemId) -> Option<FenceId> {
-        self.portal_members
-            .iter()
-            .find(|(_, ids)| ids.contains(&item))
-            .map(|(f, _)| *f)
+        self.fences().iter().map(|f| f.id).find(|f| {
+            self.portal_members
+                .get(f)
+                .is_some_and(|ids| ids.contains(&item))
+        })
     }
 
     pub fn set_portal_navigate(&mut self, id: FenceId, on: bool) {

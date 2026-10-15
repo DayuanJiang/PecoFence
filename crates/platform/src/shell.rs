@@ -552,8 +552,31 @@ fn url_file_text(path: &Path) -> Option<String> {
             .collect();
         String::from_utf16_lossy(&units)
     } else {
-        String::from_utf8_lossy(&bytes).into_owned()
+        match String::from_utf8(bytes) {
+            Ok(text) => text,
+            // Not UTF-8: the system ANSI code page (GBK on a Chinese Windows).
+            Err(e) => ansi_to_string(e.as_bytes()),
+        }
     })
+}
+
+/// Decodes `bytes` in the system ANSI code page.
+fn ansi_to_string(bytes: &[u8]) -> String {
+    if bytes.is_empty() {
+        return String::new();
+    }
+    // SAFETY: the first call only measures; the second writes at most `n` units into `w`.
+    unsafe {
+        let text = bytes.as_ptr().cast();
+        let len = bytes.len() as i32;
+        let n = MultiByteToWideChar(CP_ACP as u32, 0, text, len, None, 0);
+        if n <= 0 {
+            return String::from_utf8_lossy(bytes).into_owned();
+        }
+        let mut w = vec![0u16; n as usize];
+        let n = MultiByteToWideChar(CP_ACP as u32, 0, text, len, Some(PWSTR(w.as_mut_ptr())), n);
+        String::from_utf16_lossy(&w[..n.max(0) as usize])
+    }
 }
 
 /// The icon of an Internet shortcut at `size_px`, extracted from its `IconFile`. None when the
@@ -857,10 +880,40 @@ pub fn rename_with_prompt(path: &Path, new_name: &str, owner: Option<HWND>) -> R
     }
 }
 
+/// `path` for a file API: as is when short, beyond that in the `\\?\` form `std::fs` uses
+/// (`\\?\C:\…`, `\\?\UNC\server\share\…`), without which the call fails on a long path. The
+/// threshold is std's: 248 UTF-16 units including the NUL (the limit for a folder).
+fn long_path_wide(path: &Path) -> Vec<u16> {
+    use std::os::windows::ffi::OsStrExt;
+    use std::path::{Component, Prefix};
+    let plain = path_wide(path);
+    if plain.len() < 248 {
+        return plain;
+    }
+    // The prefix turns normalisation off, so the path must be absolute and clean first.
+    let abs = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
+    let abs_w: Vec<u16> = abs.as_os_str().encode_wide().collect();
+    let mut w: Vec<u16> = r"\\?\".encode_utf16().collect();
+    match abs.components().next() {
+        Some(Component::Prefix(p)) => match p.kind() {
+            Prefix::Disk(_) => w.extend(&abs_w),
+            // `\\server\share\…` keeps one of its leading backslashes.
+            Prefix::UNC(..) => {
+                w.extend("UNC".encode_utf16());
+                w.extend(&abs_w[1..]);
+            }
+            _ => return plain,
+        },
+        _ => return plain,
+    }
+    w.push(0);
+    w
+}
+
 /// Renames `from` to `to`. `std::fs::rename` replaces a file already at `to`; this fails with
 /// `ErrorKind::AlreadyExists` instead, so a rename never overwrites another file.
 pub fn rename_no_replace(from: &Path, to: &Path) -> std::io::Result<()> {
-    let (from, to) = (path_wide(from), path_wide(to));
+    let (from, to) = (long_path_wide(from), long_path_wide(to));
     // SAFETY: plain FFI call; both strings are NUL-terminated and outlive it.
     let ok = unsafe { MoveFileExW(PCWSTR(from.as_ptr()), PCWSTR(to.as_ptr()), 0) };
     if ok.as_bool() {
@@ -1008,22 +1061,53 @@ mod url_tests {
             bytes.extend(unit.to_le_bytes());
         }
         std::fs::write(&utf16, bytes).unwrap();
-        // IconFile names 桌面 in GBK.
+        // The URL ends in 桌面 in GBK: decoded in the system code page, whichever it is, not
+        // as broken UTF-8.
         let ansi = dir.join("ansi.url");
         std::fs::write(
             &ansi,
-            b"[InternetShortcut]\r\nURL=https://example.com/\r\nIconFile=C:\\\xd7\xc0\xc3\xe6\\a.ico\r\n",
+            b"[InternetShortcut]\r\nURL=https://example.com/\xd7\xc0\xc3\xe6\r\nIconFile=C:\\a.ico\r\n",
         )
         .unwrap();
         assert_eq!(
             url_shortcut_target(&utf16).as_deref(),
             Some("https://github.com/")
         );
-        assert_eq!(
-            url_shortcut_target(&ansi).as_deref(),
-            Some("https://example.com/")
-        );
+        let target = url_shortcut_target(&ansi).unwrap();
+        let tail = target.strip_prefix("https://example.com/").unwrap();
+        assert!(!tail.is_empty() && !tail.contains('\u{FFFD}'), "{target:?}");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+#[cfg(test)]
+mod path_tests {
+    use super::long_path_wide;
+    use std::path::Path;
+
+    /// Only a long path (248 UTF-16 units with the NUL, as in std) gets the prefix; a network
+    /// path keeps one backslash.
+    #[test]
+    fn long_paths_get_the_verbatim_prefix() {
+        let wide = |s: &str| {
+            s.encode_utf16()
+                .chain(std::iter::once(0))
+                .collect::<Vec<_>>()
+        };
+        let short = r"C:\Users\Me\Desktop\note.txt";
+        assert_eq!(long_path_wide(Path::new(short)), wide(short));
+        let deep = format!(r"C:\Users\Me\Desktop\{}\note.txt", "x".repeat(250));
+        assert_eq!(
+            long_path_wide(Path::new(&deep)),
+            wide(&format!(r"\\?\{deep}"))
+        );
+        let unc = format!(r"\\server\share\{}\note.txt", "x".repeat(250));
+        assert_eq!(
+            long_path_wide(Path::new(&unc)),
+            wide(&format!(r"\\?\UNC\{}", &unc[2..]))
+        );
+        let verbatim = format!(r"\\?\{deep}");
+        assert_eq!(long_path_wide(Path::new(&verbatim)), wide(&verbatim));
     }
 }
 

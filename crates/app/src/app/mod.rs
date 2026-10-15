@@ -224,19 +224,25 @@ pub struct App {
     control: Window,
     queue: CommandQueue,
     tray: Option<TrayIcon>,
-    /// The user's and the public desktop folder (restarted by `revive_watchers`).
-    watchers: Vec<DirWatcher>,
+    /// The user's and the public desktop folder, each with its watcher (restarted per folder
+    /// by `revive_watchers`).
+    watchers: Vec<(PathBuf, DirWatcher)>,
     /// Shell change notifications for the Recycle Bin and the desktop namespace, which no
     /// folder watcher sees (`None` when the shell refused the registration).
     _shell_watch: Option<ShellChangeWatch>,
     /// One watcher per folder-portal fence on the folder it currently shows (kept in sync by
     /// `ensure_portal_watchers`; navigating swaps the watcher).
     portal_watchers: HashMap<FenceId, (PathBuf, DirWatcher)>,
+    /// Portal folders whose watcher could not be started after a long wait (an unreachable
+    /// network share): how many times, and when to try again (see `ensure_portal_watchers`).
+    watcher_retry: HashMap<PathBuf, (u32, Instant)>,
     fs_pending: Arc<Mutex<Vec<FsEvent>>>,
     /// Finished shell file operations from the worker threads (see `fileops.rs`).
     fileops_done: fileops::FileOpResults,
     /// File operations still running: their PendingRoutes must not expire mid-copy.
     fileops_running: usize,
+    /// Serial of the last file operation started (`run_fileop`).
+    fileop_serial: u64,
     /// CLI requests waiting for the UI thread (see `ipc_server.rs` / `ipc.rs`).
     ipc_pending: PendingQueue,
     /// The named-pipe listener; `None` when the pipe name was unavailable.
@@ -314,10 +320,10 @@ pub struct App {
     /// clears the dimming.
     cut_items: HashSet<ItemId>,
     cut_clip_seq: u32,
-    /// A paste of cut files is still being moved by a worker thread, and the clipboard
-    /// sequence number at the paste: the clipboard is emptied when the move succeeds, unless
-    /// something else was put on it meanwhile (see `paste_into`).
-    cut_paste_seq: Option<u32>,
+    /// A paste of cut files is still being moved by a worker thread: the serial of that file
+    /// operation and the clipboard sequence number at the paste. The clipboard is emptied when
+    /// the move succeeds, unless something else was put on it meanwhile (see `paste_into`).
+    cut_paste: Option<(u64, u32)>,
 }
 
 pub type AppCell = Rc<RefCell<Option<App>>>;
@@ -1056,7 +1062,8 @@ impl App {
 
         // Watchers.
         let fs_pending: Arc<Mutex<Vec<FsEvent>>> = Arc::new(Mutex::new(Vec::new()));
-        let watchers = sync::start_desktop_watchers(control.hwnd(), &fs_pending);
+        let watchers =
+            sync::start_desktop_watchers(sync::desktop_folders(), control.hwnd(), &fs_pending);
 
         let shell_watch = ShellChangeWatch::register_desktop(control.hwnd(), WM_APP_SHELL_CHANGED)
             .map_err(|e| tracing::warn!(error = %e, "shell change notifications unavailable"))
@@ -1090,9 +1097,11 @@ impl App {
             watchers,
             _shell_watch: shell_watch,
             portal_watchers: HashMap::new(),
+            watcher_retry: HashMap::new(),
             fs_pending,
             fileops_done: Arc::new(Mutex::new(Vec::new())),
             fileops_running: 0,
+            fileop_serial: 0,
             ipc_pending,
             _ipc: ipc,
             ipc_warnings: Vec::new(),
@@ -1145,7 +1154,7 @@ impl App {
             memory_logged: None,
             cut_items: HashSet::new(),
             cut_clip_seq: 0,
-            cut_paste_seq: None,
+            cut_paste: None,
             wallpaper_sig: None,
             wallpaper_cache: BackdropCache::default(),
             prewarm: None,

@@ -1326,6 +1326,27 @@ pub unsafe fn MoveWindow(
     unsafe { MoveWindow(hwnd, x, y, nwidth, nheight, brepaint.into()) }
 }
 #[inline]
+pub unsafe fn MultiByteToWideChar(
+    codepage: u32,
+    dwflags: u32,
+    lpmultibytestr: *const i8,
+    cbmultibyte: i32,
+    lpwidecharstr: Option<windows_core::PWSTR>,
+    cchwidechar: i32,
+) -> i32 {
+    windows_core::link!("kernel32.dll" "system" fn MultiByteToWideChar(codepage : u32, dwflags : u32, lpmultibytestr : *const i8, cbmultibyte : i32, lpwidecharstr : windows_core::PWSTR, cchwidechar : i32) -> i32);
+    unsafe {
+        MultiByteToWideChar(
+            codepage,
+            dwflags,
+            lpmultibytestr,
+            cbmultibyte,
+            lpwidecharstr.unwrap_or(core::mem::zeroed()) as _,
+            cchwidechar,
+        )
+    }
+}
+#[inline]
 pub unsafe fn OleGetClipboard() -> windows_core::Result<IDataObject> {
     windows_core::link!("ole32.dll" "system" fn OleGetClipboard(ppdataobj : *mut *mut core::ffi::c_void) -> windows_core::HRESULT);
     unsafe {
@@ -2932,6 +2953,7 @@ impl Default for CONTEXT_0_0 {
 }
 #[cfg(target_arch = "aarch64")]
 pub type CONTEXT = ARM64_NT_CONTEXT;
+pub const CP_ACP: i32 = 0;
 pub const CREATE_ALWAYS: i32 = 2;
 pub const CREATE_NO_WINDOW: i32 = 134217728;
 pub const CS_DBLCLKS: i32 = 8;
