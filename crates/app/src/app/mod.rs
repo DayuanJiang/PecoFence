@@ -82,7 +82,7 @@ use fileops::{FileOp, FileOpThen};
 use peek::peek_hotkey_label;
 use visuals::{
     StartupBackdrops, backdrop_mode_for, fence_style_for, icon_variant_for, pick_theme_mode,
-    shadow_style_for, theme_for, tray_icon_image,
+    shadow_style_for, theme_for, tray_icon_image, verify_wallpaper_later,
 };
 use wallpaper_refresh::{BackdropCache, FIRST_CHECK_MS, RefreshSchedule, supersedes};
 
@@ -1323,9 +1323,11 @@ impl App {
         window::set_coalescable_timer(app.control.hwnd(), TIMER_WALLPAPER_POLL, 5_000, 500);
         sync_desktops_differ(app.control.hwnd(), &desktops_differ);
         // Close the gap between the startup snapshot and installing the registry watchers.
-        if app.wallpaper_sig.is_some() {
+        if let Some(signature) = app.wallpaper_sig.clone() {
             // One check (no signal arrived, so no follow-ups), then prepare the other desktops.
-            window::set_timer(app.control.hwnd(), TIMER_WALLPAPER, FIRST_CHECK_MS);
+            // The check asks Explorer from a worker: it is busy hiding the desktop icons right
+            // now (0.8 s for 1000 icons), and the UI thread would wait on it that long.
+            verify_wallpaper_later(app.control.hwnd(), signature);
             window::set_timer(
                 app.control.hwnd(),
                 TIMER_WALLPAPER_PREWARM,

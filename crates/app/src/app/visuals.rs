@@ -601,6 +601,34 @@ impl StartupBackdrops {
     }
 }
 
+/// Reads the wallpaper again on a worker thread and asks the control window for a wallpaper
+/// check (`WM_APP_WALLPAPER`) when it no longer matches `signature` or cannot be read.
+pub(super) fn verify_wallpaper_later(control: HWND, signature: String) {
+    let control = control.0 as isize;
+    let post = move || {
+        window::post_message(
+            HWND(control as *mut core::ffi::c_void),
+            WM_APP_WALLPAPER,
+            0,
+            0,
+        );
+    };
+    let spawned = std::thread::Builder::new()
+        .name("pecofence-wallpaper-verify".into())
+        .spawn(move || {
+            let same = pecofence_platform::com::MtaGuard::init()
+                .ok()
+                .and_then(|_com| wallpaper::signature())
+                .is_some_and(|current| current == signature);
+            if !same {
+                post();
+            }
+        });
+    if spawned.is_err() {
+        post();
+    }
+}
+
 pub(super) fn build_backdrop_sets(
     theme: &Theme,
     wallpaper_override: Option<&str>,
