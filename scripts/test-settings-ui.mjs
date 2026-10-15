@@ -316,9 +316,18 @@ async function runTests() {
     const count = ruleCount(doc);
     await add(doc);
     assert(ruleCount(doc) === count + 1, 'Valid range was rejected');
-    const value = current().rules.list.at(-1).allOf[0].value;
+    const value = current().rules.list[0].allOf[0].value;
     assert(value.min === null && value.max === 0, 'Blank or zero bound changed meaning');
-    assert(current().rules.list.at(-1).name === '大小 ≤ 0 MB', 'Unnamed rule not named after its condition');
+    assert(current().rules.list[0].name === '大小 ≤ 0 MB', 'Unnamed rule not named after its condition');
+  });
+  await test('A new rule goes to the top of the list', async () => {
+    const before = current().rules.list.map(r => r.id);
+    change(doc, 'nrKind', 'ext'); change(doc, 'nrValue', 'pdf');
+    await add(doc);
+    const list = current().rules.list;
+    assert(list[0].allOf[0].cond === 'ext' && list[0].allOf[0].value[0] === 'pdf', 'New rule is not first');
+    assert(list.slice(1).map(r => r.id).join() === before.join(), 'Existing rules changed order');
+    assert(doc.querySelector('#ruleList [data-row-id]').dataset.rowId === list[0].id, 'New rule not rendered first');
   });
   for (const kind of ['ext', 'exact']) {
     await test('Rejects separator-only ' + kind + ' values', async () => {
@@ -336,10 +345,10 @@ async function runTests() {
     change(doc, 'nrFrom', '18:00'); change(doc, 'nrTo', '06:00');
     await add(doc);
     assert(ruleCount(doc) === count + 1, 'Overnight rule rejected');
-    const value = current().rules.list.at(-1).allOf[0].value;
+    const value = current().rules.list[0].allOf[0].value;
     // The core reads `from_min` / `to_min`; any other spelling makes the host drop all rules.
     assert(value.from_min === 1080 && value.to_min === 360, 'Overnight bounds changed');
-    assert([...doc.querySelectorAll('#ruleList .conds')].at(-1).textContent.includes('18:00–06:00'), 'Overnight rule described wrongly');
+    assert(doc.querySelector('#ruleList .conds').textContent.includes('18:00–06:00'), 'Overnight rule described wrongly');
   });
   await test('Rule target and unfinished name survive a host refresh', async () => {
     change(doc, 'nrTarget', 'fence-b'); change(doc, 'nrName', 'Unfinished draft');
@@ -600,8 +609,8 @@ async function runTests() {
       change(doc, 'nrName', '工作 <draft> & QA');
       await add(doc);
       assert(ruleCount(doc) === count + 1, kind + ' rejected selected values');
-      assert(doc.querySelector('#ruleList .rule:last-child .t').textContent === '工作 <draft> & QA', 'Rule name lost punctuation');
-      assert(doc.querySelector('#ruleList .rule:last-child .conds').textContent.includes(label), kind + ' displayed the wrong condition');
+      assert(doc.querySelector('#ruleList .rule:first-child .t').textContent === '工作 <draft> & QA', 'Rule name lost punctuation');
+      assert(doc.querySelector('#ruleList .rule:first-child .conds').textContent.includes(label), kind + ' displayed the wrong condition');
     }
   });
   await test('Name conditions reject empty values and describe accepted values', async () => {
@@ -620,7 +629,7 @@ async function runTests() {
       change(doc, 'nrValue', value);
       await add(doc);
       assert(ruleCount(doc) === count + 1, kind + ' rejected a valid condition');
-      assert(doc.querySelector('#ruleList .rule:last-child .conds').textContent.includes(label), kind + ' displayed the wrong condition');
+      assert(doc.querySelector('#ruleList .rule:first-child .conds').textContent.includes(label), kind + ' displayed the wrong condition');
     }
   });
   await test('Shortcut rules and file/folder filters can route to the desktop inbox', async () => {
@@ -634,8 +643,8 @@ async function runTests() {
       const count = ruleCount(doc);
       await add(doc);
       assert(ruleCount(doc) === count + 1, kind + ' was not added');
-      assert(doc.querySelector('#ruleList .rule:last-child .conds').textContent === label + ' → 放入“Desktop”', 'Wrong condition or destination');
-      assert(current().rules.list.at(-1).target === 'inbox', 'Inbox target serialized as a virtual fence');
+      assert(doc.querySelector('#ruleList .rule:first-child .conds').textContent === label + ' → 放入“Desktop”', 'Wrong condition or destination');
+      assert(current().rules.list[0].target === 'inbox', 'Inbox target serialized as a virtual fence');
     }
   });
   await test('Deleting the final snapshot preserves a useful keyboard focus target', async () => {

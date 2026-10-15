@@ -834,7 +834,15 @@ impl AppState {
             is_hidden: false,
             is_system: false,
             idle_days: Self::idle_days(entry.mtime, last_opened, now),
+            age_secs: Self::age_secs(entry.created, entry.mtime, now),
         }
+    }
+
+    /// Seconds since the later of creation and last write; `None` when the file reports no
+    /// time at all.
+    fn age_secs(created: i64, mtime: i64, now: i64) -> Option<u64> {
+        let last = created.max(mtime);
+        (last > 0).then(|| (now - last).max(0) as u64)
     }
 
     /// Reconciles the item table with the current desktop contents. New items are routed by the
@@ -929,11 +937,14 @@ impl AppState {
                         self.dirty = true;
                     }
                 }
-                // An item that exists but is in no fence (e.g. its fence was deleted) → route.
+                // An item that exists but is in no fence (e.g. its fence was deleted, or a .tmp
+                // skipped while fresh) → route. Counted, so the caller refreshes the windows.
                 if !in_fence.contains(&id) {
                     let decision = self.route_decision(entry);
-                    if let Some((fence, by)) = self.target_fence(decision) {
-                        self.config.assign(self.layout, id, fence, by);
+                    if let Some((fence, by)) = self.target_fence(decision)
+                        && self.config.assign(self.layout, id, fence, by).is_some()
+                    {
+                        report.updated += 1;
                         self.dirty = true;
                     }
                 }
@@ -1465,10 +1476,13 @@ impl AppState {
         let new_key = ItemKey::from_path(&new.to_string_lossy());
         // Safe-save (Word, Excel): the document is renamed to a temporary name and a fresh copy
         // is renamed over its name. The item already on the new key (the document's) is kept;
-        // the sync finds the file again.
-        let to_temp = new
-            .file_name()
-            .is_some_and(|n| pecofence_core::rules::is_temporary(&n.to_string_lossy()));
+        // the sync finds the file again. AutoCAD does the same with `.bak` as the temporary
+        // name (abcd.dwg → abcd.bak, then sav*.tmp → abcd.dwg).
+        let to_temp = new.file_name().is_some_and(|n| {
+            let n = n.to_string_lossy();
+            pecofence_core::rules::is_temporary(&n, None)
+                || pecofence_core::rules::ext_of(&n) == ".bak"
+        });
         if to_temp || (new_key != old_key && self.catalog.contains_key(&new_key)) {
             return false;
         }
@@ -2718,6 +2732,44 @@ mod tests {
         assert_eq!(state.item_id_for_path(&desk("report.txt")), Some(doc));
         assert_eq!(state.config.fence_of_item(0, doc), Some(work));
         assert!(state.config.items[&copy].orphaned_since.is_some());
+        // A sync that catches the fresh copy mid-save puts it in no fence. Once the file has
+        // lasted a minute, the next sync (nothing else changed) puts it in a fence and reports
+        // that, so housekeeping refreshes the windows.
+        let mut fresh = desktop_entry("~WRD0002.tmp");
+        fresh.created = pecofence_core::now_unix();
+        state.sync_desktop(&[desktop_entry("report.txt"), fresh.clone()]);
+        let tmp = state.item_id_for_path(&desk("~WRD0002.tmp")).unwrap();
+        assert!(state.fences().iter().all(|f| !f.contains_item(tmp)));
+        fresh.created -= pecofence_core::rules::TMP_SETTLE_SECS as i64;
+        let report = state.sync_desktop(&[desktop_entry("report.txt"), fresh]);
+        assert!(report.changed(), "a routed .tmp must show up in the report");
+        assert_eq!(state.config.fence_of_item(0, tmp), Some(inbox));
+        // A .tmp that has been around for a while, or a .bak, shows like any other file.
+        state.sync_desktop(&[
+            desktop_entry("report.txt"),
+            desktop_entry("leftover.tmp"),
+            desktop_entry("notes.bak"),
+        ]);
+        for name in ["leftover.tmp", "notes.bak"] {
+            let id = state.item_id_for_path(&desk(name)).unwrap();
+            assert!(
+                state.config.fence_of_item(0, id).is_some(),
+                "{name} shows nowhere"
+            );
+        }
+        // AutoCAD: the drawing is renamed to .bak and the new copy (catalogued by a sync while
+        // it was written) is renamed over its name. The drawing keeps its record and fence; the
+        // .bak is a file like any other.
+        let mut sav = desktop_entry("sav1.tmp");
+        sav.created = pecofence_core::now_unix();
+        state.sync_desktop(&[desktop_entry("report.txt"), sav]);
+        assert!(!state.rename_item(&desk("report.txt"), &desk("report.bak")));
+        assert!(!state.rename_item(&desk("sav1.tmp"), &desk("report.txt")));
+        state.sync_desktop(&[desktop_entry("report.txt"), desktop_entry("report.bak")]);
+        assert_eq!(state.item_id_for_path(&desk("report.txt")), Some(doc));
+        assert_eq!(state.config.fence_of_item(0, doc), Some(work));
+        let bak = state.item_id_for_path(&desk("report.bak")).unwrap();
+        assert_eq!(state.config.fence_of_item(0, bak), Some(inbox));
     }
 
     /// b.txt deleted, then a.txt renamed to b.txt within the week: the deleted file's record
