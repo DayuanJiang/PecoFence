@@ -291,6 +291,7 @@ fn category_matches(cat: TypeCategory, facts: &ItemFacts) -> bool {
                         | ".ods"
                         | ".odp"
                         | ".csv"
+                        | ".tsv"
                         | ".one"
                         | ".epub"
                         | ".json"
@@ -614,6 +615,7 @@ mod tests {
     fn classify_names_the_first_matching_category() {
         let kind = |name: &str| classify(&facts(name)).map(category_name);
         assert_eq!(kind("report.PDF"), Some("documents"));
+        assert_eq!(kind("table.tsv"), Some("documents"));
         assert_eq!(kind("photo.jpeg"), Some("images"));
         assert_eq!(kind("song.mp3"), Some("music"));
         assert_eq!(kind("clip.mkv"), Some("video"));
