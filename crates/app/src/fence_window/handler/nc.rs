@@ -506,19 +506,19 @@ pub(super) fn on_move(
     _wparam: usize,
     _lparam: isize,
 ) -> Option<isize> {
-    let HandlerCtx {
-        view, in_size_move, ..
-    } = h;
+    let HandlerCtx { view, .. } = h;
     let mut guard = view.borrow_mut();
     if let Some(v) = guard.as_mut() {
-        if in_size_move.get() {
-            // The system move loop moves the window once per pointer message (a 1000 Hz mouse
-            // would re-crop and re-upload the backdrop many times per displayed frame): the
-            // crop follows once per frame from `tick`.
-            v.move_pending = true;
-            v.frames.request();
-        } else {
-            v.follow_move();
+        let old_ink = v.material_foreground().text_primary;
+        if v.update_backdrop() {
+            if old_ink != v.material_foreground().text_primary
+                || (v.theme.liquid_glass && v.row_metrics().is_some())
+            {
+                // Moving clear glass across a light/dark boundary also changes the icon labels.
+                let _ = v.redraw();
+            } else {
+                let _ = v.redraw_chrome_only();
+            }
         }
         v.update_shadow();
     }
@@ -637,11 +637,6 @@ pub(super) fn on_exitsizemove(
         let mut guard = view.borrow_mut();
         match guard.as_mut() {
             Some(v) => {
-                // The resting window gets its crop now, not at the next frame.
-                if v.move_pending {
-                    v.move_pending = false;
-                    v.follow_move();
-                }
                 // Record the user's height, but never a transient
                 // mid-animation one (it would be persisted as expanded_h).
                 if !v.rolled_up && !v.height_animating() {

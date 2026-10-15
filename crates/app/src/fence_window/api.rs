@@ -159,7 +159,6 @@ impl FenceWindow {
             leaving: Vec::new(),
             content_busy: false,
             chrome_busy: false,
-            move_pending: false,
             mouse_inside: false,
             last_scroll: None,
             click_pending: None,
