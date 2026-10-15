@@ -211,9 +211,9 @@ impl App {
         if self.web_env.is_none() {
             match WebEnvironment::create() {
                 Ok(env) => self.web_env = Some(env),
-                // WebView2's wait for its callback pumps messages and ends with this empty
-                // error when it takes a WM_QUIT (the session ends): quit after all.
-                Err(e) if e.code().is_ok() => {
+                // WebView2's wait for its callback pumps messages and ends with an error when
+                // it takes a WM_QUIT (the session ends): quit after all.
+                Err(_) if window::quit_posted() => {
                     window::post_quit(0);
                     return;
                 }
@@ -250,7 +250,7 @@ impl App {
                 );
                 self.settings = Some(host);
             }
-            Err(e) if e.code().is_ok() => window::post_quit(0),
+            Err(_) if window::quit_posted() => window::post_quit(0),
             Err(e) => {
                 tracing::error!(error = %e, "settings window failed");
                 if let Some(t) = &self.tray {
