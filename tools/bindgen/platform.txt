@@ -562,6 +562,8 @@
     WICBitmapIgnoreAlpha
     GetFileAttributesW
     MoveFileExW
+    MultiByteToWideChar
+    CP_ACP
     FILE_ATTRIBUTE_HIDDEN
     FILE_ATTRIBUTE_SYSTEM
     FILE_ATTRIBUTE_DIRECTORY
