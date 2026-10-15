@@ -655,6 +655,7 @@ impl FenceViewState {
         let details = self.layout == ViewLayout::Details;
         let now = Instant::now();
         let mut started = false;
+        let mut pending = false;
         let mut icons = self.icons.borrow_mut();
         for (i, item) in self.items.iter_mut().enumerate() {
             if item.wants_icon(icon_px) && near(i) {
@@ -677,7 +678,10 @@ impl FenceViewState {
                     Lookup::Ready(None) => item.icon_failed = true,
                     // Another size's bitmap is the same picture: it stays up, and the sharper
                     // one replaces it without the fade.
-                    Lookup::Pending => item.icon_waited = item.icon.is_none(),
+                    Lookup::Pending => {
+                        item.icon_waited = item.icon.is_none();
+                        pending = true;
+                    }
                 }
             }
             if item.label.is_none() {
@@ -710,15 +714,16 @@ impl FenceViewState {
             }
         }
         drop(icons);
+        self.icons_pending = pending;
         if started {
             self.frames.request();
         }
     }
 
-    /// True when some item is still waiting for its icon.
+    /// True when an item near the viewport is still waiting for its icon (as of the last
+    /// content draw).
     pub fn has_pending_icons(&self) -> bool {
-        let px = (self.icon_dip() * self.scale()).round() as u32;
-        self.items.iter().any(|i| i.wants_icon(px))
+        self.icons_pending
     }
 
     /// Redraws the chrome surface only (backdrop/title); the content surface is untouched.
@@ -799,10 +804,13 @@ impl FenceViewState {
         let view_h = self.scroll_view_h(&layout);
         self.scroll_y = self.scroll_y.clamp(0.0, grid.max_scroll(view_h));
         let scroll = self.scroll_y;
-        // The rows in view plus one viewport above and below.
+        // The rows in view plus one viewport above and below, and the same around where a
+        // running glide ends (End, PageDown, a thumb drag, a Peek reveal).
+        let target = self.scroll_target();
+        let near = |y: f32, h: f32, at: f32| y + h > at - view_h && y < at + 2.0 * view_h;
         self.ensure_icons_and_labels(grid.metrics.cell_w, |i| {
             let c = grid.cell(i);
-            c.y + c.h > scroll - view_h && c.y < scroll + 2.0 * view_h
+            near(c.y, c.h, scroll) || near(c.y, c.h, target)
         });
 
         let now = Instant::now();
@@ -919,7 +927,8 @@ impl FenceViewState {
             icon_top: grid.metrics.icon_top,
             label_gap: grid.metrics.label_gap,
             scrollbar,
-            empty_text: Some(self.empty_text()),
+            // `cells` holds the viewport only; the hint is for a fence without items.
+            empty_text: self.items.is_empty().then(|| self.empty_text()),
             drop_highlight: self.drop_wash.value_at(now),
             marquee: self.marquee_rect_dip(),
             insert_caret: self.insert_caret_dip(0.0),
@@ -963,10 +972,13 @@ impl FenceViewState {
         let cols = self.columns_for(width_dip);
         let text_w = (cols.name_w - metrics.icon - 8.0 - 4.0).max(20.0);
         let scroll = self.scroll_y;
-        // The rows in view plus one viewport above and below.
+        // The rows in view plus one viewport above and below, and the same around where a
+        // running glide ends (as in `redraw_content`).
+        let target = self.scroll_target();
+        let near = |y: f32, h: f32, at: f32| y + h > at - view_h && y < at + 2.0 * view_h;
         self.ensure_icons_and_labels(text_w, |i| {
             let c = layout.cell(i);
-            c.y + c.h > scroll - view_h && c.y < scroll + 2.0 * view_h
+            near(c.y, c.h, scroll) || near(c.y, c.h, target)
         });
 
         let now = Instant::now();
@@ -1082,7 +1094,8 @@ impl FenceViewState {
         }));
         let group_headers = group_header_draws(&layout, scroll, metrics.header_h);
         let scrollbar = self.scrollbar_draw();
-        let empty_text = Some(self.empty_text());
+        // `rows` holds the viewport only; the hint is for a fence without items.
+        let empty_text = self.items.is_empty().then(|| self.empty_text());
         let marquee = self.marquee_rect_dip().map(|m| Rect {
             left: m.left,
             top: m.top + metrics.header_h,
