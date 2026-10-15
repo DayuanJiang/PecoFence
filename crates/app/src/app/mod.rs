@@ -300,6 +300,8 @@ pub struct App {
     peek_tabs: HashMap<FenceId, FenceId>,
     /// The desktop folder could not be read at the last sync (removable / network drive).
     desktop_unavailable: bool,
+    /// The tray told the user that the configuration cannot be saved (once per run).
+    save_failure_shown: bool,
     /// Last run of the rules that depend on the clock ("闲置天数"); see `housekeeping`.
     idle_rules_checked: Option<Instant>,
     /// When the last memory line was logged and the total it showed; see `log_memory`.
@@ -586,6 +588,7 @@ impl App {
                                     {
                                         window::kill_timer(hwnd, TIMER_SAVE);
                                         app.state.save_if_dirty();
+                                        app.notice_save_failure();
                                     } else {
                                         // Busy (modal loop): retry shortly instead of dropping.
                                         window::set_timer(hwnd, TIMER_SAVE, 500);
@@ -1161,6 +1164,7 @@ impl App {
             peek_hotkey_wanted: None,
             peek_hotkey_paused: false,
             desktop_unavailable: false,
+            save_failure_shown: false,
             idle_rules_checked: None,
             memory_logged: None,
             cut_items: HashSet::new(),
@@ -1393,10 +1397,30 @@ impl App {
         window::set_timer(self.control.hwnd(), TIMER_SAVE, 800);
     }
 
+    /// After a save: one that failed leaves the state dirty. The first time in a run the tray
+    /// says so, since the changes are lost at exit and only the log had the reason.
+    fn notice_save_failure(&mut self) {
+        if !self.state.is_dirty() || self.save_failure_shown {
+            return;
+        }
+        let Some(t) = &self.tray else { return };
+        self.save_failure_shown = true;
+        let path = self.state.config_path_on_disk();
+        t.show_info(
+            "PecoFence",
+            &pecofence_core::i18n::format(
+                "无法保存配置，退出后更改会丢失。请检查这个文件夹能否写入：{0}",
+                &[path.parent().unwrap_or(&path).display().to_string()],
+            ),
+            true,
+        );
+    }
+
     fn housekeeping(&mut self) {
         self.check_cut_clipboard();
         if self.state.is_dirty() {
             self.state.save_if_dirty();
+            self.notice_save_failure();
         }
         // Icons no window needs any more, if a change left some behind without a redraw; the
         // GPU trim then frees the released uploads.

@@ -868,6 +868,22 @@ async function runTests() {
     assert(!winBox.checked && hotkeyText() === 'Ctrl+Alt+空格' && !help.classList.contains('error'), 'Cancel did not restore the shortcut');
     assert(current().settings.peek.customHotkey == null, 'A refused shortcut was saved');
   });
+  await test('Keys that stop arriving during a recording suggest the combination is taken', async () => {
+    doc = await reset();
+    const box = doc.getElementById('peekHotkey'), help = doc.getElementById('peekHotkeyHelp');
+    const quiet = () => new Promise(resolve => setTimeout(resolve, 3200));
+    box.focus(); box.click(); await quiet();
+    assert(!help.classList.contains('caution') && help.textContent.includes('Esc'), 'Hint shown before any key: ' + help.textContent);
+    // Another program's hotkey keeps the key itself: only the modifiers arrive.
+    press(box, 'Control', 17, { ctrlKey: true }); await quiet();
+    assert(help.classList.contains('caution') && help.textContent.includes('其他程序占用') && box.classList.contains('recording'), 'Silence not explained: ' + help.textContent);
+    press(box, 'Alt', 18, { ctrlKey: true, altKey: true });
+    assert(!help.classList.contains('caution') && help.textContent.includes('Esc'), 'Hint stayed after a key: ' + help.textContent);
+    await quiet();
+    assert(help.classList.contains('caution'), 'Hint did not come back');
+    press(box, 'Escape', 27); await settle();
+    assert(!box.classList.contains('recording') && !help.classList.contains('caution'), 'Esc left the hint: ' + help.textContent);
+  });
   await test('Quick choices set the shortcut; a fallback says which one is in use', async () => {
     doc = await reset();
     const presets = [...doc.querySelectorAll('#peekPresets button')];
