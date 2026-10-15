@@ -143,6 +143,9 @@ const IDLE_TRIM_MS: u32 = 30_000;
 /// The live wallpaper capture worker finished (`WM_APP_LIVE_WALLPAPER`); retried while the App
 /// is borrowed.
 const TIMER_LIVE_CAPTURED: usize = 61;
+/// `TaskbarCreated` arrived while the App was borrowed: renew the shell change registration
+/// shortly.
+const TIMER_SHELL_WATCH_RETRY: usize = 62;
 const DEVICE_RETRY_MAX_MS: u32 = 30_000;
 /// Growth of private commit plus GPU memory that logs a memory line before the hour is up.
 const MEMORY_LOG_GROWTH: u64 = 64 << 20;
@@ -602,7 +605,8 @@ impl App {
                                 }
                                 TIMER_WALLPAPER_PREWARM
                                 | TIMER_PREWARM_FINISH
-                                | TIMER_LIVE_CAPTURED => {
+                                | TIMER_LIVE_CAPTURED
+                                | TIMER_SHELL_WATCH_RETRY => {
                                     if let Ok(mut guard) = cell.try_borrow_mut()
                                         && let Some(app) = guard.as_mut()
                                     {
@@ -610,6 +614,7 @@ impl App {
                                         match wparam {
                                             TIMER_PREWARM_FINISH => app.finish_prewarm(),
                                             TIMER_LIVE_CAPTURED => app.finish_live_capture(),
+                                            TIMER_SHELL_WATCH_RETRY => app.renew_shell_watch(),
                                             _ => app.prewarm_wallpapers(),
                                         }
                                     } else {
@@ -850,21 +855,12 @@ impl App {
                             if shown != Some(true) {
                                 window::set_timer(hwnd, TIMER_TRAY_RETRY, 250);
                             }
-                            // The new Explorer knows nothing of the old shell change
-                            // registration. Its id is not deregistered: the new Explorer may
-                            // have handed the same number to another program, or to one of its
-                            // own views. Should the old registration still be alive, the
-                            // duplicate notices merge in the same 60 ms batch.
                             if let Ok(mut guard) = cell.try_borrow_mut()
                                 && let Some(app) = guard.as_mut()
                             {
-                                std::mem::forget(app._shell_watch.take());
-                                app._shell_watch =
-                                    ShellChangeWatch::register_desktop(hwnd, WM_APP_SHELL_CHANGED)
-                                        .map_err(|e| {
-                                            tracing::warn!(error = %e, "shell change notifications unavailable")
-                                        })
-                                        .ok();
+                                app.renew_shell_watch();
+                            } else {
+                                window::set_timer(hwnd, TIMER_SHELL_WATCH_RETRY, 250);
                             }
                             Some(0)
                         }
@@ -1861,6 +1857,18 @@ impl App {
         {
             a.request_hide_desktop_icons();
         }
+    }
+
+    /// Explorer (re)started: the new Explorer knows nothing of the old shell change
+    /// registration. Its id is not deregistered: the new Explorer may have handed the same
+    /// number to another program, or to one of its own views. Should the old registration
+    /// still be alive, the duplicate notices merge in the same 60 ms batch.
+    fn renew_shell_watch(&mut self) {
+        std::mem::forget(self._shell_watch.take());
+        self._shell_watch =
+            ShellChangeWatch::register_desktop(self.control.hwnd(), WM_APP_SHELL_CHANGED)
+                .map_err(|e| tracing::warn!(error = %e, "shell change notifications unavailable"))
+                .ok();
     }
 
     /// (Re)adds the notification icon; false while the taskbar does not take it.
