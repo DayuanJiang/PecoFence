@@ -800,7 +800,8 @@
     if (e.key === 'Escape' && !held) { stopRecording(); return; }
     hkHeld = held;
     waitForKeys(true);
-    if (['Control', 'Alt', 'Shift', 'Meta', 'OS', 'AltGraph'].includes(e.key)) { renderPeekHotkey(); return; }
+    // A modifier starts the next attempt: an error about the previous one no longer applies.
+    if (['Control', 'Alt', 'Shift', 'Meta', 'OS', 'AltGraph'].includes(e.key)) { hkError = ''; renderPeekHotkey(); return; }
     if (e.repeat) return;
     // keyCode is the Windows virtual-key code, which RegisterHotKey takes.
     send({ type: 'action', name: 'setPeekHotkey', mods: held | (hkWin.checked ? MOD_WIN : 0), vk: e.keyCode });

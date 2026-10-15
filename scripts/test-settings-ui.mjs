@@ -883,6 +883,13 @@ async function runTests() {
     assert(help.classList.contains('caution'), 'Hint did not come back');
     press(box, 'Escape', 27); await settle();
     assert(!box.classList.contains('recording') && !help.classList.contains('caution'), 'Esc left the hint: ' + help.textContent);
+    // A refusal of the previous key does not hide the hint for the next, taken combination.
+    box.focus(); box.click(); await settle();
+    press(box, 'k', 75); await settle();
+    assert(help.classList.contains('error'), 'No-modifier refusal not shown: ' + help.textContent);
+    press(box, 'Control', 17, { ctrlKey: true }); await quiet();
+    assert(help.classList.contains('caution') && help.textContent.includes('其他程序占用'), 'Old refusal hid the hint: ' + help.textContent);
+    press(box, 'Escape', 27); await settle();
   });
   await test('Quick choices set the shortcut; a fallback says which one is in use', async () => {
     doc = await reset();
