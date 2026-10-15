@@ -15,7 +15,7 @@ const fixture = {
   settings: {
     language: 'zh-CN',
     autostart: false, hideRealIcons: false, quickHide: { enabled: true },
-    showDesktop: 'keepVisible', theme: 'dark', themeStyle: 'fluent', titleAlign: 'left', tabBar: 'top', backdrop: 'acrylic', iconSize: 48,
+    showDesktop: 'keepVisible', theme: 'dark', themeStyle: 'fluent', labelColor: 'auto', titleAlign: 'left', tabBar: 'top', backdrop: 'acrylic', iconSize: 48,
     icons: { tintRgb: null, tintStrength: 0.6, chameleon: false },
     rollUp: { hoverPeek: true, clickToExpand: false, pushNeighbors: true, titleOnHover: false, hideInactiveScrollbar: false, switchTabOnHover: false },
     snapping: { enabled: true, gapPx: 8, sizeToCells: false, guideLines: true }, peek: { enabled: true, dim: true, hotkey: 'ctrlAltSpace' },
@@ -550,6 +550,17 @@ async function runTests() {
       bar.dispatchEvent(new frame.contentWindow.Event('change', { bubbles: true }));
       await settle();
       assert(current().settings.tabBar === value, 'Tab bar position not posted: ' + value);
+    }
+  });
+  await test('Icon name colour is shown and posted', async () => {
+    doc.querySelector('[data-page=general]').click();
+    const color = doc.querySelector('[data-bind=labelColor]');
+    assert(color.value === 'auto', 'Saved icon name colour not shown');
+    for (const value of ['white', 'black', 'auto']) {
+      color.value = value;
+      color.dispatchEvent(new frame.contentWindow.Event('change', { bubbles: true }));
+      await settle();
+      assert(current().settings.labelColor === value, 'Icon name colour not posted: ' + value);
     }
   });
   await test('Rule rows are compact and the new-rule form opens when needed', async () => {

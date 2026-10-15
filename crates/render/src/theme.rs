@@ -324,6 +324,25 @@ impl Theme {
         brightness > threshold
     }
 
+    /// The theme the item names are drawn with. 「图标名称颜色」 白色 / 黑色 takes the text of
+    /// this material's dark / light theme whatever the backdrop; the plate, hover and focus
+    /// tokens stay as picked for it, and the halo follows the text.
+    pub fn with_label_color(mut self, color: pecofence_core::LabelColor) -> Self {
+        let mode = match color {
+            pecofence_core::LabelColor::Auto => return self,
+            pecofence_core::LabelColor::White => ThemeMode::Dark,
+            pecofence_core::LabelColor::Black => ThemeMode::Light,
+        };
+        let mut ink = Self::for_mode(mode);
+        if self.liquid_glass {
+            ink = ink.with_liquid_glass();
+        }
+        self.text_primary = ink.text_primary;
+        self.text_secondary = ink.text_secondary;
+        self.text_tertiary = ink.text_tertiary;
+        self
+    }
+
     /// Takes the text and control-feedback tokens of `foreground`; material, accent and
     /// geometry stay.
     fn with_ink_of(mut self, foreground: Self) -> Self {
@@ -509,6 +528,33 @@ mod tests {
                 .text_primary,
             fluent.text_primary
         );
+    }
+
+    #[test]
+    fn fixed_label_color_overrides_the_backdrop_ink_only() {
+        use pecofence_core::LabelColor;
+        for base in [
+            Theme::dark(),
+            Theme::light(),
+            Theme::dark().with_liquid_glass(),
+            Theme::light().with_liquid_glass(),
+        ] {
+            for gray in [20, 235] {
+                let picked = base.over_glass(&crate::Image::solid(30, 30, [gray; 3]));
+                assert_eq!(
+                    picked.with_label_color(LabelColor::Auto).text_primary,
+                    picked.text_primary
+                );
+                let white = picked.with_label_color(LabelColor::White);
+                let black = picked.with_label_color(LabelColor::Black);
+                assert!(white.text_primary.r > 0.9 && white.text_secondary.r > 0.9);
+                assert!(black.text_primary.r < 0.2 && black.text_secondary.r < 0.2);
+                // The plate and its feedback stay as picked for the backdrop.
+                assert_eq!(white.subtle_hover, picked.subtle_hover);
+                assert_eq!(black.focus_outer, picked.focus_outer);
+                assert_eq!(white.liquid_glass, base.liquid_glass);
+            }
+        }
     }
 
     #[test]

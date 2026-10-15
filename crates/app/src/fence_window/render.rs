@@ -936,7 +936,9 @@ impl FenceViewState {
             selection_inactive: self.selection_inactive_now(now),
             items_bottom: view_h,
         };
-        let theme = self.material_foreground();
+        let theme = self
+            .material_foreground()
+            .with_label_color(self.behavior.label_color.get());
         let chrome = self.chrome.clone();
         let bitmaps = self.bitmaps.clone();
         let ok = self
@@ -1129,11 +1131,16 @@ impl FenceViewState {
             origin_y: self.content_y as f32 / self.scale(),
             rows_bottom: metrics.header_h + view_h,
         };
-        let theme = self.material_foreground();
+        let label_color = self.behavior.label_color.get();
+        let theme = self.material_foreground().with_label_color(label_color);
         let chrome = self.chrome.clone();
         let bitmaps = self.bitmaps.clone();
         let wallpaper = self.backdrops.for_mode(self.backdrop_mode()).clone();
-        let backdrop = if self.theme.liquid_glass && !wallpaper.is_empty() {
+        // The glass is sampled under each text only to pick its ink: a fixed name colour skips it.
+        let backdrop = if self.theme.liquid_glass
+            && !wallpaper.is_empty()
+            && label_color == pecofence_core::LabelColor::Auto
+        {
             let r = self.backdrop_rect.unwrap_or_else(|| {
                 let r = window::window_rect(self.hwnd);
                 (r.left, r.top, r.right - r.left, r.bottom - r.top)

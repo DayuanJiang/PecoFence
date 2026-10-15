@@ -94,6 +94,9 @@ pub struct Settings {
     /// Material style is independent of the light/dark preference.
     #[serde(default)]
     pub theme_style: ThemeStyle,
+    /// Colour of the item names in every fence; fence titles have their own `titleColor`.
+    #[serde(default)]
+    pub label_color: LabelColor,
     /// Where every fence's title (or tab strip) sits in its title row.
     #[serde(default)]
     pub title_align: TitleAlign,
@@ -205,6 +208,7 @@ impl Default for Settings {
             backdrop: Backdrop::Acrylic,
             theme: ThemeSetting::FollowWindowsMode,
             theme_style: ThemeStyle::Fluent,
+            label_color: LabelColor::Auto,
             title_align: TitleAlign::Left,
             tab_bar: TabBar::Top,
             icon_size: 48,
@@ -250,6 +254,18 @@ pub enum ThemeStyle {
     #[default]
     Fluent,
     LiquidGlass,
+}
+
+/// Item name colour (「图标名称颜色」). Auto: Liquid Glass picks dark or light text from the
+/// wallpaper under each fence, Fluent follows the colour mode. The halo pairs with the text.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase")]
+pub enum LabelColor {
+    #[default]
+    Auto,
+    White,
+    Black,
 }
 
 /// Title position in the title row (Fences centres it). The chevron zone on the right stays
@@ -1602,10 +1618,12 @@ mod tests {
         json.as_object_mut().unwrap().remove("themeStyle");
         json.as_object_mut().unwrap().remove("titleAlign");
         json.as_object_mut().unwrap().remove("tabBar");
+        json.as_object_mut().unwrap().remove("labelColor");
         let legacy: Settings = serde_json::from_value(json).unwrap();
         assert_eq!(legacy.theme_style, ThemeStyle::Fluent);
         assert_eq!(legacy.title_align, TitleAlign::Left);
         assert_eq!(legacy.tab_bar, TabBar::Top);
+        assert_eq!(legacy.label_color, LabelColor::Auto);
         for mode in [
             ThemeSetting::Light,
             ThemeSetting::Dark,
@@ -1615,10 +1633,12 @@ mod tests {
             let settings = Settings {
                 theme: mode,
                 theme_style: ThemeStyle::LiquidGlass,
+                label_color: LabelColor::White,
                 ..legacy.clone()
             };
             let json = serde_json::to_value(&settings).unwrap();
             assert_eq!(json["themeStyle"], "liquidGlass");
+            assert_eq!(json["labelColor"], "white");
             assert_eq!(serde_json::from_value::<Settings>(json).unwrap(), settings);
         }
     }

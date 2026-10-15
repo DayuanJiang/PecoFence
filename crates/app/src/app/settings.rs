@@ -723,6 +723,7 @@ impl App {
             .set(new.roll_up.title_on_hover);
         self.ctx.behavior.title_align.set(new.title_align);
         self.ctx.behavior.tab_bar.set(new.tab_bar);
+        self.ctx.behavior.label_color.set(new.label_color);
         self.ctx
             .behavior
             .hide_inactive_scrollbar
@@ -734,6 +735,7 @@ impl App {
         // Only whole rows show with 「调整大小时按整行整列对齐」 on: redraw.
         let chrome_changed = new.roll_up.title_on_hover != old.roll_up.title_on_hover
             || new.title_align != old.title_align
+            || new.label_color != old.label_color
             || new.roll_up.hide_inactive_scrollbar != old.roll_up.hide_inactive_scrollbar
             || new.snapping.size_to_cells != old.snapping.size_to_cells;
         if chrome_changed {

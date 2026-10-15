@@ -1137,7 +1137,7 @@ impl FenceViewState {
             return None;
         }
         let rt = self.stack.create_render_target(w_px, h_px).ok()?;
-        let theme = self.theme;
+        let theme = self.theme.with_label_color(self.behavior.label_color.get());
         let chrome = self.chrome.clone();
         // Fresh uploads for the one-off target; the shared cache belongs to the surfaces.
         let mut bitmaps = BitmapCache::new();

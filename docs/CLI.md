@@ -219,6 +219,9 @@ is rejected with `invalid_value` and the hint to re-save it (`| Set-Content -Enc
 `settings set` paths are dotted camelCase keys of the Settings object, e.g. `iconSize`, `theme`,
 `themeStyle`, `hideRealIcons`, `autostart`, `peek.enabled`, `quickHide.enabled`,
 `titleAlign` (left/center/right: the title and tab strip in every title row),
+`labelColor` (auto/white/black: the item names in every fence and view; auto picks dark or light
+names from the wallpaper in Liquid Glass and follows the colour mode in Fluent; fence titles keep
+their `titleColor`; default auto),
 `tabBar` (top/left: a fence with two or more tabs shows them in its title row, or lists them in a
 column on its left that takes the title row's place; rolled up, such a fence shrinks to the
 column; default top),
