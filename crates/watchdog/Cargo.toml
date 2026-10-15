@@ -11,6 +11,7 @@ name = "pecofence-watchdog"
 path = "src/main.rs"
 
 [dependencies]
+pecofence-core = { path = "../core" }
 pecofence-platform = { path = "../platform" }
 
 [lints]

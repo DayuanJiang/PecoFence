@@ -337,6 +337,7 @@ dependencies = [
 name = "pecofence-watchdog"
 version = "0.2.1"
 dependencies = [
+ "pecofence-core",
  "pecofence-platform",
 ]
 

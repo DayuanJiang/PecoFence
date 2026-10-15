@@ -5,7 +5,7 @@
 
 #![windows_subsystem = "windows"]
 
-use pecofence_platform::{desktop, process, shell_icons};
+use pecofence_platform::{desktop, process, shell_icons, window};
 use std::path::PathBuf;
 
 fn main() {
@@ -25,11 +25,17 @@ fn main() {
     }
     // Give Explorer a moment, then restore if still hidden. Explorer may be restarting or hung,
     // so keep trying for a while; if it never works the marker stays, and the next start adopts
-    // the hidden icons and restores them at exit.
+    // the hidden icons and restores them at exit. A PecoFence started meanwhile takes them
+    // over: the icons and the marker are its own then.
+    let instance = pecofence_core::brand::var("PECOFENCE_INSTANCE").ok();
+    let [mutex, _] = pecofence_core::brand::instance_mutex_names(instance.as_deref());
     std::thread::sleep(std::time::Duration::from_millis(300));
     for attempt in 0..10 {
         if attempt > 0 {
             std::thread::sleep(std::time::Duration::from_secs(1));
+        }
+        if window::SingleInstance::is_held(&mutex) {
+            return;
         }
         let restored = !shell_icons::desktop_icons_hidden()
             || desktop::resolve_icon_host(desktop::detect_generation()).is_some_and(|host| {
