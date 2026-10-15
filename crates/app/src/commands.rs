@@ -10,6 +10,8 @@ use std::path::PathBuf;
 use std::rc::Rc;
 
 pub const WM_APP_COMMAND: u32 = msg::WM_APP + 1;
+/// A folder watcher queued events; `wparam != 0` asks for a desktop sync whatever the batch
+/// holds (a menu verb that changed a namespace item).
 pub const WM_APP_FS_CHANGED: u32 = msg::WM_APP + 2;
 pub const WM_APP_TRAY: u32 = msg::WM_APP + 3;
 /// The wallpaper registry key changed (worker thread → UI thread).
@@ -38,6 +40,8 @@ pub const WM_APP_LIVE_WALLPAPER: u32 = msg::WM_APP + 14;
 /// px of its left tab column (0 without one). Such a fence has no title row; its column takes
 /// the merge drop instead, also while the fence is collapsed to it.
 pub const WM_APP_TAB_RAIL: u32 = msg::WM_APP + 15;
+/// The startup wallpaper worker finished after the fences went up (worker thread → UI thread).
+pub const WM_APP_STARTUP_BACKDROPS: u32 = msg::WM_APP + 16;
 
 /// What a file drop does with the dropped paths (Explorer's Move / Copy / Create shortcut, the
 /// effect the drop target reported).
@@ -63,7 +67,11 @@ pub enum Command {
     ToggleRollUp(FenceId),
     /// A hover-peeked fence was double-clicked: keep it expanded.
     CommitExpanded(FenceId),
-    LaunchItem(ItemId),
+    /// Open `item` from fence `from` (a folder opens in place when `from` is a navigating portal).
+    LaunchItem {
+        item: ItemId,
+        from: FenceId,
+    },
     /// Move `items` into `to` (internal drag or menu).
     MoveItems {
         items: Vec<ItemId>,
@@ -148,11 +156,13 @@ pub enum Command {
         mode: TransferMode,
     },
     /// A link dragged from a browser onto a fence: create an Internet Shortcut (.url) like
-    /// Explorer does, and file it into `to`.
+    /// Explorer does, and file it into `to` (or write it into `folder`, the folder item it was
+    /// dropped on).
     ExternalUrlDrop {
         url: String,
         name: Option<String>,
         to: FenceId,
+        folder: Option<PathBuf>,
     },
     /// A drop onto `to` was handed to the shell's folder drop target (Outlook mail, a
     /// Start-menu app): the portals show what landed in their folders; `landed` are the desktop
@@ -223,6 +233,9 @@ pub enum Command {
         item: ItemId,
         name: String,
     },
+    /// Enter in the rename popup with a name holding a reserved character: the editor stays
+    /// open, the App says why.
+    RenameItemInvalid,
     /// Close the open inline rename popup (the view scrolled under it): commit or cancel.
     EndItemRename {
         commit: bool,

@@ -43,9 +43,10 @@ pub(super) struct FileOp {
     pub(super) then: FileOpThen,
 }
 
-/// Finished operations waiting for the UI thread (`Err` carries the error text: COM errors are
-/// not `Send`).
-pub(super) type FileOpResults = Arc<Mutex<Vec<(FileOpThen, std::result::Result<bool, String>)>>>;
+/// Finished operations waiting for the UI thread, each with its serial (`Err` carries the error
+/// text: COM errors are not `Send`).
+pub(super) type FileOpResults =
+    Arc<Mutex<Vec<(u64, FileOpThen, std::result::Result<bool, String>)>>>;
 
 impl App {
     /// Starts `op` on a worker thread; `drain_fileops` handles the outcome.
@@ -100,6 +101,7 @@ impl App {
         let owner = owner.map(|h| h.0 as isize);
         let results = self.fileops_done.clone();
         let control = self.control.hwnd().0 as isize;
+        let serial = self.fileop_serial + 1;
         let spawned = std::thread::Builder::new()
             .name("pecofence-fileop".into())
             .spawn(move || {
@@ -109,7 +111,7 @@ impl App {
                 let owner = owner.map(|h| HWND(h as *mut core::ffi::c_void));
                 let result = job(owner).map_err(|e| e.to_string());
                 if let Ok(mut r) = results.lock() {
-                    r.push((then, result));
+                    r.push((serial, then, result));
                 }
                 window::post_message(
                     HWND(control as *mut core::ffi::c_void),
@@ -119,21 +121,24 @@ impl App {
                 );
             });
         match spawned {
-            Ok(_) => self.fileops_running += 1,
+            Ok(_) => {
+                self.fileops_running += 1;
+                self.fileop_serial = serial;
+            }
             Err(e) => tracing::warn!(error = %e, "file operation thread failed to start"),
         }
     }
 
     /// Applies the outcome of every finished file operation (called from the command pump).
     pub(super) fn drain_fileops(&mut self) {
-        let done: Vec<(FileOpThen, std::result::Result<bool, String>)> = self
+        let done: Vec<(u64, FileOpThen, std::result::Result<bool, String>)> = self
             .fileops_done
             .lock()
             .map(|mut d| d.drain(..).collect())
             .unwrap_or_default();
-        for (then, result) in done {
+        for (serial, then, result) in done {
             self.fileops_running = self.fileops_running.saturating_sub(1);
-            self.on_fileop_done(then, result);
+            self.on_fileop_done(serial, then, result);
         }
     }
 
@@ -143,13 +148,33 @@ impl App {
         }
     }
 
-    fn on_fileop_done(&mut self, then: FileOpThen, result: std::result::Result<bool, String>) {
+    /// Operation `serial` finished; if it was the move of a paste of cut files (`paste_into`),
+    /// the clipboard is emptied once the files moved; after a cancel or failure they stay on
+    /// it. Something copied or cut meanwhile (the move can take minutes) is left alone.
+    fn settle_cut_paste(&mut self, serial: u64, moved: bool) {
+        if let Some((op, seq)) = self.cut_paste
+            && op == serial
+        {
+            self.cut_paste = None;
+            if moved && clipboard::sequence() == seq {
+                self.finish_cut_paste();
+            }
+        }
+    }
+
+    fn on_fileop_done(
+        &mut self,
+        serial: u64,
+        then: FileOpThen,
+        result: std::result::Result<bool, String>,
+    ) {
         match then {
             FileOpThen::IntoFolder {
                 dest,
                 copy,
                 sources,
             } => {
+                self.settle_cut_paste(serial, matches!(result, Ok(true)));
                 match &result {
                     Ok(true) => {
                         tracing::info!(count = sources.len(), copy, dest = %dest.display(), "placed into folder")
@@ -175,29 +200,32 @@ impl App {
                 }
                 self.refresh_portals_in(&dirs);
             }
-            FileOpThen::ToDesktop { routed, copy, what } => match result {
-                Ok(true) => {
-                    tracing::info!(count = routed.len(), copy, what, "files transferred");
-                    // The expiry counts from the end of the copy for files still to appear.
-                    for r in self.pending_routes.iter_mut() {
-                        if routed.contains(&r.path) {
-                            r.since = Instant::now();
+            FileOpThen::ToDesktop { routed, copy, what } => {
+                self.settle_cut_paste(serial, matches!(result, Ok(true)));
+                match result {
+                    Ok(true) => {
+                        tracing::info!(count = routed.len(), copy, what, "files transferred");
+                        // The expiry counts from the end of the copy for files still to appear.
+                        for r in self.pending_routes.iter_mut() {
+                            if routed.contains(&r.path) {
+                                r.since = Instant::now();
+                            }
                         }
                     }
+                    Ok(false) => {
+                        tracing::info!("move to desktop cancelled by user");
+                        self.pending_routes.retain(|r| !routed.contains(&r.path));
+                    }
+                    Err(e) => {
+                        tracing::warn!(error = %e, "move to desktop failed");
+                        self.pending_routes.retain(|r| !routed.contains(&r.path));
+                        self.toast(pecofence_core::i18n::format(
+                            "移动到桌面失败：{0}",
+                            std::slice::from_ref(&e),
+                        ));
+                    }
                 }
-                Ok(false) => {
-                    tracing::info!("move to desktop cancelled by user");
-                    self.pending_routes.retain(|r| !routed.contains(&r.path));
-                }
-                Err(e) => {
-                    tracing::warn!(error = %e, "move to desktop failed");
-                    self.pending_routes.retain(|r| !routed.contains(&r.path));
-                    self.toast(pecofence_core::i18n::format(
-                        "移动到桌面失败：{0}",
-                        std::slice::from_ref(&e),
-                    ));
-                }
-            },
+            }
             FileOpThen::Duplicate => {
                 match &result {
                     Ok(true) => tracing::info!("pasted duplicates"),

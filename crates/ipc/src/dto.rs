@@ -129,7 +129,7 @@ pub struct FenceDto {
     /// The window as currently shown (only the title bar when rolled up); `null` for hosted
     /// tabs and disconnected monitors.
     pub window_rect: Option<Rect>,
-    /// Monitor device id (see `monitors.list`).
+    /// Monitor device id (see `monitors.list`); a hosted tab reports its host's.
     pub monitor: String,
     pub monitor_connected: bool,
     /// Saved geometry: DIPs relative to the monitor's work area, plus the anchor edge.

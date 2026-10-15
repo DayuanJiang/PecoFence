@@ -13,7 +13,7 @@
 //!
 //! Debug / trace events, other crates' events and the test-script driver are left out. Runs of
 //! one message (an anchor error repeating every frame) collapse into a count, and a run stops
-//! writing at [`MAX_BYTES`].
+//! writing at [`MAX_BYTES`] (error lines a little later).
 
 use std::fmt::{self, Write as _};
 use std::io::Write;
@@ -29,6 +29,9 @@ use tracing_subscriber::layer::{Context, Layer};
 pub const OMITTED: &str = "<omitted>";
 /// A run's shareable log stops growing here; the feedback page only sends its tail anyway.
 const MAX_BYTES: u64 = 2 * 1024 * 1024;
+/// Error lines may go this far past [`MAX_BYTES`]: the next start looks for a `PANIC` or
+/// `CRASH` line to offer crash feedback.
+const ERROR_RESERVE_BYTES: u64 = 256 * 1024;
 /// Identical consecutive messages written out before the rest of the run is only counted.
 const REPEATS_SHOWN: u32 = 3;
 
@@ -324,10 +327,10 @@ impl Sink {
             }
         }
         let (level, target, message) = key;
-        self.write(&format!(
-            "{time} {level:>5} {target}: {message}{}\n",
-            fields.rest
-        ));
+        self.write(
+            level,
+            &format!("{time} {level:>5} {target}: {message}{}\n", fields.rest),
+        );
     }
 
     fn end_run(&mut self, time: &str) {
@@ -335,24 +338,41 @@ impl Sink {
             && run.hidden > 0
         {
             let (level, target, _) = run.key;
-            self.write(&format!(
-                "{time} {level:>5} {target}: (the previous message repeated {} more times)\n",
-                run.hidden
-            ));
+            self.write(
+                level,
+                &format!(
+                    "{time} {level:>5} {target}: (the previous message repeated {} more times)\n",
+                    run.hidden
+                ),
+            );
         }
     }
 
-    fn write(&mut self, line: &str) {
-        if self.written >= MAX_BYTES {
+    fn write(&mut self, level: Level, line: &str) {
+        let limit = if level == Level::ERROR {
+            MAX_BYTES + ERROR_RESERVE_BYTES
+        } else {
+            MAX_BYTES
+        };
+        if self.written >= limit {
             return;
         }
+        let before = self.written;
         self.written += line.len() as u64;
-        let line = if self.written >= MAX_BYTES {
+        let line = if self.written < limit {
+            line
+        } else if level == Level::ERROR {
             "(size limit reached: the rest of this run is not recorded)\n"
         } else {
-            line
+            "(size limit reached: only errors are recorded from here on)\n"
         };
         let _ = self.out.write_all(line.as_bytes());
+        // An error line can be the one that ends the room for the other levels.
+        if before < MAX_BYTES && (MAX_BYTES..limit).contains(&self.written) {
+            let _ = self
+                .out
+                .write_all(b"(size limit reached: only errors are recorded from here on)\n");
+        }
     }
 }
 
@@ -556,6 +576,51 @@ mod tests {
                 "INFO pecofence::share_log::tests: desktop icons already hidden by user/other tool; leaving as is",
             ]
         );
+    }
+
+    #[test]
+    fn errors_are_kept_past_the_size_limit() {
+        let out = Shared::default();
+        let mut sink = Sink {
+            out: Box::new(out.clone()),
+            written: 0,
+            run: None,
+        };
+        let filler = format!("t  INFO pecofence: {}\n", "x".repeat(1000));
+        while sink.written < MAX_BYTES {
+            sink.write(Level::INFO, &filler);
+        }
+        sink.write(Level::INFO, "t  INFO pecofence: dropped\n");
+        sink.write(
+            Level::ERROR,
+            "t ERROR pecofence: PANIC location=crates/app/src/x.rs:1:2\n",
+        );
+        let text = String::from_utf8(out.0.lock().unwrap().clone()).unwrap();
+        assert!(text.contains("size limit reached"));
+        assert!(!text.contains("dropped"));
+        assert!(text.ends_with("PANIC location=crates/app/src/x.rs:1:2\n"));
+    }
+
+    #[test]
+    fn an_error_line_that_reaches_the_size_limit_says_so() {
+        let out = Shared::default();
+        let mut sink = Sink {
+            out: Box::new(out.clone()),
+            written: 0,
+            run: None,
+        };
+        let filler = format!("t  INFO pecofence: {}\n", "x".repeat(1000));
+        while sink.written + (filler.len() as u64) < MAX_BYTES {
+            sink.write(Level::INFO, &filler);
+        }
+        let error = format!("t ERROR pecofence: {}\n", "e".repeat(2000));
+        sink.write(Level::ERROR, &error);
+        sink.write(Level::INFO, "t  INFO pecofence: dropped\n");
+        let text = String::from_utf8(out.0.lock().unwrap().clone()).unwrap();
+        assert!(!text.contains("dropped"));
+        assert!(text.ends_with(&format!(
+            "{error}(size limit reached: only errors are recorded from here on)\n"
+        )));
     }
 
     // ---- Source audit: every info / warn / error callsite in the workspace -------------------

@@ -20,7 +20,7 @@ const FACT_MAX: usize = 200;
 #[derive(Default)]
 pub(super) struct FeedbackState {
     /// The page to show once the freshly opened settings page is ready (`Some(crash)`).
-    focus: Option<bool>,
+    pub(super) focus: Option<bool>,
     /// The previous run ended in a panic or an unhandled exception (its shareable log says so).
     previous_run_crashed: bool,
     /// The crash balloon is up; clicking it opens the feedback form.
@@ -132,16 +132,17 @@ impl App {
 
     /// Opens the settings window at the 「反馈」 form (on 「关于」); `crash` says it reports the last crash.
     pub(super) fn open_feedback(&mut self, crash: bool) {
-        let already_open = self.settings.is_some();
         self.open_settings();
-        if self.settings.is_none() {
+        let Some(host) = &self.settings else {
             return;
-        }
-        if already_open {
+        };
+        if host.ready {
             self.post_show_feedback(crash);
         } else {
-            // The page is still loading; `ready` delivers the state and then this.
+            // The page is still loading; `ready` delivers the state and then the latest
+            // request: this form, or a fence's options.
             self.feedback.focus = Some(crash);
+            self.settings_focus_fence = None;
         }
     }
 

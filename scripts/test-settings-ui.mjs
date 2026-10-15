@@ -316,9 +316,18 @@ async function runTests() {
     const count = ruleCount(doc);
     await add(doc);
     assert(ruleCount(doc) === count + 1, 'Valid range was rejected');
-    const value = current().rules.list.at(-1).allOf[0].value;
+    const value = current().rules.list[0].allOf[0].value;
     assert(value.min === null && value.max === 0, 'Blank or zero bound changed meaning');
-    assert(current().rules.list.at(-1).name === '大小 ≤ 0 MB', 'Unnamed rule not named after its condition');
+    assert(current().rules.list[0].name === '大小 ≤ 0 MB', 'Unnamed rule not named after its condition');
+  });
+  await test('A new rule goes to the top of the list', async () => {
+    const before = current().rules.list.map(r => r.id);
+    change(doc, 'nrKind', 'ext'); change(doc, 'nrValue', 'pdf');
+    await add(doc);
+    const list = current().rules.list;
+    assert(list[0].allOf[0].cond === 'ext' && list[0].allOf[0].value[0] === 'pdf', 'New rule is not first');
+    assert(list.slice(1).map(r => r.id).join() === before.join(), 'Existing rules changed order');
+    assert(doc.querySelector('#ruleList [data-row-id]').dataset.rowId === list[0].id, 'New rule not rendered first');
   });
   for (const kind of ['ext', 'exact']) {
     await test('Rejects separator-only ' + kind + ' values', async () => {
@@ -336,10 +345,10 @@ async function runTests() {
     change(doc, 'nrFrom', '18:00'); change(doc, 'nrTo', '06:00');
     await add(doc);
     assert(ruleCount(doc) === count + 1, 'Overnight rule rejected');
-    const value = current().rules.list.at(-1).allOf[0].value;
+    const value = current().rules.list[0].allOf[0].value;
     // The core reads `from_min` / `to_min`; any other spelling makes the host drop all rules.
     assert(value.from_min === 1080 && value.to_min === 360, 'Overnight bounds changed');
-    assert([...doc.querySelectorAll('#ruleList .conds')].at(-1).textContent.includes('18:00–06:00'), 'Overnight rule described wrongly');
+    assert(doc.querySelector('#ruleList .conds').textContent.includes('18:00–06:00'), 'Overnight rule described wrongly');
   });
   await test('Rule target and unfinished name survive a host refresh', async () => {
     change(doc, 'nrTarget', 'fence-b'); change(doc, 'nrName', 'Unfinished draft');
@@ -600,8 +609,8 @@ async function runTests() {
       change(doc, 'nrName', '工作 <draft> & QA');
       await add(doc);
       assert(ruleCount(doc) === count + 1, kind + ' rejected selected values');
-      assert(doc.querySelector('#ruleList .rule:last-child .t').textContent === '工作 <draft> & QA', 'Rule name lost punctuation');
-      assert(doc.querySelector('#ruleList .rule:last-child .conds').textContent.includes(label), kind + ' displayed the wrong condition');
+      assert(doc.querySelector('#ruleList .rule:first-child .t').textContent === '工作 <draft> & QA', 'Rule name lost punctuation');
+      assert(doc.querySelector('#ruleList .rule:first-child .conds').textContent.includes(label), kind + ' displayed the wrong condition');
     }
   });
   await test('Name conditions reject empty values and describe accepted values', async () => {
@@ -620,7 +629,7 @@ async function runTests() {
       change(doc, 'nrValue', value);
       await add(doc);
       assert(ruleCount(doc) === count + 1, kind + ' rejected a valid condition');
-      assert(doc.querySelector('#ruleList .rule:last-child .conds').textContent.includes(label), kind + ' displayed the wrong condition');
+      assert(doc.querySelector('#ruleList .rule:first-child .conds').textContent.includes(label), kind + ' displayed the wrong condition');
     }
   });
   await test('Shortcut rules and file/folder filters can route to the desktop inbox', async () => {
@@ -634,8 +643,8 @@ async function runTests() {
       const count = ruleCount(doc);
       await add(doc);
       assert(ruleCount(doc) === count + 1, kind + ' was not added');
-      assert(doc.querySelector('#ruleList .rule:last-child .conds').textContent === label + ' → 放入“Desktop”', 'Wrong condition or destination');
-      assert(current().rules.list.at(-1).target === 'inbox', 'Inbox target serialized as a virtual fence');
+      assert(doc.querySelector('#ruleList .rule:first-child .conds').textContent === label + ' → 放入“Desktop”', 'Wrong condition or destination');
+      assert(current().rules.list[0].target === 'inbox', 'Inbox target serialized as a virtual fence');
     }
   });
   await test('Deleting the final snapshot preserves a useful keyboard focus target', async () => {
@@ -858,6 +867,29 @@ async function runTests() {
     assert(!box.classList.contains('recording') && sent('peekHotkeyRecording').at(-1).on === false, 'Esc did not end the recording');
     assert(!winBox.checked && hotkeyText() === 'Ctrl+Alt+空格' && !help.classList.contains('error'), 'Cancel did not restore the shortcut');
     assert(current().settings.peek.customHotkey == null, 'A refused shortcut was saved');
+  });
+  await test('Keys that stop arriving during a recording suggest the combination is taken', async () => {
+    doc = await reset();
+    const box = doc.getElementById('peekHotkey'), help = doc.getElementById('peekHotkeyHelp');
+    const quiet = () => new Promise(resolve => setTimeout(resolve, 3200));
+    box.focus(); box.click(); await quiet();
+    assert(!help.classList.contains('caution') && help.textContent.includes('Esc'), 'Hint shown before any key: ' + help.textContent);
+    // Another program's hotkey keeps the key itself: only the modifiers arrive.
+    press(box, 'Control', 17, { ctrlKey: true }); await quiet();
+    assert(help.classList.contains('caution') && help.textContent.includes('其他程序占用') && box.classList.contains('recording'), 'Silence not explained: ' + help.textContent);
+    press(box, 'Alt', 18, { ctrlKey: true, altKey: true });
+    assert(!help.classList.contains('caution') && help.textContent.includes('Esc'), 'Hint stayed after a key: ' + help.textContent);
+    await quiet();
+    assert(help.classList.contains('caution'), 'Hint did not come back');
+    press(box, 'Escape', 27); await settle();
+    assert(!box.classList.contains('recording') && !help.classList.contains('caution'), 'Esc left the hint: ' + help.textContent);
+    // A refusal of the previous key does not hide the hint for the next, taken combination.
+    box.focus(); box.click(); await settle();
+    press(box, 'k', 75); await settle();
+    assert(help.classList.contains('error'), 'No-modifier refusal not shown: ' + help.textContent);
+    press(box, 'Control', 17, { ctrlKey: true }); await quiet();
+    assert(help.classList.contains('caution') && help.textContent.includes('其他程序占用'), 'Old refusal hid the hint: ' + help.textContent);
+    press(box, 'Escape', 27); await settle();
   });
   await test('Quick choices set the shortcut; a fallback says which one is in use', async () => {
     doc = await reset();

@@ -34,8 +34,10 @@ pub struct FenceViewState {
     pub(super) drop_tab: Option<usize>,
     /// Drag dwell timer: the rolled-fence unroll is armed.
     pub(super) drag_peek_armed: bool,
-    /// A right button press cancelled a drag: swallow the WM_RBUTTONUP that follows.
-    pub(super) rbutton_swallow: bool,
+    /// Client point of a plain right button press, which took the capture: the release opens a
+    /// menu only when it pairs with one here and the pointer stayed on it (a right drag onto
+    /// another item or fence opens nothing, and a cancel press records none).
+    pub(super) rbutton_press: Option<(i32, i32)>,
     /// Item whose inline rename edit is open: its label stays folded under the edit box.
     pub(super) renaming: Option<ItemId>,
     /// The fence-title rename popup is open (a hover peek stays expanded under it).
@@ -128,8 +130,13 @@ pub struct FenceViewState {
     pub(super) col_drag: Option<ColDrag>,
     /// The fence shown is a folder portal (sort-only: no manual arrangement).
     pub(super) is_portal: bool,
+    /// The portal's folder could not be found (its empty state says so).
+    pub(super) portal_missing: bool,
     /// Width the cached labels were fitted for; a change invalidates them.
     pub(super) label_w: f32,
+    /// An item near the viewport was still waiting for its icon at the last content draw
+    /// (`ensure_icons_and_labels`): a delivered batch then redraws this window.
+    pub(super) icons_pending: bool,
     pub(super) hover: Option<usize>,
     pub(super) title_hover: bool,
     pub(super) selected: HashSet<usize>,

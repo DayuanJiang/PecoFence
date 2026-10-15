@@ -441,6 +441,19 @@ impl FenceViewState {
         if y < 0.0 || y >= self.scroll_view_h(&layout) {
             return None;
         }
-        layout.hit_test(x, y + self.scroll_y, self.items.len())
+        let y = y + self.scroll_y;
+        if self.item_motion.is_empty() {
+            return layout.hit_test(x, y, self.items.len());
+        }
+        // Layout motion running: every item is hit where it is drawn, in paint order (later
+        // items on top), so a gliding item passing under a resting one does not take its click.
+        let now = Instant::now();
+        (0..self.items.len()).rev().find(|&i| {
+            let mut c = layout.cell(i);
+            if let Some(m) = self.item_motion.get(&self.items[i].id) {
+                (c.x, c.y) = (m.x.value_at(now), m.y.value_at(now));
+            }
+            c.contains(x, y)
+        })
     }
 }

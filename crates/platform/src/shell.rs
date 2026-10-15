@@ -96,27 +96,42 @@ pub fn desktop_available() -> bool {
 
 /// Lists desktop entries, skipping hidden/system files and `desktop.ini`.
 pub fn enumerate_desktop() -> Vec<DesktopEntry> {
+    enumerate_desktop_reporting().0
+}
+
+/// [`enumerate_desktop`], plus the desktop folders it could not read in full (access denied,
+/// an error part way): some of what they hold is missing from the list.
+pub fn enumerate_desktop_reporting() -> (Vec<DesktopEntry>, Vec<EntryOrigin>) {
     let mut out = Vec::new();
+    let mut unread = Vec::new();
     for (dir, origin) in [
         (user_desktop(), EntryOrigin::UserDesktop),
         (public_desktop(), EntryOrigin::PublicDesktop),
     ] {
         let Some(dir) = dir else { continue };
-        enumerate_dir_into(&dir, origin, &mut out);
+        if !enumerate_dir_into(&dir, origin, &mut out) {
+            unread.push(origin);
+        }
     }
-    out
+    (out, unread)
 }
 
 /// The shell namespace items Windows can draw on the desktop and whether Windows shows them
 /// by default: `(CLSID, shown by default)`. Users toggle them in "Desktop icon settings".
-const SPECIAL_DESKTOP_ITEMS: [(&str, bool); 5] = [
+const SPECIAL_DESKTOP_ITEMS: [(&str, bool); 6] = [
     (RECYCLE_BIN_CLSID, true),
     ("{20D04FE0-3AEA-1069-A2D8-08002B30309D}", false), // This PC
     ("{59031a47-3f72-44a7-89c5-5595fe6b30ee}", false), // User's Files
     ("{F02C1A0D-BE21-4350-88B0-7367FC96EF3C}", false), // Network
     ("{5399E694-6CE5-4D6C-8FCE-1D8870FDCBA0}", false), // Control Panel
+    (SPOTLIGHT_CLSID, true),
 ];
 pub const RECYCLE_BIN_CLSID: &str = "{645FF040-5081-101B-9F08-00AA002F954E}";
+/// Windows Spotlight's "Learn about this picture": Windows adds it to the desktop namespace
+/// only while Spotlight is the background.
+const SPOTLIGHT_CLSID: &str = "{2CC5CA98-6485-489A-920E-B3E88A6CCCE3}";
+const DESKTOP_NAMESPACE_KEY: &str =
+    r"Software\Microsoft\Windows\CurrentVersion\Explorer\Desktop\NameSpace";
 const DESKTOP_ICON_SETTINGS_KEY: &str =
     r"Software\Microsoft\Windows\CurrentVersion\Explorer\HideDesktopIcons\NewStartPanel";
 /// Group Policy "Remove X icon from desktop": `{CLSID} = 1` here hides it regardless of the
@@ -186,6 +201,31 @@ fn desktop_icon_hidden_in_windows(clsid: &str, default_visible: bool) -> bool {
         }
     }
     !default_visible
+}
+
+/// Whether `clsid` is registered in the desktop's namespace (HKCU or HKLM).
+fn in_desktop_namespace(clsid: &str) -> bool {
+    let path = to_wide(&format!(r"{DESKTOP_NAMESPACE_KEY}\{clsid}"));
+    [HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE]
+        .into_iter()
+        .any(|root| {
+            let mut key = HKEY::default();
+            // SAFETY: the string outlives the call; `key` is a local out-pointer, closed below.
+            unsafe {
+                let status = RegOpenKeyExW(
+                    root,
+                    PCWSTR(path.as_ptr()),
+                    None,
+                    ACCESS_MASK(KEY_QUERY_VALUE as u32),
+                    &mut key,
+                );
+                if status.0 != 0 {
+                    return false;
+                }
+                let _ = RegCloseKey(key);
+            }
+            true
+        })
 }
 
 /// The Recycle Bin is asked again (see `recycle_bin_has_items`) only after this (a folder
@@ -268,7 +308,9 @@ pub fn enumerate_special_desktop_items() -> Vec<DesktopEntry> {
     };
     let mut out = Vec::new();
     for (clsid, default_visible) in SPECIAL_DESKTOP_ITEMS {
-        if desktop_icon_hidden_in_windows(clsid, default_visible) {
+        if desktop_icon_hidden_in_windows(clsid, default_visible)
+            || (clsid == SPOTLIGHT_CLSID && !in_desktop_namespace(clsid))
+        {
             continue;
         }
         let path = PathBuf::from(format!("::{clsid}"));
@@ -310,12 +352,20 @@ pub fn enumerate_folder(dir: &Path) -> Vec<DesktopEntry> {
     out
 }
 
-fn enumerate_dir_into(dir: &Path, origin: EntryOrigin, out: &mut Vec<DesktopEntry>) {
+/// False when `dir` could not be read in full.
+fn enumerate_dir_into(dir: &Path, origin: EntryOrigin, out: &mut Vec<DesktopEntry>) -> bool {
     let Ok(rd) = std::fs::read_dir(dir) else {
-        return;
+        return false;
     };
-    for entry in rd.flatten() {
-        let Ok(meta) = entry.metadata() else { continue };
+    let mut complete = true;
+    for entry in rd {
+        let Ok(entry) = entry else {
+            return false;
+        };
+        let Ok(meta) = entry.metadata() else {
+            complete = false;
+            continue;
+        };
         let attrs = meta.file_attributes();
         if attrs & (FILE_ATTRIBUTE_HIDDEN as u32 | FILE_ATTRIBUTE_SYSTEM as u32) != 0 {
             continue;
@@ -335,6 +385,7 @@ fn enumerate_dir_into(dir: &Path, origin: EntryOrigin, out: &mut Vec<DesktopEntr
             created: filetime_to_unix(meta.creation_time()),
         });
     }
+    complete
 }
 
 /// Reads one entry (for watcher events). `None` if it vanished or is hidden/system.
@@ -471,19 +522,7 @@ pub fn shell_image(path: &Path, size_px: u32, icon_only: bool) -> Result<ShellIm
 /// tap would alias and shimmer instead. Exact-size returns are left untouched.
 /// `IconFile=` / `IconIndex=` of an Internet shortcut, when the file names an icon.
 fn url_icon_source(path: &Path) -> Option<(PathBuf, i32)> {
-    let bytes = std::fs::read(path).ok()?;
-    // .url files are ANSI or UTF-8 in practice; a UTF-16 one starts with a BOM.
-    let text = if bytes.starts_with(&[0xFF, 0xFE]) {
-        let units: Vec<u16> = bytes[2..]
-            .as_chunks::<2>()
-            .0
-            .iter()
-            .map(|c| u16::from_le_bytes(*c))
-            .collect();
-        String::from_utf16_lossy(&units)
-    } else {
-        String::from_utf8_lossy(&bytes).into_owned()
-    };
+    let text = url_file_text(path)?;
     let mut file = None;
     let mut index = 0;
     for line in text.lines() {
@@ -498,6 +537,46 @@ fn url_icon_source(path: &Path) -> Option<(PathBuf, i32)> {
         }
     }
     file.map(|f| (f, index))
+}
+
+/// The text of an Internet shortcut (`.url`).
+fn url_file_text(path: &Path) -> Option<String> {
+    let bytes = std::fs::read(path).ok()?;
+    // .url files are ANSI or UTF-8 in practice; a UTF-16 one starts with a BOM.
+    Some(if bytes.starts_with(&[0xFF, 0xFE]) {
+        let units: Vec<u16> = bytes[2..]
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|c| u16::from_le_bytes(*c))
+            .collect();
+        String::from_utf16_lossy(&units)
+    } else {
+        match String::from_utf8(bytes) {
+            Ok(text) => text,
+            // Not UTF-8: the system ANSI code page (GBK on a Chinese Windows).
+            Err(e) => ansi_to_string(e.as_bytes()),
+        }
+    })
+}
+
+/// Decodes `bytes` in the system ANSI code page.
+fn ansi_to_string(bytes: &[u8]) -> String {
+    if bytes.is_empty() {
+        return String::new();
+    }
+    // SAFETY: the first call only measures; the second writes at most `n` units into `w`.
+    unsafe {
+        let text = bytes.as_ptr().cast();
+        let len = bytes.len() as i32;
+        let n = MultiByteToWideChar(CP_ACP as u32, 0, text, len, None, 0);
+        if n <= 0 {
+            return String::from_utf8_lossy(bytes).into_owned();
+        }
+        let mut w = vec![0u16; n as usize];
+        let n = MultiByteToWideChar(CP_ACP as u32, 0, text, len, Some(PWSTR(w.as_mut_ptr())), n);
+        String::from_utf16_lossy(&w[..n.max(0) as usize])
+    }
 }
 
 /// The icon of an Internet shortcut at `size_px`, extracted from its `IconFile`. None when the
@@ -755,14 +834,24 @@ pub fn transfer_to_folder(
                 op.MoveItem(&item, &dest_item, PCWSTR::null(), None).ok()?;
             }
         }
-        op.PerformOperations().ok()?;
-        let aborted = op
-            .GetAnyOperationsAborted()
-            .map(|b| b.as_bool())
-            .unwrap_or(false);
-        Ok(!aborted)
+        // Cancel in the shell's conflict or error dialog, or a declined administrator prompt,
+        // fails the operation too: report that as a cancel, not an error.
+        let performed = op.PerformOperations();
+        if op.GetAnyOperationsAborted().is_ok_and(|b| b.as_bool())
+            || performed == COPYENGINE_E_USER_CANCELLED
+            || performed == E_CANCELLED
+        {
+            return Ok(false);
+        }
+        performed.ok()?;
+        Ok(true)
     }
 }
+
+const COPYENGINE_E_USER_CANCELLED: windows_core::HRESULT =
+    windows_core::HRESULT(0x8027_0000_u32 as i32);
+/// HRESULT_FROM_WIN32(ERROR_CANCELLED).
+const E_CANCELLED: windows_core::HRESULT = windows_core::HRESULT(0x8007_04C7_u32 as i32);
 
 /// Renames `path` to `new_name` (the complete file name) with the shell's file operation, so
 /// a folder the user may not write to (the Public Desktop) gets Explorer's own
@@ -788,6 +877,49 @@ pub fn rename_with_prompt(path: &Path, new_name: &str, owner: Option<HWND>) -> R
         }
         performed.ok()?;
         Ok(true)
+    }
+}
+
+/// `path` for a file API: as is when short, beyond that in the `\\?\` form `std::fs` uses
+/// (`\\?\C:\…`, `\\?\UNC\server\share\…`), without which the call fails on a long path. The
+/// threshold is std's: 248 UTF-16 units including the NUL (the limit for a folder).
+fn long_path_wide(path: &Path) -> Vec<u16> {
+    use std::os::windows::ffi::OsStrExt;
+    use std::path::{Component, Prefix};
+    let plain = path_wide(path);
+    if plain.len() < 248 {
+        return plain;
+    }
+    // The prefix turns normalisation off, so the path must be absolute and clean first.
+    let abs = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
+    let abs_w: Vec<u16> = abs.as_os_str().encode_wide().collect();
+    let mut w: Vec<u16> = r"\\?\".encode_utf16().collect();
+    match abs.components().next() {
+        Some(Component::Prefix(p)) => match p.kind() {
+            Prefix::Disk(_) => w.extend(&abs_w),
+            // `\\server\share\…` keeps one of its leading backslashes.
+            Prefix::UNC(..) => {
+                w.extend("UNC".encode_utf16());
+                w.extend(&abs_w[1..]);
+            }
+            _ => return plain,
+        },
+        _ => return plain,
+    }
+    w.push(0);
+    w
+}
+
+/// Renames `from` to `to`. `std::fs::rename` replaces a file already at `to`; this fails with
+/// `ErrorKind::AlreadyExists` instead, so a rename never overwrites another file.
+pub fn rename_no_replace(from: &Path, to: &Path) -> std::io::Result<()> {
+    let (from, to) = (long_path_wide(from), long_path_wide(to));
+    // SAFETY: plain FFI call; both strings are NUL-terminated and outlive it.
+    let ok = unsafe { MoveFileExW(PCWSTR(from.as_ptr()), PCWSTR(to.as_ptr()), 0) };
+    if ok.as_bool() {
+        Ok(())
+    } else {
+        Err(std::io::Error::last_os_error())
     }
 }
 
@@ -909,9 +1041,74 @@ pub fn unique_path(dir: &Path, base: &str, ext: &str) -> PathBuf {
 
 /// Reads a `.url` internet shortcut's URL.
 pub fn url_shortcut_target(path: &Path) -> Option<String> {
-    let text = std::fs::read_to_string(path).ok()?;
+    let text = url_file_text(path)?;
     text.lines()
         .find_map(|l| l.strip_prefix("URL=").map(|u| u.trim().to_string()))
+}
+
+#[cfg(test)]
+mod url_tests {
+    use super::url_shortcut_target;
+
+    /// PowerShell 5.1 writes UTF-16 with a BOM; an ANSI file may hold bytes that are not UTF-8.
+    #[test]
+    fn url_target_reads_utf16_and_ansi_files() {
+        let dir = std::env::temp_dir().join(format!("pecofence-url-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let utf16 = dir.join("utf16.url");
+        let mut bytes = vec![0xFF, 0xFE];
+        for unit in "[InternetShortcut]\r\nURL=https://github.com/\r\n".encode_utf16() {
+            bytes.extend(unit.to_le_bytes());
+        }
+        std::fs::write(&utf16, bytes).unwrap();
+        // The URL ends in 桌面 in GBK: decoded in the system code page, whichever it is, not
+        // as broken UTF-8.
+        let ansi = dir.join("ansi.url");
+        std::fs::write(
+            &ansi,
+            b"[InternetShortcut]\r\nURL=https://example.com/\xd7\xc0\xc3\xe6\r\nIconFile=C:\\a.ico\r\n",
+        )
+        .unwrap();
+        assert_eq!(
+            url_shortcut_target(&utf16).as_deref(),
+            Some("https://github.com/")
+        );
+        let target = url_shortcut_target(&ansi).unwrap();
+        let tail = target.strip_prefix("https://example.com/").unwrap();
+        assert!(!tail.is_empty() && !tail.contains('\u{FFFD}'), "{target:?}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+#[cfg(test)]
+mod path_tests {
+    use super::long_path_wide;
+    use std::path::Path;
+
+    /// Only a long path (248 UTF-16 units with the NUL, as in std) gets the prefix; a network
+    /// path keeps one backslash.
+    #[test]
+    fn long_paths_get_the_verbatim_prefix() {
+        let wide = |s: &str| {
+            s.encode_utf16()
+                .chain(std::iter::once(0))
+                .collect::<Vec<_>>()
+        };
+        let short = r"C:\Users\Me\Desktop\note.txt";
+        assert_eq!(long_path_wide(Path::new(short)), wide(short));
+        let deep = format!(r"C:\Users\Me\Desktop\{}\note.txt", "x".repeat(250));
+        assert_eq!(
+            long_path_wide(Path::new(&deep)),
+            wide(&format!(r"\\?\{deep}"))
+        );
+        let unc = format!(r"\\server\share\{}\note.txt", "x".repeat(250));
+        assert_eq!(
+            long_path_wide(Path::new(&unc)),
+            wide(&format!(r"\\?\UNC\{}", &unc[2..]))
+        );
+        let verbatim = format!(r"\\?\{deep}");
+        assert_eq!(long_path_wide(Path::new(&verbatim)), wide(&verbatim));
+    }
 }
 
 #[cfg(test)]
@@ -1019,6 +1216,23 @@ mod move_tests {
             .collect();
         names.sort();
         assert_eq!(names, ["renamed.lnk", "renamed.txt"]);
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn rename_no_replace_keeps_an_existing_target() {
+        let base = std::env::temp_dir().join(format!("pecofence-mv-{}", std::process::id()));
+        std::fs::create_dir_all(&base).unwrap();
+        let (a, b) = (base.join("a.txt"), base.join("b.txt"));
+        std::fs::write(&a, b"a").unwrap();
+        std::fs::write(&b, b"b").unwrap();
+        let err = rename_no_replace(&a, &b).expect_err("b.txt must not be replaced");
+        assert_eq!(err.kind(), std::io::ErrorKind::AlreadyExists);
+        assert_eq!(std::fs::read(&b).unwrap(), b"b");
+        // A case-only rename is the same file and goes through.
+        rename_no_replace(&a, &base.join("A.txt")).expect("case change");
+        rename_no_replace(&base.join("A.txt"), &base.join("c.txt")).expect("plain rename");
+        assert_eq!(std::fs::read(base.join("c.txt")).unwrap(), b"a");
         let _ = std::fs::remove_dir_all(&base);
     }
 }

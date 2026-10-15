@@ -113,7 +113,9 @@ impl App {
     }
 
     /// A fence the user dropped onto another one moves the shortest way to a free spot on its
-    /// monitor (the snapping gap kept); with no free spot it stays where it was dropped.
+    /// monitor (the snapping gap kept); with no free spot it stays where it was dropped. One
+    /// dropped partly off the screen (a torn-off tab follows the pointer to the screen edge)
+    /// is pulled back in the same way, where a restart would place it anyway.
     pub(super) fn move_out_of_overlap(&mut self, fence: FenceId) {
         let id = self.state.host_of(fence);
         let Some(w) = self.fences.get(&id) else {
@@ -122,9 +124,6 @@ impl App {
         let r = w.rect();
         let gap = self.gap_px(w.hwnd());
         let others = self.other_fence_rects(id);
-        if !others.iter().any(|o| clearance::overlaps(&r, o, gap)) {
-            return;
-        }
         let Some(wa) = self.work_area_at((r.left + r.right) / 2, (r.top + r.bottom) / 2) else {
             return;
         };
@@ -134,8 +133,23 @@ impl App {
             right: wa.right,
             bottom: wa.bottom,
         };
+        // Off the screen means outside every work area: a fence dropped across two monitors
+        // is left where it is.
+        let on_screen = |x: i32, y: i32| {
+            self.state
+                .work_areas
+                .iter()
+                .any(|w| x >= w.left && x < w.right && y >= w.top && y < w.bottom)
+        };
+        let off_screen = !(on_screen(r.left, r.top)
+            && on_screen(r.right - 1, r.top)
+            && on_screen(r.left, r.bottom - 1)
+            && on_screen(r.right - 1, r.bottom - 1));
+        if !off_screen && !others.iter().any(|o| clearance::overlaps(&r, o, gap)) {
+            return;
+        }
         if let Some(spot) = clearance::nearest_free(&r, &others, &work, gap) {
-            tracing::info!(%id, from = ?(r.left, r.top), to = ?(spot.left, spot.top), "fence moved out of an overlap");
+            tracing::info!(%id, off_screen, from = ?(r.left, r.top), to = ?(spot.left, spot.top), "fence moved out of an overlap");
             self.relocate(id, spot);
         }
     }
@@ -291,15 +305,22 @@ impl App {
             }
         }
         let mut top = work.top + gap;
+        // Fences the column has no room for (a small screen at a high scale) start another
+        // column to the left of it.
+        let mut shift = 0;
         for (&id, h) in ids.iter().zip(heights) {
             let Some(w) = self.fences.get(&id) else {
                 continue;
             };
             let r = w.rect();
+            if top + h > work.bottom - gap && top > work.top + gap {
+                shift += r.right - r.left + gap;
+                top = work.top + gap;
+            }
             let rect = RECT {
-                left: r.left,
+                left: r.left - shift,
                 top,
-                right: r.right,
+                right: r.right - shift,
                 bottom: top + h,
             };
             w.set_bounds(rect);

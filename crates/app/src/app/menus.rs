@@ -258,7 +258,7 @@ impl App {
                 .iter()
                 .any(|id| self.state.item(*id).is_some_and(|it| it.is_namespace()))
             {
-                window::post_message(self.control.hwnd(), WM_APP_FS_CHANGED, 0, 0);
+                window::post_message(self.control.hwnd(), WM_APP_FS_CHANGED, 1, 0);
             }
             return;
         }
@@ -266,7 +266,7 @@ impl App {
         match cmd {
             CMD_ITEM_OPEN => {
                 for id in &items {
-                    self.launch(*id);
+                    self.launch(*id, fence);
                 }
             }
             CMD_ITEM_LOCATION => {
@@ -778,9 +778,15 @@ impl App {
                 && c < CMD_TAB_ATTACH_BASE + self.state.host_fences().len() as u32 =>
             {
                 let idx = (c - CMD_TAB_ATTACH_BASE) as usize;
+                // The merged window's tabs in their order (attach_tab adds them in storage
+                // order, which may interleave them with the target's tabs).
+                let moved = self.state.tabs_of(fence);
                 if let Some(target) = self.state.host_fences().get(idx).map(|o| o.id)
                     && self.state.attach_tab(fence, target)
                 {
+                    for tab in &moved {
+                        self.state.reorder_tab(target, *tab, usize::MAX);
+                    }
                     // The merged fence's own window (if it had one) goes away in resync.
                     self.resync_windows();
                     self.apply_fence_view(target);

@@ -73,6 +73,39 @@ impl ConfigSource {
     }
 }
 
+/// Room for one of the page's automatic "…前" snapshots. Like the CLI's `auto_snapshot_slot`,
+/// it never evicts a snapshot the user saved: a full list loses its oldest automatic one (the
+/// page's or the CLI's) instead, and `false` means none is left to drop, so none is taken.
+/// `protect` (the snapshot about to be restored) always stays. Automatic names saved in another
+/// UI language count as the user's.
+pub(super) fn auto_snapshot_room(
+    snapshots: &mut Vec<pecofence_core::Snapshot>,
+    protect: Option<uuid::Uuid>,
+) -> bool {
+    let auto = [
+        pecofence_core::i18n::text("恢复快照前"),
+        ConfigSource::Import.before(),
+        ConfigSource::Backup.before(),
+    ];
+    if snapshots.len() >= pecofence_core::MAX_SNAPSHOTS
+        && let Some(i) = snapshots.iter().position(|s| {
+            Some(s.id) != protect
+                && (s.name.starts_with(super::ipc::AUTO_SNAPSHOT_PREFIX)
+                    || auto.contains(&s.name.as_str()))
+        })
+    {
+        snapshots.remove(i);
+    }
+    snapshots.len() < pecofence_core::MAX_SNAPSHOTS
+}
+
+fn snapshot_limit_text() -> String {
+    pecofence_core::i18n::format(
+        "快照已达上限（{0} 个），未保存新快照。请删除不需要的快照。",
+        &[pecofence_core::MAX_SNAPSHOTS.to_string()],
+    )
+}
+
 impl App {
     /// Replaces the configuration wholesale (import / backup) and rebuilds everything.
     pub(super) fn adopt_config(&mut self, cfg: pecofence_core::Config, source: ConfigSource) {
@@ -153,7 +186,12 @@ impl App {
     pub(super) fn restore_from_file(&mut self, path: &std::path::Path, source: ConfigSource) {
         match pecofence_core::ConfigStore::parse_file(path) {
             Ok(cfg) => {
-                // Keep a snapshot of what we are replacing so the step can be undone.
+                // Keep a snapshot of what we are replacing so the step can be undone; a list
+                // full of the user's own snapshots has no room for it, so nothing is replaced.
+                if !auto_snapshot_room(&mut self.state.config.snapshots, None) {
+                    self.settings_error(&snapshot_limit_text());
+                    return;
+                }
                 self.state.save_snapshot(source.before());
                 self.adopt_config(cfg, source);
             }
@@ -173,6 +211,12 @@ impl App {
         if self.web_env.is_none() {
             match WebEnvironment::create() {
                 Ok(env) => self.web_env = Some(env),
+                // WebView2's wait for its callback pumps messages and ends with an error when
+                // it takes a WM_QUIT (the session ends): quit after all.
+                Err(_) if window::quit_posted() => {
+                    window::post_quit(0);
+                    return;
+                }
                 Err(e) => {
                     tracing::error!(error = %e, "WebView2 environment failed");
                     if let Some(t) = &self.tray {
@@ -206,6 +250,7 @@ impl App {
                 );
                 self.settings = Some(host);
             }
+            Err(_) if window::quit_posted() => window::post_quit(0),
             Err(e) => {
                 tracing::error!(error = %e, "settings window failed");
                 if let Some(t) = &self.tray {
@@ -341,6 +386,9 @@ impl App {
         match v.get("type").and_then(|t| t.as_str()) {
             Some("ready") => {
                 tracing::info!("settings: page ready");
+                if let Some(h) = self.settings.as_mut() {
+                    h.ready = true;
+                }
                 // A reload in the middle of recording a shortcut never says it ended.
                 self.resume_peek_hotkey();
                 self.push_settings_state();
@@ -418,37 +466,44 @@ impl App {
                     let _ = explorer.spawn();
                 }
                 Some("saveSnapshot") => {
-                    let name = v.get("snapshotName").and_then(|n| n.as_str()).unwrap_or("");
-                    self.state.save_snapshot(name);
-                    self.schedule_save();
-                    self.push_settings_state();
-                    self.settings_toast(pecofence_core::i18n::text("已保存快照"));
+                    // A full list refuses a new snapshot (as the CLI does) instead of
+                    // dropping the oldest one.
+                    if self.state.config.snapshots.len() >= pecofence_core::MAX_SNAPSHOTS {
+                        self.settings_error(&snapshot_limit_text());
+                    } else {
+                        let name = v.get("snapshotName").and_then(|n| n.as_str()).unwrap_or("");
+                        self.state.save_snapshot(name);
+                        self.schedule_save();
+                        self.push_settings_state();
+                        self.settings_toast(pecofence_core::i18n::text("已保存快照"));
+                    }
                 }
                 Some("restoreSnapshot") => {
                     if let Some(id) = v
                         .get("id")
                         .and_then(|i| i.as_str())
                         .and_then(|i| uuid::Uuid::parse_str(i).ok())
+                        && self.state.config.snapshots.iter().any(|s| s.id == id)
                     {
-                        // Snapshot of the current state first, so "restore" is reversible
-                        // (the target is looked up before the backup can evict it).
-                        if self
-                            .state
-                            .restore_snapshot_with_backup(
-                                id,
-                                pecofence_core::i18n::text("恢复快照前"),
-                            )
-                            .is_some()
-                        {
-                            self.end_peek_now();
-                            self.relayout_from_state();
-                            // Portals restored with the snapshot need enumerating; stale
-                            // runtime state of the replaced ones is pruned on the way.
-                            self.refresh_portals();
-                            self.schedule_save();
-                            self.push_settings_state();
-                            self.settings_toast(pecofence_core::i18n::text("已恢复快照"));
+                        // Snapshot of the current state first, so "restore" is reversible;
+                        // a list full of the user's own snapshots has no room for it, so
+                        // nothing is restored.
+                        if !auto_snapshot_room(&mut self.state.config.snapshots, Some(id)) {
+                            self.settings_error(&snapshot_limit_text());
+                            return;
                         }
+                        self.state.restore_snapshot_with_backup(
+                            id,
+                            pecofence_core::i18n::text("恢复快照前"),
+                        );
+                        self.end_peek_now();
+                        self.relayout_from_state();
+                        // Portals restored with the snapshot need enumerating; stale
+                        // runtime state of the replaced ones is pruned on the way.
+                        self.refresh_portals();
+                        self.schedule_save();
+                        self.push_settings_state();
+                        self.settings_toast(pecofence_core::i18n::text("已恢复快照"));
                     }
                 }
                 Some("deleteSnapshot") => {
@@ -597,8 +652,13 @@ impl App {
             return;
         }
         if new.autostart != old.autostart {
-            let _ = pecofence_platform::autostart::set_product_enabled(new.autostart);
-            if pecofence_platform::process::is_packaged() {
+            if let Err(e) = pecofence_platform::autostart::set_product_enabled(new.autostart) {
+                tracing::warn!(error = %e, "autostart change failed");
+                new.autostart = old.autostart;
+                self.settings_error(pecofence_core::i18n::text(
+                    "未能更改“随 Windows 启动”，请稍后重试。",
+                ));
+            } else if pecofence_platform::process::is_packaged() {
                 // Store installs: Windows owns the startup task, so hand the user the switch.
                 let _ = shell::shell_execute(
                     std::path::Path::new("ms-settings:startupapps"),
@@ -620,6 +680,10 @@ impl App {
             && let Some(a) = self.anchor.borrow_mut().as_mut()
         {
             a.quick_hide_enabled = new.quick_hide.enabled;
+            // Switched off while the fences are hidden: a double-click can no longer show them.
+            if !a.quick_hide_enabled && a.fences_hidden() {
+                a.toggle_fences_hidden();
+            }
         }
         if new.show_desktop != old.show_desktop
             && let Some(a) = self.anchor.borrow_mut().as_mut()
@@ -628,6 +692,15 @@ impl App {
                 ShowDesktopSetting::KeepVisible => ShowDesktopBehavior::KeepVisible,
                 ShowDesktopSetting::HideWithDesktop => ShowDesktopBehavior::HideWithDesktop,
             };
+        }
+        if new.zorder != old.zorder
+            && let Some(a) = self.anchor.borrow_mut().as_mut()
+        {
+            a.mode = match new.zorder {
+                ZOrderSetting::InsertAboveHost => ZMode::InsertAboveHost,
+                ZOrderSetting::HwndBottom => ZMode::HwndBottom,
+            };
+            a.reanchor("zorder changed");
         }
         self.ctx.behavior.hover_peek.set(new.roll_up.hover_peek);
         self.ctx.behavior.snapping.set(new.snapping.enabled);

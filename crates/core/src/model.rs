@@ -2,7 +2,7 @@
 
 use crate::geometry::{WorkArea, monitor_model};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 
 pub const SCHEMA_VERSION: u32 = 1;
@@ -176,7 +176,7 @@ impl PeekSettings {
 
 /// The shortcuts versions up to 0.2.0 offered. Fences uses Win+Space, but Windows 10 and 11
 /// keep Win+Space and Win+Shift+Space for the input switcher even with a single keyboard
-/// layout, so a file that names one of them gets a fallback.
+/// layout, so a file that names one of them loads with Ctrl+Alt+Space (`config_store::migrate`).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
@@ -1146,6 +1146,26 @@ impl Layout {
                 changed = true;
             }
         }
+        // Pass 1b: a fence whose host chain never reaches an unhosted fence sits in a cycle
+        // (only a hand-edited file has one); pass 2 would never end on it.
+        for i in 0..self.fences.len() {
+            let mut cur = self.fences[i].tab_host;
+            let mut steps = 0;
+            while let Some(h) = cur
+                && steps <= ids.len()
+            {
+                cur = self
+                    .fences
+                    .iter()
+                    .find(|f| f.id == h)
+                    .and_then(|f| f.tab_host);
+                steps += 1;
+            }
+            if cur.is_some() {
+                self.fences[i].tab_host = None;
+                changed = true;
+            }
+        }
         // Pass 2: flatten chains — a host that is itself hosted moves its tabs up to its host.
         loop {
             let chain: Option<(FenceId, FenceId)> = self.fences.iter().find_map(|f| {
@@ -1386,6 +1406,26 @@ impl Config {
         }
     }
 
+    /// Drops what a broken or hand-merged file lists twice in a layout, keeping the first: a
+    /// fence id seen before, and a membership of an item that an earlier fence (or an earlier
+    /// entry of the same one) holds already. True when something was dropped.
+    pub fn drop_duplicates(&mut self) -> bool {
+        let mut changed = false;
+        for layout in &mut self.layouts {
+            let mut fences = HashSet::new();
+            let before = layout.fences.len();
+            layout.fences.retain(|f| fences.insert(f.id));
+            changed |= layout.fences.len() != before;
+            let mut items = HashSet::new();
+            for f in &mut layout.fences {
+                let before = f.items.len();
+                f.items.retain(|r| items.insert(r.item_id));
+                changed |= f.items.len() != before;
+            }
+        }
+        changed
+    }
+
     pub fn fence_mut(&mut self, layout: usize, id: FenceId) -> Option<&mut Fence> {
         self.layouts
             .get_mut(layout)?
@@ -1512,8 +1552,7 @@ mod tests {
             serde_json::Value::Null
         );
 
-        // A 0.2.0 file keeps its Win+Space as the choice; the app falls back while Windows
-        // holds it.
+        // A 0.2.0 file reads its Win+Space as the choice (`config_store::migrate` replaces it).
         let v020: PeekSettings = serde_json::from_value(serde_json::json!({
             "enabled": true, "dim": true, "hotkey": "winSpace"
         }))
@@ -1718,6 +1757,48 @@ mod tests {
     }
 
     #[test]
+    fn duplicates_from_a_broken_file_keep_their_first_entry() {
+        let mut c = Config::default();
+        let a = Fence::new("A", FenceKind::Virtual, geo());
+        let b = Fence::new("B", FenceKind::Inbox, geo());
+        let mut dup = Fence::new("Dup", FenceKind::Virtual, geo());
+        dup.id = a.id;
+        let (aid, bid) = (a.id, b.id);
+        c.layouts.push(Layout {
+            shown: 0,
+            fingerprint: vec![],
+            fences: vec![a, b, dup],
+        });
+        let (x, y) = (Uuid::new_v4(), Uuid::new_v4());
+        let member = |item_id| ItemRef {
+            item_id,
+            manual_index: None,
+            assigned_by: AssignedBy::User,
+        };
+        c.layouts[0].fences[0].items = vec![member(x), member(x)];
+        c.layouts[0].fences[1].items = vec![member(y), member(x)];
+        c.layouts[0].fences[2].items = vec![member(y)];
+        // Another layout lists the same fences and items: that is no duplicate.
+        c.layouts.push(c.layouts[0].clone());
+        c.layouts[1].fences.truncate(2);
+        c.layouts[1].fences[0].items.truncate(1);
+        c.layouts[1].fences[1].items.truncate(1);
+        let clean = c.layouts[1].clone();
+
+        assert!(c.drop_duplicates());
+        let titles: Vec<&str> = c.layouts[0]
+            .fences
+            .iter()
+            .map(|f| f.title.as_str())
+            .collect();
+        assert_eq!(titles, ["A", "B"]);
+        assert_eq!(c.fence_mut(0, aid).unwrap().items, vec![member(x)]);
+        assert_eq!(c.fence_mut(0, bid).unwrap().items, vec![member(y)]);
+        assert_eq!(c.layouts[1].fences, clean.fences);
+        assert!(!c.drop_duplicates());
+    }
+
+    #[test]
     fn every_tab_can_detach_at_every_position_and_restore_the_group() {
         let orders = [
             vec![0, 1],
@@ -1869,6 +1950,28 @@ mod tests {
         assert!(l.normalize_tabs());
         assert_eq!(l.host_of(bid), bid);
         assert_eq!(l.tabs_of(bid), vec![bid]);
+        assert!(!l.normalize_tabs());
+    }
+
+    #[test]
+    fn tabs_normalize_ends_on_a_host_cycle() {
+        let mut a = Fence::new("A", FenceKind::Virtual, geo());
+        let mut b = Fence::new("B", FenceKind::Virtual, geo());
+        let mut c = Fence::new("C", FenceKind::Virtual, geo());
+        let (aid, bid, cid) = (a.id, b.id, c.id);
+        // A points into the cycle B -> C -> B and comes first, as in a hand-edited file.
+        a.tab_host = Some(bid);
+        b.tab_host = Some(cid);
+        c.tab_host = Some(bid);
+        let mut l = Layout {
+            shown: 0,
+            fingerprint: vec![],
+            fences: vec![a, b, c],
+        };
+        assert!(l.normalize_tabs());
+        assert_eq!(l.host_of(aid), aid);
+        assert_eq!(l.host_of(cid), bid);
+        assert_eq!(l.tabs_of(bid), vec![bid, cid]);
         assert!(!l.normalize_tabs());
     }
 

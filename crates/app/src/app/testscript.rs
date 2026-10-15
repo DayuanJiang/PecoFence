@@ -29,7 +29,9 @@
 //! merge <title> <into-title> merge a fence into another one's tab strip
 //! delete <title>
 //! menu-delete <title>        the fence menu's 删除栅栏 (the same path, including its prompt)
-//! new-fence <x> <y> <w> <h>  physical px
+//! new-fence <x> <y> <w> <h>  open the 「在此新建栅栏」 menu for that rectangle (physical px), as
+//!                            a desktop marquee over no fence does; the script waits until
+//!                            the menu is closed
 //! drop-desktop <title>       first item of the fence dropped on the bare desktop (inbox + rules)
 //! move <title> <into-title>  first item of the fence moved into another fence (drop minus OLE)
 //! transfer <path> <title>    shell-move a file into the portal fence's folder (worker thread)

@@ -38,12 +38,12 @@ pub(super) fn on_mousemove(
                 m.auto_last = Some(Instant::now());
             }
         }
-        if outside {
-            v.frames.request();
-        }
         v.update_marquee_selection();
-        // The band and the selection are drawn on the content surface only.
-        let _ = v.redraw_content();
+        // The band and the selection are drawn on the content surface only, once per frame by
+        // `tick` rather than once per mouse message (a 1000 Hz mouse would otherwise redraw
+        // the content many times per displayed frame).
+        v.content_busy = true;
+        v.frames.request();
         return Some(0);
     }
     if let Some(sd) = v.scroll_drag.as_ref() {
@@ -70,7 +70,9 @@ pub(super) fn on_mousemove(
         let hit = v.scrollbar_hit(x, y).map(|(h, _)| h);
         v.set_scrollbar_pointer(hit);
         v.note_scroll_activity();
-        let _ = v.redraw_content();
+        // Drawn once per frame by `tick` (see the marquee arm above).
+        v.content_busy = true;
+        v.frames.request();
         return Some(0);
     }
     if v.page_repeat.is_some() {
@@ -337,7 +339,9 @@ pub(super) fn on_mousemove(
         let (col, w) = (cd.col, cd.start_w - dx);
         v.set_column_width(col, w);
         window::set_standard_cursor(StandardCursor::SizeWE);
-        let _ = v.redraw_content();
+        // Drawn once per frame by `tick` (see the marquee arm above).
+        v.content_busy = true;
+        v.frames.request();
         return Some(0);
     }
     // A release-fired button is held: track whether the pointer is still
@@ -393,9 +397,9 @@ pub(super) fn on_mousemove(
     let up = v.up_button_at(x, y);
     let chev = v.chevron_at(x, y);
     let tab = v.tab_at(x, y);
-    let chrome_changed = std::mem::replace(&mut v.up_hovered, up) != up
-        || std::mem::replace(&mut v.chevron_hovered, chev) != chev
-        || std::mem::replace(&mut v.tab_hover, tab) != tab;
+    let chrome_changed = (std::mem::replace(&mut v.up_hovered, up) != up)
+        | (std::mem::replace(&mut v.chevron_hovered, chev) != chev)
+        | (std::mem::replace(&mut v.tab_hover, tab) != tab);
     let on_control = up || chev || tab.is_some();
     // With 「鼠标悬停时切换标签页」 on, resting on another tab switches to it after the hover
     // delay; moving onto a different tab restarts the wait.

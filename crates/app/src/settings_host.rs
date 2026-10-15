@@ -79,6 +79,8 @@ pub struct SettingsHost {
     state: Rc<RefCell<HostState>>,
     /// DWM Mica is active behind a transparent page.
     mica: bool,
+    /// The page reported `ready`: messages posted from now on reach its script.
+    pub ready: bool,
     /// Caption icons (small/big); destroyed with the host.
     icons: Vec<pecofence_platform::tray::OwnedIcon>,
     _registrations: Vec<windows_webview::EventRegistration>,
@@ -135,8 +137,29 @@ impl SettingsHost {
                         // Never paint the client area: DWM's Mica shows through (and no grey flash).
                         msg::WM_ERASEBKGND => Some(1),
                         msg::WM_GETMINMAXINFO => {
+                            // For the monitor the window is on now, which may have another
+                            // scale than the one it opened on.
+                            let (min_w, min_h) =
+                                monitors::query(monitors::monitor_from_window(hwnd))
+                                    .map(|m| placement(m.work_area, m.scale()))
+                                    .map_or((min_w, min_h), |p| (p.min_w, p.min_h));
                             // SAFETY: lParam is the MINMAXINFO for this message.
                             unsafe { window::minmaxinfo_set_min_track(lparam, min_w, min_h) };
+                            Some(0)
+                        }
+                        msg::WM_DPICHANGED => {
+                            // A per-monitor aware window resizes itself: take the size Windows
+                            // suggests for the new scale.
+                            // SAFETY: lParam points to the suggested RECT for the duration of
+                            // the message.
+                            let r = unsafe { *(lparam as *const RECT) };
+                            let _ = window::set_window_bounds(
+                                hwnd,
+                                r.left,
+                                r.top,
+                                r.right - r.left,
+                                r.bottom - r.top,
+                            );
                             Some(0)
                         }
                         msg::WM_SETFOCUS => {
@@ -250,6 +273,7 @@ impl SettingsHost {
             window,
             state,
             mica,
+            ready: false,
             icons: Vec::new(),
             _registrations: registrations,
         })

@@ -123,6 +123,20 @@ pub fn rename_hidden_suffix(display_name: &str, file_name: &str, is_folder: bool
         })
 }
 
+/// A name no file can have: empty once Win32 drops trailing dots and spaces, or holding a
+/// reserved character or one of the 32 control characters Windows refuses (a NUL would end
+/// the name early in the rename call).
+pub fn invalid_file_name(name: &str) -> bool {
+    let name = name.trim().trim_end_matches(['.', ' ']);
+    name.is_empty() || has_reserved_char(name) || name.chars().any(|c| c < ' ')
+}
+
+/// The characters Explorer refuses in a file name.
+pub fn has_reserved_char(name: &str) -> bool {
+    name.chars()
+        .any(|c| matches!(c, '\\' | '/' | ':' | '*' | '?' | '"' | '<' | '>' | '|'))
+}
+
 /// Opens the rename popup over an item's label rectangle (screen pixels). `select_end` limits
 /// the initial selection to the first N UTF-16 units (the stem); `None` selects everything.
 pub fn begin_item_rename(
@@ -234,7 +248,22 @@ fn begin_rename_at(
 fn on_key(vk: u32) -> bool {
     match vk {
         k if k == msg::VK_RETURN => {
-            end_active(true);
+            // Explorer keeps the editor open on a name with a reserved character; the App says
+            // why. An emptied box commits as before (`rename_item_file` keeps the name then).
+            let kept = ACTIVE.with(|a| {
+                let a = a.borrow();
+                let Some(s) = a.as_ref() else {
+                    return false;
+                };
+                if matches!(s.target, RenameTarget::Item(_)) && has_reserved_char(&s.edit.text()) {
+                    s.queue.push(Command::RenameItemInvalid);
+                    return true;
+                }
+                false
+            });
+            if !kept {
+                end_active(true);
+            }
             true
         }
         k if k == msg::VK_ESCAPE => {
@@ -275,7 +304,29 @@ pub fn end_active(commit: bool) {
 
 #[cfg(test)]
 mod tests {
-    use super::{rename_hidden_suffix, rename_select_len};
+    use super::{has_reserved_char, invalid_file_name, rename_hidden_suffix, rename_select_len};
+
+    #[test]
+    fn names_no_file_can_have_are_invalid() {
+        assert!(invalid_file_name(""));
+        assert!(invalid_file_name("   "));
+        assert!(invalid_file_name("..."));
+        assert!(invalid_file_name("bad:name"));
+        assert!(invalid_file_name("a/b"));
+        assert!(invalid_file_name("what?"));
+        assert!(invalid_file_name("note.txt\0junk"));
+        assert!(invalid_file_name("a\tb"));
+        assert!(!invalid_file_name("note"));
+        assert!(!invalid_file_name("report.txt"));
+        // Trailing dots and spaces are dropped by Win32, not refused.
+        assert!(!invalid_file_name("note. "));
+        // The editor's Enter only holds back reserved characters: an emptied box commits.
+        assert!(has_reserved_char("bad:name"));
+        assert!(has_reserved_char("a|b"));
+        assert!(!has_reserved_char(""));
+        assert!(!has_reserved_char("..."));
+        assert!(!has_reserved_char("note"));
+    }
 
     #[test]
     fn rename_keeps_only_hidden_extensions_despite_case_folded_paths() {

@@ -193,6 +193,10 @@ impl App {
         };
         if self.fences.contains_key(&inbox) == self.state.hidden_inbox().is_some() {
             self.resync_windows();
+            // While it had no window, another fence may have grown or moved over its spot.
+            if self.fences.contains_key(&inbox) {
+                self.move_out_of_overlap(inbox);
+            }
         }
     }
 
@@ -548,6 +552,8 @@ impl App {
         {
             w.set_icon_size(size);
         }
+        // The old size's extractions still queued would delay the new size's.
+        self.drop_unneeded_icon_requests();
         self.apply_cell_snap(fence);
         self.fit_height_to_content(fence);
         self.apply_auto_height(fence);

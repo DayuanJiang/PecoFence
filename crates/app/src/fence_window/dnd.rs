@@ -431,15 +431,17 @@ impl FenceDropHandler {
         v.apply_drop_feedback(Some(spot));
         v.update_drag_dwell(self.behavior.hover_peek.get());
         v.update_drag_scroll(pt);
+        let on_bin = spot
+            .folder
+            .and_then(|i| v.items.get(i))
+            .is_some_and(|it| pecofence_platform::shell::is_recycle_bin_path(&it.path));
         let effect = match self.kind {
             DropKind::None => DropEffect::None,
+            // A link is written as a new file: into a folder item, but not into the bin.
+            DropKind::Url if on_bin => DropEffect::None,
             // A browser usually offers COPY|LINK: Link when it may, else the best it allows.
             DropKind::Url => dragdrop::resolve(DropEffect::Link, allowed),
             DropKind::Shell => {
-                let on_bin = spot
-                    .folder
-                    .and_then(|i| v.items.get(i))
-                    .is_some_and(|it| pecofence_platform::shell::is_recycle_bin_path(&it.path));
                 if on_bin {
                     // A mail or a Start-menu app cannot be recycled.
                     DropEffect::None
@@ -451,9 +453,10 @@ impl FenceDropHandler {
                 if spot.self_drop {
                     // Same-folder drag: Explorer shows "not allowed" too.
                     DropEffect::None
-                } else if internal.is_some() && spot.folder.is_none() {
-                    // Fence membership has no copy / link; only a folder target honours the
-                    // modifiers (our own source offers every effect, so no clipping needed).
+                } else if internal.is_some() && v.drop_folder(&spot).is_none() {
+                    // Fence membership has no copy / link; only a folder target (a folder
+                    // item, or a portal's folder) honours the modifiers (our own source offers
+                    // every effect, so no clipping needed).
                     DropEffect::Move
                 } else {
                     let folder = spot
@@ -656,6 +659,12 @@ impl DropHandler for FenceDropHandler {
                     let Some(url) = dragdrop::inet_url(data) else {
                         break 'resolve DropEffect::None;
                     };
+                    if folder
+                        .as_deref()
+                        .is_some_and(pecofence_platform::shell::is_recycle_bin_path)
+                    {
+                        break 'resolve DropEffect::None;
+                    }
                     let mut effect = dragdrop::resolve(DropEffect::Link, allowed);
                     if effect == DropEffect::None {
                         break 'resolve DropEffect::None;
@@ -668,7 +677,12 @@ impl DropHandler for FenceDropHandler {
                         }
                     }
                     let name = dragdrop::file_group_descriptor_name(data);
-                    self.queue.push(Command::ExternalUrlDrop { url, name, to });
+                    self.queue.push(Command::ExternalUrlDrop {
+                        url,
+                        name,
+                        to,
+                        folder,
+                    });
                     effect
                 }
                 DropKind::Shell => {
@@ -744,6 +758,22 @@ impl DropHandler for FenceDropHandler {
                     }
                     if to == d.from {
                         break 'resolve DropEffect::None;
+                    }
+                    if let (false, Some(dest)) = (on_desktop, dest) {
+                        // The target is a portal, a folder: the modifiers decide (Ctrl copies,
+                        // Alt links) as for a drop onto a folder item.
+                        let paths = filter_folder_paths(d.paths, &dest);
+                        let effect = folder_effect(None, key_state, allowed, same_volume);
+                        let (Some(mode), false) = (transfer_mode(effect), paths.is_empty()) else {
+                            break 'resolve DropEffect::None;
+                        };
+                        self.queue.push(Command::DropIntoFolder {
+                            paths,
+                            folder: dest,
+                            fence: active,
+                            mode,
+                        });
+                        break 'resolve effect;
                     }
                     self.queue.push(Command::MoveItems { items: d.items, to });
                     DropEffect::Move

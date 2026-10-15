@@ -171,7 +171,10 @@ pub(super) fn on_keydown(
                 }),
                 None => {
                     for id in ids {
-                        queue.push(Command::LaunchItem(id));
+                        queue.push(Command::LaunchItem {
+                            item: id,
+                            from: v.active,
+                        });
                     }
                 }
             }
@@ -196,6 +199,15 @@ pub(super) fn on_keydown(
             if let Some(c) = v.cancel_tab_or_remote_drag() {
                 drop(guard);
                 finish_drag_cancel(c, queue, &h.behavior);
+                return Some(0);
+            }
+            // A divider drag: the column gets its width back and the selection stays
+            // (Explorer).
+            if let Some(cd) = v.col_drag.take() {
+                v.set_column_width(cd.col, cd.start_w);
+                let _ = v.redraw_content();
+                drop(guard);
+                window::release_capture();
                 return Some(0);
             }
             v.selected.clear();
