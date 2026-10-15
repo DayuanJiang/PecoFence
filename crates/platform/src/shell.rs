@@ -857,10 +857,39 @@ pub fn rename_with_prompt(path: &Path, new_name: &str, owner: Option<HWND>) -> R
     }
 }
 
+/// `path` for a file API: as is up to MAX_PATH, beyond that in the `\\?\` form `std::fs` uses
+/// (`\\?\C:\…`, `\\?\UNC\server\share\…`), without which the call fails on a long path.
+fn long_path_wide(path: &Path) -> Vec<u16> {
+    use std::os::windows::ffi::OsStrExt;
+    use std::path::{Component, Prefix};
+    let plain = path_wide(path);
+    if plain.len() < 260 {
+        return plain;
+    }
+    // The prefix turns normalisation off, so the path must be absolute and clean first.
+    let abs = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
+    let abs_w: Vec<u16> = abs.as_os_str().encode_wide().collect();
+    let mut w: Vec<u16> = r"\\?\".encode_utf16().collect();
+    match abs.components().next() {
+        Some(Component::Prefix(p)) => match p.kind() {
+            Prefix::Disk(_) => w.extend(&abs_w),
+            // `\\server\share\…` keeps one of its leading backslashes.
+            Prefix::UNC(..) => {
+                w.extend("UNC".encode_utf16());
+                w.extend(&abs_w[1..]);
+            }
+            _ => return plain,
+        },
+        _ => return plain,
+    }
+    w.push(0);
+    w
+}
+
 /// Renames `from` to `to`. `std::fs::rename` replaces a file already at `to`; this fails with
 /// `ErrorKind::AlreadyExists` instead, so a rename never overwrites another file.
 pub fn rename_no_replace(from: &Path, to: &Path) -> std::io::Result<()> {
-    let (from, to) = (path_wide(from), path_wide(to));
+    let (from, to) = (long_path_wide(from), long_path_wide(to));
     // SAFETY: plain FFI call; both strings are NUL-terminated and outlive it.
     let ok = unsafe { MoveFileExW(PCWSTR(from.as_ptr()), PCWSTR(to.as_ptr()), 0) };
     if ok.as_bool() {
@@ -1024,6 +1053,36 @@ mod url_tests {
             Some("https://example.com/")
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+#[cfg(test)]
+mod path_tests {
+    use super::long_path_wide;
+    use std::path::Path;
+
+    /// Only a path of MAX_PATH or more gets the prefix; a network path keeps one backslash.
+    #[test]
+    fn long_paths_get_the_verbatim_prefix() {
+        let wide = |s: &str| {
+            s.encode_utf16()
+                .chain(std::iter::once(0))
+                .collect::<Vec<_>>()
+        };
+        let short = r"C:\Users\Me\Desktop\note.txt";
+        assert_eq!(long_path_wide(Path::new(short)), wide(short));
+        let deep = format!(r"C:\Users\Me\Desktop\{}\note.txt", "x".repeat(250));
+        assert_eq!(
+            long_path_wide(Path::new(&deep)),
+            wide(&format!(r"\\?\{deep}"))
+        );
+        let unc = format!(r"\\server\share\{}\note.txt", "x".repeat(250));
+        assert_eq!(
+            long_path_wide(Path::new(&unc)),
+            wide(&format!(r"\\?\UNC\{}", &unc[2..]))
+        );
+        let verbatim = format!(r"\\?\{deep}");
+        assert_eq!(long_path_wide(Path::new(&verbatim)), wide(&verbatim));
     }
 }
 
