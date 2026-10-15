@@ -291,6 +291,9 @@ impl App {
                         })
                         .and_then(|f| self.window_for(f))
                         .map_or_else(|| self.control.hwnd(), |w| w.hwnd());
+                    // The watcher reports the prompt's rename; it must not be refused for a
+                    // deleted file's record at the new name (as in `rename_item_to`).
+                    self.state.forget_orphan_at(&old.with_file_name(&new_name));
                     self.start_shell_rename(old, new_name, owner);
                     None
                 }
@@ -377,9 +380,12 @@ impl App {
                 w.rekey_item(item, new_id);
             }
             self.refresh_portals_in(&[parent]);
-        } else if self.state.rename_item(&old, &new) {
-            self.refresh_fences_with(item);
-            self.schedule_save();
+        } else {
+            self.state.forget_orphan_at(&new);
+            if self.state.rename_item(&old, &new) {
+                self.refresh_fences_with(item);
+                self.schedule_save();
+            }
         }
         Ok(new)
     }
