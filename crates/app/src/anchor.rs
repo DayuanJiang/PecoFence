@@ -956,6 +956,8 @@ impl DesktopAnchor {
             set_fence_visible(w, shadow, !hide);
         }
         if !hide {
+            // Shown during a peek: ending it must not hide them again.
+            self.peek_shown.clear();
             self.reanchor("fences shown again");
         }
         tracing::info!(
