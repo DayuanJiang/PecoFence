@@ -149,6 +149,10 @@ impl AppState {
             tracing::warn!("fence sizes out of range in the configuration clamped");
             state.dirty = true;
         }
+        if pecofence_core::config_store::repair_unc_portals(&mut state.config) {
+            tracing::info!("network portal paths saved by 0.2.1 repaired");
+            state.dirty = true;
+        }
         state.ensure_layout();
         state.normalize_tabs();
         state
@@ -219,6 +223,7 @@ impl AppState {
         config.snapshots = snaps;
         config.drop_duplicates();
         pecofence_core::config_store::clamp_sizes(&mut config);
+        pecofence_core::config_store::repair_unc_portals(&mut config);
         self.config = config;
         self.rebuild_catalog();
         self.layout = 0;

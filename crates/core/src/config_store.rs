@@ -1,7 +1,7 @@
 //! Config persistence: atomic writes, `.bak` rotation, daily backups, load fallbacks (plan §7.5).
 
 use crate::geometry::MAX_DIP;
-use crate::model::{Config, NormGeometry, SCHEMA_VERSION};
+use crate::model::{Config, ItemSourceSpec, NormGeometry, SCHEMA_VERSION};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -320,6 +320,27 @@ pub fn clamp_sizes(cfg: &mut Config) -> bool {
         let (w, h) = size_in_range(&f.geometry);
         if (w, h) != (f.geometry.w, f.geometry.h) {
             (f.geometry.w, f.geometry.h) = (w, h);
+            changed = true;
+        }
+    }
+    changed
+}
+
+/// 0.2.1 saved a portal on a network share or a mapped drive as the relative path
+/// `UNC\server\share\…` (the canonical path with only its long-path prefix stripped), which
+/// can neither be listed nor watched: such paths, in the layouts and the snapshots, become
+/// `\\server\share\…`. True when one changed.
+pub fn repair_unc_portals(cfg: &mut Config) -> bool {
+    let mut changed = false;
+    let layouts = cfg
+        .layouts
+        .iter_mut()
+        .chain(cfg.snapshots.iter_mut().flat_map(|s| &mut s.layouts));
+    for f in layouts.flat_map(|l| &mut l.fences) {
+        if let ItemSourceSpec::Folder { path, .. } = &mut f.source
+            && let Some(rest) = path.strip_prefix(r"UNC\")
+        {
+            *path = format!(r"\\{rest}");
             changed = true;
         }
     }
@@ -844,6 +865,49 @@ mod tests {
                 .iter()
                 .all(|l| !l.message.starts_with("size "))
         );
+    }
+
+    /// A network portal saved by 0.2.1 (`UNC\server\share\…`) is repaired in the layouts and
+    /// in the snapshots; drive paths are left alone.
+    #[test]
+    fn a_network_portal_saved_by_0_2_1_gets_its_path_back() {
+        let folder = |path: &str| ItemSourceSpec::Folder {
+            path: path.to_string(),
+            recursive: false,
+            filter: None,
+        };
+        let mut c = sample();
+        let mut portal = c.layouts[0].fences[0].clone();
+        portal.id = uuid::Uuid::new_v4();
+        portal.kind = FenceKind::FolderPortal;
+        portal.source = folder(r"UNC\nas\share\docs");
+        let mut local = portal.clone();
+        local.id = uuid::Uuid::new_v4();
+        local.source = folder(r"C:\Users\Me\Documents");
+        c.layouts[0].fences.push(portal.clone());
+        c.layouts[0].fences.push(local);
+        c.snapshots.push(Snapshot {
+            id: uuid::Uuid::new_v4(),
+            name: "before".into(),
+            ts: 1,
+            layouts: vec![Layout {
+                shown: 0,
+                fingerprint: vec![],
+                fences: vec![portal],
+            }],
+        });
+        assert!(repair_unc_portals(&mut c));
+        let path_of = |f: &Fence| match &f.source {
+            ItemSourceSpec::Folder { path, .. } => path.clone(),
+            ItemSourceSpec::Desktop => String::new(),
+        };
+        assert_eq!(path_of(&c.layouts[0].fences[1]), r"\\nas\share\docs");
+        assert_eq!(path_of(&c.layouts[0].fences[2]), r"C:\Users\Me\Documents");
+        assert_eq!(
+            path_of(&c.snapshots[0].layouts[0].fences[0]),
+            r"\\nas\share\docs"
+        );
+        assert!(!repair_unc_portals(&mut c));
     }
 
     #[test]
