@@ -211,7 +211,14 @@ impl App {
     /// docs): every path that saves a fence window's geometry goes through here.
     pub(super) fn record_bounds(&mut self, id: FenceId, rect: RECT, rolled: bool, expanded: i32) {
         let rect = match self.fences.get(&id) {
-            Some(w) => self.ctx.behavior.resting_rect(w.hwnd(), rect),
+            Some(w) => {
+                let mut rect = self.ctx.behavior.resting_rect(w.hwnd(), rect);
+                // Collapsed to its left tab column: the fence keeps the width it expands to.
+                if rolled && let Some(ew) = w.collapsed_expanded_width_px() {
+                    rect.right = rect.left + ew;
+                }
+                rect
+            }
             None => rect,
         };
         self.state.set_fence_bounds(id, rect, rolled, expanded);

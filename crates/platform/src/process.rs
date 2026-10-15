@@ -24,6 +24,111 @@ pub fn current_pid() -> u32 {
     unsafe { GetCurrentProcessId() }
 }
 
+/// Lets any process take the foreground window from this one, e.g. the running instance that
+/// a second launch asks to show its settings. Only works while this process may set it.
+pub fn allow_foreground_handoff() {
+    // SAFETY: plain FFI call; fails harmlessly without the foreground right.
+    let _ =
+        unsafe { crate::store_bindings::AllowSetForegroundWindow(crate::store_bindings::ASFW_ANY) };
+}
+
+/// How long ago the process at the server end of `pipe` (a connected client handle) started.
+pub fn pipe_server_age(pipe: &std::fs::File) -> Option<std::time::Duration> {
+    use std::os::windows::io::AsRawHandle;
+    windows_core::link!("kernel32.dll" "system" fn GetNamedPipeServerProcessId(pipe: HANDLE, pid: *mut u32) -> windows_core::BOOL);
+    windows_core::link!("kernel32.dll" "system" fn GetProcessTimes(process: HANDLE, created: *mut u64, exited: *mut u64, kernel: *mut u64, user: *mut u64) -> windows_core::BOOL);
+    windows_core::link!("kernel32.dll" "system" fn GetSystemTimeAsFileTime(now: *mut u64));
+    const PROCESS_QUERY_LIMITED_INFORMATION: u32 = 0x1000;
+    let (mut pid, mut created, mut now, mut unused) = (0u32, 0u64, 0u64, 0u64);
+    // SAFETY: plain FFI calls on a live pipe handle; FILETIMEs are written as u64 (same layout);
+    // the process handle is closed before returning.
+    unsafe {
+        GetNamedPipeServerProcessId(HANDLE(pipe.as_raw_handle()), &mut pid)
+            .ok()
+            .ok()?;
+        let process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid);
+        if process.0.is_null() {
+            return None;
+        }
+        let ok = GetProcessTimes(process, &mut created, &mut unused, &mut unused, &mut unused);
+        let _ = CloseHandle(process);
+        ok.ok().ok()?;
+        GetSystemTimeAsFileTime(&mut now);
+    }
+    // FILETIME counts 100 ns intervals.
+    Some(std::time::Duration::from_nanos(
+        now.saturating_sub(created) * 100,
+    ))
+}
+
+/// Whether process `pid` runs elevated (as administrator). `None` when its token cannot be
+/// read, which for another user's or an elevated process is the usual answer.
+pub fn is_elevated(pid: u32) -> Option<bool> {
+    const PROCESS_QUERY_LIMITED_INFORMATION: u32 = 0x1000;
+    // TOKEN_INFORMATION_CLASS::TokenElevation; the answer is a TOKEN_ELEVATION (one u32).
+    const TOKEN_ELEVATION_CLASS: TOKEN_INFORMATION_CLASS = 20;
+    // SAFETY: plain FFI calls; the process (unless it is the pseudo handle) and token handles
+    // are closed before returning.
+    unsafe {
+        let own = pid == GetCurrentProcessId();
+        let process = if own {
+            GetCurrentProcess()
+        } else {
+            OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid)
+        };
+        if process.0.is_null() {
+            return None;
+        }
+        let mut token = HANDLE::default();
+        let opened = OpenProcessToken(process, TOKEN_QUERY as u32, &mut token).as_bool();
+        if !own {
+            let _ = CloseHandle(process);
+        }
+        if !opened {
+            return None;
+        }
+        let (mut elevated, mut len) = (0u32, 0u32);
+        let ok = GetTokenInformation(
+            token,
+            TOKEN_ELEVATION_CLASS,
+            Some((&mut elevated as *mut u32).cast()),
+            4,
+            &mut len,
+        )
+        .as_bool();
+        let _ = CloseHandle(token);
+        ok.then_some(elevated != 0)
+    }
+}
+
+/// Seconds from the start of process `pid` to the start of this one (negative when `pid`
+/// started later), e.g. how long after Explorer a launch at sign-in came.
+pub fn seconds_after_start_of(pid: u32) -> Option<f64> {
+    windows_core::link!("kernel32.dll" "system" fn GetProcessTimes(process: HANDLE, created: *mut u64, exited: *mut u64, kernel: *mut u64, user: *mut u64) -> windows_core::BOOL);
+    const PROCESS_QUERY_LIMITED_INFORMATION: u32 = 0x1000;
+    // SAFETY: FILETIMEs are written as u64 (same layout) into locals.
+    let created = |process: HANDLE| unsafe {
+        let (mut created, mut unused) = (0u64, 0u64);
+        GetProcessTimes(process, &mut created, &mut unused, &mut unused, &mut unused)
+            .as_bool()
+            .then_some(created)
+    };
+    // SAFETY: plain FFI calls; the opened process handle is closed before returning.
+    let theirs = unsafe {
+        let process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid);
+        if process.0.is_null() {
+            return None;
+        }
+        let at = created(process);
+        let _ = CloseHandle(process);
+        at?
+    };
+    // SAFETY: GetCurrentProcess is a pseudo handle that needs no closing.
+    let ours = created(unsafe { GetCurrentProcess() })?;
+    // FILETIME counts 100 ns intervals.
+    Some((ours as f64 - theirs as f64) / 10_000_000.0)
+}
+
 /// True when running from an MSIX package (Microsoft Store install). Packaged processes
 /// get virtualized HKCU writes, so the Run-key autostart is replaced by the manifest's
 /// `windows.startupTask`, which users control under Settings > Apps > Startup.

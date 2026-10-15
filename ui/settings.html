@@ -4,6 +4,18 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <!-- PECOFENCE_LOCALE -->
+<script>
+  // Script errors go to the app's log: the error type and where it happened, never the
+  // message, which can quote what the user typed.
+  (() => {
+    const report = (error, file, line, col) => {
+      const wv = window.chrome && window.chrome.webview;
+      if (wv) wv.postMessage({ type: 'action', name: 'pageError', kind: String((error && error.name) || ''), file: String(file || ''), line: line || 0, col: col || 0 });
+    };
+    window.addEventListener('error', e => report(e.error, e.filename, e.lineno, e.colno));
+    window.addEventListener('unhandledrejection', e => report(e.reason, '', 0, 0));
+  })();
+</script>
 <script src="i18n.js"></script>
 <title>PecoFence 设置</title>
 <style>
@@ -42,7 +54,7 @@
   /* Shared Han characters must come from the font of the page language, not the first CJK
      font that happens to contain them. */
   :root:lang(zh-TW) { --font-cjk: "Microsoft JhengHei UI", "Microsoft JhengHei"; }
-  :root:lang(ja) { --font-cjk: "Yu Gothic UI", "Meiryo UI"; }
+  :root:lang(ja) { --font-cjk: "Yu Gothic UI", "Meiryo UI"; word-break: auto-phrase; }
   :root:lang(ko) { --font-cjk: "Malgun Gothic"; }
   *, *::before, *::after { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; color: var(--text); background: transparent;
@@ -52,6 +64,8 @@
   button, select, .toggle, .tile, summary { cursor: pointer; }
   button:disabled, select:disabled { cursor: default; }
   button, a, select, input, .tile, summary { transition: background-color .15s, border-color .15s, color .15s; }
+  /* The host state lands after the first style pass; switches must not slide into it. */
+  :root:not(.ready) *, :root:not(.ready) *::before, :root:not(.ready) *::after { transition: none !important; }
   .ic { font-family: "Segoe Fluent Icons", "Segoe MDL2 Assets"; font-weight: 400; font-style: normal; }
   :focus-visible { outline: 2px solid var(--text); outline-offset: 1px; }
   .app { display: grid; grid-template-columns: 240px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); height: 100%; }
@@ -74,7 +88,7 @@
   main::-webkit-scrollbar-thumb { min-height: 40px; background-color: var(--scroll-thumb); border: 4px solid transparent; background-clip: padding-box; border-radius: 6px; }
   main:hover::-webkit-scrollbar-thumb { border-width: 3px; }
   main::-webkit-scrollbar-thumb:hover { background-color: var(--control-strong); }
-  .page { display: none; } .page.on { display: block; animation: page-in .2s cubic-bezier(.1, .9, .2, 1); }
+  .page { display: none; } .page.on { display: block; animation: page-in .2s cubic-bezier(.1, .9, .2, 1); anchor-name: --page; }
   @keyframes page-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
   .page-header { margin: 4px 2px 16px; }
   h2 { font: 600 28px/36px "Segoe UI Variable Display", "Segoe UI", var(--font-cjk), sans-serif; margin: 0; }
@@ -90,7 +104,7 @@
   .card .l > .ic { font-size: 20px; width: 20px; line-height: 20px; flex: none; text-align: center; color: var(--text); }
   .card .t { font-size: 14px; line-height: 20px; overflow-wrap: anywhere; }
   .card .s { color: var(--text2); font-size: 12px; line-height: 16px; overflow-wrap: anywhere; }
-  .card .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; max-width: 100%; }
+  .card .actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; max-width: 100%; }
   /* Controls that wrap under a long description stay on the right, as in Windows Settings. */
   .card:not(.stack) > :not(.l):not(.s) { margin-left: auto; }
   .card.disabled .t, .card.disabled .s { color: var(--text-disabled); }
@@ -109,10 +123,15 @@
   .switch-label > span { grid-area: 1 / 1; }
   .toggle.on ~ .switch-label .off-t, .toggle:not(.on) ~ .switch-label .on-t { visibility: hidden; }
   .toggle { width: 40px; height: 20px; border-radius: 10px; border: 1px solid var(--control-strong); position: relative; background: var(--control-alt); flex: none; transition: background-color .15s, border-color .15s; }
-  .toggle::after { content: ""; position: absolute; left: 3px; top: 3px; width: 12px; height: 12px; border-radius: 50%; background: var(--text2); transition: transform .15s cubic-bezier(.2, 0, 0, 1); }
+  .toggle::after { content: ""; position: absolute; left: 3px; top: 3px; width: 12px; height: 12px; border-radius: 7px; background: var(--text2);
+    transition: transform .15s cubic-bezier(.2, 0, 0, 1), left .15s, top .15s, width .15s, height .15s; }
   .toggle:hover { background: var(--control-alt-hover); }
   .toggle.on { background: var(--accent); border-color: var(--accent); }
   .toggle.on::after { transform: translateX(20px); background: var(--on-accent); }
+  /* As in WinUI, the knob grows on hover and stretches towards the centre while pressed. */
+  .toggle:not([aria-disabled=true]):hover::after { left: 2px; top: 2px; width: 14px; height: 14px; }
+  .toggle:not([aria-disabled=true]):active::after { width: 17px; }
+  .toggle.on:not([aria-disabled=true]):active::after { transform: translateX(17px); }
   .toggle.on:hover { background: var(--accent-hover); }
   .disabled .toggle, .disabled .toggle:hover { cursor: default; background: transparent; border-color: var(--text-disabled); }
   .disabled .toggle::after { background: var(--text-disabled); }
@@ -137,6 +156,26 @@
   .iconbtn:hover { background: var(--subtle); }
   .iconbtn:disabled { background: transparent; border-color: transparent; }
   .iconbtn[data-act=del]:hover { color: var(--error); background: var(--error-bg); }
+
+  /* Peek shortcut: key caps in a box that records the next combination (styled as a focused
+     text box meanwhile); the quick choices are toggle buttons. */
+  .hotkey-edit { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 16px; max-width: 100%; }
+  .hotkey-box { display: inline-flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 200px; padding: 0 10px 0 4px; }
+  .hotkey-box .keys { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; min-width: 0; }
+  .hotkey-box kbd { font: 600 12px/22px "Segoe UI Variable Text", "Segoe UI", var(--font-cjk), sans-serif; min-width: 26px; padding: 0 7px; border-radius: 3px; text-align: center; color: var(--on-accent); background: var(--accent); }
+  .hotkey-box .prompt { padding: 0 7px; color: var(--text3); }
+  .hotkey-box .ic { font-size: 14px; color: var(--text2); }
+  .hotkey-box.recording, .hotkey-box.recording:hover { background-color: var(--card); border-bottom: 2px solid var(--accent); }
+  .hotkey-box.recording .ic { visibility: hidden; }
+  .hotkey-box.recording:focus-visible { outline: none; }
+  .hotkey-box:disabled kbd { color: var(--text-disabled); background: var(--control-disabled); outline: 1px solid var(--control-stroke); }
+  .hotkey-win { display: flex; align-items: center; gap: 8px; }
+  .hotkey-win input { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); }
+  .disabled .hotkey-win { color: var(--text-disabled); }
+  .card .s.error { color: var(--error); } .card .s.caution { color: var(--caution); }
+  button[aria-pressed=true] { background: var(--accent); color: var(--on-accent); border-color: transparent; }
+  button[aria-pressed=true]:hover { background: var(--accent-hover); }
+  button[aria-pressed=true]:disabled { background: var(--control-disabled); color: var(--text-disabled); border-color: var(--control-stroke); }
 
   /* Theme style tiles double as the live preview of the icon settings below them. */
   .style-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; padding-left: 40px; }
@@ -191,13 +230,17 @@
   .rule .actions { display: flex; flex: none; gap: 4px; align-items: center; }
   .rule .actions .toggle { margin: 0 6px; }
   .rule.disabled .t, .rule.disabled .conds { color: var(--text-disabled); }
-  details.card { display: block; padding: 0; }
+  details.card { display: block; padding: 0; interpolate-size: allow-keywords; }
   details.card > summary { display: flex; align-items: center; gap: 16px; min-height: 66px; padding: 12px 16px; list-style: none; border-radius: inherit; }
   details.card > summary::-webkit-details-marker { display: none; }
   details.card > summary:hover { background: var(--subtle); }
   details.card > summary .chev { font-size: 12px; color: var(--text2); transition: transform .15s; }
   details.card[open] > summary { border-bottom: 1px solid var(--line); border-radius: var(--r-card) var(--r-card) 0 0; }
   details.card[open] > summary .chev { transform: rotate(180deg); }
+  /* WinUI Expander motion: opens over 333 ms decelerating, closes over 167 ms accelerating.
+     Only closing delays content-visibility; opening shows the fields at once so they can take focus. */
+  details.card::details-content { block-size: 0; overflow-y: clip; transition: block-size .167s cubic-bezier(1, 1, 0, 1), content-visibility .167s allow-discrete; }
+  details.card[open]::details-content { block-size: auto; transition: block-size .333s cubic-bezier(0, 0, 0, 1); }
   .newrule { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; padding: 16px 16px 0 56px; }
   .newrule label { display: flex; min-width: 0; flex-direction: column; gap: 6px; color: var(--text2); font-size: 12px; line-height: 16px; }
   .newrule > label > input, .newrule > label > select { width: 100%; min-width: 0; color: var(--text); }
@@ -238,10 +281,11 @@
   #ver { font-size: 12px; line-height: 18px; font-weight: 400; color: var(--text2); border: 1px solid var(--control-stroke); padding: 0 6px; border-radius: 4px; }
   code { font: 12px/16px "Cascadia Mono", Consolas, monospace; color: var(--text2); overflow-wrap: anywhere; user-select: text; }
 
-  .infobar { position: fixed; z-index: 5; left: 50%; bottom: 24px; transform: translate(-50%, 8px); min-height: 48px; border-radius: var(--r-card); background: var(--ok-bg); border: 1px solid var(--card-stroke); box-shadow: var(--shadow);
-    max-width: calc(100% - 32px); padding: 13px 16px; overflow-wrap: anywhere; display: flex; gap: 12px; align-items: center; opacity: 0; transition: opacity .18s, transform .18s; pointer-events: none; }
+  /* Centred over the content column (the visible page), not the whole window. */
+  .infobar { position: fixed; z-index: 5; left: 16px; right: 16px; left: anchor(--page left, 16px); right: anchor(--page right, 16px); width: fit-content; margin: 0 auto; bottom: 24px; transform: translateY(8px); min-height: 48px; border-radius: var(--r-card); background: var(--ok-bg); border: 1px solid var(--card-stroke); box-shadow: var(--shadow);
+    padding: 13px 16px; overflow-wrap: anywhere; display: flex; gap: 12px; align-items: center; opacity: 0; transition: opacity .18s, transform .18s; pointer-events: none; }
   .infobar .ic::before { content: "\E73E"; font-size: 16px; color: var(--ok); }
-  .infobar.on { opacity: 1; transform: translate(-50%, 0); }
+  .infobar.on { opacity: 1; transform: none; }
   .infobar.error { background: var(--error-bg); } .infobar.error .ic::before { content: "\E783"; color: var(--error); }
 
   @media (max-width: 900px) {
@@ -268,7 +312,7 @@
     .tile .mini-fence { backdrop-filter: none; background: var(--card); }
     .preview-glass { display: none; }
   }
-  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } ::details-content { transition: none !important; } }
   @media (forced-colors: active) {
     .card { border-color: CanvasText; }
     .toggle, .swatch { forced-color-adjust: none; }
@@ -314,6 +358,8 @@
         <select data-bind="theme"><option value="followWindowsMode">跟随 Windows 模式</option><option value="followAppMode">跟随应用模式</option><option value="light">浅色</option><option value="dark">深色</option></select></div>
       <div class="card"><div class="l"><span class="ic">&#xE8E4;</span><div><div class="t">标题对齐</div></div></div>
         <select data-bind="titleAlign"><option value="left">左对齐</option><option value="center">居中</option><option value="right">右对齐</option></select></div>
+      <div class="card"><div class="l"><span class="ic">&#xE90C;</span><div><div class="t">标签栏位置</div><div class="s">有多个标签页时，标签排在标题栏里，或在栅栏左侧排成一列</div></div></div>
+        <select data-bind="tabBar"><option value="top">顶部</option><option value="left">左侧</option></select></div>
       <div class="card"><div class="l"><span class="ic">&#xE8B9;</span><div><div class="t">默认图标大小</div><div class="s">新建栅栏时使用，每个栅栏可在“栅栏”页或右键菜单中单独设置</div></div></div>
         <select data-bind="iconSize"><option value="32">小图标</option><option value="48">中等图标</option><option value="64">较大图标</option><option value="96">大图标</option></select></div>
       <div class="group">
@@ -337,6 +383,7 @@
       <div class="card"><div class="l"><span class="ic">&#xE7C9;</span><div><div class="t">收起的栅栏需点击标题才展开</div><div class="s">开启后不再悬停展开；拖动标题仍可移动栅栏</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="rollUp.clickToExpand"></div></div>
       <div class="card"><div class="l"><span class="ic">&#xE74B;</span><div><div class="t">展开时把下面的栅栏推开</div><div class="s">收起后它们会回到原位</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="rollUp.pushNeighbors"></div></div>
       <div class="card"><div class="l"><span class="ic">&#xE737;</span><div><div class="t">鼠标悬停时才显示标题栏</div><div class="s">平时只显示图标，让桌面更清爽；每个栅栏可在“栅栏”页单独设置</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="rollUp.titleOnHover"></div></div>
+      <div class="card"><div class="l"><span class="ic">&#xE7C3;</span><div><div class="t">鼠标悬停时切换标签页</div><div class="s">鼠标在标签页上停留片刻就切换过去，不用点击</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="rollUp.switchTabOnHover"></div></div>
       <div class="card"><div class="l"><span class="ic">&#xE7B1;</span><div><div class="t">自动隐藏滚动条</div><div class="s">鼠标移到栅栏上或滚动时才显示</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="rollUp.hideInactiveScrollbar"></div></div>
       <h3>吸附与对齐</h3>
       <div class="group">
@@ -349,8 +396,13 @@
       <h3>速览栅栏</h3>
       <div class="group">
         <div class="card"><div class="l"><span class="ic">&#xE8A1;</span><div><div class="t">按快捷键让所有栅栏显示在窗口前面</div><div class="s">再按一次、按 Esc 或点击其他位置返回</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="peek.enabled"></div></div>
-        <div class="card child"><div class="l"><div><div class="t">快捷键</div><div class="s">安装了多种输入语言时 Windows 会占用 Win+空格，此时会自动改用可用的组合</div></div></div>
-          <select data-bind="peek.hotkey"><option value="ctrlAltSpace">Ctrl + Alt + 空格</option><option value="winSpace">Win + 空格</option><option value="winShiftSpace">Win + Shift + 空格</option></select></div>
+        <div class="card child" id="peekHotkeyCard"><div class="l"><div><div class="t" id="peekHotkeyTitle">快捷键</div><div class="s" id="peekHotkeyHelp" aria-live="polite"></div></div></div>
+          <div class="hotkey-edit">
+            <button type="button" class="hotkey-box" id="peekHotkey" aria-labelledby="peekHotkeyTitle peekHotkeyKeys" aria-describedby="peekHotkeyHelp"><span class="keys" id="peekHotkeyKeys"></span><span class="ic">&#xE70F;</span></button>
+            <label class="hotkey-win"><input type="checkbox" id="peekHotkeyWin">包含 Win 键</label>
+          </div></div>
+        <div class="card child" id="peekPresetCard"><div class="l"><div><div class="t" id="peekPresetTitle">常用组合</div></div></div>
+          <div class="actions" id="peekPresets" role="group" aria-labelledby="peekPresetTitle"></div></div>
       </div>
       <div class="card"><div class="l"><span class="ic">&#xE708;</span><div><div class="t">速览时调暗背景</div><div class="s">栅栏之外的区域变暗，更容易看清</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="peek.dim"></div></div>
     </section>
@@ -460,6 +512,7 @@
         <div><div class="name">PecoFence <span id="ver"></span></div><div class="s">开源的 Windows 11 桌面整理工具</div><div class="s">Apache 2.0 许可证</div><div class="s" id="memDetail">—</div></div>
       </div>
       <div class="card" id="updateCard" hidden><div class="l"><span class="ic">&#xE895;</span><div><div class="t">更新</div><div class="s" id="updateStatus"></div></div></div><button id="updateAction"></button></div>
+      <div class="card"><div class="l"><span class="ic">&#xE897;</span><div><div class="t">使用手册</div><div class="s">每个功能都有动画演示</div></div></div><button id="openManual">打开</button></div>
       <div class="card"><div class="l"><span class="ic">&#xE734;</span><div><div class="t">喜欢 PecoFence 吗？</div><div class="s">你的支持能让更多人发现它。</div></div></div>
         <div class="actions"><button id="rateStore" hidden>在 Microsoft Store 评分</button><button id="starRepo">在 GitHub 点 Star</button></div></div>
       <h3 id="feedbackHeading">反馈</h3>
@@ -625,6 +678,7 @@
     document.querySelectorAll('.page').forEach(p => p.classList.toggle('on', p.id === 'page-' + name));
     document.querySelector('main').scrollTop = 0;
     if (name === 'about') requestFeedbackInfo();
+    ringFence();
   }
   document.querySelectorAll('nav a').forEach(a => a.addEventListener('click', e => { e.preventDefault(); showPage(a.dataset.page); }));
 
@@ -651,9 +705,10 @@
       }
     });
   }
-  // Only these rows depend on their master switch: guide lines need snapping, and the hotkey is
-  // what Peek's switch turns on. Gap, whole-cell sizing and dimming apply without them.
-  const DEPENDENT = [['snapping.guideLines', 'snapping.enabled'], ['peek.hotkey', 'peek.enabled']];
+  // Only these rows depend on their master switch: guide lines need snapping, and the shortcut
+  // rows (renderPeekHotkey) are what Peek's switch turns on. Gap, whole-cell sizing and dimming
+  // apply without them.
+  const DEPENDENT = [['snapping.guideLines', 'snapping.enabled']];
   function renderDependents() {
     for (const [child, master] of DEPENDENT) {
       const on = !!get(state.settings, master), el = document.querySelector(`[data-bind="${child}"]`);
@@ -661,7 +716,99 @@
       if (el.tagName === 'SELECT') el.disabled = !on;
       else { el.tabIndex = on ? 0 : -1; el.setAttribute('aria-disabled', String(!on)); }
     }
+    renderPeekHotkey();
   }
+
+  // 速览栅栏 › 快捷键: the box records the next combination, the host checks it, tries
+  // RegisterHotKey and answers with peekHotkeyResult (plus a fresh state once saved). Windows
+  // takes many Win combinations before the page sees them, so the checkbox adds Win instead.
+  const MOD_ALT = 1, MOD_CTRL = 2, MOD_SHIFT = 4, MOD_WIN = 8;
+  const hkBox = document.getElementById('peekHotkey'), hkKeys = document.getElementById('peekHotkeyKeys');
+  const hkWin = document.getElementById('peekHotkeyWin'), hkHelp = document.getElementById('peekHotkeyHelp');
+  let hkRecording = false, hkHeld = 0, hkError = '', hkQuiet = false, hkQuietTimer = 0;
+  const heldMods = e => (e.altKey ? MOD_ALT : 0) | (e.ctrlKey ? MOD_CTRL : 0) | (e.shiftKey ? MOD_SHIFT : 0) | (e.metaKey ? MOD_WIN : 0);
+  const modNames = mods => [[MOD_WIN, 'Win'], [MOD_CTRL, t("键名\x04Ctrl")], [MOD_ALT, 'Alt'], [MOD_SHIFT, t("键名\x04Shift")]]
+    .filter(([bit]) => mods & bit).map(([, name]) => name);
+  const keyCaps = keys => keys.map(k => `<kbd>${esc(k)}</kbd>`).join('');
+  const sameKey = (a, b) => a.mods === b.mods && a.vk === b.vk;
+  // A combination another program holds never reaches the page, only its modifiers do: when
+  // keys stop arriving during a recording, the help line says the combination may be taken.
+  function waitForKeys(on) {
+    clearTimeout(hkQuietTimer);
+    hkQuiet = false;
+    if (on) hkQuietTimer = setTimeout(() => { hkQuiet = true; renderPeekHotkey(); }, 3000);
+  }
+  function renderPeekHotkey() {
+    const p = state && state.peekHotkey;
+    if (!p) return;
+    const on = !!state.settings.peek.enabled, shown = p.active || p.chosen;
+    if (!on && hkRecording) stopRecording();
+    for (const id of ['peekHotkeyCard', 'peekPresetCard']) document.getElementById(id).classList.toggle('disabled', !on);
+    hkBox.disabled = hkWin.disabled = !on;
+    hkBox.classList.toggle('recording', hkRecording);
+    const held = hkHeld | (hkWin.checked ? MOD_WIN : 0);
+    hkKeys.innerHTML = !hkRecording ? keyCaps(shown.keys)
+      : keyCaps(modNames(held)) + `<span class="prompt">${esc(held ? '…' : t("按下组合键…"))}</span>`;
+    // The checkbox belongs to the recording; the key caps show whether the shortcut has Win.
+    if (!hkRecording) hkWin.checked = false;
+    let help = t("点击方框，按下想用的组合键。要用 Win 键，请勾选“包含 Win 键”"), tone = '';
+    if (hkError) { help = hkError; tone = 'error'; }
+    else if (hkRecording && hkQuiet) { help = t("没有反应？这个组合键可能已被其他程序占用，请换一个"); tone = 'caution'; }
+    else if (hkRecording) help = t("请按下组合键，按 Esc 取消");
+    else if (on && !p.active) { help = tf("{0} 和备用的组合都已被占用，请换一个", p.chosen.label); tone = 'error'; }
+    else if (on && !sameKey(p.active, p.chosen)) { help = tf("{0} 已被占用，现在使用 {1}", p.chosen.label, p.active.label); tone = 'caution'; }
+    hkHelp.textContent = help;
+    hkHelp.className = 's' + (tone ? ' ' + tone : '');
+    // Quick choices: one button each, reused so that a refresh keeps the focus on it.
+    const presets = document.getElementById('peekPresets');
+    p.presets.forEach((k, i) => {
+      let b = presets.children[i];
+      if (!b) {
+        b = document.createElement('button');
+        b.type = 'button';
+        b.onclick = () => { hkError = ''; send({ type: 'action', name: 'setPeekHotkey', mods: Number(b.dataset.mods), vk: Number(b.dataset.vk) }); };
+        presets.append(b);
+      }
+      b.dataset.mods = k.mods; b.dataset.vk = k.vk;
+      b.textContent = k.keys.join(' + ');
+      b.setAttribute('aria-pressed', String(sameKey(k, shown)));
+      b.disabled = !on;
+    });
+  }
+  function startRecording() {
+    if (hkRecording || hkBox.disabled) return;
+    hkRecording = true; hkHeld = 0; hkError = ''; waitForKeys(false);
+    send({ type: 'action', name: 'peekHotkeyRecording', on: true });
+    renderPeekHotkey();
+  }
+  function stopRecording() {
+    if (!hkRecording) return;
+    hkRecording = false; hkHeld = 0; hkError = ''; waitForKeys(false);
+    send({ type: 'action', name: 'peekHotkeyRecording', on: false });
+    renderPeekHotkey();
+  }
+  hkBox.onclick = startRecording;
+  hkBox.addEventListener('blur', stopRecording);
+  // Clicking the checkbox while recording must not take the focus away from the box.
+  document.querySelector('.hotkey-win').addEventListener('mousedown', e => { if (hkRecording) e.preventDefault(); });
+  hkBox.addEventListener('keydown', e => {
+    if (!hkRecording) return;
+    const held = heldMods(e);
+    // Tab still moves on; Esc cancels.
+    if (e.key === 'Tab' && !held) { stopRecording(); return; }
+    e.preventDefault();
+    if (e.key === 'Escape' && !held) { stopRecording(); return; }
+    hkHeld = held;
+    waitForKeys(true);
+    // A modifier starts the next attempt: an error about the previous one no longer applies.
+    if (['Control', 'Alt', 'Shift', 'Meta', 'OS', 'AltGraph'].includes(e.key)) { hkError = ''; renderPeekHotkey(); return; }
+    if (e.repeat) return;
+    // keyCode is the Windows virtual-key code, which RegisterHotKey takes.
+    send({ type: 'action', name: 'setPeekHotkey', mods: held | (hkWin.checked ? MOD_WIN : 0), vk: e.keyCode });
+  });
+  hkBox.addEventListener('keyup', e => { if (hkRecording) { hkHeld = heldMods(e); renderPeekHotkey(); } });
+  // Ticking Win starts a recording with it; clearing it during one drops it again.
+  hkWin.onchange = () => { startRecording(); renderPeekHotkey(); hkBox.focus(); };
   const hexToRgb = (h) => [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
   const rgbToHex = (a) => a ? a.map(x => x.toString(16).padStart(2, '0')).join('').toUpperCase() : '';
 
@@ -787,7 +934,7 @@
       } else if (el.tagName === 'SELECT') {
         const value = cur == null ? '' : String(cur);
         if (prop === 'tint' || prop === 'tabColor') ensureOption(el, value, t("自定义 #") + value);
-        if (prop === 'titleColor') { ensureOption(el, /^[0-9A-F]{6}$/i.test(value) ? value : '', t("自定义 #") + value); el.querySelector('[value=tint]').disabled = !f.tint; }
+        if (prop === 'titleColor') { ensureOption(el, /^[0-9A-F]{6}$/i.test(value) ? value : '', t("自定义 #") + value); el.querySelector('[value=tint]').disabled = !f.tint; el.closest('.card').querySelector('.s').hidden = !!f.tint; }
         el.value = value;
         el.onchange = () => setFence(f.id, prop, prop === 'iconSize' ? Number(el.value) : prop === 'tint' || prop === 'tabColor' ? (el.value || null) : el.value);
       } else if (el.tagName === 'INPUT') {
@@ -799,6 +946,11 @@
     renderSwatches(fenceTintSwatches, tintSel);
     renderSwatches(fenceTabColorSwatches, tabSel);
     document.getElementById('fenceDock').onclick = () => { setFence(f.id, 'dockTop', null); toast(t("已停靠到屏幕顶部")); };
+    ringFence();
+  }
+  // While 「栅栏」 is open, the fence it edits wears the desktop's selection ring.
+  function ringFence() {
+    send({ type: 'ringFence', id: document.getElementById('page-fences').classList.contains('on') ? fenceSel : null });
   }
   function showFence(id) {
     fenceSel = id;
@@ -930,7 +1082,6 @@
     document.getElementById(id)?.focus();
   }
   document.getElementById('nrAdd').onclick = () => {
-    const name = document.getElementById('nrName').value.trim() || t("新规则");
     const target = document.getElementById('nrTarget').value;
     if (!target) return ruleError(t("没有可用的目标栅栏"), 'nrTarget');
     const kind = document.getElementById('nrKind').value;
@@ -968,7 +1119,11 @@
     else if (kind === 'files') cond = { cond: 'filesOnly', value: null };
     else cond = { cond: 'foldersOnly', value: null };
     const fence = state.fences.find(f => f.id === target);
-    state.rules.list.push({ id: newId(), name, enabled: true, target: fence && fence.kind === 'inbox' ? 'inbox' : { fence: target }, allOf: [cond], priorityClass: cls });
+    // An unnamed rule is called after its condition, so the list does not fill with identical names.
+    const name = document.getElementById('nrName').value.trim() || condLabel(cond);
+    // Rules match in list order: at the end, the new rule would sit behind the broad first-run
+    // ones ("Files and documents") and rarely fire.
+    state.rules.list.unshift({ id: newId(), name, enabled: true, target: fence && fence.kind === 'inbox' ? 'inbox' : { fence: target }, allOf: [cond], priorityClass: cls });
     send({ type: 'setRules', rules: state.rules }); renderRules(); toast(t("已添加规则"));
     document.getElementById('nrName').value = ''; document.getElementById('nrValue').value = '';
   };
@@ -1021,6 +1176,7 @@
   document.getElementById('openCfg').onclick = () => send({ type: 'action', name: 'openConfigFolder' });
   document.getElementById('rateStore').onclick = () => send({ type: 'action', name: 'rateInStore' });
   document.getElementById('starRepo').onclick = () => send({ type: 'action', name: 'openRepository' });
+  document.getElementById('openManual').onclick = () => send({ type: 'action', name: 'openManual' });
   document.getElementById('repairIcons').onclick = () => send({ type: 'action', name: 'repairIcons' });
 
   // 关于 → 更新: an installed copy downloads and runs the new setup, a ZIP opens the release page.
@@ -1045,6 +1201,7 @@
     const action = !offered ? 'checkUpdate' : install ? 'installUpdate' : 'openReleasePage';
     button.textContent = action === 'checkUpdate' ? t("检查更新") : install ? t("下载并安装") : t("打开下载页");
     button.disabled = s === 'checking' || s === 'downloading';
+    button.classList.toggle('accent', s === 'available');
     button.onclick = () => send({ type: 'action', name: action });
   };
   document.getElementById('hideIconsAgain').onclick = () => send({ type: 'action', name: 'hideDesktopIcons' });
@@ -1127,6 +1284,10 @@
   if (wv) wv.addEventListener('message', e => {
     const m = e.data;
     if (m.type === 'state') {
+      // A refused shortcut's message goes once the shortcut or Peek's switch changes (the CLI,
+      // the switch on this page).
+      const was = state && state.peekHotkey ? [state.settings.peek.enabled, state.peekHotkey.chosen] : null;
+      if (was && m.peekHotkey && (was[0] !== m.settings.peek.enabled || !sameKey(was[1], m.peekHotkey.chosen))) hkError = '';
       state = m;
       state.settings.language ||= 'zh-CN';
       const languageChanged = i18n.set(m.locale || 'zh-CN', m.translations);
@@ -1156,6 +1317,9 @@
       document.getElementById('cfgPath').textContent = m.configPath;
       bindAll(); bindThemeStyle(); bindIconTint(); renderDependents(); renderFences(); renderRules(); renderLayout(); updateKind(); renderAppearance(); renderDesktopIconsStatus();
       update = m.update; renderUpdate();
+      // Transitions come on a frame after this state has been drawn: a single frame would style
+      // both changes together and start them after all.
+      requestAnimationFrame(() => requestAnimationFrame(() => document.documentElement.classList.add('ready')));
     } else if (m.type === 'workspaceSummary') {
       if (!state) return;
       state.itemCount = m.itemCount;
@@ -1165,6 +1329,13 @@
     else if (m.type === 'showFeedback') showFeedback(!!m.crash);
     else if (m.type === 'toast') toast(m.text, !!m.error);
     else if (m.type === 'update') { update = m.update; renderUpdate(); }
+    else if (m.type === 'peekHotkeyResult') {
+      // Saved: recording is over (the host registered the new shortcut). Refused: the page
+      // keeps recording and says why.
+      hkError = m.ok ? '' : m.text || '';
+      if (m.ok) { hkRecording = false; hkHeld = 0; waitForKeys(false); }
+      renderPeekHotkey();
+    }
   });
   send({ type: 'ready' });
 })();

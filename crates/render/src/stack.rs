@@ -35,6 +35,7 @@ struct Gpu {
     device: GpuDevice,
     graphics: CompositionGraphicsDevice,
     generation: u32,
+    is_warp: bool,
 }
 
 thread_local! {
@@ -57,13 +58,14 @@ pub(crate) fn note_draw() {
     });
 }
 
-fn create_gpu(compositor: &Compositor, generation: u32) -> Result<(Gpu, bool)> {
+fn create_gpu(compositor: &Compositor, generation: u32, allow_warp: bool) -> Result<(Gpu, bool)> {
     let (device, is_warp) = match GpuDevice::new() {
         Ok(d) => (d, false),
-        Err(e) => {
+        Err(e) if allow_warp => {
             tracing::warn!(error = %e, "hardware D3D11 device failed; using WARP");
             (GpuDevice::new_warp()?, true)
         }
+        Err(e) => return Err(e),
     };
     let graphics = device.create_graphics_device(compositor)?;
     Ok((
@@ -71,6 +73,7 @@ fn create_gpu(compositor: &Compositor, generation: u32) -> Result<(Gpu, bool)> {
             device,
             graphics,
             generation,
+            is_warp,
         },
         is_warp,
     ))
@@ -92,7 +95,7 @@ impl RenderStack {
             }
         };
         let compositor = Compositor::new()?;
-        let (gpu, is_warp) = create_gpu(&compositor, 0)?;
+        let (gpu, is_warp) = create_gpu(&compositor, 0, true)?;
         Ok(Self {
             _queue: queue,
             compositor,
@@ -109,6 +112,7 @@ impl RenderStack {
     pub fn trim(&self) {
         use crate::gpu_bindings as b;
         use windows_core::Interface;
+        crate::panel::release_retired_surfaces();
         let gpu = self.gpu.borrow();
         let result = (|| -> Result<()> {
             let d2d: b::ID2D1Device = gpu.device.d2d_device().cast()?;
@@ -127,9 +131,70 @@ impl RenderStack {
         }
     }
 
+    /// The adapter the fences render on, for feedback reports: its name and the version of its
+    /// user-mode driver (`AMD Radeon(TM) Graphics, driver 32.0.21025.10016`).
+    pub fn adapter(&self) -> Option<String> {
+        use crate::gpu_bindings as b;
+        use windows_core::Interface;
+        let gpu = self.gpu.borrow();
+        let dxgi: b::IDXGIDevice = gpu.device.d3d_device().cast().ok()?;
+        // SAFETY: plain DXGI queries on a live device; `desc` is a local of the stated type.
+        unsafe {
+            let adapter = dxgi.GetAdapter().ok()?;
+            let mut desc = b::DXGI_ADAPTER_DESC::default();
+            adapter.GetDesc(&mut desc).ok().ok()?;
+            let len = desc.Description.iter().position(|&c| c == 0);
+            let name = String::from_utf16_lossy(&desc.Description[..len.unwrap_or(128)]);
+            // DXGI answers for the D3D10-era IDXGIDevice with the driver's version (the one
+            // Device Manager shows); it refuses the newer interfaces.
+            let driver = match adapter.CheckInterfaceSupport(&b::IDXGIDevice::IID) {
+                Ok(v) => {
+                    let v = v as u64;
+                    format!(
+                        "{}.{}.{}.{}",
+                        v >> 48,
+                        (v >> 32) & 0xFFFF,
+                        (v >> 16) & 0xFFFF,
+                        v & 0xFFFF
+                    )
+                }
+                Err(_) => "unknown".to_string(),
+            };
+            Some(format!("{}, driver {driver}", name.trim()))
+        }
+    }
+
+    /// This process's GPU memory in bytes on the device's adapter, `(local, non_local)`: what
+    /// Task Manager shows as dedicated and shared GPU memory. On integrated GPUs local is
+    /// system memory too.
+    pub fn gpu_memory(&self) -> Option<(u64, u64)> {
+        use crate::gpu_bindings as b;
+        use windows_core::Interface;
+        let gpu = self.gpu.borrow();
+        let dxgi: b::IDXGIDevice = gpu.device.d3d_device().cast().ok()?;
+        let adapter: b::IDXGIAdapter3 = unsafe { dxgi.GetAdapter() }.ok()?.cast().ok()?;
+        let usage = |group| {
+            let mut info = b::DXGI_QUERY_VIDEO_MEMORY_INFO::default();
+            unsafe { adapter.QueryVideoMemoryInfo(0, group, &mut info) }
+                .ok()
+                .map(|()| info.CurrentUsage)
+                .ok()
+        };
+        Some((
+            usage(b::DXGI_MEMORY_SEGMENT_GROUP_LOCAL)?,
+            usage(b::DXGI_MEMORY_SEGMENT_GROUP_NON_LOCAL)?,
+        ))
+    }
+
     /// The current composition graphics device (allocates drawing surfaces).
     pub fn graphics(&self) -> CompositionGraphicsDevice {
         self.gpu.borrow().graphics.clone()
+    }
+
+    /// True while a stack that started on the GPU draws with WARP: the hardware device could
+    /// not be created when the lost one was replaced.
+    pub fn on_fallback_warp(&self) -> bool {
+        !self.is_warp && self.gpu.borrow().is_warp
     }
 
     /// Increments every time the device is rebuilt; surfaces created under an older generation
@@ -139,11 +204,14 @@ impl RenderStack {
     }
 
     /// Rebuilds the D3D/D2D device and the composition graphics device after device loss
-    /// (sleep, driver update). Callers must then recreate every drawing surface.
-    pub fn recover(&self) -> Result<()> {
+    /// (sleep, driver update), or to hand back GPU memory the old device kept. Callers must
+    /// then recreate every drawing surface. A stack that started on hardware falls back to
+    /// WARP only with `allow_warp`; otherwise a hardware device that cannot be created yet is
+    /// an error, so the caller retries instead of drawing on the CPU until PecoFence restarts.
+    pub fn recover(&self, allow_warp: bool) -> Result<()> {
         let generation = self.gpu.borrow().generation + 1;
-        let (gpu, is_warp) = create_gpu(&self.compositor, generation)?;
-        tracing::warn!(generation, is_warp, "GPU device rebuilt after device loss");
+        let (gpu, is_warp) = create_gpu(&self.compositor, generation, allow_warp || self.is_warp)?;
+        tracing::info!(generation, is_warp, "GPU device rebuilt");
         *self.gpu.borrow_mut() = gpu;
         Ok(())
     }

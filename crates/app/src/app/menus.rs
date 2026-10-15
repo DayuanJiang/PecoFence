@@ -150,10 +150,9 @@ impl App {
         .item(
             CMD_PEEK,
             &match self.peek_hotkey {
-                Some(h) => pecofence_core::i18n::format(
-                    "速览所有栅栏\t{0}",
-                    &[peek_hotkey_label(h).to_string()],
-                ),
+                Some(h) => {
+                    pecofence_core::i18n::format("速览所有栅栏\t{0}", &[peek_hotkey_label(h)])
+                }
                 None => pecofence_core::i18n::text("速览所有栅栏").to_string(),
             },
             false,
@@ -259,7 +258,7 @@ impl App {
                 .iter()
                 .any(|id| self.state.item(*id).is_some_and(|it| it.is_namespace()))
             {
-                window::post_message(self.control.hwnd(), WM_APP_FS_CHANGED, 0, 0);
+                window::post_message(self.control.hwnd(), WM_APP_FS_CHANGED, 1, 0);
             }
             return;
         }
@@ -267,13 +266,13 @@ impl App {
         match cmd {
             CMD_ITEM_OPEN => {
                 for id in &items {
-                    self.launch(*id);
+                    self.launch(*id, fence);
                 }
             }
             CMD_ITEM_LOCATION => {
                 if let Some(item) = items.first().and_then(|id| self.state.item(*id))
                     && !item.is_namespace()
-                    && let Some(p) = item.key.as_path()
+                    && let Some(p) = item.path()
                 {
                     use std::os::windows::process::CommandExt;
                     // `/select,"<path>"`: quoted as a whole (what `arg` does for a name with
@@ -317,7 +316,7 @@ impl App {
                 .state
                 .item(*only)
                 .filter(|it| it.is_folder)
-                .and_then(|it| it.key.as_path().map(PathBuf::from)),
+                .and_then(|it| it.path().map(PathBuf::from)),
             _ => None,
         }
     }
@@ -659,19 +658,22 @@ impl App {
         if tabs.len() >= 2 || !other_hosts.is_empty() {
             let tab_menu = PopupMenu::new();
             if tabs.len() >= 2 {
+                // A left tab column moves its tabs up and down.
+                let (earlier, later) =
+                    if self.ctx.behavior.tab_bar.get() == pecofence_core::TabBar::Left {
+                        (
+                            pecofence_core::i18n::text("上移"),
+                            pecofence_core::i18n::text("下移"),
+                        )
+                    } else {
+                        (
+                            pecofence_core::i18n::text("左移"),
+                            pecofence_core::i18n::text("右移"),
+                        )
+                    };
                 tab_menu
-                    .item(
-                        CMD_TAB_MOVE_LEFT,
-                        pecofence_core::i18n::text("左移"),
-                        false,
-                        tab_idx == 0,
-                    )
-                    .item(
-                        CMD_TAB_MOVE_RIGHT,
-                        pecofence_core::i18n::text("右移"),
-                        false,
-                        tab_idx + 1 >= tabs.len(),
-                    )
+                    .item(CMD_TAB_MOVE_LEFT, earlier, false, tab_idx == 0)
+                    .item(CMD_TAB_MOVE_RIGHT, later, false, tab_idx + 1 >= tabs.len())
                     .item(
                         CMD_TAB_DETACH,
                         pecofence_core::i18n::text("拆出为独立栅栏"),
@@ -776,9 +778,15 @@ impl App {
                 && c < CMD_TAB_ATTACH_BASE + self.state.host_fences().len() as u32 =>
             {
                 let idx = (c - CMD_TAB_ATTACH_BASE) as usize;
+                // The merged window's tabs in their order (attach_tab adds them in storage
+                // order, which may interleave them with the target's tabs).
+                let moved = self.state.tabs_of(fence);
                 if let Some(target) = self.state.host_fences().get(idx).map(|o| o.id)
                     && self.state.attach_tab(fence, target)
                 {
+                    for tab in &moved {
+                        self.state.reorder_tab(target, *tab, usize::MAX);
+                    }
                     // The merged fence's own window (if it had one) goes away in resync.
                     self.resync_windows();
                     self.apply_fence_view(target);
@@ -799,7 +807,7 @@ impl App {
             }
             CMD_PORTAL_HOME => {
                 if self.state.portal_home(fence) {
-                    self.after_portal_navigation(fence);
+                    self.after_portal_navigation(fence, -1, None);
                 }
             }
             CMD_FENCE_NEW_FOLDER => self.create_desktop_item(fence, true),
@@ -863,7 +871,7 @@ impl App {
             CMD_FENCE_OPTIONS => self.open_fence_options(fence),
             CMD_FENCE_NEW => {
                 let rect = self.place_new_fence(3, 200.0, x, y, Some(host));
-                self.create_fence_at(rect, None);
+                self.create_fence_with_rename(rect);
             }
             CMD_FENCE_DELETE => self.delete_fence_from_menu(fence),
             CMD_FENCE_HIDE_EMPTY => self.set_fence_hide_when_empty(fence, !f.hide_when_empty),
@@ -963,7 +971,7 @@ impl App {
             false,
         );
         if menu.show_context(owner, pt.x, pt.y) == CMD_NEW_FENCE_HERE {
-            self.create_fence_at(rect, None);
+            self.create_fence_with_rename(rect);
         }
     }
 }

@@ -35,6 +35,8 @@ pub(super) struct IpcSubscriber {
     fence: Option<FenceId>,
     events: Option<Vec<String>>,
     seq: u64,
+    /// When this stream last got an event or a heartbeat.
+    last_sent: Instant,
 }
 
 /// What an item looked like at the last tick (cheap to rebuild; the full [`ItemDto`] is only
@@ -179,18 +181,18 @@ pub(super) fn validate_rect(
     Ok(work.clone())
 }
 
-/// File name with extension as the user spells it. The key is lower-cased; the display name
-/// has the real spelling minus the hidden extension, which the suffix puts back. Namespace
-/// items (no path) keep their display name.
+/// File name with extension as the user spells it. The display name has the real spelling
+/// minus the hidden extension, which the suffix puts back (the path of an item from an older
+/// file is still the lower-cased key). Namespace items (no path) keep their display name.
 fn item_file_name(it: &Item) -> String {
-    let Some(path) = (!it.is_namespace()).then(|| it.key.as_path()).flatten() else {
+    let Some(path) = (!it.is_namespace()).then(|| it.path()).flatten() else {
         return it.display_name.clone();
     };
-    let key_file_name = path.rsplit('\\').next().unwrap_or_default();
+    let path_file_name = path.rsplit('\\').next().unwrap_or_default();
     format!(
         "{}{}",
         it.display_name,
-        crate::rename::rename_hidden_suffix(&it.display_name, key_file_name, it.is_folder)
+        crate::rename::rename_hidden_suffix(&it.display_name, path_file_name, it.is_folder)
     )
 }
 
@@ -294,13 +296,31 @@ pub(super) fn patch_settings_path(
         };
         *slot = value;
     }
-    let settings: Settings = serde_json::from_value(root).map_err(|e| {
+    let mut settings: Settings = serde_json::from_value(root).map_err(|e| {
         IpcError::new(
             ErrorCode::ValidationFailed,
             format!("settings rejected: {e}"),
         )
         .details(json!({ "expected": e.to_string() }))
     })?;
+    if settings.peek.custom_hotkey != current.peek.custom_hotkey
+        && let Some(text) = settings.peek.custom_hotkey.clone()
+    {
+        let h = pecofence_core::hotkey::Hotkey::parse(&text)
+            .and_then(|h| h.check())
+            .map_err(|problem| {
+                IpcError::new(
+                    ErrorCode::ValidationFailed,
+                    format!("peek.customHotkey {text:?} cannot be used: {problem}"),
+                )
+                .hint("Examples: Ctrl+Shift+F, Win+Alt+Space, Ctrl+Alt+F9; null = use peek.hotkey")
+            })?;
+        // Written the way the settings page writes it (Ctrl+Alt+Space as peek.hotkey).
+        settings.peek.set_hotkey(h);
+    } else if pointer == "/peek/hotkey" || settings.peek.hotkey != current.peek.hotkey {
+        // One of the 0.2.0 choices: a custom shortcut left in place would override it.
+        settings.peek.custom_hotkey = None;
+    }
     if !matches!(settings.icon_size, 32 | 48 | 64 | 96) {
         return Err(IpcError::new(
             ErrorCode::ValidationFailed,
@@ -310,6 +330,25 @@ pub(super) fn patch_settings_path(
             ),
         )
         .details(json!({ "expected": [32, 48, 64, 96] })));
+    }
+    // The ranges the app clamps these to; a value already stored outside them does not block
+    // other paths.
+    let gap = settings.snapping.gap_px;
+    let max_gap = super::settings::MAX_SNAP_GAP_DIP;
+    if gap != current.snapping.gap_px && !(0..=max_gap).contains(&gap) {
+        return Err(IpcError::new(
+            ErrorCode::ValidationFailed,
+            format!("snapping.gapPx {gap} is not between 0 and {max_gap}"),
+        )
+        .details(json!({ "expected": { "min": 0, "max": max_gap } })));
+    }
+    let strength = settings.icons.tint_strength;
+    if strength != current.icons.tint_strength && !(0.0..=1.0).contains(&strength) {
+        return Err(IpcError::new(
+            ErrorCode::ValidationFailed,
+            format!("icons.tintStrength {strength} is not between 0 and 1"),
+        )
+        .details(json!({ "expected": { "min": 0, "max": 1 } })));
     }
     Ok(settings)
 }
@@ -685,6 +724,15 @@ impl App {
                 // No auto snapshot: snapshots hold layouts only and could not undo this.
                 let before = self.state.config.settings.clone();
                 let requested = patch_settings_path(&before, path, value.clone())?;
+                // A new Peek shortcut must be free, as on the settings page.
+                let h = requested.peek.chosen_hotkey();
+                if h != before.peek.chosen_hotkey() && !self.peek_hotkey_free(h) {
+                    return Err(IpcError::new(
+                        ErrorCode::ValidationFailed,
+                        format!("{h} is already used by Windows or another program"),
+                    )
+                    .hint("Pick another shortcut; Windows keeps Win+Space and Win+Shift+Space"));
+                }
                 self.apply_settings(requested.clone());
                 let after = &self.state.config.settings;
                 let changed = *after != before;
@@ -873,7 +921,7 @@ impl App {
             Method::PeekEnd => {
                 let active = self.peek.as_ref().is_some_and(|p| !p.is_closing());
                 if active {
-                    self.end_peek();
+                    self.end_peek("pecofence-cli");
                 }
                 Ok(mutation(active, None, Value::Null))
             }
@@ -1092,7 +1140,7 @@ impl App {
                         json!({
                             "id": it.id,
                             "name": it.display_name,
-                            "path": it.key.as_path(),
+                            "path": it.path(),
                             "fence": f.id,
                             "fenceTitle": f.title,
                         })
@@ -1176,11 +1224,12 @@ impl App {
     fn fence_dto_with(&self, f: &Fence, measure: bool) -> FenceDto {
         let host_id = self.state.host_of(f.id);
         let host = self.state.fence(host_id).unwrap_or(f);
+        // A tab keeps its own geometry from before the merge; it is on screen where its host is.
         let connected = self
             .state
             .work_areas
             .iter()
-            .any(|w| w.device_path == f.geometry.monitor);
+            .any(|w| w.device_path == host.geometry.monitor);
         let opts = self.fence_options_json(f);
         let text = |key: &str| {
             opts.get(key)
@@ -1229,12 +1278,12 @@ impl App {
             window_rect: (connected && f.tab_host.is_none())
                 .then(|| self.fences.get(&f.id).map(|w| rect_of(w.rect())))
                 .flatten(),
-            monitor: f.geometry.monitor.clone(),
+            monitor: host.geometry.monitor.clone(),
             monitor_connected: connected,
             geometry: f.geometry.clone(),
             rolled_up: host.rolled_up,
             locked: host.locked,
-            item_count: self.state.items_of(f).len(),
+            item_count: self.state.unsorted_items_of(f).count(),
             tab_host: f.tab_host,
             tabs: if f.tab_host.is_none() {
                 self.state
@@ -1347,7 +1396,7 @@ impl App {
     pub(super) fn item_dto(&self, f: &Fence, it: &Item) -> ItemDto {
         let (assigned_by, rule) = self.assignment_of(f, it.id);
         let path = (!it.is_namespace())
-            .then(|| it.key.as_path().map(str::to_string))
+            .then(|| it.path().map(str::to_string))
             .flatten();
         let file_name = item_file_name(it);
         let ext = if it.is_folder || it.is_namespace() {
@@ -1420,13 +1469,16 @@ impl App {
 
     /// The fence an item is listed in, with the item.
     fn locate_item(&self, id: ItemId) -> Option<(&Fence, &Item)> {
-        self.state.fences().iter().find_map(|f| {
-            self.state
-                .items_of(f)
-                .into_iter()
-                .find(|it| it.id == id)
-                .map(|it| (f, it))
-        })
+        let it = self
+            .state
+            .item(id)
+            .filter(|it| it.orphaned_since.is_none())?;
+        let fence = if self.state.is_portal_item(id) {
+            self.state.portal_of_item(id)
+        } else {
+            self.state.config.fence_of_item(self.state.layout, id)
+        }?;
+        self.state.fence(fence).map(|f| (f, it))
     }
 
     fn planned_move_dto(&self, m: &crate::state::PlannedRuleMove) -> PlannedMoveDto {
@@ -1456,7 +1508,7 @@ impl App {
             name: item.map(|it| it.display_name.clone()).unwrap_or_default(),
             path: item.and_then(|it| {
                 (!it.is_namespace())
-                    .then(|| it.key.as_path().map(str::to_string))
+                    .then(|| it.path().map(str::to_string))
                     .flatten()
             }),
             from,
@@ -1622,12 +1674,7 @@ impl App {
             )
             .hint("Pass the full path of a folder for --portal"));
         }
-        let canonical = std::fs::canonicalize(&folder)
-            .map(|c| {
-                let s = c.to_string_lossy().to_string();
-                PathBuf::from(s.strip_prefix(r"\\?\").unwrap_or(&s))
-            })
-            .unwrap_or(folder);
+        let canonical = crate::state::canonical_path(folder);
         let wanted = canonical.to_string_lossy().to_lowercase();
         let existing_portal = |app: &App| {
             app.state
@@ -1715,12 +1762,8 @@ impl App {
         let rolled = w.is_rolled();
         // An explicit place is where the fence rests, even at the top a push gave it.
         self.ctx.behavior.release_push(w.hwnd());
-        if rolled {
-            w.restore_geometry(full, true, rect.h);
-        } else {
-            w.set_bounds(full);
-            w.apply_height(rect.h, false);
-        }
+        // Also ends a roll in flight, whose tween would otherwise put its own size back.
+        w.restore_geometry(full, rolled, rect.h);
         self.record_bounds(id, full, rolled, rect.h);
         self.apply_auto_height(id);
         self.schedule_save();
@@ -1808,7 +1851,7 @@ impl App {
         self.handle(Command::MergeFence {
             fence: a,
             into: hwnd,
-            x: i32::MIN,
+            at: (i32::MIN, i32::MIN),
         });
         let changed = self.state.host_of(a) == host;
         self.push_settings_state();
@@ -1864,7 +1907,7 @@ impl App {
                 return Err(IpcError::internal(format!("item {id} vanished")));
             };
             let path = (!it.is_namespace())
-                .then(|| it.key.as_path().map(str::to_string))
+                .then(|| it.path().map(str::to_string))
                 .flatten();
             // Into a portal only real files go (the Recycle Bin and friends are not files);
             // into a virtual fence, desktop items change membership and portal items are moved
@@ -2024,7 +2067,7 @@ impl App {
                 it.display_name
             )));
         }
-        let Some(old_path) = it.key.as_path() else {
+        let Some(old_path) = it.path() else {
             return Err(unsupported(format!("{:?} has no path", it.display_name)));
         };
         let old_file_name = old_path.rsplit('\\').next().unwrap_or(old_path).to_string();
@@ -2037,7 +2080,9 @@ impl App {
             if old_ext.is_empty() || rules::ext_of(name) == old_ext {
                 name.to_string()
             } else {
-                format!("{name}{old_ext}")
+                // `ext_of` lower-cases; the file keeps its own spelling (`.PDF`).
+                let disk_ext = old_file_name.rfind('.').map_or("", |i| &old_file_name[i..]);
+                format!("{name}{disk_ext}")
             }
         };
         if target == item_file_name(it) {
@@ -2114,7 +2159,6 @@ impl App {
         };
         if self.ipc_subscribers.is_empty() {
             self.ipc_event_state = Some(self.event_state());
-            self.ipc_last_event = Instant::now();
             window::set_timer(self.control.hwnd(), TIMER_IPC_EVENTS, EVENT_TICK_MS);
         }
         self.ipc_subscribers.push(IpcSubscriber {
@@ -2122,6 +2166,7 @@ impl App {
             fence: fence_id,
             events: events.clone(),
             seq: 0,
+            last_sent: Instant::now(),
         });
         tracing::info!(target: "pecofence::ipc", subscribers = self.ipc_subscribers.len(), "event stream opened");
         Ok(json!({
@@ -2137,7 +2182,7 @@ impl App {
         let mut state = EventState::default();
         for f in self.state.fences() {
             state.fences.insert(f.id, self.fence_dto_with(f, false));
-            for it in self.state.items_of(f) {
+            for it in self.state.unsorted_items_of(f) {
                 state.items.insert(
                     it.id,
                     ItemSig {
@@ -2145,7 +2190,7 @@ impl App {
                         fence_title: f.title.clone(),
                         name: it.display_name.clone(),
                         path: (!it.is_namespace())
-                            .then(|| it.key.as_path().map(str::to_string))
+                            .then(|| it.path().map(str::to_string))
                             .flatten(),
                         is_folder: it.is_folder,
                         is_namespace: it.is_namespace(),
@@ -2276,6 +2321,19 @@ impl App {
                     item: Some(dto()),
                     ..blank("item.added")
                 }),
+                // Renamed on disk: the item keeps its record, and the stream shows the old file
+                // removed and the new one added (also when it changed fence in the same tick:
+                // the added event names the new fence).
+                Some(old) if old.path != sig.path => {
+                    events.push(EventDto {
+                        item: Some(Self::removed_item_dto(*id, old)),
+                        ..blank("item.removed")
+                    });
+                    events.push(EventDto {
+                        item: Some(dto()),
+                        ..blank("item.added")
+                    });
+                }
                 Some(old) if old.fence != sig.fence => events.push(EventDto {
                     item: Some(dto()),
                     from: Some(old.fence),
@@ -2294,16 +2352,20 @@ impl App {
             }
         }
         self.ipc_event_state = Some(now_state);
-        if events.is_empty() {
-            if self.ipc_last_event.elapsed() < Duration::from_secs(EVENT_HEARTBEAT_SECS) {
-                return;
-            }
-            events.push(blank("heartbeat"));
-        }
-        self.ipc_last_event = Instant::now();
+        // Per stream: one whose filter admits none of the events still needs its heartbeat,
+        // or a client that went away keeps its slot while other events flow.
+        let heartbeat = [blank("heartbeat")];
         let mut gone = Vec::new();
         for (i, sub) in self.ipc_subscribers.iter_mut().enumerate() {
-            for ev in &events {
+            let mut batch: &[EventDto] = &events;
+            if !events.iter().any(|ev| Self::event_admitted(sub, ev)) {
+                if sub.last_sent.elapsed() < Duration::from_secs(EVENT_HEARTBEAT_SECS) {
+                    continue;
+                }
+                batch = &heartbeat;
+            }
+            sub.last_sent = Instant::now();
+            for ev in batch {
                 if !Self::event_admitted(sub, ev) {
                     continue;
                 }

@@ -33,6 +33,11 @@ impl GpuDevice {
             D3D_DRIVER_TYPE_HARDWARE
         };
 
+        // PecoFence patch: on hardware, ask the driver not to start its own worker threads
+        // (D3D11_CREATE_DEVICE_PREVENT_INTERNAL_THREADING_OPTIMIZATIONS). The app draws little
+        // and from one thread, and the NVIDIA driver otherwise keeps ~50 idle threads alive.
+        // WARP keeps them: there they are its rasterizer threads.
+        let flags = D3D11_CREATE_DEVICE_BGRA_SUPPORT as u32 | if software { 0 } else { 0x8 };
         let mut d3d_device: Option<ID3D11Device> = None;
         let feature_levels = [D3D_FEATURE_LEVEL_11_0];
         unsafe {
@@ -40,7 +45,7 @@ impl GpuDevice {
                 std::ptr::null_mut(),
                 driver_type,
                 std::ptr::null_mut(),
-                D3D11_CREATE_DEVICE_BGRA_SUPPORT as u32,
+                flags,
                 feature_levels.as_ptr(),
                 feature_levels.len() as u32,
                 D3D11_SDK_VERSION as u32,

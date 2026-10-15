@@ -48,6 +48,7 @@ pub(super) fn press_ends_selection(
             | msg::WM_LBUTTONDOWN
             | msg::WM_LBUTTONDBLCLK
             | msg::WM_RBUTTONDOWN
+            | WM_RBUTTONDBLCLK
     );
     if !press {
         return false;
@@ -61,19 +62,21 @@ pub(super) fn press_ends_selection(
     let group_drag = message == msg::WM_NCLBUTTONDOWN
         && wparam as isize == msg::HTCAPTION
         && selection.iter().any(|(h, _)| *h == hwnd);
-    !group_drag
+    // The right button during this fence's title drag in the system move loop cancels the
+    // drag (`nc::cancel_move`) and keeps the selection, as Esc does.
+    let move_cancel = message == msg::WM_RBUTTONDOWN
+        && behavior
+            .size_move
+            .try_borrow()
+            .is_ok_and(|sm| sm.as_ref().is_some_and(|m| m.moving && m.hwnd == hwnd));
+    !group_drag && !move_cancel
 }
 
 /// Screen rectangles of the showing fence windows outside the group (`me` and `members`).
 pub(super) fn fence_rects_outside(me: HWND, members: &[GroupMember]) -> Vec<RECT> {
-    desktop::top_level_windows()
+    desktop::windows_of_class(anchor::FENCE_CLASS)
         .into_iter()
-        .filter(|&w| {
-            w != me
-                && !members.iter().any(|m| m.hwnd == w)
-                && desktop::class_name(w) == anchor::FENCE_CLASS
-                && desktop::is_visible(w)
-        })
+        .filter(|&w| w != me && !members.iter().any(|m| m.hwnd == w) && desktop::is_visible(w))
         .map(window::window_rect)
         .collect()
 }

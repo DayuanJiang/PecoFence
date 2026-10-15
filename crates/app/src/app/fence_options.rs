@@ -420,16 +420,17 @@ impl App {
 
     /// Opens the settings window on the 「栅栏」 page with `fence` selected.
     pub(super) fn open_fence_options(&mut self, fence: FenceId) {
-        let already_open = self.settings.is_some();
         self.open_settings();
-        if self.settings.is_none() {
+        let Some(host) = &self.settings else {
             return;
-        }
-        if already_open {
+        };
+        if host.ready {
             self.post_show_fence(fence);
         } else {
-            // The page is still loading; `ready` delivers the state and then this.
+            // The page is still loading; `ready` delivers the state and then the latest
+            // request: this fence, or the feedback form.
             self.settings_focus_fence = Some(fence);
+            self.feedback.focus = None;
         }
     }
 

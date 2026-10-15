@@ -35,10 +35,11 @@ pub(super) struct LeavingItem {
 }
 
 /// Layout motion runs only for a *rearrangement*: when at most half of the ids changed
-/// (`changed` = removed + added) relative to the larger of the two lists. A tab switch, portal
-/// navigation or a refill replaces most ids and snaps instead.
+/// (`changed` = removed + added) relative to the larger of the two lists, or when an empty list
+/// fills up (its items fade in). A tab switch, portal navigation or a refill replaces most ids
+/// and snaps instead.
 pub(super) fn layout_motion_applies(changed: usize, old_len: usize, new_len: usize) -> bool {
-    old_len > 0 && changed * 2 <= old_len.max(new_len)
+    old_len == 0 || changed * 2 <= old_len.max(new_len)
 }
 
 /// Index-keyed per-item state carried across a list refresh by item identity: `old` / `new`
@@ -74,9 +75,10 @@ impl FenceViewState {
     /// Replaces the item list with layout motion (WinUI Reorder / AddDelete theme transitions):
     /// items present before and after glide from their old cell to the new one (250 ms
     /// point-to-point), new items fade in (167 ms) at their cell, removed items fade out (83 ms)
-    /// where they were. Everything snaps when animations are off, the fence is rolled or
-    /// rolling, hidden, a drag / marquee is running, the list was empty, or more than half of
-    /// the ids changed (a tab switch, portal navigation or a refill — not a rearrangement).
+    /// where they were; the first items of an empty fence fade in. Everything snaps when
+    /// animations are off, the fence is rolled or rolling, hidden, a drag / marquee is running,
+    /// a content swap brings in a whole page (tab switch, portal navigation), or more than half
+    /// of the ids changed (a refill — not a rearrangement).
     pub(super) fn replace_items(&mut self, items: Vec<ItemView>) {
         let now = Instant::now();
         let scale = self.scale();
@@ -87,7 +89,7 @@ impl FenceViewState {
             && self.roll_anim.is_none()
             && !self.ole_drag
             && self.marquee.is_none()
-            && !self.items.is_empty()
+            && self.outgoing.is_empty()
             && desktop::is_visible(self.hwnd);
         let old_pos: HashMap<ItemId, CellRect> = if animate {
             let cells = self.cell_origins(width_dip);
@@ -111,6 +113,7 @@ impl FenceViewState {
                     && o.name == n.name
                 {
                     n.icon = o.icon;
+                    n.icon_px = o.icon_px;
                     n.icon_fade = o.icon_fade;
                     n.icon_waited = o.icon_waited;
                     n.label = o.label;
@@ -131,6 +134,7 @@ impl FenceViewState {
             self.item_hover.prune(now, |k| !old.contains_key(k));
             self.item_sel.prune(now, |k| !old.contains_key(k));
             self.drop_fades.prune(now, |k| !old.contains_key(k));
+            self.search_dim.prune(now, |k| !old.contains_key(k));
         }
         self.remap_item_state(&old_ids);
         let added = self
@@ -147,6 +151,7 @@ impl FenceViewState {
                 rolled = self.rolled_up,
                 rolling = self.roll_anim.is_some(),
                 marquee = self.marquee.is_some(),
+                swapping = !self.outgoing.is_empty(),
                 old_len,
                 new_len = self.items.len(),
                 changed,
@@ -219,7 +224,6 @@ impl FenceViewState {
         // Removed items fade out from where they are drawn — the mid-glide position and the
         // current alpha, not the layout cell (WinUI AddDeleteThemeTransition fades in place);
         // a removal mid fade-out just keeps fading.
-        let icon_px = (self.icon_dip() * scale).round() as u32;
         let icons = self.icons.borrow();
         for (id, o) in old {
             let Some(c) = old_pos.get(&id) else {
@@ -236,7 +240,7 @@ impl FenceViewState {
                 y,
                 w: c.w,
                 h: c.h,
-                icon_key: icons.draw_key(&o.icon_key, icon_px),
+                icon_key: icons.draw_key(&o.icon_key, o.icon_px),
                 icon: o.icon,
                 label: o.label.unwrap_or(o.name),
                 date: o.date_label.unwrap_or_default(),

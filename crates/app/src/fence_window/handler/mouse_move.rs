@@ -38,11 +38,12 @@ pub(super) fn on_mousemove(
                 m.auto_last = Some(Instant::now());
             }
         }
-        if outside {
-            v.frames.request();
-        }
         v.update_marquee_selection();
-        let _ = v.redraw();
+        // The band and the selection are drawn on the content surface only, once per frame by
+        // `tick` rather than once per mouse message (a 1000 Hz mouse would otherwise redraw
+        // the content many times per displayed frame).
+        v.content_busy = true;
+        v.frames.request();
         return Some(0);
     }
     if let Some(sd) = v.scroll_drag.as_ref() {
@@ -69,7 +70,9 @@ pub(super) fn on_mousemove(
         let hit = v.scrollbar_hit(x, y).map(|(h, _)| h);
         v.set_scrollbar_pointer(hit);
         v.note_scroll_activity();
-        let _ = v.redraw_content();
+        // Drawn once per frame by `tick` (see the marquee arm above).
+        v.content_busy = true;
+        v.frames.request();
         return Some(0);
     }
     if v.page_repeat.is_some() {
@@ -102,12 +105,18 @@ pub(super) fn on_mousemove(
         // it follows the pointer along the strip (TabView), so press_inside
         // is not tracked for PressTarget::Tab; tear-off clears it below.
         let far = (TAB_DETACH_DIP * v.scale()) as i32;
-        let sy = td.start.1;
+        let (sx, sy) = td.start;
         let index = td.index;
-        let (w_px, _) = v.chrome_panel.size_px();
+        let (w_px, h_px) = v.chrome_panel.size_px();
         // Leaving the title row vertically (or the window sideways) tears the
-        // tab off; moving along the strip reorders it.
-        if (y - sy).abs() > far || x < 0 || x >= w_px {
+        // tab off; moving along the strip reorders it. A left tab column is
+        // left sideways, or through the window's top or bottom edge.
+        let torn = if v.tabs_on_rail() {
+            (x - sx).abs() > far || y < 0 || y >= h_px
+        } else {
+            (y - sy).abs() > far || x < 0 || x >= w_px
+        };
+        if torn {
             let tab = v.tabs.get(index).map(|t| t.id);
             v.tab_drag = None;
             v.tab_slide.clear();
@@ -139,7 +148,6 @@ pub(super) fn on_mousemove(
         // the active pill exactly as a click does) and nothing is redrawn.
         if !td.moved {
             let (tx, ty) = window::drag_threshold();
-            let sx = td.start.0;
             if (x - sx).abs() <= tx && (y - sy).abs() <= ty {
                 return Some(0);
             }
@@ -150,7 +158,7 @@ pub(super) fn on_mousemove(
         // step, repeated so a fast sweep can cross several neighbours in one
         // message; `tab_reorder_step` is stable for any pair of widths.
         let now = Instant::now();
-        let pointer_x = x as f32 / v.scale();
+        let pointer_x = v.tab_axis(x, y);
         if let Some(td) = v.tab_drag.as_mut() {
             td.moved = true;
             td.pointer_x = pointer_x;
@@ -229,6 +237,21 @@ pub(super) fn on_mousemove(
         // ReleaseCapture sends WM_CAPTURECHANGED synchronously: no borrow held.
         window::release_capture();
         let refs: Vec<&Path> = paths.iter().map(|p| p.as_path()).collect();
+        // Explorer's desktop (24H2's Progman, or one showing its icons) takes a drop on its
+        // empty space as a move into the folder the files already are in ("The source and
+        // destination file names are the same", and our thread waits until that dialog
+        // closes), or for This PC and the Recycle Bin as "create a shortcut here". Released
+        // there without Ctrl / Alt, the drag ends in the drop source instead and the items go
+        // back to the inbox. A Windows icon that takes the drop (a folder) still gets it; a
+        // portal's files really move to the desktop.
+        let skip_drop = (!from_portal).then(|| -> dragdrop::SkipDrop {
+            Box::new(|keys| {
+                let (hit, _, on_desktop) = window_under_cursor();
+                on_desktop
+                    && dragdrop::modifier_effect(keys, true) == DropEffect::Move
+                    && !pecofence_platform::shell_icons::desktop_icon_drop_target(hit)
+            })
+        });
         let mut drag_returned: Option<Instant> = None;
         let effect = match dragdrop::data_object_for_paths(&refs) {
             Ok(obj) => {
@@ -241,7 +264,7 @@ pub(super) fn on_mousemove(
                 });
                 // Nested message loop until the button is released.
                 crate::peek::set_drag_click_through(true);
-                let effect = dragdrop::do_drag_drop(hwnd, &obj, dragdrop::ALL_EFFECTS);
+                let effect = dragdrop::do_drag_drop(hwnd, &obj, dragdrop::ALL_EFFECTS, skip_drop);
                 drag_returned = Some(Instant::now());
                 INTERNAL_DRAG.with(|s| *s.borrow_mut() = None);
                 Some(effect)
@@ -254,14 +277,8 @@ pub(super) fn on_mousemove(
         // Where it landed, resolved before re-borrowing: WindowFromPoint
         // sends WM_NCHITTEST to our own windows synchronously. The Peek
         // dimmer stays see-through until then, so it is not the answer.
-        let pt = window::cursor_pos();
-        let target = desktop::root_ancestor(desktop::window_from_point(pt.x, pt.y));
+        let (_, class, on_desktop) = window_under_cursor();
         crate::peek::set_drag_click_through(false);
-        let class = desktop::class_name(target);
-        let on_desktop = matches!(
-            class.as_str(),
-            "Progman" | "WorkerW" | "SHELLDLL_DefView" | "SysListView32"
-        );
         let mut guard = view.borrow_mut();
         let Some(v) = guard.as_mut() else {
             return Some(0);
@@ -285,9 +302,9 @@ pub(super) fn on_mousemove(
         match effect {
             // Esc / right button: Explorer cancels outright, so do we.
             Some(r) if !r.dropped => {}
-            // Bare desktop (its hidden ListView accepts nothing, so the
-            // effect is None): Explorer's same-folder drop leaves desktop
-            // items alone, so keep "back to the inbox". A Ctrl / Alt drop
+            // Bare desktop (`skip_drop` ended the drag there, or a hidden
+            // ListView accepted nothing, so the effect is None): keep
+            // "back to the inbox". A Ctrl / Alt drop
             // means duplicate, not relocate. A portal's files really moved
             // there; the desktop watcher files them.
             Some(r)
@@ -322,7 +339,9 @@ pub(super) fn on_mousemove(
         let (col, w) = (cd.col, cd.start_w - dx);
         v.set_column_width(col, w);
         window::set_standard_cursor(StandardCursor::SizeWE);
-        let _ = v.redraw_content();
+        // Drawn once per frame by `tick` (see the marquee arm above).
+        v.content_busy = true;
+        v.frames.request();
         return Some(0);
     }
     // A release-fired button is held: track whether the pointer is still
@@ -378,10 +397,27 @@ pub(super) fn on_mousemove(
     let up = v.up_button_at(x, y);
     let chev = v.chevron_at(x, y);
     let tab = v.tab_at(x, y);
-    let chrome_changed = std::mem::replace(&mut v.up_hovered, up) != up
-        || std::mem::replace(&mut v.chevron_hovered, chev) != chev
-        || std::mem::replace(&mut v.tab_hover, tab) != tab;
+    let chrome_changed = (std::mem::replace(&mut v.up_hovered, up) != up)
+        | (std::mem::replace(&mut v.chevron_hovered, chev) != chev)
+        | (std::mem::replace(&mut v.tab_hover, tab) != tab);
     let on_control = up || chev || tab.is_some();
+    // With 「鼠标悬停时切换标签页」 on, resting on another tab switches to it after the hover
+    // delay; moving onto a different tab restarts the wait.
+    let switch_to = hover_switch_target(
+        tab,
+        v.active_index(),
+        v.tabs.len(),
+        behavior.switch_tab_on_hover.get(),
+        v.title_renaming,
+    );
+    if switch_to != v.tab_hover_switch {
+        v.tab_hover_switch = switch_to;
+        if switch_to.is_some() {
+            window::set_timer(hwnd, TIMER_TAB_HOVER, Tooltip::hover_delay_ms());
+        } else {
+            window::kill_timer(hwnd, TIMER_TAB_HOVER);
+        }
+    }
     // The divider's SizeWE cursor is set by WM_SETCURSOR before this message.
     let divider = v.divider_hit(x, y);
     // The scrollbar's hot zone wins over the item under it. Nothing
@@ -405,8 +441,13 @@ pub(super) fn on_mousemove(
     };
     let header_changed = std::mem::replace(&mut v.header_hover, header) != header;
     // Client-area pointer inside the title row (a control's box) still
-    // counts as hovering the row, so the pill / chevron do not drop.
-    let in_title = y < v.title_h_px();
+    // counts as hovering the row, so the pill / chevron do not drop; a
+    // left tab column is the title bar.
+    let in_title = if v.tabs_on_rail() {
+        x < v.content_x
+    } else {
+        y < v.title_h_px()
+    };
     let (item_changed, title_changed) = v.set_hover(hit, in_title);
     if chrome_changed || title_changed {
         let _ = v.redraw_chrome_only();
@@ -434,4 +475,17 @@ pub(super) fn on_mousemove(
     }
     window::track_mouse_leave(hwnd);
     Some(0)
+}
+
+/// The window under the pointer, the class of its top-level window and whether that is the
+/// desktop. WindowFromPoint sends WM_NCHITTEST to our own windows synchronously: no borrow held.
+fn window_under_cursor() -> (HWND, String, bool) {
+    let pt = window::cursor_pos();
+    let hit = desktop::window_from_point(pt.x, pt.y);
+    let class = desktop::class_name(desktop::root_ancestor(hit));
+    let on_desktop = matches!(
+        class.as_str(),
+        "Progman" | "WorkerW" | "SHELLDLL_DefView" | "SysListView32"
+    );
+    (hit, class, on_desktop)
 }

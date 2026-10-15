@@ -28,6 +28,19 @@ pub fn set_drag_click_through(on: bool) {
     DRAG_CLICK_THROUGH.store(on, std::sync::atomic::Ordering::Relaxed);
 }
 
+/// Focus went from a Peek window to `other`. A fence (click inside its content), another
+/// dimmer, the rename popup or the search box keeps the peek; anything else ends it.
+pub fn keeps_peek(other: HWND) -> bool {
+    if other.0.is_null() {
+        return true;
+    }
+    let cls = desktop::class_name(desktop::root_ancestor(other));
+    cls == anchor::FENCE_CLASS
+        || cls == PEEK_CLASS
+        || cls == "PecoFence.Rename"
+        || cls == crate::peek_search::SEARCH_CLASS
+}
+
 pub const PEEK_CLASS: &str = "PecoFence.PeekDimmer";
 const WA_INACTIVE: usize = 0;
 /// 30 % black (WinUI `SmokeFillColorDefault` #4D000000), the resting alpha of the dimmer.
@@ -72,11 +85,14 @@ impl PeekOverlay {
         for m in monitors::enumerate() {
             let handler: MessageHandler = {
                 let queue = queue.clone();
+                // First half of a character beyond U+FFFF (an emoji): WM_CHAR brings each
+                // UTF-16 unit on its own.
+                let high_surrogate = std::cell::Cell::new(None);
                 Box::new(
                     move |hwnd: HWND, message: u32, wparam: usize, lparam: isize| {
                         match message {
                             msg::WM_LBUTTONDOWN | msg::WM_RBUTTONDOWN | msg::WM_MBUTTONDOWN => {
-                                queue.push(Command::EndPeek);
+                                queue.push(Command::EndPeek("dimmer clicked"));
                                 Some(0)
                             }
                             // Esc ends the peek (no auto-repeats). Modifier keys must NOT: the
@@ -86,7 +102,7 @@ impl PeekOverlay {
                             msg::WM_KEYDOWN
                                 if wparam as u32 == msg::VK_ESCAPE && lparam & (1 << 30) == 0 =>
                             {
-                                queue.push(Command::EndPeek);
+                                queue.push(Command::EndPeek("Esc pressed"));
                                 Some(0)
                             }
                             msg::WM_NCHITTEST
@@ -110,17 +126,27 @@ impl PeekOverlay {
                                 );
                                 None
                             }
-                            msg::WM_ACTIVATE if wparam & 0xFFFF == WA_INACTIVE => {
-                                // Focus went elsewhere. A fence (click inside its content) or another
-                                // dimmer keeps the peek; anything else ends it.
-                                let other = HWND(lparam as *mut core::ffi::c_void);
-                                let cls = desktop::class_name(desktop::root_ancestor(other));
-                                if !other.0.is_null()
-                                    && cls != anchor::FENCE_CLASS
-                                    && cls != PEEK_CLASS
-                                    && cls != "PecoFence.Rename"
+                            // Typing searches the fences: the first characters open the search
+                            // box (which then takes the keyboard). A leading space does not.
+                            msg::WM_CHAR => {
+                                let unit = wparam as u16;
+                                if (0xD800..0xDC00).contains(&unit) {
+                                    high_surrogate.set(Some(unit));
+                                    return Some(0);
+                                }
+                                let units = high_surrogate.take().into_iter().chain([unit]);
+                                if let Some(Ok(ch)) = char::decode_utf16(units).last()
+                                    && !ch.is_control()
+                                    && ch != ' '
                                 {
-                                    queue.push(Command::EndPeek);
+                                    queue.push(Command::PeekSearchType(ch.to_string()));
+                                }
+                                Some(0)
+                            }
+                            msg::WM_ACTIVATE if wparam & 0xFFFF == WA_INACTIVE => {
+                                let other = HWND(lparam as *mut core::ffi::c_void);
+                                if !keeps_peek(other) {
+                                    queue.push(Command::EndPeek("dimmer lost the focus"));
                                 }
                                 None
                             }

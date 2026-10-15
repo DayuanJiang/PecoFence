@@ -5,6 +5,7 @@ use crate::wide::{from_wide, to_wide};
 use windows_core::{Error, PCWSTR, PWSTR, Result};
 
 pub const EN_KILLFOCUS: u32 = crate::bindings::EN_KILLFOCUS as u32;
+pub const EN_CHANGE: u32 = crate::bindings::EN_CHANGE as u32;
 pub const WM_CTLCOLOREDIT_MSG: u32 = WM_CTLCOLOREDIT as u32;
 
 type KeyHandler = fn(u32) -> bool;
@@ -18,12 +19,14 @@ pub struct EditControl {
 }
 
 impl EditControl {
-    /// Creates the control filling `parent`'s client area.
+    /// Creates the control filling `parent`'s client area, its text `font_dip` DIPs high.
+    #[allow(clippy::too_many_arguments)]
     pub fn create(
         parent: HWND,
         width: i32,
         height: i32,
         dpi: u32,
+        font_dip: f32,
         text: &str,
         dark: bool,
         on_key: KeyHandler,
@@ -56,7 +59,7 @@ impl EditControl {
             }
             let face = to_wide(crate::fonts::text_face());
             let font = CreateFontW(
-                -(14.0 * dpi as f32 / 96.0).round() as i32,
+                -(font_dip * dpi as f32 / 96.0).round() as i32,
                 0,
                 0,
                 0,
@@ -84,6 +87,13 @@ impl EditControl {
         }
     }
 
+    pub fn focus(&self) {
+        // SAFETY: plain FFI call on our control.
+        unsafe {
+            let _ = SetFocus(Some(self.hwnd));
+        }
+    }
+
     pub fn focus_and_select_all(&self) {
         self.focus_and_select(0, -1);
     }
@@ -101,6 +111,43 @@ impl EditControl {
                 LPARAM(end as isize),
             );
         }
+    }
+
+    /// Moves the control within its parent (client pixels).
+    pub fn set_bounds(&self, x: i32, y: i32, width: i32, height: i32) {
+        // SAFETY: plain FFI call on our control.
+        unsafe {
+            let _ = SetWindowPos(
+                self.hwnd,
+                None,
+                x,
+                y,
+                width,
+                height,
+                (SWP_NOZORDER | SWP_NOACTIVATE) as u32,
+            );
+        }
+    }
+
+    /// Replaces the text (the parent gets `EN_CHANGE`) and puts the caret after it.
+    pub fn set_text(&self, text: &str) {
+        let wide = to_wide(text);
+        let end = text.encode_utf16().count();
+        // SAFETY: the buffer outlives the call; plain messages to our control.
+        unsafe {
+            let _ = SetWindowTextW(self.hwnd, PCWSTR(wide.as_ptr()));
+            SendMessageW(
+                self.hwnd,
+                EM_SETSEL as u32,
+                WPARAM(end),
+                LPARAM(end as isize),
+            );
+        }
+    }
+
+    /// Background colour (COLORREF), for a parent that paints around the control.
+    pub fn back_color(&self) -> u32 {
+        self.back_color
     }
 
     pub fn text(&self) -> String {

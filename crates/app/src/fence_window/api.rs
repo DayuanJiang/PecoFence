@@ -125,7 +125,7 @@ impl FenceWindow {
             tab_settle: None,
             drop_tab: None,
             drag_peek_armed: false,
-            rbutton_swallow: false,
+            rbutton_press: None,
             renaming: None,
             title_renaming: false,
             unfold_cache: None,
@@ -147,6 +147,9 @@ impl FenceWindow {
             header_fades: Fades::new(motion::FASTER, motion::FASTER, Curve::Linear),
             chrome_fades: Fades::new(motion::FASTER, motion::FASTER, Curve::Linear),
             drop_fades: Fades::new(motion::FASTER, motion::FASTER, Curve::Linear),
+            search: None,
+            search_dim: Fades::new(motion::FASTER, motion::FASTER, Curve::Linear),
+            search_expanded: false,
             drop_wash: Tween::at(0.0, Instant::now()),
             caret_alpha: Tween::at(0.0, Instant::now()),
             caret_shown: None,
@@ -171,13 +174,16 @@ impl FenceWindow {
             columns_visible: [true; 3],
             col_drag: None,
             is_portal: false,
+            portal_missing: false,
             label_w: 0.0,
+            icons_pending: false,
             hover: None,
             title_hover: false,
             selected: HashSet::new(),
             scroll_y: 0.0,
             scroll_memory: HashMap::new(),
             scroll_restore: None,
+            select_after_nav: None,
             scroll_anim: None,
             dpi,
             theme,
@@ -185,10 +191,16 @@ impl FenceWindow {
             backdrops: ctx.backdrops.borrow().clone(),
             backdrop_crop: None,
             backdrop_rect: None,
+            backdrop_origin: None,
             backdrop_key: format!("backdrop:{:x}", hwnd.0 as isize),
             gpu_glass: RefCell::new(pecofence_render::gpu_glass::GpuGlass::default()),
             chrome_panel,
             content_panel,
+            content_x: 0,
+            content_y: (theme.title_height * dpi as f32 / 96.0).round() as i32,
+            rail_dip: 0.0,
+            expanded_w_px: bounds.right - bounds.left,
+            column_collapsed: false,
             _target: target,
             root,
             chrome: ctx.chrome.clone(),
@@ -230,7 +242,9 @@ impl FenceWindow {
             cut: HashSet::new(),
             wheel_zoom_accum: 0,
             wheel_tab_accum: 0,
+            tab_hover_switch: None,
             auto_height,
+            rail_grow: false,
             locked: false,
             backdrop_override: None,
             opacity: 1.0,
@@ -371,7 +385,7 @@ impl FenceWindow {
             },
         );
         format!(
-            "title={:?} opacity={:.2} scale={:.3} fade={fade} retired={} rolled={} rolling={} peeking={} items={} tabs={} selected={} focused={:?} shadow_visible={} shadow_alpha={} layout={:?} locked={} auto_height={} active={} scroll={:.1} client={:?} client_offset=({},{}) chrome={:?} glass={:?} wallpaper_uploads={} title_size={} tab_fonts={:?} tab_rects={:?} capture={} tab_drag={} window_drag={} detach_pending={} plate_inset={} plate_alpha={:.2} mouse_inside={}",
+            "title={:?} opacity={:.2} scale={:.3} fade={fade} retired={} rolled={} rolling={} peeking={} items={} tabs={} selected={} focused={:?} shadow_visible={} shadow_alpha={} layout={:?} locked={} auto_height={} active={} scroll={:.1} client={:?} client_offset=({},{}) chrome={:?} glass={:?} wallpaper_uploads={} title_size={} tab_fonts={:?} tab_rects={:?} content_x={} content={:?} capture={} tab_drag={} window_drag={} detach_pending={} plate_inset={} plate_alpha={:.2} mouse_inside={}",
             v.title,
             v.root.opacity(),
             v.root.scale().x,
@@ -404,6 +418,8 @@ impl FenceWindow {
                 .map(|t| (&t.title, t.title_size))
                 .collect::<Vec<_>>(),
             v.tab_rects(),
+            v.content_x,
+            v.content_panel.size_px(),
             window::get_capture() == self.hwnd(),
             v.tab_drag.is_some(),
             v.remote_drag.is_some(),
@@ -496,6 +512,7 @@ impl FenceWindow {
                     "down" => (msg::WM_LBUTTONDOWN, 1, (x, y)),
                     "move" => (msg::WM_MOUSEMOVE, 1, (x, y)),
                     "up" => (msg::WM_LBUTTONUP, 0, (x, y)),
+                    "dblclk" => (msg::WM_LBUTTONDBLCLK, 1, (x, y)),
                     "caption-down" => {
                         let p = window::client_to_screen(hwnd, pecofence_platform::POINT { x, y });
                         (msg::WM_NCLBUTTONDOWN, msg::HTCAPTION as usize, (p.x, p.y))
@@ -562,11 +579,21 @@ impl FenceWindow {
             v.peeking = false;
             v.rolled_up = rolled;
             v.expanded_h_px = expanded_h;
+            v.expanded_w_px = rect.right - rect.left;
+            v.column_collapsed = rolled && v.tabs_on_rail();
+            v.rail_dip = v.measure_rail_w();
             v.roll_t = Tween::at(rolled as u8 as f32, Instant::now());
             let _ = v.motion.stop(&v.content_panel.visual, Prop::Opacity);
             v.content_panel.visual.set_opacity(1.0);
             v.content_panel.visual.set_visible(!rolled);
-            rect.bottom = rect.top + if rolled { v.title_h_px() } else { expanded_h };
+            if rolled {
+                rect.bottom = rect.top + v.rolled_h_px();
+                if v.column_collapsed {
+                    rect.right = rect.left + v.rolled_w_px();
+                }
+            } else {
+                rect.bottom = rect.top + expanded_h;
+            }
         });
         self.set_bounds(rect);
         self.with_view(|v| {
@@ -577,10 +604,37 @@ impl FenceWindow {
         });
     }
 
+    /// Moves the window to the saved expanded rect `rect`. Rolled, it keeps its rolled size there
+    /// (the title row, or the left tab column it is collapsed to) and expands to `rect` later.
+    pub fn place_saved(&self, rect: RECT, rolled: bool) {
+        if rolled {
+            self.restore_geometry(rect, true, rect.bottom - rect.top);
+        } else {
+            self.set_bounds(rect);
+        }
+    }
+
     pub(super) fn with_view(&self, f: impl FnOnce(&mut FenceViewState)) {
         if let Some(v) = self.view.borrow_mut().as_mut() {
             f(v);
         }
+    }
+
+    /// The window already shows exactly `items` (same order, names, icons and details).
+    pub fn shows_items(&self, items: &[ItemView]) -> bool {
+        self.view.borrow().as_ref().is_some_and(|v| {
+            v.items.len() == items.len()
+                && v.items.iter().zip(items).all(|(a, b)| {
+                    a.id == b.id
+                        && a.name == b.name
+                        && a.path == b.path
+                        && a.is_folder == b.is_folder
+                        && a.icon_key == b.icon_key
+                        && a.icon_only == b.icon_only
+                        && a.mtime == b.mtime
+                        && a.size == b.size
+                })
+        })
     }
 
     /// Replaces the item list with layout motion (see `FenceViewState::replace_items`).
@@ -606,9 +660,37 @@ impl FenceWindow {
                 // (the redraw clamps to its content; `set_layout` consumes the value).
                 v.scroll_y = s;
             }
+            if let Some((id, ring)) = v.select_after_nav.take()
+                && let Some(i) = v.items.iter().position(|it| it.id == id)
+            {
+                v.select_only(i);
+                v.focus_visible = ring;
+                if !v.rolled_up {
+                    v.scroll_into_view(i, false);
+                }
+            }
             let _ = v.redraw();
             // The item under a stationary pointer may have changed: re-hit-test from the loop.
             v.request_hover_refresh();
+        });
+    }
+
+    /// Portal navigation, before the new folder's items arrive: the page swaps like a tab
+    /// switch (`dir` +1 = into a subfolder, sliding in from the right; -1 = up / home, from the
+    /// left) and the new folder starts at the top. `select` (the folder just left by 上一级)
+    /// is selected by the next `set_items`.
+    pub fn begin_portal_navigation(&self, dir: i8, select: Option<ItemId>) {
+        self.with_view(|v| {
+            v.scroll_anim = None;
+            v.scroll_y = 0.0;
+            v.select_after_nav = select.map(|id| (id, v.focus_visible));
+            if !v.rolled_up
+                && !v.height_animating()
+                && v.motion.enabled()
+                && desktop::is_visible(v.hwnd)
+            {
+                v.begin_content_swap(dir);
+            }
         });
     }
 
@@ -628,6 +710,7 @@ impl FenceWindow {
                 v.item_hover.prune(now, |id| *id != old);
                 v.item_sel.prune(now, |id| *id != old);
                 v.drop_fades.prune(now, |id| *id != old);
+                v.search_dim.prune(now, |id| *id != old);
                 if v.renaming == Some(old) {
                     v.renaming = Some(new);
                 }
@@ -661,6 +744,62 @@ impl FenceWindow {
                 v.cut = cut.clone();
                 let _ = v.redraw_content();
             }
+        });
+    }
+
+    /// Peek search marks (None = drawn as usual). The current match glides into view; a
+    /// rolled-up fence with matches expands like a hover peek and rolls back up once it has
+    /// none (or the search ends).
+    pub fn set_search_marks(&self, marks: Option<SearchMarks>) {
+        self.with_view(|v| {
+            if v.search == marks {
+                return;
+            }
+            let expand = marks.as_ref().is_some_and(|m| !m.matches.is_empty());
+            let current = marks.as_ref().and_then(|m| m.current);
+            // The tab badges change the pill widths: the pills slide to their new places.
+            let tabs_changed = v.tabs.len() > 1
+                && v.search.as_ref().map(|m| &m.tab_hits) != marks.as_ref().map(|m| &m.tab_hits);
+            let now = Instant::now();
+            let prev: Vec<(FenceId, f32)> = if tabs_changed {
+                v.tabs
+                    .iter()
+                    .map(|t| t.id)
+                    .zip(v.tab_draw_xs(now))
+                    .collect()
+            } else {
+                Vec::new()
+            };
+            v.search = marks;
+            if tabs_changed {
+                if v.tab_drag.is_none() {
+                    v.sync_tab_slides(&prev, now);
+                }
+                let _ = v.redraw_chrome_only();
+            }
+            if expand && !v.search_expanded {
+                if v.peeking {
+                    v.search_expanded = true;
+                } else if v.rolled_up && v.roll_anim.is_none() && !v.retired {
+                    v.peeking = true;
+                    v.search_expanded = true;
+                    if v.expanded_h_px <= v.title_h_px() {
+                        v.expanded_h_px = v.title_h_px() + (200.0 * v.scale()) as i32;
+                    }
+                    v.start_roll_anim(false);
+                }
+            } else if !expand && v.search_expanded {
+                // The hover-peek close countdown rolls it back up (unless the pointer is on it).
+                v.search_expanded = false;
+                v.resume_peek_close();
+            }
+            if v.rolled_up {
+                return;
+            }
+            if let Some(i) = current.and_then(|id| v.items.iter().position(|it| it.id == id)) {
+                v.scroll_into_view(i, true);
+            }
+            let _ = v.redraw_content();
         });
     }
 
@@ -715,16 +854,26 @@ impl FenceWindow {
     }
 
     pub fn set_title(&self, title: &str) {
+        let mut changed = false;
         self.with_view(|v| {
+            if v.title == title {
+                return;
+            }
             v.title = title.to_string();
+            changed = true;
             let _ = v.redraw();
         });
+        if changed {
+            // UI Automation / screen readers read the window text. SetWindowText sends
+            // WM_SETTEXT synchronously: called with no borrow of the view held.
+            window::set_title(self.hwnd(), title);
+        }
     }
 
     pub fn set_icon_size(&self, size: u32) {
         self.with_view(|v| {
             v.icon_size = size;
-            v.drop_icons_for_reload();
+            v.reload_icons_and_labels();
             v.snap_item_motion();
             let _ = v.redraw();
         });
@@ -799,8 +948,18 @@ impl FenceWindow {
                 .collect();
             let old_ids: Vec<FenceId> = v.tabs.iter().map(|t| t.id).collect();
             let had_strip = v.tabs.len() > 1;
+            // A new window gets its tabs here for the first time: what it was saved with.
+            let first = v.tabs.is_empty();
+            let rail_fit = v.rail_fit_height_px();
             v.tabs = tabs;
             v.active = active;
+            // A left tab column comes with the second tab and goes with the last but one.
+            let rail_changed = v.sync_rail();
+            // Only a column that needs more room than before (a new tab, a longer caption)
+            // asks the height pass to grow the fence; a reorder, a colour or a start does not.
+            if !first && v.rail_fit_height_px() > rail_fit {
+                v.rail_grow = true;
+            }
             if !same_titles {
                 // Reorder, rename, or a tab added / removed (merge, tear-off, close): the
                 // survivors slide from where they were painted into their new slots (WinUI
@@ -894,6 +1053,32 @@ impl FenceWindow {
                 v.drop_tab = None;
                 let _ = v.redraw_chrome_only();
             }
+            if rail_changed {
+                let _ = v.redraw();
+            }
+        });
+    }
+
+    /// 标签栏位置 changed: the tabs move between the title row and the left column.
+    pub fn sync_tab_bar(&self) {
+        self.with_view(|v| {
+            // A tab drag or merge gap measured along the old axis ends here (only the CLI can
+            // change the setting mid-drag); the dragged tab goes back to its slot and the button
+            // release then finds nothing to commit.
+            if let Some(td) = v.tab_drag.take()
+                && td.index < v.tabs.len()
+            {
+                let t = v.tabs.remove(td.index);
+                v.tabs.insert(td.start_index.min(v.tabs.len()), t);
+            }
+            v.merge_gap = None;
+            v.pressed = None;
+            v.tab_slide.clear();
+            v.tab_settle = None;
+            v.pill_anim = None;
+            v.sync_rail();
+            v.rail_grow = v.tabs_on_rail();
+            let _ = v.redraw();
         });
     }
 
@@ -928,7 +1113,7 @@ impl FenceWindow {
                 offset: (pt.x - r.left, pt.y - r.top),
                 offset_dpi: monitors::dpi_for_window(hwnd),
                 merge_target: 0,
-                merge_x: i32::MIN,
+                merge_at: (i32::MIN, i32::MIN),
                 moved_once: false,
                 origin: WindowDragOrigin::Tab(Box::new(change)),
                 group: Vec::new(),
@@ -953,11 +1138,11 @@ impl FenceWindow {
 
     /// Highlights (or clears) this window's title as a drag-to-merge target: the wash + ring
     /// fade in over 83 ms and out over 167 ms, and a tabbed strip opens an insertion gap at
-    /// the slot under pointer screen `x` (neighbours slide 167 ms). Cheap when nothing changed:
-    /// the hint is re-sent for every pointer move along the target.
-    pub fn set_merge_hint(&self, on: bool, x: i32) {
+    /// the slot under pointer screen point `at` (neighbours slide 167 ms). Cheap when nothing
+    /// changed: the hint is re-sent for every pointer move along the target.
+    pub fn set_merge_hint(&self, on: bool, at: (i32, i32)) {
         self.with_view(|v| {
-            let mut changed = v.set_merge_gap(on.then_some(x));
+            let mut changed = v.set_merge_gap(on.then_some(at));
             if v.merge_hint != on {
                 v.merge_hint = on;
                 let (to, dur) = if on {
@@ -975,13 +1160,13 @@ impl FenceWindow {
         });
     }
 
-    /// Where a fence dropped on this title at pointer screen `x` lands in the strip (the slot
-    /// the merge gap sits at); `tabs.len()` = append.
-    pub fn merge_slot_at(&self, x: i32) -> usize {
+    /// Where a fence dropped on this title at pointer screen point `at` lands in the strip (the
+    /// slot the merge gap sits at); `tabs.len()` = append.
+    pub fn merge_slot_at(&self, at: (i32, i32)) -> usize {
         self.view
             .borrow()
             .as_ref()
-            .map_or(usize::MAX, |v| v.merge_slot_at(x))
+            .map_or(usize::MAX, |v| v.merge_slot_at(at))
     }
 
     /// Details column widths (修改日期, 类型, 大小) for the fence being shown.
@@ -1002,6 +1187,7 @@ impl FenceWindow {
         folder_icon: bool,
         up_button: bool,
         navigate_folders: bool,
+        folder_missing: bool,
         portal_folder: Option<PathBuf>,
     ) {
         self.with_view(|v| {
@@ -1010,11 +1196,12 @@ impl FenceWindow {
                 up_button,
             };
             let changed = v.deco != deco || v.navigate_folders != navigate_folders;
-            let portal_changed = v.is_portal != is_portal;
+            let portal_changed = v.is_portal != is_portal || v.portal_missing != folder_missing;
             v.deco = deco;
             v.navigate_folders = navigate_folders;
             v.portal_folder = portal_folder;
             v.is_portal = is_portal;
+            v.portal_missing = folder_missing;
             if !up_button {
                 v.up_hovered = false;
                 if v.pressed == Some(PressTarget::Up) {
@@ -1026,7 +1213,8 @@ impl FenceWindow {
                 let _ = v.redraw_chrome_only();
             }
             if portal_changed && v.items.is_empty() && !v.rolled_up {
-                // The empty-state wording differs for a folder portal.
+                // The empty-state wording differs for a folder portal, and for a folder that
+                // cannot be found.
                 let _ = v.redraw_content();
             }
         });
@@ -1074,9 +1262,29 @@ impl FenceWindow {
             v.header_hover = None;
             v.header_fades.clear();
             v.reset_item_fades();
-            v.drop_icons_for_reload();
+            v.reload_icons_and_labels();
             v.snap_item_motion();
             let _ = v.redraw();
+        });
+    }
+
+    /// Tab switch, after `set_tabs` and before the incoming tab's items arrive: takes that
+    /// tab's icon size and layout without drawing the outgoing items again, so the new items
+    /// are drawn, and their icons extracted, at their own size from the first frame; the icon
+    /// cache keeps an inactive tab's icons at that size only.
+    pub fn set_incoming_tab_view(&self, icon_size: u32, layout: ViewLayout) {
+        self.with_view(|v| {
+            if v.icon_size == icon_size && v.layout == layout {
+                return;
+            }
+            if v.layout != layout {
+                v.header_hover = None;
+                v.header_fades.clear();
+            }
+            v.icon_size = icon_size;
+            v.layout = layout;
+            v.reload_icons_and_labels();
+            v.snap_item_motion();
         });
     }
 
@@ -1122,6 +1330,24 @@ impl FenceWindow {
             .unwrap_or(48)
     }
 
+    pub fn dpi(&self) -> u32 {
+        self.view.borrow().as_ref().map(|v| v.dpi).unwrap_or(96)
+    }
+
+    /// Adds the `IconCache::draw_key`s this window draws or is about to draw to `out`: every
+    /// item at the current icon size, and at the size it still shows until that one arrives.
+    pub fn needed_icons(&self, icons: &IconCache, out: &mut HashSet<String>) {
+        if let Some(v) = self.view.borrow().as_ref() {
+            let px = crate::layout::icon_px(v.layout, v.icon_size, v.dpi);
+            for item in &v.items {
+                out.insert(icons.draw_key(&item.icon_key, px));
+                if item.icon.is_some() && item.icon_px != px {
+                    out.insert(icons.draw_key(&item.icon_key, item.icon_px));
+                }
+            }
+        }
+    }
+
     /// Ends a peek without rolling back (the fence stays expanded).
     pub fn commit_expanded(&self) {
         self.with_view(|v| {
@@ -1152,7 +1378,85 @@ impl FenceWindow {
         let v = guard.as_ref()?;
         let title = v.title_h_px();
         let rolled = v.roll_target() || v.peeking;
-        Some((title, if rolled { title } else { v.expanded_h_px }))
+        Some((
+            title,
+            if rolled {
+                v.rolled_h_px()
+            } else {
+                v.expanded_h_px
+            },
+        ))
+    }
+
+    /// Screen rect of tab `tab`'s row in the left tab column (None without a column): where the
+    /// rename box goes.
+    pub fn rail_row_screen_rect(&self, tab: FenceId) -> Option<RECT> {
+        let guard = self.view.try_borrow().ok()?;
+        let v = guard.as_ref()?;
+        if !v.tabs_on_rail() {
+            return None;
+        }
+        let i = v.tabs.iter().position(|t| t.id == tab)?;
+        let (y, h) = *v.tab_rects().get(i)?;
+        let s = v.scale();
+        let win = self.rect();
+        let at = |dip: f32| (dip * s).round() as i32;
+        Some(RECT {
+            left: win.left + at(RAIL_ROW_INSET),
+            top: win.top + at(y),
+            right: win.left + at(v.rail_w() - RAIL_ROW_RIGHT),
+            bottom: win.top + at(y + h),
+        })
+    }
+
+    /// Window rect, as wide as the fence expands to while it is collapsed to its left tab column:
+    /// the room automatic placement keeps clear.
+    pub fn footprint_rect(&self) -> RECT {
+        let mut r = self.rect();
+        if let Some(ew) = self.collapsed_expanded_width_px() {
+            r.right = r.left + ew;
+        }
+        r
+    }
+
+    /// Width the window expands to while it is collapsed to its left tab column (None
+    /// otherwise: the window has its expanded width).
+    pub fn collapsed_expanded_width_px(&self) -> Option<i32> {
+        let guard = self.view.try_borrow().ok()?;
+        let v = guard.as_ref()?;
+        v.column_collapsed.then_some(v.expanded_w_px)
+    }
+
+    /// A rolled fence whose tabs changed (added, removed, renamed, or 标签栏位置 switched)
+    /// takes its rolled size again: the left tab column it is collapsed to, or its title row at
+    /// the expanded width. Returns the new window rect when it changed.
+    pub fn settle_rolled_size(&self) -> Option<RECT> {
+        let (w, h) = {
+            let mut guard = self.view.borrow_mut();
+            let v = guard.as_mut()?;
+            if !v.rolled_up || v.peeking || v.roll_anim.is_some() || v.retired {
+                return None;
+            }
+            let (cur_w, _) = window::window_rect_size(v.hwnd);
+            let w = if v.tabs_on_rail() {
+                v.rail_dip = v.measure_rail_w();
+                v.rail_px()
+            } else if v.column_collapsed {
+                v.expanded_w_px
+            } else {
+                cur_w
+            };
+            v.column_collapsed = v.tabs_on_rail();
+            (w, v.rolled_h_px())
+        };
+        let r = self.rect();
+        if (r.right - r.left, r.bottom - r.top) == (w, h) {
+            return None;
+        }
+        // No borrow held: WM_SIZE lays the panels out at the new size.
+        let _ = self.window.set_bounds(r.left, r.top, w, h);
+        self.with_view(|v| v.update_shadow_now());
+        Some(window::window_rect(self.hwnd()))
     }
 
     /// Windows a title or tear-off drag driven by this window moves right now (the dragged one
@@ -1284,6 +1588,20 @@ impl FenceWindow {
         self.view.borrow().as_ref().and_then(|v| v.auto_height_px())
     }
 
+    /// Width of the left tab column in DIPs (0 without one).
+    pub fn tab_rail_dip(&self) -> f32 {
+        self.view.borrow().as_ref().map_or(0.0, |v| v.rail_w())
+    }
+
+    /// See `FenceViewState::take_rail_growth_px`: the height a fence grows to once so its left
+    /// tab column shows every tab.
+    pub fn take_rail_growth_px(&self) -> Option<i32> {
+        self.view
+            .borrow_mut()
+            .as_mut()
+            .and_then(|v| v.take_rail_growth_px())
+    }
+
     /// Columns, rows and fitting height of the fence currently shown ([`Self::active_fence`]).
     pub fn fit_report(&self) -> Option<FitReport> {
         self.view.borrow().as_ref().map(|v| v.fit_report())
@@ -1358,10 +1676,19 @@ impl FenceWindow {
     /// animations or icon resources.
     pub fn set_backdrops(&self, backdrops: Rc<BackdropSets>) {
         self.with_view(|v| {
+            let old_ink = v.material_foreground().text_primary;
             v.backdrops = backdrops;
             v.glass_dark_text.set(None);
             v.invalidate_backdrop();
-            if let Err(error) = v.redraw() {
+            // The content only follows the backdrop through its ink (as in `on_move`).
+            let result = if old_ink != v.material_foreground().text_primary
+                || (v.theme.liquid_glass && v.row_metrics().is_some())
+            {
+                v.redraw()
+            } else {
+                v.redraw_chrome_only()
+            };
+            if let Err(error) = result {
                 tracing::warn!(%error, "redraw after wallpaper change failed");
             }
         });
@@ -1448,11 +1775,39 @@ impl FenceWindow {
         });
     }
 
+    /// The icon cache has new pictures for these draw keys (`IconCache::take_replaced`):
+    /// items showing one of them, or its failure placeholder, take the new one.
+    pub fn reload_icons(&self, replaced: &HashSet<String>) {
+        self.with_view(|v| {
+            let px = (v.icon_dip() * v.scale()).round() as u32;
+            let mut any = false;
+            {
+                let icons = v.icons.borrow();
+                for item in &mut v.items {
+                    if replaced.contains(&icons.draw_key(&item.icon_key, px)) {
+                        item.icon_px = 0;
+                        item.icon_failed = false;
+                        any = true;
+                    }
+                }
+            }
+            // A removed item still fading out holds the old picture and would put it back into
+            // the GPU cache under the same key: its fade ends now.
+            let leaving = v.leaving.len();
+            v.leaving.retain(|l| !replaced.contains(&l.icon_key));
+            any |= v.leaving.len() != leaving;
+            if any && !(v.rolled_up && v.roll_anim.is_none()) {
+                let _ = v.redraw_content();
+            }
+        });
+    }
+
     /// Redraws only if icons are still missing (used after the icon worker delivers results).
     pub fn redraw_if_pending_icons(&self) {
         self.with_view(|v| {
-            if v.has_pending_icons() {
-                let _ = v.redraw();
+            // Icons live on the content surface only, hidden while rolled up (as in `redraw`).
+            if v.has_pending_icons() && !(v.rolled_up && v.roll_anim.is_none()) {
+                let _ = v.redraw_content();
             }
         });
     }

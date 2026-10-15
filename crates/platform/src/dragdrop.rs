@@ -546,6 +546,35 @@ pub fn has_shell_items(data: &IDataObject) -> bool {
     .any(|fmt| unsafe { data.QueryGetData(fmt).is_ok() })
 }
 
+/// Does a drag off the desktop hold one of the desktop's own namespace items (This PC, the
+/// Recycle Bin, OneDrive, the user's folder)? The icons of OneDrive and of the user's folder
+/// also name that folder in `CF_HDROP`, but the folder is not theirs to move (moving OneDrive's
+/// fails with "0x80004001 Not implemented").
+pub fn has_desktop_namespace_item(data: &IDataObject) -> bool {
+    let fmt = hglobal_format(registered_format(
+        "Shell IDList Array",
+        &SHELL_IDLIST_FORMAT,
+    ));
+    hglobal_bytes(data, &fmt).is_some_and(|b| ida_has_root_item(&b))
+}
+
+/// Reads a `CIDA` (item count, then the offsets of the parent's ID list and of each item's):
+/// the parent is the desktop (an empty list) and an item is a root namespace item (its first
+/// ID has type 0x1F).
+fn ida_has_root_item(b: &[u8]) -> bool {
+    let u32_at = |i: usize| {
+        b.get(i..i + 4)
+            .map(|s| u32::from_le_bytes([s[0], s[1], s[2], s[3]]) as usize)
+    };
+    let Some(count) = u32_at(0) else {
+        return false;
+    };
+    let on_desktop = u32_at(4).and_then(|o| b.get(o..o + 2)) == Some(&[0, 0][..]);
+    on_desktop
+        && (1..=count.min(1 << 16))
+            .any(|k| u32_at(4 + 4 * k).and_then(|o| b.get(o + 2)) == Some(&0x1F))
+}
+
 /// Hands a drop to the shell's own drop target for `folder` — what dropping onto that folder's
 /// icon in Explorer runs — for data we do not take apart ourselves (see [`has_shell_items`]):
 /// the shell writes the mail as `.msg`, creates the Start-menu app's shortcut, asks about name
@@ -646,8 +675,8 @@ pub fn data_object_for_paths(paths: &[&Path]) -> Result<IDataObject> {
     bound
 }
 
-/// Starts an OLE drag of `data` from `hwnd` with the shell's default drop source (Esc / right
-/// button cancel, standard Move / Copy / Link cursors) and the shell drag image.
+/// Starts an OLE drag of `data` from `hwnd` with the shell's default drop source or ours (Esc /
+/// right button cancel, standard Move / Copy / Link cursors) and the shell drag image.
 ///
 /// How an outgoing drag ended.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -661,18 +690,33 @@ pub struct DragOutcome {
 
 const DRAGDROP_S_DROP: i32 = 0x0004_0100;
 
+/// Asked when the left button comes up, with the key state at that moment (`MK_*`): true ends
+/// the drag there without a drop, so the target under the pointer gets `DragLeave` and writes
+/// nothing.
+pub type SkipDrop = Box<dyn Fn(u32) -> bool>;
+
 /// **Runs a nested message loop** until the button is released: the caller must hold no
 /// `RefCell` borrow and must have released mouse capture. Distinguishes a cancelled drag from
-/// a drop nobody accepted (the generated binding folds both into `Ok(0)`).
-pub fn do_drag_drop(hwnd: HWND, data: &IDataObject, allowed: u32) -> DragOutcome {
+/// a drop nobody accepted (the generated binding folds both into `Ok(0)`). With `skip_drop`
+/// our own drop source replaces the shell's default one, and a skipped drop is reported as a
+/// drop nobody accepted.
+pub fn do_drag_drop(
+    hwnd: HWND,
+    data: &IDataObject,
+    allowed: u32,
+    skip_drop: Option<SkipDrop>,
+) -> DragOutcome {
     windows_core::link!("shell32.dll" "system" fn SHDoDragDrop(hwnd: HWND, pdata: *mut core::ffi::c_void, pdsrc: *mut core::ffi::c_void, dweffect: u32, pdweffect: *mut u32) -> windows_core::HRESULT);
+    let source = skip_drop.map(|skip| new_drop_source(data, skip));
     let mut effect: u32 = 0;
-    // SAFETY: valid HWND and interface; a null IDropSource asks the shell for its default one.
+    // SAFETY: valid HWND and interfaces; a null IDropSource asks the shell for its default one.
     let hr = unsafe {
         SHDoDragDrop(
             hwnd,
             data.as_raw(),
-            core::ptr::null_mut(),
+            source
+                .as_ref()
+                .map_or(core::ptr::null_mut(), |s| s.as_raw()),
             allowed,
             &mut effect,
         )
@@ -680,10 +724,163 @@ pub fn do_drag_drop(hwnd: HWND, data: &IDataObject, allowed: u32) -> DragOutcome
     if hr.is_err() {
         tracing::warn!(error = %windows_core::Error::from_hresult(hr), "SHDoDragDrop failed");
     }
+    // SAFETY: `source` still holds its reference, so the object is alive.
+    let skipped = source
+        .as_ref()
+        .is_some_and(|s| unsafe { (*(s.as_raw() as *const DropSourceObject)).skipped.get() });
     DragOutcome {
-        dropped: hr.0 == DRAGDROP_S_DROP,
+        dropped: hr.0 == DRAGDROP_S_DROP || skipped,
         effect: DropEffect::from_raw(effect),
     }
+}
+
+// ---- Drop source (the shell's default one plus `SkipDrop`) -----------------------------------
+
+#[repr(C)]
+struct DropSourceVtbl {
+    base: windows_core::IUnknown_Vtbl,
+    query_continue_drag:
+        unsafe extern "system" fn(*mut core::ffi::c_void, windows_core::BOOL, u32) -> HRESULT,
+    give_feedback: unsafe extern "system" fn(*mut core::ffi::c_void, u32) -> HRESULT,
+}
+
+#[repr(C)]
+struct DropSourceObject {
+    vtbl: *const DropSourceVtbl,
+    refs: AtomicU32,
+    data: IDataObject,
+    skip_drop: SkipDrop,
+    skipped: std::cell::Cell<bool>,
+}
+
+static SOURCE_VTBL: DropSourceVtbl = DropSourceVtbl {
+    base: windows_core::IUnknown_Vtbl {
+        QueryInterface: source_query_interface,
+        AddRef: source_add_ref,
+        Release: source_release,
+    },
+    query_continue_drag: source_query_continue_drag,
+    give_feedback: source_give_feedback,
+};
+
+fn new_drop_source(data: &IDataObject, skip_drop: SkipDrop) -> IDropSource {
+    let object = Box::new(DropSourceObject {
+        vtbl: &SOURCE_VTBL,
+        refs: AtomicU32::new(1),
+        data: data.clone(),
+        skip_drop,
+        skipped: std::cell::Cell::new(false),
+    });
+    // SAFETY: a valid COM object with one owned reference, transferred to the wrapper.
+    unsafe { IDropSource::from_raw(Box::into_raw(object).cast()) }
+}
+
+unsafe extern "system" fn source_query_interface(
+    this: *mut core::ffi::c_void,
+    iid: *const GUID,
+    out: *mut *mut core::ffi::c_void,
+) -> HRESULT {
+    // SAFETY: COM contract — `this` is a live DropSourceObject, `iid`/`out` are valid.
+    unsafe {
+        if out.is_null() {
+            return E_POINTER;
+        }
+        let iid = &*iid;
+        if *iid == IDropSource::IID || *iid == windows_core::IUnknown::IID {
+            source_add_ref(this);
+            *out = this;
+            S_OK
+        } else {
+            *out = core::ptr::null_mut();
+            E_NOINTERFACE
+        }
+    }
+}
+
+unsafe extern "system" fn source_add_ref(this: *mut core::ffi::c_void) -> u32 {
+    // SAFETY: COM contract.
+    unsafe {
+        (*(this as *mut DropSourceObject))
+            .refs
+            .fetch_add(1, Ordering::AcqRel)
+            + 1
+    }
+}
+
+unsafe extern "system" fn source_release(this: *mut core::ffi::c_void) -> u32 {
+    // SAFETY: COM contract; the box is freed exactly when the count reaches zero.
+    unsafe {
+        let obj = this as *mut DropSourceObject;
+        let remaining = (*obj).refs.fetch_sub(1, Ordering::AcqRel) - 1;
+        if remaining == 0 {
+            drop(Box::from_raw(obj));
+        }
+        remaining
+    }
+}
+
+/// The shell's rules for a left-button drag (Esc or the right button cancels, releasing the
+/// left one drops), with `skip_drop` asked at the release.
+unsafe extern "system" fn source_query_continue_drag(
+    this: *mut core::ffi::c_void,
+    escape: windows_core::BOOL,
+    key_state: u32,
+) -> HRESULT {
+    // SAFETY: COM contract — `this` is a live DropSourceObject.
+    let obj = unsafe { &*(this as *const DropSourceObject) };
+    if escape.as_bool() || key_state & MK_RBUTTON != 0 {
+        DRAGDROP_S_CANCEL
+    } else if key_state & MK_LBUTTON != 0 {
+        S_OK
+    } else if (obj.skip_drop)(key_state) {
+        obj.skipped.set(true);
+        DRAGDROP_S_CANCEL
+    } else {
+        HRESULT(DRAGDROP_S_DROP)
+    }
+}
+
+static IS_SHOWING_LAYERED_FORMAT: OnceLock<u16> = OnceLock::new();
+static DRAG_WINDOW_FORMAT: OnceLock<u16> = OnceLock::new();
+
+/// A DWORD the shell's drag image keeps in the data object under the format `name`.
+fn data_dword(data: &IDataObject, name: &'static str, slot: &'static OnceLock<u16>) -> Option<u32> {
+    let bytes = hglobal_bytes(data, &hglobal_format(registered_format(name, slot)))?;
+    Some(u32::from_le_bytes(bytes.get(..4)?.try_into().ok()?))
+}
+
+/// What the shell's default drop source does: while the drag image is a layered window the
+/// pointer stays an arrow and the image carries the effect's badge (`DDWM_SETCURSOR`,
+/// WM_USER + 2: 1 none, 2 move, 3 copy, 4 link), otherwise OLE's drag cursors.
+unsafe extern "system" fn source_give_feedback(
+    this: *mut core::ffi::c_void,
+    effect: u32,
+) -> HRESULT {
+    const DRAGDROP_S_USEDEFAULTCURSORS: HRESULT = HRESULT(0x0004_0102);
+    // SAFETY: COM contract — `this` is a live DropSourceObject.
+    let obj = unsafe { &*(this as *const DropSourceObject) };
+    if data_dword(&obj.data, "IsShowingLayered", &IS_SHOWING_LAYERED_FORMAT).unwrap_or(0) == 0 {
+        return DRAGDROP_S_USEDEFAULTCURSORS;
+    }
+    if let Some(window) = data_dword(&obj.data, "DragWindow", &DRAG_WINDOW_FORMAT) {
+        let badge = match DropEffect::from_raw(effect) {
+            DropEffect::None => 1,
+            DropEffect::Move => 2,
+            DropEffect::Copy => 3,
+            DropEffect::Link => 4,
+        };
+        // SAFETY: posting to a window handle; a stale one just fails.
+        unsafe {
+            let _ = PostMessageW(
+                Some(HWND(window as usize as *mut core::ffi::c_void)),
+                WM_USER as u32 + 2,
+                WPARAM(badge),
+                LPARAM(0),
+            );
+        }
+    }
+    crate::window::set_standard_cursor(crate::window::StandardCursor::Arrow);
+    S_OK
 }
 
 /// Does the data object carry a file list (`CF_HDROP`)?
@@ -1038,6 +1235,28 @@ mod effect_tests {
         assert!(!same_volume(Some(r"\\nas\share"), Some(desk)));
         assert!(same_volume(None, Some(desk)));
         assert!(same_volume(Some("e:"), None));
+    }
+
+    /// A `CIDA` from the desktop: root items (type 0x1F, OneDrive, This PC) and files (0x32).
+    #[test]
+    fn root_items_are_found_in_a_desktop_ida() {
+        // count 2; offsets: parent 16, items 18 and 24; parent = empty list; each item one ID
+        // (cb 4: cb, type, one byte) and its terminator.
+        let ida = |first: u8, second: u8, parent_cb: u8| {
+            let mut b = vec![2, 0, 0, 0, 16, 0, 0, 0, 18, 0, 0, 0, 24, 0, 0, 0];
+            b.extend([parent_cb, 0]);
+            b.extend([4, 0, first, 0, 0, 0]);
+            b.extend([4, 0, second, 0, 0, 0]);
+            b
+        };
+        assert!(ida_has_root_item(&ida(0x1F, 0x1F, 0)));
+        // OneDrive among files.
+        assert!(ida_has_root_item(&ida(0x32, 0x1F, 0)));
+        assert!(!ida_has_root_item(&ida(0x32, 0x31, 0)));
+        // Not on the desktop (a folder's items): no root item there.
+        assert!(!ida_has_root_item(&ida(0x1F, 0x1F, 4)));
+        assert!(!ida_has_root_item(&[2, 0, 0]));
+        assert!(!ida_has_root_item(&[0, 0, 0, 0, 8, 0, 0, 0, 0, 0]));
     }
 
     #[test]

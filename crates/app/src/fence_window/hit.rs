@@ -78,29 +78,70 @@ impl FenceViewState {
             return false;
         }
         let (cw, _) = self.content_size_px();
+        let x_px = x_px - self.content_x;
         if x_px < 0 || x_px >= cw {
             return false;
         }
-        let y = (y_px - self.title_h_px()) as f32 / self.scale();
+        let y = (y_px - self.content_y) as f32 / self.scale();
         y >= 0.0 && y < RowMetrics::details().header_h
     }
 
-    /// Is the client-pixel point on the portal "up" button?
+    /// Is the client-pixel point on the portal "up" button? A tab strip in the title row has
+    /// none; a left tab column has it at the end of the shown tab's row (`rail_up_box`).
     pub(super) fn up_button_at(&self, x_px: i32, y_px: i32) -> bool {
-        if !self.deco.up_button || self.tabs.len() > 1 {
+        if !self.deco.up_button || self.title_row_strip() {
             return false;
         }
         let scale = self.scale();
         let (x, y) = (x_px as f32 / scale, y_px as f32 / scale);
-        let r = TitleDeco::up_box(self.theme.title_height);
+        let r = if self.tabs_on_rail() {
+            match self.rail_up_box() {
+                Some(r) => r,
+                None => return false,
+            }
+        } else {
+            TitleDeco::up_box(self.theme.title_height)
+        };
         x >= r.left && x < r.right && y >= r.top && y < r.bottom
+    }
+
+    /// The portal up button in a left tab column (DIPs): at the end of the shown tab's row, as
+    /// drawn (`TitleDeco::rail_up_box`). A column the fence is collapsed to has none.
+    pub(super) fn rail_up_box(&self) -> Option<Rect> {
+        if self.column_collapsed {
+            return None;
+        }
+        let i = self.active_index();
+        let (_, h) = *self.tab_rects().get(i)?;
+        let y = *self.tab_draw_xs(Instant::now()).get(i)?;
+        let row = Rect::from_xywh(
+            RAIL_ROW_INSET,
+            y,
+            (self.rail_w() - RAIL_ROW_INSET - RAIL_ROW_RIGHT).max(0.0),
+            h,
+        );
+        Some(TitleDeco::rail_up_box(row))
     }
 
     /// Is the client-pixel point on the roll-up chevron button (right end of the title row)?
     pub(super) fn chevron_at(&self, x_px: i32, y_px: i32) -> bool {
         let scale = self.scale();
-        let (w_px, _) = self.chrome_panel.size_px();
-        let r = TitleDeco::chevron_box(w_px as f32 / scale, self.theme.title_height);
+        let (w_px, h_px) = self.chrome_panel.size_px();
+        // Under the tabs of a left tab column (the fence's title bar). Collapsed to the column
+        // there is none: a tab click expands the fence.
+        if self.column_collapsed {
+            return false;
+        }
+        let r = if self.tabs_on_rail() {
+            let rows_end = self
+                .tab_rects()
+                .iter()
+                .map(|(y, h)| y + h)
+                .fold(0.0, f32::max);
+            TitleDeco::rail_chevron_box(self.rail_w(), h_px as f32 / scale, rows_end)
+        } else {
+            TitleDeco::chevron_box(w_px as f32 / scale, self.theme.title_height)
+        };
         let (x, y) = (x_px as f32 / scale, y_px as f32 / scale);
         x >= r.left && x < r.right && y >= r.top && y < r.bottom
     }
@@ -143,20 +184,9 @@ impl FenceViewState {
         )
     }
 
-    /// The item layout at `width_dip`. With 「调整大小时按整行整列对齐」 its rows fill the
-    /// viewport's height, so any fence height shows whole icons.
+    /// The item layout at `width_dip`. Its rows keep their pitch at any fence height; with
+    /// 「调整大小时按整行整列对齐」 the viewport shows only the whole rows (`scroll_view_h`).
     pub(super) fn layout(&self, width_dip: f32) -> ItemLayout {
-        let layout = self.natural_layout(width_dip);
-        if !self.behavior.size_to_cells.get() {
-            return layout;
-        }
-        let view_h =
-            (self.viewport_h_px() - FIT_SLACK_PX) as f32 / self.scale() - layout.fixed_top();
-        layout.fill_rows(view_h)
-    }
-
-    /// The item layout at `width_dip` with rows at their own height (fitting heights).
-    fn natural_layout(&self, width_dip: f32) -> ItemLayout {
         let spans = self.group_spans();
         let n = self.items.len();
         match self.layout {
@@ -172,11 +202,7 @@ impl FenceViewState {
 
     /// Icon edge in DIPs for the current layout (rows use a small 20 DIP icon).
     pub(super) fn icon_dip(&self) -> f32 {
-        match self.layout {
-            ViewLayout::Icons => self.icon_size as f32,
-            ViewLayout::List => RowMetrics::list().icon,
-            ViewLayout::Details => RowMetrics::details().icon,
-        }
+        crate::layout::icon_dip(self.layout, self.icon_size)
     }
 
     pub(super) fn row_metrics(&self) -> Option<RowMetrics> {
@@ -193,14 +219,13 @@ impl FenceViewState {
             return None;
         }
         let scale = self.scale();
-        let title_h = self.title_h_px();
-        let y = (y_px - title_h) as f32 / scale;
+        let y = (y_px - self.content_y) as f32 / scale;
         if y < 0.0 || y >= RowMetrics::details().header_h {
             return None;
         }
         let (cw, _) = self.content_size_px();
         self.columns_for(cw as f32 / scale)
-            .column_at(x_px as f32 / scale)
+            .column_at((x_px - self.content_x) as f32 / scale)
     }
 
     /// Details header divider under a client-pixel point (resize grip).
@@ -209,13 +234,13 @@ impl FenceViewState {
             return None;
         }
         let scale = self.scale();
-        let y = (y_px - self.title_h_px()) as f32 / scale;
+        let y = (y_px - self.content_y) as f32 / scale;
         if y < 0.0 || y >= RowMetrics::details().header_h {
             return None;
         }
         let (cw, _) = self.content_size_px();
         self.columns_for(cw as f32 / scale)
-            .divider_at(x_px as f32 / scale)
+            .divider_at((x_px - self.content_x) as f32 / scale)
     }
 
     pub(super) fn column_width(&self, col: DetailColumn) -> f32 {
@@ -246,7 +271,7 @@ impl FenceViewState {
         let layout = self.layout(width_dip);
         let cell = layout.cell(index);
         let win = window::window_rect(self.hwnd);
-        let title_h = self.title_h_px();
+        let title_h = self.content_y;
         let (left, top, right, bottom) = match &layout {
             ItemLayout::Grid(grid) => {
                 let label_top = cell.y - self.scroll_y
@@ -259,11 +284,7 @@ impl FenceViewState {
             ItemLayout::Rows { metrics, .. } => {
                 let cols = self.columns_for(width_dip);
                 let text_x = cols.name_x + metrics.icon + 8.0;
-                // Centred in a row grown to the pitch.
-                let top = cell.y - self.scroll_y
-                    + metrics.header_h
-                    + (cell.h - metrics.row_h) / 2.0
-                    + 2.0;
+                let top = cell.y - self.scroll_y + metrics.header_h + 2.0;
                 (
                     text_x - 4.0,
                     top,
@@ -272,10 +293,11 @@ impl FenceViewState {
                 )
             }
         };
+        let win_left = win.left + self.content_x;
         Some(RECT {
-            left: win.left + (left * scale) as i32,
+            left: win_left + (left * scale) as i32,
             top: win.top + title_h + (top * scale) as i32,
-            right: win.left + (right * scale) as i32,
+            right: win_left + (right * scale) as i32,
             bottom: win.top + title_h + (bottom * scale) as i32,
         })
     }
@@ -293,13 +315,17 @@ impl FenceViewState {
     /// regardless of the roll state (the expand animation targets it directly).
     pub(super) fn fitting_height_px(&self) -> i32 {
         let desired = self.desired_height_px(&self.current_layout());
-        self.bounded_height_px(desired)
+        self.bounded_height_px(desired.max(self.rail_fit_height_px()))
     }
 
-    /// The item layout at the content surface's current width, rows at their own height.
+    /// The item layout at the content surface's current width. A fence collapsed (or
+    /// collapsing) to its left tab column uses the width it expands to.
     fn current_layout(&self) -> ItemLayout {
-        let (cw, _) = self.content_size_px();
-        self.natural_layout(cw as f32 / self.scale())
+        let (mut cw, _) = self.content_size_px();
+        if self.tabs_on_rail() && (self.rolled_up || self.roll_anim.is_some()) {
+            cw = (self.expanded_w_px - self.rail_px()).max(1);
+        }
+        self.layout(cw as f32 / self.scale())
     }
 
     /// Window height (device px) that shows every row of `layout`, ignoring the work area.
@@ -309,7 +335,37 @@ impl FenceViewState {
             + layout
                 .content_height()
                 .max(layout.top_pad() * 2.0 + layout.row_step());
-        self.title_h_px() + (content * self.scale()).ceil() as i32 + FIT_SLACK_PX
+        self.head_px() + (content * self.scale()).ceil() as i32 + FIT_SLACK_PX
+    }
+
+    /// Window height (device px) that shows every row of the left tab column, the free strip
+    /// above them and the chevron under them; 0 without a column.
+    pub(super) fn rail_fit_height_px(&self) -> i32 {
+        self.rail_rows_height_px(RAIL_BOTTOM)
+    }
+
+    /// `rail_fit_height_px` with `bottom` DIPs under the last row instead of the chevron's room.
+    pub(super) fn rail_rows_height_px(&self, bottom: f32) -> i32 {
+        if !self.tabs_on_rail() {
+            return 0;
+        }
+        (rail_len_for(self.tabs.len(), bottom) * self.scale()).ceil() as i32
+    }
+
+    /// Once after the left tab column appeared or grew: the expanded height (device px) that
+    /// shows all of it, when the fence is shorter. Auto-height fences already fit it, and a
+    /// fence is never made shorter; it can still be sized smaller by hand afterwards (the
+    /// pills then shrink). A rolled fence keeps the request until it is expanded.
+    pub(super) fn take_rail_growth_px(&mut self) -> Option<i32> {
+        if self.rolled_up || self.roll_anim.is_some() || !std::mem::take(&mut self.rail_grow) {
+            return None;
+        }
+        if self.auto_height || !self.tabs_on_rail() {
+            // Auto height fits the column by itself.
+            return None;
+        }
+        let want = self.bounded_height_px(self.rail_fit_height_px());
+        (want > self.expanded_h_px).then_some(want)
     }
 
     /// Columns, rows and the fitting height of the shown items at the current width, and
@@ -320,7 +376,8 @@ impl FenceViewState {
         FitReport {
             columns: layout.columns(),
             rows: layout.row_count(),
-            fitting_height_px: self.bounded_height_px(desired),
+            // The fitting height shows a left tab column too; `overflow` stays about items.
+            fitting_height_px: self.bounded_height_px(desired.max(self.rail_fit_height_px())),
             overflow: desired > self.expanded_h_px,
         }
     }
@@ -339,20 +396,30 @@ impl FenceViewState {
     }
 
     /// Test hook: the screen point over the first item whose name contains `name` (a drop onto
-    /// a folder item), the inverse of `hit_item`.
+    /// a folder item), the inverse of `hit_item`; `tab:<title>` is the middle of that tab's pill.
     #[cfg(debug_assertions)]
     pub(super) fn test_item_point(&self, name: &str) -> Option<(i32, i32)> {
-        let i = self.items.iter().position(|it| it.name.contains(name))?;
         let scale = self.scale();
+        let r = window::window_rect(self.hwnd);
+        if let Some(title) = name.strip_prefix("tab:") {
+            let i = self.tabs.iter().position(|t| t.title.contains(title))?;
+            let (x, w) = *self.tab_rects().get(i)?;
+            let along = ((x + w / 2.0) * scale).round() as i32;
+            return Some(if self.tabs_on_rail() {
+                (r.left + self.content_x / 2, r.top + along)
+            } else {
+                (r.left + along, r.top + self.title_h_px() / 2)
+            });
+        }
+        let i = self.items.iter().position(|it| it.name.contains(name))?;
         let (cw, _) = self.content_size_px();
         let layout = self.layout(cw as f32 / scale);
         let c = layout.cell(i);
         let x = c.x + c.w.min(40.0) / 2.0;
         let y = c.y - self.scroll_y + layout.fixed_top() + c.h / 2.0;
-        let r = window::window_rect(self.hwnd);
         Some((
-            r.left + (x * scale).round() as i32,
-            r.top + self.title_h_px() + (y * scale).round() as i32,
+            r.left + self.content_x + (x * scale).round() as i32,
+            r.top + self.content_y + (y * scale).round() as i32,
         ))
     }
 
@@ -362,17 +429,31 @@ impl FenceViewState {
             return None;
         }
         let scale = self.scale();
-        let title_h = self.title_h_px();
-        if y_px < title_h {
+        let title_h = self.content_y;
+        if y_px < title_h || x_px < self.content_x {
             return None;
         }
         let (cw, _) = self.content_size_px();
         let layout = self.layout(cw as f32 / scale);
-        let x = x_px as f32 / scale;
+        let x = (x_px - self.content_x) as f32 / scale;
         let y = (y_px - title_h) as f32 / scale - layout.fixed_top();
-        if y < 0.0 {
+        // Under the whole rows (「调整大小时按整行整列对齐」) nothing shows.
+        if y < 0.0 || y >= self.scroll_view_h(&layout) {
             return None;
         }
-        layout.hit_test(x, y + self.scroll_y, self.items.len())
+        let y = y + self.scroll_y;
+        if self.item_motion.is_empty() {
+            return layout.hit_test(x, y, self.items.len());
+        }
+        // Layout motion running: every item is hit where it is drawn, in paint order (later
+        // items on top), so a gliding item passing under a resting one does not take its click.
+        let now = Instant::now();
+        (0..self.items.len()).rev().find(|&i| {
+            let mut c = layout.cell(i);
+            if let Some(m) = self.item_motion.get(&self.items[i].id) {
+                (c.x, c.y) = (m.x.value_at(now), m.y.value_at(now));
+            }
+            c.contains(x, y)
+        })
     }
 }

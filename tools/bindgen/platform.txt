@@ -527,6 +527,10 @@
     KF_FLAG_DEFAULT
     SHCreateItemFromParsingName
     IShellItem
+    IEnumShellItems
+    BHID_EnumItems
+    IVirtualDesktopManager
+    VirtualDesktopManager
     IShellItemImageFactory
     SIIGBF_RESIZETOFIT
     SIIGBF_BIGGERSIZEOK
@@ -534,6 +538,7 @@
     SIIGBF_THUMBNAILONLY
     SIIGBF_INCACHEONLY
     SIGDN_PARENTRELATIVEEDITING
+    SIGDN_PARENTRELATIVEPARSING
     SIGDN_NORMALDISPLAY
     SIGDN_FILESYSPATH
     ShellExecuteExW
@@ -556,6 +561,9 @@
     WICBitmapUseAlpha
     WICBitmapIgnoreAlpha
     GetFileAttributesW
+    MoveFileExW
+    MultiByteToWideChar
+    CP_ACP
     FILE_ATTRIBUTE_HIDDEN
     FILE_ATTRIBUTE_SYSTEM
     FILE_ATTRIBUTE_DIRECTORY
@@ -732,7 +740,12 @@
     RtlCaptureStackBackTrace
     GetModuleHandleExW
     GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS
-    GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT
+    GET_MODULE_HANDLE_EX_FLAG_PIN
+    FindResourceW
+    LoadResource
+    LockResource
+    SizeofResource
+    RT_VERSION
     MiniDumpWriteDump
     MINIDUMP_EXCEPTION_INFORMATION
     MiniDumpWithIndirectlyReferencedMemory
@@ -862,6 +875,19 @@
     VK_SPACE
     GetKeyboardLayout
     MapVirtualKeyExW
+
+    // ---- Peek search box (a GDI-painted popup around an EDIT control)
+    BeginPaint
+    EndPaint
+    PAINTSTRUCT
+    FillRect
+    InvalidateRect
+    SetBkMode
+    TRANSPARENT
+    DT_LEFT
+    DT_RIGHT
+    DT_END_ELLIPSIS
+    VK_DOWN
 
     // ---- GDI for the layered shadow window
     CreateCompatibleDC

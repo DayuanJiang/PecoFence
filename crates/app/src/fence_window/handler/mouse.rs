@@ -99,8 +99,10 @@ pub(super) fn on_lbuttondown(
         let Some(v) = guard.as_mut() else {
             return Some(0);
         };
-        // Any new press cancels an armed slow-double-click rename.
+        // Any new press cancels an armed slow-double-click rename. A plain press is no
+        // double-click: a click that expanded the fence no longer swallows the next one.
         v.cancel_pending_rename();
+        v.suppress_dblclk = false;
         v.hide_tip();
         // Mouse interaction hides the keyboard focus ring (Explorer). The
         // ring lives on the content surface: arms that do not repaint it
@@ -130,7 +132,7 @@ pub(super) fn on_lbuttondown(
                     tab: tab.id,
                 });
             }
-            let pointer_x = x as f32 / v.scale();
+            let pointer_x = v.tab_axis(x, y);
             let slot_x = v
                 .tab_draw_xs(Instant::now())
                 .get(t)
@@ -161,7 +163,7 @@ pub(super) fn on_lbuttondown(
             queue.push(Command::RaiseFence(hwnd));
             return Some(0);
         }
-        let in_content = !v.rolled_up && y >= v.title_h_px();
+        let in_content = !v.rolled_up && y >= v.content_y && x >= v.content_x;
         if let Some(col) = v.divider_hit(x, y) {
             v.col_drag = Some(ColDrag {
                 col,
@@ -173,6 +175,9 @@ pub(super) fn on_lbuttondown(
                 let _ = v.redraw_content();
             }
             drop(guard);
+            // Like a content click, the press grants the focus session: Esc cancelling the
+            // drag has to reach this window.
+            focus_session(view, hwnd);
             window::set_capture(hwnd);
             window::set_standard_cursor(StandardCursor::SizeWE);
             return Some(0);
@@ -313,7 +318,7 @@ pub(super) fn on_lbuttonup(
         if drag.merge_target != 0 {
             queue.push(Command::MergeHint {
                 target: HWND(std::ptr::null_mut()),
-                x: 0,
+                at: (0, 0),
             });
         }
         if !drag.group.is_empty() {
@@ -322,11 +327,10 @@ pub(super) fn on_lbuttonup(
         } else if let Some(into) =
             merge_target_at(drag.hwnd, HWND::default(), (release.x, release.y))
         {
-            let x = release.x;
             queue.push(Command::MergeFence {
                 fence: drag.fence,
                 into,
-                x,
+                at: (release.x, release.y),
             });
         } else {
             queue.push(Command::FenceDropped(drag.fence));
@@ -340,7 +344,12 @@ pub(super) fn on_lbuttonup(
                 let tab_drag = v.tab_drag.take().map(|td| {
                     // The pill settles from under the pointer into its slot.
                     v.settle_dragged_tab(&td);
-                    (td.index, td.start_index, v.tabs.get(td.index).map(|t| t.id))
+                    (
+                        td.index,
+                        td.start_index,
+                        v.tabs.get(td.index).map(|t| t.id),
+                        td.moved,
+                    )
                 });
                 (
                     v.drag.take(),
@@ -360,7 +369,7 @@ pub(super) fn on_lbuttonup(
         queue.push(Command::SetColumnWidths { fence, widths });
     }
     // A tab dragged past its neighbours: persist the new strip order.
-    if let Some((index, start, Some(tab))) = tab_drag
+    if let Some((index, start, Some(tab), _)) = tab_drag
         && index != start
     {
         queue.push(Command::ReorderTab {
@@ -413,6 +422,19 @@ pub(super) fn on_lbuttonup(
                 } else {
                     queue.push(Command::ToggleRollUp(fence_id));
                 }
+            }
+            // A fence collapsed to its left tab column has no chevron: a click on a tab (not
+            // a drag) expands it on that tab, which the press already switched to.
+            PressTarget::Tab(_)
+                if matches!(tab_drag, Some((.., false)))
+                    && v.column_collapsed
+                    && v.rolled_up
+                    && v.roll_anim.is_none() =>
+            {
+                // The next press may arrive as WM_LBUTTONDBLCLK; it must not collapse the
+                // fence this click just expanded.
+                v.suppress_dblclk = true;
+                queue.push(Command::ToggleRollUp(fence_id));
             }
             _ => {}
         }
@@ -469,6 +491,7 @@ pub(super) fn on_capturechanged(
     let mut guard = view.borrow_mut();
     if let Some(v) = guard.as_mut() {
         v.drag = None;
+        v.rbutton_press = None;
         v.clear_pressed();
         if v.detach_pending || v.remote_drag.is_some() {
             tracing::info!(
@@ -493,7 +516,7 @@ pub(super) fn on_capturechanged(
             if rd.merge_target != 0 {
                 queue.push(Command::MergeHint {
                     target: HWND(std::ptr::null_mut()),
-                    x: 0,
+                    at: (0, 0),
                 });
             }
         }
@@ -580,42 +603,47 @@ pub(super) fn on_lbuttondblclk(
                     path: item.path.clone(),
                 });
             } else {
-                queue.push(Command::LaunchItem(item.id));
+                queue.push(Command::LaunchItem {
+                    item: item.id,
+                    from: v.active,
+                });
             }
-        } else if v.tab_at(x, y).is_some() {
+        } else if v.tab_at(x, y).is_some() && !std::mem::take(&mut v.suppress_dblclk) {
             queue.push(Command::ToggleRollUp(fence_id));
         }
     }
     Some(0)
 }
 
-// The other button during a tab drag / tear-off cancels it (as it does for
-// an OLE drag); the WM_RBUTTONUP that follows must not open a menu.
+// A plain press (WM_RBUTTONDOWN, or WM_RBUTTONDBLCLK for the second press of
+// a double-click) takes the capture so the release pairs with it (see
+// `rbutton_press`). The other button during a tab drag / tear-off cancels it
+// (as it does for an OLE drag); the WM_RBUTTONUP that follows then finds no
+// press and opens no menu.
 pub(super) fn on_rbuttondown(
     h: &HandlerCtx,
     hwnd: HWND,
     _wparam: usize,
-    _lparam: isize,
+    lparam: isize,
 ) -> Option<isize> {
     let HandlerCtx { view, queue, .. } = h;
-    // A swallow left over from a cancel whose WM_RBUTTONUP went to another
-    // window (tear-off: the pointer was over the torn-off window, which the
-    // cancel destroyed) must not eat this click's menu.
-    if let Ok(mut guard) = view.try_borrow_mut()
-        && let Some(v) = guard.as_mut()
-    {
-        v.rbutton_swallow = false;
+    if h.in_size_move.get() {
+        // A title drag in the system move loop: the right button cancels it (as it does the
+        // Liquid Glass drag below); the release finds no press and opens no menu.
+        super::nc::cancel_move(h, hwnd);
+        return Some(0);
     }
     if window::get_capture() != hwnd {
-        return None;
-    }
-    let cancel = view.borrow_mut().as_mut().and_then(|v| {
-        let c = v.cancel_tab_or_remote_drag();
-        if c.is_some() {
-            v.rbutton_swallow = true;
+        if let Some(v) = view.borrow_mut().as_mut() {
+            v.rbutton_press = Some((msg::lo_i16(lparam), msg::hi_i16(lparam)));
         }
-        c
-    });
+        window::set_capture(hwnd);
+        return Some(0);
+    }
+    let cancel = view
+        .borrow_mut()
+        .as_mut()
+        .and_then(|v| v.cancel_tab_or_remote_drag());
     match cancel {
         Some(c) => {
             finish_drag_cancel(c, queue, &h.behavior);
@@ -634,13 +662,25 @@ pub(super) fn on_rbuttonup(
     let HandlerCtx { view, queue, .. } = h;
     let x = msg::lo_i16(lparam);
     let y = msg::hi_i16(lparam);
+    let press = view
+        .borrow_mut()
+        .as_mut()
+        .and_then(|v| v.rbutton_press.take());
+    let Some((px, py)) = press else {
+        return Some(0);
+    };
+    if window::get_capture() == hwnd {
+        // ReleaseCapture sends WM_CAPTURECHANGED synchronously: no borrow held.
+        window::release_capture();
+    }
+    let (tx, ty) = window::drag_threshold();
+    if (x - px).abs() > tx || (y - py).abs() > ty {
+        return Some(0);
+    }
     let mut guard = view.borrow_mut();
     let Some(v) = guard.as_mut() else {
         return Some(0);
     };
-    if std::mem::take(&mut v.rbutton_swallow) {
-        return Some(0);
-    }
     let pt = window::cursor_pos();
     v.cancel_pending_rename();
     v.hide_tip();
@@ -740,9 +780,9 @@ pub(super) fn on_mousewheel(
             }
             return Some(0);
         }
-        // Wheel over the title row of a tabbed fence: one tab per whole notch, accumulated
-        // for touchpads. A held left button (tab, column or title drag, marquee) and a tab
-        // title rename keep the tab where it is.
+        // Wheel over the title row (or the left tab column) of a tabbed fence: one tab per
+        // whole notch, accumulated for touchpads. A held left button (tab, column or title
+        // drag, marquee) and a tab title rename keep the tab where it is.
         let pt = window::screen_to_client(
             hwnd,
             pecofence_platform::POINT {
@@ -750,7 +790,12 @@ pub(super) fn on_mousewheel(
                 y: msg::hi_i16(lparam),
             },
         );
-        let over_title = pt.y >= 0 && pt.y < v.title_h_px();
+        // A left tab column is the title bar (it stays when the fence collapses to it).
+        let over_title = if v.tabs_on_rail() {
+            pt.x >= 0 && pt.x < v.content_x && pt.y >= 0 && pt.y < v.chrome_panel.size_px().1
+        } else {
+            pt.y >= 0 && pt.y < v.title_h_px()
+        };
         let lbutton = wparam & msg::MK_LBUTTON as usize != 0;
         if v.tabs.len() > 1 && over_title && !lbutton && !v.title_renaming && v.roll_anim.is_none()
         {

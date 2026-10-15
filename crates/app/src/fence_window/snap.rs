@@ -5,7 +5,8 @@
 use super::*;
 use crate::drag_guides::GuideLine;
 
-/// Another fence's window whose title row is under the cursor (drag-to-merge target).
+/// Another fence's window whose title row or left tab column is under the cursor
+/// (drag-to-merge target).
 pub(super) fn merge_target_under_cursor(me: HWND) -> Option<HWND> {
     merge_target_under_cursor_excluding(me, HWND(std::ptr::null_mut()))
 }
@@ -16,18 +17,32 @@ pub(super) fn merge_target_under_cursor_excluding(me: HWND, also: HWND) -> Optio
 }
 
 pub(super) fn merge_target_at(me: HWND, also: HWND, point: (i32, i32)) -> Option<HWND> {
-    desktop::top_level_windows().into_iter().find(|&w| {
-        if w == me
-            || w == also
-            || desktop::class_name(w) != anchor::FENCE_CLASS
-            || !desktop::is_visible(w)
-        {
-            return false;
-        }
-        let r = window::window_rect(w);
-        let title_h = (36.0 * monitors::dpi_for_window(w).max(96) as f32 / 96.0) as i32;
-        point.0 >= r.left && point.0 < r.right && point.1 >= r.top && point.1 < r.top + title_h
-    })
+    desktop::windows_of_class(anchor::FENCE_CLASS)
+        .into_iter()
+        .find(|&w| {
+            if w == me || w == also || !desktop::is_visible(w) {
+                return false;
+            }
+            let r = window::window_rect(w);
+            let title_h = (36.0 * monitors::dpi_for_window(w).max(96) as f32 / 96.0) as i32;
+            if point.0 < r.left || point.0 >= r.right || point.1 < r.top || point.1 >= r.bottom {
+                return false;
+            }
+            // A fence with a left tab column has no title row: the column takes the drop.
+            // This process's fence windows share its UI thread, so the message is a direct
+            // call; another instance's windows (which cannot take a merge anyway) are never
+            // sent it, as a hung one would block the drag.
+            let rail = if desktop::window_pid(w) == std::process::id() {
+                window::send_message(w, WM_APP_TAB_RAIL, 0, 0) as i32
+            } else {
+                0
+            };
+            if rail > 0 {
+                point.0 < r.left + rail
+            } else {
+                point.1 < r.top + title_h
+            }
+        })
 }
 
 thread_local! {
@@ -121,11 +136,9 @@ pub(super) fn hide_drag_feedback(behavior: &Behavior) {
 
 /// Screen rectangles of the other fence windows that are showing.
 pub(super) fn other_fence_rects(me: HWND) -> Vec<RECT> {
-    desktop::top_level_windows()
+    desktop::windows_of_class(anchor::FENCE_CLASS)
         .into_iter()
-        .filter(|&w| {
-            w != me && desktop::class_name(w) == anchor::FENCE_CLASS && desktop::is_visible(w)
-        })
+        .filter(|&w| w != me && desktop::is_visible(w))
         .map(window::window_rect)
         .collect()
 }

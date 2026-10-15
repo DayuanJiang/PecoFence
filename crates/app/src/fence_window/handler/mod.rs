@@ -49,7 +49,7 @@ pub(super) fn finish_drag_cancel(cancel: DragCancel, queue: &CommandQueue, behav
         if hinted {
             queue.push(Command::MergeHint {
                 target: HWND(std::ptr::null_mut()),
-                x: 0,
+                at: (0, 0),
             });
         }
     };
@@ -106,6 +106,15 @@ pub(super) struct HandlerCtx {
     /// Original caption press carried by SC_MOVE. The cursor can already be farther along
     /// the drag by the time Windows enters its modal move loop.
     pub(super) move_start: Cell<Option<(i32, i32)>>,
+    /// Esc (WM_HOTKEY) or the right button cancelled the title drag in the system move loop
+    /// (`nc::cancel_move`): the fence and its group are back at `rect_at_enter` and stay there
+    /// until the loop ends.
+    pub(super) move_cancelled: Cell<bool>,
+    /// A right press reached this window's title row (WM_NCRBUTTONDOWN): the release that
+    /// follows opens the fence menu. A release without it (the right button cancelled a tab
+    /// tear-off or an item drag, and the window under the pointer gets the release) opens
+    /// none, as `rbutton_press` does for the client area.
+    pub(super) ncrbutton_press: Cell<bool>,
     /// Cursor position relative to the window's top-left when the move began. WM_MOVING
     /// rebuilds the rect from it every frame, so a snap displacement never accumulates (the
     /// system would otherwise keep adding mouse deltas to the *snapped* rect and the window
@@ -115,9 +124,9 @@ pub(super) struct HandlerCtx {
     /// scale resizes the window (WM_DPICHANGED), and the offset has to scale with it.
     pub(super) grab_dpi: Cell<u32>,
     pub(super) merge_target: Cell<isize>,
-    /// Pointer screen x last reported with the merge hint (the target strip opens its
+    /// Pointer screen point last reported with the merge hint (the target strip opens its
     /// insertion gap at that slot; re-sent only when the slot could have changed).
-    pub(super) merge_x: Cell<i32>,
+    pub(super) merge_at: Cell<(i32, i32)>,
     /// The other selected fences moving along with this one in the system move loop (a title
     /// drag of a fence in the desktop selection); empty otherwise.
     pub(super) group: RefCell<Vec<GroupMember>>,
@@ -142,10 +151,12 @@ impl FenceWindow {
             in_size_move: Cell::new(false),
             rect_at_enter: Cell::new(RECT::default()),
             move_start: Cell::new(None),
+            move_cancelled: Cell::new(false),
+            ncrbutton_press: Cell::new(false),
             grab_offset: Cell::new((0, 0)),
             grab_dpi: Cell::new(96),
             merge_target: Cell::new(0isize),
-            merge_x: Cell::new(i32::MIN),
+            merge_at: Cell::new((i32::MIN, i32::MIN)),
             group: RefCell::new(Vec::new()),
         };
         let trace_test_input = cfg!(debug_assertions)
@@ -199,6 +210,9 @@ impl FenceWindow {
                     msg::WM_NCLBUTTONDOWN => nc::on_nclbuttondown(h, hwnd, wparam, lparam),
                     WM_NCLBUTTONUP => nc::on_nclbuttonup(h, hwnd, wparam, lparam),
                     msg::WM_NCLBUTTONDBLCLK => nc::on_nclbuttondblclk(h, hwnd, wparam, lparam),
+                    WM_NCRBUTTONDOWN | WM_NCRBUTTONDBLCLK => {
+                        nc::on_ncrbuttondown(h, hwnd, wparam, lparam)
+                    }
                     msg::WM_NCRBUTTONUP => nc::on_ncrbuttonup(h, hwnd, wparam, lparam),
                     msg::WM_MOUSEMOVE => mouse_move::on_mousemove(h, hwnd, wparam, lparam),
                     msg::WM_MOUSELEAVE => mouse::on_mouseleave(h, hwnd, wparam, lparam),
@@ -210,7 +224,9 @@ impl FenceWindow {
                     msg::WM_SYSKEYDOWN => keyboard::on_syskeydown(h, hwnd, wparam, lparam),
                     msg::WM_CONTEXTMENU => keyboard::on_contextmenu(h, hwnd, wparam, lparam),
                     msg::WM_LBUTTONDBLCLK => mouse::on_lbuttondblclk(h, hwnd, wparam, lparam),
-                    msg::WM_RBUTTONDOWN => mouse::on_rbuttondown(h, hwnd, wparam, lparam),
+                    msg::WM_RBUTTONDOWN | WM_RBUTTONDBLCLK => {
+                        mouse::on_rbuttondown(h, hwnd, wparam, lparam)
+                    }
                     msg::WM_RBUTTONUP => mouse::on_rbuttonup(h, hwnd, wparam, lparam),
                     msg::WM_MOUSEWHEEL => mouse::on_mousewheel(h, hwnd, wparam, lparam),
                     msg::WM_SIZE => nc::on_size(h, hwnd, wparam, lparam),
@@ -218,9 +234,13 @@ impl FenceWindow {
                     msg::WM_SHOWWINDOW => misc::on_showwindow(h, hwnd, wparam, lparam),
                     WM_APP_SET_VISIBLE => misc::on_app_set_visible(h, hwnd, wparam, lparam),
                     WM_APP_TAB_SWAP_DONE => misc::on_app_tab_swap_done(h, hwnd, wparam, lparam),
+                    WM_APP_TAB_RAIL => misc::on_app_tab_rail(h, hwnd, wparam, lparam),
                     WM_APP_FADE_DONE => misc::on_app_fade_done(h, hwnd, wparam, lparam),
                     msg::WM_ENTERSIZEMOVE => nc::on_entersizemove(h, hwnd, wparam, lparam),
                     msg::WM_EXITSIZEMOVE => nc::on_exitsizemove(h, hwnd, wparam, lparam),
+                    msg::WM_HOTKEY if wparam as i32 == HOTKEY_MOVE_ESC => {
+                        nc::on_hotkey_move_esc(h, hwnd, wparam, lparam)
+                    }
                     msg::WM_TIMER if wparam == TIMER_RENAME => {
                         timers::on_timer_rename(h, hwnd, wparam, lparam)
                     }
@@ -249,6 +269,9 @@ impl FenceWindow {
                     }
                     msg::WM_TIMER if wparam == TIMER_DRAG_PEEK => {
                         timers::on_timer_drag_peek(h, hwnd, wparam, lparam)
+                    }
+                    msg::WM_TIMER if wparam == TIMER_TAB_HOVER => {
+                        timers::on_timer_tab_hover(h, hwnd, wparam, lparam)
                     }
 
                     msg::WM_TIMER if wparam == TIMER_SCROLLBAR => {

@@ -127,6 +127,16 @@ fn marquee_rect(a: POINT, b: POINT) -> RECT {
     }
 }
 
+/// A press on one of Windows' own desktop icons (they show while 「隐藏 Windows 桌面图标」 is off)
+/// selects, opens or drags that icon: it starts no marquee and counts for no quick hide.
+fn on_icon(hit: HWND, pt: POINT) -> bool {
+    let on = shell_icons::desktop_icon_hovered(hit);
+    if on {
+        tracing::debug!(?pt, "press on a Windows desktop icon");
+    }
+    on
+}
+
 /// Ctrl or Shift is down (physical state; the desktop, not us, has the keyboard focus).
 fn additive_modifier() -> bool {
     window::key_down_async(msg::VK_CONTROL) || window::key_down_async(msg::VK_SHIFT)
@@ -201,8 +211,33 @@ pub struct DesktopAnchor {
     peek_shown: Vec<HWND>,
     /// Called when another application takes the foreground during a peek.
     pub on_peek_interrupted: Option<Box<dyn Fn()>>,
-    /// Foreground transitions also signal virtual-desktop switches before registry writes.
-    pub on_foreground_changed: Option<Box<dyn Fn()>>,
+    /// Foreground transitions also signal virtual-desktop switches before registry writes
+    /// (called with the new foreground window).
+    pub on_foreground_changed: Option<Box<dyn Fn(HWND)>>,
+    /// The desktop came to the front: clicked, or shown with Win+D (which Windows 10 does not
+    /// always report as a foreground change).
+    pub on_desktop_front: Option<Box<dyn Fn()>>,
+    /// The last refused placement above the host (window above it, HRESULT), logged once until
+    /// the cause changes or the placement works again.
+    anchor_refused: Option<(isize, i32)>,
+    /// A topmost-band placement failed during this peek / show desktop (logged once).
+    topmost_refused: bool,
+}
+
+/// The fences' windows as a feedback report describes them.
+pub struct WindowReport {
+    pub fences: usize,
+    pub visible: usize,
+    pub cloaked: usize,
+    pub topmost: usize,
+    /// Below the icon host in the z-order: covered by the desktop.
+    pub below_host: usize,
+    /// On no monitor at all.
+    pub off_screen: usize,
+    pub quick_hidden: bool,
+    pub peeking: bool,
+    pub show_desktop: bool,
+    pub host: Option<desktop::HostKind>,
 }
 
 impl DesktopAnchor {
@@ -219,6 +254,8 @@ impl DesktopAnchor {
         tracing::info!(
             ?generation,
             build = desktop::os_build(),
+            ?mode,
+            ?behavior,
             "desktop generation"
         );
 
@@ -277,7 +314,7 @@ impl DesktopAnchor {
             }
         };
 
-        let anchor = DesktopAnchor {
+        let mut anchor = DesktopAnchor {
             generation,
             mode,
             behavior,
@@ -298,7 +335,16 @@ impl DesktopAnchor {
             peek_shown: Vec::new(),
             on_peek_interrupted: None,
             on_foreground_changed: None,
+            on_desktop_front: None,
+            anchor_refused: None,
+            topmost_refused: false,
         };
+        // The hook reports only changes of the foreground. With the desktop already in front
+        // (a start at sign-in before any window opens) its clicks are followed from now on.
+        if anchor.is_desktop_window(desktop::foreground_window()) {
+            tracing::info!("desktop in front at start; following its clicks");
+            anchor.set_raw_input_sink(true);
+        }
         anchor
             .sentinel
             .set_coalescable_timer(TIMER_ANCHOR_CHECK, 2000, 1000);
@@ -357,18 +403,28 @@ impl DesktopAnchor {
     /// or while the raised desktop would cover the fences, so windows created / detached /
     /// raised meanwhile end up above the dimmer or the desktop instead of behind it.
     fn place_topmost_band(&mut self) {
+        let mut refused = None;
         self.with_anchoring(|s| {
             for (f, shadow) in s.fences.clone() {
                 for h in std::iter::once(f).chain(shadow) {
                     // Fences created during the peek (resync_windows) are not topmost yet.
-                    let _ = desktop::set_topmost(h, true);
+                    if let Err(e) = desktop::set_topmost(h, true) {
+                        refused.get_or_insert(e);
+                    }
                 }
-                let _ = desktop::raise_in_band(f);
+                if let Err(e) = desktop::raise_in_band(f) {
+                    refused.get_or_insert(e);
+                }
                 if let Some(sh) = shadow {
                     let _ = desktop::insert_after(sh, f);
                 }
             }
         });
+        if let Some(e) = refused
+            && !std::mem::replace(&mut self.topmost_refused, true)
+        {
+            tracing::warn!(error = %e, "topmost placement failed");
+        }
     }
 
     /// Re-resolves the icon host and re-inserts every fence (and the sentinel) above it.
@@ -406,6 +462,8 @@ impl DesktopAnchor {
             });
             return;
         };
+        let mut refused = None;
+        let mut failed = 0;
         self.with_anchoring(|s| {
             let mode = s.mode;
             let place = |w: HWND| -> Result<()> {
@@ -419,13 +477,51 @@ impl DesktopAnchor {
             // lowest. Iterate in reverse: the end of `fences` (newest / last raised) is on top.
             for (f, shadow) in s.fences.clone().into_iter().rev() {
                 if let Err(e) = place(f) {
-                    tracing::warn!(hwnd = ?f, error = %e, "anchor SetWindowPos failed");
+                    tracing::debug!(hwnd = ?f, error = %e, "anchor SetWindowPos failed");
+                    failed += 1;
+                    refused.get_or_insert((f, e));
                 }
                 if let Some(sh) = shadow {
                     let _ = desktop::insert_after(sh, f);
                 }
             }
         });
+        self.note_refusal(host.host, refused, failed);
+    }
+
+    /// Logs a refused placement once per cause (the window it had to go under, the error):
+    /// the anchor check repeats it every pass. Access denied there means that window belongs
+    /// to a process running as administrator.
+    fn note_refusal(
+        &mut self,
+        host: HWND,
+        refused: Option<(HWND, pecofence_platform::Error)>,
+        failed: u32,
+    ) {
+        let Some((fence, e)) = refused else {
+            if self.anchor_refused.take().is_some() {
+                tracing::info!("anchoring works again");
+            }
+            return;
+        };
+        let above = desktop::surface_window_above(host, fence);
+        let cause = (above.0 as isize, e.code().0);
+        if self.anchor_refused == Some(cause) {
+            return;
+        }
+        self.anchor_refused = Some(cause);
+        let class = desktop::class_name(above);
+        let above_elevated = (!above.0.is_null())
+            .then(|| pecofence_platform::process::is_elevated(desktop::window_pid(above)))
+            .flatten();
+        tracing::warn!(
+            error = %e,
+            failed,
+            above = ?above,
+            class = %class,
+            above_elevated = ?above_elevated,
+            "anchor SetWindowPos failed"
+        );
     }
 
     fn with_anchoring(&mut self, f: impl FnOnce(&mut Self)) {
@@ -471,6 +567,9 @@ impl DesktopAnchor {
         if !self.show_desktop_active {
             if self.desktop_is_raised_over_us() && self.is_desktop_window(foreground) {
                 self.show_desktop_active = true;
+                if let Some(callback) = self.on_desktop_front.as_ref() {
+                    callback();
+                }
                 match self.behavior {
                     ShowDesktopBehavior::KeepVisible => {
                         tracing::info!("show desktop: floating the fences above the raised desktop")
@@ -491,6 +590,7 @@ impl DesktopAnchor {
     /// Leaves the topmost band; the caller re-anchors above the host.
     fn end_show_desktop(&mut self, reason: &'static str) {
         self.show_desktop_active = false;
+        self.topmost_refused = false;
         tracing::info!(reason, "show desktop ended");
         if self.behavior == ShowDesktopBehavior::KeepVisible {
             self.with_anchoring(|s| {
@@ -527,7 +627,7 @@ impl DesktopAnchor {
 
     pub fn on_foreground(&mut self, hwnd: HWND) {
         if let Some(callback) = self.on_foreground_changed.as_ref() {
-            callback();
+            callback(hwnd);
         }
         let root = desktop::root_ancestor(hwnd);
         let cls = desktop::class_name(root);
@@ -539,7 +639,7 @@ impl DesktopAnchor {
                 || cls.starts_with("PecoFence.")
                 || cls == "#32768";
             if !ours && !root.0.is_null() {
-                tracing::debug!(%cls, "foreground changed during peek; ending it");
+                tracing::info!(class = %cls, "foreground changed during peek; ending it");
                 if let Some(cb) = self.on_peek_interrupted.as_ref() {
                     cb();
                 }
@@ -551,6 +651,9 @@ impl DesktopAnchor {
         tracing::debug!(?hwnd, %cls, is_desktop, raised, "foreground changed");
 
         if is_desktop {
+            if let Some(callback) = self.on_desktop_front.as_ref() {
+                callback();
+            }
             self.set_raw_input_sink(true);
             let pt = window::cursor_pos();
             self.quick.pending_click = Some((Instant::now(), pt));
@@ -594,7 +697,10 @@ impl DesktopAnchor {
                     let _ = desktop::set_topmost(*w, true);
                 }
                 for (f, shadow) in s.fences.clone() {
-                    if !desktop::is_visible(f) {
+                    // One that quick hide is still fading out is visible until the fade ends.
+                    let quick_hidden =
+                        s.quick.fences_hidden && !s.quick_hide_excluded.contains(&(f.0 as isize));
+                    if !desktop::is_visible(f) || quick_hidden {
                         // Quick-hidden: fade it in for the peek (its shadow follows on its own).
                         set_fence_visible(f, shadow, true);
                         s.peek_shown.push(f);
@@ -610,6 +716,7 @@ impl DesktopAnchor {
             });
             tracing::info!(count = self.fences.len(), "peek on");
         } else {
+            self.topmost_refused = false;
             self.with_anchoring(|s| {
                 for (f, shadow) in s.fences.clone() {
                     for h in std::iter::once(f).chain(shadow) {
@@ -621,6 +728,9 @@ impl DesktopAnchor {
                     set_fence_visible(h, shadow, false);
                 }
             });
+            // Show desktop may have ended during the peek, which suspends its checks; left
+            // active, the fences would float above the window that came to the front.
+            self.check_show_desktop();
             self.reanchor("peek off");
             tracing::info!("peek off");
         }
@@ -741,12 +851,13 @@ impl DesktopAnchor {
         }
     }
 
-    /// The left button is down at `pt`. On the bare desktop (not over one of our windows) a
-    /// marquee may start there while the fences show; returns false anywhere else.
+    /// The left button is down at `pt`. On the bare desktop (not over one of our windows or one
+    /// of Windows' own icons) a marquee may start there while the fences show; returns false
+    /// anywhere else.
     fn begin_marquee(&mut self, pt: POINT) -> bool {
         let hit = desktop::window_from_point(pt.x, pt.y);
         let root = desktop::root_ancestor(hit);
-        if self.all_windows().contains(&root) || !self.is_desktop_window(hit) {
+        if self.all_windows().contains(&root) || !self.is_desktop_window(hit) || on_icon(hit, pt) {
             self.quick.marquee_origin = None;
             self.quick.marquee_live = false;
             return false;
@@ -845,6 +956,8 @@ impl DesktopAnchor {
             set_fence_visible(w, shadow, !hide);
         }
         if !hide {
+            // Shown during a peek: ending it must not hide them again.
+            self.peek_shown.clear();
             self.reanchor("fences shown again");
         }
         tracing::info!(
@@ -905,8 +1018,8 @@ impl DesktopAnchor {
         false
     }
 
-    /// True after the retry budget was exhausted without success (caller should reset the
-    /// setting and tell the user).
+    /// True after the retry budget was exhausted without success (caller should stop the
+    /// retries and tell the user).
     pub fn hide_desktop_icons_gave_up(&self) -> bool {
         self.icons.pending && self.icons.pending_attempts >= HIDE_ICONS_MAX_ATTEMPTS
     }
@@ -1025,6 +1138,41 @@ impl DesktopAnchor {
 
     pub fn zorder_report(&self, all_visible: bool) -> String {
         desktop::describe_zorder(&self.all_windows(), all_visible)
+    }
+
+    /// The fences' windows right now, for a feedback report.
+    pub fn window_report(&self) -> WindowReport {
+        let order = desktop::top_level_windows();
+        let host_at = self
+            .host
+            .and_then(|h| order.iter().position(|&w| w == h.host));
+        let below_host = |w: HWND| {
+            host_at.is_some_and(|i| order.iter().position(|&x| x == w).is_some_and(|p| p > i))
+        };
+        let screens: Vec<RECT> = pecofence_platform::monitors::enumerate()
+            .iter()
+            .map(|m| m.bounds)
+            .collect();
+        let off_screen = |w: HWND| {
+            let r = window::window_rect(w);
+            !screens.iter().any(|s| {
+                r.left < s.right && r.right > s.left && r.top < s.bottom && r.bottom > s.top
+            })
+        };
+        let count =
+            |test: &dyn Fn(HWND) -> bool| self.fences.iter().filter(|(f, _)| test(*f)).count();
+        WindowReport {
+            fences: self.fences.len(),
+            visible: count(&desktop::is_visible),
+            cloaked: count(&desktop::is_cloaked),
+            topmost: count(&desktop::is_topmost),
+            below_host: count(&below_host),
+            off_screen: count(&off_screen),
+            quick_hidden: self.quick.fences_hidden,
+            peeking: self.peeking,
+            show_desktop: self.show_desktop_active,
+            host: self.host.map(|h| h.kind),
+        }
     }
 }
 

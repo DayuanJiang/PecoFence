@@ -97,6 +97,12 @@ impl Image {
     /// Resamples into a `dst_w` x `dst_h` image where destination pixel (x, y) maps to the
     /// source rectangle `src` (in source pixels, may extend outside; outside = `bg`).
     fn resample_region(&self, src: [f32; 4], dst_w: u32, dst_h: u32, bg: [u8; 3]) -> Image {
+        if src == [0.0, 0.0, self.width as f32, self.height as f32]
+            && (dst_w, dst_h) == (self.width, self.height)
+        {
+            // 1:1 (clear glass, a monitor-sized picture): every sample lands on its pixel.
+            return self.clone();
+        }
         let mut out = Vec::with_capacity((dst_w * dst_h * 4) as usize);
         let sw = src[2] - src[0];
         let sh = src[3] - src[1];
@@ -175,8 +181,13 @@ impl Image {
 
     /// Averages each `factor` x `factor` block (edge blocks may be partial).
     pub fn downscale_box(&self, factor: u32) -> Image {
+        Self::downscale_pixels(&self.bgra, self.width, self.height, factor)
+    }
+
+    /// [`Image::downscale_box`] of `width` x `height` BGRA pixels held elsewhere (a bitmap).
+    pub fn downscale_pixels(pixels: &[u8], width: u32, height: u32, factor: u32) -> Image {
         let factor = factor.max(1) as usize;
-        let (sw, sh) = (self.width as usize, self.height as usize);
+        let (sw, sh) = (width as usize, height as usize);
         let width = sw.div_ceil(factor);
         let height = sh.div_ceil(factor);
         let mut bgra = Vec::with_capacity(width * height * 4);
@@ -186,7 +197,7 @@ impl Image {
             let rows = by * factor..((by + 1) * factor).min(sh);
             let row_count = rows.len() as u32;
             for y in rows {
-                let row = &self.bgra[y * sw * 4..(y + 1) * sw * 4];
+                let row = &pixels[y * sw * 4..(y + 1) * sw * 4];
                 for (x, px) in row.as_chunks::<4>().0.iter().enumerate() {
                     let sum = &mut sums[x / factor * 4..x / factor * 4 + 4];
                     for c in 0..4 {
@@ -288,6 +299,13 @@ impl Image {
         let tb = tint.b * 255.0;
         let tint_lum = 0.2126 * tr + 0.7152 * tg + 0.0722 * tb;
         let noise_amp = noise.clamp(0.0, 0.2) * 255.0;
+        if a == 0.0 && lo == 0.0 && noise_amp == 0.0 && (chroma - 1.0).abs() <= f32::EPSILON {
+            // Clear glass: every step below leaves the colour as it is.
+            for p in self.bgra.as_chunks_mut::<4>().0 {
+                p[3] = 255;
+            }
+            return;
+        }
         let mut seed: u32 = 0x9E37_79B9;
         for p in self.bgra.as_chunks_mut::<4>().0 {
             seed ^= seed << 13;
@@ -475,6 +493,31 @@ pub fn map_wallpaper(
             };
         }
     };
+    wallpaper.resample_region(src, dst_w, dst_h, background)
+}
+
+/// Span: one picture covers the bounding box of all monitors (`span_w` x `span_h` pixels) the
+/// way Fill covers one monitor. Returns, downscaled by `downscale`, the part a `mon_w` x
+/// `mon_h` monitor at `x`, `y` in that box shows.
+pub fn map_span(
+    wallpaper: &Image,
+    span_w: u32,
+    span_h: u32,
+    x: u32,
+    y: u32,
+    mon_w: u32,
+    mon_h: u32,
+    downscale: u32,
+    background: [u8; 3],
+) -> Image {
+    let downscale = downscale.max(1);
+    let (ww, wh) = (wallpaper.width as f32, wallpaper.height as f32);
+    let scale = (span_w as f32 / ww).max(span_h as f32 / wh);
+    // The box's centre crop of the picture, as in Fill, then this monitor's part of it.
+    let x0 = (ww - span_w as f32 / scale) / 2.0 + x as f32 / scale;
+    let y0 = (wh - span_h as f32 / scale) / 2.0 + y as f32 / scale;
+    let src = [x0, y0, x0 + mon_w as f32 / scale, y0 + mon_h as f32 / scale];
+    let (dst_w, dst_h) = ((mon_w / downscale).max(1), (mon_h / downscale).max(1));
     wallpaper.resample_region(src, dst_w, dst_h, background)
 }
 
@@ -691,12 +734,38 @@ impl MonitorBackdrop {
         self
     }
 
-    /// Crops the backdrop under a screen rectangle (virtual-screen pixels).
+    /// Crops the backdrop under a screen rectangle (virtual-screen pixels). The part off this
+    /// monitor repeats its edge pixels: the crop is drawn over the whole window, so a smaller
+    /// one would be stretched.
     pub fn crop_screen_rect(&self, x: i32, y: i32, w: i32, h: i32) -> Image {
         let d = self.downscale as i32;
-        let lx = (x - self.left) / d;
-        let ly = (y - self.top) / d;
-        self.image.crop(lx, ly, (w / d).max(1), (h / d).max(1))
+        let (_, _, lx, ly) = self.crop_origin(x, y);
+        let (cw, ch) = ((w / d).max(1), (h / d).max(1));
+        let image = &self.image;
+        let (iw, ih) = (image.width as i32, image.height as i32);
+        if lx >= 0 && ly >= 0 && lx + cw <= iw && ly + ch <= ih {
+            return image.crop(lx, ly, cw, ch);
+        }
+        let mut bgra = Vec::with_capacity((cw * ch * 4) as usize);
+        for row in ly..ly + ch {
+            let line = row.clamp(0, ih - 1) * iw;
+            for col in lx..lx + cw {
+                let i = ((line + col.clamp(0, iw - 1)) * 4) as usize;
+                bgra.extend_from_slice(&image.bgra[i..i + 4]);
+            }
+        }
+        Image {
+            width: cw as u32,
+            height: ch as u32,
+            bgra,
+        }
+    }
+
+    /// Where `crop_screen_rect` starts for a rectangle at `x`, `y`: this monitor's origin and
+    /// the image pixel. Equal origins (and sizes) cut equal crops.
+    pub fn crop_origin(&self, x: i32, y: i32) -> (i32, i32, i32, i32) {
+        let d = self.downscale as i32;
+        (self.left, self.top, (x - self.left) / d, (y - self.top) / d)
     }
 }
 
@@ -735,6 +804,41 @@ mod pixel_regressions {
     use super::*;
 
     #[test]
+    fn one_to_one_resample_and_clear_tint_keep_every_pixel() {
+        let (w, h) = (37u32, 23u32);
+        let mut seed = 0x1234_5678u32;
+        let bgra = (0..w * h * 4)
+            .map(|i| {
+                seed ^= seed << 13;
+                seed ^= seed >> 17;
+                seed ^= seed << 5;
+                if i % 4 == 3 { 255 } else { (seed >> 24) as u8 }
+            })
+            .collect();
+        let img = Image {
+            width: w,
+            height: h,
+            bgra,
+        };
+        // What the general path samples for each destination pixel of a 1:1 mapping.
+        let mut expected = Vec::new();
+        for y in 0..h {
+            let sy = (y as f32 + 0.5) / h as f32 * h as f32;
+            for x in 0..w {
+                let sx = (x as f32 + 0.5) / w as f32 * w as f32;
+                expected.extend_from_slice(&img.sample(sx - 0.5, sy - 0.5));
+            }
+        }
+        let mapped = map_wallpaper(&img, WallpaperPosition::Fill, w, h, 1, [0, 0, 0]);
+        assert_eq!(mapped.bgra, expected);
+        assert_eq!(mapped.bgra, img.bgra);
+        let mut tinted = mapped.clone();
+        let t = MicaTint::LIQUID_DARK;
+        tinted.tint(t.color, t.luminosity_opacity, t.noise, t.chroma);
+        assert_eq!(tinted.bgra, img.bgra);
+    }
+
+    #[test]
     fn gpu_backed_backdrop_samples_small_and_hands_out_full_pixels_once() {
         let mut full = Image::solid(10, 6, [0, 0, 0]);
         full.bgra[..4].copy_from_slice(&[40, 80, 120, 255]);
@@ -771,6 +875,55 @@ mod pixel_regressions {
         let small = ramp.downscale_box(4);
         assert_eq!(small.px(2, 1)[0], 85); // columns 8 and 9: (80 + 90) / 2, rounded
         assert_eq!(small.px(0, 1)[0], 15); // columns 0..3
+    }
+
+    #[test]
+    fn span_gives_each_monitor_its_part_of_one_picture() {
+        let mut image = Image::solid(8, 2, [0, 0, 0]);
+        for (i, p) in image.bgra.as_chunks_mut::<4>().0.iter_mut().enumerate() {
+            p[0] = (i % 8) as u8 * 10;
+        }
+        let blue = |image: &Image| image.bgra.chunks(4).map(|p| p[0]).collect::<Vec<_>>();
+        // Two 4 x 2 monitors side by side: the left half and the right half.
+        let left = map_span(&image, 8, 2, 0, 0, 4, 2, 1, [0, 0, 0]);
+        let right = map_span(&image, 8, 2, 4, 0, 4, 2, 1, [0, 0, 0]);
+        assert_eq!(blue(&left), [0, 10, 20, 30, 0, 10, 20, 30]);
+        assert_eq!(blue(&right), [40, 50, 60, 70, 40, 50, 60, 70]);
+        // A single monitor: the same pixels as Fill.
+        for (w, h) in [(8, 2), (4, 4), (12, 3)] {
+            assert_eq!(
+                map_span(&image, w, h, 0, 0, w, h, 2, [0, 0, 0]).bgra,
+                map_wallpaper(&image, WallpaperPosition::Fill, w, h, 2, [0, 0, 0]).bgra
+            );
+        }
+    }
+
+    #[test]
+    fn crop_off_the_monitor_keeps_its_size_and_repeats_the_edge() {
+        let mut image = Image::solid(4, 3, [0, 0, 0]);
+        for (i, p) in image.bgra.as_chunks_mut::<4>().0.iter_mut().enumerate() {
+            p[0] = i as u8;
+        }
+        let backdrop = MonitorBackdrop {
+            left: 100,
+            top: 0,
+            width: 8,
+            height: 6,
+            downscale: 2,
+            image,
+            gpu: None,
+        };
+        let blue = |crop: &Image| crop.bgra.chunks(4).map(|p| p[0]).collect::<Vec<_>>();
+        // Inside: the plain crop.
+        assert_eq!(blue(&backdrop.crop_screen_rect(102, 2, 4, 2)), [5, 6]);
+        // One texel off the monitor on the left, the right and the bottom: still 6 x 3, the
+        // image's pixels where they are, the edges repeated around them.
+        let crop = backdrop.crop_screen_rect(98, 2, 12, 6);
+        assert_eq!((crop.width, crop.height), (6, 3));
+        assert_eq!(
+            blue(&crop),
+            [4, 4, 5, 6, 7, 7, 8, 8, 9, 10, 11, 11, 8, 8, 9, 10, 11, 11]
+        );
     }
 
     #[test]

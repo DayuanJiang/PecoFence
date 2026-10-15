@@ -171,12 +171,17 @@ pub(super) fn on_keydown(
                 }),
                 None => {
                     for id in ids {
-                        queue.push(Command::LaunchItem(id));
+                        queue.push(Command::LaunchItem {
+                            item: id,
+                            from: v.active,
+                        });
                     }
                 }
             }
         }
         VK_BACK if v.deco.up_button => {
+            // Keyboard navigation: the folder it returns to shows the focus ring.
+            v.focus_visible = true;
             queue.push(Command::PortalUp(v.active));
         }
         k if k == msg::VK_DELETE => {
@@ -194,6 +199,15 @@ pub(super) fn on_keydown(
             if let Some(c) = v.cancel_tab_or_remote_drag() {
                 drop(guard);
                 finish_drag_cancel(c, queue, &h.behavior);
+                return Some(0);
+            }
+            // A divider drag: the column gets its width back and the selection stays
+            // (Explorer).
+            if let Some(cd) = v.col_drag.take() {
+                v.set_column_width(cd.col, cd.start_w);
+                let _ = v.redraw_content();
+                drop(guard);
+                window::release_capture();
                 return Some(0);
             }
             v.selected.clear();
@@ -255,8 +269,8 @@ pub(super) fn on_syskeydown(
     if !alt {
         return None;
     }
-    let guard = view.borrow();
-    let v = guard.as_ref()?;
+    let mut guard = view.borrow_mut();
+    let v = guard.as_mut()?;
     if vk == msg::VK_RETURN {
         let ids = v.selected_ids();
         if !ids.is_empty() {
@@ -268,6 +282,7 @@ pub(super) fn on_syskeydown(
         return Some(0);
     }
     if vk == VK_UP && v.deco.up_button {
+        v.focus_visible = true;
         queue.push(Command::PortalUp(v.active));
         return Some(0);
     }
@@ -297,8 +312,8 @@ pub(super) fn on_contextmenu(
         let pad = (8.0 * v.scale()) as i32;
         queue.push(Command::FenceMenu {
             fence: v.active,
-            x: win.left + pad,
-            y: win.top + v.title_h_px() + pad,
+            x: win.left + v.content_x + pad,
+            y: win.top + v.content_y + pad,
         });
         return Some(0);
     }

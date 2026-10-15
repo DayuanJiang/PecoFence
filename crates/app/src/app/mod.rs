@@ -3,10 +3,11 @@
 use crate::anchor::{self, AnchorCell, DesktopAnchor, ShowDesktopBehavior, ZMode};
 use crate::commands::{
     Command, CommandQueue, TransferMode, WM_APP_COMMAND, WM_APP_FRAME, WM_APP_FS_CHANGED,
-    WM_APP_PEEK_FOCUSED, WM_APP_PREWARM_DONE, WM_APP_SHELL_CHANGED, WM_APP_TRAY, WM_APP_WALLPAPER,
+    WM_APP_LIVE_WALLPAPER, WM_APP_PEEK_FOCUSED, WM_APP_PREWARM_DONE, WM_APP_SHELL_CHANGED,
+    WM_APP_STARTUP_BACKDROPS, WM_APP_TRAY, WM_APP_WALLPAPER,
 };
 use crate::fence_window::{
-    BackdropMode, BackdropSets, Behavior, FenceContext, FenceWindow, ItemView, TabView,
+    BackdropMode, BackdropSets, Behavior, FenceContext, FenceWindow, ItemView, SearchMarks, TabView,
 };
 use crate::icons::{IconCache, IconVariant, WM_APP_ICON_READY};
 use crate::ipc_server::{IpcServer, PendingQueue};
@@ -15,8 +16,9 @@ use crate::settings_host::{SettingsHost, WebEnvironment};
 use crate::shadow::{ShadowStyle, ShadowWindow};
 use crate::state::AppState;
 use pecofence_core::geometry::WorkArea;
+use pecofence_core::hotkey::Hotkey;
 use pecofence_core::{
-    FenceId, FenceKind, ItemId, ItemKey, PeekHotkey, ShowDesktopSetting, SortMode, Spacing, Target,
+    FenceId, FenceKind, ItemId, ItemKey, ShowDesktopSetting, SortMode, Spacing, Target,
     ThemeSetting, TitleSize, ViewLayout, ZOrderSetting,
 };
 use pecofence_platform::clipboard;
@@ -31,7 +33,9 @@ use pecofence_platform::watcher::{DirWatcher, FsEvent};
 use pecofence_platform::window::{
     self, ClassOptions, MessageHandler, Window, WindowBuilder, WindowClass, style,
 };
-use pecofence_platform::{HWND, POINT, RECT, desktop, monitors, msg, theme as systheme, wallpaper};
+use pecofence_platform::{
+    HWND, POINT, RECT, desktop, monitors, msg, process, theme as systheme, wallpaper,
+};
 use pecofence_render::fence_chrome::FenceChrome;
 use pecofence_render::fence_chrome::FenceStyle;
 use pecofence_render::motion::Motion;
@@ -55,6 +59,7 @@ mod fileops;
 mod group;
 mod ipc;
 mod items;
+mod live_wallpaper;
 mod menus;
 mod motion;
 mod peek;
@@ -70,13 +75,14 @@ mod testscript;
 mod updates;
 mod visuals;
 mod wallpaper_refresh;
+mod welcome;
 
 use fences::work_areas;
 use fileops::{FileOp, FileOpThen};
 use peek::peek_hotkey_label;
 use visuals::{
-    backdrop_mode_for, build_backdrop_sets, fence_style_for, icon_variant_for, pick_theme_mode,
-    shadow_style_for, theme_for, tray_icon_image,
+    StartupBackdrops, backdrop_mode_for, fence_style_for, icon_variant_for, pick_theme_mode,
+    shadow_style_for, theme_for, tray_icon_image, verify_wallpaper_later,
 };
 use wallpaper_refresh::{BackdropCache, FIRST_CHECK_MS, RefreshSchedule, supersedes};
 
@@ -120,18 +126,44 @@ const TIMER_TRAY_RETRY: usize = 57;
 const TRAY_RETRY_MS: u32 = 2_000;
 /// WM_ENDSESSION(FALSE) arrived while the App was borrowed: hide the icons again shortly.
 const TIMER_SHUTDOWN_CANCELLED: usize = 58;
+/// A theme, accent or system settings change arrived while the App was borrowed: apply it
+/// shortly.
+const TIMER_SYSTEM_SETTINGS_RETRY: usize = 52;
 /// Rebuilding the GPU device failed (driver reset in progress): try again, backing off.
 const TIMER_DEVICE_RETRY: usize = 59;
 const DEVICE_RETRY_FIRST_MS: u32 = 1_000;
+/// Re-armed by every panel draw, like `TIMER_GPU_TRIM`: once drawing has been quiet this long,
+/// hands the memory the last burst of work touched back to Windows
+/// (`memstats::trim_working_set`). While memory is plentiful Windows leaves a normal-priority
+/// process's pages resident, so without it Task Manager keeps counting everything any earlier
+/// interaction touched (~28 MB after hours of use on a 4K PC), although an idle app touches
+/// ~3 MB.
+const TIMER_IDLE_TRIM: usize = 60;
+const IDLE_TRIM_MS: u32 = 30_000;
+/// The live wallpaper capture worker finished (`WM_APP_LIVE_WALLPAPER`); retried while the App
+/// is borrowed.
+const TIMER_LIVE_CAPTURED: usize = 61;
+/// `TaskbarCreated` arrived while the App was borrowed: renew the shell change registration
+/// shortly.
+const TIMER_SHELL_WATCH_RETRY: usize = 62;
+/// The startup wallpaper worker finished late (see `StartupBackdrops`).
+const TIMER_STARTUP_BACKDROPS: usize = 63;
 const DEVICE_RETRY_MAX_MS: u32 = 30_000;
+/// Growth of private commit plus GPU memory that logs a memory line before the hour is up.
+const MEMORY_LOG_GROWTH: u64 = 64 << 20;
 const WALLPAPER_PREWARM_DELAY_MS: u32 = 3_000;
 const SPI_SETDESKWALLPAPER: usize = 0x0014;
 const SPI_SETWORKAREA: usize = 0x002F;
 const TRAY_ID: u32 = 1;
 const HOTKEY_PEEK: i32 = 1;
+/// Registered for a moment to learn whether a shortcut the user picks is free.
+const HOTKEY_PROBE: i32 = 2;
 
 /// How long a fence-menu "新建" keeps its claim on the next desktop item (plan §5.8).
 const PENDING_CREATION_SECS: u64 = 15;
+/// How long a shell drop onto a virtual fence claims the shortcuts that appear on the desktop
+/// afterwards.
+const SHELL_DROP_CLAIM_SECS: u64 = 5;
 
 /// Frame cadence of one animation run (from the first requested frame to the frame nothing
 /// moves any more), for the "animation run stuttered" diagnostics.
@@ -180,6 +212,10 @@ pub struct App {
     /// GPU recovery retry: one is armed (`TIMER_DEVICE_RETRY`), and the delay of the next one.
     device_retry_pending: bool,
     device_retry_ms: u32,
+    /// GPU memory at the first idle point after startup or the last rebuild that handed it
+    /// back, and when that rebuild ran (`motion::hand_back_gpu_memory`).
+    gpu_baseline: Option<u64>,
+    gpu_rebuilt: Option<Instant>,
     /// `--test-script` state while a script runs.
     test: Option<testscript::TestScript>,
     /// Selection kept by a Ctrl / Shift desktop marquee in progress (empty for a plain one);
@@ -193,18 +229,25 @@ pub struct App {
     control: Window,
     queue: CommandQueue,
     tray: Option<TrayIcon>,
-    _watchers: Vec<DirWatcher>,
+    /// The user's and the public desktop folder, each with its watcher (restarted per folder
+    /// by `revive_watchers`).
+    watchers: Vec<(PathBuf, DirWatcher)>,
     /// Shell change notifications for the Recycle Bin and the desktop namespace, which no
     /// folder watcher sees (`None` when the shell refused the registration).
     _shell_watch: Option<ShellChangeWatch>,
     /// One watcher per folder-portal fence on the folder it currently shows (kept in sync by
     /// `ensure_portal_watchers`; navigating swaps the watcher).
     portal_watchers: HashMap<FenceId, (PathBuf, DirWatcher)>,
+    /// Portal folders whose watcher could not be started after a long wait (an unreachable
+    /// network share): how many times, and when to try again (see `ensure_portal_watchers`).
+    watcher_retry: HashMap<PathBuf, (u32, Instant)>,
     fs_pending: Arc<Mutex<Vec<FsEvent>>>,
     /// Finished shell file operations from the worker threads (see `fileops.rs`).
     fileops_done: fileops::FileOpResults,
     /// File operations still running: their PendingRoutes must not expire mid-copy.
     fileops_running: usize,
+    /// Serial of the last file operation started (`run_fileop`).
+    fileop_serial: u64,
     /// CLI requests waiting for the UI thread (see `ipc_server.rs` / `ipc.rs`).
     ipc_pending: PendingQueue,
     /// The named-pipe listener; `None` when the pipe name was unavailable.
@@ -214,8 +257,6 @@ pub struct App {
     /// Open `events.subscribe` streams and the last tick's state they are diffed against.
     ipc_subscribers: Vec<ipc::IpcSubscriber>,
     ipc_event_state: Option<ipc::EventState>,
-    /// When the last event (or heartbeat) went out to the streams.
-    ipc_last_event: Instant,
     /// `PECOFENCE_INSTANCE` of this process (reported by `status.get`).
     instance: Option<String>,
     settings: Option<SettingsHost>,
@@ -226,6 +267,10 @@ pub struct App {
     updates: updates::Updates,
     /// The one-time Store rating offer (see `rating.rs`).
     rating: rating::RatingPrompt,
+    /// The first start's welcome notice while it is on screen (see `welcome.rs`).
+    welcome: Option<crate::notice::Notice>,
+    /// The fence Settings › 「栅栏」 is editing, which wears the selection ring (`group.rs`).
+    settings_ring: Option<FenceId>,
     web_env: Option<WebEnvironment>,
     settings_class: WindowClass,
     theme_mode: ThemeMode,
@@ -233,6 +278,10 @@ pub struct App {
     accent: Option<systheme::AccentPalette>,
     wallpaper_override: Option<String>,
     pending_routes: Vec<PendingRoute>,
+    /// The virtual fence a shell drop just went to, and when: the first desktop change batch
+    /// within `SHELL_DROP_CLAIM_SECS` that adds shortcuts puts them into it (the shell writes
+    /// some after `Drop` returned), see `on_fs_changed`.
+    shell_drop_claim: Option<(FenceId, Instant)>,
     /// Previous frame's timestamp while an animation runs (frame-gap diagnostics).
     frame_prev: Option<Instant>,
     /// Cadence statistics of the animation run in progress.
@@ -244,28 +293,73 @@ pub struct App {
     peek_class: WindowClass,
     /// Dimmer windows while a Peek is active.
     peek: Option<PeekOverlay>,
+    /// Peek search matches in reading order (host window, tab, item) and the highlighted one.
+    peek_hits: Vec<(FenceId, FenceId, ItemId)>,
+    peek_hit: usize,
+    /// Fences the search moved to another tab, with the tab each showed before.
+    peek_tabs: HashMap<FenceId, FenceId>,
     /// The desktop folder could not be read at the last sync (removable / network drive).
     desktop_unavailable: bool,
+    /// The tray told the user that the configuration cannot be saved (once per run).
+    save_failure_shown: bool,
     /// Last run of the rules that depend on the clock ("闲置天数"); see `housekeeping`.
     idle_rules_checked: Option<Instant>,
+    /// When the last memory line was logged and the total it showed; see `log_memory`.
+    memory_logged: Option<(Instant, u64)>,
     /// Fingerprint of the snapshot the current backdrops were built from.
     wallpaper_sig: Option<String>,
     wallpaper_cache: BackdropCache,
     /// Another virtual desktop's wallpaper being decoded ahead of a switch there.
     prewarm: Option<visuals::PrewarmJob>,
+    /// The startup wallpaper worker, while Explorer has not answered it (see `StartupBackdrops`).
+    startup_backdrops: Option<StartupBackdrops>,
+    /// Monitors a live wallpaper covers, and the capture of them in progress.
+    live: Vec<live_wallpaper::LiveWallpaper>,
+    live_capture: Option<live_wallpaper::LiveCapture>,
+    /// The worker of a given-up capture that has not returned yet (one at most).
+    live_abandoned: Option<std::thread::JoinHandle<()>>,
     /// The hotkey currently registered (None = registration failed or Peek disabled).
-    peek_hotkey: Option<PeekHotkey>,
+    peek_hotkey: Option<Hotkey>,
     /// The combination the last `sync_peek_hotkey` tried to register (the user's choice), so a
     /// persisting conflict does not re-toast on every settings apply.
-    peek_hotkey_wanted: Option<PeekHotkey>,
+    peek_hotkey_wanted: Option<Hotkey>,
+    /// The settings page is recording a new shortcut: `peek_hotkey` is unregistered meanwhile,
+    /// so pressing it reaches the page instead of starting a Peek.
+    peek_hotkey_paused: bool,
     /// Items put on the clipboard with 剪切 (drawn dimmed) and the clipboard sequence number at
     /// that moment: any later clipboard change (Explorer pasted, something else was copied)
     /// clears the dimming.
     cut_items: HashSet<ItemId>,
     cut_clip_seq: u32,
+    /// A paste of cut files is still being moved by a worker thread: the serial of that file
+    /// operation and the clipboard sequence number at the paste. The clipboard is emptied when
+    /// the move succeeds, unless something else was put on it meanwhile (see `paste_into`).
+    cut_paste: Option<(u64, u32)>,
 }
 
 pub type AppCell = Rc<RefCell<Option<App>>>;
+
+/// Seconds from Explorer's start to this process's, to a tenth (negative: Explorer restarted
+/// since).
+fn seconds_after_explorer() -> Option<f64> {
+    let explorer = desktop::window_pid(desktop::shell_window());
+    process::seconds_after_start_of(explorer).map(|s| (s * 10.0).round() / 10.0)
+}
+
+/// Re-reads whether virtual desktops keep different pictures. The 100 ms desktop poll (and the
+/// foreground signal) only run while they do: a switch cannot change the wallpaper otherwise.
+fn sync_desktops_differ(control: HWND, differ: &Cell<bool>) {
+    let now = wallpaper::desktops_differ();
+    // Starts false with no poll running.
+    if differ.replace(now) != now {
+        tracing::debug!(desktops_differ = now, "virtual desktop wallpapers");
+        if now {
+            window::set_coalescable_timer(control, TIMER_DESKTOP_ID, 100, 25);
+        } else {
+            window::kill_timer(control, TIMER_DESKTOP_ID);
+        }
+    }
+}
 
 /// The variant name of a command (its `Debug` form up to the first `{`, `(` or space).
 fn command_name(cmd: &Command) -> String {
@@ -278,6 +372,15 @@ impl App {
     pub fn create(args: Args) -> Result<AppCell> {
         let cell: AppCell = Rc::new(RefCell::new(None));
 
+        // Elevation decides which windows the fences may be placed under; the delay after
+        // Explorer shows how long a launch at sign-in waited.
+        let after_explorer_s = seconds_after_explorer();
+        tracing::info!(
+            packaged = process::is_packaged(),
+            elevated = ?process::is_elevated(process::current_pid()),
+            after_explorer_s = ?after_explorer_s,
+            "process started"
+        );
         let stack = Rc::new(RenderStack::new()?);
         tracing::info!(
             queue = stack.queue_path,
@@ -286,11 +389,15 @@ impl App {
         );
 
         let areas = work_areas();
-        for w in &areas {
-            tracing::info!(name = %w.device_path, dpi = w.dpi, work = ?(w.left, w.top, w.right, w.bottom), "monitor");
-        }
+        fences::log_monitors(&areas);
         let state = AppState::load(areas, args.portable);
-        tracing::info!(path = %state.config_path().display(), first_run = state.first_run, fences = state.fences().len(), "config loaded");
+        tracing::info!(
+            path = %state.config_path().display(),
+            storage = state.storage_kind(),
+            first_run = state.first_run,
+            fences = state.fences().len(),
+            "config loaded"
+        );
         if let Some(p) = &state.recovered_from {
             tracing::warn!(from = %p.display(), "config recovered from backup");
         }
@@ -305,16 +412,16 @@ impl App {
             state.config.settings.theme_style,
             accent.as_ref(),
         );
-        let (backdrops, wallpaper_sig) =
-            match build_backdrop_sets(&theme, args.wallpaper_override.as_deref()) {
-                Ok((backdrops, signature)) => (backdrops, Some(signature)),
-                Err(error) => {
-                    tracing::warn!(%error, "wallpaper unavailable at startup; solid backdrop");
-                    (Rc::new(BackdropSets::default()), None)
-                }
-            };
+        // Decoded on a worker while the rest of startup runs; in place before the first fence.
+        let mut startup_backdrops =
+            StartupBackdrops::start(&theme, args.wallpaper_override.as_deref());
 
         let queue = CommandQueue::new();
+        // Whether a virtual-desktop switch can change the picture (see `sync_desktops_differ`).
+        let desktops_differ = Rc::new(Cell::new(false));
+        // The desktop anchor once it exists: WM_QUERYENDSESSION shows the real icons again
+        // through it while a menu or dialog holds the App.
+        let session_anchor: Rc<std::cell::OnceCell<AnchorCell>> = Rc::default();
 
         // Control window: timers, tray callbacks, command pump.
         let control_class = WindowClass::register("PecoFence.Control", ClassOptions::default())?;
@@ -324,12 +431,22 @@ impl App {
             // Folder-watcher debounce state (see WM_APP_FS_CHANGED / TIMER_FS).
             let fs_armed = Cell::new(false);
             let fs_flushed: Cell<Option<Instant>> = Cell::new(None);
+            // The pending batch must sync the desktop even if its events all lie in portal
+            // folders: a shell notice or a menu asked for it.
+            let fs_desktop = Cell::new(false);
+            // TIMER_ICONS is armed for a batch of results (see WM_APP_ICON_READY).
+            let icons_armed = Cell::new(false);
             let peek_focus_pending: Cell<Option<usize>> = Cell::new(None);
             // A display change is waiting out DISPLAY_SETTLE_MS on TIMER_WORKAREA.
             let display_settling = Cell::new(false);
             // This lives outside App so nested/modal loops cannot lose a wallpaper signal.
             let wallpaper_schedule = Rc::new(Cell::new(RefreshSchedule::default()));
             let last_desktop_id = Cell::new(wallpaper::desktop_id());
+            let desktops_differ = desktops_differ.clone();
+            let session_anchor = session_anchor.clone();
+            let queue = queue.clone();
+            // Virtual desktop of the last foreground window (see WM_APP_WALLPAPER).
+            let last_foreground_desktop: Cell<Option<u128>> = Cell::new(None);
             let notify_wallpaper = {
                 let wallpaper_schedule = wallpaper_schedule.clone();
                 move |hwnd| {
@@ -375,6 +492,14 @@ impl App {
                                 // desktop namespace item toggled): release its payload and
                                 // treat it like a folder change.
                                 ShellChangeWatch::release(wparam, lparam);
+                                // The Recycle Bin may have changed: ask it at the next sync.
+                                // Plain folder events leave the cached answer alone (asking
+                                // touches every fixed drive); without this channel the sync
+                                // itself asks every time.
+                                shell::recycle_bin_changed();
+                            }
+                            if message == WM_APP_SHELL_CHANGED || wparam != 0 {
+                                fs_desktop.set(true);
                             }
                             // Explorer reacts to a folder change within a frame or two; a file
                             // the shell just moved onto the desktop (drag-out from a portal)
@@ -390,12 +515,31 @@ impl App {
                             }
                             Some(0)
                         }
+                        WM_APP_STARTUP_BACKDROPS => {
+                            window::set_timer(hwnd, TIMER_STARTUP_BACKDROPS, 1);
+                            Some(0)
+                        }
                         WM_APP_PREWARM_DONE => {
                             window::set_timer(hwnd, TIMER_PREWARM_FINISH, 1);
                             Some(0)
                         }
+                        WM_APP_LIVE_WALLPAPER => {
+                            if wparam == 0 {
+                                window::set_timer(hwnd, TIMER_LIVE_CAPTURED, 1);
+                            } else if let Ok(mut guard) = cell.try_borrow_mut()
+                                && let Some(app) = guard.as_mut()
+                            {
+                                app.capture_live_wallpapers(live_wallpaper::LIVE_FRONT_REFRESH);
+                            }
+                            Some(0)
+                        }
                         WM_APP_ICON_READY => {
-                            window::set_timer(hwnd, TIMER_ICONS, 40);
+                            // One timer per batch: SetTimer restarts a running timer, so arming
+                            // it for every result would hold the drain back for as long as the
+                            // workers keep finishing icons less than 40 ms apart.
+                            if !icons_armed.replace(true) {
+                                window::set_timer(hwnd, TIMER_ICONS, 40);
+                            }
                             Some(0)
                         }
                         msg::WM_HOTKEY if wparam as i32 == HOTKEY_PEEK => {
@@ -444,6 +588,7 @@ impl App {
                                     {
                                         window::kill_timer(hwnd, TIMER_SAVE);
                                         app.state.save_if_dirty();
+                                        app.notice_save_failure();
                                     } else {
                                         // Busy (modal loop): retry shortly instead of dropping.
                                         window::set_timer(hwnd, TIMER_SAVE, 500);
@@ -455,7 +600,7 @@ impl App {
                                     {
                                         window::kill_timer(hwnd, TIMER_FS);
                                         fs_armed.set(false);
-                                        app.on_fs_changed();
+                                        app.on_fs_changed(fs_desktop.take());
                                         fs_flushed.set(Some(Instant::now()));
                                     } else {
                                         // Busy (modal loop): retry shortly; stays armed.
@@ -470,15 +615,31 @@ impl App {
                                         app.trim_gpu_if_idle();
                                     }
                                 }
-                                TIMER_WALLPAPER_PREWARM | TIMER_PREWARM_FINISH => {
+                                TIMER_IDLE_TRIM => {
+                                    if let Ok(mut guard) = cell.try_borrow_mut()
+                                        && let Some(app) = guard.as_mut()
+                                    {
+                                        window::kill_timer(hwnd, TIMER_IDLE_TRIM);
+                                        app.trim_if_idle();
+                                    }
+                                }
+                                TIMER_WALLPAPER_PREWARM
+                                | TIMER_PREWARM_FINISH
+                                | TIMER_LIVE_CAPTURED
+                                | TIMER_SHELL_WATCH_RETRY
+                                | TIMER_STARTUP_BACKDROPS => {
                                     if let Ok(mut guard) = cell.try_borrow_mut()
                                         && let Some(app) = guard.as_mut()
                                     {
                                         window::kill_timer(hwnd, wparam);
-                                        if wparam == TIMER_PREWARM_FINISH {
-                                            app.finish_prewarm();
-                                        } else {
-                                            app.prewarm_wallpapers();
+                                        match wparam {
+                                            TIMER_PREWARM_FINISH => app.finish_prewarm(),
+                                            TIMER_LIVE_CAPTURED => app.finish_live_capture(),
+                                            TIMER_SHELL_WATCH_RETRY => app.renew_shell_watch(),
+                                            TIMER_STARTUP_BACKDROPS => {
+                                                app.finish_startup_backdrops()
+                                            }
+                                            _ => app.prewarm_wallpapers(),
                                         }
                                     } else {
                                         window::set_timer(hwnd, wparam, 200);
@@ -502,6 +663,7 @@ impl App {
                                     if let Ok(mut guard) = cell.try_borrow_mut()
                                         && let Some(app) = guard.as_mut()
                                     {
+                                        icons_armed.set(false);
                                         window::kill_timer(hwnd, TIMER_ICONS);
                                         app.on_icons_ready();
                                     } else {
@@ -527,6 +689,7 @@ impl App {
                                     }
                                 }
                                 TIMER_WALLPAPER_POLL => {
+                                    sync_desktops_differ(hwnd, &desktops_differ);
                                     if let Ok(mut guard) = cell.try_borrow_mut()
                                         && let Some(app) = guard.as_mut()
                                     {
@@ -596,6 +759,16 @@ impl App {
                                         window::set_timer(hwnd, TIMER_SHUTDOWN_CANCELLED, 250);
                                     }
                                 }
+                                TIMER_SYSTEM_SETTINGS_RETRY => {
+                                    window::kill_timer(hwnd, TIMER_SYSTEM_SETTINGS_RETRY);
+                                    if let Ok(mut guard) = cell.try_borrow_mut()
+                                        && let Some(app) = guard.as_mut()
+                                    {
+                                        app.on_system_settings_changed();
+                                    } else {
+                                        window::set_timer(hwnd, TIMER_SYSTEM_SETTINGS_RETRY, 250);
+                                    }
+                                }
                                 TIMER_TRAY_RETRY => {
                                     window::kill_timer(hwnd, TIMER_TRAY_RETRY);
                                     let shown = cell
@@ -623,6 +796,7 @@ impl App {
                             Some(0)
                         }
                         msg::WM_SETTINGCHANGE if wparam == SPI_SETDESKWALLPAPER => {
+                            sync_desktops_differ(hwnd, &desktops_differ);
                             notify_wallpaper(hwnd);
                             None
                         }
@@ -637,6 +811,27 @@ impl App {
                             Some(0)
                         }
                         WM_APP_WALLPAPER => {
+                            if wparam == 1 {
+                                // A foreground change: a desktop switch announcing itself. It
+                                // cannot change the picture while every desktop shows the same,
+                                // and a window on the previous one's desktop is no switch.
+                                if !desktops_differ.get() {
+                                    last_foreground_desktop.set(None);
+                                    return Some(0);
+                                }
+                                let desktop = wallpaper::window_desktop(HWND(
+                                    lparam as *mut core::ffi::c_void,
+                                ));
+                                if desktop.is_some()
+                                    && last_foreground_desktop.replace(desktop) == desktop
+                                {
+                                    return Some(0);
+                                }
+                                // Unknown (the desktop itself, say): the next one counts again.
+                                last_foreground_desktop.set(desktop);
+                            } else {
+                                sync_desktops_differ(hwnd, &desktops_differ);
+                            }
                             // Try promptly, then keep checking while Explorer publishes the
                             // new desktop's image. Repeated notifications never delay a check.
                             tracing::debug!(source = wparam, "wallpaper refresh signal");
@@ -662,6 +857,9 @@ impl App {
                                 && let Some(app) = guard.as_mut()
                             {
                                 app.on_system_settings_changed();
+                            } else {
+                                // A menu or dialog runs; Windows does not repeat the broadcast.
+                                window::set_timer(hwnd, TIMER_SYSTEM_SETTINGS_RETRY, 250);
                             }
                             None
                         }
@@ -681,6 +879,13 @@ impl App {
                             if shown != Some(true) {
                                 window::set_timer(hwnd, TIMER_TRAY_RETRY, 250);
                             }
+                            if let Ok(mut guard) = cell.try_borrow_mut()
+                                && let Some(app) = guard.as_mut()
+                            {
+                                app.renew_shell_watch();
+                            } else {
+                                window::set_timer(hwnd, TIMER_SHELL_WATCH_RETRY, 250);
+                            }
                             Some(0)
                         }
                         msg::WM_QUERYENDSESSION => {
@@ -691,6 +896,12 @@ impl App {
                                 if let Some(a) = app.anchor.borrow_mut().as_mut() {
                                     a.restore_desktop_icons();
                                 }
+                            } else if let Some(anchor) = session_anchor.get()
+                                && let Ok(mut guard) = anchor.try_borrow_mut()
+                                && let Some(a) = guard.as_mut()
+                            {
+                                // The session may end before the menu or dialog returns.
+                                a.restore_desktop_icons();
                             }
                             Some(1)
                         }
@@ -712,6 +923,13 @@ impl App {
                             // (WM_QUERYENDSESSION saved and showed the icons). Staying makes
                             // Windows wait, then kill it and report a hang.
                             tracing::info!(close_app = lparam & 1 != 0, "session ending: quitting");
+                            if cell.try_borrow_mut().is_err() {
+                                // A menu holds the App, and its loop keeps running past the
+                                // quit below: close it, then quit as 退出 does (saving first)
+                                // once the App is free again.
+                                tray::end_menu();
+                                queue.push(Command::Quit);
+                            }
                             window::post_quit(0);
                             Some(0)
                         }
@@ -747,6 +965,7 @@ impl App {
             &sentinel_class,
         )?;
         std::mem::forget(sentinel_class);
+        let _ = session_anchor.set(anchor_cell.clone());
         if let Some(a) = anchor_cell.borrow_mut().as_mut() {
             let q = queue.clone();
             a.on_marquee = Some(Box::new(move |event| {
@@ -781,12 +1000,17 @@ impl App {
             )?,
             chrome: Rc::new(FenceChrome::new()?),
             theme: RefCell::new(theme),
-            backdrops: RefCell::new(backdrops),
+            backdrops: RefCell::new(Rc::new(BackdropSets::default())),
             anchor: anchor_cell.clone(),
             taskbar_created: desktop::taskbar_created_message(),
             icons: Rc::new(RefCell::new({
                 let mut c = IconCache::new(control.hwnd());
                 c.set_variant(icon_variant_for(&state.config.settings.icons));
+                // Started at sign-in (or before Explorer): the shell's first answers may be
+                // placeholders.
+                if after_explorer_s.is_none_or(|s| s < 300.0) {
+                    c.recheck_after_start();
+                }
                 c
             })),
             bitmaps: Rc::new(RefCell::new(BitmapCache::new())),
@@ -808,8 +1032,12 @@ impl App {
                 ),
                 title_on_hover: std::cell::Cell::new(state.config.settings.roll_up.title_on_hover),
                 title_align: std::cell::Cell::new(state.config.settings.title_align),
+                tab_bar: std::cell::Cell::new(state.config.settings.tab_bar),
                 hide_inactive_scrollbar: std::cell::Cell::new(
                     state.config.settings.roll_up.hide_inactive_scrollbar,
+                ),
+                switch_tab_on_hover: std::cell::Cell::new(
+                    state.config.settings.roll_up.switch_tab_on_hover,
                 ),
                 wheel_lines: std::cell::Cell::new(sysparams::wheel_scroll_lines()),
                 drop_preview: std::cell::RefCell::new(
@@ -848,28 +1076,8 @@ impl App {
 
         // Watchers.
         let fs_pending: Arc<Mutex<Vec<FsEvent>>> = Arc::new(Mutex::new(Vec::new()));
-        let mut watchers = Vec::new();
-        for dir in [shell::user_desktop(), shell::public_desktop()]
-            .into_iter()
-            .flatten()
-        {
-            let pending = fs_pending.clone();
-            let control_hwnd = control.hwnd().0 as isize;
-            match DirWatcher::start(&dir, move |events| {
-                if let Ok(mut p) = pending.lock() {
-                    p.extend(events);
-                }
-                window::post_message(
-                    HWND(control_hwnd as *mut core::ffi::c_void),
-                    WM_APP_FS_CHANGED,
-                    0,
-                    0,
-                );
-            }) {
-                Ok(w) => watchers.push(w),
-                Err(e) => tracing::warn!(dir = %dir.display(), error = %e, "watcher failed"),
-            }
-        }
+        let watchers =
+            sync::start_desktop_watchers(sync::desktop_folders(), control.hwnd(), &fs_pending);
 
         let shell_watch = ShellChangeWatch::register_desktop(control.hwnd(), WM_APP_SHELL_CHANGED)
             .map_err(|e| tracing::warn!(error = %e, "shell change notifications unavailable"))
@@ -880,11 +1088,13 @@ impl App {
 
         // CLI named pipe: requests land in `ipc_pending`, the control window is poked.
         let ipc_pending: PendingQueue = Arc::new(Mutex::new(VecDeque::new()));
-        let ipc = IpcServer::start(
-            &pecofence_core::brand::ipc_pipe_name(args.instance.as_deref()),
-            control.hwnd(),
-            ipc_pending.clone(),
-        );
+        let ipc = match pecofence_platform::pipe::ipc_pipe_name(args.instance.as_deref()) {
+            Ok(name) => IpcServer::start(&name, control.hwnd(), ipc_pending.clone()),
+            Err(error) => {
+                tracing::warn!(target: "pecofence::ipc", %error, "user SID unavailable; CLI disabled");
+                None
+            }
+        };
         let rating = rating::RatingPrompt::load(
             state.config_path().parent().unwrap_or(Path::new(".")),
             pecofence_platform::process::is_packaged(),
@@ -898,30 +1108,34 @@ impl App {
             control,
             queue,
             tray,
-            _watchers: watchers,
+            watchers,
             _shell_watch: shell_watch,
             portal_watchers: HashMap::new(),
+            watcher_retry: HashMap::new(),
             fs_pending,
             fileops_done: Arc::new(Mutex::new(Vec::new())),
             fileops_running: 0,
+            fileop_serial: 0,
             ipc_pending,
             _ipc: ipc,
             ipc_warnings: Vec::new(),
             ipc_subscribers: Vec::new(),
             ipc_event_state: None,
-            ipc_last_event: Instant::now(),
             instance: args.instance.clone(),
             settings: None,
             settings_focus_fence: None,
             feedback: Default::default(),
             updates: Default::default(),
             rating,
+            welcome: None,
+            settings_ring: None,
             web_env: None,
             settings_class,
             theme_mode,
             accent,
             wallpaper_override: args.wallpaper_override.clone(),
             pending_routes: Vec::new(),
+            shell_drop_claim: None,
             frame_prev: None,
             frame_run: FrameRun::default(),
             no_hide_icons: args.no_hide_icons,
@@ -934,27 +1148,36 @@ impl App {
             },
             peek_class,
             peek: None,
+            peek_hits: Vec::new(),
+            peek_hit: 0,
+            peek_tabs: HashMap::new(),
             dying: Vec::new(),
             device_retry_pending: false,
             device_retry_ms: DEVICE_RETRY_FIRST_MS,
+            gpu_baseline: None,
+            gpu_rebuilt: None,
             test: None,
             marquee_base: None,
             marquee_band: None,
             marquee_draws_band: false,
             peek_hotkey: None,
             peek_hotkey_wanted: None,
+            peek_hotkey_paused: false,
             desktop_unavailable: false,
+            save_failure_shown: false,
             idle_rules_checked: None,
+            memory_logged: None,
             cut_items: HashSet::new(),
             cut_clip_seq: 0,
-            wallpaper_sig,
+            cut_paste: None,
+            wallpaper_sig: None,
             wallpaper_cache: BackdropCache::default(),
             prewarm: None,
+            startup_backdrops: None,
+            live: Vec::new(),
+            live_capture: None,
+            live_abandoned: None,
         };
-        if let Some(signature) = app.wallpaper_sig.clone() {
-            app.wallpaper_cache
-                .insert(signature, app.ctx.backdrops.borrow().clone());
-        }
         // Watch both wallpaper settings and virtual-desktop state; either signal starts a
         // bounded burst of fast reads, because the image may arrive after the notification.
         {
@@ -973,12 +1196,23 @@ impl App {
         app.sync_peek_hotkey();
         if let Some(a) = app.anchor.borrow_mut().as_mut() {
             let q = app.queue.clone();
-            a.on_peek_interrupted = Some(Box::new(move || q.push(Command::EndPeek)));
+            a.on_peek_interrupted = Some(Box::new(move || {
+                q.push(Command::EndPeek("another window came to the front"))
+            }));
             let control_hwnd = app.control.hwnd().0 as isize;
-            a.on_foreground_changed = Some(Box::new(move || {
+            a.on_foreground_changed = Some(Box::new(move |foreground| {
                 window::post_message(
                     HWND(control_hwnd as *mut core::ffi::c_void),
                     WM_APP_WALLPAPER,
+                    1,
+                    foreground.0 as isize,
+                );
+            }));
+            // A live wallpaper's backdrop catches up with what the desktop shows now.
+            a.on_desktop_front = Some(Box::new(move || {
+                window::post_message(
+                    HWND(control_hwnd as *mut core::ffi::c_void),
+                    WM_APP_LIVE_WALLPAPER,
                     1,
                     0,
                 );
@@ -1019,16 +1253,38 @@ impl App {
             }
         }
         // Installed before the first fence draws, and armed once: an idle startup with no
-        // later draw must still release its scratch memory.
+        // later draw must still release its scratch memory and hand its pages back.
         let control = app.control.hwnd();
         pecofence_render::stack::set_draw_hook(move || {
-            window::set_timer(control, TIMER_GPU_TRIM, GPU_TRIM_IDLE_MS)
+            window::set_timer(control, TIMER_GPU_TRIM, GPU_TRIM_IDLE_MS);
+            window::set_timer(control, TIMER_IDLE_TRIM, IDLE_TRIM_MS);
         });
         window::set_timer(control, TIMER_GPU_TRIM, GPU_TRIM_IDLE_MS);
+        window::set_timer(control, TIMER_IDLE_TRIM, IDLE_TRIM_MS);
         // Initial desktop sync + windows.
         app.sync_desktop_if_available("startup");
         app.state.refresh_all_portals();
+        let mut startup_snapshot = None;
+        match startup_backdrops.finish(&app.ctx.theme.borrow(), app.control.hwnd()) {
+            Some(Ok((backdrops, snapshot, signature))) => {
+                *app.ctx.backdrops.borrow_mut() = backdrops.clone();
+                app.wallpaper_cache.insert(signature.clone(), backdrops);
+                app.wallpaper_sig = Some(signature);
+                startup_snapshot = Some(snapshot);
+            }
+            Some(Err(error)) => {
+                tracing::warn!(%error, "wallpaper unavailable at startup; solid backdrop");
+            }
+            // Explorer is slow to answer: the fences go up now, the glass follows.
+            None => {
+                startup_backdrops.generation = app.wallpaper_cache.generation();
+                app.startup_backdrops = Some(startup_backdrops);
+            }
+        }
         app.sync_fence_windows();
+        if app.state.first_run {
+            app.fit_first_run_column();
+        }
         // Fences never stay on top of each other: pull apart any overlap the layout brings.
         app.settle_unplaced(true);
         if let Some(folder) = args.portal.as_deref() {
@@ -1069,7 +1325,7 @@ impl App {
             }
             if app.state.config.settings.hide_real_icons && !app.no_hide_icons {
                 // At logon Explorer's desktop may not be ready yet: retried from the anchor's
-                // periodic check; housekeeping resets the setting if it never succeeds.
+                // periodic check; housekeeping tells the user if it never succeeds.
                 a.request_hide_desktop_icons();
             }
         }
@@ -1083,16 +1339,40 @@ impl App {
                 tracing::warn!(%error, "autostart reconciliation failed");
             }
         }
-        app.state.save_if_dirty();
+        // What startup changed is derived again on the next start: write it once the fences
+        // are up instead of before the message loop runs.
+        if app.state.is_dirty() {
+            app.schedule_save();
+        }
         window::set_coalescable_timer(app.control.hwnd(), TIMER_HOUSEKEEPING, 60_000, 5_000);
         window::set_coalescable_timer(app.control.hwnd(), TIMER_WALLPAPER_POLL, 5_000, 500);
-        window::set_coalescable_timer(app.control.hwnd(), TIMER_DESKTOP_ID, 100, 25);
+        sync_desktops_differ(app.control.hwnd(), &desktops_differ);
         // Close the gap between the startup snapshot and installing the registry watchers.
-        window::post_message(app.control.hwnd(), WM_APP_WALLPAPER, 0, 0);
+        if let Some(signature) = app.wallpaper_sig.clone() {
+            // One check (no signal arrived, so no follow-ups), then prepare the other desktops.
+            // The check asks Explorer from a worker: it is busy hiding the desktop icons right
+            // now (0.8 s for 1000 icons), and the UI thread would wait on it that long. The
+            // rest of the check (live wallpapers) runs on the startup read right away.
+            verify_wallpaper_later(app.control.hwnd(), signature);
+            if let Some(snapshot) = &startup_snapshot {
+                app.follow_snapshot(snapshot, "startup");
+            }
+            window::set_timer(
+                app.control.hwnd(),
+                TIMER_WALLPAPER_PREWARM,
+                WALLPAPER_PREWARM_DELAY_MS,
+            );
+        } else if app.startup_backdrops.is_none() {
+            // Not readable yet (Explorer still starting): keep trying as for a signal.
+            window::post_message(app.control.hwnd(), WM_APP_WALLPAPER, 0, 0);
+        }
 
         app.remove_old_update_downloads();
         // Last of the startup balloons, so it is the one left showing.
         app.offer_crash_feedback();
+        if app.state.first_run && args.exit_after_ms.is_none() && args.test_script.is_none() {
+            app.offer_welcome();
+        }
         if args.open_settings {
             app.queue.push(Command::OpenSettings);
         }
@@ -1117,11 +1397,37 @@ impl App {
         window::set_timer(self.control.hwnd(), TIMER_SAVE, 800);
     }
 
+    /// After a save: one that failed leaves the state dirty. The first time in a run the tray
+    /// says so, since the changes are lost at exit and only the log had the reason.
+    fn notice_save_failure(&mut self) {
+        if !self.state.is_dirty() || self.save_failure_shown {
+            return;
+        }
+        let Some(t) = &self.tray else { return };
+        self.save_failure_shown = true;
+        let path = self.state.config_path_on_disk();
+        t.show_info(
+            "PecoFence",
+            &pecofence_core::i18n::format(
+                "无法保存配置，退出后更改会丢失。请检查这个文件夹能否写入：{0}",
+                &[path.parent().unwrap_or(&path).display().to_string()],
+            ),
+            true,
+        );
+    }
+
     fn housekeeping(&mut self) {
         self.check_cut_clipboard();
         if self.state.is_dirty() {
             self.state.save_if_dirty();
+            self.notice_save_failure();
         }
+        // Icons no window needs any more, if a change left some behind without a redraw; the
+        // GPU trim then frees the released uploads.
+        if self.prune_icons() {
+            window::set_timer(self.control.hwnd(), TIMER_GPU_TRIM, GPU_TRIM_IDLE_MS);
+        }
+        self.revive_watchers();
         // While the special desktop items are shown, re-read them once a minute as well: a
         // change in Windows' own "Desktop icon settings" leaves no folder event behind, and the
         // shell notification channel may be unavailable.
@@ -1155,13 +1461,13 @@ impl App {
                 self.schedule_save();
             }
         }
-        // A DPI that settled late re-lays the window out; its rectangle stays (the rows and
-        // columns share the rest, so it still shows whole icons).
+        // A DPI that settled late re-lays the window out; its rectangle stays (it still shows
+        // whole icons: the columns share the rest, the rows leave it empty).
         for window in self.fences.values() {
             window.check_dpi();
         }
-        // Startup hide that kept failing: converge to the same end state as apply_settings
-        // (setting reflects reality, user is told) instead of silently showing the toggle on.
+        // Startup hide that kept failing: stop retrying for this run and tell the user. The
+        // setting stays on, so the next start (or turning it off and on) tries again.
         if self.state.config.settings.hide_real_icons {
             let gave_up = self
                 .anchor
@@ -1173,11 +1479,8 @@ impl App {
                     a.cancel_pending_hide();
                 }
                 tracing::warn!(
-                    "hiding desktop icons kept failing after startup; turning the setting off"
+                    "hiding desktop icons kept failing after startup; trying again at the next start"
                 );
-                self.state.config.settings.hide_real_icons = false;
-                self.settings_mutated();
-                self.desktop_icons_setting_changed();
                 if let Some(t) = &self.tray {
                     t.show_info(
                         "PecoFence",
@@ -1188,6 +1491,39 @@ impl App {
             }
         }
         self.offer_rating_if_due();
+        self.log_memory();
+    }
+
+    /// One line with the process's memory: on the first housekeeping tick, then hourly, and
+    /// whenever the total grew by `MEMORY_LOG_GROWTH` since the last line, so a log sent with
+    /// a high Task Manager number shows when it grew and in which kind of memory.
+    fn log_memory(&mut self) {
+        let Ok(m) = pecofence_platform::memstats::MemoryStats::current() else {
+            return;
+        };
+        let gpu = self.ctx.stack.gpu_memory();
+        let (gpu_local, gpu_shared) = gpu.unwrap_or_default();
+        let total = m.private_commit as u64 + gpu_local + gpu_shared;
+        let due = match self.memory_logged {
+            None => true,
+            Some((at, logged)) => {
+                at.elapsed() >= Duration::from_secs(3600)
+                    || total >= logged.saturating_add(MEMORY_LOG_GROWTH)
+            }
+        };
+        if !due {
+            return;
+        }
+        self.memory_logged = Some((Instant::now(), total));
+        let mb = |b: u64| (b as f64 / (1u64 << 20) as f64 * 10.0).round() / 10.0;
+        // The GPU fields are left out when the query failed: no zero that looks measured.
+        tracing::info!(
+            private_ws_mb = mb(m.private_working_set as u64),
+            commit_mb = mb(m.private_commit as u64),
+            gpu_local_mb = gpu.map(|(local, _)| mb(local)),
+            gpu_shared_mb = gpu.map(|(_, shared)| mb(shared)),
+            "memory"
+        );
     }
 
     /// Drains and executes queued commands. Loops because handlers may enqueue more.
@@ -1207,8 +1543,12 @@ impl App {
                 // to jump ahead): name it.
                 let name = command_name(&cmd);
                 let started = Instant::now();
+                let in_menus = tray::time_in_menus();
                 self.handle(cmd);
-                let spent = started.elapsed();
+                // A menu it opened waited for the user, which is no delay of ours.
+                let spent = started
+                    .elapsed()
+                    .saturating_sub(tray::time_in_menus() - in_menus);
                 if spent > Duration::from_millis(8) {
                     tracing::info!(
                         ms = spent.as_secs_f32() * 1000.0,
@@ -1249,7 +1589,7 @@ impl App {
                 // rule like every other path that expands a fence.
                 self.apply_auto_height(fence);
             }
-            Command::LaunchItem(item) => self.launch(item),
+            Command::LaunchItem { item, from } => self.launch(item, from),
             Command::MoveItems { items, to } => self.move_items(&items, to),
             Command::ReorderItems {
                 fence,
@@ -1286,27 +1626,38 @@ impl App {
                 self.state.set_column_widths(fence, widths);
                 self.schedule_save();
             }
-            Command::MergeHint { target, x } => {
+            Command::MergeHint { target, at } => {
                 for w in self.fences.values() {
-                    w.set_merge_hint(!target.0.is_null() && w.hwnd() == target, x);
+                    w.set_merge_hint(!target.0.is_null() && w.hwnd() == target, at);
                 }
             }
-            Command::MergeFence { fence, into, x } => {
+            Command::MergeFence { fence, into, at } => {
                 // The slot the gap sat at (read before the hints — and the gap — are cleared).
                 let host = self.fence_of_hwnd(into);
                 let index = host
                     .and_then(|h| self.fences.get(&h))
-                    .map(|w| w.merge_slot_at(x));
+                    .map(|w| w.merge_slot_at(at));
                 for w in self.fences.values() {
-                    w.set_merge_hint(false, 0);
+                    w.set_merge_hint(false, (0, 0));
                 }
+                // The dragged window's tabs in their order (attach_tab adds them in storage
+                // order, which may interleave them with the target's tabs).
+                let moved = self.state.tabs_of(fence);
                 if let Some(host) = host
                     && host != fence
                     && self.state.attach_tab(fence, host)
                 {
                     if let Some(index) = index {
-                        // Land where the gap was, so the neighbours do not move again.
-                        self.state.reorder_tab(host, fence, index);
+                        // Land where the gap was, so the neighbours do not move again, and
+                        // keep the dragged window's tabs together in their order. First to
+                        // the end in order (a host without a hand-made order lists them in
+                        // creation order, possibly ahead of the gap), then into the gap.
+                        for tab in &moved {
+                            self.state.reorder_tab(host, *tab, usize::MAX);
+                        }
+                        for (k, tab) in moved.iter().enumerate() {
+                            self.state.reorder_tab(host, *tab, index.saturating_add(k));
+                        }
                     }
                     self.resync_windows();
                     self.apply_fence_view(host);
@@ -1401,9 +1752,13 @@ impl App {
                     // Like Fences: dropping a file from elsewhere onto a fence moves it to the
                     // desktop and puts it in that fence (a PendingRoute bypasses the rules).
                     if let Some(desktop) = shell::user_desktop() {
+                        // A desktop file of the same name is not the one being dropped: a
+                        // route would move it into `to` as soon as any watcher batch arrives,
+                        // before the conflict dialog is even answered.
                         let routed: Vec<PathBuf> = foreign
                             .iter()
                             .filter_map(|p| p.file_name().map(|n| desktop.join(n)))
+                            .filter(|p| self.state.live_item_by_path(p).is_none())
                             .collect();
                         for path in &routed {
                             self.pending_routes.push(PendingRoute {
@@ -1432,8 +1787,17 @@ impl App {
                     self.move_items(&ids, to);
                 }
             }
-            Command::ExternalUrlDrop { url, name, to } => self.create_url_shortcut(url, name, to),
-            Command::ShellDrop { to, landed } => self.shell_drop_landed(to, landed),
+            Command::ExternalUrlDrop {
+                url,
+                name,
+                to,
+                folder,
+            } => self.create_url_shortcut(url, name, to, folder),
+            Command::ShellDrop {
+                to,
+                landed,
+                on_desktop,
+            } => self.shell_drop_landed(to, landed, on_desktop),
             Command::FenceMenu { fence, x, y } => self.show_fence_menu(fence, x, y),
             Command::HeaderMenu { fence, x, y } => self.show_header_menu(fence, x, y),
             Command::ItemMenu { fence, items, x, y } => self.show_item_menu(fence, items, x, y),
@@ -1481,6 +1845,7 @@ impl App {
                 self.end_item_rename_visuals();
                 self.rename_item_file(item, &name);
             }
+            Command::RenameItemInvalid => self.invalid_name_toast(),
             Command::EndItemRename { commit } => crate::rename::end_active(commit),
             Command::DeleteItems {
                 fence,
@@ -1490,7 +1855,11 @@ impl App {
             Command::DeviceLost => self.recover_device(),
             Command::ToggleAllFences => self.toggle_all_fences(),
             Command::TogglePeek => self.toggle_peek(),
-            Command::EndPeek => self.end_peek(),
+            Command::EndPeek(reason) => self.end_peek(reason),
+            Command::PeekSearchType(text) => self.peek_search_type(&text),
+            Command::PeekSearchChanged => self.update_peek_search(),
+            Command::PeekSearchStep(step) => self.step_peek_search(step),
+            Command::PeekSearchOpen => self.open_peek_hit(),
             Command::ApplyRulesNow => {
                 let entries = shell::enumerate_desktop();
                 let moved = self.state.apply_rules_all(&entries);
@@ -1526,6 +1895,8 @@ impl App {
             Command::WindowGone(hwnd) => {
                 if self.settings.as_ref().is_some_and(|h| h.hwnd() == hwnd) {
                     self.settings = None;
+                    self.set_settings_ring(None);
+                    self.resume_peek_hotkey();
                 }
             }
             Command::FadeOutDone(hwnd) => {
@@ -1547,6 +1918,18 @@ impl App {
         {
             a.request_hide_desktop_icons();
         }
+    }
+
+    /// Explorer (re)started: the new Explorer knows nothing of the old shell change
+    /// registration. Its id is not deregistered: the new Explorer may have handed the same
+    /// number to another program, or to one of its own views. Should the old registration
+    /// still be alive, the duplicate notices merge in the same 60 ms batch.
+    fn renew_shell_watch(&mut self) {
+        std::mem::forget(self._shell_watch.take());
+        self._shell_watch =
+            ShellChangeWatch::register_desktop(self.control.hwnd(), WM_APP_SHELL_CHANGED)
+                .map_err(|e| tracing::warn!(error = %e, "shell change notifications unavailable"))
+                .ok();
     }
 
     /// (Re)adds the notification icon; false while the taskbar does not take it.

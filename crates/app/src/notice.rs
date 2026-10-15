@@ -12,20 +12,35 @@ use pecofence_platform::window::{
     self, ClassOptions, StandardCursor, Window, WindowBuilder, WindowClass, style,
 };
 use pecofence_platform::{HWND, RECT, desktop, dwm, monitors, msg};
+use pecofence_render::motion::{self, Curve, Motion, Tween};
 use pecofence_render::notice::{NoticeCard, NoticeHit, NoticeLayout, WIDTH};
-use pecofence_render::{DesktopWindowTarget, Panel, Theme};
+use pecofence_render::{ContainerVisual, DesktopWindowTarget, Panel, RenderStack, Theme};
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::time::Instant;
 use windows_core::Result;
 
 const CLASS: &str = "PecoFence.Notice";
 const TIMER_DISMISS: usize = 1;
+/// Steps the 167 ms fade in / out of the card together with its shadow (a layered window).
+const TIMER_FADE: usize = 2;
 /// How long the notice stays when the pointer leaves it alone.
 const SHOW_FOR_MS: u32 = 30_000;
 /// Re-check interval while the pointer rests on it.
 const HOVER_RECHECK_MS: u32 = 1_500;
 /// Gap to the work area's edge, in DIPs.
 const MARGIN: f32 = 12.0;
+
+/// The `locale` for [`Notice::show`] in the UI language (fonts for Han, kana, Hangul).
+pub fn locale() -> &'static str {
+    match pecofence_core::i18n::language().tag() {
+        "zh-CN" => "zh-CN",
+        "zh-TW" => "zh-TW",
+        "ja" => "ja-JP",
+        "ko" => "ko-KR",
+        _ => "en-US",
+    }
+}
 
 /// What the user did with the notice.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -38,18 +53,45 @@ pub enum NoticeEvent {
 
 struct View {
     panel: Panel,
+    stack: Rc<RenderStack>,
     card: NoticeCard,
     layout: NoticeLayout,
     theme: Theme,
     dpi: u32,
     hover: NoticeHit,
+    root: ContainerVisual,
+    motion: Rc<Motion>,
+    shadow: ShadowWindow,
+    /// Opacity while fading in or out.
+    fade: Option<Tween>,
+    /// Fading out; the notice no longer reacts.
+    closing: bool,
 }
 
 impl View {
-    fn redraw(&self) {
-        let _ = self.panel.draw(self.dpi, |s, _, _| {
+    /// Fades the card and its shadow to `opacity` from where they are.
+    fn start_fade(&mut self, hwnd: HWND, opacity: f32) {
+        let now = Instant::now();
+        let from = self.fade.map_or(1.0, |t| t.value_at(now));
+        let fade = self
+            .motion
+            .tween(from, opacity, motion::FAST, Curve::Linear, now);
+        self.fade = Some(fade);
+        window::set_timer(hwnd, TIMER_FADE, 16);
+    }
+
+    /// False when the GPU device is gone and a surface from the stack's current device (the
+    /// app rebuilds it when a fence loses it too) cannot be drawn either.
+    fn redraw(&mut self) -> bool {
+        self.draw() || (self.panel.recreate(&self.stack).is_ok() && self.draw())
+    }
+
+    /// False on device loss.
+    fn draw(&self) -> bool {
+        let drawn = self.panel.draw(self.dpi, |s, _, _| {
             self.card.draw(s, &self.layout, &self.theme, self.hover)
         });
+        !matches!(drawn, Ok(false))
     }
 
     fn hit(&self, lparam: isize) -> NoticeHit {
@@ -63,9 +105,8 @@ impl View {
 /// A visible notice; dropping it closes it.
 pub struct Notice {
     window: Window,
-    shadow: ShadowWindow,
     _target: DesktopWindowTarget,
-    _view: Rc<RefCell<View>>,
+    view: Rc<RefCell<View>>,
     _class: WindowClass,
 }
 
@@ -127,37 +168,69 @@ impl Notice {
         let mut panel = Panel::new(&ctx.stack)?;
         panel.resize(w, h)?;
         root.children().insert_at_top(&panel.visual);
+        let mut shadow = ShadowWindow::create(&ctx.shadow_class, ctx.shadow_style.get())?;
+        shadow.update(rect, dpi);
+        // Fades in like a fence: the first frame shows nothing.
+        root.set_opacity(0.0);
+        shadow.set_alpha(0);
         let shared = Rc::new(RefCell::new(View {
             panel,
+            stack: ctx.stack.clone(),
             card,
             layout,
             theme: *ctx.theme.borrow(),
             dpi,
             hover: NoticeHit::None,
+            root,
+            motion: ctx.motion.clone(),
+            shadow,
+            fade: Some(Tween::at(0.0, Instant::now())),
+            closing: false,
         }));
-        shared.borrow().redraw();
+        shared.borrow_mut().redraw();
         *view.borrow_mut() = Some(shared.clone());
 
-        let mut shadow = ShadowWindow::create(&ctx.shadow_class, ctx.shadow_style.get())?;
-        shadow.update(rect, dpi);
         window.show_no_activate();
-        desktop::show_no_activate(shadow.hwnd());
-        let _ = desktop::insert_after(shadow.hwnd(), hwnd);
+        {
+            let mut v = shared.borrow_mut();
+            desktop::show_no_activate(v.shadow.hwnd());
+            let _ = desktop::insert_after(v.shadow.hwnd(), hwnd);
+            v.start_fade(hwnd, 1.0);
+        }
         window.set_timer(TIMER_DISMISS, SHOW_FOR_MS);
         Ok(Self {
             window,
-            shadow,
             _target: target,
-            _view: shared,
+            view: shared,
             _class: class,
         })
+    }
+
+    /// The app rebuilt the render stack (device loss): the card moves to a surface of the new
+    /// device, or goes away when it cannot be drawn there either.
+    pub fn redraw(&self) {
+        let drawn = {
+            let mut v = self.view.borrow_mut();
+            v.closing || v.redraw()
+        };
+        if !drawn {
+            fade_out(self.window.hwnd(), &self.view);
+        }
     }
 }
 
 impl Drop for Notice {
     fn drop(&mut self) {
-        self.shadow.hide();
+        self.view.borrow().shadow.hide();
         self.window.hide();
+    }
+}
+
+/// × or the timeout: the app hears of it, and drops the notice, once it has faded out.
+fn fade_out(hwnd: HWND, view: &Rc<RefCell<View>>) {
+    let mut v = view.borrow_mut();
+    if !std::mem::replace(&mut v.closing, true) {
+        v.start_fade(hwnd, 0.0);
     }
 }
 
@@ -173,9 +246,14 @@ fn handle(
         let mut v = view.borrow_mut();
         if v.hover != hit {
             v.hover = hit;
+            // A failure means the device is gone and the app has not rebuilt the stack yet;
+            // its rebuild redraws the card (`Notice::redraw`).
             v.redraw();
         }
     };
+    if view.borrow().closing && m != msg::WM_TIMER {
+        return None;
+    }
     match m {
         msg::WM_MOUSEMOVE => {
             let hit = view.borrow().hit(lparam);
@@ -192,13 +270,17 @@ fn handle(
             Some(1)
         }
         msg::WM_LBUTTONUP => {
-            let event = match view.borrow().hit(lparam) {
-                NoticeHit::Close => NoticeEvent::Dismissed,
-                NoticeHit::None => return Some(0),
-                NoticeHit::Card | NoticeHit::Button => NoticeEvent::Action,
-            };
+            let hit = view.borrow().hit(lparam);
+            if hit == NoticeHit::None {
+                return Some(0);
+            }
             window::kill_timer(hwnd, TIMER_DISMISS);
-            queue.push(Command::Notice(event));
+            if hit == NoticeHit::Close {
+                fade_out(hwnd, view);
+            } else {
+                // What the click opens should not wait for the exit fade.
+                queue.push(Command::Notice(NoticeEvent::Action));
+            }
             Some(0)
         }
         msg::WM_TIMER if wparam == TIMER_DISMISS => {
@@ -206,7 +288,25 @@ fn handle(
                 window::set_timer(hwnd, TIMER_DISMISS, HOVER_RECHECK_MS);
             } else {
                 window::kill_timer(hwnd, TIMER_DISMISS);
-                queue.push(Command::Notice(NoticeEvent::Dismissed));
+                fade_out(hwnd, view);
+            }
+            Some(0)
+        }
+        msg::WM_TIMER if wparam == TIMER_FADE => {
+            let mut v = view.borrow_mut();
+            let now = Instant::now();
+            let Some(fade) = v.fade else {
+                return Some(0);
+            };
+            let (opacity, done) = (fade.value_at(now), fade.is_done(now));
+            v.root.set_opacity(opacity);
+            v.shadow.set_alpha((opacity * 255.0).round() as u8);
+            if done {
+                v.fade = None;
+                window::kill_timer(hwnd, TIMER_FADE);
+                if v.closing {
+                    queue.push(Command::Notice(NoticeEvent::Dismissed));
+                }
             }
             Some(0)
         }

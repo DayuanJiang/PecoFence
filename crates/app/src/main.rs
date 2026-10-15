@@ -15,6 +15,7 @@ mod layout;
 mod marquee_band;
 mod notice;
 mod peek;
+mod peek_search;
 mod rename;
 mod settings_host;
 mod shadow;
@@ -69,7 +70,23 @@ fn start_log(
 ) -> Option<std::fs::File> {
     use pecofence_core::brand::log_file_name;
     let path = dir.join(log_file_name(instance, current));
-    let _ = std::fs::rename(&path, dir.join(log_file_name(instance, previous)));
+    let prev = dir.join(log_file_name(instance, previous));
+    // The Store edition installed on another drive cannot rename files in its copy of
+    // %LOCALAPPDATA% (os error 17), and a viewer that holds the log without delete sharing
+    // blocks the rename too: keep a copy instead.
+    let kept = match std::fs::rename(&path, &prev) {
+        Ok(()) => true,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => true,
+        Err(_) => std::fs::copy(&path, &prev).is_ok(),
+    };
+    if !kept {
+        // Write on after the last run's lines rather than erase them.
+        return std::fs::OpenOptions::new()
+            .append(true)
+            .create(true)
+            .open(path)
+            .ok();
+    }
     std::fs::File::create(path).ok()
 }
 
@@ -138,6 +155,35 @@ fn install_panic_hook() {
     }));
 }
 
+/// Asks the running instance to open its settings window. Fire and forget: it answers late
+/// while one of its menus is open, and this process has nothing else to do. Not when that
+/// instance has only just started: two autostart entries (say the Store and the ZIP edition)
+/// race at logon, and the loser must not open Settings.
+fn show_running_settings(instance: Option<&str>) {
+    use std::io::Write;
+    use std::os::windows::fs::OpenOptionsExt;
+    const SECURITY_IDENTIFICATION: u32 = 0x0001_0000;
+    const STARTUP: std::time::Duration = std::time::Duration::from_secs(30);
+    pecofence_platform::process::allow_foreground_handoff();
+    let request = pecofence_ipc::Request::new(pecofence_ipc::Method::SettingsOpenUi);
+    let Ok(name) = pecofence_platform::pipe::ipc_pipe_name(instance) else {
+        return;
+    };
+    let pipe = std::fs::OpenOptions::new()
+        .write(true)
+        .security_qos_flags(SECURITY_IDENTIFICATION)
+        .open(name);
+    let Ok(mut pipe) = pipe else {
+        return;
+    };
+    if pecofence_platform::process::pipe_server_age(&pipe).is_some_and(|age| age < STARTUP) {
+        return;
+    }
+    if let Ok(line) = serde_json::to_string(&request) {
+        let _ = writeln!(pipe, "{line}");
+    }
+}
+
 fn main() -> Result<()> {
     // `PECOFENCE_INSTANCE=<name>` runs a second, independent instance (developer testing with
     // `--portable`); the default name keeps one PecoFence per session. Checked before logging
@@ -152,6 +198,11 @@ fn main() -> Result<()> {
     let [current_name, legacy_name] =
         pecofence_core::brand::instance_mutex_names(instance_name.as_deref());
     let Some(_instance) = window::SingleInstance::acquire(&current_name) else {
+        // Started again from the Start menu or a shortcut: Windows 11 hides new tray icons
+        // in the overflow, so show the running copy's settings rather than exit silently.
+        if std::env::args().len() == 1 {
+            show_running_settings(instance.as_deref());
+        }
         return Ok(());
     };
     // A pre-rename instance is running: exit it before starting PecoFence.

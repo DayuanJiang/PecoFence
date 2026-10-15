@@ -21,7 +21,8 @@ pub struct MonitorWallpaper {
     pub monitor_id: String,
     /// Monitor rectangle in virtual-screen coordinates.
     pub rect: RECT,
-    /// Image path, if a picture wallpaper is set for this monitor.
+    /// Image path, if a picture wallpaper is set for this monitor: Windows' own copy of the
+    /// picture when the file it was set from is gone.
     pub path: Option<PathBuf>,
 }
 
@@ -162,19 +163,87 @@ pub fn desktop_wallpapers() -> Vec<([u8; 16], Option<PathBuf>)> {
         .map(|chunk| {
             let id = *chunk;
             let key = format!(r"{DESKTOPS_KEY}\Desktops\{}", guid_string(&id));
-            let path = registry_value(&key, "Wallpaper", RRF_RT_REG_SZ).and_then(|data| {
-                let wide: Vec<u16> = data
-                    .as_chunks::<2>()
-                    .0
-                    .iter()
-                    .map(|c| u16::from_le_bytes([c[0], c[1]]))
-                    .take_while(|&c| c != 0)
-                    .collect();
-                (!wide.is_empty()).then(|| PathBuf::from(String::from_utf16_lossy(&wide)))
-            });
+            let path =
+                registry_value(&key, "Wallpaper", RRF_RT_REG_SZ).and_then(|data| utf16_path(&data));
             (id, path)
         })
         .collect()
+}
+
+/// The NUL-terminated UTF-16LE path at the start of `data`, `None` when it is empty.
+fn utf16_path(data: &[u8]) -> Option<PathBuf> {
+    let wide: Vec<u16> = data
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|c| u16::from_le_bytes([c[0], c[1]]))
+        .take_while(|&c| c != 0)
+        .collect();
+    (!wide.is_empty()).then(|| PathBuf::from(String::from_utf16_lossy(&wide)))
+}
+
+/// The copy Windows made of the picture `path` when it was set as the wallpaper, for a
+/// picture deleted or moved since (a wallpaper app that set it from a temporary file): the
+/// desktop keeps showing that copy. `Themes\TranscodedWallpaper` is the picture of all
+/// monitors, `Themes\Transcoded_000`, `_001` … one per monitor when they show different
+/// pictures; `Control Panel\Desktop\TranscodedImageCache` (`_000` …) records each copy's
+/// source path, in UTF-16 from byte 24.
+fn windows_copy(path: &Path) -> Option<PathBuf> {
+    const RRF_RT_REG_BINARY: u32 = 0x08;
+    let themes = PathBuf::from(std::env::var_os("APPDATA")?).join(r"Microsoft\Windows\Themes");
+    let wanted = path.to_string_lossy();
+    std::fs::read_dir(themes).ok()?.flatten().find_map(|entry| {
+        let name = entry.file_name().into_string().ok()?;
+        let value = match name.strip_prefix("Transcoded_") {
+            Some(index) => format!("TranscodedImageCache_{index}"),
+            None if name == "TranscodedWallpaper" => "TranscodedImageCache".into(),
+            None => return None,
+        };
+        let data = registry_value(r"Control Panel\Desktop", &value, RRF_RT_REG_BINARY)?;
+        let source = utf16_path(data.get(24..)?)?;
+        source
+            .to_string_lossy()
+            .eq_ignore_ascii_case(&wanted)
+            .then(|| entry.path())
+    })
+}
+
+/// The virtual desktop `hwnd` is on, `None` when Explorer does not say (the desktop itself,
+/// windows shown on every desktop, a failed call). Requires COM on this thread.
+pub fn window_desktop(hwnd: HWND) -> Option<u128> {
+    use std::mem::ManuallyDrop;
+    // Never released at exit: thread-local destructors run inside ExitProcess, where releasing
+    // Explorer's object waits for an RPC reply that never comes. The process then hangs for
+    // good, holding the single-instance mutex, and PecoFence cannot start again.
+    thread_local! {
+        static MANAGER: std::cell::RefCell<Option<ManuallyDrop<IVirtualDesktopManager>>> =
+            const { std::cell::RefCell::new(None) };
+    }
+    MANAGER.with_borrow_mut(|manager| {
+        if manager.is_none() {
+            // SAFETY: standard COM activation.
+            *manager = unsafe { CoCreateInstance(&VirtualDesktopManager, None, CLSCTX_ALL as u32) }
+                .ok()
+                .map(ManuallyDrop::new);
+        }
+        // SAFETY: COM call on a live interface.
+        match unsafe { manager.as_ref()?.GetWindowDesktopId(hwnd) } {
+            Ok(id) => Some(id.to_u128()).filter(|&id| id != 0),
+            Err(_) => {
+                // Explorer restarted, perhaps: ask a new object next time.
+                drop(manager.take().map(ManuallyDrop::into_inner));
+                None
+            }
+        }
+    })
+}
+
+/// Whether a virtual-desktop switch can change the picture: more than one desktop, and they
+/// do not all keep the same one (one without a picture of its own differs from one with;
+/// Windows 10 keeps none per desktop). A hint like [`desktop_wallpapers`].
+pub fn desktops_differ() -> bool {
+    let desktops = desktop_wallpapers();
+    desktops.len() > 1 && desktops.iter().any(|(_, path)| *path != desktops[0].1)
 }
 
 /// Watch both wallpaper settings and Explorer's virtual-desktop state. The latter is only
@@ -205,6 +274,24 @@ pub fn watch_changes(on_change: impl Fn() + Send + 'static) -> Result<()> {
     result
 }
 
+/// What `RegNotifyChangeKeyValue` returns once the watched key was deleted.
+const ERROR_KEY_DELETED: i32 = 1018;
+
+fn open_notify_key(path: &[u16]) -> Option<HKEY> {
+    let mut key = HKEY::default();
+    // SAFETY: out-pointer references a local; the string outlives the call.
+    let status = unsafe {
+        RegOpenKeyExW(
+            HKEY_CURRENT_USER,
+            PCWSTR(path.as_ptr()),
+            None,
+            ACCESS_MASK(KEY_NOTIFY as u32),
+            &mut key,
+        )
+    };
+    (status.0 == 0).then_some(key)
+}
+
 fn watch_registry_key(
     path: &str,
     subtree: bool,
@@ -212,26 +299,15 @@ fn watch_registry_key(
     on_change: impl Fn() + Send + 'static,
 ) -> Result<()> {
     let key_path = to_wide(path);
-    let mut key = HKEY::default();
-    // SAFETY: out-pointer references a local; the string outlives the call.
-    let status = unsafe {
-        RegOpenKeyExW(
-            HKEY_CURRENT_USER,
-            PCWSTR(key_path.as_ptr()),
-            None,
-            ACCESS_MASK(KEY_NOTIFY as u32),
-            &mut key,
-        )
-    };
-    if status.0 != 0 {
+    let Some(key) = open_notify_key(&key_path) else {
         return Err(windows_core::Error::from_hresult(E_FAIL));
-    }
+    };
     let raw = key.0 as isize;
     let thread = std::thread::Builder::new()
         .name(name.into())
         .stack_size(64 * 1024)
         .spawn(move || {
-            let key = HKEY(raw as *mut core::ffi::c_void);
+            let mut key = HKEY(raw as *mut core::ffi::c_void);
             tracing::debug!(?key, subtree, "wallpaper registry watcher started");
             loop {
                 // SAFETY: synchronous wait on a key we opened; returns when a value changes.
@@ -244,16 +320,29 @@ fn watch_registry_key(
                         false,
                     )
                 };
-                if st.0 != 0 {
+                if st.0 == 0 {
+                    tracing::debug!(?key, "wallpaper registry change received");
+                    on_change();
+                    continue;
+                }
+                // SAFETY: closing the key we opened.
+                unsafe {
+                    let _ = RegCloseKey(key);
+                }
+                if st.0 != ERROR_KEY_DELETED {
                     tracing::warn!(status = st.0, ?key, "wallpaper registry watcher stopped");
                     break;
                 }
-                tracing::debug!(?key, "wallpaper registry change received");
+                // Explorer replaced the key: watch the one that is there now, and report the
+                // changes missed meanwhile.
+                key = loop {
+                    std::thread::sleep(std::time::Duration::from_secs(2));
+                    if let Some(key) = open_notify_key(&key_path) {
+                        break key;
+                    }
+                };
+                tracing::info!(?key, "wallpaper registry watcher reopened its key");
                 on_change();
-            }
-            // SAFETY: closing the key we opened.
-            unsafe {
-                let _ = RegCloseKey(key);
             }
         });
     if thread.is_err() {
@@ -300,7 +389,14 @@ pub fn query() -> Result<WallpaperSnapshot> {
             // that distinction so a switch-in-progress cannot replace good pixels with black.
             let path = if rect.right > rect.left && rect.bottom > rect.top {
                 let path = take_string(dw.GetWallpaper(PCWSTR(id_w.as_ptr()))?);
-                (!path.is_empty()).then(|| PathBuf::from(path))
+                (!path.is_empty()).then(|| {
+                    let path = PathBuf::from(path);
+                    if path.is_file() {
+                        path
+                    } else {
+                        windows_copy(&path).unwrap_or(path)
+                    }
+                })
             } else {
                 None
             };
@@ -330,6 +426,42 @@ pub struct DecodedImage {
 /// `max_width` x `max_height`. The scaler is attached directly to the frame so the full-size
 /// bitmap is never materialized.
 pub fn decode_scaled(path: &Path, max_width: u32, max_height: u32) -> Result<DecodedImage> {
+    decode(path, |w, h| {
+        let scale = (max_width as f32 / w as f32)
+            .min(max_height as f32 / h as f32)
+            .min(1.0);
+        let dst_w = ((w as f32 * scale).round() as u32).max(1);
+        let dst_h = ((h as f32 * scale).round() as u32).max(1);
+        ((dst_w, dst_h), [0, 0, dst_w, dst_h])
+    })
+}
+
+/// Decodes `path` at its own size and keeps at most `max_width` x `max_height` pixels of it:
+/// the middle when `centered`, else the top-left corner. That is all a monitor of that size
+/// shows of a centred or a tiled picture.
+pub fn decode_native(
+    path: &Path,
+    max_width: u32,
+    max_height: u32,
+    centered: bool,
+) -> Result<DecodedImage> {
+    decode(path, |w, h| {
+        let (cw, ch) = (w.min(max_width.max(1)), h.min(max_height.max(1)));
+        let (x, y) = if centered {
+            ((w - cw) / 2, (h - ch) / 2)
+        } else {
+            (0, 0)
+        };
+        ((w, h), [x, y, cw, ch])
+    })
+}
+
+/// The WIC pipeline of both: `size` maps the picture's size to the size it is scaled to and
+/// the part of the scaled picture (x, y, width, height) that is copied out.
+fn decode(
+    path: &Path,
+    size: impl FnOnce(u32, u32) -> ((u32, u32), [u32; 4]),
+) -> Result<DecodedImage> {
     let wide: Vec<u16> = path.as_os_str().encode_wide_nul();
     // SAFETY: standard WIC pipeline; every interface is owned for the duration of the call.
     unsafe {
@@ -348,11 +480,7 @@ pub fn decode_scaled(path: &Path, max_width: u32, max_height: u32) -> Result<Dec
         if w == 0 || h == 0 {
             return Err(windows_core::Error::from_hresult(E_FAIL));
         }
-        let scale = (max_width as f32 / w as f32)
-            .min(max_height as f32 / h as f32)
-            .min(1.0);
-        let dst_w = ((w as f32 * scale).round() as u32).max(1);
-        let dst_h = ((h as f32 * scale).round() as u32).max(1);
+        let ((dst_w, dst_h), [x, y, out_w, out_h]) = size(w, h);
 
         let scaler = factory.CreateBitmapScaler()?;
         scaler
@@ -370,21 +498,27 @@ pub fn decode_scaled(path: &Path, max_width: u32, max_height: u32) -> Result<Dec
             )
             .ok()?;
         let source: IWICBitmapSource = converter.cast()?;
-        let stride = dst_w * 4;
-        let mut bgra = vec![0u8; (stride * dst_h) as usize];
+        let stride = out_w * 4;
+        let mut bgra = vec![0u8; (stride * out_h) as usize];
+        let rect = WICRect {
+            X: x as i32,
+            Y: y as i32,
+            Width: out_w as i32,
+            Height: out_h as i32,
+        };
         // The generated wrapper mis-projects CopyPixels' buffer as a return value; call the
         // vtable slot directly.
         (Interface::vtable(&source).CopyPixels)(
             Interface::as_raw(&source),
-            core::ptr::null(),
+            &rect,
             stride,
             bgra.len() as u32,
             bgra.as_mut_ptr(),
         )
         .ok()?;
         Ok(DecodedImage {
-            width: dst_w,
-            height: dst_h,
+            width: out_w,
+            height: out_h,
             bgra,
         })
     }

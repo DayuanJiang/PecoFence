@@ -9,7 +9,7 @@ use crate::layout::{FIT_SLACK_PX, clearance};
 /// Details rows) and rows below the fixed title / header part. With `cells` off
 /// (`snapping.sizeToCells`) sizes are free and only the one-row minimum applies; on, the
 /// automatic size changes take whole cells, but a height held short by a fence below is kept
-/// exactly (the rows share the rest, see `ItemLayout::fill_rows`).
+/// exactly (the rest stays empty under the whole rows, see `ItemLayout::whole_rows_h`).
 #[derive(Clone, Copy, Debug)]
 pub(super) struct GridSteps {
     /// Column width and total horizontal padding.
@@ -24,6 +24,11 @@ impl GridSteps {
     /// fences stop there too, exactly a gap above the fence below.
     pub fn height_within(&self, h: i32) -> i32 {
         h.max((self.fixed + self.row).round() as i32)
+    }
+
+    /// Height of `rows` whole rows.
+    pub fn rows_height(&self, rows: u32) -> i32 {
+        (self.fixed + rows as f32 * self.row).round() as i32
     }
 
     /// Widest width that fits in `w`: whole columns with `cells`, else `w`; one column at least.
@@ -46,7 +51,13 @@ impl App {
             crate::layout::GridMetrics::for_icon_size(shown.view.icon_size, shown.view.label_lines)
                 .with_line_h(self.ctx.chrome.label_line_h())
                 .with_spacing(shown.view.spacing);
-        let title_h = (self.ctx.theme.borrow().title_height * scale).round();
+        // A left tab column sits before the first icon column, and replaces the title row.
+        let rail = self.fences.get(&id).map_or(0.0, |w| w.tab_rail_dip());
+        let title_h = if rail > 0.0 {
+            0.0
+        } else {
+            (self.ctx.theme.borrow().title_height * scale).round()
+        };
         let cells = self.state.config.settings.snapping.size_to_cells;
         let rows = match shown.view.layout {
             ViewLayout::Icons => None,
@@ -61,7 +72,7 @@ impl App {
                 fixed: title_h + (rm.header_h + rm.pad_y * 2.0) * scale + FIT_SLACK_PX as f32,
             },
             None => GridSteps {
-                cols: Some((metrics.cell_w * scale, metrics.pad_x * 2.0 * scale)),
+                cols: Some((metrics.cell_w * scale, (metrics.pad_x * 2.0 + rail) * scale)),
                 cells,
                 row: metrics.cell_h * scale,
                 fixed: title_h + metrics.pad_y * 2.0 * scale + FIT_SLACK_PX as f32,
@@ -102,7 +113,9 @@ impl App {
     }
 
     /// A fence the user dropped onto another one moves the shortest way to a free spot on its
-    /// monitor (the snapping gap kept); with no free spot it stays where it was dropped.
+    /// monitor (the snapping gap kept); with no free spot it stays where it was dropped. One
+    /// dropped partly off the screen (a torn-off tab follows the pointer to the screen edge)
+    /// is pulled back in the same way, where a restart would place it anyway.
     pub(super) fn move_out_of_overlap(&mut self, fence: FenceId) {
         let id = self.state.host_of(fence);
         let Some(w) = self.fences.get(&id) else {
@@ -111,9 +124,6 @@ impl App {
         let r = w.rect();
         let gap = self.gap_px(w.hwnd());
         let others = self.other_fence_rects(id);
-        if !others.iter().any(|o| clearance::overlaps(&r, o, gap)) {
-            return;
-        }
         let Some(wa) = self.work_area_at((r.left + r.right) / 2, (r.top + r.bottom) / 2) else {
             return;
         };
@@ -123,8 +133,23 @@ impl App {
             right: wa.right,
             bottom: wa.bottom,
         };
+        // Off the screen means outside every work area: a fence dropped across two monitors
+        // is left where it is.
+        let on_screen = |x: i32, y: i32| {
+            self.state
+                .work_areas
+                .iter()
+                .any(|w| x >= w.left && x < w.right && y >= w.top && y < w.bottom)
+        };
+        let off_screen = !(on_screen(r.left, r.top)
+            && on_screen(r.right - 1, r.top)
+            && on_screen(r.left, r.bottom - 1)
+            && on_screen(r.right - 1, r.bottom - 1));
+        if !off_screen && !others.iter().any(|o| clearance::overlaps(&r, o, gap)) {
+            return;
+        }
         if let Some(spot) = clearance::nearest_free(&r, &others, &work, gap) {
-            tracing::info!(%id, from = ?(r.left, r.top), to = ?(spot.left, spot.top), "fence moved out of an overlap");
+            tracing::info!(%id, off_screen, from = ?(r.left, r.top), to = ?(spot.left, spot.top), "fence moved out of an overlap");
             self.relocate(id, spot);
         }
     }
@@ -207,7 +232,8 @@ impl App {
         let Some(w) = self.fences.get(&id) else {
             return;
         };
-        let r = w.rect();
+        // Collapsed to its left tab column, the fence expands to its own width too.
+        let r = w.footprint_rect();
         let expanded = w.expanded_height_px();
         let scale = monitors::dpi_for_window(w.hwnd()).max(96) as f32 / 96.0;
         let (Some(limit), Some(steps)) =
@@ -226,8 +252,88 @@ impl App {
         self.record_bounds(id, r, true, h);
     }
 
+    /// First run: the default column is sized to what the rules sorted into it, in whole rows,
+    /// and restacked from the top. Fixed heights left a half-cut row in one fence and mostly
+    /// empty plates in the others.
+    pub(super) fn fit_first_run_column(&mut self) {
+        let ids: Vec<FenceId> = self.state.fences().iter().map(|f| f.id).collect();
+        let Some(hwnd) = ids
+            .first()
+            .and_then(|id| self.fences.get(id))
+            .map(|w| w.hwnd())
+        else {
+            return;
+        };
+        let Some(monitor) = monitors::query(monitors::monitor_from_window(hwnd)) else {
+            return;
+        };
+        let scale = monitors::dpi_for_window(hwnd).max(96) as f32 / 96.0;
+        let gap = (16.0 * scale).round() as i32;
+        let mut want = Vec::new();
+        for &id in &ids {
+            let (Some(w), Some(steps)) = (self.fences.get(&id), self.grid_steps(id, scale)) else {
+                return;
+            };
+            let Some(fit) = w.fit_report() else {
+                return;
+            };
+            // Every row, not `fitting_height_px`: that stops at the work area's bottom from
+            // where the fence sits before the restack.
+            want.push((steps.rows_height(fit.rows.max(1) as u32), steps));
+        }
+        // One row each, then one more row each in turn while it fits: fences with a few
+        // icons stop at their fitting height, the others share the rest of the column.
+        let work = monitor.work_area;
+        let mut left = work.bottom - work.top - gap * (ids.len() as i32 + 1);
+        let mut rows = vec![1; ids.len()];
+        let mut heights: Vec<i32> = want
+            .iter()
+            .map(|(fit, s)| s.rows_height(1).min(*fit))
+            .collect();
+        left -= heights.iter().sum::<i32>();
+        let mut grew = true;
+        while grew {
+            grew = false;
+            for ((h, n), (fit, steps)) in heights.iter_mut().zip(&mut rows).zip(&want) {
+                let taller = steps.rows_height(*n + 1).min(*fit);
+                if taller > *h && taller - *h <= left {
+                    left -= taller - *h;
+                    *h = taller;
+                    *n += 1;
+                    grew = true;
+                }
+            }
+        }
+        let mut top = work.top + gap;
+        // Fences the column has no room for (a small screen at a high scale) start another
+        // column to the left of it.
+        let mut shift = 0;
+        for (&id, h) in ids.iter().zip(heights) {
+            let Some(w) = self.fences.get(&id) else {
+                continue;
+            };
+            let r = w.rect();
+            if top + h > work.bottom - gap && top > work.top + gap {
+                shift += r.right - r.left + gap;
+                top = work.top + gap;
+            }
+            let rect = RECT {
+                left: r.left - shift,
+                top,
+                right: r.right - shift,
+                bottom: top + h,
+            };
+            w.set_bounds(rect);
+            w.apply_height(h, false);
+            self.record_bounds(id, rect, false, h);
+            top += h + gap;
+        }
+        self.schedule_save();
+    }
+
     /// Icon-size change on a fixed-height fence: the height follows the content (no band of
-    /// empty rows after shrinking the icons), growing only as far as the next fence below.
+    /// empty rows after shrinking the icons), growing only as far as the next fence below. The
+    /// bottom edge glides there like an auto-height fence's.
     pub(super) fn fit_height_to_content(&mut self, id: FenceId) {
         let id = self.state.host_of(id);
         if self.state.fence(id).is_none_or(|f| f.view.auto_height) {
@@ -256,7 +362,7 @@ impl App {
         if h == r.bottom - r.top {
             return;
         }
-        let rect = w.apply_height(h, false);
+        let rect = w.apply_height(h, true);
         self.record_bounds(id, rect, false, h);
         self.schedule_save();
     }

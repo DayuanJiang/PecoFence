@@ -306,13 +306,24 @@ fn serve(connection: File, control: isize, pending: &PendingQueue, active: &Atom
         let _deadline = IoDeadline::arm(&thread, WRITE_DEADLINE);
         write_reply(&connection, &response, flush)
     };
-    tracing::info!(
-        target: "pecofence::ipc",
-        method,
-        ok = response.ok,
-        ms = started.elapsed().as_secs_f32() * 1000.0,
-        "request"
-    );
+    // A script may poll for weeks: the log, which has no size limit within a run, keeps only
+    // the failed requests unless RUST_LOG asks for debug.
+    if response.ok {
+        tracing::debug!(
+            target: "pecofence::ipc",
+            method,
+            ms = started.elapsed().as_secs_f32() * 1000.0,
+            "request"
+        );
+    } else {
+        tracing::info!(
+            target: "pecofence::ipc",
+            method,
+            ok = false,
+            ms = started.elapsed().as_secs_f32() * 1000.0,
+            "request"
+        );
+    }
     active.fetch_sub(1, Ordering::SeqCst);
     let Some(rx) = stream else {
         return;

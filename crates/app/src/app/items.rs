@@ -21,10 +21,10 @@ pub(super) enum RenameError {
 
 fn rename_error(e: std::io::Error) -> RenameError {
     tracing::warn!(error = %e, "rename failed");
-    if e.kind() == std::io::ErrorKind::PermissionDenied {
-        RenameError::Denied(e.to_string())
-    } else {
-        RenameError::Io(e.to_string())
+    match e.kind() {
+        std::io::ErrorKind::PermissionDenied => RenameError::Denied(e.to_string()),
+        std::io::ErrorKind::AlreadyExists => RenameError::Exists,
+        _ => RenameError::Io(e.to_string()),
     }
 }
 
@@ -34,7 +34,7 @@ impl App {
             .items_of(fence)
             .into_iter()
             .map(|it| {
-                let path = PathBuf::from(it.key.as_path().unwrap_or(""));
+                let path = PathBuf::from(it.path().unwrap_or(""));
                 let (_, icon_only) = crate::icons::icon_key_for(&path, it.is_folder, it.mtime);
                 ItemView::new(
                     it.id,
@@ -71,7 +71,8 @@ impl App {
         let created = if folder {
             std::fs::create_dir(&path)
         } else {
-            std::fs::write(&path, b"")
+            // `create_new`: a file another program put there since the check is not truncated.
+            std::fs::File::create_new(&path).map(drop)
         };
         match created {
             Ok(()) => {
@@ -130,6 +131,9 @@ impl App {
         for (id, fence, rename) in landed {
             self.move_items(&[id], fence);
             if rename {
+                // The rules may have filed the item here already: then nothing moved, the
+                // window does not list it yet, and the label the edit box needs has no rect.
+                self.refresh_fence(fence);
                 self.begin_item_rename(fence, id);
             }
         }
@@ -144,14 +148,17 @@ impl App {
             .iter()
             .filter(|id| self.state.is_portal_item(**id))
             .filter_map(|id| self.state.item(*id))
-            .filter_map(|it| it.key.as_path().map(PathBuf::from))
+            .filter_map(|it| it.path().map(PathBuf::from))
             .collect();
         if paths.is_empty() {
             return;
         }
+        // A desktop file of the same name is not the one being moved: no route for it (see the
+        // external drop in `handle`).
         let routed: Vec<PathBuf> = paths
             .iter()
             .filter_map(|p| p.file_name().map(|n| desktop.join(n)))
+            .filter(|p| self.state.live_item_by_path(p).is_none())
             .collect();
         for path in &routed {
             self.pending_routes.push(PendingRoute {
@@ -255,18 +262,19 @@ impl App {
             return;
         }
         let name = name.trim();
-        // `old` is a lower-cased ItemKey, not the file's displayed spelling.
-        if name == it.display_name {
+        // `old` is the file name (hidden extension included), not the displayed spelling. An
+        // emptied box keeps the name, as in Explorer (else the hidden suffix alone, ".txt" or
+        // ".lnk", would become the whole name).
+        if name.is_empty() || name == it.display_name {
             return;
         }
         let file_name = it
-            .key
-            .as_path()
+            .path()
             .and_then(|p| p.rsplit('\\').next())
             .unwrap_or_default();
         // Explorer's editing name drops `.lnk` / hidden extensions: keep whatever it dropped.
         let suffix = crate::rename::rename_hidden_suffix(&it.display_name, file_name, it.is_folder);
-        let old = it.key.as_path().map(PathBuf::from);
+        let old = it.path().map(PathBuf::from);
         let new_name = format!("{name}{suffix}");
         let toast = match self.rename_item_to(item, &new_name) {
             Ok(_) | Err(RenameError::Unsupported) => None,
@@ -283,15 +291,18 @@ impl App {
                         })
                         .and_then(|f| self.window_for(f))
                         .map_or_else(|| self.control.hwnd(), |w| w.hwnd());
+                    // The watcher reports the prompt's rename; it must not be refused for a
+                    // deleted file's record at the new name (as in `rename_item_to`).
+                    self.state.forget_orphan_at(&old.with_file_name(&new_name));
                     self.start_shell_rename(old, new_name, owner);
                     None
                 }
                 None => Some(pecofence_core::i18n::format("重命名失败：{0}", &[e])),
             },
-            Err(RenameError::InvalidName) => Some(
-                pecofence_core::i18n::text("名称不能为空，也不能包含 \\ / : * ? \" < > |")
-                    .to_string(),
-            ),
+            Err(RenameError::InvalidName) => {
+                self.invalid_name_toast();
+                None
+            }
             Err(RenameError::Exists) => {
                 Some(pecofence_core::i18n::text("此文件夹中已有同名项目。").to_string())
             }
@@ -299,6 +310,17 @@ impl App {
         };
         if let (Some(text), Some(t)) = (toast, &self.tray) {
             t.show_info("PecoFence", &text, true);
+        }
+    }
+
+    /// The toast for a name no file can have (the inline editor's Enter and commit paths).
+    pub(super) fn invalid_name_toast(&self) {
+        if let Some(t) = &self.tray {
+            t.show_info(
+                "PecoFence",
+                pecofence_core::i18n::text("名称不能为空，也不能包含 \\ / : * ? \" < > |"),
+                true,
+            );
         }
     }
 
@@ -316,35 +338,39 @@ impl App {
         if it.is_namespace() {
             return Err(RenameError::Unsupported);
         }
-        let file_name = file_name.trim();
-        if file_name.is_empty()
-            || file_name == "."
-            || file_name == ".."
-            || file_name
-                .chars()
-                .any(|c| matches!(c, '\\' | '/' | ':' | '*' | '?' | '"' | '<' | '>' | '|'))
-        {
+        // Win32 drops trailing dots and spaces from a name: strip them here too, or the
+        // record would be keyed "note." for a file that is "note" on disk.
+        let file_name = file_name.trim().trim_end_matches(['.', ' ']);
+        if crate::rename::invalid_file_name(file_name) {
             return Err(RenameError::InvalidName);
         }
-        let Some(old) = it.key.as_path().map(PathBuf::from) else {
+        let Some(old) = it.path().map(PathBuf::from) else {
             return Err(RenameError::Unsupported);
         };
         let Some(parent) = old.parent().map(Path::to_path_buf) else {
             return Err(RenameError::Unsupported);
         };
         let new = parent.join(file_name);
+        if new == old {
+            // Only trailing dots or spaces differed ("note" to "note."): nothing to rename.
+            return Ok(new);
+        }
         if ItemKey::from_path(&new.to_string_lossy()) == ItemKey::from_path(&old.to_string_lossy())
         {
-            // Same name, another case: a no-op for the item table, but the file's spelling
-            // changes. (`old` is the lower-cased key: callers already skipped unchanged names.)
-            std::fs::rename(&old, &new).map_err(rename_error)?;
+            // Same name, another case: the item keeps its key, its path and name take the new
+            // spelling. (Callers already skipped unchanged names.)
+            shell::rename_no_replace(&old, &new).map_err(rename_error)?;
+            if self.state.rename_item(&old, &new) {
+                self.schedule_save();
+            }
             self.refresh_fences_with(item);
             return Ok(new);
         }
         if new.exists() {
             return Err(RenameError::Exists);
         }
-        std::fs::rename(&old, &new).map_err(rename_error)?;
+        // Not `std::fs::rename`: that would replace a file created at `new` since the check.
+        shell::rename_no_replace(&old, &new).map_err(rename_error)?;
         tracing::info!(from = %old.display(), to = %new.display(), "item renamed");
         if self.state.is_portal_item(item) {
             // Portal ids are path hashes. Update the old view's identity before the folder
@@ -354,9 +380,12 @@ impl App {
                 w.rekey_item(item, new_id);
             }
             self.refresh_portals_in(&[parent]);
-        } else if self.state.rename_item(&old, &new) {
-            self.refresh_fences_with(item);
-            self.schedule_save();
+        } else {
+            self.state.forget_orphan_at(&new);
+            if self.state.rename_item(&old, &new) {
+                self.refresh_fences_with(item);
+                self.schedule_save();
+            }
         }
         Ok(new)
     }
@@ -381,13 +410,14 @@ impl App {
             items
                 .iter()
                 .filter_map(|id| self.state.item(*id))
-                .filter_map(|it| it.key.as_path().map(PathBuf::from))
+                .filter_map(|it| it.path().map(PathBuf::from))
                 .collect(),
         )
     }
 
     /// Runs one of the shell's canonical verbs (`delete`, `cut`, `copy`, `properties`) on the
     /// selection as if picked from Explorer's menu. `shift` = Shift held (permanent delete).
+    /// `delete` runs on a worker thread (see [`App::start_shell_delete`]).
     pub(super) fn shell_verb_on_items(
         &mut self,
         fence: FenceId,
@@ -408,6 +438,10 @@ impl App {
             .window_for(fence)
             .map(|w| w.hwnd())
             .unwrap_or(self.control.hwnd());
+        if verb == "delete" {
+            self.start_shell_delete(paths, owner, shift);
+            return true;
+        }
         let refs: Vec<&std::path::Path> = paths.iter().map(|p| p.as_path()).collect();
         match ShellContextMenu::for_paths(&refs)
             .and_then(|mut m| m.invoke_verb(verb, owner, window::cursor_pos(), shift))
@@ -442,7 +476,7 @@ impl App {
         if let Some(p) = items
             .first()
             .and_then(|id| self.state.item(*id))
-            .and_then(|it| it.key.as_path().map(PathBuf::from))
+            .and_then(|it| it.path().map(PathBuf::from))
         {
             let owner = self
                 .window_for(fence)
@@ -509,6 +543,7 @@ impl App {
                 return;
             }
         }
+        let running = self.fileops_running;
         self.handle(Command::ExternalDrop {
             paths,
             to: fence,
@@ -519,28 +554,47 @@ impl App {
             },
         });
         if cut {
-            // Explorer empties the clipboard after pasting cut files.
-            clipboard::clear();
-            self.cut_items.clear();
-            self.push_cut_items();
+            if self.fileops_running > running {
+                // Foreign files are still being moved by a worker: emptied when it succeeds,
+                // so a cancelled conflict dialog leaves the files on the clipboard for another
+                // try (`on_fileop_done`). The serial names that operation (another transfer
+                // finishing first must not settle this paste); the sequence number tells
+                // whether the clipboard still holds this paste by then.
+                self.cut_paste = Some((self.fileop_serial, clipboard::sequence()));
+            } else {
+                self.finish_cut_paste();
+            }
         }
     }
 
-    pub(super) fn launch(&mut self, item: ItemId) {
-        // A folder inside a navigating portal opens in place (Fences "Navigate").
-        if let Some(fence) = self.state.portal_of_item(item)
-            && self.state.fence(fence).is_some_and(|f| f.portal_navigate)
+    /// Explorer empties the clipboard after pasting cut files.
+    pub(super) fn finish_cut_paste(&mut self) {
+        self.cut_paste = None;
+        clipboard::clear();
+        self.cut_items.clear();
+        self.push_cut_items();
+    }
+
+    /// Opens `item`, which the user picked in fence `from`.
+    pub(super) fn launch(&mut self, item: ItemId, from: FenceId) {
+        // A folder inside a navigating portal opens in place (Fences "Navigate"). Two portals
+        // can show the same folder, so only the one the item was opened from navigates.
+        if self
+            .state
+            .fence(from)
+            .is_some_and(|f| f.kind == FenceKind::FolderPortal && f.portal_navigate)
+            && self.state.is_portal_item(item)
             && let Some(it) = self.state.item(item)
             && it.is_folder
-            && let Some(p) = it.key.as_path().map(PathBuf::from)
+            && let Some(p) = it.path().map(PathBuf::from)
         {
-            self.portal_enter(fence, &p);
+            self.portal_enter(from, &p);
             return;
         }
         let Some(path) = self
             .state
             .item(item)
-            .and_then(|it| it.key.as_path().map(PathBuf::from))
+            .and_then(|it| it.path().map(PathBuf::from))
         else {
             return;
         };
@@ -573,7 +627,7 @@ impl App {
                 .iter()
                 .filter_map(|id| self.state.item(*id))
                 .filter(|it| !it.is_namespace())
-                .filter_map(|it| it.key.as_path().map(PathBuf::from))
+                .filter_map(|it| it.path().map(PathBuf::from))
                 .collect();
             self.move_files_into_portal(paths, to);
             return;

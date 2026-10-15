@@ -1,6 +1,7 @@
 //! Config persistence: atomic writes, `.bak` rotation, daily backups, load fallbacks (plan §7.5).
 
-use crate::model::{Config, SCHEMA_VERSION};
+use crate::geometry::MAX_DIP;
+use crate::model::{Config, ItemSourceSpec, NormGeometry, SCHEMA_VERSION};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -30,6 +31,21 @@ impl LoadOutcome {
         }
     }
 }
+
+/// A failed [`ConfigStore::save`]: the step that failed (a fixed name, safe to log) and why.
+#[derive(Debug)]
+pub struct SaveError {
+    pub step: &'static str,
+    pub error: io::Error,
+}
+
+impl std::fmt::Display for SaveError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}: {}", self.step, self.error)
+    }
+}
+
+impl std::error::Error for SaveError {}
 
 pub struct ConfigStore {
     dir: PathBuf,
@@ -65,7 +81,7 @@ impl ConfigStore {
     fn bak_path(&self) -> PathBuf {
         self.dir.join("config.bak")
     }
-    fn tmp_path(&self) -> PathBuf {
+    pub fn tmp_path(&self) -> PathBuf {
         self.dir.join("config.json.tmp")
     }
     fn backups_dir(&self) -> PathBuf {
@@ -79,7 +95,9 @@ impl ConfigStore {
     /// Reads and validates any config file (import / backup restore), with the reason on error.
     pub fn parse_file(path: &Path) -> Result<Config, String> {
         let text = fs::read_to_string(path).map_err(|e| e.to_string())?;
-        let cfg: Config = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+        // Windows PowerShell 5.1 `Set-Content -Encoding utf8` and Notepad can add a BOM.
+        let text = text.strip_prefix('\u{feff}').unwrap_or(&text);
+        let cfg: Config = serde_json::from_str(text).map_err(|e| e.to_string())?;
         validate(&cfg)?;
         Ok(migrate(cfg))
     }
@@ -92,6 +110,10 @@ impl ConfigStore {
     /// The file text: pretty JSON with the `$schema` field pointing at the published schema
     /// (serde_json sorts keys, and `$` sorts first, so it is the first line after the brace).
     fn to_json(cfg: &Config) -> io::Result<String> {
+        if cfg.schema.as_deref() == Some(crate::model::CONFIG_SCHEMA_URL) {
+            // A loaded config already carries it: no copy of the whole config per save.
+            return serde_json::to_string_pretty(cfg).map_err(io::Error::other);
+        }
         let mut cfg = cfg.clone();
         cfg.schema = Some(crate::model::CONFIG_SCHEMA_URL.to_string());
         serde_json::to_string_pretty(&cfg).map_err(io::Error::other)
@@ -108,6 +130,17 @@ impl ConfigStore {
     /// would otherwise turn it into `config.bak` and delete it on the next save.
     pub fn load_reporting(&self) -> (LoadOutcome, Option<PathBuf>) {
         let primary = self.primary_path();
+        // Antivirus, backup and sync tools can hold the file open without read sharing for a
+        // moment (ERROR_SHARING_VIOLATION, ERROR_LOCK_VIOLATION); wait for them before the
+        // file counts as unreadable.
+        for attempt in 1..=5 {
+            match fs::File::open(&primary) {
+                Err(e) if attempt < 5 && matches!(e.raw_os_error(), Some(32 | 33)) => {
+                    std::thread::sleep(std::time::Duration::from_millis(300))
+                }
+                _ => break,
+            }
+        }
         let quarantined = match Self::parse_file(&primary) {
             Ok(c) => return (LoadOutcome::Primary(c), None),
             Err(_) if !primary.exists() => None,
@@ -174,23 +207,50 @@ impl ConfigStore {
     }
 
     /// Atomically writes the config: tmp → fsync → rotate old to .bak → rename tmp over primary.
-    pub fn save(&self, cfg: &Config) -> io::Result<()> {
-        validate(cfg).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-        fs::create_dir_all(&self.dir)?;
-        let json = Self::to_json(cfg)?;
+    pub fn save(&self, cfg: &Config) -> Result<(), SaveError> {
+        let at = |step: &'static str| move |error: io::Error| SaveError { step, error };
+        validate(cfg)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
+            .map_err(at("validate"))?;
+        fs::create_dir_all(&self.dir).map_err(at("create folder"))?;
+        let json = Self::to_json(cfg).map_err(at("serialize"))?;
         {
-            let mut f = fs::File::create(self.tmp_path())?;
-            io::Write::write_all(&mut f, json.as_bytes())?;
-            f.sync_all()?;
+            let mut f = fs::File::create(self.tmp_path()).map_err(at("create temp file"))?;
+            io::Write::write_all(&mut f, json.as_bytes()).map_err(at("write temp file"))?;
+            f.sync_all().map_err(at("flush temp file"))?;
         }
         let primary = self.primary_path();
+        let mut rotated = false;
         if primary.exists() {
             // Best effort: keep the previous good file as .bak.
             let _ = fs::remove_file(self.bak_path());
-            let _ = fs::rename(&primary, self.bak_path());
+            rotated = fs::rename(&primary, self.bak_path()).is_ok();
         }
-        fs::rename(self.tmp_path(), &primary)?;
-        self.daily_backup(&json)?;
+        match fs::rename(self.tmp_path(), &primary) {
+            Ok(()) => {}
+            // The Store edition sees %APPDATA% merged with its package's copy, and Windows
+            // refuses renames in it when %APPDATA% was moved to another drive (the .bak
+            // rotation above fails too). Write the file in place, keeping the old one as .bak.
+            // Without that copy a torn write would leave nothing readable, so it must succeed;
+            // the new file is flushed like the temp file before the temp file goes.
+            Err(e) if e.kind() == io::ErrorKind::CrossesDevices => {
+                if primary.exists() {
+                    fs::copy(&primary, self.bak_path()).map_err(at("keep config.bak"))?;
+                }
+                let mut f = fs::File::create(&primary).map_err(at("write config.json"))?;
+                io::Write::write_all(&mut f, json.as_bytes()).map_err(at("write config.json"))?;
+                f.sync_all().map_err(at("flush config.json"))?;
+                let _ = fs::remove_file(self.tmp_path());
+            }
+            Err(e) => {
+                // Put the previous file back: a load never looks at the temp file.
+                if rotated {
+                    let _ = fs::rename(self.bak_path(), &primary);
+                }
+                return Err(at("replace config.json")(e));
+            }
+        }
+        self.daily_backup(&json).map_err(at("daily backup"))?;
         Ok(())
     }
 
@@ -235,12 +295,6 @@ pub fn validate(cfg: &Config) -> Result<(), String> {
             if !(g.w.is_finite() && g.h.is_finite() && g.x.is_finite() && g.y.is_finite()) {
                 return Err(format!("fence {} has non-finite geometry", f.title));
             }
-            if g.w < 1.0 || g.h < 1.0 || g.w > 8192.0 || g.h > 8192.0 {
-                return Err(format!(
-                    "fence {} has out-of-range size {}x{}",
-                    f.title, g.w, g.h
-                ));
-            }
             // The presets are 0.55 ("更透明"), 1.6 ("更厚实" = a veil) and 0 ("全透明").
             if let Some(a) = &f.appearance
                 && let Some(o) = a.opacity
@@ -252,6 +306,46 @@ pub fn validate(cfg: &Config) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+/// `g`'s size clamped to 1 to 8192 DIP each way.
+fn size_in_range(g: &NormGeometry) -> (f32, f32) {
+    (g.w.clamp(1.0, MAX_DIP), g.h.clamp(1.0, MAX_DIP))
+}
+
+/// Brings fence sizes outside 1 to 8192 DIP (a hand-edited file) into that range, for the app
+/// to load or import the file with just those sizes changed. True when one changed.
+pub fn clamp_sizes(cfg: &mut Config) -> bool {
+    let mut changed = false;
+    for f in cfg.layouts.iter_mut().flat_map(|l| &mut l.fences) {
+        let (w, h) = size_in_range(&f.geometry);
+        if (w, h) != (f.geometry.w, f.geometry.h) {
+            (f.geometry.w, f.geometry.h) = (w, h);
+            changed = true;
+        }
+    }
+    changed
+}
+
+/// 0.2.1 saved a portal on a network share or a mapped drive as the relative path
+/// `UNC\server\share\…` (the canonical path with only its long-path prefix stripped), which
+/// can neither be listed nor watched: such paths, in the layouts and the snapshots, become
+/// `\\server\share\…`. True when one changed.
+pub fn repair_unc_portals(cfg: &mut Config) -> bool {
+    let mut changed = false;
+    let layouts = cfg
+        .layouts
+        .iter_mut()
+        .chain(cfg.snapshots.iter_mut().flat_map(|s| &mut s.layouts));
+    for f in layouts.flat_map(|l| &mut l.fences) {
+        if let ItemSourceSpec::Folder { path, .. } = &mut f.source
+            && let Some(rest) = path.strip_prefix(r"UNC\")
+        {
+            *path = format!(r"\\{rest}");
+            changed = true;
+        }
+    }
+    changed
 }
 
 /// Severity of a [`lint`] finding.
@@ -284,9 +378,10 @@ fn lint_at(out: &mut Vec<Lint>, level: LintLevel, subject: impl Into<String>, me
 
 /// Cross-checks a configuration that already passed [`validate`] for things that load but will
 /// not work as written: rules whose target fence exists in no layout, portals whose folder is
-/// gone, tabs hosted by a missing fence, duplicate fence ids, memberships of unknown items, more
-/// snapshots than the app keeps, a missing or foreign `$schema`. Pure apart from the folder
-/// existence checks; safe to run on an exported file without the app.
+/// gone, tabs hosted by a missing fence, duplicate fence ids, fence sizes the app clamps,
+/// memberships of unknown items, more snapshots than the app keeps, a missing or foreign
+/// `$schema`. Pure apart from the folder existence checks; safe to run on an exported file
+/// without the app.
 pub fn lint(cfg: &Config) -> Vec<Lint> {
     use crate::model::FenceKind;
     use crate::rules::Target;
@@ -376,6 +471,19 @@ pub fn lint(cfg: &Config) -> Vec<Lint> {
                     ),
                 );
             }
+            let g = &f.geometry;
+            let (w, h) = size_in_range(g);
+            if (w, h) != (g.w, g.h) {
+                lint_at(
+                    &mut out,
+                    LintLevel::Warning,
+                    &subject,
+                    format!(
+                        "size {}x{} is out of range; the app changes it to {w}x{h}",
+                        g.w, g.h
+                    ),
+                );
+            }
             if f.kind == FenceKind::FolderPortal
                 && !matches!(f.source, crate::model::ItemSourceSpec::Folder { .. })
             {
@@ -448,6 +556,16 @@ pub fn lint(cfg: &Config) -> Vec<Lint> {
             ),
         );
     }
+    if let Some(text) = &cfg.settings.peek.custom_hotkey
+        && let Err(problem) = crate::hotkey::Hotkey::parse(text).and_then(|h| h.check())
+    {
+        lint_at(
+            &mut out,
+            LintLevel::Warning,
+            "settings",
+            format!("peek.customHotkey {text:?} is not used ({problem}); Peek uses peek.hotkey"),
+        );
+    }
     if cfg.snapshots.len() > crate::model::MAX_SNAPSHOTS {
         lint_at(
             &mut out,
@@ -463,10 +581,17 @@ pub fn lint(cfg: &Config) -> Vec<Lint> {
     out
 }
 
-/// Schema migration chain (currently identity).
+/// Schema migration chain, and choices this version no longer offers.
 pub fn migrate(mut cfg: Config) -> Config {
     if cfg.schema_version < SCHEMA_VERSION {
         cfg.schema_version = SCHEMA_VERSION;
+    }
+    // 0.2.0 offered Win+Space and Win+Shift+Space, which Windows keeps for the input switcher:
+    // Peek never got them, and a file still choosing one showed the fallback notice at every
+    // start. It takes the default (a usable `customHotkey` stays the choice).
+    let peek = &mut cfg.settings.peek;
+    if peek.chosen_hotkey() == peek.hotkey.combo() {
+        peek.hotkey = crate::model::PeekHotkey::CtrlAltSpace;
     }
     cfg
 }
@@ -587,6 +712,51 @@ mod tests {
     }
 
     #[test]
+    fn primary_with_a_utf8_bom_loads() {
+        let store = ConfigStore::new(tmpdir("bom"));
+        store.save(&sample()).unwrap();
+        let mut bytes = vec![0xEF, 0xBB, 0xBF];
+        bytes.extend(fs::read(store.primary_path()).unwrap());
+        fs::write(store.primary_path(), bytes).unwrap();
+        assert!(ConfigStore::parse_file(&store.primary_path()).is_ok());
+        assert!(matches!(store.load(), LoadOutcome::Primary(_)));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn primary_locked_for_a_moment_still_loads() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let store = ConfigStore::new(tmpdir("locked"));
+        store.save(&sample()).unwrap();
+        // Held without sharing, as a scanner does: opens fail with ERROR_SHARING_VIOLATION.
+        let lock = fs::OpenOptions::new()
+            .read(true)
+            .share_mode(0)
+            .open(store.primary_path())
+            .unwrap();
+        let unlock = std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(400));
+            drop(lock);
+        });
+        let (outcome, moved) = store.load_reporting();
+        unlock.join().unwrap();
+        assert!(matches!(outcome, LoadOutcome::Primary(_)), "{outcome:?}");
+        assert_eq!(moved, None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn primary_without_read_access_is_not_waited_for() {
+        use std::os::unix::fs::PermissionsExt;
+        let store = ConfigStore::new(tmpdir("denied"));
+        store.save(&sample()).unwrap();
+        fs::set_permissions(store.primary_path(), fs::Permissions::from_mode(0o000)).unwrap();
+        let started = std::time::Instant::now();
+        let _ = store.load_reporting();
+        assert!(started.elapsed() < std::time::Duration::from_millis(1000));
+    }
+
+    #[test]
     fn nothing_usable_gives_fresh() {
         let store = ConfigStore::new(tmpdir("fresh"));
         assert!(matches!(store.load(), LoadOutcome::Fresh(_)));
@@ -652,6 +822,106 @@ mod tests {
             ..f
         });
         assert!(validate(&c).is_err());
+    }
+
+    #[test]
+    fn a_win_space_peek_shortcut_from_0_2_0_loads_as_the_default() {
+        let mut c = sample();
+        c.settings.peek.hotkey = PeekHotkey::WinSpace;
+        assert_eq!(migrate(c.clone()).settings.peek, PeekSettings::default());
+        c.settings.peek.hotkey = PeekHotkey::WinShiftSpace;
+        assert_eq!(migrate(c.clone()).settings.peek, PeekSettings::default());
+        // A usable custom shortcut is the choice; `hotkey` is only for older versions then.
+        c.settings.peek.custom_hotkey = Some("Ctrl+Shift+F".into());
+        let peek = migrate(c).settings.peek;
+        assert_eq!(peek.hotkey, PeekHotkey::WinShiftSpace);
+        assert_eq!(peek.chosen_hotkey().to_string(), "Ctrl+Shift+F");
+    }
+
+    #[test]
+    fn an_out_of_range_size_costs_only_that_size() {
+        // A hand edit: one fence 1e9 wide and -500 tall, another 0 tall. The file still loads
+        // as it is, `config check` warns, and the sizes come into range.
+        let store = ConfigStore::new(tmpdir("sizes"));
+        let mut c = sample();
+        let mut b = Fence::new(
+            "B",
+            FenceKind::Virtual,
+            c.layouts[0].fences[0].geometry.clone(),
+        );
+        b.geometry.h = 0.0;
+        c.layouts[0].fences[0].geometry.w = 1e9;
+        c.layouts[0].fences[0].geometry.h = -500.0;
+        c.layouts[0].fences.push(b);
+        fs::create_dir_all(store.dir()).unwrap();
+        fs::write(store.primary_path(), serde_json::to_string(&c).unwrap()).unwrap();
+        let (outcome, moved) = store.load_reporting();
+        let LoadOutcome::Primary(mut loaded) = outcome else {
+            panic!("{outcome:?}");
+        };
+        assert_eq!(moved, None);
+        let lints = lint(&loaded);
+        let sizes: Vec<&Lint> = lints
+            .iter()
+            .filter(|l| l.message.starts_with("size "))
+            .collect();
+        assert_eq!(sizes.len(), 2, "{lints:?}");
+        assert_eq!(sizes[0].subject, "fence:A");
+        assert_eq!(sizes[1].subject, "fence:B");
+        assert!(sizes.iter().all(|l| l.level == LintLevel::Warning));
+        assert!(clamp_sizes(&mut loaded));
+        let g = &loaded.layouts[0].fences[0].geometry;
+        assert_eq!((g.w, g.h), (8192.0, 1.0));
+        assert_eq!(loaded.layouts[0].fences[1].geometry.h, 1.0);
+        assert!(!clamp_sizes(&mut loaded));
+        assert!(
+            lint(&loaded)
+                .iter()
+                .all(|l| !l.message.starts_with("size "))
+        );
+    }
+
+    /// A network portal saved by 0.2.1 (`UNC\server\share\…`) is repaired in the layouts and
+    /// in the snapshots; drive paths are left alone.
+    #[test]
+    fn a_network_portal_saved_by_0_2_1_gets_its_path_back() {
+        let folder = |path: &str| ItemSourceSpec::Folder {
+            path: path.to_string(),
+            recursive: false,
+            filter: None,
+        };
+        let mut c = sample();
+        let mut portal = c.layouts[0].fences[0].clone();
+        portal.id = uuid::Uuid::new_v4();
+        portal.kind = FenceKind::FolderPortal;
+        portal.source = folder(r"UNC\nas\share\docs");
+        let mut local = portal.clone();
+        local.id = uuid::Uuid::new_v4();
+        local.source = folder(r"C:\Users\Me\Documents");
+        c.layouts[0].fences.push(portal.clone());
+        c.layouts[0].fences.push(local);
+        c.snapshots.push(Snapshot {
+            id: uuid::Uuid::new_v4(),
+            name: "before".into(),
+            ts: 1,
+            layouts: vec![Layout {
+                shown: 0,
+                fingerprint: vec![],
+                fences: vec![portal],
+            }],
+        });
+        assert!(repair_unc_portals(&mut c));
+        let path_of = |f: &Fence| match &f.source {
+            ItemSourceSpec::Folder { path, .. } => path.clone(),
+            ItemSourceSpec::Desktop => String::new(),
+        };
+        assert_eq!(path_of(&c.layouts[0].fences[1]), r"\\nas\share\docs");
+        assert_eq!(path_of(&c.layouts[0].fences[2]), r"C:\Users\Me\Documents");
+        assert_eq!(
+            path_of(&c.snapshots[0].layouts[0].fences[0]),
+            r"\\nas\share\docs"
+        );
+        assert!(!repair_unc_portals(&mut c));
     }
 
     #[test]

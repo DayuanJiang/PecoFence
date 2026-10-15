@@ -15,9 +15,9 @@ const fixture = {
   settings: {
     language: 'zh-CN',
     autostart: false, hideRealIcons: false, quickHide: { enabled: true },
-    showDesktop: 'keepVisible', theme: 'dark', themeStyle: 'fluent', titleAlign: 'left', backdrop: 'acrylic', iconSize: 48,
+    showDesktop: 'keepVisible', theme: 'dark', themeStyle: 'fluent', titleAlign: 'left', tabBar: 'top', backdrop: 'acrylic', iconSize: 48,
     icons: { tintRgb: null, tintStrength: 0.6, chameleon: false },
-    rollUp: { hoverPeek: true, clickToExpand: false, pushNeighbors: true, titleOnHover: false, hideInactiveScrollbar: false },
+    rollUp: { hoverPeek: true, clickToExpand: false, pushNeighbors: true, titleOnHover: false, hideInactiveScrollbar: false, switchTabOnHover: false },
     snapping: { enabled: true, gapPx: 8, sizeToCells: false, guideLines: true }, peek: { enabled: true, dim: true, hotkey: 'ctrlAltSpace' },
   },
   rules: {
@@ -40,6 +40,15 @@ const fixture = {
   desktopIconsHidden: false,
   version: 'test', configPath: 'C:\\PecoFence\\config.json', memoryMb: 28, itemCount: 12,
   themeMode: 'dark', accent: '#60CDFF',
+  peekHotkey: {
+    chosen: { mods: 3, vk: 32, keys: ['Ctrl', 'Alt', '空格'], label: 'Ctrl+Alt+空格' },
+    active: { mods: 3, vk: 32, keys: ['Ctrl', 'Alt', '空格'], label: 'Ctrl+Alt+空格' },
+    presets: [
+      { mods: 3, vk: 32, keys: ['Ctrl', 'Alt', '空格'], label: 'Ctrl+Alt+空格' },
+      { mods: 9, vk: 32, keys: ['Win', 'Alt', '空格'], label: 'Win+Alt+空格' },
+      { mods: 6, vk: 32, keys: ['Ctrl', 'Shift', '空格'], label: 'Ctrl+Shift+空格' },
+    ],
+  },
 };
 
 function bridge() {
@@ -72,6 +81,20 @@ function bridge() {
           state.desktopIconsHidden = state.settings.hideRealIcons;
         }
         if (message.type === 'setRules') state.rules = structuredClone(message.rules);
+        if (message.name === 'setPeekHotkey') {
+          const names = [[8, 'Win'], [2, 'Ctrl'], [1, 'Alt'], [4, 'Shift']].filter(([bit]) => message.mods & bit).map(([, n]) => n);
+          const keys = [...names, message.vk === 32 ? '空格' : String.fromCharCode(message.vk)];
+          const combo = { mods: message.mods, vk: message.vk, keys, label: keys.join('+') };
+          // Win+Shift+Space stands for a combination Windows holds.
+          const text = !(message.mods & 11) ? '快捷键需要包含 Ctrl、Alt 或 Win'
+            : message.mods === 12 && message.vk === 32 ? combo.label + ' 已被 Windows 或其他程序占用，请换一个' : null;
+          if (!text) {
+            state.peekHotkey.chosen = state.peekHotkey.active = combo;
+            state.settings.peek.customHotkey = message.mods === 3 && message.vk === 32 ? null : combo.label;
+            setTimeout(window.testRefresh, 0);
+          }
+          setTimeout(() => receive({ data: { type: 'peekHotkeyResult', ok: !text, text } }), 0);
+        }
         if (message.name === 'addTemplate' && !state.rules.list.some(r => r.template === message.template)) {
           // Mirror the host: a new fence plus its rule at the top of the list.
           const id = 'tpl-' + message.template;
@@ -192,7 +215,10 @@ async function runTests() {
     assert(doc.getElementById('fenceTintTitleOnly').style.display === 'none', 'Title-only tint offered without a tint');
     assert(doc.getElementById('fenceTabColor').style.display === 'none', 'Tab colour offered for a fence without tabs');
     assert(doc.querySelector('[data-fence=titleColor] [value=tint]').disabled, 'Follow-tint offered without a tint');
+    const tintHint = doc.getElementById('fenceTitleColor').closest('.card').querySelector('.s');
+    assert(!tintHint.hidden, 'Choose-a-tint hint missing without a tint');
     change(doc, 'fenceSel', 'inbox');
+    assert(tintHint.hidden, 'Choose-a-tint hint shown although the fence has a tint');
     assert(doc.querySelector('[data-fence=locked]').classList.contains('on'), 'Lock state not shown');
     assert(doc.getElementById('fenceHideEmpty').style.display === '' && doc.querySelector('[data-fence=hideWhenEmpty]').classList.contains('on'), 'Inbox hide-when-empty not shown');
     assert(doc.getElementById('fenceTintTitleOnly').style.display === '' && doc.querySelector('[data-fence=tintTitleOnly]').classList.contains('on'), 'Title-only tint not shown');
@@ -290,8 +316,18 @@ async function runTests() {
     const count = ruleCount(doc);
     await add(doc);
     assert(ruleCount(doc) === count + 1, 'Valid range was rejected');
-    const value = current().rules.list.at(-1).allOf[0].value;
+    const value = current().rules.list[0].allOf[0].value;
     assert(value.min === null && value.max === 0, 'Blank or zero bound changed meaning');
+    assert(current().rules.list[0].name === '大小 ≤ 0 MB', 'Unnamed rule not named after its condition');
+  });
+  await test('A new rule goes to the top of the list', async () => {
+    const before = current().rules.list.map(r => r.id);
+    change(doc, 'nrKind', 'ext'); change(doc, 'nrValue', 'pdf');
+    await add(doc);
+    const list = current().rules.list;
+    assert(list[0].allOf[0].cond === 'ext' && list[0].allOf[0].value[0] === 'pdf', 'New rule is not first');
+    assert(list.slice(1).map(r => r.id).join() === before.join(), 'Existing rules changed order');
+    assert(doc.querySelector('#ruleList [data-row-id]').dataset.rowId === list[0].id, 'New rule not rendered first');
   });
   for (const kind of ['ext', 'exact']) {
     await test('Rejects separator-only ' + kind + ' values', async () => {
@@ -309,10 +345,10 @@ async function runTests() {
     change(doc, 'nrFrom', '18:00'); change(doc, 'nrTo', '06:00');
     await add(doc);
     assert(ruleCount(doc) === count + 1, 'Overnight rule rejected');
-    const value = current().rules.list.at(-1).allOf[0].value;
+    const value = current().rules.list[0].allOf[0].value;
     // The core reads `from_min` / `to_min`; any other spelling makes the host drop all rules.
     assert(value.from_min === 1080 && value.to_min === 360, 'Overnight bounds changed');
-    assert([...doc.querySelectorAll('#ruleList .conds')].at(-1).textContent.includes('18:00–06:00'), 'Overnight rule described wrongly');
+    assert(doc.querySelector('#ruleList .conds').textContent.includes('18:00–06:00'), 'Overnight rule described wrongly');
   });
   await test('Rule target and unfinished name survive a host refresh', async () => {
     change(doc, 'nrTarget', 'fence-b'); change(doc, 'nrName', 'Unfinished draft');
@@ -447,7 +483,7 @@ async function runTests() {
     assert(!current().settings.autostart && shown().join() === '关', 'Caption did not follow the switch');
   });
   await test('Dependent rows are disabled while their master switch is off', async () => {
-    const guides = doc.querySelector('[data-bind="snapping.guideLines"]'), hotkey = doc.querySelector('[data-bind="peek.hotkey"]');
+    const guides = doc.querySelector('[data-bind="snapping.guideLines"]'), hotkey = doc.getElementById('peekHotkey');
     doc.querySelector('[data-bind="snapping.enabled"]').click(); await settle();
     assert(!current().settings.snapping.enabled && guides.closest('.card').classList.contains('disabled'), 'Guide lines stay active without snapping');
     const before = current().settings.snapping.guideLines;
@@ -458,9 +494,10 @@ async function runTests() {
     doc.querySelector('[data-bind="snapping.enabled"]').click(); await settle();
     assert(!guides.closest('.card').classList.contains('disabled') && guides.tabIndex === 0, 'Guide lines did not return');
     doc.querySelector('[data-bind="peek.enabled"]').click(); await settle();
-    assert(hotkey.disabled && !doc.querySelector('[data-bind="peek.dim"]').closest('.card').classList.contains('disabled'), 'Peek hotkey/dim dependency wrong');
+    assert(hotkey.disabled && doc.getElementById('peekHotkeyWin').disabled && [...doc.querySelectorAll('#peekPresets button')].every(b => b.disabled)
+      && !doc.querySelector('[data-bind="peek.dim"]').closest('.card').classList.contains('disabled'), 'Peek hotkey/dim dependency wrong');
     doc.querySelector('[data-bind="peek.enabled"]').click(); await settle();
-    assert(!hotkey.disabled, 'Hotkey stayed disabled');
+    assert(!hotkey.disabled && !doc.getElementById('peekPresetCard').classList.contains('disabled'), 'Hotkey stayed disabled');
   });
   await test('Colour swatches drive the hidden selects and keep keyboard focus', async () => {
     const swatches = doc.getElementById('iconTintSwatches');
@@ -503,6 +540,17 @@ async function runTests() {
     const sent = frame.contentWindow.testMessages.filter(m => m.type === 'setFence').at(-1);
     assert(sent.id === 'fence-a' && sent.prop === 'opacity' && sent.value === 'transparent', 'Fully transparent not posted');
     assert(doc.querySelector('[data-fence=opacity]').value === 'transparent', 'Refreshed opacity not reflected');
+  });
+  await test('Tab bar position is shown and posted', async () => {
+    doc.querySelector('[data-page=general]').click();
+    const bar = doc.querySelector('[data-bind=tabBar]');
+    assert(bar.value === 'top', 'Saved tab bar position not shown');
+    for (const value of ['left', 'top']) {
+      bar.value = value;
+      bar.dispatchEvent(new frame.contentWindow.Event('change', { bubbles: true }));
+      await settle();
+      assert(current().settings.tabBar === value, 'Tab bar position not posted: ' + value);
+    }
   });
   await test('Rule rows are compact and the new-rule form opens when needed', async () => {
     doc = await reset();
@@ -561,8 +609,8 @@ async function runTests() {
       change(doc, 'nrName', '工作 <draft> & QA');
       await add(doc);
       assert(ruleCount(doc) === count + 1, kind + ' rejected selected values');
-      assert(doc.querySelector('#ruleList .rule:last-child .t').textContent === '工作 <draft> & QA', 'Rule name lost punctuation');
-      assert(doc.querySelector('#ruleList .rule:last-child .conds').textContent.includes(label), kind + ' displayed the wrong condition');
+      assert(doc.querySelector('#ruleList .rule:first-child .t').textContent === '工作 <draft> & QA', 'Rule name lost punctuation');
+      assert(doc.querySelector('#ruleList .rule:first-child .conds').textContent.includes(label), kind + ' displayed the wrong condition');
     }
   });
   await test('Name conditions reject empty values and describe accepted values', async () => {
@@ -581,7 +629,7 @@ async function runTests() {
       change(doc, 'nrValue', value);
       await add(doc);
       assert(ruleCount(doc) === count + 1, kind + ' rejected a valid condition');
-      assert(doc.querySelector('#ruleList .rule:last-child .conds').textContent.includes(label), kind + ' displayed the wrong condition');
+      assert(doc.querySelector('#ruleList .rule:first-child .conds').textContent.includes(label), kind + ' displayed the wrong condition');
     }
   });
   await test('Shortcut rules and file/folder filters can route to the desktop inbox', async () => {
@@ -595,8 +643,8 @@ async function runTests() {
       const count = ruleCount(doc);
       await add(doc);
       assert(ruleCount(doc) === count + 1, kind + ' was not added');
-      assert(doc.querySelector('#ruleList .rule:last-child .conds').textContent === label + ' → 放入“Desktop”', 'Wrong condition or destination');
-      assert(current().rules.list.at(-1).target === 'inbox', 'Inbox target serialized as a virtual fence');
+      assert(doc.querySelector('#ruleList .rule:first-child .conds').textContent === label + ' → 放入“Desktop”', 'Wrong condition or destination');
+      assert(current().rules.list[0].target === 'inbox', 'Inbox target serialized as a virtual fence');
     }
   });
   await test('Deleting the final snapshot preserves a useful keyboard focus target', async () => {
@@ -617,9 +665,9 @@ async function runTests() {
     assert(messages().length === 1 && messages()[0].a === 'two' && messages()[0].b === 'one', 'Display selections reset or swapped incorrectly');
   });
 
-  await test('The Store rating button appears only in the Store edition; both support buttons post', async () => {
+  await test('The Store rating button appears only in the Store edition; the manual and support buttons post', async () => {
     doc.querySelector('[data-page=about]').click();
-    const rate = doc.getElementById('rateStore'), star = doc.getElementById('starRepo');
+    const rate = doc.getElementById('rateStore'), star = doc.getElementById('starRepo'), manual = doc.getElementById('openManual');
     current().storeEdition = false;
     frame.contentWindow.testRefresh(); await settle();
     assert(rate.hidden && !star.hidden, 'Rating offered outside the Store edition');
@@ -627,8 +675,8 @@ async function runTests() {
     frame.contentWindow.testRefresh(); await settle();
     assert(!rate.hidden && rate.offsetWidth > 0, 'Rating button missing in the Store edition');
     const actions = () => frame.contentWindow.testMessages.filter(m => m.type === 'action').map(m => m.name);
-    rate.click(); star.click(); await settle();
-    assert(actions().slice(-2).join() === 'rateInStore,openRepository', 'Support buttons did not post their actions');
+    manual.click(); rate.click(); star.click(); await settle();
+    assert(actions().slice(-3).join() === 'openManual,rateInStore,openRepository', 'About buttons did not post their actions');
     current().storeEdition = false;
     frame.contentWindow.testRefresh();
   });
@@ -678,12 +726,12 @@ async function runTests() {
     const show = async update => { current().update = update; frame.contentWindow.testUpdate(update); await settle(); };
     const installer = { edition: 'installer', version: '0.1.4', hasSetup: true };
     await show({ ...installer, state: 'idle', version: null });
-    assert(!card.hidden && button.textContent === '检查更新' && !button.disabled && status.textContent === '', 'Idle card wrong');
+    assert(!card.hidden && button.textContent === '检查更新' && !button.disabled && !button.classList.contains('accent') && status.textContent === '', 'Idle card wrong');
     button.click(); assert(lastAction() === 'checkUpdate', 'Check not requested');
     await show({ ...installer, state: 'checking', version: null });
     assert(button.disabled && status.textContent === '正在检查更新…', 'Checking state wrong');
     await show({ ...installer, state: 'available' });
-    assert(status.textContent.startsWith('有新版本 0.1.4。') && button.textContent === '下载并安装', 'Available (installer) wrong: ' + status.textContent);
+    assert(status.textContent.startsWith('有新版本 0.1.4。') && button.textContent === '下载并安装' && button.classList.contains('accent'), 'Available (installer) wrong: ' + status.textContent);
     button.click(); assert(lastAction() === 'installUpdate', 'Install not requested');
     await show({ ...installer, state: 'downloading' });
     assert(button.disabled && button.textContent === '下载并安装' && status.textContent === '正在下载新版本…', 'Downloading state wrong');
@@ -772,7 +820,104 @@ async function runTests() {
     assert(doc.getElementById('fbCrashNote').hidden, 'Crash note stays after the report went out');
     current().crashed = false;
   });
+  await test('Script errors reach the host as their type and position, without the message', async () => {
+    doc = await reset();
+    const failing = doc.createElement('script');
+    failing.textContent = "throw new TypeError('C:/Users/jane.doe/taxes.pdf')";
+    doc.body.append(failing);
+    await settle();
+    const sent = frame.contentWindow.testMessages.filter(m => m.name === 'pageError');
+    assert(sent.length === 1 && sent[0].kind === 'TypeError' && sent[0].line > 0, 'Script error not reported: ' + JSON.stringify(sent));
+    assert(!JSON.stringify(sent).includes('jane'), 'The error message reached the host: ' + JSON.stringify(sent));
+  });
 
+  const hotkeyText = () => [...doc.querySelectorAll('#peekHotkeyKeys kbd')].map(k => k.textContent).join('+');
+  const press = (target, key, keyCode, mods = {}) => target.dispatchEvent(new frame.contentWindow.KeyboardEvent('keydown', { key, keyCode, bubbles: true, cancelable: true, ...mods }));
+  const sent = name => win().testMessages.filter(m => m.name === name);
+  const win = () => frame.contentWindow;
+  await test('The Peek shortcut box records a combination and shows what the host saved', async () => {
+    doc = await reset();
+    const box = doc.getElementById('peekHotkey');
+    assert(hotkeyText() === 'Ctrl+Alt+空格' && !doc.getElementById('peekHotkeyWin').checked, 'Active shortcut not shown: ' + hotkeyText());
+    assert(doc.getElementById('peekHotkeyHelp').textContent.includes('包含 Win 键'), 'Help does not mention the Win checkbox');
+    box.focus(); box.click(); await settle();
+    assert(box.classList.contains('recording') && sent('peekHotkeyRecording').at(-1)?.on === true, 'Recording did not start');
+    press(box, 'Control', 17, { ctrlKey: true });
+    assert(hotkeyText() === 'Ctrl', 'Held modifiers are not shown: ' + hotkeyText());
+    press(box, 'k', 75, { ctrlKey: true, altKey: true }); await settle();
+    const set = sent('setPeekHotkey').at(-1);
+    assert(set && set.mods === 3 && set.vk === 75, 'Wrong combination sent: ' + JSON.stringify(set));
+    assert(!box.classList.contains('recording') && hotkeyText() === 'Ctrl+Alt+K', 'Saved shortcut not shown: ' + hotkeyText());
+    assert(current().settings.peek.customHotkey === 'Ctrl+Alt+K', 'Shortcut not saved');
+    assert(![...doc.querySelectorAll('#peekPresets button')].some(b => b.getAttribute('aria-pressed') === 'true'), 'A quick choice still looks selected');
+  });
+  await test('A refused shortcut keeps recording with the reason; Esc cancels', async () => {
+    doc = await reset();
+    const box = doc.getElementById('peekHotkey'), help = doc.getElementById('peekHotkeyHelp'), winBox = doc.getElementById('peekHotkeyWin');
+    box.focus(); box.click(); await settle();
+    press(box, 'k', 75); await settle();
+    assert(help.classList.contains('error') && help.textContent.includes('Ctrl、Alt 或 Win') && box.classList.contains('recording'), 'No-modifier refusal not shown: ' + help.textContent);
+    // Win comes from the checkbox: Windows keeps Win+Space before the page sees it.
+    winBox.click(); await settle();
+    assert(winBox.checked && box.classList.contains('recording') && doc.activeElement === box && hotkeyText() === 'Win', 'Win checkbox did not start a Win recording');
+    press(box, ' ', 32, { shiftKey: true }); await settle();
+    assert(sent('setPeekHotkey').at(-1).mods === 12, 'Win was not added');
+    assert(help.textContent.includes('已被 Windows 或其他程序占用') && box.classList.contains('recording'), 'Taken combination not reported: ' + help.textContent);
+    press(box, 'Escape', 27); await settle();
+    assert(!box.classList.contains('recording') && sent('peekHotkeyRecording').at(-1).on === false, 'Esc did not end the recording');
+    assert(!winBox.checked && hotkeyText() === 'Ctrl+Alt+空格' && !help.classList.contains('error'), 'Cancel did not restore the shortcut');
+    assert(current().settings.peek.customHotkey == null, 'A refused shortcut was saved');
+  });
+  await test('Keys that stop arriving during a recording suggest the combination is taken', async () => {
+    doc = await reset();
+    const box = doc.getElementById('peekHotkey'), help = doc.getElementById('peekHotkeyHelp');
+    const quiet = () => new Promise(resolve => setTimeout(resolve, 3200));
+    box.focus(); box.click(); await quiet();
+    assert(!help.classList.contains('caution') && help.textContent.includes('Esc'), 'Hint shown before any key: ' + help.textContent);
+    // Another program's hotkey keeps the key itself: only the modifiers arrive.
+    press(box, 'Control', 17, { ctrlKey: true }); await quiet();
+    assert(help.classList.contains('caution') && help.textContent.includes('其他程序占用') && box.classList.contains('recording'), 'Silence not explained: ' + help.textContent);
+    press(box, 'Alt', 18, { ctrlKey: true, altKey: true });
+    assert(!help.classList.contains('caution') && help.textContent.includes('Esc'), 'Hint stayed after a key: ' + help.textContent);
+    await quiet();
+    assert(help.classList.contains('caution'), 'Hint did not come back');
+    press(box, 'Escape', 27); await settle();
+    assert(!box.classList.contains('recording') && !help.classList.contains('caution'), 'Esc left the hint: ' + help.textContent);
+    // A refusal of the previous key does not hide the hint for the next, taken combination.
+    box.focus(); box.click(); await settle();
+    press(box, 'k', 75); await settle();
+    assert(help.classList.contains('error'), 'No-modifier refusal not shown: ' + help.textContent);
+    press(box, 'Control', 17, { ctrlKey: true }); await quiet();
+    assert(help.classList.contains('caution') && help.textContent.includes('其他程序占用'), 'Old refusal hid the hint: ' + help.textContent);
+    press(box, 'Escape', 27); await settle();
+  });
+  await test('Quick choices set the shortcut; a fallback says which one is in use', async () => {
+    doc = await reset();
+    const presets = [...doc.querySelectorAll('#peekPresets button')];
+    assert(presets.length === 3 && presets[0].getAttribute('aria-pressed') === 'true' && presets[1].textContent === 'Win + Alt + 空格', 'Quick choices wrong');
+    presets[1].focus(); presets[1].click(); await settle();
+    assert(sent('setPeekHotkey').at(-1).mods === 9 && hotkeyText() === 'Win+Alt+空格', 'Quick choice not applied: ' + hotkeyText());
+    assert(presets[1].getAttribute('aria-pressed') === 'true' && doc.activeElement === presets[1], 'Selected quick choice lost its state or focus');
+    // A shortcut with Win does not tick the box for the next recording.
+    const box = doc.getElementById('peekHotkey'), winBox = doc.getElementById('peekHotkeyWin');
+    assert(!winBox.checked, 'Win checkbox ticked outside a recording');
+    box.focus(); box.click(); await settle();
+    winBox.click(); await settle();
+    assert(winBox.checked && hotkeyText() === 'Win', 'Ticking Win during a recording failed');
+    winBox.click(); await settle();
+    assert(!winBox.checked && box.classList.contains('recording') && doc.activeElement === box, 'Clearing Win ended the recording');
+    press(box, 'k', 75, { ctrlKey: true, altKey: true }); await settle();
+    assert(sent('setPeekHotkey').at(-1).mods === 3 && hotkeyText() === 'Ctrl+Alt+K', 'Win stayed in the next recording');
+    // A 0.2.0 file with Win+Space: Windows holds it, Ctrl+Alt+Space works instead.
+    current().peekHotkey.chosen = { mods: 8, vk: 32, keys: ['Win', '空格'], label: 'Win+空格' };
+    current().peekHotkey.active = current().peekHotkey.presets[0];
+    win().testRefresh(); await settle();
+    const help = doc.getElementById('peekHotkeyHelp');
+    assert(hotkeyText() === 'Ctrl+Alt+空格' && help.classList.contains('caution') && help.textContent.includes('Win+空格') && help.textContent.includes('Ctrl+Alt+空格'), 'Fallback not explained: ' + help.textContent);
+    current().peekHotkey.active = null;
+    win().testRefresh(); await settle();
+    assert(help.classList.contains('error') && hotkeyText() === 'Win+空格', 'All-taken state not shown: ' + help.textContent);
+  });
   await test('All ten languages switch live without changing user names or draft inputs', async () => {
     doc = await reset();
     const win = frame.contentWindow;

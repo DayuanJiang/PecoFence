@@ -34,28 +34,44 @@ struct RenameSession {
     committed: bool,
 }
 
-/// Opens (or re-targets) the rename popup over `fence_hwnd`'s title bar.
+/// Opens (or re-targets) the rename popup over `fence_hwnd`'s title bar, or over `row` (screen
+/// rect of the tab's row in a left tab column).
 pub fn begin_inline_rename(
     fence_hwnd: HWND,
     fence: FenceId,
     current: String,
+    row: Option<RECT>,
     queue: CommandQueue,
     mode: ThemeMode,
 ) {
     let r = window::window_rect(fence_hwnd);
     let dpi = monitors::dpi_for_window(fence_hwnd).max(96);
     let scale = dpi as f32 / 96.0;
-    let x = r.left + (8.0 * scale) as i32;
-    let y = r.top + (4.0 * scale) as i32;
-    let w = ((r.right - r.left) - (52.0 * scale) as i32).max((80.0 * scale) as i32);
     let h = (24.0 * scale) as i32;
+    let rect = match row {
+        Some(row) => {
+            let top = (row.top + row.bottom - h) / 2;
+            RECT {
+                left: row.left,
+                top,
+                right: row.right,
+                bottom: top + h,
+            }
+        }
+        None => {
+            let x = r.left + (8.0 * scale) as i32;
+            let y = r.top + (4.0 * scale) as i32;
+            let w = ((r.right - r.left) - (52.0 * scale) as i32).max((80.0 * scale) as i32);
+            RECT {
+                left: x,
+                top: y,
+                right: x + w,
+                bottom: y + h,
+            }
+        }
+    };
     begin_rename_at(
-        RECT {
-            left: x,
-            top: y,
-            right: x + w,
-            bottom: y + h,
-        },
+        rect,
         dpi,
         RenameTarget::Fence(fence),
         current,
@@ -81,8 +97,9 @@ pub fn rename_select_len(editing_name: &str, path: &str, is_folder: bool) -> Opt
     Some(editing_name.encode_utf16().count() - suffix.encode_utf16().count())
 }
 
-/// The extension hidden by the shell's display name must survive rename. Item paths are
-/// case-folded, so comparing them to the visible name must ignore case too.
+/// The extension hidden by the shell's display name must survive rename. Older item paths are
+/// case-folded, so comparing them to the visible name must ignore case too; the suffix keeps
+/// the file's own spelling (`.JPG`).
 pub fn rename_hidden_suffix(display_name: &str, file_name: &str, is_folder: bool) -> String {
     if is_folder {
         return String::new();
@@ -91,13 +108,33 @@ pub fn rename_hidden_suffix(display_name: &str, file_name: &str, is_folder: bool
     let display_lower = display_name.to_lowercase();
     file_lower
         .strip_prefix(&display_lower)
-        .map(str::to_string)
+        .map(|tail| {
+            file_name
+                .get(file_name.len().saturating_sub(tail.len())..)
+                .filter(|t| t.to_lowercase() == tail)
+                .unwrap_or(tail)
+                .to_string()
+        })
         .unwrap_or_else(|| {
             std::path::Path::new(file_name)
                 .extension()
                 .map(|e| format!(".{}", e.to_string_lossy()))
                 .unwrap_or_default()
         })
+}
+
+/// A name no file can have: empty once Win32 drops trailing dots and spaces, or holding a
+/// reserved character or one of the 32 control characters Windows refuses (a NUL would end
+/// the name early in the rename call).
+pub fn invalid_file_name(name: &str) -> bool {
+    let name = name.trim().trim_end_matches(['.', ' ']);
+    name.is_empty() || has_reserved_char(name) || name.chars().any(|c| c < ' ')
+}
+
+/// The characters Explorer refuses in a file name.
+pub fn has_reserved_char(name: &str) -> bool {
+    name.chars()
+        .any(|c| matches!(c, '\\' | '/' | ':' | '*' | '?' | '"' | '<' | '>' | '|'))
 }
 
 /// Opens the rename popup over an item's label rectangle (screen pixels). `select_end` limits
@@ -167,10 +204,13 @@ fn begin_rename_at(
     let created = CLASS.with(|c| {
         let c = c.borrow();
         let class = c.as_ref()?;
+        // Topmost: during Peek and Win+D the fences float in the topmost band, and a normal
+        // popup would open behind its fence, seen only faintly through the glass (#99). The
+        // popup closes as soon as it loses focus, so it never stays over another app.
         WindowBuilder::new(class)
             .title("rename")
             .style(style::POPUP)
-            .ex_style(style::EX_TOOLWINDOW)
+            .ex_style(style::EX_TOOLWINDOW | style::EX_TOPMOST)
             .bounds(x, y, w, h)
             .create(handler)
             .ok()
@@ -181,6 +221,7 @@ fn begin_rename_at(
         w,
         h,
         dpi,
+        14.0,
         &current,
         mode == ThemeMode::Dark,
         on_key,
@@ -207,7 +248,22 @@ fn begin_rename_at(
 fn on_key(vk: u32) -> bool {
     match vk {
         k if k == msg::VK_RETURN => {
-            end_active(true);
+            // Explorer keeps the editor open on a name with a reserved character; the App says
+            // why. An emptied box commits as before (`rename_item_file` keeps the name then).
+            let kept = ACTIVE.with(|a| {
+                let a = a.borrow();
+                let Some(s) = a.as_ref() else {
+                    return false;
+                };
+                if matches!(s.target, RenameTarget::Item(_)) && has_reserved_char(&s.edit.text()) {
+                    s.queue.push(Command::RenameItemInvalid);
+                    return true;
+                }
+                false
+            });
+            if !kept {
+                end_active(true);
+            }
             true
         }
         k if k == msg::VK_ESCAPE => {
@@ -248,7 +304,29 @@ pub fn end_active(commit: bool) {
 
 #[cfg(test)]
 mod tests {
-    use super::{rename_hidden_suffix, rename_select_len};
+    use super::{has_reserved_char, invalid_file_name, rename_hidden_suffix, rename_select_len};
+
+    #[test]
+    fn names_no_file_can_have_are_invalid() {
+        assert!(invalid_file_name(""));
+        assert!(invalid_file_name("   "));
+        assert!(invalid_file_name("..."));
+        assert!(invalid_file_name("bad:name"));
+        assert!(invalid_file_name("a/b"));
+        assert!(invalid_file_name("what?"));
+        assert!(invalid_file_name("note.txt\0junk"));
+        assert!(invalid_file_name("a\tb"));
+        assert!(!invalid_file_name("note"));
+        assert!(!invalid_file_name("report.txt"));
+        // Trailing dots and spaces are dropped by Win32, not refused.
+        assert!(!invalid_file_name("note. "));
+        // The editor's Enter only holds back reserved characters: an emptied box commits.
+        assert!(has_reserved_char("bad:name"));
+        assert!(has_reserved_char("a|b"));
+        assert!(!has_reserved_char(""));
+        assert!(!has_reserved_char("..."));
+        assert!(!has_reserved_char("note"));
+    }
 
     #[test]
     fn rename_keeps_only_hidden_extensions_despite_case_folded_paths() {
@@ -260,6 +338,9 @@ mod tests {
         );
         assert_eq!(rename_hidden_suffix("Docs.Backup", "docs.backup", true), "");
         assert_eq!(rename_hidden_suffix("报告.PDF", "报告.pdf", false), "");
+        // Feedback #25: the hidden extension keeps its case on disk.
+        assert_eq!(rename_hidden_suffix("ABC", "ABC.ZIP", false), ".ZIP");
+        assert_eq!(rename_hidden_suffix("abc", "ABC.Zip", false), ".Zip");
     }
 
     #[test]

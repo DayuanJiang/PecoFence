@@ -80,6 +80,31 @@ pub(super) fn shell_effect(key_state: u32, allowed: u32) -> DropEffect {
     dragdrop::resolve(dragdrop::modifier_effect(key_state, false), allowed)
 }
 
+/// The dropped file paths. Dragged off the desktop, OneDrive's and the user folder's icons put
+/// their folder into the list, which is not theirs to move: next to them only the paths in a
+/// desktop folder (the desktop's own files) stay.
+fn dropped_paths(data: &IDataObject, internal: bool) -> Vec<PathBuf> {
+    let paths = dragdrop::hdrop_paths(data);
+    if internal || !dragdrop::has_desktop_namespace_item(data) {
+        return paths;
+    }
+    let desktops = [
+        pecofence_platform::shell::user_desktop(),
+        pecofence_platform::shell::public_desktop(),
+    ];
+    paths
+        .into_iter()
+        .filter(|p| {
+            p.parent().is_some_and(|parent| {
+                desktops
+                    .iter()
+                    .flatten()
+                    .any(|d| parent.as_os_str().eq_ignore_ascii_case(d.as_os_str()))
+            })
+        })
+        .collect()
+}
+
 /// The entries directly in `dir` (the desktop, before and after a shell drop).
 fn dir_entries(dir: &Path) -> HashSet<PathBuf> {
     std::fs::read_dir(dir)
@@ -406,15 +431,17 @@ impl FenceDropHandler {
         v.apply_drop_feedback(Some(spot));
         v.update_drag_dwell(self.behavior.hover_peek.get());
         v.update_drag_scroll(pt);
+        let on_bin = spot
+            .folder
+            .and_then(|i| v.items.get(i))
+            .is_some_and(|it| pecofence_platform::shell::is_recycle_bin_path(&it.path));
         let effect = match self.kind {
             DropKind::None => DropEffect::None,
+            // A link is written as a new file: into a folder item, but not into the bin.
+            DropKind::Url if on_bin => DropEffect::None,
             // A browser usually offers COPY|LINK: Link when it may, else the best it allows.
             DropKind::Url => dragdrop::resolve(DropEffect::Link, allowed),
             DropKind::Shell => {
-                let on_bin = spot
-                    .folder
-                    .and_then(|i| v.items.get(i))
-                    .is_some_and(|it| pecofence_platform::shell::is_recycle_bin_path(&it.path));
                 if on_bin {
                     // A mail or a Start-menu app cannot be recycled.
                     DropEffect::None
@@ -426,9 +453,10 @@ impl FenceDropHandler {
                 if spot.self_drop {
                     // Same-folder drag: Explorer shows "not allowed" too.
                     DropEffect::None
-                } else if internal.is_some() && spot.folder.is_none() {
-                    // Fence membership has no copy / link; only a folder target honours the
-                    // modifiers (our own source offers every effect, so no clipping needed).
+                } else if internal.is_some() && v.drop_folder(&spot).is_none() {
+                    // Fence membership has no copy / link; only a folder target (a folder
+                    // item, or a portal's folder) honours the modifiers (our own source offers
+                    // every effect, so no clipping needed).
                     DropEffect::Move
                 } else {
                     let folder = spot
@@ -495,9 +523,12 @@ impl DropHandler for FenceDropHandler {
         pt: DragPoint,
         allowed: u32,
     ) -> DropEffect {
-        let hdrop = dragdrop::has_hdrop(data).then(|| dragdrop::hdrop_paths(data));
+        let internal = Self::internal().is_some();
+        // A drag of only the desktop's own items (This PC, OneDrive) has no paths left: it goes
+        // to the shell, which makes their shortcuts.
+        let hdrop = dragdrop::has_hdrop(data).then(|| dropped_paths(data, internal));
         self.kind = classify_drop(
-            Self::internal().is_some(),
+            internal,
             hdrop.as_deref(),
             || dragdrop::has_inet_url(data),
             || dragdrop::has_shell_items(data),
@@ -628,6 +659,12 @@ impl DropHandler for FenceDropHandler {
                     let Some(url) = dragdrop::inet_url(data) else {
                         break 'resolve DropEffect::None;
                     };
+                    if folder
+                        .as_deref()
+                        .is_some_and(pecofence_platform::shell::is_recycle_bin_path)
+                    {
+                        break 'resolve DropEffect::None;
+                    }
                     let mut effect = dragdrop::resolve(DropEffect::Link, allowed);
                     if effect == DropEffect::None {
                         break 'resolve DropEffect::None;
@@ -640,7 +677,12 @@ impl DropHandler for FenceDropHandler {
                         }
                     }
                     let name = dragdrop::file_group_descriptor_name(data);
-                    self.queue.push(Command::ExternalUrlDrop { url, name, to });
+                    self.queue.push(Command::ExternalUrlDrop {
+                        url,
+                        name,
+                        to,
+                        folder,
+                    });
                     effect
                 }
                 DropKind::Shell => {
@@ -675,7 +717,11 @@ impl DropHandler for FenceDropHandler {
                         let landed = before
                             .map(|b| shell_drop_landed(&dest, &b, &dir_entries(&dest), &names))
                             .unwrap_or_default();
-                        self.queue.push(Command::ShellDrop { to, landed });
+                        self.queue.push(Command::ShellDrop {
+                            to,
+                            landed,
+                            on_desktop,
+                        });
                     }
                     effect
                 }
@@ -713,11 +759,27 @@ impl DropHandler for FenceDropHandler {
                     if to == d.from {
                         break 'resolve DropEffect::None;
                     }
+                    if let (false, Some(dest)) = (on_desktop, dest) {
+                        // The target is a portal, a folder: the modifiers decide (Ctrl copies,
+                        // Alt links) as for a drop onto a folder item.
+                        let paths = filter_folder_paths(d.paths, &dest);
+                        let effect = folder_effect(None, key_state, allowed, same_volume);
+                        let (Some(mode), false) = (transfer_mode(effect), paths.is_empty()) else {
+                            break 'resolve DropEffect::None;
+                        };
+                        self.queue.push(Command::DropIntoFolder {
+                            paths,
+                            folder: dest,
+                            fence: active,
+                            mode,
+                        });
+                        break 'resolve effect;
+                    }
                     self.queue.push(Command::MoveItems { items: d.items, to });
                     DropEffect::Move
                 }
                 DropKind::Files => {
-                    let paths = dragdrop::hdrop_paths(data);
+                    let paths = dropped_paths(data, Self::internal().is_some());
                     if paths.is_empty() {
                         break 'resolve DropEffect::None;
                     }
@@ -795,8 +857,9 @@ impl FenceViewState {
         if self.rolled_up || self.sort != SortMode::Manual || self.is_portal {
             return None;
         }
-        let title_h = self.title_h_px();
+        let title_h = self.content_y;
         let (cw, ch) = self.content_size_px();
+        let x_px = x_px - self.content_x;
         if x_px < 0 || x_px >= cw || y_px < title_h || y_px >= title_h + ch {
             return None;
         }
@@ -1064,8 +1127,8 @@ impl FenceViewState {
         let win = window::window_rect(self.hwnd);
         let (px, py) = self.ole_drag_press;
         let (press_x, press_y) = (win.left + px, win.top + py);
-        let origin_x = win.left + (l * scale).round() as i32;
-        let origin_y = win.top + self.title_h_px() + (t * scale).round() as i32;
+        let origin_x = win.left + self.content_x + (l * scale).round() as i32;
+        let origin_y = win.top + self.content_y + (t * scale).round() as i32;
         if press_x < origin_x
             || press_x >= origin_x + w_px as i32
             || press_y < origin_y
@@ -1086,12 +1149,12 @@ impl FenceViewState {
             m31: 0.0,
             m32: 0.0,
         };
-        let icon_px = (self.icon_dip() * scale).round() as u32;
         let keys: Vec<String> = {
             let icons = self.icons.borrow();
             cells
                 .iter()
-                .map(|(i, _)| icons.draw_key(&self.items[*i].icon_key, icon_px))
+                .map(|(i, _)| &self.items[*i])
+                .map(|it| icons.draw_key(&it.icon_key, it.icon_px))
                 .collect()
         };
         let drawn = match &layout {
@@ -1137,10 +1200,20 @@ impl FenceViewState {
                     insert_caret: None,
                     insert_caret_alpha: 0.0,
                     selection_inactive: 0.0,
+                    items_bottom: f32::INFINITY,
                 };
                 rt.draw(|session| {
                     session.set_transform(&transform);
-                    chrome.draw_content(session, &theme, scale, &mut bitmaps, bw, bh, &content)
+                    chrome.draw_content(
+                        session,
+                        None,
+                        &theme,
+                        scale,
+                        &mut bitmaps,
+                        bw,
+                        bh,
+                        &content,
+                    )
                 })
             }
             ItemLayout::Rows { metrics, .. } => {
@@ -1194,6 +1267,10 @@ impl FenceViewState {
                     insert_caret: None,
                     insert_caret_alpha: 0.0,
                     selection_inactive: 0.0,
+                    // No glass behind a drag image.
+                    origin_x: 0.0,
+                    origin_y: 0.0,
+                    rows_bottom: f32::INFINITY,
                 };
                 rt.draw(|session| {
                     session.set_transform(&transform);

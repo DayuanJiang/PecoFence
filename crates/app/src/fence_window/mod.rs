@@ -5,7 +5,8 @@
 
 use crate::anchor::{self, AnchorCell};
 use crate::commands::{
-    Command, CommandQueue, TransferMode, WM_APP_FADE_DONE, WM_APP_SET_VISIBLE, WM_APP_TAB_SWAP_DONE,
+    Command, CommandQueue, TransferMode, WM_APP_FADE_DONE, WM_APP_SET_VISIBLE, WM_APP_TAB_RAIL,
+    WM_APP_TAB_SWAP_DONE,
 };
 use crate::icons::{IconCache, Lookup};
 use crate::layout::{
@@ -28,10 +29,11 @@ use pecofence_platform::tray::PopupMenu;
 use pecofence_platform::window::{
     self, MessageHandler, StandardCursor, Window, WindowBuilder, WindowClass, style,
 };
-use pecofence_platform::{HWND, RECT, desktop, dwm, monitors, msg};
+use pecofence_platform::{HWND, RECT, desktop, dwm, hotkey, monitors, msg};
 use pecofence_render::fence_chrome::{
     Backdrop, BackdropCrop, ContentDraw, FenceChrome, FenceStyle, GroupHeaderDraw, HeaderColumn,
-    ItemCell, RowCell, RowColumns, RowsDraw, ScrollbarDraw, TabDraw, TitleDeco, TitleState,
+    ItemCell, RAIL_BOTTOM, RAIL_COLLAPSED_BOTTOM, RAIL_ROW_H, RAIL_ROW_INSET, RAIL_ROW_RIGHT,
+    RAIL_TOP, RowCell, RowColumns, RowsDraw, ScrollbarDraw, TabDraw, TitleDeco, TitleState,
 };
 use pecofence_render::motion::{self, Curve, Fades, Motion, Prop, Tween};
 use pecofence_render::{
@@ -124,8 +126,12 @@ pub struct Behavior {
     pub title_on_hover: std::cell::Cell<bool>,
     /// Title (or tab strip) position in the title row (`titleAlign`).
     pub title_align: std::cell::Cell<pecofence_core::TitleAlign>,
+    /// Tabs in the title row or in a column on the left (`tabBar`).
+    pub tab_bar: std::cell::Cell<pecofence_core::TabBar>,
     /// Scrollbar drawn only while hovered / shortly after scrolling.
     pub hide_inactive_scrollbar: std::cell::Cell<bool>,
+    /// Resting the pointer on another tab switches to it (`rollUp.switchTabOnHover`).
+    pub switch_tab_on_hover: std::cell::Cell<bool>,
     /// `SPI_GETWHEELSCROLLLINES`: rows per wheel notch; `u32::MAX` (`WHEEL_PAGESCROLL`) = one
     /// viewport, 0 = the wheel does not scroll. Refreshed on WM_SETTINGCHANGE.
     pub wheel_lines: std::cell::Cell<u32>,
@@ -264,12 +270,27 @@ pub struct ItemView {
     type_label: Option<String>,
     size_label: Option<String>,
     icon: Option<Rc<Image>>,
+    /// Pixel size `icon` was extracted at. After an icon-size, layout or DPI change the old
+    /// bitmap stays up, scaled into the new box, until the new size arrives; its GPU upload
+    /// is keyed by this size, never by the size being shown.
+    icon_px: u32,
     icon_failed: bool,
     /// The icon lookup came back pending at least once: when it finally lands the bitmap
     /// cross-fades in over the loading tile (a synchronous cache hit shows at once).
     icon_waited: bool,
     /// Bitmap opacity 0 → 1 (167 ms linear) after an asynchronous icon arrived.
     icon_fade: Option<Tween>,
+}
+
+/// Peek search marks for one fence: matching items are highlighted, every other item dims, and
+/// `current` (what Enter opens) is drawn selected with a focus ring. A rolled-up fence with
+/// matches expands until they are gone. `tab_hits` counts the matches in each tab: a tab with
+/// some shows the number in a badge, a tab without any dims.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct SearchMarks {
+    pub matches: HashSet<ItemId>,
+    pub current: Option<ItemId>,
+    pub tab_hits: HashMap<FenceId, usize>,
 }
 
 impl ItemView {
@@ -280,6 +301,11 @@ impl ItemView {
         } else {
             fileinfo::format_local_datetime(self.mtime)
         }
+    }
+
+    /// The icon for `px` is still to come: none yet, or only one of another size.
+    fn wants_icon(&self, px: u32) -> bool {
+        (self.icon.is_none() || self.icon_px != px) && !self.icon_failed
     }
 
     /// Details "大小" text; namespace items have none.
@@ -321,6 +347,7 @@ impl ItemView {
             type_label: None,
             size_label: None,
             icon: None,
+            icon_px: 0,
             icon_failed: false,
             icon_waited: false,
             icon_fade: None,

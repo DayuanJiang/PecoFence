@@ -150,24 +150,40 @@ pub(super) fn snap_offset(v: f32, scale: f32) -> f32 {
 }
 
 impl FenceViewState {
-    /// Scrollable layout and viewport height (DIPs) of the content panel. While the fence is
-    /// rolled up the panel is 1 px tall, so the viewport is the remembered expanded height
-    /// instead: the offset the user left stays within the real range and the fence unrolls
-    /// exactly where it was (a collapsed container has no viewport of its own).
+    /// Scrollable layout and viewport height (DIPs) of the content panel (`scroll_view_h`).
     pub(super) fn scroll_extent(&self) -> (ItemLayout, f32) {
-        let scale = self.scale();
         let (cw, _) = self.content_size_px();
-        let layout = self.layout(cw as f32 / scale);
-        let view_h = (self.viewport_h_px() as f32 / scale - layout.fixed_top()).max(1.0);
+        let layout = self.layout(cw as f32 / self.scale());
+        let view_h = self.scroll_view_h(&layout);
         (layout, view_h)
+    }
+
+    /// Height (DIPs) of the band below the fixed header. While the fence is rolled up the
+    /// panel is 1 px tall, so the band is the remembered expanded height instead: the offset
+    /// the user left stays within the real range and the fence unrolls exactly where it was
+    /// (a collapsed container has no viewport of its own).
+    pub(super) fn band_h(&self, layout: &ItemLayout) -> f32 {
+        (self.viewport_h_px() as f32 / self.scale() - layout.fixed_top()).max(1.0)
+    }
+
+    /// Viewport (DIPs below the fixed header) the items scroll in: the band, or with
+    /// 「调整大小时按整行整列对齐」 only the whole rows in it. The rows never move with the
+    /// fence height then; the height left over stays empty under the last whole row.
+    pub(super) fn scroll_view_h(&self, layout: &ItemLayout) -> f32 {
+        let band_h = self.band_h(layout);
+        if self.behavior.size_to_cells.get() {
+            layout.whole_rows_h(band_h)
+        } else {
+            band_h
+        }
     }
 
     /// Height (device px) of the content viewport, header included: the content panel, or
     /// while rolled up the remembered expanded height below the title (see `scroll_extent`).
     pub(super) fn viewport_h_px(&self) -> i32 {
         if self.rolled_up && self.roll_anim.is_none() {
-            let title_h = self.title_h_px();
-            self.expanded_h_px.max(title_h + 40) - title_h
+            let head = self.head_px();
+            self.expanded_h_px.max(head + 40) - head
         } else {
             self.content_size_px().1
         }
@@ -238,6 +254,8 @@ impl FenceViewState {
     /// floating over the wrong row. Taking `renaming` here keeps a second notch from posting
     /// again; the popup itself closes from the command loop, outside this borrow.
     pub(super) fn dismiss_rename_for_scroll(&mut self) {
+        // A slow double-click's armed rename would open on an item scrolled out of view.
+        self.cancel_pending_rename();
         if self.renaming.take().is_some() {
             self.queue.push(Command::EndItemRename { commit: true });
         }
@@ -302,15 +320,17 @@ impl FenceViewState {
         if max_scroll <= 0.0 {
             return None;
         }
+        // The bar spans the whole band, the empty height under the whole rows included.
         let band_top = layout.fixed_top();
-        let (track_top, track_h) = scrollbar_track(band_top, view_h);
+        let band_h = self.band_h(&layout);
+        let (track_top, track_h) = scrollbar_track(band_top, band_h);
         let content_h = layout.content_height();
         let thumb_h = scrollbar_thumb_h(track_h, view_h, content_h);
         let thumb_y =
             track_top + (track_h - thumb_h) * (scroll_y.clamp(0.0, max_scroll) / max_scroll);
         Some(ScrollbarGeom {
             band_top,
-            band_h: view_h,
+            band_h,
             track_top,
             track_h,
             thumb_y,
@@ -332,16 +352,20 @@ impl FenceViewState {
         y_px: i32,
         scroll_y: f32,
     ) -> Option<(ScrollHit, ScrollbarGeom)> {
-        let title_h = self.title_h_px();
+        let title_h = self.content_y;
         if y_px < title_h {
             return None;
         }
         let g = self.scrollbar_geometry_for(scroll_y)?;
         let scale = self.scale();
         let (cw, _) = self.content_size_px();
-        let x = x_px as f32 / scale;
+        let x = (x_px - self.content_x) as f32 / scale;
         let y = (y_px - title_h) as f32 / scale;
-        if x < cw as f32 / scale - SCROLLBAR_HOT_DIP || y < g.band_top || y > g.band_top + g.band_h
+        // Captured pointers can be beyond the right edge: off the bar there too.
+        if x < cw as f32 / scale - SCROLLBAR_HOT_DIP
+            || x >= cw as f32 / scale
+            || y < g.band_top
+            || y > g.band_top + g.band_h
         {
             return None;
         }
@@ -568,7 +592,9 @@ impl FenceViewState {
         let cy = pt.y - r.top;
         let (top, bottom) = self.marquee_band_px();
         let zone_px = (DRAG_SCROLL_ZONE_DIP * self.scale()) as i32;
-        let zone = drag_scroll_zone(cy, top, bottom, zone_px).filter(|_| self.scroll_max() > 0.0);
+        // Over a left tab column the drag aims at a tab pill, not at the item area's edge.
+        let zone = drag_scroll_zone(cy, top, bottom, zone_px)
+            .filter(|_| self.scroll_max() > 0.0 && pt.x - r.left >= self.content_x);
         let Some((dir, depth)) = zone else {
             if self.drag_scroll.take().is_some() && self.snap_scroll() {
                 // Auto-scroll ended between pixels: `content_busy` makes the next tick redraw

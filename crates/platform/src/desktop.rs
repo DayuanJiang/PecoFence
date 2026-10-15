@@ -165,6 +165,24 @@ pub fn child_windows(parent: HWND) -> Vec<(HWND, String, RECT, bool)> {
     out
 }
 
+/// The top-level windows of `class`, in z-order (top to bottom): what filtering
+/// `top_level_windows` by `class_name` gives, without a class lookup per window.
+pub fn windows_of_class(class: &str) -> Vec<HWND> {
+    let class = to_wide(class);
+    let mut out = Vec::new();
+    let mut prev: Option<HWND> = None;
+    loop {
+        // SAFETY: plain FFI enumeration; the string outlives the call.
+        let next = unsafe { FindWindowExW(None, prev, PCWSTR(class.as_ptr()), PCWSTR::null()) };
+        if next.0.is_null() {
+            break;
+        }
+        out.push(next);
+        prev = Some(next);
+    }
+    out
+}
+
 /// Enumerates top-level windows in z-order (top to bottom).
 pub fn top_level_windows() -> Vec<HWND> {
     let mut out: Vec<HWND> = Vec::new();
@@ -260,7 +278,9 @@ const E_ACCESS_DENIED: windows_core::HRESULT = windows_core::HRESULT(0x8007_0005
 
 /// Inserts `hwnd` directly above `host` in the z-order: below the lowest window above `host`
 /// that paints a surface, or at the top of the normal band when there is none (HWND_BOTTOM
-/// would put `hwnd` under a raised `host`).
+/// would put `hwnd` under a raised `host`) or when that window is topmost while `host` is not:
+/// with no app window open it is the taskbar, and a window inserted after a topmost one becomes
+/// topmost itself. A topmost `host` (a fence during Peek) keeps `hwnd` right above it.
 ///
 /// Placing a window below one of an elevated process (an app run as administrator, lowest
 /// above the desktop) is refused by UIPI, which would leave `hwnd` wherever it is — over every
@@ -270,16 +290,15 @@ const E_ACCESS_DENIED: windows_core::HRESULT = windows_core::HRESULT(0x8007_0005
 pub fn insert_above(hwnd: HWND, host: HWND) -> Result<()> {
     // SAFETY: plain FFI calls on caller-supplied handles.
     unsafe {
-        let mut above = GetWindow(host, GW_HWNDPREV as u32);
-        // Nonvisual windows can sit directly above Progman. A minimized elevated
-        // terminal may reject relative placement even though it paints no surface.
-        while !above.0.is_null() && above != hwnd && !has_visible_surface(above) {
-            above = GetWindow(above, GW_HWNDPREV as u32);
-        }
+        let above = surface_window_above(host, hwnd);
         if above == hwnd {
             return Ok(());
         }
-        let insert_after = if above.0.is_null() { HWND_TOP } else { above };
+        let insert_after = if above.0.is_null() || (is_topmost(above) && !is_topmost(host)) {
+            HWND_TOP
+        } else {
+            above
+        };
         match SetWindowPos(hwnd, Some(insert_after), 0, 0, 0, 0, ANCHOR_FLAGS).ok() {
             Err(e)
                 if e.code() == E_ACCESS_DENIED
@@ -294,6 +313,21 @@ pub fn insert_above(hwnd: HWND, host: HWND) -> Result<()> {
             }
             placed => placed,
         }
+    }
+}
+
+/// The lowest window above `host` that paints a surface, which `insert_above` places `hwnd`
+/// under; `hwnd` itself when it comes first, a null HWND when there is none.
+pub fn surface_window_above(host: HWND, hwnd: HWND) -> HWND {
+    // SAFETY: plain FFI calls on caller-supplied handles.
+    unsafe {
+        let mut above = GetWindow(host, GW_HWNDPREV as u32);
+        // Nonvisual windows can sit directly above Progman. A minimized elevated
+        // terminal may reject relative placement even though it paints no surface.
+        while !above.0.is_null() && above != hwnd && !has_visible_surface(above) {
+            above = GetWindow(above, GW_HWNDPREV as u32);
+        }
+        above
     }
 }
 

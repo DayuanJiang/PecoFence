@@ -10,6 +10,8 @@ use std::path::PathBuf;
 use std::rc::Rc;
 
 pub const WM_APP_COMMAND: u32 = msg::WM_APP + 1;
+/// A folder watcher queued events; `wparam != 0` asks for a desktop sync whatever the batch
+/// holds (a menu verb that changed a namespace item).
 pub const WM_APP_FS_CHANGED: u32 = msg::WM_APP + 2;
 pub const WM_APP_TRAY: u32 = msg::WM_APP + 3;
 /// The wallpaper registry key changed (worker thread → UI thread).
@@ -32,6 +34,14 @@ pub const WM_APP_PEEK_FOCUSED: u32 = msg::WM_APP + 11;
 pub const WM_APP_SHELL_CHANGED: u32 = msg::WM_APP + 12;
 /// Posted by the worker that decoded another virtual desktop's wallpaper in advance.
 pub const WM_APP_PREWARM_DONE: u32 = msg::WM_APP + 13;
+/// wparam 0: the live wallpaper capture worker finished; 1: the desktop came to the front.
+pub const WM_APP_LIVE_WALLPAPER: u32 = msg::WM_APP + 14;
+/// Sent to a fence window while another fence is dragged over it: returns the width in device
+/// px of its left tab column (0 without one). Such a fence has no title row; its column takes
+/// the merge drop instead, also while the fence is collapsed to it.
+pub const WM_APP_TAB_RAIL: u32 = msg::WM_APP + 15;
+/// The startup wallpaper worker finished after the fences went up (worker thread → UI thread).
+pub const WM_APP_STARTUP_BACKDROPS: u32 = msg::WM_APP + 16;
 
 /// What a file drop does with the dropped paths (Explorer's Move / Copy / Create shortcut, the
 /// effect the drop target reported).
@@ -57,7 +67,11 @@ pub enum Command {
     ToggleRollUp(FenceId),
     /// A hover-peeked fence was double-clicked: keep it expanded.
     CommitExpanded(FenceId),
-    LaunchItem(ItemId),
+    /// Open `item` from fence `from` (a folder opens in place when `from` is a navigating portal).
+    LaunchItem {
+        item: ItemId,
+        from: FenceId,
+    },
     /// Move `items` into `to` (internal drag or menu).
     MoveItems {
         items: Vec<ItemId>,
@@ -87,18 +101,20 @@ pub enum Command {
         path: PathBuf,
     },
     PortalUp(FenceId),
-    /// A fence window is being dragged over `target`'s title (null = none): highlight it and,
-    /// on a tabbed target, open the insertion gap at pointer screen `x`.
+    /// A fence window is being dragged over `target`'s title or left tab column (null = none):
+    /// highlight it and, on a tabbed target, open the insertion gap at pointer screen point
+    /// `at`.
     MergeHint {
         target: HWND,
-        x: i32,
+        at: (i32, i32),
     },
-    /// A fence window was dropped on another fence's title at pointer screen `x`: merge it
-    /// there as a tab, inserted at the slot under the pointer.
+    /// A fence window was dropped on another fence's title or tab column at pointer screen
+    /// point `at`: merge it there as a tab, inserted at the slot under the pointer
+    /// (`i32::MIN` = no pointer: appended).
     MergeFence {
         fence: FenceId,
         into: HWND,
-        x: i32,
+        at: (i32, i32),
     },
     /// Details header divider dragged: persist the (修改日期, 类型, 大小) widths.
     SetColumnWidths {
@@ -140,18 +156,23 @@ pub enum Command {
         mode: TransferMode,
     },
     /// A link dragged from a browser onto a fence: create an Internet Shortcut (.url) like
-    /// Explorer does, and file it into `to`.
+    /// Explorer does, and file it into `to` (or write it into `folder`, the folder item it was
+    /// dropped on).
     ExternalUrlDrop {
         url: String,
         name: Option<String>,
         to: FenceId,
+        folder: Option<PathBuf>,
     },
     /// A drop onto `to` was handed to the shell's folder drop target (Outlook mail, a
     /// Start-menu app): the portals show what landed in their folders; `landed` are the desktop
-    /// entries a virtual fence's drop created, to be filed into `to`.
+    /// entries a virtual fence's drop created, to be filed into `to`. `on_desktop`: the drop
+    /// went to the desktop folder (a virtual fence), so what the shell writes there a moment
+    /// later goes into `to` too.
     ShellDrop {
         to: FenceId,
         landed: Vec<PathBuf>,
+        on_desktop: bool,
     },
     /// Right-click on the Details header: column visibility menu at screen coordinates.
     HeaderMenu {
@@ -212,6 +233,9 @@ pub enum Command {
         item: ItemId,
         name: String,
     },
+    /// Enter in the rename popup with a name holding a reserved character: the editor stays
+    /// open, the App says why.
+    RenameItemInvalid,
     /// Close the open inline rename popup (the view scrolled under it): commit or cancel.
     EndItemRename {
         commit: bool,
@@ -239,7 +263,17 @@ pub enum Command {
     ToggleAllFences,
     /// Peek hotkey: float all fences above the current windows (again = end).
     TogglePeek,
-    EndPeek,
+    /// End the peek; the reason (a fixed text) goes to the log.
+    EndPeek(&'static str),
+    /// Text typed during a Peek while the search box did not have the keyboard yet: opens the
+    /// box with it, or adds it to the box.
+    PeekSearchType(String),
+    /// The Peek search box text changed.
+    PeekSearchChanged,
+    /// Up / Down in the search box: highlight the previous (-1) or next (+1) match.
+    PeekSearchStep(i32),
+    /// Enter in the search box: open the highlighted match.
+    PeekSearchOpen,
     ApplyRulesNow,
     OpenSettings,
     /// Settings window on the 「栅栏」 page with this fence selected.

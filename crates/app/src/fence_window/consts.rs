@@ -3,9 +3,19 @@
 use super::*;
 
 pub(super) const RESIZE_BORDER_DIP: f32 = 6.0;
+/// Opacity of the items a Peek search does not match.
+pub(super) const SEARCH_DIM_ALPHA: f32 = 0.15;
+/// Selection-fill strength of the Peek search matches other than the current one (which is
+/// fully selected).
+pub(super) const SEARCH_MATCH_SELECTION: f32 = 0.5;
+/// Opacity of the tab pills a Peek search finds nothing in.
+pub(super) const SEARCH_TAB_DIM_ALPHA: f32 = 0.4;
 /// Corner radius DWM gives a Fluent fence (DWMWCP_ROUNDSMALL; the shadow casts the same one):
 /// the root clip matches it while a folded title row moves the plate's top edge down.
 pub(super) const FLUENT_WINDOW_RADIUS_DIP: f32 = 4.0;
+/// Esc registered as a hotkey on the fence for the length of a title drag in the system move
+/// loop (`on_entersizemove`): the loop hears the keyboard only while the fence has the focus.
+pub(super) const HOTKEY_MOVE_ESC: i32 = 1;
 pub(super) const TIMER_PEEK_OPEN: usize = 31;
 pub(super) const TIMER_PEEK_CLOSE: usize = 32;
 pub(super) const TIMER_SHADOW: usize = 33;
@@ -32,6 +42,9 @@ pub(super) const TIMER_SCROLL_REPEAT: usize = 41;
 pub(super) const TIMER_DRAG_PEEK: usize = 42;
 pub(super) const TIMER_VISIBILITY_FINISH: usize = 43;
 pub(super) const TIMER_CONTENT_FINISH: usize = 44;
+/// The pointer rests on another tab with `rollUp.switchTabOnHover` on: switch to it after the
+/// hover delay.
+pub(super) const TIMER_TAB_HOVER: usize = 45;
 /// DWM can suspend completion callbacks for fully occluded windows. UI state must still
 /// settle after the longest (250 ms) transition, independently of compositor visibility.
 pub(super) const COMPOSITION_FINISH_MS: u32 = 400;
@@ -62,8 +75,14 @@ pub(super) const DRAG_SCROLL_ARM: Duration = Duration::from_millis(50);
 pub(super) const TYPE_AHEAD_TIMEOUT: Duration = Duration::from_millis(1000);
 /// Pointer within this many DIPs of the right edge counts as "on the scrollbar".
 pub(super) const SCROLLBAR_HOT_DIP: f32 = 12.0;
+/// Right resize border left beside a shown scrollbar (the expanded thumb ends 3 DIP from the
+/// edge; the rest of the 12 DIP strip belongs to the bar).
+pub(super) const SCROLLBAR_RESIZE_BORDER_DIP: f32 = 3.0;
 pub(super) const WM_NCLBUTTONUP: u32 = 0x00A2;
 pub(super) const WM_NCRBUTTONDOWN: u32 = 0x00A4;
+pub(super) const WM_NCRBUTTONDBLCLK: u32 = 0x00A6;
+/// The second right press of a double-click (CS_DBLCLKS): a press like any other for the fence.
+pub(super) const WM_RBUTTONDBLCLK: u32 = 0x0206;
 /// `SC_MOVE | HTCAPTION`: starts the caption drag loop as if the title had just been pressed.
 pub const SC_MOVE_CAPTION: usize = 0xF012;
 
@@ -82,6 +101,12 @@ pub(super) const TAB_GAP: f32 = 4.0;
 pub(super) const TAB_LEFT: f32 = 8.0;
 /// Right-hand title space reserved for the chevron / rolled item count.
 pub(super) const TAB_RIGHT_RESERVE: f32 = 44.0;
+/// Left tab column width limits (DIPs) and what a row needs beside its caption: 10 before
+/// it and 8 after, 14 more before it when a tab shows a colour dot.
+pub(super) const TAB_RAIL_MIN_W: f32 = 96.0;
+pub(super) const TAB_RAIL_MAX_W: f32 = 160.0;
+pub(super) const TAB_RAIL_TEXT_ROOM: f32 = 18.0;
+pub(super) const TAB_RAIL_DOT_ROOM: f32 = 14.0;
 /// Width of the insertion gap a tabbed strip opens for a fence dragged over it (WinUI TabView's
 /// default tab width; the merged tab is laid out for real once it lands).
 pub(super) const TAB_MERGE_GAP_W: f32 = 96.0;

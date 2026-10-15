@@ -20,6 +20,26 @@ fn url_shortcut_names_prefer_the_browser_title() {
     );
 }
 
+/// Peek search matches the shown name or the file name (its extension may be hidden), ignoring
+/// case; namespace items match by their shown name only.
+#[test]
+fn peek_search_matches_names_and_hidden_extensions() {
+    use super::peek::search_matches;
+    let report = Some(r"c:\users\me\desktop\report 2026.pdf");
+    assert!(search_matches("Report 2026", report, "port 20"));
+    assert!(search_matches("Report 2026", report, ".pdf"));
+    assert!(!search_matches("Report 2026", report, "docx"));
+    assert!(search_matches(
+        "会议记录.docx",
+        Some(r"c:\d\会议记录.docx"),
+        "记录"
+    ));
+    let bin = Some("::{645ff040-5081-101b-9f08-00aa002f954e}");
+    assert!(search_matches("回收站", bin, "回收"));
+    assert!(!search_matches("回收站", bin, "645"));
+    assert!(search_matches("Shell item", None, "shell"));
+}
+
 mod ipc {
     use super::super::fence_options::{FenceProp, parse_fence_prop};
     use super::super::ipc::{
@@ -267,10 +287,61 @@ mod ipc {
         assert_eq!(err.code, ErrorCode::ValidationFailed);
         assert_eq!(err.details.unwrap()["expected"], json!([32, 48, 64, 96]));
 
+        // Numbers the app would clamp: the ranges it clamps to.
+        for (path, value) in [
+            ("snapping.gapPx", json!(1000)),
+            ("snapping.gapPx", json!(-3)),
+            ("icons.tintStrength", json!(5)),
+            ("icons.tintStrength", json!(-1)),
+        ] {
+            let err = patch_settings_path(&Settings::default(), path, value).unwrap_err();
+            assert_eq!(err.code, ErrorCode::ValidationFailed, "{path}");
+        }
+        let patched = patch_settings_path(&Settings::default(), "snapping.gapPx", json!(64));
+        assert_eq!(patched.unwrap().snapping.gap_px, 64);
+        // One already stored outside them does not block other paths.
+        let mut stored = Settings::default();
+        stored.snapping.gap_px = 1000;
+        assert!(patch_settings_path(&stored, "peek.dim", json!(false)).is_ok());
+
         // Enum paths: the serde error names the variants.
         let err = patch_settings_path(&Settings::default(), "theme", json!("neon")).unwrap_err();
         assert_eq!(err.code, ErrorCode::ValidationFailed);
         assert!(err.message.contains("expected one of"), "{}", err.message);
+    }
+
+    #[test]
+    fn settings_patch_checks_and_normalizes_the_custom_peek_shortcut() {
+        let current = Settings::default();
+        let patched =
+            patch_settings_path(&current, "peek.customHotkey", json!("ctrl + shift + f")).unwrap();
+        assert_eq!(patched.peek.custom_hotkey.as_deref(), Some("Ctrl+Shift+F"));
+        // Ctrl+Alt+Space is the preset every version reads.
+        let mut legacy = current.clone();
+        legacy.peek.hotkey = pecofence_core::PeekHotkey::WinSpace;
+        let patched =
+            patch_settings_path(&legacy, "peek.customHotkey", json!("Ctrl+Alt+Space")).unwrap();
+        assert_eq!(patched.peek, current.peek);
+        for text in ["Ctrl+Space", "Win+L", "Shift+F", "Ctrl+Alt+Ä", "Ctrl+Alt"] {
+            let err = patch_settings_path(&current, "peek.customHotkey", json!(text)).unwrap_err();
+            assert_eq!(err.code, ErrorCode::ValidationFailed, "{text}");
+            assert!(err.message.contains("cannot be used"), "{}", err.message);
+        }
+        // Back to the preset; an unusable value already in the file does not block other paths.
+        let mut stored = current.clone();
+        stored.peek.custom_hotkey = Some("nonsense".into());
+        let patched = patch_settings_path(&stored, "peek.dim", json!(false)).unwrap();
+        assert_eq!(patched.peek.custom_hotkey.as_deref(), Some("nonsense"));
+        let patched = patch_settings_path(&stored, "peek.customHotkey", json!(null)).unwrap();
+        assert_eq!(patched.peek.custom_hotkey, None);
+        // Setting peek.hotkey picks that one, even the Ctrl+Alt+Space a custom shortcut keeps
+        // there for older versions.
+        let mut custom = current.clone();
+        custom.peek.custom_hotkey = Some("Ctrl+Shift+F".into());
+        for value in ["ctrlAltSpace", "winShiftSpace"] {
+            let patched = patch_settings_path(&custom, "peek.hotkey", json!(value)).unwrap();
+            assert_eq!(patched.peek.custom_hotkey, None, "{value}");
+        }
     }
 
     #[test]
@@ -561,5 +632,35 @@ mod ipc {
         let mut list = vec![snap("mine", 1)];
         assert!(auto_snapshot_slot(&mut list, None));
         assert_eq!(list.len(), 1);
+    }
+
+    #[test]
+    fn page_auto_snapshots_make_room_from_automatic_ones_only() {
+        use super::super::settings::auto_snapshot_room;
+        let before_restore = pecofence_core::i18n::text("恢复快照前");
+        // Not full: nothing goes.
+        let mut list = vec![snap("home", 1), snap(before_restore, 2)];
+        assert!(auto_snapshot_room(&mut list, None));
+        assert_eq!(list.len(), 2);
+
+        // Full: the oldest automatic one goes (not the restore target), never the user's.
+        let mut list: Vec<Snapshot> = vec![snap("home", 0), snap(before_restore, 1)];
+        let target = list[1].id;
+        list.push(snap(before_restore, 2));
+        let next = list[2].id;
+        list.extend((3..MAX_SNAPSHOTS).map(|i| snap(&format!("mine {i}"), i as i64)));
+        assert_eq!(list.len(), MAX_SNAPSHOTS);
+        assert!(auto_snapshot_room(&mut list, Some(target)));
+        assert_eq!(list.len(), MAX_SNAPSHOTS - 1);
+        assert!(list.iter().all(|s| s.id != next));
+        assert!(list.iter().any(|s| s.id == target));
+        assert_eq!(list[0].name, "home");
+
+        // Full of the user's own: refused, untouched.
+        let mut list: Vec<Snapshot> = (0..MAX_SNAPSHOTS)
+            .map(|i| snap(&format!("mine {i}"), i as i64))
+            .collect();
+        assert!(!auto_snapshot_room(&mut list, None));
+        assert_eq!(list.len(), MAX_SNAPSHOTS);
     }
 }

@@ -29,21 +29,27 @@ pub fn install(dump_dir: PathBuf, instance: &str) {
     }
 }
 
-/// `module+rva` for an address in this process (module = file name only).
-fn locate(addr: u64) -> String {
+/// The loaded module containing `addr`, if any. It stays loaded until the process ends:
+/// another thread cannot unload it while the filter reads its version resource.
+fn module_at(addr: u64) -> Option<HMODULE> {
     let mut module = HMODULE::default();
-    // SAFETY: querying the module containing `addr`; the module's refcount is left unchanged.
+    // SAFETY: querying the module containing `addr`; pinning it is harmless in a process that
+    // is crashing.
     let found = unsafe {
         GetModuleHandleExW(
-            (GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT)
-                as u32,
+            (GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_PIN) as u32,
             PCWSTR(addr as usize as *const u16),
             &mut module,
         )
     };
-    if !found.as_bool() || module.0.is_null() {
+    (found.as_bool() && !module.0.is_null()).then_some(module)
+}
+
+/// `module+rva` for an address in this process (module = file name only).
+fn locate(addr: u64) -> String {
+    let Some(module) = module_at(addr) else {
         return format!("{addr:#x}");
-    }
+    };
     let mut name = [0u16; 260];
     // SAFETY: buffer of the stated length.
     let n =
@@ -53,28 +59,94 @@ fn locate(addr: u64) -> String {
     format!("{file}+{:#x}", addr.wrapping_sub(module.0 as usize as u64))
 }
 
+/// The file version (`32.0.21025.10016`) in the version resource of the module containing
+/// `addr`, read from the module's mapped image: no file access, no allocation but the result.
+fn module_version(addr: u64) -> Option<String> {
+    const VS_VERSION_INFO: usize = 1;
+    const VS_FFI_SIGNATURE: u32 = 0xFEEF_04BD;
+    let module = module_at(addr)?;
+    // SAFETY: the resource lies in the image of a loaded module, and every read stays within
+    // the size Windows reports for it.
+    unsafe {
+        let res = FindResourceW(
+            Some(module),
+            PCWSTR(VS_VERSION_INFO as *const u16),
+            RT_VERSION,
+        );
+        if res.0.is_null() {
+            return None;
+        }
+        let size = SizeofResource(Some(module), res) as usize;
+        let data = LockResource(LoadResource(Some(module), res)) as *const u8;
+        if data.is_null() {
+            return None;
+        }
+        // VS_FIXEDFILEINFO follows the VS_VERSIONINFO header and its key, 32-bit aligned.
+        let fixed = std::mem::size_of::<VS_FIXEDFILEINFO>();
+        let mut at = 0;
+        while at + fixed <= size.min(256) {
+            let info = std::ptr::read_unaligned(data.add(at).cast::<VS_FIXEDFILEINFO>());
+            if info.dwSignature == VS_FFI_SIGNATURE {
+                let (ms, ls) = (info.dwFileVersionMS, info.dwFileVersionLS);
+                return Some(format!(
+                    "{}.{}.{}.{}",
+                    ms >> 16,
+                    ms & 0xFFFF,
+                    ls >> 16,
+                    ls & 0xFFFF
+                ));
+            }
+            at += 4;
+        }
+        None
+    }
+}
+
 unsafe extern "system" fn filter(info: *const EXCEPTION_POINTERS) -> i32 {
     // Everything here must tolerate a corrupted process: no allocation-heavy work beyond a
     // few strings, no locks we may already hold (tracing's writer is a mutex — accept the
     // small risk; the dump is written first so it survives a hang).
     const EXCEPTION_CONTINUE_SEARCH: i32 = 0;
+    const EXCEPTION_ACCESS_VIOLATION: u32 = 0xC000_0005;
+    const EXCEPTION_IN_PAGE_ERROR: u32 = 0xC000_0006;
     // SAFETY: the OS hands a valid EXCEPTION_POINTERS to the filter.
-    let (code, address, ctx) = unsafe {
+    let (code, address, ctx, fault) = unsafe {
         if info.is_null() || (*info).ExceptionRecord.is_null() {
             return EXCEPTION_CONTINUE_SEARCH;
         }
         let rec = &*(*info).ExceptionRecord;
+        // An access violation also says what the instruction tried and at which address.
+        let fault = (matches!(
+            rec.ExceptionCode,
+            EXCEPTION_ACCESS_VIOLATION | EXCEPTION_IN_PAGE_ERROR
+        ) && rec.NumberParameters >= 2)
+            .then(|| (rec.ExceptionInformation[0], rec.ExceptionInformation[1]));
         (
             rec.ExceptionCode,
             rec.ExceptionAddress as usize as u64,
             (*info).ContextRecord,
+            fault,
         )
     };
     let dump = write_dump(info);
     let frames = walk(ctx);
+    let access = fault.map(|(kind, _)| match kind {
+        0 => "read",
+        1 => "write",
+        8 => "execute",
+        _ => "other",
+    });
+    let accessed = fault.map(|(_, accessed)| format!("{accessed:#x}"));
+    let at_version = module_version(address);
+    // This function is part of pecofence.exe: the build the exe's frames in the stack are from.
+    let exe_version = module_version(filter as *const () as usize as u64);
     tracing::error!(
         code = format_args!("{code:#010x}"),
         at = %locate(address),
+        module_version = at_version.as_deref(),
+        access,
+        address = accessed.as_deref(),
+        exe_version = exe_version.as_deref(),
         dump = ?dump,
         stack = %frames.join("\n"),
         "CRASH (unhandled exception)"

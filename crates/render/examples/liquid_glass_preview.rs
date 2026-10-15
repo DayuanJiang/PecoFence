@@ -160,6 +160,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     BackdropCrop {
                         image: &image,
                         key: "study",
+                        width: w as f32,
                         height: h as f32,
                     },
                     1.0,

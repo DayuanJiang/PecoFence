@@ -124,9 +124,9 @@ pub(super) fn on_timer_scroll_repeat(
         return Some(0);
     };
     // Hit-test against the thumb at the glide's destination, so paging
-    // stops as soon as the thumb is going to sit under the pointer (Win32
-    // stops when the hit test changes; the pointer sliding off the bar
-    // pauses and resumes). An arrow keeps stepping one row while the
+    // pauses as soon as the thumb is going to sit under the pointer (Win32
+    // pauses while the hit test differs, the pointer sliding off the bar
+    // included, and resumes). An arrow keeps stepping one row while the
     // pointer stays on it. Repeat steps use the 83 ms cap so the offset
     // reaches each page / row before the next 50 ms tick (Win32 pages at
     // once); a 333 ms glide retargeted every tick would trail the thumb by
@@ -148,8 +148,9 @@ pub(super) fn on_timer_scroll_repeat(
                 window::set_timer(hwnd, TIMER_SCROLL_REPEAT, SCROLL_PAGE_REPEAT_MS);
             }
         }
-        Some(_) => window::kill_timer(hwnd, TIMER_SCROLL_REPEAT),
-        None => window::set_timer(hwnd, TIMER_SCROLL_REPEAT, SCROLL_PAGE_REPEAT_MS),
+        // Another part or off the bar: paused, it resumes once the pointer is back on `side`
+        // (the thumb that caught up with the pointer, or the pointer dragged further along).
+        _ => window::set_timer(hwnd, TIMER_SCROLL_REPEAT, SCROLL_PAGE_REPEAT_MS),
     }
     Some(0)
 }
@@ -263,6 +264,51 @@ pub(super) fn on_timer_drag_peek(
     Some(0)
 }
 
+/// The pointer rested on another tab for the hover delay: switch to it the way a wheel notch
+/// does, unless it moved off, a press or drag began, or the setting went off meanwhile.
+pub(super) fn on_timer_tab_hover(
+    h: &HandlerCtx,
+    hwnd: HWND,
+    _wparam: usize,
+    _lparam: isize,
+) -> Option<isize> {
+    let HandlerCtx {
+        view,
+        fence_id,
+        queue,
+        behavior,
+        in_size_move,
+        ..
+    } = h;
+    window::kill_timer(hwnd, TIMER_TAB_HOVER);
+    if let Ok(mut guard) = view.try_borrow_mut()
+        && let Some(v) = guard.as_mut()
+        && let Some(i) = v.tab_hover_switch.take()
+    {
+        let target = hover_switch_target(
+            v.tab_hover,
+            v.active_index(),
+            v.tabs.len(),
+            behavior.switch_tab_on_hover.get(),
+            v.title_renaming,
+        );
+        if !v.retired
+            && target == Some(i)
+            && v.pressed.is_none()
+            && v.tab_drag.is_none()
+            && v.roll_anim.is_none()
+            && !in_size_move.get()
+            && !window::key_down(msg::VK_LBUTTON)
+        {
+            queue.push(Command::SwitchTab {
+                host: *fence_id,
+                tab: v.tabs[i].id,
+            });
+        }
+    }
+    Some(0)
+}
+
 pub(super) fn on_timer_scrollbar(
     h: &HandlerCtx,
     hwnd: HWND,
@@ -357,6 +403,14 @@ pub(super) fn on_timer_peek_close(
             g.as_ref()
                 .is_some_and(|v| v.renaming.is_some() || v.title_renaming)
         });
+    // A Peek search holds it open; ending the search restarts this countdown.
+    if view
+        .try_borrow()
+        .ok()
+        .is_some_and(|g| g.as_ref().is_some_and(|v| v.search_expanded))
+    {
+        return Some(0);
+    }
     let pt = window::cursor_pos();
     let r = window::window_rect(hwnd);
     // A fence this one pushed out of its way counts as inside: moving onto it must not make it

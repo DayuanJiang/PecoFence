@@ -3,10 +3,30 @@
 use crate::bindings::*;
 use crate::wide::to_wide;
 use std::cell::RefCell;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{Duration, Instant};
 use windows_core::{Error, PCWSTR, Result};
 
 windows_core::link!("user32.dll" "system" fn GetMenuState(hmenu: HMENU, uid: u32, uflags: u32) -> u32);
 windows_core::link!("user32.dll" "system" fn GetMenuStringW(hmenu: HMENU, uiditem: u32, lpstring: windows_core::PWSTR, cchmax: i32, flags: u32) -> i32);
+windows_core::link!("user32.dll" "system" fn EndMenu() -> windows_core::BOOL);
+
+/// Microseconds spent in [`PopupMenu`]s so far (`TrackPopupMenuEx` waits for the user).
+static MENU_TIME_US: AtomicU64 = AtomicU64::new(0);
+
+/// How long this process has waited in popup menus so far, so code timed around one can leave
+/// the user's time in it out.
+pub fn time_in_menus() -> Duration {
+    Duration::from_micros(MENU_TIME_US.load(Ordering::Relaxed))
+}
+
+/// Closes the popup menu this thread shows, if any (its `TrackPopupMenuEx` returns 0).
+pub fn end_menu() {
+    // SAFETY: plain FFI call.
+    unsafe {
+        let _ = EndMenu();
+    }
+}
 
 /// Creates a 32-bit icon from premultiplied BGRA pixels.
 pub fn icon_from_bgra(width: i32, height: i32, bgra: &[u8]) -> Result<HICON> {
@@ -390,9 +410,8 @@ impl PopupMenu {
     pub fn submenu(&self, text: &str, sub: PopupMenu) -> &Self {
         let w = to_wide(text);
         let h = sub.hmenu;
-        self.bitmaps
-            .borrow_mut()
-            .append(&mut sub.bitmaps.borrow_mut());
+        // `take` leaves `sub` an empty Vec without a buffer for `forget` to leak.
+        self.bitmaps.borrow_mut().extend(sub.bitmaps.take());
         std::mem::forget(sub);
         // SAFETY: string outlives the call; submenu handle is now owned by the parent.
         unsafe {
@@ -478,7 +497,9 @@ impl PopupMenu {
         // SAFETY: plain FFI calls; WM_NULL nudge is the documented tray-menu workaround.
         unsafe {
             let _ = SetForegroundWindow(owner);
+            let shown = Instant::now();
             let cmd = TrackPopupMenuEx(self.hmenu, flags, x, y, owner, None);
+            MENU_TIME_US.fetch_add(shown.elapsed().as_micros() as u64, Ordering::Relaxed);
             let _ = PostMessageW(Some(owner), WM_NULL as u32, WPARAM(0), LPARAM(0));
             cmd.0 as u32
         }

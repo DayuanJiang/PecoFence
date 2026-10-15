@@ -1,6 +1,6 @@
 //! Icon grid layout in DIPs: cell geometry, hit testing, scrolling extents.
 
-use pecofence_core::DateBucket;
+use pecofence_core::{DateBucket, ViewLayout};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct GridMetrics {
@@ -94,18 +94,8 @@ impl CellRect {
 pub const GROUP_HEADER_H: f32 = 24.0;
 
 /// Spare device px below the content of a fence at a fitting or whole-row height (title bar +
-/// content + this); the row pitch leaves it out.
+/// content + this).
 pub const FIT_SLACK_PX: i32 = 2;
-
-/// Row pitch showing whole rows only in a viewport `view_h` DIPs tall with `pad_y` above and
-/// below: as many rows of `row_h` as fit (one at least), sharing the height left over like the
-/// grid's columns share the width. `row_h` when the viewport is not even one row tall.
-pub fn row_pitch(view_h: f32, pad_y: f32, row_h: f32) -> f32 {
-    let usable = view_h - pad_y * 2.0;
-    // The small tolerance keeps a whole-row height from losing a row to float error.
-    let rows = (usable / row_h + 1e-3).floor().max(1.0);
-    (usable / rows).max(row_h)
-}
 
 /// A contiguous run of the (already sorted) items shown as one section: under a dated header,
 /// or — for the leading namespace items (Recycle Bin …) that have no date — under none.
@@ -217,11 +207,6 @@ impl Bands {
             groups,
             content_height: y + pad_y,
         }
-    }
-
-    /// The same items with rows `row_h` apart (only called for the single headerless group).
-    fn with_row_h(&self, row_h: f32, pad_y: f32) -> Self {
-        Self::new(self.cols, row_h, pad_y, self.count, &[])
     }
 
     fn total_rows(&self) -> usize {
@@ -423,17 +408,14 @@ impl Grid {
     }
 
     /// Rect of item `index` in content coordinates (before scrolling). Cells sit centred in
-    /// their column pitch and row pitch.
+    /// their column pitch.
     pub fn cell(&self, index: usize) -> CellRect {
         let (gi, row, col) = self.bands.place(index);
-        let row_pitch = self.bands.row_h;
         CellRect {
             x: self.metrics.pad_x
                 + col as f32 * self.pitch
                 + (self.pitch - self.metrics.cell_w) / 2.0,
-            y: self.bands.groups[gi].rows_y
-                + row as f32 * row_pitch
-                + (row_pitch - self.metrics.cell_h) / 2.0,
+            y: self.bands.groups[gi].rows_y + row as f32 * self.bands.row_h,
             w: self.metrics.cell_w,
             h: self.metrics.cell_h,
         }
@@ -500,6 +482,20 @@ impl RowMetrics {
             pad_y: 4.0,
         }
     }
+}
+
+/// Icon edge in DIPs for a view layout: `icon_size` in Icons, the rows' small icon otherwise.
+pub fn icon_dip(layout: ViewLayout, icon_size: u32) -> f32 {
+    match layout {
+        ViewLayout::Icons => icon_size as f32,
+        ViewLayout::List => RowMetrics::list().icon,
+        ViewLayout::Details => RowMetrics::details().icon,
+    }
+}
+
+/// Icon edge in physical pixels on a monitor of `dpi`: the size icons are extracted at.
+pub fn icon_px(layout: ViewLayout, icon_size: u32, dpi: u32) -> u32 {
+    (icon_dip(layout, icon_size) * (dpi as f32 / 96.0)).round() as u32
 }
 
 /// Column split of the details view for a content width (DIPs). Narrow fences drop the type,
@@ -657,39 +653,22 @@ impl ItemLayout {
         }
     }
 
-    /// 「调整大小时按整行整列对齐」: the rows share the height of a viewport `view_h` DIPs
-    /// tall (below the fixed header) like the icon columns share the width, so only whole rows
-    /// show at any fence height; a height of exactly whole rows keeps its layout. Icon cells
-    /// sit centred in the taller pitch, list rows grow to it. Grouped layouts keep their rows:
-    /// the header bands have no row rhythm to fill.
-    pub fn fill_rows(self, view_h: f32) -> Self {
-        match self {
-            Self::Grid(g) if !g.bands.is_grouped() => {
-                let m = g.metrics;
-                let bands = g
-                    .bands
-                    .with_row_h(row_pitch(view_h, m.pad_y, m.cell_h), m.pad_y);
-                Self::Grid(Grid {
-                    rows: bands.total_rows(),
-                    content_height: bands.content_height,
-                    bands,
-                    ..g
-                })
-            }
-            Self::Rows {
-                metrics,
-                width,
-                bands,
-            } if !bands.is_grouped() => Self::Rows {
-                metrics,
-                width,
-                bands: bands.with_row_h(
-                    row_pitch(view_h, metrics.pad_y, metrics.row_h),
-                    metrics.pad_y,
-                ),
-            },
-            other => other,
+    /// 「调整大小时按整行整列对齐」: the part of a viewport `view_h` DIPs tall (below the
+    /// fixed header) that shows rows — the pads and as many whole rows as fit, one at least.
+    /// The rows keep their pitch, so the items stay put whatever the fence height; the height
+    /// left over stays empty under the last whole row. `view_h` itself when not even one row
+    /// fits, and for grouped layouts (the header bands have no row rhythm).
+    pub fn whole_rows_h(&self, view_h: f32) -> f32 {
+        let bands = self.bands();
+        if bands.is_grouped() {
+            return view_h;
         }
+        let pad_y = self.top_pad();
+        // The small tolerance keeps a whole-row height from losing a row to float error.
+        let rows = ((view_h - pad_y * 2.0) / bands.row_h + 1e-3)
+            .floor()
+            .max(1.0);
+        (pad_y * 2.0 + rows * bands.row_h).min(view_h)
     }
 
     fn bands(&self) -> &Bands {
@@ -1181,69 +1160,38 @@ mod tests {
         assert_eq!(g.insertion_index(200.0, c.y + 1.0, 7), 2);
     }
 
-    /// 「整数个图标」 at any height: the rows share what is left after the whole rows like the
-    /// columns share the width, cells sit centred in the pitch and the gaps are not hit; the
-    /// content scrolls by whole pitches.
+    /// 「整数个图标」 at any height: the rows keep their pitch (the items never move with the
+    /// fence height), the viewport shows the whole rows that fit and the height left over stays
+    /// empty under them; the content scrolls by whole rows.
     #[test]
-    fn rows_share_the_height_left_over_after_the_whole_rows() {
+    fn whole_rows_leave_the_height_left_over_empty() {
         let m = GridMetrics::for_icon_size(48, 2); // 80 x 96 cells, 8 DIP top / bottom pad
-        let natural = || ItemLayout::Grid(Grid::new(m, 320.0, 10)); // 4 columns, 3 rows
-        let view_h = 16.0 + 2.0 * 96.0 + 30.0;
-        let l = natural().fill_rows(view_h);
+        let l = ItemLayout::Grid(Grid::new(m, 320.0, 10)); // 4 columns, 3 rows
+        let shown = l.whole_rows_h(16.0 + 2.0 * 96.0 + 30.0);
         assert_eq!(
-            l.row_step(),
-            111.0,
-            "two whole rows share the 30 DIP left over"
+            shown,
+            16.0 + 2.0 * 96.0,
+            "two whole rows, 30 DIP left empty"
         );
-        assert_eq!(l.cell(0).y, 8.0 + 7.5);
-        assert_eq!(l.cell(4).y, 8.0 + 111.0 + 7.5);
-        assert_eq!((l.cell(4).x, l.cell(4).h), (natural().cell(4).x, 96.0));
-        assert_eq!(l.content_height(), 16.0 + 3.0 * 111.0);
-        assert_eq!(l.max_scroll(view_h), 111.0, "one whole row to scroll");
-        assert_eq!(
-            l.hit_test(40.0, 8.0 + 111.0 + 3.0, 10),
-            None,
-            "gap above row 1"
-        );
-        assert_eq!(l.hit_test(40.0, l.cell(4).y + 1.0, 10), Some(4));
-        assert_eq!(l.insertion_index(4.0, l.cell(4).y + 4.0, 10), 4);
-        assert_eq!(l.neighbour(0, 0, 1, 10), Some(4));
-        // Exactly whole rows, or less than one row: the natural layout.
-        for view_h in [16.0 + 2.0 * 96.0, 50.0] {
-            let l = natural().fill_rows(view_h);
-            for i in 0..10 {
-                assert_eq!(l.cell(i), natural().cell(i), "view {view_h}");
-            }
-            assert_eq!(l.content_height(), natural().content_height());
-        }
-        // Header bands have no row rhythm: grouped layouts keep theirs.
-        let (_, grouped) = grouped_grid();
-        let filled = grouped_grid().1.fill_rows(view_h);
-        for i in 0..8 {
-            assert_eq!(filled.cell(i), grouped.cell(i));
-        }
-        // List rows grow to the pitch.
-        let rows =
-            ItemLayout::rows(RowMetrics::list(), 200.0, 5).fill_rows(8.0 + 3.0 * 28.0 + 12.0);
-        assert_eq!(rows.row_step(), 32.0);
-        assert_eq!(
-            rows.cell(1),
-            CellRect {
-                x: 0.0,
-                y: 4.0 + 32.0,
-                w: 200.0,
-                h: 32.0
-            }
-        );
-        assert_eq!(rows.insertion_index(10.0, 4.0 + 32.0 * 1.6, 5), 2);
-        assert_eq!(rows.max_scroll(8.0 + 3.0 * 28.0 + 12.0), 2.0 * 32.0);
+        assert_eq!(l.max_scroll(shown), 96.0, "one whole row to scroll");
+        assert_eq!((l.cell(4).y, l.row_step()), (8.0 + 96.0, 96.0));
+        // Exactly whole rows, or less than one row: the whole viewport.
+        assert_eq!(l.whole_rows_h(16.0 + 2.0 * 96.0), 16.0 + 2.0 * 96.0);
+        assert_eq!(l.whole_rows_h(50.0), 50.0);
+        // Header bands have no row rhythm: grouped layouts keep the whole viewport.
+        assert_eq!(grouped_grid().1.whole_rows_h(250.0), 250.0);
+        // List rows alike.
+        let rows = ItemLayout::rows(RowMetrics::list(), 200.0, 5);
+        let shown = rows.whole_rows_h(8.0 + 3.0 * 28.0 + 12.0);
+        assert_eq!(shown, 8.0 + 3.0 * 28.0);
+        assert_eq!(rows.max_scroll(shown), 2.0 * 28.0);
     }
 
     /// Fences of any icon size, spacing, label lines and view share every height: each shows
-    /// whole rows only and scrolls by whole rows, so their edges can line up.
+    /// whole rows only, at its own pitch, and scrolls by whole rows, so their edges can line up.
     #[test]
-    fn every_cell_size_fills_a_shared_height_with_whole_rows() {
-        let mut layouts: Vec<(String, Box<dyn Fn() -> ItemLayout>, f32, f32)> = Vec::new();
+    fn every_cell_size_shows_whole_rows_at_a_shared_height() {
+        let mut layouts: Vec<(String, ItemLayout, f32, f32)> = Vec::new();
         for icon in [32u32, 48, 64, 96] {
             for lines in [1u8, 2, 3] {
                 for spacing in [
@@ -1254,7 +1202,7 @@ mod tests {
                     let m = GridMetrics::for_icon_size(icon, lines).with_spacing(spacing);
                     layouts.push((
                         format!("{icon} px, {lines} lines, {spacing:?}"),
-                        Box::new(move || ItemLayout::Grid(Grid::new(m, 300.0, 40))),
+                        ItemLayout::Grid(Grid::new(m, 300.0, 40)),
                         m.pad_y,
                         m.cell_h,
                     ));
@@ -1267,34 +1215,36 @@ mod tests {
         ] {
             layouts.push((
                 name.into(),
-                Box::new(move || ItemLayout::rows(rm, 300.0, 40)),
+                ItemLayout::rows(rm, 300.0, 40),
                 rm.pad_y,
                 rm.row_h,
             ));
         }
-        for (name, make, pad_y, row_h) in &layouts {
+        for (name, l, pad_y, row_h) in &layouts {
             let one_row = pad_y * 2.0 + row_h;
             for view_h in (60..=900).step_by(7).map(|h| h as f32) {
-                let l = make().fill_rows(view_h);
+                let shown = l.whole_rows_h(view_h);
                 if view_h < one_row {
-                    assert_eq!(l.row_step(), *row_h, "{name} at {view_h}");
+                    assert_eq!(shown, view_h, "{name} at {view_h}");
                     continue;
                 }
-                let pitch = l.row_step();
-                let whole = (view_h - pad_y * 2.0) / pitch;
-                assert!(pitch >= *row_h, "{name} at {view_h}");
+                assert!(
+                    shown <= view_h && view_h - shown < *row_h,
+                    "{name} at {view_h}"
+                );
+                let whole = (shown - pad_y * 2.0) / row_h;
                 assert!(
                     (whole - whole.round()).abs() < 1e-3,
                     "{name} at {view_h}: {whole} rows"
                 );
-                let scroll_rows = l.max_scroll(view_h) / pitch;
+                let scroll_rows = l.max_scroll(shown) / row_h;
                 assert!(
                     (scroll_rows - scroll_rows.round()).abs() < 1e-3,
                     "{name} at {view_h}: scrolls {scroll_rows} rows"
                 );
                 let c = l.cell(0);
                 assert!(
-                    c.y >= *pad_y && c.y + c.h <= view_h - pad_y + 1e-3,
+                    c.y >= *pad_y && c.y + c.h <= shown - pad_y + 1e-3,
                     "{name} at {view_h}"
                 );
             }
