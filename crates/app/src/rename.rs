@@ -124,10 +124,11 @@ pub fn rename_hidden_suffix(display_name: &str, file_name: &str, is_folder: bool
 }
 
 /// A name no file can have: empty once Win32 drops trailing dots and spaces, or holding a
-/// reserved or a control character (a NUL would end the name early in the rename call).
+/// reserved character or one of the 32 control characters Windows refuses (a NUL would end
+/// the name early in the rename call).
 pub fn invalid_file_name(name: &str) -> bool {
     let name = name.trim().trim_end_matches(['.', ' ']);
-    name.is_empty() || has_reserved_char(name) || name.chars().any(char::is_control)
+    name.is_empty() || has_reserved_char(name) || name.chars().any(|c| c < ' ')
 }
 
 /// The characters Explorer refuses in a file name.
