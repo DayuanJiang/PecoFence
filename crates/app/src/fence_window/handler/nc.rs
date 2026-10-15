@@ -592,8 +592,7 @@ pub(super) fn on_entersizemove(
     h.move_cancelled.set(false);
     // Esc cancels a title drag, but the system move loop hears the keyboard only while this
     // window has the focus, which a title press never grants: for the length of the drag Esc
-    // is a hotkey (WM_HOTKEY reaches `cancel_move`; the right button gets there through
-    // WM_RBUTTONDOWN, which the loop dispatches).
+    // is a hotkey (WM_HOTKEY reaches `cancel_move`; `on_moving` reads the right button).
     if caption.is_some() {
         hotkey::register(hwnd, HOTKEY_MOVE_ESC, 0, msg::VK_ESCAPE);
     }
@@ -831,6 +830,10 @@ pub(super) fn on_moving(
     // SAFETY: lParam is the RECT* of the window being dragged for this
     // message.
     let rect = unsafe { &mut *(lparam as *mut RECT) };
+    // The loop does not pass a right press on to WM_RBUTTONDOWN: read the button itself.
+    if !h.move_cancelled.get() && window::secondary_button_down_async() {
+        cancel_move(h, hwnd);
+    }
     if h.move_cancelled.get() {
         // Cancelled (`cancel_move`): the loop keeps asking until the button is released.
         *rect = rect_at_enter.get();
