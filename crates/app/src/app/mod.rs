@@ -406,6 +406,7 @@ impl App {
         }
 
         let theme_mode = pick_theme_mode(state.config.settings.theme, &args);
+        tray::set_dark_menus(theme_mode == ThemeMode::Dark);
         let accent = systheme::accent_palette();
         let theme = theme_for(
             theme_mode,

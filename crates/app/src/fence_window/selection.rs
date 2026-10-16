@@ -253,6 +253,27 @@ impl FenceViewState {
         self.cursor_to(target, mode);
     }
 
+    /// Characters typed within the timeout form a prefix: a space typed now belongs to it.
+    pub(super) fn typing_ahead(&self) -> bool {
+        !self.type_ahead.is_empty()
+            && self
+                .type_ahead_at
+                .is_some_and(|t| t.elapsed() <= TYPE_AHEAD_TIMEOUT)
+    }
+
+    /// The file Space previews in QuickLook: the focused item when it is selected (Explorer),
+    /// else the first selected one.
+    pub(super) fn preview_path(&self) -> Option<&std::path::Path> {
+        if self.rolled_up {
+            return None;
+        }
+        let idx = self
+            .anchor_index
+            .filter(|i| self.selected.contains(i))
+            .or_else(|| self.selected.iter().min().copied())?;
+        self.items.get(idx).map(|it| it.path.as_path())
+    }
+
     /// Type-to-select (Explorer ListView): characters typed within ~1 s form a prefix; the next
     /// item (cyclically from the anchor) whose name starts with it is selected and scrolled into
     /// view. One letter pressed repeatedly cycles through the items starting with it; a longer
