@@ -819,9 +819,17 @@ impl FenceViewState {
         let before = self.tab_scroll.get();
         self.tab_scroll.set(before + dir * TAB_EDGE_SPEED * dt);
         let _ = self.tab_rects();
-        if (self.tab_scroll.get() - before).abs() < 0.01 {
+        let moved = before - self.tab_scroll.get();
+        if moved.abs() < 0.01 {
             // The first frame only starts the clock; at an end the strip stops.
             return dt == 0.0;
+        }
+        // Pills sliding into new slots ride along with the strip.
+        for (_, t) in &mut self.tab_slide {
+            t.shift(moved);
+        }
+        if let Some((_, t)) = &mut self.tab_settle {
+            t.shift(moved);
         }
         if self.tab_drag.is_some() {
             self.reorder_dragged_tab(now);
@@ -927,12 +935,14 @@ impl FenceViewState {
         // principle outlive a shrink: index by `get_mut`, never by position.
         let mut xs: Vec<f32> = rects.iter().map(|(x, _)| *x).collect();
         let index_of = |id: FenceId| self.tabs.iter().position(|t| t.id == id);
-        for (id, t) in &self.tab_slide {
+        // A finished slide is drawn in its slot: the strip may have moved since it started.
+        for (id, t) in self.tab_slide.iter().filter(|(_, t)| !t.is_done(now)) {
             if let Some(x) = index_of(*id).and_then(|i| xs.get_mut(i)) {
                 *x = t.value_at(now);
             }
         }
         if let Some((id, t)) = &self.tab_settle
+            && !t.is_done(now)
             && let Some(x) = index_of(*id).and_then(|i| xs.get_mut(i))
         {
             *x = t.value_at(now);
