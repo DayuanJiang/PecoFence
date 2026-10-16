@@ -101,6 +101,13 @@ pub(super) const TAB_GAP: f32 = 4.0;
 pub(super) const TAB_LEFT: f32 = 8.0;
 /// Right-hand title space reserved for the chevron / rolled item count.
 pub(super) const TAB_RIGHT_RESERVE: f32 = 44.0;
+/// Room a scrolled tab strip keeps beside the active tab where more tabs lie behind the strip's
+/// end: 16 DIP of the next tab, then the fade.
+pub(super) const TAB_SCROLL_MARGIN: f32 = 16.0 + pecofence_render::fence_chrome::STRIP_FADE_W;
+/// A tab dragged along a scrolled strip, or a fence dragged over it to merge, scrolls the strip
+/// while the pointer is this close to an end (DIPs), at this speed (DIPs per second).
+pub(super) const TAB_EDGE_ZONE: f32 = 32.0;
+pub(super) const TAB_EDGE_SPEED: f32 = 360.0;
 /// Left tab column width limits (DIPs) and what a row needs beside its caption: 10 before
 /// it and 8 after, 14 more before it when a tab shows a colour dot.
 pub(super) const TAB_RAIL_MIN_W: f32 = 96.0;

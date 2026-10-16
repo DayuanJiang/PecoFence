@@ -487,6 +487,12 @@ impl Tween {
         self.progress(now) >= 1.0
     }
 
+    /// Moves the whole tween by `by`, keeping its timing (a slide whose strip scrolled).
+    pub fn shift(&mut self, by: f32) {
+        self.from += by;
+        self.to += by;
+    }
+
     /// Redirects the tween towards a new target, starting from wherever it is *now* so the
     /// motion stays continuous (a hover that leaves halfway through its fade-in fades back
     /// from that alpha, not from 1). Asking for the target it already has is always a no-op:

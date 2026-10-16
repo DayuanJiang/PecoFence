@@ -315,12 +315,6 @@ pub(super) fn on_lbuttonup(
         }
         h.behavior.release_push(drag.hwnd);
         queue_bounds_changed(queue, &h.behavior, drag.fence, drag.hwnd);
-        if drag.merge_target != 0 {
-            queue.push(Command::MergeHint {
-                target: HWND(std::ptr::null_mut()),
-                at: (0, 0),
-            });
-        }
         if !drag.group.is_empty() {
             queue.push(Command::FenceDropped(drag.fence));
             commit_members(queue, &h.behavior, &drag.group);
@@ -334,6 +328,14 @@ pub(super) fn on_lbuttonup(
             });
         } else {
             queue.push(Command::FenceDropped(drag.fence));
+        }
+        // After the merge, which reads the slot the gap sits at: without the gap a scrolled
+        // strip moves back to its active tab and the pointer would point at another slot.
+        if drag.merge_target != 0 {
+            queue.push(Command::MergeHint {
+                target: HWND(std::ptr::null_mut()),
+                at: (0, 0),
+            });
         }
         return Some(0);
     }

@@ -163,35 +163,7 @@ pub(super) fn on_mousemove(
             td.moved = true;
             td.pointer_x = pointer_x;
         }
-        let prev: Vec<(FenceId, f32)> = v
-            .tabs
-            .iter()
-            .map(|t| t.id)
-            .zip(v.tab_draw_xs(now))
-            .collect();
-        let mut index = index;
-        let grab_dx = v.tab_drag.as_ref().map_or(0.0, |td| td.grab_dx);
-        let mut reordered = false;
-        for _ in 0..v.tabs.len() {
-            let rects = v.tab_rects();
-            let over = tab_reorder_at_pointer(index, pointer_x, grab_dx, &rects);
-            let Some(over) = over.filter(|o| *o < v.tabs.len()) else {
-                break;
-            };
-            let t = v.tabs.remove(index);
-            v.tabs.insert(over, t);
-            if let Some(td) = v.tab_drag.as_mut() {
-                td.index = over;
-            }
-            index = over;
-            reordered = true;
-        }
-        if reordered {
-            v.tab_hover = Some(index);
-            v.pressed = Some(PressTarget::Tab(index));
-            v.hide_tip();
-            v.sync_tab_slides(&prev, now);
-        }
+        v.reorder_dragged_tab(now);
         // The chrome is rasterised once per frame by `tick`, not once per
         // mouse message (a 1000 Hz mouse would otherwise redraw it 16 times
         // per displayed frame on top of the slide tweens' own draw).
@@ -404,7 +376,7 @@ pub(super) fn on_mousemove(
     // With 「鼠标悬停时切换标签页」 on, resting on another tab switches to it after the hover
     // delay; moving onto a different tab restarts the wait.
     let switch_to = hover_switch_target(
-        tab,
+        tab.filter(|&i| v.tab_fully_shown(i)),
         v.active_index(),
         v.tabs.len(),
         behavior.switch_tab_on_hover.get(),

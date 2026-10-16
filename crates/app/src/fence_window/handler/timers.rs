@@ -286,7 +286,7 @@ pub(super) fn on_timer_tab_hover(
         && let Some(i) = v.tab_hover_switch.take()
     {
         let target = hover_switch_target(
-            v.tab_hover,
+            v.tab_hover.filter(|&i| v.tab_fully_shown(i)),
             v.active_index(),
             v.tabs.len(),
             behavior.switch_tab_on_hover.get(),

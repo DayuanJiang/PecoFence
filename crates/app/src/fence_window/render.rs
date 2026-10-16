@@ -336,6 +336,7 @@ impl FenceViewState {
             merge_hint: self.merge_t.value_at(now),
             plate_top,
             plate_clear,
+            strip_clip: self.tab_strip_clip(),
         }
     }
 
