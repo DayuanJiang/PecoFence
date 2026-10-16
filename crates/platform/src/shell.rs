@@ -682,6 +682,94 @@ fn icon_file_image(file: &Path, index: i32, size_px: u32) -> Option<ShellImage> 
     }
 }
 
+/// `SFGAO_LINK`: the shell draws its shortcut arrow on the item.
+const SFGAO_LINK: u32 = 0x0001_0000;
+/// `SIID_LINK` / `SHGSI_ICONLOCATION` (shellapi.h).
+const SIID_LINK: i32 = 29;
+const SHGSI_ICONLOCATION: u32 = 0;
+
+/// `SHSTOCKICONINFO` (shellapi.h).
+#[repr(C)]
+struct StockIconInfo {
+    size: u32,
+    icon: HICON,
+    system_image_index: i32,
+    icon_index: i32,
+    path: [u16; 260],
+}
+
+windows_core::link!("shell32.dll" "system" fn SHGetStockIconInfo(siid: i32, flags: u32, info: *mut StockIconInfo) -> windows_core::HRESULT);
+
+/// True when Explorer draws its shortcut arrow on the item: the shell reports it as a link
+/// (`SFGAO_LINK`), which .lnk, .url, .appref-ms and every other file type marked `IsShortcut`
+/// are.
+pub fn is_link(path: &Path) -> bool {
+    shell_item(path)
+        // SAFETY: COM call on a live item.
+        .and_then(|item| unsafe { item.GetAttributes(SFGAOF(SFGAO_LINK)) })
+        .is_ok_and(|a| a.0 & SFGAO_LINK != 0)
+}
+
+/// Draws Windows' shortcut arrow over `image` at `size_px`, aligned to its bottom-left like
+/// Explorer's overlay: the icon `SHGetStockIconInfo(SIID_LINK)` names (the user's own arrow, or
+/// a blank one that removes it, when `Shell Icons` value 29 is set). The arrow is extracted once
+/// per size on each worker thread.
+pub fn add_link_overlay(image: &mut ShellImage, size_px: u32) {
+    thread_local! {
+        static OVERLAYS: std::cell::RefCell<std::collections::HashMap<u32, Option<ShellImage>>> =
+            Default::default();
+    }
+    OVERLAYS.with_borrow_mut(|overlays| {
+        let overlay = overlays.entry(size_px).or_insert_with(|| {
+            let (file, index) = link_overlay_source()?;
+            icon_file_image(&file, index, size_px)
+        });
+        if let Some(o) = overlay {
+            draw_over_bottom_left(image, o);
+        }
+    });
+}
+
+/// The icon file and index of the shell's shortcut arrow.
+fn link_overlay_source() -> Option<(PathBuf, i32)> {
+    // SAFETY: plain-data struct; all-zero is a valid value.
+    let mut info: StockIconInfo = unsafe { std::mem::zeroed() };
+    info.size = size_of::<StockIconInfo>() as u32;
+    // SAFETY: `info` is a live out-struct of the declared size.
+    unsafe { SHGetStockIconInfo(SIID_LINK, SHGSI_ICONLOCATION, &mut info) }
+        .ok()
+        .ok()?;
+    let len = info.path.iter().position(|&c| c == 0).unwrap_or(0);
+    (len > 0).then(|| {
+        (
+            PathBuf::from(String::from_utf16_lossy(&info.path[..len])),
+            info.icon_index,
+        )
+    })
+}
+
+/// Premultiplied source-over of `top` onto `image`, their bottom-left corners aligned, clipped
+/// to `image`.
+fn draw_over_bottom_left(image: &mut ShellImage, top: &ShellImage) {
+    let dy = image.height as i32 - top.height as i32;
+    let w = top.width.min(image.width) as usize;
+    for ty in 0..top.height as i32 {
+        let iy = dy + ty;
+        if iy < 0 || iy >= image.height as i32 {
+            continue;
+        }
+        for x in 0..w {
+            let s = (ty as usize * top.width as usize + x) * 4;
+            let d = (iy as usize * image.width as usize + x) * 4;
+            let keep = 255 - top.bgra[s + 3] as u32;
+            for c in 0..4 {
+                let v = top.bgra[s + c] as u32 + (image.bgra[d + c] as u32 * keep + 127) / 255;
+                image.bgra[d + c] = v.min(255) as u8;
+            }
+        }
+    }
+}
+
 unsafe fn hbitmap_to_bgra(hbitmap: HBITMAP, max_px: u32) -> Result<ShellImage> {
     // SAFETY: caller owns the bitmap for the duration of the call.
     unsafe {
@@ -1141,6 +1229,49 @@ mod scale_tests {
         let before = premultiplied.clone();
         premultiply_if_straight(&mut premultiplied);
         assert_eq!(premultiplied, before);
+    }
+}
+
+#[cfg(test)]
+mod link_overlay_tests {
+    use super::*;
+
+    #[test]
+    fn overlays_are_drawn_at_the_bottom_left() {
+        // A 4x4 opaque blue image under a 2x2 overlay: one opaque white pixel, one half-covered
+        // white pixel and two transparent ones.
+        let mut image = ShellImage {
+            width: 4,
+            height: 4,
+            bgra: [255, 0, 0, 255].repeat(16),
+        };
+        let top = ShellImage {
+            width: 2,
+            height: 2,
+            bgra: [[255, 255, 255, 255], [128, 128, 128, 128], [0; 4], [0; 4]].concat(),
+        };
+        draw_over_bottom_left(&mut image, &top);
+        let px = |x: usize, y: usize| &image.bgra[(y * 4 + x) * 4..][..4];
+        assert_eq!(px(0, 2), [255, 255, 255, 255]);
+        assert_eq!(px(1, 2), [255, 128, 128, 255]);
+        assert_eq!(px(0, 3), [255, 0, 0, 255]);
+        assert_eq!(px(0, 0), [255, 0, 0, 255]);
+        assert_eq!(px(3, 3), [255, 0, 0, 255]);
+    }
+
+    #[test]
+    fn shortcuts_are_links_and_the_arrow_has_a_source() {
+        let _com = crate::com::OleGuard::init().expect("COM");
+        let dir = std::env::temp_dir().join(format!("pf-link-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("a.txt");
+        std::fs::write(&file, "x").unwrap();
+        let link = create_shortcut(&file, &dir).unwrap();
+        assert!(is_link(&link));
+        assert!(!is_link(&file));
+        assert!(!is_link(&dir));
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(link_overlay_source().is_some_and(|(file, _)| file.exists()));
     }
 }
 
