@@ -229,7 +229,10 @@ included. `config.json` and `config export` files write this condition as
 is rejected with `invalid_value` and the hint to re-save it (`| Set-Content -Encoding utf8`).
 
 `settings set` paths are dotted camelCase keys of the Settings object, e.g. `iconSize`, `theme`,
-`themeStyle`, `hideRealIcons`, `autostart`, `peek.enabled`, `quickHide.enabled`,
+`themeStyle`, `hideRealIcons`, `hideInboxWhenIconsShown` (while `hideRealIcons` is off, the inbox
+fence shows no window and its items only show among the Windows desktop icons; a tab or a host of
+tabs stays; default off), `offerNewFence` (a rectangle drawn on empty desktop that touches no fence
+offers 「在此新建栅栏」; default on), `autostart`, `peek.enabled`, `quickHide.enabled`,
 `titleAlign` (left/center/right: the title and tab strip in every title row),
 `labelColor` (auto/white/black: the item names in every fence and view; auto picks dark or light
 names from the wallpaper in Liquid Glass and follows the colour mode in Fluent; fence titles keep

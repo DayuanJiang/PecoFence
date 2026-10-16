@@ -110,6 +110,13 @@ pub struct Settings {
     pub roll_up: RollUpSettings,
     pub show_desktop: ShowDesktopSetting,
     pub hide_real_icons: bool,
+    /// While `hideRealIcons` is off, the inbox fence has no window: the items no rule files
+    /// show only among Windows' own desktop icons.
+    #[serde(default)]
+    pub hide_inbox_when_icons_shown: bool,
+    /// A rectangle drawn on the empty desktop that touches no fence offers 「在此新建栅栏」.
+    #[serde(default = "default_true")]
+    pub offer_new_fence: bool,
     /// Unused (see [`UNUSED_SETTINGS`]).
     #[serde(default)]
     #[cfg_attr(feature = "schema", schemars(skip))]
@@ -218,6 +225,8 @@ impl Default for Settings {
             roll_up: RollUpSettings::default(),
             show_desktop: ShowDesktopSetting::KeepVisible,
             hide_real_icons: true,
+            hide_inbox_when_icons_shown: false,
+            offer_new_fence: true,
             show_real_icons_when_fences_hidden: false,
             snapping: SnappingSettings::default(),
             zorder: ZOrderSetting::InsertAboveHost,
@@ -1612,6 +1621,17 @@ mod tests {
             back.quick_hide.enabled,
             Settings::default().quick_hide.enabled
         );
+    }
+
+    #[test]
+    fn desktop_settings_missing_from_older_files_keep_the_old_behaviour() {
+        let mut json = serde_json::to_value(Settings::default()).unwrap();
+        let obj = json.as_object_mut().unwrap();
+        assert!(obj.remove("offerNewFence").is_some());
+        assert!(obj.remove("hideInboxWhenIconsShown").is_some());
+        let legacy: Settings = serde_json::from_value(json).unwrap();
+        assert!(legacy.offer_new_fence);
+        assert!(!legacy.hide_inbox_when_icons_shown);
     }
 
     #[test]

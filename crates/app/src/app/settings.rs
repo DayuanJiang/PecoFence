@@ -763,6 +763,8 @@ impl App {
             || new.backdrop != old.backdrop;
         let icons_changed = new.icons != old.icons;
         let push_changed = new.roll_up.push_neighbors != old.roll_up.push_neighbors;
+        let inbox_hiding_changed =
+            new.hide_inbox_when_icons_shown != old.hide_inbox_when_icons_shown;
         // 「调整大小时按整行整列对齐」 switched on keeps every rectangle: the rows fill any
         // height with whole icons (redrawn above), and rounding would undo fences lined up.
         self.state.config.settings = new;
@@ -782,6 +784,9 @@ impl App {
         if push_changed {
             // Pushed fences go back at once when it is switched off.
             self.reflow_pushed();
+        }
+        if inbox_hiding_changed {
+            self.sync_inbox_window();
         }
         self.push_settings_state();
     }

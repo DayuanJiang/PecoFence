@@ -14,7 +14,7 @@ const fixture = {
   locale: 'zh-CN', translations: {},
   settings: {
     language: 'zh-CN',
-    autostart: false, hideRealIcons: false, quickHide: { enabled: true },
+    autostart: false, hideRealIcons: false, hideInboxWhenIconsShown: false, offerNewFence: true, quickHide: { enabled: true },
     showDesktop: 'keepVisible', theme: 'dark', themeStyle: 'fluent', labelColor: 'auto', titleAlign: 'left', tabBar: 'top', backdrop: 'acrylic', iconSize: 48,
     icons: { tintRgb: null, tintStrength: 0.6, chameleon: false },
     rollUp: { hoverPeek: true, clickToExpand: false, pushNeighbors: true, titleOnHover: false, hideInactiveScrollbar: false, switchTabOnHover: false },
@@ -521,6 +521,24 @@ async function runTests() {
       && !doc.querySelector('[data-bind="peek.dim"]').closest('.card').classList.contains('disabled'), 'Peek hotkey/dim dependency wrong');
     doc.querySelector('[data-bind="peek.enabled"]').click(); await settle();
     assert(!hotkey.disabled && !doc.getElementById('peekPresetCard').classList.contains('disabled'), 'Hotkey stayed disabled');
+  });
+  await test('Hiding the desktop fence is available only while the Windows icons show', async () => {
+    const icons = doc.querySelector('[data-bind=hideRealIcons]'), inbox = doc.querySelector('[data-bind=hideInboxWhenIconsShown]');
+    assert(!current().settings.hideRealIcons && !inbox.closest('.card').classList.contains('disabled') && inbox.tabIndex === 0, 'Unavailable while the Windows icons show');
+    inbox.click(); await settle();
+    assert(current().settings.hideInboxWhenIconsShown && inbox.getAttribute('aria-checked') === 'true', 'Switch did not post its setting');
+    icons.click(); await settle();
+    assert(current().settings.hideRealIcons && inbox.closest('.card').classList.contains('disabled') && inbox.getAttribute('aria-disabled') === 'true', 'Still available with the Windows icons hidden');
+    inbox.click(); await settle();
+    assert(current().settings.hideInboxWhenIconsShown, 'A disabled switch still changed its setting');
+    icons.click(); await settle();
+    assert(!inbox.closest('.card').classList.contains('disabled'), 'Did not return with the Windows icons');
+    inbox.click(); await settle();
+    const offer = doc.querySelector('[data-bind=offerNewFence]');
+    assert(offer.getAttribute('aria-checked') === 'true', 'New fence offer not shown on');
+    offer.click(); await settle();
+    assert(current().settings.offerNewFence === false, 'New fence offer switch did not post');
+    offer.click(); await settle();
   });
   await test('Colour swatches drive the hidden selects and keep keyboard focus', async () => {
     const swatches = doc.getElementById('iconTintSwatches');
