@@ -21,7 +21,7 @@ const fixture = {
     snapping: { enabled: true, gapPx: 8, sizeToCells: false, guideLines: true }, peek: { enabled: true, dim: true, hotkey: 'ctrlAltSpace' },
   },
   rules: {
-    keepUpdated: true, defaultTarget: 'inbox',
+    keepUpdated: true, defaultTarget: 'inbox', unmatched: 'defaultTarget',
     list: [
       { id: 'rule-a', name: 'Documents', enabled: true, target: { fence: 'fence-a' }, allOf: [{ cond: 'ext', value: ['txt'] }], priorityClass: 'type' },
       { id: 'rule-b', name: 'Images', enabled: true, target: { fence: 'fence-b' }, allOf: [{ cond: 'ext', value: ['png'] }], priorityClass: 'type' },
@@ -328,6 +328,29 @@ async function runTests() {
     assert(list[0].allOf[0].cond === 'ext' && list[0].allOf[0].value[0] === 'pdf', 'New rule is not first');
     assert(list.slice(1).map(r => r.id).join() === before.join(), 'Existing rules changed order');
     assert(doc.querySelector('#ruleList [data-row-id]').dataset.rowId === list[0].id, 'New rule not rendered first');
+  });
+  await test('A plain-files rule goes to the end of the list and is named after its condition', async () => {
+    const before = current().rules.list.map(r => r.id);
+    change(doc, 'nrKind', 'plain');
+    assert(doc.getElementById('nrValueWrap').style.display === 'none', 'Plain files asks for a value');
+    await add(doc);
+    const list = current().rules.list, last = list[list.length - 1];
+    assert(last.allOf.length === 1 && last.allOf[0].cond === 'plainFiles' && last.name === '普通文件', 'Plain-files rule not appended: ' + JSON.stringify(last));
+    assert(list.slice(0, -1).map(r => r.id).join() === before.join(), 'Existing rules changed order');
+    const rows = doc.querySelectorAll('#ruleList [data-row-id]');
+    assert(rows[rows.length - 1].querySelector('.conds').textContent.startsWith('普通文件 → '), 'Plain-files rule described wrongly');
+  });
+  await test('Unmatched items can stay in their fence', async () => {
+    const pick = async value => {
+      const sel = doc.querySelector('[data-bind="rules.unmatched"]');
+      sel.value = value; sel.dispatchEvent(new frame.contentWindow.Event('change', { bubbles: true })); await settle();
+    };
+    assert(doc.querySelector('[data-bind="rules.unmatched"]').value === 'defaultTarget', 'Default is not back to the desktop fence');
+    await pick('stay');
+    const sent = frame.contentWindow.testMessages.filter(m => m.type === 'setRules').pop();
+    assert(sent && sent.rules.unmatched === 'stay', 'setRules did not carry unmatched');
+    assert(doc.querySelector('[data-bind="rules.unmatched"]').value === 'stay', 'Choice lost after refresh');
+    await pick('defaultTarget');
   });
   for (const kind of ['ext', 'exact']) {
     await test('Rejects separator-only ' + kind + ' values', async () => {

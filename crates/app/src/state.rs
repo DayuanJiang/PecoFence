@@ -1,7 +1,7 @@
 //! Application state: config + layout selection + desktop item catalog + rule routing.
 
 use pecofence_core::geometry::{self, PxRect, WorkArea};
-use pecofence_core::rules::{Cond, Decision, RuleSet, Target, Template};
+use pecofence_core::rules::{Cond, Decision, RuleSet, Target, Template, Unmatched};
 use pecofence_core::{
     AssignedBy, Config, ConfigStore, Fence, FenceId, FenceKind, IconKey, Item, ItemId, ItemKey,
     ItemRef, ItemSourceSpec, Layout, LoadOutcome, MonitorIdentity, Origin, SortMode,
@@ -1617,7 +1617,8 @@ impl AppState {
 
     /// What [`apply_rules_all`](Self::apply_rules_all) would do, without doing it: one entry per
     /// item that is not pinned by a manual placement and whose rule target differs from the
-    /// fence it is in now (`idle_only`: see [`apply_idle_rules`](Self::apply_idle_rules)).
+    /// fence it is in now (`idle_only`: see [`apply_idle_rules`](Self::apply_idle_rules)). With
+    /// [`Unmatched::Stay`] an item in a fence that no rule matches stays there.
     pub fn plan_rules(&self, entries: &[DesktopEntry], idle_only: bool) -> Vec<PlannedRuleMove> {
         let mut plan = Vec::new();
         for entry in entries {
@@ -1650,6 +1651,12 @@ impl AppState {
                 if !by_idle_rule {
                     continue;
                 }
+            }
+            if current.is_some()
+                && matches!(decision, Decision::Default(_))
+                && self.config.rules.unmatched == Unmatched::Stay
+            {
+                continue;
             }
             let Some((to, by)) = self.target_fence(decision) else {
                 continue;
@@ -2770,6 +2777,94 @@ mod tests {
         assert_eq!(state.config.fence_of_item(0, doc), Some(work));
         let bak = state.item_id_for_path(&desk("report.bak")).unwrap();
         assert_eq!(state.config.fence_of_item(0, bak), Some(inbox));
+    }
+
+    /// #69 / #71: the shortcut rule is disabled and type rules plus a final 「普通文件」 rule are
+    /// applied. With 「留在当前栅栏」 the programs and shortcuts stay where that rule put them;
+    /// with the default they fall back to 「桌面」 as before. A new item still goes to 「桌面」.
+    #[test]
+    fn unmatched_items_can_stay_in_their_fence_when_the_rules_are_applied() {
+        use pecofence_core::rules::{Rule, TypeCategory};
+        let mut state = test_state();
+        let (programs, folders, docs) = (
+            state.fences()[0].id,
+            state.fences()[1].id,
+            state.fences()[2].id,
+        );
+        let inbox = state.inbox_id().unwrap();
+        let [archives, images, other] =
+            ["压缩", "图片", "其它"].map(|t| state.new_fence(t, rect(0, 0, 300, 200)).unwrap());
+        let mut folder = desktop_entry("Projects");
+        folder.is_folder = true;
+        let mut entries: Vec<DesktopEntry> = [
+            "Notepad.lnk",
+            "tool.exe",
+            "site.url",
+            "backup.zip",
+            "report.docx",
+            "table.tsv",
+            "photo.png",
+            "query.sql",
+            "page.html",
+            "data.qwe",
+        ]
+        .map(desktop_entry)
+        .into();
+        entries.push(folder);
+        // The first-run rules put the programs and shortcuts into 程序.
+        state.sync_desktop(&entries);
+        let id = |state: &AppState, name: &str| {
+            state
+                .item_id_for_path(Path::new(&format!("C:/Users/Me/Desktop/{name}")))
+                .unwrap()
+        };
+        let fence_of =
+            |state: &AppState, name: &str| state.config.fence_of_item(0, id(state, name));
+        assert_eq!(fence_of(&state, "Notepad.lnk"), Some(programs));
+        assert_eq!(fence_of(&state, "query.sql"), Some(inbox));
+        let type_rule = |cat, to| Rule::new("t", Target::Fence(to), vec![Cond::Type(vec![cat])]);
+        let rules = &mut state.config.rules;
+        rules.list[0].enabled = false;
+        rules.list.truncate(1);
+        rules.list.extend([
+            type_rule(TypeCategory::Archives, archives),
+            type_rule(TypeCategory::Folders, folders),
+            type_rule(TypeCategory::Documents, docs),
+            type_rule(TypeCategory::Images, images),
+            Rule::new("其它", Target::Fence(other), vec![Cond::PlainFiles]),
+        ]);
+        let shortcuts = ["Notepad.lnk", "tool.exe", "site.url"];
+        let plan = state.plan_rules(&entries, false);
+        for name in shortcuts {
+            let m = plan.iter().find(|m| m.item == id(&state, name)).unwrap();
+            assert_eq!((m.from, m.to), (Some(programs), inbox), "{name}");
+        }
+        state.config.rules.unmatched = Unmatched::Stay;
+        let plan = state.plan_rules(&entries, false);
+        assert!(
+            plan.iter()
+                .all(|m| shortcuts.iter().all(|n| m.item != id(&state, n)))
+        );
+        assert_eq!(state.apply_rules_all(&entries), plan.len());
+        for (name, fence) in [
+            ("Notepad.lnk", programs),
+            ("tool.exe", programs),
+            ("site.url", programs),
+            ("backup.zip", archives),
+            ("report.docx", docs),
+            ("table.tsv", docs),
+            ("photo.png", images),
+            ("query.sql", other),
+            ("page.html", other),
+            ("data.qwe", other),
+            ("Projects", folders),
+        ] {
+            assert_eq!(fence_of(&state, name), Some(fence), "{name}");
+        }
+        entries.push(desktop_entry("New.lnk"));
+        state.sync_desktop(&entries);
+        assert_eq!(fence_of(&state, "New.lnk"), Some(inbox));
+        assert!(state.plan_rules(&entries, false).is_empty());
     }
 
     /// b.txt deleted, then a.txt renamed to b.txt within the week: the deleted file's record

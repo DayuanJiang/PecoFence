@@ -205,13 +205,25 @@ where each move has `item`, `name`, `path`, `from`/`fromTitle`, `to`/`toTitle`, 
 (`null` = the default target). Nothing moves and no snapshot is taken. Without `--dry-run` the same
 `moves` list describes what happened.
 
+An item no rule matches goes to `defaultTarget` (the inbox). With `"unmatched": "stay"` in the rule set
+(Settings › 整理规则 › 没有命中规则的项目 › 留在当前栅栏; the default is `"defaultTarget"`), applying the
+rules leaves such an item in the fence it is in, so disabling a rule no longer sends the items it filed
+back to the inbox. An item in no fence yet still goes to `defaultTarget`. `rule list` shows the value;
+change it in Settings or with `rule import` of an edited `rule list`.
+
 `rule add --index 0` inserts the new rule ahead of existing rules in the same priority class, so a
 PDF rule can take precedence over an existing Documents rule. Without `--index`, the rule is appended.
 
 `rule add` conditions (all must match): `--ext pdf,docx`, `--type programs,folders,documents,images,
 music,video,archives,shortcuts,installers`, `--name-contains`, `--name-not-contains`, `--starts-with`,
-`--ends-with`, `--name-is`, `--glob "*.bak"`, `--folders-only` / `--files-only`, and `--json` with an
-array of `Cond` objects (`describe --schema Cond`) for everything else (size, creation time, idle days).
+`--ends-with`, `--name-is`, `--glob "*.bak"`, `--folders-only` / `--files-only`, `--plain-files`, and
+`--json` with an array of `Cond` objects (`describe --schema Cond`) for everything else (size, creation
+time, idle days). `--plain-files` (`plainFiles`) matches a file that is not a folder, a program (the
+`programs` type), a shortcut (`.lnk`, `.url`, `.website`) or This PC and friends; rules are first match,
+so a `--plain-files` rule added last takes every file the rules before it left, unknown extensions
+included. `config.json` and `config export` files write this condition as
+`{"cond":"filesOnly","plain":true}`, so 0.2.1 and older still open them (and read the rule as
+`--files-only`); `rule list`, `rule import` and `--json` use `{"cond":"plainFiles"}`.
 
 `rule import` reads UTF-8 (a BOM is fine). Windows PowerShell 5 writes UTF-16 with `>`; such a file
 is rejected with `invalid_value` and the hint to re-save it (`| Set-Content -Encoding utf8`).

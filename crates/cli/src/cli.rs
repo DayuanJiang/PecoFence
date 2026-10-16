@@ -498,6 +498,10 @@ pub struct RuleAddArgs {
     /// Only files
     #[arg(long, group = "cond")]
     pub files_only: bool,
+    /// Only plain files: no folders, programs, shortcuts, This PC or Recycle Bin (as the last
+    /// rule it takes every file the rules before it left)
+    #[arg(long, group = "cond", conflicts_with = "folders_only")]
+    pub plain_files: bool,
     /// Extra conditions as a JSON array of Cond objects (see `describe --schema Cond`)
     #[arg(long, value_name = "COND-ARRAY-JSON", group = "cond")]
     pub json: Option<String>,
@@ -925,6 +929,17 @@ mod tests {
             ])
             .is_err()
         );
+        let plain = [
+            "rule",
+            "add",
+            "--name",
+            "x",
+            "--to",
+            "Docs",
+            "--plain-files",
+        ];
+        assert!(parse(&plain).is_ok());
+        assert!(parse(&[&plain[..], &["--folders-only"]].concat()).is_err());
         let cli = parse(&[
             "rule",
             "add",

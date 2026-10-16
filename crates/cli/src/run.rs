@@ -812,6 +812,9 @@ pub fn build_conds(args: &RuleAddArgs) -> Result<Vec<Cond>, IpcError> {
     if args.files_only {
         conds.push(Cond::FilesOnly);
     }
+    if args.plain_files {
+        conds.push(Cond::PlainFiles);
+    }
     if let Some(json) = &args.json {
         let extra: Vec<Cond> = serde_json::from_str(json).map_err(|e| {
             IpcError::new(
@@ -1223,6 +1226,7 @@ mod tests {
             glob: None,
             folders_only: false,
             files_only: false,
+            plain_files: false,
             json: None,
             index: None,
         }
@@ -1276,6 +1280,10 @@ mod tests {
         let mut a = add_args();
         a.folders_only = true;
         assert_eq!(build_conds(&a).unwrap(), vec![Cond::FoldersOnly]);
+
+        let mut a = add_args();
+        a.plain_files = true;
+        assert_eq!(build_conds(&a).unwrap(), vec![Cond::PlainFiles]);
     }
 
     #[test]
