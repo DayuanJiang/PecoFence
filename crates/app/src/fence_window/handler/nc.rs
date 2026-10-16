@@ -663,12 +663,7 @@ pub(super) fn on_exitsizemove(
             queue.push(Command::ClearFenceSelection);
         }
     }
-    if merge_target.replace(0) != 0 {
-        queue.push(Command::MergeHint {
-            target: HWND(std::ptr::null_mut()),
-            at: (0, 0),
-        });
-    }
+    let hinted = merge_target.replace(0) != 0;
     let peeking = {
         let mut guard = view.borrow_mut();
         match guard.as_mut() {
@@ -698,6 +693,15 @@ pub(super) fn on_exitsizemove(
     } else if moved && !cancelled {
         queue.push(Command::FenceDropped(fence_id));
         commit_members(queue, &h.behavior, &group);
+    }
+    // After the merge, which reads the slot the gap sits at: without the gap the pills move
+    // (and a scrolled strip moves back to its active tab), so the pointer would point at
+    // another slot.
+    if hinted {
+        queue.push(Command::MergeHint {
+            target: HWND(std::ptr::null_mut()),
+            at: (0, 0),
+        });
     }
     if peeking {
         // The close timer was cancelled on WM_ENTERSIZEMOVE; its arm
