@@ -17,7 +17,7 @@ const fixture = {
     autostart: false, hideRealIcons: false, quickHide: { enabled: true },
     showDesktop: 'keepVisible', theme: 'dark', themeStyle: 'fluent', titleAlign: 'left', tabBar: 'top', backdrop: 'acrylic', iconSize: 48,
     icons: { tintRgb: null, tintStrength: 0.6, chameleon: false },
-    rollUp: { hoverPeek: true, clickToExpand: false, pushNeighbors: true, titleOnHover: false, hideInactiveScrollbar: false, switchTabOnHover: false },
+    rollUp: { hoverPeek: true, clickToExpand: false, pushNeighbors: true, titleOnHover: false, hideInactiveScrollbar: false, switchTabOnHover: false, hideCountAndChevron: false },
     snapping: { enabled: true, gapPx: 8, sizeToCells: false, guideLines: true }, peek: { enabled: true, dim: true, hotkey: 'ctrlAltSpace' },
   },
   rules: {
@@ -481,6 +481,15 @@ async function runTests() {
     assert(toggle.classList.contains('on') && shown().join() === '开', 'Clicking the caption did not toggle the switch');
     toggle.click(); await settle();
     assert(!current().settings.autostart && shown().join() === '关', 'Caption did not follow the switch');
+  });
+  await test('Hiding the title bar count and chevron is posted', async () => {
+    doc.querySelector('[data-page=general]').click();
+    const toggle = doc.querySelector('[data-bind="rollUp.hideCountAndChevron"]');
+    assert(toggle && !toggle.classList.contains('on'), 'Switch missing or on by default');
+    toggle.click(); await settle();
+    assert(current().settings.rollUp.hideCountAndChevron === true, 'Turning it on was not posted');
+    toggle.click(); await settle();
+    assert(current().settings.rollUp.hideCountAndChevron === false, 'Turning it off was not posted');
   });
   await test('Dependent rows are disabled while their master switch is off', async () => {
     const guides = doc.querySelector('[data-bind="snapping.guideLines"]'), hotkey = doc.getElementById('peekHotkey');

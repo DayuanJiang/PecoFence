@@ -426,6 +426,7 @@ impl FenceViewState {
         let style = FenceStyle {
             title_align: self.behavior.title_align.get(),
             tab_rail: self.rail_w(),
+            hide_count_and_chevron: self.behavior.hide_count_and_chevron.get(),
             ..self.style
         };
         let pressed_tab = match self.pressed {

@@ -1039,6 +1039,9 @@ impl App {
                 switch_tab_on_hover: std::cell::Cell::new(
                     state.config.settings.roll_up.switch_tab_on_hover,
                 ),
+                hide_count_and_chevron: std::cell::Cell::new(
+                    state.config.settings.roll_up.hide_count_and_chevron,
+                ),
                 wheel_lines: std::cell::Cell::new(sysparams::wheel_scroll_lines()),
                 drop_preview: std::cell::RefCell::new(
                     crate::drop_preview::DropPreview::create()

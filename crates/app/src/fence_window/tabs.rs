@@ -420,7 +420,7 @@ impl FenceViewState {
         let width = self.chrome_panel.size_px().0 as f32 / self.scale();
         // Rolled: the item count sits before the chevron; the strip must end before it. The
         // target state, so the pills slide there during the roll (`start_roll_anim`).
-        let reserve = if self.roll_target() {
+        let reserve = if self.roll_target() && !self.behavior.hide_count_and_chevron.get() {
             TAB_RIGHT_RESERVE
                 + pecofence_render::fence_chrome::header_count_width(
                     width,

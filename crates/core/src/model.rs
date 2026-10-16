@@ -368,6 +368,10 @@ pub struct RollUpSettings {
     /// click would.
     #[serde(default)]
     pub switch_tab_on_hover: bool,
+    /// No item count on a rolled title and no roll chevron: the title bar shows the name only.
+    /// Double-clicking the title and the fence menu still roll the fence up and down.
+    #[serde(default)]
+    pub hide_count_and_chevron: bool,
 }
 
 impl Default for RollUpSettings {
@@ -383,6 +387,7 @@ impl Default for RollUpSettings {
             hide_inactive_scrollbar: false,
             push_neighbors: true,
             switch_tab_on_hover: false,
+            hide_count_and_chevron: false,
         }
     }
 }
@@ -1621,6 +1626,24 @@ mod tests {
             assert_eq!(json["themeStyle"], "liquidGlass");
             assert_eq!(serde_json::from_value::<Settings>(json).unwrap(), settings);
         }
+    }
+
+    /// Settings from before `rollUp.hideCountAndChevron` keep the count and chevron; the switch
+    /// saves and loads back.
+    #[test]
+    fn hide_count_and_chevron_defaults_off_and_roundtrips() {
+        let mut json = serde_json::to_value(Settings::default()).unwrap();
+        json["rollUp"]
+            .as_object_mut()
+            .unwrap()
+            .remove("hideCountAndChevron");
+        let legacy: Settings = serde_json::from_value(json).unwrap();
+        assert!(!legacy.roll_up.hide_count_and_chevron);
+        let mut settings = legacy;
+        settings.roll_up.hide_count_and_chevron = true;
+        let json = serde_json::to_value(&settings).unwrap();
+        assert_eq!(json["rollUp"]["hideCountAndChevron"], true);
+        assert_eq!(serde_json::from_value::<Settings>(json).unwrap(), settings);
     }
 
     fn geo() -> NormGeometry {

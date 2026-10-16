@@ -296,6 +296,8 @@
   "开启后不再悬停展开；拖动标题仍可移动栅栏": "Al activarlo, ya no se expanden al pasar el cursor; puedes seguir arrastrando el título para mover el grupo",
   "收起后它们会回到原位": "Vuelven a su sitio cuando el grupo se contrae",
   "平时只显示图标，让桌面更清爽；每个栅栏可在“栅栏”页单独设置": "Solo se ven los iconos hasta que pasas el cursor; puedes cambiarlo en cada grupo desde la página Grupos",
+  "隐藏标题栏右侧的项目数和折叠箭头": "Ocultar el número de elementos y la flecha de contraer de la barra de título",
+  "标题栏只显示名称；双击标题或用右键菜单收起和展开": "La barra de título solo muestra el nombre; para contraer y expandir, haz doble clic en el título o usa el menú contextual",
   "鼠标在标签页上停留片刻就切换过去，不用点击": "Deja el cursor un momento sobre una pestaña para cambiar a ella sin hacer clic",
   "有多个标签页时，标签排在标题栏里，或在栅栏左侧排成一列": "Las pestañas van en la barra de título o se apilan en una columna a la izquierda",
   "鼠标移到栅栏上或滚动时才显示": "Solo aparecen al pasar el cursor sobre el grupo o al desplazarte",

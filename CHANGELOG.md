@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- The title bar can show the fence's name alone (feedback #29). With 「隐藏标题栏右侧的项目数和折叠箭头」 on (Settings › 常规 › 行为, or `pecofence-cli settings set rollUp.hideCountAndChevron true`), a rolled-up fence no longer shows how many items it holds, and no fence shows the roll-up chevron, also at the bottom of a left tab column. Double-click the title, or use 「收起」 and 「展开」 in the fence menu, to roll a fence up and down; where the chevron was, the title drags, double-clicks and opens the menu like the rest of it. The setting is off by default, because a rolled-up fence without them looks like a fence that only has a title.
 - A folder portal merged into a tab strip shows the folder icon before its name, as it does before its title on its own (#86, by @xan2622). Its tab looked like any other until now, although files dropped on it move into a real folder. In the left tab column, the names of every tab move over to stay aligned once one of them is a folder. Turning off 「标题栏显示文件夹图标」 in the fence options hides it in the tab too.
 - The selected tab's background stays on its tab when Peek switches a fence to the tab with matches. The background glides to the new tab, and when the match counts widened the tabs during that glide it stopped where the tab had been before, half over the next tab, until something redrew the fence.
 
