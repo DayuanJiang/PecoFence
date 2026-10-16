@@ -122,6 +122,7 @@ impl FenceWindow {
             tab_slide: Vec::new(),
             merge_gap: None,
             tab_natural_w: RefCell::new(Vec::new()),
+            tab_scroll: Cell::new(0.0),
             tab_settle: None,
             drop_tab: None,
             drag_peek_armed: false,
@@ -951,6 +952,7 @@ impl FenceWindow {
             // A new window gets its tabs here for the first time: what it was saved with.
             let first = v.tabs.is_empty();
             let rail_fit = v.rail_fit_height_px();
+            let strip_scroll = v.tab_scroll.get();
             v.tabs = tabs;
             v.active = active;
             // A left tab column comes with the second tab and goes with the last but one.
@@ -960,11 +962,14 @@ impl FenceWindow {
             if !first && v.rail_fit_height_px() > rail_fit {
                 v.rail_grow = true;
             }
-            if !same_titles {
+            // A strip too wide for its room scrolled to show the new active tab.
+            let _ = v.tab_rects();
+            let scrolled = (v.tab_scroll.get() - strip_scroll).abs() > 0.5;
+            if !same_titles || scrolled {
                 // Reorder, rename, or a tab added / removed (merge, tear-off, close): the
                 // survivors slide from where they were painted into their new slots (WinUI
                 // TabView neighbours moving into the vacated slot); a drag in progress keeps
-                // its own provisional positions.
+                // its own provisional positions. A scrolled strip slides the same way.
                 if v.tab_drag.is_none() {
                     v.sync_tab_slides(&prev, now);
                 } else if !same_set {

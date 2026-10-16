@@ -4,15 +4,17 @@
 
 use crate::backdrop::Image;
 use crate::bitmaps::BitmapCache;
+use crate::gpu_bindings as b;
 use crate::panel::Clip;
 use crate::theme::{Theme, font_small, font_text, lerp, with_alpha};
 use std::cell::RefCell;
+use std::mem::ManuallyDrop;
 use std::rc::Rc;
 use windows_canvas::{
-    Brush, ColorF, DrawingSession, FontWeight, GradientStop, Matrix3x2, ParagraphAlignment, Rect,
-    RoundedRect, TextAlignment, TextFormat, TextLayout, Vector2, WordWrapping,
+    Brush, ColorF, DrawingSession, FontWeight, GradientStop, Matrix3x2, Paint, ParagraphAlignment,
+    Rect, RoundedRect, TextAlignment, TextFormat, TextLayout, Vector2, WordWrapping,
 };
-use windows_core::Result;
+use windows_core::{Interface, Result};
 
 /// Icon-label font: the system icon-title font (`SPI_GETICONTITLELOGFONT` scaled by the
 /// Settings › Accessibility › Text size factor, see `sysparams::icon_title_font`) with its
@@ -375,6 +377,77 @@ pub struct TitleState {
     /// How far a fully transparent fence (外观 → 全透明) has cleared its plate: 0 = drawn,
     /// 1 = no glass, tint or rim at all (the resting look away from the pointer).
     pub plate_clear: f32,
+    /// A tab strip too wide for its room scrolls: where its pills are cut. None = it fits.
+    pub strip_clip: Option<StripClip>,
+}
+
+/// The visible span of a scrolled tab strip (DIPs). An end with more pills behind it fades out
+/// over `STRIP_FADE_W`.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct StripClip {
+    pub left: f32,
+    /// The right end beside the roll-up chevron.
+    pub right: f32,
+    /// The right end while the chevron is hidden (an expanded fence, pointer away from the
+    /// title): the strip runs on under the chevron's place.
+    pub rest_right: f32,
+    /// Where the last pill ends: the right end fades while pills lie past it.
+    pub content_right: f32,
+    pub fade_left: bool,
+}
+
+/// Width (DIPs) of the fade at an end of a scrolled tab strip with more pills behind it.
+pub const STRIP_FADE_W: f32 = 12.0;
+
+/// Starts drawing a scrolled tab strip into a layer cut to `clip` (`title_h` tall) whose
+/// opacity falls to 0 over `STRIP_FADE_W` at the ends with pills behind them. The right end
+/// moves from `rest_right` to `right` as the chevron fades in (`chevron` 0..=1). The returned
+/// brush must live until `pop_strip_fade` ends the layer.
+fn push_strip_fade(
+    session: &DrawingSession<'_>,
+    clip: StripClip,
+    title_h: f32,
+    chevron: f32,
+) -> Result<b::ID2D1Brush> {
+    let right = clip.rest_right + (clip.right - clip.rest_right) * chevron.clamp(0.0, 1.0);
+    let fade_right = clip.content_right > right + 0.5;
+    let fade = (STRIP_FADE_W / (right - clip.left).max(1.0)).min(0.5);
+    let opaque = ColorF::new(0.0, 0.0, 0.0, 1.0);
+    let end = |hidden: bool| if hidden { ColorF::TRANSPARENT } else { opaque };
+    let gradient = session.create_linear_gradient(
+        Vector2::new(clip.left, 0.0),
+        Vector2::new(right, 0.0),
+        &[
+            GradientStop::new(0.0, end(clip.fade_left)),
+            GradientStop::new(fade, opaque),
+            GradientStop::new(1.0 - fade, opaque),
+            GradientStop::new(1.0, end(fade_right)),
+        ],
+    )?;
+    let brush: b::ID2D1Brush = gradient.as_raw_brush().cast()?;
+    let context: b::ID2D1DeviceContext = session.raw().cast()?;
+    let params = b::D2D1_LAYER_PARAMETERS1 {
+        contentBounds: b::D2D_RECT_F {
+            left: clip.left,
+            top: 0.0,
+            right,
+            bottom: title_h,
+        },
+        maskTransform: windows_numerics::Matrix3x2::identity(),
+        opacity: 1.0,
+        opacityBrush: ManuallyDrop::new(Some(brush.clone())),
+        ..Default::default()
+    };
+    unsafe { context.PushLayer(&params, None::<&b::ID2D1Layer>) };
+    drop(ManuallyDrop::into_inner(params.opacityBrush));
+    Ok(brush)
+}
+
+/// Ends the layer `push_strip_fade` started.
+fn pop_strip_fade(session: &DrawingSession<'_>, _brush: b::ID2D1Brush) {
+    if let Ok(context) = session.raw().cast::<b::ID2D1DeviceContext>() {
+        unsafe { context.PopLayer() };
+    }
 }
 
 impl TitleDeco {
@@ -1833,7 +1906,20 @@ impl FenceChrome {
         } else {
             0.0
         };
+        // The roll-up chevron: shown while rolled or rolling, otherwise on hover, never when the
+        // user hid it.
+        let chevron_shown = if style.hide_count_and_chevron {
+            0.0
+        } else if rolled_up || roll_t > 0.0 {
+            1.0
+        } else {
+            state.hover.clamp(0.0, 1.0)
+        };
         if tabs.len() > 1 {
+            let strip_fade = match state.strip_clip {
+                Some(clip) => Some(push_strip_fade(session, clip, title_h, chevron_shown)?),
+                None => None,
+            };
             let inset = if theme.liquid_glass { 4.0 } else { 6.0 };
             let pill_h = (title_h - inset * 2.0).max(0.0);
             let tab_rect = |x, w| Rect::from_xywh(x, inset, w, pill_h);
@@ -2017,6 +2103,9 @@ impl FenceChrome {
                     session.draw_text(badge, &self.badge_format, &r, &text);
                 }
             }
+            if let Some(brush) = strip_fade {
+                pop_strip_fade(session, brush);
+            }
         } else {
             let mut x = 16.0;
             if deco.up_button {
@@ -2139,11 +2228,7 @@ impl FenceChrome {
         if style.hide_count_and_chevron {
             return Ok(());
         }
-        let chevron_a = if rolled_up || roll_t > 0.0 {
-            1.0
-        } else {
-            state.hover.clamp(0.0, 1.0)
-        } * title_a;
+        let chevron_a = chevron_shown * title_a;
         let box_r = TitleDeco::chevron_box(width, title_h);
         self.draw_chevron(
             session, &backdrop, theme, scale, opacity, style.tint, box_r, "\u{E70E}", chevron_a,

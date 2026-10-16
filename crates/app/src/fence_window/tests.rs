@@ -293,6 +293,46 @@ fn narrow_tab_strips_cannot_cover_the_chevron_or_count() {
         }
     }
 }
+
+/// A scrolled title-row strip keeps every pill at its natural width, `TAB_GAP` apart, and the
+/// merge gap opens a slot in it.
+#[test]
+fn scrolled_strip_keeps_natural_widths() {
+    let natural = [80.0, 60.0, 100.0];
+    assert_eq!(tab_strip_span(&natural, None), 240.0 + 2.0 * TAB_GAP);
+    assert_eq!(
+        tab_strip_span(&natural, Some((1, TAB_MERGE_GAP_W))),
+        240.0 + TAB_MERGE_GAP_W + 3.0 * TAB_GAP
+    );
+    let rects = tab_strip_scrolled(&natural, None, 30.0);
+    assert_eq!(
+        rects,
+        vec![
+            (TAB_LEFT - 30.0, 80.0),
+            (TAB_LEFT + 54.0, 60.0),
+            (TAB_LEFT + 118.0, 100.0)
+        ]
+    );
+    let gapped = tab_strip_scrolled(&natural, Some((1, TAB_MERGE_GAP_W)), 0.0);
+    assert_eq!(gapped[1].0, TAB_LEFT + 84.0 + TAB_MERGE_GAP_W + TAB_GAP);
+}
+
+/// The strip scrolls only as far as needed to show the active pill clear of the fades, and
+/// never past its ends.
+#[test]
+fn strip_scrolls_just_enough_to_show_the_active_tab() {
+    let m = TAB_SCROLL_MARGIN;
+    // 200 DIPs of room over a 500 DIP strip: at most 300 of scroll.
+    assert_eq!(scroll_to_show(0.0, 50.0, 80.0, 200.0, 300.0), 0.0);
+    assert_eq!(scroll_to_show(0.0, 250.0, 80.0, 200.0, 300.0), 130.0 + m);
+    assert_eq!(scroll_to_show(170.0, 160.0, 80.0, 200.0, 300.0), 160.0 - m);
+    // At the strip's ends there is nothing to keep room for.
+    assert_eq!(scroll_to_show(0.0, 10.0, 80.0, 200.0, 300.0), 0.0);
+    assert_eq!(scroll_to_show(130.0, 420.0, 80.0, 200.0, 300.0), 300.0);
+    // A room too narrow for both margins centres the pill.
+    assert_eq!(scroll_to_show(0.0, 100.0, 80.0, 120.0, 300.0), 80.0);
+    assert_eq!(scroll_to_show(0.0, 100.0, 250.0, 200.0, 300.0), 125.0);
+}
 /// Right-drag menu offers only what both the source and this target can do, in Explorer's
 /// order.
 /// Explorer: Ctrl+dragging one item of a multi-selection copies the whole selection; the

@@ -211,6 +211,50 @@ pub(super) fn tab_strip_rects_with(
         .collect()
 }
 
+/// Length (DIPs) of a strip of pills at their `natural` widths, `TAB_GAP` apart, with the
+/// phantom gap (slot, length) of a merge included.
+pub(super) fn tab_strip_span(natural: &[f32], gap: Option<(usize, f32)>) -> f32 {
+    let n = natural.len() + gap.is_some() as usize;
+    natural.iter().sum::<f32>()
+        + gap.map_or(0.0, |(_, len)| len)
+        + TAB_GAP * n.saturating_sub(1) as f32
+}
+
+/// A title-row strip wider than its room: the pills keep their natural widths from `TAB_LEFT`
+/// and the strip is moved `scroll` DIPs to the left. One (x, w) per entry of `natural`.
+pub(super) fn tab_strip_scrolled(
+    natural: &[f32],
+    gap: Option<(usize, f32)>,
+    scroll: f32,
+) -> Vec<(f32, f32)> {
+    let mut x = TAB_LEFT - scroll;
+    let mut rects = Vec::with_capacity(natural.len());
+    for (i, w) in natural.iter().enumerate() {
+        if let Some((g, len)) = gap
+            && g == i
+        {
+            x += len + TAB_GAP;
+        }
+        rects.push((x, *w));
+        x += w + TAB_GAP;
+    }
+    rects
+}
+
+/// The scroll offset nearest `scroll` that shows the pill at `x` (DIPs from the strip start,
+/// unscrolled), `w` wide, in `room` DIPs with `TAB_SCROLL_MARGIN` beside it, so it stays clear
+/// of the fades and a bit of its neighbour shows; centred when the room is too narrow for both
+/// margins. Clamped to [0, `max`], where the strip's own ends need no margin.
+pub(super) fn scroll_to_show(scroll: f32, x: f32, w: f32, room: f32, max: f32) -> f32 {
+    let m = TAB_SCROLL_MARGIN;
+    let s = if w + 2.0 * m > room {
+        x - (room - w) / 2.0
+    } else {
+        scroll.max(x + w + m - room).min(x - m)
+    };
+    s.clamp(0.0, max.max(0.0))
+}
+
 impl FenceViewState {
     /// Tab switch, Fluent Direct Exit / Entrance for a content swap: the old content stays on
     /// its panel and fades out (83 ms linear) while a second panel — which every later redraw
@@ -366,8 +410,8 @@ impl FenceViewState {
     /// Tab header rects (x, w) in DIPs along the strip; empty unless there are 2+ tabs. In the
     /// title row x is the window x and the natural width is the caption + 16 padding, clamped
     /// to [48, 160]; in the left column (`tabs_on_rail`) x is the window y and every row is
-    /// `RAIL_ROW_H` tall. When the strip does not fit (beside the chevron zone, or in the
-    /// column) every tab shrinks proportionally (captions ellipsize).
+    /// `RAIL_ROW_H` tall. A title row too narrow for its tabs scrolls (`tab_scroll`); a column
+    /// too short shrinks every tab proportionally.
     pub(super) fn tab_rects(&self) -> Vec<(f32, f32)> {
         self.tab_rects_with_gap(self.merge_gap)
     }
@@ -390,6 +434,24 @@ impl FenceViewState {
                 .collect();
         }
         let available = (end - TAB_LEFT).max(0.0);
+        let phantom = gap.map(|g| (g, TAB_MERGE_GAP_W));
+        let span = tab_strip_span(&natural, phantom);
+        if span > available + 0.5 {
+            // Wider than its room: the pills keep their widths and the strip scrolls, just far
+            // enough to show the active tab whole, so a wheel notch or Ctrl+Tab brings the next
+            // one in. A tab being dragged keeps the strip where it is.
+            let max = span - available;
+            let mut scroll = self.tab_scroll.get().clamp(0.0, max);
+            if self.tab_drag.as_ref().is_none_or(|d| !d.moved)
+                && let Some(&(x, w)) =
+                    tab_strip_scrolled(&natural, phantom, 0.0).get(self.active_index())
+            {
+                scroll = scroll_to_show(scroll, x - TAB_LEFT, w, available, max);
+            }
+            self.tab_scroll.set(scroll);
+            return tab_strip_scrolled(&natural, phantom, scroll);
+        }
+        self.tab_scroll.set(0.0);
         // 标题对齐 moves the strip as a whole. The offset is measured without the merge gap, so
         // opening the gap never shifts the slots under the pointer; the gap squeezes the pills
         // into the room before the chevron zone instead.
@@ -431,6 +493,35 @@ impl FenceViewState {
             TAB_RIGHT_RESERVE
         };
         (TAB_LEFT, (width - reserve).max(TAB_LEFT))
+    }
+
+    /// Where a title-row strip that scrolls is cut (DIPs) and how far its pills reach; None
+    /// while the strip fits.
+    pub(super) fn tab_strip_clip(&self) -> Option<StripClip> {
+        if !self.title_row_strip() {
+            return None;
+        }
+        let (start, end) = self.tab_strip_bounds();
+        let phantom = self.merge_gap.map(|g| (g, TAB_MERGE_GAP_W));
+        let max = tab_strip_span(&self.tab_natural_widths(), phantom) - (end - start).max(0.0);
+        if max <= 0.5 {
+            return None;
+        }
+        let scroll = self.tab_scroll.get();
+        let width = self.chrome_panel.size_px().0 as f32 / self.scale();
+        let rest_right = (width - TAB_LEFT).max(end);
+        Some(StripClip {
+            left: start,
+            // Without a chevron (the user hid it) the strip always runs on to its place.
+            right: if self.behavior.hide_count_and_chevron.get() {
+                rest_right
+            } else {
+                end
+            },
+            rest_right,
+            content_right: end + max - scroll,
+            fade_left: scroll > 0.5,
+        })
     }
 
     /// The tabs stack in a column on the left (标签栏位置 → 左侧, two or more tabs).
@@ -706,6 +797,12 @@ impl FenceViewState {
         }
         let x = self.tab_axis(x_px, y_px);
         let rects = self.tab_rects();
+        // The parts of a scrolled strip cut off at its ends are not there to click.
+        if let Some(clip) = self.tab_strip_clip()
+            && (x < clip.left || x >= clip.right)
+        {
+            return None;
+        }
         let xs = self.tab_draw_xs(Instant::now());
         if let Some(drag) = &self.tab_drag
             && drag.moved
