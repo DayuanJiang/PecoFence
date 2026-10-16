@@ -613,13 +613,12 @@ pub fn tab_text_inset(theme: &Theme, w: f32, text_w: f32) -> f32 {
     (w - text_w).clamp(TAB_TEXT_MIN_PADDING, tab_text_padding(theme))
 }
 
-/// Counts are secondary: a short collapsed fence must retain space for its title/tabs.
+/// Counts are secondary: a short collapsed fence must retain space for its title/tabs. A tab
+/// strip that does not fit scrolls, so room for two of its narrowest tabs is enough.
 pub fn header_count_width(width: f32, tabs: usize, title_x: f32) -> f32 {
     let (left, captions) = if tabs > 1 {
-        (
-            8.0,
-            tabs as f32 * 48.0 + tabs.saturating_sub(1) as f32 * 4.0,
-        )
+        let shown = tabs.min(2) as f32;
+        (8.0, shown * 48.0 + (shown - 1.0) * 4.0)
     } else {
         (title_x, 64.0)
     };
@@ -3232,6 +3231,9 @@ mod tests {
         assert_eq!(header_count_width(136.0, 1, 16.0), 0.0);
         assert_eq!(header_count_width(136.0, 2, 16.0), 0.0);
         assert_eq!(header_count_width(400.0, 2, 16.0), ROLLED_COUNT_W);
+        // Six tabs scroll beside the count instead of shrinking under it.
+        assert_eq!(header_count_width(320.0, 6, 16.0), ROLLED_COUNT_W);
+        assert_eq!(header_count_width(200.0, 6, 16.0), 0.0);
     }
 
     #[test]

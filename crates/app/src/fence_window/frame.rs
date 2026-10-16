@@ -33,6 +33,9 @@ impl FenceViewState {
             content = true;
             more = true;
         }
+        if self.tab_strip_autoscroll(now) {
+            more = true;
+        }
         if self.sb_busy {
             content = true;
             self.sb_arrow_fades.prune(now, |_| true);

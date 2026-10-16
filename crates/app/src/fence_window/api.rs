@@ -123,6 +123,8 @@ impl FenceWindow {
             merge_gap: None,
             tab_natural_w: RefCell::new(Vec::new()),
             tab_scroll: Cell::new(0.0),
+            tab_edge_last: None,
+            merge_pointer: None,
             tab_settle: None,
             drop_tab: None,
             drag_peek_armed: false,

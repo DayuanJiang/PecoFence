@@ -439,10 +439,12 @@ impl FenceViewState {
         if span > available + 0.5 {
             // Wider than its room: the pills keep their widths and the strip scrolls, just far
             // enough to show the active tab whole, so a wheel notch or Ctrl+Tab brings the next
-            // one in. A tab being dragged keeps the strip where it is.
+            // one in. While a tab is dragged along it or a fence over it, only the pointer at
+            // its ends scrolls it (`tab_strip_autoscroll`).
             let max = span - available;
             let mut scroll = self.tab_scroll.get().clamp(0.0, max);
             if self.tab_drag.as_ref().is_none_or(|d| !d.moved)
+                && self.merge_gap.is_none()
                 && let Some(&(x, w)) =
                     tab_strip_scrolled(&natural, phantom, 0.0).get(self.active_index())
             {
@@ -766,6 +768,11 @@ impl FenceViewState {
     /// neighbours slide aside / back over 167 ms point-to-point (`sync_tab_slides`). Returns
     /// true when the strip changed.
     pub(super) fn set_merge_gap(&mut self, at: Option<(i32, i32)>) -> bool {
+        self.merge_pointer = at.filter(|_| self.tabs.len() >= 2);
+        if self.merge_pointer.is_some() && self.tab_strip_clip().is_some() {
+            // The pointer may rest at an end of a scrolled strip: `tick` scrolls it there.
+            self.frames.request();
+        }
         let gap = at
             .filter(|_| self.tabs.len() >= 2)
             .map(|p| self.merge_slot_at(p));
@@ -782,6 +789,100 @@ impl FenceViewState {
         self.merge_gap = gap;
         self.sync_tab_slides(&prev, now);
         true
+    }
+
+    /// One frame of edge auto-scroll for a scrolled strip: while a tab is dragged along it, or a
+    /// fence over it to merge, with the pointer within `TAB_EDGE_ZONE` of an end, the strip
+    /// moves that way at `TAB_EDGE_SPEED`; the dragged tab swaps past the tabs coming in, or
+    /// the insertion gap follows them. Returns true while it moved.
+    pub(super) fn tab_strip_autoscroll(&mut self, now: Instant) -> bool {
+        let pointer = match (&self.tab_drag, self.merge_pointer) {
+            (Some(td), _) if td.moved => Some(td.pointer_x),
+            (None, Some((x, _))) if self.merge_gap.is_some() => {
+                let r = window::window_rect(self.hwnd);
+                Some(x.saturating_sub(r.left) as f32 / self.scale())
+            }
+            _ => None,
+        };
+        let dir = match pointer.and_then(|x| Some((x, self.tab_strip_clip()?))) {
+            Some((x, clip)) if x < clip.left + TAB_EDGE_ZONE => -1.0,
+            Some((x, clip)) if x > clip.right - TAB_EDGE_ZONE => 1.0,
+            _ => {
+                self.tab_edge_last = None;
+                return false;
+            }
+        };
+        let dt = self.tab_edge_last.map_or(0.0, |t| {
+            now.saturating_duration_since(t).as_secs_f32().min(0.05)
+        });
+        self.tab_edge_last = Some(now);
+        let before = self.tab_scroll.get();
+        self.tab_scroll.set(before + dir * TAB_EDGE_SPEED * dt);
+        let _ = self.tab_rects();
+        if (self.tab_scroll.get() - before).abs() < 0.01 {
+            // The first frame only starts the clock; at an end the strip stops.
+            return dt == 0.0;
+        }
+        if self.tab_drag.is_some() {
+            self.reorder_dragged_tab(now);
+        } else if let Some(p) = self.merge_pointer {
+            self.set_merge_gap(Some(p));
+        }
+        self.chrome_busy = true;
+        true
+    }
+
+    /// The dragged tab at the pointer swaps with the neighbours it passed: one slot per step,
+    /// repeated so a fast sweep can cross several in one message (`tab_reorder_step` is stable
+    /// for any pair of widths); they slide into the vacated slots (167 ms point-to-point).
+    pub(super) fn reorder_dragged_tab(&mut self, now: Instant) {
+        let Some((mut index, pointer_x, grab_dx)) = self
+            .tab_drag
+            .as_ref()
+            .map(|td| (td.index, td.pointer_x, td.grab_dx))
+        else {
+            return;
+        };
+        let prev: Vec<(FenceId, f32)> = self
+            .tabs
+            .iter()
+            .map(|t| t.id)
+            .zip(self.tab_draw_xs(now))
+            .collect();
+        let mut reordered = false;
+        for _ in 0..self.tabs.len() {
+            let rects = self.tab_rects();
+            let over = tab_reorder_at_pointer(index, pointer_x, grab_dx, &rects);
+            let Some(over) = over.filter(|o| *o < self.tabs.len()) else {
+                break;
+            };
+            let t = self.tabs.remove(index);
+            self.tabs.insert(over, t);
+            if let Some(td) = self.tab_drag.as_mut() {
+                td.index = over;
+            }
+            index = over;
+            reordered = true;
+        }
+        if reordered {
+            self.tab_hover = Some(index);
+            self.pressed = Some(PressTarget::Tab(index));
+            self.hide_tip();
+            self.sync_tab_slides(&prev, now);
+        }
+    }
+
+    /// The tab at strip index `i` shows whole. The cut-off tabs of a scrolled strip take a
+    /// click or the wheel, never a hover switch: switching scrolls the strip and would put the
+    /// next cut-off tab under the resting pointer, one after the other.
+    pub(super) fn tab_fully_shown(&self, i: usize) -> bool {
+        let rects = self.tab_rects();
+        let Some(clip) = self.tab_strip_clip() else {
+            return true;
+        };
+        rects
+            .get(i)
+            .is_some_and(|&(x, w)| x >= clip.left - 0.5 && x + w <= clip.right + 0.5)
     }
 
     /// Tab header under a client-pixel point.
