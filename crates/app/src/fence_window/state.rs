@@ -28,8 +28,8 @@ pub struct FenceViewState {
     /// tabbed strip): the strip opens a `TAB_MERGE_GAP_W` gap there and the neighbours slide
     /// aside. None = no hint, or a plain (single-tab) title.
     pub(super) merge_gap: Option<usize>,
-    /// Natural pill widths by caption (and search badge), see `tab_natural_widths`.
-    pub(super) tab_natural_w: RefCell<Vec<(String, u8, bool, Option<String>, f32)>>,
+    /// Natural pill widths by caption (folder glyph and search badge), see `tab_natural_widths`.
+    pub(super) tab_natural_w: RefCell<Vec<(String, u8, bool, bool, Option<String>, f32)>>,
     /// Tab head under an OLE drag (highlighted like a folder drop target; not the hover).
     pub(super) drop_tab: Option<usize>,
     /// Drag dwell timer: the rolled-fence unroll is armed.
