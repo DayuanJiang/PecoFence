@@ -555,7 +555,8 @@ impl IconCache {
 }
 
 /// Decides how an item's icon is cached: per-extension for ordinary documents, per-file for
-/// things whose icon depends on content (executables, shortcuts, images, folders with icons).
+/// things whose icon depends on content (executables, shortcuts, images, folders with icons or
+/// a preview of their contents). The flag is true for an icon without a thumbnail.
 pub fn icon_key_for(path: &Path, is_folder: bool, mtime: i64) -> (IconKey, bool) {
     // Namespace items have no extension; each one has its own icon, and the Recycle Bin's
     // changes with its contents (encoded in `mtime`).
@@ -620,7 +621,9 @@ pub fn icon_key_for(path: &Path, is_folder: bool, mtime: i64) -> (IconKey, bool)
     } else {
         IconKey::ByExt(ext)
     };
-    (key, !thumbnail_capable)
+    // Folders show a preview of their contents as on Windows 11's desktop. With Explorer's
+    // 「始终显示图标，从不显示缩略图」 on, the shell hands back the plain icon itself.
+    (key, !thumbnail_capable && !is_folder)
 }
 
 #[cfg(test)]
@@ -880,6 +883,16 @@ mod tests {
             .suffix(),
             "#c"
         );
+    }
+
+    /// Folders ask for the preview of their contents; documents and shortcuts stay icons,
+    /// pictures stay thumbnails.
+    #[test]
+    fn folders_ask_for_previews() {
+        assert!(!icon_key_for(Path::new("C:\\pf-test\\Photos"), true, 1).1);
+        assert!(icon_key_for(Path::new("C:\\pf-test\\a.txt"), false, 1).1);
+        assert!(icon_key_for(Path::new("C:\\pf-test\\a.lnk"), false, 1).1);
+        assert!(!icon_key_for(Path::new("C:\\pf-test\\a.jpg"), false, 1).1);
     }
 }
 

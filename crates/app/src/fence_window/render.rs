@@ -653,13 +653,16 @@ impl FenceViewState {
             self.unfold_cache = None;
         }
         let details = self.layout == ViewLayout::Details;
+        // Explorer's list and details rows show folders without the preview of their contents.
+        let rows = self.layout != ViewLayout::Icons;
         let now = Instant::now();
         let mut started = false;
         let mut pending = false;
         let mut icons = self.icons.borrow_mut();
         for (i, item) in self.items.iter_mut().enumerate() {
             if item.wants_icon(icon_px) && near(i) {
-                match icons.get(&item.icon_key, &item.path, icon_px, item.icon_only) {
+                let icon_only = item.icon_only || (rows && item.is_folder);
+                match icons.get(&item.icon_key, &item.path, icon_px, icon_only) {
                     Lookup::Ready(Some(img)) => {
                         item.icon = Some(img);
                         item.icon_px = icon_px;
