@@ -409,16 +409,19 @@ impl FenceViewState {
         if dragging.is_some() {
             self.pill_anim = None;
         }
-        // Active pill mid-glide: drawn at the tweened place instead of on the active tab.
-        let pill = self
-            .pill_anim
-            .map(|(x, w)| (x.value_at(now), w.value_at(now)));
+        // Active pill mid-glide: drawn at the tweened place instead of on the active tab. The
+        // glide's end was the tab's rect when it started; once it is done the active tab draws
+        // its own fill, so a strip that changed width meanwhile (Peek badges) is not left with
+        // the pill at the old place.
         if self
             .pill_anim
             .is_some_and(|(x, w)| x.is_done(now) && w.is_done(now))
         {
             self.pill_anim = None;
         }
+        let pill = self
+            .pill_anim
+            .map(|(x, w)| (x.value_at(now), w.value_at(now)));
         let deco = self.deco;
         let style = FenceStyle {
             title_align: self.behavior.title_align.get(),

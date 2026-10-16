@@ -3,6 +3,7 @@
 ## Unreleased
 
 - A folder portal merged into a tab strip shows the folder icon before its name, as it does before its title on its own (#86, by @xan2622). Its tab looked like any other until now, although files dropped on it move into a real folder. In the left tab column, the names of every tab move over to stay aligned once one of them is a folder. Turning off 「标题栏显示文件夹图标」 in the fence options hides it in the tab too.
+- The selected tab's background stays on its tab when Peek switches a fence to the tab with matches. The background glides to the new tab, and when the match counts widened the tabs during that glide it stopped where the tab had been before, half over the next tab, until something redrew the fence.
 
 ## 0.2.1
 
