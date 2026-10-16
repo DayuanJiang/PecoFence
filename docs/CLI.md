@@ -205,30 +205,51 @@ where each move has `item`, `name`, `path`, `from`/`fromTitle`, `to`/`toTitle`, 
 (`null` = the default target). Nothing moves and no snapshot is taken. Without `--dry-run` the same
 `moves` list describes what happened.
 
+An item no rule matches goes to `defaultTarget` (the inbox). With `"unmatched": "stay"` in the rule set
+(Settings › 整理规则 › 没有命中规则的项目 › 留在当前栅栏; the default is `"defaultTarget"`), applying the
+rules leaves such an item in the fence it is in, so disabling a rule no longer sends the items it filed
+back to the inbox. An item in no fence yet still goes to `defaultTarget`. `rule list` shows the value;
+change it in Settings or with `rule import` of an edited `rule list`.
+
 `rule add --index 0` inserts the new rule ahead of existing rules in the same priority class, so a
 PDF rule can take precedence over an existing Documents rule. Without `--index`, the rule is appended.
 
 `rule add` conditions (all must match): `--ext pdf,docx`, `--type programs,folders,documents,images,
 music,video,archives,shortcuts,installers`, `--name-contains`, `--name-not-contains`, `--starts-with`,
-`--ends-with`, `--name-is`, `--glob "*.bak"`, `--folders-only` / `--files-only`, and `--json` with an
-array of `Cond` objects (`describe --schema Cond`) for everything else (size, creation time, idle days).
+`--ends-with`, `--name-is`, `--glob "*.bak"`, `--folders-only` / `--files-only`, `--plain-files`, and
+`--json` with an array of `Cond` objects (`describe --schema Cond`) for everything else (size, creation
+time, idle days). `--plain-files` (`plainFiles`) matches a file that is not a folder, a program (the
+`programs` type), a shortcut (`.lnk`, `.url`, `.website`) or This PC and friends; rules are first match,
+so a `--plain-files` rule added last takes every file the rules before it left, unknown extensions
+included. `config.json` and `config export` files write this condition as
+`{"cond":"filesOnly","plain":true}`, so 0.2.1 and older still open them (and read the rule as
+`--files-only`); `rule list`, `rule import` and `--json` use `{"cond":"plainFiles"}`.
 
 `rule import` reads UTF-8 (a BOM is fine). Windows PowerShell 5 writes UTF-16 with `>`; such a file
 is rejected with `invalid_value` and the hint to re-save it (`| Set-Content -Encoding utf8`).
 
 `settings set` paths are dotted camelCase keys of the Settings object, e.g. `iconSize`, `theme`,
-`themeStyle`, `hideRealIcons`, `autostart`, `peek.enabled`, `quickHide.enabled`,
+`themeStyle`, `hideRealIcons`, `hideInboxWhenIconsShown` (while `hideRealIcons` is off, the inbox
+fence shows no window and its items only show among the Windows desktop icons; a tab or a host of
+tabs stays; default off), `offerNewFence` (a rectangle drawn on empty desktop that touches no fence
+offers 「在此新建栅栏」; default on), `autostart`, `peek.enabled`, `quickHide.enabled`,
 `titleAlign` (left/center/right: the title and tab strip in every title row),
+`labelColor` (auto/white/black: the item names in every fence and view; auto picks dark or light
+names from the wallpaper in Liquid Glass and follows the colour mode in Fluent; fence titles keep
+their `titleColor`; default auto),
 `tabBar` (top/left: a fence with two or more tabs shows them in its title row, or lists them in a
 column on its left that takes the title row's place; rolled up, such a fence shrinks to the
 column; default top),
 `rollUp.hoverPeek`, `rollUp.clickToExpand`, `rollUp.pushNeighbors` (an expanded fence pushes the
 fences stacked below it down and they slide back when it rolls up; their `rect` stays where it was,
 default on), `rollUp.titleOnHover` (the title row folds away until the
-pointer is over the fence; for every fence whose `titleOnHover` is `default`), `snapping.enabled`, `snapping.gapPx` (the gap, in DIPs,
+pointer is over the fence; for every fence whose `titleOnHover` is `default`),
+`rollUp.hideCountAndChevron` (no item count on a rolled title and no roll-up chevron, so the title
+bar shows the name only; double-clicking the title and the fence menu still roll up; default off), `snapping.enabled`, `snapping.gapPx` (the gap, in DIPs,
 fences keep to each other and the screen edges while snapping; 0 to 64, default 8),
 `snapping.sizeToCells` (resizing keeps whole icon columns and rows), `snapping.guideLines`
-(alignment guides while dragging, default on), `icons.chameleon`, `peek.customHotkey` (the Peek
+(alignment guides while dragging, default on), `icons.chameleon`,
+`icons.shortcutArrows` (Windows' shortcut arrow on the icons of shortcuts, default on), `peek.customHotkey` (the Peek
 shortcut as text such as `Ctrl+Shift+F` or `Win+Alt+Space`: Ctrl, Alt or Win plus a letter, digit,
 F1 to F24, Num0 to Num9, Space, Enter, Tab, Esc, Backspace, Insert, Delete, Home, End, PageUp,
 PageDown or an arrow key; `null` goes back to `peek.hotkey`, whose default is Ctrl+Alt+Space, and

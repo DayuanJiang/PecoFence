@@ -721,6 +721,7 @@ pub(super) fn icon_variant_for(s: &pecofence_core::IconSettings) -> IconVariant 
         tint: s.tint_rgb,
         tint_strength: (s.tint_strength.clamp(0.0, 1.0) * 100.0).round() as u8,
         chameleon: s.chameleon,
+        shortcut_arrows: s.shortcut_arrows,
     }
 }
 
@@ -737,9 +738,11 @@ pub(super) fn fence_style_for(f: &pecofence_core::Fence) -> FenceStyle {
             TitleSize::Large => 2,
             TitleSize::ExtraLarge => 3,
         },
-        // Global (标题对齐, 标签栏位置): the window takes them from `Behavior` at draw time.
+        // Global (标题对齐, 标签栏位置, the count and chevron): the window takes them from
+        // `Behavior` at draw time.
         title_align: pecofence_core::TitleAlign::Left,
         tab_rail: 0.0,
+        hide_count_and_chevron: false,
     }
 }
 
@@ -1222,6 +1225,9 @@ impl App {
         } else {
             self.ctx.backdrops.borrow().clone()
         };
+        if mode != self.theme_mode {
+            tray::set_dark_menus(mode == ThemeMode::Dark);
+        }
         self.theme_mode = mode;
         self.accent = accent;
         *self.ctx.theme.borrow_mut() = theme;
@@ -1253,7 +1259,8 @@ impl App {
         tracing::info!(?mode, ?style, accent = ?accent.map(|a| a.accent), "theme refreshed");
     }
 
-    /// Global icon tint / chameleon changed: flush the caches and let icons reload processed.
+    /// Global icon tint / chameleon / shortcut arrows changed: flush the caches and let icons
+    /// reload processed.
     pub(super) fn apply_icon_variant(&mut self) {
         let variant = icon_variant_for(&self.state.config.settings.icons);
         if self.ctx.icons.borrow_mut().set_variant(variant) {

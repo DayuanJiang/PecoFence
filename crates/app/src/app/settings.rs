@@ -723,6 +723,7 @@ impl App {
             .set(new.roll_up.title_on_hover);
         self.ctx.behavior.title_align.set(new.title_align);
         self.ctx.behavior.tab_bar.set(new.tab_bar);
+        self.ctx.behavior.label_color.set(new.label_color);
         self.ctx
             .behavior
             .hide_inactive_scrollbar
@@ -731,10 +732,16 @@ impl App {
             .behavior
             .switch_tab_on_hover
             .set(new.roll_up.switch_tab_on_hover);
+        self.ctx
+            .behavior
+            .hide_count_and_chevron
+            .set(new.roll_up.hide_count_and_chevron);
         // Only whole rows show with 「调整大小时按整行整列对齐」 on: redraw.
         let chrome_changed = new.roll_up.title_on_hover != old.roll_up.title_on_hover
             || new.title_align != old.title_align
+            || new.label_color != old.label_color
             || new.roll_up.hide_inactive_scrollbar != old.roll_up.hide_inactive_scrollbar
+            || new.roll_up.hide_count_and_chevron != old.roll_up.hide_count_and_chevron
             || new.snapping.size_to_cells != old.snapping.size_to_cells;
         if chrome_changed {
             for w in self.fences.values() {
@@ -761,6 +768,8 @@ impl App {
             || new.backdrop != old.backdrop;
         let icons_changed = new.icons != old.icons;
         let push_changed = new.roll_up.push_neighbors != old.roll_up.push_neighbors;
+        let inbox_hiding_changed =
+            new.hide_inbox_when_icons_shown != old.hide_inbox_when_icons_shown;
         // 「调整大小时按整行整列对齐」 switched on keeps every rectangle: the rows fill any
         // height with whole icons (redrawn above), and rounding would undo fences lined up.
         self.state.config.settings = new;
@@ -780,6 +789,9 @@ impl App {
         if push_changed {
             // Pushed fences go back at once when it is switched off.
             self.reflow_pushed();
+        }
+        if inbox_hiding_changed {
+            self.sync_inbox_window();
         }
         self.push_settings_state();
     }

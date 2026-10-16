@@ -426,6 +426,7 @@ impl FenceViewState {
         let style = FenceStyle {
             title_align: self.behavior.title_align.get(),
             tab_rail: self.rail_w(),
+            hide_count_and_chevron: self.behavior.hide_count_and_chevron.get(),
             ..self.style
         };
         let pressed_tab = match self.pressed {
@@ -657,13 +658,16 @@ impl FenceViewState {
             self.unfold_cache = None;
         }
         let details = self.layout == ViewLayout::Details;
+        // Explorer's list and details rows show folders without the preview of their contents.
+        let rows = self.layout != ViewLayout::Icons;
         let now = Instant::now();
         let mut started = false;
         let mut pending = false;
         let mut icons = self.icons.borrow_mut();
         for (i, item) in self.items.iter_mut().enumerate() {
             if item.wants_icon(icon_px) && near(i) {
-                match icons.get(&item.icon_key, &item.path, icon_px, item.icon_only) {
+                let icon_only = item.icon_only || (rows && item.is_folder);
+                match icons.get(&item.icon_key, &item.path, icon_px, self.dpi, icon_only) {
                     Lookup::Ready(Some(img)) => {
                         item.icon = Some(img);
                         item.icon_px = icon_px;
@@ -940,7 +944,9 @@ impl FenceViewState {
             selection_inactive: self.selection_inactive_now(now),
             items_bottom: view_h,
         };
-        let theme = self.material_foreground();
+        let theme = self
+            .material_foreground()
+            .with_label_color(self.behavior.label_color.get());
         let chrome = self.chrome.clone();
         let bitmaps = self.bitmaps.clone();
         let ok = self
@@ -1133,11 +1139,16 @@ impl FenceViewState {
             origin_y: self.content_y as f32 / self.scale(),
             rows_bottom: metrics.header_h + view_h,
         };
-        let theme = self.material_foreground();
+        let label_color = self.behavior.label_color.get();
+        let theme = self.material_foreground().with_label_color(label_color);
         let chrome = self.chrome.clone();
         let bitmaps = self.bitmaps.clone();
         let wallpaper = self.backdrops.for_mode(self.backdrop_mode()).clone();
-        let backdrop = if self.theme.liquid_glass && !wallpaper.is_empty() {
+        // The glass is sampled under each text only to pick its ink: a fixed name colour skips it.
+        let backdrop = if self.theme.liquid_glass
+            && !wallpaper.is_empty()
+            && label_color == pecofence_core::LabelColor::Auto
+        {
             let r = self.backdrop_rect.unwrap_or_else(|| {
                 let r = window::window_rect(self.hwnd);
                 (r.left, r.top, r.right - r.left, r.bottom - r.top)

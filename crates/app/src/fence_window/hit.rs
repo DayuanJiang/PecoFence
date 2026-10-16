@@ -128,8 +128,8 @@ impl FenceViewState {
         let scale = self.scale();
         let (w_px, h_px) = self.chrome_panel.size_px();
         // Under the tabs of a left tab column (the fence's title bar). Collapsed to the column
-        // there is none: a tab click expands the fence.
-        if self.column_collapsed {
+        // there is none: a tab click expands the fence. Hidden by the user, its spot is title.
+        if self.column_collapsed || self.behavior.hide_count_and_chevron.get() {
             return false;
         }
         let r = if self.tabs_on_rail() {

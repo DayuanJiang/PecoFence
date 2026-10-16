@@ -76,7 +76,8 @@ impl App {
         self.ensure_portal_watchers();
         self.state.normalize_tabs();
         // Only host fences own a window; fences hosted as tabs live inside their host's. An
-        // empty inbox set to 为空时自动隐藏 has none until something lands in it.
+        // empty inbox set to 为空时自动隐藏 has none until something lands in it, and one
+        // hidden beside the Windows icons none until they are hidden again.
         let hidden = self.state.hidden_inbox();
         let mut hosts = self.state.host_fences();
         hosts.retain(|f| Some(f.id) != hidden);
@@ -182,7 +183,8 @@ impl App {
     }
 
     /// 为空时自动隐藏: the inbox window goes with its last item and comes back with the next
-    /// one (or when the flag is switched off).
+    /// one (or when the flag is switched off). Also when the inbox's hiding beside the Windows
+    /// icons starts or ends.
     pub(super) fn sync_inbox_window(&mut self) {
         let Some(inbox) = self
             .state

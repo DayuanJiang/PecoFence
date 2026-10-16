@@ -56,6 +56,7 @@ pub mod msg;
 pub mod paint;
 pub mod pipe;
 pub mod process;
+pub mod quicklook;
 pub mod rawinput;
 pub mod shell;
 pub mod shell_icons;

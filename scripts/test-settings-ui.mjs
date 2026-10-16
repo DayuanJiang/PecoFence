@@ -14,14 +14,14 @@ const fixture = {
   locale: 'zh-CN', translations: {},
   settings: {
     language: 'zh-CN',
-    autostart: false, hideRealIcons: false, quickHide: { enabled: true },
-    showDesktop: 'keepVisible', theme: 'dark', themeStyle: 'fluent', titleAlign: 'left', tabBar: 'top', backdrop: 'acrylic', iconSize: 48,
-    icons: { tintRgb: null, tintStrength: 0.6, chameleon: false },
-    rollUp: { hoverPeek: true, clickToExpand: false, pushNeighbors: true, titleOnHover: false, hideInactiveScrollbar: false, switchTabOnHover: false },
+    autostart: false, hideRealIcons: false, hideInboxWhenIconsShown: false, offerNewFence: true, quickHide: { enabled: true },
+    showDesktop: 'keepVisible', theme: 'dark', themeStyle: 'fluent', labelColor: 'auto', titleAlign: 'left', tabBar: 'top', backdrop: 'acrylic', iconSize: 48,
+    icons: { tintRgb: null, tintStrength: 0.6, chameleon: false, shortcutArrows: true },
+    rollUp: { hoverPeek: true, clickToExpand: false, pushNeighbors: true, titleOnHover: false, hideInactiveScrollbar: false, switchTabOnHover: false, hideCountAndChevron: false },
     snapping: { enabled: true, gapPx: 8, sizeToCells: false, guideLines: true }, peek: { enabled: true, dim: true, hotkey: 'ctrlAltSpace' },
   },
   rules: {
-    keepUpdated: true, defaultTarget: 'inbox',
+    keepUpdated: true, defaultTarget: 'inbox', unmatched: 'defaultTarget',
     list: [
       { id: 'rule-a', name: 'Documents', enabled: true, target: { fence: 'fence-a' }, allOf: [{ cond: 'ext', value: ['txt'] }], priorityClass: 'type' },
       { id: 'rule-b', name: 'Images', enabled: true, target: { fence: 'fence-b' }, allOf: [{ cond: 'ext', value: ['png'] }], priorityClass: 'type' },
@@ -329,6 +329,29 @@ async function runTests() {
     assert(list.slice(1).map(r => r.id).join() === before.join(), 'Existing rules changed order');
     assert(doc.querySelector('#ruleList [data-row-id]').dataset.rowId === list[0].id, 'New rule not rendered first');
   });
+  await test('A plain-files rule goes to the end of the list and is named after its condition', async () => {
+    const before = current().rules.list.map(r => r.id);
+    change(doc, 'nrKind', 'plain');
+    assert(doc.getElementById('nrValueWrap').style.display === 'none', 'Plain files asks for a value');
+    await add(doc);
+    const list = current().rules.list, last = list[list.length - 1];
+    assert(last.allOf.length === 1 && last.allOf[0].cond === 'plainFiles' && last.name === '普通文件', 'Plain-files rule not appended: ' + JSON.stringify(last));
+    assert(list.slice(0, -1).map(r => r.id).join() === before.join(), 'Existing rules changed order');
+    const rows = doc.querySelectorAll('#ruleList [data-row-id]');
+    assert(rows[rows.length - 1].querySelector('.conds').textContent.startsWith('普通文件 → '), 'Plain-files rule described wrongly');
+  });
+  await test('Unmatched items can stay in their fence', async () => {
+    const pick = async value => {
+      const sel = doc.querySelector('[data-bind="rules.unmatched"]');
+      sel.value = value; sel.dispatchEvent(new frame.contentWindow.Event('change', { bubbles: true })); await settle();
+    };
+    assert(doc.querySelector('[data-bind="rules.unmatched"]').value === 'defaultTarget', 'Default is not back to the desktop fence');
+    await pick('stay');
+    const sent = frame.contentWindow.testMessages.filter(m => m.type === 'setRules').pop();
+    assert(sent && sent.rules.unmatched === 'stay', 'setRules did not carry unmatched');
+    assert(doc.querySelector('[data-bind="rules.unmatched"]').value === 'stay', 'Choice lost after refresh');
+    await pick('defaultTarget');
+  });
   for (const kind of ['ext', 'exact']) {
     await test('Rejects separator-only ' + kind + ' values', async () => {
       change(doc, 'nrKind', kind); change(doc, 'nrValue', ',，,');
@@ -482,6 +505,15 @@ async function runTests() {
     toggle.click(); await settle();
     assert(!current().settings.autostart && shown().join() === '关', 'Caption did not follow the switch');
   });
+  await test('Hiding the title bar count and chevron is posted', async () => {
+    doc.querySelector('[data-page=general]').click();
+    const toggle = doc.querySelector('[data-bind="rollUp.hideCountAndChevron"]');
+    assert(toggle && !toggle.classList.contains('on'), 'Switch missing or on by default');
+    toggle.click(); await settle();
+    assert(current().settings.rollUp.hideCountAndChevron === true, 'Turning it on was not posted');
+    toggle.click(); await settle();
+    assert(current().settings.rollUp.hideCountAndChevron === false, 'Turning it off was not posted');
+  });
   await test('Dependent rows are disabled while their master switch is off', async () => {
     const guides = doc.querySelector('[data-bind="snapping.guideLines"]'), hotkey = doc.getElementById('peekHotkey');
     doc.querySelector('[data-bind="snapping.enabled"]').click(); await settle();
@@ -498,6 +530,24 @@ async function runTests() {
       && !doc.querySelector('[data-bind="peek.dim"]').closest('.card').classList.contains('disabled'), 'Peek hotkey/dim dependency wrong');
     doc.querySelector('[data-bind="peek.enabled"]').click(); await settle();
     assert(!hotkey.disabled && !doc.getElementById('peekPresetCard').classList.contains('disabled'), 'Hotkey stayed disabled');
+  });
+  await test('Hiding the desktop fence is available only while the Windows icons show', async () => {
+    const icons = doc.querySelector('[data-bind=hideRealIcons]'), inbox = doc.querySelector('[data-bind=hideInboxWhenIconsShown]');
+    assert(!current().settings.hideRealIcons && !inbox.closest('.card').classList.contains('disabled') && inbox.tabIndex === 0, 'Unavailable while the Windows icons show');
+    inbox.click(); await settle();
+    assert(current().settings.hideInboxWhenIconsShown && inbox.getAttribute('aria-checked') === 'true', 'Switch did not post its setting');
+    icons.click(); await settle();
+    assert(current().settings.hideRealIcons && inbox.closest('.card').classList.contains('disabled') && inbox.getAttribute('aria-disabled') === 'true', 'Still available with the Windows icons hidden');
+    inbox.click(); await settle();
+    assert(current().settings.hideInboxWhenIconsShown, 'A disabled switch still changed its setting');
+    icons.click(); await settle();
+    assert(!inbox.closest('.card').classList.contains('disabled'), 'Did not return with the Windows icons');
+    inbox.click(); await settle();
+    const offer = doc.querySelector('[data-bind=offerNewFence]');
+    assert(offer.getAttribute('aria-checked') === 'true', 'New fence offer not shown on');
+    offer.click(); await settle();
+    assert(current().settings.offerNewFence === false, 'New fence offer switch did not post');
+    offer.click(); await settle();
   });
   await test('Colour swatches drive the hidden selects and keep keyboard focus', async () => {
     const swatches = doc.getElementById('iconTintSwatches');
@@ -550,6 +600,17 @@ async function runTests() {
       bar.dispatchEvent(new frame.contentWindow.Event('change', { bubbles: true }));
       await settle();
       assert(current().settings.tabBar === value, 'Tab bar position not posted: ' + value);
+    }
+  });
+  await test('Icon name colour is shown and posted', async () => {
+    doc.querySelector('[data-page=general]').click();
+    const color = doc.querySelector('[data-bind=labelColor]');
+    assert(color.value === 'auto', 'Saved icon name colour not shown');
+    for (const value of ['white', 'black', 'auto']) {
+      color.value = value;
+      color.dispatchEvent(new frame.contentWindow.Event('change', { bubbles: true }));
+      await settle();
+      assert(current().settings.labelColor === value, 'Icon name colour not posted: ' + value);
     }
   });
   await test('Rule rows are compact and the new-rule form opens when needed', async () => {

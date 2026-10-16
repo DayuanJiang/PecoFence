@@ -198,7 +198,7 @@ pub const COMMANDS: &[Entry] = &[
     entry!(
         "rule add",
         Some("rules.add"),
-        "Add a rule from --ext/--type/--name-*/--glob/--folders-only/--files-only/--json",
+        "Add a rule from --ext/--type/--name-*/--glob/--folders-only/--files-only/--plain-files/--json",
         "pecofence-cli rule add --name PDFs --ext pdf --to Docs"
     ),
     entry!(

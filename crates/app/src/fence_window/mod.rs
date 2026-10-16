@@ -128,10 +128,14 @@ pub struct Behavior {
     pub title_align: std::cell::Cell<pecofence_core::TitleAlign>,
     /// Tabs in the title row or in a column on the left (`tabBar`).
     pub tab_bar: std::cell::Cell<pecofence_core::TabBar>,
+    /// Item names in the backdrop's ink or always white / black (`labelColor`).
+    pub label_color: std::cell::Cell<pecofence_core::LabelColor>,
     /// Scrollbar drawn only while hovered / shortly after scrolling.
     pub hide_inactive_scrollbar: std::cell::Cell<bool>,
     /// Resting the pointer on another tab switches to it (`rollUp.switchTabOnHover`).
     pub switch_tab_on_hover: std::cell::Cell<bool>,
+    /// No rolled item count and no roll chevron (`rollUp.hideCountAndChevron`).
+    pub hide_count_and_chevron: std::cell::Cell<bool>,
     /// `SPI_GETWHEELSCROLLLINES`: rows per wheel notch; `u32::MAX` (`WHEEL_PAGESCROLL`) = one
     /// viewport, 0 = the wheel does not scroll. Refreshed on WM_SETTINGCHANGE.
     pub wheel_lines: std::cell::Cell<u32>,

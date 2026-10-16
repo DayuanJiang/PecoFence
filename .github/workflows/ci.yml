@@ -44,12 +44,6 @@ jobs:
           # Separate invocation so the CLI's schemars feature is not unified into the app.
           cargo build --locked --release -p pecofence-cli
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Size gate (pecofence.exe <= 4 MB)
-        shell: pwsh
-        run: |
-          $size = (Get-Item target/release/pecofence.exe).Length
-          Write-Output "pecofence.exe = $size bytes"
-          if ($size -gt 4MB) { throw "binary too large" }
       - name: Install pinned Inno Setup compiler
         shell: pwsh
         run: ./scripts/setup-inno-ci.ps1

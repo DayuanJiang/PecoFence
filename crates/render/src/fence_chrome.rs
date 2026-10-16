@@ -325,6 +325,9 @@ pub struct FenceStyle {
     /// is the fence's title bar, so there is no title row; 0 = the tabs, if any, run along the
     /// title row.
     pub tab_rail: f32,
+    /// No item count on a rolled title and no roll chevron (the global
+    /// 「隐藏标题栏右侧的项目数和折叠箭头」 setting).
+    pub hide_count_and_chevron: bool,
 }
 
 /// Left tab column metrics (DIPs): the free strip above the first tab (a handle to drag the
@@ -1765,6 +1768,9 @@ impl FenceChrome {
             // hover like the title row's chevron. A collapsed column has none (a tab click
             // expands it): the chevron turns as it fades out with the collapse, and back in
             // as the fence expands.
+            if style.hide_count_and_chevron {
+                return Ok(());
+            }
             let chevron_a = rail_chevron_alpha(state.hover, roll_t);
             let rows_end = tabs.iter().map(|t| t.x + t.w).fold(0.0, f32::max);
             let box_r = TitleDeco::rail_chevron_box(style.tab_rail, height, rows_end);
@@ -1811,7 +1817,8 @@ impl FenceChrome {
         let tertiary = session.create_solid_brush(with_alpha(foreground.text_tertiary, title_a))?;
         let title_format = self.title_format(style.title_size);
         // Rolled plate: the item count sits before the chevron so a rolled fence still tells
-        // you what is inside (it fades out as the fence expands).
+        // you what is inside (it fades out as the fence expands), unless the user hid it.
+        let caption = caption.filter(|_| !style.hide_count_and_chevron);
         let count_a = state.count.clamp(0.0, 1.0) * title_a;
         let count_w = if caption.is_some() && (rolled_up || count_a > 0.0) {
             header_count_width(width, tabs.len(), deco.title_x())
@@ -2129,6 +2136,9 @@ impl FenceChrome {
         // the chevron stays fully shown until the height has settled, so an expand started
         // with the pointer off the title row (context menu, keyboard) does not pop it to the
         // hover alpha on its first frame.
+        if style.hide_count_and_chevron {
+            return Ok(());
+        }
         let chevron_a = if rolled_up || roll_t > 0.0 {
             1.0
         } else {

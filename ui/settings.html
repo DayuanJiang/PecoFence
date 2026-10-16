@@ -356,6 +356,8 @@
         </div></div>
       <div class="card"><div class="l"><span class="ic">&#xE7A1;</span><div><div class="t">颜色模式</div></div></div>
         <select data-bind="theme"><option value="followWindowsMode">跟随 Windows 模式</option><option value="followAppMode">跟随应用模式</option><option value="light">浅色</option><option value="dark">深色</option></select></div>
+      <div class="card"><div class="l"><span class="ic">&#xE8D3;</span><div><div class="t">图标名称颜色</div><div class="s">自动：液态玻璃按背后壁纸的明暗选深色或浅色，Fluent 跟随颜色模式；栅栏标题的颜色在“栅栏”页设置</div></div></div>
+        <select data-bind="labelColor"><option value="auto">自动</option><option value="white">白色</option><option value="black">黑色</option></select></div>
       <div class="card"><div class="l"><span class="ic">&#xE8E4;</span><div><div class="t">标题对齐</div></div></div>
         <select data-bind="titleAlign"><option value="left">左对齐</option><option value="center">居中</option><option value="right">右对齐</option></select></div>
       <div class="card"><div class="l"><span class="ic">&#xE90C;</span><div><div class="t">标签栏位置</div><div class="s">有多个标签页时，标签排在标题栏里，或在栅栏左侧排成一列</div></div></div>
@@ -370,12 +372,17 @@
           <select id="iconTintStrength"><option value="0.35">弱</option><option value="0.6">中</option><option value="0.9">强</option></select></div>
       </div>
       <div class="card"><div class="l"><span class="ic">&#xE793;</span><div><div class="t">图标融入背景（Chameleon）</div><div class="s">降低图标饱和度和不透明度，让桌面看起来更清爽</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="icons.chameleon"></div></div>
+      <div class="card"><div class="l"><span class="ic">&#xE71B;</span><div><div class="t">显示快捷方式箭头</div><div class="s">和 Windows 桌面一样，在快捷方式图标的左下角显示小箭头</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="icons.shortcutArrows"></div></div>
       <div class="card"><div class="l"><span class="ic">&#xE774;</span><div><div class="t">显示语言</div><div class="s">立即切换界面语言；你的文件和自定义名称保持不变</div></div></div>
         <select id="language" data-bind="language"><option value="system">跟随系统</option><option value="zh-CN" data-language-name>简体中文</option><option value="zh-TW" data-language-name>繁體中文</option><option value="en" data-language-name>English</option><option value="ja" data-language-name>日本語</option><option value="ko" data-language-name>한국어</option><option value="de" data-language-name>Deutsch</option><option value="fr" data-language-name>Français</option><option value="es" data-language-name>Español</option><option value="pt-BR" data-language-name>Português (Brasil)</option><option value="ru" data-language-name>Русский</option></select></div>
       <h3>桌面与启动</h3>
       <div class="card"><div class="l"><span class="ic">&#xE7E8;</span><div><div class="t">随 Windows 启动</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="autostart"></div></div>
-      <div class="card"><div class="l"><span class="ic">&#xE8A9;</span><div><div class="t">隐藏 Windows 桌面图标</div><div class="s">桌面项目只显示在栅栏里，未归类的进入“桌面”栅栏；回收站等系统图标也会出现在“桌面”栅栏中</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="hideRealIcons"></div></div>
+      <div class="group">
+        <div class="card"><div class="l"><span class="ic">&#xE8A9;</span><div><div class="t">隐藏 Windows 桌面图标</div><div class="s">桌面项目只显示在栅栏里，未归类的进入“桌面”栅栏；回收站等系统图标也会出现在“桌面”栅栏中</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="hideRealIcons"></div></div>
+        <div class="card child"><div class="l"><div><div class="t">显示 Windows 桌面图标时隐藏“桌面”栅栏</div><div class="s">未归类的项目只留在 Windows 桌面上；关闭“隐藏 Windows 桌面图标”后可用</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="hideInboxWhenIconsShown"></div></div>
+      </div>
       <div class="card"><div class="l"><span class="ic">&#xE890;</span><div><div class="t">双击桌面空白处隐藏或显示栅栏</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="quickHide.enabled"></div></div>
+      <div class="card"><div class="l"><span class="ic">&#xE8B3;</span><div><div class="t">在桌面空白处拖出矩形时提供“在此新建栅栏”</div><div class="s">矩形没有碰到任何栅栏时弹出这一项；关闭后拖出矩形只用来框选，仍可从托盘菜单新建栅栏</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="offerNewFence"></div></div>
       <div class="card"><div class="l"><span class="ic">&#xE7C4;</span><div><div class="t">显示桌面 (Win+D) 时</div></div></div>
         <select data-bind="showDesktop"><option value="keepVisible">保持栅栏可见</option><option value="hideWithDesktop">随桌面隐藏</option></select></div>
       <h3>行为</h3>
@@ -383,6 +390,7 @@
       <div class="card"><div class="l"><span class="ic">&#xE7C9;</span><div><div class="t">收起的栅栏需点击标题才展开</div><div class="s">开启后不再悬停展开；拖动标题仍可移动栅栏</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="rollUp.clickToExpand"></div></div>
       <div class="card"><div class="l"><span class="ic">&#xE74B;</span><div><div class="t">展开时把下面的栅栏推开</div><div class="s">收起后它们会回到原位</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="rollUp.pushNeighbors"></div></div>
       <div class="card"><div class="l"><span class="ic">&#xE737;</span><div><div class="t">鼠标悬停时才显示标题栏</div><div class="s">平时只显示图标，让桌面更清爽；每个栅栏可在“栅栏”页单独设置</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="rollUp.titleOnHover"></div></div>
+      <div class="card"><div class="l"><span class="ic">&#xE70E;</span><div><div class="t">隐藏标题栏右侧的项目数和折叠箭头</div><div class="s">标题栏只显示名称；双击标题或用右键菜单收起和展开</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="rollUp.hideCountAndChevron"></div></div>
       <div class="card"><div class="l"><span class="ic">&#xE7C3;</span><div><div class="t">鼠标悬停时切换标签页</div><div class="s">鼠标在标签页上停留片刻就切换过去，不用点击</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="rollUp.switchTabOnHover"></div></div>
       <div class="card"><div class="l"><span class="ic">&#xE7B1;</span><div><div class="t">自动隐藏滚动条</div><div class="s">鼠标移到栅栏上或滚动时才显示</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="rollUp.hideInactiveScrollbar"></div></div>
       <h3>吸附与对齐</h3>
@@ -453,6 +461,8 @@
     <section class="page" id="page-rules">
       <header class="page-header"><h2>整理规则</h2></header>
       <div class="card"><div class="l"><span class="ic">&#xE8CB;</span><div><div class="t">新项目出现在桌面时自动归类</div><div class="s">先看快捷方式目标规则，再按列表顺序匹配；都不符合的放进“桌面”栅栏</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="rules.keepUpdated"></div></div>
+      <div class="card"><div class="l"><span class="ic">&#xE718;</span><div><div class="t">没有命中规则的项目</div><div class="s">应用规则时，已在某个栅栏里但不符合任何规则的项目放在哪里；不符合规则的新项目总是放进“桌面”栅栏</div></div></div>
+        <select data-bind="rules.unmatched"><option value="defaultTarget">回到“桌面”栅栏</option><option value="stay">留在当前栅栏</option></select></div>
       <div class="card"><div class="l"><span class="ic">&#xE8AB;</span><div><div class="t">立即对桌面上的全部项目应用规则</div><div class="s">手动摆放过的项目保持原位</div></div></div><button id="applyRules">立即应用</button></div>
       <h3>快速添加</h3>
       <div class="card stack"><div class="l"><span class="ic">&#xE8F4;</span><div><div class="t">一键创建栅栏并添加规则</div><div class="s">“待清理”只归拢 30 天没用过的安装包和压缩包，不删除任何文件</div></div></div>
@@ -473,7 +483,7 @@
             <option value="glob">通配符（*.png）</option><option value="target">快捷方式目标包含</option>
             <option value="time">创建时段</option><option value="weekday">创建于星期几</option><option value="size">大小范围（MB）</option>
             <option value="idle">闲置天数（未修改也未打开）</option>
-            <option value="folders">仅文件夹</option><option value="files">仅文件</option></select></label>
+            <option value="folders">仅文件夹</option><option value="files">仅文件</option><option value="plain">普通文件（程序和快捷方式除外）</option></select></label>
           <label id="nrValueWrap">条件值<input type="text" id="nrValue" placeholder="png, jpg"></label>
           <div class="cats" id="nrCats" style="grid-column: 1 / -1"></div>
           <div class="cats" id="nrTime" style="grid-column: 1 / -1; display:none"><label>从 <input type="time" id="nrFrom" value="18:00"></label><label>到 <input type="time" id="nrTo" value="06:00"></label><span class="s">结束时间早于开始时间，表示跨过午夜</span></div>
@@ -705,13 +715,15 @@
       }
     });
   }
-  // Only these rows depend on their master switch: guide lines need snapping, and the shortcut
-  // rows (renderPeekHotkey) are what Peek's switch turns on. Gap, whole-cell sizing and dimming
-  // apply without them.
-  const DEPENDENT = [['snapping.guideLines', 'snapping.enabled']];
+  // Only these rows depend on their master switch: guide lines need snapping, hiding the inbox
+  // beside the Windows icons needs those icons shown ('!': while the master is off), and the
+  // shortcut rows (renderPeekHotkey) are what Peek's switch turns on. Gap, whole-cell sizing
+  // and dimming apply without them.
+  const DEPENDENT = [['snapping.guideLines', 'snapping.enabled'], ['hideInboxWhenIconsShown', '!hideRealIcons']];
   function renderDependents() {
     for (const [child, master] of DEPENDENT) {
-      const on = !!get(state.settings, master), el = document.querySelector(`[data-bind="${child}"]`);
+      const value = !!get(state.settings, master.replace('!', ''));
+      const on = master.startsWith('!') ? !value : value, el = document.querySelector(`[data-bind="${child}"]`);
       el.closest('.card').classList.toggle('disabled', !on);
       if (el.tagName === 'SELECT') el.disabled = !on;
       else { el.tabIndex = on ? 0 : -1; el.setAttribute('aria-disabled', String(!on)); }
@@ -978,6 +990,7 @@
       case 'shortcutTarget': return (TARGET_OPS[v.op] || TARGET_OPS.contains)(v.value);
       case 'foldersOnly': return t("仅文件夹");
       case 'filesOnly': return t("仅文件");
+      case 'plainFiles': return t("普通文件");
       case 'sizeMb': return v.min != null && v.max != null ? tf("大小 {0}–{1} MB", v.min, v.max)
         : v.min != null ? tf("大小 ≥ {0} MB", v.min) : v.max != null ? tf("大小 ≤ {0} MB", v.max) : t("大小");
       case 'createdTime': return tf("创建时间 {0}–{1}", hm(v.from_min), hm(v.to_min));
@@ -1057,7 +1070,7 @@
   const WEEKDAYS = () => [['0',t("周一")],['1',t("周二")],['2',t("周三")],['3',t("周四")],['4',t("周五")],['5',t("周六")],['6',t("周日")]];
   function updateKind() {
     const k = document.getElementById('nrKind').value;
-    const noValue = ['type','folders','files','time','weekday','size','idle'];
+    const noValue = ['type','folders','files','plain','time','weekday','size','idle'];
     document.getElementById('nrValueWrap').style.display = noValue.includes(k) ? 'none' : '';
     document.getElementById('nrCats').style.display = k === 'type' ? '' : 'none';
     document.getElementById('nrTime').style.display = k === 'time' ? '' : 'none';
@@ -1117,13 +1130,16 @@
       cond = { cond: 'idleDays', value: { min: Math.floor(days) } }; cls = 'time';
     }
     else if (kind === 'files') cond = { cond: 'filesOnly', value: null };
+    else if (kind === 'plain') cond = { cond: 'plainFiles', value: null };
     else cond = { cond: 'foldersOnly', value: null };
     const fence = state.fences.find(f => f.id === target);
     // An unnamed rule is called after its condition, so the list does not fill with identical names.
     const name = document.getElementById('nrName').value.trim() || condLabel(cond);
     // Rules match in list order: at the end, the new rule would sit behind the broad first-run
-    // ones ("Files and documents") and rarely fire.
-    state.rules.list.unshift({ id: newId(), name, enabled: true, target: fence && fence.kind === 'inbox' ? 'inbox' : { fence: target }, allOf: [cond], priorityClass: cls });
+    // ones ("Files and documents") and rarely fire. A plain-files rule is the catch-all that
+    // takes what the rules before it leave, so it goes last.
+    const rule = { id: newId(), name, enabled: true, target: fence && fence.kind === 'inbox' ? 'inbox' : { fence: target }, allOf: [cond], priorityClass: cls };
+    if (kind === 'plain') state.rules.list.push(rule); else state.rules.list.unshift(rule);
     send({ type: 'setRules', rules: state.rules }); renderRules(); toast(t("已添加规则"));
     document.getElementById('nrName').value = ''; document.getElementById('nrValue').value = '';
   };

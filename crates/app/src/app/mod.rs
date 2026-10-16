@@ -406,6 +406,7 @@ impl App {
         }
 
         let theme_mode = pick_theme_mode(state.config.settings.theme, &args);
+        tray::set_dark_menus(theme_mode == ThemeMode::Dark);
         let accent = systheme::accent_palette();
         let theme = theme_for(
             theme_mode,
@@ -1033,11 +1034,15 @@ impl App {
                 title_on_hover: std::cell::Cell::new(state.config.settings.roll_up.title_on_hover),
                 title_align: std::cell::Cell::new(state.config.settings.title_align),
                 tab_bar: std::cell::Cell::new(state.config.settings.tab_bar),
+                label_color: std::cell::Cell::new(state.config.settings.label_color),
                 hide_inactive_scrollbar: std::cell::Cell::new(
                     state.config.settings.roll_up.hide_inactive_scrollbar,
                 ),
                 switch_tab_on_hover: std::cell::Cell::new(
                     state.config.settings.roll_up.switch_tab_on_hover,
+                ),
+                hide_count_and_chevron: std::cell::Cell::new(
+                    state.config.settings.roll_up.hide_count_and_chevron,
                 ),
                 wheel_lines: std::cell::Cell::new(sysparams::wheel_scroll_lines()),
                 drop_preview: std::cell::RefCell::new(

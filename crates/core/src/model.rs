@@ -29,6 +29,8 @@ pub struct Config {
     pub items: HashMap<ItemId, Item>,
     /// One layout per monitor configuration.
     pub layouts: Vec<Layout>,
+    #[serde(with = "crate::rules::saved")]
+    #[cfg_attr(feature = "schema", schemars(with = "crate::rules::RuleSet"))]
     pub rules: crate::rules::RuleSet,
     #[serde(default)]
     pub undo_log: Vec<Assignment>,
@@ -94,6 +96,9 @@ pub struct Settings {
     /// Material style is independent of the light/dark preference.
     #[serde(default)]
     pub theme_style: ThemeStyle,
+    /// Colour of the item names in every fence; fence titles have their own `titleColor`.
+    #[serde(default)]
+    pub label_color: LabelColor,
     /// Where every fence's title (or tab strip) sits in its title row.
     #[serde(default)]
     pub title_align: TitleAlign,
@@ -105,6 +110,13 @@ pub struct Settings {
     pub roll_up: RollUpSettings,
     pub show_desktop: ShowDesktopSetting,
     pub hide_real_icons: bool,
+    /// While `hideRealIcons` is off, the inbox fence has no window: the items no rule files
+    /// show only among Windows' own desktop icons.
+    #[serde(default)]
+    pub hide_inbox_when_icons_shown: bool,
+    /// A rectangle drawn on the empty desktop that touches no fence offers 「在此新建栅栏」.
+    #[serde(default = "default_true")]
+    pub offer_new_fence: bool,
     /// Unused (see [`UNUSED_SETTINGS`]).
     #[serde(default)]
     #[cfg_attr(feature = "schema", schemars(skip))]
@@ -205,6 +217,7 @@ impl Default for Settings {
             backdrop: Backdrop::Acrylic,
             theme: ThemeSetting::FollowWindowsMode,
             theme_style: ThemeStyle::Fluent,
+            label_color: LabelColor::Auto,
             title_align: TitleAlign::Left,
             tab_bar: TabBar::Top,
             icon_size: 48,
@@ -212,6 +225,8 @@ impl Default for Settings {
             roll_up: RollUpSettings::default(),
             show_desktop: ShowDesktopSetting::KeepVisible,
             hide_real_icons: true,
+            hide_inbox_when_icons_shown: false,
+            offer_new_fence: true,
             show_real_icons_when_fences_hidden: false,
             snapping: SnappingSettings::default(),
             zorder: ZOrderSetting::InsertAboveHost,
@@ -250,6 +265,18 @@ pub enum ThemeStyle {
     #[default]
     Fluent,
     LiquidGlass,
+}
+
+/// Item name colour (「图标名称颜色」). Auto: Liquid Glass picks dark or light text from the
+/// wallpaper under each fence, Fluent follows the colour mode. The halo pairs with the text.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase")]
+pub enum LabelColor {
+    #[default]
+    Auto,
+    White,
+    Black,
 }
 
 /// Title position in the title row (Fences centres it). The chevron zone on the right stays
@@ -368,6 +395,10 @@ pub struct RollUpSettings {
     /// click would.
     #[serde(default)]
     pub switch_tab_on_hover: bool,
+    /// No item count on a rolled title and no roll chevron: the title bar shows the name only.
+    /// Double-clicking the title and the fence menu still roll the fence up and down.
+    #[serde(default)]
+    pub hide_count_and_chevron: bool,
 }
 
 impl Default for RollUpSettings {
@@ -383,6 +414,7 @@ impl Default for RollUpSettings {
             hide_inactive_scrollbar: false,
             push_neighbors: true,
             switch_tab_on_hover: false,
+            hide_count_and_chevron: false,
         }
     }
 }
@@ -680,6 +712,9 @@ pub struct IconSettings {
     pub tint_strength: f32,
     /// Chameleon: icons desaturate and fade so they blend with the backdrop.
     pub chameleon: bool,
+    /// Windows' shortcut arrow at the bottom-left of the items Explorer draws it on.
+    #[serde(default = "default_true")]
+    pub shortcut_arrows: bool,
 }
 
 impl Default for IconSettings {
@@ -688,6 +723,7 @@ impl Default for IconSettings {
             tint_rgb: None,
             tint_strength: 0.6,
             chameleon: false,
+            shortcut_arrows: true,
         }
     }
 }
@@ -1597,15 +1633,28 @@ mod tests {
     }
 
     #[test]
+    fn desktop_settings_missing_from_older_files_keep_the_old_behaviour() {
+        let mut json = serde_json::to_value(Settings::default()).unwrap();
+        let obj = json.as_object_mut().unwrap();
+        assert!(obj.remove("offerNewFence").is_some());
+        assert!(obj.remove("hideInboxWhenIconsShown").is_some());
+        let legacy: Settings = serde_json::from_value(json).unwrap();
+        assert!(legacy.offer_new_fence);
+        assert!(!legacy.hide_inbox_when_icons_shown);
+    }
+
+    #[test]
     fn theme_style_loads_legacy_settings_and_roundtrips_independently_of_mode() {
         let mut json = serde_json::to_value(Settings::default()).unwrap();
         json.as_object_mut().unwrap().remove("themeStyle");
         json.as_object_mut().unwrap().remove("titleAlign");
         json.as_object_mut().unwrap().remove("tabBar");
+        json.as_object_mut().unwrap().remove("labelColor");
         let legacy: Settings = serde_json::from_value(json).unwrap();
         assert_eq!(legacy.theme_style, ThemeStyle::Fluent);
         assert_eq!(legacy.title_align, TitleAlign::Left);
         assert_eq!(legacy.tab_bar, TabBar::Top);
+        assert_eq!(legacy.label_color, LabelColor::Auto);
         for mode in [
             ThemeSetting::Light,
             ThemeSetting::Dark,
@@ -1615,12 +1664,32 @@ mod tests {
             let settings = Settings {
                 theme: mode,
                 theme_style: ThemeStyle::LiquidGlass,
+                label_color: LabelColor::White,
                 ..legacy.clone()
             };
             let json = serde_json::to_value(&settings).unwrap();
             assert_eq!(json["themeStyle"], "liquidGlass");
+            assert_eq!(json["labelColor"], "white");
             assert_eq!(serde_json::from_value::<Settings>(json).unwrap(), settings);
         }
+    }
+
+    /// Settings from before `rollUp.hideCountAndChevron` keep the count and chevron; the switch
+    /// saves and loads back.
+    #[test]
+    fn hide_count_and_chevron_defaults_off_and_roundtrips() {
+        let mut json = serde_json::to_value(Settings::default()).unwrap();
+        json["rollUp"]
+            .as_object_mut()
+            .unwrap()
+            .remove("hideCountAndChevron");
+        let legacy: Settings = serde_json::from_value(json).unwrap();
+        assert!(!legacy.roll_up.hide_count_and_chevron);
+        let mut settings = legacy;
+        settings.roll_up.hide_count_and_chevron = true;
+        let json = serde_json::to_value(&settings).unwrap();
+        assert_eq!(json["rollUp"]["hideCountAndChevron"], true);
+        assert_eq!(serde_json::from_value::<Settings>(json).unwrap(), settings);
     }
 
     fn geo() -> NormGeometry {
