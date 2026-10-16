@@ -228,7 +228,8 @@ default on), `rollUp.titleOnHover` (the title row folds away until the
 pointer is over the fence; for every fence whose `titleOnHover` is `default`), `snapping.enabled`, `snapping.gapPx` (the gap, in DIPs,
 fences keep to each other and the screen edges while snapping; 0 to 64, default 8),
 `snapping.sizeToCells` (resizing keeps whole icon columns and rows), `snapping.guideLines`
-(alignment guides while dragging, default on), `icons.chameleon`, `peek.customHotkey` (the Peek
+(alignment guides while dragging, default on), `icons.chameleon`,
+`icons.shortcutArrows` (Windows' shortcut arrow on the icons of shortcuts, default on), `peek.customHotkey` (the Peek
 shortcut as text such as `Ctrl+Shift+F` or `Win+Alt+Space`: Ctrl, Alt or Win plus a letter, digit,
 F1 to F24, Num0 to Num9, Space, Enter, Tab, Esc, Backspace, Insert, Delete, Home, End, PageUp,
 PageDown or an arrow key; `null` goes back to `peek.hotkey`, whose default is Ctrl+Alt+Space, and

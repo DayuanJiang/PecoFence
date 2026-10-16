@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Folders show what is inside them, as on the Windows 11 desktop (#120): a folder of pictures shows one of them in the folder, a folder of documents shows a page, and an empty folder keeps the plain folder icon. The 「列表」 and 「详细信息」 views keep plain folder icons, as Explorer's do. With 「始终显示图标，从不显示缩略图」 on in File Explorer Options, folders show the plain icon too, as pictures and videos already did. On a test desktop with 36 folders of pictures the fences had every icon ready as quickly as before once Windows had the previews in its thumbnail cache; the first start after that cache was emptied took about half a second longer.
+- Shortcuts show Windows' shortcut arrow at the bottom left of their icon, as on the desktop (feedback #3, #37), so a shortcut and the file or folder it opens can be told apart: .lnk and .url files and every other kind Explorer marks the same way, in the icon, list and details views, at every icon size and display scaling, with the arrow as large as Explorer draws it. PecoFence uses the arrow Windows itself uses, so an arrow you replaced or removed in Windows (the `Shell Icons` value 29) looks the same in the fences. The arrows are on after the update; to turn them off, switch off 「显示快捷方式箭头」 in Settings › 常规 › 外观, or run `pecofence-cli settings set icons.shortcutArrows false`.
 
 ## 0.2.1
 

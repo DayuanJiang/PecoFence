@@ -17,13 +17,15 @@ use std::time::{Duration, Instant};
 pub const WM_APP_ICON_READY: u32 = pecofence_platform::msg::WM_APP + 4;
 const WORKERS: usize = 2;
 
-/// Global icon post-processing (Fences Icon Tint / Chameleon); part of the cache key.
+/// Global icon post-processing (Fences Icon Tint / Chameleon, Windows' shortcut arrows); part
+/// of the cache key.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct IconVariant {
     pub tint: Option<[u8; 3]>,
     /// 0..=100 percent.
     pub tint_strength: u8,
     pub chameleon: bool,
+    pub shortcut_arrows: bool,
 }
 
 impl IconVariant {
@@ -38,11 +40,12 @@ impl IconVariant {
                 0
             },
             chameleon: self.chameleon,
+            shortcut_arrows: self.shortcut_arrows,
         }
     }
 
     fn suffix(&self) -> String {
-        match (self.tint, self.chameleon) {
+        let mut s = match (self.tint, self.chameleon) {
             (None, false) => String::new(),
             (Some(t), c) => format!(
                 "#t{:02x}{:02x}{:02x}{}{}",
@@ -53,7 +56,11 @@ impl IconVariant {
                 if c { "c" } else { "" }
             ),
             (None, true) => "#c".to_string(),
+        };
+        if self.shortcut_arrows {
+            s.push_str("#a");
         }
+        s
     }
 
     fn apply(&self, img: &mut Image) {
@@ -79,6 +86,10 @@ struct Request {
     /// The Recycle Bin: full or empty as its key says (`mtime` 1 or 0), so the picture matches
     /// the key even when the bin changed while the request waited.
     recycle_bin_full: Option<bool>,
+    /// Pixel size of the shortcut arrow to draw if the shell says the item has one
+    /// (`arrow_px`). Only for per-file keys: a symbolic link to a document would otherwise put
+    /// its arrow on every file of the type.
+    link_arrow: Option<u32>,
 }
 
 /// An extraction in flight (or waiting for a retry), with how often it has failed so far.
@@ -201,7 +212,17 @@ impl IconCache {
                             || shell::shell_image(&req.path, req.size_px, req.icon_only),
                             Ok,
                         ) {
-                            Ok(img) => {
+                            Ok(mut img) => {
+                                if let Some(arrow) = req.link_arrow
+                                    && shell::is_link(&req.path)
+                                {
+                                    // An image smaller than asked for is drawn scaled up.
+                                    let px = img.width.max(img.height);
+                                    shell::add_link_overlay(
+                                        &mut img,
+                                        arrow * px / req.size_px.max(1),
+                                    );
+                                }
                                 let mut image = Image {
                                     width: img.width,
                                     height: img.height,
@@ -296,8 +317,16 @@ impl IconCache {
         }
     }
 
-    /// Cached image, or queues extraction and reports `Pending`.
-    pub fn get(&mut self, key: &IconKey, path: &Path, size_px: u32, icon_only: bool) -> Lookup {
+    /// Cached image, or queues extraction and reports `Pending`. `dpi` is the monitor's, for
+    /// the size of the shortcut arrow.
+    pub fn get(
+        &mut self,
+        key: &IconKey,
+        path: &Path,
+        size_px: u32,
+        dpi: u32,
+        icon_only: bool,
+    ) -> Lookup {
         let k = (
             format!("{}{}", Self::cache_key(key), self.variant.suffix()),
             size_px,
@@ -321,6 +350,9 @@ impl IconCache {
                 variant: self.variant,
                 id: self.next_id,
                 recycle_bin_full,
+                link_arrow: (self.variant.shortcut_arrows
+                    && matches!(key, IconKey::ByContent { .. }))
+                .then(|| arrow_px(size_px, dpi)),
             };
             self.send(&req);
             self.pending.insert(
@@ -554,6 +586,21 @@ impl IconCache {
     }
 }
 
+/// Pixel size of the shortcut arrow image Explorer's desktop draws over an icon of `size_px` on
+/// a monitor of `dpi` (measured on Windows 11 at 100% and 150%, icons of 16 to 256 DIPs): the
+/// 16 DIP arrow on icons under 32 DIPs, the 32 DIP one up to 48 DIPs, and 0.3 DIP more for every
+/// DIP above that.
+pub fn arrow_px(size_px: u32, dpi: u32) -> u32 {
+    let scale = dpi.max(96) as f32 / 96.0;
+    let dip = size_px as f32 / scale;
+    let arrow = if dip < 32.0 {
+        16.0
+    } else {
+        32.0 + (dip - 48.0).max(0.0) * 0.3
+    };
+    (arrow * scale).round() as u32
+}
+
 /// Decides how an item's icon is cached: per-extension for ordinary documents, per-file for
 /// things whose icon depends on content (executables, shortcuts, images, folders with icons or
 /// a preview of their contents). The flag is true for an icon without a thumbnail.
@@ -579,6 +626,7 @@ pub fn icon_key_for(path: &Path, is_folder: bool, mtime: i64) -> (IconKey, bool)
             ".exe"
                 | ".lnk"
                 | ".url"
+                | ".website"
                 | ".ico"
                 | ".cur"
                 | ".appref-ms"
@@ -662,10 +710,13 @@ mod tests {
         // Still extracting: one icon a window waits for, one nobody needs any more.
         let path = Path::new("c:\\pf-test-missing.jpg");
         assert!(matches!(
-            cache.get(&shown, path, 72, false),
+            cache.get(&shown, path, 72, 96, false),
             Lookup::Pending
         ));
-        assert!(matches!(cache.get(&left, path, 96, false), Lookup::Pending));
+        assert!(matches!(
+            cache.get(&left, path, 96, 96, false),
+            Lookup::Pending
+        ));
         let needed: HashSet<String> = [
             cache.draw_key(&shown, 48),
             cache.draw_key(&shown, 72),
@@ -707,21 +758,30 @@ mod tests {
             still_there: false,
         };
         // The first request is dropped in flight and asked again; only the second one counts.
-        assert!(matches!(cache.get(&key, path, 96, false), Lookup::Pending));
+        assert!(matches!(
+            cache.get(&key, path, 96, 96, false),
+            Lookup::Pending
+        ));
         cache.invalidate(&key);
-        assert!(matches!(cache.get(&key, path, 96, false), Lookup::Pending));
+        assert!(matches!(
+            cache.get(&key, path, 96, 96, false),
+            Lookup::Pending
+        ));
         done.send(ready(1, "ext:.pf-test")).unwrap();
         assert_eq!(cache.drain_results(), 0);
-        assert!(matches!(cache.get(&key, path, 96, false), Lookup::Pending));
+        assert!(matches!(
+            cache.get(&key, path, 96, 96, false),
+            Lookup::Pending
+        ));
         done.send(ready(2, "ext:.pf-test")).unwrap();
         assert_eq!(cache.drain_results(), 1);
         assert!(matches!(
-            cache.get(&key, path, 96, false),
+            cache.get(&key, path, 96, 96, false),
             Lookup::Ready(Some(_))
         ));
         // A result for a variant that was switched away from stays out of the cache.
         assert!(matches!(
-            cache.get(&IconKey::ByExt(".pf-other".into()), path, 96, false),
+            cache.get(&IconKey::ByExt(".pf-other".into()), path, 96, 96, false),
             Lookup::Pending
         ));
         cache.set_variant(IconVariant {
@@ -741,9 +801,18 @@ mod tests {
         let path = Path::new("C:\\pf-test.pf-test");
         let a = IconKey::ByExt(".pf-live-a".into());
         let b = IconKey::ByExt(".pf-live-b".into());
-        assert!(matches!(cache.get(&a, path, 48, false), Lookup::Pending));
-        assert!(matches!(cache.get(&a, path, 96, false), Lookup::Pending));
-        assert!(matches!(cache.get(&b, path, 48, false), Lookup::Pending));
+        assert!(matches!(
+            cache.get(&a, path, 48, 96, false),
+            Lookup::Pending
+        ));
+        assert!(matches!(
+            cache.get(&a, path, 96, 96, false),
+            Lookup::Pending
+        ));
+        assert!(matches!(
+            cache.get(&b, path, 48, 96, false),
+            Lookup::Pending
+        ));
         let ids: Vec<u64> = cache.pending.values().map(|f| f.req.id).collect();
         assert_eq!(cache.live_lock().len(), 3);
         assert!(ids.iter().all(|id| cache.live_lock().contains(id)));
@@ -768,7 +837,10 @@ mod tests {
         cache.invalidate(&b);
         assert!(cache.live_lock().is_empty());
         // The variant switch drops everything queued.
-        assert!(matches!(cache.get(&a, path, 72, false), Lookup::Pending));
+        assert!(matches!(
+            cache.get(&a, path, 72, 96, false),
+            Lookup::Pending
+        ));
         cache.set_variant(IconVariant {
             chameleon: true,
             ..IconVariant::default()
@@ -786,7 +858,7 @@ mod tests {
         let this_pc = Path::new("::{20D04FE0-3AEA-1069-A2D8-08002B30309D}");
         let (key, _) = icon_key_for(this_pc, false, 0);
         assert!(matches!(
-            cache.get(&key, this_pc, 48, true),
+            cache.get(&key, this_pc, 48, 96, true),
             Lookup::Pending
         ));
         done.send(Ready {
@@ -801,7 +873,7 @@ mod tests {
         assert_eq!(cache.drain_results(), 0);
         assert_eq!(cache.retry.len(), 1);
         assert!(matches!(
-            cache.get(&key, this_pc, 48, true),
+            cache.get(&key, this_pc, 48, 96, true),
             Lookup::Pending
         ));
     }
@@ -830,7 +902,10 @@ mod tests {
         // First answers: a generic picture, a failure (no file, so no quick retry), the real one.
         for (k, first) in keys.iter().zip([Some(1), None, Some(3)]) {
             let key = IconKey::ByExt(k.trim_start_matches("ext:").to_string());
-            assert!(matches!(cache.get(&key, path, 48, true), Lookup::Pending));
+            assert!(matches!(
+                cache.get(&key, path, 48, 96, true),
+                Lookup::Pending
+            ));
             answer(&mut cache, k, first);
         }
         assert!(cache.take_replaced().is_empty());
@@ -873,6 +948,7 @@ mod tests {
             tint: Some([1, 2, 3]),
             tint_strength: 60,
             chameleon: true,
+            shortcut_arrows: false,
         };
         assert_eq!(tinted.suffix(), "#t01020360c");
         assert_eq!(
@@ -883,6 +959,51 @@ mod tests {
             .suffix(),
             "#c"
         );
+        // Turning the shortcut arrows on or off gives every icon another key.
+        let arrows = IconVariant {
+            shortcut_arrows: true,
+            ..off
+        };
+        assert_ne!(arrows.normalized(), off.normalized());
+        assert_eq!(arrows.suffix(), "#a");
+    }
+
+    /// Only per-file keys get the arrow: an extension key is shared by every file of the type,
+    /// and a symbolic link among them must not put its arrow on the others.
+    #[test]
+    fn shortcut_arrows_only_on_per_file_keys() {
+        let mut cache = IconCache::new(HWND::default());
+        cache.set_variant(IconVariant {
+            shortcut_arrows: true,
+            ..IconVariant::default()
+        });
+        let lnk = Path::new("C:\\pf-test-missing.lnk");
+        let (lnk_key, icon_only) = icon_key_for(lnk, false, 1);
+        assert!(icon_only);
+        let txt = Path::new("C:\\pf-test-missing.txt");
+        let (txt_key, _) = icon_key_for(txt, false, 1);
+        cache.get(&lnk_key, lnk, 48, 96, true);
+        cache.get(&txt_key, txt, 48, 96, true);
+        let arrow = |key: &IconKey| {
+            let k = (
+                format!("{}{}", IconCache::cache_key(key), cache.variant.suffix()),
+                48,
+            );
+            cache.pending[&k].req.link_arrow
+        };
+        assert_eq!(arrow(&lnk_key), Some(32));
+        assert_eq!(arrow(&txt_key), None);
+    }
+
+    /// The arrow sizes Explorer's desktop draws, as measured (the shell's arrow icon covers
+    /// about 40% of its own size): 8 px at 16 to 24 px icons, 13 px at 32 to 48 px, 19 px at
+    /// 96 px and 38 px at 256 px; 150% scaling multiplies them by 1.5 at the same DIP size.
+    #[test]
+    fn arrow_sizes_follow_explorer() {
+        let sizes = [16, 24, 32, 48, 64, 96, 128, 256].map(|px| arrow_px(px, 96));
+        assert_eq!(sizes, [16, 16, 32, 32, 37, 46, 56, 94]);
+        let sizes = [24, 48, 72, 144].map(|px| arrow_px(px, 144));
+        assert_eq!(sizes, [24, 48, 48, 70]);
     }
 
     /// Folders ask for the preview of their contents; documents and shortcuts stay icons,
@@ -891,7 +1012,7 @@ mod tests {
     fn folders_ask_for_previews() {
         assert!(!icon_key_for(Path::new("C:\\pf-test\\Photos"), true, 1).1);
         assert!(icon_key_for(Path::new("C:\\pf-test\\a.txt"), false, 1).1);
-        assert!(icon_key_for(Path::new("C:\\pf-test\\a.lnk"), false, 1).1);
+        assert!(icon_key_for(Path::new("C:\\pf-test\\a.website"), false, 1).1);
         assert!(!icon_key_for(Path::new("C:\\pf-test\\a.jpg"), false, 1).1);
     }
 }

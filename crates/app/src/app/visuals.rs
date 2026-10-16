@@ -721,6 +721,7 @@ pub(super) fn icon_variant_for(s: &pecofence_core::IconSettings) -> IconVariant 
         tint: s.tint_rgb,
         tint_strength: (s.tint_strength.clamp(0.0, 1.0) * 100.0).round() as u8,
         chameleon: s.chameleon,
+        shortcut_arrows: s.shortcut_arrows,
     }
 }
 
@@ -1253,7 +1254,8 @@ impl App {
         tracing::info!(?mode, ?style, accent = ?accent.map(|a| a.accent), "theme refreshed");
     }
 
-    /// Global icon tint / chameleon changed: flush the caches and let icons reload processed.
+    /// Global icon tint / chameleon / shortcut arrows changed: flush the caches and let icons
+    /// reload processed.
     pub(super) fn apply_icon_variant(&mut self) {
         let variant = icon_variant_for(&self.state.config.settings.icons);
         if self.ctx.icons.borrow_mut().set_variant(variant) {

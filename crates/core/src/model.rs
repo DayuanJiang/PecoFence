@@ -680,6 +680,9 @@ pub struct IconSettings {
     pub tint_strength: f32,
     /// Chameleon: icons desaturate and fade so they blend with the backdrop.
     pub chameleon: bool,
+    /// Windows' shortcut arrow at the bottom-left of the items Explorer draws it on.
+    #[serde(default = "default_true")]
+    pub shortcut_arrows: bool,
 }
 
 impl Default for IconSettings {
@@ -688,6 +691,7 @@ impl Default for IconSettings {
             tint_rgb: None,
             tint_strength: 0.6,
             chameleon: false,
+            shortcut_arrows: true,
         }
     }
 }

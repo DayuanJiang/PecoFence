@@ -662,7 +662,7 @@ impl FenceViewState {
         for (i, item) in self.items.iter_mut().enumerate() {
             if item.wants_icon(icon_px) && near(i) {
                 let icon_only = item.icon_only || (rows && item.is_folder);
-                match icons.get(&item.icon_key, &item.path, icon_px, icon_only) {
+                match icons.get(&item.icon_key, &item.path, icon_px, self.dpi, icon_only) {
                     Lookup::Ready(Some(img)) => {
                         item.icon = Some(img);
                         item.icon_px = icon_px;

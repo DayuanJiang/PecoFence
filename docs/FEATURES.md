@@ -65,6 +65,7 @@ JSON 输出报告实际改动，命令目录与 JSON Schema 帮助助手发现�
 | 状态过渡 | 自动 | 悬停 / 选中底色 83 ms 线性淡入淡出（悬停 SubtleFillColorSecondary、按下即时换成更浅的 SubtleFillColorTertiary，已选中项按下只显示选中底色，选中 + 悬停选中底色加深）；选中 / 悬停 / 焦点按项目身份跨排序、重排、重命名、文件夹刷新保留并随 250 ms 布局滑动；点击激活立即显示强调色；跟随系统「动画效果」开关，关闭即瞬切；每次只重绘变化的那一层 |
 | 图标着色 | 设置 → 图标着色（颜色 + 强度） | 所有图标染色 |
 | Chameleon | 设置 → 图标融入背景 | 图标降饱和、降不透明度 |
+| 快捷方式箭头 | 设置 → 常规 →「显示快捷方式箭头」（默认开；CLI `icons.shortcutArrows`） | 和资源管理器一样在快捷方式（.lnk、.url 等资源管理器标箭头的项目）图标左下角画 Windows 的箭头，图标 / 列表 / 详细信息视图、各种图标大小和缩放比例都有；用 Windows 自己的箭头图标，换过或去掉箭头（注册表 Shell Icons 的 29）的系统在栅栏里也一样 |
 | 玻璃调参 | 环境变量 `PECOFENCE_ACRYLIC="不透明度,亮度锁定,模糊半径[,饱和度]"` | 仅影响 Fluent；Liquid Glass 原生材质验证可运行 `cargo run -p pecofence-render --example liquid_glass_preview -- .cache/glass.bmp`，或用 `liquid_glass_wallpaper … gpu --background 图片` 在指定图片上渲染 |
 
 ## 3. 标签页栅栏
