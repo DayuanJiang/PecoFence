@@ -243,7 +243,9 @@ column; default top),
 `rollUp.hoverPeek`, `rollUp.clickToExpand`, `rollUp.pushNeighbors` (an expanded fence pushes the
 fences stacked below it down and they slide back when it rolls up; their `rect` stays where it was,
 default on), `rollUp.titleOnHover` (the title row folds away until the
-pointer is over the fence; for every fence whose `titleOnHover` is `default`), `snapping.enabled`, `snapping.gapPx` (the gap, in DIPs,
+pointer is over the fence; for every fence whose `titleOnHover` is `default`),
+`rollUp.hideCountAndChevron` (no item count on a rolled title and no roll-up chevron, so the title
+bar shows the name only; double-clicking the title and the fence menu still roll up; default off), `snapping.enabled`, `snapping.gapPx` (the gap, in DIPs,
 fences keep to each other and the screen edges while snapping; 0 to 64, default 8),
 `snapping.sizeToCells` (resizing keeps whole icon columns and rows), `snapping.guideLines`
 (alignment guides while dragging, default on), `icons.chameleon`,

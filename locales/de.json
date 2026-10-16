@@ -307,6 +307,8 @@
   "开启后不再悬停展开；拖动标题仍可移动栅栏": "Kein Ausklappen beim Daraufzeigen; am Titel lässt sich der Bereich weiterhin verschieben",
   "收起后它们会回到原位": "Sie rücken zurück, sobald der Bereich wieder eingeklappt wird",
   "平时只显示图标，让桌面更清爽；每个栅栏可在“栅栏”页单独设置": "Sonst nur Symbole, für einen ruhigeren Desktop; pro Bereich auf der Seite „Bereiche“ änderbar",
+  "隐藏标题栏右侧的项目数和折叠箭头": "Elementanzahl und Einklapppfeil in der Titelleiste ausblenden",
+  "标题栏只显示名称；双击标题或用右键菜单收起和展开": "Die Titelleiste zeigt nur den Namen. Zum Ein- und Ausklappen doppelklickst du auf den Titel oder nutzt das Kontextmenü",
   "鼠标在标签页上停留片刻就切换过去，不用点击": "Den Mauszeiger kurz auf einem Tab halten, um ohne Klick zu ihm zu wechseln",
   "有多个标签页时，标签排在标题栏里，或在栅栏左侧排成一列": "Tabs stehen in der Titelleiste oder untereinander in einer Spalte links",
   "鼠标移到栅栏上或滚动时才显示": "Nur beim Daraufzeigen oder Scrollen anzeigen",

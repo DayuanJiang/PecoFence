@@ -738,9 +738,11 @@ pub(super) fn fence_style_for(f: &pecofence_core::Fence) -> FenceStyle {
             TitleSize::Large => 2,
             TitleSize::ExtraLarge => 3,
         },
-        // Global (标题对齐, 标签栏位置): the window takes them from `Behavior` at draw time.
+        // Global (标题对齐, 标签栏位置, the count and chevron): the window takes them from
+        // `Behavior` at draw time.
         title_align: pecofence_core::TitleAlign::Left,
         tab_rail: 0.0,
+        hide_count_and_chevron: false,
     }
 }
 

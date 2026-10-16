@@ -331,6 +331,8 @@
   "开启后不再悬停展开；拖动标题仍可移动栅栏": "Disables hover expansion; dragging the title still moves the fence",
   "收起后它们会回到原位": "They slide back when it rolls up",
   "平时只显示图标，让桌面更清爽；每个栅栏可在“栅栏”页单独设置": "Keep only icons visible until hovered; each fence can override this in its own settings",
+  "隐藏标题栏右侧的项目数和折叠箭头": "Hide the item count and the roll-up arrow in the title bar",
+  "标题栏只显示名称；双击标题或用右键菜单收起和展开": "The title bar shows only the name. Double-click the title or use its context menu to roll up and expand",
   "鼠标在标签页上停留片刻就切换过去，不用点击": "Rest the pointer on a tab for a moment to switch to it without clicking",
   "有多个标签页时，标签排在标题栏里，或在栅栏左侧排成一列": "Tabs run along the title bar, or stack in a column on the left",
   "鼠标移到栅栏上或滚动时才显示": "Shown only while the pointer is over the fence or while you scroll",

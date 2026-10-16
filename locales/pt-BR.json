@@ -307,6 +307,8 @@
   "开启后不再悬停展开；拖动标题仍可移动栅栏": "Desativa a expansão ao passar o mouse; arraste o título para mover o grupo",
   "收起后它们会回到原位": "Eles voltam ao lugar quando o grupo é recolhido",
   "平时只显示图标，让桌面更清爽；每个栅栏可在“栅栏”页单独设置": "Mostrar só os ícones até passar o mouse; cada grupo pode ter sua própria configuração na página Grupos",
+  "隐藏标题栏右侧的项目数和折叠箭头": "Ocultar a contagem de itens e a seta de recolher na barra de título",
+  "标题栏只显示名称；双击标题或用右键菜单收起和展开": "A barra de título mostra só o nome; para recolher e expandir, clique duas vezes no título ou use o menu de contexto",
   "鼠标在标签页上停留片刻就切换过去，不用点击": "Deixe o mouse um instante sobre uma aba para trocar para ela sem clicar",
   "有多个标签页时，标签排在标题栏里，或在栅栏左侧排成一列": "As abas ficam na barra de título ou empilhadas em uma coluna à esquerda",
   "鼠标移到栅栏上或滚动时才显示": "Mostrar só ao passar o mouse sobre o grupo ou ao rolar",
