@@ -17,6 +17,7 @@ impl App {
                 color: f.appearance.as_ref().and_then(|a| a.tab_rgb.or(a.tint_rgb)),
                 title_size: fence_style_for(f).title_size,
                 title_color: fence_style_for(f).title_color,
+                folder_icon: f.kind == FenceKind::FolderPortal && !f.hide_title_icon,
             })
             .collect()
     }

@@ -367,6 +367,8 @@ pub struct TabView {
     pub color: Option<[u8; 3]>,
     pub title_size: u8,
     pub title_color: Option<ColorF>,
+    /// A folder portal whose title icon is shown: the tab pill carries the folder glyph.
+    pub folder_icon: bool,
 }
 
 type ViewCell = Rc<RefCell<Option<FenceViewState>>>;

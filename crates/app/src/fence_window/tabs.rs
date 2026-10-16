@@ -453,8 +453,8 @@ impl FenceViewState {
     }
 
     /// The column's width for the current tabs: the longest caption (semibold, as the shown
-    /// tab draws it) with its row's insets and a colour dot's room, 96 to 160 DIPs and at most
-    /// 45 % of the expanded fence, so the items keep their room.
+    /// tab draws it) with its row's insets, a colour dot's and a folder glyph's room, 96 to 160
+    /// DIPs and at most 45 % of the expanded fence, so the items keep their room.
     pub(super) fn measure_rail_w(&self) -> f32 {
         if !self.tabs_on_rail() {
             return 0.0;
@@ -474,9 +474,11 @@ impl FenceViewState {
         } else {
             0.0
         };
+        let glyph =
+            pecofence_render::fence_chrome::tab_icon_w(self.tabs.iter().any(|t| t.folder_icon));
         let room = TAB_RAIL_TEXT_ROOM + RAIL_ROW_INSET + RAIL_ROW_RIGHT;
         let fence = self.expanded_w_px as f32 / self.scale();
-        (widest + dot + room)
+        (widest + dot + glyph + room)
             .clamp(TAB_RAIL_MIN_W, TAB_RAIL_MAX_W)
             .min((fence * 0.45).max(TAB_RAIL_MIN_W))
             .round()
@@ -573,11 +575,12 @@ impl FenceViewState {
         true
     }
 
-    /// Natural pill width per tab (caption + 16 padding, clamped to [48, 160] DIPs, plus the
-    /// Peek search badge); in the left column every row is `RAIL_ROW_H` tall. Measuring a
-    /// caption builds a DirectWrite layout, so widths are cached by caption: a reorder, a merge
-    /// hint or a redraw re-uses them and only a new / renamed caption is measured. The cache
-    /// also tracks title size, the theme's control padding and the badge.
+    /// Natural pill width per tab (caption + folder glyph + 16 padding, clamped to [48, 160]
+    /// DIPs, plus the Peek search badge); in the left column every row is `RAIL_ROW_H` tall.
+    /// Measuring a caption builds a DirectWrite layout, so widths are cached by caption: a
+    /// reorder, a merge hint or a redraw re-uses them and only a new / renamed caption is
+    /// measured. The cache also tracks title size, folder glyph, the theme's control padding
+    /// and the badge.
     pub(super) fn tab_natural_widths(&self) -> Vec<f32> {
         if self.tabs_on_rail() {
             return vec![RAIL_ROW_H; self.tabs.len()];
@@ -585,43 +588,53 @@ impl FenceViewState {
         let mut cache = self.tab_natural_w.borrow_mut();
         let glass = self.theme.liquid_glass;
         let badges: Vec<Option<String>> = self.tabs.iter().map(|t| self.tab_badge(t.id)).collect();
-        let hit =
-            cache.len() == self.tabs.len()
-                && cache.iter().zip(&self.tabs).zip(&badges).all(
-                    |(((c, size, g, badge, _), t), b)| {
-                        *c == t.title && *size == t.title_size && *g == glass && badge == b
-                    },
-                );
+        type Entry = (String, u8, bool, bool, Option<String>, f32);
+        let same = |(c, size, g, icon, badge, _): &Entry, t: &TabView, b: &Option<String>| {
+            *c == t.title
+                && *size == t.title_size
+                && *g == glass
+                && *icon == t.folder_icon
+                && badge == b
+        };
+        let hit = cache.len() == self.tabs.len()
+            && cache
+                .iter()
+                .zip(&self.tabs)
+                .zip(&badges)
+                .all(|((e, t), b)| same(e, t, b));
         if !hit {
             let fresh: Vec<_> = self
                 .tabs
                 .iter()
                 .zip(badges)
                 .map(|(t, badge)| {
-                    let w = cache
-                        .iter()
-                        .find(|(c, size, g, b, _)| {
-                            *c == t.title && *size == t.title_size && *g == glass && *b == badge
-                        })
-                        .map_or_else(
-                            || {
-                                (pecofence_render::text::measure_width(
-                                    &t.title,
-                                    self.chrome.tab_format(t.title_size),
-                                ) + pecofence_render::fence_chrome::tab_text_padding(&self.theme))
-                                .clamp(TAB_MIN_W, TAB_MAX_W)
-                                    + badge
-                                        .as_deref()
-                                        .map_or(0.0, |b| self.chrome.tab_badge_width(b))
-                            },
-                            |(_, _, _, _, w)| *w,
-                        );
-                    (t.title.clone(), t.title_size, glass, badge, w)
+                    let w = cache.iter().find(|e| same(e, t, &badge)).map_or_else(
+                        || {
+                            (pecofence_render::text::measure_width(
+                                &t.title,
+                                self.chrome.tab_format(t.title_size),
+                            ) + pecofence_render::fence_chrome::tab_icon_w(t.folder_icon)
+                                + pecofence_render::fence_chrome::tab_text_padding(&self.theme))
+                            .clamp(TAB_MIN_W, TAB_MAX_W)
+                                + badge
+                                    .as_deref()
+                                    .map_or(0.0, |b| self.chrome.tab_badge_width(b))
+                        },
+                        |(_, _, _, _, _, w)| *w,
+                    );
+                    (
+                        t.title.clone(),
+                        t.title_size,
+                        glass,
+                        t.folder_icon,
+                        badge,
+                        w,
+                    )
                 })
                 .collect();
             *cache = fresh;
         }
-        cache.iter().map(|(_, _, _, _, w)| *w).collect()
+        cache.iter().map(|(_, _, _, _, _, w)| *w).collect()
     }
 
     /// Peek search: the match count a tab's badge shows (None = no badge).
