@@ -727,7 +727,15 @@ impl FenceViewState {
                 .collect();
             *cache = fresh;
         }
-        cache.iter().map(|(_, _, _, _, _, w)| *w).collect()
+        // The shown tab's pill makes room for the portal up button; kept out of the cache, as
+        // it follows the navigation, not the caption.
+        let up = pecofence_render::fence_chrome::tab_up_w(self.deco.up_button);
+        let active = self.active_index();
+        cache
+            .iter()
+            .enumerate()
+            .map(|(i, (_, _, _, _, _, w))| if i == active { *w + up } else { *w })
+            .collect()
     }
 
     /// Peek search: the match count a tab's badge shows (None = no badge).
