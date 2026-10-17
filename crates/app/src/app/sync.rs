@@ -67,6 +67,19 @@ impl App {
             }
         }
         self.portal_watchers.retain(|_, (_, w)| w.is_running());
+        // A watcher follows its folder when the folder is renamed or moved away, and keeps
+        // running there: a local portal whose folder is no longer the one at its path drops
+        // it and reads the path again (missing, or the new folder made there).
+        let moved: Vec<FenceId> = self
+            .portal_watchers
+            .iter()
+            .filter(|(_, (dir, w))| shell::is_on_fixed_drive(dir) && !w.still_at(dir))
+            .map(|(id, _)| *id)
+            .collect();
+        for id in &moved {
+            tracing::info!(%id, "portal folder is no longer the one at its path; watcher dropped");
+            self.portal_watchers.remove(id);
+        }
         // Portals without a watcher, plus those last read as missing: a folder renamed away
         // and back keeps its watcher alive, and any batch meanwhile may have started one on a
         // folder that came back without re-reading it.
@@ -87,7 +100,10 @@ impl App {
         self.ensure_portal_watchers();
         let changed: Vec<FenceId> = stale
             .into_iter()
-            .filter(|id| self.portal_watchers.contains_key(id) && self.state.refresh_portal(*id))
+            .filter(|id| {
+                (self.portal_watchers.contains_key(id) || moved.contains(id))
+                    && self.state.refresh_portal(*id)
+            })
             .collect();
         self.refresh_portal_fences(&changed);
     }
@@ -225,6 +241,16 @@ impl App {
 
     /// Reconciles the item table with the desktop — unless the desktop folder is unreachable
     /// (removable / network drive), in which case nothing is orphaned and we retry later.
+    /// TIMER_TMP_SETTLE: the `.tmp` the rules held back are old enough now.
+    pub(super) fn sync_settled_tmp(&mut self) {
+        let report = self.sync_desktop_if_available("tmp settled");
+        if report.changed() {
+            self.refresh_all();
+            self.schedule_save();
+            self.push_workspace_summary();
+        }
+    }
+
     pub(super) fn sync_desktop_if_available(
         &mut self,
         reason: &'static str,
@@ -261,6 +287,10 @@ impl App {
             entries.extend(shell::enumerate_special_desktop_items());
         }
         let report = self.state.sync_desktop_partly_read(&entries, &unread);
+        if let Some(at) = self.state.take_tmp_settle_at() {
+            let wait_s = (at - pecofence_core::now_unix()).max(0) as u32;
+            window::set_timer(self.control.hwnd(), TIMER_TMP_SETTLE, wait_s * 1000 + 500);
+        }
         tracing::debug!(
             reason,
             items = entries.len(),

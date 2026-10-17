@@ -203,6 +203,7 @@ impl App {
     }
 
     pub(super) fn open_settings(&mut self) {
+        self.query_store_startup();
         if let Some(h) = &self.settings {
             window::show_normal(h.hwnd());
             window::bring_to_front(h.hwnd());
@@ -363,6 +364,49 @@ impl App {
         self.state.mark_dirty();
         self.schedule_save();
         self.push_settings_state();
+    }
+
+    /// Store edition: reads Windows' startup switch for the package on a worker; the result comes
+    /// back through `WM_APP_STARTUP_TASK` to [`Self::finish_store_startup`].
+    pub(super) fn query_store_startup(&self) {
+        if !pecofence_platform::process::is_packaged() {
+            return;
+        }
+        let result = self.store_startup.clone();
+        let control = self.control.hwnd().0 as isize;
+        let _ = std::thread::Builder::new()
+            .name("pecofence-startup-task".into())
+            .spawn(
+                move || match pecofence_platform::store::startup_task_enabled() {
+                    Ok(on) => {
+                        result.store(1 + on as u8, std::sync::atomic::Ordering::Relaxed);
+                        window::post_message(
+                            HWND(control as *mut core::ffi::c_void),
+                            WM_APP_STARTUP_TASK,
+                            0,
+                            0,
+                        );
+                    }
+                    Err(e) => tracing::warn!(error = %e, "reading the startup task failed"),
+                },
+            );
+    }
+
+    /// 「随 Windows 启动」 follows the switch Windows keeps for the Store package.
+    pub(super) fn finish_store_startup(&mut self) {
+        let on = match self
+            .store_startup
+            .load(std::sync::atomic::Ordering::Relaxed)
+        {
+            1 => false,
+            2 => true,
+            _ => return,
+        };
+        if self.state.config.settings.autostart != on {
+            tracing::info!(on, "startup switch follows Windows");
+            self.state.config.settings.autostart = on;
+            self.settings_mutated();
+        }
     }
 
     pub(super) fn settings_toast(&self, text: &str) {
@@ -652,7 +696,9 @@ impl App {
             return;
         }
         if new.autostart != old.autostart {
-            if let Err(e) = pecofence_platform::autostart::set_product_enabled(new.autostart) {
+            if let Err(e) =
+                pecofence_platform::autostart::set_product_enabled(new.autostart, self.portable)
+            {
                 tracing::warn!(error = %e, "autostart change failed");
                 new.autostart = old.autostart;
                 self.settings_error(pecofence_core::i18n::text(
@@ -660,6 +706,9 @@ impl App {
                 ));
             } else if pecofence_platform::process::is_packaged() {
                 // Store installs: Windows owns the startup task, so hand the user the switch.
+                // The switch here keeps showing Windows' state; it is read again when the user
+                // comes back to this window.
+                new.autostart = old.autostart;
                 let _ = shell::shell_execute(
                     std::path::Path::new("ms-settings:startupapps"),
                     None,

@@ -27,6 +27,9 @@ pub struct AppState {
     portal_cwd: HashMap<FenceId, PathBuf>,
     /// Portals whose folder could not be found at the last read.
     portal_missing: HashSet<FenceId>,
+    /// When the youngest `.tmp` the rules skipped as too new has lasted `TMP_SETTLE_SECS`
+    /// (Unix seconds): the App syncs the desktop again then (`take_tmp_settle_at`).
+    tmp_settle_at: std::cell::Cell<Option<i64>>,
     pub work_areas: Vec<WorkArea>,
     /// Fences with no spot saved on the current monitors (see [`Self::ensure_layout`]): they
     /// sit where their spot elsewhere puts them until the App moves them out of the others' way.
@@ -134,6 +137,7 @@ impl AppState {
             portal_members: HashMap::new(),
             portal_cwd: HashMap::new(),
             portal_missing: HashSet::new(),
+            tmp_settle_at: std::cell::Cell::new(None),
             work_areas,
             unplaced: Vec::new(),
             first_run,
@@ -752,7 +756,19 @@ impl AppState {
             return Decision::Default(Target::Inbox);
         }
         if self.config.rules.keep_updated {
-            self.config.rules.evaluate(&self.facts_for(entry))
+            let facts = self.facts_for(entry);
+            let decision = self.config.rules.evaluate(&facts);
+            if decision == Decision::Skip
+                && facts.file_name.to_lowercase().ends_with(".tmp")
+                && let Some(age) = facts.age_secs
+                && age < pecofence_core::rules::TMP_SETTLE_SECS
+            {
+                let at = pecofence_core::now_unix()
+                    + (pecofence_core::rules::TMP_SETTLE_SECS - age) as i64;
+                let soonest = self.tmp_settle_at.get().map_or(at, |t| t.min(at));
+                self.tmp_settle_at.set(Some(soonest));
+            }
+            decision
         } else {
             Decision::Default(Target::Inbox)
         }
@@ -848,6 +864,12 @@ impl AppState {
     fn age_secs(created: i64, mtime: i64, now: i64) -> Option<u64> {
         let last = created.max(mtime);
         (last > 0).then(|| (now - last).max(0) as u64)
+    }
+
+    /// When a `.tmp` skipped as too new will have lasted long enough to be routed (Unix
+    /// seconds), once; see `tmp_settle_at`.
+    pub fn take_tmp_settle_at(&self) -> Option<i64> {
+        self.tmp_settle_at.take()
     }
 
     /// Reconciles the item table with the current desktop contents. New items are routed by the
@@ -2226,6 +2248,7 @@ mod tests {
             portal_members: HashMap::new(),
             portal_cwd: HashMap::new(),
             portal_missing: HashSet::new(),
+            tmp_settle_at: std::cell::Cell::new(None),
             work_areas,
             unplaced: Vec::new(),
             first_run: true,

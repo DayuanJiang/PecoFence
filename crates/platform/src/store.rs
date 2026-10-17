@@ -1,11 +1,11 @@
-//! The Microsoft Store's own rating dialog (`StoreContext.RequestRateAndReviewAppAsync`). Only
-//! the Store edition can use it: the Store finds the product through the package identity, so
-//! an unpackaged process gets an error back.
+//! The Microsoft Store's own rating dialog (`StoreContext.RequestRateAndReviewAppAsync`) and the
+//! package's startup switch. Only the Store edition can use them: Windows finds the product
+//! through the package identity, so an unpackaged process gets an error back.
 
 use crate::HWND;
 use crate::store_bindings::{
     self, IInitializeWithWindow, QUNS_ACCEPTS_NOTIFICATIONS, SHQueryUserNotificationState,
-    StoreContext, StoreRateAndReviewStatus,
+    StartupTask, StartupTaskState, StoreContext, StoreRateAndReviewStatus,
 };
 use windows_core::{HRESULT, Interface, Result};
 
@@ -61,4 +61,23 @@ pub fn request_rating(
 pub fn user_accepts_notifications() -> bool {
     // SAFETY: plain FFI call with an out parameter.
     unsafe { SHQueryUserNotificationState() }.is_ok_and(|state| state == QUNS_ACCEPTS_NOTIFICATIONS)
+}
+
+/// Whether Windows' startup switch for the package (Settings > Apps > Startup, the manifest's
+/// `PecoFenceStartup` task) is on. Waits for WinRT, so call it on a worker.
+pub fn startup_task_enabled() -> Result<bool> {
+    // The activation factory is cached for the process. Keep the MTA it lives in alive, or the
+    // worker leaving it tears it down and the next call crashes in combase.
+    static MTA: std::sync::Once = std::sync::Once::new();
+    MTA.call_once(|| {
+        windows_core::link!("ole32.dll" "system" fn CoIncrementMTAUsage(cookie: *mut *mut core::ffi::c_void) -> HRESULT);
+        let mut cookie = core::ptr::null_mut();
+        // SAFETY: out-pointer to a local; the usage is never released.
+        let _ = unsafe { CoIncrementMTAUsage(&mut cookie) };
+    });
+    let task = StartupTask::GetAsync(&windows_core::HSTRING::from("PecoFenceStartup"))?.join()?;
+    Ok(matches!(
+        task.State()?,
+        StartupTaskState::Enabled | StartupTaskState::EnabledByPolicy
+    ))
 }

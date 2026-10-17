@@ -48,11 +48,16 @@ PecoFence first; both builds share the single-instance mutex.
 
 - Autostart: HKCU writes are virtualized inside the package, so the Run-key code is
   skipped (`process::is_packaged()`). The manifest startup task is enabled by default and
-  users manage it under Settings > Apps > Startup; the in-app toggle opens that page.
-- Configuration: `%APPDATA%\PecoFence\config.json` is written into the package's
-  virtualized AppData (`%LOCALAPPDATA%\Packages\DayuanJiang.PecoFence_0bme5nfnaj27p\`).
-  An existing portable config is read on first launch but changes stay in the package.
-- Uninstall removes the virtualized config with the package.
+  users manage it under Settings > Apps > Startup; the in-app toggle opens that page and
+  shows the state Windows keeps for the task (read again when the settings window is
+  activated).
+- Configuration: when `%APPDATA%\PecoFence` does not exist yet, the Store edition writes
+  `config.json` into the package's virtualized AppData
+  (`%LOCALAPPDATA%\Packages\DayuanJiang.PecoFence_0bme5nfnaj27p\LocalCache\Roaming\PecoFence\`),
+  and uninstalling the package removes it. When the folder already exists (the setup or the
+  ZIP edition ran before), the Store edition reads and writes that real folder, as the other
+  editions do, and the configuration stays after the package is uninstalled (checked
+  2026-10-17 with a test-signed 0.2.2 package).
 
 ## Submission checklist (Partner Center)
 

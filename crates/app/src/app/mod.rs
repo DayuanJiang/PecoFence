@@ -4,7 +4,7 @@ use crate::anchor::{self, AnchorCell, DesktopAnchor, ShowDesktopBehavior, ZMode}
 use crate::commands::{
     Command, CommandQueue, TransferMode, WM_APP_COMMAND, WM_APP_FRAME, WM_APP_FS_CHANGED,
     WM_APP_LIVE_WALLPAPER, WM_APP_PEEK_FOCUSED, WM_APP_PREWARM_DONE, WM_APP_SHELL_CHANGED,
-    WM_APP_STARTUP_BACKDROPS, WM_APP_TRAY, WM_APP_WALLPAPER,
+    WM_APP_STARTUP_BACKDROPS, WM_APP_STARTUP_TASK, WM_APP_TRAY, WM_APP_WALLPAPER,
 };
 use crate::fence_window::{
     BackdropMode, BackdropSets, Behavior, FenceContext, FenceWindow, ItemView, SearchMarks, TabView,
@@ -148,6 +148,11 @@ const TIMER_LIVE_CAPTURED: usize = 61;
 const TIMER_SHELL_WATCH_RETRY: usize = 62;
 /// The startup wallpaper worker finished late (see `StartupBackdrops`).
 const TIMER_STARTUP_BACKDROPS: usize = 63;
+/// The Store edition's startup switch was read (`WM_APP_STARTUP_TASK`); retried while the App
+/// is borrowed.
+const TIMER_STARTUP_TASK: usize = 64;
+/// A `.tmp` the rules skipped as too new has lasted long enough: sync the desktop again.
+const TIMER_TMP_SETTLE: usize = 65;
 const DEVICE_RETRY_MAX_MS: u32 = 30_000;
 /// Growth of private commit plus GPU memory that logs a memory line before the hour is up.
 const MEMORY_LOG_GROWTH: u64 = 64 << 20;
@@ -288,6 +293,10 @@ pub struct App {
     frame_run: FrameRun,
     /// `--no-hide-icons`: keep Explorer's icons visible this run without persisting the choice.
     no_hide_icons: bool,
+    /// `--portable`: the configuration lives next to the program, and so must the startup entry.
+    portable: bool,
+    /// The Store edition's startup switch as last read on a worker: 0 not read, 1 off, 2 on.
+    store_startup: Arc<std::sync::atomic::AtomicU8>,
     /// `--light` / `--dark`: pin the theme this run.
     theme_override: Option<ThemeMode>,
     peek_class: WindowClass,
@@ -520,6 +529,10 @@ impl App {
                             window::set_timer(hwnd, TIMER_STARTUP_BACKDROPS, 1);
                             Some(0)
                         }
+                        WM_APP_STARTUP_TASK => {
+                            window::set_timer(hwnd, TIMER_STARTUP_TASK, 1);
+                            Some(0)
+                        }
                         WM_APP_PREWARM_DONE => {
                             window::set_timer(hwnd, TIMER_PREWARM_FINISH, 1);
                             Some(0)
@@ -628,6 +641,8 @@ impl App {
                                 | TIMER_PREWARM_FINISH
                                 | TIMER_LIVE_CAPTURED
                                 | TIMER_SHELL_WATCH_RETRY
+                                | TIMER_STARTUP_TASK
+                                | TIMER_TMP_SETTLE
                                 | TIMER_STARTUP_BACKDROPS => {
                                     if let Ok(mut guard) = cell.try_borrow_mut()
                                         && let Some(app) = guard.as_mut()
@@ -637,6 +652,8 @@ impl App {
                                             TIMER_PREWARM_FINISH => app.finish_prewarm(),
                                             TIMER_LIVE_CAPTURED => app.finish_live_capture(),
                                             TIMER_SHELL_WATCH_RETRY => app.renew_shell_watch(),
+                                            TIMER_STARTUP_TASK => app.finish_store_startup(),
+                                            TIMER_TMP_SETTLE => app.sync_settled_tmp(),
                                             TIMER_STARTUP_BACKDROPS => {
                                                 app.finish_startup_backdrops()
                                             }
@@ -1144,6 +1161,8 @@ impl App {
             frame_prev: None,
             frame_run: FrameRun::default(),
             no_hide_icons: args.no_hide_icons,
+            portable: args.portable,
+            store_startup: Arc::default(),
             theme_override: if args.light {
                 Some(ThemeMode::Light)
             } else if args.dark {
@@ -1343,7 +1362,16 @@ impl App {
             ) {
                 tracing::warn!(%error, "autostart reconciliation failed");
             }
+        } else if !cfg!(debug_assertions) {
+            // A portable copy registers nothing by itself: 「随 Windows 启动」 shows whether the
+            // startup entry starts this copy (a new portable configuration says on).
+            let on = pecofence_platform::autostart::starts_this_copy();
+            if app.state.config.settings.autostart != on {
+                app.state.config.settings.autostart = on;
+                app.state.mark_dirty();
+            }
         }
+        app.query_store_startup();
         // What startup changed is derived again on the next start: write it once the fences
         // are up instead of before the message loop runs.
         if app.state.is_dirty() {
@@ -1897,6 +1925,7 @@ impl App {
                 }
                 window::post_quit(0);
             }
+            Command::SettingsActivated => self.query_store_startup(),
             Command::WindowGone(hwnd) => {
                 if self.settings.as_ref().is_some_and(|h| h.hwnd() == hwnd) {
                     self.settings = None;

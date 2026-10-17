@@ -117,7 +117,7 @@ impl SettingsHost {
             let state = state.clone();
             let queue = queue.clone();
             Box::new(
-                move |hwnd: HWND, message: u32, _wparam: usize, lparam: isize| -> Option<isize> {
+                move |hwnd: HWND, message: u32, wparam: usize, lparam: isize| -> Option<isize> {
                     match message {
                         msg::WM_SIZE => {
                             let w = msg::lo_i16(lparam);
@@ -169,6 +169,10 @@ impl SettingsHost {
                                     c.move_focus(windows_webview::MoveFocusReason::Programmatic);
                             }
                             Some(0)
+                        }
+                        msg::WM_ACTIVATE if wparam & 0xffff != 0 => {
+                            queue.push(Command::SettingsActivated);
+                            None
                         }
                         msg::WM_DESTROY => {
                             let mut s = state.borrow_mut();
