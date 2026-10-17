@@ -484,7 +484,12 @@ impl FenceViewState {
         let width = self.chrome_panel.size_px().0 as f32 / self.scale();
         // Rolled: the item count sits before the chevron; the strip must end before it. The
         // target state, so the pills slide there during the roll (`start_roll_anim`).
-        let reserve = if self.roll_target() && !self.behavior.hide_count_and_chevron.get() {
+        // With the count and chevron hidden the strip runs on to the right padding, the same
+        // end its clip uses; otherwise the next tab lands whole under a resting pointer after
+        // each hover switch, and the switches run on to the last tab.
+        let reserve = if self.behavior.hide_count_and_chevron.get() {
+            TAB_LEFT
+        } else if self.roll_target() {
             TAB_RIGHT_RESERVE
                 + pecofence_render::fence_chrome::header_count_width(
                     width,
@@ -975,7 +980,8 @@ impl FenceViewState {
     /// resting places, and Decelerate reads as a snap-then-drift over 60 DIP.
     pub(super) fn sync_tab_slides(&mut self, prev: &[(FenceId, f32)], now: Instant) {
         let rects = self.tab_rects();
-        let dragged = self.tab_drag.as_ref().map(|d| d.index);
+        // A pressed tab still within the drag threshold sits in its slot and slides with it.
+        let dragged = self.tab_drag.as_ref().filter(|d| d.moved).map(|d| d.index);
         let dur = self.anim_dur(motion::FAST);
         let mut live = false;
         for (i, tab) in self.tabs.iter().enumerate() {
