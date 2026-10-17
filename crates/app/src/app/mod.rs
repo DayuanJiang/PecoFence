@@ -1347,7 +1347,10 @@ impl App {
             );
             // Icons already showing: the last run restored them, but a sign-out ended it before
             // it removed the marker.
-            if a.stale_marker_present() && pecofence_platform::shell_icons::desktop_icons_hidden() {
+            if a.stale_marker_present() && !pecofence_platform::shell_icons::desktop_icons_hidden()
+            {
+                a.forget_stale_marker();
+            } else if a.stale_marker_present() {
                 tracing::warn!(
                     "stale icons-hidden marker found: previous run did not restore icons"
                 );

@@ -105,6 +105,10 @@ impl App {
                     && self.state.refresh_portal(*id)
             })
             .collect();
+        // A portal whose subfolder went away is back at its root now: watch that at once.
+        if !moved.is_empty() {
+            self.ensure_portal_watchers();
+        }
         self.refresh_portal_fences(&changed);
     }
 
@@ -239,8 +243,6 @@ impl App {
         self.push_workspace_summary();
     }
 
-    /// Reconciles the item table with the desktop — unless the desktop folder is unreachable
-    /// (removable / network drive), in which case nothing is orphaned and we retry later.
     /// TIMER_TMP_SETTLE: the `.tmp` the rules held back are old enough now.
     pub(super) fn sync_settled_tmp(&mut self) {
         let report = self.sync_desktop_if_available("tmp settled");
@@ -251,6 +253,8 @@ impl App {
         }
     }
 
+    /// Reconciles the item table with the desktop — unless the desktop folder is unreachable
+    /// (removable / network drive), in which case nothing is orphaned and we retry later.
     pub(super) fn sync_desktop_if_available(
         &mut self,
         reason: &'static str,

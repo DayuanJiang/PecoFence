@@ -115,8 +115,12 @@ impl App {
         if let Some(desk) = shell::user_desktop() {
             self.state.migrate_desktop_path(&desk);
         }
-        // What the file (plus the desktop-path migration) wants the settings to be.
-        let new_settings = self.state.config.settings.clone();
+        // What the file (plus the desktop-path migration) wants the settings to be. The Store
+        // edition's startup switch is Windows': a file does not change it (nor open its page).
+        let mut new_settings = self.state.config.settings.clone();
+        if pecofence_platform::process::is_packaged() {
+            new_settings.autostart = old_settings.autostart;
+        }
         self.sync_desktop_if_available("config adopted");
         self.relayout_from_state();
         // The file's portals need enumerating; runtime state of the replaced ones is pruned.

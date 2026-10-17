@@ -1092,6 +1092,14 @@ impl DesktopAnchor {
         self.icons.marker.exists()
     }
 
+    /// The previous run's marker with the icons showing anyway: it restored them but was ended
+    /// before it removed the marker. Kept, it would take a later hide by the user for ours.
+    pub fn forget_stale_marker(&mut self) {
+        if !self.icons.we_hid_them {
+            let _ = std::fs::remove_file(&self.icons.marker);
+        }
+    }
+
     fn on_timer(&mut self, id: usize) {
         match id {
             TIMER_ANCHOR_CHECK => self.ensure_anchored("periodic check"),
