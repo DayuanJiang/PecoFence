@@ -64,7 +64,14 @@ impl App {
                     self.portal_watchers.insert(id, (dir, w));
                 }
                 Err(e) => {
-                    tracing::warn!(dir = %dir.display(), error = %e, "portal watcher failed");
+                    // A folder that is gone (the fence says so) is tried on every batch: no
+                    // warning each time.
+                    const NOT_FOUND: [i32; 2] = [0x8007_0002_u32 as i32, 0x8007_0003_u32 as i32];
+                    if NOT_FOUND.contains(&e.code().0) {
+                        tracing::debug!(dir = %dir.display(), "portal folder not found");
+                    } else {
+                        tracing::warn!(dir = %dir.display(), error = %e, "portal watcher failed");
+                    }
                     // Opening a folder on an unreachable share blocks the UI thread until the
                     // network gives up, and this runs on every batch and once a minute: such
                     // a folder waits twice as long before each further try, up to an hour. A
