@@ -1365,7 +1365,7 @@ impl App {
         } else if !cfg!(debug_assertions) {
             // A portable copy registers nothing by itself: 「随 Windows 启动」 shows whether the
             // startup entry starts this copy (a new portable configuration says on).
-            let on = pecofence_platform::autostart::starts_this_copy();
+            let on = pecofence_platform::autostart::adopt_portable_entry();
             if app.state.config.settings.autostart != on {
                 app.state.config.settings.autostart = on;
                 app.state.mark_dirty();
