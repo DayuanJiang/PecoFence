@@ -500,6 +500,16 @@ impl TitleDeco {
         )
     }
 
+    /// Room (DIPs) the portal up button adds at the left of the shown tab's pill in a title-row
+    /// tab strip: its box plus a 2 DIP margin.
+    pub const STRIP_UP_W: f32 = 26.0;
+
+    /// The portal up button inside the shown tab's pill of a title-row tab strip, `tab_x` being
+    /// the pill's left edge, for a title row `title_h` tall; the app hit-tests the same box.
+    pub fn strip_up_box(tab_x: f32, title_h: f32) -> Rect {
+        Rect::from_xywh(tab_x + 2.0, (title_h - 24.0) * 0.5, 24.0, 24.0)
+    }
+
     /// Where the title text starts (left-aligned).
     pub fn title_x(&self) -> f32 {
         let mut x = 16.0;
@@ -544,6 +554,9 @@ pub struct TabDraw<'a> {
     pub title_color: Option<ColorF>,
     /// A folder portal tab: its folder glyph is drawn before the caption (`TAB_ICON_W` wider).
     pub folder_icon: bool,
+    /// The shown tab is a portal inside a subfolder: the up button is drawn at the left of its
+    /// pill (`TitleDeco::STRIP_UP_W` wider).
+    pub up_button: bool,
     pub active: bool,
     /// PointerOver pill alpha 0..=1.
     pub hover: f32,
@@ -593,6 +606,15 @@ pub fn tab_icon_w(folder_icon: bool) -> f32 {
     if folder_icon { TAB_ICON_W } else { 0.0 }
 }
 
+/// Width the portal up button adds before a tab's caption in a title-row strip.
+pub fn tab_up_w(up_button: bool) -> f32 {
+    if up_button {
+        TitleDeco::STRIP_UP_W
+    } else {
+        0.0
+    }
+}
+
 /// Where captions start in a left tab column row: after the colour dot when any tab has a
 /// colour, and after the folder glyph when any tab has one, so the names stay aligned.
 fn rail_text_left(colored: bool, folders: bool) -> f32 {
@@ -627,6 +649,45 @@ pub fn header_count_width(width: f32, tabs: usize, title_x: f32) -> f32 {
     } else {
         0.0
     }
+}
+
+/// The portal up button's hover / pressed fill behind its glyph: transparent at rest,
+/// SubtleFill fading in on hover, SubtleFillColorTertiary while pressed (a glass lens on liquid
+/// glass).
+fn draw_up_box_fill(
+    session: &DrawingSession<'_>,
+    backdrop: &Backdrop<'_>,
+    theme: &Theme,
+    scale: f32,
+    box_r: Rect,
+    state: TitleState,
+    alpha: f32,
+) -> Result<()> {
+    if theme.liquid_glass && (state.up_pressed || state.up_hover > 0.0) {
+        draw_header_glass(
+            session,
+            backdrop,
+            theme,
+            scale,
+            3,
+            box_r,
+            if state.up_pressed { 0.85 } else { 0.45 },
+            alpha
+                * if state.up_pressed {
+                    1.0
+                } else {
+                    state.up_hover
+                },
+        )?;
+    } else if state.up_pressed {
+        let pill = session.create_solid_brush(with_alpha(theme.subtle_pressed, alpha))?;
+        session.fill_rounded_rect(&RoundedRect::uniform(box_r, 4.0), &pill);
+    } else if state.up_hover > 0.0 {
+        let pill =
+            session.create_solid_brush(with_alpha(theme.subtle_hover, state.up_hover * alpha))?;
+        session.fill_rounded_rect(&RoundedRect::uniform(box_r, 4.0), &pill);
+    }
+    Ok(())
 }
 
 fn draw_header_glass(
@@ -1653,10 +1714,12 @@ impl FenceChrome {
         w: f32,
         size: u8,
         folder_icon: bool,
+        up_button: bool,
         theme: &Theme,
     ) -> bool {
-        let content_w =
-            crate::text::measure_width(title, self.tab_format(size)) + tab_icon_w(folder_icon);
+        let content_w = crate::text::measure_width(title, self.tab_format(size))
+            + tab_icon_w(folder_icon)
+            + tab_up_w(up_button);
         content_w <= (w - tab_text_inset(theme, w, content_w)).max(0.0)
     }
 
@@ -2018,9 +2081,10 @@ impl FenceChrome {
                 let fmt = self.tab_format(tab.title_size);
                 let badge_w = tab.badge.map_or(0.0, |b| self.tab_badge_width(b));
                 let icon_w = tab_icon_w(tab.folder_icon);
+                let up_w = tab_up_w(tab.up_button);
                 let title_w = crate::text::measure_width(tab.title, fmt);
-                let padding = tab_text_inset(theme, tab.w - badge_w, title_w + icon_w);
-                let caption_w = (tab.w - badge_w - icon_w - padding).max(0.0);
+                let padding = tab_text_inset(theme, tab.w - badge_w, title_w + icon_w + up_w);
+                let caption_w = (tab.w - badge_w - icon_w - up_w - padding).max(0.0);
                 let fitted = crate::text::fit_width(tab.title, fmt, caption_w);
                 // With a folder glyph or a badge, they and the caption are centred in the pill
                 // as one group. An unelided caption keeps the width measured above.
@@ -2034,12 +2098,13 @@ impl FenceChrome {
                 } else {
                     caption_w
                 };
-                let caption_x = tab.x + icon_w + (tab.w - icon_w - shown_w - badge_w) * 0.5;
+                let lead_w = up_w + icon_w;
+                let caption_x = tab.x + lead_w + (tab.w - lead_w - shown_w - badge_w) * 0.5;
                 // A persistent marker identifies the selected tab even on uniform wallpaper. It
-                // stays under the glyph and caption when a badge widens the pill.
+                // stays under the up button, glyph and caption when a badge widens the pill.
                 let (marker_x, marker_w) = if tab.badge.is_some() {
                     let w = tab.w - badge_w;
-                    (caption_x - icon_w + (icon_w + shown_w - w) * 0.5, w)
+                    (caption_x - lead_w + (lead_w + shown_w - w) * 0.5, w)
                 } else {
                     (tab.x, tab.w)
                 };
@@ -2082,6 +2147,20 @@ impl FenceChrome {
                     &brush,
                     halo.as_ref(),
                 );
+                if tab.up_button {
+                    // Up (Segoe Fluent E74A), as in a lone portal's title row.
+                    let box_r = TitleDeco::strip_up_box(tab.x, title_h);
+                    draw_up_box_fill(session, &backdrop, theme, scale, box_r, state, ta)?;
+                    let glyph = session.create_solid_brush(with_alpha(
+                        if state.up_pressed {
+                            foreground.text_tertiary
+                        } else {
+                            foreground.text_secondary
+                        },
+                        ta,
+                    ))?;
+                    session.draw_text("\u{E74A}", &self.glyph_format, &box_r, &glyph);
+                }
                 if let Some(badge) = tab.badge {
                     let r = Rect::from_xywh(
                         caption_x + shown_w + TAB_BADGE_GAP,
@@ -2111,33 +2190,7 @@ impl FenceChrome {
                 // Up (Segoe Fluent E74A) in a 28×28 box: transparent at rest, SubtleFill
                 // fading in on hover, SubtleFillColorTertiary + tertiary glyph while pressed.
                 let box_r = TitleDeco::up_box(title_h);
-                if theme.liquid_glass && (state.up_pressed || state.up_hover > 0.0) {
-                    draw_header_glass(
-                        session,
-                        &backdrop,
-                        theme,
-                        scale,
-                        3,
-                        box_r,
-                        if state.up_pressed { 0.85 } else { 0.45 },
-                        title_a
-                            * if state.up_pressed {
-                                1.0
-                            } else {
-                                state.up_hover
-                            },
-                    )?;
-                } else if state.up_pressed {
-                    let pill =
-                        session.create_solid_brush(with_alpha(theme.subtle_pressed, title_a))?;
-                    session.fill_rounded_rect(&RoundedRect::uniform(box_r, 4.0), &pill);
-                } else if state.up_hover > 0.0 {
-                    let pill = session.create_solid_brush(with_alpha(
-                        theme.subtle_hover,
-                        state.up_hover * title_a,
-                    ))?;
-                    session.fill_rounded_rect(&RoundedRect::uniform(box_r, 4.0), &pill);
-                }
+                draw_up_box_fill(session, &backdrop, theme, scale, box_r, state, title_a)?;
                 session.draw_text(
                     "\u{E74A}",
                     &self.glyph_format,
@@ -3248,16 +3301,20 @@ mod tests {
             // padding shrinks so the two characters still fit.
             let squeezed = caption + TAB_TEXT_MIN_PADDING + 1.0;
             assert!(tab_text_inset(&theme, squeezed, caption) < full);
-            assert!(chrome.tab_title_fits("游戏", squeezed, 1, false, &theme));
+            assert!(chrome.tab_title_fits("游戏", squeezed, 1, false, false, &theme));
             // Below the minimum padding the caption is elided, never drawn over the edge.
             assert_eq!(
                 tab_text_inset(&theme, caption, caption),
                 TAB_TEXT_MIN_PADDING
             );
-            assert!(!chrome.tab_title_fits("游戏", caption, 1, false, &theme));
+            assert!(!chrome.tab_title_fits("游戏", caption, 1, false, false, &theme));
             // A folder tab's glyph takes its room from the caption.
-            assert!(chrome.tab_title_fits("游戏", squeezed + TAB_ICON_W, 1, true, &theme));
-            assert!(!chrome.tab_title_fits("游戏", squeezed, 1, true, &theme));
+            assert!(chrome.tab_title_fits("游戏", squeezed + TAB_ICON_W, 1, true, false, &theme));
+            assert!(!chrome.tab_title_fits("游戏", squeezed, 1, true, false, &theme));
+            // So does the up button of a tab that navigated into a subfolder.
+            let up = TitleDeco::STRIP_UP_W;
+            assert!(chrome.tab_title_fits("游戏", squeezed + up, 1, false, true, &theme));
+            assert!(!chrome.tab_title_fits("游戏", squeezed, 1, false, true, &theme));
         }
     }
 
@@ -3381,6 +3438,13 @@ mod tests {
         );
         let u = TitleDeco::up_box(36.0);
         assert_eq!((u.left, u.top, u.right, u.bottom), (6.0, 4.0, 34.0, 32.0));
+        // In a tab strip the button sits inside the shown pill, within the room it adds.
+        let s = TitleDeco::strip_up_box(100.0, 36.0);
+        assert_eq!(
+            (s.left, s.top, s.right, s.bottom),
+            (102.0, 6.0, 126.0, 30.0)
+        );
+        assert!(s.right <= 100.0 + TitleDeco::STRIP_UP_W);
     }
 
     #[test]
