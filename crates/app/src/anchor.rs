@@ -631,6 +631,14 @@ impl DesktopAnchor {
         }
         let root = desktop::root_ancestor(hwnd);
         let cls = desktop::class_name(root);
+        // Windows 11's shell popups (snap layouts after Win+Up, the task switcher) take the
+        // foreground for a moment and give it back without another event: taken for an app,
+        // they ended a Peek and turned the desktop's double-click off. The window the user
+        // goes to from there is the real change.
+        if cls == "XamlExplorerHostIslandWindow" {
+            tracing::debug!(%cls, "shell popup in front; foreground change ignored");
+            return;
+        }
         if self.peeking {
             // Peek is a glance: the first foreign window that comes to the front ends it. Our
             // own windows (fences, dimmer, rename popup, menus) do not.
