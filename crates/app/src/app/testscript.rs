@@ -434,7 +434,7 @@ impl App {
                 }
                 ["drop-desktop", title] => {
                     // What a drag-out onto the bare desktop ends in (minus the OLE round
-                    // trip): the fence's first item goes back to the inbox and through the rules.
+                    // trip): the fence's first item goes back to the inbox.
                     if let Some(id) = self.test_fence(title)
                         && let Some(item) = self
                             .state

@@ -927,17 +927,36 @@ pub fn transfer_to_folder(
             let _ = op.SetOwnerWindow(h);
         }
         let dest_item = shell_item(dest)?;
+        // Recycle Bin items get back the name they had before the delete, as Explorer gives
+        // them; the wide names live until the operation has run.
+        let mut recycled = Vec::new();
+        let mut names = Vec::new();
         for p in paths {
             let item = shell_item(p)?;
+            let name = recycled_original_name(p).map(|n| to_wide(&n));
+            let new_name = name.as_ref().map_or(PCWSTR::null(), |n| PCWSTR(n.as_ptr()));
             if copy {
-                op.CopyItem(&item, &dest_item, PCWSTR::null(), None).ok()?;
+                op.CopyItem(&item, &dest_item, new_name, None).ok()?;
             } else {
-                op.MoveItem(&item, &dest_item, PCWSTR::null(), None).ok()?;
+                op.MoveItem(&item, &dest_item, new_name, None).ok()?;
+            }
+            if name.is_some() {
+                recycled.push(p);
+            }
+            names.push(name);
+        }
+        let performed = op.PerformOperations();
+        // An item moved out of the bin leaves no `$I` record behind, as with Explorer's
+        // restore.
+        if !copy {
+            for p in recycled.into_iter().filter(|p| !p.exists()) {
+                if let Some(info) = recycle_info_path(p) {
+                    let _ = std::fs::remove_file(info);
+                }
             }
         }
         // Cancel in the shell's conflict or error dialog, or a declined administrator prompt,
         // fails the operation too: report that as a cancel, not an error.
-        let performed = op.PerformOperations();
         if op.GetAnyOperationsAborted().is_ok_and(|b| b.as_bool())
             || performed == COPYENGINE_E_USER_CANCELLED
             || performed == E_CANCELLED
@@ -947,6 +966,60 @@ pub fn transfer_to_folder(
         performed.ok()?;
         Ok(true)
     }
+}
+
+/// The name `path` gets in the folder [`transfer_to_folder`] moves or copies it to.
+pub fn transferred_name(path: &Path) -> Option<std::ffi::OsString> {
+    recycled_original_name(path)
+        .map(Into::into)
+        .or_else(|| path.file_name().map(Into::into))
+}
+
+/// The name a Recycle Bin item had before it was deleted, None for a path outside the bin.
+/// The bin keeps the item as `$R<id>.ext` and writes its original path into `$I<id>.ext`
+/// beside it, where Explorer reads it to restore the item (feedback #50).
+fn recycled_original_name(path: &Path) -> Option<String> {
+    let bytes = std::fs::read(recycle_info_path(path)?).ok()?;
+    let original = recycle_info_original_path(&bytes)?;
+    Path::new(&original)
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+}
+
+/// `$I<id>.ext` beside `path` when `path` is a Recycle Bin item (`…\$Recycle.Bin\<SID>\$R<id>.ext`).
+fn recycle_info_path(path: &Path) -> Option<PathBuf> {
+    let name = path.file_name()?.to_str()?;
+    let id = name
+        .strip_prefix("$R")
+        .or_else(|| name.strip_prefix("$r"))?;
+    let in_bin = path.ancestors().any(|a| {
+        a.file_name()
+            .is_some_and(|n| n.eq_ignore_ascii_case("$Recycle.Bin"))
+    });
+    in_bin.then(|| path.with_file_name(format!("$I{id}")))
+}
+
+/// The original path in a `$I` file: version 1 (Windows Vista to 8.1) keeps it in a fixed
+/// field of 260 characters at byte 24, version 2 (Windows 10 and later) has its length in
+/// characters at byte 24 and the path from byte 28.
+fn recycle_info_original_path(bytes: &[u8]) -> Option<String> {
+    let version = u64::from_le_bytes(bytes.get(..8)?.try_into().ok()?);
+    let field = match version {
+        1 => bytes.get(24..24 + 520)?,
+        2 => {
+            let len = u32::from_le_bytes(bytes.get(24..28)?.try_into().ok()?) as usize;
+            bytes.get(28..28 + len.checked_mul(2)?)?
+        }
+        _ => return None,
+    };
+    let units: Vec<u16> = field
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|&c| u16::from_le_bytes(c))
+        .take_while(|&u| u != 0)
+        .collect();
+    (!units.is_empty()).then(|| String::from_utf16_lossy(&units))
 }
 
 const COPYENGINE_E_USER_CANCELLED: windows_core::HRESULT =
@@ -1471,5 +1544,98 @@ mod namespace_tests {
             assert!(!entry.is_folder);
             assert!(!entry.file_name.is_empty());
         }
+    }
+}
+
+#[cfg(test)]
+mod recycle_tests {
+    use super::{recycle_info_original_path, recycle_info_path, transferred_name};
+    use std::path::{Path, PathBuf};
+
+    fn info_v2(path: &str) -> Vec<u8> {
+        let units: Vec<u16> = path.encode_utf16().chain([0]).collect();
+        let mut b = Vec::new();
+        b.extend(2u64.to_le_bytes());
+        b.extend(1234u64.to_le_bytes());
+        b.extend(0u64.to_le_bytes());
+        b.extend((units.len() as u32).to_le_bytes());
+        units.iter().for_each(|u| b.extend(u.to_le_bytes()));
+        b
+    }
+
+    /// Both `$I` layouts give the path from before the delete; anything else gives none.
+    #[test]
+    fn info_file_gives_the_original_path() {
+        let path = r"C:\Users\me\Desktop\年终总结.docx";
+        assert_eq!(
+            recycle_info_original_path(&info_v2(path)).as_deref(),
+            Some(path)
+        );
+
+        let mut v1 = Vec::new();
+        v1.extend(1u64.to_le_bytes());
+        v1.extend([0; 16]);
+        let mut field = [0u16; 260];
+        path.encode_utf16()
+            .enumerate()
+            .for_each(|(i, u)| field[i] = u);
+        field.iter().for_each(|u| v1.extend(u.to_le_bytes()));
+        assert_eq!(v1.len(), 544);
+        assert_eq!(recycle_info_original_path(&v1).as_deref(), Some(path));
+
+        let mut short = info_v2(path);
+        short.truncate(40);
+        assert_eq!(recycle_info_original_path(&short), None);
+        let mut v3 = info_v2(path);
+        v3[0] = 3;
+        assert_eq!(recycle_info_original_path(&v3), None);
+    }
+
+    /// Only a `$R` item inside a `$Recycle.Bin` folder has a `$I` record.
+    #[test]
+    fn info_file_sits_beside_bin_items_only() {
+        let bin = r"C:\$Recycle.Bin\S-1-5-21-1-2-3-1001";
+        assert_eq!(
+            recycle_info_path(&Path::new(bin).join("$R7AB12C.docx")),
+            Some(PathBuf::from(bin).join("$I7AB12C.docx"))
+        );
+        assert_eq!(
+            recycle_info_path(Path::new(r"D:\$RECYCLE.BIN\S-1-5-21-1\$RQ1W2E3")),
+            Some(PathBuf::from(r"D:\$RECYCLE.BIN\S-1-5-21-1\$IQ1W2E3"))
+        );
+        assert_eq!(
+            recycle_info_path(Path::new(r"C:\Users\me\$Report.docx")),
+            None
+        );
+        assert_eq!(recycle_info_path(&Path::new(bin).join("desktop.ini")), None);
+    }
+
+    /// A bin item lands under its old name; any other file, or a bin item whose record is
+    /// gone, keeps its own.
+    #[test]
+    fn transferred_name_restores_bin_names() {
+        let root = std::env::temp_dir().join(format!("pecofence-bin-{}", std::process::id()));
+        let dir = root.join("$Recycle.Bin").join("S-1-5-21-1");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("$R7AB12C.docx"), b"x").unwrap();
+        std::fs::write(
+            dir.join("$I7AB12C.docx"),
+            info_v2(r"C:\Users\me\Desktop\年终总结.docx"),
+        )
+        .unwrap();
+        std::fs::write(dir.join("$R000000.txt"), b"x").unwrap();
+        assert_eq!(
+            transferred_name(&dir.join("$R7AB12C.docx")).unwrap(),
+            "年终总结.docx"
+        );
+        assert_eq!(
+            transferred_name(&dir.join("$R000000.txt")).unwrap(),
+            "$R000000.txt"
+        );
+        assert_eq!(
+            transferred_name(Path::new(r"C:\Users\me\a.txt")).unwrap(),
+            "a.txt"
+        );
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

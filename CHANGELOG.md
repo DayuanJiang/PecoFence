@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- An icon dragged out of a fence onto the empty desktop stays in 「桌面」 (feedback #49), as with 「移出栅栏（放回“桌面”）」 in its menu. The sorting rules then ran on it at once, whether 「新项目出现在桌面时自动归类」 was on or off, so a shortcut went straight back to 「程序」 and could not be taken out of its fence by dragging. Icons new on the desktop are still sorted by the rules.
+- A file or folder dragged from the Recycle Bin window into a fence gets its name back (feedback #50), as when Explorer restores it. It kept the name the Recycle Bin gives it on disk, such as `$R7AB12C.docx`.
+
 ## 0.2.3
 
 - Signing out or shutting down while a PecoFence menu is open shows the Windows desktop icons again and keeps the last changes. With a menu open, Windows closes the menu and ends PecoFence at once, before it is told about the sign-out, so the icons stayed hidden until PecoFence started again (in 0.2.2 and earlier), and a fence moved just before the menu opened was back where it had been. PecoFence now shows the icons when Windows closes the menu for a sign-out, and saves its changes before any menu opens.

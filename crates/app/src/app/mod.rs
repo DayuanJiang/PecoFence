@@ -1726,23 +1726,12 @@ impl App {
             Command::CancelDetach { change } => self.cancel_tab_detach(*change),
             Command::ReorderTab { host, tab, to } => self.reorder_tab(host, tab, to),
             Command::MoveItemsToInbox { items } => {
-                // Dropped on the bare desktop: back to the inbox, then straight through the
-                // rules — the same routing a new desktop item gets, now instead of whenever the
-                // watcher next reconciles (which used to leave the icon in the rolled-up inbox
-                // for a second or two).
+                // Dropped on the bare desktop: back to the inbox, as 「移出栅栏」 in the item
+                // menu does. The rules sent a shortcut straight back to 「程序」, so it could
+                // not be taken out of its fence by dragging (feedback #49).
                 if let Some(inbox) = self.state.inbox_id() {
+                    tracing::debug!(items = items.len(), "dropped on the desktop: inbox");
                     self.move_items(&items, inbox);
-                    let entries = shell::enumerate_desktop();
-                    let touched = self.state.apply_rules_to(&items, &entries);
-                    tracing::debug!(
-                        items = items.len(),
-                        refiled = ?touched,
-                        "dropped on the desktop: inbox, then rules"
-                    );
-                    for id in touched {
-                        self.refresh_fence(id);
-                    }
-                    self.schedule_save();
                 }
             }
             Command::ExternalDrop { paths, to, mode } if self.state.portal_path(to).is_some() => {
@@ -1807,7 +1796,7 @@ impl App {
                         // before the conflict dialog is even answered.
                         let routed: Vec<PathBuf> = foreign
                             .iter()
-                            .filter_map(|p| p.file_name().map(|n| desktop.join(n)))
+                            .filter_map(|p| shell::transferred_name(p).map(|n| desktop.join(n)))
                             .filter(|p| self.state.live_item_by_path(p).is_none())
                             .collect();
                         for path in &routed {

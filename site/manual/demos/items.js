@@ -1,7 +1,7 @@
 // 2.1 在栅栏之间移动图标: drag 合同.pdf into 工作 (drop wash + 「移动到 工作」), Ctrl+click two
 // files and drag them together (the drag image is the selection as laid out, anchored at
 // the press point: dnd.rs render_drag_image), then drag 合同.pdf onto the bare desktop: back to
-// the inbox and straight through the rules (MoveItemsToInbox), so it lands in 文件与文档 again.
+// the inbox, 桌面 (MoveItemsToInbox).
 (() => {
     'use strict';
     const { E, ramp, lerp, inside, pathAt, spans, spanFade, el, put, show, slot, icon, fence,
@@ -12,7 +12,9 @@
     const FENCES = {
         A: { x: 28, y: 36, w: 324, h: 204, title: '文件与文档' },
         W: { x: 448, y: 36, w: 324, h: 204, title: '工作' },
+        I: { x: 28, y: 268, w: 324, h: 118, title: '桌面' },
     };
+    const FS = Object.keys(FENCES);
     // id: [icon, label]; ids are ASCII so translations never touch them; .url hides its extension like Explorer
     const ITEMS = {
         invoice: ['pdf', '发票.pdf'],
@@ -24,6 +26,7 @@
         budget: ['xlsx', '预算.xlsx'],
         weekly: ['docx', '周报.docx'],
         home: ['url', '项目主页'],
+        assets: ['folder', '素材'],
     };
 
     const CLICK1 = 3.72, CLICK2 = 4.5;
@@ -31,7 +34,7 @@
     const DRAGS = [
         { press: 1.15, lift: 1.22, drop: 2.6, items: ['contract'], from: 'A', to: 'W' },
         { press: 5.0, lift: 5.2, drop: 6.6, items: ['quote', 'plan'], from: 'A', to: 'W' },
-        { press: 7.75, lift: 7.82, drop: 9.15, items: ['contract'], from: 'W', to: 'A' },
+        { press: 7.75, lift: 7.82, drop: 9.15, items: ['contract'], from: 'W', to: 'I' },
     ];
     const SELECTED = {
         contract: [[DRAGS[0].press, DRAGS[0].drop], [DRAGS[2].press, DRAGS[2].drop]],
@@ -48,9 +51,9 @@
         [8.1, 8.95, '拖到桌面空白处', 48, -6],
     ];
     const KEYS = [{ a: 3.95, b: 4.8, keys: ['Ctrl'], down: 4.05, up: 4.75 }];
-    // just below 文件与文档, clear of its title however long it is translated
-    const RULE_NOTE = [DRAGS[2].drop + .1, DRAGS[2].drop + 1.5, '按规则归类',
-        FENCES.A.x + 110, FENCES.A.y + FENCES.A.h + 10, 'abs'];
+    // right of 桌面, where it landed
+    const INBOX_NOTE = [DRAGS[2].drop + .1, DRAGS[2].drop + 1.5, '放回「桌面」',
+        FENCES.I.x + FENCES.I.w + 14, FENCES.I.y + 44, 'abs'];
 
     // Manual order of items never rearranged by hand: lowercase name, code point order
     // (state.rs items_of, SortMode::Manual with no manual_index).
@@ -58,15 +61,19 @@
         const x = ITEMS[a][1].toLowerCase(), y = ITEMS[b][1].toLowerCase();
         return x < y ? -1 : x > y ? 1 : 0;
     });
-    const PHASES = [{ A: order(['invoice', 'contract', 'todo', 'quote', 'plan', 'poster', 'budget']), W: order(['weekly', 'home']) }];
+    const PHASES = [{
+        A: order(['invoice', 'contract', 'todo', 'quote', 'plan', 'poster', 'budget']),
+        W: order(['weekly', 'home']),
+        I: ['assets'],
+    }];
     for (const d of DRAGS) {
         const p = PHASES[PHASES.length - 1];
-        const next = { A: p.A.filter(k => !d.items.includes(k)), W: p.W.filter(k => !d.items.includes(k)) };
+        const next = Object.fromEntries(FS.map(f => [f, p[f].filter(k => !d.items.includes(k))]));
         next[d.to] = order([...next[d.to], ...d.items]);
         PHASES.push(next);
     }
     const where = (k, j) => {
-        for (const f of ['A', 'W']) {
+        for (const f of FS) {
             const i = PHASES[j][f].indexOf(k);
             if (i >= 0) return { f, i, ...slot(FENCES[f], i, COLS) };
         }
@@ -113,9 +120,8 @@
         el('div', 'wall', root);
         r.scene = el('div', 'scene', root);
         const S = r.scene;
-        r.F = {};
-        for (const k of ['A', 'W']) r.F[k] = fence(S, { ...FENCES[k] });
-        r.carets = { A: el('div', 'icons-caret', S), W: el('div', 'icons-caret', S) };
+        r.F = Object.fromEntries(FS.map(f => [f, fence(S, { ...FENCES[f] })]));
+        r.carets = Object.fromEntries(FS.map(f => [f, el('div', 'icons-caret', S)]));
         r.icons = {};
         r.echo = {};
         for (const k of Object.keys(ITEMS)) {
@@ -143,10 +149,8 @@
 
         // hover spans of the dragging pointer over each fence, per drag
         const dragging = (d, t) => t >= d.lift && t < d.drop;
-        r.over = DRAGS.map(d => ({
-            A: spans(D, t => dragging(d, t) && inside(at(t), FENCES.A)),
-            W: spans(D, t => dragging(d, t) && inside(at(t), FENCES.W)),
-        }));
+        r.over = DRAGS.map(d => Object.fromEntries(FS.map(f =>
+            [f, spans(D, t => dragging(d, t) && inside(at(t), FENCES[f]))])));
         return r;
     }
 
@@ -178,7 +182,7 @@
 
         // drop feedback: wash on another fence, insertion caret on the source (手动 order)
         let badge = null;
-        for (const f of ['A', 'W']) {
+        for (const f of FS) {
             let wash = 0, caret = 0, cpos = null;
             DRAGS.forEach((d, i) => {
                 const list = r.over[i][f];
@@ -209,13 +213,13 @@
             put(r.badge, p.x + 2, p.y + 34);
         }
 
-        // back in 文件与文档 by the rules: a pulse where it landed
+        // back in 桌面: a pulse where it landed
         const back = DRAGS[2].drop, home = where('contract', 3);
         if (show(r.pulse, t >= back + .05 && t < back + .85)) {
             const q = (t - back - .05) / .8;
             put(r.pulse, home.x + 39, home.y + 24, (1 - q) * .9, ` scale(${.6 + E.out(q) * 1.1})`);
         }
-        drawChip(r.note, t, [RULE_NOTE], p);
+        drawChip(r.note, t, [INBOX_NOTE], p);
 
         drawKeys(r.keys, t, KEYS);
         drawPointer(r.ptr, t, p, { clicks: CLICKS, presses: PRESSES, chips: CHIPS, at });
