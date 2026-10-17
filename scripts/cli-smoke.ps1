@@ -203,7 +203,8 @@ try {
     $r = Invoke-Cli @("fence", "create", "--title", "x", "--rect", "2147483000,0,300,200")
     Check "overflowing rect -> invalid_value" ($r.Code -eq 1 -and (Json $r.Err).error.code -eq "invalid_value") "code=$($r.Code) $($r.Err)"
     $r = Invoke-Cli @("settings", "set", "snapping.gapPx", "-4")
-    Check "settings set negative number" ($r.Code -eq 0 -and (Json $r.Out).settings.snapping.gapPx -eq -4) "$($r.Out) $($r.Err)"
+    # -4 must reach the app as a value, not as a flag; the gap is 0 to 64, so it is refused.
+    Check "settings set negative number reaches the range check" ($r.Code -eq 1 -and (Json $r.Err).error.code -eq "validation_failed" -and $r.Err -match "gapPx -4") "code=$($r.Code) $($r.Err)"
     $r = Invoke-Cli @("rule", "add", "--name", "Empty", "--to", "inbox", "--json", "[]")
     Check "rule add without conditions rejected" ($r.Code -ne 0) "$($r.Out)"
 
