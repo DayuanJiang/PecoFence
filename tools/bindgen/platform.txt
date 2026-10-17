@@ -353,6 +353,7 @@
     PROCESS_MEMORY_COUNTERS_EX2
     PROCESS_MEMORY_COUNTERS_EX
     PROCESS_MEMORY_COUNTERS
+    QueryWorkingSet
 
     // ---- CLI named pipe (pecofence-cli IPC)
     CreateNamedPipeW

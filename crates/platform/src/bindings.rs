@@ -1472,6 +1472,15 @@ pub unsafe fn QueryDisplayConfig(
     }
 }
 #[inline]
+pub unsafe fn QueryWorkingSet(
+    hprocess: HANDLE,
+    pv: *mut core::ffi::c_void,
+    cb: u32,
+) -> windows_core::BOOL {
+    windows_core::link!("kernel32.dll" "system" "K32QueryWorkingSet" fn QueryWorkingSet(hprocess : HANDLE, pv : *mut core::ffi::c_void, cb : u32) -> windows_core::BOOL);
+    unsafe { QueryWorkingSet(hprocess, pv as _, cb) }
+}
+#[inline]
 pub unsafe fn ReadDirectoryChangesW(
     hdirectory: HANDLE,
     lpbuffer: *mut core::ffi::c_void,
