@@ -295,6 +295,7 @@ impl FenceWindow {
                     m if m == h.taskbar_created && m != 0 => {
                         misc::on_taskbar_created(h, hwnd, wparam, lparam)
                     }
+                    msg::WM_CANCELMODE => misc::on_cancelmode(h, hwnd, wparam, lparam),
                     msg::WM_DESTROY => misc::on_destroy(h, hwnd, wparam, lparam),
                     _ => None,
                 }

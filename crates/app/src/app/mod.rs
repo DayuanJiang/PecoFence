@@ -923,6 +923,18 @@ impl App {
                             }
                             Some(1)
                         }
+                        msg::WM_CANCELMODE if window::session_ending() => {
+                            // The session ends while the tray menu is open: show the real icons
+                            // before the menu closes, as for a fence menu (`on_cancelmode`).
+                            if let Some(anchor) = session_anchor.get()
+                                && let Ok(mut guard) = anchor.try_borrow_mut()
+                                && let Some(a) = guard.as_mut()
+                            {
+                                tracing::info!("session ending with a menu open");
+                                a.restore_desktop_icons();
+                            }
+                            None
+                        }
                         msg::WM_ENDSESSION if wparam == 0 => {
                             // The shutdown was cancelled (another program refused, or the user
                             // chose Cancel): WM_QUERYENDSESSION showed the real icons again.
@@ -1333,7 +1345,9 @@ impl App {
 {}",
                 a.zorder_report(false)
             );
-            if a.stale_marker_present() {
+            // Icons already showing: the last run restored them, but a sign-out ended it before
+            // it removed the marker.
+            if a.stale_marker_present() && pecofence_platform::shell_icons::desktop_icons_hidden() {
                 tracing::warn!(
                     "stale icons-hidden marker found: previous run did not restore icons"
                 );

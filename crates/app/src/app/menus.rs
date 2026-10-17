@@ -209,6 +209,9 @@ impl App {
                 false,
             )
             .icon(glyph::EXIT);
+        // A sign-out while a menu is open ends the process before the menu returns, and the
+        // menu keeps TIMER_SAVE from saving meanwhile: save pending changes first.
+        self.state.save_if_dirty();
         let cmd = menu.show(self.control.hwnd(), x, y);
         match cmd {
             CMD_TOGGLE_FENCES => self.toggle_all_fences(),
@@ -240,6 +243,8 @@ impl App {
             .window_for(fence)
             .map(|w| w.hwnd())
             .unwrap_or(self.control.hwnd());
+        // Saved first, as for the tray menu.
+        self.state.save_if_dirty();
         let cmd = menu.show_context(owner, x, y);
         if let Some(sm) = shell_menu.as_ref()
             && sm.contains(cmd)
@@ -748,6 +753,8 @@ impl App {
             .get(&host)
             .map(|w| w.hwnd())
             .unwrap_or(self.control.hwnd());
+        // Saved first, as for the tray menu.
+        self.state.save_if_dirty();
         let cmd = menu.show_context(owner, x, y);
         match cmd {
             CMD_FENCE_ROLL => self.toggle_roll(host),
@@ -918,6 +925,8 @@ impl App {
             .window_for(fence)
             .map(|w| w.hwnd())
             .unwrap_or(self.control.hwnd());
+        // Saved first, as for the tray menu.
+        self.state.save_if_dirty();
         let cmd = menu.show_context(owner, x, y);
         match cmd {
             CMD_COL_DATE | CMD_COL_TYPE | CMD_COL_SIZE => {
@@ -970,6 +979,8 @@ impl App {
             false,
             false,
         );
+        // Saved first, as for the tray menu.
+        self.state.save_if_dirty();
         if menu.show_context(owner, pt.x, pt.y) == CMD_NEW_FENCE_HERE {
             self.create_fence_with_rename(rect);
         }
