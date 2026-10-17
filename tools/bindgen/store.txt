@@ -1,14 +1,18 @@
 --out crates/platform/src/store_bindings.rs
 --flat --dead-code
 
-// Microsoft Store rating dialog (`store.rs`). Interfaces carry the methods; the class entries
-// alone would only be name shells.
+// Microsoft Store rating dialog and the package's startup switch (`store.rs`). Interfaces
+// carry the methods; the class entries alone would only be name shells.
 --filter
     Windows.Services.Store.StoreContext
     Windows.Services.Store.IStoreContextStatics.GetDefault
     Windows.Services.Store.IStoreContext4.RequestRateAndReviewAppAsync
     Windows.Services.Store.StoreRateAndReviewResult
     Windows.Services.Store.IStoreRateAndReviewResult
+    Windows.ApplicationModel.StartupTask
+    Windows.ApplicationModel.IStartupTaskStatics.GetAsync
+    Windows.ApplicationModel.IStartupTask.State
+    Windows.ApplicationModel.StartupTaskState
     Windows.Services.Store.StoreRateAndReviewStatus
     IInitializeWithWindow
     AllowSetForegroundWindow

@@ -143,6 +143,19 @@ pub fn is_namespace_path(path: &Path) -> bool {
     path.to_string_lossy().starts_with("::{")
 }
 
+/// True for a path on a local fixed drive (`C:\...`): asking whether it exists is quick. A
+/// share or a mapped network drive may keep the caller waiting until the network gives up.
+pub fn is_on_fixed_drive(path: &Path) -> bool {
+    let s = path.to_string_lossy();
+    let mut chars = s.chars();
+    let (Some(letter), Some(':')) = (chars.next(), chars.next()) else {
+        return false;
+    };
+    let root = to_wide(&format!("{letter}:\\"));
+    // SAFETY: the string is NUL-terminated and outlives the call.
+    unsafe { GetDriveTypeW(PCWSTR(root.as_ptr())) == DRIVE_FIXED as u32 }
+}
+
 /// True for the Recycle Bin's parsing name in any letter case (item keys are lower-cased).
 pub fn is_recycle_bin_path(path: &Path) -> bool {
     path.to_string_lossy()
@@ -1094,9 +1107,16 @@ pub fn create_shortcut(target: &Path, dir: &Path) -> Result<PathBuf> {
             .filter(|s| !s.is_empty())
             .unwrap_or(name)
     };
+    // Named in the Windows display language, as Explorer names the shortcuts it makes: the
+    // file stays on disk for every other program, whatever language PecoFence shows.
+    use pecofence_core::i18n;
+    let windows_language = i18n::Language::from_locale(crate::locale::ui_language());
     let path = unique_path(
         dir,
-        &pecofence_core::i18n::format("{0} - 快捷方式", std::slice::from_ref(&base)),
+        &i18n::interpolate(
+            i18n::text_in(windows_language, "{0} - 快捷方式"),
+            std::slice::from_ref(&base),
+        ),
         ".lnk",
     );
     let target_w = path_wide(target);
@@ -1298,16 +1318,24 @@ mod move_tests {
     }
 
     /// The Link drop effect writes Explorer's `<stem> - 快捷方式.lnk` (folders keep their full
-    /// name) and never overwrites an existing shortcut.
+    /// name), in the Windows display language, and never overwrites an existing shortcut.
     #[test]
     fn create_shortcut_writes_explorer_named_lnk() {
+        use pecofence_core::i18n;
         let _com = crate::com::OleGuard::init().expect("COM");
+        let language = i18n::Language::from_locale(crate::locale::ui_language());
+        let named = |stem: &str| {
+            i18n::interpolate(
+                i18n::text_in(language, "{0} - 快捷方式"),
+                &[stem.to_string()],
+            )
+        };
         let base = std::env::temp_dir().join(format!("pecofence-lnk-{}", std::process::id()));
         std::fs::create_dir_all(&base).unwrap();
         let file = base.join("probe.txt");
         std::fs::write(&file, b"x").unwrap();
         let lnk = create_shortcut(&file, &base).expect("shortcut");
-        assert_eq!(lnk, base.join("probe - 快捷方式.lnk"));
+        assert_eq!(lnk, base.join(format!("{}.lnk", named("probe"))));
         assert!(lnk.exists());
         // Canonicalize both sides: the temp directory may be an 8.3 short path (as on
         // CI runners) while the shell stores the long form in the link.
@@ -1317,15 +1345,15 @@ mod move_tests {
             std::fs::canonicalize(&file).expect("canonical file")
         );
         let second = create_shortcut(&file, &base).expect("shortcut 2");
-        assert_eq!(second, base.join("probe - 快捷方式 (2).lnk"));
+        assert_eq!(second, base.join(format!("{} (2).lnk", named("probe"))));
         let folder = base.join("sub.dir");
         std::fs::create_dir_all(&folder).unwrap();
         let flnk = create_shortcut(&folder, &base).expect("folder shortcut");
-        assert_eq!(flnk, base.join("sub.dir - 快捷方式.lnk"));
+        assert_eq!(flnk, base.join(format!("{}.lnk", named("sub.dir"))));
         // The Start menu's known-folder-relative app path is no file: no link to nowhere.
         let start_menu = Path::new(r"{7C5A40EF-A0FB-4BFC-874A-C0F2E0B9FA8E}\Steam\steam.exe");
         assert!(create_shortcut(start_menu, &base).is_err());
-        assert!(!base.join("steam - 快捷方式.lnk").exists());
+        assert!(!base.join(format!("{}.lnk", named("steam"))).exists());
         let _ = std::fs::remove_dir_all(&base);
     }
 

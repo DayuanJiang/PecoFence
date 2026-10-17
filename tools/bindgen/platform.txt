@@ -170,6 +170,7 @@
     WM_DWMCOLORIZATIONCOLORCHANGED
     WM_ENDSESSION
     WM_QUERYENDSESSION
+    WM_CANCELMODE
     MINMAXINFO
     HTCLIENT
     HTCAPTION
@@ -353,6 +354,7 @@
     PROCESS_MEMORY_COUNTERS_EX2
     PROCESS_MEMORY_COUNTERS_EX
     PROCESS_MEMORY_COUNTERS
+    QueryWorkingSet
 
     // ---- CLI named pipe (pecofence-cli IPC)
     CreateNamedPipeW
@@ -453,6 +455,7 @@
     SM_CXDOUBLECLK
     SM_CYDOUBLECLK
     SM_SWAPBUTTON
+    SM_SHUTTINGDOWN
 
     // ---- test tooling
     keybd_event

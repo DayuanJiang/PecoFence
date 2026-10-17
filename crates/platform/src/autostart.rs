@@ -52,29 +52,50 @@ pub fn reconcile_product(wanted: bool, development: bool) -> Result<()> {
         registered_path(LEGACY_AUTOSTART).is_some(),
     );
     if actions.register_current {
-        set_enabled(NAME, true)?;
+        set_enabled(NAME, true, false)?;
     }
     if actions.remove_current {
-        set_enabled(NAME, false)?;
+        set_enabled(NAME, false, false)?;
     }
     if actions.remove_legacy {
-        set_enabled(LEGACY_AUTOSTART, false)?;
+        set_enabled(LEGACY_AUTOSTART, false, false)?;
     }
     Ok(())
 }
 
 /// Explicit settings changes address both names, avoiding duplicate login launches.
 /// Store (MSIX) installs leave the registry alone: the package startup task owns autostart.
-pub fn set_product_enabled(enabled: bool) -> Result<()> {
+/// A portable copy's entry starts it with `--portable`, so it opens its own configuration.
+pub fn set_product_enabled(enabled: bool, portable: bool) -> Result<()> {
     use pecofence_core::brand::{LEGACY_AUTOSTART, NAME};
     if crate::process::is_packaged() {
         return Ok(());
     }
-    set_enabled(NAME, enabled)?;
+    set_enabled(NAME, enabled, portable)?;
     if registered_path(LEGACY_AUTOSTART).is_some() {
-        set_enabled(LEGACY_AUTOSTART, false)?;
+        set_enabled(LEGACY_AUTOSTART, false, false)?;
     }
     Ok(())
+}
+
+/// Whether the startup entry starts this portable copy. An entry from 0.2.2 or earlier starts
+/// it without `--portable`, which opens the %APPDATA% configuration at sign-in: it gets the
+/// flag here.
+pub fn adopt_portable_entry() -> bool {
+    use pecofence_core::brand::NAME;
+    let Some(command) = registered_command(NAME) else {
+        return false;
+    };
+    if !same_executable(command_path(&command), &exe_path()) {
+        return false;
+    }
+    if !command.contains("--portable") {
+        match set_enabled(NAME, true, true) {
+            Ok(()) => tracing::info!("startup entry of this portable copy gets --portable"),
+            Err(e) => tracing::warn!(error = %e, "startup entry could not get --portable"),
+        }
+    }
+    true
 }
 
 /// Whether two paths name the same file. Canonical paths first (case, 8.3 names, symlinks),
@@ -117,13 +138,14 @@ fn open_run_key() -> Result<HKEY> {
     Ok(hkey)
 }
 
-pub fn set_enabled(value_name: &str, enabled: bool) -> Result<()> {
+pub fn set_enabled(value_name: &str, enabled: bool, portable: bool) -> Result<()> {
     let hkey = open_run_key()?;
     let name = to_wide(value_name);
     // SAFETY: buffers outlive the calls; key closed afterwards.
     let status = unsafe {
         let s = if enabled {
-            let cmd = to_wide(&format!("\"{}\"", exe_path()));
+            let args = if portable { " --portable" } else { "" };
+            let cmd = to_wide(&format!("\"{}\"{args}", exe_path()));
             let bytes: Vec<u8> = cmd.iter().flat_map(|c| c.to_le_bytes()).collect();
             RegSetValueExW(hkey, PCWSTR(name.as_ptr()), None, REG_SZ, Some(&bytes))
         } else {
@@ -142,6 +164,11 @@ pub fn set_enabled(value_name: &str, enabled: bool) -> Result<()> {
 
 /// The executable path currently registered for `value_name` (quotes stripped), if any.
 pub fn registered_path(value_name: &str) -> Option<String> {
+    registered_command(value_name).map(|command| command_path(&command).to_string())
+}
+
+/// The command line registered for `value_name`, if any.
+fn registered_command(value_name: &str) -> Option<String> {
     let key = to_wide(RUN_KEY);
     let name = to_wide(value_name);
     let mut buf = [0u16; 1024];
@@ -163,8 +190,15 @@ pub fn registered_path(value_name: &str) -> Option<String> {
     }
     let chars = (size as usize / 2).min(buf.len());
     let raw = from_wide(&buf[..chars]);
-    let raw = raw.trim_end_matches('\0').trim();
-    Some(raw.trim_matches('"').to_string())
+    Some(raw.trim_end_matches('\0').trim().to_string())
+}
+
+/// The program of a Run entry's command line: the quoted part, or the whole line unquoted.
+fn command_path(command: &str) -> &str {
+    match command.strip_prefix('"') {
+        Some(rest) => rest.split('"').next().unwrap_or(rest),
+        None => command,
+    }
 }
 
 pub fn is_enabled(value_name: &str) -> bool {

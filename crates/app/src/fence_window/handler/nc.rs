@@ -251,7 +251,11 @@ pub(super) fn on_ncmouseleave(
         if !inside {
             v.set_mouse_inside(false);
         }
-        if v.title_hover {
+        // Onto a control of the title row (a tab, the chevron box): still the row. This
+        // message can come after the WM_MOUSEMOVE there, which already counted the row as
+        // hovered, and clearing it hid the chevron until the pointer moved again.
+        let c = window::screen_to_client(hwnd, pt);
+        if v.title_hover && !(inside && v.title_row_at(c.x, c.y)) {
             v.title_hover = false;
             let _ = v.redraw_chrome_only();
         }
@@ -595,6 +599,7 @@ pub(super) fn on_entersizemove(
     // is a hotkey (WM_HOTKEY reaches `cancel_move`; `on_moving` reads the right button).
     if caption.is_some() {
         hotkey::register(hwnd, HOTKEY_MOVE_ESC, 0, msg::VK_ESCAPE);
+        window::set_timer(hwnd, TIMER_MOVE_RBUTTON, 30);
     }
     // A title drag (not a resize) of a selected fence takes the rest of the selection along.
     *h.group.borrow_mut() = if caption.is_some() {
@@ -636,6 +641,7 @@ pub(super) fn on_exitsizemove(
     let fence_id = h.fence_id;
     in_size_move.set(false);
     hotkey::unregister(hwnd, HOTKEY_MOVE_ESC);
+    window::kill_timer(hwnd, TIMER_MOVE_RBUTTON);
     // A title drag, not a resize. (Comparing sizes would call a move onto a monitor with
     // another scale a resize: WM_DPICHANGED rescales the window inside the loop.)
     let moved = h
@@ -939,6 +945,20 @@ pub(super) fn cancel_move(h: &HandlerCtx, hwnd: HWND) {
     restore_members(&group);
     let r = h.rect_at_enter.get();
     let _ = window::set_window_bounds(hwnd, r.left, r.top, r.right - r.left, r.bottom - r.top);
+}
+
+/// TIMER_MOVE_RBUTTON: the right button pressed during a title drag cancels it, as in
+/// `on_moving`, also while the pointer rests.
+pub(super) fn on_timer_move_rbutton(
+    h: &HandlerCtx,
+    hwnd: HWND,
+    _wparam: usize,
+    _lparam: isize,
+) -> Option<isize> {
+    if !h.move_cancelled.get() && window::secondary_button_down_async() {
+        cancel_move(h, hwnd);
+    }
+    Some(0)
 }
 
 pub(super) fn on_hotkey_move_esc(

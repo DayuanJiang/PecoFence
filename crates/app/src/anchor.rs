@@ -240,6 +240,13 @@ pub struct WindowReport {
     pub host: Option<desktop::HostKind>,
 }
 
+/// Windows 11's shell popups (snap layouts after Win+Up, the task switcher) take the foreground
+/// for a moment and hand it back without another foreground event. Taken for an app, they ended
+/// a Peek, turned the desktop's double-click off, or ended show desktop.
+fn is_shell_popup(class: &str) -> bool {
+    class == "XamlExplorerHostIslandWindow"
+}
+
 impl DesktopAnchor {
     /// Creates the anchor state, its sentinel window and the foreground hook. Returns the shared
     /// cell so window handlers can reach it.
@@ -582,6 +589,7 @@ impl DesktopAnchor {
         } else if !foreground.0.is_null()
             && !self.is_desktop_window(foreground)
             && !self.is_own_window(foreground)
+            && !is_shell_popup(desktop::class_name(desktop::root_ancestor(foreground)).as_str())
         {
             self.end_show_desktop("another window came to the front");
         }
@@ -631,6 +639,11 @@ impl DesktopAnchor {
         }
         let root = desktop::root_ancestor(hwnd);
         let cls = desktop::class_name(root);
+        // The window the user goes to from a shell popup is the real change.
+        if is_shell_popup(&cls) {
+            tracing::debug!(%cls, "shell popup in front; foreground change ignored");
+            return;
+        }
         if self.peeking {
             // Peek is a glance: the first foreign window that comes to the front ends it. Our
             // own windows (fences, dimmer, rename popup, menus) do not.
@@ -1090,6 +1103,14 @@ impl DesktopAnchor {
     /// True when a previous run left the marker behind (crashed without restoring).
     pub fn stale_marker_present(&self) -> bool {
         self.icons.marker.exists()
+    }
+
+    /// The previous run's marker with the icons showing anyway: it restored them but was ended
+    /// before it removed the marker. Kept, it would take a later hide by the user for ours.
+    pub fn forget_stale_marker(&mut self) {
+        if !self.icons.we_hid_them {
+            let _ = std::fs::remove_file(&self.icons.marker);
+        }
     }
 
     fn on_timer(&mut self, id: usize) {

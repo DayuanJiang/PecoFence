@@ -42,6 +42,8 @@ pub const WM_APP_LIVE_WALLPAPER: u32 = msg::WM_APP + 14;
 pub const WM_APP_TAB_RAIL: u32 = msg::WM_APP + 15;
 /// The startup wallpaper worker finished after the fences went up (worker thread → UI thread).
 pub const WM_APP_STARTUP_BACKDROPS: u32 = msg::WM_APP + 16;
+/// The Store edition's startup switch was read on a worker (worker thread → UI thread).
+pub const WM_APP_STARTUP_TASK: u32 = msg::WM_APP + 17;
 
 /// What a file drop does with the dropped paths (Explorer's Move / Copy / Create shortcut, the
 /// effect the drop target reported).
@@ -282,6 +284,8 @@ pub enum Command {
     Quit,
     /// A window was destroyed (unregister).
     WindowGone(HWND),
+    /// The settings window became the active window (back from Windows' Startup page, say).
+    SettingsActivated,
     /// A retired fence window (deleted / merged) finished fading out: destroy it now.
     FadeOutDone(HWND),
     /// The user clicked a fence: bring it above the other fences.

@@ -1472,6 +1472,15 @@ pub unsafe fn QueryDisplayConfig(
     }
 }
 #[inline]
+pub unsafe fn QueryWorkingSet(
+    hprocess: HANDLE,
+    pv: *mut core::ffi::c_void,
+    cb: u32,
+) -> windows_core::BOOL {
+    windows_core::link!("kernel32.dll" "system" "K32QueryWorkingSet" fn QueryWorkingSet(hprocess : HANDLE, pv : *mut core::ffi::c_void, cb : u32) -> windows_core::BOOL);
+    unsafe { QueryWorkingSet(hprocess, pv as _, cb) }
+}
+#[inline]
 pub unsafe fn ReadDirectoryChangesW(
     hdirectory: HANDLE,
     lpbuffer: *mut core::ffi::c_void,
@@ -15885,6 +15894,7 @@ pub const SM_CXSMICON: i32 = 49;
 pub const SM_CYDOUBLECLK: i32 = 37;
 pub const SM_CYDRAG: i32 = 69;
 pub const SM_CYSCREEN: i32 = 1;
+pub const SM_SHUTTINGDOWN: i32 = 8192;
 pub const SM_SWAPBUTTON: i32 = 23;
 pub const SPI_GETCLIENTAREAANIMATION: i32 = 4162;
 pub const SPI_GETICONMETRICS: i32 = 45;
@@ -16207,6 +16217,7 @@ pub const WINEVENT_SKIPOWNPROCESS: i32 = 2;
 pub const WM_ACTIVATE: i32 = 6;
 pub const WM_ACTIVATEAPP: i32 = 28;
 pub const WM_APP: i32 = 32768;
+pub const WM_CANCELMODE: i32 = 31;
 pub const WM_CAPTURECHANGED: i32 = 533;
 pub const WM_CHAR: i32 = 258;
 pub const WM_CLOSE: i32 = 16;

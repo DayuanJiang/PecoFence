@@ -856,6 +856,12 @@ pub fn pump_messages() -> bool {
     }
 }
 
+/// Whether the session is signing out or shutting down (`SM_SHUTTINGDOWN`).
+pub fn session_ending() -> bool {
+    // SAFETY: plain FFI call.
+    unsafe { GetSystemMetrics(SM_SHUTTINGDOWN) != 0 }
+}
+
 pub fn post_quit(code: i32) {
     QUIT_POSTED.store(true, std::sync::atomic::Ordering::Relaxed);
     // SAFETY: plain FFI call.

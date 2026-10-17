@@ -181,6 +181,26 @@ pub(super) fn on_taskbar_created(
     Some(0)
 }
 
+// The session ends while a menu of this fence is open: Windows cancels the menu and ends the
+// process as soon as the menu window is gone, before WM_ENDSESSION and often before
+// WM_QUERYENDSESSION. The real desktop icons come back first.
+pub(super) fn on_cancelmode(
+    h: &HandlerCtx,
+    _hwnd: HWND,
+    _wparam: usize,
+    _lparam: isize,
+) -> Option<isize> {
+    let HandlerCtx { anchor, .. } = h;
+    if window::session_ending()
+        && let Ok(mut guard) = anchor.try_borrow_mut()
+        && let Some(a) = guard.as_mut()
+    {
+        tracing::info!("session ending with a menu open");
+        a.restore_desktop_icons();
+    }
+    None
+}
+
 pub(super) fn on_destroy(
     h: &HandlerCtx,
     hwnd: HWND,

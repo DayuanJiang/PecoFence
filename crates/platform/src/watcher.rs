@@ -29,6 +29,8 @@ pub struct DirWatcher {
     handle: Arc<SendHandle>,
     stop: Arc<AtomicBool>,
     thread: Option<JoinHandle<()>>,
+    /// Creation time of the folder the handle was opened on (see [`Self::still_at`]).
+    created: Option<u64>,
 }
 
 impl DirWatcher {
@@ -57,6 +59,7 @@ impl DirWatcher {
         }
         let handle = Arc::new(SendHandle(handle));
         let stop = Arc::new(AtomicBool::new(false));
+        let created = folder_created(dir);
         let dir = dir.to_path_buf();
         let thread = {
             let handle = handle.clone();
@@ -80,7 +83,15 @@ impl DirWatcher {
             handle,
             stop,
             thread: Some(thread),
+            created,
         })
+    }
+
+    /// False when the folder this watcher follows is no longer the one at `dir`: the handle
+    /// moves with a folder that is renamed or moved away, so the watcher keeps running on it,
+    /// and a new folder made at `dir` has another creation time.
+    pub fn still_at(&self, dir: &Path) -> bool {
+        self.created.is_none() || folder_created(dir) == self.created
     }
 
     /// False once the watcher thread has exited (its folder was deleted, renamed or unmounted).
@@ -110,6 +121,11 @@ impl Drop for DirWatcher {
             let _ = CloseHandle(self.handle.0);
         }
     }
+}
+
+fn folder_created(dir: &Path) -> Option<u64> {
+    use std::os::windows::fs::MetadataExt;
+    std::fs::metadata(dir).ok().map(|m| m.creation_time())
 }
 
 const FILTER: u32 = (FILE_NOTIFY_CHANGE_FILE_NAME

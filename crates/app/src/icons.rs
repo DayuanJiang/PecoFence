@@ -419,7 +419,9 @@ impl IconCache {
                 }
                 None => self.stats.failed += 1,
             }
-            if f.req.icon_only && !self.recheck_at.is_empty() {
+            // Thumbnails are not asked again; folders are, though their requests ask for a
+            // preview of the contents.
+            if (f.req.icon_only || !thumbnail_capable(&f.req.path)) && !self.recheck_at.is_empty() {
                 self.recheck.push(f.req.clone());
             }
             self.pending.remove(&k);
@@ -451,7 +453,7 @@ impl IconCache {
         }
     }
 
-    /// Asks every icon (not the thumbnails) again at `RECHECK_AFTER_START_S`.
+    /// Asks every icon and folder (not the thumbnails) again at `RECHECK_AFTER_START_S`.
     pub fn recheck_after_start(&mut self) {
         let now = Instant::now();
         self.recheck_at = RECHECK_AFTER_START_S
@@ -645,22 +647,6 @@ pub fn icon_key_for(path: &Path, is_folder: bool, mtime: i64) -> (IconKey, bool)
                 | ".mov"
                 | ".avi"
         );
-    let thumbnail_capable = matches!(
-        ext.as_str(),
-        ".png"
-            | ".jpg"
-            | ".jpeg"
-            | ".gif"
-            | ".bmp"
-            | ".webp"
-            | ".heic"
-            | ".tif"
-            | ".tiff"
-            | ".mp4"
-            | ".mkv"
-            | ".mov"
-            | ".avi"
-    );
     let key = if by_content {
         IconKey::ByContent {
             path: path.to_string_lossy().to_lowercase(),
@@ -671,7 +657,31 @@ pub fn icon_key_for(path: &Path, is_folder: bool, mtime: i64) -> (IconKey, bool)
     };
     // Folders show a preview of their contents as on Windows 11's desktop. With Explorer's
     // 「始终显示图标，从不显示缩略图」 on, the shell hands back the plain icon itself.
-    (key, !thumbnail_capable && !is_folder)
+    (key, !thumbnail_capable(path) && !is_folder)
+}
+
+/// Pictures and videos: the shell hands back a thumbnail of the file.
+fn thumbnail_capable(path: &Path) -> bool {
+    let ext = path
+        .extension()
+        .map(|e| e.to_string_lossy().to_lowercase())
+        .unwrap_or_default();
+    matches!(
+        ext.as_str(),
+        "png"
+            | "jpg"
+            | "jpeg"
+            | "gif"
+            | "bmp"
+            | "webp"
+            | "heic"
+            | "tif"
+            | "tiff"
+            | "mp4"
+            | "mkv"
+            | "mov"
+            | "avi"
+    )
 }
 
 #[cfg(test)]
