@@ -1702,45 +1702,6 @@ impl AppState {
         plan
     }
 
-    /// Re-files `ids` by the rules as if they had just arrived on the desktop (the user dragged
-    /// them out of a fence onto the desktop: an explicit "let go", so an earlier manual
-    /// placement no longer pins them). Unmatched items stay where they are (the inbox).
-    /// Returns the fences whose membership changed.
-    pub fn apply_rules_to(&mut self, ids: &[ItemId], entries: &[DesktopEntry]) -> Vec<FenceId> {
-        let mut touched = Vec::new();
-        for entry in entries {
-            if entry.origin == EntryOrigin::Namespace {
-                continue;
-            }
-            let key = ItemKey::from_path(&entry.path.to_string_lossy());
-            let Some(&id) = self.catalog.get(&key) else {
-                continue;
-            };
-            if !ids.contains(&id) {
-                continue;
-            }
-            let from = self
-                .fences()
-                .iter()
-                .find(|f| f.contains_item(id))
-                .map(|f| f.id);
-            let decision = self.config.rules.evaluate(&self.facts_for(entry));
-            if let Some((fence, by)) = self.target_fence(decision)
-                && Some(fence) != from
-                && self.config.assign(self.layout, id, fence, by).is_some()
-            {
-                touched.extend(from);
-                touched.push(fence);
-            }
-        }
-        if !touched.is_empty() {
-            self.dirty = true;
-            touched.sort_unstable();
-            touched.dedup();
-        }
-        touched
-    }
-
     // ---- fences -----------------------------------------------------------------------------
 
     pub fn set_fence_bounds(&mut self, id: FenceId, rect: RECT, rolled: bool, expanded_h_px: i32) {
