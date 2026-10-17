@@ -519,7 +519,7 @@
       <header class="page-header"><h2>关于</h2></header>
       <div class="about-head">
         <svg class="brand-mark" viewBox="0 0 64 64" aria-hidden="true"><path d="M27 8H14a6 6 0 0 0-6 6v13M37 8h13a6 6 0 0 1 6 6v13M8 37v13a6 6 0 0 0 6 6h13M56 37v13a6 6 0 0 1-6 6H37" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round"/><rect x="22" y="22" width="8" height="8" rx="2" fill="currentColor"/><rect x="35" y="22" width="8" height="8" rx="2" fill="currentColor" opacity=".65"/><rect x="22" y="35" width="8" height="8" rx="2" fill="currentColor" opacity=".65"/><rect x="35" y="35" width="8" height="8" rx="2" fill="currentColor"/></svg>
-        <div><div class="name">PecoFence <span id="ver"></span></div><div class="s">开源的 Windows 11 桌面整理工具</div><div class="s">Apache 2.0 许可证</div><div class="s" id="memDetail">—</div></div>
+        <div><div class="name">PecoFence <span id="ver"></span></div><div class="s">开源的 Windows 桌面整理工具</div><div class="s">Apache 2.0 许可证</div><div class="s" id="memDetail">—</div></div>
       </div>
       <div class="card" id="updateCard" hidden><div class="l"><span class="ic">&#xE895;</span><div><div class="t">更新</div><div class="s" id="updateStatus"></div></div></div><button id="updateAction"></button></div>
       <div class="card"><div class="l"><span class="ic">&#xE897;</span><div><div class="t">使用手册</div><div class="s">每个功能都有动画演示</div></div></div><button id="openManual">打开</button></div>
@@ -1040,7 +1040,7 @@
         <div class="actions"><button class="iconbtn" title="${esc(t("上移"))}" data-act="up" ${i===0?'disabled':''}>&#xE70E;</button><button class="iconbtn" title="${esc(t("下移"))}" data-act="down" ${i===rules.length-1?'disabled':''}>&#xE70D;</button><div class="toggle ${r.enabled?'on':''}" role="switch" tabindex="0" aria-checked="${r.enabled}" data-act="toggle"></div><button class="iconbtn" title="${esc(t("删除"))}" data-act="del">&#xE74D;</button></div></div>`;
       div.querySelectorAll('[data-act]').forEach(b => {
         const labels = { up: t("上移"), down: t("下移"), toggle: t("启用规则"), del: t("删除规则") };
-        b.setAttribute('aria-label', labels[b.dataset.act] + '：' + r.name);
+        b.setAttribute('aria-label', tf("{0}：{1}", labels[b.dataset.act], r.name));
         b.onclick = () => {
           const act = b.dataset.act;
           if (act === 'toggle') r.enabled = !r.enabled;
