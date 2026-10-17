@@ -972,7 +972,13 @@ impl FenceWindow {
                 // survivors slide from where they were painted into their new slots (WinUI
                 // TabView neighbours moving into the vacated slot); a drag in progress keeps
                 // its own provisional positions. A scrolled strip slides the same way.
-                if v.tab_drag.is_none() {
+                let pressed = v.tab_drag.as_ref().is_some_and(|d| !d.moved);
+                if v.tab_drag.is_none() || (pressed && same_set) {
+                    // A press that switched to a cut-off tab scrolled the strip: the grab
+                    // moves with the pressed tab, so a drag from there starts at its new slot.
+                    if let Some(d) = v.tab_drag.as_mut() {
+                        d.grab_dx += v.tab_scroll.get() - strip_scroll;
+                    }
                     v.sync_tab_slides(&prev, now);
                 } else if !same_set {
                     v.tab_slide.clear();
