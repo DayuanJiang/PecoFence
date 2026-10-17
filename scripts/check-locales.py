@@ -52,7 +52,11 @@ def source_keys():
     for path in (ROOT / "crates").rglob("*.rs"):
         if path.name in ("bindings.rs", "gpu_bindings.rs"):
             continue
-        for match in re.finditer(r"i18n::(?:text|format)\(\s*(" + LITERAL + ")", path.read_text(encoding="utf-8")):
+        source = path.read_text(encoding="utf-8")
+        for match in re.finditer(r"i18n::(?:text|format)\(\s*(" + LITERAL + ")", source):
+            keys.add(ast.literal_eval(match[1]))
+        # `text_in(language, "...")`: the language comes first.
+        for match in re.finditer(r"i18n::text_in\([^,()]*,\s*(" + LITERAL + ")", source):
             keys.add(ast.literal_eval(match[1]))
     # The native palette stores constant source names and translates at serialization.
     keys.update(("红", "橙", "黄", "绿", "青", "蓝", "紫", "粉", "灰"))
