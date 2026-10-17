@@ -71,6 +71,10 @@ impl RatingPrompt {
     }
 
     fn save(&self) {
+        // The first start records itself before the first configuration save made the folder.
+        if let Some(dir) = self.path.parent() {
+            let _ = std::fs::create_dir_all(dir);
+        }
         if let Ok(json) = serde_json::to_vec_pretty(&self.saved)
             && let Err(error) = std::fs::write(&self.path, json)
         {
