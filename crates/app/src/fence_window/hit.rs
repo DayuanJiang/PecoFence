@@ -123,6 +123,16 @@ impl FenceViewState {
         Some(TitleDeco::rail_up_box(row))
     }
 
+    /// Is the client-pixel point in the title row (the left tab column beside one)? Its
+    /// caption and its controls (tabs, the chevron box) are one row for the hover.
+    pub(super) fn title_row_at(&self, x_px: i32, y_px: i32) -> bool {
+        if self.tabs_on_rail() {
+            x_px >= 0 && x_px < self.content_x
+        } else {
+            y_px >= 0 && y_px < self.title_h_px()
+        }
+    }
+
     /// Is the client-pixel point on the roll-up chevron button (right end of the title row)?
     pub(super) fn chevron_at(&self, x_px: i32, y_px: i32) -> bool {
         let scale = self.scale();

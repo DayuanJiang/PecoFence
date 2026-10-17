@@ -61,7 +61,11 @@ pub(super) fn on_mouseleave(
         // instant collapse.
         v.set_scrollbar_pointer(None);
         let content_changed = v.header_hover.take().is_some();
-        let (item_changed, title_changed) = v.set_hover(None, false);
+        // Onto the caption part of the title row (a gap between tabs): still the row, as in
+        // WM_NCMOUSELEAVE; this message can come after the WM_NCMOUSEMOVE there.
+        let c = window::screen_to_client(hwnd, pt);
+        let on_row = inside && v.title_row_at(c.x, c.y);
+        let (item_changed, title_changed) = v.set_hover(None, on_row && v.title_hover);
         if chrome_changed || title_changed {
             let _ = v.redraw_chrome_only();
         }

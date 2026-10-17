@@ -255,13 +255,7 @@ pub(super) fn on_ncmouseleave(
         // message can come after the WM_MOUSEMOVE there, which already counted the row as
         // hovered, and clearing it hid the chevron until the pointer moved again.
         let c = window::screen_to_client(hwnd, pt);
-        let on_row = inside
-            && if v.tabs_on_rail() {
-                c.x >= 0 && c.x < v.content_x
-            } else {
-                c.y >= 0 && c.y < v.title_h_px()
-            };
-        if v.title_hover && !on_row {
+        if v.title_hover && !(inside && v.title_row_at(c.x, c.y)) {
             v.title_hover = false;
             let _ = v.redraw_chrome_only();
         }
