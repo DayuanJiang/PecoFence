@@ -11,7 +11,8 @@
 - Folders get their icon asked again after a start at sign-in, like the other icons (feedback #11). Since 0.2.2 folders show a preview of their contents and were left out of the re-checks half a minute, two minutes and ten minutes after the start, so a folder that got the wrong icon at sign-in kept it.
 - A new `.tmp` file on the desktop shows in a fence once it has lasted a minute. It waited for the next minute tick, and with the Windows desktop icons shown for the next change on the desktop.
 - Shortcuts PecoFence makes, for example with Alt held while dragging into a folder fence, are named in the Windows display language, as Explorer names them (`Report - Shortcut.lnk` on English Windows), whatever language PecoFence shows.
-- The roll-up chevron shows when the pointer goes straight from a fence's border onto a tab; it showed only after the pointer moved again.
+- The roll-up chevron shows when the pointer goes straight from a fence's border onto a tab, from a tab onto the gap between two tabs, and after the first click on a cut-off tab; it showed only after the pointer moved again, and on Windows 10 the first click after a start often lost it (also in 0.2.2).
+- Windows 11's snap layouts popup (after Win+Up) and the task switcher no longer count as an app coming to the front. Taken for one, the popup ended a Peek, so the search you typed went to the window below, turned off the desktop's double-click that hides the fences, or ended Win+D's floating fences (also in 0.2.2).
 - Screen readers read the rule buttons in Settings › 整理规则 with the colon of the UI language (`Move up: Programs and shortcuts`).
 - The Store edition starts its wait for the rating notice at the first start; the first start could not record itself and the wait began one start later.
 - A folder fence whose folder is gone no longer writes a warning to the log at every change on the desktop.
