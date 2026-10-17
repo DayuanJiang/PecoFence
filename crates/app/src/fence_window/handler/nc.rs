@@ -251,7 +251,17 @@ pub(super) fn on_ncmouseleave(
         if !inside {
             v.set_mouse_inside(false);
         }
-        if v.title_hover {
+        // Onto a control of the title row (a tab, the chevron box): still the row. This
+        // message can come after the WM_MOUSEMOVE there, which already counted the row as
+        // hovered, and clearing it hid the chevron until the pointer moved again.
+        let c = window::screen_to_client(hwnd, pt);
+        let on_row = inside
+            && if v.tabs_on_rail() {
+                c.x >= 0 && c.x < v.content_x
+            } else {
+                c.y >= 0 && c.y < v.title_h_px()
+            };
+        if v.title_hover && !on_row {
             v.title_hover = false;
             let _ = v.redraw_chrome_only();
         }
