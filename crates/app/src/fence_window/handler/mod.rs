@@ -241,6 +241,9 @@ impl FenceWindow {
                     msg::WM_HOTKEY if wparam as i32 == HOTKEY_MOVE_ESC => {
                         nc::on_hotkey_move_esc(h, hwnd, wparam, lparam)
                     }
+                    msg::WM_TIMER if wparam == TIMER_MOVE_RBUTTON => {
+                        nc::on_timer_move_rbutton(h, hwnd, wparam, lparam)
+                    }
                     msg::WM_TIMER if wparam == TIMER_RENAME => {
                         timers::on_timer_rename(h, hwnd, wparam, lparam)
                     }

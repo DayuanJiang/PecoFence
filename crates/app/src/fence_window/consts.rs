@@ -45,6 +45,9 @@ pub(super) const TIMER_CONTENT_FINISH: usize = 44;
 /// The pointer rests on another tab with `rollUp.switchTabOnHover` on: switch to it after the
 /// hover delay.
 pub(super) const TIMER_TAB_HOVER: usize = 45;
+/// Polls the right button during a title drag in the system move loop: the loop sends
+/// WM_MOVING only while the pointer moves, so a right click on a resting pointer went unseen.
+pub(super) const TIMER_MOVE_RBUTTON: usize = 46;
 /// DWM can suspend completion callbacks for fully occluded windows. UI state must still
 /// settle after the longest (250 ms) transition, independently of compositor visibility.
 pub(super) const COMPOSITION_FINISH_MS: u32 = 400;
