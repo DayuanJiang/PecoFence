@@ -9,9 +9,12 @@ the Liquid Glass lens, the corners, the shadow, the fonts and the colours. Sizes
 
 1. Settings › 常规 › 自定义主题 › 打开主题文件夹 opens the `themes` folder next to
    `config.json` (`%APPDATA%\PecoFence\themes`; the portable edition uses `config\themes` next to
-   the program). The button makes the folder when it is missing.
-2. Put a theme file there, for example `Frosted Glass.json`. Each `.json` file is one theme, and
-   its file name is the name Settings lists.
+   the program). When the folder is missing, the button makes it and puts three example
+   themes in it, named in the interface language: Frosted Glass (a frosted Liquid Glass), Warm
+   (Fluent in warm colours) and Rounded (Fluent with larger corners and a softer shadow).
+   Deleted examples do not come back.
+2. Put a theme file there, or copy an example and change it. Each `.json` file is one theme,
+   and its file name is the name Settings lists.
 3. Choose it in the 自定义主题 list. A click on the Fluent or Liquid Glass tile goes back to that
    built-in style.
 

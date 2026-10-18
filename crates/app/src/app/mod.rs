@@ -85,7 +85,7 @@ use peek::peek_hotkey_label;
 use visuals::{
     StartupBackdrops, backdrop_mode_for, custom_theme_names, fence_style_for, icon_variant_for,
     load_custom_theme, pick_theme_mode, shadow_style_for, theme_for, tray_icon_image,
-    verify_wallpaper_later,
+    verify_wallpaper_later, write_example_themes,
 };
 use wallpaper_refresh::{BackdropCache, FIRST_CHECK_MS, RefreshSchedule, supersedes};
 

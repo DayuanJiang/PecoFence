@@ -1,0 +1,9 @@
+{
+  "base": "liquidGlass",
+  "blur": 8,
+  "refraction": 0.85,
+  "rimLight": 1.2,
+  "cornerRadius": 22,
+  "light": { "tint": "#FFFFFF38", "luminosity": 0.15 },
+  "dark": { "tint": "#1E212866", "luminosity": 0.15 }
+}

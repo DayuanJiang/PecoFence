@@ -63,6 +63,35 @@ pub(super) fn load_custom_theme(
     Ok(Some(theme))
 }
 
+/// The themes a new `themes` folder starts with, named in the interface language, so the
+/// list has something to pick and a file to copy.
+fn example_themes(language: pecofence_core::i18n::Language) -> [(&'static str, &'static str); 3] {
+    [
+        (
+            pecofence_core::i18n::text_in(language, "磨砂玻璃"),
+            include_str!("../../../../ui/themes/frosted-glass.json"),
+        ),
+        (
+            pecofence_core::i18n::text_in(language, "暖色"),
+            include_str!("../../../../ui/themes/warm.json"),
+        ),
+        (
+            pecofence_core::i18n::text_in(language, "大圆角"),
+            include_str!("../../../../ui/themes/rounded.json"),
+        ),
+    ]
+}
+
+/// Writes the example themes into the `themes` folder that 「打开主题文件夹」 just made.
+pub(super) fn write_example_themes(dir: &Path) {
+    for (name, text) in example_themes(pecofence_core::i18n::language()) {
+        let path = dir.join(format!("{name}.json"));
+        if let Err(e) = std::fs::write(&path, text) {
+            tracing::warn!(path = %path.display(), error = %e, "example theme not written");
+        }
+    }
+}
+
 /// The theme files in the `themes` folder by name, as Settings lists them.
 pub(super) fn custom_theme_names(state: &AppState) -> Vec<String> {
     let mut names: Vec<String> = std::fs::read_dir(state.themes_dir())
@@ -1487,6 +1516,29 @@ mod tray_icon_tests {
         for size in [16, 20, 24, 32, 48, 64] {
             let px = tray_icon_image(size, [0, 0, 0], true);
             std::fs::write(format!("../../.cache/tray-{size}.bgra"), px).unwrap();
+        }
+    }
+}
+
+#[cfg(test)]
+mod example_theme_tests {
+    use super::{CustomTheme, example_themes};
+
+    /// Every example loads, names no font (a missing font would refuse the theme) and gets a
+    /// file name of its own in every language.
+    #[test]
+    fn example_themes_load_with_distinct_names() {
+        for &language in pecofence_core::i18n::SUPPORTED {
+            let themes = example_themes(language);
+            for (name, text) in themes {
+                let theme = CustomTheme::parse(text).unwrap_or_else(|e| panic!("{name}: {e}"));
+                assert_eq!(theme.fonts, Default::default(), "{name}");
+                assert!(!name.contains(['/', '\\', ':', '*', '?', '"', '<', '>', '|']));
+            }
+            let mut names: Vec<_> = themes.iter().map(|(n, _)| *n).collect();
+            names.sort();
+            names.dedup();
+            assert_eq!(names.len(), 3, "{language:?}");
         }
     }
 }

@@ -522,10 +522,17 @@ impl App {
                 }
                 Some("openThemesFolder") => {
                     let dir = self.state.themes_dir();
-                    if let Err(e) = std::fs::create_dir_all(&dir) {
-                        tracing::warn!(dir = %dir.display(), error = %e, "themes folder not made");
+                    if !dir.exists() {
+                        match std::fs::create_dir_all(&dir) {
+                            Ok(()) => write_example_themes(&dir),
+                            Err(e) => {
+                                tracing::warn!(dir = %dir.display(), error = %e, "themes folder not made")
+                            }
+                        }
                     }
                     self.sync_theme_watcher();
+                    // The examples were written before the watcher started: list them now.
+                    self.push_settings_state();
                     // The Store package's copy of %APPDATA%, where Explorer can find it.
                     let _ = std::process::Command::new("explorer.exe")
                         .arg(crate::state::canonical_path(dir))
