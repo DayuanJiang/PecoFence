@@ -68,7 +68,7 @@ wallpaper or the theme changes. Liquid Glass then bends the result through its l
 
 | Key | Range | What it does |
 |---|---|---|
-| `cornerRadius` | 0 to 32 | Corner radius in DIPs; 0 gives square corners. Built in, Liquid Glass uses 16 and Windows rounds Fluent windows by 4. With this key a Fluent fence rounds its own window instead, also on Windows 10, where Windows does not round windows at all. |
+| `cornerRadius` | 0 to 32 | Corner radius in DIPs; 0 gives square corners. Built in, Fluent uses 8 and Liquid Glass 16. |
 | `shadowOpacity` | 0 to 1 | Darkness of the shadow at its edge (built in 0.16 light, 0.30 dark); 0 removes it. |
 | `shadowBlur` | 0 to 24 | Softness of the shadow in DIPs (built in 8 Fluent, 12 Liquid Glass). |
 | `shadowOffset` | 0 to 16 | How far the shadow falls below the fence, in DIPs (built in 4 Fluent, 5 Liquid Glass). |

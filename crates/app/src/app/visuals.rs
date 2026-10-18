@@ -811,9 +811,7 @@ pub(super) fn shadow_style_for(theme: &Theme) -> ShadowStyle {
         shadow.sigma = 12.0;
         shadow.offset_y = 5.0;
     }
-    if theme.own_corners {
-        shadow.radius = theme.corner_radius;
-    }
+    shadow.radius = theme.corner_radius;
     let custom = theme.shadow;
     shadow.opacity = custom.opacity.unwrap_or(shadow.opacity);
     shadow.sigma = custom.blur.unwrap_or(shadow.sigma);

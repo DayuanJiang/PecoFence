@@ -74,7 +74,7 @@ impl FenceWindow {
             )
             .create(handler)?;
         let hwnd = window.hwnd();
-        apply_window_shape(hwnd, ctx.theme.borrow().own_corners);
+        apply_window_shape(hwnd);
         let _ = dwm::set_border_color_none(hwnd);
         // Not DWMWA_EXCLUDED_FROM_PEEK: DWM hides such windows for the whole virtual-desktop
         // switch animation while their shadows slide, leaving empty panes. Plain windows slide
@@ -1741,7 +1741,7 @@ impl FenceWindow {
 
     pub fn set_theme(&self, theme: Theme, backdrops: Rc<BackdropSets>, shadow: ShadowStyle) {
         let hwnd = self.hwnd();
-        apply_window_shape(hwnd, theme.own_corners);
+        apply_window_shape(hwnd);
         let mode = self
             .view
             .borrow()

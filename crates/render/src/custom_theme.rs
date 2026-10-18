@@ -31,7 +31,6 @@ struct Values {
     noise: Option<f32>,
     refraction: Option<f32>,
     rim_light: Option<f32>,
-    /// A Fluent fence then rounds its own window instead of leaving it to Windows.
     corner_radius: Option<f32>,
     shadow_opacity: Option<f32>,
     shadow_blur: Option<f32>,
@@ -223,7 +222,6 @@ impl Values {
         }
         if let Some(v) = self.corner_radius {
             theme.corner_radius = v.clamp(0.0, 32.0);
-            theme.own_corners = true;
         }
         if let Some(v) = self.shadow_opacity {
             theme.shadow.opacity = Some(v.clamp(0.0, 1.0));
@@ -361,17 +359,11 @@ mod tests {
     }
 
     #[test]
-    fn a_fluent_theme_with_corners_rounds_its_own_window() {
-        assert!(!Theme::light().own_corners && Theme::light().with_liquid_glass().own_corners);
+    fn a_fluent_theme_sets_its_corner_radius() {
         let file = CustomTheme::parse(r#"{ "base": "fluent", "cornerRadius": 14 }"#).unwrap();
-        let theme = file.apply(Theme::light());
-        assert_eq!(theme.corner_radius, 14.0);
-        assert!(theme.own_corners);
+        assert_eq!(file.apply(Theme::light()).corner_radius, 14.0);
         let plain = CustomTheme::parse(r#"{ "base": "fluent" }"#).unwrap();
-        assert!(
-            !plain.apply(Theme::light()).own_corners,
-            "Windows keeps its corners"
-        );
+        assert_eq!(plain.apply(Theme::light()).corner_radius, 8.0);
     }
 
     #[test]

@@ -62,8 +62,9 @@ pub struct Theme {
     pub focus_inner: ColorF,
     /// The opaque accent the selection tokens derive from (tray icon, settings page brand).
     pub accent: ColorF,
-    /// Window corner radius in DIPs. Both materials use 8, the Windows 11 top-level window
-    /// radius; Liquid Glass additionally clips the composition root to it (lens and shadow).
+    /// Window corner radius in DIPs: Fluent 8, the Windows 11 top-level window radius, and
+    /// Liquid Glass 16. The fence clips its own window to it (the composition root, so the
+    /// plate, lens and shadow share one silhouette); Windows does not round fences.
     pub corner_radius: f32,
     /// Title bar height in DIPs.
     pub title_height: f32,
@@ -74,9 +75,6 @@ pub struct Theme {
     /// refracts the result).
     pub material: MicaTint,
     pub lens: Lens,
-    /// The fence clips its own window to `corner_radius`: Liquid Glass, and a Fluent theme
-    /// file with its own `cornerRadius`. Otherwise Windows rounds a Fluent window (4 DIP).
-    pub own_corners: bool,
     /// A theme file's shadow values (None = the style's own).
     pub shadow: ShadowOverride,
     /// A custom theme's light and dark ink, which the text switches to over a bright or a
@@ -188,7 +186,6 @@ impl Theme {
             text_halo: false,
             material: MicaTint::ACRYLIC_DARK,
             lens: Lens::BUILT_IN,
-            own_corners: false,
             shadow: ShadowOverride::NONE,
             custom_inks: None,
         }
@@ -226,7 +223,6 @@ impl Theme {
             text_halo: false,
             material: MicaTint::ACRYLIC_LIGHT,
             lens: Lens::BUILT_IN,
-            own_corners: false,
             shadow: ShadowOverride::NONE,
             custom_inks: None,
         }
@@ -257,7 +253,6 @@ impl Theme {
     pub const fn with_liquid_glass(mut self) -> Self {
         self.liquid_glass = true;
         self.corner_radius = 16.0;
-        self.own_corners = true;
         self.material = match self.mode {
             ThemeMode::Dark => MicaTint::LIQUID_DARK,
             ThemeMode::Light => MicaTint::LIQUID_LIGHT,
