@@ -497,15 +497,17 @@ impl App {
                 false,
             )
             .icon(glyph::FOLDER_OPEN);
-            if self.state.portal_navigated(fence) {
+            if self.state.can_go_up(fence) {
                 menu.item(
                     CMD_PORTAL_UP,
                     pecofence_core::i18n::text("返回上一级\tBackspace"),
                     false,
                     false,
                 )
-                .icon(glyph::UP)
-                .item(
+                .icon(glyph::UP);
+            }
+            if self.state.can_go_home(fence) {
+                menu.item(
                     CMD_PORTAL_HOME,
                     pecofence_core::i18n::text("返回最初的文件夹"),
                     false,

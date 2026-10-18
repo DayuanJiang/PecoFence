@@ -477,12 +477,8 @@ impl App {
             Spacing::Normal => "normal",
             Spacing::Loose => "loose",
         };
-        let portal = (f.kind == FenceKind::FolderPortal).then(|| {
-            serde_json::json!({
-                "navigate": f.portal_navigate,
-                "titleIcon": !f.hide_title_icon,
-            })
-        });
+        let portal = (f.kind == FenceKind::FolderPortal)
+            .then(|| serde_json::json!({ "titleIcon": !f.hide_title_icon }));
         serde_json::json!({
             "id": f.id,
             "title": f.title,
@@ -506,6 +502,7 @@ impl App {
             "titleSize": title_size,
             "titleOnHover": title_on_hover,
             "hideWhenEmpty": f.hide_when_empty,
+            "portalNavigate": f.portal_navigate,
             "portal": portal,
         })
     }

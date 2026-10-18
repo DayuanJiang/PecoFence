@@ -1123,30 +1123,19 @@ pub fn shortcut_target(path: &Path) -> Option<String> {
     shortcut_info(path).map(|(target, _)| target)
 }
 
+/// A `.lnk` file's target path with its environment variables expanded (the path the shell
+/// opens), or `None`.
+pub fn shortcut_target_expanded(path: &Path) -> Option<PathBuf> {
+    let link = load_shortcut(path)?;
+    shortcut_path(&link, 0).map(PathBuf::from)
+}
+
 /// A `.lnk`'s target path and its command-line arguments (`None` when it has none).
 pub fn shortcut_info(path: &Path) -> Option<(String, Option<String>)> {
-    let w = path_wide(path);
-    // SAFETY: standard IShellLink usage; buffers are sized and NUL-terminated.
+    let link = load_shortcut(path)?;
+    let target = shortcut_path(&link, SLGP_RAWPATH)?;
+    // SAFETY: the buffer is sized and NUL-terminated.
     unsafe {
-        let link: IShellLinkW = CoCreateInstance(&ShellLink, None, CLSCTX_INPROC_SERVER).ok()?;
-        let persist: IPersistFile = link.cast().ok()?;
-        persist
-            .Load(PCWSTR(w.as_ptr()), STGM_READ as u32)
-            .ok()
-            .ok()?;
-        let mut buf = [0u16; 1024];
-        link.GetPath(
-            PWSTR(buf.as_mut_ptr()),
-            buf.len() as i32,
-            core::ptr::null_mut(),
-            SLGP_RAWPATH,
-        )
-        .ok()
-        .ok()?;
-        let target = crate::wide::from_wide(&buf);
-        if target.is_empty() {
-            return None;
-        }
         // Longer arguments come back truncated, which is enough to tell shortcuts apart.
         let mut args = [0u16; 1024];
         let arguments = link
@@ -1157,6 +1146,38 @@ pub fn shortcut_info(path: &Path) -> Option<(String, Option<String>)> {
             .filter(|a| !a.is_empty());
         Some((target, arguments))
     }
+}
+
+fn load_shortcut(path: &Path) -> Option<IShellLinkW> {
+    let w = path_wide(path);
+    // SAFETY: standard IShellLink usage; the path is NUL-terminated and outlives the call.
+    unsafe {
+        let link: IShellLinkW = CoCreateInstance(&ShellLink, None, CLSCTX_INPROC_SERVER).ok()?;
+        let persist: IPersistFile = link.cast().ok()?;
+        persist
+            .Load(PCWSTR(w.as_ptr()), STGM_READ as u32)
+            .ok()
+            .ok()?;
+        Some(link)
+    }
+}
+
+/// The target path of a loaded `.lnk` (`SLGP_RAWPATH` in `flags` keeps environment variables),
+/// or `None` when it has none.
+fn shortcut_path(link: &IShellLinkW, flags: SLGP_FLAGS) -> Option<String> {
+    let mut buf = [0u16; 1024];
+    // SAFETY: the buffer is sized and NUL-terminated.
+    unsafe {
+        link.GetPath(
+            PWSTR(buf.as_mut_ptr()),
+            buf.len() as i32,
+            core::ptr::null_mut(),
+            flags,
+        )
+        .ok()
+        .ok()?;
+    }
+    Some(crate::wide::from_wide(&buf)).filter(|t| !t.is_empty())
 }
 
 /// Creates the `.lnk` Explorer writes for "在当前位置创建快捷方式": `<name> - 快捷方式.lnk` in
@@ -1388,6 +1409,38 @@ mod move_tests {
         assert!(!file.exists());
         assert!(dst_dir.join("probe.txt").exists());
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// A link to `%TEMP%\…` keeps the variable in its raw target (what the rules compare) and
+    /// opens the expanded folder.
+    #[test]
+    fn shortcut_target_expanded_expands_environment_variables() {
+        let _com = crate::com::OleGuard::init().expect("COM");
+        let name = format!("pecofence-envlnk-{}", std::process::id());
+        let folder = std::env::temp_dir().join(&name);
+        std::fs::create_dir_all(&folder).unwrap();
+        let lnk = folder.join("env.lnk");
+        let target = to_wide(&format!(r"%TEMP%\{name}"));
+        let lnk_w = path_wide(&lnk);
+        // SAFETY: standard IShellLink usage; all strings outlive the calls.
+        unsafe {
+            let link: IShellLinkW =
+                CoCreateInstance(&ShellLink, None, CLSCTX_INPROC_SERVER).unwrap();
+            link.SetPath(PCWSTR(target.as_ptr())).ok().unwrap();
+            let persist: IPersistFile = link.cast().unwrap();
+            persist.Save(PCWSTR(lnk_w.as_ptr()), true).ok().unwrap();
+        }
+        assert!(
+            shortcut_target(&lnk)
+                .expect("raw target")
+                .starts_with("%TEMP%")
+        );
+        let expanded = shortcut_target_expanded(&lnk).expect("expanded target");
+        assert_eq!(
+            std::fs::canonicalize(expanded).unwrap(),
+            std::fs::canonicalize(&folder).unwrap()
+        );
+        let _ = std::fs::remove_dir_all(&folder);
     }
 
     /// The Link drop effect writes Explorer's `<stem> - 快捷方式.lnk` (folders keep their full

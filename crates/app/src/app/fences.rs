@@ -708,7 +708,7 @@ impl App {
         let icons = if f.kind == FenceKind::FolderPortal {
             0
         } else {
-            self.state.items_of(f).len()
+            self.state.own_item_count(f)
         };
         let rules = self
             .state

@@ -168,9 +168,11 @@ its tint), `titleColor` theme/tint/white/black/`"#RRGGBB"`, `titleSize` small/no
 `titleOnHover` default/hover/always (hover: the title row folds away until the pointer is over the
 fence; default follows `rollUp.titleOnHover`), `layout` icons/list/details,
 `sort` manual/name/type/date/size/openCount, `reverse`, `groupByDate`, `labelLines`,
-`portalNavigate`, `portalTitleIcon`, `hideWhenEmpty` (inbox only: no window while it is empty; the inbox
-cannot be deleted). `--all` applies the option to every fence one call at a time and
-skips tabs hosted inside another fence (their options belong to the host).
+`portalNavigate` (double-clicking a folder, or a shortcut to a folder, opens it inside the fence
+instead of Explorer), `portalTitleIcon`, `hideWhenEmpty` (inbox
+only: no window while it is empty; the inbox cannot be deleted). `--all` applies the option to
+every fence one call at a time and skips tabs hosted inside another fence (their options belong to
+the host).
 
 `item list` describes every item with `kind` (`folders`, `programs`, `installers`, `shortcuts`,
 `documents`, `images`, `music`, `video`, `archives`, `namespace`, `other`; the same tests the `type`
@@ -285,10 +287,10 @@ reason `item move --glob` without `--from` never touches items shown by a portal
 a rule, always pair `--glob` with `--from`, and check `fence list` for `"kind": "portal"` before
 choosing `--to`.
 
-A portal whose `portalNavigate` is on can be double-clicked into a subfolder. It then reports that
-folder as `portal.current` (next to `portal.path`, the folder it was created for): `item list` shows
-the subfolder's contents and `item move --to <portal>` puts files there. `--dry-run` shows the exact
-`destination` of every file.
+A portal whose `portalNavigate` is on can be double-clicked into a subfolder, or into the folder a
+folder shortcut points to. It then reports that folder as `portal.current` (next to `portal.path`,
+the folder it was created for): `item list` shows its contents and `item move --to <portal>` puts
+files there. `--dry-run` shows the exact `destination` of every file.
 
 ## Watching for changes
 
