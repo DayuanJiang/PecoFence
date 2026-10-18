@@ -818,6 +818,7 @@ impl App {
             .set(backdrop_mode_for(new.backdrop));
         let visual_changed = new.theme != old.theme
             || new.theme_style != old.theme_style
+            || new.custom_theme != old.custom_theme
             || new.backdrop != old.backdrop;
         let icons_changed = new.icons != old.icons;
         let push_changed = new.roll_up.push_neighbors != old.roll_up.push_neighbors;

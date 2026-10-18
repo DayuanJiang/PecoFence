@@ -644,9 +644,9 @@ fn draw_header_glass(
     }
     let radius = header_control_radius(theme, rect);
     if let Backdrop::GpuGlass { material, .. } = backdrop {
-        material
-            .borrow_mut()
-            .draw_control(session, key, rect, scale, radius, amount * alpha)?;
+        let mut material = material.borrow_mut();
+        material.set_lens(theme.lens);
+        material.draw_control(session, key, rect, scale, radius, amount * alpha)?;
     }
     let white = ColorF::new(1.0, 1.0, 1.0, 1.0);
     // A thin optical wash, not the opaque LayerOnAcrylic fill used by Fluent tabs.
@@ -741,6 +741,7 @@ fn draw_plate(
             // A folded title row moves the lens (and its bezel) down to the plate top.
             let inset = (plate_top * scale).round() as i32;
             let lens = [rect[0], rect[1] + inset, rect[2], (rect[3] - inset).max(1)];
+            material.borrow_mut().set_lens(theme.lens);
             let result = material.borrow_mut().draw(
                 session,
                 &mut bitmaps.glass_wallpaper,

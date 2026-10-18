@@ -5,23 +5,51 @@ use super::wallpaper_refresh::LIVE_MARK;
 use super::*;
 
 /// The theme for `mode`, retinted with the user's accent when it could be read (WinUI
-/// AccentFillColorDefault: AccentLight2 on dark, AccentDark1 on light).
+/// AccentFillColorDefault: AccentLight2 on dark, AccentDark1 on light). A custom theme
+/// starts from its own base style and its values win over the accent.
 pub(super) fn theme_for(
     mode: ThemeMode,
     style: pecofence_core::ThemeStyle,
+    custom: Option<&CustomTheme>,
     accent: Option<&systheme::AccentPalette>,
 ) -> Theme {
+    let style = custom.map_or(style, |c| c.base);
     let mut theme = Theme::for_mode(mode);
     if style == pecofence_core::ThemeStyle::LiquidGlass {
         theme = theme.with_liquid_glass();
     }
-    match accent {
-        Some(p) => theme.with_accent(if mode == ThemeMode::Dark {
+    if let Some(p) = accent {
+        theme = theme.with_accent(if mode == ThemeMode::Dark {
             p.light2
         } else {
             p.dark1
-        }),
+        });
+    }
+    match custom {
+        Some(c) => c.apply(theme),
         None => theme,
+    }
+}
+
+/// The custom theme the settings name, read from the `themes` folder. None when no theme is
+/// chosen, and (with a warning in the log) when the file is missing or invalid: the fences
+/// then keep the built-in style.
+pub(super) fn load_custom_theme(state: &AppState) -> Option<CustomTheme> {
+    let name = state.config.settings.custom_theme.as_deref()?;
+    let path = state.themes_dir().join(format!("{name}.json"));
+    let result = if name.contains(['/', '\\']) {
+        Err("the name must not contain a path".to_string())
+    } else {
+        std::fs::read_to_string(&path)
+            .map_err(|e| e.to_string())
+            .and_then(|text| CustomTheme::parse(&text))
+    };
+    match result {
+        Ok(theme) => Some(theme),
+        Err(error) => {
+            tracing::warn!(path = %path.display(), %error, "custom theme not loaded");
+            None
+        }
     }
 }
 
@@ -1190,14 +1218,19 @@ impl App {
         });
         let accent = systheme::accent_palette();
         let accent_changed = accent != self.accent;
-        let style = self.state.config.settings.theme_style;
+        let custom = load_custom_theme(&self.state);
+        let style = custom
+            .as_ref()
+            .map_or(self.state.config.settings.theme_style, |c| c.base);
         let style_changed = self.ctx.theme.borrow().liquid_glass
-            != (style == pecofence_core::ThemeStyle::LiquidGlass);
+            != (style == pecofence_core::ThemeStyle::LiquidGlass)
+            || custom != self.custom_theme;
         if mode == self.theme_mode && !style_changed && !accent_changed && !force {
             return;
         }
         let theme_changed = mode != self.theme_mode || style_changed;
-        let theme = theme_for(mode, style, accent.as_ref());
+        let theme = theme_for(mode, style, custom.as_ref(), accent.as_ref());
+        self.custom_theme = custom;
         // The wallpaper sets are accent-independent and expensive: rebuild them only for a
         // mode change (or a forced refresh), not for a Settings › Colours retint.
         let backdrops = if theme_changed || force {

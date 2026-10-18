@@ -166,6 +166,11 @@ impl AppState {
         self.store.primary_path()
     }
 
+    /// The folder custom themes are read from (see `pecofence_render::CustomTheme`).
+    pub fn themes_dir(&self) -> PathBuf {
+        self.store.dir().join("themes")
+    }
+
     /// `config_path` where Explorer can find it. The Store package's writes under %APPDATA%
     /// land in its `LocalCache\Roaming`, so only this process sees the file at the %APPDATA%
     /// path; the final path of the opened file names the real one.

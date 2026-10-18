@@ -3,6 +3,7 @@
 //! Interaction tokens follow WinUI; cool neutral surfaces and directional glass edges give
 //! the desktop and settings a shared palette. Alpha is applied over the sampled backdrop.
 
+use crate::backdrop::MicaTint;
 use windows_canvas::ColorF;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -69,6 +70,68 @@ pub struct Theme {
     /// Captions sit on bare wallpaper (a fully transparent plate): titles, tabs and labels
     /// get the legibility halo Liquid Glass labels always have.
     pub text_halo: bool,
+    /// The recipe the wallpaper behind the fences is blurred and tinted with (Liquid Glass
+    /// refracts the result).
+    pub material: MicaTint,
+    pub lens: Lens,
+    /// A custom theme's light and dark ink, which the text switches to over a bright or a
+    /// dark backdrop (None = the built-in style's).
+    pub custom_inks: Option<[Ink; 2]>,
+}
+
+/// Liquid Glass lens strength, as multiples of the built-in refraction and rim light.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Lens {
+    pub refraction: f32,
+    pub rim_light: f32,
+}
+
+impl Lens {
+    pub const BUILT_IN: Self = Self {
+        refraction: 1.0,
+        rim_light: 1.0,
+    };
+}
+
+impl Default for Lens {
+    fn default() -> Self {
+        Self::BUILT_IN
+    }
+}
+
+/// The text and control-feedback tokens that follow the backdrop under them (see
+/// [`Theme::over_glass`]): one style's light or dark set.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Ink {
+    text_primary: ColorF,
+    text_secondary: ColorF,
+    text_tertiary: ColorF,
+    control_strong: ColorF,
+    subtle_hover: ColorF,
+    subtle_pressed: ColorF,
+    tab_active_fill: ColorF,
+    selection_fill_inactive: ColorF,
+    selection_stroke_inactive: ColorF,
+    focus_outer: ColorF,
+    focus_inner: ColorF,
+}
+
+impl Ink {
+    pub fn of(theme: &Theme) -> Self {
+        Self {
+            text_primary: theme.text_primary,
+            text_secondary: theme.text_secondary,
+            text_tertiary: theme.text_tertiary,
+            control_strong: theme.control_strong,
+            subtle_hover: theme.subtle_hover,
+            subtle_pressed: theme.subtle_pressed,
+            tab_active_fill: theme.tab_active_fill,
+            selection_fill_inactive: theme.selection_fill_inactive,
+            selection_stroke_inactive: theme.selection_stroke_inactive,
+            focus_outer: theme.focus_outer,
+            focus_inner: theme.focus_inner,
+        }
+    }
 }
 
 impl Theme {
@@ -102,6 +165,9 @@ impl Theme {
             corner_radius: 8.0,
             title_height: 36.0,
             text_halo: false,
+            material: MicaTint::ACRYLIC_DARK,
+            lens: Lens::BUILT_IN,
+            custom_inks: None,
         }
     }
 
@@ -135,27 +201,21 @@ impl Theme {
             corner_radius: 8.0,
             title_height: 36.0,
             text_halo: false,
+            material: MicaTint::ACRYLIC_LIGHT,
+            lens: Lens::BUILT_IN,
+            custom_inks: None,
         }
     }
 
-    pub const fn mica_tint(&self) -> crate::backdrop::MicaTint {
+    pub const fn mica_tint(&self) -> MicaTint {
         match self.mode {
-            ThemeMode::Dark => crate::backdrop::MicaTint::MICA_DARK,
-            ThemeMode::Light => crate::backdrop::MicaTint::MICA_LIGHT,
+            ThemeMode::Dark => MicaTint::MICA_DARK,
+            ThemeMode::Light => MicaTint::MICA_LIGHT,
         }
     }
 
-    pub const fn acrylic_tint(&self) -> crate::backdrop::MicaTint {
-        if self.liquid_glass {
-            return match self.mode {
-                ThemeMode::Dark => crate::backdrop::MicaTint::LIQUID_DARK,
-                ThemeMode::Light => crate::backdrop::MicaTint::LIQUID_LIGHT,
-            };
-        }
-        match self.mode {
-            ThemeMode::Dark => crate::backdrop::MicaTint::ACRYLIC_DARK,
-            ThemeMode::Light => crate::backdrop::MicaTint::ACRYLIC_LIGHT,
-        }
+    pub const fn acrylic_tint(&self) -> MicaTint {
+        self.material
     }
 
     pub const fn for_mode(mode: ThemeMode) -> Self {
@@ -172,6 +232,10 @@ impl Theme {
     pub const fn with_liquid_glass(mut self) -> Self {
         self.liquid_glass = true;
         self.corner_radius = 16.0;
+        self.material = match self.mode {
+            ThemeMode::Dark => MicaTint::LIQUID_DARK,
+            ThemeMode::Light => MicaTint::LIQUID_LIGHT,
+        };
         self.glass_rim_top = ColorF::from_rgba8(0xFF, 0xFF, 0xFF, 0xCD);
         match self.mode {
             ThemeMode::Dark => {
@@ -248,9 +312,9 @@ impl Theme {
             return self;
         }
         let foreground = if self.prefers_dark_text(image, opacity, tint, previous_dark_text) {
-            Self::light().with_liquid_glass()
+            self.ink(ThemeMode::Light)
         } else {
-            Self::dark().with_liquid_glass()
+            self.ink(ThemeMode::Dark)
         };
         self.with_ink_of(foreground)
     }
@@ -273,9 +337,9 @@ impl Theme {
             return self;
         }
         let foreground = if self.prefers_dark_text(image, 1.0, tint, previous_dark_text) {
-            Self::light()
+            self.ink(ThemeMode::Light)
         } else {
-            Self::dark()
+            self.ink(ThemeMode::Dark)
         };
         self.with_ink_of(foreground)
     }
@@ -333,19 +397,32 @@ impl Theme {
             pecofence_core::LabelColor::White => ThemeMode::Dark,
             pecofence_core::LabelColor::Black => ThemeMode::Light,
         };
-        let mut ink = Self::for_mode(mode);
-        if self.liquid_glass {
-            ink = ink.with_liquid_glass();
-        }
+        let ink = self.ink(mode);
         self.text_primary = ink.text_primary;
         self.text_secondary = ink.text_secondary;
         self.text_tertiary = ink.text_tertiary;
         self
     }
 
+    /// The ink of this style's `mode` variant: a custom theme's own, else the built-in one.
+    fn ink(&self, mode: ThemeMode) -> Ink {
+        if let Some([light, dark]) = self.custom_inks {
+            return if mode == ThemeMode::Light {
+                light
+            } else {
+                dark
+            };
+        }
+        let mut theme = Self::for_mode(mode);
+        if self.liquid_glass {
+            theme = theme.with_liquid_glass();
+        }
+        Ink::of(&theme)
+    }
+
     /// Takes the text and control-feedback tokens of `foreground`; material, accent and
     /// geometry stay.
-    fn with_ink_of(mut self, foreground: Self) -> Self {
+    fn with_ink_of(mut self, foreground: Ink) -> Self {
         self.text_primary = foreground.text_primary;
         self.text_secondary = foreground.text_secondary;
         self.text_tertiary = foreground.text_tertiary;

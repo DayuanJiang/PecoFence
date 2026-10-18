@@ -96,6 +96,10 @@ pub struct Settings {
     /// Material style is independent of the light/dark preference.
     #[serde(default)]
     pub theme_style: ThemeStyle,
+    /// A theme file in the configuration's `themes` folder, by name without `.json`. While it
+    /// loads, its `base` takes the place of `themeStyle`.
+    #[serde(default)]
+    pub custom_theme: Option<String>,
     /// Colour of the item names in every fence; fence titles have their own `titleColor`.
     #[serde(default)]
     pub label_color: LabelColor,
@@ -217,6 +221,7 @@ impl Default for Settings {
             backdrop: Backdrop::Acrylic,
             theme: ThemeSetting::FollowWindowsMode,
             theme_style: ThemeStyle::Fluent,
+            custom_theme: None,
             label_color: LabelColor::Auto,
             title_align: TitleAlign::Left,
             tab_bar: TabBar::Top,
@@ -1650,8 +1655,10 @@ mod tests {
         json.as_object_mut().unwrap().remove("titleAlign");
         json.as_object_mut().unwrap().remove("tabBar");
         json.as_object_mut().unwrap().remove("labelColor");
+        json.as_object_mut().unwrap().remove("customTheme");
         let legacy: Settings = serde_json::from_value(json).unwrap();
         assert_eq!(legacy.theme_style, ThemeStyle::Fluent);
+        assert_eq!(legacy.custom_theme, None);
         assert_eq!(legacy.title_align, TitleAlign::Left);
         assert_eq!(legacy.tab_bar, TabBar::Top);
         assert_eq!(legacy.label_color, LabelColor::Auto);

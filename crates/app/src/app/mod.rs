@@ -40,7 +40,8 @@ use pecofence_render::fence_chrome::FenceChrome;
 use pecofence_render::fence_chrome::FenceStyle;
 use pecofence_render::motion::Motion;
 use pecofence_render::{
-    BitmapCache, Image, MonitorBackdrop, RenderStack, Theme, ThemeMode, WallpaperPosition,
+    BitmapCache, CustomTheme, Image, MonitorBackdrop, RenderStack, Theme, ThemeMode,
+    WallpaperPosition,
 };
 use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -81,8 +82,8 @@ use fences::work_areas;
 use fileops::{FileOp, FileOpThen};
 use peek::peek_hotkey_label;
 use visuals::{
-    StartupBackdrops, backdrop_mode_for, fence_style_for, icon_variant_for, pick_theme_mode,
-    shadow_style_for, theme_for, tray_icon_image, verify_wallpaper_later,
+    StartupBackdrops, backdrop_mode_for, fence_style_for, icon_variant_for, load_custom_theme,
+    pick_theme_mode, shadow_style_for, theme_for, tray_icon_image, verify_wallpaper_later,
 };
 use wallpaper_refresh::{BackdropCache, FIRST_CHECK_MS, RefreshSchedule, supersedes};
 
@@ -281,6 +282,8 @@ pub struct App {
     theme_mode: ThemeMode,
     /// The user's accent palette at the last visual refresh (None = built-in default look).
     accent: Option<systheme::AccentPalette>,
+    /// The custom theme at the last visual refresh (see `load_custom_theme`).
+    custom_theme: Option<CustomTheme>,
     wallpaper_override: Option<String>,
     pending_routes: Vec<PendingRoute>,
     /// The virtual fence a shell drop just went to, and when: the first desktop change batch
@@ -417,9 +420,11 @@ impl App {
         let theme_mode = pick_theme_mode(state.config.settings.theme, &args);
         tray::set_dark_menus(theme_mode == ThemeMode::Dark);
         let accent = systheme::accent_palette();
+        let custom_theme = load_custom_theme(&state);
         let theme = theme_for(
             theme_mode,
             state.config.settings.theme_style,
+            custom_theme.as_ref(),
             accent.as_ref(),
         );
         // Decoded on a worker while the rest of startup runs; in place before the first fence.
@@ -1167,6 +1172,7 @@ impl App {
             settings_class,
             theme_mode,
             accent,
+            custom_theme,
             wallpaper_override: args.wallpaper_override.clone(),
             pending_routes: Vec::new(),
             shell_drop_claim: None,
