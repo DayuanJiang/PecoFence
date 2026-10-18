@@ -1,6 +1,6 @@
 //! GPU glass over a shared wallpaper texture. Movement only updates a transform:
 //! the displacement field, specular ring, source upload and effect graph stay resident.
-use crate::{Image, MonitorBackdrop, gpu_bindings as b};
+use crate::{Image, MonitorBackdrop, gpu_bindings as b, theme::Lens};
 use std::{
     collections::HashMap,
     rc::{Rc, Weak},
@@ -251,7 +251,7 @@ struct Effects {
     light: b::ID2D1Effect,
     output: b::ID2D1Effect,
     surface: Rc<Wallpaper>,
-    geometry: Option<(u32, u32, u32, u32)>,
+    geometry: Option<(u32, u32, u32, u32, u32)>,
     opacity: Option<u32>,
     light_level: Option<u32>,
 }
@@ -331,8 +331,15 @@ impl Effects {
         h: u32,
         scale: f32,
         radius: f32,
+        refraction: f32,
     ) -> Result<bool> {
-        let key = (w, h, scale.to_bits(), radius.to_bits());
+        let key = (
+            w,
+            h,
+            scale.to_bits(),
+            radius.to_bits(),
+            refraction.to_bits(),
+        );
         if self.geometry == Some(key) {
             return Ok(false);
         }
@@ -382,7 +389,7 @@ impl Effects {
         scalar(
             &self.displace,
             b::D2D1_DISPLACEMENTMAP_PROP_SCALE,
-            field.scale_px,
+            field.scale_px * refraction,
         )?;
         unsafe {
             map_border.SetInput(0, &map.cast::<b::ID2D1Image>()?, true);
@@ -414,6 +421,7 @@ pub struct GpuGlass {
     stats: Stats,
     controls: HashMap<u128, Control>,
     text_inks: HashMap<u128, (bool, u64)>,
+    lens: Lens,
 }
 
 struct Control {
@@ -431,6 +439,11 @@ impl GpuGlass {
     }
     pub fn failed(&self) -> bool {
         self.failed
+    }
+
+    /// The theme's lens strength for the next draws (the plate and its controls).
+    pub fn set_lens(&mut self, lens: Lens) {
+        self.lens = lens;
     }
 
     /// Draws the plate lens for the screen rect `rect` at surface row `origin_y` (device px;
@@ -560,9 +573,10 @@ impl GpuGlass {
             (rect.width() * scale).ceil().max(1.0) as u32,
             (rect.height() * scale).ceil().max(1.0) as u32,
         );
-        if effects.geometry(&context, w, h, scale, radius)? {
+        if effects.geometry(&context, w, h, scale, radius, self.lens.refraction)? {
             self.stats.control_map_builds += 1;
         }
+        effects.set_light(RIM_LIGHT * self.lens.rim_light)?;
         let (x, y) = (rect.left * scale, rect.top * scale);
         // The parent surface starts at the plate top (`origin_y`), not at the window top.
         matrix(
@@ -629,7 +643,7 @@ impl GpuGlass {
         }
         let w = rect[2].max(1) as u32;
         let h = rect[3].max(1) as u32;
-        if effects.geometry(&context, w, h, scale, radius)? {
+        if effects.geometry(&context, w, h, scale, radius, self.lens.refraction)? {
             self.stats.map_builds += 1;
         }
         matrix(
@@ -646,7 +660,8 @@ impl GpuGlass {
             effects.opacity = Some(opacity.to_bits());
         }
         // Hover lifts the rim light with the application's existing animation clock.
-        effects.set_light(RIM_LIGHT * (1.0 + 0.35 * hover.clamp(0.0, 1.0)))?;
+        effects
+            .set_light(RIM_LIGHT * self.lens.rim_light * (1.0 + 0.35 * hover.clamp(0.0, 1.0)))?;
         let area = b::D2D_RECT_F {
             left: 0.0,
             top: 0.0,

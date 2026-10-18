@@ -68,16 +68,12 @@ pub(super) fn apply_system_backdrop(hwnd: HWND, mode: BackdropMode, dark: bool) 
     let _ = dwm::set_immersive_dark_mode(hwnd, dark);
 }
 
-pub(super) fn apply_window_shape(hwnd: HWND, liquid_glass: bool) {
-    let _ = dwm::set_nonclient_rendering(hwnd, !liquid_glass);
-    let _ = dwm::set_corner_preference(
-        hwnd,
-        if liquid_glass {
-            dwm::CornerPreference::DoNotRound
-        } else {
-            dwm::CornerPreference::RoundSmall
-        },
-    );
+/// The fence clips its window itself (`update_shape_clip`), so DWM must neither round it nor
+/// draw its frame. DWM's small Fluent corner (4 DIP) left the 8 DIP rim a sliver of plate
+/// outside its arc.
+pub(super) fn apply_window_shape(hwnd: HWND) {
+    let _ = dwm::set_nonclient_rendering(hwnd, false);
+    let _ = dwm::set_corner_preference(hwnd, dwm::CornerPreference::DoNotRound);
 }
 
 impl FenceViewState {
@@ -619,29 +615,16 @@ impl FenceViewState {
     }
 
     /// The clip must follow every height-animation frame even while content stays frozen. It
-    /// starts at the plate top: a title row folded away by title on hover is cut off too (a
-    /// Fluent window is otherwise rounded by DWM alone).
+    /// starts at the plate top: a title row folded away by title on hover is cut off too.
     pub(super) fn update_shape_clip(&self, w: i32, h: i32) -> Result<()> {
         let inset = self.plate_inset_px.clamp(0, (h - 1).max(0));
-        if self.theme.liquid_glass {
-            self.motion.clip_rounded_at(
-                &self.root,
-                inset as f32,
-                w as f32,
-                (h - inset) as f32,
-                self.theme.corner_radius * self.scale(),
-            )?;
-        } else if inset > 0 {
-            self.motion.clip_rounded_at(
-                &self.root,
-                inset as f32,
-                w as f32,
-                (h - inset) as f32,
-                FLUENT_WINDOW_RADIUS_DIP * self.scale(),
-            )?;
-        } else {
-            self.motion.clear_clip(&self.root)?;
-        }
+        self.motion.clip_rounded_at(
+            &self.root,
+            inset as f32,
+            w as f32,
+            (h - inset) as f32,
+            self.theme.corner_radius * self.scale(),
+        )?;
         Ok(())
     }
 

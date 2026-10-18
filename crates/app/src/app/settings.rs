@@ -3,6 +3,9 @@
 
 use super::*;
 
+/// How to write a theme file (Settings › 常规 › 自定义主题).
+const THEME_GUIDE_URL: &str = "https://github.com/DayuanJiang/PecoFence/blob/main/docs/THEMES.md";
+
 /// Largest snapping gap honoured, in DIPs; `snapping.gapPx` is clamped to `0..=` this.
 pub(super) const MAX_SNAP_GAP_DIP: i32 = 64;
 
@@ -333,6 +336,10 @@ impl App {
             "memoryMb": mem_mb,
             "itemCount": self.state.workspace_item_count(),
             "themeMode": if self.theme_mode == ThemeMode::Dark { "dark" } else { "light" },
+            // The style the fences show, which a custom theme's base decides.
+            "styleInUse": if self.ctx.theme.borrow().liquid_glass { "liquidGlass" } else { "fluent" },
+            "customThemes": custom_theme_names(&self.state),
+            "customThemeError": self.custom_theme_error,
             "accent": accent,
             "update": self.update_json(),
             "peekHotkey": self.peek_hotkey_json(),
@@ -512,6 +519,27 @@ impl App {
                         explorer.arg(path.parent().unwrap_or(&path));
                     }
                     let _ = explorer.spawn();
+                }
+                Some("openThemesFolder") => {
+                    let dir = self.state.themes_dir();
+                    if !dir.exists() {
+                        match std::fs::create_dir_all(&dir) {
+                            Ok(()) => write_example_themes(&dir),
+                            Err(e) => {
+                                tracing::warn!(dir = %dir.display(), error = %e, "themes folder not made")
+                            }
+                        }
+                    }
+                    self.sync_theme_watcher();
+                    // The examples were written before the watcher started: list them now.
+                    self.push_settings_state();
+                    // The Store package's copy of %APPDATA%, where Explorer can find it.
+                    let _ = std::process::Command::new("explorer.exe")
+                        .arg(crate::state::canonical_path(dir))
+                        .spawn();
+                }
+                Some("openThemeGuide") => {
+                    let _ = shell::shell_execute(Path::new(THEME_GUIDE_URL), None, None);
                 }
                 Some("saveSnapshot") => {
                     // A full list refuses a new snapshot (as the CLI does) instead of
@@ -818,6 +846,7 @@ impl App {
             .set(backdrop_mode_for(new.backdrop));
         let visual_changed = new.theme != old.theme
             || new.theme_style != old.theme_style
+            || new.custom_theme != old.custom_theme
             || new.backdrop != old.backdrop;
         let icons_changed = new.icons != old.icons;
         let push_changed = new.roll_up.push_neighbors != old.roll_up.push_neighbors;

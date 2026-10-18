@@ -7,7 +7,7 @@ use crate::bitmaps::BitmapCache;
 use crate::gpu_bindings as b;
 use crate::panel::Clip;
 use crate::theme::{Theme, font_small, font_text, lerp, with_alpha};
-use std::cell::RefCell;
+use std::cell::{Ref, RefCell};
 use std::mem::ManuallyDrop;
 use std::rc::Rc;
 use windows_canvas::{
@@ -34,8 +34,21 @@ pub const DEFAULT_LABEL_LINE_H: f32 = 16.0;
 /// multi-line CJK labels from visually running together in narrow panes.
 pub const ICON_LABEL_SIDE_INSET: f32 = 8.0;
 
+/// Titles and tab captions at the four title sizes (12 / 14 / 16 / 18 px), rebuilt when a
+/// theme names its own title font.
+struct TitleFonts {
+    titles: [TextFormat; 4],
+    /// Same face, size and weight as standalone titles, centred inside their controls.
+    tabs: [TextFormat; 4],
+    /// The left tab column's resting captions: regular weight, leading (the shown tab uses
+    /// the title format).
+    tab_lists: [TextFormat; 4],
+    face: Option<String>,
+    weight: i32,
+}
+
 pub struct FenceChrome {
-    title_format: TextFormat,
+    title_fonts: RefCell<TitleFonts>,
     count_format: TextFormat,
     label_font: RefCell<LabelFont>,
     glyph_format: TextFormat,
@@ -45,19 +58,10 @@ pub struct FenceChrome {
     row_format_right: TextFormat,
     /// Header sort indicator (8 px chevron).
     sort_glyph_format: TextFormat,
-    /// Same face, size and weight as standalone titles, centred inside their controls.
-    tab_formats: [TextFormat; 4],
-    /// The left tab column's resting captions: regular weight, leading (the shown tab uses
-    /// the semibold title format).
-    tab_list_formats: [TextFormat; 4],
     /// Empty-state text: Body 14, top-aligned (Explorer "This folder is empty.").
     empty_format: TextFormat,
     /// 14 px Fluent glyph beside the title (portal folder icon).
     title_glyph_format: TextFormat,
-    /// Title at 12 / 16 / 18 px for the per-fence "title size" option (`title_format` is 14).
-    title_format_small: TextFormat,
-    title_format_large: TextFormat,
-    title_format_xlarge: TextFormat,
     /// "按时间分组" section captions: Caption 12 / 600, leading, vertically centred.
     group_format: TextFormat,
     /// Tab match badge number: 11 / 600, centred.
@@ -644,9 +648,9 @@ fn draw_header_glass(
     }
     let radius = header_control_radius(theme, rect);
     if let Backdrop::GpuGlass { material, .. } = backdrop {
-        material
-            .borrow_mut()
-            .draw_control(session, key, rect, scale, radius, amount * alpha)?;
+        let mut material = material.borrow_mut();
+        material.set_lens(theme.lens);
+        material.draw_control(session, key, rect, scale, radius, amount * alpha)?;
     }
     let white = ColorF::new(1.0, 1.0, 1.0, 1.0);
     // A thin optical wash, not the opaque LayerOnAcrylic fill used by Fluent tabs.
@@ -741,6 +745,7 @@ fn draw_plate(
             // A folded title row moves the lens (and its bezel) down to the plate top.
             let inset = (plate_top * scale).round() as i32;
             let lens = [rect[0], rect[1] + inset, rect[2], (rect[3] - inset).max(1)];
+            material.borrow_mut().set_lens(theme.lens);
             let result = material.borrow_mut().draw(
                 session,
                 &mut bitmaps.glass_wallpaper,
@@ -1444,10 +1449,6 @@ impl FenceChrome {
         let locale = text_locale();
         // WinUI type ramp: Body Strong 14/600 for the title, Caption 12 (Small optical size) for
         // labels and the rolled item count, Body 14 for the empty state. No letter-spacing.
-        let title_format = TextFormat::with_locale(font_text(), 14.0, FontWeight(600), locale)?
-            .with_alignment(TextAlignment::Leading)
-            .with_paragraph_alignment(ParagraphAlignment::Center)
-            .with_word_wrapping(WordWrapping::NoWrap);
         let count_format = TextFormat::with_locale(font_small(), 12.0, FontWeight::NORMAL, locale)?
             .with_alignment(TextAlignment::Trailing)
             .with_paragraph_alignment(ParagraphAlignment::Center)
@@ -1478,34 +1479,6 @@ impl FenceChrome {
                 .with_alignment(TextAlignment::Center)
                 .with_paragraph_alignment(ParagraphAlignment::Center)
                 .with_word_wrapping(WordWrapping::NoWrap);
-        let tab_format = |face, size| -> Result<TextFormat> {
-            Ok(
-                TextFormat::with_locale(face, size, FontWeight(600), locale)?
-                    .with_alignment(TextAlignment::Center)
-                    .with_paragraph_alignment(ParagraphAlignment::Center)
-                    .with_word_wrapping(WordWrapping::NoWrap),
-            )
-        };
-        let tab_formats = [
-            tab_format(font_small(), 12.0)?,
-            tab_format(font_text(), 14.0)?,
-            tab_format(font_text(), 16.0)?,
-            tab_format(font_text(), 18.0)?,
-        ];
-        let list_format = |face, size| -> Result<TextFormat> {
-            Ok(
-                TextFormat::with_locale(face, size, FontWeight::NORMAL, locale)?
-                    .with_alignment(TextAlignment::Leading)
-                    .with_paragraph_alignment(ParagraphAlignment::Center)
-                    .with_word_wrapping(WordWrapping::NoWrap),
-            )
-        };
-        let tab_list_formats = [
-            list_format(font_small(), 12.0)?,
-            list_format(font_text(), 14.0)?,
-            list_format(font_text(), 16.0)?,
-            list_format(font_text(), 18.0)?,
-        ];
         let empty_format = TextFormat::with_locale(font_text(), 14.0, FontWeight::NORMAL, locale)?
             .with_alignment(TextAlignment::Center)
             .with_paragraph_alignment(ParagraphAlignment::Top)
@@ -1513,21 +1486,6 @@ impl FenceChrome {
         let title_glyph_format =
             TextFormat::with_locale(crate::theme::font_icons(), 14.0, FontWeight::NORMAL, locale)?
                 .with_alignment(TextAlignment::Center)
-                .with_paragraph_alignment(ParagraphAlignment::Center)
-                .with_word_wrapping(WordWrapping::NoWrap);
-        let title_format_small =
-            TextFormat::with_locale(font_small(), 12.0, FontWeight(600), locale)?
-                .with_alignment(TextAlignment::Leading)
-                .with_paragraph_alignment(ParagraphAlignment::Center)
-                .with_word_wrapping(WordWrapping::NoWrap);
-        let title_format_large =
-            TextFormat::with_locale(font_text(), 16.0, FontWeight(600), locale)?
-                .with_alignment(TextAlignment::Leading)
-                .with_paragraph_alignment(ParagraphAlignment::Center)
-                .with_word_wrapping(WordWrapping::NoWrap);
-        let title_format_xlarge =
-            TextFormat::with_locale(font_text(), 18.0, FontWeight(600), locale)?
-                .with_alignment(TextAlignment::Leading)
                 .with_paragraph_alignment(ParagraphAlignment::Center)
                 .with_word_wrapping(WordWrapping::NoWrap);
         let group_format = TextFormat::with_locale(font_small(), 12.0, FontWeight(600), locale)?
@@ -1539,20 +1497,15 @@ impl FenceChrome {
             .with_paragraph_alignment(ParagraphAlignment::Center)
             .with_word_wrapping(WordWrapping::NoWrap);
         let chrome = Self {
-            title_format,
+            title_fonts: RefCell::new(Self::build_title_fonts(None, 600)?),
             count_format,
             label_font,
             glyph_format,
             row_format,
             row_format_right,
             sort_glyph_format,
-            tab_formats,
-            tab_list_formats,
             empty_format,
             title_glyph_format,
-            title_format_small,
-            title_format_large,
-            title_format_xlarge,
             group_format,
             badge_format,
         };
@@ -1562,6 +1515,58 @@ impl FenceChrome {
             let _ = chrome.set_icon_title_font(&f.family, f.size_dip, FontWeight(f.weight));
         }
         Ok(chrome)
+    }
+
+    /// `face` for every title size, or the built-in faces (the Small optical size at 12 px).
+    fn build_title_fonts(face: Option<&str>, weight: i32) -> Result<TitleFonts> {
+        let locale = text_locale();
+        let format =
+            |size: f32, weight: i32, align: TextAlignment| -> Result<TextFormat> {
+                let built_in = if size < 13.0 {
+                    font_small()
+                } else {
+                    font_text()
+                };
+                Ok(TextFormat::with_locale(
+                    face.unwrap_or(built_in),
+                    size,
+                    FontWeight(weight),
+                    locale,
+                )?
+                .with_alignment(align)
+                .with_paragraph_alignment(ParagraphAlignment::Center)
+                .with_word_wrapping(WordWrapping::NoWrap))
+            };
+        let sizes = [12.0, 14.0, 16.0, 18.0];
+        let set = |weight: i32, align: TextAlignment| -> Result<[TextFormat; 4]> {
+            Ok([
+                format(sizes[0], weight, align)?,
+                format(sizes[1], weight, align)?,
+                format(sizes[2], weight, align)?,
+                format(sizes[3], weight, align)?,
+            ])
+        };
+        Ok(TitleFonts {
+            titles: set(weight, TextAlignment::Leading)?,
+            tabs: set(weight, TextAlignment::Center)?,
+            tab_lists: set(FontWeight::NORMAL.0, TextAlignment::Leading)?,
+            face: face.map(str::to_string),
+            weight,
+        })
+    }
+
+    /// A theme's title font (`face`, `weight`; None = Segoe UI Variable, semibold) for titles
+    /// and tabs. Returns whether anything changed (the caller then lays the title rows out).
+    pub fn set_title_font(&self, face: Option<&str>, weight: Option<i32>) -> Result<bool> {
+        let weight = weight.unwrap_or(600);
+        {
+            let cur = self.title_fonts.borrow();
+            if cur.face.as_deref() == face && cur.weight == weight {
+                return Ok(false);
+            }
+        }
+        *self.title_fonts.borrow_mut() = Self::build_title_fonts(face, weight)?;
+        Ok(true)
     }
 
     fn build_label_format(family: &str, size: f32, weight: FontWeight) -> Result<TextFormat> {
@@ -1615,18 +1620,18 @@ impl FenceChrome {
         self.label_font.borrow().line_h
     }
 
-    pub fn title_format(&self, size: u8) -> &TextFormat {
-        match size {
-            0 => &self.title_format_small,
-            2 => &self.title_format_large,
-            3 => &self.title_format_xlarge,
-            _ => &self.title_format,
-        }
+    /// Title at 12 / 14 / 16 / 18 px for the per-fence "title size" option (0 to 3).
+    pub fn title_format(&self, size: u8) -> Ref<'_, TextFormat> {
+        Ref::map(self.title_fonts.borrow(), |f| {
+            &f.titles[usize::from(size.min(3))]
+        })
     }
 
     /// Layout, drawing and tooltip fitting all use the same title size.
-    pub fn tab_format(&self, size: u8) -> &TextFormat {
-        &self.tab_formats[usize::from(size.min(3))]
+    pub fn tab_format(&self, size: u8) -> Ref<'_, TextFormat> {
+        Ref::map(self.title_fonts.borrow(), |f| {
+            &f.tabs[usize::from(size.min(3))]
+        })
     }
 
     /// Width a match badge reading `text` adds to a tab pill, its gap to the caption included.
@@ -1656,7 +1661,7 @@ impl FenceChrome {
         theme: &Theme,
     ) -> bool {
         let content_w =
-            crate::text::measure_width(title, self.tab_format(size)) + tab_icon_w(folder_icon);
+            crate::text::measure_width(title, &self.tab_format(size)) + tab_icon_w(folder_icon);
         content_w <= (w - tab_text_inset(theme, w, content_w)).max(0.0)
     }
 
@@ -1680,17 +1685,20 @@ impl FenceChrome {
     }
 
     /// Caption format of a left tab column row: semibold for the shown tab.
-    fn rail_title_format(&self, size: u8, active: bool) -> &TextFormat {
-        if active {
-            self.title_format(size)
-        } else {
-            &self.tab_list_formats[usize::from(size.min(3))]
-        }
+    fn rail_title_format(&self, size: u8, active: bool) -> Ref<'_, TextFormat> {
+        let i = usize::from(size.min(3));
+        Ref::map(self.title_fonts.borrow(), |f| {
+            if active {
+                &f.titles[i]
+            } else {
+                &f.tab_lists[i]
+            }
+        })
     }
 
     /// `title` shows whole in `room` DIPs of a left tab column row.
     pub fn rail_title_fits(&self, title: &str, room: f32, size: u8, active: bool) -> bool {
-        crate::text::measure_width(title, self.rail_title_format(size, active)) <= room
+        crate::text::measure_width(title, &self.rail_title_format(size, active)) <= room
     }
 
     /// Draws the chrome into a `width` x `height` DIP area whose origin is (0, 0). `scale` is
@@ -1856,7 +1864,7 @@ impl FenceChrome {
             return Ok(());
         }
         // Title text; leave room for the roll-up chevron on the right, ellipsize the rest.
-        let title_width = crate::text::measure_width(title, self.title_format(style.title_size))
+        let title_width = crate::text::measure_width(title, &self.title_format(style.title_size))
             .min((width - deco.title_x() - TITLE_RIGHT_RESERVE).max(1.0));
         let sample_x = aligned_x(
             style.title_align,
@@ -1887,7 +1895,7 @@ impl FenceChrome {
         let secondary =
             session.create_solid_brush(with_alpha(foreground.text_secondary, title_a))?;
         let tertiary = session.create_solid_brush(with_alpha(foreground.text_tertiary, title_a))?;
-        let title_format = self.title_format(style.title_size);
+        let title_format = &self.title_format(style.title_size);
         // Rolled plate: the item count sits before the chevron so a rolled fence still tells
         // you what is inside (it fades out as the fence expands), unless the user hid it.
         let caption = caption.filter(|_| !style.hide_count_and_chevron);
@@ -2015,7 +2023,7 @@ impl FenceChrome {
                     let ring = session.create_solid_brush(with_alpha(theme.selection_stroke, a))?;
                     session.draw_rounded_rect(&px.ring(rect, radius), &ring, px.hair());
                 }
-                let fmt = self.tab_format(tab.title_size);
+                let fmt = &self.tab_format(tab.title_size);
                 let badge_w = tab.badge.map_or(0.0, |b| self.tab_badge_width(b));
                 let icon_w = tab_icon_w(tab.folder_icon);
                 let title_w = crate::text::measure_width(tab.title, fmt);
@@ -2478,7 +2486,7 @@ impl FenceChrome {
                 if let Some(halo) = halo {
                     halo.set_color(halo_color(color, a));
                 }
-                let fmt = self.rail_title_format(tab.title_size, strong);
+                let fmt = &self.rail_title_format(tab.title_size, strong);
                 let fitted = crate::text::fit_width(tab.title, fmt, room);
                 draw_caption(session, &fitted, fmt, &caption, &brush, halo);
             }
@@ -3188,24 +3196,25 @@ mod tests {
         let mut widths = Vec::new();
         for size in 0..=2 {
             for caption in ["文件与文档", "Folder pictures", "资料 Archives 2026"] {
-                let single = TextLayout::new(caption, chrome.title_format(size), 1000.0, 100.0)
+                let single = TextLayout::new(caption, &chrome.title_format(size), 1000.0, 100.0)
                     .unwrap()
                     .metrics();
-                let tab = TextLayout::new(caption, chrome.tab_format(size), 1000.0, 100.0)
+                let tab = TextLayout::new(caption, &chrome.tab_format(size), 1000.0, 100.0)
                     .unwrap()
                     .metrics();
                 assert!((single.width - tab.width).abs() < 0.001);
                 assert!((single.height - tab.height).abs() < 0.001);
                 for width in [0.0, 2.0, 8.0, 20.0, 80.0] {
-                    let text = crate::text::fit_width(caption, chrome.tab_format(size), width);
+                    let text = crate::text::fit_width(caption, &chrome.tab_format(size), width);
                     assert!(
-                        crate::text::measure_width(&text, chrome.tab_format(size)) <= width + 0.001
+                        crate::text::measure_width(&text, &chrome.tab_format(size))
+                            <= width + 0.001
                     );
                 }
             }
             widths.push(crate::text::measure_width(
                 "文件与文档",
-                chrome.tab_format(size),
+                &chrome.tab_format(size),
             ));
         }
         assert!(widths[0] < widths[1] && widths[1] < widths[2]);
@@ -3241,7 +3250,7 @@ mod tests {
         let chrome = FenceChrome::new().unwrap();
         for theme in [Theme::dark().with_liquid_glass(), Theme::dark()] {
             let full = tab_text_padding(&theme);
-            let caption = crate::text::measure_width("游戏", chrome.tab_format(1));
+            let caption = crate::text::measure_width("游戏", &chrome.tab_format(1));
             // Room to spare: the theme's padding.
             assert_eq!(tab_text_inset(&theme, caption + full + 10.0, caption), full);
             // A crowded strip (a 172 DIP fence with three tabs gives ~37 DIP pills): the

@@ -253,8 +253,13 @@ impl App {
             "startup": fact(startup),
             "language": pecofence_core::i18n::language().tag(),
             "theme": format!(
-                "{:?}, {}",
-                settings.theme_style,
+                "{}{}, {}",
+                if self.ctx.theme.borrow().liquid_glass { "LiquidGlass" } else { "Fluent" },
+                match (&settings.custom_theme, &self.custom_theme_error) {
+                    (None, _) => "",
+                    (Some(_), None) => " (custom theme)",
+                    (Some(_), Some(_)) => " (custom theme not loaded)",
+                },
                 if self.theme_mode == ThemeMode::Dark { "dark" } else { "light" }
             ),
             "workspace": format!(

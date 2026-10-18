@@ -1,0 +1,20 @@
+{
+  "base": "fluent",
+  "accent": "#E8710A",
+  "light": {
+    "tint": "#FFDDB8CC",
+    "luminosity": 0.3,
+    "glassLayerFill": "#FFF0DC59",
+    "textPrimary": "#3B2412",
+    "textSecondary": "#6B4A2E",
+    "tabActiveFill": "#FFFFFFCC",
+    "stroke": "#B4642840"
+  },
+  "dark": {
+    "tint": "#3A2414D9",
+    "glassLayerFill": "#2A180C40",
+    "textPrimary": "#FFF3E6",
+    "textSecondary": "#F2DCC6",
+    "tabActiveFill": "#FFE4C833"
+  }
+}

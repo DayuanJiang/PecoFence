@@ -40,6 +40,7 @@ const fixture = {
   desktopIconsHidden: false,
   version: 'test', configPath: 'C:\\PecoFence\\config.json', memoryMb: 28, itemCount: 12,
   themeMode: 'dark', accent: '#60CDFF',
+  customThemes: ['Frosted Glass', 'Warm'], customThemeError: null, styleInUse: 'fluent',
   peekHotkey: {
     chosen: { mods: 3, vk: 32, keys: ['Ctrl', 'Alt', '空格'], label: 'Ctrl+Alt+空格' },
     active: { mods: 3, vk: 32, keys: ['Ctrl', 'Alt', '空格'], label: 'Ctrl+Alt+空格' },
@@ -75,6 +76,10 @@ function bridge() {
           state.themeMode = message.settings.theme === 'light' ? 'light' : 'dark';
           // The native host also switches to the corresponding system accent shade.
           state.accent = state.themeMode === 'light' ? '#005FB8' : '#60CDFF';
+          // A custom theme's base decides the style in use; a file not listed here does not load.
+          const bases = { 'Frosted Glass': 'liquidGlass', Warm: 'fluent' }, custom = state.settings.customTheme;
+          state.customThemeError = custom && !bases[custom] ? 'unknown key "blurr"' : null;
+          state.styleInUse = (custom && bases[custom]) || state.settings.themeStyle || 'fluent';
         }
         if (message.name === 'repairIcons' || message.name === 'hideDesktopIcons') {
           state.settings.hideRealIcons = message.name === 'hideDesktopIcons';
@@ -493,6 +498,39 @@ async function runTests() {
     frame.contentWindow.testRefresh();
     assert(styleRadio(doc, 'fluent').checked, 'Missing material has no valid selection');
     assert(!doc.documentElement.classList.contains('liquid-glass'), 'Old settings changed the appearance');
+  });
+  await test('A custom theme takes the place of the style tiles until a tile is clicked', async () => {
+    const select = doc.getElementById('customTheme');
+    assert([...select.options].map(o => o.value).join('|') === '|Frosted Glass|Warm', 'Theme files not listed after 无');
+    assert(select.value === '' && styleRadio(doc, 'fluent').checked, 'A custom theme was chosen at first');
+    change(doc, 'customTheme', 'Frosted Glass'); await settle();
+    assert(current().settings.customTheme === 'Frosted Glass', 'Host did not receive the custom theme');
+    assert(current().settings.themeStyle === 'fluent', 'Choosing a custom theme changed the built-in style');
+    assert(!styleRadio(doc, 'fluent').checked && !styleRadio(doc, 'liquidGlass').checked, 'A style tile stays checked under a custom theme');
+    assert(doc.documentElement.classList.contains('liquid-glass'), 'The page does not follow the theme base style');
+    assert(select.value === 'Frosted Glass' && doc.getElementById('customThemeError').hidden, 'A loaded theme is not shown as chosen');
+    styleRadio(doc, 'liquidGlass').click(); await settle();
+    assert(current().settings.customTheme === null && current().settings.themeStyle === 'liquidGlass', 'A tile click did not go back to the built-in style');
+    assert(select.value === '' && styleRadio(doc, 'liquidGlass').checked, 'The page did not show the built-in style again');
+    styleRadio(doc, 'fluent').click(); await settle();
+    assert(!doc.documentElement.classList.contains('liquid-glass'), 'Fluent did not come back');
+  });
+  await test('A chosen theme file that does not load stays listed and says why', async () => {
+    current().settings.customTheme = 'Gone';
+    current().customThemeError = 'The system cannot find the file specified. (os error 2)';
+    frame.contentWindow.testRefresh(); await settle();
+    const select = doc.getElementById('customTheme'), error = doc.getElementById('customThemeError');
+    assert(select.value === 'Gone', 'A chosen file that is gone is not listed');
+    assert(!error.hidden && error.textContent.includes('os error 2'), 'The load error is not shown');
+    assert(!styleRadio(doc, 'fluent').checked && !styleRadio(doc, 'liquidGlass').checked, 'A tile is checked for a missing theme');
+    change(doc, 'customTheme', ''); await settle();
+    assert(current().settings.customTheme === null && error.hidden, '无 did not clear the theme and its error');
+    assert(styleRadio(doc, 'fluent').checked, 'The built-in style is not checked again');
+  });
+  await test('The theme buttons ask the host for the folder and the guide', async () => {
+    doc.getElementById('openThemes').click(); doc.getElementById('themeGuide').click(); await settle();
+    const names = frame.contentWindow.testMessages.filter(m => m.type === 'action').map(m => m.name);
+    assert(names.includes('openThemesFolder') && names.includes('openThemeGuide'), 'Buttons sent ' + names.join(', '));
   });
   await test('Switches show an On/Off caption that follows their state', async () => {
     doc.querySelector('[data-page=general]').click();

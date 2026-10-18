@@ -31,13 +31,13 @@ impl ShadowStyle {
         sigma: 8.0,
         offset_y: 4.0,
         opacity: 0.30,
-        radius: 4.0,
+        radius: 8.0,
     };
     pub const LIGHT: Self = Self {
         sigma: 8.0,
         offset_y: 4.0,
         opacity: 0.16,
-        radius: 4.0,
+        radius: 8.0,
     };
 
     pub fn pad_px(&self, scale: f32) -> i32 {
@@ -146,11 +146,11 @@ fn render_shadow(w: i32, h: i32, scale: f32, style: &ShadowStyle) -> Image {
         }
     }
     img.blur_alpha(style.sigma * scale);
-    // Apply opacity and cut the shadow out from under the DWM-rounded body (RoundSmall, the
-    // same radius as the SDF) so the anti-aliased corner arc blends into the shadow instead of
-    // leaving square notches; the cut-out also avoids double darkening of the Mica backdrop
-    // through the fence's translucent pixels. On the straight edges coverage is exactly 0 or 1,
-    // identical to a rectangle test.
+    // Apply opacity and cut the shadow out from under the rounded body (the fence clips
+    // itself to the same radius as the SDF) so the anti-aliased corner arc blends into the
+    // shadow instead of leaving square notches; the cut-out also avoids double darkening of
+    // the Mica backdrop through the fence's translucent pixels. On the straight edges coverage
+    // is exactly 0 or 1, identical to a rectangle test.
     for y in 0..sh {
         for x in 0..sw {
             let i = ((y * sw + x) * 4) as usize;
@@ -585,7 +585,7 @@ mod tests {
         let (w, h) = (40, 40);
         let img = render_shadow(w, h, 1.0, &style);
         let pad = style.pad_px(1.0);
-        // Bottom-left body corner pixel lies outside the 4 px arc: shadowed.
+        // Bottom-left body corner pixel lies outside the 8 px arc: shadowed.
         let corner = alpha(&img, pad, pad + h - 1);
         assert!(corner > 0, "corner pixel unshadowed: {corner}");
         // Just outside the body beside it is shadowed too, and the corner pixel (closer to the
@@ -596,7 +596,7 @@ mod tests {
             "{corner} vs {outside}"
         );
         // Interior and straight edges are fully cut out.
-        assert_eq!(alpha(&img, pad + 2, pad + 2), 0);
+        assert_eq!(alpha(&img, pad + w / 2, pad + h / 2), 0);
         assert_eq!(alpha(&img, pad + w / 2, pad), 0);
         assert_eq!(alpha(&img, pad + w / 2, pad + h - 1), 0);
         assert_eq!(alpha(&img, pad, pad + h / 2), 0);
@@ -604,7 +604,7 @@ mod tests {
         let img = render_shadow(w, h, 1.5, &style);
         let pad = style.pad_px(1.5);
         assert!(alpha(&img, pad, pad + h - 1) > 0);
-        assert_eq!(alpha(&img, pad + 3, pad + 3), 0);
+        assert_eq!(alpha(&img, pad + w / 2, pad + h / 2), 0);
     }
 
     fn assert_close(a: &Image, b: &Image, tol: i32, what: &str) {

@@ -237,6 +237,9 @@ offers 「在此新建栅栏」; default on), `autostart`, `peek.enabled`, `quic
 `labelColor` (auto/white/black: the item names in every fence and view; auto picks dark or light
 names from the wallpaper in Liquid Glass and follows the colour mode in Fluent; fence titles keep
 their `titleColor`; default auto),
+`customTheme` (the name of a theme file in the `themes` folder next to `config.json`, without
+`.json`; while it loads, its base style takes the place of `themeStyle`; `null` = the built-in
+style; see [THEMES.md](THEMES.md)),
 `tabBar` (top/left: a fence with two or more tabs shows them in its title row, or lists them in a
 column on its left that takes the title row's place; rolled up, such a fence shrinks to the
 column; default top),
