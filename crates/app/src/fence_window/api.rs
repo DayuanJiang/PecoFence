@@ -74,7 +74,7 @@ impl FenceWindow {
             )
             .create(handler)?;
         let hwnd = window.hwnd();
-        apply_window_shape(hwnd, ctx.theme.borrow().liquid_glass);
+        apply_window_shape(hwnd, ctx.theme.borrow().own_corners);
         let _ = dwm::set_border_color_none(hwnd);
         // Not DWMWA_EXCLUDED_FROM_PEEK: DWM hides such windows for the whole virtual-desktop
         // switch animation while their shadows slide, leaving empty panes. Plain windows slide
@@ -1741,7 +1741,7 @@ impl FenceWindow {
 
     pub fn set_theme(&self, theme: Theme, backdrops: Rc<BackdropSets>, shadow: ShadowStyle) {
         let hwnd = self.hwnd();
-        apply_window_shape(hwnd, theme.liquid_glass);
+        apply_window_shape(hwnd, theme.own_corners);
         let mode = self
             .view
             .borrow()
@@ -1766,6 +1766,8 @@ impl FenceWindow {
                 v.glass_dark_text.set(None);
             }
             v.theme = theme;
+            // A theme may bring its own title font: the tabs are measured again.
+            v.tab_natural_w.borrow_mut().clear();
             if !theme.liquid_glass {
                 v.gpu_glass.borrow_mut().reset();
             }

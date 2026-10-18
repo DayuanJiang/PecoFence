@@ -51,7 +51,16 @@ pub(super) fn load_custom_theme(
     if let Err(error) = &result {
         tracing::warn!(path = %path.display(), %error, "custom theme not loaded");
     }
-    result.map(Some)
+    let theme = result?;
+    // A misspelt font would fall back without a word, so it is an error like a wrong key.
+    let faces = [&theme.fonts.label_family, &theme.fonts.title_family];
+    let installed = |face: &&String| pecofence_platform::fonts::font_family_exists(face);
+    if let Some(face) = faces.into_iter().flatten().find(|f| !installed(f)) {
+        let error = format!(r#"the font "{face}" is not installed"#);
+        tracing::warn!(path = %path.display(), %error, "custom theme not loaded");
+        return Err(error);
+    }
+    Ok(Some(theme))
 }
 
 /// The theme files in the `themes` folder by name, as Settings lists them.
@@ -801,8 +810,14 @@ pub(super) fn shadow_style_for(theme: &Theme) -> ShadowStyle {
     if theme.liquid_glass {
         shadow.sigma = 12.0;
         shadow.offset_y = 5.0;
+    }
+    if theme.own_corners {
         shadow.radius = theme.corner_radius;
     }
+    let custom = theme.shadow;
+    shadow.opacity = custom.opacity.unwrap_or(shadow.opacity);
+    shadow.sigma = custom.blur.unwrap_or(shadow.sigma);
+    shadow.offset_y = custom.offset.unwrap_or(shadow.offset_y);
     shadow
 }
 
@@ -1173,7 +1188,7 @@ impl App {
             .behavior
             .wheel_lines
             .set(sysparams::wheel_scroll_lines());
-        self.apply_icon_title_font();
+        self.apply_fonts();
         // Any broadcast that reaches us after the work area moved (taskbar, DPI, resolution
         // races) must re-layout, or every later set_fence_bounds normalizes against a stale
         // work area and the saved geometry drifts by the taskbar height. Once the monitors
@@ -1188,25 +1203,45 @@ impl App {
     }
 
     /// Icon labels follow the desktop's icon-title font (`SPI_GETICONTITLELOGFONT` times the
-    /// Accessibility text-size factor, both re-read on WM_SETTINGCHANGE): when it changed,
-    /// every fence refits its labels and re-lays out its grid, then settles its auto height.
-    pub(super) fn apply_icon_title_font(&mut self) {
-        let Some(f) = sysparams::icon_title_font() else {
-            return;
-        };
-        let changed = self
+    /// Accessibility text-size factor, both re-read on WM_SETTINGCHANGE) unless the custom
+    /// theme names its own, and titles the theme's title font. When a font changed, every
+    /// fence refits its labels and re-lays out its grid, then settles its auto height.
+    pub(super) fn apply_fonts(&mut self) {
+        let fonts = self
+            .custom_theme
+            .as_ref()
+            .map(|c| c.fonts.clone())
+            .unwrap_or_default();
+        let titles = self
             .ctx
             .chrome
-            .set_icon_title_font(
-                &f.family,
-                f.size_dip,
-                pecofence_render::FontWeight(f.weight),
-            )
+            .set_title_font(fonts.title_family.as_deref(), fonts.title_weight)
             .unwrap_or(false);
-        if !changed {
+        let system = sysparams::icon_title_font();
+        let text_scale = sysparams::text_scale_percent() as f32 / 100.0;
+        let family = fonts
+            .label_family
+            .clone()
+            .or_else(|| system.as_ref().map(|f| f.family.clone()));
+        let labels = family.as_ref().is_some_and(|family| {
+            let size = fonts
+                .label_size
+                .map(|s| s * text_scale)
+                .or(system.as_ref().map(|f| f.size_dip))
+                .unwrap_or(12.0 * text_scale);
+            let weight = fonts
+                .label_weight
+                .or(system.as_ref().map(|f| f.weight))
+                .unwrap_or(400);
+            self.ctx
+                .chrome
+                .set_icon_title_font(family, size, pecofence_render::FontWeight(weight))
+                .unwrap_or(false)
+        });
+        if !titles && !labels {
             return;
         }
-        tracing::info!(family = %f.family, size = f.size_dip, "icon-title font changed");
+        tracing::info!(label = ?family, title = ?fonts.title_family, "fonts changed");
         let ids: Vec<FenceId> = self.fences.keys().copied().collect();
         for id in ids {
             if let Some(w) = self.fences.get(&id) {
@@ -1284,6 +1319,10 @@ impl App {
         let theme_changed = mode != self.theme_mode || style_changed;
         let theme = theme_for(mode, style, custom.as_ref(), accent.as_ref());
         self.custom_theme = custom;
+        if style_changed {
+            // Before the fences take the theme, so their title rows lay out in its font.
+            self.apply_fonts();
+        }
         // The wallpaper sets are accent-independent and expensive: rebuild them only for a
         // mode change (or a forced refresh), not for a Settings › Colours retint.
         let backdrops = if theme_changed || force {

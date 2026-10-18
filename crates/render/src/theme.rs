@@ -74,6 +74,11 @@ pub struct Theme {
     /// refracts the result).
     pub material: MicaTint,
     pub lens: Lens,
+    /// The fence clips its own window to `corner_radius`: Liquid Glass, and a Fluent theme
+    /// file with its own `cornerRadius`. Otherwise Windows rounds a Fluent window (4 DIP).
+    pub own_corners: bool,
+    /// A theme file's shadow values (None = the style's own).
+    pub shadow: ShadowOverride,
     /// A custom theme's light and dark ink, which the text switches to over a bright or a
     /// dark backdrop (None = the built-in style's).
     pub custom_inks: Option<[Ink; 2]>,
@@ -97,6 +102,22 @@ impl Default for Lens {
     fn default() -> Self {
         Self::BUILT_IN
     }
+}
+
+/// Shadow values a theme file sets: peak opacity, blur sigma and downward offset in DIPs.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct ShadowOverride {
+    pub opacity: Option<f32>,
+    pub blur: Option<f32>,
+    pub offset: Option<f32>,
+}
+
+impl ShadowOverride {
+    pub const NONE: Self = Self {
+        opacity: None,
+        blur: None,
+        offset: None,
+    };
 }
 
 /// The text and control-feedback tokens that follow the backdrop under them (see
@@ -167,6 +188,8 @@ impl Theme {
             text_halo: false,
             material: MicaTint::ACRYLIC_DARK,
             lens: Lens::BUILT_IN,
+            own_corners: false,
+            shadow: ShadowOverride::NONE,
             custom_inks: None,
         }
     }
@@ -203,6 +226,8 @@ impl Theme {
             text_halo: false,
             material: MicaTint::ACRYLIC_LIGHT,
             lens: Lens::BUILT_IN,
+            own_corners: false,
+            shadow: ShadowOverride::NONE,
             custom_inks: None,
         }
     }
@@ -232,6 +257,7 @@ impl Theme {
     pub const fn with_liquid_glass(mut self) -> Self {
         self.liquid_glass = true;
         self.corner_radius = 16.0;
+        self.own_corners = true;
         self.material = match self.mode {
             ThemeMode::Dark => MicaTint::LIQUID_DARK,
             ThemeMode::Light => MicaTint::LIQUID_LIGHT,

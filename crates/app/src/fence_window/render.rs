@@ -68,11 +68,13 @@ pub(super) fn apply_system_backdrop(hwnd: HWND, mode: BackdropMode, dark: bool) 
     let _ = dwm::set_immersive_dark_mode(hwnd, dark);
 }
 
-pub(super) fn apply_window_shape(hwnd: HWND, liquid_glass: bool) {
-    let _ = dwm::set_nonclient_rendering(hwnd, !liquid_glass);
+/// `own_corners` (see `Theme::own_corners`): the fence clips its window itself, so DWM must
+/// neither round it nor draw its frame.
+pub(super) fn apply_window_shape(hwnd: HWND, own_corners: bool) {
+    let _ = dwm::set_nonclient_rendering(hwnd, !own_corners);
     let _ = dwm::set_corner_preference(
         hwnd,
-        if liquid_glass {
+        if own_corners {
             dwm::CornerPreference::DoNotRound
         } else {
             dwm::CornerPreference::RoundSmall
@@ -620,10 +622,10 @@ impl FenceViewState {
 
     /// The clip must follow every height-animation frame even while content stays frozen. It
     /// starts at the plate top: a title row folded away by title on hover is cut off too (a
-    /// Fluent window is otherwise rounded by DWM alone).
+    /// Fluent window without its own corners is otherwise rounded by DWM alone).
     pub(super) fn update_shape_clip(&self, w: i32, h: i32) -> Result<()> {
         let inset = self.plate_inset_px.clamp(0, (h - 1).max(0));
-        if self.theme.liquid_glass {
+        if self.theme.own_corners {
             self.motion.clip_rounded_at(
                 &self.root,
                 inset as f32,

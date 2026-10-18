@@ -1,6 +1,7 @@
 //! Custom themes: a JSON file in the configuration's `themes` folder that starts from Fluent
 //! or Liquid Glass and replaces some of its values. Keys at the top level apply to both
-//! colour modes; the same keys inside `light` or `dark` apply to that mode and win.
+//! colour modes; the same keys inside `light` or `dark` apply to that mode and win. Fonts are
+//! top-level only.
 //!
 //! ```json
 //! { "base": "liquidGlass", "blur": 6, "light": { "tint": "#FFFFFF14" } }
@@ -14,6 +15,7 @@ use windows_canvas::ColorF;
 #[derive(Clone, Debug, PartialEq)]
 pub struct CustomTheme {
     pub base: ThemeStyle,
+    pub fonts: ThemeFonts,
     both: Values,
     light: Values,
     dark: Values,
@@ -29,11 +31,54 @@ struct Values {
     noise: Option<f32>,
     refraction: Option<f32>,
     rim_light: Option<f32>,
-    /// Liquid Glass only: Windows rounds a Fluent window itself.
+    /// A Fluent fence then rounds its own window instead of leaving it to Windows.
     corner_radius: Option<f32>,
+    shadow_opacity: Option<f32>,
+    shadow_blur: Option<f32>,
+    shadow_offset: Option<f32>,
     accent: Option<ColorF>,
     /// Indexes into [`COLORS`], in file order.
     colors: Vec<(usize, ColorF)>,
+}
+
+/// A theme file's fonts; None keeps the built-in choice.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ThemeFonts {
+    /// Item names (built in: the Windows desktop icon font).
+    pub label_family: Option<String>,
+    /// Item name em size in DIPs at 100 % text size.
+    pub label_size: Option<f32>,
+    pub label_weight: Option<i32>,
+    /// Titles and tabs (built in: Segoe UI Variable, semibold).
+    pub title_family: Option<String>,
+    pub title_weight: Option<i32>,
+}
+
+impl ThemeFonts {
+    fn take(map: &mut Map<String, Value>) -> Result<Self, String> {
+        let mut text = |key: &str| match map.remove(key) {
+            None => Ok(None),
+            Some(Value::String(s)) if !s.trim().is_empty() => Ok(Some(s.trim().to_string())),
+            Some(_) => Err(format!(r#""{key}" must be a font name"#)),
+        };
+        let label_family = text("labelFont")?;
+        let title_family = text("titleFont")?;
+        let mut number = |key: &str| match map.remove(key) {
+            None => Ok(None),
+            Some(v) => v
+                .as_f64()
+                .map(|n| Some(n as f32))
+                .ok_or_else(|| format!(r#""{key}" must be a number"#)),
+        };
+        let weight = |v: f32| (v.round() as i32).clamp(100, 900);
+        Ok(Self {
+            label_family,
+            label_size: number("labelFontSize")?.map(|v| v.clamp(8.0, 24.0)),
+            label_weight: number("labelFontWeight")?.map(weight),
+            title_family,
+            title_weight: number("titleFontWeight")?.map(weight),
+        })
+    }
 }
 
 type Token = fn(&mut Theme) -> &mut ColorF;
@@ -82,8 +127,10 @@ impl CustomTheme {
         };
         let light = scope("light")?;
         let dark = scope("dark")?;
+        let fonts = ThemeFonts::take(&mut map)?;
         Ok(Self {
             base,
+            fonts,
             both: Values::parse(map, "")?,
             light,
             dark,
@@ -138,6 +185,9 @@ impl Values {
                 "refraction" => values.refraction = Some(number()?),
                 "rimLight" => values.rim_light = Some(number()?),
                 "cornerRadius" => values.corner_radius = Some(number()?),
+                "shadowOpacity" => values.shadow_opacity = Some(number()?),
+                "shadowBlur" => values.shadow_blur = Some(number()?),
+                "shadowOffset" => values.shadow_offset = Some(number()?),
                 "accent" => values.accent = Some(color()?),
                 _ => match COLORS.iter().position(|(k, _)| *k == key) {
                     Some(i) => values.colors.push((i, color()?)),
@@ -171,8 +221,18 @@ impl Values {
         if let Some(v) = self.rim_light {
             theme.lens.rim_light = v.clamp(0.0, 3.0);
         }
-        if let Some(v) = self.corner_radius.filter(|_| theme.liquid_glass) {
+        if let Some(v) = self.corner_radius {
             theme.corner_radius = v.clamp(0.0, 32.0);
+            theme.own_corners = true;
+        }
+        if let Some(v) = self.shadow_opacity {
+            theme.shadow.opacity = Some(v.clamp(0.0, 1.0));
+        }
+        if let Some(v) = self.shadow_blur {
+            theme.shadow.blur = Some(v.clamp(0.0, 24.0));
+        }
+        if let Some(v) = self.shadow_offset {
+            theme.shadow.offset = Some(v.clamp(0.0, 16.0));
         }
         if let Some(c) = self.accent {
             theme = theme.with_accent(rgb8(c));
@@ -301,12 +361,55 @@ mod tests {
     }
 
     #[test]
-    fn a_fluent_theme_keeps_the_window_corners() {
+    fn a_fluent_theme_with_corners_rounds_its_own_window() {
+        assert!(!Theme::light().own_corners && Theme::light().with_liquid_glass().own_corners);
         let file = CustomTheme::parse(r#"{ "base": "fluent", "cornerRadius": 14 }"#).unwrap();
-        assert_eq!(
-            file.apply(Theme::light()).corner_radius,
-            Theme::light().corner_radius
+        let theme = file.apply(Theme::light());
+        assert_eq!(theme.corner_radius, 14.0);
+        assert!(theme.own_corners);
+        let plain = CustomTheme::parse(r#"{ "base": "fluent" }"#).unwrap();
+        assert!(
+            !plain.apply(Theme::light()).own_corners,
+            "Windows keeps its corners"
         );
+    }
+
+    #[test]
+    fn shadow_values_apply_per_mode_and_are_clamped() {
+        let file = CustomTheme::parse(
+            r#"{ "base": "fluent", "shadowBlur": 30, "shadowOffset": 2,
+                 "light": { "shadowOpacity": 0.1 }, "dark": { "shadowOpacity": 3 } }"#,
+        )
+        .unwrap();
+        let light = file.apply(Theme::light()).shadow;
+        let dark = file.apply(Theme::dark()).shadow;
+        assert_eq!(
+            (light.opacity, light.blur, light.offset),
+            (Some(0.1), Some(24.0), Some(2.0))
+        );
+        assert_eq!(dark.opacity, Some(1.0));
+        assert_eq!(Theme::dark().shadow, crate::theme::ShadowOverride::NONE);
+    }
+
+    #[test]
+    fn fonts_come_from_the_top_level() {
+        let file = CustomTheme::parse(
+            r#"{ "base": "fluent", "labelFont": " Microsoft YaHei UI ", "labelFontSize": 40,
+                 "labelFontWeight": 650.4, "titleFont": "Georgia" }"#,
+        )
+        .unwrap();
+        assert_eq!(
+            file.fonts,
+            ThemeFonts {
+                label_family: Some("Microsoft YaHei UI".into()),
+                label_size: Some(24.0),
+                label_weight: Some(650),
+                title_family: Some("Georgia".into()),
+                title_weight: None,
+            }
+        );
+        let plain = CustomTheme::parse(r#"{ "base": "fluent" }"#).unwrap();
+        assert_eq!(plain.fonts, ThemeFonts::default());
     }
 
     #[test]
@@ -337,6 +440,18 @@ mod tests {
             (
                 r#"{ "base": "fluent", "light": 1 }"#,
                 "\"light\" must be an object",
+            ),
+            (
+                r#"{ "base": "fluent", "light": { "titleFont": "Arial" } }"#,
+                "unknown key \"light.titleFont\"",
+            ),
+            (
+                r#"{ "base": "fluent", "titleFont": 3 }"#,
+                "\"titleFont\" must be a font name",
+            ),
+            (
+                r#"{ "base": "fluent", "labelFontSize": "big" }"#,
+                "\"labelFontSize\" must be a number",
             ),
             (r#"{ "base": "fluent", "#, "line 1"),
         ] {

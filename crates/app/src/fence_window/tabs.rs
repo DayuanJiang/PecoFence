@@ -563,7 +563,7 @@ impl FenceViewState {
             .map(|t| {
                 pecofence_render::text::measure_width(
                     &t.title,
-                    self.chrome.tab_format(t.title_size),
+                    &self.chrome.tab_format(t.title_size),
                 )
             })
             .fold(0.0, f32::max);
@@ -710,7 +710,7 @@ impl FenceViewState {
                         || {
                             (pecofence_render::text::measure_width(
                                 &t.title,
-                                self.chrome.tab_format(t.title_size),
+                                &self.chrome.tab_format(t.title_size),
                             ) + pecofence_render::fence_chrome::tab_icon_w(t.folder_icon)
                                 + pecofence_render::fence_chrome::tab_text_padding(&self.theme))
                             .clamp(TAB_MIN_W, TAB_MAX_W)

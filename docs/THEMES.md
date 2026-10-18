@@ -2,7 +2,8 @@
 
 A custom theme is a JSON file that starts from one of the built-in styles, Fluent or Liquid
 Glass, and changes some of its values: the frosting and tint of the wallpaper behind the fences,
-the Liquid Glass lens, the corner radius and the colours.
+the Liquid Glass lens, the corners, the shadow, the fonts and the colours. Sizes and layout
+(title bar height, icon spacing) stay as they are, so a theme never moves or resizes a fence.
 
 ## Using a theme
 
@@ -37,7 +38,7 @@ From a terminal: `pecofence-cli settings set customTheme "Frosted Glass" --strin
 
 - `base` is required: `"fluent"` or `"liquidGlass"`.
 - Keys at the top level apply in both colour modes. The same keys inside `"light"` or `"dark"`
-  apply only in that mode and win over the top level.
+  apply only in that mode and win over the top level. Fonts go at the top level only.
 - Colours are `"#RRGGBB"` or `"#RRGGBBAA"`; the last pair is the opacity (`00` clear, `FF` solid).
 - Every value is optional; anything left out keeps the base style's value. Values outside the
   range below are moved to its nearest end. An unknown key is an error, so a typo shows up in
@@ -62,7 +63,31 @@ wallpaper or the theme changes. Liquid Glass then bends the result through its l
 |---|---|---|
 | `refraction` | 0 to 2 | Strength of the bending at the edges, as a multiple of the built-in one. |
 | `rimLight` | 0 to 3 | Brightness of the lit rim, as a multiple of the built-in one. |
-| `cornerRadius` | 0 to 32 | Corner radius in DIPs (built-in 16). Fluent fences keep the corners Windows gives their windows, so a Fluent theme ignores it. |
+
+### Corners and shadow
+
+| Key | Range | What it does |
+|---|---|---|
+| `cornerRadius` | 0 to 32 | Corner radius in DIPs; 0 gives square corners. Built in, Liquid Glass uses 16 and Windows rounds Fluent windows by 4. With this key a Fluent fence rounds its own window instead, also on Windows 10, where Windows does not round windows at all. |
+| `shadowOpacity` | 0 to 1 | Darkness of the shadow at its edge (built in 0.16 light, 0.30 dark); 0 removes it. |
+| `shadowBlur` | 0 to 24 | Softness of the shadow in DIPs (built in 8 Fluent, 12 Liquid Glass). |
+| `shadowOffset` | 0 to 16 | How far the shadow falls below the fence, in DIPs (built in 4 Fluent, 5 Liquid Glass). |
+
+### Fonts
+
+| Key | Range | What it does |
+|---|---|---|
+| `labelFont` | font name | Item names. Built in, they use the font Windows gives desktop icons. |
+| `labelFontSize` | 8 to 24 | Item name size in DIPs (Windows' default is 12), times Windows' text size setting (Settings › Accessibility › Text size). The grid makes its rows taller or shorter to fit. |
+| `labelFontWeight` | 100 to 900 | 400 regular, 600 semibold, 700 bold. |
+| `titleFont` | font name | Fence titles and tabs (built in Segoe UI Variable). Each fence's 标题字号 option still picks the size. |
+| `titleFontWeight` | 100 to 900 | Built in 600. Resting tabs in a left tab column stay regular. |
+
+A font name is a family name, in English or in the font's own language, such as
+`"Microsoft YaHei UI"`, `"微软雅黑"` or `"Georgia"`; for Segoe UI Variable write
+`"Segoe UI Variable Text"`. A font that is not installed is an error, so a misspelt name shows
+up in Settings. Text the font has no letters for (Chinese in a Latin font, for
+example) is drawn in a fallback font.
 
 ### Colours
 

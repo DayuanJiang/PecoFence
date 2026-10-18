@@ -1257,6 +1257,8 @@ impl App {
         }
         app.sync_peek_hotkey();
         app.sync_theme_watcher();
+        // Before the first fence: a custom theme's fonts.
+        app.apply_fonts();
         if let Some(a) = app.anchor.borrow_mut().as_mut() {
             let q = app.queue.clone();
             a.on_peek_interrupted = Some(Box::new(move || {
