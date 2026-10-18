@@ -577,45 +577,44 @@ impl App {
 
     /// Opens `item`, which the user picked in fence `from`.
     pub(super) fn launch(&mut self, item: ItemId, from: FenceId) {
-        // A folder inside a navigating portal opens in place (Fences "Navigate"). Two portals
-        // can show the same folder, so only the one the item was opened from navigates.
-        if self
-            .state
-            .fence(from)
-            .is_some_and(|f| f.kind == FenceKind::FolderPortal && f.portal_navigate)
-            && self.state.is_portal_item(item)
-            && let Some(it) = self.state.item(item)
-            && it.is_folder
-            && let Some(p) = it.path().map(PathBuf::from)
-        {
-            self.portal_enter(from, &p);
-            return;
-        }
-        let Some(path) = self
+        let Some((path, is_folder)) = self
             .state
             .item(item)
-            .and_then(|it| it.path().map(PathBuf::from))
+            .and_then(|it| Some((PathBuf::from(it.path()?), it.is_folder)))
         else {
             return;
         };
+        // A folder, or a folder shortcut's target, opens inside the fence it was picked in, as
+        // Explorer opens it in its own window (Fences "Navigate"). Two portals can show the same
+        // folder, so only the one the item was opened from navigates.
+        if self.state.fence(from).is_some_and(|f| f.portal_navigate)
+            && let Some(dir) = folder_to_open(&path, is_folder)
+            && self.open_folder_in_fence(from, &dir)
+        {
+            self.note_opened(item);
+            return;
+        }
         match shell::shell_execute(&path, None, None) {
-            Ok(()) => {
-                self.state.note_opened(item);
-                // A fence sorted by open count reorders; persist lazily with the next save.
-                let sorted: Vec<FenceId> = self
-                    .state
-                    .fences()
-                    .iter()
-                    .filter(|f| f.view.sort == SortMode::OpenCount && f.contains_item(item))
-                    .map(|f| f.id)
-                    .collect();
-                for f in sorted {
-                    self.refresh_fence(f);
-                }
-                self.schedule_save();
-            }
+            Ok(()) => self.note_opened(item),
             Err(e) => tracing::warn!(path = %path.display(), error = %e, "launch failed"),
         }
+    }
+
+    /// Counts an open of `item`; a fence sorted by open count reorders.
+    fn note_opened(&mut self, item: ItemId) {
+        self.state.note_opened(item);
+        // Persist lazily with the next save.
+        let sorted: Vec<FenceId> = self
+            .state
+            .fences()
+            .iter()
+            .filter(|f| f.view.sort == SortMode::OpenCount && f.contains_item(item))
+            .map(|f| f.id)
+            .collect();
+        for f in sorted {
+            self.refresh_fence(f);
+        }
+        self.schedule_save();
     }
 
     /// Moves items into `to`. Virtual fences only change membership (files stay put); a portal
@@ -656,4 +655,19 @@ impl App {
             self.schedule_save();
         }
     }
+}
+
+/// The folder that double-clicking the item at `path` opens: the item itself, or the folder a
+/// `.lnk` shortcut points to.
+fn folder_to_open(path: &Path, is_folder: bool) -> Option<PathBuf> {
+    if is_folder {
+        return Some(path.to_path_buf());
+    }
+    if !path
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("lnk"))
+    {
+        return None;
+    }
+    shell::shortcut_target_expanded(path).filter(|target| target.is_dir())
 }

@@ -105,11 +105,13 @@ pub struct MonitorDto {
 pub struct PortalDto {
     /// Folder the portal was created for.
     pub path: String,
-    /// The subfolder the portal has been navigated into, if any: `items.list` shows its
-    /// contents and `items.move` to the portal puts files there. Left out at `path` itself.
+    /// The folder the portal shows instead of `path`, if any (a subfolder navigated into, or a
+    /// folder shortcut's target): `items.list` shows its contents and `items.move` to the
+    /// portal puts files there. Left out at `path` itself.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub current: Option<String>,
-    /// Double-clicking a subfolder navigates inside the portal instead of opening Explorer.
+    /// Double-clicking a folder or a folder shortcut opens it inside the portal instead of
+    /// Explorer.
     pub navigate: bool,
     /// Folder glyph shown before the title.
     pub title_icon: bool,

@@ -1245,24 +1245,25 @@ impl App {
                 s
             }
         };
-        let portal = (f.kind == FenceKind::FolderPortal).then(|| PortalDto {
-            path: self
-                .state
-                .portal_root(f.id)
-                .map(|p| p.to_string_lossy().into_owned())
-                .or_else(|| match &f.source {
-                    ItemSourceSpec::Folder { path, .. } => Some(path.clone()),
-                    ItemSourceSpec::Desktop => None,
-                })
-                .unwrap_or_default(),
-            current: self
-                .state
-                .portal_navigated(f.id)
-                .then(|| self.state.portal_path(f.id))
-                .flatten()
-                .map(|p| p.to_string_lossy().into_owned()),
-            navigate: f.portal_navigate,
-            title_icon: !f.hide_title_icon,
+        let portal = (f.kind == FenceKind::FolderPortal).then(|| {
+            let root = self.state.portal_root(f.id);
+            PortalDto {
+                path: root
+                    .as_ref()
+                    .map(|p| p.to_string_lossy().into_owned())
+                    .or_else(|| match &f.source {
+                        ItemSourceSpec::Folder { path, .. } => Some(path.clone()),
+                        ItemSourceSpec::Desktop => None,
+                    })
+                    .unwrap_or_default(),
+                current: self
+                    .state
+                    .portal_path(f.id)
+                    .filter(|p| Some(p) != root.as_ref())
+                    .map(|p| p.to_string_lossy().into_owned()),
+                navigate: f.portal_navigate,
+                title_icon: !f.hide_title_icon,
+            }
         });
         FenceDto {
             id: f.id,
@@ -1363,7 +1364,7 @@ impl App {
 
     /// `assignedBy` and the filing rule's name for an item of `f`.
     fn assignment_of(&self, f: &Fence, item: ItemId) -> (&'static str, Option<String>) {
-        if f.kind == FenceKind::FolderPortal {
+        if self.state.portal_path(f.id).is_some() {
             return ("portal", None);
         }
         match f
@@ -1733,7 +1734,7 @@ impl App {
             )));
         }
         // Memberships are about to move back to the inbox: keep a way back.
-        let snapshot = (f.kind != FenceKind::FolderPortal && !self.state.items_of(&f).is_empty())
+        let snapshot = (f.kind != FenceKind::FolderPortal && self.state.own_item_count(&f) > 0)
             .then(|| self.auto_snapshot())
             .flatten();
         self.delete_fence(id);

@@ -764,7 +764,7 @@ pub struct Fence {
     /// longer tabs are ignored; tabs missing here are appended in layout order.
     #[serde(default)]
     pub tab_order: Vec<FenceId>,
-    /// Folder portal: double-clicking a subfolder opens it inside the portal (Fences
+    /// Double-clicking a folder, or a shortcut to a folder, opens it inside the fence (Fences
     /// "Navigate"); off = open it in Explorer.
     #[serde(default = "default_true")]
     pub portal_navigate: bool,
