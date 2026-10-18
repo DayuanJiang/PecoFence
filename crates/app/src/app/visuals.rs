@@ -31,11 +31,15 @@ pub(super) fn theme_for(
     }
 }
 
-/// The custom theme the settings name, read from the `themes` folder. None when no theme is
-/// chosen, and (with a warning in the log) when the file is missing or invalid: the fences
+/// The custom theme the settings name, read from the `themes` folder: None when no theme is
+/// chosen, an error (also written to the log) when the file is missing or invalid. The fences
 /// then keep the built-in style.
-pub(super) fn load_custom_theme(state: &AppState) -> Option<CustomTheme> {
-    let name = state.config.settings.custom_theme.as_deref()?;
+pub(super) fn load_custom_theme(
+    state: &AppState,
+) -> std::result::Result<Option<CustomTheme>, String> {
+    let Some(name) = state.config.settings.custom_theme.as_deref() else {
+        return Ok(None);
+    };
     let path = state.themes_dir().join(format!("{name}.json"));
     let result = if name.contains(['/', '\\']) {
         Err("the name must not contain a path".to_string())
@@ -44,13 +48,28 @@ pub(super) fn load_custom_theme(state: &AppState) -> Option<CustomTheme> {
             .map_err(|e| e.to_string())
             .and_then(|text| CustomTheme::parse(&text))
     };
-    match result {
-        Ok(theme) => Some(theme),
-        Err(error) => {
-            tracing::warn!(path = %path.display(), %error, "custom theme not loaded");
-            None
-        }
+    if let Err(error) = &result {
+        tracing::warn!(path = %path.display(), %error, "custom theme not loaded");
     }
+    result.map(Some)
+}
+
+/// The theme files in the `themes` folder by name, as Settings lists them.
+pub(super) fn custom_theme_names(state: &AppState) -> Vec<String> {
+    let mut names: Vec<String> = std::fs::read_dir(state.themes_dir())
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|p| {
+            p.is_file()
+                && p.extension()
+                    .is_some_and(|x| x.eq_ignore_ascii_case("json"))
+        })
+        .filter_map(|p| Some(p.file_stem()?.to_string_lossy().into_owned()))
+        .collect();
+    names.sort_by_key(|n| n.to_lowercase());
+    names
 }
 
 pub(super) fn pick_theme_mode(setting: ThemeSetting, args: &Args) -> ThemeMode {
@@ -1197,6 +1216,38 @@ impl App {
         }
     }
 
+    /// Watches the `themes` folder once it exists; a watcher ends when its folder goes away.
+    pub(super) fn sync_theme_watcher(&mut self) {
+        if self.theme_watcher.as_ref().is_some_and(|w| w.is_running()) {
+            return;
+        }
+        self.theme_watcher = None;
+        let dir = self.state.themes_dir();
+        if !dir.is_dir() {
+            return;
+        }
+        let control = self.control.hwnd().0 as isize;
+        let watcher = DirWatcher::start(&dir, move |_| {
+            window::post_message(
+                HWND(control as *mut core::ffi::c_void),
+                WM_APP_THEMES_CHANGED,
+                0,
+                0,
+            );
+        });
+        match watcher {
+            Ok(w) => self.theme_watcher = Some(w),
+            Err(e) => tracing::warn!(dir = %dir.display(), error = %e, "themes watcher failed"),
+        }
+    }
+
+    /// A theme file was saved, added or removed: the fences take the chosen file as it is now,
+    /// and Settings lists the folder again.
+    pub(super) fn on_themes_changed(&mut self) {
+        self.refresh_visuals(false);
+        self.push_settings_state();
+    }
+
     pub(super) fn refresh_visuals(&mut self, force: bool) {
         let mode = self.theme_override.unwrap_or_else(|| {
             pick_theme_mode(
@@ -1218,7 +1269,9 @@ impl App {
         });
         let accent = systheme::accent_palette();
         let accent_changed = accent != self.accent;
-        let custom = load_custom_theme(&self.state);
+        let loaded = load_custom_theme(&self.state);
+        self.custom_theme_error = loaded.as_ref().err().cloned();
+        let custom = loaded.ok().flatten();
         let style = custom
             .as_ref()
             .map_or(self.state.config.settings.theme_style, |c| c.base);

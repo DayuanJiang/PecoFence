@@ -4,7 +4,8 @@ use crate::anchor::{self, AnchorCell, DesktopAnchor, ShowDesktopBehavior, ZMode}
 use crate::commands::{
     Command, CommandQueue, TransferMode, WM_APP_COMMAND, WM_APP_FRAME, WM_APP_FS_CHANGED,
     WM_APP_LIVE_WALLPAPER, WM_APP_PEEK_FOCUSED, WM_APP_PREWARM_DONE, WM_APP_SHELL_CHANGED,
-    WM_APP_STARTUP_BACKDROPS, WM_APP_STARTUP_TASK, WM_APP_TRAY, WM_APP_WALLPAPER,
+    WM_APP_STARTUP_BACKDROPS, WM_APP_STARTUP_TASK, WM_APP_THEMES_CHANGED, WM_APP_TRAY,
+    WM_APP_WALLPAPER,
 };
 use crate::fence_window::{
     BackdropMode, BackdropSets, Behavior, FenceContext, FenceWindow, ItemView, SearchMarks, TabView,
@@ -82,8 +83,9 @@ use fences::work_areas;
 use fileops::{FileOp, FileOpThen};
 use peek::peek_hotkey_label;
 use visuals::{
-    StartupBackdrops, backdrop_mode_for, fence_style_for, icon_variant_for, load_custom_theme,
-    pick_theme_mode, shadow_style_for, theme_for, tray_icon_image, verify_wallpaper_later,
+    StartupBackdrops, backdrop_mode_for, custom_theme_names, fence_style_for, icon_variant_for,
+    load_custom_theme, pick_theme_mode, shadow_style_for, theme_for, tray_icon_image,
+    verify_wallpaper_later,
 };
 use wallpaper_refresh::{BackdropCache, FIRST_CHECK_MS, RefreshSchedule, supersedes};
 
@@ -154,6 +156,10 @@ const TIMER_STARTUP_BACKDROPS: usize = 63;
 const TIMER_STARTUP_TASK: usize = 64;
 /// A `.tmp` the rules skipped as too new has lasted long enough: sync the desktop again.
 const TIMER_TMP_SETTLE: usize = 65;
+/// The themes folder is read again once its changes have been quiet this long: editors save
+/// a file in several steps (a temporary file, then a rename).
+const TIMER_THEMES: usize = 66;
+const THEMES_SETTLE_MS: u32 = 300;
 const DEVICE_RETRY_MAX_MS: u32 = 30_000;
 /// Growth of private commit plus GPU memory that logs a memory line before the hour is up.
 const MEMORY_LOG_GROWTH: u64 = 64 << 20;
@@ -282,8 +288,12 @@ pub struct App {
     theme_mode: ThemeMode,
     /// The user's accent palette at the last visual refresh (None = built-in default look).
     accent: Option<systheme::AccentPalette>,
-    /// The custom theme at the last visual refresh (see `load_custom_theme`).
+    /// The custom theme at the last visual refresh (see `load_custom_theme`), or why the chosen
+    /// file did not load.
     custom_theme: Option<CustomTheme>,
+    custom_theme_error: Option<String>,
+    /// Watches the `themes` folder once it exists, so a saved theme file shows at once.
+    theme_watcher: Option<DirWatcher>,
     wallpaper_override: Option<String>,
     pending_routes: Vec<PendingRoute>,
     /// The virtual fence a shell drop just went to, and when: the first desktop change batch
@@ -420,7 +430,9 @@ impl App {
         let theme_mode = pick_theme_mode(state.config.settings.theme, &args);
         tray::set_dark_menus(theme_mode == ThemeMode::Dark);
         let accent = systheme::accent_palette();
-        let custom_theme = load_custom_theme(&state);
+        let loaded = load_custom_theme(&state);
+        let custom_theme_error = loaded.as_ref().err().cloned();
+        let custom_theme = loaded.ok().flatten();
         let theme = theme_for(
             theme_mode,
             state.config.settings.theme_style,
@@ -538,6 +550,10 @@ impl App {
                             window::set_timer(hwnd, TIMER_STARTUP_TASK, 1);
                             Some(0)
                         }
+                        WM_APP_THEMES_CHANGED => {
+                            window::set_timer(hwnd, TIMER_THEMES, THEMES_SETTLE_MS);
+                            Some(0)
+                        }
                         WM_APP_PREWARM_DONE => {
                             window::set_timer(hwnd, TIMER_PREWARM_FINISH, 1);
                             Some(0)
@@ -648,6 +664,7 @@ impl App {
                                 | TIMER_SHELL_WATCH_RETRY
                                 | TIMER_STARTUP_TASK
                                 | TIMER_TMP_SETTLE
+                                | TIMER_THEMES
                                 | TIMER_STARTUP_BACKDROPS => {
                                     if let Ok(mut guard) = cell.try_borrow_mut()
                                         && let Some(app) = guard.as_mut()
@@ -659,6 +676,7 @@ impl App {
                                             TIMER_SHELL_WATCH_RETRY => app.renew_shell_watch(),
                                             TIMER_STARTUP_TASK => app.finish_store_startup(),
                                             TIMER_TMP_SETTLE => app.sync_settled_tmp(),
+                                            TIMER_THEMES => app.on_themes_changed(),
                                             TIMER_STARTUP_BACKDROPS => {
                                                 app.finish_startup_backdrops()
                                             }
@@ -1173,6 +1191,8 @@ impl App {
             theme_mode,
             accent,
             custom_theme,
+            custom_theme_error,
+            theme_watcher: None,
             wallpaper_override: args.wallpaper_override.clone(),
             pending_routes: Vec::new(),
             shell_drop_claim: None,
@@ -1236,6 +1256,7 @@ impl App {
             }
         }
         app.sync_peek_hotkey();
+        app.sync_theme_watcher();
         if let Some(a) = app.anchor.borrow_mut().as_mut() {
             let q = app.queue.clone();
             a.on_peek_interrupted = Some(Box::new(move || {
@@ -1484,6 +1505,8 @@ impl App {
             window::set_timer(self.control.hwnd(), TIMER_GPU_TRIM, GPU_TRIM_IDLE_MS);
         }
         self.revive_watchers();
+        // A themes folder made by hand gets its watcher here.
+        self.sync_theme_watcher();
         // While the special desktop items are shown, re-read them once a minute as well: a
         // change in Windows' own "Desktop icon settings" leaves no folder event behind, and the
         // shell notification channel may be unavailable.
