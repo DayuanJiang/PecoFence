@@ -1,0 +1,62 @@
+{
+  "label": "UNA CASA PER IL TUO DESKTOP WINDOWS 11",
+  "titles": [
+    "Fai spazio a ciò che conta.",
+    "I tuoi file. Senza perdere il filo.",
+    "Un riquadro. Ogni progetto.",
+    "Nuovi file.\nAl posto giusto.",
+    "Due atmosfere. Il tuo desktop."
+  ],
+  "sub": [
+    "Progetti, ispirazioni e file di tutti i giorni. Tutto in perfetto ordine.",
+    "Porta i file del desktop in primo piano sopra l'app su cui stai lavorando.",
+    "Dai file di progetto alle ispirazioni. Ti basta cambiare scheda.",
+    "Imposta una regola per tipo di file.\nA PecoFence penserà l'ordinamento.",
+    "Chiaro o scuro. Armonizza i riquadri con lo sfondo del desktop."
+  ],
+  "captions": [
+    "Cartelle di progetto, un PDF e studi di design originali nei riquadri Liquid Glass.",
+    "Peek porta i riquadri in primo piano sopra una finestra di esempio con un documento. Premi Ctrl + Alt + Space per aprirli e Esc per tornare indietro.",
+    "Lo stesso riquadro con schede mostrato due volte: una con Progetti aperta, l'altra con Ispirazioni.",
+    "Le regole per estensione hanno ordinato i nuovi file Form study.png e Launch checklist.md senza modificarne i percorsi o i contenuti.",
+    "Gli stessi file di design su due desktop, in Liquid Glass chiaro e scuro."
+  ],
+  "short": "Fai spazio a ciò che conta. Organizza i file in pannelli trasparenti, passa da un progetto all'altro con le schede e raggiungi il desktop con una scorciatoia, oppure chiedi al tuo agente IA di configurarlo. Gratuito, open source e con un consumo ridotto di memoria: circa 40 MB.",
+  "uploadCaptions": [
+    "Progetti, ispirazioni e file di tutti i giorni, ciascuno nel proprio riquadro Liquid Glass.",
+    "Peek porta i riquadri in primo piano sopra un documento di esempio. Premi Ctrl + Alt + Space per aprirli ed Esc per tornare indietro.",
+    "Progetti e Ispirazioni condividono un riquadro. Ispirazioni è aperta; seleziona una scheda per passare all'altra.",
+    "Le regole per estensione hanno ordinato automaticamente i nuovi file PNG e Markdown nei riquadri Immagini e Documenti.",
+    "Liquid Glass su uno sfondo scuro, con cartelle di progetto, riferimenti di design e documenti di tutti i giorni a portata di mano."
+  ],
+  "labels": {
+    "projects": "PROGETTI",
+    "inspiration": "ISPIRAZIONI",
+    "autosort": "ORDINAMENTO AUTOMATICO",
+    "light": "CHIARO",
+    "dark": "SCURO"
+  },
+  "description": "Un desktop più ordinato. Tutto a portata di mano.\n\nDai a ogni progetto il suo spazio. PecoFence organizza il desktop di Windows 11 in riquadri: pannelli trasparenti che tengono i file a portata di mano e lasciano respirare lo sfondo.\n\nLASCIA CHE SIA LA TUA IA A CONFIGURARLO\nPecoFence include pecofence-cli. Spiega con parole tue cosa vuoi a un agente di programmazione come Claude Code, Codex o Cursor: leggerà la configurazione attuale e applicherà le modifiche, dalla creazione di nuovi riquadri e regole di ordinamento alle dimensioni delle icone, ai colori e ai temi. Le istantanee e l'esportazione della configurazione permettono di conservare una copia delle impostazioni che preferisci.\n\nMENO TEMPO A ORDINARE\nImposta regole per tipo di file, nome, età o dimensione. I nuovi file sul desktop appariranno automaticamente nel riquadro giusto. L'ordinamento automatico non modifica la posizione dei file sul disco.\n\nI TUOI FILE, A PORTATA DI SCORCIATOIA\nPremi Ctrl + Alt + Space per portare i riquadri in primo piano sopra l'app aperta. Prendi ciò che ti serve, poi premi Esc per tornare indietro.\n\nUNO SPAZIO PER OGNI PROGETTO\nRaggruppa i riquadri correlati in schede. Passa da uno all'altro con un clic oppure trascina una scheda per trasformarla in un riquadro a sé. Tieni una cartella attiva sul desktop e sfoglia le sottocartelle senza uscire dal riquadro.\n\nFAI SPAZIO PER CONCENTRARTI\nFai doppio clic su uno spazio vuoto del desktop per nascondere i riquadri e ripeti per mostrarli di nuovo. Arrotola un riquadro fino alla barra del titolo e passaci sopra con il puntatore per espanderlo.\n\nUN EFFETTO VETRO CHE SI ADATTA AL DESKTOP\nScegli Fluent o Liquid Glass, la modalità chiara o scura, quindi regola il colore e l'opacità di ogni riquadro. Salva il layout con istantanee e backup.\n\nLEGGERO PER IL TUO PC\nPecoFence è un'applicazione nativa che, quando è inattiva, usa circa 40 MB di memoria secondo Gestione attività. La finestra delle impostazioni si carica solo quando la apri.\n\nGratuito e open source con licenza Apache 2.0. Non è necessario un account per l'app. Dieci lingue dell'interfaccia integrate, disponibili offline. Progettato per Windows 10 22H2 e Windows 11 x64.\n\nPecoFence usa file reali: le operazioni sui file che avvii tu, inclusi spostamenti, rinominazioni ed eliminazioni, modificano i file sul disco. Quando chiudi l'app, le normali icone del desktop di Windows vengono ripristinate.",
+  "features": [
+    "Organizzazione automatica del desktop con regole per tipo di file, nome, età e dimensione",
+    "pecofence-cli integrato, così gli agenti IA come Claude Code, Codex e Cursor possono configurare riquadri, regole e aspetto",
+    "Ctrl + Alt + Space porta i riquadri in primo piano sopra l'app aperta",
+    "Riquadri con schede e cartelle attive sul desktop",
+    "Temi Fluent e Liquid Glass, con colori e opacità personalizzabili per ogni riquadro",
+    "Fai doppio clic per nascondere i riquadri; arrotolali fino alla barra del titolo",
+    "Istantanee del layout, backup giornalieri ed esportazione della configurazione",
+    "App nativa che, quando è inattiva, usa circa 40 MB di memoria",
+    "Gratuito, open source e disponibile in dieci lingue dell'interfaccia"
+  ],
+  "keywords": [
+    "organizzatore desktop",
+    "organizzatore di icone del desktop",
+    "organizzare le icone del desktop",
+    "riquadri desktop",
+    "desktop ordinato",
+    "gruppi di icone",
+    "cartelle desktop"
+  ],
+  "trailerTitle": "PecoFence — organizza il desktop o lascia che lo faccia la tua IA",
+  "releaseNotes": "Novità di questo aggiornamento: uscire da Windows o arrestare il PC mentre è aperto un menu di PecoFence ora ripristina le icone del desktop di Windows e conserva le modifiche più recenti. Le cartelle mostrate sul desktop rilevano quando vengono rinominate o spostate. In Fluent, il clic destro annulla lo spostamento di un riquadro anche quando il puntatore rimane fermo. L'opzione Avvia con Windows mostra l'interruttore che Windows mantiene per PecoFence in Impostazioni › App › Avvio e recepisce le modifiche effettuate lì. Su Windows 10 senza l'aggiornamento di settembre 2023, la sezione Informazioni mostra di nuovo il consumo di memoria di PecoFence. I nuovi file .tmp vengono visualizzati dopo un minuto e i collegamenti creati da PecoFence ricevono un nome nella lingua di Windows."
+}
