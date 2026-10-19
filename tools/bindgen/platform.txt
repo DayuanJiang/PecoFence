@@ -777,6 +777,7 @@
     SMTO_NORMAL
     ERROR_TIMEOUT
     GetCurrentThreadStackLimits
+    ReadProcessMemory
     SymInitializeW
     SymFunctionTableAccess64
     SymGetModuleBase64

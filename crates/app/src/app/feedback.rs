@@ -39,9 +39,11 @@ fn log_records_crash(log: &str) -> bool {
 
 /// Whether a shareable log ends as a normal exit does (`main` writes `process exiting` last;
 /// at a sign-out Windows may end the process before that, after `session ending`), or cannot
-/// tell: an empty log, or one that stopped at its size limit.
+/// tell: an empty log, one that stopped at its size limit, or one of a version before the hang
+/// watch, which wrote no `process exiting` (the first start after an update from 0.2.3).
 fn log_ends_normally(log: &str) -> bool {
     log.trim().is_empty()
+        || !log.contains(": hang watch started")
         || [
             ": process exiting",
             ": session ending",
@@ -380,7 +382,11 @@ mod tests {
             "t  INFO pecofence::app: process started\n(size limit reached: only errors are recorded from here on)\n"
         ));
         assert!(!log_ends_normally(
-            "t  INFO pecofence::app: process started\nt  WARN pecofence_platform::hangwatch: UI thread not responding ms=5000\n"
+            "t  INFO pecofence::app: process started\nt  INFO pecofence_platform::hangwatch: hang watch started\nt  WARN pecofence_platform::hangwatch: UI thread not responding ms=5000\n"
+        ));
+        // 0.2.3 and earlier wrote no `process exiting`: a log of theirs cannot tell.
+        assert!(log_ends_normally(
+            "t  INFO pecofence::app: process started\nt  INFO pecofence::app: tray exit\n"
         ));
     }
 

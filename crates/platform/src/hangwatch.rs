@@ -35,6 +35,8 @@ pub fn start(hwnd: HWND) {
     let _ = std::thread::Builder::new()
         .name("hang watch".into())
         .spawn(move || watch(HWND(hwnd as *mut _), thread, (low, high)));
+    // Marks the log as one of a version that also writes `process exiting` when it ends.
+    tracing::info!("hang watch started");
 }
 
 /// Whether `hwnd` answered a WM_NULL within `ms`; `None` when the window is gone.
@@ -149,8 +151,24 @@ fn after_call(addr: u64) -> bool {
     if addr < module.0 as u64 + 8 {
         return false;
     }
-    // SAFETY: the 7 bytes before `addr` lie in the mapped image of a loaded module.
-    let b = |back: u64| unsafe { *((addr - back) as *const u8) };
+    // The module may be unloaded meanwhile (it is not pinned): ReadProcessMemory fails then,
+    // where a plain read would fault.
+    let mut code = [0u8; 7];
+    let mut read = 0usize;
+    // SAFETY: the buffer is a local of the stated length; the source is checked by the call.
+    let ok = unsafe {
+        ReadProcessMemory(
+            GetCurrentProcess(),
+            (addr - 7) as *const core::ffi::c_void,
+            code.as_mut_ptr().cast(),
+            code.len(),
+            Some(&mut read),
+        )
+    };
+    if !ok.as_bool() || read != code.len() {
+        return false;
+    }
+    let b = |back: u64| code[code.len() - back as usize];
     let modrm = |back: u64, modbits: u8| {
         b(back) == 0xFF && b(back - 1) >> 6 == modbits && (b(back - 1) >> 3) & 7 == 2
     };

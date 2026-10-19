@@ -1539,6 +1539,25 @@ pub unsafe fn ReadDirectoryChangesW(
     }
 }
 #[inline]
+pub unsafe fn ReadProcessMemory(
+    hprocess: HANDLE,
+    lpbaseaddress: *const core::ffi::c_void,
+    lpbuffer: *mut core::ffi::c_void,
+    nsize: usize,
+    lpnumberofbytesread: Option<*mut usize>,
+) -> windows_core::BOOL {
+    windows_core::link!("kernel32.dll" "system" fn ReadProcessMemory(hprocess : HANDLE, lpbaseaddress : *const core::ffi::c_void, lpbuffer : *mut core::ffi::c_void, nsize : usize, lpnumberofbytesread : *mut usize) -> windows_core::BOOL);
+    unsafe {
+        ReadProcessMemory(
+            hprocess,
+            lpbaseaddress,
+            lpbuffer as _,
+            nsize,
+            lpnumberofbytesread.unwrap_or(core::mem::zeroed()) as _,
+        )
+    }
+}
+#[inline]
 pub unsafe fn RegCloseKey(hkey: HKEY) -> LSTATUS {
     windows_core::link!("advapi32.dll" "system" fn RegCloseKey(hkey : HKEY) -> LSTATUS);
     unsafe { RegCloseKey(hkey) }
