@@ -283,6 +283,30 @@ pub fn recycle_bin_has_items() -> bool {
     RECYCLE_BIN_FULL.load(Ordering::Relaxed)
 }
 
+/// Asks the Recycle Bin afresh and waits up to `wait` for the answer; `None` when it takes
+/// longer (a bin with tens of thousands of items). A different answer is posted as usual.
+pub fn recycle_bin_has_items_now(wait: std::time::Duration) -> Option<bool> {
+    recycle_bin_changed();
+    let started = std::time::Instant::now();
+    let _ = recycle_bin_has_items();
+    while started.elapsed() < wait {
+        if !RECYCLE_BIN_ASKING.load(Ordering::Acquire) && !RECYCLE_BIN_STALE.load(Ordering::Relaxed)
+        {
+            return Some(RECYCLE_BIN_FULL.load(Ordering::Relaxed));
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    None
+}
+
+/// Empties the Recycle Bin of every drive, with Windows' own confirmation, progress and sound.
+/// Blocks until it is done: call it off the UI thread.
+pub fn empty_recycle_bin(owner: Option<HWND>) -> Result<bool> {
+    // SAFETY: plain FFI call; no root path means every drive.
+    unsafe { SHEmptyRecycleBinW(owner, PCWSTR::null(), 0) }.ok()?;
+    Ok(true)
+}
+
 /// The worker behind `recycle_bin_has_items`: asks until no change came in meanwhile.
 fn ask_recycle_bin() {
     let _com = crate::com::MtaGuard::init();

@@ -1947,6 +1947,24 @@ where
     }
 }
 #[inline]
+pub unsafe fn SHEmptyRecycleBinW<P1>(
+    hwnd: Option<HWND>,
+    pszrootpath: P1,
+    dwflags: u32,
+) -> windows_core::HRESULT
+where
+    P1: windows_core::Param<windows_core::PCWSTR>,
+{
+    windows_core::link!("shell32.dll" "system" fn SHEmptyRecycleBinW(hwnd : HWND, pszrootpath : windows_core::PCWSTR, dwflags : u32) -> windows_core::HRESULT);
+    unsafe {
+        SHEmptyRecycleBinW(
+            hwnd.unwrap_or(core::mem::zeroed()) as _,
+            pszrootpath.param().abi(),
+            dwflags,
+        )
+    }
+}
+#[inline]
 pub unsafe fn SHGetDesktopFolder() -> windows_core::Result<IShellFolder> {
     windows_core::link!("shell32.dll" "system" fn SHGetDesktopFolder(ppshf : *mut *mut core::ffi::c_void) -> windows_core::HRESULT);
     unsafe {

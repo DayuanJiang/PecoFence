@@ -21,6 +21,7 @@ const CMD_ITEM_TO_INBOX: u32 = 103;
 const CMD_ITEM_PORTAL: u32 = 104;
 const CMD_ITEM_RENAME: u32 = 105;
 const CMD_ITEM_DELETE: u32 = 106;
+const CMD_ITEM_EMPTY_BIN: u32 = 107;
 const CMD_FENCE_OPEN_FOLDER: u32 = 332;
 const CMD_ITEM_MOVE_BASE: u32 = 200;
 const CMD_NEW_FENCE_HERE: u32 = 250;
@@ -304,6 +305,7 @@ impl App {
                 }
             }
             CMD_ITEM_DELETE => self.delete_items(fence, &items, window::key_down(msg::VK_SHIFT)),
+            CMD_ITEM_EMPTY_BIN => self.start_empty_recycle_bin(owner),
             c if c >= CMD_ITEM_MOVE_BASE && c < CMD_ITEM_MOVE_BASE + 1000 => {
                 let idx = (c - CMD_ITEM_MOVE_BASE) as usize;
                 if let Some(target) = self.state.fences().get(idx).map(|f| f.id) {
@@ -343,14 +345,35 @@ impl App {
             items[..],
             [only] if self.state.item(only).is_some_and(|it| it.is_namespace())
         );
+        // The Recycle Bin's own 清空回收站 takes the place of the shell's: in the Store edition
+        // the shell in this process never hears of files other programs recycled, and its entry
+        // stayed grey with the bin full.
+        let single_bin = matches!(
+            items[..],
+            [only] if self
+                .state
+                .item(only)
+                .and_then(|it| it.path())
+                .is_some_and(|p| shell::is_recycle_bin_path(Path::new(p)))
+        );
         menu.item(
             CMD_ITEM_OPEN,
             pecofence_core::i18n::text("打开\tEnter"),
             false,
             false,
         )
-        .default_item(CMD_ITEM_OPEN)
-        .item(
+        .default_item(CMD_ITEM_OPEN);
+        if single_bin {
+            // A bin too big to answer quickly is taken for full.
+            let full = shell::recycle_bin_has_items_now(Duration::from_millis(200)).unwrap_or(true);
+            menu.item(
+                CMD_ITEM_EMPTY_BIN,
+                pecofence_core::i18n::text("清空回收站"),
+                false,
+                !full,
+            );
+        }
+        menu.item(
             CMD_ITEM_LOCATION,
             pecofence_core::i18n::text("打开文件所在位置"),
             false,
@@ -434,8 +457,9 @@ impl App {
             ) {
                 Ok(n) => {
                     shell_items = n;
-                    // Explorer's own 打开 / 删除 (and 重命名 where it adds one) duplicate ours.
-                    sm.remove_verbs(menu.handle(), &["open", "delete", "rename"]);
+                    // Explorer's own 打开 / 删除 (and 重命名 where it adds one, 清空回收站 for
+                    // the bin) duplicate ours.
+                    sm.remove_verbs(menu.handle(), &["open", "delete", "rename", "empty"]);
                     menu.tidy_separators();
                 }
                 Err(e) => tracing::warn!(error = %e, "shell context menu unavailable"),

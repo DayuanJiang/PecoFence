@@ -833,6 +833,7 @@
     SHGetFileInfoW
     SHFILEINFOW
     SHQueryRecycleBinW
+    SHEmptyRecycleBinW
     SHQUERYRBINFO
     GetLogicalDrives
     GetDriveTypeW
