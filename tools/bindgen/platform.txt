@@ -721,6 +721,12 @@
     ILClone
     ILFindLastID
     SHBindToParent
+    IEnumIDList
+    SHCONTF_FOLDERS
+    SHCONTF_NONFOLDERS
+    SHCONTF_INCLUDEHIDDEN
+    SHGDN_FORPARSING
+    StrRetToStrW
     RegisterHotKey
     UnregisterHotKey
     MOD_ALT

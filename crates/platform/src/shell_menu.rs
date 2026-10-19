@@ -9,7 +9,7 @@ use crate::bindings::*;
 use crate::wide::to_wide;
 use std::cell::RefCell;
 use std::path::Path;
-use windows_core::{Error, Interface, PCSTR, PCWSTR, Result};
+use windows_core::{Error, Interface, PCSTR, PCWSTR, PWSTR, Result};
 
 const WM_MENUCHAR: u32 = 0x0120;
 /// `GCS_VERBW`: ask `GetCommandString` for the canonical verb as UTF-16.
@@ -33,17 +33,7 @@ impl ShellContextMenu {
         if paths.is_empty() {
             return Err(Error::from_hresult(E_INVALIDARG));
         }
-        let mut pidls: Vec<LPCITEMIDLIST> = Vec::with_capacity(paths.len());
-        for p in paths {
-            let w = to_wide(&p.to_string_lossy());
-            let mut pidl: LPITEMIDLIST = std::ptr::null_mut();
-            // SAFETY: string outlives the call; pidl is freed below.
-            let hr =
-                unsafe { SHParseDisplayName(PCWSTR(w.as_ptr()), None, &mut pidl, SFGAOF(0), None) };
-            if hr.is_ok() && !pidl.is_null() {
-                pidls.push(pidl as LPCITEMIDLIST);
-            }
-        }
+        let pidls = id_lists_for(paths);
         let bound = (|| -> Result<IContextMenu> {
             if pidls.is_empty() {
                 return Err(Error::from_hresult(E_FAIL));
@@ -56,7 +46,7 @@ impl ShellContextMenu {
             }
         })();
         for p in pidls {
-            // SAFETY: each pidl came from SHParseDisplayName.
+            // SAFETY: each pidl came from `id_lists_for`.
             unsafe { ILFree(Some(p)) };
         }
         Ok(Self {
@@ -209,6 +199,80 @@ impl Drop for ShellContextMenu {
             }
         });
     }
+}
+
+/// The id lists of `paths` for one shell handler (unknown paths are skipped); free each with
+/// `ILFree`. Items of the user's Desktop and of the Public Desktop have no common parent folder,
+/// so for a selection with both the shell bound nothing (delete, cut, copy and Explorer's menu
+/// did nothing); such a selection comes as items of the desktop itself, which merges the two
+/// folders as Explorer's desktop does.
+fn id_lists_for(paths: &[&Path]) -> Vec<LPCITEMIDLIST> {
+    let parent = |p: &Path| p.parent().map(|d| d.to_string_lossy().to_lowercase());
+    if paths.iter().any(|p| parent(p) != parent(paths[0]))
+        && let Some(children) = desktop_children(paths)
+    {
+        return children;
+    }
+    let mut pidls: Vec<LPCITEMIDLIST> = Vec::with_capacity(paths.len());
+    for p in paths {
+        let w = to_wide(&p.to_string_lossy());
+        let mut pidl: LPITEMIDLIST = std::ptr::null_mut();
+        // SAFETY: string outlives the call; the caller frees the pidl.
+        let hr =
+            unsafe { SHParseDisplayName(PCWSTR(w.as_ptr()), None, &mut pidl, SFGAOF(0), None) };
+        if hr.is_ok() && !pidl.is_null() {
+            pidls.push(pidl as LPCITEMIDLIST);
+        }
+    }
+    pidls
+}
+
+/// `paths` as items of the desktop root, in their order; `None` unless the desktop lists all.
+fn desktop_children(paths: &[&Path]) -> Option<Vec<LPCITEMIDLIST>> {
+    let wanted: Vec<String> = paths
+        .iter()
+        .map(|p| p.to_string_lossy().to_lowercase())
+        .collect();
+    let mut found: Vec<LPCITEMIDLIST> = vec![std::ptr::null(); paths.len()];
+    // SAFETY: plain COM calls; every child the enumerator hands out is kept in `found` or freed.
+    unsafe {
+        if let Ok(desktop) = SHGetDesktopFolder()
+            && let Ok(items) = desktop.EnumObjects(
+                HWND::default(),
+                SHCONTF_FOLDERS | SHCONTF_NONFOLDERS | SHCONTF_INCLUDEHIDDEN,
+            )
+        {
+            loop {
+                let mut child: LPITEMIDLIST = std::ptr::null_mut();
+                if items.Next(1, &mut child, None) != S_OK || child.is_null() {
+                    break;
+                }
+                let mut name = STRRET::default();
+                let mut parsing = PWSTR::null();
+                let path = if desktop
+                    .GetDisplayNameOf(child, SHGDN_FORPARSING, &mut name)
+                    .is_ok()
+                    && StrRetToStrW(&mut name, Some(child), &mut parsing).is_ok()
+                {
+                    crate::shell::take_string(parsing).to_lowercase()
+                } else {
+                    String::new()
+                };
+                match wanted.iter().position(|w| *w == path) {
+                    Some(i) if found[i].is_null() => found[i] = child,
+                    _ => ILFree(Some(child)),
+                }
+            }
+        }
+    }
+    if found.iter().all(|p| !p.is_null()) {
+        return Some(found);
+    }
+    for p in found.into_iter().filter(|p| !p.is_null()) {
+        // SAFETY: from the enumerator above, freed once.
+        unsafe { ILFree(Some(p)) };
+    }
+    None
 }
 
 /// Routes menu messages to the active shell menu. Returns the result to hand back to the system

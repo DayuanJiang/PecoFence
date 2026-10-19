@@ -2339,6 +2339,21 @@ pub unsafe fn StackWalk64(
     }
 }
 #[inline]
+pub unsafe fn StrRetToStrW(
+    pstr: *mut STRRET,
+    pidl: Option<*const ITEMIDLIST>,
+    ppsz: *mut windows_core::PWSTR,
+) -> windows_core::HRESULT {
+    windows_core::link!("shlwapi.dll" "system" fn StrRetToStrW(pstr : *mut STRRET, pidl : *const ITEMIDLIST, ppsz : *mut windows_core::PWSTR) -> windows_core::HRESULT);
+    unsafe {
+        StrRetToStrW(
+            pstr as _,
+            pidl.unwrap_or(core::mem::zeroed()) as _,
+            ppsz as _,
+        )
+    }
+}
+#[inline]
 pub unsafe fn SymFunctionTableAccess64(hprocess: HANDLE, addrbase: u64) -> *mut core::ffi::c_void {
     windows_core::link!("dbghelp.dll" "system" fn SymFunctionTableAccess64(hprocess : HANDLE, addrbase : u64) -> *mut core::ffi::c_void);
     unsafe { SymFunctionTableAccess64(hprocess, addrbase) }
@@ -7311,13 +7326,139 @@ windows_core::imp::define_interface!(
     0x000214f2_0000_0000_c000_000000000046
 );
 windows_core::imp::interface_hierarchy!(IEnumIDList, windows_core::IUnknown);
+impl IEnumIDList {
+    pub(crate) unsafe fn Next(
+        &self,
+        celt: u32,
+        rgelt: *mut LPITEMIDLIST,
+        pceltfetched: Option<*mut u32>,
+    ) -> windows_core::HRESULT {
+        unsafe {
+            (windows_core::Interface::vtable(self).Next)(
+                windows_core::Interface::as_raw(self),
+                celt,
+                rgelt as _,
+                pceltfetched.unwrap_or(core::mem::zeroed()) as _,
+            )
+        }
+    }
+    pub(crate) unsafe fn Skip(&self, celt: u32) -> windows_core::HRESULT {
+        unsafe {
+            (windows_core::Interface::vtable(self).Skip)(
+                windows_core::Interface::as_raw(self),
+                celt,
+            )
+        }
+    }
+    pub(crate) unsafe fn Reset(&self) -> windows_core::HRESULT {
+        unsafe {
+            (windows_core::Interface::vtable(self).Reset)(windows_core::Interface::as_raw(self))
+        }
+    }
+    pub(crate) unsafe fn Clone(&self) -> windows_core::Result<Self> {
+        unsafe {
+            let mut result__ = core::mem::zeroed();
+            (windows_core::Interface::vtable(self).Clone)(
+                windows_core::Interface::as_raw(self),
+                &mut result__,
+            )
+            .and_then(|| windows_core::imp::Type::from_abi(result__))
+        }
+    }
+}
 #[repr(C)]
 pub struct IEnumIDList_Vtbl {
     pub base__: windows_core::IUnknown_Vtbl,
-    Next: usize,
-    Skip: usize,
-    Reset: usize,
-    Clone: usize,
+    pub Next: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        u32,
+        *mut LPITEMIDLIST,
+        *mut u32,
+    ) -> windows_core::HRESULT,
+    pub Skip: unsafe extern "system" fn(*mut core::ffi::c_void, u32) -> windows_core::HRESULT,
+    pub Reset: unsafe extern "system" fn(*mut core::ffi::c_void) -> windows_core::HRESULT,
+    pub Clone: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        *mut *mut core::ffi::c_void,
+    ) -> windows_core::HRESULT,
+}
+pub trait IEnumIDList_Impl: windows_core::IUnknownImpl {
+    fn Next(
+        &self,
+        celt: u32,
+        rgelt: *mut LPITEMIDLIST,
+        pceltfetched: *mut u32,
+    ) -> windows_core::Result<()>;
+    fn Skip(&self, celt: u32) -> windows_core::Result<()>;
+    fn Reset(&self) -> windows_core::Result<()>;
+    fn Clone(&self) -> windows_core::Result<IEnumIDList>;
+}
+impl IEnumIDList_Vtbl {
+    pub const fn new<Identity: IEnumIDList_Impl, const OFFSET: isize>() -> Self {
+        unsafe extern "system" fn Next<Identity: IEnumIDList_Impl, const OFFSET: isize>(
+            this: *mut core::ffi::c_void,
+            celt: u32,
+            rgelt: *mut LPITEMIDLIST,
+            pceltfetched: *mut u32,
+        ) -> windows_core::HRESULT {
+            unsafe {
+                let this: &Identity =
+                    &*((this as *const *const ()).offset(OFFSET) as *const Identity);
+                IEnumIDList_Impl::Next(
+                    this,
+                    core::mem::transmute_copy(&celt),
+                    core::mem::transmute_copy(&rgelt),
+                    core::mem::transmute_copy(&pceltfetched),
+                )
+                .into()
+            }
+        }
+        unsafe extern "system" fn Skip<Identity: IEnumIDList_Impl, const OFFSET: isize>(
+            this: *mut core::ffi::c_void,
+            celt: u32,
+        ) -> windows_core::HRESULT {
+            unsafe {
+                let this: &Identity =
+                    &*((this as *const *const ()).offset(OFFSET) as *const Identity);
+                IEnumIDList_Impl::Skip(this, core::mem::transmute_copy(&celt)).into()
+            }
+        }
+        unsafe extern "system" fn Reset<Identity: IEnumIDList_Impl, const OFFSET: isize>(
+            this: *mut core::ffi::c_void,
+        ) -> windows_core::HRESULT {
+            unsafe {
+                let this: &Identity =
+                    &*((this as *const *const ()).offset(OFFSET) as *const Identity);
+                IEnumIDList_Impl::Reset(this).into()
+            }
+        }
+        unsafe extern "system" fn Clone<Identity: IEnumIDList_Impl, const OFFSET: isize>(
+            this: *mut core::ffi::c_void,
+            ppenum: *mut *mut core::ffi::c_void,
+        ) -> windows_core::HRESULT {
+            unsafe {
+                let this: &Identity =
+                    &*((this as *const *const ()).offset(OFFSET) as *const Identity);
+                match IEnumIDList_Impl::Clone(this) {
+                    Ok(ok__) => {
+                        ppenum.write(core::mem::transmute(ok__));
+                        windows_core::HRESULT(0)
+                    }
+                    Err(err) => err.into(),
+                }
+            }
+        }
+        Self {
+            base__: windows_core::IUnknown_Vtbl::new::<Identity, OFFSET>(),
+            Next: Next::<Identity, OFFSET>,
+            Skip: Skip::<Identity, OFFSET>,
+            Reset: Reset::<Identity, OFFSET>,
+            Clone: Clone::<Identity, OFFSET>,
+        }
+    }
+    pub fn matches(iid: &windows_core::GUID) -> bool {
+        iid == &<IEnumIDList as windows_core::Interface>::IID
+    }
 }
 impl windows_core::RuntimeName for IEnumIDList {}
 windows_core::imp::define_interface!(
@@ -15657,6 +15798,9 @@ pub const SHCNE_UPDATEITEM: i32 = 8192;
 pub const SHCNRF_NewDelivery: i32 = 32768;
 pub const SHCNRF_ShellLevel: i32 = 2;
 pub type SHCONTF = u32;
+pub const SHCONTF_FOLDERS: SHCONTF = 32;
+pub const SHCONTF_INCLUDEHIDDEN: SHCONTF = 128;
+pub const SHCONTF_NONFOLDERS: SHCONTF = 64;
 #[repr(C, packed(1))]
 #[derive(Clone, Copy, Default)]
 pub struct SHChangeNotifyEntry {
@@ -15822,6 +15966,7 @@ impl Default for SHFILEINFOW {
     }
 }
 pub type SHGDNF = u32;
+pub const SHGDN_FORPARSING: SHGDNF = 32768;
 pub const SHGFI_PIDL: i32 = 8;
 pub const SHGFI_TYPENAME: i32 = 1024;
 pub const SHGFI_USEFILEATTRIBUTES: i32 = 16;

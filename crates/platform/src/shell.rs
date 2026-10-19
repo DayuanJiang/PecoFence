@@ -14,7 +14,7 @@ const FOLDERID_DOCUMENTS: GUID = GUID::from_u128(0xFDD39AD0_238F_46AF_ADB4_6C854
 const FOLDERID_DOWNLOADS: GUID = GUID::from_u128(0x374DE290_123F_4565_9164_39C4925E467B);
 const FOLDERID_PICTURES: GUID = GUID::from_u128(0x33E28130_4E1E_4676_835A_98395C3BC3BB);
 
-fn take_string(pwstr: PWSTR) -> String {
+pub(crate) fn take_string(pwstr: PWSTR) -> String {
     if pwstr.is_null() {
         return String::new();
     }
