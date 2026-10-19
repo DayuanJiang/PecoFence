@@ -596,6 +596,71 @@ pub fn shell_image(path: &Path, size_px: u32, icon_only: bool) -> Result<ShellIm
     }
 }
 
+/// What Explorer shows for each file of a type.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FilePicture {
+    /// The icon of the type, the same for every file.
+    TypeIcon,
+    /// An icon of its own: from an icon handler, or from the file itself (a DefaultIcon of
+    /// `%1`, as for programs).
+    OwnIcon,
+    /// A thumbnail of the file, from a thumbnail handler (IThumbnailProvider or IExtractImage)
+    /// such as a PDF reader's.
+    Thumbnail,
+}
+
+/// [`FilePicture`] of the files of type `ext` (`.pdf`), from what the shell has registered for
+/// it, found through the file association as Explorer finds it (the ProgID,
+/// `SystemFileAssociations`, the perceived type).
+pub fn file_picture(ext: &str) -> FilePicture {
+    let assoc = to_wide(ext);
+    // One association object for the four questions: AssocQueryString would look the type up
+    // again for each of them (about three times as long).
+    // SAFETY: COM calls on a live object; the string outlives the call.
+    let qa = unsafe {
+        AssocCreate::<IQueryAssociations>(CLSID_QueryAssociations)
+            .ok()
+            .filter(|qa| {
+                qa.Init(ASSOCF::default(), PCWSTR(assoc.as_ptr()), None, None)
+                    .is_ok()
+            })
+    };
+    let Some(qa) = qa else {
+        return FilePicture::TypeIcon;
+    };
+    let query = |what: ASSOCSTR, extra: Option<&str>| {
+        let extra = extra.map(to_wide);
+        let mut buf = [0u16; 1024];
+        let mut len = buf.len() as u32;
+        // SAFETY: NUL-terminated input outlives the call; `len` is the buffer's length.
+        let hr = unsafe {
+            qa.GetString(
+                ASSOCF::default(),
+                what,
+                extra
+                    .as_ref()
+                    .map_or(PCWSTR::null(), |e| PCWSTR(e.as_ptr())),
+                Some(PWSTR(buf.as_mut_ptr())),
+                &mut len,
+            )
+        };
+        hr.is_ok().then(|| crate::wide::from_wide(&buf))
+    };
+    let handler = |name: &str| query(ASSOCSTR_SHELLEXTENSION, Some(name)).is_some();
+    // IThumbnailProvider, IExtractImage.
+    if handler("{e357fccd-a995-4576-b01f-234630154e96}")
+        || handler("{BB2E617C-0920-11d1-9A0B-00C04FC2D6C1}")
+    {
+        FilePicture::Thumbnail
+    } else if handler("IconHandler")
+        || query(ASSOCSTR_DEFAULTICON, None).is_some_and(|icon| icon.contains("%1"))
+    {
+        FilePicture::OwnIcon
+    } else {
+        FilePicture::TypeIcon
+    }
+}
+
 /// Converts the shell bitmap to premultiplied BGRA, minifying it to fit `max_px` on its long
 /// side with WIC's Fant filter when the shell handed back a bigger image (`SIIGBF_BIGGERSIZEOK`
 /// returns the 256 px jumbo icon / thumbnail for 64 and 96 px requests). Explorer downsamples
