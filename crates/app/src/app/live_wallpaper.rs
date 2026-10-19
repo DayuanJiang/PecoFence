@@ -132,9 +132,9 @@ fn capture_and_build(work: Vec<(MonitorRecipe, Option<isize>)>) -> Result<Built>
                 let window = HWND(hwnd as *mut core::ffi::c_void);
                 let shot = match capture(window) {
                     Ok((rect, image)) => Some((Some(rect), image)),
-                    Err(why) => {
+                    Err(reason) => {
                         let copied = clone_source(window).and_then(|source| capture(source).ok());
-                        empty.push((hwnd, why, copied.is_some()));
+                        empty.push((hwnd, reason, copied.is_some()));
                         copied.map(|(_, image)| (None, image))
                     }
                 };
@@ -371,7 +371,7 @@ impl App {
             }
         };
         // Once per window, and not while it settles: a player that just started can be black.
-        for (hwnd, why, copied) in empty {
+        for (hwnd, reason, copied) in empty {
             let Some(monitor) = self
                 .live
                 .iter()
@@ -387,9 +387,9 @@ impl App {
             }
             let class = desktop::class_name(HWND(hwnd as *mut core::ffi::c_void));
             if copied {
-                tracing::info!(?monitor, %class, why, "live wallpaper capture came back empty; showing the window it clones");
+                tracing::info!(?monitor, %class, reason, "live wallpaper capture came back empty; showing the window it clones");
             } else {
-                tracing::info!(?monitor, %class, why, "live wallpaper capture came back empty; the backdrop keeps its last picture");
+                tracing::info!(?monitor, %class, reason, "live wallpaper capture came back empty; the backdrop keeps its last picture");
             }
         }
         let mut captured = 0;
