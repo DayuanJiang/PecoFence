@@ -1098,10 +1098,19 @@ pub fn rename_no_replace(from: &Path, to: &Path) -> std::io::Result<()> {
 }
 
 /// Opens an item with the shell (default verb), or runs `verb` (`"runas"`, `"properties"`,
-/// `"openas"`…).
+/// `"openas"`…). A file or a namespace item goes in as its id list, as Explorer opens it: as a
+/// path, one without an extension (a folder `Foo`, a file `README`) was completed with `.com`,
+/// `.exe`, `.bat`, `.lnk`… first, so a `Foo.lnk` beside it opened instead (feedback #51).
 pub fn shell_execute(path: &Path, verb: Option<&str>, owner: Option<HWND>) -> Result<()> {
     let file = path_wide(path);
     let verb_w = verb.map(to_wide);
+    let mut pidl: LPITEMIDLIST = std::ptr::null_mut();
+    if path.is_absolute() || is_namespace_path(path) {
+        // SAFETY: the string outlives the call; the id list is freed below. A path the shell
+        // cannot parse (gone) goes in as a path, so Windows reports it as before.
+        let _ =
+            unsafe { SHParseDisplayName(PCWSTR(file.as_ptr()), None, &mut pidl, SFGAOF(0), None) };
+    }
     let mut info = SHELLEXECUTEINFOW {
         cbSize: size_of::<SHELLEXECUTEINFOW>() as u32,
         fMask: (SEE_MASK_INVOKEIDLIST | SEE_MASK_NOASYNC) as u32,
@@ -1110,12 +1119,22 @@ pub fn shell_execute(path: &Path, verb: Option<&str>, owner: Option<HWND>) -> Re
             .as_ref()
             .map(|v| PCWSTR(v.as_ptr()))
             .unwrap_or(PCWSTR::null()),
-        lpFile: PCWSTR(file.as_ptr()),
+        lpFile: if pidl.is_null() {
+            PCWSTR(file.as_ptr())
+        } else {
+            PCWSTR::null()
+        },
+        lpIDList: pidl.cast(),
         nShow: SW_SHOWNORMAL,
         ..Default::default()
     };
     // SAFETY: all referenced buffers outlive the call.
-    unsafe { ShellExecuteExW(&mut info).ok() }
+    let result = unsafe { ShellExecuteExW(&mut info).ok() };
+    if !pidl.is_null() {
+        // SAFETY: the id list came from SHParseDisplayName and is freed once.
+        unsafe { ILFree(Some(pidl)) };
+    }
+    result
 }
 
 /// Resolves a `.lnk` file's target path (raw, unexpanded), or `None`.
