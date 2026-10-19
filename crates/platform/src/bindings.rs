@@ -710,6 +710,22 @@ pub unsafe fn GetCurrentThreadId() -> u32 {
     windows_core::link!("kernel32.dll" "system" fn GetCurrentThreadId() -> u32);
     unsafe { GetCurrentThreadId() }
 }
+#[cfg(target_arch = "x86")]
+#[inline]
+pub unsafe fn GetCurrentThreadStackLimits(lowlimit: *mut u32, highlimit: *mut u32) {
+    windows_core::link!("kernel32.dll" "system" fn GetCurrentThreadStackLimits(lowlimit : *mut u32, highlimit : *mut u32));
+    unsafe { GetCurrentThreadStackLimits(lowlimit as _, highlimit as _) }
+}
+#[cfg(any(
+    target_arch = "aarch64",
+    target_arch = "arm64ec",
+    target_arch = "x86_64"
+))]
+#[inline]
+pub unsafe fn GetCurrentThreadStackLimits(lowlimit: *mut u64, highlimit: *mut u64) {
+    windows_core::link!("kernel32.dll" "system" fn GetCurrentThreadStackLimits(lowlimit : *mut u64, highlimit : *mut u64));
+    unsafe { GetCurrentThreadStackLimits(lowlimit as _, highlimit as _) }
+}
 #[inline]
 pub unsafe fn GetCursorPos(lppoint: *mut POINT) -> windows_core::BOOL {
     windows_core::link!("user32.dll" "system" fn GetCursorPos(lppoint : *mut POINT) -> windows_core::BOOL);
@@ -993,6 +1009,11 @@ pub unsafe fn GetSystemMetricsForDpi(nindex: i32, dpi: u32) -> i32 {
 pub unsafe fn GetTextFaceW(hdc: HDC, c: i32, lpname: Option<windows_core::PWSTR>) -> i32 {
     windows_core::link!("gdi32.dll" "system" fn GetTextFaceW(hdc : HDC, c : i32, lpname : windows_core::PWSTR) -> i32);
     unsafe { GetTextFaceW(hdc, c, lpname.unwrap_or(core::mem::zeroed()) as _) }
+}
+#[inline]
+pub unsafe fn GetThreadContext(hthread: HANDLE, lpcontext: LPCONTEXT) -> windows_core::BOOL {
+    windows_core::link!("kernel32.dll" "system" fn GetThreadContext(hthread : HANDLE, lpcontext : LPCONTEXT) -> windows_core::BOOL);
+    unsafe { GetThreadContext(hthread, lpcontext as _) }
 }
 #[inline]
 pub unsafe fn GetTickCount64() -> u64 {
@@ -1730,6 +1751,11 @@ pub unsafe fn RemoveWindowSubclass(
     unsafe { RemoveWindowSubclass(hwnd, pfnsubclass, uidsubclass) }
 }
 #[inline]
+pub unsafe fn ResumeThread(hthread: HANDLE) -> u32 {
+    windows_core::link!("kernel32.dll" "system" fn ResumeThread(hthread : HANDLE) -> u32);
+    unsafe { ResumeThread(hthread) }
+}
+#[inline]
 pub unsafe fn RevokeDragDrop(hwnd: HWND) -> windows_core::HRESULT {
     windows_core::link!("ole32.dll" "system" fn RevokeDragDrop(hwnd : HWND) -> windows_core::HRESULT);
     unsafe { RevokeDragDrop(hwnd) }
@@ -2352,6 +2378,11 @@ pub unsafe fn StrRetToStrW(
             ppsz as _,
         )
     }
+}
+#[inline]
+pub unsafe fn SuspendThread(hthread: HANDLE) -> u32 {
+    windows_core::link!("kernel32.dll" "system" fn SuspendThread(hthread : HANDLE) -> u32);
+    unsafe { SuspendThread(hthread) }
 }
 #[inline]
 pub unsafe fn SymFunctionTableAccess64(hprocess: HANDLE, addrbase: u64) -> *mut core::ffi::c_void {
@@ -3588,6 +3619,7 @@ pub const ERROR_NOTIFY_ENUM_DIR: i32 = 1022;
 pub const ERROR_NO_DATA: i32 = 232;
 pub const ERROR_OPERATION_ABORTED: i32 = 995;
 pub const ERROR_PIPE_CONNECTED: i32 = 535;
+pub const ERROR_TIMEOUT: i32 = 1460;
 pub const ES_AUTOHSCROLL: i32 = 128;
 pub const EVENT_OBJECT_DESTROY: i32 = 32769;
 pub const EVENT_SYSTEM_FOREGROUND: i32 = 3;
@@ -14671,6 +14703,7 @@ impl Default for LOGFONTW {
 pub struct LPARAM(pub isize);
 pub type LPBYTE = *mut u8;
 pub type LPCITEMIDLIST = *const ITEMIDLIST;
+pub type LPCONTEXT = PCONTEXT;
 pub type LPITEMIDLIST = *mut ITEMIDLIST;
 pub type LPOVERLAPPED_COMPLETION_ROUTINE = Option<
     unsafe extern "system" fn(
@@ -16032,6 +16065,7 @@ pub const SLGP_RAWPATH: SLGP_FLAGS = 4;
 pub const SLGP_UNCPRIORITY: SLGP_FLAGS = 2;
 pub const SMTO_ABORTIFHUNG: i32 = 2;
 pub const SMTO_BLOCK: i32 = 1;
+pub const SMTO_NORMAL: i32 = 0;
 pub const SM_CXDOUBLECLK: i32 = 36;
 pub const SM_CXDRAG: i32 = 68;
 pub const SM_CXSCREEN: i32 = 0;
@@ -16160,6 +16194,8 @@ pub const S_FALSE: windows_core::HRESULT = windows_core::HRESULT(0x1_u32 as _);
 pub const S_OK: windows_core::HRESULT = windows_core::HRESULT(0x0_u32 as _);
 pub const ShellLink: windows_core::GUID =
     windows_core::GUID::from_u128(0x00021401_0000_0000_c000_000000000046);
+pub const THREAD_GET_CONTEXT: i32 = 8;
+pub const THREAD_SUSPEND_RESUME: i32 = 2;
 pub const THREAD_TERMINATE: i32 = 1;
 pub type TIMERPROC =
     Option<unsafe extern "system" fn(param0: HWND, param1: u32, param2: usize, param3: u32)>;

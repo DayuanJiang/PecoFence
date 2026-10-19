@@ -241,5 +241,7 @@ fn main() -> Result<()> {
         app.shutdown();
     }
     drop(cell);
+    // The next start looks for this line: a log without it ended in a hang or a kill.
+    tracing::info!(code, "process exiting");
     std::process::exit(code);
 }

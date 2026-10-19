@@ -1000,6 +1000,9 @@ impl App {
             .create(control_handler)?;
         queue.attach(&control);
         std::mem::forget(control_class); // class lives for the process
+        // The Recycle Bin is asked on a worker; a new answer means listing the desktop again.
+        shell::notify_recycle_bin_changes(control.hwnd(), WM_APP_FS_CHANGED);
+        pecofence_platform::hangwatch::start(control.hwnd());
 
         // Desktop anchor (z-order, show desktop, quick hide, icon hiding).
         let sentinel_class = anchor::register_sentinel_class()?;
@@ -1625,7 +1628,9 @@ impl App {
                 let name = command_name(&cmd);
                 let started = Instant::now();
                 let in_menus = tray::time_in_menus();
+                pecofence_platform::hangwatch::running(Some(&name));
                 self.handle(cmd);
+                pecofence_platform::hangwatch::running(None);
                 // A menu it opened waited for the user, which is no delay of ours.
                 let spent = started
                     .elapsed()

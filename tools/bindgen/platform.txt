@@ -762,6 +762,15 @@
     MiniDumpWithDataSegs
     MiniDumpWithThreadInfo
     StackWalk64
+    // UI thread stack when it stops answering (platform::hangwatch)
+    SuspendThread
+    ResumeThread
+    GetThreadContext
+    THREAD_SUSPEND_RESUME
+    THREAD_GET_CONTEXT
+    SMTO_NORMAL
+    ERROR_TIMEOUT
+    GetCurrentThreadStackLimits
     SymInitializeW
     SymFunctionTableAccess64
     SymGetModuleBase64

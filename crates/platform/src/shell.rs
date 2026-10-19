@@ -4,6 +4,7 @@ use crate::bindings::*;
 use crate::wide::to_wide;
 use std::os::windows::fs::MetadataExt;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use windows_core::{GUID, Interface, PCWSTR, PWSTR, Result};
 
 // FOLDERID_Desktop / FOLDERID_PublicDesktop (KnownFolders.h).
@@ -244,30 +245,78 @@ fn in_desktop_namespace(clsid: &str) -> bool {
 /// The Recycle Bin is asked again (see `recycle_bin_has_items`) only after this (a folder
 /// change, the shell's notice, a refresh) or ten minutes after the last answer.
 pub fn recycle_bin_changed() {
-    RECYCLE_BIN_STALE.store(true, std::sync::atomic::Ordering::Relaxed);
+    RECYCLE_BIN_STALE.store(true, Ordering::Relaxed);
 }
 
-static RECYCLE_BIN_STALE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+/// Where the Recycle Bin worker posts `message` (wparam 1) when its answer changed: `hwnd`
+/// should list the desktop items again.
+pub fn notify_recycle_bin_changes(hwnd: HWND, message: u32) {
+    let _ = RECYCLE_BIN_NOTIFY.set((hwnd.0 as usize, message));
+}
 
-/// Whether the Recycle Bin holds anything (decides between the full and empty icon). Each
-/// fixed drive is asked on its own: the all-drives form fails as a whole when one volume
-/// (card reader without media, offline mapped drive) cannot answer. When no drive answers,
-/// the last known state is kept rather than flipping to "empty". Asking touches every fixed
-/// drive (a sleeping one wakes, which can take seconds), so the answer is reused until
-/// `recycle_bin_changed` or for ten minutes.
+static RECYCLE_BIN_STALE: AtomicBool = AtomicBool::new(true);
+static RECYCLE_BIN_FULL: AtomicBool = AtomicBool::new(false);
+static RECYCLE_BIN_ASKING: AtomicBool = AtomicBool::new(false);
+static RECYCLE_BIN_ASKED: std::sync::Mutex<Option<std::time::Instant>> =
+    std::sync::Mutex::new(None);
+static RECYCLE_BIN_NOTIFY: std::sync::OnceLock<(usize, u32)> = std::sync::OnceLock::new();
+
+/// Whether the Recycle Bin holds anything (decides between the full and empty icon), as last
+/// known. Asking touches every fixed drive (a sleeping one wakes, which can take seconds) and
+/// counts every item in the bin (seconds when it holds tens of thousands), so a worker asks:
+/// after `recycle_bin_changed`, or ten minutes after the last answer, this starts it and
+/// returns the last answer; a different answer is posted as `notify_recycle_bin_changes` says.
 pub fn recycle_bin_has_items() -> bool {
-    use std::sync::Mutex;
-    use std::sync::atomic::{AtomicBool, Ordering};
-    use std::time::{Duration, Instant};
-    static LAST_KNOWN: AtomicBool = AtomicBool::new(false);
-    static ASKED: Mutex<Option<Instant>> = Mutex::new(None);
-    let mut asked = ASKED.lock().unwrap_or_else(|e| e.into_inner());
-    let recent = asked.is_some_and(|t| t.elapsed() < Duration::from_secs(600));
-    if recent && !RECYCLE_BIN_STALE.swap(false, Ordering::Relaxed) {
-        return LAST_KNOWN.load(Ordering::Relaxed);
+    let due = RECYCLE_BIN_STALE.load(Ordering::Relaxed)
+        || RECYCLE_BIN_ASKED
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .is_none_or(|t| t.elapsed() >= std::time::Duration::from_secs(600));
+    if due && !RECYCLE_BIN_ASKING.swap(true, Ordering::AcqRel) {
+        let spawned = std::thread::Builder::new()
+            .name("recycle bin".into())
+            .spawn(ask_recycle_bin);
+        if spawned.is_err() {
+            RECYCLE_BIN_ASKING.store(false, Ordering::Release);
+        }
     }
-    RECYCLE_BIN_STALE.store(false, Ordering::Relaxed);
-    *asked = Some(Instant::now());
+    RECYCLE_BIN_FULL.load(Ordering::Relaxed)
+}
+
+/// The worker behind `recycle_bin_has_items`: asks until no change came in meanwhile.
+fn ask_recycle_bin() {
+    let _com = crate::com::MtaGuard::init();
+    let before = RECYCLE_BIN_FULL.load(Ordering::Relaxed);
+    loop {
+        RECYCLE_BIN_STALE.store(false, Ordering::Relaxed);
+        *RECYCLE_BIN_ASKED.lock().unwrap_or_else(|e| e.into_inner()) =
+            Some(std::time::Instant::now());
+        if let Some(full) = query_recycle_bin() {
+            RECYCLE_BIN_FULL.store(full, Ordering::Relaxed);
+        }
+        RECYCLE_BIN_ASKING.store(false, Ordering::Release);
+        // A change that came in while asking: ask again, unless a new worker took over.
+        if !RECYCLE_BIN_STALE.load(Ordering::Relaxed)
+            || RECYCLE_BIN_ASKING.swap(true, Ordering::AcqRel)
+        {
+            break;
+        }
+    }
+    if RECYCLE_BIN_FULL.load(Ordering::Relaxed) != before
+        && let Some(&(hwnd, message)) = RECYCLE_BIN_NOTIFY.get()
+    {
+        // SAFETY: plain FFI call; a window that is gone just drops the message.
+        unsafe {
+            let _ = PostMessageW(Some(HWND(hwnd as *mut _)), message, WPARAM(1), LPARAM(0));
+        }
+    }
+}
+
+/// Whether any fixed drive's Recycle Bin holds anything; `None` when no drive answered (the
+/// last answer then stays rather than flipping to "empty"). Each fixed drive is asked on its
+/// own: the all-drives form fails as a whole when one volume (card reader without media,
+/// offline mapped drive) cannot answer.
+fn query_recycle_bin() -> Option<bool> {
     // SAFETY: no arguments; returns a bitmask.
     let drives = unsafe { GetLogicalDrives() };
     let mut answered = false;
@@ -294,12 +343,7 @@ pub fn recycle_bin_has_items() -> bool {
             }
         }
     }
-    if answered {
-        LAST_KNOWN.store(full, Ordering::Relaxed);
-        full
-    } else {
-        LAST_KNOWN.load(Ordering::Relaxed)
-    }
+    answered.then_some(full)
 }
 
 /// The special desktop items the user has enabled in Windows (Recycle Bin, This PC, ...), as
@@ -1529,7 +1573,7 @@ mod namespace_tests {
         let image = shell_image(&bin, 32, true).expect("recycle bin icon");
         assert!(image.width > 0 && image.height > 0);
         // Querying the bin never fails on a desktop session; the answer itself may be either.
-        let _ = recycle_bin_has_items();
+        let _ = query_recycle_bin();
         assert_eq!(
             crate::fileinfo::type_name(&bin, false)
                 .as_deref()

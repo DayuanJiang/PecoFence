@@ -46,7 +46,7 @@ fn module_at(addr: u64) -> Option<HMODULE> {
 }
 
 /// `module+rva` for an address in this process (module = file name only).
-fn locate(addr: u64) -> String {
+pub(crate) fn locate(addr: u64) -> String {
     let Some(module) = module_at(addr) else {
         return format!("{addr:#x}");
     };

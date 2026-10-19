@@ -23,6 +23,9 @@ pub(super) struct FeedbackState {
     pub(super) focus: Option<bool>,
     /// The previous run ended in a panic or an unhandled exception (its shareable log says so).
     previous_run_crashed: bool,
+    /// The previous run's shareable log stops without its last line: it hung and was ended, or
+    /// was ended from Task Manager. Its log goes with a report too.
+    previous_run_unfinished: bool,
     /// The crash balloon is up; clicking it opens the feedback form.
     crash_offer_pending: bool,
 }
@@ -32,6 +35,20 @@ fn log_records_crash(log: &str) -> bool {
     log.lines().any(|line| {
         line.contains(": PANIC location=") || line.contains(": CRASH (unhandled exception)")
     })
+}
+
+/// Whether a shareable log ends as a normal exit does (`main` writes `process exiting` last;
+/// at a sign-out Windows may end the process before that, after `session ending`), or cannot
+/// tell: an empty log, or one that stopped at its size limit.
+fn log_ends_normally(log: &str) -> bool {
+    log.trim().is_empty()
+        || [
+            ": process exiting",
+            ": session ending",
+            "(size limit reached",
+        ]
+        .iter()
+        .any(|line| log.contains(line))
 }
 
 /// The last whole lines of `text` within `max` bytes.
@@ -100,10 +117,16 @@ impl App {
 
     /// At startup: if the last run crashed, offer to report it from a tray balloon.
     pub(super) fn offer_crash_feedback(&mut self) {
-        let crashed = self
-            .share_log(pecofence_core::brand::PREVIOUS_SHARE_LOG)
-            .is_some_and(|log| log_records_crash(&log));
+        let previous = self.share_log(pecofence_core::brand::PREVIOUS_SHARE_LOG);
+        let crashed = previous.as_deref().is_some_and(log_records_crash);
         self.feedback.previous_run_crashed = crashed;
+        self.feedback.previous_run_unfinished = !crashed
+            && previous
+                .as_deref()
+                .is_some_and(|log| !log_ends_normally(log));
+        if self.feedback.previous_run_unfinished {
+            tracing::info!("previous run did not end normally");
+        }
         if !crashed {
             return;
         }
@@ -271,10 +294,17 @@ impl App {
             "gpu": fact(self.ctx.stack.adapter().unwrap_or_else(|| "unknown".to_string())),
         });
         let mut log = String::new();
-        if self.feedback.previous_run_crashed
+        let previous_run = if self.feedback.previous_run_crashed {
+            Some("crashed")
+        } else if self.feedback.previous_run_unfinished {
+            Some("did not end normally")
+        } else {
+            None
+        };
+        if let Some(how) = previous_run
             && let Some(previous) = self.share_log(pecofence_core::brand::PREVIOUS_SHARE_LOG)
         {
-            log.push_str("--- previous run (crashed) ---\n");
+            log.push_str(&format!("--- previous run ({how}) ---\n"));
             log.push_str(&excerpt(&previous, LOG_EXCERPT_BYTES));
             log.push_str("\n--- this run ---\n");
         }
@@ -310,6 +340,7 @@ impl App {
                     tracing::info!(status, "feedback sent");
                     // A crash report went out; the next one starts from this run.
                     self.feedback.previous_run_crashed = false;
+                    self.feedback.previous_run_unfinished = false;
                 } else {
                     tracing::warn!(status, "feedback not sent");
                 }
@@ -333,6 +364,23 @@ mod tests {
         ));
         assert!(!log_records_crash(
             "t  INFO pecofence::app: config loaded fences=7\n"
+        ));
+    }
+
+    #[test]
+    fn unfinished_runs_are_recognised() {
+        assert!(log_ends_normally(""));
+        assert!(log_ends_normally(
+            "t  INFO pecofence::app: process started\nt  INFO pecofence: process exiting code=0\n"
+        ));
+        assert!(log_ends_normally(
+            "t  INFO pecofence::app: process started\nt  INFO pecofence::app: session ending: quitting close_app=false\n"
+        ));
+        assert!(log_ends_normally(
+            "t  INFO pecofence::app: process started\n(size limit reached: only errors are recorded from here on)\n"
+        ));
+        assert!(!log_ends_normally(
+            "t  INFO pecofence::app: process started\nt  WARN pecofence_platform::hangwatch: UI thread not responding ms=5000\n"
         ));
     }
 

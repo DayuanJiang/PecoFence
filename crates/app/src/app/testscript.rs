@@ -563,6 +563,11 @@ impl App {
                         std::ptr::null_mut::<u32>().write_volatile(1);
                     }
                 }
+                #[cfg(debug_assertions)]
+                ["stall", ms] => {
+                    // Exercises platform::hangwatch: the UI thread stops answering for `ms`.
+                    std::thread::sleep(Duration::from_millis(ms.parse().unwrap_or(0)));
+                }
                 ["exit-if-file", path] => {
                     if std::path::Path::new(path).is_file() {
                         self.test = None;
