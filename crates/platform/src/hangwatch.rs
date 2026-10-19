@@ -1,6 +1,7 @@
 //! Notices when the UI thread stops answering messages for as long as Windows takes before it
 //! calls a program "not responding", and writes to the log which command it was running and
-//! where it was stuck (a `module+rva` stack, as for a crash), so a report of a freeze says where.
+//! where it was stuck (`module+rva` return addresses, as for a crash), so a report of a freeze
+//! says where.
 
 use crate::bindings::*;
 use std::sync::Mutex;
@@ -9,11 +10,10 @@ use std::time::{Duration, Instant};
 /// Windows marks a window "not responding" after 5 s without messages.
 const HANG_MS: u32 = 5000;
 const MAX_FRAMES: usize = 48;
+/// How much of the stuck thread's stack is copied for the scan.
+const STACK_COPY: usize = 64 * 1024;
 /// `CONTEXT_FULL` on x64: control, integer and floating-point registers.
 const CONTEXT_FULL: u32 = 0x0010_000B;
-
-windows_core::link!("kernel32.dll" "system" fn RtlLookupFunctionEntry(pc: u64, image_base: *mut u64, history: *mut core::ffi::c_void) -> *const core::ffi::c_void);
-windows_core::link!("kernel32.dll" "system" fn RtlVirtualUnwind(handler_type: u32, image_base: u64, pc: u64, entry: *const core::ffi::c_void, context: *mut CONTEXT, handler_data: *mut *mut core::ffi::c_void, establisher_frame: *mut u64, pointers: *mut core::ffi::c_void) -> *mut core::ffi::c_void);
 
 /// The command the UI thread is running, if any (see [`running`]).
 static RUNNING: Mutex<Option<String>> = Mutex::new(None);
@@ -87,15 +87,21 @@ fn watch(hwnd: HWND, thread: u32, stack: (u64, u64)) {
     }
 }
 
-/// The frames of `thread` as `module+rva`, walked while it is suspended. Only the system's
-/// unwinder runs meanwhile: no allocation and no lock the stopped thread could be holding.
-/// `stack` bounds the walk to the thread's stack.
+/// The stuck thread's instruction pointer and the return addresses on the top of its stack,
+/// as `module+rva`. The thread is suspended only to read its registers and copy that part of
+/// its stack; nothing else runs meanwhile, because anything more (the system's unwinder, the
+/// loader, the heap) may wait for a lock the stopped thread holds, and the watch would then
+/// never resume it. The copy is scanned afterwards: a value counts as a return address when
+/// it points into a loaded module right behind a call instruction, so a few stale frames may
+/// show up between the real ones.
 fn thread_stack(thread: u32, (low, high): (u64, u64)) -> Vec<String> {
     #[repr(C, align(16))]
     struct Aligned(CONTEXT);
-    let mut pcs: Vec<u64> = Vec::with_capacity(MAX_FRAMES);
-    // SAFETY: the thread is resumed before the handle is closed; the unwinder reads the stopped
-    // thread's stack within its bounds, and `pcs` never grows past its capacity.
+    let mut copy = vec![0u64; STACK_COPY / 8];
+    let mut words = 0;
+    let mut rip = 0;
+    // SAFETY: the thread is resumed before the handle is closed; the copy reads the stopped
+    // thread's committed stack from its stack pointer up, within its bounds and `copy`'s length.
     unsafe {
         let handle = OpenThread(
             (THREAD_SUSPEND_RESUME | THREAD_GET_CONTEXT) as u32,
@@ -110,40 +116,49 @@ fn thread_stack(thread: u32, (low, high): (u64, u64)) -> Vec<String> {
                 ContextFlags: CONTEXT_FULL,
                 ..Default::default()
             });
-            if GetThreadContext(handle, &mut ctx.0).as_bool() {
-                let ctx = &mut ctx.0;
-                while pcs.len() < MAX_FRAMES && ctx.Rip != 0 && (low..high).contains(&ctx.Rsp) {
-                    pcs.push(ctx.Rip);
-                    let mut base = 0u64;
-                    let entry = RtlLookupFunctionEntry(ctx.Rip, &mut base, std::ptr::null_mut());
-                    if entry.is_null() {
-                        // A leaf function: the return address is on top of the stack.
-                        if ctx.Rsp + 8 > high {
-                            break;
-                        }
-                        ctx.Rip = *(ctx.Rsp as *const u64);
-                        ctx.Rsp += 8;
-                    } else {
-                        let mut data = std::ptr::null_mut();
-                        let mut frame = 0u64;
-                        RtlVirtualUnwind(
-                            0,
-                            base,
-                            ctx.Rip,
-                            entry,
-                            ctx,
-                            &mut data,
-                            &mut frame,
-                            std::ptr::null_mut(),
-                        );
-                    }
-                }
+            if GetThreadContext(handle, &mut ctx.0).as_bool() && (low..high).contains(&ctx.0.Rsp) {
+                rip = ctx.0.Rip;
+                words = (((high - ctx.0.Rsp) / 8) as usize).min(copy.len());
+                std::ptr::copy_nonoverlapping(ctx.0.Rsp as *const u64, copy.as_mut_ptr(), words);
             }
             ResumeThread(handle);
         }
         let _ = CloseHandle(handle);
     }
-    pcs.iter()
-        .map(|&pc| format!("  {}", crate::crashlog::locate(pc)))
+    if rip == 0 {
+        return Vec::new();
+    }
+    std::iter::once(rip)
+        .chain(
+            copy[..words]
+                .iter()
+                .copied()
+                .filter(|&v| after_call(v))
+                .take(MAX_FRAMES),
+        )
+        .map(|pc| format!("  {}", crate::crashlog::locate_unpinned(pc)))
         .collect()
+}
+
+/// Whether `addr` points into a loaded module right behind a call instruction: `call rel32`,
+/// or `call` through a register or memory operand (`FF /2`, 2, 3, 6 or 7 bytes long).
+fn after_call(addr: u64) -> bool {
+    let Some(module) = crate::crashlog::module_holding(addr) else {
+        return false;
+    };
+    if addr < module.0 as u64 + 8 {
+        return false;
+    }
+    // SAFETY: the 7 bytes before `addr` lie in the mapped image of a loaded module.
+    let b = |back: u64| unsafe { *((addr - back) as *const u8) };
+    let modrm = |back: u64, modbits: u8| {
+        b(back) == 0xFF && b(back - 1) >> 6 == modbits && (b(back - 1) >> 3) & 7 == 2
+    };
+    b(5) == 0xE8
+        || modrm(2, 0b11)
+        || modrm(2, 0b00)
+        || modrm(3, 0b01)
+        || (b(6) == 0xFF && b(5) == 0x15)
+        || modrm(6, 0b10)
+        || (modrm(7, 0b10) && b(6) & 7 == 0b100)
 }

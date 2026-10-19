@@ -45,9 +45,34 @@ fn module_at(addr: u64) -> Option<HMODULE> {
     (found.as_bool() && !module.0.is_null()).then_some(module)
 }
 
+/// The loaded module containing `addr`, if any, for a process that goes on running: the
+/// module is not pinned, so it can still be unloaded.
+pub(crate) fn module_holding(addr: u64) -> Option<HMODULE> {
+    let mut module = HMODULE::default();
+    // SAFETY: querying the module containing `addr` without changing its reference count.
+    let found = unsafe {
+        GetModuleHandleExW(
+            (GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT)
+                as u32,
+            PCWSTR(addr as usize as *const u16),
+            &mut module,
+        )
+    };
+    (found.as_bool() && !module.0.is_null()).then_some(module)
+}
+
 /// `module+rva` for an address in this process (module = file name only).
-pub(crate) fn locate(addr: u64) -> String {
-    let Some(module) = module_at(addr) else {
+fn locate(addr: u64) -> String {
+    describe(addr, module_at(addr))
+}
+
+/// As [`locate`], without pinning the module (see [`module_holding`]).
+pub(crate) fn locate_unpinned(addr: u64) -> String {
+    describe(addr, module_holding(addr))
+}
+
+fn describe(addr: u64, module: Option<HMODULE>) -> String {
+    let Some(module) = module else {
         return format!("{addr:#x}");
     };
     let mut name = [0u16; 260];

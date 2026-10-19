@@ -3818,6 +3818,7 @@ pub const GENERIC_WRITE: i32 = 1073741824;
 pub type GETPROPERTYSTOREFLAGS = u32;
 pub const GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS: i32 = 4;
 pub const GET_MODULE_HANDLE_EX_FLAG_PIN: i32 = 1;
+pub const GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT: i32 = 2;
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct GROUP_AFFINITY {
