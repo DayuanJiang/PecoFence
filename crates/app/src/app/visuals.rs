@@ -1153,16 +1153,21 @@ impl App {
         reason: &str,
     ) {
         self.detect_live_wallpapers(snapshot);
-        self.show_wallpaper(snapshot, reason);
+        let refreshed = self.show_wallpaper(snapshot, reason);
+        // A wallpaper signal, or a new wallpaper the poll found without one.
+        if reason == "notification" || (reason == "poll" && refreshed) {
+            self.resettle_live_wallpapers();
+        }
         self.capture_live_wallpapers(LIVE_REFRESH);
     }
 
     /// Wallpaper-only refresh: reuse a recent desktop's pixels and preserve icon/geometry
     /// caches. Failed reads must not advance the signature, so the next check can retry.
-    fn show_wallpaper(&mut self, snapshot: &wallpaper::WallpaperSnapshot, reason: &str) {
+    /// True when the backdrops were rebuilt.
+    fn show_wallpaper(&mut self, snapshot: &wallpaper::WallpaperSnapshot, reason: &str) -> bool {
         let signature = backdrop_signature(snapshot, &self.live);
         if self.wallpaper_sig.as_ref() == Some(&signature) {
-            return;
+            return false;
         }
         // The same files with new contents: the old set can never be shown again. Drop it
         // before inserting the new one so the byte cap does not evict another desktop's set.
@@ -1189,7 +1194,7 @@ impl App {
                 }
                 Err(error) => {
                     tracing::debug!(reason, %error, "wallpaper not ready; retaining last backdrop");
-                    return;
+                    return false;
                 }
             },
         };
@@ -1204,6 +1209,7 @@ impl App {
             elapsed_ms = started.elapsed().as_millis(),
             "wallpaper refreshed"
         );
+        true
     }
 
     pub(super) fn on_system_settings_changed(&mut self) {

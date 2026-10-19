@@ -64,15 +64,19 @@ pub fn covering(live: &[(HWND, RECT)], monitor: RECT) -> Option<(HWND, RECT)> {
 /// be 33 MB. PrintWindow with PW_RENDERFULLCONTENT is the one way that gets video and web
 /// players on Windows 10 and 11 without side effects; it blocks while DWM draws the window
 /// (50 to 130 ms for a 4K window), so call it off the UI thread. All black when the window
-/// drew nothing. `None` when the window's thread does not answer within 3 s (a player that
-/// hangs, or one suspended while it pauses): PrintWindow waits for that thread, without limit.
-pub fn capture<T>(hwnd: HWND, read: impl FnOnce(&[u8], u32, u32) -> T) -> Option<(RECT, T)> {
+/// drew nothing. An error says why there are no pixels, for example when the window's thread
+/// does not answer within 3 s (a player that hangs, or one suspended while it pauses):
+/// PrintWindow waits for that thread, without limit.
+pub fn capture<T>(
+    hwnd: HWND,
+    read: impl FnOnce(&[u8], u32, u32) -> T,
+) -> Result<(RECT, T), &'static str> {
     windows_core::link!("user32.dll" "system" fn PrintWindow(hwnd: HWND, hdc: HDC, flags: u32) -> windows_core::BOOL);
     const PW_RENDERFULLCONTENT: u32 = 2;
     let rect = window_rect(hwnd);
     let (w, h) = (rect.right - rect.left, rect.bottom - rect.top);
     if w <= 0 || h <= 0 {
-        return None;
+        return Err("the window has no size");
     }
     // SAFETY: a message with a timeout; WM_NULL does nothing.
     let answered = unsafe {
@@ -87,7 +91,7 @@ pub fn capture<T>(hwnd: HWND, read: impl FnOnce(&[u8], u32, u32) -> T) -> Option
         )
     };
     if answered.0 == 0 {
-        return None;
+        return Err("the window did not answer within 3 s");
     }
     // SAFETY: GDI objects created and released here; the DIB's bits are read while selected.
     unsafe {
@@ -108,7 +112,7 @@ pub fn capture<T>(hwnd: HWND, read: impl FnOnce(&[u8], u32, u32) -> T) -> Option
         let dib = CreateDIBSection(Some(dc), &info, DIB_RGB_COLORS as u32, &mut bits, None, 0);
         if dib.0.is_null() || bits.is_null() {
             let _ = DeleteDC(dc);
-            return None;
+            return Err("no bitmap for the capture");
         }
         let old = SelectObject(dc, HGDIOBJ(dib.0));
         let drawn = PrintWindow(hwnd, dc, PW_RENDERFULLCONTENT).as_bool();
@@ -123,6 +127,6 @@ pub fn capture<T>(hwnd: HWND, read: impl FnOnce(&[u8], u32, u32) -> T) -> Option
         SelectObject(dc, old);
         let _ = DeleteObject(HGDIOBJ(dib.0));
         let _ = DeleteDC(dc);
-        Some((rect, pixels?))
+        Ok((rect, pixels.ok_or("PrintWindow failed")?))
     }
 }
