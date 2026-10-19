@@ -7,6 +7,7 @@
 - An icon dragged out of a fence onto the empty desktop stays in 「桌面」 (feedback #49), as with 「移出栅栏（放回“桌面”）」 in its menu. The sorting rules then ran on it at once, whether 「新项目出现在桌面时自动归类」 was on or off, so a shortcut went straight back to 「程序」 and could not be taken out of its fence by dragging. Icons new on the desktop are still sorted by the rules.
 - A file or folder dragged from the Recycle Bin window into a fence gets its name back (feedback #50), as when Explorer restores it. It kept the name the Recycle Bin gives it on disk, such as `$R7AB12C.docx`.
 - A folder or a file without an extension opens itself from a fence, also when a program or a shortcut of the same name lies beside it (feedback #51). A folder `Foo` next to `Foo.lnk` opened the shortcut's program, and a file `README` next to `README.bat` ran the batch file, because Windows tried the name with `.com`, `.exe`, `.bat`, `.lnk` and so on first. PecoFence now hands Windows the item itself, as Explorer does.
+- 「展开时把下面的栅栏推开」 also pushes fences that are 「锁定位置和大小」 (feedback #52). The expanded fence covered a locked fence below it, and after a restart with the upper fence saved expanded, the locked fence was even moved out of the way for good. A push only moves the window while the fence above is expanded, so a locked fence keeps its saved place and size.
 
 ## 0.2.3
 

@@ -16,9 +16,11 @@ use crate::fence_window::Pushed;
 /// Who may move a fence in this pass.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Role {
+    /// Pushed out of the way, also when locked (feedback #52): a push only moves the window
+    /// for a while, and the fence keeps its saved place.
     Free,
-    /// Locked: stays at its resting place.
-    Locked,
+    /// No spot on these monitors yet: stays at its resting place.
+    Settling,
     /// Stays where it is: in the user's hands (dragged, or resized when `pushes`), or pushed by
     /// a fence that is being dragged (it makes room again once that fence is dropped).
     Held,
@@ -59,7 +61,7 @@ fn stack(slots: &mut [Slot], enabled: bool) {
         let b = &slots[j];
         let mut y = match b.role {
             Role::Held => b.top,
-            Role::Locked => b.base,
+            Role::Settling => b.base,
             Role::Free => b.base,
         };
         let mut binding = None;
@@ -164,8 +166,8 @@ impl App {
                 let settles = settling.contains(&id);
                 let role = if is_dragged || frozen || sized == Some(hwnd) {
                     Role::Held
-                } else if settles || self.state.fence(id).is_some_and(|f| f.locked) {
-                    Role::Locked
+                } else if settles {
+                    Role::Settling
                 } else {
                     Role::Free
                 };
@@ -353,17 +355,12 @@ mod tests {
     }
 
     #[test]
-    fn locked_and_held_fences_are_not_moved() {
-        let mut s = vec![
-            slot(1, 0, 100, 300, TITLE),
-            slot(2, 0, 146, TITLE, TITLE),
-            slot(3, 0, 192, TITLE, TITLE),
-        ];
-        get(&mut s, 2).role = Role::Locked;
-        get(&mut s, 3).role = Role::Held;
-        get(&mut s, 3).top = 250;
+    fn a_held_fence_is_not_moved() {
+        let mut s = vec![slot(1, 0, 100, 300, TITLE), slot(2, 0, 146, TITLE, TITLE)];
+        get(&mut s, 2).role = Role::Held;
+        get(&mut s, 2).top = 250;
         stack(&mut s, true);
-        assert_eq!(ys(&s, &[2, 3]), vec![146, 250]);
+        assert_eq!(ys(&s, &[2]), vec![250]);
     }
 
     #[test]
@@ -405,7 +402,7 @@ mod tests {
             slot(3, 0, 420, TITLE, TITLE),
         ];
         let m = get(&mut s, 2);
-        m.role = Role::Locked;
+        m.role = Role::Settling;
         m.pushes = false;
         stack(&mut s, true);
         assert_eq!(ys(&s, &[2, 3]), vec![146, 420]);
