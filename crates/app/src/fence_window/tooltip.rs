@@ -148,7 +148,7 @@ impl FenceViewState {
                         w,
                         t.title_size,
                         t.folder_icon,
-                        t.id == self.active && self.deco.up_button,
+                        self.tab_up_button(i),
                         &self.theme,
                     )
                 };

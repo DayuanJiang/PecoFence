@@ -558,8 +558,9 @@ pub struct TabDraw<'a> {
     pub title_color: Option<ColorF>,
     /// A folder portal tab: its folder glyph is drawn before the caption (`TAB_ICON_W` wider).
     pub folder_icon: bool,
-    /// The shown tab is a portal inside a subfolder: the up button is drawn at the left of its
-    /// pill (`TitleDeco::STRIP_UP_W` wider).
+    /// A portal inside a subfolder: the up button is drawn at the left of its pill
+    /// (`TitleDeco::STRIP_UP_W` wider), also while another tab is shown. Only the shown tab's
+    /// takes hover and press.
     pub up_button: bool,
     pub active: bool,
     /// PointerOver pill alpha 0..=1.
@@ -2156,11 +2157,14 @@ impl FenceChrome {
                     halo.as_ref(),
                 );
                 if tab.up_button {
-                    // Up (Segoe Fluent E74A), as in a lone portal's title row.
+                    // Up (Segoe Fluent E74A), as in a lone portal's title row. On another tab
+                    // than the shown one it is a plain glyph: a click there picks the tab.
                     let box_r = TitleDeco::strip_up_box(tab.x, title_h);
-                    draw_up_box_fill(session, &backdrop, theme, scale, box_r, state, ta)?;
+                    if tab.active {
+                        draw_up_box_fill(session, &backdrop, theme, scale, box_r, state, ta)?;
+                    }
                     let glyph = session.create_solid_brush(with_alpha(
-                        if state.up_pressed {
+                        if tab.active && state.up_pressed {
                             foreground.text_tertiary
                         } else {
                             foreground.text_secondary

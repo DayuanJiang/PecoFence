@@ -732,15 +732,26 @@ impl FenceViewState {
                 .collect();
             *cache = fresh;
         }
-        // The shown tab's pill makes room for the portal up button; kept out of the cache, as
+        // A navigated portal tab's pill makes room for the up button; kept out of the cache, as
         // it follows the navigation, not the caption.
-        let up = pecofence_render::fence_chrome::tab_up_w(self.deco.up_button);
-        let active = self.active_index();
         cache
             .iter()
             .enumerate()
-            .map(|(i, (_, _, _, _, _, w))| if i == active { *w + up } else { *w })
+            .map(|(i, (_, _, _, _, _, w))| {
+                *w + pecofence_render::fence_chrome::tab_up_w(self.tab_up_button(i))
+            })
             .collect()
+    }
+
+    /// Does tab `i`'s pill in a title-row strip carry the portal up button? The shown tab
+    /// follows the window's decorations (which the click and the keys act on), the others
+    /// keep theirs while another tab is shown.
+    pub(super) fn tab_up_button(&self, i: usize) -> bool {
+        if i == self.active_index() {
+            self.deco.up_button
+        } else {
+            self.tabs.get(i).is_some_and(|t| t.up_button)
+        }
     }
 
     /// Peek search: the match count a tab's badge shows (None = no badge).
