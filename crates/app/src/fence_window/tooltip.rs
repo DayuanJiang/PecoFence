@@ -148,6 +148,7 @@ impl FenceViewState {
                         w,
                         t.title_size,
                         t.folder_icon,
+                        self.tab_up_button(i),
                         &self.theme,
                     )
                 };

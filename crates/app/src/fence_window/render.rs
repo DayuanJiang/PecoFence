@@ -444,6 +444,7 @@ impl FenceViewState {
                 title_size: t.title_size,
                 title_color: t.title_color,
                 folder_icon: t.folder_icon,
+                up_button: self.tab_up_button(i),
                 active: i == active,
                 hover: self.chrome_fades.value(&ChromeKey::Tab(i), now),
                 pressed: pressed_tab == Some(i),

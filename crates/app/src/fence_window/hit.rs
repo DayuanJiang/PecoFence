@@ -86,15 +86,27 @@ impl FenceViewState {
         y >= 0.0 && y < RowMetrics::details().header_h
     }
 
-    /// Is the client-pixel point on the portal "up" button? A tab strip in the title row has
-    /// none; a left tab column has it at the end of the shown tab's row (`rail_up_box`).
+    /// Is the client-pixel point on the portal "up" button? A tab strip in the title row has it
+    /// at the left of the shown tab's pill (`TitleDeco::strip_up_box`); a left tab column at the
+    /// end of the shown tab's row (`rail_up_box`).
     pub(super) fn up_button_at(&self, x_px: i32, y_px: i32) -> bool {
-        if !self.deco.up_button || self.title_row_strip() {
+        if !self.deco.up_button {
             return false;
         }
         let scale = self.scale();
         let (x, y) = (x_px as f32 / scale, y_px as f32 / scale);
-        let r = if self.tabs_on_rail() {
+        let r = if self.title_row_strip() {
+            // The pill is where it is drawn (sliding, dragged); a scrolled strip's cut-off part
+            // takes no click (`tab_at`).
+            let i = self.active_index();
+            let Some(&tab_x) = self.tab_draw_xs(Instant::now()).get(i) else {
+                return false;
+            };
+            if self.tab_at(x_px, y_px) != Some(i) {
+                return false;
+            }
+            TitleDeco::strip_up_box(tab_x, self.theme.title_height)
+        } else if self.tabs_on_rail() {
             match self.rail_up_box() {
                 Some(r) => r,
                 None => return false,
