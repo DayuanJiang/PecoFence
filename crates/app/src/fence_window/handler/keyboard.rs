@@ -23,9 +23,12 @@ pub(super) fn on_activate(
     if !stays
         && let Ok(mut guard) = view.try_borrow_mut()
         && let Some(v) = guard.as_mut()
-        && v.set_active(!inactive)
     {
-        let _ = v.redraw_content();
+        let cleared = inactive && v.clear_selection_on_deactivate();
+        let changed = v.set_active(!inactive);
+        if changed || cleared {
+            let _ = v.redraw_content();
+        }
     }
     None
 }

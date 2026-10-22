@@ -428,6 +428,18 @@ impl FenceViewState {
         !self.selected.is_empty() && !self.rolled_up
     }
 
+    /// Drops the selection (and the Shift-range / keyboard anchors) when the fence is deactivated,
+    /// so no item stays highlighted in a fence the user has left. Returns true when something
+    /// was selected and the content needs a redraw.
+    #[must_use]
+    pub(super) fn clear_selection_on_deactivate(&mut self) -> bool {
+        let had = !self.selected.is_empty();
+        self.selected.clear();
+        self.anchor_index = None;
+        self.range_anchor = None;
+        had && !self.rolled_up
+    }
+
     /// Pointer-initiated activation. Explorer processes WM_MOUSEACTIVATE / focus before the
     /// button message, so a clicked item is accent on its first frame; the 167 ms cross-fade
     /// is reserved for WM_ACTIVATE-driven changes (focus leaving / returning without a click).
