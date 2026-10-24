@@ -124,6 +124,8 @@ function bridge() {
             crashed: !!state.crashed, system: { app: 'PecoFence 0.1.4 (ZIP / winget)', windows: 'build 26200' },
             log: 'INFO pecofence::app: config loaded fences=4' } }), 0);
         }
+        // Mirror the host: the system colour dialog answers with the colour picked there.
+        if (message.name === 'pickColor') setTimeout(() => receive({ data: { type: 'pickedColor', target: message.target, hex: '123456' } }), 0);
         if (message.name === 'deleteSnapshot') state.snapshots = state.snapshots.filter(s => s.id !== message.id);
         if (['ready', 'patchSettings', 'setRules', 'setFence'].includes(message.type) || message.type === 'action') {
           setTimeout(window.testRefresh, 0);
@@ -606,6 +608,31 @@ async function runTests() {
     const sent = frame.contentWindow.testMessages.filter(m => m.type === 'setFence').at(-1);
     assert(sent.prop === 'tint' && sent.value === '0078D4', 'Fence tint swatch did not post setFence');
     assert(doc.querySelector('#fenceTintSwatches [data-value="0078D4"]').getAttribute('aria-checked') === 'true', 'Fence tint swatch not selected after refresh');
+    doc.querySelector('#fenceTintSwatches [data-value=""]').click(); await settle();
+  });
+  await test('The custom colour swatch opens the colour dialog and stands for a colour off the palette', async () => {
+    doc.querySelector('[data-page=general]').click();
+    const swatches = doc.getElementById('iconTintSwatches');
+    const custom = swatches.children[1];
+    assert(custom.classList.contains('custom') && !custom.classList.contains('set') && custom.getAttribute('aria-checked') === 'false', 'Custom swatch not right after no tint');
+    const none = swatches.children[0];
+    none.focus();
+    none.dispatchEvent(new frame.contentWindow.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })); await settle();
+    assert(doc.activeElement === custom && !frame.contentWindow.testMessages.some(m => m.name === 'pickColor'), 'Arrow key did not just focus the custom swatch');
+    custom.click(); await settle(); await settle();
+    const asked = frame.contentWindow.testMessages.filter(m => m.name === 'pickColor').at(-1);
+    assert(asked && asked.target === 'iconTint', 'Colour dialog not requested');
+    assert(rgbHex(current().settings.icons.tintRgb) === '123456', 'Picked colour not posted');
+    assert(custom.classList.contains('set') && custom.getAttribute('aria-checked') === 'true' && custom.dataset.value === '123456', 'Custom swatch does not show the picked colour');
+    assert(swatches.children.length === doc.getElementById('iconTint').options.length, 'Picked colour added a second swatch');
+    swatches.querySelector('[data-value=""]').click(); await settle();
+    assert(!custom.classList.contains('set'), 'Custom swatch kept a cleared colour');
+    doc.querySelector('[data-page=fences]').click();
+    change(doc, 'fenceSel', 'fence-a');
+    doc.querySelector('#fenceTintSwatches .custom').click(); await settle(); await settle();
+    const sent = frame.contentWindow.testMessages.filter(m => m.type === 'setFence').at(-1);
+    assert(sent.prop === 'tint' && sent.value === '123456', 'Fence custom tint did not post setFence');
+    assert(doc.querySelector('#fenceTintSwatches .custom').getAttribute('aria-checked') === 'true', 'Fence custom swatch not selected after refresh');
     doc.querySelector('#fenceTintSwatches [data-value=""]').click(); await settle();
   });
   await test('Title alignment is posted and previewed; fully transparent fences show their preset', async () => {

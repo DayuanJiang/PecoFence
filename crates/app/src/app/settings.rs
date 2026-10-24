@@ -175,6 +175,29 @@ impl App {
         }
     }
 
+    /// 「自定义颜色」 swatch: the system colour dialog, opened on the colour the swatch holds.
+    /// The page applies the answer to the swatch row named by `target`, like a swatch click.
+    fn pick_color(&mut self, v: &serde_json::Value) {
+        let owner = self.settings.as_ref().map(|h| h.hwnd());
+        let initial = v
+            .get("color")
+            .and_then(|c| c.as_str())
+            .and_then(fence_options::parse_hex);
+        let accent = self.ctx.theme.borrow().accent_rgb8();
+        if let Some(rgb) = pecofence_platform::colordialog::pick(owner, initial, accent)
+            && let Some(h) = &self.settings
+        {
+            h.post_json(
+                &serde_json::json!({
+                    "type": "pickedColor",
+                    "target": v.get("target"),
+                    "hex": fence_options::hex(rgb),
+                })
+                .to_string(),
+            );
+        }
+    }
+
     pub(super) fn import_config(&mut self) {
         let owner = self.settings.as_ref().map(|h| h.hwnd());
         match pecofence_platform::filedialog::open_json(
@@ -608,6 +631,7 @@ impl App {
                         self.swap_monitors(&a, &b);
                     }
                 }
+                Some("pickColor") => self.pick_color(&v),
                 Some("exportConfig") => self.export_config(),
                 Some("importConfig") => self.import_config(),
                 Some("restoreBackup") => {
