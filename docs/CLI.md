@@ -229,7 +229,9 @@ included. `config.json` and `config export` files write this condition as
 is rejected with `invalid_value` and the hint to re-save it (`| Set-Content -Encoding utf8`).
 
 `settings set` paths are dotted camelCase keys of the Settings object, e.g. `iconSize`, `theme`,
-`themeStyle`, `hideRealIcons`, `hideInboxWhenIconsShown` (while `hideRealIcons` is off, the inbox
+`themeStyle`, `hideRealIcons`, `keepIconsHidden` (with `hideRealIcons`, Windows' desktop icons stay
+hidden when PecoFence exits, so they do not flash at the next sign-in; default off),
+`hideInboxWhenIconsShown` (while `hideRealIcons` is off, the inbox
 fence shows no window and its items only show among the Windows desktop icons; a tab or a host of
 tabs stays; default off), `offerNewFence` (a rectangle drawn on empty desktop that touches no fence
 offers 「在此新建栅栏」; default on), `autostart`, `peek.enabled`, `quickHide.enabled`,

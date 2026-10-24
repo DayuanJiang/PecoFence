@@ -281,6 +281,8 @@
   "随 Windows 启动": "Démarrer avec Windows",
   "隐藏 Windows 桌面图标": "Masquer les icônes du Bureau Windows",
   "双击桌面空白处隐藏或显示栅栏": "Double-cliquer sur le Bureau pour masquer ou afficher les groupes",
+  "关闭 PecoFence 时保持 Windows 桌面图标隐藏": "Garder les icônes du Bureau Windows masquées à la fermeture de PecoFence",
+  "登录时 Windows 会先显示桌面图标，等 PecoFence 启动后才隐藏。打开后，退出或注销时图标保持隐藏，下次登录就不会闪现；PecoFence 没有运行时，桌面上不显示图标": "À l’ouverture de session, Windows affiche ses icônes jusqu’à ce que PecoFence démarre et les masque. Si cette option est activée, elles restent masquées quand PecoFence se ferme ou que vous vous déconnectez, et ne clignotent plus à la session suivante. Tant que PecoFence n’est pas en cours d’exécution, le Bureau n’affiche aucune icône",
   "显示 Windows 桌面图标时隐藏“桌面”栅栏": "Masquer le groupe « Bureau » quand les icônes du Bureau Windows sont affichées",
   "未归类的项目只留在 Windows 桌面上；关闭“隐藏 Windows 桌面图标”后可用": "Les éléments non classés restent seulement sur le Bureau Windows ; disponible quand « Masquer les icônes du Bureau Windows » est désactivé",
   "在桌面空白处拖出矩形时提供“在此新建栅栏”": "Proposer « Créer un groupe ici » après avoir tracé un rectangle sur le Bureau",

@@ -281,6 +281,8 @@
   "随 Windows 启动": "Start with Windows",
   "隐藏 Windows 桌面图标": "Hide Windows desktop icons",
   "双击桌面空白处隐藏或显示栅栏": "Double-click the desktop to hide or show fences",
+  "关闭 PecoFence 时保持 Windows 桌面图标隐藏": "Keep Windows desktop icons hidden when PecoFence closes",
+  "登录时 Windows 会先显示桌面图标，等 PecoFence 启动后才隐藏。打开后，退出或注销时图标保持隐藏，下次登录就不会闪现；PecoFence 没有运行时，桌面上不显示图标": "At sign-in Windows shows its desktop icons until PecoFence starts and hides them. With this on, they stay hidden when PecoFence exits or you sign out, so they don’t flash at the next sign-in. While PecoFence isn’t running, the desktop shows no icons",
   "显示 Windows 桌面图标时隐藏“桌面”栅栏": "Hide the Desktop fence while Windows desktop icons are shown",
   "未归类的项目只留在 Windows 桌面上；关闭“隐藏 Windows 桌面图标”后可用": "Unassigned items stay on the Windows desktop only. Available while Hide Windows desktop icons is off",
   "在桌面空白处拖出矩形时提供“在此新建栅栏”": "Offer “Create a fence here” after dragging a rectangle on the desktop",

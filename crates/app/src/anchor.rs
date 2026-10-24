@@ -154,6 +154,11 @@ struct DesktopIcons {
 }
 
 impl DesktopIcons {
+    /// Next to the marker: exit left the icons hidden on purpose (`keep_icons_hidden`).
+    fn kept_marker(&self) -> PathBuf {
+        self.marker.with_extension("kept")
+    }
+
     fn new() -> Self {
         let base = std::env::var_os("LOCALAPPDATA")
             .map(PathBuf::from)
@@ -195,6 +200,8 @@ pub struct DesktopAnchor {
     _hook: Option<WinEventHook>,
     quick: QuickHide,
     icons: DesktopIcons,
+    /// `Settings::keep_icons_hidden`: exit leaves the icons hidden (`release_desktop_icons`).
+    pub keep_icons_hidden: bool,
     pub quick_hide_enabled: bool,
     /// Optional test script driven by TIMER_TEST on the sentinel window.
     pub test_hook: Option<TestHook>,
@@ -333,6 +340,7 @@ impl DesktopAnchor {
             _hook: hook,
             quick: QuickHide::default(),
             icons: DesktopIcons::new(),
+            keep_icons_hidden: false,
             quick_hide_enabled,
             test_hook: None,
             quit_requested: false,
@@ -986,11 +994,18 @@ impl DesktopAnchor {
             self.host = desktop::resolve_icon_host(self.generation);
         }
         let Some(h) = self.host else { return false };
+        let kept = self.icons.kept_marker();
         if shell_icons::desktop_icons_hidden() {
-            if self.icons.marker.exists() {
-                // Our previous run (and its watchdog) died without restoring: take ownership
-                // again so exit restores the icons and a fresh watchdog covers a crash.
+            if self.icons.marker.exists() || kept.exists() {
+                // Our previous run died without restoring them, or left them hidden on purpose
+                // (`release_desktop_icons`). Taking them back lets exit restore or keep them as
+                // the setting says, and a fresh watchdog covers a crash.
                 tracing::info!("desktop icons still hidden by our previous run; adopting");
+                if let Some(dir) = self.icons.marker.parent() {
+                    let _ = std::fs::create_dir_all(dir);
+                }
+                let _ = std::fs::write(&self.icons.marker, b"pecofence hid desktop icons\n");
+                let _ = std::fs::remove_file(&kept);
                 self.icons.we_hid_them = true;
                 self.spawn_watchdog();
             } else {
@@ -998,6 +1013,8 @@ impl DesktopAnchor {
             }
             return true;
         }
+        // Shown by the user since: nothing of ours to keep.
+        let _ = std::fs::remove_file(&kept);
         if let Some(dir) = self.icons.marker.parent() {
             let _ = std::fs::create_dir_all(dir);
         }
@@ -1098,6 +1115,24 @@ impl DesktopAnchor {
         }
         self.icons.we_hid_them = false;
         let _ = std::fs::remove_file(&self.icons.marker);
+    }
+
+    /// At exit and at the end of the session: restores the icons, or with `keep_icons_hidden`
+    /// leaves them hidden for the next sign-in. The kept marker says they are still ours, so
+    /// the next start adopts them and the uninstaller shows them; the watchdog leaves them.
+    pub fn release_desktop_icons(&mut self) {
+        if self.keep_icons_hidden && self.icons.we_hid_them {
+            self.cancel_pending_hide();
+            let _ = std::fs::write(
+                self.icons.kept_marker(),
+                b"pecofence keeps desktop icons hidden\n",
+            );
+            self.icons.we_hid_them = false;
+            let _ = std::fs::remove_file(&self.icons.marker);
+            tracing::info!("desktop icons left hidden for the next sign-in");
+            return;
+        }
+        self.restore_desktop_icons();
     }
 
     /// True when a previous run left the marker behind (crashed without restoring).
@@ -1204,6 +1239,7 @@ pub fn register_sentinel_class() -> Result<WindowClass> {
 
 impl Drop for DesktopAnchor {
     fn drop(&mut self) {
+        // A clean exit released the icons already; a panic unwinding to here shows them.
         self.restore_desktop_icons();
         self.set_raw_input_sink(false);
     }
