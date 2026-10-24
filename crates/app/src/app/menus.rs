@@ -55,6 +55,18 @@ const CMD_FENCE_OPTIONS: u32 = 331;
 const CMD_FENCE_NEW_FOLDER: u32 = 340;
 const CMD_FENCE_NEW_TEXT: u32 = 341;
 const CMD_FENCE_PASTE: u32 = 342;
+/// Title bar › Alignment › Use General setting / Left / Center / Right.
+const CMD_FENCE_ALIGN_DEFAULT: u32 = 357;
+const CMD_FENCE_ALIGN_START: u32 = 354;
+const CMD_FENCE_ALIGN_CENTER: u32 = 355;
+const CMD_FENCE_ALIGN_END: u32 = 356;
+/// A title row's 向上展开.
+const CMD_FENCE_EXPAND_UP: u32 = 359;
+const CMD_FENCE_SHRINK_COLLAPSED: u32 = 363;
+/// Title bar › 显示标题栏 › Use General setting / Always / On hover.
+const CMD_FENCE_TITLE_FOLLOW: u32 = 367;
+const CMD_FENCE_TITLE_ALWAYS: u32 = 368;
+const CMD_FENCE_TITLE_HOVER: u32 = 364;
 const CMD_FENCE_VIEW_ICONS: u32 = 360;
 const CMD_FENCE_VIEW_LIST: u32 = 361;
 const CMD_FENCE_VIEW_DETAILS: u32 = 362;
@@ -100,6 +112,7 @@ mod glyph {
     pub const FOLDER: char = '\u{E8B7}';
     /// Favicon: a frame with a title strip, like a fence with tabs.
     pub const TAB: char = '\u{E737}';
+    pub const TITLE_BAR: char = '\u{E8A0}';
     pub const LOCK: char = '\u{E72E}';
     pub const UNLOCK: char = '\u{E785}';
     pub const DELETE: char = '\u{E74D}';
@@ -118,6 +131,32 @@ mod glyph {
     pub const REPAIR: char = '\u{E90F}';
     pub const MESSAGE: char = '\u{E8BD}';
     pub const EXIT: char = '\u{F3B1}';
+}
+
+/// What the fence menu's Title bar submenu greys out for a fence.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(super) struct TitleMenuGreys {
+    pub align: bool,
+    pub shrink: bool,
+    pub hover: bool,
+    pub expand: bool,
+}
+
+/// 标签栏位置 → 左侧 lists the tabs of a fence with two or more in a column, which fills from its
+/// top, always shrinks to its tabs and never hides. A fence `arranged` like the desktop has no
+/// title bar and never rolls, so nothing in the submenu applies to it.
+pub(super) fn title_menu_greys(
+    tabbed: bool,
+    tab_bar: pecofence_core::TabBar,
+    arranged: bool,
+) -> TitleMenuGreys {
+    let column = tabbed && tab_bar == pecofence_core::TabBar::Left;
+    TitleMenuGreys {
+        align: column || arranged,
+        shrink: column || arranged,
+        hover: column || arranged,
+        expand: arranged,
+    }
 }
 
 impl App {
@@ -698,6 +737,88 @@ impl App {
                 !clipboard::has_file_list(),
             )
             .icon(glyph::PASTE);
+        // Title bar ›, right above Tabs: the tabs live in the title bar.
+        let greys = title_menu_greys(
+            self.state.tabs_of(host).len() > 1,
+            self.ctx.behavior.tab_bar.get(),
+            arranged,
+        );
+        let title_menu = PopupMenu::new();
+        // Alignment along the title row, as stored: the General setting or the fence's own.
+        let own_align = h.appearance.as_ref().and_then(|a| a.title_align);
+        let align_menu = PopupMenu::new();
+        align_menu
+            .item(
+                CMD_FENCE_ALIGN_DEFAULT,
+                pecofence_core::i18n::text("跟随常规设置"),
+                own_align.is_none(),
+                greys.align,
+            )
+            .separator();
+        for (cmd, a, label) in [
+            (
+                CMD_FENCE_ALIGN_START,
+                pecofence_core::TitleAlign::Left,
+                "左对齐",
+            ),
+            (
+                CMD_FENCE_ALIGN_CENTER,
+                pecofence_core::TitleAlign::Center,
+                "居中",
+            ),
+            (
+                CMD_FENCE_ALIGN_END,
+                pecofence_core::TitleAlign::Right,
+                "右对齐",
+            ),
+        ] {
+            align_menu.item(
+                cmd,
+                pecofence_core::i18n::text(label),
+                own_align == Some(a),
+                greys.align,
+            );
+        }
+        title_menu.submenu(pecofence_core::i18n::text("对齐方式"), align_menu);
+        title_menu
+            .item(
+                CMD_FENCE_EXPAND_UP,
+                pecofence_core::i18n::text("向上展开"),
+                h.expand_upward,
+                greys.expand,
+            )
+            .item(
+                CMD_FENCE_SHRINK_COLLAPSED,
+                pecofence_core::i18n::text("收起时缩短"),
+                h.shrinks_collapsed(),
+                greys.shrink,
+            );
+        // As stored, like the page's 显示标题栏: the General setting, always, or on hover.
+        let own_hover = h.appearance.as_ref().and_then(|a| a.title_on_hover);
+        let hover_menu = PopupMenu::new();
+        hover_menu
+            .item(
+                CMD_FENCE_TITLE_FOLLOW,
+                pecofence_core::i18n::text("跟随常规设置"),
+                own_hover.is_none(),
+                greys.hover,
+            )
+            .separator()
+            .item(
+                CMD_FENCE_TITLE_ALWAYS,
+                pecofence_core::i18n::text("始终显示"),
+                own_hover == Some(false),
+                greys.hover,
+            )
+            .item(
+                CMD_FENCE_TITLE_HOVER,
+                pecofence_core::i18n::text("鼠标悬停时显示"),
+                own_hover == Some(true),
+                greys.hover,
+            );
+        title_menu.submenu(pecofence_core::i18n::text("显示标题栏"), hover_menu);
+        menu.submenu(pecofence_core::i18n::text("标题栏"), title_menu)
+            .icon(glyph::TITLE_BAR);
         // Tabbed fences (Fences 6): split a tab out, move it along the strip, or merge this
         // fence into another window. Hidden when none of that applies.
         let tabs = self.state.tabs_of(host);
@@ -949,6 +1070,32 @@ impl App {
                 self.state.set_group_by_date(fence, !f.view.group_by_date);
                 self.refresh_fence(fence);
                 self.schedule_save();
+            }
+            CMD_FENCE_ALIGN_DEFAULT
+            | CMD_FENCE_ALIGN_START
+            | CMD_FENCE_ALIGN_CENTER
+            | CMD_FENCE_ALIGN_END => {
+                let align = match cmd {
+                    CMD_FENCE_ALIGN_START => Some(pecofence_core::TitleAlign::Left),
+                    CMD_FENCE_ALIGN_CENTER => Some(pecofence_core::TitleAlign::Center),
+                    CMD_FENCE_ALIGN_END => Some(pecofence_core::TitleAlign::Right),
+                    _ => None,
+                };
+                self.set_fence_title_align(host, align);
+            }
+            CMD_FENCE_EXPAND_UP => self.set_fence_expand_upward(host, !h.expand_upward),
+            CMD_FENCE_SHRINK_COLLAPSED => {
+                // Toggled back off, the fence follows the default again.
+                let shrink = !h.shrinks_collapsed();
+                self.set_fence_collapsed_size(host, shrink.then_some(true));
+            }
+            CMD_FENCE_TITLE_FOLLOW | CMD_FENCE_TITLE_ALWAYS | CMD_FENCE_TITLE_HOVER => {
+                let on = match cmd {
+                    CMD_FENCE_TITLE_ALWAYS => Some(false),
+                    CMD_FENCE_TITLE_HOVER => Some(true),
+                    _ => None,
+                };
+                self.set_fence_title_on_hover(host, on);
             }
             CMD_FENCE_LOCK => self.set_fence_locked(host, !h.locked),
             CMD_FENCE_OPTIONS => self.open_fence_options(fence),

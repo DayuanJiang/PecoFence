@@ -139,7 +139,7 @@ impl FenceViewState {
                             &t.title,
                             room,
                             t.title_size,
-                            active && !self.column_collapsed,
+                            active && !self.column_collapsed(),
                         )
                 } else {
                     let (_, w) = *self.tab_rects().get(i)?;

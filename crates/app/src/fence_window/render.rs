@@ -436,9 +436,10 @@ impl FenceViewState {
             .map(|(x, w)| (x.value_at(now), w.value_at(now)));
         let deco = self.deco;
         let style = FenceStyle {
-            title_align: self.behavior.title_align.get(),
+            title_align: self.title_align(),
             tab_rail: self.rail_w(),
             hide_count_and_chevron: self.behavior.hide_count_and_chevron.get(),
+            chevron_leads: self.chevron_leads(),
             ..self.style
         };
         let pressed_tab = match self.pressed {
@@ -610,9 +611,9 @@ impl FenceViewState {
             .set_center(&self.root, w as f32 / 2.0, h as f32 / 2.0);
         self.update_shape_clip(w, h)?;
         self.chrome_panel.resize(w, h)?;
-        // A fence collapsed (or collapsing) to its left tab column keeps the width it returns
-        // to; the column's width follows the expanded fence.
-        if !self.column_collapsed && self.roll_anim.as_ref().is_none_or(|a| a.width.is_none()) {
+        // A fence collapsed (or collapsing) to its left tab column or a shrunk title row keeps
+        // the width it returns to; the column's width follows the expanded fence.
+        if !self.width_collapsed && self.roll_anim.as_ref().is_none_or(|a| a.width.is_none()) {
             self.expanded_w_px = w;
         }
         self.rail_dip = self.measure_rail_w();

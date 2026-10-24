@@ -896,6 +896,21 @@ impl App {
                 self.apply_auto_height(host);
             }
         }
+        // A rolled title row that shrinks pivots where its title sits and fits its item count:
+        // either setting places it again.
+        if new.title_align != old.title_align
+            || new.roll_up.hide_count_and_chevron != old.roll_up.hide_count_and_chevron
+        {
+            let shrunk: Vec<FenceId> = self
+                .fences
+                .keys()
+                .copied()
+                .filter(|id| self.state.fence(*id).is_some_and(|f| f.shrinks_collapsed()))
+                .collect();
+            for id in shrunk {
+                self.place_title_bar(id);
+            }
+        }
         self.ctx
             .behavior
             .backdrop

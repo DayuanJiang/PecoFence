@@ -86,13 +86,13 @@ impl FenceWindow {
         let hwnd = self.hwnd();
         let moved = flush_window_drag(&self.view, hwnd, now, None);
         // Phase 1: compute under a short borrow.
-        let (height, more, upward) = {
+        let (height, more, (upward, anchor)) = {
             let mut guard = self.view.borrow_mut();
             let Some(v) = guard.as_mut() else {
                 return false;
             };
-            let upward = v.anim_upward;
-            // A collapse to a left tab column (or an expand from it) also moves the width.
+            // A collapse to a left tab column or a shrinking title row (or an expand from it) also
+            // moves the width.
             let width = v
                 .roll_anim
                 .as_ref()
@@ -115,7 +115,7 @@ impl FenceWindow {
             (
                 height.map(|(h, done, rolled)| (width, h, done, rolled)),
                 more,
-                upward,
+                (v.anim_upward, v.width_anchor()),
             )
         };
         // Phase 2: window geometry with no borrow held (WM_SIZE re-enters the handler; while
@@ -126,7 +126,8 @@ impl FenceWindow {
         let r = window::window_rect(hwnd);
         let w = w.unwrap_or(r.right - r.left);
         let top = top_for_height(upward, &r, h);
-        let _ = window::set_window_bounds(hwnd, r.left, top, w, h);
+        let left = self.pivoted_left(&r, w, anchor);
+        let _ = window::set_window_bounds(hwnd, left, top, w, h);
         if !done {
             return true;
         }

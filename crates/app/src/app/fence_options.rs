@@ -65,6 +65,8 @@ pub(super) const FENCE_PROPS: &[&str] = &[
     "titleColor",
     "titleSize",
     "titleOnHover",
+    "titleAlign",
+    "collapsedSize",
     "layout",
     "sort",
     "reverse",
@@ -111,6 +113,10 @@ pub(super) enum FenceProp {
     TitleSize(Option<TitleSize>),
     /// None = the global `rollUp.titleOnHover`.
     TitleOnHover(Option<bool>),
+    /// None = the global `titleAlign`.
+    TitleAlign(Option<pecofence_core::TitleAlign>),
+    /// Whether the collapsed title row shrinks to what it shows; None = it keeps its width.
+    CollapsedSize(Option<bool>),
     /// Regular fences: a double-clicked folder opens inside the fence.
     OpenFoldersInside(bool),
     PortalNavigate(bool),
@@ -227,6 +233,30 @@ pub(super) fn parse_fence_prop(
                 "default" => None,
                 "hover" => Some(true),
                 "always" => Some(false),
+                _ => return Err(bad(ALLOWED)),
+            })
+        }
+        "titleAlign" => {
+            use pecofence_core::TitleAlign;
+            const ALLOWED: &[&str] = &["default", "left", "center", "right"];
+            FenceProp::TitleAlign(match as_str(ALLOWED)? {
+                "default" => None,
+                "left" => Some(TitleAlign::Left),
+                "center" => Some(TitleAlign::Center),
+                "right" => Some(TitleAlign::Right),
+                _ => return Err(bad(ALLOWED)),
+            })
+        }
+        "collapsedSize" => {
+            const ALLOWED: &[&str] = &["default", "fit", "full"];
+            // The settings page's switch sends true (fit) or false (full).
+            if let Some(fit) = value.as_bool() {
+                return Ok(FenceProp::CollapsedSize(Some(fit)));
+            }
+            FenceProp::CollapsedSize(match as_str(ALLOWED)? {
+                "default" => None,
+                "fit" => Some(true),
+                "full" => Some(false),
                 _ => return Err(bad(ALLOWED)),
             })
         }
@@ -349,6 +379,35 @@ impl App {
         self.state.set_desktop_layout(fence, on);
         self.sync_hidden_fences();
         self.apply_fence_view(fence);
+        self.schedule_save();
+    }
+
+    /// None = the global Title alignment setting. A title row that shrinks while collapsed
+    /// pivots where its title sits, so a rolled fence is placed again.
+    pub(super) fn set_fence_title_align(
+        &mut self,
+        fence: FenceId,
+        align: Option<pecofence_core::TitleAlign>,
+    ) {
+        let host = self.state.host_of(fence);
+        self.state.set_title_align(host, align);
+        self.apply_fence_appearance(host);
+        if self
+            .state
+            .fence(host)
+            .is_some_and(|f| f.shrinks_collapsed())
+        {
+            self.place_title_bar(host);
+        }
+        self.schedule_save();
+    }
+
+    /// Whether the collapsed title row shrinks to its title or tabs (None = it keeps its width).
+    pub(super) fn set_fence_collapsed_size(&mut self, fence: FenceId, shrink: Option<bool>) {
+        let host = self.state.host_of(fence);
+        self.state.set_shrink_collapsed(host, shrink);
+        self.apply_fence_appearance(host);
+        self.place_title_bar(host);
         self.schedule_save();
     }
 
@@ -579,6 +638,23 @@ impl App {
             "titleColor": title_color,
             "titleSize": title_size,
             "titleOnHover": title_on_hover,
+            "titleAlign": match h.appearance.as_ref().and_then(|a| a.title_align) {
+                None => "default",
+                Some(pecofence_core::TitleAlign::Left) => "left",
+                Some(pecofence_core::TitleAlign::Center) => "center",
+                Some(pecofence_core::TitleAlign::Right) => "right",
+            },
+            "collapsedSize": match h.appearance.as_ref().and_then(|a| a.shrink_collapsed) {
+                None => "default",
+                Some(true) => "fit",
+                Some(false) => "full",
+            },
+            "collapsedShrinks": h.shrinks_collapsed(),
+            // 像桌面一样排列 as the fence menu sees it: no title bar, so the page greys its options.
+            "desktopArranged": self
+                .fences
+                .get(&host_id)
+                .is_some_and(|w| w.is_desktop_arranged()),
             "hideWhenEmpty": f.hide_when_empty,
             "desktopLayout": f.desktop_layout,
             "openFoldersInside": f.open_folders_inside,
@@ -663,6 +739,8 @@ impl App {
                 self.set_fence_title_style(fence, title_rgb, size);
             }
             FenceProp::TitleOnHover(on) => self.set_fence_title_on_hover(fence, on),
+            FenceProp::TitleAlign(align) => self.set_fence_title_align(fence, align),
+            FenceProp::CollapsedSize(shrink) => self.set_fence_collapsed_size(fence, shrink),
             FenceProp::OpenFoldersInside(on) => self.set_fence_open_folders_inside(fence, on),
             FenceProp::PortalNavigate(on) => self.set_fence_portal_navigate(fence, on),
             FenceProp::PortalTitleIcon(on) => self.set_fence_title_icon(fence, on),

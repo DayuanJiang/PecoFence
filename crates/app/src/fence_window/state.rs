@@ -201,9 +201,9 @@ pub struct FenceViewState {
     /// Expanded window width (device px): what a fence collapsed to its left tab column
     /// returns to, and the width the layout records for it.
     pub(super) expanded_w_px: i32,
-    /// The window is collapsed (or collapsing) to its left tab column: it is as narrow as the
-    /// column, and `expanded_w_px` keeps its width.
-    pub(super) column_collapsed: bool,
+    /// The window is collapsed (or collapsing) narrower than it expands: to its left tab column,
+    /// or to a title row that shrinks (`collapses_width`); `expanded_w_px` keeps its width.
+    pub(super) width_collapsed: bool,
     pub(super) _target: DesktopWindowTarget,
     /// Root of the window's visual tree: whole-window fades / scales animate this.
     pub(super) root: ContainerVisual,
@@ -270,6 +270,8 @@ pub struct FenceViewState {
     pub(super) tab_hover_switch: Option<usize>,
     /// Fence height follows the item grid (FenceView.auto_height).
     pub(super) auto_height: bool,
+    /// This fence's title alignment; None follows `Behavior::title_align`.
+    pub(super) title_align: Option<pecofence_core::TitleAlign>,
     /// The left tab column appeared or grew (a tab joined, a caption changed, 标签栏位置): the
     /// next height pass lets a fence too short for it grow (`take_rail_growth_px`).
     pub(super) rail_grow: bool,
@@ -283,6 +285,9 @@ pub struct FenceViewState {
     pub(super) row_bottom: bool,
     /// The `row_bottom` the running height animation started with: it keeps moving that edge.
     pub(super) anim_upward: bool,
+    /// Where the width of a title row shrunk around its centre pivots (screen px), and the left
+    /// edge and width last set from it (`pivot_left`).
+    pub(super) width_pivot: Option<(f32, i32, i32)>,
     /// Per-fence material override; None follows the global setting.
     pub(super) backdrop_override: Option<BackdropMode>,
     /// Per-fence opacity multiplier for the glass layer (1.0 = default).

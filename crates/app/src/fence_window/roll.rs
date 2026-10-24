@@ -2,6 +2,30 @@
 
 use super::*;
 
+/// Left edge (device px) of a window going `w` wide that pivots at fraction `anchor` of its
+/// width (a title row shrunk around its centre). The pivot in `kept` (with the left edge and
+/// width the last frame set) carries over while the window at `r_left`, `cur_w` wide still
+/// matches, so rounding never adds up over frames and rolls; a resize or snap measures it
+/// again. Keeping the width keeps the left edge. Returns the left edge and the new `kept`.
+pub(super) fn pivot_left(
+    kept: Option<(f32, i32, i32)>,
+    r_left: i32,
+    cur_w: i32,
+    w: i32,
+    anchor: f32,
+) -> (i32, (f32, i32, i32)) {
+    let pivot = match kept {
+        Some((pivot, left, width)) if left == r_left && width == cur_w => pivot,
+        _ => r_left as f32 + cur_w as f32 * anchor,
+    };
+    let left = if w == cur_w {
+        r_left
+    } else {
+        (pivot - w as f32 * anchor).round() as i32
+    };
+    (left, (pivot, left, w))
+}
+
 /// The rolled state the chrome shows: the end state of a roll in flight, else the resting one.
 pub(super) fn roll_target_of(rolling_to: Option<bool>, rolled_up: bool) -> bool {
     rolling_to.unwrap_or(rolled_up)
@@ -439,15 +463,16 @@ impl FenceViewState {
         let cur = window::window_rect(self.hwnd);
         let (cur_w, cur_h) = (cur.right - cur.left, cur.bottom - cur.top);
         // A fence with a left tab column collapses to the column (its title bar) rather than
-        // to a title row: the width moves with the height.
-        let to_w = self.tabs_on_rail().then(|| {
+        // to a title row, and a shrinking title row to what it shows: the width moves with the
+        // height.
+        let to_w = self.collapses_width().then(|| {
             if rolled {
                 self.rolled_w_px()
             } else {
                 self.expanded_w_px
             }
         });
-        self.column_collapsed = rolled && to_w.is_some();
+        self.width_collapsed = rolled && to_w.is_some();
         let to_h = if rolled {
             self.rolled_h_px()
         } else if let Some((_, h)) = side {
@@ -522,8 +547,12 @@ impl FenceViewState {
         self.roll_t
             .retarget(rolled as u8 as f32, self.anim_dur(dur), curve, now);
         // A left tab column keeps its pills where they are (it has no item count to make room
-        // for, and it is hidden while rolled).
-        if self.tabs.len() > 1 && self.tab_drag.is_none() && !self.tabs_on_rail() {
+        // for, and it is hidden while rolled). So does a title row that shrinks while rolled.
+        if self.tabs.len() > 1
+            && self.tab_drag.is_none()
+            && !self.tabs_on_rail()
+            && !self.collapses_width()
+        {
             self.sync_tab_slides(&prev, now);
         }
         self.frames.request();

@@ -172,7 +172,12 @@ is over the fence), `tint` `"#RRGGBB"` or `null`, `tintTitleOnly` (the tint wash
 row), `tabColor` `"#RRGGBB"` or `null` (the bar under the fence's tab in a tab strip; `null` follows
 its tint), `titleColor` theme/tint/white/black/`"#RRGGBB"`, `titleSize` small/normal/large/extraLarge,
 `titleOnHover` default/hover/always (hover: the title row folds away until the pointer is over the
-fence; default follows `rollUp.titleOnHover`), `layout` icons/list/details,
+fence; default follows `rollUp.titleOnHover`), `titleAlign` default/left/center/right (default
+follows the `titleAlign` setting; the chevron and item count move to the start of the title row
+when this option is right, even with the setting on right too), `collapsedSize` default/fit/full (fit: a collapsed
+title row is only as long as its title or tabs; default keeps it at the fence's width; `true` and
+`false` mean fit and full, and `fence get` adds `collapsedShrinks`, the effective choice),
+`layout` icons/list/details,
 `sort` manual/name/type/date/size/openCount, `reverse`, `groupByDate`, `foldersFirst` (folders above files in a sorted fence), `labelLines`,
 `openFoldersInside` (any fence but a portal: double-clicking a folder, or a shortcut to a folder,
 shows that folder inside the fence instead of opening File Explorer; off by default),
@@ -248,7 +253,8 @@ hidden when PecoFence exits, so they do not flash at the next sign-in; default o
 fence shows no window and its items only show among the Windows desktop icons; a tab or a host of
 tabs stays; default off), `offerNewFence` (a rectangle drawn on empty desktop that touches no fence
 offers 「在此新建栅栏」; default on), `autostart`, `peek.enabled`, `quickHide.enabled`,
-`titleAlign` (left/center/right: the title and tab strip in every title row),
+`titleAlign` (left/center/right: the title and tab strip in every title row, unless the fence sets
+its own `titleAlign`),
 `labelColor` (auto/white/black: the item names in every fence and view; auto picks dark or light
 names from the wallpaper in Liquid Glass and follows the colour mode in Fluent; white and black
 also colour the titles, tabs and item counts of fences whose `titleColor` is `theme`, while a fence

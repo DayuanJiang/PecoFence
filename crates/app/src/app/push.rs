@@ -420,8 +420,15 @@ impl App {
         let (rect, row_bottom, choose) = match self.fences.get(&id) {
             Some(w) => {
                 let mut rect = self.ctx.behavior.resting_rect(w.hwnd(), rect);
-                // Collapsed to its left tab column: the fence keeps the width it expands to.
+                // Collapsed to its left tab column or a shrunk title row: the fence keeps the width
+                // it expands to.
                 if rolled && let Some(ew) = w.collapsed_expanded_width_px() {
+                    rect.left = crate::fence_window::anchored_start(
+                        rect.left,
+                        rect.right - rect.left,
+                        ew,
+                        w.width_anchor(),
+                    );
                     rect.right = rect.left + ew;
                 }
                 let choose = rolled

@@ -109,8 +109,8 @@ pub(super) fn on_nchittest(
             msg::HTCLIENT
         });
     }
-    if rolled && v.tabs_on_rail() {
-        // Collapsed to the column: it only moves.
+    if rolled && (v.tabs_on_rail() || v.width_collapsed) {
+        // Collapsed to the column, or to a shrunk title row: it only moves.
         return Some(msg::HTCAPTION);
     }
     if rolled {

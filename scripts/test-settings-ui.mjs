@@ -28,7 +28,7 @@ const fixture = {
     ],
   },
   fences: [
-    { id: 'fence-a', title: 'Documents', kind: 'virtual', host: null, iconSize: 48, spacing: 'normal', iconAlign: 'left', autoHeight: false, locked: false, excludeFromQuickHide: false, opacity: 'default', tint: null, titleColor: 'theme', titleSize: 'normal', titleOnHover: 'default', openFoldersInside: false, portal: null },
+    { id: 'fence-a', title: 'Documents', kind: 'virtual', host: null, iconSize: 48, spacing: 'normal', iconAlign: 'left', autoHeight: false, locked: false, excludeFromQuickHide: false, opacity: 'default', tint: null, titleColor: 'theme', titleSize: 'normal', titleOnHover: 'default', titleAlign: 'default', expandUpward: false, openFoldersInside: false, portal: null },
     { id: 'fence-b', title: 'Images', kind: 'virtual', host: 'Documents', iconSize: 96, spacing: 'loose', autoHeight: true, locked: false, excludeFromQuickHide: false, opacity: 'transparent', tint: null, tabColor: 'E74856', titleColor: 'theme', titleSize: 'normal', titleOnHover: 'default', portal: null },
     { id: 'inbox', title: 'Desktop', kind: 'inbox', host: null, iconSize: 48, spacing: 'normal', autoHeight: false, locked: true, excludeFromQuickHide: true, opacity: 'solid', tint: '0078D4', tintTitleOnly: true, titleColor: 'tint', titleSize: 'large', titleOnHover: 'hover', hideWhenEmpty: true, desktopLayout: true, openFoldersInside: true, expandUpward: true, portal: null },
     { id: 'portal', title: 'Portal', kind: 'portal', host: null, iconSize: 32, spacing: 'compact', iconAlign: 'center', autoHeight: false, locked: false, excludeFromQuickHide: false, opacity: 'clear', tint: '123456', titleColor: 'ABCDEF', titleSize: 'small', titleOnHover: 'always', portal: { navigate: true, titleIcon: false } },
@@ -134,6 +134,10 @@ function bridge() {
           if (message.prop === 'portalNavigate') fence.portal.navigate = message.value;
           else if (message.prop === 'portalTitleIcon') fence.portal.titleIcon = message.value;
           else if (message.prop !== 'dockTop') fence[message.prop] = message.value;
+          // The host reports the effective shrink: by default a title row keeps its width.
+          if (message.prop === 'collapsedSize') {
+            fence.collapsedShrinks = message.value === true || message.value === 'fit';
+          }
         }
         window.testShowFence = (id) => receive({ data: { type: 'showFence', id } });
         window.testShowFeedback = (crash) => receive({ data: { type: 'showFeedback', crash } });
@@ -306,6 +310,110 @@ async function runTests() {
     assert(doc.querySelector('[data-fence=iconAlign]').value === 'left', 'Left icon alignment not shown');
     change(doc, 'fenceIconAlign', 'center'); await settle();
     assert(messages().at(-1).id === 'fence-a' && messages().at(-1).prop === 'iconAlign' && messages().at(-1).value === 'center', 'Icon alignment not posted');
+  });
+  await test('Title bar settings sit in their own section, after Layout', async () => {
+    const page = doc.getElementById('page-fences');
+    const headings = [...page.querySelectorAll('#fenceBody > h3')].filter(h => h.id !== 'fencePortalHeading').map(h => h.textContent);
+    assert(headings.join() === ['Appearance', 'Layout', 'Title bar', 'Behavior'].join() || headings.join() === ['外观', '布局', '标题栏', '行为'].join(), 'Sections: ' + headings.join());
+    const section = (el) => { let n = el.closest('.card'); while (n && n.tagName !== 'H3') n = n.previousElementSibling; return n && n.textContent; };
+    for (const el of [...['fenceTitleColor', 'fenceTitleSize', 'fenceTitleOnHover', 'fenceTitleAlign', 'fenceCollapsedSize'].map(id => doc.getElementById(id)), doc.querySelector('[data-fence=expandUpward]')]) {
+      assert(/Title bar|标题栏/.test(section(el)), (el.id || el.dataset.fence) + ' is in ' + section(el));
+    }
+  });
+  await test('Title alignment, Expand upward and Shrink when rolled up post setFence', async () => {
+    const messages = () => frame.contentWindow.testMessages.filter(m => m.type === 'setFence');
+    const expand = doc.querySelector('[data-fence=expandUpward]');
+    const help = expand.closest('.card').querySelector('.s');
+    change(doc, 'fenceSel', 'fence-a');
+    // Expand upward is a switch with its help line.
+    assert(!expand.classList.contains('on'), 'Expand upward shown on');
+    assert(/^(Opens upward when there is room above it, otherwise downward; the title bar stays where it is\. Handy for fences above the taskbar|上方放得下时向上展开，放不下就向下展开；标题栏留在原处。适合放在任务栏上方的栅栏)$/.test(help.textContent), 'Help: ' + help.textContent);
+    expand.click(); await settle();
+    assert(messages().at(-1).prop === 'expandUpward' && messages().at(-1).value === true, 'Expand upward not posted as true');
+    expand.click(); await settle();
+    assert(messages().at(-1).value === false, 'Expand upward not posted as false');
+    change(doc, 'fenceTitleAlign', 'center');
+    await settle();
+    assert(messages().at(-1).prop === 'titleAlign' && messages().at(-1).value === 'center', 'Title alignment not posted');
+    // A title row shrinks only when asked to: switched back off, it follows the default.
+    const shrink = doc.querySelector('[data-fence=collapsedSize]');
+    assert(!shrink.classList.contains('on'), 'A title row shown shrinking by default');
+    shrink.click(); await settle();
+    assert(messages().at(-1).prop === 'collapsedSize' && messages().at(-1).value === true, 'Shrinking a title row posted ' + messages().at(-1).value);
+    shrink.click(); await settle();
+    assert(messages().at(-1).value === 'default', 'Keeping the full width did not return to the default: ' + messages().at(-1).value);
+    change(doc, 'fenceTitleAlign', 'default');
+    await settle();
+  });
+  await test('Beside a left tab column the title options that do nothing are greyed out with a reason', async () => {
+    doc.querySelector('[data-page=general]').click();
+    const bar = doc.querySelector('[data-bind=tabBar]');
+    bar.value = 'left';
+    bar.dispatchEvent(new frame.contentWindow.Event('change', { bubbles: true }));
+    await settle();
+    doc.querySelector('[data-page=fences]').click();
+    change(doc, 'fenceSel', 'fence-b');
+    await settle();
+    const cards = {
+      align: doc.getElementById('fenceTitleAlignCard'),
+      shrink: doc.getElementById('fenceCollapsedSize'),
+      hover: doc.getElementById('fenceTitleOnHover').closest('.card'),
+    };
+    for (const [name, card] of Object.entries(cards)) {
+      const line = card.querySelector('.s');
+      assert(card.style.display !== 'none' && card.classList.contains('disabled'), name + ' not greyed out beside a tab column');
+      assert(!line.hidden && line.textContent.length > 0, name + ' greyed out without a reason');
+    }
+    assert(doc.getElementById('fenceTitleAlign').disabled, 'Title alignment still takes a choice beside a tab column');
+    const before = frame.contentWindow.testMessages.length;
+    doc.querySelector('[data-fence=collapsedSize]').click();
+    await settle();
+    assert(frame.contentWindow.testMessages.length === before, 'A greyed-out Shrink when rolled up still posted');
+    // A single fence keeps them, and the help lines it had.
+    change(doc, 'fenceSel', 'portal');
+    await settle();
+    for (const [name, card] of Object.entries(cards)) assert(!card.classList.contains('disabled'), name + ' greyed out for a fence without tabs');
+    assert(cards.align.querySelector('.s').hidden, 'Title alignment shows a help line while it applies');
+    doc.querySelector('[data-page=general]').click();
+    bar.value = 'top';
+    bar.dispatchEvent(new frame.contentWindow.Event('change', { bubbles: true }));
+    await settle();
+    doc.querySelector('[data-page=fences]').click();
+    change(doc, 'fenceSel', 'fence-a');
+  });
+  await test('A fence arranged like the desktop greys its title bar options with the reason', async () => {
+    const inbox = frame.contentWindow.testState.fences.find(f => f.id === 'inbox');
+    inbox.desktopArranged = true;
+    frame.contentWindow.testRefresh(); await settle();
+    change(doc, 'fenceSel', 'inbox');
+    await settle();
+    const cards = {
+      align: doc.getElementById('fenceTitleAlignCard'),
+      shrink: doc.getElementById('fenceCollapsedSize'),
+      hover: doc.getElementById('fenceTitleOnHover').closest('.card'),
+      expand: doc.getElementById('fenceExpandUpward'),
+    };
+    for (const [name, card] of Object.entries(cards)) {
+      const line = card.querySelector('.s');
+      assert(card.style.display !== 'none' && card.classList.contains('disabled'), name + ' not greyed out for a desktop-arranged fence');
+      assert(/^(Arranged like the desktop, this fence has no title bar|像桌面一样排列时没有标题栏)$/.test(line.textContent), name + ' reason: ' + line.textContent);
+    }
+    const before = frame.contentWindow.testMessages.length;
+    doc.querySelector('[data-fence=expandUpward]').click();
+    doc.querySelector('[data-fence=collapsedSize]').click();
+    await settle();
+    assert(frame.contentWindow.testMessages.length === before, 'A greyed-out title bar option still posted');
+    inbox.desktopArranged = false;
+    frame.contentWindow.testRefresh(); await settle();
+    for (const [name, card] of Object.entries(cards)) assert(!card.classList.contains('disabled'), name + ' still greyed out once the fence is not arranged');
+    assert(/^(Opens upward when there is room above it|上方放得下时向上展开)/.test(cards.expand.querySelector('.s').textContent), 'Expand upward did not get its help line back');
+    change(doc, 'fenceSel', 'fence-a');
+  });
+  await test('The General Title alignment says each fence can override it', async () => {
+    doc.querySelector('[data-page=general]').click();
+    const line = doc.querySelector('[data-bind=titleAlign]').closest('.card').querySelector('.s');
+    assert(line && /^(Each fence can override this in its own settings|每个栅栏可在“栅栏”页单独设置)$/.test(line.textContent), 'General Title alignment help: ' + (line && line.textContent));
+    doc.querySelector('[data-page=fences]').click();
   });
   await test('showFence opens the fence page with that fence selected', async () => {
     doc.querySelector('[data-page=general]').click();

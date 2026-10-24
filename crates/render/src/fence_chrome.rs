@@ -329,7 +329,7 @@ pub struct FenceStyle {
     pub title_color: Option<ColorF>,
     /// 0 = small (12), 1 = normal (14), 2 = large (16), 3 = extra large (18).
     pub title_size: u8,
-    /// Title position in the row (the global 标题对齐 setting).
+    /// Title position along the title bar: the fence's own alignment, else the global one.
     pub title_align: pecofence_core::TitleAlign,
     /// Width in DIPs of the left tab column (标签栏位置 → 左侧, two or more tabs). The column
     /// is the fence's title bar, so there is no title row; 0 = the tabs, if any, run along the
@@ -338,6 +338,11 @@ pub struct FenceStyle {
     /// No item count on a rolled title and no roll chevron (the global
     /// 「隐藏标题栏右侧的项目数和折叠箭头」 setting).
     pub hide_count_and_chevron: bool,
+    /// Collapsed, the title bar shrinks to its title or tabs (`Fence::shrinks_collapsed`).
+    pub shrink_collapsed: bool,
+    /// The chevron (and a rolled row's item count) sits at the start of the title bar,
+    /// opposite a title or tabs aligned to its end, so they stay put as the fence rolls.
+    pub chevron_leads: bool,
 }
 
 /// Left tab column metrics (DIPs): the free strip above the first tab (a handle to drag the
@@ -473,6 +478,18 @@ impl TitleDeco {
         Rect::from_xywh(Self::UP_X, (title_h - 28.0) / 2.0, Self::UP_W, 28.0)
     }
 
+    /// The chevron box (DIPs) at the start of a title row `title_h` tall, `after` DIPs in (past
+    /// the up button), when the title is aligned to the row's end; the app hit-tests the same
+    /// rectangle.
+    pub fn lead_chevron_box(title_h: f32, after: f32) -> Rect {
+        Rect::from_xywh(
+            after + Self::CHEVRON_RIGHT_MARGIN,
+            (title_h - Self::CHEVRON_W) / 2.0,
+            Self::CHEVRON_W,
+            Self::CHEVRON_W,
+        )
+    }
+
     /// The chevron box (DIPs) for a fence `width` wide with a title row `title_h` tall; the
     /// app hit-tests the same rectangle.
     pub fn chevron_box(width: f32, title_h: f32) -> Rect {
@@ -514,6 +531,21 @@ impl TitleDeco {
         self.up_button && !self.folder_icon
     }
 
+    /// Room a separate up button takes before a leading chevron (DIPs).
+    pub fn lead_up_w(&self) -> f32 {
+        if self.up_at_left() {
+            Self::UP_X + Self::UP_W
+        } else {
+            0.0
+        }
+    }
+
+    /// Where the rename box of a lone title may start when the chevron leads (DIPs): past the
+    /// up button and the chevron.
+    pub fn lead_title_start(&self) -> f32 {
+        Self::lead_chevron_box(0.0, self.lead_up_w()).right + 8.0
+    }
+
     /// Where the title text starts (left-aligned).
     pub fn title_x(&self) -> f32 {
         let mut x = 16.0;
@@ -529,6 +561,9 @@ impl TitleDeco {
 
 /// Least room kept free at the right end of the title row: the roll-up chevron.
 pub const TITLE_RIGHT_RESERVE: f32 = 40.0;
+
+/// Padding after a title aligned to the end of its row when the chevron leads.
+pub const TITLE_END_PAD: f32 = 16.0;
 
 /// Left edge of a title-row unit `unit_w` DIPs wide (the title with its folder glyph, or the
 /// whole tab strip) that may occupy `start..end` of a row `width` DIPs wide. Centred means
@@ -1923,7 +1958,9 @@ impl FenceChrome {
 
     /// Lays out a single title (no tab strip) in a title row `width` wide that keeps `reserve`
     /// DIPs free for the rolled item count: where its unit (the folder glyph, then the title)
-    /// starts, the fitted title and the room the title gets.
+    /// starts, the fitted title and the room the title gets. With `chevron_leads` the chevron
+    /// and the count take the start of the row instead of its end.
+    #[allow(clippy::too_many_arguments)]
     fn lone_title_place(
         &self,
         title: &str,
@@ -1932,19 +1969,27 @@ impl FenceChrome {
         width: f32,
         deco: TitleDeco,
         reserve: f32,
+        chevron_leads: bool,
     ) -> (f32, String, f32) {
         let fmt = &self.title_format(size);
-        let start = if deco.up_at_left() {
-            16.0 + TitleDeco::UP_W
-        } else {
-            16.0
-        };
         let glyph_w = if deco.folder_icon {
             TitleDeco::ICON_W
         } else {
             0.0
         };
-        let end = width - TITLE_RIGHT_RESERVE - reserve;
+        let (start, end) = if chevron_leads {
+            (
+                TitleDeco::lead_chevron_box(0.0, deco.lead_up_w()).right + 4.0 + reserve,
+                width - TITLE_END_PAD,
+            )
+        } else {
+            let start = if deco.up_at_left() {
+                16.0 + TitleDeco::UP_W
+            } else {
+                16.0
+            };
+            (start, width - TITLE_RIGHT_RESERVE - reserve)
+        };
         let title_w = (end - start - glyph_w).max(0.0);
         let fitted = crate::text::fit_width(title, fmt, title_w);
         let unit_w = glyph_w + crate::text::measure_width(&fitted, fmt).min(title_w);
@@ -1953,6 +1998,7 @@ impl FenceChrome {
 
     /// The up button of a single folder title inside a subfolder: the square around its folder
     /// glyph, which moves with the title's alignment. The app hit-tests the same box.
+    #[allow(clippy::too_many_arguments)]
     pub fn lone_up_box(
         &self,
         title: &str,
@@ -1961,12 +2007,14 @@ impl FenceChrome {
         width: f32,
         reserve: f32,
         title_h: f32,
+        chevron_leads: bool,
     ) -> Rect {
         let deco = TitleDeco {
             folder_icon: true,
             up_button: true,
         };
-        let (x, _, _) = self.lone_title_place(title, size, align, width, deco, reserve);
+        let (x, _, _) =
+            self.lone_title_place(title, size, align, width, deco, reserve, chevron_leads);
         glyph_up_square(x + 8.0, title_h)
     }
 
@@ -2168,16 +2216,15 @@ impl FenceChrome {
             // "鼠标悬停时才显示标题栏": the glass and rim stay, the title row stays empty.
             return Ok(());
         }
-        // Title text; leave room for the roll-up chevron on the right, ellipsize the rest.
+        // Title text; leave room for the roll-up chevron, ellipsize the rest.
+        let (title_lo, title_hi) = if style.chevron_leads {
+            (deco.title_x() + TITLE_RIGHT_RESERVE, width - TITLE_END_PAD)
+        } else {
+            (deco.title_x(), width - TITLE_RIGHT_RESERVE)
+        };
         let title_width = crate::text::measure_width(title, &self.title_format(style.title_size))
-            .min((width - deco.title_x() - TITLE_RIGHT_RESERVE).max(1.0));
-        let sample_x = aligned_x(
-            style.title_align,
-            width,
-            deco.title_x(),
-            width - TITLE_RIGHT_RESERVE,
-            title_width,
-        );
+            .min((title_hi - title_lo).max(1.0));
+        let sample_x = aligned_x(style.title_align, width, title_lo, title_hi, title_width);
         let foreground = header_foreground(
             &backdrop,
             theme,
@@ -2221,6 +2268,13 @@ impl FenceChrome {
         };
         // The roll-up chevron: shown while rolled or rolling, otherwise on hover, never when the
         // user hid it.
+        // A leading chevron follows the up button, and the item count follows the chevron.
+        let up_w = if tabs.len() <= 1 {
+            deco.lead_up_w()
+        } else {
+            0.0
+        };
+        let lead_chevron = TitleDeco::lead_chevron_box(title_h, up_w);
         let chevron_shown = if style.hide_count_and_chevron {
             0.0
         } else if rolled_up || roll_t > 0.0 {
@@ -2453,6 +2507,7 @@ impl FenceChrome {
                 width,
                 deco,
                 title_reserve,
+                style.chevron_leads,
             );
             if deco.folder_icon {
                 // Folder glyph (E8B7) aligned with the title baseline. Inside a subfolder it is
@@ -2492,12 +2547,20 @@ impl FenceChrome {
             && count_w > 0.0
             && let Some(caption) = caption
         {
-            let count_rect = Rect::from_xywh(
-                width - TitleDeco::CHEVRON_W - TitleDeco::CHEVRON_RIGHT_MARGIN - count_w,
-                0.0,
-                count_w - 4.0,
-                title_h,
-            );
+            // Before an end chevron the count is right-aligned in its room; after a leading one
+            // it sits beside it.
+            let count_rect = if style.chevron_leads {
+                let text_w =
+                    crate::text::measure_width(caption, &self.count_format).min(count_w - 4.0);
+                Rect::from_xywh(lead_chevron.right + 4.0, 0.0, text_w + 1.0, title_h)
+            } else {
+                Rect::from_xywh(
+                    width - TitleDeco::CHEVRON_W - TitleDeco::CHEVRON_RIGHT_MARGIN - count_w,
+                    0.0,
+                    count_w - 4.0,
+                    title_h,
+                )
+            };
             let foreground =
                 header_foreground(&backdrop, theme, 6, count_rect, scale, opacity, style.tint);
             let count =
@@ -2529,7 +2592,11 @@ impl FenceChrome {
             return Ok(());
         }
         let chevron_a = chevron_shown * title_a;
-        let box_r = TitleDeco::chevron_box(width, title_h);
+        let box_r = if style.chevron_leads {
+            lead_chevron
+        } else {
+            TitleDeco::chevron_box(width, title_h)
+        };
         self.draw_chevron(
             session, &backdrop, theme, scale, opacity, style.tint, box_r, "\u{E70E}", chevron_a,
             state, roll_t,
@@ -3570,15 +3637,21 @@ mod tests {
             up_button: true,
         };
         assert_eq!(up.title_x(), 16.0 + TitleDeco::ICON_W);
-        let left = chrome.lone_up_box("2026", 1, Left, 300.0, 0.0, 36.0);
+        let left = chrome.lone_up_box("2026", 1, Left, 300.0, 0.0, 36.0, false);
         assert_eq!(
             (left.left, left.top, left.right, left.bottom),
             (14.0, 8.0, 34.0, 28.0)
         );
         // It moves with the title, which keeps clear of the rolled count.
-        let right = chrome.lone_up_box("2026", 1, Right, 300.0, ROLLED_COUNT_W, 36.0);
+        let right = chrome.lone_up_box("2026", 1, Right, 300.0, ROLLED_COUNT_W, 36.0, false);
         assert!(right.left > left.left);
         assert!(right.right <= 300.0 - TITLE_RIGHT_RESERVE - ROLLED_COUNT_W);
+        // With the chevron and count at the start, a title aligned to the end runs to it.
+        let leading = chrome.lone_up_box("2026", 1, Right, 300.0, ROLLED_COUNT_W, 36.0, true);
+        assert!(leading.left > right.left);
+        let start = TitleDeco::lead_chevron_box(36.0, 0.0).right + 4.0 + ROLLED_COUNT_W;
+        let left_led = chrome.lone_up_box("2026", 1, Left, 300.0, ROLLED_COUNT_W, 36.0, true);
+        assert_eq!(left_led.left, start - 2.0);
         // With the glyph hidden, the button stays at the far left.
         let hidden = TitleDeco {
             folder_icon: false,
@@ -3708,6 +3781,29 @@ mod tests {
         );
         let u = TitleDeco::up_box(36.0);
         assert_eq!((u.left, u.top, u.right, u.bottom), (6.0, 4.0, 34.0, 32.0));
+    }
+
+    /// A leading chevron sits after a separate up button, and a rename box starts after both.
+    #[test]
+    fn a_leading_chevron_follows_the_up_button() {
+        let plain = TitleDeco::default();
+        let c = TitleDeco::lead_chevron_box(36.0, plain.lead_up_w());
+        assert_eq!((c.left, c.top, c.right, c.bottom), (4.0, 2.0, 36.0, 34.0));
+        assert_eq!(plain.lead_title_start(), 44.0);
+        let up = TitleDeco {
+            folder_icon: false,
+            up_button: true,
+        };
+        let c = TitleDeco::lead_chevron_box(36.0, up.lead_up_w());
+        assert_eq!((c.left, c.right), (38.0, 70.0));
+        assert!(c.left >= TitleDeco::up_box(36.0).right);
+        assert_eq!(up.lead_title_start(), 78.0);
+        // The folder glyph is the up button, so nothing comes before the chevron.
+        let glyph = TitleDeco {
+            folder_icon: true,
+            up_button: true,
+        };
+        assert_eq!(glyph.lead_up_w(), 0.0);
     }
 
     #[test]

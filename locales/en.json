@@ -156,6 +156,7 @@
   "自动": "Automatic",
   "自动：液态玻璃按背后壁纸的明暗选深色或浅色，Fluent 跟随颜色模式；白色和黑色也用于标题颜色为“跟随主题”的栅栏标题和标签": "Automatic: Liquid Glass picks dark or light text for the wallpaper behind it, Fluent follows the color mode. White and black also color the titles and tabs of fences whose title color is Match theme",
   "标题对齐": "Title alignment",
+  "每个栅栏可在“栅栏”页单独设置": "Each fence can override this in its own settings",
   "左对齐": "Left",
   "居中": "Center",
   "右对齐": "Right",
@@ -375,6 +376,7 @@
   "跟随常规设置": "Use General setting",
   "始终显示": "Always",
   "鼠标悬停时显示": "On hover",
+  "标题栏": "Title bar",
   "也可以在栅栏内按住 Ctrl 滚动鼠标滚轮": "You can also use Ctrl+mouse wheel inside a fence",
   "高度跟随内容行数，内容增减时平滑过渡": "Height adjusts smoothly as content rows change",
   "边框不再可拖动缩放；标题仍可点击、右键、双击": "The fence can't be moved or resized; you can still click, right-click and double-click the title",
@@ -584,5 +586,13 @@
   "命令行文档": "CLI guide",
   "请用 PecoFence 的命令行工具帮我整理 Windows 桌面。PecoFence 正在运行，命令行工具是 `{0}`。先运行 `{0} skill` 阅读使用说明，再查看桌面上的项目和现有的栅栏，动手前先导出一份配置备份。然后告诉我你的整理方案：新建哪些栅栏，哪些项目放到哪里，为以后出现的新文件添加哪些整理规则。等我同意后再执行。": "Please use PecoFence's command-line tool to organize my Windows desktop. PecoFence is running, and its command-line tool is `{0}`. First run `{0} skill` to read how to use it, then look at the items on my desktop and the fences I have, and export a backup of the configuration before you change anything. Then tell me your plan: which fences to create, which items go where, and which sorting rules to add for new files. Wait for my OK before you carry it out.",
   "提示词已复制，粘贴到 AI 助手里即可": "Prompt copied. Paste it into your AI assistant.",
-  "没能复制提示词，请稍后重试": "The prompt could not be copied. Try again in a moment."
+  "没能复制提示词，请稍后重试": "The prompt could not be copied. Try again in a moment.",
+  "收起时缩短": "Shrink when rolled up",
+  "收起后标题栏只有标题或标签页那么长，而不是和栅栏一样长": "A rolled-up title bar is only as long as its title or tabs, not as long as the fence",
+  "对齐方式": "Alignment",
+  "“标题栏”中的设置也对整组标签页生效，标题颜色和标题字号除外": "Title bar settings also apply to the whole tab group, except title color and title text size",
+  "标签排成一列时从上往下排，不跟随标题对齐": "Tabs in a column line up from the top, whatever the alignment",
+  "标签栏位置为左侧时，收起的栅栏总是缩成标签那一列": "With Tab bar position set to Left, a rolled-up fence always shrinks to its tab column",
+  "标题栏排成一列时总是显示": "A title bar in a column always shows",
+  "像桌面一样排列时没有标题栏": "Arranged like the desktop, this fence has no title bar"
 }

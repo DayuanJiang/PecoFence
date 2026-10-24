@@ -132,10 +132,11 @@ impl FenceViewState {
             self.chrome.lone_up_box(
                 &self.title,
                 self.style.title_size,
-                self.behavior.title_align.get(),
+                self.title_align(),
                 width,
                 reserve,
                 self.theme.title_height,
+                self.chevron_leads(),
             )
         } else {
             TitleDeco::up_box(self.theme.title_height)
@@ -146,7 +147,7 @@ impl FenceViewState {
     /// The portal up button in a left tab column (DIPs): at the end of the shown tab's row, as
     /// drawn (`TitleDeco::rail_up_box`). A column the fence is collapsed to has none.
     pub(super) fn rail_up_box(&self) -> Option<Rect> {
-        if self.column_collapsed {
+        if self.column_collapsed() {
             return None;
         }
         let i = self.active_index();
@@ -177,7 +178,7 @@ impl FenceViewState {
         let (w_px, h_px) = self.chrome_panel.size_px();
         // Under the tabs of a left tab column (the fence's title bar). Collapsed to the column
         // there is none: a tab click expands the fence. Hidden by the user, its spot is title.
-        if self.column_collapsed || self.behavior.hide_count_and_chevron.get() {
+        if self.column_collapsed() || self.behavior.hide_count_and_chevron.get() {
             return false;
         }
         let r = if self.tabs_on_rail() {
@@ -187,6 +188,13 @@ impl FenceViewState {
                 .map(|(y, h)| y + h)
                 .fold(0.0, f32::max);
             TitleDeco::rail_chevron_box(self.rail_w(), h_px as f32 / scale, rows_end)
+        } else if self.chevron_leads() {
+            let up_w = if self.title_row_strip() {
+                0.0
+            } else {
+                self.deco.lead_up_w()
+            };
+            TitleDeco::lead_chevron_box(self.theme.title_height, up_w)
         } else {
             TitleDeco::chevron_box(w_px as f32 / scale, self.theme.title_height)
         };
@@ -387,10 +395,10 @@ impl FenceViewState {
     }
 
     /// The item layout at the content surface's current width. A fence collapsed (or
-    /// collapsing) to its left tab column uses the width it expands to.
+    /// collapsing) narrower than it expands uses the width it expands to.
     fn current_layout(&self) -> ItemLayout {
         let (mut cw, _) = self.content_size_px();
-        if self.tabs_on_rail() && (self.rolled_up || self.roll_anim.is_some()) {
+        if self.collapses_width() && (self.rolled_up || self.roll_anim.is_some()) {
             cw = (self.expanded_w_px - self.rail_px()).max(1);
         }
         self.layout(cw as f32 / self.scale())

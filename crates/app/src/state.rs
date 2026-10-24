@@ -2201,6 +2201,15 @@ impl AppState {
         self.edit_appearance(id, |a| a.title_on_hover = on);
     }
 
+    pub fn set_title_align(&mut self, id: FenceId, align: Option<pecofence_core::TitleAlign>) {
+        self.edit_appearance(id, |a| a.title_align = align);
+    }
+
+    /// None = the collapsed title row keeps the fence's width.
+    pub fn set_shrink_collapsed(&mut self, id: FenceId, shrink: Option<bool>) {
+        self.edit_appearance(id, |a| a.shrink_collapsed = shrink);
+    }
+
     /// The tint washes only the title row.
     pub fn set_tint_title_only(&mut self, id: FenceId, on: bool) {
         self.edit_appearance(id, |a| a.tint_title_only = on);
@@ -2617,6 +2626,25 @@ mod tests {
         assert_eq!(state.fence_expanded_px(fa), a_h);
         assert!(fb.rolled_up);
         assert_eq!(state.fence_expanded_px(fb), 300);
+    }
+
+    /// A restore brings back each fence's title bar options as the snapshot has them.
+    #[test]
+    fn a_restored_fence_takes_the_snapshot_s_title_bar_options() {
+        let mut state = test_state();
+        let a = state.fences()[0].id;
+        state.set_title_align(a, Some(pecofence_core::TitleAlign::Right));
+        state.set_shrink_collapsed(a, Some(true));
+        let id = state.save_snapshot("before");
+        state.set_title_align(a, None);
+        state.set_shrink_collapsed(a, None);
+        assert!(state.restore_snapshot(id));
+        let f = state.fence(a).unwrap();
+        assert!(f.shrinks_collapsed());
+        assert_eq!(
+            f.appearance.as_ref().and_then(|x| x.title_align),
+            Some(pecofence_core::TitleAlign::Right)
+        );
     }
 
     #[test]

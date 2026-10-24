@@ -433,7 +433,9 @@ impl FenceViewState {
                 .map(|(y, h)| (y + shift, h))
                 .collect();
         }
-        let available = (end - TAB_LEFT).max(0.0);
+        let available = (end - start).max(0.0);
+        // Pills are laid out from `TAB_LEFT`, then moved to where the strip starts.
+        let lead = start - TAB_LEFT;
         let phantom = gap.map(|g| (g, TAB_MERGE_GAP_W));
         let span = tab_strip_span(&natural, phantom);
         if span > available + 0.5 {
@@ -451,23 +453,25 @@ impl FenceViewState {
                 scroll = scroll_to_show(scroll, x - TAB_LEFT, w, available, max);
             }
             self.tab_scroll.set(scroll);
-            return tab_strip_scrolled(&natural, phantom, scroll);
+            return tab_strip_scrolled(&natural, phantom, scroll)
+                .into_iter()
+                .map(|(x, w)| (x + lead, w))
+                .collect();
         }
         self.tab_scroll.set(0.0);
-        // 标题对齐 moves the strip as a whole. The offset is measured without the merge gap, so
+        // Title alignment moves the whole strip. The offset is measured without the merge gap, so
         // opening the gap never shifts the slots under the pointer; the gap squeezes the pills
         // into the room before the chevron zone instead.
-        let shift = match self.behavior.title_align.get() {
-            pecofence_core::TitleAlign::Left => 0.0,
+        let shift = match self.title_align() {
+            pecofence_core::TitleAlign::Left => lead,
             align => {
                 let resting = tab_strip_rects(&natural, None, available);
                 let span = resting.last().map_or(0.0, |(x, w)| x + w - TAB_LEFT);
                 let width = self.chrome_panel.size_px().0 as f32 / self.scale();
-                pecofence_render::fence_chrome::aligned_x(align, width, TAB_LEFT, end, span)
-                    - TAB_LEFT
+                pecofence_render::fence_chrome::aligned_x(align, width, start, end, span) - TAB_LEFT
             }
         };
-        tab_strip_rects(&natural, gap, available - shift)
+        tab_strip_rects(&natural, gap, end - TAB_LEFT - shift)
             .into_iter()
             .map(|(x, w)| (x + shift, w))
             .collect()
@@ -499,6 +503,11 @@ impl FenceViewState {
         } else {
             TAB_RIGHT_RESERVE
         };
+        if self.chevron_leads() {
+            // The chevron and the count take the start of the row instead.
+            let start = reserve.max(TAB_LEFT);
+            return (start, (width - TAB_LEFT).max(start));
+        }
         (TAB_LEFT, (width - reserve).max(TAB_LEFT))
     }
 
@@ -534,6 +543,40 @@ impl FenceViewState {
     /// The tabs stack in a column on the left (标签栏位置 → 左侧, two or more tabs).
     pub(super) fn tabs_on_rail(&self) -> bool {
         self.tabs.len() > 1 && self.behavior.tab_bar.get() == pecofence_core::TabBar::Left
+    }
+
+    /// Collapsing narrows the window: to the left tab column, or to a title row that shrinks to
+    /// what it shows.
+    pub(super) fn collapses_width(&self) -> bool {
+        self.tabs_on_rail() || self.style.shrink_collapsed
+    }
+
+    /// The window is collapsed (or collapsing) to its left tab column.
+    pub(super) fn column_collapsed(&self) -> bool {
+        self.width_collapsed && self.tabs_on_rail()
+    }
+
+    /// Where width changes pivot (`anchored_start`): 0 keeps the left edge, 1 the right edge. A
+    /// title row that shrinks while collapsed pivots where its title sits, so the title stays
+    /// put.
+    pub(super) fn width_anchor(&self) -> f32 {
+        if self.style.shrink_collapsed && !self.tabs_on_rail() {
+            match self.title_align() {
+                pecofence_core::TitleAlign::Left => 0.0,
+                pecofence_core::TitleAlign::Center => 0.5,
+                pecofence_core::TitleAlign::Right => 1.0,
+            }
+        } else {
+            0.0
+        }
+    }
+
+    /// The chevron (and a rolled row's item count) sits at the start of the title row, opposite
+    /// a title or tabs aligned to its end, so they stay put as the fence rolls. It leads only
+    /// when the fence's own alignment is right: a title row aligned right by the General setting
+    /// keeps the chevron at the end, and so does the left tab column.
+    pub(super) fn chevron_leads(&self) -> bool {
+        self.title_align == Some(pecofence_core::TitleAlign::Right) && !self.tabs_on_rail()
     }
 
     /// The title row holds the tab strip (two or more tabs along the top) instead of a title.
@@ -592,6 +635,12 @@ impl FenceViewState {
         }
     }
 
+    /// Where the title (or tab strip) sits in its row: this fence's choice, else the global one.
+    pub(super) fn title_align(&self) -> pecofence_core::TitleAlign {
+        self.title_align
+            .unwrap_or_else(|| self.behavior.title_align.get())
+    }
+
     /// Window height (device px) of a rolled fence: its title row, or (tabs on the left) the
     /// column collapsed to fit every tab, at most the expanded height.
     pub(super) fn rolled_h_px(&self) -> i32 {
@@ -607,20 +656,58 @@ impl FenceViewState {
     /// Room under the last row of the left tab column (DIPs): the chevron's, or once the fence
     /// is collapsed to the column (it has no chevron then) the same strip as above the first.
     fn rail_bottom(&self) -> f32 {
-        if self.column_collapsed {
+        if self.column_collapsed() {
             RAIL_COLLAPSED_BOTTOM
         } else {
             RAIL_BOTTOM
         }
     }
 
-    /// Window width (device px) of a rolled fence: its expanded width, or the left column's.
+    /// Window width (device px) of a rolled fence: the left column's, a shrinking title row's
+    /// or its expanded width.
     pub(super) fn rolled_w_px(&self) -> i32 {
         if self.tabs_on_rail() {
             self.rail_px()
+        } else if self.style.shrink_collapsed {
+            self.shrunk_row_w_px().min(self.expanded_w_px)
         } else {
             self.expanded_w_px
         }
+    }
+
+    /// Width (device px) of a title row shrunk to what it shows while collapsed: the title
+    /// after the up button and folder glyph (or the tabs), then the item count when it fits and
+    /// the chevron.
+    fn shrunk_row_w_px(&self) -> i32 {
+        use pecofence_render::fence_chrome::{
+            ROLLED_COUNT_W, TITLE_RIGHT_RESERVE, header_count_width,
+        };
+        // Room before the title (or tabs), the title, and room after it for the chevron.
+        let (lead, content, trail, tabs) = if self.tabs.len() > 1 {
+            let span = tab_strip_span(&self.tab_natural_widths(), None);
+            (TAB_LEFT, span, TAB_RIGHT_RESERVE, self.tabs.len())
+        } else {
+            let title = pecofence_render::text::measure_width(
+                &self.title,
+                &self.chrome.title_format(self.style.title_size),
+            );
+            (self.deco.title_x(), title, 12.0 + TITLE_RIGHT_RESERVE, 1)
+        };
+        let bare = lead + content + trail;
+        let count = if !self.behavior.hide_count_and_chevron.get()
+            && header_count_width(bare + ROLLED_COUNT_W, tabs, self.deco.title_x()) > 0.0
+        {
+            ROLLED_COUNT_W
+        } else {
+            0.0
+        };
+        // A centred title keeps the fence's centre: as much room on each side.
+        let dip = if self.title_align() == pecofence_core::TitleAlign::Center {
+            content + 2.0 * lead.max(trail + count)
+        } else {
+            bare + count
+        };
+        (dip * self.scale()).ceil() as i32
     }
 
     /// `rail_w` in device pixels: where the content starts once laid out (`content_x`).

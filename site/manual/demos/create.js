@@ -49,7 +49,7 @@
             'fill="none" stroke="#1663c7" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>移动到 <b>新栅栏</b>';
         r.menu1 = menu(S, ['在此新建栅栏'], 148);
         r.menu2 = menu(S, ['收起', '重命名…', '-', { t: '视图', sub: 1 }, { t: '排序方式', sub: 1 }, { t: '新建', sub: 1 },
-            { t: '粘贴', key: 'Ctrl+V', dis: 1 }, { t: '标签页', sub: 1 }, '锁定位置和大小', '-', '栅栏选项…', '新建栅栏',
+            { t: '粘贴', key: 'Ctrl+V', dis: 1 }, { t: '标题栏', sub: 1 }, { t: '标签页', sub: 1 }, '锁定位置和大小', '-', '栅栏选项…', '新建栅栏',
             { t: '在桌面显示文件夹', sub: 1 }, '删除栅栏'], 196);
         r.keys = el('div', 'keys', S);
         r.ptr = pointer(S);

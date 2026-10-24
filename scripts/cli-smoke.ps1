@@ -241,6 +241,38 @@ try {
     foreach ($p in @(@("tintTitleOnly", "false"), @("tabColor", "null"), @("titleSize", "normal"))) {
         Invoke-Cli @("fence", "set", $id, $p[0], $p[1]) | Out-Null
     }
+    Invoke-Cli @("fence", "roll", $id) | Out-Null
+    Start-Sleep -Milliseconds 800
+    $r = Invoke-Cli @("fence", "set", $id, "titleAlign", "right")
+    Check "fence set titleAlign right" ($r.Code -eq 0 -and (Json $r.Out).fence.titleAlign -eq "right") "$($r.Out) $($r.Err)"
+    # A title row shrinks only when asked to. A short title keeps the shrunk row narrower than
+    # the fence at any scale.
+    Invoke-Cli @("fence", "rename", $id, "Edges") | Out-Null
+    $r = Invoke-Cli @("fence", "set", $id, "collapsedSize", "fit")
+    $f = (Json $r.Out).fence
+    Check "fence set collapsedSize fit -> a rolled title row aligned right shrinks to the right" ($r.Code -eq 0 -and $f.collapsedShrinks -and ($f.windowRect.x + $f.windowRect.w) -eq ($f.rect.x + $f.rect.w) -and $f.windowRect.w -lt $f.rect.w) "$($r.Out) $($r.Err)"
+    # The shrunk row fits its title again after a rename or a larger title size.
+    $narrow = $f.windowRect
+    Invoke-Cli @("fence", "rename", $id, "Edges and corners") | Out-Null
+    $w = Json (Invoke-Cli @("fence", "get", $id)).Out
+    Check "a rolled shrunk row grows with a longer title" ($w.windowRect.w -gt $narrow.w -and ($w.windowRect.x + $w.windowRect.w) -eq ($w.rect.x + $w.rect.w)) "before=$($narrow | ConvertTo-Json -Compress) after=$($w.windowRect | ConvertTo-Json -Compress)"
+    $wide = $w.windowRect
+    Invoke-Cli @("fence", "set", $id, "titleSize", "large") | Out-Null
+    $w = Json (Invoke-Cli @("fence", "get", $id)).Out
+    Check "a rolled shrunk row grows with a larger title size" ($w.windowRect.w -gt $wide.w -or $w.windowRect.w -eq $w.rect.w) "before=$($wide | ConvertTo-Json -Compress) after=$($w.windowRect | ConvertTo-Json -Compress)"
+    Invoke-Cli @("fence", "set", $id, "titleSize", "normal") | Out-Null
+    Invoke-Cli @("fence", "rename", $id, "Edges") | Out-Null
+    # Centred, it shrinks around the fence's centre.
+    Invoke-Cli @("fence", "set", $id, "titleAlign", "center") | Out-Null
+    $w = Json (Invoke-Cli @("fence", "get", $id)).Out
+    Check "a rolled shrunk row aligned center keeps the fence's centre" ($w.windowRect.w -lt $w.rect.w -and [math]::Abs(($w.windowRect.x * 2 + $w.windowRect.w) - ($w.rect.x * 2 + $w.rect.w)) -le 2) "rect=$($w.rect | ConvertTo-Json -Compress) window=$($w.windowRect | ConvertTo-Json -Compress)"
+    Invoke-Cli @("fence", "set", $id, "titleAlign", "right") | Out-Null
+    $r = Invoke-Cli @("fence", "set", $id, "collapsedSize", "default")
+    $f = (Json $r.Out).fence
+    Check "fence set collapsedSize default -> a rolled title row is as wide as the fence" ($r.Code -eq 0 -and $f.collapsedSize -eq "default" -and $f.windowRect.w -eq $f.rect.w) "$($r.Out) $($r.Err)"
+    Invoke-Cli @("fence", "set", $id, "titleAlign", "default") | Out-Null
+    Invoke-Cli @("fence", "unroll", $id) | Out-Null
+    Start-Sleep -Milliseconds 800
     # Issue #39: the inbox cannot be deleted, but it can hide while empty.
     $r = Invoke-Cli @("fence", "delete", "inbox")
     Check "fence delete inbox -> refused with the hideWhenEmpty hint" ($r.Code -eq 1 -and $r.Err -match "hideWhenEmpty") "code=$($r.Code) $($r.Err)"
@@ -418,6 +450,17 @@ try {
     $sameRect = ($tab.rect.x -eq $hostDto.rect.x) -and ($tab.rect.y -eq $hostDto.rect.y) -and ($tab.rect.w -eq $hostDto.rect.w) -and ($tab.rect.h -eq $hostDto.rect.h)
     Check "a tab reports its host's rect and no windowRect" ($sameRect -and $null -eq $tab.windowRect -and $tab.tabHost -eq $id) (($tab | ConvertTo-Json -Compress -Depth 3) + " / " + ($hostDto.rect | ConvertTo-Json -Compress))
     Check "only the shown tab has fit" ((($null -ne $tab.fit) -xor ($null -ne $hostDto.fit))) "tab.fit=$($tab.fit) host.fit=$($hostDto.fit)"
+    # Tab bar position Left lists a host's tabs in a column: rolled up, the window shrinks to
+    # that column.
+    $r = Invoke-Cli @("settings", "set", "tabBar", "left")
+    Check "settings set tabBar left" ($r.Code -eq 0) "$($r.Out) $($r.Err)"
+    Invoke-Cli @("fence", "roll", $id) | Out-Null
+    Start-Sleep -Milliseconds 800
+    $hostDto = Json (Invoke-Cli @("fence", "get", $id)).Out
+    Check "tabBar left: a rolled host shrinks to its tab column" ($hostDto.rolledUp -eq $true -and $hostDto.windowRect.w -lt $hostDto.rect.w -and $hostDto.windowRect.x -eq $hostDto.rect.x) "$($hostDto | ConvertTo-Json -Compress -Depth 4)"
+    Invoke-Cli @("settings", "set", "tabBar", "top") | Out-Null
+    Invoke-Cli @("fence", "unroll", $id) | Out-Null
+    Start-Sleep -Milliseconds 800
     $r = Invoke-Cli @("fence", "delete", $placedId)
     Check "delete the tab" ($r.Code -eq 0) "$($r.Out) $($r.Err)"
 

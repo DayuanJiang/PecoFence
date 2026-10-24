@@ -71,12 +71,13 @@
         });
         r.topCard = SM.card(f, { ic: '\uE737', t: '只给标题栏上色', s: '关掉的话，整个栅栏都会染上色调', textW: 200 });
         r.topTog = SM.toggle(r.topCard);
-        SM.select(SM.card(f, { ic: '\uE8D2', t: '标题颜色', s: '要跟随色调，请先选一种色调', textW: 190 }), '跟随主题', 100);
+        // 布局 and 标题颜色 come before 标题字号 on the page; left out here, 标题字号 stays in view.
+        SM.h3(f, '标题栏');
         r.size = SM.select(SM.card(f, { ic: '\uE8E9', t: '标题字号', s: '栅栏标题和标签页文字的大小', textW: 190 }), '标准', 100);
 
         // the fence menu (menus.rs show_fence_menu; 标签页 is there because other fences exist)
         r.menu = menu(S, ['收起', '重命名…', '-', { t: '视图', sub: 1 }, { t: '排序方式', sub: 1 }, { t: '新建', sub: 1 },
-            { t: '粘贴', key: 'Ctrl+V' }, { t: '标签页', sub: 1 }, '锁定位置和大小', '-', '栅栏选项…', '新建栅栏',
+            { t: '粘贴', key: 'Ctrl+V' }, { t: '标题栏', sub: 1 }, { t: '标签页', sub: 1 }, '锁定位置和大小', '-', '栅栏选项…', '新建栅栏',
             { t: '在桌面显示文件夹', sub: 1 }, '删除栅栏'], 196);
         r.menu.n.style.zIndex = 3;
         r.opaPop = SM.popup(S, OPACITY, 100);

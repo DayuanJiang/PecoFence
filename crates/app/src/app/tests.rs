@@ -377,6 +377,7 @@ mod ipc {
             "titleOnHover",
             "expandUpward",
             "portalTitleIcon",
+            "titleAlign",
         ] {
             assert!(allowed.as_array().unwrap().contains(&json!(p)), "{allowed}");
         }
@@ -396,6 +397,30 @@ mod ipc {
             parse_fence_prop("layout", &json!("list")).unwrap(),
             FenceProp::Layout(ViewLayout::List)
         );
+        // The expand direction is `expandUpward`; there is no separate property for it.
+        assert!(parse_fence_prop("expandDirection", &json!("up")).is_err());
+        assert_eq!(
+            parse_fence_prop("titleAlign", &json!("default")).unwrap(),
+            FenceProp::TitleAlign(None)
+        );
+        assert_eq!(
+            parse_fence_prop("titleAlign", &json!("center")).unwrap(),
+            FenceProp::TitleAlign(Some(pecofence_core::TitleAlign::Center))
+        );
+        assert_eq!(
+            parse_fence_prop("collapsedSize", &json!("fit")).unwrap(),
+            FenceProp::CollapsedSize(Some(true))
+        );
+        assert_eq!(
+            parse_fence_prop("collapsedSize", &json!("default")).unwrap(),
+            FenceProp::CollapsedSize(None)
+        );
+        // The settings page's switch.
+        assert_eq!(
+            parse_fence_prop("collapsedSize", &json!(false)).unwrap(),
+            FenceProp::CollapsedSize(Some(false))
+        );
+        assert!(parse_fence_prop("collapsedSize", &json!("tiny")).is_err());
         assert_eq!(
             parse_fence_prop("tint", &json!("#ABCDEF")).unwrap(),
             FenceProp::Tint(Some([0xAB, 0xCD, 0xEF]))
@@ -748,5 +773,44 @@ mod ipc {
         assert!(!snapshot_room(&mut list, None));
         let after: Vec<uuid::Uuid> = list.iter().map(|s| s.id).collect();
         assert_eq!(after, before);
+    }
+}
+
+/// The Title bar submenu greys out what a left tab column has no use for, and nothing else.
+#[test]
+fn the_title_menu_greys_what_a_tab_column_ignores() {
+    use super::menus::{TitleMenuGreys, title_menu_greys};
+    use pecofence_core::TabBar;
+    let column = TitleMenuGreys {
+        align: true,
+        shrink: true,
+        hover: true,
+        expand: false,
+    };
+    assert_eq!(title_menu_greys(true, TabBar::Left, false), column);
+    assert_eq!(
+        title_menu_greys(true, TabBar::Top, false),
+        TitleMenuGreys::default()
+    );
+    assert_eq!(
+        title_menu_greys(false, TabBar::Left, false),
+        TitleMenuGreys::default()
+    );
+}
+
+/// A fence arranged like the desktop has no title bar: the whole submenu is greyed out, as roll
+/// and lock are in its menu.
+#[test]
+fn the_title_menu_greys_everything_for_a_desktop_arranged_fence() {
+    use super::menus::{TitleMenuGreys, title_menu_greys};
+    use pecofence_core::TabBar;
+    let all = TitleMenuGreys {
+        align: true,
+        shrink: true,
+        hover: true,
+        expand: true,
+    };
+    for bar in [TabBar::Top, TabBar::Left] {
+        assert_eq!(title_menu_greys(false, bar, true), all);
     }
 }

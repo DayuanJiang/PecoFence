@@ -150,6 +150,7 @@
   "自动": "Automatisch",
   "自动：液态玻璃按背后壁纸的明暗选深色或浅色，Fluent 跟随颜色模式；白色和黑色也用于标题颜色为“跟随主题”的栅栏标题和标签": "Automatisch: Liquid Glass wählt dunkle oder helle Schrift passend zum Hintergrundbild dahinter, Fluent folgt dem Farbmodus. Weiß und Schwarz gelten auch für Titel und Tabs der Bereiche mit der Titelfarbe „Wie Design“",
   "标题对齐": "Titelausrichtung",
+  "每个栅栏可在“栅栏”页单独设置": "Pro Bereich auf der Seite „Bereiche“ änderbar",
   "左对齐": "Links",
   "居中": "Zentriert",
   "右对齐": "Rechts",
@@ -351,6 +352,7 @@
   "跟随常规设置": "Wie unter Allgemein",
   "始终显示": "Immer",
   "鼠标悬停时显示": "Beim Daraufzeigen",
+  "标题栏": "Titelleiste",
   "也可以在栅栏内按住 Ctrl 滚动鼠标滚轮": "Auch mit Strg+Mausrad im Bereich änderbar",
   "高度跟随内容行数，内容增减时平滑过渡": "Höhe passt sich bei geänderter Zeilenzahl fließend an",
   "边框不再可拖动缩放；标题仍可点击、右键、双击": "Größenänderung sperren; Titelklicks und Kontextmenü bleiben verfügbar",
@@ -584,5 +586,13 @@
   "命令行文档": "CLI-Anleitung",
   "请用 PecoFence 的命令行工具帮我整理 Windows 桌面。PecoFence 正在运行，命令行工具是 `{0}`。先运行 `{0} skill` 阅读使用说明，再查看桌面上的项目和现有的栅栏，动手前先导出一份配置备份。然后告诉我你的整理方案：新建哪些栅栏，哪些项目放到哪里，为以后出现的新文件添加哪些整理规则。等我同意后再执行。": "Bitte räume meinen Windows-Desktop mit dem Befehlszeilenwerkzeug von PecoFence auf. PecoFence läuft, und das Befehlszeilenwerkzeug ist `{0}`. Führe zuerst `{0} skill` aus, um die Anleitung zu lesen, sieh dir dann die Objekte auf meinem Desktop und meine Bereiche an und exportiere eine Sicherung der Konfiguration, bevor du etwas änderst. Sag mir dann deinen Plan: welche Bereiche du anlegst, welche Objekte wohin kommen und welche Sortierregeln du für neue Dateien hinzufügst. Warte auf mein OK, bevor du ihn umsetzt.",
   "提示词已复制，粘贴到 AI 助手里即可": "Prompt kopiert. Füge ihn in deinen KI-Assistenten ein.",
-  "没能复制提示词，请稍后重试": "Der Prompt ließ sich nicht kopieren. Versuche es gleich noch einmal."
+  "没能复制提示词，请稍后重试": "Der Prompt ließ sich nicht kopieren. Versuche es gleich noch einmal.",
+  "收起时缩短": "Eingeklappt verkürzen",
+  "收起后标题栏只有标题或标签页那么长，而不是和栅栏一样长": "Eingeklappt ist die Titelleiste nur so lang wie ihr Titel oder ihre Tabs, nicht so lang wie der Bereich",
+  "对齐方式": "Ausrichtung",
+  "“标题栏”中的设置也对整组标签页生效，标题颜色和标题字号除外": "Auch die Einstellungen unter „Titelleiste“ gelten für alle Tabs gemeinsam, außer Titelfarbe und Titelschriftgröße",
+  "标签排成一列时从上往下排，不跟随标题对齐": "Tabs in einer Spalte beginnen oben, unabhängig von der Ausrichtung",
+  "标签栏位置为左侧时，收起的栅栏总是缩成标签那一列": "Mit der Tableiste links schrumpft ein eingeklappter Bereich immer auf seine Tab-Spalte",
+  "标题栏排成一列时总是显示": "Eine Titelleiste als Spalte ist immer sichtbar",
+  "像桌面一样排列时没有标题栏": "Wie den Desktop angeordnet hat dieser Bereich keine Titelleiste"
 }

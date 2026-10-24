@@ -412,7 +412,7 @@
         });
         const sw = Math.min(130, g.cardW - 180);
         select(card(g, { ic: '\uE7A1', t: '颜色模式', textW: 120 }), '跟随 Windows 模式', sw);
-        select(card(g, { ic: '\uE8E4', t: '标题对齐', textW: 120 }), '左对齐', sw);
+        select(card(g, { ic: '\uE8E4', t: '标题对齐', s: '每个栅栏可在“栅栏”页单独设置', textW: g.cardW - sw - 60 }), '左对齐', sw);
         select(card(g, { ic: '\uE8B9', t: '默认图标大小', s: '新建栅栏时使用，每个栅栏可在“栅栏”页或右键菜单中单独设置', textW: g.cardW - sw - 60 }), '中等图标', sw);
         stack(g);
         return { g, tiles };

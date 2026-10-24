@@ -579,6 +579,80 @@ fn expand_upward_keeps_the_bottom_edge() {
     assert_eq!(top_for_height(true, &expanded, 32), 968);
 }
 
+/// A title row shrunk around its centre rolls up and expands many times without creeping:
+/// every frame's left edge comes from one pivot, not from the last frame's rounded rect.
+#[test]
+fn a_centred_shrinking_row_does_not_creep() {
+    let (left0, expanded, rolled) = (100, 301, 97);
+    // As placed rolled from the saved rect (`restore_geometry`).
+    let mut left = anchored_start(left0, expanded, rolled, 0.5);
+    let mut kept = Some((left0 as f32 + expanded as f32 * 0.5, left, rolled));
+    let mut cur_w = rolled;
+    let frames = |from: i32, to: i32| (1..=13).map(move |i| from + (to - from) * i / 13);
+    for _ in 0..200 {
+        for w in frames(rolled, expanded).chain(frames(expanded, rolled)) {
+            let (l, k) = pivot_left(kept, left, cur_w, w, 0.5);
+            (left, kept, cur_w) = (l, Some(k), w);
+        }
+    }
+    assert_eq!(left, anchored_start(left0, expanded, rolled, 0.5));
+    // Open, it is back at its saved left edge.
+    let (open, _) = pivot_left(kept, left, cur_w, expanded, 0.5);
+    assert_eq!(open, left0);
+    // Moved meanwhile (dragged, pushed), the pivot is measured again from where it is.
+    let (moved, (pivot, _, _)) = pivot_left(kept, left + 40, cur_w, expanded, 0.5);
+    assert_eq!(pivot, (left + 40) as f32 + rolled as f32 * 0.5);
+    assert_eq!(moved, (pivot - 150.5).round() as i32);
+}
+
+/// An open centred row widened from its right edge keeps its left edge on the next settle,
+/// and its next roll shrinks around the new centre.
+#[test]
+fn a_centred_row_resized_between_rolls_does_not_slide() {
+    let (left0, w0, rolled) = (100, 300, 96);
+    // Rolled and opened once: the last frame left it at its saved rect.
+    let mut kept = Some((left0 as f32 + w0 as f32 * 0.5, left0, w0));
+    let (open, k) = pivot_left(kept, left0, w0, w0, 0.5);
+    assert_eq!(open, left0);
+    kept = Some(k);
+    // The right edge is dragged from 400 to 600: the left edge stays at 100.
+    let w = 500;
+    // An auto-height settle keeps the width, and so the left edge.
+    let (settled, k) = pivot_left(kept, left0, w, w, 0.5);
+    assert_eq!(settled, left0);
+    kept = Some(k);
+    // The next roll pivots on the centre of the 500 px row, not the old 300 px one.
+    let (rolled_left, (pivot, _, _)) = pivot_left(kept, left0, w, rolled, 0.5);
+    assert_eq!(pivot, 350.0);
+    assert_eq!(rolled_left, 302);
+    // Opening again lands on the rect the drag left.
+    let (open, _) = pivot_left(
+        Some((pivot, rolled_left, rolled)),
+        rolled_left,
+        rolled,
+        w,
+        0.5,
+    );
+    assert_eq!(open, left0);
+}
+
+/// A rolled centred row that settles to a new width again and again (a title typed one letter
+/// at a time) stays centred on its pivot: twelve one-pixel widenings from 202 px end 6 px further
+/// left, not 12.
+#[test]
+fn a_centred_shrunk_row_settling_does_not_drift() {
+    let (left0, w0) = (100, 202);
+    let mut kept = Some((left0 as f32 + w0 as f32 * 0.5, left0, w0));
+    let (mut left, mut w) = (left0, w0);
+    for _ in 0..12 {
+        let (l, k) = pivot_left(kept, left, w, w + 1, 0.5);
+        (left, kept, w) = (l, Some(k), w + 1);
+    }
+    assert_eq!(w, 214);
+    assert_eq!(left, 94);
+    assert_eq!(kept.unwrap().0, 201.0);
+}
+
 #[test]
 fn roll_target_leads_the_committed_state() {
     assert!(roll_target_of(Some(true), false));

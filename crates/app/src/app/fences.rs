@@ -239,6 +239,7 @@ impl App {
         w.set_appearance(bd, op);
         w.set_title_on_hover(f.appearance.as_ref().and_then(|a| a.title_on_hover));
         w.set_style(fence_style_for(&f));
+        w.set_title_align(f.appearance.as_ref().and_then(|a| a.title_align));
         if let Some(a) = self.anchor.borrow_mut().as_mut() {
             a.set_quick_hide_excluded(w.hwnd(), f.exclude_from_quick_hide);
         }
@@ -627,6 +628,31 @@ impl App {
         w.restore_geometry(rect, fence.rolled_up, self.state.fence_expanded_px(fence));
     }
 
+    /// Places the window again from its saved rect after its title row changed shape (alignment
+    /// or collapsed size): rolled up, it takes its new shape at the end of the rect it sits at,
+    /// and a roll in flight lands at once. The bounds are recorded again, so a fence rolled up at
+    /// rest saves its rect on the side it opens to.
+    pub(super) fn place_title_bar(&mut self, id: FenceId) {
+        let id = self.state.host_of(id);
+        let Some(f) = self.state.fence(id).cloned() else {
+            return;
+        };
+        let Some(w) = self.fences.get(&id) else {
+            return;
+        };
+        self.ctx.behavior.release_push(w.hwnd());
+        let px = self.state.fence_px_rect(&f);
+        let rect = RECT {
+            left: px.left,
+            top: px.top,
+            right: px.right,
+            bottom: px.bottom,
+        };
+        w.restore_geometry(rect, f.rolled_up, self.state.fence_expanded_px(&f));
+        let (rect, rolled, expanded) = (w.rect(), w.is_rolled(), w.expanded_height_px());
+        self.record_bounds(id, rect, rolled, expanded);
+    }
+
     /// Re-applies every fence's saved geometry to its window (after a swap / restore / import).
     pub(super) fn relayout_from_state(&mut self) {
         self.state.ensure_layout();
@@ -695,7 +721,8 @@ impl App {
                     .fence(fence)
                     .map(|f| f.title.clone())
                     .unwrap_or_default(),
-                w.rail_row_screen_rect(fence),
+                w.rail_row_screen_rect(fence)
+                    .or_else(|| w.title_rename_rect()),
                 self.queue.clone(),
                 self.theme_mode,
             );

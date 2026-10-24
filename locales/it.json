@@ -584,5 +584,15 @@
   "请用 PecoFence 的命令行工具帮我整理 Windows 桌面。PecoFence 正在运行，命令行工具是 `{0}`。先运行 `{0} skill` 阅读使用说明，再查看桌面上的项目和现有的栅栏，动手前先导出一份配置备份。然后告诉我你的整理方案：新建哪些栅栏，哪些项目放到哪里，为以后出现的新文件添加哪些整理规则。等我同意后再执行。": "Usa lo strumento da riga di comando di PecoFence per riordinare il mio desktop di Windows. PecoFence è in esecuzione e il suo strumento da riga di comando è `{0}`. Prima esegui `{0} skill` per leggere come si usa, poi guarda gli elementi del mio desktop e i riquadri che ho già, ed esporta un backup della configurazione prima di modificare qualsiasi cosa. Poi presentami il tuo piano: quali riquadri creare, quali elementi mettere dove e quali regole di organizzazione aggiungere per i nuovi file. Aspetta il mio via libera prima di metterlo in pratica.",
   "提示词已复制，粘贴到 AI 助手里即可": "Prompt copiato. Incollalo nel tuo assistente IA.",
   "没能复制提示词，请稍后重试": "Impossibile copiare il prompt. Riprova tra un momento.",
-  "文件夹优先": "Prima le cartelle"
+  "文件夹优先": "Prima le cartelle",
+  "每个栅栏可在“栅栏”页单独设置": "Puoi modificare questa impostazione per ogni riquadro nella pagina «Riquadri»",
+  "标题栏": "Barra del titolo",
+  "收起时缩短": "Accorcia quando è compresso",
+  "收起后标题栏只有标题或标签页那么长，而不是和栅栏一样长": "Una volta compressa, la barra del titolo è lunga quanto il titolo o le schede, non quanto il riquadro",
+  "对齐方式": "Allineamento",
+  "“标题栏”中的设置也对整组标签页生效，标题颜色和标题字号除外": "Anche le impostazioni di «Barra del titolo» si applicano all’intero gruppo di schede, tranne il colore e la dimensione del titolo",
+  "标签排成一列时从上往下排，不跟随标题对齐": "Le schede in colonna partono dall’alto, qualunque sia l’allineamento",
+  "标签栏位置为左侧时，收起的栅栏总是缩成标签那一列": "Con la barra delle schede a sinistra, un riquadro compresso si riduce sempre alla sua colonna di schede",
+  "标题栏排成一列时总是显示": "Una barra del titolo in colonna è sempre visibile",
+  "像桌面一样排列时没有标题栏": "Disposto come il desktop, questo riquadro non ha la barra del titolo"
 }

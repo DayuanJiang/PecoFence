@@ -32,11 +32,10 @@
         { ic: '', t: '自动隐藏滚动条', s: '鼠标移到栅栏上或滚动时才显示', on: false },
     ];
     const TARGET = 3;
-    // The pages go on below what is built (常规: 调整大小时按整行整列对齐, 速览栅栏; 栅栏: 布局,
-    // 行为): only the scrollbar thumb needs their height.
-    const GEN_MORE = 200, FEN_MORE = 440;
-    // 栅栏 page: 色调 palette (fence_options.rs TINT_PALETTE) and the 「显示标题栏」 options
-    const SWATCHES = [null, 'E74856', 'F7630C', 'FFB900', '10893E', '00B7C3', '0078D4', '8764B8', 'E3008C', '7A7574'];
+    // The pages go on beyond what is built (常规: 调整大小时按整行整列对齐, 速览栅栏; 栅栏: 外观, 布局,
+    // the rest of 标题栏, 行为): only the scrollbar thumb needs their height.
+    const GEN_MORE = 200, FEN_MORE = 720;
+    // 栅栏 page: the 「显示标题栏」 options
     const OPTIONS = ['跟随常规设置', '始终显示', '鼠标悬停时显示'];
 
     const SCROLL_A = .62, SCROLL_B = 1.45;                   // wheel: top of 常规 → 行为
@@ -93,16 +92,11 @@
         const count = el('span', 'set-s', picker.n, T('{0} 个栅栏').replace('{0}', '2'));
         Object.assign(count.style, { right: '16px', top: '5px', color: '#8a8a8a' });
         SM.drawInput(SM.input(SM.card(f, { ic: '', t: '栅栏名称', textW: 160 }), '', 140), '程序', false, 0);
-        SM.h3(f, '外观');
-        SM.select(SM.card(f, { ic: '', t: '不透明度', s: '默认：透出桌面。更厚实：多一层底色。全透明：鼠标悬停时才显示玻璃。', textW: 190 }), '默认', 100);
-        const tint = SM.card(f, { ic: '', t: '色调', s: '给玻璃染上一层颜色，标签页的色条随之变化', textW: 88 });
-        SWATCHES.forEach((hex, i) => {
-            const c = SM.ctrl(tint, 'set-sw' + (hex ? '' : ' none on'), 15, 15, { right: 10 + (SWATCHES.length - 1 - i) * 19.5, label: null });
-            if (hex) c.n.style.background = '#' + hex;
-        });
-        // 只给标题栏上色 shows only with a tint, 标签页颜色 only with tabs
+        // 外观 and 布局 come before 标题栏 on the page; left out here, 显示标题栏 stays in view.
+        SM.h3(f, '标题栏');
         SM.select(SM.card(f, { ic: '', t: '标题颜色', s: '要跟随色调，请先选一种色调', textW: 190 }), '跟随主题', 100);
         SM.select(SM.card(f, { ic: '', t: '标题字号', s: '栅栏标题和标签页文字的大小', textW: 190 }), '标准', 100);
+        SM.select(SM.card(f, { ic: '\uE8E4', t: '标题对齐', textW: 190 }), OPTIONS[0], 100);
         const mode = SM.select(SM.card(f, { ic: '', t: '显示标题栏', s: '鼠标悬停时显示：平时收起标题行，指针移到栅栏上才出现',
             textW: f.cardW - 34 - 120 - 24 }), OPTIONS[0], 120);
         f.contentH = SM.stack(f) + FEN_MORE;

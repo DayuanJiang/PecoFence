@@ -150,6 +150,7 @@
   "自动": "Automático",
   "自动：液态玻璃按背后壁纸的明暗选深色或浅色，Fluent 跟随颜色模式；白色和黑色也用于标题颜色为“跟随主题”的栅栏标题和标签": "Automático: o Liquid Glass escolhe texto escuro ou claro conforme a tela de fundo atrás dele, o Fluent segue o modo de cor. Branco e preto também valem para os títulos e as abas dos grupos com a cor do título Igual ao tema",
   "标题对齐": "Alinhamento do título",
+  "每个栅栏可在“栅栏”页单独设置": "Cada grupo pode ter sua própria configuração na página Grupos",
   "左对齐": "À esquerda",
   "居中": "Centralizado",
   "右对齐": "À direita",
@@ -351,6 +352,7 @@
   "跟随常规设置": "Usar a configuração geral",
   "始终显示": "Sempre",
   "鼠标悬停时显示": "Ao passar o mouse",
+  "标题栏": "Barra de título",
   "也可以在栅栏内按住 Ctrl 滚动鼠标滚轮": "Você também pode usar Ctrl+roda do mouse dentro de um grupo",
   "高度跟随内容行数，内容增减时平滑过渡": "A altura se ajusta suavemente ao número de linhas",
   "边框不再可拖动缩放；标题仍可点击、右键、双击": "Desativar redimensionamento; cliques e menu do título continuam disponíveis",
@@ -584,5 +586,13 @@
   "命令行文档": "Guia da linha de comando",
   "请用 PecoFence 的命令行工具帮我整理 Windows 桌面。PecoFence 正在运行，命令行工具是 `{0}`。先运行 `{0} skill` 阅读使用说明，再查看桌面上的项目和现有的栅栏，动手前先导出一份配置备份。然后告诉我你的整理方案：新建哪些栅栏，哪些项目放到哪里，为以后出现的新文件添加哪些整理规则。等我同意后再执行。": "Use a ferramenta de linha de comando do PecoFence para organizar minha área de trabalho do Windows. O PecoFence está aberto, e a ferramenta de linha de comando é `{0}`. Primeiro execute `{0} skill` para ler como usá-la, depois veja os itens da minha área de trabalho e os grupos que tenho, e exporte um backup da configuração antes de mudar qualquer coisa. Em seguida, me diga seu plano: quais grupos criar, quais itens vão para onde e quais regras de organização adicionar para arquivos novos. Espere meu OK antes de executar.",
   "提示词已复制，粘贴到 AI 助手里即可": "Prompt copiado. Cole no seu assistente de IA.",
-  "没能复制提示词，请稍后重试": "Não foi possível copiar o prompt. Tente de novo em instantes."
+  "没能复制提示词，请稍后重试": "Não foi possível copiar o prompt. Tente de novo em instantes.",
+  "收起时缩短": "Encurtar ao recolher",
+  "收起后标题栏只有标题或标签页那么长，而不是和栅栏一样长": "Recolhida, a barra de título tem só o comprimento do título ou das abas, não o do grupo",
+  "对齐方式": "Alinhamento",
+  "“标题栏”中的设置也对整组标签页生效，标题颜色和标题字号除外": "As opções de “Barra de título” também valem para todas as abas do grupo, exceto a cor e o tamanho do título",
+  "标签排成一列时从上往下排，不跟随标题对齐": "As abas em coluna começam do alto, seja qual for o alinhamento",
+  "标签栏位置为左侧时，收起的栅栏总是缩成标签那一列": "Com a barra de abas à esquerda, um grupo recolhido sempre se reduz à sua coluna de abas",
+  "标题栏排成一列时总是显示": "Uma barra de título em coluna sempre aparece",
+  "像桌面一样排列时没有标题栏": "Organizado como a área de trabalho, este grupo não tem barra de título"
 }

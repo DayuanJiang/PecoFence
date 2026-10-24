@@ -156,6 +156,7 @@
   "自动": "Automatique",
   "自动：液态玻璃按背后壁纸的明暗选深色或浅色，Fluent 跟随颜色模式；白色和黑色也用于标题颜色为“跟随主题”的栅栏标题和标签": "Automatique : Liquid Glass choisit un texte foncé ou clair selon le fond d’écran derrière lui, Fluent suit le mode de couleur. Blanc et noir s’appliquent aussi aux titres et aux onglets des groupes dont la couleur de titre est « Selon le thème »",
   "标题对齐": "Alignement du titre",
+  "每个栅栏可在“栅栏”页单独设置": "Réglable pour chaque groupe dans la page « Groupes »",
   "左对齐": "À gauche",
   "居中": "Centré",
   "右对齐": "À droite",
@@ -375,6 +376,7 @@
   "跟随常规设置": "Selon le réglage Général",
   "始终显示": "Toujours",
   "鼠标悬停时显示": "Au survol",
+  "标题栏": "Barre de titre",
   "也可以在栅栏内按住 Ctrl 滚动鼠标滚轮": "Aussi réglable avec Ctrl+molette dans un groupe",
   "高度跟随内容行数，内容增减时平滑过渡": "La hauteur s’ajuste doucement au nombre de lignes",
   "边框不再可拖动缩放；标题仍可点击、右键、双击": "Désactiver le redimensionnement ; clics et menu du titre restent disponibles",
@@ -584,5 +586,13 @@
   "命令行文档": "Guide de la ligne de commande",
   "请用 PecoFence 的命令行工具帮我整理 Windows 桌面。PecoFence 正在运行，命令行工具是 `{0}`。先运行 `{0} skill` 阅读使用说明，再查看桌面上的项目和现有的栅栏，动手前先导出一份配置备份。然后告诉我你的整理方案：新建哪些栅栏，哪些项目放到哪里，为以后出现的新文件添加哪些整理规则。等我同意后再执行。": "Utilise l’outil en ligne de commande de PecoFence pour ranger mon Bureau Windows. PecoFence est lancé, et son outil en ligne de commande est `{0}`. Exécute d’abord `{0} skill` pour lire le mode d’emploi, puis regarde les éléments de mon Bureau et mes groupes, et exporte une sauvegarde de la configuration avant de modifier quoi que ce soit. Ensuite, présente-moi ton plan : quels groupes créer, quels éléments mettre où et quelles règles de rangement ajouter pour les nouveaux fichiers. Attends mon accord avant de l’appliquer.",
   "提示词已复制，粘贴到 AI 助手里即可": "Consigne copiée. Collez-la dans votre assistant IA.",
-  "没能复制提示词，请稍后重试": "Impossible de copier la consigne. Réessayez dans un instant."
+  "没能复制提示词，请稍后重试": "Impossible de copier la consigne. Réessayez dans un instant.",
+  "收起时缩短": "Raccourcir une fois replié",
+  "收起后标题栏只有标题或标签页那么长，而不是和栅栏一样长": "Repliée, la barre de titre ne fait que la longueur de son titre ou de ses onglets, pas celle du groupe",
+  "对齐方式": "Alignement",
+  "“标题栏”中的设置也对整组标签页生效，标题颜色和标题字号除外": "Les options de « Barre de titre » s’appliquent aussi à tous les onglets du groupe, sauf la couleur et la taille du titre",
+  "标签排成一列时从上往下排，不跟随标题对齐": "Les onglets en colonne partent du haut, quel que soit l’alignement",
+  "标签栏位置为左侧时，收起的栅栏总是缩成标签那一列": "Avec la barre d’onglets à gauche, un groupe replié se réduit toujours à sa colonne d’onglets",
+  "标题栏排成一列时总是显示": "Une barre de titre en colonne est toujours affichée",
+  "像桌面一样排列时没有标题栏": "Disposé comme le bureau, ce groupe n’a pas de barre de titre"
 }

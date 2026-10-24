@@ -70,6 +70,12 @@ mod tooltip;
 mod window_drag;
 
 pub use api::FenceWindow;
+
+/// Left (or top) edge of a window at `start` that goes from `from` to `to` px wide (or tall)
+/// pivoting at `anchor` (`FenceWindow::width_anchor`): 0 keeps the start edge, 1 the end edge.
+pub fn anchored_start(start: i32, from: i32, to: i32, anchor: f32) -> i32 {
+    start + ((from - to) as f32 * anchor).round() as i32
+}
 pub use dnd::filter_folder_paths;
 pub use state::DesktopArea;
 

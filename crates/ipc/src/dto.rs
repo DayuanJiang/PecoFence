@@ -201,6 +201,15 @@ pub struct FenceDto {
     /// `default` (the global `rollUp.titleOnHover`) | `hover` | `always`.
     #[serde(default)]
     pub title_on_hover: String,
+    /// `default` (the global `titleAlign`) | `left` | `center` | `right`.
+    #[serde(default)]
+    pub title_align: String,
+    /// `default` (the title row keeps its width) | `fit` | `full`.
+    #[serde(default)]
+    pub collapsed_size: String,
+    /// Whether the collapsed title row shrinks to its title or tabs (`collapsedSize` applied).
+    #[serde(default)]
+    pub collapsed_shrinks: bool,
     /// `icons` | `list` | `details`.
     pub layout: String,
     /// `manual` | `name` | `type` | `date` | `size` | `openCount`.

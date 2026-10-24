@@ -454,7 +454,7 @@ pub(super) fn on_lbuttonup(
             // a drag) expands it on that tab, which the press already switched to.
             PressTarget::Tab(_)
                 if matches!(tab_drag, Some((.., false)))
-                    && v.column_collapsed
+                    && v.column_collapsed()
                     && v.rolled_up
                     && v.roll_anim.is_none() =>
             {
