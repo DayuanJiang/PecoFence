@@ -254,7 +254,7 @@ pub enum FenceCmd {
         #[arg(long, group = "size")]
         h: Option<i32>,
     },
-    /// Set a per-fence option (title, iconSize, spacing, iconAlign, autoHeight, locked, expandUpward, excludeFromQuickHide, opacity, tint, tintTitleOnly, tabColor, titleColor, titleSize, titleOnHover, titleAlign, collapsedSize, layout, sort, reverse, groupByDate, foldersFirst, labelLines, openFoldersInside, portalNavigate, portalTitleIcon, hideWhenEmpty, desktopLayout); `fence rename` is the friendlier way to set title
+    /// Set a per-fence option (title, iconSize, spacing, iconAlign, autoHeight, locked, expandUpward, excludeFromQuickHide, opacity, tint, tintTitleOnly, tabColor, titleColor, titleSize, titleOnHover, titlePosition, titleAlign, collapsedSize, layout, sort, reverse, groupByDate, foldersFirst, labelLines, openFoldersInside, portalNavigate, portalTitleIcon, hideWhenEmpty, desktopLayout); `fence rename` is the friendlier way to set title
     #[command(
         override_usage = "pecofence-cli fence set [OPTIONS] <FENCE> <PROP> <VALUE>\n       pecofence-cli fence set [OPTIONS] --all <PROP> <VALUE>",
         after_help = "Arguments:\n  <FENCE>  Fence: id, unique id prefix (>=6 hex), or title (exact, then unique substring)\n  <PROP>   Option name as shown by `fence get` (title: prefer `fence rename`)\n  <VALUE>  JSON value or bare text: 48, true, list, null; quote # colours: \"#ff8800\" or '\"#ff8800\"'\n\nExample: pecofence-cli fence set Work layout list\n         pecofence-cli fence set Work tint \"#ff8800\"\n         pecofence-cli fence set --all opacity clear"
@@ -288,7 +288,7 @@ pub enum FenceCmd {
         #[arg(long)]
         all: bool,
     },
-    /// Dock a fence to the top edge of its monitor (rolled up, expands on hover)
+    /// Dock a fence to the top edge of its monitor (rolled up, expands on hover; its title bar moves to the top)
     #[command(after_help = "Example: pecofence-cli fence dock-top Work")]
     DockTop {
         #[arg(help = FENCE_HELP)]

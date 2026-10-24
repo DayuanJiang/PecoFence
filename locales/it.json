@@ -594,5 +594,13 @@
   "标签排成一列时从上往下排，不跟随标题对齐": "Le schede in colonna partono dall’alto, qualunque sia l’allineamento",
   "标签栏位置为左侧时，收起的栅栏总是缩成标签那一列": "Con la barra delle schede a sinistra, un riquadro compresso si riduce sempre alla sua colonna di schede",
   "标题栏排成一列时总是显示": "Una barra del titolo in colonna è sempre visibile",
-  "像桌面一样排列时没有标题栏": "Disposto come il desktop, questo riquadro non ha la barra del titolo"
+  "像桌面一样排列时没有标题栏": "Disposto come il desktop, questo riquadro non ha la barra del titolo",
+  "标题栏位置": "Posizione della barra del titolo",
+  "底部": "In basso",
+  "向下收起": "Comprimi verso il basso",
+  "位置": "Posizione",
+  "上方放得下时从标题栏向上展开，放不下就向下展开": "Si espande verso l’alto dalla barra del titolo se c’è spazio, altrimenti verso il basso",
+  "放在底部时，标签页留在标题栏里，栅栏收向标题栏": "In basso le schede restano nella barra del titolo e il riquadro si comprime verso di essa",
+  "标题栏在底部的栅栏不受影响": "Non vale per i riquadri con la barra del titolo in basso",
+  "停靠时标题栏回到顶部": "Quando lo agganci, la barra del titolo torna in alto"
 }

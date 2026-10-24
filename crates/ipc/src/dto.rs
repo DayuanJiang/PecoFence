@@ -201,6 +201,9 @@ pub struct FenceDto {
     /// `default` (the global `rollUp.titleOnHover`) | `hover` | `always`.
     #[serde(default)]
     pub title_on_hover: String,
+    /// `top` | `bottom`: the edge the title bar runs along.
+    #[serde(default)]
+    pub title_position: String,
     /// `default` (the global `titleAlign`) | `left` | `center` | `right`.
     #[serde(default)]
     pub title_align: String,

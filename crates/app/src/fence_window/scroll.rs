@@ -182,8 +182,8 @@ impl FenceViewState {
     /// while rolled up the remembered expanded height below the title (see `scroll_extent`).
     pub(super) fn viewport_h_px(&self) -> i32 {
         if self.rolled_up && self.roll_anim.is_none() {
-            let head = self.head_px();
-            self.expanded_h_px.max(head + 40) - head
+            let title = self.head_px() + self.foot_px();
+            self.expanded_h_px.max(title + 40) - title
         } else {
             self.content_size_px().1
         }

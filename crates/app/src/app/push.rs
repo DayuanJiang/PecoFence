@@ -289,10 +289,10 @@ impl App {
                 let by = prev.map(|p| p.by.clone()).unwrap_or_default();
                 let fence = self.state.fence(id);
                 // Opened upward, it keeps the bottom edge where it is: nothing below it has to
-                // make room (the ones above do). A fence with 向上展开 is not pushed either way
-                // (its top moving up as it expands must not read as a fence resting under the
-                // ones above).
-                let chooses = fence.is_some_and(|f| f.expand_upward);
+                // make room (the ones above do). A fence that picks its side (向上展开, or a bottom
+                // title row) is not pushed either way (its top moving up as it expands must not
+                // read as a fence resting under the ones above).
+                let chooses = fence.is_some_and(|f| f.chooses_side());
                 let upward = w.row_at_bottom();
                 let row = if upward { r.bottom - title_h } else { base };
                 let (cx, cy) = ((r.left + r.right) / 2, row + title_h / 2);
@@ -365,14 +365,15 @@ impl App {
         }
     }
 
-    /// `Behavior::expand_room` for the windows with 向上展开: the room above the bottom edge
+    /// `Behavior::expand_room` for the windows that pick their side (`Fence::chooses_side`): the
+    /// room above the bottom edge
     /// (`lifted`: the push pass's, the fences there sliding up; None: up to the next fence
     /// above) and below the top edge (to the bottom of the work area, the fences there sliding
     /// down; with pushNeighbors off, to the next fence below).
     fn keep_expand_rooms(&self, lifted: Option<Vec<(HWND, i32)>>) {
         let mut rooms = Vec::new();
         for (&id, w) in &self.fences {
-            if !self.state.fence(id).is_some_and(|f| f.expand_upward) {
+            if !self.state.fence(id).is_some_and(|f| f.chooses_side()) {
                 continue;
             }
             let r = w.rect();
@@ -407,6 +408,30 @@ impl App {
     /// rolled up at rest has its saved rect laid out around its title row on the screen
     /// (`AppState::set_fence_bounds`); the window's row then sits at that end of it.
     pub(super) fn record_bounds(&mut self, id: FenceId, rect: RECT, rolled: bool, expanded: i32) {
+        self.record_bounds_with(id, rect, rolled, expanded, true);
+    }
+
+    /// [`Self::record_bounds`] for a title row placed at the end of the rect it was saved at
+    /// (an explicit move or resize): rolled up at rest, it keeps that end instead of choosing
+    /// the side where the fence fits again.
+    pub(super) fn record_bounds_kept(
+        &mut self,
+        id: FenceId,
+        rect: RECT,
+        rolled: bool,
+        expanded: i32,
+    ) {
+        self.record_bounds_with(id, rect, rolled, expanded, false);
+    }
+
+    fn record_bounds_with(
+        &mut self,
+        id: FenceId,
+        rect: RECT,
+        rolled: bool,
+        expanded: i32,
+        choose_side: bool,
+    ) {
         // 像桌面一样排列 places that window itself: its saved rect stays the fence's own, for
         // when the option goes off.
         if self
@@ -431,9 +456,10 @@ impl App {
                     );
                     rect.right = rect.left + ew;
                 }
-                let choose = rolled
+                let choose = choose_side
+                    && rolled
                     && w.rolled_at_rest()
-                    && self.state.fence(id).is_some_and(|f| f.expand_upward);
+                    && self.state.fence(id).is_some_and(|f| f.chooses_side());
                 (rect, w.row_at_bottom(), choose)
             }
             None => (rect, false, false),

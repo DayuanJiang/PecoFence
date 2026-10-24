@@ -92,10 +92,12 @@
         const count = el('span', 'set-s', picker.n, T('{0} 个栅栏').replace('{0}', '2'));
         Object.assign(count.style, { right: '16px', top: '5px', color: '#8a8a8a' });
         SM.drawInput(SM.input(SM.card(f, { ic: '', t: '栅栏名称', textW: 160 }), '', 140), '程序', false, 0);
-        // 外观 and 布局 come before 标题栏 on the page; left out here, 显示标题栏 stays in view.
+        // 外观 and 布局 come before 标题栏 on the page and are left out here, so 显示标题栏 stays in
+        // view under the 标题栏 cards above it.
         SM.h3(f, '标题栏');
         SM.select(SM.card(f, { ic: '', t: '标题颜色', s: '要跟随色调，请先选一种色调', textW: 190 }), '跟随主题', 100);
         SM.select(SM.card(f, { ic: '', t: '标题字号', s: '栅栏标题和标签页文字的大小', textW: 190 }), '标准', 100);
+        SM.select(SM.card(f, { ic: '', t: '标题栏位置', s: '放在底部时，标签页留在标题栏里，栅栏收向标题栏', textW: 190 }), '顶部', 100);
         SM.select(SM.card(f, { ic: '\uE8E4', t: '标题对齐', textW: 190 }), OPTIONS[0], 100);
         const mode = SM.select(SM.card(f, { ic: '', t: '显示标题栏', s: '鼠标悬停时显示：平时收起标题行，指针移到栅栏上才出现',
             textW: f.cardW - 34 - 120 - 24 }), OPTIONS[0], 120);

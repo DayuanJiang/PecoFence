@@ -90,7 +90,6 @@ impl FenceViewState {
             return false;
         }
         let scale = self.scale();
-        let (x, y) = (x_px as f32 / scale, y_px as f32 / scale);
         let r = if self.title_row_strip() {
             // The pill is where it is drawn (sliding, dragged); a scrolled strip's cut-off part
             // takes no click (`tab_at`). A tab without its folder glyph has no button.
@@ -141,6 +140,9 @@ impl FenceViewState {
         } else {
             TitleDeco::up_box(self.theme.title_height)
         };
+        // Boxes are measured from the title row's top.
+        let y_px = y_px - self.title_top_px();
+        let (x, y) = (x_px as f32 / scale, y_px as f32 / scale);
         x >= r.left && x < r.right && y >= r.top && y < r.bottom
     }
 
@@ -168,7 +170,7 @@ impl FenceViewState {
         if self.tabs_on_rail() {
             x_px >= 0 && x_px < self.content_x
         } else {
-            y_px >= 0 && y_px < self.title_h_px()
+            self.in_title_row(y_px)
         }
     }
 
@@ -198,6 +200,7 @@ impl FenceViewState {
         } else {
             TitleDeco::chevron_box(w_px as f32 / scale, self.theme.title_height)
         };
+        let y_px = y_px - self.title_top_px();
         let (x, y) = (x_px as f32 / scale, y_px as f32 / scale);
         x >= r.left && x < r.right && y >= r.top && y < r.bottom
     }
@@ -411,7 +414,7 @@ impl FenceViewState {
             + layout
                 .content_height()
                 .max(layout.top_pad() * 2.0 + layout.row_step());
-        self.head_px() + (content * self.scale()).ceil() as i32 + FIT_SLACK_PX
+        self.head_px() + self.foot_px() + (content * self.scale()).ceil() as i32 + FIT_SLACK_PX
     }
 
     /// Window height (device px) that shows every row of the left tab column, the free strip
@@ -465,7 +468,7 @@ impl FenceViewState {
     fn bounded_height_px(&self, desired: i32) -> i32 {
         let rect = window::window_rect(self.hwnd);
         monitors::query(monitors::monitor_from_window(self.hwnd)).map_or(desired, |monitor| {
-            let (above, below) = if self.expand_upward {
+            let (above, below) = if self.chooses_side() {
                 self.expand_rooms_px()
             } else {
                 (i32::MAX, i32::MAX)
@@ -515,7 +518,10 @@ impl FenceViewState {
             return Some(if self.tabs_on_rail() {
                 (r.left + self.content_x / 2, r.top + along)
             } else {
-                (r.left + along, r.top + self.title_h_px() / 2)
+                (
+                    r.left + along,
+                    r.top + self.title_top_px() + self.title_h_px() / 2,
+                )
             });
         }
         let i = self.items.iter().position(|it| it.name.contains(name))?;

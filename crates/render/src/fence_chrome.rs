@@ -338,11 +338,15 @@ pub struct FenceStyle {
     /// No item count on a rolled title and no roll chevron (the global
     /// 「隐藏标题栏右侧的项目数和折叠箭头」 setting).
     pub hide_count_and_chevron: bool,
+    /// The edge the title bar runs along; title on hover folds a bottom row away there.
+    pub title_edge: pecofence_core::TitleEdge,
     /// Collapsed, the title bar shrinks to its title or tabs (`Fence::shrinks_collapsed`).
     pub shrink_collapsed: bool,
     /// The chevron (and a rolled row's item count) sits at the start of the title bar,
     /// opposite a title or tabs aligned to its end, so they stay put as the fence rolls.
     pub chevron_leads: bool,
+    /// The edge the fence collapses to (the one that stays put): the chevron points there.
+    pub collapse_to: pecofence_core::TitleEdge,
 }
 
 /// Left tab column metrics (DIPs): the free strip above the first tab (a handle to drag the
@@ -386,7 +390,8 @@ pub struct TitleState {
     /// accent wash + ring alpha, 83 ms in / 167 ms out.
     pub merge_hint: f32,
     /// Title-on-hover fold: the plate (glass, tint, rim) starts this many DIPs below the
-    /// window top, so a resting fence begins at its content; 0 once the title row is shown.
+    /// window top (ends this many above its bottom with a bottom `FenceStyle::title_edge`), so a
+    /// resting fence begins at its content; 0 once the title row is shown.
     pub plate_top: f32,
     /// How far a fully transparent fence (外观 → 全透明) has cleared its plate: 0 = drawn,
     /// 1 = no glass, tint or rim at all (the resting look away from the pointer).
@@ -413,6 +418,25 @@ pub struct StripClip {
 /// Width (DIPs) of the fade at an end of a scrolled tab strip with more pills behind it.
 pub const STRIP_FADE_W: f32 = 12.0;
 
+/// The chevron of a title row points the way the fence collapses: down (ChevronDown E70D) when
+/// it keeps its bottom edge, else up (ChevronUp E70E).
+fn row_chevron(collapse_to: pecofence_core::TitleEdge) -> &'static str {
+    if collapse_to == pecofence_core::TitleEdge::Bottom {
+        "\u{E70D}"
+    } else {
+        "\u{E70E}"
+    }
+}
+
+/// `r` moved down by `dy`: title-row boxes measured from the row's top, placed in the window.
+fn shift_y(r: Rect, dy: f32) -> Rect {
+    Rect {
+        top: r.top + dy,
+        bottom: r.bottom + dy,
+        ..r
+    }
+}
+
 /// Starts drawing a scrolled tab strip into a layer cut to `clip` (`title_h` tall) whose
 /// opacity falls to 0 over `STRIP_FADE_W` at the ends with pills behind them. The right end
 /// moves from `rest_right` to `right` as the chevron fades in (`chevron` 0..=1). The returned
@@ -420,6 +444,7 @@ pub const STRIP_FADE_W: f32 = 12.0;
 fn push_strip_fade(
     session: &DrawingSession<'_>,
     clip: StripClip,
+    row_top: f32,
     title_h: f32,
     chevron: f32,
 ) -> Result<b::ID2D1Brush> {
@@ -443,9 +468,9 @@ fn push_strip_fade(
     let params = b::D2D1_LAYER_PARAMETERS1 {
         contentBounds: b::D2D_RECT_F {
             left: clip.left,
-            top: 0.0,
+            top: row_top,
             right,
-            bottom: title_h,
+            bottom: row_top + title_h,
         },
         maskTransform: windows_numerics::Matrix3x2::identity(),
         opacity: 1.0,
@@ -455,6 +480,31 @@ fn push_strip_fade(
     unsafe { context.PushLayer(&params, None::<&b::ID2D1Layer>) };
     drop(ManuallyDrop::into_inner(params.opacityBrush));
     Ok(brush)
+}
+
+/// Starts drawing cut to `rect` until `pop_clip`.
+fn push_clip(session: &DrawingSession<'_>, rect: Rect) -> Result<()> {
+    let context: b::ID2D1DeviceContext = session.raw().cast()?;
+    let params = b::D2D1_LAYER_PARAMETERS1 {
+        contentBounds: b::D2D_RECT_F {
+            left: rect.left,
+            top: rect.top,
+            right: rect.right,
+            bottom: rect.bottom,
+        },
+        maskTransform: windows_numerics::Matrix3x2::identity(),
+        opacity: 1.0,
+        ..Default::default()
+    };
+    unsafe { context.PushLayer(&params, None::<&b::ID2D1Layer>) };
+    Ok(())
+}
+
+/// Ends the layer `push_clip` started.
+fn pop_clip(session: &DrawingSession<'_>) {
+    if let Ok(context) = session.raw().cast::<b::ID2D1DeviceContext>() {
+        unsafe { context.PopLayer() };
+    }
 }
 
 /// Ends the layer `push_strip_fade` started.
@@ -853,9 +903,15 @@ fn draw_plate(
             rect,
             scale,
         } => {
-            // A folded title row moves the lens (and its bezel) down to the plate top.
+            // A folded title row moves the lens (and its bezel) to the plate's edge.
             let inset = (plate_top * scale).round() as i32;
-            let lens = [rect[0], rect[1] + inset, rect[2], (rect[3] - inset).max(1)];
+            let cut = ((height - outer.bottom).max(0.0) * scale).round() as i32;
+            let lens = [
+                rect[0],
+                rect[1] + inset,
+                rect[2],
+                (rect[3] - inset - cut).max(1),
+            ];
             material.borrow_mut().set_lens(theme.lens);
             let result = material.borrow_mut().draw(
                 session,
@@ -969,6 +1025,24 @@ fn draw_plate(
                 ],
             )?;
             session.fill_rounded_rect(&RoundedRect::uniform(outer, radius), &wash);
+        } else if style.tint_title_only && style.title_edge == pecofence_core::TitleEdge::Bottom {
+            // The bottom title row: the plate's rounded bottom corners, a straight top edge
+            // where the icons end.
+            let band = theme.title_height.min(height) - (height - outer.bottom);
+            if band > 0.0 {
+                let edge = band / outer.height().max(1.0);
+                let soft = (px.hair() / outer.height().max(1.0)).min(1.0 - edge.min(1.0));
+                let wash = session.create_linear_gradient(
+                    Vector2::new(0.0, outer.bottom),
+                    Vector2::new(0.0, plate_top),
+                    &[
+                        GradientStop::new(0.0, tint),
+                        GradientStop::new(edge.min(1.0), tint),
+                        GradientStop::new((edge + soft).min(1.0), ColorF::TRANSPARENT),
+                    ],
+                )?;
+                session.fill_rounded_rect(&RoundedRect::uniform(outer, radius), &wash);
+            }
         } else if style.tint_title_only {
             // Only the title row (what of it the fold leaves): the plate's rounded top
             // corners, a straight bottom edge where the icons start.
@@ -1002,7 +1076,7 @@ fn draw_plate(
     if sampled_material && !theme.liquid_glass {
         let sheen = session.create_linear_gradient(
             Vector2::new(0.0, plate_top),
-            Vector2::new(width, height.max(plate_top + 1.0)),
+            Vector2::new(width, outer.bottom.max(plate_top + 1.0)),
             &[
                 GradientStop::new(0.0, with_alpha(theme.glass_rim_top, 0.16 * plate_a)),
                 GradientStop::new(0.48, ColorF::TRANSPARENT),
@@ -1034,7 +1108,7 @@ fn draw_plate(
     } else if sampled_material {
         let rim = session.create_linear_gradient(
             Vector2::new(0.0, plate_top),
-            Vector2::new(width * 0.65, height.max(plate_top + 1.0)),
+            Vector2::new(width * 0.65, outer.bottom.max(plate_top + 1.0)),
             &[
                 GradientStop::new(
                     0.0,
@@ -2087,9 +2161,16 @@ impl FenceChrome {
         // The plate is the whole surface, or only the part below the title row while title on
         // hover keeps that row folded away (the compositor clip cuts the surface at its top).
         // A fully transparent fence fades the whole plate with `plate_a`.
-        let plate_top = state.plate_top.clamp(0.0, (height - 1.0).max(0.0));
+        let fold = state.plate_top.clamp(0.0, (height - 1.0).max(0.0));
         let plate_a = 1.0 - state.plate_clear.clamp(0.0, 1.0);
-        let outer = Rect::from_xywh(0.0, plate_top, width, height - plate_top);
+        // Two or more tabs on the left: the column is the title bar, there is no title row.
+        let column = style.tab_rail > 0.0 && tabs.len() > 1;
+        let bottom = style.title_edge == pecofence_core::TitleEdge::Bottom && !column;
+        let outer = if bottom {
+            Rect::from_xywh(0.0, 0.0, width, height - fold)
+        } else {
+            Rect::from_xywh(0.0, fold, width, height - fold)
+        };
         let radius = theme
             .corner_radius
             .min(width.min(outer.height()) * 0.5)
@@ -2101,9 +2182,9 @@ impl FenceChrome {
             state.title.clamp(0.0, 1.0)
         };
         let title_h = theme.title_height.min(height);
+        // Top of the title row: the window's top, or its bottom row.
+        let ty = if bottom { height - title_h } else { 0.0 };
         let pill_a = state.hover * title_a;
-        // Two or more tabs on the left: the column is the title bar, there is no title row.
-        let column = style.tab_rail > 0.0 && tabs.len() > 1;
 
         if plate_a > 0.0 {
             draw_plate(
@@ -2128,7 +2209,12 @@ impl FenceChrome {
         // single-title fence shows an inset pill (SubtleFill, 83 ms fade), never a full-width
         // strip; a tab strip gets its feedback from the individual tab pills instead.
         if pill_a > 0.0 && tabs.len() <= 1 {
-            let row = Rect::from_xywh(4.0, 4.0, (width - 8.0).max(0.0), (title_h - 8.0).max(0.0));
+            let row = Rect::from_xywh(
+                4.0,
+                ty + 4.0,
+                (width - 8.0).max(0.0),
+                (title_h - 8.0).max(0.0),
+            );
             if theme.liquid_glass {
                 draw_header_glass(session, &backdrop, theme, scale, 1, row, 0.28, pill_a)?;
             } else {
@@ -2154,7 +2240,12 @@ impl FenceChrome {
                     (height - 8.0).max(0.0),
                 )
             } else {
-                Rect::from_xywh(4.0, 4.0, (width - 8.0).max(0.0), (title_h - 8.0).max(0.0))
+                Rect::from_xywh(
+                    4.0,
+                    ty + 4.0,
+                    (width - 8.0).max(0.0),
+                    (title_h - 8.0).max(0.0),
+                )
             };
             let radius = header_control_radius(theme, row);
             if theme.liquid_glass {
@@ -2216,6 +2307,16 @@ impl FenceChrome {
             // "鼠标悬停时才显示标题栏": the glass and rim stay, the title row stays empty.
             return Ok(());
         }
+        // The fold slides the plate's bottom edge over a title row there: none of the row shows
+        // past it. (The compositor's clip follows the plate a frame apart from this drawing; at
+        // the top it is enough.)
+        let folded = bottom && state.plate_top > 0.0;
+        if folded {
+            push_clip(
+                session,
+                Rect::from_xywh(0.0, 0.0, width, (height - state.plate_top).max(0.0)),
+            )?;
+        }
         // Title text; leave room for the roll-up chevron, ellipsize the rest.
         let (title_lo, title_hi) = if style.chevron_leads {
             (deco.title_x() + TITLE_RIGHT_RESERVE, width - TITLE_END_PAD)
@@ -2229,7 +2330,7 @@ impl FenceChrome {
             &backdrop,
             theme,
             5,
-            Rect::from_xywh(sample_x, 0.0, title_width, title_h),
+            Rect::from_xywh(sample_x, ty, title_width, title_h),
             scale,
             opacity,
             style.tint,
@@ -2284,12 +2385,12 @@ impl FenceChrome {
         };
         if tabs.len() > 1 {
             let strip_fade = match state.strip_clip {
-                Some(clip) => Some(push_strip_fade(session, clip, title_h, chevron_shown)?),
+                Some(clip) => Some(push_strip_fade(session, clip, ty, title_h, chevron_shown)?),
                 None => None,
             };
             let inset = if theme.liquid_glass { 4.0 } else { 6.0 };
             let pill_h = (title_h - inset * 2.0).max(0.0);
-            let tab_rect = |x, w| Rect::from_xywh(x, inset, w, pill_h);
+            let tab_rect = |x, w| Rect::from_xywh(x, ty + inset, w, pill_h);
             let marker = |x: f32, w: f32, color: ColorF, alpha: f32| -> Result<()> {
                 let marker_w = (w - 24.0).clamp(0.0, 20.0);
                 if marker_w > 0.0 {
@@ -2298,7 +2399,7 @@ impl FenceChrome {
                         &RoundedRect::uniform(
                             Rect::from_xywh(
                                 x + (w - marker_w) * 0.5,
-                                title_h - inset - 3.0,
+                                ty + title_h - inset - 3.0,
                                 marker_w,
                                 2.0,
                             ),
@@ -2430,12 +2531,13 @@ impl FenceChrome {
                 let brush = session.create_solid_brush(with_alpha(color, ta))?;
                 let fx = legible.as_ref().map(|l| l.fx(theme, color, ta, false));
                 if tab.folder_icon {
-                    let slot = Rect::from_xywh(caption_x - icon_w - 2.0, 0.0, icon_w, title_h);
+                    let slot = Rect::from_xywh(caption_x - icon_w - 2.0, ty, icon_w, title_h);
                     if tab.up_button {
                         // Inside a subfolder the folder glyph is the up button: Up (Segoe
                         // Fluent E74A) in the caption's ink, with the lone portal button's
                         // hover fill and pressed look in a square around it.
-                        let box_r = glyph_up_square(tab_glyph_centre(caption_x), title_h);
+                        let box_r =
+                            shift_y(glyph_up_square(tab_glyph_centre(caption_x), title_h), ty);
                         draw_up_box_fill(session, &backdrop, theme, scale, box_r, state, ta)?;
                         let ink = session.create_solid_brush(with_alpha(
                             if state.up_pressed {
@@ -2454,14 +2556,14 @@ impl FenceChrome {
                     session,
                     &fitted,
                     fmt,
-                    &Rect::from_xywh(caption_x, 0.0, shown_w, title_h),
+                    &Rect::from_xywh(caption_x, ty, shown_w, title_h),
                     &brush,
                     fx,
                 );
                 if let Some(badge) = tab.badge {
                     let r = Rect::from_xywh(
                         caption_x + shown_w + TAB_BADGE_GAP,
-                        ((title_h - TAB_BADGE_H) * 0.5).round(),
+                        ty + ((title_h - TAB_BADGE_H) * 0.5).round(),
                         badge_w - TAB_BADGE_GAP,
                         TAB_BADGE_H,
                     );
@@ -2485,7 +2587,7 @@ impl FenceChrome {
             if deco.up_at_left() {
                 // Up (Segoe Fluent E74A) in a 28×28 box: transparent at rest, SubtleFill
                 // fading in on hover, SubtleFillColorTertiary + tertiary glyph while pressed.
-                let box_r = TitleDeco::up_box(title_h);
+                let box_r = shift_y(TitleDeco::up_box(title_h), ty);
                 draw_up_box_fill(session, &backdrop, theme, scale, box_r, state, title_a)?;
                 session.draw_text(
                     "\u{E74A}",
@@ -2512,9 +2614,9 @@ impl FenceChrome {
             if deco.folder_icon {
                 // Folder glyph (E8B7) aligned with the title baseline. Inside a subfolder it is
                 // the up button (E74A), as in a folder tab.
-                let slot = Rect::from_xywh(x - 2.0, 0.0, 20.0, title_h);
+                let slot = Rect::from_xywh(x - 2.0, ty, 20.0, title_h);
                 if deco.up_button {
-                    let box_r = glyph_up_square(x + 8.0, title_h);
+                    let box_r = shift_y(glyph_up_square(x + 8.0, title_h), ty);
                     draw_up_box_fill(session, &backdrop, theme, scale, box_r, state, title_a)?;
                     session.draw_text(
                         "\u{E74A}",
@@ -2538,7 +2640,7 @@ impl FenceChrome {
                 session,
                 &fitted,
                 title_format,
-                &Rect::from_xywh(x, 0.0, title_w, title_h),
+                &Rect::from_xywh(x, ty, title_w, title_h),
                 &text,
                 fx,
             );
@@ -2552,11 +2654,11 @@ impl FenceChrome {
             let count_rect = if style.chevron_leads {
                 let text_w =
                     crate::text::measure_width(caption, &self.count_format).min(count_w - 4.0);
-                Rect::from_xywh(lead_chevron.right + 4.0, 0.0, text_w + 1.0, title_h)
+                Rect::from_xywh(lead_chevron.right + 4.0, ty, text_w + 1.0, title_h)
             } else {
                 Rect::from_xywh(
                     width - TitleDeco::CHEVRON_W - TitleDeco::CHEVRON_RIGHT_MARGIN - count_w,
-                    0.0,
+                    ty,
                     count_w - 4.0,
                     title_h,
                 )
@@ -2589,18 +2691,29 @@ impl FenceChrome {
         // with the pointer off the title row (context menu, keyboard) does not pop it to the
         // hover alpha on its first frame.
         if style.hide_count_and_chevron {
+            if folded {
+                pop_clip(session);
+            }
             return Ok(());
         }
         let chevron_a = chevron_shown * title_a;
-        let box_r = if style.chevron_leads {
-            lead_chevron
-        } else {
-            TitleDeco::chevron_box(width, title_h)
-        };
-        self.draw_chevron(
-            session, &backdrop, theme, scale, opacity, style.tint, box_r, "\u{E70E}", chevron_a,
-            state, roll_t,
-        )
+        let box_r = shift_y(
+            if style.chevron_leads {
+                lead_chevron
+            } else {
+                TitleDeco::chevron_box(width, title_h)
+            },
+            ty,
+        );
+        let glyph = row_chevron(style.collapse_to);
+        let drawn = self.draw_chevron(
+            session, &backdrop, theme, scale, opacity, style.tint, box_r, glyph, chevron_a, state,
+            roll_t,
+        );
+        if folded {
+            pop_clip(session);
+        }
+        drawn
     }
 
     /// The roll chevron (`glyph`, turned 180° by the roll progress `roll_t`) in its 32×32
@@ -3781,6 +3894,14 @@ mod tests {
         );
         let u = TitleDeco::up_box(36.0);
         assert_eq!((u.left, u.top, u.right, u.bottom), (6.0, 4.0, 34.0, 32.0));
+    }
+
+    /// A title row's chevron points the way the fence collapses.
+    #[test]
+    fn a_row_chevron_points_to_the_edge_it_rolls_to() {
+        use pecofence_core::TitleEdge;
+        assert_eq!(row_chevron(TitleEdge::Top), "\u{E70E}");
+        assert_eq!(row_chevron(TitleEdge::Bottom), "\u{E70D}");
     }
 
     /// A leading chevron sits after a separate up button, and a rename box starts after both.

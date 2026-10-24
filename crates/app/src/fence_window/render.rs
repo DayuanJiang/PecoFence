@@ -440,6 +440,7 @@ impl FenceViewState {
             tab_rail: self.rail_w(),
             hide_count_and_chevron: self.behavior.hide_count_and_chevron.get(),
             chevron_leads: self.chevron_leads(),
+            collapse_to: self.collapse_to(),
             ..self.style
         };
         let pressed_tab = match self.pressed {
@@ -609,7 +610,6 @@ impl FenceViewState {
         // Entrance / exit scales pivot on the window centre (visual units are physical px).
         self.motion
             .set_center(&self.root, w as f32 / 2.0, h as f32 / 2.0);
-        self.update_shape_clip(w, h)?;
         self.chrome_panel.resize(w, h)?;
         // A fence collapsed (or collapsing) to its left tab column or a shrunk title row keeps
         // the width it returns to; the column's width follows the expanded fence.
@@ -619,7 +619,9 @@ impl FenceViewState {
         self.rail_dip = self.measure_rail_w();
         self.content_x = self.rail_px();
         self.content_y = self.head_px();
-        let content_h = (h - self.content_y).max(1);
+        // After the content is placed: its clip stops at a title row along the bottom.
+        self.update_shape_clip(w, h)?;
+        let content_h = (h - self.content_y - self.foot_px()).max(1);
         self.content_panel
             .resize((w - self.content_x).max(1), content_h)?;
         self.content_panel
@@ -632,17 +634,40 @@ impl FenceViewState {
     }
 
     /// The clip must follow every height-animation frame even while content stays frozen. It
-    /// starts at the plate top: a title row folded away by title on hover is cut off too.
+    /// spans the plate: a title row folded away by title on hover is cut off too (at the
+    /// bottom, for a title row there).
     pub(super) fn update_shape_clip(&self, w: i32, h: i32) -> Result<()> {
         let inset = self.plate_inset_px.clamp(0, (h - 1).max(0));
+        let top = if self.title_bottom() { 0 } else { inset };
         self.motion.clip_rounded_at(
             &self.root,
-            inset as f32,
+            top as f32,
             w as f32,
             (h - inset) as f32,
             self.theme.corner_radius * self.scale(),
         )?;
+        if self.content_beside_title() {
+            self.clip_content(&self.content_panel, w, h)?;
+        }
         Ok(())
+    }
+
+    /// The content sits above the chrome and stays at its final size while the size animates:
+    /// beside a title row along the bottom edge it must stop at the title row. A top title row
+    /// covers nothing, so its content has no clip.
+    pub(super) fn content_beside_title(&self) -> bool {
+        self.title_bottom()
+    }
+
+    /// Clips a content panel to the content area of a window `w` x `h` px.
+    pub(super) fn clip_content(&self, panel: &Panel, w: i32, h: i32) -> Result<()> {
+        self.motion.clip_rounded_rect(
+            &panel.visual,
+            pecofence_render::Vector2::new(0.0, 0.0),
+            (w - self.content_x).max(1) as f32,
+            (h - self.content_y - self.foot_px()).max(1) as f32,
+            0.0,
+        )
     }
 
     /// `label_w` is the width the label must fit: the cell width for icons, the name column's

@@ -594,5 +594,13 @@
   "标签排成一列时从上往下排，不跟随标题对齐": "As abas em coluna começam do alto, seja qual for o alinhamento",
   "标签栏位置为左侧时，收起的栅栏总是缩成标签那一列": "Com a barra de abas à esquerda, um grupo recolhido sempre se reduz à sua coluna de abas",
   "标题栏排成一列时总是显示": "Uma barra de título em coluna sempre aparece",
-  "像桌面一样排列时没有标题栏": "Organizado como a área de trabalho, este grupo não tem barra de título"
+  "像桌面一样排列时没有标题栏": "Organizado como a área de trabalho, este grupo não tem barra de título",
+  "标题栏位置": "Posição da barra de título",
+  "底部": "Embaixo",
+  "向下收起": "Recolher para baixo",
+  "位置": "Posição",
+  "上方放得下时从标题栏向上展开，放不下就向下展开": "Abre para cima a partir da barra de título quando há espaço e, se não houver, para baixo",
+  "放在底部时，标签页留在标题栏里，栅栏收向标题栏": "Embaixo, as abas ficam na barra de título e o grupo se recolhe na direção dela",
+  "标题栏在底部的栅栏不受影响": "Não afeta os grupos com a barra de título embaixo",
+  "停靠时标题栏回到顶部": "Ao acoplar, a barra de título volta para cima"
 }

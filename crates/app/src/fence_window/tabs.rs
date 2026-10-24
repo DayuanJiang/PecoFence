@@ -166,6 +166,16 @@ pub(super) fn rail_len_for(n: usize, bottom: f32) -> f32 {
     RAIL_TOP + n * RAIL_ROW_H + (n - 1.0).max(0.0) * TAB_GAP + bottom
 }
 
+/// 标签栏位置 → 左侧 lists the tabs of a fence with its title bar at the top in a column on the
+/// left (two or more tabs). A title bar the fence put at the bottom stays there.
+pub(super) fn is_tab_column(
+    edge: pecofence_core::TitleEdge,
+    tabs: usize,
+    tab_bar: pecofence_core::TabBar,
+) -> bool {
+    tabs > 1 && edge == pecofence_core::TitleEdge::Top && tab_bar == pecofence_core::TabBar::Left
+}
+
 /// Lays the tab strip out along the title row: `natural` are the pills' natural widths (DIPs,
 /// already clamped), `available` the room between `TAB_LEFT` and the chevron zone. A phantom
 /// pill of `TAB_MERGE_GAP_W` at slot `gap` takes part in the proportional shrink and the
@@ -300,6 +310,10 @@ impl FenceViewState {
         self.root.children().insert_at_top(&incoming.visual);
         let outgoing = std::mem::replace(&mut self.content_panel, incoming);
         let (o, n) = (outgoing.visual.clone(), self.content_panel.visual.clone());
+        if self.content_beside_title() {
+            let (w, h) = window::window_rect_size(self.hwnd);
+            let _ = self.clip_content(&self.content_panel, w, h);
+        }
         self.outgoing.push(outgoing);
         self.swap_gen += 1;
         self.swap_deadline =
@@ -351,6 +365,8 @@ impl FenceViewState {
         self.root.children().remove(&o.visual);
         o.visual.set_opacity(1.0);
         o.visual.set_visible(false);
+        // A spare comes back for any title edge: it takes a clip again if it needs one.
+        let _ = self.motion.clear_clip(&o.visual);
         if self.spares.len() < 2 {
             // Free its pixels until the next swap sizes and draws it again.
             let _ = o.resize(1, 1);
@@ -540,9 +556,13 @@ impl FenceViewState {
         })
     }
 
-    /// The tabs stack in a column on the left (标签栏位置 → 左侧, two or more tabs).
+    /// The tabs stack in a column on the left (`is_tab_column`).
     pub(super) fn tabs_on_rail(&self) -> bool {
-        self.tabs.len() > 1 && self.behavior.tab_bar.get() == pecofence_core::TabBar::Left
+        is_tab_column(
+            self.style.title_edge,
+            self.tabs.len(),
+            self.behavior.tab_bar.get(),
+        )
     }
 
     /// Collapsing narrows the window: to the left tab column, or to a title row that shrinks to
@@ -554,6 +574,16 @@ impl FenceViewState {
     /// The window is collapsed (or collapsing) to its left tab column.
     pub(super) fn column_collapsed(&self) -> bool {
         self.width_collapsed && self.tabs_on_rail()
+    }
+
+    /// The edge the fence collapses to (the one that stays put), which its chevron and the
+    /// menu's roll item point to. A top title row shows the top one, also with 向上展开.
+    pub(super) fn collapse_to(&self) -> pecofence_core::TitleEdge {
+        if self.row_bottom && self.title_bottom() {
+            pecofence_core::TitleEdge::Bottom
+        } else {
+            pecofence_core::TitleEdge::Top
+        }
     }
 
     /// Where width changes pivot (`anchored_start`): 0 keeps the left edge, 1 the right edge. A
@@ -572,11 +602,15 @@ impl FenceViewState {
     }
 
     /// The chevron (and a rolled row's item count) sits at the start of the title row, opposite
-    /// a title or tabs aligned to its end, so they stay put as the fence rolls. It leads only
-    /// when the fence's own alignment is right: a title row aligned right by the General setting
-    /// keeps the chevron at the end, and so does the left tab column.
+    /// a title or tabs aligned to its end, so they stay put as the fence rolls. It leads when
+    /// the fence's own alignment is right, or when its title row is at the bottom and its title
+    /// is aligned right. A top title row aligned right by the General setting keeps the chevron
+    /// at the end, and so does the left tab column.
     pub(super) fn chevron_leads(&self) -> bool {
-        self.title_align == Some(pecofence_core::TitleAlign::Right) && !self.tabs_on_rail()
+        let own = self.title_align == Some(pecofence_core::TitleAlign::Right);
+        let off_top = self.style.title_edge != pecofence_core::TitleEdge::Top;
+        (own || (off_top && self.title_align() == pecofence_core::TitleAlign::Right))
+            && !self.tabs_on_rail()
     }
 
     /// The title row holds the tab strip (two or more tabs along the top) instead of a title.
@@ -626,19 +660,74 @@ impl FenceViewState {
     }
 
     /// Height above the content: the title row, or nothing beside a left tab column (the
-    /// column is the fence's title bar).
+    /// column is the fence's title bar) or with the title row at the bottom.
     pub(super) fn head_px(&self) -> i32 {
-        if self.tabs_on_rail() {
+        if self.tabs_on_rail() || self.title_bottom() {
             0
         } else {
             self.title_h_px()
         }
     }
 
+    /// Height below the content: the title row when it runs along the bottom edge.
+    pub(super) fn foot_px(&self) -> i32 {
+        if self.title_bottom() {
+            self.title_h_px()
+        } else {
+            0
+        }
+    }
+
+    /// The fence picks its side at each expansion (`Fence::chooses_side`): with 向上展开, or with
+    /// its title row at the bottom.
+    pub(super) fn chooses_side(&self) -> bool {
+        self.expand_upward || self.title_bottom()
+    }
+
+    /// The title row runs along the bottom edge.
+    pub(super) fn title_bottom(&self) -> bool {
+        self.style.title_edge == pecofence_core::TitleEdge::Bottom
+    }
+
+    /// The title bar moved between the top and the bottom, where the left tab column comes and
+    /// goes: a tab drag or merge gap measured along the old axis ends (the dragged tab goes back
+    /// to its slot and the button release then finds nothing to commit), and the column is
+    /// measured again.
+    pub(super) fn reset_tab_axis(&mut self) {
+        if let Some(td) = self.tab_drag.take()
+            && td.index < self.tabs.len()
+        {
+            let t = self.tabs.remove(td.index);
+            self.tabs.insert(td.start_index.min(self.tabs.len()), t);
+        }
+        self.merge_gap = None;
+        self.pressed = None;
+        self.tab_slide.clear();
+        self.tab_settle = None;
+        self.pill_anim = None;
+        self.sync_rail();
+        self.rail_grow = self.tabs_on_rail();
+    }
+
     /// Where the title (or tab strip) sits in its row: this fence's choice, else the global one.
     pub(super) fn title_align(&self) -> pecofence_core::TitleAlign {
         self.title_align
             .unwrap_or_else(|| self.behavior.title_align.get())
+    }
+
+    /// Client y (device px) where the title row starts.
+    pub(super) fn title_top_px(&self) -> i32 {
+        if self.title_bottom() {
+            self.chrome_panel.size_px().1 - self.title_h_px()
+        } else {
+            0
+        }
+    }
+
+    /// Is client y (device px) inside the title row? Says nothing about a left tab column.
+    pub(super) fn in_title_row(&self, y_px: i32) -> bool {
+        let top = self.title_top_px();
+        y_px >= top && y_px < top + self.title_h_px()
     }
 
     /// Window height (device px) of a rolled fence: its title row, or (tabs on the left) the
@@ -991,7 +1080,7 @@ impl FenceViewState {
             // The column stays when the fence collapses to it.
             x_px >= 0 && x_px < self.rail_px() && y_px >= 0
         } else {
-            y_px >= 0 && y_px < self.title_h_px()
+            self.in_title_row(y_px)
         };
         if !on_strip {
             return None;

@@ -209,6 +209,45 @@ fn rect_of(r: RECT) -> Rect {
     }
 }
 
+/// Height a rolled fence moved by `fences.setBounds` opens to: the full height `expanded_px`
+/// its saved rect (`saved_h` tall) was cut from when the request keeps that height, else the
+/// requested one.
+pub(super) fn kept_full_h(requested_h: i32, saved_h: i32, expanded_px: i32) -> i32 {
+    if requested_h == saved_h {
+        expanded_px.max(requested_h)
+    } else {
+        requested_h
+    }
+}
+
+/// [`adjusted`] for `fences.setBounds` of a rolled fence that opens to `full_h`: a rect that
+/// only gained the full height a cut saved rect kept was not changed by the app.
+pub(super) fn set_bounds_adjusted(
+    requested: Rect,
+    full_h: i32,
+    applied: Rect,
+    reason: &str,
+) -> Option<AdjustedDto> {
+    let full = Rect {
+        h: full_h,
+        ..requested
+    };
+    adjusted(full, applied, reason).and_then(|_| adjusted(requested, applied, reason))
+}
+
+/// `r` moved onto `work`, and cut to its size where larger.
+pub(super) fn clamp_into_work(r: Rect, work: &geometry::WorkArea) -> Rect {
+    let w = r.w.min(work.right - work.left);
+    let x = r.x.clamp(work.left, work.right - w);
+    let h = r.h.min(work.bottom - work.top);
+    Rect {
+        x,
+        y: r.y.clamp(work.top, work.bottom - h),
+        w,
+        h,
+    }
+}
+
 fn rect_to_win(r: Rect) -> RECT {
     RECT {
         left: r.x,
@@ -1472,6 +1511,7 @@ impl App {
             title_color: with_hash(text("titleColor")),
             title_size: text("titleSize"),
             title_on_hover: text("titleOnHover"),
+            title_position: text("titlePosition"),
             title_align: text("titleAlign"),
             collapsed_size: text("collapsedSize"),
             collapsed_shrinks: flag("collapsedShrinks"),
@@ -1930,26 +1970,52 @@ impl App {
         if let Some(host) = before.tab_host {
             return Err(self.tab_unsupported(&before, host));
         }
-        validate_rect(rect, &self.state.work_areas)?;
+        let work = validate_rect(rect, &self.state.work_areas)?;
         let Some(w) = self.fences.get(&id) else {
             return Err(IpcError::internal("the fence has no window"));
         };
         // Same steps as a user move/resize (`FenceBoundsChanged`) and the cell snap: the
         // window first, then the state with the expanded height. Rolled up, only the title bar
         // shows; `h` becomes the height it unrolls to.
-        let full = rect_to_win(rect);
         let rolled = w.is_rolled();
+        let edge = before.title_edge();
+        let kept_end = rolled && edge != pecofence_core::TitleEdge::Top;
+        // A rolled bottom row keeps the full height its saved rect was cut from when only
+        // moved, and rests inside the work area, as a restart would place it.
+        let (full, full_h) = if kept_end {
+            let saved_h = self.state.fence_px_rect(&before).height();
+            let full_h = kept_full_h(rect.h, saved_h, self.state.fence_expanded_px(&before));
+            (rect_to_win(clamp_into_work(rect, &work)), full_h)
+        } else {
+            (rect_to_win(rect), rect.h)
+        };
         // An explicit place is where the fence rests, even at the top a push gave it.
         self.ctx.behavior.release_push(w.hwnd());
-        // Rolled with 向上展开, the title row goes to the bottom of the rect, where it opens
-        // upward into it (the rect is on the screen, so it fits above the row).
-        if rolled && self.state.fence(id).is_some_and(|f| f.expand_upward) {
-            w.set_row_at_bottom(true);
+        // Rolled with 向上展开, a top title row goes to the bottom of the rect, where it opens
+        // upward into it (the rect is on the screen, so it fits above the row). A bottom title
+        // row stays at the end of the rect it was saved at, the edge `fence resize` kept.
+        if rolled && let Some(f) = self.state.fence(id) {
+            match f.title_edge() {
+                pecofence_core::TitleEdge::Top => {
+                    if f.expand_upward {
+                        w.set_row_at_bottom(true);
+                    }
+                }
+                pecofence_core::TitleEdge::Bottom => w.set_row_at_bottom(f.bottom_anchored),
+            }
         }
         // Also ends a roll in flight, whose tween would otherwise put its own size back.
-        w.restore_geometry(full, rolled, rect.h);
-        self.record_bounds(id, full, rolled, rect.h);
-        self.apply_auto_height(id);
+        w.restore_geometry(full, rolled, full_h);
+        if kept_end {
+            // The title row is where the end it was saved at puts it: recorded from there,
+            // without choosing that end again, also when it settles to its tabs below.
+            let bar = w.rect();
+            self.record_bounds_kept(id, bar, true, full_h);
+            self.apply_auto_height_kept(id);
+        } else {
+            self.record_bounds(id, full, rolled, rect.h);
+            self.apply_auto_height(id);
+        }
         self.schedule_save();
         let changed = self.state.fence(id) != Some(&before);
         self.push_settings_state();
@@ -1960,7 +2026,7 @@ impl App {
         };
         let adj = self
             .expanded_rect(id)
-            .and_then(|applied| adjusted(rect, applied, reason));
+            .and_then(|applied| set_bounds_adjusted(rect, full_h, applied, reason));
         Ok(mutation(
             changed,
             None,

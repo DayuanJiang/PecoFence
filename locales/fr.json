@@ -594,5 +594,13 @@
   "标签排成一列时从上往下排，不跟随标题对齐": "Les onglets en colonne partent du haut, quel que soit l’alignement",
   "标签栏位置为左侧时，收起的栅栏总是缩成标签那一列": "Avec la barre d’onglets à gauche, un groupe replié se réduit toujours à sa colonne d’onglets",
   "标题栏排成一列时总是显示": "Une barre de titre en colonne est toujours affichée",
-  "像桌面一样排列时没有标题栏": "Disposé comme le bureau, ce groupe n’a pas de barre de titre"
+  "像桌面一样排列时没有标题栏": "Disposé comme le bureau, ce groupe n’a pas de barre de titre",
+  "标题栏位置": "Position de la barre de titre",
+  "底部": "En bas",
+  "向下收起": "Replier vers le bas",
+  "位置": "Position",
+  "上方放得下时从标题栏向上展开，放不下就向下展开": "Se déplie vers le haut depuis la barre de titre s’il y a de la place, sinon vers le bas",
+  "放在底部时，标签页留在标题栏里，栅栏收向标题栏": "En bas, les onglets restent dans la barre de titre et le groupe se replie vers elle",
+  "标题栏在底部的栅栏不受影响": "Les groupes dont la barre de titre est en bas ne sont pas concernés",
+  "停靠时标题栏回到顶部": "À l’ancrage, la barre de titre revient en haut"
 }

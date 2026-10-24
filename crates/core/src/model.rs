@@ -310,7 +310,8 @@ pub enum LabelColor {
 
 /// Title position in the title row (Fences centres it). With the global setting the chevron
 /// zone on the right stays clear whichever is chosen; a fence aligned right by its own
-/// `appearance.titleAlign` puts the chevron and item count at the start instead.
+/// `appearance.titleAlign`, or with its title bar off the top edge, puts the chevron and item
+/// count at the start instead.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
@@ -321,8 +322,27 @@ pub enum TitleAlign {
     Right,
 }
 
+/// The edge of a fence its title bar runs along (Title bar position).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase")]
+pub enum TitleEdge {
+    #[default]
+    Top,
+    Bottom,
+}
+
+impl TitleEdge {
+    /// The default edge, which a saved fence leaves out.
+    pub fn is_top(&self) -> bool {
+        *self == TitleEdge::Top
+    }
+}
+
 /// Where a tabbed fence shows its tabs: side by side in the title row, or listed in a column
 /// on its left that takes the title row's place (rolled up, the fence shrinks to the column).
+/// Only a fence with its title bar at the top follows it; a title bar on another edge
+/// ([`TitleEdge`]) stays there.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
@@ -728,6 +748,9 @@ pub struct AppearanceOverride {
     /// This fence's bar in a tab strip (None = its tint).
     #[serde(default)]
     pub tab_rgb: Option<[u8; 3]>,
+    /// The edge the title bar runs along (Title bar position), left out of the file at the top.
+    #[serde(default, skip_serializing_if = "TitleEdge::is_top")]
+    pub title_edge: TitleEdge,
     /// Where the title sits in its row (None = the global `titleAlign`). Left out of the file at
     /// its default, so a config that never set it saves as before.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -878,6 +901,32 @@ impl Fence {
             desktop_layout: false,
             items: Vec::new(),
         }
+    }
+
+    pub fn title_edge(&self) -> TitleEdge {
+        self.appearance
+            .as_ref()
+            .map_or(TitleEdge::Top, |a| a.title_edge)
+    }
+
+    /// Sets [`AppearanceOverride::title_edge`].
+    pub fn set_title_edge(&mut self, edge: TitleEdge) {
+        self.edit_appearance(|a| a.title_edge = edge);
+    }
+
+    /// Moves the title bar to `edge` (Title bar position). 向上展开 follows the new edge (off at
+    /// the top, on at the bottom), so the fence opens away from its title.
+    pub fn move_title_bar(&mut self, edge: TitleEdge) {
+        if self.title_edge() != edge {
+            self.expand_upward = edge == TitleEdge::Bottom;
+        }
+        self.set_title_edge(edge);
+    }
+
+    /// The fence picks its side at each expansion from the room around its title row: with
+    /// 向上展开, or with its title row at the bottom, which then prefers downward without it.
+    pub fn chooses_side(&self) -> bool {
+        self.expand_upward || self.title_edge() == TitleEdge::Bottom
     }
 
     /// Collapsed, the title row shrinks to its title or tabs
@@ -1088,6 +1137,7 @@ struct TabPlacement {
 /// A group's title bar settings, which belong to the window: the host carries them.
 #[derive(Clone, Copy, Debug)]
 struct TitleBar {
+    edge: TitleEdge,
     align: Option<TitleAlign>,
     shrink_collapsed: Option<bool>,
 }
@@ -1096,6 +1146,7 @@ impl TitleBar {
     fn of(fence: &Fence) -> Self {
         let a = fence.appearance.clone().unwrap_or_default();
         Self {
+            edge: a.title_edge,
             align: a.title_align,
             shrink_collapsed: a.shrink_collapsed,
         }
@@ -1103,6 +1154,7 @@ impl TitleBar {
 
     fn apply(self, fence: &mut Fence) {
         fence.edit_appearance(|a| {
+            a.title_edge = self.edge;
             a.title_align = self.align;
             a.shrink_collapsed = self.shrink_collapsed;
         });
@@ -1525,19 +1577,21 @@ impl Config {
     /// roll state `to` saved for it. Returns the fences `to` had no spot for: they keep the one
     /// they had in `from`.
     pub fn carry_fences(&mut self, from: usize, to: usize) -> Vec<FenceId> {
-        let spots: HashMap<FenceId, (NormGeometry, bool, f32)> = self.layouts[to]
+        let spots: HashMap<FenceId, Fence> = self.layouts[to]
             .fences
             .iter()
-            .map(|f| (f.id, (f.geometry.clone(), f.rolled_up, f.expanded_h)))
+            .map(|f| (f.id, f.clone()))
             .collect();
         let mut fences = self.layouts[from].fences.clone();
         let mut unplaced = Vec::new();
         for f in &mut fences {
             match spots.get(&f.id) {
-                Some((geometry, rolled_up, expanded_h)) => {
-                    f.geometry = geometry.clone();
-                    f.rolled_up = *rolled_up;
-                    f.expanded_h = *expanded_h;
+                Some(spot) => {
+                    f.geometry = spot.geometry.clone();
+                    f.rolled_up = spot.rolled_up;
+                    f.expanded_h = spot.expanded_h;
+                    // Which end of that rect the rolled title row sits at goes with it.
+                    f.bottom_anchored = spot.bottom_anchored;
                 }
                 None => unplaced.push(f.id),
             }
@@ -1685,6 +1739,36 @@ pub fn now_unix() -> i64 {
 mod tests {
     use super::*;
 
+    #[test]
+    fn expand_upward_follows_a_title_row_between_top_and_bottom() {
+        use TitleEdge as E;
+        let mut f = Fence::new("A", FenceKind::Virtual, geo());
+        // At the bottom it turns on, and back off at the top.
+        f.move_title_bar(E::Bottom);
+        assert!(f.expand_upward && f.chooses_side());
+        f.move_title_bar(E::Top);
+        assert!(!f.expand_upward && !f.chooses_side());
+        // A choice made at one edge does not outlast a move: the round trips end at the edge's.
+        f.expand_upward = true;
+        f.move_title_bar(E::Bottom);
+        f.move_title_bar(E::Top);
+        assert!(!f.expand_upward);
+        f.move_title_bar(E::Bottom);
+        f.expand_upward = false;
+        assert!(f.chooses_side());
+        f.move_title_bar(E::Top);
+        f.move_title_bar(E::Bottom);
+        assert!(f.expand_upward);
+        // Picking the edge the bar already has changes nothing.
+        f.expand_upward = false;
+        f.move_title_bar(E::Bottom);
+        assert!(!f.expand_upward);
+        f.move_title_bar(E::Top);
+        // Back at the defaults, the fence carries no appearance override.
+        f.move_title_bar(E::Top);
+        assert!(f.appearance.is_none());
+    }
+
     /// A fence that never used the title options saves byte for byte as before: none of their
     /// fields is written at its default, also inside an appearance override.
     #[test]
@@ -1692,7 +1776,7 @@ mod tests {
         let mut f = Fence::new("A", FenceKind::Virtual, geo());
         f.edit_appearance(|a| a.tint_title_only = true);
         let saved = serde_json::to_string(&f).unwrap();
-        for key in ["titleAlign", "shrinkCollapsed"] {
+        for key in ["titleEdge", "titleAlign", "shrinkCollapsed"] {
             assert!(!saved.contains(key), "{key} in {saved}");
         }
         let again: Fence = serde_json::from_str(&saved).unwrap();
@@ -1705,8 +1789,8 @@ mod tests {
         );
     }
 
-    /// A fence saved before the title bar options and 向上展开 loads as it was: opening
-    /// downward, its title row at the top of its rect.
+    /// A fence saved before the title bar options and 向上展开 loads as it was: a top title row,
+    /// opening downward, its title row at the top of its rect.
     #[test]
     fn a_fence_without_the_new_fields_loads_unchanged() {
         let mut json = serde_json::to_value(Fence::new("A", FenceKind::Virtual, geo())).unwrap();
@@ -1716,17 +1800,21 @@ mod tests {
         }
         let f: Fence = serde_json::from_value(json).unwrap();
         assert!(!f.expand_upward && !f.bottom_anchored);
+        assert_eq!(f.title_edge(), TitleEdge::Top);
         assert!(!f.shrinks_collapsed());
         assert!(f.appearance.is_none());
         // An appearance override from before the title options keeps its defaults too.
         let a: AppearanceOverride =
             serde_json::from_value(serde_json::json!({ "tintTitleOnly": true })).unwrap();
+        assert_eq!(a.title_edge, TitleEdge::Top);
         assert_eq!((a.title_align, a.shrink_collapsed), (None, None));
     }
 
     #[test]
     fn a_collapsed_title_row_shrinks_only_when_told_to() {
         let mut f = Fence::new("A", FenceKind::Virtual, geo());
+        assert!(!f.shrinks_collapsed());
+        f.set_title_edge(TitleEdge::Bottom);
         assert!(!f.shrinks_collapsed());
         f.edit_appearance(|a| a.shrink_collapsed = Some(true));
         assert!(f.shrinks_collapsed());
@@ -2194,6 +2282,7 @@ mod tests {
         b.tab_host = Some(aid);
         a.tab_order = vec![aid, bid];
         a.edit_appearance(|t| {
+            t.title_edge = TitleEdge::Bottom;
             t.title_align = Some(TitleAlign::Center);
             t.shrink_collapsed = Some(true);
         });
@@ -2204,6 +2293,7 @@ mod tests {
         };
         layout.detach_tab(aid).unwrap();
         let b = layout.fences.iter().find(|f| f.id == bid).unwrap();
+        assert_eq!(b.title_edge(), TitleEdge::Bottom);
         assert!(b.shrinks_collapsed());
         assert_eq!(
             b.appearance.as_ref().unwrap().title_align,
@@ -2436,6 +2526,8 @@ mod tests {
         let mut on_laptop = a.clone();
         on_laptop.geometry.x = 40.0;
         on_laptop.rolled_up = true;
+        // Rolled there with its title row at the bottom of the rect.
+        on_laptop.bottom_anchored = true;
         c.layouts.push(saved(&[("GSM7787#A", D1), ("BOE1#L", D2)]));
         c.layouts.push(saved(&[("BOE1#L", D1)]));
         c.layouts[1].fences = vec![on_laptop, b.clone()];
@@ -2453,6 +2545,7 @@ mod tests {
             (l[0].title.as_str(), l[0].geometry.x, l[0].rolled_up),
             ("A2", 40.0, true)
         );
+        assert!(l[0].bottom_anchored);
         assert_eq!(l[1].geometry, new.geometry);
     }
 

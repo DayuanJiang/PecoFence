@@ -405,7 +405,7 @@ impl FenceWindow {
             },
         );
         format!(
-            "title={:?} opacity={:.2} scale={:.3} fade={fade} retired={} rolled={} rolling={} peeking={} items={} tabs={} selected={} focused={:?} shadow_visible={} shadow_alpha={} layout={:?} locked={} auto_height={} active={} scroll={:.1} client={:?} client_offset=({},{}) chrome={:?} glass={:?} wallpaper_uploads={} title_size={} tab_fonts={:?} tab_rects={:?} content_x={} content={:?} capture={} tab_drag={} window_drag={} detach_pending={} plate_inset={} plate_alpha={:.2} mouse_inside={}",
+            "title={:?} opacity={:.2} scale={:.3} fade={fade} retired={} rolled={} rolling={} peeking={} items={} tabs={} selected={} focused={:?} shadow_visible={} shadow_alpha={} layout={:?} locked={} auto_height={} active={} scroll={:.1} client={:?} client_offset=({},{}) chrome={:?} glass={:?} wallpaper_uploads={} title_size={} tab_fonts={:?} tab_rects={:?} content_x={} content={:?} capture={} tab_drag={} window_drag={} detach_pending={} plate_inset={} plate_alpha={:.2} mouse_inside={} title_edge={:?} row_bottom={} width_collapsed={}",
             v.title,
             v.root.opacity(),
             v.root.scale().x,
@@ -447,6 +447,9 @@ impl FenceWindow {
             v.plate_inset_px,
             v.plate_alpha,
             v.mouse_inside,
+            v.style.title_edge,
+            v.row_bottom,
+            v.width_collapsed,
         )
     }
 
@@ -1118,25 +1121,12 @@ impl FenceWindow {
         });
     }
 
-    /// 标签栏位置 changed: the tabs move between the title row and the left column.
+    /// 标签栏位置 changed: the tabs of a fence with its title bar at the top move between the
+    /// title row and the left column.
     pub fn sync_tab_bar(&self) {
         self.with_view(|v| {
-            // A tab drag or merge gap measured along the old axis ends here (only the CLI can
-            // change the setting mid-drag); the dragged tab goes back to its slot and the button
-            // release then finds nothing to commit.
-            if let Some(td) = v.tab_drag.take()
-                && td.index < v.tabs.len()
-            {
-                let t = v.tabs.remove(td.index);
-                v.tabs.insert(td.start_index.min(v.tabs.len()), t);
-            }
-            v.merge_gap = None;
-            v.pressed = None;
-            v.tab_slide.clear();
-            v.tab_settle = None;
-            v.pill_anim = None;
-            v.sync_rail();
-            v.rail_grow = v.tabs_on_rail();
+            // Only the CLI can change the setting mid-drag.
+            v.reset_tab_axis();
             let _ = v.redraw();
         });
     }
@@ -1495,23 +1485,30 @@ impl FenceWindow {
         })
     }
 
-    /// Screen band of the title row for the title's rename box when its chevron leads: the box
-    /// keeps the start of the row free for the chevron instead of the end. None when the chevron
-    /// is at the end, where the box has its own spot.
+    /// Screen band of the title row for the title's rename box when it is not at the top with
+    /// the chevron at its end, where the box has its own spot: a bottom title row, or a row whose
+    /// chevron leads, which keeps the start of the row free for the chevron instead of the end.
     pub fn title_rename_rect(&self) -> Option<RECT> {
         let guard = self.view.try_borrow().ok()?;
         let v = guard.as_ref()?;
-        if !v.chevron_leads() {
+        let leads = v.chevron_leads();
+        if !leads && !v.title_bottom() {
             return None;
         }
         let s = v.scale();
         let win = self.rect();
-        let left = win.left + (v.deco.lead_title_start() * s) as i32;
+        let (lead, trail) = if leads {
+            (v.deco.lead_title_start(), 8.0)
+        } else {
+            (8.0, 44.0)
+        };
+        let left = win.left + (lead * s) as i32;
+        let top = win.top + v.title_top_px();
         Some(RECT {
             left,
-            top: win.top,
-            right: (win.right - (8.0 * s) as i32).max(left + (80.0 * s) as i32),
-            bottom: win.top + v.title_h_px(),
+            top,
+            right: (win.right - (trail * s) as i32).max(left + (80.0 * s) as i32),
+            bottom: top + v.title_h_px(),
         })
     }
 
@@ -1631,8 +1628,8 @@ impl FenceWindow {
 
     /// 向上展开 on or off. Nothing moves: the next expansion picks its side by the new setting.
     /// Returns true when the fence is rolled up at rest, so the caller records its expanded
-    /// rect again around the title row (switched off, below it). An open fence or one in a roll
-    /// keeps the edge it has until it is rolled up.
+    /// rect again around the title row (switched off, below a top one). An open fence or one in
+    /// a roll keeps the edge it has until it is rolled up.
     pub fn set_expand_upward(&self, on: bool) -> bool {
         let mut guard = self.view.borrow_mut();
         let Some(v) = guard.as_mut() else {
@@ -1643,7 +1640,7 @@ impl FenceWindow {
         }
         v.expand_upward = on;
         let at_rest = v.rolled_at_rest();
-        if at_rest && !on {
+        if at_rest && !on && !v.title_bottom() {
             v.row_bottom = false;
         }
         at_rest
@@ -1658,6 +1655,14 @@ impl FenceWindow {
     /// chooses it).
     pub fn set_row_at_bottom(&self, on: bool) {
         self.with_view(|v| v.row_bottom = on);
+    }
+
+    /// The edge the fence collapses to: the one that stays put as it rolls up and expands.
+    pub fn collapse_to(&self) -> pecofence_core::TitleEdge {
+        self.view
+            .borrow()
+            .as_ref()
+            .map_or(pecofence_core::TitleEdge::Top, |v| v.collapse_to())
     }
 
     /// Rolled up and still: no hover peek, no roll or height animation in flight.
@@ -1719,11 +1724,23 @@ impl FenceWindow {
 
     /// Per-fence colour wash, title colour and title size.
     pub fn set_style(&self, style: FenceStyle) {
+        let hwnd = self.hwnd();
         self.with_view(|v| {
             if v.style != style {
                 let previous_ink = v.material_foreground().text_primary;
+                let moved = v.style.title_edge != style.title_edge;
                 v.style = style;
-                if previous_ink != v.material_foreground().text_primary {
+                if moved {
+                    // The title bar moves to the other edge: the tabs may change axis, and the
+                    // content and the plate's fold move.
+                    v.reset_tab_axis();
+                    let _ = v.motion.clear_clip(&v.content_panel.visual);
+                    let (w, h) = window::window_rect_size(hwnd);
+                    if let Err(e) = v.layout_panels(w, h).and_then(|_| v.redraw()) {
+                        tracing::error!(error = %e, "relayout for the title position failed");
+                    }
+                    v.update_shadow_now();
+                } else if previous_ink != v.material_foreground().text_primary {
                     let _ = v.redraw();
                 } else {
                     let _ = v.redraw_chrome_only();

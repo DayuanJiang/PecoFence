@@ -594,5 +594,13 @@
   "标签排成一列时从上往下排，不跟随标题对齐": "Tabs in a column line up from the top, whatever the alignment",
   "标签栏位置为左侧时，收起的栅栏总是缩成标签那一列": "With Tab bar position set to Left, a rolled-up fence always shrinks to its tab column",
   "标题栏排成一列时总是显示": "A title bar in a column always shows",
-  "像桌面一样排列时没有标题栏": "Arranged like the desktop, this fence has no title bar"
+  "像桌面一样排列时没有标题栏": "Arranged like the desktop, this fence has no title bar",
+  "标题栏位置": "Title bar position",
+  "底部": "Bottom",
+  "向下收起": "Roll down",
+  "位置": "Position",
+  "上方放得下时从标题栏向上展开，放不下就向下展开": "Opens upward from the title bar when there is room, otherwise downward",
+  "放在底部时，标签页留在标题栏里，栅栏收向标题栏": "At the bottom the tabs stay in the title bar, and the fence rolls toward it",
+  "标题栏在底部的栅栏不受影响": "Fences with the title bar at the bottom aren't affected",
+  "停靠时标题栏回到顶部": "Docking moves the title bar back to the top"
 }

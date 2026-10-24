@@ -55,6 +55,9 @@ const CMD_FENCE_OPTIONS: u32 = 331;
 const CMD_FENCE_NEW_FOLDER: u32 = 340;
 const CMD_FENCE_NEW_TEXT: u32 = 341;
 const CMD_FENCE_PASTE: u32 = 342;
+/// Title bar › Position › Top / Bottom: the edge the title bar runs along.
+const CMD_FENCE_TITLE_TOP: u32 = 350;
+const CMD_FENCE_TITLE_BOTTOM: u32 = 351;
 /// Title bar › Alignment › Use General setting / Left / Center / Right.
 const CMD_FENCE_ALIGN_DEFAULT: u32 = 357;
 const CMD_FENCE_ALIGN_START: u32 = 354;
@@ -140,22 +143,35 @@ pub(super) struct TitleMenuGreys {
     pub shrink: bool,
     pub hover: bool,
     pub expand: bool,
+    pub position: bool,
 }
 
-/// 标签栏位置 → 左侧 lists the tabs of a fence with two or more in a column, which fills from its
-/// top, always shrinks to its tabs and never hides. A fence `arranged` like the desktop has no
-/// title bar and never rolls, so nothing in the submenu applies to it.
+/// 标签栏位置 → 左侧 lists the tabs of a fence with two or more and its title bar at the top in a
+/// column.
+pub(super) fn tab_column(
+    edge: pecofence_core::TitleEdge,
+    tabbed: bool,
+    tab_bar: pecofence_core::TabBar,
+) -> bool {
+    edge == pecofence_core::TitleEdge::Top && tabbed && tab_bar == pecofence_core::TabBar::Left
+}
+
+/// A tab column fills from its top, always shrinks to its tabs and never hides. A fence
+/// `arranged` like the desktop has no title bar and never rolls, so nothing in the submenu
+/// applies to it.
 pub(super) fn title_menu_greys(
+    edge: pecofence_core::TitleEdge,
     tabbed: bool,
     tab_bar: pecofence_core::TabBar,
     arranged: bool,
 ) -> TitleMenuGreys {
-    let column = tabbed && tab_bar == pecofence_core::TabBar::Left;
+    let column = tab_column(edge, tabbed, tab_bar);
     TitleMenuGreys {
         align: column || arranged,
         shrink: column || arranged,
         hover: column || arranged,
         expand: arranged,
+        position: arranged,
     }
 }
 
@@ -547,21 +563,24 @@ impl App {
             .fences
             .get(&host)
             .is_some_and(|w| w.is_desktop_arranged());
+        // The fence rolls towards the edge it keeps, and opens away from it.
+        let kept = self
+            .fences
+            .get(&host)
+            .map_or(pecofence_core::TitleEdge::Top, |w| w.collapse_to());
+        let (roll_label, towards, away) = match kept {
+            pecofence_core::TitleEdge::Top => ("收起", glyph::CHEVRON_UP, glyph::CHEVRON_DOWN),
+            pecofence_core::TitleEdge::Bottom => {
+                ("向下收起", glyph::CHEVRON_DOWN, glyph::CHEVRON_UP)
+            }
+        };
         menu.item(
             CMD_FENCE_ROLL,
-            if rolled {
-                pecofence_core::i18n::text("展开")
-            } else {
-                pecofence_core::i18n::text("收起")
-            },
+            pecofence_core::i18n::text(if rolled { "展开" } else { roll_label }),
             false,
             arranged,
         )
-        .icon(if rolled {
-            glyph::CHEVRON_DOWN
-        } else {
-            glyph::CHEVRON_UP
-        })
+        .icon(if rolled { away } else { towards })
         .item(
             CMD_FENCE_RENAME,
             pecofence_core::i18n::text("重命名…"),
@@ -738,12 +757,29 @@ impl App {
             )
             .icon(glyph::PASTE);
         // Title bar ›, right above Tabs: the tabs live in the title bar.
-        let greys = title_menu_greys(
-            self.state.tabs_of(host).len() > 1,
-            self.ctx.behavior.tab_bar.get(),
-            arranged,
-        );
+        let title_edge = h.title_edge();
+        let tabbed = self.state.tabs_of(host).len() > 1;
+        let tab_bar = self.ctx.behavior.tab_bar.get();
+        let greys = title_menu_greys(title_edge, tabbed, tab_bar, arranged);
+        let column = tab_column(title_edge, tabbed, tab_bar);
         let title_menu = PopupMenu::new();
+        let position_menu = PopupMenu::new();
+        for (cmd, edge, label) in [
+            (CMD_FENCE_TITLE_TOP, pecofence_core::TitleEdge::Top, "顶部"),
+            (
+                CMD_FENCE_TITLE_BOTTOM,
+                pecofence_core::TitleEdge::Bottom,
+                "底部",
+            ),
+        ] {
+            position_menu.item(
+                cmd,
+                pecofence_core::i18n::text(label),
+                title_edge == edge,
+                greys.position,
+            );
+        }
+        title_menu.submenu(pecofence_core::i18n::text("位置"), position_menu);
         // Alignment along the title row, as stored: the General setting or the fence's own.
         let own_align = h.appearance.as_ref().and_then(|a| a.title_align);
         let align_menu = PopupMenu::new();
@@ -849,19 +885,18 @@ impl App {
         if tabs.len() >= 2 || !other_hosts.is_empty() {
             let tab_menu = PopupMenu::new();
             if tabs.len() >= 2 {
-                // A left tab column moves its tabs up and down.
-                let (earlier, later) =
-                    if self.ctx.behavior.tab_bar.get() == pecofence_core::TabBar::Left {
-                        (
-                            pecofence_core::i18n::text("上移"),
-                            pecofence_core::i18n::text("下移"),
-                        )
-                    } else {
-                        (
-                            pecofence_core::i18n::text("左移"),
-                            pecofence_core::i18n::text("右移"),
-                        )
-                    };
+                // A column of tabs moves its tabs up and down.
+                let (earlier, later) = if column {
+                    (
+                        pecofence_core::i18n::text("上移"),
+                        pecofence_core::i18n::text("下移"),
+                    )
+                } else {
+                    (
+                        pecofence_core::i18n::text("左移"),
+                        pecofence_core::i18n::text("右移"),
+                    )
+                };
                 tab_menu
                     .item(CMD_TAB_MOVE_LEFT, earlier, false, tab_idx == 0)
                     .item(CMD_TAB_MOVE_RIGHT, later, false, tab_idx + 1 >= tabs.len())
@@ -1070,6 +1105,14 @@ impl App {
                 self.state.set_group_by_date(fence, !f.view.group_by_date);
                 self.refresh_fence(fence);
                 self.schedule_save();
+            }
+            CMD_FENCE_TITLE_TOP | CMD_FENCE_TITLE_BOTTOM => {
+                let edge = if cmd == CMD_FENCE_TITLE_BOTTOM {
+                    pecofence_core::TitleEdge::Bottom
+                } else {
+                    pecofence_core::TitleEdge::Top
+                };
+                self.set_fence_title_edge(host, edge);
             }
             CMD_FENCE_ALIGN_DEFAULT
             | CMD_FENCE_ALIGN_START

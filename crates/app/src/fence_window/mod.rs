@@ -135,7 +135,7 @@ pub struct Behavior {
     pub title_on_hover: std::cell::Cell<bool>,
     /// Title (or tab strip) position in the title row (`titleAlign`).
     pub title_align: std::cell::Cell<pecofence_core::TitleAlign>,
-    /// Tabs in the title row or in a column on the left (`tabBar`).
+    /// Tabs in the title row or in a column on the left (`tabBar`), for a title bar at the top.
     pub tab_bar: std::cell::Cell<pecofence_core::TabBar>,
     /// Item names in the backdrop's ink or always white / black (`labelColor`).
     pub label_color: std::cell::Cell<pecofence_core::LabelColor>,

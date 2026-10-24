@@ -276,6 +276,17 @@ fn collapsed_tab_column_has_no_chevron_room() {
     assert_eq!(rail_len_for(3, RAIL_COLLAPSED_BOTTOM), 120.0);
 }
 
+/// 标签栏位置 → 左侧 turns the tabs of a fence with its title bar at the top into the left tab
+/// column; a fence with its title bar at the bottom, or with one tab, keeps its title row.
+#[test]
+fn the_left_tab_bar_applies_to_tabbed_fences_with_a_top_title_bar() {
+    use pecofence_core::{TabBar, TitleEdge};
+    assert!(is_tab_column(TitleEdge::Top, 2, TabBar::Left));
+    assert!(!is_tab_column(TitleEdge::Top, 1, TabBar::Left));
+    assert!(!is_tab_column(TitleEdge::Top, 3, TabBar::Top));
+    assert!(!is_tab_column(TitleEdge::Bottom, 2, TabBar::Left));
+}
+
 #[test]
 fn narrow_tab_strips_cannot_cover_the_chevron_or_count() {
     for count in 2..=10 {

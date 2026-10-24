@@ -69,11 +69,11 @@ pub(super) fn on_nchittest(
     };
     let scale = v.scale();
     let border = (RESIZE_BORDER_DIP * scale).round() as i32;
-    // Beside a left tab column there is no title row: the column is the title bar.
-    let title_h = if v.tabs_on_rail() { 0 } else { v.title_h_px() };
     let rect = window::window_rect(hwnd);
     let left = x - rect.left;
     let top = y - rect.top;
+    // Beside a left tab column there is no title row: the column is the title bar.
+    let in_title = !v.tabs_on_rail() && v.in_title_row(top);
     let right = rect.right - x;
     let bottom = rect.bottom - y;
     let w = rect.right - rect.left;
@@ -96,14 +96,14 @@ pub(super) fn on_nchittest(
     let clear_of_edges = if in_rail {
         rolled || (left >= border && bottom > border)
     } else {
-        top < title_h && left >= border && right > border
+        in_title && left >= border && right > border
     };
     if on_control && clear_of_edges {
         return Some(msg::HTCLIENT);
     }
     if v.locked {
         // Locked: no resize edges; the title still takes clicks/menus.
-        return Some(if top < title_h || in_rail {
+        return Some(if in_title || in_rail {
             msg::HTCAPTION
         } else {
             msg::HTCLIENT
@@ -129,7 +129,8 @@ pub(super) fn on_nchittest(
     // the outermost few DIPs there. (`scroll_max` lays the content out: asked only near the
     // right edge.)
     let right_border = if right <= border
-        && top >= title_h.max(border)
+        && !in_title
+        && top >= border
         && !in_rail
         && bottom > border
         && v.scroll_max() > 0.0
@@ -152,7 +153,7 @@ pub(super) fn on_nchittest(
         (_, true, _, _) => msg::HTRIGHT,
         (_, _, true, _) => msg::HTTOP,
         (_, _, _, true) => msg::HTBOTTOM,
-        _ if top < title_h || in_rail => msg::HTCAPTION,
+        _ if in_title || in_rail => msg::HTCAPTION,
         _ => msg::HTCLIENT,
     };
     Some(code)
@@ -178,7 +179,7 @@ pub(super) fn on_ncmousemove(
         // Beside a left tab column the column is the title bar (the only caption area there).
         let top = window::window_rect(hwnd).top;
         let is_title = wparam as isize == msg::HTCAPTION
-            && (v.tabs_on_rail() || msg::hi_i16(lparam) - top < v.title_h_px());
+            && (v.tabs_on_rail() || v.in_title_row(msg::hi_i16(lparam) - top));
         let (item, title) = v.set_hover(None, is_title);
         if title {
             let _ = v.redraw_chrome_only();
@@ -756,8 +757,8 @@ pub(super) fn on_sizing(h: &HandlerCtx, hwnd: HWND, wparam: usize, lparam: isize
     let v = guard.as_ref()?;
     let scale = v.scale();
     let metrics = v.grid_metrics();
-    // Above the rows: the title row, nothing beside a left tab column.
-    let title_h = v.head_px();
+    // Beside the rows: the title row above or below them, nothing beside a left tab column.
+    let title_h = v.head_px() + v.foot_px();
     let slack = FIT_SLACK_PX as f32;
     // Rows (List / Details): rows below the title (+ fixed header), free width.
     let (cols, rows, min_w) = match v.row_metrics() {

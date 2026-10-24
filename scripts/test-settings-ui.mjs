@@ -28,7 +28,7 @@ const fixture = {
     ],
   },
   fences: [
-    { id: 'fence-a', title: 'Documents', kind: 'virtual', host: null, iconSize: 48, spacing: 'normal', iconAlign: 'left', autoHeight: false, locked: false, excludeFromQuickHide: false, opacity: 'default', tint: null, titleColor: 'theme', titleSize: 'normal', titleOnHover: 'default', titleAlign: 'default', expandUpward: false, openFoldersInside: false, portal: null },
+    { id: 'fence-a', title: 'Documents', kind: 'virtual', host: null, iconSize: 48, spacing: 'normal', iconAlign: 'left', autoHeight: false, locked: false, excludeFromQuickHide: false, opacity: 'default', tint: null, titleColor: 'theme', titleSize: 'normal', titleOnHover: 'default', titlePosition: 'top', titleAlign: 'default', expandUpward: false, openFoldersInside: false, portal: null },
     { id: 'fence-b', title: 'Images', kind: 'virtual', host: 'Documents', iconSize: 96, spacing: 'loose', autoHeight: true, locked: false, excludeFromQuickHide: false, opacity: 'transparent', tint: null, tabColor: 'E74856', titleColor: 'theme', titleSize: 'normal', titleOnHover: 'default', portal: null },
     { id: 'inbox', title: 'Desktop', kind: 'inbox', host: null, iconSize: 48, spacing: 'normal', autoHeight: false, locked: true, excludeFromQuickHide: true, opacity: 'solid', tint: '0078D4', tintTitleOnly: true, titleColor: 'tint', titleSize: 'large', titleOnHover: 'hover', hideWhenEmpty: true, desktopLayout: true, openFoldersInside: true, expandUpward: true, portal: null },
     { id: 'portal', title: 'Portal', kind: 'portal', host: null, iconSize: 32, spacing: 'compact', iconAlign: 'center', autoHeight: false, locked: false, excludeFromQuickHide: false, opacity: 'clear', tint: '123456', titleColor: 'ABCDEF', titleSize: 'small', titleOnHover: 'always', portal: { navigate: true, titleIcon: false } },
@@ -133,7 +133,12 @@ function bridge() {
           const fence = state.fences.find(f => f.id === message.id);
           if (message.prop === 'portalNavigate') fence.portal.navigate = message.value;
           else if (message.prop === 'portalTitleIcon') fence.portal.titleIcon = message.value;
-          else if (message.prop !== 'dockTop') fence[message.prop] = message.value;
+          else if (message.prop !== 'dockTop') {
+            // Mirror the host: moved to another edge, expandUpward follows it (off at the top, on at
+            // the bottom).
+            if (message.prop === 'titlePosition' && (fence.titlePosition || 'top') !== message.value) fence.expandUpward = message.value === 'bottom';
+            fence[message.prop] = message.value;
+          }
           // The host reports the effective shrink: by default a title row keeps its width.
           if (message.prop === 'collapsedSize') {
             fence.collapsedShrinks = message.value === true || message.value === 'fit';
@@ -316,34 +321,46 @@ async function runTests() {
     const headings = [...page.querySelectorAll('#fenceBody > h3')].filter(h => h.id !== 'fencePortalHeading').map(h => h.textContent);
     assert(headings.join() === ['Appearance', 'Layout', 'Title bar', 'Behavior'].join() || headings.join() === ['外观', '布局', '标题栏', '行为'].join(), 'Sections: ' + headings.join());
     const section = (el) => { let n = el.closest('.card'); while (n && n.tagName !== 'H3') n = n.previousElementSibling; return n && n.textContent; };
-    for (const el of [...['fenceTitleColor', 'fenceTitleSize', 'fenceTitleOnHover', 'fenceTitleAlign', 'fenceCollapsedSize'].map(id => doc.getElementById(id)), doc.querySelector('[data-fence=expandUpward]')]) {
-      assert(/Title bar|标题栏/.test(section(el)), (el.id || el.dataset.fence) + ' is in ' + section(el));
+    for (const id of ['fenceTitleColor', 'fenceTitleSize', 'fenceTitleOnHover', 'fenceTitlePosition', 'fenceTitleAlign', 'fenceExpandUpward', 'fenceCollapsedSize']) {
+      assert(/Title bar|标题栏/.test(section(doc.getElementById(id))), id + ' is in ' + section(doc.getElementById(id)));
     }
   });
-  await test('Title alignment, Expand upward and Shrink when rolled up post setFence', async () => {
+  await test('Title position, alignment and Expand upward post setFence', async () => {
     const messages = () => frame.contentWindow.testMessages.filter(m => m.type === 'setFence');
     const expand = doc.querySelector('[data-fence=expandUpward]');
-    const help = expand.closest('.card').querySelector('.s');
+    const expandCard = doc.getElementById('fenceExpandUpward');
+    const help = expandCard.querySelector('.s');
+    const topHelp = /^(Opens upward when there is room above it, otherwise downward; the title bar stays where it is\. Handy for fences above the taskbar|上方放得下时向上展开，放不下就向下展开；标题栏留在原处。适合放在任务栏上方的栅栏)$/;
     change(doc, 'fenceSel', 'fence-a');
-    // Expand upward is a switch with its help line.
-    assert(!expand.classList.contains('on'), 'Expand upward shown on');
-    assert(/^(Opens upward when there is room above it, otherwise downward; the title bar stays where it is\. Handy for fences above the taskbar|上方放得下时向上展开，放不下就向下展开；标题栏留在原处。适合放在任务栏上方的栅栏)$/.test(help.textContent), 'Help: ' + help.textContent);
+    // At the top, Expand upward is a switch with its help line.
+    assert(!expand.classList.contains('on'), 'A top title row shows Expand upward ' + expand.className);
+    assert(topHelp.test(help.textContent), 'Top row help: ' + help.textContent);
     expand.click(); await settle();
     assert(messages().at(-1).prop === 'expandUpward' && messages().at(-1).value === true, 'Expand upward not posted as true');
     expand.click(); await settle();
     assert(messages().at(-1).value === false, 'Expand upward not posted as false');
+    change(doc, 'fenceTitlePosition', 'bottom');
     change(doc, 'fenceTitleAlign', 'center');
     await settle();
-    assert(messages().at(-1).prop === 'titleAlign' && messages().at(-1).value === 'center', 'Title alignment not posted');
+    const sent = messages().slice(-2);
+    assert(sent[0].prop === 'titlePosition' && sent[0].value === 'bottom', 'Title position not posted');
+    assert(sent[1].prop === 'titleAlign' && sent[1].value === 'center', 'Title alignment not posted');
+    // At the bottom the host turned 向上展开 on, as it follows the title bar there.
+    assert(expand.classList.contains('on'), 'A bottom title row that followed the title shows Expand upward off');
+    assert(/from the title bar|从标题栏向上展开/.test(help.textContent), 'Bottom row help: ' + help.textContent);
     // A title row shrinks only when asked to: switched back off, it follows the default.
     const shrink = doc.querySelector('[data-fence=collapsedSize]');
+    const lastFence = () => frame.contentWindow.testMessages.filter(m => m.type === 'setFence').at(-1);
     assert(!shrink.classList.contains('on'), 'A title row shown shrinking by default');
     shrink.click(); await settle();
-    assert(messages().at(-1).prop === 'collapsedSize' && messages().at(-1).value === true, 'Shrinking a title row posted ' + messages().at(-1).value);
+    assert(lastFence().prop === 'collapsedSize' && lastFence().value === true, 'Shrinking a title row posted ' + lastFence().value);
     shrink.click(); await settle();
-    assert(messages().at(-1).value === 'default', 'Keeping the full width did not return to the default: ' + messages().at(-1).value);
+    assert(lastFence().value === 'default', 'Keeping the full width did not return to the default: ' + lastFence().value);
+    change(doc, 'fenceTitlePosition', 'top');
     change(doc, 'fenceTitleAlign', 'default');
     await settle();
+    if (expand.classList.contains('on')) { expand.click(); await settle(); }
+    assert(topHelp.test(help.textContent), 'Row help: ' + help.textContent);
   });
   await test('Beside a left tab column the title options that do nothing are greyed out with a reason', async () => {
     doc.querySelector('[data-page=general]').click();
@@ -388,6 +405,7 @@ async function runTests() {
     change(doc, 'fenceSel', 'inbox');
     await settle();
     const cards = {
+      position: doc.getElementById('fenceTitlePositionCard'),
       align: doc.getElementById('fenceTitleAlignCard'),
       shrink: doc.getElementById('fenceCollapsedSize'),
       hover: doc.getElementById('fenceTitleOnHover').closest('.card'),
@@ -403,6 +421,7 @@ async function runTests() {
     doc.querySelector('[data-fence=collapsedSize]').click();
     await settle();
     assert(frame.contentWindow.testMessages.length === before, 'A greyed-out title bar option still posted');
+    assert(doc.getElementById('fenceTitlePosition').disabled, 'Title bar position still takes a choice for a desktop-arranged fence');
     inbox.desktopArranged = false;
     frame.contentWindow.testRefresh(); await settle();
     for (const [name, card] of Object.entries(cards)) assert(!card.classList.contains('disabled'), name + ' still greyed out once the fence is not arranged');

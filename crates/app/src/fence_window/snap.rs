@@ -32,7 +32,8 @@ pub(super) fn merge_target_at(me: HWND, also: HWND, point: (i32, i32)) -> Option
             // This process's fence windows share its UI thread, so the message is a direct
             // call; another instance's windows (which cannot take a merge anyway) are never
             // sent it, as a hung one would block the drag.
-            let rail = if desktop::window_pid(w) == std::process::id() {
+            let own = desktop::window_pid(w) == std::process::id();
+            let rail = if own {
                 window::send_message(w, WM_APP_TAB_RAIL, 0, 0) as i32
             } else {
                 0
@@ -42,7 +43,14 @@ pub(super) fn merge_target_at(me: HWND, also: HWND, point: (i32, i32)) -> Option
             } else if rail > 0 {
                 point.0 < r.left + rail
             } else {
-                point.1 < r.top + title_h
+                // The title row may run along the bottom edge.
+                let top = r.top
+                    + if own {
+                        window::send_message(w, WM_APP_TAB_RAIL, 1, 0) as i32
+                    } else {
+                        0
+                    };
+                point.1 >= top && point.1 < top + title_h
             }
         })
 }

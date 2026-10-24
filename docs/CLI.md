@@ -172,9 +172,14 @@ is over the fence), `tint` `"#RRGGBB"` or `null`, `tintTitleOnly` (the tint wash
 row), `tabColor` `"#RRGGBB"` or `null` (the bar under the fence's tab in a tab strip; `null` follows
 its tint), `titleColor` theme/tint/white/black/`"#RRGGBB"`, `titleSize` small/normal/large/extraLarge,
 `titleOnHover` default/hover/always (hover: the title row folds away until the pointer is over the
-fence; default follows `rollUp.titleOnHover`), `titleAlign` default/left/center/right (default
-follows the `titleAlign` setting; the chevron and item count move to the start of the title row
-when this option is right, even with the setting on right too), `collapsedSize` default/fit/full (fit: a collapsed
+fence; default follows `rollUp.titleOnHover`), `titlePosition` top/bottom (moved between them,
+`expandUpward` follows the new edge: off at the top, on at the bottom; at the bottom the fence picks
+its side at each expansion either way, downward first without `expandUpward`; a fence at the top
+shows its tabs as the `tabBar` setting says, one at the bottom keeps them in its title row;
+`fence dock-top` moves the title bar back to the top), `titleAlign` default/left/center/right
+(default follows the `titleAlign` setting; the chevron and item count move to the start of the
+title row when this option is right, even with the setting on right too, or when the title row is
+at the bottom and the title is aligned right), `collapsedSize` default/fit/full (fit: a collapsed
 title row is only as long as its title or tabs; default keeps it at the fence's width; `true` and
 `false` mean fit and full, and `fence get` adds `collapsedShrinks`, the effective choice),
 `layout` icons/list/details,
@@ -264,7 +269,7 @@ or tab with a `titleColor` of its own keeps it; default auto),
 style; see [THEMES.md](THEMES.md)),
 `tabBar` (top/left: a fence with two or more tabs shows them in its title row, or lists them in a
 column on its left that takes the title row's place; rolled up, such a fence shrinks to the
-column; default top),
+column; default top; only fences with `titlePosition` top follow it),
 `rollUp.hoverPeek`, `rollUp.clickToExpand`, `rollUp.pushNeighbors` (an expanded fence pushes the
 fences stacked below it down and they slide back when it rolls up; their `rect` stays where it was,
 default on), `rollUp.titleOnHover` (the title row folds away until the
@@ -392,7 +397,7 @@ The app ignores the field's value.
 - `adjusted: {"requested", "applied", "reason"}` appears when the app changed a rect on its own:
   `fence move`/`resize`/`fit` and `fence create --rect` (virtual fences and portals alike) on a fence
   with `autoHeight` (`reason: "autoHeight"`, the height follows the content) or clamped to the size
-  limits (`"clamped"`), and `fence set` of `iconSize`, `spacing`, `layout` or `labelLines`, which
+  limits, or for a rolled bottom title row onto the work area (`"clamped"`), and `fence set` of `iconSize`, `spacing`, `layout` or `labelLines`, which
   snaps the window to whole icon columns and rows (`"cellSnap"`; `requested` is the rect before the
   change). Use `applied` for further placement.
 - Failure: stderr gets `{"error": {"code", "message", "hint"?, "details"?}}`. Nothing else is ever

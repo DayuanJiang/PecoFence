@@ -260,7 +260,7 @@ impl App {
     /// with 向上展开 picks its side and height from the room around its title row as it opens
     /// instead (`expand_rooms_px`), without changing the height it is saved with.
     pub(super) fn clamp_expand_height(&mut self, id: FenceId) {
-        if self.state.fence(id).is_some_and(|f| f.expand_upward) {
+        if self.state.fence(id).is_some_and(|f| f.chooses_side()) {
             return;
         }
         let Some(w) = self.fences.get(&id) else {

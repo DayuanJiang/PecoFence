@@ -1947,17 +1947,36 @@ impl AppState {
                 .cloned()
         };
         let (mut bottom_anchored, mut h) = (row_bottom, full);
+        let bottom_title = self
+            .fence(id)
+            .is_some_and(|f| f.title_edge() == pecofence_core::TitleEdge::Bottom);
+        let row_area = area_at((rect.left + rect.right) / 2, (rect.top + rect.bottom) / 2);
         if rolled
             && choose
-            && let Some(w) = area_at((rect.left + rect.right) / 2, (rect.top + rect.bottom) / 2)
+            && let Some(w) = &row_area
         {
-            let (up, shown) = crate::layout::clearance::expand_side(
-                full,
-                rect.bottom - w.top,
-                w.bottom - rect.top,
-            );
+            let (above, below) = (rect.bottom - w.top, w.bottom - rect.top);
+            // A bottom title row without 向上展开 prefers downward.
+            let (up, shown) = if self.fence(id).is_some_and(|f| f.expand_upward) {
+                crate::layout::clearance::expand_side(full, above, below)
+            } else {
+                let (down, shown) = crate::layout::clearance::expand_side(full, below, above);
+                (!down, shown)
+            };
             bottom_anchored = up;
             h = shown.max(1);
+        } else if rolled
+            && bottom_title
+            && let Some(w) = &row_area
+        {
+            // A rolled bottom title row kept at its end saves the rect cut to the room there,
+            // so a restart puts the row back where it is.
+            let room = if bottom_anchored {
+                rect.bottom - w.top
+            } else {
+                w.bottom - rect.top
+            };
+            h = full.min(room).max(1);
         }
         let (top, bottom) = match (rolled, bottom_anchored) {
             (true, false) => (rect.top, rect.top + h),
@@ -2199,6 +2218,17 @@ impl AppState {
     /// Per-fence title on hover (None = follow `rollUp.titleOnHover`).
     pub fn set_title_on_hover(&mut self, id: FenceId, on: Option<bool>) {
         self.edit_appearance(id, |a| a.title_on_hover = on);
+    }
+
+    /// Moves the title bar to another edge (`Fence::move_title_bar`: a 向上展开 that follows a
+    /// title row turns with it between the top and the bottom).
+    pub fn move_title_bar(&mut self, id: FenceId, edge: pecofence_core::TitleEdge) {
+        if let Some(f) = self.fence_mut(id)
+            && f.title_edge() != edge
+        {
+            f.move_title_bar(edge);
+            self.dirty = true;
+        }
     }
 
     pub fn set_title_align(&mut self, id: FenceId, align: Option<pecofence_core::TitleAlign>) {
@@ -2645,6 +2675,29 @@ mod tests {
             f.appearance.as_ref().and_then(|x| x.title_align),
             Some(pecofence_core::TitleAlign::Right)
         );
+    }
+
+    /// A restore brings back the edge each title bar runs along and the end of its saved rect a
+    /// rolled title row sits at.
+    #[test]
+    fn a_restored_fence_takes_the_snapshot_s_title_edge_and_anchored_end() {
+        use pecofence_core::TitleEdge;
+        let mut state = test_state();
+        let a = state.fences()[0].id;
+        let r = state.fence_px_rect(state.fence(a).unwrap());
+        let h = r.bottom - r.top;
+        let row = |top: i32| rect(r.left, top, r.right - r.left, 40);
+        state.move_title_bar(a, TitleEdge::Bottom);
+        state.set_fence_bounds(a, row(r.bottom - 40), true, h, true, false);
+        assert!(state.fence(a).unwrap().bottom_anchored);
+        let id = state.save_snapshot("before");
+        state.move_title_bar(a, TitleEdge::Top);
+        state.set_fence_bounds(a, row(r.top), true, h, false, false);
+        assert!(!state.fence(a).unwrap().bottom_anchored);
+        assert!(state.restore_snapshot(id));
+        let f = state.fence(a).unwrap();
+        assert_eq!(f.title_edge(), TitleEdge::Bottom);
+        assert!(f.rolled_up && f.bottom_anchored && f.expand_upward);
     }
 
     #[test]
@@ -3260,6 +3313,66 @@ mod tests {
         assert!(!view(&state).group_by_date);
         state.set_group_by_date(fence, true);
         assert!(!view(&state).folders_first);
+    }
+
+    /// A bottom title row prefers to open upward and falls back to downward: it saves its rect
+    /// above the row where the fence fits there, below it where it fits only there.
+    #[test]
+    fn a_bottom_title_row_prefers_up_and_falls_back_to_down() {
+        let mut state = test_state(); // work area 0..1040
+        let id = state.fences()[0].id;
+        state.move_title_bar(id, pecofence_core::TitleEdge::Bottom);
+        assert!(state.fence(id).unwrap().expand_upward);
+        let saved = |s: &AppState| {
+            let f = s.fence(id).unwrap();
+            let px = s.fence_px_rect(f);
+            (px.top, px.bottom, f.bottom_anchored)
+        };
+        assert!(state.set_fence_bounds(id, rect(20, 600, 300, 32), true, 300, false, true));
+        assert_eq!(saved(&state), (332, 632, true));
+        assert!(!state.set_fence_bounds(id, rect(20, 100, 300, 32), true, 300, true, true));
+        assert_eq!(saved(&state), (100, 400, false));
+        // Back at the top, the preference follows it: the fence opens downward again.
+        state.move_title_bar(id, pecofence_core::TitleEdge::Top);
+        assert!(!state.fence(id).unwrap().expand_upward);
+    }
+
+    /// A rolled bottom title row without 向上展开 picks its side too, preferring downward: it saves
+    /// its rect below the row where the fence fits there, above it where it fits only there.
+    #[test]
+    fn a_bottom_title_row_without_expand_upward_prefers_down() {
+        let mut state = test_state(); // work area 0..1040
+        let id = state.fences()[0].id;
+        state.move_title_bar(id, pecofence_core::TitleEdge::Bottom);
+        state.set_expand_upward(id, false);
+        assert!(state.fence(id).unwrap().chooses_side());
+        let saved = |s: &AppState| {
+            let f = s.fence(id).unwrap();
+            let px = s.fence_px_rect(f);
+            (px.top, px.bottom, f.bottom_anchored)
+        };
+        assert!(!state.set_fence_bounds(id, rect(20, 100, 300, 32), true, 300, true, true));
+        assert_eq!(saved(&state), (100, 400, false));
+        assert!(state.set_fence_bounds(id, rect(20, 900, 300, 32), true, 300, false, true));
+        assert_eq!(saved(&state), (632, 932, true));
+    }
+
+    /// A rolled bottom title row kept at its end saves its rect cut to the room on the screen
+    /// there and keeps the full height; a top row keeps the whole rect.
+    #[test]
+    fn a_kept_bottom_row_saves_its_rect_on_the_screen() {
+        let mut state = test_state(); // work area 0..1920 x 0..1040
+        let id = state.fences()[0].id;
+        let bar = rect(100, 900, 300, 36);
+        state.move_title_bar(id, pecofence_core::TitleEdge::Bottom);
+        state.set_fence_bounds(id, bar, true, 600, false, false);
+        let f = state.fence(id).unwrap().clone();
+        let px = state.fence_px_rect(&f);
+        assert_eq!((px.top, px.bottom), (900, 1040));
+        assert_eq!(state.fence_expanded_px(&f), 600);
+        state.move_title_bar(id, pecofence_core::TitleEdge::Top);
+        state.set_fence_bounds(id, bar, true, 600, false, false);
+        assert_eq!(state.fence(id).unwrap().geometry.h, 600.0);
     }
 
     fn desktop_entry(name: &str) -> DesktopEntry {

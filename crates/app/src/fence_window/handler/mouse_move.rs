@@ -432,7 +432,7 @@ pub(super) fn on_mousemove(
     let in_title = if v.tabs_on_rail() {
         x < v.content_x
     } else {
-        y < v.title_h_px()
+        v.in_title_row(y)
     };
     let (item_changed, title_changed) = v.set_hover(hit, in_title);
     // Explorer's single-click open: resting on an item selects it after the hover time;

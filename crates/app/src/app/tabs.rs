@@ -2,6 +2,20 @@
 
 use super::*;
 
+/// Where the cursor holds a fence torn off a tab strip, from the window's top-left corner: the
+/// middle of its title row, at the top or the bottom of a window `w` x `h` px.
+pub(super) fn title_grip(
+    edge: pecofence_core::TitleEdge,
+    w: i32,
+    h: i32,
+    title_h: i32,
+) -> (i32, i32) {
+    match edge {
+        pecofence_core::TitleEdge::Bottom => (w / 2, h - title_h / 2),
+        pecofence_core::TitleEdge::Top => (w / 2, title_h / 2),
+    }
+}
+
 impl App {
     /// Tab strip of a host window: the host first, then its hosted fences.
     pub(super) fn tab_views(&self, host: FenceId) -> Vec<TabView> {
@@ -83,8 +97,13 @@ impl App {
                     }
                 };
                 let title_h = (36.0 * scale) as i32;
-                let mut left = x - w / 2;
-                let mut top = y - title_h / 2;
+                let edge = self
+                    .state
+                    .fence(tab)
+                    .map_or(pecofence_core::TitleEdge::Top, |f| f.title_edge());
+                let (gx, gy) = title_grip(edge, w, h, title_h);
+                let mut left = x - gx;
+                let mut top = y - gy;
                 if let Some(work) = &work {
                     left = left.clamp(work.left, (work.right - w).max(work.left));
                     top = top.clamp(work.top, (work.bottom - h).max(work.top));
@@ -153,11 +172,16 @@ impl App {
                 let pt = window::cursor_pos();
                 let scale = monitors::dpi_for_window(new_hwnd).max(96) as f32 / 96.0;
                 let title_h = (36.0 * scale) as i32;
+                let edge = self
+                    .state
+                    .fence(tab)
+                    .map_or(pecofence_core::TitleEdge::Top, |f| f.title_edge());
+                let (gx, gy) = title_grip(edge, rw, rh, title_h);
                 let placed = RECT {
-                    left: pt.x - rw / 2,
-                    top: pt.y - title_h / 2,
-                    right: pt.x - rw / 2 + rw,
-                    bottom: pt.y - title_h / 2 + rh,
+                    left: pt.x - gx,
+                    top: pt.y - gy,
+                    right: pt.x - gx + rw,
+                    bottom: pt.y - gy + rh,
                 };
                 w.set_bounds(placed);
                 // Keep capture on the original HWND. For a departing host this is
@@ -207,6 +231,12 @@ impl App {
             self.fences.get(&change.source_host),
         ) {
             let px = self.state.fence_px_rect(fence);
+            // A bottom row rolled up keeps the full height its saved rect was cut from.
+            let expanded = if fence.title_edge() == pecofence_core::TitleEdge::Top {
+                px.height()
+            } else {
+                self.state.fence_expanded_px(fence)
+            };
             window.restore_geometry(
                 RECT {
                     left: px.left,
@@ -215,7 +245,7 @@ impl App {
                     bottom: px.bottom,
                 },
                 fence.rolled_up,
-                px.height(),
+                expanded,
             );
             self.queue.push(Command::RaiseFence(window.hwnd()));
         }

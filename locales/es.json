@@ -594,5 +594,13 @@
   "标签排成一列时从上往下排，不跟随标题对齐": "Las pestañas en columna se colocan desde arriba, sin seguir la alineación",
   "标签栏位置为左侧时，收起的栅栏总是缩成标签那一列": "Con la barra de pestañas a la izquierda, un grupo contraído siempre se reduce a su columna de pestañas",
   "标题栏排成一列时总是显示": "Una barra de título en columna siempre se muestra",
-  "像桌面一样排列时没有标题栏": "Organizado como el escritorio, este grupo no tiene barra de título"
+  "像桌面一样排列时没有标题栏": "Organizado como el escritorio, este grupo no tiene barra de título",
+  "标题栏位置": "Posición de la barra de título",
+  "底部": "Abajo",
+  "向下收起": "Contraer hacia abajo",
+  "位置": "Posición",
+  "上方放得下时从标题栏向上展开，放不下就向下展开": "Se expande hacia arriba desde la barra de título si hay espacio y, si no, hacia abajo",
+  "放在底部时，标签页留在标题栏里，栅栏收向标题栏": "Abajo, las pestañas siguen en la barra de título y el grupo se contrae hacia ella",
+  "标题栏在底部的栅栏不受影响": "No afecta a los grupos con la barra de título abajo",
+  "停靠时标题栏回到顶部": "Al acoplarlo, la barra de título vuelve arriba"
 }

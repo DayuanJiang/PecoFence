@@ -594,5 +594,13 @@
   "标签排成一列时从上往下排，不跟随标题对齐": "Tabs in einer Spalte beginnen oben, unabhängig von der Ausrichtung",
   "标签栏位置为左侧时，收起的栅栏总是缩成标签那一列": "Mit der Tableiste links schrumpft ein eingeklappter Bereich immer auf seine Tab-Spalte",
   "标题栏排成一列时总是显示": "Eine Titelleiste als Spalte ist immer sichtbar",
-  "像桌面一样排列时没有标题栏": "Wie den Desktop angeordnet hat dieser Bereich keine Titelleiste"
+  "像桌面一样排列时没有标题栏": "Wie den Desktop angeordnet hat dieser Bereich keine Titelleiste",
+  "标题栏位置": "Position der Titelleiste",
+  "底部": "Unten",
+  "向下收起": "Nach unten einklappen",
+  "位置": "Position",
+  "上方放得下时从标题栏向上展开，放不下就向下展开": "Klappt von der Titelleiste nach oben aus, wenn darüber Platz ist, sonst nach unten",
+  "放在底部时，标签页留在标题栏里，栅栏收向标题栏": "Unten bleiben die Tabs in der Titelleiste, und der Bereich klappt zu ihr hin ein",
+  "标题栏在底部的栅栏不受影响": "Bereiche mit der Titelleiste unten sind nicht betroffen",
+  "停靠时标题栏回到顶部": "Beim Andocken kommt die Titelleiste nach oben"
 }

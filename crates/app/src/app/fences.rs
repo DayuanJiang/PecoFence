@@ -483,6 +483,16 @@ impl App {
     }
 
     pub(super) fn apply_auto_height(&mut self, id: FenceId) {
+        self.apply_auto_height_with(id, true);
+    }
+
+    /// [`Self::apply_auto_height`] for a title bar just placed at the end of the rect it was
+    /// saved at: a rolled fence settling to its tabs keeps that end (`record_bounds_kept`).
+    pub(super) fn apply_auto_height_kept(&mut self, id: FenceId) {
+        self.apply_auto_height_with(id, false);
+    }
+
+    fn apply_auto_height_with(&mut self, id: FenceId, choose_side: bool) {
         let id = self.state.host_of(id);
         let Some(w) = self.fences.get(&id) else {
             return;
@@ -491,7 +501,11 @@ impl App {
         // row at its expanded width.
         if let Some(rect) = w.settle_rolled_size() {
             let expanded = w.expanded_height_px();
-            self.record_bounds(id, rect, true, expanded);
+            if choose_side {
+                self.record_bounds(id, rect, true, expanded);
+            } else {
+                self.record_bounds_kept(id, rect, true, expanded);
+            }
             self.schedule_save();
         }
         let Some(w) = self.fences.get(&id) else {
@@ -892,6 +906,18 @@ impl App {
     /// work area, rolls up and expands on hover — a pull-down shelf. Its title row is the top
     /// of it from now on (with 向上展开 there is no room above it either, so it opens downward).
     pub(super) fn dock_to_top(&mut self, fence: FenceId) {
+        let fence = self.state.host_of(fence);
+        // The title bar moves to the top edge, under which the drawer hangs.
+        if self
+            .state
+            .fence(fence)
+            .is_some_and(|f| f.title_edge() != pecofence_core::TitleEdge::Top)
+        {
+            self.state
+                .move_title_bar(fence, pecofence_core::TitleEdge::Top);
+            self.apply_fence_appearance(fence);
+            self.place_title_bar(fence);
+        }
         let Some(w) = self.fences.get(&fence) else {
             return;
         };

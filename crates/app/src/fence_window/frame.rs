@@ -154,7 +154,8 @@ impl FenceWindow {
             v.update_shadow_now();
             // Rolled up with 向上展开 switched off meanwhile: the row stays, and from now on it
             // is the top of the fence again (the bounds recorded below hang the rect below it).
-            if rolled_at_end == Some(true) && !v.expand_upward {
+            // A bottom title row keeps the edge it opened from either way.
+            if rolled_at_end == Some(true) && !v.expand_upward && !v.title_bottom() {
                 v.row_bottom = false;
             }
             v.anim_upward = v.row_bottom;

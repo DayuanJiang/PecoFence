@@ -821,7 +821,7 @@ pub(super) fn on_mousewheel(
         let over_title = if v.tabs_on_rail() {
             pt.x >= 0 && pt.x < v.content_x && pt.y >= 0 && pt.y < v.chrome_panel.size_px().1
         } else {
-            pt.y >= 0 && pt.y < v.title_h_px()
+            v.in_title_row(pt.y)
         };
         let lbutton = wparam & msg::MK_LBUTTON as usize != 0;
         if v.tabs.len() > 1 && over_title && !lbutton && !v.title_renaming && v.roll_anim.is_none()
