@@ -834,12 +834,13 @@ pub(super) fn fence_style_for(f: &pecofence_core::Fence) -> FenceStyle {
             TitleSize::ExtraLarge => 3,
         },
         // The window fills these in at draw time: the title alignment (this fence's, else the
-        // global one), the left tab column's width and the chevron fields.
+        // global one), the title column width and the chevron fields.
         title_align: pecofence_core::TitleAlign::Left,
         tab_rail: 0.0,
         hide_count_and_chevron: false,
         title_edge: f.title_edge(),
         shrink_collapsed: f.shrinks_collapsed(),
+        side_tab_text: f.side_tab_text(),
         chevron_leads: false,
         collapse_to: f.title_edge(),
     }

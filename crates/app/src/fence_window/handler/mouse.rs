@@ -187,7 +187,10 @@ pub(super) fn on_lbuttondown(
             queue.push(Command::RaiseFence(hwnd));
             return Some(0);
         }
-        let in_content = !v.rolled_up && y >= v.content_y && x >= v.content_x;
+        let in_content = !v.rolled_up
+            && y >= v.content_y
+            && x >= v.content_x
+            && x < v.content_x + v.content_size_px().0;
         if let Some(col) = v.divider_hit(x, y) {
             v.col_drag = Some(ColDrag {
                 col,
@@ -450,7 +453,7 @@ pub(super) fn on_lbuttonup(
                     queue.push(Command::ToggleRollUp(fence_id));
                 }
             }
-            // A fence collapsed to its left tab column has no chevron: a click on a tab (not
+            // A fence collapsed to its title column has no chevron: a click on a tab (not
             // a drag) expands it on that tab, which the press already switched to.
             PressTarget::Tab(_)
                 if matches!(tab_drag, Some((.., false)))
@@ -807,7 +810,7 @@ pub(super) fn on_mousewheel(
             }
             return Some(0);
         }
-        // Wheel over the title row (or the left tab column) of a tabbed fence: one tab per
+        // Wheel over the title row (or the title column) of a tabbed fence: one tab per
         // whole notch, accumulated for touchpads. A held left button (tab, column or title
         // drag, marquee) and a tab title rename keep the tab where it is.
         let pt = window::screen_to_client(
@@ -817,9 +820,9 @@ pub(super) fn on_mousewheel(
                 y: msg::hi_i16(lparam),
             },
         );
-        // A left tab column is the title bar (it stays when the fence collapses to it).
-        let over_title = if v.tabs_on_rail() {
-            pt.x >= 0 && pt.x < v.content_x && pt.y >= 0 && pt.y < v.chrome_panel.size_px().1
+        // A title column is the title bar (it stays when the fence collapses to it).
+        let over_title = if v.title_column() {
+            v.in_column(pt.x) && pt.y >= 0 && pt.y < v.chrome_panel.size_px().1
         } else {
             v.in_title_row(pt.y)
         };

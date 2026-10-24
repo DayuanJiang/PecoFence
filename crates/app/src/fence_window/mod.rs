@@ -72,7 +72,8 @@ mod window_drag;
 pub use api::FenceWindow;
 
 /// Left (or top) edge of a window at `start` that goes from `from` to `to` px wide (or tall)
-/// pivoting at `anchor` (`FenceWindow::width_anchor`): 0 keeps the start edge, 1 the end edge.
+/// pivoting at `anchor` (`FenceWindow::width_anchor`, `height_anchor`): 0 keeps the start
+/// edge, 1 the end edge.
 pub fn anchored_start(start: i32, from: i32, to: i32, anchor: f32) -> i32 {
     start + ((from - to) as f32 * anchor).round() as i32
 }
@@ -182,6 +183,14 @@ pub struct Pushed {
     pub by: Vec<HWND>,
 }
 
+/// Moves the push record of `hwnd` at window top `top` by `dy` px, keeping its shift: the
+/// window and its resting top move together.
+pub(crate) fn shift_pushed(pushed: &mut [Pushed], hwnd: HWND, top: i32, dy: i32) {
+    for p in pushed.iter_mut().filter(|p| p.hwnd == hwnd && p.top == top) {
+        p.top += dy;
+    }
+}
+
 /// A window in the system move / size loop and, for a title drag, the selection moving along.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SizeMove {
@@ -203,6 +212,11 @@ impl Behavior {
             rect.bottom -= p.dy;
         }
         rect
+    }
+
+    /// `hwnd`, pushed to window top `top`, moves `dy` px down along with its resting top.
+    pub fn shift_push(&self, hwnd: HWND, top: i32, dy: i32) {
+        shift_pushed(&mut self.pushed.borrow_mut(), hwnd, top, dy);
     }
 
     /// The user moved `hwnd`: where it is now is where it rests.

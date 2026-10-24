@@ -37,9 +37,10 @@ pub const WM_APP_PREWARM_DONE: u32 = msg::WM_APP + 13;
 /// wparam 0: the live wallpaper capture worker finished; 1: the desktop came to the front.
 pub const WM_APP_LIVE_WALLPAPER: u32 = msg::WM_APP + 14;
 /// Sent to a fence window while another fence is dragged over it. wparam 0 returns the width
-/// in device px of its left tab column (0 without one): such a fence has no title row, and its
+/// in device px of its title column (0 without one): such a fence has no title row, and its
 /// column takes the merge drop instead, also while the fence is collapsed to it. wparam 1
-/// returns the client y of its title row (0 at the top).
+/// returns the client y of its title row (0 at the top), wparam 2 the client x of its title
+/// column (0 on the left).
 pub const WM_APP_TAB_RAIL: u32 = msg::WM_APP + 15;
 /// The startup wallpaper worker finished after the fences went up (worker thread → UI thread).
 pub const WM_APP_STARTUP_BACKDROPS: u32 = msg::WM_APP + 16;
@@ -111,7 +112,7 @@ pub enum Command {
         path: PathBuf,
     },
     PortalUp(FenceId),
-    /// A fence window is being dragged over `target`'s title or left tab column (null = none):
+    /// A fence window is being dragged over `target`'s title or title column (null = none):
     /// highlight it and, on a tabbed target, open the insertion gap at pointer screen point
     /// `at`.
     MergeHint {

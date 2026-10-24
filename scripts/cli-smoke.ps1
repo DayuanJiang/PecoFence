@@ -276,9 +276,43 @@ try {
     $f = (Json (Invoke-Cli @("fence", "set", $id, "titlePosition", "bottom")).Out).fence
     Check "expandUpward off at the bottom, to the top and back: on" ($f.expandUpward -eq $true) "$($f | ConvertTo-Json -Compress)"
     Invoke-Cli @("fence", "set", $id, "titlePosition", "top") | Out-Null
+    # On a side the title bar is a column the fence rolls up into, opening away from it.
+    $r = Invoke-Cli @("fence", "set", $id, "titlePosition", "right")
+    $f = (Json $r.Out).fence
+    Check "fence set titlePosition right -> title column at the right of the rect" ($r.Code -eq 0 -and $f.titlePosition -eq "right" -and ($f.windowRect.x + $f.windowRect.w) -eq ($f.rect.x + $f.rect.w) -and $f.windowRect.w -lt $f.rect.w) "$($r.Out) $($r.Err)"
+    $w = Json (Invoke-Cli @("fence", "get", $id)).Out
+    Check "a right column with room on its left reports rightAnchored" ($w.rightAnchored -eq $true -and $w.bottomAnchored -eq $false) "$($w | ConvertTo-Json -Compress -Depth 4)"
+    # fence resize --w keeps the right edge of a column that sits at the right of its rect.
+    $was = $w
+    Invoke-Cli @("fence", "resize", $id, "--w", "$($was.rect.w - 40)") | Out-Null
+    $w = Json (Invoke-Cli @("fence", "get", $id)).Out
+    Check "resize --w keeps the right edge of a rightAnchored column" ($w.rect.w -eq ($was.rect.w - 40) -and ($w.rect.x + $w.rect.w) -eq ($was.rect.x + $was.rect.w) -and ($w.windowRect.x + $w.windowRect.w) -eq ($was.windowRect.x + $was.windowRect.w) -and $w.rightAnchored -eq $true) "before=$($was.rect | ConvertTo-Json -Compress) $($was.windowRect | ConvertTo-Json -Compress) after=$($w.rect | ConvertTo-Json -Compress) $($w.windowRect | ConvertTo-Json -Compress)"
+    Invoke-Cli @("fence", "resize", $id, "--w", "$($was.rect.w)") | Out-Null
+    $r = Invoke-Cli @("fence", "set", $id, "titlePosition", "left")
+    $f = (Json $r.Out).fence
+    Check "fence set titlePosition left -> the rolled column stays where it was" ($r.Code -eq 0 -and $f.titlePosition -eq "left" -and ($f.windowRect.x + $f.windowRect.w) -eq ($was.windowRect.x + $was.windowRect.w) -and $f.windowRect.w -lt $f.rect.w) "$($r.Out) $($r.Err)"
+    # A fence 50 px right of the column leaves too little room there: the column opens to the
+    # left, as wide as it fits there, and rolls back into the same column.
+    $col = $f.windowRect
+    $r = Invoke-Cli @("fence", "create", "--title", "Beside $instance", "--rect", "$($col.x + $col.w + 50),$($f.rect.y),200,$($f.rect.h)")
+    $beside = (Json $r.Out).fence.id
+    Start-Sleep -Milliseconds 400
+    Invoke-Cli @("fence", "unroll", $id) | Out-Null
+    Start-Sleep -Milliseconds 800
+    $w = Json (Invoke-Cli @("fence", "get", $id)).Out
+    Check "a left column with too little room on its right opens to the left" ($w.rolledUp -eq $false -and $w.rightAnchored -eq $true -and ($w.windowRect.x + $w.windowRect.w) -eq ($col.x + $col.w) -and $w.windowRect.w -gt ($col.w + 50) -and $w.windowRect.w -le $rect.w) "col=$($col | ConvertTo-Json -Compress) window=$($w.windowRect | ConvertTo-Json -Compress)"
+    Invoke-Cli @("fence", "roll", $id) | Out-Null
+    Start-Sleep -Milliseconds 800
+    $w = Json (Invoke-Cli @("fence", "get", $id)).Out
+    Check "the column rolls back into the same spot, with the fence's full width saved" ($w.rolledUp -eq $true -and $w.windowRect.x -eq $col.x -and $w.windowRect.w -eq $col.w -and $w.rect.w -eq $rect.w) "col=$($col | ConvertTo-Json -Compress) now=$($w.windowRect | ConvertTo-Json -Compress) rect=$($w.rect | ConvertTo-Json -Compress)"
+    Invoke-Cli @("fence", "delete", $beside) | Out-Null
+    $r = Invoke-Cli @("fence", "set", $id, "collapsedSize", "full")
+    $f = (Json $r.Out).fence
+    Check "fence set collapsedSize full -> the column keeps the fence's height" ($r.Code -eq 0 -and $f.collapsedSize -eq "full" -and -not $f.collapsedShrinks -and $f.windowRect.h -eq $f.rect.h) "$($r.Out) $($r.Err)"
     # A title row shrinks only when asked to. A short title keeps the shrunk row narrower than
     # the fence at any scale.
     Invoke-Cli @("fence", "rename", $id, "Edges") | Out-Null
+    Invoke-Cli @("fence", "set", $id, "titlePosition", "top") | Out-Null
     $r = Invoke-Cli @("fence", "set", $id, "collapsedSize", "fit")
     $f = (Json $r.Out).fence
     Check "fence set collapsedSize fit -> a rolled title row aligned right shrinks to the right" ($r.Code -eq 0 -and $f.collapsedShrinks -and ($f.windowRect.x + $f.windowRect.w) -eq ($f.rect.x + $f.rect.w) -and $f.windowRect.w -lt $f.rect.w) "$($r.Out) $($r.Err)"
@@ -301,6 +335,9 @@ try {
     $r = Invoke-Cli @("fence", "set", $id, "collapsedSize", "default")
     $f = (Json $r.Out).fence
     Check "fence set collapsedSize default -> a rolled title row is as wide as the fence" ($r.Code -eq 0 -and $f.collapsedSize -eq "default" -and $f.windowRect.w -eq $f.rect.w) "$($r.Out) $($r.Err)"
+    $r = Invoke-Cli @("fence", "set", $id, "sideTabText", "horizontal")
+    Check "fence set sideTabText horizontal" ($r.Code -eq 0 -and (Json $r.Out).fence.sideTabText -eq "horizontal") "$($r.Out) $($r.Err)"
+    Invoke-Cli @("fence", "set", $id, "sideTabText", "vertical") | Out-Null
     foreach ($p in @(@("titlePosition", "top"), @("titleAlign", "default"))) {
         Invoke-Cli @("fence", "set", $id, $p[0], $p[1]) | Out-Null
     }
@@ -593,6 +630,23 @@ try {
     $saved = $cfgText -match '"peek":\s*\{[^}]*"enabled":\s*false'
     Check "config.json saved with peek.enabled=false" $saved ""
 
+    # A left title column with too little room on its right opens to the left
+    # (as wide as it fits there, which other test fences may cut); after a restart it rolls back
+    # into the same column (`rightAnchored` keeps that end).
+    $r = Invoke-Cli @("fence", "create", "--title", "Column $instance", "--rect", "$($x + 500),$($work.y + 620),300,100")
+    $cid = (Json $r.Out).fence.id
+    Invoke-Cli @("fence", "set", $cid, "titlePosition", "left") | Out-Null
+    Invoke-Cli @("fence", "roll", $cid) | Out-Null
+    Start-Sleep -Milliseconds 800
+    $ccol = (Json (Invoke-Cli @("fence", "get", $cid)).Out).windowRect
+    $r = Invoke-Cli @("fence", "create", "--title", "Wall $instance", "--rect", "$($ccol.x + $ccol.w + 50),$($work.y + 620),200,100")
+    $wall = (Json $r.Out).fence.id
+    Start-Sleep -Milliseconds 400
+    Invoke-Cli @("fence", "unroll", $cid) | Out-Null
+    Start-Sleep -Milliseconds 800
+    $c = Json (Invoke-Cli @("fence", "get", $cid)).Out
+    Check "a left column with too little room on its right opens to the left" ($c.rolledUp -eq $false -and $c.rightAnchored -eq $true -and ($c.windowRect.x + $c.windowRect.w) -eq ($ccol.x + $ccol.w) -and $c.windowRect.w -gt ($ccol.w + 50) -and $c.windowRect.w -le 300) "col=$($ccol | ConvertTo-Json -Compress) window=$($c.windowRect | ConvertTo-Json -Compress)"
+
     # 10. Issue #125: a rolled fence with expandUpward comes back at the same title row after a
     # restart (the window is created with its row at the saved end of the saved rect).
     $r = Invoke-Cli @("fence", "create", "--title", "Upward $instance", "--rect", "$x,$($y + 200),400,300")
@@ -625,6 +679,14 @@ try {
     $now = Json (Invoke-Cli @("fence", "get", $foot)).Out
     Check "a rolled bottom title row keeps its spot across a restart" ($now.rolledUp -eq $true -and $now.titlePosition -eq "bottom" -and $now.windowRect.y -eq $footWas.windowRect.y -and $now.windowRect.h -eq $footWas.windowRect.h -and $now.rect.y -eq $footWas.rect.y -and $now.bottomAnchored -eq $footWas.bottomAnchored) "before=$($footWas.rect | ConvertTo-Json -Compress) $($footWas.windowRect | ConvertTo-Json -Compress) after=$($now.rect | ConvertTo-Json -Compress) $($now.windowRect | ConvertTo-Json -Compress)"
     Invoke-Cli @("fence", "delete", $foot) | Out-Null
+    $c = Json (Invoke-Cli @("fence", "get", $cid)).Out
+    Check "after a restart the open column still keeps its right edge" ($c.rolledUp -eq $false -and $c.rightAnchored -eq $true -and ($c.rect.x + $c.rect.w) -eq ($ccol.x + $ccol.w)) "col=$($ccol | ConvertTo-Json -Compress) rect=$($c.rect | ConvertTo-Json -Compress) window=$($c.windowRect | ConvertTo-Json -Compress)"
+    Invoke-Cli @("fence", "roll", $cid) | Out-Null
+    Start-Sleep -Milliseconds 800
+    $c = Json (Invoke-Cli @("fence", "get", $cid)).Out
+    Check "after a restart the column rolls back into the same spot" ($c.rolledUp -eq $true -and $c.windowRect.x -eq $ccol.x -and $c.windowRect.w -eq $ccol.w) "col=$($ccol | ConvertTo-Json -Compress) now=$($c.windowRect | ConvertTo-Json -Compress)"
+    Invoke-Cli @("fence", "delete", $cid) | Out-Null
+    Invoke-Cli @("fence", "delete", $wall) | Out-Null
 
     # A title row at the top of the screen, switched on: the fence does not fit above it, so
     # the row stays and it opens downward.
@@ -681,10 +743,15 @@ try {
     Check "resize --h on a rolled bottom title row that opened down keeps the row and its end" ($w.bottomAnchored -eq $false -and $w.windowRect.y -eq $row.y -and $w.rect.y -eq $row.y -and $w.rect.h -eq 250) "rect=$($w.rect | ConvertTo-Json -Compress) window=$($w.windowRect | ConvertTo-Json -Compress)"
     Invoke-Cli @("fence", "unroll", $bottom) | Out-Null
     Start-Sleep -Milliseconds 800
-    # Dock to top moves a bottom title bar to the top edge.
+    # Dock to top moves a bottom or side title bar to the top edge.
     Invoke-Cli @("fence", "dock-top", $bottom) | Out-Null
     $w = Json (Invoke-Cli @("fence", "get", $bottom)).Out
     Check "dock-top moves a bottom title bar to the top" ($w.titlePosition -eq "top" -and $w.rolledUp -eq $true -and $w.windowRect.y -eq $work.y) "$($w | ConvertTo-Json -Compress -Depth 4)"
+    Start-Sleep -Milliseconds 800
+    Invoke-Cli @("fence", "set", $bottom, "titlePosition", "right") | Out-Null
+    Invoke-Cli @("fence", "dock-top", $bottom) | Out-Null
+    $w = Json (Invoke-Cli @("fence", "get", $bottom)).Out
+    Check "dock-top moves a side title bar to the top" ($w.titlePosition -eq "top" -and $w.rolledUp -eq $true -and $w.windowRect.y -eq $work.y -and $w.windowRect.w -eq $w.rect.w) "$($w | ConvertTo-Json -Compress -Depth 4)"
     Invoke-Cli @("fence", "delete", $bottom) | Out-Null
 
     # A bottom title row with Expand upward off opens downward where the fence fits below its
@@ -729,6 +796,30 @@ try {
     $o = (Json (Invoke-Cli @("fence", "get", $over)).Out).windowRect
     Check "rolled up again, the fence above comes back" ($o.y -eq $overWas.y) "was=$($overWas | ConvertTo-Json -Compress) now=$($o | ConvertTo-Json -Compress)"
     foreach ($f in @($floor, $over)) { Invoke-Cli @("fence", "delete", $f) | Out-Null }
+
+    # A rolled column moved to the other side stays where it was; at the right edge of the screen
+    # a left column then opens to the left, and `fence resize --w` keeps that end. Back at the top,
+    # the column's end is gone and resize keeps the left edge, as for any title row.
+    $workRight = $work.x + $work.w
+    $r = Invoke-Cli @("fence", "create", "--title", "Edge $instance", "--rect", "$($workRight - 300),$($work.y + 300),300,200")
+    $edge = (Json $r.Out).fence.id
+    Invoke-Cli @("fence", "set", $edge, "titlePosition", "right") | Out-Null
+    Invoke-Cli @("fence", "roll", $edge) | Out-Null
+    Start-Sleep -Milliseconds 800
+    $bar = (Json (Invoke-Cli @("fence", "get", $edge)).Out).windowRect
+    Invoke-Cli @("fence", "set", $edge, "titlePosition", "left") | Out-Null
+    $w = Json (Invoke-Cli @("fence", "get", $edge)).Out
+    Check "a rolled right column moved to the left stays where it was and opens to the left" ($w.titlePosition -eq "left" -and $w.windowRect.x -eq $bar.x -and $w.windowRect.y -eq $bar.y -and $w.rightAnchored -eq $true -and ($w.rect.x + $w.rect.w) -eq $workRight) "bar=$($bar | ConvertTo-Json -Compress) now=$($w.windowRect | ConvertTo-Json -Compress) rect=$($w.rect | ConvertTo-Json -Compress)"
+    Invoke-Cli @("fence", "resize", $edge, "--w", "260") | Out-Null
+    $w = Json (Invoke-Cli @("fence", "get", $edge)).Out
+    Check "resize --w on a rolled left column at its right end keeps that end" ($w.rightAnchored -eq $true -and $w.rect.w -eq 260 -and ($w.rect.x + $w.rect.w) -eq $workRight -and ($w.windowRect.x + $w.windowRect.w) -eq $workRight) "rect=$($w.rect | ConvertTo-Json -Compress) window=$($w.windowRect | ConvertTo-Json -Compress)"
+    Invoke-Cli @("fence", "set", $edge, "titlePosition", "top") | Out-Null
+    $w = Json (Invoke-Cli @("fence", "get", $edge)).Out
+    $was = $w.rect
+    Invoke-Cli @("fence", "resize", $edge, "--w", "240") | Out-Null
+    $w = Json (Invoke-Cli @("fence", "get", $edge)).Out
+    Check "back at the top the column's end is gone and resize --w keeps the left edge" ($w.rightAnchored -eq $false -and $w.rect.x -eq $was.x -and $w.rect.w -eq 240) "before=$($was | ConvertTo-Json -Compress) after=$($w.rect | ConvertTo-Json -Compress)"
+    Invoke-Cli @("fence", "delete", $edge) | Out-Null
 }
 finally {
     if ($app -and -not $app.HasExited) { Stop-Process -Id $app.Id -Force }

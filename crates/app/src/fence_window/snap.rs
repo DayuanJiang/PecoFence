@@ -5,7 +5,7 @@
 use super::*;
 use crate::drag_guides::GuideLine;
 
-/// Another fence's window whose title row or left tab column is under the cursor
+/// Another fence's window whose title row or title column is under the cursor
 /// (drag-to-merge target).
 pub(super) fn merge_target_under_cursor(me: HWND) -> Option<HWND> {
     merge_target_under_cursor_excluding(me, HWND(std::ptr::null_mut()))
@@ -28,7 +28,7 @@ pub(super) fn merge_target_at(me: HWND, also: HWND, point: (i32, i32)) -> Option
             if point.0 < r.left || point.0 >= r.right || point.1 < r.top || point.1 >= r.bottom {
                 return false;
             }
-            // A fence with a left tab column has no title row: the column takes the drop.
+            // A fence with a title column has no title row: the column takes the drop.
             // This process's fence windows share its UI thread, so the message is a direct
             // call; another instance's windows (which cannot take a merge anyway) are never
             // sent it, as a hung one would block the drag.
@@ -41,7 +41,9 @@ pub(super) fn merge_target_at(me: HWND, also: HWND, point: (i32, i32)) -> Option
             if rail < 0 {
                 false
             } else if rail > 0 {
-                point.0 < r.left + rail
+                // The title column, on either side.
+                let left = r.left + window::send_message(w, WM_APP_TAB_RAIL, 2, 0) as i32;
+                point.0 >= left && point.0 < left + rail
             } else {
                 // The title row may run along the bottom edge.
                 let top = r.top
@@ -151,6 +153,13 @@ pub(super) fn other_fence_rects(me: HWND) -> Vec<RECT> {
         .filter(|&w| w != me && desktop::is_visible(w) && !anchor::is_desktop_fence(w))
         .map(window::window_rect)
         .collect()
+}
+
+/// Work area of the monitor a title column at `rect` is on: the one its top is on, as
+/// `AppState::column_work_area` picks it.
+pub(super) fn column_work_area(rect: &RECT) -> Option<RECT> {
+    let mon = monitors::monitor_from_point((rect.left + rect.right) / 2, rect.top);
+    monitors::query(mon).map(|info| info.work_area)
 }
 
 /// Work area of the monitor under `rect`'s centre.

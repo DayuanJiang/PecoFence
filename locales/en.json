@@ -600,7 +600,17 @@
   "向下收起": "Roll down",
   "位置": "Position",
   "上方放得下时从标题栏向上展开，放不下就向下展开": "Opens upward from the title bar when there is room, otherwise downward",
-  "放在底部时，标签页留在标题栏里，栅栏收向标题栏": "At the bottom the tabs stay in the title bar, and the fence rolls toward it",
-  "标题栏在底部的栅栏不受影响": "Fences with the title bar at the bottom aren't affected",
-  "停靠时标题栏回到顶部": "Docking moves the title bar back to the top"
+  "放在底部时，标签页留在标题栏里，栅栏收向标题栏；放在两侧时标题栏是一列，栅栏收起到这一列，从另一侧展开": "At the bottom the tabs stay in the title bar, and the fence rolls toward it. On a side the title bar is a column the fence rolls up into and expands away from",
+  "标题栏在底部或两侧的栅栏不受影响": "Fences with the title bar at the bottom or on a side aren't affected",
+  "停靠时标题栏回到顶部": "Docking moves the title bar back to the top",
+  "右侧": "Right",
+  "向左收起": "Roll left",
+  "向右收起": "Roll right",
+  "两侧标签页的文字": "Side tab text",
+  "标题栏在两侧时，栅栏朝离开标题栏的方向展开": "With the title bar on a side, the fence opens away from it",
+  "标题栏在两侧且有多个标签页时才用到": "Applies to a title bar on a side with two or more tabs",
+  "对齐\u0004顶部": "Align top",
+  "对齐\u0004底部": "Align bottom",
+  "竖向": "Vertical",
+  "横向": "Horizontal"
 }

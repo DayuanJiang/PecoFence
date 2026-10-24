@@ -2014,6 +2014,37 @@ impl AppState {
         bottom_anchored
     }
 
+    /// Work area of the monitor showing point (`x`, `y`): the one containing it, else the one
+    /// whose monitor does (a point on a taskbar), else the one nearest to it.
+    pub fn work_area_on_monitor_at(&self, x: i32, y: i32) -> Option<WorkArea> {
+        let gap = |lo: i32, hi: i32, v: i32| (lo - v).max(v - (hi - 1)).max(0) as i64;
+        self.work_areas
+            .iter()
+            .find(|w| x >= w.left && x < w.right && y >= w.top && y < w.bottom)
+            .or_else(|| {
+                self.work_areas.iter().find(|w| {
+                    x >= w.mon_left && x < w.mon_right && y >= w.mon_top && y < w.mon_bottom
+                })
+            })
+            .or_else(|| {
+                self.work_areas.iter().min_by_key(|w| {
+                    let (dx, dy) = (
+                        gap(w.mon_left, w.mon_right, x),
+                        gap(w.mon_top, w.mon_bottom, y),
+                    );
+                    dx * dx + dy * dy
+                })
+            })
+            .cloned()
+    }
+
+    /// Work area a title column at `rect` belongs to: the one of the monitor its top is on. A
+    /// column runs down from its top, which may sit on a taskbar, and its centre may be below
+    /// the screen.
+    pub fn column_work_area(&self, rect: &RECT) -> Option<WorkArea> {
+        self.work_area_on_monitor_at((rect.left + rect.right) / 2, rect.top)
+    }
+
     /// Height (device px) fence `fence` opens to: its saved rect's, or rolled up the full
     /// expanded height, which a saved rect cut to the room around its title row keeps.
     pub fn fence_expanded_px(&self, fence: &Fence) -> i32 {
@@ -2169,6 +2200,113 @@ impl AppState {
         }
     }
 
+    /// Records title-column fence `id` at window rect `rect`, a column `full_w` x `full_h` px
+    /// open. Rolled up, `rect` is the column and the saved rect starts at its top, beside it on
+    /// the side `right` names (ending at the column's right edge), or with `choose` (rolled up
+    /// at rest) on the side where it fits on the screen (`column_rest_side`). That rect is cut
+    /// to the work area beside and below the column, so a restart puts the column back where it
+    /// was; `expanded_w` and `expanded_h` keep the full size. Open, the window is the rect and
+    /// `full_w` its width before a cut to the room. Returns the end it saved
+    /// (`Fence::right_anchored`).
+    #[allow(clippy::too_many_arguments)]
+    pub fn set_column_bounds(
+        &mut self,
+        id: FenceId,
+        rect: RECT,
+        rolled: bool,
+        full_w: i32,
+        full_h: i32,
+        right: bool,
+        choose: bool,
+    ) -> bool {
+        let (full_w, full_h) = (full_w.max(1), full_h.max(1));
+        let Some(work) = self.column_work_area(&rect) else {
+            return right;
+        };
+        let title_right = self
+            .fence(id)
+            .is_some_and(|f| f.title_edge() == pecofence_core::TitleEdge::Right);
+        let mut right = right;
+        let px = if rolled {
+            let w = if choose {
+                let (r, w) = self.column_rest_side(rect, full_w, title_right);
+                right = r;
+                w
+            } else if right {
+                full_w.min(rect.right - work.left)
+            } else {
+                full_w.min(work.right - rect.left)
+            }
+            .max(1);
+            let h = full_h.min(work.bottom - rect.top).max(1);
+            let left = if right { rect.right - w } else { rect.left };
+            PxRect {
+                left,
+                top: rect.top,
+                right: left + w,
+                bottom: rect.top + h,
+            }
+        } else {
+            PxRect {
+                left: rect.left,
+                top: rect.top,
+                right: rect.right,
+                bottom: rect.bottom,
+            }
+        };
+        let geo = geometry::normalize(px, &work);
+        let scale = work.scale();
+        let expanded_h = if rolled { full_h as f32 / scale } else { geo.h };
+        let expanded_w = (full_w > px.width()).then(|| full_w as f32 / scale);
+        if let Some(f) = self.fence_mut(id)
+            && (f.geometry != geo
+                || f.rolled_up != rolled
+                || f.bottom_anchored
+                || f.right_anchored != right
+                || (f.expanded_h - expanded_h).abs() > 0.5
+                || f.expanded_w.map(|w| w.round()) != expanded_w.map(|w| w.round()))
+        {
+            f.geometry = geo;
+            f.rolled_up = rolled;
+            f.bottom_anchored = false;
+            f.right_anchored = right;
+            f.expanded_h = expanded_h;
+            f.expanded_w = expanded_w;
+            self.dirty = true;
+        }
+        right
+    }
+
+    /// Width (device px) title column `fence` opens to: its saved rect's, or the full width a
+    /// saved rect cut to the room beside the column keeps.
+    pub fn fence_expanded_w_px(&self, fence: &Fence) -> i32 {
+        let w = self.fence_px_rect(fence).width();
+        let scale = geometry::resolve_work_area(&fence.geometry, &self.work_areas)
+            .map_or(1.0, |w| w.scale());
+        fence
+            .expanded_w
+            .map_or(w, |full| ((full * scale).round() as i32).max(w))
+    }
+
+    /// Where a title column rolled up at rest at `column` saves the rect it opens to, `full_w`
+    /// wide: on the side of the column where it fits on the screen, away from the column's own
+    /// side first (`clearance::column_side`), on the work area alone, so a restart puts the
+    /// column back where it was. Where it fits on neither side, the rect is cut to the room
+    /// there. Returns whether the right edge stays put, and the width.
+    pub fn column_rest_side(&self, column: RECT, full_w: i32, column_right: bool) -> (bool, i32) {
+        let Some(w) = self.column_work_area(&column) else {
+            return (column_right, full_w);
+        };
+        let (right, shown) = crate::layout::clearance::column_side(
+            full_w,
+            1,
+            column_right,
+            column.right - w.left,
+            w.right - column.left,
+        );
+        (right, shown.max(1))
+    }
+
     /// Changes a fence's appearance override; one left at every default is dropped (None =
     /// follow the global settings).
     fn edit_appearance(
@@ -2221,26 +2359,62 @@ impl AppState {
     }
 
     /// Moves the title bar to another edge (`Fence::move_title_bar`: a 向上展开 that follows a
-    /// title row turns with it between the top and the bottom).
+    /// title row turns with it between the top and the bottom). The rect stays, except that a
+    /// rolled title column cut to the room beside it takes its full width back as a title row
+    /// where that overlaps no other fence.
     pub fn move_title_bar(&mut self, id: FenceId, edge: pecofence_core::TitleEdge) {
-        if let Some(f) = self.fence_mut(id)
-            && f.title_edge() != edge
-        {
+        let Some(f) = self.fence(id) else {
+            return;
+        };
+        let from = f.title_edge();
+        if from == edge {
+            return;
+        }
+        let full = (f.rolled_up && from.is_side() && !edge.is_side())
+            .then(|| f.full_width_geometry())
+            .flatten()
+            .filter(|g| self.clear_of_other_fences(id, g));
+        if let Some(f) = self.fence_mut(id) {
             f.move_title_bar(edge);
+            if let Some(g) = full {
+                f.geometry = g;
+            }
             self.dirty = true;
         }
+    }
+
+    /// `geo` overlaps the saved rect of no other window (touching counts as clear).
+    fn clear_of_other_fences(&self, id: FenceId, geo: &pecofence_core::NormGeometry) -> bool {
+        let Some(work) = geometry::resolve_work_area(geo, &self.work_areas) else {
+            return true;
+        };
+        let to_rect = |p: PxRect| RECT {
+            left: p.left,
+            top: p.top,
+            right: p.right,
+            bottom: p.bottom,
+        };
+        let r = to_rect(geometry::denormalize(geo, work));
+        self.fences()
+            .iter()
+            .filter(|o| o.id != id && o.tab_host.is_none())
+            .all(|o| !crate::layout::clearance::overlaps(&r, &to_rect(self.fence_px_rect(o)), 0))
     }
 
     pub fn set_title_align(&mut self, id: FenceId, align: Option<pecofence_core::TitleAlign>) {
         self.edit_appearance(id, |a| a.title_align = align);
     }
 
-    /// None = the collapsed title row keeps the fence's width.
+    /// None = only a title column on a side shrinks while collapsed.
     pub fn set_shrink_collapsed(&mut self, id: FenceId, shrink: Option<bool>) {
         self.edit_appearance(id, |a| a.shrink_collapsed = shrink);
     }
 
-    /// The tint washes only the title row.
+    pub fn set_side_tab_text(&mut self, id: FenceId, style: pecofence_core::SideTabText) {
+        self.edit_appearance(id, |a| a.side_tab_text = style);
+    }
+
+    /// The tint washes only the title bar (row or column).
     pub fn set_tint_title_only(&mut self, id: FenceId, on: bool) {
         self.edit_appearance(id, |a| a.tint_title_only = on);
     }
@@ -2698,6 +2872,28 @@ mod tests {
         let f = state.fence(a).unwrap();
         assert_eq!(f.title_edge(), TitleEdge::Bottom);
         assert!(f.rolled_up && f.bottom_anchored && f.expand_upward);
+    }
+
+    /// A restore brings back the end of its saved rect a title column sits at and the full width
+    /// it keeps while that rect is cut to the room beside it.
+    #[test]
+    fn a_restored_fence_takes_the_snapshot_s_column_end_and_full_width() {
+        use pecofence_core::TitleEdge;
+        let mut state = test_state();
+        let a = state.fences()[0].id;
+        state.move_title_bar(a, TitleEdge::Right);
+        let f = state.fence_mut(a).unwrap();
+        f.right_anchored = true;
+        f.expanded_w = Some(900.0);
+        let id = state.save_snapshot("before");
+        state.move_title_bar(a, TitleEdge::Top);
+        let f = state.fence(a).unwrap();
+        assert!(!f.right_anchored && f.expanded_w.is_none());
+        assert!(state.restore_snapshot(id));
+        let f = state.fence(a).unwrap();
+        assert_eq!(f.title_edge(), TitleEdge::Right);
+        assert!(f.right_anchored);
+        assert_eq!(f.expanded_w, Some(900.0));
     }
 
     #[test]
@@ -3322,7 +3518,8 @@ mod tests {
         let mut state = test_state(); // work area 0..1040
         let id = state.fences()[0].id;
         state.move_title_bar(id, pecofence_core::TitleEdge::Bottom);
-        assert!(state.fence(id).unwrap().expand_upward);
+        let f = state.fence(id).unwrap();
+        assert!(f.expand_upward && f.chooses_side());
         let saved = |s: &AppState| {
             let f = s.fence(id).unwrap();
             let px = s.fence_px_rect(f);
@@ -3357,6 +3554,133 @@ mod tests {
         assert_eq!(saved(&state), (632, 932, true));
     }
 
+    /// A title column rolled up at rest saves its rect on the side it opens to: away from its
+    /// own side where the fence fits there, else the other way, else toward the larger room,
+    /// cut to it. A restart puts the column back at that end of the rect.
+    #[test]
+    fn a_rolled_column_saves_the_side_it_opens_to_and_restores_there() {
+        let mut state = test_state(); // work area 0..1920 x 0..1040
+        let id = state.fences()[0].id;
+        state.move_title_bar(id, pecofence_core::TitleEdge::Left);
+        let column = |x: i32| rect(x, 200, 36, 400);
+        // Room on the right: the left edge stays put.
+        assert_eq!(
+            state.column_rest_side(column(100), 300, false),
+            (false, 300)
+        );
+        // Near the right edge: it opens to the left.
+        assert_eq!(
+            state.column_rest_side(column(1800), 300, false),
+            (true, 300)
+        );
+        // A right column prefers the left, and goes right only where the left is too narrow.
+        assert_eq!(state.column_rest_side(column(1800), 300, true), (true, 300));
+        assert_eq!(state.column_rest_side(column(100), 300, true), (false, 300));
+        // Wider than either side: toward the larger room, as wide as it.
+        assert_eq!(
+            state.column_rest_side(column(800), 1500, false),
+            (false, 1920 - 800)
+        );
+        assert_eq!(
+            state.column_rest_side(column(1100), 1500, false),
+            (true, 1136)
+        );
+        // Rolled up at rest at 1800..1836, it saves the rect opening to the left, ending at the
+        // column's right edge, and `rightAnchored` says so.
+        assert!(state.set_column_bounds(id, column(1800), true, 300, 400, false, true));
+        let f = state.fence(id).unwrap().clone();
+        assert!(f.right_anchored && !f.bottom_anchored);
+        let px = state.fence_px_rect(&f);
+        assert_eq!((px.left, px.right, px.top), (1536, 1836, 200));
+        // Placed again from the state (a restart), the column sits at the rect's right end.
+        let left = crate::fence_window::anchored_start(px.left, px.width(), 36, 1.0);
+        assert_eq!(left, 1800);
+    }
+
+    /// A column whose fence is wider than the room on either side saves the rect cut to the
+    /// room, and keeps the full width for the next expansion and a restart. Rolled up low on
+    /// the screen, the rect is cut at the bottom of the work area too, and keeps the full
+    /// height; the column's top never moves.
+    #[test]
+    fn a_column_cut_to_the_room_keeps_its_full_size() {
+        let mut state = test_state(); // work area 0..1920 x 0..1040
+        let id = state.fences()[0].id;
+        state.move_title_bar(id, pecofence_core::TitleEdge::Left);
+        let column = rect(900, 800, 36, 120);
+        assert!(!state.set_column_bounds(id, column, true, 1100, 600, false, true));
+        let f = state.fence(id).unwrap().clone();
+        let px = state.fence_px_rect(&f);
+        assert_eq!(
+            (px.left, px.top, px.right, px.bottom),
+            (900, 800, 1920, 1040)
+        );
+        assert_eq!(state.fence_expanded_w_px(&f), 1100);
+        assert_eq!(state.fence_expanded_px(&f), 600);
+        // Open 1020 wide (cut to the room), it still opens 1100 wide next time.
+        state.set_column_bounds(
+            id,
+            rect(900, 100, 1020, 400),
+            false,
+            1100,
+            400,
+            false,
+            false,
+        );
+        let f = state.fence(id).unwrap().clone();
+        assert_eq!(state.fence_px_rect(&f).width(), 1020);
+        assert_eq!(state.fence_expanded_w_px(&f), 1100);
+        // Open at its full width, there is nothing to keep.
+        state.set_column_bounds(id, rect(100, 100, 400, 400), false, 400, 400, false, false);
+        assert_eq!(state.fence(id).unwrap().expanded_w, None);
+    }
+
+    /// A title column moved to a title row keeps its rect while open. Rolled up and cut to the
+    /// room, it takes its full width back where that overlaps no other fence, and keeps the cut
+    /// width over a neighbour.
+    #[test]
+    fn a_cut_column_moved_to_a_row_grows_only_rolled_and_into_free_room() {
+        use pecofence_core::TitleEdge as E;
+        let mut state = test_state(); // work area 0..1920 x 0..1040
+        let id = state.fences()[0].id;
+        let cut_column = |state: &mut AppState, rolled: bool| {
+            state.move_title_bar(id, E::Left);
+            state.set_column_bounds(id, rect(100, 100, 400, 400), false, 1100, 400, false, false);
+            state.fence_mut(id).unwrap().rolled_up = rolled;
+        };
+        let row = |state: &AppState| {
+            let f = state.fence(id).unwrap();
+            let px = state.fence_px_rect(f);
+            (px.left, px.width(), f.expanded_w)
+        };
+        cut_column(&mut state, false);
+        state.move_title_bar(id, E::Top);
+        assert_eq!(row(&state), (100, 400, None));
+        cut_column(&mut state, true);
+        state.move_title_bar(id, E::Top);
+        assert_eq!(row(&state), (100, 1100, None));
+        state.new_fence("B", rect(800, 150, 300, 300)).unwrap();
+        cut_column(&mut state, true);
+        state.move_title_bar(id, E::Bottom);
+        assert_eq!(row(&state), (100, 400, None));
+    }
+
+    /// A rolled column moved by its saved, cut rect with the full height kept saves that height
+    /// again: moved up, it opens to all of it.
+    #[test]
+    fn a_cut_column_moved_up_keeps_its_full_height() {
+        let mut state = test_state(); // work area 0..1920 x 0..1040
+        let id = state.fences()[0].id;
+        state.move_title_bar(id, pecofence_core::TitleEdge::Left);
+        state.set_column_bounds(id, rect(100, 900, 36, 140), true, 300, 600, false, false);
+        let f = state.fence(id).unwrap().clone();
+        assert_eq!(state.fence_px_rect(&f).height(), 140);
+        assert_eq!(state.fence_expanded_px(&f), 600);
+        state.set_column_bounds(id, rect(100, 100, 36, 600), true, 300, 600, false, false);
+        let f = state.fence(id).unwrap().clone();
+        assert_eq!(state.fence_px_rect(&f).height(), 600);
+        assert_eq!(state.fence_expanded_px(&f), 600);
+    }
+
     /// A rolled bottom title row kept at its end saves its rect cut to the room on the screen
     /// there and keeps the full height; a top row keeps the whole rect.
     #[test]
@@ -3373,6 +3697,53 @@ mod tests {
         state.move_title_bar(id, pecofence_core::TitleEdge::Top);
         state.set_fence_bounds(id, bar, true, 600, false, false);
         assert_eq!(state.fence(id).unwrap().geometry.h, 600.0);
+    }
+
+    /// A column top dropped on the taskbar of a second, taller monitor is measured on that
+    /// monitor, not on the primary one.
+    #[test]
+    fn a_column_top_on_a_taskbar_lifts_on_its_own_monitor() {
+        let mut secondary = monitor("secondary", 1920, 2560, 1400, 96);
+        secondary.mon_bottom = 1440;
+        let state = state_on(vec![monitor("primary", 0, 1920, 1040, 96), secondary]);
+        let wa = state.work_area_on_monitor_at(2500, 1410).unwrap();
+        assert_eq!(wa.device_path, "secondary");
+        let top = 1410 + crate::layout::clearance::column_lift(1410, wa.bottom, 36);
+        assert_eq!(top, 1364);
+        // Inside a work area, that one; off every monitor, the nearest.
+        let at = |x, y| state.work_area_on_monitor_at(x, y).unwrap().device_path;
+        assert_eq!(at(500, 500), "primary");
+        assert_eq!(at(1000, 1090), "primary");
+        assert_eq!(at(5000, 700), "secondary");
+    }
+
+    /// A fit column lifted to the bottom of a second monitor's work area hangs below it, its
+    /// centre off every work area: it is still saved on that monitor, where a restart puts it.
+    #[test]
+    fn a_lifted_column_is_saved_on_its_own_monitor() {
+        let mut secondary = monitor("secondary", 1920, 2560, 1400, 96);
+        secondary.mon_bottom = 1440;
+        let mut state = state_on(vec![monitor("primary", 0, 1920, 1040, 96), secondary]);
+        let id = state.fences()[0].id;
+        state.move_title_bar(id, pecofence_core::TitleEdge::Left);
+        let column = rect(4000, 1364, 36, 200);
+        assert!(!state.set_column_bounds(id, column, true, 300, 200, false, true));
+        let f = state.fence(id).unwrap().clone();
+        assert_eq!(f.geometry.monitor, "secondary");
+        let px = state.fence_px_rect(&f);
+        assert_eq!((px.left, px.top), (4000, 1364));
+        assert_eq!(state.fence_expanded_px(&f), 200);
+    }
+
+    /// With a second monitor below the main one, a 600 px column whose top is on the main one
+    /// is measured there, even though most of its rect is on the lower monitor.
+    #[test]
+    fn a_column_belongs_to_the_monitor_its_top_is_on() {
+        let mut lower = monitor("lower", 0, 1920, 1040, 96);
+        (lower.top, lower.bottom, lower.mon_top, lower.mon_bottom) = (1100, 2140, 1100, 2180);
+        let state = state_on(vec![monitor("main", 0, 1920, 1040, 96), lower]);
+        let wa = state.column_work_area(&rect(100, 900, 36, 600)).unwrap();
+        assert_eq!((wa.device_path.as_str(), wa.bottom), ("main", 1040));
     }
 
     fn desktop_entry(name: &str) -> DesktopEntry {

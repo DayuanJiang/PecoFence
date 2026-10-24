@@ -191,17 +191,17 @@ pub struct FenceViewState {
     pub(super) chrome_panel: Panel,
     pub(super) content_panel: Panel,
     /// Device px from the window's top-left corner to the content panel as last laid out
-    /// (`layout_panels`, `sync_rail`): the left tab column's width (0 without one) and the
-    /// title row's height (0 beside a left tab column). Client points become content points by
+    /// (`layout_panels`, `sync_rail`): the title column's width (0 without one) and the
+    /// title row's height (0 beside a title column). Client points become content points by
     /// subtracting them.
     pub(super) content_x: i32,
     pub(super) content_y: i32,
-    /// The left tab column's width in DIPs as last measured (`sync_rail`).
+    /// The title column's width in DIPs as last measured (`sync_rail`).
     pub(super) rail_dip: f32,
-    /// Expanded window width (device px): what a fence collapsed to its left tab column
+    /// Expanded window width (device px): what a fence collapsed to its title column
     /// returns to, and the width the layout records for it.
     pub(super) expanded_w_px: i32,
-    /// The window is collapsed (or collapsing) narrower than it expands: to its left tab column,
+    /// The window is collapsed (or collapsing) narrower than it expands: to its title column,
     /// or to a title row that shrinks (`collapses_width`); `expanded_w_px` keeps its width.
     pub(super) width_collapsed: bool,
     pub(super) _target: DesktopWindowTarget,
@@ -272,7 +272,7 @@ pub struct FenceViewState {
     pub(super) auto_height: bool,
     /// This fence's title alignment; None follows `Behavior::title_align`.
     pub(super) title_align: Option<pecofence_core::TitleAlign>,
-    /// The left tab column appeared or grew (a tab joined, a caption changed, 标签栏位置): the
+    /// The title column appeared or grew (a tab joined, a caption changed, the title moved): the
     /// next height pass lets a fence too short for it grow (`take_rail_growth_px`).
     pub(super) rail_grow: bool,
     /// Mouse move/resize disabled (menu "锁定位置和大小").
@@ -280,12 +280,16 @@ pub struct FenceViewState {
     /// 向上展开: each expansion opens upward where the fence fits above its title row, else
     /// downward (`clearance::expand_side`); the title row stays where the user put it.
     pub(super) expand_upward: bool,
-    /// The title row is at the bottom: height changes (roll-up, expand, auto height) keep the
-    /// bottom edge in place. Set as a 向上展开 fence or a bottom title row starts to expand, kept
-    /// while it rolls back.
-    pub(super) row_bottom: bool,
-    /// The `row_bottom` the running height animation started with: it keeps moving that edge.
-    pub(super) anim_upward: bool,
+    /// The far edge stays put: the bottom for a title row (height changes keep the bottom edge,
+    /// and the rolled row sits at the bottom of the fence), the right for a title column (width
+    /// changes keep the right edge). Set as the fence starts to expand
+    /// (`FenceViewState::expand_side`), kept while it rolls back.
+    pub(super) kept_end: bool,
+    /// The `kept_end` the running height animation started with: it keeps moving that edge.
+    pub(super) anim_end: bool,
+    /// The window width a title column opened to where the room was narrower than the fence
+    /// (`expand_side`); `expanded_w_px` keeps the full width while the window has this one.
+    pub(super) cut_w: Option<i32>,
     /// Where the width of a title row shrunk around its centre pivots (screen px), and the left
     /// edge and width last set from it (`pivot_left`).
     pub(super) width_pivot: Option<(f32, i32, i32)>,
@@ -401,6 +405,9 @@ impl FenceViewState {
         self.backdrop_rect = None;
         self.expanded_h_px = (self.expanded_h_px as f32 * new_dpi as f32 / old).round() as i32;
         self.expanded_w_px = (self.expanded_w_px as f32 * new_dpi as f32 / old).round() as i32;
+        self.cut_w = self
+            .cut_w
+            .map(|w| (w as f32 * new_dpi as f32 / old).round() as i32);
         self.reload_icons_and_labels();
         self.snap_item_motion();
         // The infotip window scales its max width from the owner DPI at creation: rebuild it

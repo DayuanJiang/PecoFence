@@ -40,14 +40,17 @@ fn peek_search_matches_names_and_hidden_extensions() {
     assert!(search_matches("Shell item", None, "shell"));
 }
 
-/// A torn-off fence hangs from the cursor by its title row: the top one's middle, or the
-/// bottom one's.
+/// A torn-off fence hangs from the cursor by its title bar: the middle of a title row, or the
+/// top of a title column.
 #[test]
 fn a_torn_off_tab_is_held_by_its_title_row() {
     use super::tabs::title_grip;
     use pecofence_core::TitleEdge;
     assert_eq!(title_grip(TitleEdge::Top, 300, 200, 36), (150, 18));
     assert_eq!(title_grip(TitleEdge::Bottom, 300, 200, 36), (150, 182));
+    // A column's top, where its title starts.
+    assert_eq!(title_grip(TitleEdge::Left, 300, 200, 36), (18, 18));
+    assert_eq!(title_grip(TitleEdge::Right, 300, 200, 36), (282, 18));
 }
 
 mod ipc {
@@ -56,7 +59,8 @@ mod ipc {
         AUTO_SNAPSHOT_PREFIX, MAX_NAME_CHARS, MIN_EXPIRY_MS, adjusted, auto_snapshot_slot,
         check_rule_conditions, checked_name, clamp_into_work, is_inbox_alias, kept_full_h,
         patch_settings_path, prune_auto_snapshots, request_expiry, rolled_back_settings,
-        set_bounds_adjusted, snapshot_changes, snapshot_dto, validate_rect, visible_settings_json,
+        set_bounds_adjusted, snapshot_changes, snapshot_dto, validate_rect, validate_rect_at,
+        visible_settings_json,
     };
     use pecofence_core::geometry::WorkArea;
     use pecofence_core::{Cond, MAX_SNAPSHOTS, Settings, Snapshot, ViewLayout};
@@ -112,6 +116,32 @@ mod ipc {
         assert!(validate_rect(rect(-1000, 500, 64, 36), &areas).is_err());
         assert!(validate_rect(rect(-1000, 500, 96, 54), &areas).is_ok());
         assert!(validate_rect(rect(500, 500, 64, 36), &areas).is_ok());
+    }
+
+    /// The rect a rolled column opens to may hang below the screen: it is checked at the
+    /// column's top, on the monitor that top is on.
+    #[test]
+    fn a_column_rect_is_checked_at_its_top() {
+        let one = vec![work("primary", 0, 0, 1920, 1040, 96)];
+        let tall = rect(100, 900, 300, 600);
+        assert!(validate_rect(tall, &one).is_err());
+        assert_eq!(
+            validate_rect_at(tall, &one, true).unwrap().device_path,
+            "primary"
+        );
+        // A top on the taskbar still counts; one off every monitor does not.
+        assert!(validate_rect_at(rect(100, 1060, 300, 600), &one, true).is_ok());
+        assert!(validate_rect_at(rect(100, 1200, 300, 600), &one, true).is_err());
+        // Stacked monitors: the column stays on the one its top is on.
+        let stacked = vec![
+            work("main", 0, 0, 1920, 1040, 96),
+            work("lower", 0, 1080, 1920, 1040, 96),
+        ];
+        assert_eq!(validate_rect(tall, &stacked).unwrap().device_path, "lower");
+        assert_eq!(
+            validate_rect_at(tall, &stacked, true).unwrap().device_path,
+            "main"
+        );
     }
 
     #[test]
@@ -414,7 +444,11 @@ mod ipc {
             parse_fence_prop("titlePosition", &json!("bottom")).unwrap(),
             FenceProp::TitleEdge(pecofence_core::TitleEdge::Bottom)
         );
-        assert!(parse_fence_prop("titlePosition", &json!("right")).is_err());
+        assert_eq!(
+            parse_fence_prop("titlePosition", &json!("right")).unwrap(),
+            FenceProp::TitleEdge(pecofence_core::TitleEdge::Right)
+        );
+        assert!(parse_fence_prop("titlePosition", &json!("middle")).is_err());
         assert_eq!(
             parse_fence_prop("titleAlign", &json!("default")).unwrap(),
             FenceProp::TitleAlign(None)
@@ -437,6 +471,11 @@ mod ipc {
             FenceProp::CollapsedSize(Some(false))
         );
         assert!(parse_fence_prop("collapsedSize", &json!("tiny")).is_err());
+        assert_eq!(
+            parse_fence_prop("sideTabText", &json!("horizontal")).unwrap(),
+            FenceProp::SideTabText(pecofence_core::SideTabText::Horizontal)
+        );
+        assert!(parse_fence_prop("sideTabText", &json!("list")).is_err());
         assert_eq!(
             parse_fence_prop("tint", &json!("#ABCDEF")).unwrap(),
             FenceProp::Tint(Some([0xAB, 0xCD, 0xEF]))
@@ -612,17 +651,21 @@ mod ipc {
         );
     }
 
-    /// A rolled bottom row moved partly off the screen rests inside the work area, where a
-    /// restart would put it.
+    /// A rolled bottom row or title column moved partly off the screen rests inside the work
+    /// area, where a restart would put it.
     #[test]
     fn a_rect_off_the_edge_moves_onto_the_work_area() {
         let wa = work("primary", 0, 0, 1920, 1040, 96);
-        let row = |r| clamp_into_work(r, &wa);
+        let row = |r| clamp_into_work(r, &wa, false);
         assert_eq!(row(rect(1800, 950, 300, 200)), rect(1620, 840, 300, 200));
         assert_eq!(row(rect(-50, -20, 300, 200)), rect(0, 0, 300, 200));
         assert_eq!(row(rect(100, 100, 300, 200)), rect(100, 100, 300, 200));
         // Taller than the work area: cut to it.
         assert_eq!(row(rect(100, 500, 300, 1200)), rect(100, 0, 300, 1040));
+        // A column keeps its top on the screen; its saved rect is cut at the bottom.
+        let column = |r| clamp_into_work(r, &wa, true);
+        assert_eq!(column(rect(1800, 900, 300, 600)), rect(1620, 900, 300, 600));
+        assert_eq!(column(rect(-50, -20, 300, 200)), rect(0, 0, 300, 200));
     }
 
     #[test]
@@ -837,35 +880,53 @@ mod ipc {
     }
 }
 
-/// The Title bar submenu greys out what a left tab column has no use for, and nothing else; a
-/// bottom title row keeps its tabs in the row.
+/// The Title bar submenu greys out what each title bar has no use for: a left tab column its
+/// alignment, shrinking and title on hover; a column on a side 向上展开 and title on hover, and
+/// alignment only with horizontal tabs; side tab text everywhere but on a side with tabs.
 #[test]
-fn the_title_menu_greys_what_a_tab_column_ignores() {
+fn the_title_menu_greys_what_a_title_bar_ignores() {
     use super::menus::{TitleMenuGreys, title_menu_greys};
-    use pecofence_core::{TabBar, TitleEdge};
-    let column = TitleMenuGreys {
+    use pecofence_core::{SideTabText, TabBar, TitleEdge};
+    let greys = |edge, tabbed, bar, text| title_menu_greys(edge, tabbed, bar, text, false);
+    let row = TitleMenuGreys {
+        tab_text: true,
+        ..TitleMenuGreys::default()
+    };
+    let v = SideTabText::Vertical;
+    assert_eq!(greys(TitleEdge::Top, true, TabBar::Top, v), row);
+    assert_eq!(greys(TitleEdge::Top, false, TabBar::Left, v), row);
+    assert_eq!(greys(TitleEdge::Bottom, true, TabBar::Left, v), row);
+    let tab_column = TitleMenuGreys {
         align: true,
         shrink: true,
         hover: true,
-        expand: false,
-        position: false,
+        ..row
     };
-    let none = TitleMenuGreys::default();
+    assert_eq!(greys(TitleEdge::Top, true, TabBar::Left, v), tab_column);
+    let side = TitleMenuGreys {
+        expand: true,
+        hover: true,
+        ..TitleMenuGreys::default()
+    };
+    assert_eq!(greys(TitleEdge::Left, true, TabBar::Left, v), side);
     assert_eq!(
-        title_menu_greys(TitleEdge::Top, true, TabBar::Left, false),
-        column
+        greys(TitleEdge::Right, true, TabBar::Top, SideTabText::Horizontal),
+        TitleMenuGreys {
+            align: true,
+            ..side
+        }
     );
     assert_eq!(
-        title_menu_greys(TitleEdge::Top, true, TabBar::Top, false),
-        none
-    );
-    assert_eq!(
-        title_menu_greys(TitleEdge::Top, false, TabBar::Left, false),
-        none
-    );
-    assert_eq!(
-        title_menu_greys(TitleEdge::Bottom, true, TabBar::Left, false),
-        none
+        greys(
+            TitleEdge::Right,
+            false,
+            TabBar::Top,
+            SideTabText::Horizontal
+        ),
+        TitleMenuGreys {
+            tab_text: true,
+            ..side
+        }
     );
 }
 
@@ -874,15 +935,25 @@ fn the_title_menu_greys_what_a_tab_column_ignores() {
 #[test]
 fn the_title_menu_greys_everything_for_a_desktop_arranged_fence() {
     use super::menus::{TitleMenuGreys, title_menu_greys};
-    use pecofence_core::{TabBar, TitleEdge};
+    use pecofence_core::{SideTabText, TabBar, TitleEdge};
     let all = TitleMenuGreys {
         align: true,
         shrink: true,
         hover: true,
         expand: true,
         position: true,
+        tab_text: true,
     };
-    for bar in [TabBar::Top, TabBar::Left] {
-        assert_eq!(title_menu_greys(TitleEdge::Top, false, bar, true), all);
+    for edge in [
+        TitleEdge::Top,
+        TitleEdge::Bottom,
+        TitleEdge::Left,
+        TitleEdge::Right,
+    ] {
+        for bar in [TabBar::Top, TabBar::Left] {
+            for text in [SideTabText::Vertical, SideTabText::Horizontal] {
+                assert_eq!(title_menu_greys(edge, false, bar, text, true), all);
+            }
+        }
     }
 }

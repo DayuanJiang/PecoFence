@@ -131,8 +131,19 @@ impl App {
             ) {
                 Ok(w) => {
                     w.set_tabs(tabs, active);
+                    // A title column sits at the end of the saved rect `right_anchored` names.
+                    let column = fence.title_edge().is_side();
+                    if column {
+                        w.set_kept_end(fence.right_anchored);
+                        w.set_expanded_width_px(self.state.fence_expanded_w_px(&fence));
+                    }
                     self.fences.insert(fence.id, w);
                     self.apply_fence_view(fence.id);
+                    // A rolled title column takes its shape at its end of the saved rect once
+                    // the window knows its title bar is a column.
+                    if column && fence.rolled_up {
+                        self.place_from_state(&fence);
+                    }
                 }
                 Err(e) => tracing::error!(title = %fence.title, error = %e, "fence window failed"),
             }
@@ -347,23 +358,22 @@ impl App {
         let Some(steps) = self.grid_steps(id, scale) else {
             return;
         };
-        // Collapsed to its left tab column, the window is as wide as the column.
+        // Collapsed to its title column, the window is as wide as the column.
         if !steps.cells || w.collapsed_expanded_width_px().is_some() {
             return;
         }
         let mut width = r.right - r.left;
         let mut left = r.left;
+        // A title column kept at its right edge keeps that edge: columns come and go on the left.
+        let keep_right = w.column_at_right();
         if let Some((cell, pad)) = steps.cols {
             let cols = ((width as f32 - pad) / cell).round().max(1.0);
             width = (pad + cols * cell).round() as i32;
             // Rounding up never pushes a fence past the work-area edge or onto a neighbour:
-            // shift it left, else round down.
+            // shift it back inside, else round down.
             let (cx, cy) = ((r.left + r.right) / 2, (r.top + r.bottom) / 2);
-            if let Some(wa) = self.work_area_at(cx, cy)
-                && left + width > wa.right
-            {
-                left = (wa.right - width).max(wa.left);
-            }
+            let work = self.work_area_at(cx, cy).map(|wa| (wa.left, wa.right));
+            left = crate::layout::clearance::cells_left(&r, width, keep_right, work);
             let grown = RECT {
                 left,
                 top: r.top,
@@ -377,8 +387,8 @@ impl App {
                         && !crate::layout::clearance::overlaps(&r, o, gap)
                 })
             {
-                left = r.left;
                 width = steps.floor_width(r.right - r.left);
+                left = if keep_right { r.right - width } else { r.left };
             }
         }
         // Rolled fences keep their title-only height; auto-height ones get an exact row count.
@@ -497,7 +507,7 @@ impl App {
         let Some(w) = self.fences.get(&id) else {
             return;
         };
-        // A rolled fence follows its tabs: collapsed to the left tab column, or back to a title
+        // A rolled fence follows its tabs: collapsed to the title column, or back to a title
         // row at its expanded width.
         if let Some(rect) = w.settle_rolled_size() {
             let expanded = w.expanded_height_px();
@@ -511,7 +521,7 @@ impl App {
         let Some(w) = self.fences.get(&id) else {
             return;
         };
-        // A fence without auto height still grows once to show a new left tab column (taken
+        // A fence without auto height still grows once to show a new title column (taken
         // on every pass, so a request left by an auto-height fence does not fire later).
         let rail = w.take_rail_growth_px();
         let Some(mut h) = w.auto_height_px().or(rail) else {
@@ -622,7 +632,7 @@ impl App {
         ));
     }
 
-    /// Puts `fence`'s window where the state has it: the saved rect, and rolled up its title row
+    /// Puts `fence`'s window where the state has it: the saved rect, and rolled up its title bar
     /// at the saved end of it, ready to open to its full height. The window takes the saved roll
     /// state and height at once, ending a roll or hover expansion still running toward the other
     /// state: one finishing later would roll the fence back up and record that, as after a
@@ -638,15 +648,39 @@ impl App {
             right: px.right,
             bottom: px.bottom,
         };
-        w.set_row_at_bottom(fence.bottom_anchored);
+        w.set_kept_end(if fence.title_edge().is_side() {
+            fence.right_anchored
+        } else {
+            fence.bottom_anchored
+        });
         w.restore_geometry(rect, fence.rolled_up, self.state.fence_expanded_px(fence));
+        if fence.title_edge().is_side() {
+            w.set_expanded_width_px(self.state.fence_expanded_w_px(fence));
+        }
     }
 
-    /// Places the window again from its saved rect after its title row changed shape (alignment
-    /// or collapsed size): rolled up, it takes its new shape at the end of the rect it sits at,
-    /// and a roll in flight lands at once. The bounds are recorded again, so a fence rolled up at
-    /// rest saves its rect on the side it opens to.
-    pub(super) fn place_title_bar(&mut self, id: FenceId) {
+    /// Where host `id`'s rolled title bar rests: not the window of a hover peek or a roll in
+    /// flight, nor where a push has it. Read before the bar changes shape.
+    pub(super) fn resting_bar_rect(&self, id: FenceId) -> Option<RECT> {
+        let w = self.fences.get(&self.state.host_of(id))?;
+        let win = w.rect();
+        let shift = self.ctx.behavior.resting_rect(w.hwnd(), win).top - win.top;
+        let bar = w.rolled_bar_rect();
+        Some(RECT {
+            top: bar.top + shift,
+            bottom: bar.bottom + shift,
+            ..bar
+        })
+    }
+
+    /// Places the window again from its saved rect after its title bar changed shape (another
+    /// edge, alignment, collapsed size or tab text): rolled up, the title bar takes its new shape
+    /// at the end of the rect it sits at, and a roll in flight lands at once. With `moved` (the
+    /// new `kept_end`, whether the new bar lines up with the old one's right edge rather than its
+    /// left, and the old bar's `resting_bar_rect`, for a title bar moved to another edge) the
+    /// rolled bar stays where it was. The bounds are recorded again, so a fence rolled up at rest
+    /// saves its rect on the side it opens to.
+    pub(super) fn place_title_bar(&mut self, id: FenceId, moved: Option<(bool, bool, RECT)>) {
         let id = self.state.host_of(id);
         let Some(f) = self.state.fence(id).cloned() else {
             return;
@@ -654,15 +688,78 @@ impl App {
         let Some(w) = self.fences.get(&id) else {
             return;
         };
+        // Rolled up, a title bar moved to another edge stays where it was: the new one lines up
+        // with the old one's top, and with its left or right edge.
+        let old_bar = moved
+            .filter(|_| f.rolled_up)
+            .map(|(_, old_right, old)| (old, old_right));
+        if let Some((end, ..)) = moved {
+            w.set_kept_end(end);
+        }
         self.ctx.behavior.release_push(w.hwnd());
         let px = self.state.fence_px_rect(&f);
-        let rect = RECT {
+        let mut rect = RECT {
             left: px.left,
             top: px.top,
             right: px.right,
             bottom: px.bottom,
         };
-        w.restore_geometry(rect, f.rolled_up, self.state.fence_expanded_px(&f));
+        let expanded = self.state.fence_expanded_px(&f);
+        w.restore_geometry(rect, f.rolled_up, expanded);
+        if let Some((old, old_right)) = old_bar {
+            let new = w.rect();
+            let mut dx = if old_right {
+                old.right - new.right
+            } else {
+                old.left - new.left
+            };
+            let mut dy = old.top - new.top;
+            // Never off the screen: the new bar may be longer than the old one. A column is cut at
+            // the bottom of the work area where it lands, so only its top has to be on it.
+            let moved_bar = RECT {
+                left: new.left + dx,
+                top: new.top + dy,
+                right: new.right + dx,
+                bottom: if f.title_edge().is_side() {
+                    new.top + dy + 1
+                } else {
+                    new.bottom + dy
+                },
+            };
+            let work = if f.title_edge().is_side() {
+                self.state.column_work_area(&moved_bar)
+            } else {
+                self.work_area_at(
+                    (moved_bar.left + moved_bar.right) / 2,
+                    (moved_bar.top + moved_bar.bottom) / 2,
+                )
+            };
+            if let Some(wa) = work {
+                let (ix, iy) = crate::layout::clearance::shift_inside(
+                    &moved_bar,
+                    &RECT {
+                        left: wa.left,
+                        top: wa.top,
+                        right: wa.right,
+                        bottom: wa.bottom,
+                    },
+                );
+                dx += ix;
+                dy += iy;
+            }
+            if (dx, dy) != (0, 0) {
+                rect = RECT {
+                    left: rect.left + dx,
+                    top: rect.top + dy,
+                    right: rect.right + dx,
+                    bottom: rect.bottom + dy,
+                };
+                w.restore_geometry(rect, true, expanded);
+            }
+        }
+        if f.title_edge().is_side() {
+            w.set_expanded_width_px(self.state.fence_expanded_w_px(&f));
+        }
         let (rect, rolled, expanded) = (w.rect(), w.is_rolled(), w.expanded_height_px());
         self.record_bounds(id, rect, rolled, expanded);
     }
@@ -673,6 +770,9 @@ impl App {
         self.resync_windows();
         for fence in self.state.host_fences() {
             if self.fences.contains_key(&fence.id) {
+                // A rolled title bar takes its shape from its edge: the window gets the edge a
+                // restore or an import brings before it is placed.
+                self.apply_fence_appearance(fence.id);
                 self.place_from_state(&fence);
             }
             self.apply_fence_view(fence.id);
@@ -913,15 +1013,17 @@ impl App {
             .fence(fence)
             .is_some_and(|f| f.title_edge() != pecofence_core::TitleEdge::Top)
         {
+            let old_right = self.fences.get(&fence).is_some_and(|w| w.column_at_right());
+            let old_bar = self.resting_bar_rect(fence);
             self.state
                 .move_title_bar(fence, pecofence_core::TitleEdge::Top);
             self.apply_fence_appearance(fence);
-            self.place_title_bar(fence);
+            self.place_title_bar(fence, old_bar.map(|old| (false, old_right, old)));
         }
         let Some(w) = self.fences.get(&fence) else {
             return;
         };
-        w.set_row_at_bottom(false);
+        w.set_kept_end(false);
         let r = w.rect();
         let Some(wa) = self.work_area_at((r.left + r.right) / 2, (r.top + r.bottom) / 2) else {
             return;

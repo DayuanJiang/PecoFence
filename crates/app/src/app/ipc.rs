@@ -126,6 +126,17 @@ pub(super) fn validate_rect(
     rect: Rect,
     work_areas: &[geometry::WorkArea],
 ) -> std::result::Result<geometry::WorkArea, IpcError> {
+    validate_rect_at(rect, work_areas, false)
+}
+
+/// [`validate_rect`] for the rect a rolled title column opens to (`column`): it belongs to the
+/// work area of the monitor its top is on (`AppState::column_work_area`), a taskbar included,
+/// as the column runs down from there.
+pub(super) fn validate_rect_at(
+    rect: Rect,
+    work_areas: &[geometry::WorkArea],
+    column: bool,
+) -> std::result::Result<geometry::WorkArea, IpcError> {
     if rect.w <= 0 || rect.h <= 0 {
         return Err(IpcError::invalid_value(
             "rect width and height must be positive",
@@ -141,10 +152,18 @@ pub(super) fn validate_rect(
     };
     // Midpoint without overflow: both ends are valid i32 now.
     let cx = rect.x + (right - rect.x) / 2;
-    let cy = rect.y + (bottom - rect.y) / 2;
+    let cy = if column {
+        rect.y
+    } else {
+        rect.y + (bottom - rect.y) / 2
+    };
+    let on_monitor = |w: &&geometry::WorkArea| {
+        column && cx >= w.mon_left && cx < w.mon_right && cy >= w.mon_top && cy < w.mon_bottom
+    };
     let Some(work) = work_areas
         .iter()
         .find(|w| cx >= w.left && cx < w.right && cy >= w.top && cy < w.bottom)
+        .or_else(|| work_areas.iter().find(on_monitor))
     else {
         let areas: Vec<Value> = work_areas.iter().map(work_area_json).collect();
         let ids: Vec<String> = work_areas
@@ -153,7 +172,11 @@ pub(super) fn validate_rect(
             .collect();
         let ids: Vec<&str> = ids.iter().map(String::as_str).collect();
         return Err(IpcError::invalid_value(
-            "rect centre is outside every monitor's work area",
+            if column {
+                "the column's top is on no monitor"
+            } else {
+                "rect centre is outside every monitor's work area"
+            },
             &ids,
         )
         .hint("Run `pecofence-cli monitor list`; the rect is in physical pixels of the virtual screen")
@@ -235,10 +258,19 @@ pub(super) fn set_bounds_adjusted(
     adjusted(full, applied, reason).and_then(|_| adjusted(requested, applied, reason))
 }
 
-/// `r` moved onto `work`, and cut to its size where larger.
-pub(super) fn clamp_into_work(r: Rect, work: &geometry::WorkArea) -> Rect {
+/// `r` moved onto `work`, and cut to its size where larger. A title column (`column`) keeps
+/// its top unless it is above the work area: its saved rect is cut at the bottom instead.
+pub(super) fn clamp_into_work(r: Rect, work: &geometry::WorkArea, column: bool) -> Rect {
     let w = r.w.min(work.right - work.left);
     let x = r.x.clamp(work.left, work.right - w);
+    if column {
+        return Rect {
+            x,
+            y: r.y.max(work.top),
+            w,
+            h: r.h,
+        };
+    }
     let h = r.h.min(work.bottom - work.top);
     Rect {
         x,
@@ -1479,7 +1511,8 @@ impl App {
             rolled_up: host.rolled_up,
             locked: host.locked,
             expand_upward: host.expand_upward,
-            bottom_anchored: host.bottom_anchored,
+            bottom_anchored: host.bottom_anchored && !host.title_edge().is_side(),
+            right_anchored: host.right_anchored && host.title_edge().is_side(),
             item_count: self.state.unsorted_held_items_of(f).count(),
             tab_host: f.tab_host,
             tabs: if f.tab_host.is_none() {
@@ -1515,6 +1548,7 @@ impl App {
             title_align: text("titleAlign"),
             collapsed_size: text("collapsedSize"),
             collapsed_shrinks: flag("collapsedShrinks"),
+            side_tab_text: text("sideTabText"),
             layout: layout_name(f.view.layout).to_string(),
             sort: sort_name(f.view.sort).to_string(),
             reverse: f.view.reverse,
@@ -1970,7 +2004,10 @@ impl App {
         if let Some(host) = before.tab_host {
             return Err(self.tab_unsupported(&before, host));
         }
-        let work = validate_rect(rect, &self.state.work_areas)?;
+        // A rolled title column belongs to the monitor its top is on, as everywhere else.
+        let column =
+            before.title_edge().is_side() && self.fences.get(&id).is_some_and(|w| w.is_rolled());
+        let work = validate_rect_at(rect, &self.state.work_areas, column)?;
         let Some(w) = self.fences.get(&id) else {
             return Err(IpcError::internal("the fence has no window"));
         };
@@ -1980,12 +2017,18 @@ impl App {
         let rolled = w.is_rolled();
         let edge = before.title_edge();
         let kept_end = rolled && edge != pecofence_core::TitleEdge::Top;
-        // A rolled bottom row keeps the full height its saved rect was cut from when only
-        // moved, and rests inside the work area, as a restart would place it.
+        // A rolled bottom row or title column keeps the full height its saved rect was cut
+        // from when only moved, and rests inside the work area, as a restart would place it.
         let (full, full_h) = if kept_end {
             let saved_h = self.state.fence_px_rect(&before).height();
             let full_h = kept_full_h(rect.h, saved_h, self.state.fence_expanded_px(&before));
-            (rect_to_win(clamp_into_work(rect, &work)), full_h)
+            let mut at = clamp_into_work(rect, &work, edge.is_side());
+            // A column opens down from its top: the whole height, cut at the work area's
+            // bottom as it is placed.
+            if edge.is_side() {
+                at.h = full_h;
+            }
+            (rect_to_win(at), full_h)
         } else {
             (rect_to_win(rect), rect.h)
         };
@@ -1993,21 +2036,27 @@ impl App {
         self.ctx.behavior.release_push(w.hwnd());
         // Rolled with 向上展开, a top title row goes to the bottom of the rect, where it opens
         // upward into it (the rect is on the screen, so it fits above the row). A bottom title
-        // row stays at the end of the rect it was saved at, the edge `fence resize` kept.
+        // row and a title column stay at the end of the rect they were saved at, the edge
+        // `fence resize` kept.
         if rolled && let Some(f) = self.state.fence(id) {
             match f.title_edge() {
                 pecofence_core::TitleEdge::Top => {
                     if f.expand_upward {
-                        w.set_row_at_bottom(true);
+                        w.set_kept_end(true);
                     }
                 }
-                pecofence_core::TitleEdge::Bottom => w.set_row_at_bottom(f.bottom_anchored),
+                pecofence_core::TitleEdge::Bottom => w.set_kept_end(f.bottom_anchored),
+                _ => w.set_kept_end(f.right_anchored),
             }
         }
         // Also ends a roll in flight, whose tween would otherwise put its own size back.
         w.restore_geometry(full, rolled, full_h);
+        // A title column cut to the room, moved but not resized, keeps the width it opens to.
+        if edge.is_side() && rect.w == self.state.fence_px_rect(&before).width() {
+            w.set_expanded_width_px(self.state.fence_expanded_w_px(&before));
+        }
         if kept_end {
-            // The title row is where the end it was saved at puts it: recorded from there,
+            // The title bar is where the end it was saved at puts it: recorded from there,
             // without choosing that end again, also when it settles to its tabs below.
             let bar = w.rect();
             self.record_bounds_kept(id, bar, true, full_h);
@@ -2294,7 +2343,11 @@ impl App {
             .ok_or_else(|| IpcError::internal("the fence window has no view"))?;
         // One whose title row is at its bottom (a 向上展开 fence that opened upward) keeps that
         // edge.
-        if self.state.fence(host).is_some_and(|h| h.bottom_anchored) {
+        if self
+            .state
+            .fence(host)
+            .is_some_and(|h| h.bottom_anchored && !h.title_edge().is_side())
+        {
             rect.y += rect.h - report.fitting_height_px;
         }
         rect.h = report.fitting_height_px;

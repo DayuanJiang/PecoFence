@@ -44,7 +44,7 @@ pub(super) fn top_for_height(row_bottom: bool, r: &RECT, h: i32) -> i32 {
 /// cross-fades on the compositor).
 pub(super) struct RollAnim {
     pub(super) height: Tween,
-    /// A fence with a left tab column collapses to that column: its width moves too.
+    /// A fence with a title column collapses to that column: its width moves too.
     pub(super) width: Option<Tween>,
     pub(super) rolled_at_end: bool,
 }
@@ -359,9 +359,9 @@ impl FenceViewState {
     }
 
     /// Title on hover for this fence: its own choice, else the global setting. A fence whose
-    /// tabs are on the left has no title row to fold away.
+    /// title bar is a column has no title row to fold away.
     pub(super) fn title_on_hover(&self) -> bool {
-        !self.tabs_on_rail()
+        !self.title_column()
             && self
                 .title_on_hover_override
                 .unwrap_or_else(|| self.behavior.title_on_hover.get())
@@ -405,7 +405,7 @@ impl FenceViewState {
             || self.title_renaming
     }
 
-    /// End width (device px) of a collapse to (or expand from) a left tab column in flight.
+    /// End width (device px) of a collapse to (or expand from) a title column in flight.
     pub(super) fn width_target_px(&self) -> Option<i32> {
         self.roll_anim
             .as_ref()
@@ -443,39 +443,64 @@ impl FenceViewState {
             .map(|t| t.id)
             .zip(self.tab_draw_xs(now))
             .collect();
-        // 向上展开 or a bottom title row: which way the fence opens is decided as it starts to
-        // expand, from the room on either side of its title row, which stays where it is. A roll
-        // that takes over a running height animation keeps moving the same edge.
+        // Which way the fence opens is decided as it starts to expand, from the room on either
+        // side of its rolled title bar, which stays where it is: a title row with 向上展开 picks
+        // up or down, a title column left or right. A roll that takes over a running height
+        // animation keeps moving the same edge.
         let side = if rolled || self.height_animating() {
             None
         } else {
             self.expand_side()
         };
-        if let Some((up, _)) = side {
-            self.row_bottom = up;
+        if let Some((end, _)) = side {
+            self.kept_end = end;
         }
         if !self.height_animating() {
-            self.anim_upward = self.row_bottom;
+            self.anim_end = self.kept_end;
         }
+        let (side_w, side_h) = match side {
+            Some((_, size)) if self.side_column() => (Some(size), None),
+            Some((_, size)) => (None, Some(size)),
+            // A title column opening again before it finished rolling up keeps its side, and
+            // the room there.
+            None if !rolled && self.side_column() && self.height_animating() => {
+                (Some(self.reopen_width_px()), None)
+            }
+            None => (None, None),
+        };
         // The roll owns the height (and the content panel) from here on.
         self.height_anim = None;
         self.finish_content_swap_now();
         let cur = window::window_rect(self.hwnd);
         let (cur_w, cur_h) = (cur.right - cur.left, cur.bottom - cur.top);
-        // A fence with a left tab column collapses to the column (its title bar) rather than
-        // to a title row, and a shrinking title row to what it shows: the width moves with the
-        // height.
+        // A fence with a title column collapses to the column (its title bar), and a shrinking
+        // title row to what it shows: the width moves with the height.
         let to_w = self.collapses_width().then(|| {
             if rolled {
                 self.rolled_w_px()
+            } else if let Some(w) = side_w {
+                w.max(self.rolled_w_px())
             } else {
                 self.expanded_w_px
             }
         });
         self.width_collapsed = rolled && to_w.is_some();
+        // A title column opened narrower than the fence, for want of room, keeps the width it
+        // rolls back to.
+        self.cut_w = match (side_w, to_w) {
+            (Some(_), Some(w)) if w < self.expanded_w_px => Some(w),
+            _ => None,
+        };
         let to_h = if rolled {
-            self.rolled_h_px()
-        } else if let Some((_, h)) = side {
+            // A column is measured where its bar lands, as `restore_geometry` measures it.
+            let w = to_w.unwrap_or(cur_w);
+            let left = super::anchored_start(cur.left, cur_w, w, self.width_anchor());
+            self.rolled_h_px_at(&RECT {
+                left,
+                right: left + w,
+                ..cur
+            })
+        } else if let Some(h) = side_h {
             let h = h.max(self.title_h_px() + 1);
             if self.auto_height {
                 self.expanded_h_px = h;
@@ -483,12 +508,23 @@ impl FenceViewState {
             h
         } else if self.auto_height {
             // Items may have changed while rolled (the remembered height is stale then): expand
-            // straight to the fitting height so the settle does not add a second glide.
-            let h = self.fitting_height_px();
+            // straight to the fitting height so the settle does not add a second glide. A title
+            // column opening narrower than the fence fits its items at that width.
+            let h = match (side_w, to_w) {
+                (Some(_), Some(w)) => self.fitting_height_at_px(w),
+                _ => self.fitting_height_px(),
+            };
             self.expanded_h_px = h;
             h
         } else {
             self.expanded_h_px.max(self.title_h_px() + 40)
+        };
+        // A title column opens down from its top, inside the work area.
+        let to_h = match snap::column_work_area(&cur) {
+            Some(work) if !rolled && self.side_column() => {
+                to_h.min(work.bottom - cur.top).max(cur_h)
+            }
+            _ => to_h,
         };
         let mid_roll = self.roll_anim.is_some();
         if rolled {
@@ -507,7 +543,7 @@ impl FenceViewState {
             let w = to_w.unwrap_or_else(|| self.chrome_panel.size_px().0);
             let top = self.content_y;
             let _ = self.content_panel.resize(
-                (w - self.content_x).max(1),
+                (w - self.content_x - self.content_right_px()).max(1),
                 (to_h - top - self.foot_px()).max(1),
             );
             self.content_panel
@@ -547,7 +583,7 @@ impl FenceViewState {
         // same duration and curve, continuous when a roll is reversed mid-flight.
         self.roll_t
             .retarget(rolled as u8 as f32, self.anim_dur(dur), curve, now);
-        // A left tab column keeps its pills where they are (it has no item count to make room
+        // A title column keeps its pills where they are (it has no item count to make room
         // for, and it is hidden while rolled). So does a title row that shrinks while rolled.
         if self.tabs.len() > 1
             && self.tab_drag.is_none()
@@ -559,10 +595,23 @@ impl FenceViewState {
         self.frames.request();
     }
 
-    /// Which way the rolled fence opens, and how far: `Some((row_bottom, height))` for a title
-    /// row with 向上展开 or at the bottom (`clearance::expand_side`). None for a top title row
-    /// without 向上展开, which opens downward.
+    /// Which way the rolled fence opens, and how far: `Some((kept_end, size))`, the height for
+    /// a title row with 向上展开 or at the bottom (`clearance::expand_side`) and the width for a
+    /// title column (`clearance::column_side`). None for a top title row without 向上展开, which
+    /// opens downward.
     fn expand_side(&self) -> Option<(bool, i32)> {
+        if self.side_column() {
+            let (left, right) = self.column_rooms_px();
+            // Wedged between fences, it still opens one icon column wide.
+            let cell = (self.grid_metrics().cell_w * self.scale()).ceil() as i32;
+            return Some(crate::layout::clearance::column_side(
+                self.expanded_w_px,
+                self.rolled_w_px() + cell,
+                self.column_right(),
+                left,
+                right,
+            ));
+        }
         if !self.chooses_side() {
             return None;
         }
@@ -578,6 +627,46 @@ impl FenceViewState {
             return Some((!down, h));
         }
         Some(crate::layout::clearance::expand_side(want, above, below))
+    }
+
+    /// Width (device px) a title column reopens to on the side its running animation keeps:
+    /// its full width, cut to the room there, one icon column wide at least.
+    fn reopen_width_px(&self) -> i32 {
+        let (left, right) = self.column_rooms_px();
+        let room = if self.anim_end { left } else { right };
+        let cell = (self.grid_metrics().cell_w * self.scale()).ceil() as i32;
+        crate::layout::clearance::reopen_width(self.expanded_w_px, self.rolled_w_px() + cell, room)
+    }
+
+    /// Room (device px) a title column may open into: from its right edge leftwards and from
+    /// its left edge rightwards, each up to a snapping gap before the next fence beside the
+    /// fence's height, or the work area's edge. Nothing slides sideways out of its way.
+    fn column_rooms_px(&self) -> (i32, i32) {
+        let r = window::window_rect(self.hwnd);
+        let cur_h = r.bottom - r.top;
+        // The height the fence opens to: a column that shrinks while collapsed grows around its
+        // title as it expands.
+        let h = self.expanded_h_px.max(cur_h);
+        let top = super::anchored_start(r.top, cur_h, h, self.height_anchor());
+        let span = RECT {
+            top,
+            bottom: top + h,
+            ..r
+        };
+        let gap = (self.behavior.snap_gap_dip.get() as f32 * self.scale()).round() as i32;
+        let others = snap::other_fence_rects(self.hwnd);
+        let work = snap::column_work_area(&r);
+        let left = crate::layout::clearance::limit_left(&others, &span, gap)
+            .into_iter()
+            .chain(work.map(|w| w.left))
+            .max()
+            .unwrap_or(i32::MIN / 2);
+        let right = crate::layout::clearance::limit_right(&others, &span, gap)
+            .into_iter()
+            .chain(work.map(|w| w.right))
+            .min()
+            .unwrap_or(i32::MAX / 2);
+        (r.right - left, right - r.left)
     }
 
     /// Starts (or retargets) the auto-height settle towards `to_h`: 250 ms point-to-point,
@@ -597,7 +686,7 @@ impl FenceViewState {
         match self.height_anim.as_mut() {
             Some(t) => t.retarget(to_h as f32, motion::NORMAL, Curve::PointToPoint, now),
             None => {
-                self.anim_upward = self.row_bottom;
+                self.anim_end = self.kept_end;
                 self.height_anim = Some(self.motion.tween(
                     cur_h as f32,
                     to_h as f32,

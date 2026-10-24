@@ -35,7 +35,8 @@ struct RenameSession {
 }
 
 /// Opens (or re-targets) the rename popup over `fence_hwnd`'s title bar, or centred in `row`
-/// (screen rect of the tab's row in a left tab column, or of a title row whose chevron leads).
+/// (a screen rect: the tab's row in a title column, or the title's spot anywhere but at the start
+/// of a top title row).
 pub fn begin_inline_rename(
     fence_hwnd: HWND,
     fence: FenceId,

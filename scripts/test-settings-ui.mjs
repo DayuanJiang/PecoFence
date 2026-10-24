@@ -139,9 +139,10 @@ function bridge() {
             if (message.prop === 'titlePosition' && (fence.titlePosition || 'top') !== message.value) fence.expandUpward = message.value === 'bottom';
             fence[message.prop] = message.value;
           }
-          // The host reports the effective shrink: by default a title row keeps its width.
+          // The host reports the effective shrink: by default only a side column shrinks.
           if (message.prop === 'collapsedSize') {
-            fence.collapsedShrinks = message.value === true || message.value === 'fit';
+            const side = fence.titlePosition === 'left' || fence.titlePosition === 'right';
+            fence.collapsedShrinks = message.value === 'default' ? side : message.value === true || message.value === 'fit';
           }
         }
         window.testShowFence = (id) => receive({ data: { type: 'showFence', id } });
@@ -321,7 +322,7 @@ async function runTests() {
     const headings = [...page.querySelectorAll('#fenceBody > h3')].filter(h => h.id !== 'fencePortalHeading').map(h => h.textContent);
     assert(headings.join() === ['Appearance', 'Layout', 'Title bar', 'Behavior'].join() || headings.join() === ['外观', '布局', '标题栏', '行为'].join(), 'Sections: ' + headings.join());
     const section = (el) => { let n = el.closest('.card'); while (n && n.tagName !== 'H3') n = n.previousElementSibling; return n && n.textContent; };
-    for (const id of ['fenceTitleColor', 'fenceTitleSize', 'fenceTitleOnHover', 'fenceTitlePosition', 'fenceTitleAlign', 'fenceExpandUpward', 'fenceCollapsedSize']) {
+    for (const id of ['fenceTitleColor', 'fenceTitleSize', 'fenceTitleOnHover', 'fenceTitlePosition', 'fenceTitleAlign', 'fenceExpandUpward', 'fenceCollapsedSize', 'fenceSideTabText']) {
       assert(/Title bar|标题栏/.test(section(doc.getElementById(id))), id + ' is in ' + section(doc.getElementById(id)));
     }
   });
@@ -333,7 +334,7 @@ async function runTests() {
     const topHelp = /^(Opens upward when there is room above it, otherwise downward; the title bar stays where it is\. Handy for fences above the taskbar|上方放得下时向上展开，放不下就向下展开；标题栏留在原处。适合放在任务栏上方的栅栏)$/;
     change(doc, 'fenceSel', 'fence-a');
     // At the top, Expand upward is a switch with its help line.
-    assert(!expand.classList.contains('on'), 'A top title row shows Expand upward ' + expand.className);
+    assert(!expand.classList.contains('on') && !expandCard.classList.contains('disabled'), 'A top title row shows Expand upward ' + expand.className);
     assert(topHelp.test(help.textContent), 'Top row help: ' + help.textContent);
     expand.click(); await settle();
     assert(messages().at(-1).prop === 'expandUpward' && messages().at(-1).value === true, 'Expand upward not posted as true');
@@ -348,19 +349,63 @@ async function runTests() {
     // At the bottom the host turned 向上展开 on, as it follows the title bar there.
     assert(expand.classList.contains('on'), 'A bottom title row that followed the title shows Expand upward off');
     assert(/from the title bar|从标题栏向上展开/.test(help.textContent), 'Bottom row help: ' + help.textContent);
-    // A title row shrinks only when asked to: switched back off, it follows the default.
+    change(doc, 'fenceTitlePosition', 'right'); await settle();
+    assert(expandCard.classList.contains('disabled') && expand.getAttribute('aria-disabled') === 'true' && expand.tabIndex === -1, 'Expand upward not greyed out for a title column');
+    assert(/opens away from it$|朝离开标题栏的方向展开/.test(help.textContent), 'Column help: ' + help.textContent);
+    const before = messages().length;
+    expand.click(); await settle();
+    assert(messages().length === before, 'A greyed-out Expand upward still posted');
+    change(doc, 'fenceTitlePosition', 'left'); await settle();
+    const onHover = doc.getElementById('fenceTitleOnHover').closest('.card');
+    assert(onHover.style.display !== 'none' && onHover.classList.contains('disabled') && !onHover.querySelector('.s').hidden, 'Title on hover not greyed out with a reason for a title column');
+    const align = doc.getElementById('fenceTitleAlign');
+    assert(['Align top', '顶部'].includes(align.querySelector('[value=left]').textContent) && ['Align bottom', '底部'].includes(align.querySelector('[value=right]').textContent), 'Column alignment not labelled by its top and bottom: ' + align.querySelector('[value=left]').textContent);
+
+    // A side column shrinks by default: switching it back on returns to that default.
     const shrink = doc.querySelector('[data-fence=collapsedSize]');
     const lastFence = () => frame.contentWindow.testMessages.filter(m => m.type === 'setFence').at(-1);
-    assert(!shrink.classList.contains('on'), 'A title row shown shrinking by default');
     shrink.click(); await settle();
-    assert(lastFence().prop === 'collapsedSize' && lastFence().value === true, 'Shrinking a title row posted ' + lastFence().value);
+    assert(lastFence().prop === 'collapsedSize' && lastFence().value === 'default', 'Shrinking a side column did not return to the default: ' + lastFence().value);
     shrink.click(); await settle();
-    assert(lastFence().value === 'default', 'Keeping the full width did not return to the default: ' + lastFence().value);
+    assert(lastFence().value === false, 'Keeping the full length posted ' + lastFence().value);
     change(doc, 'fenceTitlePosition', 'top');
     change(doc, 'fenceTitleAlign', 'default');
     await settle();
     if (expand.classList.contains('on')) { expand.click(); await settle(); }
-    assert(topHelp.test(help.textContent), 'Row help: ' + help.textContent);
+    assert(!onHover.classList.contains('disabled'), 'Title on hover greyed out for a title row');
+    assert(!expandCard.classList.contains('disabled') && topHelp.test(help.textContent), 'Row help: ' + help.textContent);
+  });
+  await test('Side tab text applies to a tabbed fence on a side; horizontal tabs grey out the alignment', async () => {
+    const lastFence = () => frame.contentWindow.testMessages.filter(m => m.type === 'setFence').at(-1);
+    const sideTabs = doc.getElementById('fenceSideTabText');
+    const alignCard = doc.getElementById('fenceTitleAlign').closest('.card');
+    const greyed = card => card.style.display !== 'none' && card.classList.contains('disabled') && !card.querySelector('.s').hidden;
+    // The portal has no tabs: on a side, tab text is greyed out with the reason.
+    change(doc, 'fenceSel', 'portal');
+    change(doc, 'fenceTitlePosition', 'left');
+    await settle();
+    assert(greyed(sideTabs), 'Side tabs not greyed out for a fence without tabs');
+    change(doc, 'fenceTitlePosition', 'top');
+    await settle();
+    // A tab of a group does.
+    change(doc, 'fenceSel', 'fence-b');
+    change(doc, 'fenceTitlePosition', 'right');
+    await settle();
+    assert(!sideTabs.classList.contains('disabled'), 'Side tabs greyed out for a tabbed fence with a title column');
+    const text = sideTabs.querySelector('[data-fence=sideTabText]');
+    text.value = 'horizontal';
+    text.dispatchEvent(new frame.contentWindow.Event('change', { bubbles: true }));
+    await settle();
+    assert(lastFence().prop === 'sideTabText' && lastFence().value === 'horizontal', 'Tab text not posted: ' + JSON.stringify(lastFence()));
+    assert(greyed(alignCard), 'Alignment not greyed out for horizontal side tabs, which fill from the top');
+    text.value = 'vertical';
+    text.dispatchEvent(new frame.contentWindow.Event('change', { bubbles: true }));
+    await settle();
+    assert(!alignCard.classList.contains('disabled'), 'Alignment greyed out for vertical side tabs');
+    change(doc, 'fenceTitlePosition', 'top');
+    await settle();
+    assert(greyed(sideTabs), 'Side tabs not greyed out for a title row');
+    change(doc, 'fenceSel', 'fence-a');
   });
   await test('Beside a left tab column the title options that do nothing are greyed out with a reason', async () => {
     doc.querySelector('[data-page=general]').click();
@@ -411,7 +456,8 @@ async function runTests() {
       hover: doc.getElementById('fenceTitleOnHover').closest('.card'),
       expand: doc.getElementById('fenceExpandUpward'),
     };
-    for (const [name, card] of Object.entries(cards)) {
+    const sideText = doc.getElementById('fenceSideTabText');
+    for (const [name, card] of Object.entries({ ...cards, sideText })) {
       const line = card.querySelector('.s');
       assert(card.style.display !== 'none' && card.classList.contains('disabled'), name + ' not greyed out for a desktop-arranged fence');
       assert(/^(Arranged like the desktop, this fence has no title bar|像桌面一样排列时没有标题栏)$/.test(line.textContent), name + ' reason: ' + line.textContent);
@@ -425,6 +471,7 @@ async function runTests() {
     inbox.desktopArranged = false;
     frame.contentWindow.testRefresh(); await settle();
     for (const [name, card] of Object.entries(cards)) assert(!card.classList.contains('disabled'), name + ' still greyed out once the fence is not arranged');
+    assert(!/^(Arranged like the desktop|像桌面一样排列)/.test(sideText.querySelector('.s').textContent), 'Side tab text keeps the desktop reason once the fence is not arranged');
     assert(/^(Opens upward when there is room above it|上方放得下时向上展开)/.test(cards.expand.querySelector('.s').textContent), 'Expand upward did not get its help line back');
     change(doc, 'fenceSel', 'fence-a');
   });

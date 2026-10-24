@@ -1,6 +1,6 @@
 //! Persistent data model (plan §7). Pure data + serde; no Windows types.
 
-use crate::geometry::{WorkArea, monitor_model};
+use crate::geometry::{WorkArea, monitor_model, pick_anchor};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
@@ -311,7 +311,8 @@ pub enum LabelColor {
 /// Title position in the title row (Fences centres it). With the global setting the chevron
 /// zone on the right stays clear whichever is chosen; a fence aligned right by its own
 /// `appearance.titleAlign`, or with its title bar off the top edge, puts the chevron and item
-/// count at the start instead.
+/// count at the start instead. Down a title column on a side, left is the top and right the
+/// bottom.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
@@ -322,7 +323,9 @@ pub enum TitleAlign {
     Right,
 }
 
-/// The edge of a fence its title bar runs along (Title bar position).
+/// The edge of a fence its title bar runs along (Title bar position). A title bar on a side is a
+/// column, where the title and tabs turn to read downwards (the tabs can read across instead,
+/// see [`SideTabText`]).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
@@ -330,12 +333,19 @@ pub enum TitleEdge {
     #[default]
     Top,
     Bottom,
+    Left,
+    Right,
 }
 
 impl TitleEdge {
     /// The default edge, which a saved fence leaves out.
     pub fn is_top(&self) -> bool {
         *self == TitleEdge::Top
+    }
+
+    /// A column on the left or right rather than a row.
+    pub fn is_side(self) -> bool {
+        matches!(self, TitleEdge::Left | TitleEdge::Right)
     }
 }
 
@@ -742,7 +752,7 @@ pub struct AppearanceOverride {
     /// `rollUp.titleOnHover`).
     #[serde(default)]
     pub title_on_hover: Option<bool>,
-    /// The tint washes only the title row instead of the whole glass.
+    /// The tint washes only the title bar (row or column) instead of the whole glass.
     #[serde(default)]
     pub tint_title_only: bool,
     /// This fence's bar in a tab strip (None = its tint).
@@ -755,10 +765,32 @@ pub struct AppearanceOverride {
     /// its default, so a config that never set it saves as before.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title_align: Option<TitleAlign>,
-    /// Collapsed, the title row shrinks to its title or tabs instead of keeping the fence's
-    /// width (None = it keeps the width).
+    /// Collapsed, the title bar shrinks to its title or tabs instead of keeping the fence's
+    /// length (None = only a column on a side does).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shrink_collapsed: Option<bool>,
+    /// How a title column on a side shows two or more tabs.
+    #[serde(default, skip_serializing_if = "SideTabText::is_vertical")]
+    pub side_tab_text: SideTabText,
+}
+
+/// How a title column on a side shows two or more tabs (Side tab text).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase")]
+pub enum SideTabText {
+    /// The captions turn to read downwards, in a strip as narrow as a title row is tall.
+    #[default]
+    Vertical,
+    /// The captions read across, one tab per row in a wider column.
+    Horizontal,
+}
+
+impl SideTabText {
+    /// The default, which a saved fence leaves out.
+    pub fn is_vertical(&self) -> bool {
+        *self == SideTabText::Vertical
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -822,6 +854,10 @@ pub struct Fence {
     pub rolled_up: bool,
     /// Height (DIPs) to restore when un-rolling.
     pub expanded_h: f32,
+    /// Width (DIPs) a title column opens to when `geometry` was cut to the room beside it
+    /// (None: `geometry`'s width), the twin of `expanded_h`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expanded_w: Option<f32>,
     pub view: FenceView,
     #[serde(default)]
     pub appearance: Option<AppearanceOverride>,
@@ -859,13 +895,18 @@ pub struct Fence {
     pub hide_when_empty: bool,
     /// Expand upward (向上展开): the bottom edge stays put while the fence rolls up, expands or
     /// changes height, so a fence resting on the taskbar grows away from it. `geometry` is still
-    /// the expanded rect; rolled up, the title row sits at its bottom.
+    /// the expanded rect; rolled up, the title row sits at its bottom. Only a title row at the top
+    /// or bottom has it (`chooses_side`); a title column opens away from its side.
     #[serde(default)]
     pub expand_upward: bool,
     /// With `expand_upward`: the bottom edge is the one that stays put (it last opened upward);
     /// rolled up, its title row sits at the bottom of `geometry` instead of at the top.
     #[serde(default)]
     pub bottom_anchored: bool,
+    /// A title column's twin of `bottom_anchored`: the right edge is the one that stays put (it
+    /// last opened to the left); rolled up, its column sits at the right of `geometry`.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub right_anchored: bool,
     /// 像桌面一样排列 (the inbox only): no plate, title row, rim or shadow; the icons stand
     /// down columns from the top-left of the monitor's work area, around the other fences,
     /// like the Windows desktop with 自动排列图标.
@@ -883,6 +924,7 @@ impl Fence {
             kind,
             source: ItemSourceSpec::Desktop,
             expanded_h: geometry.h,
+            expanded_w: None,
             geometry,
             rolled_up: false,
             view: FenceView::default(),
@@ -898,6 +940,7 @@ impl Fence {
             hide_when_empty: false,
             expand_upward: false,
             bottom_anchored: false,
+            right_anchored: false,
             desktop_layout: false,
             items: Vec::new(),
         }
@@ -914,28 +957,67 @@ impl Fence {
         self.edit_appearance(|a| a.title_edge = edge);
     }
 
-    /// Moves the title bar to `edge` (Title bar position). 向上展开 follows the new edge (off at
-    /// the top, on at the bottom), so the fence opens away from its title.
+    /// Moves the title bar to `edge` (Title bar position). Arriving at a row, from the other row
+    /// or from a column, 向上展开 follows the new edge (off at the top, on at the bottom), so the
+    /// fence opens away from its title. A column keeps the setting and opens away from its side.
     pub fn move_title_bar(&mut self, edge: TitleEdge) {
-        if self.title_edge() != edge {
+        let from = self.title_edge();
+        // `expanded_w` is a column's alone.
+        if from.is_side() && !edge.is_side() {
+            self.expanded_w = None;
+        }
+        // Each end flag belongs to one shape of title bar.
+        if edge.is_side() {
+            self.bottom_anchored = false;
+        } else {
+            self.right_anchored = false;
+        }
+        if from != edge && !edge.is_side() {
             self.expand_upward = edge == TitleEdge::Bottom;
         }
         self.set_title_edge(edge);
     }
 
-    /// The fence picks its side at each expansion from the room around its title row: with
-    /// 向上展开, or with its title row at the bottom, which then prefers downward without it.
-    pub fn chooses_side(&self) -> bool {
-        self.expand_upward || self.title_edge() == TitleEdge::Bottom
+    /// The rect at the full width a title column's rect was cut from (`expanded_w`), grown from
+    /// the end the column keeps and kept on the work area. None when it was not cut.
+    pub fn full_width_geometry(&self) -> Option<NormGeometry> {
+        let full = self.expanded_w?;
+        let mut g = self.geometry.clone();
+        let grow = (full - g.w).max(0.0);
+        if self.right_anchored {
+            g.x -= grow;
+        }
+        g.w += grow;
+        g.x = g.x.clamp(0.0, (g.work_w - g.w).max(0.0));
+        g.anchor = pick_anchor(g.x, g.y, g.w, g.h, g.work_w, g.work_h);
+        Some(g)
     }
 
-    /// Collapsed, the title row shrinks to its title or tabs
-    /// ([`AppearanceOverride::shrink_collapsed`]).
+    /// The fence picks its side at each expansion from the room around its title row: with
+    /// 向上展开, or with its title row at the bottom, which then prefers downward without it. A
+    /// title column opens away from its side instead.
+    pub fn chooses_side(&self) -> bool {
+        let edge = self.title_edge();
+        !edge.is_side() && (self.expand_upward || edge == TitleEdge::Bottom)
+    }
+
+    /// Collapsed, the title bar shrinks to its title or tabs: the fence's
+    /// [`AppearanceOverride::shrink_collapsed`], else only on a side.
     pub fn shrinks_collapsed(&self) -> bool {
         self.appearance
             .as_ref()
             .and_then(|a| a.shrink_collapsed)
-            .unwrap_or(false)
+            .unwrap_or_else(|| self.title_edge().is_side())
+    }
+
+    pub fn side_tab_text(&self) -> SideTabText {
+        self.appearance
+            .as_ref()
+            .map_or(SideTabText::Vertical, |a| a.side_tab_text)
+    }
+
+    pub fn set_side_tab_text(&mut self, style: SideTabText) {
+        self.edit_appearance(|a| a.side_tab_text = style);
     }
 
     /// Changes the appearance override; one left at every default is dropped.
@@ -1127,10 +1209,12 @@ struct TabPlacement {
     geometry: NormGeometry,
     rolled: bool,
     expanded_h: f32,
+    expanded_w: Option<f32>,
     auto_height: bool,
-    /// 向上展开, and which end of `geometry` the rolled title row sits at.
+    /// 向上展开, and which end of `geometry` the rolled title bar sits at.
     expand_upward: bool,
     bottom_anchored: bool,
+    right_anchored: bool,
     title: TitleBar,
 }
 
@@ -1140,6 +1224,7 @@ struct TitleBar {
     edge: TitleEdge,
     align: Option<TitleAlign>,
     shrink_collapsed: Option<bool>,
+    side_tab_text: SideTabText,
 }
 
 impl TitleBar {
@@ -1149,6 +1234,7 @@ impl TitleBar {
             edge: a.title_edge,
             align: a.title_align,
             shrink_collapsed: a.shrink_collapsed,
+            side_tab_text: a.side_tab_text,
         }
     }
 
@@ -1157,6 +1243,7 @@ impl TitleBar {
             a.title_edge = self.edge;
             a.title_align = self.align;
             a.shrink_collapsed = self.shrink_collapsed;
+            a.side_tab_text = self.side_tab_text;
         });
     }
 }
@@ -1171,9 +1258,11 @@ impl TabPlacement {
             geometry: fence.geometry.clone(),
             rolled: fence.rolled_up,
             expanded_h: fence.expanded_h,
+            expanded_w: fence.expanded_w,
             auto_height: fence.view.auto_height,
             expand_upward: fence.expand_upward,
             bottom_anchored: fence.bottom_anchored,
+            right_anchored: fence.right_anchored,
             title: TitleBar::of(fence),
         }
     }
@@ -1185,9 +1274,11 @@ impl TabPlacement {
         fence.geometry = self.geometry.clone();
         fence.rolled_up = self.rolled;
         fence.expanded_h = self.expanded_h;
+        fence.expanded_w = self.expanded_w;
         fence.view.auto_height = self.auto_height;
         fence.expand_upward = self.expand_upward;
         fence.bottom_anchored = self.bottom_anchored;
+        fence.right_anchored = self.right_anchored;
         self.title.apply(fence);
     }
 }
@@ -1236,9 +1327,11 @@ impl Layout {
                         fence.geometry = group.geometry.clone();
                         fence.rolled_up = group.rolled;
                         fence.expanded_h = group.expanded_h;
+                        fence.expanded_w = group.expanded_w;
                         fence.view.auto_height = group.auto_height;
                         fence.expand_upward = group.expand_upward;
                         fence.bottom_anchored = group.bottom_anchored;
+                        fence.right_anchored = group.right_anchored;
                         group.title.apply(fence);
                     }
                 } else {
@@ -1590,8 +1683,12 @@ impl Config {
                     f.geometry = spot.geometry.clone();
                     f.rolled_up = spot.rolled_up;
                     f.expanded_h = spot.expanded_h;
-                    // Which end of that rect the rolled title row sits at goes with it.
-                    f.bottom_anchored = spot.bottom_anchored;
+                    // Which end of that rect the rolled title bar sits at goes with it, for the
+                    // title bar the fence has now, and so does a column's full width.
+                    let side = f.title_edge().is_side();
+                    f.expanded_w = spot.expanded_w.filter(|_| side);
+                    f.bottom_anchored = spot.bottom_anchored && !side;
+                    f.right_anchored = spot.right_anchored && side;
                 }
                 None => unplaced.push(f.id),
             }
@@ -1739,6 +1836,47 @@ pub fn now_unix() -> i64 {
 mod tests {
     use super::*;
 
+    /// A column moved to a row leaves no `expanded_w` behind and keeps its rect: an open column
+    /// cut to the room stays as wide as it is, and a row resized and moved back to a side starts
+    /// a column from its own width. The full width a cut rect grows back to keeps the column's
+    /// end and the work area.
+    #[test]
+    fn a_title_row_takes_a_columns_full_width_and_keeps_none() {
+        use TitleEdge as E;
+        let mut f = Fence::new("A", FenceKind::Virtual, geo());
+        f.move_title_bar(E::Left);
+        f.geometry.x = 100.0;
+        f.geometry.w = 400.0;
+        f.expanded_w = Some(1100.0);
+        let full = f.full_width_geometry().unwrap();
+        assert_eq!((full.x, full.w), (100.0, 1100.0));
+        f.move_title_bar(E::Top);
+        assert_eq!(f.expanded_w, None);
+        assert_eq!((f.geometry.x, f.geometry.w), (100.0, 400.0));
+        assert_eq!(f.full_width_geometry(), None);
+        f.geometry.w = 600.0;
+        f.move_title_bar(E::Left);
+        assert_eq!((f.expanded_w, f.geometry.w), (None, 600.0));
+
+        // At the right end of its cut rect the column's right edge stays put, and the full rect
+        // stays on the work area.
+        f.geometry.x = 1500.0;
+        f.geometry.w = 400.0;
+        f.right_anchored = true;
+        f.expanded_w = Some(1100.0);
+        let full = f.full_width_geometry().unwrap();
+        assert_eq!(
+            (full.x, full.w, full.anchor),
+            (800.0, 1100.0, Anchor::RightTop)
+        );
+        f.geometry.x = 200.0;
+        f.geometry.w = 300.0;
+        assert_eq!(
+            f.full_width_geometry().map(|g| (g.x, g.w)),
+            Some((0.0, 1100.0))
+        );
+    }
+
     #[test]
     fn expand_upward_follows_a_title_row_between_top_and_bottom() {
         use TitleEdge as E;
@@ -1764,6 +1902,16 @@ mod tests {
         f.move_title_bar(E::Bottom);
         assert!(!f.expand_upward);
         f.move_title_bar(E::Top);
+        // A title column keeps the setting but opens away from its side.
+        f.move_title_bar(E::Left);
+        assert!(!f.expand_upward && !f.chooses_side());
+        // Arriving at a row from a column, it follows the new edge (on at the bottom, off at
+        // the top), as a direct move from the top would leave it.
+        f.move_title_bar(E::Bottom);
+        assert!(f.expand_upward && f.chooses_side());
+        f.move_title_bar(E::Right);
+        f.move_title_bar(E::Top);
+        assert!(!f.expand_upward);
         // Back at the defaults, the fence carries no appearance override.
         f.move_title_bar(E::Top);
         assert!(f.appearance.is_none());
@@ -1776,7 +1924,14 @@ mod tests {
         let mut f = Fence::new("A", FenceKind::Virtual, geo());
         f.edit_appearance(|a| a.tint_title_only = true);
         let saved = serde_json::to_string(&f).unwrap();
-        for key in ["titleEdge", "titleAlign", "shrinkCollapsed"] {
+        for key in [
+            "titleEdge",
+            "titleAlign",
+            "shrinkCollapsed",
+            "sideTabText",
+            "expandedW",
+            "rightAnchored",
+        ] {
             assert!(!saved.contains(key), "{key} in {saved}");
         }
         let again: Fence = serde_json::from_str(&saved).unwrap();
@@ -1795,13 +1950,21 @@ mod tests {
     fn a_fence_without_the_new_fields_loads_unchanged() {
         let mut json = serde_json::to_value(Fence::new("A", FenceKind::Virtual, geo())).unwrap();
         let obj = json.as_object_mut().unwrap();
-        for key in ["expandUpward", "bottomAnchored", "appearance"] {
+        for key in [
+            "expandUpward",
+            "bottomAnchored",
+            "rightAnchored",
+            "expandedW",
+            "appearance",
+        ] {
             obj.remove(key);
         }
         let f: Fence = serde_json::from_value(json).unwrap();
-        assert!(!f.expand_upward && !f.bottom_anchored);
+        assert!(!f.expand_upward && !f.bottom_anchored && !f.right_anchored);
+        assert_eq!(f.expanded_w, None);
         assert_eq!(f.title_edge(), TitleEdge::Top);
         assert!(!f.shrinks_collapsed());
+        assert_eq!(f.side_tab_text(), SideTabText::Vertical);
         assert!(f.appearance.is_none());
         // An appearance override from before the title options keeps its defaults too.
         let a: AppearanceOverride =
@@ -1811,11 +1974,14 @@ mod tests {
     }
 
     #[test]
-    fn a_collapsed_title_row_shrinks_only_when_told_to() {
+    fn a_collapsed_title_bar_shrinks_on_a_side_unless_told_otherwise() {
         let mut f = Fence::new("A", FenceKind::Virtual, geo());
         assert!(!f.shrinks_collapsed());
-        f.set_title_edge(TitleEdge::Bottom);
+        f.set_title_edge(TitleEdge::Right);
+        assert!(f.shrinks_collapsed());
+        f.edit_appearance(|a| a.shrink_collapsed = Some(false));
         assert!(!f.shrinks_collapsed());
+        f.set_title_edge(TitleEdge::Bottom);
         f.edit_appearance(|a| a.shrink_collapsed = Some(true));
         assert!(f.shrinks_collapsed());
     }
@@ -2282,9 +2448,10 @@ mod tests {
         b.tab_host = Some(aid);
         a.tab_order = vec![aid, bid];
         a.edit_appearance(|t| {
-            t.title_edge = TitleEdge::Bottom;
+            t.title_edge = TitleEdge::Left;
             t.title_align = Some(TitleAlign::Center);
-            t.shrink_collapsed = Some(true);
+            t.shrink_collapsed = Some(false);
+            t.side_tab_text = SideTabText::Horizontal;
         });
         let mut layout = Layout {
             shown: 0,
@@ -2293,8 +2460,9 @@ mod tests {
         };
         layout.detach_tab(aid).unwrap();
         let b = layout.fences.iter().find(|f| f.id == bid).unwrap();
-        assert_eq!(b.title_edge(), TitleEdge::Bottom);
-        assert!(b.shrinks_collapsed());
+        assert_eq!(b.title_edge(), TitleEdge::Left);
+        assert_eq!(b.side_tab_text(), SideTabText::Horizontal);
+        assert!(!b.shrinks_collapsed());
         assert_eq!(
             b.appearance.as_ref().unwrap().title_align,
             Some(TitleAlign::Center)
@@ -2545,8 +2713,50 @@ mod tests {
             (l[0].title.as_str(), l[0].geometry.x, l[0].rolled_up),
             ("A2", 40.0, true)
         );
-        assert!(l[0].bottom_anchored);
+        assert!(l[0].bottom_anchored && !l[0].right_anchored);
         assert_eq!(l[1].geometry, new.geometry);
+    }
+
+    /// A title column rolled at the right end of its rect on one monitor set comes back there;
+    /// the end flag of the other shape of title bar does not come along.
+    #[test]
+    fn showing_another_set_carries_which_end_a_column_sits_at() {
+        let mut c = Config::default();
+        let mut a = Fence::new("A", FenceKind::Virtual, geo());
+        a.set_title_edge(TitleEdge::Left);
+        let mut on_laptop = a.clone();
+        on_laptop.rolled_up = true;
+        on_laptop.right_anchored = true;
+        on_laptop.expanded_w = Some(900.0);
+        on_laptop.bottom_anchored = true;
+        c.layouts.push(saved(&[("GSM7787#A", D1)]));
+        c.layouts.push(saved(&[("BOE1#L", D1)]));
+        c.layouts[0].fences = vec![a.clone()];
+        c.layouts[1].fences = vec![on_laptop];
+        assert!(c.carry_fences(0, 1).is_empty());
+        let f = &c.layouts[1].fences[0];
+        assert!(f.right_anchored && !f.bottom_anchored);
+        assert_eq!(f.expanded_w, Some(900.0));
+    }
+
+    /// A fence that is a title row now does not take the full width it had as a cut column on
+    /// the other monitor set.
+    #[test]
+    fn showing_another_set_leaves_a_columns_full_width_to_columns() {
+        let mut c = Config::default();
+        let a = Fence::new("A", FenceKind::Virtual, geo());
+        let mut on_laptop = a.clone();
+        on_laptop.set_title_edge(TitleEdge::Left);
+        on_laptop.geometry.w = 400.0;
+        on_laptop.expanded_w = Some(900.0);
+        c.layouts.push(saved(&[("GSM7787#A", D1)]));
+        c.layouts.push(saved(&[("BOE1#L", D1)]));
+        c.layouts[0].fences = vec![a];
+        c.layouts[1].fences = vec![on_laptop];
+        assert!(c.carry_fences(0, 1).is_empty());
+        let f = &c.layouts[1].fences[0];
+        assert_eq!(f.title_edge(), TitleEdge::Top);
+        assert_eq!((f.geometry.w, f.expanded_w), (400.0, None));
     }
 
     #[test]

@@ -1032,6 +1032,91 @@ pub mod clearance {
             .max()
     }
 
+    /// How far up (negative px) a rolled title column at `top` moves so a rect `min_h` tall can
+    /// start at its top inside a work area ending at `work_bottom`; 0 when it fits already.
+    pub fn column_lift(top: i32, work_bottom: i32, min_h: i32) -> i32 {
+        (work_bottom - min_h - top).min(0)
+    }
+
+    /// How far (`dx`, `dy`) `bar` moves to lie inside `work`: not at all when it does, else
+    /// just far enough, onto the left or top edge where it is the larger one.
+    pub fn shift_inside(bar: &RECT, work: &RECT) -> (i32, i32) {
+        let axis = |lo: i32, hi: i32, min: i32, max: i32| {
+            if lo < min || hi - lo > max - min {
+                min - lo
+            } else if hi > max {
+                max - hi
+            } else {
+                0
+            }
+        };
+        (
+            axis(bar.left, bar.right, work.left, work.right),
+            axis(bar.top, bar.bottom, work.top, work.bottom),
+        )
+    }
+
+    /// Left edge of a fence at `r` resized to `width` (whole icon columns): its left edge
+    /// stays, or with `keep_right` (a title column kept at its right) its right edge; where the
+    /// new width crosses the far edge of the work area (`work`, its left and right), it moves
+    /// back inside.
+    pub fn cells_left(r: &RECT, width: i32, keep_right: bool, work: Option<(i32, i32)>) -> i32 {
+        match (keep_right, work) {
+            (false, Some((wl, wr))) if r.left + width > wr => (wr - width).max(wl),
+            (false, _) => r.left,
+            (true, Some((wl, wr))) if r.right - width < wl => (wl + width).min(wr) - width,
+            (true, _) => r.right - width,
+        }
+    }
+
+    /// Leftmost edge `r` may grow to: `gap` right of the nearest fence that shares some of its
+    /// height and ends at or left of its left edge.
+    pub fn limit_left(others: &[RECT], r: &RECT, gap: i32) -> Option<i32> {
+        others
+            .iter()
+            .filter(|o| spans_y(o, r) && o.right <= r.left)
+            .map(|o| o.right + gap)
+            .max()
+    }
+
+    /// Rightmost edge `r` may grow to: `gap` left of the nearest fence that shares some of its
+    /// height and starts at or right of its right edge.
+    pub fn limit_right(others: &[RECT], r: &RECT, gap: i32) -> Option<i32> {
+        others
+            .iter()
+            .filter(|o| spans_y(o, r) && o.left >= r.right)
+            .map(|o| o.left - gap)
+            .min()
+    }
+
+    /// Which way a fence collapsed to its title column opens, and how wide: away from the side
+    /// its column is on (`column_right`: to the left) when `want` fits the room there, else the
+    /// other way when it fits there, else toward the larger room, as wide as that room but at
+    /// least `least` (over whatever is there). `room_left` is the room from the column's right
+    /// edge leftwards, `room_right` from its left edge rightwards. Returns whether the right edge
+    /// stays put, and the width.
+    pub fn column_side(
+        want: i32,
+        least: i32,
+        column_right: bool,
+        room_left: i32,
+        room_right: i32,
+    ) -> (bool, i32) {
+        let (right, w) = if column_right {
+            expand_side(want, room_left, room_right)
+        } else {
+            let (rightwards, w) = expand_side(want, room_right, room_left);
+            (!rightwards, w)
+        };
+        (right, w.max(least.min(want)))
+    }
+
+    /// Width a title column reopens to mid-roll, on the side it already moves: `want`, cut to
+    /// the `room` there but at least `least` (both at most `want`).
+    pub fn reopen_width(want: i32, least: i32, room: i32) -> i32 {
+        want.min(room).max(least.min(want))
+    }
+
     /// True when `a` and `b` overlap by more than half a gap (fences snapped a gap apart, or
     /// touching, do not count).
     pub fn overlaps(a: &RECT, b: &RECT, gap: i32) -> bool {
@@ -1205,6 +1290,103 @@ mod tests {
         assert_eq!(expand_side(300, 400, 400), (true, 300)); // both: up
         assert_eq!(expand_side(600, 336, 420), (false, 420));
         assert_eq!(expand_side(600, 420, 336), (true, 420));
+    }
+
+    #[test]
+    fn clearance_limits_sideways_count_fences_beside_only() {
+        use clearance::{limit_left, limit_right};
+        let me = rc(400, 100, 436, 500); // a column collapsed to its title bar
+        let left = rc(100, 300, 300, 600);
+        let further_left = rc(0, 100, 50, 200);
+        let right = rc(700, 50, 900, 150);
+        let above = rc(380, 0, 460, 90);
+        let overlapped = rc(420, 200, 480, 260);
+        let others = [left, further_left, right, above, overlapped];
+        assert_eq!(limit_left(&others, &me, 8), Some(308));
+        assert_eq!(limit_right(&others, &me, 8), Some(692));
+        assert_eq!(limit_left(&[above, right], &me, 8), None);
+        assert_eq!(limit_right(&[above, left], &me, 8), None);
+    }
+
+    /// A rolled column within 36 DIPs of the work area's bottom moves up so its rect keeps its
+    /// top on a restart (1010, 1020 and 1030 above a bottom at 1040 all go to 1004).
+    #[test]
+    fn a_column_too_low_for_its_rect_moves_up() {
+        use clearance::column_lift;
+        assert_eq!(column_lift(1010, 1040, 36), -6);
+        assert_eq!(column_lift(1030, 1040, 36), -26);
+        assert_eq!(column_lift(1004, 1040, 36), 0);
+        assert_eq!(column_lift(500, 1040, 36), 0);
+    }
+
+    /// The whole-column snap keeps the left edge, or the right one of a title column kept at
+    /// its right, and moves back inside the work area.
+    #[test]
+    fn cells_left_keeps_the_kept_edge() {
+        use clearance::cells_left;
+        let r = rc(1000, 100, 1300, 400);
+        let work = Some((0, 1920));
+        assert_eq!(cells_left(&r, 350, false, work), 1000);
+        assert_eq!(cells_left(&r, 350, true, work), 950);
+        assert_eq!(cells_left(&r, 250, true, work), 1050);
+        // Past the work area's far edge: moved back inside.
+        let near_right = rc(1700, 100, 1900, 400);
+        assert_eq!(cells_left(&near_right, 300, false, work), 1620);
+        let near_left = rc(20, 100, 320, 400);
+        assert_eq!(cells_left(&near_left, 400, true, work), 0);
+        // Wider than the work area: at its near edge.
+        assert_eq!(cells_left(&near_left, 3000, true, work), 1920 - 3000);
+        assert_eq!(cells_left(&near_right, 3000, false, work), 0);
+    }
+
+    /// A title column opens away from its side where the fence fits there, else the other way
+    /// where it fits, else toward the larger room, as wide as that room.
+    #[test]
+    fn column_side_prefers_away_then_toward_then_the_larger_room() {
+        use clearance::column_side;
+        let side = |want, right, l, r| column_side(want, 1, right, l, r);
+        // A left column: right of it first. `true` keeps the right edge (opens to the left).
+        assert_eq!(side(300, false, 100, 900), (false, 300));
+        assert_eq!(side(300, false, 900, 120), (true, 300)); // near the right edge
+        assert_eq!(side(600, false, 400, 500), (false, 500));
+        assert_eq!(side(600, false, 500, 400), (true, 500));
+        // A right column: left of it first.
+        assert_eq!(side(300, true, 900, 100), (true, 300));
+        assert_eq!(side(300, true, 120, 900), (false, 300)); // near the left edge
+        assert_eq!(side(600, true, 450, 450), (true, 450));
+        assert_eq!(side(600, true, 400, 500), (false, 500));
+        // Wedged between fences (36 px column, 10 and 20 px free), it still opens one icon
+        // column wide (36 + 80), toward the larger room.
+        assert_eq!(column_side(300, 116, false, 46, 56), (false, 116));
+        assert_eq!(column_side(300, 116, true, 46, 56), (false, 116));
+        // Never wider than the fence.
+        assert_eq!(column_side(100, 116, false, 46, 56), (false, 100));
+    }
+
+    /// A title column opening again mid-roll stays on its side: it reopens to the room there
+    /// (beside a fence 200 px away, not its full 260), one icon column at least.
+    #[test]
+    fn a_column_reopening_mid_roll_keeps_to_the_room_on_its_side() {
+        use clearance::reopen_width;
+        assert_eq!(reopen_width(260, 145, 200), 200);
+        assert_eq!(reopen_width(260, 145, 900), 260);
+        assert_eq!(reopen_width(260, 145, 60), 145);
+        assert_eq!(reopen_width(120, 145, 60), 120);
+    }
+
+    /// A title bar placed again after a title position change stays on the screen: the
+    /// 45 px column lined up with the right edge of a bar that ended 128 px past a 3840 px work
+    /// area comes back to end at its edge.
+    #[test]
+    fn a_moved_title_bar_shifts_back_inside_the_work_area() {
+        use clearance::shift_inside;
+        let work = rc(0, 0, 3840, 2100);
+        assert_eq!(shift_inside(&rc(3923, 1552, 3968, 2100), &work), (-128, 0));
+        assert_eq!(shift_inside(&rc(3795, 1552, 3840, 2100), &work), (0, 0));
+        assert_eq!(shift_inside(&rc(-20, -5, 25, 40), &work), (20, 5));
+        assert_eq!(shift_inside(&rc(100, 2080, 360, 2125), &work), (0, -25));
+        // Larger than the work area: onto its left and top edges.
+        assert_eq!(shift_inside(&rc(10, 10, 4000, 2200), &work), (-10, -10));
     }
 
     /// A dropped fence moves the shortest way out of the one it covers, stays inside the work

@@ -600,7 +600,17 @@
   "向下收起": "Recolher para baixo",
   "位置": "Posição",
   "上方放得下时从标题栏向上展开，放不下就向下展开": "Abre para cima a partir da barra de título quando há espaço e, se não houver, para baixo",
-  "放在底部时，标签页留在标题栏里，栅栏收向标题栏": "Embaixo, as abas ficam na barra de título e o grupo se recolhe na direção dela",
-  "标题栏在底部的栅栏不受影响": "Não afeta os grupos com a barra de título embaixo",
-  "停靠时标题栏回到顶部": "Ao acoplar, a barra de título volta para cima"
+  "放在底部时，标签页留在标题栏里，栅栏收向标题栏；放在两侧时标题栏是一列，栅栏收起到这一列，从另一侧展开": "Embaixo, as abas ficam na barra de título e o grupo se recolhe na direção dela. Na lateral, a barra de título é uma coluna em que o grupo se recolhe e da qual se expande para o outro lado",
+  "标题栏在底部或两侧的栅栏不受影响": "Não afeta os grupos com a barra de título embaixo ou na lateral",
+  "停靠时标题栏回到顶部": "Ao acoplar, a barra de título volta para cima",
+  "右侧": "À direita",
+  "向左收起": "Recolher para a esquerda",
+  "向右收起": "Recolher para a direita",
+  "两侧标签页的文字": "Texto das abas na lateral",
+  "标题栏在两侧时，栅栏朝离开标题栏的方向展开": "Com a barra de título na lateral, o grupo abre para o lado oposto",
+  "标题栏在两侧且有多个标签页时才用到": "Vale para uma barra de título lateral com duas ou mais abas",
+  "对齐\u0004顶部": "Alinhar em cima",
+  "对齐\u0004底部": "Alinhar embaixo",
+  "竖向": "Vertical",
+  "横向": "Horizontal"
 }

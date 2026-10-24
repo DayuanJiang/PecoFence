@@ -119,8 +119,8 @@ impl FenceViewState {
             TipTarget::Up => Some(pecofence_core::i18n::text("向上").to_string()),
             TipTarget::Tab(i) => {
                 let t = self.tabs.get(i)?;
-                let fits = if self.tabs_on_rail() {
-                    // A row of the left column is as wide as the column, whatever its height.
+                let fits = if self.tabs_on_rail() && !self.vertical_tabs() {
+                    // A row of the title column is as wide as the column, whatever its height.
                     let active = t.id == self.active;
                     let colored = self.tabs.iter().any(|t| t.color.is_some());
                     let folders = self.tabs.iter().any(|t| t.folder_icon);

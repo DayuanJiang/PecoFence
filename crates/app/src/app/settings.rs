@@ -905,10 +905,14 @@ impl App {
                 .fences
                 .keys()
                 .copied()
-                .filter(|id| self.state.fence(*id).is_some_and(|f| f.shrinks_collapsed()))
+                .filter(|id| {
+                    self.state
+                        .fence(*id)
+                        .is_some_and(|f| f.shrinks_collapsed() && !f.title_edge().is_side())
+                })
                 .collect();
             for id in shrunk {
-                self.place_title_bar(id);
+                self.place_title_bar(id, None);
             }
         }
         self.ctx

@@ -134,9 +134,10 @@ pub(super) fn on_app_tab_rail(
         .and_then(|g| {
             g.as_ref().map(|v| match wparam {
                 1 => v.title_top_px(),
+                2 => v.column_x_px(),
                 // -1: a fence arranged like the desktop (像桌面一样排列) takes no merge.
                 _ if v.bare() => -1,
-                _ => v.content_x,
+                _ => v.rail_px(),
             })
         })
         .unwrap_or(0);

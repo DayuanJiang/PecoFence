@@ -278,18 +278,23 @@ fn run_fence(ctx: &Ctx, cmd: FenceCmd) -> Result<Reply, IpcError> {
             ctx.call(Method::FencesSetBounds { fence: id, rect })
         }
         FenceCmd::Resize { fence, w, h } => {
-            let (id, current, upward) = current_rect(ctx, &fence)?;
-            let h = h.unwrap_or(current.h);
+            let (id, current, (bottom, right)) = current_rect(ctx, &fence)?;
+            let (w, h) = (w.unwrap_or(current.w), h.unwrap_or(current.h));
             let rect = Rect {
-                w: w.unwrap_or(current.w),
+                w,
                 h,
-                // A fence whose title row is at its bottom keeps that edge instead of its top.
-                y: if upward {
+                // A fence whose title row is at its bottom keeps that edge instead of its top,
+                // and one whose title column is at its right keeps that edge.
+                y: if bottom {
                     current.y + current.h - h
                 } else {
                     current.y
                 },
-                ..current
+                x: if right {
+                    current.x + current.w - w
+                } else {
+                    current.x
+                },
             };
             if rect.w <= 0 || rect.h <= 0 {
                 return Err(IpcError::new(
@@ -344,10 +349,10 @@ fn roll(ctx: &Ctx, fence: Option<String>, all: bool, rolled: bool) -> Result<Rep
 }
 
 /// `fences.get`, returning the fence's id (so later calls skip selector resolution), its
-/// expanded rectangle and whether its bottom edge is the one that stays put. Hosted tabs report their host's `rect`
-/// (older apps reported the tab's own, stale one; the server rejects moving a tab either way);
-/// only a fence whose monitor is disconnected has none.
-fn current_rect(ctx: &Ctx, fence: &str) -> Result<(String, Rect, bool), IpcError> {
+/// expanded rectangle and whether its bottom and its right edge are the ones that stay put.
+/// Hosted tabs report their host's `rect` (older apps reported the tab's own, stale one; the
+/// server rejects moving a tab either way); only a fence whose monitor is disconnected has none.
+fn current_rect(ctx: &Ctx, fence: &str) -> Result<(String, Rect, (bool, bool)), IpcError> {
     let dto = ctx
         .call(Method::FencesGet {
             fence: fence.to_string(),
@@ -358,9 +363,12 @@ fn current_rect(ctx: &Ctx, fence: &str) -> Result<(String, Rect, bool), IpcError
         .map(str::to_string)
         .unwrap_or_else(|| fence.to_string());
     let title = dto["title"].as_str().unwrap_or(fence);
-    let upward = dto["bottomAnchored"].as_bool().unwrap_or(false);
+    let kept = (
+        dto["bottomAnchored"].as_bool().unwrap_or(false),
+        dto["rightAnchored"].as_bool().unwrap_or(false),
+    );
     match serde_json::from_value::<Option<Rect>>(dto["rect"].clone()) {
-        Ok(Some(rect)) => Ok((id, rect, upward)),
+        Ok(Some(rect)) => Ok((id, rect, kept)),
         _ => {
             let monitor = dto["monitor"].as_str().unwrap_or("?");
             Err(IpcError::new(

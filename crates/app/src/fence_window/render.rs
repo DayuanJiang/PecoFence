@@ -441,6 +441,7 @@ impl FenceViewState {
             hide_count_and_chevron: self.behavior.hide_count_and_chevron.get(),
             chevron_leads: self.chevron_leads(),
             collapse_to: self.collapse_to(),
+            side_tab_text: self.side_tab_text(),
             ..self.style
         };
         let pressed_tab = match self.pressed {
@@ -541,7 +542,7 @@ impl FenceViewState {
             if let Some(target) = self.height_target_px() {
                 h = h.max(target);
             }
-            // Collapsing to a left tab column (or expanding from it) moves the width too.
+            // Collapsing to a title column (or expanding from it) moves the width too.
             if let Some(target) = self.width_target_px() {
                 w = w.max(target);
             }
@@ -602,7 +603,7 @@ impl FenceViewState {
         self.update_backdrop();
     }
 
-    /// Lays out the content panel below the title bar (and beside a left tab column) and
+    /// Lays out the content panel below the title bar (and beside a title column) and
     /// resizes both surfaces.
     pub(super) fn layout_panels(&mut self, w: i32, h: i32) -> Result<()> {
         // A content swap still moving would be laid out at the wrong size: settle it first.
@@ -611,19 +612,26 @@ impl FenceViewState {
         self.motion
             .set_center(&self.root, w as f32 / 2.0, h as f32 / 2.0);
         self.chrome_panel.resize(w, h)?;
-        // A fence collapsed (or collapsing) to its left tab column or a shrunk title row keeps
-        // the width it returns to; the column's width follows the expanded fence.
-        if !self.width_collapsed && self.roll_anim.as_ref().is_none_or(|a| a.width.is_none()) {
+        // A fence collapsed (or collapsing) to its title column keeps the width it returns
+        // to; the column's width follows the expanded fence.
+        if !self.width_collapsed
+            && self.roll_anim.as_ref().is_none_or(|a| a.width.is_none())
+            // Rounded when the DPI changed, the window may be a pixel off its cut width.
+            && self.cut_w.is_none_or(|cut| (cut - w).abs() > 2)
+        {
             self.expanded_w_px = w;
+            self.cut_w = None;
         }
         self.rail_dip = self.measure_rail_w();
-        self.content_x = self.rail_px();
+        self.content_x = self.rail_px() - self.content_right_px();
         self.content_y = self.head_px();
-        // After the content is placed: its clip stops at a title row along the bottom.
+        // After the column is measured: the content's clip stops at it.
         self.update_shape_clip(w, h)?;
         let content_h = (h - self.content_y - self.foot_px()).max(1);
-        self.content_panel
-            .resize((w - self.content_x).max(1), content_h)?;
+        self.content_panel.resize(
+            (w - self.content_x - self.content_right_px()).max(1),
+            content_h,
+        )?;
         self.content_panel
             .visual
             .set_offset(self.content_x as f32, self.content_y as f32, 0.0);
@@ -653,10 +661,10 @@ impl FenceViewState {
     }
 
     /// The content sits above the chrome and stays at its final size while the size animates:
-    /// beside a title row along the bottom edge it must stop at the title row. A top title row
-    /// covers nothing, so its content has no clip.
+    /// beside a title row along the bottom edge or a title column it must stop at the title bar.
+    /// A top title row covers nothing, so its content has no clip.
     pub(super) fn content_beside_title(&self) -> bool {
-        self.title_bottom()
+        self.title_bottom() || self.side_column()
     }
 
     /// Clips a content panel to the content area of a window `w` x `h` px.
@@ -664,7 +672,7 @@ impl FenceViewState {
         self.motion.clip_rounded_rect(
             &panel.visual,
             pecofence_render::Vector2::new(0.0, 0.0),
-            (w - self.content_x).max(1) as f32,
+            (w - self.content_x - self.content_right_px()).max(1) as f32,
             (h - self.content_y - self.foot_px()).max(1) as f32,
             0.0,
         )

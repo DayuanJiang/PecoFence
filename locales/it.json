@@ -600,7 +600,17 @@
   "向下收起": "Comprimi verso il basso",
   "位置": "Posizione",
   "上方放得下时从标题栏向上展开，放不下就向下展开": "Si espande verso l’alto dalla barra del titolo se c’è spazio, altrimenti verso il basso",
-  "放在底部时，标签页留在标题栏里，栅栏收向标题栏": "In basso le schede restano nella barra del titolo e il riquadro si comprime verso di essa",
-  "标题栏在底部的栅栏不受影响": "Non vale per i riquadri con la barra del titolo in basso",
-  "停靠时标题栏回到顶部": "Quando lo agganci, la barra del titolo torna in alto"
+  "放在底部时，标签页留在标题栏里，栅栏收向标题栏；放在两侧时标题栏是一列，栅栏收起到这一列，从另一侧展开": "In basso le schede restano nella barra del titolo e il riquadro si comprime verso di essa. Di lato la barra del titolo è una colonna in cui il riquadro si comprime e da cui si espande verso il lato opposto",
+  "标题栏在底部或两侧的栅栏不受影响": "Non vale per i riquadri con la barra del titolo in basso o di lato",
+  "停靠时标题栏回到顶部": "Quando lo agganci, la barra del titolo torna in alto",
+  "右侧": "A destra",
+  "向左收起": "Comprimi verso sinistra",
+  "向右收起": "Comprimi verso destra",
+  "两侧标签页的文字": "Testo delle schede ai lati",
+  "标题栏在两侧时，栅栏朝离开标题栏的方向展开": "Con la barra del titolo di lato, il riquadro si espande dal lato opposto",
+  "标题栏在两侧且有多个标签页时才用到": "Vale per una barra del titolo laterale con due o più schede",
+  "对齐\u0004顶部": "Allinea in alto",
+  "对齐\u0004底部": "Allinea in basso",
+  "竖向": "Verticale",
+  "横向": "Orizzontale"
 }

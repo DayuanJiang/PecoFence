@@ -80,7 +80,7 @@ impl PxRect {
 }
 
 /// Picks the anchor by which edges the fence is closest to.
-fn pick_anchor(x: f32, y: f32, w: f32, h: f32, work_w: f32, work_h: f32) -> Anchor {
+pub(crate) fn pick_anchor(x: f32, y: f32, w: f32, h: f32, work_w: f32, work_h: f32) -> Anchor {
     let left = x;
     let right = work_w - (x + w);
     let top = y;

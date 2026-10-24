@@ -253,8 +253,9 @@ impl FenceWindow {
             rail_grow: false,
             locked: false,
             expand_upward,
-            row_bottom,
-            anim_upward: row_bottom,
+            kept_end: row_bottom,
+            anim_end: row_bottom,
+            cut_w: None,
             width_pivot: None,
             backdrop_override: None,
             opacity: 1.0,
@@ -405,7 +406,7 @@ impl FenceWindow {
             },
         );
         format!(
-            "title={:?} opacity={:.2} scale={:.3} fade={fade} retired={} rolled={} rolling={} peeking={} items={} tabs={} selected={} focused={:?} shadow_visible={} shadow_alpha={} layout={:?} locked={} auto_height={} active={} scroll={:.1} client={:?} client_offset=({},{}) chrome={:?} glass={:?} wallpaper_uploads={} title_size={} tab_fonts={:?} tab_rects={:?} content_x={} content={:?} capture={} tab_drag={} window_drag={} detach_pending={} plate_inset={} plate_alpha={:.2} mouse_inside={} title_edge={:?} row_bottom={} width_collapsed={}",
+            "title={:?} opacity={:.2} scale={:.3} fade={fade} retired={} rolled={} rolling={} peeking={} items={} tabs={} selected={} focused={:?} shadow_visible={} shadow_alpha={} layout={:?} locked={} auto_height={} active={} scroll={:.1} client={:?} client_offset=({},{}) chrome={:?} glass={:?} wallpaper_uploads={} title_size={} tab_fonts={:?} tab_rects={:?} content_x={} content={:?} capture={} tab_drag={} window_drag={} detach_pending={} plate_inset={} plate_alpha={:.2} mouse_inside={} title_edge={:?} kept_end={} column_right={} rail_dip={:.1} width_collapsed={} cut_w={:?}",
             v.title,
             v.root.opacity(),
             v.root.scale().x,
@@ -448,8 +449,11 @@ impl FenceWindow {
             v.plate_alpha,
             v.mouse_inside,
             v.style.title_edge,
-            v.row_bottom,
+            v.kept_end,
+            v.column_right(),
+            v.rail_dip,
             v.width_collapsed,
+            v.cut_w,
         )
     }
 
@@ -617,6 +621,7 @@ impl FenceWindow {
             v.rolled_up = rolled;
             v.expanded_h_px = expanded_h;
             v.expanded_w_px = rect.right - rect.left;
+            v.cut_w = None;
             v.width_collapsed = rolled && v.collapses_width();
             v.rail_dip = v.measure_rail_w();
             v.roll_t = Tween::at(rolled as u8 as f32, Instant::now());
@@ -624,14 +629,6 @@ impl FenceWindow {
             v.content_panel.visual.set_opacity(1.0);
             v.content_panel.visual.set_visible(!rolled);
             if rolled {
-                // `rect` is the expanded rect: the title row sits at its top, or at its bottom
-                // for a fence that last opened upward.
-                let rolled_h = v.rolled_h_px();
-                if v.row_bottom {
-                    rect.top = rect.bottom - rolled_h;
-                } else {
-                    rect.bottom = rect.top + rolled_h;
-                }
                 v.width_pivot = None;
                 if v.width_collapsed {
                     let w = v.rolled_w_px();
@@ -645,6 +642,16 @@ impl FenceWindow {
                     }
                     rect.right = rect.left + w;
                 }
+                // Measured where the window goes (a column at its own left and right edges),
+                // not where it is now.
+                let mut h = v.rolled_h_px_at(&rect);
+                // A title column is no taller rolled up than the rect it opens to.
+                if v.side_column() {
+                    h = h.min(rect.bottom - rect.top);
+                }
+                rect.top =
+                    super::anchored_start(rect.top, rect.bottom - rect.top, h, v.height_anchor());
+                rect.bottom = rect.top + h;
             } else {
                 v.width_pivot = None;
                 rect.bottom = rect.top + expanded_h;
@@ -1006,7 +1013,7 @@ impl FenceWindow {
             let strip_scroll = v.tab_scroll.get();
             v.tabs = tabs;
             v.active = active;
-            // A left tab column comes with the second tab and goes with the last but one.
+            // A title column comes with the second tab and goes with the last but one.
             let rail_changed = v.sync_rail();
             // Only a column that needs more room than before (a new tab, a longer caption)
             // asks the height pass to grow the fence; a reorder, a colour or a start does not.
@@ -1424,26 +1431,20 @@ impl FenceWindow {
     }
 
     /// The window as it rests: a rolled fence that is hover-peeking or rolling counts as its
-    /// title row (see `resting_heights_px`).
+    /// title bar, a row or a column (see `resting_heights_px`).
     pub fn resting_rect(&self) -> RECT {
-        let mut r = self.rect();
+        let r = self.rect();
         // Rolled (and maybe hover-peeking open) by its state, not by a roll in flight: a peek
-        // committed open counts at its full height at once.
-        let rolled = self.view.try_borrow().ok().and_then(|g| {
-            g.as_ref()
-                .map(|v| (v.rolled_up || v.peeking, v.rolled_h_px()))
-        });
-        if let Some((true, rest)) = rolled
-            && rest > 0
-            && rest < r.bottom - r.top
-        {
-            if self.row_at_bottom() {
-                r.top = r.bottom - rest;
-            } else {
-                r.bottom = r.top + rest;
-            }
-        }
-        r
+        // committed open counts at its full size at once.
+        self.view
+            .try_borrow()
+            .ok()
+            .and_then(|g| {
+                g.as_ref()
+                    .filter(|v| v.rolled_up || v.peeking)
+                    .map(|v| rolled_bar_in(v, r))
+            })
+            .unwrap_or(r)
     }
 
     /// Title-row height and the height the window settles at: the title row while it is rolled
@@ -1464,7 +1465,7 @@ impl FenceWindow {
         ))
     }
 
-    /// Screen rect of tab `tab`'s row in the left tab column (None without a column): where the
+    /// Screen rect of tab `tab`'s row in the title column (None without a column): where the
     /// rename box goes.
     pub fn rail_row_screen_rect(&self, tab: FenceId) -> Option<RECT> {
         let guard = self.view.try_borrow().ok()?;
@@ -1477,26 +1478,63 @@ impl FenceWindow {
         let s = v.scale();
         let win = self.rect();
         let at = |dip: f32| (dip * s).round() as i32;
+        if v.vertical_tabs() {
+            // The box does not turn: it lies across the tab's start and reaches into the fence,
+            // as for a single vertical title (`title_rename_rect`).
+            let w = (win.right - win.left - at(8.0)).max(at(160.0));
+            let (left, right) = if v.column_right() {
+                (win.right - at(4.0) - w, win.right - at(4.0))
+            } else {
+                (win.left + at(4.0), win.left + at(4.0) + w)
+            };
+            let top = win.top + at(y);
+            return Some(RECT {
+                left,
+                top,
+                right,
+                bottom: top + at(h.min(28.0)),
+            });
+        }
+        let left = win.left + v.column_x_px();
         Some(RECT {
-            left: win.left + at(RAIL_ROW_INSET),
+            left: left + at(RAIL_ROW_INSET),
             top: win.top + at(y),
-            right: win.left + at(v.rail_w() - RAIL_ROW_RIGHT),
+            right: left + at(v.rail_w() - RAIL_ROW_RIGHT),
             bottom: win.top + at(y + h),
         })
     }
 
-    /// Screen band of the title row for the title's rename box when it is not at the top with
-    /// the chevron at its end, where the box has its own spot: a bottom title row, or a row whose
-    /// chevron leads, which keeps the start of the row free for the chevron instead of the end.
+    /// Screen rect for the title's rename box when it is not in a top title row with the chevron
+    /// at its end, where the box has its own spot: the top of a single fence's title column, a
+    /// bottom title row, or a row whose chevron leads, which keeps the start of the row free for
+    /// the chevron instead of the end.
     pub fn title_rename_rect(&self) -> Option<RECT> {
         let guard = self.view.try_borrow().ok()?;
         let v = guard.as_ref()?;
+        let s = v.scale();
+        let win = self.rect();
+        if v.title_column() && !v.tabs_on_rail() {
+            // The box does not turn: it lies across the column's top and reaches into the
+            // fence, past the window while the fence is collapsed to its column.
+            let at = |dip: f32| (dip * s).round() as i32;
+            let w = (win.right - win.left - at(8.0)).max(at(160.0));
+            let (left, right) = if v.column_right() {
+                (win.right - at(4.0) - w, win.right - at(4.0))
+            } else {
+                (win.left + at(4.0), win.left + at(4.0) + w)
+            };
+            let top = win.top + at(RAIL_TOP);
+            return Some(RECT {
+                left,
+                top,
+                right,
+                bottom: top + at(28.0),
+            });
+        }
         let leads = v.chevron_leads();
         if !leads && !v.title_bottom() {
             return None;
         }
-        let s = v.scale();
-        let win = self.rect();
         let (lead, trail) = if leads {
             (v.deco.lead_title_start(), 8.0)
         } else {
@@ -1512,8 +1550,8 @@ impl FenceWindow {
         })
     }
 
-    /// Window rect, as wide as the fence expands to while it is collapsed to its left tab column
-    /// or a shrunk title row: the room automatic placement keeps clear.
+    /// Window rect, as wide as the fence expands to while it is collapsed to its title column:
+    /// the room automatic placement keeps clear.
     pub fn footprint_rect(&self) -> RECT {
         let mut r = self.rect();
         if let Some(ew) = self.collapsed_expanded_width_px() {
@@ -1523,7 +1561,42 @@ impl FenceWindow {
         r
     }
 
-    /// Width the window expands to while it is collapsed to its left tab column (None
+    /// Screen rect of the rolled title bar: the window rolled up at rest, else the bar at the
+    /// edges a hover peek or a roll in flight keeps, where the window rolls back to.
+    pub fn rolled_bar_rect(&self) -> RECT {
+        let r = self.window.window_rect();
+        self.view
+            .borrow()
+            .as_ref()
+            .map_or(r, |v| rolled_bar_in(v, r))
+    }
+
+    /// Width (device px) the window opens to: its own, or the width a title column keeps while
+    /// it is collapsed or open narrower for want of room.
+    pub fn expanded_width_px(&self) -> i32 {
+        let r = self.window.window_rect();
+        self.view
+            .borrow()
+            .as_ref()
+            .map_or(r.right - r.left, |v| v.expanded_w_px)
+    }
+
+    /// A title column's full width when its saved rect was cut to the room beside it
+    /// (`AppState::fence_expanded_w_px`): the next expansion targets it, and an open window
+    /// narrower than that keeps it.
+    pub fn set_expanded_width_px(&self, full: i32) {
+        let r = self.window.window_rect();
+        self.with_view(|v| {
+            if full > v.expanded_w_px {
+                if !v.width_collapsed {
+                    v.cut_w = Some(r.right - r.left);
+                }
+                v.expanded_w_px = full;
+            }
+        });
+    }
+
+    /// Width the window expands to while it is collapsed to its title column (None
     /// otherwise: the window has its expanded width).
     pub fn collapsed_expanded_width_px(&self) -> Option<i32> {
         let guard = self.view.try_borrow().ok()?;
@@ -1531,11 +1604,11 @@ impl FenceWindow {
         v.width_collapsed.then_some(v.expanded_w_px)
     }
 
-    /// A rolled fence whose tabs changed (added, removed, renamed, or 标签栏位置 switched)
-    /// takes its rolled size again: the left tab column it is collapsed to, or its title row at
+    /// A rolled fence whose tabs changed (added, removed, renamed, or the title edge switched)
+    /// takes its rolled size again: the title column it is collapsed to, or its title row at
     /// the expanded width. Returns the new window rect when it changed.
     pub fn settle_rolled_size(&self) -> Option<RECT> {
-        let (w, h, upward) = {
+        let (w, h) = {
             let mut guard = self.view.borrow_mut();
             let v = guard.as_mut()?;
             if !v.rolled_up || v.peeking || v.roll_anim.is_some() || v.retired {
@@ -1551,17 +1624,16 @@ impl FenceWindow {
                 cur_w
             };
             v.width_collapsed = v.collapses_width();
-            (w, v.rolled_h_px(), v.row_bottom)
+            (w, v.rolled_h_px())
         };
         let r = self.rect();
         if (r.right - r.left, r.bottom - r.top) == (w, h) {
             return None;
         }
+        let top = super::anchored_start(r.top, r.bottom - r.top, h, self.height_anchor());
         let left = self.pivoted_left(&r, w, self.width_anchor());
         // No borrow held: WM_SIZE lays the panels out at the new size.
-        let _ = self
-            .window
-            .set_bounds(left, top_for_height(upward, &r, h), w, h);
+        let _ = self.window.set_bounds(left, top, w, h);
         self.with_view(|v| v.update_shadow_now());
         Some(window::window_rect(self.hwnd()))
     }
@@ -1614,6 +1686,14 @@ impl FenceWindow {
         left
     }
 
+    /// Where height changes of a collapse pivot (`anchored_start`).
+    pub fn height_anchor(&self) -> f32 {
+        self.view
+            .borrow()
+            .as_ref()
+            .map_or(0.0, |v| v.height_anchor())
+    }
+
     /// Where width changes pivot (`anchored_start`).
     pub fn width_anchor(&self) -> f32 {
         self.view
@@ -1640,21 +1720,26 @@ impl FenceWindow {
         }
         v.expand_upward = on;
         let at_rest = v.rolled_at_rest();
-        if at_rest && !on && !v.title_bottom() {
-            v.row_bottom = false;
+        if at_rest && !on && !v.side_column() && !v.title_bottom() {
+            v.kept_end = false;
         }
         at_rest
     }
 
     /// The title row is at the bottom: the window keeps its bottom edge as its height changes.
     pub fn row_at_bottom(&self) -> bool {
-        self.view.borrow().as_ref().is_some_and(|v| v.row_bottom)
+        self.view
+            .borrow()
+            .as_ref()
+            .is_some_and(|v| v.row_at_bottom())
     }
 
-    /// Which end of the saved rect a rolled title row sits at (`AppState::set_fence_bounds`
-    /// chooses it).
-    pub fn set_row_at_bottom(&self, on: bool) {
-        self.with_view(|v| v.row_bottom = on);
+    /// The title column keeps the right edge: rolled up, it sits at the right of the saved rect.
+    pub fn column_at_right(&self) -> bool {
+        self.view
+            .borrow()
+            .as_ref()
+            .is_some_and(|v| v.column_at_right())
     }
 
     /// The edge the fence collapses to: the one that stays put as it rolls up and expands.
@@ -1663,6 +1748,26 @@ impl FenceWindow {
             .borrow()
             .as_ref()
             .map_or(pecofence_core::TitleEdge::Top, |v| v.collapse_to())
+    }
+
+    /// Which end of the saved rect a rolled title bar sits at: the bottom for a title row, the
+    /// right for a title column (`AppState::set_fence_bounds`, `column_rest_side` choose it).
+    pub fn set_kept_end(&self, on: bool) {
+        self.with_view(|v| {
+            v.kept_end = on;
+            // A height animation already running keeps the edge it started with.
+            if !v.height_animating() {
+                v.anim_end = on;
+            }
+        });
+    }
+
+    /// A title column is collapsing or opening (its width is moving).
+    pub fn column_rolling(&self) -> bool {
+        self.view
+            .borrow()
+            .as_ref()
+            .is_some_and(|v| v.column_rolling())
     }
 
     /// Rolled up and still: no hover peek, no roll or height animation in flight.
@@ -1728,10 +1833,11 @@ impl FenceWindow {
         self.with_view(|v| {
             if v.style != style {
                 let previous_ink = v.material_foreground().text_primary;
-                let moved = v.style.title_edge != style.title_edge;
+                let moved = v.style.title_edge != style.title_edge
+                    || v.style.side_tab_text != style.side_tab_text;
                 v.style = style;
                 if moved {
-                    // The title bar moves to the other edge: the tabs may change axis, and the
+                    // The title bar moves to another edge: the tabs may change axis, and the
                     // content and the plate's fold move.
                     v.reset_tab_axis();
                     let _ = v.motion.clear_clip(&v.content_panel.visual);
@@ -1900,7 +2006,7 @@ impl FenceWindow {
         }
     }
 
-    /// Width of the left tab column in DIPs (0 without one).
+    /// Width of the title column in DIPs (0 without one).
     pub fn tab_rail_dip(&self) -> f32 {
         self.view.borrow().as_ref().map_or(0.0, |v| v.rail_w())
     }
@@ -1934,7 +2040,7 @@ impl FenceWindow {
             match guard.as_mut() {
                 Some(v) => {
                     v.expanded_h_px = height_px;
-                    (animate && v.start_height_anim(height_px), v.row_bottom)
+                    (animate && v.start_height_anim(height_px), v.row_at_bottom())
                 }
                 None => (false, false),
             }
@@ -2146,5 +2252,32 @@ impl FenceWindow {
 fn selection_ring(theme: &Theme) -> crate::shadow::SelectionRing {
     crate::shadow::SelectionRing {
         radius_dip: theme.corner_radius,
+    }
+}
+
+/// The rolled title bar of a window at `r`: the window itself rolled up at rest, else the bar
+/// at the edges a hover peek or a roll in flight keeps, where the window rolls back to.
+fn rolled_bar_in(v: &FenceViewState, r: RECT) -> RECT {
+    if v.rolled_at_rest() {
+        return r;
+    }
+    let (cur_w, cur_h) = (r.right - r.left, r.bottom - r.top);
+    let w = if v.collapses_width() {
+        v.rolled_w_px().min(cur_w)
+    } else {
+        cur_w
+    };
+    let left = super::anchored_start(r.left, cur_w, w, v.width_anchor());
+    let bar = RECT {
+        left,
+        right: left + w,
+        ..r
+    };
+    let h = v.rolled_h_px_at(&bar).min(cur_h);
+    let top = super::anchored_start(r.top, cur_h, h, v.height_anchor());
+    RECT {
+        top,
+        bottom: top + h,
+        ..bar
     }
 }

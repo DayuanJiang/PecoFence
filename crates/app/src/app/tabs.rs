@@ -3,7 +3,8 @@
 use super::*;
 
 /// Where the cursor holds a fence torn off a tab strip, from the window's top-left corner: the
-/// middle of its title row, at the top or the bottom of a window `w` x `h` px.
+/// middle of its title row, at the top or the bottom of a window `w` x `h` px, or the top of its
+/// title column.
 pub(super) fn title_grip(
     edge: pecofence_core::TitleEdge,
     w: i32,
@@ -13,6 +14,8 @@ pub(super) fn title_grip(
     match edge {
         pecofence_core::TitleEdge::Bottom => (w / 2, h - title_h / 2),
         pecofence_core::TitleEdge::Top => (w / 2, title_h / 2),
+        pecofence_core::TitleEdge::Left => (title_h / 2, title_h / 2),
+        pecofence_core::TitleEdge::Right => (w - title_h / 2, title_h / 2),
     }
 }
 
@@ -231,7 +234,8 @@ impl App {
             self.fences.get(&change.source_host),
         ) {
             let px = self.state.fence_px_rect(fence);
-            // A bottom row rolled up keeps the full height its saved rect was cut from.
+            // A bottom row or title column rolled up keeps the full height its saved rect was
+            // cut from.
             let expanded = if fence.title_edge() == pecofence_core::TitleEdge::Top {
                 px.height()
             } else {
@@ -247,6 +251,9 @@ impl App {
                 fence.rolled_up,
                 expanded,
             );
+            if fence.title_edge().is_side() {
+                window.set_expanded_width_px(self.state.fence_expanded_w_px(fence));
+            }
             self.queue.push(Command::RaiseFence(window.hwnd()));
         }
         self.schedule_save();

@@ -22,8 +22,8 @@ enum Role {
     /// Pushed out of the way, also when locked (feedback #52): a push only moves the window
     /// for a while, and the fence keeps its saved place.
     Free,
-    /// Stays at its resting place: no spot on these monitors yet, or has 向上展开 (never
-    /// pushed).
+    /// Stays at its resting place: no spot on these monitors yet, or picks its side as it
+    /// opens (向上展开, a bottom title row) or rolls into a title column (never pushed).
     Fixed,
     /// Stays where it is: in the user's hands (dragged, or resized when `pushes`), or pushed by
     /// a fence that is being dragged (it makes room again once that fence is dropped).
@@ -312,7 +312,7 @@ impl App {
                 let settles = settling.contains(&id);
                 let role = if is_dragged || frozen || sized == Some(hwnd) {
                     Role::Held
-                } else if settles || chooses || upward {
+                } else if settles || chooses || upward || w.column_rolling() {
                     Role::Fixed
                 } else {
                     Role::Free
@@ -406,12 +406,13 @@ impl App {
     /// Records host `id` at `rect`, a window rectangle, without the push shift (see the module
     /// docs): every path that saves a fence window's geometry goes through here. A 向上展开 fence
     /// rolled up at rest has its saved rect laid out around its title row on the screen
-    /// (`AppState::set_fence_bounds`); the window's row then sits at that end of it.
+    /// (`AppState::set_fence_bounds`), and a title column the rect beside it on the screen
+    /// (`AppState::set_column_bounds`); the window's title bar then sits at that end of it.
     pub(super) fn record_bounds(&mut self, id: FenceId, rect: RECT, rolled: bool, expanded: i32) {
         self.record_bounds_with(id, rect, rolled, expanded, true);
     }
 
-    /// [`Self::record_bounds`] for a title row placed at the end of the rect it was saved at
+    /// [`Self::record_bounds`] for a title bar placed at the end of the rect it was saved at
     /// (an explicit move or resize): rolled up at rest, it keeps that end instead of choosing
     /// the side where the fence fits again.
     pub(super) fn record_bounds_kept(
@@ -445,8 +446,76 @@ impl App {
         let (rect, row_bottom, choose) = match self.fences.get(&id) {
             Some(w) => {
                 let mut rect = self.ctx.behavior.resting_rect(w.hwnd(), rect);
-                // Collapsed to its left tab column or a shrunk title row: the fence keeps the width
-                // it expands to.
+                if self
+                    .state
+                    .fence(id)
+                    .is_some_and(|f| f.title_edge().is_side())
+                {
+                    let at_rest = choose_side && rolled && w.rolled_at_rest();
+                    // A rolled column too low for any rect to start at its top inside the work
+                    // area (36 DIPs at least) moves up to where a restart would put it. A top on
+                    // a taskbar is off every work area: the monitor showing it counts.
+                    let scale = monitors::dpi_for_window(w.hwnd()).max(96) as f32 / 96.0;
+                    let min_h = (pecofence_core::geometry::MIN_H_DIP * scale).ceil() as i32;
+                    if rolled
+                        && let Some(wa) = self.state.column_work_area(&rect)
+                        && let dy =
+                            crate::layout::clearance::column_lift(rect.top, wa.bottom, min_h)
+                        && dy != 0
+                    {
+                        let now = w.rect();
+                        // A pushed column keeps its shift: its resting top moves with it.
+                        self.ctx.behavior.shift_push(w.hwnd(), now.top, dy);
+                        w.set_bounds(RECT {
+                            top: now.top + dy,
+                            bottom: now.bottom + dy,
+                            ..now
+                        });
+                        rect.top += dy;
+                        rect.bottom += dy;
+                    }
+                    // A rolled column past the side of its work area slides back onto it, where a
+                    // restart would put it.
+                    if rolled
+                        && w.rolled_at_rest()
+                        && let Some(wa) = self.state.column_work_area(&rect)
+                        && let (dx, _) = crate::layout::clearance::shift_inside(
+                            &rect,
+                            &RECT {
+                                left: wa.left,
+                                top: rect.top,
+                                right: wa.right,
+                                bottom: rect.bottom,
+                            },
+                        )
+                        && dx != 0
+                    {
+                        let now = w.rect();
+                        w.set_bounds(RECT {
+                            left: now.left + dx,
+                            right: now.right + dx,
+                            ..now
+                        });
+                        rect.left += dx;
+                        rect.right += dx;
+                    }
+                    let right = self.state.set_column_bounds(
+                        id,
+                        rect,
+                        rolled,
+                        w.expanded_width_px(),
+                        expanded,
+                        w.column_at_right(),
+                        at_rest,
+                    );
+                    if at_rest {
+                        w.set_kept_end(right);
+                    }
+                    // The loose icons flow around a column too.
+                    self.arrange_desktop_fence();
+                    return;
+                }
+                // A title row that shrinks while collapsed keeps the width it expands to.
                 if rolled && let Some(ew) = w.collapsed_expanded_width_px() {
                     rect.left = crate::fence_window::anchored_start(
                         rect.left,
@@ -468,7 +537,7 @@ impl App {
             .state
             .set_fence_bounds(id, rect, rolled, expanded, row_bottom, choose);
         if choose && let Some(w) = self.fences.get(&id) {
-            w.set_row_at_bottom(row_bottom);
+            w.set_kept_end(row_bottom);
         }
         // Wherever a fence now rests (a drag, the CLI, a snap, a push, auto height), the loose
         // icons flow around it.

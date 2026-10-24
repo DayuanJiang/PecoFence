@@ -600,7 +600,17 @@
   "向下收起": "Nach unten einklappen",
   "位置": "Position",
   "上方放得下时从标题栏向上展开，放不下就向下展开": "Klappt von der Titelleiste nach oben aus, wenn darüber Platz ist, sonst nach unten",
-  "放在底部时，标签页留在标题栏里，栅栏收向标题栏": "Unten bleiben die Tabs in der Titelleiste, und der Bereich klappt zu ihr hin ein",
-  "标题栏在底部的栅栏不受影响": "Bereiche mit der Titelleiste unten sind nicht betroffen",
-  "停靠时标题栏回到顶部": "Beim Andocken kommt die Titelleiste nach oben"
+  "放在底部时，标签页留在标题栏里，栅栏收向标题栏；放在两侧时标题栏是一列，栅栏收起到这一列，从另一侧展开": "Unten bleiben die Tabs in der Titelleiste, und der Bereich klappt zu ihr hin ein. An der Seite ist die Titelleiste eine Spalte, in die der Bereich einklappt und von der weg er ausklappt",
+  "标题栏在底部或两侧的栅栏不受影响": "Bereiche mit der Titelleiste unten oder an der Seite sind nicht betroffen",
+  "停靠时标题栏回到顶部": "Beim Andocken kommt die Titelleiste nach oben",
+  "右侧": "Rechts",
+  "向左收起": "Nach links einklappen",
+  "向右收起": "Nach rechts einklappen",
+  "两侧标签页的文字": "Tab-Text an der Seite",
+  "标题栏在两侧时，栅栏朝离开标题栏的方向展开": "Mit der Titelleiste an der Seite klappt der Bereich von ihr weg aus",
+  "标题栏在两侧且有多个标签页时才用到": "Gilt für eine Titelleiste an der Seite mit zwei oder mehr Tabs",
+  "对齐\u0004顶部": "Oben ausrichten",
+  "对齐\u0004底部": "Unten ausrichten",
+  "竖向": "Hochkant",
+  "横向": "Quer"
 }

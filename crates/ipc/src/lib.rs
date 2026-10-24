@@ -148,8 +148,9 @@ pub enum Method {
     /// (`iconSize` 32|48|64|96, `spacing`, `iconAlign` left|center, `autoHeight`, `locked`, `expandUpward`, `excludeFromQuickHide`,
     /// `opacity` default|clear|solid|transparent, `tint` "#RRGGBB"|null, `tintTitleOnly`,
     /// `tabColor` "#RRGGBB"|null, `titleColor`, `titleSize` small|normal|large|extraLarge,
-    /// `titleOnHover` default|hover|always, `titlePosition` top|bottom, `titleAlign`
-    /// default|left|center|right, `collapsedSize` default|fit|full, `layout` icons|list|details, `sort`, `reverse`,
+    /// `titleOnHover` default|hover|always, `titlePosition` top|bottom|left|right, `titleAlign`
+    /// default|left|center|right, `collapsedSize` default|fit|full, `sideTabText` vertical|horizontal,
+    /// `layout` icons|list|details, `sort`, `reverse`,
     /// `groupByDate`, `foldersFirst`, `labelLines`, `openFoldersInside`, `portalNavigate`,
     /// `portalTitleIcon`, `hideWhenEmpty`, `desktopLayout`). Result: `{changed, fence}`.
     #[serde(rename = "fences.setOption")]

@@ -166,22 +166,31 @@ does not fill the fence width, the last one too, sits in the middle; icons view 
 default), `autoHeight`, `locked`, `expandUpward` (rolled up, it
 opens upward from its title row where it fits above it, else downward, for fences resting on the
 taskbar; the row stays where it is; `bottomAnchored` in `fence get` says whether the bottom edge
-is the one that stays put, which `fence resize --h` and `fence fit` keep), `excludeFromQuickHide`,
+is the one that stays put, which `fence resize --h` and `fence fit` keep. It applies to title rows
+only. A side column opens away from its side where the fence fits there, else the other way, else
+toward the larger room (at least one icon column wide), down from its top and inside the work area,
+and `rightAnchored` says whether its right edge is the one that stays put, which `fence resize --w`
+keeps), `excludeFromQuickHide`,
 `opacity` default/clear/solid/transparent (transparent: no glass, rim or shadow until the pointer
 is over the fence), `tint` `"#RRGGBB"` or `null`, `tintTitleOnly` (the tint washes only the title
-row), `tabColor` `"#RRGGBB"` or `null` (the bar under the fence's tab in a tab strip; `null` follows
+bar, row or column), `tabColor` `"#RRGGBB"` or `null` (the bar under the fence's tab in a tab strip; `null` follows
 its tint), `titleColor` theme/tint/white/black/`"#RRGGBB"`, `titleSize` small/normal/large/extraLarge,
 `titleOnHover` default/hover/always (hover: the title row folds away until the pointer is over the
-fence; default follows `rollUp.titleOnHover`), `titlePosition` top/bottom (moved between them,
-`expandUpward` follows the new edge: off at the top, on at the bottom; at the bottom the fence picks
-its side at each expansion either way, downward first without `expandUpward`; a fence at the top
-shows its tabs as the `tabBar` setting says, one at the bottom keeps them in its title row;
+fence; default follows `rollUp.titleOnHover`; a title column on a side ignores both and always
+shows), `titlePosition` top/bottom/left/right (on a side the title bar is a column, where a single
+title and vertical tabs turn to read downwards; moved to the top or the bottom, `expandUpward`
+follows the new edge: off at the top, on at the bottom; at the bottom the fence picks its side at
+each expansion either way, downward first without `expandUpward`; a fence at the top shows its tabs
+as the `tabBar` setting says, one at the bottom or on a side keeps them in its own title bar;
 `fence dock-top` moves the title bar back to the top), `titleAlign` default/left/center/right
-(default follows the `titleAlign` setting; the chevron and item count move to the start of the
-title row when this option is right, even with the setting on right too, or when the title row is
-at the bottom and the title is aligned right), `collapsedSize` default/fit/full (fit: a collapsed
-title row is only as long as its title or tabs; default keeps it at the fence's width; `true` and
-`false` mean fit and full, and `fence get` adds `collapsedShrinks`, the effective choice),
+(default follows the `titleAlign` setting; down a side column left and right mean top and bottom;
+the chevron and item count move to the start of the title bar when this option is right, even with
+the setting on right too, or when the title bar is off the top and the title is aligned right),
+`collapsedSize` default/fit/full (fit: a collapsed title bar is only as long as its title or tabs;
+default fits a side column and keeps a title row at the fence's width; `true` and `false` mean fit
+and full, and `fence get` adds `collapsedShrinks`, the effective choice), `sideTabText`
+vertical/horizontal (tab text in a side column: turned like the title, or across with one tab per
+row),
 `layout` icons/list/details,
 `sort` manual/name/type/date/size/openCount, `reverse`, `groupByDate`, `foldersFirst` (folders above files in a sorted fence), `labelLines`,
 `openFoldersInside` (any fence but a portal: double-clicking a folder, or a shortcut to a folder,
@@ -397,7 +406,9 @@ The app ignores the field's value.
 - `adjusted: {"requested", "applied", "reason"}` appears when the app changed a rect on its own:
   `fence move`/`resize`/`fit` and `fence create --rect` (virtual fences and portals alike) on a fence
   with `autoHeight` (`reason: "autoHeight"`, the height follows the content) or clamped to the size
-  limits, or for a rolled bottom title row onto the work area (`"clamped"`), and `fence set` of `iconSize`, `spacing`, `layout` or `labelLines`, which
+  limits, or for a rolled bottom title row or side column onto the work area (`"clamped"`; a side
+  column moved with its saved rect gets back the full height that rect was cut from, which is not
+  reported), and `fence set` of `iconSize`, `spacing`, `layout` or `labelLines`, which
   snaps the window to whole icon columns and rows (`"cellSnap"`; `requested` is the rect before the
   change). Use `applied` for further placement.
 - Failure: stderr gets `{"error": {"code", "message", "hint"?, "details"?}}`. Nothing else is ever

@@ -46,7 +46,7 @@ struct TitleFonts {
     titles: [TextFormat; 4],
     /// Same face, size and weight as standalone titles, centred inside their controls.
     tabs: [TextFormat; 4],
-    /// The left tab column's resting captions: regular weight, leading (the shown tab uses
+    /// The title column's resting captions: regular weight, leading (the shown tab uses
     /// the title format).
     tab_lists: [TextFormat; 4],
     face: Option<String>,
@@ -257,8 +257,8 @@ pub struct RowsDraw<'a> {
     pub insert_caret_alpha: f32,
     /// 0 = accent selection (active window), 1 = neutral grey (another window is active).
     pub selection_inactive: f32,
-    /// Window position (DIPs) of the surface's top-left corner: the left tab column's width
-    /// and the title row's height (0 beside a left tab column). The glass behind the text is
+    /// Window position (DIPs) of the surface's top-left corner: the title column's width
+    /// and the title row's height (0 beside a title column). The glass behind the text is
     /// sampled in window coordinates.
     pub origin_x: f32,
     pub origin_y: f32,
@@ -331,9 +331,8 @@ pub struct FenceStyle {
     pub title_size: u8,
     /// Title position along the title bar: the fence's own alignment, else the global one.
     pub title_align: pecofence_core::TitleAlign,
-    /// Width in DIPs of the left tab column (标签栏位置 → 左侧, two or more tabs). The column
-    /// is the fence's title bar, so there is no title row; 0 = the tabs, if any, run along the
-    /// title row.
+    /// Width in DIPs of the title column (`title_edge` on a side). The column is the fence's
+    /// title bar, so there is no title row; 0 = a title row, with the tabs, if any, along it.
     pub tab_rail: f32,
     /// No item count on a rolled title and no roll chevron (the global
     /// 「隐藏标题栏右侧的项目数和折叠箭头」 setting).
@@ -342,6 +341,8 @@ pub struct FenceStyle {
     pub title_edge: pecofence_core::TitleEdge,
     /// Collapsed, the title bar shrinks to its title or tabs (`Fence::shrinks_collapsed`).
     pub shrink_collapsed: bool,
+    /// How a title column shows two or more tabs.
+    pub side_tab_text: pecofence_core::SideTabText,
     /// The chevron (and a rolled row's item count) sits at the start of the title bar,
     /// opposite a title or tabs aligned to its end, so they stay put as the fence rolls.
     pub chevron_leads: bool,
@@ -349,8 +350,8 @@ pub struct FenceStyle {
     pub collapse_to: pecofence_core::TitleEdge,
 }
 
-/// Left tab column metrics (DIPs): the free strip above the first tab (a handle to drag the
-/// fence by), each tab row's height, its inset from the window's left edge and from the
+/// Title column metrics (DIPs): the free strip above the first tab (a handle to drag the
+/// fence by), each tab row's height, its inset from the column's outer edge and from the
 /// divider, and the room under the last tab that holds the collapse chevron. Collapsed to the
 /// column the fence has no chevron (a tab click expands it): the last tab keeps the top strip's
 /// room under it.
@@ -425,6 +426,25 @@ fn row_chevron(collapse_to: pecofence_core::TitleEdge) -> &'static str {
         "\u{E70D}"
     } else {
         "\u{E70E}"
+    }
+}
+
+/// `r` moved right by `dx`: title-column boxes measured from the column's left, placed in the
+/// window.
+fn shift_x(r: Rect, dx: f32) -> Rect {
+    Rect {
+        left: r.left + dx,
+        right: r.right + dx,
+        ..r
+    }
+}
+
+/// The chevron of a title column points the way the fence collapses: towards its side.
+fn column_chevron(edge: pecofence_core::TitleEdge) -> &'static str {
+    if edge == pecofence_core::TitleEdge::Right {
+        "\u{E76C}"
+    } else {
+        "\u{E76B}"
     }
 }
 
@@ -540,6 +560,17 @@ impl TitleDeco {
         )
     }
 
+    /// The collapse chevron at the top of a title column `rail_w` wide, centred in the room
+    /// above a title or tabs aligned to the bottom; the app hit-tests the same box.
+    pub fn rail_chevron_box_top(rail_w: f32) -> Rect {
+        Rect::from_xywh(
+            ((rail_w - Self::CHEVRON_W) * 0.5).max(0.0),
+            (RAIL_BOTTOM - Self::CHEVRON_W) * 0.5,
+            Self::CHEVRON_W,
+            Self::CHEVRON_W,
+        )
+    }
+
     /// The chevron box (DIPs) for a fence `width` wide with a title row `title_h` tall; the
     /// app hit-tests the same rectangle.
     pub fn chevron_box(width: f32, title_h: f32) -> Rect {
@@ -551,7 +582,7 @@ impl TitleDeco {
         )
     }
 
-    /// The collapse chevron of a left tab column `rail_w` wide in a window `height` tall,
+    /// The collapse chevron of a title column `rail_w` wide in a window `height` tall,
     /// centred in the room under the tabs (`RAIL_BOTTOM`), never above the last tab's end
     /// `rows_end`: while the fence collapses or expands the moving bottom edge hides it instead
     /// of it sliding over the tab. The app hit-tests the same box.
@@ -565,7 +596,31 @@ impl TitleDeco {
         )
     }
 
-    /// The portal up button at the end of the shown tab's `row` in a left tab column; the app
+    /// The portal up button `top` DIPs down a single fence's title column `col_w` wide, above
+    /// its title; the app hit-tests the same box.
+    pub fn column_up_box(col_w: f32, top: f32) -> Rect {
+        Rect::from_xywh(((col_w - 28.0) * 0.5).max(0.0), top, 28.0, 28.0)
+    }
+
+    /// A vertical tab's pill: `len` DIPs from `y` down a title column `col_w` wide from `cx`, inset
+    /// from its sides as a title-row pill is from the row's top and bottom.
+    pub fn vertical_pill(theme: &Theme, cx: f32, col_w: f32, y: f32, len: f32) -> Rect {
+        let inset = if theme.liquid_glass { 4.0 } else { 6.0 };
+        Rect::from_xywh(cx + inset, y, (col_w - inset * 2.0).max(0.0), len)
+    }
+
+    /// The portal up button at the end of the shown vertical tab's `pill`, upright; the app
+    /// hit-tests the same box.
+    pub fn vertical_up_box(pill: Rect) -> Rect {
+        Rect::from_xywh(
+            pill.left + (pill.width() - 24.0) * 0.5,
+            pill.bottom - VERTICAL_UP_ROOM,
+            24.0,
+            24.0,
+        )
+    }
+
+    /// The portal up button at the end of the shown tab's `row` in a title column; the app
     /// hit-tests the same box.
     pub fn rail_up_box(row: Rect) -> Rect {
         Rect::from_xywh(
@@ -666,6 +721,9 @@ pub struct TabDraw<'a> {
     pub badge: Option<&'a str>,
 }
 
+/// Room the portal up button adds at the end of the shown tab in a column of vertical tabs (DIPs).
+pub const VERTICAL_UP_ROOM: f32 = 26.0;
+
 /// Width of the "N 项" caption a rolled fence shows before its chevron (DIPs).
 pub const ROLLED_COUNT_W: f32 = 64.0;
 
@@ -715,7 +773,7 @@ fn tab_glyph_centre(caption_x: f32) -> f32 {
     caption_x - 2.0 - TAB_ICON_W * 0.5
 }
 
-/// Where captions start in a left tab column row: after the colour dot when any tab has a
+/// Where captions start in a title column row: after the colour dot when any tab has a
 /// colour, and after the folder glyph when any tab has one, so the names stay aligned.
 fn rail_text_left(colored: bool, folders: bool) -> f32 {
     (if colored { 24.0 } else { 10.0 }) + tab_icon_w(folders)
@@ -1011,13 +1069,18 @@ fn draw_plate(
         // Per-fence colour: a translucent wash so the glass still reads as glass.
         tint.a = 0.22 * plate_a;
         if style.tint_title_only && style.tab_rail > 0.0 {
-            // A left tab column is the title bar: the plate's rounded left corners, a straight
-            // right edge where the icons start.
+            // A title column is the title bar: the plate's rounded corners on its side, a
+            // straight edge where the icons start.
             let edge = (style.tab_rail / outer.width().max(1.0)).min(1.0);
             let soft = (px.hair() / outer.width().max(1.0)).min(1.0 - edge);
+            let (from, to) = if style.title_edge == pecofence_core::TitleEdge::Right {
+                (outer.right, outer.left)
+            } else {
+                (outer.left, outer.right)
+            };
             let wash = session.create_linear_gradient(
-                Vector2::new(outer.left, 0.0),
-                Vector2::new(outer.right, 0.0),
+                Vector2::new(from, 0.0),
+                Vector2::new(to, 0.0),
                 &[
                     GradientStop::new(0.0, tint),
                     GradientStop::new(edge, tint),
@@ -1166,6 +1229,29 @@ struct TextShadow {
     color: ColorF,
     blur: f32,
     offset: f32,
+    /// Drawn turned a quarter clockwise (a title or tab reading down a title column): the offset
+    /// runs along the text, so the shadow still falls downward on the screen.
+    turned: bool,
+}
+
+/// Where a caption's soft shadow starts and how far down its own frame it falls: below the
+/// caption, or for one turned a quarter clockwise along it, which is down on the screen.
+fn shadow_origin(rect: &Rect, shadow: TextShadow) -> (Vector2, f32) {
+    if shadow.turned {
+        (Vector2::new(rect.left + shadow.offset, rect.top), 0.0)
+    } else {
+        (Vector2::new(rect.left, rect.top), shadow.offset)
+    }
+}
+
+impl CaptionFx<'_> {
+    /// The same halo and shadow for a caption drawn turned a quarter clockwise.
+    fn turned(mut self) -> Self {
+        if let Some(shadow) = &mut self.shadow {
+            shadow.turned = true;
+        }
+        self
+    }
 }
 
 impl Legible {
@@ -1187,6 +1273,7 @@ impl Legible {
             color: with_alpha(c, alpha),
             blur: fx.shadow_blur.unwrap_or(TextFx::SHADOW_BLUR),
             offset: fx.shadow_offset.unwrap_or(TextFx::SHADOW_OFFSET),
+            turned: false,
         });
         CaptionFx { halo, shadow }
     }
@@ -1216,7 +1303,7 @@ pub fn chevron_angle(roll_t: f32) -> f32 {
     180.0 * roll_t.clamp(0.0, 1.0)
 }
 
-/// How selected a row of a left tab column looks (0..=1): the shown tab while the fence is
+/// How selected a row of a title column looks (0..=1): the shown tab while the fence is
 /// `expanded` (1 - roll progress; a collapsed column shows its tabs alike), a dragged tab always.
 pub fn rail_selected(active: bool, dragging: bool, expanded: f32) -> f32 {
     if dragging {
@@ -1228,7 +1315,7 @@ pub fn rail_selected(active: bool, dragging: bool, expanded: f32) -> f32 {
     }
 }
 
-/// Opacity of a left tab column's chevron: the column's hover, faded out by the roll progress
+/// Opacity of a title column's chevron: the column's hover, faded out by the roll progress
 /// (0 expanded ..= 1 collapsed to the column, which has no chevron).
 pub fn rail_chevron_alpha(hover: f32, roll_t: f32) -> f32 {
     hover.clamp(0.0, 1.0) * (1.0 - roll_t.clamp(0.0, 1.0))
@@ -1713,14 +1800,15 @@ impl FenceChrome {
         rect: &Rect,
         shadow: TextShadow,
     ) {
+        let (origin, offset) = shadow_origin(rect, shadow);
         self.text_shadows.borrow_mut().draw(
             session,
             layout,
             text,
             format,
-            Vector2::new(rect.left, rect.top),
+            origin,
             shadow.blur,
-            shadow.offset,
+            offset,
             shadow.color,
         );
     }
@@ -2092,7 +2180,7 @@ impl FenceChrome {
         glyph_up_square(x + 8.0, title_h)
     }
 
-    /// Width a caption gets in a row of a `rail_w` DIP left tab column: after the colour dot's
+    /// Width a caption gets in a row of a `rail_w` DIP title column: after the colour dot's
     /// room when any tab has a colour and the folder glyph's when any tab has one, before the
     /// badge and the portal up button.
     pub fn rail_title_room(
@@ -2111,7 +2199,7 @@ impl FenceChrome {
         (row_w - text_left - 8.0 - badge_w - badge_gap - up_w).max(0.0)
     }
 
-    /// Caption format of a left tab column row: semibold for the shown tab.
+    /// Caption format of a title column row: semibold for the shown tab.
     fn rail_title_format(&self, size: u8, active: bool) -> Ref<'_, TextFormat> {
         let i = usize::from(size.min(3));
         Ref::map(self.title_fonts.borrow(), |f| {
@@ -2123,7 +2211,7 @@ impl FenceChrome {
         })
     }
 
-    /// `title` shows whole in `room` DIPs of a left tab column row.
+    /// `title` shows whole in `room` DIPs of a title column row.
     pub fn rail_title_fits(&self, title: &str, room: f32, size: u8, active: bool) -> bool {
         crate::text::measure_width(title, &self.rail_title_format(size, active)) <= room
     }
@@ -2163,8 +2251,14 @@ impl FenceChrome {
         // A fully transparent fence fades the whole plate with `plate_a`.
         let fold = state.plate_top.clamp(0.0, (height - 1.0).max(0.0));
         let plate_a = 1.0 - state.plate_clear.clamp(0.0, 1.0);
-        // Two or more tabs on the left: the column is the title bar, there is no title row.
-        let column = style.tab_rail > 0.0 && tabs.len() > 1;
+        // A title bar on a side is a column; there is no title row.
+        let column = style.tab_rail > 0.0;
+        // Left edge of the column.
+        let cx = if style.title_edge == pecofence_core::TitleEdge::Right {
+            width - style.tab_rail
+        } else {
+            0.0
+        };
         let bottom = style.title_edge == pecofence_core::TitleEdge::Bottom && !column;
         let outer = if bottom {
             Rect::from_xywh(0.0, 0.0, width, height - fold)
@@ -2208,7 +2302,7 @@ impl FenceChrome {
         // No header band, no divider: the title sits directly on the glass. Hovering a
         // single-title fence shows an inset pill (SubtleFill, 83 ms fade), never a full-width
         // strip; a tab strip gets its feedback from the individual tab pills instead.
-        if pill_a > 0.0 && tabs.len() <= 1 {
+        if pill_a > 0.0 && tabs.len() <= 1 && !column {
             let row = Rect::from_xywh(
                 4.0,
                 ty + 4.0,
@@ -2231,10 +2325,10 @@ impl FenceChrome {
             // fading in over 83 ms and out over 167 ms.
             let a = state.merge_hint.min(1.0);
             let wash = session.create_solid_brush(with_alpha(theme.drop_highlight, a))?;
-            // Over the left tab column when that is the title bar.
+            // Over the title column when that is the title bar.
             let row = if column {
                 Rect::from_xywh(
-                    4.0,
+                    cx + 4.0,
                     4.0,
                     (style.tab_rail - 8.0).max(0.0),
                     (height - 8.0).max(0.0),
@@ -2266,41 +2360,84 @@ impl FenceChrome {
                 &marker,
             );
         }
+        if column && tabs.len() <= 1 {
+            return self.draw_title_column(
+                session, &backdrop, theme, scale, opacity, style, title, cx, height, roll_t,
+                pill_a, deco, state,
+            );
+        }
         if column {
             let legible = if theme.text_halo {
                 Some(Legible::new(session)?)
             } else {
                 None
             };
-            self.draw_tab_list(
+            if style.side_tab_text == pecofence_core::SideTabText::Vertical {
+                self.draw_vertical_tabs(
+                    session,
+                    &backdrop,
+                    theme,
+                    scale,
+                    opacity,
+                    style,
+                    tabs,
+                    pill,
+                    legible.as_ref(),
+                    cx,
+                    height,
+                    1.0 - roll_t.clamp(0.0, 1.0),
+                    deco,
+                    state,
+                )?;
+            } else {
+                self.draw_horizontal_tabs(
+                    session,
+                    &backdrop,
+                    theme,
+                    scale,
+                    opacity,
+                    style.tint,
+                    tabs,
+                    pill,
+                    legible.as_ref(),
+                    cx,
+                    style.tab_rail,
+                    style.title_edge == pecofence_core::TitleEdge::Right,
+                    height,
+                    1.0 - roll_t.clamp(0.0, 1.0),
+                    deco,
+                    state,
+                )?;
+            }
+            // The chevron collapses the fence to its column, revealed with the column's hover
+            // like the title row's chevron. A collapsed column has none (a tab click expands
+            // it): the chevron turns as it fades out with the collapse, and back in as the
+            // fence expands.
+            if style.hide_count_and_chevron {
+                return Ok(());
+            }
+            let chevron_a = rail_chevron_alpha(state.hover, roll_t);
+            let rows_end = tabs.iter().map(|t| t.x + t.w).fold(0.0, f32::max);
+            let box_r = shift_x(
+                if style.chevron_leads {
+                    TitleDeco::rail_chevron_box_top(style.tab_rail)
+                } else {
+                    TitleDeco::rail_chevron_box(style.tab_rail, height, rows_end)
+                },
+                cx,
+            );
+            return self.draw_chevron(
                 session,
                 &backdrop,
                 theme,
                 scale,
                 opacity,
                 style.tint,
-                tabs,
-                pill,
-                legible.as_ref(),
-                style.tab_rail,
-                height,
-                1.0 - roll_t.clamp(0.0, 1.0),
-                deco,
+                box_r,
+                column_chevron(style.collapse_to),
+                chevron_a,
                 state,
-            )?;
-            // ChevronLeft (E76B) collapses the fence to its column, revealed with the column's
-            // hover like the title row's chevron. A collapsed column has none (a tab click
-            // expands it): the chevron turns as it fades out with the collapse, and back in
-            // as the fence expands.
-            if style.hide_count_and_chevron {
-                return Ok(());
-            }
-            let chevron_a = rail_chevron_alpha(state.hover, roll_t);
-            let rows_end = tabs.iter().map(|t| t.x + t.w).fold(0.0, f32::max);
-            let box_r = TitleDeco::rail_chevron_box(style.tab_rail, height, rows_end);
-            return self.draw_chevron(
-                session, &backdrop, theme, scale, opacity, style.tint, box_r, "\u{E76B}",
-                chevron_a, state, roll_t,
+                roll_t,
             );
         }
         if title_a <= 0.0 {
@@ -2785,15 +2922,387 @@ impl FenceChrome {
         Ok(())
     }
 
-    /// Draws a left tab column `rail_w` DIPs wide down the whole window (`height`): the fence's
-    /// title bar when its tabs are on the left. Each tab is a 32 DIP row inset 4 DIPs from the
+    /// Draws a title column of vertical tabs `style.tab_rail` DIPs wide from `cx`, down the whole
+    /// window (`height`): each tab a pill along the column (`TabDraw::x` its top, `w` its
+    /// length) with its caption turned to read downwards, styled as a title-row tab. As with
+    /// horizontal tabs the selection fades out as the fence collapses (`expanded` 1 ..= 0).
+    #[allow(clippy::too_many_arguments)]
+    fn draw_vertical_tabs(
+        &self,
+        session: &DrawingSession<'_>,
+        backdrop: &Backdrop<'_>,
+        theme: &Theme,
+        scale: f32,
+        opacity: f32,
+        style: FenceStyle,
+        tabs: &[TabDraw<'_>],
+        pill: Option<(f32, f32)>,
+        legible: Option<&Legible>,
+        cx: f32,
+        height: f32,
+        expanded: f32,
+        deco: TitleDeco,
+        state: TitleState,
+    ) -> Result<()> {
+        let px = Px::new(scale);
+        let col_w = style.tab_rail;
+        let right = style.title_edge == pecofence_core::TitleEdge::Right;
+        let dark = theme.mode == crate::theme::ThemeMode::Dark;
+        let expanded = expanded.clamp(0.0, 1.0);
+        if expanded > 0.0 {
+            // The divider between the column and the items stops short of the corners.
+            let inset = theme.corner_radius.max(8.0);
+            let alpha = 0.18 * expanded;
+            let line = if dark {
+                ColorF::new(1.0, 1.0, 1.0, alpha)
+            } else {
+                ColorF::new(0.0, 0.0, 0.0, alpha)
+            };
+            let brush = session.create_solid_brush(line)?;
+            let divider = if right {
+                px.snap(cx)
+            } else {
+                px.snap(cx + col_w) - px.hair()
+            };
+            session.fill_rect(
+                &Rect::from_xywh(divider, inset, px.hair(), (height - inset * 2.0).max(0.0)),
+                &brush,
+            );
+        }
+        let pill_rect = |y: f32, len: f32| TitleDeco::vertical_pill(theme, cx, col_w, y, len);
+        // The colour marker runs along the pill's side towards the items, as a title-row
+        // pill's runs along its bottom.
+        let marker = |y: f32, len: f32, color: ColorF, alpha: f32| -> Result<()> {
+            let marker_len = (len - 24.0).clamp(0.0, 20.0);
+            if marker_len > 0.0 {
+                let r = pill_rect(y, len);
+                let x = if right { r.left + 1.0 } else { r.right - 3.0 };
+                let brush = session.create_solid_brush(with_alpha(color, alpha))?;
+                session.fill_rounded_rect(
+                    &RoundedRect::uniform(
+                        Rect::from_xywh(x, y + (len - marker_len) * 0.5, 2.0, marker_len),
+                        1.0,
+                    ),
+                    &brush,
+                );
+            }
+            Ok(())
+        };
+        let selected = |rect: Rect, a: f32| -> Result<()> {
+            if theme.liquid_glass {
+                draw_header_glass(session, backdrop, theme, scale, 0, rect, 0.78, a)
+            } else {
+                let fill = session.create_solid_brush(with_alpha(theme.tab_active_fill, a))?;
+                session.fill_rounded_rect(
+                    &RoundedRect::uniform(rect, header_control_radius(theme, rect)),
+                    &fill,
+                );
+                Ok(())
+            }
+        };
+        if theme.liquid_glass {
+            for tab in tabs.iter().filter(|t| !t.dragging) {
+                if tab.active && pill.is_none() {
+                    continue;
+                }
+                draw_header_glass(
+                    session,
+                    backdrop,
+                    theme,
+                    scale,
+                    tab.key,
+                    pill_rect(tab.x, tab.w),
+                    0.16 + 0.32 * tab.hover + 0.3 * tab.drop_target,
+                    tab.alpha.clamp(0.0, 1.0),
+                )?;
+            }
+        }
+        if let Some((y, len)) = pill {
+            selected(pill_rect(y, len), expanded)?;
+            let color = tabs
+                .iter()
+                .find(|t| t.active)
+                .and_then(|t| t.color)
+                .unwrap_or(theme.accent);
+            marker(y, len, color, expanded)?;
+        }
+        // A dragged tab is always above its neighbours.
+        for tab in tabs
+            .iter()
+            .filter(|t| !t.dragging)
+            .chain(tabs.iter().filter(|t| t.dragging))
+        {
+            let ta = tab.alpha.clamp(0.0, 1.0);
+            if ta <= 0.0 {
+                continue;
+            }
+            let rect = pill_rect(tab.x, tab.w);
+            let radius = header_control_radius(theme, rect);
+            let sel = rail_selected(tab.active, tab.dragging, expanded);
+            let own = if pill.is_none() { sel } else { 0.0 };
+            if own > 0.0 {
+                selected(rect, ta * own)?;
+            }
+            if tab.pressed && own < 1.0 {
+                let fill = session
+                    .create_solid_brush(with_alpha(theme.subtle_pressed, ta * (1.0 - own)))?;
+                session.fill_rounded_rect(&RoundedRect::uniform(rect, radius), &fill);
+            } else if !theme.liquid_glass && tab.hover > 0.0 && sel < 1.0 {
+                let a = tab.hover * ta * (1.0 - sel);
+                let fill = session.create_solid_brush(with_alpha(theme.subtle_hover, a))?;
+                session.fill_rounded_rect(&RoundedRect::uniform(rect, radius), &fill);
+            }
+            if tab.drop_target > 0.0 {
+                let a = tab.drop_target.min(1.0) * ta;
+                let fill = session.create_solid_brush(with_alpha(theme.selection_fill, a))?;
+                session.fill_rounded_rect(&RoundedRect::uniform(rect, radius), &fill);
+                let ring = session.create_solid_brush(with_alpha(theme.selection_stroke, a))?;
+                session.draw_rounded_rect(&px.ring(rect, radius), &ring, px.hair());
+            }
+            if pill.is_none() && sel > 0.0 {
+                marker(tab.x, tab.w, tab.color.unwrap_or(theme.accent), ta * sel)?;
+            }
+            if let Some(color) = tab.color.filter(|_| sel < 1.0) {
+                marker(tab.x, tab.w, color, ta * 0.7 * (1.0 - sel))?;
+            }
+            let foreground =
+                header_foreground(backdrop, theme, tab.key, rect, scale, opacity, style.tint);
+            let color = if tab.pressed && !tab.dragging {
+                foreground.text_tertiary
+            } else {
+                tab.title_color.unwrap_or_else(|| {
+                    foreground.title_ink(if sel > 0.5 || tab.drop_target >= 0.5 {
+                        foreground.text_primary
+                    } else {
+                        foreground.text_secondary
+                    })
+                })
+            };
+            let up = tab.active && deco.up_button;
+            let up_room = if up { VERTICAL_UP_ROOM } else { 0.0 };
+            // Along the pill, as a title-row tab lays out across: the folder glyph, the caption
+            // and the badge centred as one group, before the up button.
+            let len = (tab.w - up_room).max(0.0);
+            let fmt = &self.tab_format(tab.title_size);
+            let badge_w = tab.badge.map_or(0.0, |b| self.tab_badge_width(b));
+            let icon_w = tab_icon_w(tab.folder_icon);
+            let title_w = crate::text::measure_width(tab.title, fmt);
+            let padding = tab_text_inset(theme, len - badge_w, title_w + icon_w);
+            let caption_w = (len - badge_w - icon_w - padding).max(0.0);
+            let fitted = crate::text::fit_width(tab.title, fmt, caption_w);
+            let shown_w = if fitted == tab.title {
+                title_w
+            } else {
+                crate::text::measure_width(&fitted, fmt)
+            }
+            .min(caption_w);
+            let group = icon_w + shown_w + badge_w;
+            let start = tab.x + (len - group) * 0.5;
+            let brush = session.create_solid_brush(with_alpha(color, ta))?;
+            let fx = legible.map(|l| l.fx(theme, color, ta, false).turned());
+            // Laid out across about the group's centre, then turned a quarter clockwise.
+            let centre = Vector2::new(rect.left + rect.width() * 0.5, start + group * 0.5);
+            let thick = rect.width();
+            let left = centre.x - group * 0.5;
+            let top = centre.y - thick * 0.5;
+            let saved = session.transform();
+            session.set_transform(&(Matrix3x2::rotation_around(90.0, centre) * saved));
+            if tab.folder_icon {
+                session.draw_text(
+                    "\u{E8B7}",
+                    &self.title_glyph_format,
+                    &Rect::from_xywh(left - 2.0, top, icon_w, thick),
+                    &brush,
+                );
+            }
+            self.draw_caption(
+                session,
+                &fitted,
+                fmt,
+                &Rect::from_xywh(left + icon_w, top, shown_w, thick),
+                &brush,
+                fx,
+            );
+            if let Some(badge) = tab.badge {
+                let r = Rect::from_xywh(
+                    left + icon_w + shown_w + TAB_BADGE_GAP,
+                    top + ((thick - TAB_BADGE_H) * 0.5).round(),
+                    badge_w - TAB_BADGE_GAP,
+                    TAB_BADGE_H,
+                );
+                let fill = session.create_solid_brush(with_alpha(theme.accent, ta))?;
+                session.fill_rounded_rect(&RoundedRect::uniform(r, TAB_BADGE_H * 0.5), &fill);
+                let on_accent = if dark {
+                    ColorF::from_rgba8(0, 0, 0, 0xFF)
+                } else {
+                    ColorF::from_rgba8(0xFF, 0xFF, 0xFF, 0xFF)
+                };
+                let text = session.create_solid_brush(with_alpha(on_accent, ta))?;
+                session.draw_text(badge, &self.badge_format, &r, &text);
+            }
+            session.set_transform(&saved);
+            // Like the selection, the up button is gone from a collapsed column.
+            let up_a = ta * expanded;
+            if up && up_a > 0.0 {
+                let box_r = TitleDeco::vertical_up_box(rect);
+                let fill = if state.up_pressed {
+                    Some(with_alpha(theme.subtle_pressed, up_a))
+                } else if state.up_hover > 0.0 {
+                    Some(with_alpha(theme.subtle_hover, state.up_hover * up_a))
+                } else {
+                    None
+                };
+                if let Some(fill) = fill {
+                    let b = session.create_solid_brush(fill)?;
+                    session.fill_rounded_rect(&RoundedRect::uniform(box_r, 4.0), &b);
+                }
+                let glyph = session.create_solid_brush(with_alpha(
+                    if state.up_pressed {
+                        foreground.text_tertiary
+                    } else {
+                        foreground.text_secondary
+                    },
+                    up_a,
+                ))?;
+                session.draw_text("\u{E74A}", &self.glyph_format, &box_r, &glyph);
+            }
+        }
+        Ok(())
+    }
+
+    /// Draws a single fence's title bar as a column `style.tab_rail` DIPs wide from `cx`, down
+    /// the whole window (`height`). The title turns to read downwards, placed by the title
+    /// alignment between the up button (a navigated portal) and the chevron. The chevron takes
+    /// the end the title is not aligned to and points to the side the fence collapses to.
+    #[allow(clippy::too_many_arguments)]
+    fn draw_title_column(
+        &self,
+        session: &DrawingSession<'_>,
+        backdrop: &Backdrop<'_>,
+        theme: &Theme,
+        scale: f32,
+        opacity: f32,
+        style: FenceStyle,
+        title: &str,
+        cx: f32,
+        height: f32,
+        roll_t: f32,
+        pill_a: f32,
+        deco: TitleDeco,
+        state: TitleState,
+    ) -> Result<()> {
+        let col_w = style.tab_rail;
+        let column = Rect::from_xywh(cx, 0.0, col_w, height);
+        if pill_a > 0.0 {
+            let pill = Rect::from_xywh(
+                cx + 4.0,
+                4.0,
+                (col_w - 8.0).max(0.0),
+                (height - 8.0).max(0.0),
+            );
+            if theme.liquid_glass {
+                draw_header_glass(session, backdrop, theme, scale, 1, pill, 0.28, pill_a)?;
+            } else {
+                let brush = session.create_solid_brush(with_alpha(theme.subtle_hover, pill_a))?;
+                session.fill_rounded_rect(
+                    &RoundedRect::uniform(pill, header_control_radius(theme, pill)),
+                    &brush,
+                );
+            }
+        }
+        let foreground = header_foreground(backdrop, theme, 5, column, scale, opacity, style.tint);
+        // The chevron takes the room at the end the title is not aligned to.
+        let (mut start, end_room) = if style.chevron_leads {
+            (RAIL_BOTTOM, RAIL_TOP)
+        } else {
+            (RAIL_TOP, RAIL_BOTTOM)
+        };
+        if deco.up_button {
+            let box_r = shift_x(TitleDeco::column_up_box(col_w, start), cx);
+            if state.up_pressed || state.up_hover > 0.0 {
+                let a = if state.up_pressed {
+                    1.0
+                } else {
+                    state.up_hover
+                };
+                let fill = if state.up_pressed {
+                    theme.subtle_pressed
+                } else {
+                    theme.subtle_hover
+                };
+                let brush = session.create_solid_brush(with_alpha(fill, a))?;
+                session.fill_rounded_rect(&RoundedRect::uniform(box_r, 4.0), &brush);
+            }
+            let glyph = session.create_solid_brush(foreground.text_secondary)?;
+            session.draw_text("\u{E74A}", &self.glyph_format, &box_r, &glyph);
+            start = box_r.bottom + 4.0;
+        }
+        let end = (height - end_room).max(start);
+        let format = &self.title_format(style.title_size);
+        let room = (end - start).max(0.0);
+        let fitted = crate::text::fit_width(title, format, room);
+        let len = crate::text::measure_width(&fitted, format).min(room);
+        let along = aligned_x(style.title_align, height, start, end, len);
+        // The fence's own 「标题颜色」, else the theme's title colour, else the text colour.
+        let ink = style
+            .title_color
+            .unwrap_or_else(|| foreground.title_ink(foreground.text_primary));
+        let brush = session.create_solid_brush(ink)?;
+        let legible = if theme.text_halo {
+            Some(Legible::new(session)?)
+        } else {
+            None
+        };
+        let fx = legible
+            .as_ref()
+            .map(|l| l.fx(theme, ink, 1.0, false).turned());
+        // Laid out across, then turned a quarter clockwise about its centre: it reads downwards.
+        let centre = Vector2::new(cx + col_w * 0.5, along + len * 0.5);
+        let across = Rect::from_xywh(centre.x - len * 0.5, centre.y - col_w * 0.5, len, col_w);
+        let saved = session.transform();
+        session.set_transform(&(Matrix3x2::rotation_around(90.0, centre) * saved));
+        self.draw_caption(session, &fitted, format, &across, &brush, fx);
+        session.set_transform(&saved);
+        if style.hide_count_and_chevron {
+            return Ok(());
+        }
+        let chevron_a = if roll_t > 0.0 {
+            1.0
+        } else {
+            state.hover.clamp(0.0, 1.0)
+        };
+        let box_r = shift_x(
+            if style.chevron_leads {
+                TitleDeco::rail_chevron_box_top(col_w)
+            } else {
+                TitleDeco::rail_chevron_box(col_w, height, along + len)
+            },
+            cx,
+        );
+        self.draw_chevron(
+            session,
+            backdrop,
+            theme,
+            scale,
+            opacity,
+            style.tint,
+            box_r,
+            column_chevron(style.collapse_to),
+            chevron_a,
+            state,
+            roll_t,
+        )
+    }
+
+    /// Draws a title column `rail_w` DIPs wide from `cx` down the whole window (`height`): the
+    /// title bar of horizontal tabs on a side. Each tab is a 32 DIP row inset 4 DIPs from the
     /// window edge (WinUI NavigationView items), a hairline separates neighbours, the shown tab
     /// is semibold on the selection fill (`pill` while it glides to a newly selected tab), and
     /// a tab's own colour is a 6 DIP dot before its name. `expanded` (1 - roll progress) fades
     /// the line between the column and the items and the shown tab's selection fill, semibold
     /// caption and up button: a fence collapsed to the column shows its tabs alike.
     #[allow(clippy::too_many_arguments)]
-    fn draw_tab_list(
+    fn draw_horizontal_tabs(
         &self,
         session: &DrawingSession<'_>,
         backdrop: &Backdrop<'_>,
@@ -2804,7 +3313,9 @@ impl FenceChrome {
         tabs: &[TabDraw<'_>],
         pill: Option<(f32, f32)>,
         legible: Option<&Legible>,
+        cx: f32,
         rail_w: f32,
+        right: bool,
         height: f32,
         expanded: f32,
         deco: TitleDeco,
@@ -2824,19 +3335,20 @@ impl FenceChrome {
         if expanded > 0.0 {
             let inset = theme.corner_radius.max(8.0);
             let brush = session.create_solid_brush(line(0.18 * expanded))?;
+            // Between the column and the items: its right edge on the left, its left on the right.
+            let divider = if right {
+                px.snap(cx)
+            } else {
+                px.snap(cx + rail_w) - px.hair()
+            };
             session.fill_rect(
-                &Rect::from_xywh(
-                    px.snap(rail_w) - px.hair(),
-                    inset,
-                    px.hair(),
-                    (height - inset * 2.0).max(0.0),
-                ),
+                &Rect::from_xywh(divider, inset, px.hair(), (height - inset * 2.0).max(0.0)),
                 &brush,
             );
         }
         let row = |y: f32, h: f32| {
             Rect::from_xywh(
-                RAIL_ROW_INSET,
+                cx + RAIL_ROW_INSET,
                 y,
                 (rail_w - RAIL_ROW_INSET - RAIL_ROW_RIGHT).max(0.0),
                 h,
@@ -3819,7 +4331,7 @@ mod tests {
         assert_eq!(rail_selected(true, false, 1.3), 1.0);
     }
 
-    /// A left tab column shows its chevron on hover while expanded and none once collapsed to
+    /// A title column shows its chevron on hover while expanded and none once collapsed to
     /// the column; in between it fades with the roll, never popping at either end.
     #[test]
     fn rail_chevron_fades_with_the_collapse() {
@@ -3896,12 +4408,71 @@ mod tests {
         assert_eq!((u.left, u.top, u.right, u.bottom), (6.0, 4.0, 34.0, 32.0));
     }
 
-    /// A title row's chevron points the way the fence collapses.
+    /// The chevron points the way the fence collapses: a row's up or down, a column's towards
+    /// its side (ChevronLeft E76B, ChevronRight E76C).
     #[test]
-    fn a_row_chevron_points_to_the_edge_it_rolls_to() {
+    fn a_chevron_points_to_the_edge_it_rolls_to() {
         use pecofence_core::TitleEdge;
         assert_eq!(row_chevron(TitleEdge::Top), "\u{E70E}");
         assert_eq!(row_chevron(TitleEdge::Bottom), "\u{E70D}");
+        assert_eq!(column_chevron(TitleEdge::Left), "\u{E76B}");
+        assert_eq!(column_chevron(TitleEdge::Right), "\u{E76C}");
+    }
+
+    /// A title column's boxes: the chevron centred in the room above the tabs, the up button
+    /// centred across the column, a vertical tab's pill inset from the column's sides as a row's
+    /// is from its top and bottom, and its up button upright at the pill's end.
+    #[test]
+    fn title_column_boxes() {
+        let c = TitleDeco::rail_chevron_box_top(36.0);
+        assert_eq!((c.left, c.top, c.right, c.bottom), (2.0, 6.0, 34.0, 38.0));
+        assert_eq!(TitleDeco::rail_chevron_box_top(20.0).left, 0.0);
+        let u = TitleDeco::column_up_box(36.0, 40.0);
+        assert_eq!((u.left, u.top, u.right, u.bottom), (4.0, 40.0, 32.0, 68.0));
+        let mut theme = Theme::light();
+        theme.liquid_glass = false;
+        let pill = TitleDeco::vertical_pill(&theme, 100.0, 36.0, 50.0, 120.0);
+        assert_eq!(
+            (pill.left, pill.top, pill.right, pill.bottom),
+            (106.0, 50.0, 130.0, 170.0)
+        );
+        theme.liquid_glass = true;
+        let glass = TitleDeco::vertical_pill(&theme, 100.0, 36.0, 50.0, 120.0);
+        assert_eq!((glass.left, glass.right), (104.0, 132.0));
+        let up = TitleDeco::vertical_up_box(pill);
+        assert_eq!(
+            (up.left, up.top, up.right, up.bottom),
+            (
+                106.0,
+                170.0 - VERTICAL_UP_ROOM,
+                130.0,
+                194.0 - VERTICAL_UP_ROOM
+            )
+        );
+        assert!(up.top >= pill.top && up.bottom <= pill.bottom);
+    }
+
+    /// A turned title or tab casts a theme's shadow down the screen, as a caption across does.
+    #[test]
+    fn a_turned_caption_s_shadow_falls_down_the_screen() {
+        let rect = Rect::from_xywh(10.0, 20.0, 80.0, 36.0);
+        let shadow = TextShadow {
+            color: ColorF::BLACK,
+            blur: 2.0,
+            offset: 1.5,
+            turned: false,
+        };
+        let (at, down) = shadow_origin(&rect, shadow);
+        assert_eq!((at.x, at.y, down), (10.0, 20.0, 1.5));
+        // Turned a quarter clockwise, the caption's own x runs down the screen.
+        let (at, down) = shadow_origin(
+            &rect,
+            TextShadow {
+                turned: true,
+                ..shadow
+            },
+        );
+        assert_eq!((at.x, at.y, down), (11.5, 20.0, 0.0));
     }
 
     /// A leading chevron sits after a separate up button, and a rename box starts after both.

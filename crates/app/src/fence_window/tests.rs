@@ -241,7 +241,7 @@ fn merge_slot_on_drawn_strip_is_stable() {
     );
 }
 
-/// A merge into a left tab column collapsed to fit its rows opens one row: the rows shrink by a
+/// A merge into a title column collapsed to fit its rows opens one row: the rows shrink by a
 /// quarter for three tabs, where a title-row-wide gap would halve them.
 #[test]
 fn merge_gap_in_left_column_is_one_row() {
@@ -267,7 +267,7 @@ fn drag_image_footprint_limit() {
     assert_eq!(DRAG_IMAGE_MAX_ITEMS, 4);
 }
 
-/// A fence collapsed to its left tab column keeps no room for the chevron under the tabs: two
+/// A fence collapsed to its title column keeps no room for the chevron under the tabs: two
 /// tabs take 84 DIP instead of the expanded column's 120.
 #[test]
 fn collapsed_tab_column_has_no_chevron_room() {
@@ -277,14 +277,16 @@ fn collapsed_tab_column_has_no_chevron_room() {
 }
 
 /// 标签栏位置 → 左侧 turns the tabs of a fence with its title bar at the top into the left tab
-/// column; a fence with its title bar at the bottom, or with one tab, keeps its title row.
+/// column; a fence with its own title edge elsewhere, or with one tab, keeps its title bar.
 #[test]
 fn the_left_tab_bar_applies_to_tabbed_fences_with_a_top_title_bar() {
     use pecofence_core::{TabBar, TitleEdge};
     assert!(is_tab_column(TitleEdge::Top, 2, TabBar::Left));
     assert!(!is_tab_column(TitleEdge::Top, 1, TabBar::Left));
     assert!(!is_tab_column(TitleEdge::Top, 3, TabBar::Top));
-    assert!(!is_tab_column(TitleEdge::Bottom, 2, TabBar::Left));
+    for edge in [TitleEdge::Bottom, TitleEdge::Left, TitleEdge::Right] {
+        assert!(!is_tab_column(edge, 2, TabBar::Left), "{edge:?}");
+    }
 }
 
 #[test]
@@ -1414,4 +1416,30 @@ fn hover_switches_only_to_another_tab() {
     assert_eq!(hover_switch_target(Some(0), 1, 1, true, false), None);
     assert_eq!(hover_switch_target(Some(5), 0, 3, true, false), None);
     assert_eq!(hover_switch_target(None, 0, 3, true, false), None);
+}
+
+/// A pushed column lifted off the bottom of the work area keeps its push shift: its resting
+/// top moves with the window.
+#[test]
+fn a_lifted_pushed_column_keeps_its_shift() {
+    let (a, b) = (HWND(0x10 as *mut _), HWND(0x20 as *mut _));
+    let mut pushed = vec![
+        Pushed {
+            hwnd: a,
+            top: 1030,
+            dy: 80,
+            by: vec![b],
+        },
+        Pushed {
+            hwnd: b,
+            top: 1030,
+            dy: 10,
+            by: Vec::new(),
+        },
+    ];
+    shift_pushed(&mut pushed, a, 1030, -26);
+    assert_eq!((pushed[0].top, pushed[0].dy), (1004, 80));
+    // Its resting top is 26 px higher too, and other windows keep theirs.
+    assert_eq!(pushed[0].top - pushed[0].dy, 1030 - 80 - 26);
+    assert_eq!(pushed[1].top, 1030);
 }

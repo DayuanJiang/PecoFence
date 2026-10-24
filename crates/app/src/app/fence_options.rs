@@ -68,6 +68,7 @@ pub(super) const FENCE_PROPS: &[&str] = &[
     "titlePosition",
     "titleAlign",
     "collapsedSize",
+    "sideTabText",
     "layout",
     "sort",
     "reverse",
@@ -118,8 +119,9 @@ pub(super) enum FenceProp {
     TitleEdge(pecofence_core::TitleEdge),
     /// None = the global `titleAlign`.
     TitleAlign(Option<pecofence_core::TitleAlign>),
-    /// Whether the collapsed title row shrinks to what it shows; None = it keeps its width.
+    /// Whether the collapsed title bar shrinks to what it shows; None = only on a side.
     CollapsedSize(Option<bool>),
+    SideTabText(pecofence_core::SideTabText),
     /// Regular fences: a double-clicked folder opens inside the fence.
     OpenFoldersInside(bool),
     PortalNavigate(bool),
@@ -241,10 +243,12 @@ pub(super) fn parse_fence_prop(
         }
         "titlePosition" => {
             use pecofence_core::TitleEdge;
-            const ALLOWED: &[&str] = &["top", "bottom"];
+            const ALLOWED: &[&str] = &["top", "bottom", "left", "right"];
             FenceProp::TitleEdge(match as_str(ALLOWED)? {
                 "top" => TitleEdge::Top,
                 "bottom" => TitleEdge::Bottom,
+                "left" => TitleEdge::Left,
+                "right" => TitleEdge::Right,
                 _ => return Err(bad(ALLOWED)),
             })
         }
@@ -269,6 +273,15 @@ pub(super) fn parse_fence_prop(
                 "default" => None,
                 "fit" => Some(true),
                 "full" => Some(false),
+                _ => return Err(bad(ALLOWED)),
+            })
+        }
+        "sideTabText" => {
+            use pecofence_core::SideTabText;
+            const ALLOWED: &[&str] = &["vertical", "horizontal"];
+            FenceProp::SideTabText(match as_str(ALLOWED)? {
+                "vertical" => SideTabText::Vertical,
+                "horizontal" => SideTabText::Horizontal,
                 _ => return Err(bad(ALLOWED)),
             })
         }
@@ -322,6 +335,8 @@ pub(super) fn title_edge_name(edge: pecofence_core::TitleEdge) -> &'static str {
     match edge {
         TitleEdge::Top => "top",
         TitleEdge::Bottom => "bottom",
+        TitleEdge::Left => "left",
+        TitleEdge::Right => "right",
     }
 }
 
@@ -402,9 +417,11 @@ impl App {
         self.schedule_save();
     }
 
-    /// Title bar position: the edge of the host its title bar runs along. A 向上展开 that
-    /// follows the title bar turns with it (`Fence::move_title_bar`) and a rolled title row stays
-    /// where it is, its rect recorded again around it. An open fence keeps its rect.
+    /// Title bar position: the edge of the host its title bar runs along. Between the top and
+    /// the bottom a 向上展开 that follows the title bar turns with it (`Fence::move_title_bar`)
+    /// and a rolled title row stays where it is, its rect recorded again around it. Into, out
+    /// of or between columns, the rolled title bar stays where it was too (`place_title_bar`).
+    /// An open fence keeps its rect.
     pub(super) fn set_fence_title_edge(&mut self, fence: FenceId, edge: pecofence_core::TitleEdge) {
         let host = self.state.host_of(fence);
         let Some(from) = self.state.fence(host).map(|f| f.title_edge()) else {
@@ -413,17 +430,29 @@ impl App {
         if from == edge {
             return;
         }
+        // Which end of the old bar the new one lines up with: a column's kept end, or for a
+        // row the side the new column runs along. Read before the window takes the new bar.
+        let old_right = if from.is_side() {
+            self.fences.get(&host).is_some_and(|w| w.column_at_right())
+        } else {
+            edge == pecofence_core::TitleEdge::Right
+        };
+        let old_bar = self.resting_bar_rect(host);
         self.state.move_title_bar(host, edge);
         // Also hands the window the 向上展开 the move may have turned.
         self.apply_fence_appearance(host);
-        if let Some(w) = self.fences.get(&host) {
-            // An open fence rolls up to its new title bar, so a bottom row keeps the bottom edge.
-            let open = !w.is_rolled();
+        // An open fence rolls up to its new title bar, so a bottom row keeps the bottom edge.
+        let open = self.fences.get(&host).is_some_and(|w| !w.is_rolled());
+        let bottom = open && edge == pecofence_core::TitleEdge::Bottom;
+        if from.is_side() || edge.is_side() {
+            let end = edge == pecofence_core::TitleEdge::Right || bottom;
+            self.place_title_bar(host, old_bar.map(|old| (end, old_right, old)));
+        } else if let Some(w) = self.fences.get(&host) {
             // Rolled up, a row moved to the top without 向上展开 is the top of the fence now.
             let top_down = edge == pecofence_core::TitleEdge::Top
                 && !self.state.fence(host).is_some_and(|f| f.expand_upward);
             if open || top_down {
-                w.set_row_at_bottom(open && edge == pecofence_core::TitleEdge::Bottom);
+                w.set_kept_end(bottom);
             }
             let (rect, rolled, expanded) = (w.rect(), w.is_rolled(), w.expanded_height_px());
             self.record_bounds(host, rect, rolled, expanded);
@@ -447,17 +476,31 @@ impl App {
             .fence(host)
             .is_some_and(|f| f.shrinks_collapsed())
         {
-            self.place_title_bar(host);
+            self.place_title_bar(host, None);
         }
         self.schedule_save();
     }
 
-    /// Whether the collapsed title row shrinks to its title or tabs (None = it keeps its width).
+    /// Whether the collapsed title bar shrinks to its title or tabs (None = only on a side).
     pub(super) fn set_fence_collapsed_size(&mut self, fence: FenceId, shrink: Option<bool>) {
         let host = self.state.host_of(fence);
         self.state.set_shrink_collapsed(host, shrink);
         self.apply_fence_appearance(host);
-        self.place_title_bar(host);
+        self.place_title_bar(host, None);
+        self.schedule_save();
+    }
+
+    /// How a title column on a side shows its tabs.
+    pub(super) fn set_fence_side_tab_text(
+        &mut self,
+        fence: FenceId,
+        style: pecofence_core::SideTabText,
+    ) {
+        let host = self.state.host_of(fence);
+        self.state.set_side_tab_text(host, style);
+        self.apply_fence_appearance(host);
+        self.place_title_bar(host, None);
+        self.apply_auto_height(host);
         self.schedule_save();
     }
 
@@ -706,6 +749,10 @@ impl App {
                 .fences
                 .get(&host_id)
                 .is_some_and(|w| w.is_desktop_arranged()),
+            "sideTabText": match h.side_tab_text() {
+                pecofence_core::SideTabText::Vertical => "vertical",
+                pecofence_core::SideTabText::Horizontal => "horizontal",
+            },
             "hideWhenEmpty": f.hide_when_empty,
             "desktopLayout": f.desktop_layout,
             "openFoldersInside": f.open_folders_inside,
@@ -793,6 +840,7 @@ impl App {
             FenceProp::TitleEdge(edge) => self.set_fence_title_edge(fence, edge),
             FenceProp::TitleAlign(align) => self.set_fence_title_align(fence, align),
             FenceProp::CollapsedSize(shrink) => self.set_fence_collapsed_size(fence, shrink),
+            FenceProp::SideTabText(style) => self.set_fence_side_tab_text(fence, style),
             FenceProp::OpenFoldersInside(on) => self.set_fence_open_folders_inside(fence, on),
             FenceProp::PortalNavigate(on) => self.set_fence_portal_navigate(fence, on),
             FenceProp::PortalTitleIcon(on) => self.set_fence_title_icon(fence, on),

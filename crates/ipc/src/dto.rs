@@ -162,6 +162,10 @@ pub struct FenceDto {
     /// or rolled up with its title row at the bottom of `rect` (`fence resize` keeps it).
     #[serde(default)]
     pub bottom_anchored: bool,
+    /// The right edge is the one that stays put: a title column that opened to the left, or
+    /// rolled up into its column at the right of `rect` (`fence resize` keeps it).
+    #[serde(default)]
+    pub right_anchored: bool,
     pub item_count: usize,
     /// Set when this fence is shown as a tab inside another fence's window.
     pub tab_host: Option<Uuid>,
@@ -188,7 +192,7 @@ pub struct FenceDto {
     pub opacity: String,
     /// `#RRGGBB` or `null`.
     pub tint: Option<String>,
-    /// The tint washes only the title row.
+    /// The tint washes only the title bar (row or column).
     #[serde(default)]
     pub tint_title_only: bool,
     /// This fence's bar in a tab strip: `#RRGGBB`, or `null` = its tint.
@@ -201,18 +205,22 @@ pub struct FenceDto {
     /// `default` (the global `rollUp.titleOnHover`) | `hover` | `always`.
     #[serde(default)]
     pub title_on_hover: String,
-    /// `top` | `bottom`: the edge the title bar runs along.
+    /// `top` | `bottom` | `left` | `right`: the edge the title bar runs along (on a side it is a
+    /// column).
     #[serde(default)]
     pub title_position: String,
     /// `default` (the global `titleAlign`) | `left` | `center` | `right`.
     #[serde(default)]
     pub title_align: String,
-    /// `default` (the title row keeps its width) | `fit` | `full`.
+    /// `default` (a side column fits, a title row keeps its length) | `fit` | `full`.
     #[serde(default)]
     pub collapsed_size: String,
-    /// Whether the collapsed title row shrinks to its title or tabs (`collapsedSize` applied).
+    /// Whether the collapsed title bar shrinks to its title or tabs (`collapsedSize` applied).
     #[serde(default)]
     pub collapsed_shrinks: bool,
+    /// `vertical` | `horizontal`: the tab text in a side column.
+    #[serde(default)]
+    pub side_tab_text: String,
     /// `icons` | `list` | `details`.
     pub layout: String,
     /// `manual` | `name` | `type` | `date` | `size` | `openCount`.

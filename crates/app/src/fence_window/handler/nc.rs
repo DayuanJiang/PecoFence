@@ -72,8 +72,8 @@ pub(super) fn on_nchittest(
     let rect = window::window_rect(hwnd);
     let left = x - rect.left;
     let top = y - rect.top;
-    // Beside a left tab column there is no title row: the column is the title bar.
-    let in_title = !v.tabs_on_rail() && v.in_title_row(top);
+    // Beside a title column there is no title row: the column is the title bar.
+    let in_title = !v.title_column() && v.in_title_row(top);
     let right = rect.right - x;
     let bottom = rect.bottom - y;
     let w = rect.right - rect.left;
@@ -88,13 +88,18 @@ pub(super) fn on_nchittest(
     let rolled = v.rolled_up;
     // Tab headers and the title bar's buttons take clicks (switch / drag out,
     // up, roll); the rest of the title row moves the window, and so does the
-    // free part of a left tab column. A fence collapsed to its column has no
+    // free part of a title column. A fence collapsed to its column has no
     // resize edges.
-    let in_rail = left < v.content_x;
+    let in_rail = v.in_column(left);
     let on_control =
         v.tab_at(left, top).is_some() || v.up_button_at(left, top) || v.chevron_at(left, top);
     let clear_of_edges = if in_rail {
-        rolled || (left >= border && bottom > border)
+        let off_side = if v.column_right() {
+            right > border
+        } else {
+            left >= border
+        };
+        rolled || (off_side && bottom > border)
     } else {
         in_title && left >= border && right > border
     };
@@ -109,7 +114,7 @@ pub(super) fn on_nchittest(
             msg::HTCLIENT
         });
     }
-    if rolled && (v.tabs_on_rail() || v.width_collapsed) {
+    if rolled && (v.title_column() || v.width_collapsed) {
         // Collapsed to the column, or to a shrunk title row: it only moves.
         return Some(msg::HTCAPTION);
     }
@@ -176,10 +181,10 @@ pub(super) fn on_ncmousemove(
     let mut guard = view.borrow_mut();
     if let Some(v) = guard.as_mut() {
         v.set_mouse_inside(true);
-        // Beside a left tab column the column is the title bar (the only caption area there).
+        // Beside a title column the column is the title bar (the only caption area there).
         let top = window::window_rect(hwnd).top;
         let is_title = wparam as isize == msg::HTCAPTION
-            && (v.tabs_on_rail() || v.in_title_row(msg::hi_i16(lparam) - top));
+            && (v.title_column() || v.in_title_row(msg::hi_i16(lparam) - top));
         let (item, title) = v.set_hover(None, is_title);
         if title {
             let _ = v.redraw_chrome_only();
@@ -757,7 +762,7 @@ pub(super) fn on_sizing(h: &HandlerCtx, hwnd: HWND, wparam: usize, lparam: isize
     let v = guard.as_ref()?;
     let scale = v.scale();
     let metrics = v.grid_metrics();
-    // Beside the rows: the title row above or below them, nothing beside a left tab column.
+    // Beside the rows: the title row above or below them, nothing beside a title column.
     let title_h = v.head_px() + v.foot_px();
     let slack = FIT_SLACK_PX as f32;
     // Rows (List / Details): rows below the title (+ fixed header), free width.
@@ -771,9 +776,9 @@ pub(super) fn on_sizing(h: &HandlerCtx, hwnd: HWND, wparam: usize, lparam: isize
             1,
         ),
         None => {
-            // A left tab column sits before the first column.
+            // A title column sits before the first column.
             let cols = Cells {
-                fixed: metrics.pad_x * 2.0 * scale + v.content_x as f32,
+                fixed: metrics.pad_x * 2.0 * scale + v.rail_px() as f32,
                 step: (metrics.cell_w * scale).max(1.0),
             };
             (

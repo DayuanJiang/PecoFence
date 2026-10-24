@@ -600,7 +600,17 @@
   "向下收起": "Contraer hacia abajo",
   "位置": "Posición",
   "上方放得下时从标题栏向上展开，放不下就向下展开": "Se expande hacia arriba desde la barra de título si hay espacio y, si no, hacia abajo",
-  "放在底部时，标签页留在标题栏里，栅栏收向标题栏": "Abajo, las pestañas siguen en la barra de título y el grupo se contrae hacia ella",
-  "标题栏在底部的栅栏不受影响": "No afecta a los grupos con la barra de título abajo",
-  "停靠时标题栏回到顶部": "Al acoplarlo, la barra de título vuelve arriba"
+  "放在底部时，标签页留在标题栏里，栅栏收向标题栏；放在两侧时标题栏是一列，栅栏收起到这一列，从另一侧展开": "Abajo, las pestañas siguen en la barra de título y el grupo se contrae hacia ella. En un lateral, la barra de título es una columna en la que el grupo se contrae y desde la que se expande hacia el otro lado",
+  "标题栏在底部或两侧的栅栏不受影响": "No afecta a los grupos con la barra de título abajo o en un lateral",
+  "停靠时标题栏回到顶部": "Al acoplarlo, la barra de título vuelve arriba",
+  "右侧": "Derecha",
+  "向左收起": "Contraer hacia la izquierda",
+  "向右收起": "Contraer hacia la derecha",
+  "两侧标签页的文字": "Texto de las pestañas en un lateral",
+  "标题栏在两侧时，栅栏朝离开标题栏的方向展开": "Con la barra de título en un lateral, el grupo se expande hacia el lado contrario",
+  "标题栏在两侧且有多个标签页时才用到": "Se aplica a una barra de título lateral con dos o más pestañas",
+  "对齐\u0004顶部": "Alinear arriba",
+  "对齐\u0004底部": "Alinear abajo",
+  "竖向": "Vertical",
+  "横向": "Horizontal"
 }
