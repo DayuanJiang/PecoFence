@@ -532,6 +532,23 @@ fn scroll_duration_is_capped_per_input() {
 /// tab reserve) so those animate with the height instead of flipping when it lands; the
 /// progress tween is phase-locked with the height (167 ms collapse curve reaches 1 exactly
 /// at the end).
+/// A height change keeps the top edge, or the bottom edge of a fence that expands upward
+/// (issue #125): a title row resting on the taskbar grows away from it.
+#[test]
+fn expand_upward_keeps_the_bottom_edge() {
+    let r = RECT {
+        left: 20,
+        top: 968,
+        right: 380,
+        bottom: 1000,
+    };
+    assert_eq!(top_for_height(false, &r, 400), 968);
+    assert_eq!(top_for_height(true, &r, 400), 600);
+    // Rolling back up lands on the same row.
+    let expanded = RECT { top: 600, ..r };
+    assert_eq!(top_for_height(true, &expanded, 32), 968);
+}
+
 #[test]
 fn roll_target_leads_the_committed_state() {
     assert!(roll_target_of(Some(true), false));

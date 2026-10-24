@@ -1283,6 +1283,7 @@ impl App {
             geometry: f.geometry.clone(),
             rolled_up: host.rolled_up,
             locked: host.locked,
+            expand_upward: host.expand_upward,
             item_count: self.state.unsorted_items_of(f).count(),
             tab_host: f.tab_host,
             tabs: if f.tab_host.is_none() {

@@ -145,7 +145,7 @@ pub enum Method {
     #[serde(rename = "fences.moveToMonitor")]
     FencesMoveToMonitor { fence: String, monitor: String },
     /// Per-fence option; `prop` and `value` use the same names and values as [`FenceDto`]
-    /// (`iconSize` 32|48|64|96, `spacing`, `autoHeight`, `locked`, `excludeFromQuickHide`,
+    /// (`iconSize` 32|48|64|96, `spacing`, `autoHeight`, `locked`, `expandUpward`, `excludeFromQuickHide`,
     /// `opacity` default|clear|solid|transparent, `tint` "#RRGGBB"|null, `tintTitleOnly`,
     /// `tabColor` "#RRGGBB"|null, `titleColor`, `titleSize` small|normal|large|extraLarge,
     /// `titleOnHover` default|hover|always, `layout` icons|list|details, `sort`, `reverse`, `groupByDate`, `labelLines`,

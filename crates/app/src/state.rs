@@ -1710,15 +1710,19 @@ impl AppState {
     // ---- fences -----------------------------------------------------------------------------
 
     pub fn set_fence_bounds(&mut self, id: FenceId, rect: RECT, rolled: bool, expanded_h_px: i32) {
+        // Rolled up, the window is the title row: the expanded rect hangs below it, or stands
+        // on it for a fence that expands upward.
+        let upward = self.fence(id).is_some_and(|f| f.expand_upward);
+        let (top, bottom) = match (rolled, upward) {
+            (true, false) => (rect.top, rect.top + expanded_h_px.max(1)),
+            (true, true) => (rect.bottom - expanded_h_px.max(1), rect.bottom),
+            (false, _) => (rect.top, rect.bottom),
+        };
         let px = PxRect {
             left: rect.left,
-            top: rect.top,
+            top,
             right: rect.right,
-            bottom: if rolled {
-                rect.top + expanded_h_px.max(1)
-            } else {
-                rect.bottom
-            },
+            bottom,
         };
         let (cx, cy) = px.center();
         let work = self
@@ -1836,6 +1840,15 @@ impl AppState {
             && f.hide_when_empty != on
         {
             f.hide_when_empty = on;
+            self.dirty = true;
+        }
+    }
+
+    pub fn set_expand_upward(&mut self, id: FenceId, on: bool) {
+        if let Some(f) = self.fence_mut(id)
+            && f.expand_upward != on
+        {
+            f.expand_upward = on;
             self.dirty = true;
         }
     }
@@ -2362,6 +2375,28 @@ mod tests {
         state.ensure_layout();
         assert_eq!(state.layout, 1);
         assert!(state.fence(own.id).is_none());
+    }
+
+    /// Rolled up, a fence saves its expanded rect: below the title row, or above it when the
+    /// fence expands upward (the title row then sits at the expanded rect's bottom edge).
+    #[test]
+    fn rolled_bounds_hang_below_or_stand_above_the_title_row() {
+        let mut state = test_state();
+        let id = state.fences()[0].id;
+        let saved = |s: &AppState| {
+            let px = s.fence_px_rect(s.fence(id).unwrap());
+            (px.top, px.bottom)
+        };
+        // Title row at 600..632, 300 px expanded.
+        state.set_fence_bounds(id, rect(20, 600, 300, 32), true, 300);
+        assert_eq!(saved(&state), (600, 900));
+        state.set_expand_upward(id, true);
+        state.set_fence_bounds(id, rect(20, 600, 300, 32), true, 300);
+        assert_eq!(saved(&state), (332, 632));
+        // Expanded, the window is the rect either way.
+        state.set_fence_bounds(id, rect(20, 100, 300, 300), false, 300);
+        assert_eq!(saved(&state), (100, 400));
+        assert!(state.fence(id).unwrap().expand_upward);
     }
 
     /// The same monitor at 4K / 200 % and at 1080p / 100 %: each keeps its own spots.

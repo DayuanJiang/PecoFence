@@ -161,6 +161,49 @@ try {
     $r = Invoke-Cli @("fence", "unroll", $id)
     Check "fence unroll" ($r.Code -eq 0 -and (Json $r.Out).fence.rolledUp -eq $false) "$($r.Out) $($r.Err)"
 
+    # Issue #125: expandUpward keeps the bottom edge; the saved (expanded) rect stays put.
+    Start-Sleep -Milliseconds 800  # the unroll above lands first
+    $r = Invoke-Cli @("fence", "set", $id, "expandUpward", "true")
+    $u = Json $r.Out
+    Check "fence set expandUpward true" ($r.Code -eq 0 -and $u.fence.expandUpward -eq $true) "$($r.Out) $($r.Err)"
+    $rect = $u.fence.rect
+    $bottom = $rect.y + $rect.h
+    Invoke-Cli @("fence", "roll", $id) | Out-Null
+    Start-Sleep -Milliseconds 800
+    $w = Json (Invoke-Cli @("fence", "get", $id)).Out
+    Check "expandUpward roll: title row at the bottom edge" ($w.rolledUp -eq $true -and $w.windowRect.h -lt $rect.h -and ($w.windowRect.y + $w.windowRect.h) -eq $bottom) "$($w | ConvertTo-Json -Compress -Depth 4)"
+    Check "expandUpward roll: saved rect unchanged" ($w.rect.y -eq $rect.y -and $w.rect.h -eq $rect.h) "$($w.rect | ConvertTo-Json -Compress)"
+    Invoke-Cli @("fence", "unroll", $id) | Out-Null
+    Start-Sleep -Milliseconds 800
+    $w = Json (Invoke-Cli @("fence", "get", $id)).Out
+    Check "expandUpward unroll: grows back up to the saved rect" ($w.rolledUp -eq $false -and $w.windowRect.y -eq $rect.y -and $w.windowRect.h -eq $rect.h) "$($w.windowRect | ConvertTo-Json -Compress)"
+    Invoke-Cli @("fence", "roll", $id) | Out-Null
+    Start-Sleep -Milliseconds 800
+    # Switched while rolled, the title row stays where it is (one dragged onto the taskbar
+    # expands upward from there): the saved rect hangs below it, or stands on it again.
+    $row = (Json (Invoke-Cli @("fence", "get", $id)).Out).windowRect
+    $r = Invoke-Cli @("fence", "set", $id, "expandUpward", "false")
+    $w = Json (Invoke-Cli @("fence", "get", $id)).Out
+    Check "expandUpward off while rolled: title row stays, rect hangs below it" ($r.Code -eq 0 -and $w.expandUpward -eq $false -and $w.windowRect.y -eq $row.y -and $w.rect.y -eq $row.y -and $w.rect.h -eq $rect.h) "$($w | ConvertTo-Json -Compress -Depth 4)"
+    $r = Invoke-Cli @("fence", "set", $id, "expandUpward", "true")
+    $w = Json (Invoke-Cli @("fence", "get", $id)).Out
+    Check "expandUpward on while rolled: title row stays, rect stands on it" ($r.Code -eq 0 -and $w.windowRect.y -eq $row.y -and ($w.rect.y + $w.rect.h) -eq $bottom -and $w.rect.h -eq $rect.h) "$($w | ConvertTo-Json -Compress -Depth 4)"
+    Invoke-Cli @("fence", "unroll", $id) | Out-Null
+    Start-Sleep -Milliseconds 800
+    Invoke-Cli @("fence", "set", $id, "expandUpward", "false") | Out-Null
+    # Switched during a roll, the roll finishes the way it started and the rect follows the
+    # title row it lands as: this roll collapses to the top row, the rect then stands on it.
+    Invoke-Cli @("fence", "roll", $id) | Out-Null
+    Invoke-Cli @("fence", "set", $id, "expandUpward", "true") | Out-Null
+    Start-Sleep -Milliseconds 800
+    $w = Json (Invoke-Cli @("fence", "get", $id)).Out
+    Check "expandUpward switched mid-roll: lands at the top row, rect stands on it" ($w.rolledUp -eq $true -and $w.windowRect.y -eq $rect.y -and ($w.rect.y + $w.rect.h) -eq ($w.windowRect.y + $w.windowRect.h) -and $w.rect.h -eq $rect.h) "$($w | ConvertTo-Json -Compress -Depth 4)"
+    Invoke-Cli @("fence", "set", $id, "expandUpward", "false") | Out-Null
+    Invoke-Cli @("fence", "unroll", $id) | Out-Null
+    Start-Sleep -Milliseconds 800
+    $w = Json (Invoke-Cli @("fence", "get", $id)).Out
+    Check "expandUpward off again: back at the rect it started from" ($w.rolledUp -eq $false -and $w.windowRect.y -eq $rect.y -and $w.windowRect.h -eq $rect.h) "$($w.windowRect | ConvertTo-Json -Compress)"
+
     $r = Invoke-Cli @("fence", "rename", $id, "$title renamed")
     Check "fence rename" ($r.Code -eq 0 -and (Json $r.Out).fence.title -eq "$title renamed") "$($r.Out) $($r.Err)"
 
@@ -450,6 +493,44 @@ try {
     $cfgText = Get-Content -Raw (Join-Path $stage "config/config.json")
     $saved = $cfgText -match '"peek":\s*\{[^}]*"enabled":\s*false'
     Check "config.json saved with peek.enabled=false" $saved ""
+
+    # 10. Issue #125: a rolled fence that expands upward comes back at the same spot after a
+    # restart (the window is created with its title row at the bottom of the saved rect).
+    $r = Invoke-Cli @("fence", "create", "--title", "Upward $instance", "--rect", "$x,$($y + 200),400,300")
+    $up = (Json $r.Out).fence.id
+    Invoke-Cli @("fence", "set", $up, "expandUpward", "true") | Out-Null
+    Invoke-Cli @("fence", "roll", $up) | Out-Null
+    Start-Sleep -Milliseconds 800
+    $was = Json (Invoke-Cli @("fence", "get", $up)).Out
+    Stop-Process -Id $app.Id -Force
+    Start-Sleep -Milliseconds 500
+    $app = Start-Process -FilePath (Join-Path $stage "pecofence.exe") -WorkingDirectory $stage `
+        -ArgumentList @("--portable", "--no-hide-icons", "--exit-after", "$LifetimeMs") -PassThru
+    $deadline = (Get-Date).AddSeconds(30)
+    do {
+        Start-Sleep -Milliseconds 250
+        $r = Invoke-Cli @("status")
+    } while ($r.Code -ne 0 -and (Get-Date) -lt $deadline)
+    Start-Sleep -Milliseconds 500
+    $now = Json (Invoke-Cli @("fence", "get", $up)).Out
+    Check "expandUpward rolled fence keeps its spot across a restart" ($now.rolledUp -eq $true -and $now.rect.y -eq $was.rect.y -and $now.rect.h -eq $was.rect.h -and $now.windowRect.y -eq $was.windowRect.y -and ($now.windowRect.y + $now.windowRect.h) -eq ($now.rect.y + $now.rect.h)) "before=$($was.rect | ConvertTo-Json -Compress) $($was.windowRect | ConvertTo-Json -Compress) after=$($now.rect | ConvertTo-Json -Compress) $($now.windowRect | ConvertTo-Json -Compress)"
+    Invoke-Cli @("fence", "delete", $up) | Out-Null
+
+    # A title row at the top of the screen, switched on: the fence above it would leave the
+    # screen, so the row moves down until the expanded fence fits.
+    $r = Invoke-Cli @("fence", "create", "--title", "Top $instance", "--rect", "$x,$($work.y + 20),400,300")
+    $top = (Json $r.Out).fence.id
+    Start-Sleep -Milliseconds 500
+    Invoke-Cli @("fence", "roll", $top) | Out-Null
+    Start-Sleep -Milliseconds 800
+    Invoke-Cli @("fence", "set", $top, "expandUpward", "true") | Out-Null
+    $w = Json (Invoke-Cli @("fence", "get", $top)).Out
+    Check "expandUpward at the top of the screen: the row moves down so the fence fits" ($w.rect.y -ge $work.y -and ($w.windowRect.y + $w.windowRect.h) -eq ($w.rect.y + $w.rect.h)) "rect=$($w.rect | ConvertTo-Json -Compress) window=$($w.windowRect | ConvertTo-Json -Compress)"
+    Invoke-Cli @("fence", "unroll", $top) | Out-Null
+    Start-Sleep -Milliseconds 800
+    $w = Json (Invoke-Cli @("fence", "get", $top)).Out
+    Check "expandUpward at the top of the screen: expands inside the work area" ($w.windowRect.y -ge $work.y -and $w.windowRect.y -eq $w.rect.y) "window=$($w.windowRect | ConvertTo-Json -Compress)"
+    Invoke-Cli @("fence", "delete", $top) | Out-Null
 }
 finally {
     if ($app -and -not $app.HasExited) { Stop-Process -Id $app.Id -Force }

@@ -160,7 +160,9 @@ in; only the tab currently shown can be measured, so another tab is `unsupported
 `fence detach` it first).
 
 `fence set` properties (values as shown by `fence get`): `title` (or `fence rename`), `iconSize`
-32/48/64/96, `spacing` compact/normal/loose, `autoHeight`, `locked`, `excludeFromQuickHide`,
+32/48/64/96, `spacing` compact/normal/loose, `autoHeight`, `locked`, `expandUpward` (the bottom
+edge stays put: rolled up, the title row sits at the bottom and the fence expands upward, for
+fences resting on the taskbar), `excludeFromQuickHide`,
 `opacity` default/clear/solid/transparent (transparent: no glass, rim or shadow until the pointer
 is over the fence), `tint` `"#RRGGBB"` or `null`, `tintTitleOnly` (the tint washes only the title
 row), `tabColor` `"#RRGGBB"` or `null` (the bar under the fence's tab in a tab strip; `null` follows

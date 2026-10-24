@@ -1,7 +1,8 @@
 //! Push neighbours (`rollUp.pushNeighbors`): while a fence is expanded (a click, a hover peek, or
 //! a taller height from the CLI), the fences stacked below it slide down out of its way, and
 //! slide back when it rolls up. Edge drags and the automatic size changes still stop short of
-//! the fence below as it shows.
+//! the fence below as it shows. A fence that expands upward keeps its bottom edge: it pushes
+//! nothing and is not pushed.
 //!
 //! The layout keeps the resting positions. The pass moves the windows and notes each shift in
 //! `Behavior::pushed`; every rectangle the layout records has the shift taken out first
@@ -162,9 +163,14 @@ impl App {
                 // what it pushed stays put rather than sliding back under it.
                 let frozen = by.iter().any(|h| dragged.contains(h));
                 let settles = settling.contains(&id);
+                let fence = self.state.fence(id);
+                // Expanding upward keeps the bottom edge where it is: nothing below it has to
+                // make room, and nothing above pushes it (its top moving up as it expands must
+                // not read as a fence resting under the ones above).
+                let upward = fence.is_some_and(|f| f.expand_upward);
                 let role = if is_dragged || frozen || sized == Some(hwnd) {
                     Role::Held
-                } else if settles || self.state.fence(id).is_some_and(|f| f.locked) {
+                } else if settles || upward || fence.is_some_and(|f| f.locked) {
                     Role::Locked
                 } else {
                     Role::Free
@@ -182,7 +188,7 @@ impl App {
                     gap: self.gap_px(hwnd),
                     work,
                     role,
-                    pushes: !is_dragged && !settles,
+                    pushes: !is_dragged && !settles && !upward,
                     y: r.top,
                     by,
                 });

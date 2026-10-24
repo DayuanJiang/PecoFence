@@ -136,6 +136,10 @@ pub struct FenceDto {
     pub geometry: NormGeometry,
     pub rolled_up: bool,
     pub locked: bool,
+    /// The bottom edge stays put when the fence rolls up, expands or changes height (a hosted
+    /// tab reports its host's).
+    #[serde(default)]
+    pub expand_upward: bool,
     pub item_count: usize,
     /// Set when this fence is shown as a tab inside another fence's window.
     pub tab_host: Option<Uuid>,

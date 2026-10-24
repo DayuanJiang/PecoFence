@@ -120,6 +120,7 @@ impl App {
                 &fence.title,
                 shown.kind == FenceKind::Inbox,
                 fence.rolled_up,
+                fence.expand_upward,
                 shown.view.icon_size,
                 shown.view.label_lines,
                 fence.view.auto_height,
@@ -202,8 +203,9 @@ impl App {
         }
     }
 
-    /// Pushes the persisted per-fence flags (lock, quick-hide exclusion, appearance override,
-    /// title on hover) into the window and the anchor.
+    /// Pushes the persisted per-fence flags (lock, expand upward, quick-hide exclusion,
+    /// appearance override, title on hover) into the window and the anchor. No geometry: the
+    /// window keeps its rect.
     pub(super) fn apply_fence_appearance(&mut self, id: FenceId) {
         let id = self.state.host_of(id);
         let Some(f) = self.state.fence(id).cloned() else {
@@ -213,6 +215,9 @@ impl App {
             return;
         };
         w.set_locked(f.locked);
+        // The flag only: a window rolled up at rest is where its saved rect says (the callers
+        // that change it place the window from the state afterwards).
+        w.set_expand_upward(f.expand_upward);
         let (bd, op) = f
             .appearance
             .as_ref()
@@ -413,8 +418,10 @@ impl App {
             return;
         };
         let r = w.rect();
-        // Growing stops short of a fence below; the rest of the items scroll.
-        if let Some(limit) = self.growth_limit_below(id, &r) {
+        // Growing stops short of a fence below; the rest of the items scroll. A fence that
+        // expands upward keeps its bottom edge and never grows into the fences below it.
+        let upward = self.state.fence(id).is_some_and(|f| f.expand_upward);
+        if !upward && let Some(limit) = self.growth_limit_below(id, &r) {
             h = h.min(limit.max(r.bottom) - r.top);
         }
         if r.bottom - r.top == h {

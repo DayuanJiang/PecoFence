@@ -375,6 +375,7 @@ mod ipc {
             "layout",
             "labelLines",
             "titleOnHover",
+            "expandUpward",
             "portalTitleIcon",
         ] {
             assert!(allowed.as_array().unwrap().contains(&json!(p)), "{allowed}");
@@ -425,6 +426,17 @@ mod ipc {
         assert_eq!(
             parse_fence_prop("hideWhenEmpty", &json!(true)).unwrap(),
             FenceProp::HideWhenEmpty(true)
+        );
+        // Issue #125: the bottom edge stays put.
+        assert_eq!(
+            parse_fence_prop("expandUpward", &json!(true)).unwrap(),
+            FenceProp::ExpandUpward(true)
+        );
+        assert_eq!(
+            parse_fence_prop("expandUpward", &json!("up"))
+                .unwrap_err()
+                .code,
+            ErrorCode::InvalidValue
         );
         assert_eq!(
             parse_fence_prop("opacity", &json!("transparent")).unwrap(),

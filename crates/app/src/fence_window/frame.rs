@@ -86,11 +86,12 @@ impl FenceWindow {
         let hwnd = self.hwnd();
         let moved = flush_window_drag(&self.view, hwnd, now, None);
         // Phase 1: compute under a short borrow.
-        let (height, more) = {
+        let (height, more, upward) = {
             let mut guard = self.view.borrow_mut();
             let Some(v) = guard.as_mut() else {
                 return false;
             };
+            let upward = v.anim_upward;
             // A collapse to a left tab column (or an expand from it) also moves the width.
             let width = v
                 .roll_anim
@@ -114,6 +115,7 @@ impl FenceWindow {
             (
                 height.map(|(h, done, rolled)| (width, h, done, rolled)),
                 more,
+                upward,
             )
         };
         // Phase 2: window geometry with no borrow held (WM_SIZE re-enters the handler; while
@@ -123,7 +125,8 @@ impl FenceWindow {
         };
         let r = window::window_rect(hwnd);
         let w = w.unwrap_or(r.right - r.left);
-        let _ = window::set_window_bounds(hwnd, r.left, r.top, w, h);
+        let top = top_for_height(upward, &r, h);
+        let _ = window::set_window_bounds(hwnd, r.left, top, w, h);
         if !done {
             return true;
         }
@@ -148,6 +151,9 @@ impl FenceWindow {
                 tracing::error!(error = %e, "redraw after height animation failed");
             }
             v.update_shadow_now();
+            // 向上展开 switched while the animation ran: the next one moves the other edge (the
+            // bounds recorded below place the expanded rect for the current setting).
+            v.anim_upward = v.expand_upward;
             (v.queue.clone(), v.behavior.clone())
         };
         queue_bounds_changed(&queue, &behavior, self.id, hwnd);

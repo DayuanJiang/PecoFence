@@ -266,6 +266,11 @@ pub struct FenceViewState {
     pub(super) rail_grow: bool,
     /// Mouse move/resize disabled (menu "锁定位置和大小").
     pub(super) locked: bool,
+    /// 向上展开: height changes (roll-up, expand, auto height) keep the bottom edge in place.
+    pub(super) expand_upward: bool,
+    /// The `expand_upward` the running height animation started with: switching it mid-flight
+    /// takes effect when the animation lands, not by moving the window halfway.
+    pub(super) anim_upward: bool,
     /// Per-fence material override; None follows the global setting.
     pub(super) backdrop_override: Option<BackdropMode>,
     /// Per-fence opacity multiplier for the glass layer (1.0 = default).

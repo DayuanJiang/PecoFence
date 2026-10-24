@@ -775,6 +775,11 @@ pub struct Fence {
     /// desktop brings it back at its saved spot.
     #[serde(default)]
     pub hide_when_empty: bool,
+    /// Expand upward (向上展开): the bottom edge stays put while the fence rolls up, expands or
+    /// changes height, so a fence resting on the taskbar grows away from it. `geometry` is still
+    /// the expanded rect; rolled up, the title row sits at its bottom.
+    #[serde(default)]
+    pub expand_upward: bool,
     #[serde(default)]
     pub items: Vec<ItemRef>,
 }
@@ -799,6 +804,7 @@ impl Fence {
             portal_navigate: true,
             hide_title_icon: false,
             hide_when_empty: false,
+            expand_upward: false,
             items: Vec::new(),
         }
     }

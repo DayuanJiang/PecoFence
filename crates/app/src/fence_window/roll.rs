@@ -7,6 +7,12 @@ pub(super) fn roll_target_of(rolling_to: Option<bool>, rolled_up: bool) -> bool 
     rolling_to.unwrap_or(rolled_up)
 }
 
+/// Top of window rect `r` once it is `h` tall: the top edge stays, or the bottom edge for a
+/// fence that expands upward (向上展开).
+pub(super) fn top_for_height(expand_upward: bool, r: &RECT, h: i32) -> i32 {
+    if expand_upward { r.bottom - h } else { r.top }
+}
+
 /// Roll-up / expand: the window height itself moves, which only the app can animate (an
 /// HWND has no compositor properties), so this is a client tween ticked by the frame clock.
 /// While it runs nothing is re-rasterised but the chrome (the content surface is frozen at its
@@ -400,6 +406,10 @@ impl FenceViewState {
             .map(|t| t.id)
             .zip(self.tab_draw_xs(now))
             .collect();
+        // A roll that takes over a running height animation keeps moving the same edge.
+        if !self.height_animating() {
+            self.anim_upward = self.expand_upward;
+        }
         // The roll owns the height (and the content panel) from here on.
         self.height_anim = None;
         self.finish_content_swap_now();
@@ -507,6 +517,7 @@ impl FenceViewState {
         match self.height_anim.as_mut() {
             Some(t) => t.retarget(to_h as f32, motion::NORMAL, Curve::PointToPoint, now),
             None => {
+                self.anim_upward = self.expand_upward;
                 self.height_anim = Some(self.motion.tween(
                     cur_h as f32,
                     to_h as f32,

@@ -530,6 +530,8 @@
   "下载失败，请稍后再试": "Impossible de télécharger la mise à jour. Réessayez plus tard.",
   "为空时自动隐藏": "Masquer quand il est vide",
   "里面没有图标时就不显示；桌面上一出现新图标，它会自己回来": "Reste masqué tant qu’il ne contient aucune icône et réapparaît dès qu’une nouvelle icône arrive sur le Bureau",
+  "向上展开": "Déplier vers le haut",
+  "底边保持不动：收起时标题栏在底部，展开时向上长高，适合放在任务栏上方的栅栏": "Le bord inférieur reste en place : replié, la barre de titre est en bas, et le groupe s’agrandit vers le haut en se dépliant. Pratique au-dessus de la barre des tâches",
   "只给标题栏上色": "Teinter seulement la barre de titre",
   "关掉的话，整个栅栏都会染上色调": "Désactivé, la teinte couvre tout le groupe",
   "标签页颜色": "Couleur de l’onglet",
