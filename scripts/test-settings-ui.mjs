@@ -125,7 +125,10 @@ function bridge() {
             log: 'INFO pecofence::app: config loaded fences=4' } }), 0);
         }
         // Mirror the host: the system colour dialog answers with the colour picked there.
-        if (message.name === 'pickColor') setTimeout(() => receive({ data: { type: 'pickedColor', target: message.target, hex: '123456' } }), 0);
+        if (message.name === 'pickColor') {
+          state.pickedColors = { ...state.pickedColors, [message.target]: '123456' };
+          setTimeout(() => receive({ data: { type: 'pickedColor', target: message.target, hex: '123456' } }), 0);
+        }
         if (message.name === 'deleteSnapshot') state.snapshots = state.snapshots.filter(s => s.id !== message.id);
         if (['ready', 'patchSettings', 'setRules', 'setFence'].includes(message.type) || message.type === 'action') {
           setTimeout(window.testRefresh, 0);
@@ -614,7 +617,7 @@ async function runTests() {
     doc.querySelector('[data-page=general]').click();
     const swatches = doc.getElementById('iconTintSwatches');
     const custom = swatches.children[1];
-    assert(custom.classList.contains('custom') && !custom.classList.contains('set') && custom.getAttribute('aria-checked') === 'false', 'Custom swatch not right after no tint');
+    assert(custom.classList.contains('custom') && custom.getAttribute('aria-checked') === 'false', 'Custom swatch not right after no tint');
     const none = swatches.children[0];
     none.focus();
     none.dispatchEvent(new frame.contentWindow.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })); await settle();
@@ -625,8 +628,14 @@ async function runTests() {
     assert(rgbHex(current().settings.icons.tintRgb) === '123456', 'Picked colour not posted');
     assert(custom.classList.contains('set') && custom.getAttribute('aria-checked') === 'true' && custom.dataset.value === '123456', 'Custom swatch does not show the picked colour');
     assert(swatches.children.length === doc.getElementById('iconTint').options.length, 'Picked colour added a second swatch');
+    const keepsColour = (b) => b.classList.contains('set') && b.getAttribute('aria-checked') === 'false' && b.style.getPropertyValue('--swatch') === '#123456';
+    swatches.querySelector('[data-value="60CDFF"]').click(); await settle();
+    assert(keepsColour(custom), 'Custom swatch lost its colour when a palette colour was chosen');
+    custom.click(); await settle();
+    assert(frame.contentWindow.testMessages.filter(m => m.name === 'pickColor').at(-1).color === '123456', 'Colour dialog not opened on the kept colour');
+    await settle();
     swatches.querySelector('[data-value=""]').click(); await settle();
-    assert(!custom.classList.contains('set'), 'Custom swatch kept a cleared colour');
+    assert(keepsColour(custom), 'Custom swatch lost its colour when the tint was cleared');
     doc.querySelector('[data-page=fences]').click();
     change(doc, 'fenceSel', 'fence-a');
     doc.querySelector('#fenceTintSwatches .custom').click(); await settle(); await settle();
@@ -634,6 +643,7 @@ async function runTests() {
     assert(sent.prop === 'tint' && sent.value === '123456', 'Fence custom tint did not post setFence');
     assert(doc.querySelector('#fenceTintSwatches .custom').getAttribute('aria-checked') === 'true', 'Fence custom swatch not selected after refresh');
     doc.querySelector('#fenceTintSwatches [data-value=""]').click(); await settle();
+    assert(keepsColour(doc.querySelector('#fenceTintSwatches .custom')), 'Fence custom swatch lost its colour');
   });
   await test('Title alignment is posted and previewed; fully transparent fences show their preset', async () => {
     doc.querySelector('[data-page=general]').click();

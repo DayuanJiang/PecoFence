@@ -175,27 +175,29 @@ impl App {
         }
     }
 
-    /// 「自定义颜色」 swatch: the system colour dialog, opened on the colour the swatch holds.
+    /// 「自定义颜色」 swatch: the system colour dialog, opened on the colour the swatch shows.
     /// The page applies the answer to the swatch row named by `target`, like a swatch click.
     fn pick_color(&mut self, v: &serde_json::Value) {
+        let Some(target) = v.get("target").and_then(|t| t.as_str()) else {
+            return;
+        };
         let owner = self.settings.as_ref().map(|h| h.hwnd());
         let initial = v
             .get("color")
             .and_then(|c| c.as_str())
             .and_then(fence_options::parse_hex);
         let accent = self.ctx.theme.borrow().accent_rgb8();
-        if let Some(rgb) = pecofence_platform::colordialog::pick(owner, initial, accent)
-            && let Some(h) = &self.settings
-        {
+        let Some(rgb) = pecofence_platform::colordialog::pick(owner, initial, accent) else {
+            return;
+        };
+        let hex = fence_options::hex(rgb);
+        if let Some(h) = &self.settings {
             h.post_json(
-                &serde_json::json!({
-                    "type": "pickedColor",
-                    "target": v.get("target"),
-                    "hex": fence_options::hex(rgb),
-                })
-                .to_string(),
+                &serde_json::json!({ "type": "pickedColor", "target": target, "hex": hex })
+                    .to_string(),
             );
         }
+        self.picked_colors.insert(target.to_string(), hex);
     }
 
     pub(super) fn import_config(&mut self) {
@@ -353,6 +355,7 @@ impl App {
             "backups": backups,
             "monitors": monitors,
             "tintPalette": fence_options::tint_palette_json(),
+            "pickedColors": self.picked_colors,
             "version": env!("CARGO_PKG_VERSION"),
             "storeEdition": pecofence_platform::process::is_packaged(),
             "configPath": self.state.config_path_on_disk().to_string_lossy(),

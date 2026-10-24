@@ -214,9 +214,8 @@
   .swatch:hover { background: var(--swatch); filter: brightness(1.08); }
   .swatch.none { background: var(--control); border-color: var(--control-strong); }
   .swatch.none::after { content: ""; position: absolute; left: 50%; top: 4px; bottom: 4px; width: 1.5px; margin-left: -.75px; background: var(--text2); transform: rotate(45deg); }
-  .swatch.custom, .swatch.custom:hover { --wheel: conic-gradient(#f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00); background: var(--wheel); }
-  .swatch.custom::after { content: "+"; position: absolute; right: -3px; top: -3px; width: 12px; height: 12px; border-radius: 50%; background: var(--card); color: var(--text); border: 1px solid var(--control-strong); font: 600 11px/11px "Segoe UI", sans-serif; text-align: center; }
-  .swatch.custom.set, .swatch.custom.set:hover { border: 3px solid transparent; background: linear-gradient(var(--swatch), var(--swatch)) padding-box, var(--wheel) border-box; }
+  .swatch.custom:not(.set), .swatch.custom:not(.set):hover { background: conic-gradient(#f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00); }
+  .swatch.custom::after { content: "\E70F"; position: absolute; right: -4px; top: -4px; width: 14px; height: 14px; border-radius: 50%; background: var(--card); color: var(--text); border: 1px solid var(--control-strong); font: 8px/12px "Segoe Fluent Icons", "Segoe MDL2 Assets"; text-align: center; }
   .swatch[aria-checked=true] { box-shadow: 0 0 0 2px var(--card), 0 0 0 4px var(--text); }
 
   /* Rules page. */
@@ -864,7 +863,7 @@
   // Buttons are reused per colour so a host refresh never takes focus away from the swatch.
   // With `pick`, a 「自定义颜色」 swatch follows the first one: it opens the system colour
   // dialog and stands for the select's custom option (a colour outside the palette).
-  const pickRows = {};
+  const pickRows = {}, lastCustom = {};
   function renderSwatches(group, select, pick) {
     const options = [...select.options].filter(o => !(pick && o.dataset.custom));
     const existing = new Map([...group.children].filter(b => !b.classList.contains('custom')).map(b => [b.dataset.value, b]));
@@ -913,13 +912,18 @@
       b.type = 'button';
       b.className = 'swatch custom';
       b.setAttribute('role', 'radio');
-      b.onclick = () => send({ type: 'action', name: 'pickColor', target, color: select.value });
+      b.onclick = () => send({ type: 'action', name: 'pickColor', target, color: b.dataset.color || select.value });
     }
+    // Checked for a colour off the palette; otherwise it still shows the last custom colour of
+    // the row (this page's, else the one the host kept from an earlier page this session).
     const o = select.querySelector('[data-custom]');
+    if (o) lastCustom[target] = o.value;
+    const shown = lastCustom[target] || (state.pickedColors || {})[target];
     if (o) b.dataset.value = o.value; else delete b.dataset.value;
-    b.classList.toggle('set', !!o);
-    if (o) b.style.setProperty('--swatch', '#' + o.value); else b.style.removeProperty('--swatch');
-    const label = o ? o.textContent : t("自定义颜色");
+    if (shown) b.dataset.color = shown; else delete b.dataset.color;
+    b.classList.toggle('set', !!shown);
+    if (shown) b.style.setProperty('--swatch', '#' + shown); else b.style.removeProperty('--swatch');
+    const label = shown ? t("自定义 #") + shown : t("自定义颜色");
     b.setAttribute('aria-label', label);
     b.title = label;
     return b;
@@ -927,8 +931,10 @@
   // The system colour dialog's answer (`pickColor`) lands on the swatch row it was opened from.
   function pickedColor(target, hex) {
     const row = pickRows[target];
-    if (!row || !/^[0-9A-F]{6}$/.test(hex) || row.select.value === hex) return;
+    if (!row || !/^[0-9A-F]{6}$/.test(hex)) return;
+    lastCustom[target] = hex;
     const { group, select } = row;
+    if (select.value === hex) { renderSwatches(group, select, target); return; }
     ensureOption(select, hex, t("自定义 #") + hex);
     select.value = hex;
     renderSwatches(group, select, target);
