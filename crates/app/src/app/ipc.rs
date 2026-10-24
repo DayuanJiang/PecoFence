@@ -303,6 +303,9 @@ pub(super) fn patch_settings_path(
         )
         .details(json!({ "expected": e.to_string() }))
     })?;
+    // `tabBar` is unused, but a whole object from an older export may carry it. Saved, the next
+    // load would fold it into the title edge of every fence with tabs (`config_store::migrate`).
+    settings.tab_bar = current.tab_bar;
     if settings.peek.custom_hotkey != current.peek.custom_hotkey
         && let Some(text) = settings.peek.custom_hotkey.clone()
     {
@@ -1297,6 +1300,7 @@ impl App {
             icon_size: f.view.icon_size,
             spacing: text("spacing"),
             auto_height: flag("autoHeight"),
+            expand_direction: text("expandDirection"),
             exclude_from_quick_hide: flag("excludeFromQuickHide"),
             hide_when_empty: flag("hideWhenEmpty"),
             opacity: text("opacity"),
@@ -1312,6 +1316,11 @@ impl App {
             title_color: with_hash(text("titleColor")),
             title_size: text("titleSize"),
             title_on_hover: text("titleOnHover"),
+            title_position: text("titlePosition"),
+            title_align: text("titleAlign"),
+            collapsed_size: text("collapsedSize"),
+            collapsed_shrinks: flag("collapsedShrinks"),
+            side_tab_text: text("sideTabText"),
             layout: layout_name(f.view.layout).to_string(),
             sort: sort_name(f.view.sort).to_string(),
             reverse: f.view.reverse,
@@ -2048,6 +2057,10 @@ impl App {
         let report = w
             .fit_report()
             .ok_or_else(|| IpcError::internal("the fence window has no view"))?;
+        if self.state.fence(host).is_some_and(|h| h.expands_up()) {
+            // Keeps the bottom edge, as its auto height does.
+            rect.y += rect.h - report.fitting_height_px;
+        }
         rect.h = report.fitting_height_px;
         let result = self.ipc_set_bounds(&host.to_string(), rect)?;
         let changed = result

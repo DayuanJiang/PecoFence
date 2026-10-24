@@ -2,6 +2,22 @@
 
 use super::*;
 
+/// A fence that keeps its bottom (or right) edge animates its size inside a window held at the
+/// larger end. Only `visible_w` x `visible_h` device px at the kept edges show; the root visual
+/// is offset by the rest.
+///
+/// Moving the window's top edge every frame would show each frame's drawing briefly at the
+/// window's new place, so the kept edge would jump. Growing takes two frames for the same
+/// reason: the root moves down first (one blank frame), then the window grows. Done at once,
+/// the band would flash at the window's new top.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct Band {
+    pub(super) window_w: i32,
+    pub(super) window_h: i32,
+    pub(super) visible_w: i32,
+    pub(super) visible_h: i32,
+}
+
 /// The rolled state the chrome shows: the end state of a roll in flight, else the resting one.
 pub(super) fn roll_target_of(rolling_to: Option<bool>, rolled_up: bool) -> bool {
     rolling_to.unwrap_or(rolled_up)
@@ -14,7 +30,7 @@ pub(super) fn roll_target_of(rolling_to: Option<bool>, rolled_up: bool) -> bool 
 /// cross-fades on the compositor).
 pub(super) struct RollAnim {
     pub(super) height: Tween,
-    /// A fence with a left tab column collapses to that column: its width moves too.
+    /// A fence with a title column collapses to that column: its width moves too.
     pub(super) width: Option<Tween>,
     pub(super) rolled_at_end: bool,
 }
@@ -135,11 +151,81 @@ impl FenceViewState {
         self.shadow_uploaded = Some(Instant::now());
     }
 
+    /// Screen rect of what shows: the window, or the part of it at the kept edges that an
+    /// anchored size animation shows (`Band`).
+    pub(super) fn visual_rect(&self) -> RECT {
+        let mut r = window::window_rect(self.hwnd);
+        if let Some(band) = self.band {
+            r.top =
+                super::anchored_start(r.top, band.window_h, band.visible_h, self.height_anchor());
+            r.bottom = r.top + band.visible_h;
+            r.left =
+                super::anchored_start(r.left, band.window_w, band.visible_w, self.width_anchor());
+            r.right = r.left + band.visible_w;
+        }
+        r
+    }
+
+    /// Where the root visual sits in the window while a `Band` shows: moved past the hidden part
+    /// on each kept side.
+    pub(super) fn band_offset(&self, band: Band) -> (f32, f32) {
+        (
+            ((band.window_w - band.visible_w) as f32 * self.width_anchor()).round(),
+            ((band.window_h - band.visible_h) as f32 * self.height_anchor()).round(),
+        )
+    }
+
+    /// Draws the part an anchored size animation shows, as WM_SIZE does for a resize.
+    pub(super) fn draw_band(&mut self, w: i32, h: i32) {
+        let (x, y) = self.content_origin(w, h);
+        self.content_panel
+            .visual
+            .set_offset(x as f32, y as f32, 0.0);
+        self.update_backdrop();
+        if let Err(e) = self
+            .update_shape_clip(w, h)
+            .and_then(|_| self.chrome_panel.resize(w, h))
+            .and_then(|_| self.draw_chrome_panel())
+        {
+            tracing::error!(error = %e, "anchored animation frame failed");
+        }
+        self.update_shadow();
+    }
+
+    /// Ends an auto-height settle at once (the user took the window). With an upward band the
+    /// window keeps its tall size, which the next auto-height pass corrects.
+    pub(super) fn stop_height_anim(&mut self) {
+        self.height_anim = None;
+        if self.roll_anim.is_none() && self.band.is_some() {
+            self.end_band();
+            let (w, h) = window::window_rect_size(self.hwnd);
+            if let Err(e) = self.layout_panels(w, h).and_then(|_| self.redraw()) {
+                tracing::error!(error = %e, "relayout after a stopped settle failed");
+            }
+            self.update_shadow_now();
+        }
+    }
+
+    /// Ends an anchored size animation's band: the root goes back to the window's corner.
+    pub(super) fn end_band(&mut self) {
+        self.band_parked = false;
+        if self.band.take().is_some() {
+            self.root.set_offset(0.0, 0.0, 0.0);
+            self.content_panel
+                .visual
+                .set_offset(self.content_x as f32, self.content_y as f32, 0.0);
+        }
+    }
+
     /// Screen rect of the visible plate: the window, minus a title row that title on hover
     /// has folded away (the shadow casts from this).
     pub(super) fn plate_rect(&self) -> RECT {
-        let mut r = window::window_rect(self.hwnd);
-        r.top = (r.top + self.plate_inset_px).min(r.bottom - 1);
+        let mut r = self.visual_rect();
+        if self.title_bottom() {
+            r.bottom = (r.bottom - self.plate_inset_px).max(r.top + 1);
+        } else {
+            r.top = (r.top + self.plate_inset_px).min(r.bottom - 1);
+        }
         r
     }
 
@@ -321,9 +407,9 @@ impl FenceViewState {
     }
 
     /// Title on hover for this fence: its own choice, else the global setting. A fence whose
-    /// tabs are on the left has no title row to fold away.
+    /// title bar is a column has no title row to fold away.
     pub(super) fn title_on_hover(&self) -> bool {
-        !self.tabs_on_rail()
+        !self.title_column()
             && self
                 .title_on_hover_override
                 .unwrap_or_else(|| self.behavior.title_on_hover.get())
@@ -362,7 +448,7 @@ impl FenceViewState {
             || self.title_renaming
     }
 
-    /// End width (device px) of a collapse to (or expand from) a left tab column in flight.
+    /// End width (device px) of a collapse to (or expand from) a title column in flight.
     pub(super) fn width_target_px(&self) -> Option<i32> {
         self.roll_anim
             .as_ref()
@@ -403,18 +489,18 @@ impl FenceViewState {
         // The roll owns the height (and the content panel) from here on.
         self.height_anim = None;
         self.finish_content_swap_now();
-        let cur = window::window_rect(self.hwnd);
+        let cur = self.visual_rect();
         let (cur_w, cur_h) = (cur.right - cur.left, cur.bottom - cur.top);
-        // A fence with a left tab column collapses to the column (its title bar) rather than
-        // to a title row: the width moves with the height.
-        let to_w = self.tabs_on_rail().then(|| {
+        // A fence with a title column collapses to the column (its title bar), and a shrinking
+        // title row to what it shows: the width moves with the height.
+        let to_w = self.collapses_width().then(|| {
             if rolled {
                 self.rolled_w_px()
             } else {
                 self.expanded_w_px
             }
         });
-        self.column_collapsed = rolled && to_w.is_some();
+        self.width_collapsed = rolled && to_w.is_some();
         let to_h = if rolled {
             self.rolled_h_px()
         } else if self.auto_height {
@@ -425,6 +511,13 @@ impl FenceViewState {
             h
         } else {
             self.expanded_h_px.max(self.title_h_px() + 40)
+        };
+        // Growing upwards, nothing makes room: every expansion (a click, a hover peek, a
+        // search) stops at the top of the work area and a gap below the fence above.
+        let to_h = if !rolled && self.expand_up {
+            to_h.min((cur.bottom - self.expand_up_limit(&cur)).max(cur_h))
+        } else {
+            to_h
         };
         let mid_roll = self.roll_anim.is_some();
         if rolled {
@@ -442,9 +535,10 @@ impl FenceViewState {
             // Rasterise the content once at its final size; the growing HWND reveals it.
             let w = to_w.unwrap_or_else(|| self.chrome_panel.size_px().0);
             let top = self.content_y;
-            let _ = self
-                .content_panel
-                .resize((w - self.content_x).max(1), (to_h - top).max(1));
+            let _ = self.content_panel.resize(
+                (w - self.content_x - self.content_right_px()).max(1),
+                (to_h - top - self.foot_px()).max(1),
+            );
             self.content_panel
                 .visual
                 .set_offset(self.content_x as f32, top as f32, 0.0);
@@ -482,12 +576,26 @@ impl FenceViewState {
         // same duration and curve, continuous when a roll is reversed mid-flight.
         self.roll_t
             .retarget(rolled as u8 as f32, self.anim_dur(dur), curve, now);
-        // A left tab column keeps its pills where they are (it has no item count to make room
-        // for, and it is hidden while rolled).
-        if self.tabs.len() > 1 && self.tab_drag.is_none() && !self.tabs_on_rail() {
+        // A title column keeps its pills where they are (it has no item count to make room
+        // for, and it is hidden while rolled). So does a title row that shrinks while rolled.
+        if self.tabs.len() > 1
+            && self.tab_drag.is_none()
+            && !self.tabs_on_rail()
+            && !self.collapses_width()
+        {
             self.sync_tab_slides(&prev, now);
         }
         self.frames.request();
+    }
+
+    /// Highest top edge (screen px) a window at `r` may expand upwards to: the work area's
+    /// top, or a snapping gap below the nearest fence above.
+    fn expand_up_limit(&self, r: &RECT) -> i32 {
+        let work = snap::work_area_under(r).map_or(i32::MIN, |w| w.top);
+        let gap = (self.behavior.snap_gap_dip.get() as f32 * self.scale()).round() as i32;
+        let fence =
+            crate::layout::clearance::limit_above(&snap::other_fence_rects(self.hwnd), r, gap);
+        fence.map_or(work, |f| f.max(work))
     }
 
     /// Starts (or retargets) the auto-height settle towards `to_h`: 250 ms point-to-point,
@@ -499,7 +607,8 @@ impl FenceViewState {
         if self.roll_anim.is_some() {
             return false;
         }
-        let cur_h = window::window_rect_size(self.hwnd).1;
+        let cur = self.visual_rect();
+        let cur_h = cur.bottom - cur.top;
         let now = Instant::now();
         if (to_h - cur_h).abs() < 2 || !self.motion.enabled() || !desktop::is_visible(self.hwnd) {
             return false;
@@ -517,7 +626,7 @@ impl FenceViewState {
             }
         }
         let (w, ch) = self.content_panel.size_px();
-        let target_ch = (to_h - self.content_y).max(1);
+        let target_ch = (to_h - self.content_y - self.foot_px()).max(1);
         if target_ch > ch {
             let _ = self.content_panel.resize(w, target_ch);
             let _ = self.redraw_content();

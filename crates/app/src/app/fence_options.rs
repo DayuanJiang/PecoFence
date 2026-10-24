@@ -54,6 +54,7 @@ pub(super) const FENCE_PROPS: &[&str] = &[
     "iconSize",
     "spacing",
     "autoHeight",
+    "expandDirection",
     "locked",
     "excludeFromQuickHide",
     "opacity",
@@ -63,6 +64,10 @@ pub(super) const FENCE_PROPS: &[&str] = &[
     "titleColor",
     "titleSize",
     "titleOnHover",
+    "titlePosition",
+    "titleAlign",
+    "collapsedSize",
+    "sideTabText",
     "layout",
     "sort",
     "reverse",
@@ -90,6 +95,7 @@ pub(super) enum FenceProp {
     IconSize(u32),
     Spacing(Spacing),
     AutoHeight(bool),
+    ExpandDirection(ExpandDirection),
     Locked(bool),
     ExcludeFromQuickHide(bool),
     /// None = the global default; otherwise a preset (`OPACITY_CLEAR` / `_SOLID` / `_NONE`).
@@ -103,6 +109,13 @@ pub(super) enum FenceProp {
     TitleSize(Option<TitleSize>),
     /// None = the global `rollUp.titleOnHover`.
     TitleOnHover(Option<bool>),
+    /// The edge the title bar runs along.
+    TitleEdge(pecofence_core::TitleEdge),
+    /// None = the global `titleAlign`.
+    TitleAlign(Option<pecofence_core::TitleAlign>),
+    /// Whether the collapsed title bar shrinks to what it shows; None = only on a side.
+    CollapsedSize(Option<bool>),
+    SideTabText(pecofence_core::SideTabText),
     /// Regular fences: a double-clicked folder opens inside the fence.
     OpenFoldersInside(bool),
     PortalNavigate(bool),
@@ -154,6 +167,17 @@ pub(super) fn parse_fence_prop(
             })
         }
         "autoHeight" => FenceProp::AutoHeight(as_bool()?),
+        "expandDirection" => {
+            const ALLOWED: &[&str] = &["followTitle", "down", "up", "left", "right"];
+            FenceProp::ExpandDirection(match as_str(ALLOWED)? {
+                "followTitle" => ExpandDirection::FollowTitle,
+                "down" => ExpandDirection::Down,
+                "up" => ExpandDirection::Up,
+                "left" => ExpandDirection::Left,
+                "right" => ExpandDirection::Right,
+                _ => return Err(bad(ALLOWED)),
+            })
+        }
         "locked" => FenceProp::Locked(as_bool()?),
         "excludeFromQuickHide" => FenceProp::ExcludeFromQuickHide(as_bool()?),
         "opacity" => {
@@ -210,6 +234,50 @@ pub(super) fn parse_fence_prop(
                 _ => return Err(bad(ALLOWED)),
             })
         }
+        "titlePosition" => {
+            use pecofence_core::TitleEdge;
+            const ALLOWED: &[&str] = &["top", "bottom", "left", "right"];
+            FenceProp::TitleEdge(match as_str(ALLOWED)? {
+                "top" => TitleEdge::Top,
+                "bottom" => TitleEdge::Bottom,
+                "left" => TitleEdge::Left,
+                "right" => TitleEdge::Right,
+                _ => return Err(bad(ALLOWED)),
+            })
+        }
+        "titleAlign" => {
+            use pecofence_core::TitleAlign;
+            const ALLOWED: &[&str] = &["default", "left", "center", "right"];
+            FenceProp::TitleAlign(match as_str(ALLOWED)? {
+                "default" => None,
+                "left" => Some(TitleAlign::Left),
+                "center" => Some(TitleAlign::Center),
+                "right" => Some(TitleAlign::Right),
+                _ => return Err(bad(ALLOWED)),
+            })
+        }
+        "collapsedSize" => {
+            const ALLOWED: &[&str] = &["default", "fit", "full"];
+            // The settings page's switch sends true (fit) or false (full).
+            if let Some(fit) = value.as_bool() {
+                return Ok(FenceProp::CollapsedSize(Some(fit)));
+            }
+            FenceProp::CollapsedSize(match as_str(ALLOWED)? {
+                "default" => None,
+                "fit" => Some(true),
+                "full" => Some(false),
+                _ => return Err(bad(ALLOWED)),
+            })
+        }
+        "sideTabText" => {
+            use pecofence_core::SideTabText;
+            const ALLOWED: &[&str] = &["vertical", "horizontal"];
+            FenceProp::SideTabText(match as_str(ALLOWED)? {
+                "vertical" => SideTabText::Vertical,
+                "horizontal" => SideTabText::Horizontal,
+                _ => return Err(bad(ALLOWED)),
+            })
+        }
         "layout" => {
             const ALLOWED: &[&str] = &["icons", "list", "details"];
             FenceProp::Layout(match as_str(ALLOWED)? {
@@ -251,6 +319,26 @@ pub(super) fn parse_fence_prop(
             ));
         }
     })
+}
+
+pub(super) fn expand_direction_name(direction: ExpandDirection) -> &'static str {
+    match direction {
+        ExpandDirection::FollowTitle => "followTitle",
+        ExpandDirection::Down => "down",
+        ExpandDirection::Up => "up",
+        ExpandDirection::Left => "left",
+        ExpandDirection::Right => "right",
+    }
+}
+
+pub(super) fn title_edge_name(edge: pecofence_core::TitleEdge) -> &'static str {
+    use pecofence_core::TitleEdge;
+    match edge {
+        TitleEdge::Top => "top",
+        TitleEdge::Bottom => "bottom",
+        TitleEdge::Left => "left",
+        TitleEdge::Right => "right",
+    }
 }
 
 /// String forms of `FenceView.layout` / `.sort` as the page, `fence get` and `fence set` use.
@@ -301,6 +389,68 @@ impl App {
         {
             a.set_quick_hide_excluded(w.hwnd(), on);
         }
+        self.schedule_save();
+    }
+
+    /// Title bar position: the edge of the host its title bar runs along. With the expand
+    /// direction on `followTitle`, the fence rolls up to that edge and expands away from it.
+    pub(super) fn set_fence_title_edge(&mut self, fence: FenceId, edge: pecofence_core::TitleEdge) {
+        let host = self.state.host_of(fence);
+        self.state.set_title_edge(host, edge);
+        self.apply_fence_appearance(host);
+        // Forced: a roll in flight lands with the row at its new end even if the kept edge stays.
+        self.apply_kept_edge(host, true);
+        self.apply_auto_height(host);
+        self.schedule_save();
+    }
+
+    /// None = the global Title alignment setting. A title row that shrinks while collapsed
+    /// pivots where its title sits, so a rolled fence is placed again.
+    pub(super) fn set_fence_title_align(
+        &mut self,
+        fence: FenceId,
+        align: Option<pecofence_core::TitleAlign>,
+    ) {
+        let host = self.state.host_of(fence);
+        self.state.set_title_align(host, align);
+        self.apply_fence_appearance(host);
+        self.apply_kept_edge(host, true);
+        self.schedule_save();
+    }
+
+    /// Whether the collapsed title bar shrinks to its title or tabs (None = only on a side).
+    pub(super) fn set_fence_collapsed_size(&mut self, fence: FenceId, shrink: Option<bool>) {
+        let host = self.state.host_of(fence);
+        self.state.set_shrink_collapsed(host, shrink);
+        self.apply_fence_appearance(host);
+        self.apply_kept_edge(host, true);
+        self.schedule_save();
+    }
+
+    /// How a title column on a side shows its tabs.
+    pub(super) fn set_fence_side_tab_text(
+        &mut self,
+        fence: FenceId,
+        style: pecofence_core::SideTabText,
+    ) {
+        let host = self.state.host_of(fence);
+        self.state.set_side_tab_text(host, style);
+        self.apply_fence_appearance(host);
+        self.apply_kept_edge(host, true);
+        self.apply_auto_height(host);
+        self.schedule_save();
+    }
+
+    /// Expand direction: the edge the host keeps when it rolls up and expands.
+    pub(super) fn set_fence_expand_direction(
+        &mut self,
+        fence: FenceId,
+        direction: ExpandDirection,
+    ) {
+        let host = self.state.host_of(fence);
+        self.state.set_expand_direction(host, direction);
+        self.apply_kept_edge(host, false);
+        self.apply_auto_height(host);
         self.schedule_save();
     }
 
@@ -374,6 +524,15 @@ impl App {
         }
         self.refresh_fence(fence);
         self.schedule_save();
+    }
+
+    /// The fence's title row folds away until the pointer is over it: its own choice, else the
+    /// global setting.
+    pub(super) fn title_on_hover_of(&self, f: &pecofence_core::Fence) -> bool {
+        f.appearance
+            .as_ref()
+            .and_then(|a| a.title_on_hover)
+            .unwrap_or(self.state.config.settings.roll_up.title_on_hover)
     }
 
     /// `None` = follow the global 「鼠标悬停时才显示标题栏」.
@@ -506,6 +665,7 @@ impl App {
             "iconSize": f.view.icon_size,
             "spacing": spacing,
             "autoHeight": h.view.auto_height,
+            "expandDirection": expand_direction_name(h.expand_direction),
             "locked": h.locked,
             "excludeFromQuickHide": h.exclude_from_quick_hide,
             "opacity": opacity,
@@ -515,6 +675,23 @@ impl App {
             "titleColor": title_color,
             "titleSize": title_size,
             "titleOnHover": title_on_hover,
+            "titlePosition": title_edge_name(h.title_edge()),
+            "titleAlign": match h.appearance.as_ref().and_then(|a| a.title_align) {
+                None => "default",
+                Some(pecofence_core::TitleAlign::Left) => "left",
+                Some(pecofence_core::TitleAlign::Center) => "center",
+                Some(pecofence_core::TitleAlign::Right) => "right",
+            },
+            "collapsedSize": match h.appearance.as_ref().and_then(|a| a.shrink_collapsed) {
+                None => "default",
+                Some(true) => "fit",
+                Some(false) => "full",
+            },
+            "collapsedShrinks": h.shrinks_collapsed(),
+            "sideTabText": match h.side_tab_text() {
+                pecofence_core::SideTabText::Vertical => "vertical",
+                pecofence_core::SideTabText::Horizontal => "horizontal",
+            },
             "hideWhenEmpty": f.hide_when_empty,
             "openFoldersInside": f.open_folders_inside,
             "portal": portal,
@@ -575,6 +752,9 @@ impl App {
             FenceProp::IconSize(size) => self.apply_icon_size(fence, size),
             FenceProp::Spacing(spacing) => self.set_fence_spacing(fence, spacing),
             FenceProp::AutoHeight(on) => self.set_fence_auto_height(fence, on),
+            FenceProp::ExpandDirection(direction) => {
+                self.set_fence_expand_direction(fence, direction)
+            }
             FenceProp::Locked(on) => self.set_fence_locked(fence, on),
             FenceProp::ExcludeFromQuickHide(on) => self.set_fence_quick_hide_excluded(fence, on),
             FenceProp::Opacity(op) => self.set_fence_opacity(fence, op),
@@ -596,6 +776,10 @@ impl App {
                 self.set_fence_title_style(fence, title_rgb, size);
             }
             FenceProp::TitleOnHover(on) => self.set_fence_title_on_hover(fence, on),
+            FenceProp::TitleEdge(edge) => self.set_fence_title_edge(fence, edge),
+            FenceProp::TitleAlign(align) => self.set_fence_title_align(fence, align),
+            FenceProp::CollapsedSize(shrink) => self.set_fence_collapsed_size(fence, shrink),
+            FenceProp::SideTabText(style) => self.set_fence_side_tab_text(fence, style),
             FenceProp::OpenFoldersInside(on) => self.set_fence_open_folders_inside(fence, on),
             FenceProp::PortalNavigate(on) => self.set_fence_portal_navigate(fence, on),
             FenceProp::PortalTitleIcon(on) => self.set_fence_title_icon(fence, on),

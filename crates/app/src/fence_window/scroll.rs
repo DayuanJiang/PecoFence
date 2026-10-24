@@ -182,8 +182,8 @@ impl FenceViewState {
     /// while rolled up the remembered expanded height below the title (see `scroll_extent`).
     pub(super) fn viewport_h_px(&self) -> i32 {
         if self.rolled_up && self.roll_anim.is_none() {
-            let head = self.head_px();
-            self.expanded_h_px.max(head + 40) - head
+            let title = self.head_px() + self.foot_px();
+            self.expanded_h_px.max(title + 40) - title
         } else {
             self.content_size_px().1
         }
@@ -592,9 +592,9 @@ impl FenceViewState {
         let cy = pt.y - r.top;
         let (top, bottom) = self.marquee_band_px();
         let zone_px = (DRAG_SCROLL_ZONE_DIP * self.scale()) as i32;
-        // Over a left tab column the drag aims at a tab pill, not at the item area's edge.
+        // Over a title column the drag aims at a tab pill, not at the item area's edge.
         let zone = drag_scroll_zone(cy, top, bottom, zone_px)
-            .filter(|_| self.scroll_max() > 0.0 && pt.x - r.left >= self.content_x);
+            .filter(|_| self.scroll_max() > 0.0 && !self.in_column(pt.x - r.left));
         let Some((dir, depth)) = zone else {
             if self.drag_scroll.take().is_some() && self.snap_scroll() {
                 // Auto-scroll ended between pixels: `content_busy` makes the next tick redraw

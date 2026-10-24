@@ -15,7 +15,7 @@ const fixture = {
   settings: {
     language: 'zh-CN',
     autostart: false, hideRealIcons: false, keepIconsHidden: false, hideInboxWhenIconsShown: false, offerNewFence: true, quickHide: { enabled: true },
-    showDesktop: 'keepVisible', theme: 'dark', themeStyle: 'fluent', labelColor: 'auto', titleAlign: 'left', tabBar: 'top', backdrop: 'acrylic', iconSize: 48,
+    showDesktop: 'keepVisible', theme: 'dark', themeStyle: 'fluent', labelColor: 'auto', titleAlign: 'left', backdrop: 'acrylic', iconSize: 48,
     icons: { tintRgb: null, tintStrength: 0.6, chameleon: false, shortcutArrows: true },
     rollUp: { hoverPeek: true, clickToExpand: false, pushNeighbors: true, titleOnHover: false, hideInactiveScrollbar: false, switchTabOnHover: false, hideCountAndChevron: false },
     snapping: { enabled: true, gapPx: 8, sizeToCells: false, guideLines: true }, peek: { enabled: true, dim: true, hotkey: 'ctrlAltSpace' },
@@ -28,7 +28,7 @@ const fixture = {
     ],
   },
   fences: [
-    { id: 'fence-a', title: 'Documents', kind: 'virtual', host: null, iconSize: 48, spacing: 'normal', autoHeight: false, locked: false, excludeFromQuickHide: false, opacity: 'default', tint: null, titleColor: 'theme', titleSize: 'normal', titleOnHover: 'default', openFoldersInside: false, portal: null },
+    { id: 'fence-a', title: 'Documents', kind: 'virtual', host: null, iconSize: 48, spacing: 'normal', autoHeight: false, locked: false, excludeFromQuickHide: false, opacity: 'default', tint: null, titleColor: 'theme', titleSize: 'normal', titleOnHover: 'default', titlePosition: 'top', titleAlign: 'default', expandDirection: 'followTitle', openFoldersInside: false, portal: null },
     { id: 'fence-b', title: 'Images', kind: 'virtual', host: 'Documents', iconSize: 96, spacing: 'loose', autoHeight: true, locked: false, excludeFromQuickHide: false, opacity: 'transparent', tint: null, tabColor: 'E74856', titleColor: 'theme', titleSize: 'normal', titleOnHover: 'default', portal: null },
     { id: 'inbox', title: 'Desktop', kind: 'inbox', host: null, iconSize: 48, spacing: 'normal', autoHeight: false, locked: true, excludeFromQuickHide: true, opacity: 'solid', tint: '0078D4', tintTitleOnly: true, titleColor: 'tint', titleSize: 'large', titleOnHover: 'hover', hideWhenEmpty: true, openFoldersInside: true, portal: null },
     { id: 'portal', title: 'Portal', kind: 'portal', host: null, iconSize: 32, spacing: 'compact', autoHeight: false, locked: false, excludeFromQuickHide: false, opacity: 'clear', tint: '123456', titleColor: 'ABCDEF', titleSize: 'small', titleOnHover: 'always', portal: { navigate: true, titleIcon: false } },
@@ -115,6 +115,11 @@ function bridge() {
           if (message.prop === 'portalNavigate') fence.portal.navigate = message.value;
           else if (message.prop === 'portalTitleIcon') fence.portal.titleIcon = message.value;
           else if (message.prop !== 'dockTop') fence[message.prop] = message.value;
+          // The host reports the effective shrink: by default only a side column shrinks.
+          if (message.prop === 'collapsedSize') {
+            const side = fence.titlePosition === 'left' || fence.titlePosition === 'right';
+            fence.collapsedShrinks = message.value === 'default' ? side : message.value === true || message.value === 'fit';
+          }
         }
         window.testShowFence = (id) => receive({ data: { type: 'showFence', id } });
         window.testShowFeedback = (crash) => receive({ data: { type: 'showFeedback', crash } });
@@ -273,6 +278,41 @@ async function runTests() {
     doc.querySelector('#fenceTabColorSwatches [data-value=""]').click(); await settle();
     assert(messages().at(-1).prop === 'tabColor' && messages().at(-1).value === null, 'Following the tint did not post null');
     change(doc, 'fenceSel', 'fence-a');
+  });
+  await test('Title position, alignment and expand direction post setFence', async () => {
+    const messages = () => frame.contentWindow.testMessages.filter(m => m.type === 'setFence');
+    change(doc, 'fenceSel', 'fence-a');
+    change(doc, 'fenceTitlePosition', 'bottom');
+    change(doc, 'fenceTitleAlign', 'center');
+    change(doc, 'fenceExpandDirection', 'up');
+    await settle();
+    const sent = messages().slice(-3);
+    assert(sent[0].prop === 'titlePosition' && sent[0].value === 'bottom', 'Title position not posted');
+    assert(sent[1].prop === 'titleAlign' && sent[1].value === 'center', 'Title alignment not posted');
+    assert(sent[2].prop === 'expandDirection' && sent[2].value === 'up', 'Expand direction not posted');
+    const direction = doc.getElementById('fenceExpandDirection');
+    const shown = () => [...direction.options].filter(o => !o.hidden).map(o => o.value).join();
+    assert(shown() === 'followTitle,down,up', 'A title bar at the bottom offers ' + shown());
+    change(doc, 'fenceTitlePosition', 'right'); await settle();
+    assert(shown() === 'followTitle,left,right', 'A title bar on the right offers ' + shown());
+    assert(direction.value === 'followTitle', 'A stored direction across the title shows as ' + direction.value);
+    const onHover = doc.getElementById('fenceTitleOnHover').closest('.card');
+    assert(onHover.style.display === 'none', 'Title on hover offered for a title column');
+    const align = doc.getElementById('fenceTitleAlign');
+    assert(align.querySelector('[value=left]').textContent === 'Top' || align.querySelector('[value=left]').textContent === '顶部', 'Column alignment not labelled by its top: ' + align.querySelector('[value=left]').textContent);
+    assert(doc.getElementById('fenceSideTabText').style.display === 'none', 'Side tabs offered for a fence without tabs');
+    // A side column shrinks by default: switching it back on returns to that default.
+    const shrink = doc.querySelector('[data-fence=collapsedSize]');
+    const lastFence = () => frame.contentWindow.testMessages.filter(m => m.type === 'setFence').at(-1);
+    shrink.click(); await settle();
+    assert(lastFence().prop === 'collapsedSize' && lastFence().value === 'default', 'Shrinking a side column did not return to the default: ' + lastFence().value);
+    shrink.click(); await settle();
+    assert(lastFence().value === false, 'Keeping the full length posted ' + lastFence().value);
+    change(doc, 'fenceTitlePosition', 'top');
+    change(doc, 'fenceTitleAlign', 'default');
+    change(doc, 'fenceExpandDirection', 'followTitle');
+    await settle();
+    assert(onHover.style.display === '', 'Title on hover hidden for a title row');
   });
   await test('showFence opens the fence page with that fence selected', async () => {
     doc.querySelector('[data-page=general]').click();
@@ -641,17 +681,6 @@ async function runTests() {
     const sent = frame.contentWindow.testMessages.filter(m => m.type === 'setFence').at(-1);
     assert(sent.id === 'fence-a' && sent.prop === 'opacity' && sent.value === 'transparent', 'Fully transparent not posted');
     assert(doc.querySelector('[data-fence=opacity]').value === 'transparent', 'Refreshed opacity not reflected');
-  });
-  await test('Tab bar position is shown and posted', async () => {
-    doc.querySelector('[data-page=general]').click();
-    const bar = doc.querySelector('[data-bind=tabBar]');
-    assert(bar.value === 'top', 'Saved tab bar position not shown');
-    for (const value of ['left', 'top']) {
-      bar.value = value;
-      bar.dispatchEvent(new frame.contentWindow.Event('change', { bubbles: true }));
-      await settle();
-      assert(current().settings.tabBar === value, 'Tab bar position not posted: ' + value);
-    }
   });
   await test('Icon name colour is shown and posted', async () => {
     doc.querySelector('[data-page=general]').click();

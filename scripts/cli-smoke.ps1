@@ -184,6 +184,55 @@ try {
     foreach ($p in @(@("tintTitleOnly", "false"), @("tabColor", "null"), @("titleSize", "normal"))) {
         Invoke-Cli @("fence", "set", $id, $p[0], $p[1]) | Out-Null
     }
+    # Issue #125: rolled up, a fence that expands upwards rests at the bottom of its rect; turning
+    # it on or off mid-roll lands the roll and keeps the rect.
+    Invoke-Cli @("fence", "roll", $id) | Out-Null
+    $r = Invoke-Cli @("fence", "set", $id, "expandDirection", "up")
+    $f = (Json $r.Out).fence
+    Check "fence set expandDirection up -> title row at the bottom of the rect" ($r.Code -eq 0 -and $f.expandDirection -eq "up" -and ($f.windowRect.y + $f.windowRect.h) -eq ($f.rect.y + $f.rect.h)) "$($r.Out) $($r.Err)"
+    $r = Invoke-Cli @("fence", "set", $id, "expandDirection", "down")
+    $f = (Json $r.Out).fence
+    Check "fence set expandDirection down -> title row at the top of the rect" ($r.Code -eq 0 -and $f.expandDirection -eq "down" -and $f.windowRect.y -eq $f.rect.y) "$($r.Out) $($r.Err)"
+    # Following a title row at the bottom (the default), the fence rolls up to it.
+    Invoke-Cli @("fence", "set", $id, "expandDirection", "followTitle") | Out-Null
+    $r = Invoke-Cli @("fence", "set", $id, "titlePosition", "bottom")
+    $f = (Json $r.Out).fence
+    Check "fence set titlePosition bottom -> title row at the bottom of the rect" ($r.Code -eq 0 -and $f.titlePosition -eq "bottom" -and $f.expandDirection -eq "followTitle" -and ($f.windowRect.y + $f.windowRect.h) -eq ($f.rect.y + $f.rect.h)) "$($r.Out) $($r.Err)"
+    $r = Invoke-Cli @("fence", "set", $id, "titleAlign", "right")
+    Check "fence set titleAlign right" ($r.Code -eq 0 -and (Json $r.Out).fence.titleAlign -eq "right") "$($r.Out) $($r.Err)"
+    # On a side the title bar is a column the fence rolls up to.
+    $r = Invoke-Cli @("fence", "set", $id, "titlePosition", "right")
+    $f = (Json $r.Out).fence
+    Check "fence set titlePosition right -> title column at the right of the rect" ($r.Code -eq 0 -and $f.titlePosition -eq "right" -and ($f.windowRect.x + $f.windowRect.w) -eq ($f.rect.x + $f.rect.w) -and $f.windowRect.w -lt $f.rect.w) "$($r.Out) $($r.Err)"
+    $r = Invoke-Cli @("fence", "set", $id, "expandDirection", "right")
+    $f = (Json $r.Out).fence
+    Check "fence set expandDirection right -> title column at the left of the rect" ($r.Code -eq 0 -and $f.expandDirection -eq "right" -and $f.windowRect.x -eq $f.rect.x -and $f.windowRect.w -lt $f.rect.w) "$($r.Out) $($r.Err)"
+    # A direction across the title bar's axis follows the title bar.
+    $r = Invoke-Cli @("fence", "set", $id, "expandDirection", "up")
+    $f = (Json $r.Out).fence
+    Check "fence set expandDirection up beside a right column -> still at the right" ($r.Code -eq 0 -and ($f.windowRect.x + $f.windowRect.w) -eq ($f.rect.x + $f.rect.w) -and $f.windowRect.w -lt $f.rect.w) "$($r.Out) $($r.Err)"
+    Invoke-Cli @("fence", "set", $id, "expandDirection", "followTitle") | Out-Null
+    $r = Invoke-Cli @("fence", "set", $id, "titlePosition", "left")
+    $f = (Json $r.Out).fence
+    Check "fence set titlePosition left -> title column at the left of the rect" ($r.Code -eq 0 -and $f.titlePosition -eq "left" -and $f.windowRect.x -eq $f.rect.x -and $f.windowRect.w -lt $f.rect.w) "$($r.Out) $($r.Err)"
+    $r = Invoke-Cli @("fence", "set", $id, "collapsedSize", "full")
+    $f = (Json $r.Out).fence
+    Check "fence set collapsedSize full -> the column keeps the fence's height" ($r.Code -eq 0 -and $f.collapsedSize -eq "full" -and -not $f.collapsedShrinks -and $f.windowRect.h -eq $f.rect.h) "$($r.Out) $($r.Err)"
+    # A title row shrinks only when asked to.
+    Invoke-Cli @("fence", "set", $id, "titlePosition", "top") | Out-Null
+    $r = Invoke-Cli @("fence", "set", $id, "collapsedSize", "fit")
+    $f = (Json $r.Out).fence
+    Check "fence set collapsedSize fit -> a rolled title row aligned right shrinks to the right" ($r.Code -eq 0 -and $f.collapsedShrinks -and ($f.windowRect.x + $f.windowRect.w) -eq ($f.rect.x + $f.rect.w) -and $f.windowRect.w -lt $f.rect.w) "$($r.Out) $($r.Err)"
+    $r = Invoke-Cli @("fence", "set", $id, "collapsedSize", "default")
+    $f = (Json $r.Out).fence
+    Check "fence set collapsedSize default -> a rolled title row is as wide as the fence" ($r.Code -eq 0 -and $f.collapsedSize -eq "default" -and $f.windowRect.w -eq $f.rect.w) "$($r.Out) $($r.Err)"
+    $r = Invoke-Cli @("fence", "set", $id, "sideTabText", "horizontal")
+    Check "fence set sideTabText horizontal" ($r.Code -eq 0 -and (Json $r.Out).fence.sideTabText -eq "horizontal") "$($r.Out) $($r.Err)"
+    Invoke-Cli @("fence", "set", $id, "sideTabText", "vertical") | Out-Null
+    foreach ($p in @(@("titlePosition", "top"), @("titleAlign", "default"))) {
+        Invoke-Cli @("fence", "set", $id, $p[0], $p[1]) | Out-Null
+    }
+    Invoke-Cli @("fence", "unroll", $id) | Out-Null
     # Issue #39: the inbox cannot be deleted, but it can hide while empty.
     $r = Invoke-Cli @("fence", "delete", "inbox")
     Check "fence delete inbox -> refused with the hideWhenEmpty hint" ($r.Code -eq 1 -and $r.Err -match "hideWhenEmpty") "code=$($r.Code) $($r.Err)"

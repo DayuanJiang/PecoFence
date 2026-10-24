@@ -86,23 +86,31 @@ impl FenceWindow {
         let hwnd = self.hwnd();
         let moved = flush_window_drag(&self.view, hwnd, now, None);
         // Phase 1: compute under a short borrow.
-        let (height, more) = {
+        let (height, more, (up, anchor), target) = {
             let mut guard = self.view.borrow_mut();
             let Some(v) = guard.as_mut() else {
                 return false;
             };
-            // A collapse to a left tab column (or an expand from it) also moves the width.
+            // A collapse to a title column (or an expand from it) also moves the width.
             let width = v
                 .roll_anim
                 .as_ref()
                 .and_then(|a| a.width)
                 .map(|t| t.value_at(now).round() as i32);
-            let height = v
+            let tween = v
                 .roll_anim
                 .as_ref()
                 .map(|a| (a.height, Some(a.rolled_at_end)))
-                .or_else(|| v.height_anim.map(|t| (t, None)))
-                .map(|(t, rolled)| (t.value_at(now).round() as i32, t.is_done(now), rolled));
+                .or_else(|| v.height_anim.map(|t| (t, None)));
+            let target = (
+                v.roll_anim
+                    .as_ref()
+                    .and_then(|a| a.width)
+                    .map_or(0, |t| t.target().round() as i32),
+                tween.map_or(0, |(t, _)| t.target().round() as i32),
+            );
+            let height =
+                tween.map(|(t, rolled)| (t.value_at(now).round() as i32, t.is_done(now), rolled));
             // If the size changes, WM_SIZE will render the new chrome. Drawing hover
             // feedback here would first publish the same frame at the previous size.
             let draw_chrome = !moved
@@ -114,6 +122,8 @@ impl FenceWindow {
             (
                 height.map(|(h, done, rolled)| (width, h, done, rolled)),
                 more,
+                (v.height_anchor(), v.width_anchor()),
+                target,
             )
         };
         // Phase 2: window geometry with no borrow held (WM_SIZE re-enters the handler; while
@@ -122,9 +132,17 @@ impl FenceWindow {
             return more;
         };
         let r = window::window_rect(hwnd);
+        let width_moves = w.is_some();
         let w = w.unwrap_or(r.right - r.left);
-        let _ = window::set_window_bounds(hwnd, r.left, r.top, w, h);
-        if !done {
+        // A kept bottom edge, or a kept right edge with the width moving: the motion happens
+        // inside the window (see `Band`).
+        let finished = if up > 0.0 || (anchor > 0.0 && width_moves) {
+            self.frame_band(hwnd, r, (w, h), target, done)
+        } else {
+            let _ = window::set_window_bounds(hwnd, r.left, r.top, w, h);
+            true
+        };
+        if !done || !finished {
             return true;
         }
         // Phase 3: final geometry — lay the frozen content out once and rasterise everything.
@@ -152,5 +170,92 @@ impl FenceWindow {
         };
         queue_bounds_changed(&queue, &behavior, self.id, hwnd);
         more
+    }
+
+    /// One frame of an anchored size animation (see `Band`): the window grows to the larger end
+    /// once, then only the root visual moves; when the animation ends the window takes the
+    /// final size. `r` is the window rect, `(w, h)` the size shown this frame and `target` the
+    /// tweens' ends. Returns false while the band still needs a frame after `done`.
+    fn frame_band(
+        &self,
+        hwnd: HWND,
+        r: RECT,
+        (w, h): (i32, i32),
+        target: (i32, i32),
+        done: bool,
+    ) -> bool {
+        let (cur_w, cur_h) = (r.right - r.left, r.bottom - r.top);
+        let wide = cur_w.max(target.0).max(w);
+        let tall = cur_h.max(target.1).max(h);
+        let (mut up, mut anchor, mut prepared, mut parked) = (0.0, 0.0, false, false);
+        self.with_view(|v| {
+            (up, anchor, parked) = (v.height_anchor(), v.width_anchor(), v.band_parked)
+        });
+        if parked {
+            // The root went back to the window's corner last frame; the window catches up.
+            let left = super::anchored_start(r.left, cur_w, w, anchor);
+            let top = super::anchored_start(r.top, r.bottom - r.top, h, up);
+            let _ = window::set_window_bounds(hwnd, left, top, w, h);
+            self.with_view(|v| v.band_parked = false);
+            return true;
+        }
+        self.with_view(|v| {
+            // The root already moved for this size on an earlier frame (see `Band`).
+            prepared = v
+                .band
+                .is_some_and(|b| (b.window_w, b.window_h) == (wide, tall));
+            let band = Band {
+                window_w: wide,
+                window_h: tall,
+                visible_w: w,
+                visible_h: h,
+            };
+            v.band = Some(band);
+            let (x, y) = v.band_offset(band);
+            v.root.set_offset(x, y, 0.0);
+        });
+        let place = |w: i32, h: i32| {
+            let left = super::anchored_start(r.left, r.right - r.left, w, anchor);
+            let top = super::anchored_start(r.top, r.bottom - r.top, h, up);
+            let _ = window::set_window_bounds(hwnd, left, top, w, h);
+        };
+        // The window's size once this frame has moved it.
+        let mut now = (cur_w, cur_h);
+        if (wide, tall) != now && prepared {
+            // WM_SIZE draws the band.
+            place(wide, tall);
+            now = (wide, tall);
+        } else {
+            self.with_view(|v| v.draw_band(w, h));
+        }
+        if done {
+            // The window takes the final size and the root goes back to its corner. Windows
+            // shows the window's change a frame before the root's, so a shrink moves the root
+            // a frame ahead and resizes the window on the next one.
+            if w < now.0 || h < now.1 {
+                self.with_view(|v| {
+                    v.band = None;
+                    v.band_parked = true;
+                    v.content_panel
+                        .visual
+                        .set_offset(v.content_x as f32, v.content_y as f32, 0.0);
+                    let _ = v.update_shape_clip(w, h);
+                    v.root.set_offset(0.0, 0.0, 0.0);
+                });
+                return false;
+            }
+            self.with_view(|v| {
+                v.band = None;
+                v.content_panel
+                    .visual
+                    .set_offset(v.content_x as f32, v.content_y as f32, 0.0);
+            });
+            // An animation done on its first frame (animations off) never grew the window.
+            if (w, h) != now {
+                place(w, h);
+            }
+            self.with_view(|v| v.root.set_offset(0.0, 0.0, 0.0));
+        }
+        true
     }
 }

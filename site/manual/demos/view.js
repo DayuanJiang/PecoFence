@@ -76,7 +76,7 @@
     const KEYS = [{ a: 1.05, b: 2.55, keys: ['Ctrl'], down: 1.2, up: 2.5 }];
     const MENU_DELAY = .4;      // SPI_GETMENUSHOWDELAY default
 
-    const FENCE_MENU = ['收起', '重命名…', '-', { t: '视图', sub: 1 }, { t: '排序方式', sub: 1 }, { t: '新建', sub: 1 },
+    const FENCE_MENU = ['收起', '重命名…', '-', { t: '视图', sub: 1 }, { t: '排序方式', sub: 1 }, { t: '标题栏', sub: 1 }, { t: '新建', sub: 1 },
         { t: '粘贴', key: 'Ctrl+V' }, { t: '标签页', sub: 1 }, '锁定位置和大小', '-', '栅栏选项…', '新建栅栏',
         { t: '在桌面显示文件夹', sub: 1 }, '删除栅栏'];
     const CHECK = '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2.3 6.3 4.9 8.9 9.8 3.4" fill="none" ' +

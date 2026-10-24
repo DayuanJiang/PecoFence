@@ -70,6 +70,7 @@ pecofence-cli fence move Work --x 1200 --y 80                  # or --rect x,y,w
 pecofence-cli fence fit Tools                                  # height that shows every item
 pecofence-cli fence set Work layout list                       # iconSize 48 | spacing compact | opacity clear | locked true | autoHeight true
 pecofence-cli fence set --all locked true                      # one call per fence, summary in .results
+pecofence-cli fence set Dock titlePosition bottom              # top|bottom|left|right; expandDirection followTitle|up|down|left|right; collapsedSize default|fit|full; sideTabText vertical|horizontal
 pecofence-cli fence merge Games --into Work                    # Games becomes a tab; `fence detach Games` undoes
 pecofence-cli fence rename Work Projects
 pecofence-cli fence delete Temp                                # its items go back to the desktop fence

@@ -221,9 +221,39 @@ impl App {
         w.set_appearance(bd, op);
         w.set_title_on_hover(f.appearance.as_ref().and_then(|a| a.title_on_hover));
         w.set_style(fence_style_for(&f));
+        w.set_title_align(f.appearance.as_ref().and_then(|a| a.title_align));
         if let Some(a) = self.anchor.borrow_mut().as_mut() {
             a.set_quick_hide_excluded(w.hwnd(), f.exclude_from_quick_hide);
         }
+    }
+
+    /// Hands the fence's kept edge (`Fence::kept_edge`) to its window. When it changed, or with
+    /// `force`, the window is placed again from the saved rect: a rolled fence's title row
+    /// moves to its other end, and a roll in flight lands at once.
+    pub(super) fn apply_kept_edge(&mut self, id: FenceId, force: bool) {
+        let id = self.state.host_of(id);
+        let Some(f) = self.state.fence(id).cloned() else {
+            return;
+        };
+        let Some(w) = self.fences.get(&id) else {
+            return;
+        };
+        if !w.set_kept_edge(f.kept_edge()) && !force {
+            return;
+        }
+        self.ctx.behavior.release_push(w.hwnd());
+        let px = self.state.fence_px_rect(&f);
+        w.place_saved(
+            RECT {
+                left: px.left,
+                top: px.top,
+                right: px.right,
+                bottom: px.bottom,
+            },
+            f.rolled_up,
+        );
+        let (rect, rolled, expanded) = (w.rect(), w.is_rolled(), w.expanded_height_px());
+        self.record_bounds(id, rect, rolled, expanded);
     }
 
     /// Pushes every persisted per-fence view flag (icon size, auto height, lock/appearance,
@@ -266,6 +296,13 @@ impl App {
             w.set_group_by_date(shown.view.group_by_date);
             w.set_sort_indicator(shown.view.sort, shown.view.reverse);
             w.set_auto_height(f.view.auto_height);
+        }
+        // Before the roll below, so the roll pivots on the fence's kept edge.
+        self.apply_kept_edge(id, false);
+        {
+            let Some(w) = self.fences.get(&id) else {
+                return;
+            };
             if w.is_rolled() != f.rolled_up {
                 w.set_rolled(f.rolled_up);
             }
@@ -322,7 +359,7 @@ impl App {
         let Some(steps) = self.grid_steps(id, scale) else {
             return;
         };
-        // Collapsed to its left tab column, the window is as wide as the column.
+        // Collapsed to its title column, the window is as wide as the column.
         if !steps.cells || w.collapsed_expanded_width_px().is_some() {
             return;
         }
@@ -358,24 +395,36 @@ impl App {
         }
         // Rolled fences keep their title-only height; auto-height ones get an exact row count.
         let rolled = w.is_rolled();
-        let mut bottom = r.bottom;
+        let (mut top, mut bottom) = (r.top, r.bottom);
         if !rolled && !f.view.auto_height {
             let h = (r.bottom - r.top) as f32;
             let rows = ((h - steps.fixed) / steps.row).round().max(1.0);
-            bottom = r.top + (steps.fixed + rows * steps.row).round() as i32;
-            if let Some(limit) = self.growth_limit_below(id, &r) {
-                let limit = limit.max(r.bottom);
-                if bottom > limit {
-                    bottom = r.top + steps.height_within(limit - r.top);
+            let want = (steps.fixed + rows * steps.row).round() as i32;
+            if w.expands_up() {
+                // Keeps the bottom edge; growing stops under the fence above.
+                top = r.bottom - want;
+                if let Some(limit) = self.growth_limit_above(id, &r) {
+                    let limit = limit.min(r.top);
+                    if top < limit {
+                        top = r.bottom - steps.height_within(r.bottom - limit);
+                    }
+                }
+            } else {
+                bottom = r.top + want;
+                if let Some(limit) = self.growth_limit_below(id, &r) {
+                    let limit = limit.max(r.bottom);
+                    if bottom > limit {
+                        bottom = r.top + steps.height_within(limit - r.top);
+                    }
                 }
             }
         }
-        if (left, width, bottom) == (r.left, r.right - r.left, r.bottom) {
+        if (left, width, top, bottom) == (r.left, r.right - r.left, r.top, r.bottom) {
             return;
         }
         let rect = RECT {
             left,
-            top: r.top,
+            top,
             right: left + width,
             bottom,
         };
@@ -396,7 +445,7 @@ impl App {
         let Some(w) = self.fences.get(&id) else {
             return;
         };
-        // A rolled fence follows its tabs: collapsed to the left tab column, or back to a title
+        // A rolled fence follows its tabs: collapsed to the title column, or back to a title
         // row at its expanded width.
         if let Some(rect) = w.settle_rolled_size() {
             let expanded = w.expanded_height_px();
@@ -406,15 +455,20 @@ impl App {
         let Some(w) = self.fences.get(&id) else {
             return;
         };
-        // A fence without auto height still grows once to show a new left tab column (taken
+        // A fence without auto height still grows once to show a new title column (taken
         // on every pass, so a request left by an auto-height fence does not fire later).
         let rail = w.take_rail_growth_px();
         let Some(mut h) = w.auto_height_px().or(rail) else {
             return;
         };
         let r = w.rect();
-        // Growing stops short of a fence below; the rest of the items scroll.
-        if let Some(limit) = self.growth_limit_below(id, &r) {
+        // Growing stops short of a fence below (above, for one that expands upwards); the rest
+        // of the items scroll.
+        if w.expands_up() {
+            if let Some(limit) = self.growth_limit_above(id, &r) {
+                h = h.min(r.bottom - limit.min(r.top));
+            }
+        } else if let Some(limit) = self.growth_limit_below(id, &r) {
             h = h.min(limit.max(r.bottom) - r.top);
         }
         if r.bottom - r.top == h {
@@ -591,7 +645,8 @@ impl App {
                     .fence(fence)
                     .map(|f| f.title.clone())
                     .unwrap_or_default(),
-                w.rail_row_screen_rect(fence),
+                w.rail_row_screen_rect(fence)
+                    .or_else(|| w.title_rename_rect()),
                 self.queue.clone(),
                 self.theme_mode,
             );
@@ -760,6 +815,20 @@ impl App {
     /// Fences "dock to the top of the screen": the fence moves flush against the top of its
     /// work area, rolls up and expands on hover — a pull-down shelf.
     pub(super) fn dock_to_top(&mut self, fence: FenceId) {
+        // A drawer hanging from the top edge opens downwards, under its title.
+        if self.state.fence(fence).is_some_and(|f| {
+            f.kept_edge() != pecofence_core::TitleEdge::Top
+                || f.title_edge() != pecofence_core::TitleEdge::Top
+        }) {
+            self.state
+                .set_expand_direction(fence, ExpandDirection::FollowTitle);
+            self.state
+                .set_title_edge(fence, pecofence_core::TitleEdge::Top);
+            self.apply_fence_appearance(fence);
+            // Forced: to the window a kept left edge and a kept top edge look the same, yet it
+            // must leave the column shape.
+            self.apply_kept_edge(fence, true);
+        }
         let Some(w) = self.fences.get(&fence) else {
             return;
         };
@@ -922,11 +991,7 @@ impl App {
     /// undo each other while the 167 ms roll animation is still running.
     pub(super) fn set_roll(&mut self, fence: FenceId, rolled: bool) {
         let fence = self.state.host_of(fence);
-        // With pushNeighbors on the fences below make room instead.
-        if !rolled
-            && !self.state.config.settings.roll_up.push_neighbors
-            && self.fences.get(&fence).is_some_and(|w| w.is_rolled())
-        {
+        if !rolled && self.fences.get(&fence).is_some_and(|w| w.is_rolled()) {
             self.clamp_expand_height(fence);
         }
         if let Some(w) = self.fences.get(&fence) {

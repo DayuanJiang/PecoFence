@@ -72,6 +72,7 @@ pub const MAX_SNAPSHOTS: usize = 20;
 /// hides them from `settings get` / the schema and refuses to set them.
 pub const UNUSED_SETTINGS: &[&str] = &[
     "showRealIconsWhenFencesHidden",
+    "tabBar",
     "telemetry",
     "quickHide.scope",
     "quickHide.alwaysShowAtStartup",
@@ -103,11 +104,13 @@ pub struct Settings {
     /// Colour of the item names in every fence; fence titles have their own `titleColor`.
     #[serde(default)]
     pub label_color: LabelColor,
-    /// Where every fence's title (or tab strip) sits in its title row.
+    /// Where every fence's title (or tab strip) sits in its title row, unless the fence's
+    /// `appearance.titleAlign` says otherwise.
     #[serde(default)]
     pub title_align: TitleAlign,
-    /// Where a fence with two or more tabs shows them.
+    /// Unused (see [`UNUSED_SETTINGS`]).
     #[serde(default)]
+    #[cfg_attr(feature = "schema", schemars(skip))]
     pub tab_bar: TabBar,
     pub icon_size: u32,
     pub quick_hide: QuickHideSettings,
@@ -291,7 +294,8 @@ pub enum LabelColor {
 }
 
 /// Title position in the title row (Fences centres it). The chevron zone on the right stays
-/// clear whichever is chosen.
+/// clear whichever is chosen. Down a title column on a side, left is the top and right the
+/// bottom.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
@@ -302,8 +306,29 @@ pub enum TitleAlign {
     Right,
 }
 
-/// Where a tabbed fence shows its tabs: side by side in the title row, or listed in a column
-/// on its left that takes the title row's place (rolled up, the fence shrinks to the column).
+/// The edge of a fence its title bar runs along (Title bar position). A title bar on a side is a
+/// column, where the title and tabs turn to read downwards (the tabs can read across instead,
+/// see [`SideTabText`]).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase")]
+pub enum TitleEdge {
+    #[default]
+    Top,
+    Bottom,
+    Left,
+    Right,
+}
+
+impl TitleEdge {
+    /// A column on the left or right rather than a row.
+    pub fn is_side(self) -> bool {
+        matches!(self, TitleEdge::Left | TitleEdge::Right)
+    }
+}
+
+/// Unused (see [`UNUSED_SETTINGS`]): where a tabbed fence showed its tabs.
+/// `config_store::migrate` turns a `left` value into a side [`TitleEdge`] on each tabbed fence.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
@@ -688,6 +713,31 @@ pub struct AppearanceOverride {
     /// This fence's bar in a tab strip (None = its tint).
     #[serde(default)]
     pub tab_rgb: Option<[u8; 3]>,
+    /// The edge the title bar runs along (Title bar position).
+    #[serde(default)]
+    pub title_edge: TitleEdge,
+    /// Where the title sits in its row (None = the global `titleAlign`).
+    #[serde(default)]
+    pub title_align: Option<TitleAlign>,
+    /// Collapsed, the title bar shrinks to its title or tabs instead of keeping the fence's
+    /// length (None = only a column on a side does).
+    #[serde(default)]
+    pub shrink_collapsed: Option<bool>,
+    /// How a title column on a side shows two or more tabs.
+    #[serde(default)]
+    pub side_tab_text: SideTabText,
+}
+
+/// How a title column on a side shows two or more tabs (Tab text on a side).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase")]
+pub enum SideTabText {
+    /// The captions turn to read downwards, in a strip as narrow as a title row is tall.
+    #[default]
+    Vertical,
+    /// The captions read across, one tab per row in a wider column.
+    Horizontal,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -699,6 +749,25 @@ pub enum TitleSize {
     Normal,
     Large,
     ExtraLarge,
+}
+
+/// Which way a fence opens from its rolled title row (Expand direction).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase")]
+pub enum ExpandDirection {
+    /// Away from the title bar, which stays put.
+    #[default]
+    FollowTitle,
+    /// Keeps the top edge (a title bar at the top or bottom).
+    Down,
+    /// Keeps the bottom edge (a title bar at the top or bottom), for a fence near the bottom of
+    /// the screen.
+    Up,
+    /// Keeps the right edge (a title bar on a side).
+    Left,
+    /// Keeps the left edge (a title bar on a side).
+    Right,
 }
 
 /// Distance between icons in the grid (Fences "icon spacing").
@@ -785,6 +854,10 @@ pub struct Fence {
     /// desktop brings it back at its saved spot.
     #[serde(default)]
     pub hide_when_empty: bool,
+    /// The edge the fence keeps when it rolls up and expands. `geometry` holds the expanded
+    /// rectangle either way.
+    #[serde(default)]
+    pub expand_direction: ExpandDirection,
     #[serde(default)]
     pub items: Vec<ItemRef>,
 }
@@ -810,8 +883,65 @@ impl Fence {
             open_folders_inside: false,
             hide_title_icon: false,
             hide_when_empty: false,
+            expand_direction: ExpandDirection::FollowTitle,
             items: Vec::new(),
         }
+    }
+
+    /// The edge that stays put when the fence rolls up and expands: the title bar's, unless
+    /// the expand direction keeps the opposite edge. A direction that would keep a neighbouring
+    /// edge (left or right for a top title bar) follows the title bar.
+    pub fn kept_edge(&self) -> TitleEdge {
+        let title = self.title_edge();
+        match (self.expand_direction, title.is_side()) {
+            (ExpandDirection::Down, false) => TitleEdge::Top,
+            (ExpandDirection::Up, false) => TitleEdge::Bottom,
+            (ExpandDirection::Right, true) => TitleEdge::Left,
+            (ExpandDirection::Left, true) => TitleEdge::Right,
+            _ => title,
+        }
+    }
+
+    /// Height changes keep the bottom edge.
+    pub fn expands_up(&self) -> bool {
+        self.kept_edge() == TitleEdge::Bottom
+    }
+
+    pub fn title_edge(&self) -> TitleEdge {
+        self.appearance
+            .as_ref()
+            .map_or(TitleEdge::Top, |a| a.title_edge)
+    }
+
+    /// Sets [`AppearanceOverride::title_edge`].
+    pub fn set_title_edge(&mut self, edge: TitleEdge) {
+        self.edit_appearance(|a| a.title_edge = edge);
+    }
+
+    /// Collapsed, the title bar shrinks to its title or tabs: the fence's
+    /// [`AppearanceOverride::shrink_collapsed`], else only on a side.
+    pub fn shrinks_collapsed(&self) -> bool {
+        self.appearance
+            .as_ref()
+            .and_then(|a| a.shrink_collapsed)
+            .unwrap_or_else(|| self.title_edge().is_side())
+    }
+
+    pub fn side_tab_text(&self) -> SideTabText {
+        self.appearance
+            .as_ref()
+            .map_or(SideTabText::Vertical, |a| a.side_tab_text)
+    }
+
+    pub fn set_side_tab_text(&mut self, style: SideTabText) {
+        self.edit_appearance(|a| a.side_tab_text = style);
+    }
+
+    /// Changes the appearance override; one left at every default is dropped.
+    pub fn edit_appearance(&mut self, edit: impl FnOnce(&mut AppearanceOverride)) {
+        let mut next = self.appearance.clone().unwrap_or_default();
+        edit(&mut next);
+        self.appearance = (next != AppearanceOverride::default()).then_some(next);
     }
 
     pub fn contains_item(&self, id: ItemId) -> bool {
@@ -997,6 +1127,38 @@ struct TabPlacement {
     rolled: bool,
     expanded_h: f32,
     auto_height: bool,
+    expand_direction: ExpandDirection,
+    title: TitleBar,
+}
+
+/// A group's title bar settings, which belong to the window: the host carries them.
+#[derive(Clone, Copy, Debug)]
+struct TitleBar {
+    edge: TitleEdge,
+    align: Option<TitleAlign>,
+    shrink_collapsed: Option<bool>,
+    side_tab_text: SideTabText,
+}
+
+impl TitleBar {
+    fn of(fence: &Fence) -> Self {
+        let a = fence.appearance.clone().unwrap_or_default();
+        Self {
+            edge: a.title_edge,
+            align: a.title_align,
+            shrink_collapsed: a.shrink_collapsed,
+            side_tab_text: a.side_tab_text,
+        }
+    }
+
+    fn apply(self, fence: &mut Fence) {
+        fence.edit_appearance(|a| {
+            a.title_edge = self.edge;
+            a.title_align = self.align;
+            a.shrink_collapsed = self.shrink_collapsed;
+            a.side_tab_text = self.side_tab_text;
+        });
+    }
 }
 
 impl TabPlacement {
@@ -1010,6 +1172,8 @@ impl TabPlacement {
             rolled: fence.rolled_up,
             expanded_h: fence.expanded_h,
             auto_height: fence.view.auto_height,
+            expand_direction: fence.expand_direction,
+            title: TitleBar::of(fence),
         }
     }
 
@@ -1021,6 +1185,8 @@ impl TabPlacement {
         fence.rolled_up = self.rolled;
         fence.expanded_h = self.expanded_h;
         fence.view.auto_height = self.auto_height;
+        fence.expand_direction = self.expand_direction;
+        self.title.apply(fence);
     }
 }
 
@@ -1069,6 +1235,8 @@ impl Layout {
                         fence.rolled_up = group.rolled;
                         fence.expanded_h = group.expanded_h;
                         fence.view.auto_height = group.auto_height;
+                        fence.expand_direction = group.expand_direction;
+                        group.title.apply(fence);
                     }
                 } else {
                     fence.tab_host = Some(remaining_host);
@@ -1567,6 +1735,51 @@ mod tests {
     use super::*;
 
     #[test]
+    fn the_kept_edge_follows_the_title_unless_the_direction_turns_it_round() {
+        use ExpandDirection as D;
+        use TitleEdge as E;
+        let mut f = Fence::new("A", FenceKind::Virtual, geo());
+        let cases = [
+            (E::Top, D::FollowTitle, E::Top),
+            (E::Top, D::Up, E::Bottom),
+            (E::Top, D::Down, E::Top),
+            (E::Bottom, D::FollowTitle, E::Bottom),
+            (E::Bottom, D::Down, E::Top),
+            (E::Left, D::FollowTitle, E::Left),
+            (E::Left, D::Left, E::Right),
+            (E::Right, D::Right, E::Left),
+            (E::Right, D::Left, E::Right),
+            // Across the title bar's axis a direction follows the title bar.
+            (E::Left, D::Up, E::Left),
+            (E::Right, D::Down, E::Right),
+            (E::Top, D::Left, E::Top),
+            (E::Bottom, D::Right, E::Bottom),
+        ];
+        for (title, direction, kept) in cases {
+            f.set_title_edge(title);
+            f.expand_direction = direction;
+            assert_eq!(f.kept_edge(), kept, "{title:?} {direction:?}");
+            assert_eq!(f.expands_up(), kept == E::Bottom);
+        }
+        // Back at the defaults, the fence carries no appearance override.
+        f.set_title_edge(E::Top);
+        assert!(f.appearance.is_none());
+    }
+
+    #[test]
+    fn a_collapsed_title_bar_shrinks_on_a_side_unless_told_otherwise() {
+        let mut f = Fence::new("A", FenceKind::Virtual, geo());
+        assert!(!f.shrinks_collapsed());
+        f.set_title_edge(TitleEdge::Right);
+        assert!(f.shrinks_collapsed());
+        f.edit_appearance(|a| a.shrink_collapsed = Some(false));
+        assert!(!f.shrinks_collapsed());
+        f.set_title_edge(TitleEdge::Bottom);
+        f.edit_appearance(|a| a.shrink_collapsed = Some(true));
+        assert!(f.shrinks_collapsed());
+    }
+
+    #[test]
     fn item_keys_still_name_the_file() {
         // 'İ' lower-cases to "i\u{307}", a spelling NTFS never matches back.
         let key = ItemKey::from_path("C:/Users/İbrahim/Desktop/Plan.TXT");
@@ -1999,6 +2212,35 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn the_host_leaving_hands_its_title_bar_to_the_next_host() {
+        let mut a = Fence::new("A", FenceKind::Virtual, geo());
+        let mut b = Fence::new("B", FenceKind::Virtual, geo());
+        let (aid, bid) = (a.id, b.id);
+        b.tab_host = Some(aid);
+        a.tab_order = vec![aid, bid];
+        a.edit_appearance(|t| {
+            t.title_edge = TitleEdge::Left;
+            t.title_align = Some(TitleAlign::Center);
+            t.shrink_collapsed = Some(false);
+            t.side_tab_text = SideTabText::Horizontal;
+        });
+        let mut layout = Layout {
+            shown: 0,
+            fingerprint: vec![],
+            fences: vec![a, b],
+        };
+        layout.detach_tab(aid).unwrap();
+        let b = layout.fences.iter().find(|f| f.id == bid).unwrap();
+        assert_eq!(b.title_edge(), TitleEdge::Left);
+        assert_eq!(b.side_tab_text(), SideTabText::Horizontal);
+        assert!(!b.shrinks_collapsed());
+        assert_eq!(
+            b.appearance.as_ref().unwrap().title_align,
+            Some(TitleAlign::Center)
+        );
     }
 
     #[test]

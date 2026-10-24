@@ -869,6 +869,16 @@ pub mod clearance {
             .min()
     }
 
+    /// Highest top edge `r` may grow to: `gap` below the nearest fence that shares some of its
+    /// width and ends at or above its top edge.
+    pub fn limit_above(others: &[RECT], r: &RECT, gap: i32) -> Option<i32> {
+        others
+            .iter()
+            .filter(|o| spans_x(o, r) && o.bottom <= r.top)
+            .map(|o| o.bottom + gap)
+            .max()
+    }
+
     /// True when `a` and `b` overlap by more than half a gap (fences snapped a gap apart, or
     /// touching, do not count).
     pub fn overlaps(a: &RECT, b: &RECT, gap: i32) -> bool {
@@ -1024,6 +1034,19 @@ mod tests {
         let others = [below, beside, overlapped];
         assert_eq!(limit_below(&others, &me, 8), Some(192));
         assert_eq!(limit_below(&[beside], &me, 8), None);
+    }
+
+    #[test]
+    fn clearance_limit_above_mirrors_limit_below() {
+        use clearance::limit_above;
+        let me = rc(100, 400, 300, 440);
+        let above = rc(120, 100, 320, 300);
+        let higher = rc(120, 0, 320, 60);
+        let beside = rc(400, 100, 500, 400);
+        let overlapped = rc(150, 380, 250, 420);
+        let others = [above, higher, beside, overlapped];
+        assert_eq!(limit_above(&others, &me, 8), Some(308));
+        assert_eq!(limit_above(&[beside], &me, 8), None);
     }
 
     /// A dropped fence moves the shortest way out of the one it covers, stays inside the work

@@ -51,7 +51,7 @@ impl App {
             crate::layout::GridMetrics::for_icon_size(shown.view.icon_size, shown.view.label_lines)
                 .with_line_h(self.ctx.chrome.label_line_h())
                 .with_spacing(shown.view.spacing);
-        // A left tab column sits before the first icon column, and replaces the title row.
+        // A title column sits before the first icon column, and replaces the title row.
         let rail = self.fences.get(&id).map_or(0.0, |w| w.tab_rail_dip());
         let title_h = if rail > 0.0 {
             0.0
@@ -220,31 +220,84 @@ impl App {
         self.schedule_save();
     }
 
+    /// Highest top edge host `id` at `r` may grow to: under the nearest fence above, inside the
+    /// work area.
+    pub(super) fn growth_limit_above(&self, id: FenceId, r: &RECT) -> Option<i32> {
+        let w = self.fences.get(&id)?;
+        let gap = self.gap_px(w.hwnd());
+        let work = self.work_area_at((r.left + r.right) / 2, r.bottom - 1)?;
+        let fence = clearance::limit_above(&self.other_fence_rects(id), r, gap);
+        Some(fence.map_or(work.top, |f| f.max(work.top)))
+    }
+
     /// Lowest bottom edge host `id` at `r` may grow to without running into a fence below.
     pub(super) fn growth_limit_below(&self, id: FenceId, r: &RECT) -> Option<i32> {
         let w = self.fences.get(&id)?;
         clearance::limit_below(&self.other_fence_rects(id), r, self.gap_px(w.hwnd()))
     }
 
-    /// Expanding a rolled fence with `rollUp.pushNeighbors` off: the expanded height stops short
-    /// of a fence placed under the title row meanwhile (the rest of the items scroll).
+    /// Expanding a rolled fence: the expanded height stops short of a fence placed under the
+    /// title row meanwhile (the rest of the items scroll). With `rollUp.pushNeighbors` on, only
+    /// fences that expand upwards stop it: the others slide away.
     pub(super) fn clamp_expand_height(&mut self, id: FenceId) {
         let Some(w) = self.fences.get(&id) else {
             return;
         };
-        // Collapsed to its left tab column, the fence expands to its own width too.
+        if w.expands_up() {
+            self.clamp_expand_up_height(id);
+            return;
+        }
+        // Collapsed to its title column, the fence expands to its own width too.
         let r = w.footprint_rect();
         let expanded = w.expanded_height_px();
         let scale = monitors::dpi_for_window(w.hwnd()).max(96) as f32 / 96.0;
-        let (Some(limit), Some(steps)) =
-            (self.growth_limit_below(id, &r), self.grid_steps(id, scale))
-        else {
+        let limit = if self.state.config.settings.roll_up.push_neighbors {
+            let fixed: Vec<RECT> = self
+                .fences
+                .iter()
+                .filter(|(fid, o)| {
+                    **fid != id
+                        && o.expands_up()
+                        && pecofence_platform::desktop::is_visible(o.hwnd())
+                })
+                .map(|(_, o)| o.rect())
+                .collect();
+            clearance::limit_below(&fixed, &r, self.gap_px(w.hwnd()))
+        } else {
+            self.growth_limit_below(id, &r)
+        };
+        let (Some(limit), Some(steps)) = (limit, self.grid_steps(id, scale)) else {
             return;
         };
         if r.top + expanded <= limit {
             return;
         }
         let h = steps.height_within(limit - r.top);
+        if h >= expanded {
+            return;
+        }
+        w.set_expanded_height_px(h);
+        self.record_bounds(id, r, true, h);
+    }
+
+    /// [`Self::clamp_expand_height`] for a fence that expands upwards. It pushes nothing, so
+    /// `rollUp.pushNeighbors` makes no difference.
+    fn clamp_expand_up_height(&mut self, id: FenceId) {
+        let Some(w) = self.fences.get(&id) else {
+            return;
+        };
+        let r = w.footprint_rect();
+        let expanded = w.expanded_height_px();
+        let scale = monitors::dpi_for_window(w.hwnd()).max(96) as f32 / 96.0;
+        let (Some(limit), Some(steps)) =
+            (self.growth_limit_above(id, &r), self.grid_steps(id, scale))
+        else {
+            return;
+        };
+        if r.bottom - expanded >= limit {
+            return;
+        }
+        let h = steps.height_within(r.bottom - limit.min(r.top));
         if h >= expanded {
             return;
         }
@@ -351,7 +404,16 @@ impl App {
         let r = w.rect();
         let scale = monitors::dpi_for_window(w.hwnd()).max(96) as f32 / 96.0;
         let mut h = fit.fitting_height_px;
-        if let Some(limit) = self.growth_limit_below(id, &r)
+        if w.expands_up() {
+            if let Some(limit) = self.growth_limit_above(id, &r)
+                && let Some(steps) = self.grid_steps(id, scale)
+            {
+                let limit = limit.min(r.top);
+                if r.bottom - h < limit {
+                    h = steps.height_within(r.bottom - limit);
+                }
+            }
+        } else if let Some(limit) = self.growth_limit_below(id, &r)
             && let Some(steps) = self.grid_steps(id, scale)
         {
             let limit = limit.max(r.bottom);

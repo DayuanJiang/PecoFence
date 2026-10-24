@@ -360,10 +360,8 @@
         <select data-bind="theme"><option value="followWindowsMode">跟随 Windows 模式</option><option value="followAppMode">跟随应用模式</option><option value="light">浅色</option><option value="dark">深色</option></select></div>
       <div class="card"><div class="l"><span class="ic">&#xE8D3;</span><div><div class="t">图标名称颜色</div><div class="s">自动：液态玻璃按背后壁纸的明暗选深色或浅色，Fluent 跟随颜色模式；栅栏标题的颜色在“栅栏”页设置</div></div></div>
         <select data-bind="labelColor"><option value="auto">自动</option><option value="white">白色</option><option value="black">黑色</option></select></div>
-      <div class="card"><div class="l"><span class="ic">&#xE8E4;</span><div><div class="t">标题对齐</div></div></div>
+      <div class="card"><div class="l"><span class="ic">&#xE8E4;</span><div><div class="t">标题对齐</div><div class="s">每个栅栏可在“栅栏”页单独设置</div></div></div>
         <select data-bind="titleAlign"><option value="left">左对齐</option><option value="center">居中</option><option value="right">右对齐</option></select></div>
-      <div class="card"><div class="l"><span class="ic">&#xE90C;</span><div><div class="t">标签栏位置</div><div class="s">有多个标签页时，标签排在标题栏里，或在栅栏左侧排成一列</div></div></div>
-        <select data-bind="tabBar"><option value="top">顶部</option><option value="left">左侧</option></select></div>
       <div class="card"><div class="l"><span class="ic">&#xE8B9;</span><div><div class="t">默认图标大小</div><div class="s">新建栅栏时使用，每个栅栏可在“栅栏”页或右键菜单中单独设置</div></div></div>
         <select data-bind="iconSize"><option value="32">小图标</option><option value="48">中等图标</option><option value="64">较大图标</option><option value="96">大图标</option></select></div>
       <div class="group">
@@ -442,12 +440,21 @@
         <select id="fenceTitleSize" data-fence="titleSize"><option value="small">小</option><option value="normal">标准</option><option value="large">大</option><option value="extraLarge">特大</option></select></div>
       <div class="card"><div class="l"><span class="ic">&#xE737;</span><div><div class="t">显示标题栏</div><div class="s">鼠标悬停时显示：平时收起标题行，指针移到栅栏上才出现</div></div></div>
         <select id="fenceTitleOnHover" data-fence="titleOnHover"><option value="default">跟随常规设置</option><option value="always">始终显示</option><option value="hover">鼠标悬停时显示</option></select></div>
+      <div class="card"><div class="l"><span class="ic">&#xE8A0;</span><div><div class="t">标题栏位置</div><div class="s">放在两侧时标题栏是一列，标题竖着排；展开方向为“跟随标题栏”时，栅栏收起到标题栏，从另一侧展开</div></div></div>
+        <select id="fenceTitlePosition" data-fence="titlePosition"><option value="top">顶部</option><option value="bottom">底部</option><option value="left">左侧</option><option value="right">右侧</option></select></div>
+      <div class="card"><div class="l"><span class="ic">&#xE8E4;</span><div><div class="t">标题对齐</div></div></div>
+        <select id="fenceTitleAlign" data-fence="titleAlign"><option value="default">跟随常规设置</option><option value="left">左对齐</option><option value="center">居中</option><option value="right">右对齐</option></select></div>
+      <div class="card" id="fenceSideTabText"><div class="l"><span class="ic">&#xE7C3;</span><div><div class="t">两侧标签页的文字</div></div></div>
+        <select data-fence="sideTabText"><option value="vertical">竖排</option><option value="horizontal">横排</option></select></div>
       <h3>布局</h3>
       <div class="card"><div class="l"><span class="ic">&#xE8B9;</span><div><div class="t">图标大小</div><div class="s">也可以在栅栏内按住 Ctrl 滚动鼠标滚轮</div></div></div>
         <select id="fenceIconSize" data-fence="iconSize"><option value="32">小图标</option><option value="48">中等图标</option><option value="64">较大图标</option><option value="96">大图标</option></select></div>
       <div class="card"><div class="l"><span class="ic">&#xF0E2;</span><div><div class="t">图标间距</div></div></div>
         <select id="fenceSpacing" data-fence="spacing"><option value="compact">紧凑</option><option value="normal">标准</option><option value="loose">宽松</option></select></div>
       <div class="card"><div class="l"><span class="ic">&#xE745;</span><div><div class="t">自动高度</div><div class="s">高度跟随内容行数，内容增减时平滑过渡</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="autoHeight"></div></div>
+      <div class="card"><div class="l"><span class="ic">&#xE70E;</span><div><div class="t">展开方向</div><div class="s">收起和展开时保持不动的一边：朝上适合放在屏幕底部的栅栏</div></div></div>
+        <select id="fenceExpandDirection" data-fence="expandDirection"><option value="followTitle">跟随标题栏</option><option value="down">朝下</option><option value="up">朝上</option><option value="left">朝左</option><option value="right">朝右</option></select></div>
+      <div class="card" id="fenceCollapsedSize"><div class="l"><span class="ic">&#xE73F;</span><div><div class="t">收起时缩短</div><div class="s">收起后标题栏只有标题或标签页那么长，而不是和栅栏一样长</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="collapsedSize"></div></div>
       <h3>行为</h3>
       <div class="card"><div class="l"><span class="ic">&#xE72E;</span><div><div class="t">锁定位置和大小</div><div class="s">边框不再可拖动缩放；标题仍可点击、右键、双击</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="locked"></div></div>
       <div class="card"><div class="l"><span class="ic">&#xE890;</span><div><div class="t">双击桌面隐藏时保留此栅栏</div><div class="s">其他栅栏隐藏时，这个栅栏仍留在桌面上</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="excludeFromQuickHide"></div></div>
@@ -971,19 +978,36 @@
     const tabPalette = `<option value="">${esc(t("跟随色调"))}</option>` + palette.slice(palette.indexOf('</option>') + 9);
     if (tabSel.innerHTML !== tabPalette) tabSel.innerHTML = tabPalette;
     document.getElementById('fenceTintTitleOnly').style.display = f.tint ? '' : 'none';
+    // Only the directions along the title bar's axis apply; one across it acts as followTitle.
+    const side = f.titlePosition === 'left' || f.titlePosition === 'right';
+    for (const o of document.getElementById('fenceExpandDirection').options) {
+      o.hidden = side ? o.value === 'up' || o.value === 'down' : o.value === 'left' || o.value === 'right';
+    }
+    // A title column never hides.
+    document.getElementById('fenceTitleOnHover').closest('.card').style.display = side ? 'none' : '';
+    // Down a column the title aligns to its top or bottom.
+    const alignSel = document.getElementById('fenceTitleAlign');
+    alignSel.querySelector('[value=left]').textContent = t(side ? "顶部" : "左对齐");
+    alignSel.querySelector('[value=right]').textContent = t(side ? "底部" : "右对齐");
+    document.getElementById('fenceSideTabText').style.display = side && (f.host || f.tabbed) ? '' : 'none';
+    // Horizontal tab text fills the column from its top.
+    alignSel.closest('.card').style.display = side && (f.host || f.tabbed) && f.sideTabText === 'horizontal' ? 'none' : '';
     document.getElementById('fenceTabColor').style.display = f.host || f.tabbed ? '' : 'none';
     document.querySelectorAll('[data-fence]').forEach(el => {
       const prop = el.dataset.fence;
-      const cur = prop === 'portalNavigate' ? !!(f.portal && f.portal.navigate) : prop === 'portalTitleIcon' ? !!(f.portal && f.portal.titleIcon) : f[prop];
+      const cur = prop === 'portalNavigate' ? !!(f.portal && f.portal.navigate) : prop === 'portalTitleIcon' ? !!(f.portal && f.portal.titleIcon) : prop === 'collapsedSize' ? f.collapsedShrinks : f[prop];
       if (el.classList.contains('toggle')) {
         el.classList.toggle('on', !!cur); el.setAttribute('aria-checked', String(!!cur));
-        el.onclick = () => { const on = !el.classList.contains('on'); el.classList.toggle('on', on); el.setAttribute('aria-checked', String(on)); setFence(f.id, prop, on); };
+        // Back at what the title edge does anyway, the shrink switch follows the edge again.
+        const post = on => prop === 'collapsedSize' && on === side ? 'default' : on;
+        el.onclick = () => { const on = !el.classList.contains('on'); el.classList.toggle('on', on); el.setAttribute('aria-checked', String(on)); setFence(f.id, prop, post(on)); };
         keyToggle(el);
       } else if (el.tagName === 'SELECT') {
         const value = cur == null ? '' : String(cur);
         if (prop === 'tint' || prop === 'tabColor') ensureOption(el, value, t("自定义 #") + value);
         if (prop === 'titleColor') { ensureOption(el, /^[0-9A-F]{6}$/i.test(value) ? value : '', t("自定义 #") + value); el.querySelector('[value=tint]').disabled = !f.tint; el.closest('.card').querySelector('.s').hidden = !!f.tint; }
         el.value = value;
+        if (prop === 'expandDirection' && el.selectedOptions[0]?.hidden) el.value = 'followTitle';
         el.onchange = () => setFence(f.id, prop, prop === 'iconSize' ? Number(el.value) : prop === 'tint' || prop === 'tabColor' ? (el.value || null) : el.value);
       } else if (el.tagName === 'INPUT') {
         if (document.activeElement !== el) el.value = cur;

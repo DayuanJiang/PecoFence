@@ -203,7 +203,7 @@ impl FenceWindow {
             content_y: (theme.title_height * dpi as f32 / 96.0).round() as i32,
             rail_dip: 0.0,
             expanded_w_px: bounds.right - bounds.left,
-            column_collapsed: false,
+            width_collapsed: false,
             _target: target,
             root,
             chrome: ctx.chrome.clone(),
@@ -247,6 +247,11 @@ impl FenceWindow {
             wheel_tab_accum: 0,
             tab_hover_switch: None,
             auto_height,
+            expand_up: false,
+            keep_right_edge: false,
+            band: None,
+            band_parked: false,
+            title_align: None,
             rail_grow: false,
             locked: false,
             backdrop_override: None,
@@ -363,8 +368,14 @@ impl FenceWindow {
         hide_with_fade(&self.view, hwnd, true, true)
     }
 
+    /// Window rect of what shows: during an anchored size animation, only the drawn part (see
+    /// `Band`).
     pub fn rect(&self) -> RECT {
-        self.window.window_rect()
+        self.view
+            .try_borrow()
+            .ok()
+            .and_then(|g| g.as_ref().map(|v| v.visual_rect()))
+            .unwrap_or_else(|| self.window.window_rect())
     }
 
     /// One-line state summary for `--test-script dump`: what the compositor shows (root
@@ -566,7 +577,11 @@ impl FenceWindow {
     /// Explicit geometry from the app (layout, snapping, monitor changes) takes precedence over
     /// a running auto-height settle.
     pub fn set_bounds(&self, r: RECT) {
-        self.with_view(|v| v.height_anim = None);
+        self.with_view(|v| {
+            v.height_anim = None;
+            // A roll in flight keeps running, but in the window's new shape.
+            v.end_band();
+        });
         let _ = self
             .window
             .set_bounds(r.left, r.top, r.right - r.left, r.bottom - r.top);
@@ -579,20 +594,31 @@ impl FenceWindow {
             v.finish_content_swap_now();
             v.roll_anim = None;
             v.height_anim = None;
+            v.end_band();
             v.peeking = false;
             v.rolled_up = rolled;
             v.expanded_h_px = expanded_h;
             v.expanded_w_px = rect.right - rect.left;
-            v.column_collapsed = rolled && v.tabs_on_rail();
+            v.width_collapsed = rolled && v.collapses_width();
             v.rail_dip = v.measure_rail_w();
             v.roll_t = Tween::at(rolled as u8 as f32, Instant::now());
             let _ = v.motion.stop(&v.content_panel.visual, Prop::Opacity);
             v.content_panel.visual.set_opacity(1.0);
             v.content_panel.visual.set_visible(!rolled);
             if rolled {
-                rect.bottom = rect.top + v.rolled_h_px();
-                if v.column_collapsed {
-                    rect.right = rect.left + v.rolled_w_px();
+                let h = v.rolled_h_px();
+                rect.top =
+                    super::anchored_start(rect.top, rect.bottom - rect.top, h, v.height_anchor());
+                rect.bottom = rect.top + h;
+                if v.width_collapsed {
+                    let w = v.rolled_w_px();
+                    rect.left = super::anchored_start(
+                        rect.left,
+                        rect.right - rect.left,
+                        w,
+                        v.width_anchor(),
+                    );
+                    rect.right = rect.left + w;
                 }
             } else {
                 rect.bottom = rect.top + expanded_h;
@@ -608,7 +634,7 @@ impl FenceWindow {
     }
 
     /// Moves the window to the saved expanded rect `rect`. Rolled, it keeps its rolled size there
-    /// (the title row, or the left tab column it is collapsed to) and expands to `rect` later.
+    /// (the title row, or the title column it is collapsed to) and expands to `rect` later.
     pub fn place_saved(&self, rect: RECT, rolled: bool) {
         if rolled {
             self.restore_geometry(rect, true, rect.bottom - rect.top);
@@ -958,7 +984,7 @@ impl FenceWindow {
             let strip_scroll = v.tab_scroll.get();
             v.tabs = tabs;
             v.active = active;
-            // A left tab column comes with the second tab and goes with the last but one.
+            // A title column comes with the second tab and goes with the last but one.
             let rail_changed = v.sync_rail();
             // Only a column that needs more room than before (a new tab, a longer caption)
             // asks the height pass to grow the fence; a reorder, a colour or a start does not.
@@ -1070,29 +1096,6 @@ impl FenceWindow {
             if rail_changed {
                 let _ = v.redraw();
             }
-        });
-    }
-
-    /// 标签栏位置 changed: the tabs move between the title row and the left column.
-    pub fn sync_tab_bar(&self) {
-        self.with_view(|v| {
-            // A tab drag or merge gap measured along the old axis ends here (only the CLI can
-            // change the setting mid-drag); the dragged tab goes back to its slot and the button
-            // release then finds nothing to commit.
-            if let Some(td) = v.tab_drag.take()
-                && td.index < v.tabs.len()
-            {
-                let t = v.tabs.remove(td.index);
-                v.tabs.insert(td.start_index.min(v.tabs.len()), t);
-            }
-            v.merge_gap = None;
-            v.pressed = None;
-            v.tab_slide.clear();
-            v.tab_settle = None;
-            v.pill_anim = None;
-            v.sync_rail();
-            v.rail_grow = v.tabs_on_rail();
-            let _ = v.redraw();
         });
     }
 
@@ -1402,7 +1405,7 @@ impl FenceWindow {
         ))
     }
 
-    /// Screen rect of tab `tab`'s row in the left tab column (None without a column): where the
+    /// Screen rect of tab `tab`'s row in the title column (None without a column): where the
     /// rename box goes.
     pub fn rail_row_screen_rect(&self, tab: FenceId) -> Option<RECT> {
         let guard = self.view.try_borrow().ok()?;
@@ -1415,34 +1418,90 @@ impl FenceWindow {
         let s = v.scale();
         let win = self.rect();
         let at = |dip: f32| (dip * s).round() as i32;
+        if v.vertical_tabs() {
+            // The box does not turn: it lies across the tab's start and reaches into the fence,
+            // as for a single vertical title (`title_rename_rect`).
+            let w = (win.right - win.left - at(8.0)).max(at(160.0));
+            let (left, right) = if v.column_right() {
+                (win.right - at(4.0) - w, win.right - at(4.0))
+            } else {
+                (win.left + at(4.0), win.left + at(4.0) + w)
+            };
+            let top = win.top + at(y);
+            return Some(RECT {
+                left,
+                top,
+                right,
+                bottom: top + at(h.min(28.0)),
+            });
+        }
+        let left = win.left + v.column_x_px();
         Some(RECT {
-            left: win.left + at(RAIL_ROW_INSET),
+            left: left + at(RAIL_ROW_INSET),
             top: win.top + at(y),
-            right: win.left + at(v.rail_w() - RAIL_ROW_RIGHT),
+            right: left + at(v.rail_w() - RAIL_ROW_RIGHT),
             bottom: win.top + at(y + h),
         })
     }
 
-    /// Window rect, as wide as the fence expands to while it is collapsed to its left tab column:
+    /// Screen rect for the title's rename box when the title is not in a top row: a bottom
+    /// title row, or the top of a single fence's title column. None for a top row, whose box
+    /// has its own spot.
+    pub fn title_rename_rect(&self) -> Option<RECT> {
+        let guard = self.view.try_borrow().ok()?;
+        let v = guard.as_ref()?;
+        let s = v.scale();
+        let win = self.rect();
+        if v.title_column() && !v.tabs_on_rail() {
+            // The box does not turn: it lies across the column's top and reaches into the
+            // fence, past the window while the fence is collapsed to its column.
+            let at = |dip: f32| (dip * s).round() as i32;
+            let w = (win.right - win.left - at(8.0)).max(at(160.0));
+            let (left, right) = if v.column_right() {
+                (win.right - at(4.0) - w, win.right - at(4.0))
+            } else {
+                (win.left + at(4.0), win.left + at(4.0) + w)
+            };
+            let top = win.top + at(RAIL_TOP);
+            return Some(RECT {
+                left,
+                top,
+                right,
+                bottom: top + at(28.0),
+            });
+        }
+        if !v.title_bottom() {
+            return None;
+        }
+        Some(RECT {
+            left: win.left + (8.0 * s) as i32,
+            top: win.bottom - v.title_h_px(),
+            right: (win.right - (44.0 * s) as i32).max(win.left + (88.0 * s) as i32),
+            bottom: win.bottom,
+        })
+    }
+
+    /// Window rect, as wide as the fence expands to while it is collapsed to its title column:
     /// the room automatic placement keeps clear.
     pub fn footprint_rect(&self) -> RECT {
         let mut r = self.rect();
         if let Some(ew) = self.collapsed_expanded_width_px() {
+            r.left = super::anchored_start(r.left, r.right - r.left, ew, self.width_anchor());
             r.right = r.left + ew;
         }
         r
     }
 
-    /// Width the window expands to while it is collapsed to its left tab column (None
+    /// Width the window expands to while it is collapsed to its title column (None
     /// otherwise: the window has its expanded width).
     pub fn collapsed_expanded_width_px(&self) -> Option<i32> {
         let guard = self.view.try_borrow().ok()?;
         let v = guard.as_ref()?;
-        v.column_collapsed.then_some(v.expanded_w_px)
+        v.width_collapsed.then_some(v.expanded_w_px)
     }
 
-    /// A rolled fence whose tabs changed (added, removed, renamed, or 标签栏位置 switched)
-    /// takes its rolled size again: the left tab column it is collapsed to, or its title row at
+    /// A rolled fence whose tabs changed (added, removed, renamed, or the title edge switched)
+    /// takes its rolled size again: the title column it is collapsed to, or its title row at
     /// the expanded width. Returns the new window rect when it changed.
     pub fn settle_rolled_size(&self) -> Option<RECT> {
         let (w, h) = {
@@ -1452,23 +1511,25 @@ impl FenceWindow {
                 return None;
             }
             let (cur_w, _) = window::window_rect_size(v.hwnd);
-            let w = if v.tabs_on_rail() {
+            let w = if v.collapses_width() {
                 v.rail_dip = v.measure_rail_w();
-                v.rail_px()
-            } else if v.column_collapsed {
+                v.rolled_w_px()
+            } else if v.width_collapsed {
                 v.expanded_w_px
             } else {
                 cur_w
             };
-            v.column_collapsed = v.tabs_on_rail();
+            v.width_collapsed = v.collapses_width();
             (w, v.rolled_h_px())
         };
         let r = self.rect();
         if (r.right - r.left, r.bottom - r.top) == (w, h) {
             return None;
         }
+        let top = super::anchored_start(r.top, r.bottom - r.top, h, self.height_anchor());
+        let left = super::anchored_start(r.left, r.right - r.left, w, self.width_anchor());
         // No borrow held: WM_SIZE lays the panels out at the new size.
-        let _ = self.window.set_bounds(r.left, r.top, w, h);
+        let _ = self.window.set_bounds(left, top, w, h);
         self.with_view(|v| v.update_shadow_now());
         Some(window::window_rect(self.hwnd()))
     }
@@ -1504,6 +1565,43 @@ impl FenceWindow {
 
     pub fn set_auto_height(&self, on: bool) {
         self.with_view(|v| v.auto_height = on);
+    }
+
+    pub fn expands_up(&self) -> bool {
+        self.view.borrow().as_ref().is_some_and(|v| v.expand_up)
+    }
+
+    /// Where height changes of a collapse pivot (`anchored_start`).
+    pub fn height_anchor(&self) -> f32 {
+        self.view
+            .borrow()
+            .as_ref()
+            .map_or(0.0, |v| v.height_anchor())
+    }
+
+    /// Where width changes pivot (`anchored_start`).
+    pub fn width_anchor(&self) -> f32 {
+        self.view
+            .borrow()
+            .as_ref()
+            .map_or(0.0, |v| v.width_anchor())
+    }
+
+    /// Switches the edge size changes keep (`Fence::kept_edge`). Returns whether it changed;
+    /// the caller then places the window again from the saved geometry
+    /// ([`Self::place_saved`]).
+    pub fn set_kept_edge(&self, edge: pecofence_core::TitleEdge) -> bool {
+        let (up, right) = (
+            edge == pecofence_core::TitleEdge::Bottom,
+            edge == pecofence_core::TitleEdge::Right,
+        );
+        let mut changed = false;
+        self.with_view(|v| {
+            changed = (v.expand_up, v.keep_right_edge) != (up, right);
+            v.expand_up = up;
+            v.keep_right_edge = right;
+        });
+        changed
     }
 
     pub fn set_locked(&self, on: bool) {
@@ -1558,15 +1656,37 @@ impl FenceWindow {
 
     /// Per-fence colour wash, title colour and title size.
     pub fn set_style(&self, style: FenceStyle) {
+        let hwnd = self.hwnd();
         self.with_view(|v| {
             if v.style != style {
                 let previous_ink = v.material_foreground().text_primary;
+                let moved = v.style.title_edge != style.title_edge
+                    || v.style.side_tab_text != style.side_tab_text;
                 v.style = style;
-                if previous_ink != v.material_foreground().text_primary {
+                if moved {
+                    // The title bar moves to another edge: the tabs may change axis, and the
+                    // content and the plate's fold move.
+                    v.reset_tab_axis();
+                    let (w, h) = window::window_rect_size(hwnd);
+                    if let Err(e) = v.layout_panels(w, h).and_then(|_| v.redraw()) {
+                        tracing::error!(error = %e, "relayout for the title position failed");
+                    }
+                    v.update_shadow_now();
+                } else if previous_ink != v.material_foreground().text_primary {
                     let _ = v.redraw();
                 } else {
                     let _ = v.redraw_chrome_only();
                 }
+            }
+        });
+    }
+
+    /// This fence's title alignment (None = the global setting).
+    pub fn set_title_align(&self, align: Option<pecofence_core::TitleAlign>) {
+        self.with_view(|v| {
+            if v.title_align != align {
+                v.title_align = align;
+                let _ = v.redraw_chrome_only();
             }
         });
     }
@@ -1602,7 +1722,7 @@ impl FenceWindow {
         self.view.borrow().as_ref().and_then(|v| v.auto_height_px())
     }
 
-    /// Width of the left tab column in DIPs (0 without one).
+    /// Width of the title column in DIPs (0 without one).
     pub fn tab_rail_dip(&self) -> f32 {
         self.view.borrow().as_ref().map_or(0.0, |v| v.rail_w())
     }
@@ -1638,7 +1758,11 @@ impl FenceWindow {
             }
         };
         let mut r = self.window.window_rect();
-        r.bottom = r.top + height_px;
+        if self.expands_up() {
+            r.top = r.bottom - height_px;
+        } else {
+            r.bottom = r.top + height_px;
+        }
         if !animated {
             self.set_bounds(r);
         }

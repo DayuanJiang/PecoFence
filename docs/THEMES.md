@@ -84,7 +84,7 @@ wallpaper or the theme changes. Liquid Glass then bends the result through its l
 | `labelFontSize` | 8 to 24 | Item name size in DIPs (Windows' default is 12), times Windows' text size setting (Settings › Accessibility › Text size). The grid makes its rows taller or shorter to fit. |
 | `labelFontWeight` | 100 to 900 | 400 regular, 600 semibold, 700 bold. |
 | `titleFont` | font name | Fence titles and tabs (built in Segoe UI Variable). Each fence's 标题字号 option still picks the size. |
-| `titleFontWeight` | 100 to 900 | Built in 600. Resting tabs in a left tab column stay regular. |
+| `titleFontWeight` | 100 to 900 | Built in 600. Resting horizontal tabs in a title column stay regular. |
 
 A font name is a family name, in English or in the font's own language, such as
 `"Microsoft YaHei UI"`, `"微软雅黑"` or `"Georgia"`; for Segoe UI Variable write

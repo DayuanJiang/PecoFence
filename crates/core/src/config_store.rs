@@ -1,7 +1,9 @@
 //! Config persistence: atomic writes, `.bak` rotation, daily backups, load fallbacks (plan §7.5).
 
 use crate::geometry::MAX_DIP;
-use crate::model::{Config, ItemSourceSpec, NormGeometry, SCHEMA_VERSION};
+use crate::model::{
+    Config, Fence, ItemSourceSpec, NormGeometry, SCHEMA_VERSION, TabBar, TitleEdge,
+};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -593,6 +595,30 @@ pub fn migrate(mut cfg: Config) -> Config {
     if peek.chosen_hotkey() == peek.hotkey.combo() {
         peek.hotkey = crate::model::PeekHotkey::CtrlAltSpace;
     }
+    // Files from 0.2.3 and earlier set a left tab column globally with `tabBar`. Each tabbed
+    // host still at a top title edge takes a left one with horizontal tab text instead, and
+    // `tabBar` goes back to top.
+    if cfg.settings.tab_bar == TabBar::Left {
+        let fold = |fences: &mut Vec<Fence>| {
+            let hosts: std::collections::HashSet<_> =
+                fences.iter().filter_map(|f| f.tab_host).collect();
+            for f in fences.iter_mut() {
+                if hosts.contains(&f.id) && f.title_edge() == TitleEdge::Top {
+                    f.set_title_edge(TitleEdge::Left);
+                    f.set_side_tab_text(crate::model::SideTabText::Horizontal);
+                }
+            }
+        };
+        for layout in &mut cfg.layouts {
+            fold(&mut layout.fences);
+        }
+        for snapshot in &mut cfg.snapshots {
+            for layout in &mut snapshot.layouts {
+                fold(&mut layout.fences);
+            }
+        }
+        cfg.settings.tab_bar = TabBar::Top;
+    }
     cfg
 }
 
@@ -836,6 +862,38 @@ mod tests {
         let peek = migrate(c).settings.peek;
         assert_eq!(peek.hotkey, PeekHotkey::WinShiftSpace);
         assert_eq!(peek.chosen_hotkey().to_string(), "Ctrl+Shift+F");
+    }
+
+    #[test]
+    fn a_left_tab_bar_becomes_the_title_edge_of_the_fences_with_tabs() {
+        let mut c = sample();
+        let geometry = c.layouts[0].fences[0].geometry.clone();
+        let host = Fence::new("Host", FenceKind::Virtual, geometry.clone());
+        let mut tab = Fence::new("Tab", FenceKind::Virtual, geometry.clone());
+        tab.tab_host = Some(host.id);
+        let (host_id, tab_id) = (host.id, tab.id);
+        c.layouts[0].fences.extend([host, tab]);
+        c.settings.tab_bar = TabBar::Left;
+        let c = migrate(c);
+        assert_eq!(c.settings.tab_bar, TabBar::Top);
+        let edge = |id| {
+            c.layouts[0]
+                .fences
+                .iter()
+                .find(|f| f.id == id)
+                .unwrap()
+                .title_edge()
+        };
+        assert_eq!(edge(host_id), TitleEdge::Left);
+        let host = c.layouts[0]
+            .fences
+            .iter()
+            .find(|f| f.id == host_id)
+            .unwrap();
+        assert_eq!(host.side_tab_text(), crate::model::SideTabText::Horizontal);
+        // A single fence and a tab keep their title row.
+        assert_eq!(edge(c.layouts[0].fences[0].id), TitleEdge::Top);
+        assert_eq!(edge(tab_id), TitleEdge::Top);
     }
 
     #[test]
