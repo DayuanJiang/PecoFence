@@ -1218,6 +1218,15 @@ impl AppState {
         if fence.view.reverse {
             items.reverse();
         }
+        // After the reverse, so folders stay on top in either direction, under the Recycle Bin
+        // and the other system items. Date groups keep their order: a folder moved out of its
+        // section would break the headers.
+        if fence.view.folders_first
+            && fence.view.sort != SortMode::Manual
+            && !fence.view.group_by_date
+        {
+            items.sort_by_key(|(_, it)| (!it.is_namespace(), !it.is_folder));
+        }
         items.into_iter().map(|(_, it)| it).collect()
     }
 
@@ -1953,6 +1962,30 @@ impl AppState {
         }
     }
 
+    /// Folders first. Turning it on sorts a manually ordered fence by name and ends Group by
+    /// date, where it would have no effect.
+    pub fn set_folders_first(&mut self, id: FenceId, on: bool) {
+        let Some(f) = self.fence_mut(id) else {
+            return;
+        };
+        let mut changed = false;
+        if f.view.folders_first != on {
+            f.view.folders_first = on;
+            changed = true;
+        }
+        if on && f.view.sort == SortMode::Manual {
+            f.view.sort = SortMode::Name;
+            changed = true;
+        }
+        if on && f.view.group_by_date {
+            f.view.group_by_date = false;
+            changed = true;
+        }
+        if changed {
+            self.dirty = true;
+        }
+    }
+
     pub fn set_locked(&mut self, id: FenceId, on: bool) {
         if let Some(f) = self.fence_mut(id)
             && f.locked != on
@@ -2079,7 +2112,8 @@ impl AppState {
         }
     }
 
-    /// Any order but by date ends "按时间分组" (sections only make sense in date order).
+    /// Any order but by date ends Group by date (sections only make sense in date order), and
+    /// manual order ends Folders first.
     pub fn set_sort(&mut self, id: FenceId, sort: SortMode) {
         let Some(f) = self.fence_mut(id) else {
             return;
@@ -2093,12 +2127,16 @@ impl AppState {
             f.view.group_by_date = false;
             changed = true;
         }
+        if sort == SortMode::Manual && f.view.folders_first {
+            f.view.folders_first = false;
+            changed = true;
+        }
         if changed {
             self.dirty = true;
         }
     }
 
-    /// "按时间分组"; turning it on also sorts by date.
+    /// Group by date; turning it on also sorts by date and ends Folders first.
     pub fn set_group_by_date(&mut self, id: FenceId, on: bool) {
         let Some(f) = self.fence_mut(id) else {
             return;
@@ -2106,6 +2144,10 @@ impl AppState {
         let mut changed = false;
         if f.view.group_by_date != on {
             f.view.group_by_date = on;
+            changed = true;
+        }
+        if on && f.view.folders_first {
+            f.view.folders_first = false;
             changed = true;
         }
         if on && f.view.sort != SortMode::Date {
@@ -2916,6 +2958,59 @@ mod tests {
         // A sorted fence refuses.
         state.set_sort(fence, SortMode::Name);
         assert!(!state.reorder_items(fence, &[a], 0));
+    }
+
+    #[test]
+    fn folders_first_keeps_folders_on_top_when_sorted() {
+        let mut state = test_state();
+        let fence = state.fences()[0].id;
+        add_item(&mut state, fence, "apple");
+        let zoo = add_item(&mut state, fence, "zoo");
+        add_item(&mut state, fence, "mango");
+        let docs = add_item(&mut state, fence, "docs");
+        let bin = add_item(&mut state, fence, "Recycle Bin");
+        for id in [zoo, docs] {
+            state.config.items.get_mut(&id).unwrap().is_folder = true;
+        }
+        state.config.items.get_mut(&bin).unwrap().key =
+            ItemKey::Path("::{645ff040-5081-101b-9f08-00aa002f954e}".into());
+        state.set_sort(fence, SortMode::Name);
+        assert_eq!(
+            names(&state, fence),
+            ["Recycle Bin", "apple", "docs", "mango", "zoo"]
+        );
+        state.set_folders_first(fence, true);
+        assert_eq!(
+            names(&state, fence),
+            ["Recycle Bin", "docs", "zoo", "apple", "mango"]
+        );
+        state.set_reverse(fence, true);
+        assert_eq!(
+            names(&state, fence),
+            ["Recycle Bin", "zoo", "docs", "mango", "apple"]
+        );
+        // Type already puts folders first; reversed, the flag keeps them there.
+        state.set_sort(fence, SortMode::Type);
+        assert_eq!(
+            names(&state, fence),
+            ["Recycle Bin", "zoo", "docs", "mango", "apple"]
+        );
+    }
+
+    #[test]
+    fn folders_first_turns_manual_order_and_date_groups_off() {
+        let mut state = test_state();
+        let fence = state.fences()[0].id;
+        let view = |state: &AppState| state.fence(fence).unwrap().view.clone();
+        state.set_folders_first(fence, true);
+        assert_eq!(view(&state).sort, SortMode::Name);
+        state.set_sort(fence, SortMode::Manual);
+        assert!(!view(&state).folders_first);
+        state.set_group_by_date(fence, true);
+        state.set_folders_first(fence, true);
+        assert!(!view(&state).group_by_date);
+        state.set_group_by_date(fence, true);
+        assert!(!view(&state).folders_first);
     }
 
     fn desktop_entry(name: &str) -> DesktopEntry {

@@ -1316,6 +1316,7 @@ impl App {
             sort: sort_name(f.view.sort).to_string(),
             reverse: f.view.reverse,
             group_by_date: f.view.group_by_date,
+            folders_first: f.view.folders_first,
             label_lines: f.view.label_lines,
             open_folders_inside: f.open_folders_inside,
             opened_folder: (f.kind != FenceKind::FolderPortal)

@@ -550,5 +550,6 @@
   "每个功能都有动画演示": "Ogni funzione è illustrata con una breve animazione",
   "桌面整理好了": "Il desktop è in ordine",
   "文件都没有移动，只是显示在栅栏里。\n在桌面空白处拖出一个框可新建栅栏，双击空白处可隐藏或显示栅栏。": "I file non sono stati spostati: sono solo visualizzati nei riquadri.\nTrascina un rettangolo su un’area vuota del desktop per creare un riquadro; fai doppio clic sull’area vuota per nascondere o mostrare i riquadri.",
-  "没有匹配的文件": "Nessun file corrispondente"
+  "没有匹配的文件": "Nessun file corrispondente",
+  "文件夹优先": "Prima le cartelle"
 }
