@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="{{lang}}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{t:notfound.title}} · PecoFence</title>
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#f6f7fb">
+<link rel="icon" href="{{root}}assets/mark.svg?v={{v}}" type="image/svg+xml">
+<link rel="stylesheet" href="{{root}}assets/base.css?v={{v}}">
+<script src="{{root}}assets/site.js?v={{v}}" defer></script>
+</head>
+<body class="not-found-page">
+{{header}}
+
+<main id="main" class="container not-found">
+  <p class="not-found-code">404</p>
+  <h1>{{t:notfound.title}}</h1>
+  <p>{{t:notfound.text}}</p>
+  <div class="not-found-actions">
+    <a class="button primary" href="{{home}}">{{t:notfound.home}}<svg class="icon" aria-hidden="true"><use href="#i-arrow"/></svg></a>
+    <a class="button" href="{{manual}}">{{t:nav.manual}}</a>
+  </div>
+</main>
+
+{{footer}}
+</body>
+</html>
