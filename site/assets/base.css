@@ -317,6 +317,47 @@ select {
     font-size: 11px
 }
 
+/* The 404 page: the message centered between the header and the footer */
+.not-found-page {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh
+}
+
+.not-found {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding-block: 56px;
+    text-align: center
+}
+
+.not-found-code {
+    margin: 0;
+    color: var(--accent);
+    font: 700 14px/1 var(--font-display);
+    letter-spacing: .14em
+}
+
+.not-found h1 {
+    margin: 16px 0 12px;
+    font: 700 clamp(30px, 5vw, 44px)/1.15 var(--font-display)
+}
+
+.not-found p {
+    color: var(--ink-soft)
+}
+
+.not-found-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 14px;
+    margin-top: 32px
+}
+
 @media(max-width:1100px) {
     .container {
         width: calc(100% - 64px)

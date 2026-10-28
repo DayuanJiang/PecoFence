@@ -89,5 +89,8 @@
   "agents.setup": "CLI はアプリに付属しています。Microsoft Store 版では <code>pecofence-cli</code> が PATH に追加されます。ポータブル版では <code>pecofence-cli.exe</code> のフルパスをエージェントに伝えてください。",
   "agents.starter": "pecofence-cli でデスクトップを設定してください。まず pecofence-cli skill と pecofence-cli describe を読み、現在の設定とフェンスを確認してください。変更前に設定をバックアップし、ダークモードに切り替えて、すべてのフェンスをもう少し透明にしてください。",
   "agents.copy": "AI への依頼をコピー",
-  "agents.contract": "AI とスクリプト向けのインターフェース。<code>describe</code> はコマンド一覧と JSON Schema、<code>skill</code> はエージェント向けガイドを出力します。結果は JSON で返るので変更内容を確認でき、エラーも構造化されているため、エージェントが次の操作を判断できます。"
+  "agents.contract": "AI とスクリプト向けのインターフェース。<code>describe</code> はコマンド一覧と JSON Schema、<code>skill</code> はエージェント向けガイドを出力します。結果は JSON で返るので変更内容を確認でき、エラーも構造化されているため、エージェントが次の操作を判断できます。",
+  "notfound.title": "ページが見つかりません",
+  "notfound.text": "お探しのページは存在しないか、移動した可能性があります。",
+  "notfound.home": "ホームに戻る"
 }

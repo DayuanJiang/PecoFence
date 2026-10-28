@@ -9,6 +9,7 @@ The product page at <https://pecofence.jiang.jp> is a static site generated from
 | Path | Purpose |
 |---|---|
 | `site/template.html` | One HTML template rendered once per language |
+| `site/404.html` | The "page not found" page, rendered once per language |
 | `site/partials/header.html`, `footer.html` | The header (manual and GitHub links, language picker, download button) and footer, shared by the home page and the manual |
 | `site/assets/base.css` | Tokens, header and footer styles, shared by the home page and the manual |
 | `site/assets/site.css`, `site.js`, `mark.svg` | The home page's styles; the hero trailer's play control, accessible feature tabs and their animations, AI prompt and install command copy buttons, language picker (`site.js` runs on the manual too) and favicon |
@@ -19,8 +20,11 @@ The product page at <https://pecofence.jiang.jp> is a static site generated from
 | `site/manual/` | The animated user manual (see [The user manual](#the-user-manual)) |
 
 The build writes `dist/site/`: `index.html` for English, one `<language>/index.html`
-per translation, the localized README hero images as Open Graph and Twitter previews, `CNAME`,
-`robots.txt` and `sitemap.xml`. Pages carry `hreflang` alternates, so search engines
+per translation, a `404.html` beside each of them, the localized README hero images as Open
+Graph and Twitter previews, `CNAME`, `robots.txt` and `sitemap.xml`. Cloudflare Pages answers a
+missing path with status 404 and the nearest `404.html` above it, so `/ja/old-page` gets the
+Japanese one; without a top-level `404.html` it would serve the home page instead. The 404
+pages can show at any depth, so their links start at the site root. Pages carry `hreflang` alternates, so search engines
 send visitors to their language; the header's language picker and the language links
 do the same by hand. The picker preserves the current section. The header links to
 the manual and GitHub; at 840 px and narrower only the manual link stays (GitHub and
