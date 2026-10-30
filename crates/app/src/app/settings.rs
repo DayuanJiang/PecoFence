@@ -136,6 +136,7 @@ impl App {
         // apply_settings only refreshes on a visual / icon diff; a wholesale swap (per-fence
         // tint, layouts) needs these regardless.
         self.sync_peek_hotkey();
+        self.sync_windows_desktop_hotkey();
         self.apply_icon_variant();
         self.refresh_visuals(true);
         self.state.save_if_dirty();
@@ -343,6 +344,7 @@ impl App {
             "accent": accent,
             "update": self.update_json(),
             "peekHotkey": self.peek_hotkey_json(),
+            "windowsDesktopHotkey": self.windows_desktop_hotkey_json(),
         })
         .to_string()
     }
@@ -445,7 +447,7 @@ impl App {
                     h.ready = true;
                 }
                 // A reload in the middle of recording a shortcut never says it ended.
-                self.resume_peek_hotkey();
+                self.resume_hotkeys();
                 self.push_settings_state();
                 // The first `ready` shows the window; a reload's leaves it as the user left it.
                 if let Some(h) = self
@@ -630,12 +632,19 @@ impl App {
                     let number = |key: &str| v.get(key).and_then(|n| n.as_u64()).unwrap_or(0);
                     self.set_peek_hotkey_from_page(number("mods") as u32, number("vk") as u32);
                 }
-                Some("peekHotkeyRecording") => {
+                Some("peekHotkeyRecording" | "windowsDesktopHotkeyRecording") => {
                     if v.get("on").and_then(|o| o.as_bool()).unwrap_or(false) {
-                        self.pause_peek_hotkey();
+                        self.pause_hotkeys();
                     } else {
-                        self.resume_peek_hotkey();
+                        self.resume_hotkeys();
                     }
+                }
+                Some("setWindowsDesktopHotkey") => {
+                    // Without a key: 清除.
+                    let number = |key: &str| v.get(key).and_then(|n| n.as_u64());
+                    let h = number("vk")
+                        .map(|vk| Hotkey::new(number("mods").unwrap_or(0) as u32, vk as u32));
+                    self.set_windows_desktop_hotkey_from_page(h);
                 }
                 Some("repairIcons") => self.set_desktop_icons_hidden(false),
                 Some("hideDesktopIcons") => self.set_desktop_icons_hidden(true),
@@ -859,6 +868,7 @@ impl App {
         self.state.mark_dirty();
         self.schedule_save();
         self.sync_peek_hotkey();
+        self.sync_windows_desktop_hotkey();
         if icons_toggled {
             self.desktop_icons_setting_changed();
         }

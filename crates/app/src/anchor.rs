@@ -960,10 +960,15 @@ impl DesktopAnchor {
     }
 
     pub fn toggle_fences_hidden(&mut self) {
-        let hide = !self.quick.fences_hidden;
+        self.set_fences_hidden(!self.quick.fences_hidden, false);
+    }
+
+    /// Hides or shows the fences as quick hide does; `every` includes the ones kept on the
+    /// desktop by 「双击桌面隐藏时保留此栅栏」 (「临时显示 Windows 桌面」 hides those too).
+    pub fn set_fences_hidden(&mut self, hide: bool, every: bool) {
         self.quick.fences_hidden = hide;
         for (w, shadow) in self.fences.clone() {
-            if self.quick_hide_excluded.contains(&(w.0 as isize)) {
+            if !every && self.quick_hide_excluded.contains(&(w.0 as isize)) {
                 continue;
             }
             set_fence_visible(w, shadow, !hide);

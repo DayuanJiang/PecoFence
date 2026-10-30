@@ -668,9 +668,9 @@ impl App {
         tracing::info!(target: "pecofence::test", "[{tag}] selection={selected:?} ringed={ringed:?} band={band:?}");
         let peek = self.peek.is_some();
         let rename = crate::rename::active_target().is_some();
-        tracing::info!(target: "pecofence::test", "[{tag}] fences={} dying={} peek={peek} rename={rename} hide_setting={} icons_hidden={}",
+        tracing::info!(target: "pecofence::test", "[{tag}] fences={} dying={} peek={peek} rename={rename} hide_setting={} icons_hidden={} windows_desktop={}",
             self.fences.len(), self.dying.len(), self.state.config.settings.hide_real_icons,
-            pecofence_platform::shell_icons::desktop_icons_hidden());
+            pecofence_platform::shell_icons::desktop_icons_hidden(), self.windows_desktop);
     }
 }
 

@@ -99,6 +99,12 @@ pub enum Command {
         #[command(subcommand)]
         cmd: PeekCmd,
     },
+    /// Show the Windows desktop for a while (hide every fence, show the Windows desktop icons)
+    #[command(name = "windows-desktop")]
+    WindowsDesktop {
+        #[command(subcommand)]
+        cmd: WindowsDesktopCmd,
+    },
     /// Stream desktop events as JSON lines (item added/removed/moved, fence created/deleted/changed) until Ctrl+C
     #[command(
         after_help = "Example: pecofence-cli watch --fence inbox --once\n         pecofence-cli watch --events item.added,item.moved\n\nEach line is an EventDto (`describe --schema EventDto`); a heartbeat arrives every 30 s on a quiet\nstream and is hidden unless --heartbeat. Typical use: a script waits with --once, then runs a batch."
@@ -588,6 +594,16 @@ pub enum PeekCmd {
     Start,
     /// End Peek
     #[command(after_help = "Example: pecofence-cli peek end")]
+    End,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum WindowsDesktopCmd {
+    /// Hide every fence and show the Windows desktop icons PecoFence hid (not saved)
+    #[command(after_help = "Example: pecofence-cli windows-desktop start")]
+    Start,
+    /// Show the fences and hide the Windows desktop icons again
+    #[command(after_help = "Example: pecofence-cli windows-desktop end")]
     End,
 }
 

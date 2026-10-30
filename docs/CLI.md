@@ -142,6 +142,7 @@ unique id prefix, or a name (only while that name is unique).
 | `backup list` | `pecofence-cli backup list` (daily backups beside config.json, newest first) |
 | `backup restore <FILE>` | `pecofence-cli backup restore "C:\Users\me\AppData\Roaming\PecoFence\backups\2026-09-23.json"` (a path from `backup list`) |
 | `peek start` / `peek end` | `pecofence-cli peek start` |
+| `windows-desktop start` / `windows-desktop end` | `pecofence-cli windows-desktop start` (hide every fence and show the Windows desktop icons until `end`; not saved) |
 | `watch [--fence <FENCE>] [--events <E,...>] [--once] [--heartbeat]` | `pecofence-cli watch --fence inbox --once` |
 | `log [-f] [-n <N>]` | `pecofence-cli log -n 100` (text, not JSON) |
 | `paths` | `pecofence-cli paths` (config, backups, log, crash dumps; offline) |
@@ -262,6 +263,10 @@ PageDown or an arrow key; `null` goes back to `peek.hotkey`, whose default is Ct
 setting `peek.hotkey` clears it). A
 combination Windows or another program holds is refused with `validation_failed`, like common
 Windows shortcuts (Ctrl+Space, Alt+Tab, Win plus one key).
+`windowsDesktopHotkey` (the shortcut of 「临时显示 Windows 桌面」, written like
+`peek.customHotkey`, e.g. `Ctrl+Alt+D`; one press hides every fence and shows the Windows desktop
+icons PecoFence hid, the next brings both back, and nothing of it is saved; default `null`, no
+shortcut) is checked the same way, and may not be the Peek shortcut.
 `describe --schema Settings` lists them all with their allowed values (the name is matched
 case-insensitively; an unknown name is a `usage` error listing `details.allowed`).
 

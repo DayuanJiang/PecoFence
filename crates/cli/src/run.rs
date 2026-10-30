@@ -10,7 +10,7 @@ use serde_json::{Value, json};
 use crate::cli::split_set_args;
 use crate::cli::{
     BackupCmd, Command, ConfigCmd, FenceCmd, ItemCmd, MonitorCmd, PeekCmd, RuleAddArgs, RuleCmd,
-    SettingsCmd, SnapshotCmd,
+    SettingsCmd, SnapshotCmd, WindowsDesktopCmd,
 };
 use crate::output::{Reply, Style};
 use crate::{client, describe, local, output};
@@ -132,6 +132,12 @@ pub fn run(ctx: &Ctx, command: Command) -> Result<Reply, IpcError> {
             cmd: PeekCmd::Start,
         } => ctx.call(Method::PeekStart),
         Command::Peek { cmd: PeekCmd::End } => ctx.call(Method::PeekEnd),
+        Command::WindowsDesktop {
+            cmd: WindowsDesktopCmd::Start,
+        } => ctx.call(Method::WindowsDesktopStart),
+        Command::WindowsDesktop {
+            cmd: WindowsDesktopCmd::End,
+        } => ctx.call(Method::WindowsDesktopEnd),
     }
 }
 

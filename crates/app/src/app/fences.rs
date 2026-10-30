@@ -475,6 +475,11 @@ impl App {
     }
 
     pub fn toggle_all_fences(&mut self) {
+        // 「显示所有栅栏」 while 「临时显示 Windows 桌面」 is on ends it (the icons go again).
+        if self.windows_desktop {
+            self.set_windows_desktop(false, "fences shown");
+            return;
+        }
         self.end_peek_now();
         if let Some(a) = self.anchor.borrow_mut().as_mut() {
             a.toggle_fences_hidden();

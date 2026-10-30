@@ -224,7 +224,7 @@ impl App {
         );
         // The settings that change how the fences sit on the desktop.
         let behavior = format!(
-            "showDesktop {:?}, zorder {:?}, hideIcons {}, quickHide {}, peek {} (dim {}, {}, active {}), autostart {}, iconSize {}",
+            "showDesktop {:?}, zorder {:?}, hideIcons {}, quickHide {}, peek {} (dim {}, {}, active {}), windowsDesktop hotkey {}, autostart {}, iconSize {}",
             settings.show_desktop,
             settings.zorder,
             on_off(settings.hide_real_icons),
@@ -233,6 +233,9 @@ impl App {
             on_off(settings.peek.dim),
             settings.peek.chosen_hotkey(),
             self.peek_hotkey
+                .map_or_else(|| "none".to_string(), |h| h.to_string()),
+            settings
+                .windows_desktop_hotkey()
                 .map_or_else(|| "none".to_string(), |h| h.to_string()),
             on_off(settings.autostart),
             settings.icon_size,
@@ -245,7 +248,7 @@ impl App {
             .and_then(|a| a.as_ref().map(|a| a.window_report()))
         {
             Some(w) => format!(
-                "{} fences: {} visible, {} cloaked, {} topmost, {} below the desktop, {} off screen; hidden by double-click {}, peek {}, show desktop {}; host {}",
+                "{} fences: {} visible, {} cloaked, {} topmost, {} below the desktop, {} off screen; hidden by double-click {}, peek {}, show desktop {}, windows desktop {}; host {}",
                 w.fences,
                 w.visible,
                 w.cloaked,
@@ -255,6 +258,7 @@ impl App {
                 on_off(w.quick_hidden),
                 on_off(w.peeking),
                 on_off(w.show_desktop),
+                on_off(self.windows_desktop),
                 w.host.map_or("none".to_string(), |k| format!("{k:?}")),
             ),
             None => "unknown".to_string(),
