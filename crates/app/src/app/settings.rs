@@ -76,12 +76,12 @@ impl ConfigSource {
     }
 }
 
-/// Room for one of the page's automatic "…前" snapshots. Like the CLI's `auto_snapshot_slot`,
-/// it never evicts a snapshot the user saved: a full list loses its oldest automatic one (the
-/// page's or the CLI's) instead, and `false` means none is left to drop, so none is taken.
-/// `protect` (the snapshot about to be restored) always stays. Automatic names saved in another
-/// UI language count as the user's.
-pub(super) fn auto_snapshot_room(
+/// Room for one more snapshot: one the user saves (page or CLI) or one of the page's automatic
+/// "…前" snapshots. Like the CLI's `auto_snapshot_slot`, it never evicts a snapshot the user
+/// saved: a full list loses its oldest automatic one (the page's or the CLI's) instead, and
+/// `false` means none is left to drop, so none is taken. `protect` (the snapshot about to be
+/// restored) always stays. Automatic names saved in another UI language count as the user's.
+pub(super) fn snapshot_room(
     snapshots: &mut Vec<pecofence_core::Snapshot>,
     protect: Option<uuid::Uuid>,
 ) -> bool {
@@ -195,7 +195,7 @@ impl App {
             Ok(cfg) => {
                 // Keep a snapshot of what we are replacing so the step can be undone; a list
                 // full of the user's own snapshots has no room for it, so nothing is replaced.
-                if !auto_snapshot_room(&mut self.state.config.snapshots, None) {
+                if !snapshot_room(&mut self.state.config.snapshots, None) {
                     self.settings_error(&snapshot_limit_text());
                     return;
                 }
@@ -542,9 +542,9 @@ impl App {
                     let _ = shell::shell_execute(Path::new(THEME_GUIDE_URL), None, None);
                 }
                 Some("saveSnapshot") => {
-                    // A full list refuses a new snapshot (as the CLI does) instead of
-                    // dropping the oldest one.
-                    if self.state.config.snapshots.len() >= pecofence_core::MAX_SNAPSHOTS {
+                    // A full list drops its oldest automatic snapshot for it (as the CLI
+                    // does); only a list of the user's own snapshots refuses it.
+                    if !snapshot_room(&mut self.state.config.snapshots, None) {
                         self.settings_error(&snapshot_limit_text());
                     } else {
                         let name = v.get("snapshotName").and_then(|n| n.as_str()).unwrap_or("");
@@ -564,7 +564,7 @@ impl App {
                         // Snapshot of the current state first, so "restore" is reversible;
                         // a list full of the user's own snapshots has no room for it, so
                         // nothing is restored.
-                        if !auto_snapshot_room(&mut self.state.config.snapshots, Some(id)) {
+                        if !snapshot_room(&mut self.state.config.snapshots, Some(id)) {
                             self.settings_error(&snapshot_limit_text());
                             return;
                         }

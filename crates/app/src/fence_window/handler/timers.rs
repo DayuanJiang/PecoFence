@@ -309,6 +309,47 @@ pub(super) fn on_timer_tab_hover(
     Some(0)
 }
 
+// Explorer's single-click open: the pointer rested on an item for the hover time, so it is
+// selected as on the desktop (Ctrl toggles it, Shift selects the range from the anchor). Like
+// the desktop, only while the fence is the active window, and not while a button is held, a
+// gesture runs or a rename is open.
+pub(super) fn on_timer_hover_select(
+    h: &HandlerCtx,
+    hwnd: HWND,
+    _wparam: usize,
+    _lparam: isize,
+) -> Option<isize> {
+    let HandlerCtx { view, behavior, .. } = h;
+    window::kill_timer(hwnd, TIMER_HOVER_SELECT);
+    if let Ok(mut guard) = view.try_borrow_mut()
+        && let Some(v) = guard.as_mut()
+        && let Some(i) = v.hover
+        && behavior.single_click.get()
+        && v.win_active
+        && !v.retired
+        && !v.rolled_up
+        && v.pressed.is_none()
+        && v.drag.is_none()
+        && v.marquee.is_none()
+        && !v.ole_drag
+        && !window::key_down(msg::VK_LBUTTON)
+        && crate::rename::active_target().is_none()
+    {
+        let changed = hover_item(
+            &mut v.selected,
+            &mut v.range_anchor,
+            i,
+            window::key_down(msg::VK_SHIFT),
+            window::key_down(msg::VK_CONTROL),
+        );
+        v.anchor_index = Some(i);
+        if changed {
+            let _ = v.redraw_content();
+        }
+    }
+    Some(0)
+}
+
 pub(super) fn on_timer_scrollbar(
     h: &HandlerCtx,
     hwnd: HWND,

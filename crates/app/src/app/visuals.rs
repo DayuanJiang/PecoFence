@@ -1221,6 +1221,10 @@ impl App {
             .behavior
             .wheel_lines
             .set(sysparams::wheel_scroll_lines());
+        let single_click = pecofence_platform::shell_icons::single_click_open();
+        if self.ctx.behavior.single_click.replace(single_click) != single_click {
+            tracing::info!(single_click, "Explorer's click to open setting changed");
+        }
         self.apply_fonts();
         // Any broadcast that reaches us after the work area moved (taskbar, DPI, resolution
         // races) must re-layout, or every later set_fence_bounds normalizes against a stale

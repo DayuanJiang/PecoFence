@@ -363,6 +363,36 @@ fn ctrl_drag_carries_the_whole_selection() {
     assert!(selected.contains(&3) && selected.contains(&0));
 }
 
+/// Explorer's single-click open on the desktop: resting on an item selects it alone, Ctrl
+/// toggles it (adds, then removes on the next rest), Shift selects the range from the anchor.
+#[test]
+fn hover_select_follows_the_desktop() {
+    let sorted = |s: &HashSet<usize>| {
+        let mut v: Vec<usize> = s.iter().copied().collect();
+        v.sort();
+        v
+    };
+    let mut selected = HashSet::new();
+    let mut anchor = None;
+    assert!(hover_item(&mut selected, &mut anchor, 2, false, false));
+    assert!(hover_item(&mut selected, &mut anchor, 4, false, false));
+    assert_eq!(sorted(&selected), vec![4]);
+    assert_eq!(anchor, Some(4));
+    // Resting on it again changes nothing.
+    assert!(!hover_item(&mut selected, &mut anchor, 4, false, false));
+    assert!(hover_item(&mut selected, &mut anchor, 1, false, true));
+    assert!(hover_item(&mut selected, &mut anchor, 6, false, true));
+    assert_eq!(sorted(&selected), vec![1, 4, 6]);
+    assert!(hover_item(&mut selected, &mut anchor, 1, false, true));
+    assert_eq!(sorted(&selected), vec![4, 6]);
+    // A plain rest on an item of a multi-selection keeps it, as a plain press does.
+    assert!(!hover_item(&mut selected, &mut anchor, 4, false, false));
+    assert_eq!(sorted(&selected), vec![4, 6]);
+    assert!(hover_item(&mut selected, &mut anchor, 3, true, false));
+    assert_eq!(sorted(&selected), vec![1, 2, 3]);
+    assert_eq!(anchor, Some(1));
+}
+
 /// Real file paths stay ours; Outlook mail, a Start-menu app (its `CF_HDROP` holds a
 /// known-folder-relative "path") and other shell-only items go to the shell; our own fences'
 /// drags and browser links keep their paths.

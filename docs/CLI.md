@@ -425,7 +425,9 @@ applies `fittingHeight`; `fence set <FENCE> autoHeight true` keeps it applied as
 (a laptop docked and undocked has two), and a snapshot holds all of them; `fenceCount` counts the
 fences of the layout for the monitors connected now (what `fence list` shows after a restore). Keep
 `snapshot.id`: `snapshot restore <ID>` (full id or a unique prefix) is unambiguous, whereas a name
-only resolves while exactly one snapshot carries it.
+only resolves while exactly one snapshot carries it. With 20 snapshots stored, `snapshot save` drops the
+oldest automatic one (`auto-cli-*`, or one the settings page took before a restore or an import) to make
+room; it fails with `limit_reached` only when all 20 are snapshots you saved.
 Restoring snapshots the current layout first and returns that `snapshotId`, so a restore can itself
 be undone. Snapshots do not include settings, rules, or files moved through portals.
 
