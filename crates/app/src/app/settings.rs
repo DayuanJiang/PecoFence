@@ -186,7 +186,12 @@ impl App {
             .get("color")
             .and_then(|c| c.as_str())
             .and_then(fence_options::parse_hex);
-        let accent = self.ctx.theme.borrow().accent_rgb8();
+        // The Windows accent itself: the theme's accent token is a lighter or darker step of it
+        // (or a custom theme's own colour).
+        let accent = self
+            .accent
+            .as_ref()
+            .map_or_else(|| self.ctx.theme.borrow().accent_rgb8(), |p| p.accent);
         let Some(rgb) = pecofence_platform::colordialog::pick(owner, initial, accent) else {
             return;
         };
