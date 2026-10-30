@@ -6,8 +6,9 @@ use pecofence_platform::quicklook;
 // Selection colour follows activation (Explorer: accent only in the active
 // view). Our own rename popup and a context menu keep the fence "active".
 // Focus moving to another fence or the desktop drops the selection, as a
-// click elsewhere on the desktop does; another app, a Properties dialog or
-// QuickLook keep it in the inactive grey.
+// click elsewhere on the desktop does; another app, a Properties dialog,
+// QuickLook or the Peek dimmer (its hotkey clicks nowhere) keep it in the
+// inactive grey, and so does a window that cannot be told.
 pub(super) fn on_activate(
     h: &HandlerCtx,
     hwnd: HWND,
@@ -31,7 +32,7 @@ pub(super) fn on_activate(
     let stays = matches!(cls.as_str(), "PecoFence.Rename" | "#32768");
     let to_desktop = matches!(
         cls.as_str(),
-        "PecoFence.Fence" | "PecoFence.PeekDimmer" | "Progman" | "WorkerW"
+        crate::anchor::FENCE_CLASS | "Progman" | "WorkerW"
     );
     if !stays
         && let Ok(mut guard) = view.try_borrow_mut()
