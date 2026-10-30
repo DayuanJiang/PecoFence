@@ -428,11 +428,11 @@ impl FenceViewState {
         !self.selected.is_empty() && !self.rolled_up
     }
 
-    /// Drops the selection (and the Shift-range / keyboard anchors) when the fence is deactivated,
-    /// so no item stays highlighted in a fence the user has left. Returns true when something
-    /// was selected and the content needs a redraw.
+    /// Drops the selection (and the Shift-range / keyboard anchors) when the user clicks the
+    /// desktop or another fence, so no item stays highlighted in a fence the user has left.
+    /// Returns true when something was selected and the content needs a redraw.
     #[must_use]
-    pub(super) fn clear_selection_on_deactivate(&mut self) -> bool {
+    pub(super) fn end_selection(&mut self) -> bool {
         let had = !self.selected.is_empty();
         self.selected.clear();
         self.anchor_index = None;

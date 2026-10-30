@@ -184,6 +184,9 @@ impl FenceWindow {
                 if press_ends_selection(&h.behavior, hwnd, message, wparam) {
                     h.queue.push(Command::ClearFenceSelection);
                 }
+                if is_press(message) {
+                    h.queue.push(Command::EndItemSelection { except: hwnd });
+                }
                 match message {
                     msg::WM_MOUSEACTIVATE => Some(msg::MA_NOACTIVATE),
                     // Alt+F4 / SC_CLOSE while the fence is the active window: fences are

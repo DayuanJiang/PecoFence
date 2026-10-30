@@ -5,44 +5,29 @@ use pecofence_platform::quicklook;
 
 // Selection colour follows activation (Explorer: accent only in the active
 // view). Our own rename popup and a context menu keep the fence "active".
-// Focus moving to another fence or the desktop drops the selection, as a
-// click elsewhere on the desktop does; another app, a Properties dialog,
-// QuickLook or the Peek dimmer (its hotkey clicks nowhere) keep it in the
-// inactive grey, and so does a window that cannot be told.
+// Another window keeps the selection in grey; a press on the desktop or in
+// another fence ends it (`Command::EndItemSelection`).
 pub(super) fn on_activate(
     h: &HandlerCtx,
-    hwnd: HWND,
+    _hwnd: HWND,
     wparam: usize,
     lparam: isize,
 ) -> Option<isize> {
     let HandlerCtx { view, .. } = h;
     let inactive = wparam & 0xFFFF == 0;
-    let other = HWND(lparam as *mut core::ffi::c_void);
-    // The window taking over can come as NULL; it is the foreground one by then.
-    let other = if other.0.is_null() {
-        desktop::foreground_window()
-    } else {
-        other
+    let stays = inactive && {
+        let other = HWND(lparam as *mut core::ffi::c_void);
+        !other.0.is_null() && {
+            let cls = desktop::class_name(desktop::root_ancestor(other));
+            cls == "PecoFence.Rename" || cls == "#32768"
+        }
     };
-    let cls = if inactive && !other.0.is_null() && other != hwnd {
-        desktop::class_name(desktop::root_ancestor(other))
-    } else {
-        String::new()
-    };
-    let stays = matches!(cls.as_str(), "PecoFence.Rename" | "#32768");
-    let to_desktop = matches!(
-        cls.as_str(),
-        crate::anchor::FENCE_CLASS | "Progman" | "WorkerW"
-    );
     if !stays
         && let Ok(mut guard) = view.try_borrow_mut()
         && let Some(v) = guard.as_mut()
+        && v.set_active(!inactive)
     {
-        let cleared = to_desktop && v.clear_selection_on_deactivate();
-        let changed = v.set_active(!inactive);
-        if changed || cleared {
-            let _ = v.redraw_content();
-        }
+        let _ = v.redraw_content();
     }
     None
 }

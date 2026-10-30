@@ -32,15 +32,9 @@ pub(super) fn group_members(behavior: &Behavior, me: HWND) -> Vec<GroupMember> {
         .collect()
 }
 
-/// A press on this fence ends the selection, except a title press on a selected fence (it may
-/// start a group drag; a title click without a drag ends the selection on release).
-pub(super) fn press_ends_selection(
-    behavior: &Behavior,
-    hwnd: HWND,
-    message: u32,
-    wparam: usize,
-) -> bool {
-    let press = matches!(
+/// A mouse button going down anywhere on the fence (title or content).
+pub(super) fn is_press(message: u32) -> bool {
+    matches!(
         message,
         msg::WM_NCLBUTTONDOWN
             | msg::WM_NCLBUTTONDBLCLK
@@ -49,8 +43,18 @@ pub(super) fn press_ends_selection(
             | msg::WM_LBUTTONDBLCLK
             | msg::WM_RBUTTONDOWN
             | WM_RBUTTONDBLCLK
-    );
-    if !press {
+    )
+}
+
+/// A press on this fence ends the selection, except a title press on a selected fence (it may
+/// start a group drag; a title click without a drag ends the selection on release).
+pub(super) fn press_ends_selection(
+    behavior: &Behavior,
+    hwnd: HWND,
+    message: u32,
+    wparam: usize,
+) -> bool {
+    if !is_press(message) {
         return false;
     }
     let Ok(selection) = behavior.selection.try_borrow() else {
