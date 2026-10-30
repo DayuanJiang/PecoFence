@@ -504,6 +504,9 @@
         </div>
         <div class="newrule-foot"><button class="accent" id="nrAdd">添加规则</button></div>
       </details>
+      <h3>AI 助手</h3>
+      <div class="card"><div class="l"><span class="ic">&#xE99A;</span><div><div class="t">让 AI 助手整理桌面</div><div class="s">能运行命令的 AI 助手（如 Claude Code、Codex）可以通过 pecofence-cli 查看桌面项目、新建栅栏、移动图标和添加规则</div></div></div>
+        <div class="actions"><button class="accent" id="copyAiPrompt">复制给 AI 助手的提示词</button><button id="openCliDocs">命令行文档</button></div></div>
     </section>
 
     <section class="page" id="page-layout">
@@ -1281,6 +1284,23 @@
   document.getElementById('rateStore').onclick = () => send({ type: 'action', name: 'rateInStore' });
   document.getElementById('starRepo').onclick = () => send({ type: 'action', name: 'openRepository' });
   document.getElementById('openManual').onclick = () => send({ type: 'action', name: 'openManual' });
+  // 整理规则 › AI 助手: the prompt names the CLI the way this edition runs it (on PATH in the
+  // Store edition, else its full path). The page is no secure context, so it copies through
+  // a selected text field.
+  document.getElementById('copyAiPrompt').onclick = () => {
+    const cli = (state && state.cliCommand) || 'pecofence-cli';
+    const field = document.createElement('textarea');
+    field.value = tf("请用 PecoFence 的命令行工具帮我整理 Windows 桌面。PecoFence 正在运行，命令行工具是 `{0}`。先运行 `{0} skill` 阅读使用说明，再查看桌面上的项目和现有的栅栏，动手前先导出一份配置备份。然后告诉我你的整理方案：新建哪些栅栏，哪些项目放到哪里，为以后出现的新文件添加哪些整理规则。等我同意后再执行。", cli);
+    field.setAttribute('readonly', '');
+    field.style.cssText = 'position:fixed;opacity:0;pointer-events:none';
+    document.body.append(field);
+    field.select();
+    const copied = document.execCommand('copy');
+    field.remove();
+    document.getElementById('copyAiPrompt').focus();
+    toast(copied ? t("提示词已复制，粘贴到 AI 助手里即可") : t("没能复制提示词，请稍后重试"), !copied);
+  };
+  document.getElementById('openCliDocs').onclick = () => send({ type: 'action', name: 'openCliDocs' });
   document.getElementById('openThemes').onclick = () => send({ type: 'action', name: 'openThemesFolder' });
   document.getElementById('themeGuide').onclick = () => send({ type: 'action', name: 'openThemeGuide' });
   document.getElementById('repairIcons').onclick = () => send({ type: 'action', name: 'repairIcons' });

@@ -556,5 +556,13 @@
   "每个功能都有动画演示": "Jede Funktion mit kurzer Animation",
   "桌面整理好了": "Dein Desktop ist aufgeräumt",
   "文件都没有移动，只是显示在栅栏里。\n在桌面空白处拖出一个框可新建栅栏，双击空白处可隐藏或显示栅栏。": "Deine Dateien bleiben, wo sie sind; die Bereiche zeigen sie nur an.\nZieh auf freier Desktopfläche einen Rahmen auf, um einen Bereich anzulegen, oder doppelklicke dort, um die Bereiche aus- und einzublenden.",
-  "没有匹配的文件": "Keine passenden Dateien"
+  "没有匹配的文件": "Keine passenden Dateien",
+  "AI 助手": "KI-Assistenten",
+  "让 AI 助手整理桌面": "Desktop von einem KI-Assistenten aufräumen lassen",
+  "能运行命令的 AI 助手（如 Claude Code、Codex）可以通过 pecofence-cli 查看桌面项目、新建栅栏、移动图标和添加规则": "KI-Assistenten, die Befehle ausführen können, etwa Claude Code oder Codex, sehen mit pecofence-cli deine Desktopobjekte, legen Bereiche an, verschieben Symbole und fügen Regeln hinzu",
+  "复制给 AI 助手的提示词": "Prompt für den KI-Assistenten kopieren",
+  "命令行文档": "CLI-Anleitung",
+  "请用 PecoFence 的命令行工具帮我整理 Windows 桌面。PecoFence 正在运行，命令行工具是 `{0}`。先运行 `{0} skill` 阅读使用说明，再查看桌面上的项目和现有的栅栏，动手前先导出一份配置备份。然后告诉我你的整理方案：新建哪些栅栏，哪些项目放到哪里，为以后出现的新文件添加哪些整理规则。等我同意后再执行。": "Bitte räume meinen Windows-Desktop mit dem Befehlszeilenwerkzeug von PecoFence auf. PecoFence läuft, und das Befehlszeilenwerkzeug ist `{0}`. Führe zuerst `{0} skill` aus, um die Anleitung zu lesen, sieh dir dann die Objekte auf meinem Desktop und meine Bereiche an und exportiere eine Sicherung der Konfiguration, bevor du etwas änderst. Sag mir dann deinen Plan: welche Bereiche du anlegst, welche Objekte wohin kommen und welche Sortierregeln du für neue Dateien hinzufügst. Warte auf mein OK, bevor du ihn umsetzt.",
+  "提示词已复制，粘贴到 AI 助手里即可": "Prompt kopiert. Füge ihn in deinen KI-Assistenten ein.",
+  "没能复制提示词，请稍后重试": "Der Prompt ließ sich nicht kopieren. Versuche es gleich noch einmal."
 }

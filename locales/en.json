@@ -556,5 +556,13 @@
   "每个功能都有动画演示": "Every feature, with a short animation",
   "桌面整理好了": "Your desktop is tidied up",
   "文件都没有移动，只是显示在栅栏里。\n在桌面空白处拖出一个框可新建栅栏，双击空白处可隐藏或显示栅栏。": "Your files haven't moved; the fences just show them.\nDrag a box on empty desktop space to add a fence, or double-click it to hide or show the fences.",
-  "没有匹配的文件": "No matching files"
+  "没有匹配的文件": "No matching files",
+  "AI 助手": "AI assistants",
+  "让 AI 助手整理桌面": "Let an AI assistant tidy your desktop",
+  "能运行命令的 AI 助手（如 Claude Code、Codex）可以通过 pecofence-cli 查看桌面项目、新建栅栏、移动图标和添加规则": "AI assistants that can run commands, such as Claude Code or Codex, can use pecofence-cli to look at your desktop items, create fences, move icons and add rules",
+  "复制给 AI 助手的提示词": "Copy a prompt for the AI assistant",
+  "命令行文档": "CLI guide",
+  "请用 PecoFence 的命令行工具帮我整理 Windows 桌面。PecoFence 正在运行，命令行工具是 `{0}`。先运行 `{0} skill` 阅读使用说明，再查看桌面上的项目和现有的栅栏，动手前先导出一份配置备份。然后告诉我你的整理方案：新建哪些栅栏，哪些项目放到哪里，为以后出现的新文件添加哪些整理规则。等我同意后再执行。": "Please use PecoFence's command-line tool to organize my Windows desktop. PecoFence is running, and its command-line tool is `{0}`. First run `{0} skill` to read how to use it, then look at the items on my desktop and the fences I have, and export a backup of the configuration before you change anything. Then tell me your plan: which fences to create, which items go where, and which sorting rules to add for new files. Wait for my OK before you carry it out.",
+  "提示词已复制，粘贴到 AI 助手里即可": "Prompt copied. Paste it into your AI assistant.",
+  "没能复制提示词，请稍后重试": "The prompt could not be copied. Try again in a moment."
 }

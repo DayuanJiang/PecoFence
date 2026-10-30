@@ -333,6 +333,7 @@ impl App {
             "tintPalette": fence_options::tint_palette_json(),
             "version": env!("CARGO_PKG_VERSION"),
             "storeEdition": pecofence_platform::process::is_packaged(),
+            "cliCommand": cli_command(),
             "configPath": self.state.config_path_on_disk().to_string_lossy(),
             "memoryMb": mem_mb,
             "itemCount": self.state.workspace_item_count(),
@@ -654,6 +655,10 @@ impl App {
                     let url = pecofence_core::brand::REPOSITORY_URL;
                     let _ = shell::shell_execute(std::path::Path::new(url), None, None);
                 }
+                Some("openCliDocs") => {
+                    let url = pecofence_core::brand::CLI_DOCS_URL;
+                    let _ = shell::shell_execute(std::path::Path::new(url), None, None);
+                }
                 _ => {}
             },
             _ => {}
@@ -908,4 +913,19 @@ impl App {
         }
         self.push_settings_state();
     }
+}
+
+/// How an AI agent in a terminal runs pecofence-cli (the 整理规则 prompt names it): the Store
+/// edition puts `pecofence-cli` on PATH through an App Execution Alias; setup and the ZIP
+/// leave it next to `pecofence.exe`, so the prompt gets its full path.
+fn cli_command() -> String {
+    if !pecofence_platform::process::is_packaged()
+        && let Some(cli) = std::env::current_exe()
+            .ok()
+            .and_then(|exe| Some(exe.parent()?.join("pecofence-cli.exe")))
+            .filter(|cli| cli.is_file())
+    {
+        return cli.to_string_lossy().into_owned();
+    }
+    "pecofence-cli".to_string()
 }

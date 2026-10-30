@@ -8,6 +8,8 @@ PecoFence 内置 `pecofence-cli`，Claude Code、Codex、Cursor 等能运行本�
 
 启动 PecoFence 后，把需求交给助手，例如：“先阅读 `pecofence-cli skill` 和 `pecofence-cli describe`，查看并备份我的配置，再切换为深色模式，把所有栅栏调得更透明。”Microsoft Store 版通过 PATH 调用；便携版需告诉助手 `pecofence-cli.exe` 的完整路径。
 
+设置 → 整理规则 → AI 助手 → 「复制给 AI 助手的提示词」复制一段现成的整理请求，粘贴给助手即可：它让助手先读 `skill`，看过桌面项目和栅栏、导出配置备份后提出整理方案（新建哪些栅栏、项目放到哪里、为新文件加哪些规则），等你同意再执行；商店版的提示词写 `pecofence-cli`，安装版和便携版写这台电脑上 `pecofence-cli.exe` 的完整路径。「命令行文档」打开下面的上手指南（#87）。
+
 JSON 输出报告实际改动，命令目录与 JSON Schema 帮助助手发现可用操作和参数。布局快照保存栅栏布局；全局设置和规则通过配置导入导出备份与恢复。详见 [CLI 上手指南与完整参考](CLI.md#start-with-your-ai-agent)。
 
 ## 1. 栅栏基础

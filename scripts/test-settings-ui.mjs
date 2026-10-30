@@ -1057,6 +1057,18 @@ async function runTests() {
     assert(sent('setWindowsDesktopHotkey').at(-1).vk === undefined && clear.hidden && wdText() === '', 'Clear did not remove the shortcut');
     assert(current().settings.windowsDesktopHotkey === null, 'Clear not saved');
   });
+  await test('The AI card copies a prompt that names this edition\'s CLI and opens the guide', async () => {
+    doc = await reset();
+    current().cliCommand = 'C:\\PecoFence\\pecofence-cli.exe';
+    win().testRefresh(); await settle();
+    let copied = '';
+    doc.execCommand = cmd => { copied = cmd === 'copy' ? doc.querySelector('textarea[readonly]')?.value || '' : ''; return true; };
+    doc.getElementById('copyAiPrompt').click(); await settle();
+    assert(copied.includes('`C:\\PecoFence\\pecofence-cli.exe skill`') && copied.includes('PecoFence'), 'Prompt does not name the CLI: ' + copied);
+    assert(!doc.querySelector('textarea[readonly]') && doc.getElementById('toast').classList.contains('on'), 'Copy left its field or showed no toast');
+    doc.getElementById('openCliDocs').click(); await settle();
+    assert(sent('openCliDocs').length === 1, 'CLI guide not opened');
+  });
   await test('All ten languages switch live without changing user names or draft inputs', async () => {
     doc = await reset();
     const win = frame.contentWindow;

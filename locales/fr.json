@@ -556,5 +556,13 @@
   "每个功能都有动画演示": "Chaque fonction avec une courte animation",
   "桌面整理好了": "Votre Bureau est rangé",
   "文件都没有移动，只是显示在栅栏里。\n在桌面空白处拖出一个框可新建栅栏，双击空白处可隐藏或显示栅栏。": "Vos fichiers n’ont pas bougé : les groupes ne font que les afficher.\nTracez un cadre sur un espace vide du Bureau pour créer un groupe, ou double-cliquez dessus pour masquer ou afficher les groupes.",
-  "没有匹配的文件": "Aucun fichier correspondant"
+  "没有匹配的文件": "Aucun fichier correspondant",
+  "AI 助手": "Assistants IA",
+  "让 AI 助手整理桌面": "Faire ranger le Bureau par un assistant IA",
+  "能运行命令的 AI 助手（如 Claude Code、Codex）可以通过 pecofence-cli 查看桌面项目、新建栅栏、移动图标和添加规则": "Les assistants IA capables d’exécuter des commandes, comme Claude Code ou Codex, peuvent avec pecofence-cli consulter les éléments du Bureau, créer des groupes, déplacer des icônes et ajouter des règles",
+  "复制给 AI 助手的提示词": "Copier une consigne pour l’assistant IA",
+  "命令行文档": "Guide de la ligne de commande",
+  "请用 PecoFence 的命令行工具帮我整理 Windows 桌面。PecoFence 正在运行，命令行工具是 `{0}`。先运行 `{0} skill` 阅读使用说明，再查看桌面上的项目和现有的栅栏，动手前先导出一份配置备份。然后告诉我你的整理方案：新建哪些栅栏，哪些项目放到哪里，为以后出现的新文件添加哪些整理规则。等我同意后再执行。": "Utilise l’outil en ligne de commande de PecoFence pour ranger mon Bureau Windows. PecoFence est lancé, et son outil en ligne de commande est `{0}`. Exécute d’abord `{0} skill` pour lire le mode d’emploi, puis regarde les éléments de mon Bureau et mes groupes, et exporte une sauvegarde de la configuration avant de modifier quoi que ce soit. Ensuite, présente-moi ton plan : quels groupes créer, quels éléments mettre où et quelles règles de rangement ajouter pour les nouveaux fichiers. Attends mon accord avant de l’appliquer.",
+  "提示词已复制，粘贴到 AI 助手里即可": "Consigne copiée. Collez-la dans votre assistant IA.",
+  "没能复制提示词，请稍后重试": "Impossible de copier la consigne. Réessayez dans un instant."
 }

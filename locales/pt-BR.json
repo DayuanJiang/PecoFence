@@ -556,5 +556,13 @@
   "每个功能都有动画演示": "Cada recurso com uma animação curta",
   "桌面整理好了": "Sua área de trabalho está organizada",
   "文件都没有移动，只是显示在栅栏里。\n在桌面空白处拖出一个框可新建栅栏，双击空白处可隐藏或显示栅栏。": "Seus arquivos não foram movidos; os grupos só os exibem.\nDesenhe um retângulo em um espaço vazio da área de trabalho para criar um grupo, ou clique duas vezes nele para ocultar ou mostrar os grupos.",
-  "没有匹配的文件": "Nenhum arquivo correspondente"
+  "没有匹配的文件": "Nenhum arquivo correspondente",
+  "AI 助手": "Assistentes de IA",
+  "让 AI 助手整理桌面": "Deixe um assistente de IA organizar a área de trabalho",
+  "能运行命令的 AI 助手（如 Claude Code、Codex）可以通过 pecofence-cli 查看桌面项目、新建栅栏、移动图标和添加规则": "Assistentes de IA que executam comandos, como Claude Code ou Codex, podem usar o pecofence-cli para ver os itens da área de trabalho, criar grupos, mover ícones e adicionar regras",
+  "复制给 AI 助手的提示词": "Copiar um prompt para o assistente",
+  "命令行文档": "Guia da linha de comando",
+  "请用 PecoFence 的命令行工具帮我整理 Windows 桌面。PecoFence 正在运行，命令行工具是 `{0}`。先运行 `{0} skill` 阅读使用说明，再查看桌面上的项目和现有的栅栏，动手前先导出一份配置备份。然后告诉我你的整理方案：新建哪些栅栏，哪些项目放到哪里，为以后出现的新文件添加哪些整理规则。等我同意后再执行。": "Use a ferramenta de linha de comando do PecoFence para organizar minha área de trabalho do Windows. O PecoFence está aberto, e a ferramenta de linha de comando é `{0}`. Primeiro execute `{0} skill` para ler como usá-la, depois veja os itens da minha área de trabalho e os grupos que tenho, e exporte um backup da configuração antes de mudar qualquer coisa. Em seguida, me diga seu plano: quais grupos criar, quais itens vão para onde e quais regras de organização adicionar para arquivos novos. Espere meu OK antes de executar.",
+  "提示词已复制，粘贴到 AI 助手里即可": "Prompt copiado. Cole no seu assistente de IA.",
+  "没能复制提示词，请稍后重试": "Não foi possível copiar o prompt. Tente de novo em instantes."
 }
