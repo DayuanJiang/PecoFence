@@ -139,7 +139,7 @@
   "颜色模式": "Modo de color",
   "图标名称颜色": "Color de las etiquetas de iconos",
   "自动": "Automático",
-  "自动：液态玻璃按背后壁纸的明暗选深色或浅色，Fluent 跟随颜色模式；栅栏标题的颜色在“栅栏”页设置": "Automático: Liquid Glass elige texto oscuro o claro según el fondo de pantalla que tiene detrás, Fluent sigue el modo de color. El color de los títulos se elige en la página Grupos",
+  "自动：液态玻璃按背后壁纸的明暗选深色或浅色，Fluent 跟随颜色模式；白色和黑色也用于标题颜色为“跟随主题”的栅栏标题和标签": "Automático: Liquid Glass elige texto oscuro o claro según el fondo de pantalla que tiene detrás, Fluent sigue el modo de color. Blanco y negro también se aplican a los títulos y pestañas de los grupos con el color de título Según el tema",
   "标题对齐": "Alineación del título",
   "左对齐": "Izquierda",
   "居中": "Centro",

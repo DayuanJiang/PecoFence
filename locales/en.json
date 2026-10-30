@@ -145,7 +145,7 @@
   "颜色模式": "Color mode",
   "图标名称颜色": "Icon label color",
   "自动": "Automatic",
-  "自动：液态玻璃按背后壁纸的明暗选深色或浅色，Fluent 跟随颜色模式；栅栏标题的颜色在“栅栏”页设置": "Automatic: Liquid Glass picks dark or light text for the wallpaper behind it, Fluent follows the color mode. Fence titles have their own color on the Fences page",
+  "自动：液态玻璃按背后壁纸的明暗选深色或浅色，Fluent 跟随颜色模式；白色和黑色也用于标题颜色为“跟随主题”的栅栏标题和标签": "Automatic: Liquid Glass picks dark or light text for the wallpaper behind it, Fluent follows the color mode. White and black also color the titles and tabs of fences whose title color is Match theme",
   "标题对齐": "Title alignment",
   "左对齐": "Left",
   "居中": "Center",

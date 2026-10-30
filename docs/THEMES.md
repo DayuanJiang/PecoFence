@@ -118,7 +118,8 @@ marker take it, with the opacity they normally have. The other keys set one colo
 In Liquid Glass, and on fully transparent fences, the text follows the wallpaper behind each
 fence: over a bright wallpaper it takes the theme's `light` text colours, over a dark one the
 `dark` ones, whatever the colour mode. So set text colours for both modes. 图标名称颜色 白色 and
-黑色 take the theme's `dark` and `light` text colour for item names.
+黑色 take the theme's `dark` and `light` text colour for item names, and for the titles and tabs
+of fences without a title colour of their own.
 
 The per-fence options (opacity, tint, title colour) apply on top of the theme as they do on the
 built-in styles.

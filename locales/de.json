@@ -139,7 +139,7 @@
   "颜色模式": "Farbmodus",
   "图标名称颜色": "Farbe der Symbolunterschriften",
   "自动": "Automatisch",
-  "自动：液态玻璃按背后壁纸的明暗选深色或浅色，Fluent 跟随颜色模式；栅栏标题的颜色在“栅栏”页设置": "Automatisch: Liquid Glass wählt dunkle oder helle Schrift passend zum Hintergrundbild dahinter, Fluent folgt dem Farbmodus. Die Titelfarbe stellst du auf der Seite „Bereiche“ ein",
+  "自动：液态玻璃按背后壁纸的明暗选深色或浅色，Fluent 跟随颜色模式；白色和黑色也用于标题颜色为“跟随主题”的栅栏标题和标签": "Automatisch: Liquid Glass wählt dunkle oder helle Schrift passend zum Hintergrundbild dahinter, Fluent folgt dem Farbmodus. Weiß und Schwarz gelten auch für Titel und Tabs der Bereiche mit der Titelfarbe „Wie Design“",
   "标题对齐": "Titelausrichtung",
   "左对齐": "Links",
   "居中": "Zentriert",

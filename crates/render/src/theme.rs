@@ -80,6 +80,9 @@ pub struct Theme {
     /// A custom theme's light and dark ink, which the text switches to over a bright or a
     /// dark backdrop (None = the built-in style's).
     pub custom_inks: Option<[Ink; 2]>,
+    /// The 「图标名称颜色」 the text was fixed to by [`Self::with_label_color`]; titles and tabs
+    /// over glass keep it instead of picking their ink from the wallpaper (Auto: they pick).
+    pub label_color: pecofence_core::LabelColor,
 }
 
 /// Liquid Glass lens strength, as multiples of the built-in refraction and rim light.
@@ -188,6 +191,7 @@ impl Theme {
             lens: Lens::BUILT_IN,
             shadow: ShadowOverride::NONE,
             custom_inks: None,
+            label_color: pecofence_core::LabelColor::Auto,
         }
     }
 
@@ -225,6 +229,7 @@ impl Theme {
             lens: Lens::BUILT_IN,
             shadow: ShadowOverride::NONE,
             custom_inks: None,
+            label_color: pecofence_core::LabelColor::Auto,
         }
     }
 
@@ -409,10 +414,12 @@ impl Theme {
         brightness > threshold
     }
 
-    /// The theme the item names are drawn with. 「图标名称颜色」 白色 / 黑色 takes the text of
-    /// this material's dark / light theme whatever the backdrop; the plate, hover and focus
-    /// tokens stay as picked for it, and the halo follows the text.
+    /// The theme the item names, and the titles and tabs without a 「标题颜色」 of their own,
+    /// are drawn with. 「图标名称颜色」 白色 / 黑色 takes the text of this material's dark /
+    /// light theme whatever the backdrop; the plate, hover and focus tokens stay as picked for
+    /// it, and the halo follows the text.
     pub fn with_label_color(mut self, color: pecofence_core::LabelColor) -> Self {
+        self.label_color = color;
         let mode = match color {
             pecofence_core::LabelColor::Auto => return self,
             pecofence_core::LabelColor::White => ThemeMode::Dark,

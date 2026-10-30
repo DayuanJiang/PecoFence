@@ -235,8 +235,9 @@ tabs stays; default off), `offerNewFence` (a rectangle drawn on empty desktop th
 offers 「在此新建栅栏」; default on), `autostart`, `peek.enabled`, `quickHide.enabled`,
 `titleAlign` (left/center/right: the title and tab strip in every title row),
 `labelColor` (auto/white/black: the item names in every fence and view; auto picks dark or light
-names from the wallpaper in Liquid Glass and follows the colour mode in Fluent; fence titles keep
-their `titleColor`; default auto),
+names from the wallpaper in Liquid Glass and follows the colour mode in Fluent; white and black
+also colour the titles, tabs and item counts of fences whose `titleColor` is `theme`, while a fence
+or tab with a `titleColor` of its own keeps it; default auto),
 `customTheme` (the name of a theme file in the `themes` folder next to `config.json`, without
 `.json`; while it loads, its base style takes the place of `themeStyle`; `null` = the built-in
 style; see [THEMES.md](THEMES.md)),
