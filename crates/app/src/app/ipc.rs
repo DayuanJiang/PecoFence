@@ -830,11 +830,13 @@ impl App {
 
             Method::SnapshotsSave { name } => {
                 let name = checked_name("snapshot name", name)?;
-                if self.state.config.snapshots.len() >= pecofence_core::MAX_SNAPSHOTS {
+                // A full list drops its oldest automatic snapshot (the CLI's or the settings
+                // page's) for this one; only a list of the user's own snapshots is refused.
+                if !super::settings::snapshot_room(&mut self.state.config.snapshots, None) {
                     return Err(IpcError::new(
                         ErrorCode::LimitReached,
                         format!(
-                            "{} snapshots already exist (the maximum)",
+                            "{} snapshots you saved already exist (the maximum)",
                             pecofence_core::MAX_SNAPSHOTS
                         ),
                     )

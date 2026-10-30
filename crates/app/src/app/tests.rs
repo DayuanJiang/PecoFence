@@ -636,11 +636,11 @@ mod ipc {
 
     #[test]
     fn page_auto_snapshots_make_room_from_automatic_ones_only() {
-        use super::super::settings::auto_snapshot_room;
+        use super::super::settings::snapshot_room;
         let before_restore = pecofence_core::i18n::text("恢复快照前");
         // Not full: nothing goes.
         let mut list = vec![snap("home", 1), snap(before_restore, 2)];
-        assert!(auto_snapshot_room(&mut list, None));
+        assert!(snapshot_room(&mut list, None));
         assert_eq!(list.len(), 2);
 
         // Full: the oldest automatic one goes (not the restore target), never the user's.
@@ -650,7 +650,7 @@ mod ipc {
         let next = list[2].id;
         list.extend((3..MAX_SNAPSHOTS).map(|i| snap(&format!("mine {i}"), i as i64)));
         assert_eq!(list.len(), MAX_SNAPSHOTS);
-        assert!(auto_snapshot_room(&mut list, Some(target)));
+        assert!(snapshot_room(&mut list, Some(target)));
         assert_eq!(list.len(), MAX_SNAPSHOTS - 1);
         assert!(list.iter().all(|s| s.id != next));
         assert!(list.iter().any(|s| s.id == target));
@@ -660,7 +660,44 @@ mod ipc {
         let mut list: Vec<Snapshot> = (0..MAX_SNAPSHOTS)
             .map(|i| snap(&format!("mine {i}"), i as i64))
             .collect();
-        assert!(!auto_snapshot_room(&mut list, None));
+        assert!(!snapshot_room(&mut list, None));
         assert_eq!(list.len(), MAX_SNAPSHOTS);
+    }
+
+    #[test]
+    fn user_saves_on_a_full_list_replace_automatic_snapshots_oldest_first() {
+        // Feedback #76: restores from the settings page piled up 「恢复快照前」 snapshots until
+        // `snapshot save` failed with limit_reached.
+        use super::super::settings::snapshot_room;
+        let before_restore = pecofence_core::i18n::text("恢复快照前");
+        let mut list: Vec<Snapshot> = (0..MAX_SNAPSHOTS - 3)
+            .map(|i| snap(&format!("mine {i}"), i as i64))
+            .collect();
+        list.insert(2, snap(before_restore, 50));
+        list.push(snap(&format!("{AUTO_SNAPSHOT_PREFIX}a"), 100));
+        list.push(snap(before_restore, 101));
+        let autos: Vec<uuid::Uuid> = list
+            .iter()
+            .filter(|s| !s.name.starts_with("mine"))
+            .map(|s| s.id)
+            .collect();
+        let users: Vec<uuid::Uuid> = list
+            .iter()
+            .filter(|s| s.name.starts_with("mine"))
+            .map(|s| s.id)
+            .collect();
+        assert_eq!(list.len(), MAX_SNAPSHOTS);
+        for (n, gone) in autos.iter().enumerate() {
+            assert!(snapshot_room(&mut list, None), "save {n} refused");
+            assert!(list.iter().all(|s| s.id != *gone), "save {n} kept {gone}");
+            list.push(snap(&format!("new {n}"), 200 + n as i64));
+            assert_eq!(list.len(), MAX_SNAPSHOTS);
+        }
+        // Only the user's own are left: the next save is refused and nothing goes.
+        assert!(users.iter().all(|u| list.iter().any(|s| s.id == *u)));
+        let before: Vec<uuid::Uuid> = list.iter().map(|s| s.id).collect();
+        assert!(!snapshot_room(&mut list, None));
+        let after: Vec<uuid::Uuid> = list.iter().map(|s| s.id).collect();
+        assert_eq!(after, before);
     }
 }
