@@ -873,7 +873,7 @@ impl App {
             self.reflow_pushed();
         }
         if inbox_hiding_changed {
-            self.sync_inbox_window();
+            self.sync_hidden_fences();
         }
         self.push_settings_state();
     }

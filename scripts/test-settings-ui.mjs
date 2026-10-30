@@ -216,7 +216,8 @@ async function runTests() {
     assert(sel.options.length === 4, 'Fence list incomplete');
     assert([...sel.options].map(o => o.textContent).join('|') === 'Documents|Images（Documents 的标签页）|Desktop（桌面）|Portal（文件夹）', 'Fence labels wrong: ' + [...sel.options].map(o => o.textContent).join('|'));
     assert(doc.getElementById('fencePortalGroup').style.display === 'none', 'Portal options shown for an ordinary fence');
-    assert(doc.getElementById('fenceHideEmpty').style.display === 'none', 'Hide-when-empty offered for an ordinary fence');
+    assert(doc.getElementById('fenceHideEmpty').style.display === '', 'Hide-when-empty not offered for an ordinary fence');
+    const fenceHideNote = doc.querySelector('#fenceHideEmpty .s').textContent;
     assert(doc.getElementById('fenceTintTitleOnly').style.display === 'none', 'Title-only tint offered without a tint');
     assert(doc.getElementById('fenceTabColor').style.display === 'none', 'Tab colour offered for a fence without tabs');
     assert(doc.querySelector('[data-fence=titleColor] [value=tint]').disabled, 'Follow-tint offered without a tint');
@@ -226,6 +227,7 @@ async function runTests() {
     assert(tintHint.hidden, 'Choose-a-tint hint shown although the fence has a tint');
     assert(doc.querySelector('[data-fence=locked]').classList.contains('on'), 'Lock state not shown');
     assert(doc.getElementById('fenceHideEmpty').style.display === '' && doc.querySelector('[data-fence=hideWhenEmpty]').classList.contains('on'), 'Inbox hide-when-empty not shown');
+    assert(doc.querySelector('#fenceHideEmpty .s').textContent !== fenceHideNote, 'Inbox hide-when-empty note is the one of other fences');
     assert(doc.getElementById('fenceTintTitleOnly').style.display === '' && doc.querySelector('[data-fence=tintTitleOnly]').classList.contains('on'), 'Title-only tint not shown');
     assert(doc.querySelector('[data-fence=tint]').value === '0078D4', 'Palette tint not selected');
     assert(doc.querySelector('[data-fence=titleColor]').value === 'tint' && !doc.querySelector('[data-fence=titleColor] [value=tint]').disabled, 'Follow-tint title not shown');

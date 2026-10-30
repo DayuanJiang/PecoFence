@@ -771,8 +771,9 @@ pub struct Fence {
     /// Folder portal: hide the folder glyph before the title.
     #[serde(default)]
     pub hide_title_icon: bool,
-    /// Inbox: no window while it holds no items (为空时自动隐藏); the next item to land on the
-    /// desktop brings it back at its saved spot.
+    /// No window while it holds no items (为空时自动隐藏; a portal only at its root folder, a
+    /// tab or a host of tabs never); the next item to land in it brings it back at its saved
+    /// spot.
     #[serde(default)]
     pub hide_when_empty: bool,
     #[serde(default)]

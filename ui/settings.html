@@ -959,7 +959,9 @@
       ? tf("这是“{0}”中的一个标签页，外观、锁定和自动高度对整组标签页生效", f.host)
       : t("外观、锁定和自动高度对整组标签页生效");
     document.getElementById('fencePortalGroup').style.display = f.portal ? '' : 'none';
-    document.getElementById('fenceHideEmpty').style.display = f.kind === 'inbox' ? '' : 'none';
+    document.querySelector('#fenceHideEmpty .s').textContent = f.kind === 'inbox'
+      ? t("里面没有图标时就不显示；桌面上一出现新图标，它会自己回来")
+      : t("里面没有图标时就不显示；有图标归到这里时，它会自己回来");
     document.getElementById('fencePortalHeading').textContent = t("栅栏页\x04文件夹");
     const tintSel = document.querySelector('[data-fence=tint]');
     const palette = `<option value="">${esc(t("无"))}</option>` + (state.tintPalette || []).map(c => `<option value="${esc(c.hex)}">${esc(t(c.name))}</option>`).join('');

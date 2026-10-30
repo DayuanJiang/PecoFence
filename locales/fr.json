@@ -531,6 +531,7 @@
   "下载失败，请稍后再试": "Impossible de télécharger la mise à jour. Réessayez plus tard.",
   "为空时自动隐藏": "Masquer quand il est vide",
   "里面没有图标时就不显示；桌面上一出现新图标，它会自己回来": "Reste masqué tant qu’il ne contient aucune icône et réapparaît dès qu’une nouvelle icône arrive sur le Bureau",
+  "里面没有图标时就不显示；有图标归到这里时，它会自己回来": "Reste masqué tant qu’il ne contient aucune icône et réapparaît dès qu’une icône y est rangée",
   "只给标题栏上色": "Teinter seulement la barre de titre",
   "关掉的话，整个栅栏都会染上色调": "Désactivé, la teinte couvre tout le groupe",
   "标签页颜色": "Couleur de l’onglet",

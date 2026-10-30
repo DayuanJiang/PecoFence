@@ -531,6 +531,7 @@
   "下载失败，请稍后再试": "Der Download ist fehlgeschlagen. Versuche es später noch einmal.",
   "为空时自动隐藏": "Ausblenden, wenn leer",
   "里面没有图标时就不显示；桌面上一出现新图标，它会自己回来": "Bleibt ausgeblendet, solange er keine Symbole enthält, und erscheint wieder, sobald ein neues Symbol auf dem Desktop landet",
+  "里面没有图标时就不显示；有图标归到这里时，它会自己回来": "Bleibt ausgeblendet, solange er keine Symbole enthält, und erscheint wieder, sobald ein Symbol hier einsortiert wird",
   "只给标题栏上色": "Nur die Titelleiste einfärben",
   "关掉的话，整个栅栏都会染上色调": "Ausgeschaltet färbt der Farbton den ganzen Bereich",
   "标签页颜色": "Tab-Farbe",

@@ -531,6 +531,7 @@
   "下载失败，请稍后再试": "No se pudo descargar la actualización. Inténtalo de nuevo más tarde.",
   "为空时自动隐藏": "Ocultar si está vacío",
   "里面没有图标时就不显示；桌面上一出现新图标，它会自己回来": "Permanece oculto mientras no tenga iconos y vuelve en cuanto aparece un icono nuevo en el escritorio",
+  "里面没有图标时就不显示；有图标归到这里时，它会自己回来": "Permanece oculto mientras no tenga iconos y vuelve en cuanto se archiva un icono aquí",
   "只给标题栏上色": "Colorear solo la barra de título",
   "关掉的话，整个栅栏都会染上色调": "Si está desactivado, el tinte cubre todo el grupo",
   "标签页颜色": "Color de la pestaña",

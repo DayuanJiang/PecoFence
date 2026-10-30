@@ -168,8 +168,10 @@ its tint), `titleColor` theme/tint/white/black/`"#RRGGBB"`, `titleSize` small/no
 `titleOnHover` default/hover/always (hover: the title row folds away until the pointer is over the
 fence; default follows `rollUp.titleOnHover`), `layout` icons/list/details,
 `sort` manual/name/type/date/size/openCount, `reverse`, `groupByDate`, `labelLines`,
-`portalNavigate`, `portalTitleIcon`, `hideWhenEmpty` (inbox only: no window while it is empty; the inbox
-cannot be deleted). `--all` applies the option to every fence one call at a time and
+`portalNavigate`, `portalTitleIcon`, `hideWhenEmpty` (no window while the fence is empty, and back
+at its saved spot when an item lands in it; a portal hides only at its root folder, a tab or a host
+of tabs stays; this is also how to keep the inbox, which cannot be deleted, out of sight).
+`--all` applies the option to every fence one call at a time and
 skips tabs hosted inside another fence (their options belong to the host).
 
 `item list` describes every item with `kind` (`folders`, `programs`, `installers`, `shortcuts`,
