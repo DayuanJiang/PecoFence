@@ -9,6 +9,8 @@ use crate::wide::to_wide;
 use windows_core::PCWSTR;
 
 const HIDE_ICONS_BIT: u32 = 1 << 12; // SHELLSTATE::fHideIcons
+const DOUBLE_CLICK_BIT: u32 = 1 << 5; // SHELLSTATE::fDoubleClickInWebView
+const SSF_DOUBLECLICKINWEBVIEW: u32 = 0x80;
 const CMD_TOGGLE_DESKTOP_ICONS: usize = 0x7402;
 const LVM_GETSELECTEDCOUNT: u32 = 0x1000 + 50; // LVM_FIRST + 50
 const LVM_GETHOTITEM: u32 = 0x1000 + 61; // LVM_FIRST + 61
@@ -16,18 +18,25 @@ const LVM_GETITEMCOUNT: u32 = 0x1000 + 4; // LVM_FIRST + 4
 const LVM_GETITEMSTATE: u32 = 0x1000 + 44; // LVM_FIRST + 44
 const LVIS_DROPHILITED: isize = 0x0008;
 
-/// True when the shell currently hides desktop icons.
-pub fn desktop_icons_hidden() -> bool {
+/// The first bit field of the shell's `SHELLSTATE`, with the flags in `mask` filled in.
+fn shell_flags(mask: u32) -> u32 {
     let mut state = SHELLSTATEW::default();
     // SAFETY: SHELLSTATEA and SHELLSTATEW share the same layout; `state` outlives the call.
     unsafe {
-        SHGetSetSettings(
-            Some((&mut state as *mut SHELLSTATEW).cast()),
-            SSF_HIDEICONS as u32,
-            false,
-        );
+        SHGetSetSettings(Some((&mut state as *mut SHELLSTATEW).cast()), mask, false);
     }
-    (state._bitfield1.0 as u32) & HIDE_ICONS_BIT != 0
+    state._bitfield1.0 as u32
+}
+
+/// True when the shell currently hides desktop icons.
+pub fn desktop_icons_hidden() -> bool {
+    shell_flags(SSF_HIDEICONS as u32) & HIDE_ICONS_BIT != 0
+}
+
+/// True when Explorer opens items with a single click (Folder Options › "Single-click to open
+/// an item (point to select)"), as the desktop then does.
+pub fn single_click_open() -> bool {
+    shell_flags(SSF_DOUBLECLICKINWEBVIEW) & DOUBLE_CLICK_BIT == 0
 }
 
 /// Sends the toggle command to the desktop view (falls back to `Progman` when `def_view` is

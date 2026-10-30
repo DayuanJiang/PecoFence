@@ -15,6 +15,9 @@ pub(super) struct DragState {
     /// Ctrl press on an already-selected item: a release that never became a drag deselects
     /// it; a drag carries the whole selection (Explorer's Ctrl+drag copy).
     pub(super) deselect_on_up: bool,
+    /// Plain press with Explorer's single-click open on: a release that never became a drag
+    /// opens the item.
+    pub(super) open_on_up: bool,
 }
 
 /// What a left press on item `i` did to the selection, for the release.
@@ -57,6 +60,36 @@ pub(super) fn press_item(
         *range_anchor = Some(i);
     }
     press
+}
+
+/// The pointer rested on item `i` with Explorer's single-click open on (the desktop list
+/// view's hover select): Shift = range from the anchor (added with Ctrl), Ctrl = toggle,
+/// plain = select it alone unless it is already selected. Returns whether the selection
+/// changed.
+pub(super) fn hover_item(
+    selected: &mut HashSet<usize>,
+    range_anchor: &mut Option<usize>,
+    i: usize,
+    shift: bool,
+    ctrl: bool,
+) -> bool {
+    let before = selected.clone();
+    if shift && let Some(a) = *range_anchor {
+        if !ctrl {
+            selected.clear();
+        }
+        selected.extend(a.min(i)..=a.max(i));
+    } else if ctrl {
+        if !selected.remove(&i) {
+            selected.insert(i);
+        }
+        *range_anchor = Some(i);
+    } else if !selected.contains(&i) {
+        selected.clear();
+        selected.insert(i);
+        *range_anchor = Some(i);
+    }
+    *selected != before
 }
 
 /// The button came up on `i` without a drag: finish a Ctrl toggle-off.

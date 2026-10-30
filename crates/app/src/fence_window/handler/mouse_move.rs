@@ -421,6 +421,15 @@ pub(super) fn on_mousemove(
         y < v.title_h_px()
     };
     let (item_changed, title_changed) = v.set_hover(hit, in_title);
+    // Explorer's single-click open: resting on an item selects it after the hover time;
+    // moving onto another item restarts the wait.
+    if item_changed && behavior.single_click.get() {
+        if hit.is_some() {
+            window::set_timer(hwnd, TIMER_HOVER_SELECT, Tooltip::hover_delay_ms());
+        } else {
+            window::kill_timer(hwnd, TIMER_HOVER_SELECT);
+        }
+    }
     if chrome_changed || title_changed {
         let _ = v.redraw_chrome_only();
     }

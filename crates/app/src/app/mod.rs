@@ -1100,6 +1100,9 @@ impl App {
                     state.config.settings.roll_up.hide_count_and_chevron,
                 ),
                 wheel_lines: std::cell::Cell::new(sysparams::wheel_scroll_lines()),
+                single_click: std::cell::Cell::new(
+                    pecofence_platform::shell_icons::single_click_open(),
+                ),
                 drop_preview: std::cell::RefCell::new(
                     crate::drop_preview::DropPreview::create()
                         .map_err(|e| tracing::warn!(error = %e, "drop preview unavailable"))

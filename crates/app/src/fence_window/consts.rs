@@ -45,6 +45,9 @@ pub(super) const TIMER_TAB_HOVER: usize = 45;
 /// Polls the right button during a title drag in the system move loop: the loop sends
 /// WM_MOVING only while the pointer moves, so a right click on a resting pointer went unseen.
 pub(super) const TIMER_MOVE_RBUTTON: usize = 46;
+/// Explorer's single-click open: the pointer rests on an item for the hover time
+/// (SPI_GETMOUSEHOVERTIME), which selects it, as on the desktop.
+pub(super) const TIMER_HOVER_SELECT: usize = 47;
 /// DWM can suspend completion callbacks for fully occluded windows. UI state must still
 /// settle after the longest (250 ms) transition, independently of compositor visibility.
 pub(super) const COMPOSITION_FINISH_MS: u32 = 400;

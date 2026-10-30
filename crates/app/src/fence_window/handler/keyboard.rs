@@ -160,30 +160,7 @@ pub(super) fn on_keydown(
                 });
             }
         }
-        k if k == msg::VK_RETURN => {
-            let folder = (v.navigate_folders && ids.len() == 1)
-                .then(|| {
-                    v.items
-                        .iter()
-                        .find(|it| it.id == ids[0] && it.is_folder)
-                        .map(|it| it.path.clone())
-                })
-                .flatten();
-            match folder {
-                Some(path) => queue.push(Command::PortalEnter {
-                    fence: v.active,
-                    path,
-                }),
-                None => {
-                    for id in ids {
-                        queue.push(Command::LaunchItem {
-                            item: id,
-                            from: v.active,
-                        });
-                    }
-                }
-            }
-        }
+        k if k == msg::VK_RETURN => open_items(v, queue, ids),
         VK_BACK if v.deco.up_button => {
             // Keyboard navigation: the folder it returns to shows the focus ring.
             v.focus_visible = true;
