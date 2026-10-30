@@ -12,6 +12,7 @@ const CMD_HIDE_ICONS_AGAIN: u32 = 6;
 const CMD_FEEDBACK: u32 = 7;
 const CMD_EXIT: u32 = 9;
 const CMD_PEEK: u32 = 10;
+const CMD_WINDOWS_DESKTOP: u32 = 15;
 /// Tray 「在桌面显示文件夹」 entries: 11..=14 (see `App::show_folder_submenu`).
 const CMD_SHOW_FOLDER: u32 = 11;
 const CMD_ITEM_OPEN: u32 = 100;
@@ -137,6 +138,13 @@ impl App {
         )
         .icon(if hidden { glyph::VIEW } else { glyph::hide() })
         .item(
+            CMD_WINDOWS_DESKTOP,
+            &self.windows_desktop_menu_text(),
+            false,
+            false,
+        )
+        .icon(glyph::MONITOR)
+        .item(
             CMD_NEW_FENCE,
             pecofence_core::i18n::text("新建栅栏"),
             false,
@@ -216,6 +224,7 @@ impl App {
         let cmd = menu.show(self.control.hwnd(), x, y);
         match cmd {
             CMD_TOGGLE_FENCES => self.toggle_all_fences(),
+            CMD_WINDOWS_DESKTOP => self.set_windows_desktop(!self.windows_desktop, "tray menu"),
             CMD_PEEK => self.queue.push(Command::TogglePeek),
             CMD_NEW_FENCE => self.queue.push(Command::NewFence { x, y: y - 300 }),
             c if (CMD_SHOW_FOLDER..CMD_SHOW_FOLDER + 4).contains(&c) => {

@@ -76,11 +76,11 @@ impl App {
         self.ensure_portal_watchers();
         self.state.normalize_tabs();
         // Only host fences own a window; fences hosted as tabs live inside their host's. An
-        // empty inbox set to 为空时自动隐藏 has none until something lands in it, and one
+        // empty fence set to 为空时自动隐藏 has none until something lands in it, and an inbox
         // hidden beside the Windows icons none until they are hidden again.
-        let hidden = self.state.hidden_inbox();
+        let hidden = self.state.hidden_fences();
         let mut hosts = self.state.host_fences();
-        hosts.retain(|f| Some(f.id) != hidden);
+        hosts.retain(|f| !hidden.contains(&f.id));
         let ids: Vec<FenceId> = hosts.iter().map(|f| f.id).collect();
         let gone: Vec<FenceId> = self
             .fences
@@ -179,25 +179,29 @@ impl App {
         }
         self.apply_portal_deco(host);
         self.apply_auto_height(host);
-        self.sync_inbox_window();
+        self.sync_hidden_fences();
     }
 
-    /// 为空时自动隐藏: the inbox window goes with its last item and comes back with the next
+    /// 为空时自动隐藏: a fence's window goes with its last item and comes back with the next
     /// one (or when the flag is switched off). Also when the inbox's hiding beside the Windows
     /// icons starts or ends.
-    pub(super) fn sync_inbox_window(&mut self) {
-        let Some(inbox) = self
+    pub(super) fn sync_hidden_fences(&mut self) {
+        let hidden = self.state.hidden_fences();
+        let changed: Vec<FenceId> = self
             .state
-            .inbox_id()
-            .filter(|id| self.state.fence(*id).is_some_and(|f| f.tab_host.is_none()))
-        else {
+            .host_fences()
+            .iter()
+            .map(|f| f.id)
+            .filter(|id| self.fences.contains_key(id) == hidden.contains(id))
+            .collect();
+        if changed.is_empty() {
             return;
-        };
-        if self.fences.contains_key(&inbox) == self.state.hidden_inbox().is_some() {
-            self.resync_windows();
-            // While it had no window, another fence may have grown or moved over its spot.
-            if self.fences.contains_key(&inbox) {
-                self.move_out_of_overlap(inbox);
+        }
+        self.resync_windows();
+        // While it had no window, another fence may have grown or moved over its spot.
+        for id in changed {
+            if self.fences.contains_key(&id) {
+                self.move_out_of_overlap(id);
             }
         }
     }
@@ -294,7 +298,7 @@ impl App {
             }
             self.apply_auto_height(id);
         }
-        self.sync_inbox_window();
+        self.sync_hidden_fences();
         // Cut items that were moved away (Explorer pasted them) stop being dimmed.
         let before = self.cut_items.len();
         self.cut_items.retain(|id| self.state.item(*id).is_some());
@@ -471,6 +475,11 @@ impl App {
     }
 
     pub fn toggle_all_fences(&mut self) {
+        // 「显示所有栅栏」 while 「临时显示 Windows 桌面」 is on ends it (the icons go again).
+        if self.windows_desktop {
+            self.set_windows_desktop(false, "fences shown");
+            return;
+        }
         self.end_peek_now();
         if let Some(a) = self.anchor.borrow_mut().as_mut() {
             a.toggle_fences_hidden();

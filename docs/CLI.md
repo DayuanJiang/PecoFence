@@ -142,6 +142,7 @@ unique id prefix, or a name (only while that name is unique).
 | `backup list` | `pecofence-cli backup list` (daily backups beside config.json, newest first) |
 | `backup restore <FILE>` | `pecofence-cli backup restore "C:\Users\me\AppData\Roaming\PecoFence\backups\2026-09-23.json"` (a path from `backup list`) |
 | `peek start` / `peek end` | `pecofence-cli peek start` |
+| `windows-desktop start` / `windows-desktop end` | `pecofence-cli windows-desktop start` (hide every fence and show the Windows desktop icons until `end`; not saved) |
 | `watch [--fence <FENCE>] [--events <E,...>] [--once] [--heartbeat]` | `pecofence-cli watch --fence inbox --once` |
 | `log [-f] [-n <N>]` | `pecofence-cli log -n 100` (text, not JSON) |
 | `paths` | `pecofence-cli paths` (config, backups, log, crash dumps; offline) |
@@ -168,8 +169,10 @@ its tint), `titleColor` theme/tint/white/black/`"#RRGGBB"`, `titleSize` small/no
 `titleOnHover` default/hover/always (hover: the title row folds away until the pointer is over the
 fence; default follows `rollUp.titleOnHover`), `layout` icons/list/details,
 `sort` manual/name/type/date/size/openCount, `reverse`, `groupByDate`, `labelLines`,
-`portalNavigate`, `portalTitleIcon`, `hideWhenEmpty` (inbox only: no window while it is empty; the inbox
-cannot be deleted). `--all` applies the option to every fence one call at a time and
+`portalNavigate`, `portalTitleIcon`, `hideWhenEmpty` (no window while the fence is empty, and back
+at its saved spot when an item lands in it; a portal hides only at its root folder, a tab or a host
+of tabs stays; this is also how to keep the inbox, which cannot be deleted, out of sight).
+`--all` applies the option to every fence one call at a time and
 skips tabs hosted inside another fence (their options belong to the host).
 
 `item list` describes every item with `kind` (`folders`, `programs`, `installers`, `shortcuts`,
@@ -235,8 +238,9 @@ tabs stays; default off), `offerNewFence` (a rectangle drawn on empty desktop th
 offers 「在此新建栅栏」; default on), `autostart`, `peek.enabled`, `quickHide.enabled`,
 `titleAlign` (left/center/right: the title and tab strip in every title row),
 `labelColor` (auto/white/black: the item names in every fence and view; auto picks dark or light
-names from the wallpaper in Liquid Glass and follows the colour mode in Fluent; fence titles keep
-their `titleColor`; default auto),
+names from the wallpaper in Liquid Glass and follows the colour mode in Fluent; white and black
+also colour the titles, tabs and item counts of fences whose `titleColor` is `theme`, while a fence
+or tab with a `titleColor` of its own keeps it; default auto),
 `customTheme` (the name of a theme file in the `themes` folder next to `config.json`, without
 `.json`; while it loads, its base style takes the place of `themeStyle`; `null` = the built-in
 style; see [THEMES.md](THEMES.md)),
@@ -259,6 +263,10 @@ PageDown or an arrow key; `null` goes back to `peek.hotkey`, whose default is Ct
 setting `peek.hotkey` clears it). A
 combination Windows or another program holds is refused with `validation_failed`, like common
 Windows shortcuts (Ctrl+Space, Alt+Tab, Win plus one key).
+`windowsDesktopHotkey` (the shortcut of 「临时显示 Windows 桌面」, written like
+`peek.customHotkey`, e.g. `Ctrl+Alt+D`; one press hides every fence and shows the Windows desktop
+icons PecoFence hid, the next brings both back, and nothing of it is saved; default `null`, no
+shortcut) is checked the same way, and may not be the Peek shortcut.
 `describe --schema Settings` lists them all with their allowed values (the name is matched
 case-insensitively; an unknown name is a `usage` error listing `details.allowed`).
 

@@ -321,6 +321,21 @@ pub(super) fn patch_settings_path(
         // One of the 0.2.0 choices: a custom shortcut left in place would override it.
         settings.peek.custom_hotkey = None;
     }
+    if settings.windows_desktop_hotkey != current.windows_desktop_hotkey
+        && let Some(text) = settings.windows_desktop_hotkey.clone()
+    {
+        let h = pecofence_core::hotkey::Hotkey::parse(&text)
+            .and_then(|h| h.check())
+            .map_err(|problem| {
+                IpcError::new(
+                    ErrorCode::ValidationFailed,
+                    format!("windowsDesktopHotkey {text:?} cannot be used: {problem}"),
+                )
+                .hint("Examples: Ctrl+Alt+D, Win+Alt+D, Ctrl+Alt+F9; null = no shortcut")
+            })?;
+        // Written the way the settings page writes it.
+        settings.windows_desktop_hotkey = Some(h.to_string());
+    }
     if !matches!(settings.icon_size, 32 | 48 | 64 | 96) {
         return Err(IpcError::new(
             ErrorCode::ValidationFailed,
@@ -726,12 +741,31 @@ impl App {
                 let requested = patch_settings_path(&before, path, value.clone())?;
                 // A new Peek shortcut must be free, as on the settings page.
                 let h = requested.peek.chosen_hotkey();
-                if h != before.peek.chosen_hotkey() && !self.peek_hotkey_free(h) {
-                    return Err(IpcError::new(
-                        ErrorCode::ValidationFailed,
-                        format!("{h} is already used by Windows or another program"),
-                    )
-                    .hint("Pick another shortcut; Windows keeps Win+Space and Win+Shift+Space"));
+                if h != before.peek.chosen_hotkey() {
+                    if requested.windows_desktop_hotkey() == Some(h) {
+                        return Err(IpcError::new(
+                            ErrorCode::ValidationFailed,
+                            format!("{h} is the windowsDesktopHotkey shortcut"),
+                        )
+                        .hint("Pick another shortcut for one of them"));
+                    }
+                    if !self.peek_hotkey_free(h) {
+                        return Err(IpcError::new(
+                            ErrorCode::ValidationFailed,
+                            format!("{h} is already used by Windows or another program"),
+                        )
+                        .hint(
+                            "Pick another shortcut; Windows keeps Win+Space and Win+Shift+Space",
+                        ));
+                    }
+                }
+                // The same for 「临时显示 Windows 桌面」.
+                if let Some(h) = requested.windows_desktop_hotkey()
+                    && Some(h) != before.windows_desktop_hotkey()
+                    && let Some(problem) = self.windows_desktop_hotkey_cli_problem(h)
+                {
+                    return Err(IpcError::new(ErrorCode::ValidationFailed, problem)
+                        .hint("Pick another shortcut, or null for none"));
                 }
                 self.apply_settings(requested.clone());
                 let after = &self.state.config.settings;
@@ -926,6 +960,13 @@ impl App {
                     self.end_peek("pecofence-cli");
                 }
                 Ok(mutation(active, None, Value::Null))
+            }
+            Method::WindowsDesktopStart | Method::WindowsDesktopEnd => {
+                let on = matches!(m, Method::WindowsDesktopStart);
+                let before = self.windows_desktop;
+                self.set_windows_desktop(on, "pecofence-cli");
+                // set_windows_desktop declines while the desktop anchor is not ready.
+                Ok(mutation(self.windows_desktop != before, None, Value::Null))
             }
             Method::SettingsOpenUi => {
                 self.handle(Command::OpenSettings);

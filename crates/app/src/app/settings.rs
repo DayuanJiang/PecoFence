@@ -136,6 +136,7 @@ impl App {
         // apply_settings only refreshes on a visual / icon diff; a wholesale swap (per-fence
         // tint, layouts) needs these regardless.
         self.sync_peek_hotkey();
+        self.sync_windows_desktop_hotkey();
         self.apply_icon_variant();
         self.refresh_visuals(true);
         self.state.save_if_dirty();
@@ -332,6 +333,7 @@ impl App {
             "tintPalette": fence_options::tint_palette_json(),
             "version": env!("CARGO_PKG_VERSION"),
             "storeEdition": pecofence_platform::process::is_packaged(),
+            "cliCommand": cli_command(),
             "configPath": self.state.config_path_on_disk().to_string_lossy(),
             "memoryMb": mem_mb,
             "itemCount": self.state.workspace_item_count(),
@@ -343,6 +345,7 @@ impl App {
             "accent": accent,
             "update": self.update_json(),
             "peekHotkey": self.peek_hotkey_json(),
+            "windowsDesktopHotkey": self.windows_desktop_hotkey_json(),
         })
         .to_string()
     }
@@ -445,7 +448,7 @@ impl App {
                     h.ready = true;
                 }
                 // A reload in the middle of recording a shortcut never says it ended.
-                self.resume_peek_hotkey();
+                self.resume_hotkeys();
                 self.push_settings_state();
                 // The first `ready` shows the window; a reload's leaves it as the user left it.
                 if let Some(h) = self
@@ -630,12 +633,19 @@ impl App {
                     let number = |key: &str| v.get(key).and_then(|n| n.as_u64()).unwrap_or(0);
                     self.set_peek_hotkey_from_page(number("mods") as u32, number("vk") as u32);
                 }
-                Some("peekHotkeyRecording") => {
+                Some("peekHotkeyRecording" | "windowsDesktopHotkeyRecording") => {
                     if v.get("on").and_then(|o| o.as_bool()).unwrap_or(false) {
-                        self.pause_peek_hotkey();
+                        self.pause_hotkeys();
                     } else {
-                        self.resume_peek_hotkey();
+                        self.resume_hotkeys();
                     }
+                }
+                Some("setWindowsDesktopHotkey") => {
+                    // Without a key: 清除.
+                    let number = |key: &str| v.get(key).and_then(|n| n.as_u64());
+                    let h = number("vk")
+                        .map(|vk| Hotkey::new(number("mods").unwrap_or(0) as u32, vk as u32));
+                    self.set_windows_desktop_hotkey_from_page(h);
                 }
                 Some("repairIcons") => self.set_desktop_icons_hidden(false),
                 Some("hideDesktopIcons") => self.set_desktop_icons_hidden(true),
@@ -643,6 +653,10 @@ impl App {
                 Some("openManual") => self.open_manual(),
                 Some("openRepository") => {
                     let url = pecofence_core::brand::REPOSITORY_URL;
+                    let _ = shell::shell_execute(std::path::Path::new(url), None, None);
+                }
+                Some("openCliDocs") => {
+                    let url = pecofence_core::brand::CLI_DOCS_URL;
                     let _ = shell::shell_execute(std::path::Path::new(url), None, None);
                 }
                 _ => {}
@@ -859,6 +873,7 @@ impl App {
         self.state.mark_dirty();
         self.schedule_save();
         self.sync_peek_hotkey();
+        self.sync_windows_desktop_hotkey();
         if icons_toggled {
             self.desktop_icons_setting_changed();
         }
@@ -873,7 +888,7 @@ impl App {
             self.reflow_pushed();
         }
         if inbox_hiding_changed {
-            self.sync_inbox_window();
+            self.sync_hidden_fences();
         }
         self.push_settings_state();
     }
@@ -898,4 +913,19 @@ impl App {
         }
         self.push_settings_state();
     }
+}
+
+/// How an AI agent in a terminal runs pecofence-cli (the 整理规则 prompt names it): the Store
+/// edition puts `pecofence-cli` on PATH through an App Execution Alias; setup and the ZIP
+/// leave it next to `pecofence.exe`, so the prompt gets its full path.
+fn cli_command() -> String {
+    if !pecofence_platform::process::is_packaged()
+        && let Some(cli) = std::env::current_exe()
+            .ok()
+            .and_then(|exe| Some(exe.parent()?.join("pecofence-cli.exe")))
+            .filter(|cli| cli.is_file())
+    {
+        return cli.to_string_lossy().into_owned();
+    }
+    "pecofence-cli".to_string()
 }

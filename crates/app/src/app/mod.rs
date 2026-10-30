@@ -78,6 +78,7 @@ mod updates;
 mod visuals;
 mod wallpaper_refresh;
 mod welcome;
+mod windows_desktop;
 
 use fences::work_areas;
 use fileops::{FileOp, FileOpThen};
@@ -170,6 +171,8 @@ const TRAY_ID: u32 = 1;
 const HOTKEY_PEEK: i32 = 1;
 /// Registered for a moment to learn whether a shortcut the user picks is free.
 const HOTKEY_PROBE: i32 = 2;
+/// 「临时显示 Windows 桌面」.
+const HOTKEY_WINDOWS_DESKTOP: i32 = 3;
 
 /// How long a fence-menu "新建" keeps its claim on the next desktop item (plan §5.8).
 const PENDING_CREATION_SECS: u64 = 15;
@@ -345,9 +348,17 @@ pub struct App {
     /// The combination the last `sync_peek_hotkey` tried to register (the user's choice), so a
     /// persisting conflict does not re-toast on every settings apply.
     peek_hotkey_wanted: Option<Hotkey>,
-    /// The settings page is recording a new shortcut: `peek_hotkey` is unregistered meanwhile,
-    /// so pressing it reaches the page instead of starting a Peek.
-    peek_hotkey_paused: bool,
+    /// The settings page is recording a new shortcut: `peek_hotkey` and
+    /// `windows_desktop_hotkey` are unregistered meanwhile, so pressing one reaches the page
+    /// instead of starting a Peek.
+    hotkeys_paused: bool,
+    /// 「临时显示 Windows 桌面」 is on: every fence hidden, the icons PecoFence hid shown. Never
+    /// saved.
+    windows_desktop: bool,
+    /// Its shortcut as registered (None = none chosen, or taken).
+    windows_desktop_hotkey: Option<Hotkey>,
+    /// The chosen shortcut last found taken, so a lasting conflict is told once.
+    windows_desktop_hotkey_taken: Option<Hotkey>,
     /// Items put on the clipboard with 剪切 (drawn dimmed) and the clipboard sequence number at
     /// that moment: any later clipboard change (Explorer pasted, something else was copied)
     /// clears the dimming.
@@ -582,6 +593,14 @@ impl App {
                                 && let Some(app) = guard.as_mut()
                             {
                                 app.toggle_peek();
+                            }
+                            Some(0)
+                        }
+                        msg::WM_HOTKEY if wparam as i32 == HOTKEY_WINDOWS_DESKTOP => {
+                            if let Ok(mut guard) = cell.try_borrow_mut()
+                                && let Some(app) = guard.as_mut()
+                            {
+                                app.set_windows_desktop(!app.windows_desktop, "hotkey");
                             }
                             Some(0)
                         }
@@ -1230,7 +1249,10 @@ impl App {
             marquee_draws_band: false,
             peek_hotkey: None,
             peek_hotkey_wanted: None,
-            peek_hotkey_paused: false,
+            hotkeys_paused: false,
+            windows_desktop: false,
+            windows_desktop_hotkey: None,
+            windows_desktop_hotkey_taken: None,
             desktop_unavailable: false,
             save_failure_shown: false,
             idle_rules_checked: None,
@@ -1262,6 +1284,7 @@ impl App {
             }
         }
         app.sync_peek_hotkey();
+        app.sync_windows_desktop_hotkey();
         app.sync_theme_watcher();
         // Before the first fence: a custom theme's fonts.
         app.apply_fonts();
@@ -1975,7 +1998,7 @@ impl App {
                 if self.settings.as_ref().is_some_and(|h| h.hwnd() == hwnd) {
                     self.settings = None;
                     self.set_settings_ring(None);
-                    self.resume_peek_hotkey();
+                    self.resume_hotkeys();
                 }
             }
             Command::FadeOutDone(hwnd) => {
@@ -1993,6 +2016,7 @@ impl App {
         tracing::info!("shutdown cancelled");
         if self.state.config.settings.hide_real_icons
             && !self.no_hide_icons
+            && !self.windows_desktop
             && let Some(a) = self.anchor.borrow_mut().as_mut()
         {
             a.request_hide_desktop_icons();

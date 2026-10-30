@@ -50,6 +50,7 @@ const fixture = {
       { mods: 6, vk: 32, keys: ['Ctrl', 'Shift', '空格'], label: 'Ctrl+Shift+空格' },
     ],
   },
+  windowsDesktopHotkey: { chosen: null, registered: false },
 };
 
 function bridge() {
@@ -99,6 +100,20 @@ function bridge() {
             setTimeout(window.testRefresh, 0);
           }
           setTimeout(() => receive({ data: { type: 'peekHotkeyResult', ok: !text, text } }), 0);
+        }
+        if (message.name === 'setWindowsDesktopHotkey') {
+          // No key = 清除. Peek's Ctrl+Alt+Space is refused, the rest is saved as given.
+          const names = [[8, 'Win'], [2, 'Ctrl'], [1, 'Alt'], [4, 'Shift']].filter(([bit]) => message.mods & bit).map(([, n]) => n);
+          const keys = message.vk == null ? null : [...names, message.vk === 32 ? '空格' : String.fromCharCode(message.vk)];
+          const combo = keys && { mods: message.mods, vk: message.vk, keys, label: keys.join('+') };
+          const text = combo && !(message.mods & 11) ? '快捷键需要包含 Ctrl、Alt 或 Win'
+            : combo && message.mods === 3 && message.vk === 32 ? combo.label + ' 已经是“速览栅栏”的快捷键，请换一个' : null;
+          if (!text) {
+            state.windowsDesktopHotkey = { chosen: combo, registered: !!combo };
+            state.settings.windowsDesktopHotkey = combo ? combo.label : null;
+            setTimeout(window.testRefresh, 0);
+          }
+          setTimeout(() => receive({ data: { type: 'windowsDesktopHotkeyResult', ok: !text, text } }), 0);
         }
         if (message.name === 'addTemplate' && !state.rules.list.some(r => r.template === message.template)) {
           // Mirror the host: a new fence plus its rule at the top of the list.
@@ -216,7 +231,8 @@ async function runTests() {
     assert(sel.options.length === 4, 'Fence list incomplete');
     assert([...sel.options].map(o => o.textContent).join('|') === 'Documents|Images（Documents 的标签页）|Desktop（桌面）|Portal（文件夹）', 'Fence labels wrong: ' + [...sel.options].map(o => o.textContent).join('|'));
     assert(doc.getElementById('fencePortalGroup').style.display === 'none', 'Portal options shown for an ordinary fence');
-    assert(doc.getElementById('fenceHideEmpty').style.display === 'none', 'Hide-when-empty offered for an ordinary fence');
+    assert(doc.getElementById('fenceHideEmpty').style.display === '', 'Hide-when-empty not offered for an ordinary fence');
+    const fenceHideNote = doc.querySelector('#fenceHideEmpty .s').textContent;
     assert(doc.getElementById('fenceTintTitleOnly').style.display === 'none', 'Title-only tint offered without a tint');
     assert(doc.getElementById('fenceTabColor').style.display === 'none', 'Tab colour offered for a fence without tabs');
     assert(doc.querySelector('[data-fence=titleColor] [value=tint]').disabled, 'Follow-tint offered without a tint');
@@ -226,6 +242,7 @@ async function runTests() {
     assert(tintHint.hidden, 'Choose-a-tint hint shown although the fence has a tint');
     assert(doc.querySelector('[data-fence=locked]').classList.contains('on'), 'Lock state not shown');
     assert(doc.getElementById('fenceHideEmpty').style.display === '' && doc.querySelector('[data-fence=hideWhenEmpty]').classList.contains('on'), 'Inbox hide-when-empty not shown');
+    assert(doc.querySelector('#fenceHideEmpty .s').textContent !== fenceHideNote, 'Inbox hide-when-empty note is the one of other fences');
     assert(doc.getElementById('fenceTintTitleOnly').style.display === '' && doc.querySelector('[data-fence=tintTitleOnly]').classList.contains('on'), 'Title-only tint not shown');
     assert(doc.querySelector('[data-fence=tint]').value === '0078D4', 'Palette tint not selected');
     assert(doc.querySelector('[data-fence=titleColor]').value === 'tint' && !doc.querySelector('[data-fence=titleColor] [value=tint]').disabled, 'Follow-tint title not shown');
@@ -1016,6 +1033,41 @@ async function runTests() {
     current().peekHotkey.active = null;
     win().testRefresh(); await settle();
     assert(help.classList.contains('error') && hotkeyText() === 'Win+空格', 'All-taken state not shown: ' + help.textContent);
+  });
+  await test('The Windows desktop shortcut starts unset, records a combination and clears', async () => {
+    doc = await reset();
+    const box = doc.getElementById('wdHotkey'), clear = doc.getElementById('wdHotkeyClear'), help = doc.getElementById('wdHotkeyHelp');
+    const wdText = () => [...doc.querySelectorAll('#wdHotkeyKeys kbd')].map(k => k.textContent).join('+');
+    assert(wdText() === '' && doc.getElementById('wdHotkeyKeys').textContent.includes('未设置') && clear.hidden, 'An unset shortcut is not shown as unset');
+    box.focus(); box.click(); await settle();
+    assert(box.classList.contains('recording') && sent('windowsDesktopHotkeyRecording').at(-1)?.on === true, 'Recording did not start');
+    // Peek's shortcut is refused and the recording goes on.
+    press(box, ' ', 32, { ctrlKey: true, altKey: true }); await settle();
+    assert(help.classList.contains('error') && help.textContent.includes('速览栅栏') && box.classList.contains('recording'), 'Peek shortcut not refused: ' + help.textContent);
+    press(box, 'd', 68, { ctrlKey: true, altKey: true }); await settle();
+    const set = sent('setWindowsDesktopHotkey').at(-1);
+    assert(set && set.mods === 3 && set.vk === 68, 'Wrong combination sent: ' + JSON.stringify(set));
+    assert(!box.classList.contains('recording') && wdText() === 'Ctrl+Alt+D' && !clear.hidden && !help.classList.contains('error'), 'Saved shortcut not shown: ' + wdText());
+    assert(current().settings.windowsDesktopHotkey === 'Ctrl+Alt+D', 'Shortcut not saved');
+    // Taken by another program after a restart: said under the box.
+    current().windowsDesktopHotkey.registered = false;
+    win().testRefresh(); await settle();
+    assert(help.classList.contains('error') && help.textContent.includes('Ctrl+Alt+D'), 'Taken shortcut not explained: ' + help.textContent);
+    clear.click(); await settle();
+    assert(sent('setWindowsDesktopHotkey').at(-1).vk === undefined && clear.hidden && wdText() === '', 'Clear did not remove the shortcut');
+    assert(current().settings.windowsDesktopHotkey === null, 'Clear not saved');
+  });
+  await test('The AI card copies a prompt that names this edition\'s CLI and opens the guide', async () => {
+    doc = await reset();
+    current().cliCommand = 'C:\\PecoFence\\pecofence-cli.exe';
+    win().testRefresh(); await settle();
+    let copied = '';
+    doc.execCommand = cmd => { copied = cmd === 'copy' ? doc.querySelector('textarea[readonly]')?.value || '' : ''; return true; };
+    doc.getElementById('copyAiPrompt').click(); await settle();
+    assert(copied.includes('`C:\\PecoFence\\pecofence-cli.exe skill`') && copied.includes('PecoFence'), 'Prompt does not name the CLI: ' + copied);
+    assert(!doc.querySelector('textarea[readonly]') && doc.getElementById('toast').classList.contains('on'), 'Copy left its field or showed no toast');
+    doc.getElementById('openCliDocs').click(); await settle();
+    assert(sent('openCliDocs').length === 1, 'CLI guide not opened');
   });
   await test('All ten languages switch live without changing user names or draft inputs', async () => {
     doc = await reset();

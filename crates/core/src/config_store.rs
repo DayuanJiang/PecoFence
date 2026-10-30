@@ -566,6 +566,16 @@ pub fn lint(cfg: &Config) -> Vec<Lint> {
             format!("peek.customHotkey {text:?} is not used ({problem}); Peek uses peek.hotkey"),
         );
     }
+    if let Some(text) = &cfg.settings.windows_desktop_hotkey
+        && let Err(problem) = crate::hotkey::Hotkey::parse(text).and_then(|h| h.check())
+    {
+        lint_at(
+            &mut out,
+            LintLevel::Warning,
+            "settings",
+            format!("windowsDesktopHotkey {text:?} is not used ({problem}); it has no shortcut"),
+        );
+    }
     if cfg.snapshots.len() > crate::model::MAX_SNAPSHOTS {
         lint_at(
             &mut out,

@@ -10,7 +10,7 @@ pub(super) fn peek_hotkey_label(h: Hotkey) -> String {
 }
 
 /// The key names of `h` in the interface language, one per key cap.
-fn hotkey_keys(h: Hotkey) -> Vec<String> {
+pub(super) fn hotkey_keys(h: Hotkey) -> Vec<String> {
     h.parts()
         .into_iter()
         .map(|part| {
@@ -40,7 +40,7 @@ fn hotkey_keys(h: Hotkey) -> Vec<String> {
 }
 
 /// Why the settings page cannot use `h`, in the interface language.
-fn hotkey_problem_text(problem: Problem, h: Hotkey) -> String {
+pub(super) fn hotkey_problem_text(problem: Problem, h: Hotkey) -> String {
     match problem {
         Problem::Malformed | Problem::UnsupportedKey => {
             pecofence_core::i18n::text("这个键不能用在快捷键里，请换一个").to_string()
@@ -59,6 +59,16 @@ fn hotkey_problem_text(problem: Problem, h: Hotkey) -> String {
     }
 }
 
+/// A shortcut as the settings page shows it: its codes, key caps and label.
+pub(super) fn hotkey_json(h: Hotkey) -> serde_json::Value {
+    serde_json::json!({
+        "mods": h.mods,
+        "vk": h.vk,
+        "keys": hotkey_keys(h),
+        "label": peek_hotkey_label(h),
+    })
+}
+
 /// Peek search: the shown name or the file name (with the extension the shown name may hide)
 /// contains `query`, which is lower case. Shell namespace items (Recycle Bin, ...) match by
 /// their shown name only.
@@ -73,8 +83,8 @@ pub(super) fn search_matches(name: &str, path: Option<&str>, query: &str) -> boo
 impl App {
     /// Registers / re-registers / drops the Peek hotkey to match the settings.
     pub(super) fn sync_peek_hotkey(&mut self) {
-        // The settings page is recording a shortcut: `resume_peek_hotkey` syncs once it ends.
-        if self.peek_hotkey_paused {
+        // The settings page is recording a shortcut: `resume_hotkeys` syncs once it ends.
+        if self.hotkeys_paused {
             return;
         }
         let peek = &self.state.config.settings.peek;
@@ -141,9 +151,11 @@ impl App {
     /// Whether `h` can be the Peek hotkey right now: it is ours already, or `RegisterHotKey`
     /// takes it (and it is released again at once).
     pub(super) fn peek_hotkey_free(&self, h: Hotkey) -> bool {
-        if self.peek_hotkey == Some(h) {
-            return true;
-        }
+        self.peek_hotkey == Some(h) || self.hotkey_free(h)
+    }
+
+    /// Whether `RegisterHotKey` takes `h` (it is released again at once).
+    pub(super) fn hotkey_free(&self, h: Hotkey) -> bool {
         let hwnd = self.control.hwnd();
         let free = hotkey::register(hwnd, HOTKEY_PROBE, h.mods | hotkey::mods::NOREPEAT, h.vk);
         if free {
@@ -152,35 +164,47 @@ impl App {
         free
     }
 
-    /// The settings page started recording a shortcut: release ours so that pressing it
-    /// reaches the page instead of starting a Peek.
-    pub(super) fn pause_peek_hotkey(&mut self) {
-        if !self.peek_hotkey_paused && self.peek_hotkey.is_some() {
-            hotkey::unregister(self.control.hwnd(), HOTKEY_PEEK);
-            self.peek_hotkey_paused = true;
-        }
-    }
-
-    /// Recording ended (or the settings window went away): register the shortcut again.
-    pub(super) fn resume_peek_hotkey(&mut self) {
-        if !std::mem::take(&mut self.peek_hotkey_paused) {
+    /// The settings page started recording a shortcut: release ours so that pressing one
+    /// reaches the page instead of starting a Peek or 「临时显示 Windows 桌面」.
+    pub(super) fn pause_hotkeys(&mut self) {
+        if self.hotkeys_paused {
             return;
         }
-        let before = self.peek_hotkey;
-        if let Some(h) = before
-            && !hotkey::register(
-                self.control.hwnd(),
-                HOTKEY_PEEK,
-                h.mods | hotkey::mods::NOREPEAT,
-                h.vk,
-            )
+        let hwnd = self.control.hwnd();
+        if self.peek_hotkey.is_some() {
+            hotkey::unregister(hwnd, HOTKEY_PEEK);
+        }
+        if self.windows_desktop_hotkey.is_some() {
+            hotkey::unregister(hwnd, HOTKEY_WINDOWS_DESKTOP);
+        }
+        self.hotkeys_paused = true;
+    }
+
+    /// Recording ended (or the settings window went away): register the shortcuts again.
+    pub(super) fn resume_hotkeys(&mut self) {
+        if !std::mem::take(&mut self.hotkeys_paused) {
+            return;
+        }
+        let before = (self.peek_hotkey, self.windows_desktop_hotkey);
+        let hwnd = self.control.hwnd();
+        let again =
+            |id: i32, h: Hotkey| hotkey::register(hwnd, id, h.mods | hotkey::mods::NOREPEAT, h.vk);
+        // Another program took one meanwhile: the syncs below try again (Peek through its
+        // fallbacks).
+        if let Some(h) = self.peek_hotkey
+            && !again(HOTKEY_PEEK, h)
         {
-            // Another program took it meanwhile: the sync goes through the fallbacks again.
             self.peek_hotkey = None;
+        }
+        if let Some(h) = self.windows_desktop_hotkey
+            && !again(HOTKEY_WINDOWS_DESKTOP, h)
+        {
+            self.windows_desktop_hotkey = None;
         }
         // Settings applied during the recording (pecofence-cli, say) take effect now.
         self.sync_peek_hotkey();
-        if self.peek_hotkey != before {
+        self.sync_windows_desktop_hotkey();
+        if (self.peek_hotkey, self.windows_desktop_hotkey) != before {
             self.push_settings_state();
         }
     }
@@ -188,11 +212,20 @@ impl App {
     /// 「快捷键」 on the settings page: a recorded key press or a quick choice. A combination
     /// that is refused or taken leaves the settings as they are and the page keeps recording.
     pub(super) fn set_peek_hotkey_from_page(&mut self, mods: u32, vk: u32) {
-        let recording = self.peek_hotkey_paused;
-        self.resume_peek_hotkey();
+        let recording = self.hotkeys_paused;
+        self.resume_hotkeys();
         let h = Hotkey::new(mods, vk);
         let refused = match h.check() {
             Err(problem) => Some(hotkey_problem_text(problem, h)),
+            Ok(_) if self.state.config.settings.windows_desktop_hotkey() == Some(h) => {
+                Some(pecofence_core::i18n::format(
+                    "{0} 已经是“{1}”的快捷键，请换一个",
+                    &[
+                        peek_hotkey_label(h),
+                        pecofence_core::i18n::text("临时显示 Windows 桌面").to_string(),
+                    ],
+                ))
+            }
             Ok(_) if !self.peek_hotkey_free(h) => {
                 tracing::info!(hotkey = %h, "peek hotkey refused: taken");
                 Some(pecofence_core::i18n::format(
@@ -203,7 +236,7 @@ impl App {
             Ok(_) => None,
         };
         match &refused {
-            Some(_) if recording => self.pause_peek_hotkey(),
+            Some(_) if recording => self.pause_hotkeys(),
             Some(_) => {}
             None => {
                 let mut settings = self.state.config.settings.clone();
@@ -229,18 +262,10 @@ impl App {
     /// `peekHotkey` of the settings state: the chosen shortcut, the one registered (`null`
     /// when Peek is off or every combination is taken) and the quick choices.
     pub(super) fn peek_hotkey_json(&self) -> serde_json::Value {
-        let combo = |h: Hotkey| {
-            serde_json::json!({
-                "mods": h.mods,
-                "vk": h.vk,
-                "keys": hotkey_keys(h),
-                "label": peek_hotkey_label(h),
-            })
-        };
         serde_json::json!({
-            "chosen": combo(self.state.config.settings.peek.chosen_hotkey()),
-            "active": self.peek_hotkey.map(combo),
-            "presets": PRESETS.map(combo),
+            "chosen": hotkey_json(self.state.config.settings.peek.chosen_hotkey()),
+            "active": self.peek_hotkey.map(hotkey_json),
+            "presets": PRESETS.map(hotkey_json),
         })
     }
 
