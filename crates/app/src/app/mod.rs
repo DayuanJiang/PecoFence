@@ -361,6 +361,14 @@ pub struct App {
 
 pub type AppCell = Rc<RefCell<Option<App>>>;
 
+/// What to do when Windows refuses to read the saved files because they are not encrypted
+/// (`ReadError::not_encrypted`): the Store edition's data then lives on another drive.
+fn not_encrypted_hint() -> &'static str {
+    pecofence_core::i18n::text(
+        "商店版装在 C 盘以外时会这样：请在 Windows 设置 › 应用 › 已安装的应用 中把 PecoFence 移到 C 盘，或改用便携版。",
+    )
+}
+
 /// Seconds from Explorer's start to this process's, to a tenth (negative: Explorer restarted
 /// since).
 fn seconds_after_explorer() -> Option<f64> {
@@ -420,6 +428,10 @@ impl App {
             fences = state.fences().len(),
             "config loaded"
         );
+        for (what, path, error) in &state.load_failures {
+            let what = *what;
+            tracing::warn!(what, path = %path.display(), error = %error, "config file unusable");
+        }
         if let Some(p) = &state.recovered_from {
             tracing::warn!(from = %p.display(), "config recovered from backup");
         }
@@ -1287,7 +1299,21 @@ impl App {
             }));
         }
 
-        if let Some(moved) = &app.state.unreadable_moved_to
+        let not_encrypted = app
+            .state
+            .load_failures
+            .iter()
+            .any(|(_, _, e)| e.not_encrypted());
+        if not_encrypted && let Some(t) = &app.tray {
+            // Short enough for the four lines a notice shows.
+            t.show_info(
+                "PecoFence",
+                pecofence_core::i18n::text(
+                    "无法读取保存的设置（Windows 错误 409）。请把 PecoFence 移到 C 盘（Windows 设置 › 应用 › 已安装的应用），或改用便携版。",
+                ),
+                true,
+            );
+        } else if let Some(moved) = &app.state.unreadable_moved_to
             && let Some(t) = &app.tray
         {
             t.show_info(

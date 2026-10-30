@@ -483,6 +483,8 @@
   "、": ", ",
   "“{0}”": "« {0} »",
   "无法读取配置文件（可能是较新版本的 PecoFence 写入的），原文件已改名为 {0}。": "Impossible de lire le fichier de configuration (il a peut-être été écrit par une version plus récente de PecoFence). Le fichier d’origine a été renommé en {0}.",
+  "无法读取保存的设置（Windows 错误 409）。请把 PecoFence 移到 C 盘（Windows 设置 › 应用 › 已安装的应用），或改用便携版。": "Impossible de lire les paramètres enregistrés (erreur Windows 409). Déplacez PecoFence vers C: (Paramètres › Applications › Applications installées) ou utilisez l’édition portable.",
+  "商店版装在 C 盘以外时会这样：请在 Windows 设置 › 应用 › 已安装的应用 中把 PecoFence 移到 C 盘，或改用便携版。": "Cela arrive quand l’édition Store n’est pas sur C:. Déplacez-la vers C: dans Paramètres Windows › Applications › Applications installées, ou utilisez l’édition portable.",
   "无法保存配置，退出后更改会丢失。请检查这个文件夹能否写入：{0}": "Impossible d’enregistrer la configuration, les modifications seront perdues à la fermeture. Vérifiez que ce dossier est accessible en écriture : {0}",
   "最多只能有 {0} 个栅栏（含标签页），请先删除或合并一些。": "Vous pouvez avoir au plus {0} groupes (onglets compris). Supprimez-en ou fusionnez-en d’abord.",
   "要删除栅栏“{0}”吗？": "Supprimer le groupe « {0} » ?",

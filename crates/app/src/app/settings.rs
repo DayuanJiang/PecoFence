@@ -202,10 +202,15 @@ impl App {
                 self.state.save_snapshot(source.before());
                 self.adopt_config(cfg, source);
             }
-            Err(e) => self.settings_error(&pecofence_core::i18n::format(
-                "无法使用此文件：{0}",
-                std::slice::from_ref(&e),
-            )),
+            Err(e) => {
+                tracing::warn!(error = %e, "config file to restore unusable");
+                let mut text =
+                    pecofence_core::i18n::format("无法使用此文件：{0}", &[e.to_string()]);
+                if e.not_encrypted() {
+                    text = format!("{text} {}", not_encrypted_hint());
+                }
+                self.settings_error(&text);
+            }
         }
     }
 
