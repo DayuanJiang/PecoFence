@@ -275,7 +275,7 @@
   "隐藏 Windows 桌面图标": "Ocultar iconos del escritorio de Windows",
   "双击桌面空白处隐藏或显示栅栏": "Ocultar o mostrar los grupos con doble clic en el escritorio",
   "关闭 PecoFence 时保持 Windows 桌面图标隐藏": "Mantener ocultos los iconos del escritorio de Windows al cerrar PecoFence",
-  "登录时 Windows 会先显示桌面图标，等 PecoFence 启动后才隐藏。打开后，退出或注销时图标保持隐藏，下次登录就不会闪现；PecoFence 没有运行时，桌面上不显示图标": "Al iniciar sesión, Windows muestra los iconos del escritorio hasta que PecoFence se inicia y los oculta. Con esta opción activada, siguen ocultos al salir o cerrar sesión, así que no aparecen un instante al volver a iniciar sesión. Mientras PecoFence no se ejecuta, el escritorio no muestra iconos",
+  "登录时 Windows 会先显示桌面图标，等 PecoFence 启动后才隐藏。打开后，退出或注销时图标保持隐藏，下次登录就不会闪现；PecoFence 没有运行时，桌面上不显示图标。要让图标重新显示，右键桌面，选“查看”→“显示桌面图标”": "Al iniciar sesión, Windows muestra los iconos del escritorio hasta que PecoFence se inicia y los oculta. Con esta opción activada, siguen ocultos al salir o cerrar sesión, así que no aparecen un instante al volver a iniciar sesión. Mientras PecoFence no se ejecuta, el escritorio no muestra iconos. Para volver a mostrarlos, haz clic con el botón derecho en el escritorio y elige «Ver» → «Mostrar iconos del escritorio»",
   "显示 Windows 桌面图标时隐藏“桌面”栅栏": "Ocultar el grupo «Escritorio» mientras se muestran los iconos del escritorio de Windows",
   "未归类的项目只留在 Windows 桌面上；关闭“隐藏 Windows 桌面图标”后可用": "Los elementos sin clasificar quedan solo en el escritorio de Windows; disponible cuando «Ocultar iconos del escritorio de Windows» está desactivado",
   "在桌面空白处拖出矩形时提供“在此新建栅栏”": "Ofrecer «Crear grupo aquí» al dibujar un rectángulo en el escritorio",
