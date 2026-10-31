@@ -386,7 +386,7 @@ impl App {
             .iter()
             .enumerate()
             .map(|(i, f)| {
-                let label = if self.state.portal_path(f.id).is_some() {
+                let label = if self.state.move_target_folder(f.id).is_some() {
                     pecofence_core::i18n::format(
                         "{0}（文件会移到此文件夹）",
                         &[self.state.display_title(f).to_string()],

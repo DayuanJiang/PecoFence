@@ -1901,7 +1901,7 @@ impl App {
                 ids.push(id);
             }
         }
-        let into_portal = self.state.portal_path(to);
+        let into_portal = self.state.move_target_folder(to);
         let desktop = shell::user_desktop();
         let mut plan = Vec::with_capacity(ids.len());
         for id in ids {

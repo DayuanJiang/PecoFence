@@ -627,10 +627,11 @@ impl App {
         self.schedule_save();
     }
 
-    /// Moves items into `to`. Virtual fences only change membership (files stay put); a portal
-    /// as source or target means a real file move (portal = folder view).
+    /// Moves items into `to`. Virtual fences only change membership (files stay put), also while
+    /// they show a folder opened in them; a portal as source or target means a real file move
+    /// (portal = folder view).
     pub(super) fn move_items(&mut self, items: &[ItemId], to: FenceId) {
-        if self.state.portal_path(to).is_some() {
+        if self.state.move_target_folder(to).is_some() {
             // Namespace items cannot be moved into a folder; they stay where they are.
             let paths: Vec<PathBuf> = items
                 .iter()

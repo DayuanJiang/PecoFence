@@ -1623,10 +1623,19 @@ impl AppState {
         true
     }
 
+    /// The folder that moving items into fence `to` puts their files in: what a folder portal
+    /// shows. `None` for any other fence, also while it shows a folder opened in it: moving
+    /// icons there (「移出栅栏」, a drop on the bare desktop, a 新建 or drop that lands later,
+    /// `item move`) only changes membership, so no desktop file goes into that folder unseen.
+    pub fn move_target_folder(&self, to: FenceId) -> Option<PathBuf> {
+        self.portal_root(to)?;
+        self.portal_path(to)
+    }
+
     pub fn move_items(&mut self, items: &[ItemId], to: FenceId) -> usize {
         // Portal fences show a folder, not desktop membership: nothing can be moved into them,
         // and their (runtime) items cannot be moved out.
-        if self.portal_path(to).is_some() {
+        if self.move_target_folder(to).is_some() {
             return 0;
         }
         let mut n = 0;
@@ -2726,6 +2735,35 @@ mod tests {
         assert!(state.portal_path(fence).is_none());
         assert_eq!(shown(&state), [own]);
         assert!(!state.portal_up(fence));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    /// While the 桌面 fence shows a folder opened in it, 「移出栅栏（放回“桌面”）」, a drop on the
+    /// bare desktop, a pending route and `item move` only change membership: the desktop file
+    /// is never moved into that folder, and the icon is back in view after going up.
+    #[test]
+    fn moving_icons_to_a_fence_showing_a_folder_only_changes_membership() {
+        let root = std::env::temp_dir().join(format!("pecofence-browse-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let mut state = test_state();
+        let inbox = state.inbox_id().unwrap();
+        let other = state.fences().iter().find(|f| f.id != inbox).unwrap().id;
+        let docs = add_item(&mut state, other, "Docs");
+        assert!(state.open_folder(inbox, &root));
+        assert!(state.portal_path(inbox).is_some());
+        assert!(state.move_target_folder(inbox).is_none());
+
+        assert_eq!(state.move_items(&[docs], inbox), 1);
+        assert!(state.fence(inbox).unwrap().contains_item(docs));
+        assert!(!state.fence(other).unwrap().contains_item(docs));
+        assert!(state.portal_up(inbox));
+        let f = state.fence(inbox).unwrap();
+        assert!(state.items_of(f).iter().any(|it| it.id == docs));
+
+        // A folder portal is a folder: moving into it is a file move, not a membership change.
+        let portal = state.new_portal_fence(&root, RECT::default()).unwrap();
+        assert_eq!(state.move_target_folder(portal), state.portal_path(portal));
+        assert_eq!(state.move_items(&[docs], portal), 0);
         std::fs::remove_dir_all(root).unwrap();
     }
 
