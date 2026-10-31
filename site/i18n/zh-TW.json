@@ -89,5 +89,8 @@
   "agents.setup": "CLI 已隨應用程式附帶。Microsoft Store 版會將 <code>pecofence-cli</code> 加入 PATH；使用免安裝版時，告訴助理 <code>pecofence-cli.exe</code> 的完整路徑即可。",
   "agents.starter": "請用 pecofence-cli 幫我設定桌面。先閱讀 pecofence-cli skill 和 pecofence-cli describe，再查看目前的設定與圍欄。修改前先備份設定，然後切換為深色模式，並把所有圍欄調得更透明。",
   "agents.copy": "複製 AI 提示詞",
-  "agents.contract": "為 AI 與指令碼而設計：<code>describe</code> 輸出指令目錄與 JSON Schema，<code>skill</code> 輸出使用指南。每次執行都以 JSON 回報改了什麼；出錯時回傳結構化錯誤，助理可據此決定下一步。"
+  "agents.contract": "為 AI 與指令碼而設計：<code>describe</code> 輸出指令目錄與 JSON Schema，<code>skill</code> 輸出使用指南。每次執行都以 JSON 回報改了什麼；出錯時回傳結構化錯誤，助理可據此決定下一步。",
+  "notfound.title": "找不到頁面",
+  "notfound.text": "你要找的頁面不存在，或已經移到別處。",
+  "notfound.home": "返回首頁"
 }

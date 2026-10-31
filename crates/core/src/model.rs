@@ -114,6 +114,11 @@ pub struct Settings {
     pub roll_up: RollUpSettings,
     pub show_desktop: ShowDesktopSetting,
     pub hide_real_icons: bool,
+    /// With `hideRealIcons`, Windows' desktop icons stay hidden when PecoFence exits or the
+    /// session ends, so they do not show for a moment at the next sign-in before PecoFence
+    /// starts. A crash still shows them.
+    #[serde(default)]
+    pub keep_icons_hidden: bool,
     /// While `hideRealIcons` is off, the inbox fence has no window: the items no rule files
     /// show only among Windows' own desktop icons.
     #[serde(default)]
@@ -230,6 +235,7 @@ impl Default for Settings {
             roll_up: RollUpSettings::default(),
             show_desktop: ShowDesktopSetting::KeepVisible,
             hide_real_icons: true,
+            keep_icons_hidden: false,
             hide_inbox_when_icons_shown: false,
             offer_new_fence: true,
             show_real_icons_when_fences_hidden: false,
@@ -768,6 +774,10 @@ pub struct Fence {
     /// "Navigate"); off = open it in Explorer.
     #[serde(default = "default_true")]
     pub portal_navigate: bool,
+    /// Any other fence: double-clicking a folder, or a shortcut to a folder, shows that folder
+    /// inside the fence until the fence goes up from it; off (the default) = open it in Explorer.
+    #[serde(default)]
+    pub open_folders_inside: bool,
     /// Folder portal: hide the folder glyph before the title.
     #[serde(default)]
     pub hide_title_icon: bool,
@@ -802,6 +812,7 @@ impl Fence {
             active_tab: None,
             tab_order: Vec::new(),
             portal_navigate: true,
+            open_folders_inside: false,
             hide_title_icon: false,
             hide_when_empty: false,
             expand_upward: false,
@@ -811,6 +822,16 @@ impl Fence {
 
     pub fn contains_item(&self, id: ItemId) -> bool {
         self.items.iter().any(|r| r.item_id == id)
+    }
+
+    /// A double-clicked folder opens inside the fence: `portal_navigate` for a folder portal,
+    /// `open_folders_inside` for any other fence.
+    pub fn navigates_folders(&self) -> bool {
+        if self.kind == FenceKind::FolderPortal {
+            self.portal_navigate
+        } else {
+            self.open_folders_inside
+        }
     }
 }
 
@@ -1654,9 +1675,11 @@ mod tests {
         let obj = json.as_object_mut().unwrap();
         assert!(obj.remove("offerNewFence").is_some());
         assert!(obj.remove("hideInboxWhenIconsShown").is_some());
+        assert!(obj.remove("keepIconsHidden").is_some());
         let legacy: Settings = serde_json::from_value(json).unwrap();
         assert!(legacy.offer_new_fence);
         assert!(!legacy.hide_inbox_when_icons_shown);
+        assert!(!legacy.keep_icons_hidden);
     }
 
     #[test]
@@ -1708,6 +1731,17 @@ mod tests {
         let json = serde_json::to_value(&settings).unwrap();
         assert_eq!(json["rollUp"]["hideCountAndChevron"], true);
         assert_eq!(serde_json::from_value::<Settings>(json).unwrap(), settings);
+    }
+
+    /// Fences saved before `openFoldersInside` keep opening folders in Explorer, whatever their
+    /// `portalNavigate` (saved as true for every fence).
+    #[test]
+    fn open_folders_inside_defaults_off() {
+        let mut json = serde_json::to_value(Fence::new("A", FenceKind::Virtual, geo())).unwrap();
+        json.as_object_mut().unwrap().remove("openFoldersInside");
+        let legacy: Fence = serde_json::from_value(json).unwrap();
+        assert!(legacy.portal_navigate);
+        assert!(!legacy.open_folders_inside);
     }
 
     fn geo() -> NormGeometry {

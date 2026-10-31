@@ -49,7 +49,8 @@ SolidCompression=yes
 WizardStyle=modern
 AppMutex={#AppMutexNames}
 SetupMutex=Local\{#ProductId}.Setup
-; The app/watchdog must restore desktop icons through their normal exit path.
+; The app/watchdog must restore desktop icons through their normal exit path (or leave them
+; hidden on purpose; uninstalling then shows them again, see RestoreKeptDesktopIcons).
 CloseApplications=no
 RestartApplications=no
 
@@ -64,6 +65,7 @@ Name: "fr"; MessagesFile: "compiler:Languages\French.isl"
 Name: "es"; MessagesFile: "compiler:Languages\Spanish.isl"
 Name: "pt_BR"; MessagesFile: "compiler:Languages\BrazilianPortuguese.isl"
 Name: "ru"; MessagesFile: "compiler:Languages\Russian.isl"
+Name: "it"; MessagesFile: "compiler:Languages\Italian.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
@@ -102,6 +104,7 @@ fr.AlreadyInstalled=PecoFence est déjà installé dans %1. Pour l'installer dan
 es.AlreadyInstalled=PecoFence ya está instalado en %1. Para instalarlo en otra carpeta, desinstálalo primero.
 pt_BR.AlreadyInstalled=O PecoFence já está instalado em %1. Para instalá-lo em outra pasta, desinstale-o primeiro.
 ru.AlreadyInstalled=PecoFence уже установлен в %1. Чтобы установить его в другую папку, сначала удалите его.
+it.AlreadyInstalled=PecoFence è già installato in %1. Per installarlo in un’altra cartella, disinstallalo prima.
 en.InvalidDestination=This folder already contains other files. Choose an empty folder, or the folder that already contains PecoFence.
 zh_CN.InvalidDestination=这个文件夹里已经有别的文件了。请选一个空文件夹，或者原来放 PecoFence 的文件夹。
 zh_TW.InvalidDestination=這個資料夾裡已經有其他檔案。請選一個空資料夾，或原本放 PecoFence 的資料夾。
@@ -112,6 +115,7 @@ fr.InvalidDestination=Ce dossier contient déjà d'autres fichiers. Choisissez u
 es.InvalidDestination=Esta carpeta ya tiene otros archivos. Elige una carpeta vacía o la que ya contiene PecoFence.
 pt_BR.InvalidDestination=Esta pasta já tem outros arquivos. Escolha uma pasta vazia ou a que já contém o PecoFence.
 ru.InvalidDestination=В этой папке уже есть другие файлы. Выберите пустую папку или ту, где уже лежит PecoFence.
+it.InvalidDestination=Questa cartella contiene già altri file. Scegli una cartella vuota o quella che contiene già PecoFence.
 en.NewerVersion=A newer version of PecoFence is already installed. Uninstall it first to install this older version. Your settings and fences are kept.
 zh_CN.NewerVersion=已经装了更新的 PecoFence。要装这个旧版本，请先卸载。设置和栅栏都会保留。
 zh_TW.NewerVersion=已經安裝了較新的 PecoFence。要安裝這個舊版本，請先解除安裝。設定和圍欄都會保留。
@@ -122,6 +126,7 @@ fr.NewerVersion=Une version plus récente de PecoFence est déjà installée. Po
 es.NewerVersion=Ya hay una versión más reciente de PecoFence instalada. Para instalar esta versión anterior, desinstálala primero. Tus ajustes y grupos se conservan.
 pt_BR.NewerVersion=Uma versão mais recente do PecoFence já está instalada. Para instalar esta versão anterior, desinstale-a primeiro. Suas configurações e grupos são mantidos.
 ru.NewerVersion=Уже установлена более новая версия PecoFence. Чтобы установить старую версию, сначала удалите новую. Настройки и области сохранятся.
+it.NewerVersion=È già installata una versione più recente di PecoFence. Per installare questa versione precedente, disinstalla prima quella più recente. Le impostazioni e i riquadri vengono mantenuti.
 
 [Code]
 const
@@ -287,8 +292,26 @@ begin
       RegDeleteValue(HKCU, RunKey, Name);
 end;
 
+{ "Keep Windows desktop icons hidden" left them hidden when PecoFence closed for setup. The
+  watchdog, given no process to wait for, shows them again and removes the kept marker. Test
+  installers leave the developer's own desktop alone. }
+procedure RestoreKeptDesktopIcons;
+var
+  Kept: String;
+  ResultCode: Integer;
+begin
+#ifndef TestIdentity
+  Kept := ExpandConstant('{localappdata}\PecoFence\icons-hidden.kept');
+  if FileExists(Kept) then
+    Exec(ExpandConstant('{app}\pecofence-watchdog.exe'), '0 "' + Kept + '"', '', SW_HIDE,
+      ewWaitUntilTerminated, ResultCode);
+#endif
+end;
+
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
+  if CurUninstallStep = usUninstall then
+    RestoreKeptDesktopIcons;
   if CurUninstallStep = usPostUninstall then begin
     RemoveOwnedStartupValue('{#CurrentRunName}');
     RemoveOwnedStartupValue('{#LegacyRunName}');

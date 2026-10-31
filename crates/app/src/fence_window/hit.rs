@@ -81,19 +81,62 @@ impl FenceViewState {
         y >= 0.0 && y < RowMetrics::details().header_h
     }
 
-    /// Is the client-pixel point on the portal "up" button? A tab strip in the title row has
-    /// none; a left tab column has it at the end of the shown tab's row (`rail_up_box`).
+    /// Is the client-pixel point on the portal "up" button? A tab strip in the title row has it
+    /// on the shown tab's folder glyph (`FenceChrome::tab_up_box`); a left tab column at the end
+    /// of the shown tab's row (`rail_up_box`); a single title on its folder glyph
+    /// (`FenceChrome::lone_up_box`), or at the far left while the glyph is hidden.
     pub(super) fn up_button_at(&self, x_px: i32, y_px: i32) -> bool {
-        if !self.deco.up_button || self.title_row_strip() {
+        if !self.deco.up_button {
             return false;
         }
         let scale = self.scale();
         let (x, y) = (x_px as f32 / scale, y_px as f32 / scale);
-        let r = if self.tabs_on_rail() {
+        let r = if self.title_row_strip() {
+            // The pill is where it is drawn (sliding, dragged); a scrolled strip's cut-off part
+            // takes no click (`tab_at`). A tab without its folder glyph has no button.
+            let i = self.active_index();
+            let Some(t) = self.tabs.get(i).filter(|t| t.up_button && t.folder_icon) else {
+                return false;
+            };
+            let (Some(&tab_x), Some(&(_, tab_w))) = (
+                self.tab_draw_xs(Instant::now()).get(i),
+                self.tab_rects().get(i),
+            ) else {
+                return false;
+            };
+            if self.tab_at(x_px, y_px) != Some(i) {
+                return false;
+            }
+            let badge = self.tab_badge(t.id);
+            self.chrome.tab_up_box(
+                &self.theme,
+                tab_x,
+                tab_w,
+                &t.title,
+                t.title_size,
+                badge.as_deref(),
+            )
+        } else if self.tabs_on_rail() {
             match self.rail_up_box() {
                 Some(r) => r,
                 None => return false,
             }
+        } else if self.deco.folder_icon {
+            // The title moves aside for the rolled item count, as drawn.
+            let width = self.chrome_panel.size_px().0 as f32 / scale;
+            let reserve = if self.roll_target() && !self.behavior.hide_count_and_chevron.get() {
+                pecofence_render::fence_chrome::header_count_width(width, 1, self.deco.title_x())
+            } else {
+                0.0
+            };
+            self.chrome.lone_up_box(
+                &self.title,
+                self.style.title_size,
+                self.behavior.title_align.get(),
+                width,
+                reserve,
+                self.theme.title_height,
+            )
         } else {
             TitleDeco::up_box(self.theme.title_height)
         };

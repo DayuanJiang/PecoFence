@@ -89,5 +89,8 @@
   "agents.setup": "CLI는 앱에 포함되어 있습니다. Microsoft Store 버전은 <code>pecofence-cli</code>를 PATH에 추가합니다. 포터블 ZIP에서는 에이전트에게 <code>pecofence-cli.exe</code>의 전체 경로를 알려 주세요.",
   "agents.starter": "pecofence-cli로 내 바탕 화면을 설정해 주세요. 먼저 pecofence-cli skill과 pecofence-cli describe를 읽고 현재 설정과 펜스를 확인해 주세요. 변경하기 전에 설정을 백업하고, 다크 모드로 바꾼 다음 모든 펜스를 좀 더 투명하게 해 주세요.",
   "agents.copy": "AI 요청 복사",
-  "agents.contract": "AI와 스크립트를 위한 인터페이스: <code>describe</code>는 명령 목록과 JSON Schema를, <code>skill</code>은 에이전트 가이드를 출력합니다. JSON 결과로 실제 변경 내용을 확인하고, 구조화된 앱 오류를 바탕으로 다음 작업을 결정할 수 있습니다."
+  "agents.contract": "AI와 스크립트를 위한 인터페이스: <code>describe</code>는 명령 목록과 JSON Schema를, <code>skill</code>은 에이전트 가이드를 출력합니다. JSON 결과로 실제 변경 내용을 확인하고, 구조화된 앱 오류를 바탕으로 다음 작업을 결정할 수 있습니다.",
+  "notfound.title": "페이지를 찾을 수 없습니다",
+  "notfound.text": "찾으시는 페이지가 없거나 다른 곳으로 옮겨졌습니다.",
+  "notfound.home": "홈으로 돌아가기"
 }

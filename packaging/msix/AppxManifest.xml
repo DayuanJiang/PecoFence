@@ -37,6 +37,7 @@
     <Resource Language="es" />
     <Resource Language="pt-BR" />
     <Resource Language="ru" />
+    <Resource Language="it" />
   </Resources>
 
   <Dependencies>

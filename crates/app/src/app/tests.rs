@@ -439,6 +439,10 @@ mod ipc {
             ErrorCode::InvalidValue
         );
         assert_eq!(
+            parse_fence_prop("openFoldersInside", &json!(true)).unwrap(),
+            FenceProp::OpenFoldersInside(true)
+        );
+        assert_eq!(
             parse_fence_prop("opacity", &json!("transparent")).unwrap(),
             FenceProp::Opacity(Some(0.0))
         );

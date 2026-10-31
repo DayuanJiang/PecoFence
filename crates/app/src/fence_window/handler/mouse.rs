@@ -112,8 +112,11 @@ pub(super) fn on_lbuttondown(
         // ring lives on the content surface: arms that do not repaint it
         // anyway do so once below (one raster per click).
         let focus_cleared = std::mem::take(&mut v.focus_visible) && !v.rolled_up;
-        // Up button / chevron: pressed look now, action on release inside.
-        if v.up_button_at(x, y) || v.chevron_at(x, y) {
+        // Up button / chevron: pressed look now, action on release inside. In a title-row tab
+        // strip the up button is the shown tab's folder glyph, pressed as part of its tab below.
+        let up = v.up_button_at(x, y);
+        let tab_up = up && v.title_row_strip();
+        if (up && !tab_up) || v.chevron_at(x, y) {
             // A press on the chevron is about to toggle the roll-up: a
             // pending hover-peek must not fire under it.
             window::kill_timer(hwnd, TIMER_PEEK_OPEN);
@@ -151,7 +154,13 @@ pub(super) fn on_lbuttondown(
                 pointer_x,
             });
             v.tab_settle = None;
-            v.pressed = Some(PressTarget::Tab(t));
+            // On the up button the press is the button's (up on a release); a drag from it
+            // still moves the tab (`on_mousemove`).
+            v.pressed = Some(if tab_up {
+                PressTarget::Up
+            } else {
+                PressTarget::Tab(t)
+            });
             v.press_inside = true;
             // The click grants activation below; draw the accent now.
             if v.activate_by_pointer() || focus_cleared {
@@ -612,6 +621,7 @@ pub(super) fn on_lbuttondblclk(
                 queue.push(Command::LaunchItem {
                     item: item.id,
                     from: v.active,
+                    inside: true,
                 });
             }
         } else if v.tab_at(x, y).is_some() && !std::mem::take(&mut v.suppress_dblclk) {
