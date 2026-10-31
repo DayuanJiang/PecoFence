@@ -5,7 +5,8 @@ use super::*;
 
 impl App {
     /// Pushes the shown fence's portal decorations (folder glyph, up button, navigate flag) and
-    /// its display title into the host window. A regular fence showing a folder gets them too.
+    /// its display title into the host window. A regular fence showing a folder gets them too,
+    /// except the glyph: it marks folder portals, whose option hides it.
     pub(super) fn apply_portal_deco(&self, host: FenceId) {
         let Some(w) = self.fences.get(&host) else {
             return;
@@ -18,7 +19,7 @@ impl App {
         let is_portal = folder.is_some();
         w.set_portal_deco(
             is_portal,
-            is_portal && !f.hide_title_icon,
+            f.kind == FenceKind::FolderPortal && !f.hide_title_icon,
             self.state.can_go_up(active),
             is_portal && f.navigates_folders(),
             is_portal && self.state.portal_missing(active),

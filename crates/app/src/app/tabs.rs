@@ -9,18 +9,15 @@ impl App {
             .tabs_of(host)
             .into_iter()
             .filter_map(|id| self.state.fence(id))
-            .map(|f| {
-                let folder = self.state.portal_path(f.id);
-                TabView {
-                    id: f.id,
-                    // A navigated portal's tab names the subfolder actually shown / dropped into.
-                    title: self.state.display_title(f),
-                    color: f.appearance.as_ref().and_then(|a| a.tab_rgb.or(a.tint_rgb)),
-                    title_size: fence_style_for(f).title_size,
-                    title_color: fence_style_for(f).title_color,
-                    folder_icon: folder.is_some() && !f.hide_title_icon,
-                    folder,
-                }
+            .map(|f| TabView {
+                id: f.id,
+                folder: self.state.portal_path(f.id),
+                // A navigated portal's tab names the subfolder actually shown / dropped into.
+                title: self.state.display_title(f),
+                color: f.appearance.as_ref().and_then(|a| a.tab_rgb.or(a.tint_rgb)),
+                title_size: fence_style_for(f).title_size,
+                title_color: fence_style_for(f).title_color,
+                folder_icon: f.kind == FenceKind::FolderPortal && !f.hide_title_icon,
             })
             .collect()
     }
