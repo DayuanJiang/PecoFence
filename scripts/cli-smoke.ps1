@@ -163,6 +163,12 @@ try {
 
     # Issue #125: expandUpward keeps the bottom edge; the saved (expanded) rect stays put.
     Start-Sleep -Milliseconds 800  # the unroll above lands first
+    # The icon size change fitted the empty fence to one row (74 px at 100 %), less than the
+    # title row + 40 px an expand opens to at least, so the rect would not stay exact. 200 px
+    # at y 200 also fits on the screen on either side of its title row (a rect that would not
+    # moves the row), down to a 1024x768 screen.
+    Invoke-Cli @("fence", "move", $id, "--rect", "$($x + 200),$($work.y + 200),500,200") | Out-Null
+    Start-Sleep -Milliseconds 400
     $r = Invoke-Cli @("fence", "set", $id, "expandUpward", "true")
     $u = Json $r.Out
     Check "fence set expandUpward true" ($r.Code -eq 0 -and $u.fence.expandUpward -eq $true) "$($r.Out) $($r.Err)"
@@ -530,6 +536,15 @@ try {
     Start-Sleep -Milliseconds 800
     $w = Json (Invoke-Cli @("fence", "get", $top)).Out
     Check "expandUpward at the top of the screen: expands inside the work area" ($w.windowRect.y -ge $work.y -and $w.windowRect.y -eq $w.rect.y) "window=$($w.windowRect | ConvertTo-Json -Compress)"
+    # fence resize --h moves the top edge of a fence that expands upward, not its bottom one.
+    $was = $w.rect
+    Invoke-Cli @("fence", "resize", $top, "--h", "$($was.h - 60)") | Out-Null
+    $w = Json (Invoke-Cli @("fence", "get", $top)).Out
+    Check "expandUpward resize --h keeps the bottom edge" ($w.rect.h -eq ($was.h - 60) -and ($w.rect.y + $w.rect.h) -eq ($was.y + $was.h)) "before=$($was | ConvertTo-Json -Compress) after=$($w.rect | ConvertTo-Json -Compress)"
+    # Dock to top makes a shelf that opens downward from the top edge: the option goes off.
+    Invoke-Cli @("fence", "dock-top", $top) | Out-Null
+    $w = Json (Invoke-Cli @("fence", "get", $top)).Out
+    Check "dock-top turns expandUpward off: the title row sits at the top" ($w.expandUpward -eq $false -and $w.rolledUp -eq $true -and $w.windowRect.y -eq $work.y -and $w.rect.y -eq $work.y) "rect=$($w.rect | ConvertTo-Json -Compress) window=$($w.windowRect | ConvertTo-Json -Compress)"
     Invoke-Cli @("fence", "delete", $top) | Out-Null
 }
 finally {
