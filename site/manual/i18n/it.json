@@ -87,7 +87,7 @@
   "3.3 · 整理图标": "3.3 · Organizza le icone",
   "自动整理规则": "Regole di ordinamento automatico",
   "加一条规则，以后新文件就会自动放进你指定的栅栏。": "Aggiungi una regola e i nuovi file verranno inseriti automaticamente nel riquadro che hai scelto.",
-  "打开「设置」→「整理规则」（右键托盘图标，选<b>「设置…」</b>），展开<b>「新建规则」</b>。「规则名称」填「发票」，「条件类型」选<b>「名称包含」</b>，「条件值」也填「发票」。": "Apri «Impostazioni» → «Regole di ordinamento» (fai clic destro sull’icona nell’area di notifica e seleziona <b>«Impostazioni…»</b>), quindi espandi <b>«Nuova regola»</b>. Inserisci «Fatture» in «Nome della regola», seleziona <b>«Il nome contiene»</b> in «Tipo di condizione» e inserisci «Fatture» anche in «Valore della condizione»."
+  "打开「设置」→「整理规则」（右键托盘图标，选<b>「设置…」</b>），展开<b>「新建规则」</b>。「规则名称」填「发票」，「条件类型」选<b>「名称包含」</b>，「条件值」也填「发票」。": "Apri «Impostazioni» → «Regole di ordinamento» (fai clic destro sull’icona nell’area di notifica e seleziona <b>«Impostazioni…»</b>), quindi espandi <b>«Nuova regola»</b>. Inserisci «Fatture» in «Nome della regola», seleziona <b>«Il nome contiene»</b> in «Tipo di condizione» e inserisci «Fatture» anche in «Valore della condizione».",
   "「目标栅栏」选「报销」（这里只列出已有的栅栏），点<b>「添加规则」</b>。再点<b>「上移」</b>，把它排到「文件与文档」前面，不然发票会先进「文件与文档」。": "Imposta «Riquadro di destinazione» su «Note spese» (qui vengono mostrati solo i riquadri esistenti) e fai clic su <b>«Aggiungi regola»</b>. Poi fai clic su <b>«Sposta su»</b> per mettere la regola prima di «File e documenti». Altrimenti le fatture verrebbero prima inserite in «File e documenti».",
   "以后桌面上出现名字带「发票」的文件，就会自动进「报销」。": "Da ora in poi, i nuovi file sul desktop con «Fattura» nel nome verranno inseriti automaticamente in «Note spese».",
   "桌面上原有的图标不会自己挪。点<b>「立即应用」</b>，它们也会按规则重新放好，手动摆放过的除外。": "Le icone già presenti sul desktop non si spostano da sole. Fai clic su <b>«Applica ora»</b> per riordinarle secondo le regole, tranne quelle che hai posizionato manualmente.",
@@ -165,7 +165,7 @@
   "按住其中一个的标题栏拖动": "Trascina la barra del titolo di uno dei riquadri selezionati",
   "选中的栅栏一起移动": "Sposta insieme tutti i riquadri selezionati",
   "单击空白处": "Fai clic su una zona vuota",
-  "取消选择": "Annulla la selezione"
+  "取消选择": "Annulla la selezione",
   "栅栏": "Riquadri",
   "按住标题栏拖动": "Trascina tenendo premuta la barra del titolo",
   "移动栅栏": "Sposta il riquadro",
@@ -397,7 +397,7 @@
   "海报.png": "Poster.png",
   "点一下": "Fai clic",
   "按住 Ctrl 点": "Ctrl+clic",
-  "一起拖走": "Trascinali insieme"
+  "一起拖走": "Trascinali insieme",
   "拖到桌面空白处": "Rilascia in un punto vuoto del desktop",
   "放回「桌面」": "Riporta sul «Desktop»",
   "移动到 %1": "Sposta in %1",

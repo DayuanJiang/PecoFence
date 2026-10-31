@@ -89,5 +89,8 @@
   "agents.setup": "La CLI è inclusa. L'edizione Microsoft Store aggiunge <code>pecofence-cli</code> al PATH. Se usi lo ZIP portatile, indica al tuo agente il percorso di <code>pecofence-cli.exe</code>.",
   "agents.starter": "Usa pecofence-cli per configurare il mio desktop. Per prima cosa leggi le istruzioni di pecofence-cli e pecofence-cli describe, poi controlla le impostazioni e i riquadri attuali. Fai un backup della configurazione prima di apportare modifiche. Passa alla modalità scura e rendi tutti i riquadri più trasparenti.",
   "agents.copy": "Copia il prompt per l'IA",
-  "agents.contract": "Progettato per agenti e script: <code>describe</code> mostra il catalogo dei comandi e gli schemi JSON; <code>skill</code> stampa la guida per gli agenti. I risultati JSON indicano cosa è cambiato e gli errori strutturati dell'applicazione aiutano l'agente a scegliere il passaggio successivo."
+  "agents.contract": "Progettato per agenti e script: <code>describe</code> mostra il catalogo dei comandi e gli schemi JSON; <code>skill</code> stampa la guida per gli agenti. I risultati JSON indicano cosa è cambiato e gli errori strutturati dell'applicazione aiutano l'agente a scegliere il passaggio successivo.",
+  "notfound.title": "Pagina non trovata",
+  "notfound.text": "La pagina che cerchi non esiste o è stata spostata.",
+  "notfound.home": "Torna alla pagina iniziale"
 }

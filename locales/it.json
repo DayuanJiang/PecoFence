@@ -101,7 +101,7 @@
   "蓝": "Blu",
   "紫": "Viola",
   "粉": "Rosa",
-  "灰": "Grigio"
+  "灰": "Grigio",
   "新建文件夹": "Nuova cartella",
   "新建 文本文档": "Nuovo documento di testo",
   "新建 Internet 快捷方式": "Nuovo collegamento Internet",
@@ -133,8 +133,16 @@
   "布局与备份": "Disposizione e backup",
   "关于": "Informazioni",
   "主题风格": "Stile del tema",
+  "磨砂玻璃": "Vetro smerigliato",
+  "暖色": "Caldo",
+  "大圆角": "Arrotondato",
+  "自定义主题": "Tema personalizzato",
+  "主题文件放在 themes 文件夹里，选中后代替上面的风格，文件保存后栅栏立即更新": "I file dei temi vanno nella cartella themes; quello scelto sostituisce lo stile qui sopra e i riquadri si aggiornano appena salvi il file",
+  "打开主题文件夹": "Apri la cartella dei temi",
+  "写法说明": "Come scriverne uno",
+  "主题文件有误，正在使用内置风格：{0}": "Il file del tema contiene un errore, quindi è in uso lo stile integrato: {0}",
   "颜色模式": "Modalità colore",
-"图标名称颜色": "Colore etichetta dell’icona",
+  "图标名称颜色": "Colore etichetta dell’icona",
   "自动": "Automatico",
   "自动：液态玻璃按背后壁纸的明暗选深色或浅色，Fluent 跟随颜色模式；栅栏标题的颜色在“栅栏”页设置": "Automatico: Liquid Glass sceglie se usare testo scuro o chiaro in base allo sfondo; Fluent segue la modalità colore. I titoli dei riquadri hanno un colore dedicato nella pagina Riquadri.",
   "标题对齐": "Allineamento del titolo",
@@ -201,7 +209,7 @@
   "停靠": "Aggancio",
   "停靠到屏幕顶部": "Aggancia alla parte superiore dello schermo",
   "双击子文件夹时在此栅栏内打开": "Apri le sottocartelle in questo riquadro con un doppio clic",
-  "标题栏显示文件夹图标": "Mostra l'icona della cartella nella barra del titolo"  "整理规则": "Sorting rules",
+  "标题栏显示文件夹图标": "Mostra l'icona della cartella nella barra del titolo",
   "整理规则": "Regole di organizzazione",
   "立即应用": "Applica ora",
   "规则列表": "Regole",
@@ -333,7 +341,7 @@
   "收起后它们会回到原位": "Quando il riquadro si comprime, tornano alla posizione originale",
   "平时只显示图标，让桌面更清爽；每个栅栏可在“栅栏”页单独设置": "Mostra solo le icone quando non ci passi sopra con il puntatore, per mantenere il desktop ordinato. Puoi modificare questa impostazione per ogni riquadro nella pagina «riquadri»",
   "隐藏标题栏右侧的项目数和折叠箭头": "Nascondi il numero di elementi e la freccia di riduzione sul lato destro della barra del titolo",
-  "标题栏只显示名称；双击标题或用右键菜单收起和展开": "La barra del titolo mostra solo il nome. Fai doppio clic sul titolo o usa il menu contestuale per ridurre ed espandere"
+  "标题栏只显示名称；双击标题或用右键菜单收起和展开": "La barra del titolo mostra solo il nome. Fai doppio clic sul titolo o usa il menu contestuale per ridurre ed espandere",
   "鼠标在标签页上停留片刻就切换过去，不用点击": "Sposta il puntatore su una scheda per un momento per passare a essa senza fare clic",
   "有多个标签页时，标签排在标题栏里，或在栅栏左侧排成一列": "Se ci sono più schede, vengono disposte nella barra del titolo o in colonna sul lato sinistro del riquadro",
   "鼠标移到栅栏上或滚动时才显示": "Mostrate solo quando il puntatore è sul riquadro o mentre scorri",
@@ -357,11 +365,11 @@
   "贴到屏幕顶边并收起，鼠标悬停时展开，像一个下拉抽屉": "Aggancia e comprimi il riquadro sul bordo superiore dello schermo; passa il puntatore sopra per espanderlo come un cassetto a scomparsa",
   "关闭后双击子文件夹改为在资源管理器中打开": "Se disattivata, le sottocartelle si aprono in Esplora file con un doppio clic",
   "在标题前显示一个小文件夹图标": "Mostra una piccola icona di cartella prima del titolo",
-  "开源的 Windows 11 桌面整理工具": "Organizzatore del desktop open source per Windows 11",
+  "开源的 Windows 桌面整理工具": "Organizzatore del desktop open source per Windows",
   "记录所有栅栏的位置、大小和内容，随时恢复": "Salva la posizione, le dimensioni e il contenuto di tutti i riquadri per poterli ripristinare in qualsiasi momento",
   "把一个显示器上的全部栅栏搬到另一个，反之亦然": "Sposta tutti i riquadri da un monitor all'altro e viceversa",
   "导出为 JSON 以便迁移到另一台电脑；导入前会自动保存一份快照": "Esporta in formato JSON per trasferire la configurazione su un altro computer. Prima dell'importazione viene salvata automaticamente un'istantanea",
-  "桌面项目只显示在栅栏里，未归类的进入“桌面”栅栏；回收站等系统图标也会出现在“桌面”栅栏中": "Gli elementi del desktop vengono mostrati solo nei riquadri; quelli non classificati finiscono nel riquadro «Desktop». Anche le icone di sistema, come il Cestino, appaiono nel riquadro «Desktop»"
+  "桌面项目只显示在栅栏里，未归类的进入“桌面”栅栏；回收站等系统图标也会出现在“桌面”栅栏中": "Gli elementi del desktop vengono mostrati solo nei riquadri; quelli non classificati finiscono nel riquadro «Desktop». Anche le icone di sistema, come il Cestino, appaiono nel riquadro «Desktop»",
   "新项目出现在桌面时自动归类": "Organizza automaticamente i nuovi elementi sul desktop",
   "立即对桌面上的全部项目应用规则": "Applica subito le regole a tutti gli elementi sul desktop",
   "手动摆放过的项目保持原位": "Gli elementi posizionati manualmente restano dove sono",
@@ -369,7 +377,7 @@
   "没有命中规则的项目": "Elementi che non corrispondono ad alcuna regola",
   "应用规则时，已在某个栅栏里但不符合任何规则的项目放在哪里；不符合规则的新项目总是放进“桌面”栅栏": "Dove spostare, quando vengono applicate le regole, gli elementi già presenti in un riquadro che non corrispondono ad alcuna regola. I nuovi elementi che non corrispondono ad alcuna regola vengono sempre inseriti nel riquadro Desktop",
   "回到“桌面”栅栏": "Torna al riquadro Desktop",
-  "留在当前栅栏": "Resta nel riquadro corrente"
+  "留在当前栅栏": "Resta nel riquadro corrente",
   "结束时间早于开始时间，表示跨过午夜": "Se l’ora di fine è precedente a quella di inizio, l’intervallo attraversa la mezzanotte",
   "请填写大小范围": "Inserisci un intervallo di dimensioni",
   "请输入关键字": "Inserisci una parola chiave",
@@ -482,7 +490,7 @@
   "栅栏名称": "Nome del riquadro",
   "栅栏页\u0004文件夹": "Cartella",
   "示例\u0004截图": "Schermata",
-  "示例\u0004备份": "backup"
+  "示例\u0004备份": "backup",
   "PecoFence 上次意外关闭了。点击这里报告问题。": "PecoFence si è chiuso inaspettatamente l’ultima volta. Fai clic qui per segnalare il problema.",
   "PecoFence 上次意外关闭了，那次的日志会一起发送。如果还记得当时在做什么，请写在下面。": "PecoFence si è chiuso inaspettatamente l’ultima volta. Verrà inviato anche il registro di quella sessione. Se ricordi cosa stavi facendo, descrivilo qui sotto.",
   "其他": "Altro",
@@ -539,4 +547,4 @@
   "桌面整理好了": "Il desktop è in ordine",
   "文件都没有移动，只是显示在栅栏里。\n在桌面空白处拖出一个框可新建栅栏，双击空白处可隐藏或显示栅栏。": "I file non sono stati spostati: sono solo visualizzati nei riquadri.\nTrascina un riquadro su un’area vuota del desktop per creare un riquadro; fai doppio clic sull’area vuota per nascondere o mostrare i riquadri.",
   "没有匹配的文件": "Nessun file corrispondente"
-  }
+}
