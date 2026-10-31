@@ -281,15 +281,24 @@ fn half(value: f32) -> u16 {
 
 /// Geometry-only GPU inputs. Built on size/DPI changes, never on window movement.
 pub(crate) struct DisplacementField {
-    /// Half-float RGBA texels; R/G hold the x/y displacement around 0.5.
+    /// Half-float RGBA texels; R/G hold the x/y displacement around 0.5. One spare flat row
+    /// follows the last (see `rim`).
     pub width: u32,
     pub height: u32,
     pub rgba: Vec<u16>,
-    /// A8 specular ring at device resolution, the size of the plate.
+    /// A8 specular ring at device resolution, the size of the plate: rows `rim_pitch` bytes
+    /// apart (a multiple of 4), then one spare row. An AMD driver crashed reading just past a
+    /// tight buffer's end while uploading it (feedback #69).
     pub rim: Vec<u8>,
     pub rim_width: u32,
     pub rim_height: u32,
+    pub rim_pitch: u32,
     pub scale_px: f32,
+}
+
+/// Bytes between two rows of an A8 ring `width` pixels wide.
+fn rim_pitch(width: u32) -> u32 {
+    width.next_multiple_of(4)
 }
 
 pub(crate) fn displacement_field(
@@ -314,7 +323,7 @@ pub(crate) fn displacement_field(
     let map_h = (h * MAP_TEXELS_PER_DIP).ceil().max(2.0) as u32;
     let neutral = half(0.5);
     let flat = [neutral, neutral, neutral, half(1.0)];
-    let mut rgba = flat.repeat(map_w as usize * map_h as usize);
+    let mut rgba = flat.repeat(map_w as usize * (map_h as usize + 1));
     let mut put = |x: u32, y: u32, dx: f32, dy: f32| {
         let i = (y * map_w + x) as usize * 4;
         rgba[i] = half(0.5 - dx / scale_px);
@@ -360,13 +369,13 @@ pub(crate) fn displacement_field(
             }
         }
     }
-    let mut rim = vec![0u8; width as usize * height as usize];
+    let pitch = rim_pitch(width);
+    let mut rim = vec![0u8; pitch as usize * (height as usize + 1)];
     // Only pixels within the ring's 2 DIP (plus the corners) can be lit.
     let band = ((2.0 + radius) * scale).ceil() as u32 + 1;
     let side = (2.0 * scale).ceil() as u32 + 1;
     // The light is lit from both sides of one diagonal: a half turn maps the ring onto
     // itself, so the lower half is the upper half rotated.
-    let last = (width * height) as usize - 1;
     for y in 0..height.div_ceil(2) {
         let py = (y as f32 + 0.5) / scale;
         let full = y < band;
@@ -378,9 +387,9 @@ pub(crate) fn displacement_field(
             }
             let (nx, ny, depth) = edge((x as f32 + 0.5) / scale, py, w, h, radius);
             let alpha = rim_light(nx, ny, depth);
-            let i = (y * width + x) as usize;
-            rim[i] = (alpha * 255.0).round().clamp(0.0, 255.0) as u8;
-            rim[last - i] = rim[i];
+            let value = (alpha * 255.0).round().clamp(0.0, 255.0) as u8;
+            rim[(y * pitch + x) as usize] = value;
+            rim[((height - 1 - y) * pitch + width - 1 - x) as usize] = value;
             x += 1;
         }
     }
@@ -391,6 +400,7 @@ pub(crate) fn displacement_field(
         rim,
         rim_width: width,
         rim_height: height,
+        rim_pitch: pitch,
         scale_px,
     }
 }
@@ -840,7 +850,7 @@ mod tests {
         for scale in [1.0, 1.25, 1.5, 2.0] {
             let (w, h) = ((320.0 * scale) as u32, (120.0 * scale) as u32);
             let field = displacement_field(w, h, scale, 16.0);
-            let alpha = |x: u32, y: u32| field.rim[(y * w + x) as usize];
+            let alpha = |x: u32, y: u32| field.rim[(y * field.rim_pitch + x) as usize];
             let mid = h / 2;
             let peak = (1.0 * scale) as u32;
             assert!(
@@ -890,7 +900,7 @@ mod tests {
                     .iter()
                     .all(|&v| (0.0..=1.0).contains(&from_half(v)))
             );
-            assert_eq!(field.rim.len(), (w * h) as usize);
+            assert_eq!(field.rim.len(), (field.rim_pitch * (h + 1)) as usize);
         }
         let sharp = displacement_field(200, 200, 1.5, 0.0);
         assert!(
@@ -899,6 +909,47 @@ mod tests {
                 .chunks(4)
                 .all(|t| t[0] == 0x3800 && t[1] == 0x3800)
         );
+    }
+
+    #[test]
+    fn uploads_have_padded_rows_and_a_spare_row() {
+        for (w, h, scale) in [
+            (517, 301, 1.25),
+            (640, 64, 2.0),
+            (3, 5, 1.0),
+            (1001, 777, 1.5),
+        ] {
+            let field = displacement_field(w, h, scale, 16.0);
+            let pitch = field.rim_pitch;
+            assert!(
+                pitch.is_multiple_of(4) && pitch >= w && pitch - w < 4,
+                "{w}: pitch {pitch}"
+            );
+            assert_eq!(field.rim.len(), (pitch * (h + 1)) as usize);
+            let at = |x: u32, y: u32| field.rim[(y * pitch + x) as usize];
+            for y in 0..h {
+                for x in 0..w {
+                    assert_eq!(
+                        at(x, y),
+                        at(w - 1 - x, h - 1 - y),
+                        "{w}x{h}: half turn at {x},{y}"
+                    );
+                }
+                assert!(
+                    (w..pitch).all(|x| at(x, y) == 0),
+                    "{w}x{h}: padding of row {y}"
+                );
+            }
+            assert!(field.rim[(pitch * h) as usize..].iter().all(|&v| v == 0));
+            let row = field.width as usize * 4;
+            assert_eq!(field.rgba.len(), row * (field.height as usize + 1));
+            let spare = &field.rgba[row * field.height as usize..];
+            assert!(
+                spare
+                    .chunks(4)
+                    .all(|t| t == [0x3800, 0x3800, 0x3800, 0x3C00])
+            );
+        }
     }
 
     #[test]
