@@ -606,6 +606,9 @@ impl App {
             && let Some(dir) = folder_to_open(&path, is_folder)
             && self.open_folder_in_fence(from, &dir)
         {
+            if !self.state.is_portal_item(item) {
+                self.state.set_opened_by(from, item);
+            }
             self.note_opened(item);
             return;
         }

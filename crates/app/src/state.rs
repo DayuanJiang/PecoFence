@@ -1328,9 +1328,35 @@ impl AppState {
             .map(|n| n.to_string_lossy().to_string())
             .or_else(|| shell::normal_display_name(&root))
             .unwrap_or_else(|| root.to_string_lossy().to_string());
-        self.opened_folders.insert(id, OpenedFolder { root, title });
+        // A folder opened from another opened folder keeps the icon that opened the first one.
+        let opened_by = self.opened_folders.get(&id).and_then(|o| o.opened_by);
+        self.opened_folders.insert(
+            id,
+            OpenedFolder {
+                root,
+                title,
+                opened_by,
+            },
+        );
         self.refresh_portal(id);
         true
+    }
+
+    /// Notes the fence's own icon that opened the folder regular fence `id` shows (a desktop
+    /// folder or a folder shortcut), so up selects it again.
+    pub fn set_opened_by(&mut self, id: FenceId, item: ItemId) {
+        if let Some(o) = self.opened_folders.get_mut(&id) {
+            o.opened_by = Some(item);
+        }
+    }
+
+    /// What one level up selects, as in Explorer: the subfolder just left, or the fence's own
+    /// icon that opened the folder when up brings its icons back.
+    pub fn up_selection(&self, id: FenceId) -> Option<ItemId> {
+        match self.portal_cwd.get(&id) {
+            Some(cur) => Some(portal_item_id(&cur.to_string_lossy())),
+            None => self.opened_folders.get(&id).and_then(|o| o.opened_by),
+        }
     }
 
     /// Leaves the folder opened in regular fence `id`: it shows its own icons again. False when
@@ -2278,6 +2304,8 @@ struct OpenedFolder {
     root: PathBuf,
     /// The fence's title meanwhile: the folder's name, or a drive's display name.
     title: String,
+    /// The fence's own icon that opened it, selected again when up brings the icons back.
+    opened_by: Option<ItemId>,
 }
 
 /// Stable id for a portal item derived from its (case-folded) path, so selections and pending
@@ -2759,10 +2787,17 @@ mod tests {
             .collect();
         assert_eq!(held, [own]);
 
+        state.set_opened_by(fence, own);
         assert!(state.portal_enter(fence, &nested));
         assert!(state.portal_navigated(fence));
+        // Up selects the subfolder just left, then the icon that opened the folder.
+        assert_eq!(
+            state.up_selection(fence),
+            Some(portal_item_id(&nested.to_string_lossy()))
+        );
         assert!(state.portal_up(fence));
         assert_eq!(state.portal_path(fence).as_deref(), Some(root.as_path()));
+        assert_eq!(state.up_selection(fence), Some(own));
         // At the opened folder, up leaves it: the fence's own icons are back.
         assert!(state.portal_up(fence));
         assert!(!state.can_go_up(fence));

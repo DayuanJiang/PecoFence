@@ -284,9 +284,8 @@ impl App {
 
     /// One level up selects the folder just left, as in Explorer.
     pub(super) fn portal_up(&mut self, fence: FenceId) {
-        let left = self.state.portal_path(fence);
+        let left = self.state.up_selection(fence);
         if self.state.portal_up(fence) {
-            let left = left.map(|p| crate::state::portal_item_id(&p.to_string_lossy()));
             self.after_portal_navigation(fence, -1, left);
         }
     }
