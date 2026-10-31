@@ -425,10 +425,14 @@ impl App {
         };
         let r = w.rect();
         // Growing stops short of a fence below; the rest of the items scroll. A fence that
-        // expands upward keeps its bottom edge and never grows into the fences below it.
+        // expands upward keeps its bottom edge and stops short of a fence above instead (while
+        // it is expanded, the push pass has lifted those out of its way already).
         let upward = self.state.fence(id).is_some_and(|f| f.expand_upward);
         if !upward && let Some(limit) = self.growth_limit_below(id, &r) {
             h = h.min(limit.max(r.bottom) - r.top);
+        }
+        if let Some(limit) = self.growth_limit_above(id, &r) {
+            h = h.min(r.bottom - limit.min(r.top));
         }
         if r.bottom - r.top == h {
             return;

@@ -1109,6 +1109,7 @@ impl App {
                 ),
                 selection: std::cell::RefCell::new(Vec::new()),
                 pushed: std::cell::RefCell::new(Vec::new()),
+                push_room: std::cell::RefCell::new(Vec::new()),
                 size_move: std::cell::RefCell::new(None),
             }),
         });

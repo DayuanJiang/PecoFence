@@ -147,21 +147,25 @@ pub struct Behavior {
     /// Fence windows (and their host fence ids) selected with a marquee on the desktop; a
     /// title drag of one of them moves them all. Owned by the App (`App::set_fence_selection`).
     pub selection: std::cell::RefCell<Vec<(HWND, FenceId)>>,
-    /// Fence windows moved down out of an expanded neighbour's way (`rollUp.pushNeighbors`).
-    /// Owned by the App's push pass (`app/push.rs`).
+    /// Fence windows moved down (or up) out of an expanded neighbour's way
+    /// (`rollUp.pushNeighbors`). Owned by the App's push pass (`app/push.rs`).
     pub pushed: std::cell::RefCell<Vec<Pushed>>,
+    /// For each fence window that expands upward, the height it may open to while the fences
+    /// above it slide up out of its way: past that they cannot go (`app/push.rs`).
+    pub push_room: std::cell::RefCell<Vec<(HWND, i32)>>,
     /// The system move / size loop in progress (one at a time: it is modal).
     pub size_move: std::cell::RefCell<Option<SizeMove>>,
 }
 
-/// A fence window the push pass moved down. The shift stands only while the window is still at
-/// the top the pass gave it: anything else that moves it makes its new place the resting one.
+/// A fence window the push pass moved down (or up, out of the way of a fence that expands
+/// upward). The shift stands only while the window is still at the top the pass gave it:
+/// anything else that moves it makes its new place the resting one.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Pushed {
     pub hwnd: HWND,
     /// Window top the pass gave it.
     pub top: i32,
-    /// How far below its resting top that is.
+    /// How far below its resting top that is (negative: above it).
     pub dy: i32,
     /// The fences that pushed it, directly or through the ones in between.
     pub by: Vec<HWND>,

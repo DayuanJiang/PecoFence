@@ -266,6 +266,16 @@ impl App {
         clearance::limit_below(&self.other_fence_rects(id), r, self.gap_px(w.hwnd()))
     }
 
+    /// Highest top edge host `id` at `r` may grow to without running into a fence above, for a
+    /// fence that expands upward (None for the others).
+    pub(super) fn growth_limit_above(&self, id: FenceId, r: &RECT) -> Option<i32> {
+        if !self.state.fence(id).is_some_and(|f| f.expand_upward) {
+            return None;
+        }
+        let w = self.fences.get(&id)?;
+        clearance::limit_above(&self.other_fence_rects(id), r, self.gap_px(w.hwnd()))
+    }
+
     /// Expanding a rolled fence with `rollUp.pushNeighbors` off: the expanded height stops short
     /// of a fence placed under the title row meanwhile, or above it for a fence that expands
     /// upward (the rest of the items scroll).
@@ -278,7 +288,7 @@ impl App {
         let expanded = w.expanded_height_px();
         let scale = monitors::dpi_for_window(w.hwnd()).max(96) as f32 / 96.0;
         let room = if self.state.fence(id).is_some_and(|f| f.expand_upward) {
-            clearance::limit_above(&self.other_fence_rects(id), &r, self.gap_px(w.hwnd()))
+            self.growth_limit_above(id, &r)
                 .map(|limit| r.bottom - limit)
         } else {
             self.growth_limit_below(id, &r).map(|limit| limit - r.top)
@@ -402,6 +412,15 @@ impl App {
             let limit = limit.max(r.bottom);
             if r.top + h > limit {
                 h = steps.height_within(limit - r.top);
+            }
+        }
+        // A fence that expands upward grows only as far as the next fence above.
+        if let Some(limit) = self.growth_limit_above(id, &r)
+            && let Some(steps) = self.grid_steps(id, scale)
+        {
+            let limit = limit.min(r.top);
+            if r.bottom - h < limit {
+                h = steps.height_within(r.bottom - limit);
             }
         }
         if h == r.bottom - r.top {

@@ -438,7 +438,10 @@ impl FenceViewState {
             self.expanded_h_px = h;
             h
         } else {
-            self.expanded_h_px.max(self.title_h_px() + 40)
+            let h = self.expanded_h_px.max(self.title_h_px() + 40);
+            // Expanding upward, it stops below the fences above that cannot move further up.
+            self.push_room_px()
+                .map_or(h, |room| h.min(room.max(self.title_h_px())))
         };
         let mid_roll = self.roll_anim.is_some();
         if rolled {

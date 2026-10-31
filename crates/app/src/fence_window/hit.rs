@@ -395,12 +395,31 @@ impl FenceViewState {
         let rect = window::window_rect(self.hwnd);
         monitors::query(monitors::monitor_from_window(self.hwnd)).map_or(desired, |monitor| {
             let (top, bottom) = if self.expand_upward {
-                (monitor.work_area.top, rect.bottom)
+                // Nor past the fences above that cannot move further up out of its way.
+                let room = self
+                    .push_room_px()
+                    .map_or(i32::MIN, |room| rect.bottom - room);
+                (monitor.work_area.top.max(room), rect.bottom)
             } else {
                 (rect.top, monitor.work_area.bottom)
             };
             bounded_auto_height(desired, self.title_h_px(), top, bottom)
         })
+    }
+
+    /// With `rollUp.pushNeighbors`, the height a fence that expands upward may open to while
+    /// the fences above it slide up out of its way (kept by the App's push pass); None for the
+    /// other fences.
+    pub(super) fn push_room_px(&self) -> Option<i32> {
+        if !self.expand_upward {
+            return None;
+        }
+        self.behavior
+            .push_room
+            .borrow()
+            .iter()
+            .find(|(hwnd, _)| *hwnd == self.hwnd)
+            .map(|&(_, room)| room)
     }
 
     /// Test hook: the screen point over the first item whose name contains `name` (a drop onto
