@@ -51,6 +51,11 @@
       "code": "ru",
       "name": "Русский",
       "dir": "ru/"
+    },
+    {
+      "code": "it",
+      "name": "Italiano",
+      "dir": "it/"
     }
   ]
 }

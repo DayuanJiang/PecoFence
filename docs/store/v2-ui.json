@@ -108,5 +108,16 @@
     "uploadNote": "Нативные скриншоты без добавленного рекламного текста. Нажмите для увеличения или прокрутите по горизонтали.",
     "campaignNote": "Рекламные макеты предназначены для оценки дизайна. Для загрузки в магазин используйте нативные скриншоты.",
     "lightbox": "Просмотр скриншота", "close": "Закрыть", "previous": "Предыдущее изображение", "next": "Следующее изображение"
+  },
+  "it": {
+    "reviewTitle": "Versione 2 · Anteprima locale del design", "reviewNote": "Pagina dello Store simulata, non ancora pubblicata. La visualizzazione reale può variare.",
+    "galleryLink": "Apri la galleria completa ↗", "storeLink": "Vedi la pagina dello Store ↗", "assets": "Tipo di immagini", "upload": "Schermate native", "campaign": "Immagini promozionali",
+    "home": "Home", "apps": "App", "games": "Giochi", "themes": "Temi", "search": "Cerca app, giochi e altro", "category": "Produttività",
+    "get": "Ottieni", "facts": "Gratuito · Open source · Windows 10 22H2 / Windows 11 x64", "screenshots": "Schermate", "description": "Descrizione",
+    "downloadZip": "Scarica le immagini per lo Store in ZIP", "downloadPng": "Scarica il PNG ↗", "galleryTitle": "La versione 2 nei dettagli.",
+    "galleryIntro": "Cinque temi: desktop, vista rapida, schede, ordinamento automatico e aspetto. Passa dalle schermate native alle immagini promozionali.",
+    "uploadNote": "Schermate native senza testo promozionale aggiunto. Fai clic per ingrandire o scorri in orizzontale.",
+    "campaignNote": "Le immagini promozionali servono a valutare il design. Per lo Store usa le schermate native.",
+    "lightbox": "Anteprima della schermata", "close": "Chiudi", "previous": "Immagine precedente", "next": "Immagine successiva"
   }
 }

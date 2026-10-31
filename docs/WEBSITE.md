@@ -148,7 +148,7 @@ line up with it.
 Edit lessons in `page.html` and the demo scripts, then refresh the translation files:
 
 ```powershell
-uv run python scripts/manual_i18n.py --prefill en zh-TW ja ko de fr es pt-BR ru   # add new keys
+uv run python scripts/manual_i18n.py --prefill en zh-TW ja ko de fr es pt-BR ru it   # add new keys
 uv run python scripts/manual_i18n.py --check                                     # coverage per language
 uv run python scripts/manual_i18n.py --build ja                                  # preview into .cache/manual-build/ja (no site header)
 ```

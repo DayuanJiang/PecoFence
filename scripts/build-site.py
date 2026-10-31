@@ -33,6 +33,7 @@ PLACEHOLDER = re.compile(r"\{\{(t|raw):([\w.]+)\}\}|\{\{(\w+)\}\}")
 OG_LOCALES = {
     "en": "en_US", "zh-CN": "zh_CN", "zh-TW": "zh_TW", "ja": "ja_JP", "ko": "ko_KR",
     "de": "de_DE", "fr": "fr_FR", "es": "es_ES", "pt-BR": "pt_BR", "ru": "ru_RU",
+    "it": "it_IT",
 }
 
 
