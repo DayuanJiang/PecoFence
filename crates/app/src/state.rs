@@ -1858,34 +1858,89 @@ impl AppState {
 
     // ---- fences -----------------------------------------------------------------------------
 
-    pub fn set_fence_bounds(&mut self, id: FenceId, rect: RECT, rolled: bool, expanded_h_px: i32) {
+    /// Records fence `id` at window rect `rect`. Rolled up, `rect` is its title row and the
+    /// saved rect is `expanded_h_px` tall: hanging below the row, or standing on it when
+    /// `row_bottom`. `choose` (a 向上展开 fence rolled up at rest) picks that end the way an
+    /// expansion picks its side, on the work area alone (`clearance::expand_side`): the saved rect
+    /// stays on the screen around the row, so a restart puts the row back where it was. Where
+    /// the fence fits on neither side, the saved rect is cut to the room there and `expanded_h`
+    /// keeps the full height. Returns the end it saved (`Fence::bottom_anchored`).
+    pub fn set_fence_bounds(
+        &mut self,
+        id: FenceId,
+        rect: RECT,
+        rolled: bool,
+        expanded_h_px: i32,
+        row_bottom: bool,
+        choose: bool,
+    ) -> bool {
+        let full = expanded_h_px.max(1);
+        let area_at = |x: i32, y: i32| {
+            self.work_areas
+                .iter()
+                .find(|w| x >= w.left && x < w.right && y >= w.top && y < w.bottom)
+                .or(self.work_areas.first())
+                .cloned()
+        };
+        let (mut bottom_anchored, mut h) = (row_bottom, full);
+        if rolled
+            && choose
+            && let Some(w) = area_at((rect.left + rect.right) / 2, (rect.top + rect.bottom) / 2)
+        {
+            let (up, shown) = crate::layout::clearance::expand_side(
+                full,
+                rect.bottom - w.top,
+                w.bottom - rect.top,
+            );
+            bottom_anchored = up;
+            h = shown.max(1);
+        }
+        let (top, bottom) = match (rolled, bottom_anchored) {
+            (true, false) => (rect.top, rect.top + h),
+            (true, true) => (rect.bottom - h, rect.bottom),
+            (false, _) => (rect.top, rect.bottom),
+        };
         let px = PxRect {
             left: rect.left,
-            top: rect.top,
+            top,
             right: rect.right,
-            bottom: if rolled {
-                rect.top + expanded_h_px.max(1)
-            } else {
-                rect.bottom
-            },
+            bottom,
         };
         let (cx, cy) = px.center();
-        let work = self
-            .work_areas
-            .iter()
-            .find(|w| cx >= w.left && cx < w.right && cy >= w.top && cy < w.bottom)
-            .or(self.work_areas.first())
-            .cloned();
-        let Some(work) = work else { return };
+        let Some(work) = area_at(cx, cy) else {
+            return bottom_anchored;
+        };
         let geo = geometry::normalize(px, &work);
-        if let Some(f) = self.fence_mut(id) {
-            if f.geometry != geo || f.rolled_up != rolled {
-                f.expanded_h = geo.h;
-                f.geometry = geo;
-                f.rolled_up = rolled;
-                self.dirty = true;
-            }
+        let expanded_h = if rolled {
+            full as f32 / work.scale()
+        } else {
+            geo.h
+        };
+        if let Some(f) = self.fence_mut(id)
+            && (f.geometry != geo
+                || f.rolled_up != rolled
+                || f.bottom_anchored != bottom_anchored
+                || (f.expanded_h - expanded_h).abs() > 0.5)
+        {
+            f.expanded_h = expanded_h;
+            f.geometry = geo;
+            f.rolled_up = rolled;
+            f.bottom_anchored = bottom_anchored;
+            self.dirty = true;
         }
+        bottom_anchored
+    }
+
+    /// Height (device px) fence `fence` opens to: its saved rect's, or rolled up the full
+    /// expanded height, which a saved rect cut to the room around its title row keeps.
+    pub fn fence_expanded_px(&self, fence: &Fence) -> i32 {
+        let h = self.fence_px_rect(fence).height();
+        if !fence.rolled_up {
+            return h;
+        }
+        let scale = geometry::resolve_work_area(&fence.geometry, &self.work_areas)
+            .map_or(1.0, |w| w.scale());
+        ((fence.expanded_h * scale).round() as i32).max(h)
     }
 
     /// Physical rectangle for a fence on the current monitors (expanded height).
@@ -2009,6 +2064,15 @@ impl AppState {
             && f.hide_when_empty != on
         {
             f.hide_when_empty = on;
+            self.dirty = true;
+        }
+    }
+
+    pub fn set_expand_upward(&mut self, id: FenceId, on: bool) {
+        if let Some(f) = self.fence_mut(id)
+            && f.expand_upward != on
+        {
+            f.expand_upward = on;
             self.dirty = true;
         }
     }
@@ -2499,7 +2563,7 @@ mod tests {
         // The same fences; all were on the big monitor, so none has a spot here yet.
         assert_eq!(ids(&state), docked.iter().map(|f| f.id).collect::<Vec<_>>());
         assert_eq!(state.unplaced.len(), docked.len());
-        state.set_fence_bounds(first, rect(-1900, 20, 300, 200), false, 200);
+        state.set_fence_bounds(first, rect(-1900, 20, 300, 200), false, 200, false, false);
         state.rename_fence(first, "Laptop title");
         let made = state
             .new_fence("Made on the laptop", rect(-1500, 600, 300, 200))
@@ -2558,6 +2622,36 @@ mod tests {
         assert!(state.fence(own.id).is_none());
     }
 
+    /// Rolled up, a fence saves its expanded rect below the title row, or above it when the
+    /// title row is at its bottom. A 向上展开 fence at rest picks the end that keeps the rect on
+    /// the screen around the row (above first), cut to the room where it fits neither way.
+    #[test]
+    fn rolled_bounds_stay_on_the_screen_around_the_title_row() {
+        let mut state = test_state(); // work area 0..1040
+        let id = state.fences()[0].id;
+        let saved = |s: &AppState| {
+            let f = s.fence(id).unwrap();
+            let px = s.fence_px_rect(f);
+            (px.top, px.bottom, f.bottom_anchored, s.fence_expanded_px(f))
+        };
+        // Title row at 600..632, 300 px expanded.
+        assert!(!state.set_fence_bounds(id, rect(20, 600, 300, 32), true, 300, false, false));
+        assert_eq!(saved(&state), (600, 900, false, 300));
+        state.set_expand_upward(id, true);
+        assert!(state.set_fence_bounds(id, rect(20, 600, 300, 32), true, 300, false, true));
+        assert_eq!(saved(&state), (332, 632, true, 300));
+        // A row near the top: the fence fits below it only.
+        assert!(!state.set_fence_bounds(id, rect(20, 30, 300, 32), true, 300, true, true));
+        assert_eq!(saved(&state), (30, 330, false, 300));
+        // 800 px fits on neither side of a row at 500: the larger room below, the full height
+        // kept for when it opens.
+        assert!(!state.set_fence_bounds(id, rect(20, 500, 300, 32), true, 800, false, true));
+        assert_eq!(saved(&state), (500, 1040, false, 800));
+        // Expanded, the window is the rect either way, with the end it opened from.
+        assert!(state.set_fence_bounds(id, rect(20, 100, 300, 300), false, 300, true, false));
+        assert_eq!(saved(&state), (100, 400, true, 300));
+    }
+
     /// The same monitor at 4K / 200 % and at 1080p / 100 %: each keeps its own spots.
     #[test]
     fn each_resolution_keeps_its_own_spots() {
@@ -2569,7 +2663,7 @@ mod tests {
         state.ensure_layout();
         assert_eq!((state.layout, state.config.layouts.len()), (1, 2));
         assert_eq!(state.unplaced.len(), at_4k.len());
-        state.set_fence_bounds(first, rect(20, 20, 300, 200), false, 200);
+        state.set_fence_bounds(first, rect(20, 20, 300, 200), false, 200, false, false);
 
         state.work_areas = vec![monitor(id, 0, 3840, 2064, 192)];
         state.ensure_layout();

@@ -35,11 +35,11 @@ const OPACITY_CLEAR: f32 = 0.55;
 const OPACITY_SOLID: f32 = 1.6;
 const OPACITY_NONE: f32 = 0.0;
 
-fn hex(rgb: [u8; 3]) -> String {
+pub(super) fn hex(rgb: [u8; 3]) -> String {
     format!("{:02X}{:02X}{:02X}", rgb[0], rgb[1], rgb[2])
 }
 
-fn parse_hex(s: &str) -> Option<[u8; 3]> {
+pub(super) fn parse_hex(s: &str) -> Option<[u8; 3]> {
     let s = s.trim_start_matches('#');
     if s.len() != 6 {
         return None;
@@ -55,6 +55,7 @@ pub(super) const FENCE_PROPS: &[&str] = &[
     "spacing",
     "autoHeight",
     "locked",
+    "expandUpward",
     "excludeFromQuickHide",
     "opacity",
     "tint",
@@ -92,6 +93,8 @@ pub(super) enum FenceProp {
     Spacing(Spacing),
     AutoHeight(bool),
     Locked(bool),
+    /// 向上展开: the bottom edge stays put when the height changes.
+    ExpandUpward(bool),
     ExcludeFromQuickHide(bool),
     /// None = the global default; otherwise a preset (`OPACITY_CLEAR` / `_SOLID` / `_NONE`).
     Opacity(Option<f32>),
@@ -157,6 +160,7 @@ pub(super) fn parse_fence_prop(
         }
         "autoHeight" => FenceProp::AutoHeight(as_bool()?),
         "locked" => FenceProp::Locked(as_bool()?),
+        "expandUpward" => FenceProp::ExpandUpward(as_bool()?),
         "excludeFromQuickHide" => FenceProp::ExcludeFromQuickHide(as_bool()?),
         "opacity" => {
             const ALLOWED: &[&str] = &["default", "clear", "solid", "transparent"];
@@ -292,6 +296,23 @@ impl App {
         self.state.set_locked(host, on);
         if let Some(w) = self.fences.get(&host) {
             w.set_locked(on);
+        }
+        self.schedule_save();
+    }
+
+    /// 向上展开 (a window-level flag: a tab sets its host's). Nothing moves: a rolled title row
+    /// stays where it is and its expanded rect is recorded again around it (switched on, above
+    /// it where it fits there, see `AppState::set_fence_bounds`; switched off, below it, like
+    /// any fence). An open fence keeps the edge it opened from until it rolls up.
+    pub(super) fn set_fence_expand_upward(&mut self, fence: FenceId, on: bool) {
+        let host = self.state.host_of(fence);
+        self.state.set_expand_upward(host, on);
+        let rolled = self.fences.get(&host).and_then(|w| {
+            w.set_expand_upward(on)
+                .then(|| (w.rect(), w.expanded_height_px()))
+        });
+        if let Some((rect, expanded)) = rolled {
+            self.record_bounds(host, rect, true, expanded);
         }
         self.schedule_save();
     }
@@ -510,6 +531,7 @@ impl App {
             "spacing": spacing,
             "autoHeight": h.view.auto_height,
             "locked": h.locked,
+            "expandUpward": h.expand_upward,
             "excludeFromQuickHide": h.exclude_from_quick_hide,
             "opacity": opacity,
             "tint": tint.map(hex),
@@ -579,6 +601,7 @@ impl App {
             FenceProp::Spacing(spacing) => self.set_fence_spacing(fence, spacing),
             FenceProp::AutoHeight(on) => self.set_fence_auto_height(fence, on),
             FenceProp::Locked(on) => self.set_fence_locked(fence, on),
+            FenceProp::ExpandUpward(on) => self.set_fence_expand_upward(fence, on),
             FenceProp::ExcludeFromQuickHide(on) => self.set_fence_quick_hide_excluded(fence, on),
             FenceProp::Opacity(op) => self.set_fence_opacity(fence, op),
             FenceProp::Tint(tint) => self.set_fence_tint(fence, tint),

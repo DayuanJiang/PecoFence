@@ -160,7 +160,10 @@ in; only the tab currently shown can be measured, so another tab is `unsupported
 `fence detach` it first).
 
 `fence set` properties (values as shown by `fence get`): `title` (or `fence rename`), `iconSize`
-32/48/64/96, `spacing` compact/normal/loose, `autoHeight`, `locked`, `excludeFromQuickHide`,
+32/48/64/96, `spacing` compact/normal/loose, `autoHeight`, `locked`, `expandUpward` (rolled up, it
+opens upward from its title row where it fits above it, else downward, for fences resting on the
+taskbar; the row stays where it is; `bottomAnchored` in `fence get` says whether the bottom edge
+is the one that stays put, which `fence resize --h` and `fence fit` keep), `excludeFromQuickHide`,
 `opacity` default/clear/solid/transparent (transparent: no glass, rim or shadow until the pointer
 is over the fence), `tint` `"#RRGGBB"` or `null`, `tintTitleOnly` (the tint washes only the title
 row), `tabColor` `"#RRGGBB"` or `null` (the bar under the fence's tab in a tab strip; `null` follows

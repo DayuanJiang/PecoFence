@@ -135,7 +135,7 @@ impl App {
             }
             let rect = self.ctx.behavior.resting_rect(w.hwnd(), w.rect());
             self.state
-                .set_fence_bounds(tab, rect, false, w.expanded_height_px());
+                .set_fence_bounds(tab, rect, false, w.expanded_height_px(), false, false);
             self.queue.push(Command::RaiseFence(w.hwnd()));
             tracing::debug!(
                 from_drag,
