@@ -18,6 +18,7 @@ impl App {
                 title_size: fence_style_for(f).title_size,
                 title_color: fence_style_for(f).title_color,
                 folder_icon: f.kind == FenceKind::FolderPortal && !f.hide_title_icon,
+                up_button: f.kind == FenceKind::FolderPortal && self.state.portal_navigated(f.id),
             })
             .collect()
     }

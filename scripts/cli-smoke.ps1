@@ -209,6 +209,11 @@ try {
     Check "rule add without conditions rejected" ($r.Code -ne 0) "$($r.Out)"
 
     # 4. Settings.
+    # keepIconsHidden only decides what exit does with icons this instance hid (it hides none).
+    $r = Invoke-Cli @("settings", "set", "keepIconsHidden", "true")
+    Check "settings set keepIconsHidden true" ($r.Code -eq 0 -and (Json $r.Out).settings.keepIconsHidden -eq $true) "$($r.Out) $($r.Err)"
+    $r = Invoke-Cli @("settings", "set", "keepIconsHidden", "false")
+    Check "settings set keepIconsHidden false" ($r.Code -eq 0 -and (Json $r.Out).settings.keepIconsHidden -eq $false) "$($r.Out) $($r.Err)"
     $r = Invoke-Cli @("settings", "get", "peek.enabled")
     Check "settings get peek.enabled is bool" ($r.Code -eq 0 -and ($r.Out -eq "true" -or $r.Out -eq "false")) "$($r.Out) $($r.Err)"
     $r = Invoke-Cli @("settings", "set", "peek.enabled", "false")

@@ -114,6 +114,11 @@ pub struct Settings {
     pub roll_up: RollUpSettings,
     pub show_desktop: ShowDesktopSetting,
     pub hide_real_icons: bool,
+    /// With `hideRealIcons`, Windows' desktop icons stay hidden when PecoFence exits or the
+    /// session ends, so they do not show for a moment at the next sign-in before PecoFence
+    /// starts. A crash still shows them.
+    #[serde(default)]
+    pub keep_icons_hidden: bool,
     /// While `hideRealIcons` is off, the inbox fence has no window: the items no rule files
     /// show only among Windows' own desktop icons.
     #[serde(default)]
@@ -230,6 +235,7 @@ impl Default for Settings {
             roll_up: RollUpSettings::default(),
             show_desktop: ShowDesktopSetting::KeepVisible,
             hide_real_icons: true,
+            keep_icons_hidden: false,
             hide_inbox_when_icons_shown: false,
             offer_new_fence: true,
             show_real_icons_when_fences_hidden: false,
@@ -1658,9 +1664,11 @@ mod tests {
         let obj = json.as_object_mut().unwrap();
         assert!(obj.remove("offerNewFence").is_some());
         assert!(obj.remove("hideInboxWhenIconsShown").is_some());
+        assert!(obj.remove("keepIconsHidden").is_some());
         let legacy: Settings = serde_json::from_value(json).unwrap();
         assert!(legacy.offer_new_fence);
         assert!(!legacy.hide_inbox_when_icons_shown);
+        assert!(!legacy.keep_icons_hidden);
     }
 
     #[test]

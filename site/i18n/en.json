@@ -89,5 +89,8 @@
   "agents.setup": "The CLI is included. The Microsoft Store edition adds <code>pecofence-cli</code> to PATH. With the portable ZIP, give your agent the path to <code>pecofence-cli.exe</code>.",
   "agents.starter": "Use pecofence-cli to configure my desktop. First read pecofence-cli skill and pecofence-cli describe, then inspect my current settings and fences. Back up my configuration before changes. Switch to dark mode and make all fences more transparent.",
   "agents.copy": "Copy AI prompt",
-  "agents.contract": "Built for agents and scripts: <code>describe</code> exposes the command catalog and JSON Schemas; <code>skill</code> prints the agent guide. JSON results report what changed, and structured application errors help the agent choose its next step."
+  "agents.contract": "Built for agents and scripts: <code>describe</code> exposes the command catalog and JSON Schemas; <code>skill</code> prints the agent guide. JSON results report what changed, and structured application errors help the agent choose its next step.",
+  "notfound.title": "Page not found",
+  "notfound.text": "The page you are looking for does not exist or has moved.",
+  "notfound.home": "Back to the home page"
 }

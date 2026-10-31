@@ -163,6 +163,11 @@ pub(super) fn on_mousemove(
             td.moved = true;
             td.pointer_x = pointer_x;
         }
+        // A drag that started on the tab's up button: the press is the tab's now.
+        if v.pressed == Some(PressTarget::Up) {
+            v.pressed = Some(PressTarget::Tab(index));
+            v.up_hovered = false;
+        }
         v.reorder_dragged_tab(now);
         // The chrome is rasterised once per frame by `tick`, not once per
         // mouse message (a 1000 Hz mouse would otherwise redraw it 16 times
