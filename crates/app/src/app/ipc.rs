@@ -1098,7 +1098,7 @@ impl App {
         let sel = sel.trim();
         let mut all: Vec<(&Item, &Fence)> = Vec::new();
         for f in self.state.fences() {
-            all.extend(self.state.items_of(f).into_iter().map(|it| (it, f)));
+            all.extend(self.state.held_items_of(f).into_iter().map(|it| (it, f)));
         }
         let not_found = || {
             IpcError::new(ErrorCode::ItemNotFound, format!("no item matches {sel:?}"))
@@ -1283,7 +1283,7 @@ impl App {
             geometry: f.geometry.clone(),
             rolled_up: host.rolled_up,
             locked: host.locked,
-            item_count: self.state.unsorted_items_of(f).count(),
+            item_count: self.state.unsorted_held_items_of(f).count(),
             tab_host: f.tab_host,
             tabs: if f.tab_host.is_none() {
                 self.state
@@ -1318,6 +1318,10 @@ impl App {
             group_by_date: f.view.group_by_date,
             label_lines: f.view.label_lines,
             open_folders_inside: f.open_folders_inside,
+            opened_folder: (f.kind != FenceKind::FolderPortal)
+                .then(|| self.state.portal_path(f.id))
+                .flatten()
+                .map(|p| p.to_string_lossy().into_owned()),
             portal,
             // Only the fence the window currently shows has a measured layout.
             fit: (connected && measure)
@@ -1355,7 +1359,7 @@ impl App {
             if only.is_some_and(|id| id != f.id) {
                 continue;
             }
-            for it in self.state.items_of(f) {
+            for it in self.state.held_items_of(f) {
                 out.push(self.item_dto(f, it));
             }
         }
@@ -1364,7 +1368,7 @@ impl App {
 
     /// `assignedBy` and the filing rule's name for an item of `f`.
     fn assignment_of(&self, f: &Fence, item: ItemId) -> (&'static str, Option<String>) {
-        if self.state.portal_path(f.id).is_some() {
+        if f.kind == FenceKind::FolderPortal {
             return ("portal", None);
         }
         match f
@@ -2184,7 +2188,7 @@ impl App {
         let mut state = EventState::default();
         for f in self.state.fences() {
             state.fences.insert(f.id, self.fence_dto_with(f, false));
-            for it in self.state.unsorted_items_of(f) {
+            for it in self.state.unsorted_held_items_of(f) {
                 state.items.insert(
                     it.id,
                     ItemSig {

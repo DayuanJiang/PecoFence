@@ -1109,9 +1109,20 @@ impl AppState {
             .len()
     }
 
-    /// Items of `fence` with their refs, as stored (orphans hidden), before any sort.
-    fn fence_members<'s, 'f>(&'s self, fence: &'f Fence) -> Vec<(Option<&'f ItemRef>, &'s Item)> {
-        if self.folder_root(fence.id).is_some() {
+    /// Items of `fence` with their refs, as stored (orphans hidden), before any sort: what its
+    /// window shows, or with `held` what it holds (a regular fence showing a folder opened in it
+    /// still holds its own icons).
+    fn fence_members<'s, 'f>(
+        &'s self,
+        fence: &'f Fence,
+        held: bool,
+    ) -> Vec<(Option<&'f ItemRef>, &'s Item)> {
+        let folder = if held {
+            self.portal_root(fence.id)
+        } else {
+            self.folder_root(fence.id)
+        };
+        if folder.is_some() {
             self.portal_members
                 .get(&fence.id)
                 .map(|ids| {
@@ -1143,15 +1154,27 @@ impl AppState {
         self.own_members(fence).count()
     }
 
-    /// Items of `fence` in no particular order (orphans hidden): for callers that only need
-    /// the set, without the sort `items_of` pays for.
-    pub fn unsorted_items_of<'s>(&'s self, fence: &Fence) -> impl Iterator<Item = &'s Item> {
-        self.fence_members(fence).into_iter().map(|(_, it)| it)
+    /// What `fence` holds, in no particular order (orphans hidden): a portal's folder, any other
+    /// fence's own icons, also while it shows a folder opened in it. The CLI's view, for callers
+    /// that only need the set, without the sort `held_items_of` pays for.
+    pub fn unsorted_held_items_of<'s>(&'s self, fence: &Fence) -> impl Iterator<Item = &'s Item> {
+        self.fence_members(fence, true)
+            .into_iter()
+            .map(|(_, it)| it)
     }
 
-    /// Items of `fence` in display order (orphans hidden).
+    /// Items of `fence` in display order (orphans hidden), as its window shows them.
     pub fn items_of(&self, fence: &Fence) -> Vec<&Item> {
-        let mut items = self.fence_members(fence);
+        self.sorted_members(fence, false)
+    }
+
+    /// [`Self::unsorted_held_items_of`] in display order.
+    pub fn held_items_of(&self, fence: &Fence) -> Vec<&Item> {
+        self.sorted_members(fence, true)
+    }
+
+    fn sorted_members(&self, fence: &Fence, held: bool) -> Vec<&Item> {
+        let mut items = self.fence_members(fence, held);
         match fence.view.sort {
             SortMode::Manual => items.sort_by_key(|(r, it)| {
                 (
@@ -2724,6 +2747,13 @@ mod tests {
         assert_eq!(shown(&state).len(), 2);
         assert!(!shown(&state).contains(&own));
         assert_eq!(state.own_item_count(state.fence(fence).unwrap()), 1);
+        // The CLI still sees the fence's own icons.
+        let held: Vec<ItemId> = state
+            .held_items_of(state.fence(fence).unwrap())
+            .iter()
+            .map(|it| it.id)
+            .collect();
+        assert_eq!(held, [own]);
 
         assert!(state.portal_enter(fence, &nested));
         assert!(state.portal_navigated(fence));

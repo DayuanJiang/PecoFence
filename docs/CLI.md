@@ -293,6 +293,14 @@ folder as `portal.current` (next to `portal.path`, the folder it was created for
 the subfolder's contents and `item move --to <portal>` puts files there. `--dry-run` shows the exact
 `destination` of every file.
 
+A virtual fence or the inbox whose `openFoldersInside` is on shows a folder double-clicked in it (or
+the folder a shortcut points to) in place of its own icons until it goes up again. `fence get`
+reports that folder, or the subfolder of it shown, as `openedFolder` (`null` otherwise; `kind` and
+`portal` do not change). Meanwhile `itemCount`, `item list`, `item move` and `watch` keep to the
+fence's own icons: `item move --to` that fence only changes membership and never moves a file into
+the folder it shows, and `watch` reports the change as `fence.changed` with `openedFolder` in
+`changed`.
+
 ## Watching for changes
 
 `pecofence-cli watch` turns the connection into an event stream and prints one JSON document per

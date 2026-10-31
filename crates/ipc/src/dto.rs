@@ -178,6 +178,12 @@ pub struct FenceDto {
     /// instead of File Explorer (off by default; a portal has `portal.navigate`).
     #[serde(default)]
     pub open_folders_inside: bool,
+    /// The folder a virtual fence or the inbox shows in place of its own icons (one
+    /// double-clicked in it, or a subfolder of that); `null` when it shows its icons and for
+    /// portals. Runtime only: `itemCount`, `items.list`, `items.move` and the item events keep
+    /// to the fence's own icons meanwhile.
+    #[serde(default)]
+    pub opened_folder: Option<String>,
     pub portal: Option<PortalDto>,
     /// How the items fit the window; `null` for a tab that is not the one currently shown and
     /// for fences without a window (disconnected monitor).
