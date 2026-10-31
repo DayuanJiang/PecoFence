@@ -168,7 +168,10 @@ its tint), `titleColor` theme/tint/white/black/`"#RRGGBB"`, `titleSize` small/no
 `titleOnHover` default/hover/always (hover: the title row folds away until the pointer is over the
 fence; default follows `rollUp.titleOnHover`), `layout` icons/list/details,
 `sort` manual/name/type/date/size/openCount, `reverse`, `groupByDate`, `labelLines`,
-`portalNavigate`, `portalTitleIcon`, `hideWhenEmpty` (inbox only: no window while it is empty; the inbox
+`openFoldersInside` (any fence but a portal: double-clicking a folder, or a shortcut to a folder,
+shows that folder inside the fence instead of opening File Explorer; off by default),
+`portalNavigate` (portals: double-clicking a subfolder opens it inside the portal; on by default),
+`portalTitleIcon`, `hideWhenEmpty` (inbox only: no window while it is empty; the inbox
 cannot be deleted). `--all` applies the option to every fence one call at a time and
 skips tabs hosted inside another fence (their options belong to the host).
 
@@ -291,6 +294,14 @@ A portal whose `portalNavigate` is on can be double-clicked into a subfolder. It
 folder as `portal.current` (next to `portal.path`, the folder it was created for): `item list` shows
 the subfolder's contents and `item move --to <portal>` puts files there. `--dry-run` shows the exact
 `destination` of every file.
+
+A virtual fence or the inbox whose `openFoldersInside` is on shows a folder double-clicked in it (or
+the folder a shortcut points to) in place of its own icons until it goes up again. `fence get`
+reports that folder, or the subfolder of it shown, as `openedFolder` (`null` otherwise; `kind` and
+`portal` do not change). Meanwhile `itemCount`, `item list`, `item move` and `watch` keep to the
+fence's own icons: `item move --to` that fence only changes membership and never moves a file into
+the folder it shows, and `watch` reports the change as `fence.changed` with `openedFolder` in
+`changed`.
 
 ## Watching for changes
 

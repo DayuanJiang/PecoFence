@@ -621,6 +621,7 @@ pub(super) fn on_lbuttondblclk(
                 queue.push(Command::LaunchItem {
                     item: item.id,
                     from: v.active,
+                    inside: true,
                 });
             }
         } else if v.tab_at(x, y).is_some() && !std::mem::take(&mut v.suppress_dblclk) {
