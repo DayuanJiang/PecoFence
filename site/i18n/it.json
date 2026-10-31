@@ -72,7 +72,7 @@
   "download.req1": "Windows 10 22H2 o Windows 11, x64.",
   "download.req2": "Microsoft Edge WebView2 Runtime per la finestra delle Impostazioni. È già incluso in Windows 11; su Windows 10 potrebbe essere necessario installarlo.",
   "download.req3": "Tieni <code>WebView2Loader.dll</code> e <code>pecofence-watchdog.exe</code> nella stessa cartella dell’app.",
-  "download.req4": "Le versioni portatili non sono firmate. Se al primo avvio compare Windows SmartScreen, scegli Altre informazioni e poi Esegui comunque. L’installazione da Microsoft Store o tramite winget evita l’avviso.",
+  "download.req4": "Le versioni portatili non sono firmate. Se al primo avvio compare Windows SmartScreen, scegli Ulteriori informazioni e poi Esegui comunque. L’installazione da Microsoft Store o tramite winget evita l’avviso.",
   "download.portable": "Guida all’edizione portatile",
   "download.upgrade": "Aggiornamento da una versione precedente",
   "footer.tagline": "Pensato per un desktop a cui è un piacere tornare.",
