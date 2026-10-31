@@ -296,8 +296,9 @@ impl App {
     /// 向上展开 (a window-level flag: a tab sets its host's). A rolled title row stays where
     /// it is, so one dragged onto the taskbar expands upward from there: its expanded rect is
     /// recorded again, standing on the row now (or hanging below it when switched off). Where
-    /// that rect would leave the screen, the saved rect is kept on it and the row moves to the
-    /// rect's end instead.
+    /// the fence would open past the top of the screen, the row moves down until it fits.
+    /// Switched off, the row stays put even where the fence then opens past the bottom (it
+    /// was parked there on purpose; a fence without the switch does the same).
     pub(super) fn set_fence_expand_upward(&mut self, fence: FenceId, on: bool) {
         let host = self.state.host_of(fence);
         self.state.set_expand_upward(host, on);
@@ -307,18 +308,7 @@ impl App {
         });
         if let Some((rect, expanded)) = rolled {
             self.record_bounds(host, rect, true, expanded);
-            if let (Some(f), Some(w)) = (self.state.fence(host), self.fences.get(&host)) {
-                let px = self.state.fence_px_rect(f);
-                w.place_saved(
-                    RECT {
-                        left: px.left,
-                        top: px.top,
-                        right: px.right,
-                        bottom: px.bottom,
-                    },
-                    true,
-                );
-            }
+            self.fit_upward_rect(host);
         }
         self.schedule_save();
     }
