@@ -576,8 +576,8 @@ impl App {
     }
 
     /// Opens `item`, which the user picked in fence `from`. `inside`: a folder may open inside
-    /// the fence; false opens it in Explorer, for a Peek search match (the Peek ends, so the
-    /// fence would show it behind the windows).
+    /// the fence; false opens it in Explorer (one of several items opened at once, a Peek search
+    /// match).
     pub(super) fn launch(&mut self, item: ItemId, from: FenceId, inside: bool) {
         let Some((path, is_folder)) = self
             .state

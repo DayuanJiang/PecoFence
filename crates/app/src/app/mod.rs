@@ -1670,7 +1670,7 @@ impl App {
                 // rule like every other path that expands a fence.
                 self.apply_auto_height(fence);
             }
-            Command::LaunchItem { item, from } => self.launch(item, from, true),
+            Command::LaunchItem { item, from, inside } => self.launch(item, from, inside),
             Command::MoveItems { items, to } => self.move_items(&items, to),
             Command::ReorderItems {
                 fence,

@@ -174,10 +174,13 @@ pub(super) fn on_keydown(
                     path,
                 }),
                 None => {
+                    // Several folders cannot all open inside the fence: Explorer gets each.
+                    let inside = ids.len() == 1;
                     for id in ids {
                         queue.push(Command::LaunchItem {
                             item: id,
                             from: v.active,
+                            inside,
                         });
                     }
                 }

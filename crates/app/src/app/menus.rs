@@ -270,8 +270,10 @@ impl App {
         drop(shell_menu);
         match cmd {
             CMD_ITEM_OPEN => {
+                // Several folders cannot all open inside the fence: Explorer gets each.
+                let inside = items.len() == 1;
                 for id in &items {
-                    self.launch(*id, fence, true);
+                    self.launch(*id, fence, inside);
                 }
             }
             CMD_ITEM_LOCATION => {
