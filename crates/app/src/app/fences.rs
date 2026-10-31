@@ -378,9 +378,15 @@ impl App {
         if (left, width, bottom) == (r.left, r.right - r.left, r.bottom) {
             return;
         }
+        // A fence that expands upward keeps its bottom edge: the rows come and go at the top.
+        let (top, bottom) = if f.expand_upward {
+            (r.bottom - (bottom - r.top), r.bottom)
+        } else {
+            (r.top, bottom)
+        };
         let rect = RECT {
             left,
-            top: r.top,
+            top,
             right: left + width,
             bottom,
         };

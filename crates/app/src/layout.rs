@@ -869,6 +869,16 @@ pub mod clearance {
             .min()
     }
 
+    /// Highest top edge `r` may grow to (a fence that expands upward): `gap` below the nearest
+    /// fence that shares some of its width and ends at or above its top edge.
+    pub fn limit_above(others: &[RECT], r: &RECT, gap: i32) -> Option<i32> {
+        others
+            .iter()
+            .filter(|o| spans_x(o, r) && o.bottom <= r.top)
+            .map(|o| o.bottom + gap)
+            .max()
+    }
+
     /// True when `a` and `b` overlap by more than half a gap (fences snapped a gap apart, or
     /// touching, do not count).
     pub fn overlaps(a: &RECT, b: &RECT, gap: i32) -> bool {
@@ -1012,11 +1022,11 @@ mod tests {
         }
     }
 
-    /// Growth stops a gap short of a fence below; fences beside, above or
-    /// already overlapped do not count.
+    /// Growth stops a gap short of a fence below (above, for a fence that expands upward);
+    /// fences beside, on the other side or already overlapped do not count.
     #[test]
     fn clearance_limits_only_count_fences_beyond_the_edge() {
-        use clearance::limit_below;
+        use clearance::{limit_above, limit_below};
         let me = rc(100, 100, 300, 140); // e.g. a rolled fence: title row only
         let below = rc(120, 200, 320, 400);
         let beside = rc(400, 100, 500, 400);
@@ -1024,6 +1034,12 @@ mod tests {
         let others = [below, beside, overlapped];
         assert_eq!(limit_below(&others, &me, 8), Some(192));
         assert_eq!(limit_below(&[beside], &me, 8), None);
+        let above = rc(120, 0, 320, 60);
+        assert_eq!(
+            limit_above(&[above, below, beside, overlapped], &me, 8),
+            Some(68)
+        );
+        assert_eq!(limit_above(&others, &me, 8), None);
     }
 
     /// A dropped fence moves the shortest way out of the one it covers, stays inside the work
