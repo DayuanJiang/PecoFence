@@ -575,8 +575,10 @@ impl App {
         self.push_cut_items();
     }
 
-    /// Opens `item`, which the user picked in fence `from`.
-    pub(super) fn launch(&mut self, item: ItemId, from: FenceId) {
+    /// Opens `item`, which the user picked in fence `from`. `inside`: a folder may open inside
+    /// the fence; false opens it in Explorer, for a Peek search match (the Peek ends, so the
+    /// fence would show it behind the windows).
+    pub(super) fn launch(&mut self, item: ItemId, from: FenceId, inside: bool) {
         let Some((path, is_folder)) = self
             .state
             .item(item)
@@ -585,7 +587,10 @@ impl App {
             return;
         };
         let (portal, navigate) = self.state.fence(from).map_or((false, false), |f| {
-            (f.kind == FenceKind::FolderPortal, f.navigates_folders())
+            (
+                f.kind == FenceKind::FolderPortal,
+                inside && f.navigates_folders(),
+            )
         });
         // A folder inside a navigating portal opens in place (Fences "Navigate"). Two portals
         // can show the same folder, so only the one the item was opened from navigates.
