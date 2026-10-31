@@ -1135,6 +1135,28 @@ impl DesktopAnchor {
         self.restore_desktop_icons();
     }
 
+    /// The previous run left the icons hidden (`release_desktop_icons`), but this one hides none
+    /// (「隐藏 Windows 桌面图标」 off or `--no-hide-icons`): shows them again. The kept marker
+    /// stays while Explorer does not answer, so the next start tries again.
+    pub fn show_kept_desktop_icons(&mut self) {
+        let kept = self.icons.kept_marker();
+        if !kept.exists() {
+            return;
+        }
+        if shell_icons::desktop_icons_hidden() {
+            let shown = self
+                .host
+                .or_else(|| desktop::resolve_icon_host(self.generation))
+                .and_then(|h| shell_icons::set_desktop_icons_hidden(false, h.def_view, h.host));
+            if shown != Some(false) {
+                tracing::warn!(?shown, "showing the kept desktop icons failed");
+                return;
+            }
+            tracing::info!("desktop icons kept hidden by our previous run shown again");
+        }
+        let _ = std::fs::remove_file(&kept);
+    }
+
     /// True when a previous run left the marker behind (crashed without restoring).
     pub fn stale_marker_present(&self) -> bool {
         self.icons.marker.exists()

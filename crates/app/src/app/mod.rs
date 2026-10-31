@@ -1398,6 +1398,8 @@ impl App {
                 // At logon Explorer's desktop may not be ready yet: retried from the anchor's
                 // periodic check; housekeeping tells the user if it never succeeds.
                 a.request_hide_desktop_icons();
+            } else {
+                a.show_kept_desktop_icons();
             }
         }
         // Portable/development runs do not change login startup. Normal releases
