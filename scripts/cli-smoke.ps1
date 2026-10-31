@@ -166,8 +166,9 @@ try {
     # The icon size change fitted the empty fence to one row (74 px at 100 %), less than the
     # title row + 40 px an expand opens to at least, so the rect would not stay exact. 200 px
     # at y 200 also fits on the screen on either side of its title row (a rect that would not
-    # moves the row), down to a 1024x768 screen.
-    Invoke-Cli @("fence", "move", $id, "--rect", "$($x + 200),$($work.y + 200),500,200") | Out-Null
+    # moves the row), down to a 1024x768 screen; 400 px wide it stays clear of the first-run
+    # fences on the right, which it would stop below where they cannot slide further up.
+    Invoke-Cli @("fence", "move", $id, "--rect", "$($x + 200),$($work.y + 200),400,200") | Out-Null
     Start-Sleep -Milliseconds 400
     $r = Invoke-Cli @("fence", "set", $id, "expandUpward", "true")
     $u = Json $r.Out
