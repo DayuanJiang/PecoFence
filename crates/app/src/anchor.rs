@@ -553,9 +553,15 @@ impl DesktopAnchor {
             && desktop::window_pid(root) == desktop::window_pid(desktop::shell_window())
     }
 
-    /// A window of this process (fence, shadow, settings, menu, rename popup).
-    fn is_own_window(&self, hwnd: HWND) -> bool {
-        desktop::window_pid(desktop::root_ancestor(hwnd)) == std::process::id()
+    /// One of our fences, popups (rename, notice) or menus: show desktop goes on while it is in
+    /// front. Settings and the dialogs of this process (Explorer's Properties, a confirmation)
+    /// end it like any app's window, or the floating fences would cover them.
+    fn is_own_overlay(&self, hwnd: HWND) -> bool {
+        let root = desktop::root_ancestor(hwnd);
+        let cls = desktop::class_name(root);
+        ((cls.starts_with("PecoFence.") && cls != crate::settings_host::SETTINGS_CLASS)
+            || cls == "#32768")
+            && desktop::window_pid(root) == std::process::id()
     }
 
     /// Have our windows ended up *below* the host? (Explorer raised the desktop.)
@@ -588,7 +594,7 @@ impl DesktopAnchor {
             }
         } else if !foreground.0.is_null()
             && !self.is_desktop_window(foreground)
-            && !self.is_own_window(foreground)
+            && !self.is_own_overlay(foreground)
             && !is_shell_popup(desktop::class_name(desktop::root_ancestor(foreground)).as_str())
         {
             self.end_show_desktop("another window came to the front");
