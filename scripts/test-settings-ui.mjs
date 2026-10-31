@@ -14,7 +14,7 @@ const fixture = {
   locale: 'zh-CN', translations: {},
   settings: {
     language: 'zh-CN',
-    autostart: false, hideRealIcons: false, hideInboxWhenIconsShown: false, offerNewFence: true, quickHide: { enabled: true },
+    autostart: false, hideRealIcons: false, keepIconsHidden: false, hideInboxWhenIconsShown: false, offerNewFence: true, quickHide: { enabled: true },
     showDesktop: 'keepVisible', theme: 'dark', themeStyle: 'fluent', labelColor: 'auto', titleAlign: 'left', tabBar: 'top', backdrop: 'acrylic', iconSize: 48,
     icons: { tintRgb: null, tintStrength: 0.6, chameleon: false, shortcutArrows: true },
     rollUp: { hoverPeek: true, clickToExpand: false, pushNeighbors: true, titleOnHover: false, hideInactiveScrollbar: false, switchTabOnHover: false, hideCountAndChevron: false },
@@ -586,6 +586,16 @@ async function runTests() {
     offer.click(); await settle();
     assert(current().settings.offerNewFence === false, 'New fence offer switch did not post');
     offer.click(); await settle();
+  });
+  await test('Keeping the Windows icons hidden is available only while PecoFence hides them', async () => {
+    const icons = doc.querySelector('[data-bind=hideRealIcons]'), keep = doc.querySelector('[data-bind=keepIconsHidden]');
+    assert(!current().settings.hideRealIcons && keep.closest('.card').classList.contains('disabled'), 'Available while the Windows icons show');
+    icons.click(); await settle();
+    assert(!keep.closest('.card').classList.contains('disabled') && keep.tabIndex === 0, 'Unavailable with the Windows icons hidden');
+    keep.click(); await settle();
+    assert(current().settings.keepIconsHidden && keep.getAttribute('aria-checked') === 'true', 'Switch did not post its setting');
+    keep.click(); await settle();
+    icons.click(); await settle();
   });
   await test('Colour swatches drive the hidden selects and keep keyboard focus', async () => {
     const swatches = doc.getElementById('iconTintSwatches');

@@ -49,7 +49,8 @@ SolidCompression=yes
 WizardStyle=modern
 AppMutex={#AppMutexNames}
 SetupMutex=Local\{#ProductId}.Setup
-; The app/watchdog must restore desktop icons through their normal exit path.
+; The app/watchdog must restore desktop icons through their normal exit path (or leave them
+; hidden on purpose; uninstalling then shows them again, see RestoreKeptDesktopIcons).
 CloseApplications=no
 RestartApplications=no
 
@@ -287,8 +288,26 @@ begin
       RegDeleteValue(HKCU, RunKey, Name);
 end;
 
+{ "Keep Windows desktop icons hidden" left them hidden when PecoFence closed for setup. The
+  watchdog, given no process to wait for, shows them again and removes the kept marker. Test
+  installers leave the developer's own desktop alone. }
+procedure RestoreKeptDesktopIcons;
+var
+  Kept: String;
+  ResultCode: Integer;
+begin
+#ifndef TestIdentity
+  Kept := ExpandConstant('{localappdata}\PecoFence\icons-hidden.kept');
+  if FileExists(Kept) then
+    Exec(ExpandConstant('{app}\pecofence-watchdog.exe'), '0 "' + Kept + '"', '', SW_HIDE,
+      ewWaitUntilTerminated, ResultCode);
+#endif
+end;
+
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
+  if CurUninstallStep = usUninstall then
+    RestoreKeptDesktopIcons;
   if CurUninstallStep = usPostUninstall then begin
     RemoveOwnedStartupValue('{#CurrentRunName}');
     RemoveOwnedStartupValue('{#LegacyRunName}');
