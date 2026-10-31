@@ -5,6 +5,8 @@ use pecofence_platform::quicklook;
 
 // Selection colour follows activation (Explorer: accent only in the active
 // view). Our own rename popup and a context menu keep the fence "active".
+// Another window keeps the selection in grey; a press on the desktop or in
+// another fence ends it (`Command::EndItemSelection`).
 pub(super) fn on_activate(
     h: &HandlerCtx,
     _hwnd: HWND,

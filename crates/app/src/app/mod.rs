@@ -1903,6 +1903,7 @@ impl App {
             Command::NewFenceRect(rect) => self.offer_new_fence(rect),
             Command::DesktopMarquee(event) => self.on_desktop_marquee(event),
             Command::ClearFenceSelection => self.set_fence_selection(Vec::new()),
+            Command::EndItemSelection { except } => self.end_item_selection(except),
             Command::RaiseFence(hwnd) => {
                 if let Some(a) = self.anchor.borrow_mut().as_mut() {
                     a.raise_fence(hwnd);

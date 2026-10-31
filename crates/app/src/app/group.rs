@@ -15,6 +15,8 @@ impl App {
                 let kept = if additive {
                     self.ctx.behavior.selection.borrow().clone()
                 } else {
+                    // A click on the empty desktop also ends the icon selection in the fences.
+                    self.end_item_selection(HWND(std::ptr::null_mut()));
                     Vec::new()
                 };
                 self.set_fence_selection(kept.clone());
@@ -151,6 +153,16 @@ impl App {
     }
 
     /// Replaces the selection, updating the rings of the fences that joined or left it.
+    /// Ends the icon selection in every fence window but `except`, as a click elsewhere on the
+    /// Windows desktop does (the fences and the desktop are one view to the user).
+    pub(super) fn end_item_selection(&self, except: HWND) {
+        for w in self.fences.values() {
+            if w.hwnd() != except {
+                w.end_item_selection();
+            }
+        }
+    }
+
     pub(super) fn set_fence_selection(&mut self, selection: Vec<(HWND, FenceId)>) {
         let old = self.ctx.behavior.selection.replace(selection.clone());
         if old == selection {

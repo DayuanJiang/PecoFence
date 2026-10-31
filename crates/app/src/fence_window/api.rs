@@ -1774,6 +1774,16 @@ impl FenceWindow {
         });
     }
 
+    /// A press on the desktop or in another fence: the items lose their selection, as icons
+    /// on the Windows desktop do.
+    pub fn end_item_selection(&self) {
+        self.with_view(|v| {
+            if v.end_selection() {
+                let _ = v.redraw_content();
+            }
+        });
+    }
+
     /// Marks the window as part of the desktop selection: a white ring just outside it (like
     /// the drop outline), drawn with its shadow.
     pub fn set_group_selected(&self, on: bool) {
