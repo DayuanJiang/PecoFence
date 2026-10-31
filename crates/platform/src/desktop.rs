@@ -286,7 +286,8 @@ const E_ACCESS_DENIED: windows_core::HRESULT = windows_core::HRESULT(0x8007_0005
 /// above the desktop) is refused by UIPI, which would leave `hwnd` wherever it is — over every
 /// app. When `host` is the bottom-most window (Progman on current Windows), `hwnd` then goes to
 /// the bottom and `host` back under it, which references no foreign window; `hwnd` spends well
-/// under a millisecond behind the desktop.
+/// under a millisecond behind the desktop. Above a host with windows under it (the WorkerW of
+/// Windows 10), `hwnd` goes directly above the elevated window instead: other apps stay above.
 pub fn insert_above(hwnd: HWND, host: HWND) -> Result<()> {
     // SAFETY: plain FFI calls on caller-supplied handles.
     unsafe {
@@ -311,7 +312,36 @@ pub fn insert_above(hwnd: HWND, host: HWND) -> Result<()> {
                 SetWindowPos(hwnd, Some(HWND_BOTTOM), 0, 0, 0, 0, ANCHOR_FLAGS).ok()?;
                 SetWindowPos(host, Some(HWND_BOTTOM), 0, 0, 0, 0, ANCHOR_FLAGS).ok()
             }
+            Err(e) if e.code() == E_ACCESS_DENIED => {
+                tracing::debug!(
+                    ?above,
+                    "placement under an elevated window refused; placing above it"
+                );
+                place_above_refused(hwnd, above, is_topmost(host))
+            }
             placed => placed,
+        }
+    }
+}
+
+/// Puts `hwnd` directly above `refused`, a window UIPI does not let us place a window under:
+/// below the first window above it we may reference, or at the top of the normal band when the
+/// walk reaches a topmost window (unless `topmost` is asked for) or the top of the z-order.
+fn place_above_refused(hwnd: HWND, refused: HWND, topmost: bool) -> Result<()> {
+    // SAFETY: plain FFI calls on caller-supplied handles.
+    unsafe {
+        let mut next = GetWindow(refused, GW_HWNDPREV as u32);
+        loop {
+            if next == hwnd {
+                return Ok(());
+            }
+            if next.0.is_null() || (is_topmost(next) && !topmost) {
+                return SetWindowPos(hwnd, Some(HWND_TOP), 0, 0, 0, 0, ANCHOR_FLAGS).ok();
+            }
+            match SetWindowPos(hwnd, Some(next), 0, 0, 0, 0, ANCHOR_FLAGS).ok() {
+                Err(e) if e.code() == E_ACCESS_DENIED => next = GetWindow(next, GW_HWNDPREV as u32),
+                placed => return placed,
+            }
         }
     }
 }
