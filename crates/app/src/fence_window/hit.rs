@@ -88,7 +88,8 @@ impl FenceViewState {
 
     /// Is the client-pixel point on the portal "up" button? A tab strip in the title row has it
     /// on the shown tab's folder glyph (`FenceChrome::tab_up_box`); a left tab column at the end
-    /// of the shown tab's row (`rail_up_box`).
+    /// of the shown tab's row (`rail_up_box`); a single title on its folder glyph
+    /// (`FenceChrome::lone_up_box`), or at the far left while the glyph is hidden.
     pub(super) fn up_button_at(&self, x_px: i32, y_px: i32) -> bool {
         if !self.deco.up_button {
             return false;
@@ -125,6 +126,22 @@ impl FenceViewState {
                 Some(r) => r,
                 None => return false,
             }
+        } else if self.deco.folder_icon {
+            // The title moves aside for the rolled item count, as drawn.
+            let width = self.chrome_panel.size_px().0 as f32 / scale;
+            let reserve = if self.roll_target() && !self.behavior.hide_count_and_chevron.get() {
+                pecofence_render::fence_chrome::header_count_width(width, 1, self.deco.title_x())
+            } else {
+                0.0
+            };
+            self.chrome.lone_up_box(
+                &self.title,
+                self.style.title_size,
+                self.behavior.title_align.get(),
+                width,
+                reserve,
+                self.theme.title_height,
+            )
         } else {
             TitleDeco::up_box(self.theme.title_height)
         };

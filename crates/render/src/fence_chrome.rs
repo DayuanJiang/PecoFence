@@ -349,7 +349,8 @@ pub const RAIL_BOTTOM: f32 = 44.0;
 pub const RAIL_COLLAPSED_BOTTOM: f32 = RAIL_TOP;
 
 /// Title-row decorations of a folder portal: a folder glyph before the title and, once the
-/// portal has navigated into a subfolder, an "up" button at the far left.
+/// portal has navigated into a subfolder, an "up" button: the folder glyph itself, or one at the
+/// far left while the glyph is hidden.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct TitleDeco {
     pub folder_icon: bool,
@@ -504,10 +505,15 @@ impl TitleDeco {
         )
     }
 
+    /// The up button sits at the far left (the folder glyph is hidden, so it cannot be it).
+    pub fn up_at_left(&self) -> bool {
+        self.up_button && !self.folder_icon
+    }
+
     /// Where the title text starts (left-aligned).
     pub fn title_x(&self) -> f32 {
         let mut x = 16.0;
-        if self.up_button {
+        if self.up_at_left() {
             x += Self::UP_W;
         }
         if self.folder_icon {
@@ -609,11 +615,15 @@ struct TabCaption {
     badge_w: f32,
 }
 
-/// The up button that takes the folder glyph's place in a tab pill whose caption starts at
-/// `caption_x`: a 20 DIP square around the glyph, filled on hover and press.
-fn tab_up_square(caption_x: f32, title_h: f32) -> Rect {
-    let centre = caption_x - 2.0 - TAB_ICON_W * 0.5;
+/// The up button that takes a folder glyph's place, the glyph centred at `centre`: a 20 DIP
+/// square around it, filled on hover and press.
+fn glyph_up_square(centre: f32, title_h: f32) -> Rect {
     Rect::from_xywh(centre - 10.0, (title_h - 20.0) * 0.5, 20.0, 20.0)
+}
+
+/// Where a tab pill's folder glyph is centred when its caption starts at `caption_x`.
+fn tab_glyph_centre(caption_x: f32) -> f32 {
+    caption_x - 2.0 - TAB_ICON_W * 0.5
 }
 
 /// Where captions start in a left tab column row: after the colour dot when any tab has a
@@ -1773,7 +1783,56 @@ impl FenceChrome {
         badge: Option<&str>,
     ) -> Rect {
         let caption = self.tab_caption(theme, w, title, size, true, badge);
-        tab_up_square(x + caption.x, theme.title_height)
+        glyph_up_square(tab_glyph_centre(x + caption.x), theme.title_height)
+    }
+
+    /// Lays out a single title (no tab strip) in a title row `width` wide that keeps `reserve`
+    /// DIPs free for the rolled item count: where its unit (the folder glyph, then the title)
+    /// starts, the fitted title and the room the title gets.
+    fn lone_title_place(
+        &self,
+        title: &str,
+        size: u8,
+        align: pecofence_core::TitleAlign,
+        width: f32,
+        deco: TitleDeco,
+        reserve: f32,
+    ) -> (f32, String, f32) {
+        let fmt = &self.title_format(size);
+        let start = if deco.up_at_left() {
+            16.0 + TitleDeco::UP_W
+        } else {
+            16.0
+        };
+        let glyph_w = if deco.folder_icon {
+            TitleDeco::ICON_W
+        } else {
+            0.0
+        };
+        let end = width - TITLE_RIGHT_RESERVE - reserve;
+        let title_w = (end - start - glyph_w).max(0.0);
+        let fitted = crate::text::fit_width(title, fmt, title_w);
+        let unit_w = glyph_w + crate::text::measure_width(&fitted, fmt).min(title_w);
+        (aligned_x(align, width, start, end, unit_w), fitted, title_w)
+    }
+
+    /// The up button of a single folder title inside a subfolder: the square around its folder
+    /// glyph, which moves with the title's alignment. The app hit-tests the same box.
+    pub fn lone_up_box(
+        &self,
+        title: &str,
+        size: u8,
+        align: pecofence_core::TitleAlign,
+        width: f32,
+        reserve: f32,
+        title_h: f32,
+    ) -> Rect {
+        let deco = TitleDeco {
+            folder_icon: true,
+            up_button: true,
+        };
+        let (x, _, _) = self.lone_title_place(title, size, align, width, deco, reserve);
+        glyph_up_square(x + 8.0, title_h)
     }
 
     /// Width a caption gets in a row of a `rail_w` DIP left tab column: after the colour dot's
@@ -2187,7 +2246,7 @@ impl FenceChrome {
                         // Inside a subfolder the folder glyph is the up button: Up (Segoe
                         // Fluent E74A) in the caption's ink, with the lone portal button's
                         // hover fill and pressed look in a square around it.
-                        let box_r = tab_up_square(caption_x, title_h);
+                        let box_r = glyph_up_square(tab_glyph_centre(caption_x), title_h);
                         draw_up_box_fill(session, &backdrop, theme, scale, box_r, state, ta)?;
                         let ink = session.create_solid_brush(with_alpha(
                             if state.up_pressed {
@@ -2234,8 +2293,7 @@ impl FenceChrome {
                 pop_strip_fade(session, brush);
             }
         } else {
-            let mut x = 16.0;
-            if deco.up_button {
+            if deco.up_at_left() {
                 // Up (Segoe Fluent E74A) in a 28×28 box: transparent at rest, SubtleFill
                 // fading in on hover, SubtleFillColorTertiary + tertiary glyph while pressed.
                 let box_r = TitleDeco::up_box(title_h);
@@ -2250,29 +2308,38 @@ impl FenceChrome {
                         &secondary
                     },
                 );
-                x += TitleDeco::UP_W;
             }
-            // The folder glyph travels with the title to the chosen alignment; the up button
-            // stays at the far left.
-            let glyph_w = if deco.folder_icon {
-                TitleDeco::ICON_W
-            } else {
-                0.0
-            };
-            let end = width - TITLE_RIGHT_RESERVE - title_reserve;
-            let title_w = (end - x - glyph_w).max(0.0);
-            let fitted = crate::text::fit_width(title, title_format, title_w);
-            let unit_w = glyph_w + crate::text::measure_width(&fitted, title_format).min(title_w);
-            x = aligned_x(style.title_align, width, x, end, unit_w);
+            // The folder glyph travels with the title to the chosen alignment; a separate up
+            // button stays at the far left.
+            let (mut x, fitted, title_w) = self.lone_title_place(
+                title,
+                style.title_size,
+                style.title_align,
+                width,
+                deco,
+                title_reserve,
+            );
             if deco.folder_icon {
-                // Folder glyph (E8B7) aligned with the title baseline.
-                session.draw_text(
-                    "\u{E8B7}",
-                    &self.title_glyph_format,
-                    &Rect::from_xywh(x - 2.0, 0.0, 20.0, title_h),
-                    &secondary,
-                );
-                x += glyph_w;
+                // Folder glyph (E8B7) aligned with the title baseline. Inside a subfolder it is
+                // the up button (E74A), as in a folder tab.
+                let slot = Rect::from_xywh(x - 2.0, 0.0, 20.0, title_h);
+                if deco.up_button {
+                    let box_r = glyph_up_square(x + 8.0, title_h);
+                    draw_up_box_fill(session, &backdrop, theme, scale, box_r, state, title_a)?;
+                    session.draw_text(
+                        "\u{E74A}",
+                        &self.title_glyph_format,
+                        &slot,
+                        if state.up_pressed {
+                            &tertiary
+                        } else {
+                            &secondary
+                        },
+                    );
+                } else {
+                    session.draw_text("\u{E8B7}", &self.title_glyph_format, &slot, &secondary);
+                }
+                x += TitleDeco::ICON_W;
             }
             if let Some(halo) = &halo {
                 halo.set_color(halo_color(
@@ -3378,6 +3445,34 @@ mod tests {
             assert_eq!(r.top + 10.0, theme.title_height * 0.5);
             assert!(r.left >= 100.0 && r.right <= 100.0 + w);
         }
+    }
+
+    #[test]
+    fn a_lone_folder_titles_up_button_is_its_glyph() {
+        use pecofence_core::TitleAlign::{Left, Right};
+        let chrome = FenceChrome::new().unwrap();
+        // The glyph keeps its place before the title; no separate button pushes the title.
+        let up = TitleDeco {
+            folder_icon: true,
+            up_button: true,
+        };
+        assert_eq!(up.title_x(), 16.0 + TitleDeco::ICON_W);
+        let left = chrome.lone_up_box("2026", 1, Left, 300.0, 0.0, 36.0);
+        assert_eq!(
+            (left.left, left.top, left.right, left.bottom),
+            (14.0, 8.0, 34.0, 28.0)
+        );
+        // It moves with the title, which keeps clear of the rolled count.
+        let right = chrome.lone_up_box("2026", 1, Right, 300.0, ROLLED_COUNT_W, 36.0);
+        assert!(right.left > left.left);
+        assert!(right.right <= 300.0 - TITLE_RIGHT_RESERVE - ROLLED_COUNT_W);
+        // With the glyph hidden, the button stays at the far left.
+        let hidden = TitleDeco {
+            folder_icon: false,
+            up_button: true,
+        };
+        assert!(hidden.up_at_left());
+        assert_eq!(hidden.title_x(), 16.0 + TitleDeco::UP_W);
     }
 
     #[test]
