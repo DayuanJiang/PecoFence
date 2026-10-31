@@ -6,16 +6,26 @@ use windows_core::{Error, PCWSTR, PWSTR, Result};
 
 const SYNCHRONIZE: u32 = 0x0010_0000;
 
-/// Blocks until the process with `pid` exits. Returns immediately if it cannot be opened.
-pub fn wait_for_process_exit(pid: u32) {
-    // SAFETY: plain FFI calls; the handle is closed afterwards.
+/// Blocks until the process with `pid` exits, then returns its exit code and how long it ran.
+/// Returns `None` at once if it cannot be opened.
+pub fn wait_for_process_exit(pid: u32) -> Option<(u32, std::time::Duration)> {
+    windows_core::link!("kernel32.dll" "system" fn GetProcessTimes(process: HANDLE, created: *mut u64, exited: *mut u64, kernel: *mut u64, user: *mut u64) -> windows_core::BOOL);
+    const PROCESS_QUERY_LIMITED_INFORMATION: u32 = 0x1000;
+    let (mut code, mut created, mut exited, mut unused) = (0u32, 0u64, 0u64, 0u64);
+    // SAFETY: plain FFI calls; FILETIMEs are written as u64 (same layout); the handle is
+    // closed afterwards.
     unsafe {
-        let h = OpenProcess(SYNCHRONIZE, false, pid);
+        let h = OpenProcess(SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION, false, pid);
         if h.0.is_null() {
-            return;
+            return None;
         }
         let _ = WaitForSingleObject(h, INFINITE);
+        let ok = GetExitCodeProcess(h, &mut code).as_bool()
+            && GetProcessTimes(h, &mut created, &mut exited, &mut unused, &mut unused).as_bool();
         let _ = CloseHandle(h);
+        // FILETIME counts 100 ns intervals.
+        let ran = std::time::Duration::from_nanos(exited.saturating_sub(created) * 100);
+        ok.then_some((code, ran))
     }
 }
 

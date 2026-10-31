@@ -747,7 +747,10 @@ impl App {
                                 }
                                 TIMER_WALLPAPER => {
                                     window::kill_timer(hwnd, TIMER_WALLPAPER);
-                                    if let Ok(mut guard) = cell.try_borrow_mut()
+                                    if display_settling.get() {
+                                        // After the display change (see TIMER_WALLPAPER_POLL).
+                                        window::set_timer(hwnd, TIMER_WALLPAPER, DISPLAY_SETTLE_MS);
+                                    } else if let Ok(mut guard) = cell.try_borrow_mut()
                                         && let Some(app) = guard.as_mut()
                                     {
                                         app.check_wallpaper("notification");
@@ -762,7 +765,13 @@ impl App {
                                 }
                                 TIMER_WALLPAPER_POLL => {
                                     sync_desktops_differ(hwnd, &desktops_differ);
-                                    if let Ok(mut guard) = cell.try_borrow_mut()
+                                    // Monitors come or go: the backdrops are rebuilt once they
+                                    // settled and the fences moved (TIMER_WORKAREA). Redrawing
+                                    // every fence for the new monitors before that crashed in an
+                                    // AMD driver (feedback #59).
+                                    if display_settling.get() {
+                                        tracing::debug!("wallpaper poll skipped; monitors settle");
+                                    } else if let Ok(mut guard) = cell.try_borrow_mut()
                                         && let Some(app) = guard.as_mut()
                                     {
                                         app.check_wallpaper("poll");
