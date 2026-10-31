@@ -1,6 +1,6 @@
 ---
 name: pecofence-cli
-description: Configure PecoFence (Windows desktop fences) from the terminal: list/create/move fences, move and rename desktop icons using file metadata, per-fence options, global settings, auto-sorting rules, layout snapshots. Use when the user asks to organise their desktop icons or change PecoFence settings.
+description: "Configure PecoFence (Windows desktop fences) from the terminal: list/create/move fences, move and rename desktop icons using file metadata, per-fence options, global settings, auto-sorting rules, layout snapshots. Use when the user asks to organise their desktop icons or change PecoFence settings."
 ---
 
 # pecofence-cli
