@@ -220,6 +220,13 @@ impl MonitorRecipe {
         self.live = Some(capture);
     }
 
+    /// Shows a neutral colour instead of the picture: the live wallpaper over it cannot be
+    /// captured, and the Windows wallpaper under it is not what the monitor shows.
+    pub(super) fn show_neutral(&mut self, dark: bool) {
+        self.path = None;
+        self.background = if dark { [40, 40, 44] } else { [212, 214, 218] };
+    }
+
     pub(super) fn rect(&self) -> RECT {
         RECT {
             left: self.left,
@@ -436,27 +443,30 @@ pub(super) fn monitor_recipes(
                 pecofence_render::backdrop::MicaTint::ACRYLIC_DARK.blur_sigma_dip * scale,
             ),
         };
-        if let Some(image) = live
-            .iter()
-            .find(|l| l.monitor == m.rect)
-            .and_then(|l| l.image.clone())
-        {
-            recipe.show_live(image);
+        if let Some(l) = live.iter().find(|l| l.monitor == m.rect) {
+            if let Some(image) = l.image.clone() {
+                recipe.show_live(image);
+            } else if l.blind {
+                recipe.show_neutral(theme.mode == ThemeMode::Dark);
+            }
         }
         out.push(recipe);
     }
     out
 }
 
-/// `snapshot`'s signature, plus the monitors whose backdrop shows a live wallpaper's capture.
+/// `snapshot`'s signature, plus the monitors whose backdrop shows a live wallpaper's capture
+/// or, when it cannot be captured, a neutral colour.
 pub(super) fn backdrop_signature(
     snapshot: &wallpaper::WallpaperSnapshot,
     live: &[LiveWallpaper],
 ) -> String {
     let mut signature = snapshot.signature();
-    for m in live.iter().filter(|l| l.image.is_some()).map(|l| l.monitor) {
+    for l in live.iter().filter(|l| l.image.is_some() || l.blind) {
+        let m = l.monitor;
+        let blind = if l.image.is_none() { "blind," } else { "" };
         signature.push_str(&format!(
-            "{LIVE_MARK}{},{},{},{}",
+            "{LIVE_MARK}{blind}{},{},{},{}",
             m.left, m.top, m.right, m.bottom
         ));
     }

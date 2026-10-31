@@ -30,6 +30,9 @@ const CAPTURE_DOWNSCALE: u32 = 4;
 /// Wallpaper Engine's clone mode shows one monitor's wallpaper on the others in windows of this
 /// class, through a DWM thumbnail of the window it copies (feedback #55).
 const CLONE_CLASS: &str = "WPECloneView";
+/// A settled window whose captures came back empty this many times in a row draws nothing
+/// PrintWindow can read.
+const BLIND_AFTER: u32 = 3;
 
 /// The live wallpaper covering one monitor.
 #[derive(Clone)]
@@ -49,6 +52,11 @@ pub(super) struct LiveWallpaper {
     attempted: Option<(isize, Instant)>,
     /// The window whose empty capture was logged (once per window).
     reported: Option<isize>,
+    /// Empty captures of `hwnd` in a row once it settled.
+    empty: u32,
+    /// `hwnd` cannot be captured (no redirection bitmap, or `BLIND_AFTER` empty captures): the
+    /// backdrop shows a neutral colour, not an old capture or the Windows wallpaper under it.
+    pub(super) blind: bool,
 }
 
 /// What the worker hands back: per monitor the recipe (with its new capture), the window when
@@ -133,7 +141,15 @@ fn capture_and_build(work: Vec<(MonitorRecipe, Option<isize>)>) -> Result<Built>
                 let shot = match capture(window) {
                     Ok((rect, image)) => Some((Some(rect), image)),
                     Err(reason) => {
-                        let copied = clone_source(window).and_then(|source| capture(source).ok());
+                        let copied = clone_source(window).map(capture);
+                        // A clone of a window PrintWindow cannot read is as blind as it.
+                        let reason = match copied {
+                            Some(Err(live_wallpaper::NOT_REDIRECTED)) => {
+                                live_wallpaper::NOT_REDIRECTED
+                            }
+                            _ => reason,
+                        };
+                        let copied = copied.and_then(|copied| copied.ok());
                         empty.push((hwnd, reason, copied.is_some()));
                         copied.map(|(_, image)| (None, image))
                     }
@@ -194,18 +210,19 @@ impl App {
                             image: None,
                             attempted: None,
                             reported: None,
+                            empty: 0,
+                            blind: false,
                         }
                     });
                     let hwnd = hwnd.0 as isize;
-                    let since = if hwnd == entry.hwnd {
-                        entry.since
-                    } else {
-                        Instant::now()
-                    };
+                    // A new window keeps the previous one's picture (or `blind`) until its own
+                    // capture.
+                    let same = hwnd == entry.hwnd;
                     self.live.push(LiveWallpaper {
                         hwnd,
-                        since,
+                        since: if same { entry.since } else { Instant::now() },
                         missing: None,
+                        empty: if same { entry.empty } else { 0 },
                         ..entry
                     });
                 }
@@ -370,24 +387,42 @@ impl App {
                 return;
             }
         };
-        // Once per window, and not while it settles: a player that just started can be black.
+        // A window without a redirection bitmap never shows PrintWindow anything: its monitors
+        // go blind at once, others after BLIND_AFTER empty captures, not before the window
+        // settled (a player that just started can be black). Logged once per window once it
+        // settled, and when it goes blind.
+        let mut blinded = false;
         for (hwnd, reason, copied) in empty {
-            let Some(monitor) = self
-                .live
-                .iter()
-                .find(|l| {
-                    l.hwnd == hwnd && l.reported != Some(hwnd) && l.since.elapsed() >= LIVE_SETTLE
-                })
-                .map(|l| l.monitor)
-            else {
+            let never = reason == live_wallpaper::NOT_REDIRECTED;
+            let mut report = None;
+            for live in self.live.iter_mut().filter(|l| l.hwnd == hwnd) {
+                let settled = never || live.since.elapsed() >= LIVE_SETTLE;
+                let mut now_blind = false;
+                if !copied {
+                    live.empty += 1;
+                    now_blind = !live.blind && settled && (never || live.empty >= BLIND_AFTER);
+                }
+                if !settled {
+                    continue;
+                }
+                if now_blind {
+                    live.blind = true;
+                    live.image = None;
+                    blinded = true;
+                }
+                if live.reported != Some(hwnd) || now_blind {
+                    live.reported = Some(hwnd);
+                    report = Some((live.monitor, live.blind));
+                }
+            }
+            let Some((monitor, blind)) = report else {
                 continue;
             };
-            for live in self.live.iter_mut().filter(|l| l.hwnd == hwnd) {
-                live.reported = Some(hwnd);
-            }
             let class = desktop::class_name(HWND(hwnd as *mut core::ffi::c_void));
             if copied {
                 tracing::info!(?monitor, %class, reason, "live wallpaper capture came back empty; showing the window it clones");
+            } else if blind {
+                tracing::info!(?monitor, %class, reason, "live wallpaper cannot be captured; its backdrop shows a neutral colour");
             } else {
                 tracing::info!(?monitor, %class, reason, "live wallpaper capture came back empty; the backdrop keeps its last picture");
             }
@@ -401,18 +436,23 @@ impl App {
                     .find(|l| l.monitor == recipe.rect() && l.hwnd == hwnd)
             {
                 live.image = recipe.live.clone();
+                live.empty = 0;
+                live.blind = false;
                 captured += 1;
             }
         }
         tracing::debug!(
             captured,
+            blinded,
             elapsed_ms = job.started.elapsed().as_millis(),
             "live wallpaper captured"
         );
-        if captured == 0 {
+        if captured == 0 && !blinded {
             return;
         }
-        if self.wallpaper_sig != job.shown
+        // The worker built these monitors from their old captures: build again.
+        if blinded
+            || self.wallpaper_sig != job.shown
             || self.wallpaper_cache.generation() != job.generation
             || job.snapshot.signature() != job.file_signature
         {

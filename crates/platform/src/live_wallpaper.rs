@@ -59,6 +59,9 @@ pub fn covering(live: &[(HWND, RECT)], monitor: RECT) -> Option<(HWND, RECT)> {
     })
 }
 
+/// Why [`capture`] skips a window drawn without a redirection bitmap.
+pub const NOT_REDIRECTED: &str = "the window has no redirection bitmap";
+
 /// The window's rectangle and what `read` makes of its current pixels (`width` x `height`
 /// BGRA rows, alpha undefined), read where PrintWindow drew them: a copy of a 4K window would
 /// be 33 MB. PrintWindow with PW_RENDERFULLCONTENT is the one way that gets video and web
@@ -66,13 +69,19 @@ pub fn covering(live: &[(HWND, RECT)], monitor: RECT) -> Option<(HWND, RECT)> {
 /// (50 to 130 ms for a 4K window), so call it off the UI thread. All black when the window
 /// drew nothing. An error says why there are no pixels, for example when the window's thread
 /// does not answer within 3 s (a player that hangs, or one suspended while it pauses):
-/// PrintWindow waits for that thread, without limit.
+/// PrintWindow waits for that thread, without limit. A window with WS_EX_NOREDIRECTIONBITMAP
+/// is not read at all ([`NOT_REDIRECTED`]): for Wallpaper Engine's scene player PrintWindow
+/// reports success with an all-black picture, or with an earlier wallpaper's (feedback #62,
+/// main #134).
 pub fn capture<T>(
     hwnd: HWND,
     read: impl FnOnce(&[u8], u32, u32) -> T,
 ) -> Result<(RECT, T), &'static str> {
     windows_core::link!("user32.dll" "system" fn PrintWindow(hwnd: HWND, hdc: HDC, flags: u32) -> windows_core::BOOL);
     const PW_RENDERFULLCONTENT: u32 = 2;
+    if crate::desktop::ex_style(hwnd) & WS_EX_NOREDIRECTIONBITMAP as u32 != 0 {
+        return Err(NOT_REDIRECTED);
+    }
     let rect = window_rect(hwnd);
     let (w, h) = (rect.right - rect.left, rect.bottom - rect.top);
     if w <= 0 || h <= 0 {
