@@ -5,7 +5,7 @@ import http from 'node:http';
 import { readFile } from 'node:fs/promises';
 
 const settingsUrl = new URL('../ui/settings.html', import.meta.url);
-const languageTags = ['en', 'ja', 'zh-TW', 'ko', 'de', 'fr', 'es', 'pt-BR', 'ru'];
+const languageTags = ['en', 'ja', 'zh-TW', 'ko', 'de', 'fr', 'es', 'pt-BR', 'ru', 'it'];
 const catalogs = Object.fromEntries(await Promise.all(languageTags.map(async language =>
   [language, JSON.parse(await readFile(new URL('../locales/' + language + '.json', import.meta.url), 'utf8'))])));
 const port = Number(process.env.PECOFENCE_UI_TEST_PORT || 43190);
@@ -1030,7 +1030,7 @@ async function runTests() {
     win().testRefresh(); await settle();
     assert(help.classList.contains('error') && hotkeyText() === 'Win+空格', 'All-taken state not shown: ' + help.textContent);
   });
-  await test('All ten languages switch live without changing user names or draft inputs', async () => {
+  await test('All eleven languages switch live without changing user names or draft inputs', async () => {
     doc = await reset();
     const win = frame.contentWindow;
     current().fences[0].title = '名称';
@@ -1040,7 +1040,7 @@ async function runTests() {
     doc.getElementById('nrName').value = 'My rule 中文 {0}';
     change(doc, 'nrKind', 'type');
     doc.querySelector('#nrCats input').checked = true;
-    for (const language of ['en', 'ja', 'zh-TW', 'ko', 'de', 'fr', 'es', 'pt-BR', 'ru', 'zh-CN', 'system']) {
+    for (const language of ['en', 'ja', 'zh-TW', 'ko', 'de', 'fr', 'es', 'pt-BR', 'ru', 'it', 'zh-CN', 'system']) {
       change(doc, 'language', language);
       await settle();
       const locale = language === 'system' ? 'en' : language;

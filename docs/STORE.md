@@ -66,8 +66,8 @@ PecoFence first; both builds share the single-instance mutex.
    URL), display mode PC, support URL and website.
 3. Age ratings: IARC questionnaire, utility with no user-generated or online content.
 4. Packages: upload `dist/pecofence-<version>-x64.msix`.
-5. Store listings: all ten app languages (en-US, zh-CN, zh-TW, ja, ko, de, fr, es,
-   pt-BR, ru). Review the second revision at
+5. Store listings: all eleven app languages (en-US, zh-CN, zh-TW, ja, ko, de, fr, es,
+   pt-BR, ru, it). Review the second revision at
    `dist/store-listing-v2/index.html`. Rebuild from its local native captures with
    `uv run --with pillow python scripts/make-store-v2.py`.
    Its `PecoFence-store-v2.zip` contains five native screenshots, matching localized

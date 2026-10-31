@@ -20,6 +20,7 @@ pub fn ui_language() -> &'static str {
         0x0a => "es",
         0x16 => "pt-BR",
         0x19 => "ru",
+        0x10 => "it",
         _ => "en",
     }
 }
