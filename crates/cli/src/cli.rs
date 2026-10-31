@@ -235,7 +235,7 @@ pub enum FenceCmd {
         #[arg(help = FENCE_HELP)]
         fence: String,
     },
-    /// Resize a fence (physical px); position is kept
+    /// Resize a fence (physical px); position is kept (the bottom edge for an expandUpward fence)
     #[command(after_help = "Example: pecofence-cli fence resize Work --w 800")]
     #[command(group(ArgGroup::new("size").required(true).multiple(true)))]
     Resize {

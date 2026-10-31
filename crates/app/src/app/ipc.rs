@@ -2044,6 +2044,10 @@ impl App {
         let report = w
             .fit_report()
             .ok_or_else(|| IpcError::internal("the fence window has no view"))?;
+        // A fence that expands upward keeps its bottom edge.
+        if self.state.fence(host).is_some_and(|h| h.expand_upward) {
+            rect.y += rect.h - report.fitting_height_px;
+        }
         rect.h = report.fitting_height_px;
         let result = self.ipc_set_bounds(&host.to_string(), rect)?;
         let changed = result
