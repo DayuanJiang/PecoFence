@@ -9,15 +9,10 @@ pub(super) struct ColDrag {
     pub(super) start_w: f32,
 }
 
-pub(super) fn bounded_auto_height(
-    desired: i32,
-    title_height: i32,
-    top: i32,
-    work_bottom: i32,
-) -> i32 {
+pub(super) fn bounded_auto_height(desired: i32, title_height: i32, top: i32, bottom: i32) -> i32 {
     // Preserve a client pixel even when the title was dragged almost offscreen. In normal
     // positions, excess rows stay accessible via the existing scrollbar above the taskbar.
-    desired.min(work_bottom.saturating_sub(top).max(title_height + 1))
+    desired.min(bottom.saturating_sub(top).max(title_height + 1))
 }
 
 impl FenceViewState {
@@ -392,16 +387,19 @@ impl FenceViewState {
         }
     }
 
-    /// `desired` capped so the window ends at the bottom of its monitor's work area.
+    /// `desired` capped so the window ends at the bottom of its monitor's work area, or, for a
+    /// fence that expands upward, starts at its top: the room on the side the fence grows into.
+    /// The edge that stays put is the one measured from, so the cap does not grow as the fence
+    /// does.
     fn bounded_height_px(&self, desired: i32) -> i32 {
         let rect = window::window_rect(self.hwnd);
         monitors::query(monitors::monitor_from_window(self.hwnd)).map_or(desired, |monitor| {
-            bounded_auto_height(
-                desired,
-                self.title_h_px(),
-                rect.top,
-                monitor.work_area.bottom,
-            )
+            let (top, bottom) = if self.expand_upward {
+                (monitor.work_area.top, rect.bottom)
+            } else {
+                (rect.top, monitor.work_area.bottom)
+            };
+            bounded_auto_height(desired, self.title_h_px(), top, bottom)
         })
     }
 
