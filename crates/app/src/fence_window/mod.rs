@@ -372,6 +372,9 @@ pub struct TabView {
     pub title_color: Option<ColorF>,
     /// A folder portal whose title icon is shown: the tab pill carries the folder glyph.
     pub folder_icon: bool,
+    /// A folder portal shown inside a subfolder: while it is the shown tab, its folder glyph is
+    /// the up button.
+    pub up_button: bool,
 }
 
 type ViewCell = Rc<RefCell<Option<FenceViewState>>>;
