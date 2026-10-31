@@ -1,10 +1,12 @@
-//! Folder-portal fences: decorations, per-portal folder watchers, creation, refresh, navigation.
+//! Folder-portal fences, and regular fences showing a folder: decorations, per-fence folder
+//! watchers, creation, refresh, navigation.
 
 use super::*;
 
 impl App {
     /// Pushes the shown fence's portal decorations (folder glyph, up button, navigate flag) and
-    /// its display title into the host window.
+    /// its display title into the host window. A regular fence showing a folder gets them too,
+    /// except the glyph: it marks folder portals, whose option hides it.
     pub(super) fn apply_portal_deco(&self, host: FenceId) {
         let Some(w) = self.fences.get(&host) else {
             return;
@@ -13,14 +15,15 @@ impl App {
         let Some(f) = self.state.fence(active) else {
             return;
         };
-        let is_portal = f.kind == FenceKind::FolderPortal;
+        let folder = self.state.portal_path(active);
+        let is_portal = folder.is_some();
         w.set_portal_deco(
             is_portal,
-            is_portal && !f.hide_title_icon,
-            is_portal && self.state.portal_navigated(active),
-            is_portal && f.portal_navigate,
+            f.kind == FenceKind::FolderPortal && !f.hide_title_icon,
+            self.state.can_go_up(active),
+            is_portal && f.navigates_folders(),
             is_portal && self.state.portal_missing(active),
-            self.state.portal_path(active),
+            folder,
         );
         if let Some(h) = self.state.fence(host) {
             let title = if active == host {
@@ -268,11 +271,21 @@ impl App {
         }
     }
 
+    /// Opens folder `dir` inside regular fence `fence`: a subfolder of the folder it shows opens
+    /// as a subfolder (up goes to its parent); any other folder is shown in place of the fence's
+    /// icons until up brings them back. False when refused.
+    pub(super) fn open_folder_in_fence(&mut self, fence: FenceId, dir: &std::path::Path) -> bool {
+        let entered = self.state.portal_enter(fence, dir) || self.state.open_folder(fence, dir);
+        if entered {
+            self.after_portal_navigation(fence, 1, None);
+        }
+        entered
+    }
+
     /// One level up selects the folder just left, as in Explorer.
     pub(super) fn portal_up(&mut self, fence: FenceId) {
-        let left = self.state.portal_path(fence);
+        let left = self.state.up_selection(fence);
         if self.state.portal_up(fence) {
-            let left = left.map(|p| crate::state::portal_item_id(&p.to_string_lossy()));
             self.after_portal_navigation(fence, -1, left);
         }
     }

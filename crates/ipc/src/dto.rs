@@ -136,6 +136,14 @@ pub struct FenceDto {
     pub geometry: NormGeometry,
     pub rolled_up: bool,
     pub locked: bool,
+    /// The bottom edge stays put when the fence rolls up, expands or changes height (a hosted
+    /// tab reports its host's).
+    #[serde(default)]
+    pub expand_upward: bool,
+    /// The bottom edge is the one that stays put: an `expandUpward` fence that opened upward,
+    /// or rolled up with its title row at the bottom of `rect` (`fence resize` keeps it).
+    #[serde(default)]
+    pub bottom_anchored: bool,
     pub item_count: usize,
     /// Set when this fence is shown as a tab inside another fence's window.
     pub tab_host: Option<Uuid>,
@@ -174,6 +182,16 @@ pub struct FenceDto {
     pub reverse: bool,
     pub group_by_date: bool,
     pub label_lines: u8,
+    /// Regular fences: double-clicking a folder or a folder shortcut opens it inside the fence
+    /// instead of File Explorer (off by default; a portal has `portal.navigate`).
+    #[serde(default)]
+    pub open_folders_inside: bool,
+    /// The folder a virtual fence or the inbox shows in place of its own icons (one
+    /// double-clicked in it, or a subfolder of that); `null` when it shows its icons and for
+    /// portals. Runtime only: `itemCount`, `items.list`, `items.move` and the item events keep
+    /// to the fence's own icons meanwhile.
+    #[serde(default)]
+    pub opened_folder: Option<String>,
     pub portal: Option<PortalDto>,
     /// How the items fit the window; `null` for a tab that is not the one currently shown and
     /// for fences without a window (disconnected monitor).

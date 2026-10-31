@@ -160,7 +160,10 @@ in; only the tab currently shown can be measured, so another tab is `unsupported
 `fence detach` it first).
 
 `fence set` properties (values as shown by `fence get`): `title` (or `fence rename`), `iconSize`
-32/48/64/96, `spacing` compact/normal/loose, `autoHeight`, `locked`, `excludeFromQuickHide`,
+32/48/64/96, `spacing` compact/normal/loose, `autoHeight`, `locked`, `expandUpward` (rolled up, it
+opens upward from its title row where it fits above it, else downward, for fences resting on the
+taskbar; the row stays where it is; `bottomAnchored` in `fence get` says whether the bottom edge
+is the one that stays put, which `fence resize --h` and `fence fit` keep), `excludeFromQuickHide`,
 `opacity` default/clear/solid/transparent (transparent: no glass, rim or shadow until the pointer
 is over the fence), `tint` `"#RRGGBB"` or `null`, `tintTitleOnly` (the tint washes only the title
 row), `tabColor` `"#RRGGBB"` or `null` (the bar under the fence's tab in a tab strip; `null` follows
@@ -168,7 +171,10 @@ its tint), `titleColor` theme/tint/white/black/`"#RRGGBB"`, `titleSize` small/no
 `titleOnHover` default/hover/always (hover: the title row folds away until the pointer is over the
 fence; default follows `rollUp.titleOnHover`), `layout` icons/list/details,
 `sort` manual/name/type/date/size/openCount, `reverse`, `groupByDate`, `labelLines`,
-`portalNavigate`, `portalTitleIcon`, `hideWhenEmpty` (inbox only: no window while it is empty; the inbox
+`openFoldersInside` (any fence but a portal: double-clicking a folder, or a shortcut to a folder,
+shows that folder inside the fence instead of opening File Explorer; off by default),
+`portalNavigate` (portals: double-clicking a subfolder opens it inside the portal; on by default),
+`portalTitleIcon`, `hideWhenEmpty` (inbox only: no window while it is empty; the inbox
 cannot be deleted). `--all` applies the option to every fence one call at a time and
 skips tabs hosted inside another fence (their options belong to the host).
 
@@ -229,7 +235,9 @@ included. `config.json` and `config export` files write this condition as
 is rejected with `invalid_value` and the hint to re-save it (`| Set-Content -Encoding utf8`).
 
 `settings set` paths are dotted camelCase keys of the Settings object, e.g. `iconSize`, `theme`,
-`themeStyle`, `hideRealIcons`, `hideInboxWhenIconsShown` (while `hideRealIcons` is off, the inbox
+`themeStyle`, `hideRealIcons`, `keepIconsHidden` (with `hideRealIcons`, Windows' desktop icons stay
+hidden when PecoFence exits, so they do not flash at the next sign-in; default off),
+`hideInboxWhenIconsShown` (while `hideRealIcons` is off, the inbox
 fence shows no window and its items only show among the Windows desktop icons; a tab or a host of
 tabs stays; default off), `offerNewFence` (a rectangle drawn on empty desktop that touches no fence
 offers 「在此新建栅栏」; default on), `autostart`, `peek.enabled`, `quickHide.enabled`,
@@ -289,6 +297,14 @@ A portal whose `portalNavigate` is on can be double-clicked into a subfolder. It
 folder as `portal.current` (next to `portal.path`, the folder it was created for): `item list` shows
 the subfolder's contents and `item move --to <portal>` puts files there. `--dry-run` shows the exact
 `destination` of every file.
+
+A virtual fence or the inbox whose `openFoldersInside` is on shows a folder double-clicked in it (or
+the folder a shortcut points to) in place of its own icons until it goes up again. `fence get`
+reports that folder, or the subfolder of it shown, as `openedFolder` (`null` otherwise; `kind` and
+`portal` do not change). Meanwhile `itemCount`, `item list`, `item move` and `watch` keep to the
+fence's own icons: `item move --to` that fence only changes membership and never moves a file into
+the folder it shows, and `watch` reports the change as `fence.changed` with `openedFolder` in
+`changed`.
 
 ## Watching for changes
 

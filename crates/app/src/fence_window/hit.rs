@@ -9,15 +9,10 @@ pub(super) struct ColDrag {
     pub(super) start_w: f32,
 }
 
-pub(super) fn bounded_auto_height(
-    desired: i32,
-    title_height: i32,
-    top: i32,
-    work_bottom: i32,
-) -> i32 {
+pub(super) fn bounded_auto_height(desired: i32, title_height: i32, top: i32, bottom: i32) -> i32 {
     // Preserve a client pixel even when the title was dragged almost offscreen. In normal
     // positions, excess rows stay accessible via the existing scrollbar above the taskbar.
-    desired.min(work_bottom.saturating_sub(top).max(title_height + 1))
+    desired.min(bottom.saturating_sub(top).max(title_height + 1))
 }
 
 impl FenceViewState {
@@ -86,19 +81,62 @@ impl FenceViewState {
         y >= 0.0 && y < RowMetrics::details().header_h
     }
 
-    /// Is the client-pixel point on the portal "up" button? A tab strip in the title row has
-    /// none; a left tab column has it at the end of the shown tab's row (`rail_up_box`).
+    /// Is the client-pixel point on the portal "up" button? A tab strip in the title row has it
+    /// on the shown tab's folder glyph (`FenceChrome::tab_up_box`); a left tab column at the end
+    /// of the shown tab's row (`rail_up_box`); a single title on its folder glyph
+    /// (`FenceChrome::lone_up_box`), or at the far left while the glyph is hidden.
     pub(super) fn up_button_at(&self, x_px: i32, y_px: i32) -> bool {
-        if !self.deco.up_button || self.title_row_strip() {
+        if !self.deco.up_button {
             return false;
         }
         let scale = self.scale();
         let (x, y) = (x_px as f32 / scale, y_px as f32 / scale);
-        let r = if self.tabs_on_rail() {
+        let r = if self.title_row_strip() {
+            // The pill is where it is drawn (sliding, dragged); a scrolled strip's cut-off part
+            // takes no click (`tab_at`). A tab without its folder glyph has no button.
+            let i = self.active_index();
+            let Some(t) = self.tabs.get(i).filter(|t| t.up_button && t.folder_icon) else {
+                return false;
+            };
+            let (Some(&tab_x), Some(&(_, tab_w))) = (
+                self.tab_draw_xs(Instant::now()).get(i),
+                self.tab_rects().get(i),
+            ) else {
+                return false;
+            };
+            if self.tab_at(x_px, y_px) != Some(i) {
+                return false;
+            }
+            let badge = self.tab_badge(t.id);
+            self.chrome.tab_up_box(
+                &self.theme,
+                tab_x,
+                tab_w,
+                &t.title,
+                t.title_size,
+                badge.as_deref(),
+            )
+        } else if self.tabs_on_rail() {
             match self.rail_up_box() {
                 Some(r) => r,
                 None => return false,
             }
+        } else if self.deco.folder_icon {
+            // The title moves aside for the rolled item count, as drawn.
+            let width = self.chrome_panel.size_px().0 as f32 / scale;
+            let reserve = if self.roll_target() && !self.behavior.hide_count_and_chevron.get() {
+                pecofence_render::fence_chrome::header_count_width(width, 1, self.deco.title_x())
+            } else {
+                0.0
+            };
+            self.chrome.lone_up_box(
+                &self.title,
+                self.style.title_size,
+                self.behavior.title_align.get(),
+                width,
+                reserve,
+                self.theme.title_height,
+            )
         } else {
             TitleDeco::up_box(self.theme.title_height)
         };
@@ -324,8 +362,13 @@ impl FenceViewState {
     /// Window height (device px) that fits every row of the grid at the current width,
     /// regardless of the roll state (the expand animation targets it directly).
     pub(super) fn fitting_height_px(&self) -> i32 {
+        self.bounded_height_px(self.wanted_height_px())
+    }
+
+    /// The height that shows every row (and the left tab column), with no room limit.
+    pub(super) fn wanted_height_px(&self) -> i32 {
         let desired = self.desired_height_px(&self.current_layout());
-        self.bounded_height_px(desired.max(self.rail_fit_height_px()))
+        desired.max(self.rail_fit_height_px())
     }
 
     /// The item layout at the content surface's current width. A fence collapsed (or
@@ -392,16 +435,47 @@ impl FenceViewState {
         }
     }
 
-    /// `desired` capped so the window ends at the bottom of its monitor's work area.
+    /// `desired` capped so the window ends at the bottom of its monitor's work area, or starts
+    /// at its top when the title row is at the bottom: the room on the side the fence grows
+    /// into, with 向上展开 also only as far as the fences there can make room. The edge that stays
+    /// put is the one measured from, so the cap does not grow as the fence does.
     fn bounded_height_px(&self, desired: i32) -> i32 {
         let rect = window::window_rect(self.hwnd);
         monitors::query(monitors::monitor_from_window(self.hwnd)).map_or(desired, |monitor| {
-            bounded_auto_height(
-                desired,
-                self.title_h_px(),
-                rect.top,
-                monitor.work_area.bottom,
-            )
+            let (above, below) = if self.expand_upward {
+                self.expand_rooms_px()
+            } else {
+                (i32::MAX, i32::MAX)
+            };
+            let (top, bottom) = if self.row_bottom {
+                let top = rect.bottom.saturating_sub(above);
+                (monitor.work_area.top.max(top), rect.bottom)
+            } else {
+                let bottom = rect.top.saturating_add(below);
+                (rect.top, monitor.work_area.bottom.min(bottom))
+            };
+            bounded_auto_height(desired, self.title_h_px(), top, bottom)
+        })
+    }
+
+    /// Room (device px) above the window's bottom edge and below its top edge for a fence with
+    /// 向上展开: as far as the fences there can make room (they slide with
+    /// `rollUp.pushNeighbors`, else the fence stops short of them) inside the work area. Kept
+    /// by the App's push pass; the bare work area until it has run.
+    pub(super) fn expand_rooms_px(&self) -> (i32, i32) {
+        let kept = self
+            .behavior
+            .expand_room
+            .borrow()
+            .iter()
+            .find(|(hwnd, ..)| *hwnd == self.hwnd)
+            .map(|&(_, above, below)| (above, below));
+        kept.unwrap_or_else(|| {
+            let rect = window::window_rect(self.hwnd);
+            monitors::query(monitors::monitor_from_window(self.hwnd))
+                .map_or((i32::MAX, i32::MAX), |m| {
+                    (rect.bottom - m.work_area.top, m.work_area.bottom - rect.top)
+                })
         })
     }
 

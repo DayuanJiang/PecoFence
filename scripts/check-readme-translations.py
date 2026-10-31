@@ -1,7 +1,7 @@
 """Check that every README translation mirrors the English README.
 
 Verifies that each language has a README under docs/readme/, a hero image under
-docs/assets/, a ten-entry language bar, the same number of headings, tables,
+docs/assets/, an eleven-entry language bar, the same number of headings, tables,
 images and <details> blocks as README.md, and that every relative link and
 in-page anchor resolves. Exit status is non-zero on any problem.
 """
@@ -12,7 +12,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 README_DIR = ROOT / "docs/readme"
-LANGUAGES = ["zh-CN", "zh-TW", "ja", "ko", "de", "fr", "es", "pt-BR", "ru"]
+LANGUAGES = ["zh-CN", "zh-TW", "ja", "ko", "de", "fr", "es", "pt-BR", "ru", "it"]
 LINK = re.compile(r'\]\(([^)\s]+)\)|href="([^"]+)"|src="([^"]+)"')
 HEADING = re.compile(r"^(#{1,6})\s+(.*?)\s*$", re.M)
 
@@ -39,7 +39,7 @@ def check(path, expected_shape, hero, problems):
         problems.append(f"{path.name}: BOM or CRLF line endings")
     if hero and f"hero-{hero}.png" not in text:
         problems.append(f"{path.name}: does not reference hero-{hero}.png")
-    if text.count("&nbsp;·&nbsp;") < 11:
+    if text.count("&nbsp;·&nbsp;") < 12:
         problems.append(f"{path.name}: language bar seems incomplete")
     actual = shape(text)
     if expected_shape and actual != expected_shape:

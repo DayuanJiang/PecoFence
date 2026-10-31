@@ -220,15 +220,35 @@ impl App {
         self.schedule_save();
     }
 
-    /// Lowest bottom edge host `id` at `r` may grow to without running into a fence below.
+    /// Lowest bottom edge host `id` at `r` may grow to without running into a fence below. One
+    /// whose title row is at its bottom (a 向上展开 fence that opened upward) keeps that edge,
+    /// so nothing below limits it.
     pub(super) fn growth_limit_below(&self, id: FenceId, r: &RECT) -> Option<i32> {
         let w = self.fences.get(&id)?;
+        if w.row_at_bottom() {
+            return None;
+        }
         clearance::limit_below(&self.other_fence_rects(id), r, self.gap_px(w.hwnd()))
     }
 
+    /// Highest top edge host `id` at `r` may grow to without running into a fence above, for a
+    /// fence whose title row is at its bottom (None for the others).
+    pub(super) fn growth_limit_above(&self, id: FenceId, r: &RECT) -> Option<i32> {
+        let w = self.fences.get(&id)?;
+        if !w.row_at_bottom() {
+            return None;
+        }
+        clearance::limit_above(&self.other_fence_rects(id), r, self.gap_px(w.hwnd()))
+    }
+
     /// Expanding a rolled fence with `rollUp.pushNeighbors` off: the expanded height stops short
-    /// of a fence placed under the title row meanwhile (the rest of the items scroll).
+    /// of a fence placed under the title row meanwhile (the rest of the items scroll). A fence
+    /// with 向上展开 picks its side and height from the room around its title row as it opens
+    /// instead (`expand_rooms_px`), without changing the height it is saved with.
     pub(super) fn clamp_expand_height(&mut self, id: FenceId) {
+        if self.state.fence(id).is_some_and(|f| f.expand_upward) {
+            return;
+        }
         let Some(w) = self.fences.get(&id) else {
             return;
         };
@@ -357,6 +377,15 @@ impl App {
             let limit = limit.max(r.bottom);
             if r.top + h > limit {
                 h = steps.height_within(limit - r.top);
+            }
+        }
+        // A fence that expands upward grows only as far as the next fence above.
+        if let Some(limit) = self.growth_limit_above(id, &r)
+            && let Some(steps) = self.grid_steps(id, scale)
+        {
+            let limit = limit.min(r.top);
+            if r.bottom - h < limit {
+                h = steps.height_within(r.bottom - limit);
             }
         }
         if h == r.bottom - r.top {

@@ -55,6 +55,7 @@ pub(super) const FENCE_PROPS: &[&str] = &[
     "spacing",
     "autoHeight",
     "locked",
+    "expandUpward",
     "excludeFromQuickHide",
     "opacity",
     "tint",
@@ -68,6 +69,7 @@ pub(super) const FENCE_PROPS: &[&str] = &[
     "reverse",
     "groupByDate",
     "labelLines",
+    "openFoldersInside",
     "portalNavigate",
     "portalTitleIcon",
     "hideWhenEmpty",
@@ -90,6 +92,8 @@ pub(super) enum FenceProp {
     Spacing(Spacing),
     AutoHeight(bool),
     Locked(bool),
+    /// 向上展开: the bottom edge stays put when the height changes.
+    ExpandUpward(bool),
     ExcludeFromQuickHide(bool),
     /// None = the global default; otherwise a preset (`OPACITY_CLEAR` / `_SOLID` / `_NONE`).
     Opacity(Option<f32>),
@@ -102,6 +106,8 @@ pub(super) enum FenceProp {
     TitleSize(Option<TitleSize>),
     /// None = the global `rollUp.titleOnHover`.
     TitleOnHover(Option<bool>),
+    /// Regular fences: a double-clicked folder opens inside the fence.
+    OpenFoldersInside(bool),
     PortalNavigate(bool),
     PortalTitleIcon(bool),
     /// Inbox only: 为空时自动隐藏.
@@ -152,6 +158,7 @@ pub(super) fn parse_fence_prop(
         }
         "autoHeight" => FenceProp::AutoHeight(as_bool()?),
         "locked" => FenceProp::Locked(as_bool()?),
+        "expandUpward" => FenceProp::ExpandUpward(as_bool()?),
         "excludeFromQuickHide" => FenceProp::ExcludeFromQuickHide(as_bool()?),
         "opacity" => {
             const ALLOWED: &[&str] = &["default", "clear", "solid", "transparent"];
@@ -237,6 +244,7 @@ pub(super) fn parse_fence_prop(
                 _ => return Err(bad(ALLOWED)),
             }
         }
+        "openFoldersInside" => FenceProp::OpenFoldersInside(as_bool()?),
         "portalNavigate" => FenceProp::PortalNavigate(as_bool()?),
         "portalTitleIcon" => FenceProp::PortalTitleIcon(as_bool()?),
         "hideWhenEmpty" => FenceProp::HideWhenEmpty(as_bool()?),
@@ -285,6 +293,23 @@ impl App {
         self.state.set_locked(host, on);
         if let Some(w) = self.fences.get(&host) {
             w.set_locked(on);
+        }
+        self.schedule_save();
+    }
+
+    /// 向上展开 (a window-level flag: a tab sets its host's). Nothing moves: a rolled title row
+    /// stays where it is and its expanded rect is recorded again around it (switched on, above
+    /// it where it fits there, see `AppState::set_fence_bounds`; switched off, below it, like
+    /// any fence). An open fence keeps the edge it opened from until it rolls up.
+    pub(super) fn set_fence_expand_upward(&mut self, fence: FenceId, on: bool) {
+        let host = self.state.host_of(fence);
+        self.state.set_expand_upward(host, on);
+        let rolled = self.fences.get(&host).and_then(|w| {
+            w.set_expand_upward(on)
+                .then(|| (w.rect(), w.expanded_height_px()))
+        });
+        if let Some((rect, expanded)) = rolled {
+            self.record_bounds(host, rect, true, expanded);
         }
         self.schedule_save();
     }
@@ -398,6 +423,12 @@ impl App {
         self.schedule_save();
     }
 
+    pub(super) fn set_fence_open_folders_inside(&mut self, fence: FenceId, on: bool) {
+        self.state.set_open_folders_inside(fence, on);
+        self.apply_portal_deco(self.state.host_of(fence));
+        self.schedule_save();
+    }
+
     pub(super) fn set_fence_title_icon(&mut self, fence: FenceId, show: bool) {
         self.state.set_hide_title_icon(fence, !show);
         let host = self.state.host_of(fence);
@@ -497,6 +528,7 @@ impl App {
             "spacing": spacing,
             "autoHeight": h.view.auto_height,
             "locked": h.locked,
+            "expandUpward": h.expand_upward,
             "excludeFromQuickHide": h.exclude_from_quick_hide,
             "opacity": opacity,
             "tint": tint.map(hex),
@@ -506,6 +538,7 @@ impl App {
             "titleSize": title_size,
             "titleOnHover": title_on_hover,
             "hideWhenEmpty": f.hide_when_empty,
+            "openFoldersInside": f.open_folders_inside,
             "portal": portal,
         })
     }
@@ -565,6 +598,7 @@ impl App {
             FenceProp::Spacing(spacing) => self.set_fence_spacing(fence, spacing),
             FenceProp::AutoHeight(on) => self.set_fence_auto_height(fence, on),
             FenceProp::Locked(on) => self.set_fence_locked(fence, on),
+            FenceProp::ExpandUpward(on) => self.set_fence_expand_upward(fence, on),
             FenceProp::ExcludeFromQuickHide(on) => self.set_fence_quick_hide_excluded(fence, on),
             FenceProp::Opacity(op) => self.set_fence_opacity(fence, op),
             FenceProp::Tint(tint) => self.set_fence_tint(fence, tint),
@@ -585,6 +619,7 @@ impl App {
                 self.set_fence_title_style(fence, title_rgb, size);
             }
             FenceProp::TitleOnHover(on) => self.set_fence_title_on_hover(fence, on),
+            FenceProp::OpenFoldersInside(on) => self.set_fence_open_folders_inside(fence, on),
             FenceProp::PortalNavigate(on) => self.set_fence_portal_navigate(fence, on),
             FenceProp::PortalTitleIcon(on) => self.set_fence_title_icon(fence, on),
             FenceProp::HideWhenEmpty(on) => self.set_fence_hide_when_empty(fence, on),

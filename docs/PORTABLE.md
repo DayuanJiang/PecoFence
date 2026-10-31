@@ -14,7 +14,7 @@ Windows 10 22H2 or Windows 11 (x64) and Microsoft Edge WebView2 Runtime are requ
 
 Right-click the tray icon to open Settings or exit. Under General, choose your
 display language: English, Simplified/Traditional Chinese, Japanese, Korean,
-German, French, Spanish, Portuguese (Brazil), Russian or Follow system.
+German, French, Spanish, Portuguese (Brazil), Russian, Italian or Follow system.
 
 By default, settings are saved in `%APPDATA%\PecoFence\config.json`. Launch with
 `--portable` to use a `config` folder beside the executable.

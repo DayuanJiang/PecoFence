@@ -24,6 +24,7 @@ https://github.com/user-attachments/assets/c827f059-cfd7-4f6a-bed3-8b00411a7220
   &nbsp;·&nbsp; <a href="docs/readme/README.es.md">Español</a>
   &nbsp;·&nbsp; <a href="docs/readme/README.pt-BR.md">Português (Brasil)</a>
   &nbsp;·&nbsp; <a href="docs/readme/README.ru.md">Русский</a>
+  &nbsp;·&nbsp; <a href="docs/readme/README.it.md">Italiano</a>
 </p>
 
 ---

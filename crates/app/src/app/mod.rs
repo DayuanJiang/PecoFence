@@ -938,14 +938,14 @@ impl App {
                             {
                                 app.state.save_if_dirty();
                                 if let Some(a) = app.anchor.borrow_mut().as_mut() {
-                                    a.restore_desktop_icons();
+                                    a.release_desktop_icons();
                                 }
                             } else if let Some(anchor) = session_anchor.get()
                                 && let Ok(mut guard) = anchor.try_borrow_mut()
                                 && let Some(a) = guard.as_mut()
                             {
                                 // The session may end before the menu or dialog returns.
-                                a.restore_desktop_icons();
+                                a.release_desktop_icons();
                             }
                             Some(1)
                         }
@@ -957,7 +957,7 @@ impl App {
                                 && let Some(a) = guard.as_mut()
                             {
                                 tracing::info!("session ending with a menu open");
-                                a.restore_desktop_icons();
+                                a.release_desktop_icons();
                             }
                             None
                         }
@@ -1112,6 +1112,7 @@ impl App {
                 ),
                 selection: std::cell::RefCell::new(Vec::new()),
                 pushed: std::cell::RefCell::new(Vec::new()),
+                expand_room: std::cell::RefCell::new(Vec::new()),
                 size_move: std::cell::RefCell::new(None),
             }),
         });
@@ -1397,10 +1398,13 @@ impl App {
                     );
                 }
             }
+            a.keep_icons_hidden = app.state.config.settings.keep_icons_hidden;
             if app.state.config.settings.hide_real_icons && !app.no_hide_icons {
                 // At logon Explorer's desktop may not be ready yet: retried from the anchor's
                 // periodic check; housekeeping tells the user if it never succeeds.
                 a.request_hide_desktop_icons();
+            } else {
+                a.show_kept_desktop_icons();
             }
         }
         // Portable/development runs do not change login startup. Normal releases
@@ -1674,7 +1678,7 @@ impl App {
                 // rule like every other path that expands a fence.
                 self.apply_auto_height(fence);
             }
-            Command::LaunchItem { item, from } => self.launch(item, from),
+            Command::LaunchItem { item, from, inside } => self.launch(item, from, inside),
             Command::MoveItems { items, to } => self.move_items(&items, to),
             Command::ReorderItems {
                 fence,
@@ -1962,7 +1966,7 @@ impl App {
             Command::Quit => {
                 self.state.save_if_dirty();
                 if let Some(a) = self.anchor.borrow_mut().as_mut() {
-                    a.restore_desktop_icons();
+                    a.release_desktop_icons();
                 }
                 window::post_quit(0);
             }
@@ -2027,7 +2031,7 @@ impl App {
         self.fences.clear();
         self.dying.clear();
         if let Some(a) = self.anchor.borrow_mut().as_mut() {
-            a.restore_desktop_icons();
+            a.release_desktop_icons();
         }
         self.tray = None;
     }

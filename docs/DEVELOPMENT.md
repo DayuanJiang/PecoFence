@@ -44,7 +44,7 @@ Some platform tests use real Windows APIs and a desktop session. They are not a
 substitute for testing native menus, multiple monitors and supported Windows builds.
 
 After building the package binaries, `python scripts/test-language-smoke.py`
-opens an isolated portable Settings window, changes all ten languages through the
+opens an isolated portable Settings window, changes all eleven languages through the
 real IPC handler, and checks saved preferences and preservation of names/autostart.
 It keeps its generated configuration and report under `.cache/`.
 
