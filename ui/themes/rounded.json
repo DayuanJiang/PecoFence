@@ -1,0 +1,8 @@
+{
+  "base": "fluent",
+  "cornerRadius": 16,
+  "shadowBlur": 14,
+  "shadowOffset": 6,
+  "light": { "shadowOpacity": 0.28 },
+  "dark": { "shadowOpacity": 0.45 }
+}

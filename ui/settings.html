@@ -354,6 +354,8 @@
             <span class="shot" aria-hidden="true"><span class="mini-fence"><span class="preview-title">工作空间</span><span class="mini-items"><span class="file-icon folder ic">&#xE8B7;</span><span class="file-icon ic">&#xE8A5;</span><span class="file-icon sheet ic">&#xE9F9;</span></span></span></span>
             <span class="cap">Liquid Glass · 液态玻璃</span></label>
         </div></div>
+      <div class="card"><div class="l"><span class="ic">&#xE790;</span><div><div class="t" id="customThemeTitle">自定义主题</div><div class="s">主题文件放在 themes 文件夹里，选中后代替上面的风格，文件保存后栅栏立即更新</div><div class="s error" id="customThemeError" aria-live="polite" hidden></div></div></div>
+        <div class="actions"><select id="customTheme" aria-labelledby="customThemeTitle"></select><button id="openThemes">打开主题文件夹</button><button id="themeGuide">写法说明</button></div></div>
       <div class="card"><div class="l"><span class="ic">&#xE7A1;</span><div><div class="t">颜色模式</div></div></div>
         <select data-bind="theme"><option value="followWindowsMode">跟随 Windows 模式</option><option value="followAppMode">跟随应用模式</option><option value="light">浅色</option><option value="dark">深色</option></select></div>
       <div class="card"><div class="l"><span class="ic">&#xE8D3;</span><div><div class="t">图标名称颜色</div><div class="s">自动：液态玻璃按背后壁纸的明暗选深色或浅色，Fluent 跟随颜色模式；栅栏标题的颜色在“栅栏”页设置</div></div></div>
@@ -582,19 +584,50 @@
   function renderAppearance() {
     if (!state) return;
     const settings = state.settings, preview = document.getElementById('desktopPreview');
-    document.documentElement.classList.toggle('liquid-glass', settings.themeStyle === 'liquidGlass');
+    // A custom theme's base style comes with the host's next state.
+    const glass = settings.customTheme ? state.styleInUse === 'liquidGlass' : settings.themeStyle === 'liquidGlass';
+    document.documentElement.classList.toggle('liquid-glass', glass);
     preview.classList.toggle('chameleon', !!settings.icons.chameleon);
     preview.style.setProperty('--preview-icon-size', ({ 32: 21, 48: 26, 64: 31, 96: 36 }[settings.iconSize] || 26) + 'px');
     preview.style.setProperty('--preview-tint', settings.icons.tintRgb ? '#' + rgbToHex(settings.icons.tintRgb) : 'transparent');
     preview.style.setProperty('--preview-tint-strength', settings.icons.tintStrength);
     preview.style.setProperty('--preview-title-align', settings.titleAlign || 'left');
   }
+  // A chosen custom theme takes the place of the style tiles: none of them is checked, and a
+  // click on one goes back to that built-in style.
   function bindThemeStyle() {
-    const value = state.settings.themeStyle || 'fluent';
+    const value = state.settings.customTheme ? '' : state.settings.themeStyle || 'fluent';
     document.querySelectorAll('input[name=themeStyle]').forEach(radio => {
       radio.checked = radio.value === value;
-      radio.onchange = () => { if (radio.checked) { state.settings.themeStyle = radio.value; commit('themeStyle'); } };
+      radio.onchange = () => {
+        if (!radio.checked) return;
+        state.settings.themeStyle = radio.value;
+        state.settings.customTheme = null;
+        bindCustomTheme();
+        commit('themeStyle');
+      };
     });
+  }
+  // The theme files of the themes folder; a chosen file that is gone stays listed with its error.
+  function bindCustomTheme() {
+    const select = document.getElementById('customTheme'), chosen = state.settings.customTheme || '';
+    const names = [...(state.customThemes || [])];
+    if (chosen && !names.includes(chosen)) names.push(chosen);
+    // Rebuilt only when the list changed: every host state passes through here, and a rebuild
+    // closes the list while it is open.
+    const listed = [...select.options].map(o => o.text);
+    if (listed.join('\n') !== [t("无"), ...names].join('\n')) {
+      select.replaceChildren(new Option(t("无"), ''), ...names.map(name => new Option(name, name)));
+    }
+    select.value = chosen;
+    select.onchange = () => {
+      state.settings.customTheme = select.value || null;
+      bindThemeStyle();
+      commit('customTheme');
+    };
+    const error = document.getElementById('customThemeError'), message = chosen && state.customThemeError;
+    error.hidden = !message;
+    error.textContent = message ? tf("主题文件有误，正在使用内置风格：{0}", message) : '';
   }
 
   // The desktop uses cached native optics. The Liquid Glass tile refracts its backdrop through a
@@ -1193,6 +1226,8 @@
   document.getElementById('rateStore').onclick = () => send({ type: 'action', name: 'rateInStore' });
   document.getElementById('starRepo').onclick = () => send({ type: 'action', name: 'openRepository' });
   document.getElementById('openManual').onclick = () => send({ type: 'action', name: 'openManual' });
+  document.getElementById('openThemes').onclick = () => send({ type: 'action', name: 'openThemesFolder' });
+  document.getElementById('themeGuide').onclick = () => send({ type: 'action', name: 'openThemeGuide' });
   document.getElementById('repairIcons').onclick = () => send({ type: 'action', name: 'repairIcons' });
 
   // 关于 → 更新: an installed copy downloads and runs the new setup, a ZIP opens the release page.
@@ -1331,7 +1366,7 @@
       document.getElementById('rateStore').hidden = !m.storeEdition;
       renderWorkspaceSummary(m.fences.length, m.itemCount);
       document.getElementById('cfgPath').textContent = m.configPath;
-      bindAll(); bindThemeStyle(); bindIconTint(); renderDependents(); renderFences(); renderRules(); renderLayout(); updateKind(); renderAppearance(); renderDesktopIconsStatus();
+      bindAll(); bindThemeStyle(); bindCustomTheme(); bindIconTint(); renderDependents(); renderFences(); renderRules(); renderLayout(); updateKind(); renderAppearance(); renderDesktopIconsStatus();
       update = m.update; renderUpdate();
       // Transitions come on a frame after this state has been drawn: a single frame would style
       // both changes together and start them after all.

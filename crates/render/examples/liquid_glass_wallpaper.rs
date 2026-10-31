@@ -132,7 +132,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let w = if tab_mode == "narrow" {
                     37.0
                 } else {
-                    pecofence_render::text::measure_width(title, chrome.tab_format(title_size))
+                    pecofence_render::text::measure_width(title, &chrome.tab_format(title_size))
                         + 24.0
                 };
                 let tab = TabDraw {

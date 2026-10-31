@@ -1,6 +1,6 @@
 """Build the static product site into dist/site.
 
-Renders site/template.html once per language in site/i18n/, and beside it that
+Renders site/template.html and site/404.html once per language in site/i18n/, and beside it that
 language's animated manual (site/manual, scripts/manual_i18n.py) with the same header
 and footer (site/partials). Copies site/assets and the localized README hero images,
 and writes CNAME, robots.txt and sitemap.xml for GitHub Pages. No dependencies beyond
@@ -112,6 +112,7 @@ def main():
     template = (SITE / "template.html").read_text(encoding="utf-8")
     header = (SITE / "partials/header.html").read_text(encoding="utf-8")
     footer = (SITE / "partials/footer.html").read_text(encoding="utf-8")
+    not_found = (SITE / "404.html").read_text(encoding="utf-8")
     # Content hash appended to the stylesheet and script URLs so browsers pick up new
     # versions immediately despite the CDN's cache lifetime.
     asset_version = hashlib.sha256(
@@ -214,6 +215,15 @@ def main():
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(page, encoding="utf-8", newline="\n")
         urls.append(f"{origin}/{directory}")
+
+        # The 404 page Cloudflare Pages shows for a missing path under <dir>. It can be
+        # served at any depth, so its links start at the site root.
+        chrome = {"root": "/", "home": f"/{directory}", "manual": f"/{directory}manual/", "manual_current": "",
+                  "language_options": language_options(lambda lang: f"/{lang['dir']}")}
+        parts = {"header": render(header, {**values, **chrome}, strings),
+                 "footer": render(footer, {**values, **chrome}, strings)}
+        (out / directory / "404.html").write_text(
+            render(not_found, {**values, **chrome, **parts}, strings), encoding="utf-8", newline="\n")
 
         # ... and on the manual at <dir>manual/, one level down.
         up = "../" + root

@@ -5,24 +5,109 @@ use super::wallpaper_refresh::LIVE_MARK;
 use super::*;
 
 /// The theme for `mode`, retinted with the user's accent when it could be read (WinUI
-/// AccentFillColorDefault: AccentLight2 on dark, AccentDark1 on light).
+/// AccentFillColorDefault: AccentLight2 on dark, AccentDark1 on light). A custom theme
+/// starts from its own base style and its values win over the accent.
 pub(super) fn theme_for(
     mode: ThemeMode,
     style: pecofence_core::ThemeStyle,
+    custom: Option<&CustomTheme>,
     accent: Option<&systheme::AccentPalette>,
 ) -> Theme {
+    let style = custom.map_or(style, |c| c.base);
     let mut theme = Theme::for_mode(mode);
     if style == pecofence_core::ThemeStyle::LiquidGlass {
         theme = theme.with_liquid_glass();
     }
-    match accent {
-        Some(p) => theme.with_accent(if mode == ThemeMode::Dark {
+    if let Some(p) = accent {
+        theme = theme.with_accent(if mode == ThemeMode::Dark {
             p.light2
         } else {
             p.dark1
-        }),
+        });
+    }
+    match custom {
+        Some(c) => c.apply(theme),
         None => theme,
     }
+}
+
+/// The custom theme the settings name, read from the `themes` folder: None when no theme is
+/// chosen, an error (also written to the log) when the file is missing or invalid. The fences
+/// then keep the built-in style.
+pub(super) fn load_custom_theme(
+    state: &AppState,
+) -> std::result::Result<Option<CustomTheme>, String> {
+    let Some(name) = state.config.settings.custom_theme.as_deref() else {
+        return Ok(None);
+    };
+    let path = state.themes_dir().join(format!("{name}.json"));
+    let result = if name.contains(['/', '\\']) {
+        Err("the name must not contain a path".to_string())
+    } else {
+        std::fs::read_to_string(&path)
+            .map_err(|e| e.to_string())
+            .and_then(|text| CustomTheme::parse(&text))
+    };
+    if let Err(error) = &result {
+        tracing::warn!(path = %path.display(), %error, "custom theme not loaded");
+    }
+    let theme = result?;
+    // A misspelt font would fall back without a word, so it is an error like a wrong key.
+    let faces = [&theme.fonts.label_family, &theme.fonts.title_family];
+    let installed = |face: &&String| pecofence_platform::fonts::font_family_exists(face);
+    if let Some(face) = faces.into_iter().flatten().find(|f| !installed(f)) {
+        let error = format!(r#"the font "{face}" is not installed"#);
+        tracing::warn!(path = %path.display(), %error, "custom theme not loaded");
+        return Err(error);
+    }
+    Ok(Some(theme))
+}
+
+/// The themes a new `themes` folder starts with, named in the interface language, so the
+/// list has something to pick and a file to copy.
+fn example_themes(language: pecofence_core::i18n::Language) -> [(&'static str, &'static str); 3] {
+    [
+        (
+            pecofence_core::i18n::text_in(language, "磨砂玻璃"),
+            include_str!("../../../../ui/themes/frosted-glass.json"),
+        ),
+        (
+            pecofence_core::i18n::text_in(language, "暖色"),
+            include_str!("../../../../ui/themes/warm.json"),
+        ),
+        (
+            pecofence_core::i18n::text_in(language, "大圆角"),
+            include_str!("../../../../ui/themes/rounded.json"),
+        ),
+    ]
+}
+
+/// Writes the example themes into the `themes` folder that 「打开主题文件夹」 just made.
+pub(super) fn write_example_themes(dir: &Path) {
+    for (name, text) in example_themes(pecofence_core::i18n::language()) {
+        let path = dir.join(format!("{name}.json"));
+        if let Err(e) = std::fs::write(&path, text) {
+            tracing::warn!(path = %path.display(), error = %e, "example theme not written");
+        }
+    }
+}
+
+/// The theme files in the `themes` folder by name, as Settings lists them.
+pub(super) fn custom_theme_names(state: &AppState) -> Vec<String> {
+    let mut names: Vec<String> = std::fs::read_dir(state.themes_dir())
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|p| {
+            p.is_file()
+                && p.extension()
+                    .is_some_and(|x| x.eq_ignore_ascii_case("json"))
+        })
+        .filter_map(|p| Some(p.file_stem()?.to_string_lossy().into_owned()))
+        .collect();
+    names.sort_by_key(|n| n.to_lowercase());
+    names
 }
 
 pub(super) fn pick_theme_mode(setting: ThemeSetting, args: &Args) -> ThemeMode {
@@ -754,8 +839,12 @@ pub(super) fn shadow_style_for(theme: &Theme) -> ShadowStyle {
     if theme.liquid_glass {
         shadow.sigma = 12.0;
         shadow.offset_y = 5.0;
-        shadow.radius = theme.corner_radius;
     }
+    shadow.radius = theme.corner_radius;
+    let custom = theme.shadow;
+    shadow.opacity = custom.opacity.unwrap_or(shadow.opacity);
+    shadow.sigma = custom.blur.unwrap_or(shadow.sigma);
+    shadow.offset_y = custom.offset.unwrap_or(shadow.offset_y);
     shadow
 }
 
@@ -1126,7 +1215,7 @@ impl App {
             .behavior
             .wheel_lines
             .set(sysparams::wheel_scroll_lines());
-        self.apply_icon_title_font();
+        self.apply_fonts();
         // Any broadcast that reaches us after the work area moved (taskbar, DPI, resolution
         // races) must re-layout, or every later set_fence_bounds normalizes against a stale
         // work area and the saved geometry drifts by the taskbar height. Once the monitors
@@ -1141,25 +1230,45 @@ impl App {
     }
 
     /// Icon labels follow the desktop's icon-title font (`SPI_GETICONTITLELOGFONT` times the
-    /// Accessibility text-size factor, both re-read on WM_SETTINGCHANGE): when it changed,
-    /// every fence refits its labels and re-lays out its grid, then settles its auto height.
-    pub(super) fn apply_icon_title_font(&mut self) {
-        let Some(f) = sysparams::icon_title_font() else {
-            return;
-        };
-        let changed = self
+    /// Accessibility text-size factor, both re-read on WM_SETTINGCHANGE) unless the custom
+    /// theme names its own, and titles the theme's title font. When a font changed, every
+    /// fence refits its labels and re-lays out its grid, then settles its auto height.
+    pub(super) fn apply_fonts(&mut self) {
+        let fonts = self
+            .custom_theme
+            .as_ref()
+            .map(|c| c.fonts.clone())
+            .unwrap_or_default();
+        let titles = self
             .ctx
             .chrome
-            .set_icon_title_font(
-                &f.family,
-                f.size_dip,
-                pecofence_render::FontWeight(f.weight),
-            )
+            .set_title_font(fonts.title_family.as_deref(), fonts.title_weight)
             .unwrap_or(false);
-        if !changed {
+        let system = sysparams::icon_title_font();
+        let text_scale = sysparams::text_scale_percent() as f32 / 100.0;
+        let family = fonts
+            .label_family
+            .clone()
+            .or_else(|| system.as_ref().map(|f| f.family.clone()));
+        let labels = family.as_ref().is_some_and(|family| {
+            let size = fonts
+                .label_size
+                .map(|s| s * text_scale)
+                .or(system.as_ref().map(|f| f.size_dip))
+                .unwrap_or(12.0 * text_scale);
+            let weight = fonts
+                .label_weight
+                .or(system.as_ref().map(|f| f.weight))
+                .unwrap_or(400);
+            self.ctx
+                .chrome
+                .set_icon_title_font(family, size, pecofence_render::FontWeight(weight))
+                .unwrap_or(false)
+        });
+        if !titles && !labels {
             return;
         }
-        tracing::info!(family = %f.family, size = f.size_dip, "icon-title font changed");
+        tracing::info!(label = ?family, title = ?fonts.title_family, "fonts changed");
         let ids: Vec<FenceId> = self.fences.keys().copied().collect();
         for id in ids {
             if let Some(w) = self.fences.get(&id) {
@@ -1167,6 +1276,38 @@ impl App {
             }
             self.apply_auto_height(id);
         }
+    }
+
+    /// Watches the `themes` folder once it exists; a watcher ends when its folder goes away.
+    pub(super) fn sync_theme_watcher(&mut self) {
+        if self.theme_watcher.as_ref().is_some_and(|w| w.is_running()) {
+            return;
+        }
+        self.theme_watcher = None;
+        let dir = self.state.themes_dir();
+        if !dir.is_dir() {
+            return;
+        }
+        let control = self.control.hwnd().0 as isize;
+        let watcher = DirWatcher::start(&dir, move |_| {
+            window::post_message(
+                HWND(control as *mut core::ffi::c_void),
+                WM_APP_THEMES_CHANGED,
+                0,
+                0,
+            );
+        });
+        match watcher {
+            Ok(w) => self.theme_watcher = Some(w),
+            Err(e) => tracing::warn!(dir = %dir.display(), error = %e, "themes watcher failed"),
+        }
+    }
+
+    /// A theme file was saved, added or removed: the fences take the chosen file as it is now,
+    /// and Settings lists the folder again.
+    pub(super) fn on_themes_changed(&mut self) {
+        self.refresh_visuals(false);
+        self.push_settings_state();
     }
 
     pub(super) fn refresh_visuals(&mut self, force: bool) {
@@ -1190,14 +1331,25 @@ impl App {
         });
         let accent = systheme::accent_palette();
         let accent_changed = accent != self.accent;
-        let style = self.state.config.settings.theme_style;
+        let loaded = load_custom_theme(&self.state);
+        self.custom_theme_error = loaded.as_ref().err().cloned();
+        let custom = loaded.ok().flatten();
+        let style = custom
+            .as_ref()
+            .map_or(self.state.config.settings.theme_style, |c| c.base);
         let style_changed = self.ctx.theme.borrow().liquid_glass
-            != (style == pecofence_core::ThemeStyle::LiquidGlass);
+            != (style == pecofence_core::ThemeStyle::LiquidGlass)
+            || custom != self.custom_theme;
         if mode == self.theme_mode && !style_changed && !accent_changed && !force {
             return;
         }
         let theme_changed = mode != self.theme_mode || style_changed;
-        let theme = theme_for(mode, style, accent.as_ref());
+        let theme = theme_for(mode, style, custom.as_ref(), accent.as_ref());
+        self.custom_theme = custom;
+        if style_changed {
+            // Before the fences take the theme, so their title rows lay out in its font.
+            self.apply_fonts();
+        }
         // The wallpaper sets are accent-independent and expensive: rebuild them only for a
         // mode change (or a forced refresh), not for a Settings › Colours retint.
         let backdrops = if theme_changed || force {
@@ -1364,6 +1516,29 @@ mod tray_icon_tests {
         for size in [16, 20, 24, 32, 48, 64] {
             let px = tray_icon_image(size, [0, 0, 0], true);
             std::fs::write(format!("../../.cache/tray-{size}.bgra"), px).unwrap();
+        }
+    }
+}
+
+#[cfg(test)]
+mod example_theme_tests {
+    use super::{CustomTheme, example_themes};
+
+    /// Every example loads, names no font (a missing font would refuse the theme) and gets a
+    /// file name of its own in every language.
+    #[test]
+    fn example_themes_load_with_distinct_names() {
+        for &language in pecofence_core::i18n::SUPPORTED {
+            let themes = example_themes(language);
+            for (name, text) in themes {
+                let theme = CustomTheme::parse(text).unwrap_or_else(|e| panic!("{name}: {e}"));
+                assert_eq!(theme.fonts, Default::default(), "{name}");
+                assert!(!name.contains(['/', '\\', ':', '*', '?', '"', '<', '>', '|']));
+            }
+            let mut names: Vec<_> = themes.iter().map(|(n, _)| *n).collect();
+            names.sort();
+            names.dedup();
+            assert_eq!(names.len(), 3, "{language:?}");
         }
     }
 }

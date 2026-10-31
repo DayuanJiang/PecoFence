@@ -14,6 +14,7 @@ windows-collections = "0.100"
 windows-time = "0.100"
 bezier_easing = "0.3"
 pecofence-platform = { path = "../platform" }
+serde_json = { workspace = true }
 tracing = { workspace = true }
 
 [lints]

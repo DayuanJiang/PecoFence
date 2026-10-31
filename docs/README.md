@@ -9,6 +9,7 @@
 - [Windows installer instructions](INSTALLER.md)
 - [Command-line control for terminals and AI agents](CLI.md)
 - [Product website: build and publishing](WEBSITE.md)
+- [Custom themes: the theme file format](THEMES.md)
 - [Complete feature list, in Chinese](FEATURES.md)
 - [README in other languages](readme/) — the root README is English; translations live in `docs/readme/`
 

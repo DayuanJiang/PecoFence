@@ -10,9 +10,6 @@ pub(super) const SEARCH_DIM_ALPHA: f32 = 0.15;
 pub(super) const SEARCH_MATCH_SELECTION: f32 = 0.5;
 /// Opacity of the tab pills a Peek search finds nothing in.
 pub(super) const SEARCH_TAB_DIM_ALPHA: f32 = 0.4;
-/// Corner radius DWM gives a Fluent fence (DWMWCP_ROUNDSMALL; the shadow casts the same one):
-/// the root clip matches it while a folded title row moves the plate's top edge down.
-pub(super) const FLUENT_WINDOW_RADIUS_DIP: f32 = 4.0;
 /// Esc registered as a hotkey on the fence for the length of a title drag in the system move
 /// loop (`on_entersizemove`): the loop hears the keyboard only while the fence has the focus.
 pub(super) const HOTKEY_MOVE_ESC: i32 = 1;
