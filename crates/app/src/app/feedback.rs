@@ -3,6 +3,7 @@
 //! start. The page itself posts to the feedback service; nothing here touches the network.
 
 use super::*;
+use pecofence_core::config_store::ReadError;
 
 /// The feedback service (the Cloudflare Worker in `services/feedback`), which files each report
 /// as an issue in a private repository. `PECOFENCE_FEEDBACK_URL` points a test instance
@@ -110,11 +111,20 @@ fn on_off(on: bool) -> &'static str {
 
 impl App {
     fn share_log(&self, suffix: &str) -> Option<String> {
-        let dir = crate::log_dir()?;
+        self.read_share_log(suffix).ok()
+    }
+
+    /// A shareable log's text; a file that exists but cannot be read is logged.
+    fn read_share_log(&self, suffix: &str) -> std::io::Result<String> {
+        let dir = crate::log_dir().ok_or(std::io::ErrorKind::NotFound)?;
         let name = pecofence_core::brand::log_file_name(self.instance.as_deref(), suffix);
-        std::fs::read(dir.join(name))
-            .ok()
-            .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
+        let read = std::fs::read(dir.join(name));
+        if let Err(e) = &read
+            && e.kind() != std::io::ErrorKind::NotFound
+        {
+            tracing::warn!(error = %e, "shareable log unreadable");
+        }
+        read.map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
     }
 
     /// At startup: if the last run crashed, offer to report it from a tray balloon.
@@ -268,11 +278,21 @@ impl App {
             Some(false) => "no",
             None => "unknown",
         };
-        let startup = format!(
+        let mut startup = format!(
             "started {} after Explorer, elevated {elevated}, config in {}",
             seconds_after_explorer().map_or("?".to_string(), |s| format!("{s} s")),
             self.state.storage_kind()
         );
+        // Files the start could not use, by their OS error (the log may be unreadable too).
+        for (what, _, error) in &self.state.load_failures {
+            let reason = match error {
+                ReadError::Io(e) => e
+                    .raw_os_error()
+                    .map_or_else(|| format!("{:?}", e.kind()), |c| format!("os error {c}")),
+                ReadError::Invalid(_) => "invalid".to_string(),
+            };
+            startup.push_str(&format!(", {what} unusable ({reason})"));
+        }
         let system = serde_json::json!({
             "app": format!("PecoFence {} ({install})", env!("CARGO_PKG_VERSION")),
             "windows": format!("build {}", pecofence_platform::desktop::os_build()),
@@ -314,8 +334,10 @@ impl App {
             log.push_str(&excerpt(&previous, LOG_EXCERPT_BYTES));
             log.push_str("\n--- this run ---\n");
         }
-        if let Some(current) = self.share_log(pecofence_core::brand::SHARE_LOG) {
-            log.push_str(&excerpt(&current, LOG_EXCERPT_BYTES));
+        match self.read_share_log(pecofence_core::brand::SHARE_LOG) {
+            Ok(current) => log.push_str(&excerpt(&current, LOG_EXCERPT_BYTES)),
+            // The report still says why it has no log.
+            Err(e) => log.push_str(&format!("--- the log could not be read: {e} ---\n")),
         }
         let url = pecofence_core::brand::var("PECOFENCE_FEEDBACK_URL")
             .ok()

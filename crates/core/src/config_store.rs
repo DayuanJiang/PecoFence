@@ -32,6 +32,46 @@ impl LoadOutcome {
     }
 }
 
+/// ERROR_APPX_FILE_NOT_ENCRYPTED: Windows refuses the Store edition a file of its own data
+/// that is not encrypted. With the package on a drive other than C:, its data lives on that
+/// drive and Windows expects every file there to be encrypted.
+pub const APPX_FILE_NOT_ENCRYPTED: i32 = 409;
+
+/// Why a config file could not be used.
+#[derive(Debug)]
+pub enum ReadError {
+    /// The file could not be read.
+    Io(io::Error),
+    /// It was read but is no configuration this version accepts.
+    Invalid(String),
+}
+
+impl ReadError {
+    /// Windows refused to read the file because it is not encrypted ([`APPX_FILE_NOT_ENCRYPTED`]).
+    pub fn not_encrypted(&self) -> bool {
+        matches!(self, ReadError::Io(e) if e.raw_os_error() == Some(APPX_FILE_NOT_ENCRYPTED))
+    }
+}
+
+impl std::fmt::Display for ReadError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ReadError::Io(e) => e.fmt(f),
+            ReadError::Invalid(reason) => f.write_str(reason),
+        }
+    }
+}
+
+/// What [`ConfigStore::load_reporting`] met on its way to the outcome.
+#[derive(Debug, Default)]
+pub struct LoadReport {
+    /// Where an unreadable primary was moved.
+    pub moved_to: Option<PathBuf>,
+    /// The files that exist but could not be used, in the order tried: which one
+    /// (`config.json`, `config.bak` or `backup`), its path and why.
+    pub failures: Vec<(&'static str, PathBuf, ReadError)>,
+}
+
 /// A failed [`ConfigStore::save`]: the step that failed (a fixed name, safe to log) and why.
 #[derive(Debug)]
 pub struct SaveError {
@@ -88,17 +128,31 @@ impl ConfigStore {
         self.dir.join("backups")
     }
 
-    fn parse(path: &Path) -> Option<Config> {
-        Self::parse_file(path).ok()
+    /// [`Self::parse_file`] for a fallback: a file that exists but cannot be used goes to
+    /// `failures` under `name`.
+    fn parse(
+        path: &Path,
+        name: &'static str,
+        failures: &mut Vec<(&'static str, PathBuf, ReadError)>,
+    ) -> Option<Config> {
+        match Self::parse_file(path) {
+            Ok(c) => Some(c),
+            Err(ReadError::Io(e)) if e.kind() == io::ErrorKind::NotFound => None,
+            Err(e) => {
+                failures.push((name, path.to_path_buf(), e));
+                None
+            }
+        }
     }
 
     /// Reads and validates any config file (import / backup restore), with the reason on error.
-    pub fn parse_file(path: &Path) -> Result<Config, String> {
-        let text = fs::read_to_string(path).map_err(|e| e.to_string())?;
+    pub fn parse_file(path: &Path) -> Result<Config, ReadError> {
+        let text = fs::read_to_string(path).map_err(ReadError::Io)?;
         // Windows PowerShell 5.1 `Set-Content -Encoding utf8` and Notepad can add a BOM.
         let text = text.strip_prefix('\u{feff}').unwrap_or(&text);
-        let cfg: Config = serde_json::from_str(text).map_err(|e| e.to_string())?;
-        validate(&cfg)?;
+        let cfg: Config =
+            serde_json::from_str(text).map_err(|e| ReadError::Invalid(e.to_string()))?;
+        validate(&cfg).map_err(ReadError::Invalid)?;
         Ok(migrate(cfg))
     }
 
@@ -124,11 +178,12 @@ impl ConfigStore {
         self.load_reporting().0
     }
 
-    /// [`Self::load`], plus where an unreadable primary was moved. A `config.json` that exists
-    /// but does not parse or validate (written by a newer version, or hand-edited) is renamed
-    /// to `config.unreadable-<date>-<secs>.json` first: the `.bak` rotation in [`Self::save`]
-    /// would otherwise turn it into `config.bak` and delete it on the next save.
-    pub fn load_reporting(&self) -> (LoadOutcome, Option<PathBuf>) {
+    /// [`Self::load`], plus where an unreadable primary was moved and which files could not be
+    /// used. A `config.json` that exists but does not parse or validate (written by a newer
+    /// version, or hand-edited) is renamed to `config.unreadable-<date>-<secs>.json` first: the
+    /// `.bak` rotation in [`Self::save`] would otherwise turn it into `config.bak` and delete it
+    /// on the next save.
+    pub fn load_reporting(&self) -> (LoadOutcome, LoadReport) {
         let primary = self.primary_path();
         // Antivirus, backup and sync tools can hold the file open without read sharing for a
         // moment (ERROR_SHARING_VIOLATION, ERROR_LOCK_VIOLATION); wait for them before the
@@ -141,12 +196,16 @@ impl ConfigStore {
                 _ => break,
             }
         }
-        let quarantined = match Self::parse_file(&primary) {
-            Ok(c) => return (LoadOutcome::Primary(c), None),
-            Err(_) if !primary.exists() => None,
-            Err(_) => self.quarantine(&primary),
-        };
-        (self.load_fallbacks(), quarantined)
+        let mut report = LoadReport::default();
+        match Self::parse_file(&primary) {
+            Ok(c) => return (LoadOutcome::Primary(c), report),
+            Err(_) if !primary.exists() => {}
+            Err(e) => {
+                report.moved_to = self.quarantine(&primary);
+                report.failures.push(("config.json", primary, e));
+            }
+        }
+        (self.load_fallbacks(&mut report.failures), report)
     }
 
     fn quarantine(&self, primary: &Path) -> Option<PathBuf> {
@@ -181,14 +240,17 @@ impl ConfigStore {
         Some(to)
     }
 
-    fn load_fallbacks(&self) -> LoadOutcome {
-        if let Some(c) = Self::parse(&self.bak_path()) {
+    fn load_fallbacks(
+        &self,
+        failures: &mut Vec<(&'static str, PathBuf, ReadError)>,
+    ) -> LoadOutcome {
+        if let Some(c) = Self::parse(&self.bak_path(), "config.bak", failures) {
             return LoadOutcome::Recovered(c, self.bak_path());
         }
         let mut backups = self.list_backups();
         backups.sort();
         for p in backups.into_iter().rev() {
-            if let Some(c) = Self::parse(&p) {
+            if let Some(c) = Self::parse(&p, "backup", failures) {
                 return LoadOutcome::Recovered(c, p);
             }
         }
@@ -712,9 +774,9 @@ mod tests {
         fs::create_dir_all(store.dir()).unwrap();
         let text = r#"{ "schemaVersion": 99, "marker": "users-layout" }"#;
         fs::write(store.primary_path(), text).unwrap();
-        let (outcome, moved) = store.load_reporting();
+        let (outcome, report) = store.load_reporting();
         assert!(matches!(outcome, LoadOutcome::Fresh(_)));
-        let moved = moved.expect("unreadable primary moved aside");
+        let moved = report.moved_to.expect("unreadable primary moved aside");
         store.save(&sample()).unwrap();
         store.save(&sample()).unwrap();
         assert_eq!(fs::read_to_string(&moved).unwrap(), text);
@@ -748,10 +810,11 @@ mod tests {
             std::thread::sleep(std::time::Duration::from_millis(400));
             drop(lock);
         });
-        let (outcome, moved) = store.load_reporting();
+        let (outcome, report) = store.load_reporting();
         unlock.join().unwrap();
         assert!(matches!(outcome, LoadOutcome::Primary(_)), "{outcome:?}");
-        assert_eq!(moved, None);
+        assert_eq!(report.moved_to, None);
+        assert!(report.failures.is_empty());
     }
 
     #[cfg(unix)]
@@ -769,7 +832,43 @@ mod tests {
     #[test]
     fn nothing_usable_gives_fresh() {
         let store = ConfigStore::new(tmpdir("fresh"));
-        assert!(matches!(store.load(), LoadOutcome::Fresh(_)));
+        let (outcome, report) = store.load_reporting();
+        assert!(matches!(outcome, LoadOutcome::Fresh(_)));
+        // Missing files are no failures: a first start.
+        assert!(report.failures.is_empty(), "{report:?}");
+    }
+
+    #[test]
+    fn files_that_cannot_be_used_are_reported_in_order() {
+        let store = ConfigStore::new(tmpdir("failures"));
+        store.save(&sample()).unwrap();
+        fs::write(store.primary_path(), "{ not json").unwrap();
+        // A folder in place of config.bak cannot be read at all.
+        fs::create_dir_all(store.bak_path()).unwrap();
+        let (outcome, report) = store.load_reporting();
+        assert!(matches!(outcome, LoadOutcome::Recovered(..)), "{outcome:?}");
+        let found: Vec<_> = report
+            .failures
+            .iter()
+            .map(|(name, path, e)| (*name, path.clone(), matches!(e, ReadError::Io(_))))
+            .collect();
+        assert_eq!(
+            found,
+            [
+                ("config.json", store.primary_path(), false),
+                ("config.bak", store.bak_path(), true),
+            ]
+        );
+        assert!(report.failures.iter().all(|(_, _, e)| !e.not_encrypted()));
+    }
+
+    #[test]
+    fn error_409_means_not_encrypted() {
+        let e = ReadError::Io(io::Error::from_raw_os_error(APPX_FILE_NOT_ENCRYPTED));
+        assert!(e.not_encrypted());
+        assert!(e.to_string().contains("409"), "{e}");
+        assert!(!ReadError::Io(io::Error::from_raw_os_error(5)).not_encrypted());
+        assert!(!ReadError::Invalid("unsupported schemaVersion 99".into()).not_encrypted());
     }
 
     #[test]
@@ -865,11 +964,11 @@ mod tests {
         c.layouts[0].fences.push(b);
         fs::create_dir_all(store.dir()).unwrap();
         fs::write(store.primary_path(), serde_json::to_string(&c).unwrap()).unwrap();
-        let (outcome, moved) = store.load_reporting();
+        let (outcome, report) = store.load_reporting();
         let LoadOutcome::Primary(mut loaded) = outcome else {
             panic!("{outcome:?}");
         };
-        assert_eq!(moved, None);
+        assert_eq!(report.moved_to, None);
         let lints = lint(&loaded);
         let sizes: Vec<&Lint> = lints
             .iter()

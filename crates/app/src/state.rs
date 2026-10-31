@@ -38,6 +38,12 @@ pub struct AppState {
     pub recovered_from: Option<PathBuf>,
     /// Where an unreadable `config.json` was moved at load (see `ConfigStore::load_reporting`).
     pub unreadable_moved_to: Option<PathBuf>,
+    /// The saved files that could not be used at load, and why.
+    pub load_failures: Vec<(
+        &'static str,
+        PathBuf,
+        pecofence_core::config_store::ReadError,
+    )>,
 }
 
 /// Summary of a desktop sync pass.
@@ -115,7 +121,20 @@ impl AppState {
         if store.dir() != directory {
             tracing::info!(path = %store.dir().display(), "reusing pre-rename configuration");
         }
-        let (outcome, unreadable_moved_to) = store.load_reporting();
+        #[cfg_attr(not(debug_assertions), allow(unused_mut))]
+        let (outcome, mut report) = store.load_reporting();
+        // A test instance stands in for a PC where Windows refuses the saved files (os error
+        // 409 needs the Store edition on a second drive).
+        #[cfg(debug_assertions)]
+        if let Ok(code) = pecofence_core::brand::var("PECOFENCE_TEST_READ_ERROR")
+            && let Ok(code) = code.parse()
+        {
+            let error = std::io::Error::from_raw_os_error(code);
+            let error = pecofence_core::config_store::ReadError::Io(error);
+            report
+                .failures
+                .push(("config.json", store.primary_path(), error));
+        }
         let (config, first_run, recovered_from) = match outcome {
             LoadOutcome::Primary(c) => (c, false, None),
             LoadOutcome::Recovered(c, from) => (c, false, Some(from)),
@@ -142,7 +161,8 @@ impl AppState {
             unplaced: Vec::new(),
             first_run,
             recovered_from,
-            unreadable_moved_to,
+            unreadable_moved_to: report.moved_to,
+            load_failures: report.failures,
         };
         state.rebuild_catalog();
         if state.config.drop_duplicates() {
@@ -2222,6 +2242,7 @@ mod tests {
             first_run: true,
             recovered_from: None,
             unreadable_moved_to: None,
+            load_failures: Vec::new(),
         };
         state.ensure_layout();
         state
