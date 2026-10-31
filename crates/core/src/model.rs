@@ -982,6 +982,8 @@ struct TabPlacement {
     rolled: bool,
     expanded_h: f32,
     auto_height: bool,
+    /// Which end of `geometry` the rolled title row sits at.
+    expand_upward: bool,
 }
 
 impl TabPlacement {
@@ -995,6 +997,7 @@ impl TabPlacement {
             rolled: fence.rolled_up,
             expanded_h: fence.expanded_h,
             auto_height: fence.view.auto_height,
+            expand_upward: fence.expand_upward,
         }
     }
 
@@ -1006,6 +1009,7 @@ impl TabPlacement {
         fence.rolled_up = self.rolled;
         fence.expanded_h = self.expanded_h;
         fence.view.auto_height = self.auto_height;
+        fence.expand_upward = self.expand_upward;
     }
 }
 
@@ -1054,6 +1058,7 @@ impl Layout {
                         fence.rolled_up = group.rolled;
                         fence.expanded_h = group.expanded_h;
                         fence.view.auto_height = group.auto_height;
+                        fence.expand_upward = group.expand_upward;
                     }
                 } else {
                     fence.tab_host = Some(remaining_host);
@@ -1920,6 +1925,8 @@ mod tests {
                         fences[0].tab_order = strip.clone();
                         fences[0].active_tab = (active != ids[0]).then_some(active);
                         fences[0].rolled_up = rolled;
+                        // Which end of the rect the rolled title row sits at goes with it.
+                        fences[0].expand_upward = rolled;
                         let before = fences.clone();
                         let mut layout = Layout {
                             shown: 0,
@@ -1949,6 +1956,7 @@ mod tests {
                         assert_eq!(group.geometry, before[0].geometry);
                         assert_eq!(group.rolled_up, rolled);
                         assert_eq!(group.view.auto_height, before[0].view.auto_height);
+                        assert_eq!(group.expand_upward, before[0].expand_upward);
                         for old in &before {
                             let current = layout.fences.iter().find(|f| f.id == old.id).unwrap();
                             assert_eq!(current.title, old.title);
