@@ -245,12 +245,13 @@ impl App {
             .and_then(|a| a.as_ref().map(|a| a.window_report()))
         {
             Some(w) => format!(
-                "{} fences: {} visible, {} cloaked, {} topmost, {} below the desktop, {} off screen; hidden by double-click {}, peek {}, show desktop {}; host {}",
+                "{} fences: {} visible, {} cloaked, {} topmost, {} below the desktop, {} above other windows, {} off screen; hidden by double-click {}, peek {}, show desktop {}; host {}",
                 w.fences,
                 w.visible,
                 w.cloaked,
                 w.topmost,
                 w.below_host,
+                w.above_windows,
                 w.off_screen,
                 on_off(w.quick_hidden),
                 on_off(w.peeking),

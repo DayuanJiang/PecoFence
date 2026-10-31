@@ -232,6 +232,9 @@ pub struct WindowReport {
     pub topmost: usize,
     /// Below the icon host in the z-order: covered by the desktop.
     pub below_host: usize,
+    /// Above a window that is not ours or the desktop's (an app, Settings, a dialog): the fence
+    /// covers it.
+    pub above_windows: usize,
     /// On no monitor at all.
     pub off_screen: usize,
     pub quick_hidden: bool,
@@ -1176,6 +1179,22 @@ impl DesktopAnchor {
         let below_host = |w: HWND| {
             host_at.is_some_and(|i| order.iter().position(|&x| x == w).is_some_and(|p| p > i))
         };
+        let ours = self.all_windows();
+        let above_windows = |w: HWND| {
+            let Some(at) = order.iter().position(|&x| x == w) else {
+                return false;
+            };
+            // The windows between the fence and the host (none for a fence below the host).
+            let between = order.get(at + 1..host_at.unwrap_or(order.len()));
+            between.is_some_and(|between| {
+                between.iter().any(|&x| {
+                    !ours.contains(&x)
+                        && !is_drag_overlay(x)
+                        && !self.is_desktop_window(x)
+                        && desktop::has_visible_surface(x)
+                })
+            })
+        };
         let screens: Vec<RECT> = pecofence_platform::monitors::enumerate()
             .iter()
             .map(|m| m.bounds)
@@ -1194,6 +1213,7 @@ impl DesktopAnchor {
             cloaked: count(&desktop::is_cloaked),
             topmost: count(&desktop::is_topmost),
             below_host: count(&below_host),
+            above_windows: count(&above_windows),
             off_screen: count(&off_screen),
             quick_hidden: self.quick.fences_hidden,
             peeking: self.peeking,
