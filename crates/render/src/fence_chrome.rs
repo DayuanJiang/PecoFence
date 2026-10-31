@@ -504,16 +504,6 @@ impl TitleDeco {
         )
     }
 
-    /// Room (DIPs) the portal up button adds at the left of the shown tab's pill in a title-row
-    /// tab strip: its box plus a 2 DIP margin.
-    pub const STRIP_UP_W: f32 = 26.0;
-
-    /// The portal up button inside the shown tab's pill of a title-row tab strip, `tab_x` being
-    /// the pill's left edge, for a title row `title_h` tall; the app hit-tests the same box.
-    pub fn strip_up_box(tab_x: f32, title_h: f32) -> Rect {
-        Rect::from_xywh(tab_x + 2.0, (title_h - 24.0) * 0.5, 24.0, 24.0)
-    }
-
     /// Where the title text starts (left-aligned).
     pub fn title_x(&self) -> f32 {
         let mut x = 16.0;
@@ -558,9 +548,8 @@ pub struct TabDraw<'a> {
     pub title_color: Option<ColorF>,
     /// A folder portal tab: its folder glyph is drawn before the caption (`TAB_ICON_W` wider).
     pub folder_icon: bool,
-    /// A portal inside a subfolder: the up button is drawn at the left of its pill
-    /// (`TitleDeco::STRIP_UP_W` wider), also while another tab is shown. Only the shown tab's
-    /// takes hover and press.
+    /// The shown tab of a folder portal inside a subfolder: its folder glyph is drawn as the up
+    /// button (`FenceChrome::tab_up_box`), with the up button's hover and pressed looks.
     pub up_button: bool,
     pub active: bool,
     /// PointerOver pill alpha 0..=1.
@@ -611,13 +600,20 @@ pub fn tab_icon_w(folder_icon: bool) -> f32 {
     if folder_icon { TAB_ICON_W } else { 0.0 }
 }
 
-/// Width the portal up button adds before a tab's caption in a title-row strip.
-pub fn tab_up_w(up_button: bool) -> f32 {
-    if up_button {
-        TitleDeco::STRIP_UP_W
-    } else {
-        0.0
-    }
+/// A tab pill's caption as `FenceChrome::draw` lays it out: where it starts, how wide it is
+/// drawn, its fitted text and the badge's width after it.
+struct TabCaption {
+    x: f32,
+    w: f32,
+    fitted: String,
+    badge_w: f32,
+}
+
+/// The up button that takes the folder glyph's place in a tab pill whose caption starts at
+/// `caption_x`: a 20 DIP square around the glyph, filled on hover and press.
+fn tab_up_square(caption_x: f32, title_h: f32) -> Rect {
+    let centre = caption_x - 2.0 - TAB_ICON_W * 0.5;
+    Rect::from_xywh(centre - 10.0, (title_h - 20.0) * 0.5, 20.0, 20.0)
 }
 
 /// Where captions start in a left tab column row: after the colour dot when any tab has a
@@ -1720,13 +1716,64 @@ impl FenceChrome {
         w: f32,
         size: u8,
         folder_icon: bool,
-        up_button: bool,
         theme: &Theme,
     ) -> bool {
-        let content_w = crate::text::measure_width(title, &self.tab_format(size))
-            + tab_icon_w(folder_icon)
-            + tab_up_w(up_button);
+        let content_w =
+            crate::text::measure_width(title, &self.tab_format(size)) + tab_icon_w(folder_icon);
         content_w <= (w - tab_text_inset(theme, w, content_w)).max(0.0)
+    }
+
+    /// Lays out the caption of a tab pill `w` DIPs wide, its `x` counted from the pill's left
+    /// edge. With a folder glyph or a badge, they and the caption are centred in the pill as
+    /// one group.
+    fn tab_caption(
+        &self,
+        theme: &Theme,
+        w: f32,
+        title: &str,
+        size: u8,
+        folder_icon: bool,
+        badge: Option<&str>,
+    ) -> TabCaption {
+        let fmt = &self.tab_format(size);
+        let badge_w = badge.map_or(0.0, |b| self.tab_badge_width(b));
+        let icon_w = tab_icon_w(folder_icon);
+        let title_w = crate::text::measure_width(title, fmt);
+        let padding = tab_text_inset(theme, w - badge_w, title_w + icon_w);
+        let caption_w = (w - badge_w - icon_w - padding).max(0.0);
+        let fitted = crate::text::fit_width(title, fmt, caption_w);
+        // An unelided caption keeps the width measured above.
+        let shown_w = if badge.is_some() || folder_icon {
+            if fitted == title {
+                title_w
+            } else {
+                crate::text::measure_width(&fitted, fmt)
+            }
+            .min(caption_w)
+        } else {
+            caption_w
+        };
+        TabCaption {
+            x: icon_w + (w - icon_w - shown_w - badge_w) * 0.5,
+            w: shown_w,
+            fitted,
+            badge_w,
+        }
+    }
+
+    /// The up button of a folder tab's pill at `x`, `w` wide, in a title-row strip: the square
+    /// around its folder glyph, as drawn. The app hit-tests the same box.
+    pub fn tab_up_box(
+        &self,
+        theme: &Theme,
+        x: f32,
+        w: f32,
+        title: &str,
+        size: u8,
+        badge: Option<&str>,
+    ) -> Rect {
+        let caption = self.tab_caption(theme, w, title, size, true, badge);
+        tab_up_square(x + caption.x, theme.title_height)
     }
 
     /// Width a caption gets in a row of a `rail_w` DIP left tab column: after the colour dot's
@@ -2088,32 +2135,26 @@ impl FenceChrome {
                     session.draw_rounded_rect(&px.ring(rect, radius), &ring, px.hair());
                 }
                 let fmt = &self.tab_format(tab.title_size);
-                let badge_w = tab.badge.map_or(0.0, |b| self.tab_badge_width(b));
                 let icon_w = tab_icon_w(tab.folder_icon);
-                let up_w = tab_up_w(tab.up_button);
-                let title_w = crate::text::measure_width(tab.title, fmt);
-                let padding = tab_text_inset(theme, tab.w - badge_w, title_w + icon_w + up_w);
-                let caption_w = (tab.w - badge_w - icon_w - up_w - padding).max(0.0);
-                let fitted = crate::text::fit_width(tab.title, fmt, caption_w);
-                // With a folder glyph or a badge, they and the caption are centred in the pill
-                // as one group. An unelided caption keeps the width measured above.
-                let shown_w = if tab.badge.is_some() || tab.folder_icon {
-                    if fitted == tab.title {
-                        title_w
-                    } else {
-                        crate::text::measure_width(&fitted, fmt)
-                    }
-                    .min(caption_w)
-                } else {
-                    caption_w
-                };
-                let lead_w = up_w + icon_w;
-                let caption_x = tab.x + lead_w + (tab.w - lead_w - shown_w - badge_w) * 0.5;
+                let TabCaption {
+                    x: caption_dx,
+                    w: shown_w,
+                    fitted,
+                    badge_w,
+                } = self.tab_caption(
+                    theme,
+                    tab.w,
+                    tab.title,
+                    tab.title_size,
+                    tab.folder_icon,
+                    tab.badge,
+                );
+                let caption_x = tab.x + caption_dx;
                 // A persistent marker identifies the selected tab even on uniform wallpaper. It
-                // stays under the up button, glyph and caption when a badge widens the pill.
+                // stays under the glyph and caption when a badge widens the pill.
                 let (marker_x, marker_w) = if tab.badge.is_some() {
                     let w = tab.w - badge_w;
-                    (caption_x - lead_w + (lead_w + shown_w - w) * 0.5, w)
+                    (caption_x - icon_w + (icon_w + shown_w - w) * 0.5, w)
                 } else {
                     (tab.x, tab.w)
                 };
@@ -2141,12 +2182,25 @@ impl FenceChrome {
                     halo.set_color(halo_color(color, ta));
                 }
                 if tab.folder_icon {
-                    session.draw_text(
-                        "\u{E8B7}",
-                        &self.title_glyph_format,
-                        &Rect::from_xywh(caption_x - icon_w - 2.0, 0.0, icon_w, title_h),
-                        &brush,
-                    );
+                    let slot = Rect::from_xywh(caption_x - icon_w - 2.0, 0.0, icon_w, title_h);
+                    if tab.up_button {
+                        // Inside a subfolder the folder glyph is the up button: Up (Segoe
+                        // Fluent E74A) in the caption's ink, with the lone portal button's
+                        // hover fill and pressed look in a square around it.
+                        let box_r = tab_up_square(caption_x, title_h);
+                        draw_up_box_fill(session, &backdrop, theme, scale, box_r, state, ta)?;
+                        let ink = session.create_solid_brush(with_alpha(
+                            if state.up_pressed {
+                                foreground.text_tertiary
+                            } else {
+                                color
+                            },
+                            ta,
+                        ))?;
+                        session.draw_text("\u{E74A}", &self.title_glyph_format, &slot, &ink);
+                    } else {
+                        session.draw_text("\u{E8B7}", &self.title_glyph_format, &slot, &brush);
+                    }
                 }
                 draw_caption(
                     session,
@@ -2156,23 +2210,6 @@ impl FenceChrome {
                     &brush,
                     halo.as_ref(),
                 );
-                if tab.up_button {
-                    // Up (Segoe Fluent E74A), as in a lone portal's title row. On another tab
-                    // than the shown one it is a plain glyph: a click there picks the tab.
-                    let box_r = TitleDeco::strip_up_box(tab.x, title_h);
-                    if tab.active {
-                        draw_up_box_fill(session, &backdrop, theme, scale, box_r, state, ta)?;
-                    }
-                    let glyph = session.create_solid_brush(with_alpha(
-                        if tab.active && state.up_pressed {
-                            foreground.text_tertiary
-                        } else {
-                            foreground.text_secondary
-                        },
-                        ta,
-                    ))?;
-                    session.draw_text("\u{E74A}", &self.glyph_format, &box_r, &glyph);
-                }
                 if let Some(badge) = tab.badge {
                     let r = Rect::from_xywh(
                         caption_x + shown_w + TAB_BADGE_GAP,
@@ -3314,20 +3351,32 @@ mod tests {
             // padding shrinks so the two characters still fit.
             let squeezed = caption + TAB_TEXT_MIN_PADDING + 1.0;
             assert!(tab_text_inset(&theme, squeezed, caption) < full);
-            assert!(chrome.tab_title_fits("游戏", squeezed, 1, false, false, &theme));
+            assert!(chrome.tab_title_fits("游戏", squeezed, 1, false, &theme));
             // Below the minimum padding the caption is elided, never drawn over the edge.
             assert_eq!(
                 tab_text_inset(&theme, caption, caption),
                 TAB_TEXT_MIN_PADDING
             );
-            assert!(!chrome.tab_title_fits("游戏", caption, 1, false, false, &theme));
+            assert!(!chrome.tab_title_fits("游戏", caption, 1, false, &theme));
             // A folder tab's glyph takes its room from the caption.
-            assert!(chrome.tab_title_fits("游戏", squeezed + TAB_ICON_W, 1, true, false, &theme));
-            assert!(!chrome.tab_title_fits("游戏", squeezed, 1, true, false, &theme));
-            // So does the up button of a tab that navigated into a subfolder.
-            let up = TitleDeco::STRIP_UP_W;
-            assert!(chrome.tab_title_fits("游戏", squeezed + up, 1, false, true, &theme));
-            assert!(!chrome.tab_title_fits("游戏", squeezed, 1, false, true, &theme));
+            assert!(chrome.tab_title_fits("游戏", squeezed + TAB_ICON_W, 1, true, &theme));
+            assert!(!chrome.tab_title_fits("游戏", squeezed, 1, true, &theme));
+        }
+    }
+
+    #[test]
+    fn a_folder_tabs_up_button_is_the_square_around_its_glyph() {
+        let chrome = FenceChrome::new().unwrap();
+        for theme in [Theme::dark().with_liquid_glass(), Theme::dark()] {
+            let caption = crate::text::measure_width("项目", &chrome.tab_format(1));
+            let w = caption + TAB_ICON_W + tab_text_padding(&theme);
+            let r = chrome.tab_up_box(&theme, 100.0, w, "项目", 1, None);
+            // The glyph starts the centred group (glyph, then caption) and keeps its slot.
+            let glyph_mid = 100.0 + (w - TAB_ICON_W - caption) * 0.5 - 2.0 + TAB_ICON_W * 0.5;
+            assert_eq!((r.width(), r.height()), (20.0, 20.0));
+            assert!((r.left + 10.0 - glyph_mid).abs() < 0.01);
+            assert_eq!(r.top + 10.0, theme.title_height * 0.5);
+            assert!(r.left >= 100.0 && r.right <= 100.0 + w);
         }
     }
 
@@ -3451,13 +3500,6 @@ mod tests {
         );
         let u = TitleDeco::up_box(36.0);
         assert_eq!((u.left, u.top, u.right, u.bottom), (6.0, 4.0, 34.0, 32.0));
-        // In a tab strip the button sits inside the shown pill, within the room it adds.
-        let s = TitleDeco::strip_up_box(100.0, 36.0);
-        assert_eq!(
-            (s.left, s.top, s.right, s.bottom),
-            (102.0, 6.0, 126.0, 30.0)
-        );
-        assert!(s.right <= 100.0 + TitleDeco::STRIP_UP_W);
     }
 
     #[test]

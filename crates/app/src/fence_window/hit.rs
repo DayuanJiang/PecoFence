@@ -87,8 +87,8 @@ impl FenceViewState {
     }
 
     /// Is the client-pixel point on the portal "up" button? A tab strip in the title row has it
-    /// at the left of the shown tab's pill (`TitleDeco::strip_up_box`); a left tab column at the
-    /// end of the shown tab's row (`rail_up_box`).
+    /// on the shown tab's folder glyph (`FenceChrome::tab_up_box`); a left tab column at the end
+    /// of the shown tab's row (`rail_up_box`).
     pub(super) fn up_button_at(&self, x_px: i32, y_px: i32) -> bool {
         if !self.deco.up_button {
             return false;
@@ -97,15 +97,29 @@ impl FenceViewState {
         let (x, y) = (x_px as f32 / scale, y_px as f32 / scale);
         let r = if self.title_row_strip() {
             // The pill is where it is drawn (sliding, dragged); a scrolled strip's cut-off part
-            // takes no click (`tab_at`).
+            // takes no click (`tab_at`). A tab without its folder glyph has no button.
             let i = self.active_index();
-            let Some(&tab_x) = self.tab_draw_xs(Instant::now()).get(i) else {
+            let Some(t) = self.tabs.get(i).filter(|t| t.up_button && t.folder_icon) else {
+                return false;
+            };
+            let (Some(&tab_x), Some(&(_, tab_w))) = (
+                self.tab_draw_xs(Instant::now()).get(i),
+                self.tab_rects().get(i),
+            ) else {
                 return false;
             };
             if self.tab_at(x_px, y_px) != Some(i) {
                 return false;
             }
-            TitleDeco::strip_up_box(tab_x, self.theme.title_height)
+            let badge = self.tab_badge(t.id);
+            self.chrome.tab_up_box(
+                &self.theme,
+                tab_x,
+                tab_w,
+                &t.title,
+                t.title_size,
+                badge.as_deref(),
+            )
         } else if self.tabs_on_rail() {
             match self.rail_up_box() {
                 Some(r) => r,
