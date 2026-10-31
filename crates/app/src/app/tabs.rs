@@ -17,8 +17,11 @@ impl App {
                 color: f.appearance.as_ref().and_then(|a| a.tab_rgb.or(a.tint_rgb)),
                 title_size: fence_style_for(f).title_size,
                 title_color: fence_style_for(f).title_color,
-                folder_icon: f.kind == FenceKind::FolderPortal && !f.hide_title_icon,
-                up_button: f.kind == FenceKind::FolderPortal && self.state.portal_navigated(f.id),
+                // A regular fence showing a folder opened in it gets the folder icon too, so its
+                // tab has the up arrow that takes it back to its own icons.
+                folder_icon: !f.hide_title_icon
+                    && (f.kind == FenceKind::FolderPortal || self.state.can_go_up(f.id)),
+                up_button: self.state.can_go_up(f.id),
             })
             .collect()
     }
