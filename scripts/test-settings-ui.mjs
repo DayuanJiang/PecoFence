@@ -14,7 +14,7 @@ const fixture = {
   locale: 'zh-CN', translations: {},
   settings: {
     language: 'zh-CN',
-    autostart: false, hideRealIcons: false, hideInboxWhenIconsShown: false, offerNewFence: true, quickHide: { enabled: true },
+    autostart: false, hideRealIcons: false, keepIconsHidden: false, hideInboxWhenIconsShown: false, offerNewFence: true, quickHide: { enabled: true },
     showDesktop: 'keepVisible', theme: 'dark', themeStyle: 'fluent', labelColor: 'auto', titleAlign: 'left', tabBar: 'top', backdrop: 'acrylic', iconSize: 48,
     icons: { tintRgb: null, tintStrength: 0.6, chameleon: false, shortcutArrows: true },
     rollUp: { hoverPeek: true, clickToExpand: false, pushNeighbors: true, titleOnHover: false, hideInactiveScrollbar: false, switchTabOnHover: false, hideCountAndChevron: false },
@@ -28,9 +28,9 @@ const fixture = {
     ],
   },
   fences: [
-    { id: 'fence-a', title: 'Documents', kind: 'virtual', host: null, iconSize: 48, spacing: 'normal', autoHeight: false, locked: false, excludeFromQuickHide: false, opacity: 'default', tint: null, titleColor: 'theme', titleSize: 'normal', titleOnHover: 'default', portal: null },
+    { id: 'fence-a', title: 'Documents', kind: 'virtual', host: null, iconSize: 48, spacing: 'normal', autoHeight: false, locked: false, excludeFromQuickHide: false, opacity: 'default', tint: null, titleColor: 'theme', titleSize: 'normal', titleOnHover: 'default', openFoldersInside: false, portal: null },
     { id: 'fence-b', title: 'Images', kind: 'virtual', host: 'Documents', iconSize: 96, spacing: 'loose', autoHeight: true, locked: false, excludeFromQuickHide: false, opacity: 'transparent', tint: null, tabColor: 'E74856', titleColor: 'theme', titleSize: 'normal', titleOnHover: 'default', portal: null },
-    { id: 'inbox', title: 'Desktop', kind: 'inbox', host: null, iconSize: 48, spacing: 'normal', autoHeight: false, locked: true, excludeFromQuickHide: true, opacity: 'solid', tint: '0078D4', tintTitleOnly: true, titleColor: 'tint', titleSize: 'large', titleOnHover: 'hover', hideWhenEmpty: true, portal: null },
+    { id: 'inbox', title: 'Desktop', kind: 'inbox', host: null, iconSize: 48, spacing: 'normal', autoHeight: false, locked: true, excludeFromQuickHide: true, opacity: 'solid', tint: '0078D4', tintTitleOnly: true, titleColor: 'tint', titleSize: 'large', titleOnHover: 'hover', hideWhenEmpty: true, openFoldersInside: true, portal: null },
     { id: 'portal', title: 'Portal', kind: 'portal', host: null, iconSize: 32, spacing: 'compact', autoHeight: false, locked: false, excludeFromQuickHide: false, opacity: 'clear', tint: '123456', titleColor: 'ABCDEF', titleSize: 'small', titleOnHover: 'always', portal: { navigate: true, titleIcon: false } },
   ],
   tintPalette: [{ name: '红', hex: 'E74856' }, { name: '蓝', hex: '0078D4' }, { name: '灰', hex: '7A7574' }],
@@ -217,6 +217,7 @@ async function runTests() {
     assert([...sel.options].map(o => o.textContent).join('|') === 'Documents|Images（Documents 的标签页）|Desktop（桌面）|Portal（文件夹）', 'Fence labels wrong: ' + [...sel.options].map(o => o.textContent).join('|'));
     assert(doc.getElementById('fencePortalGroup').style.display === 'none', 'Portal options shown for an ordinary fence');
     assert(doc.getElementById('fenceHideEmpty').style.display === 'none', 'Hide-when-empty offered for an ordinary fence');
+    assert(doc.getElementById('fenceOpenFolders').style.display === '' && !doc.querySelector('[data-fence=openFoldersInside]').classList.contains('on'), 'Open-folders-inside missing or on for an ordinary fence');
     assert(doc.getElementById('fenceTintTitleOnly').style.display === 'none', 'Title-only tint offered without a tint');
     assert(doc.getElementById('fenceTabColor').style.display === 'none', 'Tab colour offered for a fence without tabs');
     assert(doc.querySelector('[data-fence=titleColor] [value=tint]').disabled, 'Follow-tint offered without a tint');
@@ -226,6 +227,7 @@ async function runTests() {
     assert(tintHint.hidden, 'Choose-a-tint hint shown although the fence has a tint');
     assert(doc.querySelector('[data-fence=locked]').classList.contains('on'), 'Lock state not shown');
     assert(doc.getElementById('fenceHideEmpty').style.display === '' && doc.querySelector('[data-fence=hideWhenEmpty]').classList.contains('on'), 'Inbox hide-when-empty not shown');
+    assert(doc.querySelector('[data-fence=openFoldersInside]').classList.contains('on'), 'Open-folders-inside state not shown');
     assert(doc.getElementById('fenceTintTitleOnly').style.display === '' && doc.querySelector('[data-fence=tintTitleOnly]').classList.contains('on'), 'Title-only tint not shown');
     assert(doc.querySelector('[data-fence=tint]').value === '0078D4', 'Palette tint not selected');
     assert(doc.querySelector('[data-fence=titleColor]').value === 'tint' && !doc.querySelector('[data-fence=titleColor] [value=tint]').disabled, 'Follow-tint title not shown');
@@ -237,6 +239,7 @@ async function runTests() {
     assert(doc.querySelector('#fenceTabColorSwatches [data-value=E74856]').getAttribute('aria-checked') === 'true', 'Tab colour swatch not selected');
     change(doc, 'fenceSel', 'portal');
     assert(doc.getElementById('fencePortalGroup').style.display === '', 'Portal options hidden for a portal');
+    assert(doc.getElementById('fenceOpenFolders').style.display === 'none', 'Open-folders-inside offered for a portal');
     assert(doc.querySelector('[data-fence=portalNavigate]').classList.contains('on') && !doc.querySelector('[data-fence=portalTitleIcon]').classList.contains('on'), 'Portal flags wrong');
     assert(doc.querySelector('[data-fence=tint]').value === '123456' && doc.querySelector('[data-fence=titleColor]').value === 'ABCDEF', 'Imported custom colours not represented');
     assert(doc.querySelector('[data-fence=iconSize]').value === '32' && doc.querySelector('[data-fence=spacing]').value === 'compact' && doc.querySelector('[data-fence=opacity]').value === 'clear', 'Layout values not shown');
@@ -586,6 +589,16 @@ async function runTests() {
     offer.click(); await settle();
     assert(current().settings.offerNewFence === false, 'New fence offer switch did not post');
     offer.click(); await settle();
+  });
+  await test('Keeping the Windows icons hidden is available only while PecoFence hides them', async () => {
+    const icons = doc.querySelector('[data-bind=hideRealIcons]'), keep = doc.querySelector('[data-bind=keepIconsHidden]');
+    assert(!current().settings.hideRealIcons && keep.closest('.card').classList.contains('disabled'), 'Available while the Windows icons show');
+    icons.click(); await settle();
+    assert(!keep.closest('.card').classList.contains('disabled') && keep.tabIndex === 0, 'Unavailable with the Windows icons hidden');
+    keep.click(); await settle();
+    assert(current().settings.keepIconsHidden && keep.getAttribute('aria-checked') === 'true', 'Switch did not post its setting');
+    keep.click(); await settle();
+    icons.click(); await settle();
   });
   await test('Colour swatches drive the hidden selects and keep keyboard focus', async () => {
     const swatches = doc.getElementById('iconTintSwatches');

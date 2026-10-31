@@ -1098,7 +1098,7 @@ impl App {
         let sel = sel.trim();
         let mut all: Vec<(&Item, &Fence)> = Vec::new();
         for f in self.state.fences() {
-            all.extend(self.state.items_of(f).into_iter().map(|it| (it, f)));
+            all.extend(self.state.held_items_of(f).into_iter().map(|it| (it, f)));
         }
         let not_found = || {
             IpcError::new(ErrorCode::ItemNotFound, format!("no item matches {sel:?}"))
@@ -1283,7 +1283,7 @@ impl App {
             geometry: f.geometry.clone(),
             rolled_up: host.rolled_up,
             locked: host.locked,
-            item_count: self.state.unsorted_items_of(f).count(),
+            item_count: self.state.unsorted_held_items_of(f).count(),
             tab_host: f.tab_host,
             tabs: if f.tab_host.is_none() {
                 self.state
@@ -1317,6 +1317,11 @@ impl App {
             reverse: f.view.reverse,
             group_by_date: f.view.group_by_date,
             label_lines: f.view.label_lines,
+            open_folders_inside: f.open_folders_inside,
+            opened_folder: (f.kind != FenceKind::FolderPortal)
+                .then(|| self.state.portal_path(f.id))
+                .flatten()
+                .map(|p| p.to_string_lossy().into_owned()),
             portal,
             // Only the fence the window currently shows has a measured layout.
             fit: (connected && measure)
@@ -1354,7 +1359,7 @@ impl App {
             if only.is_some_and(|id| id != f.id) {
                 continue;
             }
-            for it in self.state.items_of(f) {
+            for it in self.state.held_items_of(f) {
                 out.push(self.item_dto(f, it));
             }
         }
@@ -1733,7 +1738,7 @@ impl App {
             )));
         }
         // Memberships are about to move back to the inbox: keep a way back.
-        let snapshot = (f.kind != FenceKind::FolderPortal && !self.state.items_of(&f).is_empty())
+        let snapshot = (f.kind != FenceKind::FolderPortal && self.state.own_item_count(&f) > 0)
             .then(|| self.auto_snapshot())
             .flatten();
         self.delete_fence(id);
@@ -1900,7 +1905,7 @@ impl App {
                 ids.push(id);
             }
         }
-        let into_portal = self.state.portal_path(to);
+        let into_portal = self.state.move_target_folder(to);
         let desktop = shell::user_desktop();
         let mut plan = Vec::with_capacity(ids.len());
         for id in ids {
@@ -2183,7 +2188,7 @@ impl App {
         let mut state = EventState::default();
         for f in self.state.fences() {
             state.fences.insert(f.id, self.fence_dto_with(f, false));
-            for it in self.state.unsorted_items_of(f) {
+            for it in self.state.unsorted_held_items_of(f) {
                 state.items.insert(
                     it.id,
                     ItemSig {

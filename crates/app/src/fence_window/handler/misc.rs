@@ -196,7 +196,7 @@ pub(super) fn on_cancelmode(
         && let Some(a) = guard.as_mut()
     {
         tracing::info!("session ending with a menu open");
-        a.restore_desktop_icons();
+        a.release_desktop_icons();
     }
     None
 }

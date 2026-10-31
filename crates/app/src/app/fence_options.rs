@@ -68,6 +68,7 @@ pub(super) const FENCE_PROPS: &[&str] = &[
     "reverse",
     "groupByDate",
     "labelLines",
+    "openFoldersInside",
     "portalNavigate",
     "portalTitleIcon",
     "hideWhenEmpty",
@@ -102,6 +103,8 @@ pub(super) enum FenceProp {
     TitleSize(Option<TitleSize>),
     /// None = the global `rollUp.titleOnHover`.
     TitleOnHover(Option<bool>),
+    /// Regular fences: a double-clicked folder opens inside the fence.
+    OpenFoldersInside(bool),
     PortalNavigate(bool),
     PortalTitleIcon(bool),
     /// Inbox only: 为空时自动隐藏.
@@ -237,6 +240,7 @@ pub(super) fn parse_fence_prop(
                 _ => return Err(bad(ALLOWED)),
             }
         }
+        "openFoldersInside" => FenceProp::OpenFoldersInside(as_bool()?),
         "portalNavigate" => FenceProp::PortalNavigate(as_bool()?),
         "portalTitleIcon" => FenceProp::PortalTitleIcon(as_bool()?),
         "hideWhenEmpty" => FenceProp::HideWhenEmpty(as_bool()?),
@@ -398,6 +402,12 @@ impl App {
         self.schedule_save();
     }
 
+    pub(super) fn set_fence_open_folders_inside(&mut self, fence: FenceId, on: bool) {
+        self.state.set_open_folders_inside(fence, on);
+        self.apply_portal_deco(self.state.host_of(fence));
+        self.schedule_save();
+    }
+
     pub(super) fn set_fence_title_icon(&mut self, fence: FenceId, show: bool) {
         self.state.set_hide_title_icon(fence, !show);
         let host = self.state.host_of(fence);
@@ -506,6 +516,7 @@ impl App {
             "titleSize": title_size,
             "titleOnHover": title_on_hover,
             "hideWhenEmpty": f.hide_when_empty,
+            "openFoldersInside": f.open_folders_inside,
             "portal": portal,
         })
     }
@@ -585,6 +596,7 @@ impl App {
                 self.set_fence_title_style(fence, title_rgb, size);
             }
             FenceProp::TitleOnHover(on) => self.set_fence_title_on_hover(fence, on),
+            FenceProp::OpenFoldersInside(on) => self.set_fence_open_folders_inside(fence, on),
             FenceProp::PortalNavigate(on) => self.set_fence_portal_navigate(fence, on),
             FenceProp::PortalTitleIcon(on) => self.set_fence_title_icon(fence, on),
             FenceProp::HideWhenEmpty(on) => self.set_fence_hide_when_empty(fence, on),
