@@ -765,11 +765,14 @@ impl App {
     }
 
     /// Fences "dock to the top of the screen": the fence moves flush against the top of its
-    /// work area, rolls up and expands on hover — a pull-down shelf.
+    /// work area, rolls up and expands on hover — a pull-down shelf. A shelf opens downward
+    /// from its title row at the top edge, so docking turns 向上展开 off.
     pub(super) fn dock_to_top(&mut self, fence: FenceId) {
         let Some(w) = self.fences.get(&fence) else {
             return;
         };
+        self.state.set_expand_upward(fence, false);
+        w.set_expand_upward(false);
         let r = w.rect();
         let Some(wa) = self.work_area_at((r.left + r.right) / 2, (r.top + r.bottom) / 2) else {
             return;
