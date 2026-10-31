@@ -9,15 +9,10 @@ pub(super) struct ColDrag {
     pub(super) start_w: f32,
 }
 
-pub(super) fn bounded_auto_height(
-    desired: i32,
-    title_height: i32,
-    top: i32,
-    work_bottom: i32,
-) -> i32 {
+pub(super) fn bounded_auto_height(desired: i32, title_height: i32, room: i32) -> i32 {
     // Preserve a client pixel even when the title was dragged almost offscreen. In normal
     // positions, excess rows stay accessible via the existing scrollbar above the taskbar.
-    desired.min(work_bottom.saturating_sub(top).max(title_height + 1))
+    desired.min(room.max(title_height + 1))
 }
 
 impl FenceViewState {
@@ -87,15 +82,15 @@ impl FenceViewState {
     }
 
     /// Is the client-pixel point on the portal "up" button? A tab strip in the title row has it
-    /// on the shown tab's folder glyph (`FenceChrome::tab_up_box`); a left tab column at the end
-    /// of the shown tab's row (`rail_up_box`); a single title on its folder glyph
-    /// (`FenceChrome::lone_up_box`), or at the far left while the glyph is hidden.
+    /// on the shown tab's folder glyph (`FenceChrome::tab_up_box`); a title column of tabs at the
+    /// end of the shown tab (`rail_up_box`); a single title column above its title; a single
+    /// title row on its folder glyph (`FenceChrome::lone_up_box`), or at the far left while the
+    /// glyph is hidden.
     pub(super) fn up_button_at(&self, x_px: i32, y_px: i32) -> bool {
         if !self.deco.up_button {
             return false;
         }
         let scale = self.scale();
-        let (x, y) = (x_px as f32 / scale, y_px as f32 / scale);
         let r = if self.title_row_strip() {
             // The pill is where it is drawn (sliding, dragged); a scrolled strip's cut-off part
             // takes no click (`tab_at`). A tab without its folder glyph has no button.
@@ -126,6 +121,8 @@ impl FenceViewState {
                 Some(r) => r,
                 None => return false,
             }
+        } else if self.title_column() {
+            TitleDeco::column_up_box(self.rail_w(), self.column_top())
         } else if self.deco.folder_icon {
             // The title moves aside for the rolled item count, as drawn.
             let width = self.chrome_panel.size_px().0 as f32 / scale;
@@ -137,26 +134,43 @@ impl FenceViewState {
             self.chrome.lone_up_box(
                 &self.title,
                 self.style.title_size,
-                self.behavior.title_align.get(),
+                self.title_align(),
                 width,
                 reserve,
                 self.theme.title_height,
+                self.chevron_leads(),
             )
         } else {
             TitleDeco::up_box(self.theme.title_height)
         };
+        // Boxes are measured from the title column's left, or the title row's top.
+        let (x_px, y_px) = if self.title_column() {
+            (x_px - self.column_x_px(), y_px)
+        } else {
+            (x_px, y_px - self.title_top_px())
+        };
+        let (x, y) = (x_px as f32 / scale, y_px as f32 / scale);
         x >= r.left && x < r.right && y >= r.top && y < r.bottom
     }
 
-    /// The portal up button in a left tab column (DIPs): at the end of the shown tab's row, as
+    /// The portal up button in a title column (DIPs): at the end of the shown tab's row, as
     /// drawn (`TitleDeco::rail_up_box`). A column the fence is collapsed to has none.
     pub(super) fn rail_up_box(&self) -> Option<Rect> {
-        if self.column_collapsed {
+        if self.column_collapsed() {
             return None;
         }
         let i = self.active_index();
         let (_, h) = *self.tab_rects().get(i)?;
         let y = *self.tab_draw_xs(Instant::now()).get(i)?;
+        if self.vertical_tabs() {
+            return Some(TitleDeco::vertical_up_box(TitleDeco::vertical_pill(
+                &self.theme,
+                0.0,
+                self.rail_w(),
+                y,
+                h,
+            )));
+        }
         let row = Rect::from_xywh(
             RAIL_ROW_INSET,
             y,
@@ -166,13 +180,13 @@ impl FenceViewState {
         Some(TitleDeco::rail_up_box(row))
     }
 
-    /// Is the client-pixel point in the title row (the left tab column beside one)? Its
+    /// Is the client-pixel point in the title row (the title column beside one)? Its
     /// caption and its controls (tabs, the chevron box) are one row for the hover.
     pub(super) fn title_row_at(&self, x_px: i32, y_px: i32) -> bool {
-        if self.tabs_on_rail() {
-            x_px >= 0 && x_px < self.content_x
+        if self.title_column() {
+            self.in_column(x_px)
         } else {
-            y_px >= 0 && y_px < self.title_h_px()
+            self.in_title_row(y_px)
         }
     }
 
@@ -180,20 +194,43 @@ impl FenceViewState {
     pub(super) fn chevron_at(&self, x_px: i32, y_px: i32) -> bool {
         let scale = self.scale();
         let (w_px, h_px) = self.chrome_panel.size_px();
-        // Under the tabs of a left tab column (the fence's title bar). Collapsed to the column
+        // Under the tabs of a title column (the fence's title bar). Collapsed to the column
         // there is none: a tab click expands the fence. Hidden by the user, its spot is title.
-        if self.column_collapsed || self.behavior.hide_count_and_chevron.get() {
+        if (self.column_collapsed() && self.tabs_on_rail())
+            || self.behavior.hide_count_and_chevron.get()
+        {
             return false;
         }
-        let r = if self.tabs_on_rail() {
-            let rows_end = self
-                .tab_rects()
-                .iter()
-                .map(|(y, h)| y + h)
-                .fold(0.0, f32::max);
-            TitleDeco::rail_chevron_box(self.rail_w(), h_px as f32 / scale, rows_end)
+        let r = if self.title_column() {
+            // A single fence's chevron stays under the start of its title, where a fence too
+            // short for the title draws it.
+            let rows_end = if self.tabs_on_rail() {
+                self.tab_rects()
+                    .iter()
+                    .map(|(y, h)| y + h)
+                    .fold(0.0, f32::max)
+            } else {
+                self.column_title_start()
+            };
+            if self.chevron_leads() {
+                TitleDeco::rail_chevron_box_top(self.rail_w())
+            } else {
+                TitleDeco::rail_chevron_box(self.rail_w(), h_px as f32 / scale, rows_end)
+            }
+        } else if self.chevron_leads() {
+            let up_w = if self.title_row_strip() {
+                0.0
+            } else {
+                self.deco.lead_up_w()
+            };
+            TitleDeco::lead_chevron_box(self.theme.title_height, up_w)
         } else {
             TitleDeco::chevron_box(w_px as f32 / scale, self.theme.title_height)
+        };
+        let (x_px, y_px) = if self.title_column() {
+            (x_px - self.column_x_px(), y_px)
+        } else {
+            (x_px, y_px - self.title_top_px())
         };
         let (x, y) = (x_px as f32 / scale, y_px as f32 / scale);
         x >= r.left && x < r.right && y >= r.top && y < r.bottom
@@ -372,10 +409,10 @@ impl FenceViewState {
     }
 
     /// The item layout at the content surface's current width. A fence collapsed (or
-    /// collapsing) to its left tab column uses the width it expands to.
+    /// collapsing) narrower than it expands uses the width it expands to.
     fn current_layout(&self) -> ItemLayout {
         let (mut cw, _) = self.content_size_px();
-        if self.tabs_on_rail() && (self.rolled_up || self.roll_anim.is_some()) {
+        if self.collapses_width() && (self.rolled_up || self.roll_anim.is_some()) {
             cw = (self.expanded_w_px - self.rail_px()).max(1);
         }
         self.layout(cw as f32 / self.scale())
@@ -388,10 +425,10 @@ impl FenceViewState {
             + layout
                 .content_height()
                 .max(layout.top_pad() * 2.0 + layout.row_step());
-        self.head_px() + (content * self.scale()).ceil() as i32 + FIT_SLACK_PX
+        self.head_px() + self.foot_px() + (content * self.scale()).ceil() as i32 + FIT_SLACK_PX
     }
 
-    /// Window height (device px) that shows every row of the left tab column, the free strip
+    /// Window height (device px) that shows every row of the title column, the free strip
     /// above them and the chevron under them; 0 without a column.
     pub(super) fn rail_fit_height_px(&self) -> i32 {
         self.rail_rows_height_px(RAIL_BOTTOM)
@@ -402,10 +439,10 @@ impl FenceViewState {
         if !self.tabs_on_rail() {
             return 0;
         }
-        (rail_len_for(self.tabs.len(), bottom) * self.scale()).ceil() as i32
+        (rail_len_of(&self.tab_natural_widths(), bottom) * self.scale()).ceil() as i32
     }
 
-    /// Once after the left tab column appeared or grew: the expanded height (device px) that
+    /// Once after the title column appeared or grew: the expanded height (device px) that
     /// shows all of it, when the fence is shorter. Auto-height fences already fit it, and a
     /// fence is never made shorter; it can still be sized smaller by hand afterwards (the
     /// pills then shrink). A rolled fence keeps the request until it is expanded.
@@ -429,22 +466,23 @@ impl FenceViewState {
         FitReport {
             columns: layout.columns(),
             rows: layout.row_count(),
-            // The fitting height shows a left tab column too; `overflow` stays about items.
+            // The fitting height shows a title column too; `overflow` stays about items.
             fitting_height_px: self.bounded_height_px(desired.max(self.rail_fit_height_px())),
             overflow: desired > self.expanded_h_px,
         }
     }
 
-    /// `desired` capped so the window ends at the bottom of its monitor's work area.
+    /// `desired` capped so the window ends at the bottom of its monitor's work area, or starts
+    /// at its top for a fence that grows upwards.
     fn bounded_height_px(&self, desired: i32) -> i32 {
         let rect = window::window_rect(self.hwnd);
         monitors::query(monitors::monitor_from_window(self.hwnd)).map_or(desired, |monitor| {
-            bounded_auto_height(
-                desired,
-                self.title_h_px(),
-                rect.top,
-                monitor.work_area.bottom,
-            )
+            let room = if self.expand_up {
+                rect.bottom - monitor.work_area.top
+            } else {
+                monitor.work_area.bottom - rect.top
+            };
+            bounded_auto_height(desired, self.title_h_px(), room)
         })
     }
 
@@ -459,9 +497,15 @@ impl FenceViewState {
             let (x, w) = *self.tab_rects().get(i)?;
             let along = ((x + w / 2.0) * scale).round() as i32;
             return Some(if self.tabs_on_rail() {
-                (r.left + self.content_x / 2, r.top + along)
+                (
+                    r.left + self.column_x_px() + self.rail_px() / 2,
+                    r.top + along,
+                )
             } else {
-                (r.left + along, r.top + self.title_h_px() / 2)
+                (
+                    r.left + along,
+                    r.top + self.title_top_px() + self.title_h_px() / 2,
+                )
             });
         }
         let i = self.items.iter().position(|it| it.name.contains(name))?;

@@ -51,6 +51,23 @@ const CMD_FENCE_OPTIONS: u32 = 331;
 const CMD_FENCE_NEW_FOLDER: u32 = 340;
 const CMD_FENCE_NEW_TEXT: u32 = 341;
 const CMD_FENCE_PASTE: u32 = 342;
+/// Title ▸ Top / Bottom / Left / Right: the edge the title bar runs along.
+const CMD_FENCE_TITLE_TOP: u32 = 350;
+const CMD_FENCE_TITLE_BOTTOM: u32 = 351;
+const CMD_FENCE_TITLE_LEFT: u32 = 352;
+const CMD_FENCE_TITLE_RIGHT: u32 = 353;
+const CMD_FENCE_ALIGN_START: u32 = 354;
+const CMD_FENCE_ALIGN_CENTER: u32 = 355;
+const CMD_FENCE_ALIGN_END: u32 = 356;
+const CMD_FENCE_EXPAND_FOLLOW: u32 = 357;
+/// Down, or right beside a title column.
+const CMD_FENCE_EXPAND_FORWARD: u32 = 358;
+/// Up, or left beside a title column.
+const CMD_FENCE_EXPAND_BACK: u32 = 359;
+const CMD_FENCE_SHRINK_COLLAPSED: u32 = 363;
+const CMD_FENCE_TITLE_HOVER: u32 = 364;
+const CMD_FENCE_TAB_TEXT_VERTICAL: u32 = 365;
+const CMD_FENCE_TAB_TEXT_HORIZONTAL: u32 = 366;
 const CMD_FENCE_VIEW_ICONS: u32 = 360;
 const CMD_FENCE_VIEW_LIST: u32 = 361;
 const CMD_FENCE_VIEW_DETAILS: u32 = 362;
@@ -82,6 +99,8 @@ const _: () = assert!(
 mod glyph {
     pub const CHEVRON_UP: char = '\u{E70E}';
     pub const CHEVRON_DOWN: char = '\u{E70D}';
+    pub const CHEVRON_LEFT: char = '\u{E76B}';
+    pub const CHEVRON_RIGHT: char = '\u{E76C}';
     pub const RENAME: char = '\u{E8AC}';
     pub const FOLDER_OPEN: char = '\u{E838}';
     pub const UP: char = '\u{E74A}';
@@ -96,6 +115,7 @@ mod glyph {
     pub const FOLDER: char = '\u{E8B7}';
     /// Favicon: a frame with a title strip, like a fence with tabs.
     pub const TAB: char = '\u{E737}';
+    pub const TITLE_BAR: char = '\u{E8A0}';
     pub const LOCK: char = '\u{E72E}';
     pub const UNLOCK: char = '\u{E785}';
     pub const DELETE: char = '\u{E74D}';
@@ -468,21 +488,26 @@ impl App {
         let h = self.state.fence(host).cloned().unwrap_or_else(|| f.clone());
         let menu = PopupMenu::new();
         let rolled = self.fences.get(&host).is_some_and(|w| w.is_rolled());
+        // The fence rolls towards the edge it keeps, and opens away from it.
+        let (roll_label, towards, away) = match h.kept_edge() {
+            pecofence_core::TitleEdge::Top => ("收起", glyph::CHEVRON_UP, glyph::CHEVRON_DOWN),
+            pecofence_core::TitleEdge::Bottom => {
+                ("向下收起", glyph::CHEVRON_DOWN, glyph::CHEVRON_UP)
+            }
+            pecofence_core::TitleEdge::Left => {
+                ("向左收起", glyph::CHEVRON_LEFT, glyph::CHEVRON_RIGHT)
+            }
+            pecofence_core::TitleEdge::Right => {
+                ("向右收起", glyph::CHEVRON_RIGHT, glyph::CHEVRON_LEFT)
+            }
+        };
         menu.item(
             CMD_FENCE_ROLL,
-            if rolled {
-                pecofence_core::i18n::text("展开")
-            } else {
-                pecofence_core::i18n::text("收起")
-            },
+            pecofence_core::i18n::text(if rolled { "展开" } else { roll_label }),
             false,
             false,
         )
-        .icon(if rolled {
-            glyph::CHEVRON_DOWN
-        } else {
-            glyph::CHEVRON_UP
-        })
+        .icon(if rolled { away } else { towards })
         .item(
             CMD_FENCE_RENAME,
             pecofence_core::i18n::text("重命名…"),
@@ -620,6 +645,148 @@ impl App {
             );
         menu.submenu(pecofence_core::i18n::text("排序方式"), sort_menu)
             .icon(glyph::SORT);
+        let title_edge = h.title_edge();
+        let title_menu = PopupMenu::new();
+        for (cmd, edge, label) in [
+            (CMD_FENCE_TITLE_TOP, pecofence_core::TitleEdge::Top, "顶部"),
+            (
+                CMD_FENCE_TITLE_BOTTOM,
+                pecofence_core::TitleEdge::Bottom,
+                "底部",
+            ),
+            (
+                CMD_FENCE_TITLE_LEFT,
+                pecofence_core::TitleEdge::Left,
+                "左侧",
+            ),
+            (
+                CMD_FENCE_TITLE_RIGHT,
+                pecofence_core::TitleEdge::Right,
+                "右侧",
+            ),
+        ] {
+            title_menu.item(
+                cmd,
+                pecofence_core::i18n::text(label),
+                title_edge == edge,
+                false,
+            );
+        }
+        // Alignment along the title bar: across a row, down a column.
+        let side = title_edge.is_side();
+        let align = h
+            .appearance
+            .as_ref()
+            .and_then(|a| a.title_align)
+            .unwrap_or(self.state.config.settings.title_align);
+        let horizontal_tabs = side
+            && self.state.tabs_of(host).len() > 1
+            && h.side_tab_text() == pecofence_core::SideTabText::Horizontal;
+        title_menu.separator();
+        for (cmd, a, row, column) in [
+            (
+                CMD_FENCE_ALIGN_START,
+                pecofence_core::TitleAlign::Left,
+                "靠左对齐",
+                "顶端对齐",
+            ),
+            (
+                CMD_FENCE_ALIGN_CENTER,
+                pecofence_core::TitleAlign::Center,
+                "居中对齐",
+                "居中对齐",
+            ),
+            (
+                CMD_FENCE_ALIGN_END,
+                pecofence_core::TitleAlign::Right,
+                "靠右对齐",
+                "底端对齐",
+            ),
+        ] {
+            if horizontal_tabs {
+                break;
+            }
+            title_menu.item(
+                cmd,
+                pecofence_core::i18n::text(if side { column } else { row }),
+                align == a,
+                false,
+            );
+        }
+        // Only the directions that keep the title bar's edge or the opposite one; the other
+        // two follow the title bar (`Fence::kept_edge`).
+        let (forward, back, forward_label, back_label) = if side {
+            (
+                ExpandDirection::Right,
+                ExpandDirection::Left,
+                "向右展开",
+                "向左展开",
+            )
+        } else {
+            (
+                ExpandDirection::Down,
+                ExpandDirection::Up,
+                "向下展开",
+                "向上展开",
+            )
+        };
+        let direction = match h.expand_direction {
+            d if d == forward || d == back => d,
+            _ => ExpandDirection::FollowTitle,
+        };
+        title_menu
+            .separator()
+            .item(
+                CMD_FENCE_EXPAND_FOLLOW,
+                pecofence_core::i18n::text("背离标题栏展开"),
+                direction == ExpandDirection::FollowTitle,
+                false,
+            )
+            .item(
+                CMD_FENCE_EXPAND_FORWARD,
+                pecofence_core::i18n::text(forward_label),
+                direction == forward,
+                false,
+            )
+            .item(
+                CMD_FENCE_EXPAND_BACK,
+                pecofence_core::i18n::text(back_label),
+                direction == back,
+                false,
+            )
+            .separator()
+            .item(
+                CMD_FENCE_SHRINK_COLLAPSED,
+                pecofence_core::i18n::text("收起时缩短"),
+                h.shrinks_collapsed(),
+                false,
+            )
+            // A title column never hides.
+            .item(
+                CMD_FENCE_TITLE_HOVER,
+                pecofence_core::i18n::text("仅在悬停时显示"),
+                !side && self.title_on_hover_of(&h),
+                side,
+            );
+        if side && self.state.tabs_of(host).len() > 1 {
+            let vertical = h.side_tab_text() == pecofence_core::SideTabText::Vertical;
+            title_menu
+                .separator()
+                .item(
+                    CMD_FENCE_TAB_TEXT_VERTICAL,
+                    pecofence_core::i18n::text("标签页文字竖排"),
+                    vertical,
+                    false,
+                )
+                .item(
+                    CMD_FENCE_TAB_TEXT_HORIZONTAL,
+                    pecofence_core::i18n::text("标签页文字横排"),
+                    !vertical,
+                    false,
+                );
+        }
+        menu.submenu(pecofence_core::i18n::text("标题栏"), title_menu)
+            .icon(glyph::TITLE_BAR);
         let new_menu = PopupMenu::new();
         new_menu
             .item(
@@ -667,19 +834,18 @@ impl App {
         if tabs.len() >= 2 || !other_hosts.is_empty() {
             let tab_menu = PopupMenu::new();
             if tabs.len() >= 2 {
-                // A left tab column moves its tabs up and down.
-                let (earlier, later) =
-                    if self.ctx.behavior.tab_bar.get() == pecofence_core::TabBar::Left {
-                        (
-                            pecofence_core::i18n::text("上移"),
-                            pecofence_core::i18n::text("下移"),
-                        )
-                    } else {
-                        (
-                            pecofence_core::i18n::text("左移"),
-                            pecofence_core::i18n::text("右移"),
-                        )
-                    };
+                // A column of tabs (a title bar on a side) moves its tabs up and down.
+                let (earlier, later) = if h.title_edge().is_side() {
+                    (
+                        pecofence_core::i18n::text("上移"),
+                        pecofence_core::i18n::text("下移"),
+                    )
+                } else {
+                    (
+                        pecofence_core::i18n::text("左移"),
+                        pecofence_core::i18n::text("右移"),
+                    )
+                };
                 tab_menu
                     .item(CMD_TAB_MOVE_LEFT, earlier, false, tab_idx == 0)
                     .item(CMD_TAB_MOVE_RIGHT, later, false, tab_idx + 1 >= tabs.len())
@@ -877,6 +1043,53 @@ impl App {
                 self.state.set_group_by_date(fence, !f.view.group_by_date);
                 self.refresh_fence(fence);
                 self.schedule_save();
+            }
+            CMD_FENCE_TITLE_TOP
+            | CMD_FENCE_TITLE_BOTTOM
+            | CMD_FENCE_TITLE_LEFT
+            | CMD_FENCE_TITLE_RIGHT => {
+                let edge = match cmd {
+                    CMD_FENCE_TITLE_BOTTOM => pecofence_core::TitleEdge::Bottom,
+                    CMD_FENCE_TITLE_LEFT => pecofence_core::TitleEdge::Left,
+                    CMD_FENCE_TITLE_RIGHT => pecofence_core::TitleEdge::Right,
+                    _ => pecofence_core::TitleEdge::Top,
+                };
+                self.set_fence_title_edge(host, edge);
+            }
+            CMD_FENCE_ALIGN_START | CMD_FENCE_ALIGN_CENTER | CMD_FENCE_ALIGN_END => {
+                let align = match cmd {
+                    CMD_FENCE_ALIGN_CENTER => pecofence_core::TitleAlign::Center,
+                    CMD_FENCE_ALIGN_END => pecofence_core::TitleAlign::Right,
+                    _ => pecofence_core::TitleAlign::Left,
+                };
+                self.set_fence_title_align(host, Some(align));
+            }
+            CMD_FENCE_EXPAND_FOLLOW | CMD_FENCE_EXPAND_FORWARD | CMD_FENCE_EXPAND_BACK => {
+                let side = h.title_edge().is_side();
+                let direction = match (cmd, side) {
+                    (CMD_FENCE_EXPAND_FORWARD, false) => ExpandDirection::Down,
+                    (CMD_FENCE_EXPAND_BACK, false) => ExpandDirection::Up,
+                    (CMD_FENCE_EXPAND_FORWARD, true) => ExpandDirection::Right,
+                    (CMD_FENCE_EXPAND_BACK, true) => ExpandDirection::Left,
+                    _ => ExpandDirection::FollowTitle,
+                };
+                self.set_fence_expand_direction(host, direction);
+            }
+            CMD_FENCE_SHRINK_COLLAPSED => {
+                // Toggled back to the title edge's default, the fence follows the edge again.
+                let shrink = !h.shrinks_collapsed();
+                let default = h.title_edge().is_side();
+                self.set_fence_collapsed_size(host, (shrink != default).then_some(shrink));
+            }
+            CMD_FENCE_TITLE_HOVER => {
+                let on = self.title_on_hover_of(&h);
+                self.set_fence_title_on_hover(host, Some(!on));
+            }
+            CMD_FENCE_TAB_TEXT_VERTICAL => {
+                self.set_fence_side_tab_text(host, pecofence_core::SideTabText::Vertical);
+            }
+            CMD_FENCE_TAB_TEXT_HORIZONTAL => {
+                self.set_fence_side_tab_text(host, pecofence_core::SideTabText::Horizontal);
             }
             CMD_FENCE_LOCK => self.set_fence_locked(host, !h.locked),
             CMD_FENCE_OPTIONS => self.open_fence_options(fence),

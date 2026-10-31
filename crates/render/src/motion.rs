@@ -369,6 +369,18 @@ impl Motion {
         height: f32,
         radius: f32,
     ) -> Result<()> {
+        self.clip_rounded_rect(v, Vector2::new(0.0, top), width, height, radius)
+    }
+
+    /// [`Motion::clip_rounded`] for a rectangle starting at `origin` in the visual.
+    pub fn clip_rounded_rect(
+        &self,
+        v: &Visual,
+        origin: Vector2,
+        width: f32,
+        height: f32,
+        radius: f32,
+    ) -> Result<()> {
         let visual = raw_visual(v)?;
         let existing = visual
             .Clip()
@@ -385,7 +397,7 @@ impl Motion {
             }
         };
         let radius = radius.min(width.min(height) * 0.5).max(0.0);
-        geometry.SetOffset(Vector2::new(0.0, top))?;
+        geometry.SetOffset(origin)?;
         geometry.SetSize(Vector2::new(width, height))?;
         geometry.SetCornerRadius(Vector2::new(radius, radius))
     }

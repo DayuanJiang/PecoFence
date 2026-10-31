@@ -421,9 +421,11 @@ impl FenceViewState {
             .map(|(x, w)| (x.value_at(now), w.value_at(now)));
         let deco = self.deco;
         let style = FenceStyle {
-            title_align: self.behavior.title_align.get(),
+            title_align: self.title_align(),
             tab_rail: self.rail_w(),
             hide_count_and_chevron: self.behavior.hide_count_and_chevron.get(),
+            chevron_leads: self.chevron_leads(),
+            collapse_to: self.collapse_to(),
             ..self.style
         };
         let pressed_tab = match self.pressed {
@@ -509,7 +511,7 @@ impl FenceViewState {
     /// so the moving bottom edge only reveals or conceals finished pixels. Liquid Glass
     /// instead follows the curved bottom bezel each frame. Returns whether the crop changed.
     pub(super) fn update_backdrop(&mut self) -> bool {
-        let r = window::window_rect(self.hwnd);
+        let r = self.visual_rect();
         self.update_backdrop_at(r)
     }
 
@@ -524,7 +526,7 @@ impl FenceViewState {
             if let Some(target) = self.height_target_px() {
                 h = h.max(target);
             }
-            // Collapsing to a left tab column (or expanding from it) moves the width too.
+            // Collapsing to a title column (or expanding from it) moves the width too.
             if let Some(target) = self.width_target_px() {
                 w = w.max(target);
             }
@@ -585,7 +587,7 @@ impl FenceViewState {
         self.update_backdrop();
     }
 
-    /// Lays out the content panel below the title bar (and beside a left tab column) and
+    /// Lays out the content panel below the title bar (and beside a title column) and
     /// resizes both surfaces.
     pub(super) fn layout_panels(&mut self, w: i32, h: i32) -> Result<()> {
         // A content swap still moving would be laid out at the wrong size: settle it first.
@@ -593,19 +595,22 @@ impl FenceViewState {
         // Entrance / exit scales pivot on the window centre (visual units are physical px).
         self.motion
             .set_center(&self.root, w as f32 / 2.0, h as f32 / 2.0);
-        self.update_shape_clip(w, h)?;
         self.chrome_panel.resize(w, h)?;
-        // A fence collapsed (or collapsing) to its left tab column keeps the width it returns
+        // A fence collapsed (or collapsing) to its title column keeps the width it returns
         // to; the column's width follows the expanded fence.
-        if !self.column_collapsed && self.roll_anim.as_ref().is_none_or(|a| a.width.is_none()) {
+        if !self.width_collapsed && self.roll_anim.as_ref().is_none_or(|a| a.width.is_none()) {
             self.expanded_w_px = w;
         }
         self.rail_dip = self.measure_rail_w();
-        self.content_x = self.rail_px();
+        self.content_x = self.rail_px() - self.content_right_px();
         self.content_y = self.head_px();
-        let content_h = (h - self.content_y).max(1);
-        self.content_panel
-            .resize((w - self.content_x).max(1), content_h)?;
+        // After the column is measured: the content's clip stops at it.
+        self.update_shape_clip(w, h)?;
+        let content_h = (h - self.content_y - self.foot_px()).max(1);
+        self.content_panel.resize(
+            (w - self.content_x - self.content_right_px()).max(1),
+            content_h,
+        )?;
         self.content_panel
             .visual
             .set_offset(self.content_x as f32, self.content_y as f32, 0.0);
@@ -616,17 +621,48 @@ impl FenceViewState {
     }
 
     /// The clip must follow every height-animation frame even while content stays frozen. It
-    /// starts at the plate top: a title row folded away by title on hover is cut off too.
+    /// spans the plate: a title row folded away by title on hover is cut off too (at the
+    /// bottom, for a title row there).
     pub(super) fn update_shape_clip(&self, w: i32, h: i32) -> Result<()> {
         let inset = self.plate_inset_px.clamp(0, (h - 1).max(0));
+        let top = if self.title_bottom() { 0 } else { inset };
         self.motion.clip_rounded_at(
             &self.root,
-            inset as f32,
+            top as f32,
             w as f32,
             (h - inset) as f32,
             self.theme.corner_radius * self.scale(),
         )?;
+        // The content sits above the chrome and stays at its final size while the height
+        // animates: it must stop at a title row along the bottom edge, and at a title column.
+        let (ox, oy) = self.content_origin(w, h);
+        self.motion.clip_rounded_rect(
+            &self.content_panel.visual,
+            pecofence_render::Vector2::new(
+                (self.content_x - ox) as f32,
+                (self.content_y - oy) as f32,
+            ),
+            (w - self.content_x - self.content_right_px()).max(1) as f32,
+            (h - self.content_y - self.foot_px()).max(1) as f32,
+            0.0,
+        )?;
         Ok(())
+    }
+
+    /// Where the content panel sits in a window `w` x `h` px: at `content_x` / `content_y`,
+    /// or against the kept edge while a `Band` keeps the right or bottom edge. The items then
+    /// stay beside the title bar, and the moving edge uncovers them like a drawer.
+    pub(super) fn content_origin(&self, w: i32, h: i32) -> (i32, i32) {
+        if self.band.is_none() {
+            return (self.content_x, self.content_y);
+        }
+        let (cw, ch) = self.content_panel.size_px();
+        let room = w - self.content_x - self.content_right_px();
+        let x = self.content_x + ((room - cw).min(0) as f32 * self.width_anchor()).round() as i32;
+        let room_h = h - self.content_y - self.foot_px();
+        let y =
+            self.content_y + ((room_h - ch).min(0) as f32 * self.height_anchor()).round() as i32;
+        (x, y)
     }
 
     /// `label_w` is the width the label must fit: the cell width for icons, the name column's

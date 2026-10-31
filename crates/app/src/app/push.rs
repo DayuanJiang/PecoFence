@@ -1,7 +1,8 @@
 //! Push neighbours (`rollUp.pushNeighbors`): while a fence is expanded (a click, a hover peek, or
 //! a taller height from the CLI), the fences stacked below it slide down out of its way, and
 //! slide back when it rolls up. Edge drags and the automatic size changes still stop short of
-//! the fence below as it shows.
+//! the fence below as it shows. A fence that expands upwards takes no part: it pushes nothing
+//! and is not pushed.
 //!
 //! The layout keeps the resting positions. The pass moves the windows and notes each shift in
 //! `Behavior::pushed`; every rectangle the layout records has the shift taken out first
@@ -162,9 +163,12 @@ impl App {
                 // what it pushed stays put rather than sliding back under it.
                 let frozen = by.iter().any(|h| dragged.contains(h));
                 let settles = settling.contains(&id);
+                // A fence that expands upwards moves its top as it grows: the stack would take
+                // that for a fence moving down past the ones it pushes.
+                let up = w.expands_up();
                 let role = if is_dragged || frozen || sized == Some(hwnd) {
                     Role::Held
-                } else if settles || self.state.fence(id).is_some_and(|f| f.locked) {
+                } else if settles || up || self.state.fence(id).is_some_and(|f| f.locked) {
                     Role::Locked
                 } else {
                     Role::Free
@@ -182,7 +186,7 @@ impl App {
                     gap: self.gap_px(hwnd),
                     work,
                     role,
-                    pushes: !is_dragged && !settles,
+                    pushes: !is_dragged && !settles && !up,
                     y: r.top,
                     by,
                 });
@@ -213,15 +217,23 @@ impl App {
         let rect = match self.fences.get(&id) {
             Some(w) => {
                 let mut rect = self.ctx.behavior.resting_rect(w.hwnd(), rect);
-                // Collapsed to its left tab column: the fence keeps the width it expands to.
+                // Collapsed to its title column: the fence keeps the width it expands to.
                 if rolled && let Some(ew) = w.collapsed_expanded_width_px() {
+                    rect.left = crate::fence_window::anchored_start(
+                        rect.left,
+                        rect.right - rect.left,
+                        ew,
+                        w.width_anchor(),
+                    );
                     rect.right = rect.left + ew;
                 }
                 rect
             }
             None => rect,
         };
-        self.state.set_fence_bounds(id, rect, rolled, expanded);
+        let anchor = self.fences.get(&id).map_or(0.0, |w| w.height_anchor());
+        self.state
+            .set_fence_bounds(id, rect, rolled, expanded, anchor);
     }
 }
 

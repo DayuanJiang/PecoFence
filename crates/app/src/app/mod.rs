@@ -19,8 +19,8 @@ use crate::state::AppState;
 use pecofence_core::geometry::WorkArea;
 use pecofence_core::hotkey::Hotkey;
 use pecofence_core::{
-    FenceId, FenceKind, ItemId, ItemKey, ShowDesktopSetting, SortMode, Spacing, Target,
-    ThemeSetting, TitleSize, ViewLayout, ZOrderSetting,
+    ExpandDirection, FenceId, FenceKind, ItemId, ItemKey, ShowDesktopSetting, SortMode, Spacing,
+    Target, ThemeSetting, TitleSize, ViewLayout, ZOrderSetting,
 };
 use pecofence_platform::clipboard;
 use pecofence_platform::frameclock::FrameClock;
@@ -1085,7 +1085,6 @@ impl App {
                 ),
                 title_on_hover: std::cell::Cell::new(state.config.settings.roll_up.title_on_hover),
                 title_align: std::cell::Cell::new(state.config.settings.title_align),
-                tab_bar: std::cell::Cell::new(state.config.settings.tab_bar),
                 label_color: std::cell::Cell::new(state.config.settings.label_color),
                 hide_inactive_scrollbar: std::cell::Cell::new(
                     state.config.settings.roll_up.hide_inactive_scrollbar,

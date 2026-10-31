@@ -104,10 +104,14 @@ fn tab_sweeps_cross_multiple_compressed_slots_without_bouncing() {
 
 #[test]
 fn auto_height_keeps_long_lists_above_the_taskbar() {
-    assert_eq!(bounded_auto_height(2162, 72, 360, 2064), 1704);
-    assert_eq!(bounded_auto_height(490, 72, 360, 2064), 490);
-    assert_eq!(bounded_auto_height(1300, 36, -900, 0), 900);
-    assert_eq!(bounded_auto_height(500, 72, 2030, 2064), 73);
+    // The room is the work-area bottom minus the window top.
+    assert_eq!(bounded_auto_height(2162, 72, 2064 - 360), 1704);
+    assert_eq!(bounded_auto_height(490, 72, 2064 - 360), 490);
+    assert_eq!(bounded_auto_height(1300, 36, 0 - -900), 900);
+    assert_eq!(bounded_auto_height(500, 72, 2064 - 2030), 73);
+    // Growing upwards it is the window bottom minus the work-area top: a title row resting on
+    // the taskbar of a 1040 px work area still gets the whole screen above it.
+    assert_eq!(bounded_auto_height(600, 36, 1040), 600);
 }
 
 #[test]
@@ -241,7 +245,7 @@ fn merge_slot_on_drawn_strip_is_stable() {
     );
 }
 
-/// A merge into a left tab column collapsed to fit its rows opens one row: the rows shrink by a
+/// A merge into a title column collapsed to fit its rows opens one row: the rows shrink by a
 /// quarter for three tabs, where a title-row-wide gap would halve them.
 #[test]
 fn merge_gap_in_left_column_is_one_row() {
@@ -267,7 +271,7 @@ fn drag_image_footprint_limit() {
     assert_eq!(DRAG_IMAGE_MAX_ITEMS, 4);
 }
 
-/// A fence collapsed to its left tab column keeps no room for the chevron under the tabs: two
+/// A fence collapsed to its title column keeps no room for the chevron under the tabs: two
 /// tabs take 84 DIP instead of the expanded column's 120.
 #[test]
 fn collapsed_tab_column_has_no_chevron_room() {

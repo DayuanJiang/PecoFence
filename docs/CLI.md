@@ -160,13 +160,22 @@ in; only the tab currently shown can be measured, so another tab is `unsupported
 `fence detach` it first).
 
 `fence set` properties (values as shown by `fence get`): `title` (or `fence rename`), `iconSize`
-32/48/64/96, `spacing` compact/normal/loose, `autoHeight`, `locked`, `excludeFromQuickHide`,
+32/48/64/96, `spacing` compact/normal/loose, `autoHeight`, `expandDirection` followTitle/down/up/left/right (the way the fence opens from its rolled title bar;
+followTitle, the default, opens away from it; up/down suit a title bar at the top or bottom,
+left/right one on a side), `locked`, `excludeFromQuickHide`,
 `opacity` default/clear/solid/transparent (transparent: no glass, rim or shadow until the pointer
 is over the fence), `tint` `"#RRGGBB"` or `null`, `tintTitleOnly` (the tint washes only the title
 row), `tabColor` `"#RRGGBB"` or `null` (the bar under the fence's tab in a tab strip; `null` follows
 its tint), `titleColor` theme/tint/white/black/`"#RRGGBB"`, `titleSize` small/normal/large/extraLarge,
 `titleOnHover` default/hover/always (hover: the title row folds away until the pointer is over the
-fence; default follows `rollUp.titleOnHover`), `layout` icons/list/details,
+fence; default follows `rollUp.titleOnHover`), `titlePosition` top/bottom/left/right (on a side the title bar is a
+column, where a single title and tabs turn to read downwards), `titleAlign`
+default/left/center/right (default follows the `titleAlign` setting; down a side column left and right
+mean top and bottom), `collapsedSize` default/fit/full (fit: a collapsed title bar is only as long as
+its title or tabs; default fits a side column and keeps a title row at the fence's width; `true`
+and `false` mean fit and full, and `fence get` adds `collapsedShrinks`, the effective choice), `sideTabText`
+vertical/horizontal (tab text in a side column: turned like the title, or across with one tab per row),
+`layout` icons/list/details,
 `sort` manual/name/type/date/size/openCount, `reverse`, `groupByDate`, `labelLines`,
 `openFoldersInside` (any fence but a portal: double-clicking a folder, or a shortcut to a folder,
 shows that folder inside the fence instead of opening File Explorer; off by default),
@@ -238,16 +247,14 @@ hidden when PecoFence exits, so they do not flash at the next sign-in; default o
 fence shows no window and its items only show among the Windows desktop icons; a tab or a host of
 tabs stays; default off), `offerNewFence` (a rectangle drawn on empty desktop that touches no fence
 offers 「在此新建栅栏」; default on), `autostart`, `peek.enabled`, `quickHide.enabled`,
-`titleAlign` (left/center/right: the title and tab strip in every title row),
+`titleAlign` (left/center/right: the title and tab strip in every title row, unless the fence sets
+its own `titleAlign`),
 `labelColor` (auto/white/black: the item names in every fence and view; auto picks dark or light
 names from the wallpaper in Liquid Glass and follows the colour mode in Fluent; fence titles keep
 their `titleColor`; default auto),
 `customTheme` (the name of a theme file in the `themes` folder next to `config.json`, without
 `.json`; while it loads, its base style takes the place of `themeStyle`; `null` = the built-in
 style; see [THEMES.md](THEMES.md)),
-`tabBar` (top/left: a fence with two or more tabs shows them in its title row, or lists them in a
-column on its left that takes the title row's place; rolled up, such a fence shrinks to the
-column; default top),
 `rollUp.hoverPeek`, `rollUp.clickToExpand`, `rollUp.pushNeighbors` (an expanded fence pushes the
 fences stacked below it down and they slide back when it rolls up; their `rect` stays where it was,
 default on), `rollUp.titleOnHover` (the title row folds away until the

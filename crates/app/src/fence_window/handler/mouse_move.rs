@@ -109,7 +109,7 @@ pub(super) fn on_mousemove(
         let index = td.index;
         let (w_px, h_px) = v.chrome_panel.size_px();
         // Leaving the title row vertically (or the window sideways) tears the
-        // tab off; moving along the strip reorders it. A left tab column is
+        // tab off; moving along the strip reorders it. A title column is
         // left sideways, or through the window's top or bottom edge.
         let torn = if v.tabs_on_rail() {
             (x - sx).abs() > far || y < 0 || y >= h_px
@@ -419,11 +419,11 @@ pub(super) fn on_mousemove(
     let header_changed = std::mem::replace(&mut v.header_hover, header) != header;
     // Client-area pointer inside the title row (a control's box) still
     // counts as hovering the row, so the pill / chevron do not drop; a
-    // left tab column is the title bar.
-    let in_title = if v.tabs_on_rail() {
-        x < v.content_x
+    // title column is the title bar.
+    let in_title = if v.title_column() {
+        v.in_column(x)
     } else {
-        y < v.title_h_px()
+        v.in_title_row(y)
     };
     let (item_changed, title_changed) = v.set_hover(hit, in_title);
     if chrome_changed || title_changed {

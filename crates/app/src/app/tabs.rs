@@ -83,8 +83,22 @@ impl App {
                     }
                 };
                 let title_h = (36.0 * scale) as i32;
-                let mut left = x - w / 2;
-                let mut top = y - title_h / 2;
+                // The cursor holds the title bar: the middle of the title row, or the top of a
+                // title column.
+                let edge = self
+                    .state
+                    .fence(tab)
+                    .map_or(pecofence_core::TitleEdge::Top, |f| f.title_edge());
+                let mut left = match edge {
+                    pecofence_core::TitleEdge::Left => x - title_h / 2,
+                    pecofence_core::TitleEdge::Right => x - (w - title_h / 2),
+                    _ => x - w / 2,
+                };
+                let mut top = if edge == pecofence_core::TitleEdge::Bottom {
+                    y - (h - title_h / 2)
+                } else {
+                    y - title_h / 2
+                };
                 if let Some(work) = &work {
                     left = left.clamp(work.left, (work.right - w).max(work.left));
                     top = top.clamp(work.top, (work.bottom - h).max(work.top));
@@ -135,7 +149,7 @@ impl App {
             }
             let rect = self.ctx.behavior.resting_rect(w.hwnd(), w.rect());
             self.state
-                .set_fence_bounds(tab, rect, false, w.expanded_height_px());
+                .set_fence_bounds(tab, rect, false, w.expanded_height_px(), 0.0);
             self.queue.push(Command::RaiseFence(w.hwnd()));
             tracing::debug!(
                 from_drag,
@@ -153,11 +167,20 @@ impl App {
                 let pt = window::cursor_pos();
                 let scale = monitors::dpi_for_window(new_hwnd).max(96) as f32 / 96.0;
                 let title_h = (36.0 * scale) as i32;
+                let grip = if self
+                    .state
+                    .fence(tab)
+                    .is_some_and(|f| f.title_edge() == pecofence_core::TitleEdge::Bottom)
+                {
+                    rh - title_h / 2
+                } else {
+                    title_h / 2
+                };
                 let placed = RECT {
                     left: pt.x - rw / 2,
-                    top: pt.y - title_h / 2,
+                    top: pt.y - grip,
                     right: pt.x - rw / 2 + rw,
-                    bottom: pt.y - title_h / 2 + rh,
+                    bottom: pt.y - grip + rh,
                 };
                 w.set_bounds(placed);
                 // Keep capture on the original HWND. For a departing host this is

@@ -269,6 +269,11 @@ mod ipc {
         let patched = patch_settings_path(&current, "", edited).unwrap();
         assert_eq!(patched.icon_size, 64);
         assert_eq!(patched.quick_hide.enabled, current.quick_hide.enabled);
+        // An older export's `tabBar` is dropped: the next load would turn it into title edges.
+        let mut old = visible;
+        old["tabBar"] = json!("left");
+        let patched = patch_settings_path(&current, "", old).unwrap();
+        assert_eq!(patched.tab_bar, pecofence_core::TabBar::Top);
     }
 
     #[test]
@@ -376,6 +381,9 @@ mod ipc {
             "labelLines",
             "titleOnHover",
             "portalTitleIcon",
+            "expandDirection",
+            "titlePosition",
+            "titleAlign",
         ] {
             assert!(allowed.as_array().unwrap().contains(&json!(p)), "{allowed}");
         }
@@ -395,6 +403,47 @@ mod ipc {
             parse_fence_prop("layout", &json!("list")).unwrap(),
             FenceProp::Layout(ViewLayout::List)
         );
+        assert_eq!(
+            parse_fence_prop("expandDirection", &json!("up")).unwrap(),
+            FenceProp::ExpandDirection(pecofence_core::ExpandDirection::Up)
+        );
+        assert!(parse_fence_prop("expandDirection", &json!(true)).is_err());
+        assert_eq!(
+            parse_fence_prop("titlePosition", &json!("bottom")).unwrap(),
+            FenceProp::TitleEdge(pecofence_core::TitleEdge::Bottom)
+        );
+        assert_eq!(
+            parse_fence_prop("titlePosition", &json!("right")).unwrap(),
+            FenceProp::TitleEdge(pecofence_core::TitleEdge::Right)
+        );
+        assert!(parse_fence_prop("titlePosition", &json!("middle")).is_err());
+        assert_eq!(
+            parse_fence_prop("titleAlign", &json!("default")).unwrap(),
+            FenceProp::TitleAlign(None)
+        );
+        assert_eq!(
+            parse_fence_prop("titleAlign", &json!("center")).unwrap(),
+            FenceProp::TitleAlign(Some(pecofence_core::TitleAlign::Center))
+        );
+        assert_eq!(
+            parse_fence_prop("collapsedSize", &json!("fit")).unwrap(),
+            FenceProp::CollapsedSize(Some(true))
+        );
+        assert_eq!(
+            parse_fence_prop("collapsedSize", &json!("default")).unwrap(),
+            FenceProp::CollapsedSize(None)
+        );
+        // The settings page's switch.
+        assert_eq!(
+            parse_fence_prop("collapsedSize", &json!(false)).unwrap(),
+            FenceProp::CollapsedSize(Some(false))
+        );
+        assert!(parse_fence_prop("collapsedSize", &json!("tiny")).is_err());
+        assert_eq!(
+            parse_fence_prop("sideTabText", &json!("horizontal")).unwrap(),
+            FenceProp::SideTabText(pecofence_core::SideTabText::Horizontal)
+        );
+        assert!(parse_fence_prop("sideTabText", &json!("list")).is_err());
         assert_eq!(
             parse_fence_prop("tint", &json!("#ABCDEF")).unwrap(),
             FenceProp::Tint(Some([0xAB, 0xCD, 0xEF]))

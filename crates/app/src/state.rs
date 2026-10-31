@@ -3,8 +3,9 @@
 use pecofence_core::geometry::{self, PxRect, WorkArea};
 use pecofence_core::rules::{Cond, Decision, RuleSet, Target, Template, Unmatched};
 use pecofence_core::{
-    AssignedBy, Config, ConfigStore, Fence, FenceId, FenceKind, IconKey, Item, ItemId, ItemKey,
-    ItemRef, ItemSourceSpec, Layout, LoadOutcome, MonitorIdentity, Origin, SortMode,
+    AssignedBy, Config, ConfigStore, ExpandDirection, Fence, FenceId, FenceKind, IconKey, Item,
+    ItemId, ItemKey, ItemRef, ItemSourceSpec, Layout, LoadOutcome, MonitorIdentity, Origin,
+    SortMode,
 };
 use pecofence_platform::RECT;
 use pecofence_platform::shell::{self, DesktopEntry, EntryOrigin};
@@ -1849,17 +1850,27 @@ impl AppState {
 
     // ---- fences -----------------------------------------------------------------------------
 
-    pub fn set_fence_bounds(&mut self, id: FenceId, rect: RECT, rolled: bool, expanded_h_px: i32) {
-        let px = PxRect {
+    /// `anchor` is where a rolled fence's height pivots between its rolled and expanded size
+    /// (`FenceWindow::height_anchor`): 0 at the top, 1 at the bottom.
+    pub fn set_fence_bounds(
+        &mut self,
+        id: FenceId,
+        rect: RECT,
+        rolled: bool,
+        expanded_h_px: i32,
+        anchor: f32,
+    ) {
+        let mut px = PxRect {
             left: rect.left,
             top: rect.top,
             right: rect.right,
-            bottom: if rolled {
-                rect.top + expanded_h_px.max(1)
-            } else {
-                rect.bottom
-            },
+            bottom: rect.bottom,
         };
+        if rolled {
+            let h = expanded_h_px.max(1);
+            px.top = rect.top - ((h - (rect.bottom - rect.top)) as f32 * anchor).round() as i32;
+            px.bottom = px.top + h;
+        }
         let (cx, cy) = px.center();
         let work = self
             .work_areas
@@ -1980,6 +1991,15 @@ impl AppState {
         }
     }
 
+    pub fn set_expand_direction(&mut self, id: FenceId, direction: ExpandDirection) {
+        if let Some(f) = self.fence_mut(id)
+            && f.expand_direction != direction
+        {
+            f.expand_direction = direction;
+            self.dirty = true;
+        }
+    }
+
     /// Changes a fence's appearance override; one left at every default is dropped (None =
     /// follow the global settings).
     fn edit_appearance(
@@ -2029,6 +2049,23 @@ impl AppState {
     /// Per-fence title on hover (None = follow `rollUp.titleOnHover`).
     pub fn set_title_on_hover(&mut self, id: FenceId, on: Option<bool>) {
         self.edit_appearance(id, |a| a.title_on_hover = on);
+    }
+
+    pub fn set_title_edge(&mut self, id: FenceId, edge: pecofence_core::TitleEdge) {
+        self.edit_appearance(id, |a| a.title_edge = edge);
+    }
+
+    pub fn set_title_align(&mut self, id: FenceId, align: Option<pecofence_core::TitleAlign>) {
+        self.edit_appearance(id, |a| a.title_align = align);
+    }
+
+    /// None = only a title column on a side shrinks while collapsed.
+    pub fn set_shrink_collapsed(&mut self, id: FenceId, shrink: Option<bool>) {
+        self.edit_appearance(id, |a| a.shrink_collapsed = shrink);
+    }
+
+    pub fn set_side_tab_text(&mut self, id: FenceId, style: pecofence_core::SideTabText) {
+        self.edit_appearance(id, |a| a.side_tab_text = style);
     }
 
     /// The tint washes only the title row.
@@ -2457,7 +2494,7 @@ mod tests {
         // The same fences; all were on the big monitor, so none has a spot here yet.
         assert_eq!(ids(&state), docked.iter().map(|f| f.id).collect::<Vec<_>>());
         assert_eq!(state.unplaced.len(), docked.len());
-        state.set_fence_bounds(first, rect(-1900, 20, 300, 200), false, 200);
+        state.set_fence_bounds(first, rect(-1900, 20, 300, 200), false, 200, 0.0);
         state.rename_fence(first, "Laptop title");
         let made = state
             .new_fence("Made on the laptop", rect(-1500, 600, 300, 200))
@@ -2527,7 +2564,7 @@ mod tests {
         state.ensure_layout();
         assert_eq!((state.layout, state.config.layouts.len()), (1, 2));
         assert_eq!(state.unplaced.len(), at_4k.len());
-        state.set_fence_bounds(first, rect(20, 20, 300, 200), false, 200);
+        state.set_fence_bounds(first, rect(20, 20, 300, 200), false, 200, 0.0);
 
         state.work_areas = vec![monitor(id, 0, 3840, 2064, 192)];
         state.ensure_layout();
@@ -2916,6 +2953,34 @@ mod tests {
         // A sorted fence refuses.
         state.set_sort(fence, SortMode::Name);
         assert!(!state.reorder_items(fence, &[a], 0));
+    }
+
+    #[test]
+    fn a_rolled_fence_that_expands_up_saves_the_rect_above_its_title() {
+        let mut state = test_state();
+        let fence = state.fences()[0].id;
+        // Rolled to a 36 px title row at y 600, expanding to 300 px.
+        state.set_fence_bounds(fence, rect(20, 600, 300, 36), true, 300, 0.0);
+        let px = state.fence_px_rect(state.fence(fence).unwrap());
+        assert_eq!((px.top, px.bottom), (600, 900));
+        state.set_expand_direction(fence, ExpandDirection::Up);
+        state.set_fence_bounds(fence, rect(20, 600, 300, 36), true, 300, 1.0);
+        let px = state.fence_px_rect(state.fence(fence).unwrap());
+        assert_eq!((px.top, px.bottom), (336, 636));
+        // Expanded, the window rect is the saved one either way.
+        state.set_fence_bounds(fence, rect(20, 336, 300, 300), false, 300, 1.0);
+        let px = state.fence_px_rect(state.fence(fence).unwrap());
+        assert_eq!((px.top, px.bottom), (336, 636));
+        // Following a title row at the bottom, the fence expands upwards too.
+        state.set_expand_direction(fence, ExpandDirection::FollowTitle);
+        state.set_title_edge(fence, pecofence_core::TitleEdge::Bottom);
+        state.set_fence_bounds(fence, rect(20, 600, 300, 36), true, 300, 1.0);
+        let px = state.fence_px_rect(state.fence(fence).unwrap());
+        assert_eq!((px.top, px.bottom), (336, 636));
+        // A column pivoting at its centre keeps the middle of the rect.
+        state.set_fence_bounds(fence, rect(20, 400, 45, 100), true, 300, 0.5);
+        let px = state.fence_px_rect(state.fence(fence).unwrap());
+        assert_eq!((px.top, px.bottom), (300, 600));
     }
 
     fn desktop_entry(name: &str) -> DesktopEntry {

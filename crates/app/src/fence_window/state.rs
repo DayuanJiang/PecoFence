@@ -182,19 +182,19 @@ pub struct FenceViewState {
     pub(super) chrome_panel: Panel,
     pub(super) content_panel: Panel,
     /// Device px from the window's top-left corner to the content panel as last laid out
-    /// (`layout_panels`, `sync_rail`): the left tab column's width (0 without one) and the
-    /// title row's height (0 beside a left tab column). Client points become content points by
+    /// (`layout_panels`, `sync_rail`): the title column's width (0 without one) and the
+    /// title row's height (0 beside a title column). Client points become content points by
     /// subtracting them.
     pub(super) content_x: i32,
     pub(super) content_y: i32,
-    /// The left tab column's width in DIPs as last measured (`sync_rail`).
+    /// The title column's width in DIPs as last measured (`sync_rail`).
     pub(super) rail_dip: f32,
-    /// Expanded window width (device px): what a fence collapsed to its left tab column
+    /// Expanded window width (device px): what a fence collapsed to its title column
     /// returns to, and the width the layout records for it.
     pub(super) expanded_w_px: i32,
-    /// The window is collapsed (or collapsing) to its left tab column: it is as narrow as the
-    /// column, and `expanded_w_px` keeps its width.
-    pub(super) column_collapsed: bool,
+    /// The window is collapsed (or collapsing) narrower than it expands: to its title column,
+    /// or to a title row that shrinks (`collapses_width`); `expanded_w_px` keeps its width.
+    pub(super) width_collapsed: bool,
     pub(super) _target: DesktopWindowTarget,
     /// Root of the window's visual tree: whole-window fades / scales animate this.
     pub(super) root: ContainerVisual,
@@ -261,7 +261,17 @@ pub struct FenceViewState {
     pub(super) tab_hover_switch: Option<usize>,
     /// Fence height follows the item grid (FenceView.auto_height).
     pub(super) auto_height: bool,
-    /// The left tab column appeared or grew (a tab joined, a caption changed, 标签栏位置): the
+    /// Height changes keep the bottom edge (`Fence::kept_edge`).
+    pub(super) expand_up: bool,
+    /// A title column keeps the right edge (`Fence::kept_edge`).
+    pub(super) keep_right_edge: bool,
+    /// Set while a fence that keeps its bottom or right edge animates its size.
+    pub(super) band: Option<Band>,
+    /// The root is parked off the window for the last frame of a shrinking `Band`.
+    pub(super) band_parked: bool,
+    /// This fence's title alignment; None follows `Behavior::title_align`.
+    pub(super) title_align: Option<pecofence_core::TitleAlign>,
+    /// The title column appeared or grew (a tab joined, a caption changed, the title moved): the
     /// next height pass lets a fence too short for it grow (`take_rail_growth_px`).
     pub(super) rail_grow: bool,
     /// Mouse move/resize disabled (menu "锁定位置和大小").

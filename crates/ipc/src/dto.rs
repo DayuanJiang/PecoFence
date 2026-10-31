@@ -146,6 +146,11 @@ pub struct FenceDto {
     /// `compact` | `normal` | `loose`.
     pub spacing: String,
     pub auto_height: bool,
+    /// `followTitle` | `down` | `up` | `left` | `right`: the way the window opens from its
+    /// rolled title bar (`followTitle`: away from it). Up and down apply to a title bar at the
+    /// top or bottom, left and right to one on a side; across that axis it follows the title bar.
+    #[serde(default)]
+    pub expand_direction: String,
     pub exclude_from_quick_hide: bool,
     /// Inbox only: no window while it is empty (`windowRect` is `null` then).
     #[serde(default)]
@@ -167,6 +172,22 @@ pub struct FenceDto {
     /// `default` (the global `rollUp.titleOnHover`) | `hover` | `always`.
     #[serde(default)]
     pub title_on_hover: String,
+    /// `top` | `bottom` | `left` | `right`: the edge the title bar runs along (on a side it is a
+    /// column).
+    #[serde(default)]
+    pub title_position: String,
+    /// `default` (the global `titleAlign`) | `left` | `center` | `right`.
+    #[serde(default)]
+    pub title_align: String,
+    /// `default` (a side column fits, a title row keeps its length) | `fit` | `full`.
+    #[serde(default)]
+    pub collapsed_size: String,
+    /// Whether the collapsed title bar shrinks to its title or tabs (`collapsedSize` applied).
+    #[serde(default)]
+    pub collapsed_shrinks: bool,
+    /// `vertical` | `horizontal`: the tab text in a side column.
+    #[serde(default)]
+    pub side_tab_text: String,
     /// `icons` | `list` | `details`.
     pub layout: String,
     /// `manual` | `name` | `type` | `date` | `size` | `openCount`.

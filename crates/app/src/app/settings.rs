@@ -808,7 +808,6 @@ impl App {
             .title_on_hover
             .set(new.roll_up.title_on_hover);
         self.ctx.behavior.title_align.set(new.title_align);
-        self.ctx.behavior.tab_bar.set(new.tab_bar);
         self.ctx.behavior.label_color.set(new.label_color);
         self.ctx
             .behavior
@@ -834,15 +833,23 @@ impl App {
                 w.redraw();
             }
         }
-        if new.tab_bar != old.tab_bar {
-            // The tab column takes (or gives back) width beside the items, and an auto-height
-            // fence grows to show every tab in it.
-            let hosts: Vec<FenceId> = self.fences.keys().copied().collect();
-            for host in hosts {
-                if let Some(w) = self.fences.get(&host) {
-                    w.sync_tab_bar();
-                }
-                self.apply_auto_height(host);
+        // A rolled title row that shrinks pivots where its title sits and fits its item count:
+        // either setting places it again.
+        if new.title_align != old.title_align
+            || new.roll_up.hide_count_and_chevron != old.roll_up.hide_count_and_chevron
+        {
+            let shrunk: Vec<FenceId> = self
+                .fences
+                .keys()
+                .copied()
+                .filter(|id| {
+                    self.state
+                        .fence(*id)
+                        .is_some_and(|f| f.shrinks_collapsed() && !f.title_edge().is_side())
+                })
+                .collect();
+            for id in shrunk {
+                self.apply_kept_edge(id, true);
             }
         }
         self.ctx
