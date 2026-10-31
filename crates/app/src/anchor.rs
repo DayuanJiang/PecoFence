@@ -1059,7 +1059,11 @@ impl DesktopAnchor {
         }
         let pid = pecofence_platform::process::current_pid().to_string();
         let marker = self.icons.marker.to_string_lossy().to_string();
-        match pecofence_platform::process::spawn_detached(&wd.to_string_lossy(), &[&pid, &marker]) {
+        // After a crash it starts us again with these arguments.
+        let ours: Vec<String> = std::env::args().skip(1).collect();
+        let mut args = vec![pid.as_str(), marker.as_str()];
+        args.extend(ours.iter().map(String::as_str));
+        match pecofence_platform::process::spawn_detached(&wd.to_string_lossy(), &args) {
             Ok(wpid) => {
                 tracing::info!(watchdog_pid = wpid, "watchdog started");
                 self.icons.watchdogs.push(wpid);
