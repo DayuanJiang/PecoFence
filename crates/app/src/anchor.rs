@@ -8,7 +8,7 @@ use pecofence_platform::window::{
 use pecofence_platform::winevent::{self, WinEventHook};
 use pecofence_platform::{HWND, POINT, RECT, Result, msg, rawinput, shell_icons};
 use std::cell::{Cell, RefCell};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::time::Instant;
 
@@ -146,6 +146,9 @@ fn additive_modifier() -> bool {
 struct DesktopIcons {
     we_hid_them: bool,
     marker: PathBuf,
+    /// Exit left the icons hidden on purpose (`keep_icons_hidden`). Always in our own folder,
+    /// where the next start and the uninstaller look, also when `marker` is the legacy one.
+    kept: PathBuf,
     /// A hide was requested (setting on) but has not succeeded yet; retried from ensure_anchored.
     pending: bool,
     pending_attempts: u32,
@@ -154,11 +157,6 @@ struct DesktopIcons {
 }
 
 impl DesktopIcons {
-    /// Next to the marker: exit left the icons hidden on purpose (`keep_icons_hidden`).
-    fn kept_marker(&self) -> PathBuf {
-        self.marker.with_extension("kept")
-    }
-
     fn new() -> Self {
         let base = std::env::var_os("LOCALAPPDATA")
             .map(PathBuf::from)
@@ -169,10 +167,17 @@ impl DesktopIcons {
             Ok(n) if !n.trim().is_empty() => format!("icons-hidden.{}.marker", n.trim()),
             _ => "icons-hidden.marker".to_string(),
         };
-        let current = base.join(&marker);
+        Self::in_dir(&base, &marker)
+    }
+
+    /// The marker named `name` in `base`, or in the legacy folder next to it if only that one
+    /// has it.
+    fn in_dir(base: &Path, name: &str) -> Self {
+        let current = base.join(name);
         let legacy = base
             .with_file_name(pecofence_core::brand::LEGACY_DATA_DIR)
-            .join(&marker);
+            .join(name);
+        let kept = current.with_extension("kept");
         let marker = if !current.exists() && legacy.exists() {
             legacy
         } else {
@@ -181,6 +186,7 @@ impl DesktopIcons {
         Self {
             we_hid_them: false,
             marker,
+            kept,
             pending: false,
             pending_attempts: 0,
             watchdogs: Vec::new(),
@@ -994,7 +1000,7 @@ impl DesktopAnchor {
             self.host = desktop::resolve_icon_host(self.generation);
         }
         let Some(h) = self.host else { return false };
-        let kept = self.icons.kept_marker();
+        let kept = self.icons.kept.clone();
         if shell_icons::desktop_icons_hidden() {
             if self.icons.marker.exists() || kept.exists() {
                 // Our previous run died without restoring them, or left them hidden on purpose
@@ -1123,10 +1129,7 @@ impl DesktopAnchor {
     pub fn release_desktop_icons(&mut self) {
         if self.keep_icons_hidden && self.icons.we_hid_them {
             self.cancel_pending_hide();
-            let _ = std::fs::write(
-                self.icons.kept_marker(),
-                b"pecofence keeps desktop icons hidden\n",
-            );
+            let _ = std::fs::write(&self.icons.kept, b"pecofence keeps desktop icons hidden\n");
             self.icons.we_hid_them = false;
             let _ = std::fs::remove_file(&self.icons.marker);
             tracing::info!("desktop icons left hidden for the next sign-in");
@@ -1139,7 +1142,7 @@ impl DesktopAnchor {
     /// (「隐藏 Windows 桌面图标」 off or `--no-hide-icons`): shows them again. The kept marker
     /// stays while Explorer does not answer, so the next start tries again.
     pub fn show_kept_desktop_icons(&mut self) {
-        let kept = self.icons.kept_marker();
+        let kept = self.icons.kept.clone();
         if !kept.exists() {
             return;
         }
@@ -1264,5 +1267,26 @@ impl Drop for DesktopAnchor {
         // A clean exit released the icons already; a panic unwinding to here shows them.
         self.restore_desktop_icons();
         self.set_raw_input_sink(false);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_kept_marker_stays_in_our_folder_when_the_crash_marker_is_legacy() {
+        let root = std::env::temp_dir().join(format!("pecofence-icons-{}", std::process::id()));
+        let ours = root.join("PecoFence");
+        let legacy = root.join(pecofence_core::brand::LEGACY_DATA_DIR);
+        std::fs::create_dir_all(&legacy).unwrap();
+        std::fs::write(legacy.join("icons-hidden.marker"), b"").unwrap();
+        let icons = DesktopIcons::in_dir(&ours, "icons-hidden.marker");
+        assert_eq!(icons.marker, legacy.join("icons-hidden.marker"));
+        assert_eq!(icons.kept, ours.join("icons-hidden.kept"));
+        std::fs::remove_dir_all(&root).unwrap();
+        let icons = DesktopIcons::in_dir(&ours, "icons-hidden.test.marker");
+        assert_eq!(icons.marker, ours.join("icons-hidden.test.marker"));
+        assert_eq!(icons.kept, ours.join("icons-hidden.test.kept"));
     }
 }
