@@ -1538,7 +1538,15 @@ impl FenceWindow {
             return false;
         }
         v.expand_upward = on;
-        v.rolled_up && !v.peeking && !v.height_animating() && !v.retired
+        v.rolled_at_rest()
+    }
+
+    /// Rolled up and still: no hover peek, no roll or height animation in flight.
+    pub fn rolled_at_rest(&self) -> bool {
+        self.view
+            .borrow()
+            .as_ref()
+            .is_some_and(|v| v.rolled_at_rest())
     }
 
     /// Re-reads the window's DPI and relayouts if it drifted (logon-time 96-DPI windows).

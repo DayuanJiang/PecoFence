@@ -109,6 +109,42 @@ impl App {
             rect.bottom - rect.top
         };
         self.record_bounds(id, rect, rolled, expanded);
+        self.fit_upward_rect(id);
+        self.schedule_save();
+    }
+
+    /// A rolled fence that expands upward opens above its title row. Where it would open past
+    /// the top of the row's work area (a row dropped near the top of the screen), the row moves
+    /// down until the fence fits there, and rests there: the saved rect stays on the screen, so
+    /// a hover opens on it and a restart puts the row back at the same spot.
+    pub(super) fn fit_upward_rect(&mut self, id: FenceId) {
+        let id = self.state.host_of(id);
+        if !self.state.fence(id).is_some_and(|f| f.expand_upward) {
+            return;
+        }
+        let Some(w) = self.fences.get(&id) else {
+            return;
+        };
+        if !w.rolled_at_rest() {
+            return;
+        }
+        // Collapsed to its left tab column, the fence opens to its own width.
+        let row = w.footprint_rect();
+        let Some(wa) = self.work_area_at((row.left + row.right) / 2, (row.top + row.bottom) / 2)
+        else {
+            return;
+        };
+        let h = w.expanded_height_px().min(wa.bottom - wa.top);
+        if row.bottom - h >= wa.top {
+            return;
+        }
+        let rect = RECT {
+            top: wa.top,
+            bottom: wa.top + h,
+            ..row
+        };
+        w.place_saved(rect, true);
+        self.record_bounds(id, w.rect(), true, h);
         self.schedule_save();
     }
 

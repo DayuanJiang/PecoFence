@@ -179,6 +179,10 @@ impl FenceViewState {
         self.roll_anim.is_some() || self.height_anim.is_some()
     }
 
+    pub(super) fn rolled_at_rest(&self) -> bool {
+        self.rolled_up && !self.peeking && !self.height_animating() && !self.retired
+    }
+
     /// The rolled state the chrome should show: the end state of a roll in flight, else the
     /// resting one. Chevron, item count and tab-strip layout follow this so they animate with
     /// the collapse rather than flipping when it lands (`rolled_up` itself is committed at the
