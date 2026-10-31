@@ -447,6 +447,15 @@ pub fn display_name(path: &Path) -> Option<String> {
     (!s.is_empty()).then_some(s)
 }
 
+/// The name Explorer's title bar shows for `path`: "Local Disk (C:)" for a drive's root.
+pub fn normal_display_name(path: &Path) -> Option<String> {
+    let item = shell_item(path).ok()?;
+    // SAFETY: COM call on a live item.
+    let name = unsafe { item.GetDisplayName(SIGDN_NORMALDISPLAY) }.ok()?;
+    let s = take_string(name);
+    (!s.is_empty()).then_some(s)
+}
+
 /// [`display_name`] of every item the shell lists in `dir`, keyed by lowercase file name. One
 /// bind of the folder instead of a parse of each full path (several ms per item on OneDrive).
 pub fn display_names_in(dir: &Path) -> std::collections::HashMap<String, String> {
@@ -1310,6 +1319,14 @@ mod path_tests {
         );
         let verbatim = format!(r"\\?\{deep}");
         assert_eq!(long_path_wide(Path::new(&verbatim)), wide(&verbatim));
+    }
+
+    /// A drive's root, which has no file name, gets Explorer's "Local Disk (C:)".
+    #[test]
+    fn a_drive_root_has_a_display_name() {
+        let _com = crate::com::OleGuard::init().expect("COM");
+        let name = super::normal_display_name(Path::new(r"C:\")).expect("display name");
+        assert!(name.contains("(C:)"), "{name}");
     }
 }
 

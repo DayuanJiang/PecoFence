@@ -1322,7 +1322,13 @@ impl AppState {
         }
         self.portal_cwd.remove(&id);
         let root = folder_path_with_real_case(dir);
-        self.opened_folders.insert(id, OpenedFolder { root });
+        // A drive's root has no name of its own: Explorer titles it "Local Disk (C:)".
+        let title = root
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .or_else(|| shell::normal_display_name(&root))
+            .unwrap_or_else(|| root.to_string_lossy().to_string());
+        self.opened_folders.insert(id, OpenedFolder { root, title });
         self.refresh_portal(id);
         true
     }
@@ -1404,15 +1410,11 @@ impl AppState {
     /// Title shown for a fence: one showing a subfolder, or a folder opened in it, shows that
     /// folder's name.
     pub fn display_title(&self, f: &Fence) -> String {
-        match self
-            .portal_cwd
-            .get(&f.id)
-            .or_else(|| self.opened_folders.get(&f.id).map(|s| &s.root))
-        {
-            Some(cwd) => cwd
-                .file_name()
-                .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_else(|| f.title.clone()),
+        if let Some(name) = self.portal_cwd.get(&f.id).and_then(|cwd| cwd.file_name()) {
+            return name.to_string_lossy().to_string();
+        }
+        match self.opened_folders.get(&f.id) {
+            Some(opened) => opened.title.clone(),
             None => f.title.clone(),
         }
     }
@@ -2274,6 +2276,8 @@ fn folder_path_with_real_case(path: &Path) -> PathBuf {
 struct OpenedFolder {
     /// The folder opened: navigation never goes above it.
     root: PathBuf,
+    /// The fence's title meanwhile: the folder's name, or a drive's display name.
+    title: String,
 }
 
 /// Stable id for a portal item derived from its (case-folded) path, so selections and pending
