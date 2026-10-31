@@ -266,6 +266,10 @@ pub enum Command {
     DesktopMarquee(crate::anchor::MarqueeEvent),
     /// A click elsewhere ended the desktop fence selection.
     ClearFenceSelection,
+    /// A press in the fence window `except` ends the icon selection of every other fence.
+    EndItemSelection {
+        except: HWND,
+    },
     ToggleAllFences,
     /// Peek hotkey: float all fences above the current windows (again = end).
     TogglePeek,
