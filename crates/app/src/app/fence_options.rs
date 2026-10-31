@@ -35,11 +35,11 @@ const OPACITY_CLEAR: f32 = 0.55;
 const OPACITY_SOLID: f32 = 1.6;
 const OPACITY_NONE: f32 = 0.0;
 
-fn hex(rgb: [u8; 3]) -> String {
+pub(super) fn hex(rgb: [u8; 3]) -> String {
     format!("{:02X}{:02X}{:02X}", rgb[0], rgb[1], rgb[2])
 }
 
-fn parse_hex(s: &str) -> Option<[u8; 3]> {
+pub(super) fn parse_hex(s: &str) -> Option<[u8; 3]> {
     let s = s.trim_start_matches('#');
     if s.len() != 6 {
         return None;
