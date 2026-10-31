@@ -149,6 +149,9 @@ struct DesktopIcons {
     /// Exit left the icons hidden on purpose (`keep_icons_hidden`). Always in our own folder,
     /// where the next start and the uninstaller look, also when `marker` is the legacy one.
     kept: PathBuf,
+    /// `release_desktop_icons` left the icons hidden; ensure_anchored takes them back if this
+    /// process goes on after all (a cancelled sign-out).
+    left_hidden: bool,
     /// A hide was requested (setting on) but has not succeeded yet; retried from ensure_anchored.
     pending: bool,
     pending_attempts: u32,
@@ -187,6 +190,7 @@ impl DesktopIcons {
             we_hid_them: false,
             marker,
             kept,
+            left_hidden: false,
             pending: false,
             pending_attempts: 0,
             watchdogs: Vec::new(),
@@ -768,6 +772,15 @@ impl DesktopAnchor {
         if self.peeking {
             return;
         }
+        // Windows 11 can cancel a sign-out without sending us WM_ENDSESSION(0)
+        // (`shutdown_cancelled`): once the session goes on, take back the icons it left hidden.
+        if self.icons.left_hidden && !window::session_ending() && !window::quit_posted() {
+            self.icons.left_hidden = false;
+            if !self.icons.we_hid_them {
+                tracing::info!("session goes on: taking back the desktop icons left hidden");
+                self.request_hide_desktop_icons();
+            }
+        }
         // A hide that failed at startup (desktop not ready) is retried on every tick, not only
         // when the z-order is off, so the setting converges with reality without a toggle.
         if self.icons.pending && self.icons.pending_attempts < HIDE_ICONS_MAX_ATTEMPTS {
@@ -1063,6 +1076,7 @@ impl DesktopAnchor {
     pub fn cancel_pending_hide(&mut self) {
         self.icons.pending = false;
         self.icons.pending_attempts = 0;
+        self.icons.left_hidden = false;
     }
 
     /// Starts `pecofence-watchdog.exe` (next to our exe) so a crash still restores the icons.
@@ -1131,6 +1145,7 @@ impl DesktopAnchor {
             self.cancel_pending_hide();
             let _ = std::fs::write(&self.icons.kept, b"pecofence keeps desktop icons hidden\n");
             self.icons.we_hid_them = false;
+            self.icons.left_hidden = true;
             let _ = std::fs::remove_file(&self.icons.marker);
             tracing::info!("desktop icons left hidden for the next sign-in");
             return;
