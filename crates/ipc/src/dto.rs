@@ -140,6 +140,10 @@ pub struct FenceDto {
     /// tab reports its host's).
     #[serde(default)]
     pub expand_upward: bool,
+    /// The bottom edge is the one that stays put: an `expandUpward` fence that opened upward,
+    /// or rolled up with its title row at the bottom of `rect` (`fence resize` keeps it).
+    #[serde(default)]
+    pub bottom_anchored: bool,
     pub item_count: usize,
     /// Set when this fence is shown as a tab inside another fence's window.
     pub tab_host: Option<Uuid>,

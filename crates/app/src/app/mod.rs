@@ -1109,7 +1109,7 @@ impl App {
                 ),
                 selection: std::cell::RefCell::new(Vec::new()),
                 pushed: std::cell::RefCell::new(Vec::new()),
-                push_room: std::cell::RefCell::new(Vec::new()),
+                expand_room: std::cell::RefCell::new(Vec::new()),
                 size_move: std::cell::RefCell::new(None),
             }),
         });
@@ -1658,9 +1658,6 @@ impl App {
                 self.record_bounds(fence, rect, rolled, expanded);
                 self.schedule_save();
                 self.apply_auto_height(fence);
-                // A rolled row dropped near the top (or a roll that lands there after the
-                // switch was turned on) must still open on the screen.
-                self.fit_upward_rect(fence);
             }
             Command::FenceDropped(fence) => self.move_out_of_overlap(fence),
             Command::ToggleRollUp(fence) => self.toggle_roll(fence),

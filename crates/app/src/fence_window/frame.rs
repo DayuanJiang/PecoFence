@@ -151,9 +151,12 @@ impl FenceWindow {
                 tracing::error!(error = %e, "redraw after height animation failed");
             }
             v.update_shadow_now();
-            // 向上展开 switched while the animation ran: the next one moves the other edge (the
-            // bounds recorded below place the expanded rect for the current setting).
-            v.anim_upward = v.expand_upward;
+            // Rolled up with 向上展开 switched off meanwhile: the row stays, and from now on it
+            // is the top of the fence again (the bounds recorded below hang the rect below it).
+            if rolled_at_end == Some(true) && !v.expand_upward {
+                v.row_bottom = false;
+            }
+            v.anim_upward = v.row_bottom;
             (v.queue.clone(), v.behavior.clone())
         };
         queue_bounds_changed(&queue, &behavior, self.id, hwnd);

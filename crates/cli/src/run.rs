@@ -277,7 +277,7 @@ fn run_fence(ctx: &Ctx, cmd: FenceCmd) -> Result<Reply, IpcError> {
             let rect = Rect {
                 w: w.unwrap_or(current.w),
                 h,
-                // A fence that expands upward keeps its bottom edge instead of its top.
+                // A fence whose title row is at its bottom keeps that edge instead of its top.
                 y: if upward {
                     current.y + current.h - h
                 } else {
@@ -338,7 +338,7 @@ fn roll(ctx: &Ctx, fence: Option<String>, all: bool, rolled: bool) -> Result<Rep
 }
 
 /// `fences.get`, returning the fence's id (so later calls skip selector resolution), its
-/// expanded rectangle and whether it expands upward. Hosted tabs report their host's `rect`
+/// expanded rectangle and whether its bottom edge is the one that stays put. Hosted tabs report their host's `rect`
 /// (older apps reported the tab's own, stale one; the server rejects moving a tab either way);
 /// only a fence whose monitor is disconnected has none.
 fn current_rect(ctx: &Ctx, fence: &str) -> Result<(String, Rect, bool), IpcError> {
@@ -352,7 +352,7 @@ fn current_rect(ctx: &Ctx, fence: &str) -> Result<(String, Rect, bool), IpcError
         .map(str::to_string)
         .unwrap_or_else(|| fence.to_string());
     let title = dto["title"].as_str().unwrap_or(fence);
-    let upward = dto["expandUpward"].as_bool().unwrap_or(false);
+    let upward = dto["bottomAnchored"].as_bool().unwrap_or(false);
     match serde_json::from_value::<Option<Rect>>(dto["rect"].clone()) {
         Ok(Some(rect)) => Ok((id, rect, upward)),
         _ => {

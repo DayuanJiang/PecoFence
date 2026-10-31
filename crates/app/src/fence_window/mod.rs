@@ -150,9 +150,9 @@ pub struct Behavior {
     /// Fence windows moved down (or up) out of an expanded neighbour's way
     /// (`rollUp.pushNeighbors`). Owned by the App's push pass (`app/push.rs`).
     pub pushed: std::cell::RefCell<Vec<Pushed>>,
-    /// For each fence window that expands upward, the height it may open to while the fences
-    /// above it slide up out of its way: past that they cannot go (`app/push.rs`).
-    pub push_room: std::cell::RefCell<Vec<(HWND, i32)>>,
+    /// For each fence window with 向上展开: the room above its bottom edge and below its top
+    /// edge it may open into, the fences there sliding out of its way or not (`app/push.rs`).
+    pub expand_room: std::cell::RefCell<Vec<(HWND, i32, i32)>>,
     /// The system move / size loop in progress (one at a time: it is modal).
     pub size_move: std::cell::RefCell<Option<SizeMove>>,
 }

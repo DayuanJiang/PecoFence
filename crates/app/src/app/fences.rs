@@ -121,11 +121,12 @@ impl App {
                 shown.kind == FenceKind::Inbox,
                 fence.rolled_up,
                 fence.expand_upward,
+                fence.bottom_anchored,
                 shown.view.icon_size,
                 shown.view.label_lines,
                 fence.view.auto_height,
                 rect,
-                px.height(),
+                self.state.fence_expanded_px(&fence),
                 items,
             ) {
                 Ok(w) => {
@@ -378,8 +379,9 @@ impl App {
         if (left, width, bottom) == (r.left, r.right - r.left, r.bottom) {
             return;
         }
-        // A fence that expands upward keeps its bottom edge: the rows come and go at the top.
-        let (top, bottom) = if f.expand_upward {
+        // A fence whose title row is at its bottom keeps that edge: the rows come and go at
+        // the top.
+        let (top, bottom) = if w.row_at_bottom() {
             (r.bottom - (bottom - r.top), r.bottom)
         } else {
             (r.top, bottom)
@@ -424,11 +426,10 @@ impl App {
             return;
         };
         let r = w.rect();
-        // Growing stops short of a fence below; the rest of the items scroll. A fence that
-        // expands upward keeps its bottom edge and stops short of a fence above instead (while
+        // Growing stops short of a fence below; the rest of the items scroll. One whose title
+        // row is at its bottom keeps that edge and stops short of a fence above instead (while
         // it is expanded, the push pass has lifted those out of its way already).
-        let upward = self.state.fence(id).is_some_and(|f| f.expand_upward);
-        if !upward && let Some(limit) = self.growth_limit_below(id, &r) {
+        if let Some(limit) = self.growth_limit_below(id, &r) {
             h = h.min(limit.max(r.bottom) - r.top);
         }
         if let Some(limit) = self.growth_limit_above(id, &r) {
@@ -462,19 +463,10 @@ impl App {
         // A different monitor set may select a different layout: sync windows first.
         self.sync_fence_windows();
         for fence in self.state.fences().to_vec() {
-            if let Some(w) = self.fences.get(&fence.id) {
-                let px = self.state.fence_px_rect(&fence);
+            if self.fences.contains_key(&fence.id) {
                 // State, not the window: sync_fence_windows has just made the window agree, and
                 // a fence rolled in the old layout but expanded in the new one needs px.height().
-                w.place_saved(
-                    RECT {
-                        left: px.left,
-                        top: px.top,
-                        right: px.right,
-                        bottom: px.bottom,
-                    },
-                    fence.rolled_up,
-                );
+                self.place_from_state(&fence);
             }
         }
         // Fences new to these monitors (or whose monitor is gone) move out of the others' way;
@@ -531,22 +523,34 @@ impl App {
         ));
     }
 
+    /// Puts `fence`'s window where the state has it: the saved rect, and rolled up its title row
+    /// at the saved end of it, ready to open to its full height.
+    fn place_from_state(&self, fence: &pecofence_core::Fence) {
+        let Some(w) = self.fences.get(&fence.id) else {
+            return;
+        };
+        let px = self.state.fence_px_rect(fence);
+        let rect = RECT {
+            left: px.left,
+            top: px.top,
+            right: px.right,
+            bottom: px.bottom,
+        };
+        w.set_row_at_bottom(fence.bottom_anchored);
+        if fence.rolled_up {
+            w.restore_geometry(rect, true, self.state.fence_expanded_px(fence));
+        } else {
+            w.place_saved(rect, false);
+        }
+    }
+
     /// Re-applies every fence's saved geometry to its window (after a swap / restore / import).
     pub(super) fn relayout_from_state(&mut self) {
         self.state.ensure_layout();
         self.resync_windows();
         for fence in self.state.host_fences() {
-            if let Some(w) = self.fences.get(&fence.id) {
-                let px = self.state.fence_px_rect(&fence);
-                w.place_saved(
-                    RECT {
-                        left: px.left,
-                        top: px.top,
-                        right: px.right,
-                        bottom: px.bottom,
-                    },
-                    fence.rolled_up,
-                );
+            if self.fences.contains_key(&fence.id) {
+                self.place_from_state(&fence);
             }
             self.apply_fence_view(fence.id);
         }
@@ -775,14 +779,13 @@ impl App {
     }
 
     /// Fences "dock to the top of the screen": the fence moves flush against the top of its
-    /// work area, rolls up and expands on hover — a pull-down shelf. A shelf opens downward
-    /// from its title row at the top edge, so docking turns 向上展开 off.
+    /// work area, rolls up and expands on hover — a pull-down shelf. Its title row is the top
+    /// of it from now on (with 向上展开 there is no room above it either, so it opens downward).
     pub(super) fn dock_to_top(&mut self, fence: FenceId) {
         let Some(w) = self.fences.get(&fence) else {
             return;
         };
-        self.state.set_expand_upward(fence, false);
-        w.set_expand_upward(false);
+        w.set_row_at_bottom(false);
         let r = w.rect();
         let Some(wa) = self.work_area_at((r.left + r.right) / 2, (r.top + r.bottom) / 2) else {
             return;

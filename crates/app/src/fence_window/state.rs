@@ -266,10 +266,13 @@ pub struct FenceViewState {
     pub(super) rail_grow: bool,
     /// Mouse move/resize disabled (menu "锁定位置和大小").
     pub(super) locked: bool,
-    /// 向上展开: height changes (roll-up, expand, auto height) keep the bottom edge in place.
+    /// 向上展开: each expansion opens upward where the fence fits above its title row, else
+    /// downward (`clearance::expand_side`); the title row stays where the user put it.
     pub(super) expand_upward: bool,
-    /// The `expand_upward` the running height animation started with: switching it mid-flight
-    /// takes effect when the animation lands, not by moving the window halfway.
+    /// The title row is at the bottom: height changes (roll-up, expand, auto height) keep the
+    /// bottom edge in place. Set as a 向上展开 fence starts to expand, kept while it rolls back.
+    pub(super) row_bottom: bool,
+    /// The `row_bottom` the running height animation started with: it keeps moving that edge.
     pub(super) anim_upward: bool,
     /// Per-fence material override; None follows the global setting.
     pub(super) backdrop_override: Option<BackdropMode>,

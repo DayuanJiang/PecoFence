@@ -362,8 +362,13 @@ impl FenceViewState {
     /// Window height (device px) that fits every row of the grid at the current width,
     /// regardless of the roll state (the expand animation targets it directly).
     pub(super) fn fitting_height_px(&self) -> i32 {
+        self.bounded_height_px(self.wanted_height_px())
+    }
+
+    /// The height that shows every row (and the left tab column), with no room limit.
+    pub(super) fn wanted_height_px(&self) -> i32 {
         let desired = self.desired_height_px(&self.current_layout());
-        self.bounded_height_px(desired.max(self.rail_fit_height_px()))
+        desired.max(self.rail_fit_height_px())
     }
 
     /// The item layout at the content surface's current width. A fence collapsed (or
@@ -430,39 +435,48 @@ impl FenceViewState {
         }
     }
 
-    /// `desired` capped so the window ends at the bottom of its monitor's work area, or, for a
-    /// fence that expands upward, starts at its top: the room on the side the fence grows into.
-    /// The edge that stays put is the one measured from, so the cap does not grow as the fence
-    /// does.
+    /// `desired` capped so the window ends at the bottom of its monitor's work area, or starts
+    /// at its top when the title row is at the bottom: the room on the side the fence grows
+    /// into, with 向上展开 also only as far as the fences there can make room. The edge that stays
+    /// put is the one measured from, so the cap does not grow as the fence does.
     fn bounded_height_px(&self, desired: i32) -> i32 {
         let rect = window::window_rect(self.hwnd);
         monitors::query(monitors::monitor_from_window(self.hwnd)).map_or(desired, |monitor| {
-            let (top, bottom) = if self.expand_upward {
-                // Nor past the fences above that cannot move further up out of its way.
-                let room = self
-                    .push_room_px()
-                    .map_or(i32::MIN, |room| rect.bottom - room);
-                (monitor.work_area.top.max(room), rect.bottom)
+            let (above, below) = if self.expand_upward {
+                self.expand_rooms_px()
             } else {
-                (rect.top, monitor.work_area.bottom)
+                (i32::MAX, i32::MAX)
+            };
+            let (top, bottom) = if self.row_bottom {
+                let top = rect.bottom.saturating_sub(above);
+                (monitor.work_area.top.max(top), rect.bottom)
+            } else {
+                let bottom = rect.top.saturating_add(below);
+                (rect.top, monitor.work_area.bottom.min(bottom))
             };
             bounded_auto_height(desired, self.title_h_px(), top, bottom)
         })
     }
 
-    /// With `rollUp.pushNeighbors`, the height a fence that expands upward may open to while
-    /// the fences above it slide up out of its way (kept by the App's push pass); None for the
-    /// other fences.
-    pub(super) fn push_room_px(&self) -> Option<i32> {
-        if !self.expand_upward {
-            return None;
-        }
-        self.behavior
-            .push_room
+    /// Room (device px) above the window's bottom edge and below its top edge for a fence with
+    /// 向上展开: as far as the fences there can make room (they slide with
+    /// `rollUp.pushNeighbors`, else the fence stops short of them) inside the work area. Kept
+    /// by the App's push pass; the bare work area until it has run.
+    pub(super) fn expand_rooms_px(&self) -> (i32, i32) {
+        let kept = self
+            .behavior
+            .expand_room
             .borrow()
             .iter()
-            .find(|(hwnd, _)| *hwnd == self.hwnd)
-            .map(|&(_, room)| room)
+            .find(|(hwnd, ..)| *hwnd == self.hwnd)
+            .map(|&(_, above, below)| (above, below));
+        kept.unwrap_or_else(|| {
+            let rect = window::window_rect(self.hwnd);
+            monitors::query(monitors::monitor_from_window(self.hwnd))
+                .map_or((i32::MAX, i32::MAX), |m| {
+                    (rect.bottom - m.work_area.top, m.work_area.bottom - rect.top)
+                })
+        })
     }
 
     /// Test hook: the screen point over the first item whose name contains `name` (a drop onto

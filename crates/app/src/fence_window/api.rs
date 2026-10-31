@@ -36,6 +36,7 @@ impl FenceWindow {
         is_inbox: bool,
         rolled_up: bool,
         expand_upward: bool,
+        row_bottom: bool,
         icon_size: u32,
         label_lines: u8,
         auto_height: bool,
@@ -251,7 +252,8 @@ impl FenceWindow {
             rail_grow: false,
             locked: false,
             expand_upward,
-            anim_upward: expand_upward,
+            row_bottom,
+            anim_upward: row_bottom,
             backdrop_override: None,
             opacity: 1.0,
             title_on_hover_override: None,
@@ -290,9 +292,9 @@ impl FenceWindow {
         };
         if rolled_up {
             // `bounds` is the expanded rect: the title row sits at its top, or at its bottom for
-            // a fence that expands upward.
+            // a fence that last opened upward.
             let th = state.title_h_px();
-            let top = top_for_height(expand_upward, &bounds, th);
+            let top = top_for_height(row_bottom, &bounds, th);
             let _ = window.set_bounds(bounds.left, top, bounds.right - bounds.left, th);
         }
         state.update_backdrop();
@@ -597,10 +599,9 @@ impl FenceWindow {
             v.content_panel.visual.set_visible(!rolled);
             if rolled {
                 // `rect` is the expanded rect: the title row sits at its top, or at its bottom
-                // for a fence that expands upward.
+                // for a fence that last opened upward.
                 let rolled_h = v.rolled_h_px();
-                if v.expand_upward {
-                    rect.bottom = rect.top + expanded_h;
+                if v.row_bottom {
                     rect.top = rect.bottom - rolled_h;
                 } else {
                     rect.bottom = rect.top + rolled_h;
@@ -1475,7 +1476,7 @@ impl FenceWindow {
                 cur_w
             };
             v.column_collapsed = v.tabs_on_rail();
-            (w, v.rolled_h_px(), v.expand_upward)
+            (w, v.rolled_h_px(), v.row_bottom)
         };
         let r = self.rect();
         if (r.right - r.left, r.bottom - r.top) == (w, h) {
@@ -1526,10 +1527,10 @@ impl FenceWindow {
         self.with_view(|v| v.locked = on);
     }
 
-    /// 向上展开 on or off. A rolled-up title row stays where it is (one dragged onto the
-    /// taskbar expands upward from there); returns true when it is rolled up at rest, so the
-    /// caller records its expanded rect again: above the row now, or below it. A switch during
-    /// a roll is recorded when the roll lands.
+    /// 向上展开 on or off. Nothing moves: the next expansion picks its side by the new setting.
+    /// Returns true when the fence is rolled up at rest, so the caller records its expanded
+    /// rect again around the title row (switched off, below it). An open fence or one in a roll
+    /// keeps the edge it has until it is rolled up.
     pub fn set_expand_upward(&self, on: bool) -> bool {
         let mut guard = self.view.borrow_mut();
         let Some(v) = guard.as_mut() else {
@@ -1539,7 +1540,22 @@ impl FenceWindow {
             return false;
         }
         v.expand_upward = on;
-        v.rolled_at_rest()
+        let at_rest = v.rolled_at_rest();
+        if at_rest && !on {
+            v.row_bottom = false;
+        }
+        at_rest
+    }
+
+    /// The title row is at the bottom: the window keeps its bottom edge as its height changes.
+    pub fn row_at_bottom(&self) -> bool {
+        self.view.borrow().as_ref().is_some_and(|v| v.row_bottom)
+    }
+
+    /// Which end of the saved rect a rolled title row sits at (`AppState::set_fence_bounds`
+    /// chooses it).
+    pub fn set_row_at_bottom(&self, on: bool) {
+        self.with_view(|v| v.row_bottom = on);
     }
 
     /// Rolled up and still: no hover peek, no roll or height animation in flight.
@@ -1672,7 +1688,7 @@ impl FenceWindow {
             match guard.as_mut() {
                 Some(v) => {
                     v.expanded_h_px = height_px;
-                    (animate && v.start_height_anim(height_px), v.expand_upward)
+                    (animate && v.start_height_anim(height_px), v.row_bottom)
                 }
                 None => (false, false),
             }

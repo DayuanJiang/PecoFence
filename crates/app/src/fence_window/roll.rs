@@ -7,10 +7,10 @@ pub(super) fn roll_target_of(rolling_to: Option<bool>, rolled_up: bool) -> bool 
     rolling_to.unwrap_or(rolled_up)
 }
 
-/// Top of window rect `r` once it is `h` tall: the top edge stays, or the bottom edge for a
-/// fence that expands upward (向上展开).
-pub(super) fn top_for_height(expand_upward: bool, r: &RECT, h: i32) -> i32 {
-    if expand_upward { r.bottom - h } else { r.top }
+/// Top of window rect `r` once it is `h` tall: the top edge stays, or the bottom edge when the
+/// title row is at the bottom (a 向上展开 fence that opened upward).
+pub(super) fn top_for_height(row_bottom: bool, r: &RECT, h: i32) -> i32 {
+    if row_bottom { r.bottom - h } else { r.top }
 }
 
 /// Roll-up / expand: the window height itself moves, which only the app can animate (an
@@ -410,9 +410,23 @@ impl FenceViewState {
             .map(|t| t.id)
             .zip(self.tab_draw_xs(now))
             .collect();
-        // A roll that takes over a running height animation keeps moving the same edge.
+        // 向上展开: which way the fence opens is decided as it starts to expand, from the room
+        // on either side of its title row, which stays where it is. A roll that takes over a
+        // running height animation keeps moving the same edge.
+        let side = (!rolled && self.expand_upward && !self.height_animating()).then(|| {
+            let want = if self.auto_height {
+                self.wanted_height_px()
+            } else {
+                self.expanded_h_px.max(self.title_h_px() + 40)
+            };
+            let (above, below) = self.expand_rooms_px();
+            crate::layout::clearance::expand_side(want, above, below)
+        });
+        if let Some((up, _)) = side {
+            self.row_bottom = up;
+        }
         if !self.height_animating() {
-            self.anim_upward = self.expand_upward;
+            self.anim_upward = self.row_bottom;
         }
         // The roll owns the height (and the content panel) from here on.
         self.height_anim = None;
@@ -431,6 +445,12 @@ impl FenceViewState {
         self.column_collapsed = rolled && to_w.is_some();
         let to_h = if rolled {
             self.rolled_h_px()
+        } else if let Some((_, h)) = side {
+            let h = h.max(self.title_h_px() + 1);
+            if self.auto_height {
+                self.expanded_h_px = h;
+            }
+            h
         } else if self.auto_height {
             // Items may have changed while rolled (the remembered height is stale then): expand
             // straight to the fitting height so the settle does not add a second glide.
@@ -438,10 +458,7 @@ impl FenceViewState {
             self.expanded_h_px = h;
             h
         } else {
-            let h = self.expanded_h_px.max(self.title_h_px() + 40);
-            // Expanding upward, it stops below the fences above that cannot move further up.
-            self.push_room_px()
-                .map_or(h, |room| h.min(room.max(self.title_h_px())))
+            self.expanded_h_px.max(self.title_h_px() + 40)
         };
         let mid_roll = self.roll_anim.is_some();
         if rolled {
@@ -524,7 +541,7 @@ impl FenceViewState {
         match self.height_anim.as_mut() {
             Some(t) => t.retarget(to_h as f32, motion::NORMAL, Curve::PointToPoint, now),
             None => {
-                self.anim_upward = self.expand_upward;
+                self.anim_upward = self.row_bottom;
                 self.height_anim = Some(self.motion.tween(
                     cur_h as f32,
                     to_h as f32,

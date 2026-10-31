@@ -869,6 +869,22 @@ pub mod clearance {
             .min()
     }
 
+    /// Which way a fence with 向上展开 opens from its title row, and how tall: upward when
+    /// `want` fits the room `above` (from the row's bottom edge up), else downward when it fits
+    /// the room `below` (from its top edge down), else toward the side with more room, as tall
+    /// as that room.
+    pub fn expand_side(want: i32, above: i32, below: i32) -> (bool, i32) {
+        if want <= above {
+            (true, want)
+        } else if want <= below {
+            (false, want)
+        } else if above >= below {
+            (true, above)
+        } else {
+            (false, below)
+        }
+    }
+
     /// Highest top edge `r` may grow to (a fence that expands upward): `gap` below the nearest
     /// fence that shares some of its width and ends at or above its top edge.
     pub fn limit_above(others: &[RECT], r: &RECT, gap: i32) -> Option<i32> {
@@ -1040,6 +1056,18 @@ mod tests {
             Some(68)
         );
         assert_eq!(limit_above(&others, &me, 8), None);
+    }
+
+    /// 向上展开 opens upward where the fence fits above its title row, downward where it fits
+    /// only below, and toward the larger room, as tall as that room, where it fits neither way.
+    #[test]
+    fn expand_side_prefers_up_then_down_then_the_larger_room() {
+        use clearance::expand_side;
+        assert_eq!(expand_side(300, 712, 44), (true, 300)); // above the taskbar
+        assert_eq!(expand_side(300, 66, 690), (false, 300)); // near the top
+        assert_eq!(expand_side(300, 400, 400), (true, 300)); // both: up
+        assert_eq!(expand_side(600, 336, 420), (false, 420));
+        assert_eq!(expand_side(600, 420, 336), (true, 420));
     }
 
     /// A dropped fence moves the shortest way out of the one it covers, stays inside the work
