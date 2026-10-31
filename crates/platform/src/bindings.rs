@@ -17,6 +17,18 @@ pub unsafe fn AssignProcessToJobObject(hjob: HANDLE, hprocess: HANDLE) -> window
     unsafe { AssignProcessToJobObject(hjob, hprocess) }
 }
 #[inline]
+pub unsafe fn AssocCreate<T>(clsid: windows_core::GUID) -> windows_core::Result<T>
+where
+    T: windows_core::Interface,
+{
+    windows_core::link!("shlwapi.dll" "system" fn AssocCreate(clsid : windows_core::GUID, riid : *const windows_core::GUID, ppv : *mut *mut core::ffi::c_void) -> windows_core::HRESULT);
+    let mut result__ = core::ptr::null_mut();
+    unsafe {
+        AssocCreate(clsid, &T::IID, &mut result__)
+            .and_then(|| windows_core::imp::Type::from_abi(result__))
+    }
+}
+#[inline]
 pub unsafe fn BeginPaint(hwnd: HWND, lppaint: *mut PAINTSTRUCT) -> HDC {
     windows_core::link!("user32.dll" "system" fn BeginPaint(hwnd : HWND, lppaint : *mut PAINTSTRUCT) -> HDC);
     unsafe { BeginPaint(hwnd, lppaint as _) }
@@ -715,6 +727,22 @@ pub unsafe fn GetCurrentThreadId() -> u32 {
     windows_core::link!("kernel32.dll" "system" fn GetCurrentThreadId() -> u32);
     unsafe { GetCurrentThreadId() }
 }
+#[cfg(target_arch = "x86")]
+#[inline]
+pub unsafe fn GetCurrentThreadStackLimits(lowlimit: *mut u32, highlimit: *mut u32) {
+    windows_core::link!("kernel32.dll" "system" fn GetCurrentThreadStackLimits(lowlimit : *mut u32, highlimit : *mut u32));
+    unsafe { GetCurrentThreadStackLimits(lowlimit as _, highlimit as _) }
+}
+#[cfg(any(
+    target_arch = "aarch64",
+    target_arch = "arm64ec",
+    target_arch = "x86_64"
+))]
+#[inline]
+pub unsafe fn GetCurrentThreadStackLimits(lowlimit: *mut u64, highlimit: *mut u64) {
+    windows_core::link!("kernel32.dll" "system" fn GetCurrentThreadStackLimits(lowlimit : *mut u64, highlimit : *mut u64));
+    unsafe { GetCurrentThreadStackLimits(lowlimit as _, highlimit as _) }
+}
 #[inline]
 pub unsafe fn GetCursorPos(lppoint: *mut POINT) -> windows_core::BOOL {
     windows_core::link!("user32.dll" "system" fn GetCursorPos(lppoint : *mut POINT) -> windows_core::BOOL);
@@ -998,6 +1026,11 @@ pub unsafe fn GetSystemMetricsForDpi(nindex: i32, dpi: u32) -> i32 {
 pub unsafe fn GetTextFaceW(hdc: HDC, c: i32, lpname: Option<windows_core::PWSTR>) -> i32 {
     windows_core::link!("gdi32.dll" "system" fn GetTextFaceW(hdc : HDC, c : i32, lpname : windows_core::PWSTR) -> i32);
     unsafe { GetTextFaceW(hdc, c, lpname.unwrap_or(core::mem::zeroed()) as _) }
+}
+#[inline]
+pub unsafe fn GetThreadContext(hthread: HANDLE, lpcontext: LPCONTEXT) -> windows_core::BOOL {
+    windows_core::link!("kernel32.dll" "system" fn GetThreadContext(hthread : HANDLE, lpcontext : LPCONTEXT) -> windows_core::BOOL);
+    unsafe { GetThreadContext(hthread, lpcontext as _) }
 }
 #[inline]
 pub unsafe fn GetTickCount64() -> u64 {
@@ -1511,6 +1544,25 @@ pub unsafe fn ReadDirectoryChangesW(
     }
 }
 #[inline]
+pub unsafe fn ReadProcessMemory(
+    hprocess: HANDLE,
+    lpbaseaddress: *const core::ffi::c_void,
+    lpbuffer: *mut core::ffi::c_void,
+    nsize: usize,
+    lpnumberofbytesread: Option<*mut usize>,
+) -> windows_core::BOOL {
+    windows_core::link!("kernel32.dll" "system" fn ReadProcessMemory(hprocess : HANDLE, lpbaseaddress : *const core::ffi::c_void, lpbuffer : *mut core::ffi::c_void, nsize : usize, lpnumberofbytesread : *mut usize) -> windows_core::BOOL);
+    unsafe {
+        ReadProcessMemory(
+            hprocess,
+            lpbaseaddress,
+            lpbuffer as _,
+            nsize,
+            lpnumberofbytesread.unwrap_or(core::mem::zeroed()) as _,
+        )
+    }
+}
+#[inline]
 pub unsafe fn RegCloseKey(hkey: HKEY) -> LSTATUS {
     windows_core::link!("advapi32.dll" "system" fn RegCloseKey(hkey : HKEY) -> LSTATUS);
     unsafe { RegCloseKey(hkey) }
@@ -1735,6 +1787,11 @@ pub unsafe fn RemoveWindowSubclass(
     unsafe { RemoveWindowSubclass(hwnd, pfnsubclass, uidsubclass) }
 }
 #[inline]
+pub unsafe fn ResumeThread(hthread: HANDLE) -> u32 {
+    windows_core::link!("kernel32.dll" "system" fn ResumeThread(hthread : HANDLE) -> u32);
+    unsafe { ResumeThread(hthread) }
+}
+#[inline]
 pub unsafe fn RevokeDragDrop(hwnd: HWND) -> windows_core::HRESULT {
     windows_core::link!("ole32.dll" "system" fn RevokeDragDrop(hwnd : HWND) -> windows_core::HRESULT);
     unsafe { RevokeDragDrop(hwnd) }
@@ -1923,6 +1980,24 @@ where
             &mut result__,
         )
         .map(|| result__)
+    }
+}
+#[inline]
+pub unsafe fn SHEmptyRecycleBinW<P1>(
+    hwnd: Option<HWND>,
+    pszrootpath: P1,
+    dwflags: u32,
+) -> windows_core::HRESULT
+where
+    P1: windows_core::Param<windows_core::PCWSTR>,
+{
+    windows_core::link!("shell32.dll" "system" fn SHEmptyRecycleBinW(hwnd : HWND, pszrootpath : windows_core::PCWSTR, dwflags : u32) -> windows_core::HRESULT);
+    unsafe {
+        SHEmptyRecycleBinW(
+            hwnd.unwrap_or(core::mem::zeroed()) as _,
+            pszrootpath.param().abi(),
+            dwflags,
+        )
     }
 }
 #[inline]
@@ -2344,6 +2419,26 @@ pub unsafe fn StackWalk64(
     }
 }
 #[inline]
+pub unsafe fn StrRetToStrW(
+    pstr: *mut STRRET,
+    pidl: Option<*const ITEMIDLIST>,
+    ppsz: *mut windows_core::PWSTR,
+) -> windows_core::HRESULT {
+    windows_core::link!("shlwapi.dll" "system" fn StrRetToStrW(pstr : *mut STRRET, pidl : *const ITEMIDLIST, ppsz : *mut windows_core::PWSTR) -> windows_core::HRESULT);
+    unsafe {
+        StrRetToStrW(
+            pstr as _,
+            pidl.unwrap_or(core::mem::zeroed()) as _,
+            ppsz as _,
+        )
+    }
+}
+#[inline]
+pub unsafe fn SuspendThread(hthread: HANDLE) -> u32 {
+    windows_core::link!("kernel32.dll" "system" fn SuspendThread(hthread : HANDLE) -> u32);
+    unsafe { SuspendThread(hthread) }
+}
+#[inline]
 pub unsafe fn SymFunctionTableAccess64(hprocess: HANDLE, addrbase: u64) -> *mut core::ffi::c_void {
     windows_core::link!("dbghelp.dll" "system" fn SymFunctionTableAccess64(hprocess : HANDLE, addrbase : u64) -> *mut core::ffi::c_void);
     unsafe { SymFunctionTableAccess64(hprocess, addrbase) }
@@ -2705,6 +2800,15 @@ pub struct ARM64_NT_NEON128_0 {
     pub Low: u64,
     pub High: i64,
 }
+pub type ASSOCDATA = i32;
+pub type ASSOCENUM = i32;
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub struct ASSOCF(pub u32);
+pub type ASSOCKEY = i32;
+pub type ASSOCSTR = i32;
+pub const ASSOCSTR_DEFAULTICON: ASSOCSTR = 15;
+pub const ASSOCSTR_SHELLEXTENSION: ASSOCSTR = 16;
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub struct ATOM(pub u16);
@@ -2808,6 +2912,8 @@ pub const CLIP_DEFAULT_PRECIS: i32 = 0;
 pub type CLSCTX = u32;
 pub const CLSCTX_ALL: i32 = 23;
 pub const CLSCTX_INPROC_SERVER: CLSCTX = 1;
+pub const CLSID_QueryAssociations: windows_core::GUID =
+    windows_core::GUID::from_u128(0xa07034fd_6caa_4954_ac3f_97a27216f98a);
 pub const CLSID_WICImagingFactory: windows_core::GUID =
     windows_core::GUID::from_u128(0xcacaf262_9370_4615_a13b_9f5539da4c0a);
 pub const CMF_CANRENAME: i32 = 16;
@@ -3613,6 +3719,7 @@ pub const ERROR_NOTIFY_ENUM_DIR: i32 = 1022;
 pub const ERROR_NO_DATA: i32 = 232;
 pub const ERROR_OPERATION_ABORTED: i32 = 995;
 pub const ERROR_PIPE_CONNECTED: i32 = 535;
+pub const ERROR_TIMEOUT: i32 = 1460;
 pub const ES_AUTOHSCROLL: i32 = 128;
 pub const EVENT_OBJECT_DESTROY: i32 = 32769;
 pub const EVENT_SYSTEM_FOREGROUND: i32 = 3;
@@ -3770,6 +3877,7 @@ pub const GENERIC_WRITE: i32 = 1073741824;
 pub type GETPROPERTYSTOREFLAGS = u32;
 pub const GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS: i32 = 4;
 pub const GET_MODULE_HANDLE_EX_FLAG_PIN: i32 = 1;
+pub const GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT: i32 = 2;
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct GROUP_AFFINITY {
@@ -7351,13 +7459,139 @@ windows_core::imp::define_interface!(
     0x000214f2_0000_0000_c000_000000000046
 );
 windows_core::imp::interface_hierarchy!(IEnumIDList, windows_core::IUnknown);
+impl IEnumIDList {
+    pub(crate) unsafe fn Next(
+        &self,
+        celt: u32,
+        rgelt: *mut LPITEMIDLIST,
+        pceltfetched: Option<*mut u32>,
+    ) -> windows_core::HRESULT {
+        unsafe {
+            (windows_core::Interface::vtable(self).Next)(
+                windows_core::Interface::as_raw(self),
+                celt,
+                rgelt as _,
+                pceltfetched.unwrap_or(core::mem::zeroed()) as _,
+            )
+        }
+    }
+    pub(crate) unsafe fn Skip(&self, celt: u32) -> windows_core::HRESULT {
+        unsafe {
+            (windows_core::Interface::vtable(self).Skip)(
+                windows_core::Interface::as_raw(self),
+                celt,
+            )
+        }
+    }
+    pub(crate) unsafe fn Reset(&self) -> windows_core::HRESULT {
+        unsafe {
+            (windows_core::Interface::vtable(self).Reset)(windows_core::Interface::as_raw(self))
+        }
+    }
+    pub(crate) unsafe fn Clone(&self) -> windows_core::Result<Self> {
+        unsafe {
+            let mut result__ = core::mem::zeroed();
+            (windows_core::Interface::vtable(self).Clone)(
+                windows_core::Interface::as_raw(self),
+                &mut result__,
+            )
+            .and_then(|| windows_core::imp::Type::from_abi(result__))
+        }
+    }
+}
 #[repr(C)]
 pub struct IEnumIDList_Vtbl {
     pub base__: windows_core::IUnknown_Vtbl,
-    Next: usize,
-    Skip: usize,
-    Reset: usize,
-    Clone: usize,
+    pub Next: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        u32,
+        *mut LPITEMIDLIST,
+        *mut u32,
+    ) -> windows_core::HRESULT,
+    pub Skip: unsafe extern "system" fn(*mut core::ffi::c_void, u32) -> windows_core::HRESULT,
+    pub Reset: unsafe extern "system" fn(*mut core::ffi::c_void) -> windows_core::HRESULT,
+    pub Clone: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        *mut *mut core::ffi::c_void,
+    ) -> windows_core::HRESULT,
+}
+pub trait IEnumIDList_Impl: windows_core::IUnknownImpl {
+    fn Next(
+        &self,
+        celt: u32,
+        rgelt: *mut LPITEMIDLIST,
+        pceltfetched: *mut u32,
+    ) -> windows_core::Result<()>;
+    fn Skip(&self, celt: u32) -> windows_core::Result<()>;
+    fn Reset(&self) -> windows_core::Result<()>;
+    fn Clone(&self) -> windows_core::Result<IEnumIDList>;
+}
+impl IEnumIDList_Vtbl {
+    pub const fn new<Identity: IEnumIDList_Impl, const OFFSET: isize>() -> Self {
+        unsafe extern "system" fn Next<Identity: IEnumIDList_Impl, const OFFSET: isize>(
+            this: *mut core::ffi::c_void,
+            celt: u32,
+            rgelt: *mut LPITEMIDLIST,
+            pceltfetched: *mut u32,
+        ) -> windows_core::HRESULT {
+            unsafe {
+                let this: &Identity =
+                    &*((this as *const *const ()).offset(OFFSET) as *const Identity);
+                IEnumIDList_Impl::Next(
+                    this,
+                    core::mem::transmute_copy(&celt),
+                    core::mem::transmute_copy(&rgelt),
+                    core::mem::transmute_copy(&pceltfetched),
+                )
+                .into()
+            }
+        }
+        unsafe extern "system" fn Skip<Identity: IEnumIDList_Impl, const OFFSET: isize>(
+            this: *mut core::ffi::c_void,
+            celt: u32,
+        ) -> windows_core::HRESULT {
+            unsafe {
+                let this: &Identity =
+                    &*((this as *const *const ()).offset(OFFSET) as *const Identity);
+                IEnumIDList_Impl::Skip(this, core::mem::transmute_copy(&celt)).into()
+            }
+        }
+        unsafe extern "system" fn Reset<Identity: IEnumIDList_Impl, const OFFSET: isize>(
+            this: *mut core::ffi::c_void,
+        ) -> windows_core::HRESULT {
+            unsafe {
+                let this: &Identity =
+                    &*((this as *const *const ()).offset(OFFSET) as *const Identity);
+                IEnumIDList_Impl::Reset(this).into()
+            }
+        }
+        unsafe extern "system" fn Clone<Identity: IEnumIDList_Impl, const OFFSET: isize>(
+            this: *mut core::ffi::c_void,
+            ppenum: *mut *mut core::ffi::c_void,
+        ) -> windows_core::HRESULT {
+            unsafe {
+                let this: &Identity =
+                    &*((this as *const *const ()).offset(OFFSET) as *const Identity);
+                match IEnumIDList_Impl::Clone(this) {
+                    Ok(ok__) => {
+                        ppenum.write(core::mem::transmute(ok__));
+                        windows_core::HRESULT(0)
+                    }
+                    Err(err) => err.into(),
+                }
+            }
+        }
+        Self {
+            base__: windows_core::IUnknown_Vtbl::new::<Identity, OFFSET>(),
+            Next: Next::<Identity, OFFSET>,
+            Skip: Skip::<Identity, OFFSET>,
+            Reset: Reset::<Identity, OFFSET>,
+            Clone: Clone::<Identity, OFFSET>,
+        }
+    }
+    pub fn matches(iid: &windows_core::GUID) -> bool {
+        iid == &<IEnumIDList as windows_core::Interface>::IID
+    }
 }
 impl windows_core::RuntimeName for IEnumIDList {}
 windows_core::imp::define_interface!(
@@ -9696,6 +9930,338 @@ pub struct IPropertyStore_Vtbl {
     Commit: usize,
 }
 impl windows_core::RuntimeName for IPropertyStore {}
+windows_core::imp::define_interface!(
+    IQueryAssociations,
+    IQueryAssociations_Vtbl,
+    0xc46ca590_3c3f_11d2_bee6_0000f805ca57
+);
+windows_core::imp::interface_hierarchy!(IQueryAssociations, windows_core::IUnknown);
+impl IQueryAssociations {
+    pub(crate) unsafe fn Init<P1>(
+        &self,
+        flags: ASSOCF,
+        pszassoc: P1,
+        hkprogid: Option<HKEY>,
+        hwnd: Option<HWND>,
+    ) -> windows_core::HRESULT
+    where
+        P1: windows_core::Param<windows_core::PCWSTR>,
+    {
+        unsafe {
+            (windows_core::Interface::vtable(self).Init)(
+                windows_core::Interface::as_raw(self),
+                flags,
+                pszassoc.param().abi(),
+                hkprogid.unwrap_or(core::mem::zeroed()) as _,
+                hwnd.unwrap_or(core::mem::zeroed()) as _,
+            )
+        }
+    }
+    pub(crate) unsafe fn GetString<P2>(
+        &self,
+        flags: ASSOCF,
+        str: ASSOCSTR,
+        pszextra: P2,
+        pszout: Option<windows_core::PWSTR>,
+        pcchout: *mut u32,
+    ) -> windows_core::HRESULT
+    where
+        P2: windows_core::Param<windows_core::PCWSTR>,
+    {
+        unsafe {
+            (windows_core::Interface::vtable(self).GetString)(
+                windows_core::Interface::as_raw(self),
+                flags,
+                str,
+                pszextra.param().abi(),
+                pszout.unwrap_or(core::mem::zeroed()) as _,
+                pcchout as _,
+            )
+        }
+    }
+    pub(crate) unsafe fn GetKey<P2>(
+        &self,
+        flags: ASSOCF,
+        key: ASSOCKEY,
+        pszextra: P2,
+    ) -> windows_core::Result<HKEY>
+    where
+        P2: windows_core::Param<windows_core::PCWSTR>,
+    {
+        unsafe {
+            let mut result__ = core::mem::zeroed();
+            (windows_core::Interface::vtable(self).GetKey)(
+                windows_core::Interface::as_raw(self),
+                flags,
+                key,
+                pszextra.param().abi(),
+                &mut result__,
+            )
+            .map(|| result__)
+        }
+    }
+    pub(crate) unsafe fn GetData<P2>(
+        &self,
+        flags: ASSOCF,
+        data: ASSOCDATA,
+        pszextra: P2,
+        pvout: Option<*mut core::ffi::c_void>,
+        pcbout: Option<*mut u32>,
+    ) -> windows_core::HRESULT
+    where
+        P2: windows_core::Param<windows_core::PCWSTR>,
+    {
+        unsafe {
+            (windows_core::Interface::vtable(self).GetData)(
+                windows_core::Interface::as_raw(self),
+                flags,
+                data,
+                pszextra.param().abi(),
+                pvout.unwrap_or(core::mem::zeroed()) as _,
+                pcbout.unwrap_or(core::mem::zeroed()) as _,
+            )
+        }
+    }
+    pub(crate) unsafe fn GetEnum<P2, T>(
+        &self,
+        flags: ASSOCF,
+        assocenum: ASSOCENUM,
+        pszextra: P2,
+    ) -> windows_core::Result<T>
+    where
+        P2: windows_core::Param<windows_core::PCWSTR>,
+        T: windows_core::Interface,
+    {
+        let mut result__ = core::ptr::null_mut();
+        unsafe {
+            (windows_core::Interface::vtable(self).GetEnum)(
+                windows_core::Interface::as_raw(self),
+                flags,
+                assocenum,
+                pszextra.param().abi(),
+                &T::IID,
+                &mut result__,
+            )
+            .and_then(|| windows_core::imp::Type::from_abi(result__))
+        }
+    }
+}
+#[repr(C)]
+pub struct IQueryAssociations_Vtbl {
+    pub base__: windows_core::IUnknown_Vtbl,
+    pub Init: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        ASSOCF,
+        windows_core::PCWSTR,
+        HKEY,
+        HWND,
+    ) -> windows_core::HRESULT,
+    pub GetString: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        ASSOCF,
+        ASSOCSTR,
+        windows_core::PCWSTR,
+        windows_core::PWSTR,
+        *mut u32,
+    ) -> windows_core::HRESULT,
+    pub GetKey: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        ASSOCF,
+        ASSOCKEY,
+        windows_core::PCWSTR,
+        *mut HKEY,
+    ) -> windows_core::HRESULT,
+    pub GetData: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        ASSOCF,
+        ASSOCDATA,
+        windows_core::PCWSTR,
+        *mut core::ffi::c_void,
+        *mut u32,
+    ) -> windows_core::HRESULT,
+    pub GetEnum: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        ASSOCF,
+        ASSOCENUM,
+        windows_core::PCWSTR,
+        *const windows_core::GUID,
+        *mut *mut core::ffi::c_void,
+    ) -> windows_core::HRESULT,
+}
+pub trait IQueryAssociations_Impl: windows_core::IUnknownImpl {
+    fn Init(
+        &self,
+        flags: ASSOCF,
+        pszassoc: &windows_core::PCWSTR,
+        hkprogid: HKEY,
+        hwnd: HWND,
+    ) -> windows_core::Result<()>;
+    fn GetString(
+        &self,
+        flags: ASSOCF,
+        str: ASSOCSTR,
+        pszextra: &windows_core::PCWSTR,
+        pszout: windows_core::PWSTR,
+        pcchout: *mut u32,
+    ) -> windows_core::Result<()>;
+    fn GetKey(
+        &self,
+        flags: ASSOCF,
+        key: ASSOCKEY,
+        pszextra: &windows_core::PCWSTR,
+    ) -> windows_core::Result<HKEY>;
+    fn GetData(
+        &self,
+        flags: ASSOCF,
+        data: ASSOCDATA,
+        pszextra: &windows_core::PCWSTR,
+        pvout: *mut core::ffi::c_void,
+        pcbout: *mut u32,
+    ) -> windows_core::Result<()>;
+    fn GetEnum(
+        &self,
+        flags: ASSOCF,
+        assocenum: ASSOCENUM,
+        pszextra: &windows_core::PCWSTR,
+        riid: *const windows_core::GUID,
+        ppvout: *mut *mut core::ffi::c_void,
+    ) -> windows_core::Result<()>;
+}
+impl IQueryAssociations_Vtbl {
+    pub const fn new<Identity: IQueryAssociations_Impl, const OFFSET: isize>() -> Self {
+        unsafe extern "system" fn Init<Identity: IQueryAssociations_Impl, const OFFSET: isize>(
+            this: *mut core::ffi::c_void,
+            flags: ASSOCF,
+            pszassoc: windows_core::PCWSTR,
+            hkprogid: HKEY,
+            hwnd: HWND,
+        ) -> windows_core::HRESULT {
+            unsafe {
+                let this: &Identity =
+                    &*((this as *const *const ()).offset(OFFSET) as *const Identity);
+                IQueryAssociations_Impl::Init(
+                    this,
+                    core::mem::transmute_copy(&flags),
+                    core::mem::transmute(&pszassoc),
+                    core::mem::transmute_copy(&hkprogid),
+                    core::mem::transmute_copy(&hwnd),
+                )
+                .into()
+            }
+        }
+        unsafe extern "system" fn GetString<
+            Identity: IQueryAssociations_Impl,
+            const OFFSET: isize,
+        >(
+            this: *mut core::ffi::c_void,
+            flags: ASSOCF,
+            str: ASSOCSTR,
+            pszextra: windows_core::PCWSTR,
+            pszout: windows_core::PWSTR,
+            pcchout: *mut u32,
+        ) -> windows_core::HRESULT {
+            unsafe {
+                let this: &Identity =
+                    &*((this as *const *const ()).offset(OFFSET) as *const Identity);
+                IQueryAssociations_Impl::GetString(
+                    this,
+                    core::mem::transmute_copy(&flags),
+                    core::mem::transmute_copy(&str),
+                    core::mem::transmute(&pszextra),
+                    core::mem::transmute_copy(&pszout),
+                    core::mem::transmute_copy(&pcchout),
+                )
+                .into()
+            }
+        }
+        unsafe extern "system" fn GetKey<Identity: IQueryAssociations_Impl, const OFFSET: isize>(
+            this: *mut core::ffi::c_void,
+            flags: ASSOCF,
+            key: ASSOCKEY,
+            pszextra: windows_core::PCWSTR,
+            phkeyout: *mut HKEY,
+        ) -> windows_core::HRESULT {
+            unsafe {
+                let this: &Identity =
+                    &*((this as *const *const ()).offset(OFFSET) as *const Identity);
+                match IQueryAssociations_Impl::GetKey(
+                    this,
+                    core::mem::transmute_copy(&flags),
+                    core::mem::transmute_copy(&key),
+                    core::mem::transmute(&pszextra),
+                ) {
+                    Ok(ok__) => {
+                        phkeyout.write(ok__);
+                        windows_core::HRESULT(0)
+                    }
+                    Err(err) => err.into(),
+                }
+            }
+        }
+        unsafe extern "system" fn GetData<
+            Identity: IQueryAssociations_Impl,
+            const OFFSET: isize,
+        >(
+            this: *mut core::ffi::c_void,
+            flags: ASSOCF,
+            data: ASSOCDATA,
+            pszextra: windows_core::PCWSTR,
+            pvout: *mut core::ffi::c_void,
+            pcbout: *mut u32,
+        ) -> windows_core::HRESULT {
+            unsafe {
+                let this: &Identity =
+                    &*((this as *const *const ()).offset(OFFSET) as *const Identity);
+                IQueryAssociations_Impl::GetData(
+                    this,
+                    core::mem::transmute_copy(&flags),
+                    core::mem::transmute_copy(&data),
+                    core::mem::transmute(&pszextra),
+                    core::mem::transmute_copy(&pvout),
+                    core::mem::transmute_copy(&pcbout),
+                )
+                .into()
+            }
+        }
+        unsafe extern "system" fn GetEnum<
+            Identity: IQueryAssociations_Impl,
+            const OFFSET: isize,
+        >(
+            this: *mut core::ffi::c_void,
+            flags: ASSOCF,
+            assocenum: ASSOCENUM,
+            pszextra: windows_core::PCWSTR,
+            riid: *const windows_core::GUID,
+            ppvout: *mut *mut core::ffi::c_void,
+        ) -> windows_core::HRESULT {
+            unsafe {
+                let this: &Identity =
+                    &*((this as *const *const ()).offset(OFFSET) as *const Identity);
+                IQueryAssociations_Impl::GetEnum(
+                    this,
+                    core::mem::transmute_copy(&flags),
+                    core::mem::transmute_copy(&assocenum),
+                    core::mem::transmute(&pszextra),
+                    core::mem::transmute_copy(&riid),
+                    core::mem::transmute_copy(&ppvout),
+                )
+                .into()
+            }
+        }
+        Self {
+            base__: windows_core::IUnknown_Vtbl::new::<Identity, OFFSET>(),
+            Init: Init::<Identity, OFFSET>,
+            GetString: GetString::<Identity, OFFSET>,
+            GetKey: GetKey::<Identity, OFFSET>,
+            GetData: GetData::<Identity, OFFSET>,
+            GetEnum: GetEnum::<Identity, OFFSET>,
+        }
+    }
+    pub fn matches(iid: &windows_core::GUID) -> bool {
+        iid == &<IQueryAssociations as windows_core::Interface>::IID
+    }
+}
+impl windows_core::RuntimeName for IQueryAssociations {}
 windows_core::imp::define_interface!(
     ISequentialStream,
     ISequentialStream_Vtbl,
@@ -14573,6 +15139,7 @@ pub type LPCCHOOKPROC = Option<
     unsafe extern "system" fn(param0: HWND, param1: u32, param2: WPARAM, param3: LPARAM) -> usize,
 >;
 pub type LPCITEMIDLIST = *const ITEMIDLIST;
+pub type LPCONTEXT = PCONTEXT;
 pub type LPITEMIDLIST = *mut ITEMIDLIST;
 pub type LPOVERLAPPED_COMPLETION_ROUTINE = Option<
     unsafe extern "system" fn(
@@ -15700,6 +16267,9 @@ pub const SHCNE_UPDATEITEM: i32 = 8192;
 pub const SHCNRF_NewDelivery: i32 = 32768;
 pub const SHCNRF_ShellLevel: i32 = 2;
 pub type SHCONTF = u32;
+pub const SHCONTF_FOLDERS: SHCONTF = 32;
+pub const SHCONTF_INCLUDEHIDDEN: SHCONTF = 128;
+pub const SHCONTF_NONFOLDERS: SHCONTF = 64;
 #[repr(C, packed(1))]
 #[derive(Clone, Copy, Default)]
 pub struct SHChangeNotifyEntry {
@@ -15865,6 +16435,7 @@ impl Default for SHFILEINFOW {
     }
 }
 pub type SHGDNF = u32;
+pub const SHGDN_FORPARSING: SHGDNF = 32768;
 pub const SHGFI_PIDL: i32 = 8;
 pub const SHGFI_TYPENAME: i32 = 1024;
 pub const SHGFI_USEFILEATTRIBUTES: i32 = 16;
@@ -15930,6 +16501,7 @@ pub const SLGP_RAWPATH: SLGP_FLAGS = 4;
 pub const SLGP_UNCPRIORITY: SLGP_FLAGS = 2;
 pub const SMTO_ABORTIFHUNG: i32 = 2;
 pub const SMTO_BLOCK: i32 = 1;
+pub const SMTO_NORMAL: i32 = 0;
 pub const SM_CXDOUBLECLK: i32 = 36;
 pub const SM_CXDRAG: i32 = 68;
 pub const SM_CXSCREEN: i32 = 0;
@@ -16058,6 +16630,8 @@ pub const S_FALSE: windows_core::HRESULT = windows_core::HRESULT(0x1_u32 as _);
 pub const S_OK: windows_core::HRESULT = windows_core::HRESULT(0x0_u32 as _);
 pub const ShellLink: windows_core::GUID =
     windows_core::GUID::from_u128(0x00021401_0000_0000_c000_000000000046);
+pub const THREAD_GET_CONTEXT: i32 = 8;
+pub const THREAD_SUSPEND_RESUME: i32 = 2;
 pub const THREAD_TERMINATE: i32 = 1;
 pub type TIMERPROC =
     Option<unsafe extern "system" fn(param0: HWND, param1: u32, param2: usize, param3: u32)>;

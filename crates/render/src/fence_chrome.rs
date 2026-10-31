@@ -758,19 +758,23 @@ fn header_foreground(
         ..
     } = backdrop
     {
-        return material.borrow_mut().control_foreground(
-            key,
-            *theme,
-            wallpaper,
-            [
-                rect[0] + (area.left * scale).round() as i32,
-                rect[1] + (area.top * scale).round() as i32,
-                (area.width() * scale).round().max(1.0) as i32,
-                (area.height() * scale).round().max(1.0) as i32,
-            ],
-            opacity,
-            tint,
-        );
+        // A fixed 「图标名称颜色」 keeps its text; the sample still keeps the lens warm.
+        return material
+            .borrow_mut()
+            .control_foreground(
+                key,
+                *theme,
+                wallpaper,
+                [
+                    rect[0] + (area.left * scale).round() as i32,
+                    rect[1] + (area.top * scale).round() as i32,
+                    (area.width() * scale).round().max(1.0) as i32,
+                    (area.height() * scale).round().max(1.0) as i32,
+                ],
+                opacity,
+                tint,
+            )
+            .with_label_color(theme.label_color);
     }
     *theme
 }

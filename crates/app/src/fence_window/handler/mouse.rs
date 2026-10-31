@@ -25,6 +25,15 @@ pub(super) fn on_setcursor(
         window::set_standard_cursor(StandardCursor::SizeWE);
         return Some(1);
     }
+    // Explorer's single-click open: the hand over an item, as on the desktop.
+    if h.behavior.single_click.get()
+        && v.scrollbar_hit(pt.x, pt.y).is_none()
+        && v.hit_item(pt.x, pt.y).is_some()
+    {
+        drop(guard);
+        window::set_standard_cursor(StandardCursor::Hand);
+        return Some(1);
+    }
     None
 }
 
@@ -108,6 +117,8 @@ pub(super) fn on_lbuttondown(
         v.cancel_pending_rename();
         v.suppress_dblclk = false;
         v.hide_tip();
+        // A press decides the selection itself: a pending hover select must not follow it.
+        window::kill_timer(hwnd, TIMER_HOVER_SELECT);
         // Mouse interaction hides the keyboard focus ring (Explorer). The
         // ring lives on the content surface: arms that do not repaint it
         // anyway do so once below (one raster per click).
@@ -229,6 +240,7 @@ pub(super) fn on_lbuttondown(
                     collapse_on_up: press.collapse_on_up,
                     was_sole_selected: press.was_sole_selected,
                     deselect_on_up: press.deselect_on_up,
+                    open_on_up: h.behavior.single_click.get() && !ctrl && !shift,
                 });
                 v.pressed = Some(PressTarget::Item(i));
                 v.press_inside = true;
@@ -470,6 +482,7 @@ pub(super) fn on_lbuttonup(
             );
             need_content = true;
         } else if d.was_sole_selected
+            && !d.open_on_up
             && v.selected.len() == 1
             && v.selected.contains(&d.item)
             && v.label_hit(x, y, d.item)
@@ -484,6 +497,12 @@ pub(super) fn on_lbuttonup(
                 TIMER_RENAME,
                 pecofence_platform::rawinput::double_click_time_ms(),
             );
+        }
+        // Explorer's single-click open: a click without a drag opens the item.
+        if d.open_on_up
+            && let Some(it) = v.items.get(d.item)
+        {
+            open_items(v, queue, vec![it.id]);
         }
     }
     if need_content && !v.rolled_up {
@@ -612,17 +631,9 @@ pub(super) fn on_lbuttondblclk(
         if let Some(i) = v.hit_item(x, y)
             && let Some(item) = v.items.get(i)
         {
-            if v.navigate_folders && item.is_folder {
-                queue.push(Command::PortalEnter {
-                    fence: v.active,
-                    path: item.path.clone(),
-                });
-            } else {
-                queue.push(Command::LaunchItem {
-                    item: item.id,
-                    from: v.active,
-                    inside: true,
-                });
+            // With single-click open the first click of the pair opened it already.
+            if !h.behavior.single_click.get() {
+                open_items(v, queue, vec![item.id]);
             }
         } else if v.tab_at(x, y).is_some() && !std::mem::take(&mut v.suppress_dblclk) {
             queue.push(Command::ToggleRollUp(fence_id));

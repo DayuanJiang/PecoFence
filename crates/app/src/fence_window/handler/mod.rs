@@ -39,6 +39,36 @@ pub(super) fn focus_session(view: &RefCell<Option<FenceViewState>>, hwnd: HWND) 
     }
 }
 
+/// Opens `ids` as Enter does: a lone folder in a fence that navigates folders opens in place,
+/// anything else is launched.
+pub(super) fn open_items(v: &FenceViewState, queue: &CommandQueue, ids: Vec<ItemId>) {
+    let folder = (v.navigate_folders && ids.len() == 1)
+        .then(|| {
+            v.items
+                .iter()
+                .find(|it| it.id == ids[0] && it.is_folder)
+                .map(|it| it.path.clone())
+        })
+        .flatten();
+    match folder {
+        Some(path) => queue.push(Command::PortalEnter {
+            fence: v.active,
+            path,
+        }),
+        None => {
+            // Several folders cannot all open inside the fence: Explorer gets each.
+            let inside = ids.len() == 1;
+            for id in ids {
+                queue.push(Command::LaunchItem {
+                    item: id,
+                    from: v.active,
+                    inside,
+                });
+            }
+        }
+    }
+}
+
 /// Second half of a cancelled tab / tear-off drag, with no borrow held: releases the capture
 /// (WM_CAPTURECHANGED then finds no drag to commit), takes the drop outline and guides down and
 /// hands a torn-off fence back to its host.
@@ -278,6 +308,9 @@ impl FenceWindow {
                     }
                     msg::WM_TIMER if wparam == TIMER_TAB_HOVER => {
                         timers::on_timer_tab_hover(h, hwnd, wparam, lparam)
+                    }
+                    msg::WM_TIMER if wparam == TIMER_HOVER_SELECT => {
+                        timers::on_timer_hover_select(h, hwnd, wparam, lparam)
                     }
 
                     msg::WM_TIMER if wparam == TIMER_SCROLLBAR => {

@@ -32,6 +32,8 @@ pub(super) enum FileOpThen {
     Rename,
     /// The shell's own delete; the folder watchers take the items away.
     Delete { count: usize, permanent: bool },
+    /// 清空回收站: the bin is asked again for its icon.
+    EmptyBin,
 }
 
 pub(super) struct FileOp {
@@ -90,6 +92,13 @@ impl App {
                 })
             },
         );
+    }
+
+    /// 清空回收站 from the bin's menu, with Windows' confirmation and progress, on a worker
+    /// thread: a big bin takes a while to empty.
+    pub(super) fn start_empty_recycle_bin(&mut self, owner: HWND) {
+        tracing::info!("emptying the Recycle Bin");
+        self.run_fileop(Some(owner), FileOpThen::EmptyBin, shell::empty_recycle_bin);
     }
 
     fn run_fileop(
@@ -245,6 +254,14 @@ impl App {
                 Ok(false) => tracing::warn!("shell menu offers no delete verb"),
                 Err(e) => tracing::warn!(error = %e, "shell delete failed"),
             },
+            FileOpThen::EmptyBin => {
+                match &result {
+                    Ok(_) => tracing::info!("Recycle Bin emptied"),
+                    Err(e) => tracing::warn!(error = %e, "emptying the Recycle Bin failed"),
+                }
+                shell::recycle_bin_changed();
+                window::post_message(self.control.hwnd(), WM_APP_FS_CHANGED, 1, 0);
+            }
             FileOpThen::Rename => match &result {
                 Ok(true) => tracing::info!("item renamed through the shell"),
                 Ok(false) => tracing::info!("rename cancelled by user"),

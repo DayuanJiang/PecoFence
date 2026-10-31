@@ -50,7 +50,7 @@ pub(super) fn on_killfocus(
 }
 
 // Keyboard during a focus session (plan §5.12): F2 rename, Enter open,
-// Delete → shell delete (Shift+Delete = permanent), Esc clears the selection,
+// Delete or Ctrl+D → shell delete (Shift+Delete = permanent), Esc clears the selection,
 // Ctrl+C / X / V clipboard, Ctrl+Shift+N new folder, F5 refresh, Ctrl+Tab.
 pub(super) fn on_keydown(
     h: &HandlerCtx,
@@ -83,6 +83,7 @@ pub(super) fn on_keydown(
     const VK_DOWN: u32 = 0x28;
     const VK_A: u32 = 0x41;
     const VK_C: u32 = 0x43;
+    const VK_D: u32 = 0x44;
     const VK_N: u32 = 0x4E;
     const VK_V: u32 = 0x56;
     const VK_X: u32 = 0x58;
@@ -161,39 +162,14 @@ pub(super) fn on_keydown(
                 });
             }
         }
-        k if k == msg::VK_RETURN => {
-            let folder = (v.navigate_folders && ids.len() == 1)
-                .then(|| {
-                    v.items
-                        .iter()
-                        .find(|it| it.id == ids[0] && it.is_folder)
-                        .map(|it| it.path.clone())
-                })
-                .flatten();
-            match folder {
-                Some(path) => queue.push(Command::PortalEnter {
-                    fence: v.active,
-                    path,
-                }),
-                None => {
-                    // Several folders cannot all open inside the fence: Explorer gets each.
-                    let inside = ids.len() == 1;
-                    for id in ids {
-                        queue.push(Command::LaunchItem {
-                            item: id,
-                            from: v.active,
-                            inside,
-                        });
-                    }
-                }
-            }
-        }
+        k if k == msg::VK_RETURN => open_items(v, queue, ids),
         VK_BACK if v.deco.up_button => {
             // Keyboard navigation: the folder it returns to shows the focus ring.
             v.focus_visible = true;
             queue.push(Command::PortalUp(v.active));
         }
-        k if k == msg::VK_DELETE => {
+        // Ctrl+D deletes to the Recycle Bin, as on the desktop and in Explorer.
+        k if k == msg::VK_DELETE || (k == VK_D && ctrl && !shift) => {
             if !ids.is_empty() {
                 queue.push(Command::DeleteItems {
                     fence: v.active,

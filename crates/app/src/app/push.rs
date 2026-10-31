@@ -19,9 +19,12 @@ use crate::fence_window::Pushed;
 /// Who may move a fence in this pass.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Role {
+    /// Pushed out of the way, also when locked (feedback #52): a push only moves the window
+    /// for a while, and the fence keeps its saved place.
     Free,
-    /// Locked: stays at its resting place.
-    Locked,
+    /// Stays at its resting place: no spot on these monitors yet, or has 向上展开 (never
+    /// pushed).
+    Fixed,
     /// Stays where it is: in the user's hands (dragged, or resized when `pushes`), or pushed by
     /// a fence that is being dragged (it makes room again once that fence is dropped).
     Held,
@@ -114,7 +117,7 @@ fn stack(slots: &mut [Slot], enabled: bool) {
         let b = &slots[j];
         let mut y = match b.role {
             Role::Held => b.top,
-            Role::Locked => b.base,
+            Role::Fixed => b.base,
             Role::Free => b.base,
         };
         let mut binding = None;
@@ -199,7 +202,7 @@ fn stack(slots: &mut [Slot], enabled: bool) {
 
 /// How tall each fence with 向上展开 may open upward now, from its bottom edge: up to where the
 /// fences resting above it, lifted as far as they can go (each at its resting gap, at most
-/// `gap`, under the next, the top one at the top of the work area; locked and held ones not at
+/// `gap`, under the next, the top one at the top of the work area; held and fixed ones not at
 /// all), leave room for it.
 fn rooms(slots: &[Slot]) -> Vec<(HWND, i32)> {
     let mut order: Vec<usize> = (0..slots.len()).collect();
@@ -305,8 +308,8 @@ impl App {
                 let settles = settling.contains(&id);
                 let role = if is_dragged || frozen || sized == Some(hwnd) {
                     Role::Held
-                } else if settles || chooses || upward || fence.is_some_and(|f| f.locked) {
-                    Role::Locked
+                } else if settles || chooses || upward {
+                    Role::Fixed
                 } else {
                     Role::Free
                 };
@@ -459,7 +462,7 @@ mod tests {
             upward: true,
             chooses: true,
             pushes: false,
-            role: Role::Locked,
+            role: Role::Fixed,
             ..slot(n, x, top, h, rest_h)
         }
     }
@@ -568,17 +571,12 @@ mod tests {
     }
 
     #[test]
-    fn locked_and_held_fences_are_not_moved() {
-        let mut s = vec![
-            slot(1, 0, 100, 300, TITLE),
-            slot(2, 0, 146, TITLE, TITLE),
-            slot(3, 0, 192, TITLE, TITLE),
-        ];
-        get(&mut s, 2).role = Role::Locked;
-        get(&mut s, 3).role = Role::Held;
-        get(&mut s, 3).top = 250;
+    fn a_held_fence_is_not_moved() {
+        let mut s = vec![slot(1, 0, 100, 300, TITLE), slot(2, 0, 146, TITLE, TITLE)];
+        get(&mut s, 2).role = Role::Held;
+        get(&mut s, 2).top = 250;
         stack(&mut s, true);
-        assert_eq!(ys(&s, &[2, 3]), vec![146, 250]);
+        assert_eq!(ys(&s, &[2]), vec![250]);
     }
 
     #[test]
@@ -620,7 +618,7 @@ mod tests {
             slot(3, 0, 420, TITLE, TITLE),
         ];
         let m = get(&mut s, 2);
-        m.role = Role::Locked;
+        m.role = Role::Fixed;
         m.pushes = false;
         stack(&mut s, true);
         assert_eq!(ys(&s, &[2, 3]), vec![146, 420]);
@@ -677,12 +675,14 @@ mod tests {
         *get(&mut s, 3) = upward(3, 0, 900, 900, TITLE);
         stack(&mut s, true);
         assert_eq!(ys(&s, &[1, 2]), vec![0, 0]);
-        // A locked fence is not lifted: the upward one stops 8 px under it.
+        // A fence that stays put (here one still settling on a new screen setup) is not
+        // lifted: the upward one stops 8 px under it. A locked fence is free and lifted.
         let mut s = vec![
             slot(1, 0, 500, TITLE, TITLE),
             upward(2, 0, 900, TITLE, TITLE),
         ];
-        get(&mut s, 1).role = Role::Locked;
+        assert_eq!(room(&s, 2), Some(936 - 44));
+        get(&mut s, 1).role = Role::Fixed;
         assert_eq!(room(&s, 2), Some(936 - 544));
         // Nothing above: the whole work area.
         assert_eq!(room(&[upward(1, 0, 900, TITLE, TITLE)], 1), Some(936));

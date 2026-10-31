@@ -4,6 +4,7 @@ use crate::bindings::*;
 use crate::wide::to_wide;
 use std::os::windows::fs::MetadataExt;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use windows_core::{GUID, Interface, PCWSTR, PWSTR, Result};
 
 // FOLDERID_Desktop / FOLDERID_PublicDesktop (KnownFolders.h).
@@ -14,7 +15,7 @@ const FOLDERID_DOCUMENTS: GUID = GUID::from_u128(0xFDD39AD0_238F_46AF_ADB4_6C854
 const FOLDERID_DOWNLOADS: GUID = GUID::from_u128(0x374DE290_123F_4565_9164_39C4925E467B);
 const FOLDERID_PICTURES: GUID = GUID::from_u128(0x33E28130_4E1E_4676_835A_98395C3BC3BB);
 
-fn take_string(pwstr: PWSTR) -> String {
+pub(crate) fn take_string(pwstr: PWSTR) -> String {
     if pwstr.is_null() {
         return String::new();
     }
@@ -244,30 +245,102 @@ fn in_desktop_namespace(clsid: &str) -> bool {
 /// The Recycle Bin is asked again (see `recycle_bin_has_items`) only after this (a folder
 /// change, the shell's notice, a refresh) or ten minutes after the last answer.
 pub fn recycle_bin_changed() {
-    RECYCLE_BIN_STALE.store(true, std::sync::atomic::Ordering::Relaxed);
+    RECYCLE_BIN_STALE.store(true, Ordering::Relaxed);
 }
 
-static RECYCLE_BIN_STALE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+/// Where the Recycle Bin worker posts `message` (wparam 1) when its answer changed: `hwnd`
+/// should list the desktop items again.
+pub fn notify_recycle_bin_changes(hwnd: HWND, message: u32) {
+    let _ = RECYCLE_BIN_NOTIFY.set((hwnd.0 as usize, message));
+}
 
-/// Whether the Recycle Bin holds anything (decides between the full and empty icon). Each
-/// fixed drive is asked on its own: the all-drives form fails as a whole when one volume
-/// (card reader without media, offline mapped drive) cannot answer. When no drive answers,
-/// the last known state is kept rather than flipping to "empty". Asking touches every fixed
-/// drive (a sleeping one wakes, which can take seconds), so the answer is reused until
-/// `recycle_bin_changed` or for ten minutes.
+static RECYCLE_BIN_STALE: AtomicBool = AtomicBool::new(true);
+static RECYCLE_BIN_FULL: AtomicBool = AtomicBool::new(false);
+static RECYCLE_BIN_ASKING: AtomicBool = AtomicBool::new(false);
+static RECYCLE_BIN_ASKED: std::sync::Mutex<Option<std::time::Instant>> =
+    std::sync::Mutex::new(None);
+static RECYCLE_BIN_NOTIFY: std::sync::OnceLock<(usize, u32)> = std::sync::OnceLock::new();
+
+/// Whether the Recycle Bin holds anything (decides between the full and empty icon), as last
+/// known. Asking touches every fixed drive (a sleeping one wakes, which can take seconds) and
+/// counts every item in the bin (seconds when it holds tens of thousands), so a worker asks:
+/// after `recycle_bin_changed`, or ten minutes after the last answer, this starts it and
+/// returns the last answer; a different answer is posted as `notify_recycle_bin_changes` says.
 pub fn recycle_bin_has_items() -> bool {
-    use std::sync::Mutex;
-    use std::sync::atomic::{AtomicBool, Ordering};
-    use std::time::{Duration, Instant};
-    static LAST_KNOWN: AtomicBool = AtomicBool::new(false);
-    static ASKED: Mutex<Option<Instant>> = Mutex::new(None);
-    let mut asked = ASKED.lock().unwrap_or_else(|e| e.into_inner());
-    let recent = asked.is_some_and(|t| t.elapsed() < Duration::from_secs(600));
-    if recent && !RECYCLE_BIN_STALE.swap(false, Ordering::Relaxed) {
-        return LAST_KNOWN.load(Ordering::Relaxed);
+    let due = RECYCLE_BIN_STALE.load(Ordering::Relaxed)
+        || RECYCLE_BIN_ASKED
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .is_none_or(|t| t.elapsed() >= std::time::Duration::from_secs(600));
+    if due && !RECYCLE_BIN_ASKING.swap(true, Ordering::AcqRel) {
+        let spawned = std::thread::Builder::new()
+            .name("recycle bin".into())
+            .spawn(ask_recycle_bin);
+        if spawned.is_err() {
+            RECYCLE_BIN_ASKING.store(false, Ordering::Release);
+        }
     }
-    RECYCLE_BIN_STALE.store(false, Ordering::Relaxed);
-    *asked = Some(Instant::now());
+    RECYCLE_BIN_FULL.load(Ordering::Relaxed)
+}
+
+/// Asks the Recycle Bin afresh and waits up to `wait` for the answer; `None` when it takes
+/// longer (a bin with tens of thousands of items). A different answer is posted as usual.
+pub fn recycle_bin_has_items_now(wait: std::time::Duration) -> Option<bool> {
+    recycle_bin_changed();
+    let started = std::time::Instant::now();
+    let _ = recycle_bin_has_items();
+    while started.elapsed() < wait {
+        if !RECYCLE_BIN_ASKING.load(Ordering::Acquire) && !RECYCLE_BIN_STALE.load(Ordering::Relaxed)
+        {
+            return Some(RECYCLE_BIN_FULL.load(Ordering::Relaxed));
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    None
+}
+
+/// Empties the Recycle Bin of every drive, with Windows' own confirmation, progress and sound.
+/// Blocks until it is done: call it off the UI thread.
+pub fn empty_recycle_bin(owner: Option<HWND>) -> Result<bool> {
+    // SAFETY: plain FFI call; no root path means every drive.
+    unsafe { SHEmptyRecycleBinW(owner, PCWSTR::null(), 0) }.ok()?;
+    Ok(true)
+}
+
+/// The worker behind `recycle_bin_has_items`: asks until no change came in meanwhile.
+fn ask_recycle_bin() {
+    let _com = crate::com::MtaGuard::init();
+    let before = RECYCLE_BIN_FULL.load(Ordering::Relaxed);
+    loop {
+        RECYCLE_BIN_STALE.store(false, Ordering::Relaxed);
+        *RECYCLE_BIN_ASKED.lock().unwrap_or_else(|e| e.into_inner()) =
+            Some(std::time::Instant::now());
+        if let Some(full) = query_recycle_bin() {
+            RECYCLE_BIN_FULL.store(full, Ordering::Relaxed);
+        }
+        RECYCLE_BIN_ASKING.store(false, Ordering::Release);
+        // A change that came in while asking: ask again, unless a new worker took over.
+        if !RECYCLE_BIN_STALE.load(Ordering::Relaxed)
+            || RECYCLE_BIN_ASKING.swap(true, Ordering::AcqRel)
+        {
+            break;
+        }
+    }
+    if RECYCLE_BIN_FULL.load(Ordering::Relaxed) != before
+        && let Some(&(hwnd, message)) = RECYCLE_BIN_NOTIFY.get()
+    {
+        // SAFETY: plain FFI call; a window that is gone just drops the message.
+        unsafe {
+            let _ = PostMessageW(Some(HWND(hwnd as *mut _)), message, WPARAM(1), LPARAM(0));
+        }
+    }
+}
+
+/// Whether any fixed drive's Recycle Bin holds anything; `None` when no drive answered (the
+/// last answer then stays rather than flipping to "empty"). Each fixed drive is asked on its
+/// own: the all-drives form fails as a whole when one volume (card reader without media,
+/// offline mapped drive) cannot answer.
+fn query_recycle_bin() -> Option<bool> {
     // SAFETY: no arguments; returns a bitmask.
     let drives = unsafe { GetLogicalDrives() };
     let mut answered = false;
@@ -294,12 +367,7 @@ pub fn recycle_bin_has_items() -> bool {
             }
         }
     }
-    if answered {
-        LAST_KNOWN.store(full, Ordering::Relaxed);
-        full
-    } else {
-        LAST_KNOWN.load(Ordering::Relaxed)
-    }
+    answered.then_some(full)
 }
 
 /// The special desktop items the user has enabled in Windows (Recycle Bin, This PC, ...), as
@@ -534,6 +602,71 @@ pub fn shell_image(path: &Path, size_px: u32, icon_only: bool) -> Result<ShellIm
         let result = hbitmap_to_bgra(hbitmap, size_px);
         let _ = DeleteObject(HGDIOBJ(hbitmap.0));
         result
+    }
+}
+
+/// What Explorer shows for each file of a type.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FilePicture {
+    /// The icon of the type, the same for every file.
+    TypeIcon,
+    /// An icon of its own: from an icon handler, or from the file itself (a DefaultIcon of
+    /// `%1`, as for programs).
+    OwnIcon,
+    /// A thumbnail of the file, from a thumbnail handler (IThumbnailProvider or IExtractImage)
+    /// such as a PDF reader's.
+    Thumbnail,
+}
+
+/// [`FilePicture`] of the files of type `ext` (`.pdf`), from what the shell has registered for
+/// it, found through the file association as Explorer finds it (the ProgID,
+/// `SystemFileAssociations`, the perceived type).
+pub fn file_picture(ext: &str) -> FilePicture {
+    let assoc = to_wide(ext);
+    // One association object for the four questions: AssocQueryString would look the type up
+    // again for each of them (about three times as long).
+    // SAFETY: COM calls on a live object; the string outlives the call.
+    let qa = unsafe {
+        AssocCreate::<IQueryAssociations>(CLSID_QueryAssociations)
+            .ok()
+            .filter(|qa| {
+                qa.Init(ASSOCF::default(), PCWSTR(assoc.as_ptr()), None, None)
+                    .is_ok()
+            })
+    };
+    let Some(qa) = qa else {
+        return FilePicture::TypeIcon;
+    };
+    let query = |what: ASSOCSTR, extra: Option<&str>| {
+        let extra = extra.map(to_wide);
+        let mut buf = [0u16; 1024];
+        let mut len = buf.len() as u32;
+        // SAFETY: NUL-terminated input outlives the call; `len` is the buffer's length.
+        let hr = unsafe {
+            qa.GetString(
+                ASSOCF::default(),
+                what,
+                extra
+                    .as_ref()
+                    .map_or(PCWSTR::null(), |e| PCWSTR(e.as_ptr())),
+                Some(PWSTR(buf.as_mut_ptr())),
+                &mut len,
+            )
+        };
+        hr.is_ok().then(|| crate::wide::from_wide(&buf))
+    };
+    let handler = |name: &str| query(ASSOCSTR_SHELLEXTENSION, Some(name)).is_some();
+    // IThumbnailProvider, IExtractImage.
+    if handler("{e357fccd-a995-4576-b01f-234630154e96}")
+        || handler("{BB2E617C-0920-11d1-9A0B-00C04FC2D6C1}")
+    {
+        FilePicture::Thumbnail
+    } else if handler("IconHandler")
+        || query(ASSOCSTR_DEFAULTICON, None).is_some_and(|icon| icon.contains("%1"))
+    {
+        FilePicture::OwnIcon
+    } else {
+        FilePicture::TypeIcon
     }
 }
 
@@ -1107,10 +1240,19 @@ pub fn rename_no_replace(from: &Path, to: &Path) -> std::io::Result<()> {
 }
 
 /// Opens an item with the shell (default verb), or runs `verb` (`"runas"`, `"properties"`,
-/// `"openas"`…).
+/// `"openas"`…). A file or a namespace item goes in as its id list, as Explorer opens it: as a
+/// path, one without an extension (a folder `Foo`, a file `README`) was completed with `.com`,
+/// `.exe`, `.bat`, `.lnk`… first, so a `Foo.lnk` beside it opened instead (feedback #51).
 pub fn shell_execute(path: &Path, verb: Option<&str>, owner: Option<HWND>) -> Result<()> {
     let file = path_wide(path);
     let verb_w = verb.map(to_wide);
+    let mut pidl: LPITEMIDLIST = std::ptr::null_mut();
+    if path.is_absolute() || is_namespace_path(path) {
+        // SAFETY: the string outlives the call; the id list is freed below. A path the shell
+        // cannot parse (gone) goes in as a path, so Windows reports it as before.
+        let _ =
+            unsafe { SHParseDisplayName(PCWSTR(file.as_ptr()), None, &mut pidl, SFGAOF(0), None) };
+    }
     let mut info = SHELLEXECUTEINFOW {
         cbSize: size_of::<SHELLEXECUTEINFOW>() as u32,
         fMask: (SEE_MASK_INVOKEIDLIST | SEE_MASK_NOASYNC) as u32,
@@ -1119,12 +1261,22 @@ pub fn shell_execute(path: &Path, verb: Option<&str>, owner: Option<HWND>) -> Re
             .as_ref()
             .map(|v| PCWSTR(v.as_ptr()))
             .unwrap_or(PCWSTR::null()),
-        lpFile: PCWSTR(file.as_ptr()),
+        lpFile: if pidl.is_null() {
+            PCWSTR(file.as_ptr())
+        } else {
+            PCWSTR::null()
+        },
+        lpIDList: pidl.cast(),
         nShow: SW_SHOWNORMAL,
         ..Default::default()
     };
     // SAFETY: all referenced buffers outlive the call.
-    unsafe { ShellExecuteExW(&mut info).ok() }
+    let result = unsafe { ShellExecuteExW(&mut info).ok() };
+    if !pidl.is_null() {
+        // SAFETY: the id list came from SHParseDisplayName and is freed once.
+        unsafe { ILFree(Some(pidl)) };
+    }
+    result
 }
 
 /// Resolves a `.lnk` file's target path (raw, unexpanded), or `None`.
@@ -1580,7 +1732,7 @@ mod namespace_tests {
         let image = shell_image(&bin, 32, true).expect("recycle bin icon");
         assert!(image.width > 0 && image.height > 0);
         // Querying the bin never fails on a desktop session; the answer itself may be either.
-        let _ = recycle_bin_has_items();
+        let _ = query_recycle_bin();
         assert_eq!(
             crate::fileinfo::type_name(&bin, false)
                 .as_deref()

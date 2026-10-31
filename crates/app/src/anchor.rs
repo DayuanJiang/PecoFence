@@ -239,6 +239,9 @@ pub struct DesktopAnchor {
     anchor_refused: Option<(isize, i32)>,
     /// A topmost-band placement failed during this peek / show desktop (logged once).
     topmost_refused: bool,
+    /// The window (of an elevated program) the fences go above because they may not go under
+    /// it; logged when it starts and when it ends.
+    placed_above: Option<isize>,
 }
 
 /// The fences' windows as a feedback report describes them.
@@ -249,6 +252,9 @@ pub struct WindowReport {
     pub topmost: usize,
     /// Below the icon host in the z-order: covered by the desktop.
     pub below_host: usize,
+    /// Above a window that is not ours or the desktop's (an app, Settings, a dialog): the fence
+    /// covers it.
+    pub above_windows: usize,
     /// On no monitor at all.
     pub off_screen: usize,
     pub quick_hidden: bool,
@@ -363,6 +369,7 @@ impl DesktopAnchor {
             on_desktop_front: None,
             anchor_refused: None,
             topmost_refused: false,
+            placed_above: None,
         };
         // The hook reports only changes of the foreground. With the desktop already in front
         // (a start at sign-in before any window opens) its clicks are followed from now on.
@@ -489,22 +496,26 @@ impl DesktopAnchor {
         };
         let mut refused = None;
         let mut failed = 0;
+        let mut placed_above = None;
         self.with_anchoring(|s| {
             let mode = s.mode;
-            let place = |w: HWND| -> Result<()> {
+            let place = |w: HWND| -> Result<Option<HWND>> {
                 match mode {
                     ZMode::InsertAboveHost => desktop::insert_above(w, host.host),
-                    ZMode::HwndBottom => desktop::send_to_bottom(w),
+                    ZMode::HwndBottom => desktop::send_to_bottom(w).map(|()| None),
                 }
             };
             let _ = place(s.sentinel.hwnd());
             // Each fence is inserted directly above the host, so the *last* one placed ends up
             // lowest. Iterate in reverse: the end of `fences` (newest / last raised) is on top.
             for (f, shadow) in s.fences.clone().into_iter().rev() {
-                if let Err(e) = place(f) {
-                    tracing::debug!(hwnd = ?f, error = %e, "anchor SetWindowPos failed");
-                    failed += 1;
-                    refused.get_or_insert((f, e));
+                match place(f) {
+                    Ok(above) => placed_above = placed_above.or(above),
+                    Err(e) => {
+                        tracing::debug!(hwnd = ?f, error = %e, "anchor SetWindowPos failed");
+                        failed += 1;
+                        refused.get_or_insert((f, e));
+                    }
                 }
                 if let Some(sh) = shadow {
                     let _ = desktop::insert_after(sh, f);
@@ -512,6 +523,27 @@ impl DesktopAnchor {
             }
         });
         self.note_refusal(host.host, refused, failed);
+        self.note_placed_above(placed_above);
+    }
+
+    /// Logs once when the fences start going above a window they may not go under (one of an
+    /// elevated program, lowest above the desktop) and once when they are directly above the
+    /// desktop again: the anchor check repeats the placement every pass.
+    fn note_placed_above(&mut self, above: Option<HWND>) {
+        let key = above.map(|h| h.0 as isize);
+        if key == self.placed_above {
+            return;
+        }
+        self.placed_above = key;
+        match above {
+            Some(h) => tracing::info!(
+                above = ?h,
+                class = %desktop::class_name(h),
+                above_elevated = ?pecofence_platform::process::is_elevated(desktop::window_pid(h)),
+                "fences placed above a window they may not go under"
+            ),
+            None => tracing::info!("fences directly above the desktop again"),
+        }
     }
 
     /// Logs a refused placement once per cause (the window it had to go under, the error):
@@ -571,9 +603,15 @@ impl DesktopAnchor {
             && desktop::window_pid(root) == desktop::window_pid(desktop::shell_window())
     }
 
-    /// A window of this process (fence, shadow, settings, menu, rename popup).
-    fn is_own_window(&self, hwnd: HWND) -> bool {
-        desktop::window_pid(desktop::root_ancestor(hwnd)) == std::process::id()
+    /// One of our fences, popups (rename, notice) or menus: show desktop goes on while it is in
+    /// front. Settings and the dialogs of this process (Explorer's Properties, a confirmation)
+    /// end it like any app's window, or the floating fences would cover them.
+    fn is_own_overlay(&self, hwnd: HWND) -> bool {
+        let root = desktop::root_ancestor(hwnd);
+        let cls = desktop::class_name(root);
+        ((cls.starts_with("PecoFence.") && cls != crate::settings_host::SETTINGS_CLASS)
+            || cls == "#32768")
+            && desktop::window_pid(root) == std::process::id()
     }
 
     /// Have our windows ended up *below* the host? (Explorer raised the desktop.)
@@ -606,7 +644,7 @@ impl DesktopAnchor {
             }
         } else if !foreground.0.is_null()
             && !self.is_desktop_window(foreground)
-            && !self.is_own_window(foreground)
+            && !self.is_own_overlay(foreground)
             && !is_shell_popup(desktop::class_name(desktop::root_ancestor(foreground)).as_str())
         {
             self.end_show_desktop("another window came to the front");
@@ -987,10 +1025,15 @@ impl DesktopAnchor {
     }
 
     pub fn toggle_fences_hidden(&mut self) {
-        let hide = !self.quick.fences_hidden;
+        self.set_fences_hidden(!self.quick.fences_hidden, false);
+    }
+
+    /// Hides or shows the fences as quick hide does; `every` includes the ones kept on the
+    /// desktop by 「双击桌面隐藏时保留此栅栏」 (「临时显示 Windows 桌面」 hides those too).
+    pub fn set_fences_hidden(&mut self, hide: bool, every: bool) {
         self.quick.fences_hidden = hide;
         for (w, shadow) in self.fences.clone() {
-            if self.quick_hide_excluded.contains(&(w.0 as isize)) {
+            if !every && self.quick_hide_excluded.contains(&(w.0 as isize)) {
                 continue;
             }
             set_fence_visible(w, shadow, !hide);
@@ -1096,7 +1139,11 @@ impl DesktopAnchor {
         }
         let pid = pecofence_platform::process::current_pid().to_string();
         let marker = self.icons.marker.to_string_lossy().to_string();
-        match pecofence_platform::process::spawn_detached(&wd.to_string_lossy(), &[&pid, &marker]) {
+        // After a crash it starts us again with these arguments.
+        let ours: Vec<String> = std::env::args().skip(1).collect();
+        let mut args = vec![pid.as_str(), marker.as_str()];
+        args.extend(ours.iter().map(String::as_str));
+        match pecofence_platform::process::spawn_detached(&wd.to_string_lossy(), &args) {
             Ok(wpid) => {
                 tracing::info!(watchdog_pid = wpid, "watchdog started");
                 self.icons.watchdogs.push(wpid);
@@ -1245,6 +1292,22 @@ impl DesktopAnchor {
         let below_host = |w: HWND| {
             host_at.is_some_and(|i| order.iter().position(|&x| x == w).is_some_and(|p| p > i))
         };
+        let ours = self.all_windows();
+        let above_windows = |w: HWND| {
+            let Some(at) = order.iter().position(|&x| x == w) else {
+                return false;
+            };
+            // The windows between the fence and the host (none for a fence below the host).
+            let between = order.get(at + 1..host_at.unwrap_or(order.len()));
+            between.is_some_and(|between| {
+                between.iter().any(|&x| {
+                    !ours.contains(&x)
+                        && !is_drag_overlay(x)
+                        && !self.is_desktop_window(x)
+                        && desktop::has_visible_surface(x)
+                })
+            })
+        };
         let screens: Vec<RECT> = pecofence_platform::monitors::enumerate()
             .iter()
             .map(|m| m.bounds)
@@ -1263,6 +1326,7 @@ impl DesktopAnchor {
             cloaked: count(&desktop::is_cloaked),
             topmost: count(&desktop::is_topmost),
             below_host: count(&below_host),
+            above_windows: count(&above_windows),
             off_screen: count(&off_screen),
             quick_hidden: self.quick.fences_hidden,
             peeking: self.peeking,

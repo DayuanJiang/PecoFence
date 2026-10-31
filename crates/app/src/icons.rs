@@ -5,13 +5,14 @@ use pecofence_core::IconKey;
 use pecofence_platform::HWND;
 use pecofence_platform::com::OleGuard;
 use pecofence_platform::shell;
+use pecofence_platform::shell::FilePicture;
 use pecofence_platform::window;
 use pecofence_render::Image;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::mpsc::{Receiver, Sender, channel};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 pub const WM_APP_ICON_READY: u32 = pecofence_platform::msg::WM_APP + 4;
@@ -605,7 +606,8 @@ pub fn arrow_px(size_px: u32, dpi: u32) -> u32 {
 
 /// Decides how an item's icon is cached: per-extension for ordinary documents, per-file for
 /// things whose icon depends on content (executables, shortcuts, images, folders with icons or
-/// a preview of their contents). The flag is true for an icon without a thumbnail.
+/// a preview of their contents, types with a thumbnail or icon handler). The flag is true for
+/// an icon without a thumbnail.
 pub fn icon_key_for(path: &Path, is_folder: bool, mtime: i64) -> (IconKey, bool) {
     // Namespace items have no extension; each one has its own icon, and the Recycle Bin's
     // changes with its contents (encoded in `mtime`).
@@ -618,36 +620,9 @@ pub fn icon_key_for(path: &Path, is_folder: bool, mtime: i64) -> (IconKey, bool)
             true,
         );
     }
-    let ext = path
-        .extension()
-        .map(|e| format!(".{}", e.to_string_lossy().to_lowercase()))
-        .unwrap_or_default();
-    let by_content = is_folder
-        || matches!(
-            ext.as_str(),
-            ".exe"
-                | ".lnk"
-                | ".url"
-                | ".website"
-                | ".ico"
-                | ".cur"
-                | ".appref-ms"
-                | ".scr"
-                | ".png"
-                | ".jpg"
-                | ".jpeg"
-                | ".gif"
-                | ".bmp"
-                | ".webp"
-                | ".heic"
-                | ".tif"
-                | ".tiff"
-                | ".mp4"
-                | ".mkv"
-                | ".mov"
-                | ".avi"
-        );
-    let key = if by_content {
+    let ext = extension(path);
+    let picture = file_picture(&ext);
+    let key = if is_folder || picture != FilePicture::TypeIcon {
         IconKey::ByContent {
             path: path.to_string_lossy().to_lowercase(),
             mtime,
@@ -657,31 +632,44 @@ pub fn icon_key_for(path: &Path, is_folder: bool, mtime: i64) -> (IconKey, bool)
     };
     // Folders show a preview of their contents as on Windows 11's desktop. With Explorer's
     // 「始终显示图标，从不显示缩略图」 on, the shell hands back the plain icon itself.
-    (key, !thumbnail_capable(path) && !is_folder)
+    (key, picture != FilePicture::Thumbnail && !is_folder)
 }
 
-/// Pictures and videos: the shell hands back a thumbnail of the file.
+/// `.pdf` for `a.PDF`, empty without an extension.
+fn extension(path: &Path) -> String {
+    path.extension()
+        .map(|e| format!(".{}", e.to_string_lossy().to_lowercase()))
+        .unwrap_or_default()
+}
+
+/// What Explorer shows for the files of type `ext`.
+fn file_picture(ext: &str) -> FilePicture {
+    match ext {
+        "" => FilePicture::TypeIcon,
+        ".exe" | ".lnk" | ".url" | ".website" | ".ico" | ".cur" | ".appref-ms" | ".scr" => {
+            FilePicture::OwnIcon
+        }
+        ".png" | ".jpg" | ".jpeg" | ".gif" | ".bmp" | ".webp" | ".heic" | ".tif" | ".tiff"
+        | ".mp4" | ".mkv" | ".mov" | ".avi" => FilePicture::Thumbnail,
+        // Other types as the shell has them registered (a PDF reader's thumbnails, an icon
+        // handler), asked once per type: a handler installed while PecoFence runs counts from
+        // the next start.
+        _ => {
+            static TYPES: OnceLock<Mutex<HashMap<String, FilePicture>>> = OnceLock::new();
+            let mut types = TYPES
+                .get_or_init(Default::default)
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            *types
+                .entry(ext.to_string())
+                .or_insert_with(|| shell::file_picture(ext))
+        }
+    }
+}
+
+/// The shell hands back a thumbnail of the file.
 fn thumbnail_capable(path: &Path) -> bool {
-    let ext = path
-        .extension()
-        .map(|e| e.to_string_lossy().to_lowercase())
-        .unwrap_or_default();
-    matches!(
-        ext.as_str(),
-        "png"
-            | "jpg"
-            | "jpeg"
-            | "gif"
-            | "bmp"
-            | "webp"
-            | "heic"
-            | "tif"
-            | "tiff"
-            | "mp4"
-            | "mkv"
-            | "mov"
-            | "avi"
-    )
+    file_picture(&extension(path)) == FilePicture::Thumbnail
 }
 
 #[cfg(test)]
@@ -1024,6 +1012,18 @@ mod tests {
         assert!(icon_key_for(Path::new("C:\\pf-test\\a.txt"), false, 1).1);
         assert!(icon_key_for(Path::new("C:\\pf-test\\a.website"), false, 1).1);
         assert!(!icon_key_for(Path::new("C:\\pf-test\\a.jpg"), false, 1).1);
+    }
+
+    /// Types off the built-in lists go by what Windows registers for them: fonts have a
+    /// thumbnail handler, animated cursors a DefaultIcon of `%1`, an unknown type neither.
+    #[test]
+    fn registered_handlers_give_per_file_pictures() {
+        let font = icon_key_for(Path::new("C:\\pf-test\\a.ttf"), false, 1);
+        assert!(matches!(font.0, IconKey::ByContent { .. }) && !font.1);
+        let cursor = icon_key_for(Path::new("C:\\pf-test\\a.ani"), false, 1);
+        assert!(matches!(cursor.0, IconKey::ByContent { .. }) && cursor.1);
+        let unknown = icon_key_for(Path::new("C:\\pf-test\\a.pf-none"), false, 1);
+        assert_eq!(unknown, (IconKey::ByExt(".pf-none".into()), true));
     }
 }
 

@@ -382,7 +382,7 @@ impl Effects {
             field.rim_width,
             field.rim_height,
             field.rim.as_ptr().cast(),
-            field.rim_width,
+            field.rim_pitch,
             b::DXGI_FORMAT_A8_UNORM,
         )?
         .cast::<b::ID2D1Image>()?;

@@ -140,6 +140,13 @@ pub struct Settings {
     /// Fences "Peek": a hotkey floats every fence above the current windows.
     #[serde(default)]
     pub peek: PeekSettings,
+    /// 「临时显示 Windows 桌面」: a shortcut, written like `peek.customHotkey` ("Ctrl+Alt+D"),
+    /// that hides every fence and shows the Windows desktop icons PecoFence hid, until it is
+    /// pressed again. Nothing of that is saved. `null` (the default) = no shortcut; the tray
+    /// menu and `pecofence-cli windows-desktop` still switch. Text that is not a usable
+    /// shortcut is ignored the same way.
+    #[serde(default)]
+    pub windows_desktop_hotkey: Option<String>,
     #[serde(default)]
     pub icons: IconSettings,
     /// The user's Desktop folder as last seen, so a moved desktop (OneDrive, another drive) can
@@ -195,6 +202,15 @@ impl PeekSettings {
     }
 }
 
+impl Settings {
+    /// The 「临时显示 Windows 桌面」 shortcut, when `windowsDesktopHotkey` holds a usable one.
+    pub fn windows_desktop_hotkey(&self) -> Option<crate::hotkey::Hotkey> {
+        self.windows_desktop_hotkey
+            .as_deref()
+            .and_then(|t| crate::hotkey::Hotkey::parse(t).and_then(|h| h.check()).ok())
+    }
+}
+
 /// The shortcuts versions up to 0.2.0 offered. Fences uses Win+Space, but Windows 10 and 11
 /// keep Win+Space and Win+Shift+Space for the input switcher even with a single keyboard
 /// layout, so a file that names one of them loads with Ctrl+Alt+Space (`config_store::migrate`).
@@ -244,6 +260,7 @@ impl Default for Settings {
             autostart: true,
             telemetry: false,
             peek: PeekSettings::default(),
+            windows_desktop_hotkey: None,
             icons: IconSettings::default(),
             desktop_path: None,
         }
@@ -403,8 +420,8 @@ pub struct RollUpSettings {
     #[serde(default = "default_true")]
     pub push_neighbors: bool,
     /// Resting the pointer on a tab of a tabbed fence for the hover delay switches to it, as a
-    /// click would.
-    #[serde(default)]
+    /// click would. On by default; a configuration that already says `false` keeps it.
+    #[serde(default = "default_true")]
     pub switch_tab_on_hover: bool,
     /// No item count on a rolled title and no roll chevron: the title bar shows the name only.
     /// Double-clicking the title and the fence menu still roll the fence up and down.
@@ -424,7 +441,7 @@ impl Default for RollUpSettings {
             title_on_hover: false,
             hide_inactive_scrollbar: false,
             push_neighbors: true,
-            switch_tab_on_hover: false,
+            switch_tab_on_hover: true,
             hide_count_and_chevron: false,
         }
     }
@@ -786,8 +803,9 @@ pub struct Fence {
     /// Folder portal: hide the folder glyph before the title.
     #[serde(default)]
     pub hide_title_icon: bool,
-    /// Inbox: no window while it holds no items (为空时自动隐藏); the next item to land on the
-    /// desktop brings it back at its saved spot.
+    /// No window while it holds no items (为空时自动隐藏; a portal only at its root folder, a
+    /// tab or a host of tabs never); the next item to land in it brings it back at its saved
+    /// spot.
     #[serde(default)]
     pub hide_when_empty: bool,
     /// Expand upward (向上展开): the bottom edge stays put while the fence rolls up, expands or
@@ -1745,6 +1763,20 @@ mod tests {
         let json = serde_json::to_value(&settings).unwrap();
         assert_eq!(json["rollUp"]["hideCountAndChevron"], true);
         assert_eq!(serde_json::from_value::<Settings>(json).unwrap(), settings);
+    }
+
+    /// New settings switch tabs on hover; a saved `false` stays off.
+    #[test]
+    fn switch_tab_on_hover_defaults_on_and_keeps_a_saved_choice() {
+        assert!(Settings::default().roll_up.switch_tab_on_hover);
+        let mut json = serde_json::to_value(Settings::default()).unwrap();
+        let roll_up = json["rollUp"].as_object_mut().unwrap();
+        roll_up.remove("switchTabOnHover");
+        let missing: Settings = serde_json::from_value(json.clone()).unwrap();
+        assert!(missing.roll_up.switch_tab_on_hover);
+        json["rollUp"]["switchTabOnHover"] = false.into();
+        let saved: Settings = serde_json::from_value(json).unwrap();
+        assert!(!saved.roll_up.switch_tab_on_hover);
     }
 
     /// Fences saved before `openFoldersInside` keep opening folders in Explorer, whatever their

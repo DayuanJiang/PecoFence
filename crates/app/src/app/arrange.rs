@@ -185,7 +185,10 @@ impl App {
                     work,
                     gap: self.gap_px(w.hwnd()),
                     rank,
-                    movable: all || movers.contains(id),
+                    // A locked fence keeps its place at startup, also when a fence saved expanded
+                    // above it could not push it clear; one with no spot on these monitors moves.
+                    movable: movers.contains(id)
+                        || (all && !self.state.fence(*id).is_some_and(|f| f.locked)),
                 };
                 (*id, rest)
             })

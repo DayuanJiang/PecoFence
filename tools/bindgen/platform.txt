@@ -540,6 +540,11 @@
     SIIGBF_ICONONLY
     SIIGBF_THUMBNAILONLY
     SIIGBF_INCACHEONLY
+    AssocCreate
+    IQueryAssociations
+    CLSID_QueryAssociations
+    ASSOCSTR_SHELLEXTENSION
+    ASSOCSTR_DEFAULTICON
     SIGDN_PARENTRELATIVEEDITING
     SIGDN_PARENTRELATIVEPARSING
     SIGDN_NORMALDISPLAY
@@ -721,6 +726,12 @@
     ILClone
     ILFindLastID
     SHBindToParent
+    IEnumIDList
+    SHCONTF_FOLDERS
+    SHCONTF_NONFOLDERS
+    SHCONTF_INCLUDEHIDDEN
+    SHGDN_FORPARSING
+    StrRetToStrW
     RegisterHotKey
     UnregisterHotKey
     MOD_ALT
@@ -744,6 +755,7 @@
     GetModuleHandleExW
     GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS
     GET_MODULE_HANDLE_EX_FLAG_PIN
+    GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT
     FindResourceW
     LoadResource
     LockResource
@@ -756,6 +768,16 @@
     MiniDumpWithDataSegs
     MiniDumpWithThreadInfo
     StackWalk64
+    // UI thread stack when it stops answering (platform::hangwatch)
+    SuspendThread
+    ResumeThread
+    GetThreadContext
+    THREAD_SUSPEND_RESUME
+    THREAD_GET_CONTEXT
+    SMTO_NORMAL
+    ERROR_TIMEOUT
+    GetCurrentThreadStackLimits
+    ReadProcessMemory
     SymInitializeW
     SymFunctionTableAccess64
     SymGetModuleBase64
@@ -818,6 +840,7 @@
     SHGetFileInfoW
     SHFILEINFOW
     SHQueryRecycleBinW
+    SHEmptyRecycleBinW
     SHQUERYRBINFO
     GetLogicalDrives
     GetDriveTypeW

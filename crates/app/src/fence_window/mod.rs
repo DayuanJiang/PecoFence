@@ -140,6 +140,9 @@ pub struct Behavior {
     /// `SPI_GETWHEELSCROLLLINES`: rows per wheel notch; `u32::MAX` (`WHEEL_PAGESCROLL`) = one
     /// viewport, 0 = the wheel does not scroll. Refreshed on WM_SETTINGCHANGE.
     pub wheel_lines: std::cell::Cell<u32>,
+    /// Explorer's "Single-click to open an item (point to select)": resting the pointer on an
+    /// item selects it and a click opens it, as on the desktop. Refreshed on WM_SETTINGCHANGE.
+    pub single_click: std::cell::Cell<bool>,
     /// Outline of the spot a fence dragged over another one will move to on release, or of
     /// the fence it would join as a tab.
     pub drop_preview: std::cell::RefCell<Option<crate::drop_preview::DropPreview>>,

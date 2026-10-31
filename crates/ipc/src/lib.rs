@@ -287,6 +287,12 @@ pub enum Method {
     PeekStart,
     #[serde(rename = "peek.end")]
     PeekEnd,
+    /// 「临时显示 Windows 桌面」: hide every fence and show the Windows desktop icons
+    /// PecoFence hid, until `windowsDesktop.end` (nothing of it is saved). Result: `{changed}`.
+    #[serde(rename = "windowsDesktop.start")]
+    WindowsDesktopStart,
+    #[serde(rename = "windowsDesktop.end")]
+    WindowsDesktopEnd,
     /// Open the Settings window. Result: `{changed: true}`.
     #[serde(rename = "settings.openUi")]
     SettingsOpenUi,
@@ -351,6 +357,8 @@ impl Method {
                 | Method::SettingsOpenUi
                 | Method::PeekStart
                 | Method::PeekEnd
+                | Method::WindowsDesktopStart
+                | Method::WindowsDesktopEnd
                 | Method::EventsSubscribe { .. }
         )
     }
@@ -711,6 +719,8 @@ mod tests {
             },
             Method::PeekStart,
             Method::PeekEnd,
+            Method::WindowsDesktopStart,
+            Method::WindowsDesktopEnd,
             Method::SettingsOpenUi,
         ]
     }

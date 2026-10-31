@@ -220,6 +220,13 @@ impl MonitorRecipe {
         self.live = Some(capture);
     }
 
+    /// Shows a neutral colour instead of the picture: the live wallpaper over it cannot be
+    /// captured, and the Windows wallpaper under it is not what the monitor shows.
+    pub(super) fn show_neutral(&mut self, dark: bool) {
+        self.path = None;
+        self.background = if dark { [40, 40, 44] } else { [212, 214, 218] };
+    }
+
     pub(super) fn rect(&self) -> RECT {
         RECT {
             left: self.left,
@@ -436,27 +443,30 @@ pub(super) fn monitor_recipes(
                 pecofence_render::backdrop::MicaTint::ACRYLIC_DARK.blur_sigma_dip * scale,
             ),
         };
-        if let Some(image) = live
-            .iter()
-            .find(|l| l.monitor == m.rect)
-            .and_then(|l| l.image.clone())
-        {
-            recipe.show_live(image);
+        if let Some(l) = live.iter().find(|l| l.monitor == m.rect) {
+            if let Some(image) = l.image.clone() {
+                recipe.show_live(image);
+            } else if l.blind {
+                recipe.show_neutral(theme.mode == ThemeMode::Dark);
+            }
         }
         out.push(recipe);
     }
     out
 }
 
-/// `snapshot`'s signature, plus the monitors whose backdrop shows a live wallpaper's capture.
+/// `snapshot`'s signature, plus the monitors whose backdrop shows a live wallpaper's capture
+/// or, when it cannot be captured, a neutral colour.
 pub(super) fn backdrop_signature(
     snapshot: &wallpaper::WallpaperSnapshot,
     live: &[LiveWallpaper],
 ) -> String {
     let mut signature = snapshot.signature();
-    for m in live.iter().filter(|l| l.image.is_some()).map(|l| l.monitor) {
+    for l in live.iter().filter(|l| l.image.is_some() || l.blind) {
+        let m = l.monitor;
+        let blind = if l.image.is_none() { "blind," } else { "" };
         signature.push_str(&format!(
-            "{LIVE_MARK}{},{},{},{}",
+            "{LIVE_MARK}{blind}{},{},{},{}",
             m.left, m.top, m.right, m.bottom
         ));
     }
@@ -1153,16 +1163,21 @@ impl App {
         reason: &str,
     ) {
         self.detect_live_wallpapers(snapshot);
-        self.show_wallpaper(snapshot, reason);
+        let refreshed = self.show_wallpaper(snapshot, reason);
+        // A wallpaper signal, or a new wallpaper the poll found without one.
+        if reason == "notification" || (reason == "poll" && refreshed) {
+            self.resettle_live_wallpapers();
+        }
         self.capture_live_wallpapers(LIVE_REFRESH);
     }
 
     /// Wallpaper-only refresh: reuse a recent desktop's pixels and preserve icon/geometry
     /// caches. Failed reads must not advance the signature, so the next check can retry.
-    fn show_wallpaper(&mut self, snapshot: &wallpaper::WallpaperSnapshot, reason: &str) {
+    /// True when the backdrops were rebuilt.
+    fn show_wallpaper(&mut self, snapshot: &wallpaper::WallpaperSnapshot, reason: &str) -> bool {
         let signature = backdrop_signature(snapshot, &self.live);
         if self.wallpaper_sig.as_ref() == Some(&signature) {
-            return;
+            return false;
         }
         // The same files with new contents: the old set can never be shown again. Drop it
         // before inserting the new one so the byte cap does not evict another desktop's set.
@@ -1189,7 +1204,7 @@ impl App {
                 }
                 Err(error) => {
                     tracing::debug!(reason, %error, "wallpaper not ready; retaining last backdrop");
-                    return;
+                    return false;
                 }
             },
         };
@@ -1204,6 +1219,7 @@ impl App {
             elapsed_ms = started.elapsed().as_millis(),
             "wallpaper refreshed"
         );
+        true
     }
 
     pub(super) fn on_system_settings_changed(&mut self) {
@@ -1215,6 +1231,10 @@ impl App {
             .behavior
             .wheel_lines
             .set(sysparams::wheel_scroll_lines());
+        let single_click = pecofence_platform::shell_icons::single_click_open();
+        if self.ctx.behavior.single_click.replace(single_click) != single_click {
+            tracing::info!(single_click, "Explorer's click to open setting changed");
+        }
         self.apply_fonts();
         // Any broadcast that reaches us after the work area moved (taskbar, DPI, resolution
         // races) must re-layout, or every later set_fence_bounds normalizes against a stale

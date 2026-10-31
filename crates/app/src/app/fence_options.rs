@@ -111,7 +111,7 @@ pub(super) enum FenceProp {
     OpenFoldersInside(bool),
     PortalNavigate(bool),
     PortalTitleIcon(bool),
-    /// Inbox only: 为空时自动隐藏.
+    /// 为空时自动隐藏.
     HideWhenEmpty(bool),
     Layout(ViewLayout),
     Sort(SortMode),
@@ -328,10 +328,10 @@ impl App {
         self.schedule_save();
     }
 
-    /// The inbox's 为空时自动隐藏 (other fences keep the flag but never hide).
+    /// 为空时自动隐藏 (feedback #88: every fence, not only the inbox).
     pub(super) fn set_fence_hide_when_empty(&mut self, fence: FenceId, on: bool) {
         self.state.set_hide_when_empty(fence, on);
-        self.sync_inbox_window();
+        self.sync_hidden_fences();
         self.schedule_save();
     }
 

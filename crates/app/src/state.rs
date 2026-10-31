@@ -41,6 +41,12 @@ pub struct AppState {
     pub recovered_from: Option<PathBuf>,
     /// Where an unreadable `config.json` was moved at load (see `ConfigStore::load_reporting`).
     pub unreadable_moved_to: Option<PathBuf>,
+    /// The saved files that could not be used at load, and why.
+    pub load_failures: Vec<(
+        &'static str,
+        PathBuf,
+        pecofence_core::config_store::ReadError,
+    )>,
 }
 
 /// Summary of a desktop sync pass.
@@ -118,7 +124,20 @@ impl AppState {
         if store.dir() != directory {
             tracing::info!(path = %store.dir().display(), "reusing pre-rename configuration");
         }
-        let (outcome, unreadable_moved_to) = store.load_reporting();
+        #[cfg_attr(not(debug_assertions), allow(unused_mut))]
+        let (outcome, mut report) = store.load_reporting();
+        // A test instance stands in for a PC where Windows refuses the saved files (os error
+        // 409 needs the Store edition on a second drive).
+        #[cfg(debug_assertions)]
+        if let Ok(code) = pecofence_core::brand::var("PECOFENCE_TEST_READ_ERROR")
+            && let Ok(code) = code.parse()
+        {
+            let error = std::io::Error::from_raw_os_error(code);
+            let error = pecofence_core::config_store::ReadError::Io(error);
+            report
+                .failures
+                .push(("config.json", store.primary_path(), error));
+        }
         let (config, first_run, recovered_from) = match outcome {
             LoadOutcome::Primary(c) => (c, false, None),
             LoadOutcome::Recovered(c, from) => (c, false, Some(from)),
@@ -146,7 +165,8 @@ impl AppState {
             unplaced: Vec::new(),
             first_run,
             recovered_from,
-            unreadable_moved_to,
+            unreadable_moved_to: report.moved_to,
+            load_failures: report.failures,
         };
         state.rebuild_catalog();
         if state.config.drop_duplicates() {
@@ -688,23 +708,26 @@ impl AppState {
             .map(|f| f.id)
     }
 
-    /// The inbox while it is kept without a window: 为空时自动隐藏 is on and it shows no items,
-    /// or 显示 Windows 桌面图标时隐藏“桌面”栅栏 is on while the Windows icons show. Only a
-    /// window of its own hides (a tab, or a host of tabs, stays).
-    pub fn hidden_inbox(&self) -> Option<FenceId> {
-        let f = self.fences().iter().find(|f| f.kind == FenceKind::Inbox)?;
-        let empty = !f.items.iter().any(|r| {
-            self.config
-                .items
-                .get(&r.item_id)
-                .is_some_and(|it| it.orphaned_since.is_none())
-        });
+    /// The fences kept without a window: 为空时自动隐藏 is on and they show no items (a
+    /// portal only at its root folder and a regular fence not while it shows a folder opened in
+    /// it, so opening an empty folder keeps it), and the inbox while 显示 Windows 桌面图标时隐藏
+    /// “桌面”栅栏 is on and the Windows icons show. Only a window of its own hides (a tab, or a
+    /// host of tabs, stays).
+    pub fn hidden_fences(&self) -> Vec<FenceId> {
         let settings = &self.config.settings;
         let for_windows_icons = settings.hide_inbox_when_icons_shown && !settings.hide_real_icons;
-        (((f.hide_when_empty && empty) || for_windows_icons)
-            && f.tab_host.is_none()
-            && self.tabs_of(f.id).len() <= 1)
-            .then_some(f.id)
+        self.fences()
+            .iter()
+            .filter(|f| {
+                let empty = f.hide_when_empty
+                    && !self.can_go_up(f.id)
+                    && self.unsorted_held_items_of(f).next().is_none();
+                (empty || (for_windows_icons && f.kind == FenceKind::Inbox))
+                    && f.tab_host.is_none()
+                    && self.tabs_of(f.id).len() <= 1
+            })
+            .map(|f| f.id)
+            .collect()
     }
 
     pub fn mark_dirty(&mut self) {
@@ -2478,6 +2501,7 @@ mod tests {
             first_run: true,
             recovered_from: None,
             unreadable_moved_to: None,
+            load_failures: Vec::new(),
         };
         state.ensure_layout();
         state
@@ -3376,28 +3400,36 @@ mod tests {
     }
 
     /// Issue #39: the inbox cannot be deleted, but 为空时自动隐藏 keeps an empty one out of sight.
+    /// Feedback #88: every other fence can hide the same way.
     #[test]
-    fn an_empty_inbox_hides_only_when_asked_and_on_its_own() {
+    fn an_empty_fence_hides_only_when_asked_and_on_its_own() {
         let mut state = test_state();
         let inbox = state.inbox_id().unwrap();
         let other = state.fences().iter().find(|f| f.id != inbox).unwrap().id;
         let item = add_item(&mut state, inbox, "new");
         state.set_hide_when_empty(inbox, true);
-        assert_eq!(state.hidden_inbox(), None, "it still holds an item");
+        assert!(state.hidden_fences().is_empty(), "it still holds an item");
         state.move_items(&[item], other);
-        assert_eq!(state.hidden_inbox(), Some(inbox));
+        assert_eq!(state.hidden_fences(), vec![inbox]);
         // A deleted file stays catalogued for a while (orphaned) but is not shown.
         let gone = add_item(&mut state, inbox, "gone");
-        assert_eq!(state.hidden_inbox(), None);
+        assert!(state.hidden_fences().is_empty());
         state.config.items.get_mut(&gone).unwrap().orphaned_since = Some(1);
-        assert_eq!(state.hidden_inbox(), Some(inbox));
+        assert_eq!(state.hidden_fences(), vec![inbox]);
         // As a tab, or with tabs of its own, it is part of a window that stays.
         state.attach_tab(other, inbox);
-        assert_eq!(state.hidden_inbox(), None);
+        assert!(state.hidden_fences().is_empty());
         state.detach_tab(other);
-        assert_eq!(state.hidden_inbox(), Some(inbox));
+        assert_eq!(state.hidden_fences(), vec![inbox]);
         state.set_hide_when_empty(inbox, false);
-        assert_eq!(state.hidden_inbox(), None);
+        assert!(state.hidden_fences().is_empty());
+        // Any other fence: gone with its last item, back with the next one.
+        state.set_hide_when_empty(other, true);
+        assert!(state.hidden_fences().is_empty());
+        state.move_items(&[item], inbox);
+        assert_eq!(state.hidden_fences(), vec![other]);
+        state.move_items(&[item], other);
+        assert!(state.hidden_fences().is_empty());
     }
 
     /// Feedback #4 and #21: with the Windows icons shown, the inbox can stay out of sight even
@@ -3410,16 +3442,19 @@ mod tests {
         add_item(&mut state, inbox, "new");
         state.config.settings.hide_inbox_when_icons_shown = true;
         assert!(state.config.settings.hide_real_icons);
-        assert_eq!(state.hidden_inbox(), None, "the Windows icons are hidden");
+        assert!(
+            state.hidden_fences().is_empty(),
+            "the Windows icons are hidden"
+        );
         state.config.settings.hide_real_icons = false;
-        assert_eq!(state.hidden_inbox(), Some(inbox));
+        assert_eq!(state.hidden_fences(), vec![inbox]);
         // As a tab, or with tabs of its own, it is part of a window that stays.
         state.attach_tab(other, inbox);
-        assert_eq!(state.hidden_inbox(), None);
+        assert!(state.hidden_fences().is_empty());
         state.detach_tab(other);
-        assert_eq!(state.hidden_inbox(), Some(inbox));
+        assert_eq!(state.hidden_fences(), vec![inbox]);
         state.config.settings.hide_inbox_when_icons_shown = false;
-        assert_eq!(state.hidden_inbox(), None);
+        assert!(state.hidden_fences().is_empty());
     }
 
     #[test]

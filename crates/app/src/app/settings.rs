@@ -76,12 +76,12 @@ impl ConfigSource {
     }
 }
 
-/// Room for one of the page's automatic "…前" snapshots. Like the CLI's `auto_snapshot_slot`,
-/// it never evicts a snapshot the user saved: a full list loses its oldest automatic one (the
-/// page's or the CLI's) instead, and `false` means none is left to drop, so none is taken.
-/// `protect` (the snapshot about to be restored) always stays. Automatic names saved in another
-/// UI language count as the user's.
-pub(super) fn auto_snapshot_room(
+/// Room for one more snapshot: one the user saves (page or CLI) or one of the page's automatic
+/// "…前" snapshots. Like the CLI's `auto_snapshot_slot`, it never evicts a snapshot the user
+/// saved: a full list loses its oldest automatic one (the page's or the CLI's) instead, and
+/// `false` means none is left to drop, so none is taken. `protect` (the snapshot about to be
+/// restored) always stays. Automatic names saved in another UI language count as the user's.
+pub(super) fn snapshot_room(
     snapshots: &mut Vec<pecofence_core::Snapshot>,
     protect: Option<uuid::Uuid>,
 ) -> bool {
@@ -136,6 +136,7 @@ impl App {
         // apply_settings only refreshes on a visual / icon diff; a wholesale swap (per-fence
         // tint, layouts) needs these regardless.
         self.sync_peek_hotkey();
+        self.sync_windows_desktop_hotkey();
         self.apply_icon_variant();
         self.refresh_visuals(true);
         self.state.save_if_dirty();
@@ -225,17 +226,22 @@ impl App {
             Ok(cfg) => {
                 // Keep a snapshot of what we are replacing so the step can be undone; a list
                 // full of the user's own snapshots has no room for it, so nothing is replaced.
-                if !auto_snapshot_room(&mut self.state.config.snapshots, None) {
+                if !snapshot_room(&mut self.state.config.snapshots, None) {
                     self.settings_error(&snapshot_limit_text());
                     return;
                 }
                 self.state.save_snapshot(source.before());
                 self.adopt_config(cfg, source);
             }
-            Err(e) => self.settings_error(&pecofence_core::i18n::format(
-                "无法使用此文件：{0}",
-                std::slice::from_ref(&e),
-            )),
+            Err(e) => {
+                tracing::warn!(error = %e, "config file to restore unusable");
+                let mut text =
+                    pecofence_core::i18n::format("无法使用此文件：{0}", &[e.to_string()]);
+                if e.not_encrypted() {
+                    text = format!("{text} {}", not_encrypted_hint());
+                }
+                self.settings_error(&text);
+            }
         }
     }
 
@@ -363,6 +369,7 @@ impl App {
             "pickedColors": self.picked_colors,
             "version": env!("CARGO_PKG_VERSION"),
             "storeEdition": pecofence_platform::process::is_packaged(),
+            "cliCommand": cli_command(),
             "configPath": self.state.config_path_on_disk().to_string_lossy(),
             "memoryMb": mem_mb,
             "itemCount": self.state.workspace_item_count(),
@@ -374,6 +381,7 @@ impl App {
             "accent": accent,
             "update": self.update_json(),
             "peekHotkey": self.peek_hotkey_json(),
+            "windowsDesktopHotkey": self.windows_desktop_hotkey_json(),
         })
         .to_string()
     }
@@ -476,7 +484,7 @@ impl App {
                     h.ready = true;
                 }
                 // A reload in the middle of recording a shortcut never says it ended.
-                self.resume_peek_hotkey();
+                self.resume_hotkeys();
                 self.push_settings_state();
                 // The first `ready` shows the window; a reload's leaves it as the user left it.
                 if let Some(h) = self
@@ -573,9 +581,9 @@ impl App {
                     let _ = shell::shell_execute(Path::new(THEME_GUIDE_URL), None, None);
                 }
                 Some("saveSnapshot") => {
-                    // A full list refuses a new snapshot (as the CLI does) instead of
-                    // dropping the oldest one.
-                    if self.state.config.snapshots.len() >= pecofence_core::MAX_SNAPSHOTS {
+                    // A full list drops its oldest automatic snapshot for it (as the CLI
+                    // does); only a list of the user's own snapshots refuses it.
+                    if !snapshot_room(&mut self.state.config.snapshots, None) {
                         self.settings_error(&snapshot_limit_text());
                     } else {
                         let name = v.get("snapshotName").and_then(|n| n.as_str()).unwrap_or("");
@@ -595,7 +603,7 @@ impl App {
                         // Snapshot of the current state first, so "restore" is reversible;
                         // a list full of the user's own snapshots has no room for it, so
                         // nothing is restored.
-                        if !auto_snapshot_room(&mut self.state.config.snapshots, Some(id)) {
+                        if !snapshot_room(&mut self.state.config.snapshots, Some(id)) {
                             self.settings_error(&snapshot_limit_text());
                             return;
                         }
@@ -662,12 +670,19 @@ impl App {
                     let number = |key: &str| v.get(key).and_then(|n| n.as_u64()).unwrap_or(0);
                     self.set_peek_hotkey_from_page(number("mods") as u32, number("vk") as u32);
                 }
-                Some("peekHotkeyRecording") => {
+                Some("peekHotkeyRecording" | "windowsDesktopHotkeyRecording") => {
                     if v.get("on").and_then(|o| o.as_bool()).unwrap_or(false) {
-                        self.pause_peek_hotkey();
+                        self.pause_hotkeys();
                     } else {
-                        self.resume_peek_hotkey();
+                        self.resume_hotkeys();
                     }
+                }
+                Some("setWindowsDesktopHotkey") => {
+                    // Without a key: 清除.
+                    let number = |key: &str| v.get(key).and_then(|n| n.as_u64());
+                    let h = number("vk")
+                        .map(|vk| Hotkey::new(number("mods").unwrap_or(0) as u32, vk as u32));
+                    self.set_windows_desktop_hotkey_from_page(h);
                 }
                 Some("repairIcons") => self.set_desktop_icons_hidden(false),
                 Some("hideDesktopIcons") => self.set_desktop_icons_hidden(true),
@@ -675,6 +690,10 @@ impl App {
                 Some("openManual") => self.open_manual(),
                 Some("openRepository") => {
                     let url = pecofence_core::brand::REPOSITORY_URL;
+                    let _ = shell::shell_execute(std::path::Path::new(url), None, None);
+                }
+                Some("openCliDocs") => {
+                    let url = pecofence_core::brand::CLI_DOCS_URL;
                     let _ = shell::shell_execute(std::path::Path::new(url), None, None);
                 }
                 _ => {}
@@ -896,6 +915,7 @@ impl App {
         self.state.mark_dirty();
         self.schedule_save();
         self.sync_peek_hotkey();
+        self.sync_windows_desktop_hotkey();
         if icons_toggled {
             self.desktop_icons_setting_changed();
         }
@@ -910,7 +930,7 @@ impl App {
             self.reflow_pushed();
         }
         if inbox_hiding_changed {
-            self.sync_inbox_window();
+            self.sync_hidden_fences();
         }
         self.push_settings_state();
     }
@@ -935,4 +955,19 @@ impl App {
         }
         self.push_settings_state();
     }
+}
+
+/// How an AI agent in a terminal runs pecofence-cli (the 整理规则 prompt names it): the Store
+/// edition puts `pecofence-cli` on PATH through an App Execution Alias; setup and the ZIP
+/// leave it next to `pecofence.exe`, so the prompt gets its full path.
+fn cli_command() -> String {
+    if !pecofence_platform::process::is_packaged()
+        && let Some(cli) = std::env::current_exe()
+            .ok()
+            .and_then(|exe| Some(exe.parent()?.join("pecofence-cli.exe")))
+            .filter(|cli| cli.is_file())
+    {
+        return cli.to_string_lossy().into_owned();
+    }
+    "pecofence-cli".to_string()
 }

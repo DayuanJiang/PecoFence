@@ -3,6 +3,7 @@
 //! start. The page itself posts to the feedback service; nothing here touches the network.
 
 use super::*;
+use pecofence_core::config_store::ReadError;
 
 /// The feedback service (the Cloudflare Worker in `services/feedback`), which files each report
 /// as an issue in a private repository. `PECOFENCE_FEEDBACK_URL` points a test instance
@@ -23,6 +24,9 @@ pub(super) struct FeedbackState {
     pub(super) focus: Option<bool>,
     /// The previous run ended in a panic or an unhandled exception (its shareable log says so).
     previous_run_crashed: bool,
+    /// The previous run's shareable log stops without its last line: it hung and was ended, or
+    /// was ended from Task Manager. Its log goes with a report too.
+    previous_run_unfinished: bool,
     /// The crash balloon is up; clicking it opens the feedback form.
     crash_offer_pending: bool,
 }
@@ -32,6 +36,22 @@ fn log_records_crash(log: &str) -> bool {
     log.lines().any(|line| {
         line.contains(": PANIC location=") || line.contains(": CRASH (unhandled exception)")
     })
+}
+
+/// Whether a shareable log ends as a normal exit does (`main` writes `process exiting` last;
+/// at a sign-out Windows may end the process before that, after `session ending`), or cannot
+/// tell: an empty log, one that stopped at its size limit, or one of a version before the hang
+/// watch, which wrote no `process exiting` (the first start after an update from 0.2.3).
+fn log_ends_normally(log: &str) -> bool {
+    log.trim().is_empty()
+        || !log.contains(": hang watch started")
+        || [
+            ": process exiting",
+            ": session ending",
+            "(size limit reached",
+        ]
+        .iter()
+        .any(|line| log.contains(line))
 }
 
 /// The last whole lines of `text` within `max` bytes.
@@ -91,19 +111,34 @@ fn on_off(on: bool) -> &'static str {
 
 impl App {
     fn share_log(&self, suffix: &str) -> Option<String> {
-        let dir = crate::log_dir()?;
+        self.read_share_log(suffix).ok()
+    }
+
+    /// A shareable log's text; a file that exists but cannot be read is logged.
+    fn read_share_log(&self, suffix: &str) -> std::io::Result<String> {
+        let dir = crate::log_dir().ok_or(std::io::ErrorKind::NotFound)?;
         let name = pecofence_core::brand::log_file_name(self.instance.as_deref(), suffix);
-        std::fs::read(dir.join(name))
-            .ok()
-            .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
+        let read = std::fs::read(dir.join(name));
+        if let Err(e) = &read
+            && e.kind() != std::io::ErrorKind::NotFound
+        {
+            tracing::warn!(error = %e, "shareable log unreadable");
+        }
+        read.map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
     }
 
     /// At startup: if the last run crashed, offer to report it from a tray balloon.
     pub(super) fn offer_crash_feedback(&mut self) {
-        let crashed = self
-            .share_log(pecofence_core::brand::PREVIOUS_SHARE_LOG)
-            .is_some_and(|log| log_records_crash(&log));
+        let previous = self.share_log(pecofence_core::brand::PREVIOUS_SHARE_LOG);
+        let crashed = previous.as_deref().is_some_and(log_records_crash);
         self.feedback.previous_run_crashed = crashed;
+        self.feedback.previous_run_unfinished = !crashed
+            && previous
+                .as_deref()
+                .is_some_and(|log| !log_ends_normally(log));
+        if self.feedback.previous_run_unfinished {
+            tracing::info!("previous run did not end normally");
+        }
         if !crashed {
             return;
         }
@@ -199,7 +234,7 @@ impl App {
         );
         // The settings that change how the fences sit on the desktop.
         let behavior = format!(
-            "showDesktop {:?}, zorder {:?}, hideIcons {}, quickHide {}, peek {} (dim {}, {}, active {}), autostart {}, iconSize {}",
+            "showDesktop {:?}, zorder {:?}, hideIcons {}, quickHide {}, peek {} (dim {}, {}, active {}), windowsDesktop hotkey {}, autostart {}, iconSize {}",
             settings.show_desktop,
             settings.zorder,
             on_off(settings.hide_real_icons),
@@ -208,6 +243,9 @@ impl App {
             on_off(settings.peek.dim),
             settings.peek.chosen_hotkey(),
             self.peek_hotkey
+                .map_or_else(|| "none".to_string(), |h| h.to_string()),
+            settings
+                .windows_desktop_hotkey()
                 .map_or_else(|| "none".to_string(), |h| h.to_string()),
             on_off(settings.autostart),
             settings.icon_size,
@@ -220,16 +258,18 @@ impl App {
             .and_then(|a| a.as_ref().map(|a| a.window_report()))
         {
             Some(w) => format!(
-                "{} fences: {} visible, {} cloaked, {} topmost, {} below the desktop, {} off screen; hidden by double-click {}, peek {}, show desktop {}; host {}",
+                "{} fences: {} visible, {} cloaked, {} topmost, {} below the desktop, {} above other windows, {} off screen; hidden by double-click {}, peek {}, show desktop {}, windows desktop {}; host {}",
                 w.fences,
                 w.visible,
                 w.cloaked,
                 w.topmost,
                 w.below_host,
+                w.above_windows,
                 w.off_screen,
                 on_off(w.quick_hidden),
                 on_off(w.peeking),
                 on_off(w.show_desktop),
+                on_off(self.windows_desktop),
                 w.host.map_or("none".to_string(), |k| format!("{k:?}")),
             ),
             None => "unknown".to_string(),
@@ -239,11 +279,21 @@ impl App {
             Some(false) => "no",
             None => "unknown",
         };
-        let startup = format!(
+        let mut startup = format!(
             "started {} after Explorer, elevated {elevated}, config in {}",
             seconds_after_explorer().map_or("?".to_string(), |s| format!("{s} s")),
             self.state.storage_kind()
         );
+        // Files the start could not use, by their OS error (the log may be unreadable too).
+        for (what, _, error) in &self.state.load_failures {
+            let reason = match error {
+                ReadError::Io(e) => e
+                    .raw_os_error()
+                    .map_or_else(|| format!("{:?}", e.kind()), |c| format!("os error {c}")),
+                ReadError::Invalid(_) => "invalid".to_string(),
+            };
+            startup.push_str(&format!(", {what} unusable ({reason})"));
+        }
         let system = serde_json::json!({
             "app": format!("PecoFence {} ({install})", env!("CARGO_PKG_VERSION")),
             "windows": format!("build {}", pecofence_platform::desktop::os_build()),
@@ -271,15 +321,24 @@ impl App {
             "gpu": fact(self.ctx.stack.adapter().unwrap_or_else(|| "unknown".to_string())),
         });
         let mut log = String::new();
-        if self.feedback.previous_run_crashed
+        let previous_run = if self.feedback.previous_run_crashed {
+            Some("crashed")
+        } else if self.feedback.previous_run_unfinished {
+            Some("did not end normally")
+        } else {
+            None
+        };
+        if let Some(how) = previous_run
             && let Some(previous) = self.share_log(pecofence_core::brand::PREVIOUS_SHARE_LOG)
         {
-            log.push_str("--- previous run (crashed) ---\n");
+            log.push_str(&format!("--- previous run ({how}) ---\n"));
             log.push_str(&excerpt(&previous, LOG_EXCERPT_BYTES));
             log.push_str("\n--- this run ---\n");
         }
-        if let Some(current) = self.share_log(pecofence_core::brand::SHARE_LOG) {
-            log.push_str(&excerpt(&current, LOG_EXCERPT_BYTES));
+        match self.read_share_log(pecofence_core::brand::SHARE_LOG) {
+            Ok(current) => log.push_str(&excerpt(&current, LOG_EXCERPT_BYTES)),
+            // The report still says why it has no log.
+            Err(e) => log.push_str(&format!("--- the log could not be read: {e} ---\n")),
         }
         let url = pecofence_core::brand::var("PECOFENCE_FEEDBACK_URL")
             .ok()
@@ -310,6 +369,7 @@ impl App {
                     tracing::info!(status, "feedback sent");
                     // A crash report went out; the next one starts from this run.
                     self.feedback.previous_run_crashed = false;
+                    self.feedback.previous_run_unfinished = false;
                 } else {
                     tracing::warn!(status, "feedback not sent");
                 }
@@ -333,6 +393,27 @@ mod tests {
         ));
         assert!(!log_records_crash(
             "t  INFO pecofence::app: config loaded fences=7\n"
+        ));
+    }
+
+    #[test]
+    fn unfinished_runs_are_recognised() {
+        assert!(log_ends_normally(""));
+        assert!(log_ends_normally(
+            "t  INFO pecofence::app: process started\nt  INFO pecofence: process exiting code=0\n"
+        ));
+        assert!(log_ends_normally(
+            "t  INFO pecofence::app: process started\nt  INFO pecofence::app: session ending: quitting close_app=false\n"
+        ));
+        assert!(log_ends_normally(
+            "t  INFO pecofence::app: process started\n(size limit reached: only errors are recorded from here on)\n"
+        ));
+        assert!(!log_ends_normally(
+            "t  INFO pecofence::app: process started\nt  INFO pecofence_platform::hangwatch: hang watch started\nt  WARN pecofence_platform::hangwatch: UI thread not responding ms=5000\n"
+        ));
+        // 0.2.3 and earlier wrote no `process exiting`: a log of theirs cannot tell.
+        assert!(log_ends_normally(
+            "t  INFO pecofence::app: process started\nt  INFO pecofence::app: tray exit\n"
         ));
     }
 
