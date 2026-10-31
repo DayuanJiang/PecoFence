@@ -148,9 +148,9 @@ pub enum Method {
     /// (`iconSize` 32|48|64|96, `spacing`, `autoHeight`, `locked`, `expandUpward`, `excludeFromQuickHide`,
     /// `opacity` default|clear|solid|transparent, `tint` "#RRGGBB"|null, `tintTitleOnly`,
     /// `tabColor` "#RRGGBB"|null, `titleColor`, `titleSize` small|normal|large|extraLarge,
-    /// `titleOnHover` default|hover|always, `layout` icons|list|details, `sort`, `reverse`, `groupByDate`, `labelLines`,
-    /// `openFoldersInside`, `portalNavigate`, `portalTitleIcon`, `hideWhenEmpty`). Result:
-    /// `{changed, fence}`.
+    /// `titleOnHover` default|hover|always, `layout` icons|list|details, `sort`, `reverse`,
+    /// `groupByDate`, `foldersFirst`, `labelLines`, `openFoldersInside`, `portalNavigate`,
+    /// `portalTitleIcon`, `hideWhenEmpty`). Result: `{changed, fence}`.
     #[serde(rename = "fences.setOption")]
     FencesSetOption {
         fence: String,

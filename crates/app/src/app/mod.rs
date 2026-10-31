@@ -295,6 +295,9 @@ pub struct App {
     /// file did not load.
     custom_theme: Option<CustomTheme>,
     custom_theme_error: Option<String>,
+    /// The last colour picked in the system colour dialog per settings swatch row (the page's
+    /// `pickColor` target), which its 「自定义颜色」 swatch keeps showing; kept for the session.
+    picked_colors: HashMap<String, String>,
     /// Watches the `themes` folder once it exists, so a saved theme file shows at once.
     theme_watcher: Option<DirWatcher>,
     wallpaper_override: Option<String>,
@@ -1239,6 +1242,7 @@ impl App {
             accent,
             custom_theme,
             custom_theme_error,
+            picked_colors: HashMap::new(),
             theme_watcher: None,
             wallpaper_override: args.wallpaper_override.clone(),
             pending_routes: Vec::new(),

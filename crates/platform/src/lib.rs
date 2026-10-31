@@ -33,6 +33,7 @@ mod store_bindings;
 
 pub mod autostart;
 pub mod clipboard;
+pub mod colordialog;
 pub mod com;
 pub mod crashlog;
 pub mod d2d;

@@ -46,6 +46,7 @@ const CMD_FENCE_SORT_SIZE: u32 = 324;
 const CMD_FENCE_SORT_REVERSE: u32 = 325;
 const CMD_FENCE_SORT_OPENED: u32 = 326;
 const CMD_FENCE_SORT_GROUP: u32 = 327;
+const CMD_FENCE_SORT_FOLDERS_FIRST: u32 = 328;
 const CMD_FENCE_LOCK: u32 = 333;
 const CMD_FENCE_RENAME: u32 = 330;
 /// Opens the settings page on the 「栅栏」 tab for this fence.
@@ -644,6 +645,12 @@ impl App {
                 f.view.reverse,
                 false,
             )
+            .item(
+                CMD_FENCE_SORT_FOLDERS_FIRST,
+                pecofence_core::i18n::text("文件夹优先"),
+                f.view.folders_first,
+                false,
+            )
             .separator()
             .item(
                 CMD_FENCE_SORT_GROUP,
@@ -901,6 +908,11 @@ impl App {
             }
             CMD_FENCE_SORT_REVERSE => {
                 self.state.set_reverse(fence, !f.view.reverse);
+                self.refresh_fence(fence);
+                self.schedule_save();
+            }
+            CMD_FENCE_SORT_FOLDERS_FIRST => {
+                self.state.set_folders_first(fence, !f.view.folders_first);
                 self.refresh_fence(fence);
                 self.schedule_save();
             }

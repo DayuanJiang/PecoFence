@@ -891,6 +891,13 @@
     FOS_FILEMUSTEXIST
     FOS_OVERWRITEPROMPT
 
+    // ---- custom tint colours (the system colour dialog)
+    ChooseColorW
+    CHOOSECOLORW
+    CC_RGBINIT
+    CC_FULLOPEN
+    CC_ANYCOLOR
+
     // ---- Direct2D axis-aligned clip (Details rows under the fixed header); windows-canvas
     // does not expose PushAxisAlignedClip, so the raw interface comes from here.
     ID2D1RenderTarget

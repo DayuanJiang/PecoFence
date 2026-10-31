@@ -58,6 +58,11 @@ pub unsafe fn CancelSynchronousIo(hthread: HANDLE) -> windows_core::BOOL {
     unsafe { CancelSynchronousIo(hthread) }
 }
 #[inline]
+pub unsafe fn ChooseColorW(param0: *mut CHOOSECOLORW) -> windows_core::BOOL {
+    windows_core::link!("comdlg32.dll" "system" fn ChooseColorW(param0 : *mut CHOOSECOLORW) -> windows_core::BOOL);
+    unsafe { ChooseColorW(param0 as _) }
+}
+#[inline]
 pub unsafe fn ClientToScreen(hwnd: HWND, lppoint: *mut POINT) -> windows_core::BOOL {
     windows_core::link!("user32.dll" "system" fn ClientToScreen(hwnd : HWND, lppoint : *mut POINT) -> windows_core::BOOL);
     unsafe { ClientToScreen(hwnd, lppoint as _) }
@@ -2863,7 +2868,42 @@ pub struct BLENDFUNCTION {
     pub SourceConstantAlpha: u8,
     pub AlphaFormat: u8,
 }
+pub const CC_ANYCOLOR: i32 = 256;
+pub const CC_FULLOPEN: i32 = 2;
+pub const CC_RGBINIT: i32 = 1;
 pub const CF_HDROP: i32 = 15;
+#[repr(C, packed(1))]
+#[cfg(target_arch = "x86")]
+#[derive(Clone, Copy, Default)]
+pub struct CHOOSECOLORW {
+    pub lStructSize: u32,
+    pub hwndOwner: HWND,
+    pub hInstance: HWND,
+    pub rgbResult: COLORREF,
+    pub lpCustColors: *mut COLORREF,
+    pub Flags: u32,
+    pub lCustData: LPARAM,
+    pub lpfnHook: LPCCHOOKPROC,
+    pub lpTemplateName: windows_core::PCWSTR,
+}
+#[repr(C)]
+#[cfg(any(
+    target_arch = "aarch64",
+    target_arch = "arm64ec",
+    target_arch = "x86_64"
+))]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct CHOOSECOLORW {
+    pub lStructSize: u32,
+    pub hwndOwner: HWND,
+    pub hInstance: HWND,
+    pub rgbResult: COLORREF,
+    pub lpCustColors: *mut COLORREF,
+    pub Flags: u32,
+    pub lCustData: LPARAM,
+    pub lpfnHook: LPCCHOOKPROC,
+    pub lpTemplateName: windows_core::PCWSTR,
+}
 pub const CLEARTYPE_QUALITY: i32 = 5;
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -15095,6 +15135,9 @@ impl Default for LOGFONTW {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub struct LPARAM(pub isize);
 pub type LPBYTE = *mut u8;
+pub type LPCCHOOKPROC = Option<
+    unsafe extern "system" fn(param0: HWND, param1: u32, param2: WPARAM, param3: LPARAM) -> usize,
+>;
 pub type LPCITEMIDLIST = *const ITEMIDLIST;
 pub type LPCONTEXT = PCONTEXT;
 pub type LPITEMIDLIST = *mut ITEMIDLIST;

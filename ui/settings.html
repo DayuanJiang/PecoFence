@@ -214,6 +214,8 @@
   .swatch:hover { background: var(--swatch); filter: brightness(1.08); }
   .swatch.none { background: var(--control); border-color: var(--control-strong); }
   .swatch.none::after { content: ""; position: absolute; left: 50%; top: 4px; bottom: 4px; width: 1.5px; margin-left: -.75px; background: var(--text2); transform: rotate(45deg); }
+  .swatch.custom:not(.set), .swatch.custom:not(.set):hover { background: conic-gradient(#f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00); }
+  .swatch.custom::after { content: "\E70F"; position: absolute; right: -4px; top: -4px; width: 14px; height: 14px; border-radius: 50%; background: var(--card); color: var(--text); border: 1px solid var(--control-strong); font: 8px/12px "Segoe Fluent Icons", "Segoe MDL2 Assets"; text-align: center; }
   .swatch[aria-checked=true] { box-shadow: 0 0 0 2px var(--card), 0 0 0 4px var(--text); }
 
   /* Rules page. */
@@ -918,11 +920,18 @@
 
   // Colour choices render as swatches; the hidden select stays the single source of truth.
   // Buttons are reused per colour so a host refresh never takes focus away from the swatch.
-  function renderSwatches(group, select) {
-    const existing = new Map([...group.children].map(b => [b.dataset.value, b]));
-    const values = new Set([...select.options].map(o => o.value));
+  // With `pick`, a 「自定义颜色」 swatch follows the first one: it opens the system colour
+  // dialog and stands for the select's custom option (a colour outside the palette).
+  const pickRows = {}, lastCustom = {};
+  function renderSwatches(group, select, pick) {
+    const options = [...select.options].filter(o => !(pick && o.dataset.custom));
+    const existing = new Map([...group.children].filter(b => !b.classList.contains('custom')).map(b => [b.dataset.value, b]));
+    const values = new Set(options.map(o => o.value));
     for (const [value, b] of existing) if (!values.has(value)) b.remove();
-    [...select.options].forEach((o, i) => {
+    const custom = pick ? customSwatch(group, select, pick) : null;
+    if (custom && group.children[1] !== custom) group.insertBefore(custom, group.children[1] || null);
+    options.forEach((o, n) => {
+      const i = custom && n > 0 ? n + 1 : n;
       let b = existing.get(o.value);
       if (!b) {
         const value = o.value;
@@ -949,9 +958,46 @@
       e.preventDefault();
       const items = [...group.children], i = items.indexOf(document.activeElement);
       const next = items[(i + step + items.length) % items.length];
-      next.focus(); next.click();
+      // Arrowing onto 「自定义颜色」 only focuses it: the dialog waits for Enter or Space.
+      next.focus(); if (!next.classList.contains('custom')) next.click();
     };
     syncSwatches(group, select);
+  }
+  function customSwatch(group, select, target) {
+    pickRows[target] = { group, select };
+    let b = group.querySelector('.custom');
+    if (!b) {
+      b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'swatch custom';
+      b.setAttribute('role', 'radio');
+      b.onclick = () => send({ type: 'action', name: 'pickColor', target, color: b.dataset.color || select.value });
+    }
+    // Checked for a colour off the palette; otherwise it still shows the last custom colour of
+    // the row (this page's, else the one the host kept from an earlier page this session).
+    const o = select.querySelector('[data-custom]');
+    if (o) lastCustom[target] = o.value;
+    const shown = lastCustom[target] || (state.pickedColors || {})[target];
+    if (o) b.dataset.value = o.value; else delete b.dataset.value;
+    if (shown) b.dataset.color = shown; else delete b.dataset.color;
+    b.classList.toggle('set', !!shown);
+    if (shown) b.style.setProperty('--swatch', '#' + shown); else b.style.removeProperty('--swatch');
+    const label = shown ? t("自定义 #") + shown : t("自定义颜色");
+    b.setAttribute('aria-label', label);
+    b.title = label;
+    return b;
+  }
+  // The system colour dialog's answer (`pickColor`) lands on the swatch row it was opened from.
+  function pickedColor(target, hex) {
+    const row = pickRows[target];
+    if (!row || !/^[0-9A-F]{6}$/.test(hex)) return;
+    lastCustom[target] = hex;
+    const { group, select } = row;
+    if (select.value === hex) { renderSwatches(group, select, target); return; }
+    ensureOption(select, hex, t("自定义 #") + hex);
+    select.value = hex;
+    renderSwatches(group, select, target);
+    select.dispatchEvent(new Event('change'));
   }
   function syncSwatches(group, select) {
     for (const b of group.children) {
@@ -975,7 +1021,7 @@
     str.value = s < 0.5 ? '0.35' : (s < 0.75 ? '0.6' : '0.9');
     sel.onchange = () => { state.settings.icons.tintRgb = sel.value ? hexToRgb(sel.value) : null; enableStrength(!!sel.value); commit('icons'); };
     str.onchange = () => { state.settings.icons.tintStrength = Number(str.value); commit('icons'); };
-    renderSwatches(document.getElementById('iconTintSwatches'), sel);
+    renderSwatches(document.getElementById('iconTintSwatches'), sel, 'iconTint');
   }
   function commit(path) {
     renderAppearance();
@@ -1050,8 +1096,8 @@
         el.onkeydown = (e) => { if (e.key === 'Enter') el.blur(); if (e.key === 'Escape') { el.value = f.title; el.blur(); } };
       }
     });
-    renderSwatches(fenceTintSwatches, tintSel);
-    renderSwatches(fenceTabColorSwatches, tabSel);
+    renderSwatches(fenceTintSwatches, tintSel, 'fenceTint');
+    renderSwatches(fenceTabColorSwatches, tabSel, 'tabColor');
     document.getElementById('fenceDock').onclick = () => { setFence(f.id, 'dockTop', null); toast(t("已停靠到屏幕顶部")); };
     ringFence();
   }
@@ -1458,6 +1504,7 @@
     else if (m.type === 'feedbackInfo') { fbInfo = m; fbCrash ||= !!m.crashed; renderFeedback(); }
     else if (m.type === 'showFeedback') showFeedback(!!m.crash);
     else if (m.type === 'toast') toast(m.text, !!m.error);
+    else if (m.type === 'pickedColor') pickedColor(m.target, m.hex);
     else if (m.type === 'update') { update = m.update; renderUpdate(); }
     else if (m.type === 'peekHotkeyResult') peekRecorder.result(m);
     else if (m.type === 'windowsDesktopHotkeyResult') wdRecorder.result(m);

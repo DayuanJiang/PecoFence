@@ -171,7 +171,7 @@ row), `tabColor` `"#RRGGBB"` or `null` (the bar under the fence's tab in a tab s
 its tint), `titleColor` theme/tint/white/black/`"#RRGGBB"`, `titleSize` small/normal/large/extraLarge,
 `titleOnHover` default/hover/always (hover: the title row folds away until the pointer is over the
 fence; default follows `rollUp.titleOnHover`), `layout` icons/list/details,
-`sort` manual/name/type/date/size/openCount, `reverse`, `groupByDate`, `labelLines`,
+`sort` manual/name/type/date/size/openCount, `reverse`, `groupByDate`, `foldersFirst` (folders above files in a sorted fence), `labelLines`,
 `openFoldersInside` (any fence but a portal: double-clicking a folder, or a shortcut to a folder,
 shows that folder inside the fence instead of opening File Explorer; off by default),
 `portalNavigate` (portals: double-clicking a subfolder opens it inside the portal; on by default),
