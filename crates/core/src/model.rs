@@ -420,8 +420,8 @@ pub struct RollUpSettings {
     #[serde(default = "default_true")]
     pub push_neighbors: bool,
     /// Resting the pointer on a tab of a tabbed fence for the hover delay switches to it, as a
-    /// click would.
-    #[serde(default)]
+    /// click would. On by default; a configuration that already says `false` keeps it.
+    #[serde(default = "default_true")]
     pub switch_tab_on_hover: bool,
     /// No item count on a rolled title and no roll chevron: the title bar shows the name only.
     /// Double-clicking the title and the fence menu still roll the fence up and down.
@@ -441,7 +441,7 @@ impl Default for RollUpSettings {
             title_on_hover: false,
             hide_inactive_scrollbar: false,
             push_neighbors: true,
-            switch_tab_on_hover: false,
+            switch_tab_on_hover: true,
             hide_count_and_chevron: false,
         }
     }
@@ -1758,6 +1758,20 @@ mod tests {
         let json = serde_json::to_value(&settings).unwrap();
         assert_eq!(json["rollUp"]["hideCountAndChevron"], true);
         assert_eq!(serde_json::from_value::<Settings>(json).unwrap(), settings);
+    }
+
+    /// New settings switch tabs on hover; a saved `false` stays off.
+    #[test]
+    fn switch_tab_on_hover_defaults_on_and_keeps_a_saved_choice() {
+        assert!(Settings::default().roll_up.switch_tab_on_hover);
+        let mut json = serde_json::to_value(Settings::default()).unwrap();
+        let roll_up = json["rollUp"].as_object_mut().unwrap();
+        roll_up.remove("switchTabOnHover");
+        let missing: Settings = serde_json::from_value(json.clone()).unwrap();
+        assert!(missing.roll_up.switch_tab_on_hover);
+        json["rollUp"]["switchTabOnHover"] = false.into();
+        let saved: Settings = serde_json::from_value(json).unwrap();
+        assert!(!saved.roll_up.switch_tab_on_hover);
     }
 
     /// Fences saved before `openFoldersInside` keep opening folders in Explorer, whatever their
