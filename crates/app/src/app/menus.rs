@@ -506,7 +506,7 @@ impl App {
                 )
                 .icon(glyph::UP);
             }
-            if self.state.can_go_home(fence) {
+            if self.state.portal_navigated(fence) {
                 menu.item(
                     CMD_PORTAL_HOME,
                     pecofence_core::i18n::text("返回最初的文件夹"),

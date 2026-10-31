@@ -20,7 +20,7 @@ impl App {
             is_portal,
             is_portal && !f.hide_title_icon,
             self.state.can_go_up(active),
-            is_portal && f.portal_navigate,
+            is_portal && f.navigates_folders(),
             is_portal && self.state.portal_missing(active),
             folder,
         );
@@ -270,9 +270,9 @@ impl App {
         }
     }
 
-    /// Opens folder `dir` inside `fence`: a subfolder of the folder the fence shows opens as a
-    /// subfolder (up goes to its parent); any other folder is shown in place of the fence's
-    /// icons or folder until up brings them back. False when refused.
+    /// Opens folder `dir` inside regular fence `fence`: a subfolder of the folder it shows opens
+    /// as a subfolder (up goes to its parent); any other folder is shown in place of the fence's
+    /// icons until up brings them back. False when refused.
     pub(super) fn open_folder_in_fence(&mut self, fence: FenceId, dir: &std::path::Path) -> bool {
         let entered = self.state.portal_enter(fence, dir) || self.state.open_folder(fence, dir);
         if entered {

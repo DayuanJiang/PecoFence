@@ -105,13 +105,11 @@ pub struct MonitorDto {
 pub struct PortalDto {
     /// Folder the portal was created for.
     pub path: String,
-    /// The folder the portal shows instead of `path`, if any (a subfolder navigated into, or a
-    /// folder shortcut's target): `items.list` shows its contents and `items.move` to the
-    /// portal puts files there. Left out at `path` itself.
+    /// The subfolder the portal has been navigated into, if any: `items.list` shows its
+    /// contents and `items.move` to the portal puts files there. Left out at `path` itself.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub current: Option<String>,
-    /// Double-clicking a folder or a folder shortcut opens it inside the portal instead of
-    /// Explorer.
+    /// Double-clicking a subfolder navigates inside the portal instead of opening Explorer.
     pub navigate: bool,
     /// Folder glyph shown before the title.
     pub title_icon: bool,
@@ -176,6 +174,10 @@ pub struct FenceDto {
     pub reverse: bool,
     pub group_by_date: bool,
     pub label_lines: u8,
+    /// Regular fences: double-clicking a folder or a folder shortcut opens it inside the fence
+    /// instead of File Explorer (off by default; a portal has `portal.navigate`).
+    #[serde(default)]
+    pub open_folders_inside: bool,
     pub portal: Option<PortalDto>,
     /// How the items fit the window; `null` for a tab that is not the one currently shown and
     /// for fences without a window (disconnected monitor).

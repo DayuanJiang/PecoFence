@@ -764,10 +764,14 @@ pub struct Fence {
     /// longer tabs are ignored; tabs missing here are appended in layout order.
     #[serde(default)]
     pub tab_order: Vec<FenceId>,
-    /// Double-clicking a folder, or a shortcut to a folder, opens it inside the fence (Fences
+    /// Folder portal: double-clicking a subfolder opens it inside the portal (Fences
     /// "Navigate"); off = open it in Explorer.
     #[serde(default = "default_true")]
     pub portal_navigate: bool,
+    /// Any other fence: double-clicking a folder, or a shortcut to a folder, shows that folder
+    /// inside the fence until the fence goes up from it; off (the default) = open it in Explorer.
+    #[serde(default)]
+    pub open_folders_inside: bool,
     /// Folder portal: hide the folder glyph before the title.
     #[serde(default)]
     pub hide_title_icon: bool,
@@ -797,6 +801,7 @@ impl Fence {
             active_tab: None,
             tab_order: Vec::new(),
             portal_navigate: true,
+            open_folders_inside: false,
             hide_title_icon: false,
             hide_when_empty: false,
             items: Vec::new(),
@@ -805,6 +810,16 @@ impl Fence {
 
     pub fn contains_item(&self, id: ItemId) -> bool {
         self.items.iter().any(|r| r.item_id == id)
+    }
+
+    /// A double-clicked folder opens inside the fence: `portal_navigate` for a folder portal,
+    /// `open_folders_inside` for any other fence.
+    pub fn navigates_folders(&self) -> bool {
+        if self.kind == FenceKind::FolderPortal {
+            self.portal_navigate
+        } else {
+            self.open_folders_inside
+        }
     }
 }
 
@@ -1697,6 +1712,17 @@ mod tests {
         let json = serde_json::to_value(&settings).unwrap();
         assert_eq!(json["rollUp"]["hideCountAndChevron"], true);
         assert_eq!(serde_json::from_value::<Settings>(json).unwrap(), settings);
+    }
+
+    /// Fences saved before `openFoldersInside` keep opening folders in Explorer, whatever their
+    /// `portalNavigate` (saved as true for every fence).
+    #[test]
+    fn open_folders_inside_defaults_off() {
+        let mut json = serde_json::to_value(Fence::new("A", FenceKind::Virtual, geo())).unwrap();
+        json.as_object_mut().unwrap().remove("openFoldersInside");
+        let legacy: Fence = serde_json::from_value(json).unwrap();
+        assert!(legacy.portal_navigate);
+        assert!(!legacy.open_folders_inside);
     }
 
     fn geo() -> NormGeometry {

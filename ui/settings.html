@@ -452,9 +452,10 @@
       <div class="card"><div class="l"><span class="ic">&#xE890;</span><div><div class="t">双击桌面隐藏时保留此栅栏</div><div class="s">其他栅栏隐藏时，这个栅栏仍留在桌面上</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="excludeFromQuickHide"></div></div>
       <div class="card" id="fenceHideEmpty"><div class="l"><span class="ic">&#xED1A;</span><div><div class="t">为空时自动隐藏</div><div class="s">里面没有图标时就不显示；桌面上一出现新图标，它会自己回来</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="hideWhenEmpty"></div></div>
       <div class="card"><div class="l"><span class="ic">&#xE74A;</span><div><div class="t">停靠到屏幕顶部</div><div class="s">贴到屏幕顶边并收起，鼠标悬停时展开，像一个下拉抽屉</div></div></div><button id="fenceDock">停靠</button></div>
-      <div class="card"><div class="l"><span class="ic">&#xE838;</span><div><div class="t">双击文件夹或文件夹快捷方式时在此栅栏内打开</div><div class="s">关闭后双击文件夹或文件夹快捷方式改为在资源管理器中打开</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="portalNavigate"></div></div>
+      <div class="card" id="fenceOpenFolders"><div class="l"><span class="ic">&#xE838;</span><div><div class="t">双击文件夹或文件夹快捷方式时在此栅栏内打开</div><div class="s">在栅栏里显示文件夹的内容，点向上箭头或按 Backspace 回到原来的图标</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="openFoldersInside"></div></div>
       <div id="fencePortalGroup">
       <h3 id="fencePortalHeading"></h3>
+      <div class="card"><div class="l"><span class="ic">&#xE838;</span><div><div class="t">双击子文件夹时在此栅栏内打开</div><div class="s">关闭后双击子文件夹改为在资源管理器中打开</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="portalNavigate"></div></div>
       <div class="card"><div class="l"><span class="ic">&#xE8B7;</span><div><div class="t">标题栏显示文件夹图标</div><div class="s">在标题前显示一个小文件夹图标</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="portalTitleIcon"></div></div>
       </div>
       </div>
@@ -959,6 +960,7 @@
       ? tf("这是“{0}”中的一个标签页，外观、锁定和自动高度对整组标签页生效", f.host)
       : t("外观、锁定和自动高度对整组标签页生效");
     document.getElementById('fencePortalGroup').style.display = f.portal ? '' : 'none';
+    document.getElementById('fenceOpenFolders').style.display = f.portal ? 'none' : '';
     document.getElementById('fenceHideEmpty').style.display = f.kind === 'inbox' ? '' : 'none';
     document.getElementById('fencePortalHeading').textContent = t("栅栏页\x04文件夹");
     const tintSel = document.querySelector('[data-fence=tint]');
@@ -971,7 +973,7 @@
     document.getElementById('fenceTabColor').style.display = f.host || f.tabbed ? '' : 'none';
     document.querySelectorAll('[data-fence]').forEach(el => {
       const prop = el.dataset.fence;
-      const cur = prop === 'portalTitleIcon' ? !!(f.portal && f.portal.titleIcon) : f[prop];
+      const cur = prop === 'portalNavigate' ? !!(f.portal && f.portal.navigate) : prop === 'portalTitleIcon' ? !!(f.portal && f.portal.titleIcon) : f[prop];
       if (el.classList.contains('toggle')) {
         el.classList.toggle('on', !!cur); el.setAttribute('aria-checked', String(!!cur));
         el.onclick = () => { const on = !el.classList.contains('on'); el.classList.toggle('on', on); el.setAttribute('aria-checked', String(on)); setFence(f.id, prop, on); };

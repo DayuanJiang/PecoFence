@@ -25,9 +25,8 @@ pub struct AppState {
     portal_members: HashMap<FenceId, Vec<ItemId>>,
     /// Fence showing a folder → subfolder it has navigated into (absent = the folder itself).
     portal_cwd: HashMap<FenceId, PathBuf>,
-    /// Fence → a folder double-clicked in it (a desktop folder or a folder shortcut's target),
-    /// shown in place of its icons (or of a portal's folder) until the fence goes up from it.
-    /// Runtime only.
+    /// Regular fence → a folder double-clicked in it (a desktop folder or a folder shortcut's
+    /// target), shown in place of its icons until the fence goes up from it. Runtime only.
     opened_folders: HashMap<FenceId, OpenedFolder>,
     /// Portals whose folder could not be found at the last read.
     portal_missing: HashSet<FenceId>,
@@ -1252,8 +1251,8 @@ impl AppState {
         self.portal_cwd.contains_key(&id)
     }
 
-    /// True when the fence can go up: a portal inside a subfolder, or a fence showing a folder
-    /// opened in it (up from there shows what the fence showed before).
+    /// True when the fence can go up: a portal inside a subfolder, or a regular fence showing a
+    /// folder opened in it (up from there brings its own icons back).
     pub fn can_go_up(&self, id: FenceId) -> bool {
         self.portal_navigated(id) || self.opened_folders.contains_key(&id)
     }
@@ -1287,46 +1286,37 @@ impl AppState {
         true
     }
 
-    /// Makes fence `id` show `dir` (a desktop folder or a folder shortcut's target) in place of
-    /// its icons, or of the folder a portal shows. Returns false if refused (an unknown fence or
-    /// a folder that is gone).
+    /// Makes regular fence `id` show `dir` (a desktop folder or a folder shortcut's target) in
+    /// place of its icons; a folder opened from another opened folder replaces it. Returns false
+    /// if refused (an unknown fence, a folder portal, or a folder that is gone).
     pub fn open_folder(&mut self, id: FenceId, dir: &Path) -> bool {
-        if self.fence(id).is_none() || !dir.is_dir() {
+        if self
+            .fence(id)
+            .is_none_or(|f| f.kind == FenceKind::FolderPortal)
+            || !dir.is_dir()
+        {
             return false;
         }
-        // A folder opened from another opened folder replaces it: up still leads back to what
-        // the fence showed before the first one.
-        let before = self.portal_cwd.remove(&id);
-        let back = match self.opened_folders.remove(&id) {
-            Some(previous) => previous.back,
-            None => before,
-        };
+        self.portal_cwd.remove(&id);
         let root = folder_path_with_real_case(dir);
-        self.opened_folders.insert(id, OpenedFolder { root, back });
+        self.opened_folders.insert(id, OpenedFolder { root });
         self.refresh_portal(id);
         true
     }
 
-    /// Leaves the folder opened in fence `id`: a portal shows its own folder again (the subfolder
-    /// it showed before), a regular fence its icons. False when it shows none.
+    /// Leaves the folder opened in regular fence `id`: it shows its own icons again. False when
+    /// it shows none.
     fn leave_opened_folder(&mut self, id: FenceId) -> bool {
-        let Some(left) = self.opened_folders.remove(&id) else {
+        if self.opened_folders.remove(&id).is_none() {
             return false;
-        };
-        if let Some(back) = left.back {
-            self.portal_cwd.insert(id, back);
         }
-        if self.portal_root(id).is_some() {
-            self.refresh_portal(id);
-        } else {
-            self.portal_missing.remove(&id);
-            self.evict_portal_members(id);
-        }
+        self.portal_missing.remove(&id);
+        self.evict_portal_members(id);
         true
     }
 
-    /// One folder up (never above the root). From a folder opened in the fence, back to what it
-    /// showed before. Returns false when there is nowhere to go.
+    /// One folder up (never above the root). From a folder opened in a regular fence, back to
+    /// its own icons. Returns false when there is nowhere to go.
     pub fn portal_up(&mut self, id: FenceId) -> bool {
         let Some(cur) = self.portal_cwd.get(&id).cloned() else {
             return self.leave_opened_folder(id);
@@ -1341,24 +1331,14 @@ impl AppState {
         }
     }
 
-    /// Back to the root folder: a portal's own, also from a folder opened in it; a regular
-    /// fence's opened folder.
+    /// Back to the root folder: a portal's own, or the folder opened in a regular fence.
     pub fn portal_home(&mut self, id: FenceId) -> bool {
-        if !self.can_go_home(id) {
-            return false;
+        if self.portal_cwd.remove(&id).is_some() {
+            self.refresh_portal(id);
+            true
+        } else {
+            false
         }
-        if self.portal_root(id).is_some() {
-            self.opened_folders.remove(&id);
-        }
-        self.portal_cwd.remove(&id);
-        self.refresh_portal(id);
-        true
-    }
-
-    /// True when [`Self::portal_home`] would show another folder.
-    pub fn can_go_home(&self, id: FenceId) -> bool {
-        self.portal_navigated(id)
-            || (self.portal_root(id).is_some() && self.opened_folders.contains_key(&id))
     }
 
     /// The portal (if any) whose current folder contains this runtime item: the first in layout
@@ -1376,6 +1356,15 @@ impl AppState {
             && f.portal_navigate != on
         {
             f.portal_navigate = on;
+            self.dirty = true;
+        }
+    }
+
+    pub fn set_open_folders_inside(&mut self, id: FenceId, on: bool) {
+        if let Some(f) = self.fence_mut(id)
+            && f.open_folders_inside != on
+        {
+            f.open_folders_inside = on;
             self.dirty = true;
         }
     }
@@ -2249,12 +2238,10 @@ fn folder_path_with_real_case(path: &Path) -> PathBuf {
     actual.unwrap_or_else(|| path.to_path_buf())
 }
 
-/// A folder opened in a fence ([`AppState::open_folder`]).
+/// A folder opened in a regular fence ([`AppState::open_folder`]).
 struct OpenedFolder {
     /// The folder opened: navigation never goes above it.
     root: PathBuf,
-    /// The portal subfolder shown before it, shown again on the way back.
-    back: Option<PathBuf>,
 }
 
 /// Stable id for a portal item derived from its (case-folded) path, so selections and pending
@@ -2743,7 +2730,7 @@ mod tests {
     }
 
     #[test]
-    fn a_portal_shows_an_outside_folder_and_comes_back_to_its_subfolder() {
+    fn an_opened_folder_replaces_the_one_before_and_portals_keep_to_their_own() {
         let base = std::env::temp_dir().join(format!("pecofence-browse-{}", uuid::Uuid::new_v4()));
         let root = base.join("Portal");
         let sub = root.join("Sub");
@@ -2753,34 +2740,27 @@ mod tests {
             std::fs::create_dir_all(dir).unwrap();
         }
         let mut state = test_state();
-        let portal = state.new_portal_fence(&root, RECT::default()).unwrap();
-        assert!(state.portal_enter(portal, &sub));
-        // Outside the portal's folder: a subfolder navigation is refused, opening it is not.
-        assert!(!state.portal_enter(portal, &outside));
-        assert!(state.open_folder(portal, &outside));
-        assert_eq!(
-            state.portal_path(portal).as_deref(),
-            Some(outside.as_path())
-        );
-        assert_eq!(state.portal_root(portal).as_deref(), Some(root.as_path()));
-        assert_eq!(state.display_title(state.fence(portal).unwrap()), "Outside");
-        // A folder opened from there replaces it; up still leads back to the subfolder.
-        assert!(state.open_folder(portal, &other));
-        assert!(state.can_go_home(portal));
-        assert!(state.portal_up(portal));
-        assert_eq!(state.portal_path(portal).as_deref(), Some(sub.as_path()));
-        assert!(state.portal_up(portal));
-        assert_eq!(state.portal_path(portal).as_deref(), Some(root.as_path()));
-        assert!(!state.can_go_up(portal));
-        // Home leaves an opened folder too: the portal shows its own folder.
-        assert!(state.open_folder(portal, &outside));
-        assert!(state.portal_home(portal));
-        assert_eq!(state.portal_path(portal).as_deref(), Some(root.as_path()));
-        assert!(!state.can_go_home(portal));
-
         let fence = state.fences()[0].id;
+        assert!(state.open_folder(fence, &outside));
+        // A folder opened from there replaces it; up goes straight back to the fence's icons.
+        assert!(state.open_folder(fence, &other));
+        assert_eq!(state.portal_path(fence).as_deref(), Some(other.as_path()));
+        assert_eq!(state.display_title(state.fence(fence).unwrap()), "Other");
+        assert!(!state.portal_home(fence));
+        assert!(state.portal_up(fence));
+        assert!(state.portal_path(fence).is_none());
         assert!(!state.open_folder(fence, &base.join("missing")));
         assert!(!state.can_go_up(fence));
+
+        // A folder portal shows its own folder and its subfolders only.
+        let portal = state.new_portal_fence(&root, RECT::default()).unwrap();
+        assert!(state.portal_enter(portal, &sub));
+        assert!(!state.portal_enter(portal, &outside));
+        assert!(!state.open_folder(portal, &outside));
+        assert_eq!(state.portal_path(portal).as_deref(), Some(sub.as_path()));
+        assert!(state.portal_home(portal));
+        assert_eq!(state.portal_path(portal).as_deref(), Some(root.as_path()));
+        assert!(!state.can_go_up(portal));
         std::fs::remove_dir_all(base).unwrap();
     }
 

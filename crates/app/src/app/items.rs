@@ -584,10 +584,20 @@ impl App {
         else {
             return;
         };
-        // A folder, or a folder shortcut's target, opens inside the fence it was picked in, as
-        // Explorer opens it in its own window (Fences "Navigate"). Two portals can show the same
-        // folder, so only the one the item was opened from navigates.
-        if self.state.fence(from).is_some_and(|f| f.portal_navigate)
+        let (portal, navigate) = self.state.fence(from).map_or((false, false), |f| {
+            (f.kind == FenceKind::FolderPortal, f.navigates_folders())
+        });
+        // A folder inside a navigating portal opens in place (Fences "Navigate"). Two portals
+        // can show the same folder, so only the one the item was opened from navigates.
+        if portal && navigate && is_folder && self.state.is_portal_item(item) {
+            self.portal_enter(from, &path);
+            return;
+        }
+        // A regular fence with 「双击文件夹或文件夹快捷方式时在此栅栏内打开」 (off by default) shows a
+        // folder, or a folder shortcut's target, inside itself, as Explorer opens it in its own
+        // window.
+        if !portal
+            && navigate
             && let Some(dir) = folder_to_open(&path, is_folder)
             && self.open_folder_in_fence(from, &dir)
         {

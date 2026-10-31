@@ -1245,25 +1245,24 @@ impl App {
                 s
             }
         };
-        let portal = (f.kind == FenceKind::FolderPortal).then(|| {
-            let root = self.state.portal_root(f.id);
-            PortalDto {
-                path: root
-                    .as_ref()
-                    .map(|p| p.to_string_lossy().into_owned())
-                    .or_else(|| match &f.source {
-                        ItemSourceSpec::Folder { path, .. } => Some(path.clone()),
-                        ItemSourceSpec::Desktop => None,
-                    })
-                    .unwrap_or_default(),
-                current: self
-                    .state
-                    .portal_path(f.id)
-                    .filter(|p| Some(p) != root.as_ref())
-                    .map(|p| p.to_string_lossy().into_owned()),
-                navigate: f.portal_navigate,
-                title_icon: !f.hide_title_icon,
-            }
+        let portal = (f.kind == FenceKind::FolderPortal).then(|| PortalDto {
+            path: self
+                .state
+                .portal_root(f.id)
+                .map(|p| p.to_string_lossy().into_owned())
+                .or_else(|| match &f.source {
+                    ItemSourceSpec::Folder { path, .. } => Some(path.clone()),
+                    ItemSourceSpec::Desktop => None,
+                })
+                .unwrap_or_default(),
+            current: self
+                .state
+                .portal_navigated(f.id)
+                .then(|| self.state.portal_path(f.id))
+                .flatten()
+                .map(|p| p.to_string_lossy().into_owned()),
+            navigate: f.portal_navigate,
+            title_icon: !f.hide_title_icon,
         });
         FenceDto {
             id: f.id,
@@ -1318,6 +1317,7 @@ impl App {
             reverse: f.view.reverse,
             group_by_date: f.view.group_by_date,
             label_lines: f.view.label_lines,
+            open_folders_inside: f.open_folders_inside,
             portal,
             // Only the fence the window currently shows has a measured layout.
             fit: (connected && measure)
