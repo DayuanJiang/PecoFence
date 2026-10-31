@@ -181,6 +181,9 @@ pub struct FenceDto {
     pub sort: String,
     pub reverse: bool,
     pub group_by_date: bool,
+    /// Folders above files in any sorted order (not manual, not grouped by date).
+    #[serde(default)]
+    pub folders_first: bool,
     pub label_lines: u8,
     /// Regular fences: double-clicking a folder or a folder shortcut opens it inside the fence
     /// instead of File Explorer (off by default; a portal has `portal.navigate`).

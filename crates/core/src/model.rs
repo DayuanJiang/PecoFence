@@ -644,6 +644,10 @@ pub struct FenceView {
     /// layouts). Implies `sort == Date`.
     #[serde(default)]
     pub group_by_date: bool,
+    /// Folders first: folders stay above files in any order but manual and date groups, also
+    /// when reversed. Manual order and Group by date turn it off.
+    #[serde(default)]
+    pub folders_first: bool,
 }
 
 impl Default for FenceView {
@@ -659,6 +663,7 @@ impl Default for FenceView {
             column_widths: None,
             columns_visible: None,
             group_by_date: false,
+            folders_first: false,
         }
     }
 }

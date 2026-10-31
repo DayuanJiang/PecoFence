@@ -68,6 +68,7 @@ pub(super) const FENCE_PROPS: &[&str] = &[
     "sort",
     "reverse",
     "groupByDate",
+    "foldersFirst",
     "labelLines",
     "openFoldersInside",
     "portalNavigate",
@@ -116,6 +117,7 @@ pub(super) enum FenceProp {
     Sort(SortMode),
     Reverse(bool),
     GroupByDate(bool),
+    FoldersFirst(bool),
     LabelLines(u8),
 }
 
@@ -237,6 +239,7 @@ pub(super) fn parse_fence_prop(
         }
         "reverse" => FenceProp::Reverse(as_bool()?),
         "groupByDate" => FenceProp::GroupByDate(as_bool()?),
+        "foldersFirst" => FenceProp::FoldersFirst(as_bool()?),
         "labelLines" => {
             const ALLOWED: &[&str] = &["1", "2", "3"];
             match value.as_u64() {
@@ -647,6 +650,11 @@ impl App {
             }
             FenceProp::GroupByDate(on) => {
                 self.state.set_group_by_date(fence, on);
+                self.refresh_fence(fence);
+                self.schedule_save();
+            }
+            FenceProp::FoldersFirst(on) => {
+                self.state.set_folders_first(fence, on);
                 self.refresh_fence(fence);
                 self.schedule_save();
             }
