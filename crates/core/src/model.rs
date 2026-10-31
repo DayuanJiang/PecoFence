@@ -785,6 +785,15 @@ pub struct Fence {
     /// desktop brings it back at its saved spot.
     #[serde(default)]
     pub hide_when_empty: bool,
+    /// Expand upward (向上展开): the bottom edge stays put while the fence rolls up, expands or
+    /// changes height, so a fence resting on the taskbar grows away from it. `geometry` is still
+    /// the expanded rect; rolled up, the title row sits at its bottom.
+    #[serde(default)]
+    pub expand_upward: bool,
+    /// With `expand_upward`: the bottom edge is the one that stays put (it last opened upward);
+    /// rolled up, its title row sits at the bottom of `geometry` instead of at the top.
+    #[serde(default)]
+    pub bottom_anchored: bool,
     #[serde(default)]
     pub items: Vec<ItemRef>,
 }
@@ -810,6 +819,8 @@ impl Fence {
             open_folders_inside: false,
             hide_title_icon: false,
             hide_when_empty: false,
+            expand_upward: false,
+            bottom_anchored: false,
             items: Vec::new(),
         }
     }
@@ -997,6 +1008,9 @@ struct TabPlacement {
     rolled: bool,
     expanded_h: f32,
     auto_height: bool,
+    /// 向上展开, and which end of `geometry` the rolled title row sits at.
+    expand_upward: bool,
+    bottom_anchored: bool,
 }
 
 impl TabPlacement {
@@ -1010,6 +1024,8 @@ impl TabPlacement {
             rolled: fence.rolled_up,
             expanded_h: fence.expanded_h,
             auto_height: fence.view.auto_height,
+            expand_upward: fence.expand_upward,
+            bottom_anchored: fence.bottom_anchored,
         }
     }
 
@@ -1021,6 +1037,8 @@ impl TabPlacement {
         fence.rolled_up = self.rolled;
         fence.expanded_h = self.expanded_h;
         fence.view.auto_height = self.auto_height;
+        fence.expand_upward = self.expand_upward;
+        fence.bottom_anchored = self.bottom_anchored;
     }
 }
 
@@ -1069,6 +1087,8 @@ impl Layout {
                         fence.rolled_up = group.rolled;
                         fence.expanded_h = group.expanded_h;
                         fence.view.auto_height = group.auto_height;
+                        fence.expand_upward = group.expand_upward;
+                        fence.bottom_anchored = group.bottom_anchored;
                     }
                 } else {
                     fence.tab_host = Some(remaining_host);
@@ -1948,6 +1968,9 @@ mod tests {
                         fences[0].tab_order = strip.clone();
                         fences[0].active_tab = (active != ids[0]).then_some(active);
                         fences[0].rolled_up = rolled;
+                        // Which end of the rect the rolled title row sits at goes with it.
+                        fences[0].expand_upward = rolled;
+                        fences[0].bottom_anchored = rolled;
                         let before = fences.clone();
                         let mut layout = Layout {
                             shown: 0,
@@ -1977,6 +2000,8 @@ mod tests {
                         assert_eq!(group.geometry, before[0].geometry);
                         assert_eq!(group.rolled_up, rolled);
                         assert_eq!(group.view.auto_height, before[0].view.auto_height);
+                        assert_eq!(group.expand_upward, before[0].expand_upward);
+                        assert_eq!(group.bottom_anchored, before[0].bottom_anchored);
                         for old in &before {
                             let current = layout.fences.iter().find(|f| f.id == old.id).unwrap();
                             assert_eq!(current.title, old.title);

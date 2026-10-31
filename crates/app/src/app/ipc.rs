@@ -1283,6 +1283,8 @@ impl App {
             geometry: f.geometry.clone(),
             rolled_up: host.rolled_up,
             locked: host.locked,
+            expand_upward: host.expand_upward,
+            bottom_anchored: host.bottom_anchored,
             item_count: self.state.unsorted_held_items_of(f).count(),
             tab_host: f.tab_host,
             tabs: if f.tab_host.is_none() {
@@ -1768,6 +1770,11 @@ impl App {
         let rolled = w.is_rolled();
         // An explicit place is where the fence rests, even at the top a push gave it.
         self.ctx.behavior.release_push(w.hwnd());
+        // Rolled with 向上展开, the title row goes to the bottom of the rect, where it opens
+        // upward into it (the rect is on the screen, so it fits above the row).
+        if rolled && self.state.fence(id).is_some_and(|f| f.expand_upward) {
+            w.set_row_at_bottom(true);
+        }
         // Also ends a roll in flight, whose tween would otherwise put its own size back.
         w.restore_geometry(full, rolled, rect.h);
         self.record_bounds(id, full, rolled, rect.h);
@@ -2048,6 +2055,11 @@ impl App {
         let report = w
             .fit_report()
             .ok_or_else(|| IpcError::internal("the fence window has no view"))?;
+        // One whose title row is at its bottom (a 向上展开 fence that opened upward) keeps that
+        // edge.
+        if self.state.fence(host).is_some_and(|h| h.bottom_anchored) {
+            rect.y += rect.h - report.fitting_height_px;
+        }
         rect.h = report.fitting_height_px;
         let result = self.ipc_set_bounds(&host.to_string(), rect)?;
         let changed = result

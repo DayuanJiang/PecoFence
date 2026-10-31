@@ -534,6 +534,8 @@
   "下载失败，请稍后再试": "Couldn't download the update. Try again later.",
   "为空时自动隐藏": "Hide when empty",
   "里面没有图标时就不显示；桌面上一出现新图标，它会自己回来": "Stays out of sight while it has no icons and comes back as soon as a new icon appears on the desktop",
+  "向上展开": "Expand upward",
+  "上方放得下时向上展开，放不下就向下展开；标题栏留在原处。适合放在任务栏上方的栅栏": "Opens upward when there is room above it, otherwise downward; the title bar stays where it is. Handy for fences above the taskbar",
   "只给标题栏上色": "Tint the title bar only",
   "关掉的话，整个栅栏都会染上色调": "When off, the tint covers the whole fence",
   "标签页颜色": "Tab color",

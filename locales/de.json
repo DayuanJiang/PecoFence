@@ -534,6 +534,8 @@
   "下载失败，请稍后再试": "Der Download ist fehlgeschlagen. Versuche es später noch einmal.",
   "为空时自动隐藏": "Ausblenden, wenn leer",
   "里面没有图标时就不显示；桌面上一出现新图标，它会自己回来": "Bleibt ausgeblendet, solange er keine Symbole enthält, und erscheint wieder, sobald ein neues Symbol auf dem Desktop landet",
+  "向上展开": "Nach oben ausklappen",
+  "上方放得下时向上展开，放不下就向下展开；标题栏留在原处。适合放在任务栏上方的栅栏": "Klappt nach oben aus, wenn darüber Platz ist, sonst nach unten; die Titelleiste bleibt, wo sie ist. Praktisch für Bereiche über der Taskleiste",
   "只给标题栏上色": "Nur die Titelleiste einfärben",
   "关掉的话，整个栅栏都会染上色调": "Ausgeschaltet färbt der Farbton den ganzen Bereich",
   "标签页颜色": "Tab-Farbe",

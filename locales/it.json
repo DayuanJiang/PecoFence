@@ -534,6 +534,8 @@
   "下载失败，请稍后再试": "Download non riuscito. Riprova più tardi.",
   "为空时自动隐藏": "Nascondi automaticamente quando è vuoto",
   "里面没有图标时就不显示；桌面上一出现新图标，它会自己回来": "Resta nascosto quando non contiene icone e riappare non appena compare una nuova icona sul desktop",
+  "向上展开": "Espandi verso l’alto",
+  "上方放得下时向上展开，放不下就向下展开；标题栏留在原处。适合放在任务栏上方的栅栏": "Si espande verso l’alto se sopra c’è spazio, altrimenti verso il basso; la barra del titolo resta dov’è. Utile per i riquadri sopra la barra delle applicazioni",
   "只给标题栏上色": "Colora solo la barra del titolo",
   "关掉的话，整个栅栏都会染上色调": "Se disattivata, la tinta verrà applicata all’intero riquadro",
   "标签页颜色": "Colore della scheda",
