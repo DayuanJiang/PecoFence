@@ -1,6 +1,7 @@
 //! Popup menus (tray, item, fence, details header) and their command ids.
 
 use super::*;
+use crate::layout::ICON_SIZE_PRESETS;
 
 // Tray / menu command ids.
 const CMD_TOGGLE_FENCES: u32 = 1;
@@ -35,10 +36,9 @@ const CMD_FENCE_NEW: u32 = 304;
 /// The inbox's 为空时自动隐藏 (in place of 删除栅栏).
 const CMD_FENCE_HIDE_EMPTY: u32 = 305;
 const CMD_FENCE_DESKTOP_LAYOUT: u32 = 306;
-const CMD_FENCE_ICON_32: u32 = 310;
-const CMD_FENCE_ICON_48: u32 = 311;
-const CMD_FENCE_ICON_64: u32 = 312;
-const CMD_FENCE_ICON_96: u32 = 313;
+/// 小图标 … 大图标: one id per `layout::ICON_SIZE_PRESETS` entry, in its order.
+const CMD_FENCE_ICON_FIRST: u32 = 310;
+const CMD_FENCE_ICON_LAST: u32 = CMD_FENCE_ICON_FIRST + ICON_SIZE_PRESETS.len() as u32 - 1;
 const CMD_FENCE_SORT_MANUAL: u32 = 320;
 const CMD_FENCE_SORT_NAME: u32 = 321;
 const CMD_FENCE_SORT_TYPE: u32 = 322;
@@ -579,31 +579,19 @@ impl App {
                 f.view.layout == ViewLayout::Details,
                 false,
             )
-            .separator()
-            .item(
-                CMD_FENCE_ICON_32,
-                pecofence_core::i18n::text("小图标"),
-                f.view.icon_size == 32,
-                false,
-            )
-            .item(
-                CMD_FENCE_ICON_48,
-                pecofence_core::i18n::text("中等图标"),
-                f.view.icon_size == 48,
-                false,
-            )
-            .item(
-                CMD_FENCE_ICON_64,
-                pecofence_core::i18n::text("较大图标"),
-                f.view.icon_size == 64,
-                false,
-            )
-            .item(
-                CMD_FENCE_ICON_96,
-                pecofence_core::i18n::text("大图标"),
-                f.view.icon_size == 96,
-                false,
-            );
+            .separator();
+        // A size between the presets (the settings slider) checks none of them.
+        let names = [
+            pecofence_core::i18n::text("小图标"),
+            pecofence_core::i18n::text("中等图标"),
+            pecofence_core::i18n::text("较大图标"),
+            pecofence_core::i18n::text("大图标"),
+        ];
+        for (cmd, (size, name)) in
+            (CMD_FENCE_ICON_FIRST..).zip(ICON_SIZE_PRESETS.into_iter().zip(names))
+        {
+            view_menu.item(cmd, name, f.view.icon_size == size, false);
+        }
         menu.submenu(pecofence_core::i18n::text("视图"), view_menu)
             .icon(glyph::VIEW_ALL);
         let sort_menu = PopupMenu::new();
@@ -890,13 +878,8 @@ impl App {
             }
             CMD_FENCE_NEW_FOLDER => self.create_desktop_item(fence, true),
             CMD_FENCE_NEW_TEXT => self.create_desktop_item(fence, false),
-            CMD_FENCE_ICON_32 | CMD_FENCE_ICON_48 | CMD_FENCE_ICON_64 | CMD_FENCE_ICON_96 => {
-                let size = match cmd {
-                    CMD_FENCE_ICON_32 => 32,
-                    CMD_FENCE_ICON_64 => 64,
-                    CMD_FENCE_ICON_96 => 96,
-                    _ => 48,
-                };
+            CMD_FENCE_ICON_FIRST..=CMD_FENCE_ICON_LAST => {
+                let size = ICON_SIZE_PRESETS[(cmd - CMD_FENCE_ICON_FIRST) as usize];
                 self.apply_icon_size(fence, size);
             }
             CMD_FENCE_VIEW_ICONS | CMD_FENCE_VIEW_LIST | CMD_FENCE_VIEW_DETAILS => {
@@ -906,11 +889,7 @@ impl App {
                     _ => ViewLayout::Icons,
                 };
                 self.state.set_layout(fence, layout);
-                if let Some(w) = self.window_for(fence)
-                    && w.active_fence() == fence
-                {
-                    w.set_layout(layout);
-                }
+                self.show_grid(fence);
                 self.apply_cell_snap(fence);
                 self.apply_auto_height(fence);
                 self.schedule_save();

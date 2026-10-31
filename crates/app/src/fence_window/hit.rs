@@ -16,7 +16,8 @@ pub(super) fn bounded_auto_height(desired: i32, title_height: i32, top: i32, bot
 }
 
 impl FenceViewState {
-    /// Is the client-pixel point on item `index`'s label text (not its icon)?
+    /// Is the client-pixel point on item `index`'s label text (not its icon)? Never in an
+    /// icon grid without labels, whose label rect has no height.
     pub(super) fn label_hit(&self, x_px: i32, y_px: i32, index: usize) -> bool {
         let Some(id) = self.items.get(index).map(|i| i.id) else {
             return false;
@@ -206,9 +207,7 @@ impl FenceViewState {
     }
 
     pub(super) fn grid_metrics(&self) -> GridMetrics {
-        GridMetrics::for_icon_size(self.icon_size, self.label_lines)
-            .with_line_h(self.chrome.label_line_h())
-            .with_spacing(self.spacing)
+        self.grid().metrics(self.chrome.label_line_h())
     }
 
     /// "按时间分组" sections of the current items as delivered (sorted, possibly reversed):
@@ -245,8 +244,10 @@ impl FenceViewState {
                 ItemLayout::Grid(grid.with_slots(self.desktop_slots.clone(), n))
             }
             None => {
-                let grid = Grid::grouped(self.grid_metrics(), width_dip, n, &spans);
-                ItemLayout::Grid(grid.centred(self.icon_align == IconAlign::Center))
+                ItemLayout::Grid(
+                    self.grid()
+                        .grid(self.chrome.label_line_h(), width_dip, n, &spans),
+                )
             }
         }
     }
@@ -333,12 +334,9 @@ impl FenceViewState {
         let title_h = self.content_y;
         let (left, top, right, bottom) = match &layout {
             ItemLayout::Grid(grid) => {
-                let label_top = cell.y - self.scroll_y
-                    + grid.metrics.icon_top
-                    + self.icon_size as f32
-                    + grid.metrics.label_gap;
-                let label_h = grid.metrics.line_h * self.label_lines as f32;
-                (cell.x, label_top, cell.x + cell.w, label_top + label_h)
+                let r = grid.metrics.label_rect(cell);
+                let top = r.y - self.scroll_y;
+                (r.x, top, r.x + r.w, top + r.h)
             }
             ItemLayout::Rows { metrics, .. } => {
                 let cols = self.columns_for(width_dip);

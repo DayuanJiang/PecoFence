@@ -153,6 +153,31 @@ try {
     $r = Invoke-Cli @("fence", "set", $id, "nosuchprop", "1")
     $e = Json $r.Err
     Check "fence set unknown prop -> invalid_value with allowed" ($e.error.code -eq "invalid_value" -and $e.error.details.allowed.Count -gt 5) $r.Err
+    $r = Invoke-Cli @("fence", "set", $id, "iconSize", "52")
+    Check "fence set iconSize 52 (between the menu sizes)" ($r.Code -eq 0 -and (Json $r.Out).fence.iconSize -eq 52) "$($r.Out) $($r.Err)"
+    Invoke-Cli @("fence", "set", $id, "iconSize", "48") | Out-Null
+    $r = Invoke-Cli @("fence", "set", $id, "labelLines", "0")
+    Check "fence set labelLines 0 (labels hidden)" ($r.Code -eq 0 -and (Json $r.Out).fence.labelLines -eq 0) "$($r.Out) $($r.Err)"
+    Invoke-Cli @("fence", "set", $id, "labelLines", "2") | Out-Null
+    # spacingPx sets any value; spacing names the nearest preset and still sets one.
+    $r = Invoke-Cli @("fence", "set", $id, "spacingPx", "8")
+    $g = (Json $r.Out).fence
+    Check "fence set spacingPx 8 -> spacing normal" ($r.Code -eq 0 -and $g.spacingPx -eq 8 -and $g.spacing -eq "normal") "$($r.Out) $($r.Err)"
+    $r = Invoke-Cli @("fence", "set", $id, "spacing", "compact")
+    $g = (Json $r.Out).fence
+    Check "fence set spacing compact -> spacingPx -12" ($r.Code -eq 0 -and $g.spacingPx -eq -12 -and $g.spacing -eq "compact") "$($r.Out) $($r.Err)"
+    foreach ($v in @("6", "36", "null")) {
+        $r = Invoke-Cli @("fence", "set", $id, "spacingPx", $v)
+        $e = Json $r.Err
+        Check "fence set spacingPx $v -> invalid_value" ($r.Code -eq 1 -and $e.error.code -eq "invalid_value") "code=$($r.Code) $($r.Err)"
+    }
+    Invoke-Cli @("fence", "set", $id, "spacing", "normal") | Out-Null
+    # The alignment and the cell (size, spacing, labels) are one grid: changing either keeps the other.
+    Invoke-Cli @("fence", "set", $id, "iconAlign", "center") | Out-Null
+    foreach ($kv in @(@("iconSize", "52"), @("spacingPx", "8"), @("labelLines", "0"))) { Invoke-Cli @("fence", "set", $id, $kv[0], $kv[1]) | Out-Null }
+    $g = Json (Invoke-Cli @("fence", "get", $id)).Out
+    Check "iconAlign center keeps a 52 px, +8, label-less grid" ($g.iconAlign -eq "center" -and $g.iconSize -eq 52 -and $g.spacingPx -eq 8 -and $g.labelLines -eq 0) ($g | ConvertTo-Json -Compress)
+    foreach ($kv in @(@("iconAlign", "left"), @("iconSize", "48"), @("spacingPx", "0"), @("labelLines", "2"))) { Invoke-Cli @("fence", "set", $id, $kv[0], $kv[1]) | Out-Null }
 
     $r = Invoke-Cli @("fence", "roll", $id)
     Check "fence roll" ($r.Code -eq 0 -and (Json $r.Out).fence.rolledUp -eq $true) "$($r.Out) $($r.Err)"
@@ -255,6 +280,14 @@ try {
     Check "fence set --all returns results" ($r.Code -eq 0 -and @($b.results).Count -ge 1 -and $null -ne $b.changed) "$($r.Out) $($r.Err)"
     $r = Invoke-Cli @("fence", "get", "inbox")
     Check "fence get inbox alias" ($r.Code -eq 0 -and (Json $r.Out).kind -eq "inbox") "$($r.Out) $($r.Err)"
+    # Arranged like the desktop, the inbox still takes the icon grid options (its cells follow them).
+    Invoke-Cli @("fence", "set", "inbox", "desktopLayout", "true") | Out-Null
+    $r = Invoke-Cli @("fence", "set", "inbox", "iconSize", "72")
+    $r2 = Invoke-Cli @("fence", "set", "inbox", "labelLines", "0")
+    $g = (Json $r2.Out).fence
+    Check "desktop-arranged inbox takes iconSize 72 and labelLines 0" ($r.Code -eq 0 -and $r2.Code -eq 0 -and $g.desktopLayout -eq $true -and $g.iconSize -eq 72 -and $g.labelLines -eq 0) "$($r.Err) $($r2.Out) $($r2.Err)"
+    Invoke-Cli @("fence", "set", "inbox", "iconSize", "48") | Out-Null
+    Invoke-Cli @("fence", "set", "inbox", "labelLines", "2") | Out-Null
     $r = Invoke-Cli @("fence", "move", $id, "--rect", "999999,999999,300,200")
     Check "off-screen rect -> invalid_value" ($r.Code -eq 1 -and (Json $r.Err).error.code -eq "invalid_value") "code=$($r.Code) $($r.Err)"
     $r = Invoke-Cli @("fence", "create", "--title", "x", "--rect", "2147483000,0,300,200")
@@ -271,6 +304,9 @@ try {
     Check "settings set keepIconsHidden true" ($r.Code -eq 0 -and (Json $r.Out).settings.keepIconsHidden -eq $true) "$($r.Out) $($r.Err)"
     $r = Invoke-Cli @("settings", "set", "keepIconsHidden", "false")
     Check "settings set keepIconsHidden false" ($r.Code -eq 0 -and (Json $r.Out).settings.keepIconsHidden -eq $false) "$($r.Out) $($r.Err)"
+    $r = Invoke-Cli @("settings", "set", "iconSize", "72")
+    Check "settings set iconSize 72" ($r.Code -eq 0 -and (Json $r.Out).settings.iconSize -eq 72) "$($r.Out) $($r.Err)"
+    Invoke-Cli @("settings", "set", "iconSize", "48") | Out-Null
     $r = Invoke-Cli @("settings", "get", "peek.enabled")
     Check "settings get peek.enabled is bool" ($r.Code -eq 0 -and ($r.Out -eq "true" -or $r.Out -eq "false")) "$($r.Out) $($r.Err)"
     $r = Invoke-Cli @("settings", "set", "peek.enabled", "false")

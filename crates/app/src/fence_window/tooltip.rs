@@ -181,6 +181,36 @@ impl FenceViewState {
     }
 
     pub(super) fn show_tip(&mut self) {
+        let pt = window::cursor_pos();
+        let scale = self.scale();
+        self.show_tip_at(
+            pt.x + (12.0 * scale).round() as i32,
+            pt.y + (20.0 * scale).round() as i32,
+        );
+    }
+
+    /// Keyboard focus (arrow keys, type-to-select, the Peek search's current match) moved to
+    /// item `index` in an icon grid without labels: nothing on screen names it, so its infotip
+    /// shows at once under the icon. `None` hides it.
+    pub(super) fn tip_keyboard_focus(&mut self, index: Option<usize>) {
+        if self.layout != ViewLayout::Icons || self.label_lines != 0 || self.rolled_up {
+            return;
+        }
+        self.hide_tip();
+        let Some(i) = index else {
+            return;
+        };
+        let Some(r) = self.items.get(i).and_then(|it| self.item_label_rect(it.id)) else {
+            return;
+        };
+        // The rect uses the current scroll offset. A keyboard glide is still heading for the
+        // target, so the tip goes where the item stops.
+        let glide = ((self.scroll_y - self.scroll_target()) * self.scale()).round() as i32;
+        self.tip_target = Some(TipTarget::Item(i));
+        self.show_tip_at(r.left, r.bottom + glide);
+    }
+
+    fn show_tip_at(&mut self, x: i32, y: i32) {
         let Some(text) = self.tip_text() else {
             return;
         };
@@ -190,14 +220,8 @@ impl FenceViewState {
                 .map_err(|e| tracing::warn!(error = %e, "tooltip window failed"))
                 .ok();
         }
-        let pt = window::cursor_pos();
-        let scale = self.scale();
         if let Some(t) = self.tip.as_mut() {
-            t.show(
-                &text,
-                pt.x + (12.0 * scale).round() as i32,
-                pt.y + (20.0 * scale).round() as i32,
-            );
+            t.show(&text, x, y);
             self.tip_shown = true;
             self.tip_armed = false;
             window::set_timer(

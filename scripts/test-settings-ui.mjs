@@ -28,10 +28,10 @@ const fixture = {
     ],
   },
   fences: [
-    { id: 'fence-a', title: 'Documents', kind: 'virtual', host: null, iconSize: 48, spacing: 'normal', iconAlign: 'left', autoHeight: false, locked: false, excludeFromQuickHide: false, opacity: 'default', tint: null, titleColor: 'theme', titleSize: 'normal', titleOnHover: 'default', openFoldersInside: false, portal: null },
-    { id: 'fence-b', title: 'Images', kind: 'virtual', host: 'Documents', iconSize: 96, spacing: 'loose', autoHeight: true, locked: false, excludeFromQuickHide: false, opacity: 'transparent', tint: null, tabColor: 'E74856', titleColor: 'theme', titleSize: 'normal', titleOnHover: 'default', portal: null },
-    { id: 'inbox', title: 'Desktop', kind: 'inbox', host: null, iconSize: 48, spacing: 'normal', autoHeight: false, locked: true, excludeFromQuickHide: true, opacity: 'solid', tint: '0078D4', tintTitleOnly: true, titleColor: 'tint', titleSize: 'large', titleOnHover: 'hover', hideWhenEmpty: true, desktopLayout: true, openFoldersInside: true, expandUpward: true, portal: null },
-    { id: 'portal', title: 'Portal', kind: 'portal', host: null, iconSize: 32, spacing: 'compact', iconAlign: 'center', autoHeight: false, locked: false, excludeFromQuickHide: false, opacity: 'clear', tint: '123456', titleColor: 'ABCDEF', titleSize: 'small', titleOnHover: 'always', portal: { navigate: true, titleIcon: false } },
+    { id: 'fence-a', title: 'Documents', kind: 'virtual', host: null, iconSize: 48, spacing: 'normal', spacingPx: 0, labelLines: 2, layout: 'icons', iconAlign: 'left', autoHeight: false, locked: false, excludeFromQuickHide: false, opacity: 'default', tint: null, titleColor: 'theme', titleSize: 'normal', titleOnHover: 'default', openFoldersInside: false, portal: null },
+    { id: 'fence-b', title: 'Images', kind: 'virtual', host: 'Documents', iconSize: 96, spacing: 'loose', spacingPx: 16, labelLines: 1, layout: 'list', autoHeight: true, locked: false, excludeFromQuickHide: false, opacity: 'transparent', tint: null, tabColor: 'E74856', titleColor: 'theme', titleSize: 'normal', titleOnHover: 'default', portal: null },
+    { id: 'inbox', title: 'Desktop', kind: 'inbox', host: null, iconSize: 48, spacing: 'normal', spacingPx: 0, labelLines: 3, layout: 'icons', autoHeight: false, locked: true, excludeFromQuickHide: true, opacity: 'solid', tint: '0078D4', tintTitleOnly: true, titleColor: 'tint', titleSize: 'large', titleOnHover: 'hover', hideWhenEmpty: true, desktopLayout: true, openFoldersInside: true, expandUpward: true, portal: null },
+    { id: 'portal', title: 'Portal', kind: 'portal', host: null, iconSize: 32, spacing: 'compact', spacingPx: -12, labelLines: 0, layout: 'icons', iconAlign: 'center', autoHeight: false, locked: false, excludeFromQuickHide: false, opacity: 'clear', tint: '123456', titleColor: 'ABCDEF', titleSize: 'small', titleOnHover: 'always', portal: { navigate: true, titleIcon: false } },
   ],
   tintPalette: [{ name: '红', hex: 'E74856' }, { name: '蓝', hex: '0078D4' }, { name: '灰', hex: '7A7574' }],
   snapshots: [{ id: 'snapshot-a', name: 'Before changes', date: '2026-09-09', fenceCount: 4 }],
@@ -118,7 +118,7 @@ function bridge() {
         if (message.name === 'addTemplate' && !state.rules.list.some(r => r.template === message.template)) {
           // Mirror the host: a new fence plus its rule at the top of the list.
           const id = 'tpl-' + message.template;
-          state.fences.push({ id, title: message.template, kind: 'virtual', host: null, iconSize: 48, spacing: 'normal', autoHeight: false, locked: false, excludeFromQuickHide: false, opacity: 'default', tint: null, titleColor: 'theme', titleSize: 'normal', titleOnHover: 'default', portal: null });
+          state.fences.push({ id, title: message.template, kind: 'virtual', host: null, iconSize: 48, spacing: 'normal', spacingPx: 0, labelLines: 2, layout: 'icons', autoHeight: false, locked: false, excludeFromQuickHide: false, opacity: 'default', tint: null, titleColor: 'theme', titleSize: 'normal', titleOnHover: 'default', portal: null });
           const idle = message.template === 'cleanup';
           const allOf = idle ? [{ cond: 'type', value: ['installers', 'archives'] }, { cond: 'idleDays', value: { min: 30 } }] : [{ cond: 'type', value: [message.template] }];
           const at = idle ? 0 : state.rules.list.findIndex(r => !r.allOf.some(c => c.cond === 'idleDays'));
@@ -134,6 +134,7 @@ function bridge() {
           if (message.prop === 'portalNavigate') fence.portal.navigate = message.value;
           else if (message.prop === 'portalTitleIcon') fence.portal.titleIcon = message.value;
           else if (message.prop !== 'dockTop') fence[message.prop] = message.value;
+          if (message.prop === 'spacingPx') fence.spacing = message.value <= -8 ? 'compact' : message.value >= 12 ? 'loose' : 'normal';
         }
         window.testShowFence = (id) => receive({ data: { type: 'showFence', id } });
         window.testShowFeedback = (crash) => receive({ data: { type: 'showFeedback', crash } });
@@ -265,14 +266,17 @@ async function runTests() {
     assert(doc.querySelector('[data-fence=titleOnHover]').value === 'hover', 'Title on hover not shown');
     change(doc, 'fenceSel', 'fence-b');
     assert(doc.getElementById('fenceTabColor').style.display === '', 'Tab colour hidden for a tab');
+    assert(doc.getElementById('fenceNameLines').style.display === '' && doc.getElementById('fenceNameLines').classList.contains('disabled'), 'Icon labels not greyed for a list fence');
     assert(doc.querySelector('#fenceTabColorSwatches [data-value=E74856]').getAttribute('aria-checked') === 'true', 'Tab colour swatch not selected');
     change(doc, 'fenceSel', 'portal');
     assert(doc.getElementById('fencePortalGroup').style.display === '', 'Portal options hidden for a portal');
     assert(doc.getElementById('fenceOpenFolders').style.display === 'none', 'Open-folders-inside offered for a portal');
     assert(doc.querySelector('[data-fence=portalNavigate]').classList.contains('on') && !doc.querySelector('[data-fence=portalTitleIcon]').classList.contains('on'), 'Portal flags wrong');
     assert(doc.querySelector('[data-fence=tint]').value === '123456' && doc.querySelector('[data-fence=titleColor]').value === 'ABCDEF', 'Imported custom colours not represented');
-    assert(doc.querySelector('[data-fence=iconSize]').value === '32' && doc.querySelector('[data-fence=spacing]').value === 'compact' && doc.querySelector('[data-fence=opacity]').value === 'clear', 'Layout values not shown');
+    assert(doc.querySelector('[data-fence=iconSize]').value === '32' && doc.querySelector('[data-fence=spacingPx]').value === '-12' && doc.querySelector('[data-fence=opacity]').value === 'clear', 'Layout values not shown');
     assert(doc.querySelector('[data-fence=iconAlign]').value === 'center', 'Icon alignment not shown');
+    assert(!doc.getElementById('fenceNameLines').classList.contains('disabled') && doc.querySelector('[data-fence=labelLines]').value === '0', 'No-labels choice not shown');
+    assert([...doc.querySelectorAll('#fenceLabelLines option')].map(o => o.value + o.textContent).join() === '0不显示,1一行,2两行,3三行', 'Icon label choices wrong');
   });
   await test('Fence controls post setFence and keep the selection across a host refresh', async () => {
     const messages = () => frame.contentWindow.testMessages.filter(m => m.type === 'setFence');
@@ -283,17 +287,19 @@ async function runTests() {
     change(doc, 'fenceTint', 'E74856');
     change(doc, 'fenceTitle', '  Renamed  ');
     change(doc, 'fenceTitleOnHover', 'always');
+    change(doc, 'fenceLabelLines', '0');
     await settle();
     const sent = messages().slice(before);
-    assert(sent.length === 5, 'Expected five setFence messages, got ' + sent.length);
+    assert(sent.length === 6, 'Expected six setFence messages, got ' + sent.length);
     assert(sent.every(m => m.id === 'fence-a'), 'Message addressed to the wrong fence');
     assert(sent[0].prop === 'locked' && sent[0].value === true, 'Lock toggle not posted');
     assert(sent[1].prop === 'iconSize' && sent[1].value === 96, 'Icon size not posted as a number');
     assert(sent[2].prop === 'tint' && sent[2].value === 'E74856', 'Tint not posted');
     assert(sent[3].prop === 'title' && sent[3].value === 'Renamed', 'Title not trimmed');
     assert(sent[4].prop === 'titleOnHover' && sent[4].value === 'always', 'Title on hover not posted');
+    assert(sent[5].prop === 'labelLines' && sent[5].value === 0, 'Icon labels not posted as a number');
     assert(doc.getElementById('fenceSel').value === 'fence-a', 'Selection lost on refresh');
-    assert(doc.querySelector('[data-fence=locked]').classList.contains('on') && doc.querySelector('[data-fence=tint]').value === 'E74856' && doc.querySelector('[data-fence=titleOnHover]').value === 'always', 'Refreshed state not reflected');
+    assert(doc.querySelector('[data-fence=locked]').classList.contains('on') && doc.querySelector('[data-fence=tint]').value === 'E74856' && doc.querySelector('[data-fence=titleOnHover]').value === 'always' && doc.querySelector('[data-fence=labelLines]').value === '0', 'Refreshed state not reflected');
     assert(!doc.querySelector('[data-fence=titleColor] [value=tint]').disabled, 'Follow-tint stays disabled after choosing a tint');
     change(doc, 'fenceTint', ''); await settle();
     assert(messages().at(-1).value === null, 'Clearing the tint did not post null');
@@ -306,6 +312,291 @@ async function runTests() {
     assert(doc.querySelector('[data-fence=iconAlign]').value === 'left', 'Left icon alignment not shown');
     change(doc, 'fenceIconAlign', 'center'); await settle();
     assert(messages().at(-1).id === 'fence-a' && messages().at(-1).prop === 'iconAlign' && messages().at(-1).value === 'center', 'Icon alignment not posted');
+  });
+  await test('Icon labels grey out with a reason where no icons show, and stay live on a desktop-arranged inbox', async () => {
+    doc.querySelector('[data-page=fences]').click();
+    const card = doc.getElementById('fenceNameLines'), select = doc.getElementById('fenceLabelLines');
+    const note = () => card.querySelector('.s').textContent, greyed = () => card.classList.contains('disabled') && select.disabled;
+    const inbox = current().fences.find(f => f.id === 'inbox');
+    change(doc, 'fenceSel', 'fence-b');
+    assert(card.style.display === '' && greyed() && note() === '只用于图标视图', 'List fence: labels card not greyed with its reason: ' + note());
+    change(doc, 'fenceSel', 'inbox');
+    assert(!greyed() && !card.classList.contains('disabled') && note() === '不显示时只显示图标，鼠标悬停在图标上可以看到名称', 'Icons fence: labels card greyed');
+    // Arranged like the desktop, the inbox shows icons whatever its own view.
+    inbox.layout = 'details'; frame.contentWindow.testRefresh();
+    assert(!card.classList.contains('disabled') && !select.disabled, 'Desktop-arranged inbox: labels card greyed');
+    inbox.desktopLayout = false; frame.contentWindow.testRefresh();
+    assert(greyed() && note() === '只用于图标视图', 'Details inbox: labels card not greyed');
+    // A 「桌面」 with tabs stays a fence and shows its own view.
+    inbox.desktopLayout = true; inbox.tabbed = true; frame.contentWindow.testRefresh();
+    assert(greyed(), 'Tabbed inbox in details: labels card not greyed');
+    delete inbox.tabbed; inbox.layout = 'icons'; frame.contentWindow.testRefresh();
+    assert(!greyed(), 'Labels card stays greyed after the inbox shows icons again');
+    change(doc, 'fenceSel', 'fence-a');
+  });
+  // A pointer drag on a slider: pointerdown, then one input event per position. `move`
+  // alone continues a drag already under way.
+  const move = (id, ...values) => {
+    const input = doc.getElementById(id);
+    for (const value of values) {
+      input.value = value;
+      input.dispatchEvent(new frame.contentWindow.Event('input', { bubbles: true }));
+    }
+    return input;
+  };
+  const slide = (id, ...values) => {
+    doc.getElementById(id).dispatchEvent(new frame.contentWindow.PointerEvent('pointerdown', { bubbles: true }));
+    return move(id, ...values);
+  };
+  // Chromium sends change after the release only when the value moved; `change: false`
+  // leaves it out.
+  const release = (id, { change = true } = {}) => {
+    const input = doc.getElementById(id), win = frame.contentWindow;
+    input.dispatchEvent(new win.PointerEvent('pointerup', { bubbles: true }));
+    if (change) input.dispatchEvent(new win.Event('change', { bubbles: true }));
+  };
+  const keyOn = (id, type, key) => doc.getElementById(id).dispatchEvent(new frame.contentWindow.KeyboardEvent(type, { key, bubbles: true, cancelable: true }));
+  const tap = (id, key) => { keyOn(id, 'keydown', key); keyOn(id, 'keyup', key); };
+  const track = id => doc.getElementById(id).closest('.slider-track');
+  const bubble = id => track(id).querySelector('.slider-bubble');
+  const ticks = id => [...track(id).querySelectorAll('.slider-ticks > span')];
+  const tickAt = id => ticks(id).map(s => parseFloat(s.style.left).toFixed(1)).join();
+  const onTick = id => ticks(id).filter(s => s.classList.contains('on')).map(s => s.textContent).join();
+  await test('Icon size sliders cover 24 to 128 px, snap to the menu sizes and label them', async () => {
+    doc.querySelector('[data-page=general]').click();
+    const input = doc.getElementById('iconSize'), preview = doc.getElementById('desktopPreview');
+    assert(input.type === 'range' && input.min === '24' && input.max === '128', 'Default icon size is not a 24-128 slider');
+    assert(tickAt('iconSize') === [32, 48, 64, 96].map(v => ((v - 24) / 104 * 100).toFixed(1)).join(), 'Ticks not at the menu sizes: ' + tickAt('iconSize'));
+    assert(ticks('iconSize').map(s => s.textContent).join() === '小,中,较大,大', 'Ticks not labelled: ' + ticks('iconSize').map(s => s.textContent));
+    assert(input.value === '48' && onTick('iconSize') === '中', 'Current tick not marked: ' + onTick('iconSize'));
+    assert(input.getAttribute('aria-valuetext') === '中等图标 · 48 px', 'Preset name not announced: ' + input.getAttribute('aria-valuetext'));
+    const patches = () => frame.contentWindow.testMessages.filter(m => m.type === 'patchSettings').length;
+    const before = patches();
+    // Closer than 4 px to a tick lands on it; elsewhere the thumb takes the nearest step of 4.
+    for (const [raw, value] of [['30', 32], ['35.5', 32], ['28.5', 32], ['27.5', 28], ['37', 36], ['41', 40], ['44.5', 48], ['99', 96], ['100', 100], ['126.9', 128]]) {
+      slide('iconSize', raw);
+      assert(Number(input.value) === value, `${raw} should land on ${value}, got ${input.value}`);
+    }
+    assert(bubble('iconSize').textContent === '128 px' && input.getAttribute('aria-valuetext') === '128 px' && onTick('iconSize') === '', 'Bubble not updated while dragging: ' + bubble('iconSize').textContent);
+    assert(preview.style.getPropertyValue('--preview-icon-size') === '40px', 'Preview did not follow the drag');
+    assert(patches() === before, 'The default size was saved while dragging');
+    slide('iconSize', '37');
+    release('iconSize');
+    await settle();
+    assert(patches() === before + 1 && current().settings.iconSize === 36, 'The released value was not saved once');
+    assert(input.value === '36' && bubble('iconSize').textContent === '36 px', 'Value lost on the host refresh');
+    assert(preview.style.getPropertyValue('--preview-icon-size') === '22px', 'Preview not scaled between the menu sizes');
+    // Keys move by one step, skip the snap and save on key-up.
+    keyOn('iconSize', 'keydown', 'ArrowLeft');
+    assert(input.value === '32' && patches() === before + 1, 'A held key saved before its release');
+    keyOn('iconSize', 'keyup', 'ArrowLeft');
+    assert(current().settings.iconSize === 32 && patches() === before + 2, 'Key-up did not save the size');
+    tap('iconSize', 'ArrowRight');
+    assert(current().settings.iconSize === 36 && input.value === '36', 'Arrow key snapped back to the tick');
+    tap('iconSize', 'End');
+    assert(current().settings.iconSize === 128, 'End did not reach the largest size');
+    // 48 was on the drag's way: the host's value shows once its echoes can no longer arrive.
+    current().settings.iconSize = 48;
+    frame.contentWindow.testRefresh();
+    assert(input.value === '128', 'An echo of a passed value moved the thumb');
+    await new Promise(resolve => setTimeout(resolve, 600));
+    frame.contentWindow.testRefresh();
+    assert(input.value === '48', 'Host value not shown');
+  });
+  await test('A dragged slider shows its value in a bubble over the thumb', async () => {
+    doc.querySelector('[data-page=fences]').click();
+    change(doc, 'fenceSel', 'fence-a');
+    const input = doc.getElementById('fenceIconSize'), tip = bubble('fenceIconSize');
+    assert(!track('fenceIconSize').classList.contains('live') && tip.getAttribute('aria-hidden') === 'true', 'Bubble shown at rest');
+    slide('fenceIconSize', '52');
+    assert(track('fenceIconSize').classList.contains('live'), 'Bubble not shown during the drag');
+    assert(tip.textContent === '52 px' && !tip.querySelector('small'), 'Bubble text off a preset: ' + tip.textContent);
+    move('fenceIconSize', '47');
+    assert(tip.querySelector('b').textContent === '48 px' && tip.querySelector('small').textContent === '中等图标', 'Bubble text on a preset: ' + tip.textContent);
+    const thumbX = 10 + (input.getBoundingClientRect().width - 20) * (48 - 24) / 104;
+    const tipX = tip.getBoundingClientRect().left + tip.getBoundingClientRect().width / 2 - input.getBoundingClientRect().left;
+    assert(Math.abs(tipX - thumbX) < 1 && tip.getBoundingClientRect().bottom <= input.getBoundingClientRect().top + 8, `Bubble not over the thumb: ${tipX} vs ${thumbX}`);
+    release('fenceIconSize');
+    await settle();
+    assert(!track('fenceIconSize').classList.contains('live'), 'Bubble stays after the release');
+    change(doc, 'fenceSel', 'fence-b');
+    slide('fenceSpacing', '1');
+    assert(bubble('fenceSpacing').querySelector('b').textContent === '0 px' && bubble('fenceSpacing').querySelector('small').textContent === '标准', 'Spacing bubble: ' + bubble('fenceSpacing').textContent);
+    release('fenceSpacing');
+    await settle();
+    // The bubble and the thumb follow the theme.
+    const styleOf = el => frame.contentWindow.getComputedStyle(el);
+    const dark = [styleOf(tip).backgroundColor, styleOf(input).getPropertyValue('--thumb').trim()];
+    doc.documentElement.classList.add('light');
+    const light = [styleOf(tip).backgroundColor, styleOf(input).getPropertyValue('--thumb').trim()];
+    doc.documentElement.classList.remove('light');
+    assert(dark.join() === 'rgb(44, 44, 44),#454545' && light.join() === 'rgb(249, 249, 249),#ffffff', `Bubble or thumb ignores the theme: ${dark} | ${light}`);
+    await new Promise(resolve => setTimeout(resolve, 600));
+    current().fences.find(f => f.id === 'fence-b').spacingPx = 16;
+    change(doc, 'fenceSel', 'fence-a');
+    current().fences.find(f => f.id === 'fence-a').iconSize = 48;
+    frame.contentWindow.testRefresh();
+  });
+  await test('Fence sliders send live ticks at most ten times a second, then the release without the flag', async () => {
+    doc.querySelector('[data-page=fences]').click();
+    change(doc, 'fenceSel', 'fence-a');
+    const fence = id => current().fences.find(f => f.id === id);
+    fence('fence-a').iconSize = 48;
+    frame.contentWindow.testRefresh();
+    const sent = () => frame.contentWindow.testMessages.filter(m => m.type === 'setFence' && m.prop === 'iconSize');
+    let before = sent().length;
+    const input = slide('fenceIconSize', '52', '56', '61');
+    assert(sent().length === before, 'Every input event posted at once');
+    await settle();
+    assert(sent().length === before + 1 && sent().at(-1).value === 64 && sent().at(-1).id === 'fence-a' && sent().at(-1).live === true, 'The latest position was not posted once as a live tick: ' + JSON.stringify(sent().slice(before)));
+    slide('fenceIconSize', '69');
+    // A host state from the earlier position must not move a held thumb.
+    frame.contentWindow.testRefresh();
+    assert(input.value === '68' && bubble('fenceIconSize').textContent === '68 px', 'Host refresh moved the thumb during a drag');
+    release('fenceIconSize');
+    assert(sent().length === before + 2 && sent().at(-1).value === 68 && !('live' in sent().at(-1)), 'The release was not posted at once without the live flag: ' + JSON.stringify(sent().slice(before)));
+    await settle();
+    assert(sent().length === before + 2, 'A throttled post fired after the release');
+    fence('fence-a').iconSize = 64;
+    frame.contentWindow.testRefresh();
+    assert(input.value === '68', 'A late host echo of a value passed on the way moved the thumb');
+    fence('fence-a').iconSize = 68;
+    frame.contentWindow.testRefresh();
+    // A held arrow key repeats: one post for the whole run, at its release.
+    before = sent().length;
+    for (let i = 0; i < 3; i++) keyOn('fenceIconSize', 'keydown', 'ArrowRight');
+    assert(input.value === '80' && sent().length === before, 'Key repeats posted past the throttle');
+    keyOn('fenceIconSize', 'keyup', 'ArrowRight');
+    assert(sent().length === before + 1 && sent().at(-1).value === 80 && !sent().at(-1).live, 'Key-up did not post the size: ' + JSON.stringify(sent().slice(before)));
+    await settle();
+    // A drag back to its start gets no change event: the release still sends the start value,
+    // so the host snaps the live ticks away.
+    await new Promise(resolve => setTimeout(resolve, 600));
+    before = sent().length;
+    slide('fenceIconSize', '100', '120');
+    await settle();
+    assert(sent().at(-1).value === 120 && sent().at(-1).live, 'Drag not posted');
+    slide('fenceIconSize', '81');
+    release('fenceIconSize', { change: false });
+    assert(sent().length === before + 2 && sent().at(-1).value === 80 && !sent().at(-1).live, 'Releasing on the start value did not post it: ' + JSON.stringify(sent().slice(before)));
+    await settle();
+    fence('fence-a').iconSize = 120;
+    frame.contentWindow.testRefresh();
+    assert(input.value === '80', 'A late echo moved the thumb after a drag back to its start');
+    fence('fence-a').iconSize = 80;
+    frame.contentWindow.testRefresh();
+    // A drag that never left its start sends nothing.
+    before = sent().length;
+    slide('fenceIconSize', '81');
+    release('fenceIconSize', { change: false });
+    await settle();
+    assert(sent().length === before, 'A drag that did not move posted');
+    // Another fence shows its own size at once.
+    change(doc, 'fenceSel', 'portal');
+    assert(input.value === '32' && onTick('fenceIconSize') === '小', 'Portal size not shown: ' + input.value);
+    change(doc, 'fenceSel', 'fence-a');
+    assert(input.value === '80', 'Fence size not shown after switching back: ' + input.value);
+    // A fence switch in the middle of a drag drops the drag instead of resizing the new fence.
+    before = sent().length;
+    slide('fenceIconSize', '100');
+    change(doc, 'fenceSel', 'portal');
+    move('fenceIconSize', '110');
+    release('fenceIconSize');
+    await settle();
+    assert(input.value === '32' && sent().length === before, 'The rest of the drag resized another fence: ' + JSON.stringify(sent().slice(before)));
+    change(doc, 'fenceSel', 'fence-a');
+    // One whose live ticks already resized the old fence sends that fence its release first.
+    await new Promise(resolve => setTimeout(resolve, 600));
+    before = sent().length;
+    slide('fenceIconSize', '100');
+    await settle();
+    change(doc, 'fenceSel', 'portal');
+    move('fenceIconSize', '110');
+    release('fenceIconSize');
+    await settle();
+    const tail = sent().slice(before).map(m => [m.id, m.value, !!m.live].join());
+    assert(tail.join(' | ') === 'fence-a,100,true | fence-a,100,false' && input.value === '32', 'The old fence did not get its release: ' + tail.join(' | '));
+    change(doc, 'fenceSel', 'fence-a');
+    fence('fence-a').iconSize = 48;
+    frame.contentWindow.testRefresh();
+  });
+  await test('The icon spacing slider covers -12 to +32 px in steps of 4 and labels the presets', async () => {
+    doc.querySelector('[data-page=fences]').click();
+    change(doc, 'fenceSel', 'fence-b');
+    const input = doc.getElementById('fenceSpacing');
+    const spacingSent = () => frame.contentWindow.testMessages.filter(m => m.type === 'setFence' && m.prop === 'spacingPx');
+    const start = spacingSent().length;
+    assert(input.type === 'range' && input.min === '-12' && input.max === '32', 'Icon spacing is not a -12 to 32 slider');
+    assert(tickAt('fenceSpacing') === [-12, 0, 16].map(v => ((v + 12) / 44 * 100).toFixed(1)).join(), 'Ticks not at the presets: ' + tickAt('fenceSpacing'));
+    assert(ticks('fenceSpacing').map(s => s.textContent).join() === '紧凑,标准,宽松', 'Presets not labelled');
+    assert(input.closest('.card').querySelector('.s').textContent === '图标之间的距离，以“标准”为基准', 'Spacing help line missing');
+    assert(input.value === '16' && onTick('fenceSpacing') === '宽松', 'Loose not shown: ' + onTick('fenceSpacing'));
+    assert(input.getAttribute('aria-valuetext') === '宽松 · +16 px', 'Preset name not announced: ' + input.getAttribute('aria-valuetext'));
+    // The thumb takes the nearest step of 4, so every preset is a stop of its own.
+    for (const [raw, value] of [['-10.5', -12], ['1.9', 0], ['-1.9', 0], ['14.1', 16], ['13.9', 12], ['2.1', 4], ['9.9', 8], ['31', 32]]) {
+      slide('fenceSpacing', raw);
+      assert(Number(input.value) === value, `${raw} should land on ${value}, got ${input.value}`);
+    }
+    assert(bubble('fenceSpacing').textContent === '+32 px' && input.getAttribute('aria-valuetext') === '+32 px', 'Bubble not updated while dragging: ' + bubble('fenceSpacing').textContent);
+    await settle();
+    slide('fenceSpacing', '-11');
+    assert(input.getAttribute('aria-valuetext') === '紧凑 · −12 px' && onTick('fenceSpacing') === '紧凑', 'Compact not shown');
+    release('fenceSpacing');
+    await settle();
+    const sent = spacingSent().slice(start);
+    assert(sent.at(-1).id === 'fence-b' && sent.at(-1).value === -12 && !sent.at(-1).live, 'Released value not posted: ' + JSON.stringify(sent.at(-1)));
+    assert(sent.length > 1 && sent.slice(0, -1).every(m => m.live === true), 'A tick before the release was not live: ' + JSON.stringify(sent));
+    assert(current().fences.find(f => f.id === 'fence-b').spacing === 'compact' && input.value === '-12', 'Value lost on the host refresh');
+    tap('fenceSpacing', 'ArrowRight');
+    tap('fenceSpacing', 'ArrowRight');
+    tap('fenceSpacing', 'ArrowRight');
+    assert(spacingSent().at(-1).value === 0 && input.value === '0', 'Arrow keys did not step by 4');
+    await new Promise(resolve => setTimeout(resolve, 600));
+    current().fences.find(f => f.id === 'fence-b').spacingPx = 16;
+    change(doc, 'fenceSel', 'fence-a');
+  });
+  await test('A dragged slider keeps its row still and its tick labels apart in every window width and language', async () => {
+    doc.querySelector('[data-page=fences]').click();
+    change(doc, 'fenceSel', 'fence-a');
+    for (const language of ['en', 'ja', 'zh-TW', 'ko', 'de', 'fr', 'es', 'pt-BR', 'ru', 'it']) {
+      change(doc, 'language', language); await settle();
+      for (const [id, values] of [['fenceIconSize', ['52', '128', '24', '48']], ['fenceSpacing', ['4', '-12', '32', '0']]]) {
+        const input = doc.getElementById(id), card = input.closest('.card');
+        for (const width of [704, 960]) {
+          frame.style.width = width + 'px';
+          await settle();
+          const at = [];
+          for (const value of values) {
+            slide(id, value);
+            at.push([card.getBoundingClientRect().height, input.getBoundingClientRect().left, input.getBoundingClientRect().width].join());
+          }
+          release(id);
+          await settle();
+          assert(new Set(at).size === 1, `${id} row moved during a drag at ${width}px: ${at.join(' | ')}`);
+          // Tick labels keep 4 px apart, also beside the bold current one, and none leaves its
+          // card. Each sits centred under its tick unless the card's edge pushed it in.
+          const boxes = ticks(id).map(s => s.querySelector('b').getBoundingClientRect()), rail = track(id).getBoundingClientRect();
+          const box = card.getBoundingClientRect();
+          const spans = boxes.map(b => `${Math.round(b.left - rail.left)}..${Math.round(b.right - rail.left)}`).join(' ');
+          assert(boxes.every((b, i) => i === 0 || boxes[i - 1].right + 4 <= b.left), `${id} tick labels overlap in ${language} at ${width}px: ${spans}`);
+          assert(boxes.every(b => b.left >= box.left + 11.5 && b.right <= box.right - 11.5), `${id} tick label outside its card in ${language} at ${width}px: ${spans}`);
+          const centred = ticks(id).map((s, i) => {
+            const mark = s.getBoundingClientRect(), b = boxes[i];
+            const edge = Math.abs(b.left - (box.left + 12)) < 1 || Math.abs(b.right - (box.right - 12)) < 1;
+            return edge || Math.abs((b.left + b.right) / 2 - (mark.left + mark.right) / 2) < 1;
+          });
+          assert(centred.every(Boolean), `${id} tick label not centred under its tick in ${language} at ${width}px: ${spans}`);
+          // The spacing bubble names the current preset with the word under its tick.
+          const on = ticks(id).find(s => s.classList.contains('on'));
+          assert(id !== 'fenceSpacing' || (on && bubble(id).querySelector('small').textContent === on.textContent), `Spacing bubble and tick disagree in ${language}`);
+        }
+      }
+    }
+    frame.style.width = '704px';
+    change(doc, 'language', 'zh-CN'); await settle();
+    const fence = current().fences.find(f => f.id === 'fence-a');
+    fence.iconSize = 48; fence.spacingPx = 0; fence.spacing = 'normal';
+    frame.contentWindow.testRefresh();
   });
   await test('showFence opens the fence page with that fence selected', async () => {
     doc.querySelector('[data-page=general]').click();
@@ -1191,6 +1482,8 @@ async function runTests() {
       const locale = language === 'system' ? 'en' : language;
       assert(doc.documentElement.lang === locale, 'Wrong document language: ' + language);
       assert(doc.querySelector('[data-page=general]').textContent.includes(win.PecoFenceI18n.text('常规')), 'Navigation was not translated: ' + language);
+      const sizeTicks = [...doc.querySelectorAll('#page-fences .slider-ticks b')].slice(0, 4).map(b => b.textContent);
+      assert(sizeTicks.join() === ['小', '中', '较大', '大'].map(k => win.PecoFenceI18n.text('图标大小\x04' + k)).join() && !sizeTicks.join().includes('\x04'), 'Icon size ticks not translated: ' + language);
       assert(doc.getElementById('nrName').value === 'My rule 中文 {0}' && doc.querySelector('#nrCats input').checked, 'Draft rule input lost: ' + language);
       assert(current().fences[0].title === '名称' && current().rules.list[0].name === '保存快照' && current().snapshots[0].name === '桌面 {1}', 'User data changed: ' + language);
       assert(doc.querySelector('#ruleList .t').textContent === '保存快照', 'User rule name translated: ' + language);

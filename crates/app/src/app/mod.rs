@@ -12,6 +12,7 @@ use crate::fence_window::{
 };
 use crate::icons::{IconCache, IconVariant, WM_APP_ICON_READY};
 use crate::ipc_server::{IpcServer, PendingQueue};
+use crate::layout::GridSpec;
 use crate::peek::PeekOverlay;
 use crate::settings_host::{SettingsHost, WebEnvironment};
 use crate::shadow::{ShadowStyle, ShadowWindow};
@@ -326,6 +327,8 @@ pub struct App {
     peek_hit: usize,
     /// Fences the search moved to another tab, with the tab each showed before.
     peek_tabs: HashMap<FenceId, FenceId>,
+    /// A settings slider's live tick is being applied: `apply_cell_snap` waits for the release.
+    snap_held: bool,
     /// The desktop folder could not be read at the last sync (removable / network drive).
     desktop_unavailable: bool,
     /// The tray told the user that the configuration cannot be saved (once per run).
@@ -1264,6 +1267,7 @@ impl App {
             peek_hits: Vec::new(),
             peek_hit: 0,
             peek_tabs: HashMap::new(),
+            snap_held: false,
             dying: Vec::new(),
             device_retry_pending: false,
             device_retry_ms: DEVICE_RETRY_FIRST_MS,

@@ -2211,7 +2211,7 @@ impl AppState {
         self.edit_appearance(id, |a| a.tab_rgb = rgb);
     }
 
-    pub fn set_spacing(&mut self, id: FenceId, spacing: pecofence_core::Spacing) {
+    pub fn set_spacing(&mut self, id: FenceId, spacing: i32) {
         if let Some(f) = self.fence_mut(id)
             && f.view.spacing != spacing
         {

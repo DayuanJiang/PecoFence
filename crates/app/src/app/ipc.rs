@@ -304,6 +304,24 @@ pub(super) fn patch_settings_path(
         };
         *slot = value;
     }
+    // Checked before loading, which rounds a size into the range, and only when it changes,
+    // like the ranges below: a size stored outside the range does not block other paths.
+    if let Some(size) = root.get("iconSize").and_then(Value::as_u64)
+        && size != u64::from(current.icon_size)
+        && !crate::layout::is_icon_size(size)
+    {
+        use crate::layout::{ICON_SIZE_MAX, ICON_SIZE_MIN, ICON_SIZE_STEP};
+        return Err(IpcError::new(
+            ErrorCode::ValidationFailed,
+            format!(
+                "iconSize {size} is not between {ICON_SIZE_MIN} and {ICON_SIZE_MAX} in steps of \
+                 {ICON_SIZE_STEP}"
+            ),
+        )
+        .details(json!({
+            "expected": { "min": ICON_SIZE_MIN, "max": ICON_SIZE_MAX, "step": ICON_SIZE_STEP }
+        })));
+    }
     let mut settings: Settings = serde_json::from_value(root).map_err(|e| {
         IpcError::new(
             ErrorCode::ValidationFailed,
@@ -343,16 +361,6 @@ pub(super) fn patch_settings_path(
             })?;
         // Written the way the settings page writes it.
         settings.windows_desktop_hotkey = Some(h.to_string());
-    }
-    if !matches!(settings.icon_size, 32 | 48 | 64 | 96) {
-        return Err(IpcError::new(
-            ErrorCode::ValidationFailed,
-            format!(
-                "iconSize {} is not one of 32, 48, 64, 96",
-                settings.icon_size
-            ),
-        )
-        .details(json!({ "expected": [32, 48, 64, 96] })));
     }
     // The ranges the app clamps these to; a value already stored outside them does not block
     // other paths.
@@ -1454,6 +1462,7 @@ impl App {
             },
             icon_size: f.view.icon_size,
             spacing: text("spacing"),
+            spacing_px: f.view.spacing,
             icon_align: text("iconAlign"),
             auto_height: flag("autoHeight"),
             exclude_from_quick_hide: flag("excludeFromQuickHide"),

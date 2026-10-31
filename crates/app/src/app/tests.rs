@@ -40,8 +40,52 @@ fn peek_search_matches_names_and_hidden_extensions() {
     assert!(search_matches("Shell item", None, "shell"));
 }
 
+/// Whole-row rounding never grows a fence into a neighbour: a downward fence stops at the fence
+/// below, an upward one (its title row at the bottom) at the fence above.
+mod cell_snap {
+    use super::super::arrange::GridSteps;
+    use pecofence_platform::RECT;
+
+    const STEPS: GridSteps = GridSteps {
+        cols: None,
+        row: 100.0,
+        fixed: 40.0,
+        cells: true,
+    };
+    const R: RECT = RECT {
+        left: 0,
+        top: 300,
+        right: 200,
+        bottom: 600,
+    };
+
+    #[test]
+    fn rows_stop_at_the_fence_on_the_growing_side() {
+        assert_eq!(STEPS.height_up_to(440, &R, None, false), 440);
+        assert_eq!(STEPS.height_up_to(440, &R, Some(650), false), 350);
+        assert_eq!(STEPS.height_up_to(340, &R, Some(650), false), 340);
+        assert_eq!(STEPS.height_up_to(440, &R, Some(250), true), 350);
+        assert_eq!(STEPS.height_up_to(340, &R, Some(250), true), 340);
+        // Already past the limit: it keeps its height, and one row at least.
+        assert_eq!(STEPS.height_up_to(440, &R, Some(580), false), 300);
+        assert_eq!(STEPS.height_up_to(440, &R, Some(320), true), 300);
+        let short = RECT { top: 500, ..R };
+        assert_eq!(STEPS.height_up_to(440, &short, Some(480), true), 140);
+    }
+}
+
+/// Ctrl+wheel resizes the icons unless the fence is locked; 像桌面一样排列 has no lock.
+#[test]
+fn ctrl_wheel_skips_locked_fences_but_not_the_desktop_arranged_one() {
+    use super::fences::ctrl_wheel_resizes;
+    assert!(ctrl_wheel_resizes(false, false));
+    assert!(!ctrl_wheel_resizes(true, false));
+    assert!(ctrl_wheel_resizes(true, true));
+    assert!(ctrl_wheel_resizes(false, true));
+}
+
 mod ipc {
-    use super::super::fence_options::{FenceProp, parse_fence_prop};
+    use super::super::fence_options::{FenceProp, is_live_tick, parse_fence_prop};
     use super::super::ipc::{
         AUTO_SNAPSHOT_PREFIX, MAX_NAME_CHARS, MIN_EXPIRY_MS, adjusted, auto_snapshot_slot,
         check_rule_conditions, checked_name, is_inbox_alias, patch_settings_path,
@@ -283,9 +327,40 @@ mod ipc {
                 .contains("bool")
         );
 
-        let err = patch_settings_path(&Settings::default(), "iconSize", json!(50)).unwrap_err();
-        assert_eq!(err.code, ErrorCode::ValidationFailed);
-        assert_eq!(err.details.unwrap()["expected"], json!([32, 48, 64, 96]));
+        for size in [20, 50, 132] {
+            let err =
+                patch_settings_path(&Settings::default(), "iconSize", json!(size)).unwrap_err();
+            assert_eq!(err.code, ErrorCode::ValidationFailed, "{size}");
+            assert!(
+                err.message.contains("24 and 128 in steps of 4"),
+                "{}",
+                err.message
+            );
+            assert_eq!(
+                err.details.unwrap()["expected"],
+                json!({ "min": 24, "max": 128, "step": 4 })
+            );
+        }
+        for size in [24, 52, 128] {
+            let patched =
+                patch_settings_path(&Settings::default(), "iconSize", json!(size)).unwrap();
+            assert_eq!(patched.icon_size, size);
+        }
+        // A size stored outside the range blocks only a change of the size itself; any other
+        // change rounds it into the range, as loading the file does.
+        let stored = Settings {
+            icon_size: 50,
+            ..Settings::default()
+        };
+        let patched = patch_settings_path(&stored, "peek.enabled", json!(false)).unwrap();
+        assert_eq!(patched.icon_size, 52);
+        assert!(patch_settings_path(&stored, "iconSize", json!(54)).is_err());
+        assert_eq!(
+            patch_settings_path(&stored, "iconSize", json!(52))
+                .unwrap()
+                .icon_size,
+            52
+        );
 
         // Numbers the app would clamp: the ranges it clamps to.
         for (path, value) in [
@@ -364,6 +439,21 @@ mod ipc {
         assert_eq!(err.code, ErrorCode::ValidationFailed);
     }
 
+    /// Only `live: true` holds the cell snap, so a slider's release, sent without the flag,
+    /// snaps.
+    #[test]
+    fn only_live_slider_ticks_hold_the_cell_snap() {
+        let tick = json!({ "type": "setFence", "id": "x", "prop": "iconSize", "value": 52 });
+        assert!(!is_live_tick(&tick));
+        let mut live = tick.clone();
+        live["live"] = json!(true);
+        assert!(is_live_tick(&live));
+        live["live"] = json!(false);
+        assert!(!is_live_tick(&live));
+        live["live"] = json!("true");
+        assert!(!is_live_tick(&live));
+    }
+
     #[test]
     fn fence_props_are_validated() {
         let err = parse_fence_prop("nope", &json!(1)).unwrap_err();
@@ -381,16 +471,63 @@ mod ipc {
             assert!(allowed.as_array().unwrap().contains(&json!(p)), "{allowed}");
         }
 
-        let err = parse_fence_prop("iconSize", &json!(50)).unwrap_err();
-        assert_eq!(err.code, ErrorCode::InvalidValue);
+        for bad in [
+            json!(50),
+            json!(20),
+            json!(132),
+            json!(-48),
+            json!(48.5),
+            json!("48"),
+        ] {
+            let err = parse_fence_prop("iconSize", &bad).unwrap_err();
+            assert_eq!(err.code, ErrorCode::InvalidValue, "{bad}");
+            assert!(
+                err.message.contains("allowed: 24 to 128 in steps of 4"),
+                "{}",
+                err.message
+            );
+            assert_eq!(
+                err.details.unwrap()["allowed"],
+                json!(["24 to 128 in steps of 4"])
+            );
+        }
+        for size in [24, 52, 64, 128] {
+            assert_eq!(
+                parse_fence_prop("iconSize", &json!(size)).unwrap(),
+                FenceProp::IconSize(size)
+            );
+        }
+
+        // A preset and a free value both set the spacing in DIPs.
         assert_eq!(
-            err.details.unwrap()["allowed"],
-            json!(["32", "48", "64", "96"])
+            parse_fence_prop("spacing", &json!("compact")).unwrap(),
+            FenceProp::Spacing(-12)
         );
         assert_eq!(
-            parse_fence_prop("iconSize", &json!(64)).unwrap(),
-            FenceProp::IconSize(64)
+            parse_fence_prop("spacing", &json!("loose")).unwrap(),
+            FenceProp::Spacing(16)
         );
+        for px in [-12, 0, 8, 32] {
+            assert_eq!(
+                parse_fence_prop("spacingPx", &json!(px)).unwrap(),
+                FenceProp::Spacing(px)
+            );
+        }
+        for bad in [
+            json!(-16),
+            json!(36),
+            json!(6),
+            json!(8.5),
+            json!("8"),
+            json!(null),
+        ] {
+            let err = parse_fence_prop("spacingPx", &bad).unwrap_err();
+            assert_eq!(err.code, ErrorCode::InvalidValue, "{bad}");
+            assert_eq!(
+                err.details.unwrap()["allowed"],
+                json!(["-12 to 32 in steps of 4"])
+            );
+        }
 
         assert_eq!(
             parse_fence_prop("layout", &json!("list")).unwrap(),
@@ -468,8 +605,15 @@ mod ipc {
             json!(["default", "hover", "always"])
         );
         assert_eq!(
-            parse_fence_prop("labelLines", &json!(4)).unwrap_err().code,
-            ErrorCode::InvalidValue
+            parse_fence_prop("labelLines", &json!(4))
+                .unwrap_err()
+                .details
+                .unwrap()["allowed"],
+            json!(["0", "1", "2", "3"])
+        );
+        assert_eq!(
+            parse_fence_prop("labelLines", &json!(0)).unwrap(),
+            FenceProp::LabelLines(0)
         );
         assert_eq!(
             parse_fence_prop("locked", &json!("true")).unwrap_err().code,

@@ -3356,6 +3356,9 @@ impl FenceChrome {
         if alpha <= 0.0 {
             return Ok(());
         }
+        // Without labels nothing unfolds: the state pill would stretch into the next row with
+        // no text in it.
+        let unfold = unfold.filter(|_| content.label_lines > 0);
         let base_lines = content.label_lines as f32;
         let lines = unfold.map_or(base_lines, |(_, n)| (n as f32).max(base_lines));
         let extra = (lines - base_lines) * content.line_h;
@@ -3398,6 +3401,9 @@ impl FenceChrome {
             content.icon_size,
             4.0,
         )?;
+        if content.label_lines == 0 {
+            return Ok(());
+        }
         let label_rect = Rect::from_xywh(
             cell.x + ICON_LABEL_SIDE_INSET,
             icon_y + content.icon_size + content.label_gap,

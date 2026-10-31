@@ -167,10 +167,14 @@ pub struct FenceDto {
     pub tab_host: Option<Uuid>,
     /// Tabs hosted by this fence (strip order), empty when it is a plain window.
     pub tabs: Vec<Uuid>,
-    /// 32 | 48 | 64 | 96.
+    /// Icon edge in DIPs: 24 to 128 in steps of 4.
     pub icon_size: u32,
-    /// `compact` | `normal` | `loose`.
+    /// `compact` | `normal` | `loose`: the preset nearest to `spacingPx`.
     pub spacing: String,
+    /// Icon spacing in DIPs, -12 to 32 in steps of 4: what the icon cell gains in width over
+    /// `normal` (compact -12, loose 16).
+    #[serde(default)]
+    pub spacing_px: i32,
     /// `left` | `center`: where a row of icons that does not fill the width sits (icons view).
     #[serde(default)]
     pub icon_align: String,
@@ -210,6 +214,7 @@ pub struct FenceDto {
     /// Folders above files in any sorted order (not manual, not grouped by date).
     #[serde(default)]
     pub folders_first: bool,
+    /// Lines of the label under each icon in the icons layout, 0 to 3 (0: no labels).
     pub label_lines: u8,
     /// Regular fences: double-clicking a folder or a folder shortcut opens it inside the fence
     /// instead of File Explorer (off by default; a portal has `portal.navigate`).
@@ -245,8 +250,8 @@ pub struct FitDto {
 }
 
 /// A geometry the app changed on its own after a request: `fences.setBounds` with auto height,
-/// or an option (`iconSize`, `spacing`, `layout`, `labelLines`) that snaps the window to whole
-/// icon columns and rows.
+/// or an option (`iconSize`, `spacing`, `spacingPx`, `layout`, `labelLines`) that snaps the window
+/// to whole icon columns and rows.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "describe", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]

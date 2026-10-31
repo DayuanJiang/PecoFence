@@ -68,7 +68,7 @@ pecofence-cli fence create --title Tools --right-of Work      # aligned + snappi
 pecofence-cli fence create --portal "C:\Users\me\Pictures"     # a folder as a fence: real files
 pecofence-cli fence move Work --x 1200 --y 80                  # or --rect x,y,w,h
 pecofence-cli fence fit Tools                                  # height that shows every item
-pecofence-cli fence set Work layout list                       # iconSize 48 | spacing compact | opacity clear | locked true | autoHeight true
+pecofence-cli fence set Work layout list                       # iconSize 52 (24-128, steps of 4) | spacing compact | spacingPx 8 | labelLines 0 | opacity clear | locked true | autoHeight true
 pecofence-cli fence set --all locked true                      # one call per fence, summary in .results
 pecofence-cli fence merge Games --into Work                    # Games becomes a tab; `fence detach Games` undoes
 pecofence-cli fence rename Work Projects

@@ -1,6 +1,65 @@
 //! Icon grid layout in DIPs: cell geometry, hit testing, scrolling extents.
 
-use pecofence_core::{DateBucket, ViewLayout};
+use pecofence_core::{DateBucket, FenceView, IconAlign, ViewLayout};
+
+/// Left edge of the fence title (DIPs): the first icon column lines up with it.
+const TITLE_X: f32 = 16.0;
+
+pub use pecofence_core::model::{ICON_SIZE_MAX, ICON_SIZE_MIN, ICON_SIZE_STEP};
+
+pub fn is_icon_size(size: u64) -> bool {
+    (ICON_SIZE_MIN as u64..=ICON_SIZE_MAX as u64).contains(&size)
+        && size.is_multiple_of(ICON_SIZE_STEP as u64)
+}
+
+/// The four sizes of the fence menu, which Ctrl+wheel steps through: 32 / 48 / 96 are the
+/// desktop's small / medium / large, 64 sits between.
+pub const ICON_SIZE_PRESETS: [u32; 4] = [32, 48, 64, 96];
+
+/// The preset after `cur` (before it with `larger` false), from any size; `None` at the ends.
+pub fn step_icon_preset(cur: u32, larger: bool) -> Option<u32> {
+    if larger {
+        ICON_SIZE_PRESETS.iter().copied().find(|s| *s > cur)
+    } else {
+        ICON_SIZE_PRESETS.iter().rev().copied().find(|s| *s < cur)
+    }
+}
+
+/// What a fence's items are laid out from: the window takes it as one value.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct GridSpec {
+    pub icon_size: u32,
+    pub label_lines: u8,
+    /// Icon spacing in DIPs (`FenceView::spacing`).
+    pub spacing: i32,
+    pub icon_align: IconAlign,
+    pub layout: ViewLayout,
+}
+
+impl GridSpec {
+    pub fn of(view: &FenceView) -> Self {
+        Self {
+            icon_size: view.icon_size,
+            label_lines: view.label_lines,
+            spacing: view.spacing,
+            icon_align: view.icon_align,
+            layout: view.layout,
+        }
+    }
+
+    /// The icon grid's cells for label lines `line_h` DIPs high.
+    pub fn metrics(&self, line_h: f32) -> GridMetrics {
+        GridMetrics::for_icon_size(self.icon_size, self.label_lines)
+            .with_line_h(line_h)
+            .with_spacing(self.spacing)
+    }
+
+    /// The icon grid of `count` items in `width` DIPs, its short rows aligned.
+    pub fn grid(&self, line_h: f32, width: f32, count: usize, spans: &[GroupSpan]) -> Grid {
+        Grid::grouped(self.metrics(line_h), width, count, spans)
+            .centred(self.icon_align == IconAlign::Center)
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct GridMetrics {
@@ -26,9 +85,14 @@ impl GridMetrics {
             // 4 px grid: icon + 32 wide (32→64, 48→80, 64→96, 96→128) so a 72 DIP label holds
             // six 12 px CJK glyphs (the 96 px desktop "large" size gets a 120 DIP label); no
             // side padding, so the first icon's left edge lands on the title's x = 16. 8 top
-            // pad, 4 icon→label gap, two 16 px label lines, 4 bottom.
-            cell_w: icon + 32.0,
-            cell_h: icon + 8.0 + 4.0 + line_h * label_lines as f32 + 4.0,
+            // pad, 4 icon→label gap, two 16 px label lines, 4 bottom. Without labels the cell
+            // is a square with 8 around the icon.
+            cell_w: if label_lines == 0 {
+                icon + 16.0
+            } else {
+                icon + 32.0
+            },
+            cell_h: Self::cell_h_for(icon, line_h, label_lines),
             pad_x: 0.0,
             pad_y: 8.0,
             label_lines,
@@ -36,6 +100,17 @@ impl GridMetrics {
             icon_top: 8.0,
             label_gap: 4.0,
         }
+        .align_bare_icons()
+    }
+
+    /// Side padding puts the first icon of a grid without labels on the title's x. A labelled
+    /// cell gets there through its 16 DIPs on each side of the icon. A bare cell wider than that
+    /// (spacing above 16) starts at the edge instead.
+    fn align_bare_icons(mut self) -> Self {
+        if self.label_lines == 0 {
+            self.pad_x = (TITLE_X - (self.cell_w - self.icon) / 2.0).max(0.0);
+        }
+        self
     }
 
     /// Label line height from the system icon-title font (Accessibility text scaling): the
@@ -44,26 +119,42 @@ impl GridMetrics {
     pub fn with_line_h(mut self, line_h: f32) -> Self {
         let line_h = (line_h.max(1.0) / 4.0).ceil() * 4.0;
         self.line_h = line_h;
-        self.cell_h = self.icon + 8.0 + 4.0 + line_h * self.label_lines as f32 + 4.0;
+        self.cell_h = Self::cell_h_for(self.icon, line_h, self.label_lines);
         self
     }
 
-    /// Fences "icon spacing": compact pulls cells in by 12/8 DIPs, loose pushes them out by
-    /// 16/12 (4 px grid kept).
-    pub fn with_spacing(mut self, spacing: pecofence_core::Spacing) -> Self {
-        match spacing {
-            pecofence_core::Spacing::Compact => {
-                self.cell_w -= 12.0;
-                // 4 + icon + 2 + label + 2 == cell_h: the label still ends inside the cell.
-                self.cell_h -= 8.0;
-                self.icon_top = 4.0;
-                self.label_gap = 2.0;
-            }
-            pecofence_core::Spacing::Normal => {}
-            pecofence_core::Spacing::Loose => {
-                self.cell_w += 16.0;
-                self.cell_h += 12.0;
-            }
+    /// 8 top pad, the icon, then the label (4 gap + its lines) and 4 bottom; with no label
+    /// lines, 8 bottom.
+    fn cell_h_for(icon: f32, line_h: f32, label_lines: u8) -> f32 {
+        if label_lines == 0 {
+            icon + 16.0
+        } else {
+            icon + 8.0 + 4.0 + line_h * label_lines as f32 + 4.0
+        }
+    }
+
+    /// Fences "icon spacing" in DIPs: the cell grows by `px` in width and by 3/4 of that in
+    /// height, rounded to the 4 px grid. Compact is -12 (-12 / -8), Loose 16 (+16 / +12). A
+    /// shorter cell takes the height from the pad above the icon, the gap under it and the pad
+    /// under the label at 2:1:1, so the label still ends inside the cell. A taller one adds it
+    /// under the label. Cells without labels stay square around the centred icon: they grow by
+    /// `px` each way and shrink by 8 at most, which compact reaches.
+    pub fn with_spacing(mut self, px: i32) -> Self {
+        use pecofence_core::Spacing;
+        let px = px.clamp(Spacing::PX_MIN, Spacing::PX_MAX) as f32;
+        if self.label_lines == 0 {
+            let delta = px.max(-8.0);
+            self.cell_w += delta;
+            self.cell_h += delta;
+            self.icon_top += delta / 2.0;
+            return self.align_bare_icons();
+        }
+        let dh = (px * 0.75 / 4.0).round() * 4.0;
+        self.cell_w += px;
+        self.cell_h += dh;
+        if dh < 0.0 {
+            self.icon_top += dh / 2.0;
+            self.label_gap += dh / 4.0;
         }
         self
     }
@@ -72,6 +163,17 @@ impl GridMetrics {
     /// snapping converges to, so new fences must be created at it.
     pub fn width_for_columns(&self, cols: u32) -> f32 {
         self.pad_x * 2.0 + cols.max(1) as f32 * self.cell_w
+    }
+
+    /// The label box under the icon of `cell`. Without labels it has no height, so it never
+    /// takes a click, and the rename edit and the keyboard menu open right under the icon.
+    pub fn label_rect(&self, cell: CellRect) -> CellRect {
+        CellRect {
+            x: cell.x,
+            y: cell.y + self.icon_top + self.icon + self.label_gap,
+            w: cell.w,
+            h: self.line_h * self.label_lines as f32,
+        }
     }
 }
 
@@ -1317,7 +1419,7 @@ mod tests {
         assert_eq!(odd.cell_h % 4.0, 0.0);
         let compact = GridMetrics::for_icon_size(48, 2)
             .with_line_h(20.0)
-            .with_spacing(pecofence_core::Spacing::Compact);
+            .with_spacing(pecofence_core::Spacing::Compact.px());
         assert_eq!(compact.cell_h, big.cell_h - 8.0);
     }
 
@@ -1421,16 +1523,12 @@ mod tests {
     #[test]
     fn every_cell_size_shows_whole_rows_at_a_shared_height() {
         let mut layouts: Vec<(String, ItemLayout, f32, f32)> = Vec::new();
-        for icon in [32u32, 48, 64, 96] {
-            for lines in [1u8, 2, 3] {
-                for spacing in [
-                    pecofence_core::Spacing::Compact,
-                    pecofence_core::Spacing::Normal,
-                    pecofence_core::Spacing::Loose,
-                ] {
+        for icon in (ICON_SIZE_MIN..=ICON_SIZE_MAX).step_by(ICON_SIZE_STEP as usize) {
+            for lines in [0u8, 1, 2, 3] {
+                for spacing in spacing_values() {
                     let m = GridMetrics::for_icon_size(icon, lines).with_spacing(spacing);
                     layouts.push((
-                        format!("{icon} px, {lines} lines, {spacing:?}"),
+                        format!("{icon} px, {lines} lines, spacing {spacing}"),
                         ItemLayout::Grid(Grid::new(m, 300.0, 40)),
                         m.pad_y,
                         m.cell_h,
@@ -1524,31 +1622,296 @@ mod tests {
     }
 
     #[test]
-    fn label_stays_inside_the_cell_for_every_spacing() {
+    fn grid_spec_takes_the_view_and_builds_its_cells() {
+        let view = FenceView {
+            icon_size: 52,
+            label_lines: 0,
+            spacing: 8,
+            icon_align: IconAlign::Center,
+            layout: ViewLayout::List,
+            ..Default::default()
+        };
+        let spec = GridSpec::of(&view);
+        assert_eq!(
+            spec,
+            GridSpec {
+                icon_size: 52,
+                label_lines: 0,
+                spacing: 8,
+                icon_align: IconAlign::Center,
+                layout: ViewLayout::List,
+            }
+        );
+        assert_eq!(
+            spec.metrics(20.0),
+            GridMetrics::for_icon_size(52, 0)
+                .with_line_h(20.0)
+                .with_spacing(8)
+        );
+        let left = GridSpec {
+            icon_align: IconAlign::Left,
+            ..spec
+        };
+        let (flat, centred) = (
+            left.grid(20.0, 400.0, 1, &[]),
+            spec.grid(20.0, 400.0, 1, &[]),
+        );
+        let shift = (centred.columns - 1) as f32 * centred.pitch / 2.0;
+        assert_eq!(centred.cell(0).x, flat.cell(0).x + shift);
+    }
+
+    /// 图标对齐 居中 with every icon size, spacing and label count, hidden labels included: a
+    /// short row has as much room on its left as on its right, and full rows do not move.
+    #[test]
+    fn a_centred_short_row_is_centred_for_every_cell() {
+        for icon_size in (ICON_SIZE_MIN..=ICON_SIZE_MAX).step_by(ICON_SIZE_STEP as usize) {
+            for label_lines in [0u8, 1, 2, 3] {
+                for spacing in spacing_values() {
+                    let spec = GridSpec {
+                        icon_size,
+                        label_lines,
+                        spacing,
+                        icon_align: IconAlign::Center,
+                        layout: ViewLayout::Icons,
+                    };
+                    let name = format!("icon {icon_size} lines {label_lines} spacing {spacing}");
+                    let width = spec.metrics(16.0).width_for_columns(5) + 6.0;
+                    let g = spec.grid(16.0, width, 7, &[]);
+                    let flat = GridSpec {
+                        icon_align: IconAlign::Left,
+                        ..spec
+                    }
+                    .grid(16.0, width, 7, &[]);
+                    assert_eq!(g.columns, 5, "{name}");
+                    assert_eq!(g.cell(4), flat.cell(4), "{name}: a full row moved");
+                    let (first, last) = (g.cell(5), g.cell(6));
+                    let (l, r) = (first.x, width - (last.x + last.w));
+                    assert!((l - r).abs() < 0.01, "{name}: {l} left, {r} right");
+                    let mid = first.y + first.h / 2.0;
+                    assert_eq!(g.hit_test(first.x + 1.0, mid, 7), Some(5), "{name}");
+                    assert_eq!(g.hit_test(first.x - 1.0, mid, 7), None, "{name}");
+                }
+            }
+        }
+    }
+
+    /// A config saved before `spacingPx` gets the cells it had: 48 px icons, two label lines.
+    #[test]
+    fn a_config_without_spacing_px_keeps_its_cells() {
+        for (preset, cell) in [
+            ("compact", (68.0, 88.0, 4.0, 2.0)),
+            ("normal", (80.0, 96.0, 8.0, 4.0)),
+            ("loose", (96.0, 108.0, 8.0, 4.0)),
+        ] {
+            let view: FenceView = serde_json::from_value(serde_json::json!({
+                "iconSize": 48, "sort": "manual", "labelLines": 2, "autoHeight": false,
+                "spacing": preset,
+            }))
+            .unwrap();
+            let m = GridSpec::of(&view).metrics(16.0);
+            assert_eq!(
+                (m.cell_w, m.cell_h, m.icon_top, m.label_gap),
+                cell,
+                "{preset}"
+            );
+        }
+    }
+
+    /// Cells without labels at any spacing keep their padding at 0 or more, so the first and last
+    /// columns' hover plates stay inside the content.
+    #[test]
+    fn bare_cells_stay_inside_the_content_at_every_spacing() {
+        for icon in (ICON_SIZE_MIN..=ICON_SIZE_MAX).step_by(ICON_SIZE_STEP as usize) {
+            for spacing in spacing_values() {
+                let m = GridMetrics::for_icon_size(icon, 0).with_spacing(spacing);
+                let name = format!("icon {icon} spacing {spacing}");
+                assert!(m.pad_x >= 0.0, "{name}: pad {}", m.pad_x);
+                let w = m.width_for_columns(4);
+                let g = Grid::new(m, w, 4);
+                assert_eq!(g.columns, 4, "{name}");
+                let (first, last) = (g.cell(0), g.cell(3));
+                assert!(first.x >= 0.0 && last.x + last.w <= w, "{name}");
+            }
+        }
+    }
+
+    fn spacing_values() -> impl Iterator<Item = i32> {
+        use pecofence_core::Spacing;
+        (Spacing::PX_MIN..=Spacing::PX_MAX).step_by(Spacing::PX_STEP as usize)
+    }
+
+    /// The presets' cells, as fixed numbers: configs saved with a preset must keep them, also
+    /// with the icon-title font scaled (line heights 20 and 24).
+    #[test]
+    fn spacing_presets_keep_their_cells() {
+        use pecofence_core::Spacing;
         for icon in [32u32, 48, 64, 96] {
-            for lines in [1u8, 2] {
-                for spacing in [
-                    pecofence_core::Spacing::Compact,
-                    pecofence_core::Spacing::Normal,
-                    pecofence_core::Spacing::Loose,
-                ] {
-                    let m = GridMetrics::for_icon_size(icon, lines).with_spacing(spacing);
-                    // Every size stays on the 4 px grid the column snap relies on.
-                    assert_eq!(
-                        m.cell_w % 4.0,
-                        0.0,
-                        "{spacing:?} icon {icon}: cell_w {}",
-                        m.cell_w
+            for lines in [1u8, 2, 3] {
+                for line_h in [16.0f32, 20.0, 24.0] {
+                    let base = GridMetrics::for_icon_size(icon, lines).with_line_h(line_h);
+                    let (w, h) = (
+                        icon as f32 + 32.0,
+                        icon as f32 + 16.0 + line_h * lines as f32,
                     );
-                    let label_bottom = m.icon_top + m.icon + m.label_gap + m.line_h * lines as f32;
-                    assert!(
-                        label_bottom <= m.cell_h - 2.0,
-                        "{spacing:?} icon {icon} lines {lines}: label bottom {label_bottom} vs cell {}",
-                        m.cell_h
+                    assert_eq!((base.cell_w, base.cell_h), (w, h));
+                    assert_eq!(base.with_spacing(Spacing::Normal.px()), base);
+                    let compact = base.with_spacing(Spacing::Compact.px());
+                    assert_eq!(
+                        (
+                            compact.cell_w,
+                            compact.cell_h,
+                            compact.icon_top,
+                            compact.label_gap
+                        ),
+                        (w - 12.0, h - 8.0, 4.0, 2.0)
+                    );
+                    let loose = base.with_spacing(Spacing::Loose.px());
+                    assert_eq!(
+                        (loose.cell_w, loose.cell_h, loose.icon_top, loose.label_gap),
+                        (w + 16.0, h + 12.0, 8.0, 4.0)
                     );
                 }
             }
         }
+    }
+
+    #[test]
+    fn label_stays_inside_the_cell_for_every_spacing() {
+        for icon in (ICON_SIZE_MIN..=ICON_SIZE_MAX).step_by(ICON_SIZE_STEP as usize) {
+            for lines in [1u8, 2, 3] {
+                for line_h in [16.0, 20.0] {
+                    let mut prev: Option<GridMetrics> = None;
+                    for spacing in spacing_values() {
+                        let m = GridMetrics::for_icon_size(icon, lines)
+                            .with_line_h(line_h)
+                            .with_spacing(spacing);
+                        let name = format!("spacing {spacing} icon {icon} lines {lines}");
+                        // Every size stays on the 4 px grid the column snap relies on.
+                        assert_eq!(m.cell_w % 4.0, 0.0, "{name}: cell_w {}", m.cell_w);
+                        assert_eq!(m.cell_h % 4.0, 0.0, "{name}: cell_h {}", m.cell_h);
+                        assert!(
+                            m.cell_w - pecofence_render::fence_chrome::ICON_LABEL_SIDE_INSET * 2.0
+                                >= m.icon,
+                            "{name}: the label is narrower than the icon"
+                        );
+                        // Two 12 px CJK glyphs per label line, also at the smallest size.
+                        let label_w =
+                            m.cell_w - pecofence_render::fence_chrome::ICON_LABEL_SIDE_INSET * 2.0;
+                        assert!(label_w >= 24.0, "{name}: label {label_w}");
+                        // The hover and selection plate is inset 2 DIPs: icon and label stay on it.
+                        assert!(m.icon_top >= 2.0 && m.label_gap >= 1.0, "{name}");
+                        assert_eq!(m.icon_top.fract() + m.label_gap.fract(), 0.0, "{name}");
+                        let bottom_pad = m.cell_h
+                            - (m.icon_top + m.icon + m.label_gap + m.line_h * lines as f32);
+                        assert!(bottom_pad >= 2.0, "{name}: bottom pad {bottom_pad}");
+                        if let Some(p) = prev {
+                            assert!(m.cell_w > p.cell_w && m.cell_h >= p.cell_h, "{name}");
+                        }
+                        prev = Some(m);
+                    }
+                }
+            }
+        }
+    }
+
+    /// No labels: square cells with the icon centred, on the 4 px grid, for every icon size and
+    /// spacing; the label font size changes nothing; the column snap still converges.
+    #[test]
+    fn cells_without_labels_are_squares_around_the_icon() {
+        use pecofence_core::Spacing::{Compact, Loose, Normal};
+        for icon in [32u32, 48, 64, 96] {
+            let i = icon as f32;
+            for (spacing, side, top, pad) in [
+                (Compact, 8.0, 4.0, 12.0),
+                (Normal, 16.0, 8.0, 8.0),
+                (Loose, 32.0, 16.0, 0.0),
+            ] {
+                let m = GridMetrics::for_icon_size(icon, 0)
+                    .with_line_h(20.0)
+                    .with_spacing(spacing.px());
+                assert_eq!(
+                    (m.cell_w, m.cell_h),
+                    (i + side, i + side),
+                    "{icon} {spacing:?}"
+                );
+                assert_eq!(m.icon_top, top, "{icon} {spacing:?}");
+                assert_eq!(
+                    m.icon_top * 2.0 + i,
+                    m.cell_h,
+                    "{icon} {spacing:?}: centred"
+                );
+                assert_eq!(m.cell_w % 4.0, 0.0);
+                assert_eq!(m.pad_x, pad, "{icon} {spacing:?}");
+                let w = m.width_for_columns(3);
+                assert_eq!(((w - m.pad_x * 2.0) / m.cell_w).round(), 3.0);
+                // The first icon lines up with the title, as in labelled grids.
+                let c = Grid::new(m, w, 3).cell(0);
+                assert_eq!(c.x + (c.w - i) / 2.0, 16.0, "{icon} {spacing:?}");
+            }
+        }
+        assert_eq!(
+            GridMetrics::for_icon_size(48, 2).width_for_columns(4),
+            320.0,
+            "labelled cells keep no side padding"
+        );
+        // 48 px: 64 x 64 cells and 8 side padding, five columns in 336 DIPs.
+        let bare = GridMetrics::for_icon_size(48, 0);
+        let g = Grid::new(bare, 336.0, 7);
+        assert_eq!((g.columns, g.rows), (5, 2));
+        let c = g.cell(6);
+        assert_eq!((c.x, c.y, c.h), (8.0 + 64.0, 8.0 + 64.0, 64.0));
+        assert_eq!(g.hit_test(c.x + 32.0, c.y + 32.0, 7), Some(6));
+        assert_eq!(g.hit_test(4.0, c.y + 32.0, 7), None, "side padding");
+        assert_eq!(g.content_height, 8.0 + 2.0 * 64.0 + 8.0);
+    }
+
+    /// The label box sits under the icon; without labels it has no height, so a click never
+    /// lands on it (no slow-click rename) and the rename edit opens right under the icon.
+    #[test]
+    fn label_rect_has_no_height_without_labels() {
+        let cell = CellRect {
+            x: 8.0,
+            y: 8.0,
+            w: 64.0,
+            h: 64.0,
+        };
+        let bare = GridMetrics::for_icon_size(48, 0).label_rect(cell);
+        assert_eq!((bare.y, bare.h), (8.0 + 8.0 + 48.0 + 4.0, 0.0));
+        assert!(!bare.contains(bare.x + 1.0, bare.y));
+        let two = GridMetrics::for_icon_size(48, 2).label_rect(cell);
+        assert_eq!((two.y, two.h), (bare.y, 32.0));
+        assert!(two.contains(two.x + 1.0, two.y));
+        let compact = GridMetrics::for_icon_size(48, 0)
+            .with_spacing(pecofence_core::Spacing::Compact.px())
+            .label_rect(cell);
+        assert_eq!(compact.y, 8.0 + 4.0 + 48.0 + 4.0);
+    }
+
+    #[test]
+    fn icon_sizes_are_multiples_of_four_from_24_to_128() {
+        for size in [24, 28, 52, 96, 124, 128] {
+            assert!(is_icon_size(size), "{size}");
+        }
+        for size in [0, 20, 23, 25, 50, 66, 129, 132, 256, u64::MAX] {
+            assert!(!is_icon_size(size), "{size}");
+        }
+        assert!(ICON_SIZE_PRESETS.iter().all(|&s| is_icon_size(s as u64)));
+    }
+
+    /// Ctrl+wheel steps between the menu's presets, also from a size the slider set between them.
+    #[test]
+    fn icon_presets_step_from_any_size() {
+        assert_eq!(step_icon_preset(48, true), Some(64));
+        assert_eq!(step_icon_preset(48, false), Some(32));
+        assert_eq!(step_icon_preset(52, true), Some(64));
+        assert_eq!(step_icon_preset(52, false), Some(48));
+        assert_eq!(step_icon_preset(24, true), Some(32));
+        assert_eq!(step_icon_preset(24, false), None);
+        assert_eq!(step_icon_preset(28, false), None);
+        assert_eq!(step_icon_preset(80, true), Some(96));
+        assert_eq!(step_icon_preset(100, false), Some(96));
+        assert_eq!(step_icon_preset(96, true), None);
+        assert_eq!(step_icon_preset(128, true), None);
     }
 
     #[test]

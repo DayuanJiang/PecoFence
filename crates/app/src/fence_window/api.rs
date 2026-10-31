@@ -264,7 +264,7 @@ impl FenceWindow {
             wanted_layout: ViewLayout::Icons,
             title_on_hover_override: None,
             style: FenceStyle::default(),
-            spacing: Spacing::Normal,
+            spacing: 0,
             icon_align: IconAlign::Left,
             anchor_index: None,
             range_anchor: None,
@@ -686,7 +686,7 @@ impl FenceWindow {
             v.hide_tip();
             if let Some(s) = v.scroll_restore {
                 // Tab switch: the new tab's items are here, back to where that tab was
-                // (the redraw clamps to its content; `set_layout` consumes the value).
+                // (the redraw clamps to its content; `set_grid` consumes the value).
                 v.scroll_y = s;
             }
             if let Some((id, ring)) = v.select_after_nav.take()
@@ -827,9 +827,11 @@ impl FenceWindow {
             if v.rolled_up {
                 return;
             }
-            if let Some(i) = current.and_then(|id| v.items.iter().position(|it| it.id == id)) {
+            let current = current.and_then(|id| v.items.iter().position(|it| it.id == id));
+            if let Some(i) = current {
                 v.scroll_into_view(i, true);
             }
+            v.tip_keyboard_focus(current);
             let _ = v.redraw_content();
         });
     }
@@ -899,34 +901,6 @@ impl FenceWindow {
             // WM_SETTEXT synchronously: called with no borrow of the view held.
             window::set_title(self.hwnd(), title);
         }
-    }
-
-    pub fn set_icon_size(&self, size: u32) {
-        self.with_view(|v| {
-            v.icon_size = size;
-            v.reload_icons_and_labels();
-            v.snap_item_motion();
-            let _ = v.redraw();
-        });
-        // 像桌面一样排列: other cells.
-        self.arrange_desktop(false);
-    }
-
-    /// Lines of label text under each icon (1-3): refit the labels and relayout at once.
-    pub fn set_label_lines(&self, lines: u8) {
-        self.with_view(|v| {
-            if v.label_lines == lines {
-                return;
-            }
-            v.label_lines = lines;
-            for item in &mut v.items {
-                item.label = None;
-            }
-            v.unfold_cache = None;
-            v.snap_item_motion();
-            let _ = v.redraw();
-        });
-        self.arrange_desktop(false);
     }
 
     /// The system icon-title font changed (font or Accessibility text size): fitted labels
@@ -1292,49 +1266,27 @@ impl FenceWindow {
         });
     }
 
-    /// Switches between the icon grid and the List / Details rows.
-    pub fn set_layout(&self, layout: ViewLayout) {
-        self.with_view(|v| {
-            // 像桌面一样排列 shows icons whatever the fence's view; the fence's own comes back
-            // when it goes off (`set_desktop_area`).
-            v.wanted_layout = layout;
-            let layout = if v.bare() { ViewLayout::Icons } else { layout };
-            // Consumes the tab switch's pending offset either way (see `set_tabs`).
-            let restore = v.scroll_restore.take();
-            if v.layout == layout {
-                return;
-            }
-            v.layout = layout;
-            v.scroll_anim = None;
-            // A genuine layout change starts at the top; a tab switch between tabs of
-            // different layouts keeps the restored offset (the redraw clamps it).
-            v.scroll_y = restore.unwrap_or(0.0);
-            v.header_hover = None;
-            v.header_fades.clear();
-            v.reset_item_fades();
-            v.reload_icons_and_labels();
-            v.snap_item_motion();
-            let _ = v.redraw();
-        });
+    /// Icon size, label lines, spacing, alignment and layout (the icon grid or the List /
+    /// Details rows): lays the items out again at once.
+    pub fn set_grid(&self, grid: GridSpec) {
+        let mut changed = false;
+        self.with_view(|v| changed = v.apply_grid(grid));
+        // 像桌面一样排列: other cells.
+        if changed {
+            self.arrange_desktop(false);
+        }
     }
 
     /// Tab switch, after `set_tabs` and before the incoming tab's items arrive: takes that
-    /// tab's icon size and layout without drawing the outgoing items again, so the new items
-    /// are drawn, and their icons extracted, at their own size from the first frame; the icon
-    /// cache keeps an inactive tab's icons at that size only.
-    pub fn set_incoming_tab_view(&self, icon_size: u32, layout: ViewLayout) {
+    /// tab's grid without drawing the outgoing items again. The new items are then drawn, and
+    /// their icons extracted, at their own size and in their own cells from the first frame.
+    /// The icon cache keeps an inactive tab's icons at that size only.
+    pub fn set_incoming_tab_view(&self, grid: GridSpec) {
         self.with_view(|v| {
-            if v.icon_size == icon_size && v.layout == layout {
-                return;
+            if v.grid() != grid {
+                v.take_grid(grid);
+                v.snap_item_motion();
             }
-            if v.layout != layout {
-                v.header_hover = None;
-                v.header_fades.clear();
-            }
-            v.icon_size = icon_size;
-            v.layout = layout;
-            v.reload_icons_and_labels();
-            v.snap_item_motion();
         });
     }
 
@@ -1370,14 +1322,6 @@ impl FenceWindow {
             .borrow()
             .as_ref()
             .is_some_and(|v| v.rolled_up || v.peeking)
-    }
-
-    pub fn icon_size(&self) -> u32 {
-        self.view
-            .borrow()
-            .as_ref()
-            .map(|v| v.icon_size)
-            .unwrap_or(48)
     }
 
     pub fn dpi(&self) -> u32 {
@@ -1674,31 +1618,6 @@ impl FenceWindow {
         });
     }
 
-    pub fn set_spacing(&self, spacing: Spacing) {
-        self.with_view(|v| {
-            if v.spacing != spacing {
-                v.spacing = spacing;
-                for item in &mut v.items {
-                    item.label = None;
-                }
-                v.snap_item_motion();
-                let _ = v.redraw();
-            }
-        });
-        self.arrange_desktop(false);
-    }
-
-    /// 图标对齐 (#154): a short row of icons stays at the left or moves to the middle.
-    pub fn set_icon_align(&self, align: IconAlign) {
-        self.with_view(|v| {
-            if v.icon_align != align {
-                v.icon_align = align;
-                v.snap_item_motion();
-                let _ = v.redraw_content();
-            }
-        });
-    }
-
     /// Drops every cached icon (global icon processing changed); they reload lazily.
     pub fn drop_icons(&self) {
         self.with_view(|v| {
@@ -1739,10 +1658,10 @@ impl FenceWindow {
             }
         });
         if style_changed {
-            let wanted = self.view.borrow().as_ref().map(|v| v.wanted_layout);
-            if let Some(wanted) = wanted {
-                self.set_layout(wanted);
-            }
+            // Icons while it is on; the fence's own view comes back when it goes off.
+            self.with_view(|v| {
+                v.apply_grid(v.grid());
+            });
         }
         let on = self.is_desktop_arranged();
         anchor::set_desktop_fence(self.hwnd(), on);

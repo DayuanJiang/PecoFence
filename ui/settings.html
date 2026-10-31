@@ -27,7 +27,7 @@
     --sheet: #202020; --card: #2b2b2b; --card-stroke: #0000001a; --line: #ffffff14;
     --control: #ffffff0f; --control-hover: #ffffff15; --control-pressed: #ffffff08; --control-disabled: #ffffff0a;
     --control-stroke: #ffffff12; --control-stroke-bottom: #ffffff0a; --control-strong: #9a9a9a;
-    --control-alt: #0000001a; --control-alt-hover: #ffffff0b;
+    --control-alt: #0000001a; --control-alt-hover: #ffffff0b; --thumb: #454545; --tip: #2c2c2c; --tip-stroke: #ffffff17;
     --subtle: #ffffff0f; --subtle-pressed: #ffffff0a; --scroll-thumb: #ffffff5c;
     --accent: #60cdff; --accent-hover: #60cdffe6; --on-accent: #000000;
     --ok: #6ccb5f; --ok-bg: #393d1b; --error: #ff99a4; --error-bg: #442726; --caution: #fce100; --caution-bg: #433519;
@@ -42,7 +42,7 @@
     --sheet: #f3f3f3; --card: #fbfbfb; --card-stroke: #0000000f; --line: #0000000f;
     --control: #ffffffb3; --control-hover: #f9f9f980; --control-pressed: #f9f9f94d; --control-disabled: #f9f9f94d;
     --control-stroke: #0000000f; --control-stroke-bottom: #00000029; --control-strong: #8a8a8a;
-    --control-alt: #00000006; --control-alt-hover: #0000000f;
+    --control-alt: #00000006; --control-alt-hover: #0000000f; --thumb: #ffffff; --tip: #f9f9f9; --tip-stroke: #0000001a;
     --subtle: #00000009; --subtle-pressed: #00000006; --scroll-thumb: #0000005c;
     --accent: #005fb8; --accent-hover: #005fb8e6; --on-accent: #ffffff;
     --ok: #0f7b0f; --ok-bg: #dff6dd; --error: #c42b1c; --error-bg: #fde7e9; --caution: #9d5d00; --caution-bg: #fff4ce;
@@ -136,6 +136,33 @@
   .disabled .toggle, .disabled .toggle:hover { cursor: default; background: transparent; border-color: var(--text-disabled); }
   .disabled .toggle::after { background: var(--text-disabled); }
   .disabled .switch-label { color: var(--text-disabled); }
+
+  /* Slider (see slider()): a 4 px rail filled with the accent up to the thumb. The round
+     thumb's accent dot grows on hover and shrinks while pressed, as in WinUI. --fill ends at
+     the thumb's centre, whose travel stops 10 px short of either end. The labelled ticks and
+     the value bubble are positioned out of the flow, so a drag never moves the row. */
+  .slider { max-width: 100%; }
+  .slider-track { position: relative; width: 300px; max-width: 100%; padding-bottom: 14px; }
+  .slider input { position: relative; z-index: 1; display: block; width: 100%; height: 32px; margin: 0; appearance: none; background: transparent; cursor: pointer; }
+  .slider input::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: linear-gradient(to right, var(--accent) var(--fill, 0), var(--control-strong) var(--fill, 0)); }
+  .slider input::-webkit-slider-thumb { appearance: none; box-sizing: border-box; width: 20px; height: 20px; margin-top: -8px; border-radius: 50%;
+    border: 4px solid var(--thumb); background: var(--accent); box-shadow: 0 0 0 1px var(--control-stroke), 0 1px 2px #00000040; transition: border-width .1s; }
+  .slider input:hover::-webkit-slider-thumb { border-width: 3px; }
+  .slider input:active::-webkit-slider-thumb { border-width: 5px; }
+  .slider-ticks { position: absolute; left: 10px; right: 10px; top: 21px; height: 6px; pointer-events: none; }
+  .slider-ticks > span { position: absolute; top: 0; width: 2px; height: 100%; margin-left: -1px; border-radius: 1px; background: var(--text3); }
+  .slider-ticks b { position: absolute; top: 9px; left: 50%; transform: translateX(-50%); font-size: 11px; line-height: 16px; font-weight: 400; color: var(--text2); white-space: nowrap; }
+  /* The end labels start or end at their ticks, so they stay over the rail. */
+  .slider-ticks > .on { background: var(--text); } .slider-ticks > .on b { color: var(--text); font-weight: 600; }
+  /* The value over the thumb while it is dragged or has keyboard focus: a WinUI tooltip. */
+  .slider-bubble { position: absolute; z-index: 2; top: -30px; transform: translateX(-50%); padding: 3px 10px; border-radius: 6px; border: 1px solid var(--tip-stroke);
+    background: var(--tip); box-shadow: 0 4px 12px #00000040; font-size: 12px; line-height: 16px; white-space: nowrap; pointer-events: none; opacity: 0; transition: opacity .083s; }
+  .slider-bubble::after { content: ""; position: absolute; left: 50%; bottom: -6px; width: 10px; height: 10px; transform: translateX(-50%) rotate(45deg);
+    background: var(--tip); border: solid var(--tip-stroke); border-width: 0 1px 1px 0; }
+  .slider-bubble b { position: relative; z-index: 1; font-weight: 600; }
+  .slider-bubble small { position: relative; z-index: 1; font-size: inherit; color: var(--accent); }
+  .slider-bubble small::before { content: "·"; margin: 0 6px; color: var(--text2); }
+  .slider-track.live .slider-bubble, .slider input:focus-visible ~ .slider-bubble { opacity: 1; }
 
   input[type=time], input[type=text], input[type=number], input[type=email], select, button { height: 32px; border-radius: var(--r-control); background: var(--control);
     border: 1px solid var(--control-stroke); border-bottom-color: var(--control-stroke-bottom); font-size: 14px; max-width: 100%; }
@@ -317,7 +344,12 @@
   @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } ::details-content { transition: none !important; } }
   @media (forced-colors: active) {
     .card { border-color: CanvasText; }
-    .toggle, .swatch { forced-color-adjust: none; }
+    .toggle, .swatch, .slider input, .slider-ticks { forced-color-adjust: none; }
+    .slider input::-webkit-slider-runnable-track { background: linear-gradient(to right, Highlight var(--fill, 0), ButtonText var(--fill, 0)); }
+    .slider input::-webkit-slider-thumb { border-color: ButtonFace; background: Highlight; box-shadow: 0 0 0 1px ButtonText; }
+    .slider-ticks > span, .slider-ticks > .on { background: ButtonText; } .slider-ticks b { color: CanvasText; } .slider-ticks > .on b { color: Highlight; }
+    .slider-bubble, .slider-bubble::after { background: Canvas; border-color: CanvasText; box-shadow: none; } .slider-bubble small, .slider-bubble small::before { color: CanvasText; }
+    .slider input:focus-visible { outline-color: Highlight; }
     .toggle { border-color: ButtonText; background: Canvas; } .toggle::after { background: ButtonText; }
     .toggle.on { background: Highlight; border-color: Highlight; } .toggle.on::after { background: HighlightText; }
     .disabled .toggle { border-color: GrayText; } .disabled .toggle::after { background: GrayText; }
@@ -367,7 +399,7 @@
       <div class="card"><div class="l"><span class="ic">&#xE90C;</span><div><div class="t">标签栏位置</div><div class="s">有多个标签页时，标签排在标题栏里，或在栅栏左侧排成一列</div></div></div>
         <select data-bind="tabBar"><option value="top">顶部</option><option value="left">左侧</option></select></div>
       <div class="card"><div class="l"><span class="ic">&#xE8B9;</span><div><div class="t">默认图标大小</div><div class="s">新建栅栏时使用，每个栅栏可在“栅栏”页或右键菜单中单独设置</div></div></div>
-        <select data-bind="iconSize"><option value="32">小图标</option><option value="48">中等图标</option><option value="64">较大图标</option><option value="96">大图标</option></select></div>
+        <div class="slider"><input type="range" id="iconSize" data-bind="iconSize"></div></div>
       <div class="group">
         <div class="card"><div class="l"><span class="ic">&#xE790;</span><div><div class="t" id="iconTintTitle">图标着色</div></div></div>
           <div class="swatches" id="iconTintSwatches" role="radiogroup" aria-labelledby="iconTintTitle"></div>
@@ -455,9 +487,11 @@
         <select id="fenceTitleOnHover" data-fence="titleOnHover"><option value="default">跟随常规设置</option><option value="always">始终显示</option><option value="hover">鼠标悬停时显示</option></select></div>
       <h3>布局</h3>
       <div class="card"><div class="l"><span class="ic">&#xE8B9;</span><div><div class="t">图标大小</div><div class="s">也可以在栅栏内按住 Ctrl 滚动鼠标滚轮</div></div></div>
-        <select id="fenceIconSize" data-fence="iconSize"><option value="32">小图标</option><option value="48">中等图标</option><option value="64">较大图标</option><option value="96">大图标</option></select></div>
-      <div class="card"><div class="l"><span class="ic">&#xF0E2;</span><div><div class="t">图标间距</div></div></div>
-        <select id="fenceSpacing" data-fence="spacing"><option value="compact">紧凑</option><option value="normal">标准</option><option value="loose">宽松</option></select></div>
+        <div class="slider"><input type="range" id="fenceIconSize" data-fence="iconSize"></div></div>
+      <div class="card"><div class="l"><span class="ic">&#xF0E2;</span><div><div class="t">图标间距</div><div class="s">图标之间的距离，以“标准”为基准</div></div></div>
+        <div class="slider"><input type="range" id="fenceSpacing" data-fence="spacingPx"></div></div>
+      <div class="card" id="fenceNameLines"><div class="l"><span class="ic">&#xE8C1;</span><div><div class="t">图标名称</div><div class="s">不显示时只显示图标，鼠标悬停在图标上可以看到名称</div></div></div>
+        <select id="fenceLabelLines" data-fence="labelLines"><option value="0"></option><option value="1"></option><option value="2"></option><option value="3"></option></select></div>
       <div class="card"><div class="l"><span class="ic">&#xE8E3;</span><div><div class="t">图标对齐</div><div class="s">一行排不满时，居中把空出的宽度平分到左右两边；只用于图标视图</div></div></div>
         <select id="fenceIconAlign" data-fence="iconAlign"><option value="left">左对齐</option><option value="center">居中</option></select></div>
       <div class="card"><div class="l"><span class="ic">&#xE745;</span><div><div class="t">自动高度</div><div class="s">高度跟随内容行数，内容增减时平滑过渡</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="autoHeight"></div></div>
@@ -598,6 +632,164 @@
   const wv = window.chrome && window.chrome.webview;
   const send = (m) => wv && wv.postMessage(m);
   let state = null;
+
+  // Wires the range input of a .slider and returns { input, value, set(value, force), onInput,
+  // onChange }. A dragged thumb closer than `snap` to a tick lands on it. Arrow keys move by
+  // `step` and Page Up / Down by four steps, both without the snap. A drag, or a run of keys,
+  // is one gesture: onInput gets its values, at most one per `liveMs`, and onChange the final
+  // value when it ends, if the gesture moved the value or sent one. A drag ends on release;
+  // keys end on key-up, blur or half a second without a key. `tick` labels the ticks; `value`
+  // and `name` (a preset's) fill the bubble over the thumb and the screen reader text. They run
+  // again on every set(), so they may use the page language. set() does nothing during a
+  // gesture, nor for half a second after one when the host repeats a value the gesture sent.
+  // set(value, true) switches subject (another fence) and drops a gesture. A gesture that already
+  // sent values first gets its onChange, which still belongs to the old subject.
+  function slider(input, { min, max, step = 1, ticks = [], snap = 0, liveMs = 0, value = String, name = () => '', tick = name }) {
+    const track = document.createElement('div'), marks = document.createElement('div'), bubble = document.createElement('span');
+    track.className = 'slider-track'; marks.className = 'slider-ticks'; bubble.className = 'slider-bubble';
+    bubble.setAttribute('aria-hidden', 'true');
+    input.before(track);
+    track.append(marks, input, bubble);
+    // step 'any' lets the pointer position land between steps, so the snap distance is exact.
+    Object.assign(input, { min, max, step: 'any' });
+    const frac = v => (v - min) / (max - min);
+    const at = v => `calc(10px + (100% - 20px) * ${frac(v)})`;
+    marks.replaceChildren(...ticks.map(v => {
+      const mark = document.createElement('span');
+      mark.style.left = frac(v) * 100 + '%';
+      mark.append(document.createElement('b'));
+      return mark;
+    }));
+    // Each label sits centred under its tick. One that would leave its card (a narrow window, a
+    // long translation at an end tick) moves back inside, 12 px from the card's edge.
+    const fit = () => {
+      const card = track.closest('.card')?.getBoundingClientRect();
+      for (const b of marks.querySelectorAll('b')) {
+        b.style.marginLeft = '';
+        const r = b.getBoundingClientRect();
+        if (!card || !r.width) continue;
+        const shift = Math.max(0, card.left + 12 - r.left) - Math.max(0, r.right - (card.right - 12));
+        if (shift) b.style.marginLeft = shift + 'px';
+      }
+    };
+    new ResizeObserver(fit).observe(track);
+    const control = { input, value: min, onInput: null, onChange: null };
+    // gesture: 'drag', 'keys' or null; the bubble shows while it runs. trail: the values it sent.
+    // hold: values recent gestures sent, which a host state may still repeat. orphan: a drag
+    // that set(value, true) dropped; the thumb ignores the pointer until it lets go.
+    let base = min, emitted = min, gesture = null, orphan = false, trail = [], hold = null;
+    let timer = 0, keyTimer = 0, lastLive = -Infinity;
+    const begin = g => { gesture = g; track.classList.toggle('live', !!g); };
+    const quantize = v => Math.min(max, Math.max(min, min + Math.round((v - min) / step) * step));
+    const snapped = v => ticks.find(t => Math.abs(v - t) < snap) ?? quantize(v);
+    const show = v => {
+      control.value = v;
+      input.value = v;
+      input.style.setProperty('--fill', at(v));
+      bubble.style.left = at(v);
+      const px = tf("{0} px", value(v)), preset = name(v);
+      const b = document.createElement('b'), small = document.createElement('small');
+      b.textContent = px; small.textContent = preset;
+      bubble.replaceChildren(b, ...(preset ? [small] : []));
+      input.setAttribute('aria-valuetext', preset ? tf("{0} · {1} px", preset, value(v)) : px);
+      ticks.forEach((tv, i) => marks.children[i].classList.toggle('on', tv === v));
+      // The bold current label is wider.
+      fit();
+    };
+    const emit = () => {
+      clearTimeout(timer); timer = 0;
+      if (control.value === emitted) return;
+      emitted = control.value; lastLive = performance.now(); trail.push(emitted);
+      control.onInput?.(emitted);
+    };
+    const live = () => {
+      if (!liveMs) emit();
+      else if (!timer) timer = setTimeout(emit, Math.max(0, lastLive + liveMs - performance.now()));
+    };
+    const finish = () => {
+      clearTimeout(timer); clearTimeout(keyTimer); timer = keyTimer = 0;
+      const now = performance.now(), sent = trail.length > 0;
+      hold = { values: new Set([...(hold && now < hold.until ? hold.values : []), ...trail]), until: now + 500 };
+      trail = []; begin(null);
+      if (control.value === base && !sent) return;
+      base = emitted = control.value;
+      control.onChange?.(base);
+    };
+    input.addEventListener('pointerdown', () => { begin('drag'); orphan = false; });
+    // Chromium sends no change event when a drag ends where it started, so the release ends it.
+    for (const type of ['pointerup', 'pointercancel']) window.addEventListener(type, () => {
+      if (orphan) input.value = control.value;
+      else if (gesture === 'drag') finish();
+      orphan = false;
+    });
+    input.addEventListener('input', () => {
+      if (orphan) { input.value = control.value; return; }
+      if (!gesture) begin('drag');
+      show(snapped(Number(input.value)));
+      live();
+    });
+    // After the release, or a value set from a script (not snapped yet).
+    input.addEventListener('change', () => {
+      if (orphan) { input.value = control.value; return; }
+      if (Number(input.value) !== control.value) show(snapped(Number(input.value)));
+      finish();
+    });
+    input.addEventListener('keydown', e => {
+      const by = { ArrowRight: step, ArrowUp: step, ArrowLeft: -step, ArrowDown: -step, PageUp: step * 4, PageDown: -step * 4 }[e.key];
+      const to = e.key === 'Home' ? min : e.key === 'End' ? max : by ? quantize(control.value + by) : null;
+      if (to == null) return;
+      e.preventDefault();
+      if (gesture === 'drag' || orphan) return;
+      begin('keys');
+      show(to);
+      live();
+      clearTimeout(keyTimer); keyTimer = setTimeout(finish, 500);
+    });
+    for (const type of ['keyup', 'blur']) input.addEventListener(type, () => { if (gesture === 'keys') finish(); });
+    control.set = (v, force) => {
+      if (force) {
+        if (gesture && trail.length) control.onChange?.(control.value);
+        clearTimeout(timer); clearTimeout(keyTimer); timer = keyTimer = 0;
+        orphan = gesture === 'drag'; begin(null); trail = []; hold = null;
+      } else if (gesture || (v !== control.value && hold && performance.now() < hold.until && hold.values.has(v))) {
+        return;
+      }
+      base = emitted = v;
+      ticks.forEach((tv, i) => { marks.children[i].firstChild.textContent = tick(tv); });
+      show(v);
+    };
+    control.set(min);
+    return control;
+  }
+  // Icon sizes: any multiple of 4 from 24 to 128 (layout::is_icon_size). The ticks are the fence
+  // menu's four sizes, under short names; the bubble and screen readers use the menu's names.
+  const iconSizeSlider = (input, liveMs) => slider(input, {
+    min: 24, max: 128, step: 4, ticks: [32, 48, 64, 96], snap: 4, liveMs,
+    name: v => ({ 32: t("小图标"), 48: t("中等图标"), 64: t("较大图标"), 96: t("大图标") })[v],
+    tick: v => ({ 32: t("图标大小\x04小"), 48: t("图标大小\x04中"), 64: t("图标大小\x04较大"), 96: t("图标大小\x04大") })[v],
+  });
+  // The default size slider only updates the preview while dragged. A fence's sliders resize the
+  // fence live, about 10 times a second, since each new size re-extracts the fence's icons.
+  const defaultIconSize = iconSizeSlider(document.getElementById('iconSize'), 0);
+  const fenceIconSize = iconSizeSlider(document.getElementById('fenceIconSize'), 100);
+  // Icon spacing: DIPs the icon cell gains in width (Spacing::PX_MIN..PX_MAX). The ticks are the
+  // three presets, under names short enough to fit.
+  const fenceSpacing = slider(document.getElementById('fenceSpacing'), {
+    min: -12, max: 32, step: 4, ticks: [-12, 0, 16], liveMs: 100,
+    value: v => (v > 0 ? '+' : v < 0 ? '−' : '') + Math.abs(v),
+    name: v => ({ [-12]: t("图标间距\x04紧凑"), 0: t("图标间距\x04标准"), 16: t("图标间距\x04宽松") })[v],
+  });
+  const fenceSliders = new Map([fenceIconSize, fenceSpacing].map(s => [s.input, s]));
+  // Preview icon edge (px) for an icon size: the four menu sizes map to 21 / 26 / 31 / 36, and
+  // other sizes interpolate between their neighbours.
+  const PREVIEW_ICON = [[24, 18], [32, 21], [48, 26], [64, 31], [96, 36], [128, 40]];
+  function previewIconPx(size) {
+    const i = PREVIEW_ICON.findIndex(([s]) => s >= size);
+    if (i === 0) return PREVIEW_ICON[0][1];
+    if (i < 0) return PREVIEW_ICON.at(-1)[1];
+    const [s0, p0] = PREVIEW_ICON[i - 1], [s1, p1] = PREVIEW_ICON[i];
+    return Math.round(p0 + (p1 - p0) * (size - s0) / (s1 - s0));
+  }
   const CATS = () => [["programs",t("程序")],["shortcuts",t("快捷方式")],["folders",t("文件夹")],["documents",t("文档")],["images",t("图片")],["music",t("音乐")],["video",t("视频")],["archives",t("压缩包")],["installers",t("安装包")]];
 
   // The theme-style tiles preview the icon settings (size, tint, Chameleon) in place.
@@ -608,7 +800,7 @@
     const glass = settings.customTheme ? state.styleInUse === 'liquidGlass' : settings.themeStyle === 'liquidGlass';
     document.documentElement.classList.toggle('liquid-glass', glass);
     preview.classList.toggle('chameleon', !!settings.icons.chameleon);
-    preview.style.setProperty('--preview-icon-size', ({ 32: 21, 48: 26, 64: 31, 96: 36 }[settings.iconSize] || 26) + 'px');
+    preview.style.setProperty('--preview-icon-size', previewIconPx(settings.iconSize || 48) + 'px');
     preview.style.setProperty('--preview-tint', settings.icons.tintRgb ? '#' + rgbToHex(settings.icons.tintRgb) : 'transparent');
     preview.style.setProperty('--preview-tint-strength', settings.icons.tintStrength);
     preview.style.setProperty('--preview-title-align', settings.titleAlign || 'left');
@@ -765,6 +957,10 @@
       } else if (el.tagName === 'SELECT') {
         el.value = String(cur);
         el.onchange = () => { const v = el.value; set(root, p, isNaN(v) || v === '' ? v : Number(v)); commit(path); };
+      } else if (el === defaultIconSize.input) {
+        defaultIconSize.set(cur);
+        defaultIconSize.onInput = v => { set(root, p, v); renderAppearance(); };
+        defaultIconSize.onChange = v => { set(root, p, v); commit(path); };
       }
     });
   }
@@ -1038,7 +1234,8 @@
   let fenceSel = null;
   const fenceById = (id) => (state.fences || []).find(f => f.id === id);
   const fenceOption = (f) => f.title + (f.kind === 'portal' ? t("（文件夹）") : f.kind === 'inbox' ? t("（桌面）") : '') + (f.host ? tf("（{0} 的标签页）", f.host) : '');
-  const setFence = (id, prop, value) => send({ type: 'setFence', id, prop, value });
+  // A slider's live ticks resize the fence without the cell snap; its release snaps once.
+  const setFence = (id, prop, value, live) => send({ type: 'setFence', id, prop, value, ...(live && { live }) });
   function ensureOption(sel, value, label) {
     sel.querySelector('[data-custom]')?.remove();
     if (value && ![...sel.options].some(o => o.value === value)) {
@@ -1072,6 +1269,15 @@
       : t("里面没有图标时就不显示；有图标归到这里时，它会自己回来");
     document.getElementById('fenceOpenFolders').style.display = f.portal ? 'none' : '';
     document.getElementById('fenceDesktopLayout').style.display = f.kind === 'inbox' ? '' : 'none';
+    // List and Details rows keep the name on one line, so the setting does nothing there and is
+    // greyed. 像桌面一样排列 shows icons whatever the fence's view (a 「桌面」 with tabs stays a fence).
+    const nameLines = [t("图标名称\x04不显示"), t("图标名称\x04一行"), t("图标名称\x04两行"), t("图标名称\x04三行")];
+    [...document.getElementById('fenceLabelLines').options].forEach((o, i) => { if (o.textContent !== nameLines[i]) o.textContent = nameLines[i]; });
+    const iconsShown = !(f.layout === 'list' || f.layout === 'details') || (!!f.desktopLayout && !f.tabbed);
+    const nameCard = document.getElementById('fenceNameLines');
+    nameCard.classList.toggle('disabled', !iconsShown);
+    document.getElementById('fenceLabelLines').disabled = !iconsShown;
+    nameCard.querySelector('.s').textContent = iconsShown ? t("不显示时只显示图标，鼠标悬停在图标上可以看到名称") : t("只用于图标视图");
     document.getElementById('fencePortalHeading').textContent = t("栅栏页\x04文件夹");
     const tintSel = document.querySelector('[data-fence=tint]');
     const palette = `<option value="">${esc(t("无"))}</option>` + (state.tintPalette || []).map(c => `<option value="${esc(c.hex)}">${esc(t(c.name))}</option>`).join('');
@@ -1093,7 +1299,14 @@
         if (prop === 'tint' || prop === 'tabColor') ensureOption(el, value, t("自定义 #") + value);
         if (prop === 'titleColor') { ensureOption(el, /^[0-9A-F]{6}$/i.test(value) ? value : '', t("自定义 #") + value); el.querySelector('[value=tint]').disabled = !f.tint; el.closest('.card').querySelector('.s').hidden = !!f.tint; }
         el.value = value;
-        el.onchange = () => setFence(f.id, prop, prop === 'iconSize' ? Number(el.value) : prop === 'tint' || prop === 'tabColor' ? (el.value || null) : el.value);
+        el.onchange = () => setFence(f.id, prop, prop === 'labelLines' ? Number(el.value) : prop === 'tint' || prop === 'tabColor' ? (el.value || null) : el.value);
+      } else if (fenceSliders.has(el)) {
+        // Another fence's value replaces whatever the slider still holds.
+        const s = fenceSliders.get(el);
+        s.set(cur, s.fence !== f.id);
+        s.fence = f.id;
+        s.onInput = v => setFence(f.id, prop, v, true);
+        s.onChange = v => setFence(f.id, prop, v);
       } else if (el.tagName === 'INPUT') {
         if (document.activeElement !== el) el.value = cur;
         el.onchange = () => { const v = el.value.trim(); if (v && v !== f.title) setFence(f.id, prop, v); else el.value = f.title; };
