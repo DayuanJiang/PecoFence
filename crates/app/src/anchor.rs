@@ -222,6 +222,9 @@ pub struct DesktopAnchor {
     anchor_refused: Option<(isize, i32)>,
     /// A topmost-band placement failed during this peek / show desktop (logged once).
     topmost_refused: bool,
+    /// The window (of an elevated program) the fences go above because they may not go under
+    /// it; logged when it starts and when it ends.
+    placed_above: Option<isize>,
 }
 
 /// The fences' windows as a feedback report describes them.
@@ -348,6 +351,7 @@ impl DesktopAnchor {
             on_desktop_front: None,
             anchor_refused: None,
             topmost_refused: false,
+            placed_above: None,
         };
         // The hook reports only changes of the foreground. With the desktop already in front
         // (a start at sign-in before any window opens) its clicks are followed from now on.
@@ -474,22 +478,26 @@ impl DesktopAnchor {
         };
         let mut refused = None;
         let mut failed = 0;
+        let mut placed_above = None;
         self.with_anchoring(|s| {
             let mode = s.mode;
-            let place = |w: HWND| -> Result<()> {
+            let place = |w: HWND| -> Result<Option<HWND>> {
                 match mode {
                     ZMode::InsertAboveHost => desktop::insert_above(w, host.host),
-                    ZMode::HwndBottom => desktop::send_to_bottom(w),
+                    ZMode::HwndBottom => desktop::send_to_bottom(w).map(|()| None),
                 }
             };
             let _ = place(s.sentinel.hwnd());
             // Each fence is inserted directly above the host, so the *last* one placed ends up
             // lowest. Iterate in reverse: the end of `fences` (newest / last raised) is on top.
             for (f, shadow) in s.fences.clone().into_iter().rev() {
-                if let Err(e) = place(f) {
-                    tracing::debug!(hwnd = ?f, error = %e, "anchor SetWindowPos failed");
-                    failed += 1;
-                    refused.get_or_insert((f, e));
+                match place(f) {
+                    Ok(above) => placed_above = placed_above.or(above),
+                    Err(e) => {
+                        tracing::debug!(hwnd = ?f, error = %e, "anchor SetWindowPos failed");
+                        failed += 1;
+                        refused.get_or_insert((f, e));
+                    }
                 }
                 if let Some(sh) = shadow {
                     let _ = desktop::insert_after(sh, f);
@@ -497,6 +505,27 @@ impl DesktopAnchor {
             }
         });
         self.note_refusal(host.host, refused, failed);
+        self.note_placed_above(placed_above);
+    }
+
+    /// Logs once when the fences start going above a window they may not go under (one of an
+    /// elevated program, lowest above the desktop) and once when they are directly above the
+    /// desktop again: the anchor check repeats the placement every pass.
+    fn note_placed_above(&mut self, above: Option<HWND>) {
+        let key = above.map(|h| h.0 as isize);
+        if key == self.placed_above {
+            return;
+        }
+        self.placed_above = key;
+        match above {
+            Some(h) => tracing::info!(
+                above = ?h,
+                class = %desktop::class_name(h),
+                above_elevated = ?pecofence_platform::process::is_elevated(desktop::window_pid(h)),
+                "fences placed above a window they may not go under"
+            ),
+            None => tracing::info!("fences directly above the desktop again"),
+        }
     }
 
     /// Logs a refused placement once per cause (the window it had to go under, the error):

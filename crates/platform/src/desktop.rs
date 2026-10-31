@@ -288,12 +288,13 @@ const E_ACCESS_DENIED: windows_core::HRESULT = windows_core::HRESULT(0x8007_0005
 /// the bottom and `host` back under it, which references no foreign window; `hwnd` spends well
 /// under a millisecond behind the desktop. Above a host with windows under it (the WorkerW of
 /// Windows 10), `hwnd` goes directly above the elevated window instead: other apps stay above.
-pub fn insert_above(hwnd: HWND, host: HWND) -> Result<()> {
+/// Returns that window then, `None` when `hwnd` is directly above `host`.
+pub fn insert_above(hwnd: HWND, host: HWND) -> Result<Option<HWND>> {
     // SAFETY: plain FFI calls on caller-supplied handles.
     unsafe {
         let above = surface_window_above(host, hwnd);
         if above == hwnd {
-            return Ok(());
+            return Ok(None);
         }
         let insert_after = if above.0.is_null() || (is_topmost(above) && !is_topmost(host)) {
             HWND_TOP
@@ -310,16 +311,18 @@ pub fn insert_above(hwnd: HWND, host: HWND) -> Result<()> {
                     "placement under an elevated window refused; anchoring from the bottom"
                 );
                 SetWindowPos(hwnd, Some(HWND_BOTTOM), 0, 0, 0, 0, ANCHOR_FLAGS).ok()?;
-                SetWindowPos(host, Some(HWND_BOTTOM), 0, 0, 0, 0, ANCHOR_FLAGS).ok()
+                SetWindowPos(host, Some(HWND_BOTTOM), 0, 0, 0, 0, ANCHOR_FLAGS).ok()?;
+                Ok(None)
             }
             Err(e) if e.code() == E_ACCESS_DENIED => {
                 tracing::debug!(
                     ?above,
                     "placement under an elevated window refused; placing above it"
                 );
-                place_above_refused(hwnd, above, is_topmost(host))
+                place_above_refused(hwnd, above, is_topmost(host))?;
+                Ok(Some(above))
             }
-            placed => placed,
+            placed => placed.map(|()| None),
         }
     }
 }
