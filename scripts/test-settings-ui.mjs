@@ -1017,7 +1017,7 @@ async function runTests() {
     win().testRefresh(); await settle();
     assert(help.classList.contains('error') && hotkeyText() === 'Win+空格', 'All-taken state not shown: ' + help.textContent);
   });
-  await test('All ten languages switch live without changing user names or draft inputs', async () => {
+  await test('All eleven languages switch live without changing user names or draft inputs', async () => {
     doc = await reset();
     const win = frame.contentWindow;
     current().fences[0].title = '名称';
