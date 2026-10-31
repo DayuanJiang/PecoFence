@@ -35,6 +35,8 @@ impl FenceWindow {
         title: &str,
         is_inbox: bool,
         rolled_up: bool,
+        expand_upward: bool,
+        row_bottom: bool,
         icon_size: u32,
         label_lines: u8,
         auto_height: bool,
@@ -249,6 +251,9 @@ impl FenceWindow {
             auto_height,
             rail_grow: false,
             locked: false,
+            expand_upward,
+            row_bottom,
+            anim_upward: row_bottom,
             backdrop_override: None,
             opacity: 1.0,
             title_on_hover_override: None,
@@ -286,8 +291,11 @@ impl FenceWindow {
             behavior: ctx.behavior.clone(),
         };
         if rolled_up {
+            // `bounds` is the expanded rect: the title row sits at its top, or at its bottom for
+            // a fence that last opened upward.
             let th = state.title_h_px();
-            let _ = window.set_bounds(bounds.left, bounds.top, bounds.right - bounds.left, th);
+            let top = top_for_height(row_bottom, &bounds, th);
+            let _ = window.set_bounds(bounds.left, top, bounds.right - bounds.left, th);
         }
         state.update_backdrop();
         state.snap_chrome_fades();
@@ -590,7 +598,14 @@ impl FenceWindow {
             v.content_panel.visual.set_opacity(1.0);
             v.content_panel.visual.set_visible(!rolled);
             if rolled {
-                rect.bottom = rect.top + v.rolled_h_px();
+                // `rect` is the expanded rect: the title row sits at its top, or at its bottom
+                // for a fence that last opened upward.
+                let rolled_h = v.rolled_h_px();
+                if v.row_bottom {
+                    rect.top = rect.bottom - rolled_h;
+                } else {
+                    rect.bottom = rect.top + rolled_h;
+                }
                 if v.column_collapsed {
                     rect.right = rect.left + v.rolled_w_px();
                 }
@@ -932,6 +947,7 @@ impl FenceWindow {
                         && a.title_size == b.title_size
                         && a.title_color == b.title_color
                         && a.folder_icon == b.folder_icon
+                        && a.up_button == b.up_button
                 });
             let same_set = v.tabs.len() == tabs.len()
                 && v.tabs.iter().all(|t| tabs.iter().any(|n| n.id == t.id));
@@ -1444,7 +1460,7 @@ impl FenceWindow {
     /// takes its rolled size again: the left tab column it is collapsed to, or its title row at
     /// the expanded width. Returns the new window rect when it changed.
     pub fn settle_rolled_size(&self) -> Option<RECT> {
-        let (w, h) = {
+        let (w, h, upward) = {
             let mut guard = self.view.borrow_mut();
             let v = guard.as_mut()?;
             if !v.rolled_up || v.peeking || v.roll_anim.is_some() || v.retired {
@@ -1460,14 +1476,16 @@ impl FenceWindow {
                 cur_w
             };
             v.column_collapsed = v.tabs_on_rail();
-            (w, v.rolled_h_px())
+            (w, v.rolled_h_px(), v.row_bottom)
         };
         let r = self.rect();
         if (r.right - r.left, r.bottom - r.top) == (w, h) {
             return None;
         }
         // No borrow held: WM_SIZE lays the panels out at the new size.
-        let _ = self.window.set_bounds(r.left, r.top, w, h);
+        let _ = self
+            .window
+            .set_bounds(r.left, top_for_height(upward, &r, h), w, h);
         self.with_view(|v| v.update_shadow_now());
         Some(window::window_rect(self.hwnd()))
     }
@@ -1507,6 +1525,45 @@ impl FenceWindow {
 
     pub fn set_locked(&self, on: bool) {
         self.with_view(|v| v.locked = on);
+    }
+
+    /// 向上展开 on or off. Nothing moves: the next expansion picks its side by the new setting.
+    /// Returns true when the fence is rolled up at rest, so the caller records its expanded
+    /// rect again around the title row (switched off, below it). An open fence or one in a roll
+    /// keeps the edge it has until it is rolled up.
+    pub fn set_expand_upward(&self, on: bool) -> bool {
+        let mut guard = self.view.borrow_mut();
+        let Some(v) = guard.as_mut() else {
+            return false;
+        };
+        if v.expand_upward == on {
+            return false;
+        }
+        v.expand_upward = on;
+        let at_rest = v.rolled_at_rest();
+        if at_rest && !on {
+            v.row_bottom = false;
+        }
+        at_rest
+    }
+
+    /// The title row is at the bottom: the window keeps its bottom edge as its height changes.
+    pub fn row_at_bottom(&self) -> bool {
+        self.view.borrow().as_ref().is_some_and(|v| v.row_bottom)
+    }
+
+    /// Which end of the saved rect a rolled title row sits at (`AppState::set_fence_bounds`
+    /// chooses it).
+    pub fn set_row_at_bottom(&self, on: bool) {
+        self.with_view(|v| v.row_bottom = on);
+    }
+
+    /// Rolled up and still: no hover peek, no roll or height animation in flight.
+    pub fn rolled_at_rest(&self) -> bool {
+        self.view
+            .borrow()
+            .as_ref()
+            .is_some_and(|v| v.rolled_at_rest())
     }
 
     /// Re-reads the window's DPI and relayouts if it drifted (logon-time 96-DPI windows).
@@ -1626,17 +1683,18 @@ impl FenceWindow {
     /// the final geometry either way, so the state persists it immediately. The borrow is
     /// released before SetWindowPos because WM_SIZE re-enters the handler.
     pub fn apply_height(&self, height_px: i32, animate: bool) -> RECT {
-        let animated = {
+        let (animated, upward) = {
             let mut guard = self.view.borrow_mut();
             match guard.as_mut() {
                 Some(v) => {
                     v.expanded_h_px = height_px;
-                    animate && v.start_height_anim(height_px)
+                    (animate && v.start_height_anim(height_px), v.row_bottom)
                 }
-                None => false,
+                None => (false, false),
             }
         };
         let mut r = self.window.window_rect();
+        r.top = top_for_height(upward, &r, height_px);
         r.bottom = r.top + height_px;
         if !animated {
             self.set_bounds(r);

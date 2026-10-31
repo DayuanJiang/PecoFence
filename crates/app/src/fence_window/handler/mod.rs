@@ -56,10 +56,13 @@ pub(super) fn open_items(v: &FenceViewState, queue: &CommandQueue, ids: Vec<Item
             path,
         }),
         None => {
+            // Several folders cannot all open inside the fence: Explorer gets each.
+            let inside = ids.len() == 1;
             for id in ids {
                 queue.push(Command::LaunchItem {
                     item: id,
                     from: v.active,
+                    inside,
                 });
             }
         }

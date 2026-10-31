@@ -17,7 +17,11 @@ impl App {
                 color: f.appearance.as_ref().and_then(|a| a.tab_rgb.or(a.tint_rgb)),
                 title_size: fence_style_for(f).title_size,
                 title_color: fence_style_for(f).title_color,
-                folder_icon: f.kind == FenceKind::FolderPortal && !f.hide_title_icon,
+                // A regular fence showing a folder opened in it gets the folder icon too, so its
+                // tab has the up arrow that takes it back to its own icons.
+                folder_icon: !f.hide_title_icon
+                    && (f.kind == FenceKind::FolderPortal || self.state.can_go_up(f.id)),
+                up_button: self.state.can_go_up(f.id),
             })
             .collect()
     }
@@ -131,7 +135,7 @@ impl App {
             }
             let rect = self.ctx.behavior.resting_rect(w.hwnd(), w.rect());
             self.state
-                .set_fence_bounds(tab, rect, false, w.expanded_height_px());
+                .set_fence_bounds(tab, rect, false, w.expanded_height_px(), false, false);
             self.queue.push(Command::RaiseFence(w.hwnd()));
             tracing::debug!(
                 from_drag,

@@ -23,8 +23,11 @@ pub struct AppState {
     portal_items: HashMap<ItemId, Item>,
     /// Portal fence → its current item ids.
     portal_members: HashMap<FenceId, Vec<ItemId>>,
-    /// Portal fence → subfolder it has navigated into (absent = its root folder).
+    /// Fence showing a folder → subfolder it has navigated into (absent = the folder itself).
     portal_cwd: HashMap<FenceId, PathBuf>,
+    /// Regular fence → a folder double-clicked in it (a desktop folder or a folder shortcut's
+    /// target), shown in place of its icons until the fence goes up from it. Runtime only.
+    opened_folders: HashMap<FenceId, OpenedFolder>,
     /// Portals whose folder could not be found at the last read.
     portal_missing: HashSet<FenceId>,
     /// When the youngest `.tmp` the rules skipped as too new has lasted `TMP_SETTLE_SECS`
@@ -155,6 +158,7 @@ impl AppState {
             portal_items: HashMap::new(),
             portal_members: HashMap::new(),
             portal_cwd: HashMap::new(),
+            opened_folders: HashMap::new(),
             portal_missing: HashSet::new(),
             tmp_settle_at: std::cell::Cell::new(None),
             work_areas,
@@ -259,6 +263,7 @@ impl AppState {
         self.ensure_layout();
         self.normalize_tabs();
         self.portal_cwd.clear();
+        self.opened_folders.clear();
         self.dirty = true;
     }
 
@@ -319,6 +324,7 @@ impl AppState {
         self.ensure_layout();
         self.normalize_tabs();
         self.portal_cwd.clear();
+        self.opened_folders.clear();
         self.dirty = true;
     }
 
@@ -703,9 +709,10 @@ impl AppState {
     }
 
     /// The fences kept without a window: 为空时自动隐藏 is on and they show no items (a
-    /// portal only at its root folder, so opening an empty subfolder keeps it), and the inbox
-    /// while 显示 Windows 桌面图标时隐藏“桌面”栅栏 is on and the Windows icons show. Only a
-    /// window of its own hides (a tab, or a host of tabs, stays).
+    /// portal only at its root folder and a regular fence not while it shows a folder opened in
+    /// it, so opening an empty folder keeps it), and the inbox while 显示 Windows 桌面图标时隐藏
+    /// “桌面”栅栏 is on and the Windows icons show. Only a window of its own hides (a tab, or a
+    /// host of tabs, stays).
     pub fn hidden_fences(&self) -> Vec<FenceId> {
         let settings = &self.config.settings;
         let for_windows_icons = settings.hide_inbox_when_icons_shown && !settings.hide_real_icons;
@@ -713,8 +720,8 @@ impl AppState {
             .iter()
             .filter(|f| {
                 let empty = f.hide_when_empty
-                    && !self.portal_cwd.contains_key(&f.id)
-                    && self.unsorted_items_of(f).next().is_none();
+                    && !self.can_go_up(f.id)
+                    && self.unsorted_held_items_of(f).next().is_none();
                 (empty || (for_windows_icons && f.kind == FenceKind::Inbox))
                     && f.tab_host.is_none()
                     && self.tabs_of(f.id).len() <= 1
@@ -1125,9 +1132,20 @@ impl AppState {
             .len()
     }
 
-    /// Items of `fence` with their refs, as stored (orphans hidden), before any sort.
-    fn fence_members<'s, 'f>(&'s self, fence: &'f Fence) -> Vec<(Option<&'f ItemRef>, &'s Item)> {
-        if fence.kind == FenceKind::FolderPortal {
+    /// Items of `fence` with their refs, as stored (orphans hidden), before any sort: what its
+    /// window shows, or with `held` what it holds (a regular fence showing a folder opened in it
+    /// still holds its own icons).
+    fn fence_members<'s, 'f>(
+        &'s self,
+        fence: &'f Fence,
+        held: bool,
+    ) -> Vec<(Option<&'f ItemRef>, &'s Item)> {
+        let folder = if held {
+            self.portal_root(fence.id)
+        } else {
+            self.folder_root(fence.id)
+        };
+        if folder.is_some() {
             self.portal_members
                 .get(&fence.id)
                 .map(|ids| {
@@ -1137,24 +1155,49 @@ impl AppState {
                 })
                 .unwrap_or_default()
         } else {
-            fence
-                .items
-                .iter()
-                .filter_map(|r| self.config.items.get(&r.item_id).map(|it| (Some(r), it)))
-                .filter(|(_, it)| it.orphaned_since.is_none())
-                .collect()
+            self.own_members(fence).collect()
         }
     }
 
-    /// Items of `fence` in no particular order (orphans hidden): for callers that only need
-    /// the set, without the sort `items_of` pays for.
-    pub fn unsorted_items_of<'s>(&'s self, fence: &Fence) -> impl Iterator<Item = &'s Item> {
-        self.fence_members(fence).into_iter().map(|(_, it)| it)
+    /// The desktop items assigned to `fence` (orphans hidden), whatever it shows right now.
+    fn own_members<'s, 'f>(
+        &'s self,
+        fence: &'f Fence,
+    ) -> impl Iterator<Item = (Option<&'f ItemRef>, &'s Item)> {
+        fence
+            .items
+            .iter()
+            .filter_map(|r| self.config.items.get(&r.item_id).map(|it| (Some(r), it)))
+            .filter(|(_, it)| it.orphaned_since.is_none())
     }
 
-    /// Items of `fence` in display order (orphans hidden).
+    /// How many desktop items are assigned to `fence`: what deleting it sends back to the inbox
+    /// (a fence showing a folder keeps its own icons meanwhile).
+    pub fn own_item_count(&self, fence: &Fence) -> usize {
+        self.own_members(fence).count()
+    }
+
+    /// What `fence` holds, in no particular order (orphans hidden): a portal's folder, any other
+    /// fence's own icons, also while it shows a folder opened in it. The CLI's view, for callers
+    /// that only need the set, without the sort `held_items_of` pays for.
+    pub fn unsorted_held_items_of<'s>(&'s self, fence: &Fence) -> impl Iterator<Item = &'s Item> {
+        self.fence_members(fence, true)
+            .into_iter()
+            .map(|(_, it)| it)
+    }
+
+    /// Items of `fence` in display order (orphans hidden), as its window shows them.
     pub fn items_of(&self, fence: &Fence) -> Vec<&Item> {
-        let mut items = self.fence_members(fence);
+        self.sorted_members(fence, false)
+    }
+
+    /// [`Self::unsorted_held_items_of`] in display order.
+    pub fn held_items_of(&self, fence: &Fence) -> Vec<&Item> {
+        self.sorted_members(fence, true)
+    }
+
+    fn sorted_members(&self, fence: &Fence, held: bool) -> Vec<&Item> {
+        let mut items = self.fence_members(fence, held);
         match fence.view.sort {
             SortMode::Manual => items.sort_by_key(|(r, it)| {
                 (
@@ -1223,9 +1266,19 @@ impl AppState {
     }
 
     /// The folder a portal fence currently shows (its root, or the subfolder navigated into).
+    /// Also the folder a fence shows after a folder was opened in it ([`Self::open_folder`]).
     pub fn portal_path(&self, id: FenceId) -> Option<PathBuf> {
-        let root = self.portal_root(id)?;
+        let root = self.folder_root(id)?;
         Some(self.portal_cwd.get(&id).cloned().unwrap_or(root))
+    }
+
+    /// The folder a fence navigates from: a folder opened in it, else a portal's root.
+    /// Navigation never goes above it.
+    fn folder_root(&self, id: FenceId) -> Option<PathBuf> {
+        self.opened_folders
+            .get(&id)
+            .map(|s| s.root.clone())
+            .or_else(|| self.portal_root(id))
     }
 
     /// The folder a portal was created for.
@@ -1244,6 +1297,12 @@ impl AppState {
         self.portal_cwd.contains_key(&id)
     }
 
+    /// True when the fence can go up: a portal inside a subfolder, or a regular fence showing a
+    /// folder opened in it (up from there brings its own icons back).
+    pub fn can_go_up(&self, id: FenceId) -> bool {
+        self.portal_navigated(id) || self.opened_folders.contains_key(&id)
+    }
+
     /// True when the portal's folder could not be found at the last read.
     pub fn portal_missing(&self, id: FenceId) -> bool {
         self.portal_missing.contains(&id)
@@ -1251,7 +1310,7 @@ impl AppState {
 
     /// Navigates a portal into `dir` (must be inside its root). Returns false if refused.
     pub fn portal_enter(&mut self, id: FenceId, dir: &Path) -> bool {
-        let Some(root) = self.portal_root(id) else {
+        let Some(root) = self.folder_root(id) else {
             return false;
         };
         if !dir.is_dir() {
@@ -1273,10 +1332,72 @@ impl AppState {
         true
     }
 
-    /// One folder up (never above the root). Returns false when already at the root.
+    /// Makes regular fence `id` show `dir` (a desktop folder or a folder shortcut's target) in
+    /// place of its icons; a folder opened from another opened folder replaces it. Returns false
+    /// if refused (an unknown fence, a folder portal, or a folder that is gone).
+    pub fn open_folder(&mut self, id: FenceId, dir: &Path) -> bool {
+        if self
+            .fence(id)
+            .is_none_or(|f| f.kind == FenceKind::FolderPortal)
+            || !dir.is_dir()
+        {
+            return false;
+        }
+        self.portal_cwd.remove(&id);
+        let root = folder_path_with_real_case(dir);
+        // A drive's root has no name of its own: Explorer titles it "Local Disk (C:)".
+        let title = root
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .or_else(|| shell::normal_display_name(&root))
+            .unwrap_or_else(|| root.to_string_lossy().to_string());
+        // A folder opened from another opened folder keeps the icon that opened the first one.
+        let opened_by = self.opened_folders.get(&id).and_then(|o| o.opened_by);
+        self.opened_folders.insert(
+            id,
+            OpenedFolder {
+                root,
+                title,
+                opened_by,
+            },
+        );
+        self.refresh_portal(id);
+        true
+    }
+
+    /// Notes the fence's own icon that opened the folder regular fence `id` shows (a desktop
+    /// folder or a folder shortcut), so up selects it again.
+    pub fn set_opened_by(&mut self, id: FenceId, item: ItemId) {
+        if let Some(o) = self.opened_folders.get_mut(&id) {
+            o.opened_by = Some(item);
+        }
+    }
+
+    /// What one level up selects, as in Explorer: the subfolder just left, or the fence's own
+    /// icon that opened the folder when up brings its icons back.
+    pub fn up_selection(&self, id: FenceId) -> Option<ItemId> {
+        match self.portal_cwd.get(&id) {
+            Some(cur) => Some(portal_item_id(&cur.to_string_lossy())),
+            None => self.opened_folders.get(&id).and_then(|o| o.opened_by),
+        }
+    }
+
+    /// Leaves the folder opened in regular fence `id`: it shows its own icons again. False when
+    /// it shows none.
+    fn leave_opened_folder(&mut self, id: FenceId) -> bool {
+        if self.opened_folders.remove(&id).is_none() {
+            return false;
+        }
+        self.portal_missing.remove(&id);
+        self.evict_portal_members(id);
+        true
+    }
+
+    /// One folder up (never above the root). From a folder opened in a regular fence, back to
+    /// its own icons. Returns false when there is nowhere to go.
     pub fn portal_up(&mut self, id: FenceId) -> bool {
         let Some(cur) = self.portal_cwd.get(&id).cloned() else {
-            return false;
+            return self.leave_opened_folder(id);
         };
         match cur.parent() {
             Some(parent) => self.portal_enter(id, parent),
@@ -1288,7 +1409,7 @@ impl AppState {
         }
     }
 
-    /// Back to the root folder.
+    /// Back to the root folder: a portal's own, or the folder opened in a regular fence.
     pub fn portal_home(&mut self, id: FenceId) -> bool {
         if self.portal_cwd.remove(&id).is_some() {
             self.refresh_portal(id);
@@ -1317,6 +1438,15 @@ impl AppState {
         }
     }
 
+    pub fn set_open_folders_inside(&mut self, id: FenceId, on: bool) {
+        if let Some(f) = self.fence_mut(id)
+            && f.open_folders_inside != on
+        {
+            f.open_folders_inside = on;
+            self.dirty = true;
+        }
+    }
+
     pub fn set_hide_title_icon(&mut self, id: FenceId, on: bool) {
         if let Some(f) = self.fence_mut(id)
             && f.hide_title_icon != on
@@ -1326,13 +1456,14 @@ impl AppState {
         }
     }
 
-    /// Title shown for a fence: a navigated portal shows the current folder's name.
+    /// Title shown for a fence: one showing a subfolder, or a folder opened in it, shows that
+    /// folder's name.
     pub fn display_title(&self, f: &Fence) -> String {
-        match self.portal_cwd.get(&f.id) {
-            Some(cwd) => cwd
-                .file_name()
-                .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_else(|| f.title.clone()),
+        if let Some(name) = self.portal_cwd.get(&f.id).and_then(|cwd| cwd.file_name()) {
+            return name.to_string_lossy().to_string();
+        }
+        match self.opened_folders.get(&f.id) {
+            Some(opened) => opened.title.clone(),
             None => f.title.clone(),
         }
     }
@@ -1479,12 +1610,13 @@ impl AppState {
         changed
     }
 
-    /// Re-reads every portal folder (startup, watcher batches). Returns the fences that changed.
+    /// Re-reads every folder a fence shows (startup, watcher batches). Returns the fences that
+    /// changed.
     pub fn refresh_all_portals(&mut self) -> Vec<FenceId> {
         let portals: Vec<FenceId> = self
             .fences()
             .iter()
-            .filter(|f| f.kind == FenceKind::FolderPortal)
+            .filter(|f| self.folder_root(f.id).is_some())
             .map(|f| f.id)
             .collect();
         // Drop runtime state for portals that no longer exist in the current layout (import /
@@ -1565,10 +1697,19 @@ impl AppState {
         true
     }
 
+    /// The folder that moving items into fence `to` puts their files in: what a folder portal
+    /// shows. `None` for any other fence, also while it shows a folder opened in it: moving
+    /// icons there (「移出栅栏」, a drop on the bare desktop, a 新建 or drop that lands later,
+    /// `item move`) only changes membership, so no desktop file goes into that folder unseen.
+    pub fn move_target_folder(&self, to: FenceId) -> Option<PathBuf> {
+        self.portal_root(to)?;
+        self.portal_path(to)
+    }
+
     pub fn move_items(&mut self, items: &[ItemId], to: FenceId) -> usize {
         // Portal fences show a folder, not desktop membership: nothing can be moved into them,
         // and their (runtime) items cannot be moved out.
-        if self.portal_path(to).is_some() {
+        if self.move_target_folder(to).is_some() {
             return 0;
         }
         let mut n = 0;
@@ -1731,34 +1872,89 @@ impl AppState {
 
     // ---- fences -----------------------------------------------------------------------------
 
-    pub fn set_fence_bounds(&mut self, id: FenceId, rect: RECT, rolled: bool, expanded_h_px: i32) {
+    /// Records fence `id` at window rect `rect`. Rolled up, `rect` is its title row and the
+    /// saved rect is `expanded_h_px` tall: hanging below the row, or standing on it when
+    /// `row_bottom`. `choose` (a 向上展开 fence rolled up at rest) picks that end the way an
+    /// expansion picks its side, on the work area alone (`clearance::expand_side`): the saved rect
+    /// stays on the screen around the row, so a restart puts the row back where it was. Where
+    /// the fence fits on neither side, the saved rect is cut to the room there and `expanded_h`
+    /// keeps the full height. Returns the end it saved (`Fence::bottom_anchored`).
+    pub fn set_fence_bounds(
+        &mut self,
+        id: FenceId,
+        rect: RECT,
+        rolled: bool,
+        expanded_h_px: i32,
+        row_bottom: bool,
+        choose: bool,
+    ) -> bool {
+        let full = expanded_h_px.max(1);
+        let area_at = |x: i32, y: i32| {
+            self.work_areas
+                .iter()
+                .find(|w| x >= w.left && x < w.right && y >= w.top && y < w.bottom)
+                .or(self.work_areas.first())
+                .cloned()
+        };
+        let (mut bottom_anchored, mut h) = (row_bottom, full);
+        if rolled
+            && choose
+            && let Some(w) = area_at((rect.left + rect.right) / 2, (rect.top + rect.bottom) / 2)
+        {
+            let (up, shown) = crate::layout::clearance::expand_side(
+                full,
+                rect.bottom - w.top,
+                w.bottom - rect.top,
+            );
+            bottom_anchored = up;
+            h = shown.max(1);
+        }
+        let (top, bottom) = match (rolled, bottom_anchored) {
+            (true, false) => (rect.top, rect.top + h),
+            (true, true) => (rect.bottom - h, rect.bottom),
+            (false, _) => (rect.top, rect.bottom),
+        };
         let px = PxRect {
             left: rect.left,
-            top: rect.top,
+            top,
             right: rect.right,
-            bottom: if rolled {
-                rect.top + expanded_h_px.max(1)
-            } else {
-                rect.bottom
-            },
+            bottom,
         };
         let (cx, cy) = px.center();
-        let work = self
-            .work_areas
-            .iter()
-            .find(|w| cx >= w.left && cx < w.right && cy >= w.top && cy < w.bottom)
-            .or(self.work_areas.first())
-            .cloned();
-        let Some(work) = work else { return };
+        let Some(work) = area_at(cx, cy) else {
+            return bottom_anchored;
+        };
         let geo = geometry::normalize(px, &work);
-        if let Some(f) = self.fence_mut(id) {
-            if f.geometry != geo || f.rolled_up != rolled {
-                f.expanded_h = geo.h;
-                f.geometry = geo;
-                f.rolled_up = rolled;
-                self.dirty = true;
-            }
+        let expanded_h = if rolled {
+            full as f32 / work.scale()
+        } else {
+            geo.h
+        };
+        if let Some(f) = self.fence_mut(id)
+            && (f.geometry != geo
+                || f.rolled_up != rolled
+                || f.bottom_anchored != bottom_anchored
+                || (f.expanded_h - expanded_h).abs() > 0.5)
+        {
+            f.expanded_h = expanded_h;
+            f.geometry = geo;
+            f.rolled_up = rolled;
+            f.bottom_anchored = bottom_anchored;
+            self.dirty = true;
         }
+        bottom_anchored
+    }
+
+    /// Height (device px) fence `fence` opens to: its saved rect's, or rolled up the full
+    /// expanded height, which a saved rect cut to the room around its title row keeps.
+    pub fn fence_expanded_px(&self, fence: &Fence) -> i32 {
+        let h = self.fence_px_rect(fence).height();
+        if !fence.rolled_up {
+            return h;
+        }
+        let scale = geometry::resolve_work_area(&fence.geometry, &self.work_areas)
+            .map_or(1.0, |w| w.scale());
+        ((fence.expanded_h * scale).round() as i32).max(h)
     }
 
     /// Physical rectangle for a fence on the current monitors (expanded height).
@@ -1858,6 +2054,15 @@ impl AppState {
             && f.hide_when_empty != on
         {
             f.hide_when_empty = on;
+            self.dirty = true;
+        }
+    }
+
+    pub fn set_expand_upward(&mut self, id: FenceId, on: bool) {
+        if let Some(f) = self.fence_mut(id)
+            && f.expand_upward != on
+        {
+            f.expand_upward = on;
             self.dirty = true;
         }
     }
@@ -2095,6 +2300,7 @@ impl AppState {
         };
         let removed = self.config.layouts[self.layout].fences.remove(pos);
         self.portal_cwd.remove(&id);
+        self.opened_folders.remove(&id);
         self.portal_missing.remove(&id);
         self.evict_portal_members(id);
         let ids: Vec<ItemId> = removed.items.iter().map(|r| r.item_id).collect();
@@ -2179,6 +2385,16 @@ fn folder_path_with_real_case(path: &Path) -> PathBuf {
     actual.unwrap_or_else(|| path.to_path_buf())
 }
 
+/// A folder opened in a regular fence ([`AppState::open_folder`]).
+struct OpenedFolder {
+    /// The folder opened: navigation never goes above it.
+    root: PathBuf,
+    /// The fence's title meanwhile: the folder's name, or a drive's display name.
+    title: String,
+    /// The fence's own icon that opened it, selected again when up brings the icons back.
+    opened_by: Option<ItemId>,
+}
+
 /// Stable id for a portal item derived from its (case-folded) path, so selections and pending
 /// icon lookups survive a folder refresh.
 pub(crate) fn portal_item_id(path: &str) -> ItemId {
@@ -2235,6 +2451,7 @@ mod tests {
             portal_items: HashMap::new(),
             portal_members: HashMap::new(),
             portal_cwd: HashMap::new(),
+            opened_folders: HashMap::new(),
             portal_missing: HashSet::new(),
             tmp_settle_at: std::cell::Cell::new(None),
             work_areas,
@@ -2328,7 +2545,7 @@ mod tests {
         // The same fences; all were on the big monitor, so none has a spot here yet.
         assert_eq!(ids(&state), docked.iter().map(|f| f.id).collect::<Vec<_>>());
         assert_eq!(state.unplaced.len(), docked.len());
-        state.set_fence_bounds(first, rect(-1900, 20, 300, 200), false, 200);
+        state.set_fence_bounds(first, rect(-1900, 20, 300, 200), false, 200, false, false);
         state.rename_fence(first, "Laptop title");
         let made = state
             .new_fence("Made on the laptop", rect(-1500, 600, 300, 200))
@@ -2387,6 +2604,36 @@ mod tests {
         assert!(state.fence(own.id).is_none());
     }
 
+    /// Rolled up, a fence saves its expanded rect below the title row, or above it when the
+    /// title row is at its bottom. A 向上展开 fence at rest picks the end that keeps the rect on
+    /// the screen around the row (above first), cut to the room where it fits neither way.
+    #[test]
+    fn rolled_bounds_stay_on_the_screen_around_the_title_row() {
+        let mut state = test_state(); // work area 0..1040
+        let id = state.fences()[0].id;
+        let saved = |s: &AppState| {
+            let f = s.fence(id).unwrap();
+            let px = s.fence_px_rect(f);
+            (px.top, px.bottom, f.bottom_anchored, s.fence_expanded_px(f))
+        };
+        // Title row at 600..632, 300 px expanded.
+        assert!(!state.set_fence_bounds(id, rect(20, 600, 300, 32), true, 300, false, false));
+        assert_eq!(saved(&state), (600, 900, false, 300));
+        state.set_expand_upward(id, true);
+        assert!(state.set_fence_bounds(id, rect(20, 600, 300, 32), true, 300, false, true));
+        assert_eq!(saved(&state), (332, 632, true, 300));
+        // A row near the top: the fence fits below it only.
+        assert!(!state.set_fence_bounds(id, rect(20, 30, 300, 32), true, 300, true, true));
+        assert_eq!(saved(&state), (30, 330, false, 300));
+        // 800 px fits on neither side of a row at 500: the larger room below, the full height
+        // kept for when it opens.
+        assert!(!state.set_fence_bounds(id, rect(20, 500, 300, 32), true, 800, false, true));
+        assert_eq!(saved(&state), (500, 1040, false, 800));
+        // Expanded, the window is the rect either way, with the end it opened from.
+        assert!(state.set_fence_bounds(id, rect(20, 100, 300, 300), false, 300, true, false));
+        assert_eq!(saved(&state), (100, 400, true, 300));
+    }
+
     /// The same monitor at 4K / 200 % and at 1080p / 100 %: each keeps its own spots.
     #[test]
     fn each_resolution_keeps_its_own_spots() {
@@ -2398,7 +2645,7 @@ mod tests {
         state.ensure_layout();
         assert_eq!((state.layout, state.config.layouts.len()), (1, 2));
         assert_eq!(state.unplaced.len(), at_4k.len());
-        state.set_fence_bounds(first, rect(20, 20, 300, 200), false, 200);
+        state.set_fence_bounds(first, rect(20, 20, 300, 200), false, 200, false, false);
 
         state.work_areas = vec![monitor(id, 0, 3840, 2064, 192)];
         state.ensure_layout();
@@ -2625,6 +2872,121 @@ mod tests {
         assert_eq!(state.display_title(state.fence(fence).unwrap()), root_title);
         assert!(!state.portal_up(fence));
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn regular_fence_shows_an_opened_folder_and_gets_its_icons_back() {
+        let root = std::env::temp_dir().join(format!("pecofence-browse-{}", uuid::Uuid::new_v4()));
+        let nested = root.join("Nested");
+        std::fs::create_dir_all(&nested).unwrap();
+        std::fs::write(root.join("a.txt"), b"").unwrap();
+        let mut state = test_state();
+        let fence = state.fences()[0].id;
+        let own = add_item(&mut state, fence, "own");
+        let shown = |state: &AppState| -> Vec<ItemId> {
+            let f = state.fence(fence).unwrap();
+            state.items_of(f).iter().map(|it| it.id).collect()
+        };
+        assert!(!state.can_go_up(fence));
+        assert_eq!(shown(&state), [own]);
+
+        assert!(state.open_folder(fence, &root));
+        assert_eq!(state.portal_path(fence).as_deref(), Some(root.as_path()));
+        assert!(state.can_go_up(fence));
+        assert!(!state.portal_navigated(fence));
+        assert_eq!(shown(&state).len(), 2);
+        assert!(!shown(&state).contains(&own));
+        assert_eq!(state.own_item_count(state.fence(fence).unwrap()), 1);
+        // The CLI still sees the fence's own icons.
+        let held: Vec<ItemId> = state
+            .held_items_of(state.fence(fence).unwrap())
+            .iter()
+            .map(|it| it.id)
+            .collect();
+        assert_eq!(held, [own]);
+
+        state.set_opened_by(fence, own);
+        assert!(state.portal_enter(fence, &nested));
+        assert!(state.portal_navigated(fence));
+        // Up selects the subfolder just left, then the icon that opened the folder.
+        assert_eq!(
+            state.up_selection(fence),
+            Some(portal_item_id(&nested.to_string_lossy()))
+        );
+        assert!(state.portal_up(fence));
+        assert_eq!(state.portal_path(fence).as_deref(), Some(root.as_path()));
+        assert_eq!(state.up_selection(fence), Some(own));
+        // At the opened folder, up leaves it: the fence's own icons are back.
+        assert!(state.portal_up(fence));
+        assert!(!state.can_go_up(fence));
+        assert!(state.portal_path(fence).is_none());
+        assert_eq!(shown(&state), [own]);
+        assert!(!state.portal_up(fence));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    /// While the 桌面 fence shows a folder opened in it, 「移出栅栏（放回“桌面”）」, a drop on the
+    /// bare desktop, a pending route and `item move` only change membership: the desktop file
+    /// is never moved into that folder, and the icon is back in view after going up.
+    #[test]
+    fn moving_icons_to_a_fence_showing_a_folder_only_changes_membership() {
+        let root = std::env::temp_dir().join(format!("pecofence-browse-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let mut state = test_state();
+        let inbox = state.inbox_id().unwrap();
+        let other = state.fences().iter().find(|f| f.id != inbox).unwrap().id;
+        let docs = add_item(&mut state, other, "Docs");
+        assert!(state.open_folder(inbox, &root));
+        assert!(state.portal_path(inbox).is_some());
+        assert!(state.move_target_folder(inbox).is_none());
+
+        assert_eq!(state.move_items(&[docs], inbox), 1);
+        assert!(state.fence(inbox).unwrap().contains_item(docs));
+        assert!(!state.fence(other).unwrap().contains_item(docs));
+        assert!(state.portal_up(inbox));
+        let f = state.fence(inbox).unwrap();
+        assert!(state.items_of(f).iter().any(|it| it.id == docs));
+
+        // A folder portal is a folder: moving into it is a file move, not a membership change.
+        let portal = state.new_portal_fence(&root, RECT::default()).unwrap();
+        assert_eq!(state.move_target_folder(portal), state.portal_path(portal));
+        assert_eq!(state.move_items(&[docs], portal), 0);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn an_opened_folder_replaces_the_one_before_and_portals_keep_to_their_own() {
+        let base = std::env::temp_dir().join(format!("pecofence-browse-{}", uuid::Uuid::new_v4()));
+        let root = base.join("Portal");
+        let sub = root.join("Sub");
+        let outside = base.join("Outside");
+        let other = base.join("Other");
+        for dir in [&sub, &outside, &other] {
+            std::fs::create_dir_all(dir).unwrap();
+        }
+        let mut state = test_state();
+        let fence = state.fences()[0].id;
+        assert!(state.open_folder(fence, &outside));
+        // A folder opened from there replaces it; up goes straight back to the fence's icons.
+        assert!(state.open_folder(fence, &other));
+        assert_eq!(state.portal_path(fence).as_deref(), Some(other.as_path()));
+        assert_eq!(state.display_title(state.fence(fence).unwrap()), "Other");
+        assert!(!state.portal_home(fence));
+        assert!(state.portal_up(fence));
+        assert!(state.portal_path(fence).is_none());
+        assert!(!state.open_folder(fence, &base.join("missing")));
+        assert!(!state.can_go_up(fence));
+
+        // A folder portal shows its own folder and its subfolders only.
+        let portal = state.new_portal_fence(&root, RECT::default()).unwrap();
+        assert!(state.portal_enter(portal, &sub));
+        assert!(!state.portal_enter(portal, &outside));
+        assert!(!state.open_folder(portal, &outside));
+        assert_eq!(state.portal_path(portal).as_deref(), Some(sub.as_path()));
+        assert!(state.portal_home(portal));
+        assert_eq!(state.portal_path(portal).as_deref(), Some(root.as_path()));
+        assert!(!state.can_go_up(portal));
+        std::fs::remove_dir_all(base).unwrap();
     }
 
     #[test]

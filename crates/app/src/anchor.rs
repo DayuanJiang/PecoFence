@@ -8,7 +8,7 @@ use pecofence_platform::window::{
 use pecofence_platform::winevent::{self, WinEventHook};
 use pecofence_platform::{HWND, POINT, RECT, Result, msg, rawinput, shell_icons};
 use std::cell::{Cell, RefCell};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::time::Instant;
 
@@ -146,6 +146,12 @@ fn additive_modifier() -> bool {
 struct DesktopIcons {
     we_hid_them: bool,
     marker: PathBuf,
+    /// Exit left the icons hidden on purpose (`keep_icons_hidden`). Always in our own folder,
+    /// where the next start and the uninstaller look, also when `marker` is the legacy one.
+    kept: PathBuf,
+    /// `release_desktop_icons` left the icons hidden; ensure_anchored takes them back if this
+    /// process goes on after all (a cancelled sign-out).
+    left_hidden: bool,
     /// A hide was requested (setting on) but has not succeeded yet; retried from ensure_anchored.
     pending: bool,
     pending_attempts: u32,
@@ -164,10 +170,17 @@ impl DesktopIcons {
             Ok(n) if !n.trim().is_empty() => format!("icons-hidden.{}.marker", n.trim()),
             _ => "icons-hidden.marker".to_string(),
         };
-        let current = base.join(&marker);
+        Self::in_dir(&base, &marker)
+    }
+
+    /// The marker named `name` in `base`, or in the legacy folder next to it if only that one
+    /// has it.
+    fn in_dir(base: &Path, name: &str) -> Self {
+        let current = base.join(name);
         let legacy = base
             .with_file_name(pecofence_core::brand::LEGACY_DATA_DIR)
-            .join(&marker);
+            .join(name);
+        let kept = current.with_extension("kept");
         let marker = if !current.exists() && legacy.exists() {
             legacy
         } else {
@@ -176,6 +189,8 @@ impl DesktopIcons {
         Self {
             we_hid_them: false,
             marker,
+            kept,
+            left_hidden: false,
             pending: false,
             pending_attempts: 0,
             watchdogs: Vec::new(),
@@ -195,6 +210,8 @@ pub struct DesktopAnchor {
     _hook: Option<WinEventHook>,
     quick: QuickHide,
     icons: DesktopIcons,
+    /// `Settings::keep_icons_hidden`: exit leaves the icons hidden (`release_desktop_icons`).
+    pub keep_icons_hidden: bool,
     pub quick_hide_enabled: bool,
     /// Optional test script driven by TIMER_TEST on the sentinel window.
     pub test_hook: Option<TestHook>,
@@ -333,6 +350,7 @@ impl DesktopAnchor {
             _hook: hook,
             quick: QuickHide::default(),
             icons: DesktopIcons::new(),
+            keep_icons_hidden: false,
             quick_hide_enabled,
             test_hook: None,
             quit_requested: false,
@@ -754,6 +772,15 @@ impl DesktopAnchor {
         if self.peeking {
             return;
         }
+        // Windows 11 can cancel a sign-out without sending us WM_ENDSESSION(0)
+        // (`shutdown_cancelled`): once the session goes on, take back the icons it left hidden.
+        if self.icons.left_hidden && !window::session_ending() && !window::quit_posted() {
+            self.icons.left_hidden = false;
+            if !self.icons.we_hid_them {
+                tracing::info!("session goes on: taking back the desktop icons left hidden");
+                self.request_hide_desktop_icons();
+            }
+        }
         // A hide that failed at startup (desktop not ready) is retried on every tick, not only
         // when the z-order is off, so the setting converges with reality without a toggle.
         if self.icons.pending && self.icons.pending_attempts < HIDE_ICONS_MAX_ATTEMPTS {
@@ -991,11 +1018,18 @@ impl DesktopAnchor {
             self.host = desktop::resolve_icon_host(self.generation);
         }
         let Some(h) = self.host else { return false };
+        let kept = self.icons.kept.clone();
         if shell_icons::desktop_icons_hidden() {
-            if self.icons.marker.exists() {
-                // Our previous run (and its watchdog) died without restoring: take ownership
-                // again so exit restores the icons and a fresh watchdog covers a crash.
+            if self.icons.marker.exists() || kept.exists() {
+                // Our previous run died without restoring them, or left them hidden on purpose
+                // (`release_desktop_icons`). Taking them back lets exit restore or keep them as
+                // the setting says, and a fresh watchdog covers a crash.
                 tracing::info!("desktop icons still hidden by our previous run; adopting");
+                if let Some(dir) = self.icons.marker.parent() {
+                    let _ = std::fs::create_dir_all(dir);
+                }
+                let _ = std::fs::write(&self.icons.marker, b"pecofence hid desktop icons\n");
+                let _ = std::fs::remove_file(&kept);
                 self.icons.we_hid_them = true;
                 self.spawn_watchdog();
             } else {
@@ -1003,6 +1037,8 @@ impl DesktopAnchor {
             }
             return true;
         }
+        // Shown by the user since: nothing of ours to keep.
+        let _ = std::fs::remove_file(&kept);
         if let Some(dir) = self.icons.marker.parent() {
             let _ = std::fs::create_dir_all(dir);
         }
@@ -1045,6 +1081,7 @@ impl DesktopAnchor {
     pub fn cancel_pending_hide(&mut self) {
         self.icons.pending = false;
         self.icons.pending_attempts = 0;
+        self.icons.left_hidden = false;
     }
 
     /// Starts `pecofence-watchdog.exe` (next to our exe) so a crash still restores the icons.
@@ -1103,6 +1140,44 @@ impl DesktopAnchor {
         }
         self.icons.we_hid_them = false;
         let _ = std::fs::remove_file(&self.icons.marker);
+    }
+
+    /// At exit and at the end of the session: restores the icons, or with `keep_icons_hidden`
+    /// leaves them hidden for the next sign-in. The kept marker says they are still ours, so
+    /// the next start adopts them and the uninstaller shows them; the watchdog leaves them.
+    pub fn release_desktop_icons(&mut self) {
+        if self.keep_icons_hidden && self.icons.we_hid_them {
+            self.cancel_pending_hide();
+            let _ = std::fs::write(&self.icons.kept, b"pecofence keeps desktop icons hidden\n");
+            self.icons.we_hid_them = false;
+            self.icons.left_hidden = true;
+            let _ = std::fs::remove_file(&self.icons.marker);
+            tracing::info!("desktop icons left hidden for the next sign-in");
+            return;
+        }
+        self.restore_desktop_icons();
+    }
+
+    /// The previous run left the icons hidden (`release_desktop_icons`), but this one hides none
+    /// (「隐藏 Windows 桌面图标」 off or `--no-hide-icons`): shows them again. The kept marker
+    /// stays while Explorer does not answer, so the next start tries again.
+    pub fn show_kept_desktop_icons(&mut self) {
+        let kept = self.icons.kept.clone();
+        if !kept.exists() {
+            return;
+        }
+        if shell_icons::desktop_icons_hidden() {
+            let shown = self
+                .host
+                .or_else(|| desktop::resolve_icon_host(self.generation))
+                .and_then(|h| shell_icons::set_desktop_icons_hidden(false, h.def_view, h.host));
+            if shown != Some(false) {
+                tracing::warn!(?shown, "showing the kept desktop icons failed");
+                return;
+            }
+            tracing::info!("desktop icons kept hidden by our previous run shown again");
+        }
+        let _ = std::fs::remove_file(&kept);
     }
 
     /// True when a previous run left the marker behind (crashed without restoring).
@@ -1209,7 +1284,29 @@ pub fn register_sentinel_class() -> Result<WindowClass> {
 
 impl Drop for DesktopAnchor {
     fn drop(&mut self) {
+        // A clean exit released the icons already; a panic unwinding to here shows them.
         self.restore_desktop_icons();
         self.set_raw_input_sink(false);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_kept_marker_stays_in_our_folder_when_the_crash_marker_is_legacy() {
+        let root = std::env::temp_dir().join(format!("pecofence-icons-{}", std::process::id()));
+        let ours = root.join("PecoFence");
+        let legacy = root.join(pecofence_core::brand::LEGACY_DATA_DIR);
+        std::fs::create_dir_all(&legacy).unwrap();
+        std::fs::write(legacy.join("icons-hidden.marker"), b"").unwrap();
+        let icons = DesktopIcons::in_dir(&ours, "icons-hidden.marker");
+        assert_eq!(icons.marker, legacy.join("icons-hidden.marker"));
+        assert_eq!(icons.kept, ours.join("icons-hidden.kept"));
+        std::fs::remove_dir_all(&root).unwrap();
+        let icons = DesktopIcons::in_dir(&ours, "icons-hidden.test.marker");
+        assert_eq!(icons.marker, ours.join("icons-hidden.test.marker"));
+        assert_eq!(icons.kept, ours.join("icons-hidden.test.kept"));
     }
 }

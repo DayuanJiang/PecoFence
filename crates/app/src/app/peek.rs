@@ -382,13 +382,14 @@ impl App {
         self.show_peek_hits(true);
     }
 
-    /// Enter in the search box: open the highlighted match and end the Peek.
+    /// Enter in the search box: open the highlighted match and end the Peek. A folder opens in
+    /// Explorer: shown inside its fence, it would sit behind the windows the Peek uncovered.
     pub(super) fn open_peek_hit(&mut self) {
         let Some(&(_, tab, item)) = self.peek_hits.get(self.peek_hit) else {
             return;
         };
         self.end_peek("search match opened");
-        self.launch(item, tab);
+        self.launch(item, tab, false);
     }
 
     /// Shows the matches: each fence switches to the tab holding its highlighted match, else

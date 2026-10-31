@@ -114,6 +114,11 @@ pub struct Settings {
     pub roll_up: RollUpSettings,
     pub show_desktop: ShowDesktopSetting,
     pub hide_real_icons: bool,
+    /// With `hideRealIcons`, Windows' desktop icons stay hidden when PecoFence exits or the
+    /// session ends, so they do not show for a moment at the next sign-in before PecoFence
+    /// starts. A crash still shows them.
+    #[serde(default)]
+    pub keep_icons_hidden: bool,
     /// While `hideRealIcons` is off, the inbox fence has no window: the items no rule files
     /// show only among Windows' own desktop icons.
     #[serde(default)]
@@ -246,6 +251,7 @@ impl Default for Settings {
             roll_up: RollUpSettings::default(),
             show_desktop: ShowDesktopSetting::KeepVisible,
             hide_real_icons: true,
+            keep_icons_hidden: false,
             hide_inbox_when_icons_shown: false,
             offer_new_fence: true,
             show_real_icons_when_fences_hidden: false,
@@ -785,6 +791,10 @@ pub struct Fence {
     /// "Navigate"); off = open it in Explorer.
     #[serde(default = "default_true")]
     pub portal_navigate: bool,
+    /// Any other fence: double-clicking a folder, or a shortcut to a folder, shows that folder
+    /// inside the fence until the fence goes up from it; off (the default) = open it in Explorer.
+    #[serde(default)]
+    pub open_folders_inside: bool,
     /// Folder portal: hide the folder glyph before the title.
     #[serde(default)]
     pub hide_title_icon: bool,
@@ -793,6 +803,15 @@ pub struct Fence {
     /// spot.
     #[serde(default)]
     pub hide_when_empty: bool,
+    /// Expand upward (向上展开): the bottom edge stays put while the fence rolls up, expands or
+    /// changes height, so a fence resting on the taskbar grows away from it. `geometry` is still
+    /// the expanded rect; rolled up, the title row sits at its bottom.
+    #[serde(default)]
+    pub expand_upward: bool,
+    /// With `expand_upward`: the bottom edge is the one that stays put (it last opened upward);
+    /// rolled up, its title row sits at the bottom of `geometry` instead of at the top.
+    #[serde(default)]
+    pub bottom_anchored: bool,
     #[serde(default)]
     pub items: Vec<ItemRef>,
 }
@@ -815,14 +834,27 @@ impl Fence {
             active_tab: None,
             tab_order: Vec::new(),
             portal_navigate: true,
+            open_folders_inside: false,
             hide_title_icon: false,
             hide_when_empty: false,
+            expand_upward: false,
+            bottom_anchored: false,
             items: Vec::new(),
         }
     }
 
     pub fn contains_item(&self, id: ItemId) -> bool {
         self.items.iter().any(|r| r.item_id == id)
+    }
+
+    /// A double-clicked folder opens inside the fence: `portal_navigate` for a folder portal,
+    /// `open_folders_inside` for any other fence.
+    pub fn navigates_folders(&self) -> bool {
+        if self.kind == FenceKind::FolderPortal {
+            self.portal_navigate
+        } else {
+            self.open_folders_inside
+        }
     }
 }
 
@@ -994,6 +1026,9 @@ struct TabPlacement {
     rolled: bool,
     expanded_h: f32,
     auto_height: bool,
+    /// 向上展开, and which end of `geometry` the rolled title row sits at.
+    expand_upward: bool,
+    bottom_anchored: bool,
 }
 
 impl TabPlacement {
@@ -1007,6 +1042,8 @@ impl TabPlacement {
             rolled: fence.rolled_up,
             expanded_h: fence.expanded_h,
             auto_height: fence.view.auto_height,
+            expand_upward: fence.expand_upward,
+            bottom_anchored: fence.bottom_anchored,
         }
     }
 
@@ -1018,6 +1055,8 @@ impl TabPlacement {
         fence.rolled_up = self.rolled;
         fence.expanded_h = self.expanded_h;
         fence.view.auto_height = self.auto_height;
+        fence.expand_upward = self.expand_upward;
+        fence.bottom_anchored = self.bottom_anchored;
     }
 }
 
@@ -1066,6 +1105,8 @@ impl Layout {
                         fence.rolled_up = group.rolled;
                         fence.expanded_h = group.expanded_h;
                         fence.view.auto_height = group.auto_height;
+                        fence.expand_upward = group.expand_upward;
+                        fence.bottom_anchored = group.bottom_anchored;
                     }
                 } else {
                     fence.tab_host = Some(remaining_host);
@@ -1661,9 +1702,11 @@ mod tests {
         let obj = json.as_object_mut().unwrap();
         assert!(obj.remove("offerNewFence").is_some());
         assert!(obj.remove("hideInboxWhenIconsShown").is_some());
+        assert!(obj.remove("keepIconsHidden").is_some());
         let legacy: Settings = serde_json::from_value(json).unwrap();
         assert!(legacy.offer_new_fence);
         assert!(!legacy.hide_inbox_when_icons_shown);
+        assert!(!legacy.keep_icons_hidden);
     }
 
     #[test]
@@ -1715,6 +1758,17 @@ mod tests {
         let json = serde_json::to_value(&settings).unwrap();
         assert_eq!(json["rollUp"]["hideCountAndChevron"], true);
         assert_eq!(serde_json::from_value::<Settings>(json).unwrap(), settings);
+    }
+
+    /// Fences saved before `openFoldersInside` keep opening folders in Explorer, whatever their
+    /// `portalNavigate` (saved as true for every fence).
+    #[test]
+    fn open_folders_inside_defaults_off() {
+        let mut json = serde_json::to_value(Fence::new("A", FenceKind::Virtual, geo())).unwrap();
+        json.as_object_mut().unwrap().remove("openFoldersInside");
+        let legacy: Fence = serde_json::from_value(json).unwrap();
+        assert!(legacy.portal_navigate);
+        assert!(!legacy.open_folders_inside);
     }
 
     fn geo() -> NormGeometry {
@@ -1932,6 +1986,9 @@ mod tests {
                         fences[0].tab_order = strip.clone();
                         fences[0].active_tab = (active != ids[0]).then_some(active);
                         fences[0].rolled_up = rolled;
+                        // Which end of the rect the rolled title row sits at goes with it.
+                        fences[0].expand_upward = rolled;
+                        fences[0].bottom_anchored = rolled;
                         let before = fences.clone();
                         let mut layout = Layout {
                             shown: 0,
@@ -1961,6 +2018,8 @@ mod tests {
                         assert_eq!(group.geometry, before[0].geometry);
                         assert_eq!(group.rolled_up, rolled);
                         assert_eq!(group.view.auto_height, before[0].view.auto_height);
+                        assert_eq!(group.expand_upward, before[0].expand_upward);
+                        assert_eq!(group.bottom_anchored, before[0].bottom_anchored);
                         for old in &before {
                             let current = layout.fences.iter().find(|f| f.id == old.id).unwrap();
                             assert_eq!(current.title, old.title);

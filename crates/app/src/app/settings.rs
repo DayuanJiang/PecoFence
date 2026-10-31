@@ -776,6 +776,11 @@ impl App {
             ));
         }
         let icons_toggled = new.hide_real_icons != old.hide_real_icons;
+        if new.keep_icons_hidden != old.keep_icons_hidden
+            && let Some(a) = self.anchor.borrow_mut().as_mut()
+        {
+            a.keep_icons_hidden = new.keep_icons_hidden;
+        }
         if new.quick_hide.enabled != old.quick_hide.enabled
             && let Some(a) = self.anchor.borrow_mut().as_mut()
         {
