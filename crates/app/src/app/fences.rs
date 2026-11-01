@@ -459,10 +459,12 @@ impl App {
             bottom: wa.bottom,
         };
         // Where the other fences rest: one hover-peeking open over the icons does not move them.
+        // Windows not shown yet count too (startup creates them hidden), so the first arrange
+        // is already the right one; a fence with no window (为空时自动隐藏) takes no cells.
         let covered: Vec<RECT> = self
             .fences
             .iter()
-            .filter(|(fid, o)| **fid != id && desktop::is_visible(o.hwnd()))
+            .filter(|(fid, _)| **fid != id)
             .map(|(_, o)| o.resting_rect())
             .collect();
         let Some(w) = self.fences.get(&id) else {
