@@ -490,6 +490,22 @@ impl Theme {
         let ink = self.ink(ThemeMode::Dark);
         let mut theme = self.with_ink_of(ink);
         theme.text_halo = true;
+        // Light text takes `text_fx[1]`; a theme file's own effects stay.
+        if theme.text_fx[1] == TextFx::NONE {
+            let black = |a: f32| ColorF {
+                r: 0.0,
+                g: 0.0,
+                b: 0.0,
+                a,
+            };
+            theme.text_fx[1] = TextFx {
+                halo: Some(black(0.5)),
+                halo_width: Some(TextFx::HALO_WIDTH),
+                shadow: Some(black(0.9)),
+                shadow_blur: Some(TextFx::SHADOW_BLUR),
+                shadow_offset: Some(TextFx::SHADOW_OFFSET),
+            };
+        }
         theme
     }
 

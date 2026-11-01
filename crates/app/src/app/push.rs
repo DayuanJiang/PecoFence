@@ -408,6 +408,7 @@ impl App {
             .get(&id)
             .is_some_and(|w| w.is_desktop_arranged())
         {
+            self.arrange_desktop_fence();
             return;
         }
         let (rect, row_bottom, choose) = match self.fences.get(&id) {

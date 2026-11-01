@@ -287,6 +287,9 @@ pub struct FenceViewState {
     pub(super) backdrop_override: Option<BackdropMode>,
     /// Per-fence opacity multiplier for the glass layer (1.0 = default).
     pub(super) opacity: f32,
+    /// The view the fence asks for (`set_layout`): `layout` is the icon view while 像桌面一样
+    /// 排列 is on and this again when it goes off.
+    pub(super) wanted_layout: ViewLayout,
     /// 像桌面一样排列 (`Fence::desktop_layout`): the work area this fence arranges its icons
     /// in and the other fences' rects over it (screen px). Some = no title row, plate or
     /// edges; the window covers only the cells its icons take.

@@ -547,6 +547,8 @@ impl App {
         }
         // Wallpaper regions moved with the monitors: rebuild the backdrops unconditionally.
         self.refresh_visuals(true);
+        // 像桌面一样排列: the new work area (and the fences placed again on it).
+        self.arrange_desktop_fence();
     }
 
     pub fn toggle_all_fences(&mut self) {
