@@ -347,7 +347,8 @@ impl App {
     /// keep their look; the flag is saved but has no effect on them).
     pub(super) fn set_fence_desktop_layout(&mut self, fence: FenceId, on: bool) {
         self.state.set_desktop_layout(fence, on);
-        self.arrange_desktop_fence();
+        self.sync_hidden_fences();
+        self.apply_fence_view(fence);
         self.schedule_save();
     }
 

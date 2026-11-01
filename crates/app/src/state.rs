@@ -751,14 +751,19 @@ impl AppState {
     /// host of tabs, stays).
     pub fn hidden_fences(&self) -> Vec<FenceId> {
         let settings = &self.config.settings;
-        let for_windows_icons = settings.hide_inbox_when_icons_shown && !settings.hide_real_icons;
+        // 像桌面一样排列 draws the loose icons where Windows shows its own: with the Windows
+        // icons shown they would be there twice, so 「桌面」 goes as with the option below.
+        let for_windows_icons = !settings.hide_real_icons;
         self.fences()
             .iter()
             .filter(|f| {
                 let empty = f.hide_when_empty
                     && !self.can_go_up(f.id)
                     && self.unsorted_held_items_of(f).next().is_none();
-                (empty || (for_windows_icons && f.kind == FenceKind::Inbox))
+                let beside_windows_icons = for_windows_icons
+                    && f.kind == FenceKind::Inbox
+                    && (settings.hide_inbox_when_icons_shown || f.desktop_layout);
+                (empty || beside_windows_icons)
                     && f.tab_host.is_none()
                     && self.tabs_of(f.id).len() <= 1
             })

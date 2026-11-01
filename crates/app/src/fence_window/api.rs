@@ -1274,6 +1274,9 @@ impl FenceWindow {
     /// Switches between the icon grid and the List / Details rows.
     pub fn set_layout(&self, layout: ViewLayout) {
         self.with_view(|v| {
+            // 像桌面一样排列 shows icons whatever the fence's view (List / Details come back
+            // when it goes off: `apply_fence_view` passes the saved one again).
+            let layout = if v.bare() { ViewLayout::Icons } else { layout };
             // Consumes the tab switch's pending offset either way (see `set_tabs`).
             let restore = v.scroll_restore.take();
             if v.layout == layout {
@@ -1393,6 +1396,23 @@ impl FenceWindow {
             }
             v.start_roll_anim(rolled);
         });
+    }
+
+    /// The window as it rests: a rolled fence that is hover-peeking or rolling counts as its
+    /// title row (see `resting_heights_px`).
+    pub fn resting_rect(&self) -> RECT {
+        let mut r = self.rect();
+        if let Some((_, rest)) = self.resting_heights_px()
+            && rest > 0
+            && rest < r.bottom - r.top
+        {
+            if self.row_at_bottom() {
+                r.top = r.bottom - rest;
+            } else {
+                r.bottom = r.top + rest;
+            }
+        }
+        r
     }
 
     /// Title-row height and the height the window settles at: the title row while it is rolled
@@ -1686,6 +1706,9 @@ impl FenceWindow {
                 }
             }
         });
+        if style_changed && self.is_desktop_arranged() {
+            self.set_layout(ViewLayout::Icons);
+        }
         let on = self.is_desktop_arranged();
         anchor::set_desktop_fence(self.hwnd(), on);
         if style_changed && !on {

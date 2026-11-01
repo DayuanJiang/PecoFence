@@ -431,6 +431,8 @@ impl App {
         else {
             return;
         };
+        // A 「桌面」 that holds tabs stays a fence (its tab strip has nowhere to go).
+        let on = on && self.state.tabs_of(id).len() <= 1;
         let Some(w) = self.fences.get(&id) else {
             return;
         };
@@ -456,7 +458,13 @@ impl App {
             right: wa.right,
             bottom: wa.bottom,
         };
-        let covered = self.other_fence_rects(id);
+        // Where the other fences rest: one hover-peeking open over the icons does not move them.
+        let covered: Vec<RECT> = self
+            .fences
+            .iter()
+            .filter(|(fid, o)| **fid != id && desktop::is_visible(o.hwnd()))
+            .map(|(_, o)| o.resting_rect())
+            .collect();
         let Some(w) = self.fences.get(&id) else {
             return;
         };

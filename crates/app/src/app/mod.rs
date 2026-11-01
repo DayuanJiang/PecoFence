@@ -1795,6 +1795,22 @@ impl App {
                     w.set_merge_hint(!target.0.is_null() && w.hwnd() == target, at);
                 }
             }
+            // 像桌面一样排列 has no tab strip: nothing merges into it, and it merges into nothing.
+            Command::MergeFence { fence, into, .. }
+                if self
+                    .fences
+                    .get(&self.state.host_of(fence))
+                    .is_some_and(|w| w.is_desktop_arranged())
+                    || self
+                        .fence_of_hwnd(into)
+                        .and_then(|h| self.fences.get(&h))
+                        .is_some_and(|w| w.is_desktop_arranged()) =>
+            {
+                tracing::info!("merge with the desktop-arranged 「桌面」 ignored");
+                for w in self.fences.values() {
+                    w.set_merge_hint(false, (0, 0));
+                }
+            }
             Command::MergeFence { fence, into, at } => {
                 // The slot the gap sat at (read before the hints — and the gap — are cleared).
                 let host = self.fence_of_hwnd(into);

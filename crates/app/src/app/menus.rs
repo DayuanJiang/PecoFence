@@ -703,8 +703,23 @@ impl App {
             .iter()
             .enumerate()
             .filter(|(_, o)| o.id != host)
+            .filter(|(_, o)| {
+                !self
+                    .fences
+                    .get(&o.id)
+                    .is_some_and(|w| w.is_desktop_arranged())
+            })
             .map(|(i, o)| (CMD_TAB_ATTACH_BASE + i as u32, o.title.clone()))
             .collect();
+        let other_hosts = if self
+            .fences
+            .get(&host)
+            .is_some_and(|w| w.is_desktop_arranged())
+        {
+            Vec::new()
+        } else {
+            other_hosts
+        };
         if tabs.len() >= 2 || !other_hosts.is_empty() {
             let tab_menu = PopupMenu::new();
             if tabs.len() >= 2 {
