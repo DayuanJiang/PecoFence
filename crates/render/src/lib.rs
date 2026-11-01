@@ -41,6 +41,7 @@ pub mod notice;
 pub mod panel;
 pub mod stack;
 pub mod text;
+pub mod text_shadow;
 pub mod theme;
 
 pub use backdrop::{GpuPixels, Image, MicaTint, MonitorBackdrop, WallpaperPosition};

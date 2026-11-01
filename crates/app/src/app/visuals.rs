@@ -1370,6 +1370,8 @@ impl App {
         if style_changed {
             // Before the fences take the theme, so their title rows lay out in its font.
             self.apply_fonts();
+            // The old theme's shadows (its blur, its fonts) are not drawn again.
+            self.ctx.chrome.forget_text_shadows();
         }
         // The wallpaper sets are accent-independent and expensive: rebuild them only for a
         // mode change (or a forced refresh), not for a Settings › Colours retint.

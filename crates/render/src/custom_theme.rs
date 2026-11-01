@@ -7,7 +7,7 @@
 //! { "base": "liquidGlass", "blur": 6, "light": { "tint": "#FFFFFF14" } }
 //! ```
 
-use crate::theme::{Ink, Theme, ThemeMode};
+use crate::theme::{Ink, TextFx, Theme, ThemeMode};
 use pecofence_core::ThemeStyle;
 use serde_json::{Map, Value};
 use windows_canvas::ColorF;
@@ -36,6 +36,9 @@ struct Values {
     shadow_blur: Option<f32>,
     shadow_offset: Option<f32>,
     accent: Option<ColorF>,
+    title_color: Option<ColorF>,
+    /// Halo and soft shadow of text over bare wallpaper, unclamped.
+    text_fx: TextFx,
     /// Indexes into [`COLORS`], in file order.
     colors: Vec<(usize, ColorF)>,
 }
@@ -137,16 +140,18 @@ impl CustomTheme {
     }
 
     /// `theme` (the base style in its mode, with the system accent) with this file's values,
-    /// and the light and dark ink the text switches between.
+    /// and the light and dark ink the text switches between, each with its halo and shadow.
     pub fn apply(&self, theme: Theme) -> Theme {
         let mut out = self.with_values(theme);
-        out.custom_inks = Some([ThemeMode::Light, ThemeMode::Dark].map(|mode| {
+        let variants = [ThemeMode::Light, ThemeMode::Dark].map(|mode| {
             let mut variant = Theme::for_mode(mode);
             if theme.liquid_glass {
                 variant = variant.with_liquid_glass();
             }
-            Ink::of(&self.with_values(variant))
-        }));
+            self.with_values(variant)
+        });
+        out.custom_inks = Some(variants.map(|v| Ink::of(&v)));
+        out.text_fx = [variants[0].text_fx[0], variants[1].text_fx[1]];
         out
     }
 
@@ -188,6 +193,12 @@ impl Values {
                 "shadowBlur" => values.shadow_blur = Some(number()?),
                 "shadowOffset" => values.shadow_offset = Some(number()?),
                 "accent" => values.accent = Some(color()?),
+                "titleColor" => values.title_color = Some(color()?),
+                "textHalo" => values.text_fx.halo = Some(color()?),
+                "textHaloWidth" => values.text_fx.halo_width = Some(number()?),
+                "textShadow" => values.text_fx.shadow = Some(color()?),
+                "textShadowBlur" => values.text_fx.shadow_blur = Some(number()?),
+                "textShadowOffset" => values.text_fx.shadow_offset = Some(number()?),
                 _ => match COLORS.iter().position(|(k, _)| *k == key) {
                     Some(i) => values.colors.push((i, color()?)),
                     None => return Err(format!(r#"unknown key "{name}""#)),
@@ -234,6 +245,23 @@ impl Values {
         }
         if let Some(c) = self.accent {
             theme = theme.with_accent(rgb8(c));
+        }
+        if let Some(c) = self.title_color {
+            theme.title_text = Some(c);
+        }
+        // The text of this mode is the light mode's dark ink or the dark mode's light one.
+        let fx = &mut theme.text_fx[(theme.mode == ThemeMode::Dark) as usize];
+        let own = self.text_fx;
+        fx.halo = own.halo.or(fx.halo);
+        fx.shadow = own.shadow.or(fx.shadow);
+        if let Some(v) = own.halo_width {
+            fx.halo_width = Some(v.clamp(0.0, 3.0));
+        }
+        if let Some(v) = own.shadow_blur {
+            fx.shadow_blur = Some(v.clamp(0.0, 8.0));
+        }
+        if let Some(v) = own.shadow_offset {
+            fx.shadow_offset = Some(v.clamp(0.0, 4.0));
         }
         for &(i, c) in &self.colors {
             *(COLORS[i].1)(&mut theme) = c;
@@ -405,6 +433,90 @@ mod tests {
     }
 
     #[test]
+    fn title_colour_follows_the_ink_and_gives_way_to_a_fixed_label_colour() {
+        use pecofence_core::LabelColor;
+        let file = CustomTheme::parse(
+            r##"{ "base": "liquidGlass",
+                  "light": { "titleColor": "#5A3A10" },
+                  "dark": { "titleColor": "#FFD890" } }"##,
+        )
+        .unwrap();
+        let theme = file.apply(Theme::dark().with_liquid_glass());
+        let on_bright = theme.over_glass(&crate::Image::solid(30, 30, [235; 3]));
+        let on_dark = theme.over_glass(&crate::Image::solid(30, 30, [20; 3]));
+        let primary = on_bright.text_primary;
+        assert_eq!(
+            on_bright.title_ink(primary),
+            ColorF::from_rgba8(0x5A, 0x3A, 0x10, 0xFF)
+        );
+        assert_eq!(
+            on_dark.title_ink(primary),
+            ColorF::from_rgba8(0xFF, 0xD8, 0x90, 0xFF)
+        );
+        // 「图标名称颜色」 白色 / 黑色 wins over the theme's title colour.
+        let white = on_bright.with_label_color(LabelColor::White);
+        assert_eq!(white.title_ink(white.text_primary), white.text_primary);
+        assert_eq!(
+            on_bright
+                .with_label_color(LabelColor::Auto)
+                .title_ink(primary),
+            ColorF::from_rgba8(0x5A, 0x3A, 0x10, 0xFF)
+        );
+        // Fluent follows the colour mode; without the key the title is the primary text.
+        let fluent = CustomTheme::parse(r##"{ "base": "fluent", "titleColor": "#102030" }"##)
+            .unwrap()
+            .apply(Theme::light());
+        assert_eq!(
+            fluent.title_ink(fluent.text_primary),
+            ColorF::from_rgba8(0x10, 0x20, 0x30, 0xFF)
+        );
+        assert_eq!(
+            Theme::light().title_ink(ColorF::TRANSPARENT),
+            ColorF::TRANSPARENT
+        );
+    }
+
+    #[test]
+    fn text_halo_and_shadow_pair_with_the_ink_and_are_clamped() {
+        let file = CustomTheme::parse(
+            r##"{ "base": "liquidGlass", "textHaloWidth": 9, "textShadowBlur": -1,
+                  "light": { "textHalo": "#FFFFFF40" },
+                  "dark": { "textShadow": "#00000099", "textShadowOffset": 12,
+                            "textHaloWidth": 0 } }"##,
+        )
+        .unwrap();
+        // The same pair in either colour mode: the text, not the mode, picks the values.
+        for base in [Theme::light(), Theme::dark()] {
+            let theme = file.apply(base.with_liquid_glass());
+            let dark_text = theme.text_fx(ColorF::from_rgba8(0x13, 0x20, 0x36, 0xFF));
+            let light_text = theme.text_fx(ColorF::from_rgba8(0xFF, 0xFF, 0xFF, 0xFF));
+            assert_eq!(
+                dark_text,
+                TextFx {
+                    halo: Some(ColorF::from_rgba8(0xFF, 0xFF, 0xFF, 0x40)),
+                    halo_width: Some(3.0),
+                    shadow: None,
+                    shadow_blur: Some(0.0),
+                    shadow_offset: None,
+                }
+            );
+            assert_eq!(
+                light_text,
+                TextFx {
+                    halo: None,
+                    halo_width: Some(0.0),
+                    shadow: Some(ColorF::from_rgba8(0, 0, 0, 0x99)),
+                    shadow_blur: Some(0.0),
+                    shadow_offset: Some(4.0),
+                }
+            );
+        }
+        let plain = CustomTheme::parse(r#"{ "base": "fluent" }"#).unwrap();
+        assert_eq!(plain.apply(Theme::dark()).text_fx, [TextFx::NONE; 2]);
+        assert_eq!(Theme::dark().text_fx, [TextFx::NONE; 2]);
+    }
+
+    #[test]
     fn errors_name_the_wrong_key() {
         for (text, needle) in [
             (r#"{ "blur": 4 }"#, "\"base\""),
@@ -444,6 +556,18 @@ mod tests {
             (
                 r#"{ "base": "fluent", "labelFontSize": "big" }"#,
                 "\"labelFontSize\" must be a number",
+            ),
+            (
+                r#"{ "base": "fluent", "dark": { "titleColor": "gold" } }"#,
+                "\"dark.titleColor\" must be a colour",
+            ),
+            (
+                r#"{ "base": "fluent", "textShadowBlur": "soft" }"#,
+                "\"textShadowBlur\" must be a number",
+            ),
+            (
+                r#"{ "base": "fluent", "textHalo": 1 }"#,
+                "\"textHalo\" must be a colour",
             ),
             (r#"{ "base": "fluent", "#, "line 1"),
         ] {
