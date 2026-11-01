@@ -43,7 +43,7 @@ impl FenceViewState {
         let chrome = self.chrome.clone();
         let fmt = chrome.row_format();
         // 12 DIPs of caption breathing room (the sort chevron sits above the caption).
-        let mut w = pecofence_render::text::measure_width(caption, fmt) + 12.0;
+        let mut w = pecofence_render::text::measure_width(caption, &fmt) + 12.0;
         for item in &mut self.items {
             let label = match col {
                 DetailColumn::Date => {
@@ -61,10 +61,11 @@ impl FenceViewState {
                     item.size_label.get_or_insert(text).clone()
                 }
             };
-            w = w.max(pecofence_render::text::measure_width(&label, fmt));
+            w = w.max(pecofence_render::text::measure_width(&label, &fmt));
         }
-        // 8 DIPs of cell padding; MIN/MAX clamping happens in set_column_width.
-        self.set_column_width(col, w + 8.0);
+        // 8 DIPs of cell padding; MIN/MAX clamping happens in set_column_width. Widths are
+        // saved for 12 DIP text (`column_scale`).
+        self.set_column_width(col, (w + 8.0) / self.column_scale());
     }
 
     /// Is the client-pixel point anywhere in the Details header band (column menu)?
@@ -78,7 +79,7 @@ impl FenceViewState {
             return false;
         }
         let y = (y_px - self.content_y) as f32 / self.scale();
-        y >= 0.0 && y < RowMetrics::details().header_h
+        y >= 0.0 && y < self.row_metrics_of(ViewLayout::Details).header_h
     }
 
     /// Is the client-pixel point on the portal "up" button? A tab strip in the title row has it
@@ -237,14 +238,9 @@ impl FenceViewState {
     pub(super) fn layout(&self, width_dip: f32) -> ItemLayout {
         let spans = self.group_spans();
         let n = self.items.len();
-        match self.layout {
-            ViewLayout::Icons => {
-                ItemLayout::Grid(Grid::grouped(self.grid_metrics(), width_dip, n, &spans))
-            }
-            ViewLayout::List => ItemLayout::rows_grouped(RowMetrics::list(), width_dip, n, &spans),
-            ViewLayout::Details => {
-                ItemLayout::rows_grouped(RowMetrics::details(), width_dip, n, &spans)
-            }
+        match self.row_metrics() {
+            Some(rm) => ItemLayout::rows_grouped(rm, width_dip, n, &spans),
+            None => ItemLayout::Grid(Grid::grouped(self.grid_metrics(), width_dip, n, &spans)),
         }
     }
 
@@ -256,9 +252,22 @@ impl FenceViewState {
     pub(super) fn row_metrics(&self) -> Option<RowMetrics> {
         match self.layout {
             ViewLayout::Icons => None,
-            ViewLayout::List => Some(RowMetrics::list()),
-            ViewLayout::Details => Some(RowMetrics::details()),
+            layout => Some(self.row_metrics_of(layout)),
         }
+    }
+
+    /// List or Details rows for the current row text (the icon-label font).
+    fn row_metrics_of(&self, layout: ViewLayout) -> RowMetrics {
+        let line_h = self.chrome.label_line_h();
+        match layout {
+            ViewLayout::Details => RowMetrics::details(line_h),
+            _ => RowMetrics::list(line_h),
+        }
+    }
+
+    /// Details columns are shown this much wider than their saved widths (larger row text).
+    pub(super) fn column_scale(&self) -> f32 {
+        crate::layout::row_text_scale(self.chrome.label_size())
     }
 
     /// Details header column under a client-pixel point.
@@ -268,7 +277,7 @@ impl FenceViewState {
         }
         let scale = self.scale();
         let y = (y_px - self.content_y) as f32 / scale;
-        if y < 0.0 || y >= RowMetrics::details().header_h {
+        if y < 0.0 || y >= self.row_metrics_of(ViewLayout::Details).header_h {
             return None;
         }
         let (cw, _) = self.content_size_px();
@@ -283,7 +292,7 @@ impl FenceViewState {
         }
         let scale = self.scale();
         let y = (y_px - self.content_y) as f32 / scale;
-        if y < 0.0 || y >= RowMetrics::details().header_h {
+        if y < 0.0 || y >= self.row_metrics_of(ViewLayout::Details).header_h {
             return None;
         }
         let (cw, _) = self.content_size_px();
@@ -332,7 +341,9 @@ impl FenceViewState {
             ItemLayout::Rows { metrics, .. } => {
                 let cols = self.columns_for(width_dip);
                 let text_x = cols.name_x + metrics.icon + 8.0;
-                let top = cell.y - self.scroll_y + metrics.header_h + 2.0;
+                // The rename box (`begin_item_rename`) centred on the row.
+                let box_h = crate::rename::item_rename_h(self.column_scale());
+                let top = cell.y - self.scroll_y + metrics.header_h + (metrics.row_h - box_h) / 2.0;
                 (
                     text_x - 4.0,
                     top,

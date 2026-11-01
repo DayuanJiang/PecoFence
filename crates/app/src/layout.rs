@@ -454,8 +454,11 @@ impl Grid {
     }
 }
 
-/// Row metrics for the List / Details layouts (DIPs). Rows are 28 tall with a 20 DIP icon;
-/// Details adds a 28 DIP header that stays put while the rows scroll.
+/// Row metrics for the List / Details layouts (DIPs). Rows are one line of their text (the
+/// icon-label font, which Settings › Accessibility › Text size makes larger) plus 12, and 28 at
+/// least: 28 at the default 12 DIP text, 32 and 36 at 15 and 18 DIPs (text size 125 % and
+/// 150 %; Explorer's rows are 28, 31 and 36). The small icon stays 20 DIPs. Details adds a
+/// header as tall as a row that stays put while the rows scroll.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct RowMetrics {
     pub row_h: f32,
@@ -465,31 +468,37 @@ pub struct RowMetrics {
 }
 
 impl RowMetrics {
-    pub const fn list() -> Self {
+    /// `line_h`: one line of the row text in DIPs (16 at the default 12 DIP text).
+    pub fn list(line_h: f32) -> Self {
         Self {
-            row_h: 28.0,
+            row_h: (line_h + 12.0).round().max(28.0),
             icon: 20.0,
             header_h: 0.0,
             pad_y: 4.0,
         }
     }
 
-    pub const fn details() -> Self {
+    pub fn details(line_h: f32) -> Self {
+        let list = Self::list(line_h);
         Self {
-            row_h: 28.0,
-            icon: 20.0,
-            header_h: 28.0,
-            pad_y: 4.0,
+            header_h: list.row_h,
+            ..list
         }
     }
+}
+
+/// Row text size over the default 12 DIPs (never below 1): the saved details column widths
+/// are shown this much wider.
+pub fn row_text_scale(text: f32) -> f32 {
+    text.max(12.0) / 12.0
 }
 
 /// Icon edge in DIPs for a view layout: `icon_size` in Icons, the rows' small icon otherwise.
 pub fn icon_dip(layout: ViewLayout, icon_size: u32) -> f32 {
     match layout {
         ViewLayout::Icons => icon_size as f32,
-        ViewLayout::List => RowMetrics::list().icon,
-        ViewLayout::Details => RowMetrics::details().icon,
+        ViewLayout::List => RowMetrics::list(0.0).icon,
+        ViewLayout::Details => RowMetrics::details(0.0).icon,
     }
 }
 
@@ -499,7 +508,8 @@ pub fn icon_px(layout: ViewLayout, icon_size: u32, dpi: u32) -> u32 {
 }
 
 /// Column split of the details view for a content width (DIPs). Narrow fences drop the type,
-/// then the date column, so the name always keeps at least ~120 DIPs.
+/// then the date column, so the name always keeps at least ~120 DIPs (more with larger row
+/// text).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct DetailColumns {
     pub name_x: f32,
@@ -523,16 +533,23 @@ impl DetailColumns {
 
     #[cfg(test)]
     pub fn for_width(width: f32) -> Self {
-        Self::for_width_with(width, Self::DEFAULT_WIDTHS, [true; 3])
+        Self::for_width_with(width, Self::DEFAULT_WIDTHS, [true; 3], 1.0)
     }
 
-    /// `widths` = user-sized (修改日期, 类型, 大小) column widths; `visible` = which of them the
-    /// user shows (header context menu). A hidden column is neither placed nor reserved.
-    pub fn for_width_with(width: f32, widths: [f32; 3], visible: [bool; 3]) -> Self {
-        let clamp = |w: f32| w.clamp(Self::MIN_COL_W, Self::MAX_COL_W);
+    /// `widths` = user-sized (修改日期, 类型, 大小) column widths for the default 12 DIP row text;
+    /// they and the name's minimum are `text_scale` times wider on screen (`row_text_scale`).
+    /// `visible` = which of them the user shows (header context menu). A hidden column is
+    /// neither placed nor reserved.
+    pub fn for_width_with(
+        width: f32,
+        widths: [f32; 3],
+        visible: [bool; 3],
+        text_scale: f32,
+    ) -> Self {
+        let clamp = |w: f32| w.clamp(Self::MIN_COL_W, Self::MAX_COL_W) * text_scale;
         let (date_w, type_w, size_w) = (clamp(widths[0]), clamp(widths[1]), clamp(widths[2]));
         let name_x = 8.0;
-        let min_name = 120.0;
+        let min_name = 120.0 * text_scale;
         let mut right = width - Self::GUTTER;
         let mut size = None;
         let mut date = None;
@@ -1225,7 +1242,7 @@ mod tests {
         // Header bands have no row rhythm: grouped layouts keep the whole viewport.
         assert_eq!(grouped_grid().1.whole_rows_h(250.0), 250.0);
         // List rows alike.
-        let rows = ItemLayout::rows(RowMetrics::list(), 200.0, 5);
+        let rows = ItemLayout::rows(RowMetrics::list(16.0), 200.0, 5);
         let shown = rows.whole_rows_h(8.0 + 3.0 * 28.0 + 12.0);
         assert_eq!(shown, 8.0 + 3.0 * 28.0);
         assert_eq!(rows.max_scroll(shown), 2.0 * 28.0);
@@ -1254,8 +1271,8 @@ mod tests {
             }
         }
         for (name, rm) in [
-            ("list", RowMetrics::list()),
-            ("details", RowMetrics::details()),
+            ("list", RowMetrics::list(16.0)),
+            ("details", RowMetrics::details(16.0)),
         ] {
             layouts.push((
                 name.into(),
@@ -1368,11 +1385,13 @@ mod tests {
 
     #[test]
     fn detail_columns_skip_hidden_columns() {
-        let all = DetailColumns::for_width_with(480.0, DetailColumns::DEFAULT_WIDTHS, [true; 3]);
+        let all =
+            DetailColumns::for_width_with(480.0, DetailColumns::DEFAULT_WIDTHS, [true; 3], 1.0);
         let no_type = DetailColumns::for_width_with(
             480.0,
             DetailColumns::DEFAULT_WIDTHS,
             [true, false, true],
+            1.0,
         );
         assert!(no_type.type_.is_none());
         assert!(no_type.date.is_some() && no_type.size.is_some());
@@ -1383,6 +1402,7 @@ mod tests {
             340.0,
             DetailColumns::DEFAULT_WIDTHS,
             [false, true, true],
+            1.0,
         );
         assert!(narrow.date.is_none() && narrow.type_.is_some() && narrow.size.is_some());
     }
@@ -1402,7 +1422,7 @@ mod tests {
         let last = l.cell(3);
         let end = l.insertion_caret(4, 4);
         assert_eq!(end.x, last.x + last.w - 1.0);
-        let rows = ItemLayout::rows(RowMetrics::list(), 200.0, 3);
+        let rows = ItemLayout::rows(RowMetrics::list(16.0), 200.0, 3);
         assert_eq!(rows.insertion_index(10.0, 4.0 + 28.0 * 1.6, 3), 2);
         assert_eq!(rows.insertion_index(10.0, 9_999.0, 3), 3);
         assert_eq!(rows.insertion_caret(3, 3).y, 4.0 + 3.0 * 28.0 - 1.0);
@@ -1410,7 +1430,7 @@ mod tests {
 
     #[test]
     fn detail_columns_honour_user_widths_and_expose_dividers() {
-        let c = DetailColumns::for_width_with(600.0, [200.0, 60.0, 100.0], [true; 3]);
+        let c = DetailColumns::for_width_with(600.0, [200.0, 60.0, 100.0], [true; 3], 1.0);
         assert_eq!(c.date.unwrap().1, 200.0);
         assert_eq!(c.type_.unwrap().1, 60.0);
         assert_eq!(c.size.unwrap().1, 100.0);
@@ -1418,13 +1438,28 @@ mod tests {
         assert_eq!(c.divider_at(dx - 4.0), Some(DetailColumn::Date));
         assert_eq!(c.divider_at(dx + 30.0), None);
         // Widths clamp so a dragged column can never eat the whole fence.
-        let tiny = DetailColumns::for_width_with(600.0, [1.0, 1.0, 1.0], [true; 3]);
+        let tiny = DetailColumns::for_width_with(600.0, [1.0, 1.0, 1.0], [true; 3], 1.0);
         assert_eq!(tiny.size.unwrap().1, DetailColumns::MIN_COL_W);
+    }
+
+    /// With 18 DIP row text (Windows' text size 150 %) the columns and the name's minimum are
+    /// half as wide again, so a fence that shows every column at 12 DIPs drops the type column
+    /// instead of squeezing the names.
+    #[test]
+    fn detail_columns_grow_with_the_row_text() {
+        let w = DetailColumns::DEFAULT_WIDTHS;
+        let normal = DetailColumns::for_width_with(640.0, w, [true; 3], 1.0);
+        assert!(normal.type_.is_some());
+        let large = DetailColumns::for_width_with(640.0, w, [true; 3], 1.5);
+        assert_eq!(large.date.unwrap().1, DetailColumns::DATE_W * 1.5);
+        assert_eq!(large.size.unwrap().1, DetailColumns::SIZE_W * 1.5);
+        assert!(large.type_.is_none());
+        assert!(large.name_w >= 180.0);
     }
 
     #[test]
     fn rows_layout_hit_tests_by_row() {
-        let l = ItemLayout::rows(RowMetrics::details(), 300.0, 5);
+        let l = ItemLayout::rows(RowMetrics::details(16.0), 300.0, 5);
         assert_eq!(l.columns(), 1);
         assert_eq!(l.fixed_top(), 28.0);
         let c = l.cell(2);
@@ -1432,6 +1467,24 @@ mod tests {
         assert_eq!(l.hit_test(10.0, 1.0, 5), None);
         assert_eq!(l.hit_test(10.0, c.y + 1000.0, 5), None);
         assert_eq!(l.content_height(), 4.0 * 2.0 + 5.0 * 28.0);
+    }
+
+    /// Rows keep their size for the default 12 DIP text (a 16 DIP line) and smaller, and grow
+    /// with larger text (Windows' text size at 125 % and 150 %), header included; the icon
+    /// stays.
+    #[test]
+    fn rows_grow_with_the_row_text() {
+        let m = |line_h: f32| {
+            let d = RowMetrics::details(line_h);
+            (d.row_h, d.icon, d.header_h)
+        };
+        assert_eq!(m(16.0), (28.0, 20.0, 28.0));
+        assert_eq!(m(14.0), m(16.0));
+        assert_eq!(m(20.0), (32.0, 20.0, 32.0));
+        assert_eq!(m(24.0), (36.0, 20.0, 36.0));
+        assert_eq!(RowMetrics::list(24.0).header_h, 0.0);
+        assert_eq!(row_text_scale(18.0), 1.5);
+        assert_eq!(row_text_scale(10.0), 1.0);
     }
 
     fn overlaps(a: CellRect, b: CellRect) -> bool {
@@ -1583,7 +1636,7 @@ mod tests {
         assert_eq!(plain.neighbour(7, 0, 1, 10), Some(9));
         assert_eq!(plain.neighbour(9, 0, 1, 10), None);
         assert_eq!(plain.neighbour(9, 1, 0, 10), Some(9));
-        let rows = ItemLayout::rows(RowMetrics::list(), 200.0, 3);
+        let rows = ItemLayout::rows(RowMetrics::list(16.0), 200.0, 3);
         assert_eq!(rows.neighbour(0, 0, 1, 3), Some(1));
         assert_eq!(rows.neighbour(2, 0, 1, 3), None);
     }
@@ -1646,8 +1699,8 @@ mod tests {
             Some(DateBucket::Today),
             Some(DateBucket::Yesterday),
         ]);
-        let l = ItemLayout::rows_grouped(RowMetrics::details(), 300.0, 3, &spans);
-        let m = RowMetrics::details();
+        let l = ItemLayout::rows_grouped(RowMetrics::details(16.0), 300.0, 3, &spans);
+        let m = RowMetrics::details(16.0);
         let headers = l.headers();
         assert_eq!(headers.len(), 2);
         assert_eq!(headers[0].rect.y, m.pad_y);

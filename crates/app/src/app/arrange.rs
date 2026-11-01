@@ -59,10 +59,11 @@ impl App {
             (self.ctx.theme.borrow().title_height * scale).round()
         };
         let cells = self.state.config.settings.snapping.size_to_cells;
+        let line_h = self.ctx.chrome.label_line_h();
         let rows = match shown.view.layout {
             ViewLayout::Icons => None,
-            ViewLayout::List => Some(crate::layout::RowMetrics::list()),
-            ViewLayout::Details => Some(crate::layout::RowMetrics::details()),
+            ViewLayout::List => Some(crate::layout::RowMetrics::list(line_h)),
+            ViewLayout::Details => Some(crate::layout::RowMetrics::details(line_h)),
         };
         Some(match rows {
             Some(rm) => GridSteps {

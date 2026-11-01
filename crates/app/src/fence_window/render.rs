@@ -691,7 +691,7 @@ impl FenceViewState {
                     ),
                     _ => pecofence_render::text::fit_width(
                         &item.name,
-                        self.chrome.row_format(),
+                        &self.chrome.row_format(),
                         label_w,
                     ),
                 });
@@ -747,9 +747,12 @@ impl FenceViewState {
 
     pub(super) fn columns_for(&self, width_dip: f32) -> DetailColumns {
         match self.layout {
-            ViewLayout::Details => {
-                DetailColumns::for_width_with(width_dip, self.column_widths, self.columns_visible)
-            }
+            ViewLayout::Details => DetailColumns::for_width_with(
+                width_dip,
+                self.column_widths,
+                self.columns_visible,
+                self.column_scale(),
+            ),
             _ => DetailColumns {
                 name_x: 8.0,
                 name_w: (width_dip - 16.0).max(40.0),

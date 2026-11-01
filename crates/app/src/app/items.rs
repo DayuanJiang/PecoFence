@@ -222,6 +222,7 @@ impl App {
         crate::rename::begin_item_rename(
             rect,
             dpi,
+            crate::layout::row_text_scale(self.ctx.chrome.label_size()),
             item,
             current,
             select_end,
