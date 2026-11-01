@@ -401,6 +401,15 @@ impl App {
     /// rolled up at rest has its saved rect laid out around its title row on the screen
     /// (`AppState::set_fence_bounds`); the window's row then sits at that end of it.
     pub(super) fn record_bounds(&mut self, id: FenceId, rect: RECT, rolled: bool, expanded: i32) {
+        // 像桌面一样排列 places that window itself: its saved rect stays the fence's own, for
+        // when the option goes off.
+        if self
+            .fences
+            .get(&id)
+            .is_some_and(|w| w.is_desktop_arranged())
+        {
+            return;
+        }
         let (rect, row_bottom, choose) = match self.fences.get(&id) {
             Some(w) => {
                 let mut rect = self.ctx.behavior.resting_rect(w.hwnd(), rect);
@@ -421,6 +430,9 @@ impl App {
         if choose && let Some(w) = self.fences.get(&id) {
             w.set_row_at_bottom(row_bottom);
         }
+        // Wherever a fence now rests (a drag, the CLI, a snap, a push, auto height), the loose
+        // icons flow around it.
+        self.arrange_desktop_fence();
     }
 }
 
