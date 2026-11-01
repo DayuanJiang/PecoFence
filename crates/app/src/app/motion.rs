@@ -122,6 +122,7 @@ impl App {
         self.ctx.bitmaps.borrow_mut().prune_wallpapers();
         // Diagnostic: keep every GPU cache (compare glitches with and without the trim).
         if pecofence_core::brand::var_os("PECOFENCE_NO_GPU_TRIM").is_none() {
+            self.ctx.chrome.trim();
             self.ctx.stack.trim();
         }
     }

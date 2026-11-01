@@ -6,7 +6,8 @@ use crate::backdrop::Image;
 use crate::bitmaps::BitmapCache;
 use crate::gpu_bindings as b;
 use crate::panel::Clip;
-use crate::theme::{Theme, font_small, font_text, lerp, with_alpha};
+use crate::text_shadow::TextShadows;
+use crate::theme::{TextFx, Theme, font_small, font_text, lerp, with_alpha};
 use std::cell::{Ref, RefCell};
 use std::mem::ManuallyDrop;
 use std::rc::Rc;
@@ -66,6 +67,8 @@ pub struct FenceChrome {
     group_format: TextFormat,
     /// Tab match badge number: 11 / 600, centred.
     badge_format: TextFormat,
+    /// The blurred masks of a theme's soft text shadow, shared by all fences.
+    text_shadows: RefCell<TextShadows>,
 }
 
 /// A "按时间分组" section header band in surface DIPs (already scrolled; for rows already
@@ -1020,57 +1023,63 @@ fn draw_plate(
 }
 
 /// Halo under a caption drawn in `ink` straight over wallpaper (Liquid Glass labels, a fully
-/// transparent plate): a dark rim under light text, a light one under dark text.
-fn halo_color(ink: ColorF, alpha: f32) -> ColorF {
+/// transparent plate): the theme file's for that text, else a dark rim under light text and a
+/// light one under dark text (`soft`: the lighter halo of list and details rows).
+fn halo_color(theme: &Theme, ink: ColorF, alpha: f32, soft: bool) -> ColorF {
+    if let Some(c) = theme.text_fx(ink).halo {
+        return with_alpha(c, alpha);
+    }
+    let (dark, light) = if soft { (0.28, 0.28) } else { (0.38, 0.55) };
     if ink.r > 0.5 {
-        ColorF::new(0.0, 0.0, 0.0, 0.38 * alpha)
+        ColorF::new(0.0, 0.0, 0.0, dark * alpha)
     } else {
-        ColorF::new(1.0, 1.0, 1.0, 0.55 * alpha)
+        ColorF::new(1.0, 1.0, 1.0, light * alpha)
     }
 }
 
-/// Draws `text` in `rect`, over a four-way `halo` outline (¾ DIP each way) when one is given.
-fn draw_caption(
-    session: &DrawingSession<'_>,
-    text: &str,
-    format: &TextFormat,
-    rect: &Rect,
-    brush: &Brush,
-    halo: Option<&Brush>,
-) {
-    let Some(halo) = halo else {
-        session.draw_text(text, format, rect, brush);
-        return;
-    };
-    // Shaped once for the five passes: `draw_text` lays the text out anew on every call.
-    let Ok(layout) = TextLayout::new(text, format, rect.width(), rect.height()) else {
-        session.draw_text(text, format, rect, brush);
-        return;
-    };
-    for (dx, dy) in [(-0.75, 0.0), (0.75, 0.0), (0.0, -0.75), (0.0, 0.75)] {
-        session.draw_text_layout(Vector2::new(rect.left + dx, rect.top + dy), &layout, halo);
-    }
-    session.draw_text_layout(Vector2::new(rect.left, rect.top), &layout, brush);
+/// The halo brush of captions straight over wallpaper, recoloured per caption by
+/// [`Legible::fx`].
+struct Legible {
+    halo: Brush,
 }
 
-fn draw_legible_text(
-    session: &DrawingSession<'_>,
-    text: &str,
-    format: &TextFormat,
-    rect: &Rect,
-    brush: &Brush,
-    halo: Option<&Brush>,
-    spread: f32,
-) {
-    if let Some(halo) = halo {
-        let shifted = Rect {
-            top: rect.top + spread,
-            bottom: rect.bottom + spread,
-            ..*rect
-        };
-        session.draw_text(text, format, &shifted, halo);
+/// What one caption straight over wallpaper is drawn over: the halo (its brush, in the
+/// caption's halo colour, and the outline width) and a theme file's soft shadow.
+#[derive(Clone, Copy)]
+struct CaptionFx<'a> {
+    halo: Option<(&'a Brush, f32)>,
+    shadow: Option<TextShadow>,
+}
+
+#[derive(Clone, Copy)]
+struct TextShadow {
+    color: ColorF,
+    blur: f32,
+    offset: f32,
+}
+
+impl Legible {
+    fn new(session: &DrawingSession<'_>) -> Result<Self> {
+        Ok(Self {
+            halo: session.create_solid_brush(ColorF::TRANSPARENT)?,
+        })
     }
-    session.draw_text(text, format, rect, brush);
+
+    /// The halo and shadow of a caption in `ink` at `alpha` (`soft`: a list or details row).
+    fn fx(&self, theme: &Theme, ink: ColorF, alpha: f32, soft: bool) -> CaptionFx<'_> {
+        let fx = theme.text_fx(ink);
+        let width = fx.halo_width.unwrap_or(TextFx::HALO_WIDTH);
+        let halo = (width > 0.0).then(|| {
+            self.halo.set_color(halo_color(theme, ink, alpha, soft));
+            (&self.halo, width)
+        });
+        let shadow = fx.shadow.map(|c| TextShadow {
+            color: with_alpha(c, alpha),
+            blur: fx.shadow_blur.unwrap_or(TextFx::SHADOW_BLUR),
+            offset: fx.shadow_offset.unwrap_or(TextFx::SHADOW_OFFSET),
+        });
+        CaptionFx { halo, shadow }
+    }
 }
 
 /// The hairline of a "按时间分组" section header: from 8 DIPs after the caption's end
@@ -1177,7 +1186,7 @@ struct StateBrushes {
     scratch_a: Brush,
     scratch_b: Brush,
     /// The label halo over wallpaper (Liquid Glass, text_halo), recoloured per cell.
-    halo: Brush,
+    legible: Legible,
 }
 
 impl StateBrushes {
@@ -1190,14 +1199,8 @@ impl StateBrushes {
             focus_inner: session.create_solid_brush(theme.focus_inner)?,
             scratch_a: session.create_solid_brush(theme.text_primary)?,
             scratch_b: session.create_solid_brush(theme.text_secondary)?,
-            halo: session.create_solid_brush(halo_color(theme.text_primary, 1.0))?,
+            legible: Legible::new(session)?,
         })
-    }
-
-    /// `halo` recoloured to `c`.
-    fn halo(&self, c: ColorF) -> &Brush {
-        self.halo.set_color(c);
-        &self.halo
     }
 
     /// `scratch_a` recoloured to `c`.
@@ -1517,6 +1520,115 @@ fn text_locale() -> &'static str {
 }
 
 impl FenceChrome {
+    /// Draws `text` in `rect` over what `fx` gives a caption straight on wallpaper: a theme's
+    /// soft shadow, then the halo outline (¾ DIP four ways built in; eight ways when a theme
+    /// makes it wider than a DIP).
+    fn draw_caption(
+        &self,
+        session: &DrawingSession<'_>,
+        text: &str,
+        format: &TextFormat,
+        rect: &Rect,
+        brush: &Brush,
+        fx: Option<CaptionFx<'_>>,
+    ) {
+        let Some(fx) = fx.filter(|f| f.halo.is_some() || f.shadow.is_some()) else {
+            session.draw_text(text, format, rect, brush);
+            return;
+        };
+        // Shaped once for all passes: `draw_text` lays the text out anew on every call.
+        let Ok(layout) = TextLayout::new(text, format, rect.width(), rect.height()) else {
+            session.draw_text(text, format, rect, brush);
+            return;
+        };
+        if let Some(shadow) = fx.shadow {
+            self.draw_text_shadow(session, &layout, text, format, rect, shadow);
+        }
+        if let Some((halo, width)) = fx.halo {
+            let (w, d) = (width, width * std::f32::consts::FRAC_1_SQRT_2);
+            let ways = [
+                (-w, 0.0),
+                (w, 0.0),
+                (0.0, -w),
+                (0.0, w),
+                (-d, -d),
+                (d, -d),
+                (-d, d),
+                (d, d),
+            ];
+            for (dx, dy) in &ways[..if width > 1.0 { 8 } else { 4 }] {
+                let at = Vector2::new(rect.left + dx, rect.top + dy);
+                session.draw_text_layout(at, &layout, halo);
+            }
+        }
+        session.draw_text_layout(Vector2::new(rect.left, rect.top), &layout, brush);
+    }
+
+    /// A list or details row's text over wallpaper: a theme's soft shadow, then the halo as a
+    /// copy `spread` below the text.
+    #[allow(clippy::too_many_arguments)]
+    fn draw_legible_text(
+        &self,
+        session: &DrawingSession<'_>,
+        text: &str,
+        format: &TextFormat,
+        rect: &Rect,
+        brush: &Brush,
+        fx: Option<CaptionFx<'_>>,
+        spread: f32,
+    ) {
+        if let Some(shadow) = fx.and_then(|f| f.shadow)
+            && let Ok(layout) = TextLayout::new(text, format, rect.width(), rect.height())
+        {
+            self.draw_text_shadow(session, &layout, text, format, rect, shadow);
+        }
+        if let Some((halo, _)) = fx.and_then(|f| f.halo) {
+            let shifted = Rect {
+                top: rect.top + spread,
+                bottom: rect.bottom + spread,
+                ..*rect
+            };
+            session.draw_text(text, format, &shifted, halo);
+        }
+        session.draw_text(text, format, rect, brush);
+    }
+
+    /// A theme's soft shadow under `text` (laid out as `layout` in `rect`), from its mask.
+    fn draw_text_shadow(
+        &self,
+        session: &DrawingSession<'_>,
+        layout: &TextLayout,
+        text: &str,
+        format: &TextFormat,
+        rect: &Rect,
+        shadow: TextShadow,
+    ) {
+        self.text_shadows.borrow_mut().draw(
+            session,
+            layout,
+            text,
+            format,
+            Vector2::new(rect.left, rect.top),
+            shadow.blur,
+            shadow.offset,
+            shadow.color,
+        );
+    }
+
+    /// Drawing has gone quiet: lets go of what only new text shadows need (the masks stay).
+    pub fn trim(&self) {
+        if let Ok(mut shadows) = self.text_shadows.try_borrow_mut() {
+            shadows.trim();
+        }
+    }
+
+    /// Another theme took over: drops the masks of its text shadows.
+    pub fn forget_text_shadows(&self) {
+        if let Ok(mut shadows) = self.text_shadows.try_borrow_mut() {
+            shadows.clear();
+        }
+    }
+
     pub fn new() -> Result<Self> {
         let locale = text_locale();
         // WinUI type ramp: Body Strong 14/600 for the title, Caption 12 (Small optical size) for
@@ -1580,6 +1692,7 @@ impl FenceChrome {
             title_glyph_format,
             group_format,
             badge_format,
+            text_shadows: RefCell::default(),
         };
         // Labels follow the desktop's icon-title font from the start (12 px / 16 stays the
         // fallback when the system call fails).
@@ -1997,8 +2110,8 @@ impl FenceChrome {
             );
         }
         if column {
-            let halo = if theme.text_halo {
-                Some(session.create_solid_brush(ColorF::TRANSPARENT)?)
+            let legible = if theme.text_halo {
+                Some(Legible::new(session)?)
             } else {
                 None
             };
@@ -2011,7 +2124,7 @@ impl FenceChrome {
                 style.tint,
                 tabs,
                 pill,
-                halo.as_ref(),
+                legible.as_ref(),
                 style.tab_rail,
                 height,
                 1.0 - roll_t.clamp(0.0, 1.0),
@@ -2057,15 +2170,16 @@ impl FenceChrome {
             style.tint,
         );
         // Captions over bare wallpaper (a fully transparent plate) get a halo.
-        let halo = if theme.text_halo {
-            Some(session.create_solid_brush(ColorF::TRANSPARENT)?)
+        let legible = if theme.text_halo {
+            Some(Legible::new(session)?)
         } else {
             None
         };
-        let text = session.create_solid_brush(with_alpha(
-            style.title_color.unwrap_or(foreground.text_primary),
-            title_a,
-        ))?;
+        // The fence's own 「标题颜色」, else the theme's title colour, else the text colour.
+        let title_ink = style
+            .title_color
+            .unwrap_or_else(|| foreground.title_ink(foreground.text_primary));
+        let text = session.create_solid_brush(with_alpha(title_ink, title_a))?;
         let secondary =
             session.create_solid_brush(with_alpha(foreground.text_secondary, title_a))?;
         let tertiary = session.create_solid_brush(with_alpha(foreground.text_tertiary, title_a))?;
@@ -2233,17 +2347,16 @@ impl FenceChrome {
                 let color = if tab.pressed && !tab.dragging {
                     foreground.text_tertiary
                 } else {
-                    tab.title_color
-                        .unwrap_or(if tab.active || tab.drop_target >= 0.5 {
+                    tab.title_color.unwrap_or_else(|| {
+                        foreground.title_ink(if tab.active || tab.drop_target >= 0.5 {
                             foreground.text_primary
                         } else {
                             foreground.text_secondary
                         })
+                    })
                 };
                 let brush = session.create_solid_brush(with_alpha(color, ta))?;
-                if let Some(halo) = &halo {
-                    halo.set_color(halo_color(color, ta));
-                }
+                let fx = legible.as_ref().map(|l| l.fx(theme, color, ta, false));
                 if tab.folder_icon {
                     let slot = Rect::from_xywh(caption_x - icon_w - 2.0, 0.0, icon_w, title_h);
                     if tab.up_button {
@@ -2265,13 +2378,13 @@ impl FenceChrome {
                         session.draw_text("\u{E8B7}", &self.title_glyph_format, &slot, &brush);
                     }
                 }
-                draw_caption(
+                self.draw_caption(
                     session,
                     &fitted,
                     fmt,
                     &Rect::from_xywh(caption_x, 0.0, shown_w, title_h),
                     &brush,
-                    halo.as_ref(),
+                    fx,
                 );
                 if let Some(badge) = tab.badge {
                     let r = Rect::from_xywh(
@@ -2345,19 +2458,16 @@ impl FenceChrome {
                 }
                 x += TitleDeco::ICON_W;
             }
-            if let Some(halo) = &halo {
-                halo.set_color(halo_color(
-                    style.title_color.unwrap_or(foreground.text_primary),
-                    title_a,
-                ));
-            }
-            draw_caption(
+            let fx = legible
+                .as_ref()
+                .map(|l| l.fx(theme, title_ink, title_a, false));
+            self.draw_caption(
                 session,
                 &fitted,
                 title_format,
                 &Rect::from_xywh(x, 0.0, title_w, title_h),
                 &text,
-                halo.as_ref(),
+                fx,
             );
         }
         if count_a > 0.0
@@ -2374,16 +2484,16 @@ impl FenceChrome {
                 header_foreground(&backdrop, theme, 6, count_rect, scale, opacity, style.tint);
             let count =
                 session.create_solid_brush(with_alpha(foreground.text_tertiary, count_a))?;
-            if let Some(halo) = &halo {
-                halo.set_color(halo_color(foreground.text_tertiary, count_a));
-            }
-            draw_caption(
+            let fx = legible
+                .as_ref()
+                .map(|l| l.fx(theme, foreground.text_tertiary, count_a, false));
+            self.draw_caption(
                 session,
                 caption,
                 &self.count_format,
                 &count_rect,
                 &count,
-                halo.as_ref(),
+                fx,
             );
         }
 
@@ -2495,7 +2605,7 @@ impl FenceChrome {
         tint: Option<ColorF>,
         tabs: &[TabDraw<'_>],
         pill: Option<(f32, f32)>,
-        halo: Option<&Brush>,
+        legible: Option<&Legible>,
         rail_w: f32,
         height: f32,
         expanded: f32,
@@ -2619,7 +2729,8 @@ impl FenceChrome {
             let color = if tab.pressed && !tab.dragging {
                 foreground.text_secondary
             } else {
-                tab.title_color.unwrap_or(foreground.text_primary)
+                tab.title_color
+                    .unwrap_or_else(|| foreground.title_ink(foreground.text_primary))
             };
             // A navigated portal's up button ends the shown tab's row (its room stays while the
             // fence collapses, so the caption does not re-fit at the end).
@@ -2648,12 +2759,10 @@ impl FenceChrome {
                     continue;
                 }
                 let brush = session.create_solid_brush(with_alpha(color, a))?;
-                if let Some(halo) = halo {
-                    halo.set_color(halo_color(color, a));
-                }
+                let fx = legible.map(|l| l.fx(theme, color, a, false));
                 let fmt = &self.rail_title_format(tab.title_size, strong);
                 let fitted = crate::text::fit_width(tab.title, fmt, room);
-                draw_caption(session, &fitted, fmt, &caption, &brush, halo);
+                self.draw_caption(session, &fitted, fmt, &caption, &brush, fx);
             }
             // Like the selection fill, the up button is gone from a collapsed column.
             let up_a = ta * expanded;
@@ -2731,11 +2840,7 @@ impl FenceChrome {
         let secondary = session.create_solid_brush(theme.text_secondary)?;
         let cols = rows.columns;
         let header_h = rows.header_h;
-        let halo = if theme.liquid_glass || theme.text_halo {
-            Some(session.create_solid_brush(ColorF::TRANSPARENT)?)
-        } else {
-            None
-        };
+        let legible = (theme.liquid_glass || theme.text_halo).then_some(&state.legible);
         let spread = 1.0 / scale.max(1.0);
         let paint_text = |text: &str,
                           format: &TextFormat,
@@ -2768,14 +2873,8 @@ impl FenceChrome {
                 foreground.text_primary
             };
             let brush = state.a(with_alpha(color, alpha));
-            if let Some(halo) = &halo {
-                halo.set_color(if color.r > 0.5 {
-                    ColorF::new(0.0, 0.0, 0.0, 0.28 * alpha)
-                } else {
-                    ColorF::new(1.0, 1.0, 1.0, 0.28 * alpha)
-                });
-            }
-            draw_legible_text(session, text, format, &rect, brush, halo.as_ref(), spread);
+            let fx = legible.map(|l| l.fx(theme, color, alpha, true));
+            self.draw_legible_text(session, text, format, &rect, brush, fx, spread);
         };
         // Dates, types, sizes and the column captions are not shortened like the names: each
         // is clipped to its column so a long one does not run into the next.
@@ -3112,15 +3211,7 @@ impl FenceChrome {
             if !content.group_headers.is_empty() {
                 let line = session.create_solid_brush(theme.stroke)?;
                 // The same local halo the labels get over mixed wallpaper.
-                let halo = if theme.liquid_glass || theme.text_halo {
-                    Some(session.create_solid_brush(if theme.text_secondary.r > 0.5 {
-                        ColorF::new(0.0, 0.0, 0.0, 0.28)
-                    } else {
-                        ColorF::new(1.0, 1.0, 1.0, 0.28)
-                    })?)
-                } else {
-                    None
-                };
+                let legible = (theme.liquid_glass || theme.text_halo).then_some(&state.legible);
                 let spread = 1.0 / scale.max(1.0);
                 let text_x = ICON_LABEL_SIDE_INSET;
                 let right = width - 8.0;
@@ -3132,13 +3223,14 @@ impl FenceChrome {
                         .min((right - text_x).max(1.0))
                         .max(1.0);
                     let rect = Rect::from_xywh(text_x, h.y, text_w, h.h);
-                    draw_legible_text(
+                    let fx = legible.map(|l| l.fx(theme, theme.text_secondary, 1.0, true));
+                    self.draw_legible_text(
                         session,
                         h.text,
                         &self.group_format,
                         &rect,
                         &label_dim,
-                        halo.as_ref(),
+                        fx,
                         spread,
                     );
                     draw_group_rule(session, px, h, text_x + text_w, right, &line);
@@ -3310,15 +3402,15 @@ impl FenceChrome {
         };
         // A local halo protects labels over mixed light/dark wallpaper (Liquid Glass, a fully
         // transparent plate). It does not frost or darken the glass between icons.
-        let halo = (theme.liquid_glass || theme.text_halo)
-            .then(|| state.halo(halo_color(theme.text_primary, alpha)));
-        draw_caption(
+        let fx = (theme.liquid_glass || theme.text_halo)
+            .then(|| state.legible.fx(theme, theme.text_primary, alpha, false));
+        self.draw_caption(
             session,
             text,
             &self.label_font.borrow().format,
             &label_rect,
             brush,
-            halo,
+            fx,
         );
 
         Ok(())

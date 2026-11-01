@@ -83,6 +83,38 @@ pub struct Theme {
     /// The 「图标名称颜色」 the text was fixed to by [`Self::with_label_color`]; titles and tabs
     /// over glass keep it instead of picking their ink from the wallpaper (Auto: they pick).
     pub label_color: pecofence_core::LabelColor,
+    /// A theme file's title colour for fence titles and tabs without a 「标题颜色」 of their own
+    /// (None = `text_primary`). It follows the backdrop like the text.
+    pub title_text: Option<ColorF>,
+    /// A theme file's halo and shadow for text drawn straight over wallpaper: for dark text
+    /// (the light mode's values) and for light text (the dark mode's), see [`Self::text_fx`].
+    pub text_fx: [TextFx; 2],
+}
+
+/// The halo and soft shadow a theme file gives text over bare wallpaper (None = built in: the
+/// ¾ DIP halo of [`TextFx::HALO_WIDTH`], no shadow).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct TextFx {
+    pub halo: Option<ColorF>,
+    pub halo_width: Option<f32>,
+    pub shadow: Option<ColorF>,
+    pub shadow_blur: Option<f32>,
+    pub shadow_offset: Option<f32>,
+}
+
+impl TextFx {
+    pub const NONE: Self = Self {
+        halo: None,
+        halo_width: None,
+        shadow: None,
+        shadow_blur: None,
+        shadow_offset: None,
+    };
+    /// The built-in halo: a four-way outline this many DIPs wide.
+    pub const HALO_WIDTH: f32 = 0.75;
+    /// A shadow's blur and downward offset (DIPs) when the theme sets only its colour.
+    pub const SHADOW_BLUR: f32 = 2.0;
+    pub const SHADOW_OFFSET: f32 = 1.0;
 }
 
 /// Liquid Glass lens strength, as multiples of the built-in refraction and rim light.
@@ -136,6 +168,7 @@ pub struct Ink {
     selection_stroke_inactive: ColorF,
     focus_outer: ColorF,
     focus_inner: ColorF,
+    title_text: Option<ColorF>,
 }
 
 impl Ink {
@@ -152,6 +185,7 @@ impl Ink {
             selection_stroke_inactive: theme.selection_stroke_inactive,
             focus_outer: theme.focus_outer,
             focus_inner: theme.focus_inner,
+            title_text: theme.title_text,
         }
     }
 }
@@ -192,6 +226,8 @@ impl Theme {
             shadow: ShadowOverride::NONE,
             custom_inks: None,
             label_color: pecofence_core::LabelColor::Auto,
+            title_text: None,
+            text_fx: [TextFx::NONE; 2],
         }
     }
 
@@ -230,6 +266,8 @@ impl Theme {
             shadow: ShadowOverride::NONE,
             custom_inks: None,
             label_color: pecofence_core::LabelColor::Auto,
+            title_text: None,
+            text_fx: [TextFx::NONE; 2],
         }
     }
 
@@ -416,8 +454,9 @@ impl Theme {
 
     /// The theme the item names, and the titles and tabs without a 「标题颜色」 of their own,
     /// are drawn with. 「图标名称颜色」 白色 / 黑色 takes the text of this material's dark /
-    /// light theme whatever the backdrop; the plate, hover and focus tokens stay as picked for
-    /// it, and the halo follows the text.
+    /// light theme whatever the backdrop, also for those titles in place of a theme file's
+    /// title colour; the plate, hover and focus tokens stay as picked for it, and the halo
+    /// follows the text.
     pub fn with_label_color(mut self, color: pecofence_core::LabelColor) -> Self {
         self.label_color = color;
         let mode = match color {
@@ -429,7 +468,20 @@ impl Theme {
         self.text_primary = ink.text_primary;
         self.text_secondary = ink.text_secondary;
         self.text_tertiary = ink.text_tertiary;
+        self.title_text = None;
         self
+    }
+
+    /// The colour of a fence title or tab caption without a 「标题颜色」 of its own: the theme
+    /// file's title colour, else `fallback` (the primary or, for a resting tab, secondary text).
+    pub fn title_ink(&self, fallback: ColorF) -> ColorF {
+        self.title_text.unwrap_or(fallback)
+    }
+
+    /// The theme file's halo and shadow for text in `ink`: dark text takes the light mode's,
+    /// light text the dark mode's.
+    pub fn text_fx(&self, ink: ColorF) -> TextFx {
+        self.text_fx[(ink.r > 0.5) as usize]
     }
 
     /// The ink of this style's `mode` variant: a custom theme's own, else the built-in one.
@@ -462,6 +514,7 @@ impl Theme {
         self.selection_stroke_inactive = foreground.selection_stroke_inactive;
         self.focus_outer = foreground.focus_outer;
         self.focus_inner = foreground.focus_inner;
+        self.title_text = foreground.title_text;
         self
     }
 
