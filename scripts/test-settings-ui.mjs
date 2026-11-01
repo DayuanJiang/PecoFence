@@ -825,6 +825,33 @@ async function runTests() {
       assert(doc.querySelector('#ruleList .rule:first-child .conds').textContent.includes(label), kind + ' displayed the wrong condition');
     }
   });
+  await test('A value typed in quotes is saved without them (feedback #89)', async () => {
+    assert(doc.getElementById('nrValueHint').textContent.includes('不用加引号'), 'The hint does not say quotes are not needed');
+    assert(doc.getElementById('nrValue').getAttribute('aria-describedby') === 'nrValueHint', 'The hint is not tied to the input');
+    for (const [kind, value, saved] of [
+      ['contains', '"my report"', { cond: 'name', value: { op: 'contains', value: 'my report' } }],
+      ['startsWith', "'my report'", { cond: 'name', value: { op: 'startsWith', value: 'my report' } }],
+      ['endsWith', ' “my report” ', { cond: 'name', value: { op: 'endsWith', value: 'my report' } }],
+      ['notContains', '‘old copy’', { cond: 'name', value: { op: 'notContains', value: 'old copy' } }],
+      ['exact', `"my report.docx", 'notes 2.md'`, { cond: 'exactName', value: ['my report.docx', 'notes 2.md'] }],
+      ['exact', '"a b.txt, c d.txt"', { cond: 'exactName', value: ['a b.txt', 'c d.txt'] }],
+      ['glob', '"*my report*"', { cond: 'glob', value: '*my report*' }],
+      ['target', '"Program Files"', { cond: 'shortcutTarget', value: { op: 'contains', value: 'Program Files' } }],
+      ['ext', '"tar.gz"', { cond: 'ext', value: ['tar.gz'] }],
+      // Quotes that are not one pair around the whole value stay.
+      ['contains', `it's "draft`, { cond: 'name', value: { op: 'contains', value: `it's "draft` } }],
+      ['contains', `"a" and "b"`, { cond: 'name', value: { op: 'contains', value: `"a" and "b"` } }],
+    ]) {
+      change(doc, 'nrKind', kind); change(doc, 'nrValue', value);
+      await add(doc);
+      const got = JSON.stringify(current().rules.list[0].allOf[0]);
+      assert(got === JSON.stringify(saved), kind + ' ' + value + ' saved as ' + got);
+    }
+    change(doc, 'nrKind', 'contains'); change(doc, 'nrValue', '""');
+    const count = ruleCount(doc);
+    await add(doc);
+    assert(ruleCount(doc) === count && errorShown(doc), 'A pair of quotes alone was accepted');
+  });
   await test('Shortcut rules and file/folder filters can route to the desktop inbox', async () => {
     change(doc, 'nrTarget', 'inbox');
     for (const [kind, value, label] of [

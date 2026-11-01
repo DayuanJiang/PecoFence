@@ -232,6 +232,7 @@
   "例如：截图": "Exemple : Captures d’écran",
   "条件类型": "Type de condition",
   "条件值": "Valeur de la condition",
+  "有空格也直接输入，不用加引号": "Saisissez les espaces tels quels, sans guillemets",
   "文件类型": "Type de fichier",
   "扩展名（逗号分隔）": "Extensions (séparées par des virgules)",
   "名称包含": "Le nom contient",
