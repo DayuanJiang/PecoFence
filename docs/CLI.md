@@ -99,7 +99,7 @@ unique id prefix, or a name (only while that name is unique).
 
 | Command | Example |
 |---|---|
-| `status` | `pecofence-cli status` |
+| `status` | `pecofence-cli status` (version, config path, counts, and per monitor `liveWallpapers`) |
 | `monitor list` | `pecofence-cli monitor list` |
 | `describe [--schema <NAME>]` | `pecofence-cli describe --schema Settings` |
 | `skill` | `pecofence-cli skill > SKILL.md` |
@@ -134,7 +134,7 @@ unique id prefix, or a name (only while that name is unique).
 | `rule apply [--dry-run]` | `pecofence-cli rule apply --dry-run` |
 | `snapshot list` | `pecofence-cli snapshot list` |
 | `snapshot save <NAME>` | `pecofence-cli snapshot save before-cleanup` |
-| `snapshot restore <ID>` | `pecofence-cli snapshot restore 3f9c2a1e` |
+| `snapshot restore <ID> [--dry-run]` | `pecofence-cli snapshot restore 3f9c2a1e --dry-run` |
 | `snapshot delete <ID>` | `pecofence-cli snapshot delete 3f9c2a1e` |
 | `config export <FILE>` | `pecofence-cli config export C:\Users\me\Desktop\pecofence.json` (absolute path, overwrites) |
 | `config import <FILE>` | `pecofence-cli config import C:\Users\me\Desktop\pecofence.json` (replaces everything; layout snapshotted first) |
@@ -444,6 +444,16 @@ the bottom of the work area) and `overflow` (`true` when the fence is shorter th
 It is `null` for a tab that is not the one shown and for fences on a disconnected monitor. `fence fit`
 applies `fittingHeight`; `fence set <FENCE> autoHeight true` keeps it applied as items come and go.
 
+## Live wallpapers
+
+`status` lists `liveWallpapers`, one entry per connected monitor (`monitor` is the id from
+`monitor list`) with a `state`: `none` (no live wallpaper covers the monitor; the fences show the
+Windows wallpaper), `pending` (a player window such as Wallpaper Engine or Lively covers it but no
+capture has worked yet; the Windows wallpaper until then), `captured` (the fences show the latest
+capture of the player) or `notCapturable` (the player draws nothing a capture can read, such as
+Wallpaper Engine's scene wallpapers, or came back black three times in a row; the fences show a
+neutral light or dark colour until a capture works again).
+
 ## Snapshots
 
 `snapshot save <NAME>` stores the current fence layout and returns `{"changed": true, "snapshot":
@@ -456,6 +466,17 @@ oldest automatic one (`auto-cli-*`, or one the settings page took before a resto
 room; it fails with `limit_reached` only when all 20 are snapshots you saved.
 Restoring snapshots the current layout first and returns that `snapshotId`, so a restore can itself
 be undone. Snapshots do not include settings, rules, or files moved through portals.
+
+`snapshot restore <ID> --dry-run` (wire method `snapshots.planRestore`) restores nothing and takes no
+snapshot. It compares the fences shown now with the ones the restore would show on the monitors
+connected now and returns `{"changed": false, "dryRun": true, "snapshot": {...}, "added": [...],
+"removed": [...], "moved": [...], "updated": [...]}`. Every entry has the fence's `id` and `title`
+(the title after the restore; a removed fence's title now). `moved` entries add `from` and `to`, the
+saved rectangle now and after the restore in physical px (a move or a resize). `updated` entries add
+`fields`, the saved fields that change besides the position, named as `config export` writes them:
+`title`, `rolledUp`, `items` (membership or manual order), `appearance` (opacity, tint, title colour),
+`view`, `tabHost` and so on. Empty lists mean the restore changes nothing. A fence whose monitor is not
+connected is placed by the app after a real restore, so its `to` can differ from where it ends up.
 
 ## Test instances
 

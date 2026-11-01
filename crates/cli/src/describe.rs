@@ -252,8 +252,8 @@ pub const COMMANDS: &[Entry] = &[
     entry!(
         "snapshot restore",
         Some("snapshots.restore"),
-        "Restore by id (names only while unique); the current layout is snapshotted first",
-        "pecofence-cli snapshot restore 3f9c2a1e"
+        "Restore by id (names only while unique); the current layout is snapshotted first; --dry-run (snapshots.planRestore) lists the fences it would add, remove, move or update",
+        "pecofence-cli snapshot restore 3f9c2a1e --dry-run"
     ),
     entry!(
         "snapshot delete",
@@ -337,7 +337,11 @@ pub const COMMANDS: &[Entry] = &[
 
 /// Methods reachable only through a flag of a command listed above.
 #[cfg(test)]
-const EXTRA_METHODS: &[&str] = &["fences.moveToMonitor", "items.planMove"];
+const EXTRA_METHODS: &[&str] = &[
+    "fences.moveToMonitor",
+    "items.planMove",
+    "snapshots.planRestore",
+];
 
 pub const ERROR_CODES: &[(ErrorCode, &str)] = &[
     (

@@ -623,16 +623,6 @@ impl FenceWindow {
         });
     }
 
-    /// Moves the window to the saved expanded rect `rect`. Rolled, it keeps its rolled size there
-    /// (the title row, or the left tab column it is collapsed to) and expands to `rect` later.
-    pub fn place_saved(&self, rect: RECT, rolled: bool) {
-        if rolled {
-            self.restore_geometry(rect, true, rect.bottom - rect.top);
-        } else {
-            self.set_bounds(rect);
-        }
-    }
-
     pub(super) fn with_view(&self, f: impl FnOnce(&mut FenceViewState)) {
         if let Some(v) = self.view.borrow_mut().as_mut() {
             f(v);

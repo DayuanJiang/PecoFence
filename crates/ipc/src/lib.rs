@@ -259,6 +259,14 @@ pub enum Method {
     /// `snapshotId` is absent). Result: `{changed, restored: uuid, snapshotId?}`.
     #[serde(rename = "snapshots.restore")]
     SnapshotsRestore { id: String },
+    /// What `snapshots.restore` with the same `id` would change, without restoring (the CLI's
+    /// `snapshot restore --dry-run`; a method of its own, so an older app answers "unknown
+    /// method" instead of restoring). Fences of the layout shown now against the ones the
+    /// restore would show on the current monitors. Result: `{changed: false, dryRun: true,
+    /// snapshot: SnapshotDto, added: [SnapshotFenceDto], removed: [SnapshotFenceDto],
+    /// moved: [SnapshotFenceDto], updated: [SnapshotFenceDto]}`.
+    #[serde(rename = "snapshots.planRestore")]
+    SnapshotsPlanRestore { id: String },
     /// Result: `{changed, deleted: uuid}`.
     #[serde(rename = "snapshots.delete")]
     SnapshotsDelete { id: String },
@@ -351,6 +359,7 @@ impl Method {
                 | Method::RulesGet
                 | Method::RulesApply { dry_run: true }
                 | Method::SnapshotsList
+                | Method::SnapshotsPlanRestore { .. }
                 | Method::BackupsList
                 | Method::ConfigExport { .. }
                 | Method::FencesOpenOptions { .. }
@@ -706,6 +715,7 @@ mod tests {
             Method::RulesApply { dry_run: true },
             Method::SnapshotsSave { name: "x".into() },
             Method::SnapshotsRestore { id: "x".into() },
+            Method::SnapshotsPlanRestore { id: "x".into() },
             Method::SnapshotsDelete { id: "x".into() },
             Method::ConfigExport {
                 path: "C:\\tmp\\x.json".into(),
@@ -812,6 +822,8 @@ mod tests {
         assert!(!Method::SettingsOpenUi.is_mutation());
         assert!(Method::RulesApply { dry_run: false }.is_mutation());
         assert!(!Method::RulesApply { dry_run: true }.is_mutation());
+        assert!(Method::SnapshotsRestore { id: "x".into() }.is_mutation());
+        assert!(!Method::SnapshotsPlanRestore { id: "x".into() }.is_mutation());
         assert!(
             !Method::ItemsPlanMove {
                 items: vec![],

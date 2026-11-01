@@ -241,6 +241,7 @@ pub(super) fn on_mousemove(
                 });
                 // Nested message loop until the button is released.
                 crate::peek::set_drag_click_through(true);
+                queue.push(Command::PeekDragStarted);
                 let effect = dragdrop::do_drag_drop(hwnd, &obj, dragdrop::ALL_EFFECTS, skip_drop);
                 drag_returned = Some(Instant::now());
                 INTERNAL_DRAG.with(|s| *s.borrow_mut() = None);
@@ -256,6 +257,14 @@ pub(super) fn on_mousemove(
         // dimmer stays see-through until then, so it is not the answer.
         let (_, class, on_desktop) = window_under_cursor();
         crate::peek::set_drag_click_through(false);
+        if effect.is_some() {
+            // Dropped on another program's window: a Peek is done, that window is where the
+            // user goes on.
+            let elsewhere = effect.as_ref().is_some_and(|r| r.dropped)
+                && !on_desktop
+                && !class.starts_with("PecoFence.");
+            queue.push(Command::PeekDragEnded { elsewhere });
+        }
         let mut guard = view.borrow_mut();
         let Some(v) = guard.as_mut() else {
             return Some(0);

@@ -14,6 +14,17 @@ use windows_core::PCWSTR;
 
 static DUMP_DIR: OnceLock<PathBuf> = OnceLock::new();
 static INSTANCE: OnceLock<String> = OnceLock::new();
+/// Debug builds: the module the crash line names as the faulting one instead of the real one.
+#[cfg(debug_assertions)]
+static FAKE_MODULE: OnceLock<String> = OnceLock::new();
+
+/// Debug builds: the next crash line names `module` (`ExplorerPatcher.amd64.dll`) as the
+/// faulting module, as when another program's DLL crashes inside PecoFence (test scripts'
+/// `crash <module>`).
+#[cfg(debug_assertions)]
+pub fn fake_faulting_module(module: &str) {
+    let _ = FAKE_MODULE.set(module.to_string());
+}
 
 /// Installs the filter. `dump_dir` receives `crash-<instance>-<ticks>.dmp`; `instance` tags the
 /// files of a second (test) instance.
@@ -165,9 +176,15 @@ unsafe extern "system" fn filter(info: *const EXCEPTION_POINTERS) -> i32 {
     let at_version = module_version(address);
     // This function is part of pecofence.exe: the build the exe's frames in the stack are from.
     let exe_version = module_version(filter as *const () as usize as u64);
+    let at = locate(address);
+    #[cfg(debug_assertions)]
+    let at = match (FAKE_MODULE.get(), at.split_once('+')) {
+        (Some(module), Some((_, rva))) => format!("{module}+{rva}"),
+        _ => at,
+    };
     tracing::error!(
         code = format_args!("{code:#010x}"),
-        at = %locate(address),
+        at = %at,
         module_version = at_version.as_deref(),
         access,
         address = accessed.as_deref(),

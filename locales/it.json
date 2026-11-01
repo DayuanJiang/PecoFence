@@ -515,6 +515,7 @@
   "示例\u0004截图": "Schermata",
   "示例\u0004备份": "backup",
   "PecoFence 上次意外关闭了。点击这里报告问题。": "PecoFence si è chiuso inaspettatamente l’ultima volta. Fai clic qui per segnalare il problema.",
+  "上次因 ExplorerPatcher 出错而关闭。请在它的 Properties › File Explorer 中取消勾选“Register as shell extension”，然后重启资源管理器。": "PecoFence si è chiuso per un errore in ExplorerPatcher. Nelle sue Properties › File Explorer deseleziona «Register as shell extension» e riavvia Esplora file.",
   "PecoFence 上次意外关闭了，那次的日志会一起发送。如果还记得当时在做什么，请写在下面。": "PecoFence si è chiuso inaspettatamente l’ultima volta. Verrà inviato anche il registro di quella sessione. Se ricordi cosa stavi facendo, descrivilo qui sotto.",
   "其他": "Altro",
   "内容": "Messaggio",

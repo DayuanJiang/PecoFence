@@ -45,8 +45,8 @@ mod ipc {
     use super::super::ipc::{
         AUTO_SNAPSHOT_PREFIX, MAX_NAME_CHARS, MIN_EXPIRY_MS, adjusted, auto_snapshot_slot,
         check_rule_conditions, checked_name, is_inbox_alias, patch_settings_path,
-        prune_auto_snapshots, request_expiry, rolled_back_settings, snapshot_dto, validate_rect,
-        visible_settings_json,
+        prune_auto_snapshots, request_expiry, rolled_back_settings, snapshot_changes, snapshot_dto,
+        validate_rect, visible_settings_json,
     };
     use pecofence_core::geometry::WorkArea;
     use pecofence_core::{Cond, MAX_SNAPSHOTS, Settings, Snapshot, ViewLayout};
@@ -563,6 +563,39 @@ mod ipc {
         // No layout for these monitors: a restore would start from the first one.
         assert_eq!(snapshot_dto(&s, &elsewhere).fence_count, 2);
         assert_eq!(snapshot_dto(&snap("x", 2), &now).fence_count, 0);
+    }
+
+    #[test]
+    fn a_snapshot_dry_run_lists_added_removed_moved_and_updated_fences() {
+        let now = layout(&["\\\\.\\DISPLAY1"], 4).fences;
+        let mut then = now.clone();
+        // f0 stays as it is, f1 moves, f2 rolls up and gains a title, f3 is not in the snapshot.
+        then[1].geometry.x = 400.0;
+        then[2].rolled_up = true;
+        then[2].title = "Games".into();
+        then.truncate(3);
+        let extra = layout(&["\\\\.\\DISPLAY1"], 1).fences.remove(0);
+        then.push(extra.clone());
+        let rect = |f: &pecofence_core::Fence| Rect {
+            x: f.geometry.x as i32,
+            y: f.geometry.y as i32,
+            w: f.geometry.w as i32,
+            h: f.geometry.h as i32,
+        };
+        let [added, removed, moved, updated] = snapshot_changes(&now, &then, rect);
+        let ids = |list: &[pecofence_ipc::SnapshotFenceDto]| -> Vec<uuid::Uuid> {
+            list.iter().map(|f| f.id).collect()
+        };
+        assert_eq!(ids(&added), [extra.id]);
+        assert_eq!(ids(&removed), [now[3].id]);
+        assert_eq!(ids(&moved), [now[1].id]);
+        assert_eq!((moved[0].from.unwrap().x, moved[0].to.unwrap().x), (0, 400));
+        assert!(moved[0].fields.is_empty());
+        assert_eq!(ids(&updated), [now[2].id]);
+        assert_eq!(updated[0].fields, ["rolledUp", "title"]);
+        assert_eq!(updated[0].title, "Games");
+        // Nothing to restore: every list is empty.
+        assert!(snapshot_changes(&now, &now, rect).iter().all(Vec::is_empty));
     }
 
     #[test]

@@ -516,6 +516,7 @@
   "示例\u0004截图": "스크린샷",
   "示例\u0004备份": "백업",
   "PecoFence 上次意外关闭了。点击这里报告问题。": "PecoFence가 지난번에 예기치 않게 종료되었습니다. 여기를 클릭해 문제를 알려 주세요.",
+  "上次因 ExplorerPatcher 出错而关闭。请在它的 Properties › File Explorer 中取消勾选“Register as shell extension”，然后重启资源管理器。": "ExplorerPatcher 오류로 종료되었습니다. 해당 Properties › File Explorer에서 'Register as shell extension'을 끄고 파일 탐색기를 재시작하세요.",
   "PecoFence 上次意外关闭了，那次的日志会一起发送。如果还记得当时在做什么，请写在下面。": "PecoFence가 지난번에 예기치 않게 종료되었습니다. 그때의 로그도 함께 전송됩니다. 무엇을 하고 있었는지 기억나면 아래에 적어 주세요.",
   "其他": "기타",
   "内容": "내용",

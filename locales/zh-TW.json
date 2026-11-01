@@ -516,6 +516,7 @@
   "示例\u0004截图": "螢幕擷取畫面",
   "示例\u0004备份": "備份",
   "PecoFence 上次意外关闭了。点击这里报告问题。": "PecoFence 上次意外關閉了。按一下這裡回報問題。",
+  "上次因 ExplorerPatcher 出错而关闭。请在它的 Properties › File Explorer 中取消勾选“Register as shell extension”，然后重启资源管理器。": "上次因 ExplorerPatcher 發生錯誤而關閉。請在它的 Properties › File Explorer 中取消勾選「Register as shell extension」，然後重新啟動檔案總管。",
   "PecoFence 上次意外关闭了，那次的日志会一起发送。如果还记得当时在做什么，请写在下面。": "PecoFence 上次意外關閉了，那次的記錄會一起傳送。如果還記得當時在做什麼，請寫在下面。",
   "其他": "其他",
   "内容": "內容",
