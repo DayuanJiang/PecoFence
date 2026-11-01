@@ -111,10 +111,24 @@ impl FenceViewState {
             .round() as i32
     }
 
-    /// The selected icon whose full name shows (the anchor), if any.
-    fn desktop_unfolded(&self) -> Option<usize> {
-        self.anchor_index
-            .filter(|a| *a < self.items.len() && self.selected.contains(a))
+    /// The selected icon whose shortened name unfolds (the anchor), and how many lines below
+    /// its cell the full name takes (`unfold_cache`, filled by the redraw before the shape is
+    /// made; the most lines while it is not filled yet).
+    fn desktop_unfolded(&self) -> Option<(usize, u32)> {
+        let a = self
+            .anchor_index
+            .filter(|a| *a < self.items.len() && self.selected.contains(a))?;
+        let it = &self.items[a];
+        if it.label.as_deref().unwrap_or(&it.name) == it.name {
+            return None;
+        }
+        let lines = self
+            .unfold_cache
+            .as_ref()
+            .filter(|c| c.id == it.id)
+            .map_or(MAX_UNFOLD_LINES, |c| c.lines);
+        let extra = lines.saturating_sub(u32::from(self.label_lines));
+        (extra > 0).then_some((a, extra))
     }
 
     /// The window's shape (window px): the icon cells, plus room under the selected icon for
@@ -123,22 +137,21 @@ impl FenceViewState {
         let scale = self.scale();
         let px = |v: f32| (v * scale).round() as i32;
         let unfolded = self.desktop_unfolded();
-        let unfold = self.desktop_unfold_px();
+        let line_h = self.grid_metrics().line_h;
         self.desktop_slots
             .iter()
             .take(self.items.len())
             .enumerate()
             .map(|(i, c)| {
-                let bottom = px(c.y + c.h);
+                let room = match unfolded {
+                    Some((a, extra)) if a == i => px(extra as f32 * line_h),
+                    _ => 0,
+                };
                 RECT {
                     left: px(c.x),
                     top: px(c.y),
                     right: px(c.x + c.w),
-                    bottom: if unfolded == Some(i) {
-                        bottom + unfold
-                    } else {
-                        bottom
-                    },
+                    bottom: px(c.y + c.h) + room,
                 }
             })
             .collect()

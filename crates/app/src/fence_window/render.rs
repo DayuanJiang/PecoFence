@@ -799,8 +799,6 @@ impl FenceViewState {
     }
 
     pub(super) fn redraw_content(&mut self) -> Result<()> {
-        // 像桌面一样排列: the selected icon's full name needs room in the window's shape.
-        self.sync_desktop_shape(false);
         if self.row_metrics().is_some() {
             return self.redraw_rows();
         }
@@ -849,6 +847,8 @@ impl FenceViewState {
         if let Some(i) = shortened {
             self.refresh_unfold_cache(i, grid.metrics.cell_w);
         }
+        // 像桌面一样排列: a selected shortened name needs room below its cell in the shape.
+        self.sync_desktop_shape(false);
         let full: Option<(&str, u32)> = shortened.and_then(|i| {
             let id = self.items[i].id;
             self.unfold_cache
