@@ -80,8 +80,8 @@ wallpaper or the theme changes. Liquid Glass then bends the result through its l
 
 | Key | Range | What it does |
 |---|---|---|
-| `labelFont` | font name | Item names. Built in, they use the font Windows gives desktop icons. |
-| `labelFontSize` | 8 to 24 | Item name size in DIPs (Windows' default is 12), times Windows' text size setting (Settings › Accessibility › Text size). The grid makes its rows taller or shorter to fit. |
+| `labelFont` | font name | Item names, and all the text of the 列表 and 详细信息 rows. Built in, they use the font Windows gives desktop icons. |
+| `labelFontSize` | 8 to 24 | Item name size in DIPs (Windows' default is 12), times Windows' text size setting (Settings › Accessibility › Text size). The grid makes its rows taller or shorter to fit; 列表 and 详细信息 rows grow with larger text. |
 | `labelFontWeight` | 100 to 900 | 400 regular, 600 semibold, 700 bold. |
 | `titleFont` | font name | Fence titles and tabs (built in Segoe UI Variable). Each fence's 标题字号 option still picks the size. |
 | `titleFontWeight` | 100 to 900 | Built in 600. Resting tabs in a left tab column stay regular. |

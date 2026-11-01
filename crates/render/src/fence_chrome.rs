@@ -18,9 +18,14 @@ use windows_core::{Interface, Result};
 
 /// Icon-label font: the system icon-title font (`SPI_GETICONTITLELOGFONT`, which carries
 /// Settings › Accessibility › Text size, see `sysparams::icon_title_font`) with its
-/// measured line height, so the cell grid grows with the text like the desktop's does.
+/// measured line height, so the cell grid grows with the text like the desktop's does. List
+/// and Details rows use the same font on one line, like Explorer's rows.
 struct LabelFont {
     format: TextFormat,
+    /// Single-line, vertically centred, for list rows and column headers.
+    row: TextFormat,
+    /// Same, right-aligned (size column).
+    row_right: TextFormat,
     family: String,
     size: f32,
     weight: i32,
@@ -52,10 +57,6 @@ pub struct FenceChrome {
     count_format: TextFormat,
     label_font: RefCell<LabelFont>,
     glyph_format: TextFormat,
-    /// Single-line, vertically centred Caption text for list rows and column headers.
-    row_format: TextFormat,
-    /// Same, right-aligned (size column).
-    row_format_right: TextFormat,
     /// Header sort indicator (8 px chevron).
     sort_glyph_format: TextFormat,
     /// Empty-state text: Body 14, top-aligned (Explorer "This folder is empty.").
@@ -1527,6 +1528,8 @@ impl FenceChrome {
             .with_word_wrapping(WordWrapping::NoWrap);
         let label_font = RefCell::new(LabelFont {
             format: Self::build_label_format(font_small(), 12.0, FontWeight(400))?,
+            row: Self::build_row_format(font_small(), 12.0, FontWeight(400), false)?,
+            row_right: Self::build_row_format(font_small(), 12.0, FontWeight(400), true)?,
             family: "Segoe UI".to_string(),
             size: 12.0,
             weight: 400,
@@ -1535,15 +1538,6 @@ impl FenceChrome {
         let glyph_format =
             TextFormat::with_locale(crate::theme::font_icons(), 12.0, FontWeight::NORMAL, locale)?
                 .with_alignment(TextAlignment::Center)
-                .with_paragraph_alignment(ParagraphAlignment::Center)
-                .with_word_wrapping(WordWrapping::NoWrap);
-        let row_format = TextFormat::with_locale(font_small(), 12.0, FontWeight::NORMAL, locale)?
-            .with_alignment(TextAlignment::Leading)
-            .with_paragraph_alignment(ParagraphAlignment::Center)
-            .with_word_wrapping(WordWrapping::NoWrap);
-        let row_format_right =
-            TextFormat::with_locale(font_small(), 12.0, FontWeight::NORMAL, locale)?
-                .with_alignment(TextAlignment::Trailing)
                 .with_paragraph_alignment(ParagraphAlignment::Center)
                 .with_word_wrapping(WordWrapping::NoWrap);
         let sort_glyph_format =
@@ -1573,8 +1567,6 @@ impl FenceChrome {
             count_format,
             label_font,
             glyph_format,
-            row_format,
-            row_format_right,
             sort_glyph_format,
             empty_format,
             title_glyph_format,
@@ -1650,9 +1642,28 @@ impl FenceChrome {
         )
     }
 
+    fn build_row_format(
+        family: &str,
+        size: f32,
+        weight: FontWeight,
+        right: bool,
+    ) -> Result<TextFormat> {
+        let align = if right {
+            TextAlignment::Trailing
+        } else {
+            TextAlignment::Leading
+        };
+        Ok(
+            TextFormat::with_locale(family, size, weight, text_locale())?
+                .with_alignment(align)
+                .with_paragraph_alignment(ParagraphAlignment::Center)
+                .with_word_wrapping(WordWrapping::NoWrap),
+        )
+    }
+
     /// Adopts the system icon-title font (`family` / `size` DIPs / `weight`) for labels and
-    /// re-measures the line height. "Segoe UI" maps to the Small optical size of Segoe UI
-    /// Variable so the default keeps its Fluent look; any other family is used verbatim.
+    /// list rows, and re-measures the line height. "Segoe UI" maps to the Small optical size of
+    /// Segoe UI Variable so the default keeps its Fluent look; any other family is used verbatim.
     /// Returns whether anything changed (the caller then re-fits labels and re-lays out).
     pub fn set_icon_title_font(&self, family: &str, size: f32, weight: FontWeight) -> Result<bool> {
         let size = size.clamp(8.0, 40.0);
@@ -1674,6 +1685,8 @@ impl FenceChrome {
             .max(1.0);
         *self.label_font.borrow_mut() = LabelFont {
             format,
+            row: Self::build_row_format(face, size, weight, false)?,
+            row_right: Self::build_row_format(face, size, weight, true)?,
             family: family.to_string(),
             size,
             weight: weight.0,
@@ -1685,6 +1698,11 @@ impl FenceChrome {
     /// Label text format (a cheap COM clone; borrow it for one fit / draw).
     pub fn label_format(&self) -> TextFormat {
         self.label_font.borrow().format.clone()
+    }
+
+    /// Label and row text size in DIPs (12 by default; Windows' text size makes it larger).
+    pub fn label_size(&self) -> f32 {
+        self.label_font.borrow().size
     }
 
     /// One label line in DIPs for the current icon-title font (16 at the default 12 px).
@@ -1714,8 +1732,8 @@ impl FenceChrome {
     }
 
     /// Single-line row text format (for fitting names to the name column).
-    pub fn row_format(&self) -> &TextFormat {
-        &self.row_format
+    pub fn row_format(&self) -> Ref<'_, TextFormat> {
+        Ref::map(self.label_font.borrow(), |f| &f.row)
     }
 
     /// "按时间分组" section caption format (12 px semibold, like the small title).
@@ -2731,6 +2749,8 @@ impl FenceChrome {
         let secondary = session.create_solid_brush(theme.text_secondary)?;
         let cols = rows.columns;
         let header_h = rows.header_h;
+        let fonts = self.label_font.borrow();
+        let (row_format, row_format_right) = (&fonts.row, &fonts.row_right);
         let halo = if theme.liquid_glass || theme.text_halo {
             Some(session.create_solid_brush(ColorF::TRANSPARENT)?)
         } else {
@@ -2872,7 +2892,7 @@ impl FenceChrome {
                 let key = 0x10000 + visible_slot * 8;
                 paint_text(
                     row.name,
-                    &self.row_format,
+                    row_format,
                     Rect::from_xywh(text_x, row.y, name_w, row.h),
                     key,
                     row.dimmed,
@@ -2882,7 +2902,7 @@ impl FenceChrome {
                 if let Some((x, w)) = cols.date {
                     paint_clipped(
                         row.date,
-                        &self.row_format,
+                        row_format,
                         Rect::from_xywh(x, row.y, w, row.h),
                         key + 1,
                         alpha,
@@ -2892,7 +2912,7 @@ impl FenceChrome {
                 if let Some((x, w)) = cols.type_ {
                     paint_clipped(
                         row.type_name,
-                        &self.row_format,
+                        row_format,
                         Rect::from_xywh(x, row.y, w, row.h),
                         key + 2,
                         alpha,
@@ -2902,7 +2922,7 @@ impl FenceChrome {
                 if let Some((x, w)) = cols.size {
                     paint_clipped(
                         row.size,
-                        &self.row_format_right,
+                        row_format_right,
                         Rect::from_xywh(x, row.y, w, row.h),
                         key + 3,
                         alpha,
@@ -2996,11 +3016,7 @@ impl FenceChrome {
                     let b = session.create_solid_brush(with_alpha(theme.subtle_hover, hover))?;
                     session.fill_rounded_rect(&cell, &b);
                 }
-                let fmt = if right {
-                    &self.row_format_right
-                } else {
-                    &self.row_format
-                };
+                let fmt = if right { row_format_right } else { row_format };
                 paint_clipped(
                     text,
                     fmt,
