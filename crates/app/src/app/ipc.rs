@@ -1341,6 +1341,7 @@ impl App {
             },
             icon_size: f.view.icon_size,
             spacing: text("spacing"),
+            icon_align: text("iconAlign"),
             auto_height: flag("autoHeight"),
             exclude_from_quick_hide: flag("excludeFromQuickHide"),
             hide_when_empty: flag("hideWhenEmpty"),

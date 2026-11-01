@@ -212,6 +212,8 @@
   "标准": "Standard",
   "大": "Grande",
   "图标间距": "Espacement des icônes",
+  "图标对齐": "Alignement des icônes",
+  "一行排不满时，居中把空出的宽度平分到左右两边；只用于图标视图": "Si une rangée n’est pas pleine, « Centré » répartit l’espace libre des deux côtés. Affichage Icônes uniquement",
   "紧凑": "Compact",
   "宽松": "Aéré",
   "自动高度": "Hauteur automatique",

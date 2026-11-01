@@ -206,6 +206,8 @@
   "标准": "Estándar",
   "大": "Grande",
   "图标间距": "Espaciado de iconos",
+  "图标对齐": "Alineación de iconos",
+  "一行排不满时，居中把空出的宽度平分到左右两边；只用于图标视图": "Si una fila no está completa, «Centro» reparte el espacio libre a ambos lados. Solo en la vista de iconos",
   "紧凑": "Compacto",
   "宽松": "Amplio",
   "自动高度": "Altura automática",

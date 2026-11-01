@@ -206,6 +206,8 @@
   "标准": "Standard",
   "大": "Groß",
   "图标间距": "Symbolabstand",
+  "图标对齐": "Symbolausrichtung",
+  "一行排不满时，居中把空出的宽度平分到左右两边；只用于图标视图": "Ist eine Reihe nicht voll, verteilt „Zentriert“ den freien Platz auf beide Seiten. Nur in der Symbolansicht",
   "紧凑": "Kompakt",
   "宽松": "Weit",
   "自动高度": "Automatische Höhe",

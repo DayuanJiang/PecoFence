@@ -665,6 +665,9 @@ pub struct FenceView {
     /// when reversed. Manual order and Group by date turn it off.
     #[serde(default)]
     pub folders_first: bool,
+    /// 图标对齐 (#154): where a row of icons that does not fill the width sits (icons view only).
+    #[serde(default)]
+    pub icon_align: IconAlign,
 }
 
 impl Default for FenceView {
@@ -681,8 +684,21 @@ impl Default for FenceView {
             columns_visible: None,
             group_by_date: false,
             folders_first: false,
+            icon_align: IconAlign::Left,
         }
     }
+}
+
+/// 图标对齐 of the icons view: a row that does not fill the fence width starts at the left
+/// edge, or sits in the middle with the leftover width split on both sides (the last, shorter
+/// row too). List and details rows always start at the left.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase")]
+pub enum IconAlign {
+    #[default]
+    Left,
+    Center,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]

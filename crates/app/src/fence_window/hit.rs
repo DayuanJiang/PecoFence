@@ -239,7 +239,8 @@ impl FenceViewState {
         let n = self.items.len();
         match self.layout {
             ViewLayout::Icons => {
-                ItemLayout::Grid(Grid::grouped(self.grid_metrics(), width_dip, n, &spans))
+                let grid = Grid::grouped(self.grid_metrics(), width_dip, n, &spans);
+                ItemLayout::Grid(grid.centred(self.icon_align == IconAlign::Center))
             }
             ViewLayout::List => ItemLayout::rows_grouped(RowMetrics::list(), width_dip, n, &spans),
             ViewLayout::Details => {

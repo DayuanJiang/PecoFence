@@ -2170,6 +2170,15 @@ impl AppState {
         }
     }
 
+    pub fn set_icon_align(&mut self, id: FenceId, align: pecofence_core::IconAlign) {
+        if let Some(f) = self.fence_mut(id)
+            && f.view.icon_align != align
+        {
+            f.view.icon_align = align;
+            self.dirty = true;
+        }
+    }
+
     pub fn set_columns_visible(&mut self, id: FenceId, visible: [bool; 3]) {
         let next = (visible != [true; 3]).then_some(visible);
         if let Some(f) = self.fence_mut(id)

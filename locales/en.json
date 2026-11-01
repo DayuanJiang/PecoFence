@@ -212,6 +212,8 @@
   "标准": "Standard",
   "大": "Large",
   "图标间距": "Icon spacing",
+  "图标对齐": "Icon alignment",
+  "一行排不满时，居中把空出的宽度平分到左右两边；只用于图标视图": "When a row is not full, Center splits the free width between both sides. Icons view only",
   "紧凑": "Compact",
   "宽松": "Spacious",
   "自动高度": "Automatic height",

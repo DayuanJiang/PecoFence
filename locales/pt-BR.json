@@ -206,6 +206,8 @@
   "标准": "Padrão",
   "大": "Grande",
   "图标间距": "Espaçamento dos ícones",
+  "图标对齐": "Alinhamento dos ícones",
+  "一行排不满时，居中把空出的宽度平分到左右两边；只用于图标视图": "Quando uma linha não está cheia, “Centralizado” divide o espaço livre entre os dois lados. Só na exibição de ícones",
   "紧凑": "Compacto",
   "宽松": "Amplo",
   "自动高度": "Altura automática",

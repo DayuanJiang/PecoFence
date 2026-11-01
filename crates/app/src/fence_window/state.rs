@@ -284,6 +284,8 @@ pub struct FenceViewState {
     pub(super) style: FenceStyle,
     /// Icon grid spacing (FenceView.spacing).
     pub(super) spacing: Spacing,
+    /// 图标对齐 of the icon grid (FenceView.icon_align).
+    pub(super) icon_align: IconAlign,
     /// Keyboard/selection anchor: the last item clicked or moved to with the arrow keys.
     pub(super) anchor_index: Option<usize>,
     /// Start of a Shift range selection.

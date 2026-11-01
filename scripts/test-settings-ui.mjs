@@ -28,10 +28,10 @@ const fixture = {
     ],
   },
   fences: [
-    { id: 'fence-a', title: 'Documents', kind: 'virtual', host: null, iconSize: 48, spacing: 'normal', autoHeight: false, locked: false, excludeFromQuickHide: false, opacity: 'default', tint: null, titleColor: 'theme', titleSize: 'normal', titleOnHover: 'default', openFoldersInside: false, portal: null },
+    { id: 'fence-a', title: 'Documents', kind: 'virtual', host: null, iconSize: 48, spacing: 'normal', iconAlign: 'left', autoHeight: false, locked: false, excludeFromQuickHide: false, opacity: 'default', tint: null, titleColor: 'theme', titleSize: 'normal', titleOnHover: 'default', openFoldersInside: false, portal: null },
     { id: 'fence-b', title: 'Images', kind: 'virtual', host: 'Documents', iconSize: 96, spacing: 'loose', autoHeight: true, locked: false, excludeFromQuickHide: false, opacity: 'transparent', tint: null, tabColor: 'E74856', titleColor: 'theme', titleSize: 'normal', titleOnHover: 'default', portal: null },
     { id: 'inbox', title: 'Desktop', kind: 'inbox', host: null, iconSize: 48, spacing: 'normal', autoHeight: false, locked: true, excludeFromQuickHide: true, opacity: 'solid', tint: '0078D4', tintTitleOnly: true, titleColor: 'tint', titleSize: 'large', titleOnHover: 'hover', hideWhenEmpty: true, openFoldersInside: true, expandUpward: true, portal: null },
-    { id: 'portal', title: 'Portal', kind: 'portal', host: null, iconSize: 32, spacing: 'compact', autoHeight: false, locked: false, excludeFromQuickHide: false, opacity: 'clear', tint: '123456', titleColor: 'ABCDEF', titleSize: 'small', titleOnHover: 'always', portal: { navigate: true, titleIcon: false } },
+    { id: 'portal', title: 'Portal', kind: 'portal', host: null, iconSize: 32, spacing: 'compact', iconAlign: 'center', autoHeight: false, locked: false, excludeFromQuickHide: false, opacity: 'clear', tint: '123456', titleColor: 'ABCDEF', titleSize: 'small', titleOnHover: 'always', portal: { navigate: true, titleIcon: false } },
   ],
   tintPalette: [{ name: '红', hex: 'E74856' }, { name: '蓝', hex: '0078D4' }, { name: '灰', hex: '7A7574' }],
   snapshots: [{ id: 'snapshot-a', name: 'Before changes', date: '2026-09-09', fenceCount: 4 }],
@@ -266,6 +266,7 @@ async function runTests() {
     assert(doc.querySelector('[data-fence=portalNavigate]').classList.contains('on') && !doc.querySelector('[data-fence=portalTitleIcon]').classList.contains('on'), 'Portal flags wrong');
     assert(doc.querySelector('[data-fence=tint]').value === '123456' && doc.querySelector('[data-fence=titleColor]').value === 'ABCDEF', 'Imported custom colours not represented');
     assert(doc.querySelector('[data-fence=iconSize]').value === '32' && doc.querySelector('[data-fence=spacing]').value === 'compact' && doc.querySelector('[data-fence=opacity]').value === 'clear', 'Layout values not shown');
+    assert(doc.querySelector('[data-fence=iconAlign]').value === 'center', 'Icon alignment not shown');
   });
   await test('Fence controls post setFence and keep the selection across a host refresh', async () => {
     const messages = () => frame.contentWindow.testMessages.filter(m => m.type === 'setFence');
@@ -296,6 +297,9 @@ async function runTests() {
     doc.querySelector('#fenceTabColorSwatches [data-value=""]').click(); await settle();
     assert(messages().at(-1).prop === 'tabColor' && messages().at(-1).value === null, 'Following the tint did not post null');
     change(doc, 'fenceSel', 'fence-a');
+    assert(doc.querySelector('[data-fence=iconAlign]').value === 'left', 'Left icon alignment not shown');
+    change(doc, 'fenceIconAlign', 'center'); await settle();
+    assert(messages().at(-1).id === 'fence-a' && messages().at(-1).prop === 'iconAlign' && messages().at(-1).value === 'center', 'Icon alignment not posted');
   });
   await test('showFence opens the fence page with that fence selected', async () => {
     doc.querySelector('[data-page=general]').click();
