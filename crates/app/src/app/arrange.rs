@@ -126,6 +126,10 @@ impl App {
         let Some(w) = self.fences.get(&id) else {
             return;
         };
+        // 像桌面一样排列 places itself around the others.
+        if w.is_desktop_arranged() {
+            return;
+        }
         let r = w.rect();
         let gap = self.gap_px(w.hwnd());
         let others = self.other_fence_rects(id);
@@ -163,9 +167,11 @@ impl App {
     /// startup), else only `movers`. Fences at their own spot are kept first, then the movers
     /// whose monitor is connected, then those whose monitor is gone.
     fn resolve_overlaps(&mut self, movers: &[FenceId], all: bool) {
+        // 像桌面一样排列 lies under the others and flows around them: not a fence to pull apart.
         let fences: Vec<(FenceId, clearance::Resting)> = self
             .fences
             .iter()
+            .filter(|(_, w)| !w.is_desktop_arranged())
             .map(|(id, w)| {
                 let rect = w.rect();
                 let connected = |f: &pecofence_core::Fence| {

@@ -1436,6 +1436,9 @@ impl App {
         for f in app.fences.values() {
             f.show(false);
         }
+        // 像桌面一样排列 was arranged while the other windows were still hidden: now they show,
+        // the loose icons flow around them.
+        app.arrange_desktop_fence();
         if let Some(a) = app.anchor.borrow_mut().as_mut() {
             a.reanchor("after show");
             tracing::debug!(
