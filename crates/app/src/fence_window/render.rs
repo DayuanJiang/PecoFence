@@ -747,12 +747,9 @@ impl FenceViewState {
 
     pub(super) fn columns_for(&self, width_dip: f32) -> DetailColumns {
         match self.layout {
-            ViewLayout::Details => DetailColumns::for_width_with(
-                width_dip,
-                self.column_widths,
-                self.columns_visible,
-                self.column_scale(),
-            ),
+            ViewLayout::Details => {
+                DetailColumns::for_width_with(width_dip, self.column_widths, self.columns_visible)
+            }
             _ => DetailColumns {
                 name_x: 8.0,
                 name_w: (width_dip - 16.0).max(40.0),

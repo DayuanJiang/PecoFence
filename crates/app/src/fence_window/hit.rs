@@ -63,9 +63,8 @@ impl FenceViewState {
             };
             w = w.max(pecofence_render::text::measure_width(&label, &fmt));
         }
-        // 8 DIPs of cell padding; MIN/MAX clamping happens in set_column_width. Widths are
-        // saved for 12 DIP text (`column_scale`).
-        self.set_column_width(col, (w + 8.0) / self.column_scale());
+        // 8 DIPs of cell padding; MIN/MAX clamping happens in set_column_width.
+        self.set_column_width(col, w + 8.0);
     }
 
     /// Is the client-pixel point anywhere in the Details header band (column menu)?
@@ -268,11 +267,6 @@ impl FenceViewState {
         }
     }
 
-    /// Details columns are shown this much wider than their saved widths (larger row text).
-    pub(super) fn column_scale(&self) -> f32 {
-        crate::layout::row_text_scale(self.chrome.label_size())
-    }
-
     /// Details header column under a client-pixel point.
     pub(super) fn header_hit(&self, x_px: i32, y_px: i32) -> Option<DetailColumn> {
         if self.layout != ViewLayout::Details || self.rolled_up {
@@ -345,7 +339,9 @@ impl FenceViewState {
                 let cols = self.columns_for(width_dip);
                 let text_x = cols.name_x + metrics.icon + 8.0;
                 // The rename box (`begin_item_rename`) centred on the row.
-                let box_h = crate::rename::item_rename_h(self.column_scale());
+                let box_h = crate::rename::item_rename_h(crate::layout::row_text_scale(
+                    self.chrome.label_size(),
+                ));
                 let top = cell.y - self.scroll_y + metrics.header_h + (metrics.row_h - box_h) / 2.0;
                 (
                     text_x - 4.0,

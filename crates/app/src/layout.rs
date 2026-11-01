@@ -531,8 +531,8 @@ impl RowMetrics {
     }
 }
 
-/// Row text size over the default 12 DIPs (never below 1): the saved details column widths
-/// are shown this much wider.
+/// Row text size over the default 12 DIPs (never below 1): the item rename box is this much
+/// larger.
 pub fn row_text_scale(text: f32) -> f32 {
     text.max(12.0) / 12.0
 }
@@ -552,8 +552,8 @@ pub fn icon_px(layout: ViewLayout, icon_size: u32, dpi: u32) -> u32 {
 }
 
 /// Column split of the details view for a content width (DIPs). Narrow fences drop the type,
-/// then the date column, so the name always keeps at least ~120 DIPs (more with larger row
-/// text).
+/// then the date column, so the name always keeps at least ~120 DIPs. Larger row text leaves
+/// the widths as they are, as in Explorer (long values end in an ellipsis).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct DetailColumns {
     pub name_x: f32,
@@ -577,23 +577,16 @@ impl DetailColumns {
 
     #[cfg(test)]
     pub fn for_width(width: f32) -> Self {
-        Self::for_width_with(width, Self::DEFAULT_WIDTHS, [true; 3], 1.0)
+        Self::for_width_with(width, Self::DEFAULT_WIDTHS, [true; 3])
     }
 
-    /// `widths` = user-sized (修改日期, 类型, 大小) column widths for the default 12 DIP row text;
-    /// they and the name's minimum are `text_scale` times wider on screen (`row_text_scale`).
-    /// `visible` = which of them the user shows (header context menu). A hidden column is
-    /// neither placed nor reserved.
-    pub fn for_width_with(
-        width: f32,
-        widths: [f32; 3],
-        visible: [bool; 3],
-        text_scale: f32,
-    ) -> Self {
-        let clamp = |w: f32| w.clamp(Self::MIN_COL_W, Self::MAX_COL_W) * text_scale;
+    /// `widths` = user-sized (修改日期, 类型, 大小) column widths; `visible` = which of them the
+    /// user shows (header context menu). A hidden column is neither placed nor reserved.
+    pub fn for_width_with(width: f32, widths: [f32; 3], visible: [bool; 3]) -> Self {
+        let clamp = |w: f32| w.clamp(Self::MIN_COL_W, Self::MAX_COL_W);
         let (date_w, type_w, size_w) = (clamp(widths[0]), clamp(widths[1]), clamp(widths[2]));
         let name_x = 8.0;
-        let min_name = 120.0 * text_scale;
+        let min_name = 120.0;
         let mut right = width - Self::GUTTER;
         let mut size = None;
         let mut date = None;
@@ -1477,13 +1470,11 @@ mod tests {
 
     #[test]
     fn detail_columns_skip_hidden_columns() {
-        let all =
-            DetailColumns::for_width_with(480.0, DetailColumns::DEFAULT_WIDTHS, [true; 3], 1.0);
+        let all = DetailColumns::for_width_with(480.0, DetailColumns::DEFAULT_WIDTHS, [true; 3]);
         let no_type = DetailColumns::for_width_with(
             480.0,
             DetailColumns::DEFAULT_WIDTHS,
             [true, false, true],
-            1.0,
         );
         assert!(no_type.type_.is_none());
         assert!(no_type.date.is_some() && no_type.size.is_some());
@@ -1494,7 +1485,6 @@ mod tests {
             340.0,
             DetailColumns::DEFAULT_WIDTHS,
             [false, true, true],
-            1.0,
         );
         assert!(narrow.date.is_none() && narrow.type_.is_some() && narrow.size.is_some());
     }
@@ -1522,7 +1512,7 @@ mod tests {
 
     #[test]
     fn detail_columns_honour_user_widths_and_expose_dividers() {
-        let c = DetailColumns::for_width_with(600.0, [200.0, 60.0, 100.0], [true; 3], 1.0);
+        let c = DetailColumns::for_width_with(600.0, [200.0, 60.0, 100.0], [true; 3]);
         assert_eq!(c.date.unwrap().1, 200.0);
         assert_eq!(c.type_.unwrap().1, 60.0);
         assert_eq!(c.size.unwrap().1, 100.0);
@@ -1530,23 +1520,21 @@ mod tests {
         assert_eq!(c.divider_at(dx - 4.0), Some(DetailColumn::Date));
         assert_eq!(c.divider_at(dx + 30.0), None);
         // Widths clamp so a dragged column can never eat the whole fence.
-        let tiny = DetailColumns::for_width_with(600.0, [1.0, 1.0, 1.0], [true; 3], 1.0);
+        let tiny = DetailColumns::for_width_with(600.0, [1.0, 1.0, 1.0], [true; 3]);
         assert_eq!(tiny.size.unwrap().1, DetailColumns::MIN_COL_W);
     }
 
-    /// With 18 DIP row text (Windows' text size 150 %) the columns and the name's minimum are
-    /// half as wide again, so a fence that shows every column at 12 DIPs drops the type column
-    /// instead of squeezing the names.
+    /// Larger row text (Windows' text size 150 %: an 18 DIP font, 24 DIP lines) makes the rows
+    /// and the header taller but leaves the columns at their widths, as in Explorer: a 640 DIP
+    /// fence still shows all four columns at the default widths.
     #[test]
-    fn detail_columns_grow_with_the_row_text() {
-        let w = DetailColumns::DEFAULT_WIDTHS;
-        let normal = DetailColumns::for_width_with(640.0, w, [true; 3], 1.0);
-        assert!(normal.type_.is_some());
-        let large = DetailColumns::for_width_with(640.0, w, [true; 3], 1.5);
-        assert_eq!(large.date.unwrap().1, DetailColumns::DATE_W * 1.5);
-        assert_eq!(large.size.unwrap().1, DetailColumns::SIZE_W * 1.5);
-        assert!(large.type_.is_none());
-        assert!(large.name_w >= 180.0);
+    fn detail_columns_keep_their_widths_with_larger_text() {
+        assert_eq!(RowMetrics::details(24.0).header_h, 36.0);
+        let c = DetailColumns::for_width_with(640.0, DetailColumns::DEFAULT_WIDTHS, [true; 3]);
+        assert_eq!(c.date.unwrap().1, DetailColumns::DATE_W);
+        assert_eq!(c.type_.unwrap().1, DetailColumns::TYPE_W);
+        assert_eq!(c.size.unwrap().1, DetailColumns::SIZE_W);
+        assert!(c.name_w >= 120.0);
     }
 
     #[test]

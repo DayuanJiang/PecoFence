@@ -320,9 +320,8 @@ pub(super) fn on_mousemove(
         return Some(0);
     }
     if let Some(cd) = v.col_drag.as_ref() {
-        // Divider sits on the column's left edge: dragging right shrinks it. The saved width
-        // is for 12 DIP text, so the divider follows the pointer at larger row text too.
-        let dx = (x - cd.start_x_px) as f32 / v.scale() / v.column_scale();
+        // Divider sits on the column's left edge: dragging right shrinks it.
+        let dx = (x - cd.start_x_px) as f32 / v.scale();
         let (col, w) = (cd.col, cd.start_w - dx);
         v.set_column_width(col, w);
         window::set_standard_cursor(StandardCursor::SizeWE);

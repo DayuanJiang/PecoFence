@@ -2896,8 +2896,8 @@ impl FenceChrome {
             let fx = legible.map(|l| l.fx(theme, color, alpha, true));
             self.draw_legible_text(session, text, format, &rect, brush, fx, spread);
         };
-        // Dates, types, sizes and the column captions are not shortened like the names: each
-        // is clipped to its column so a long one does not run into the next.
+        // Dates, types, sizes and the column captions end in an ellipsis when their column is
+        // too narrow, as in Explorer, and stay clipped to it so they never run into the next.
         let paint_clipped = |text: &str,
                              format: &TextFormat,
                              rect: Rect,
@@ -2905,8 +2905,9 @@ impl FenceChrome {
                              alpha: f32,
                              right: bool|
          -> Result<()> {
+            let fitted = crate::text::fit_width(text, format, rect.width());
             let paint = || {
-                paint_text(text, format, rect, key, true, alpha, right);
+                paint_text(&fitted, format, rect, key, true, alpha, right);
                 Ok(())
             };
             match clip {
