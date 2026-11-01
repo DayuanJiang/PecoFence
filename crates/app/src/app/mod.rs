@@ -2001,6 +2001,11 @@ impl App {
             Command::ToggleAllFences => self.toggle_all_fences(),
             Command::TogglePeek => self.toggle_peek(),
             Command::EndPeek(reason) => self.end_peek(reason),
+            Command::PeekDragStarted => self.peek_drag(true),
+            Command::PeekDragEnded { elsewhere: true } => {
+                self.end_peek("file dropped on another window")
+            }
+            Command::PeekDragEnded { elsewhere: false } => self.peek_drag(false),
             Command::PeekSearchType(text) => self.peek_search_type(&text),
             Command::PeekSearchChanged => self.update_peek_search(),
             Command::PeekSearchStep(step) => self.step_peek_search(step),

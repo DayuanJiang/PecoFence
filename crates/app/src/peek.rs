@@ -243,6 +243,17 @@ impl PeekOverlay {
         }
     }
 
+    /// A file drag out of a fence starts (`true`) or ends: the dimmer fades away while it runs
+    /// and back afterwards. Nothing changes during the fade-out.
+    pub fn set_dragging(&mut self, dragging: bool, now: Instant) {
+        if self.closing || !self.dim {
+            return;
+        }
+        let to = if dragging { CLEAR_ALPHA } else { DIM_ALPHA };
+        self.alpha
+            .retarget(to as f32, PEEK_FADE, Curve::Linear, now);
+    }
+
     /// The hotkey was pressed again during the fade-out: dim again without recreating windows.
     pub fn reopen(&mut self, now: Instant) {
         self.closing = false;
