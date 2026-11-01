@@ -21,7 +21,8 @@ The product page at <https://pecofence.jiang.jp> is a static site generated from
 
 The build writes `dist/site/`: `index.html` for English, one `<language>/index.html`
 per translation, a `404.html` beside each of them, the localized README hero images as Open
-Graph and Twitter previews, `CNAME`, `robots.txt` and `sitemap.xml`. Cloudflare Pages answers a
+Graph and Twitter previews, `CNAME`, `robots.txt`, `sitemap.xml` and the IndexNow key file
+(`<indexnow_key>.txt`, key in `site/site.json`). Cloudflare Pages answers a
 missing path with status 404 and the nearest `404.html` above it, so `/ja/old-page` gets the
 Japanese one; without a top-level `404.html` it would serve the home page instead. The 404
 pages can show at any depth, so their links start at the site root. Pages carry `hreflang` alternates, so search engines
@@ -92,7 +93,9 @@ any other branch name creates a preview URL.
 
 `.github/workflows/website.yml` runs the same two steps on every push to `main` that
 touches the site. It needs two repository secrets: `CLOUDFLARE_API_TOKEN`, a token with
-**Account → Cloudflare Pages → Edit**, and `CLOUDFLARE_ACCOUNT_ID`.
+**Account → Cloudflare Pages → Edit**, and `CLOUDFLARE_ACCOUNT_ID`. After deploying it runs
+`scripts/indexnow.py`, which submits every sitemap URL to IndexNow so Bing and Yandex recrawl
+the changed pages; a failure there does not fail the deployment.
 
 ### DNS
 

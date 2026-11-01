@@ -69,7 +69,7 @@ def feature_fences(strings, root):
         <div class="feature-media">
           <video aria-label="{title}" controls muted loop playsinline preload="none" poster="{root}assets/{name}.jpg" width="1290" height="726">
             <source src="{root}assets/{name}.mp4" type="video/mp4">
-            <img class="poster" src="{root}assets/{name}.jpg" alt="" width="1290" height="726">
+            <img class="poster" src="{root}assets/{name}.jpg" alt="{title}" width="1290" height="726">
           </video>
           <iframe class="feature-demo" title="{title}" data-src="manual/?only={lesson}&amp;embed" loading="lazy" hidden></iframe>
         </div>
@@ -181,7 +181,7 @@ def main():
             "image": hero_image,
             "inLanguage": code,
             "applicationCategory": "UtilitiesApplication",
-            "operatingSystem": "Windows 11",
+            "operatingSystem": "Windows 10, Windows 11",
             "isAccessibleForFree": True,
             "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"},
             "license": "https://www.apache.org/licenses/LICENSE-2.0",
@@ -254,6 +254,9 @@ def main():
 
     (out / "CNAME").write_text(config["domain"] + "\n", encoding="utf-8")
     (out / ".nojekyll").write_text("", encoding="utf-8")
+    # IndexNow (Bing, Yandex and others): the key file proves the site owns the key that
+    # the deployment workflow submits the sitemap's URLs with.
+    (out / f"{config['indexnow_key']}.txt").write_text(config["indexnow_key"], encoding="utf-8")
     (out / "robots.txt").write_text(f"User-agent: *\nAllow: /\nSitemap: {origin}/sitemap.xml\n", encoding="utf-8")
     (out / "sitemap.xml").write_text(
         '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'

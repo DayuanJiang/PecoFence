@@ -11,6 +11,7 @@ on:
       - 'site/**'
       - 'scripts/build-site.py'
       - 'scripts/manual_i18n.py'
+      - 'scripts/indexnow.py'
       - 'docs/assets/hero-*.png'
       - '.github/workflows/website.yml'
   workflow_dispatch:
@@ -38,3 +39,6 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: pages deploy dist/site --project-name pecofence --branch main
+      - name: Notify IndexNow
+        continue-on-error: true
+        run: python scripts/indexnow.py
