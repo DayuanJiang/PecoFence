@@ -1863,8 +1863,26 @@ impl App {
                 // menu does. The rules sent a shortcut straight back to 「程序」, so it could
                 // not be taken out of its fence by dragging (feedback #49).
                 if let Some(inbox) = self.state.inbox_id() {
-                    tracing::debug!(items = items.len(), "dropped on the desktop: inbox");
-                    self.move_items(&items, inbox);
+                    // 像桌面一样排列: icons of 「桌面」 itself dropped on the empty desktop beside
+                    // them go to the end of the columns (sorted 手动), as on a desktop that
+                    // arranges its icons.
+                    let arranged = self
+                        .fences
+                        .get(&inbox)
+                        .is_some_and(|w| w.is_desktop_arranged());
+                    let own = self
+                        .state
+                        .fence(inbox)
+                        .filter(|f| items.iter().all(|i| f.contains_item(*i)));
+                    if let Some(end) = own.filter(|_| arranged).map(|f| f.items.len()) {
+                        if self.state.reorder_items(inbox, &items, end) {
+                            self.refresh_fence(inbox);
+                            self.schedule_save();
+                        }
+                    } else {
+                        tracing::debug!(items = items.len(), "dropped on the desktop: inbox");
+                        self.move_items(&items, inbox);
+                    }
                 }
             }
             Command::ExternalDrop { paths, to, mode } if self.state.portal_path(to).is_some() => {

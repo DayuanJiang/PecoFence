@@ -540,14 +540,21 @@ impl Grid {
             return 0;
         }
         if self.has_slots() {
-            // The free cell or item nearest the point: the dropped items go there.
+            // The cell nearest the point; the drop goes before it in its upper half and after
+            // it in its lower half (the items run down the columns), as the grid takes the
+            // nearest cell boundary.
+            let centre = |c: &CellRect| (c.x + c.w / 2.0, c.y + c.h / 2.0);
             let dist = |c: &CellRect| {
-                let (cx, cy) = (c.x + c.w / 2.0, c.y + c.h / 2.0);
+                let (cx, cy) = centre(c);
                 (cx - x).powi(2) + (cy - y).powi(2)
             };
-            return (0..=count.min(self.slots.len() - 1))
+            let Some(k) = (0..=count.min(self.slots.len() - 1))
                 .min_by(|&a, &b| dist(&self.slots[a]).total_cmp(&dist(&self.slots[b])))
-                .unwrap_or(count);
+            else {
+                return count;
+            };
+            let after = k < count && y > centre(&self.slots[k]).1;
+            return (k + after as usize).min(count);
         }
         let row_x = x - self.row_shift(self.bands.insertion_row_len(y));
         let colf = ((row_x - self.metrics.pad_x) / self.pitch).max(0.0);
