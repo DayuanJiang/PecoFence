@@ -103,6 +103,24 @@ pub(super) fn on_app_tab_swap_done(
     Some(0)
 }
 
+/// 像桌面一样排列: applies the shape the view left (`sync_desktop_shape`), with no borrow held.
+pub(super) fn on_app_desktop_shape(
+    h: &HandlerCtx,
+    hwnd: HWND,
+    _wparam: usize,
+    _lparam: isize,
+) -> Option<isize> {
+    let shape = h.view.try_borrow_mut().ok().and_then(|mut g| {
+        g.as_mut()
+            .filter(|v| v.bare())
+            .and_then(|v| v.desktop_shape_pending.take())
+    });
+    if let Some(shape) = shape {
+        window::set_window_region(hwnd, Some(&shape));
+    }
+    Some(0)
+}
+
 pub(super) fn on_app_tab_rail(
     h: &HandlerCtx,
     _hwnd: HWND,

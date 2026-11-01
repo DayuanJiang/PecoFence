@@ -268,6 +268,7 @@ impl FenceWindow {
                     WM_APP_SET_VISIBLE => misc::on_app_set_visible(h, hwnd, wparam, lparam),
                     WM_APP_TAB_SWAP_DONE => misc::on_app_tab_swap_done(h, hwnd, wparam, lparam),
                     WM_APP_TAB_RAIL => misc::on_app_tab_rail(h, hwnd, wparam, lparam),
+                    WM_APP_DESKTOP_SHAPE => misc::on_app_desktop_shape(h, hwnd, wparam, lparam),
                     WM_APP_FADE_DONE => misc::on_app_fade_done(h, hwnd, wparam, lparam),
                     msg::WM_ENTERSIZEMOVE => nc::on_entersizemove(h, hwnd, wparam, lparam),
                     msg::WM_EXITSIZEMOVE => nc::on_exitsizemove(h, hwnd, wparam, lparam),

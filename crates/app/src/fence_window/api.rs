@@ -259,6 +259,8 @@ impl FenceWindow {
             desktop: None,
             desktop_slots: Vec::new(),
             desktop_band_base: None,
+            desktop_shape_for: None,
+            desktop_shape_pending: None,
             wanted_layout: ViewLayout::Icons,
             title_on_hover_override: None,
             style: FenceStyle::default(),
@@ -1739,6 +1741,10 @@ impl FenceWindow {
         let on = self.is_desktop_arranged();
         anchor::set_desktop_fence(self.hwnd(), on);
         if style_changed && !on {
+            self.with_view(|v| {
+                v.desktop_shape_for = None;
+                v.desktop_shape_pending = None;
+            });
             window::set_window_region(self.hwnd(), None);
         }
         self.arrange_desktop(style_changed);
@@ -1782,14 +1788,14 @@ impl FenceWindow {
         let mut placed = None;
         self.with_view(|v| placed = v.arrange_desktop());
         let mut relayout = force;
-        if let Some((rect, shape, changed)) = placed {
+        if let Some((rect, changed)) = placed {
             relayout |= changed;
             if rect != window::window_rect(hwnd) {
                 self.place_window(rect);
                 relayout = true;
             }
             if relayout {
-                window::set_window_region(hwnd, Some(&shape));
+                self.with_view(|v| v.sync_desktop_shape(true));
             }
         }
         if relayout {

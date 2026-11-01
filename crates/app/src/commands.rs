@@ -46,6 +46,9 @@ pub const WM_APP_STARTUP_BACKDROPS: u32 = msg::WM_APP + 16;
 pub const WM_APP_STARTUP_TASK: u32 = msg::WM_APP + 17;
 /// A file in the custom themes folder changed (watcher thread → UI thread).
 pub const WM_APP_THEMES_CHANGED: u32 = msg::WM_APP + 18;
+/// 像桌面一样排列: the fence window takes its new shape (posted, so SetWindowRgn's own
+/// messages never arrive while the view is borrowed).
+pub const WM_APP_DESKTOP_SHAPE: u32 = msg::WM_APP + 19;
 
 /// What a file drop does with the dropped paths (Explorer's Move / Copy / Create shortcut, the
 /// effect the drop target reported).

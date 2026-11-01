@@ -5,8 +5,8 @@
 
 use crate::anchor::{self, AnchorCell};
 use crate::commands::{
-    Command, CommandQueue, TransferMode, WM_APP_FADE_DONE, WM_APP_SET_VISIBLE, WM_APP_TAB_RAIL,
-    WM_APP_TAB_SWAP_DONE,
+    Command, CommandQueue, TransferMode, WM_APP_DESKTOP_SHAPE, WM_APP_FADE_DONE,
+    WM_APP_SET_VISIBLE, WM_APP_TAB_RAIL, WM_APP_TAB_SWAP_DONE,
 };
 use crate::icons::{IconCache, Lookup};
 use crate::layout::{

@@ -503,6 +503,11 @@ impl App {
         let h = self.state.fence(host).cloned().unwrap_or_else(|| f.clone());
         let menu = PopupMenu::new();
         let rolled = self.fences.get(&host).is_some_and(|w| w.is_rolled());
+        // 像桌面一样排列 places itself: no roll, no lock.
+        let arranged = self
+            .fences
+            .get(&host)
+            .is_some_and(|w| w.is_desktop_arranged());
         menu.item(
             CMD_FENCE_ROLL,
             if rolled {
@@ -511,7 +516,7 @@ impl App {
                 pecofence_core::i18n::text("收起")
             },
             false,
-            false,
+            arranged,
         )
         .icon(if rolled {
             glyph::CHEVRON_DOWN
@@ -767,7 +772,7 @@ impl App {
                 pecofence_core::i18n::text("锁定位置和大小")
             },
             false,
-            false,
+            arranged,
         )
         .icon(if h.locked { glyph::UNLOCK } else { glyph::LOCK });
         menu.separator()

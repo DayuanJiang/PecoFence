@@ -51,10 +51,10 @@ pub(super) fn desktop_cells(
 
 impl FenceViewState {
     /// Lays the items out for `self.desktop` and returns the window rect that holds their
-    /// cells (screen px), and those cells relative to it (the window's shape: clicks between
-    /// and beside the icons reach the desktop); None for a normal fence. The cells are kept in
-    /// content-local DIPs for `layout`; `changed` says whether they moved.
-    pub(super) fn arrange_desktop(&mut self) -> Option<(RECT, Vec<RECT>, bool)> {
+    /// cells (screen px), with room under the last icon of each column for a selected full
+    /// name; None for a normal fence. The cells are kept in content-local DIPs for `layout`;
+    /// `changed` says whether they moved. The window's shape is `desktop_shape`.
+    pub(super) fn arrange_desktop(&mut self) -> Option<(RECT, bool)> {
         let area = self.desktop.clone()?;
         let scale = self.scale();
         let m = self.grid_metrics();
@@ -65,12 +65,9 @@ impl FenceViewState {
         let edge = (EDGE_DIP * scale).round() as i32;
         let n = self.items.len();
         let cells = desktop_cells(&area.work, &area.covered, cell, edge, n);
-        // The window's shape: the icon cells, and under an icon with no icon below it room
-        // for its selected full name (up to `MAX_UNFOLD_LINES` lines), which would be cut off
-        // at the cell's bottom edge otherwise.
-        let unfold =
-            (MAX_UNFOLD_LINES.saturating_sub(u32::from(m.label_lines)) as f32 * m.line_h * scale)
-                .round() as i32;
+        // Under an icon with no icon below it the window has room for its selected full name
+        // (up to `MAX_UNFOLD_LINES` lines), which would be cut off at the cell's bottom edge.
+        let unfold = self.desktop_unfold_px();
         let icons = &cells[..n.min(cells.len())];
         let shapes: Vec<RECT> = icons
             .iter()
@@ -104,16 +101,65 @@ impl FenceViewState {
             .collect();
         let changed = slots != self.desktop_slots;
         self.desktop_slots = slots;
-        let shape = shapes
+        Some((rect, changed))
+    }
+
+    /// Height (px) a selected full name may take below its cell.
+    fn desktop_unfold_px(&self) -> i32 {
+        let m = self.grid_metrics();
+        (MAX_UNFOLD_LINES.saturating_sub(u32::from(m.label_lines)) as f32 * m.line_h * self.scale())
+            .round() as i32
+    }
+
+    /// The selected icon whose full name shows (the anchor), if any.
+    fn desktop_unfolded(&self) -> Option<usize> {
+        self.anchor_index
+            .filter(|a| *a < self.items.len() && self.selected.contains(a))
+    }
+
+    /// The window's shape (window px): the icon cells, plus room under the selected icon for
+    /// its full name; clicks anywhere else reach the desktop.
+    fn desktop_shape(&self) -> Vec<RECT> {
+        let scale = self.scale();
+        let px = |v: f32| (v * scale).round() as i32;
+        let unfolded = self.desktop_unfolded();
+        let unfold = self.desktop_unfold_px();
+        self.desktop_slots
             .iter()
-            .map(|r| RECT {
-                left: r.left - rect.left,
-                top: r.top - rect.top,
-                right: r.right - rect.left,
-                bottom: r.bottom - rect.top,
+            .take(self.items.len())
+            .enumerate()
+            .map(|(i, c)| {
+                let bottom = px(c.y + c.h);
+                RECT {
+                    left: px(c.x),
+                    top: px(c.y),
+                    right: px(c.x + c.w),
+                    bottom: if unfolded == Some(i) {
+                        bottom + unfold
+                    } else {
+                        bottom
+                    },
+                }
             })
-            .collect();
-        Some((rect, shape, changed))
+            .collect()
+    }
+
+    /// Gives the window its shape when the cells or the selected icon changed (`force`: the
+    /// cells were placed again).
+    pub(super) fn sync_desktop_shape(&mut self, force: bool) {
+        if !self.bare() {
+            return;
+        }
+        let key = (self.desktop_unfolded(), self.items.len());
+        if !force && self.desktop_shape_for == Some(key) {
+            return;
+        }
+        self.desktop_shape_for = Some(key);
+        let first = self.desktop_shape_pending.is_none();
+        self.desktop_shape_pending = Some(self.desktop_shape());
+        if first {
+            window::post_message(self.hwnd, WM_APP_DESKTOP_SHAPE, 0, 0);
+        }
     }
 
     /// A rectangle drawn on the empty desktop (screen px) selects the icons whose cells it

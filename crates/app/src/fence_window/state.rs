@@ -300,6 +300,10 @@ pub struct FenceViewState {
     /// The icons selected when a rectangle drawn on the desktop started (kept with Ctrl or
     /// Shift); None while no rectangle is drawn.
     pub(super) desktop_band_base: Option<HashSet<usize>>,
+    /// The (selected icon, icon count) the window's shape was last made for.
+    pub(super) desktop_shape_for: Option<(Option<usize>, usize)>,
+    /// The shape `WM_APP_DESKTOP_SHAPE` applies.
+    pub(super) desktop_shape_pending: Option<Vec<RECT>>,
     /// Per-fence title on hover; None follows `Behavior::title_on_hover`.
     pub(super) title_on_hover_override: Option<bool>,
     /// Per-fence colour wash / title colour / title size.

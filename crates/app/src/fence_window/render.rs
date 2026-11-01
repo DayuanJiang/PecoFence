@@ -799,6 +799,8 @@ impl FenceViewState {
     }
 
     pub(super) fn redraw_content(&mut self) -> Result<()> {
+        // 像桌面一样排列: the selected icon's full name needs room in the window's shape.
+        self.sync_desktop_shape(false);
         if self.row_metrics().is_some() {
             return self.redraw_rows();
         }
