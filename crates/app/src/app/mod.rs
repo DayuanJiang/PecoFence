@@ -1294,8 +1294,9 @@ impl App {
             live_capture: None,
             live_abandoned: None,
         };
-        // Watch both wallpaper settings and virtual-desktop state; either signal starts a
-        // bounded burst of fast reads, because the image may arrive after the notification.
+        // Watch the wallpaper settings, virtual-desktop state and Explorer's copies of the
+        // picture; any signal starts a bounded burst of fast reads, because the image may arrive
+        // after the notification.
         {
             let control_hwnd = app.control.hwnd().0 as isize;
             if let Err(e) = wallpaper::watch_changes(move || {
