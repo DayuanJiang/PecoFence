@@ -963,7 +963,11 @@ impl FenceViewState {
                 s.tab,
                 s.folder,
                 s.insert,
-                s.tab.is_none() && s.folder.is_none() && s.insert.is_none() && !s.self_drop,
+                s.tab.is_none()
+                    && s.folder.is_none()
+                    && s.insert.is_none()
+                    && !s.self_drop
+                    && !self.bare(),
             ),
             None => (None, None, None, false),
         };

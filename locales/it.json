@@ -553,6 +553,8 @@
   "检查更新失败，请稍后再试": "Impossibile controllare gli aggiornamenti. Riprova più tardi.",
   "下载失败，请稍后再试": "Download non riuscito. Riprova più tardi.",
   "为空时自动隐藏": "Nascondi automaticamente quando è vuoto",
+  "像桌面一样排列": "Disponi come il desktop",
+  "不显示标题和边框，图标从屏幕左上角一列一列往下排，绕开其他栅栏，和 Windows 桌面图标一样": "Senza titolo né bordi: le icone stanno in colonne dall’angolo in alto a sinistra dello schermo, attorno agli altri riquadri, come le icone del desktop di Windows",
   "里面没有图标时就不显示；桌面上一出现新图标，它会自己回来": "Resta nascosto quando non contiene icone e riappare non appena compare una nuova icona sul desktop",
   "里面没有图标时就不显示；有图标归到这里时，它会自己回来": "Resta nascosto quando non contiene icone e riappare non appena gli viene assegnata un’icona",
   "向上展开": "Espandi verso l’alto",

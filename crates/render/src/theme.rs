@@ -484,6 +484,31 @@ impl Theme {
         self.text_fx[(ink.r > 0.5) as usize]
     }
 
+    /// Light text with a halo, whatever the material: icon captions on bare wallpaper, as
+    /// Windows draws the desktop icons (像桌面一样排列).
+    pub fn desktop_ink(self) -> Self {
+        let ink = self.ink(ThemeMode::Dark);
+        let mut theme = self.with_ink_of(ink);
+        theme.text_halo = true;
+        // Light text takes `text_fx[1]`; a theme file's own effects stay.
+        if theme.text_fx[1] == TextFx::NONE {
+            let black = |a: f32| ColorF {
+                r: 0.0,
+                g: 0.0,
+                b: 0.0,
+                a,
+            };
+            theme.text_fx[1] = TextFx {
+                halo: Some(black(0.5)),
+                halo_width: Some(TextFx::HALO_WIDTH),
+                shadow: Some(black(0.9)),
+                shadow_blur: Some(TextFx::SHADOW_BLUR),
+                shadow_offset: Some(TextFx::SHADOW_OFFSET),
+            };
+        }
+        theme
+    }
+
     /// The ink of this style's `mode` variant: a custom theme's own, else the built-in one.
     fn ink(&self, mode: ThemeMode) -> Ink {
         if let Some([light, dark]) = self.custom_inks {

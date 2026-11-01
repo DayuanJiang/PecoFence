@@ -833,6 +833,11 @@ pub struct Fence {
     /// rolled up, its title row sits at the bottom of `geometry` instead of at the top.
     #[serde(default)]
     pub bottom_anchored: bool,
+    /// 像桌面一样排列 (the inbox only): no plate, title row, rim or shadow; the icons stand
+    /// down columns from the top-left of the monitor's work area, around the other fences,
+    /// like the Windows desktop with 自动排列图标.
+    #[serde(default)]
+    pub desktop_layout: bool,
     #[serde(default)]
     pub items: Vec<ItemRef>,
 }
@@ -860,6 +865,7 @@ impl Fence {
             hide_when_empty: false,
             expand_upward: false,
             bottom_anchored: false,
+            desktop_layout: false,
             items: Vec::new(),
         }
     }

@@ -80,7 +80,12 @@ pub(super) fn press_ends_selection(
 pub(super) fn fence_rects_outside(me: HWND, members: &[GroupMember]) -> Vec<RECT> {
     desktop::windows_of_class(anchor::FENCE_CLASS)
         .into_iter()
-        .filter(|&w| w != me && !members.iter().any(|m| m.hwnd == w) && desktop::is_visible(w))
+        .filter(|&w| {
+            w != me
+                && !members.iter().any(|m| m.hwnd == w)
+                && desktop::is_visible(w)
+                && !anchor::is_desktop_fence(w)
+        })
         .map(window::window_rect)
         .collect()
 }

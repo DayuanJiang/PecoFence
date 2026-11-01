@@ -93,6 +93,10 @@ impl FenceViewState {
         if self.theme.liquid_glass && self.gpu_glass.borrow().failed() {
             return self.theme;
         }
+        if self.bare() {
+            // 像桌面一样排列: white captions with a halo, as Windows draws desktop icons.
+            return self.theme.desktop_ink();
+        }
         match &self.backdrop_crop {
             Some(image) if self.is_clear() => {
                 // Captions sit on bare wallpaper at rest, on the default plate while hovered.
@@ -251,7 +255,10 @@ impl FenceViewState {
 
     /// Empty-state caption for the fence being shown.
     pub(super) fn empty_text(&self) -> &'static str {
-        if self.is_inbox {
+        if self.bare() {
+            // An empty desktop shows nothing.
+            ""
+        } else if self.is_inbox {
             pecofence_core::i18n::text("没有未归类的项目")
         } else if self.drop_hover {
             pecofence_core::i18n::text("松开即可放入")
@@ -282,9 +289,14 @@ impl FenceViewState {
             let dur = self.anim_dur(motion::FAST);
             self.plate_reveal.retarget(plate, dur, Curve::Linear, now);
         }
-        let plate_top =
-            self.theme.title_height * (1.0 - self.title_reveal.value_at(now).clamp(0.0, 1.0));
+        // 像桌面一样排列 has no title row: nothing above the plate, no title.
+        let plate_top = if self.bare() {
+            0.0
+        } else {
+            self.theme.title_height * (1.0 - self.title_reveal.value_at(now).clamp(0.0, 1.0))
+        };
         let plate_clear = 1.0 - self.plate_reveal.value_at(now).clamp(0.0, 1.0);
+        let shown = (!self.bare()) as u8 as f32;
         let f = &mut self.chrome_fades;
         f.set(animate, ChromeKey::Title, title_visible as u8 as f32, now);
         f.set(
@@ -322,8 +334,8 @@ impl FenceViewState {
         }
         let inside = self.press_inside;
         TitleState {
-            title: f.value(&ChromeKey::Title, now),
-            hover: f.value(&ChromeKey::Hover, now),
+            title: f.value(&ChromeKey::Title, now) * shown,
+            hover: f.value(&ChromeKey::Hover, now) * shown,
             up_hover: f.value(&ChromeKey::Up, now),
             up_pressed: self.pressed == Some(PressTarget::Up) && inside,
             chevron_hover: f.value(&ChromeKey::Chevron, now),
@@ -835,6 +847,8 @@ impl FenceViewState {
         if let Some(i) = shortened {
             self.refresh_unfold_cache(i, grid.metrics.cell_w);
         }
+        // 像桌面一样排列: a selected shortened name needs room below its cell in the shape.
+        self.sync_desktop_shape(false);
         let full: Option<(&str, u32)> = shortened.and_then(|i| {
             let id = self.items[i].id;
             self.unfold_cache

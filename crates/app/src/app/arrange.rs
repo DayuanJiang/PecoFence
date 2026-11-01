@@ -91,7 +91,11 @@ impl App {
     pub(super) fn other_fence_rects(&self, id: FenceId) -> Vec<RECT> {
         self.fences
             .iter()
-            .filter(|(fid, w)| **fid != id && pecofence_platform::desktop::is_visible(w.hwnd()))
+            .filter(|(fid, w)| {
+                **fid != id
+                    && pecofence_platform::desktop::is_visible(w.hwnd())
+                    && !crate::anchor::is_desktop_fence(w.hwnd())
+            })
             .map(|(_, w)| w.rect())
             .collect()
     }
@@ -122,6 +126,10 @@ impl App {
         let Some(w) = self.fences.get(&id) else {
             return;
         };
+        // 像桌面一样排列 places itself around the others.
+        if w.is_desktop_arranged() {
+            return;
+        }
         let r = w.rect();
         let gap = self.gap_px(w.hwnd());
         let others = self.other_fence_rects(id);
@@ -159,9 +167,11 @@ impl App {
     /// startup), else only `movers`. Fences at their own spot are kept first, then the movers
     /// whose monitor is connected, then those whose monitor is gone.
     fn resolve_overlaps(&mut self, movers: &[FenceId], all: bool) {
+        // 像桌面一样排列 lies under the others and flows around them: not a fence to pull apart.
         let fences: Vec<(FenceId, clearance::Resting)> = self
             .fences
             .iter()
+            .filter(|(_, w)| !w.is_desktop_arranged())
             .map(|(id, w)| {
                 let rect = w.rect();
                 let connected = |f: &pecofence_core::Fence| {
@@ -280,7 +290,14 @@ impl App {
     /// and restacked from the top. Fixed heights left a half-cut row in one fence and mostly
     /// empty plates in the others.
     pub(super) fn fit_first_run_column(&mut self) {
-        let ids: Vec<FenceId> = self.state.fences().iter().map(|f| f.id).collect();
+        // 像桌面一样排列: the 「桌面」 fence stands on the desktop, not in the column.
+        let ids: Vec<FenceId> = self
+            .state
+            .fences()
+            .iter()
+            .map(|f| f.id)
+            .filter(|id| !self.fences.get(id).is_some_and(|w| w.is_desktop_arranged()))
+            .collect();
         let Some(hwnd) = ids
             .first()
             .and_then(|id| self.fences.get(id))

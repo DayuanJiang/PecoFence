@@ -2,6 +2,15 @@
 
 use super::*;
 
+/// 像桌面一样排列: where the fence arranges its icons (screen px).
+#[derive(Clone, Debug, PartialEq)]
+pub struct DesktopArea {
+    /// The monitor's work area.
+    pub work: RECT,
+    /// Other fences' rects: cells under them stay free.
+    pub covered: Vec<RECT>,
+}
+
 pub struct FenceViewState {
     #[allow(dead_code)]
     pub fence_id: FenceId,
@@ -278,6 +287,23 @@ pub struct FenceViewState {
     pub(super) backdrop_override: Option<BackdropMode>,
     /// Per-fence opacity multiplier for the glass layer (1.0 = default).
     pub(super) opacity: f32,
+    /// The view the fence asks for (`set_layout`): `layout` is the icon view while 像桌面一样
+    /// 排列 is on and this again when it goes off.
+    pub(super) wanted_layout: ViewLayout,
+    /// 像桌面一样排列 (`Fence::desktop_layout`): the work area this fence arranges its icons
+    /// in and the other fences' rects over it (screen px). Some = no title row, plate or
+    /// edges; the window covers only the cells its icons take.
+    pub(super) desktop: Option<DesktopArea>,
+    /// The cells of the items (and one more for a drop after the last), content-local DIPs,
+    /// from `arrange_desktop`.
+    pub(super) desktop_slots: Vec<CellRect>,
+    /// The icons selected when a rectangle drawn on the desktop started (kept with Ctrl or
+    /// Shift); None while no rectangle is drawn.
+    pub(super) desktop_band_base: Option<HashSet<usize>>,
+    /// The (selected icon, icon count) the window's shape was last made for.
+    pub(super) desktop_shape_for: Option<(Option<(usize, u32)>, usize)>,
+    /// The shape `WM_APP_DESKTOP_SHAPE` applies.
+    pub(super) desktop_shape_pending: Option<Vec<RECT>>,
     /// Per-fence title on hover; None follows `Behavior::title_on_hover`.
     pub(super) title_on_hover_override: Option<bool>,
     /// Per-fence colour wash / title colour / title size.
@@ -413,7 +439,15 @@ impl FenceViewState {
         }
     }
 
+    /// 像桌面一样排列: drawn like the Windows desktop (no title row, plate, rim or edges).
+    pub(super) fn bare(&self) -> bool {
+        self.desktop.is_some()
+    }
+
     pub(super) fn title_h_px(&self) -> i32 {
+        if self.bare() {
+            return 0;
+        }
         (self.theme.title_height * self.scale()).round() as i32
     }
 

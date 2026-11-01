@@ -222,6 +222,14 @@ fn unsupported(message: impl Into<String>) -> IpcError {
     IpcError::new(ErrorCode::Unsupported, message)
 }
 
+/// 像桌面一样排列 places the inbox itself: it cannot be moved, resized, rolled, docked or merged.
+fn desktop_arranged_error() -> IpcError {
+    unsupported(
+        "the inbox is arranged like the desktop (desktopLayout): it places itself and cannot be moved, resized, rolled, docked or merged",
+    )
+    .hint("fence set inbox desktopLayout false makes it a fence again")
+}
+
 /// `invalid_path` naming the keys that do exist at the deepest valid prefix of `path`.
 fn invalid_path(root: &Value, path: &str) -> IpcError {
     let mut node = root;
@@ -702,6 +710,19 @@ impl App {
                 let changed = self.apply_fence_prop(id, prop);
                 self.push_settings_state();
                 Ok(mutation(changed, None, self.fence_extra(id)?))
+            }
+            Method::FencesSetBounds { fence, .. }
+            | Method::FencesFit { fence }
+            | Method::FencesRoll { fence, .. }
+            | Method::FencesDockTop { fence }
+                if self.is_desktop_arranged(fence) =>
+            {
+                Err(desktop_arranged_error())
+            }
+            Method::FencesMerge { fence, into }
+                if self.is_desktop_arranged(fence) || self.is_desktop_arranged(into) =>
+            {
+                Err(desktop_arranged_error())
             }
             Method::FencesSetBounds { fence, rect } => self.ipc_set_bounds(fence, *rect),
             Method::FencesMoveToMonitor { fence, monitor } => {
@@ -1437,6 +1458,7 @@ impl App {
             auto_height: flag("autoHeight"),
             exclude_from_quick_hide: flag("excludeFromQuickHide"),
             hide_when_empty: flag("hideWhenEmpty"),
+            desktop_layout: flag("desktopLayout"),
             opacity: text("opacity"),
             tint: opts
                 .get("tint")
@@ -1888,6 +1910,15 @@ impl App {
         }
         self.push_settings_state();
         Ok(mutation(true, snapshot, json!({ "deleted": id })))
+    }
+
+    /// `sel` names the fence 像桌面一样排列 arranges (unknown selectors are not).
+    fn is_desktop_arranged(&self, sel: &str) -> bool {
+        self.resolve_fence(sel).is_ok_and(|id| {
+            self.fences
+                .get(&self.state.host_of(id))
+                .is_some_and(|w| w.is_desktop_arranged())
+        })
     }
 
     fn ipc_set_bounds(&mut self, sel: &str, rect: Rect) -> IpcResult {

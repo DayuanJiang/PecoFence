@@ -620,6 +620,9 @@ impl AppState {
             inbox_geo,
         );
         inbox.view.icon_size = icon;
+        // New configurations show the unsorted icons like the Windows desktop's (像桌面一样排列);
+        // a configuration saved before the option existed reads it as off.
+        inbox.desktop_layout = true;
         fences.push(inbox);
         self.config.rules = RuleSet::default_presets(ids[0], ids[1], ids[2]);
         fences
@@ -748,14 +751,19 @@ impl AppState {
     /// host of tabs, stays).
     pub fn hidden_fences(&self) -> Vec<FenceId> {
         let settings = &self.config.settings;
-        let for_windows_icons = settings.hide_inbox_when_icons_shown && !settings.hide_real_icons;
+        // 像桌面一样排列 draws the loose icons where Windows shows its own: with the Windows
+        // icons shown they would be there twice, so 「桌面」 goes as with the option below.
+        let for_windows_icons = !settings.hide_real_icons;
         self.fences()
             .iter()
             .filter(|f| {
                 let empty = f.hide_when_empty
                     && !self.can_go_up(f.id)
                     && self.unsorted_held_items_of(f).next().is_none();
-                (empty || (for_windows_icons && f.kind == FenceKind::Inbox))
+                let beside_windows_icons = for_windows_icons
+                    && f.kind == FenceKind::Inbox
+                    && (settings.hide_inbox_when_icons_shown || f.desktop_layout);
+                (empty || beside_windows_icons)
                     && f.tab_host.is_none()
                     && self.tabs_of(f.id).len() <= 1
             })
@@ -2111,6 +2119,15 @@ impl AppState {
             && f.exclude_from_quick_hide != on
         {
             f.exclude_from_quick_hide = on;
+            self.dirty = true;
+        }
+    }
+
+    pub fn set_desktop_layout(&mut self, id: FenceId, on: bool) {
+        if let Some(f) = self.fence_mut(id)
+            && f.desktop_layout != on
+        {
+            f.desktop_layout = on;
             self.dirty = true;
         }
     }
@@ -3540,7 +3557,18 @@ mod tests {
         state.detach_tab(other);
         assert_eq!(state.hidden_fences(), vec![inbox]);
         state.config.settings.hide_inbox_when_icons_shown = false;
+        // 像桌面一样排列 (on in a new configuration) would draw the loose icons where Windows
+        // shows its own: 「桌面」 goes too.
+        assert!(state.fence(inbox).unwrap().desktop_layout);
+        assert_eq!(state.hidden_fences(), vec![inbox]);
+        state.set_desktop_layout(inbox, false);
         assert!(state.hidden_fences().is_empty());
+        state.config.settings.hide_real_icons = true;
+        state.set_desktop_layout(inbox, true);
+        assert!(
+            state.hidden_fences().is_empty(),
+            "the Windows icons are hidden"
+        );
     }
 
     #[test]

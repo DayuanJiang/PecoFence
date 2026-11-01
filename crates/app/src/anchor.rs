@@ -57,6 +57,26 @@ fn is_drag_overlay(hwnd: HWND) -> bool {
         && desktop::window_pid(hwnd) == std::process::id()
 }
 
+/// 像桌面一样排列: the fence window arranged like the desktop (0 = none). It stays under the
+/// other fences, and their snapping, overlap and push rules leave it out.
+static DESKTOP_FENCE: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsize::new(0);
+
+/// Marks or unmarks `hwnd` as the fence arranged like the desktop.
+pub fn set_desktop_fence(hwnd: HWND, on: bool) {
+    use std::sync::atomic::Ordering;
+    let id = hwnd.0 as isize;
+    if on {
+        DESKTOP_FENCE.store(id, Ordering::Relaxed);
+    } else {
+        let _ = DESKTOP_FENCE.compare_exchange(id, 0, Ordering::Relaxed, Ordering::Relaxed);
+    }
+}
+
+pub fn is_desktop_fence(hwnd: HWND) -> bool {
+    let id = DESKTOP_FENCE.load(std::sync::atomic::Ordering::Relaxed);
+    id != 0 && hwnd.0 as isize == id
+}
+
 /// True while this module is repositioning windows; fence handlers let z-order changes through
 /// only in that case.
 pub fn is_anchoring() -> bool {
@@ -388,6 +408,27 @@ impl DesktopAnchor {
         if !self.fences.iter().any(|(h, _)| *h == hwnd) {
             self.fences.push((hwnd, shadow));
         }
+        self.keep_desktop_fence_lowest();
+    }
+
+    /// 像桌面一样排列: that fence lies under every other one, like the desktop's own icons.
+    /// Returns whether the order changed.
+    fn keep_desktop_fence_lowest(&mut self) -> bool {
+        match self.fences.iter().position(|(h, _)| is_desktop_fence(*h)) {
+            Some(pos) if pos > 0 => {
+                let entry = self.fences.remove(pos);
+                self.fences.insert(0, entry);
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// Re-anchors when the desktop-arranged fence is not the lowest yet.
+    pub fn lower_desktop_fence(&mut self) {
+        if self.keep_desktop_fence_lowest() {
+            self.reanchor("desktop arranged fence");
+        }
     }
 
     pub fn unregister_fence(&mut self, hwnd: HWND) {
@@ -405,6 +446,7 @@ impl DesktopAnchor {
         }
         let entry = self.fences.remove(pos);
         self.fences.push(entry);
+        self.keep_desktop_fence_lowest();
         self.reanchor("raise fence");
     }
 

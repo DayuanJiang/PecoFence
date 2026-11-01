@@ -392,7 +392,16 @@ fn for_each_fence(send: Send<'_>, make: impl Fn(String) -> Method) -> Result<Rep
             results.push(json!({ "fence": id, "title": title, "skipped": "tab" }));
             continue;
         }
-        match send(make(id.clone())).and_then(reply_from) {
+        let method = make(id.clone());
+        // 像桌面一样排列: the inbox has no title row to roll up to.
+        let arranged = f["kind"] == "inbox"
+            && f["desktopLayout"].as_bool() == Some(true)
+            && f["tabs"].as_array().is_none_or(|t| t.is_empty());
+        if arranged && matches!(method, Method::FencesRoll { .. }) {
+            results.push(json!({ "fence": id, "title": title, "skipped": "desktopLayout" }));
+            continue;
+        }
+        match send(method).and_then(reply_from) {
             Ok(reply) => {
                 let this_changed = reply.result["changed"].as_bool().unwrap_or(false);
                 changed |= this_changed;
@@ -1108,6 +1117,36 @@ mod tests {
         let reply = for_each_fence(&send, set_locked).unwrap();
         assert_eq!(reply.result["changed"], json!(false));
         assert_eq!(reply.warning.as_deref(), Some("A: not saved"));
+    }
+
+    #[test]
+    fn roll_all_skips_the_inbox_arranged_like_the_desktop() {
+        let mut inbox = fence("i", "Desktop", None);
+        inbox["kind"] = json!("inbox");
+        inbox["desktopLayout"] = json!(true);
+        let fences = json!([fence("a", "A", None), inbox]);
+        let roll = |f| Method::FencesRoll {
+            fence: f,
+            rolled: true,
+        };
+        let calls = RefCell::new(Vec::new());
+        let send = fake(fences.clone(), &calls, |_| {
+            Ok(Response::ok(json!({ "changed": true })))
+        });
+        let reply = for_each_fence(&send, roll).unwrap();
+        assert_eq!(*calls.borrow(), vec!["a"]);
+        assert!(!reply.partial_failure);
+        assert_eq!(
+            reply.result["results"][1]["skipped"],
+            json!("desktopLayout")
+        );
+        // Options still go to it.
+        let calls = RefCell::new(Vec::new());
+        let send = fake(fences, &calls, |_| {
+            Ok(Response::ok(json!({ "changed": true })))
+        });
+        for_each_fence(&send, set_locked).unwrap();
+        assert_eq!(*calls.borrow(), vec!["a", "i"]);
     }
 
     #[test]

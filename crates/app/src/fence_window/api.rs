@@ -256,6 +256,12 @@ impl FenceWindow {
             anim_upward: row_bottom,
             backdrop_override: None,
             opacity: 1.0,
+            desktop: None,
+            desktop_slots: Vec::new(),
+            desktop_band_base: None,
+            desktop_shape_for: None,
+            desktop_shape_pending: None,
+            wanted_layout: ViewLayout::Icons,
             title_on_hover_override: None,
             style: FenceStyle::default(),
             spacing: Spacing::Normal,
@@ -575,6 +581,15 @@ impl FenceWindow {
     /// Explicit geometry from the app (layout, snapping, monitor changes) takes precedence over
     /// a running auto-height settle.
     pub fn set_bounds(&self, r: RECT) {
+        // 像桌面一样排列 places the window itself.
+        if self.is_desktop_arranged() {
+            self.arrange_desktop(false);
+            return;
+        }
+        self.place_window(r);
+    }
+
+    fn place_window(&self, r: RECT) {
         self.with_view(|v| v.height_anim = None);
         let _ = self
             .window
@@ -584,6 +599,11 @@ impl FenceWindow {
     /// A tab split/undo supplies complete geometry. Settle any hover expansion first
     /// so its old tween cannot pull the detached or restored window back on later frames.
     pub fn restore_geometry(&self, mut rect: RECT, rolled: bool, expanded_h: i32) {
+        // 像桌面一样排列 places the window itself (a display change or a restore lands here).
+        if self.is_desktop_arranged() {
+            self.arrange_desktop(true);
+            return;
+        }
         self.with_view(|v| {
             v.finish_content_swap_now();
             v.roll_anim = None;
@@ -682,6 +702,8 @@ impl FenceWindow {
             // The item under a stationary pointer may have changed: re-hit-test from the loop.
             v.request_hover_refresh();
         });
+        // 像桌面一样排列: more or fewer icons take more or fewer cells.
+        self.arrange_desktop(false);
     }
 
     /// Portal navigation, before the new folder's items arrive: the page swaps like a tab
@@ -886,6 +908,8 @@ impl FenceWindow {
             v.snap_item_motion();
             let _ = v.redraw();
         });
+        // 像桌面一样排列: other cells.
+        self.arrange_desktop(false);
     }
 
     /// Lines of label text under each icon (1-3): refit the labels and relayout at once.
@@ -902,6 +926,7 @@ impl FenceWindow {
             v.snap_item_motion();
             let _ = v.redraw();
         });
+        self.arrange_desktop(false);
     }
 
     /// The system icon-title font changed (font or Accessibility text size): fitted labels
@@ -916,6 +941,7 @@ impl FenceWindow {
             v.snap_item_motion();
             let _ = v.redraw();
         });
+        self.arrange_desktop(false);
     }
 
     /// Replaces the tab strip. `active` is the fence whose items the window shows.
@@ -1269,6 +1295,10 @@ impl FenceWindow {
     /// Switches between the icon grid and the List / Details rows.
     pub fn set_layout(&self, layout: ViewLayout) {
         self.with_view(|v| {
+            // 像桌面一样排列 shows icons whatever the fence's view; the fence's own comes back
+            // when it goes off (`set_desktop_area`).
+            v.wanted_layout = layout;
+            let layout = if v.bare() { ViewLayout::Icons } else { layout };
             // Consumes the tab switch's pending offset either way (see `set_tabs`).
             let restore = v.scroll_restore.take();
             if v.layout == layout {
@@ -1388,6 +1418,29 @@ impl FenceWindow {
             }
             v.start_roll_anim(rolled);
         });
+    }
+
+    /// The window as it rests: a rolled fence that is hover-peeking or rolling counts as its
+    /// title row (see `resting_heights_px`).
+    pub fn resting_rect(&self) -> RECT {
+        let mut r = self.rect();
+        // Rolled (and maybe hover-peeking open) by its state, not by a roll in flight: a peek
+        // committed open counts at its full height at once.
+        let rolled = self.view.try_borrow().ok().and_then(|g| {
+            g.as_ref()
+                .map(|v| (v.rolled_up || v.peeking, v.rolled_h_px()))
+        });
+        if let Some((true, rest)) = rolled
+            && rest > 0
+            && rest < r.bottom - r.top
+        {
+            if self.row_at_bottom() {
+                r.top = r.bottom - rest;
+            } else {
+                r.bottom = r.top + rest;
+            }
+        }
+        r
     }
 
     /// Title-row height and the height the window settles at: the title row while it is rolled
@@ -1573,6 +1626,9 @@ impl FenceWindow {
                 v.update_shadow();
             }
         });
+        if changed {
+            self.arrange_desktop(false);
+        }
         changed
     }
 
@@ -1629,6 +1685,7 @@ impl FenceWindow {
                 let _ = v.redraw();
             }
         });
+        self.arrange_desktop(false);
     }
 
     /// 图标对齐 (#154): a short row of icons stays at the left or moves to the middle.
@@ -1657,7 +1714,105 @@ impl FenceWindow {
 
     /// Height the window should have when auto-height is on (None when off / rolled).
     pub fn auto_height_px(&self) -> Option<i32> {
-        self.view.borrow().as_ref().and_then(|v| v.auto_height_px())
+        self.view
+            .borrow()
+            .as_ref()
+            .filter(|v| !v.bare())
+            .and_then(|v| v.auto_height_px())
+    }
+
+    /// 像桌面一样排列 (`Fence::desktop_layout`): the icons stand down the columns of `area`'s
+    /// work area around the other fences, and the window covers just their cells. None = a
+    /// normal fence again (it keeps its rect).
+    pub fn set_desktop_area(&self, area: Option<DesktopArea>) {
+        let mut style_changed = false;
+        self.with_view(|v| {
+            if v.desktop != area {
+                style_changed = v.desktop.is_some() != area.is_some();
+                v.desktop = area;
+                if !v.bare() {
+                    v.desktop_slots.clear();
+                }
+                if style_changed {
+                    v.snap_chrome_fades();
+                }
+            }
+        });
+        if style_changed {
+            let wanted = self.view.borrow().as_ref().map(|v| v.wanted_layout);
+            if let Some(wanted) = wanted {
+                self.set_layout(wanted);
+            }
+        }
+        let on = self.is_desktop_arranged();
+        anchor::set_desktop_fence(self.hwnd(), on);
+        if style_changed && !on {
+            self.with_view(|v| {
+                v.desktop_shape_for = None;
+                v.desktop_shape_pending = None;
+            });
+            window::set_window_region(self.hwnd(), None);
+        }
+        self.arrange_desktop(style_changed);
+    }
+
+    /// A rectangle starts on the empty desktop: with `additive` (Ctrl / Shift) the icons
+    /// selected now stay selected while it grows.
+    pub fn begin_desktop_band(&self, additive: bool) {
+        self.with_view(|v| {
+            v.desktop_band_base = Some(if additive {
+                v.selected.clone()
+            } else {
+                HashSet::new()
+            });
+        });
+    }
+
+    /// The rectangle drawn on the desktop now covers `band` (screen px): the icons it touches
+    /// are selected. Returns whether it touches any.
+    pub fn band_desktop_items(&self, band: RECT) -> bool {
+        let mut any = false;
+        self.with_view(|v| any = v.band_desktop_items(band));
+        any
+    }
+
+    pub fn end_desktop_band(&self) {
+        self.with_view(|v| v.desktop_band_base = None);
+    }
+
+    /// 像桌面一样排列 is on for this window.
+    pub fn is_desktop_arranged(&self) -> bool {
+        self.view
+            .try_borrow()
+            .is_ok_and(|g| g.as_ref().is_some_and(|v| v.bare()))
+    }
+
+    /// Re-places the desktop cells (items added or removed, area changed) and fits the window
+    /// to them; `force` relayouts even when nothing moved (the look changed).
+    fn arrange_desktop(&self, force: bool) {
+        let hwnd = self.hwnd();
+        let mut placed = None;
+        self.with_view(|v| placed = v.arrange_desktop());
+        let mut relayout = force;
+        if let Some((rect, changed)) = placed {
+            relayout |= changed;
+            if rect != window::window_rect(hwnd) {
+                self.place_window(rect);
+                relayout = true;
+            }
+            if relayout {
+                self.with_view(|v| v.sync_desktop_shape(true));
+            }
+        }
+        if relayout {
+            self.with_view(|v| {
+                let (w, h) = window::window_rect_size(hwnd);
+                if let Err(e) = v.layout_panels(w, h).and_then(|_| v.redraw()) {
+                    tracing::warn!(error = %e, "relayout for 像桌面一样排列 failed");
+                }
+                v.update_shadow();
+            });
+        }
     }
 
     /// Width of the left tab column in DIPs (0 without one).
@@ -1685,6 +1840,10 @@ impl FenceWindow {
     /// the final geometry either way, so the state persists it immediately. The borrow is
     /// released before SetWindowPos because WM_SIZE re-enters the handler.
     pub fn apply_height(&self, height_px: i32, animate: bool) -> RECT {
+        if self.is_desktop_arranged() {
+            self.arrange_desktop(false);
+            return self.window.window_rect();
+        }
         let (animated, upward) = {
             let mut guard = self.view.borrow_mut();
             match guard.as_mut() {

@@ -81,6 +81,10 @@ pub(super) fn on_nchittest(
     if left < 0 || top < 0 || left >= w || top >= h {
         return Some(msg::HTNOWHERE);
     }
+    // 像桌面一样排列: no title row or resize edges; the icons take every click.
+    if v.bare() {
+        return Some(msg::HTCLIENT);
+    }
     let rolled = v.rolled_up;
     // Tab headers and the title bar's buttons take clicks (switch / drag out,
     // up, roll); the rest of the title row moves the window, and so does the

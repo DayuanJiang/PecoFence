@@ -179,7 +179,9 @@ shows that folder inside the fence instead of opening File Explorer; off by defa
 `portalNavigate` (portals: double-clicking a subfolder opens it inside the portal; on by default),
 `portalTitleIcon`, `hideWhenEmpty` (no window while the fence is empty, and back at its saved spot
 when an item lands in it; a portal hides only at its root folder, a tab or a host of tabs stays;
-this is also how to keep the inbox, which cannot be deleted, out of sight).
+this is also how to keep the inbox, which cannot be deleted, out of sight), `desktopLayout` (the inbox
+only: no title row, glass or edges; its icons stand down columns from the top-left of the monitor
+like the Windows desktop, around the other fences).
 `--all` applies the option to every fence one call at a time and
 skips tabs hosted inside another fence (their options belong to the host).
 

@@ -272,6 +272,10 @@ impl App {
             let pushed = self.ctx.behavior.pushed.borrow();
             for (&id, w) in &self.fences {
                 let hwnd = w.hwnd();
+                // 像桌面一样排列 lies under the others: it neither pushes nor is pushed.
+                if w.is_desktop_arranged() {
+                    continue;
+                }
                 let Some((title_h, rest_h)) = w.resting_heights_px() else {
                     continue;
                 };
@@ -339,9 +343,11 @@ impl App {
         self.keep_expand_rooms(enabled.then(|| rooms(&slots)));
         // No borrow held: SetWindowPos runs the fences' handlers synchronously.
         let mut next = Vec::new();
+        let mut moved = false;
         for s in slots {
             if s.y != s.top {
                 let _ = window::move_window_to(s.hwnd, s.left, s.y);
+                moved = true;
             }
             if s.y != s.base {
                 next.push(Pushed {
@@ -353,6 +359,10 @@ impl App {
             }
         }
         *self.ctx.behavior.pushed.borrow_mut() = next;
+        // 像桌面一样排列: the loose icons flow around the fences where the push left them.
+        if moved {
+            self.arrange_desktop_fence();
+        }
     }
 
     /// `Behavior::expand_room` for the windows with 向上展开: the room above the bottom edge
@@ -397,6 +407,16 @@ impl App {
     /// rolled up at rest has its saved rect laid out around its title row on the screen
     /// (`AppState::set_fence_bounds`); the window's row then sits at that end of it.
     pub(super) fn record_bounds(&mut self, id: FenceId, rect: RECT, rolled: bool, expanded: i32) {
+        // 像桌面一样排列 places that window itself: its saved rect stays the fence's own, for
+        // when the option goes off.
+        if self
+            .fences
+            .get(&id)
+            .is_some_and(|w| w.is_desktop_arranged())
+        {
+            self.arrange_desktop_fence();
+            return;
+        }
         let (rect, row_bottom, choose) = match self.fences.get(&id) {
             Some(w) => {
                 let mut rect = self.ctx.behavior.resting_rect(w.hwnd(), rect);
@@ -417,6 +437,9 @@ impl App {
         if choose && let Some(w) = self.fences.get(&id) {
             w.set_row_at_bottom(row_bottom);
         }
+        // Wherever a fence now rests (a drag, the CLI, a snap, a push, auto height), the loose
+        // icons flow around it.
+        self.arrange_desktop_fence();
     }
 }
 

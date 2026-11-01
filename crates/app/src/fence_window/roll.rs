@@ -351,7 +351,7 @@ impl FenceViewState {
 
     /// 外观 → 全透明: no plate (glass, tint, rim, shadow) at rest.
     pub(super) fn is_clear(&self) -> bool {
-        self.opacity <= 0.0
+        self.opacity <= 0.0 || self.bare()
     }
 
     /// Whether the plate is shown right now: always, except on a fully transparent fence,
@@ -359,6 +359,11 @@ impl FenceViewState {
     /// other windows (Peek) or is selected with a desktop marquee (the ring is part of the
     /// shadow), and while something is dropped on it or merged into it.
     pub(super) fn plate_visible_target(&self) -> bool {
+        // 像桌面一样排列: never a plate, in Peek too; hover, selection and drops show the
+        // items' own fills, as on the desktop.
+        if self.bare() {
+            return false;
+        }
         !self.is_clear()
             || self.mouse_inside
             || self.shadow.ring().is_some()

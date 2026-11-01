@@ -37,7 +37,9 @@ pub(super) fn merge_target_at(me: HWND, also: HWND, point: (i32, i32)) -> Option
             } else {
                 0
             };
-            if rail > 0 {
+            if rail < 0 {
+                false
+            } else if rail > 0 {
                 point.0 < r.left + rail
             } else {
                 point.1 < r.top + title_h
@@ -138,7 +140,7 @@ pub(super) fn hide_drag_feedback(behavior: &Behavior) {
 pub(super) fn other_fence_rects(me: HWND) -> Vec<RECT> {
     desktop::windows_of_class(anchor::FENCE_CLASS)
         .into_iter()
-        .filter(|&w| w != me && desktop::is_visible(w))
+        .filter(|&w| w != me && desktop::is_visible(w) && !anchor::is_desktop_fence(w))
         .map(window::window_rect)
         .collect()
 }

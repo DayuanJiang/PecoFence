@@ -34,6 +34,7 @@ const CMD_FENCE_DELETE: u32 = 303;
 const CMD_FENCE_NEW: u32 = 304;
 /// The inbox's 为空时自动隐藏 (in place of 删除栅栏).
 const CMD_FENCE_HIDE_EMPTY: u32 = 305;
+const CMD_FENCE_DESKTOP_LAYOUT: u32 = 306;
 const CMD_FENCE_ICON_32: u32 = 310;
 const CMD_FENCE_ICON_48: u32 = 311;
 const CMD_FENCE_ICON_64: u32 = 312;
@@ -502,6 +503,11 @@ impl App {
         let h = self.state.fence(host).cloned().unwrap_or_else(|| f.clone());
         let menu = PopupMenu::new();
         let rolled = self.fences.get(&host).is_some_and(|w| w.is_rolled());
+        // 像桌面一样排列 places itself: no roll, no lock.
+        let arranged = self
+            .fences
+            .get(&host)
+            .is_some_and(|w| w.is_desktop_arranged());
         menu.item(
             CMD_FENCE_ROLL,
             if rolled {
@@ -510,7 +516,7 @@ impl App {
                 pecofence_core::i18n::text("收起")
             },
             false,
-            false,
+            arranged,
         )
         .icon(if rolled {
             glyph::CHEVRON_DOWN
@@ -702,8 +708,23 @@ impl App {
             .iter()
             .enumerate()
             .filter(|(_, o)| o.id != host)
+            .filter(|(_, o)| {
+                !self
+                    .fences
+                    .get(&o.id)
+                    .is_some_and(|w| w.is_desktop_arranged())
+            })
             .map(|(i, o)| (CMD_TAB_ATTACH_BASE + i as u32, o.title.clone()))
             .collect();
+        let other_hosts = if self
+            .fences
+            .get(&host)
+            .is_some_and(|w| w.is_desktop_arranged())
+        {
+            Vec::new()
+        } else {
+            other_hosts
+        };
         if tabs.len() >= 2 || !other_hosts.is_empty() {
             let tab_menu = PopupMenu::new();
             if tabs.len() >= 2 {
@@ -751,7 +772,7 @@ impl App {
                 pecofence_core::i18n::text("锁定位置和大小")
             },
             false,
-            false,
+            arranged,
         )
         .icon(if h.locked { glyph::UNLOCK } else { glyph::LOCK });
         menu.separator()
@@ -781,6 +802,12 @@ impl App {
                 CMD_FENCE_HIDE_EMPTY,
                 pecofence_core::i18n::text("为空时自动隐藏"),
                 f.hide_when_empty,
+                false,
+            )
+            .item(
+                CMD_FENCE_DESKTOP_LAYOUT,
+                pecofence_core::i18n::text("像桌面一样排列"),
+                f.desktop_layout,
                 false,
             );
         } else {
@@ -931,6 +958,7 @@ impl App {
             }
             CMD_FENCE_DELETE => self.delete_fence_from_menu(fence),
             CMD_FENCE_HIDE_EMPTY => self.set_fence_hide_when_empty(fence, !f.hide_when_empty),
+            CMD_FENCE_DESKTOP_LAYOUT => self.set_fence_desktop_layout(fence, !f.desktop_layout),
             _ => return,
         }
         // An open settings page shows these fences too; keep it current.

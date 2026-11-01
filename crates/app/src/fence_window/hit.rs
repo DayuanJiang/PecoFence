@@ -239,6 +239,11 @@ impl FenceViewState {
         let n = self.items.len();
         match self.row_metrics() {
             Some(rm) => ItemLayout::rows_grouped(rm, width_dip, n, &spans),
+            None if self.bare() && !self.desktop_slots.is_empty() => {
+                // 像桌面一样排列: the cells `arrange_desktop` placed down the columns.
+                let grid = Grid::grouped(self.grid_metrics(), width_dip, n, &[]);
+                ItemLayout::Grid(grid.with_slots(self.desktop_slots.clone(), n))
+            }
             None => {
                 let grid = Grid::grouped(self.grid_metrics(), width_dip, n, &spans);
                 ItemLayout::Grid(grid.centred(self.icon_align == IconAlign::Center))

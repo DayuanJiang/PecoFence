@@ -150,7 +150,7 @@ pub enum Method {
     /// `tabColor` "#RRGGBB"|null, `titleColor`, `titleSize` small|normal|large|extraLarge,
     /// `titleOnHover` default|hover|always, `layout` icons|list|details, `sort`, `reverse`,
     /// `groupByDate`, `foldersFirst`, `labelLines`, `openFoldersInside`, `portalNavigate`,
-    /// `portalTitleIcon`, `hideWhenEmpty`). Result: `{changed, fence}`.
+    /// `portalTitleIcon`, `hideWhenEmpty`, `desktopLayout`). Result: `{changed, fence}`.
     #[serde(rename = "fences.setOption")]
     FencesSetOption {
         fence: String,
