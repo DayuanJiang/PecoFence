@@ -359,10 +359,10 @@ impl FenceViewState {
     /// other windows (Peek) or is selected with a desktop marquee (the ring is part of the
     /// shadow), and while something is dropped on it or merged into it.
     pub(super) fn plate_visible_target(&self) -> bool {
-        // 像桌面一样排列: only the marquee ring and Peek show the plate; hover and drops show
-        // the items' own fills, as on the desktop.
+        // 像桌面一样排列: never a plate, in Peek too; hover, selection and drops show the
+        // items' own fills, as on the desktop.
         if self.bare() {
-            return self.shadow.ring().is_some() || self.behavior.floating.get();
+            return false;
         }
         !self.is_clear()
             || self.mouse_inside

@@ -294,6 +294,9 @@ pub struct FenceViewState {
     /// The cells of the items (and one more for a drop after the last), content-local DIPs,
     /// from `arrange_desktop`.
     pub(super) desktop_slots: Vec<CellRect>,
+    /// The icons selected when a rectangle drawn on the desktop started (kept with Ctrl or
+    /// Shift); None while no rectangle is drawn.
+    pub(super) desktop_band_base: Option<HashSet<usize>>,
     /// Per-fence title on hover; None follows `Behavior::title_on_hover`.
     pub(super) title_on_hover_override: Option<bool>,
     /// Per-fence colour wash / title colour / title size.

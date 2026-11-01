@@ -93,7 +93,7 @@ impl FenceViewState {
         if self.theme.liquid_glass && self.gpu_glass.borrow().failed() {
             return self.theme;
         }
-        if self.bare() && !self.behavior.floating.get() {
+        if self.bare() {
             // 像桌面一样排列: white captions with a halo, as Windows draws desktop icons.
             return self.theme.desktop_ink();
         }

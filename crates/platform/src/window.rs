@@ -685,6 +685,38 @@ pub fn show_normal(hwnd: HWND) {
     }
 }
 
+/// Limits where `hwnd` draws and takes clicks to the union of `rects` (window-relative px; an
+/// empty list leaves it no area at all). None gives it its whole rectangle again.
+pub fn set_window_region(hwnd: HWND, rects: Option<&[RECT]>) {
+    windows_core::link!("gdi32.dll" "system" fn CreateRectRgn(x1: i32, y1: i32, x2: i32, y2: i32) -> isize);
+    windows_core::link!("gdi32.dll" "system" fn CombineRgn(dst: isize, a: isize, b: isize, mode: i32) -> i32);
+    windows_core::link!("gdi32.dll" "system" fn DeleteObject(object: isize) -> windows_core::BOOL);
+    windows_core::link!("user32.dll" "system" fn SetWindowRgn(hwnd: HWND, rgn: isize, redraw: windows_core::BOOL) -> i32);
+    const RGN_OR: i32 = 2;
+    // SAFETY: plain GDI calls on regions created here; the window owns the region once
+    // SetWindowRgn succeeds, else it is deleted here.
+    unsafe {
+        let Some(rects) = rects else {
+            SetWindowRgn(hwnd, 0, windows_core::BOOL(1));
+            return;
+        };
+        let rgn = CreateRectRgn(0, 0, 0, 0);
+        if rgn == 0 {
+            return;
+        }
+        for r in rects {
+            let part = CreateRectRgn(r.left, r.top, r.right, r.bottom);
+            if part != 0 {
+                CombineRgn(rgn, rgn, part, RGN_OR);
+                let _ = DeleteObject(part);
+            }
+        }
+        if SetWindowRgn(hwnd, rgn, windows_core::BOOL(1)) == 0 {
+            let _ = DeleteObject(rgn);
+        }
+    }
+}
+
 /// Outer rectangle of any window in screen pixels.
 pub fn window_rect(hwnd: HWND) -> RECT {
     let mut rect = RECT::default();

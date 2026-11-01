@@ -555,6 +555,7 @@
   "下载失败，请稍后再试": "No se pudo descargar la actualización. Inténtalo de nuevo más tarde.",
   "为空时自动隐藏": "Ocultar si está vacío",
   "像桌面一样排列": "Organizar como el escritorio",
+  "不显示标题和边框，图标从屏幕左上角一列一列往下排，绕开其他栅栏，和 Windows 桌面图标一样": "Sin título ni bordes: los iconos se colocan en columnas desde la esquina superior izquierda de la pantalla, alrededor de los otros grupos, como los iconos del escritorio de Windows",
   "里面没有图标时就不显示；桌面上一出现新图标，它会自己回来": "Permanece oculto mientras no tenga iconos y vuelve en cuanto aparece un icono nuevo en el escritorio",
   "里面没有图标时就不显示；有图标归到这里时，它会自己回来": "Permanece oculto mientras no tenga iconos y vuelve en cuanto se archiva un icono aquí",
   "向上展开": "Expandir hacia arriba",

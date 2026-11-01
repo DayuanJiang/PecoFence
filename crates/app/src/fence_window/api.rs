@@ -258,6 +258,7 @@ impl FenceWindow {
             opacity: 1.0,
             desktop: None,
             desktop_slots: Vec::new(),
+            desktop_band_base: None,
             title_on_hover_override: None,
             style: FenceStyle::default(),
             spacing: Spacing::Normal,
@@ -1685,8 +1686,36 @@ impl FenceWindow {
                 }
             }
         });
-        anchor::set_desktop_fence(self.hwnd(), self.is_desktop_arranged());
+        let on = self.is_desktop_arranged();
+        anchor::set_desktop_fence(self.hwnd(), on);
+        if style_changed && !on {
+            window::set_window_region(self.hwnd(), None);
+        }
         self.arrange_desktop(style_changed);
+    }
+
+    /// A rectangle starts on the empty desktop: with `additive` (Ctrl / Shift) the icons
+    /// selected now stay selected while it grows.
+    pub fn begin_desktop_band(&self, additive: bool) {
+        self.with_view(|v| {
+            v.desktop_band_base = Some(if additive {
+                v.selected.clone()
+            } else {
+                HashSet::new()
+            });
+        });
+    }
+
+    /// The rectangle drawn on the desktop now covers `band` (screen px): the icons it touches
+    /// are selected. Returns whether it touches any.
+    pub fn band_desktop_items(&self, band: RECT) -> bool {
+        let mut any = false;
+        self.with_view(|v| any = v.band_desktop_items(band));
+        any
+    }
+
+    pub fn end_desktop_band(&self) {
+        self.with_view(|v| v.desktop_band_base = None);
     }
 
     /// 像桌面一样排列 is on for this window.
@@ -1701,11 +1730,14 @@ impl FenceWindow {
         let mut placed = None;
         self.with_view(|v| placed = v.arrange_desktop());
         let mut relayout = force;
-        if let Some((rect, changed)) = placed {
+        if let Some((rect, shape, changed)) = placed {
             relayout |= changed;
             if rect != window::window_rect(hwnd) {
                 self.set_bounds(rect);
                 relayout = true;
+            }
+            if relayout {
+                window::set_window_region(hwnd, Some(&shape));
             }
         }
         if relayout {

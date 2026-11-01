@@ -620,6 +620,9 @@ impl AppState {
             inbox_geo,
         );
         inbox.view.icon_size = icon;
+        // New configurations show the unsorted icons like the Windows desktop's (像桌面一样排列);
+        // a configuration saved before the option existed reads it as off.
+        inbox.desktop_layout = true;
         fences.push(inbox);
         self.config.rules = RuleSet::default_presets(ids[0], ids[1], ids[2]);
         fences

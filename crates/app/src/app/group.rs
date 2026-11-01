@@ -21,10 +21,16 @@ impl App {
                 };
                 self.set_fence_selection(kept.clone());
                 self.marquee_base = Some(kept);
+                if let Some(w) = self.fences.values().find(|w| w.is_desktop_arranged()) {
+                    w.begin_desktop_band(additive);
+                }
                 self.hide_marquee_band();
                 self.marquee_draws_band = pecofence_platform::shell_icons::desktop_icons_hidden();
             }
             MarqueeEvent::Moved(rect) => {
+                if let Some(w) = self.fences.values().find(|w| w.is_desktop_arranged()) {
+                    w.band_desktop_items(rect);
+                }
                 let selection = self.marquee_selection(rect);
                 self.set_fence_selection(selection);
                 if self.marquee_draws_band {
@@ -33,7 +39,18 @@ impl App {
             }
             MarqueeEvent::Released(rect) => {
                 self.hide_marquee_band();
-                let touched = !self.fences_touching(rect).is_empty();
+                // 像桌面一样排列: icons the rectangle selected count as touched (no new-fence
+                // offer for them, as for selected Windows icons).
+                let banded = self
+                    .fences
+                    .values()
+                    .find(|w| w.is_desktop_arranged())
+                    .is_some_and(|w| {
+                        let any = w.band_desktop_items(rect);
+                        w.end_desktop_band();
+                        any
+                    });
+                let touched = banded || !self.fences_touching(rect).is_empty();
                 let selection = self.marquee_selection(rect);
                 self.marquee_base = None;
                 let count = selection.len();
@@ -53,6 +70,9 @@ impl App {
             MarqueeEvent::Cancelled => {
                 self.hide_marquee_band();
                 self.marquee_base = None;
+                if let Some(w) = self.fences.values().find(|w| w.is_desktop_arranged()) {
+                    w.end_desktop_band();
+                }
             }
         }
     }
@@ -136,6 +156,7 @@ impl App {
             .filter(|(id, w)| {
                 let r = w.rect();
                 desktop::is_visible(w.hwnd())
+                    && !w.is_desktop_arranged()
                     && !self.state.fence(**id).is_some_and(|f| f.locked)
                     && r.left < rect.right
                     && rect.left < r.right

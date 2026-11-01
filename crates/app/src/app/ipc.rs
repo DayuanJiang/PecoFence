@@ -1437,6 +1437,7 @@ impl App {
             auto_height: flag("autoHeight"),
             exclude_from_quick_hide: flag("excludeFromQuickHide"),
             hide_when_empty: flag("hideWhenEmpty"),
+            desktop_layout: flag("desktopLayout"),
             opacity: text("opacity"),
             tint: opts
                 .get("tint")

@@ -180,6 +180,10 @@ pub struct FenceDto {
     /// stays.
     #[serde(default)]
     pub hide_when_empty: bool,
+    /// The inbox only: drawn like the Windows desktop, its icons down columns from the top-left
+    /// of its monitor around the other fences (像桌面一样排列).
+    #[serde(default)]
+    pub desktop_layout: bool,
     /// `default` | `clear` | `solid` | `transparent`.
     pub opacity: String,
     /// `#RRGGBB` or `null`.

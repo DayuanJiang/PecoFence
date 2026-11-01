@@ -555,6 +555,7 @@
   "下载失败，请稍后再试": "Der Download ist fehlgeschlagen. Versuche es später noch einmal.",
   "为空时自动隐藏": "Ausblenden, wenn leer",
   "像桌面一样排列": "Wie den Desktop anordnen",
+  "不显示标题和边框，图标从屏幕左上角一列一列往下排，绕开其他栅栏，和 Windows 桌面图标一样": "Ohne Titelzeile und Rand: Die Symbole stehen in Spalten ab der oberen linken Bildschirmecke, um die anderen Bereiche herum, wie Windows-Desktopsymbole",
   "里面没有图标时就不显示；桌面上一出现新图标，它会自己回来": "Bleibt ausgeblendet, solange er keine Symbole enthält, und erscheint wieder, sobald ein neues Symbol auf dem Desktop landet",
   "里面没有图标时就不显示；有图标归到这里时，它会自己回来": "Bleibt ausgeblendet, solange er keine Symbole enthält, und erscheint wieder, sobald ein Symbol hier einsortiert wird",
   "向上展开": "Nach oben ausklappen",

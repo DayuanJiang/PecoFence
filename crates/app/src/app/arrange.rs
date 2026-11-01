@@ -284,7 +284,14 @@ impl App {
     /// and restacked from the top. Fixed heights left a half-cut row in one fence and mostly
     /// empty plates in the others.
     pub(super) fn fit_first_run_column(&mut self) {
-        let ids: Vec<FenceId> = self.state.fences().iter().map(|f| f.id).collect();
+        // 像桌面一样排列: the 「桌面」 fence stands on the desktop, not in the column.
+        let ids: Vec<FenceId> = self
+            .state
+            .fences()
+            .iter()
+            .map(|f| f.id)
+            .filter(|id| !self.fences.get(id).is_some_and(|w| w.is_desktop_arranged()))
+            .collect();
         let Some(hwnd) = ids
             .first()
             .and_then(|id| self.fences.get(id))

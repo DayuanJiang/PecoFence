@@ -51,9 +51,10 @@ pub(super) fn desktop_cells(
 
 impl FenceViewState {
     /// Lays the items out for `self.desktop` and returns the window rect that holds their
-    /// cells (screen px); None for a normal fence. The cells are kept in content-local DIPs
-    /// for `layout`; `changed` says whether they moved.
-    pub(super) fn arrange_desktop(&mut self) -> Option<(RECT, bool)> {
+    /// cells (screen px), and those cells relative to it (the window's shape: clicks between
+    /// and beside the icons reach the desktop); None for a normal fence. The cells are kept in
+    /// content-local DIPs for `layout`; `changed` says whether they moved.
+    pub(super) fn arrange_desktop(&mut self) -> Option<(RECT, Vec<RECT>, bool)> {
         let area = self.desktop.clone()?;
         let scale = self.scale();
         let m = self.grid_metrics();
@@ -82,7 +83,45 @@ impl FenceViewState {
             .collect();
         let changed = slots != self.desktop_slots;
         self.desktop_slots = slots;
-        Some((rect, changed))
+        let shape = cells[..n.min(cells.len())]
+            .iter()
+            .map(|r| RECT {
+                left: r.left - rect.left,
+                top: r.top - rect.top,
+                right: r.right - rect.left,
+                bottom: r.bottom - rect.top,
+            })
+            .collect();
+        Some((rect, shape, changed))
+    }
+
+    /// A rectangle drawn on the empty desktop (screen px) selects the icons whose cells it
+    /// touches, as Explorer's rubber band selects desktop icons; with Ctrl or Shift the icons
+    /// selected when it started stay selected. Returns whether any icon is in the band.
+    pub(super) fn band_desktop_items(&mut self, band: RECT) -> bool {
+        if !self.bare() || self.desktop_slots.is_empty() {
+            return false;
+        }
+        let win = window::window_rect(self.hwnd);
+        let scale = self.scale();
+        let mut hit = HashSet::new();
+        for (i, c) in self.desktop_slots.iter().take(self.items.len()).enumerate() {
+            let left = win.left + (c.x * scale).round() as i32;
+            let top = win.top + (c.y * scale).round() as i32;
+            let right = left + (c.w * scale).round() as i32;
+            let bottom = top + (c.h * scale).round() as i32;
+            if left < band.right && band.left < right && top < band.bottom && band.top < bottom {
+                hit.insert(i);
+            }
+        }
+        let any = !hit.is_empty();
+        let base = self.desktop_band_base.clone().unwrap_or_default();
+        let selected: HashSet<usize> = base.union(&hit).copied().collect();
+        if selected != self.selected {
+            self.selected = selected;
+            let _ = self.redraw_content();
+        }
+        any
     }
 }
 

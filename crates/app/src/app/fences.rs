@@ -157,6 +157,9 @@ impl App {
                 w.show(true);
             }
         }
+        // A fence that came (shown just now) or went changes the cells the desktop-arranged
+        // 「桌面」 fence may use.
+        self.arrange_desktop_fence();
         self.push_settings_state();
     }
 
@@ -434,9 +437,11 @@ impl App {
         if !on {
             if w.is_desktop_arranged() {
                 w.set_desktop_area(None);
-                // Back where the fence was before (its saved rect was kept meanwhile).
+                // Back where the fence was before (its saved rect was kept meanwhile), out of the
+                // way of fences moved there since.
                 if let Some(f) = self.state.fence(id).cloned() {
                     self.place_from_state(&f);
+                    self.move_out_of_overlap(id);
                 }
             }
             return;
