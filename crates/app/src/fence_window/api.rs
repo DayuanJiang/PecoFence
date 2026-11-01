@@ -1424,7 +1424,13 @@ impl FenceWindow {
     /// title row (see `resting_heights_px`).
     pub fn resting_rect(&self) -> RECT {
         let mut r = self.rect();
-        if let Some((_, rest)) = self.resting_heights_px()
+        // Rolled (and maybe hover-peeking open) by its state, not by a roll in flight: a peek
+        // committed open counts at its full height at once.
+        let rolled = self.view.try_borrow().ok().and_then(|g| {
+            g.as_ref()
+                .map(|v| (v.rolled_up || v.peeking, v.rolled_h_px()))
+        });
+        if let Some((true, rest)) = rolled
             && rest > 0
             && rest < r.bottom - r.top
         {

@@ -1755,6 +1755,8 @@ impl App {
                 // A committed peek keeps whatever height the peek had; apply the auto-height
                 // rule like every other path that expands a fence.
                 self.apply_auto_height(fence);
+                // 像桌面一样排列: the fence now rests open, the loose icons flow around it.
+                self.arrange_desktop_fence();
             }
             Command::LaunchItem { item, from, inside } => self.launch(item, from, inside),
             Command::MoveItems { items, to } => self.move_items(&items, to),
