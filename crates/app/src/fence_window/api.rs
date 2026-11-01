@@ -256,6 +256,8 @@ impl FenceWindow {
             anim_upward: row_bottom,
             backdrop_override: None,
             opacity: 1.0,
+            desktop: None,
+            desktop_slots: Vec::new(),
             title_on_hover_override: None,
             style: FenceStyle::default(),
             spacing: Spacing::Normal,
@@ -682,6 +684,8 @@ impl FenceWindow {
             // The item under a stationary pointer may have changed: re-hit-test from the loop.
             v.request_hover_refresh();
         });
+        // 像桌面一样排列: more or fewer icons take more or fewer cells.
+        self.arrange_desktop(false);
     }
 
     /// Portal navigation, before the new folder's items arrive: the page swaps like a tab
@@ -1657,7 +1661,62 @@ impl FenceWindow {
 
     /// Height the window should have when auto-height is on (None when off / rolled).
     pub fn auto_height_px(&self) -> Option<i32> {
-        self.view.borrow().as_ref().and_then(|v| v.auto_height_px())
+        self.view
+            .borrow()
+            .as_ref()
+            .filter(|v| !v.bare())
+            .and_then(|v| v.auto_height_px())
+    }
+
+    /// 像桌面一样排列 (`Fence::desktop_layout`): the icons stand down the columns of `area`'s
+    /// work area around the other fences, and the window covers just their cells. None = a
+    /// normal fence again (it keeps its rect).
+    pub fn set_desktop_area(&self, area: Option<DesktopArea>) {
+        let mut style_changed = false;
+        self.with_view(|v| {
+            if v.desktop != area {
+                style_changed = v.desktop.is_some() != area.is_some();
+                v.desktop = area;
+                if !v.bare() {
+                    v.desktop_slots.clear();
+                }
+                if style_changed {
+                    v.snap_chrome_fades();
+                }
+            }
+        });
+        anchor::set_desktop_fence(self.hwnd(), self.is_desktop_arranged());
+        self.arrange_desktop(style_changed);
+    }
+
+    /// 像桌面一样排列 is on for this window.
+    pub fn is_desktop_arranged(&self) -> bool {
+        self.view.borrow().as_ref().is_some_and(|v| v.bare())
+    }
+
+    /// Re-places the desktop cells (items added or removed, area changed) and fits the window
+    /// to them; `force` relayouts even when nothing moved (the look changed).
+    fn arrange_desktop(&self, force: bool) {
+        let hwnd = self.hwnd();
+        let mut placed = None;
+        self.with_view(|v| placed = v.arrange_desktop());
+        let mut relayout = force;
+        if let Some((rect, changed)) = placed {
+            relayout |= changed;
+            if rect != window::window_rect(hwnd) {
+                self.set_bounds(rect);
+                relayout = true;
+            }
+        }
+        if relayout {
+            self.with_view(|v| {
+                let (w, h) = window::window_rect_size(hwnd);
+                if let Err(e) = v.layout_panels(w, h).and_then(|_| v.redraw()) {
+                    tracing::warn!(error = %e, "relayout for 像桌面一样排列 failed");
+                }
+                v.update_shadow();
+            });
+        }
     }
 
     /// Width of the left tab column in DIPs (0 without one).

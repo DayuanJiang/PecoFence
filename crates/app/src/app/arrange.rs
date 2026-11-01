@@ -91,7 +91,11 @@ impl App {
     pub(super) fn other_fence_rects(&self, id: FenceId) -> Vec<RECT> {
         self.fences
             .iter()
-            .filter(|(fid, w)| **fid != id && pecofence_platform::desktop::is_visible(w.hwnd()))
+            .filter(|(fid, w)| {
+                **fid != id
+                    && pecofence_platform::desktop::is_visible(w.hwnd())
+                    && !crate::anchor::is_desktop_fence(w.hwnd())
+            })
             .map(|(_, w)| w.rect())
             .collect()
     }

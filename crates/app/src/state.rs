@@ -2115,6 +2115,15 @@ impl AppState {
         }
     }
 
+    pub fn set_desktop_layout(&mut self, id: FenceId, on: bool) {
+        if let Some(f) = self.fence_mut(id)
+            && f.desktop_layout != on
+        {
+            f.desktop_layout = on;
+            self.dirty = true;
+        }
+    }
+
     pub fn set_hide_when_empty(&mut self, id: FenceId, on: bool) {
         if let Some(f) = self.fence_mut(id)
             && f.hide_when_empty != on

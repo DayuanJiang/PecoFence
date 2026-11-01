@@ -50,6 +50,7 @@ use windows_core::Result;
 
 mod api;
 mod consts;
+mod desktop_layout;
 mod dnd;
 mod frame;
 mod group;
@@ -70,6 +71,7 @@ mod window_drag;
 
 pub use api::FenceWindow;
 pub use dnd::filter_folder_paths;
+pub use state::DesktopArea;
 
 use self::consts::*;
 use self::dnd::*;

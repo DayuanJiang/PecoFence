@@ -75,6 +75,7 @@ pub(super) const FENCE_PROPS: &[&str] = &[
     "portalNavigate",
     "portalTitleIcon",
     "hideWhenEmpty",
+    "desktopLayout",
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -116,6 +117,8 @@ pub(super) enum FenceProp {
     PortalTitleIcon(bool),
     /// 为空时自动隐藏.
     HideWhenEmpty(bool),
+    /// 像桌面一样排列 (the inbox only).
+    DesktopLayout(bool),
     Layout(ViewLayout),
     Sort(SortMode),
     Reverse(bool),
@@ -262,6 +265,7 @@ pub(super) fn parse_fence_prop(
         "portalNavigate" => FenceProp::PortalNavigate(as_bool()?),
         "portalTitleIcon" => FenceProp::PortalTitleIcon(as_bool()?),
         "hideWhenEmpty" => FenceProp::HideWhenEmpty(as_bool()?),
+        "desktopLayout" => FenceProp::DesktopLayout(as_bool()?),
         _ => {
             return Err(IpcError::invalid_value(
                 format!("unknown fence property {prop:?}"),
@@ -336,6 +340,14 @@ impl App {
         {
             a.set_quick_hide_excluded(w.hwnd(), on);
         }
+        self.schedule_save();
+    }
+
+    /// 像桌面一样排列: the inbox's icons stand on the desktop like Windows' own (other fences
+    /// keep their look; the flag is saved but has no effect on them).
+    pub(super) fn set_fence_desktop_layout(&mut self, fence: FenceId, on: bool) {
+        self.state.set_desktop_layout(fence, on);
+        self.arrange_desktop_fence();
         self.schedule_save();
     }
 
@@ -567,6 +579,7 @@ impl App {
             "titleSize": title_size,
             "titleOnHover": title_on_hover,
             "hideWhenEmpty": f.hide_when_empty,
+            "desktopLayout": f.desktop_layout,
             "openFoldersInside": f.open_folders_inside,
             "portal": portal,
         })
@@ -653,6 +666,7 @@ impl App {
             FenceProp::PortalNavigate(on) => self.set_fence_portal_navigate(fence, on),
             FenceProp::PortalTitleIcon(on) => self.set_fence_title_icon(fence, on),
             FenceProp::HideWhenEmpty(on) => self.set_fence_hide_when_empty(fence, on),
+            FenceProp::DesktopLayout(on) => self.set_fence_desktop_layout(fence, on),
             FenceProp::Layout(layout) => {
                 // Same steps as the fence menu's 视图 items.
                 self.state.set_layout(fence, layout);

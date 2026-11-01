@@ -284,6 +284,7 @@ impl App {
         self.apply_fence_appearance(id); // locked + backdrop/opacity + quick-hide exclusion
         self.apply_portal_deco(id);
         self.apply_auto_height(id);
+        self.arrange_desktop_fence();
     }
 
     pub(super) fn refresh_all(&mut self) {
@@ -306,6 +307,7 @@ impl App {
             self.apply_auto_height(id);
         }
         self.sync_hidden_fences();
+        self.arrange_desktop_fence();
         // Cut items that were moved away (Explorer pasted them) stop being dimmed.
         let before = self.cut_items.len();
         self.cut_items.retain(|id| self.state.item(*id).is_some());
@@ -328,6 +330,9 @@ impl App {
         let Some(w) = self.fences.get(&id) else {
             return;
         };
+        if w.is_desktop_arranged() {
+            return;
+        }
         let r = w.rect();
         let scale = monitors::dpi_for_window(w.hwnd()).max(96) as f32 / 96.0;
         let Some(steps) = self.grid_steps(id, scale) else {
@@ -407,6 +412,53 @@ impl App {
         };
         self.record_bounds(id, rect, rolled, expanded);
         self.schedule_save();
+    }
+
+    /// 像桌面一样排列 (`Fence::desktop_layout`): hands the 「桌面」 fence the work area of its
+    /// monitor and the other fences' rects; it lays its icons out down the columns around
+    /// them and lies under every other fence. Called whenever a fence moves, resizes, comes or
+    /// goes, and when the items change.
+    pub(super) fn arrange_desktop_fence(&mut self) {
+        let Some((id, on)) = self
+            .state
+            .fences()
+            .iter()
+            .find(|f| f.kind == FenceKind::Inbox && f.tab_host.is_none())
+            .map(|f| (f.id, f.desktop_layout))
+        else {
+            return;
+        };
+        let Some(w) = self.fences.get(&id) else {
+            return;
+        };
+        if !on {
+            if w.is_desktop_arranged() {
+                w.set_desktop_area(None);
+                // Back where the fence was before (its saved rect was kept meanwhile).
+                if let Some(f) = self.state.fence(id).cloned() {
+                    self.place_from_state(&f);
+                }
+            }
+            return;
+        }
+        let r = w.rect();
+        let Some(wa) = self.work_area_at((r.left + r.right) / 2, (r.top + r.bottom) / 2) else {
+            return;
+        };
+        let work = RECT {
+            left: wa.left,
+            top: wa.top,
+            right: wa.right,
+            bottom: wa.bottom,
+        };
+        let covered = self.other_fence_rects(id);
+        let Some(w) = self.fences.get(&id) else {
+            return;
+        };
+        w.set_desktop_area(Some(crate::fence_window::DesktopArea { work, covered }));
+        if let Some(a) = self.anchor.borrow_mut().as_mut() {
+            a.lower_desktop_fence();
+        }
     }
 
     pub(super) fn apply_auto_height(&mut self, id: FenceId) {
@@ -954,6 +1006,14 @@ impl App {
     /// undo each other while the 167 ms roll animation is still running.
     pub(super) fn set_roll(&mut self, fence: FenceId, rolled: bool) {
         let fence = self.state.host_of(fence);
+        // 像桌面一样排列 has no title row to roll up to.
+        if self
+            .fences
+            .get(&fence)
+            .is_some_and(|w| w.is_desktop_arranged())
+        {
+            return;
+        }
         // With pushNeighbors on the fences below make room instead.
         if !rolled
             && !self.state.config.settings.roll_up.push_neighbors

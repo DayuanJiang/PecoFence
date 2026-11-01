@@ -34,6 +34,7 @@ const CMD_FENCE_DELETE: u32 = 303;
 const CMD_FENCE_NEW: u32 = 304;
 /// The inbox's 为空时自动隐藏 (in place of 删除栅栏).
 const CMD_FENCE_HIDE_EMPTY: u32 = 305;
+const CMD_FENCE_DESKTOP_LAYOUT: u32 = 306;
 const CMD_FENCE_ICON_32: u32 = 310;
 const CMD_FENCE_ICON_48: u32 = 311;
 const CMD_FENCE_ICON_64: u32 = 312;
@@ -782,6 +783,12 @@ impl App {
                 pecofence_core::i18n::text("为空时自动隐藏"),
                 f.hide_when_empty,
                 false,
+            )
+            .item(
+                CMD_FENCE_DESKTOP_LAYOUT,
+                pecofence_core::i18n::text("像桌面一样排列"),
+                f.desktop_layout,
+                false,
             );
         } else {
             menu.item(
@@ -931,6 +938,7 @@ impl App {
             }
             CMD_FENCE_DELETE => self.delete_fence_from_menu(fence),
             CMD_FENCE_HIDE_EMPTY => self.set_fence_hide_when_empty(fence, !f.hide_when_empty),
+            CMD_FENCE_DESKTOP_LAYOUT => self.set_fence_desktop_layout(fence, !f.desktop_layout),
             _ => return,
         }
         // An open settings page shows these fences too; keep it current.

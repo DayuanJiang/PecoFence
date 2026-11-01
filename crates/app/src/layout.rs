@@ -408,6 +408,9 @@ pub struct Grid {
     bands: Bands,
     /// 图标对齐 居中: a row with fewer items than columns sits in the middle (`centred`).
     centre: bool,
+    /// 像桌面一样排列 (`Fence::desktop_layout`): one fixed cell per item in list order, plus
+    /// one for a drop after the last (`with_slots`). Empty = the usual rows.
+    slots: Vec<CellRect>,
 }
 
 impl Grid {
@@ -428,7 +431,50 @@ impl Grid {
             content_height: bands.content_height,
             bands,
             centre: false,
+            slots: Vec::new(),
         }
+    }
+
+    /// 像桌面一样排列: the items take `slots` in order, top to bottom down each column as on the
+    /// Windows desktop; the window computes them from its work area and the fences over it.
+    /// The content is as tall as the cells of the `count` items.
+    pub fn with_slots(mut self, slots: Vec<CellRect>, count: usize) -> Self {
+        if !slots.is_empty() {
+            self.content_height = slots
+                .iter()
+                .take(count.max(1))
+                .map(|c| c.y + c.h)
+                .fold(0.0, f32::max);
+            self.slots = slots;
+        }
+        self
+    }
+
+    pub fn has_slots(&self) -> bool {
+        !self.slots.is_empty()
+    }
+
+    /// Keyboard neighbour among fixed slots: up / down step along the list (it runs down the
+    /// columns); left / right go to the nearest item in the next column that way.
+    fn slot_neighbour(&self, index: usize, dx: i32, dy: i32, count: usize) -> Option<usize> {
+        let count = count.min(self.slots.len());
+        if count == 0 || index >= count {
+            return None;
+        }
+        if dx == 0 {
+            let last = count as i64 - 1;
+            return Some((index as i64 + i64::from(dy)).clamp(0, last) as usize);
+        }
+        let c = self.slots[index];
+        (0..count)
+            .filter(|&i| (self.slots[i].x - c.x) * dx as f32 > 0.5)
+            .min_by(|&a, &b| {
+                let d = |i: usize| {
+                    let s = self.slots[i];
+                    (s.x - c.x).abs() * 4.0 + (s.y - c.y).abs()
+                };
+                d(a).total_cmp(&d(b))
+            })
     }
 
     /// 图标对齐 居中 (#154): a row that does not fill the columns, the last one too, moves
@@ -450,6 +496,9 @@ impl Grid {
     /// Rect of item `index` in content coordinates (before scrolling). Cells sit centred in
     /// their column pitch.
     pub fn cell(&self, index: usize) -> CellRect {
+        if let Some(last) = self.slots.last() {
+            return self.slots.get(index).copied().unwrap_or(*last);
+        }
         let (gi, row, col) = self.bands.place(index);
         let shift = self.row_shift(self.bands.row_items(gi, row).len());
         CellRect {
@@ -465,6 +514,9 @@ impl Grid {
 
     /// Index of the item under a content-local point (already adjusted for scroll).
     pub fn hit_test(&self, x: f32, y: f32, count: usize) -> Option<usize> {
+        if self.has_slots() {
+            return (0..count.min(self.slots.len())).find(|&i| self.slots[i].contains(x, y));
+        }
         let row_x = x - self.row_shift(self.bands.row_len_at(y));
         if row_x < self.metrics.pad_x || y < self.metrics.pad_y {
             return None;
@@ -486,6 +538,16 @@ impl Grid {
     pub fn insertion_index(&self, x: f32, y: f32, count: usize) -> usize {
         if count == 0 {
             return 0;
+        }
+        if self.has_slots() {
+            // The free cell or item nearest the point: the dropped items go there.
+            let dist = |c: &CellRect| {
+                let (cx, cy) = (c.x + c.w / 2.0, c.y + c.h / 2.0);
+                (cx - x).powi(2) + (cy - y).powi(2)
+            };
+            return (0..=count.min(self.slots.len() - 1))
+                .min_by(|&a, &b| dist(&self.slots[a]).total_cmp(&dist(&self.slots[b])))
+                .unwrap_or(count);
         }
         let row_x = x - self.row_shift(self.bands.insertion_row_len(y));
         let colf = ((row_x - self.metrics.pad_x) / self.pitch).max(0.0);
@@ -769,7 +831,10 @@ impl ItemLayout {
 
     /// Scrollable content height, excluding a fixed details header.
     pub fn content_height(&self) -> f32 {
-        self.bands().content_height
+        match self {
+            Self::Grid(g) => g.content_height,
+            Self::Rows { bands, .. } => bands.content_height,
+        }
     }
 
     /// Height of the part that does not scroll (details header).
@@ -810,6 +875,7 @@ impl ItemLayout {
     /// crossing group headers — or None when there is no such row (no wrap between rows).
     pub fn neighbour(&self, index: usize, dx: i32, dy: i32, count: usize) -> Option<usize> {
         match self {
+            Self::Grid(g) if g.has_slots() => g.slot_neighbour(index, dx, dy, count),
             Self::Grid(g) => g.bands.neighbour(index, dx, dy, count, |i| g.centre_x(i)),
             Self::Rows { bands, .. } => bands.neighbour(index, dx, dy, count, |_| 0.0),
         }
@@ -827,6 +893,16 @@ impl ItemLayout {
     /// item), in scrollable-content coordinates.
     pub fn insertion_caret(&self, index: usize, count: usize) -> CellRect {
         match self {
+            Self::Grid(g) if g.has_slots() => {
+                // Slots run down the columns: a line above the cell the drop takes.
+                let c = g.cell(index);
+                CellRect {
+                    x: c.x,
+                    y: (c.y - 1.0).max(0.0),
+                    w: c.w,
+                    h: 2.0,
+                }
+            }
             Self::Grid(g) => {
                 if count == 0 {
                     let c = g.cell(0);

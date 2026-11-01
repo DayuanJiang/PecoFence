@@ -272,6 +272,10 @@ impl App {
             let pushed = self.ctx.behavior.pushed.borrow();
             for (&id, w) in &self.fences {
                 let hwnd = w.hwnd();
+                // 像桌面一样排列 lies under the others: it neither pushes nor is pushed.
+                if w.is_desktop_arranged() {
+                    continue;
+                }
                 let Some((title_h, rest_h)) = w.resting_heights_px() else {
                     continue;
                 };

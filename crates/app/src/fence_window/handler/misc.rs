@@ -113,7 +113,8 @@ pub(super) fn on_app_tab_rail(
     let rail = view
         .try_borrow()
         .ok()
-        .and_then(|g| g.as_ref().map(|v| v.content_x))
+        // -1: a fence arranged like the desktop (像桌面一样排列) takes no merge.
+        .and_then(|g| g.as_ref().map(|v| if v.bare() { -1 } else { v.content_x }))
         .unwrap_or(0);
     Some(rail as isize)
 }

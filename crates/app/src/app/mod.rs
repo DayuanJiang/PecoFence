@@ -1719,6 +1719,13 @@ impl App {
 
     fn handle(&mut self, cmd: Command) {
         match cmd {
+            // 像桌面一样排列 places that window itself; its saved rect stays the fence's own
+            // for when the option goes off.
+            Command::FenceBoundsChanged { fence, .. }
+                if self
+                    .fences
+                    .get(&fence)
+                    .is_some_and(|w| w.is_desktop_arranged()) => {}
             Command::FenceBoundsChanged { fence, rect } => {
                 let (rolled, expanded) = self
                     .fences
@@ -1728,6 +1735,8 @@ impl App {
                 self.record_bounds(fence, rect, rolled, expanded);
                 self.schedule_save();
                 self.apply_auto_height(fence);
+                // Another fence moved or resized: the desktop-arranged one flows around it.
+                self.arrange_desktop_fence();
             }
             Command::FenceDropped(fence) => self.move_out_of_overlap(fence),
             Command::ToggleRollUp(fence) => self.toggle_roll(fence),
