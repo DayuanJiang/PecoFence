@@ -65,7 +65,28 @@ impl FenceViewState {
         let edge = (EDGE_DIP * scale).round() as i32;
         let n = self.items.len();
         let cells = desktop_cells(&area.work, &area.covered, cell, edge, n);
-        let used = &cells[..n.max(1).min(cells.len())];
+        // The window's shape: the icon cells, and under an icon with no icon below it room
+        // for its selected full name (up to `MAX_UNFOLD_LINES` lines), which would be cut off
+        // at the cell's bottom edge otherwise.
+        let unfold =
+            (MAX_UNFOLD_LINES.saturating_sub(u32::from(m.label_lines)) as f32 * m.line_h * scale)
+                .round() as i32;
+        let icons = &cells[..n.min(cells.len())];
+        let shapes: Vec<RECT> = icons
+            .iter()
+            .map(|r| {
+                let below = icons.iter().any(|o| o.left == r.left && o.top == r.bottom);
+                RECT {
+                    bottom: if below { r.bottom } else { r.bottom + unfold },
+                    ..*r
+                }
+            })
+            .collect();
+        let used = if shapes.is_empty() {
+            &cells[..1.min(cells.len())]
+        } else {
+            &shapes[..]
+        };
         let rect = RECT {
             left: area.work.left,
             top: area.work.top,
@@ -83,7 +104,7 @@ impl FenceViewState {
             .collect();
         let changed = slots != self.desktop_slots;
         self.desktop_slots = slots;
-        let shape = cells[..n.min(cells.len())]
+        let shape = shapes
             .iter()
             .map(|r| RECT {
                 left: r.left - rect.left,
