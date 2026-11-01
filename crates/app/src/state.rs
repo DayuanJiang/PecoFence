@@ -3557,7 +3557,18 @@ mod tests {
         state.detach_tab(other);
         assert_eq!(state.hidden_fences(), vec![inbox]);
         state.config.settings.hide_inbox_when_icons_shown = false;
+        // 像桌面一样排列 (on in a new configuration) would draw the loose icons where Windows
+        // shows its own: 「桌面」 goes too.
+        assert!(state.fence(inbox).unwrap().desktop_layout);
+        assert_eq!(state.hidden_fences(), vec![inbox]);
+        state.set_desktop_layout(inbox, false);
         assert!(state.hidden_fences().is_empty());
+        state.config.settings.hide_real_icons = true;
+        state.set_desktop_layout(inbox, true);
+        assert!(
+            state.hidden_fences().is_empty(),
+            "the Windows icons are hidden"
+        );
     }
 
     #[test]
