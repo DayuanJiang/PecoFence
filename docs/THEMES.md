@@ -2,8 +2,9 @@
 
 A custom theme is a JSON file that starts from one of the built-in styles, Fluent or Liquid
 Glass, and changes some of its values: the frosting and tint of the wallpaper behind the fences,
-the Liquid Glass lens, the corners, the shadow, the fonts and the colours. Sizes and layout
-(title bar height, icon spacing) stay as they are, so a theme never moves or resizes a fence.
+the Liquid Glass lens, the corners, the shadow, the fonts, the colours, and the halo or shadow
+of text on the wallpaper. Sizes and layout (title bar height, icon spacing) stay as they are,
+so a theme never moves or resizes a fence.
 
 ## Using a theme
 
@@ -80,8 +81,8 @@ wallpaper or the theme changes. Liquid Glass then bends the result through its l
 
 | Key | Range | What it does |
 |---|---|---|
-| `labelFont` | font name | Item names. Built in, they use the font Windows gives desktop icons. |
-| `labelFontSize` | 8 to 24 | Item name size in DIPs (Windows' default is 12), times Windows' text size setting (Settings › Accessibility › Text size). The grid makes its rows taller or shorter to fit. |
+| `labelFont` | font name | Item names, and all the text of the 列表 and 详细信息 rows. Built in, they use the font Windows gives desktop icons. |
+| `labelFontSize` | 8 to 24 | Item name size in DIPs (Windows' default is 12), times Windows' text size setting (Settings › Accessibility › Text size). The grid makes its rows taller or shorter to fit; 列表 and 详细信息 rows grow with larger text. |
 | `labelFontWeight` | 100 to 900 | 400 regular, 600 semibold, 700 bold. |
 | `titleFont` | font name | Fence titles and tabs (built in Segoe UI Variable). Each fence's 标题字号 option still picks the size. |
 | `titleFontWeight` | 100 to 900 | Built in 600. Resting tabs in a left tab column stay regular. |
@@ -105,6 +106,7 @@ marker take it, with the opacity they normally have. The other keys set one colo
 | `glassRimTop`, `glassRimBottom` | Fluent: the edge and its sheen, at the top and at the bottom. Liquid Glass lights its own rim (see `rimLight`). |
 | `stroke` | The outline of a fence with no wallpaper behind it, and the lines in the details view. |
 | `textPrimary` | Titles and item names. |
+| `titleColor` | Fence titles and tabs, resting tabs too (built in, titles take `textPrimary` and resting tabs `textSecondary`). |
 | `textSecondary` | Details, dates and other secondary text. |
 | `textTertiary` | The item count and the text of an empty fence. |
 | `controlStrong` | The scrollbar thumb. |
@@ -121,8 +123,38 @@ fence: over a bright wallpaper it takes the theme's `light` text colours, over a
 黑色 take the theme's `dark` and `light` text colour for item names, and for the titles and tabs
 of fences without a title colour of their own.
 
+A fence title or tab takes the first of these that is set: its own 标题颜色 (栅栏选项, anything
+but 跟随主题), 图标名称颜色 白色 or 黑色, the theme's `titleColor`, the theme's `textPrimary`.
+
 The per-fence options (opacity, tint, title colour) apply on top of the theme as they do on the
 built-in styles.
+
+### Text on the wallpaper
+
+In Liquid Glass the item names and details, and on a fully transparent fence all its text, sit
+straight on the wallpaper. To stay readable they get a thin outline in a contrasting colour, the
+halo: built in, dark text gets a white one at 55 % opacity and light text a black one at 38 %,
+¾ DIP wide. These keys change the halo and can add a soft shadow:
+
+| Key | Range | What it does |
+|---|---|---|
+| `textHalo` | colour | The halo's colour and opacity. |
+| `textHaloWidth` | 0 to 3 | Width of the halo in DIPs (built in 0.75); 0 removes it. In the list and details views the halo is a copy one pixel below the text, which only 0 changes. |
+| `textShadow` | colour | A soft shadow in this colour and opacity. Built in, there is none. |
+| `textShadowBlur` | 0 to 8 | Softness of the shadow in DIPs (2 when left out); 0 gives a sharp copy. |
+| `textShadowOffset` | 0 to 4 | How far the shadow falls below the text, in DIPs (1 when left out). |
+
+These go with the text, not with the colour mode: the `light` values go with dark text and the
+`dark` values with light text, as the text colours do over the wallpaper. Top-level values go
+with both. This gives light text a shadow in place of its halo, as on the Windows desktop, and
+leaves dark text as it is:
+
+```json
+{
+  "base": "liquidGlass",
+  "dark": { "textHaloWidth": 0, "textShadow": "#000000B3", "textShadowBlur": 1.5 }
+}
+```
 
 ## A Fluent example
 

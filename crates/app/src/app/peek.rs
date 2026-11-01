@@ -314,6 +314,17 @@ impl App {
         }
     }
 
+    /// A file drag out of a fence started (`true`) or came back to a fence, the desktop or Esc
+    /// (`false`) during the Peek: the dimmer fades out while it runs, so the window the file
+    /// goes to shows as it is, and fades in again after it (the pointer passes through it
+    /// meanwhile, see `peek::set_drag_click_through`).
+    pub(super) fn peek_drag(&mut self, dragging: bool) {
+        if let Some(p) = self.peek.as_mut() {
+            p.set_dragging(dragging, Instant::now());
+            self.ctx.frames.request();
+        }
+    }
+
     /// The asynchronous focus handoff may have raised the topmost dimmer above the fences.
     /// Reapply the Peek band only if this completion belongs to the current overlay.
     pub(super) fn on_peek_focused(&mut self, dimmer: HWND) {

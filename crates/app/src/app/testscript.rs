@@ -55,7 +55,8 @@
 //! device-lost <n>            debug-only: every fence window reports a lost GPU device and the
 //!                            next <n> device rebuilds fail (a driver reset in progress)
 //! device-state               log how many fence windows still wait for a working device
-//! crash                      force an access violation (tests the crash logger)
+//! crash [<module>]           force an access violation (tests the crash logger); debug builds
+//!                            name <module> (`ExplorerPatcher.amd64.dll`) as the faulting one
 //! exit                       quit the process
 //! exit-if-file <path>        quit when a test harness creates a stop marker
 //! ```
@@ -554,9 +555,13 @@ impl App {
                         self.queue.push(Command::RenameItem { fence, item });
                     }
                 }
-                ["crash"] => {
+                ["crash", module @ ..] if module.len() <= 1 => {
                     // Exercises platform::crashlog: an access violation from the UI thread must
                     // leave a CRASH line + minidump behind.
+                    #[cfg(debug_assertions)]
+                    if let Some(module) = module.first() {
+                        pecofence_platform::crashlog::fake_faulting_module(module);
+                    }
                     tracing::info!(target: "pecofence::test", "forcing an access violation");
                     // SAFETY: deliberately not — this is the crash under test.
                     unsafe {

@@ -600,16 +600,30 @@ pub enum Template {
     Installers,
     /// Installers and archives idle for [`CLEANUP_IDLE_DAYS`]: gathered, not deleted.
     Cleanup,
+    /// Steam, Epic and Xbox game shortcuts (feedback #83), apart from the other programs.
+    Games,
 }
 
+/// Where a game shortcut points, by store: text its target contains. Steam and Epic put `.url`
+/// shortcuts on the desktop that start the game through their launcher, and a `.lnk` to a
+/// game's program lies in the store's game folder.
+pub const GAME_SHORTCUT_TARGETS: [(&str, &str); 5] = [
+    ("Steam", "steam://rungameid/"),
+    ("Steam", "\\steamapps\\common\\"),
+    ("Epic", "com.epicgames.launcher://apps/"),
+    ("Epic", "\\Epic Games\\"),
+    ("Xbox", "\\XboxGames\\"),
+];
+
 impl Template {
-    pub const ALL: [Template; 6] = [
+    pub const ALL: [Template; 7] = [
         Template::Images,
         Template::Music,
         Template::Video,
         Template::Archives,
         Template::Installers,
         Template::Cleanup,
+        Template::Games,
     ];
 
     /// Stable identifier used by the settings page and stored in [`Rule::template`].
@@ -621,6 +635,7 @@ impl Template {
             Template::Archives => "archives",
             Template::Installers => "installers",
             Template::Cleanup => "cleanup",
+            Template::Games => "games",
         }
     }
 
@@ -637,26 +652,48 @@ impl Template {
             Template::Archives => "压缩包",
             Template::Installers => "安装包",
             Template::Cleanup => "待清理",
+            Template::Games => "游戏",
         })
         .to_string()
     }
 
-    /// The rule that fills `fence`, tagged with this template's key.
-    pub fn rule(self, fence: FenceId) -> Rule {
-        let conds = match self {
-            Template::Images => vec![Cond::Type(vec![TypeCategory::Images])],
-            Template::Music => vec![Cond::Type(vec![TypeCategory::Music])],
-            Template::Video => vec![Cond::Type(vec![TypeCategory::Video])],
-            Template::Archives => vec![Cond::Type(vec![TypeCategory::Archives])],
-            Template::Installers => vec![Cond::Type(vec![TypeCategory::Installers])],
-            Template::Cleanup => vec![
+    /// The rules that fill `fence`, tagged with this template's key: one rule, or for 游戏 one
+    /// per kind of game shortcut, as all conditions of a rule must hold. Those are plain
+    /// 「快捷方式目标包含」 rules, which the settings page shows and edits like any other.
+    pub fn rules(self, fence: FenceId) -> Vec<Rule> {
+        let one = |conds| vec![self.tagged(&self.title(), fence, conds)];
+        match self {
+            Template::Images => one(vec![Cond::Type(vec![TypeCategory::Images])]),
+            Template::Music => one(vec![Cond::Type(vec![TypeCategory::Music])]),
+            Template::Video => one(vec![Cond::Type(vec![TypeCategory::Video])]),
+            Template::Archives => one(vec![Cond::Type(vec![TypeCategory::Archives])]),
+            Template::Installers => one(vec![Cond::Type(vec![TypeCategory::Installers])]),
+            Template::Cleanup => one(vec![
                 Cond::Type(vec![TypeCategory::Installers, TypeCategory::Archives]),
                 Cond::IdleDays {
                     min: CLEANUP_IDLE_DAYS,
                 },
-            ],
-        };
-        let mut rule = Rule::new(&self.title(), Target::Fence(fence), conds);
+            ]),
+            Template::Games => GAME_SHORTCUT_TARGETS
+                .iter()
+                .map(|&(store, target)| {
+                    let name = match store {
+                        "Steam" => crate::i18n::text("Steam 游戏"),
+                        "Epic" => crate::i18n::text("Epic 游戏"),
+                        _ => crate::i18n::text("Xbox 游戏"),
+                    };
+                    let cond = Cond::ShortcutTarget {
+                        op: StrOp::Contains,
+                        value: target.to_string(),
+                    };
+                    self.tagged(name, fence, vec![cond])
+                })
+                .collect(),
+        }
+    }
+
+    fn tagged(self, name: &str, fence: FenceId, conds: Vec<Cond>) -> Rule {
+        let mut rule = Rule::new(name, Target::Fence(fence), conds);
         rule.template = Some(self.key().to_string());
         rule
     }
@@ -953,7 +990,7 @@ mod tests {
     #[test]
     fn cleanup_template_gathers_only_idle_installers_and_archives() {
         let fence = Uuid::new_v4();
-        let rule = Template::Cleanup.rule(fence);
+        let rule = Template::Cleanup.rules(fence).remove(0);
         assert_eq!(rule.template.as_deref(), Some("cleanup"));
         assert_eq!(rule.priority_class, Class::Type);
         let rs = RuleSet {
@@ -978,11 +1015,82 @@ mod tests {
         assert_eq!(Template::parse("nope"), None);
     }
 
+    /// 游戏 (feedback #83): Steam and Epic `.url` shortcuts and `.lnk` shortcuts into a store's
+    /// game folder go to the games fence, ahead of the first-run 「程序与快捷方式」 rule; the
+    /// launchers and other shortcuts stay where they were.
+    #[test]
+    fn games_template_catches_steam_epic_and_xbox_shortcuts() {
+        let (games, programs, other) = (Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4());
+        let rules = Template::Games.rules(games);
+        assert_eq!(rules.len(), 5);
+        assert!(rules.iter().all(|r| r.template.as_deref() == Some("games")
+            && r.priority_class == Class::Target
+            && r.target == Target::Fence(games)));
+        assert_eq!(Template::parse("games"), Some(Template::Games));
+        // The template goes after the first-run presets here: target rules still come first.
+        let mut rs = RuleSet::default_presets(programs, other, other);
+        rs.list.extend(rules);
+        let shortcut = |name: &str, target: &str| {
+            let mut f = facts(name);
+            f.shortcut_target = Some(target.into());
+            f.shortcut_target_ext = Some(if name.ends_with(".url") {
+                ".url".into()
+            } else {
+                ext_of(target)
+            });
+            f
+        };
+        let to = |f: &ItemFacts| match rs.evaluate(f) {
+            Decision::Route { target, .. } => target,
+            Decision::Default(target) => target,
+            Decision::Skip => panic!("skipped {}", f.file_name),
+        };
+        for game in [
+            shortcut("Dota 2.url", "steam://rungameid/570"),
+            shortcut(
+                "Fortnite.url",
+                "com.epicgames.launcher://apps/fn%3A4fe75bbc5a674f4f9b356b5c90567da5%3AFortnite?action=launch&silent=true",
+            ),
+            shortcut(
+                "Hades.lnk",
+                r"D:\SteamLibrary\steamapps\common\Hades\x64\Hades.exe",
+            ),
+            shortcut(
+                "Alan Wake 2.lnk",
+                r"%ProgramFiles%\Epic Games\AlanWake2\AlanWake2.exe",
+            ),
+            shortcut(
+                "Halo Infinite.lnk",
+                r"C:\XboxGames\Halo Infinite\Content\HaloInfinite.exe",
+            ),
+            shortcut("Portal.LNK", r"E:\Games\STEAMAPPS\Common\Portal\hl2.exe"),
+        ] {
+            assert_eq!(to(&game), Target::Fence(games), "{}", game.file_name);
+        }
+        for program in [
+            shortcut("Steam.lnk", r"C:\Program Files (x86)\Steam\steam.exe"),
+            shortcut("Notepad.lnk", r"C:\Windows\notepad.exe"),
+            shortcut("Steam Store.url", "https://store.steampowered.com/app/570"),
+            shortcut("My Games.lnk", r"C:\Users\me\Epic Gamesaves\save.exe"),
+        ] {
+            assert_eq!(
+                to(&program),
+                Target::Fence(programs),
+                "{}",
+                program.file_name
+            );
+        }
+        // A folder named like a game folder is no shortcut.
+        let mut folder = facts("steamapps");
+        folder.is_folder = true;
+        assert_eq!(to(&folder), Target::Fence(other));
+    }
+
     #[test]
     fn idle_template_rule_is_recognised_for_ordering() {
         let f = Uuid::new_v4();
-        let cleanup = Template::Cleanup.rule(f);
-        let installers = Template::Installers.rule(f);
+        let cleanup = Template::Cleanup.rules(f).remove(0);
+        let installers = Template::Installers.rules(f).remove(0);
         assert!(
             cleanup
                 .all_of

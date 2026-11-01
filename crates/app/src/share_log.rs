@@ -629,12 +629,12 @@ mod tests {
     /// removed. Before adding one, check that the value cannot hold a path, a file / folder /
     /// fence name, a title or anything else the user typed.
     const REVIEWED: &[(&str, &str)] = &[
-        ("access", "access"),       // crashlog: read / write / execute / other
-        ("at", "%locate(address)"), // crashlog: `module+rva`
-        ("at", "script"),           // settings page script: fixed names
-        ("behavior", "?behavior"),  // ShowDesktopBehavior enum
-        ("class", "%class"),        // window class (under the cursor / above the desktop)
-        ("class", "%cls"),          // class of the window that ended a peek
+        ("access", "access"),      // crashlog: read / write / execute / other
+        ("at", "%at"),             // crashlog: `module+rva`
+        ("at", "script"),          // settings page script: fixed names
+        ("behavior", "?behavior"), // ShowDesktopBehavior enum
+        ("class", "%class"),       // window class (under the cursor / above the desktop)
+        ("class", "%cls"),         // class of the window that ended a peek
         // Class of the window the fences go above.
         ("class", "%desktop::class_name(h)"),
         ("command", "name"),            // `Command` variant name

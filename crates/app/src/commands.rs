@@ -275,6 +275,13 @@ pub enum Command {
     TogglePeek,
     /// End the peek; the reason (a fixed text) goes to the log.
     EndPeek(&'static str),
+    /// A file drag out of a fence started: during a Peek the dimmer fades away while it runs.
+    PeekDragStarted,
+    /// That drag ended; `elsewhere`: it was dropped on another program's window, which ends a
+    /// Peek. Otherwise (cancelled, or dropped on a fence or the desktop) the dimmer comes back.
+    PeekDragEnded {
+        elsewhere: bool,
+    },
     /// Text typed during a Peek while the search box did not have the keyboard yet: opens the
     /// box with it, or adds it to the box.
     PeekSearchType(String),

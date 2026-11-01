@@ -691,7 +691,7 @@ impl FenceViewState {
                     ),
                     _ => pecofence_render::text::fit_width(
                         &item.name,
-                        self.chrome.row_format(),
+                        &self.chrome.row_format(),
                         label_w,
                     ),
                 });

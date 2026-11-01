@@ -73,6 +73,7 @@ pub fn begin_inline_rename(
     begin_rename_at(
         rect,
         dpi,
+        14.0,
         RenameTarget::Fence(fence),
         current,
         None,
@@ -139,9 +140,13 @@ pub fn has_reserved_char(name: &str) -> bool {
 
 /// Opens the rename popup over an item's label rectangle (screen pixels). `select_end` limits
 /// the initial selection to the first N UTF-16 units (the stem); `None` selects everything.
+/// `text_scale` (`layout::row_text_scale`) makes the box and its 14 DIP text larger with the
+/// item names (Windows' text size).
+#[allow(clippy::too_many_arguments)]
 pub fn begin_item_rename(
     label_rect: RECT,
     dpi: u32,
+    text_scale: f32,
     item: ItemId,
     current: String,
     select_end: Option<usize>,
@@ -149,8 +154,8 @@ pub fn begin_item_rename(
     mode: ThemeMode,
 ) {
     let scale = dpi.max(96) as f32 / 96.0;
-    let min_w = (96.0 * scale) as i32;
-    let h = (24.0 * scale) as i32;
+    let min_w = (96.0 * text_scale * scale) as i32;
+    let h = (item_rename_h(text_scale) * scale) as i32;
     let mut r = label_rect;
     if r.right - r.left < min_w {
         let cx = (r.left + r.right) / 2;
@@ -161,6 +166,7 @@ pub fn begin_item_rename(
     begin_rename_at(
         r,
         dpi,
+        14.0 * text_scale,
         RenameTarget::Item(item),
         current,
         select_end,
@@ -169,9 +175,16 @@ pub fn begin_item_rename(
     );
 }
 
+/// Height of the item rename box in DIPs (24 for the default 12 DIP names).
+pub fn item_rename_h(text_scale: f32) -> f32 {
+    (24.0 * text_scale).round()
+}
+
+#[allow(clippy::too_many_arguments)]
 fn begin_rename_at(
     r: RECT,
     dpi: u32,
+    font_dip: f32,
     target: RenameTarget,
     current: String,
     select_end: Option<usize>,
@@ -221,7 +234,7 @@ fn begin_rename_at(
         w,
         h,
         dpi,
-        14.0,
+        font_dip,
         &current,
         mode == ThemeMode::Dark,
         on_key,

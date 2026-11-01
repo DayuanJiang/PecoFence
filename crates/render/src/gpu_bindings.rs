@@ -16,6 +16,7 @@ pub type D2D1_ALPHA_MODE = i32;
 pub const D2D1_ALPHA_MODE_IGNORE: D2D1_ALPHA_MODE = 3;
 pub const D2D1_ALPHA_MODE_PREMULTIPLIED: D2D1_ALPHA_MODE = 1;
 pub type D2D1_ANTIALIAS_MODE = i32;
+pub const D2D1_ANTIALIAS_MODE_ALIASED: D2D1_ANTIALIAS_MODE = 1;
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct D2D1_BITMAP_BRUSH_PROPERTIES {
@@ -33,6 +34,7 @@ pub struct D2D1_BITMAP_BRUSH_PROPERTIES1 {
 pub type D2D1_BITMAP_INTERPOLATION_MODE = i32;
 pub type D2D1_BITMAP_OPTIONS = u32;
 pub const D2D1_BITMAP_OPTIONS_NONE: D2D1_BITMAP_OPTIONS = 0;
+pub const D2D1_BITMAP_OPTIONS_TARGET: D2D1_BITMAP_OPTIONS = 1;
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct D2D1_BITMAP_PROPERTIES {
@@ -76,11 +78,13 @@ pub type D2D1_COMPATIBLE_RENDER_TARGET_OPTIONS = u32;
 pub type D2D1_COMPOSITE_MODE = i32;
 pub const D2D1_COMPOSITE_MODE_SOURCE_OVER: D2D1_COMPOSITE_MODE = 0;
 pub type D2D1_DEVICE_CONTEXT_OPTIONS = u32;
+pub const D2D1_DEVICE_CONTEXT_OPTIONS_NONE: D2D1_DEVICE_CONTEXT_OPTIONS = 0;
 pub type D2D1_DISPLACEMENTMAP_PROP = i32;
 pub const D2D1_DISPLACEMENTMAP_PROP_SCALE: D2D1_DISPLACEMENTMAP_PROP = 0;
 pub const D2D1_DISPLACEMENTMAP_PROP_X_CHANNEL_SELECT: D2D1_DISPLACEMENTMAP_PROP = 1;
 pub const D2D1_DISPLACEMENTMAP_PROP_Y_CHANNEL_SELECT: D2D1_DISPLACEMENTMAP_PROP = 2;
 pub type D2D1_DRAW_TEXT_OPTIONS = u32;
+pub const D2D1_DRAW_TEXT_OPTIONS_NONE: D2D1_DRAW_TEXT_OPTIONS = 0;
 #[repr(C)]
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct D2D1_EFFECT_INPUT_DESCRIPTION {
@@ -115,6 +119,7 @@ pub struct D2D1_IMAGE_BRUSH_PROPERTIES {
 }
 pub type D2D1_INTERPOLATION_MODE = i32;
 pub const D2D1_INTERPOLATION_MODE_LINEAR: D2D1_INTERPOLATION_MODE = 1;
+pub const D2D1_INTERPOLATION_MODE_NEAREST_NEIGHBOR: D2D1_INTERPOLATION_MODE = 0;
 pub type D2D1_LAYER_OPTIONS = u32;
 pub type D2D1_LAYER_OPTIONS1 = u32;
 #[repr(C)]
@@ -160,6 +165,8 @@ pub struct D2D1_PIXEL_FORMAT {
     pub alphaMode: D2D1_ALPHA_MODE,
 }
 pub type D2D1_PRIMITIVE_BLEND = i32;
+pub const D2D1_PRIMITIVE_BLEND_ADD: D2D1_PRIMITIVE_BLEND = 3;
+pub const D2D1_PRIMITIVE_BLEND_SOURCE_OVER: D2D1_PRIMITIVE_BLEND = 0;
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct D2D1_PRINT_CONTROL_PROPERTIES {
@@ -211,8 +218,15 @@ pub struct D2D1_ROUNDED_RECT {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub struct D2D1_TAG(pub u64);
 pub type D2D1_TEXT_ANTIALIAS_MODE = i32;
+pub const D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE: D2D1_TEXT_ANTIALIAS_MODE = 2;
 pub type D2D1_UNIT_MODE = i32;
 pub type D2D_COLOR_F = D3DCOLORVALUE;
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct D2D_POINT_2U {
+    pub x: u32,
+    pub y: u32,
+}
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct D2D_RECT_F {
@@ -220,6 +234,14 @@ pub struct D2D_RECT_F {
     pub top: f32,
     pub right: f32,
     pub bottom: f32,
+}
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct D2D_RECT_U {
+    pub left: u32,
+    pub top: u32,
+    pub right: u32,
+    pub bottom: u32,
 }
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -938,16 +960,123 @@ windows_core::imp::interface_hierarchy!(
     ID2D1Resource,
     ID2D1Image
 );
+impl ID2D1Bitmap {
+    pub(crate) unsafe fn GetSize(&self) -> D2D_SIZE_F {
+        unsafe {
+            let mut result__ = core::mem::zeroed();
+            (windows_core::Interface::vtable(self).GetSize)(
+                windows_core::Interface::as_raw(self),
+                &mut result__,
+            );
+            result__
+        }
+    }
+    pub(crate) unsafe fn GetPixelSize(&self) -> D2D_SIZE_U {
+        unsafe {
+            let mut result__ = core::mem::zeroed();
+            (windows_core::Interface::vtable(self).GetPixelSize)(
+                windows_core::Interface::as_raw(self),
+                &mut result__,
+            );
+            result__
+        }
+    }
+    pub(crate) unsafe fn GetPixelFormat(&self) -> D2D1_PIXEL_FORMAT {
+        unsafe {
+            let mut result__ = core::mem::zeroed();
+            (windows_core::Interface::vtable(self).GetPixelFormat)(
+                windows_core::Interface::as_raw(self),
+                &mut result__,
+            );
+            result__
+        }
+    }
+    pub(crate) unsafe fn GetDpi(&self, dpix: *mut f32, dpiy: *mut f32) {
+        unsafe {
+            (windows_core::Interface::vtable(self).GetDpi)(
+                windows_core::Interface::as_raw(self),
+                dpix as _,
+                dpiy as _,
+            );
+        }
+    }
+    pub(crate) unsafe fn CopyFromBitmap<P1>(
+        &self,
+        destpoint: Option<*const D2D_POINT_2U>,
+        bitmap: P1,
+        srcrect: Option<*const D2D_RECT_U>,
+    ) -> windows_core::HRESULT
+    where
+        P1: windows_core::Param<Self>,
+    {
+        unsafe {
+            (windows_core::Interface::vtable(self).CopyFromBitmap)(
+                windows_core::Interface::as_raw(self),
+                destpoint.unwrap_or(core::mem::zeroed()) as _,
+                bitmap.param().abi(),
+                srcrect.unwrap_or(core::mem::zeroed()) as _,
+            )
+        }
+    }
+    pub(crate) unsafe fn CopyFromRenderTarget<P1>(
+        &self,
+        destpoint: Option<*const D2D_POINT_2U>,
+        rendertarget: P1,
+        srcrect: Option<*const D2D_RECT_U>,
+    ) -> windows_core::HRESULT
+    where
+        P1: windows_core::Param<ID2D1RenderTarget>,
+    {
+        unsafe {
+            (windows_core::Interface::vtable(self).CopyFromRenderTarget)(
+                windows_core::Interface::as_raw(self),
+                destpoint.unwrap_or(core::mem::zeroed()) as _,
+                rendertarget.param().abi(),
+                srcrect.unwrap_or(core::mem::zeroed()) as _,
+            )
+        }
+    }
+    pub(crate) unsafe fn CopyFromMemory(
+        &self,
+        dstrect: Option<*const D2D_RECT_U>,
+        srcdata: *const core::ffi::c_void,
+        pitch: u32,
+    ) -> windows_core::HRESULT {
+        unsafe {
+            (windows_core::Interface::vtable(self).CopyFromMemory)(
+                windows_core::Interface::as_raw(self),
+                dstrect.unwrap_or(core::mem::zeroed()) as _,
+                srcdata,
+                pitch,
+            )
+        }
+    }
+}
 #[repr(C)]
 pub struct ID2D1Bitmap_Vtbl {
     pub base__: ID2D1Image_Vtbl,
-    GetSize: usize,
-    GetPixelSize: usize,
-    GetPixelFormat: usize,
-    GetDpi: usize,
-    CopyFromBitmap: usize,
-    CopyFromRenderTarget: usize,
-    CopyFromMemory: usize,
+    pub GetSize: unsafe extern "system" fn(*mut core::ffi::c_void, *mut D2D_SIZE_F),
+    pub GetPixelSize: unsafe extern "system" fn(*mut core::ffi::c_void, *mut D2D_SIZE_U),
+    pub GetPixelFormat: unsafe extern "system" fn(*mut core::ffi::c_void, *mut D2D1_PIXEL_FORMAT),
+    pub GetDpi: unsafe extern "system" fn(*mut core::ffi::c_void, *mut f32, *mut f32),
+    pub CopyFromBitmap: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        *const D2D_POINT_2U,
+        *mut core::ffi::c_void,
+        *const D2D_RECT_U,
+    ) -> windows_core::HRESULT,
+    pub CopyFromRenderTarget: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        *const D2D_POINT_2U,
+        *mut core::ffi::c_void,
+        *const D2D_RECT_U,
+    ) -> windows_core::HRESULT,
+    pub CopyFromMemory: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        *const D2D_RECT_U,
+        *const core::ffi::c_void,
+        u32,
+    ) -> windows_core::HRESULT,
 }
 impl windows_core::RuntimeName for ID2D1Bitmap {}
 windows_core::imp::define_interface!(
@@ -4040,11 +4169,31 @@ windows_core::imp::interface_hierarchy!(
     ID2D1Resource,
     ID2D1Brush
 );
+impl ID2D1SolidColorBrush {
+    pub(crate) unsafe fn SetColor(&self, color: *const D2D_COLOR_F) {
+        unsafe {
+            (windows_core::Interface::vtable(self).SetColor)(
+                windows_core::Interface::as_raw(self),
+                color,
+            );
+        }
+    }
+    pub(crate) unsafe fn GetColor(&self) -> D2D_COLOR_F {
+        unsafe {
+            let mut result__ = core::mem::zeroed();
+            (windows_core::Interface::vtable(self).GetColor)(
+                windows_core::Interface::as_raw(self),
+                &mut result__,
+            );
+            result__
+        }
+    }
+}
 #[repr(C)]
 pub struct ID2D1SolidColorBrush_Vtbl {
     pub base__: ID2D1Brush_Vtbl,
-    SetColor: usize,
-    GetColor: usize,
+    pub SetColor: unsafe extern "system" fn(*mut core::ffi::c_void, *const D2D_COLOR_F),
+    pub GetColor: unsafe extern "system" fn(*mut core::ffi::c_void, *mut D2D_COLOR_F),
 }
 impl windows_core::RuntimeName for ID2D1SolidColorBrush {}
 windows_core::imp::define_interface!(

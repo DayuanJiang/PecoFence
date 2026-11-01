@@ -851,7 +851,9 @@ fn run_snapshot(ctx: &Ctx, cmd: SnapshotCmd) -> Result<Reply, IpcError> {
     match cmd {
         SnapshotCmd::List => ctx.call(Method::SnapshotsList),
         SnapshotCmd::Save { name } => ctx.call(Method::SnapshotsSave { name }),
-        SnapshotCmd::Restore { id } => ctx.call(Method::SnapshotsRestore { id }),
+        // A method of its own: an older app refuses it instead of restoring.
+        SnapshotCmd::Restore { id, dry_run: true } => ctx.call(Method::SnapshotsPlanRestore { id }),
+        SnapshotCmd::Restore { id, dry_run: false } => ctx.call(Method::SnapshotsRestore { id }),
         SnapshotCmd::Delete { id } => ctx.call(Method::SnapshotsDelete { id }),
     }
 }

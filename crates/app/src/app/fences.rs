@@ -266,6 +266,7 @@ impl App {
             w.set_label_lines(shown.view.label_lines);
             w.set_is_inbox(shown.kind == FenceKind::Inbox);
             w.set_spacing(shown.view.spacing);
+            w.set_icon_align(shown.view.icon_align);
             w.set_column_widths(
                 shown
                     .view
@@ -533,7 +534,10 @@ impl App {
     }
 
     /// Puts `fence`'s window where the state has it: the saved rect, and rolled up its title row
-    /// at the saved end of it, ready to open to its full height.
+    /// at the saved end of it, ready to open to its full height. The window takes the saved roll
+    /// state and height at once, ending a roll or hover expansion still running toward the other
+    /// state: one finishing later would roll the fence back up and record that, as after a
+    /// `fence roll` just before a snapshot restore (feedback #76).
     fn place_from_state(&self, fence: &pecofence_core::Fence) {
         let Some(w) = self.fences.get(&fence.id) else {
             return;
@@ -546,11 +550,7 @@ impl App {
             bottom: px.bottom,
         };
         w.set_row_at_bottom(fence.bottom_anchored);
-        if fence.rolled_up {
-            w.restore_geometry(rect, true, self.state.fence_expanded_px(fence));
-        } else {
-            w.place_saved(rect, false);
-        }
+        w.restore_geometry(rect, fence.rolled_up, self.state.fence_expanded_px(fence));
     }
 
     /// Re-applies every fence's saved geometry to its window (after a swap / restore / import).

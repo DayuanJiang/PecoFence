@@ -259,6 +259,7 @@ impl FenceWindow {
             title_on_hover_override: None,
             style: FenceStyle::default(),
             spacing: Spacing::Normal,
+            icon_align: IconAlign::Left,
             anchor_index: None,
             range_anchor: None,
             device_lost: false,
@@ -620,16 +621,6 @@ impl FenceWindow {
                 .and_then(|_| v.redraw());
             v.update_shadow_now();
         });
-    }
-
-    /// Moves the window to the saved expanded rect `rect`. Rolled, it keeps its rolled size there
-    /// (the title row, or the left tab column it is collapsed to) and expands to `rect` later.
-    pub fn place_saved(&self, rect: RECT, rolled: bool) {
-        if rolled {
-            self.restore_geometry(rect, true, rect.bottom - rect.top);
-        } else {
-            self.set_bounds(rect);
-        }
     }
 
     pub(super) fn with_view(&self, f: impl FnOnce(&mut FenceViewState)) {
@@ -1636,6 +1627,17 @@ impl FenceWindow {
                 }
                 v.snap_item_motion();
                 let _ = v.redraw();
+            }
+        });
+    }
+
+    /// 图标对齐 (#154): a short row of icons stays at the left or moves to the middle.
+    pub fn set_icon_align(&self, align: IconAlign) {
+        self.with_view(|v| {
+            if v.icon_align != align {
+                v.icon_align = align;
+                v.snap_item_motion();
+                let _ = v.redraw_content();
             }
         });
     }

@@ -184,7 +184,38 @@ fn foreground_rect() -> Option<RECT> {
     other.then(|| window::window_rect(root))
 }
 
+/// What `monitor`'s backdrops make of a live wallpaper, for `status`'s `liveWallpapers` (see
+/// `LiveWallpaperDto`).
+fn live_wallpaper_state(live: &[LiveWallpaper], monitor: RECT) -> &'static str {
+    match live.iter().find(|l| l.monitor == monitor) {
+        None => "none",
+        Some(l) if l.image.is_some() => "captured",
+        Some(l) if l.blind => "notCapturable",
+        Some(_) => "pending",
+    }
+}
+
 impl App {
+    /// `status.get`'s `liveWallpapers`: one entry per connected monitor.
+    pub(super) fn live_wallpaper_dtos(&self) -> Vec<pecofence_ipc::LiveWallpaperDto> {
+        self.state
+            .work_areas
+            .iter()
+            .map(|w| {
+                let monitor = RECT {
+                    left: w.mon_left,
+                    top: w.mon_top,
+                    right: w.mon_right,
+                    bottom: w.mon_bottom,
+                };
+                pecofence_ipc::LiveWallpaperDto {
+                    monitor: w.device_path.clone(),
+                    state: live_wallpaper_state(&self.live, monitor).to_string(),
+                }
+            })
+            .collect()
+    }
+
     /// Follows which monitors a live wallpaper covers (`live_wallpaper::windows`, ~30 us). A
     /// monitor without one goes back to the Windows wallpaper.
     pub(super) fn detect_live_wallpapers(&mut self, snapshot: &wallpaper::WallpaperSnapshot) {
@@ -473,5 +504,40 @@ impl App {
         for window in self.fences.values() {
             window.set_backdrops(backdrops.clone());
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn status_tells_each_monitor_s_live_wallpaper_state() {
+        let monitor = |left| RECT {
+            left,
+            top: 0,
+            right: left + 1920,
+            bottom: 1080,
+        };
+        let entry = |left, image: Option<Arc<Image>>, blind| LiveWallpaper {
+            monitor: monitor(left),
+            hwnd: 1,
+            since: Instant::now(),
+            missing: None,
+            image,
+            attempted: None,
+            reported: None,
+            empty: 0,
+            blind,
+        };
+        let live = [
+            entry(0, Some(Arc::new(Image::solid(4, 4, [9, 9, 9]))), false),
+            entry(1920, None, true),
+            entry(3840, None, false),
+        ];
+        assert_eq!(live_wallpaper_state(&live, monitor(0)), "captured");
+        assert_eq!(live_wallpaper_state(&live, monitor(1920)), "notCapturable");
+        assert_eq!(live_wallpaper_state(&live, monitor(3840)), "pending");
+        assert_eq!(live_wallpaper_state(&live, monitor(-1920)), "none");
     }
 }

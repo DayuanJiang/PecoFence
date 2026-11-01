@@ -342,6 +342,27 @@ impl Bands {
         start..(start + self.cols).min(g.end())
     }
 
+    /// Items in the row under `y`: 0 in a header band and outside every row.
+    fn row_len_at(&self, y: f32) -> usize {
+        let Some(gi) = self
+            .groups
+            .iter()
+            .position(|g| y >= g.rows_y && y < g.bottom(self.row_h))
+        else {
+            return 0;
+        };
+        let row = ((y - self.groups[gi].rows_y) / self.row_h).floor() as usize;
+        self.row_items(gi, row).len()
+    }
+
+    /// Items in the row an insertion at `y` lands in (the row `insertion` picks).
+    fn insertion_row_len(&self, y: f32) -> usize {
+        let g = self.band_near(y);
+        let row = ((y - g.rows_y) / self.row_h).floor().max(0.0) as usize;
+        let start = g.span.first + row * self.cols;
+        g.end().saturating_sub(start).min(self.cols)
+    }
+
     fn neighbour(
         &self,
         index: usize,
@@ -385,6 +406,8 @@ pub struct Grid {
     pub rows: usize,
     pub content_height: f32,
     bands: Bands,
+    /// 图标对齐 居中: a row with fewer items than columns sits in the middle (`centred`).
+    centre: bool,
 }
 
 impl Grid {
@@ -404,15 +427,34 @@ impl Grid {
             rows: bands.total_rows(),
             content_height: bands.content_height,
             bands,
+            centre: false,
         }
+    }
+
+    /// 图标对齐 居中 (#154): a row that does not fill the columns, the last one too, moves
+    /// right by half the width its missing cells leave, so that width is split on both sides.
+    pub fn centred(mut self, on: bool) -> Self {
+        self.centre = on;
+        self
+    }
+
+    /// How far a row of `len` items moves right; an empty row counts as one item (where the
+    /// first item of an empty fence goes).
+    fn row_shift(&self, len: usize) -> f32 {
+        if !self.centre {
+            return 0.0;
+        }
+        self.columns.saturating_sub(len.max(1)) as f32 * self.pitch / 2.0
     }
 
     /// Rect of item `index` in content coordinates (before scrolling). Cells sit centred in
     /// their column pitch.
     pub fn cell(&self, index: usize) -> CellRect {
         let (gi, row, col) = self.bands.place(index);
+        let shift = self.row_shift(self.bands.row_items(gi, row).len());
         CellRect {
             x: self.metrics.pad_x
+                + shift
                 + col as f32 * self.pitch
                 + (self.pitch - self.metrics.cell_w) / 2.0,
             y: self.bands.groups[gi].rows_y + row as f32 * self.bands.row_h,
@@ -423,10 +465,11 @@ impl Grid {
 
     /// Index of the item under a content-local point (already adjusted for scroll).
     pub fn hit_test(&self, x: f32, y: f32, count: usize) -> Option<usize> {
-        if x < self.metrics.pad_x || y < self.metrics.pad_y {
+        let row_x = x - self.row_shift(self.bands.row_len_at(y));
+        if row_x < self.metrics.pad_x || y < self.metrics.pad_y {
             return None;
         }
-        let col = ((x - self.metrics.pad_x) / self.pitch).floor() as usize;
+        let col = ((row_x - self.metrics.pad_x) / self.pitch).floor() as usize;
         if col >= self.columns {
             return None;
         }
@@ -444,7 +487,8 @@ impl Grid {
         if count == 0 {
             return 0;
         }
-        let colf = ((x - self.metrics.pad_x) / self.pitch).max(0.0);
+        let row_x = x - self.row_shift(self.bands.insertion_row_len(y));
+        let colf = ((row_x - self.metrics.pad_x) / self.pitch).max(0.0);
         self.bands.insertion(y, colf.round() as usize).min(count)
     }
 
@@ -454,8 +498,11 @@ impl Grid {
     }
 }
 
-/// Row metrics for the List / Details layouts (DIPs). Rows are 28 tall with a 20 DIP icon;
-/// Details adds a 28 DIP header that stays put while the rows scroll.
+/// Row metrics for the List / Details layouts (DIPs). Rows are one line of their text (the
+/// icon-label font, which Settings › Accessibility › Text size makes larger) plus 12, and 28 at
+/// least: 28 at the default 12 DIP text, 32 and 36 at 15 and 18 DIPs (text size 125 % and
+/// 150 %; Explorer's rows are 28, 31 and 36). The small icon stays 20 DIPs. Details adds a
+/// header as tall as a row that stays put while the rows scroll.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct RowMetrics {
     pub row_h: f32,
@@ -465,31 +512,37 @@ pub struct RowMetrics {
 }
 
 impl RowMetrics {
-    pub const fn list() -> Self {
+    /// `line_h`: one line of the row text in DIPs (16 at the default 12 DIP text).
+    pub fn list(line_h: f32) -> Self {
         Self {
-            row_h: 28.0,
+            row_h: (line_h + 12.0).round().max(28.0),
             icon: 20.0,
             header_h: 0.0,
             pad_y: 4.0,
         }
     }
 
-    pub const fn details() -> Self {
+    pub fn details(line_h: f32) -> Self {
+        let list = Self::list(line_h);
         Self {
-            row_h: 28.0,
-            icon: 20.0,
-            header_h: 28.0,
-            pad_y: 4.0,
+            header_h: list.row_h,
+            ..list
         }
     }
+}
+
+/// Row text size over the default 12 DIPs (never below 1): the item rename box is this much
+/// larger.
+pub fn row_text_scale(text: f32) -> f32 {
+    text.max(12.0) / 12.0
 }
 
 /// Icon edge in DIPs for a view layout: `icon_size` in Icons, the rows' small icon otherwise.
 pub fn icon_dip(layout: ViewLayout, icon_size: u32) -> f32 {
     match layout {
         ViewLayout::Icons => icon_size as f32,
-        ViewLayout::List => RowMetrics::list().icon,
-        ViewLayout::Details => RowMetrics::details().icon,
+        ViewLayout::List => RowMetrics::list(0.0).icon,
+        ViewLayout::Details => RowMetrics::details(0.0).icon,
     }
 }
 
@@ -499,7 +552,8 @@ pub fn icon_px(layout: ViewLayout, icon_size: u32, dpi: u32) -> u32 {
 }
 
 /// Column split of the details view for a content width (DIPs). Narrow fences drop the type,
-/// then the date column, so the name always keeps at least ~120 DIPs.
+/// then the date column, so the name always keeps at least ~120 DIPs. Larger row text leaves
+/// the widths as they are, as in Explorer (long values end in an ellipsis).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct DetailColumns {
     pub name_x: f32,
@@ -1204,6 +1258,54 @@ mod tests {
         assert_eq!(g.insertion_index(200.0, c.y + 1.0, 7), 2);
     }
 
+    /// 图标对齐 居中 (#154): a short row, alone or last, moves right by half the width its
+    /// missing cells leave; full rows stay put. Hit testing, insertion slots, the caret and the
+    /// arrow keys follow the moved cells.
+    #[test]
+    fn centred_grid_splits_a_short_rows_leftover_width() {
+        let m = GridMetrics::for_icon_size(48, 2); // 80 DIP cells
+        // 5 columns of 80 DIPs: 3 icons leave 160 DIPs, 80 on each side.
+        let three = Grid::new(m, 400.0, 3).centred(true);
+        let left = Grid::new(m, 400.0, 3);
+        assert_eq!((three.columns, three.pitch), (5, 80.0));
+        assert_eq!(left.cell(0).x, 0.0);
+        assert_eq!(three.cell(0).x, 80.0);
+        assert_eq!(three.cell(2).x + three.cell(2).w + 80.0, 400.0);
+        let y = three.cell(0).y + 1.0;
+        assert_eq!(three.hit_test(40.0, y, 3), None, "the left margin is empty");
+        assert_eq!(three.hit_test(100.0, y, 3), Some(0));
+        assert_eq!(three.hit_test(260.0, y, 3), Some(2));
+        assert_eq!(three.hit_test(360.0, y, 3), None, "the right margin");
+        assert_eq!(three.insertion_index(20.0, y, 3), 0);
+        assert_eq!(three.insertion_index(165.0, y, 3), 1);
+        assert_eq!(three.insertion_index(390.0, y, 3), 3);
+        let l = ItemLayout::Grid(three);
+        assert_eq!(l.insertion_caret(0, 3).x, 79.0);
+        assert_eq!(l.insertion_caret(3, 3).x, 319.0, "after the last icon");
+
+        // 7 icons: a full first row and a last row of 2, 120 DIPs in from each side.
+        let seven = Grid::new(m, 400.0, 7).centred(true);
+        assert_eq!(seven.cell(4).x, 320.0, "a full row does not move");
+        assert_eq!(seven.cell(5).x, 120.0);
+        assert_eq!(seven.cell(6).x, 200.0);
+        let y2 = seven.cell(5).y + 1.0;
+        assert_eq!(seven.hit_test(100.0, y2, 7), None);
+        assert_eq!(seven.hit_test(150.0, y2, 7), Some(5));
+        assert_eq!(seven.hit_test(230.0, y2, 7), Some(6));
+        assert_eq!(seven.insertion_index(60.0, y2, 7), 5);
+        assert_eq!(seven.insertion_index(380.0, y2, 7), 7);
+        let l = ItemLayout::Grid(seven);
+        // Down from the middle icon of the full row and back, by the nearest centre.
+        assert_eq!(l.neighbour(2, 0, 1, 7), Some(5));
+        assert_eq!(l.neighbour(6, 0, -1, 7), Some(2));
+        assert_eq!(l.neighbour(4, 0, 1, 7), Some(6));
+        assert_eq!(l.insertion_caret(7, 7).x, 279.0);
+
+        // An empty fence: the first icon goes to the middle.
+        let empty = ItemLayout::Grid(Grid::new(m, 400.0, 0).centred(true));
+        assert_eq!(empty.insertion_caret(0, 0).x, 160.0);
+    }
+
     /// 「整数个图标」 at any height: the rows keep their pitch (the items never move with the
     /// fence height), the viewport shows the whole rows that fit and the height left over stays
     /// empty under them; the content scrolls by whole rows.
@@ -1225,7 +1327,7 @@ mod tests {
         // Header bands have no row rhythm: grouped layouts keep the whole viewport.
         assert_eq!(grouped_grid().1.whole_rows_h(250.0), 250.0);
         // List rows alike.
-        let rows = ItemLayout::rows(RowMetrics::list(), 200.0, 5);
+        let rows = ItemLayout::rows(RowMetrics::list(16.0), 200.0, 5);
         let shown = rows.whole_rows_h(8.0 + 3.0 * 28.0 + 12.0);
         assert_eq!(shown, 8.0 + 3.0 * 28.0);
         assert_eq!(rows.max_scroll(shown), 2.0 * 28.0);
@@ -1254,8 +1356,8 @@ mod tests {
             }
         }
         for (name, rm) in [
-            ("list", RowMetrics::list()),
-            ("details", RowMetrics::details()),
+            ("list", RowMetrics::list(16.0)),
+            ("details", RowMetrics::details(16.0)),
         ] {
             layouts.push((
                 name.into(),
@@ -1402,7 +1504,7 @@ mod tests {
         let last = l.cell(3);
         let end = l.insertion_caret(4, 4);
         assert_eq!(end.x, last.x + last.w - 1.0);
-        let rows = ItemLayout::rows(RowMetrics::list(), 200.0, 3);
+        let rows = ItemLayout::rows(RowMetrics::list(16.0), 200.0, 3);
         assert_eq!(rows.insertion_index(10.0, 4.0 + 28.0 * 1.6, 3), 2);
         assert_eq!(rows.insertion_index(10.0, 9_999.0, 3), 3);
         assert_eq!(rows.insertion_caret(3, 3).y, 4.0 + 3.0 * 28.0 - 1.0);
@@ -1422,9 +1524,22 @@ mod tests {
         assert_eq!(tiny.size.unwrap().1, DetailColumns::MIN_COL_W);
     }
 
+    /// Larger row text (Windows' text size 150 %: an 18 DIP font, 24 DIP lines) makes the rows
+    /// and the header taller but leaves the columns at their widths, as in Explorer: a 640 DIP
+    /// fence still shows all four columns at the default widths.
+    #[test]
+    fn detail_columns_keep_their_widths_with_larger_text() {
+        assert_eq!(RowMetrics::details(24.0).header_h, 36.0);
+        let c = DetailColumns::for_width_with(640.0, DetailColumns::DEFAULT_WIDTHS, [true; 3]);
+        assert_eq!(c.date.unwrap().1, DetailColumns::DATE_W);
+        assert_eq!(c.type_.unwrap().1, DetailColumns::TYPE_W);
+        assert_eq!(c.size.unwrap().1, DetailColumns::SIZE_W);
+        assert!(c.name_w >= 120.0);
+    }
+
     #[test]
     fn rows_layout_hit_tests_by_row() {
-        let l = ItemLayout::rows(RowMetrics::details(), 300.0, 5);
+        let l = ItemLayout::rows(RowMetrics::details(16.0), 300.0, 5);
         assert_eq!(l.columns(), 1);
         assert_eq!(l.fixed_top(), 28.0);
         let c = l.cell(2);
@@ -1432,6 +1547,24 @@ mod tests {
         assert_eq!(l.hit_test(10.0, 1.0, 5), None);
         assert_eq!(l.hit_test(10.0, c.y + 1000.0, 5), None);
         assert_eq!(l.content_height(), 4.0 * 2.0 + 5.0 * 28.0);
+    }
+
+    /// Rows keep their size for the default 12 DIP text (a 16 DIP line) and smaller, and grow
+    /// with larger text (Windows' text size at 125 % and 150 %), header included; the icon
+    /// stays.
+    #[test]
+    fn rows_grow_with_the_row_text() {
+        let m = |line_h: f32| {
+            let d = RowMetrics::details(line_h);
+            (d.row_h, d.icon, d.header_h)
+        };
+        assert_eq!(m(16.0), (28.0, 20.0, 28.0));
+        assert_eq!(m(14.0), m(16.0));
+        assert_eq!(m(20.0), (32.0, 20.0, 32.0));
+        assert_eq!(m(24.0), (36.0, 20.0, 36.0));
+        assert_eq!(RowMetrics::list(24.0).header_h, 0.0);
+        assert_eq!(row_text_scale(18.0), 1.5);
+        assert_eq!(row_text_scale(10.0), 1.0);
     }
 
     fn overlaps(a: CellRect, b: CellRect) -> bool {
@@ -1583,7 +1716,7 @@ mod tests {
         assert_eq!(plain.neighbour(7, 0, 1, 10), Some(9));
         assert_eq!(plain.neighbour(9, 0, 1, 10), None);
         assert_eq!(plain.neighbour(9, 1, 0, 10), Some(9));
-        let rows = ItemLayout::rows(RowMetrics::list(), 200.0, 3);
+        let rows = ItemLayout::rows(RowMetrics::list(16.0), 200.0, 3);
         assert_eq!(rows.neighbour(0, 0, 1, 3), Some(1));
         assert_eq!(rows.neighbour(2, 0, 1, 3), None);
     }
@@ -1646,8 +1779,8 @@ mod tests {
             Some(DateBucket::Today),
             Some(DateBucket::Yesterday),
         ]);
-        let l = ItemLayout::rows_grouped(RowMetrics::details(), 300.0, 3, &spans);
-        let m = RowMetrics::details();
+        let l = ItemLayout::rows_grouped(RowMetrics::details(16.0), 300.0, 3, &spans);
+        let m = RowMetrics::details(16.0);
         let headers = l.headers();
         assert_eq!(headers.len(), 2);
         assert_eq!(headers[0].rect.y, m.pad_y);

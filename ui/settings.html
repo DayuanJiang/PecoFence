@@ -458,6 +458,8 @@
         <select id="fenceIconSize" data-fence="iconSize"><option value="32">小图标</option><option value="48">中等图标</option><option value="64">较大图标</option><option value="96">大图标</option></select></div>
       <div class="card"><div class="l"><span class="ic">&#xF0E2;</span><div><div class="t">图标间距</div></div></div>
         <select id="fenceSpacing" data-fence="spacing"><option value="compact">紧凑</option><option value="normal">标准</option><option value="loose">宽松</option></select></div>
+      <div class="card"><div class="l"><span class="ic">&#xE8E3;</span><div><div class="t">图标对齐</div><div class="s">一行排不满时，居中把空出的宽度平分到左右两边；只用于图标视图</div></div></div>
+        <select id="fenceIconAlign" data-fence="iconAlign"><option value="left">左对齐</option><option value="center">居中</option></select></div>
       <div class="card"><div class="l"><span class="ic">&#xE745;</span><div><div class="t">自动高度</div><div class="s">高度跟随内容行数，内容增减时平滑过渡</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="autoHeight"></div></div>
       <h3>行为</h3>
       <div class="card"><div class="l"><span class="ic">&#xE72E;</span><div><div class="t">锁定位置和大小</div><div class="s">边框不再可拖动缩放；标题仍可点击、右键、双击</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="locked"></div></div>
@@ -483,7 +485,7 @@
       <h3>快速添加</h3>
       <div class="card stack"><div class="l"><span class="ic">&#xE8F4;</span><div><div class="t">一键创建栅栏并添加规则</div><div class="s">“待清理”只归拢 30 天没用过的安装包和压缩包，不删除任何文件</div></div></div>
         <div class="chips" id="templates">
-          <button class="chip" data-template="images"><span class="ic">&#xEB9F;</span>图片</button><button class="chip" data-template="music"><span class="ic">&#xE8D6;</span>音乐</button><button class="chip" data-template="video"><span class="ic">&#xE714;</span>视频</button>
+          <button class="chip" data-template="images"><span class="ic">&#xEB9F;</span>图片</button><button class="chip" data-template="music"><span class="ic">&#xE8D6;</span>音乐</button><button class="chip" data-template="video"><span class="ic">&#xE714;</span>视频</button><button class="chip" data-template="games"><span class="ic">&#xE7FC;</span>游戏</button>
           <button class="chip" data-template="archives"><span class="ic">&#xF012;</span>压缩包</button><button class="chip" data-template="installers"><span class="ic">&#xE7B8;</span>安装包</button><button class="chip" data-template="cleanup"><span class="ic">&#xEA99;</span>待清理</button>
         </div></div>
       <h3>规则列表</h3>
@@ -500,7 +502,7 @@
             <option value="time">创建时段</option><option value="weekday">创建于星期几</option><option value="size">大小范围（MB）</option>
             <option value="idle">闲置天数（未修改也未打开）</option>
             <option value="folders">仅文件夹</option><option value="files">仅文件</option><option value="plain">普通文件（程序和快捷方式除外）</option></select></label>
-          <label id="nrValueWrap">条件值<input type="text" id="nrValue" placeholder="png, jpg"></label>
+          <label id="nrValueWrap">条件值<input type="text" id="nrValue" placeholder="png, jpg" aria-label="条件值" aria-describedby="nrValueHint"><span id="nrValueHint">有空格也直接输入，不用加引号</span></label>
           <div class="cats" id="nrCats" style="grid-column: 1 / -1"></div>
           <div class="cats" id="nrTime" style="grid-column: 1 / -1; display:none"><label>从 <input type="time" id="nrFrom" value="18:00"></label><label>到 <input type="time" id="nrTo" value="06:00"></label><span class="s">结束时间早于开始时间，表示跨过午夜</span></div>
           <div class="cats" id="nrWeek" style="grid-column: 1 / -1; display:none"></div>
@@ -1230,6 +1232,14 @@
     const h = [...b].map(x => x.toString(16).padStart(2, '0')).join('');
     return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
   };
+  // A value typed in quotes ("my report", 'my report', “my report”) means the text inside them
+  // (feedback #89): names with spaces need none. A list in one pair of quotes loses that pair,
+  // a list of quoted entries the quotes of each entry.
+  const QUOTE_PAIRS = { '"': '"', "'": "'", '“': '”', '‘': '’' };
+  const unquote = (v) => {
+    const close = QUOTE_PAIRS[v[0]], inner = v.slice(1, -1);
+    return v.length >= 2 && v.at(-1) === close && !inner.includes(v[0]) && !inner.includes(close) ? inner : v;
+  };
   function ruleError(text, id) {
     toast(text, true);
     openRuleForm();
@@ -1239,11 +1249,11 @@
     const target = document.getElementById('nrTarget').value;
     if (!target) return ruleError(t("没有可用的目标栅栏"), 'nrTarget');
     const kind = document.getElementById('nrKind').value;
-    const value = document.getElementById('nrValue').value.trim();
+    const value = unquote(document.getElementById('nrValue').value.trim());
     let cond, cls = 'custom';
-    const split = (v) => v.split(/[,，]+/).map(x => x.trim()).filter(Boolean);
+    const split = (v) => v.split(/[,，]+/).map(x => unquote(x.trim())).filter(Boolean);
     if (kind === 'type') { const sel = [...document.querySelectorAll('#nrCats input:checked')].map(i => i.value); if (!sel.length) return ruleError(t("请选择至少一种类型"), 'nrKind'); cond = { cond: 'type', value: sel }; cls = 'type'; }
-    else if (kind === 'ext') { const extensions = value.split(/[,，\s]+/).map(x => x.replace(/^\./, '')).filter(Boolean); if (!extensions.length) return ruleError(t("请输入扩展名"), 'nrValue'); cond = { cond: 'ext', value: extensions }; cls = 'type'; }
+    else if (kind === 'ext') { const extensions = value.split(/[,，\s]+/).map(x => unquote(x).replace(/^\./, '')).filter(Boolean); if (!extensions.length) return ruleError(t("请输入扩展名"), 'nrValue'); cond = { cond: 'ext', value: extensions }; cls = 'type'; }
     else if (['contains','notContains','startsWith','endsWith'].includes(kind)) { if (!value) return ruleError(t("请输入关键字"), 'nrValue'); cond = { cond: 'name', value: { op: kind, value } }; cls = 'name'; }
     else if (kind === 'exact') { const names = split(value); if (!names.length) return ruleError(t("请输入完整文件名"), 'nrValue'); cond = { cond: 'exactName', value: names }; cls = 'name'; }
     else if (kind === 'glob') { if (!value) return ruleError(t("请输入通配符"), 'nrValue'); cond = { cond: 'glob', value }; cls = 'name'; }

@@ -38,6 +38,24 @@ fn log_records_crash(log: &str) -> bool {
     })
 }
 
+/// The module crashlog's line in a shareable log names as the faulting one
+/// (`at=ExplorerPatcher.amd64.dll+0xc0c1`).
+fn crash_module(log: &str) -> Option<&str> {
+    let line = log
+        .lines()
+        .find(|line| line.contains(": CRASH (unhandled exception)"))?;
+    let at = line
+        .split_whitespace()
+        .find_map(|w| w.strip_prefix("at="))?;
+    at.split_once('+').map(|(module, _)| module)
+}
+
+/// ExplorerPatcher's DLL: registered as a shell extension, it loads into every program that
+/// shows the shell's folders, PecoFence included (feedback #81).
+fn is_explorer_patcher(module: &str) -> bool {
+    module.to_ascii_lowercase().starts_with("explorerpatcher.")
+}
+
 /// Whether a shareable log ends as a normal exit does (`main` writes `process exiting` last;
 /// at a sign-out Windows may end the process before that, after `session ending`), or cannot
 /// tell: an empty log, one that stopped at its size limit, or one of a version before the hang
@@ -143,12 +161,20 @@ impl App {
             return;
         }
         tracing::info!("previous run crashed; offering to send feedback");
+        let in_explorer_patcher = previous
+            .as_deref()
+            .and_then(crash_module)
+            .is_some_and(is_explorer_patcher);
+        let text = if in_explorer_patcher {
+            tracing::info!("the crash was inside ExplorerPatcher");
+            pecofence_core::i18n::text(
+                "上次因 ExplorerPatcher 出错而关闭。请在它的 Properties › File Explorer 中取消勾选“Register as shell extension”，然后重启资源管理器。",
+            )
+        } else {
+            pecofence_core::i18n::text("PecoFence 上次意外关闭了。点击这里报告问题。")
+        };
         if let Some(t) = &self.tray {
-            t.show_info(
-                "PecoFence",
-                pecofence_core::i18n::text("PecoFence 上次意外关闭了。点击这里报告问题。"),
-                true,
-            );
+            t.show_info("PecoFence", text, true);
             self.feedback.crash_offer_pending = true;
         }
     }
@@ -394,6 +420,23 @@ mod tests {
         assert!(!log_records_crash(
             "t  INFO pecofence::app: config loaded fences=7\n"
         ));
+    }
+
+    #[test]
+    fn the_faulting_module_is_read_from_the_crash_line() {
+        // As feedback #81's log has it: the stack follows on the next lines.
+        let log = "t  INFO pecofence::app: process started\n\
+            t ERROR pecofence_platform::crashlog: CRASH (unhandled exception) code=0xc0000005 at=ExplorerPatcher.amd64.dll+0xc0c1 module_version=26100.8457.70.3 access=write stack=  ExplorerPatcher.amd64.dll+0xc0c1\n  combase.dll+0x1c6e85\n";
+        assert_eq!(crash_module(log), Some("ExplorerPatcher.amd64.dll"));
+        assert!(is_explorer_patcher("ExplorerPatcher.amd64.dll"));
+        assert!(is_explorer_patcher("explorerpatcher.IA-32.dll"));
+        let ours = "t ERROR pecofence_platform::crashlog: CRASH (unhandled exception) code=0xc0000005 at=pecofence.exe+0x1f368 stack=  ExplorerPatcher.amd64.dll+0x19b37\n";
+        assert!(!crash_module(ours).is_some_and(is_explorer_patcher));
+        // A panic names no module.
+        assert_eq!(
+            crash_module("t ERROR pecofence: PANIC location=crates/app/src/x.rs:1:2\n"),
+            None
+        );
     }
 
     #[test]

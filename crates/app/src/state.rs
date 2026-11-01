@@ -318,6 +318,39 @@ impl AppState {
         true
     }
 
+    /// The fences a restore of snapshot `id` would show on the current monitors, as
+    /// [`Self::restore_snapshot`] leaves them (`pecofence-cli snapshot restore --dry-run`). This
+    /// state stays as it is: the restore runs on a copy of the layouts. None when `id` is unknown.
+    pub fn snapshot_preview(&self, id: uuid::Uuid) -> Option<Vec<Fence>> {
+        let snap = self.config.snapshots.iter().find(|s| s.id == id)?;
+        let mut scratch = AppState {
+            config: Config {
+                settings: self.config.settings.clone(),
+                ..Config::default()
+            },
+            // Never saved: the scratch state is dropped at the end of this call.
+            store: ConfigStore::new(PathBuf::new()),
+            layout: 0,
+            dirty: false,
+            catalog: HashMap::new(),
+            portal_items: HashMap::new(),
+            portal_members: HashMap::new(),
+            portal_cwd: HashMap::new(),
+            opened_folders: HashMap::new(),
+            portal_missing: HashSet::new(),
+            tmp_settle_at: std::cell::Cell::new(None),
+            work_areas: self.work_areas.clone(),
+            unplaced: Vec::new(),
+            first_run: false,
+            recovered_from: None,
+            unreadable_moved_to: None,
+            load_failures: Vec::new(),
+        };
+        scratch.apply_snapshot_layouts(snap.layouts.clone());
+        let layout = scratch.layout;
+        Some(std::mem::take(&mut scratch.config.layouts[layout].fences))
+    }
+
     fn apply_snapshot_layouts(&mut self, layouts: Vec<pecofence_core::Layout>) {
         self.config.layouts = layouts;
         self.layout = 0;
@@ -2170,6 +2203,15 @@ impl AppState {
         }
     }
 
+    pub fn set_icon_align(&mut self, id: FenceId, align: pecofence_core::IconAlign) {
+        if let Some(f) = self.fence_mut(id)
+            && f.view.icon_align != align
+        {
+            f.view.icon_align = align;
+            self.dirty = true;
+        }
+    }
+
     pub fn set_columns_visible(&mut self, id: FenceId, visible: [bool; 3]) {
         let next = (visible != [true; 3]).then_some(visible);
         if let Some(f) = self.fence_mut(id)
@@ -2278,8 +2320,8 @@ impl AppState {
         Some(id)
     }
 
-    /// "快速添加": a fence for `template` at `rect` plus its rule, inserted ahead of the
-    /// existing rules so it wins over the broader first-run presets (an installer is also a
+    /// "快速添加": a fence for `template` at `rect` plus its rules, inserted ahead of the
+    /// existing rules so they win over the broader first-run presets (an installer is also a
     /// program). `Err(existing)` when the template was added before; `existing` is the fence
     /// its rule still points to, if any.
     pub fn add_template(
@@ -2302,10 +2344,10 @@ impl AppState {
             return Err(existing);
         }
         let id = self.new_fence(&template.title(), rect).ok_or(None)?;
-        let rule = template.rule(id);
+        let rules = template.rules(id);
         // Idle-days rules must stay ahead of the type-only ones ("待清理" before "安装包"),
         // otherwise a plain type rule claims every installer first and the idle rule never fires.
-        let at = if Self::has_idle_cond(&rule) {
+        let at = if rules.iter().any(Self::has_idle_cond) {
             0
         } else {
             self.config
@@ -2315,7 +2357,7 @@ impl AppState {
                 .take_while(|r| Self::has_idle_cond(r))
                 .count()
         };
-        self.config.rules.list.insert(at, rule);
+        self.config.rules.list.splice(at..at, rules);
         self.dirty = true;
         Ok(id)
     }
@@ -2514,6 +2556,50 @@ mod tests {
             right: left + w,
             bottom: top + h,
         }
+    }
+
+    #[test]
+    fn a_snapshot_preview_shows_what_a_restore_would_and_changes_nothing() {
+        let mut state = test_state();
+        let id = state.save_snapshot("before");
+        // After the snapshot one fence moves and another one goes.
+        let layout = state.layout;
+        state.config.layouts[layout].fences[0].geometry.x += 200.0;
+        let gone = state.config.layouts[layout].fences.remove(1);
+        let config = serde_json::to_value(&state.config).unwrap();
+        let preview = state.snapshot_preview(id).unwrap();
+        assert_eq!(serde_json::to_value(&state.config).unwrap(), config);
+        assert!(preview.contains(&gone));
+        assert!(state.snapshot_preview(uuid::Uuid::new_v4()).is_none());
+        assert!(state.restore_snapshot(id));
+        assert_eq!(preview, state.fences());
+    }
+
+    /// What `place_from_state` hands each window after a restore (`restore_geometry`): the
+    /// snapshot's roll state and the height the fence opens to, whatever the fences did since.
+    #[test]
+    fn a_restored_fence_takes_the_snapshot_s_roll_state_and_height() {
+        let mut state = test_state();
+        let (a, b) = (state.fences()[0].id, state.fences()[1].id);
+        let at = |state: &AppState, id: FenceId| {
+            let r = state.fence_px_rect(state.fence(id).unwrap());
+            (r.left, r.top, r.right - r.left)
+        };
+        let row = |(x, y, w): (i32, i32, i32)| rect(x, y, w, 40);
+        // Before the snapshot b is rolled up, opening to 300 px.
+        state.set_fence_bounds(b, row(at(&state, b)), true, 300, false, false);
+        let a_h = state.fence_expanded_px(state.fence(a).unwrap());
+        let id = state.save_snapshot("before");
+        // After it a rolls up and b opens to 260 px.
+        state.set_fence_bounds(a, row(at(&state, a)), true, a_h, false, false);
+        let (x, y, w) = at(&state, b);
+        state.set_fence_bounds(b, rect(x, y, w, 260), false, 260, false, false);
+        assert!(state.restore_snapshot(id));
+        let (fa, fb) = (state.fence(a).unwrap(), state.fence(b).unwrap());
+        assert!(!fa.rolled_up);
+        assert_eq!(state.fence_expanded_px(fa), a_h);
+        assert!(fb.rolled_up);
+        assert_eq!(state.fence_expanded_px(fb), 300);
     }
 
     #[test]

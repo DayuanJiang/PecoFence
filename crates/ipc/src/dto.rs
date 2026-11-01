@@ -81,6 +81,24 @@ pub struct StatusDto {
     /// `light` | `dark`.
     pub theme_mode: String,
     pub desktop_icons_hidden: bool,
+    /// Per connected monitor (in `monitors.list` order), what the fence backdrops make of a
+    /// live wallpaper (Wallpaper Engine, Lively) on it.
+    #[serde(default)]
+    pub live_wallpapers: Vec<LiveWallpaperDto>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "describe", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct LiveWallpaperDto {
+    /// Monitor device id (see `monitors.list`).
+    pub monitor: String,
+    /// `none`: no live wallpaper covers the monitor, the backdrops show the Windows wallpaper |
+    /// `pending`: one does, but no capture of it has worked yet (the Windows wallpaper until
+    /// then) | `captured`: the backdrops show its latest capture | `notCapturable`: it draws
+    /// nothing a capture can read (Wallpaper Engine scenes, for one), so the backdrops show a
+    /// neutral colour.
+    pub state: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -153,6 +171,9 @@ pub struct FenceDto {
     pub icon_size: u32,
     /// `compact` | `normal` | `loose`.
     pub spacing: String,
+    /// `left` | `center`: where a row of icons that does not fill the width sits (icons view).
+    #[serde(default)]
+    pub icon_align: String,
     pub auto_height: bool,
     pub exclude_from_quick_hide: bool,
     /// No window while it is empty (`windowRect` is `null` then); a tab or a host of tabs
@@ -370,6 +391,26 @@ pub struct SnapshotDto {
     /// Fences of the layout for the current monitor set (the ones `fences.list` would show
     /// after a restore); the first layout's when none matches.
     pub fence_count: usize,
+}
+
+/// A fence that `snapshots.planRestore` lists as added, removed, moved or updated.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "describe", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct SnapshotFenceDto {
+    pub id: Uuid,
+    /// The title after the restore (a removed fence's title now).
+    pub title: String,
+    /// `moved`: the saved rectangle now and after the restore (physical px; a tab's own, kept
+    /// for when it is split out again).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from: Option<Rect>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub to: Option<Rect>,
+    /// `updated`: the saved fields that change besides the position, as `config export`
+    /// names them (`title`, `rolledUp`, `items`, `appearance`, `tabHost`, ...).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub fields: Vec<String>,
 }
 
 /// A daily configuration backup kept beside `config.json`.
