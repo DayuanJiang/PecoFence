@@ -343,9 +343,11 @@ impl App {
         self.keep_expand_rooms(enabled.then(|| rooms(&slots)));
         // No borrow held: SetWindowPos runs the fences' handlers synchronously.
         let mut next = Vec::new();
+        let mut moved = false;
         for s in slots {
             if s.y != s.top {
                 let _ = window::move_window_to(s.hwnd, s.left, s.y);
+                moved = true;
             }
             if s.y != s.base {
                 next.push(Pushed {
@@ -357,6 +359,10 @@ impl App {
             }
         }
         *self.ctx.behavior.pushed.borrow_mut() = next;
+        // 像桌面一样排列: the loose icons flow around the fences where the push left them.
+        if moved {
+            self.arrange_desktop_fence();
+        }
     }
 
     /// `Behavior::expand_room` for the windows with 向上展开: the room above the bottom edge

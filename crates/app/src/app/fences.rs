@@ -152,10 +152,15 @@ impl App {
         if let Some(a) = self.anchor.borrow_mut().as_mut() {
             a.reanchor("windows resynced");
         }
+        let mut shown = false;
         for w in self.fences.values() {
             if !before.contains(&w.hwnd()) {
                 w.show(true);
+                shown = true;
             }
+        }
+        if shown && let Some(a) = self.anchor.borrow_mut().as_mut() {
+            a.reanchor("new windows shown");
         }
         // A fence that came (shown just now) or went changes the cells the desktop-arranged
         // 「桌面」 fence may use.
