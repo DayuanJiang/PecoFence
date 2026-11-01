@@ -131,18 +131,27 @@ impl QuickHide {
         }
     }
 
-    /// A press on the bare desktop at `pt`: true when it is the second click of a double-click
-    /// (within `limit_ms` and `slop` pixels of the first one), else it is the first.
-    fn desktop_press(&mut self, now: Instant, pt: POINT, limit_ms: u128, slop: (i32, i32)) -> bool {
-        if let Some((t0, p0)) = self.pending_click.take()
-            && now.duration_since(t0).as_millis() <= limit_ms
-            && (pt.x - p0.x).abs() <= slop.0.max(4)
-            && (pt.y - p0.y).abs() <= slop.1.max(4)
-        {
-            return true;
+    /// A press on the bare desktop at `pt`. The second click of a double-click (within
+    /// `limit_ms` and `slop` pixels of the first one) returns the time since the first click and
+    /// where it was; any other press becomes the first click.
+    fn desktop_press(
+        &mut self,
+        now: Instant,
+        pt: POINT,
+        limit_ms: u128,
+        slop: (i32, i32),
+    ) -> Option<(u128, POINT)> {
+        if let Some((t0, p0)) = self.pending_click.take() {
+            let interval_ms = now.duration_since(t0).as_millis();
+            if interval_ms <= limit_ms
+                && (pt.x - p0.x).abs() <= slop.0.max(4)
+                && (pt.y - p0.y).abs() <= slop.1.max(4)
+            {
+                return Some((interval_ms, p0));
+            }
         }
         self.pending_click = Some((now, pt));
-        false
+        None
     }
 }
 
@@ -987,8 +996,15 @@ impl DesktopAnchor {
         }
         let limit = rawinput::double_click_time_ms() as u128;
         let slop = rawinput::double_click_slop_px();
-        if self.quick.desktop_press(Instant::now(), pt, limit, slop) {
-            tracing::info!(?pt, "double-click on empty desktop → quick hide on release");
+        if let Some((interval_ms, first)) =
+            self.quick.desktop_press(Instant::now(), pt, limit, slop)
+        {
+            tracing::info!(
+                ?pt,
+                interval_ms,
+                ?first,
+                "double-click on empty desktop → quick hide on release"
+            );
             self.quick.pending_toggle = Some(pt);
             self.sentinel.set_timer(TIMER_QUICKHIDE, QUICKHIDE_DELAY_MS);
         }
@@ -1434,11 +1450,14 @@ mod tests {
         let t = Instant::now();
         let mut q = QuickHide::default();
         q.desktop_activated(true, true, t, pt(700, 560));
-        assert!(!q.desktop_press(ms(t, 2), pt(700, 560), 500, (2, 2)));
+        assert_eq!(q.desktop_press(ms(t, 2), pt(700, 560), 500, (2, 2)), None);
         // A real second click still makes it a double-click.
-        assert!(q.desktop_press(ms(t, 200), pt(701, 560), 500, (2, 2)));
+        assert_eq!(
+            q.desktop_press(ms(t, 200), pt(701, 560), 500, (2, 2)),
+            Some((198, pt(700, 560)))
+        );
         // A third one starts over.
-        assert!(!q.desktop_press(ms(t, 350), pt(701, 560), 500, (2, 2)));
+        assert_eq!(q.desktop_press(ms(t, 350), pt(701, 560), 500, (2, 2)), None);
     }
 
     #[test]
@@ -1447,7 +1466,10 @@ mod tests {
         let t = Instant::now();
         let mut q = QuickHide::default();
         q.desktop_activated(false, true, t, pt(300, 420));
-        assert!(q.desktop_press(ms(t, 150), pt(300, 421), 500, (2, 2)));
+        assert_eq!(
+            q.desktop_press(ms(t, 150), pt(300, 421), 500, (2, 2)),
+            Some((150, pt(300, 420)))
+        );
     }
 
     #[test]
@@ -1457,18 +1479,21 @@ mod tests {
         let t = Instant::now();
         let mut q = QuickHide::default();
         q.desktop_activated(false, false, t, pt(390, 204));
-        assert!(!q.desktop_press(ms(t, 120), pt(390, 204), 500, (2, 2)));
+        assert_eq!(q.desktop_press(ms(t, 120), pt(390, 204), 500, (2, 2)), None);
     }
 
     #[test]
     fn presses_too_far_apart_in_time_or_place_are_single_clicks() {
         let t = Instant::now();
         let mut q = QuickHide::default();
-        assert!(!q.desktop_press(t, pt(100, 100), 500, (2, 2)));
-        assert!(!q.desktop_press(ms(t, 600), pt(100, 100), 500, (2, 2)));
-        assert!(!q.desktop_press(ms(t, 700), pt(105, 100), 500, (2, 2)));
+        assert_eq!(q.desktop_press(t, pt(100, 100), 500, (2, 2)), None);
+        assert_eq!(q.desktop_press(ms(t, 600), pt(100, 100), 500, (2, 2)), None);
+        assert_eq!(q.desktop_press(ms(t, 700), pt(105, 100), 500, (2, 2)), None);
         // Within 4 px (more than the 2 px of the system rectangle) is the same place.
-        assert!(q.desktop_press(ms(t, 800), pt(109, 104), 500, (2, 2)));
+        assert_eq!(
+            q.desktop_press(ms(t, 800), pt(109, 104), 500, (2, 2)),
+            Some((100, pt(105, 100)))
+        );
     }
 
     #[test]
