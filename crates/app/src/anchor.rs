@@ -119,6 +119,33 @@ struct QuickHide {
     marquee_last: Option<POINT>,
 }
 
+impl QuickHide {
+    /// The desktop came to the front with the pointer at `pt`, the primary button `held` down
+    /// or not. A press on the desktop that brought it there while the raw input sink was off
+    /// reached Explorer unseen, so it counts as the first click here. Nothing else does: with
+    /// the sink on, raw input reports that press itself (just before or just after this event),
+    /// and a click on an item of Explorer's menu (刷新) brings the desktop back on its release.
+    fn desktop_activated(&mut self, sink_was_on: bool, held: bool, now: Instant, pt: POINT) {
+        if !sink_was_on && held {
+            self.pending_click = Some((now, pt));
+        }
+    }
+
+    /// A press on the bare desktop at `pt`: true when it is the second click of a double-click
+    /// (within `limit_ms` and `slop` pixels of the first one), else it is the first.
+    fn desktop_press(&mut self, now: Instant, pt: POINT, limit_ms: u128, slop: (i32, i32)) -> bool {
+        if let Some((t0, p0)) = self.pending_click.take()
+            && now.duration_since(t0).as_millis() <= limit_ms
+            && (pt.x - p0.x).abs() <= slop.0.max(4)
+            && (pt.y - p0.y).abs() <= slop.1.max(4)
+        {
+            return true;
+        }
+        self.pending_click = Some((now, pt));
+        false
+    }
+}
+
 /// Smallest marquee (device pixels, either axis) that counts as "draw a fence here".
 pub const MARQUEE_MIN_PX: i32 = 48;
 
@@ -765,13 +792,16 @@ impl DesktopAnchor {
             if let Some(callback) = self.on_desktop_front.as_ref() {
                 callback();
             }
+            let sink_was_on = self.quick.sink_registered;
             self.set_raw_input_sink(true);
             let pt = window::cursor_pos();
-            self.quick.pending_click = Some((Instant::now(), pt));
+            let held = window::primary_button_down_async();
+            self.quick
+                .desktop_activated(sink_was_on, held, Instant::now(), pt);
             // The press that activated the desktop reached Explorer before the sink existed: a
             // drag it starts still draws a marquee (from where the pointer is now). Activated
             // any other way, the desktop ends the fence selection like a click on it does.
-            if window::primary_button_down_async() {
+            if held {
                 self.begin_marquee(pt);
             } else {
                 self.emit_marquee(MarqueeEvent::Pressed {
@@ -955,19 +985,12 @@ impl DesktopAnchor {
         if !self.quick_hide_enabled {
             return;
         }
-        let now = Instant::now();
-        let (sx, sy) = rawinput::double_click_slop_px();
         let limit = rawinput::double_click_time_ms() as u128;
-        if let Some((t0, p0)) = self.quick.pending_click.take()
-            && now.duration_since(t0).as_millis() <= limit
-            && (pt.x - p0.x).abs() <= sx.max(4)
-            && (pt.y - p0.y).abs() <= sy.max(4)
-        {
+        let slop = rawinput::double_click_slop_px();
+        if self.quick.desktop_press(Instant::now(), pt, limit, slop) {
             tracing::info!(?pt, "double-click on empty desktop → quick hide on release");
             self.quick.pending_toggle = Some(pt);
             self.sentinel.set_timer(TIMER_QUICKHIDE, QUICKHIDE_DELAY_MS);
-        } else {
-            self.quick.pending_click = Some((now, pt));
         }
     }
 
@@ -1394,6 +1417,59 @@ impl Drop for DesktopAnchor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Duration;
+
+    fn pt(x: i32, y: i32) -> POINT {
+        POINT { x, y }
+    }
+
+    fn ms(t: Instant, ms: u64) -> Instant {
+        t + Duration::from_millis(ms)
+    }
+
+    #[test]
+    fn a_click_that_brings_the_desktop_back_counts_once_when_raw_input_saw_it() {
+        // The desktop was in front (sink on), then a fence or Explorer's menu; the click on the
+        // desktop or on 刷新 brings the desktop back, and raw input reports that click as well.
+        let t = Instant::now();
+        let mut q = QuickHide::default();
+        q.desktop_activated(true, true, t, pt(700, 560));
+        assert!(!q.desktop_press(ms(t, 2), pt(700, 560), 500, (2, 2)));
+        // A real second click still makes it a double-click.
+        assert!(q.desktop_press(ms(t, 200), pt(701, 560), 500, (2, 2)));
+        // A third one starts over.
+        assert!(!q.desktop_press(ms(t, 350), pt(701, 560), 500, (2, 2)));
+    }
+
+    #[test]
+    fn the_press_that_activates_the_desktop_unseen_is_the_first_click() {
+        // Another program was in front (sink off): raw input never reports that press.
+        let t = Instant::now();
+        let mut q = QuickHide::default();
+        q.desktop_activated(false, true, t, pt(300, 420));
+        assert!(q.desktop_press(ms(t, 150), pt(300, 421), 500, (2, 2)));
+    }
+
+    #[test]
+    fn a_menu_item_click_that_brings_the_desktop_back_is_no_first_click() {
+        // Explorer's menu was in front (sink off); its 刷新 runs on the release, so the button is
+        // up when the desktop comes back. A click there right after is a single click.
+        let t = Instant::now();
+        let mut q = QuickHide::default();
+        q.desktop_activated(false, false, t, pt(390, 204));
+        assert!(!q.desktop_press(ms(t, 120), pt(390, 204), 500, (2, 2)));
+    }
+
+    #[test]
+    fn presses_too_far_apart_in_time_or_place_are_single_clicks() {
+        let t = Instant::now();
+        let mut q = QuickHide::default();
+        assert!(!q.desktop_press(t, pt(100, 100), 500, (2, 2)));
+        assert!(!q.desktop_press(ms(t, 600), pt(100, 100), 500, (2, 2)));
+        assert!(!q.desktop_press(ms(t, 700), pt(105, 100), 500, (2, 2)));
+        // Within 4 px (more than the 2 px of the system rectangle) is the same place.
+        assert!(q.desktop_press(ms(t, 800), pt(109, 104), 500, (2, 2)));
+    }
 
     #[test]
     fn the_kept_marker_stays_in_our_folder_when_the_crash_marker_is_legacy() {
