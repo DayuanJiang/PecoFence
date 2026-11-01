@@ -17,7 +17,7 @@ use pecofence_ipc::{
     AdjustedDto, BIG_MOVE_SNAPSHOT_ITEMS, BackupDto, EVENT_HEARTBEAT_SECS, EVENT_NAMES, ErrorCode,
     EventDto, FenceDto, FitDto, IpcError, ItemDto, ItemMovePlanDto, MAX_SUBSCRIBERS, Method,
     MonitorDto, PROTOCOL_VERSION, PlannedMoveDto, PortalDto, Rect, Response, RuleEntry,
-    RuleListDto, SnapshotDto, StatusDto, dotted_to_pointer, mutation,
+    RuleListDto, SnapshotDto, SnapshotFenceDto, StatusDto, dotted_to_pointer, mutation,
 };
 use serde_json::{Value, json};
 use std::sync::mpsc;
@@ -476,6 +476,70 @@ pub(super) fn snapshot_dto(s: &Snapshot, monitors: &[geometry::WorkArea]) -> Sna
     }
 }
 
+/// What restoring a snapshot changes: `before` (the fences shown now) against `after` (the ones
+/// the restore would show), with each fence's saved rectangle from `rect`. Returns the fences
+/// added, removed, moved (or resized) and updated otherwise (see `SnapshotFenceDto`).
+pub(super) fn snapshot_changes(
+    before: &[Fence],
+    after: &[Fence],
+    rect: impl Fn(&Fence) -> Rect,
+) -> [Vec<SnapshotFenceDto>; 4] {
+    let entry = |f: &Fence| SnapshotFenceDto {
+        id: f.id,
+        title: f.title.clone(),
+        from: None,
+        to: None,
+        fields: Vec::new(),
+    };
+    let find = |list: &[Fence], id: FenceId| list.iter().position(|f| f.id == id);
+    let added = after
+        .iter()
+        .filter(|f| find(before, f.id).is_none())
+        .map(entry)
+        .collect();
+    let removed = before
+        .iter()
+        .filter(|f| find(after, f.id).is_none())
+        .map(entry)
+        .collect();
+    let (mut moved, mut updated) = (Vec::new(), Vec::new());
+    for a in after {
+        let Some(b) = find(before, a.id).map(|i| &before[i]) else {
+            continue;
+        };
+        let (from, to) = (rect(b), rect(a));
+        if adjusted(from, to, "").is_some() {
+            moved.push(SnapshotFenceDto {
+                from: Some(from),
+                to: Some(to),
+                ..entry(a)
+            });
+        }
+        let fields = fence_fields_changed(b, a);
+        if !fields.is_empty() {
+            updated.push(SnapshotFenceDto { fields, ..entry(a) });
+        }
+    }
+    [added, removed, moved, updated]
+}
+
+/// The saved fields (camelCase, as `config export` writes them) that differ between two
+/// versions of a fence, its position and size aside.
+fn fence_fields_changed(before: &Fence, after: &Fence) -> Vec<String> {
+    let (Ok(Value::Object(b)), Ok(Value::Object(a))) =
+        (serde_json::to_value(before), serde_json::to_value(after))
+    else {
+        return Vec::new();
+    };
+    let mut keys: Vec<&String> = a.keys().chain(b.keys()).collect();
+    keys.sort();
+    keys.dedup();
+    keys.into_iter()
+        .filter(|k| !matches!(k.as_str(), "geometry" | "expandedH") && a.get(*k) != b.get(*k))
+        .cloned()
+        .collect()
+}
+
 /// `AdjustedDto` when the app's final rect differs from `requested` by more than the 1 px the
 /// DIP round trip of the saved geometry can introduce at fractional scale factors.
 pub(super) fn adjusted(requested: Rect, applied: Rect, reason: &str) -> Option<AdjustedDto> {
@@ -916,6 +980,33 @@ impl App {
                 self.push_settings_state();
                 Ok(mutation(true, backup, json!({ "restored": target })))
             }
+            Method::SnapshotsPlanRestore { id } => {
+                let target = self.resolve_snapshot(id)?;
+                let after = self
+                    .state
+                    .snapshot_preview(target)
+                    .ok_or_else(|| self.snapshot_not_found(id))?;
+                let [added, removed, moved, updated] =
+                    snapshot_changes(self.state.fences(), &after, |f| {
+                        Rect::from(self.state.fence_px_rect(f))
+                    });
+                let snapshot = self
+                    .state
+                    .config
+                    .snapshots
+                    .iter()
+                    .find(|s| s.id == target)
+                    .map(|s| snapshot_dto(s, &self.state.work_areas));
+                Ok(json!({
+                    "changed": false,
+                    "dryRun": true,
+                    "snapshot": to_json(&snapshot)?,
+                    "added": to_json(&added)?,
+                    "removed": to_json(&removed)?,
+                    "moved": to_json(&moved)?,
+                    "updated": to_json(&updated)?,
+                }))
+            }
             Method::SnapshotsDelete { id } => {
                 let target = self.resolve_snapshot(id)?;
                 let changed = self.state.delete_snapshot(target);
@@ -1224,6 +1315,7 @@ impl App {
             }
             .to_string(),
             desktop_icons_hidden: pecofence_platform::shell_icons::desktop_icons_hidden(),
+            live_wallpapers: self.live_wallpaper_dtos(),
         }
     }
 

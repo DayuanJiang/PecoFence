@@ -80,6 +80,7 @@ pecofence-cli rule add --name PDFs --ext pdf --to Docs         # or --type, --na
 pecofence-cli rule apply --dry-run && pecofence-cli rule apply
 pecofence-cli settings set theme dark                          # dotted camelCase path; `settings get` shows them
 pecofence-cli snapshot list
+pecofence-cli snapshot restore <id> --dry-run                 # fences it would add / remove / move / update
 pecofence-cli config export "C:\Users\me\Desktop\pecofence-backup.json"   # settings + rules + layouts
 ```
 

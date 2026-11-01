@@ -318,6 +318,39 @@ impl AppState {
         true
     }
 
+    /// The fences a restore of snapshot `id` would show on the current monitors, as
+    /// [`Self::restore_snapshot`] leaves them (`pecofence-cli snapshot restore --dry-run`). This
+    /// state stays as it is: the restore runs on a copy of the layouts. None when `id` is unknown.
+    pub fn snapshot_preview(&self, id: uuid::Uuid) -> Option<Vec<Fence>> {
+        let snap = self.config.snapshots.iter().find(|s| s.id == id)?;
+        let mut scratch = AppState {
+            config: Config {
+                settings: self.config.settings.clone(),
+                ..Config::default()
+            },
+            // Never saved: the scratch state is dropped at the end of this call.
+            store: ConfigStore::new(PathBuf::new()),
+            layout: 0,
+            dirty: false,
+            catalog: HashMap::new(),
+            portal_items: HashMap::new(),
+            portal_members: HashMap::new(),
+            portal_cwd: HashMap::new(),
+            opened_folders: HashMap::new(),
+            portal_missing: HashSet::new(),
+            tmp_settle_at: std::cell::Cell::new(None),
+            work_areas: self.work_areas.clone(),
+            unplaced: Vec::new(),
+            first_run: false,
+            recovered_from: None,
+            unreadable_moved_to: None,
+            load_failures: Vec::new(),
+        };
+        scratch.apply_snapshot_layouts(snap.layouts.clone());
+        let layout = scratch.layout;
+        Some(std::mem::take(&mut scratch.config.layouts[layout].fences))
+    }
+
     fn apply_snapshot_layouts(&mut self, layouts: Vec<pecofence_core::Layout>) {
         self.config.layouts = layouts;
         self.layout = 0;
@@ -2514,6 +2547,23 @@ mod tests {
             right: left + w,
             bottom: top + h,
         }
+    }
+
+    #[test]
+    fn a_snapshot_preview_shows_what_a_restore_would_and_changes_nothing() {
+        let mut state = test_state();
+        let id = state.save_snapshot("before");
+        // After the snapshot one fence moves and another one goes.
+        let layout = state.layout;
+        state.config.layouts[layout].fences[0].geometry.x += 200.0;
+        let gone = state.config.layouts[layout].fences.remove(1);
+        let config = serde_json::to_value(&state.config).unwrap();
+        let preview = state.snapshot_preview(id).unwrap();
+        assert_eq!(serde_json::to_value(&state.config).unwrap(), config);
+        assert!(preview.contains(&gone));
+        assert!(state.snapshot_preview(uuid::Uuid::new_v4()).is_none());
+        assert!(state.restore_snapshot(id));
+        assert_eq!(preview, state.fences());
     }
 
     #[test]

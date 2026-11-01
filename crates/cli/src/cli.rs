@@ -527,12 +527,19 @@ pub enum SnapshotCmd {
         /// Snapshot name
         name: String,
     },
-    /// Restore a snapshot (the current layout is snapshotted first)
+    /// Restore a snapshot (the current layout is snapshotted first); --dry-run only lists what would change
     #[command(after_help = "Example: pecofence-cli snapshot restore 3f9c2a1e
-         (snapshot.id or a unique id prefix from `snapshot save` / `snapshot list`; a name works only while it is unique)")]
+         pecofence-cli snapshot restore 3f9c2a1e --dry-run
+         (snapshot.id or a unique id prefix from `snapshot save` / `snapshot list`; a name works only while it is unique)
+
+--dry-run lists the fences the restore would add, remove, move, or change otherwise
+(`updated`, with the saved fields that differ) on the current monitors.")]
     Restore {
         /// Snapshot id, unique id prefix, or (unique) name
         id: String,
+        /// Report what would change without restoring (no snapshot, nothing changes)
+        #[arg(long)]
+        dry_run: bool,
     },
     /// Delete a snapshot
     #[command(after_help = "Example: pecofence-cli snapshot delete 3f9c2a1e")]
@@ -805,6 +812,14 @@ mod tests {
         assert!(parse(&["config", "check"]).is_ok());
         assert!(parse(&["config", "check", "C:\\x.json"]).is_ok());
         assert!(parse(&["rule", "apply", "--dry-run"]).is_ok());
+        assert!(matches!(
+            parse(&["snapshot", "restore", "3f9c", "--dry-run"])
+                .unwrap()
+                .command,
+            Command::Snapshot {
+                cmd: SnapshotCmd::Restore { dry_run: true, .. }
+            }
+        ));
         let cli = parse(&["item", "rename", "a", "b"]).unwrap();
         match cli.command {
             Command::Item {
