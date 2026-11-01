@@ -259,6 +259,7 @@ impl FenceWindow {
             title_on_hover_override: None,
             style: FenceStyle::default(),
             spacing: Spacing::Normal,
+            icon_align: IconAlign::Left,
             anchor_index: None,
             range_anchor: None,
             device_lost: false,
@@ -1636,6 +1637,17 @@ impl FenceWindow {
                 }
                 v.snap_item_motion();
                 let _ = v.redraw();
+            }
+        });
+    }
+
+    /// 图标对齐 (#154): a short row of icons stays at the left or moves to the middle.
+    pub fn set_icon_align(&self, align: IconAlign) {
+        self.with_view(|v| {
+            if v.icon_align != align {
+                v.icon_align = align;
+                v.snap_item_motion();
+                let _ = v.redraw_content();
             }
         });
     }

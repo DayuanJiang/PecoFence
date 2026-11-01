@@ -28,10 +28,10 @@ const fixture = {
     ],
   },
   fences: [
-    { id: 'fence-a', title: 'Documents', kind: 'virtual', host: null, iconSize: 48, spacing: 'normal', autoHeight: false, locked: false, excludeFromQuickHide: false, opacity: 'default', tint: null, titleColor: 'theme', titleSize: 'normal', titleOnHover: 'default', openFoldersInside: false, portal: null },
+    { id: 'fence-a', title: 'Documents', kind: 'virtual', host: null, iconSize: 48, spacing: 'normal', iconAlign: 'left', autoHeight: false, locked: false, excludeFromQuickHide: false, opacity: 'default', tint: null, titleColor: 'theme', titleSize: 'normal', titleOnHover: 'default', openFoldersInside: false, portal: null },
     { id: 'fence-b', title: 'Images', kind: 'virtual', host: 'Documents', iconSize: 96, spacing: 'loose', autoHeight: true, locked: false, excludeFromQuickHide: false, opacity: 'transparent', tint: null, tabColor: 'E74856', titleColor: 'theme', titleSize: 'normal', titleOnHover: 'default', portal: null },
     { id: 'inbox', title: 'Desktop', kind: 'inbox', host: null, iconSize: 48, spacing: 'normal', autoHeight: false, locked: true, excludeFromQuickHide: true, opacity: 'solid', tint: '0078D4', tintTitleOnly: true, titleColor: 'tint', titleSize: 'large', titleOnHover: 'hover', hideWhenEmpty: true, openFoldersInside: true, expandUpward: true, portal: null },
-    { id: 'portal', title: 'Portal', kind: 'portal', host: null, iconSize: 32, spacing: 'compact', autoHeight: false, locked: false, excludeFromQuickHide: false, opacity: 'clear', tint: '123456', titleColor: 'ABCDEF', titleSize: 'small', titleOnHover: 'always', portal: { navigate: true, titleIcon: false } },
+    { id: 'portal', title: 'Portal', kind: 'portal', host: null, iconSize: 32, spacing: 'compact', iconAlign: 'center', autoHeight: false, locked: false, excludeFromQuickHide: false, opacity: 'clear', tint: '123456', titleColor: 'ABCDEF', titleSize: 'small', titleOnHover: 'always', portal: { navigate: true, titleIcon: false } },
   ],
   tintPalette: [{ name: '红', hex: 'E74856' }, { name: '蓝', hex: '0078D4' }, { name: '灰', hex: '7A7574' }],
   snapshots: [{ id: 'snapshot-a', name: 'Before changes', date: '2026-09-09', fenceCount: 4 }],
@@ -122,7 +122,11 @@ function bridge() {
           const idle = message.template === 'cleanup';
           const allOf = idle ? [{ cond: 'type', value: ['installers', 'archives'] }, { cond: 'idleDays', value: { min: 30 } }] : [{ cond: 'type', value: [message.template] }];
           const at = idle ? 0 : state.rules.list.findIndex(r => !r.allOf.some(c => c.cond === 'idleDays'));
-          state.rules.list.splice(at < 0 ? state.rules.list.length : at, 0, { id: 'rule-' + id, name: message.template, enabled: true, target: { fence: id }, allOf, priorityClass: 'type', template: message.template });
+          // 游戏 is one shortcut-target rule per kind of game shortcut.
+          const games = message.template === 'games' && [['Steam 游戏', 'steam://rungameid/'], ['Steam 游戏', '\\steamapps\\common\\'], ['Epic 游戏', 'com.epicgames.launcher://apps/'], ['Epic 游戏', '\\Epic Games\\'], ['Xbox 游戏', '\\XboxGames\\']];
+          const rules = games ? games.map(([name, value], i) => ({ id: 'rule-' + id + '-' + i, name, enabled: true, target: { fence: id }, allOf: [{ cond: 'shortcutTarget', value: { op: 'contains', value } }], priorityClass: 'target', template: 'games' }))
+            : [{ id: 'rule-' + id, name: message.template, enabled: true, target: { fence: id }, allOf, priorityClass: 'type', template: message.template }];
+          state.rules.list.splice(at < 0 ? state.rules.list.length : at, 0, ...rules);
         }
         if (message.type === 'setFence') {
           // Mirror the host: a portal flag lands in `portal`, everything else on the fence.
@@ -266,6 +270,7 @@ async function runTests() {
     assert(doc.querySelector('[data-fence=portalNavigate]').classList.contains('on') && !doc.querySelector('[data-fence=portalTitleIcon]').classList.contains('on'), 'Portal flags wrong');
     assert(doc.querySelector('[data-fence=tint]').value === '123456' && doc.querySelector('[data-fence=titleColor]').value === 'ABCDEF', 'Imported custom colours not represented');
     assert(doc.querySelector('[data-fence=iconSize]').value === '32' && doc.querySelector('[data-fence=spacing]').value === 'compact' && doc.querySelector('[data-fence=opacity]').value === 'clear', 'Layout values not shown');
+    assert(doc.querySelector('[data-fence=iconAlign]').value === 'center', 'Icon alignment not shown');
   });
   await test('Fence controls post setFence and keep the selection across a host refresh', async () => {
     const messages = () => frame.contentWindow.testMessages.filter(m => m.type === 'setFence');
@@ -296,6 +301,9 @@ async function runTests() {
     doc.querySelector('#fenceTabColorSwatches [data-value=""]').click(); await settle();
     assert(messages().at(-1).prop === 'tabColor' && messages().at(-1).value === null, 'Following the tint did not post null');
     change(doc, 'fenceSel', 'fence-a');
+    assert(doc.querySelector('[data-fence=iconAlign]').value === 'left', 'Left icon alignment not shown');
+    change(doc, 'fenceIconAlign', 'center'); await settle();
+    assert(messages().at(-1).id === 'fence-a' && messages().at(-1).prop === 'iconAlign' && messages().at(-1).value === 'center', 'Icon alignment not posted');
   });
   await test('showFence opens the fence page with that fence selected', async () => {
     doc.querySelector('[data-page=general]').click();
@@ -441,6 +449,24 @@ async function runTests() {
     await add(doc);
     assert(errorShown(doc), 'Zero idle days accepted');
     doc = await reset(); rulesPage(doc); // the template fence must not leak into later fixture-count checks
+  });
+  await test('The games template adds a shortcut-target rule per kind of game shortcut (feedback #83)', async () => {
+    const chip = doc.querySelector('#templates [data-template=games]');
+    assert(chip && chip.textContent.includes('游戏'), 'Games chip missing');
+    const before = ruleCount(doc);
+    chip.click(); await settle();
+    assert(frame.contentWindow.testMessages.some(m => m.name === 'addTemplate' && m.template === 'games'), 'addTemplate games not posted');
+    assert(ruleCount(doc) === before + 5, 'Games rules not rendered');
+    const rows = [...doc.querySelectorAll('#ruleList [data-row-id]')].slice(0, 5);
+    const conds = rows.map(r => r.querySelector('.conds').textContent);
+    assert(conds[0].startsWith('快捷方式目标包含“steam://rungameid/”') && conds[4].startsWith('快捷方式目标包含“\\XboxGames\\”'), 'Games conditions not labelled: ' + conds.join(' | '));
+    assert(rows[2].querySelector('.t').textContent === 'Epic 游戏', 'Games rule names not shown');
+    // Each rule toggles and goes on its own, like any rule.
+    rows[0].querySelector('[data-act=toggle]').click(); await settle();
+    assert(current().rules.list[0].enabled === false && current().rules.list[1].enabled === true, 'Toggle did not act on one games rule');
+    doc.querySelector('#ruleList [data-row-id] [data-act=del]').click(); await settle();
+    assert(ruleCount(doc) === before + 4 && current().rules.list[0].allOf[0].value.value === '\\steamapps\\common\\', 'Delete did not remove one games rule');
+    doc = await reset(); rulesPage(doc);
   });
   await test('Reaching a reorder boundary never focuses the opposite action', async () => {
     const up = doc.querySelector('[data-row-id="rule-a"] [data-act=up]');
@@ -798,6 +824,33 @@ async function runTests() {
       assert(ruleCount(doc) === count + 1, kind + ' rejected a valid condition');
       assert(doc.querySelector('#ruleList .rule:first-child .conds').textContent.includes(label), kind + ' displayed the wrong condition');
     }
+  });
+  await test('A value typed in quotes is saved without them (feedback #89)', async () => {
+    assert(doc.getElementById('nrValueHint').textContent.includes('不用加引号'), 'The hint does not say quotes are not needed');
+    assert(doc.getElementById('nrValue').getAttribute('aria-describedby') === 'nrValueHint', 'The hint is not tied to the input');
+    for (const [kind, value, saved] of [
+      ['contains', '"my report"', { cond: 'name', value: { op: 'contains', value: 'my report' } }],
+      ['startsWith', "'my report'", { cond: 'name', value: { op: 'startsWith', value: 'my report' } }],
+      ['endsWith', ' “my report” ', { cond: 'name', value: { op: 'endsWith', value: 'my report' } }],
+      ['notContains', '‘old copy’', { cond: 'name', value: { op: 'notContains', value: 'old copy' } }],
+      ['exact', `"my report.docx", 'notes 2.md'`, { cond: 'exactName', value: ['my report.docx', 'notes 2.md'] }],
+      ['exact', '"a b.txt, c d.txt"', { cond: 'exactName', value: ['a b.txt', 'c d.txt'] }],
+      ['glob', '"*my report*"', { cond: 'glob', value: '*my report*' }],
+      ['target', '"Program Files"', { cond: 'shortcutTarget', value: { op: 'contains', value: 'Program Files' } }],
+      ['ext', '"tar.gz"', { cond: 'ext', value: ['tar.gz'] }],
+      // Quotes that are not one pair around the whole value stay.
+      ['contains', `it's "draft`, { cond: 'name', value: { op: 'contains', value: `it's "draft` } }],
+      ['contains', `"a" and "b"`, { cond: 'name', value: { op: 'contains', value: `"a" and "b"` } }],
+    ]) {
+      change(doc, 'nrKind', kind); change(doc, 'nrValue', value);
+      await add(doc);
+      const got = JSON.stringify(current().rules.list[0].allOf[0]);
+      assert(got === JSON.stringify(saved), kind + ' ' + value + ' saved as ' + got);
+    }
+    change(doc, 'nrKind', 'contains'); change(doc, 'nrValue', '""');
+    const count = ruleCount(doc);
+    await add(doc);
+    assert(ruleCount(doc) === count && errorShown(doc), 'A pair of quotes alone was accepted');
   });
   await test('Shortcut rules and file/folder filters can route to the desktop inbox', async () => {
     change(doc, 'nrTarget', 'inbox');

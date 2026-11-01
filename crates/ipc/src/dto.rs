@@ -153,6 +153,9 @@ pub struct FenceDto {
     pub icon_size: u32,
     /// `compact` | `normal` | `loose`.
     pub spacing: String,
+    /// `left` | `center`: where a row of icons that does not fill the width sits (icons view).
+    #[serde(default)]
+    pub icon_align: String,
     pub auto_height: bool,
     pub exclude_from_quick_hide: bool,
     /// No window while it is empty (`windowRect` is `null` then); a tab or a host of tabs

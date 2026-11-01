@@ -53,6 +53,7 @@ pub(super) const FENCE_PROPS: &[&str] = &[
     "title",
     "iconSize",
     "spacing",
+    "iconAlign",
     "autoHeight",
     "locked",
     "expandUpward",
@@ -91,6 +92,8 @@ pub(super) enum FenceProp {
     Title(String),
     IconSize(u32),
     Spacing(Spacing),
+    /// 图标对齐 of the icons view.
+    IconAlign(IconAlign),
     AutoHeight(bool),
     Locked(bool),
     /// 向上展开: the bottom edge stays put when the height changes.
@@ -155,6 +158,14 @@ pub(super) fn parse_fence_prop(
                 "compact" => Spacing::Compact,
                 "normal" => Spacing::Normal,
                 "loose" => Spacing::Loose,
+                _ => return Err(bad(ALLOWED)),
+            })
+        }
+        "iconAlign" => {
+            const ALLOWED: &[&str] = &["left", "center"];
+            FenceProp::IconAlign(match as_str(ALLOWED)? {
+                "left" => IconAlign::Left,
+                "center" => IconAlign::Center,
                 _ => return Err(bad(ALLOWED)),
             })
         }
@@ -420,6 +431,17 @@ impl App {
         self.schedule_save();
     }
 
+    /// 图标对齐: only where the icons sit in their rows changes, so the size stays.
+    pub(super) fn set_fence_icon_align(&mut self, fence: FenceId, align: IconAlign) {
+        self.state.set_icon_align(fence, align);
+        if let Some(w) = self.window_for(fence)
+            && w.active_fence() == fence
+        {
+            w.set_icon_align(align);
+        }
+        self.schedule_save();
+    }
+
     pub(super) fn set_fence_portal_navigate(&mut self, fence: FenceId, on: bool) {
         self.state.set_portal_navigate(fence, on);
         self.apply_portal_deco(self.state.host_of(fence));
@@ -529,6 +551,10 @@ impl App {
             "tabbed": self.state.tabs_of(host_id).len() > 1,
             "iconSize": f.view.icon_size,
             "spacing": spacing,
+            "iconAlign": match f.view.icon_align {
+                IconAlign::Left => "left",
+                IconAlign::Center => "center",
+            },
             "autoHeight": h.view.auto_height,
             "locked": h.locked,
             "expandUpward": h.expand_upward,
@@ -599,6 +625,7 @@ impl App {
             }
             FenceProp::IconSize(size) => self.apply_icon_size(fence, size),
             FenceProp::Spacing(spacing) => self.set_fence_spacing(fence, spacing),
+            FenceProp::IconAlign(align) => self.set_fence_icon_align(fence, align),
             FenceProp::AutoHeight(on) => self.set_fence_auto_height(fence, on),
             FenceProp::Locked(on) => self.set_fence_locked(fence, on),
             FenceProp::ExpandUpward(on) => self.set_fence_expand_upward(fence, on),

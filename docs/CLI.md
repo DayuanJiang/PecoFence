@@ -161,7 +161,9 @@ in; only the tab currently shown can be measured, so another tab is `unsupported
 `fence detach` it first).
 
 `fence set` properties (values as shown by `fence get`): `title` (or `fence rename`), `iconSize`
-32/48/64/96, `spacing` compact/normal/loose, `autoHeight`, `locked`, `expandUpward` (rolled up, it
+32/48/64/96, `spacing` compact/normal/loose, `iconAlign` left/center (center: a row of icons that
+does not fill the fence width, the last one too, sits in the middle; icons view only; left by
+default), `autoHeight`, `locked`, `expandUpward` (rolled up, it
 opens upward from its title row where it fits above it, else downward, for fences resting on the
 taskbar; the row stays where it is; `bottomAnchored` in `fence get` says whether the bottom edge
 is the one that stays put, which `fence resize --h` and `fence fit` keep), `excludeFromQuickHide`,

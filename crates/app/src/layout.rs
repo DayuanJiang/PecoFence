@@ -342,6 +342,27 @@ impl Bands {
         start..(start + self.cols).min(g.end())
     }
 
+    /// Items in the row under `y`: 0 in a header band and outside every row.
+    fn row_len_at(&self, y: f32) -> usize {
+        let Some(gi) = self
+            .groups
+            .iter()
+            .position(|g| y >= g.rows_y && y < g.bottom(self.row_h))
+        else {
+            return 0;
+        };
+        let row = ((y - self.groups[gi].rows_y) / self.row_h).floor() as usize;
+        self.row_items(gi, row).len()
+    }
+
+    /// Items in the row an insertion at `y` lands in (the row `insertion` picks).
+    fn insertion_row_len(&self, y: f32) -> usize {
+        let g = self.band_near(y);
+        let row = ((y - g.rows_y) / self.row_h).floor().max(0.0) as usize;
+        let start = g.span.first + row * self.cols;
+        g.end().saturating_sub(start).min(self.cols)
+    }
+
     fn neighbour(
         &self,
         index: usize,
@@ -385,6 +406,8 @@ pub struct Grid {
     pub rows: usize,
     pub content_height: f32,
     bands: Bands,
+    /// 图标对齐 居中: a row with fewer items than columns sits in the middle (`centred`).
+    centre: bool,
 }
 
 impl Grid {
@@ -404,15 +427,34 @@ impl Grid {
             rows: bands.total_rows(),
             content_height: bands.content_height,
             bands,
+            centre: false,
         }
+    }
+
+    /// 图标对齐 居中 (#154): a row that does not fill the columns, the last one too, moves
+    /// right by half the width its missing cells leave, so that width is split on both sides.
+    pub fn centred(mut self, on: bool) -> Self {
+        self.centre = on;
+        self
+    }
+
+    /// How far a row of `len` items moves right; an empty row counts as one item (where the
+    /// first item of an empty fence goes).
+    fn row_shift(&self, len: usize) -> f32 {
+        if !self.centre {
+            return 0.0;
+        }
+        self.columns.saturating_sub(len.max(1)) as f32 * self.pitch / 2.0
     }
 
     /// Rect of item `index` in content coordinates (before scrolling). Cells sit centred in
     /// their column pitch.
     pub fn cell(&self, index: usize) -> CellRect {
         let (gi, row, col) = self.bands.place(index);
+        let shift = self.row_shift(self.bands.row_items(gi, row).len());
         CellRect {
             x: self.metrics.pad_x
+                + shift
                 + col as f32 * self.pitch
                 + (self.pitch - self.metrics.cell_w) / 2.0,
             y: self.bands.groups[gi].rows_y + row as f32 * self.bands.row_h,
@@ -423,10 +465,11 @@ impl Grid {
 
     /// Index of the item under a content-local point (already adjusted for scroll).
     pub fn hit_test(&self, x: f32, y: f32, count: usize) -> Option<usize> {
-        if x < self.metrics.pad_x || y < self.metrics.pad_y {
+        let row_x = x - self.row_shift(self.bands.row_len_at(y));
+        if row_x < self.metrics.pad_x || y < self.metrics.pad_y {
             return None;
         }
-        let col = ((x - self.metrics.pad_x) / self.pitch).floor() as usize;
+        let col = ((row_x - self.metrics.pad_x) / self.pitch).floor() as usize;
         if col >= self.columns {
             return None;
         }
@@ -444,7 +487,8 @@ impl Grid {
         if count == 0 {
             return 0;
         }
-        let colf = ((x - self.metrics.pad_x) / self.pitch).max(0.0);
+        let row_x = x - self.row_shift(self.bands.insertion_row_len(y));
+        let colf = ((row_x - self.metrics.pad_x) / self.pitch).max(0.0);
         self.bands.insertion(y, colf.round() as usize).min(count)
     }
 
@@ -1219,6 +1263,54 @@ mod tests {
         assert_eq!(g.hit_test(105.0, c.y + 1.0, 7), None, "gap between cells");
         assert_eq!(g.hit_test(150.0, c.y + 1.0, 7), Some(1));
         assert_eq!(g.insertion_index(200.0, c.y + 1.0, 7), 2);
+    }
+
+    /// 图标对齐 居中 (#154): a short row, alone or last, moves right by half the width its
+    /// missing cells leave; full rows stay put. Hit testing, insertion slots, the caret and the
+    /// arrow keys follow the moved cells.
+    #[test]
+    fn centred_grid_splits_a_short_rows_leftover_width() {
+        let m = GridMetrics::for_icon_size(48, 2); // 80 DIP cells
+        // 5 columns of 80 DIPs: 3 icons leave 160 DIPs, 80 on each side.
+        let three = Grid::new(m, 400.0, 3).centred(true);
+        let left = Grid::new(m, 400.0, 3);
+        assert_eq!((three.columns, three.pitch), (5, 80.0));
+        assert_eq!(left.cell(0).x, 0.0);
+        assert_eq!(three.cell(0).x, 80.0);
+        assert_eq!(three.cell(2).x + three.cell(2).w + 80.0, 400.0);
+        let y = three.cell(0).y + 1.0;
+        assert_eq!(three.hit_test(40.0, y, 3), None, "the left margin is empty");
+        assert_eq!(three.hit_test(100.0, y, 3), Some(0));
+        assert_eq!(three.hit_test(260.0, y, 3), Some(2));
+        assert_eq!(three.hit_test(360.0, y, 3), None, "the right margin");
+        assert_eq!(three.insertion_index(20.0, y, 3), 0);
+        assert_eq!(three.insertion_index(165.0, y, 3), 1);
+        assert_eq!(three.insertion_index(390.0, y, 3), 3);
+        let l = ItemLayout::Grid(three);
+        assert_eq!(l.insertion_caret(0, 3).x, 79.0);
+        assert_eq!(l.insertion_caret(3, 3).x, 319.0, "after the last icon");
+
+        // 7 icons: a full first row and a last row of 2, 120 DIPs in from each side.
+        let seven = Grid::new(m, 400.0, 7).centred(true);
+        assert_eq!(seven.cell(4).x, 320.0, "a full row does not move");
+        assert_eq!(seven.cell(5).x, 120.0);
+        assert_eq!(seven.cell(6).x, 200.0);
+        let y2 = seven.cell(5).y + 1.0;
+        assert_eq!(seven.hit_test(100.0, y2, 7), None);
+        assert_eq!(seven.hit_test(150.0, y2, 7), Some(5));
+        assert_eq!(seven.hit_test(230.0, y2, 7), Some(6));
+        assert_eq!(seven.insertion_index(60.0, y2, 7), 5);
+        assert_eq!(seven.insertion_index(380.0, y2, 7), 7);
+        let l = ItemLayout::Grid(seven);
+        // Down from the middle icon of the full row and back, by the nearest centre.
+        assert_eq!(l.neighbour(2, 0, 1, 7), Some(5));
+        assert_eq!(l.neighbour(6, 0, -1, 7), Some(2));
+        assert_eq!(l.neighbour(4, 0, 1, 7), Some(6));
+        assert_eq!(l.insertion_caret(7, 7).x, 279.0);
+
+        // An empty fence: the first icon goes to the middle.
+        let empty = ItemLayout::Grid(Grid::new(m, 400.0, 0).centred(true));
+        assert_eq!(empty.insertion_caret(0, 0).x, 160.0);
     }
 
     /// 「整数个图标」 at any height: the rows keep their pitch (the items never move with the

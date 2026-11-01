@@ -266,6 +266,7 @@ impl App {
             w.set_label_lines(shown.view.label_lines);
             w.set_is_inbox(shown.kind == FenceKind::Inbox);
             w.set_spacing(shown.view.spacing);
+            w.set_icon_align(shown.view.icon_align);
             w.set_column_widths(
                 shown
                     .view

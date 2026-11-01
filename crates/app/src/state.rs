@@ -2170,6 +2170,15 @@ impl AppState {
         }
     }
 
+    pub fn set_icon_align(&mut self, id: FenceId, align: pecofence_core::IconAlign) {
+        if let Some(f) = self.fence_mut(id)
+            && f.view.icon_align != align
+        {
+            f.view.icon_align = align;
+            self.dirty = true;
+        }
+    }
+
     pub fn set_columns_visible(&mut self, id: FenceId, visible: [bool; 3]) {
         let next = (visible != [true; 3]).then_some(visible);
         if let Some(f) = self.fence_mut(id)
@@ -2278,8 +2287,8 @@ impl AppState {
         Some(id)
     }
 
-    /// "快速添加": a fence for `template` at `rect` plus its rule, inserted ahead of the
-    /// existing rules so it wins over the broader first-run presets (an installer is also a
+    /// "快速添加": a fence for `template` at `rect` plus its rules, inserted ahead of the
+    /// existing rules so they win over the broader first-run presets (an installer is also a
     /// program). `Err(existing)` when the template was added before; `existing` is the fence
     /// its rule still points to, if any.
     pub fn add_template(
@@ -2302,10 +2311,10 @@ impl AppState {
             return Err(existing);
         }
         let id = self.new_fence(&template.title(), rect).ok_or(None)?;
-        let rule = template.rule(id);
+        let rules = template.rules(id);
         // Idle-days rules must stay ahead of the type-only ones ("待清理" before "安装包"),
         // otherwise a plain type rule claims every installer first and the idle rule never fires.
-        let at = if Self::has_idle_cond(&rule) {
+        let at = if rules.iter().any(Self::has_idle_cond) {
             0
         } else {
             self.config
@@ -2315,7 +2324,7 @@ impl AppState {
                 .take_while(|r| Self::has_idle_cond(r))
                 .count()
         };
-        self.config.rules.list.insert(at, rule);
+        self.config.rules.list.splice(at..at, rules);
         self.dirty = true;
         Ok(id)
     }
