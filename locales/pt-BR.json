@@ -509,6 +509,7 @@
   "示例\u0004截图": "Captura de tela",
   "示例\u0004备份": "backup",
   "PecoFence 上次意外关闭了。点击这里报告问题。": "O PecoFence fechou inesperadamente da última vez. Clique aqui para relatar o problema.",
+  "上次因 ExplorerPatcher 出错而关闭。请在它的 Properties › File Explorer 中取消勾选“Register as shell extension”，然后重启资源管理器。": "O PecoFence fechou por um erro no ExplorerPatcher. Nas Properties › File Explorer dele, desmarque “Register as shell extension” e reinicie o Explorador.",
   "PecoFence 上次意外关闭了，那次的日志会一起发送。如果还记得当时在做什么，请写在下面。": "O PecoFence fechou inesperadamente da última vez; o registro dessa execução vai junto. Se você lembrar o que estava fazendo, descreva abaixo.",
   "其他": "Outro",
   "内容": "Mensagem",

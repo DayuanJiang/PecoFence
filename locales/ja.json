@@ -509,6 +509,7 @@
   "示例\u0004截图": "スクリーンショット",
   "示例\u0004备份": "バックアップ",
   "PecoFence 上次意外关闭了。点击这里报告问题。": "PecoFence は前回予期せず終了しました。ここをクリックして問題を報告してください。",
+  "上次因 ExplorerPatcher 出错而关闭。请在它的 Properties › File Explorer 中取消勾选“Register as shell extension”，然后重启资源管理器。": "前回 ExplorerPatcher のエラーで終了しました。その Properties › File Explorer で「Register as shell extension」をオフにして、エクスプローラーを再起動してください。",
   "PecoFence 上次意外关闭了，那次的日志会一起发送。如果还记得当时在做什么，请写在下面。": "PecoFence は前回予期せず終了しました。そのときのログも一緒に送信されます。何をしていたか覚えていれば、下に書いてください。",
   "其他": "その他",
   "内容": "内容",
