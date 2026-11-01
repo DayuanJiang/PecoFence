@@ -260,6 +260,10 @@ pub struct FenceViewState {
     /// shows only once the pointer has rested inside the SM_C[XY]MOUSEHOVER box for the delay.
     pub(super) tip_anchor: (i32, i32),
     pub(super) tip_armed: bool,
+    /// A keyboard tip (`tip_keyboard_focus`) is up, shown with the pointer at these client px.
+    /// A mouse move to the same point comes from Windows (a window appeared, or the content
+    /// glided under the resting pointer) and leaves that tip alone.
+    pub(super) tip_kbd_at: Option<(i32, i32)>,
     /// Items on the clipboard via 剪切 (drawn at half alpha like Explorer).
     pub(super) cut: HashSet<ItemId>,
     /// Ctrl+wheel accumulator (touchpads deliver fractional notches).
