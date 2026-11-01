@@ -1,6 +1,7 @@
 {
  "page": {
   "PecoFence 使用手册": "PecoFence-Handbuch",
+  "PecoFence 使用手册：栅栏、标签页、整理规则和 AI 配置": "PecoFence-Handbuch: Bereiche, Tabs, Sortierregeln und Einrichtung per KI",
   "每一节都配了一段动画，跟着做一遍就会。点任意一步，动画就跳到那里；看不清就点「慢放」。": "Zu jedem Abschnitt gibt es eine Animation – mach sie einfach einmal nach. Klick auf einen Schritt, und die Animation springt dorthin. Geht es dir zu schnell, klick auf „Zeitlupe“.",
   "\n        <span class=\"intro-ai-mark\" aria-hidden=\"true\">AI</span>\n        <span class=\"intro-ai-text\"><b>嫌一项项设置麻烦？</b>把想要的效果告诉 Claude Code、Codex 这类 AI 助手，它会帮你把 PecoFence 配好。</span>\n        <span class=\"intro-ai-go\">看看怎么做 →</span>\n      ": "\n        <span class=\"intro-ai-mark\" aria-hidden=\"true\">KI</span>\n        <span class=\"intro-ai-text\"><b>Keine Lust, alles einzeln einzustellen?</b> Beschreib Claude Code, Codex oder einem anderen KI-Agenten, was du möchtest – er richtet PecoFence für dich ein.</span>\n        <span class=\"intro-ai-go\">So geht’s →</span>\n      ",
   "目录": "Inhalt",
