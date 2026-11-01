@@ -75,7 +75,8 @@ pub fn mouse_hover_rect() -> (i32, i32) {
 
 /// Settings › Accessibility › Text size, in percent (100–225; 100 when unset). The slider
 /// stores `HKCU\Software\Microsoft\Accessibility\TextScaleFactor` (WinRT
-/// `UISettings.TextScaleFactor`); it does not rewrite the GDI icon-title `LOGFONT`.
+/// `UISettings.TextScaleFactor`); its 「应用」 also rewrites the system fonts, the icon-title
+/// `LOGFONT` included (-12 becomes -15 at 125 %).
 pub fn text_scale_percent() -> u32 {
     let key = to_wide(r"Software\Microsoft\Accessibility");
     let value = to_wide("TextScaleFactor");
@@ -101,8 +102,7 @@ pub fn text_scale_percent() -> u32 {
 }
 
 /// The font the desktop draws icon labels with: `SPI_GETICONTITLELOGFONT` read at 96 DPI so
-/// `size_dip` is in DIPs, multiplied by the Accessibility text-size factor
-/// (`text_scale_percent`, which the LOGFONT itself does not carry).
+/// `size_dip` is in DIPs. Windows' text size is already in it.
 #[derive(Clone, Debug, PartialEq)]
 pub struct IconTitleFont {
     pub family: String,
@@ -112,8 +112,8 @@ pub struct IconTitleFont {
     pub weight: i32,
 }
 
-/// `SPI_GETICONTITLELOGFONT` via `SystemParametersInfoForDpi(96)`, scaled by the text-size
-/// factor; None when the call fails (callers keep their built-in 12 px default).
+/// `SPI_GETICONTITLELOGFONT` via `SystemParametersInfoForDpi(96)`; None when the call fails
+/// (callers keep their built-in 12 px default).
 pub fn icon_title_font() -> Option<IconTitleFont> {
     let mut lf = LOGFONTW::default();
     // SAFETY: out-pointer to a LOGFONTW-sized local, which is what this SPI fills in.
@@ -136,20 +136,19 @@ pub fn icon_title_font() -> Option<IconTitleFont> {
     }
     Some(IconTitleFont {
         family,
-        size_dip: icon_title_size_dip(lf.lfHeight, text_scale_percent()),
+        size_dip: icon_title_size_dip(lf.lfHeight),
         weight: if lf.lfWeight <= 0 { 400 } else { lf.lfWeight },
     })
 }
 
 /// `lfHeight` is negative for em sizes (the usual case), positive for cell heights, 0 for the
-/// default; all become a DIP em size, scaled by the text-size percentage and clamped to
-/// something drawable.
-fn icon_title_size_dip(lf_height: i32, text_scale_percent: u32) -> f32 {
+/// default; all become a DIP em size, clamped to something drawable.
+fn icon_title_size_dip(lf_height: i32) -> f32 {
     let size = match lf_height {
         0 => 12.0,
         h => h.unsigned_abs() as f32,
     };
-    (size * text_scale_percent as f32 / 100.0).clamp(8.0, 40.0)
+    size.clamp(8.0, 40.0)
 }
 
 /// `GetDoubleClickTime` in ms.
@@ -164,19 +163,12 @@ mod tests {
 
     #[test]
     fn icon_title_height_maps_to_dip_em_size() {
-        assert_eq!(icon_title_size_dip(-12, 100), 12.0);
-        assert_eq!(icon_title_size_dip(-15, 100), 15.0);
-        assert_eq!(icon_title_size_dip(16, 100), 16.0);
-        assert_eq!(icon_title_size_dip(0, 100), 12.0);
-        assert_eq!(icon_title_size_dip(-2, 100), 8.0);
-        assert_eq!(icon_title_size_dip(-99, 100), 40.0);
-    }
-
-    #[test]
-    fn text_scale_percent_scales_the_em_size() {
-        assert_eq!(icon_title_size_dip(-12, 125), 15.0);
-        assert_eq!(icon_title_size_dip(-12, 150), 18.0);
-        assert_eq!(icon_title_size_dip(-12, 225), 27.0);
-        assert_eq!(icon_title_size_dip(-20, 225), 40.0);
+        assert_eq!(icon_title_size_dip(-12), 12.0);
+        // Text size 125 % (Windows rewrites the LOGFONT itself).
+        assert_eq!(icon_title_size_dip(-15), 15.0);
+        assert_eq!(icon_title_size_dip(16), 16.0);
+        assert_eq!(icon_title_size_dip(0), 12.0);
+        assert_eq!(icon_title_size_dip(-2), 8.0);
+        assert_eq!(icon_title_size_dip(-99), 40.0);
     }
 }

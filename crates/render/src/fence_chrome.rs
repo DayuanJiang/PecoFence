@@ -16,8 +16,8 @@ use windows_canvas::{
 };
 use windows_core::{Interface, Result};
 
-/// Icon-label font: the system icon-title font (`SPI_GETICONTITLELOGFONT` scaled by the
-/// Settings › Accessibility › Text size factor, see `sysparams::icon_title_font`) with its
+/// Icon-label font: the system icon-title font (`SPI_GETICONTITLELOGFONT`, which carries
+/// Settings › Accessibility › Text size, see `sysparams::icon_title_font`) with its
 /// measured line height, so the cell grid grows with the text like the desktop's does.
 struct LabelFont {
     format: TextFormat,

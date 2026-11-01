@@ -1249,10 +1249,11 @@ impl App {
         self.refresh_visuals(false);
     }
 
-    /// Icon labels follow the desktop's icon-title font (`SPI_GETICONTITLELOGFONT` times the
-    /// Accessibility text-size factor, both re-read on WM_SETTINGCHANGE) unless the custom
-    /// theme names its own, and titles the theme's title font. When a font changed, every
-    /// fence refits its labels and re-lays out its grid, then settles its auto height.
+    /// Icon labels follow the desktop's icon-title font (`SPI_GETICONTITLELOGFONT`, which
+    /// already carries the Accessibility text size; re-read on WM_SETTINGCHANGE) unless the
+    /// custom theme names its own (its size times the text size), and titles the theme's title
+    /// font. When a font changed, every fence refits its labels and re-lays out its grid, then
+    /// settles its auto height.
     pub(super) fn apply_fonts(&mut self) {
         let fonts = self
             .custom_theme
