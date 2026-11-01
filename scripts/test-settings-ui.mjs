@@ -122,7 +122,11 @@ function bridge() {
           const idle = message.template === 'cleanup';
           const allOf = idle ? [{ cond: 'type', value: ['installers', 'archives'] }, { cond: 'idleDays', value: { min: 30 } }] : [{ cond: 'type', value: [message.template] }];
           const at = idle ? 0 : state.rules.list.findIndex(r => !r.allOf.some(c => c.cond === 'idleDays'));
-          state.rules.list.splice(at < 0 ? state.rules.list.length : at, 0, { id: 'rule-' + id, name: message.template, enabled: true, target: { fence: id }, allOf, priorityClass: 'type', template: message.template });
+          // 游戏 is one shortcut-target rule per kind of game shortcut.
+          const games = message.template === 'games' && [['Steam 游戏', 'steam://rungameid/'], ['Steam 游戏', '\\steamapps\\common\\'], ['Epic 游戏', 'com.epicgames.launcher://apps/'], ['Epic 游戏', '\\Epic Games\\'], ['Xbox 游戏', '\\XboxGames\\']];
+          const rules = games ? games.map(([name, value], i) => ({ id: 'rule-' + id + '-' + i, name, enabled: true, target: { fence: id }, allOf: [{ cond: 'shortcutTarget', value: { op: 'contains', value } }], priorityClass: 'target', template: 'games' }))
+            : [{ id: 'rule-' + id, name: message.template, enabled: true, target: { fence: id }, allOf, priorityClass: 'type', template: message.template }];
+          state.rules.list.splice(at < 0 ? state.rules.list.length : at, 0, ...rules);
         }
         if (message.type === 'setFence') {
           // Mirror the host: a portal flag lands in `portal`, everything else on the fence.
@@ -445,6 +449,24 @@ async function runTests() {
     await add(doc);
     assert(errorShown(doc), 'Zero idle days accepted');
     doc = await reset(); rulesPage(doc); // the template fence must not leak into later fixture-count checks
+  });
+  await test('The games template adds a shortcut-target rule per kind of game shortcut (feedback #83)', async () => {
+    const chip = doc.querySelector('#templates [data-template=games]');
+    assert(chip && chip.textContent.includes('游戏'), 'Games chip missing');
+    const before = ruleCount(doc);
+    chip.click(); await settle();
+    assert(frame.contentWindow.testMessages.some(m => m.name === 'addTemplate' && m.template === 'games'), 'addTemplate games not posted');
+    assert(ruleCount(doc) === before + 5, 'Games rules not rendered');
+    const rows = [...doc.querySelectorAll('#ruleList [data-row-id]')].slice(0, 5);
+    const conds = rows.map(r => r.querySelector('.conds').textContent);
+    assert(conds[0].startsWith('快捷方式目标包含“steam://rungameid/”') && conds[4].startsWith('快捷方式目标包含“\\XboxGames\\”'), 'Games conditions not labelled: ' + conds.join(' | '));
+    assert(rows[2].querySelector('.t').textContent === 'Epic 游戏', 'Games rule names not shown');
+    // Each rule toggles and goes on its own, like any rule.
+    rows[0].querySelector('[data-act=toggle]').click(); await settle();
+    assert(current().rules.list[0].enabled === false && current().rules.list[1].enabled === true, 'Toggle did not act on one games rule');
+    doc.querySelector('#ruleList [data-row-id] [data-act=del]').click(); await settle();
+    assert(ruleCount(doc) === before + 4 && current().rules.list[0].allOf[0].value.value === '\\steamapps\\common\\', 'Delete did not remove one games rule');
+    doc = await reset(); rulesPage(doc);
   });
   await test('Reaching a reorder boundary never focuses the opposite action', async () => {
     const up = doc.querySelector('[data-row-id="rule-a"] [data-act=up]');
