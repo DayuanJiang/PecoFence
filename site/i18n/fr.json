@@ -45,7 +45,7 @@
   "detail.back.title": "Un retour toujours possible",
   "detail.back.text": "Instantanés de disposition, sauvegardes quotidiennes, import/export de la configuration et échange des groupes entre écrans.",
   "detail.footprint.title": "Une empreinte légère",
-  "detail.footprint.text": "Une application native en Rust. La fenêtre Paramètres ne charge WebView2 que lorsque vous l’ouvrez.",
+  "detail.footprint.text": "Une application native en Rust qui n’occupe qu’environ 2 à 5 Mo de mémoire au repos (d’après le Gestionnaire des tâches). La fenêtre Paramètres ne charge WebView2 que lorsque vous l’ouvrez.",
   "detail.safe.title": "Vos fichiers restent les vôtres",
   "detail.safe.text": "Les règles automatiques changent seulement le groupe qui affiche un fichier. Vos propres déplacements se comportent comme dans l’Explorateur.",
   "agents.heading": "Votre Bureau, configuré par votre IA.",

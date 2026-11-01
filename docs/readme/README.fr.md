@@ -105,7 +105,7 @@ en cours. Prenez ce qu’il vous faut, puis appuyez sur **Échap** pour y reveni
 | **Gardez vos dossiers à portée de main** | Posez un dossier en direct sur votre Bureau. Parcourez ses sous-dossiers et voyez les changements au moment où ils se produisent. |
 | **De la place quand il en faut** | Repliez un groupe sur son titre. Survolez-le pour le développer. Verrouillez une disposition qui vous convient. Double-cliquez sur le Bureau pour masquer vos groupes. Double-cliquez à nouveau pour les retrouver. |
 | **Un retour toujours possible** | Instantanés de disposition, sauvegardes quotidiennes, import/export de la configuration et échange entre écrans. |
-| **Une empreinte légère** | Une application native en Rust qui occupe environ 40 Mo de mémoire au repos (d’après le Gestionnaire des tâches). La fenêtre Paramètres en WebView2 se charge à la demande. |
+| **Une empreinte légère** | Une application native en Rust qui n’occupe qu’environ 2 à 5 Mo de mémoire au repos (d’après le Gestionnaire des tâches). La fenêtre Paramètres en WebView2 se charge à la demande. |
 
 Les règles de classement automatique laissent les fichiers à leur emplacement d’origine.
 Les déplacements que vous lancez vous-même se comportent comme dans l’Explorateur.

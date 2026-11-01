@@ -105,7 +105,7 @@ Prendi quello che ti serve, poi premi **Esc** per tornare indietro.
 | **Le cartelle a portata di mano** | Metti una cartella attiva sul desktop. Sfoglia le sottocartelle e guarda le modifiche comparire man mano che avvengono. |
 | **Spazio quando serve** | Comprimi un riquadro fino al titolo. Passaci sopra con il puntatore per espanderlo. Blocca il layout quando ti soddisfa. Fai doppio clic sul desktop per nascondere i riquadri e di nuovo per mostrarli. |
 | **Un modo per tornare indietro** | Istantanee del layout, backup giornalieri, importazione ed esportazione della configurazione e scambio dei riquadri tra i monitor. |
-| **Ingombro ridotto** | Un’applicazione nativa scritta in Rust che, quando è inattiva, usa circa 40 MB di memoria in Gestione attività. Il pannello delle impostazioni in WebView2 si carica solo quando serve. |
+| **Ingombro ridotto** | Un’applicazione nativa scritta in Rust che, quando è inattiva, usa solo tra 2 e 5 MB circa di memoria in Gestione attività. Il pannello delle impostazioni in WebView2 si carica solo quando serve. |
 
 Le regole di organizzazione automatica lasciano i file nella loro posizione originale.
 Gli spostamenti avviati da te funzionano come in Esplora file.

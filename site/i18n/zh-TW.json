@@ -45,7 +45,7 @@
   "detail.back.title": "喜歡的配置留得住",
   "detail.back.text": "儲存配置快照、每日自動備份、匯入匯出設定、交換兩個顯示器上的圍欄。",
   "detail.footprint.title": "輕巧地待在桌面上",
-  "detail.footprint.text": "以 Rust 撰寫的原生應用程式，設定面板要開啟時才載入 WebView2。",
+  "detail.footprint.text": "以 Rust 撰寫的原生應用程式，閒置時記憶體用量只有約 2 到 5 MB（工作管理員顯示）。設定面板要開啟時才載入 WebView2。",
   "detail.safe.title": "檔案還是你的檔案",
   "detail.safe.text": "自動規則只改變檔案顯示在哪個圍欄。你自己發起的移動，則和檔案總管一樣直接作用在真實檔案上。",
   "agents.heading": "桌面怎麼設，告訴 AI 就好。",

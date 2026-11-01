@@ -105,7 +105,7 @@ Grab what you need, then press **Esc** to return.
 | **Keep folders close** | Put a live folder on your desktop. Browse subfolders and see changes as they happen. |
 | **Space when you need it** | Roll a fence up to its title. Hover to expand. Lock a layout you like. Double-click the desktop to hide your fences. Double-click again to bring them back. |
 | **A way back** | Layout snapshots, daily backups, configuration import/export and swapping fences between displays. |
-| **A small footprint** | A native Rust application that idles at about 40 MB of memory in Task Manager. The WebView2 settings panel loads on demand. |
+| **A small footprint** | A native Rust application that uses only about 2 to 5 MB of memory at rest in Task Manager. The WebView2 settings panel loads on demand. |
 
 Automatic sorting rules keep files in their original locations. File moves you
 initiate work like they do in File Explorer.

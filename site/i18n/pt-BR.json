@@ -45,7 +45,7 @@
   "detail.back.title": "Um caminho de volta",
   "detail.back.text": "Instantâneos de layout, backups diários, importação e exportação da configuração e troca de grupos entre monitores.",
   "detail.footprint.title": "Leve de verdade",
-  "detail.footprint.text": "Um aplicativo nativo em Rust. O painel de configurações só carrega o WebView2 quando você o abre.",
+  "detail.footprint.text": "Um aplicativo nativo em Rust que, ocioso, usa só cerca de 2 a 5 MB de memória segundo o Gerenciador de Tarefas. O painel de configurações só carrega o WebView2 quando você o abre.",
   "detail.safe.title": "Seus arquivos continuam seus",
   "detail.safe.text": "As regras automáticas só mudam em qual grupo um arquivo aparece. Movimentações que você mesmo inicia funcionam como no Explorador de Arquivos.",
   "agents.heading": "Sua área de trabalho, configurada pela sua IA.",

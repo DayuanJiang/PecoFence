@@ -45,7 +45,7 @@
   "detail.back.title": "喜欢的布局，留得住",
   "detail.back.text": "布局快照、每日备份、配置导入导出，以及在两个显示器之间交换栅栏。",
   "detail.footprint.title": "轻巧地待在桌面上",
-  "detail.footprint.text": "Rust 编写的原生应用。设置面板只在你打开时才加载 WebView2。",
+  "detail.footprint.text": "Rust 编写的原生应用，空闲时内存占用只有约 2 到 5 MB（任务管理器显示）。设置面板只在你打开时才加载 WebView2。",
   "detail.safe.title": "不乱动你的文件",
   "detail.safe.text": "自动规则只改变文件显示在哪个栅栏。你主动发起的移动，和资源管理器里的操作完全一样。",
   "agents.heading": "桌面怎么配，告诉 AI 就好。",

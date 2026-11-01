@@ -105,7 +105,7 @@ Toma lo que necesites y presiona **Esc** para volver.
 | **Ten tus carpetas a mano** | Coloca una carpeta en vivo sobre el escritorio. Navega por sus subcarpetas y ve los cambios al momento. |
 | **Espacio cuando lo necesitas** | Contrae un grupo hasta su título. Pasa el cursor para expandirlo. Bloquea la distribución que te gusta. Haz doble clic en el escritorio para ocultar los grupos. Vuelve a hacer doble clic para recuperarlos. |
 | **Siempre puedes volver atrás** | Instantáneas de distribución, copias de seguridad diarias, importación y exportación de la configuración e intercambio entre pantallas. |
-| **Huella mínima** | Una aplicación nativa escrita en Rust que en reposo ocupa unos 40 MB de memoria (según el Administrador de tareas). El panel de Configuración en WebView2 se carga solo cuando hace falta. |
+| **Huella mínima** | Una aplicación nativa escrita en Rust que en reposo ocupa solo entre 2 y 5 MB de memoria (según el Administrador de tareas). El panel de Configuración en WebView2 se carga solo cuando hace falta. |
 
 Las reglas de organización automática dejan los archivos en su ubicación original. Los movimientos
 que inicias tú funcionan igual que en el Explorador de archivos.

@@ -45,7 +45,7 @@
   "detail.back.title": "Ein Weg zurück",
   "detail.back.text": "Layout-Momentaufnahmen, tägliche Sicherungen, Import/Export der Konfiguration und Tausch von Bereichen zwischen Bildschirmen.",
   "detail.footprint.title": "Ein kleiner Fußabdruck",
-  "detail.footprint.text": "Eine native Rust-Anwendung. Die Einstellungen laden WebView2 erst, wenn du sie öffnest.",
+  "detail.footprint.text": "Eine native Rust-Anwendung, die im Leerlauf nur etwa 2 bis 5 MB Arbeitsspeicher belegt (laut Task-Manager). Die Einstellungen laden WebView2 erst, wenn du sie öffnest.",
   "detail.safe.title": "Deine Dateien gehören dir",
   "detail.safe.text": "Automatische Regeln ändern nur, welcher Bereich eine Datei anzeigt. Verschiebungen, die du selbst anstößt, funktionieren genau wie im Explorer.",
   "agents.heading": "Dein Desktop. Von deiner KI eingerichtet.",

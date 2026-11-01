@@ -45,7 +45,7 @@
   "detail.back.title": "Un modo per tornare indietro",
   "detail.back.text": "Istantanee del layout, backup giornalieri, importazione ed esportazione della configurazione e spostamento dei riquadri tra gli schermi.",
   "detail.footprint.title": "Ingombro ridotto",
-  "detail.footprint.text": "Un’applicazione nativa scritta in Rust. Il pannello delle impostazioni carica WebView2 solo quando lo apri.",
+  "detail.footprint.text": "Un’applicazione nativa scritta in Rust che, quando è inattiva, usa solo tra 2 e 5 MB circa di memoria in Gestione attività. Il pannello delle impostazioni carica WebView2 solo quando lo apri.",
   "detail.safe.title": "I tuoi file restano al loro posto",
   "detail.safe.text": "Le regole automatiche cambiano solo il riquadro in cui viene mostrato un file. Gli spostamenti avviati da te funzionano esattamente come in Esplora file.",
   "agents.heading": "Il tuo desktop. Configurato dalla tua IA.",

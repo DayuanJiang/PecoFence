@@ -45,7 +45,7 @@
   "detail.back.title": "A way back",
   "detail.back.text": "Layout snapshots, daily backups, configuration import and export, and swapping fences between displays.",
   "detail.footprint.title": "A small footprint",
-  "detail.footprint.text": "A native Rust application. The settings panel loads WebView2 only when you open it.",
+  "detail.footprint.text": "A native Rust application that uses only about 2 to 5 MB of memory at rest in Task Manager. The settings panel loads WebView2 only when you open it.",
   "detail.safe.title": "Your files stay put",
   "detail.safe.text": "Automatic rules only change which fence shows a file. Moves you start yourself work exactly as in File Explorer.",
   "agents.heading": "Your desktop. Configured by your AI.",
