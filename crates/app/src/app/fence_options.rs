@@ -459,6 +459,7 @@ impl App {
         self.state.set_spacing(fence, px);
         self.show_grid(fence);
         self.apply_cell_snap(fence);
+        self.fit_height_to_content(fence);
         self.apply_auto_height(fence);
         self.schedule_save();
     }
@@ -725,6 +726,7 @@ impl App {
                 }
                 self.show_grid(fence);
                 self.apply_cell_snap(fence);
+                self.fit_height_to_content(fence);
                 self.apply_auto_height(fence);
                 self.schedule_save();
             }
