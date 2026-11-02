@@ -1215,7 +1215,8 @@ impl App {
         }
         // How long ago each change signal came: none before a refresh the poll found means the
         // signals did not reach this process.
-        let [setting_change, desktop_key, desktops_key] = wallpaper::signal_ages_ms();
+        let [setting_change, desktop_key, desktops_key, themes_folder] =
+            wallpaper::signal_ages_ms();
         tracing::info!(
             reason,
             cache_hit,
@@ -1223,6 +1224,7 @@ impl App {
             last_setting_change_ms = ?setting_change,
             last_desktop_key_ms = ?desktop_key,
             last_desktops_key_ms = ?desktops_key,
+            last_themes_folder_ms = ?themes_folder,
             "wallpaper refreshed"
         );
         true

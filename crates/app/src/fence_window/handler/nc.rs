@@ -1038,6 +1038,7 @@ pub(super) fn on_dpichanged(
         before = ?edges(before),
         suggested = ?edges(suggested),
         after = ?edges(window::window_rect(hwnd)),
+        placed = placing,
         "fence WM_DPICHANGED"
     );
     Some(0)

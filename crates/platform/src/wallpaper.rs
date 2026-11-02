@@ -280,6 +280,7 @@ pub fn watch_changes(on_change: impl Fn() + Send + 'static) -> Result<()> {
         let themes = PathBuf::from(appdata).join(r"Microsoft\Windows\Themes");
         let callback = on_change.clone();
         match crate::watcher::DirWatcher::start(&themes, move |_| {
+            note_signal(Signal::ThemesFolder);
             if let Ok(callback) = callback.lock() {
                 callback();
             }
@@ -305,11 +306,13 @@ pub enum Signal {
     DesktopKey,
     /// The watch on Explorer's `VirtualDesktops` key.
     DesktopsKey,
+    /// The watch on the folder of Explorer's copies of the picture (`Themes`).
+    ThemesFolder,
 }
 
 /// Per [`Signal`]: when it last came, in ms after [`SIGNAL_EPOCH`] plus one (0: not yet).
-static LAST_SIGNAL: [std::sync::atomic::AtomicU64; 3] =
-    [const { std::sync::atomic::AtomicU64::new(0) }; 3];
+static LAST_SIGNAL: [std::sync::atomic::AtomicU64; 4] =
+    [const { std::sync::atomic::AtomicU64::new(0) }; 4];
 static SIGNAL_EPOCH: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
 
 fn signal_clock() -> u64 {
@@ -326,7 +329,7 @@ pub fn note_signal(signal: Signal) {
 }
 
 /// Per [`Signal`] (in its order): how many ms ago it last came, `None` when it has not this run.
-pub fn signal_ages_ms() -> [Option<u64>; 3] {
+pub fn signal_ages_ms() -> [Option<u64>; 4] {
     let now = signal_clock();
     LAST_SIGNAL.each_ref().map(|at| {
         let at = at.load(std::sync::atomic::Ordering::Relaxed);
