@@ -678,8 +678,13 @@ impl App {
                 to_json(&self.item_dtos(only))
             }
             Method::SettingsGet { path } => {
-                let root = visible_settings_json(&self.state.config.settings)?;
                 let path = path.as_deref().unwrap_or("");
+                // Store edition: Windows owns the startup switch, and a change there reaches the
+                // settings only when the Settings window opens. Read it now for a reply about it.
+                if matches!(path, "" | "autostart") {
+                    self.follow_store_startup_now();
+                }
+                let root = visible_settings_json(&self.state.config.settings)?;
                 let pointer = dotted_to_pointer(path);
                 if pointer.is_empty() {
                     return Ok(root);
