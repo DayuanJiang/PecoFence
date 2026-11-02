@@ -145,6 +145,9 @@ pub struct Behavior {
     /// Explorer's "Single-click to open an item (point to select)": resting the pointer on an
     /// item selects it and a click opens it, as on the desktop. Refreshed on WM_SETTINGCHANGE.
     pub single_click: std::cell::Cell<bool>,
+    /// Explorer's "Show pop-up description for folder and desktop items": a resting pointer
+    /// shows the item's infotip. Refreshed on WM_SETTINGCHANGE.
+    pub info_tips: std::cell::Cell<bool>,
     /// Outline of the spot a fence dragged over another one will move to on release, or of
     /// the fence it would join as a tab.
     pub drop_preview: std::cell::RefCell<Option<crate::drop_preview::DropPreview>>,

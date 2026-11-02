@@ -656,6 +656,21 @@ pub(super) fn on_exitsizemove(
     hide_drag_feedback(&h.behavior);
     let rect = window::window_rect(hwnd);
     let at_enter = rect_at_enter.get();
+    // Cancelled while the pointer was over a monitor with another scale, the move loop can
+    // leave the window on that monitor's DPI although it is back on its own (a group drag
+    // gets a WM_DPICHANGED for the pointer's monitor after the put-back); its next move would
+    // then scale it once more. A 1 px move and back, as the app's own placement, makes
+    // Windows take the DPI of the monitor it is on, the rect kept.
+    if h.move_cancelled.get() {
+        let dpi = monitors::query(monitors::monitor_from_window(hwnd)).map(|m| m.dpi);
+        if dpi.is_some_and(|d| d != monitors::dpi_for_window(hwnd)) {
+            let mut nudged = at_enter;
+            nudged.left += 1;
+            nudged.right += 1;
+            super::put_back(view, hwnd, nudged);
+            super::put_back(view, hwnd, at_enter);
+        }
+    }
     // Esc in the system move loop restores the rect but leaves the cursor
     // where it is (possibly on another fence's title): never merge then.
     let esc = window::key_down(msg::VK_ESCAPE) || h.move_cancelled.get();
@@ -947,8 +962,7 @@ pub(super) fn cancel_move(h: &HandlerCtx, hwnd: HWND) {
     }
     let group = h.group.borrow().clone();
     restore_members(&group);
-    let r = h.rect_at_enter.get();
-    let _ = window::set_window_bounds(hwnd, r.left, r.top, r.right - r.left, r.bottom - r.top);
+    super::put_back(&h.view, hwnd, h.rect_at_enter.get());
 }
 
 /// TIMER_MOVE_RBUTTON: the right button pressed during a title drag cancels it, as in
@@ -982,23 +996,28 @@ pub(super) fn on_dpichanged(
     lparam: isize,
 ) -> Option<isize> {
     let HandlerCtx { view, .. } = h;
+    let before = window::window_rect(hwnd);
+    let old = view.borrow().as_ref().map(|v| (v.fence_id, v.dpi));
     let new_dpi = msg::lo_u16(wparam);
     // SAFETY: WM_DPICHANGED's lParam points to a RECT owned by the system for the
     // duration of the message.
     let suggested = unsafe { *(lparam as *const RECT) };
-    {
-        let mut guard = view.borrow_mut();
-        if let Some(v) = guard.as_mut() {
-            v.apply_dpi(new_dpi as u32);
-        }
+    let placing = view.borrow_mut().as_mut().is_some_and(|v| {
+        v.apply_dpi(new_dpi as u32);
+        v.placing
+    });
+    // A drag onto another monitor takes the suggested rect (the same size in DIPs). The app's
+    // own placement has sized the window for that monitor already: the suggested rect would
+    // scale it once more (a quarter bigger going from a 100 % monitor onto a 125 % one).
+    if !placing {
+        let _ = window::set_window_bounds(
+            hwnd,
+            suggested.left,
+            suggested.top,
+            suggested.right - suggested.left,
+            suggested.bottom - suggested.top,
+        );
     }
-    let _ = window::set_window_bounds(
-        hwnd,
-        suggested.left,
-        suggested.top,
-        suggested.right - suggested.left,
-        suggested.bottom - suggested.top,
-    );
     // Windows need not send WM_SIZE when the recommended physical size is unchanged.
     // DPI still changes the optical bezel, root clip and content layout in that case.
     if let Some(v) = view.borrow_mut().as_mut() {
@@ -1009,5 +1028,18 @@ pub(super) fn on_dpichanged(
         }
         v.update_shadow();
     }
+    // The rect Windows suggested and the one the window has now: a move by the app onto a
+    // monitor of another scale must not be scaled once more.
+    let edges = |r: RECT| (r.left, r.top, r.right, r.bottom);
+    tracing::info!(
+        fence = ?old.map(|(id, _)| id),
+        from = ?old.map(|(_, dpi)| dpi),
+        to = new_dpi,
+        before = ?edges(before),
+        suggested = ?edges(suggested),
+        after = ?edges(window::window_rect(hwnd)),
+        placed = placing,
+        "fence WM_DPICHANGED"
+    );
     Some(0)
 }

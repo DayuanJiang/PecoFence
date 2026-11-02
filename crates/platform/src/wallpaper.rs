@@ -246,11 +246,12 @@ pub fn desktops_differ() -> bool {
     desktops.len() > 1 && desktops.iter().any(|(_, path)| *path != desktops[0].1)
 }
 
-/// Watch both wallpaper settings and Explorer's virtual-desktop state. The latter is only
-/// an opportunistic trigger (an Explorer implementation detail); callers must keep a poll
-/// fallback and re-query IDesktopWallpaper before displaying anything.
+/// Watch the wallpaper settings, Explorer's virtual-desktop state and the folder of Explorer's
+/// copies of the picture. The last two are only opportunistic triggers (Explorer
+/// implementation details); callers must keep a poll fallback and re-query IDesktopWallpaper
+/// before displaying anything.
 pub fn watch_changes(on_change: impl Fn() + Send + 'static) -> Result<()> {
-    // The two watcher threads serialize access to a callback that need only be Send.
+    // The watcher threads serialize access to a callback that need only be Send.
     let on_change = std::sync::Arc::new(std::sync::Mutex::new(on_change));
     let mut result = Err(windows_core::Error::from_hresult(E_FAIL));
     for (path, subtree, name) in [
@@ -271,7 +272,69 @@ pub fn watch_changes(on_change: impl Fn() + Send + 'static) -> Result<()> {
             Err(error) => tracing::warn!(path, %error, "wallpaper change source unavailable"),
         }
     }
+    // The Store edition gets no registry notification: MSIX merges HKCU with the package's own
+    // hive, and RegNotifyChangeKeyValue there reports only the package's writes. Explorer
+    // writes its copy of every new picture (a slideshow step too) to this folder, and its
+    // change notifications reach a packaged process as well.
+    if let Some(appdata) = std::env::var_os("APPDATA") {
+        let themes = PathBuf::from(appdata).join(r"Microsoft\Windows\Themes");
+        let callback = on_change.clone();
+        match crate::watcher::DirWatcher::start(&themes, move |_| {
+            note_signal(Signal::ThemesFolder);
+            if let Ok(callback) = callback.lock() {
+                callback();
+            }
+        }) {
+            Ok(watcher) => {
+                // Watches for the life of the process, like the registry watchers.
+                std::mem::forget(watcher);
+                result = Ok(());
+            }
+            Err(error) => tracing::warn!(%error, "wallpaper change source unavailable"),
+        }
+    }
     result
+}
+
+/// A source of wallpaper change signals, for the log: whether a signal arrived before a refresh
+/// (a packaged process may not get them all).
+#[derive(Clone, Copy)]
+pub enum Signal {
+    /// WM_SETTINGCHANGE with SPI_SETDESKWALLPAPER.
+    SettingChange,
+    /// The watch on `Control Panel\Desktop`.
+    DesktopKey,
+    /// The watch on Explorer's `VirtualDesktops` key.
+    DesktopsKey,
+    /// The watch on the folder of Explorer's copies of the picture (`Themes`).
+    ThemesFolder,
+}
+
+/// Per [`Signal`]: when it last came, in ms after [`SIGNAL_EPOCH`] plus one (0: not yet).
+static LAST_SIGNAL: [std::sync::atomic::AtomicU64; 4] =
+    [const { std::sync::atomic::AtomicU64::new(0) }; 4];
+static SIGNAL_EPOCH: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+
+fn signal_clock() -> u64 {
+    SIGNAL_EPOCH
+        .get_or_init(std::time::Instant::now)
+        .elapsed()
+        .as_millis() as u64
+        + 1
+}
+
+/// Notes that `signal` arrived now.
+pub fn note_signal(signal: Signal) {
+    LAST_SIGNAL[signal as usize].store(signal_clock(), std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Per [`Signal`] (in its order): how many ms ago it last came, `None` when it has not this run.
+pub fn signal_ages_ms() -> [Option<u64>; 4] {
+    let now = signal_clock();
+    LAST_SIGNAL.each_ref().map(|at| {
+        let at = at.load(std::sync::atomic::Ordering::Relaxed);
+        (at != 0).then(|| now.saturating_sub(at))
+    })
 }
 
 /// What `RegNotifyChangeKeyValue` returns once the watched key was deleted.
@@ -322,6 +385,11 @@ fn watch_registry_key(
                 };
                 if st.0 == 0 {
                     tracing::debug!(?key, "wallpaper registry change received");
+                    note_signal(if subtree {
+                        Signal::DesktopsKey
+                    } else {
+                        Signal::DesktopKey
+                    });
                     on_change();
                     continue;
                 }
@@ -588,6 +656,40 @@ mod tests {
         assert!(
             delivered,
             "real registry writes did not wake the wallpaper watcher"
+        );
+    }
+
+    #[test]
+    fn a_picture_copy_rewritten_in_place_is_reported() {
+        use std::{sync::mpsc, time::Duration};
+        // Explorer rewrites Themes\TranscodedWallpaper for every new picture: the folder watch
+        // `watch_changes` relies on must report a rewrite of a file that already exists.
+        let dir = std::env::temp_dir().join(format!(
+            "pecofence-wallpaper-folder-test-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let copy = dir.join("TranscodedWallpaper");
+        std::fs::write(&copy, b"old picture").unwrap();
+        let (send, receive) = mpsc::channel();
+        let watcher = crate::watcher::DirWatcher::start(&dir, move |_| {
+            let _ = send.send(());
+        })
+        .unwrap();
+        // The watch starts on its own thread: rewrite until it reports.
+        let mut delivered = false;
+        for version in 0..20 {
+            std::fs::write(&copy, format!("new picture {version}")).unwrap();
+            if receive.recv_timeout(Duration::from_millis(250)).is_ok() {
+                delivered = true;
+                break;
+            }
+        }
+        drop(watcher);
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(
+            delivered,
+            "a rewritten picture copy did not wake the folder watch"
         );
     }
 

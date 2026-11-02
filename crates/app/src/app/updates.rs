@@ -255,7 +255,7 @@ impl App {
             .spawn()
             .map_err(|e| format!("{}: {e}", setup.display()))?;
         tracing::info!(setup = %setup.display(), "update setup started; exiting");
-        self.queue.push(Command::Quit);
+        self.queue.push(Command::Quit("update"));
         Ok(())
     }
 }

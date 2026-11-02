@@ -372,6 +372,11 @@ pub struct FenceViewState {
     pub(super) plate_alpha: f32,
     /// Temporarily expanded by hovering a rolled fence (state stays "rolled" for persistence).
     pub(super) peeking: bool,
+    /// The app is placing the window (`FenceWindow::place_window`, a cancelled drag put back):
+    /// the rect it sets is already in the target monitor's pixels, so a WM_DPICHANGED sent
+    /// inside that SetWindowPos (a move onto a monitor with another scale) must not scale it
+    /// again.
+    pub(super) placing: bool,
     pub(super) behavior: Rc<Behavior>,
 }
 

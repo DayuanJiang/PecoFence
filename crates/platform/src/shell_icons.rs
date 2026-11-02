@@ -11,6 +11,8 @@ use windows_core::PCWSTR;
 const HIDE_ICONS_BIT: u32 = 1 << 12; // SHELLSTATE::fHideIcons
 const DOUBLE_CLICK_BIT: u32 = 1 << 5; // SHELLSTATE::fDoubleClickInWebView
 const SSF_DOUBLECLICKINWEBVIEW: u32 = 0x80;
+const SHOW_INFO_TIP_BIT: u32 = 1 << 11; // SHELLSTATE::fShowInfoTip
+const SSF_SHOWINFOTIP: u32 = 0x2000;
 const CMD_TOGGLE_DESKTOP_ICONS: usize = 0x7402;
 const LVM_GETSELECTEDCOUNT: u32 = 0x1000 + 50; // LVM_FIRST + 50
 const LVM_GETHOTITEM: u32 = 0x1000 + 61; // LVM_FIRST + 61
@@ -37,6 +39,12 @@ pub fn desktop_icons_hidden() -> bool {
 /// an item (point to select)"), as the desktop then does.
 pub fn single_click_open() -> bool {
     shell_flags(SSF_DOUBLECLICKINWEBVIEW) & DOUBLE_CLICK_BIT == 0
+}
+
+/// True when Explorer shows a tip for the item under a resting pointer (Folder Options › View ›
+/// "Show pop-up description for folder and desktop items", on by default).
+pub fn show_info_tips() -> bool {
+    shell_flags(SSF_SHOWINFOTIP) & SHOW_INFO_TIP_BIT != 0
 }
 
 /// Sends the toggle command to the desktop view (falls back to `Progman` when `def_view` is

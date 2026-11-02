@@ -349,7 +349,7 @@ impl App {
                 .then(|| (w.rect(), w.expanded_height_px()))
         });
         if let Some((rect, expanded)) = rolled {
-            self.record_bounds(host, rect, true, expanded);
+            self.record_bounds(host, rect, true, expanded, "expand upward");
         }
         self.schedule_save();
     }

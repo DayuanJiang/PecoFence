@@ -140,9 +140,10 @@ function bridge() {
         window.testShowFeedback = (crash) => receive({ data: { type: 'showFeedback', crash } });
         if (message.name === 'feedbackInfo') {
           // Mirror the host: what may be sent besides the user's text.
+          // The host sizes the log for the message and says for how long a one.
           setTimeout(() => receive({ data: { type: 'feedbackInfo', url: 'https://feedback.test/feedback', app: '0.1.4', language: state.locale,
             crashed: !!state.crashed, system: { app: 'PecoFence 0.1.4 (ZIP / winget)', windows: 'build 26200' },
-            log: 'INFO pecofence::app: config loaded fences=4' } }), 0);
+            log: 'INFO pecofence::app: config loaded fences=4', messageBytes: message.messageBytes ?? 0 } }), 0);
         }
         // Mirror the host: the system colour dialog answers with the colour picked there.
         if (message.name === 'pickColor') {
@@ -1289,6 +1290,18 @@ async function runTests() {
     assert(body.system.windows === 'build 26200' && body.log.includes('config loaded'), 'Diagnostics missing');
     assert(feedbackOutcomes().at(-1) === 201, 'Outcome not reported to the host');
     assert(!errorShown(doc) && doc.getElementById('fbMessage').value === '', 'Sent message was not cleared');
+  });
+  await test('The log is sized again for the message before a report goes out', async () => {
+    doc = await reset();
+    await feedbackPage(doc);
+    const asked = () => frame.contentWindow.testMessages.filter(m => m.name === 'feedbackInfo');
+    assert(asked().at(-1).messageBytes === 0, 'First request does not say the message is empty');
+    const requests = stubFetch(201);
+    doc.getElementById('fbMessage').value = '栅栏在外接显示器后错位';
+    const before = asked().length;
+    doc.getElementById('fbSend').click(); await settle();
+    assert(asked().length === before + 1 && asked().at(-1).messageBytes === 33, 'Not asked again with the UTF-8 length: ' + JSON.stringify(asked().at(-1)));
+    assert(requests.length === 1 && requests[0].body.log.includes('config loaded'), 'Report not sent after the new log arrived');
   });
   await test('Turning the diagnostic log off sends only the message and version', async () => {
     doc = await reset();

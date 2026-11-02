@@ -119,6 +119,42 @@ struct QuickHide {
     marquee_last: Option<POINT>,
 }
 
+impl QuickHide {
+    /// The desktop came to the front with the pointer at `pt`, the primary button `held` down
+    /// or not. A press on the desktop that brought it there while the raw input sink was off
+    /// reached Explorer unseen, so it counts as the first click here. Nothing else does: with
+    /// the sink on, raw input reports that press itself (just before or just after this event),
+    /// and a click on an item of Explorer's menu (刷新) brings the desktop back on its release.
+    fn desktop_activated(&mut self, sink_was_on: bool, held: bool, now: Instant, pt: POINT) {
+        if !sink_was_on && held {
+            self.pending_click = Some((now, pt));
+        }
+    }
+
+    /// A press on the bare desktop at `pt`. The second click of a double-click (within
+    /// `limit_ms` and `slop` pixels of the first one) returns the time since the first click and
+    /// where it was; any other press becomes the first click.
+    fn desktop_press(
+        &mut self,
+        now: Instant,
+        pt: POINT,
+        limit_ms: u128,
+        slop: (i32, i32),
+    ) -> Option<(u128, POINT)> {
+        if let Some((t0, p0)) = self.pending_click.take() {
+            let interval_ms = now.duration_since(t0).as_millis();
+            if interval_ms <= limit_ms
+                && (pt.x - p0.x).abs() <= slop.0.max(4)
+                && (pt.y - p0.y).abs() <= slop.1.max(4)
+            {
+                return Some((interval_ms, p0));
+            }
+        }
+        self.pending_click = Some((now, pt));
+        None
+    }
+}
+
 /// Smallest marquee (device pixels, either axis) that counts as "draw a fence here".
 pub const MARQUEE_MIN_PX: i32 = 48;
 
@@ -262,6 +298,8 @@ pub struct DesktopAnchor {
     /// The window (of an elevated program) the fences go above because they may not go under
     /// it; logged when it starts and when it ends.
     placed_above: Option<isize>,
+    /// The last window found covering the fences (`note_covered`), logged once.
+    covered_by: Option<isize>,
 }
 
 /// The fences' windows as a feedback report describes them.
@@ -390,6 +428,7 @@ impl DesktopAnchor {
             anchor_refused: None,
             topmost_refused: false,
             placed_above: None,
+            covered_by: None,
         };
         // The hook reports only changes of the foreground. With the desktop already in front
         // (a start at sign-in before any window opens) its clicks are followed from now on.
@@ -667,7 +706,8 @@ impl DesktopAnchor {
     /// the front. On 24H2+ Progman itself moves up (the fences keep their place in the z-order,
     /// so inserting them "just above" it again is not reliable), on older builds the WorkerW
     /// the icons were moved into, which `reanchor` follows as a host change.
-    fn check_show_desktop(&mut self) {
+    /// `reason`: which check found it (the foreground hook, its retry, the periodic check).
+    fn check_show_desktop(&mut self, reason: &'static str) {
         let foreground = desktop::foreground_window();
         if !self.show_desktop_active {
             if self.desktop_is_raised_over_us() && self.is_desktop_window(foreground) {
@@ -675,13 +715,18 @@ impl DesktopAnchor {
                 if let Some(callback) = self.on_desktop_front.as_ref() {
                     callback();
                 }
+                let host_kind = self.host.map(|h| h.kind);
                 match self.behavior {
-                    ShowDesktopBehavior::KeepVisible => {
-                        tracing::info!("show desktop: floating the fences above the raised desktop")
-                    }
-                    ShowDesktopBehavior::HideWithDesktop => {
-                        tracing::info!("show desktop: fences stay behind the raised desktop")
-                    }
+                    ShowDesktopBehavior::KeepVisible => tracing::info!(
+                        reason,
+                        ?host_kind,
+                        "show desktop: floating the fences above the raised desktop"
+                    ),
+                    ShowDesktopBehavior::HideWithDesktop => tracing::info!(
+                        reason,
+                        ?host_kind,
+                        "show desktop: fences stay behind the raised desktop"
+                    ),
                 }
             }
         } else if !foreground.0.is_null()
@@ -697,7 +742,8 @@ impl DesktopAnchor {
     fn end_show_desktop(&mut self, reason: &'static str) {
         self.show_desktop_active = false;
         self.topmost_refused = false;
-        tracing::info!(reason, "show desktop ended");
+        let front = desktop::root_ancestor(desktop::foreground_window());
+        tracing::info!(reason, class = %desktop::class_name(front), "show desktop ended");
         if self.behavior == ShowDesktopBehavior::KeepVisible {
             self.with_anchoring(|s| {
                 for (f, shadow) in s.fences.clone() {
@@ -707,6 +753,50 @@ impl DesktopAnchor {
                 }
             });
         }
+    }
+
+    /// The window that sits between the host and our windows, or the host itself when some of
+    /// ours are below it (`is_anchored` is false); `None` when they are all in place.
+    fn first_intruder(&self) -> Option<HWND> {
+        let h = self.host?;
+        let ours = self.all_windows();
+        let windows = desktop::top_level_windows();
+        let host_index = windows.iter().position(|&w| w == h.host)?;
+        let mut remaining = ours.len();
+        for &cursor in windows[..host_index].iter().rev() {
+            if ours.contains(&cursor) {
+                remaining -= 1;
+                if remaining == 0 {
+                    return None;
+                }
+            } else if desktop::has_visible_surface(cursor) && !is_drag_overlay(cursor) {
+                return Some(cursor);
+            }
+        }
+        Some(h.host)
+    }
+
+    /// The fences' block above the desktop was broken (a window went between, or the desktop
+    /// came over some of them): logs what did it, once per window, until it happens again
+    /// with another one.
+    fn note_covered(&mut self, reason: &'static str) {
+        let Some(by) = self.first_intruder() else {
+            return;
+        };
+        let key = Some(by.0 as isize);
+        if key == self.covered_by {
+            return;
+        }
+        self.covered_by = key;
+        let desktop = self.host.is_some_and(|h| h.host == by);
+        tracing::info!(
+            reason,
+            window = ?by,
+            class = %desktop::class_name(by),
+            desktop,
+            elevated = ?pecofence_platform::process::is_elevated(desktop::window_pid(by)),
+            "fences covered; placing them above the desktop again"
+        );
     }
 
     /// Are all our windows directly above the host (contiguous block ending at host)?
@@ -760,18 +850,33 @@ impl DesktopAnchor {
         let is_desktop = self.is_desktop_window(hwnd);
         let raised = self.desktop_is_raised_over_us();
         tracing::debug!(?hwnd, %cls, is_desktop, raised, "foreground changed");
+        // Only the changes to and from the desktop, once each: they start and end following its
+        // clicks (quick hide, marquee), and say what was in front when they did.
+        if is_desktop != self.quick.sink_registered {
+            tracing::info!(
+                class = %cls,
+                desktop = is_desktop,
+                raised,
+                button_down = window::primary_button_down_async(),
+                pt = ?window::cursor_pos(),
+                "foreground moved to or from the desktop"
+            );
+        }
 
         if is_desktop {
             if let Some(callback) = self.on_desktop_front.as_ref() {
                 callback();
             }
+            let sink_was_on = self.quick.sink_registered;
             self.set_raw_input_sink(true);
             let pt = window::cursor_pos();
-            self.quick.pending_click = Some((Instant::now(), pt));
+            let held = window::primary_button_down_async();
+            self.quick
+                .desktop_activated(sink_was_on, held, Instant::now(), pt);
             // The press that activated the desktop reached Explorer before the sink existed: a
             // drag it starts still draws a marquee (from where the pointer is now). Activated
             // any other way, the desktop ends the fence selection like a click on it does.
-            if window::primary_button_down_async() {
+            if held {
                 self.begin_marquee(pt);
             } else {
                 self.emit_marquee(MarqueeEvent::Pressed {
@@ -841,7 +946,7 @@ impl DesktopAnchor {
             });
             // Show desktop may have ended during the peek, which suspends its checks; left
             // active, the fences would float above the window that came to the front.
-            self.check_show_desktop();
+            self.check_show_desktop("peek off");
             self.reanchor("peek off");
             tracing::info!("peek off");
         }
@@ -879,7 +984,7 @@ impl DesktopAnchor {
             // Explorer restarted: the raised desktop went with it.
             self.end_show_desktop("icon host changed");
         }
-        self.check_show_desktop();
+        self.check_show_desktop(reason);
         if self.show_desktop_active {
             if self.behavior == ShowDesktopBehavior::KeepVisible
                 && !self.fences.iter().all(|(f, _)| desktop::is_topmost(*f))
@@ -888,12 +993,18 @@ impl DesktopAnchor {
             }
             return;
         }
-        if resolved != self.host || !self.is_anchored() {
+        let host_changed = resolved != self.host;
+        if host_changed || !self.is_anchored() {
+            if !host_changed {
+                self.note_covered(reason);
+            }
             self.reanchor(reason);
             for (w, _) in self.fences.clone() {
                 if desktop::is_cloaked(w) {
                     tracing::info!(hwnd = ?w, "fence was cloaked; uncloaking");
-                    let _ = desktop::set_cloak(w, false);
+                    if let Err(e) = desktop::set_cloak(w, false) {
+                        tracing::warn!(hwnd = ?w, error = %e, "uncloaking a fence failed");
+                    }
                 }
                 if (!desktop::is_visible(w) || desktop::is_iconic(w)) && !self.quick.fences_hidden {
                     tracing::info!(hwnd = ?w, "fence hidden/minimized; showing");
@@ -955,19 +1066,19 @@ impl DesktopAnchor {
         if !self.quick_hide_enabled {
             return;
         }
-        let now = Instant::now();
-        let (sx, sy) = rawinput::double_click_slop_px();
         let limit = rawinput::double_click_time_ms() as u128;
-        if let Some((t0, p0)) = self.quick.pending_click.take()
-            && now.duration_since(t0).as_millis() <= limit
-            && (pt.x - p0.x).abs() <= sx.max(4)
-            && (pt.y - p0.y).abs() <= sy.max(4)
+        let slop = rawinput::double_click_slop_px();
+        if let Some((interval_ms, first)) =
+            self.quick.desktop_press(Instant::now(), pt, limit, slop)
         {
-            tracing::info!(?pt, "double-click on empty desktop → quick hide on release");
+            tracing::info!(
+                ?pt,
+                interval_ms,
+                ?first,
+                "double-click on empty desktop → quick hide on release"
+            );
             self.quick.pending_toggle = Some(pt);
             self.sentinel.set_timer(TIMER_QUICKHIDE, QUICKHIDE_DELAY_MS);
-        } else {
-            self.quick.pending_click = Some((now, pt));
         }
     }
 
@@ -1066,13 +1177,19 @@ impl DesktopAnchor {
         }
     }
 
+    /// Quick hide's double-click on the empty desktop.
     pub fn toggle_fences_hidden(&mut self) {
-        self.set_fences_hidden(!self.quick.fences_hidden, false);
+        self.toggle_fences_hidden_by("double-click on the desktop");
+    }
+
+    /// `reason` (a fixed text) goes to the log.
+    pub fn toggle_fences_hidden_by(&mut self, reason: &'static str) {
+        self.set_fences_hidden(!self.quick.fences_hidden, false, reason);
     }
 
     /// Hides or shows the fences as quick hide does; `every` includes the ones kept on the
     /// desktop by 「双击桌面隐藏时保留此栅栏」 (「临时显示 Windows 桌面」 hides those too).
-    pub fn set_fences_hidden(&mut self, hide: bool, every: bool) {
+    pub fn set_fences_hidden(&mut self, hide: bool, every: bool, reason: &'static str) {
         self.quick.fences_hidden = hide;
         for (w, shadow) in self.fences.clone() {
             if !every && self.quick_hide_excluded.contains(&(w.0 as isize)) {
@@ -1088,6 +1205,7 @@ impl DesktopAnchor {
         tracing::info!(
             hidden = hide,
             count = self.fences.len(),
+            reason,
             "fences visibility toggled"
         );
     }
@@ -1394,6 +1512,68 @@ impl Drop for DesktopAnchor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Duration;
+
+    fn pt(x: i32, y: i32) -> POINT {
+        POINT { x, y }
+    }
+
+    fn ms(t: Instant, ms: u64) -> Instant {
+        t + Duration::from_millis(ms)
+    }
+
+    #[test]
+    fn a_click_that_brings_the_desktop_back_counts_once_when_raw_input_saw_it() {
+        // The desktop was in front (sink on), then a fence or Explorer's menu; the click on the
+        // desktop or on 刷新 brings the desktop back, and raw input reports that click as well.
+        let t = Instant::now();
+        let mut q = QuickHide::default();
+        q.desktop_activated(true, true, t, pt(700, 560));
+        assert_eq!(q.desktop_press(ms(t, 2), pt(700, 560), 500, (2, 2)), None);
+        // A real second click still makes it a double-click.
+        assert_eq!(
+            q.desktop_press(ms(t, 200), pt(701, 560), 500, (2, 2)),
+            Some((198, pt(700, 560)))
+        );
+        // A third one starts over.
+        assert_eq!(q.desktop_press(ms(t, 350), pt(701, 560), 500, (2, 2)), None);
+    }
+
+    #[test]
+    fn the_press_that_activates_the_desktop_unseen_is_the_first_click() {
+        // Another program was in front (sink off): raw input never reports that press.
+        let t = Instant::now();
+        let mut q = QuickHide::default();
+        q.desktop_activated(false, true, t, pt(300, 420));
+        assert_eq!(
+            q.desktop_press(ms(t, 150), pt(300, 421), 500, (2, 2)),
+            Some((150, pt(300, 420)))
+        );
+    }
+
+    #[test]
+    fn a_menu_item_click_that_brings_the_desktop_back_is_no_first_click() {
+        // Explorer's menu was in front (sink off); its 刷新 runs on the release, so the button is
+        // up when the desktop comes back. A click there right after is a single click.
+        let t = Instant::now();
+        let mut q = QuickHide::default();
+        q.desktop_activated(false, false, t, pt(390, 204));
+        assert_eq!(q.desktop_press(ms(t, 120), pt(390, 204), 500, (2, 2)), None);
+    }
+
+    #[test]
+    fn presses_too_far_apart_in_time_or_place_are_single_clicks() {
+        let t = Instant::now();
+        let mut q = QuickHide::default();
+        assert_eq!(q.desktop_press(t, pt(100, 100), 500, (2, 2)), None);
+        assert_eq!(q.desktop_press(ms(t, 600), pt(100, 100), 500, (2, 2)), None);
+        assert_eq!(q.desktop_press(ms(t, 700), pt(105, 100), 500, (2, 2)), None);
+        // Within 4 px (more than the 2 px of the system rectangle) is the same place.
+        assert_eq!(
+            q.desktop_press(ms(t, 800), pt(109, 104), 500, (2, 2)),
+            Some((100, pt(105, 100)))
+        );
+    }
 
     #[test]
     fn the_kept_marker_stays_in_our_folder_when_the_crash_marker_is_legacy() {

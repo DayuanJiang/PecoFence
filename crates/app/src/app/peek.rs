@@ -241,7 +241,7 @@ impl App {
             None => {
                 let mut settings = self.state.config.settings.clone();
                 settings.peek.set_hotkey(h);
-                self.apply_settings(settings);
+                self.apply_settings(settings, "settings");
                 // The choice already in the settings changes nothing above, but while a
                 // fallback stands in for it, it is free again now: switch back.
                 let before = self.peek_hotkey;

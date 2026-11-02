@@ -59,7 +59,7 @@ impl App {
                 window.is_rolled(),
                 window.expanded_height_px(),
             );
-            self.record_bounds(source, rect, rolled, expanded);
+            self.record_bounds(source, rect, rolled, expanded, "tab detach");
         }
         let Some(change) = self.state.detach_tab(tab) else {
             return;
@@ -118,7 +118,7 @@ impl App {
             None => self.place_new_fence(3, 200.0, x, y, Some(host)),
         };
         let h = rect.bottom - rect.top;
-        self.record_bounds(tab, rect, false, h);
+        self.record_bounds(tab, rect, false, h, "tab detach");
         let started = Instant::now();
         self.resync_windows();
         let resynced_ms = started.elapsed().as_millis();

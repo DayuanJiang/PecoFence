@@ -1617,10 +1617,12 @@
   // 「反馈」 form on 关于: the host supplies what may go along with the user's text (system facts and
   // the shareable log, which holds no personal data); the page posts the report itself and
   // tells the host the outcome.
-  let fbInfo = null, fbCrash = false;
+  let fbInfo = null, fbCrash = false, fbSendPending = false, fbResized = false;
   const fbMessage = document.getElementById('fbMessage'), fbEmail = document.getElementById('fbEmail');
   const fbAttach = document.getElementById('fbAttach'), fbSend = document.getElementById('fbSend');
-  function requestFeedbackInfo() { send({ type: 'action', name: 'feedbackInfo' }); }
+  // The host sizes the log to leave room for the message (the service takes 64 KB in all).
+  const fbMessageBytes = () => new TextEncoder().encode(fbMessage.value.trim()).length;
+  function requestFeedbackInfo() { send({ type: 'action', name: 'feedbackInfo', messageBytes: fbMessageBytes() }); }
   const fbAttached = () => fbAttach.classList.contains('on');
   function renderFeedback() {
     document.getElementById('fbCrashNote').hidden = !fbCrash;
@@ -1652,6 +1654,12 @@
     if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { toast(t("邮箱格式不正确"), true); fbEmail.focus(); return; }
     if (!fbInfo) { requestFeedbackInfo(); toast(t("日志还在准备中，请稍后再发送"), true); return; }
     const attach = fbAttached();
+    // The message grew since the log was sized for it: ask once for one that leaves it room,
+    // then send.
+    if (attach && !fbResized && (fbInfo.messageBytes ?? 0) < fbMessageBytes()) {
+      fbResized = fbSendPending = true; requestFeedbackInfo(); return;
+    }
+    fbResized = false;
     const report = {
       kind: document.querySelector('input[name=fbKind]:checked')?.value || 'other',
       message, email: email || null, app: fbInfo.app, crash: fbCrash,
@@ -1726,7 +1734,10 @@
       state.itemCount = m.itemCount;
       renderWorkspaceSummary(m.fenceCount, m.itemCount);
     } else if (m.type === 'showFence') showFence(m.id);
-    else if (m.type === 'feedbackInfo') { fbInfo = m; fbCrash ||= !!m.crashed; renderFeedback(); }
+    else if (m.type === 'feedbackInfo') {
+      fbInfo = m; fbCrash ||= !!m.crashed; renderFeedback();
+      if (fbSendPending) { fbSendPending = false; fbSend.click(); }
+    }
     else if (m.type === 'showFeedback') showFeedback(!!m.crash);
     else if (m.type === 'toast') toast(m.text, !!m.error);
     else if (m.type === 'pickedColor') pickedColor(m.target, m.hex);

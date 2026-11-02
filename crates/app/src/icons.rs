@@ -169,6 +169,8 @@ pub struct IconCache {
     live: Arc<Mutex<HashSet<u64>>>,
     variant: IconVariant,
     stats: IconStats,
+    /// Failed extractions since `take_failures` last asked (for the hourly activity line).
+    failures: u32,
     next_id: u64,
 }
 
@@ -270,6 +272,7 @@ impl IconCache {
             live,
             variant: IconVariant::default(),
             stats: IconStats::default(),
+            failures: 0,
             next_id: 0,
         }
     }
@@ -473,8 +476,14 @@ impl IconCache {
 
     /// One line per burst of extractions (startup, an icon size change, new files), once
     /// nothing is pending any more; at info only when something went wrong.
+    /// Failed extractions since the last call.
+    pub fn take_failures(&mut self) -> u32 {
+        std::mem::take(&mut self.failures)
+    }
+
     fn log_stats(&mut self) {
         let s = std::mem::take(&mut self.stats);
+        self.failures = self.failures.saturating_add(s.failed as u32);
         if s.ok + s.failed + s.rechecked == 0 {
             return;
         }
