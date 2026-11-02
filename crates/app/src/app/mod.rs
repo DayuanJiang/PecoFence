@@ -436,7 +436,9 @@ fn log_start_state(state: &AppState) {
         custom_theme = s.custom_theme.is_some(),
         icon_size = s.icon_size,
         autostart = s.autostart,
-        moved_desktop = s.desktop_path.is_some(),
+        // The Desktop folder seen at the last run is kept once one run saved it; it does not
+        // say that the desktop moved.
+        desktop_path_saved = s.desktop_path.is_some(),
         rules = state.config.rules.list.len(),
         rules_follow = state.config.rules.keep_updated,
         "settings at start"
