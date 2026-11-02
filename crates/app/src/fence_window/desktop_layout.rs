@@ -62,9 +62,20 @@ impl FenceViewState {
     /// Lays the items out for `self.desktop` and returns the window rect that holds their
     /// cells (screen px), with room under the last icon of each column for a selected full
     /// name; None for a normal fence. The cells are kept in content-local DIPs for `layout`;
-    /// `changed` says whether they moved. The window's shape is `desktop_shape`.
+    /// `changed` says whether they moved or took another scale. The window's shape is
+    /// `desktop_shape`.
     pub(super) fn arrange_desktop(&mut self) -> Option<(RECT, bool)> {
         let area = self.desktop.clone()?;
+        // The cells are measured for the scale of the monitor they stand on, so a scale change
+        // there or a move onto a monitor with another scale is taken first. Windows sends no
+        // WM_DPICHANGED for a scale change by itself, only inside the window's next move or
+        // resize: cells measured at the old scale would keep the rect, and the old DPI with it.
+        let (cx, cy) = (
+            (area.work.left + area.work.right) / 2,
+            (area.work.top + area.work.bottom) / 2,
+        );
+        let rescaled = monitors::query(monitors::monitor_from_point(cx, cy))
+            .is_some_and(|m| self.apply_dpi(m.dpi));
         let scale = self.scale();
         let m = self.grid_metrics();
         let cell = (
@@ -108,7 +119,7 @@ impl FenceViewState {
                 h: m.cell_h,
             })
             .collect();
-        let changed = slots != self.desktop_slots;
+        let changed = rescaled || slots != self.desktop_slots;
         self.desktop_slots = slots;
         Some((rect, changed))
     }

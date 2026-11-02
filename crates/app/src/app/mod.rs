@@ -220,6 +220,8 @@ pub struct Args {
     pub test_script: Option<String>,
     /// `PECOFENCE_INSTANCE` (trimmed, non-empty) of this process; names the IPC pipe.
     pub instance: Option<String>,
+    /// The crashed run's exit code ("0xC0000005") when the watchdog started this one again.
+    pub restarted_after_crash: Option<String>,
 }
 
 pub struct App {
@@ -434,7 +436,9 @@ fn log_start_state(state: &AppState) {
         custom_theme = s.custom_theme.is_some(),
         icon_size = s.icon_size,
         autostart = s.autostart,
-        moved_desktop = s.desktop_path.is_some(),
+        // The Desktop folder seen at the last run is kept once one run saved it; it does not
+        // say that the desktop moved.
+        desktop_path_saved = s.desktop_path.is_some(),
         rules = state.config.rules.list.len(),
         rules_follow = state.config.rules.keep_updated,
         "settings at start"
@@ -507,6 +511,7 @@ impl App {
             elevated = ?process::is_elevated(process::current_pid()),
             after_explorer_s = ?after_explorer_s,
             remote_desktop = sysparams::remote_session(),
+            restarted_after_crash = %args.restarted_after_crash.as_deref().unwrap_or("None"),
             "process started"
         );
         let stack = Rc::new(RenderStack::new()?);

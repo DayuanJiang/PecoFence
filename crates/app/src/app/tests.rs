@@ -88,7 +88,7 @@ mod ipc {
     use super::super::fence_options::{FenceProp, is_live_tick, parse_fence_prop};
     use super::super::ipc::{
         AUTO_SNAPSHOT_PREFIX, MAX_NAME_CHARS, MIN_EXPIRY_MS, adjusted, auto_snapshot_slot,
-        check_rule_conditions, checked_name, is_inbox_alias, patch_settings_path,
+        check_rule_conditions, checked_name, clamp_to_work, is_inbox_alias, patch_settings_path,
         prune_auto_snapshots, request_expiry, rolled_back_settings, snapshot_changes, snapshot_dto,
         validate_rect, visible_settings_json,
     };
@@ -190,6 +190,66 @@ mod ipc {
         // the centre (-1280, 500); the same size is over the limit on the 96 dpi primary.
         assert!(validate_rect(rect(-7424, -5644, 12288, 12288), &areas).is_ok());
         assert!(validate_rect(rect(-5184, -5624, 12288, 12288), &areas).is_err());
+    }
+
+    /// `fence move` / `resize` / `fit` put the window where the saved geometry puts the fence:
+    /// on its work area, as `geometry::denormalize` places it, which is the rect the reply's
+    /// `adjusted.applied` reports (release test: a 向上展开 fence resized to 600 px kept its
+    /// window 230 px above the screen, and a rolled one moved to y 420 had its title row
+    /// below the 720 px work area).
+    #[test]
+    fn cli_rects_are_clamped_like_the_saved_geometry() {
+        use pecofence_core::geometry::{PxRect, denormalize, normalize};
+        let small = work("vm", 0, 0, 1024, 720, 96);
+        assert_eq!(
+            clamp_to_work(rect(890, -230, 120, 600), &small),
+            rect(890, 0, 120, 600)
+        );
+        assert_eq!(
+            clamp_to_work(rect(890, 420, 120, 386), &small),
+            rect(890, 334, 120, 386)
+        );
+        // Inside: unchanged.
+        assert_eq!(
+            clamp_to_work(rect(890, 40, 120, 330), &small),
+            rect(890, 40, 120, 330)
+        );
+        // Taller than the work area: cut to it, at its top.
+        assert_eq!(
+            clamp_to_work(rect(100, 200, 300, 900), &small),
+            rect(100, 0, 300, 720)
+        );
+        let areas = two_monitors();
+        // Past the left edge of the monitor to the left of the primary.
+        assert_eq!(
+            clamp_to_work(rect(-2700, 0, 400, 300), &areas[1]),
+            rect(-2560, 0, 400, 300)
+        );
+        for (r, wa) in [
+            (rect(890, -230, 120, 600), &small),
+            (rect(890, 420, 120, 386), &small),
+            (rect(1800, 900, 300, 200), &areas[0]),
+            (rect(-2700, -300, 451, 303), &areas[1]),
+            (rect(-200, 1100, 600, 500), &areas[1]),
+        ] {
+            let c = clamp_to_work(r, wa);
+            let px = PxRect {
+                left: r.x,
+                top: r.y,
+                right: r.x + r.w,
+                bottom: r.y + r.h,
+            };
+            let saved = denormalize(&normalize(px, wa), wa);
+            let near = |a: i32, b: i32| (a - b).abs() <= 1;
+            assert!(
+                near(c.x, saved.left)
+                    && near(c.y, saved.top)
+                    && near(c.w, saved.width())
+                    && near(c.h, saved.height()),
+                "{r:?} on {}: clamped {c:?}, saved {saved:?}",
+                wa.device_path
+            );
+        }
     }
 
     #[test]

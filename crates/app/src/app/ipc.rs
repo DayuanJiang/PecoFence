@@ -181,6 +181,19 @@ pub(super) fn validate_rect(
     Ok(work.clone())
 }
 
+/// Pure: `rect` cut to the size of `work` and moved into it, the way the saved geometry is
+/// placed (`geometry::denormalize`).
+pub(super) fn clamp_to_work(rect: Rect, work: &geometry::WorkArea) -> Rect {
+    let w = rect.w.min(work.right - work.left);
+    let h = rect.h.min(work.bottom - work.top);
+    Rect {
+        x: rect.x.min(work.right - w).max(work.left),
+        y: rect.y.min(work.bottom - h).max(work.top),
+        w,
+        h,
+    }
+}
+
 /// File name with extension as the user spells it. The display name has the real spelling
 /// minus the hidden extension, which the suffix puts back (the path of an item from an older
 /// file is still the lower-cased key). Namespace items (no path) keep their display name.
@@ -624,8 +637,17 @@ impl App {
                 }
             }
             let spent = started.elapsed();
-            if spent > Duration::from_millis(8) {
+            // One by one from 50 ms, as for slow commands: a script listing items every few
+            // seconds filled the feedback logs with 10 to 25 ms requests.
+            if spent >= Duration::from_millis(50) {
                 tracing::info!(
+                    target: "pecofence::ipc",
+                    ms = crate::share_log::millis(spent),
+                    method,
+                    "slow request"
+                );
+            } else if spent > Duration::from_millis(8) {
+                tracing::debug!(
                     target: "pecofence::ipc",
                     ms = crate::share_log::millis(spent),
                     method,
@@ -678,8 +700,13 @@ impl App {
                 to_json(&self.item_dtos(only))
             }
             Method::SettingsGet { path } => {
-                let root = visible_settings_json(&self.state.config.settings)?;
                 let path = path.as_deref().unwrap_or("");
+                // Store edition: Windows owns the startup switch, and a change there reaches the
+                // settings only when the Settings window opens. Read it now for a reply about it.
+                if matches!(path, "" | "autostart") {
+                    self.follow_store_startup_now();
+                }
+                let root = visible_settings_json(&self.state.config.settings)?;
                 let pointer = dotted_to_pointer(path);
                 if pointer.is_empty() {
                     return Ok(root);
@@ -1439,9 +1466,15 @@ impl App {
             .to_string(),
             // A tab is shown in its host's window, so that is where it is on screen.
             rect: connected.then(|| Rect::from(self.state.fence_px_rect(host))),
-            window_rect: (connected && f.tab_host.is_none())
-                .then(|| self.fences.get(&f.id).map(|w| rect_of(w.rect())))
-                .flatten(),
+            // 「桌面」 arranged like the desktop is shown on a connected monitor even while the
+            // monitor of its saved rect is gone.
+            window_rect: f
+                .tab_host
+                .is_none()
+                .then(|| self.fences.get(&f.id))
+                .flatten()
+                .filter(|w| connected || w.is_desktop_arranged())
+                .map(|w| rect_of(w.rect())),
             monitor: host.geometry.monitor.clone(),
             monitor_connected: connected,
             geometry: f.geometry.clone(),
@@ -1936,14 +1969,25 @@ impl App {
         if let Some(host) = before.tab_host {
             return Err(self.tab_unsupported(&before, host));
         }
-        validate_rect(rect, &self.state.work_areas)?;
+        let work = validate_rect(rect, &self.state.work_areas)?;
         let Some(w) = self.fences.get(&id) else {
             return Err(IpcError::internal("the fence has no window"));
         };
+        // The saved geometry keeps a fence inside its work area (`geometry::denormalize`), so
+        // the window goes to that same rect, the one the reply's `adjusted` names.
+        let placed = clamp_to_work(rect, &work);
+        if placed != rect {
+            tracing::info!(
+                %id,
+                requested = ?(rect.x, rect.y, rect.w, rect.h),
+                placed = ?(placed.x, placed.y, placed.w, placed.h),
+                "cli rect clamped onto the work area"
+            );
+        }
         // Same steps as a user move/resize (`FenceBoundsChanged`) and the cell snap: the
         // window first, then the state with the expanded height. Rolled up, only the title bar
         // shows; `h` becomes the height it unrolls to.
-        let full = rect_to_win(rect);
+        let full = rect_to_win(placed);
         let rolled = w.is_rolled();
         // An explicit place is where the fence rests, even at the top a push gave it.
         self.ctx.behavior.release_push(w.hwnd());
@@ -1953,8 +1997,8 @@ impl App {
             w.set_row_at_bottom(true);
         }
         // Also ends a roll in flight, whose tween would otherwise put its own size back.
-        w.restore_geometry(full, rolled, rect.h);
-        self.record_bounds(id, full, rolled, rect.h, "cli");
+        w.restore_geometry(full, rolled, placed.h);
+        self.record_bounds(id, full, rolled, placed.h, "cli");
         self.apply_auto_height(id);
         self.schedule_save();
         let changed = self.state.fence(id) != Some(&before);

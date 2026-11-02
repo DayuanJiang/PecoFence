@@ -457,6 +457,29 @@ impl App {
             );
     }
 
+    /// Store edition: reads Windows' startup switch on a worker and waits for it briefly, so a
+    /// `pecofence-cli settings get` reply shows a change made in Windows Settings meanwhile.
+    pub(super) fn follow_store_startup_now(&mut self) {
+        if !pecofence_platform::process::is_packaged() {
+            return;
+        }
+        let (send, receive) = std::sync::mpsc::channel();
+        let _ = std::thread::Builder::new()
+            .name("pecofence-startup-task".into())
+            .spawn(move || {
+                let _ = send.send(pecofence_platform::store::startup_task_enabled());
+            });
+        match receive.recv_timeout(std::time::Duration::from_millis(800)) {
+            Ok(Ok(on)) => {
+                self.store_startup
+                    .store(1 + on as u8, std::sync::atomic::Ordering::Relaxed);
+                self.finish_store_startup();
+            }
+            Ok(Err(e)) => tracing::warn!(error = %e, "reading the startup task failed"),
+            Err(_) => tracing::info!("startup task state not read in time; reply as saved"),
+        }
+    }
+
     /// 「随 Windows 启动」 follows the switch Windows keeps for the Store package.
     pub(super) fn finish_store_startup(&mut self) {
         let on = match self

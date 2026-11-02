@@ -145,7 +145,8 @@ pub struct FenceDto {
     /// host's rect (the window it is shown in). `null` while the fence's monitor is disconnected.
     pub rect: Option<Rect>,
     /// The window as currently shown (only the title bar when rolled up); `null` for hosted
-    /// tabs and disconnected monitors.
+    /// tabs and disconnected monitors (「桌面」 arranged like the desktop, which is shown on a
+    /// connected one then, reports its window).
     pub window_rect: Option<Rect>,
     /// Monitor device id (see `monitors.list`); a hosted tab reports its host's.
     pub monitor: String,

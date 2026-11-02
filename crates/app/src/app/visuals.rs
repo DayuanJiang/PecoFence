@@ -1359,6 +1359,7 @@ impl App {
                     portal: None,
                     test_script: None,
                     instance: None,
+                    restarted_after_crash: None,
                 },
             )
         });

@@ -47,6 +47,7 @@ fn parse_args() -> app::Args {
         portal: value("--portal"),
         test_script: value("--test-script"),
         instance: None,
+        restarted_after_crash: None,
     }
 }
 
@@ -186,6 +187,14 @@ fn show_running_settings(instance: Option<&str>) {
 }
 
 fn main() -> Result<()> {
+    // Set by the watchdog when it starts PecoFence again after a crash (the exit code). Taken
+    // out of the environment at once, so programs started from here (an update's setup) do not
+    // inherit it.
+    let restarted_after_crash = std::env::var("PECOFENCE_RESTARTED_AFTER").ok();
+    if restarted_after_crash.is_some() {
+        // SAFETY: first statement of main, before any other thread exists.
+        unsafe { std::env::remove_var("PECOFENCE_RESTARTED_AFTER") };
+    }
     // `PECOFENCE_INSTANCE=<name>` runs a second, independent instance (developer testing with
     // `--portable`); the default name keeps one PecoFence per session. Checked before logging
     // starts: a second launch must leave the running instance's log files alone (it used to
@@ -219,6 +228,7 @@ fn main() -> Result<()> {
 
     let mut args = parse_args();
     args.instance = instance;
+    args.restarted_after_crash = restarted_after_crash;
     let exit_after = args.exit_after_ms;
     // Back after an update closed it. Not named test instances: their environment would be
     // lost and the restart would take the main instance's place.

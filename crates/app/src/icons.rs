@@ -487,10 +487,8 @@ impl IconCache {
         if s.ok + s.failed + s.rechecked == 0 {
             return;
         }
-        let error = s
-            .first_error
-            .map(|e| format!("{:#010x}", e as u32))
-            .unwrap_or_default();
+        // No field at all when nothing failed (an empty value read as a lost one).
+        let error = s.first_error.map(|e| format!("{:#010x}", e as u32));
         if s.failed + s.retried + s.smaller + s.replaced > 0 {
             tracing::info!(
                 ok = s.ok,
@@ -499,7 +497,7 @@ impl IconCache {
                 smaller = s.smaller,
                 rechecked = s.rechecked,
                 replaced = s.replaced,
-                error = %error,
+                error = error.as_deref(),
                 "icons extracted"
             );
         } else {
