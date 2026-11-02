@@ -242,6 +242,29 @@ try {
     Start-Sleep -Milliseconds 800
     $w = Json (Invoke-Cli @("fence", "get", $id)).Out
     Check "expandUpward off: opens downward from the row, like any fence" ($w.rolledUp -eq $false -and $w.windowRect.y -eq $rect.y -and $w.windowRect.h -eq $rect.h) "$($w.windowRect | ConvertTo-Json -Compress)"
+    # A rect that reaches past the work area (its centre on it) is clamped onto it, and the
+    # window goes where the reply and the saved rect say, also rolled with expandUpward (title
+    # row at the bottom of that rect) and for a resize of a fence that opened upward.
+    $wb = $work.y + $work.h
+    $r = Invoke-Cli @("fence", "move", $id, "--y", "$($wb - 150)")
+    $m = Json $r.Out
+    $w = Json (Invoke-Cli @("fence", "get", $id)).Out
+    Check "fence move past the bottom: window at the clamped rect" ($r.Code -eq 0 -and $m.adjusted.applied.y -eq ($wb - 200) -and $w.rect.y -eq ($wb - 200) -and $w.windowRect.y -eq $w.rect.y -and $w.windowRect.h -eq $w.rect.h) "$($r.Out) $($w | ConvertTo-Json -Compress -Depth 4)"
+    Invoke-Cli @("fence", "set", $id, "expandUpward", "true") | Out-Null
+    Invoke-Cli @("fence", "roll", $id) | Out-Null
+    Start-Sleep -Milliseconds 800
+    $r = Invoke-Cli @("fence", "move", $id, "--y", "$($wb - 150)")
+    $w = Json (Invoke-Cli @("fence", "get", $id)).Out
+    Check "expandUpward rolled move past the bottom: title row on the screen, at the rect's bottom" ($r.Code -eq 0 -and $w.rolledUp -eq $true -and $w.rect.y -eq ($wb - 200) -and ($w.windowRect.y + $w.windowRect.h) -eq $wb -and $w.bottomAnchored -eq $true) "$($r.Out) $($w | ConvertTo-Json -Compress -Depth 4)"
+    Invoke-Cli @("fence", "unroll", $id) | Out-Null
+    Start-Sleep -Milliseconds 800
+    Invoke-Cli @("fence", "move", $id, "--y", "$($work.y + 20)") | Out-Null
+    $r = Invoke-Cli @("fence", "resize", $id, "--h", "400")
+    $m = Json $r.Out
+    $w = Json (Invoke-Cli @("fence", "get", $id)).Out
+    Check "expandUpward resize past the top: window at the clamped rect" ($r.Code -eq 0 -and $m.adjusted.applied.y -eq $work.y -and $w.rect.y -eq $work.y -and $w.rect.h -eq 400 -and $w.windowRect.y -eq $w.rect.y -and $w.windowRect.h -eq $w.rect.h) "$($r.Out) $($w | ConvertTo-Json -Compress -Depth 4)"
+    Invoke-Cli @("fence", "set", $id, "expandUpward", "false") | Out-Null
+    Invoke-Cli @("fence", "move", $id, "--rect", "$($rect.x),$($rect.y),$($rect.w),$($rect.h)") | Out-Null
 
     $r = Invoke-Cli @("fence", "rename", $id, "$title renamed")
     Check "fence rename" ($r.Code -eq 0 -and (Json $r.Out).fence.title -eq "$title renamed") "$($r.Out) $($r.Err)"

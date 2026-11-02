@@ -57,7 +57,7 @@ arguments match.
 - Coordinates are physical px in virtual-screen space (monitors left of the primary have negative x).
   A tab (`tabHost` set) reports its host window's `rect`; skip tabs when checking overlaps.
 - `fit: {columns, rows, fittingHeight, overflow}`: `overflow: true` means the fence scrolls. When the
-  app changes a rect on its own (auto height, whole-row snapping, size limits) the reply carries
+  app changes a rect on its own (auto height, whole-row snapping, size limits, the screen edge) the reply carries
   `adjusted: {requested, applied, reason}`: continue from `applied`.
 
 ## Cheat-sheet

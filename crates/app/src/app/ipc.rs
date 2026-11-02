@@ -181,6 +181,19 @@ pub(super) fn validate_rect(
     Ok(work.clone())
 }
 
+/// Pure: `rect` cut to the size of `work` and moved into it, the way the saved geometry is
+/// placed (`geometry::denormalize`).
+pub(super) fn clamp_to_work(rect: Rect, work: &geometry::WorkArea) -> Rect {
+    let w = rect.w.min(work.right - work.left);
+    let h = rect.h.min(work.bottom - work.top);
+    Rect {
+        x: rect.x.min(work.right - w).max(work.left),
+        y: rect.y.min(work.bottom - h).max(work.top),
+        w,
+        h,
+    }
+}
+
 /// File name with extension as the user spells it. The display name has the real spelling
 /// minus the hidden extension, which the suffix puts back (the path of an item from an older
 /// file is still the lower-cased key). Namespace items (no path) keep their display name.
@@ -1950,14 +1963,25 @@ impl App {
         if let Some(host) = before.tab_host {
             return Err(self.tab_unsupported(&before, host));
         }
-        validate_rect(rect, &self.state.work_areas)?;
+        let work = validate_rect(rect, &self.state.work_areas)?;
         let Some(w) = self.fences.get(&id) else {
             return Err(IpcError::internal("the fence has no window"));
         };
+        // The saved geometry keeps a fence inside its work area (`geometry::denormalize`), so
+        // the window goes to that same rect, the one the reply's `adjusted` names.
+        let placed = clamp_to_work(rect, &work);
+        if placed != rect {
+            tracing::info!(
+                %id,
+                requested = ?(rect.x, rect.y, rect.w, rect.h),
+                placed = ?(placed.x, placed.y, placed.w, placed.h),
+                "cli rect clamped onto the work area"
+            );
+        }
         // Same steps as a user move/resize (`FenceBoundsChanged`) and the cell snap: the
         // window first, then the state with the expanded height. Rolled up, only the title bar
         // shows; `h` becomes the height it unrolls to.
-        let full = rect_to_win(rect);
+        let full = rect_to_win(placed);
         let rolled = w.is_rolled();
         // An explicit place is where the fence rests, even at the top a push gave it.
         self.ctx.behavior.release_push(w.hwnd());
@@ -1967,8 +1991,8 @@ impl App {
             w.set_row_at_bottom(true);
         }
         // Also ends a roll in flight, whose tween would otherwise put its own size back.
-        w.restore_geometry(full, rolled, rect.h);
-        self.record_bounds(id, full, rolled, rect.h, "cli");
+        w.restore_geometry(full, rolled, placed.h);
+        self.record_bounds(id, full, rolled, placed.h, "cli");
         self.apply_auto_height(id);
         self.schedule_save();
         let changed = self.state.fence(id) != Some(&before);

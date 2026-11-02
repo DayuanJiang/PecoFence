@@ -390,7 +390,7 @@ The app ignores the field's value.
 - `adjusted: {"requested", "applied", "reason"}` appears when the app changed a rect on its own:
   `fence move`/`resize`/`fit` and `fence create --rect` (virtual fences and portals alike) on a fence
   with `autoHeight` (`reason: "autoHeight"`, the height follows the content) or clamped to the size
-  limits (`"clamped"`), and `fence set` of `iconSize`, `spacing`, `spacingPx`, `layout` or
+  limits and onto the monitor's work area (`"clamped"`; the fence goes to `applied`), and `fence set` of `iconSize`, `spacing`, `spacingPx`, `layout` or
   `labelLines`, which snaps the window to whole icon columns and rows (`"cellSnap"`; `requested` is
   the rect before the change). Use `applied` for further placement.
 - Failure: stderr gets `{"error": {"code", "message", "hint"?, "details"?}}`. Nothing else is ever
