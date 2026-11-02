@@ -260,10 +260,12 @@ pub struct FenceViewState {
     /// shows only once the pointer has rested inside the SM_C[XY]MOUSEHOVER box for the delay.
     pub(super) tip_anchor: (i32, i32),
     pub(super) tip_armed: bool,
-    /// A keyboard tip (`tip_keyboard_focus`) is up, shown with the pointer at these client px.
-    /// A mouse move to the same point comes from Windows (a window appeared, or the content
-    /// glided under the resting pointer) and leaves that tip alone.
-    pub(super) tip_kbd_at: Option<(i32, i32)>,
+    /// Screen px of the last mouse move the infotip logic took (`update_tip_target`). As in
+    /// comctl32, a move to the same point neither arms nor re-targets the tip: Windows sends
+    /// one after a click, when a window appears or when the content moves under a resting
+    /// pointer. A tip that a click, a key or the wheel hid comes back only when the pointer
+    /// really moves.
+    pub(super) tip_move_at: Option<(i32, i32)>,
     /// Items on the clipboard via 剪切 (drawn at half alpha like Explorer).
     pub(super) cut: HashSet<ItemId>,
     /// Ctrl+wheel accumulator (touchpads deliver fractional notches).

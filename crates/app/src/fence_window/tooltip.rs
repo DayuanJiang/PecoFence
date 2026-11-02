@@ -61,7 +61,6 @@ impl FenceViewState {
         }
         self.tip_target = None;
         self.tip_armed = false;
-        self.tip_kbd_at = None;
     }
 
     /// Auto-pop (TIMER_TIP_HIDE): the tip goes away but the target stays, so it does not come
@@ -80,13 +79,12 @@ impl FenceViewState {
     /// else, and restart the delay while it keeps moving over the same thing (TME_HOVER: the
     /// tip appears only after the pointer has rested inside the SM_C[XY]MOUSEHOVER box for
     /// SPI_GETMOUSEHOVERTIME). Moving straight from one tipped thing to the next re-shows
-    /// after the short TTDT_RESHOW delay. A tip already shown / auto-popped never re-arms.
+    /// after the short TTDT_RESHOW delay. A tip already shown / auto-popped never re-arms. A
+    /// move to the screen point of the previous one changes nothing (`tip_move_at`).
     pub(super) fn update_tip_target(&mut self, target: Option<TipTarget>, x: i32, y: i32) {
-        if let Some(at) = self.tip_kbd_at {
-            if at == (x, y) {
-                return;
-            }
-            self.tip_kbd_at = None;
+        let pt = window::client_to_screen(self.hwnd, pecofence_platform::POINT { x, y });
+        if self.tip_move_at.replace((pt.x, pt.y)) == Some((pt.x, pt.y)) {
+            return;
         }
         if target == self.tip_target {
             if self.tip_armed
@@ -215,12 +213,6 @@ impl FenceViewState {
         let glide = ((self.scroll_y - self.scroll_target()) * self.scale()).round() as i32;
         self.tip_target = Some(TipTarget::Item(i));
         self.show_tip_at(r.left, r.bottom + glide);
-        // The tip appearing makes Windows send a mouse move to the window under the pointer.
-        // Over this fence that move would hand the tip to the item under the pointer.
-        if self.tip_shown {
-            let pt = window::screen_to_client(self.hwnd, window::cursor_pos());
-            self.tip_kbd_at = Some((pt.x, pt.y));
-        }
     }
 
     fn show_tip_at(&mut self, x: i32, y: i32) {

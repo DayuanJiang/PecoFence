@@ -352,7 +352,8 @@ impl FenceViewState {
     }
 
     /// The content moved under a (possibly stationary) pointer — a glide ended or the offset
-    /// snapped — so the item under it, its infotip and the cursor must follow. Posts a
+    /// snapped — so the item under it and the cursor must follow (the infotip waits for a real
+    /// pointer move, see `tip_move_at`). Posts a
     /// synthetic WM_MOUSEMOVE at the pointer's current client position: the full hover / tip /
     /// cursor logic then re-runs from the message loop instead of being duplicated here.
     /// `PostMessage` is asynchronous, so this is safe under the borrow and from `tick`
