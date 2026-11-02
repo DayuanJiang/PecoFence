@@ -986,19 +986,22 @@ pub(super) fn on_dpichanged(
     // SAFETY: WM_DPICHANGED's lParam points to a RECT owned by the system for the
     // duration of the message.
     let suggested = unsafe { *(lparam as *const RECT) };
-    {
-        let mut guard = view.borrow_mut();
-        if let Some(v) = guard.as_mut() {
-            v.apply_dpi(new_dpi as u32);
-        }
+    let placing = view.borrow_mut().as_mut().is_some_and(|v| {
+        v.apply_dpi(new_dpi as u32);
+        v.placing
+    });
+    // A drag onto another monitor takes the suggested rect (the same size in DIPs). The app's
+    // own placement has sized the window for that monitor already: the suggested rect would
+    // scale it once more (a quarter bigger going from a 100 % monitor onto a 125 % one).
+    if !placing {
+        let _ = window::set_window_bounds(
+            hwnd,
+            suggested.left,
+            suggested.top,
+            suggested.right - suggested.left,
+            suggested.bottom - suggested.top,
+        );
     }
-    let _ = window::set_window_bounds(
-        hwnd,
-        suggested.left,
-        suggested.top,
-        suggested.right - suggested.left,
-        suggested.bottom - suggested.top,
-    );
     // Windows need not send WM_SIZE when the recommended physical size is unchanged.
     // DPI still changes the optical bezel, root clip and content layout in that case.
     if let Some(v) = view.borrow_mut().as_mut() {

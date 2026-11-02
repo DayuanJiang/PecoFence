@@ -295,6 +295,7 @@ impl FenceWindow {
             plate_inset_px: 0,
             plate_alpha: 1.0,
             peeking: false,
+            placing: false,
             behavior: ctx.behavior.clone(),
         };
         if rolled_up {
@@ -590,10 +591,14 @@ impl FenceWindow {
     }
 
     fn place_window(&self, r: RECT) {
-        self.with_view(|v| v.height_anim = None);
+        self.with_view(|v| {
+            v.height_anim = None;
+            v.placing = true;
+        });
         let _ = self
             .window
             .set_bounds(r.left, r.top, r.right - r.left, r.bottom - r.top);
+        self.with_view(|v| v.placing = false);
     }
 
     /// A tab split/undo supplies complete geometry. Settle any hover expansion first
