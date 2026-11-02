@@ -1146,6 +1146,7 @@ impl App {
                 single_click: std::cell::Cell::new(
                     pecofence_platform::shell_icons::single_click_open(),
                 ),
+                info_tips: std::cell::Cell::new(pecofence_platform::shell_icons::show_info_tips()),
                 drop_preview: std::cell::RefCell::new(
                     crate::drop_preview::DropPreview::create()
                         .map_err(|e| tracing::warn!(error = %e, "drop preview unavailable"))

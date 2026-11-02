@@ -1235,6 +1235,10 @@ impl App {
         if self.ctx.behavior.single_click.replace(single_click) != single_click {
             tracing::info!(single_click, "Explorer's click to open setting changed");
         }
+        let info_tips = pecofence_platform::shell_icons::show_info_tips();
+        if self.ctx.behavior.info_tips.replace(info_tips) != info_tips {
+            tracing::info!(info_tips, "Explorer's pop-up description setting changed");
+        }
         self.apply_fonts();
         // Any broadcast that reaches us after the work area moved (taskbar, DPI, resolution
         // races) must re-layout, or every later set_fence_bounds normalizes against a stale
