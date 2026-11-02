@@ -32,9 +32,12 @@ fn main() {
         && ran >= RESTART_MIN_RUN
         && !window::SingleInstance::is_held(&mutex)
     {
-        restart(&args[2..]);
+        restart(&args[2..], code);
     }
 }
+
+/// Tells the restarted run why it was started (its log's first line says so).
+const RESTARTED_AFTER: &str = "PECOFENCE_RESTARTED_AFTER";
 
 /// An exception ended the process: an NTSTATUS error such as an access violation (0xC0000005)
 /// or a Rust panic's fail-fast (0xC0000409), or a C++ exception. Not Windows ending a program
@@ -49,13 +52,15 @@ fn crashed(code: u32) -> bool {
 
 /// Starts `pecofence.exe` beside this program with the crashed run's arguments and environment
 /// (`PECOFENCE_INSTANCE` included). Not test runs: their script would run again.
-fn restart(args: &[String]) {
+fn restart(args: &[String], code: u32) {
     if args
         .iter()
         .any(|a| a == "--test-script" || a == "--exit-after")
     {
         return;
     }
+    // SAFETY: the watchdog runs no other threads that could read the environment meanwhile.
+    unsafe { std::env::set_var(RESTARTED_AFTER, format!("{code:#010X}")) };
     let Some(exe) = std::env::current_exe()
         .ok()
         .and_then(|exe| Some(exe.parent()?.join("pecofence.exe")))
