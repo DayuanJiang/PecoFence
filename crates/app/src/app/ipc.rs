@@ -624,8 +624,17 @@ impl App {
                 }
             }
             let spent = started.elapsed();
-            if spent > Duration::from_millis(8) {
+            // One by one from 50 ms, as for slow commands: a script listing items every few
+            // seconds filled the feedback logs with 10 to 25 ms requests.
+            if spent >= Duration::from_millis(50) {
                 tracing::info!(
+                    target: "pecofence::ipc",
+                    ms = crate::share_log::millis(spent),
+                    method,
+                    "slow request"
+                );
+            } else if spent > Duration::from_millis(8) {
+                tracing::debug!(
                     target: "pecofence::ipc",
                     ms = crate::share_log::millis(spent),
                     method,
