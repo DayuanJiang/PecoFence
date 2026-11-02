@@ -9,10 +9,14 @@ use pecofence_core::config_store::ReadError;
 /// as an issue in a private repository. `PECOFENCE_FEEDBACK_URL` points a test instance
 /// elsewhere (e.g. `wrangler dev`).
 const FEEDBACK_URL: &str = "https://api.pecofence.jiang.jp/feedback";
-/// How much shareable log goes with a report, at most, all runs together. The service takes a
-/// body of 64 KB (bytes): a 5000-character Chinese message is 15 KB of it, the system facts
-/// and the JSON around them about 3 KB, which leaves this much with a little room.
-const LOG_BUDGET_BYTES: usize = 44 * 1024;
+/// How much shareable log goes with a report, at most, all runs together (the service takes
+/// 52 KB); a long message leaves less room, see [`log_budget`].
+const LOG_MAX_BYTES: usize = 50 * 1024;
+/// The service refuses a body over 64 KB (bytes); this leaves one free.
+const BODY_MAX_BYTES: usize = 63 * 1024;
+/// What a body holds besides the message and the log: 12 system facts of up to 200
+/// characters, the e-mail address, the JSON keys, and the escapes the log's lines need.
+const REPORT_OVERHEAD_BYTES: usize = 4 * 1024;
 /// The first lines of a longer log that go with it: the startup lines (monitors, config,
 /// desktop generation, icon host, settings), which the end of a long run no longer shows.
 const LOG_HEAD_BYTES: usize = 8 * 1024;
@@ -30,6 +34,11 @@ const KEY_MESSAGES: &[&str] = &[
     "display changed",
     "fence placed on display change",
     "fence DPI changed",
+    "fence WM_DPICHANGED",
+    "fence rect saved",
+    "fences covered",
+    "session changed",
+    "quitting",
     "work area changed",
     "icon host changed",
     "show desktop",
@@ -203,25 +212,34 @@ fn excerpt(text: &str, max: usize) -> String {
     )
 }
 
-/// The log that goes with a report: this run's within the budget, after the previous run's
-/// when that one crashed or did not end normally (`how`), or when this run's leaves room.
-fn report_log(previous: Option<&str>, how: Option<&str>, current: &str) -> String {
+/// The room for the log in a report whose message is `message_bytes` long (UTF-8): all of
+/// [`LOG_MAX_BYTES`] for the usual short message, less for a long one, so that a 5000-character
+/// Chinese message (15 KB) still fits the service's body limit.
+fn log_budget(message_bytes: usize) -> usize {
+    BODY_MAX_BYTES
+        .saturating_sub(message_bytes + REPORT_OVERHEAD_BYTES)
+        .min(LOG_MAX_BYTES)
+}
+
+/// The log that goes with a report, within `budget` bytes: this run's, after the previous
+/// run's when that one crashed or did not end normally (`how`), or when this run's leaves room.
+fn report_log(previous: Option<&str>, how: Option<&str>, current: &str, budget: usize) -> String {
     let previous = previous.filter(|p| !p.trim().is_empty());
     let (previous, current) = match (previous, how) {
         (Some(previous), Some(_)) => {
             // The run that went wrong first; this one gets at most half.
-            let mine = current.len().min(LOG_BUDGET_BYTES / 2);
-            let previous = excerpt(previous, LOG_BUDGET_BYTES - mine - 2 * MARKER_BYTES);
-            let room = LOG_BUDGET_BYTES - previous.len() - 2 * MARKER_BYTES;
+            let mine = current.len().min(budget / 2);
+            let previous = excerpt(previous, budget.saturating_sub(mine + 2 * MARKER_BYTES));
+            let room = budget.saturating_sub(previous.len() + 2 * MARKER_BYTES);
             (Some(previous), excerpt(current, room))
         }
         (Some(previous), None) => {
-            let current = excerpt(current, LOG_BUDGET_BYTES - 2 * MARKER_BYTES);
-            let room = LOG_BUDGET_BYTES.saturating_sub(current.len() + 2 * MARKER_BYTES);
+            let current = excerpt(current, budget.saturating_sub(2 * MARKER_BYTES));
+            let room = budget.saturating_sub(current.len() + 2 * MARKER_BYTES);
             let previous = (room >= PREVIOUS_RUN_MIN_BYTES).then(|| excerpt(previous, room));
             (previous, current)
         }
-        (None, _) => (None, excerpt(current, LOG_BUDGET_BYTES)),
+        (None, _) => (None, excerpt(current, budget)),
     };
     let Some(previous) = previous else {
         return current;
@@ -382,7 +400,8 @@ impl App {
     }
 
     /// What the page may send besides the user's own text, shown to them before sending.
-    pub(super) fn feedback_info_json(&self) -> serde_json::Value {
+    /// `message_bytes`: how long the user's message is now (UTF-8), which the log makes room for.
+    pub(super) fn feedback_info_json(&self, message_bytes: usize) -> serde_json::Value {
         let install = install_kind(self.portable);
         let displays: Vec<String> = monitors::enumerate()
             .iter()
@@ -547,7 +566,12 @@ impl App {
             .read_share_log(pecofence_core::brand::SHARE_LOG)
             // The report still says why it has no log.
             .unwrap_or_else(|e| format!("--- the log could not be read: {e} ---\n"));
-        let log = report_log(previous.as_deref(), previous_run, &current);
+        let log = report_log(
+            previous.as_deref(),
+            previous_run,
+            &current,
+            log_budget(message_bytes),
+        );
         let url = pecofence_core::brand::var("PECOFENCE_FEEDBACK_URL")
             .ok()
             .filter(|u| u.starts_with("https://") || u.starts_with("http://127.0.0.1:"))
@@ -560,6 +584,8 @@ impl App {
             "crashed": self.feedback.previous_run_crashed,
             "system": system,
             "log": log,
+            // The page asks again when the message has grown since (see `log_budget`).
+            "messageBytes": message_bytes,
         })
     }
 
@@ -567,8 +593,10 @@ impl App {
     pub(super) fn on_feedback_action(&mut self, name: &str, v: &serde_json::Value) {
         match name {
             "feedbackInfo" => {
+                let message_bytes =
+                    v.get("messageBytes").and_then(|b| b.as_u64()).unwrap_or(0) as usize;
                 if let Some(h) = &self.settings {
-                    h.post_json(&self.feedback_info_json().to_string());
+                    h.post_json(&self.feedback_info_json(message_bytes).to_string());
                 }
             }
             "feedbackResult" => {
@@ -655,8 +683,8 @@ mod tests {
         let short = "a\nb\n";
         assert_eq!(excerpt(short, 100), short);
         let log: String = (0..10_000).map(|i| format!("line {i:05}\n")).collect();
-        let cut = excerpt(&log, LOG_BUDGET_BYTES);
-        assert!(cut.len() <= LOG_BUDGET_BYTES);
+        let cut = excerpt(&log, LOG_MAX_BYTES);
+        assert!(cut.len() <= LOG_MAX_BYTES);
         assert!(cut.starts_with("line 00000\n"));
         assert!(cut.ends_with("line 09999\n"));
         let head_lines = head(&log, LOG_HEAD_BYTES).lines().count();
@@ -703,8 +731,8 @@ mod tests {
             };
             log.push_str(&text);
         }
-        let cut = excerpt(&log, LOG_BUDGET_BYTES);
-        assert!(cut.len() <= LOG_BUDGET_BYTES, "{}", cut.len());
+        let cut = excerpt(&log, LOG_MAX_BYTES);
+        assert!(cut.len() <= LOG_MAX_BYTES, "{}", cut.len());
         assert!(cut.starts_with(&line(0, "INFO", "slow command ms=60.5 command=RaiseFence")));
         assert!(cut.ends_with(&line(
             3999,
@@ -768,9 +796,9 @@ mod tests {
             i += 1;
         }
         let started = std::time::Instant::now();
-        let cut = excerpt(&log, LOG_BUDGET_BYTES);
+        let cut = excerpt(&log, LOG_MAX_BYTES);
         assert!(started.elapsed() < std::time::Duration::from_secs(1));
-        assert!(cut.len() <= LOG_BUDGET_BYTES);
+        assert!(cut.len() <= LOG_MAX_BYTES);
         assert!(cut.starts_with(log.lines().next().unwrap()));
         assert!(cut.ends_with(&format!("{}\n", log.lines().last().unwrap())));
         assert!(cut.contains(": display changed monitors=2"));
@@ -782,8 +810,8 @@ mod tests {
         let log: String = (0..6000)
             .map(|i| line(i, "WARN", "hiding desktop icons failed"))
             .collect();
-        let cut = excerpt(&log, LOG_BUDGET_BYTES);
-        assert!(cut.len() <= LOG_BUDGET_BYTES);
+        let cut = excerpt(&log, LOG_MAX_BYTES);
+        assert!(cut.len() <= LOG_MAX_BYTES);
         let kept = cut
             .split_once("among them follow ---\n")
             .and_then(|(_, rest)| rest.split_once("--- end of the lines kept"))
@@ -838,21 +866,24 @@ mod tests {
         };
         let (old, now) = (long("old"), long("now"));
         // Crashed: both go, each within the budget together.
-        let log = report_log(Some(&old), Some("crashed"), &now);
-        assert!(log.len() <= LOG_BUDGET_BYTES, "{}", log.len());
+        let log = report_log(Some(&old), Some("crashed"), &now, LOG_MAX_BYTES);
+        assert!(log.len() <= LOG_MAX_BYTES, "{}", log.len());
         assert!(log.starts_with("--- previous run (crashed) ---\n"));
         assert!(log.contains("\n--- this run ---\n"));
         assert!(log.contains(": old 19999\n") && log.ends_with(": now 19999\n"));
         // A normal previous run goes only into the room this run leaves.
-        assert!(!report_log(Some(&old), None, &now).contains("previous run"));
+        assert!(!report_log(Some(&old), None, &now, LOG_MAX_BYTES).contains("previous run"));
         let started = line(1, "INFO", "process started");
-        let log = report_log(Some(&old), None, &started);
-        assert!(log.len() <= LOG_BUDGET_BYTES);
+        let log = report_log(Some(&old), None, &started, LOG_MAX_BYTES);
+        assert!(log.len() <= LOG_MAX_BYTES);
         assert!(log.starts_with("--- previous run ---\n"));
         assert!(log.ends_with(&format!("--- this run ---\n{started}")));
         // No previous run, or an empty one.
-        assert_eq!(report_log(None, None, &started), started);
-        assert_eq!(report_log(Some(" \n"), Some("crashed"), &started), started);
+        assert_eq!(report_log(None, None, &started, LOG_MAX_BYTES), started);
+        assert_eq!(
+            report_log(Some(" \n"), Some("crashed"), &started, LOG_MAX_BYTES),
+            started
+        );
     }
 
     #[test]
@@ -863,8 +894,12 @@ mod tests {
         let old: String = (0..30_000)
             .map(|i| line(i, "WARN", "anchor SetWindowPos failed"))
             .collect();
-        let log = report_log(Some(&old), Some("crashed"), &old);
+        // The longest message the page takes: 5000 characters, 3 bytes each in UTF-8.
+        let message = "错".repeat(5000);
+        assert_eq!(log_budget(0), LOG_MAX_BYTES);
+        let log = report_log(Some(&old), Some("crashed"), &old, log_budget(message.len()));
         assert!(log.encode_utf16().count() <= MAX_LOG);
+        assert!(log.len() > 40 * 1024, "{}", log.len());
         let system: serde_json::Map<String, serde_json::Value> = (0..12)
             .map(|i| {
                 (
@@ -875,7 +910,7 @@ mod tests {
             .collect();
         let report = serde_json::json!({
             "kind": "bug",
-            "message": "错".repeat(5000),
+            "message": message,
             "email": format!("{}@example.com", "a".repeat(242)),
             "app": "0.2.4",
             "crash": true,

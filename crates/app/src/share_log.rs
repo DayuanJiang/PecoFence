@@ -32,8 +32,11 @@ const MAX_BYTES: u64 = 2 * 1024 * 1024;
 /// Error lines may go this far past [`MAX_BYTES`]: the next start looks for a `PANIC` or
 /// `CRASH` line to offer crash feedback.
 const ERROR_RESERVE_BYTES: u64 = 256 * 1024;
-/// Identical consecutive messages written out before the rest of the run is only counted.
+/// Identical consecutive lines written out before the rest of the run is only counted.
 const REPEATS_SHOWN: u32 = 3;
+/// Consecutive lines of one message with other fields (one per fence after a display change)
+/// written out before the rest of the run is only counted: one per fence at the fence limit.
+const VARIED_REPEATS_SHOWN: u32 = 64;
 
 /// Fields whose text the code itself defines. Binding one of these names to a new expression
 /// fails `tests::callsites_are_shareable` until the binding is reviewed and listed there.
@@ -41,13 +44,14 @@ const CODE_TEXT_FIELDS: &[&str] = &[
     "access",
     "at",
     "behavior",
+    "by",
     "class",
     "command",
-    "drive",
     "effect",
     "family",
     "generation",
     "hotkey",
+    "host_kind",
     "install",
     "language",
     "memory",
@@ -57,11 +61,13 @@ const CODE_TEXT_FIELDS: &[&str] = &[
     "old",
     "outcome",
     "payload",
+    "place",
     "position",
     "prop",
     "queue",
     "reason",
     "report",
+    "source",
     "stack",
     "storage",
     "style",
@@ -301,9 +307,11 @@ impl Visit for SafeFields {
     }
 }
 
-/// A run of identical consecutive messages.
+/// A run of consecutive lines of one message.
 struct Run {
     key: (Level, &'static str, String),
+    /// The fields of the last line written.
+    fields: String,
     shown: u32,
     hidden: u32,
 }
@@ -319,16 +327,23 @@ impl Sink {
         let key = (level, target, fields.message);
         match &mut self.run {
             Some(run) if run.key == key => {
-                if run.shown >= REPEATS_SHOWN {
+                let limit = if run.fields == fields.rest {
+                    REPEATS_SHOWN
+                } else {
+                    VARIED_REPEATS_SHOWN
+                };
+                if run.shown >= limit {
                     run.hidden += 1;
                     return;
                 }
                 run.shown += 1;
+                run.fields.clone_from(&fields.rest);
             }
             _ => {
                 self.end_run(time);
                 self.run = Some(Run {
                     key: key.clone(),
+                    fields: fields.rest.clone(),
                     shown: 1,
                     hidden: 0,
                 });
@@ -569,21 +584,39 @@ mod tests {
     #[test]
     fn repeated_messages_collapse_into_a_count() {
         let lines = capture(|| {
-            for hwnd in 0..10 {
-                tracing::warn!(hwnd, "anchor SetWindowPos failed");
+            for _ in 0..10 {
+                tracing::warn!(hwnd = 7, "anchor SetWindowPos failed");
             }
             tracing::info!("desktop icons already hidden by user/other tool; leaving as is");
         });
         assert_eq!(
             lines,
             [
-                "WARN pecofence::share_log::tests: anchor SetWindowPos failed hwnd=0",
-                "WARN pecofence::share_log::tests: anchor SetWindowPos failed hwnd=1",
-                "WARN pecofence::share_log::tests: anchor SetWindowPos failed hwnd=2",
+                "WARN pecofence::share_log::tests: anchor SetWindowPos failed hwnd=7",
+                "WARN pecofence::share_log::tests: anchor SetWindowPos failed hwnd=7",
+                "WARN pecofence::share_log::tests: anchor SetWindowPos failed hwnd=7",
                 "WARN pecofence::share_log::tests: (the previous message repeated 7 more times)",
                 "INFO pecofence::share_log::tests: desktop icons already hidden by user/other tool; leaving as is",
             ]
         );
+    }
+
+    #[test]
+    fn one_line_per_fence_is_kept() {
+        // After a display change: one line per fence, the same message with other fields.
+        let lines = capture(|| {
+            for fence in 0..5 {
+                tracing::info!(fence, "fence placed on display change");
+            }
+            for hwnd in 0..70 {
+                tracing::warn!(hwnd, "anchor SetWindowPos failed");
+            }
+            tracing::info!("done");
+        });
+        let shown = 5 + VARIED_REPEATS_SHOWN as usize;
+        assert_eq!(lines.len(), shown + 2);
+        assert!(lines[4].ends_with("fence placed on display change fence=4"));
+        assert!(lines[shown].ends_with("(the previous message repeated 6 more times)"));
     }
 
     #[test]
@@ -641,19 +674,21 @@ mod tests {
         ("at", "%at"),             // crashlog: `module+rva`
         ("at", "script"),          // settings page script: fixed names
         ("behavior", "?behavior"), // ShowDesktopBehavior enum
+        ("by", "by"),              // `&'static str`: what saved a fence rect / changed settings
         ("class", "%class"),       // window class (under the cursor / above the desktop)
         ("class", "%cls"),         // class of the window that ended a peek
         ("class", "%desktop::class_name(front)"), // class of the window in front
+        ("class", "%desktop::class_name(by)"), // class of the window that covered the fences
         // Class of the window the fences go above.
         ("class", "%desktop::class_name(h)"),
         ("command", "name"), // `Command` variant name
-        // shell::drive_kind: fixed names of the kind of drive a path is on.
-        ("drive", "shell::drive_kind(&self.store.primary_path())"),
-        ("drive", "shell::drive_kind(path)"),
-        ("drive", "shell::drive_kind(&dir)"),
-        ("drive", "shell::drive_kind(&path)"),
-        ("drive", "shell::drive_kind(&folder)"),
-        ("drive", "crate::shell::drive_kind(&dir)"),
+        // shell::path_place: fixed words for the kind of place a path is on.
+        ("place", "shell::path_place(&self.store.primary_path())"),
+        ("place", "shell::path_place(path)"),
+        ("place", "shell::path_place(&dir)"),
+        ("place", "shell::path_place(&path)"),
+        ("place", "shell::path_place(&folder)"),
+        ("place", "crate::shell::path_place(&dir)"),
         ("command", "a.worst_command"), // `Command` variant name (command_name)
         ("command", "command.as_deref()"), // hangwatch::running_command: a `Command` variant name
         ("effect", "?effect"),          // DropEffect enum
@@ -662,6 +697,7 @@ mod tests {
         ("generation", "generation"),   // GPU device generation (u64)
         ("hotkey", "%c"),               // Hotkey: modifier and key names ("Ctrl+Alt+Space")
         ("hotkey", "%h"),               // Hotkey
+        ("host_kind", "?host_kind"),    // Option<HostKind> enum
         ("install", "install.as_str()"), // feedback::install_kind: fixed names
         ("language", "language.tag()"), // BCP 47 tag of a Language variant
         ("location", "%location"),      // panic `file:line`
@@ -677,6 +713,7 @@ mod tests {
         ("queue", "stack.queue_path"),  // composition queue kind, static
         ("reason", "reason"),           // `&'static str` reasons (reanchor / sync)
         ("report", "?report"),          // SyncReport: counts
+        ("source", "source"),           // fixed names of the file the settings came from
         ("stack", "%frames.join(\"\\n\")"), // crashlog: `module+rva` per frame
         ("storage", "state.storage_kind()"), // fixed names of the config folder's kind
         ("style", "?style"),            // backdrop style enum
@@ -687,6 +724,7 @@ mod tests {
         ("what", "e.step"),        // ConfigStore::save step name
         ("what", "kind"),          // JavaScript error type from a fixed list
         ("what", "what.as_str()"), // settings::changed_settings: `Settings` field names
+        ("what", "event"),         // sysparams::session_event_name: fixed names
     ];
 
     struct Callsite {

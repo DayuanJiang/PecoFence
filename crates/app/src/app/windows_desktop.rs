@@ -128,7 +128,7 @@ impl App {
             None => {
                 let mut settings = self.state.config.settings.clone();
                 settings.windows_desktop_hotkey = h.map(|h| h.to_string());
-                self.apply_settings(settings);
+                self.apply_settings(settings, "settings");
             }
         }
         if let Some(host) = &self.settings {

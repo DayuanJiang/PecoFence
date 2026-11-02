@@ -485,10 +485,7 @@ pub(super) fn on_size(h: &HandlerCtx, hwnd: HWND, _wparam: usize, lparam: isize)
     if let Some(v) = guard.as_mut() {
         // A window created during early logon may have reported 96 DPI
         // before the display settled; re-read it on every size change.
-        let old = v.dpi;
-        if v.apply_dpi(monitors::dpi_for_window(hwnd)) {
-            tracing::info!(fence = %v.fence_id, from = old, to = v.dpi, "fence DPI changed on a resize");
-        }
+        v.apply_dpi(monitors::dpi_for_window(hwnd));
         v.update_backdrop();
         let crop_done = Instant::now();
         let drawn = if v.height_animating() {
@@ -1024,7 +1021,7 @@ pub(super) fn on_dpichanged(
         before = ?edges(before),
         suggested = ?edges(suggested),
         after = ?edges(window::window_rect(hwnd)),
-        "fence DPI changed (WM_DPICHANGED)"
+        "fence WM_DPICHANGED"
     );
     Some(0)
 }

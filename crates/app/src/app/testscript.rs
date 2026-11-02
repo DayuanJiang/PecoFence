@@ -126,7 +126,7 @@ impl App {
                 }
                 ["dump", tag] => self.test_dump(tag),
                 ["feedback-info"] => {
-                    let info = self.feedback_info_json();
+                    let info = self.feedback_info_json(0);
                     tracing::info!(target: "pecofence::test", "feedback-info {info}");
                 }
                 #[cfg(debug_assertions)]

@@ -168,6 +168,7 @@ const WALLPAPER_PREWARM_DELAY_MS: u32 = 3_000;
 const SPI_SETDESKWALLPAPER: usize = 0x0014;
 const SPI_SETWORKAREA: usize = 0x002F;
 const WM_POWERBROADCAST: u32 = 0x0218;
+const WM_WTSSESSION_CHANGE: u32 = 0x02B1;
 const PBT_APMSUSPEND: usize = 0x0004;
 const PBT_APMRESUMEAUTOMATIC: usize = 0x0012;
 const TRAY_ID: u32 = 1;
@@ -471,6 +472,11 @@ pub(super) struct Activity {
     pub(super) max_gap_ms: f64,
     /// Commands that held the UI thread longer than a compositor frame (8 ms).
     pub(super) slow_commands: u32,
+    /// Drops into fences and drags out of them.
+    pub(super) drops: u32,
+    pub(super) drags_out: u32,
+    /// Desktop folder watchers started again (their folder came back, or they exited).
+    pub(super) watchers_restarted: u32,
     pub(super) worst_command_ms: f64,
     pub(super) worst_command: String,
 }
@@ -514,16 +520,27 @@ impl App {
         let areas = work_areas();
         fences::log_monitors(&areas);
         let state = AppState::load(areas, args.portable);
+        // Which file the settings came from: config.json, its .bak, a daily backup, or none
+        // (a new configuration, after a first start or with every file unusable).
+        let source = match &state.recovered_from {
+            Some(from) if from.extension().is_some_and(|e| e == "bak") => "config.bak",
+            Some(_) => "daily backup",
+            None if state.first_run && !state.load_failures.is_empty() => "new: files unusable",
+            None if state.first_run => "new",
+            None => "config.json",
+        };
         tracing::info!(
             path = %state.config_path().display(),
             storage = state.storage_kind(),
+            source,
+            schema = state.config.schema_version,
             first_run = state.first_run,
             fences = state.fences().len(),
             "config loaded"
         );
         for (what, path, error) in &state.load_failures {
             let what = *what;
-            tracing::warn!(what, path = %path.display(), drive = shell::drive_kind(path), error = %error, "config file unusable");
+            tracing::warn!(what, path = %path.display(), place = shell::path_place(path), error = %error, "config file unusable");
         }
         if let Some(p) = &state.recovered_from {
             tracing::warn!(from = %p.display(), "config recovered from backup");
@@ -1117,10 +1134,22 @@ impl App {
                                 // quit below: close it, then quit as 退出 does (saving first)
                                 // once the App is free again.
                                 tray::end_menu();
-                                queue.push(Command::Quit);
+                                queue.push(Command::Quit("session end"));
                             }
                             window::post_quit(0);
                             Some(0)
+                        }
+                        WM_WTSSESSION_CHANGE => {
+                            // Next to the display changes they bring: a Remote Desktop session
+                            // has the other computer's monitors.
+                            let event = sysparams::session_event_name(wparam);
+                            tracing::info!(
+                                what = event,
+                                monitors = monitors::enumerate().len(),
+                                remote_desktop = sysparams::remote_session(),
+                                "session changed"
+                            );
+                            None
                         }
                         WM_POWERBROADCAST => {
                             // Display changes and a lost GPU device often follow a wake.
@@ -1143,6 +1172,9 @@ impl App {
             .ex_style(style::EX_TOOLWINDOW | style::EX_NOACTIVATE)
             .bounds(0, 0, 0, 0)
             .create(control_handler)?;
+        if !sysparams::watch_session_changes(control.hwnd()) {
+            tracing::warn!("session change notifications unavailable");
+        }
         queue.attach(&control);
         std::mem::forget(control_class); // class lives for the process
         // The Recycle Bin is asked on a worker; a new answer means listing the desktop again.
@@ -1792,7 +1824,8 @@ impl App {
             "memory"
         );
         let a = std::mem::take(&mut self.activity);
-        if a.animation_runs + a.slow_commands > 0 {
+        let icon_failures = self.ctx.icons.borrow_mut().take_failures();
+        if a.animation_runs + a.slow_commands + a.drops + a.drags_out + icon_failures > 0 {
             tracing::info!(
                 animation_runs = a.animation_runs,
                 stuttered_runs = a.stuttered_runs,
@@ -1800,6 +1833,10 @@ impl App {
                 slow_commands = a.slow_commands,
                 worst_command_ms = a.worst_command_ms,
                 command = a.worst_command,
+                drops = a.drops,
+                drags_out = a.drags_out,
+                watchers_restarted = a.watchers_restarted,
+                icon_failures,
                 "activity"
             );
         }
@@ -1821,6 +1858,13 @@ impl App {
                 // the first frame of any animation it started (time-based tweens then appear
                 // to jump ahead): name it.
                 let name = command_name(&cmd);
+                match name.as_str() {
+                    "ExternalDrop" | "ExternalUrlDrop" | "ShellDrop" | "DropIntoFolder" => {
+                        self.activity.drops += 1
+                    }
+                    "DragOutFinished" => self.activity.drags_out += 1,
+                    _ => {}
+                }
                 let started = Instant::now();
                 let in_menus = tray::time_in_menus();
                 pecofence_platform::hangwatch::running(Some(&name));
@@ -1868,7 +1912,7 @@ impl App {
                     .get(&fence)
                     .map(|w| (w.is_rolled(), w.expanded_height_px()))
                     .unwrap_or((false, rect.bottom - rect.top));
-                self.record_bounds(fence, rect, rolled, expanded);
+                self.record_bounds(fence, rect, rolled, expanded, "user");
                 self.schedule_save();
                 self.apply_auto_height(fence);
                 // Another fence moved or resized: the desktop-arranged one flows around it.
@@ -2216,7 +2260,8 @@ impl App {
                     w.redraw();
                 }
             }
-            Command::Quit => {
+            Command::Quit(reason) => {
+                tracing::info!(reason, "quitting");
                 self.state.save_if_dirty();
                 if let Some(a) = self.anchor.borrow_mut().as_mut() {
                     a.release_desktop_icons();

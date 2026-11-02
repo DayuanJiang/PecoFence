@@ -41,7 +41,7 @@ pub(super) fn start_desktop_watchers(
         match start_watcher(&dir, control, pending.clone()) {
             Ok(w) => watchers.push((dir, w)),
             Err(e) => {
-                tracing::warn!(dir = %dir.display(), drive = shell::drive_kind(&dir), error = %e, "watcher failed")
+                tracing::warn!(dir = %dir.display(), place = shell::path_place(&dir), error = %e, "watcher failed")
             }
         }
     }
@@ -63,6 +63,7 @@ impl App {
             .collect();
         if !back.is_empty() {
             let started = start_desktop_watchers(back, self.control.hwnd(), &self.fs_pending);
+            self.activity.watchers_restarted += started.len() as u32;
             if !started.is_empty() {
                 self.watchers.extend(started);
                 window::post_message(self.control.hwnd(), WM_APP_FS_CHANGED, 0, 0);

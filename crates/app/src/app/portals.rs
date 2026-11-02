@@ -73,7 +73,7 @@ impl App {
                     if NOT_FOUND.contains(&e.code().0) {
                         tracing::debug!(dir = %dir.display(), "portal folder not found");
                     } else {
-                        tracing::warn!(dir = %dir.display(), drive = shell::drive_kind(&dir), error = %e, "portal watcher failed");
+                        tracing::warn!(dir = %dir.display(), place = shell::path_place(&dir), error = %e, "portal watcher failed");
                     }
                     // Opening a folder on an unreachable share blocks the UI thread until the
                     // network gives up, and this runs on every batch and once a minute: such
@@ -195,7 +195,7 @@ impl App {
         }
         let rect = self.place_new_fence(4, 260.0, x, y, near);
         if let Some(id) = self.state.new_portal_fence(&folder, rect) {
-            tracing::info!(folder = %folder.display(), drive = shell::drive_kind(&folder), %id, "folder portal created");
+            tracing::info!(folder = %folder.display(), place = shell::path_place(&folder), %id, "folder portal created");
             self.resync_windows();
             if let Some(w) = self.fences.get(&id) {
                 w.show(true);

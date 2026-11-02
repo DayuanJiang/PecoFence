@@ -852,7 +852,7 @@ impl App {
                     return Err(IpcError::new(ErrorCode::ValidationFailed, problem)
                         .hint("Pick another shortcut, or null for none"));
                 }
-                self.apply_settings(requested.clone());
+                self.apply_settings(requested.clone(), "cli");
                 let after = &self.state.config.settings;
                 let changed = *after != before;
                 // `apply_settings` keeps the old value when a side effect fails (e.g. Explorer
@@ -1945,7 +1945,7 @@ impl App {
         }
         // Also ends a roll in flight, whose tween would otherwise put its own size back.
         w.restore_geometry(full, rolled, rect.h);
-        self.record_bounds(id, full, rolled, rect.h);
+        self.record_bounds(id, full, rolled, rect.h, "cli");
         self.apply_auto_height(id);
         self.schedule_save();
         let changed = self.state.fence(id) != Some(&before);

@@ -113,7 +113,7 @@ impl App {
         } else {
             rect.bottom - rect.top
         };
-        self.record_bounds(id, rect, rolled, expanded);
+        self.record_bounds(id, rect, rolled, expanded, "overlap");
         self.schedule_save();
     }
 
@@ -229,7 +229,7 @@ impl App {
                 continue;
             };
             let (rect, rolled, expanded) = (w.rect(), w.is_rolled(), w.expanded_height_px());
-            self.record_bounds(id, rect, rolled, expanded);
+            self.record_bounds(id, rect, rolled, expanded, "unplaced");
         }
         self.schedule_save();
     }
@@ -283,7 +283,7 @@ impl App {
             return;
         }
         w.set_expanded_height_px(h);
-        self.record_bounds(id, r, true, h);
+        self.record_bounds(id, r, true, h, "expand clamp");
     }
 
     /// First run: the default column is sized to what the rules sorted into it, in whole rows,
@@ -366,7 +366,7 @@ impl App {
             };
             w.set_bounds(rect);
             w.apply_height(h, false);
-            self.record_bounds(id, rect, false, h);
+            self.record_bounds(id, rect, false, h, "first run");
             top += h + gap;
         }
         self.schedule_save();
@@ -413,7 +413,7 @@ impl App {
             return;
         }
         let rect = w.apply_height(h, true);
-        self.record_bounds(id, rect, false, h);
+        self.record_bounds(id, rect, false, h, "fit");
         self.schedule_save();
     }
 }

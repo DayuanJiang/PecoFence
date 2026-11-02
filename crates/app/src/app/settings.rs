@@ -147,7 +147,7 @@ impl App {
         // (hide_real_icons, quick_hide.enabled, show_desktop, autostart) and the ctx.behavior
         // cells update exactly as if the user had changed them on the page.
         self.state.config.settings = old_settings;
-        self.apply_settings(new_settings);
+        self.apply_settings(new_settings, "import");
         // apply_settings only refreshes on a visual / icon diff; a wholesale swap (per-fence
         // tint, layouts) needs these regardless.
         self.sync_peek_hotkey();
@@ -535,7 +535,7 @@ impl App {
                     return;
                 };
                 match serde_json::from_value::<pecofence_core::Settings>(new_settings) {
-                    Ok(new_settings) => self.apply_settings(new_settings),
+                    Ok(new_settings) => self.apply_settings(new_settings, "settings"),
                     Err(e) => tracing::warn!(error = %e, "bad settings from page"),
                 }
             }
@@ -794,13 +794,14 @@ impl App {
     }
 
     /// Applies a full settings object from the page, reacting to what changed.
-    pub(super) fn apply_settings(&mut self, mut new: pecofence_core::Settings) {
+    /// `by`: where the change came from (`settings`, `cli`, `import`), for the log.
+    pub(super) fn apply_settings(&mut self, mut new: pecofence_core::Settings, by: &'static str) {
         let old = self.state.config.settings.clone();
         if new == old {
             return;
         }
         let what = changed_settings(&old, &new);
-        tracing::info!(what = what.as_str(), "settings changed");
+        tracing::info!(what = what.as_str(), by, "settings changed");
         if new.autostart != old.autostart {
             if let Err(e) =
                 pecofence_platform::autostart::set_product_enabled(new.autostart, self.portable)

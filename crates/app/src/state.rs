@@ -832,7 +832,7 @@ impl AppState {
                     error = %e.error,
                     config_in_package = in_package_folder(&self.store.primary_path()),
                     temp_in_package = in_package_folder(&self.store.tmp_path()),
-                    drive = shell::drive_kind(&self.store.primary_path()),
+                    place = shell::path_place(&self.store.primary_path()),
                     "config save failed"
                 );
                 false

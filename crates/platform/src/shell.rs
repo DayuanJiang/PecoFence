@@ -182,6 +182,42 @@ pub fn drive_kind(path: &Path) -> &'static str {
     }
 }
 
+/// Where `path` is, as fixed words for the log (the path itself may name the user): its
+/// [`drive_kind`], then `+system` on the Windows drive, `+cloud` in a OneDrive folder,
+/// `+package` in a Store package's own folders, `+long` past 259 characters
+/// (`fixed+system+cloud`).
+pub fn path_place(path: &Path) -> String {
+    let text = path.to_string_lossy().to_lowercase();
+    let text = text.strip_prefix(r"\\?\").unwrap_or(&text);
+    let under = |var: &str| {
+        std::env::var(var).is_ok_and(|dir| {
+            let dir = dir.to_lowercase();
+            !dir.is_empty() && text.starts_with(dir.trim_end_matches('\\'))
+        })
+    };
+    let mut place = drive_kind(path).to_string();
+    let system = std::env::var("SystemDrive").is_ok_and(|d| {
+        let d = d.to_lowercase();
+        d.len() == 2 && text.starts_with(&d)
+    });
+    for (tag, on) in [
+        ("+system", system),
+        (
+            "+cloud",
+            ["OneDrive", "OneDriveConsumer", "OneDriveCommercial"]
+                .iter()
+                .any(|v| under(v)),
+        ),
+        ("+package", text.contains(r"\appdata\local\packages\")),
+        ("+long", text.chars().count() > 259),
+    ] {
+        if on {
+            place.push_str(tag);
+        }
+    }
+    place
+}
+
 /// True for the Recycle Bin's parsing name in any letter case (item keys are lower-cased).
 pub fn is_recycle_bin_path(path: &Path) -> bool {
     path.to_string_lossy()
@@ -1465,6 +1501,24 @@ mod url_tests {
         let tail = target.strip_prefix("https://example.com/").unwrap();
         assert!(!tail.is_empty() && !tail.contains('\u{FFFD}'), "{target:?}");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+#[cfg(test)]
+mod place_tests {
+    use super::path_place;
+    use std::path::Path;
+
+    #[test]
+    fn places_are_fixed_words() {
+        assert_eq!(path_place(Path::new(r"\\server\share\Jane\a.txt")), "unc");
+        assert_eq!(path_place(Path::new(r"\\?\UNC\server\share\a.txt")), "unc");
+        let long = format!(r"\\server\share\{}", "x".repeat(300));
+        assert_eq!(path_place(Path::new(&long)), "unc+long");
+        let system = std::env::var("SystemDrive").unwrap_or_else(|_| "C:".into());
+        let packaged = format!(r"{system}\Users\jane\AppData\Local\Packages\x\LocalCache\a.json");
+        assert_eq!(path_place(Path::new(&packaged)), "fixed+system+package");
+        assert_eq!(path_place(Path::new("relative")), "unknown");
     }
 }
 

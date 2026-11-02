@@ -241,7 +241,7 @@ impl App {
             }
             CMD_FEEDBACK => self.open_feedback(false),
             CMD_SETTINGS => self.queue.push(Command::OpenSettings),
-            CMD_EXIT => self.queue.push(Command::Quit),
+            CMD_EXIT => self.queue.push(Command::Quit("tray menu")),
             _ => {}
         }
     }

@@ -419,7 +419,7 @@ impl App {
             w.apply_height(h, false);
             h
         };
-        self.record_bounds(id, rect, rolled, expanded);
+        self.record_bounds(id, rect, rolled, expanded, "cell snap");
         self.schedule_save();
     }
 
@@ -491,7 +491,7 @@ impl App {
         // row at its expanded width.
         if let Some(rect) = w.settle_rolled_size() {
             let expanded = w.expanded_height_px();
-            self.record_bounds(id, rect, true, expanded);
+            self.record_bounds(id, rect, true, expanded, "rolled size");
             self.schedule_save();
         }
         let Some(w) = self.fences.get(&id) else {
@@ -521,7 +521,7 @@ impl App {
         // transient peek as "expanded".
         let rolled = w.is_rolled();
         let rect = w.apply_height(h, true);
-        self.record_bounds(id, rect, rolled, h);
+        self.record_bounds(id, rect, rolled, h, "auto height");
         self.schedule_save();
     }
 
@@ -610,8 +610,10 @@ impl App {
                 from = ?from.map(edges),
                 want = ?(want.left, want.top, want.right, want.bottom),
                 to = ?edges(to),
-                // Rolled up, the window is the title row of `want`.
+                // Rolled up, the window is the title row of `want`; arranged like the desktop,
+                // it covers the monitor's icon columns instead.
                 rolled = w.is_rolled(),
+                desktop_layout = w.is_desktop_arranged(),
                 monitor,
                 dpi,
                 reason,
@@ -956,7 +958,7 @@ impl App {
             h
         };
         let rolled = w.is_rolled();
-        self.record_bounds(fence, rect, rolled, expanded);
+        self.record_bounds(fence, rect, rolled, expanded, "dock to top");
         if !rolled {
             self.toggle_roll(fence);
         }
