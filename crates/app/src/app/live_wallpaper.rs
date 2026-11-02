@@ -34,6 +34,13 @@ const CLONE_CLASS: &str = "WPECloneView";
 /// PrintWindow can read.
 const BLIND_AFTER: u32 = 3;
 
+impl LiveWallpaper {
+    /// The class of the window that shows it (`WPEDesktopDX11Window`), for feedback reports.
+    pub(super) fn class(&self) -> String {
+        desktop::class_name(HWND(self.hwnd as *mut core::ffi::c_void))
+    }
+}
+
 /// The live wallpaper covering one monitor.
 #[derive(Clone)]
 pub(super) struct LiveWallpaper {

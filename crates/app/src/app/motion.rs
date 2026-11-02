@@ -324,14 +324,20 @@ impl App {
         if more {
             self.ctx.frames.request();
         } else {
-            // End of an animation run: one summary line, at info when it stuttered visibly (a
-            // gap of two 60 Hz frames, or a frame that took longer than a 60 Hz period to
-            // produce). Smaller hitches stay at debug: at 60 Hz a normal frame's jitter
-            // already passes 17 ms, and those lines filled most of the feedback logs.
+            // End of an animation run: counted for the activity line, stuttered when it had a
+            // gap of two 60 Hz frames or a frame that took longer than a 60 Hz period to
+            // produce. One by one at info only when it stuttered badly (a gap of six frames, a
+            // frame of three): smaller hitches came by the dozen in an hour and filled most of
+            // the feedback logs.
             let r = &self.frame_run;
             let total = now.duration_since(r.started.unwrap_or(now));
-            let ms = |d: Duration| (d.as_secs_f32() * 1000.0 * 10.0).round() / 10.0;
+            let ms = crate::share_log::millis;
+            self.activity.animation_runs += 1;
             if r.max_gap > Duration::from_millis(33) || r.max_frame > Duration::from_millis(16) {
+                self.activity.stuttered_runs += 1;
+                self.activity.max_gap_ms = self.activity.max_gap_ms.max(ms(r.max_gap));
+            }
+            if r.max_gap > Duration::from_millis(100) || r.max_frame > Duration::from_millis(50) {
                 tracing::info!(
                     frames = r.frames + 1,
                     total_ms = ms(total),

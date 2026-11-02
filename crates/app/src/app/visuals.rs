@@ -1203,7 +1203,7 @@ impl App {
                     backdrops
                 }
                 Err(error) => {
-                    tracing::debug!(reason, %error, "wallpaper not ready; retaining last backdrop");
+                    tracing::info!(reason, %error, "wallpaper not ready; retaining last backdrop");
                     return false;
                 }
             },
@@ -1213,10 +1213,16 @@ impl App {
         for window in self.fences.values() {
             window.set_backdrops(backdrops.clone());
         }
+        // How long ago each change signal came: none before a refresh the poll found means the
+        // signals did not reach this process.
+        let [setting_change, desktop_key, desktops_key] = wallpaper::signal_ages_ms();
         tracing::info!(
             reason,
             cache_hit,
             elapsed_ms = started.elapsed().as_millis(),
+            last_setting_change_ms = ?setting_change,
+            last_desktop_key_ms = ?desktop_key,
+            last_desktops_key_ms = ?desktops_key,
             "wallpaper refreshed"
         );
         true

@@ -615,7 +615,9 @@ impl App {
         }
         match shell::shell_execute(&path, None, None) {
             Ok(()) => self.note_opened(item),
-            Err(e) => tracing::warn!(path = %path.display(), error = %e, "launch failed"),
+            Err(e) => {
+                tracing::warn!(path = %path.display(), place = shell::path_place(&path), error = %e, "launch failed")
+            }
         }
     }
 

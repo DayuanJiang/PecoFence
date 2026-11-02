@@ -126,7 +126,7 @@ impl App {
                 }
                 ["dump", tag] => self.test_dump(tag),
                 ["feedback-info"] => {
-                    let info = self.feedback_info_json();
+                    let info = self.feedback_info_json(0);
                     tracing::info!(target: "pecofence::test", "feedback-info {info}");
                 }
                 #[cfg(debug_assertions)]
@@ -328,7 +328,7 @@ impl App {
                         .map(|a| a.fences_hidden())
                         .unwrap_or(false);
                     if hidden != want_hidden {
-                        self.toggle_all_fences();
+                        self.toggle_all_fences("test script");
                     }
                 }
                 ["peek"] => self.queue.push(Command::TogglePeek),

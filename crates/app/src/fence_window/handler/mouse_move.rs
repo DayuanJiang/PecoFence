@@ -314,7 +314,10 @@ pub(super) fn on_mousemove(
         if let Some(t) = drag_returned {
             let spent = t.elapsed();
             if spent > Duration::from_millis(8) {
-                tracing::info!(ms = spent.as_secs_f32() * 1000.0, "slow drag-out post work");
+                tracing::info!(
+                    ms = crate::share_log::millis(spent),
+                    "slow drag-out post work"
+                );
             }
         }
         return Some(0);

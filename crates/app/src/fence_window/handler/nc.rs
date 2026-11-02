@@ -996,6 +996,8 @@ pub(super) fn on_dpichanged(
     lparam: isize,
 ) -> Option<isize> {
     let HandlerCtx { view, .. } = h;
+    let before = window::window_rect(hwnd);
+    let old = view.borrow().as_ref().map(|v| (v.fence_id, v.dpi));
     let new_dpi = msg::lo_u16(wparam);
     // SAFETY: WM_DPICHANGED's lParam points to a RECT owned by the system for the
     // duration of the message.
@@ -1026,5 +1028,17 @@ pub(super) fn on_dpichanged(
         }
         v.update_shadow();
     }
+    // The rect Windows suggested and the one the window has now: a move by the app onto a
+    // monitor of another scale must not be scaled once more.
+    let edges = |r: RECT| (r.left, r.top, r.right, r.bottom);
+    tracing::info!(
+        fence = ?old.map(|(id, _)| id),
+        from = ?old.map(|(_, dpi)| dpi),
+        to = new_dpi,
+        before = ?edges(before),
+        suggested = ?edges(suggested),
+        after = ?edges(window::window_rect(hwnd)),
+        "fence WM_DPICHANGED"
+    );
     Some(0)
 }
