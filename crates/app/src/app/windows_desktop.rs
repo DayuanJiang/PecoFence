@@ -18,12 +18,21 @@ impl App {
             return;
         };
         self.windows_desktop = on;
-        a.set_fences_hidden(on, true, "windows desktop");
         if on {
+            a.set_fences_hidden(true, true, "windows desktop");
             // Only the icons PecoFence hid: icons hidden in Explorer itself stay hidden.
             a.restore_desktop_icons();
-        } else if self.state.config.settings.hide_real_icons && !self.no_hide_icons {
-            a.request_hide_desktop_icons();
+        } else {
+            // The icons go first, so they never show together with the fences. Explorer can be
+            // too busy to answer for a moment (once seen right after the tray menu): try again
+            // soon rather than at the next 2 s check.
+            if self.state.config.settings.hide_real_icons
+                && !self.no_hide_icons
+                && !a.request_hide_desktop_icons()
+            {
+                a.retry_soon();
+            }
+            a.set_fences_hidden(false, true, "windows desktop");
         }
         tracing::info!(on, reason, "windows desktop");
     }

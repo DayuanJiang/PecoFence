@@ -128,6 +128,8 @@ impl App {
             .as_ref()
             .is_some_and(|a| a.fences_hidden());
         let menu = PopupMenu::new();
+        // While 「临时显示 Windows 桌面」 is on, 「回到栅栏」 is the one way back: 「显示所有栅栏」
+        // would do the same, and 「重新隐藏桌面图标」 would leave neither fences nor icons.
         menu.item(
             CMD_TOGGLE_FENCES,
             if hidden {
@@ -136,7 +138,7 @@ impl App {
                 pecofence_core::i18n::text("隐藏所有栅栏")
             },
             false,
-            false,
+            self.windows_desktop,
         )
         .icon(if hidden { glyph::VIEW } else { glyph::hide() })
         .item(
@@ -188,7 +190,7 @@ impl App {
                     pecofence_core::i18n::text("重新隐藏桌面图标")
                 },
                 false,
-                false,
+                self.windows_desktop,
             )
             .icon(glyph::MONITOR)
             .item(

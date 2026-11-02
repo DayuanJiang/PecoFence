@@ -1270,6 +1270,13 @@ impl DesktopAnchor {
         false
     }
 
+    /// Runs the next checks (and so a pending hide) on the short retry ladder instead of
+    /// waiting for the 2 s check.
+    pub fn retry_soon(&mut self) {
+        self.retry_step = 0;
+        self.sentinel.set_timer(TIMER_RETRY, RETRY_DELAYS_MS[0]);
+    }
+
     /// True after the retry budget was exhausted without success (caller should stop the
     /// retries and tell the user).
     pub fn hide_desktop_icons_gave_up(&self) -> bool {
