@@ -26,6 +26,25 @@ impl GridSteps {
         h.max((self.fixed + self.row).round() as i32)
     }
 
+    /// Height `h` for a window at `r` whose edge away from its title row stops at `limit`: the
+    /// bottom edge, or the top one for a window that keeps its bottom (`bottom_anchored`). A
+    /// window already past the limit may keep its height.
+    pub fn height_up_to(&self, h: i32, r: &RECT, limit: Option<i32>, bottom_anchored: bool) -> i32 {
+        let Some(limit) = limit else {
+            return h;
+        };
+        let room = if bottom_anchored {
+            r.bottom - limit.min(r.top)
+        } else {
+            limit.max(r.bottom) - r.top
+        };
+        if h > room {
+            self.height_within(room)
+        } else {
+            h
+        }
+    }
+
     /// Height of `rows` whole rows.
     pub fn rows_height(&self, rows: u32) -> i32 {
         (self.fixed + rows as f32 * self.row).round() as i32
@@ -47,10 +66,7 @@ impl App {
     /// Grid rhythm of host `id`'s shown fence at `scale`.
     pub(super) fn grid_steps(&self, id: FenceId, scale: f32) -> Option<GridSteps> {
         let shown = self.state.fence(self.state.active_tab_of(id))?;
-        let metrics =
-            crate::layout::GridMetrics::for_icon_size(shown.view.icon_size, shown.view.label_lines)
-                .with_line_h(self.ctx.chrome.label_line_h())
-                .with_spacing(shown.view.spacing);
+        let metrics = GridSpec::of(&shown.view).metrics(self.ctx.chrome.label_line_h());
         // A left tab column sits before the first icon column, and replaces the title row.
         let rail = self.fences.get(&id).map_or(0.0, |w| w.tab_rail_dip());
         let title_h = if rail > 0.0 {
@@ -372,9 +388,10 @@ impl App {
         self.schedule_save();
     }
 
-    /// Icon-size change on a fixed-height fence: the height follows the content (no band of
-    /// empty rows after shrinking the icons), growing only as far as the next fence below. The
-    /// bottom edge glides there like an auto-height fence's.
+    /// Icon size, spacing or label lines changed on a fixed-height fence: the height follows the
+    /// content (no band of empty rows after shrinking the cells, no scrollbar after growing
+    /// them), growing only as far as the next fence below. The bottom edge glides there like an
+    /// auto-height fence's.
     pub(super) fn fit_height_to_content(&mut self, id: FenceId) {
         let id = self.state.host_of(id);
         if self.state.fence(id).is_none_or(|f| f.view.auto_height) {

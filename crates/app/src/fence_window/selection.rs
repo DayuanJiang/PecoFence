@@ -203,6 +203,7 @@ impl FenceViewState {
         );
         self.focus_visible = true;
         self.scroll_into_view(next, true);
+        self.tip_keyboard_focus(Some(next));
     }
 
     /// Ctrl+Space: toggles the focused item's membership in the selection.

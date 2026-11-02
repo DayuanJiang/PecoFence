@@ -113,6 +113,10 @@
 .set-inp.focus { background: #fff; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .06), inset 0 -2px 0 #005fb8 }
 .set-caret { top: 5px; width: 1px; height: 12px; background: #1b1b1b }
 
+.set-sl-tick { top: 11px; width: 1px; height: 3px; margin-left: -.5px; background: #8a8a8a }
+.set-sl-rail { right: 0; top: 6px; width: 80px; height: 3px; border-radius: 2px; background: linear-gradient(to right, #005fb8 var(--fill), #8a8a8a var(--fill)) }
+.set-sl-thumb { top: 1px; width: 13px; height: 13px; border-radius: 50%; background: #005fb8; box-shadow: inset 0 0 0 3px #fff, 0 0 0 1px rgba(0, 0, 0, .12) }
+
 .set-tog-l { top: 0; right: 40px; font-size: 10.5px; line-height: 15px; white-space: nowrap }
 .set-tog {
     right: 0;

@@ -182,7 +182,7 @@ impl App {
                 w.set_group_by_date(f.view.group_by_date);
                 if switching {
                     // After `set_tabs`, whose content swap draws the outgoing items once more.
-                    w.set_incoming_tab_view(f.view.icon_size, f.view.layout);
+                    w.set_incoming_tab_view(GridSpec::of(&f.view));
                 }
                 w.set_items(self.item_views(f));
                 w.set_sort_indicator(f.view.sort, f.view.reverse);
@@ -267,15 +267,8 @@ impl App {
             let Some(w) = self.fences.get(&id) else {
                 return;
             };
-            if w.icon_size() != shown.view.icon_size {
-                // Drops cached icons/labels, so only when it actually differs.
-                w.set_icon_size(shown.view.icon_size);
-            }
-            w.set_layout(shown.view.layout);
-            w.set_label_lines(shown.view.label_lines);
+            w.set_grid(GridSpec::of(&shown.view));
             w.set_is_inbox(shown.kind == FenceKind::Inbox);
-            w.set_spacing(shown.view.spacing);
-            w.set_icon_align(shown.view.icon_align);
             w.set_column_widths(
                 shown
                     .view
@@ -332,6 +325,9 @@ impl App {
     /// show whole icons (the columns share the rest, the rows leave it empty), so loading, DPI
     /// changes, tabs and switching the setting on keep the saved rectangle. Off, sizes are free.
     pub(super) fn apply_cell_snap(&mut self, id: FenceId) {
+        if self.snap_held {
+            return;
+        }
         let id = self.state.host_of(id);
         let Some(f) = self.state.fence(id).cloned() else {
             return;
@@ -387,13 +383,13 @@ impl App {
         if !rolled && !f.view.auto_height {
             let h = (r.bottom - r.top) as f32;
             let rows = ((h - steps.fixed) / steps.row).round().max(1.0);
-            bottom = r.top + (steps.fixed + rows * steps.row).round() as i32;
-            if let Some(limit) = self.growth_limit_below(id, &r) {
-                let limit = limit.max(r.bottom);
-                if bottom > limit {
-                    bottom = r.top + steps.height_within(limit - r.top);
-                }
-            }
+            // A fence that grows downward stops at the fence below, one that grows upward (its
+            // title row at the bottom) at the fence above.
+            let limit = self
+                .growth_limit_below(id, &r)
+                .or_else(|| self.growth_limit_above(id, &r));
+            let h = (steps.fixed + rows * steps.row).round() as i32;
+            bottom = r.top + steps.height_up_to(h, &r, limit, w.row_at_bottom());
         }
         if (left, width, bottom) == (r.left, r.right - r.left, r.bottom) {
             return;
@@ -715,15 +711,22 @@ impl App {
             .map(|(id, _)| *id)
     }
 
-    /// Menu / Ctrl+wheel: one place that changes a fence's icon size and everything derived
-    /// from it (window redraw, cell snap, height fit, auto height, save).
-    pub(super) fn apply_icon_size(&mut self, fence: FenceId, size: u32) {
-        self.state.set_icon_size(fence, size);
+    /// Shows `fence`'s grid (icon size, label lines, spacing, alignment, layout) in its window,
+    /// when it is the tab on show.
+    pub(super) fn show_grid(&self, fence: FenceId) {
         if let Some(w) = self.window_for(fence)
             && w.active_fence() == fence
+            && let Some(f) = self.state.fence(fence)
         {
-            w.set_icon_size(size);
+            w.set_grid(GridSpec::of(&f.view));
         }
+    }
+
+    /// Menu, Ctrl+wheel, settings page and CLI: one place that changes a fence's icon size and
+    /// everything derived from it (window redraw, cell snap, height fit, auto height, save).
+    pub(super) fn apply_icon_size(&mut self, fence: FenceId, size: u32) {
+        self.state.set_icon_size(fence, size);
+        self.show_grid(fence);
         // The old size's extractions still queued would delay the new size's.
         self.drop_unneeded_icon_requests();
         self.apply_cell_snap(fence);
@@ -732,20 +735,25 @@ impl App {
         self.schedule_save();
     }
 
-    /// Ctrl+wheel: 32 → 48 → 64 → 96, stopping at the ends. 32 / 48 / 96 are the desktop's
-    /// small / medium / large; 64 stays as an intermediate step for existing configs.
+    /// Ctrl+wheel: 32 → 48 → 64 → 96, stopping at the ends. A size between them (from the
+    /// settings slider or the CLI) steps to the next preset. See `ctrl_wheel_resizes` for a
+    /// locked fence.
     pub(super) fn step_icon_size(&mut self, fence: FenceId, larger: bool) {
+        let host = self.state.host_of(fence);
+        let arranged = self
+            .fences
+            .get(&host)
+            .is_some_and(|w| w.is_desktop_arranged());
+        let locked = self.state.fence(host).is_some_and(|h| h.locked);
+        if !ctrl_wheel_resizes(locked, arranged) {
+            return;
+        }
         let Some(cur) = self.state.fence(fence).map(|f| f.view.icon_size) else {
             return;
         };
-        const SIZES: [u32; 4] = [32, 48, 64, 96];
-        let next = if larger {
-            SIZES.iter().copied().find(|s| *s > cur)
-        } else {
-            SIZES.iter().rev().copied().find(|s| *s < cur)
-        };
-        if let Some(next) = next {
+        if let Some(next) = crate::layout::step_icon_preset(cur, larger) {
             self.apply_icon_size(fence, next);
+            self.push_settings_state();
         }
     }
 
@@ -1125,4 +1133,11 @@ fn fence_limit_text() -> String {
         "最多只能有 {0} 个栅栏（含标签页），请先删除或合并一些。",
         &[pecofence_core::config_store::MAX_FENCES.to_string()],
     )
+}
+
+/// Whether Ctrl+wheel changes the icon size. A locked fence keeps its size: a stray Ctrl+wheel
+/// would otherwise resize a fence locked against resizing. 像桌面一样排列 places its window
+/// itself and has no lock, so its icons change size as the Windows desktop's do.
+pub(super) fn ctrl_wheel_resizes(locked: bool, desktop_arranged: bool) -> bool {
+    desktop_arranged || !locked
 }

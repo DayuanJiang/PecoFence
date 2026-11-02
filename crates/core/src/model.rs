@@ -11,6 +11,24 @@ pub const SCHEMA_VERSION: u32 = 1;
 /// same document). Written into the file's `$schema` field so editors validate and complete it.
 pub const CONFIG_SCHEMA_URL: &str = "https://pecofence.jiang.jp/schema/config.json";
 
+/// Icon sizes a fence takes, in DIPs. Multiples of 4 keep every cell on the 4 px grid. At 24 a
+/// compact cell's label still fits two CJK glyphs; at 128 the shell's 256 px icons stay sharp
+/// up to 200% scaling.
+pub const ICON_SIZE_MIN: u32 = 24;
+pub const ICON_SIZE_MAX: u32 = 128;
+pub const ICON_SIZE_STEP: u32 = 4;
+
+/// An icon size edited by hand loads as the nearest size in range.
+fn icon_size_in_range<'de, D: serde::Deserializer<'de>>(d: D) -> Result<u32, D::Error> {
+    let size = u32::deserialize(d)?.clamp(ICON_SIZE_MIN, ICON_SIZE_MAX);
+    Ok((size + ICON_SIZE_STEP / 2) / ICON_SIZE_STEP * ICON_SIZE_STEP)
+}
+
+/// Label lines edited by hand load as 3 at most.
+fn label_lines_in_range<'de, D: serde::Deserializer<'de>>(d: D) -> Result<u8, D::Error> {
+    Ok(u8::deserialize(d)?.min(3))
+}
+
 pub type FenceId = Uuid;
 pub type ItemId = Uuid;
 pub type RuleId = Uuid;
@@ -109,6 +127,8 @@ pub struct Settings {
     /// Where a fence with two or more tabs shows them.
     #[serde(default)]
     pub tab_bar: TabBar,
+    /// Icon size of new fences, in DIPs: 24 to 128 in steps of 4.
+    #[serde(deserialize_with = "icon_size_in_range")]
     pub icon_size: u32,
     pub quick_hide: QuickHideSettings,
     pub roll_up: RollUpSettings,
@@ -640,8 +660,12 @@ pub enum ViewLayout {
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct FenceView {
+    /// Icon edge in DIPs in the icons view: 24 to 128 in steps of 4.
+    #[serde(deserialize_with = "icon_size_in_range")]
     pub icon_size: u32,
     pub sort: SortMode,
+    /// Lines of the label under each icon in the icons layout, 0 to 3 (0: no labels).
+    #[serde(deserialize_with = "label_lines_in_range")]
     pub label_lines: u8,
     pub auto_height: bool,
     /// Reverse the sort order (Fences "反向").
@@ -649,8 +673,11 @@ pub struct FenceView {
     pub reverse: bool,
     #[serde(default)]
     pub layout: ViewLayout,
-    #[serde(default)]
-    pub spacing: Spacing,
+    /// Icon spacing in DIPs: what the icon cell gains in width over `normal`, -12 to 32 in steps
+    /// of 4. The file keeps it in two keys (see `spacing_keys`).
+    #[serde(flatten, with = "spacing_keys")]
+    #[cfg_attr(feature = "schema", schemars(with = "spacing_keys::SpacingKeys"))]
+    pub spacing: i32,
     /// Details view column widths (修改日期, 类型, 大小) in DIPs; None = defaults.
     #[serde(default)]
     pub column_widths: Option<[f32; 3]>,
@@ -679,7 +706,7 @@ impl Default for FenceView {
             auto_height: false,
             reverse: false,
             layout: ViewLayout::Icons,
-            spacing: Spacing::Normal,
+            spacing: 0,
             column_widths: None,
             columns_visible: None,
             group_by_date: false,
@@ -748,6 +775,78 @@ pub enum Spacing {
     #[default]
     Normal,
     Loose,
+}
+
+impl Spacing {
+    /// Range and step of `FenceView::spacing`. The 4 DIP step keeps cell edges on whole device
+    /// pixels at 125, 150 and 175% scaling. Compact is the floor: its cell already leaves only
+    /// the 2 DIP highlight inset under the label.
+    pub const PX_MIN: i32 = -12;
+    pub const PX_MAX: i32 = 32;
+    pub const PX_STEP: i32 = 4;
+
+    /// The preset's cell width change in DIPs.
+    pub fn px(self) -> i32 {
+        match self {
+            Spacing::Compact => -12,
+            Spacing::Normal => 0,
+            Spacing::Loose => 16,
+        }
+    }
+
+    /// The preset closest to `px` (a tie goes to the smaller one).
+    pub fn nearest(px: i32) -> Spacing {
+        [Spacing::Compact, Spacing::Normal, Spacing::Loose]
+            .into_iter()
+            .min_by_key(|s| (s.px() - px).abs())
+            .unwrap_or_default()
+    }
+
+    pub fn is_valid_px(px: i32) -> bool {
+        (Self::PX_MIN..=Self::PX_MAX).contains(&px) && px % Self::PX_STEP == 0
+    }
+}
+
+/// `FenceView::spacing` in a file: `spacing` holds the nearest preset, which versions without
+/// `spacingPx` read, and `spacingPx` the exact value when it is no preset's, so a file with
+/// presets only reads as before. Reading prefers `spacingPx`. A number edited by hand is clamped
+/// to the range and rounded down to the step; a value of another type (a float, a string) fails
+/// to load like any other type error.
+mod spacing_keys {
+    use super::Spacing;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    #[derive(Serialize, Deserialize)]
+    #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+    #[serde(rename_all = "camelCase")]
+    pub struct SpacingKeys {
+        #[serde(default)]
+        spacing: Spacing,
+        /// Icon spacing in DIPs, -12 to 32 in steps of 4: what the icon cell gains in width over
+        /// `normal`. It wins over `spacing`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        spacing_px: Option<i32>,
+    }
+
+    pub fn serialize<S: Serializer>(px: &i32, s: S) -> Result<S::Ok, S::Error> {
+        let spacing = Spacing::nearest(*px);
+        SpacingKeys {
+            spacing,
+            spacing_px: (spacing.px() != *px).then_some(*px),
+        }
+        .serialize(s)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<i32, D::Error> {
+        let keys = SpacingKeys::deserialize(d)?;
+        Ok(match keys.spacing_px {
+            Some(px) => {
+                let px = px.clamp(Spacing::PX_MIN, Spacing::PX_MAX);
+                px - (px - Spacing::PX_MIN) % Spacing::PX_STEP
+            }
+            None => keys.spacing.px(),
+        })
+    }
 }
 
 /// Global icon rendering tweaks (Fences "Icon Tint" / "Chameleon").
@@ -1810,6 +1909,91 @@ mod tests {
         let legacy: Fence = serde_json::from_value(json).unwrap();
         assert!(legacy.portal_navigate);
         assert!(!legacy.open_folders_inside);
+    }
+
+    /// A fence saved before `spacingPx` reads its preset's value. One saved now carries the
+    /// nearest preset, and the exact value when it lies between them, and reads back the same.
+    #[test]
+    fn spacing_reads_spacing_px_first_and_writes_it_between_presets() {
+        let fence = |spacing: &str, px: Option<serde_json::Value>| {
+            let mut json =
+                serde_json::to_value(Fence::new("A", FenceKind::Virtual, geo())).unwrap();
+            let view = json["view"].as_object_mut().unwrap();
+            view.insert("spacing".into(), spacing.into());
+            view.remove("spacingPx");
+            if let Some(px) = px {
+                view.insert("spacingPx".into(), px);
+            }
+            serde_json::from_value::<Fence>(json).unwrap().view.spacing
+        };
+        assert_eq!(fence("compact", None), -12);
+        assert_eq!(fence("normal", None), 0);
+        assert_eq!(fence("loose", None), 16);
+        assert_eq!(fence("loose", Some(8.into())), 8);
+        assert_eq!(fence("normal", Some(serde_json::Value::Null)), 0);
+        // Edited by hand: clamped, and rounded down to the step.
+        assert_eq!(fence("normal", Some(1000.into())), 32);
+        assert_eq!(fence("normal", Some((-1000).into())), -12);
+        assert_eq!(fence("normal", Some(7.into())), 4);
+        assert_eq!(fence("normal", Some((-11).into())), -12);
+
+        for (px, preset, exact) in [
+            (-12, "compact", None),
+            (-8, "compact", Some(-8)),
+            (-4, "normal", Some(-4)),
+            (0, "normal", None),
+            (8, "normal", Some(8)),
+            (12, "loose", Some(12)),
+            (16, "loose", None),
+            (32, "loose", Some(32)),
+        ] {
+            let view = FenceView {
+                spacing: px,
+                ..Default::default()
+            };
+            let json = serde_json::to_value(&view).unwrap();
+            assert_eq!(json["spacing"], preset, "{px}");
+            assert_eq!(
+                json.get("spacingPx").map(|v| v.as_i64().unwrap() as i32),
+                exact,
+                "{px}"
+            );
+            assert_eq!(serde_json::from_value::<FenceView>(json).unwrap(), view);
+        }
+    }
+
+    /// Icon sizes and label lines edited by hand load in range: the size at the nearest step.
+    #[test]
+    fn icon_size_and_label_lines_load_in_range() {
+        let view = |size: u32, lines: u8| {
+            let mut json = serde_json::to_value(FenceView::default()).unwrap();
+            json["iconSize"] = size.into();
+            json["labelLines"] = lines.into();
+            let v: FenceView = serde_json::from_value(json).unwrap();
+            (v.icon_size, v.label_lines)
+        };
+        assert_eq!(view(48, 2), (48, 2));
+        assert_eq!(view(52, 0), (52, 0));
+        assert_eq!(view(49, 3), (48, 3));
+        assert_eq!(view(50, 4), (52, 3));
+        assert_eq!(view(16, 255), (24, 3));
+        assert_eq!(view(256, 1), (128, 1));
+        let mut json = serde_json::to_value(Settings::default()).unwrap();
+        json["iconSize"] = 70.into();
+        assert_eq!(
+            serde_json::from_value::<Settings>(json).unwrap().icon_size,
+            72
+        );
+    }
+
+    #[test]
+    fn spacing_px_stays_in_range_on_the_step() {
+        for px in [-12, -8, 0, 4, 16, 32] {
+            assert!(Spacing::is_valid_px(px), "{px}");
+        }
+        for px in [-16, 36, 6, -2] {
+            assert!(!Spacing::is_valid_px(px), "{px}");
+        }
     }
 
     fn geo() -> NormGeometry {

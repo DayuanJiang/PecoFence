@@ -145,12 +145,14 @@ pub enum Method {
     #[serde(rename = "fences.moveToMonitor")]
     FencesMoveToMonitor { fence: String, monitor: String },
     /// Per-fence option; `prop` and `value` use the same names and values as [`FenceDto`]
-    /// (`iconSize` 32|48|64|96, `spacing`, `iconAlign` left|center, `autoHeight`, `locked`, `expandUpward`, `excludeFromQuickHide`,
-    /// `opacity` default|clear|solid|transparent, `tint` "#RRGGBB"|null, `tintTitleOnly`,
-    /// `tabColor` "#RRGGBB"|null, `titleColor`, `titleSize` small|normal|large|extraLarge,
-    /// `titleOnHover` default|hover|always, `layout` icons|list|details, `sort`, `reverse`,
-    /// `groupByDate`, `foldersFirst`, `labelLines`, `openFoldersInside`, `portalNavigate`,
-    /// `portalTitleIcon`, `hideWhenEmpty`, `desktopLayout`). Result: `{changed, fence}`.
+    /// (`iconSize` 24 to 128 in steps of 4, `spacing` compact|normal|loose, `spacingPx` -12 to 32
+    /// in steps of 4, `iconAlign` left|center, `autoHeight`, `locked`, `expandUpward`,
+    /// `excludeFromQuickHide`, `opacity` default|clear|solid|transparent, `tint` "#RRGGBB"|null,
+    /// `tintTitleOnly`, `tabColor` "#RRGGBB"|null, `titleColor`, `titleSize`
+    /// small|normal|large|extraLarge, `titleOnHover` default|hover|always, `layout`
+    /// icons|list|details, `sort`, `reverse`, `groupByDate`, `foldersFirst`, `labelLines`
+    /// 0|1|2|3, `openFoldersInside`, `portalNavigate`, `portalTitleIcon`, `hideWhenEmpty`,
+    /// `desktopLayout`). Result: `{changed, fence}`.
     #[serde(rename = "fences.setOption")]
     FencesSetOption {
         fence: String,

@@ -694,6 +694,9 @@ impl FenceViewState {
             }
             if item.label.is_none() {
                 item.label = Some(match self.layout {
+                    // No lines to fit into. The full name counts as not shortened, so the
+                    // selected item never unfolds.
+                    ViewLayout::Icons if self.label_lines == 0 => item.name.clone(),
                     ViewLayout::Icons => pecofence_render::text::fit_lines(
                         &item.name,
                         &self.chrome.label_format(),

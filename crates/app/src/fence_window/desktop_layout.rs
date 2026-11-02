@@ -49,6 +49,15 @@ pub(super) fn desktop_cells(
     cells
 }
 
+/// Height (DIPs) a selected full name may take below a cell of `m`. Without labels nothing
+/// unfolds, so there is none.
+fn unfold_room_dip(m: &GridMetrics) -> f32 {
+    if m.label_lines == 0 {
+        return 0.0;
+    }
+    MAX_UNFOLD_LINES.saturating_sub(u32::from(m.label_lines)) as f32 * m.line_h
+}
+
 impl FenceViewState {
     /// Lays the items out for `self.desktop` and returns the window rect that holds their
     /// cells (screen px), with room under the last icon of each column for a selected full
@@ -106,9 +115,7 @@ impl FenceViewState {
 
     /// Height (px) a selected full name may take below its cell.
     fn desktop_unfold_px(&self) -> i32 {
-        let m = self.grid_metrics();
-        (MAX_UNFOLD_LINES.saturating_sub(u32::from(m.label_lines)) as f32 * m.line_h * self.scale())
-            .round() as i32
+        (unfold_room_dip(&self.grid_metrics()) * self.scale()).round() as i32
     }
 
     /// The selected icon whose shortened name unfolds (the anchor), and how many lines below
@@ -229,6 +236,42 @@ mod tests {
             tops,
             vec![(4, 4), (4, 204), (84, 4), (84, 204), (164, 4)],
             "column one, its third row, then column two below the fence, then column three"
+        );
+    }
+
+    /// The cells come from the fence's grid: a smaller icon, a narrower spacing or hidden
+    /// labels fit more icons in a column, and hidden labels leave no room for a full name.
+    #[test]
+    fn desktop_cells_follow_the_icon_grid() {
+        use crate::layout::GridSpec;
+        let spec = |icon_size, label_lines, spacing| GridSpec {
+            icon_size,
+            label_lines,
+            spacing,
+            icon_align: pecofence_core::IconAlign::Left,
+            layout: ViewLayout::Icons,
+        };
+        let work = rect(0, 0, 1000, 404);
+        let rows = |g: GridSpec| {
+            let m = g.metrics(16.0);
+            let cells = desktop_cells(&work, &[], (m.cell_w as i32, m.cell_h as i32), 4, 40);
+            cells.iter().filter(|c| c.left == 4).count()
+        };
+        // 48 px with two label lines: 80 x 96 cells, four to a column of 400 px.
+        assert_eq!(rows(spec(48, 2, 0)), 4);
+        assert_eq!(rows(spec(24, 2, 0)), 5, "72 px cells");
+        assert_eq!(rows(spec(48, 2, -12)), 4, "88 px cells");
+        assert_eq!(rows(spec(48, 0, 0)), 6, "64 px squares");
+        assert_eq!(rows(spec(48, 0, -12)), 7, "56 px squares");
+        assert_eq!(unfold_room_dip(&spec(48, 0, 0).metrics(16.0)), 0.0);
+        assert_eq!(
+            unfold_room_dip(&spec(48, 2, 0).metrics(16.0)),
+            (MAX_UNFOLD_LINES - 2) as f32 * 16.0
+        );
+        // Windows' text size makes the label lines, and so the room, taller.
+        assert_eq!(
+            unfold_room_dip(&spec(48, 1, 0).metrics(20.0)),
+            (MAX_UNFOLD_LINES - 1) as f32 * 20.0
         );
     }
 

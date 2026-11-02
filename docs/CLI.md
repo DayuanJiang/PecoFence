@@ -160,20 +160,24 @@ below): every item visible, no scrollbar, and no empty rows. A tab resizes the w
 in; only the tab currently shown can be measured, so another tab is `unsupported` (click it or
 `fence detach` it first).
 
-`fence set` properties (values as shown by `fence get`): `title` (or `fence rename`), `iconSize`
-32/48/64/96, `spacing` compact/normal/loose, `iconAlign` left/center (center: a row of icons that
-does not fill the fence width, the last one too, sits in the middle; icons view only; left by
-default), `autoHeight`, `locked`, `expandUpward` (rolled up, it
-opens upward from its title row where it fits above it, else downward, for fences resting on the
-taskbar; the row stays where it is; `bottomAnchored` in `fence get` says whether the bottom edge
-is the one that stays put, which `fence resize --h` and `fence fit` keep), `excludeFromQuickHide`,
-`opacity` default/clear/solid/transparent (transparent: no glass, rim or shadow until the pointer
-is over the fence), `tint` `"#RRGGBB"` or `null`, `tintTitleOnly` (the tint washes only the title
-row), `tabColor` `"#RRGGBB"` or `null` (the bar under the fence's tab in a tab strip; `null` follows
-its tint), `titleColor` theme/tint/white/black/`"#RRGGBB"`, `titleSize` small/normal/large/extraLarge,
+`fence set` properties (values as shown by `fence get`): `title` (or `fence rename`), `iconSize` 24
+to 128 in steps of 4 (the fence menu offers 32/48/64/96), `spacing` compact/normal/loose,
+`spacingPx` -12 to 32 in steps of 4 (DIPs the icon cell gains in width: compact is -12, normal 0,
+loose 16; `fence get` reports both, with `spacing` naming the nearest preset), `iconAlign`
+left/center (center: a row of icons that does not fill the fence width, the last one too, sits in
+the middle; icons view only; left by default), `autoHeight`,
+`locked`, `expandUpward` (rolled up, it opens upward from its title row where it fits
+above it, else downward, for fences resting on the taskbar; the row stays where it is;
+`bottomAnchored` in `fence get` says whether the bottom edge is the one that stays put, which
+`fence resize --h` and `fence fit` keep), `excludeFromQuickHide`, `opacity`
+default/clear/solid/transparent (transparent: no glass, rim or shadow until the pointer is over the
+fence), `tint` `"#RRGGBB"` or `null`, `tintTitleOnly` (the tint washes only the title row),
+`tabColor` `"#RRGGBB"` or `null` (the bar under the fence's tab in a tab strip; `null` follows its
+tint), `titleColor` theme/tint/white/black/`"#RRGGBB"`, `titleSize` small/normal/large/extraLarge,
 `titleOnHover` default/hover/always (hover: the title row folds away until the pointer is over the
 fence; default follows `rollUp.titleOnHover`), `layout` icons/list/details,
-`sort` manual/name/type/date/size/openCount, `reverse`, `groupByDate`, `foldersFirst` (folders above files in a sorted fence), `labelLines`,
+`sort` manual/name/type/date/size/openCount, `reverse`, `groupByDate`, `foldersFirst` (folders above files in a sorted fence), `labelLines` 0/1/2/3 (lines
+of the label under each icon in the icons layout; 0 shows the icons without labels),
 `openFoldersInside` (any fence but a portal: double-clicking a folder, or a shortcut to a folder,
 shows that folder inside the fence instead of opening File Explorer; off by default),
 `portalNavigate` (portals: double-clicking a subfolder opens it inside the portal; on by default),
@@ -386,9 +390,9 @@ The app ignores the field's value.
 - `adjusted: {"requested", "applied", "reason"}` appears when the app changed a rect on its own:
   `fence move`/`resize`/`fit` and `fence create --rect` (virtual fences and portals alike) on a fence
   with `autoHeight` (`reason: "autoHeight"`, the height follows the content) or clamped to the size
-  limits (`"clamped"`), and `fence set` of `iconSize`, `spacing`, `layout` or `labelLines`, which
-  snaps the window to whole icon columns and rows (`"cellSnap"`; `requested` is the rect before the
-  change). Use `applied` for further placement.
+  limits (`"clamped"`), and `fence set` of `iconSize`, `spacing`, `spacingPx`, `layout` or
+  `labelLines`, which snaps the window to whole icon columns and rows (`"cellSnap"`; `requested` is
+  the rect before the change). Use `applied` for further placement.
 - Failure: stderr gets `{"error": {"code", "message", "hint"?, "details"?}}`. Nothing else is ever
   printed to stdout, so `pecofence-cli ... | jq` is always safe.
 - Usage errors detected by the argument parser keep clap's human-readable message and exit code 2.

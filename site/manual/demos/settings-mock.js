@@ -205,7 +205,7 @@
 
     // Card text ends where a control on its line starts (8 px before a switch or button), so a longer
     // translation ellipsizes there instead of running under the control.
-    const FIT = ['set-tg', 'set-btn', 'set-sel', 'set-inp', 'set-ibtn'], GAP = { 'set-tg': 8, 'set-btn': 8 };
+    const FIT = ['set-tg', 'set-btn', 'set-sel', 'set-inp', 'set-ibtn', 'set-sl'], GAP = { 'set-tg': 8, 'set-btn': 8, 'set-sl': 8 };
     function fitText(b) {
         for (const n of [b.t, b.s]) {
             if (!n) continue;
@@ -279,6 +279,15 @@
             c.cap.textContent = '';
             grow(c, Math.ceil(capW) + 40);
         }
+        return c;
+    };
+    // Windows 11 slider: the 80 px rail fills with the accent up to the thumb at `frac` (0-1) of
+    // the way, with ticks at `ticks` (fractions too).
+    const slider = (b, frac, ticks, o = {}) => {
+        const c = ctrl(b, 'set-sl', 80, 15, { ...o, label: null });
+        el('span', 'set-sl-rail', c.n).style.setProperty('--fill', frac * 100 + '%');
+        for (const at of ticks) el('span', 'set-sl-tick', c.n).style.left = at * 80 + 'px';
+        el('span', 'set-sl-thumb', c.n).style.left = frac * 80 - 6.5 + 'px';
         return c;
     };
     const iconButton = (b, kind, o = {}) => {
@@ -413,7 +422,8 @@
         const sw = Math.min(130, g.cardW - 180);
         select(card(g, { ic: '\uE7A1', t: '颜色模式', textW: 120 }), '跟随 Windows 模式', sw);
         select(card(g, { ic: '\uE8E4', t: '标题对齐', textW: 120 }), '左对齐', sw);
-        select(card(g, { ic: '\uE8B9', t: '默认图标大小', s: '新建栅栏时使用，每个栅栏可在“栅栏”页或右键菜单中单独设置', textW: g.cardW - sw - 60 }), '中等图标', sw);
+        // The icon size slider at 48 px, with ticks at 32, 48, 64 and 96 (24 to 128 px).
+        slider(card(g, { ic: '\uE8B9', t: '默认图标大小', s: '新建栅栏时使用，每个栅栏可在“栅栏”页或右键菜单中单独设置', textW: g.cardW - sw - 60 }), 24 / 104, [8, 24, 40, 72].map(v => v / 104));
         stack(g);
         return { g, tiles };
     }
@@ -445,7 +455,7 @@
 
     window.SM = {
         TITLE_H, CARD_X, ICON, win, navAt, drawNav, page, header, h3, card, block, stack, ctrl, select, button,
-        input, toggle, iconButton, rect, at, box, over, drawSelect, drawButton, drawInput, drawToggle, popup,
+        input, toggle, slider, iconButton, rect, at, box, over, drawSelect, drawButton, drawInput, drawToggle, popup,
         drawPopup, popRow, drawToast, typed, generalPage, drawTiles, natW, grow, switchAt, dateTime,
     };
 })();

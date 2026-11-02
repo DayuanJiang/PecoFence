@@ -48,11 +48,18 @@ pub(super) fn parse_hex(s: &str) -> Option<[u8; 3]> {
     Some([(v >> 16) as u8, (v >> 8) as u8, v as u8])
 }
 
+/// A dragged settings slider marks its ticks `live`. They apply at once but leave the cell snap
+/// to the release, which comes without the flag, so a drag ends where one jump would.
+pub(super) fn is_live_tick(set_fence: &serde_json::Value) -> bool {
+    set_fence.get("live").and_then(serde_json::Value::as_bool) == Some(true)
+}
+
 /// Every property `parse_fence_prop` accepts (the order the error message lists them in).
 pub(super) const FENCE_PROPS: &[&str] = &[
     "title",
     "iconSize",
     "spacing",
+    "spacingPx",
     "iconAlign",
     "autoHeight",
     "locked",
@@ -92,7 +99,8 @@ pub(super) enum TitleColorChoice {
 pub(super) enum FenceProp {
     Title(String),
     IconSize(u32),
-    Spacing(Spacing),
+    /// Icon spacing in DIPs, from `spacing` (a preset) or `spacingPx`.
+    Spacing(i32),
     /// 图标对齐 of the icons view.
     IconAlign(IconAlign),
     AutoHeight(bool),
@@ -149,21 +157,35 @@ pub(super) fn parse_fence_prop(
             FenceProp::Title(super::ipc::checked_name("title", title)?)
         }
         "iconSize" => {
-            const ALLOWED: &[&str] = &["32", "48", "64", "96"];
+            use crate::layout::{ICON_SIZE_MAX, ICON_SIZE_MIN, ICON_SIZE_STEP};
             match value.as_u64() {
-                Some(size @ (32 | 48 | 64 | 96)) => FenceProp::IconSize(size as u32),
-                _ => return Err(bad(ALLOWED)),
+                Some(size) if crate::layout::is_icon_size(size) => FenceProp::IconSize(size as u32),
+                _ => {
+                    let range =
+                        format!("{ICON_SIZE_MIN} to {ICON_SIZE_MAX} in steps of {ICON_SIZE_STEP}");
+                    return Err(bad(&[range.as_str()]));
+                }
             }
         }
         "spacing" => {
             const ALLOWED: &[&str] = &["compact", "normal", "loose"];
-            FenceProp::Spacing(match as_str(ALLOWED)? {
-                "compact" => Spacing::Compact,
-                "normal" => Spacing::Normal,
-                "loose" => Spacing::Loose,
-                _ => return Err(bad(ALLOWED)),
-            })
+            FenceProp::Spacing(
+                match as_str(ALLOWED)? {
+                    "compact" => Spacing::Compact,
+                    "normal" => Spacing::Normal,
+                    "loose" => Spacing::Loose,
+                    _ => return Err(bad(ALLOWED)),
+                }
+                .px(),
+            )
         }
+        "spacingPx" => match value.as_i64().and_then(|n| i32::try_from(n).ok()) {
+            Some(px) if Spacing::is_valid_px(px) => FenceProp::Spacing(px),
+            _ => {
+                let (min, max, step) = (Spacing::PX_MIN, Spacing::PX_MAX, Spacing::PX_STEP);
+                return Err(bad(&[&format!("{min} to {max} in steps of {step}")]));
+            }
+        },
         "iconAlign" => {
             const ALLOWED: &[&str] = &["left", "center"];
             FenceProp::IconAlign(match as_str(ALLOWED)? {
@@ -255,9 +277,9 @@ pub(super) fn parse_fence_prop(
         "groupByDate" => FenceProp::GroupByDate(as_bool()?),
         "foldersFirst" => FenceProp::FoldersFirst(as_bool()?),
         "labelLines" => {
-            const ALLOWED: &[&str] = &["1", "2", "3"];
+            const ALLOWED: &[&str] = &["0", "1", "2", "3"];
             match value.as_u64() {
-                Some(n @ 1..=3) => FenceProp::LabelLines(n as u8),
+                Some(n @ 0..=3) => FenceProp::LabelLines(n as u8),
                 _ => return Err(bad(ALLOWED)),
             }
         }
@@ -432,14 +454,12 @@ impl App {
         self.schedule_save();
     }
 
-    pub(super) fn set_fence_spacing(&mut self, fence: FenceId, spacing: Spacing) {
-        self.state.set_spacing(fence, spacing);
-        if let Some(w) = self.window_for(fence)
-            && w.active_fence() == fence
-        {
-            w.set_spacing(spacing);
-        }
+    /// Icon spacing in DIPs.
+    pub(super) fn set_fence_spacing(&mut self, fence: FenceId, px: i32) {
+        self.state.set_spacing(fence, px);
+        self.show_grid(fence);
         self.apply_cell_snap(fence);
+        self.fit_height_to_content(fence);
         self.apply_auto_height(fence);
         self.schedule_save();
     }
@@ -447,11 +467,7 @@ impl App {
     /// 图标对齐: only where the icons sit in their rows changes, so the size stays.
     pub(super) fn set_fence_icon_align(&mut self, fence: FenceId, align: IconAlign) {
         self.state.set_icon_align(fence, align);
-        if let Some(w) = self.window_for(fence)
-            && w.active_fence() == fence
-        {
-            w.set_icon_align(align);
-        }
+        self.show_grid(fence);
         self.schedule_save();
     }
 
@@ -541,7 +557,7 @@ impl App {
             TitleSize::Large => "large",
             TitleSize::ExtraLarge => "extraLarge",
         };
-        let spacing = match f.view.spacing {
+        let spacing = match Spacing::nearest(f.view.spacing) {
             Spacing::Compact => "compact",
             Spacing::Normal => "normal",
             Spacing::Loose => "loose",
@@ -564,6 +580,9 @@ impl App {
             "tabbed": self.state.tabs_of(host_id).len() > 1,
             "iconSize": f.view.icon_size,
             "spacing": spacing,
+            "spacingPx": f.view.spacing,
+            "labelLines": f.view.label_lines,
+            "layout": layout_name(f.view.layout),
             "iconAlign": match f.view.icon_align {
                 IconAlign::Left => "left",
                 IconAlign::Center => "center",
@@ -609,7 +628,9 @@ impl App {
         } else {
             match parse_fence_prop(prop, &value) {
                 Ok(p) => {
+                    self.snap_held = is_live_tick(v);
                     self.apply_fence_prop(fence, p);
+                    self.snap_held = false;
                 }
                 Err(error) => {
                     tracing::warn!(prop, %error, "bad fence property from settings page");
@@ -671,11 +692,7 @@ impl App {
             FenceProp::Layout(layout) => {
                 // Same steps as the fence menu's 视图 items.
                 self.state.set_layout(fence, layout);
-                if let Some(w) = self.window_for(fence)
-                    && w.active_fence() == fence
-                {
-                    w.set_layout(layout);
-                }
+                self.show_grid(fence);
                 self.apply_cell_snap(fence);
                 self.apply_auto_height(fence);
                 self.schedule_save();
@@ -707,12 +724,9 @@ impl App {
                     f.view.label_lines = lines;
                     self.state.mark_dirty();
                 }
-                if let Some(w) = self.window_for(fence)
-                    && w.active_fence() == fence
-                {
-                    w.set_label_lines(lines);
-                }
+                self.show_grid(fence);
                 self.apply_cell_snap(fence);
+                self.fit_height_to_content(fence);
                 self.apply_auto_height(fence);
                 self.schedule_save();
             }

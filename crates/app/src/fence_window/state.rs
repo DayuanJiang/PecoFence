@@ -162,7 +162,7 @@ pub struct FenceViewState {
     /// Last scroll offset per tab of this window (session only, like Explorer): switching
     /// away and back restores where that tab was.
     pub(super) scroll_memory: HashMap<FenceId, f32>,
-    /// Offset to re-apply once the new tab's items have arrived (`set_items`); `set_layout`
+    /// Offset to re-apply once the new tab's items have arrived (`set_items`); `set_grid`
     /// consumes it, so a tab switch whose tabs differ in layout keeps the restored offset.
     pub(super) scroll_restore: Option<f32>,
     /// Portal 上一级: the folder just left, which the parent's `set_items` selects and scrolls
@@ -293,7 +293,7 @@ pub struct FenceViewState {
     pub(super) backdrop_override: Option<BackdropMode>,
     /// Per-fence opacity multiplier for the glass layer (1.0 = default).
     pub(super) opacity: f32,
-    /// The view the fence asks for (`set_layout`): `layout` is the icon view while 像桌面一样
+    /// The view the fence asks for (`set_grid`): `layout` is the icon view while 像桌面一样
     /// 排列 is on and this again when it goes off.
     pub(super) wanted_layout: ViewLayout,
     /// 像桌面一样排列 (`Fence::desktop_layout`): the work area this fence arranges its icons
@@ -314,8 +314,8 @@ pub struct FenceViewState {
     pub(super) title_on_hover_override: Option<bool>,
     /// Per-fence colour wash / title colour / title size.
     pub(super) style: FenceStyle,
-    /// Icon grid spacing (FenceView.spacing).
-    pub(super) spacing: Spacing,
+    /// Icon grid spacing in DIPs (FenceView.spacing).
+    pub(super) spacing: i32,
     /// 图标对齐 of the icon grid (FenceView.icon_align).
     pub(super) icon_align: IconAlign,
     /// Keyboard/selection anchor: the last item clicked or moved to with the arrow keys.
@@ -426,6 +426,74 @@ impl FenceViewState {
             item.label = None;
         }
         self.unfold_cache = None;
+    }
+
+    /// The grid the fence asks for; its layout is the fence's own (`wanted_layout`).
+    pub(super) fn grid(&self) -> GridSpec {
+        GridSpec {
+            icon_size: self.icon_size,
+            label_lines: self.label_lines,
+            spacing: self.spacing,
+            icon_align: self.icon_align,
+            layout: self.wanted_layout,
+        }
+    }
+
+    /// The layout shown for `wanted`: 像桌面一样排列 shows icons whatever the fence's view.
+    pub(super) fn shown_layout(&self, wanted: ViewLayout) -> ViewLayout {
+        if self.bare() {
+            ViewLayout::Icons
+        } else {
+            wanted
+        }
+    }
+
+    /// Takes `grid`. Another icon size or shown layout reloads the icons; another cell refits
+    /// the labels; the alignment only moves the cells.
+    pub(super) fn take_grid(&mut self, grid: GridSpec) {
+        let layout = self.shown_layout(grid.layout);
+        if self.layout != layout {
+            self.header_hover = None;
+            self.header_fades.clear();
+        }
+        let reload = self.icon_size != grid.icon_size || self.layout != layout;
+        let refit = self.label_lines != grid.label_lines || self.spacing != grid.spacing;
+        self.icon_size = grid.icon_size;
+        self.label_lines = grid.label_lines;
+        self.spacing = grid.spacing;
+        self.icon_align = grid.icon_align;
+        self.wanted_layout = grid.layout;
+        self.layout = layout;
+        if reload {
+            self.reload_icons_and_labels();
+        } else if refit {
+            for item in &mut self.items {
+                item.label = None;
+            }
+            self.unfold_cache = None;
+        }
+    }
+
+    /// Lays the items out for `grid` at once, also when only the shown layout changes (像桌面一样
+    /// 排列 on or off). Returns whether anything changed.
+    pub(super) fn apply_grid(&mut self, grid: GridSpec) -> bool {
+        // Consumes the tab switch's pending offset either way (see `set_tabs`).
+        let restore = self.scroll_restore.take();
+        let layout = self.shown_layout(grid.layout);
+        if self.grid() == grid && self.layout == layout {
+            return false;
+        }
+        if self.layout != layout {
+            self.scroll_anim = None;
+            // A genuine layout change starts at the top; a tab switch between tabs of
+            // different layouts keeps the restored offset (the redraw clamps it).
+            self.scroll_y = restore.unwrap_or(0.0);
+            self.reset_item_fades();
+        }
+        self.take_grid(grid);
+        self.snap_item_motion();
+        let _ = self.redraw();
+        true
     }
 
     /// Ends the layout motion at once: the geometry it was computed for (cell size, layout,
