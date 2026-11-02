@@ -656,6 +656,21 @@ pub(super) fn on_exitsizemove(
     hide_drag_feedback(&h.behavior);
     let rect = window::window_rect(hwnd);
     let at_enter = rect_at_enter.get();
+    // Cancelled while the pointer was over a monitor with another scale, the move loop can
+    // leave the window on that monitor's DPI although it is back on its own (a group drag
+    // gets a WM_DPICHANGED for the pointer's monitor after the put-back); its next move would
+    // then scale it once more. A 1 px move and back, as the app's own placement, makes
+    // Windows take the DPI of the monitor it is on, the rect kept.
+    if h.move_cancelled.get() {
+        let dpi = monitors::query(monitors::monitor_from_window(hwnd)).map(|m| m.dpi);
+        if dpi.is_some_and(|d| d != monitors::dpi_for_window(hwnd)) {
+            let mut nudged = at_enter;
+            nudged.left += 1;
+            nudged.right += 1;
+            super::put_back(view, hwnd, nudged);
+            super::put_back(view, hwnd, at_enter);
+        }
+    }
     // Esc in the system move loop restores the rect but leaves the cursor
     // where it is (possibly on another fence's title): never merge then.
     let esc = window::key_down(msg::VK_ESCAPE) || h.move_cancelled.get();
