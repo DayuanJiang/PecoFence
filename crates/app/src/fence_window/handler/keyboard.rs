@@ -183,7 +183,7 @@ pub(super) fn on_keydown(
             // drag's Esc leaves the selection alone too).
             if let Some(c) = v.cancel_tab_or_remote_drag() {
                 drop(guard);
-                finish_drag_cancel(c, queue, &h.behavior);
+                finish_drag_cancel(c, &h.view, queue, &h.behavior);
                 return Some(0);
             }
             // A divider drag: the column gets its width back and the selection stays

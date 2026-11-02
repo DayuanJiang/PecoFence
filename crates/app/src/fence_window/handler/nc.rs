@@ -947,8 +947,7 @@ pub(super) fn cancel_move(h: &HandlerCtx, hwnd: HWND) {
     }
     let group = h.group.borrow().clone();
     restore_members(&group);
-    let r = h.rect_at_enter.get();
-    let _ = window::set_window_bounds(hwnd, r.left, r.top, r.right - r.left, r.bottom - r.top);
+    super::put_back(&h.view, hwnd, h.rect_at_enter.get());
 }
 
 /// TIMER_MOVE_RBUTTON: the right button pressed during a title drag cancels it, as in
