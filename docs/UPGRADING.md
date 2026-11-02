@@ -46,6 +46,30 @@ again. To stay on the older version, restore a daily backup from before the
 upgrade in Settings → 布局与备份 (the files are in the `backups` folder next to
 `config.json`).
 
+## Going back to 0.2.3 from 0.2.4
+
+0.2.3 reads a configuration 0.2.4 has saved, but it does not know the options
+0.2.4 added, and its first save drops them: 像桌面一样排列, icon spacing between
+the presets, 图标对齐 居中, 文件夹优先, 向上展开, 为空时自动隐藏 on other
+fences, opening folders inside a fence, the custom theme, the temporary Windows
+desktop shortcut and keeping the Windows icons hidden on exit. They are off when
+you come back to 0.2.4.
+
+- The 「桌面」 fence arranged like the desktop and an empty fence that hid itself
+  show in 0.2.3 as ordinary fences at their saved place, and 0.2.3 moves fences
+  that then overlap them. A fence that opened upward shows its title row at the
+  top of its rect.
+- Icons in fences with hidden labels show squeezed labels; a default icon size
+  other than 32, 48, 64 or 96 makes 0.2.3's `pecofence-cli settings set` fail
+  until it is set back to one of those.
+- With 「关闭 PecoFence 时保持 Windows 桌面图标隐藏」 on, the desktop shows no
+  icons while 0.2.3 is not running: turn it off before going back, or choose
+  View → Show desktop icons on the desktop.
+
+To get everything back when you return to 0.2.4, restore the daily backup from
+before the downgrade in Settings → 布局与备份 (the files are in the `backups`
+folder next to `config.json`), or save a snapshot before going back.
+
 ## Windows startup
 
 A normal release launch registers the `PecoFence` startup entry when required.
