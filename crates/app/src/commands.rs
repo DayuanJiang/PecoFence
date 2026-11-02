@@ -299,7 +299,8 @@ pub enum Command {
     /// Settings window on the 「栅栏」 page with this fence selected.
     OpenOptionsForFence(FenceId),
     RedrawAll,
-    Quit,
+    /// Leave; the reason (a fixed text) goes to the log.
+    Quit(&'static str),
     /// A window was destroyed (unregister).
     WindowGone(HWND),
     /// The settings window became the active window (back from Windows' Startup page, say).

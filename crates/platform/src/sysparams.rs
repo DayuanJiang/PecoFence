@@ -8,6 +8,38 @@ use crate::bindings::*;
 use crate::wide::to_wide;
 use windows_core::{BOOL, PCWSTR};
 
+/// A Remote Desktop session: the monitors and their scale are the other computer's window.
+pub fn remote_session() -> bool {
+    const SM_REMOTESESSION: i32 = 0x1000;
+    // SAFETY: plain FFI call.
+    unsafe { GetSystemMetrics(SM_REMOTESESSION) != 0 }
+}
+
+/// Asks Windows to send `hwnd` WM_WTSSESSION_CHANGE (lock, unlock, console and Remote
+/// Desktop connects and disconnects) for this session.
+pub fn watch_session_changes(hwnd: HWND) -> bool {
+    windows_core::link!("wtsapi32.dll" "system" fn WTSRegisterSessionNotification(hwnd: HWND, flags: u32) -> BOOL);
+    const NOTIFY_FOR_THIS_SESSION: u32 = 0;
+    // SAFETY: plain FFI call on a window of this thread.
+    unsafe { WTSRegisterSessionNotification(hwnd, NOTIFY_FOR_THIS_SESSION).as_bool() }
+}
+
+/// The name of a WM_WTSSESSION_CHANGE event (its wParam).
+pub fn session_event_name(code: usize) -> &'static str {
+    match code {
+        1 => "console connect",
+        2 => "console disconnect",
+        3 => "remote connect",
+        4 => "remote disconnect",
+        5 => "logon",
+        6 => "logoff",
+        7 => "lock",
+        8 => "unlock",
+        9 => "remote control",
+        _ => "other",
+    }
+}
+
 fn read_u32(spi: i32, default: u32) -> u32 {
     let mut value: u32 = default;
     // SAFETY: out-pointer to a local of the size the SPI expects (a UINT for every SPI used

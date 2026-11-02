@@ -406,7 +406,35 @@ impl App {
     /// docs): every path that saves a fence window's geometry goes through here. A 向上展开 fence
     /// rolled up at rest has its saved rect laid out around its title row on the screen
     /// (`AppState::set_fence_bounds`); the window's row then sits at that end of it.
-    pub(super) fn record_bounds(&mut self, id: FenceId, rect: RECT, rolled: bool, expanded: i32) {
+    /// `by`: what moved it (`user` for the user's own drag or resize; `overlap` moves log
+    /// their own line); a saved rect that changed for any other reason goes to the log, since
+    /// "my fences moved by themselves" reports need it.
+    pub(super) fn record_bounds(
+        &mut self,
+        id: FenceId,
+        rect: RECT,
+        rolled: bool,
+        expanded: i32,
+        by: &'static str,
+    ) {
+        let logged = by != "user" && by != "overlap";
+        let saved = |s: &crate::state::AppState| {
+            s.fence(id).map(|f| {
+                let r = s.fence_px_rect(f);
+                (r.left, r.top, r.right, r.bottom)
+            })
+        };
+        let before = logged.then(|| saved(&self.state)).flatten();
+        self.record_bounds_quietly(id, rect, rolled, expanded);
+        if let Some(from) = before
+            && let Some(to) = saved(&self.state)
+            && from != to
+        {
+            tracing::info!(%id, ?from, ?to, by, "fence rect saved");
+        }
+    }
+
+    fn record_bounds_quietly(&mut self, id: FenceId, rect: RECT, rolled: bool, expanded: i32) {
         // 像桌面一样排列 places that window itself: its saved rect stays the fence's own, for
         // when the option goes off.
         if self

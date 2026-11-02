@@ -244,6 +244,7 @@ impl FenceWindow {
             tip_hidden_at: None,
             tip_anchor: (0, 0),
             tip_armed: false,
+            tip_move_at: None,
             cut: HashSet::new(),
             wheel_zoom_accum: 0,
             wheel_tab_accum: 0,
@@ -295,6 +296,7 @@ impl FenceWindow {
             plate_inset_px: 0,
             plate_alpha: 1.0,
             peeking: false,
+            placing: false,
             behavior: ctx.behavior.clone(),
         };
         if rolled_up {
@@ -590,10 +592,14 @@ impl FenceWindow {
     }
 
     fn place_window(&self, r: RECT) {
-        self.with_view(|v| v.height_anim = None);
+        self.with_view(|v| {
+            v.height_anim = None;
+            v.placing = true;
+        });
         let _ = self
             .window
             .set_bounds(r.left, r.top, r.right - r.left, r.bottom - r.top);
+        self.with_view(|v| v.placing = false);
     }
 
     /// A tab split/undo supplies complete geometry. Settle any hover expansion first
@@ -604,7 +610,18 @@ impl FenceWindow {
             self.arrange_desktop(true);
             return;
         }
+        // `rect` is in the pixels of the monitor it lies on: the view takes that monitor's
+        // scale first, so the title row and the sizes below are measured for it (a move onto a
+        // monitor with another scale then changes nothing more).
+        let monitor = monitors::monitor_from_point(
+            (rect.left + rect.right) / 2,
+            (rect.top + rect.bottom) / 2,
+        );
+        let target_dpi = monitors::query(monitor).map(|m| m.dpi);
         self.with_view(|v| {
+            if let Some(dpi) = target_dpi {
+                v.apply_dpi(dpi);
+            }
             v.finish_content_swap_now();
             v.roll_anim = None;
             v.height_anim = None;

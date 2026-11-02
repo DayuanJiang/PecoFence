@@ -119,9 +119,14 @@ impl Tooltip {
     }
 }
 
+/// `TTTOOLINFOW_V2_SIZE`. The manifest asks for no Common Controls 6, so the app gets comctl32
+/// 5, whose `TTM_ADDTOOLW` refuses the full struct (`lpReserved` came with version 6): the tool
+/// was never added and no tip ever showed.
+const TOOL_INFO_SIZE: u32 = std::mem::offset_of!(TTTOOLINFOW, lpReserved) as u32;
+
 fn tool_info(owner: HWND, text: &mut [u16]) -> TTTOOLINFOW {
     TTTOOLINFOW {
-        cbSize: size_of::<TTTOOLINFOW>() as u32,
+        cbSize: TOOL_INFO_SIZE,
         uFlags: TTF_TRACK as u32,
         hwnd: owner,
         uId: TOOL_ID,
@@ -139,5 +144,19 @@ impl Drop for Tooltip {
         unsafe {
             let _ = DestroyWindow(self.hwnd);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    /// comctl32 5 takes TTTOOLINFOW_V2_SIZE: everything up to `lParam`, 64 bytes on x64.
+    #[test]
+    fn tool_info_has_the_comctl32_5_size() {
+        assert_eq!(
+            super::TOOL_INFO_SIZE as usize,
+            size_of::<super::TTTOOLINFOW>() - size_of::<usize>()
+        );
+        #[cfg(target_pointer_width = "64")]
+        assert_eq!(super::TOOL_INFO_SIZE, 64);
     }
 }

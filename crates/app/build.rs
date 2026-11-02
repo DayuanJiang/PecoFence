@@ -65,7 +65,8 @@ fn main() {
 /// Memory: DLLs a process needs only now and then are delay-loaded (WinHTTP for the update
 /// check; user32 and shell32 in the watchdog, which needs them once the app has exited), and
 /// the app runs on the segment heap, which packaged (Store) apps get by default. The manifest
-/// holds nothing else, so DPI awareness, common controls and OS compatibility are unchanged.
+/// also asks for Common Controls 6, as Explorer does: themed infotips (dark ones in dark mode)
+/// and message box buttons. DPI awareness and OS compatibility are unchanged.
 fn link_options(out_dir: &Path) {
     let package = env::var("CARGO_PKG_NAME").unwrap_or_default();
     let delayed: &[&str] = match package.as_str() {
@@ -81,7 +82,7 @@ fn link_options(out_dir: &Path) {
     }
     if package == "pecofence" {
         let manifest = out_dir.join("pecofence.manifest");
-        std::fs::write(&manifest, SEGMENT_HEAP_MANIFEST).expect("write manifest");
+        std::fs::write(&manifest, APP_MANIFEST).expect("write manifest");
         println!("cargo:rustc-link-arg-bins=/MANIFEST:EMBED");
         println!(
             "cargo:rustc-link-arg-bins=/MANIFESTINPUT:{}",
@@ -90,8 +91,13 @@ fn link_options(out_dir: &Path) {
     }
 }
 
-const SEGMENT_HEAP_MANIFEST: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+const APP_MANIFEST: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0" xmlns:asmv3="urn:schemas-microsoft-com:asm.v3">
+  <dependency>
+    <dependentAssembly>
+      <assemblyIdentity type="win32" name="Microsoft.Windows.Common-Controls" version="6.0.0.0" processorArchitecture="*" publicKeyToken="6595b64144ccf1df" language="*"/>
+    </dependentAssembly>
+  </dependency>
   <asmv3:application>
     <asmv3:windowsSettings xmlns="http://schemas.microsoft.com/SMI/2020/WindowsSettings">
       <heapType>SegmentHeap</heapType>

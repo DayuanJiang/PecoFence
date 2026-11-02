@@ -23,6 +23,16 @@ pub fn running(command: Option<&str>) {
     *RUNNING.lock().unwrap_or_else(|e| e.into_inner()) = command.map(str::to_string);
 }
 
+/// The command the UI thread is running, for a crash line. Never waits: a crash on the UI
+/// thread while it held the lock would wait forever.
+pub fn running_command() -> Option<String> {
+    match RUNNING.try_lock() {
+        Ok(command) => command.clone(),
+        Err(std::sync::TryLockError::Poisoned(e)) => e.into_inner().clone(),
+        Err(std::sync::TryLockError::WouldBlock) => None,
+    }
+}
+
 /// Starts watching `hwnd`, a window of the calling (UI) thread.
 pub fn start(hwnd: HWND) {
     let (mut low, mut high) = (0u64, 0u64);

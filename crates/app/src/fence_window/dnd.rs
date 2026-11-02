@@ -365,7 +365,7 @@ impl OverStats {
 
     /// Logs the hover's cadence (info when it stuttered) and resets.
     fn report(&mut self, what: &'static str) {
-        let ms = |d: Duration| (d.as_secs_f32() * 1000.0 * 10.0).round() / 10.0;
+        let ms = crate::share_log::millis;
         if self.calls > 0 {
             if self.max_gap > Duration::from_millis(100)
                 || self.max_handler > Duration::from_millis(7)
@@ -829,7 +829,7 @@ impl DropHandler for FenceDropHandler {
         let spent = drop_started.elapsed();
         if spent > Duration::from_millis(8) {
             tracing::info!(
-                ms = spent.as_secs_f32() * 1000.0,
+                ms = crate::share_log::millis(spent),
                 ?effect,
                 "slow Drop handler"
             );

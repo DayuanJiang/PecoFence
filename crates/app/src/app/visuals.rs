@@ -1203,7 +1203,7 @@ impl App {
                     backdrops
                 }
                 Err(error) => {
-                    tracing::debug!(reason, %error, "wallpaper not ready; retaining last backdrop");
+                    tracing::info!(reason, %error, "wallpaper not ready; retaining last backdrop");
                     return false;
                 }
             },
@@ -1213,10 +1213,18 @@ impl App {
         for window in self.fences.values() {
             window.set_backdrops(backdrops.clone());
         }
+        // How long ago each change signal came: none before a refresh the poll found means the
+        // signals did not reach this process.
+        let [setting_change, desktop_key, desktops_key, themes_folder] =
+            wallpaper::signal_ages_ms();
         tracing::info!(
             reason,
             cache_hit,
             elapsed_ms = started.elapsed().as_millis(),
+            last_setting_change_ms = ?setting_change,
+            last_desktop_key_ms = ?desktop_key,
+            last_desktops_key_ms = ?desktops_key,
+            last_themes_folder_ms = ?themes_folder,
             "wallpaper refreshed"
         );
         true
@@ -1234,6 +1242,10 @@ impl App {
         let single_click = pecofence_platform::shell_icons::single_click_open();
         if self.ctx.behavior.single_click.replace(single_click) != single_click {
             tracing::info!(single_click, "Explorer's click to open setting changed");
+        }
+        let info_tips = pecofence_platform::shell_icons::show_info_tips();
+        if self.ctx.behavior.info_tips.replace(info_tips) != info_tips {
+            tracing::info!(info_tips, "Explorer's pop-up description setting changed");
         }
         self.apply_fonts();
         // Any broadcast that reaches us after the work area moved (taskbar, DPI, resolution

@@ -260,6 +260,12 @@ pub struct FenceViewState {
     /// shows only once the pointer has rested inside the SM_C[XY]MOUSEHOVER box for the delay.
     pub(super) tip_anchor: (i32, i32),
     pub(super) tip_armed: bool,
+    /// Screen px of the last mouse move the infotip logic took (`update_tip_target`). As in
+    /// comctl32, a move to the same point neither arms nor re-targets the tip: Windows sends
+    /// one after a click, when a window appears or when the content moves under a resting
+    /// pointer. A tip that a click, a key or the wheel hid comes back only when the pointer
+    /// really moves.
+    pub(super) tip_move_at: Option<(i32, i32)>,
     /// Items on the clipboard via 剪切 (drawn at half alpha like Explorer).
     pub(super) cut: HashSet<ItemId>,
     /// Ctrl+wheel accumulator (touchpads deliver fractional notches).
@@ -366,6 +372,11 @@ pub struct FenceViewState {
     pub(super) plate_alpha: f32,
     /// Temporarily expanded by hovering a rolled fence (state stays "rolled" for persistence).
     pub(super) peeking: bool,
+    /// The app is placing the window (`FenceWindow::place_window`, a cancelled drag put back):
+    /// the rect it sets is already in the target monitor's pixels, so a WM_DPICHANGED sent
+    /// inside that SetWindowPos (a move onto a monitor with another scale) must not scale it
+    /// again.
+    pub(super) placing: bool,
     pub(super) behavior: Rc<Behavior>,
 }
 

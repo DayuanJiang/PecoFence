@@ -79,8 +79,13 @@ impl FenceViewState {
     /// else, and restart the delay while it keeps moving over the same thing (TME_HOVER: the
     /// tip appears only after the pointer has rested inside the SM_C[XY]MOUSEHOVER box for
     /// SPI_GETMOUSEHOVERTIME). Moving straight from one tipped thing to the next re-shows
-    /// after the short TTDT_RESHOW delay. A tip already shown / auto-popped never re-arms.
+    /// after the short TTDT_RESHOW delay. A tip already shown / auto-popped never re-arms. A
+    /// move to the screen point of the previous one changes nothing (`tip_move_at`).
     pub(super) fn update_tip_target(&mut self, target: Option<TipTarget>, x: i32, y: i32) {
+        let pt = window::client_to_screen(self.hwnd, pecofence_platform::POINT { x, y });
+        if self.tip_move_at.replace((pt.x, pt.y)) == Some((pt.x, pt.y)) {
+            return;
+        }
         if target == self.tip_target {
             if self.tip_armed
                 && tip_hover_moved(
