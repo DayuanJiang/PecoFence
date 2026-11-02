@@ -619,7 +619,7 @@ impl App {
             if spent > Duration::from_millis(8) {
                 tracing::info!(
                     target: "pecofence::ipc",
-                    ms = spent.as_secs_f32() * 1000.0,
+                    ms = crate::share_log::millis(spent),
                     method,
                     "slow request"
                 );
@@ -783,7 +783,7 @@ impl App {
                     .hint("Retry in a moment"));
                 };
                 if hidden == *visible {
-                    self.toggle_all_fences();
+                    self.toggle_all_fences("pecofence-cli");
                 }
                 // Only what the anchor actually did counts.
                 let changed = self.fences_hidden() != Some(hidden);

@@ -388,7 +388,7 @@ impl FenceViewState {
             return false;
         }
         let old = self.dpi.max(96) as f32;
-        tracing::info!(fence = %self.fence_id, from = self.dpi, to = new_dpi, "fence DPI changed");
+        tracing::debug!(fence = %self.fence_id, from = self.dpi, to = new_dpi, "fence DPI changed");
         self.dpi = new_dpi;
         // The optical bezel and upload mask are measured in DIPs. A DPI change can keep
         // the same physical rectangle, so geometry alone cannot validate the old crop.

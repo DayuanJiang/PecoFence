@@ -55,6 +55,13 @@ pub struct SyncReport {
     pub added: usize,
     pub removed: usize,
     pub updated: usize,
+    /// Of the items new or in no fence: sent to a fence by a rule, by the default target (the
+    /// 「桌面」 fence), or left in none (a rule skips it, a fresh `.tmp`).
+    pub by_rule: usize,
+    pub by_default: usize,
+    pub unrouted: usize,
+    /// Desktop folders that could not be read this pass (their items keep their records).
+    pub unread: usize,
 }
 
 /// One move the rule engine would make (see [`AppState::plan_rules`]).
@@ -70,6 +77,15 @@ pub struct PlannedRuleMove {
 impl SyncReport {
     pub fn changed(&self) -> bool {
         self.added + self.removed + self.updated > 0
+    }
+
+    /// Counts where routing sent an item (see the fields).
+    fn note_route(&mut self, target: Option<&(FenceId, AssignedBy)>) {
+        match target {
+            Some((_, AssignedBy::Rule(_))) => self.by_rule += 1,
+            Some(_) => self.by_default += 1,
+            None => self.unrouted += 1,
+        }
     }
 }
 
@@ -691,12 +707,14 @@ impl AppState {
         }
         self.normalize_tabs();
         self.dirty = true;
+        tracing::info!(%fence, %host, tabs = self.tabs_of(host).len(), "tab attached");
         true
     }
 
     pub fn detach_tab(&mut self, fence: FenceId) -> Option<pecofence_core::TabDetach> {
         let change = self.config.layouts[self.layout].detach_tab(fence)?;
         self.dirty = true;
+        tracing::info!(%fence, "tab detached");
         Some(change)
     }
 
@@ -814,6 +832,7 @@ impl AppState {
                     error = %e.error,
                     config_in_package = in_package_folder(&self.store.primary_path()),
                     temp_in_package = in_package_folder(&self.store.tmp_path()),
+                    drive = shell::drive_kind(&self.store.primary_path()),
                     "config save failed"
                 );
                 false
@@ -1043,7 +1062,9 @@ impl AppState {
                 // skipped while fresh) → route. Counted, so the caller refreshes the windows.
                 if !in_fence.contains(&id) {
                     let decision = self.route_decision(entry);
-                    if let Some((fence, by)) = self.target_fence(decision)
+                    let target = self.target_fence(decision);
+                    report.note_route(target.as_ref());
+                    if let Some((fence, by)) = target
                         && self.config.assign(self.layout, id, fence, by).is_some()
                     {
                         report.updated += 1;
@@ -1096,12 +1117,15 @@ impl AppState {
             self.catalog.insert(key, id);
             seen.insert(id);
             let decision = self.route_decision(entry);
-            if let Some((fence, by)) = self.target_fence(decision) {
+            let target = self.target_fence(decision);
+            report.note_route(target.as_ref());
+            if let Some((fence, by)) = target {
                 self.config.assign(self.layout, id, fence, by);
             }
             report.added += 1;
             self.dirty = true;
         }
+        report.unread = unread.len();
 
         // Orphans.
         let unread: Vec<Origin> = unread
@@ -1650,7 +1674,7 @@ impl AppState {
             ids.push(item_id);
         }
         let changed = old_items != new_items || missing != was_missing;
-        let ms = started.elapsed().as_secs_f32() * 1000.0;
+        let ms = crate::share_log::millis(started.elapsed());
         if changed {
             tracing::info!(%id, folder = %dir.display(), count = ids.len(), ms, "portal refreshed");
         } else {
@@ -1833,7 +1857,14 @@ impl AppState {
 
     /// Re-runs the rules over every item (user assignments are respected).
     pub fn apply_rules_all(&mut self, entries: &[DesktopEntry]) -> usize {
-        self.apply_rules_filtered(entries, false)
+        let moved = self.apply_rules_filtered(entries, false);
+        tracing::info!(
+            moved,
+            items = entries.len(),
+            rules = self.config.rules.list.len(),
+            "rules applied"
+        );
+        moved
     }
 
     /// The hourly sweep for clock-dependent rules: only an item whose winning rule has an
@@ -2334,6 +2365,12 @@ impl AppState {
         let id = fence.id;
         self.config.layouts[self.layout].fences.push(fence);
         self.dirty = true;
+        tracing::info!(
+            %id,
+            rect = ?(rect.left, rect.top, rect.right, rect.bottom),
+            fences = self.fences().len(),
+            "fence created"
+        );
         Some(id)
     }
 
@@ -2400,6 +2437,12 @@ impl AppState {
             return false;
         };
         let removed = self.config.layouts[self.layout].fences.remove(pos);
+        tracing::info!(
+            %id,
+            items = removed.items.len(),
+            portal = removed.kind == FenceKind::FolderPortal,
+            "fence deleted"
+        );
         self.portal_cwd.remove(&id);
         self.opened_folders.remove(&id);
         self.portal_missing.remove(&id);

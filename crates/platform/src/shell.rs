@@ -157,6 +157,31 @@ pub fn is_on_fixed_drive(path: &Path) -> bool {
     unsafe { GetDriveTypeW(PCWSTR(root.as_ptr())) == DRIVE_FIXED as u32 }
 }
 
+/// The kind of place `path` is on, as a fixed name for the log and feedback (the path itself may
+/// name the user): `fixed`, `removable`, `network` (a mapped drive), `unc` (`\\server\share`),
+/// `cdrom`, `ramdisk`, or `unknown`.
+pub fn drive_kind(path: &Path) -> &'static str {
+    let s = path.to_string_lossy();
+    let s = s.strip_prefix(r"\\?\").unwrap_or(&s);
+    if s.starts_with(r"\\") || s.starts_with("UNC\\") {
+        return "unc";
+    }
+    let mut chars = s.chars();
+    let (Some(letter), Some(':')) = (chars.next(), chars.next()) else {
+        return "unknown";
+    };
+    let root = to_wide(&format!("{letter}:\\"));
+    // SAFETY: the string is NUL-terminated and outlives the call.
+    match unsafe { GetDriveTypeW(PCWSTR(root.as_ptr())) } {
+        2 => "removable",
+        3 => "fixed",
+        4 => "network",
+        5 => "cdrom",
+        6 => "ramdisk",
+        _ => "unknown",
+    }
+}
+
 /// True for the Recycle Bin's parsing name in any letter case (item keys are lower-cased).
 pub fn is_recycle_bin_path(path: &Path) -> bool {
     path.to_string_lossy()

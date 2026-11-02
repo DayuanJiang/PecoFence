@@ -43,10 +43,12 @@ const CODE_TEXT_FIELDS: &[&str] = &[
     "behavior",
     "class",
     "command",
+    "drive",
     "effect",
     "family",
     "generation",
     "hotkey",
+    "install",
     "language",
     "memory",
     "method",
@@ -67,6 +69,12 @@ const CODE_TEXT_FIELDS: &[&str] = &[
     "wanted",
     "what",
 ];
+
+/// A duration in milliseconds rounded to a tenth, for a log field: an `f32` logged as it is
+/// prints a dozen noise digits (`ms=13.804499626159668`).
+pub fn millis(d: std::time::Duration) -> f64 {
+    (d.as_secs_f64() * 10_000.0).round() / 10.0
+}
 
 /// The text the shareable log writes for a text value of field `name`.
 pub fn safe_text(name: &str, value: &str) -> String {
@@ -635,15 +643,26 @@ mod tests {
         ("behavior", "?behavior"), // ShowDesktopBehavior enum
         ("class", "%class"),       // window class (under the cursor / above the desktop)
         ("class", "%cls"),         // class of the window that ended a peek
+        ("class", "%desktop::class_name(front)"), // class of the window in front
         // Class of the window the fences go above.
         ("class", "%desktop::class_name(h)"),
-        ("command", "name"),            // `Command` variant name
+        ("command", "name"), // `Command` variant name
+        // shell::drive_kind: fixed names of the kind of drive a path is on.
+        ("drive", "shell::drive_kind(&self.store.primary_path())"),
+        ("drive", "shell::drive_kind(path)"),
+        ("drive", "shell::drive_kind(&dir)"),
+        ("drive", "shell::drive_kind(&path)"),
+        ("drive", "shell::drive_kind(&folder)"),
+        ("drive", "crate::shell::drive_kind(&dir)"),
+        ("command", "a.worst_command"), // `Command` variant name (command_name)
+        ("command", "command.as_deref()"), // hangwatch::running_command: a `Command` variant name
         ("effect", "?effect"),          // DropEffect enum
         ("family", "%f.family"),        // installed font family
         ("generation", "?generation"),  // DesktopGeneration enum
         ("generation", "generation"),   // GPU device generation (u64)
         ("hotkey", "%c"),               // Hotkey: modifier and key names ("Ctrl+Alt+Space")
         ("hotkey", "%h"),               // Hotkey
+        ("install", "install.as_str()"), // feedback::install_kind: fixed names
         ("language", "language.tag()"), // BCP 47 tag of a Language variant
         ("location", "%location"),      // panic `file:line`
         ("memory", "%m.summary()"),     // MemoryStats::summary: numbers only
@@ -663,10 +682,11 @@ mod tests {
         ("style", "?style"),            // backdrop style enum
         ("verb", "verb"),               // shell verb (canonical name)
         ("verb", "%verb"),
-        ("wanted", "%h"),   // Hotkey
-        ("what", "what"),   // `&'static str` operation names
-        ("what", "e.step"), // ConfigStore::save step name
-        ("what", "kind"),   // JavaScript error type from a fixed list
+        ("wanted", "%h"),          // Hotkey
+        ("what", "what"),          // `&'static str` operation names
+        ("what", "e.step"),        // ConfigStore::save step name
+        ("what", "kind"),          // JavaScript error type from a fixed list
+        ("what", "what.as_str()"), // settings::changed_settings: `Settings` field names
     ];
 
     struct Callsite {

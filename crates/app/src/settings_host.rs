@@ -81,6 +81,8 @@ pub struct SettingsHost {
     mica: bool,
     /// The page reported `ready`: messages posted from now on reach its script.
     pub ready: bool,
+    /// When `open` started: the page's load time goes to the log.
+    pub opened: std::time::Instant,
     /// Caption icons (small/big); destroyed with the host.
     icons: Vec<pecofence_platform::tray::OwnedIcon>,
     _registrations: Vec<windows_webview::EventRegistration>,
@@ -100,6 +102,7 @@ impl SettingsHost {
         _liquid_glass: bool,
         queue: CommandQueue,
     ) -> Result<Self> {
+        let opened = std::time::Instant::now();
         let state = Rc::new(RefCell::new(HostState {
             controller: None,
             webview: None,
@@ -278,6 +281,7 @@ impl SettingsHost {
             state,
             mica,
             ready: false,
+            opened,
             icons: Vec::new(),
             _registrations: registrations,
         })

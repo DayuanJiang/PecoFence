@@ -151,7 +151,8 @@ fn install_panic_hook() {
             .copied()
             .unwrap_or("(formatted message)");
         let bt = std::backtrace::Backtrace::force_capture();
-        tracing::error!(%location, payload, detail = %info, backtrace = %bt, "PANIC");
+        let command = pecofence_platform::hangwatch::running_command();
+        tracing::error!(%location, payload, command = command.as_deref(), detail = %info, backtrace = %bt, "PANIC");
     }));
 }
 

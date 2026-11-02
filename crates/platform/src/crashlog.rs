@@ -182,9 +182,13 @@ unsafe extern "system" fn filter(info: *const EXCEPTION_POINTERS) -> i32 {
         (Some(module), Some((_, rva))) => format!("{module}+{rva}"),
         _ => at,
     };
+    // What the UI thread was doing, when it was running a command (another thread may be the
+    // one that crashed).
+    let command = crate::hangwatch::running_command();
     tracing::error!(
         code = format_args!("{code:#010x}"),
         at = %at,
+        command = command.as_deref(),
         module_version = at_version.as_deref(),
         access,
         address = accessed.as_deref(),

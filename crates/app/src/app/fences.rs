@@ -16,6 +16,7 @@ pub(super) fn log_monitors(areas: &[WorkArea]) {
         tracing::info!(
             name = %w.device_path,
             dpi = w.dpi,
+            origin = ?(w.mon_left, w.mon_top),
             size = ?(w.mon_right - w.mon_left, w.mon_bottom - w.mon_top),
             work = ?(w.left, w.top, w.right, w.bottom),
             "monitor"
@@ -526,6 +527,9 @@ impl App {
 
     pub(super) fn on_display_changed(&mut self) {
         self.end_peek_now();
+        let before: HashMap<FenceId, RECT> =
+            self.fences.iter().map(|(id, w)| (*id, w.rect())).collect();
+        let from_layout = self.state.layout;
         self.state.work_areas = work_areas();
         let layouts = self.state.config.layouts.len();
         self.state.ensure_layout();
@@ -534,9 +538,11 @@ impl App {
             monitors = self.state.work_areas.len(),
             new_setup = self.state.config.layouts.len() > layouts,
             layout = self.state.layout,
+            from_layout,
             fences_to_place = self.state.unplaced.len(),
             "display changed"
         );
+        let unplaced = self.state.unplaced.clone();
         // A different monitor set may select a different layout: sync windows first.
         self.sync_fence_windows();
         for fence in self.state.fences().to_vec() {
@@ -549,6 +555,7 @@ impl App {
         // Fences new to these monitors (or whose monitor is gone) move out of the others' way;
         // the rest stay where this layout saved them.
         self.settle_unplaced(false);
+        self.log_placement(&before, &unplaced, from_layout);
         for w in self.fences.values() {
             w.repaint_shadow();
         }
@@ -558,7 +565,64 @@ impl App {
         self.arrange_desktop_fence();
     }
 
-    pub fn toggle_all_fences(&mut self) {
+    /// One line per fence after a display change: where its window was (`from`), where the
+    /// layout has it (`want`), where its window is now (`to`: a WM_DPICHANGED during the move
+    /// may have resized it), its monitor and why it is there: the spot these monitors saved,
+    /// the same layout as before, or no spot here (kept from the other layout, then moved out
+    /// of the others' way).
+    fn log_placement(
+        &mut self,
+        before: &HashMap<FenceId, RECT>,
+        unplaced: &[FenceId],
+        from_layout: usize,
+    ) {
+        let edges = |r: RECT| (r.left, r.top, r.right, r.bottom);
+        let mut summary = DisplayChangeSummary {
+            monitors: self.state.work_areas.len(),
+            layout: self.state.layout,
+            ..DisplayChangeSummary::default()
+        };
+        for fence in self.state.host_fences() {
+            let Some(w) = self.fences.get(&fence.id) else {
+                continue;
+            };
+            let to = w.rect();
+            let want = self.state.fence_px_rect(&fence);
+            let from = before.get(&fence.id).copied();
+            let (cx, cy) = ((to.left + to.right) / 2, (to.top + to.bottom) / 2);
+            let monitor = self.state.work_areas.iter().position(|a| {
+                cx >= a.mon_left && cx < a.mon_right && cy >= a.mon_top && cy < a.mon_bottom
+            });
+            let dpi = monitor.map(|i| self.state.work_areas[i].dpi);
+            let reason = if unplaced.contains(&fence.id) {
+                "no spot on these monitors"
+            } else if from_layout == self.state.layout {
+                "same layout"
+            } else {
+                "saved for these monitors"
+            };
+            summary.placed += 1;
+            if from != Some(to) {
+                summary.moved += 1;
+            }
+            tracing::info!(
+                id = %fence.id,
+                from = ?from.map(edges),
+                want = ?(want.left, want.top, want.right, want.bottom),
+                to = ?edges(to),
+                // Rolled up, the window is the title row of `want`.
+                rolled = w.is_rolled(),
+                monitor,
+                dpi,
+                reason,
+                "fence placed on display change"
+            );
+        }
+        self.last_display_change = Some((Instant::now(), summary));
+    }
+
+    /// 「显示/隐藏所有栅栏」 from the tray menu, a command or the CLI; `reason` names which.
+    pub fn toggle_all_fences(&mut self, reason: &'static str) {
         // 「显示所有栅栏」 while 「临时显示 Windows 桌面」 is on ends it (the icons go again).
         if self.windows_desktop {
             self.set_windows_desktop(false, "fences shown");
@@ -566,7 +630,7 @@ impl App {
         }
         self.end_peek_now();
         if let Some(a) = self.anchor.borrow_mut().as_mut() {
-            a.toggle_fences_hidden();
+            a.toggle_fences_hidden_by(reason);
         }
     }
 

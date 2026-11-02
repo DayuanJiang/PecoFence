@@ -274,6 +274,45 @@ pub fn watch_changes(on_change: impl Fn() + Send + 'static) -> Result<()> {
     result
 }
 
+/// A source of wallpaper change signals, for the log: whether a signal arrived before a refresh
+/// (a packaged process may not get them all).
+#[derive(Clone, Copy)]
+pub enum Signal {
+    /// WM_SETTINGCHANGE with SPI_SETDESKWALLPAPER.
+    SettingChange,
+    /// The watch on `Control Panel\Desktop`.
+    DesktopKey,
+    /// The watch on Explorer's `VirtualDesktops` key.
+    DesktopsKey,
+}
+
+/// Per [`Signal`]: when it last came, in ms after [`SIGNAL_EPOCH`] plus one (0: not yet).
+static LAST_SIGNAL: [std::sync::atomic::AtomicU64; 3] =
+    [const { std::sync::atomic::AtomicU64::new(0) }; 3];
+static SIGNAL_EPOCH: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+
+fn signal_clock() -> u64 {
+    SIGNAL_EPOCH
+        .get_or_init(std::time::Instant::now)
+        .elapsed()
+        .as_millis() as u64
+        + 1
+}
+
+/// Notes that `signal` arrived now.
+pub fn note_signal(signal: Signal) {
+    LAST_SIGNAL[signal as usize].store(signal_clock(), std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Per [`Signal`] (in its order): how many ms ago it last came, `None` when it has not this run.
+pub fn signal_ages_ms() -> [Option<u64>; 3] {
+    let now = signal_clock();
+    LAST_SIGNAL.each_ref().map(|at| {
+        let at = at.load(std::sync::atomic::Ordering::Relaxed);
+        (at != 0).then(|| now.saturating_sub(at))
+    })
+}
+
 /// What `RegNotifyChangeKeyValue` returns once the watched key was deleted.
 const ERROR_KEY_DELETED: i32 = 1018;
 
@@ -322,6 +361,11 @@ fn watch_registry_key(
                 };
                 if st.0 == 0 {
                     tracing::debug!(?key, "wallpaper registry change received");
+                    note_signal(if subtree {
+                        Signal::DesktopsKey
+                    } else {
+                        Signal::DesktopKey
+                    });
                     on_change();
                     continue;
                 }

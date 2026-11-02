@@ -9,11 +9,44 @@ use pecofence_core::config_store::ReadError;
 /// as an issue in a private repository. `PECOFENCE_FEEDBACK_URL` points a test instance
 /// elsewhere (e.g. `wrangler dev`).
 const FEEDBACK_URL: &str = "https://api.pecofence.jiang.jp/feedback";
-/// How much of each shareable log goes with a report, at most: its first and last lines.
-const LOG_EXCERPT_BYTES: usize = 24 * 1024;
+/// How much shareable log goes with a report, at most, all runs together. The service takes a
+/// body of 64 KB (bytes): a 5000-character Chinese message is 15 KB of it, the system facts
+/// and the JSON around them about 3 KB, which leaves this much with a little room.
+const LOG_BUDGET_BYTES: usize = 44 * 1024;
 /// The first lines of a longer log that go with it: the startup lines (monitors, config,
-/// desktop generation, icon host), which the end of a long run no longer shows.
-const LOG_HEAD_BYTES: usize = 4 * 1024;
+/// desktop generation, icon host, settings), which the end of a long run no longer shows.
+const LOG_HEAD_BYTES: usize = 8 * 1024;
+/// At most this much of the stretch a long log leaves out is kept: its warnings, errors and
+/// [`KEY_MESSAGES`] lines, the newest when they do not all fit.
+const LOG_KEPT_BYTES: usize = 8 * 1024;
+/// The previous run's log goes along too when this run's leaves at least this much room (this
+/// run just started: the user may have restarted PecoFence after the trouble).
+const PREVIOUS_RUN_MIN_BYTES: usize = 4 * 1024;
+/// Room for the lines that mark where runs and left-out stretches begin.
+const MARKER_BYTES: usize = 128;
+/// The start of the messages kept from a left-out stretch besides warnings and errors: the
+/// events reports most often turn on. `tests::key_messages_are_logged` pins them to the code.
+const KEY_MESSAGES: &[&str] = &[
+    "display changed",
+    "fence placed on display change",
+    "fence DPI changed",
+    "work area changed",
+    "icon host changed",
+    "show desktop",
+    "fences visibility toggled",
+    "double-click on empty desktop",
+    "windows desktop",
+    "settings changed",
+    "rules applied",
+    "fence created",
+    "fence deleted",
+    "GPU device rebuilt",
+    "TaskbarCreated",
+    "system suspending",
+    "system resumed",
+    "session ending",
+    "UI thread",
+];
 /// The feedback service refuses a system fact longer than this (UTF-16 units).
 const FACT_MAX: usize = 200;
 
@@ -97,17 +130,104 @@ fn head(text: &str, max: usize) -> &str {
     text[..end].rfind('\n').map(|i| &text[..=i]).unwrap_or("")
 }
 
-/// A run's log within `max` bytes: all of it, or its first lines and its last lines with a
-/// line saying how many were left out between them.
+/// Whether a shareable log line (`time LEVEL target: message fields`) is one an excerpt keeps
+/// from the stretch it leaves out.
+fn is_key_line(line: &str) -> bool {
+    let level = line.split_whitespace().nth(1).unwrap_or("");
+    if level == "WARN" || level == "ERROR" {
+        return true;
+    }
+    let message = line.split_once(": ").map_or("", |(_, m)| m);
+    KEY_MESSAGES.iter().any(|k| message.starts_with(k))
+}
+
+/// The lines of `stretch` an excerpt keeps ([`is_key_line`]), each with the lines that go on
+/// from it (a crash's stack, a repeat count), within `max` bytes: the newest when they do not
+/// all fit. Returns them and how many lines they are.
+fn key_lines(stretch: &str, max: usize) -> (String, usize) {
+    let mut records: Vec<String> = Vec::new();
+    let mut keeping = false;
+    for line in stretch.split_inclusive('\n') {
+        // A field written over several lines (a stack) goes on indented; a repeat count names
+        // no message of its own.
+        if line.starts_with(' ') || line.contains(": (the previous message repeated") {
+            if keeping && let Some(last) = records.last_mut() {
+                last.push_str(line);
+            }
+            continue;
+        }
+        keeping = is_key_line(line);
+        if keeping {
+            records.push(line.to_string());
+        }
+    }
+    let mut kept = Vec::new();
+    let mut bytes = 0;
+    for record in records.into_iter().rev() {
+        if bytes + record.len() > max {
+            break;
+        }
+        bytes += record.len();
+        kept.push(record);
+    }
+    kept.reverse();
+    let text = kept.concat();
+    let lines = text.lines().count();
+    (text, lines)
+}
+
+/// A run's log within `max` bytes: all of it, or its first lines and its last lines, and
+/// between them a line saying how many were left out, followed by the warnings, errors and
+/// key events among those.
 fn excerpt(text: &str, max: usize) -> String {
     if text.len() <= max {
         return text.to_string();
     }
-    let head = head(text, LOG_HEAD_BYTES);
-    // Room for the "left out" line.
-    let tail = tail(&text[head.len()..], max.saturating_sub(head.len() + 64));
-    let skipped = text[head.len()..text.len() - tail.len()].lines().count();
-    format!("{head}--- {skipped} lines left out ---\n{tail}")
+    let head = head(text, LOG_HEAD_BYTES.min(max / 4));
+    let rest = &text[head.len()..];
+    let room = max.saturating_sub(head.len() + 2 * MARKER_BYTES);
+    // The key lines of what the longest tail leaves out take that much room from the tail (up
+    // to their share); the shorter tail leaves more out, whose newest key lines may take it.
+    let longest = tail(rest, room);
+    let share = LOG_KEPT_BYTES.min(room / 4);
+    let (first, _) = key_lines(&rest[..rest.len() - longest.len()], share);
+    let tail = tail(rest, room - first.len());
+    let stretch = &rest[..rest.len() - tail.len()];
+    let (kept, kept_lines) = key_lines(stretch, first.len());
+    let left = stretch.lines().count() - kept_lines;
+    if kept.is_empty() {
+        return format!("{head}--- {left} lines left out ---\n{tail}");
+    }
+    format!(
+        "{head}--- {left} lines left out; the {kept_lines} warning, error and key event lines among them follow ---\n{kept}--- end of the lines kept from that stretch ---\n{tail}"
+    )
+}
+
+/// The log that goes with a report: this run's within the budget, after the previous run's
+/// when that one crashed or did not end normally (`how`), or when this run's leaves room.
+fn report_log(previous: Option<&str>, how: Option<&str>, current: &str) -> String {
+    let previous = previous.filter(|p| !p.trim().is_empty());
+    let (previous, current) = match (previous, how) {
+        (Some(previous), Some(_)) => {
+            // The run that went wrong first; this one gets at most half.
+            let mine = current.len().min(LOG_BUDGET_BYTES / 2);
+            let previous = excerpt(previous, LOG_BUDGET_BYTES - mine - 2 * MARKER_BYTES);
+            let room = LOG_BUDGET_BYTES - previous.len() - 2 * MARKER_BYTES;
+            (Some(previous), excerpt(current, room))
+        }
+        (Some(previous), None) => {
+            let current = excerpt(current, LOG_BUDGET_BYTES - 2 * MARKER_BYTES);
+            let room = LOG_BUDGET_BYTES.saturating_sub(current.len() + 2 * MARKER_BYTES);
+            let previous = (room >= PREVIOUS_RUN_MIN_BYTES).then(|| excerpt(previous, room));
+            (previous, current)
+        }
+        (None, _) => (None, excerpt(current, LOG_BUDGET_BYTES)),
+    };
+    let Some(previous) = previous else {
+        return current;
+    };
+    let how = how.map_or(String::new(), |how| format!(" ({how})"));
+    format!("--- previous run{how} ---\n{previous}\n--- this run ---\n{current}")
 }
 
 /// A system fact cut to what the feedback service accepts.
@@ -125,6 +245,47 @@ fn fact(text: String) -> String {
 
 fn on_off(on: bool) -> &'static str {
     if on { "on" } else { "off" }
+}
+
+fn yes_no(yes: bool) -> &'static str {
+    if yes { "yes" } else { "no" }
+}
+
+/// The drive a path is on (`D: (removable)`), or the kind of place without a letter: a report
+/// needs to know whether the program or its configuration sit on another drive (os error 17).
+fn drive_of(path: &std::path::Path) -> String {
+    let kind = shell::drive_kind(path);
+    let text = path.to_string_lossy();
+    let text = text.strip_prefix(r"\\?\").unwrap_or(&text);
+    let mut chars = text.chars();
+    match (chars.next(), chars.next()) {
+        (Some(letter), Some(':')) if letter.is_ascii_alphabetic() => {
+            format!("{}: ({kind})", letter.to_ascii_uppercase())
+        }
+        _ => kind.to_string(),
+    }
+}
+
+/// How this copy was installed: the Store, Setup (which leaves its uninstaller next to the
+/// program; winget runs the same Setup) or a ZIP; `portable` runs keep their configuration
+/// next to the program.
+pub(super) fn install_kind(portable: bool) -> String {
+    let kind = if pecofence_platform::process::is_packaged() {
+        "Microsoft Store"
+    } else if std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(|dir| dir.join("unins000.exe").exists()))
+        .unwrap_or(false)
+    {
+        "installer"
+    } else {
+        "ZIP"
+    };
+    if portable {
+        format!("{kind}, portable")
+    } else {
+        kind.to_string()
+    }
 }
 
 impl App {
@@ -222,19 +383,17 @@ impl App {
 
     /// What the page may send besides the user's own text, shown to them before sending.
     pub(super) fn feedback_info_json(&self) -> serde_json::Value {
-        let install = if pecofence_platform::process::is_packaged() {
-            "Microsoft Store"
-        } else {
-            "ZIP / winget"
-        };
+        let install = install_kind(self.portable);
         let displays: Vec<String> = monitors::enumerate()
             .iter()
             .map(|m| {
                 let b = m.bounds;
                 format!(
-                    "{}x{} {:.0}%{}",
+                    "{}x{} @{},{} {:.0}%{}",
                     b.right - b.left,
                     b.bottom - b.top,
+                    b.left,
+                    b.top,
                     m.scale() * 100.0,
                     if m.primary { " primary" } else { "" }
                 )
@@ -306,9 +465,11 @@ impl App {
             None => "unknown",
         };
         let mut startup = format!(
-            "started {} after Explorer, elevated {elevated}, config in {}",
+            "started {} after Explorer, elevated {elevated}, config in {}, app on {}, config on {}",
             seconds_after_explorer().map_or("?".to_string(), |s| format!("{s} s")),
-            self.state.storage_kind()
+            self.state.storage_kind(),
+            std::env::current_exe().map_or("?".to_string(), |exe| drive_of(&exe)),
+            drive_of(&self.state.config_path()),
         );
         // Files the start could not use, by their OS error (the log may be unreadable too).
         for (what, _, error) in &self.state.load_failures {
@@ -320,6 +481,33 @@ impl App {
             };
             startup.push_str(&format!(", {what} unusable ({reason})"));
         }
+        // This run so far: what the questions after a report were about.
+        let mut session = format!(
+            "run {} min, remote desktop {}",
+            self.started.elapsed().as_secs() / 60,
+            yes_no(sysparams::remote_session()),
+        );
+        match self.live.first() {
+            Some(live) => session.push_str(&format!(
+                ", live wallpaper on {} of {} monitors ({})",
+                self.live.len(),
+                self.state.work_areas.len(),
+                live.class()
+            )),
+            None => session.push_str(", no live wallpaper"),
+        }
+        match &self.last_display_change {
+            Some((at, d)) => session.push_str(&format!(
+                ", last display change {} min ago: {} monitors, layout {}, {} fences placed, {} moved",
+                at.elapsed().as_secs() / 60,
+                d.monitors,
+                d.layout,
+                d.placed,
+                d.moved
+            )),
+            None => session.push_str(", no display change"),
+        }
+        // The service takes 12 facts at most: this is the 12th.
         let system = serde_json::json!({
             "app": format!("PecoFence {} ({install})", env!("CARGO_PKG_VERSION")),
             "windows": format!("build {}", pecofence_platform::desktop::os_build()),
@@ -345,8 +533,8 @@ impl App {
             ),
             "memory": memory,
             "gpu": fact(self.ctx.stack.adapter().unwrap_or_else(|| "unknown".to_string())),
+            "session": fact(session),
         });
-        let mut log = String::new();
         let previous_run = if self.feedback.previous_run_crashed {
             Some("crashed")
         } else if self.feedback.previous_run_unfinished {
@@ -354,18 +542,12 @@ impl App {
         } else {
             None
         };
-        if let Some(how) = previous_run
-            && let Some(previous) = self.share_log(pecofence_core::brand::PREVIOUS_SHARE_LOG)
-        {
-            log.push_str(&format!("--- previous run ({how}) ---\n"));
-            log.push_str(&excerpt(&previous, LOG_EXCERPT_BYTES));
-            log.push_str("\n--- this run ---\n");
-        }
-        match self.read_share_log(pecofence_core::brand::SHARE_LOG) {
-            Ok(current) => log.push_str(&excerpt(&current, LOG_EXCERPT_BYTES)),
+        let previous = self.share_log(pecofence_core::brand::PREVIOUS_SHARE_LOG);
+        let current = self
+            .read_share_log(pecofence_core::brand::SHARE_LOG)
             // The report still says why it has no log.
-            Err(e) => log.push_str(&format!("--- the log could not be read: {e} ---\n")),
-        }
+            .unwrap_or_else(|e| format!("--- the log could not be read: {e} ---\n"));
+        let log = report_log(previous.as_deref(), previous_run, &current);
         let url = pecofence_core::brand::var("PECOFENCE_FEEDBACK_URL")
             .ok()
             .filter(|u| u.starts_with("https://") || u.starts_with("http://127.0.0.1:"))
@@ -473,8 +655,8 @@ mod tests {
         let short = "a\nb\n";
         assert_eq!(excerpt(short, 100), short);
         let log: String = (0..10_000).map(|i| format!("line {i:05}\n")).collect();
-        let cut = excerpt(&log, LOG_EXCERPT_BYTES);
-        assert!(cut.len() <= LOG_EXCERPT_BYTES);
+        let cut = excerpt(&log, LOG_BUDGET_BYTES);
+        assert!(cut.len() <= LOG_BUDGET_BYTES);
         assert!(cut.starts_with("line 00000\n"));
         assert!(cut.ends_with("line 09999\n"));
         let head_lines = head(&log, LOG_HEAD_BYTES).lines().count();
@@ -485,6 +667,224 @@ mod tests {
             .parse()
             .unwrap();
         assert_eq!(cut.lines().count() - 1 + skipped, 10_000);
+    }
+
+    /// A shareable log line as the share layer writes it.
+    fn line(i: usize, level: &str, message: &str) -> String {
+        format!(
+            "2026-11-02T10:{:02}:{:02}.{i:06}Z {level:>5} pecofence::app: {message}\n",
+            i / 60 % 60,
+            i % 60
+        )
+    }
+
+    #[test]
+    fn excerpts_keep_the_warnings_and_key_events_they_leave_out() {
+        let mut log = String::new();
+        for i in 0..4000 {
+            let text = match i {
+                1500 => line(i, "WARN", "anchor SetWindowPos failed error=0x80070005"),
+                1501 => line(i, "WARN", "anchor SetWindowPos failed error=0x80070005"),
+                1502 => line(i, "WARN", "(the previous message repeated 7 more times)"),
+                1800 => line(
+                    i,
+                    "INFO",
+                    "display changed monitors=2 new_setup=true layout=1",
+                ),
+                2000 => format!(
+                    "{}  combase.dll+0x1c6e85\n  pecofence.exe+0x1f368\n",
+                    line(
+                        i,
+                        "ERROR",
+                        "CRASH (unhandled exception) code=0xc0000005 stack=  ntdll.dll+0x1"
+                    )
+                ),
+                _ => line(i, "INFO", "slow command ms=60.5 command=RaiseFence"),
+            };
+            log.push_str(&text);
+        }
+        let cut = excerpt(&log, LOG_BUDGET_BYTES);
+        assert!(cut.len() <= LOG_BUDGET_BYTES, "{}", cut.len());
+        assert!(cut.starts_with(&line(0, "INFO", "slow command ms=60.5 command=RaiseFence")));
+        assert!(cut.ends_with(&line(
+            3999,
+            "INFO",
+            "slow command ms=60.5 command=RaiseFence"
+        )));
+        let kept = cut
+            .split_once("among them follow ---\n")
+            .and_then(|(_, rest)| rest.split_once("--- end of the lines kept"))
+            .map(|(kept, _)| kept)
+            .unwrap();
+        let expected = [1500, 1501, 1502, 1800]
+            .iter()
+            .map(|&i| log.lines().nth(i).unwrap())
+            .chain(log.lines().skip(2000).take(3))
+            .collect::<Vec<_>>();
+        assert_eq!(kept.lines().collect::<Vec<_>>(), expected);
+        // Every line of the log is shown or counted.
+        let marker = cut
+            .lines()
+            .find(|l| l.contains(" lines left out; "))
+            .unwrap();
+        let left: usize = marker
+            .trim_start_matches("--- ")
+            .split(' ')
+            .next()
+            .unwrap()
+            .parse()
+            .unwrap();
+        assert_eq!(cut.lines().count() - 2 + left, log.lines().count());
+    }
+
+    #[test]
+    fn a_full_shareable_log_keeps_its_key_events() {
+        // A run's log at its 2 MB limit, of lines as feedback #96 had them, with a display
+        // change in the middle.
+        let filler = [
+            "INFO pecofence::app: slow command ms=62.5 command=FenceMenu",
+            "INFO pecofence::app::motion: animation run stuttered frames=27 total_ms=505.7 max_gap_ms=188.4 max_frame_ms=2",
+            "INFO pecofence::app::sync: desktop resynced report=SyncReport { added: 0, removed: 0, updated: 1, by_rule: 0, by_default: 0, unrouted: 0, unread: 0 }",
+            "INFO pecofence::app::visuals: wallpaper refreshed reason=poll cache_hit=false elapsed_ms=135 last_setting_change_ms=None last_desktop_key_ms=None last_desktops_key_ms=None",
+        ];
+        let mut log = String::new();
+        let mut i = 0;
+        while log.len() < 2 * 1024 * 1024 {
+            let text = if i == 9000 {
+                "INFO pecofence::app::fences: display changed monitors=2 new_setup=true layout=2 from_layout=1 fences_to_place=5".to_string()
+            } else if (9001..9006).contains(&i) {
+                format!(
+                    "INFO pecofence::app::fences: fence placed on display change id=c40efadc-e13d-4d4a-aabc-90153a2b968{} from=Some((0, 0, 320, 400)) want=(1920, 0, 2240, 400) to=(1920, 0, 2320, 500) rolled=false monitor=Some(1) dpi=Some(120) reason=saved for these monitors",
+                    i - 9001
+                )
+            } else {
+                filler[i % filler.len()].to_string()
+            };
+            log.push_str(&format!(
+                "2026-11-01T15:{:02}:{:02}.{i:06}Z {text}\n",
+                i / 60 % 60,
+                i % 60
+            ));
+            i += 1;
+        }
+        let started = std::time::Instant::now();
+        let cut = excerpt(&log, LOG_BUDGET_BYTES);
+        assert!(started.elapsed() < std::time::Duration::from_secs(1));
+        assert!(cut.len() <= LOG_BUDGET_BYTES);
+        assert!(cut.starts_with(log.lines().next().unwrap()));
+        assert!(cut.ends_with(&format!("{}\n", log.lines().last().unwrap())));
+        assert!(cut.contains(": display changed monitors=2"));
+        assert_eq!(cut.matches(": fence placed on display change").count(), 5);
+    }
+
+    #[test]
+    fn too_many_key_lines_keep_the_newest() {
+        let log: String = (0..6000)
+            .map(|i| line(i, "WARN", "hiding desktop icons failed"))
+            .collect();
+        let cut = excerpt(&log, LOG_BUDGET_BYTES);
+        assert!(cut.len() <= LOG_BUDGET_BYTES);
+        let kept = cut
+            .split_once("among them follow ---\n")
+            .and_then(|(_, rest)| rest.split_once("--- end of the lines kept"))
+            .map(|(kept, _)| kept)
+            .unwrap();
+        assert!(kept.len() <= LOG_KEPT_BYTES);
+        // The newest of the left-out stretch: right before the tail.
+        let last_kept = kept.lines().last().unwrap();
+        let tail_first = cut
+            .split_once("--- end of the lines kept from that stretch ---\n")
+            .unwrap()
+            .1
+            .lines()
+            .next()
+            .unwrap();
+        let at = |l: &str| log.lines().position(|x| x == l).unwrap();
+        assert_eq!(at(last_kept) + 1, at(tail_first));
+    }
+
+    #[test]
+    fn key_messages_are_logged() {
+        let crates = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+        let mut sources = String::new();
+        let mut dirs = vec![crates];
+        while let Some(dir) = dirs.pop() {
+            for entry in std::fs::read_dir(dir).unwrap().flatten() {
+                let path = entry.path();
+                if path.is_dir() && path.file_name().is_some_and(|n| n != "target") {
+                    dirs.push(path);
+                } else if path.extension().is_some_and(|e| e == "rs")
+                    // The list itself is no log message.
+                    && path.file_name().is_some_and(|n| n != "feedback.rs")
+                {
+                    sources.push_str(&std::fs::read_to_string(&path).unwrap());
+                }
+            }
+        }
+        for key in KEY_MESSAGES {
+            assert!(
+                sources.contains(&format!("\"{key}")),
+                "no log message starts with {key:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn reports_bring_the_previous_run_along_when_it_matters_or_there_is_room() {
+        let long = |tag: &str| -> String {
+            (0..20_000)
+                .map(|i| line(i, "INFO", &format!("{tag} {i}")))
+                .collect()
+        };
+        let (old, now) = (long("old"), long("now"));
+        // Crashed: both go, each within the budget together.
+        let log = report_log(Some(&old), Some("crashed"), &now);
+        assert!(log.len() <= LOG_BUDGET_BYTES, "{}", log.len());
+        assert!(log.starts_with("--- previous run (crashed) ---\n"));
+        assert!(log.contains("\n--- this run ---\n"));
+        assert!(log.contains(": old 19999\n") && log.ends_with(": now 19999\n"));
+        // A normal previous run goes only into the room this run leaves.
+        assert!(!report_log(Some(&old), None, &now).contains("previous run"));
+        let started = line(1, "INFO", "process started");
+        let log = report_log(Some(&old), None, &started);
+        assert!(log.len() <= LOG_BUDGET_BYTES);
+        assert!(log.starts_with("--- previous run ---\n"));
+        assert!(log.ends_with(&format!("--- this run ---\n{started}")));
+        // No previous run, or an empty one.
+        assert_eq!(report_log(None, None, &started), started);
+        assert_eq!(report_log(Some(" \n"), Some("crashed"), &started), started);
+    }
+
+    #[test]
+    fn a_full_report_fits_the_feedback_service() {
+        // services/feedback: Content-Length (bytes) at most 64 KB, log at most 52 KB (UTF-16).
+        const MAX_BODY: usize = 64 * 1024;
+        const MAX_LOG: usize = 52 * 1024;
+        let old: String = (0..30_000)
+            .map(|i| line(i, "WARN", "anchor SetWindowPos failed"))
+            .collect();
+        let log = report_log(Some(&old), Some("crashed"), &old);
+        assert!(log.encode_utf16().count() <= MAX_LOG);
+        let system: serde_json::Map<String, serde_json::Value> = (0..12)
+            .map(|i| {
+                (
+                    format!("fact{i:02}"),
+                    serde_json::Value::String("x".repeat(FACT_MAX)),
+                )
+            })
+            .collect();
+        let report = serde_json::json!({
+            "kind": "bug",
+            "message": "错".repeat(5000),
+            "email": format!("{}@example.com", "a".repeat(242)),
+            "app": "0.2.4",
+            "crash": true,
+            "language": "zh-CN",
+            "system": system,
+            "log": log,
+        });
+        let body = report.to_string();
+        assert!(body.len() <= MAX_BODY, "{} bytes", body.len());
     }
 
     #[test]

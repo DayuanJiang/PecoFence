@@ -109,6 +109,21 @@ fn snapshot_limit_text() -> String {
     )
 }
 
+/// The names of the top-level settings that differ (`hideRealIcons,quickHide`): field names of
+/// `Settings`, never their values (a path, a hotkey).
+fn changed_settings(old: &pecofence_core::Settings, new: &pecofence_core::Settings) -> String {
+    let (Ok(serde_json::Value::Object(old)), Ok(serde_json::Value::Object(new))) =
+        (serde_json::to_value(old), serde_json::to_value(new))
+    else {
+        return String::new();
+    };
+    new.iter()
+        .filter(|(key, value)| old.get(key.as_str()) != Some(value))
+        .map(|(key, _)| key.as_str())
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
 impl App {
     /// Replaces the configuration wholesale (import / backup) and rebuilds everything.
     pub(super) fn adopt_config(&mut self, cfg: pecofence_core::Config, source: ConfigSource) {
@@ -479,7 +494,13 @@ impl App {
         };
         match v.get("type").and_then(|t| t.as_str()) {
             Some("ready") => {
-                tracing::info!("settings: page ready");
+                // The first `ready` of a window: how long WebView2 took to show the page.
+                let ms = self
+                    .settings
+                    .as_ref()
+                    .filter(|h| !h.ready)
+                    .map(|h| h.opened.elapsed().as_millis() as u64);
+                tracing::info!(ms, "settings: page ready");
                 if let Some(h) = self.settings.as_mut() {
                     h.ready = true;
                 }
@@ -778,6 +799,8 @@ impl App {
         if new == old {
             return;
         }
+        let what = changed_settings(&old, &new);
+        tracing::info!(what = what.as_str(), "settings changed");
         if new.autostart != old.autostart {
             if let Err(e) =
                 pecofence_platform::autostart::set_product_enabled(new.autostart, self.portable)
@@ -819,7 +842,7 @@ impl App {
             a.quick_hide_enabled = new.quick_hide.enabled;
             // Switched off while the fences are hidden: a double-click can no longer show them.
             if !a.quick_hide_enabled && a.fences_hidden() {
-                a.toggle_fences_hidden();
+                a.toggle_fences_hidden_by("quick hide turned off");
             }
         }
         if new.show_desktop != old.show_desktop
@@ -970,4 +993,23 @@ fn cli_command() -> String {
         return cli.to_string_lossy().into_owned();
     }
     "pecofence-cli".to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn changed_settings_are_named_not_shown() {
+        let old = pecofence_core::Settings::default();
+        let mut new = old.clone();
+        new.hide_real_icons = !old.hide_real_icons;
+        new.custom_theme = Some(r"C:\Users\jane\theme.json".to_string());
+        new.quick_hide.enabled = !old.quick_hide.enabled;
+        assert_eq!(
+            changed_settings(&old, &new),
+            "customTheme,hideRealIcons,quickHide"
+        );
+        assert_eq!(changed_settings(&old, &old), "");
+    }
 }

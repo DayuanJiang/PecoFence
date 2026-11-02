@@ -165,7 +165,7 @@ fn watch_loop(
                 on_events(vec![FsEvent::Overflow]);
                 continue;
             }
-            tracing::warn!(error = err, dir = %dir.display(), "ReadDirectoryChangesW failed; watcher exiting");
+            tracing::warn!(error = err, dir = %dir.display(), drive = crate::shell::drive_kind(&dir), "ReadDirectoryChangesW failed; watcher exiting");
             // The directory is gone (deleted / renamed / unmounted): nudge the app to re-enumerate
             // so it can fall back and re-point its watcher.
             on_events(vec![FsEvent::Overflow]);

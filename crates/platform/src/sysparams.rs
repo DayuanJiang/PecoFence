@@ -8,6 +8,13 @@ use crate::bindings::*;
 use crate::wide::to_wide;
 use windows_core::{BOOL, PCWSTR};
 
+/// A Remote Desktop session: the monitors and their scale are the other computer's window.
+pub fn remote_session() -> bool {
+    const SM_REMOTESESSION: i32 = 0x1000;
+    // SAFETY: plain FFI call.
+    unsafe { GetSystemMetrics(SM_REMOTESESSION) != 0 }
+}
+
 fn read_u32(spi: i32, default: u32) -> u32 {
     let mut value: u32 = default;
     // SAFETY: out-pointer to a local of the size the SPI expects (a UINT for every SPI used

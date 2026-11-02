@@ -40,7 +40,9 @@ pub(super) fn start_desktop_watchers(
     for dir in dirs {
         match start_watcher(&dir, control, pending.clone()) {
             Ok(w) => watchers.push((dir, w)),
-            Err(e) => tracing::warn!(dir = %dir.display(), error = %e, "watcher failed"),
+            Err(e) => {
+                tracing::warn!(dir = %dir.display(), drive = shell::drive_kind(&dir), error = %e, "watcher failed")
+            }
         }
     }
     watchers

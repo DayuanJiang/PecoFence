@@ -1616,7 +1616,9 @@ impl FenceWindow {
         let dpi = monitors::dpi_for_window(hwnd);
         let mut changed = false;
         self.with_view(|v| {
+            let old = v.dpi;
             if v.apply_dpi(dpi) {
+                tracing::info!(fence = %v.fence_id, from = old, to = dpi, "fence DPI changed (drift)");
                 changed = true;
                 v.update_backdrop();
                 let (w, h) = window::window_rect_size(hwnd);

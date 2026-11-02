@@ -697,7 +697,8 @@ impl DesktopAnchor {
     fn end_show_desktop(&mut self, reason: &'static str) {
         self.show_desktop_active = false;
         self.topmost_refused = false;
-        tracing::info!(reason, "show desktop ended");
+        let front = desktop::root_ancestor(desktop::foreground_window());
+        tracing::info!(reason, class = %desktop::class_name(front), "show desktop ended");
         if self.behavior == ShowDesktopBehavior::KeepVisible {
             self.with_anchoring(|s| {
                 for (f, shadow) in s.fences.clone() {
@@ -760,6 +761,18 @@ impl DesktopAnchor {
         let is_desktop = self.is_desktop_window(hwnd);
         let raised = self.desktop_is_raised_over_us();
         tracing::debug!(?hwnd, %cls, is_desktop, raised, "foreground changed");
+        // Only the changes to and from the desktop, once each: they start and end following its
+        // clicks (quick hide, marquee), and say what was in front when they did.
+        if is_desktop != self.quick.sink_registered {
+            tracing::info!(
+                class = %cls,
+                desktop = is_desktop,
+                raised,
+                button_down = window::primary_button_down_async(),
+                pt = ?window::cursor_pos(),
+                "foreground moved to or from the desktop"
+            );
+        }
 
         if is_desktop {
             if let Some(callback) = self.on_desktop_front.as_ref() {
@@ -1066,13 +1079,19 @@ impl DesktopAnchor {
         }
     }
 
+    /// Quick hide's double-click on the empty desktop.
     pub fn toggle_fences_hidden(&mut self) {
-        self.set_fences_hidden(!self.quick.fences_hidden, false);
+        self.toggle_fences_hidden_by("double-click on the desktop");
+    }
+
+    /// `reason` (a fixed text) goes to the log.
+    pub fn toggle_fences_hidden_by(&mut self, reason: &'static str) {
+        self.set_fences_hidden(!self.quick.fences_hidden, false, reason);
     }
 
     /// Hides or shows the fences as quick hide does; `every` includes the ones kept on the
     /// desktop by 「双击桌面隐藏时保留此栅栏」 (「临时显示 Windows 桌面」 hides those too).
-    pub fn set_fences_hidden(&mut self, hide: bool, every: bool) {
+    pub fn set_fences_hidden(&mut self, hide: bool, every: bool, reason: &'static str) {
         self.quick.fences_hidden = hide;
         for (w, shadow) in self.fences.clone() {
             if !every && self.quick_hide_excluded.contains(&(w.0 as isize)) {
@@ -1088,6 +1107,7 @@ impl DesktopAnchor {
         tracing::info!(
             hidden = hide,
             count = self.fences.len(),
+            reason,
             "fences visibility toggled"
         );
     }

@@ -328,7 +328,7 @@ impl App {
                         .map(|a| a.fences_hidden())
                         .unwrap_or(false);
                     if hidden != want_hidden {
-                        self.toggle_all_fences();
+                        self.toggle_all_fences("test script");
                     }
                 }
                 ["peek"] => self.queue.push(Command::TogglePeek),

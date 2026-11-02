@@ -19,6 +19,16 @@ enum QueueOwner {
 /// Owns everything needed to composite on the current (UI) thread.
 ///
 /// Create it once, after `OleGuard::init()`, and keep it alive for the process lifetime.
+/// See [`RenderStack::adapter_info`].
+pub struct AdapterInfo {
+    pub name: String,
+    /// PCI ids: 0x10de NVIDIA, 0x1002 AMD, 0x8086 Intel, 0x1414 Microsoft (WARP).
+    pub vendor: u32,
+    pub device: u32,
+    /// `32.0.21025.10016`, or `unknown`.
+    pub driver: String,
+}
+
 pub struct RenderStack {
     _queue: QueueOwner,
     pub compositor: Compositor,
@@ -134,6 +144,12 @@ impl RenderStack {
     /// The adapter the fences render on, for feedback reports: its name and the version of its
     /// user-mode driver (`AMD Radeon(TM) Graphics, driver 32.0.21025.10016`).
     pub fn adapter(&self) -> Option<String> {
+        self.adapter_info()
+            .map(|a| format!("{}, driver {}", a.name, a.driver))
+    }
+
+    /// The adapter the fences render on: name, PCI vendor and device id, driver version.
+    pub fn adapter_info(&self) -> Option<AdapterInfo> {
         use crate::gpu_bindings as b;
         use windows_core::Interface;
         let gpu = self.gpu.borrow();
@@ -160,7 +176,12 @@ impl RenderStack {
                 }
                 Err(_) => "unknown".to_string(),
             };
-            Some(format!("{}, driver {driver}", name.trim()))
+            Some(AdapterInfo {
+                name: name.trim().to_string(),
+                vendor: desc.VendorId,
+                device: desc.DeviceId,
+                driver,
+            })
         }
     }
 

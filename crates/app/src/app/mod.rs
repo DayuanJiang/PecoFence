@@ -167,6 +167,9 @@ const MEMORY_LOG_GROWTH: u64 = 64 << 20;
 const WALLPAPER_PREWARM_DELAY_MS: u32 = 3_000;
 const SPI_SETDESKWALLPAPER: usize = 0x0014;
 const SPI_SETWORKAREA: usize = 0x002F;
+const WM_POWERBROADCAST: u32 = 0x0218;
+const PBT_APMSUSPEND: usize = 0x0004;
+const PBT_APMRESUMEAUTOMATIC: usize = 0x0012;
 const TRAY_ID: u32 = 1;
 const HOTKEY_PEEK: i32 = 1;
 /// Registered for a moment to learn whether a shortcut the user picks is free.
@@ -334,6 +337,12 @@ pub struct App {
     idle_rules_checked: Option<Instant>,
     /// When the last memory line was logged and the total it showed; see `log_memory`.
     memory_logged: Option<(Instant, u64)>,
+    /// When this run started: its age in feedback reports, the startup time in the log.
+    started: Instant,
+    /// The last display change: when, and what it did (for feedback reports).
+    last_display_change: Option<(Instant, DisplayChangeSummary)>,
+    /// Animation runs and slow commands since the last `activity` line; see `log_memory`.
+    activity: Activity,
     /// Fingerprint of the snapshot the current backdrops were built from.
     wallpaper_sig: Option<String>,
     wallpaper_cache: BackdropCache,
@@ -405,6 +414,67 @@ fn sync_desktops_differ(control: HWND, differ: &Cell<bool>) {
     }
 }
 
+/// The settings and the fences a run starts with, two lines for the head of the log (which a
+/// report always carries): a previous run's report may come from other settings than today's.
+fn log_start_state(state: &AppState) {
+    let s = &state.config.settings;
+    tracing::info!(
+        hide_icons = s.hide_real_icons,
+        keep_icons_hidden = s.keep_icons_hidden,
+        quick_hide = s.quick_hide.enabled,
+        peek = s.peek.enabled,
+        hover_peek = s.roll_up.hover_peek,
+        snapping = s.snapping.enabled,
+        offer_new_fence = s.offer_new_fence,
+        liquid_glass = s.theme_style == pecofence_core::ThemeStyle::LiquidGlass,
+        custom_theme = s.custom_theme.is_some(),
+        icon_size = s.icon_size,
+        autostart = s.autostart,
+        moved_desktop = s.desktop_path.is_some(),
+        rules = state.config.rules.list.len(),
+        rules_follow = state.config.rules.keep_updated,
+        "settings at start"
+    );
+    let fences = state.fences();
+    let count =
+        |test: &dyn Fn(&pecofence_core::Fence) -> bool| fences.iter().filter(|f| test(f)).count();
+    tracing::info!(
+        fences = fences.len(),
+        tabs = count(&|f| f.tab_host.is_some()),
+        portals = count(&|f| f.kind == pecofence_core::FenceKind::FolderPortal),
+        rolled = count(&|f| f.rolled_up),
+        locked = count(&|f| f.locked),
+        desktop_layout = count(&|f| f.desktop_layout),
+        items = state.config.items.len(),
+        layouts = state.config.layouts.len(),
+        layout = state.layout,
+        "workspace at start"
+    );
+}
+
+/// What the last display change did, for feedback reports.
+#[derive(Clone, Copy, Default)]
+pub(super) struct DisplayChangeSummary {
+    pub(super) monitors: usize,
+    pub(super) layout: usize,
+    /// Fences placed again, and how many of those ended up somewhere else.
+    pub(super) placed: usize,
+    pub(super) moved: usize,
+}
+
+/// Timings counted between two `activity` lines; only the worst go to the log one by one.
+#[derive(Default)]
+pub(super) struct Activity {
+    pub(super) animation_runs: u32,
+    /// Runs with a gap of two 60 Hz frames or a frame longer than a 60 Hz period.
+    pub(super) stuttered_runs: u32,
+    pub(super) max_gap_ms: f64,
+    /// Commands that held the UI thread longer than a compositor frame (8 ms).
+    pub(super) slow_commands: u32,
+    pub(super) worst_command_ms: f64,
+    pub(super) worst_command: String,
+}
+
 /// The variant name of a command (its `Debug` form up to the first `{`, `(` or space).
 fn command_name(cmd: &Command) -> String {
     let s = format!("{cmd:?}");
@@ -415,20 +485,29 @@ impl App {
     /// Creates everything and returns the shared cell the control window drives.
     pub fn create(args: Args) -> Result<AppCell> {
         let cell: AppCell = Rc::new(RefCell::new(None));
+        let started = Instant::now();
 
         // Elevation decides which windows the fences may be placed under; the delay after
         // Explorer shows how long a launch at sign-in waited.
         let after_explorer_s = seconds_after_explorer();
+        let install = feedback::install_kind(args.portable);
         tracing::info!(
+            version = env!("CARGO_PKG_VERSION"),
+            install = install.as_str(),
             packaged = process::is_packaged(),
             elevated = ?process::is_elevated(process::current_pid()),
             after_explorer_s = ?after_explorer_s,
+            remote_desktop = sysparams::remote_session(),
             "process started"
         );
         let stack = Rc::new(RenderStack::new()?);
+        let gpu = stack.adapter_info();
         tracing::info!(
             queue = stack.queue_path,
             warp = stack.is_warp,
+            gpu_vendor = gpu.as_ref().map(|g| format!("{:#06x}", g.vendor)),
+            gpu_device = gpu.as_ref().map(|g| format!("{:#06x}", g.device)),
+            driver = gpu.as_ref().map(|g| g.driver.clone()),
             "composition stack ready"
         );
 
@@ -444,7 +523,7 @@ impl App {
         );
         for (what, path, error) in &state.load_failures {
             let what = *what;
-            tracing::warn!(what, path = %path.display(), error = %error, "config file unusable");
+            tracing::warn!(what, path = %path.display(), drive = shell::drive_kind(path), error = %error, "config file unusable");
         }
         if let Some(p) = &state.recovered_from {
             tracing::warn!(from = %p.display(), "config recovered from backup");
@@ -452,6 +531,7 @@ impl App {
         if let Some(p) = &state.unreadable_moved_to {
             tracing::warn!(to = %p.display(), "config.json unreadable; kept aside");
         }
+        log_start_state(&state);
 
         let theme_mode = pick_theme_mode(state.config.settings.theme, &args);
         tray::set_dark_menus(theme_mode == ThemeMode::Dark);
@@ -492,6 +572,8 @@ impl App {
             let peek_focus_pending: Cell<Option<usize>> = Cell::new(None);
             // A display change is waiting out DISPLAY_SETTLE_MS on TIMER_WORKAREA.
             let display_settling = Cell::new(false);
+            // WM_DISPLAYCHANGE and SPI_SETWORKAREA broadcasts since the last layout pass.
+            let display_signals = Cell::new((0u32, 0u32));
             // This lives outside App so nested/modal loops cannot lose a wallpaper signal.
             let wallpaper_schedule = Rc::new(Cell::new(RefreshSchedule::default()));
             let last_desktop_id = Cell::new(wallpaper::desktop_id());
@@ -869,7 +951,13 @@ impl App {
                                         && let Some(app) = guard.as_mut()
                                     {
                                         display_settling.set(false);
-                                        tracing::info!("work area changed; re-laying out fences");
+                                        let (display_changes, work_area_changes) =
+                                            display_signals.take();
+                                        tracing::info!(
+                                            display_changes,
+                                            work_area_changes,
+                                            "work area changed; re-laying out fences"
+                                        );
                                         app.on_display_changed();
                                     } else {
                                         window::set_timer(hwnd, TIMER_WORKAREA, 500);
@@ -880,6 +968,7 @@ impl App {
                             Some(0)
                         }
                         msg::WM_SETTINGCHANGE if wparam == SPI_SETDESKWALLPAPER => {
+                            wallpaper::note_signal(wallpaper::Signal::SettingChange);
                             sync_desktops_differ(hwnd, &desktops_differ);
                             notify_wallpaper(hwnd);
                             None
@@ -931,6 +1020,8 @@ impl App {
                             } else {
                                 250
                             };
+                            let (d, w) = display_signals.get();
+                            display_signals.set((d, w + 1));
                             window::set_timer(hwnd, TIMER_WORKAREA, wait);
                             None
                         }
@@ -950,6 +1041,8 @@ impl App {
                         msg::WM_DISPLAYCHANGE => {
                             // Each change restarts the wait: lay out once the monitors settled.
                             display_settling.set(true);
+                            let (d, w) = display_signals.get();
+                            display_signals.set((d + 1, w));
                             window::set_timer(hwnd, TIMER_WORKAREA, DISPLAY_SETTLE_MS);
                             Some(0)
                         }
@@ -1028,6 +1121,15 @@ impl App {
                             }
                             window::post_quit(0);
                             Some(0)
+                        }
+                        WM_POWERBROADCAST => {
+                            // Display changes and a lost GPU device often follow a wake.
+                            match wparam {
+                                PBT_APMSUSPEND => tracing::info!("system suspending"),
+                                PBT_APMRESUMEAUTOMATIC => tracing::info!("system resumed"),
+                                _ => {}
+                            }
+                            None
                         }
                         msg::WM_DESTROY => Some(0),
                         _ => None,
@@ -1283,6 +1385,9 @@ impl App {
             save_failure_shown: false,
             idle_rules_checked: None,
             memory_logged: None,
+            started,
+            last_display_change: None,
+            activity: Activity::default(),
             cut_items: HashSet::new(),
             cut_clip_seq: 0,
             cut_paste: None,
@@ -1537,6 +1642,12 @@ impl App {
                 window::set_timer(app.control.hwnd(), TIMER_TEST, 50);
             }
         }
+        tracing::info!(
+            ms = started.elapsed().as_millis() as u64,
+            windows = app.fences.len(),
+            icons_hidden = pecofence_platform::shell_icons::desktop_icons_hidden(),
+            "startup done"
+        );
         if args.dump_stats {
             match pecofence_platform::memstats::MemoryStats::current() {
                 Ok(m) => tracing::info!(memory = %m.summary(), "startup memory"),
@@ -1680,6 +1791,18 @@ impl App {
             gpu_shared_mb = gpu.map(|(_, shared)| mb(shared)),
             "memory"
         );
+        let a = std::mem::take(&mut self.activity);
+        if a.animation_runs + a.slow_commands > 0 {
+            tracing::info!(
+                animation_runs = a.animation_runs,
+                stuttered_runs = a.stuttered_runs,
+                max_gap_ms = a.max_gap_ms,
+                slow_commands = a.slow_commands,
+                worst_command_ms = a.worst_command_ms,
+                command = a.worst_command,
+                "activity"
+            );
+        }
     }
 
     /// Drains and executes queued commands. Loops because handlers may enqueue more.
@@ -1708,11 +1831,21 @@ impl App {
                     .elapsed()
                     .saturating_sub(tray::time_in_menus() - in_menus);
                 if spent > Duration::from_millis(8) {
-                    tracing::info!(
-                        ms = spent.as_secs_f32() * 1000.0,
-                        command = name,
-                        "slow command"
-                    );
+                    let ms = crate::share_log::millis(spent);
+                    let a = &mut self.activity;
+                    a.slow_commands += 1;
+                    if ms > a.worst_command_ms {
+                        a.worst_command_ms = ms;
+                        a.worst_command.clone_from(&name);
+                    }
+                    // One by one from 50 ms: shorter ones (a raise, a settings message) come by
+                    // the dozen in an hour and filled the feedback logs; the activity line
+                    // counts them.
+                    if spent >= Duration::from_millis(50) {
+                        tracing::info!(ms, command = name, "slow command");
+                    } else {
+                        tracing::debug!(ms, command = name, "slow command");
+                    }
                 }
             }
         }
@@ -2046,7 +2179,7 @@ impl App {
                 permanent,
             } => self.delete_items(fence, &items, permanent),
             Command::DeviceLost => self.recover_device(),
-            Command::ToggleAllFences => self.toggle_all_fences(),
+            Command::ToggleAllFences => self.toggle_all_fences("command"),
             Command::TogglePeek => self.toggle_peek(),
             Command::EndPeek(reason) => self.end_peek(reason),
             Command::PeekDragStarted => self.peek_drag(true),

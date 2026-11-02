@@ -18,7 +18,7 @@ impl App {
             return;
         };
         self.windows_desktop = on;
-        a.set_fences_hidden(on, true);
+        a.set_fences_hidden(on, true, "windows desktop");
         if on {
             // Only the icons PecoFence hid: icons hidden in Explorer itself stay hidden.
             a.restore_desktop_icons();

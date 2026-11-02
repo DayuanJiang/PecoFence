@@ -320,7 +320,7 @@ fn serve(connection: File, control: isize, pending: &PendingQueue, active: &Atom
             target: "pecofence::ipc",
             method,
             ok = false,
-            ms = started.elapsed().as_secs_f32() * 1000.0,
+            ms = crate::share_log::millis(started.elapsed()),
             "request"
         );
     }

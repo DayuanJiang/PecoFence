@@ -225,7 +225,7 @@ impl App {
         self.state.save_if_dirty();
         let cmd = menu.show(self.control.hwnd(), x, y);
         match cmd {
-            CMD_TOGGLE_FENCES => self.toggle_all_fences(),
+            CMD_TOGGLE_FENCES => self.toggle_all_fences("tray menu"),
             CMD_WINDOWS_DESKTOP => self.set_windows_desktop(!self.windows_desktop, "tray menu"),
             CMD_PEEK => self.queue.push(Command::TogglePeek),
             CMD_NEW_FENCE => self.queue.push(Command::NewFence { x, y: y - 300 }),
