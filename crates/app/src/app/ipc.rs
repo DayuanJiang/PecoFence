@@ -1466,9 +1466,15 @@ impl App {
             .to_string(),
             // A tab is shown in its host's window, so that is where it is on screen.
             rect: connected.then(|| Rect::from(self.state.fence_px_rect(host))),
-            window_rect: (connected && f.tab_host.is_none())
-                .then(|| self.fences.get(&f.id).map(|w| rect_of(w.rect())))
-                .flatten(),
+            // 「桌面」 arranged like the desktop is shown on a connected monitor even while the
+            // monitor of its saved rect is gone.
+            window_rect: f
+                .tab_host
+                .is_none()
+                .then(|| self.fences.get(&f.id))
+                .flatten()
+                .filter(|w| connected || w.is_desktop_arranged())
+                .map(|w| rect_of(w.rect())),
             monitor: host.geometry.monitor.clone(),
             monitor_connected: connected,
             geometry: f.geometry.clone(),
