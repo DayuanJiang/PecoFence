@@ -609,7 +609,18 @@ impl FenceWindow {
             self.arrange_desktop(true);
             return;
         }
+        // `rect` is in the pixels of the monitor it lies on: the view takes that monitor's
+        // scale first, so the title row and the sizes below are measured for it (a move onto a
+        // monitor with another scale then changes nothing more).
+        let monitor = monitors::monitor_from_point(
+            (rect.left + rect.right) / 2,
+            (rect.top + rect.bottom) / 2,
+        );
+        let target_dpi = monitors::query(monitor).map(|m| m.dpi);
         self.with_view(|v| {
+            if let Some(dpi) = target_dpi {
+                v.apply_dpi(dpi);
+            }
             v.finish_content_swap_now();
             v.roll_anim = None;
             v.height_anim = None;

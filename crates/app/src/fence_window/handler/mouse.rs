@@ -673,7 +673,7 @@ pub(super) fn on_rbuttondown(
         .and_then(|v| v.cancel_tab_or_remote_drag());
     match cancel {
         Some(c) => {
-            finish_drag_cancel(c, queue, &h.behavior);
+            finish_drag_cancel(c, &h.view, queue, &h.behavior);
             Some(0)
         }
         None => None,

@@ -72,7 +72,12 @@ pub(super) fn open_items(v: &FenceViewState, queue: &CommandQueue, ids: Vec<Item
 /// Second half of a cancelled tab / tear-off drag, with no borrow held: releases the capture
 /// (WM_CAPTURECHANGED then finds no drag to commit), takes the drop outline and guides down and
 /// hands a torn-off fence back to its host.
-pub(super) fn finish_drag_cancel(cancel: DragCancel, queue: &CommandQueue, behavior: &Behavior) {
+pub(super) fn finish_drag_cancel(
+    cancel: DragCancel,
+    view: &ViewCell,
+    queue: &CommandQueue,
+    behavior: &Behavior,
+) {
     window::release_capture();
     hide_drag_feedback(behavior);
     let clear_hint = |hinted| {
@@ -95,17 +100,31 @@ pub(super) fn finish_drag_cancel(cancel: DragCancel, queue: &CommandQueue, behav
             group,
         } => {
             clear_hint(hinted);
-            let _ = window::set_window_bounds(
-                hwnd,
-                rect.left,
-                rect.top,
-                rect.right - rect.left,
-                rect.bottom - rect.top,
-            );
+            put_back(view, hwnd, rect);
             restore_members(&group);
         }
         DragCancel::Tab => {}
     }
+}
+
+/// A cancelled title drag puts the window back at `rect`, where the press found it. Taken
+/// back onto a monitor with another scale, the window keeps that rect: as with the app's own
+/// placement (`FenceViewState::placing`), the rect WM_DPICHANGED suggests would scale it again.
+pub(super) fn put_back(view: &ViewCell, hwnd: HWND, rect: RECT) {
+    let set_placing = |on: bool| {
+        if let Some(v) = view.borrow_mut().as_mut() {
+            v.placing = on;
+        }
+    };
+    set_placing(true);
+    let _ = window::set_window_bounds(
+        hwnd,
+        rect.left,
+        rect.top,
+        rect.right - rect.left,
+        rect.bottom - rect.top,
+    );
+    set_placing(false);
 }
 
 /// State of one fence window's message handler: what the window-procedure closure used to

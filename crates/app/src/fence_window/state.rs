@@ -366,9 +366,10 @@ pub struct FenceViewState {
     pub(super) plate_alpha: f32,
     /// Temporarily expanded by hovering a rolled fence (state stays "rolled" for persistence).
     pub(super) peeking: bool,
-    /// The app is placing the window (`FenceWindow::place_window`): the rect and the expanded
-    /// size it sets are already in the target monitor's pixels, so a WM_DPICHANGED sent inside
-    /// that SetWindowPos (a move onto a monitor with another scale) must not scale them again.
+    /// The app is placing the window (`FenceWindow::place_window`, a cancelled drag put back):
+    /// the rect it sets is already in the target monitor's pixels, so a WM_DPICHANGED sent
+    /// inside that SetWindowPos (a move onto a monitor with another scale) must not scale it
+    /// again.
     pub(super) placing: bool,
     pub(super) behavior: Rc<Behavior>,
 }
@@ -392,23 +393,13 @@ impl FenceViewState {
             return false;
         }
         let old = self.dpi.max(96) as f32;
-        // `placed`: the app is moving the window there and keeps its own rect (see `placing`);
-        // otherwise the window takes the rect Windows suggests (a drag, a scale change).
-        tracing::info!(
-            fence = %self.fence_id,
-            from = self.dpi,
-            to = new_dpi,
-            placed = self.placing,
-            "fence DPI changed"
-        );
+        tracing::info!(fence = %self.fence_id, from = self.dpi, to = new_dpi, "fence DPI changed");
         self.dpi = new_dpi;
         // The optical bezel and upload mask are measured in DIPs. A DPI change can keep
         // the same physical rectangle, so geometry alone cannot validate the old crop.
         self.backdrop_rect = None;
-        if !self.placing {
-            self.expanded_h_px = (self.expanded_h_px as f32 * new_dpi as f32 / old).round() as i32;
-            self.expanded_w_px = (self.expanded_w_px as f32 * new_dpi as f32 / old).round() as i32;
-        }
+        self.expanded_h_px = (self.expanded_h_px as f32 * new_dpi as f32 / old).round() as i32;
+        self.expanded_w_px = (self.expanded_w_px as f32 * new_dpi as f32 / old).round() as i32;
         self.reload_icons_and_labels();
         self.snap_item_motion();
         // The infotip window scales its max width from the owner DPI at creation: rebuild it
