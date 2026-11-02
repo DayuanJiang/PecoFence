@@ -1552,12 +1552,45 @@ mod path_tests {
         assert_eq!(long_path_wide(Path::new(&verbatim)), wide(&verbatim));
     }
 
-    /// A drive's root, which has no file name, gets Explorer's "Local Disk (C:)".
+    /// A drive's root, which has no file name, gets Explorer's "Local Disk (C:)", or only its
+    /// label where Explorer hides drive letters.
     #[test]
     fn a_drive_root_has_a_display_name() {
         let _com = crate::com::OleGuard::init().expect("COM");
         let name = super::normal_display_name(Path::new(r"C:\")).expect("display name");
-        assert!(name.contains("(C:)"), "{name}");
+        if explorer_hides_drive_letters() {
+            assert!(!name.is_empty() && !name.contains(':'), "{name}");
+        } else {
+            assert!(name.contains("(C:)"), "{name}");
+        }
+    }
+
+    /// Explorer's `ShowDriveLettersFirst` is 2 when it hides every drive letter; the user's
+    /// value wins over the machine's.
+    fn explorer_hides_drive_letters() -> bool {
+        use crate::bindings::{
+            HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, RRF_RT_REG_DWORD, RegGetValueW,
+        };
+        [HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE]
+            .into_iter()
+            .find_map(|root| {
+                let mut value = 0u32;
+                let mut size = 4u32;
+                // SAFETY: the out-pointers reference locals of the declared size.
+                let status = unsafe {
+                    RegGetValueW(
+                        root,
+                        windows_core::w!(r"Software\Microsoft\Windows\CurrentVersion\Explorer"),
+                        windows_core::w!("ShowDriveLettersFirst"),
+                        RRF_RT_REG_DWORD as u32,
+                        None,
+                        Some((&mut value as *mut u32).cast()),
+                        Some(&mut size),
+                    )
+                };
+                (status.0 == 0).then_some(value)
+            })
+            == Some(2)
     }
 }
 
