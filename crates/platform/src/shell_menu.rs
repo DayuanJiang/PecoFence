@@ -201,6 +201,44 @@ impl Drop for ShellContextMenu {
     }
 }
 
+/// Makes the shell start its item handler cache now, on a worker thread, so that no item menu
+/// has to start it. The shell starts that cache on a thread of its own the first time a
+/// process needs it, and the caller waits for that thread without answering messages
+/// (SHCreateThread with CTF_WAIT_NO_REENTRANCY). In a folder's first menu that happened inside
+/// a menu extension's DLL initialization, with the loader lock held: the extension created a
+/// window there (Baidu Netdisk's YunShellExt on the PC where it was reproduced), which ran the
+/// pending update of Windows' 「包含到库中」 helper and its library icons. The new thread could
+/// never start, and PecoFence froze for good at its first folder right-click (feedback #103,
+/// #109). A library's icon starts the cache the same way without loading any menu extension;
+/// building a menu here instead would load them all and could stop this worker the same way.
+pub fn prepare_handler_cache() {
+    // Windows' own libraries; a PC may lack some of them, and their file names are English
+    // in every display language.
+    const LIBRARIES: [&str; 4] = ["Documents", "Pictures", "Music", "Videos"];
+    let spawned = std::thread::Builder::new()
+        .name("shell handler cache".into())
+        .spawn(|| {
+            let _sta = crate::com::OleGuard::init();
+            let started = std::time::Instant::now();
+            let mut outcome = Err(Error::from_hresult(E_FAIL));
+            for name in LIBRARIES {
+                let path = format!("::{{031E4825-7B94-4DC3-B131-E946B44C8DD5}}\\{name}.library-ms");
+                outcome = crate::shell::shell_image(Path::new(&path), 32, true).map(|_| name);
+                if outcome.is_ok() {
+                    break;
+                }
+            }
+            let ms = started.elapsed().as_millis() as u64;
+            match outcome {
+                Ok(library) => tracing::info!(ms, library, "shell handler cache prepared"),
+                Err(e) => tracing::warn!(ms, error = %e, "shell handler cache not prepared"),
+            }
+        });
+    if let Err(e) = spawned {
+        tracing::warn!(error = %e, "shell handler cache thread failed to start");
+    }
+}
+
 /// The id lists of `paths` for one shell handler (unknown paths are skipped); free each with
 /// `ILFree`. Items of the user's Desktop and of the Public Desktop have no common parent folder,
 /// so for a selection with both the shell bound nothing (delete, cut, copy and Explorer's menu

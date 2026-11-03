@@ -1188,6 +1188,8 @@ impl App {
         // The Recycle Bin is asked on a worker; a new answer means listing the desktop again.
         shell::notify_recycle_bin_changes(control.hwnd(), WM_APP_FS_CHANGED);
         pecofence_platform::hangwatch::start(control.hwnd());
+        // Before any item menu can be built: see `prepare_handler_cache`.
+        pecofence_platform::shell_menu::prepare_handler_cache();
 
         // Desktop anchor (z-order, show desktop, quick hide, icon hiding).
         let sentinel_class = anchor::register_sentinel_class()?;
