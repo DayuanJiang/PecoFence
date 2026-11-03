@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- The first right-click on a folder no longer freezes PecoFence for good on some PCs (feedback #103, #109). A folder's menu has Windows' 「包含到库中」, which fetches the library icons, and the first time a program needs such icons Windows starts a helper thread and waits for it. A menu extension that creates a window while it is being loaded (Baidu Netdisk's does, on the PC where this was reproduced) let that fetch run right then, and the helper thread could not start before the loading was over: PecoFence waited forever and had to be ended in Task Manager. Explorer is not affected, as its helper thread already runs. PecoFence now starts the helper thread itself when it starts, by fetching one library icon on a background thread, which loads no menu extension. When PecoFence stops answering, its log also keeps more of the place where it was stuck.
+
 ## 0.2.4
 
 - The fences no longer hide by themselves after 刷新 in the desktop's right-click menu (feedback #95), or after one click on the empty desktop right after using a fence. When the desktop came to the front, PecoFence took the press that brought it there for the first click of a double-click on the empty desktop, as it has to after a click from another program's window, which it does not see. But Windows 11's menu gives the desktop back when the button comes up on 刷新, so a double-click on 刷新, or another click there right after, completed a double-click and hid every fence. After using a fence, PecoFence saw that same press once more and could count it twice. Now only a press on the desktop that is still held when the desktop comes to the front counts; a double-click on the empty desktop still hides and shows the fences, also from another program's window.
