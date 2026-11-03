@@ -563,10 +563,18 @@ impl App {
                 }
             }
             Some("setRules") => {
-                if let Some(rules) = v.get("rules").cloned()
-                    && let Ok(rules) = serde_json::from_value::<pecofence_core::RuleSet>(rules)
+                // A rule list the core cannot read would drop the user's edit without a trace.
+                match v
+                    .get("rules")
+                    .cloned()
+                    .map(serde_json::from_value::<pecofence_core::RuleSet>)
                 {
-                    self.set_rules(rules);
+                    Some(Ok(rules)) => {
+                        tracing::info!(rules = rules.list.len(), "rules saved from page");
+                        self.set_rules(rules);
+                    }
+                    Some(Err(e)) => tracing::warn!(error = %e, "bad rules from page"),
+                    None => tracing::warn!("setRules from page without rules"),
                 }
             }
             Some("action") => match v.get("name").and_then(|n| n.as_str()) {

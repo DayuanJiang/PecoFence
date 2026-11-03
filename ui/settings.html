@@ -279,6 +279,36 @@
   .cats input[type=checkbox] { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); }
   .cats input[type=text] { width: 104px; } .cats input[type=time] { min-width: 128px; }
   .cats .s { color: var(--text2); font-size: 12px; }
+  /* Conditions of a rule (new-rule form and the editor of a listed rule): one box each, "且" between. */
+  .cond-list { display: flex; flex-direction: column; gap: 8px; padding: 16px 16px 0 56px; }
+  .cond-list-h, .c-and { color: var(--text2); font-size: 12px; line-height: 16px; }
+  .cond { display: flex; flex-direction: column; gap: 8px; }
+  .c-and { padding-left: 12px; }
+  .cond-list-h + .cond > .c-and { display: none; }
+  .c-box { display: flex; align-items: flex-start; gap: 8px; padding: 10px 8px 10px 12px; border-radius: var(--r-card); background: var(--subtle); border: 1px solid var(--card-stroke); }
+  .c-main { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px 12px; }
+  .c-main > .c-kind-l { flex: 0 1 260px; display: flex; min-width: 0; flex-direction: column; gap: 6px; color: var(--text2); font-size: 12px; line-height: 16px; }
+  .c-kind-l > select { width: 100%; min-width: 0; color: var(--text); }
+  .c-val { flex: 1 1 220px; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+  .c-cap { color: var(--text2); font-size: 12px; line-height: 16px; }
+  .c-val label { display: flex; min-width: 0; }
+  .c-val .c-value { flex-direction: column; gap: 6px; color: var(--text2); font-size: 12px; line-height: 16px; }
+  .c-value > input { width: 100%; min-width: 0; color: var(--text); }
+  .c-val > .cats, .c-none { padding-top: 6px; }
+  .c-fixed { padding-top: 6px; }
+  .c-val .cats label { white-space: nowrap; } .c-val .cats input[type=number] { width: 104px; }
+  .c-none, .c-fixed .s { color: var(--text2); font-size: 12px; line-height: 16px; }
+  .c-fixed { flex: 1 1 220px; min-width: 0; overflow-wrap: anywhere; }
+  .c-del[hidden] { display: none; }
+  .c-add { align-self: flex-start; display: inline-flex; align-items: center; gap: 8px; padding: 0 8px; background: transparent; border-color: transparent; color: var(--accent); }
+  .c-add .ic { font-size: 14px; }
+  /* A listed rule open for editing keeps its number and place. */
+  #ruleList .rule.editing { display: block; padding: 0; counter-increment: rule; }
+  #ruleList .rule.editing::before { display: none; }
+  .re-head { display: flex; align-items: center; gap: 16px; min-height: 60px; padding: 10px 12px 10px 16px; border-bottom: 1px solid var(--line); }
+  .re-head::before { content: counter(rule); flex: none; width: 20px; text-align: center; color: var(--text3); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .re-head .s { color: var(--text2); font-size: 12px; line-height: 16px; }
+  .redit .newrule-foot { gap: 8px; }
 
   /* Fences page: the fence picker frames the page instead of posing as a setting. */
   .picker { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0 2px 6px; }
@@ -330,7 +360,7 @@
     .brand { justify-content: center; padding: 8px 0 16px; }
     .brand-name, .nav-text, .nav-footer { display: none; } nav a { justify-content: center; padding: 8px 0; }
     main { padding: 16px 12px 24px; } .card { padding: 12px; } .card.child, .rows > .card { padding-left: 12px; }
-    .style-tiles, .chips, .fb-kinds, .fb-field { padding-left: 0; } .newrule, .fb-preview { padding-left: 12px; }
+    .style-tiles, .chips, .fb-kinds, .fb-field { padding-left: 0; } .newrule, .cond-list, .fb-preview { padding-left: 12px; }
     .about-head { gap: 14px; } .about-head .brand-mark { width: 44px; height: 44px; }
   }
   /* Liquid Glass keeps the Fluent sheet (an opaque window has nothing to refract); only the
@@ -528,21 +558,31 @@
       <details class="card" id="nrPanel">
         <summary><div class="l"><span class="ic">&#xE710;</span><div><div class="t">新建规则</div></div></div><span class="ic chev">&#xE70D;</span></summary>
         <div class="newrule">
-          <label>规则名称<input type="text" id="nrName" placeholder="例如：截图"></label>
-          <label>目标栅栏<select id="nrTarget"></select></label>
-          <label>条件类型<select id="nrKind">
+          <label>规则名称<input type="text" id="nrName" class="r-name" placeholder="例如：截图"></label>
+          <label>目标栅栏<select id="nrTarget" class="r-target"></select></label>
+        </div>
+        <div class="cond-list" id="nrConds">
+          <div class="cond-list-h">条件（全部符合时放入目标栅栏）</div>
+          <div class="cond" id="nrCond"><div class="c-and">且</div><div class="c-box"><div class="c-main">
+            <label class="c-kind-l">条件类型<select id="nrKind" class="c-kind">
             <option value="type">文件类型</option><option value="ext">扩展名（逗号分隔）</option>
             <option value="contains">名称包含</option><option value="notContains">名称不包含</option><option value="startsWith">名称开头是</option><option value="endsWith">名称结尾是</option><option value="exact">完整文件名（含扩展名，用逗号分隔）</option>
             <option value="glob">通配符（*.png）</option><option value="target">快捷方式目标包含</option>
             <option value="time">创建时段</option><option value="weekday">创建于星期几</option><option value="size">大小范围（MB）</option>
             <option value="idle">闲置天数（未修改也未打开）</option>
             <option value="folders">仅文件夹</option><option value="files">仅文件</option><option value="plain">普通文件（程序和快捷方式除外）</option></select></label>
-          <label id="nrValueWrap">条件值<input type="text" id="nrValue" placeholder="png, jpg" aria-label="条件值" aria-describedby="nrValueHint"><span id="nrValueHint">有空格也直接输入，不用加引号</span></label>
-          <div class="cats" id="nrCats" style="grid-column: 1 / -1"></div>
-          <div class="cats" id="nrTime" style="grid-column: 1 / -1; display:none"><label>从 <input type="time" id="nrFrom" value="18:00"></label><label>到 <input type="time" id="nrTo" value="06:00"></label><span class="s">结束时间早于开始时间，表示跨过午夜</span></div>
-          <div class="cats" id="nrWeek" style="grid-column: 1 / -1; display:none"></div>
-          <div class="cats" id="nrIdle" style="grid-column: 1 / -1; display:none"><label>闲置至少 <input type="number" id="nrIdleDays" value="30" min="1" style="min-width:80px"> 天</label></div>
-          <div class="cats" id="nrSize" style="grid-column: 1 / -1; display:none"><label>至少 <input type="text" inputmode="decimal" id="nrMin" placeholder="0" style="min-width:80px"> <span data-i18n="MB">MB</span></label><label>至多 <input type="text" inputmode="decimal" id="nrMax" placeholder="不限" style="min-width:80px"> <span data-i18n="MB">MB</span></label></div>
+            <div class="c-val"><span class="c-cap">条件值</span>
+              <label id="nrValueWrap" class="c-value"><input type="text" id="nrValue" class="c-text" placeholder="png, jpg" aria-label="条件值" aria-describedby="nrValueHint"><span id="nrValueHint" class="c-hint">有空格也直接输入，不用加引号</span></label>
+              <div class="cats c-cats" id="nrCats"></div>
+              <div class="cats c-time" id="nrTime" style="display:none"><label>从 <input type="time" id="nrFrom" class="c-from" value="18:00"></label><label>到 <input type="time" id="nrTo" class="c-to" value="06:00"></label><span class="s">结束时间早于开始时间，表示跨过午夜</span></div>
+              <div class="cats c-week" id="nrWeek" style="display:none"></div>
+              <div class="cats c-idle" id="nrIdle" style="display:none"><label>闲置至少 <input type="number" id="nrIdleDays" class="c-days" value="30" min="1" style="min-width:80px"> 天</label></div>
+              <div class="cats c-size" id="nrSize" style="display:none"><label>至少 <input type="text" inputmode="decimal" id="nrMin" class="c-min" placeholder="0" style="min-width:80px"> <span data-i18n="MB">MB</span></label><label>至多 <input type="text" inputmode="decimal" id="nrMax" class="c-max" placeholder="不限" style="min-width:80px"> <span data-i18n="MB">MB</span></label></div>
+              <div class="c-none" style="display:none">不需要填写</div>
+            </div></div>
+            <button class="iconbtn c-del" title="删除条件" aria-label="删除条件" hidden>&#xE711;</button>
+          </div></div>
+          <button class="c-add" id="nrAddCond"><span class="ic">&#xE710;</span>添加条件</button>
         </div>
         <div class="newrule-foot"><button class="accent" id="nrAdd">添加规则</button></div>
       </details>
@@ -1381,26 +1421,53 @@
     (control || document.getElementById(fallback))?.focus({ preventScroll: true });
   }
   const openRuleForm = () => { document.getElementById('nrPanel').open = true; };
+  // The listed rule open for editing: its row shows `form` (kept across re-renders, so a state
+  // refresh does not lose what was typed) until Save or Cancel.
+  let editing = null;
+  function fillTargets(sel) {
+    const selected = sel.value;
+    const options = state.fences.filter(f => f.kind !== 'portal').map(f => `<option value="${esc(f.id)}">${esc(f.title)}</option>`).join('');
+    if (sel.innerHTML !== options) {
+      sel.innerHTML = options;
+      if ([...sel.options].some(o => o.value === selected)) sel.value = selected;
+    }
+  }
   // The new-rule form starts open only when there is nothing else on the page to look at.
   let rulesShown = false;
   function renderRules() {
     const list = document.getElementById('ruleList');
     const focus = focusBookmark(list);
+    const typing = editing && editing.form.contains(document.activeElement) ? document.activeElement : null;
     list.innerHTML = '';
     const rules = state.rules.list;
+    if (editing && !rules.some(r => r.id === editing.id)) editing = null;
     if (!rulesShown) { rulesShown = true; if (!rules.length) openRuleForm(); }
     if (!rules.length) list.innerHTML = `<div class="card"><div class="s">${esc(t("尚未添加规则"))}</div></div>`;
     rules.forEach((r, i) => {
       const div = document.createElement('div');
-      div.className = 'card rule' + (r.enabled ? '' : ' disabled');
       div.dataset.rowId = r.id;
+      if (editing && editing.id === r.id) {
+        div.className = 'card rule editing';
+        div.innerHTML = `<div class="re-head"><div><div class="t">${esc(t("编辑规则"))}</div><div class="s">${esc(t("改完点“保存”，规则留在原来的位置"))}</div></div></div>`;
+        fillTargets(editing.form.querySelector('.r-target'));
+        div.appendChild(editing.form);
+        list.appendChild(div);
+        return;
+      }
+      div.className = 'card rule' + (r.enabled ? '' : ' disabled');
       div.innerHTML = `<div class="row"><div class="text"><div class="t">${esc(r.name)}</div><div class="conds">${r.allOf.map(condLabel).map(esc).join(t("，且 "))} ${esc(tf("→ 放入{0}", targetLabel(r.target)))}</div></div>
-        <div class="actions"><button class="iconbtn" title="${esc(t("上移"))}" data-act="up" ${i===0?'disabled':''}>&#xE70E;</button><button class="iconbtn" title="${esc(t("下移"))}" data-act="down" ${i===rules.length-1?'disabled':''}>&#xE70D;</button><div class="toggle ${r.enabled?'on':''}" role="switch" tabindex="0" aria-checked="${r.enabled}" data-act="toggle"></div><button class="iconbtn" title="${esc(t("删除"))}" data-act="del">&#xE74D;</button></div></div>`;
+        <div class="actions"><button class="iconbtn" title="${esc(t("编辑"))}" data-act="edit">&#xE70F;</button><button class="iconbtn" title="${esc(t("上移"))}" data-act="up" ${i===0?'disabled':''}>&#xE70E;</button><button class="iconbtn" title="${esc(t("下移"))}" data-act="down" ${i===rules.length-1?'disabled':''}>&#xE70D;</button><div class="toggle ${r.enabled?'on':''}" role="switch" tabindex="0" aria-checked="${r.enabled}" data-act="toggle"></div><button class="iconbtn" title="${esc(t("删除"))}" data-act="del">&#xE74D;</button></div></div>`;
       div.querySelectorAll('[data-act]').forEach(b => {
-        const labels = { up: t("上移"), down: t("下移"), toggle: t("启用规则"), del: t("删除规则") };
+        const labels = { edit: t("编辑规则"), up: t("上移"), down: t("下移"), toggle: t("启用规则"), del: t("删除规则") };
         b.setAttribute('aria-label', tf("{0}：{1}", labels[b.dataset.act], r.name));
         b.onclick = () => {
           const act = b.dataset.act;
+          if (act === 'edit') {
+            editing = { id: r.id, form: ruleForm(r) };
+            renderRules();
+            editing.form.querySelector('.r-name').focus();
+            return;
+          }
           if (act === 'toggle') r.enabled = !r.enabled;
           if (act === 'del') rules.splice(i, 1);
           if (act === 'up' && i > 0) { rules.splice(i - 1, 0, rules.splice(i, 1)[0]); }
@@ -1411,34 +1478,151 @@
       });
       list.appendChild(div);
     });
-    restoreFocus(list, focus);
-    const tgt = document.getElementById('nrTarget');
-    const selected = tgt.value;
-    const options = state.fences.filter(f => f.kind !== 'portal').map(f => `<option value="${esc(f.id)}">${esc(f.title)}</option>`).join('');
-    if (tgt.innerHTML !== options) {
-      tgt.innerHTML = options;
-      if ([...tgt.options].some(o => o.value === selected)) tgt.value = selected;
-    }
-    const cats = document.getElementById('nrCats');
-    if (!cats.children.length) cats.innerHTML = CATS().map(([k, l]) => `<label><input type="checkbox" value="${k}">${l}</label>`).join('');
+    if (typing) typing.focus({ preventScroll: true }); else restoreFocus(list, focus);
+    fillTargets(document.getElementById('nrTarget'));
+    fillChecks(document.getElementById('nrCond'));
   }
   const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
-  document.getElementById('nrKind').onchange = updateKind;
+  // The editor of a listed rule: name, target and every condition, saved in place.
+  function ruleForm(rule) {
+    const form = document.createElement('div');
+    form.className = 'redit';
+    form.innerHTML = `<div class="newrule"><label>${esc(t("规则名称"))}<input type="text" class="r-name"></label><label>${esc(t("目标栅栏"))}<select class="r-target"></select></label></div>
+      <div class="cond-list"><div class="cond-list-h">${esc(t("条件（全部符合时放入目标栅栏）"))}</div><button class="c-add"><span class="ic" aria-hidden="true">&#xE710;</span>${esc(t("添加条件"))}</button></div>
+      <div class="newrule-foot"><button data-act="cancel">${esc(t("取消"))}</button><button class="accent" data-act="save">${esc(t("保存"))}</button></div>`;
+    form.querySelector('.r-name').value = rule.name;
+    const target = form.querySelector('.r-target');
+    fillTargets(target);
+    // A rule aimed at a portal or a deleted fence routes to the desktop fence; show that.
+    const inbox = state.fences.find(f => f.kind === 'inbox');
+    const id = rule.target && rule.target.fence;
+    target.value = [...target.options].some(o => o.value === id) ? id : inbox ? inbox.id : '';
+    const add = form.querySelector('.c-add');
+    rule.allOf.forEach(c => add.before(newCond(c)));
+    add.onclick = () => { add.before(newCond()); updateDel(form); };
+    updateDel(form);
+    const close = () => {
+      const id = editing.id;
+      editing = null;
+      renderRules();
+      document.querySelector(`#ruleList [data-row-id="${id}"] [data-act=edit]`)?.focus();
+    };
+    form.querySelector('[data-act=cancel]').onclick = close;
+    form.querySelector('[data-act=save]').onclick = () => {
+      const changed = readRule(form);
+      const r = changed && state.rules.list.find(x => x.id === editing.id);
+      if (!r) return;
+      // Id, switch, template tag and place in the list stay.
+      Object.assign(r, changed);
+      send({ type: 'setRules', rules: state.rules });
+      close();
+      toast(t("已保存规则"));
+    };
+    return form;
+  }
+  // A rule keeps at least one condition; the first one of the new-rule form stays.
+  function updateDel(form) {
+    const blocks = form.querySelectorAll('.cond');
+    blocks.forEach(b => { if (b.id !== 'nrCond') b.querySelector('.c-del').hidden = blocks.length < 2; });
+  }
+
+  const KINDS = { type: 'type', ext: 'ext', exactName: 'exact', glob: 'glob', createdTime: 'time', createdWeekday: 'weekday', sizeMb: 'size', idleDays: 'idle', foldersOnly: 'folders', filesOnly: 'files', plainFiles: 'plain' };
+  const NAME_KINDS = ['contains', 'notContains', 'startsWith', 'endsWith'];
+  // The form kind that shows condition `c`, or undefined for one only the CLI writes
+  // (a name that "is", other shortcut-target tests, the desktop it came from).
+  const kindOf = c => c.cond === 'name' ? (NAME_KINDS.includes(c.value.op) ? c.value.op : undefined)
+    : c.cond === 'shortcutTarget' ? (c.value.op === 'contains' ? 'target' : undefined) : KINDS[c.cond];
+  function fillChecks(block) {
+    const cats = block.querySelector('.c-cats'), week = block.querySelector('.c-week');
+    if (!cats.children.length) cats.innerHTML = CATS().map(([k, l]) => `<label><input type="checkbox" value="${k}">${l}</label>`).join('');
+    if (!week.children.length) week.innerHTML = WEEKDAYS().map(([v, l]) => `<label><input type="checkbox" value="${v}">${l}</label>`).join('');
+  }
+  // Another condition box: a copy of the new-rule form's first one, empty or showing `c`.
+  // A condition the form cannot show stays as its summary, kept unless removed.
+  function newCond(c) {
+    const first = document.getElementById('nrCond');
+    fillChecks(first);
+    const block = first.cloneNode(true);
+    block.removeAttribute('id');
+    block.querySelectorAll('[id]').forEach(el => el.removeAttribute('id'));
+    const hint = block.querySelector('.c-hint');
+    hint.id = 'hint-' + newId();
+    block.querySelector('.c-text').setAttribute('aria-describedby', hint.id);
+    const del = block.querySelector('.c-del');
+    del.onclick = () => {
+      const form = block.closest('.redit, #nrPanel');
+      block.remove();
+      updateDel(form);
+      form.querySelector('.c-add').focus();
+    };
+    if (c && !kindOf(c)) {
+      block.cond = c;
+      block.querySelector('.c-kind-l').replaceWith(Object.assign(document.createElement('div'), { className: 'c-fixed', innerHTML: `${esc(condLabel(c))}<div class="s">${esc(t("这个条件只能用命令行修改"))}</div>` }));
+      block.querySelector('.c-val').remove();
+      return block;
+    }
+    const set = (cls, value) => { block.querySelector('.' + cls).value = value; };
+    const v = c ? c.value : null, kind = c ? kindOf(c) : 'type';
+    set('c-kind', kind); set('c-text', ''); set('c-from', '18:00'); set('c-to', '06:00'); set('c-days', 30); set('c-min', ''); set('c-max', '');
+    const on = (kind === 'type' || kind === 'weekday') && v ? v.map(String) : [];
+    block.querySelectorAll('.c-cats input').forEach(i => { i.checked = kind === 'type' && on.includes(i.value); });
+    block.querySelectorAll('.c-week input').forEach(i => { i.checked = kind === 'weekday' && on.includes(i.value); });
+    if (kind === 'ext' || kind === 'exact') set('c-text', v.join(', '));
+    else if (kind === 'glob') set('c-text', v);
+    else if (NAME_KINDS.includes(kind) || kind === 'target') set('c-text', v.value);
+    else if (kind === 'time') { set('c-from', hm(v.from_min)); set('c-to', hm(v.to_min)); }
+    else if (kind === 'size') { set('c-min', v.min ?? ''); set('c-max', v.max ?? ''); }
+    else if (kind === 'idle') set('c-days', v.min);
+    block.querySelector('.c-kind').onchange = () => updateKind(block);
+    updateKind(block);
+    return block;
+  }
+
+  document.getElementById('nrKind').onchange = () => updateKind();
+  document.getElementById('nrAddCond').onclick = () => {
+    const panel = document.getElementById('nrPanel');
+    panel.querySelector('.c-add').before(newCond());
+    updateDel(panel);
+  };
   const WEEKDAYS = () => [['0',t("周一")],['1',t("周二")],['2',t("周三")],['3',t("周四")],['4',t("周五")],['5',t("周六")],['6',t("周日")]];
-  function updateKind() {
-    const k = document.getElementById('nrKind').value;
+  function updateKind(block = document.getElementById('nrCond')) {
+    if (block.cond) return;
+    const k = block.querySelector('.c-kind').value;
+    const show = (cls, on) => { block.querySelector('.' + cls).style.display = on ? '' : 'none'; };
     const noValue = ['type','folders','files','plain','time','weekday','size','idle'];
-    document.getElementById('nrValueWrap').style.display = noValue.includes(k) ? 'none' : '';
-    document.getElementById('nrCats').style.display = k === 'type' ? '' : 'none';
-    document.getElementById('nrTime').style.display = k === 'time' ? '' : 'none';
-    document.getElementById('nrWeek').style.display = k === 'weekday' ? '' : 'none';
-    document.getElementById('nrSize').style.display = k === 'size' ? '' : 'none';
-    document.getElementById('nrIdle').style.display = k === 'idle' ? '' : 'none';
+    show('c-value', !noValue.includes(k));
+    show('c-cats', k === 'type'); show('c-time', k === 'time'); show('c-week', k === 'weekday'); show('c-size', k === 'size'); show('c-idle', k === 'idle');
+    show('c-none', ['folders','files','plain'].includes(k));
     const ph = { ext: 'png, jpg', contains: t("示例\x04截图"), notContains: t("示例\x04备份"), startsWith: 'IMG_', endsWith: '_final', exact: 'todo.txt, notes.md', glob: '*.png', target: 'steam' };
-    document.getElementById('nrValue').placeholder = ph[k] || '';
-    const wk = document.getElementById('nrWeek');
-    if (!wk.children.length) wk.innerHTML = WEEKDAYS().map(([v, l]) => `<label><input type="checkbox" value="${v}">${l}</label>`).join('');
+    block.querySelector('.c-text').placeholder = ph[k] || '';
+    fillChecks(block);
+  }
+  // After a language switch, copies of the first condition box take its new captions.
+  function relabelConds() {
+    const first = document.getElementById('nrCond');
+    const texts = root => { const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT), out = []; while (w.nextNode()) out.push(w.currentNode); return out; };
+    const from = texts(first);
+    document.querySelectorAll('.cond').forEach(block => {
+      if (block === first) return;
+      if (block.cond) { block.querySelector('.c-fixed').innerHTML = `${esc(condLabel(block.cond))}<div class="s">${esc(t("这个条件只能用命令行修改"))}</div>`; return; }
+      texts(block).forEach((node, i) => { if (from[i]) node.nodeValue = from[i].nodeValue; });
+      block.querySelector('.c-del').title = first.querySelector('.c-del').title;
+      block.querySelector('.c-del').setAttribute('aria-label', first.querySelector('.c-del').getAttribute('aria-label'));
+      updateKind(block);
+    });
+    // The editor's own captions come from t(): give it a new frame around the same boxes.
+    if (editing) {
+      const old = editing.form, rule = state.rules.list.find(r => r.id === editing.id);
+      if (!rule) return;
+      const form = ruleForm(rule);
+      form.querySelectorAll('.cond').forEach(b => b.remove());
+      old.querySelectorAll('.cond').forEach(b => form.querySelector('.c-add').before(b));
+      form.querySelector('.r-name').value = old.querySelector('.r-name').value;
+      form.querySelector('.r-target').value = old.querySelector('.r-target').value;
+      updateDel(form);
+      editing.form = form;
+    }
   }
   const toMin = (hhmm) => { const [h, m] = (hhmm || '0:0').split(':').map(Number); return (h * 60 + (m || 0)) % 1440; };
   // A v4 UUID by hand: the page is a data: URL, not a secure context, so crypto.randomUUID is missing.
@@ -1455,59 +1639,84 @@
     const close = QUOTE_PAIRS[v[0]], inner = v.slice(1, -1);
     return v.length >= 2 && v.at(-1) === close && !inner.includes(v[0]) && !inner.includes(close) ? inner : v;
   };
-  function ruleError(text, id) {
+  // Shows what is missing and puts the cursor there; returns null for the caller to stop.
+  function ruleError(text, el) {
     toast(text, true);
-    openRuleForm();
-    document.getElementById(id)?.focus();
+    if (document.getElementById('nrPanel').contains(el)) openRuleForm();
+    el.focus();
+    return null;
+  }
+  // The condition one box describes, or null after pointing at what is missing.
+  function readCond(block) {
+    if (block.cond) return block.cond;
+    const el = cls => block.querySelector('.' + cls);
+    const kind = el('c-kind').value;
+    const value = unquote(el('c-text').value.trim());
+    const split = (v) => v.split(/[,，]+/).map(x => unquote(x.trim())).filter(Boolean);
+    const checked = cls => [...block.querySelectorAll('.' + cls + ' input:checked')].map(i => i.value);
+    if (kind === 'type') { const sel = checked('c-cats'); return sel.length ? { cond: 'type', value: sel } : ruleError(t("请选择至少一种类型"), el('c-kind')); }
+    if (kind === 'ext') { const extensions = value.split(/[,，\s]+/).map(x => unquote(x).replace(/^\./, '')).filter(Boolean); return extensions.length ? { cond: 'ext', value: extensions } : ruleError(t("请输入扩展名"), el('c-text')); }
+    if (NAME_KINDS.includes(kind)) return value ? { cond: 'name', value: { op: kind, value } } : ruleError(t("请输入关键字"), el('c-text'));
+    if (kind === 'exact') { const names = split(value); return names.length ? { cond: 'exactName', value: names } : ruleError(t("请输入完整文件名"), el('c-text')); }
+    if (kind === 'glob') return value ? { cond: 'glob', value } : ruleError(t("请输入通配符"), el('c-text'));
+    if (kind === 'target') return value ? { cond: 'shortcutTarget', value: { op: 'contains', value } } : ruleError(t("请输入目标路径中的关键字"), el('c-text'));
+    if (kind === 'time') {
+      const from = el('c-from'), to = el('c-to');
+      if (!from.value || !from.validity.valid) return ruleError(t("请输入开始时间"), from);
+      if (!to.value || !to.validity.valid) return ruleError(t("请输入结束时间"), to);
+      // Snake case like the core's Cond::CreatedTime: camelCase fields fail the whole setRules.
+      return { cond: 'createdTime', value: { from_min: toMin(from.value), to_min: toMin(to.value) } };
+    }
+    if (kind === 'weekday') { const days = checked('c-week').map(Number); return days.length ? { cond: 'createdWeekday', value: days } : ruleError(t("请选择至少一天"), el('c-kind')); }
+    if (kind === 'size') {
+      const from = el('c-min').value.trim(), to = el('c-max').value.trim();
+      if (!from && !to) return ruleError(t("请填写大小范围"), el('c-min'));
+      const min = from ? Number(from) : null, max = to ? Number(to) : null;
+      if (from && (!Number.isFinite(min) || min < 0)) return ruleError(t("最小大小必须是大于或等于 0 的数字"), el('c-min'));
+      if (to && (!Number.isFinite(max) || max < 0)) return ruleError(t("最大大小必须是大于或等于 0 的数字"), el('c-max'));
+      if (min != null && max != null && min > max) return ruleError(t("最大大小不能小于最小大小"), el('c-max'));
+      return { cond: 'sizeMb', value: { min, max } };
+    }
+    if (kind === 'idle') {
+      const days = Number(el('c-days').value);
+      if (!Number.isFinite(days) || days < 1) return ruleError(t("请输入闲置天数"), el('c-days'));
+      return { cond: 'idleDays', value: { min: Math.floor(days) } };
+    }
+    return { cond: { files: 'filesOnly', plain: 'plainFiles' }[kind] || 'foldersOnly', value: null };
+  }
+  // Mirrors Rule::new in crates/core/src/rules.rs; shortcut-target rules are tried first.
+  function classOf(conds) {
+    const has = (...names) => conds.some(c => names.includes(c.cond));
+    return has('shortcutTarget') ? 'target' : has('type', 'ext') ? 'type' : has('name', 'glob', 'exactName') ? 'name'
+      : has('createdTime', 'createdWeekday', 'idleDays') ? 'time' : 'custom';
+  }
+  // Name, target and conditions of the new-rule form or an editor, or null after an error.
+  function readRule(form) {
+    const target = form.querySelector('.r-target');
+    if (!target.value) return ruleError(t("没有可用的目标栅栏"), target);
+    const allOf = [];
+    for (const block of form.querySelectorAll('.cond')) {
+      const c = readCond(block);
+      if (!c) return null;
+      allOf.push(c);
+    }
+    const fence = state.fences.find(f => f.id === target.value);
+    // An unnamed rule is called after its conditions, so the list does not fill with identical names.
+    const name = form.querySelector('.r-name').value.trim() || allOf.map(condLabel).join(t("，且 "));
+    return { name, target: fence && fence.kind === 'inbox' ? 'inbox' : { fence: target.value }, allOf, priorityClass: classOf(allOf) };
   }
   document.getElementById('nrAdd').onclick = () => {
-    const target = document.getElementById('nrTarget').value;
-    if (!target) return ruleError(t("没有可用的目标栅栏"), 'nrTarget');
-    const kind = document.getElementById('nrKind').value;
-    const value = unquote(document.getElementById('nrValue').value.trim());
-    let cond, cls = 'custom';
-    const split = (v) => v.split(/[,，]+/).map(x => unquote(x.trim())).filter(Boolean);
-    if (kind === 'type') { const sel = [...document.querySelectorAll('#nrCats input:checked')].map(i => i.value); if (!sel.length) return ruleError(t("请选择至少一种类型"), 'nrKind'); cond = { cond: 'type', value: sel }; cls = 'type'; }
-    else if (kind === 'ext') { const extensions = value.split(/[,，\s]+/).map(x => unquote(x).replace(/^\./, '')).filter(Boolean); if (!extensions.length) return ruleError(t("请输入扩展名"), 'nrValue'); cond = { cond: 'ext', value: extensions }; cls = 'type'; }
-    else if (['contains','notContains','startsWith','endsWith'].includes(kind)) { if (!value) return ruleError(t("请输入关键字"), 'nrValue'); cond = { cond: 'name', value: { op: kind, value } }; cls = 'name'; }
-    else if (kind === 'exact') { const names = split(value); if (!names.length) return ruleError(t("请输入完整文件名"), 'nrValue'); cond = { cond: 'exactName', value: names }; cls = 'name'; }
-    else if (kind === 'glob') { if (!value) return ruleError(t("请输入通配符"), 'nrValue'); cond = { cond: 'glob', value }; cls = 'name'; }
-    else if (kind === 'target') { if (!value) return ruleError(t("请输入目标路径中的关键字"), 'nrValue'); cond = { cond: 'shortcutTarget', value: { op: 'contains', value } }; cls = 'target'; }
-    else if (kind === 'time') {
-      const from = document.getElementById('nrFrom'), to = document.getElementById('nrTo');
-      if (!from.value || !from.validity.valid) return ruleError(t("请输入开始时间"), 'nrFrom');
-      if (!to.value || !to.validity.valid) return ruleError(t("请输入结束时间"), 'nrTo');
-      // Snake case like the core's Cond::CreatedTime: camelCase fields fail the whole setRules.
-      cond = { cond: 'createdTime', value: { from_min: toMin(from.value), to_min: toMin(to.value) } }; cls = 'time';
-    }
-    else if (kind === 'weekday') { const days = [...document.querySelectorAll('#nrWeek input:checked')].map(i => Number(i.value)); if (!days.length) return ruleError(t("请选择至少一天"), 'nrKind'); cond = { cond: 'createdWeekday', value: days }; cls = 'time'; }
-    else if (kind === 'size') {
-      const from = document.getElementById('nrMin').value.trim(), to = document.getElementById('nrMax').value.trim();
-      if (!from && !to) return ruleError(t("请填写大小范围"), 'nrMin');
-      const min = from ? Number(from) : null, max = to ? Number(to) : null;
-      if (from && (!Number.isFinite(min) || min < 0)) return ruleError(t("最小大小必须是大于或等于 0 的数字"), 'nrMin');
-      if (to && (!Number.isFinite(max) || max < 0)) return ruleError(t("最大大小必须是大于或等于 0 的数字"), 'nrMax');
-      if (min != null && max != null && min > max) return ruleError(t("最大大小不能小于最小大小"), 'nrMax');
-      cond = { cond: 'sizeMb', value: { min, max } };
-    }
-    else if (kind === 'idle') {
-      const days = Number(document.getElementById('nrIdleDays').value);
-      if (!Number.isFinite(days) || days < 1) return ruleError(t("请输入闲置天数"), 'nrIdleDays');
-      cond = { cond: 'idleDays', value: { min: Math.floor(days) } }; cls = 'time';
-    }
-    else if (kind === 'files') cond = { cond: 'filesOnly', value: null };
-    else if (kind === 'plain') cond = { cond: 'plainFiles', value: null };
-    else cond = { cond: 'foldersOnly', value: null };
-    const fence = state.fences.find(f => f.id === target);
-    // An unnamed rule is called after its condition, so the list does not fill with identical names.
-    const name = document.getElementById('nrName').value.trim() || condLabel(cond);
+    const panel = document.getElementById('nrPanel');
+    const read = readRule(panel);
+    if (!read) return;
+    const rule = { id: newId(), name: read.name, enabled: true, target: read.target, allOf: read.allOf, priorityClass: read.priorityClass };
     // Rules match in list order: at the end, the new rule would sit behind the broad first-run
     // ones ("Files and documents") and rarely fire. A plain-files rule is the catch-all that
     // takes what the rules before it leave, so it goes last.
-    const rule = { id: newId(), name, enabled: true, target: fence && fence.kind === 'inbox' ? 'inbox' : { fence: target }, allOf: [cond], priorityClass: cls };
-    if (kind === 'plain') state.rules.list.push(rule); else state.rules.list.unshift(rule);
+    if (rule.allOf.every(c => c.cond === 'plainFiles')) state.rules.list.push(rule); else state.rules.list.unshift(rule);
     send({ type: 'setRules', rules: state.rules }); renderRules(); toast(t("已添加规则"));
     document.getElementById('nrName').value = ''; document.getElementById('nrValue').value = '';
+    panel.querySelectorAll('.cond:not(#nrCond)').forEach(b => b.remove());
   };
   document.getElementById('applyRules').onclick = () => send({ type: 'action', name: 'applyRules' });
   document.querySelectorAll('#templates [data-template]').forEach(b => { b.onclick = () => send({ type: 'action', name: 'addTemplate', template: b.dataset.template }); });
@@ -1709,6 +1918,7 @@
             if (input && labels[index]) label.replaceChildren(input, document.createTextNode(labels[index][1]));
           });
         }
+        relabelConds();
         switchLabels();
         document.getElementById('iconTint').setAttribute('aria-label', t("图标着色"));
         document.getElementById('iconTintStrength').setAttribute('aria-label', t("图标着色强度"));

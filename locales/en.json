@@ -601,5 +601,16 @@
   "命令行文档": "CLI guide",
   "请用 PecoFence 的命令行工具帮我整理 Windows 桌面。PecoFence 正在运行，命令行工具是 `{0}`。先运行 `{0} skill` 阅读使用说明，再查看桌面上的项目和现有的栅栏，动手前先导出一份配置备份。然后告诉我你的整理方案：新建哪些栅栏，哪些项目放到哪里，为以后出现的新文件添加哪些整理规则。等我同意后再执行。": "Please use PecoFence's command-line tool to organize my Windows desktop. PecoFence is running, and its command-line tool is `{0}`. First run `{0} skill` to read how to use it, then look at the items on my desktop and the fences I have, and export a backup of the configuration before you change anything. Then tell me your plan: which fences to create, which items go where, and which sorting rules to add for new files. Wait for my OK before you carry it out.",
   "提示词已复制，粘贴到 AI 助手里即可": "Prompt copied. Paste it into your AI assistant.",
-  "没能复制提示词，请稍后重试": "The prompt could not be copied. Try again in a moment."
+  "没能复制提示词，请稍后重试": "The prompt could not be copied. Try again in a moment.",
+  "编辑": "Edit",
+  "编辑规则": "Edit rule",
+  "改完点“保存”，规则留在原来的位置": "Click Save when you are done; the rule keeps its place in the list",
+  "条件（全部符合时放入目标栅栏）": "Conditions (items that match all of them go to the target fence)",
+  "且": "and",
+  "添加条件": "Add condition",
+  "删除条件": "Remove condition",
+  "不需要填写": "Nothing to fill in",
+  "这个条件只能用命令行修改": "This condition can only be changed from the command line",
+  "保存": "Save",
+  "已保存规则": "Rule saved"
 }

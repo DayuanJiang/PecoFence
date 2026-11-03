@@ -601,5 +601,16 @@
   "命令行文档": "CLI-Anleitung",
   "请用 PecoFence 的命令行工具帮我整理 Windows 桌面。PecoFence 正在运行，命令行工具是 `{0}`。先运行 `{0} skill` 阅读使用说明，再查看桌面上的项目和现有的栅栏，动手前先导出一份配置备份。然后告诉我你的整理方案：新建哪些栅栏，哪些项目放到哪里，为以后出现的新文件添加哪些整理规则。等我同意后再执行。": "Bitte räume meinen Windows-Desktop mit dem Befehlszeilenwerkzeug von PecoFence auf. PecoFence läuft, und das Befehlszeilenwerkzeug ist `{0}`. Führe zuerst `{0} skill` aus, um die Anleitung zu lesen, sieh dir dann die Objekte auf meinem Desktop und meine Bereiche an und exportiere eine Sicherung der Konfiguration, bevor du etwas änderst. Sag mir dann deinen Plan: welche Bereiche du anlegst, welche Objekte wohin kommen und welche Sortierregeln du für neue Dateien hinzufügst. Warte auf mein OK, bevor du ihn umsetzt.",
   "提示词已复制，粘贴到 AI 助手里即可": "Prompt kopiert. Füge ihn in deinen KI-Assistenten ein.",
-  "没能复制提示词，请稍后重试": "Der Prompt ließ sich nicht kopieren. Versuche es gleich noch einmal."
+  "没能复制提示词，请稍后重试": "Der Prompt ließ sich nicht kopieren. Versuche es gleich noch einmal.",
+  "编辑": "Bearbeiten",
+  "编辑规则": "Regel bearbeiten",
+  "改完点“保存”，规则留在原来的位置": "Zum Schluss auf „Speichern“ klicken; die Regel bleibt an ihrer Stelle",
+  "条件（全部符合时放入目标栅栏）": "Bedingungen (Elemente, die alle erfüllen, kommen in den Zielbereich)",
+  "且": "und",
+  "添加条件": "Bedingung hinzufügen",
+  "删除条件": "Bedingung entfernen",
+  "不需要填写": "Keine Eingabe nötig",
+  "这个条件只能用命令行修改": "Diese Bedingung lässt sich nur über die Befehlszeile ändern",
+  "保存": "Speichern",
+  "已保存规则": "Regel gespeichert"
 }
