@@ -314,7 +314,14 @@ fn run_fence(ctx: &Ctx, cmd: FenceCmd) -> Result<Reply, IpcError> {
         FenceCmd::Set { args, all, string } => {
             let (fence, prop, value) =
                 split_set_args(&args, all).map_err(|m| IpcError::usage(m).hint(SET_USAGE))?;
-            let value = parse_value(value, string);
+            let mut value = parse_value(value, string);
+            // The app would resolve a relative path against its own working directory.
+            if prop == "scriptPath"
+                && let Some(p) = value.as_str()
+                && let Ok(abs) = std::path::absolute(p)
+            {
+                value = serde_json::Value::String(abs.display().to_string());
+            }
             let prop = prop.to_string();
             if all {
                 for_each_fence(&|m| ctx.send(m), |fence| Method::FencesSetOption {

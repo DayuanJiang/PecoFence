@@ -1335,7 +1335,9 @@
     document.querySelector('#fenceHideEmpty .s').textContent = f.kind === 'inbox'
       ? t("里面没有图标时就不显示；桌面上一出现新图标，它会自己回来")
       : t("里面没有图标时就不显示；有图标归到这里时，它会自己回来");
-    document.getElementById('fenceOpenFolders').style.display = f.portal ? 'none' : '';
+    document.getElementById('fenceOpenFolders').style.display = f.portal || f.tool ? 'none' : '';
+    // A tool fence (小工具) never holds icons: hiding it while empty would hide it for good.
+    document.getElementById('fenceHideEmpty').style.display = f.tool ? 'none' : '';
     document.getElementById('fenceDesktopLayout').style.display = f.kind === 'inbox' ? '' : 'none';
     // List and Details rows keep the name on one line, so the setting does nothing there and is
     // greyed. 像桌面一样排列 shows icons whatever the fence's view (a 「桌面」 with tabs stays a fence).

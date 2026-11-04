@@ -164,8 +164,8 @@ pub enum FenceCmd {
     )]
     #[command(group(ArgGroup::new("place").multiple(false)))]
     Create {
-        /// Title of the new fence (defaults to the folder name with --portal)
-        #[arg(long, value_name = "TITLE", required_unless_present = "portal")]
+        /// Title of the new fence (defaults to the folder name with --portal, the tool or script name with --tool / --script)
+        #[arg(long, value_name = "TITLE", required_unless_present_any = ["portal", "tool", "script"])]
         title: Option<String>,
         #[arg(long, value_name = "X,Y,W,H", value_parser = Rect::parse, allow_hyphen_values = true, group = "place", help = RECT_HELP)]
         rect: Option<Rect>,

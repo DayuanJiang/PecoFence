@@ -49,6 +49,7 @@ pub mod frameclock;
 pub mod hangwatch;
 pub mod hotkey;
 pub mod http;
+pub mod job;
 pub mod layered;
 pub mod live_wallpaper;
 pub mod locale;

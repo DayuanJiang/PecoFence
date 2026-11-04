@@ -20,6 +20,20 @@ const MARGIN_DIP: f32 = 10.0;
 thread_local! {
     static ACTIVE: RefCell<Option<Session>> = const { RefCell::new(None) };
     static CLASS: RefCell<Option<WindowClass>> = const { RefCell::new(None) };
+    /// The text the last editor closed with, until the App has taken it (`take_committed`):
+    /// an editor opened on that note before then starts from it, not from the older text the
+    /// App still has.
+    static COMMITTED: RefCell<Option<(FenceId, String)>> = const { RefCell::new(None) };
+}
+
+/// The App applied the editor's text for `fence`: forget it.
+pub fn take_committed(fence: FenceId) {
+    COMMITTED.with(|c| {
+        let mut c = c.borrow_mut();
+        if c.as_ref().is_some_and(|(id, _)| *id == fence) {
+            *c = None;
+        }
+    });
 }
 
 struct Session {
@@ -38,7 +52,16 @@ pub fn open(
     queue: CommandQueue,
     mode: ThemeMode,
 ) {
+    // An editor still open (or just closed) on this note holds newer text than the App has:
+    // its commit is only queued. Start from that text.
     end_active(true);
+    let committed = COMMITTED.with(|c| {
+        c.borrow()
+            .as_ref()
+            .filter(|(id, _)| *id == fence)
+            .map(|(_, t)| t.clone())
+    });
+    let text = committed.as_deref().unwrap_or(text);
     CLASS.with(|c| {
         if c.borrow().is_none() {
             *c.borrow_mut() = WindowClass::register(NOTE_EDIT_CLASS, ClassOptions::default()).ok();
@@ -135,6 +158,7 @@ pub fn end_active(commit: bool) {
         if commit {
             let text = s.edit.text();
             tracing::info!(fence = %s.fence, chars = text.chars().count(), "note editor closed");
+            COMMITTED.with(|c| *c.borrow_mut() = Some((s.fence, text.clone())));
             s.queue.push(Command::NoteEdited {
                 fence: s.fence,
                 text,

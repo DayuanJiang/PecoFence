@@ -807,8 +807,9 @@ pub(super) fn on_mousewheel(
         }
         if ctrl {
             // Ctrl+wheel never scrolls (Explorer); in Icons view it steps the
-            // icon size, one step per whole notch (touchpads accumulate).
-            if v.layout == ViewLayout::Icons {
+            // icon size, one step per whole notch (touchpads accumulate). A tool
+            // fence has no icons to size.
+            if v.layout == ViewLayout::Icons && !v.shows_tool() {
                 v.wheel_zoom_accum += delta;
                 while v.wheel_zoom_accum.abs() >= msg::WHEEL_DELTA {
                     let larger = v.wheel_zoom_accum > 0;

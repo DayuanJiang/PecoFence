@@ -771,6 +771,14 @@ impl App {
             {
                 Err(desktop_arranged_error())
             }
+            Method::FencesMerge { fence, into }
+                if self.is_tool_fence(fence) || self.is_tool_fence(into) =>
+            {
+                Err(
+                    unsupported("a tool fence (note, clock, script) takes no part in tabs")
+                        .hint("Merge two fences that show items"),
+                )
+            }
             Method::FencesSetBounds { fence, rect } => self.ipc_set_bounds(fence, *rect),
             Method::FencesMoveToMonitor { fence, monitor } => {
                 self.ipc_move_to_monitor(fence, monitor)
@@ -2029,6 +2037,12 @@ impl App {
     }
 
     /// `sel` names the fence 像桌面一样排列 arranges (unknown selectors are not).
+    /// `sel` is a tool fence (小工具: note, clock, script).
+    fn is_tool_fence(&self, sel: &str) -> bool {
+        self.resolve_fence(sel)
+            .is_ok_and(|id| self.state.fence(id).is_some_and(|f| f.tool.is_some()))
+    }
+
     fn is_desktop_arranged(&self, sel: &str) -> bool {
         self.resolve_fence(sel).is_ok_and(|id| {
             self.fences
@@ -2201,10 +2215,10 @@ impl App {
     ) -> std::result::Result<(FenceId, Vec<ItemMovePlanDto>), IpcError> {
         let to = self.resolve_fence(to)?;
         if self.fence_or_err(to)?.tool.is_some() {
-            return Err(unsupported(
-                "a note fence holds no items (it shows text, not desktop items)",
-            )
-            .hint("Move the items to a virtual fence or `inbox`"));
+            return Err(
+                unsupported("a tool fence (note, clock, script) holds no desktop items")
+                    .hint("Move the items to a virtual fence or `inbox`"),
+            );
         }
         let mut ids: Vec<ItemId> = Vec::new();
         for sel in items {
@@ -2753,7 +2767,7 @@ impl App {
             }
             if f.tool.is_some() {
                 return Err(unsupported(
-                    "a note fence cannot be a rule target (it shows text, not desktop items)",
+                    "a tool fence (note, clock, script) cannot be a rule target (it holds no desktop items)",
                 )
                 .hint("Target a virtual fence or `inbox`"));
             }

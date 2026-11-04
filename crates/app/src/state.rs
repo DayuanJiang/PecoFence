@@ -270,6 +270,14 @@ impl AppState {
             snaps.remove(0);
         }
         config.snapshots = snaps;
+        // Note texts and scripts belong to fences the kept snapshots may hold: keep the current
+        // ones the file has none for (`prune_notes` drops what no layout or snapshot needs).
+        for (id, text) in std::mem::take(&mut self.config.notes) {
+            config.notes.entry(id).or_insert(text);
+        }
+        for (id, spec) in std::mem::take(&mut self.config.scripts) {
+            config.scripts.entry(id).or_insert(spec);
+        }
         config.drop_duplicates();
         pecofence_core::config_store::clamp_sizes(&mut config);
         pecofence_core::config_store::repair_unc_portals(&mut config);
@@ -778,6 +786,7 @@ impl AppState {
             .iter()
             .filter(|f| {
                 let empty = f.hide_when_empty
+                    && f.tool.is_none()
                     && !self.can_go_up(f.id)
                     && self.unsorted_held_items_of(f).next().is_none();
                 let beside_windows_icons = for_windows_icons

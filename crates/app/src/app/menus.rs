@@ -489,6 +489,8 @@ impl App {
             .fences()
             .iter()
             .enumerate()
+            // A tool fence holds no items (the index stays the fence's own).
+            .filter(|(_, f)| f.tool.is_none())
             .map(|(i, f)| {
                 let label = if self.state.move_target_folder(f.id).is_some() {
                     pecofence_core::i18n::format(
@@ -837,7 +839,7 @@ impl App {
                 .host_fences()
                 .iter()
                 .enumerate()
-                .filter(|(_, o)| o.id != host)
+                .filter(|(_, o)| o.id != host && o.tool.is_none())
                 .filter(|(_, o)| {
                     !self
                         .fences

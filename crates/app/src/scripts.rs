@@ -66,10 +66,12 @@ fn command_for(path: &Path) -> Option<Vec<Command>> {
                 "Bypass",
             ])
             .arg("-Command")
-            // The script's own exit code, or 1 when its last command failed.
+            // Failed only when the script ended in failure (`exit 3`, an error on its last
+            // line): then with its exit code, else 1. A program that failed earlier in the
+            // script (a ping that got no answer) leaves $LASTEXITCODE set but is no failure.
             .arg(format!(
                 "[Console]::OutputEncoding=[Text.Encoding]::UTF8; & '{}'; \
-                 if ($LASTEXITCODE) {{ exit $LASTEXITCODE }} elseif (-not $?) {{ exit 1 }}",
+                 if (-not $?) {{ if ($LASTEXITCODE) {{ exit $LASTEXITCODE }} else {{ exit 1 }} }}",
                 file.replace('\'', "''")
             ));
             vec![c]
@@ -130,9 +132,10 @@ pub fn run(path: &Path) -> Outcome {
     let Some(mut child) = started else {
         return Outcome::NotStarted(last_error);
     };
-    // Readers on their own threads: a full pipe would otherwise stop the script. A process the
-    // script started may keep the pipe open after it ends, so their results are awaited only
-    // briefly.
+    // The programs the script starts go with it: when it ends (or is stopped) the job ends
+    // them, so none keeps running or holds the output pipes open.
+    let job = pecofence_platform::job::KillOnCloseJob::new().filter(|job| job.assign(&child));
+    // Readers on their own threads: a full pipe would otherwise stop the script.
     let reader = |pipe: Option<Box<dyn Read + Send>>| {
         let (tx, rx) = mpsc::channel();
         if let Some(mut pipe) = pipe {
@@ -169,7 +172,12 @@ pub fn run(path: &Path) -> Outcome {
         match child.try_wait() {
             Ok(Some(status)) => break Some(status),
             Ok(None) if begun.elapsed() >= TIMEOUT => {
-                let _ = child.kill();
+                match &job {
+                    Some(job) => job.terminate(),
+                    None => {
+                        let _ = child.kill();
+                    }
+                }
                 let _ = child.wait();
                 break None;
             }
@@ -177,10 +185,12 @@ pub fn run(path: &Path) -> Outcome {
             Err(_) => break None,
         }
     };
+    // Ends what the script left running, which closes the pipes so the readers finish.
+    drop(job);
     let Some(status) = status else {
         return Outcome::TimedOut;
     };
-    let wait = Duration::from_millis(500);
+    let wait = Duration::from_millis(1000);
     let stdout = clean(&decode(&out.recv_timeout(wait).unwrap_or_default()));
     let stderr = clean(&decode(&err.recv_timeout(wait).unwrap_or_default()));
     if status.success() {
@@ -200,6 +210,10 @@ pub fn run(path: &Path) -> Outcome {
 fn decode(bytes: &[u8]) -> String {
     match std::str::from_utf8(bytes) {
         Ok(s) => s.to_string(),
+        // Only the last character is cut (the byte limit): UTF-8 up to it.
+        Err(e) if e.error_len().is_none() => {
+            String::from_utf8_lossy(&bytes[..e.valid_up_to()]).into_owned()
+        }
         Err(_) => pecofence_platform::wide::from_ansi(bytes),
     }
 }

@@ -6,14 +6,14 @@ use super::*;
 use crate::fence_window::ScriptView;
 use crate::scripts::Outcome;
 use pecofence_core::{FenceTool, ScriptSpec};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::time::Instant;
 
 /// 脚本栅栏 at run time (nothing of it is saved): each fence's last result and when it came,
-/// the fences whose script is running, and when each is next due.
+/// the fences whose script is running (with the script it runs), and when each is next due.
 pub(super) struct ScriptRuns {
     last: HashMap<FenceId, (Outcome, i64)>,
-    running: HashSet<FenceId>,
+    running: HashMap<FenceId, String>,
     due: HashMap<FenceId, Instant>,
     tx: std::sync::mpsc::Sender<(FenceId, Outcome, i64, u128)>,
     rx: std::sync::mpsc::Receiver<(FenceId, Outcome, i64, u128)>,
@@ -24,7 +24,7 @@ impl Default for ScriptRuns {
         let (tx, rx) = std::sync::mpsc::channel();
         Self {
             last: HashMap::new(),
-            running: HashSet::new(),
+            running: HashMap::new(),
             due: HashMap::new(),
             tx,
             rx,
@@ -128,7 +128,7 @@ impl App {
             outcome: outcome.map(str::to_string),
             output,
             last_run: last.map(|(_, at)| *at),
-            running: self.script_runs.running.contains(&id),
+            running: self.script_runs.running.contains_key(&id),
         })
     }
 
@@ -194,7 +194,7 @@ impl App {
             .file_name()
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_else(|| spec.path.clone());
-        let running = self.script_runs.running.contains(&id);
+        let running = self.script_runs.running.contains_key(&id);
         let Some((outcome, at)) = self.script_runs.last.get(&id) else {
             return ScriptView {
                 text: String::new(),
@@ -258,7 +258,7 @@ impl App {
             .iter()
             .filter(|f| f.tool == Some(FenceTool::Script))
             .map(|f| f.id)
-            .filter(|id| !self.script_runs.running.contains(id))
+            .filter(|id| !self.script_runs.running.contains_key(id))
             .filter(|id| self.script_runs.due.get(id).is_none_or(|&at| at <= now))
             .collect();
         for id in due {
@@ -272,7 +272,8 @@ impl App {
         let Some(spec) = self.state.config.scripts.get(&id).cloned() else {
             return;
         };
-        if spec.path.is_empty() || self.script_runs.running.contains(&id) {
+        // A run of another script still going: its end starts this one (`drain_scripts`).
+        if spec.path.is_empty() || self.script_runs.running.contains_key(&id) {
             return;
         }
         let interval = std::time::Duration::from_secs(u64::from(spec.interval_minutes.max(1)) * 60);
@@ -282,7 +283,7 @@ impl App {
             id,
             Instant::now() + interval.saturating_sub(std::time::Duration::from_secs(10)),
         );
-        self.script_runs.running.insert(id);
+        self.script_runs.running.insert(id, spec.path.clone());
         let ext = std::path::Path::new(&spec.path)
             .extension()
             .map(|e| e.to_string_lossy().to_lowercase())
@@ -319,7 +320,18 @@ impl App {
     /// Takes the finished script runs and shows their results.
     pub(super) fn drain_scripts(&mut self) {
         while let Ok((id, outcome, at, ms)) = self.script_runs.rx.try_recv() {
-            self.script_runs.running.remove(&id);
+            let ran = self.script_runs.running.remove(&id);
+            let current = self.state.config.scripts.get(&id).map(|s| s.path.as_str());
+            if ran.as_deref() != current {
+                // The fence was given another script (or went) while this one ran: its result
+                // is not the fence's, run the new script instead.
+                tracing::info!(%id, outcome = outcome.kind(), "script fence result of the old script dropped");
+                if current.is_some() {
+                    self.script_runs.due.remove(&id);
+                    self.start_script(id);
+                }
+                continue;
+            }
             let (lines, code) = match &outcome {
                 Outcome::Done(t) => (t.lines().count(), Some(0)),
                 Outcome::Failed { code, text } => (text.lines().count(), *code),
@@ -507,6 +519,7 @@ impl App {
 
     /// The editor closed: its text replaces the note's (line breaks stored as `\n`).
     pub(super) fn note_edited(&mut self, fence: FenceId, text: &str) {
+        crate::note_edit::take_committed(fence);
         let text = text.replace("\r\n", "\n");
         if self.state.set_note_text(fence, &text) {
             self.schedule_save();
