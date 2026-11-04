@@ -405,6 +405,22 @@ fn seconds_after_explorer() -> Option<f64> {
     process::seconds_after_start_of(explorer).map(|s| (s * 10.0).round() / 10.0)
 }
 
+/// Whether Explorer runs elevated (as administrator): while one of its windows (the desktop
+/// too) is in front, Windows delivers no raw mouse input to a program that is not elevated, so
+/// double-click hide and the desktop marquee see no clicks. "unreadable" = its token could not
+/// be read.
+fn explorer_elevated() -> &'static str {
+    let explorer = desktop::window_pid(desktop::shell_window());
+    if explorer == 0 {
+        return "no shell";
+    }
+    match process::is_elevated(explorer) {
+        Some(true) => "yes",
+        Some(false) => "no",
+        None => "unreadable",
+    }
+}
+
 /// Re-reads whether virtual desktops keep different pictures. The 100 ms desktop poll (and the
 /// foreground signal) only run while they do: a switch cannot change the wallpaper otherwise.
 fn sync_desktops_differ(control: HWND, differ: &Cell<bool>) {
@@ -509,6 +525,7 @@ impl App {
             install = install.as_str(),
             packaged = process::is_packaged(),
             elevated = ?process::is_elevated(process::current_pid()),
+            explorer_elevated = explorer_elevated(),
             after_explorer_s = ?after_explorer_s,
             remote_desktop = sysparams::remote_session(),
             restarted_after_crash = %args.restarted_after_crash.as_deref().unwrap_or("None"),

@@ -58,9 +58,9 @@ pub(super) fn on_showwindow(
             if v.vis_fade.take() == Some(VisFade::Hiding { destroy: true }) {
                 v.queue.push(Command::FadeOutDone(hwnd));
             }
-            // Ready for a plain ShowWindow later: opaque, unscaled,
-            // shadow alpha back at 255 (same rest as the fade-done path).
-            v.reset_root();
+            // Transparent while hidden, so the first frame of the next
+            // fade-in is too; a plain ShowWindow makes it opaque above.
+            v.rest_hidden();
             (v.shadow.hwnd(), false)
         }
     };
@@ -137,11 +137,14 @@ pub(super) fn on_app_tab_rail(
     Some(rail as isize)
 }
 
+/// `lparam` of a fade completion that the fallback timer delivered (the compositor's is 0).
+pub(super) const FADE_DONE_BY_TIMER: isize = 1;
+
 pub(super) fn on_app_fade_done(
     h: &HandlerCtx,
     hwnd: HWND,
     wparam: usize,
-    _lparam: isize,
+    lparam: isize,
 ) -> Option<isize> {
     let HandlerCtx { view, .. } = h;
     // Compositor batch completed (posted from its callback thread). State
@@ -152,10 +155,35 @@ pub(super) fn on_app_fade_done(
             return Some(0);
         };
         if v.vis_gen != wparam {
+            tracing::debug!(
+                title = %v.title,
+                generation = wparam,
+                current = v.vis_gen,
+                "fade completion of a replaced fade ignored"
+            );
             return Some(0);
         }
         window::kill_timer(hwnd, TIMER_VISIBILITY_FINISH);
         v.vis_deadline = None;
+        let trace = std::mem::take(&mut v.fade_trace);
+        if let Some(fade) = v.vis_fade {
+            tracing::debug!(
+                title = %v.title,
+                generation = wparam,
+                ?fade,
+                ms = trace.elapsed_ms(),
+                by = if lparam == FADE_DONE_BY_TIMER {
+                    "fallback timer"
+                } else {
+                    "compositor"
+                },
+                shadow_steps = trace.shadow_steps,
+                max_step_gap_ms = trace.max_step_gap_ms,
+                shadow_alpha = v.shadow.alpha(),
+                zorder_moves = trace.zorder_moves,
+                "fade finished"
+            );
+        }
         match v.vis_fade.take() {
             None => return Some(0),
             Some(VisFade::Showing) => {
@@ -176,8 +204,8 @@ pub(super) fn on_app_fade_done(
     desktop::hide_window(hwnd);
     desktop::hide_window(shadow);
     if let Some(v) = view.borrow_mut().as_mut() {
-        // Ready for a plain ShowWindow from the anchor later on.
-        v.reset_root();
+        // At rest while hidden (see `rest_hidden`).
+        v.rest_hidden();
     }
     if destroy {
         queue.push(Command::FadeOutDone(hwnd));

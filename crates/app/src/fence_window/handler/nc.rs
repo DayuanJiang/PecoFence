@@ -21,6 +21,12 @@ pub(super) fn on_windowposchanging(
     if !anchor::is_anchoring() {
         // SAFETY: lparam is the WINDOWPOS of the message being processed.
         unsafe { window::windowpos_deny_zorder_change(lparam) };
+    } else if let Ok(mut guard) = h.view.try_borrow_mut()
+        && let Some(v) = guard.as_mut()
+        && v.vis_fade.is_some()
+    {
+        // Counted for the fade's debug line.
+        v.fade_trace.zorder_moves += 1;
     }
     // Prepare the new sampling transform before the HWND moves. The following WM_MOVE
     // finds the same rectangle and only moves the shadow. Resizes remain in WM_SIZE,

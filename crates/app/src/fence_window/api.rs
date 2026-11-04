@@ -277,6 +277,7 @@ impl FenceWindow {
             vis_fade: None,
             vis_gen: 0,
             vis_deadline: None,
+            fade_trace: FadeTrace::default(),
             retired: false,
             outgoing: Vec::new(),
             spares: Vec::new(),
