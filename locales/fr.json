@@ -533,6 +533,7 @@
   "示例\u0004截图": "Capture d’écran",
   "示例\u0004备份": "sauvegarde",
   "PecoFence 上次意外关闭了。点击这里报告问题。": "PecoFence s’est fermé de manière inattendue la dernière fois. Cliquez ici pour signaler le problème.",
+  "PecoFence 上次因 {0} 出错而关闭，这个文件属于其他程序，更新或卸载那个程序可能会解决。点击这里报告问题。": "PecoFence a planté dans {0}, un fichier d’un autre programme. Mettre à jour ou retirer ce programme peut aider.",
   "上次因 ExplorerPatcher 出错而关闭。请在它的 Properties › File Explorer 中取消勾选“Register as shell extension”，然后重启资源管理器。": "PecoFence a planté dans ExplorerPatcher. Dans ses Properties › File Explorer, décochez « Register as shell extension » et redémarrez l’Explorateur.",
   "PecoFence 上次意外关闭了，那次的日志会一起发送。如果还记得当时在做什么，请写在下面。": "PecoFence s’est fermé de manière inattendue la dernière fois ; le journal de cette session est joint. Si vous vous souvenez de ce que vous faisiez, décrivez-le ci-dessous.",
   "其他": "Autre",
@@ -572,7 +573,7 @@
   "下载失败，请稍后再试": "Impossible de télécharger la mise à jour. Réessayez plus tard.",
   "为空时自动隐藏": "Masquer quand il est vide",
   "像桌面一样排列": "Disposer comme le bureau",
-  "不显示标题和边框，图标从屏幕左上角一列一列往下排，绕开其他栅栏，和 Windows 桌面图标一样": "Sans titre ni bordure : les icônes se rangent en colonnes depuis le coin supérieur gauche de l’écran, autour des autres groupes, comme les icônes du bureau Windows",
+  "图标从屏幕左上角一列一列往下排，绕开其他栅栏，像 Windows 桌面的“自动排列图标”，不能随意摆放。关闭后“桌面”变回普通栅栏，可以移动和调整大小": "Les icônes se rangent en colonnes depuis le coin supérieur gauche de l’écran, autour des autres groupes, comme sur le Bureau Windows avec l’organisation automatique des icônes : elles ne se placent pas librement. Désactivé, « Bureau » redevient un groupe normal, que vous pouvez déplacer et redimensionner",
   "里面没有图标时就不显示；桌面上一出现新图标，它会自己回来": "Reste masqué tant qu’il ne contient aucune icône et réapparaît dès qu’une nouvelle icône arrive sur le Bureau",
   "里面没有图标时就不显示；有图标归到这里时，它会自己回来": "Reste masqué tant qu’il ne contient aucune icône et réapparaît dès qu’une icône y est rangée",
   "向上展开": "Déplier vers le haut",
@@ -612,5 +613,10 @@
   "不需要填写": "Rien à remplir",
   "这个条件只能用命令行修改": "Cette condition ne peut être modifiée qu’en ligne de commande",
   "保存": "Enregistrer",
-  "已保存规则": "Règle enregistrée"
+  "已保存规则": "Règle enregistrée",
+  "已在 Windows 设置 › 应用 › 启动（或任务管理器）中关闭，只能在那里重新打开。点开关会打开该页面。": "Désactivé dans Paramètres Windows › Applications › Démarrage (ou dans le Gestionnaire des tâches) : seule cette page permet de le réactiver. L’interrupteur l’ouvre.",
+  "已被管理员或组策略关闭，PecoFence 无法打开。": "Désactivé par un administrateur ou une stratégie de groupe : PecoFence ne peut pas l’activer.",
+  "已被管理员或组策略打开，PecoFence 无法关闭。": "Activé par un administrateur ou une stratégie de groupe : PecoFence ne peut pas le désactiver.",
+  "闲置天数必须在 1 到 {0} 之间": "Le nombre de jours d’inactivité doit être compris entre 1 et {0}",
+  "没能保存这次改动，规则已恢复原样": "Cette modification n’a pas pu être enregistrée ; les règles sont revenues à leur état précédent"
 }

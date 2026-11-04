@@ -1,7 +1,7 @@
 //! Keyboard, char, context-menu key and activation / focus messages.
 
 use super::*;
-use pecofence_platform::quicklook;
+use pecofence_platform::{quicklook, seer};
 
 // Selection colour follows activation (Explorer: accent only in the active
 // view). Our own rename popup and a context menu keep the fence "active".
@@ -56,7 +56,7 @@ pub(super) fn on_keydown(
     h: &HandlerCtx,
     _hwnd: HWND,
     wparam: usize,
-    _lparam: isize,
+    lparam: isize,
 ) -> Option<isize> {
     let HandlerCtx { view, queue, .. } = h;
     let fence_id = h.fence_id;
@@ -106,6 +106,7 @@ pub(super) fn on_keydown(
             };
             v.move_cursor(dx, dy, mode);
             if let Some(path) = v.preview_path() {
+                seer::switch(path);
                 quicklook::switch(path);
             }
             let _ = v.redraw_content();
@@ -162,15 +163,32 @@ pub(super) fn on_keydown(
                 });
             }
         }
+        // During the Peek (the dimmer passed the key on), as Enter in the search box does: the
+        // Peek ends and the items open, folders in Explorer (opened inside the fence, a folder
+        // would sit behind the windows the Peek uncovered).
+        k if k == msg::VK_RETURN && h.behavior.floating.get() && !ids.is_empty() => {
+            queue.push(Command::EndPeek("items opened with Enter"));
+            for item in ids {
+                queue.push(Command::LaunchItem {
+                    item,
+                    from: v.active,
+                    inside: false,
+                });
+            }
+        }
         k if k == msg::VK_RETURN => open_items(v, queue, ids),
         VK_BACK if v.deco.up_button => {
             // Keyboard navigation: the folder it returns to shows the focus ring.
             v.focus_visible = true;
             queue.push(Command::PortalUp(v.active));
         }
-        // Ctrl+D deletes to the Recycle Bin, as on the desktop and in Explorer.
+        // Ctrl+D deletes to the Recycle Bin, as on the desktop and in Explorer. A held key
+        // deletes once: its repeats (bit 30, the key was already down) asked the shell again
+        // for the same files (feedback #108).
         k if k == msg::VK_DELETE || (k == VK_D && ctrl && !shift) => {
-            if !ids.is_empty() {
+            if lparam & (1 << 30) != 0 {
+                tracing::debug!("delete key repeat ignored");
+            } else if !ids.is_empty() {
                 queue.push(Command::DeleteItems {
                     fence: v.active,
                     items: ids,
@@ -197,6 +215,7 @@ pub(super) fn on_keydown(
             }
             v.selected.clear();
             v.type_ahead.clear();
+            seer::close();
             quicklook::close();
             if !h.behavior.selection.borrow().is_empty() {
                 queue.push(Command::ClearFenceSelection);
@@ -235,11 +254,13 @@ pub(super) fn on_char(h: &HandlerCtx, _hwnd: HWND, wparam: usize, lparam: isize)
     let Some(v) = guard.as_mut() else {
         return Some(0);
     };
-    // Space outside a prefix opens or closes QuickLook's preview of the focused item, as on
-    // the desktop and in Explorer (nothing without QuickLook); a held Space does not repeat it.
+    // Space outside a prefix opens or closes the preview of the focused item in Seer or
+    // QuickLook, whichever runs (Seer when both do), as on the desktop and in Explorer (nothing
+    // without them); a held Space does not repeat it.
     if ch == ' ' && !v.typing_ahead() && !window::key_down(msg::VK_SHIFT) {
         if lparam & (1 << 30) == 0
             && let Some(path) = v.preview_path()
+            && !seer::toggle(path)
         {
             quicklook::toggle(path);
         }

@@ -57,6 +57,7 @@ const CODE_TEXT_FIELDS: &[&str] = &[
     "memory",
     "method",
     "mode",
+    "module_owner",
     "new",
     "old",
     "outcome",
@@ -704,8 +705,13 @@ mod tests {
         ("memory", "%m.summary()"),     // MemoryStats::summary: numbers only
         ("method", "method"),           // IPC method name
         ("mode", "?mode"),              // ThemeMode enum
+        ("module_owner", "owner"),      // crashlog: windows / pecofence / other
         ("new", "?resolved"),           // Option<IconHost>: HWNDs + kind enum
+        ("new", "?after"),              // store::StartupState enum
+        ("new", "?state"),              // store::StartupState enum
         ("old", "?self.host"),          // Option<IconHost>
+        ("old", "?before"),             // store::StartupState enum
+        ("old", "?self.store_startup_state"), // Option<store::StartupState>
         ("outcome", "?effect.as_ref().map(|r|(r.dropped,r.effect))"), // (bool, DropEffect)
         ("payload", "payload"),         // panic payload when `&'static str`
         ("position", "?snapshot.position"), // WallpaperPosition enum

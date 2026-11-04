@@ -81,8 +81,11 @@ impl windows_core::RuntimeType for IStartupTask {
 #[repr(C)]
 pub struct IStartupTask_Vtbl {
     pub base__: windows_core::IInspectable_Vtbl,
-    RequestEnableAsync: usize,
-    Disable: usize,
+    pub RequestEnableAsync: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        *mut *mut core::ffi::c_void,
+    ) -> windows_core::HRESULT,
+    pub Disable: unsafe extern "system" fn(*mut core::ffi::c_void) -> windows_core::HRESULT,
     pub State: unsafe extern "system" fn(
         *mut core::ffi::c_void,
         *mut StartupTaskState,
@@ -209,6 +212,24 @@ windows_core::imp::interface_hierarchy!(
     windows_core::IInspectable
 );
 impl StartupTask {
+    pub(crate) fn RequestEnableAsync(
+        &self,
+    ) -> windows_core::Result<windows_future::IAsyncOperation<StartupTaskState>> {
+        unsafe {
+            let mut result__ = core::mem::zeroed();
+            (windows_core::Interface::vtable(self).RequestEnableAsync)(
+                windows_core::Interface::as_raw(self),
+                &mut result__,
+            )
+            .and_then(|| windows_core::imp::Type::from_abi(result__))
+        }
+    }
+    pub(crate) fn Disable(&self) -> windows_core::Result<()> {
+        unsafe {
+            (windows_core::Interface::vtable(self).Disable)(windows_core::Interface::as_raw(self))
+                .ok()
+        }
+    }
     pub(crate) fn State(&self) -> windows_core::Result<StartupTaskState> {
         unsafe {
             let mut result__ = core::mem::zeroed();

@@ -336,6 +336,8 @@ pub struct FenceViewState {
     pub(super) vis_fade: Option<VisFade>,
     pub(super) vis_gen: usize,
     pub(super) vis_deadline: Option<Instant>,
+    /// What the current whole-window fade did so far (see `FadeTrace`).
+    pub(super) fade_trace: FadeTrace,
     /// `FenceWindow::retire` was called: the window is fading out for good and lives only in
     /// `App::dying`. Nothing may show it again, and every hide must end in `FadeOutDone`.
     pub(super) retired: bool,

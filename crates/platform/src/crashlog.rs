@@ -86,13 +86,49 @@ fn describe(addr: u64, module: Option<HMODULE>) -> String {
     let Some(module) = module else {
         return format!("{addr:#x}");
     };
-    let mut name = [0u16; 260];
-    // SAFETY: buffer of the stated length.
-    let n =
-        unsafe { GetModuleFileNameW(Some(module), windows_core::PWSTR(name.as_mut_ptr()), 260) };
-    let path = String::from_utf16_lossy(&name[..n as usize]);
+    let path = module_path(Some(module));
     let file = path.rsplit(['\\', '/']).next().unwrap_or(&path).to_string();
     format!("{file}+{:#x}", addr.wrapping_sub(module.0 as usize as u64))
+}
+
+/// The full path of `module` (`None`: the program itself).
+fn module_path(module: Option<HMODULE>) -> String {
+    let mut name = [0u16; 260];
+    // SAFETY: buffer of the stated length.
+    let n = unsafe { GetModuleFileNameW(module, windows_core::PWSTR(name.as_mut_ptr()), 260) };
+    String::from_utf16_lossy(&name[..(n as usize).min(name.len())])
+}
+
+windows_core::link!("kernel32.dll" "system" fn GetSystemWindowsDirectoryW(buffer: windows_core::PWSTR, size: u32) -> u32);
+
+/// Who ships the module at `path`: `windows`, `pecofence` (next to the program) or `other`,
+/// another program's DLL that loaded into PecoFence (a shell extension, an input method, a
+/// hook). The next start names an `other` module in its notice (feedback #97, GitHub #167).
+fn module_owner(path: &str) -> &'static str {
+    let mut dir = [0u16; 260];
+    // SAFETY: buffer of the stated length.
+    let n = unsafe { GetSystemWindowsDirectoryW(windows_core::PWSTR(dir.as_mut_ptr()), 260) };
+    let windows = String::from_utf16_lossy(&dir[..(n as usize).min(dir.len())]);
+    let exe = module_path(None);
+    let program = exe.rsplit_once(['\\', '/']).map_or("", |(dir, _)| dir);
+    owner_of(path, &windows, program)
+}
+
+/// [`module_owner`] for a module path, the Windows folder and the program's folder. The
+/// WebView2 Runtime (the settings page) comes with Windows, outside its folder.
+fn owner_of(path: &str, windows: &str, program: &str) -> &'static str {
+    let path = path.to_lowercase().replace('/', "\\");
+    let inside = |dir: &str| {
+        let dir = dir.trim_end_matches(['\\', '/']).to_lowercase();
+        !dir.is_empty() && path.starts_with(&format!("{dir}\\"))
+    };
+    if inside(windows) || path.contains("\\microsoft\\edgewebview\\") {
+        "windows"
+    } else if inside(program) {
+        "pecofence"
+    } else {
+        "other"
+    }
 }
 
 /// The file version (`32.0.21025.10016`) in the version resource of the module containing
@@ -177,10 +213,15 @@ unsafe extern "system" fn filter(info: *const EXCEPTION_POINTERS) -> i32 {
     // This function is part of pecofence.exe: the build the exe's frames in the stack are from.
     let exe_version = module_version(filter as *const () as usize as u64);
     let at = locate(address);
+    let owner = module_at(address).map(|m| module_owner(&module_path(Some(m))));
+    // A test's module stands for one at that path; a bare name for another program's.
     #[cfg(debug_assertions)]
-    let at = match (FAKE_MODULE.get(), at.split_once('+')) {
-        (Some(module), Some((_, rva))) => format!("{module}+{rva}"),
-        _ => at,
+    let (at, owner) = match (FAKE_MODULE.get(), at.split_once('+')) {
+        (Some(module), Some((_, rva))) => {
+            let file = module.rsplit(['\\', '/']).next().unwrap_or(module);
+            (format!("{file}+{rva}"), Some(module_owner(module)))
+        }
+        _ => (at, owner),
     };
     // What the UI thread was doing, when it was running a command (another thread may be the
     // one that crashed).
@@ -190,6 +231,7 @@ unsafe extern "system" fn filter(info: *const EXCEPTION_POINTERS) -> i32 {
         at = %at,
         command = command.as_deref(),
         module_version = at_version.as_deref(),
+        module_owner = owner,
         access,
         address = accessed.as_deref(),
         exe_version = exe_version.as_deref(),
@@ -292,4 +334,51 @@ fn walk(ctx: *mut CONTEXT) -> Vec<String> {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::owner_of;
+
+    #[test]
+    fn faulting_modules_are_told_apart_by_folder() {
+        let (windows, program) = (r"C:\WINDOWS", r"C:\Program Files\PecoFence");
+        let owner = |path| owner_of(path, windows, program);
+        assert_eq!(owner(r"C:\Windows\System32\combase.dll"), "windows");
+        // The GPU driver's DLLs are in the driver store, inside the Windows folder.
+        assert_eq!(
+            owner(r"C:\WINDOWS\System32\DriverStore\FileRepository\u0.inf_amd64\B1\amdxx64.dll"),
+            "windows"
+        );
+        assert_eq!(
+            owner(
+                r"C:\Program Files (x86)\Microsoft\EdgeWebView\Application\142.0\EBWebView\x64\EmbeddedBrowserWebView.dll"
+            ),
+            "windows"
+        );
+        assert_eq!(
+            owner(r"C:\Program Files\PecoFence\pecofence.exe"),
+            "pecofence"
+        );
+        assert_eq!(
+            owner(r"C:\Program Files\PecoFence\WebView2Loader.dll"),
+            "pecofence"
+        );
+        assert_eq!(
+            owner(
+                r"C:\Users\a\AppData\Local\Kingsoft\WPS Office\12.1.0.29162\office6\qingshellext64.dll"
+            ),
+            "other"
+        );
+        assert_eq!(
+            owner(r"C:\Program Files\ExplorerPatcher\ExplorerPatcher.amd64.dll"),
+            "other"
+        );
+        // A folder whose name only starts like the program's is another one.
+        assert_eq!(owner(r"C:\Program Files\PecoFence2\x.dll"), "other");
+        assert_eq!(owner(r"C:\Windows.old\System32\x.dll"), "other");
+        // A bare name (a test's module) is in neither folder.
+        assert_eq!(owner("qingshellext64.dll"), "other");
+        assert_eq!(owner_of("x.dll", "", ""), "other");
+    }
 }

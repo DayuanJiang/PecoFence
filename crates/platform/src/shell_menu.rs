@@ -9,16 +9,28 @@ use crate::bindings::*;
 use crate::wide::to_wide;
 use std::cell::RefCell;
 use std::path::Path;
+use std::sync::atomic::{AtomicU8, Ordering};
+use std::time::{Duration, Instant};
 use windows_core::{Error, Interface, PCSTR, PCWSTR, PWSTR, Result};
 
 const WM_MENUCHAR: u32 = 0x0120;
 /// `GCS_VERBW`: ask `GetCommandString` for the canonical verb as UTF-16.
 const GCS_VERBW: u32 = 0x0004;
+/// `CMF_OPTIMIZEFORINVOKE`: the menu is not shown, a verb is invoked by name right after.
+const CMF_OPTIMIZEFORINVOKE: u32 = 0x0800;
 
 thread_local! {
     /// The shell menu currently shown by `TrackPopupMenuEx` on this thread (at most one).
     static ACTIVE: RefCell<Option<IContextMenu>> = const { RefCell::new(None) };
 }
+
+/// Where `prepare_handler_cache` is: not started, running, or done (whatever its outcome).
+static CACHE_STATE: AtomicU8 = AtomicU8::new(CACHE_NOT_STARTED);
+const CACHE_NOT_STARTED: u8 = 0;
+const CACHE_RUNNING: u8 = 1;
+const CACHE_DONE: u8 = 2;
+/// A menu built while `prepare_handler_cache` still runs waits this long for it at most.
+const CACHE_WAIT: Duration = Duration::from_secs(2);
 
 /// The shell's context menu object for a set of items plus the command-id range it was given.
 pub struct ShellContextMenu {
@@ -70,6 +82,7 @@ impl ShellContextMenu {
         if extended {
             flags |= CMF_EXTENDEDVERBS as u32;
         }
+        wait_for_handler_cache();
         // SAFETY: hmenu is a valid menu owned by the caller.
         let hr = unsafe { self.menu.QueryContextMenu(hmenu, index, first, last, flags) };
         if hr.is_err() {
@@ -164,23 +177,50 @@ impl ShellContextMenu {
 }
 
 impl ShellContextMenu {
-    /// Runs the shell command whose canonical verb is `verb` (e.g. `delete`) as if picked from
-    /// the menu, without showing it. Returns `Ok(false)` if the verb is not offered. `shift` =
-    /// Shift held (Shift+Delete deletes permanently).
-    pub fn invoke_verb(&mut self, verb: &str, owner: HWND, pt: POINT, shift: bool) -> Result<bool> {
+    /// Runs the shell command whose canonical verb is `verb` (`delete`, `cut`, `copy`,
+    /// `properties`) without showing a menu, the way Explorer runs Delete or Ctrl+C on its
+    /// selection: the menu is only prepared for invoking (CMF_OPTIMIZEFORINVOKE) and the verb
+    /// goes by name. Building the whole menu to look the verb up loaded every menu extension
+    /// and took up to a second per key press on a PC with many of them (feedback #108). Fails
+    /// when the items do not offer the verb. `shift` = Shift held (Shift+Delete deletes
+    /// permanently).
+    pub fn invoke_verb(&self, verb: &str, owner: HWND, pt: POINT, shift: bool) -> Result<()> {
         // SAFETY: temporary menu owned and destroyed here.
         let hmenu = unsafe { CreatePopupMenu() };
-        let result = (|| -> Result<bool> {
-            let count = self.populate(hmenu, 0, 0x1000, 0x6FFF, false)?;
-            for cmd in 0x1000..0x1000 + count {
-                if self.verb(cmd).is_some_and(|v| v.eq_ignore_ascii_case(verb)) {
-                    self.invoke(cmd, owner, pt, shift)?;
-                    return Ok(true);
-                }
+        let result = (|| -> Result<()> {
+            // SAFETY: hmenu is the menu created above.
+            let hr = unsafe {
+                self.menu
+                    .QueryContextMenu(hmenu, 0, 1, 0x7FFF, CMF_OPTIMIZEFORINVOKE)
+            };
+            if hr.is_err() {
+                return Err(Error::from_hresult(hr));
             }
-            Ok(false)
+            let ansi: Vec<u8> = verb.bytes().chain(std::iter::once(0)).collect();
+            let wide = to_wide(verb);
+            let mut mask = (CMIC_MASK_UNICODE | CMIC_MASK_PTINVOKE) as u32;
+            if shift {
+                mask |= CMIC_MASK_SHIFT_DOWN as u32;
+            }
+            let info = CMINVOKECOMMANDINFOEX {
+                cbSize: std::mem::size_of::<CMINVOKECOMMANDINFOEX>() as u32,
+                fMask: mask,
+                hwnd: owner,
+                lpVerb: PCSTR(ansi.as_ptr()),
+                lpVerbW: PCWSTR(wide.as_ptr()),
+                nShow: SW_SHOWNORMAL,
+                ptInvoke: pt,
+                ..Default::default()
+            };
+            // SAFETY: the verb strings outlive the call; the EX struct starts with the base
+            // struct and cbSize tells the shell which one it is.
+            let hr = unsafe {
+                self.menu.InvokeCommand(
+                    &info as *const CMINVOKECOMMANDINFOEX as *const CMINVOKECOMMANDINFO,
+                )
+            };
+            hr.ok()
         })();
-        ACTIVE.with(|a| *a.borrow_mut() = None);
         // SAFETY: we own the menu.
         let _ = unsafe { DestroyMenu(hmenu) };
         result
@@ -199,6 +239,63 @@ impl Drop for ShellContextMenu {
             }
         });
     }
+}
+
+/// Makes the shell start its item handler cache now, on a worker thread, so that no item menu
+/// has to start it. The shell starts that cache on a thread of its own the first time a
+/// process needs it, and the caller waits for that thread without answering messages
+/// (SHCreateThread with CTF_WAIT_NO_REENTRANCY). In a folder's first menu that happened inside
+/// a menu extension's DLL initialization, with the loader lock held: the extension created a
+/// window there (Baidu Netdisk's YunShellExt on the PC where it was reproduced), which ran the
+/// pending update of Windows' 「包含到库中」 helper and its library icons. The new thread could
+/// never start, and PecoFence froze for good at its first folder right-click (feedback #103,
+/// #109). A library's icon starts the cache the same way without loading any menu extension;
+/// building a menu here instead would load them all and could stop this worker the same way.
+pub fn prepare_handler_cache() {
+    // Windows' own libraries; a PC may lack some of them, and their file names are English
+    // in every display language.
+    const LIBRARIES: [&str; 4] = ["Documents", "Pictures", "Music", "Videos"];
+    CACHE_STATE.store(CACHE_RUNNING, Ordering::Release);
+    let spawned = std::thread::Builder::new()
+        .name("shell handler cache".into())
+        .spawn(|| {
+            let _sta = crate::com::OleGuard::init();
+            let started = Instant::now();
+            let mut outcome = Err(Error::from_hresult(E_FAIL));
+            for name in LIBRARIES {
+                let path = format!("::{{031E4825-7B94-4DC3-B131-E946B44C8DD5}}\\{name}.library-ms");
+                outcome = crate::shell::shell_image(Path::new(&path), 32, true).map(|_| name);
+                if outcome.is_ok() {
+                    break;
+                }
+            }
+            let ms = started.elapsed().as_millis() as u64;
+            CACHE_STATE.store(CACHE_DONE, Ordering::Release);
+            match outcome {
+                Ok(library) => tracing::info!(ms, library, "shell handler cache prepared"),
+                Err(e) => tracing::warn!(ms, error = %e, "shell handler cache not prepared"),
+            }
+        });
+    if let Err(e) = spawned {
+        CACHE_STATE.store(CACHE_DONE, Ordering::Release);
+        tracing::warn!(error = %e, "shell handler cache thread failed to start");
+    }
+}
+
+/// A menu built in the first moments after start, while `prepare_handler_cache` still runs
+/// (146 ms on a desktop PC), waits for it: the menu could start the cache itself otherwise.
+/// Waiting is safe here, as the caller holds no loader lock; it ends after `CACHE_WAIT` anyway.
+fn wait_for_handler_cache() {
+    if CACHE_STATE.load(Ordering::Acquire) != CACHE_RUNNING {
+        return;
+    }
+    let started = Instant::now();
+    while CACHE_STATE.load(Ordering::Acquire) == CACHE_RUNNING && started.elapsed() < CACHE_WAIT {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let ms = started.elapsed().as_millis() as u64;
+    let ready = CACHE_STATE.load(Ordering::Acquire) == CACHE_DONE;
+    tracing::info!(ms, ready, "shell menu waited for the shell handler cache");
 }
 
 /// The id lists of `paths` for one shell handler (unknown paths are skipped); free each with

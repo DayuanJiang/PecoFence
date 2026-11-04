@@ -533,6 +533,7 @@
   "示例\u0004截图": "Screenshot",
   "示例\u0004备份": "backup",
   "PecoFence 上次意外关闭了。点击这里报告问题。": "PecoFence closed unexpectedly last time. Click here to report the problem.",
+  "PecoFence 上次因 {0} 出错而关闭，这个文件属于其他程序，更新或卸载那个程序可能会解决。点击这里报告问题。": "PecoFence crashed in {0}, part of another program. Updating or removing that program may help. Click to report it.",
   "上次因 ExplorerPatcher 出错而关闭。请在它的 Properties › File Explorer 中取消勾选“Register as shell extension”，然后重启资源管理器。": "PecoFence crashed inside ExplorerPatcher. In its Properties › File Explorer, untick “Register as shell extension” and restart File Explorer.",
   "PecoFence 上次意外关闭了，那次的日志会一起发送。如果还记得当时在做什么，请写在下面。": "PecoFence closed unexpectedly last time; the log from that run is sent along. If you remember what you were doing, please describe it below.",
   "其他": "Other",
@@ -572,7 +573,7 @@
   "下载失败，请稍后再试": "Couldn't download the update. Try again later.",
   "为空时自动隐藏": "Hide when empty",
   "像桌面一样排列": "Arrange like the desktop",
-  "不显示标题和边框，图标从屏幕左上角一列一列往下排，绕开其他栅栏，和 Windows 桌面图标一样": "No title row or edges: the icons stand down columns from the top-left corner of the screen, around the other fences, like Windows desktop icons",
+  "图标从屏幕左上角一列一列往下排，绕开其他栅栏，像 Windows 桌面的“自动排列图标”，不能随意摆放。关闭后“桌面”变回普通栅栏，可以移动和调整大小": "The icons stand down columns from the top-left corner of the screen, around the other fences, like Windows desktop icons with Auto arrange icons on: they cannot be placed freely. Turn it off to make the Desktop fence a normal fence you can move and resize",
   "里面没有图标时就不显示；桌面上一出现新图标，它会自己回来": "Stays out of sight while it has no icons and comes back as soon as a new icon appears on the desktop",
   "里面没有图标时就不显示；有图标归到这里时，它会自己回来": "Stays out of sight while it has no icons and comes back as soon as an icon is filed here",
   "向上展开": "Expand upward",
@@ -612,5 +613,10 @@
   "不需要填写": "Nothing to fill in",
   "这个条件只能用命令行修改": "This condition can only be changed from the command line",
   "保存": "Save",
-  "已保存规则": "Rule saved"
+  "已保存规则": "Rule saved",
+  "已在 Windows 设置 › 应用 › 启动（或任务管理器）中关闭，只能在那里重新打开。点开关会打开该页面。": "Turned off in Windows Settings › Apps › Startup (or Task Manager): it can only be turned on again there. The switch opens that page.",
+  "已被管理员或组策略关闭，PecoFence 无法打开。": "Turned off by an administrator or a group policy: PecoFence cannot turn it on.",
+  "已被管理员或组策略打开，PecoFence 无法关闭。": "Turned on by an administrator or a group policy: PecoFence cannot turn it off.",
+  "闲置天数必须在 1 到 {0} 之间": "Idle days must be between 1 and {0}",
+  "没能保存这次改动，规则已恢复原样": "This change could not be saved; the rules are back as they were"
 }
