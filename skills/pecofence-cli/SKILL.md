@@ -79,6 +79,8 @@ pecofence-cli item rename "C:\Users\me\Desktop\IMG_2031.pdf" "2026-09 electricit
 pecofence-cli rule add --name PDFs --ext pdf --to Docs         # or --type, --name-contains, --glob, --json '[Cond...]'
 pecofence-cli rule apply --dry-run && pecofence-cli rule apply
 pecofence-cli settings set theme dark                          # dotted camelCase path; `settings get` shows them
+pecofence-cli fence create --tool note --title Today --text "[ ] Pay rent"   # 小工具: note, clock, or --script <file>
+pecofence-cli fence set Today noteText "[x] Pay rent`n[ ] Call Anna"           # whole text; `n = new line in PowerShell
 pecofence-cli snapshot list
 pecofence-cli snapshot restore <id> --dry-run                 # fences it would add / remove / move / update
 pecofence-cli config export "C:\Users\me\Desktop\pecofence-backup.json"   # settings + rules + layouts
@@ -100,6 +102,11 @@ pecofence-cli config export "C:\Users\me\Desktop\pecofence-backup.json"   # sett
   target a portal and needs at least one condition.
 - `config import` / `backup restore` replace settings, rules and layouts: `config export` first.
 - The CLI cannot delete files: list duplicates and junk for the user to remove.
+- Tool fences (`fence list` shows `tool`: note, clock, script) hold no items and join no tabs. Each
+  tool has a switch (`tools.notes`, `tools.clock`, `tools.scripts`); `fence create --tool` turns it
+  on. A script fence runs the user's script every `scriptInterval` minutes, at most 10 s, and shows
+  what it prints; write such scripts for the user on request, print a few short lines, and check the
+  result with `fence get <fence>` (`script.outcome`, `script.output`).
 
 ## Recipes
 
