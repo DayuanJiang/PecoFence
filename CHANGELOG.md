@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Rules can be edited (feedback #104). Each rule in Settings › 整理规则 has a pencil button that opens the rule in its own row with the fields of 「新建规则」: the name, the target fence and every condition. 「保存」 keeps the rule at its place in the list and leaves it on or off as it was; 「取消」 changes nothing. Before, a rule could only be deleted and added again, which also put it at the top of the list. A rule can have several conditions, all of which must hold, as `pecofence-cli rule add` already allowed: 「添加条件」 adds one to a new rule or to the rule being edited, and the ✕ beside a condition removes it, so the 待清理 rule (installers and archives, unused for 30 days) keeps both of its conditions when it is edited. A condition only the CLI writes, such as `--name-is`, shows as text and stays unless it is removed. As after adding a rule, items already in a fence move to the edited rule's fence with 「立即应用」.
+
 ## 0.2.4
 
 - The fences no longer hide by themselves after 刷新 in the desktop's right-click menu (feedback #95), or after one click on the empty desktop right after using a fence. When the desktop came to the front, PecoFence took the press that brought it there for the first click of a double-click on the empty desktop, as it has to after a click from another program's window, which it does not see. But Windows 11's menu gives the desktop back when the button comes up on 刷新, so a double-click on 刷新, or another click there right after, completed a double-click and hid every fence. After using a fence, PecoFence saw that same press once more and could count it twice. Now only a press on the desktop that is still held when the desktop comes to the front counts; a double-click on the empty desktop still hides and shows the fences, also from another program's window.

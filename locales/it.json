@@ -601,5 +601,16 @@
   "请用 PecoFence 的命令行工具帮我整理 Windows 桌面。PecoFence 正在运行，命令行工具是 `{0}`。先运行 `{0} skill` 阅读使用说明，再查看桌面上的项目和现有的栅栏，动手前先导出一份配置备份。然后告诉我你的整理方案：新建哪些栅栏，哪些项目放到哪里，为以后出现的新文件添加哪些整理规则。等我同意后再执行。": "Usa lo strumento da riga di comando di PecoFence per riordinare il mio desktop di Windows. PecoFence è in esecuzione e il suo strumento da riga di comando è `{0}`. Prima esegui `{0} skill` per leggere come si usa, poi guarda gli elementi del mio desktop e i riquadri che ho già, ed esporta un backup della configurazione prima di modificare qualsiasi cosa. Poi presentami il tuo piano: quali riquadri creare, quali elementi mettere dove e quali regole di organizzazione aggiungere per i nuovi file. Aspetta il mio via libera prima di metterlo in pratica.",
   "提示词已复制，粘贴到 AI 助手里即可": "Prompt copiato. Incollalo nel tuo assistente IA.",
   "没能复制提示词，请稍后重试": "Impossibile copiare il prompt. Riprova tra un momento.",
-  "文件夹优先": "Prima le cartelle"
+  "文件夹优先": "Prima le cartelle",
+  "编辑": "Modifica",
+  "编辑规则": "Modifica regola",
+  "改完点“保存”，规则留在原来的位置": "Al termine fai clic su «Salva»; la regola resta al suo posto",
+  "条件（全部符合时放入目标栅栏）": "Condizioni (gli elementi che le soddisfano tutte vanno nel riquadro di destinazione)",
+  "且": "e",
+  "添加条件": "Aggiungi condizione",
+  "删除条件": "Rimuovi condizione",
+  "不需要填写": "Niente da compilare",
+  "这个条件只能用命令行修改": "Questa condizione si può modificare solo dalla riga di comando",
+  "保存": "Salva",
+  "已保存规则": "Regola salvata"
 }

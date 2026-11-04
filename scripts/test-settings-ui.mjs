@@ -1051,6 +1051,111 @@ async function runTests() {
     await add(doc);
     assert(panel.open && doc.activeElement.id === 'nrValue', 'Validation error did not reveal the field');
   });
+  // Rule editing (feedback #104): the row of a listed rule opens into the rule form in place.
+  const edit = async (doc, id) => { doc.querySelector(`[data-row-id="${id}"] [data-act=edit]`).click(); await settle(); return doc.querySelector(`[data-row-id="${id}"] .redit`); };
+  const setValue = (el, value) => { el.value = value; el.dispatchEvent(new frame.contentWindow.Event('change', { bubbles: true })); };
+  await test('A rule is edited in place: name, target and condition change; id, switch and place stay', async () => {
+    doc = await reset();
+    doc.querySelector('[data-page=rules]').click();
+    current().rules.list[1].enabled = false;
+    frame.contentWindow.testRefresh(); await settle();
+    const form = await edit(doc, 'rule-b');
+    assert(form && doc.activeElement === form.querySelector('.r-name'), 'Editor did not open with the name focused');
+    assert(form.querySelector('.r-name').value === 'Images' && form.querySelector('.r-target').value === 'fence-b', 'Editor not filled');
+    assert(![...form.querySelector('.r-target').options].some(o => o.value === 'portal'), 'Portal offered as a routing target');
+    const blocks = form.querySelectorAll('.cond');
+    assert(blocks.length === 1 && blocks[0].querySelector('.c-kind').value === 'ext' && blocks[0].querySelector('.c-text').value === 'png', 'Condition not filled');
+    assert(blocks[0].querySelector('.c-del').hidden, 'The only condition can be removed');
+    const main = doc.querySelector('main');
+    assert(main.scrollWidth <= main.clientWidth + 1, 'Open editor overflows the narrow window');
+    form.querySelector('.r-name').value = 'Pictures';
+    setValue(form.querySelector('.r-target'), 'inbox');
+    blocks[0].querySelector('.c-text').value = 'png, .jpg';
+    form.querySelector('[data-act=save]').click(); await settle();
+    const list = current().rules.list, r = list[1];
+    assert(list.map(x => x.id).join() === 'rule-a,rule-b', 'Edited rule moved');
+    assert(r.name === 'Pictures' && r.target === 'inbox' && r.enabled === false && r.priorityClass === 'type'
+      && JSON.stringify(r.allOf) === '[{"cond":"ext","value":["png","jpg"]}]', 'Edit not saved: ' + JSON.stringify(r));
+    assert(!doc.querySelector('#ruleList .redit'), 'Editor still open after saving');
+    assert(doc.activeElement.dataset.act === 'edit' && doc.activeElement.closest('[data-row-id]').dataset.rowId === 'rule-b', 'Focus not back on the edit button');
+    assert(doc.querySelector('[data-row-id="rule-b"] .conds').textContent.includes('png、jpg'), 'Row summary not updated');
+  });
+  await test('A host refresh keeps an open editor, its draft and focus; Cancel changes nothing', async () => {
+    const form = await edit(doc, 'rule-a');
+    form.querySelector('.r-name').value = 'Draft name';
+    form.querySelector('.r-name').focus();
+    frame.contentWindow.testRefresh(); await settle();
+    assert(doc.querySelector('[data-row-id="rule-a"] .redit') === form && form.querySelector('.r-name').value === 'Draft name', 'Host refresh dropped the editor or its draft');
+    assert(doc.activeElement === form.querySelector('.r-name'), 'Host refresh moved focus out of the editor');
+    const before = JSON.stringify(current().rules);
+    form.querySelector('[data-act=cancel]').click(); await settle();
+    assert(JSON.stringify(current().rules) === before && current().rules.list[0].name === 'Documents', 'Cancel changed the rule');
+    assert(!doc.querySelector('#ruleList .redit') && doc.activeElement.dataset.act === 'edit', 'Cancel did not close the editor onto the edit button');
+  });
+  await test('Every condition of a rule is shown and kept, one only the CLI writes as text', async () => {
+    current().rules.list[0] = { id: 'rule-c', name: '待清理', enabled: true, target: { fence: 'fence-a' }, template: 'cleanup', priorityClass: 'type',
+      allOf: [{ cond: 'type', value: ['installers', 'archives'] }, { cond: 'idleDays', value: { min: 30 } }, { cond: 'name', value: { op: 'is', value: 'a.zip' } }] };
+    frame.contentWindow.testRefresh(); await settle();
+    let form = await edit(doc, 'rule-c');
+    const blocks = form.querySelectorAll('.cond');
+    assert(blocks.length === 3, 'Not every condition shown');
+    assert([...blocks[0].querySelectorAll('.c-cats input:checked')].map(i => i.value).join() === 'archives,installers', 'Type boxes not ticked');
+    assert(blocks[1].querySelector('.c-kind').value === 'idle' && blocks[1].querySelector('.c-days').value === '30', 'Idle days not filled');
+    assert(!blocks[2].querySelector('.c-kind') && blocks[2].textContent.includes('a.zip'), 'CLI-only condition not shown as its summary');
+    assert([...blocks].every(b => !b.querySelector('.c-del').hidden), 'Conditions cannot be removed');
+    form.querySelector('[data-act=save]').click(); await settle();
+    let r = current().rules.list[0];
+    assert(JSON.stringify(r.allOf) === '[{"cond":"type","value":["archives","installers"]},{"cond":"idleDays","value":{"min":30}},{"cond":"name","value":{"op":"is","value":"a.zip"}}]', 'Saving unchanged conditions changed them: ' + JSON.stringify(r.allOf));
+    assert(r.id === 'rule-c' && r.template === 'cleanup' && r.priorityClass === 'type', 'Id, template tag or class lost');
+    form = await edit(doc, 'rule-c');
+    form.querySelectorAll('.cond')[2].querySelector('.c-del').click();
+    form.querySelectorAll('.cond')[1].querySelector('.c-del').click();
+    assert(form.querySelectorAll('.cond').length === 1 && form.querySelector('.cond .c-del').hidden && doc.activeElement === form.querySelector('.c-add'), 'Removing conditions misbehaved');
+    form.querySelector('[data-act=save]').click(); await settle();
+    r = current().rules.list[0];
+    assert(r.allOf.length === 1 && r.allOf[0].cond === 'type' && r.name === '待清理', 'Removed conditions were saved');
+  });
+  await test('The new-rule form combines several conditions', async () => {
+    rulesPage(doc);
+    change(doc, 'nrKind', 'ext'); change(doc, 'nrValue', 'png');
+    doc.getElementById('nrAddCond').click();
+    const extra = doc.querySelector('#nrConds .cond:not(#nrCond)');
+    assert(extra && !extra.querySelector('[id]:not(.c-hint)'), 'Added condition missing or reuses ids');
+    assert(extra.querySelector('.c-text').getAttribute('aria-describedby') === extra.querySelector('.c-hint').id, 'Hint of the added condition not tied to its field');
+    setValue(extra.querySelector('.c-kind'), 'startsWith');
+    assert(extra.querySelector('.c-text').placeholder === 'IMG_' && extra.querySelector('.c-value').style.display === '', 'Added condition did not follow its kind');
+    extra.querySelector('.c-text').value = 'IMG_';
+    doc.getElementById('nrName').value = '';
+    await add(doc);
+    const r = current().rules.list[0];
+    assert(JSON.stringify(r.allOf) === '[{"cond":"ext","value":["png"]},{"cond":"name","value":{"op":"startsWith","value":"IMG_"}}]' && r.priorityClass === 'type', 'Combined rule wrong: ' + JSON.stringify(r));
+    assert(r.name === '扩展名：png，且 名称开头是“IMG_”', 'Unnamed rule not named after both conditions: ' + r.name);
+    assert(!doc.querySelector('#nrConds .cond:not(#nrCond)'), 'Added condition left in the form');
+  });
+  await test('An editor error points at its own field and leaves the new-rule form closed', async () => {
+    doc = await reset();
+    doc.querySelector('[data-page=rules]').click();
+    const form = await edit(doc, 'rule-a');
+    form.querySelector('.c-text').value = ' ';
+    form.querySelector('[data-act=save]').click(); await settle();
+    assert(errorShown(doc) && doc.activeElement === form.querySelector('.c-text'), 'Error did not focus the editor field');
+    assert(!doc.getElementById('nrPanel').open, 'Error opened the new-rule form');
+    assert(current().rules.list[0].allOf[0].value[0] === 'txt', 'Invalid edit saved');
+  });
+  await test('A language switch keeps an open editor and its draft and translates it', async () => {
+    const form = doc.querySelector('[data-row-id="rule-a"] .redit');
+    form.querySelector('.c-text').value = 'md';
+    form.querySelector('.c-add').click();
+    doc.querySelector('[data-page=general]').click();
+    change(doc, 'language', 'en'); await settle();
+    doc.querySelector('[data-page=rules]').click();
+    const now = doc.querySelector('[data-row-id="rule-a"] .redit'), text = frame.contentWindow.PecoFenceI18n.text;
+    assert(now && now.querySelectorAll('.cond').length === 2 && now.querySelector('.c-text').value === 'md', 'Editor or draft lost');
+    assert(doc.querySelector('[data-row-id="rule-a"] .re-head .t').textContent === text('编辑规则') && now.querySelector('[data-act=save]').textContent === text('保存'), 'Editor frame not translated');
+    const added = now.querySelectorAll('.cond')[1];
+    assert(added.querySelector('.c-kind option[value=ext]').textContent === text('扩展名（逗号分隔）') && added.querySelector('.c-cats label').textContent === text('程序'), 'Added condition not translated');
+    change(doc, 'language', 'zh-CN'); await settle();
+  });
   await test('Every page fits compact windows in both materials and colour modes', async () => {
     for (const width of [704, 480]) {
       frame.style.width = width + 'px';

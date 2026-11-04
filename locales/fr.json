@@ -601,5 +601,16 @@
   "命令行文档": "Guide de la ligne de commande",
   "请用 PecoFence 的命令行工具帮我整理 Windows 桌面。PecoFence 正在运行，命令行工具是 `{0}`。先运行 `{0} skill` 阅读使用说明，再查看桌面上的项目和现有的栅栏，动手前先导出一份配置备份。然后告诉我你的整理方案：新建哪些栅栏，哪些项目放到哪里，为以后出现的新文件添加哪些整理规则。等我同意后再执行。": "Utilise l’outil en ligne de commande de PecoFence pour ranger mon Bureau Windows. PecoFence est lancé, et son outil en ligne de commande est `{0}`. Exécute d’abord `{0} skill` pour lire le mode d’emploi, puis regarde les éléments de mon Bureau et mes groupes, et exporte une sauvegarde de la configuration avant de modifier quoi que ce soit. Ensuite, présente-moi ton plan : quels groupes créer, quels éléments mettre où et quelles règles de rangement ajouter pour les nouveaux fichiers. Attends mon accord avant de l’appliquer.",
   "提示词已复制，粘贴到 AI 助手里即可": "Consigne copiée. Collez-la dans votre assistant IA.",
-  "没能复制提示词，请稍后重试": "Impossible de copier la consigne. Réessayez dans un instant."
+  "没能复制提示词，请稍后重试": "Impossible de copier la consigne. Réessayez dans un instant.",
+  "编辑": "Modifier",
+  "编辑规则": "Modifier la règle",
+  "改完点“保存”，规则留在原来的位置": "Cliquez sur « Enregistrer » une fois terminé ; la règle garde sa place",
+  "条件（全部符合时放入目标栅栏）": "Conditions (les éléments qui les remplissent toutes vont dans le groupe cible)",
+  "且": "et",
+  "添加条件": "Ajouter une condition",
+  "删除条件": "Supprimer la condition",
+  "不需要填写": "Rien à remplir",
+  "这个条件只能用命令行修改": "Cette condition ne peut être modifiée qu’en ligne de commande",
+  "保存": "Enregistrer",
+  "已保存规则": "Règle enregistrée"
 }
