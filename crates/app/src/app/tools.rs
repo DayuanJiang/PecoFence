@@ -64,10 +64,10 @@ impl App {
         y: i32,
     ) -> Option<FenceId> {
         let kind = tool.tool();
-        self.ensure_tool_on(kind);
         if !self.fence_room_or_notice() {
             return None;
         }
+        self.ensure_tool_on(kind);
         let (w, h) = match kind {
             FenceTool::Note => (280.0, 240.0),
             FenceTool::Clock => (240.0, 140.0),
@@ -188,6 +188,7 @@ impl App {
             return ScriptView {
                 text: i18n::text("还没有选择脚本。右键这个栅栏，选「选择脚本…」。").to_string(),
                 footer: String::new(),
+                quiet: false,
             };
         };
         let name = std::path::Path::new(&spec.path)
@@ -199,6 +200,7 @@ impl App {
             return ScriptView {
                 text: String::new(),
                 footer: i18n::format("{0} · 正在运行…", &[name]),
+                quiet: true,
             };
         };
         let when = pecofence_platform::fileinfo::format_local_time(*at);
@@ -242,6 +244,7 @@ impl App {
         ScriptView {
             text,
             footer: status,
+            quiet: false,
         }
     }
 
@@ -273,7 +276,10 @@ impl App {
             return;
         };
         // A run of another script still going: its end starts this one (`drain_scripts`).
-        if spec.path.is_empty() || self.script_runs.running.contains_key(&id) {
+        if spec.path.is_empty()
+            || self.script_runs.running.contains_key(&id)
+            || !self.state.config.settings.tools.scripts
+        {
             return;
         }
         let interval = std::time::Duration::from_secs(u64::from(spec.interval_minutes.max(1)) * 60);
@@ -434,6 +440,7 @@ impl App {
         self.script_runs.last.remove(&id);
         self.script_runs.due.remove(&id);
         self.start_script(id);
+        self.push_tool_view(self.state.host_of(id));
         true
     }
 
@@ -507,6 +514,15 @@ impl App {
             "note editor opened"
         );
         crate::note_edit::open(rect, dpi, fence, &text, self.queue.clone(), self.theme_mode);
+    }
+
+    /// Quitting: the text of a note editor still open goes into the note now (its commit through
+    /// the command queue would come too late).
+    pub(super) fn commit_open_note(&mut self) {
+        if let Some((fence, text)) = crate::note_edit::take_open() {
+            tracing::info!(%fence, "note editor open at quit: text kept");
+            self.note_edited(fence, &text);
+        }
     }
 
     /// A click on a to-do's check box.

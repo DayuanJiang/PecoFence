@@ -663,5 +663,6 @@
   "运行间隔": "Intervalo de ejecución",
   "还没有选择脚本。右键这个栅栏，选「选择脚本…」。": "Todavía no se ha elegido ningún script. Haz clic derecho en este grupo y elige “Elegir script…”.",
   "选择脚本": "Elegir script",
-  "选择脚本…": "Elegir script…"
+  "选择脚本…": "Elegir script…",
+  "已导入配置。其中的脚本栅栏还没有运行：确认脚本可信后，在「小工具」里打开脚本栅栏。": "Configuración importada. Sus grupos de script todavía no se ejecutan: cuando confíes en los scripts, activa Grupo de script en Herramientas."
 }

@@ -1177,6 +1177,7 @@ impl App {
                             if let Ok(mut guard) = cell.try_borrow_mut()
                                 && let Some(app) = guard.as_mut()
                             {
+                                app.commit_open_note();
                                 app.state.save_if_dirty();
                                 if let Some(a) = app.anchor.borrow_mut().as_mut() {
                                     a.release_desktop_icons();
@@ -2436,6 +2437,7 @@ impl App {
 
     pub fn shutdown(&mut self) {
         self.end_peek_now();
+        self.commit_open_note();
         self.state.save_if_dirty();
         self.fences.clear();
         self.dying.clear();

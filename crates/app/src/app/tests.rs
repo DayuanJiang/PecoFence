@@ -691,6 +691,8 @@ mod ipc {
             name: name.to_string(),
             ts,
             layouts: Vec::new(),
+            notes: Default::default(),
+            scripts: Default::default(),
         }
     }
 

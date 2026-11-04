@@ -220,7 +220,10 @@ fn run_fence(ctx: &Ctx, cmd: FenceCmd) -> Result<Reply, IpcError> {
                 |p: String| std::path::absolute(&p).map_or(p, |a| a.display().to_string());
             let portal = portal.map(absolute);
             let script = script.map(absolute);
-            let tool = tool.or_else(|| script.as_ref().map(|_| "script".to_string()));
+            // --script means a script fence, --text a note.
+            let tool = tool
+                .or_else(|| script.as_ref().map(|_| "script".to_string()))
+                .or_else(|| text.as_ref().map(|_| "note".to_string()));
             let placement = [
                 (Side::Below, below),
                 (Side::Above, above),

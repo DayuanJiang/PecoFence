@@ -1018,6 +1018,8 @@ mod tests {
                 fingerprint: vec![],
                 fences: vec![portal],
             }],
+            notes: Default::default(),
+            scripts: Default::default(),
         });
         assert!(repair_unc_portals(&mut c));
         let path_of = |f: &Fence| match &f.source {

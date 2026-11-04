@@ -136,6 +136,18 @@ impl App {
         // What the file (plus the desktop-path migration) wants the settings to be. The Store
         // edition's startup switch is Windows': a file does not change it (nor open its page).
         let mut new_settings = self.state.config.settings.clone();
+        // An imported file may come from someone else: its script fences do not run until the
+        // user switches 脚本栅栏 on (a backup is the user's own and keeps the switch).
+        let scripts_held = matches!(source, ConfigSource::Import)
+            && new_settings.tools.scripts
+            && !self.state.config.scripts.is_empty();
+        if scripts_held {
+            new_settings.tools.scripts = false;
+            tracing::info!(
+                scripts = self.state.config.scripts.len(),
+                "imported script fences held off"
+            );
+        }
         if pecofence_platform::process::is_packaged() {
             new_settings.autostart = old_settings.autostart;
         }
@@ -156,7 +168,13 @@ impl App {
         self.refresh_visuals(true);
         self.state.save_if_dirty();
         self.push_settings_state();
-        self.settings_toast(source.done());
+        if scripts_held {
+            self.settings_toast(pecofence_core::i18n::text(
+                "已导入配置。其中的脚本栅栏还没有运行：确认脚本可信后，在「小工具」里打开脚本栅栏。",
+            ));
+        } else {
+            self.settings_toast(source.done());
+        }
     }
 
     pub(super) fn export_config(&mut self) {
@@ -245,7 +263,8 @@ impl App {
                     self.settings_error(&snapshot_limit_text());
                     return;
                 }
-                self.state.save_snapshot(source.before());
+                let undo = self.state.save_snapshot(source.before());
+                self.state.keep_tool_data_in(undo);
                 self.adopt_config(cfg, source);
             }
             Err(e) => {

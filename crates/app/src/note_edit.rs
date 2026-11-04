@@ -26,6 +26,14 @@ thread_local! {
     static COMMITTED: RefCell<Option<(FenceId, String)>> = const { RefCell::new(None) };
 }
 
+/// Closes the editor without going through the command queue (PecoFence is quitting): the note
+/// and its text, if one was open.
+pub fn take_open() -> Option<(FenceId, String)> {
+    let session = ACTIVE.with(|a| a.borrow_mut().take())?;
+    let text = session.edit.text();
+    Some((session.fence, text))
+}
+
 /// The App applied the editor's text for `fence`: forget it.
 pub fn take_committed(fence: FenceId) {
     COMMITTED.with(|c| {

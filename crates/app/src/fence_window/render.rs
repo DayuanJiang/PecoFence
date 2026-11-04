@@ -818,7 +818,11 @@ impl FenceViewState {
             .material_foreground()
             .with_label_color(self.behavior.label_color.get());
         let chrome = self.chrome.clone();
-        let hint = pecofence_core::i18n::text("脚本没有输出文字");
+        let hint = if script.quiet {
+            ""
+        } else {
+            pecofence_core::i18n::text("脚本没有输出文字")
+        };
         let ok = self
             .content_panel
             .draw_ex(self.dpi, |session, _clip, wd, hd| {

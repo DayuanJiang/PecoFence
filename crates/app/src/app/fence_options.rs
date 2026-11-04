@@ -145,6 +145,29 @@ pub(super) enum FenceProp {
 }
 
 impl FenceProp {
+    /// A property about the icons a fence holds (their size, layout, order, the height they
+    /// need): a tool fence has none.
+    pub(super) fn is_about_icons(&self) -> bool {
+        matches!(
+            self,
+            Self::IconSize(_)
+                | Self::Spacing(_)
+                | Self::IconAlign(_)
+                | Self::AutoHeight(_)
+                | Self::OpenFoldersInside(_)
+                | Self::PortalNavigate(_)
+                | Self::PortalTitleIcon(_)
+                | Self::HideWhenEmpty(_)
+                | Self::DesktopLayout(_)
+                | Self::Layout(_)
+                | Self::Sort(_)
+                | Self::Reverse(_)
+                | Self::GroupByDate(_)
+                | Self::FoldersFirst(_)
+                | Self::LabelLines(_)
+        )
+    }
+
     /// The tool a property belongs to, None for one every fence has.
     pub(super) fn tool(&self) -> Option<pecofence_core::FenceTool> {
         match self {

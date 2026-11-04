@@ -785,7 +785,14 @@ impl App {
             }
             Method::FencesSetOption { fence, prop, value } => {
                 let id = self.resolve_fence(fence)?;
+                let prop_name = prop.as_str();
                 let prop = parse_fence_prop(prop, value)?;
+                if prop.is_about_icons() && self.fence_or_err(id)?.tool.is_some() {
+                    return Err(unsupported(format!(
+                        "{prop_name} is about icons, and a tool fence (note, clock, script) has none"
+                    ))
+                    .hint("Set it on a fence that shows items"));
+                }
                 if let Some(tool) = prop.tool()
                     && self.fence_or_err(id)?.tool != Some(tool)
                 {
@@ -1287,6 +1294,9 @@ impl App {
             )
         })?;
         let snapshot = self.auto_snapshot();
+        if let Some(id) = snapshot {
+            self.state.keep_tool_data_in(id);
+        }
         self.adopt_config(cfg, origin);
         Ok(mutation(
             true,
@@ -2345,6 +2355,11 @@ impl App {
     fn ipc_fit(&mut self, sel: &str) -> IpcResult {
         let id = self.resolve_fence(sel)?;
         let f = self.fence_or_err(id)?.clone();
+        if f.tool.is_some() {
+            return Err(unsupported(
+                "a tool fence (note, clock, script) has no icons to fit; resize it with fence resize",
+            ));
+        }
         let host = self.state.host_of(id);
         let Some(w) = self.fences.get(&host) else {
             return Err(unsupported(format!(

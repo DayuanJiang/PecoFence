@@ -484,7 +484,7 @@ pub(super) fn on_timer_clock(h: &HandlerCtx) -> Option<isize> {
     if let Ok(mut g) = h.view.try_borrow_mut()
         && let Some(v) = g.as_mut()
     {
-        if !v.rolled_up {
+        if !v.rolled_up && !v.retired && pecofence_platform::desktop::is_visible(v.hwnd) {
             let _ = v.redraw_content();
         }
         v.arm_clock();

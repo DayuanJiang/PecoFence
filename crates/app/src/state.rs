@@ -308,6 +308,8 @@ impl AppState {
             name,
             ts: pecofence_core::now_unix(),
             layouts: self.config.layouts.clone(),
+            notes: Default::default(),
+            scripts: Default::default(),
         };
         let id = snap.id;
         self.config.snapshots.push(snap);
@@ -329,8 +331,30 @@ impl AppState {
     ) -> Option<uuid::Uuid> {
         let snap = self.config.snapshots.iter().find(|s| s.id == id).cloned()?;
         let backup = self.save_snapshot(backup_name);
-        self.apply_snapshot_layouts(snap.layouts);
+        // A snapshot that brings texts back puts the current ones into the backup.
+        if !snap.notes.is_empty() || !snap.scripts.is_empty() {
+            self.keep_tool_data_in(backup);
+        }
+        self.apply_snapshot(snap);
         Some(backup)
+    }
+
+    /// Snapshot `id` keeps the current note texts and scripts: it is the undo snapshot of an
+    /// import or a backup restore, which replace them.
+    pub fn keep_tool_data_in(&mut self, id: uuid::Uuid) {
+        let (notes, scripts) = (self.config.notes.clone(), self.config.scripts.clone());
+        if let Some(s) = self.config.snapshots.iter_mut().find(|s| s.id == id) {
+            s.notes = notes;
+            s.scripts = scripts;
+            self.dirty = true;
+        }
+    }
+
+    /// A snapshot's layouts, and the note texts and scripts it kept (an undo snapshot).
+    fn apply_snapshot(&mut self, snap: pecofence_core::Snapshot) {
+        self.apply_snapshot_layouts(snap.layouts);
+        self.config.notes.extend(snap.notes);
+        self.config.scripts.extend(snap.scripts);
     }
 
     /// Restores a snapshot's layouts without taking a backup first. False when `id` is unknown.
@@ -338,7 +362,7 @@ impl AppState {
         let Some(snap) = self.config.snapshots.iter().find(|s| s.id == id).cloned() else {
             return false;
         };
-        self.apply_snapshot_layouts(snap.layouts);
+        self.apply_snapshot(snap);
         true
     }
 
@@ -2742,6 +2766,8 @@ mod tests {
             name,
             ts,
             layouts: Vec::new(),
+            notes: Default::default(),
+            scripts: Default::default(),
         };
         let mut state = test_state();
         state.config.snapshots = vec![snap("home".into(), 1), snap("work".into(), 2)];

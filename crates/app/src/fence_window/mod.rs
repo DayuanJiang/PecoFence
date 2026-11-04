@@ -378,6 +378,8 @@ impl ItemView {
 pub struct ScriptView {
     pub text: String,
     pub footer: String,
+    /// No "printed no text" hint while the body is empty (the first run has not ended).
+    pub quiet: bool,
 }
 
 /// One tab of a tabbed fence window (Fences 6): another fence shown inside this window.

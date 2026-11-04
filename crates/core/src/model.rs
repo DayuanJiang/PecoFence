@@ -91,6 +91,13 @@ pub struct Snapshot {
     pub name: String,
     pub ts: i64,
     pub layouts: Vec<Layout>,
+    /// Note texts and scripts as they were, kept only by the snapshot taken before an import or
+    /// a backup restore (which replace them): restoring it brings them back. Other snapshots
+    /// leave the current texts alone.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub notes: HashMap<FenceId, String>,
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub scripts: HashMap<FenceId, ScriptSpec>,
 }
 
 pub const MAX_SNAPSHOTS: usize = 20;
@@ -1906,6 +1913,8 @@ mod tests {
             name: "s".into(),
             ts: 0,
             layouts: c.layouts.clone(),
+            notes: Default::default(),
+            scripts: Default::default(),
         });
         c.layouts[0].fences.clear();
         assert_eq!(c.prune_notes(), 0);
@@ -2213,6 +2222,8 @@ mod tests {
             name: "旧布局".into(),
             ts: 1,
             layouts: config.layouts.clone(),
+            notes: Default::default(),
+            scripts: Default::default(),
         });
 
         for legacy in ["micaLike", "solid", "acrylic"] {
