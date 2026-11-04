@@ -54,10 +54,21 @@ fn parse_args() -> app::Args {
 /// `%LOCALAPPDATA%\PecoFence`: the logs (see `pecofence_core::brand::log_file_name`) and crash
 /// dumps.
 pub(crate) fn log_dir() -> Option<std::path::PathBuf> {
+    if let Some(root) = runtime_root() {
+        let dir = root.join("logs");
+        std::fs::create_dir_all(&dir).ok()?;
+        return Some(dir);
+    }
     let base = std::env::var_os("LOCALAPPDATA").map(std::path::PathBuf::from)?;
     let dir = base.join("PecoFence");
     std::fs::create_dir_all(&dir).ok()?;
     Some(dir)
+}
+
+/// Scoped to PecoFence. Avoid overriding LOCALAPPDATA inherited by programs opened from icons.
+pub(crate) fn runtime_root() -> Option<std::path::PathBuf> {
+    let root = std::env::var_os("PECOFENCE_RUNTIME_DIR").map(std::path::PathBuf::from)?;
+    root.is_absolute().then_some(root)
 }
 
 /// Starts this run's `current` log file, keeping the last run's as `previous` (a crash report

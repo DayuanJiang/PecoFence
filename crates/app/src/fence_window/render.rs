@@ -375,7 +375,10 @@ impl FenceViewState {
         });
         let wallpaper = self.backdrops.for_mode(self.backdrop_mode()).clone();
         let backdrop = match (self.backdrop_mode(), crop) {
-            (BackdropMode::Acrylic, _) if self.theme.liquid_glass && !wallpaper.is_empty() => {
+            (BackdropMode::Acrylic, _)
+                if self.theme.liquid_glass
+                    && (!wallpaper.is_empty() || self.bitmaps.borrow().has_realtime_glass()) =>
+            {
                 let (x, y, w, h) = self.backdrop_rect.unwrap_or_else(|| {
                     let r = window::window_rect(self.hwnd);
                     (r.left, r.top, r.right - r.left, r.bottom - r.top)

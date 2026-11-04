@@ -1955,6 +1955,30 @@ impl FenceWindow {
         });
     }
 
+    /// Refresh the live material. Grid icons retain their independent surface; row/detail
+    /// headers also sample glass, so their visible content surface follows the new frame.
+    pub fn redraw_realtime_glass(&self) {
+        self.with_view(|v| {
+            if v.gpu_glass.borrow().failed() {
+                v.gpu_glass.borrow_mut().reset();
+            }
+            if v.draw_chrome_panel().is_err() {
+                return;
+            }
+            if v.row_metrics().is_some()
+                && !(v.rolled_up && v.roll_anim.is_none())
+                && !v.device_lost
+            {
+                let _ = v.redraw_content();
+            }
+        });
+    }
+
+    /// Capture shares our GPU device and can detect loss before the next surface draw.
+    pub fn report_capture_device_lost(&self) {
+        self.with_view(|v| v.note_draw_result(false));
+    }
+
     /// The icon cache has new pictures for these draw keys (`IconCache::take_replaced`):
     /// items showing one of them, or its failure placeholder, take the new one.
     pub fn reload_icons(&self, replaced: &HashSet<String>) {

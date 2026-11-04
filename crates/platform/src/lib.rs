@@ -60,6 +60,7 @@ pub mod pipe;
 pub mod process;
 pub mod quicklook;
 pub mod rawinput;
+pub mod realtime_clock;
 pub mod shell;
 pub mod shell_icons;
 pub mod shell_menu;

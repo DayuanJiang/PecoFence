@@ -212,6 +212,24 @@ impl RenderStack {
         self.gpu.borrow().graphics.clone()
     }
 
+    /// The current D3D device, only for capture work on this UI/render thread.
+    pub fn capture_device(&self) -> windows_core::IUnknown {
+        use windows_core::Interface;
+        self.gpu
+            .borrow()
+            .device
+            .d3d_device()
+            .cast()
+            .expect("D3D device is IUnknown")
+    }
+
+    pub(crate) fn material_context(&self) -> Result<crate::gpu_bindings::ID2D1DeviceContext> {
+        use crate::gpu_bindings as b;
+        use windows_core::Interface;
+        let device: b::ID2D1Device = self.gpu.borrow().device.d2d_device().cast()?;
+        unsafe { device.CreateDeviceContext(b::D2D1_DEVICE_CONTEXT_OPTIONS_NONE) }
+    }
+
     /// True while a stack that started on the GPU draws with WARP: the hardware device could
     /// not be created when the lost one was replaced.
     pub fn on_fallback_warp(&self) -> bool {

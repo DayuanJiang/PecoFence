@@ -1,0 +1,16 @@
+--out crates/render/examples/host_backdrop_probe/bindings.rs
+--flat --dead-code
+
+// Standalone, opt-in probe bindings. Do not regenerate production comp.rs for this test.
+--filter
+    Windows.UI.Composition.Compositor
+    Windows.UI.Composition.ICompositor3.CreateHostBackdropBrush
+    Windows.UI.Composition.ICompositorStatics
+    Windows.UI.Composition.ICompositionObjectStatics
+    Windows.UI.Composition.SpriteVisual
+    Windows.UI.Composition.ISpriteVisual
+    Windows.UI.Composition.CompositionBrush
+    Windows.UI.Composition.CompositionBackdropBrush
+    DwmSetWindowAttribute
+    DWMWA_USE_HOSTBACKDROPBRUSH
+    WS_DISABLED

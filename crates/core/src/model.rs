@@ -114,6 +114,9 @@ pub struct Settings {
     /// Material style is independent of the light/dark preference.
     #[serde(default)]
     pub theme_style: ThemeStyle,
+    /// Experimental, in-memory live backdrop for Liquid Glass. Older files keep it off.
+    #[serde(default)]
+    pub realtime_glass: RealtimeGlassSettings,
     /// A theme file in the configuration's `themes` folder, by name without `.json`. While it
     /// loads, its `base` takes the place of `themeStyle`.
     #[serde(default)]
@@ -262,6 +265,7 @@ impl Default for Settings {
             backdrop: Backdrop::Acrylic,
             theme: ThemeSetting::FollowWindowsMode,
             theme_style: ThemeStyle::Fluent,
+            realtime_glass: RealtimeGlassSettings::default(),
             custom_theme: None,
             label_color: LabelColor::Auto,
             title_align: TitleAlign::Left,
@@ -313,6 +317,123 @@ pub enum ThemeStyle {
     #[default]
     Fluent,
     LiquidGlass,
+}
+
+/// Live glass options are bounded at every serde entry point (file, settings page and CLI).
+/// Missing individual fields use the same defaults as a missing `realtimeGlass` object.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(default, rename_all = "camelCase")]
+pub struct RealtimeGlassSettings {
+    pub enabled: bool,
+    /// Maximum presentation rate, not a promise that the source can supply this many frames.
+    #[serde(deserialize_with = "realtime_glass_fps")]
+    #[cfg_attr(feature = "schema", schemars(range(min = 5, max = 60)))]
+    pub fps: u32,
+    pub quality: RealtimeGlassQuality,
+    /// Blur radius in physical pixels of the original captured image, before downsampling.
+    #[serde(deserialize_with = "realtime_glass_blur")]
+    #[cfg_attr(feature = "schema", schemars(range(min = 0, max = 30)))]
+    pub blur: f32,
+    #[serde(deserialize_with = "realtime_glass_refraction")]
+    #[cfg_attr(feature = "schema", schemars(range(min = 0, max = 2)))]
+    pub refraction: f32,
+    #[serde(deserialize_with = "realtime_glass_saturation")]
+    #[cfg_attr(feature = "schema", schemars(range(min = 0, max = 2)))]
+    pub saturation: f32,
+    /// White veil opacity, independent of a fence's own tint colour.
+    #[serde(deserialize_with = "realtime_glass_tint")]
+    #[cfg_attr(feature = "schema", schemars(range(min = 0, max = 0.5)))]
+    pub tint: f32,
+    pub pause_when_covered: bool,
+}
+
+impl Default for RealtimeGlassSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            fps: 30,
+            quality: RealtimeGlassQuality::Balanced,
+            blur: 8.0,
+            refraction: 1.0,
+            saturation: 1.05,
+            tint: 0.08,
+            pause_when_covered: true,
+        }
+    }
+}
+
+impl RealtimeGlassSettings {
+    /// Also checks configurations constructed in Rust, where serde's checks do not run.
+    pub fn validate(&self) -> Result<(), String> {
+        if !(5..=60).contains(&self.fps) {
+            return Err("realtimeGlass.fps must be between 5 and 60".into());
+        }
+        for (name, value, max) in [
+            ("blur", self.blur, 30.0),
+            ("refraction", self.refraction, 2.0),
+            ("saturation", self.saturation, 2.0),
+            ("tint", self.tint, 0.5),
+        ] {
+            check_realtime_glass_float(name, value, max)?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase")]
+pub enum RealtimeGlassQuality {
+    Performance,
+    #[default]
+    Balanced,
+    Quality,
+}
+
+fn check_realtime_glass_float(name: &str, value: f32, max: f32) -> Result<(), String> {
+    if !value.is_finite() || !(0.0..=max).contains(&value) {
+        return Err(format!(
+            "realtimeGlass.{name} must be finite and between 0 and {max}"
+        ));
+    }
+    Ok(())
+}
+
+fn realtime_glass_fps<'de, D: serde::Deserializer<'de>>(d: D) -> Result<u32, D::Error> {
+    let fps = u32::deserialize(d)?;
+    if !(5..=60).contains(&fps) {
+        return Err(serde::de::Error::custom(
+            "realtimeGlass.fps must be between 5 and 60",
+        ));
+    }
+    Ok(fps)
+}
+
+fn realtime_glass_float<'de, D: serde::Deserializer<'de>>(
+    d: D,
+    name: &str,
+    max: f32,
+) -> Result<f32, D::Error> {
+    let value = f32::deserialize(d)?;
+    check_realtime_glass_float(name, value, max).map_err(serde::de::Error::custom)?;
+    Ok(value)
+}
+
+fn realtime_glass_blur<'de, D: serde::Deserializer<'de>>(d: D) -> Result<f32, D::Error> {
+    realtime_glass_float(d, "blur", 30.0)
+}
+
+fn realtime_glass_refraction<'de, D: serde::Deserializer<'de>>(d: D) -> Result<f32, D::Error> {
+    realtime_glass_float(d, "refraction", 2.0)
+}
+
+fn realtime_glass_saturation<'de, D: serde::Deserializer<'de>>(d: D) -> Result<f32, D::Error> {
+    realtime_glass_float(d, "saturation", 2.0)
+}
+
+fn realtime_glass_tint<'de, D: serde::Deserializer<'de>>(d: D) -> Result<f32, D::Error> {
+    realtime_glass_float(d, "tint", 0.5)
 }
 
 /// Item name colour (「图标名称颜色」). Auto: Liquid Glass picks dark or light text from the
@@ -1865,6 +1986,119 @@ mod tests {
             assert_eq!(json["themeStyle"], "liquidGlass");
             assert_eq!(json["labelColor"], "white");
             assert_eq!(serde_json::from_value::<Settings>(json).unwrap(), settings);
+        }
+    }
+
+    #[test]
+    fn realtime_glass_defaults_preserve_legacy_files_and_partial_objects() {
+        let defaults = RealtimeGlassSettings::default();
+        assert!(!defaults.enabled);
+        assert_eq!(defaults.fps, 30);
+        assert_eq!(defaults.quality, RealtimeGlassQuality::Balanced);
+        assert!(defaults.pause_when_covered);
+        assert!(defaults.validate().is_ok());
+        let mut legacy = serde_json::to_value(Settings::default()).unwrap();
+        legacy.as_object_mut().unwrap().remove("realtimeGlass");
+        let loaded: Settings = serde_json::from_value(legacy).unwrap();
+        assert_eq!(loaded.realtime_glass, defaults);
+        for json in [
+            serde_json::json!({}),
+            serde_json::json!({ "enabled": false }),
+        ] {
+            let loaded: RealtimeGlassSettings = serde_json::from_value(json).unwrap();
+            assert_eq!(loaded, defaults);
+        }
+        for (quality, text) in [
+            (RealtimeGlassQuality::Performance, "performance"),
+            (RealtimeGlassQuality::Balanced, "balanced"),
+            (RealtimeGlassQuality::Quality, "quality"),
+        ] {
+            let loaded: RealtimeGlassSettings = serde_json::from_value(serde_json::json!({
+                "enabled": true, "quality": text, "pauseWhenCovered": false
+            }))
+            .unwrap();
+            assert!(loaded.enabled);
+            assert_eq!(loaded.quality, quality);
+            assert!(!loaded.pause_when_covered);
+            let json = serde_json::to_value(&loaded).unwrap();
+            assert_eq!(json["quality"], text);
+            assert_eq!(
+                serde_json::from_value::<RealtimeGlassSettings>(json).unwrap(),
+                loaded
+            );
+        }
+    }
+
+    #[test]
+    fn realtime_glass_rejects_invalid_fps_and_float_ranges_at_deserialization() {
+        for fps in [5, 15, 24, 30, 45, 60] {
+            assert!(
+                serde_json::from_value::<RealtimeGlassSettings>(serde_json::json!({
+                    "fps": fps
+                }))
+                .is_ok()
+            );
+        }
+        for fps in [
+            serde_json::json!(4),
+            serde_json::json!(61),
+            serde_json::json!(-1),
+            serde_json::json!(30.5),
+        ] {
+            assert!(
+                serde_json::from_value::<RealtimeGlassSettings>(serde_json::json!({
+                    "fps": fps
+                }))
+                .is_err()
+            );
+        }
+        for (field, max) in [
+            ("blur", 30.0),
+            ("refraction", 2.0),
+            ("saturation", 2.0),
+            ("tint", 0.5),
+        ] {
+            for (number, valid) in [
+                (0.0, true),
+                (max, true),
+                (-0.01, false),
+                (max + 0.01, false),
+            ] {
+                let mut json = serde_json::json!({});
+                json[field] = serde_json::json!(number);
+                assert_eq!(
+                    serde_json::from_value::<RealtimeGlassSettings>(json).is_ok(),
+                    valid,
+                    "{field}={number}"
+                );
+            }
+            // Valid JSON can contain a finite f64 that would overflow the stored f32.
+            assert!(
+                serde_json::from_str::<RealtimeGlassSettings>(&format!("{{\"{field}\":1e39}}"))
+                    .is_err()
+            );
+        }
+        assert!(serde_json::from_str::<RealtimeGlassSettings>(r#"{"quality":"ultra"}"#).is_err());
+    }
+
+    #[test]
+    fn realtime_glass_validates_non_finite_values_created_in_memory() {
+        for field in ["blur", "refraction", "saturation", "tint"] {
+            for bad in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+                let mut settings = RealtimeGlassSettings::default();
+                match field {
+                    "blur" => settings.blur = bad,
+                    "refraction" => settings.refraction = bad,
+                    "saturation" => settings.saturation = bad,
+                    "tint" => settings.tint = bad,
+                    _ => unreachable!(),
+                }
+                let error = settings.validate().unwrap_err();
+                assert!(error.contains(field), "{error}");
+                let mut config = Config::default();
+                config.settings.realtime_glass = settings;
+                assert!(crate::config_store::validate(&config).is_err());
+            }
         }
     }
 

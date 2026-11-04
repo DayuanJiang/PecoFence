@@ -14,6 +14,53 @@ pub struct BitmapCache {
 }
 
 impl BitmapCache {
+    /// Minimal diagnostic/preview entry using the same material as fence chrome.
+    pub fn draw_realtime_preview(
+        &mut self,
+        session: &DrawingSession<'_>,
+        material: &mut crate::gpu_glass::GpuGlass,
+        rect: [i32; 4],
+        scale: f32,
+        radius: f32,
+    ) -> Result<()> {
+        material.draw(
+            session,
+            &mut self.glass_wallpaper,
+            &Rc::new(Vec::new()),
+            rect,
+            0.0,
+            scale,
+            radius,
+            1.0,
+            0.0,
+        )
+    }
+
+    pub fn has_realtime_glass(&self) -> bool {
+        self.glass_wallpaper.has_realtime()
+    }
+
+    pub fn realtime_refraction(&self) -> Option<f32> {
+        self.glass_wallpaper.realtime_refraction()
+    }
+
+    pub fn clear_realtime_glass(&mut self) -> bool {
+        self.glass_wallpaper.clear_realtime()
+    }
+
+    /// All capture/material work uses this stack's device on the UI thread. No CPU readback.
+    pub fn update_realtime_glass(
+        &mut self,
+        stack: &RenderStack,
+        surface: &windows_core::IUnknown,
+        size: (u32, u32),
+        bounds: [i32; 4],
+        options: &pecofence_core::RealtimeGlassSettings,
+    ) -> Result<()> {
+        self.glass_wallpaper
+            .update_realtime(stack, surface, size, bounds, options)
+    }
+
     pub fn new() -> Self {
         Self::default()
     }

@@ -40,10 +40,13 @@ pub struct WebEnvironment {
 
 impl WebEnvironment {
     pub fn create() -> Result<Self> {
-        let user_data = std::env::var_os("LOCALAPPDATA")
-            .map(PathBuf::from)
-            .unwrap_or_else(std::env::temp_dir)
-            .join("PecoFence")
+        let user_data = crate::runtime_root()
+            .unwrap_or_else(|| {
+                std::env::var_os("LOCALAPPDATA")
+                    .map(PathBuf::from)
+                    .unwrap_or_else(std::env::temp_dir)
+                    .join("PecoFence")
+            })
             // Keep independent instances from sharing incompatible controller options.
             .join("WebView2Profiles")
             .join(profile_name(
