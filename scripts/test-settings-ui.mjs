@@ -1284,6 +1284,20 @@ async function runTests() {
     assert(messages().length === 1 && messages()[0].a === 'two' && messages()[0].b === 'one', 'Display selections reset or swapped incorrectly');
   });
 
+  await test('The startup switch explains the Store states only Windows Settings or a policy can change', async () => {
+    doc.querySelector('[data-page=general]').click();
+    const note = doc.querySelector('[data-bind=autostart]').closest('.card').querySelector('.s');
+    for (const [stateName, words] of [['DisabledByUser', '任务管理器'], ['DisabledByPolicy', '组策略关闭'], ['EnabledByPolicy', '组策略打开']]) {
+      current().startupState = stateName;
+      frame.contentWindow.testRefresh(); await settle();
+      assert(!note.hidden && note.offsetHeight > 0 && note.textContent.includes(words), 'No note for ' + stateName);
+    }
+    for (const stateName of ['Enabled', 'Disabled', null]) {
+      current().startupState = stateName;
+      frame.contentWindow.testRefresh(); await settle();
+      assert(note.hidden && !note.textContent, 'Note shown for ' + stateName);
+    }
+  });
   await test('The Store rating button appears only in the Store edition; the manual and support buttons post', async () => {
     doc.querySelector('[data-page=about]').click();
     const rate = doc.getElementById('rateStore'), star = doc.getElementById('starRepo'), manual = doc.getElementById('openManual');

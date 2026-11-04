@@ -63,9 +63,52 @@ pub fn user_accepts_notifications() -> bool {
     unsafe { SHQueryUserNotificationState() }.is_ok_and(|state| state == QUNS_ACCEPTS_NOTIFICATIONS)
 }
 
-/// Whether Windows' startup switch for the package (Settings > Apps > Startup, the manifest's
-/// `PecoFenceStartup` task) is on. Waits for WinRT, so call it on a worker.
-pub fn startup_task_enabled() -> Result<bool> {
+/// Windows' startup switch for the package: the manifest's `PecoFenceStartup` task, shown in
+/// Settings > Apps > Startup and on Task Manager's Startup tab.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
+pub enum StartupState {
+    Disabled = 1,
+    /// Turned off in Windows' Startup settings or Task Manager: only the user can turn it on
+    /// again, there.
+    DisabledByUser = 2,
+    Enabled = 3,
+    /// Turned off by an administrator or group policy.
+    DisabledByPolicy = 4,
+    /// Turned on by an administrator or group policy.
+    EnabledByPolicy = 5,
+}
+
+impl StartupState {
+    const ALL: [Self; 5] = [
+        Self::Disabled,
+        Self::DisabledByUser,
+        Self::Enabled,
+        Self::DisabledByPolicy,
+        Self::EnabledByPolicy,
+    ];
+
+    pub fn is_on(self) -> bool {
+        matches!(self, Self::Enabled | Self::EnabledByPolicy)
+    }
+
+    /// The state stored as `state as u8` (in an atomic between threads); 0 is none.
+    pub fn from_code(code: u8) -> Option<Self> {
+        Self::ALL.into_iter().find(|s| *s as u8 == code)
+    }
+
+    fn from_task(state: StartupTaskState) -> Self {
+        match state {
+            StartupTaskState::DisabledByUser => Self::DisabledByUser,
+            StartupTaskState::Enabled => Self::Enabled,
+            StartupTaskState::DisabledByPolicy => Self::DisabledByPolicy,
+            StartupTaskState::EnabledByPolicy => Self::EnabledByPolicy,
+            _ => Self::Disabled,
+        }
+    }
+}
+
+fn startup_task() -> Result<StartupTask> {
     // The activation factory is cached for the process. Keep the MTA it lives in alive, or the
     // worker leaving it tears it down and the next call crashes in combase.
     static MTA: std::sync::Once = std::sync::Once::new();
@@ -75,9 +118,45 @@ pub fn startup_task_enabled() -> Result<bool> {
         // SAFETY: out-pointer to a local; the usage is never released.
         let _ = unsafe { CoIncrementMTAUsage(&mut cookie) };
     });
-    let task = StartupTask::GetAsync(&windows_core::HSTRING::from("PecoFenceStartup"))?.join()?;
-    Ok(matches!(
-        task.State()?,
-        StartupTaskState::Enabled | StartupTaskState::EnabledByPolicy
-    ))
+    StartupTask::GetAsync(&windows_core::HSTRING::from("PecoFenceStartup"))?.join()
+}
+
+/// The state of Windows' startup switch for the package. Waits for WinRT, so call it on a
+/// worker.
+pub fn startup_task_state() -> Result<StartupState> {
+    Ok(StartupState::from_task(startup_task()?.State()?))
+}
+
+/// Turns Windows' startup switch for the package on or off where the app may: on from
+/// `Disabled` (a packaged desktop app gets no consent prompt) and off from `Enabled`. The other
+/// states are the user's or an administrator's and stay as they are. Returns the states before
+/// and after. Waits for WinRT, so call it on a worker.
+pub fn set_startup_task(on: bool) -> Result<(StartupState, StartupState)> {
+    let task = startup_task()?;
+    let before = StartupState::from_task(task.State()?);
+    let after = match (on, before) {
+        (true, StartupState::Disabled) => {
+            StartupState::from_task(task.RequestEnableAsync()?.join()?)
+        }
+        (false, StartupState::Enabled) => {
+            task.Disable()?;
+            StartupState::from_task(task.State()?)
+        }
+        _ => before,
+    };
+    Ok((before, after))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::StartupState;
+
+    #[test]
+    fn startup_state_codes_round_trip() {
+        for state in StartupState::ALL {
+            assert_eq!(StartupState::from_code(state as u8), Some(state));
+        }
+        assert_eq!(StartupState::from_code(0), None);
+        assert_eq!(StartupState::from_code(6), None);
+    }
 }

@@ -502,8 +502,10 @@ instance and needs neither.
   The desktop (inbox) fence cannot be deleted.
 - Titles, rule names and snapshot names are limited to 256 characters; `rule add` needs at least one
   condition.
-- Changing `autostart` on the Microsoft Store build opens Windows' Startup Apps settings page instead
-  of flipping the value silently (packaged apps cannot register themselves).
+- On the Microsoft Store build, `autostart` switches the package's startup task in Windows. When the
+  user turned it off in Windows (Settings › Apps › Startup or Task Manager) or a policy decides,
+  the app cannot change it: the value stays as Windows has it, the reply warns that `autostart` was
+  rolled back, and Windows' Startup Apps settings page opens.
 - Only `describe`, `skill`, `paths`, `log` and `config check` work while the app is not running;
   the CLI never edits `config.json` itself.
 

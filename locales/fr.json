@@ -612,5 +612,8 @@
   "不需要填写": "Rien à remplir",
   "这个条件只能用命令行修改": "Cette condition ne peut être modifiée qu’en ligne de commande",
   "保存": "Enregistrer",
-  "已保存规则": "Règle enregistrée"
+  "已保存规则": "Règle enregistrée",
+  "已在 Windows 设置 › 应用 › 启动（或任务管理器）中关闭，只能在那里重新打开。点开关会打开该页面。": "Désactivé dans Paramètres Windows › Applications › Démarrage (ou dans le Gestionnaire des tâches) : seule cette page permet de le réactiver. L’interrupteur l’ouvre.",
+  "已被管理员或组策略关闭，PecoFence 无法打开。": "Désactivé par un administrateur ou une stratégie de groupe : PecoFence ne peut pas l’activer.",
+  "已被管理员或组策略打开，PecoFence 无法关闭。": "Activé par un administrateur ou une stratégie de groupe : PecoFence ne peut pas le désactiver."
 }

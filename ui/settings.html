@@ -442,7 +442,7 @@
       <div class="card"><div class="l"><span class="ic">&#xE774;</span><div><div class="t">显示语言</div><div class="s">立即切换界面语言；你的文件和自定义名称保持不变</div></div></div>
         <select id="language" data-bind="language"><option value="system">跟随系统</option><option value="zh-CN" data-language-name>简体中文</option><option value="zh-TW" data-language-name>繁體中文</option><option value="en" data-language-name>English</option><option value="ja" data-language-name>日本語</option><option value="ko" data-language-name>한국어</option><option value="de" data-language-name>Deutsch</option><option value="fr" data-language-name>Français</option><option value="es" data-language-name>Español</option><option value="pt-BR" data-language-name>Português (Brasil)</option><option value="ru" data-language-name>Русский</option><option value="it" data-language-name>Italiano</option></select></div>
       <h3>桌面与启动</h3>
-      <div class="card"><div class="l"><span class="ic">&#xE7E8;</span><div><div class="t">随 Windows 启动</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="autostart"></div></div>
+      <div class="card"><div class="l"><span class="ic">&#xE7E8;</span><div><div class="t">随 Windows 启动</div><div class="s" hidden></div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="autostart"></div></div>
       <div class="group">
         <div class="card"><div class="l"><span class="ic">&#xE8A9;</span><div><div class="t">隐藏 Windows 桌面图标</div><div class="s">桌面项目只显示在栅栏里，未归类的进入“桌面”栅栏；回收站等系统图标也会出现在“桌面”栅栏中</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="hideRealIcons"></div></div>
         <div class="card child"><div class="l"><div><div class="t">关闭 PecoFence 时保持 Windows 桌面图标隐藏</div><div class="s">登录时 Windows 会先显示桌面图标，等 PecoFence 启动后才隐藏。打开后，退出或注销时图标保持隐藏，下次登录就不会闪现；PecoFence 没有运行时，桌面上不显示图标。要让图标重新显示，右键桌面，选“查看”→“显示桌面图标”</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="keepIconsHidden"></div></div>
@@ -1814,6 +1814,20 @@
     button.classList.toggle('accent', s === 'available');
     button.onclick = () => send({ type: 'action', name: action });
   };
+  // Store edition: Windows keeps the startup switch. The states only the user (in Windows'
+  // Startup settings) or an administrator can change get a line saying so; a click on the
+  // switch then opens Windows' Startup settings.
+  function renderStartupNote() {
+    const note = {
+      DisabledByUser: t("已在 Windows 设置 › 应用 › 启动（或任务管理器）中关闭，只能在那里重新打开。点开关会打开该页面。"),
+      DisabledByPolicy: t("已被管理员或组策略关闭，PecoFence 无法打开。"),
+      EnabledByPolicy: t("已被管理员或组策略打开，PecoFence 无法关闭。"),
+    }[state.startupState] || '';
+    // The switch's help line (its id is the switch's aria-describedby).
+    const el = document.querySelector('[data-bind=autostart]').closest('.card').querySelector('.s');
+    el.textContent = note;
+    el.hidden = !note;
+  }
   document.getElementById('hideIconsAgain').onclick = () => send({ type: 'action', name: 'hideDesktopIcons' });
   function renderDesktopIconsStatus() {
     const hidden = !!(state.desktopIconsHidden ?? state.settings.hideRealIcons);
@@ -1934,7 +1948,7 @@
       document.getElementById('rateStore').hidden = !m.storeEdition;
       renderWorkspaceSummary(m.fences.length, m.itemCount);
       document.getElementById('cfgPath').textContent = m.configPath;
-      bindAll(); bindThemeStyle(); bindCustomTheme(); bindIconTint(); renderDependents(); renderFences(); renderRules(); renderLayout(); updateKind(); renderAppearance(); renderDesktopIconsStatus(); renderWindowsDesktopHotkey();
+      bindAll(); bindThemeStyle(); bindCustomTheme(); bindIconTint(); renderDependents(); renderFences(); renderRules(); renderLayout(); updateKind(); renderAppearance(); renderDesktopIconsStatus(); renderStartupNote(); renderWindowsDesktopHotkey();
       update = m.update; renderUpdate();
       // Transitions come on a frame after this state has been drawn: a single frame would style
       // both changes together and start them after all.

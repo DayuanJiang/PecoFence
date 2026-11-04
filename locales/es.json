@@ -612,5 +612,8 @@
   "不需要填写": "No hay nada que rellenar",
   "这个条件只能用命令行修改": "Esta condición solo se puede cambiar desde la línea de comandos",
   "保存": "Guardar",
-  "已保存规则": "Regla guardada"
+  "已保存规则": "Regla guardada",
+  "已在 Windows 设置 › 应用 › 启动（或任务管理器）中关闭，只能在那里重新打开。点开关会打开该页面。": "Desactivado en Configuración de Windows › Aplicaciones › Inicio (o en el Administrador de tareas): solo se puede volver a activar allí. El interruptor abre esa página.",
+  "已被管理员或组策略关闭，PecoFence 无法打开。": "Desactivado por un administrador o una directiva de grupo: PecoFence no puede activarlo.",
+  "已被管理员或组策略打开，PecoFence 无法关闭。": "Activado por un administrador o una directiva de grupo: PecoFence no puede desactivarlo."
 }
