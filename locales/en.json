@@ -615,5 +615,7 @@
   "已保存规则": "Rule saved",
   "已在 Windows 设置 › 应用 › 启动（或任务管理器）中关闭，只能在那里重新打开。点开关会打开该页面。": "Turned off in Windows Settings › Apps › Startup (or Task Manager): it can only be turned on again there. The switch opens that page.",
   "已被管理员或组策略关闭，PecoFence 无法打开。": "Turned off by an administrator or a group policy: PecoFence cannot turn it on.",
-  "已被管理员或组策略打开，PecoFence 无法关闭。": "Turned on by an administrator or a group policy: PecoFence cannot turn it off."
+  "已被管理员或组策略打开，PecoFence 无法关闭。": "Turned on by an administrator or a group policy: PecoFence cannot turn it off.",
+  "闲置天数必须在 1 到 {0} 之间": "Idle days must be between 1 and {0}",
+  "没能保存这次改动，规则已恢复原样": "This change could not be saved; the rules are back as they were"
 }

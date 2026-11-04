@@ -641,7 +641,14 @@ impl App {
                         tracing::info!(rules = rules.list.len(), "rules saved from page");
                         self.set_rules(rules);
                     }
-                    Some(Err(e)) => tracing::warn!(error = %e, "bad rules from page"),
+                    Some(Err(e)) => {
+                        // The page shows the stored rules again and says the edit was not saved.
+                        tracing::warn!(error = %e, "bad rules from page: not saved, stored rules sent back");
+                        self.push_settings_state();
+                        self.settings_error(pecofence_core::i18n::text(
+                            "没能保存这次改动，规则已恢复原样",
+                        ));
+                    }
                     None => tracing::warn!("setRules from page without rules"),
                 }
             }

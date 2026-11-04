@@ -287,7 +287,7 @@
   .cond-list-h + .cond > .c-and { display: none; }
   .c-box { display: flex; align-items: flex-start; gap: 8px; padding: 10px 8px 10px 12px; border-radius: var(--r-card); background: var(--subtle); border: 1px solid var(--card-stroke); }
   .c-main { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px 12px; }
-  .c-main > .c-kind-l { flex: 0 1 260px; display: flex; min-width: 0; flex-direction: column; gap: 6px; color: var(--text2); font-size: 12px; line-height: 16px; }
+  .c-main > .c-kind-l { flex: 0 1 240px; display: flex; min-width: 0; flex-direction: column; gap: 6px; color: var(--text2); font-size: 12px; line-height: 16px; }
   .c-kind-l > select { width: 100%; min-width: 0; color: var(--text); }
   .c-val { flex: 1 1 220px; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
   .c-cap { color: var(--text2); font-size: 12px; line-height: 16px; }
@@ -299,7 +299,8 @@
   .c-val .cats label { white-space: nowrap; } .c-val .cats input[type=number] { width: 104px; }
   .c-none, .c-fixed .s { color: var(--text2); font-size: 12px; line-height: 16px; }
   .c-fixed { flex: 1 1 220px; min-width: 0; overflow-wrap: anywhere; }
-  .c-del[hidden] { display: none; }
+  /* A box without its ✕ keeps the room for it, so every box lays out the same way. */
+  .c-del[hidden] { display: inline-block; visibility: hidden; }
   .c-add { align-self: flex-start; display: inline-flex; align-items: center; gap: 8px; padding: 0 8px; background: transparent; border-color: transparent; color: var(--accent); }
   .c-add .ic { font-size: 14px; }
   /* A listed rule open for editing keeps its number and place. */
@@ -576,7 +577,7 @@
               <div class="cats c-cats" id="nrCats"></div>
               <div class="cats c-time" id="nrTime" style="display:none"><label>从 <input type="time" id="nrFrom" class="c-from" value="18:00"></label><label>到 <input type="time" id="nrTo" class="c-to" value="06:00"></label><span class="s">结束时间早于开始时间，表示跨过午夜</span></div>
               <div class="cats c-week" id="nrWeek" style="display:none"></div>
-              <div class="cats c-idle" id="nrIdle" style="display:none"><label>闲置至少 <input type="number" id="nrIdleDays" class="c-days" value="30" min="1" style="min-width:80px"> 天</label></div>
+              <div class="cats c-idle" id="nrIdle" style="display:none"><label>闲置至少 <input type="number" id="nrIdleDays" class="c-days" value="30" min="1" max="36500" style="min-width:80px"> 天</label></div>
               <div class="cats c-size" id="nrSize" style="display:none"><label>至少 <input type="text" inputmode="decimal" id="nrMin" class="c-min" placeholder="0" style="min-width:80px"> <span data-i18n="MB">MB</span></label><label>至多 <input type="text" inputmode="decimal" id="nrMax" class="c-max" placeholder="不限" style="min-width:80px"> <span data-i18n="MB">MB</span></label></div>
               <div class="c-none" style="display:none">不需要填写</div>
             </div></div>
@@ -1422,7 +1423,8 @@
   }
   const openRuleForm = () => { document.getElementById('nrPanel').open = true; };
   // The listed rule open for editing: its row shows `form` (kept across re-renders, so a state
-  // refresh does not lose what was typed) until Save or Cancel.
+  // refresh does not lose what was typed) until Save, Cancel or Esc. One at a time: the other
+  // rules' edit buttons are off meanwhile, so opening another cannot drop a draft.
   let editing = null;
   function fillTargets(sel) {
     const selected = sel.value;
@@ -1431,6 +1433,12 @@
       sel.innerHTML = options;
       if ([...sel.options].some(o => o.value === selected)) sel.value = selected;
     }
+  }
+  // An editor's target: the fence `id`, else the desktop fence, where the app routes a rule
+  // whose fence is a portal or gone. The same when the fence goes while the editor is open.
+  function pickTarget(sel, id) {
+    const inbox = state.fences.find(f => f.kind === 'inbox');
+    sel.value = [...sel.options].some(o => o.value === id) ? id : inbox ? inbox.id : '';
   }
   // The new-rule form starts open only when there is nothing else on the page to look at.
   let rulesShown = false;
@@ -1449,14 +1457,16 @@
       if (editing && editing.id === r.id) {
         div.className = 'card rule editing';
         div.innerHTML = `<div class="re-head"><div><div class="t">${esc(t("编辑规则"))}</div><div class="s">${esc(t("改完点“保存”，规则留在原来的位置"))}</div></div></div>`;
-        fillTargets(editing.form.querySelector('.r-target'));
+        const target = editing.form.querySelector('.r-target'), chosen = target.value;
+        fillTargets(target);
+        pickTarget(target, chosen);
         div.appendChild(editing.form);
         list.appendChild(div);
         return;
       }
       div.className = 'card rule' + (r.enabled ? '' : ' disabled');
       div.innerHTML = `<div class="row"><div class="text"><div class="t">${esc(r.name)}</div><div class="conds">${r.allOf.map(condLabel).map(esc).join(t("，且 "))} ${esc(tf("→ 放入{0}", targetLabel(r.target)))}</div></div>
-        <div class="actions"><button class="iconbtn" title="${esc(t("编辑"))}" data-act="edit">&#xE70F;</button><button class="iconbtn" title="${esc(t("上移"))}" data-act="up" ${i===0?'disabled':''}>&#xE70E;</button><button class="iconbtn" title="${esc(t("下移"))}" data-act="down" ${i===rules.length-1?'disabled':''}>&#xE70D;</button><div class="toggle ${r.enabled?'on':''}" role="switch" tabindex="0" aria-checked="${r.enabled}" data-act="toggle"></div><button class="iconbtn" title="${esc(t("删除"))}" data-act="del">&#xE74D;</button></div></div>`;
+        <div class="actions"><button class="iconbtn" title="${esc(t("编辑"))}" data-act="edit" ${editing ? 'disabled' : ''}>&#xE70F;</button><button class="iconbtn" title="${esc(t("上移"))}" data-act="up" ${i===0?'disabled':''}>&#xE70E;</button><button class="iconbtn" title="${esc(t("下移"))}" data-act="down" ${i===rules.length-1?'disabled':''}>&#xE70D;</button><div class="toggle ${r.enabled?'on':''}" role="switch" tabindex="0" aria-checked="${r.enabled}" data-act="toggle"></div><button class="iconbtn" title="${esc(t("删除"))}" data-act="del">&#xE74D;</button></div></div>`;
       div.querySelectorAll('[data-act]').forEach(b => {
         const labels = { edit: t("编辑规则"), up: t("上移"), down: t("下移"), toggle: t("启用规则"), del: t("删除规则") };
         b.setAttribute('aria-label', tf("{0}：{1}", labels[b.dataset.act], r.name));
@@ -1494,10 +1504,7 @@
     form.querySelector('.r-name').value = rule.name;
     const target = form.querySelector('.r-target');
     fillTargets(target);
-    // A rule aimed at a portal or a deleted fence routes to the desktop fence; show that.
-    const inbox = state.fences.find(f => f.kind === 'inbox');
-    const id = rule.target && rule.target.fence;
-    target.value = [...target.options].some(o => o.value === id) ? id : inbox ? inbox.id : '';
+    pickTarget(target, rule.target && rule.target.fence);
     const add = form.querySelector('.c-add');
     rule.allOf.forEach(c => add.before(newCond(c)));
     add.onclick = () => { add.before(newCond()); updateDel(form); };
@@ -1509,6 +1516,8 @@
       document.querySelector(`#ruleList [data-row-id="${id}"] [data-act=edit]`)?.focus();
     };
     form.querySelector('[data-act=cancel]').onclick = close;
+    // Esc leaves like Cancel; an Esc that ends an IME composition stays with the IME.
+    form.addEventListener('keydown', e => { if (e.key === 'Escape' && !e.isComposing) { e.preventDefault(); close(); } });
     form.querySelector('[data-act=save]').onclick = () => {
       const changed = readRule(form);
       const r = changed && state.rules.list.find(x => x.id === editing.id);
@@ -1529,10 +1538,41 @@
 
   const KINDS = { type: 'type', ext: 'ext', exactName: 'exact', glob: 'glob', createdTime: 'time', createdWeekday: 'weekday', sizeMb: 'size', idleDays: 'idle', foldersOnly: 'folders', filesOnly: 'files', plainFiles: 'plain' };
   const NAME_KINDS = ['contains', 'notContains', 'startsWith', 'endsWith'];
-  // The form kind that shows condition `c`, or undefined for one only the CLI writes
-  // (a name that "is", other shortcut-target tests, the desktop it came from).
-  const kindOf = c => c.cond === 'name' ? (NAME_KINDS.includes(c.value.op) ? c.value.op : undefined)
-    : c.cond === 'shortcutTarget' ? (c.value.op === 'contains' ? 'target' : undefined) : KINDS[c.cond];
+  // 100 years. The core keeps idle days in a u32 and refuses the whole rule list beyond it.
+  const MAX_IDLE_DAYS = 36500;
+  // The form kind that shows condition `c`, or undefined for one only the CLI writes (a name
+  // that "is", other shortcut-target tests, the desktop it came from) or for a value the form
+  // would change or refuse.
+  const kindOf = c => {
+    const kind = c.cond === 'name' ? (NAME_KINDS.includes(c.value.op) ? c.value.op : undefined)
+      : c.cond === 'shortcutTarget' ? (c.value.op === 'contains' ? 'target' : undefined) : KINDS[c.cond];
+    return kind && fits(kind, c.value) ? kind : undefined;
+  };
+  // A value as its text box shows it, so that the box reads it back unchanged: in quotes when it
+  // starts or ends with spaces or quotes (`rule add --name-contains " (1)"`); null if no pair works.
+  const quoteFor = v => {
+    if (unquote(v.trim()) === v) return v;
+    const pair = Object.entries(QUOTE_PAIRS).find(([open, close]) => unquote(open + v + close) === v);
+    return pair ? pair[0] + v + pair[1] : null;
+  };
+  // Whether the form can show value `v` of `kind` and save it unchanged. `rule add --json` also
+  // writes values the form would split (a file name with a comma) or refuse (0 idle days).
+  function fits(kind, v) {
+    const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+    const minute = m => Number.isInteger(m) && m >= 0 && m < 1440;
+    switch (kind) {
+      case 'type': return v.length > 0 && v.every(x => CATS().some(([key]) => key === x));
+      case 'weekday': return v.length > 0 && v.every(d => Number.isInteger(d) && d >= 0 && d <= 6);
+      case 'ext': return v.length > 0 && same(readExts(v.join(', ')), v.map(x => x.replace(/^\./, '')));
+      case 'exact': return v.length > 0 && same(readNames(v.join(', ')), v);
+      case 'glob': return v !== '' && quoteFor(v) !== null;
+      case 'time': return minute(v.from_min) && minute(v.to_min);
+      case 'size': return (v.min != null || v.max != null) && !(v.min < 0) && !(v.max < 0) && !(v.min != null && v.max != null && v.min > v.max);
+      case 'idle': return Number.isInteger(v.min) && v.min >= 1 && v.min <= MAX_IDLE_DAYS;
+      case 'folders': case 'files': case 'plain': return true;
+      default: return v.value !== '' && quoteFor(v.value) !== null; // name tests, shortcut target
+    }
+  }
   function fillChecks(block) {
     const cats = block.querySelector('.c-cats'), week = block.querySelector('.c-week');
     if (!cats.children.length) cats.innerHTML = CATS().map(([k, l]) => `<label><input type="checkbox" value="${k}">${l}</label>`).join('');
@@ -1569,8 +1609,8 @@
     block.querySelectorAll('.c-cats input').forEach(i => { i.checked = kind === 'type' && on.includes(i.value); });
     block.querySelectorAll('.c-week input').forEach(i => { i.checked = kind === 'weekday' && on.includes(i.value); });
     if (kind === 'ext' || kind === 'exact') set('c-text', v.join(', '));
-    else if (kind === 'glob') set('c-text', v);
-    else if (NAME_KINDS.includes(kind) || kind === 'target') set('c-text', v.value);
+    else if (kind === 'glob') set('c-text', quoteFor(v));
+    else if (NAME_KINDS.includes(kind) || kind === 'target') set('c-text', quoteFor(v.value));
     else if (kind === 'time') { set('c-from', hm(v.from_min)); set('c-to', hm(v.to_min)); }
     else if (kind === 'size') { set('c-min', v.min ?? ''); set('c-max', v.max ?? ''); }
     else if (kind === 'idle') set('c-days', v.min);
@@ -1603,12 +1643,15 @@
     const first = document.getElementById('nrCond');
     const texts = root => { const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT), out = []; while (w.nextNode()) out.push(w.currentNode); return out; };
     const from = texts(first);
+    // Placeholders ("不限"), field names and button tips, in the same order in every copy.
+    const ATTRS = ['title', 'placeholder', 'aria-label'];
+    const tagged = root => [...root.querySelectorAll(ATTRS.map(a => `[${a}]`).join())];
+    const fromTagged = tagged(first);
     document.querySelectorAll('.cond').forEach(block => {
       if (block === first) return;
       if (block.cond) { block.querySelector('.c-fixed').innerHTML = `${esc(condLabel(block.cond))}<div class="s">${esc(t("这个条件只能用命令行修改"))}</div>`; return; }
       texts(block).forEach((node, i) => { if (from[i]) node.nodeValue = from[i].nodeValue; });
-      block.querySelector('.c-del').title = first.querySelector('.c-del').title;
-      block.querySelector('.c-del').setAttribute('aria-label', first.querySelector('.c-del').getAttribute('aria-label'));
+      tagged(block).forEach((el, i) => ATTRS.forEach(a => { const v = fromTagged[i]?.getAttribute(a); if (v != null) el.setAttribute(a, v); }));
       updateKind(block);
     });
     // The editor's own captions come from t(): give it a new frame around the same boxes.
@@ -1639,6 +1682,10 @@
     const close = QUOTE_PAIRS[v[0]], inner = v.slice(1, -1);
     return v.length >= 2 && v.at(-1) === close && !inner.includes(v[0]) && !inner.includes(close) ? inner : v;
   };
+  // A box of extensions splits at commas and spaces and drops a leading dot; one of file names
+  // splits at commas.
+  const readExts = s => unquote(s.trim()).split(/[,，\s]+/).map(x => unquote(x).replace(/^\./, '')).filter(Boolean);
+  const readNames = s => unquote(s.trim()).split(/[,，]+/).map(x => unquote(x.trim())).filter(Boolean);
   // Shows what is missing and puts the cursor there; returns null for the caller to stop.
   function ruleError(text, el) {
     toast(text, true);
@@ -1651,13 +1698,12 @@
     if (block.cond) return block.cond;
     const el = cls => block.querySelector('.' + cls);
     const kind = el('c-kind').value;
-    const value = unquote(el('c-text').value.trim());
-    const split = (v) => v.split(/[,，]+/).map(x => unquote(x.trim())).filter(Boolean);
+    const text = el('c-text').value, value = unquote(text.trim());
     const checked = cls => [...block.querySelectorAll('.' + cls + ' input:checked')].map(i => i.value);
     if (kind === 'type') { const sel = checked('c-cats'); return sel.length ? { cond: 'type', value: sel } : ruleError(t("请选择至少一种类型"), el('c-kind')); }
-    if (kind === 'ext') { const extensions = value.split(/[,，\s]+/).map(x => unquote(x).replace(/^\./, '')).filter(Boolean); return extensions.length ? { cond: 'ext', value: extensions } : ruleError(t("请输入扩展名"), el('c-text')); }
+    if (kind === 'ext') { const extensions = readExts(text); return extensions.length ? { cond: 'ext', value: extensions } : ruleError(t("请输入扩展名"), el('c-text')); }
     if (NAME_KINDS.includes(kind)) return value ? { cond: 'name', value: { op: kind, value } } : ruleError(t("请输入关键字"), el('c-text'));
-    if (kind === 'exact') { const names = split(value); return names.length ? { cond: 'exactName', value: names } : ruleError(t("请输入完整文件名"), el('c-text')); }
+    if (kind === 'exact') { const names = readNames(text); return names.length ? { cond: 'exactName', value: names } : ruleError(t("请输入完整文件名"), el('c-text')); }
     if (kind === 'glob') return value ? { cond: 'glob', value } : ruleError(t("请输入通配符"), el('c-text'));
     if (kind === 'target') return value ? { cond: 'shortcutTarget', value: { op: 'contains', value } } : ruleError(t("请输入目标路径中的关键字"), el('c-text'));
     if (kind === 'time') {
@@ -1679,7 +1725,8 @@
     }
     if (kind === 'idle') {
       const days = Number(el('c-days').value);
-      if (!Number.isFinite(days) || days < 1) return ruleError(t("请输入闲置天数"), el('c-days'));
+      if (!el('c-days').value || !Number.isFinite(days)) return ruleError(t("请输入闲置天数"), el('c-days'));
+      if (days < 1 || days > MAX_IDLE_DAYS) return ruleError(tf("闲置天数必须在 1 到 {0} 之间", MAX_IDLE_DAYS), el('c-days'));
       return { cond: 'idleDays', value: { min: Math.floor(days) } };
     }
     return { cond: { files: 'filesOnly', plain: 'plainFiles' }[kind] || 'foldersOnly', value: null };

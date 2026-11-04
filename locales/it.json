@@ -615,5 +615,7 @@
   "已保存规则": "Regola salvata",
   "已在 Windows 设置 › 应用 › 启动（或任务管理器）中关闭，只能在那里重新打开。点开关会打开该页面。": "Disattivato in Impostazioni di Windows › App › Avvio (o in Gestione attività): si può riattivare solo lì. L’interruttore apre quella pagina.",
   "已被管理员或组策略关闭，PecoFence 无法打开。": "Disattivato da un amministratore o da un criterio di gruppo: PecoFence non può attivarlo.",
-  "已被管理员或组策略打开，PecoFence 无法关闭。": "Attivato da un amministratore o da un criterio di gruppo: PecoFence non può disattivarlo."
+  "已被管理员或组策略打开，PecoFence 无法关闭。": "Attivato da un amministratore o da un criterio di gruppo: PecoFence non può disattivarlo.",
+  "闲置天数必须在 1 到 {0} 之间": "I giorni di inattività devono essere tra 1 e {0}",
+  "没能保存这次改动，规则已恢复原样": "Non è stato possibile salvare questa modifica; le regole sono tornate come prima"
 }
