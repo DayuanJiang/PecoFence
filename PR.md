@@ -1,5 +1,5 @@
 ##THANK FOR AUTHOR!!
-Thank you very much for the open source of the original author. 
+Thank you very much for the open source of the original author.
 I fell in love with PecoFence when I first used it on just yesterday.
 
 In terms of results, I created an experimental feature for it that can achieve a refresh rate of 60 frames per second for liquid glass backgrounds, real-time capture wallpaper engines, and  low performance overhead
@@ -10,18 +10,18 @@ The original fence block background liquid glass,has a low refresh rate and can 
 
 For the common type SENCE and type WEB in the wallpaper engine, dynamic wallpapers are reported as 'notCapturable': the program will return the glass background to neutral color, no longer transparent or refracted.
 
-I declare in advance that I am not a professional programmer, and almost all of my code is written by GPT 6. I am only working for testing the actual performance and modifying the prompt words.
-And regarding all the implementation details of the functions, I have already Let GPT written into REALTIME_GLASS.MD
+to be honest,I am not a professional programmer, and almost all of my code is written by GPT 6. I am only working for testing the actual performance and modifying the prompt words.
+Regarding all the implementation details of the functions, I have already Let GPT written into REALTIME_GLASS.MD
 
-To begin with, the conclusion is that the current functionality has perfectly met my expectations - although I am not familiar with how it exactly operates in the code.
+The conclusion is that the current functionality has perfectly met my expectations - although I am not familiar with how it exactly operates in the code.
 Now the fence block background liquid glass accurately transmits any wallpaper background underneath it and performs well.
 
 FOR RTX5070
-wallpaper engine Only  >>>     Experimental feature On
+wallpaper engine Only  >>>     Experimental feature On 
 settings
 high                           60fps
 60fps                          1/4 Resolution Sampling(Only effect on covered)
-normal 2k Sence Wallpaper      
+normal 2k Sence Wallpaper
 GPU USAGE:16%AVG       >>>     GPU USAGE:18%AVG
 and,the usage of MEM and CPU do not have obvious changes
 i hope this will help more people who love pecofence
