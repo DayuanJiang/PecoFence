@@ -888,6 +888,7 @@ impl App {
                         .hint("Pick another shortcut, or null for none"));
                 }
                 self.apply_settings(requested.clone(), "cli");
+                self.wait_store_startup_switch();
                 let after = &self.state.config.settings;
                 let changed = *after != before;
                 // `apply_settings` keeps the old value when a side effect fails (e.g. Explorer

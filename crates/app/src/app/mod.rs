@@ -321,8 +321,17 @@ pub struct App {
     no_hide_icons: bool,
     /// `--portable`: the configuration lives next to the program, and so must the startup entry.
     portable: bool,
-    /// The Store edition's startup switch as last read on a worker: 0 not read, 1 off, 2 on.
+    /// The Store edition's startup switch as a worker last read or set it (`StartupState as u8`,
+    /// 0 not read yet), for [`Self::finish_store_startup`].
     store_startup: Arc<std::sync::atomic::AtomicU8>,
+    /// Set by the worker of a click on 「随 Windows 启动」 when the app could not make the change
+    /// (a state only the user or an administrator can change): Windows' Startup settings open.
+    store_startup_refused: Arc<std::sync::atomic::AtomicBool>,
+    /// The state [`Self::finish_store_startup`] last took over; the settings page explains the
+    /// states the app cannot change.
+    store_startup_state: Option<pecofence_platform::store::StartupState>,
+    /// Signalled when the last startup task switch is done, for a CLI reply that waits for it.
+    store_startup_done: Option<std::sync::mpsc::Receiver<()>>,
     /// `--light` / `--dark`: pin the theme this run.
     theme_override: Option<ThemeMode>,
     peek_class: WindowClass,
@@ -1414,6 +1423,9 @@ impl App {
             no_hide_icons: args.no_hide_icons,
             portable: args.portable,
             store_startup: Arc::default(),
+            store_startup_refused: Arc::default(),
+            store_startup_state: None,
+            store_startup_done: None,
             theme_override: if args.light {
                 Some(ThemeMode::Light)
             } else if args.dark {

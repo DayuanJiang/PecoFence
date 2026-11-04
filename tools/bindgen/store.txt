@@ -12,6 +12,8 @@
     Windows.ApplicationModel.StartupTask
     Windows.ApplicationModel.IStartupTaskStatics.GetAsync
     Windows.ApplicationModel.IStartupTask.State
+    Windows.ApplicationModel.IStartupTask.RequestEnableAsync
+    Windows.ApplicationModel.IStartupTask.Disable
     Windows.ApplicationModel.StartupTaskState
     Windows.Services.Store.StoreRateAndReviewStatus
     IInitializeWithWindow

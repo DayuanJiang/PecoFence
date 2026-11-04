@@ -612,5 +612,8 @@
   "不需要填写": "Keine Eingabe nötig",
   "这个条件只能用命令行修改": "Diese Bedingung lässt sich nur über die Befehlszeile ändern",
   "保存": "Speichern",
-  "已保存规则": "Regel gespeichert"
+  "已保存规则": "Regel gespeichert",
+  "已在 Windows 设置 › 应用 › 启动（或任务管理器）中关闭，只能在那里重新打开。点开关会打开该页面。": "Unter Windows-Einstellungen › Apps › Autostart (oder im Task-Manager) ausgeschaltet; nur dort lässt es sich wieder einschalten. Der Schalter öffnet diese Seite.",
+  "已被管理员或组策略关闭，PecoFence 无法打开。": "Von einem Administrator oder einer Gruppenrichtlinie ausgeschaltet; PecoFence kann es nicht einschalten.",
+  "已被管理员或组策略打开，PecoFence 无法关闭。": "Von einem Administrator oder einer Gruppenrichtlinie eingeschaltet; PecoFence kann es nicht ausschalten."
 }
