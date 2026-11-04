@@ -576,7 +576,7 @@
               <div class="cats c-cats" id="nrCats"></div>
               <div class="cats c-time" id="nrTime" style="display:none"><label>从 <input type="time" id="nrFrom" class="c-from" value="18:00"></label><label>到 <input type="time" id="nrTo" class="c-to" value="06:00"></label><span class="s">结束时间早于开始时间，表示跨过午夜</span></div>
               <div class="cats c-week" id="nrWeek" style="display:none"></div>
-              <div class="cats c-idle" id="nrIdle" style="display:none"><label>闲置至少 <input type="number" id="nrIdleDays" class="c-days" value="30" min="1" style="min-width:80px"> 天</label></div>
+              <div class="cats c-idle" id="nrIdle" style="display:none"><label>闲置至少 <input type="number" id="nrIdleDays" class="c-days" value="30" min="1" max="36500" style="min-width:80px"> 天</label></div>
               <div class="cats c-size" id="nrSize" style="display:none"><label>至少 <input type="text" inputmode="decimal" id="nrMin" class="c-min" placeholder="0" style="min-width:80px"> <span data-i18n="MB">MB</span></label><label>至多 <input type="text" inputmode="decimal" id="nrMax" class="c-max" placeholder="不限" style="min-width:80px"> <span data-i18n="MB">MB</span></label></div>
               <div class="c-none" style="display:none">不需要填写</div>
             </div></div>
@@ -1537,6 +1537,8 @@
 
   const KINDS = { type: 'type', ext: 'ext', exactName: 'exact', glob: 'glob', createdTime: 'time', createdWeekday: 'weekday', sizeMb: 'size', idleDays: 'idle', foldersOnly: 'folders', filesOnly: 'files', plainFiles: 'plain' };
   const NAME_KINDS = ['contains', 'notContains', 'startsWith', 'endsWith'];
+  // 100 years. The core keeps idle days in a u32 and refuses the whole rule list beyond it.
+  const MAX_IDLE_DAYS = 36500;
   // The form kind that shows condition `c`, or undefined for one only the CLI writes (a name
   // that "is", other shortcut-target tests, the desktop it came from) or for a value the form
   // would change or refuse.
@@ -1565,7 +1567,7 @@
       case 'glob': return v !== '' && quoteFor(v) !== null;
       case 'time': return minute(v.from_min) && minute(v.to_min);
       case 'size': return (v.min != null || v.max != null) && !(v.min < 0) && !(v.max < 0) && !(v.min != null && v.max != null && v.min > v.max);
-      case 'idle': return Number.isInteger(v.min) && v.min >= 1;
+      case 'idle': return Number.isInteger(v.min) && v.min >= 1 && v.min <= MAX_IDLE_DAYS;
       case 'folders': case 'files': case 'plain': return true;
       default: return v.value !== '' && quoteFor(v.value) !== null; // name tests, shortcut target
     }
@@ -1722,7 +1724,8 @@
     }
     if (kind === 'idle') {
       const days = Number(el('c-days').value);
-      if (!Number.isFinite(days) || days < 1) return ruleError(t("请输入闲置天数"), el('c-days'));
+      if (!el('c-days').value || !Number.isFinite(days)) return ruleError(t("请输入闲置天数"), el('c-days'));
+      if (days < 1 || days > MAX_IDLE_DAYS) return ruleError(tf("闲置天数必须在 1 到 {0} 之间", MAX_IDLE_DAYS), el('c-days'));
       return { cond: 'idleDays', value: { min: Math.floor(days) } };
     }
     return { cond: { files: 'filesOnly', plain: 'plainFiles' }[kind] || 'foldersOnly', value: null };

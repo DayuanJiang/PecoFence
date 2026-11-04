@@ -86,7 +86,13 @@ function bridge() {
           state.settings.hideRealIcons = message.name === 'hideDesktopIcons';
           state.desktopIconsHidden = state.settings.hideRealIcons;
         }
-        if (message.type === 'setRules') state.rules = structuredClone(message.rules);
+        if (message.type === 'setRules') {
+          // Mirror the host: a list the core cannot read (idle days beyond its u32, or any list
+          // while testRefuseRules is set) is not saved; the stored rules go back with an error.
+          const readable = !window.testRefuseRules && message.rules.list.every(r => r.allOf.every(c => c.cond !== 'idleDays' || c.value.min <= 4294967295));
+          if (readable) state.rules = structuredClone(message.rules);
+          else setTimeout(() => { window.testRefresh(); receive({ data: { type: 'toast', text: '没能保存这次改动，规则已恢复原样', error: true } }); }, 0);
+        }
         if (message.name === 'setPeekHotkey') {
           const names = [[8, 'Win'], [2, 'Ctrl'], [1, 'Alt'], [4, 'Shift']].filter(([bit]) => message.mods & bit).map(([, n]) => n);
           const keys = [...names, message.vk === 32 ? '空格' : String.fromCharCode(message.vk)];
@@ -1249,6 +1255,42 @@ async function runTests() {
     form.querySelector('[data-act=cancel]').click(); await settle();
     const again = await edit(doc, 'rule-b');
     assert(again.querySelector('.r-target').value === 'inbox', 'Reopened editor picked another fence: ' + again.querySelector('.r-target').value);
+  });
+  await test('Idle days outside 1 to 36500 are refused with the range, in the editor and the new-rule form', async () => {
+    doc = await reset();
+    doc.querySelector('[data-page=rules]').click();
+    const form = await edit(doc, 'rule-a'), before = JSON.stringify(current().rules);
+    const block = form.querySelector('.cond');
+    setValue(block.querySelector('.c-kind'), 'idle');
+    const range = frame.contentWindow.PecoFenceI18n.format('闲置天数必须在 1 到 {0} 之间', 36500);
+    for (const days of ['99999999999', '36501', '0']) {
+      block.querySelector('.c-days').value = days;
+      form.querySelector('[data-act=save]').click(); await settle();
+      assert(errorShown(doc) && doc.getElementById('toastText').textContent === range && doc.activeElement === block.querySelector('.c-days'), days + ' idle days not refused with the range');
+      assert(JSON.stringify(current().rules) === before && doc.querySelector('[data-row-id="rule-a"] .redit') === form, days + ' idle days saved or the editor closed');
+    }
+    block.querySelector('.c-days').value = '36500';
+    form.querySelector('[data-act=save]').click(); await settle();
+    assert(JSON.stringify(current().rules.list[0].allOf) === '[{"cond":"idleDays","value":{"min":36500}}]', '36500 idle days not saved');
+    rulesPage(doc);
+    change(doc, 'nrKind', 'idle'); change(doc, 'nrIdleDays', '99999999999');
+    const count = ruleCount(doc);
+    await add(doc);
+    assert(ruleCount(doc) === count && errorShown(doc) && doc.activeElement.id === 'nrIdleDays', 'New-rule form accepted 99999999999 idle days');
+  });
+  await test('A rule list the host refuses comes back as stored, with an error instead of the saved toast', async () => {
+    doc = await reset();
+    doc.querySelector('[data-page=rules]').click();
+    frame.contentWindow.testRefuseRules = true;
+    doc.querySelector('[data-row-id="rule-a"] [data-act=toggle]').click(); await settle();
+    const text = doc.getElementById('toastText').textContent;
+    assert(errorShown(doc) && text === '没能保存这次改动，规则已恢复原样', 'No error after a refused list: ' + text);
+    assert(doc.querySelector('[data-row-id="rule-a"] [data-act=toggle]').classList.contains('on'), 'The refused switch change stayed on the page');
+    const form = await edit(doc, 'rule-a');
+    form.querySelector('.r-name').value = 'Refused name';
+    form.querySelector('[data-act=save]').click(); await settle();
+    assert(errorShown(doc) && doc.querySelector('[data-row-id="rule-a"] .t').textContent === 'Documents', 'The refused rename stayed on the page');
+    frame.contentWindow.testRefuseRules = false;
   });
 
   doc = await reset();

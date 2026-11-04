@@ -612,5 +612,7 @@
   "不需要填写": "Keine Eingabe nötig",
   "这个条件只能用命令行修改": "Diese Bedingung lässt sich nur über die Befehlszeile ändern",
   "保存": "Speichern",
-  "已保存规则": "Regel gespeichert"
+  "已保存规则": "Regel gespeichert",
+  "闲置天数必须在 1 到 {0} 之间": "Die Anzahl ungenutzter Tage muss zwischen 1 und {0} liegen",
+  "没能保存这次改动，规则已恢复原样": "Diese Änderung konnte nicht gespeichert werden; die Regeln sind wieder wie vorher"
 }

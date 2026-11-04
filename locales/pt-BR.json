@@ -612,5 +612,7 @@
   "不需要填写": "Nada a preencher",
   "这个条件只能用命令行修改": "Esta condição só pode ser alterada pela linha de comando",
   "保存": "Salvar",
-  "已保存规则": "Regra salva"
+  "已保存规则": "Regra salva",
+  "闲置天数必须在 1 到 {0} 之间": "Os dias sem uso devem estar entre 1 e {0}",
+  "没能保存这次改动，规则已恢复原样": "Não foi possível salvar esta alteração; as regras voltaram ao que eram"
 }

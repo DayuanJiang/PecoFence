@@ -612,5 +612,7 @@
   "不需要填写": "No hay nada que rellenar",
   "这个条件只能用命令行修改": "Esta condición solo se puede cambiar desde la línea de comandos",
   "保存": "Guardar",
-  "已保存规则": "Regla guardada"
+  "已保存规则": "Regla guardada",
+  "闲置天数必须在 1 到 {0} 之间": "Los días sin usar deben estar entre 1 y {0}",
+  "没能保存这次改动，规则已恢复原样": "No se pudo guardar este cambio; las reglas vuelven a estar como antes"
 }

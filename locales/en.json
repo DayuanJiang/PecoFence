@@ -612,5 +612,7 @@
   "不需要填写": "Nothing to fill in",
   "这个条件只能用命令行修改": "This condition can only be changed from the command line",
   "保存": "Save",
-  "已保存规则": "Rule saved"
+  "已保存规则": "Rule saved",
+  "闲置天数必须在 1 到 {0} 之间": "Idle days must be between 1 and {0}",
+  "没能保存这次改动，规则已恢复原样": "This change could not be saved; the rules are back as they were"
 }

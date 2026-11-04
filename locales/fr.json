@@ -612,5 +612,7 @@
   "不需要填写": "Rien à remplir",
   "这个条件只能用命令行修改": "Cette condition ne peut être modifiée qu’en ligne de commande",
   "保存": "Enregistrer",
-  "已保存规则": "Règle enregistrée"
+  "已保存规则": "Règle enregistrée",
+  "闲置天数必须在 1 到 {0} 之间": "Le nombre de jours d’inactivité doit être compris entre 1 et {0}",
+  "没能保存这次改动，规则已恢复原样": "Cette modification n’a pas pu être enregistrée ; les règles sont revenues à leur état précédent"
 }
