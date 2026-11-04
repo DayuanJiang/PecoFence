@@ -883,14 +883,7 @@ impl FenceViewState {
         let Some(seconds) = self.clock else {
             return Ok(());
         };
-        let weekday_last = matches!(
-            pecofence_core::i18n::language(),
-            pecofence_core::i18n::Language::SimplifiedChinese
-                | pecofence_core::i18n::Language::TraditionalChinese
-                | pecofence_core::i18n::Language::Japanese
-                | pecofence_core::i18n::Language::Korean
-        );
-        let (time, date) = pecofence_platform::fileinfo::clock_texts(seconds, weekday_last);
+        let (time, date) = pecofence_platform::fileinfo::clock_texts(seconds);
         let theme = self
             .material_foreground()
             .with_label_color(self.behavior.label_color.get());

@@ -116,36 +116,42 @@ impl App {
             };
         };
         let when = pecofence_platform::fileinfo::format_local_time(*at);
+        // The body holds the output, or what went wrong; the footer names the script and says
+        // when it ran.
         let (text, status) = match outcome {
-            Outcome::Done(text) => (text.clone(), i18n::format("{0} 更新", &[when])),
+            Outcome::Done(text) => (text.clone(), Some(i18n::format("{0} 更新", &[when]))),
+            // An error's first line says what happened (PowerShell's further lines locate it).
             Outcome::Failed { code, text } => (
-                text.clone(),
-                i18n::format(
+                text.lines()
+                    .find(|l| !l.trim().is_empty())
+                    .unwrap_or_default()
+                    .to_string(),
+                Some(i18n::format(
                     "{0} 运行出错（退出代码 {1}）",
                     &[
                         when,
                         code.map_or_else(|| "?".to_string(), |c| c.to_string()),
                     ],
-                ),
+                )),
             ),
             Outcome::TimedOut => (
-                String::new(),
                 i18n::format("{0} 超过 10 秒没有结束，已停止", &[when]),
+                None,
             ),
-            Outcome::Missing => (String::new(), i18n::text("找不到这个文件").to_string()),
+            Outcome::Missing => (i18n::text("找不到这个文件").to_string(), None),
             Outcome::Unsupported => (
-                String::new(),
                 i18n::text("不能运行这种文件（支持 .ps1、.py、.cmd、.bat、.js、.exe）").to_string(),
+                None,
             ),
             Outcome::NotStarted(_) => (
-                String::new(),
                 i18n::text("无法启动，检查是否装了运行它的程序（如 Python）").to_string(),
+                None,
             ),
         };
-        let status = if running {
-            i18n::format("{0} · 正在运行…", &[name])
-        } else {
-            format!("{name} · {status}")
+        let status = match (running, status) {
+            (true, _) => i18n::format("{0} · 正在运行…", &[name]),
+            (false, Some(status)) => format!("{name} · {status}"),
+            (false, None) => name,
         };
         ScriptView {
             text,
@@ -297,8 +303,13 @@ impl App {
         };
         let path = dir.join(pecofence_core::i18n::text("天气.ps1"));
         if !path.is_file() {
+            let chinese = matches!(
+                pecofence_core::i18n::language(),
+                pecofence_core::i18n::Language::SimplifiedChinese
+                    | pecofence_core::i18n::Language::TraditionalChinese
+            );
             let written = std::fs::create_dir_all(&dir)
-                .and_then(|_| std::fs::write(&path, crate::scripts::WEATHER_EXAMPLE));
+                .and_then(|_| std::fs::write(&path, crate::scripts::weather_example(chinese)));
             if let Err(e) = written {
                 tracing::warn!(error = %e, "writing the weather example failed");
                 return;

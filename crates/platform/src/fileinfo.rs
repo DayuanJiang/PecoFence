@@ -90,17 +90,16 @@ pub fn format_local_time(unix: i64) -> String {
 }
 
 /// 时钟与日期: the local time as Windows' region format writes it (12 or 24 hours; `seconds`
-/// adds them) and the date as month and day plus the weekday (`weekday_last`: "11月4日 星期三",
-/// else "Wednesday, November 4"), in the user's locale and time zone.
-pub fn clock_texts(seconds: bool, weekday_last: bool) -> (String, String) {
+/// adds them) and the region's long date, with the weekday after it when the long date has
+/// none ("2026年11月4日 星期三", "Wednesday, November 4, 2026"), in the user's time zone.
+pub fn clock_texts(seconds: bool) -> (String, String) {
     let unix = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_secs() as i64);
     let Some(st) = local_system_time(unix) else {
         return (String::new(), String::new());
     };
-    // DATE_MONTHDAY (Windows 10): the locale's month-and-day pattern.
-    const DATE_MONTHDAY: u32 = 0x80;
+    const DATE_LONGDATE: u32 = 2;
     let mut buf = [0u16; 96];
     let text = |n: i32, buf: &[u16]| {
         if n > 1 {
@@ -141,12 +140,12 @@ pub fn clock_texts(seconds: bool, weekday_last: bool) -> (String, String) {
         };
         text(n, &buf)
     };
-    let month_day = date(DATE_MONTHDAY, None);
+    let long = date(DATE_LONGDATE, None);
     let weekday = date(0, Some("dddd"));
-    let line = if weekday_last {
-        format!("{month_day} {weekday}")
+    let line = if weekday.is_empty() || long.contains(&weekday) {
+        long
     } else {
-        format!("{weekday}, {month_day}")
+        format!("{long} {weekday}")
     };
     (time, line)
 }

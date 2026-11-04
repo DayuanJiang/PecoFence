@@ -66,8 +66,10 @@ fn command_for(path: &Path) -> Option<Vec<Command>> {
                 "Bypass",
             ])
             .arg("-Command")
+            // The script's own exit code, or 1 when its last command failed.
             .arg(format!(
-                "[Console]::OutputEncoding=[Text.Encoding]::UTF8; & '{}'",
+                "[Console]::OutputEncoding=[Text.Encoding]::UTF8; & '{}'; \
+                 if ($LASTEXITCODE) {{ exit $LASTEXITCODE }} elseif (-not $?) {{ exit 1 }}",
                 file.replace('\'', "''")
             ));
             vec![c]
@@ -183,6 +185,9 @@ pub fn run(path: &Path) -> Outcome {
     let stderr = clean(&decode(&err.recv_timeout(wait).unwrap_or_default()));
     if status.success() {
         Outcome::Done(stdout)
+    } else if status.code() == Some(9009) {
+        // Windows' "command not found": no such interpreter (the python.exe Store stub too).
+        Outcome::NotStarted(stdout)
     } else {
         Outcome::Failed {
             code: status.code(),
@@ -244,17 +249,15 @@ fn strip_escapes(line: &str) -> String {
     out
 }
 
-/// The 脚本栅栏 example: today's weather from wttr.in, in Chinese.
-pub const WEATHER_EXAMPLE: &str =
-    "\u{feff}# PecoFence 脚本栅栏示例：显示天气（数据来自 wttr.in）。\r
-# 把下面的 Tokyo 改成你所在的城市（英文或拼音），保存后在栅栏菜单里选「立即运行」。\r
-# 脚本打印出来的每一行文字都会显示在栅栏里。\r
-$city = 'Tokyo'\r
-$now = Invoke-RestMethod \"https://wttr.in/$($city)?format=%t+%C&lang=zh\" -TimeoutSec 8\r
-$more = Invoke-RestMethod \"https://wttr.in/$($city)?format=%f+%h+%w&lang=zh\" -TimeoutSec 8\r
-\"$city  $now\"\r
-\"体感 / 湿度 / 风：$more\"\r
-";
+/// The 脚本栅栏 example: today's weather from wttr.in; `chinese` = the comments and labels in
+/// Chinese (the conditions come from the service as they are).
+pub fn weather_example(chinese: bool) -> &'static str {
+    if chinese {
+        "\u{feff}# PecoFence 脚本栅栏示例：显示天气（数据来自 wttr.in）。\r\n# 把下面的 Tokyo 改成你所在的城市（英文或拼音），保存后在栅栏菜单里选「立即运行」。\r\n# 脚本打印出来的每一行文字都会显示在栅栏里。\r\n$city = 'Tokyo'\r\n$w = Invoke-RestMethod \"https://wttr.in/$($city)?format=j1&lang=zh\" -TimeoutSec 8\r\n$now = $w.current_condition[0]\r\n$today = $w.weather[0]\r\n$tomorrow = $w.weather[1]\r\n$desc = $now.lang_zh[0].value\r\nif (-not $desc) { $desc = $now.weatherDesc[0].value }\r\n$rain = ($tomorrow.hourly | Measure-Object -Property chanceofrain -Maximum).Maximum\r\n\"$city  $($now.temp_C)°C  $desc\"\r\n\"体感 $($now.FeelsLikeC)°C，湿度 $($now.humidity)%，风 $($now.windspeedKmph) km/h\"\r\n\"今天 $($today.mintempC) 到 $($today.maxtempC)°C，明天 $($tomorrow.mintempC) 到 $($tomorrow.maxtempC)°C，降雨概率 $rain%\"\r\n"
+    } else {
+        "\u{feff}# PecoFence script fence example: today's weather (data from wttr.in).\r\n# Change Tokyo below to your city, save, then choose \"Run now\" in the fence menu.\r\n# Every line the script prints shows in the fence.\r\n$city = 'Tokyo'\r\n$w = Invoke-RestMethod \"https://wttr.in/$($city)?format=j1\" -TimeoutSec 8\r\n$now = $w.current_condition[0]\r\n$today = $w.weather[0]\r\n$tomorrow = $w.weather[1]\r\n$rain = ($tomorrow.hourly | Measure-Object -Property chanceofrain -Maximum).Maximum\r\n\"$city  $($now.temp_C)°C  $($now.weatherDesc[0].value)\"\r\n\"Feels like $($now.FeelsLikeC)°C, humidity $($now.humidity)%, wind $($now.windspeedKmph) km/h\"\r\n\"Today $($today.mintempC) to $($today.maxtempC)°C, tomorrow $($tomorrow.mintempC) to $($tomorrow.maxtempC)°C, rain $rain%\"\r\n"
+    }
+}
 
 #[cfg(test)]
 mod tests {

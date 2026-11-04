@@ -70,6 +70,8 @@ pub struct FenceChrome {
     badge_format: TextFormat,
     /// Note fence lines (便签与待办): Body 14, leading, wrapped.
     note_format: TextFormat,
+    /// A script fence's footer: Caption 12, leading, top-aligned.
+    note_footer_format: TextFormat,
     /// 时钟与日期: the time (Display 40 / Light) and the date line (Body 14).
     clock_time_format: TextFormat,
     clock_date_format: TextFormat,
@@ -1683,6 +1685,11 @@ impl FenceChrome {
             .with_alignment(TextAlignment::Leading)
             .with_paragraph_alignment(ParagraphAlignment::Top)
             .with_word_wrapping(WordWrapping::Wrap);
+        let note_footer_format =
+            TextFormat::with_locale(font_small(), 12.0, FontWeight::NORMAL, locale)?
+                .with_alignment(TextAlignment::Leading)
+                .with_paragraph_alignment(ParagraphAlignment::Top)
+                .with_word_wrapping(WordWrapping::NoWrap);
         let clock_time_format =
             TextFormat::with_locale(font_display(), 40.0, FontWeight(300), locale)?
                 .with_alignment(TextAlignment::Leading)
@@ -1704,6 +1711,7 @@ impl FenceChrome {
             group_format,
             badge_format,
             note_format,
+            note_footer_format,
             clock_time_format,
             clock_date_format,
             text_shadows: RefCell::default(),
@@ -3398,7 +3406,7 @@ impl FenceChrome {
         let w = (width - 2.0 * NOTE_PAD_X).max(1.0);
         let height = match footer.filter(|f| !f.is_empty()) {
             Some(footer) => {
-                let layout = TextLayout::new(footer, &self.group_format, w, f32::MAX)?;
+                let layout = TextLayout::new(footer, &self.note_footer_format, w, f32::MAX)?;
                 let h = layout.metrics().height;
                 let top = (height - h - 8.0).max(0.0);
                 session.draw_text_layout(Vector2::new(NOTE_PAD_X, top), &layout, &secondary);
