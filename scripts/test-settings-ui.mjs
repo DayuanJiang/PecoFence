@@ -1154,6 +1154,8 @@ async function runTests() {
     assert(doc.querySelector('[data-row-id="rule-a"] .re-head .t').textContent === text('编辑规则') && now.querySelector('[data-act=save]').textContent === text('保存'), 'Editor frame not translated');
     const added = now.querySelectorAll('.cond')[1];
     assert(added.querySelector('.c-kind option[value=ext]').textContent === text('扩展名（逗号分隔）') && added.querySelector('.c-cats label').textContent === text('程序'), 'Added condition not translated');
+    assert(added.querySelector('.c-max').placeholder === text('不限') && added.querySelector('.c-text').getAttribute('aria-label') === text('条件值')
+      && added.querySelector('.c-del').title === text('删除条件'), 'Placeholder or field name of the added condition not translated');
     change(doc, 'language', 'zh-CN'); await settle();
   });
   await test('Every page fits compact windows in both materials and colour modes', async () => {
@@ -1184,6 +1186,69 @@ async function runTests() {
       assert(el.getAttribute('aria-hidden') === 'true', 'Decorative glyph is announced');
     }
     assert(doc.getElementById('toast').getAttribute('role') === 'status', 'Status announcement missing');
+  });
+  // Rules the CLI wrote: `rule add --name-contains " (1)"` keeps the spaces, `--json` any value.
+  const cliRule = allOf => { current().rules.list[0] = { id: 'rule-cli', name: 'From the CLI', enabled: true, target: { fence: 'fence-a' }, allOf, priorityClass: 'name' }; frame.contentWindow.testRefresh(); };
+  await test('Values with spaces or quotes at either end are shown in quotes and saved unchanged', async () => {
+    doc = await reset();
+    doc.querySelector('[data-page=rules]').click();
+    const allOf = [{ cond: 'name', value: { op: 'contains', value: ' (1)' } }, { cond: 'name', value: { op: 'endsWith', value: ' - 副本' } },
+      { cond: 'name', value: { op: 'startsWith', value: '"draft"' } }, { cond: 'name', value: { op: 'notContains', value: 'backup' } },
+      { cond: 'glob', value: ' *.tmp' }, { cond: 'shortcutTarget', value: { op: 'contains', value: ' steam ' } }];
+    cliRule(allOf); await settle();
+    const form = await edit(doc, 'rule-cli');
+    const shown = [...form.querySelectorAll('.cond .c-text')].map(i => i.value);
+    assert(JSON.stringify(shown) === JSON.stringify(['" (1)"', '" - 副本"', '\'"draft"\'', 'backup', '" *.tmp"', '" steam "']), 'Values not shown so they read back: ' + JSON.stringify(shown));
+    form.querySelector('.r-name').value = 'Renamed';
+    form.querySelector('[data-act=save]').click(); await settle();
+    const r = current().rules.list[0];
+    assert(r.name === 'Renamed' && JSON.stringify(r.allOf) === JSON.stringify(allOf), 'Saving changed the values: ' + JSON.stringify(r.allOf));
+  });
+  await test('Values the form would split or refuse stay as text and are kept, so the rule still saves', async () => {
+    const odd = [{ cond: 'exactName', value: ['a,b.txt', 'c.txt'] }, { cond: 'idleDays', value: { min: 0 } },
+      { cond: 'sizeMb', value: { min: null, max: null } }, { cond: 'createdTime', value: { from_min: 1500, to_min: 60 } }];
+    const plain = [{ cond: 'exactName', value: ['todo.txt', 'notes.md'] }, { cond: 'idleDays', value: { min: 7 } }];
+    cliRule([...odd, ...plain]); await settle();
+    const form = await edit(doc, 'rule-cli'), blocks = [...form.querySelectorAll('.cond')];
+    assert(blocks.slice(0, 4).every(b => !b.querySelector('.c-kind') && b.querySelector('.c-fixed')), 'A value the form cannot keep is editable');
+    assert(blocks[0].textContent.includes('a,b.txt') && blocks[4].querySelector('.c-text').value === 'todo.txt, notes.md' && blocks[5].querySelector('.c-days').value === '7', 'Conditions not shown');
+    form.querySelector('.r-name').value = 'Renamed again';
+    form.querySelector('[data-act=save]').click(); await settle();
+    const r = current().rules.list[0];
+    assert(!doc.querySelector('#ruleList .redit') && !errorShown(doc), 'Save refused');
+    assert(r.name === 'Renamed again' && JSON.stringify(r.allOf) === JSON.stringify([...odd, ...plain]), 'Saving changed the conditions: ' + JSON.stringify(r.allOf));
+  });
+  await test('Esc in an editor cancels like Cancel, except while an IME composes', async () => {
+    doc = await reset();
+    doc.querySelector('[data-page=rules]').click();
+    const form = await edit(doc, 'rule-a'), name = form.querySelector('.r-name'), before = JSON.stringify(current().rules);
+    name.value = 'Draft';
+    const esc = isComposing => name.dispatchEvent(new frame.contentWindow.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true, isComposing }));
+    esc(true); await settle();
+    assert(doc.querySelector('[data-row-id="rule-a"] .redit') === form && name.value === 'Draft', 'Esc ending an IME composition closed the editor');
+    esc(false); await settle();
+    assert(!doc.querySelector('#ruleList .redit') && JSON.stringify(current().rules) === before, 'Esc did not cancel the edit');
+    assert(doc.activeElement.dataset.act === 'edit' && doc.activeElement.closest('[data-row-id]').dataset.rowId === 'rule-a', 'Esc did not return focus to the edit button');
+  });
+  await test('One editor at a time: other edit buttons are off until it closes', async () => {
+    const form = await edit(doc, 'rule-a');
+    form.querySelector('.r-name').value = 'Draft';
+    frame.contentWindow.testRefresh(); await settle();
+    const other = doc.querySelector('[data-row-id="rule-b"] [data-act=edit]');
+    assert(other.disabled, 'Another rule can be opened while one is being edited');
+    other.click(); await settle();
+    assert(doc.querySelector('[data-row-id="rule-a"] .redit') === form && form.querySelector('.r-name').value === 'Draft' && !doc.querySelector('[data-row-id="rule-b"] .redit'), 'The first draft was dropped');
+    form.querySelector('[data-act=cancel]').click(); await settle();
+    assert(!doc.querySelector('[data-row-id="rule-b"] [data-act=edit]').disabled, 'Edit buttons stay off after the editor closed');
+  });
+  await test('An editor whose fence is deleted shows the desktop fence, the same as when opened again', async () => {
+    const form = await edit(doc, 'rule-b');
+    current().fences = current().fences.filter(f => f.id !== 'fence-b');
+    frame.contentWindow.testRefresh(); await settle();
+    assert(form.querySelector('.r-target').value === 'inbox', 'Refresh picked another fence: ' + form.querySelector('.r-target').value);
+    form.querySelector('[data-act=cancel]').click(); await settle();
+    const again = await edit(doc, 'rule-b');
+    assert(again.querySelector('.r-target').value === 'inbox', 'Reopened editor picked another fence: ' + again.querySelector('.r-target').value);
   });
 
   doc = await reset();
