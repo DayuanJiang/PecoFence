@@ -159,13 +159,21 @@ JSON 输出报告实际改动，命令目录与 JSON Schema 帮助助手发现�
 | 命令行 | `--portable` `--no-hide-icons` `--light` `--dark` `--open-settings` `--portal <文件夹>` `--wallpaper <图片>` `--exit-after <ms>` `--dump-stats` `--test-script <文件>` | `PECOFENCE_INSTANCE=<名字>` 可再开一个独立实例；`--test-script` 用脚本驱动测试实例（sleep / dump / quick-hide / quick-show / peek / roll / unroll / detach / merge / delete / new-fence / drop-desktop / move / transfer / create-file / delete-file / crash / exit），`dump` 把每个栅栏窗口的不透明度、淡入淡出阶段、阴影 alpha、可见性写入日志 |
 | 命令行工具（pecofence-cli） | 同包附带 `pecofence-cli.exe`；在终端执行 `pecofence-cli fence list` / `fence create --title 工作 --rect 100,100,600,400` / `fence set <栅栏> layout list` / `item move --glob "*.pdf" --from inbox --to 文档` / `settings set theme dark` / `rule add --name PDF --ext pdf --to 文档` / `snapshot save 备份` / `config export C:\x.json` 等；`item list` 带 kind / ext / size / modified / created / openCount / lastOpened / shortcutTarget 元数据（`--kind` `--ext` 过滤），`item rename` 重命名图标背后的文件（默认保留扩展名），`rule apply --dry-run` 只列出将要移动的项目，`watch --fence inbox --once` 阻塞到下一个桌面事件（item.added / removed / moved、fence.created / deleted / changed，每 30 s 心跳）后退出供脚本触发批处理，`config check` 离线校验配置文件（规则目标、门户路径、标签宿主、`$schema`），`log -f` 跟随日志，`paths` 列出配置 / 备份 / 日志 / 崩溃 dump 位置；`item move --dry-run` 逐项预览（仅换栅栏 / 真实文件移动及目标路径 / 跳过原因），重名文件在真实移动时也跳过而不弹资源管理器的替换对话框；`fence get` 的 `fit` 报告列数、行数、放下全部图标所需高度与是否溢出，`fence fit` 一键调到该高度；`item list` 带 `shortcutArguments`（快捷方式的命令行参数，同一程序带不同参数不算重复）；`fence create --below/--above/--right-of/--left-of <栅栏>` 贴着已有栅栏放置（边缘对齐、吸附间距、越出工作区报错、重叠给警告）；程序自行调整尺寸时（自动高度、按整列整行吸附）回复带 `adjusted`；全局 `--fields` 只保留指定字段（无需 jq），`--ascii` 以 `\uXXXX` 输出非 ASCII 字符，供按系统代码页解码的读取方；`describe` 输出机器可读的命令目录与 JSON Schema，`skill` 输出给 AI 助手用的 SKILL.md | 通过命名管道 `\\.\pipe\PecoFence.<账户 SID>[.<实例>]` 驱动当前 Windows 账户**正在运行**的实例（同时登录的其他账户各用各的管道，同一账户从 ssh 等其他会话也能连上）；结果为 JSON，修改应用状态的操作返回 `changed`，已符合目标状态时为 `false`；退出码 0 成功 / 1 应用报错 / 2 用法错误 / 3 未运行 / 4 超时；超时后先读取状态再决定是否重试；栅栏可用 id、≥6 位 id 前缀或标题指定；删栏（含项目）、应用规则（有项目变动）、一次搬移 ≥ 20 个桌面项目、恢复快照前会自动保存布局快照，达到 20 个快照上限时返回警告，不挤占用户快照；快照不覆盖全局设置、规则或真实文件移动；配置导入导出与每日备份另行保存设置、规则和布局；Store 版通过应用执行别名进入 PATH；详见 [CLI.md](CLI.md) |
 
-## 8. 明确不做
+## 8. 小工具
+
+设置 → 小工具，每个小工具单独开关，默认全部关闭；关着的小工具不建窗口、不运行，它的栅栏和内容保留，打开后回到原处。小工具放在栅栏里，移动、吸附、改大小、收起、锁定、速览、双击桌面隐藏、外观（含全透明）都和普通栅栏一样；小工具栅栏不放图标，不参与标签页（不能合并，也不能被合并），不是整理规则的目标，拖放、粘贴、`item move --to` 都不会把项目放进去。
+
+| 功能 | 怎么用 | 备注 |
+|---|---|---|
+| 便签与待办 | 设置 → 小工具 → 便签与待办（开关）→ 新建便签；打开后托盘菜单和栅栏菜单也有「新建便签」（从菜单新建时如果开关没开会顺便打开） | 新便签放在空位，标题「便签」，编辑框立即打开；单击文字打开编辑框（多行，Enter 换行，Esc、Ctrl+Enter 或点别处保存）；行首写 `[ ]`、`[]` 或 `[x]`（前面可以有 `- ` 或 `* `）的一行显示成方框，单击方框打勾或取消，打勾的一行变灰；空便签显示用法提示；栅栏菜单把视图、排序、新建、粘贴、标签页换成「编辑便签」；删除有文字的便签前会询问；文字存在 `config.json` 的 `notes` 里（导出配置和每日备份一起带上，所有显示器布局看到同一份，恢复快照不会把文字改回旧的，删掉便签后只要还有快照含有它就留着文字以便恢复）；CLI `settings set tools.notes true`，`fence list` 带 `tool: "note"` 和 `noteText`；测试脚本 `new-note x y` |
+
+## 9. 明确不做
 
 | 功能 | 原因 |
 |---|---|
 | 桌面页面（屏幕边缘滑动切换多页桌面） | 用户决定不做 |
 | 桌面右键菜单里的「配置 PecoFence」 | 需要 shell 扩展；用托盘和桌面框选替代 |
 
-## 9. 多语言
+## 10. 多语言
 
 设置 → 常规 → 显示语言，支持简体中文、繁体中文、英语、日语、韩语、德语、法语、西班牙语、葡萄牙语（巴西）和俄语，并可跟随 Windows 显示语言。切换即时更新设置页、菜单及原生界面文字；已有文件名、栅栏名称、规则和快照名称保持不变。Windows 自带对话框和扩展菜单仍使用系统语言。详细说明见 [LOCALIZATION.md](LOCALIZATION.md)。
