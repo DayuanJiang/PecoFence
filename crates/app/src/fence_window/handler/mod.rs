@@ -25,7 +25,10 @@ pub(super) fn focus_session(view: &RefCell<Option<FenceViewState>>, hwnd: HWND) 
         .ok()
         .and_then(|g| g.as_ref().map(|v| v.behavior.floating.get()))
         .unwrap_or(false);
-    if !peeking {
+    if peeking {
+        // The dimmer passes the keys on to this fence instead.
+        crate::peek::set_key_fence(hwnd);
+    } else {
         window::bring_to_front(hwnd);
     }
     if desktop::foreground_window() == hwnd {

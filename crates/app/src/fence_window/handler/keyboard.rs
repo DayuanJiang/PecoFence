@@ -163,6 +163,19 @@ pub(super) fn on_keydown(
                 });
             }
         }
+        // During the Peek (the dimmer passed the key on), as Enter in the search box does: the
+        // Peek ends and the items open, folders in Explorer (opened inside the fence, a folder
+        // would sit behind the windows the Peek uncovered).
+        k if k == msg::VK_RETURN && h.behavior.floating.get() && !ids.is_empty() => {
+            queue.push(Command::EndPeek("items opened with Enter"));
+            for item in ids {
+                queue.push(Command::LaunchItem {
+                    item,
+                    from: v.active,
+                    inside: false,
+                });
+            }
+        }
         k if k == msg::VK_RETURN => open_items(v, queue, ids),
         VK_BACK if v.deco.up_button => {
             // Keyboard navigation: the folder it returns to shows the focus ring.
