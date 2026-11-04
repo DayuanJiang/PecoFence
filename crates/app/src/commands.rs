@@ -49,6 +49,8 @@ pub const WM_APP_THEMES_CHANGED: u32 = msg::WM_APP + 18;
 /// 像桌面一样排列: the fence window takes its new shape (posted, so SetWindowRgn's own
 /// messages never arrive while the view is borrowed).
 pub const WM_APP_DESKTOP_SHAPE: u32 = msg::WM_APP + 19;
+/// 脚本栅栏: a script run ended on its worker thread; the App collects the result.
+pub const WM_APP_SCRIPT_DONE: u32 = msg::WM_APP + 20;
 
 /// What a file drop does with the dropped paths (Explorer's Move / Copy / Create shortcut, the
 /// effect the drop target reported).
@@ -270,6 +272,11 @@ pub enum Command {
     },
     /// 时钟与日期: a new clock fence near the screen point.
     NewClock {
+        x: i32,
+        y: i32,
+    },
+    /// 脚本栅栏: pick a script, then a new script fence near the screen point.
+    NewScript {
         x: i32,
         y: i32,
     },

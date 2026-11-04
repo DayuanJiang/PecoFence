@@ -3,9 +3,9 @@
 use crate::anchor::{self, AnchorCell, DesktopAnchor, ShowDesktopBehavior, ZMode};
 use crate::commands::{
     Command, CommandQueue, TransferMode, WM_APP_COMMAND, WM_APP_FRAME, WM_APP_FS_CHANGED,
-    WM_APP_LIVE_WALLPAPER, WM_APP_PEEK_FOCUSED, WM_APP_PREWARM_DONE, WM_APP_SHELL_CHANGED,
-    WM_APP_STARTUP_BACKDROPS, WM_APP_STARTUP_TASK, WM_APP_THEMES_CHANGED, WM_APP_TRAY,
-    WM_APP_WALLPAPER,
+    WM_APP_LIVE_WALLPAPER, WM_APP_PEEK_FOCUSED, WM_APP_PREWARM_DONE, WM_APP_SCRIPT_DONE,
+    WM_APP_SHELL_CHANGED, WM_APP_STARTUP_BACKDROPS, WM_APP_STARTUP_TASK, WM_APP_THEMES_CHANGED,
+    WM_APP_TRAY, WM_APP_WALLPAPER,
 };
 use crate::fence_window::{
     BackdropMode, BackdropSets, Behavior, FenceContext, FenceWindow, ItemView, SearchMarks, TabView,
@@ -162,6 +162,8 @@ const TIMER_TMP_SETTLE: usize = 65;
 /// The themes folder is read again once its changes have been quiet this long: editors save
 /// a file in several steps (a temporary file, then a rename).
 const TIMER_THEMES: usize = 66;
+/// 脚本栅栏: a script run ended (`WM_APP_SCRIPT_DONE`); retried while the App is borrowed.
+const TIMER_SCRIPT_DONE: usize = 67;
 const THEMES_SETTLE_MS: u32 = 300;
 const DEVICE_RETRY_MAX_MS: u32 = 30_000;
 /// Growth of private commit plus GPU memory that logs a memory line before the hour is up.
@@ -335,6 +337,8 @@ pub struct App {
     store_startup_state: Option<pecofence_platform::store::StartupState>,
     /// Signalled when the last startup task switch is done, for a CLI reply that waits for it.
     store_startup_done: Option<std::sync::mpsc::Receiver<()>>,
+    /// 脚本栅栏: last results, running and next due script fences.
+    script_runs: tools::ScriptRuns,
     /// `--light` / `--dark`: pin the theme this run.
     theme_override: Option<ThemeMode>,
     peek_class: WindowClass,
@@ -756,6 +760,10 @@ impl App {
                             window::set_timer(hwnd, TIMER_STARTUP_TASK, 1);
                             Some(0)
                         }
+                        WM_APP_SCRIPT_DONE => {
+                            window::set_timer(hwnd, TIMER_SCRIPT_DONE, 1);
+                            Some(0)
+                        }
                         WM_APP_THEMES_CHANGED => {
                             window::set_timer(hwnd, TIMER_THEMES, THEMES_SETTLE_MS);
                             Some(0)
@@ -879,6 +887,7 @@ impl App {
                                 | TIMER_STARTUP_TASK
                                 | TIMER_TMP_SETTLE
                                 | TIMER_THEMES
+                                | TIMER_SCRIPT_DONE
                                 | TIMER_STARTUP_BACKDROPS => {
                                     if let Ok(mut guard) = cell.try_borrow_mut()
                                         && let Some(app) = guard.as_mut()
@@ -891,6 +900,7 @@ impl App {
                                             TIMER_STARTUP_TASK => app.finish_store_startup(),
                                             TIMER_TMP_SETTLE => app.sync_settled_tmp(),
                                             TIMER_THEMES => app.on_themes_changed(),
+                                            TIMER_SCRIPT_DONE => app.drain_scripts(),
                                             TIMER_STARTUP_BACKDROPS => {
                                                 app.finish_startup_backdrops()
                                             }
@@ -1474,6 +1484,7 @@ impl App {
             store_startup_refused: Arc::default(),
             store_startup_state: None,
             store_startup_done: None,
+            script_runs: tools::ScriptRuns::default(),
             theme_override: if args.light {
                 Some(ThemeMode::Light)
             } else if args.dark {
@@ -1726,6 +1737,8 @@ impl App {
             app.schedule_save();
         }
         window::set_coalescable_timer(app.control.hwnd(), TIMER_HOUSEKEEPING, 60_000, 5_000);
+        // 脚本栅栏: the first results, without waiting for the minute.
+        app.run_due_scripts();
         window::set_coalescable_timer(app.control.hwnd(), TIMER_WALLPAPER_POLL, 5_000, 500);
         sync_desktops_differ(app.control.hwnd(), &desktops_differ);
         // Close the gap between the startup snapshot and installing the registry watchers.
@@ -1805,6 +1818,7 @@ impl App {
 
     fn housekeeping(&mut self) {
         self.check_cut_clipboard();
+        self.run_due_scripts();
         if self.state.is_dirty() {
             self.state.save_if_dirty();
             self.notice_save_failure();
@@ -2283,6 +2297,7 @@ impl App {
             Command::NewFence { x, y } => self.new_fence_near(x, y),
             Command::NewNote { x, y } => self.new_note_near(x, y),
             Command::NewClock { x, y } => self.new_clock_near(x, y),
+            Command::NewScript { x, y } => self.new_script_near(x, y, None),
             Command::EditNote { fence } => self.edit_note(fence),
             Command::ToggleNoteLine { fence, line } => self.toggle_note_line(fence, line),
             Command::NoteEdited { fence, text } => self.note_edited(fence, &text),

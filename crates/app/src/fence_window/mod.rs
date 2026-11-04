@@ -372,6 +372,14 @@ impl ItemView {
     }
 }
 
+/// 脚本栅栏: what a script fence shows, its last output and a footer line (script name, update
+/// time or what went wrong).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ScriptView {
+    pub text: String,
+    pub footer: String,
+}
+
 /// One tab of a tabbed fence window (Fences 6): another fence shown inside this window.
 #[derive(Clone, Debug)]
 pub struct TabView {

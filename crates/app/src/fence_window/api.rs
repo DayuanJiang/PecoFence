@@ -182,6 +182,7 @@ impl FenceWindow {
             note: None,
             note_boxes: Vec::new(),
             clock: None,
+            script: None,
             portal_missing: false,
             label_w: 0.0,
             icons_pending: false,
@@ -1294,6 +1295,16 @@ impl FenceWindow {
             if v.clock != clock {
                 v.clock = clock;
                 v.arm_clock();
+                let _ = v.redraw();
+            }
+        });
+    }
+
+    /// 脚本栅栏: the fence being shown is a script fence showing `script`; None = it shows items.
+    pub fn set_script(&self, script: Option<ScriptView>) {
+        self.with_view(|v| {
+            if v.script != script {
+                v.script = script;
                 let _ = v.redraw();
             }
         });

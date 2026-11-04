@@ -64,6 +64,31 @@ pub fn type_name(path: &Path, is_folder: bool) -> Option<String> {
     (!s.is_empty()).then_some(s)
 }
 
+/// Unix seconds → the local time of day without seconds in the user's locale ("14:32",
+/// "2:32 PM"). Empty for out-of-range values.
+pub fn format_local_time(unix: i64) -> String {
+    let Some(st) = local_system_time(unix) else {
+        return String::new();
+    };
+    let mut buf = [0u16; 64];
+    // SAFETY: the buffer is live and its length is passed; `st` is a valid SYSTEMTIME.
+    let n = unsafe {
+        GetTimeFormatEx(
+            PCWSTR::null(),
+            TIME_NOSECONDS as u32,
+            Some(&st),
+            PCWSTR::null(),
+            Some(PWSTR(buf.as_mut_ptr())),
+            buf.len() as i32,
+        )
+    };
+    if n > 1 {
+        String::from_utf16_lossy(&buf[..(n - 1) as usize])
+    } else {
+        String::new()
+    }
+}
+
 /// 时钟与日期: the local time as Windows' region format writes it (12 or 24 hours; `seconds`
 /// adds them) and the date as month and day plus the weekday (`weekday_last`: "11月4日 星期三",
 /// else "Wednesday, November 4"), in the user's locale and time zone.

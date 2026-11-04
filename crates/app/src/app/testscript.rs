@@ -404,6 +404,14 @@ impl App {
                     let p = |s: &str| s.parse::<i32>().unwrap_or(0);
                     self.queue.push(Command::NewNote { x: p(x), y: p(y) });
                 }
+                ["new-script", x, y, path] => {
+                    let p = |s: &str| s.parse::<i32>().unwrap_or(0);
+                    self.new_script_near(p(x), p(y), Some(std::path::PathBuf::from(path)));
+                }
+                ["new-script-example", x, y] => {
+                    let p = |s: &str| s.parse::<i32>().unwrap_or(0);
+                    self.new_script_example(p(x), p(y));
+                }
                 ["new-clock", x, y] => {
                     let p = |s: &str| s.parse::<i32>().unwrap_or(0);
                     self.queue.push(Command::NewClock { x: p(x), y: p(y) });

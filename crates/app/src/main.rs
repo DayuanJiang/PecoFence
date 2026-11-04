@@ -18,6 +18,7 @@ mod notice;
 mod peek;
 mod peek_search;
 mod rename;
+mod scripts;
 mod settings_host;
 mod shadow;
 mod share_log;

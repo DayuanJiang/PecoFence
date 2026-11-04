@@ -663,7 +663,7 @@ impl App {
                         &[moved.to_string()],
                     ));
                 }
-                Some(name @ ("newNote" | "newClock")) => {
+                Some(name @ ("newNote" | "newClock" | "newScript" | "newScriptExample")) => {
                     // Beside the middle of the primary monitor's work area; the placement
                     // looks for a free spot from there.
                     let at = self
@@ -672,10 +672,11 @@ impl App {
                         .first()
                         .map(|w| ((w.left + w.right) / 2, (w.top + w.bottom) / 2));
                     if let Some((x, y)) = at {
-                        if name == "newNote" {
-                            self.new_note_near(x, y);
-                        } else {
-                            self.new_clock_near(x, y);
+                        match name {
+                            "newNote" => self.new_note_near(x, y),
+                            "newClock" => self.new_clock_near(x, y),
+                            "newScript" => self.new_script_near(x, y, None),
+                            _ => self.new_script_example(x, y),
                         }
                     }
                 }
@@ -1074,6 +1075,7 @@ impl App {
         }
         if tools_changed {
             self.refresh_tool_views();
+            self.run_due_scripts();
         }
         self.push_settings_state();
     }

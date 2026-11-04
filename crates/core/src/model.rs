@@ -60,6 +60,9 @@ pub struct Config {
     /// note back to older text.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub notes: HashMap<FenceId, String>,
+    /// What each script fence (`FenceTool::Script`) runs, keyed by fence id (kept like `notes`).
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub scripts: HashMap<FenceId, ScriptSpec>,
 }
 
 impl Default for Config {
@@ -74,6 +77,7 @@ impl Default for Config {
             undo_log: Vec::new(),
             snapshots: Vec::new(),
             notes: HashMap::new(),
+            scripts: HashMap::new(),
         }
     }
 }
@@ -199,6 +203,37 @@ pub struct ToolSettings {
     /// Clock fences show the seconds too (and redraw every second instead of every minute).
     #[serde(default)]
     pub clock_seconds: bool,
+    /// 脚本栅栏: fences that run a script of the user's on an interval and show its output.
+    #[serde(default)]
+    pub scripts: bool,
+}
+
+/// What a script fence (`FenceTool::Script`) runs, and how often.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct ScriptSpec {
+    /// The script or program (.ps1, .py, .pyw, .cmd, .bat, .js or .exe); empty = none chosen.
+    #[serde(default)]
+    pub path: String,
+    /// Minutes between runs, 1 to 1440.
+    #[serde(default = "ScriptSpec::default_interval")]
+    pub interval_minutes: u32,
+}
+
+impl ScriptSpec {
+    pub const INTERVALS: [u32; 6] = [1, 5, 15, 30, 60, 180];
+
+    fn default_interval() -> u32 {
+        30
+    }
+
+    pub fn new(path: &str) -> Self {
+        Self {
+            path: path.to_string(),
+            interval_minutes: Self::default_interval(),
+        }
+    }
 }
 
 /// A fence that shows a tool instead of desktop items.
@@ -211,6 +246,8 @@ pub enum FenceTool {
     Note,
     /// 时钟与日期: the local time, date and weekday in Windows' region format.
     Clock,
+    /// 脚本栅栏: the text a script of the user's prints (`Config::scripts`), run on an interval.
+    Script,
 }
 
 impl FenceTool {
@@ -219,6 +256,7 @@ impl FenceTool {
         match self {
             Self::Note => tools.notes,
             Self::Clock => tools.clock,
+            Self::Script => tools.scripts,
         }
     }
 }
@@ -1611,23 +1649,27 @@ impl Config {
         last_shown(&self.layouts)
     }
 
-    /// Drops the text of notes no layout and no snapshot has a fence for any more (a snapshot
-    /// that still has the fence brings it back with its text). Returns how many went.
+    /// Drops the text of notes and the scripts of script fences no layout and no snapshot has
+    /// a fence for any more (a snapshot that still has the fence brings it back with them).
+    /// Returns how many went.
     pub fn prune_notes(&mut self) -> usize {
-        if self.notes.is_empty() {
+        if self.notes.is_empty() && self.scripts.is_empty() {
             return 0;
         }
-        let kept: HashSet<FenceId> = self
-            .layouts
-            .iter()
-            .chain(self.snapshots.iter().flat_map(|s| s.layouts.iter()))
-            .flat_map(|l| l.fences.iter())
-            .filter(|f| f.tool == Some(FenceTool::Note))
-            .map(|f| f.id)
-            .collect();
-        let before = self.notes.len();
-        self.notes.retain(|id, _| kept.contains(id));
-        before - self.notes.len()
+        let kept = |tool: FenceTool| -> HashSet<FenceId> {
+            self.layouts
+                .iter()
+                .chain(self.snapshots.iter().flat_map(|s| s.layouts.iter()))
+                .flat_map(|l| l.fences.iter())
+                .filter(|f| f.tool == Some(tool))
+                .map(|f| f.id)
+                .collect()
+        };
+        let (notes, scripts) = (kept(FenceTool::Note), kept(FenceTool::Script));
+        let before = self.notes.len() + self.scripts.len();
+        self.notes.retain(|id, _| notes.contains(id));
+        self.scripts.retain(|id, _| scripts.contains(id));
+        before - self.notes.len() - self.scripts.len()
     }
 
     /// Makes `index` the layout shown last; false when it already was.

@@ -802,6 +802,43 @@ impl FenceViewState {
         });
     }
 
+    /// 脚本栅栏: the script's output lines and the footer in place of items.
+    pub(super) fn redraw_script(&mut self) -> Result<()> {
+        let Some(script) = self.script.clone() else {
+            return Ok(());
+        };
+        use pecofence_render::fence_chrome::NoteLineDraw;
+        let lines: Vec<NoteLineDraw<'_>> = script
+            .text
+            .lines()
+            .map(|text| NoteLineDraw { text, todo: None })
+            .collect();
+        let scale = self.scale();
+        let theme = self
+            .material_foreground()
+            .with_label_color(self.behavior.label_color.get());
+        let chrome = self.chrome.clone();
+        let hint = pecofence_core::i18n::text("脚本没有输出文字");
+        let ok = self
+            .content_panel
+            .draw_ex(self.dpi, |session, _clip, wd, hd| {
+                chrome
+                    .draw_note(
+                        session,
+                        &theme,
+                        scale,
+                        wd,
+                        hd,
+                        &lines,
+                        hint,
+                        Some(&script.footer),
+                    )
+                    .map(|_| ())
+            })?;
+        self.note_draw_result(ok);
+        Ok(())
+    }
+
     /// 便签与待办: the note's lines in place of items.
     pub(super) fn redraw_note(&mut self) -> Result<()> {
         let Some(text) = self.note.clone() else {
@@ -830,7 +867,7 @@ impl FenceViewState {
         let ok = self
             .content_panel
             .draw_ex(self.dpi, |session, _clip, wd, hd| {
-                boxes = chrome.draw_note(session, &theme, scale, wd, hd, &lines, hint)?;
+                boxes = chrome.draw_note(session, &theme, scale, wd, hd, &lines, hint, None)?;
                 Ok(())
             })?;
         self.note_draw_result(ok);
@@ -873,6 +910,9 @@ impl FenceViewState {
         }
         if self.clock.is_some() {
             return self.redraw_clock();
+        }
+        if self.script.is_some() {
+            return self.redraw_script();
         }
         if self.row_metrics().is_some() {
             return self.redraw_rows();

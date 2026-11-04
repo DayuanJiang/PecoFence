@@ -3377,8 +3377,9 @@ const CHECK_GLYPH: &str = "\u{E73E}";
 impl FenceChrome {
     /// Draws a note's lines from the top left, each wrapped to the width; a to-do gets a check
     /// box before its text, ticked ones in the accent with their text dimmed. `hint` shows in
-    /// the secondary colour while the note has no text. Returns each to-do's line index with
-    /// its check box (surface DIPs) for hit-testing.
+    /// the secondary colour while the note has no text. `footer` (a script fence's status line)
+    /// sits at the bottom in the secondary colour and the lines stop above it. Returns each
+    /// to-do's line index with its check box (surface DIPs) for hit-testing.
     #[allow(clippy::too_many_arguments)]
     pub fn draw_note(
         &self,
@@ -3389,11 +3390,22 @@ impl FenceChrome {
         height: f32,
         lines: &[NoteLineDraw<'_>],
         hint: &str,
+        footer: Option<&str>,
     ) -> Result<Vec<(usize, Rect)>> {
         session.clear(ColorF::TRANSPARENT);
         let primary = session.create_solid_brush(theme.text_primary)?;
         let secondary = session.create_solid_brush(theme.text_secondary)?;
         let w = (width - 2.0 * NOTE_PAD_X).max(1.0);
+        let height = match footer.filter(|f| !f.is_empty()) {
+            Some(footer) => {
+                let layout = TextLayout::new(footer, &self.group_format, w, f32::MAX)?;
+                let h = layout.metrics().height;
+                let top = (height - h - 8.0).max(0.0);
+                session.draw_text_layout(Vector2::new(NOTE_PAD_X, top), &layout, &secondary);
+                (top - 4.0).max(0.0)
+            }
+            None => height,
+        };
         if lines
             .iter()
             .all(|l| l.text.trim().is_empty() && l.todo.is_none())

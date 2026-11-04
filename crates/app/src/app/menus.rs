@@ -47,6 +47,15 @@ const CMD_FENCE_NEW_NOTE: u32 = 307;
 const CMD_FENCE_EDIT_NOTE: u32 = 308;
 /// 新建时钟 in the fence menu (only while the clock tool is on).
 const CMD_FENCE_NEW_CLOCK: u32 = 309;
+/// 脚本栅栏 in its fence menu: 立即运行, 选择脚本…, 打开脚本所在的文件夹, and 运行间隔's
+/// entries (one per `ScriptSpec::INTERVALS`).
+const CMD_FENCE_SCRIPT_RUN: u32 = 500;
+const CMD_FENCE_SCRIPT_PICK: u32 = 501;
+const CMD_FENCE_SCRIPT_FOLDER: u32 = 502;
+const CMD_FENCE_SCRIPT_INTERVAL_BASE: u32 = 1900;
+/// 新建脚本栅栏 (tray and fence menu; only while the script tool is on).
+const CMD_NEW_SCRIPT: u32 = 18;
+const CMD_FENCE_NEW_SCRIPT: u32 = 503;
 /// The inbox's 为空时自动隐藏 (in place of 删除栅栏).
 const CMD_FENCE_HIDE_EMPTY: u32 = 305;
 const CMD_FENCE_DESKTOP_LAYOUT: u32 = 306;
@@ -115,6 +124,9 @@ mod glyph {
     pub const NOTE: char = '\u{E70B}';
     /// Clock: 新建时钟.
     pub const CLOCK: char = '\u{E121}';
+    /// Code: 新建脚本栅栏; Play: 立即运行.
+    pub const CODE: char = '\u{E943}';
+    pub const PLAY: char = '\u{E768}';
     pub const FOLDER: char = '\u{E8B7}';
     /// Favicon: a frame with a title strip, like a fence with tabs.
     pub const TAB: char = '\u{E737}';
@@ -190,6 +202,15 @@ impl App {
                 false,
             )
             .icon(glyph::CLOCK);
+        }
+        if self.state.config.settings.tools.scripts {
+            menu.item(
+                CMD_NEW_SCRIPT,
+                pecofence_core::i18n::text("新建脚本栅栏…"),
+                false,
+                false,
+            )
+            .icon(glyph::CODE);
         }
         menu.submenu(
             pecofence_core::i18n::text("在桌面显示文件夹"),
@@ -269,6 +290,7 @@ impl App {
             CMD_NEW_FENCE => self.queue.push(Command::NewFence { x, y: y - 300 }),
             CMD_NEW_NOTE => self.queue.push(Command::NewNote { x, y: y - 300 }),
             CMD_NEW_CLOCK => self.queue.push(Command::NewClock { x, y: y - 300 }),
+            CMD_NEW_SCRIPT => self.queue.push(Command::NewScript { x, y: y - 300 }),
             c if (CMD_SHOW_FOLDER..CMD_SHOW_FOLDER + 4).contains(&c) => {
                 self.show_folder_command(c - CMD_SHOW_FOLDER, x, y - 300, None)
             }
@@ -625,8 +647,8 @@ impl App {
         menu.separator();
         let tabs = self.state.tabs_of(host);
         let tab_idx = tabs.iter().position(|t| *t == fence).unwrap_or(0);
-        // A note (便签) has no items to view, sort, create, paste or merge into tabs.
-        if f.tool.is_some() {
+        // A tool fence (小工具) has no items to view, sort, create, paste or merge into tabs.
+        if f.tool == Some(pecofence_core::FenceTool::Note) {
             menu.item(
                 CMD_FENCE_EDIT_NOTE,
                 pecofence_core::i18n::text("编辑便签"),
@@ -634,6 +656,52 @@ impl App {
                 false,
             )
             .icon(glyph::RENAME);
+        } else if f.tool == Some(pecofence_core::FenceTool::Script) {
+            let spec = self.state.config.scripts.get(&fence);
+            let has_path = spec.is_some_and(|s| !s.path.is_empty());
+            let interval = spec.map_or(0, |s| s.interval_minutes);
+            let interval_menu = PopupMenu::new();
+            for (i, minutes) in pecofence_core::ScriptSpec::INTERVALS
+                .into_iter()
+                .enumerate()
+            {
+                let label = if minutes < 60 {
+                    pecofence_core::i18n::format("{0} 分钟", &[minutes.to_string()])
+                } else {
+                    pecofence_core::i18n::format("{0} 小时", &[(minutes / 60).to_string()])
+                };
+                interval_menu.item(
+                    CMD_FENCE_SCRIPT_INTERVAL_BASE + i as u32,
+                    &label,
+                    interval == minutes,
+                    false,
+                );
+            }
+            menu.item(
+                CMD_FENCE_SCRIPT_RUN,
+                pecofence_core::i18n::text("立即运行"),
+                false,
+                !has_path,
+            )
+            .icon(glyph::PLAY)
+            .item(
+                CMD_FENCE_SCRIPT_PICK,
+                pecofence_core::i18n::text("选择脚本…"),
+                false,
+                false,
+            )
+            .icon(glyph::DOCUMENT)
+            .submenu(pecofence_core::i18n::text("运行间隔"), interval_menu)
+            .icon(glyph::CLOCK)
+            .item(
+                CMD_FENCE_SCRIPT_FOLDER,
+                pecofence_core::i18n::text("打开脚本所在的文件夹"),
+                false,
+                !has_path,
+            )
+            .icon(glyph::FOLDER_OPEN);
+        } else if f.tool.is_some() {
+            // A clock has nothing of its own to offer here.
         } else {
             let view_menu = PopupMenu::new();
             view_menu
@@ -871,6 +939,15 @@ impl App {
             )
             .icon(glyph::CLOCK);
         }
+        if self.state.config.settings.tools.scripts {
+            menu.item(
+                CMD_FENCE_NEW_SCRIPT,
+                pecofence_core::i18n::text("新建脚本栅栏…"),
+                false,
+                false,
+            )
+            .icon(glyph::CODE);
+        }
         menu.submenu(
             pecofence_core::i18n::text("在桌面显示文件夹"),
             Self::show_folder_submenu(CMD_FENCE_SHOW_FOLDER),
@@ -1031,6 +1108,22 @@ impl App {
             CMD_FENCE_NEW_NOTE => self.queue.push(Command::NewNote { x, y }),
             CMD_FENCE_NEW_CLOCK => self.queue.push(Command::NewClock { x, y }),
             CMD_FENCE_EDIT_NOTE => self.edit_note(fence),
+            CMD_FENCE_SCRIPT_RUN => {
+                self.script_runs_reset(fence);
+                self.start_script(fence);
+            }
+            CMD_FENCE_SCRIPT_PICK => self.pick_script_for(fence),
+            CMD_FENCE_SCRIPT_FOLDER => self.open_script_folder(fence),
+            c if (CMD_FENCE_SCRIPT_INTERVAL_BASE
+                ..CMD_FENCE_SCRIPT_INTERVAL_BASE
+                    + pecofence_core::ScriptSpec::INTERVALS.len() as u32)
+                .contains(&c) =>
+            {
+                let minutes = pecofence_core::ScriptSpec::INTERVALS
+                    [(c - CMD_FENCE_SCRIPT_INTERVAL_BASE) as usize];
+                self.set_script_interval(fence, minutes);
+            }
+            CMD_FENCE_NEW_SCRIPT => self.queue.push(Command::NewScript { x, y }),
             CMD_FENCE_DELETE => self.delete_fence_from_menu(fence),
             CMD_FENCE_HIDE_EMPTY => self.set_fence_hide_when_empty(fence, !f.hide_when_empty),
             CMD_FENCE_DESKTOP_LAYOUT => {

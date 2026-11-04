@@ -605,6 +605,11 @@
         <div class="card child"><div class="l"><div><div class="t">显示秒</div><div class="s">每秒更新一次</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="tools.clockSeconds"></div></div>
         <div class="card child"><div class="l"><div><div class="t" id="clockCount"></div></div></div><button class="accent" id="newClock">新建时钟</button></div>
       </div>
+      <h3>自己写的小工具</h3>
+      <div class="group">
+        <div class="card"><div class="l"><span class="ic">&#xE943;</span><div><div class="t">脚本栅栏</div><div class="s">定时运行你选的脚本（PowerShell、Python、批处理等），把它打印的文字显示在栅栏里，适合天气、倒计时、服务器状态，也可以让 AI 助手帮你写。PecoFence 自己不联网，联网的是你的脚本</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="tools.scripts"></div></div>
+        <div class="card child"><div class="l"><div><div class="t" id="scriptCount"></div><div class="s">脚本最多运行 10 秒，不弹出窗口；运行间隔在栅栏的右键菜单里改</div></div></div><div class="actions"><button id="newScriptExample">添加天气示例</button><button class="accent" id="newScript">新建脚本栅栏…</button></div></div>
+      </div>
     </section>
     <section class="page" id="page-layout">
       <header class="page-header"><h2>布局与备份</h2></header>
@@ -1027,9 +1032,10 @@
   // 「小工具」 page: how many notes the desktop has (they show while the switch is on).
   function renderTools() {
     const count = kind => (state.fences || []).filter(f => f.tool && f.tool.kind === kind).length;
-    const notes = count('note'), clocks = count('clock');
+    const notes = count('note'), clocks = count('clock'), scripts = count('script');
     document.getElementById('noteCount').textContent = notes ? tf("桌面上有 {0} 个便签", notes) : t("桌面上还没有便签");
     document.getElementById('clockCount').textContent = clocks ? tf("桌面上有 {0} 个时钟", clocks) : t("桌面上还没有时钟");
+    document.getElementById('scriptCount').textContent = scripts ? tf("桌面上有 {0} 个脚本栅栏", scripts) : t("桌面上还没有脚本栅栏");
   }
   function renderDependents() {
     for (const [child, master] of DEPENDENT) {
@@ -1789,6 +1795,8 @@
   document.getElementById('applyRules').onclick = () => send({ type: 'action', name: 'applyRules' });
   document.getElementById('newNote').onclick = () => send({ type: 'action', name: 'newNote' });
   document.getElementById('newClock').onclick = () => send({ type: 'action', name: 'newClock' });
+  document.getElementById('newScript').onclick = () => send({ type: 'action', name: 'newScript' });
+  document.getElementById('newScriptExample').onclick = () => send({ type: 'action', name: 'newScriptExample' });
   document.querySelectorAll('#templates [data-template]').forEach(b => { b.onclick = () => send({ type: 'action', name: 'addTemplate', template: b.dataset.template }); });
   document.getElementById('snapSave').onclick = () => { const n = document.getElementById('snapName').value; send({ type: 'action', name: 'saveSnapshot', snapshotName: n }); document.getElementById('snapName').value = ''; };
   document.getElementById('cfgExport').onclick = () => send({ type: 'action', name: 'exportConfig' });

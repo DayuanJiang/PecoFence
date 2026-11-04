@@ -153,6 +153,8 @@ pub struct FenceViewState {
     pub(super) note_boxes: Vec<(usize, [f32; 4])>,
     /// 时钟与日期: the fence shown is a clock; true = with seconds. None = it shows items.
     pub(super) clock: Option<bool>,
+    /// 脚本栅栏: the fence shown is a script fence with this output and footer.
+    pub(super) script: Option<ScriptView>,
     /// The portal's folder could not be found (its empty state says so).
     pub(super) portal_missing: bool,
     /// Width the cached labels were fitted for; a change invalidates them.
@@ -561,7 +563,7 @@ impl FenceViewState {
     /// The fence shown is a tool (小工具) in place of items: it takes no drops, merges or
     /// marquee, and counts no items.
     pub(super) fn shows_tool(&self) -> bool {
-        self.note.is_some() || self.clock.is_some()
+        self.note.is_some() || self.clock.is_some() || self.script.is_some()
     }
 
     /// Arms TIMER_CLOCK for just after the next minute (or second) boundary, or stops it when
