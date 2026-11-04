@@ -484,8 +484,9 @@ impl App {
             None => "unknown",
         };
         let mut startup = format!(
-            "started {} after Explorer, elevated {elevated}, config in {}, app on {}, config on {}",
+            "started {} after Explorer, elevated {elevated}, Explorer elevated {}, config in {}, app on {}, config on {}",
             seconds_after_explorer().map_or("?".to_string(), |s| format!("{s} s")),
+            explorer_elevated(),
             self.state.storage_kind(),
             std::env::current_exe().map_or("?".to_string(), |exe| drive_of(&exe)),
             drive_of(&self.state.config_path()),

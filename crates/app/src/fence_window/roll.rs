@@ -37,6 +37,45 @@ pub(super) enum VisFade {
     Hiding { destroy: bool },
 }
 
+/// What happened during the current whole-window fade, for the debug line at its end: how long
+/// it took, what ended it, how evenly the frame clock stepped the shadow along, and how often
+/// the anchor moved the window in the z-order meanwhile.
+#[derive(Clone, Copy, Debug, Default)]
+pub(super) struct FadeTrace {
+    pub(super) started: Option<Instant>,
+    /// Shadow alpha steps taken by the frame clock, and the longest wait between two.
+    pub(super) shadow_steps: u32,
+    pub(super) max_step_gap_ms: u32,
+    pub(super) last_step: Option<Instant>,
+    /// Z-order placements of the window by the anchor.
+    pub(super) zorder_moves: u32,
+}
+
+impl FadeTrace {
+    pub(super) fn new(now: Instant) -> Self {
+        Self {
+            started: Some(now),
+            ..Self::default()
+        }
+    }
+
+    pub(super) fn shadow_step(&mut self, now: Instant) {
+        if self.started.is_none() {
+            return;
+        }
+        self.shadow_steps += 1;
+        if let Some(prev) = self.last_step.replace(now) {
+            let gap = now.duration_since(prev).as_millis() as u32;
+            self.max_step_gap_ms = self.max_step_gap_ms.max(gap);
+        }
+    }
+
+    /// Milliseconds since the fade started.
+    pub(super) fn elapsed_ms(&self) -> u64 {
+        self.started.map_or(0, |t| t.elapsed().as_millis() as u64)
+    }
+}
+
 /// Shows a fence window with a 167 ms fade (`entrance` adds the 0.97 → 1 scale of a new
 /// window); the shadow is shown at once at alpha 0 and fades with the plate. Already-visible
 /// windows are left alone. Borrow-free around `ShowWindow`, which re-enters the handler with
@@ -207,6 +246,14 @@ impl FenceViewState {
         }
         self.vis_gen += 1;
         let now = Instant::now();
+        tracing::debug!(
+            title = %self.title,
+            generation = self.vis_gen,
+            replaces = ?self.vis_fade,
+            dpi = self.dpi,
+            "fade in started"
+        );
+        self.fade_trace = FadeTrace::new(now);
         // Reversing a fade-out continues from its current opacity instead of restarting at 0.
         if self.vis_fade.is_none() {
             self.root.set_opacity(0.0);
@@ -274,6 +321,14 @@ impl FenceViewState {
             return false;
         }
         self.vis_gen += 1;
+        tracing::debug!(
+            title = %self.title,
+            generation = self.vis_gen,
+            replaces = ?self.vis_fade,
+            dpi = self.dpi,
+            "fade out started"
+        );
+        self.fade_trace = FadeTrace::new(Instant::now());
         self.vis_fade = Some(VisFade::Hiding { destroy });
         let root = self.root.clone();
         let motion = self.motion.clone();
@@ -317,12 +372,35 @@ impl FenceViewState {
         self.apply_shadow_alpha(Instant::now());
     }
 
+    /// Resting visual state of a hidden window: transparent, unscaled, shadow alpha 0. A fade-in
+    /// shows the window before its opacity 0 reaches the compositor (that happens when the
+    /// message loop runs again), so a window kept opaque while hidden flashed fully opaque for a
+    /// frame and only then faded in; the same opacity 1, set as a fade-out ended, could also
+    /// reach the screen before the window was gone. A plain show makes it opaque in
+    /// `WM_SHOWWINDOW`. With animations off nothing fades: it rests opaque as before.
+    pub(super) fn rest_hidden(&mut self) {
+        if !self.motion.enabled() {
+            self.reset_root();
+            return;
+        }
+        window::kill_timer(self.hwnd, TIMER_VISIBILITY_FINISH);
+        self.vis_deadline = None;
+        let _ = self.motion.stop(&self.root, Prop::Opacity);
+        let _ = self.motion.stop(&self.root, Prop::Scale);
+        self.root.set_opacity(0.0);
+        self.motion.set_scale(&self.root, 1.0);
+        self.shadow_alpha = Tween::at(0.0, Instant::now());
+        self.shadow_fading = false;
+        self.apply_shadow_alpha(Instant::now());
+    }
+
     /// Advances the shadow's fade for one frame (see `shadow_alpha`); true while it still moves.
     pub(super) fn tick_shadow_alpha(&mut self, now: Instant) -> bool {
         if !self.shadow_fading {
             return false;
         }
         self.apply_shadow_alpha(now);
+        self.fade_trace.shadow_step(now);
         if self.shadow_alpha.is_done(now) {
             self.shadow_fading = false;
             return false;
