@@ -295,8 +295,8 @@ impl FenceViewState {
                 .is_some_and(|t| t.elapsed() <= TYPE_AHEAD_TIMEOUT)
     }
 
-    /// The file Space previews in QuickLook: the focused item when it is selected (Explorer),
-    /// else the first selected one.
+    /// The file Space previews in Seer or QuickLook: the focused item when it is selected
+    /// (Explorer), else the first selected one.
     pub(super) fn preview_path(&self) -> Option<&std::path::Path> {
         if self.rolled_up {
             return None;

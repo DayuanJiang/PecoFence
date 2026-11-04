@@ -181,9 +181,15 @@ impl SettingsHost {
                             None
                         }
                         msg::WM_DESTROY => {
-                            let mut s = state.borrow_mut();
-                            s.webview = None;
-                            if let Some(c) = s.controller.take() {
+                            // Taken out of the state first: closing the browser may let a
+                            // message sent by another thread in, whose handling reads the
+                            // state (GitHub #166).
+                            let (webview, controller) = {
+                                let mut s = state.borrow_mut();
+                                (s.webview.take(), s.controller.take())
+                            };
+                            drop(webview);
+                            if let Some(c) = controller {
                                 let _ = c.close();
                             }
                             queue.push(Command::WindowGone(hwnd));

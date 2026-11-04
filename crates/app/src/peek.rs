@@ -28,6 +28,38 @@ pub fn set_drag_click_through(on: bool) {
     DRAG_CLICK_THROUGH.store(on, std::sync::atomic::Ordering::Relaxed);
 }
 
+/// The fence window clicked last in this Peek (0: none yet). The dimmer keeps the keyboard (a
+/// fence cannot be activated during the Peek, see `focus_session`), so it hands the keys a fence
+/// uses (Ctrl+C / X / V, Delete, F2, Enter, the arrows, Ctrl+A, ...) on to this one.
+static KEY_FENCE: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsize::new(0);
+
+/// A click in `fence` during the Peek: the keys go there from now on.
+pub fn set_key_fence(fence: HWND) {
+    let before = KEY_FENCE.swap(fence.0 as isize, std::sync::atomic::Ordering::Relaxed);
+    if before != fence.0 as isize {
+        tracing::debug!(?fence, "peek keys go to this fence");
+    }
+}
+
+/// Sends a key message the dimmer received to the fence clicked last in this Peek, which acts on
+/// it as it does with the keyboard outside the Peek. Same UI thread: the fence reads the modifier
+/// state of this very key. False when no fence was clicked in this Peek (or it is gone).
+fn send_to_key_fence(message: u32, wparam: usize, lparam: isize) -> bool {
+    let fence =
+        HWND(KEY_FENCE.load(std::sync::atomic::Ordering::Relaxed) as *mut core::ffi::c_void);
+    if fence.0.is_null() || desktop::class_name(fence) != anchor::FENCE_CLASS {
+        tracing::debug!(
+            message,
+            wparam,
+            "peek key kept: no fence clicked in this peek"
+        );
+        return false;
+    }
+    tracing::debug!(message, wparam, ?fence, "peek key passed on to the fence");
+    window::send_message(fence, message, wparam, lparam);
+    true
+}
+
 /// Focus went from a Peek window to `other`. A fence (click inside its content), another
 /// dimmer, the rename popup or the search box keeps the peek; anything else ends it.
 pub fn keeps_peek(other: HWND) -> bool {
@@ -43,6 +75,7 @@ pub fn keeps_peek(other: HWND) -> bool {
 
 pub const PEEK_CLASS: &str = "PecoFence.PeekDimmer";
 const WA_INACTIVE: usize = 0;
+const VK_UP: u32 = 0x26;
 /// 30 % black (WinUI `SmokeFillColorDefault` #4D000000), the resting alpha of the dimmer.
 const DIM_ALPHA: u8 = 0x4D;
 /// Never 0: a fully transparent layered window is not hit-tested, and the dimmer must catch
@@ -81,6 +114,8 @@ impl PeekOverlay {
         dim: bool,
         motion: &Motion,
     ) -> Result<Self> {
+        // Keys go to no fence until one is clicked in this Peek.
+        KEY_FENCE.store(0, std::sync::atomic::Ordering::Relaxed);
         let mut windows = Vec::new();
         for m in monitors::enumerate() {
             let handler: MessageHandler = {
@@ -104,6 +139,22 @@ impl PeekOverlay {
                             {
                                 queue.push(Command::EndPeek("Esc pressed"));
                                 Some(0)
+                            }
+                            // The other keys work on the clicked fence's icons. Letters still
+                            // open the search box: their WM_CHAR comes to the dimmer.
+                            msg::WM_KEYDOWN if wparam as u32 != msg::VK_ESCAPE => {
+                                send_to_key_fence(message, wparam, lparam).then_some(0)
+                            }
+                            // Alt+Enter (properties) and Alt+Up (the folder above), the Alt keys
+                            // a fence handles. Other Alt keys stay with the dimmer.
+                            msg::WM_SYSKEYDOWN
+                                if wparam as u32 == msg::VK_RETURN || wparam as u32 == VK_UP =>
+                            {
+                                send_to_key_fence(message, wparam, lparam).then_some(0)
+                            }
+                            // The menu key and Shift+F10 (lParam -1): the clicked fence's menu.
+                            msg::WM_CONTEXTMENU if lparam as u32 == u32::MAX => {
+                                send_to_key_fence(message, wparam, lparam).then_some(0)
                             }
                             msg::WM_NCHITTEST
                                 if DRAG_CLICK_THROUGH

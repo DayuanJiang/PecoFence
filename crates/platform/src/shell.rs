@@ -666,6 +666,23 @@ pub fn shell_image(path: &Path, size_px: u32, icon_only: bool) -> Result<ShellIm
     }
 }
 
+/// True while another program has the file open for writing, or open without letting others
+/// read it: a copy or an unpacker still writing it, a virus scanner checking a new program. The
+/// shell then cannot read the icon out of the file and hands back the generic one as if it were
+/// the file's own. The check opens the file for an instant, for reading, sharing reading and
+/// deleting but not writing, so that a writer shows.
+pub fn file_busy(path: &Path) -> bool {
+    use std::os::windows::fs::OpenOptionsExt;
+    const FILE_SHARE_READ: u32 = 0x1;
+    const FILE_SHARE_DELETE: u32 = 0x4;
+    const ERROR_SHARING_VIOLATION: i32 = 32;
+    std::fs::OpenOptions::new()
+        .read(true)
+        .share_mode(FILE_SHARE_READ | FILE_SHARE_DELETE)
+        .open(path)
+        .is_err_and(|e| e.raw_os_error() == Some(ERROR_SHARING_VIOLATION))
+}
+
 /// What Explorer shows for each file of a type.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FilePicture {
@@ -1501,6 +1518,38 @@ mod url_tests {
         let tail = target.strip_prefix("https://example.com/").unwrap();
         assert!(!tail.is_empty() && !tail.contains('\u{FFFD}'), "{target:?}");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+#[cfg(test)]
+mod busy_tests {
+    use super::file_busy;
+
+    /// Busy while another handle may write the file or shares no reading; free once closed, and
+    /// while it is only being read.
+    #[test]
+    fn a_file_open_for_writing_is_busy() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let path = std::env::temp_dir().join(format!("pecofence-busy-{}.exe", std::process::id()));
+        std::fs::write(&path, b"MZ").unwrap();
+        assert!(!file_busy(&path));
+        let writer = std::fs::OpenOptions::new().write(true).open(&path).unwrap();
+        assert!(file_busy(&path));
+        drop(writer);
+        let reader = std::fs::File::open(&path).unwrap();
+        assert!(!file_busy(&path));
+        drop(reader);
+        let exclusive = std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(0)
+            .open(&path)
+            .unwrap();
+        assert!(file_busy(&path));
+        drop(exclusive);
+        assert!(!file_busy(&path));
+        let _ = std::fs::remove_file(&path);
+        // A missing file is not busy: the shell's own answer counts then.
+        assert!(!file_busy(&path));
     }
 }
 

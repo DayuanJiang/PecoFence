@@ -33,7 +33,7 @@ pub(super) fn on_timer_composition_finish(
     }
     drop(guard);
     if timer == TIMER_VISIBILITY_FINISH {
-        super::misc::on_app_fade_done(h, hwnd, generation, 0)
+        super::misc::on_app_fade_done(h, hwnd, generation, super::misc::FADE_DONE_BY_TIMER)
     } else {
         super::misc::on_app_tab_swap_done(h, hwnd, generation, 0)
     }

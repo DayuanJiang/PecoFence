@@ -47,10 +47,16 @@ PecoFence first; both builds share the single-instance mutex.
 ## Behavior differences in the packaged build
 
 - Autostart: HKCU writes are virtualized inside the package, so the Run-key code is
-  skipped (`process::is_packaged()`). The manifest startup task is enabled by default and
-  users manage it under Settings > Apps > Startup; the in-app toggle opens that page and
-  shows the state Windows keeps for the task (read again when the settings window is
-  activated).
+  skipped (`process::is_packaged()`). The manifest startup task is enabled by default. The
+  in-app switch shows the state Windows keeps for the task (read at start and whenever the
+  settings window is activated) and changes it with `StartupTask.RequestEnableAsync` /
+  `Disable` on a worker (a packaged desktop app gets no consent prompt). Windows lets an app
+  change only `Disabled` and `Enabled`: after the user turned it off in Settings > Apps >
+  Startup or Task Manager (`DisabledByUser`) only they can turn it on again there, and a
+  policy state (`DisabledByPolicy`, `EnabledByPolicy`) is fixed. For those three the page says
+  why under the switch, and a click opens Settings > Apps > Startup. The log has
+  `startup task state old=.. new=..` for each new state and `startup task set on=.. old=..
+  new=..` for each click.
 - Configuration: when `%APPDATA%\PecoFence` does not exist yet, the Store edition writes
   `config.json` into the package's virtualized AppData
   (`%LOCALAPPDATA%\Packages\DayuanJiang.PecoFence_0bme5nfnaj27p\LocalCache\Roaming\PecoFence\`),

@@ -384,6 +384,8 @@ impl App {
             "pickedColors": self.picked_colors,
             "version": env!("CARGO_PKG_VERSION"),
             "storeEdition": pecofence_platform::process::is_packaged(),
+            // Store edition: Windows' state of the startup switch (`StartupState` names).
+            "startupState": self.store_startup_state.map(|s| format!("{s:?}")),
             "cliCommand": cli_command(),
             "configPath": self.state.config_path_on_disk().to_string_lossy(),
             "memoryMb": mem_mb,
@@ -442,9 +444,9 @@ impl App {
         let _ = std::thread::Builder::new()
             .name("pecofence-startup-task".into())
             .spawn(
-                move || match pecofence_platform::store::startup_task_enabled() {
-                    Ok(on) => {
-                        result.store(1 + on as u8, std::sync::atomic::Ordering::Relaxed);
+                move || match pecofence_platform::store::startup_task_state() {
+                    Ok(state) => {
+                        result.store(state as u8, std::sync::atomic::Ordering::Relaxed);
                         window::post_message(
                             HWND(control as *mut core::ffi::c_void),
                             WM_APP_STARTUP_TASK,
@@ -457,6 +459,57 @@ impl App {
             );
     }
 
+    /// Store edition: a click on 「随 Windows 启动」 switches Windows' startup task for the package
+    /// on a worker, where the app may (`store::set_startup_task`). The state comes back as a read
+    /// does; when Windows kept it as it was, [`Self::finish_store_startup`] opens Windows'
+    /// Startup settings, where the user can change it.
+    fn switch_store_startup(&mut self, on: bool) {
+        let result = self.store_startup.clone();
+        let refused = self.store_startup_refused.clone();
+        let control = self.control.hwnd().0 as isize;
+        let (done, done_receiver) = std::sync::mpsc::channel();
+        self.store_startup_done = Some(done_receiver);
+        let _ = std::thread::Builder::new()
+            .name("pecofence-startup-task".into())
+            .spawn(move || {
+                let state = match pecofence_platform::store::set_startup_task(on) {
+                    Ok((before, after)) => {
+                        tracing::info!(on, old = ?before, new = ?after, "startup task set");
+                        Some(after)
+                    }
+                    Err(e) => {
+                        tracing::warn!(on, error = %e, "setting the startup task failed");
+                        pecofence_platform::store::startup_task_state().ok()
+                    }
+                };
+                if state.is_none_or(|s| s.is_on() != on) {
+                    refused.store(true, std::sync::atomic::Ordering::Relaxed);
+                }
+                if let Some(state) = state {
+                    result.store(state as u8, std::sync::atomic::Ordering::Relaxed);
+                }
+                window::post_message(
+                    HWND(control as *mut core::ffi::c_void),
+                    WM_APP_STARTUP_TASK,
+                    0,
+                    0,
+                );
+                let _ = done.send(());
+            });
+    }
+
+    /// Store edition: waits briefly for the startup task switch a CLI call started, so the reply
+    /// shows Windows' state (and the rollback warning when Windows kept it).
+    pub(super) fn wait_store_startup_switch(&mut self) {
+        let Some(done) = self.store_startup_done.take() else {
+            return;
+        };
+        match done.recv_timeout(std::time::Duration::from_secs(2)) {
+            Ok(()) => self.finish_store_startup(),
+            Err(_) => tracing::info!("startup task not set in time; reply as asked"),
+        }
+    }
+
     /// Store edition: reads Windows' startup switch on a worker and waits for it briefly, so a
     /// `pecofence-cli settings get` reply shows a change made in Windows Settings meanwhile.
     pub(super) fn follow_store_startup_now(&mut self) {
@@ -467,12 +520,12 @@ impl App {
         let _ = std::thread::Builder::new()
             .name("pecofence-startup-task".into())
             .spawn(move || {
-                let _ = send.send(pecofence_platform::store::startup_task_enabled());
+                let _ = send.send(pecofence_platform::store::startup_task_state());
             });
         match receive.recv_timeout(std::time::Duration::from_millis(800)) {
-            Ok(Ok(on)) => {
+            Ok(Ok(state)) => {
                 self.store_startup
-                    .store(1 + on as u8, std::sync::atomic::Ordering::Relaxed);
+                    .store(state as u8, std::sync::atomic::Ordering::Relaxed);
                 self.finish_store_startup();
             }
             Ok(Err(e)) => tracing::warn!(error = %e, "reading the startup task failed"),
@@ -480,20 +533,35 @@ impl App {
         }
     }
 
-    /// 「随 Windows 启动」 follows the switch Windows keeps for the Store package.
+    /// 「随 Windows 启动」 follows the switch Windows keeps for the Store package. After a click
+    /// the app could not carry out, Windows' Startup settings open.
     pub(super) fn finish_store_startup(&mut self) {
-        let on = match self
-            .store_startup
-            .load(std::sync::atomic::Ordering::Relaxed)
-        {
-            1 => false,
-            2 => true,
-            _ => return,
-        };
-        if self.state.config.settings.autostart != on {
-            tracing::info!(on, "startup switch follows Windows");
-            self.state.config.settings.autostart = on;
-            self.settings_mutated();
+        let refused = self
+            .store_startup_refused
+            .swap(false, std::sync::atomic::Ordering::Relaxed);
+        let read = pecofence_platform::store::StartupState::from_code(
+            self.store_startup
+                .load(std::sync::atomic::Ordering::Relaxed),
+        );
+        if let Some(state) = read {
+            let changed = self.store_startup_state != Some(state);
+            if changed {
+                tracing::info!(old = ?self.store_startup_state, new = ?state, "startup task state");
+                self.store_startup_state = Some(state);
+            }
+            let on = state.is_on();
+            if self.state.config.settings.autostart != on {
+                tracing::info!(on, "startup switch follows Windows");
+                self.state.config.settings.autostart = on;
+                self.settings_mutated();
+            } else if changed {
+                self.push_settings_state();
+            }
+        }
+        if refused {
+            tracing::info!("startup switch kept by Windows; opening Windows' Startup settings");
+            let _ =
+                shell::shell_execute(std::path::Path::new("ms-settings:startupapps"), None, None);
         }
     }
 
@@ -563,10 +631,25 @@ impl App {
                 }
             }
             Some("setRules") => {
-                if let Some(rules) = v.get("rules").cloned()
-                    && let Ok(rules) = serde_json::from_value::<pecofence_core::RuleSet>(rules)
+                // A rule list the core cannot read would drop the user's edit without a trace.
+                match v
+                    .get("rules")
+                    .cloned()
+                    .map(serde_json::from_value::<pecofence_core::RuleSet>)
                 {
-                    self.set_rules(rules);
+                    Some(Ok(rules)) => {
+                        tracing::info!(rules = rules.list.len(), "rules saved from page");
+                        self.set_rules(rules);
+                    }
+                    Some(Err(e)) => {
+                        // The page shows the stored rules again and says the edit was not saved.
+                        tracing::warn!(error = %e, "bad rules from page: not saved, stored rules sent back");
+                        self.push_settings_state();
+                        self.settings_error(pecofence_core::i18n::text(
+                            "没能保存这次改动，规则已恢复原样",
+                        ));
+                    }
+                    None => tracing::warn!("setRules from page without rules"),
                 }
             }
             Some("action") => match v.get("name").and_then(|n| n.as_str()) {
@@ -835,15 +918,10 @@ impl App {
                     "未能更改“随 Windows 启动”，请稍后重试。",
                 ));
             } else if pecofence_platform::process::is_packaged() {
-                // Store installs: Windows owns the startup task, so hand the user the switch.
-                // The switch here keeps showing Windows' state; it is read again when the user
-                // comes back to this window.
-                new.autostart = old.autostart;
-                let _ = shell::shell_execute(
-                    std::path::Path::new("ms-settings:startupapps"),
-                    None,
-                    None,
-                );
+                // Store installs: Windows keeps the startup task; a worker switches it where the
+                // app may. The switch shows the change at once and Windows' state once the
+                // worker is back.
+                self.switch_store_startup(new.autostart);
             }
         }
         if new.hide_real_icons != old.hide_real_icons

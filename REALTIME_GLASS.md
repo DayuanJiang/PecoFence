@@ -135,7 +135,7 @@ The Settings UI script serves a local test page; open it and inspect the results
 
 Regenerate the production Windows bindings with `cargo run -p tool_bindgen`. This branch includes WGC bindings in the default generation list and the CI consistency check. Regenerate the optional native-backdrop probe separately with `cargo run -p tool_bindgen -- tools/bindgen/host-backdrop.txt`.
 
-### Validation of this source migration
+### Validation of the initial source migration
 
 The following checks were rerun in the target workspace on 2026-11-04 with Rust 1.95.0:
 
@@ -146,6 +146,18 @@ The following checks were rerun in the target workspace on 2026-11-04 with Rust 
 - All 5 production Windows binding files regenerated identically to the migrated files.
 
 To satisfy strict checks, two lints concerning system type names/generated projections are allowed locally on generated-binding modules. An existing Boolean expression in the temporary-file rule was also simplified equivalently without changing the rule's behavior. These checks are recorded separately from the earlier experimental build's visual and performance measurements below.
+
+### Validation after merging upstream 0.2.5
+
+On 2026-11-04, upstream commit `ef888bf878f7cb634971123eae1dff931e537b30` was merged into this branch and the following checks were rerun with Rust 1.95.0:
+
+- `cargo fmt --all -- --check` and strict Clippy across the entire workspace and all targets passed.
+- `cargo test --workspace --locked`: **529 passed, 1 existing test ignored**.
+- Browser Settings UI regressions: **95 passed, 0 failed**, using the mock bridge.
+- Coverage checks passed for 633 messages across 11 languages and for 11 README translations.
+- All 5 production Windows binding files regenerated identically to the merged files.
+
+The merged desktop application was not launched for new visual or performance measurements. The earlier measurements below still describe the previous experimental build.
 
 ## Bounded diagnostics
 
@@ -196,7 +208,7 @@ Measurement definitions and limitations:
 
 Earlier validation also included an independent dynamic probe running for 60 seconds: 1,784 frames at about 29.7 FPS, 59 non-black background samples producing 59 distinct hashes, changes in all 58 adjacent comparisons and 0 errors. Short full-occlusion pause/resume checks, four enable/disable cycles and normal exit/rollback to the original build were also performed. No monotonic handle/thread growth was observed in those short checks; they do not replace long-duration stability testing.
 
-The earlier experimental build passed Core 91, Render 72, App 235, CLI 49 and IPC 20 tests, totaling **467**, with one existing App test ignored. The 467 count belongs only to that earlier build; see Validation of this source migration above for the complete tests rerun in the target workspace. The earlier experimental release build also passed.
+The earlier experimental build passed Core 91, Render 72, App 235, CLI 49 and IPC 20 tests, totaling **467**, with one existing App test ignored. The 467 count belongs only to that earlier build; see the validation sections above for the complete tests rerun during source migration and after merging upstream 0.2.5. The earlier experimental release build also passed.
 
 ## Compatibility limits and further validation
 
@@ -210,6 +222,6 @@ A reproduction report should include the Windows build, monitor topology/scaling
 
 ## Origin, version and license
 
-The upstream project is [DayuanJiang/PecoFence](https://github.com/DayuanJiang/PecoFence). This experiment is based on upstream commit `40b2acf6dcc349b477b426862acdf78900a79768`, whose base version is `0.2.4`. The current experimental package version is `0.2.4-liveglass.1`, as recorded in `Cargo.toml`; this does not mean that upstream has released the feature.
+The upstream project is [DayuanJiang/PecoFence](https://github.com/DayuanJiang/PecoFence). This experiment initially used upstream commit `40b2acf6dcc349b477b426862acdf78900a79768`, whose base version is `0.2.4`, with the experimental package version `0.2.4-liveglass.1`. It now incorporates upstream `0.2.5` at commit `ef888bf878f7cb634971123eae1dff931e537b30`. The package version in `Cargo.toml` follows upstream at `0.2.5`; real-time glass remains an optional addition on this feature branch, not a claim that upstream has released it.
 
 The migration retains the full upstream project, existing functionality and `vendor` dependencies, adding the real-time glass implementation and settings on that base. The license remains [Apache License 2.0](LICENSE). Retain the original author's attribution, third-party notices and each vendored dependency's license files; see the [third-party dependency notes](third_party/README.md).

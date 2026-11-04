@@ -274,6 +274,8 @@ pub struct App {
     fileops_running: usize,
     /// Serial of the last file operation started (`run_fileop`).
     fileop_serial: u64,
+    /// Files a shell delete is running for; another Delete leaves them out (`start_shell_delete`).
+    deleting: HashSet<PathBuf>,
     /// CLI requests waiting for the UI thread (see `ipc_server.rs` / `ipc.rs`).
     ipc_pending: PendingQueue,
     /// The named-pipe listener; `None` when the pipe name was unavailable.
@@ -325,8 +327,17 @@ pub struct App {
     no_hide_icons: bool,
     /// `--portable`: the configuration lives next to the program, and so must the startup entry.
     portable: bool,
-    /// The Store edition's startup switch as last read on a worker: 0 not read, 1 off, 2 on.
+    /// The Store edition's startup switch as a worker last read or set it (`StartupState as u8`,
+    /// 0 not read yet), for [`Self::finish_store_startup`].
     store_startup: Arc<std::sync::atomic::AtomicU8>,
+    /// Set by the worker of a click on 「随 Windows 启动」 when the app could not make the change
+    /// (a state only the user or an administrator can change): Windows' Startup settings open.
+    store_startup_refused: Arc<std::sync::atomic::AtomicBool>,
+    /// The state [`Self::finish_store_startup`] last took over; the settings page explains the
+    /// states the app cannot change.
+    store_startup_state: Option<pecofence_platform::store::StartupState>,
+    /// Signalled when the last startup task switch is done, for a CLI reply that waits for it.
+    store_startup_done: Option<std::sync::mpsc::Receiver<()>>,
     /// `--light` / `--dark`: pin the theme this run.
     theme_override: Option<ThemeMode>,
     peek_class: WindowClass,
@@ -407,6 +418,22 @@ fn not_encrypted_hint() -> &'static str {
 fn seconds_after_explorer() -> Option<f64> {
     let explorer = desktop::window_pid(desktop::shell_window());
     process::seconds_after_start_of(explorer).map(|s| (s * 10.0).round() / 10.0)
+}
+
+/// Whether Explorer runs elevated (as administrator): while one of its windows (the desktop
+/// too) is in front, Windows delivers no raw mouse input to a program that is not elevated, so
+/// double-click hide and the desktop marquee see no clicks. "unreadable" = its token could not
+/// be read.
+fn explorer_elevated() -> &'static str {
+    let explorer = desktop::window_pid(desktop::shell_window());
+    if explorer == 0 {
+        return "no shell";
+    }
+    match process::is_elevated(explorer) {
+        Some(true) => "yes",
+        Some(false) => "no",
+        None => "unreadable",
+    }
 }
 
 /// Re-reads whether virtual desktops keep different pictures. The 100 ms desktop poll (and the
@@ -498,6 +525,47 @@ fn command_name(cmd: &Command) -> String {
     s.split(['{', '(', ' ']).next().unwrap_or("").to_string()
 }
 
+/// The App as the control window's procedure takes it: busy while a menu or dialog holds it,
+/// and also while the anchor's own handlers (its sentinel's timer and raw input, the foreground
+/// hook, a fence's TaskbarCreated) hold the anchor without it. Those wait on Explorer with the
+/// anchor held, and a message another program sends meanwhile (WM_QUERYENDSESSION,
+/// WM_SETTINGCHANGE, a tray click) comes in; App code takes the anchor without `try`, so the
+/// message waits as it does during a menu (GitHub #166: a borrow held across a call that lets
+/// sent messages in).
+struct ControlApp {
+    app: Rc<RefCell<Option<App>>>,
+    anchor: Rc<std::cell::OnceCell<AnchorCell>>,
+}
+
+impl ControlApp {
+    fn try_borrow_mut(&self) -> std::result::Result<std::cell::RefMut<'_, Option<App>>, ()> {
+        let app = self.app.try_borrow_mut().map_err(drop)?;
+        if self.anchor_busy() {
+            return Err(());
+        }
+        Ok(app)
+    }
+
+    fn try_borrow(&self) -> std::result::Result<std::cell::Ref<'_, Option<App>>, ()> {
+        let app = self.app.try_borrow().map_err(drop)?;
+        if self.anchor_busy() {
+            return Err(());
+        }
+        Ok(app)
+    }
+
+    fn anchor_busy(&self) -> bool {
+        let busy = self
+            .anchor
+            .get()
+            .is_some_and(|a| a.try_borrow_mut().is_err());
+        if busy {
+            tracing::info!("control message deferred: the anchor is busy without the App");
+        }
+        busy
+    }
+}
+
 impl App {
     /// Creates everything and returns the shared cell the control window drives.
     pub fn create(args: Args) -> Result<AppCell> {
@@ -513,6 +581,7 @@ impl App {
             install = install.as_str(),
             packaged = process::is_packaged(),
             elevated = ?process::is_elevated(process::current_pid()),
+            explorer_elevated = explorer_elevated(),
             after_explorer_s = ?after_explorer_s,
             remote_desktop = sysparams::remote_session(),
             restarted_after_crash = %args.restarted_after_crash.as_deref().unwrap_or("None"),
@@ -588,7 +657,10 @@ impl App {
         // Control window: timers, tray callbacks, command pump.
         let control_class = WindowClass::register("PecoFence.Control", ClassOptions::default())?;
         let control_handler: MessageHandler = {
-            let cell = cell.clone();
+            let cell = ControlApp {
+                app: cell.clone(),
+                anchor: session_anchor.clone(),
+            };
             let taskbar_created = desktop::taskbar_created_message();
             // Folder-watcher debounce state (see WM_APP_FS_CHANGED / TIMER_FS).
             let fs_armed = Cell::new(false);
@@ -1208,6 +1280,8 @@ impl App {
         // The Recycle Bin is asked on a worker; a new answer means listing the desktop again.
         shell::notify_recycle_bin_changes(control.hwnd(), WM_APP_FS_CHANGED);
         pecofence_platform::hangwatch::start(control.hwnd());
+        // Before any item menu can be built: see `prepare_handler_cache`.
+        pecofence_platform::shell_menu::prepare_handler_cache();
 
         // Desktop anchor (z-order, show desktop, quick hide, icon hiding).
         let sentinel_class = anchor::register_sentinel_class()?;
@@ -1387,6 +1461,7 @@ impl App {
             fileops_done: Arc::new(Mutex::new(Vec::new())),
             fileops_running: 0,
             fileop_serial: 0,
+            deleting: HashSet::new(),
             ipc_pending,
             _ipc: ipc,
             ipc_warnings: Vec::new(),
@@ -1416,6 +1491,9 @@ impl App {
             no_hide_icons: args.no_hide_icons,
             portable: args.portable,
             store_startup: Arc::default(),
+            store_startup_refused: Arc::default(),
+            store_startup_state: None,
+            store_startup_done: None,
             theme_override: if args.light {
                 Some(ThemeMode::Light)
             } else if args.dark {

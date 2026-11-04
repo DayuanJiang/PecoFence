@@ -91,6 +91,11 @@ struct Request {
     /// (`arrow_px`). Only for per-file keys: a symbolic link to a document would otherwise put
     /// its arrow on every file of the type.
     link_arrow: Option<u32>,
+    /// The icon is read out of the file itself (a program, an .ico, a shortcut): while the file
+    /// is busy (`shell::file_busy`) the worker reports a failure instead of the generic icon the
+    /// shell would hand back, so it is asked again later. Cleared for the last retry, which
+    /// takes whatever the shell hands back.
+    wait_until_free: bool,
 }
 
 /// An extraction in flight (or waiting for a retry), with how often it has failed so far.
@@ -108,6 +113,8 @@ struct InFlight {
 /// eventually succeeds; here the loading tile stays up.
 const RETRY_ATTEMPTS: u32 = 3;
 const RETRY_DELAYS_MS: [u64; 3] = [400, 1500, 4000];
+/// `HRESULT_FROM_WIN32(ERROR_SHARING_VIOLATION)`: the file was busy (`shell::file_busy`).
+const ERROR_SHARING_VIOLATION: i32 = 0x8007_0020u32 as i32;
 
 /// A start at sign-in asks the shell while it is still busy: a shortcut can answer "not yet
 /// available" (E_PENDING) until after the retries above gave up, and one whose target drive
@@ -208,13 +215,25 @@ impl IconCache {
                         {
                             continue;
                         }
+                        // A busy file counts as a failure, so it is asked for again later.
+                        let busy = req.wait_until_free && shell::file_busy(&req.path);
+                        if busy {
+                            tracing::debug!(key = %req.key, "file in use; icon asked for later");
+                        }
                         let bin = req
                             .recycle_bin_full
                             .and_then(|full| shell::recycle_bin_image(full, req.size_px));
-                        let (image, error) = match bin.map_or_else(
-                            || shell::shell_image(&req.path, req.size_px, req.icon_only),
-                            Ok,
-                        ) {
+                        let shown = if busy {
+                            Err(windows_core::Error::from_hresult(windows_core::HRESULT(
+                                ERROR_SHARING_VIOLATION,
+                            )))
+                        } else {
+                            bin.map_or_else(
+                                || shell::shell_image(&req.path, req.size_px, req.icon_only),
+                                Ok,
+                            )
+                        };
+                        let (image, error) = match shown {
                             Ok(mut img) => {
                                 if let Some(arrow) = req.link_arrow
                                     && shell::is_link(&req.path)
@@ -357,6 +376,10 @@ impl IconCache {
                 link_arrow: (self.variant.shortcut_arrows
                     && matches!(key, IconKey::ByContent { .. }))
                 .then(|| arrow_px(size_px, dpi)),
+                // Per-file icons of files (not thumbnails, folder previews or namespace items).
+                wait_until_free: icon_only
+                    && matches!(key, IconKey::ByContent { .. })
+                    && !shell::is_namespace_path(path),
             };
             self.send(&req);
             self.pending.insert(
@@ -407,7 +430,11 @@ impl IconCache {
                 // failure placeholder.
                 let delay = RETRY_DELAYS_MS[f.attempts as usize % RETRY_DELAYS_MS.len()];
                 f.attempts += 1;
-                tracing::debug!(key = %k.0, attempt = f.attempts, delay_ms = delay, "icon extraction failed; retrying");
+                // The last retry takes what the shell hands back, also for a file still busy.
+                if f.attempts == RETRY_ATTEMPTS {
+                    f.req.wait_until_free = false;
+                }
+                tracing::debug!(key = %k.0, attempt = f.attempts, delay_ms = delay, error = ?r.error, "icon extraction failed; retrying");
                 self.stats.retried += 1;
                 self.retry.push((now + Duration::from_millis(delay), k));
                 continue;
@@ -881,6 +908,57 @@ mod tests {
             cache.get(&key, this_pc, 48, 96, true),
             Lookup::Pending
         ));
+    }
+
+    /// A program's icon is asked for again while its file is busy, and the last retry takes the
+    /// shell's answer whatever it is; type icons and thumbnails never wait.
+    #[test]
+    fn busy_files_are_asked_again_until_the_last_retry() {
+        let mut cache = IconCache::new(HWND::default());
+        let (done, rx) = channel();
+        cache.rx = rx;
+        let exe = Path::new("C:\\pf-test-missing\\geek.exe");
+        let (key, icon_only) = icon_key_for(exe, false, 1);
+        assert!(icon_only);
+        assert!(matches!(
+            cache.get(&key, exe, 48, 96, icon_only),
+            Lookup::Pending
+        ));
+        let k = (IconCache::cache_key(&key), 48);
+        assert!(cache.pending[&k].req.wait_until_free);
+        for attempt in 1..=RETRY_ATTEMPTS {
+            let id = cache.pending[&k].req.id;
+            done.send(Ready {
+                key: k.0.clone(),
+                size_px: 48,
+                id,
+                image: None,
+                error: Some(ERROR_SHARING_VIOLATION),
+                still_there: true,
+            })
+            .unwrap();
+            assert_eq!(cache.drain_results(), 0);
+            assert_eq!(
+                cache.pending[&k].req.wait_until_free,
+                attempt < RETRY_ATTEMPTS
+            );
+        }
+        let txt = Path::new("C:\\pf-test-missing\\a.txt");
+        let (txt_key, txt_icon) = icon_key_for(txt, false, 1);
+        cache.get(&txt_key, txt, 48, 96, txt_icon);
+        assert!(
+            !cache.pending[&(IconCache::cache_key(&txt_key), 48)]
+                .req
+                .wait_until_free
+        );
+        let jpg = Path::new("C:\\pf-test-missing\\a.jpg");
+        let (jpg_key, jpg_icon) = icon_key_for(jpg, false, 1);
+        cache.get(&jpg_key, jpg, 48, 96, jpg_icon);
+        assert!(
+            !cache.pending[&(IconCache::cache_key(&jpg_key), 48)]
+                .req
+                .wait_until_free
+        );
     }
 
     #[test]

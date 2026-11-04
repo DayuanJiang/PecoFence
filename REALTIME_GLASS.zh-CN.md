@@ -135,7 +135,7 @@ node scripts/test-settings-ui.mjs
 
 生产代码的 Windows 绑定可由 `cargo run -p tool_bindgen` 重新生成，本分支已把 WGC 绑定加入默认生成列表及 CI 一致性检查。可选原生背景探针另用 `cargo run -p tool_bindgen -- tools/bindgen/host-backdrop.txt` 生成。
 
-### 本次源码迁入校验
+### 首次源码迁入校验
 
 2026-11-04 在目标工作区、Rust 1.95.0 下重新执行：
 
@@ -146,6 +146,18 @@ node scripts/test-settings-ui.mjs
 - 5 套生产 Windows 绑定重新生成后与已迁入文件完全一致。
 
 为适配严格检查，还对生成绑定模块局部豁免了系统类型名／生成投影的两项 lint，并将既有临时文件规则中的布尔判断作等价简化；未改变对应规则的行为。这里的校验结果与下文先前实验构建的视觉／性能实测分开记录。
+
+### 合入上游 0.2.5 后的校验
+
+2026-11-04 将上游提交 `ef888bf878f7cb634971123eae1dff931e537b30` 合入本分支后，在 Rust 1.95.0 下重新执行：
+
+- `cargo fmt --all -- --check` 和严格的全工作区／全目标 Clippy 检查通过。
+- `cargo test --workspace --locked`：**529 项通过，1 项原有测试忽略**。
+- 浏览器设置回归：**95 项通过，0 项失败**；使用模拟桥接。
+- 11 种语言的 633 条消息覆盖检查、11 份 README 翻译检查通过。
+- 5 套生产 Windows 绑定重新生成后与合并后的文件完全一致。
+
+此次未启动合并后的桌面程序进行新的视觉或性能实测。下文的既有测量仍对应先前的实验构建。
 
 ## 有界诊断
 
@@ -196,7 +208,7 @@ cargo build --locked --release -p pecofence-render --example realtime_glass_prob
 
 先前验证还包括：独立动态探针运行 60 秒，1,784 帧、约 29.7 FPS；59 次非黑背景采样得到 59 个不同哈希，58 次相邻比较均变化，错误为 0。另进行了短时全遮挡暂停／恢复、四次开关循环和正常退出／恢复原版测试；短时没有观察到句柄和线程单调累加。这些结果不能替代长期稳定性验证。
 
-先前实验构建的 Core 91、Render 72、App 235、CLI 49、IPC 20 项测试通过，合计 **467 项**，另有一项原有 App 测试忽略。467 这一计数仅对应先前实验构建；本次目标工作区重新执行的完整测试结果见上文“本次源码迁入校验”。先前实验版的 release 构建也已通过。
+先前实验构建的 Core 91、Render 72、App 235、CLI 49、IPC 20 项测试通过，合计 **467 项**，另有一项原有 App 测试忽略。467 这一计数仅对应先前实验构建；源码迁入及合入上游 0.2.5 后重新执行的完整测试结果见上文各校验小节。先前实验版的 release 构建也已通过。
 
 ## 兼容边界与后续验证
 
@@ -210,6 +222,6 @@ WGC 不可用、软件光栅化回退或当前材质不是 Liquid Glass 时，�
 
 ## 来源、版本与许可证
 
-上游项目为 [DayuanJiang/PecoFence](https://github.com/DayuanJiang/PecoFence)。本实验基于上游提交 `40b2acf6dcc349b477b426862acdf78900a79768`，该基础版本为 `0.2.4`；当前实验源码的包版本标识为 `0.2.4-liveglass.1`，以 `Cargo.toml` 为准，未表示上游已经发布该功能。
+上游项目为 [DayuanJiang/PecoFence](https://github.com/DayuanJiang/PecoFence)。本实验最初基于上游提交 `40b2acf6dcc349b477b426862acdf78900a79768`，该基础版本为 `0.2.4`，实验包版本为 `0.2.4-liveglass.1`。现已合入上游 `0.2.5`，对应提交 `ef888bf878f7cb634971123eae1dff931e537b30`。`Cargo.toml` 中的包版本随上游采用 `0.2.5`；实时玻璃仍是本功能分支上的可选扩展，未表示上游已经发布该功能。
 
 迁入时保留上游完整工程、原有功能和 `vendor` 依赖，只在该基础上加入实时玻璃所需的实现及设置。许可证继续沿用 [Apache License 2.0](LICENSE)；原作者署名、第三方声明和 vendored 依赖各自的许可文件均应保留，见 [第三方依赖说明](third_party/README.md)。

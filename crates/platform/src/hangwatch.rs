@@ -9,7 +9,9 @@ use std::time::{Duration, Instant};
 
 /// Windows marks a window "not responding" after 5 s without messages.
 const HANG_MS: u32 = 5000;
-const MAX_FRAMES: usize = 48;
+/// Enough to reach our own frames below a deep shell call (feedback #109 showed 48, all in
+/// the shell).
+const MAX_FRAMES: usize = 128;
 /// How much of the stuck thread's stack is copied for the scan.
 const STACK_COPY: usize = 64 * 1024;
 /// `CONTEXT_FULL` on x64: control, integer and floating-point registers.

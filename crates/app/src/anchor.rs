@@ -117,6 +117,38 @@ struct QuickHide {
     marquee_live: bool,
     /// Cursor position last reported with `MarqueeEvent::Moved`.
     marquee_last: Option<POINT>,
+    /// What raw input reported while the desktop was in front (logged when it leaves).
+    seen: SinkCounts,
+}
+
+/// Raw input while the desktop is in front, counted for the log line written when it leaves
+/// the front: no `inputs` at all means Windows delivered none (it keeps the input of an
+/// Explorer that runs elevated from us), and presses that were not `taken` say why.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct SinkCounts {
+    /// `WM_INPUT` messages, moves included.
+    inputs: u64,
+    /// Messages whose mouse data could not be read.
+    unreadable: u32,
+    /// Presses of the primary button.
+    presses: u32,
+    /// Presses on the bare desktop (a marquee or a double-click may follow), with the one that
+    /// brought the desktop to the front.
+    taken: u32,
+    /// Presses refused because they were on one of our windows...
+    on_ours: u32,
+    /// ...on a window that is not the desktop...
+    not_desktop: u32,
+    /// ...or on one of Windows' own desktop icons.
+    on_icon: u32,
+}
+
+/// Why a press was not taken as one on the bare desktop.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PressRefused {
+    OnOurs,
+    NotDesktop,
+    OnIcon,
 }
 
 impl QuickHide {
@@ -185,12 +217,8 @@ fn marquee_rect(a: POINT, b: POINT) -> RECT {
 
 /// A press on one of Windows' own desktop icons (they show while 「隐藏 Windows 桌面图标」 is off)
 /// selects, opens or drags that icon: it starts no marquee and counts for no quick hide.
-fn on_icon(hit: HWND, pt: POINT) -> bool {
-    let on = shell_icons::desktop_icon_hovered(hit);
-    if on {
-        tracing::debug!(?pt, "press on a Windows desktop icon");
-    }
-    on
+fn on_icon(hit: HWND) -> bool {
+    shell_icons::desktop_icon_hovered(hit)
 }
 
 /// Ctrl or Shift is down (physical state; the desktop, not us, has the keyboard focus).
@@ -851,16 +879,38 @@ impl DesktopAnchor {
         let raised = self.desktop_is_raised_over_us();
         tracing::debug!(?hwnd, %cls, is_desktop, raised, "foreground changed");
         // Only the changes to and from the desktop, once each: they start and end following its
-        // clicks (quick hide, marquee), and say what was in front when they did.
+        // clicks (quick hide, marquee), and say what was in front when they did. Leaving the
+        // desktop, the line also counts what raw input reported meanwhile.
         if is_desktop != self.quick.sink_registered {
-            tracing::info!(
-                class = %cls,
-                desktop = is_desktop,
-                raised,
-                button_down = window::primary_button_down_async(),
-                pt = ?window::cursor_pos(),
-                "foreground moved to or from the desktop"
-            );
+            let button_down = window::primary_button_down_async();
+            let pt = window::cursor_pos();
+            if is_desktop {
+                tracing::info!(
+                    class = %cls,
+                    desktop = is_desktop,
+                    raised,
+                    button_down,
+                    ?pt,
+                    "foreground moved to or from the desktop"
+                );
+            } else {
+                let seen = std::mem::take(&mut self.quick.seen);
+                tracing::info!(
+                    class = %cls,
+                    desktop = is_desktop,
+                    raised,
+                    button_down,
+                    ?pt,
+                    inputs = seen.inputs,
+                    unreadable = seen.unreadable,
+                    presses = seen.presses,
+                    taken = seen.taken,
+                    on_ours = seen.on_ours,
+                    not_desktop = seen.not_desktop,
+                    on_icon = seen.on_icon,
+                    "foreground moved to or from the desktop"
+                );
+            }
         }
 
         if is_desktop {
@@ -1026,6 +1076,9 @@ impl DesktopAnchor {
         match r {
             Ok(()) => {
                 self.quick.sink_registered = on;
+                if on {
+                    self.quick.seen = SinkCounts::default();
+                }
                 tracing::debug!(on, "raw input sink");
             }
             Err(e) => tracing::warn!(on, error = %e, "RegisterRawInputDevices failed"),
@@ -1035,9 +1088,19 @@ impl DesktopAnchor {
     /// `WM_INPUT` on the sentinel: left button down/up on the bare desktop drive quick hide
     /// (double-click) and the marquee (fence selection / new fence); moves in between draw it.
     fn on_raw_input(&mut self, lparam: isize) {
+        self.quick.seen.inputs += 1;
         let Some(buttons) = rawinput::mouse_buttons_from_wm_input(lparam) else {
+            let error = std::io::Error::last_os_error();
+            self.quick.seen.unreadable += 1;
+            // Once per stay of the desktop in front: a broken read would repeat on every move.
+            if self.quick.seen.unreadable == 1 {
+                tracing::debug!(%error, "raw input without readable mouse data");
+            }
             return;
         };
+        if buttons.left_down {
+            self.quick.seen.presses += 1;
+        }
         if !buttons.left_down && !buttons.left_up {
             self.track_marquee();
             return;
@@ -1064,6 +1127,7 @@ impl DesktopAnchor {
             return;
         }
         if !self.quick_hide_enabled {
+            tracing::debug!(?pt, "press on the bare desktop; quick hide is off");
             return;
         }
         let limit = rawinput::double_click_time_ms() as u128;
@@ -1088,11 +1152,35 @@ impl DesktopAnchor {
     fn begin_marquee(&mut self, pt: POINT) -> bool {
         let hit = desktop::window_from_point(pt.x, pt.y);
         let root = desktop::root_ancestor(hit);
-        if self.all_windows().contains(&root) || !self.is_desktop_window(hit) || on_icon(hit, pt) {
+        let refused = if self.all_windows().contains(&root) {
+            Some(PressRefused::OnOurs)
+        } else if !self.is_desktop_window(hit) {
+            Some(PressRefused::NotDesktop)
+        } else if on_icon(hit) {
+            Some(PressRefused::OnIcon)
+        } else {
+            None
+        };
+        if let Some(reason) = refused {
+            let seen = &mut self.quick.seen;
+            match reason {
+                PressRefused::OnOurs => seen.on_ours += 1,
+                PressRefused::NotDesktop => seen.not_desktop += 1,
+                PressRefused::OnIcon => seen.on_icon += 1,
+            }
+            tracing::debug!(
+                ?pt,
+                ?reason,
+                hit = %desktop::class_name(hit),
+                top = %desktop::class_name(root),
+                explorer = desktop::window_pid(root) == desktop::window_pid(desktop::shell_window()),
+                "press not taken as one on the bare desktop"
+            );
             self.quick.marquee_origin = None;
             self.quick.marquee_live = false;
             return false;
         }
+        self.quick.seen.taken += 1;
         if !self.quick.fences_hidden {
             self.quick.marquee_origin = Some(pt);
             self.quick.marquee_live = false;

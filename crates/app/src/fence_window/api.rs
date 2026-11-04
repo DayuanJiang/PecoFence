@@ -277,6 +277,7 @@ impl FenceWindow {
             vis_fade: None,
             vis_gen: 0,
             vis_deadline: None,
+            fade_trace: FadeTrace::default(),
             retired: false,
             outgoing: Vec::new(),
             spares: Vec::new(),
@@ -1712,8 +1713,14 @@ impl FenceWindow {
         any
     }
 
-    pub fn end_desktop_band(&self) {
-        self.with_view(|v| v.desktop_band_base = None);
+    /// The rectangle is done; returns how many icons are selected now.
+    pub fn end_desktop_band(&self) -> usize {
+        let mut selected = 0;
+        self.with_view(|v| {
+            v.desktop_band_base = None;
+            selected = v.selected.len();
+        });
+        selected
     }
 
     /// 像桌面一样排列 is on for this window.
