@@ -363,7 +363,7 @@ impl App {
         } else if let Some(module) = other_programs_module(log) {
             tracing::info!(module, "the crash was inside another program's module");
             pecofence_core::i18n::format(
-                "PecoFence 上次因 {0} 出错而关闭，这个文件属于电脑上安装的其他程序。更新或卸载那个程序可能会解决。点击这里报告问题。",
+                "PecoFence 上次因 {0} 出错而关闭，这个文件属于其他程序，更新或卸载那个程序可能会解决。点击这里报告问题。",
                 &[module.to_string()],
             )
         } else {
