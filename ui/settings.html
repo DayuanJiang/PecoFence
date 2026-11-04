@@ -517,6 +517,7 @@
         <select id="fenceTitleSize" data-fence="titleSize"><option value="small">小</option><option value="normal">标准</option><option value="large">大</option><option value="extraLarge">特大</option></select></div>
       <div class="card"><div class="l"><span class="ic">&#xE737;</span><div><div class="t">显示标题栏</div><div class="s">鼠标悬停时显示：平时收起标题行，指针移到栅栏上才出现</div></div></div>
         <select id="fenceTitleOnHover" data-fence="titleOnHover"><option value="default">跟随常规设置</option><option value="always">始终显示</option><option value="hover">鼠标悬停时显示</option></select></div>
+      <div id="fenceLayoutGroup">
       <h3>布局</h3>
       <div class="card"><div class="l"><span class="ic">&#xE8B9;</span><div><div class="t">图标大小</div><div class="s">也可以在栅栏内按住 Ctrl 滚动鼠标滚轮</div></div></div>
         <div class="slider"><input type="range" id="fenceIconSize" data-fence="iconSize"></div></div>
@@ -527,6 +528,7 @@
       <div class="card"><div class="l"><span class="ic">&#xE8E3;</span><div><div class="t">图标对齐</div><div class="s">一行排不满时，居中把空出的宽度平分到左右两边；只用于图标视图</div></div></div>
         <select id="fenceIconAlign" data-fence="iconAlign"><option value="left">左对齐</option><option value="center">居中</option></select></div>
       <div class="card"><div class="l"><span class="ic">&#xE745;</span><div><div class="t">自动高度</div><div class="s">高度跟随内容行数，内容增减时平滑过渡</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="autoHeight"></div></div>
+      </div>
       <h3>行为</h3>
       <div class="card"><div class="l"><span class="ic">&#xE72E;</span><div><div class="t">锁定位置和大小</div><div class="s">边框不再可拖动缩放；标题仍可点击、右键、双击</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="locked"></div></div>
       <div class="card"><div class="l"><span class="ic">&#xE70E;</span><div><div class="t">向上展开</div><div class="s">上方放得下时向上展开，放不下就向下展开；标题栏留在原处。适合放在任务栏上方的栅栏</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="expandUpward"></div></div>
@@ -1338,6 +1340,8 @@
     document.getElementById('fenceOpenFolders').style.display = f.portal || f.tool ? 'none' : '';
     // A tool fence (小工具) never holds icons: hiding it while empty would hide it for good.
     document.getElementById('fenceHideEmpty').style.display = f.tool ? 'none' : '';
+    // Icon size, spacing, names, alignment and auto height are about icons.
+    document.getElementById('fenceLayoutGroup').style.display = f.tool ? 'none' : '';
     document.getElementById('fenceDesktopLayout').style.display = f.kind === 'inbox' ? '' : 'none';
     // List and Details rows keep the name on one line, so the setting does nothing there and is
     // greyed. 像桌面一样排列 shows icons whatever the fence's view (a 「桌面」 with tabs stays a fence).
