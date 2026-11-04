@@ -426,8 +426,8 @@ impl FenceDropHandler {
                 ..none
             };
         };
-        // A note (便签) holds no items: nothing drops on it.
-        if v.note.is_some() {
+        // A tool fence (便签, 时钟) holds no items: nothing drops on it.
+        if v.shows_tool() {
             return Feedback {
                 hwnd: v.hwnd,
                 ..none
@@ -620,7 +620,7 @@ impl DropHandler for FenceDropHandler {
         let internal = Self::internal();
         // Resolve the target and clear the highlights under one borrow.
         let resolved = self.view.try_borrow_mut().ok().and_then(|mut g| {
-            g.as_mut().filter(|v| v.note.is_none()).map(|v| {
+            g.as_mut().filter(|v| !v.shows_tool()).map(|v| {
                 let spot = v.drop_spot_at(pt.x, pt.y, internal.as_ref());
                 let tab_fence = spot.tab.and_then(|i| v.tabs.get(i)).map(|t| t.id);
                 let folder = spot

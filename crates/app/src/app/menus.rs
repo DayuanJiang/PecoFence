@@ -16,6 +16,8 @@ const CMD_PEEK: u32 = 10;
 const CMD_WINDOWS_DESKTOP: u32 = 15;
 /// 新建便签 (tray menu; only while the notes tool is on).
 const CMD_NEW_NOTE: u32 = 16;
+/// 新建时钟 (tray menu; only while the clock tool is on).
+const CMD_NEW_CLOCK: u32 = 17;
 /// Tray 「在桌面显示文件夹」 entries: 11..=14 (see `App::show_folder_submenu`).
 const CMD_SHOW_FOLDER: u32 = 11;
 const CMD_ITEM_OPEN: u32 = 100;
@@ -43,6 +45,8 @@ const CMD_FENCE_NEW: u32 = 304;
 const CMD_FENCE_NEW_NOTE: u32 = 307;
 /// 编辑便签 in a note's fence menu.
 const CMD_FENCE_EDIT_NOTE: u32 = 308;
+/// 新建时钟 in the fence menu (only while the clock tool is on).
+const CMD_FENCE_NEW_CLOCK: u32 = 309;
 /// The inbox's 为空时自动隐藏 (in place of 删除栅栏).
 const CMD_FENCE_HIDE_EMPTY: u32 = 305;
 const CMD_FENCE_DESKTOP_LAYOUT: u32 = 306;
@@ -109,6 +113,8 @@ mod glyph {
     pub const ADD_TO: char = '\u{ECC8}';
     /// QuickNote: 新建便签.
     pub const NOTE: char = '\u{E70B}';
+    /// Clock: 新建时钟.
+    pub const CLOCK: char = '\u{E121}';
     pub const FOLDER: char = '\u{E8B7}';
     /// Favicon: a frame with a title strip, like a fence with tabs.
     pub const TAB: char = '\u{E737}';
@@ -175,6 +181,15 @@ impl App {
                 false,
             )
             .icon(glyph::NOTE);
+        }
+        if self.state.config.settings.tools.clock {
+            menu.item(
+                CMD_NEW_CLOCK,
+                pecofence_core::i18n::text("新建时钟"),
+                false,
+                false,
+            )
+            .icon(glyph::CLOCK);
         }
         menu.submenu(
             pecofence_core::i18n::text("在桌面显示文件夹"),
@@ -253,6 +268,7 @@ impl App {
             CMD_PEEK => self.queue.push(Command::TogglePeek),
             CMD_NEW_FENCE => self.queue.push(Command::NewFence { x, y: y - 300 }),
             CMD_NEW_NOTE => self.queue.push(Command::NewNote { x, y: y - 300 }),
+            CMD_NEW_CLOCK => self.queue.push(Command::NewClock { x, y: y - 300 }),
             c if (CMD_SHOW_FOLDER..CMD_SHOW_FOLDER + 4).contains(&c) => {
                 self.show_folder_command(c - CMD_SHOW_FOLDER, x, y - 300, None)
             }
@@ -846,6 +862,15 @@ impl App {
             )
             .icon(glyph::NOTE);
         }
+        if self.state.config.settings.tools.clock {
+            menu.item(
+                CMD_FENCE_NEW_CLOCK,
+                pecofence_core::i18n::text("新建时钟"),
+                false,
+                false,
+            )
+            .icon(glyph::CLOCK);
+        }
         menu.submenu(
             pecofence_core::i18n::text("在桌面显示文件夹"),
             Self::show_folder_submenu(CMD_FENCE_SHOW_FOLDER),
@@ -1004,6 +1029,7 @@ impl App {
                 self.create_fence_with_rename(rect);
             }
             CMD_FENCE_NEW_NOTE => self.queue.push(Command::NewNote { x, y }),
+            CMD_FENCE_NEW_CLOCK => self.queue.push(Command::NewClock { x, y }),
             CMD_FENCE_EDIT_NOTE => self.edit_note(fence),
             CMD_FENCE_DELETE => self.delete_fence_from_menu(fence),
             CMD_FENCE_HIDE_EMPTY => self.set_fence_hide_when_empty(fence, !f.hide_when_empty),

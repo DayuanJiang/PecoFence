@@ -151,6 +151,8 @@ pub struct FenceViewState {
     /// The note's to-do check boxes as last drawn: line index and (left, top, right, bottom)
     /// in content DIPs.
     pub(super) note_boxes: Vec<(usize, [f32; 4])>,
+    /// 时钟与日期: the fence shown is a clock; true = with seconds. None = it shows items.
+    pub(super) clock: Option<bool>,
     /// The portal's folder could not be found (its empty state says so).
     pub(super) portal_missing: bool,
     /// Width the cached labels were fitted for; a change invalidates them.
@@ -554,6 +556,28 @@ impl FenceViewState {
             Some(line) => Command::ToggleNoteLine { fence, line },
             None => Command::EditNote { fence },
         })
+    }
+
+    /// The fence shown is a tool (小工具) in place of items: it takes no drops, merges or
+    /// marquee, and counts no items.
+    pub(super) fn shows_tool(&self) -> bool {
+        self.note.is_some() || self.clock.is_some()
+    }
+
+    /// Arms TIMER_CLOCK for just after the next minute (or second) boundary, or stops it when
+    /// the window shows no clock.
+    pub(super) fn arm_clock(&self) {
+        match self.clock {
+            Some(seconds) => {
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default();
+                let period_ms: u128 = if seconds { 1000 } else { 60_000 };
+                let wait = period_ms - now.as_millis() % period_ms + 20;
+                window::set_timer(self.hwnd, TIMER_CLOCK, wait as u32);
+            }
+            None => window::kill_timer(self.hwnd, TIMER_CLOCK),
+        }
     }
 
     pub(super) fn title_h_px(&self) -> i32 {

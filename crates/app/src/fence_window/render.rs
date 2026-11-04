@@ -403,7 +403,7 @@ impl FenceViewState {
         let roll_t = self.roll_t.value_at(now);
         // The count is drawn while it fades out after expanding, not only while rolled.
         // A note (便签) has no items to count.
-        let count = ((rolled || state.count > 0.0) && self.note.is_none())
+        let count = ((rolled || state.count > 0.0) && !self.shows_tool())
             .then(|| pecofence_core::i18n::format("{0} 项", &[format!("{}", self.items.len())]));
         let opacity = self.material_opacity();
         // Titles and tabs without a 「标题颜色」 of their own follow 「图标名称颜色」 (#141).
@@ -841,9 +841,38 @@ impl FenceViewState {
         Ok(())
     }
 
+    /// 时钟与日期: the time and date in place of items.
+    pub(super) fn redraw_clock(&mut self) -> Result<()> {
+        let Some(seconds) = self.clock else {
+            return Ok(());
+        };
+        let weekday_last = matches!(
+            pecofence_core::i18n::language(),
+            pecofence_core::i18n::Language::SimplifiedChinese
+                | pecofence_core::i18n::Language::TraditionalChinese
+                | pecofence_core::i18n::Language::Japanese
+                | pecofence_core::i18n::Language::Korean
+        );
+        let (time, date) = pecofence_platform::fileinfo::clock_texts(seconds, weekday_last);
+        let theme = self
+            .material_foreground()
+            .with_label_color(self.behavior.label_color.get());
+        let chrome = self.chrome.clone();
+        let ok = self
+            .content_panel
+            .draw_ex(self.dpi, |session, _clip, wd, hd| {
+                chrome.draw_clock(session, &theme, wd, hd, &time, &date)
+            })?;
+        self.note_draw_result(ok);
+        Ok(())
+    }
+
     pub(super) fn redraw_content(&mut self) -> Result<()> {
         if self.note.is_some() {
             return self.redraw_note();
+        }
+        if self.clock.is_some() {
+            return self.redraw_clock();
         }
         if self.row_metrics().is_some() {
             return self.redraw_rows();

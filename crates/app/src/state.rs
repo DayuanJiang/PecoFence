@@ -2384,13 +2384,20 @@ impl AppState {
 
     /// 便签与待办: a note fence at `rect` showing `text`. None as for [`Self::new_fence`].
     pub fn new_note(&mut self, title: &str, rect: RECT, text: &str) -> Option<FenceId> {
-        let id = self.new_fence(title, rect)?;
-        if let Some(f) = self.fence_mut(id) {
-            f.tool = Some(FenceTool::Note);
-            f.view.auto_height = false;
-        }
+        let id = self.new_tool_fence(title, rect, FenceTool::Note)?;
         self.config.notes.insert(id, text.to_string());
         tracing::info!(%id, chars = text.chars().count(), "note created");
+        Some(id)
+    }
+
+    /// A fence at `rect` that shows `tool` (小工具). None as for [`Self::new_fence`].
+    pub fn new_tool_fence(&mut self, title: &str, rect: RECT, tool: FenceTool) -> Option<FenceId> {
+        let id = self.new_fence(title, rect)?;
+        if let Some(f) = self.fence_mut(id) {
+            f.tool = Some(tool);
+            f.view.auto_height = false;
+        }
+        tracing::info!(%id, ?tool, "tool fence created");
         Some(id)
     }
 

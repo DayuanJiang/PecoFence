@@ -48,6 +48,8 @@ pub(super) const TIMER_MOVE_RBUTTON: usize = 46;
 /// Explorer's single-click open: the pointer rests on an item for the hover time
 /// (SPI_GETMOUSEHOVERTIME), which selects it, as on the desktop.
 pub(super) const TIMER_HOVER_SELECT: usize = 47;
+/// 时钟与日期: redraws a clock fence at the next minute (or second) boundary.
+pub(super) const TIMER_CLOCK: usize = 48;
 /// DWM can suspend completion callbacks for fully occluded windows. UI state must still
 /// settle after the longest (250 ms) transition, independently of compositor visibility.
 pub(super) const COMPOSITION_FINISH_MS: u32 = 400;

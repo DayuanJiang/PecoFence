@@ -663,7 +663,7 @@ impl App {
                         &[moved.to_string()],
                     ));
                 }
-                Some("newNote") => {
+                Some(name @ ("newNote" | "newClock")) => {
                     // Beside the middle of the primary monitor's work area; the placement
                     // looks for a free spot from there.
                     let at = self
@@ -672,7 +672,11 @@ impl App {
                         .first()
                         .map(|w| ((w.left + w.right) / 2, (w.top + w.bottom) / 2));
                     if let Some((x, y)) = at {
-                        self.new_note_near(x, y);
+                        if name == "newNote" {
+                            self.new_note_near(x, y);
+                        } else {
+                            self.new_clock_near(x, y);
+                        }
                     }
                 }
                 Some("addTemplate") => {
@@ -1067,6 +1071,9 @@ impl App {
         }
         if inbox_hiding_changed || tools_changed {
             self.sync_hidden_fences();
+        }
+        if tools_changed {
+            self.refresh_tool_views();
         }
         self.push_settings_state();
     }

@@ -629,5 +629,13 @@
   "便签": "Note",
   "单击这里写字。行首写 [ ] 的一行是待办，单击方框打勾。": "Cliquez ici pour écrire. Une ligne qui commence par [ ] est une tâche ; cliquez sur sa case pour la cocher.",
   "便签里的文字会一起删除。": "Le texte de la note sera supprimé avec elle.",
-  "编辑便签": "Modifier la note"
+  "编辑便签": "Modifier la note",
+  "新建时钟": "Nouvelle horloge",
+  "时钟": "Horloge",
+  "时钟与日期": "Horloge et date",
+  "显示时间、日期和星期，时间格式跟随 Windows 的区域设置": "Affiche l’heure, la date et le jour ; le format de l’heure suit les paramètres régionaux de Windows",
+  "显示秒": "Afficher les secondes",
+  "每秒更新一次": "Mise à jour chaque seconde",
+  "桌面上有 {0} 个时钟": "{0} horloges sur le bureau",
+  "桌面上还没有时钟": "Aucune horloge sur le bureau pour l’instant"
 }

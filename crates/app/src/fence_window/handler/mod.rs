@@ -332,6 +332,7 @@ impl FenceWindow {
                     msg::WM_TIMER if wparam == TIMER_TAB_HOVER => {
                         timers::on_timer_tab_hover(h, hwnd, wparam, lparam)
                     }
+                    msg::WM_TIMER if wparam == TIMER_CLOCK => timers::on_timer_clock(h),
                     msg::WM_TIMER if wparam == TIMER_HOVER_SELECT => {
                         timers::on_timer_hover_select(h, hwnd, wparam, lparam)
                     }

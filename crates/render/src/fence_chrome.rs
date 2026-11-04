@@ -7,7 +7,7 @@ use crate::bitmaps::BitmapCache;
 use crate::gpu_bindings as b;
 use crate::panel::Clip;
 use crate::text_shadow::TextShadows;
-use crate::theme::{TextFx, Theme, font_small, font_text, lerp, with_alpha};
+use crate::theme::{TextFx, Theme, font_display, font_small, font_text, lerp, with_alpha};
 use std::cell::{Ref, RefCell};
 use std::mem::ManuallyDrop;
 use std::rc::Rc;
@@ -70,6 +70,9 @@ pub struct FenceChrome {
     badge_format: TextFormat,
     /// Note fence lines (便签与待办): Body 14, leading, wrapped.
     note_format: TextFormat,
+    /// 时钟与日期: the time (Display 40 / Light) and the date line (Body 14).
+    clock_time_format: TextFormat,
+    clock_date_format: TextFormat,
     /// The blurred masks of a theme's soft text shadow, shared by all fences.
     text_shadows: RefCell<TextShadows>,
 }
@@ -1680,6 +1683,16 @@ impl FenceChrome {
             .with_alignment(TextAlignment::Leading)
             .with_paragraph_alignment(ParagraphAlignment::Top)
             .with_word_wrapping(WordWrapping::Wrap);
+        let clock_time_format =
+            TextFormat::with_locale(font_display(), 40.0, FontWeight(300), locale)?
+                .with_alignment(TextAlignment::Leading)
+                .with_paragraph_alignment(ParagraphAlignment::Top)
+                .with_word_wrapping(WordWrapping::NoWrap);
+        let clock_date_format =
+            TextFormat::with_locale(font_text(), 14.0, FontWeight::NORMAL, locale)?
+                .with_alignment(TextAlignment::Leading)
+                .with_paragraph_alignment(ParagraphAlignment::Top)
+                .with_word_wrapping(WordWrapping::Wrap);
         let chrome = Self {
             title_fonts: RefCell::new(Self::build_title_fonts(None, 600)?),
             count_format,
@@ -1691,6 +1704,8 @@ impl FenceChrome {
             group_format,
             badge_format,
             note_format,
+            clock_time_format,
+            clock_date_format,
             text_shadows: RefCell::default(),
         };
         // Labels follow the desktop's icon-title font from the start (12 px / 16 stays the
@@ -3445,6 +3460,33 @@ impl FenceChrome {
 }
 
 impl FenceChrome {
+    /// 时钟与日期: `time` large at the top left, `date` under it in the secondary colour.
+    pub fn draw_clock(
+        &self,
+        session: &DrawingSession<'_>,
+        theme: &Theme,
+        width: f32,
+        height: f32,
+        time: &str,
+        date: &str,
+    ) -> Result<()> {
+        session.clear(ColorF::TRANSPARENT);
+        let primary = session.create_solid_brush(theme.text_primary)?;
+        let secondary = session.create_solid_brush(theme.text_secondary)?;
+        let w = (width - 2.0 * NOTE_PAD_X).max(1.0);
+        let layout = TextLayout::new(time, &self.clock_time_format, w, f32::MAX)?;
+        let time_h = layout.metrics().height;
+        session.draw_text_layout(Vector2::new(NOTE_PAD_X, 0.0), &layout, &primary);
+        let top = time_h + 2.0;
+        session.draw_text(
+            date,
+            &self.clock_date_format,
+            &Rect::from_xywh(NOTE_PAD_X, top, w, (height - top).max(0.0)),
+            &secondary,
+        );
+        Ok(())
+    }
+
     /// One icon cell: state layers, icon box and label. `unfold` = (full name, line count):
     /// the label grows to that many lines and the state pill grows with it (Windows desktop
     /// focused-icon behaviour); the content surface clips whatever runs past the bottom.

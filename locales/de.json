@@ -629,5 +629,13 @@
   "便签": "Notiz",
   "单击这里写字。行首写 [ ] 的一行是待办，单击方框打勾。": "Zum Schreiben hier klicken. Eine Zeile, die mit [ ] beginnt, ist eine Aufgabe; ein Klick auf das Kästchen hakt sie ab.",
   "便签里的文字会一起删除。": "Der Text in der Notiz wird mit gelöscht.",
-  "编辑便签": "Notiz bearbeiten"
+  "编辑便签": "Notiz bearbeiten",
+  "新建时钟": "Neue Uhr",
+  "时钟": "Uhr",
+  "时钟与日期": "Uhr und Datum",
+  "显示时间、日期和星期，时间格式跟随 Windows 的区域设置": "Zeigt Uhrzeit, Datum und Wochentag; das Zeitformat folgt den Regionseinstellungen von Windows",
+  "显示秒": "Sekunden anzeigen",
+  "每秒更新一次": "Wird jede Sekunde aktualisiert",
+  "桌面上有 {0} 个时钟": "{0} Uhren auf dem Desktop",
+  "桌面上还没有时钟": "Noch keine Uhren auf dem Desktop"
 }

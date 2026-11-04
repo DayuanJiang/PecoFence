@@ -64,6 +64,68 @@ pub fn type_name(path: &Path, is_folder: bool) -> Option<String> {
     (!s.is_empty()).then_some(s)
 }
 
+/// 时钟与日期: the local time as Windows' region format writes it (12 or 24 hours; `seconds`
+/// adds them) and the date as month and day plus the weekday (`weekday_last`: "11月4日 星期三",
+/// else "Wednesday, November 4"), in the user's locale and time zone.
+pub fn clock_texts(seconds: bool, weekday_last: bool) -> (String, String) {
+    let unix = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs() as i64);
+    let Some(st) = local_system_time(unix) else {
+        return (String::new(), String::new());
+    };
+    // DATE_MONTHDAY (Windows 10): the locale's month-and-day pattern.
+    const DATE_MONTHDAY: u32 = 0x80;
+    let mut buf = [0u16; 96];
+    let text = |n: i32, buf: &[u16]| {
+        if n > 1 {
+            String::from_utf16_lossy(&buf[..(n - 1) as usize])
+        } else {
+            String::new()
+        }
+    };
+    let flags = if seconds { 0 } else { TIME_NOSECONDS as u32 };
+    // SAFETY: the buffer is live and its length is passed; `st` is a valid SYSTEMTIME.
+    let n = unsafe {
+        GetTimeFormatEx(
+            PCWSTR::null(),
+            flags,
+            Some(&st),
+            PCWSTR::null(),
+            Some(PWSTR(buf.as_mut_ptr())),
+            buf.len() as i32,
+        )
+    };
+    let time = text(n, &buf);
+    let date = |flags: u32, picture: Option<&str>| {
+        let picture = picture.map(to_wide);
+        let mut buf = [0u16; 96];
+        // SAFETY: as above; `picture` outlives the call.
+        let n = unsafe {
+            GetDateFormatEx(
+                PCWSTR::null(),
+                flags,
+                Some(&st),
+                picture
+                    .as_ref()
+                    .map_or(PCWSTR::null(), |p| PCWSTR(p.as_ptr())),
+                Some(PWSTR(buf.as_mut_ptr())),
+                buf.len() as i32,
+                PCWSTR::null(),
+            )
+        };
+        text(n, &buf)
+    };
+    let month_day = date(DATE_MONTHDAY, None);
+    let weekday = date(0, Some("dddd"));
+    let line = if weekday_last {
+        format!("{month_day} {weekday}")
+    } else {
+        format!("{weekday}, {month_day}")
+    };
+    (time, line)
+}
+
 /// Unix seconds → "short date + time without seconds" in the user's locale and time zone
 /// (Explorer's 修改日期 column). Returns an empty string for out-of-range values.
 pub fn format_local_datetime(unix: i64) -> String {

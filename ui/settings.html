@@ -600,6 +600,11 @@
         <div class="card"><div class="l"><span class="ic">&#xE70B;</span><div><div class="t">便签与待办</div><div class="s">在栅栏里写几行字，单击就能编辑；行首写 [ ] 的那一行变成可以勾选的待办</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="tools.notes"></div></div>
         <div class="card child"><div class="l"><div><div class="t" id="noteCount"></div></div></div><button class="accent" id="newNote">新建便签</button></div>
       </div>
+      <div class="group">
+        <div class="card"><div class="l"><span class="ic">&#xE121;</span><div><div class="t">时钟与日期</div><div class="s">显示时间、日期和星期，时间格式跟随 Windows 的区域设置</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="tools.clock"></div></div>
+        <div class="card child"><div class="l"><div><div class="t">显示秒</div><div class="s">每秒更新一次</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="tools.clockSeconds"></div></div>
+        <div class="card child"><div class="l"><div><div class="t" id="clockCount"></div></div></div><button class="accent" id="newClock">新建时钟</button></div>
+      </div>
     </section>
     <section class="page" id="page-layout">
       <header class="page-header"><h2>布局与备份</h2></header>
@@ -1018,11 +1023,13 @@
   // beside the Windows icons needs those icons shown ('!': while the master is off), and the
   // shortcut rows (renderPeekHotkey) are what Peek's switch turns on. Gap, whole-cell sizing
   // and dimming apply without them.
-  const DEPENDENT = [['snapping.guideLines', 'snapping.enabled'], ['hideInboxWhenIconsShown', '!hideRealIcons'], ['keepIconsHidden', 'hideRealIcons']];
+  const DEPENDENT = [['snapping.guideLines', 'snapping.enabled'], ['hideInboxWhenIconsShown', '!hideRealIcons'], ['keepIconsHidden', 'hideRealIcons'], ['tools.clockSeconds', 'tools.clock']];
   // 「小工具」 page: how many notes the desktop has (they show while the switch is on).
   function renderTools() {
-    const notes = (state.fences || []).filter(f => f.tool && f.tool.kind === 'note').length;
+    const count = kind => (state.fences || []).filter(f => f.tool && f.tool.kind === kind).length;
+    const notes = count('note'), clocks = count('clock');
     document.getElementById('noteCount').textContent = notes ? tf("桌面上有 {0} 个便签", notes) : t("桌面上还没有便签");
+    document.getElementById('clockCount').textContent = clocks ? tf("桌面上有 {0} 个时钟", clocks) : t("桌面上还没有时钟");
   }
   function renderDependents() {
     for (const [child, master] of DEPENDENT) {
@@ -1781,6 +1788,7 @@
   };
   document.getElementById('applyRules').onclick = () => send({ type: 'action', name: 'applyRules' });
   document.getElementById('newNote').onclick = () => send({ type: 'action', name: 'newNote' });
+  document.getElementById('newClock').onclick = () => send({ type: 'action', name: 'newClock' });
   document.querySelectorAll('#templates [data-template]').forEach(b => { b.onclick = () => send({ type: 'action', name: 'addTemplate', template: b.dataset.template }); });
   document.getElementById('snapSave').onclick = () => { const n = document.getElementById('snapName').value; send({ type: 'action', name: 'saveSnapshot', snapshotName: n }); document.getElementById('snapName').value = ''; };
   document.getElementById('cfgExport').onclick = () => send({ type: 'action', name: 'exportConfig' });

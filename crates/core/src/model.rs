@@ -193,6 +193,12 @@ pub struct ToolSettings {
     /// 便签与待办: note fences.
     #[serde(default)]
     pub notes: bool,
+    /// 时钟与日期: clock fences.
+    #[serde(default)]
+    pub clock: bool,
+    /// Clock fences show the seconds too (and redraw every second instead of every minute).
+    #[serde(default)]
+    pub clock_seconds: bool,
 }
 
 /// A fence that shows a tool instead of desktop items.
@@ -203,6 +209,8 @@ pub enum FenceTool {
     /// 便签与待办: lines of text (`Config::notes`); a line starting with `[ ]` or `[x]` is a
     /// to-do with a check box.
     Note,
+    /// 时钟与日期: the local time, date and weekday in Windows' region format.
+    Clock,
 }
 
 impl FenceTool {
@@ -210,6 +218,7 @@ impl FenceTool {
     pub fn enabled(self, tools: &ToolSettings) -> bool {
         match self {
             Self::Note => tools.notes,
+            Self::Clock => tools.clock,
         }
     }
 }

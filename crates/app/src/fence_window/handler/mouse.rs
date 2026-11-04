@@ -230,6 +230,12 @@ pub(super) fn on_lbuttondown(
             queue.push(Command::RaiseFence(hwnd));
             return Some(0);
         }
+        // Other tools (a clock) take no clicks in their content: no marquee, no selection.
+        if v.shows_tool() && in_content {
+            drop(guard);
+            queue.push(Command::RaiseFence(hwnd));
+            return Some(0);
+        }
         let hit = v.hit_item(x, y);
         let mut capture = false;
         match hit {

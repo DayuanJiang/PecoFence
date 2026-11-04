@@ -268,6 +268,11 @@ pub enum Command {
         x: i32,
         y: i32,
     },
+    /// 时钟与日期: a new clock fence near the screen point.
+    NewClock {
+        x: i32,
+        y: i32,
+    },
     /// A click on a note's text: open its editor.
     EditNote {
         fence: FenceId,

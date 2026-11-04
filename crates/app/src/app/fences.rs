@@ -269,7 +269,6 @@ impl App {
             };
             w.set_grid(GridSpec::of(&shown.view));
             w.set_is_inbox(shown.kind == FenceKind::Inbox);
-            w.set_note(self.state.note_text(shown.id).map(str::to_string));
             w.set_column_widths(
                 shown
                     .view
@@ -284,6 +283,7 @@ impl App {
                 w.set_rolled(f.rolled_up);
             }
         }
+        self.push_tool_view(id);
         self.apply_fence_appearance(id); // locked + backdrop/opacity + quick-hide exclusion
         self.apply_portal_deco(id);
         self.apply_auto_height(id);

@@ -134,7 +134,7 @@ pub(super) fn on_app_tab_rail(
         // -1: a fence arranged like the desktop (像桌面一样排列) or a note takes no merge.
         .and_then(|g| {
             g.as_ref().map(|v| {
-                if v.bare() || v.note.is_some() {
+                if v.bare() || v.shows_tool() {
                     -1
                 } else {
                     v.content_x

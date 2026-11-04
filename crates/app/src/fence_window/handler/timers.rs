@@ -478,3 +478,16 @@ pub(super) fn on_timer_peek_close(
     }
     Some(0)
 }
+
+/// 时钟与日期: the minute (or second) turned; draw the new time and wait for the next one.
+pub(super) fn on_timer_clock(h: &HandlerCtx) -> Option<isize> {
+    if let Ok(mut g) = h.view.try_borrow_mut()
+        && let Some(v) = g.as_mut()
+    {
+        if !v.rolled_up {
+            let _ = v.redraw_content();
+        }
+        v.arm_clock();
+    }
+    Some(0)
+}

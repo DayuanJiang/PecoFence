@@ -181,6 +181,7 @@ impl FenceWindow {
             is_portal: false,
             note: None,
             note_boxes: Vec::new(),
+            clock: None,
             portal_missing: false,
             label_w: 0.0,
             icons_pending: false,
@@ -1286,6 +1287,18 @@ impl FenceWindow {
         });
     }
 
+    /// 时钟与日期: the fence being shown is a clock (Some(true) = with seconds), drawn in place of
+    /// items and redrawn each minute or second; None = it shows items.
+    pub fn set_clock(&self, clock: Option<bool>) {
+        self.with_view(|v| {
+            if v.clock != clock {
+                v.clock = clock;
+                v.arm_clock();
+                let _ = v.redraw();
+            }
+        });
+    }
+
     /// Screen rect of the content below the title row (the note editor opens over it).
     pub fn content_screen_rect(&self) -> RECT {
         let mut r = self.rect();
@@ -1678,7 +1691,7 @@ impl FenceWindow {
         self.view
             .borrow()
             .as_ref()
-            .filter(|v| !v.bare() && v.note.is_none())
+            .filter(|v| !v.bare() && !v.shows_tool())
             .and_then(|v| v.auto_height_px())
     }
 

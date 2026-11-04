@@ -65,7 +65,6 @@ mod items;
 mod live_wallpaper;
 mod menus;
 mod motion;
-mod notes;
 mod peek;
 mod portals;
 mod push;
@@ -76,6 +75,7 @@ mod tabs;
 #[cfg(test)]
 mod tests;
 mod testscript;
+mod tools;
 mod updates;
 mod visuals;
 mod wallpaper_refresh;
@@ -2282,6 +2282,7 @@ impl App {
             Command::DeleteFence(fence) => self.delete_fence(fence),
             Command::NewFence { x, y } => self.new_fence_near(x, y),
             Command::NewNote { x, y } => self.new_note_near(x, y),
+            Command::NewClock { x, y } => self.new_clock_near(x, y),
             Command::EditNote { fence } => self.edit_note(fence),
             Command::ToggleNoteLine { fence, line } => self.toggle_note_line(fence, line),
             Command::NoteEdited { fence, text } => self.note_edited(fence, &text),

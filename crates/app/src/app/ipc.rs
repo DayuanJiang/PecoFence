@@ -1467,6 +1467,7 @@ impl App {
             .to_string(),
             tool: f.tool.map(|t| match t {
                 pecofence_core::FenceTool::Note => "note".to_string(),
+                pecofence_core::FenceTool::Clock => "clock".to_string(),
             }),
             note_text: self.state.note_text(f.id).map(str::to_string),
             // A tab is shown in its host's window, so that is where it is on screen.
