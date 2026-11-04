@@ -367,7 +367,8 @@ impl App {
 
     /// 像桌面一样排列: the inbox's icons stand on the desktop like Windows' own (other fences
     /// keep their look; the flag is saved but has no effect on them).
-    pub(super) fn set_fence_desktop_layout(&mut self, fence: FenceId, on: bool) {
+    pub(super) fn set_fence_desktop_layout(&mut self, fence: FenceId, on: bool, from: &str) {
+        tracing::info!(%fence, on, from, "desktop layout switched");
         self.state.set_desktop_layout(fence, on);
         self.sync_hidden_fences();
         self.apply_fence_view(fence);
@@ -688,7 +689,9 @@ impl App {
             FenceProp::PortalNavigate(on) => self.set_fence_portal_navigate(fence, on),
             FenceProp::PortalTitleIcon(on) => self.set_fence_title_icon(fence, on),
             FenceProp::HideWhenEmpty(on) => self.set_fence_hide_when_empty(fence, on),
-            FenceProp::DesktopLayout(on) => self.set_fence_desktop_layout(fence, on),
+            FenceProp::DesktopLayout(on) => {
+                self.set_fence_desktop_layout(fence, on, "settings or CLI")
+            }
             FenceProp::Layout(layout) => {
                 // Same steps as the fence menu's 视图 items.
                 self.state.set_layout(fence, layout);

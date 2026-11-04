@@ -572,7 +572,7 @@
   "下载失败，请稍后再试": "Couldn't download the update. Try again later.",
   "为空时自动隐藏": "Hide when empty",
   "像桌面一样排列": "Arrange like the desktop",
-  "不显示标题和边框，图标从屏幕左上角一列一列往下排，绕开其他栅栏，和 Windows 桌面图标一样": "No title row or edges: the icons stand down columns from the top-left corner of the screen, around the other fences, like Windows desktop icons",
+  "图标从屏幕左上角一列一列往下排，绕开其他栅栏，像 Windows 桌面的“自动排列图标”，不能随意摆放。关闭后“桌面”变回普通栅栏，可以移动和调整大小": "The icons stand down columns from the top-left corner of the screen, around the other fences, like Windows desktop icons with Auto arrange icons on: they cannot be placed freely. Turn it off to make the Desktop fence a normal fence you can move and resize",
   "里面没有图标时就不显示；桌面上一出现新图标，它会自己回来": "Stays out of sight while it has no icons and comes back as soon as a new icon appears on the desktop",
   "里面没有图标时就不显示；有图标归到这里时，它会自己回来": "Stays out of sight while it has no icons and comes back as soon as an icon is filed here",
   "向上展开": "Expand upward",

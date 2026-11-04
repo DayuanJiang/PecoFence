@@ -24,6 +24,10 @@ const CMD_ITEM_PORTAL: u32 = 104;
 const CMD_ITEM_RENAME: u32 = 105;
 const CMD_ITEM_DELETE: u32 = 106;
 const CMD_ITEM_EMPTY_BIN: u32 = 107;
+/// 像桌面一样排列 and 栅栏选项… in the item menu of the arranged 「桌面」 fence, whose own fence
+/// menu is out of reach (its window is only the icon cells).
+const CMD_ITEM_DESKTOP_LAYOUT: u32 = 108;
+const CMD_ITEM_FENCE_OPTIONS: u32 = 109;
 const CMD_FENCE_OPEN_FOLDER: u32 = 332;
 const CMD_ITEM_MOVE_BASE: u32 = 200;
 const CMD_NEW_FENCE_HERE: u32 = 250;
@@ -321,6 +325,12 @@ impl App {
             }
             CMD_ITEM_DELETE => self.delete_items(fence, &items, window::key_down(msg::VK_SHIFT)),
             CMD_ITEM_EMPTY_BIN => self.start_empty_recycle_bin(owner),
+            CMD_ITEM_DESKTOP_LAYOUT => {
+                self.set_fence_desktop_layout(fence, false, "item menu");
+                // An open settings page shows this switch too.
+                self.push_settings_state();
+            }
+            CMD_ITEM_FENCE_OPTIONS => self.open_fence_options(fence),
             c if c >= CMD_ITEM_MOVE_BASE && c < CMD_ITEM_MOVE_BASE + 1000 => {
                 let idx = (c - CMD_ITEM_MOVE_BASE) as usize;
                 if let Some(target) = self.state.fences().get(idx).map(|f| f.id) {
@@ -454,6 +464,24 @@ impl App {
             false,
             inbox == Some(fence),
         );
+        if self
+            .window_for(fence)
+            .is_some_and(|w| w.is_desktop_arranged())
+        {
+            menu.separator()
+                .item(
+                    CMD_ITEM_DESKTOP_LAYOUT,
+                    pecofence_core::i18n::text("像桌面一样排列"),
+                    true,
+                    false,
+                )
+                .item(
+                    CMD_ITEM_FENCE_OPTIONS,
+                    pecofence_core::i18n::text("栅栏选项…"),
+                    false,
+                    false,
+                );
+        }
         menu.separator();
         // Explorer's own menu (send to / copy / delete / pin / extensions …) appended below ours.
         let paths = self.shell_paths_of(items);
@@ -939,7 +967,9 @@ impl App {
             }
             CMD_FENCE_DELETE => self.delete_fence_from_menu(fence),
             CMD_FENCE_HIDE_EMPTY => self.set_fence_hide_when_empty(fence, !f.hide_when_empty),
-            CMD_FENCE_DESKTOP_LAYOUT => self.set_fence_desktop_layout(fence, !f.desktop_layout),
+            CMD_FENCE_DESKTOP_LAYOUT => {
+                self.set_fence_desktop_layout(fence, !f.desktop_layout, "fence menu")
+            }
             _ => return,
         }
         // An open settings page shows these fences too; keep it current.
