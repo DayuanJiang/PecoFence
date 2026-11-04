@@ -399,6 +399,11 @@ impl App {
                         self.delete_fence_from_menu(id);
                     }
                 }
+                // 便签与待办: a note near (x, y), as the menus' 新建便签 makes it.
+                ["new-note", x, y] => {
+                    let p = |s: &str| s.parse::<i32>().unwrap_or(0);
+                    self.queue.push(Command::NewNote { x: p(x), y: p(y) });
+                }
                 ["new-fence", x, y, w, h] => {
                     let p = |s: &str| s.parse::<i32>().unwrap_or(0);
                     let (x, y, w, h) = (p(x), p(y), p(w), p(h));
