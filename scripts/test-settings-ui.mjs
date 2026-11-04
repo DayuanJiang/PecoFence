@@ -1256,6 +1256,24 @@ async function runTests() {
     const again = await edit(doc, 'rule-b');
     assert(again.querySelector('.r-target').value === 'inbox', 'Reopened editor picked another fence: ' + again.querySelector('.r-target').value);
   });
+  await test('A condition box with its cross lays out like the first one without it', async () => {
+    doc = await reset();
+    rulesPage(doc);
+    change(doc, 'nrKind', 'ext');
+    doc.getElementById('nrAddCond').click();
+    const [first, added] = doc.querySelectorAll('#nrConds .cond');
+    setValue(added.querySelector('.c-kind'), 'ext');
+    assert(first.querySelector('.c-del').hidden && !added.querySelector('.c-del').hidden, 'Cross shown on the wrong box');
+    const at = block => { const box = block.querySelector('.c-box').getBoundingClientRect(), value = block.querySelector('.c-text').getBoundingClientRect(); return [value.left - box.left, value.top - box.top, value.width].map(Math.round).join(); };
+    const was = frame.style.width;
+    for (const width of [704, 960]) {
+      frame.style.width = width + 'px'; await settle();
+      assert(at(first) === at(added), `Boxes differ at ${width}px: ${at(first)} vs ${at(added)}`);
+    }
+    const box = first.querySelector('.c-box').getBoundingClientRect(), value = first.querySelector('.c-text').getBoundingClientRect();
+    assert(value.left > box.left + box.width / 3, 'Type and value no longer side by side in a wide window');
+    frame.style.width = was;
+  });
   await test('Idle days outside 1 to 36500 are refused with the range, in the editor and the new-rule form', async () => {
     doc = await reset();
     doc.querySelector('[data-page=rules]').click();

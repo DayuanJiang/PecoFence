@@ -287,7 +287,7 @@
   .cond-list-h + .cond > .c-and { display: none; }
   .c-box { display: flex; align-items: flex-start; gap: 8px; padding: 10px 8px 10px 12px; border-radius: var(--r-card); background: var(--subtle); border: 1px solid var(--card-stroke); }
   .c-main { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px 12px; }
-  .c-main > .c-kind-l { flex: 0 1 260px; display: flex; min-width: 0; flex-direction: column; gap: 6px; color: var(--text2); font-size: 12px; line-height: 16px; }
+  .c-main > .c-kind-l { flex: 0 1 240px; display: flex; min-width: 0; flex-direction: column; gap: 6px; color: var(--text2); font-size: 12px; line-height: 16px; }
   .c-kind-l > select { width: 100%; min-width: 0; color: var(--text); }
   .c-val { flex: 1 1 220px; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
   .c-cap { color: var(--text2); font-size: 12px; line-height: 16px; }
@@ -299,7 +299,8 @@
   .c-val .cats label { white-space: nowrap; } .c-val .cats input[type=number] { width: 104px; }
   .c-none, .c-fixed .s { color: var(--text2); font-size: 12px; line-height: 16px; }
   .c-fixed { flex: 1 1 220px; min-width: 0; overflow-wrap: anywhere; }
-  .c-del[hidden] { display: none; }
+  /* A box without its ✕ keeps the room for it, so every box lays out the same way. */
+  .c-del[hidden] { display: inline-block; visibility: hidden; }
   .c-add { align-self: flex-start; display: inline-flex; align-items: center; gap: 8px; padding: 0 8px; background: transparent; border-color: transparent; color: var(--accent); }
   .c-add .ic { font-size: 14px; }
   /* A listed rule open for editing keeps its number and place. */
