@@ -211,10 +211,16 @@ fn run_fence(ctx: &Ctx, cmd: FenceCmd) -> Result<Reply, IpcError> {
             right_of,
             left_of,
             size,
+            tool,
+            text,
+            script,
         } => {
-            // The app would resolve a relative folder against its own working directory.
-            let portal =
-                portal.map(|p| std::path::absolute(&p).map_or(p, |a| a.display().to_string()));
+            // The app would resolve a relative path against its own working directory.
+            let absolute =
+                |p: String| std::path::absolute(&p).map_or(p, |a| a.display().to_string());
+            let portal = portal.map(absolute);
+            let script = script.map(absolute);
+            let tool = tool.or_else(|| script.as_ref().map(|_| "script".to_string()));
             let placement = [
                 (Side::Below, below),
                 (Side::Above, above),
@@ -235,6 +241,9 @@ fn run_fence(ctx: &Ctx, cmd: FenceCmd) -> Result<Reply, IpcError> {
                     rect,
                     monitor,
                     portal,
+                    tool,
+                    text,
+                    script,
                 });
             };
             let (rect, overlaps) = placed_rect(ctx, side, &anchor, size)?;
@@ -243,6 +252,9 @@ fn run_fence(ctx: &Ctx, cmd: FenceCmd) -> Result<Reply, IpcError> {
                 rect: Some(rect),
                 monitor: None,
                 portal,
+                tool,
+                text,
+                script,
             })?;
             if !overlaps.is_empty() {
                 let w = format!("the new fence overlaps {}", overlaps.join(", "));

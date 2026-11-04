@@ -133,6 +133,26 @@ pub struct PortalDto {
     pub title_icon: bool,
 }
 
+/// 脚本栅栏: what a script fence runs and how its last run went.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "describe", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct ScriptDto {
+    pub path: String,
+    pub interval_minutes: u32,
+    /// `done` | `failed` | `timedOut` | `missing` | `unsupported` | `notStarted`; absent before
+    /// the first run ends.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub outcome: Option<String>,
+    /// What the last run printed (or its error), as the fence shows it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output: Option<String>,
+    /// Unix seconds when the last run ended.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_run: Option<i64>,
+    pub running: bool,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "describe", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
@@ -148,6 +168,9 @@ pub struct FenceDto {
     /// A note fence's text: one line per line, `[ ]` / `[x]` at the start of a to-do.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note_text: Option<String>,
+    /// A script fence's script and its last run.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub script: Option<ScriptDto>,
     /// Expanded geometry in physical px (what `fences.setBounds` sets). A hosted tab reports its
     /// host's rect (the window it is shown in). `null` while the fence's monitor is disconnected.
     pub rect: Option<Rect>,

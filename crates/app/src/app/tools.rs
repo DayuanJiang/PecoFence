@@ -32,7 +32,106 @@ impl Default for ScriptRuns {
     }
 }
 
+/// A tool fence to make and what it starts with.
+pub(super) enum NewTool {
+    /// A note with this text.
+    Note(String),
+    Clock,
+    /// A script fence running this file.
+    Script(String),
+}
+
+impl NewTool {
+    fn tool(&self) -> FenceTool {
+        match self {
+            Self::Note(_) => FenceTool::Note,
+            Self::Clock => FenceTool::Clock,
+            Self::Script(_) => FenceTool::Script,
+        }
+    }
+}
+
 impl App {
+    /// Makes a tool fence at `rect` (physical px; None = a free spot near (`x`, `y`)), titled
+    /// `title` or after the tool, switching the tool on first. None when the fence limit is
+    /// reached or no monitor is connected.
+    pub(super) fn create_tool_fence(
+        &mut self,
+        tool: NewTool,
+        title: Option<&str>,
+        rect: Option<RECT>,
+        x: i32,
+        y: i32,
+    ) -> Option<FenceId> {
+        let kind = tool.tool();
+        self.ensure_tool_on(kind);
+        if !self.fence_room_or_notice() {
+            return None;
+        }
+        let (w, h) = match kind {
+            FenceTool::Note => (280.0, 240.0),
+            FenceTool::Clock => (240.0, 140.0),
+            FenceTool::Script => (280.0, 160.0),
+        };
+        let rect = rect.unwrap_or_else(|| self.place_new_fence_dip(w, h, x, y, None));
+        let default_title = match &tool {
+            NewTool::Note(_) => pecofence_core::i18n::text("便签").to_string(),
+            NewTool::Clock => pecofence_core::i18n::text("时钟").to_string(),
+            NewTool::Script(path) => std::path::Path::new(path)
+                .file_stem()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_else(|| pecofence_core::i18n::text("脚本").to_string()),
+        };
+        let title = title
+            .map(str::trim)
+            .filter(|t| !t.is_empty())
+            .map(str::to_string)
+            .unwrap_or(default_title);
+        let id = match &tool {
+            NewTool::Note(text) => self.state.new_note(&title, rect, text)?,
+            _ => self.state.new_tool_fence(&title, rect, kind)?,
+        };
+        if let NewTool::Script(path) = &tool {
+            self.state.config.scripts.insert(id, ScriptSpec::new(path));
+            self.state.mark_dirty();
+        }
+        self.resync_windows();
+        if let Some(w) = self.fences.get(&id) {
+            w.show(true);
+        }
+        self.schedule_save();
+        if kind == FenceTool::Script {
+            self.start_script(id);
+        }
+        Some(id)
+    }
+
+    /// 脚本栅栏 for `fence get` / `fence list`: the script and its last run.
+    pub(super) fn script_dto(&self, id: FenceId) -> Option<pecofence_ipc::ScriptDto> {
+        let spec = self.state.config.scripts.get(&id)?;
+        let last = self.script_runs.last.get(&id);
+        let outcome = last.map(|(o, _)| match o {
+            Outcome::Done(_) => "done",
+            Outcome::Failed { .. } => "failed",
+            Outcome::TimedOut => "timedOut",
+            Outcome::Missing => "missing",
+            Outcome::Unsupported => "unsupported",
+            Outcome::NotStarted(_) => "notStarted",
+        });
+        let output = last.and_then(|(o, _)| match o {
+            Outcome::Done(t) | Outcome::Failed { text: t, .. } => Some(t.clone()),
+            _ => None,
+        });
+        Some(pecofence_ipc::ScriptDto {
+            path: spec.path.clone(),
+            interval_minutes: spec.interval_minutes,
+            outcome: outcome.map(str::to_string),
+            output,
+            last_run: last.map(|(_, at)| *at),
+            running: self.script_runs.running.contains(&id),
+        })
+    }
+
     /// Switches `tool` on in the settings when it is off (a new fence of it would have no
     /// window otherwise).
     fn ensure_tool_on(&mut self, tool: FenceTool) {
@@ -50,20 +149,7 @@ impl App {
 
     /// A clock fence near (`x`, `y`).
     pub(super) fn new_clock_near(&mut self, x: i32, y: i32) {
-        self.ensure_tool_on(FenceTool::Clock);
-        if !self.fence_room_or_notice() {
-            return;
-        }
-        let rect = self.place_new_fence_dip(240.0, 140.0, x, y, None);
-        let title = pecofence_core::i18n::text("时钟");
-        let Some(id) = self.state.new_tool_fence(title, rect, FenceTool::Clock) else {
-            return;
-        };
-        self.resync_windows();
-        if let Some(w) = self.fences.get(&id) {
-            w.show(true);
-        }
-        self.schedule_save();
+        self.create_tool_fence(NewTool::Clock, None, None, x, y);
     }
 
     /// Pushes what each window's shown fence needs of its tool (note text, clock seconds),
@@ -265,29 +351,8 @@ impl App {
                 }
             }
         };
-        self.ensure_tool_on(FenceTool::Script);
-        if !self.fence_room_or_notice() {
-            return;
-        }
-        let rect = self.place_new_fence_dip(280.0, 160.0, x, y, None);
-        let title = path
-            .file_stem()
-            .map(|s| s.to_string_lossy().to_string())
-            .unwrap_or_else(|| pecofence_core::i18n::text("脚本").to_string());
-        let Some(id) = self.state.new_tool_fence(&title, rect, FenceTool::Script) else {
-            return;
-        };
-        self.state
-            .config
-            .scripts
-            .insert(id, ScriptSpec::new(&path.to_string_lossy()));
-        self.state.mark_dirty();
-        self.resync_windows();
-        if let Some(w) = self.fences.get(&id) {
-            w.show(true);
-        }
-        self.schedule_save();
-        self.start_script(id);
+        let script = NewTool::Script(path.to_string_lossy().to_string());
+        self.create_tool_fence(script, None, None, x, y);
     }
 
     /// 脚本栅栏 example: writes the weather script into the configuration's `scripts` folder
@@ -328,18 +393,36 @@ impl App {
         ) else {
             return;
         };
+        self.set_script_path(id, &path.to_string_lossy());
+    }
+
+    /// Script fence `id` runs `path` from now on (at once); false when it already did or `id`
+    /// is no script fence.
+    pub(super) fn set_script_path(&mut self, id: FenceId, path: &str) -> bool {
+        if self
+            .state
+            .fence(id)
+            .is_none_or(|f| f.tool != Some(FenceTool::Script))
+        {
+            return false;
+        }
         let spec = self
             .state
             .config
             .scripts
             .entry(id)
             .or_insert_with(|| ScriptSpec::new(""));
-        spec.path = path.to_string_lossy().to_string();
+        if spec.path == path {
+            return false;
+        }
+        spec.path = path.to_string();
+        tracing::info!(%id, "script fence script changed");
         self.state.mark_dirty();
         self.schedule_save();
         self.script_runs.last.remove(&id);
         self.script_runs.due.remove(&id);
         self.start_script(id);
+        true
     }
 
     /// 立即运行: the next run is now, whatever the interval says.
@@ -387,21 +470,9 @@ impl App {
     /// A note fence near (`x`, `y`), its editor open. Switches the notes tool on first if it
     /// was off (the fence would have no window otherwise).
     pub(super) fn new_note_near(&mut self, x: i32, y: i32) {
-        self.ensure_tool_on(FenceTool::Note);
-        if !self.fence_room_or_notice() {
-            return;
+        if let Some(id) = self.create_tool_fence(NewTool::Note(String::new()), None, None, x, y) {
+            self.edit_note(id);
         }
-        let rect = self.place_new_fence_dip(280.0, 240.0, x, y, None);
-        let title = pecofence_core::i18n::text("便签");
-        let Some(id) = self.state.new_note(title, rect, "") else {
-            return;
-        };
-        self.resync_windows();
-        if let Some(w) = self.fences.get(&id) {
-            w.show(true);
-        }
-        self.schedule_save();
-        self.edit_note(id);
     }
 
     /// Opens the editor over note `fence`'s content.

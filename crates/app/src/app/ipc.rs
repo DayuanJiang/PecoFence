@@ -732,12 +732,24 @@ impl App {
                 rect,
                 monitor,
                 portal,
-            } => self.ipc_create_fence(
-                title.as_deref(),
-                *rect,
-                monitor.as_deref(),
-                portal.as_deref(),
-            ),
+                tool,
+                text,
+                script,
+            } => {
+                let tool = match tool.as_deref() {
+                    None => None,
+                    Some(name) => {
+                        Some(self.ipc_tool_spec(name, text.as_deref(), script.as_deref())?)
+                    }
+                };
+                self.ipc_create_fence(
+                    title.as_deref(),
+                    *rect,
+                    monitor.as_deref(),
+                    portal.as_deref(),
+                    tool,
+                )
+            }
             Method::FencesDelete { fence } => self.ipc_delete_fence(fence),
             Method::FencesRename { fence, title } => {
                 let id = self.resolve_fence(fence)?;
@@ -766,6 +778,19 @@ impl App {
             Method::FencesSetOption { fence, prop, value } => {
                 let id = self.resolve_fence(fence)?;
                 let prop = parse_fence_prop(prop, value)?;
+                if let Some(tool) = prop.tool()
+                    && self.fence_or_err(id)?.tool != Some(tool)
+                {
+                    return Err(unsupported(format!(
+                        "this property is for {} fences",
+                        match tool {
+                            pecofence_core::FenceTool::Note => "note",
+                            pecofence_core::FenceTool::Clock => "clock",
+                            pecofence_core::FenceTool::Script => "script",
+                        }
+                    ))
+                    .hint("fence list shows each fence's tool"));
+                }
                 // Icon size, spacing, layout and label lines snap the window to whole cells
                 // (snapping.sizeToCells) or fit it to the content: report it instead of letting the caller find out from
                 // a changed rect.
@@ -1471,6 +1496,7 @@ impl App {
                 pecofence_core::FenceTool::Script => "script".to_string(),
             }),
             note_text: self.state.note_text(f.id).map(str::to_string),
+            script: self.script_dto(f.id),
             // A tab is shown in its host's window, so that is where it is on screen.
             rect: connected.then(|| Rect::from(self.state.fence_px_rect(host))),
             // 「桌面」 arranged like the desktop is shown on a connected monitor even while the
@@ -1801,12 +1827,45 @@ impl App {
 
     // ---- fence mutations -----------------------------------------------------------------
 
+    /// `fences.create`'s tool, text and script, checked: the tool and what it starts with.
+    fn ipc_tool_spec(
+        &self,
+        name: &str,
+        text: Option<&str>,
+        script: Option<&str>,
+    ) -> std::result::Result<super::tools::NewTool, IpcError> {
+        use super::tools::NewTool;
+        match name {
+            "note" => Ok(NewTool::Note(text.unwrap_or_default().to_string())),
+            "clock" => Ok(NewTool::Clock),
+            "script" => {
+                let Some(path) = script.filter(|p| !p.trim().is_empty()) else {
+                    return Err(IpcError::usage("a script fence needs --script <file>")
+                        .hint("pecofence-cli fence create --script C:\\path\\weather.ps1"));
+                };
+                if !std::path::Path::new(path).is_file() {
+                    return Err(IpcError::new(
+                        ErrorCode::InvalidValue,
+                        format!("no such script: {path}"),
+                    )
+                    .hint("Give the full path of an existing .ps1, .py, .cmd, .bat, .js or .exe"));
+                }
+                Ok(NewTool::Script(path.to_string()))
+            }
+            other => Err(IpcError::invalid_value(
+                format!("unknown tool {other:?}"),
+                &["note", "clock", "script"],
+            )),
+        }
+    }
+
     fn ipc_create_fence(
         &mut self,
         title: Option<&str>,
         rect: Option<Rect>,
         monitor: Option<&str>,
         portal: Option<&str>,
+        tool: Option<super::tools::NewTool>,
     ) -> IpcResult {
         let title = title.map(|t| checked_name("title", t)).transpose()?;
         let title = title.as_deref();
@@ -1856,6 +1915,14 @@ impl App {
             .hint("Delete or merge a fence first"));
         }
         let requested = rect;
+        if let Some(tool) = tool {
+            let rect = rect.map(rect_to_win);
+            let id = self
+                .create_tool_fence(tool, title, rect, cx, cy)
+                .ok_or_else(|| unsupported("no monitor to place the fence on"))?;
+            self.push_settings_state();
+            return Ok(mutation(true, None, self.fence_extra(id)?));
+        }
         let rect = match rect {
             Some(r) => rect_to_win(r),
             None => self.place_new_fence(3, 200.0, cx, cy, None),
