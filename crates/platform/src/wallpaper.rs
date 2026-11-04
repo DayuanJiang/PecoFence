@@ -219,23 +219,34 @@ pub fn window_desktop(hwnd: HWND) -> Option<u128> {
         static MANAGER: std::cell::RefCell<Option<ManuallyDrop<IVirtualDesktopManager>>> =
             const { std::cell::RefCell::new(None) };
     }
-    MANAGER.with_borrow_mut(|manager| {
+    // The call goes to Explorer, and while it waits a message another thread or program sends
+    // can come in and ask again from a window procedure (GitHub #166): no borrow is held
+    // across it, only a reference of our own.
+    let manager = MANAGER.with_borrow_mut(|manager| {
         if manager.is_none() {
             // SAFETY: standard COM activation.
             *manager = unsafe { CoCreateInstance(&VirtualDesktopManager, None, CLSCTX_ALL as u32) }
                 .ok()
                 .map(ManuallyDrop::new);
         }
-        // SAFETY: COM call on a live interface.
-        match unsafe { manager.as_ref()?.GetWindowDesktopId(hwnd) } {
-            Ok(id) => Some(id.to_u128()).filter(|&id| id != 0),
-            Err(_) => {
-                // Explorer restarted, perhaps: ask a new object next time.
-                drop(manager.take().map(ManuallyDrop::into_inner));
-                None
-            }
+        manager.as_ref().map(|m| IVirtualDesktopManager::clone(m))
+    })?;
+    // SAFETY: COM call on a live interface.
+    match unsafe { manager.GetWindowDesktopId(hwnd) } {
+        Ok(id) => Some(id.to_u128()).filter(|&id| id != 0),
+        Err(_) => {
+            // Explorer restarted, perhaps: ask a new object next time. Released outside the
+            // borrow too: the last release of a proxy calls Explorer as well.
+            let failed = MANAGER.with_borrow_mut(|slot| {
+                let same = slot
+                    .as_ref()
+                    .is_some_and(|m| m.as_raw() == manager.as_raw());
+                if same { slot.take() } else { None }
+            });
+            drop(failed.map(ManuallyDrop::into_inner));
+            None
         }
-    })
+    }
 }
 
 /// Whether a virtual-desktop switch can change the picture: more than one desktop, and they

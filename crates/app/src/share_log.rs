@@ -57,6 +57,7 @@ const CODE_TEXT_FIELDS: &[&str] = &[
     "memory",
     "method",
     "mode",
+    "module_owner",
     "new",
     "old",
     "outcome",
@@ -704,6 +705,7 @@ mod tests {
         ("memory", "%m.summary()"),     // MemoryStats::summary: numbers only
         ("method", "method"),           // IPC method name
         ("mode", "?mode"),              // ThemeMode enum
+        ("module_owner", "owner"),      // crashlog: windows / pecofence / other
         ("new", "?resolved"),           // Option<IconHost>: HWNDs + kind enum
         ("old", "?self.host"),          // Option<IconHost>
         ("outcome", "?effect.as_ref().map(|r|(r.dropped,r.effect))"), // (bool, DropEffect)

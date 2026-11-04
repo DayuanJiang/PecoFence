@@ -494,6 +494,47 @@ fn command_name(cmd: &Command) -> String {
     s.split(['{', '(', ' ']).next().unwrap_or("").to_string()
 }
 
+/// The App as the control window's procedure takes it: busy while a menu or dialog holds it,
+/// and also while the anchor's own handlers (its sentinel's timer and raw input, the foreground
+/// hook, a fence's TaskbarCreated) hold the anchor without it. Those wait on Explorer with the
+/// anchor held, and a message another program sends meanwhile (WM_QUERYENDSESSION,
+/// WM_SETTINGCHANGE, a tray click) comes in; App code takes the anchor without `try`, so the
+/// message waits as it does during a menu (GitHub #166: a borrow held across a call that lets
+/// sent messages in).
+struct ControlApp {
+    app: Rc<RefCell<Option<App>>>,
+    anchor: Rc<std::cell::OnceCell<AnchorCell>>,
+}
+
+impl ControlApp {
+    fn try_borrow_mut(&self) -> std::result::Result<std::cell::RefMut<'_, Option<App>>, ()> {
+        let app = self.app.try_borrow_mut().map_err(drop)?;
+        if self.anchor_busy() {
+            return Err(());
+        }
+        Ok(app)
+    }
+
+    fn try_borrow(&self) -> std::result::Result<std::cell::Ref<'_, Option<App>>, ()> {
+        let app = self.app.try_borrow().map_err(drop)?;
+        if self.anchor_busy() {
+            return Err(());
+        }
+        Ok(app)
+    }
+
+    fn anchor_busy(&self) -> bool {
+        let busy = self
+            .anchor
+            .get()
+            .is_some_and(|a| a.try_borrow_mut().is_err());
+        if busy {
+            tracing::info!("control message deferred: the anchor is busy without the App");
+        }
+        busy
+    }
+}
+
 impl App {
     /// Creates everything and returns the shared cell the control window drives.
     pub fn create(args: Args) -> Result<AppCell> {
@@ -584,7 +625,10 @@ impl App {
         // Control window: timers, tray callbacks, command pump.
         let control_class = WindowClass::register("PecoFence.Control", ClassOptions::default())?;
         let control_handler: MessageHandler = {
-            let cell = cell.clone();
+            let cell = ControlApp {
+                app: cell.clone(),
+                anchor: session_anchor.clone(),
+            };
             let taskbar_created = desktop::taskbar_created_message();
             // Folder-watcher debounce state (see WM_APP_FS_CHANGED / TIMER_FS).
             let fs_armed = Cell::new(false);
