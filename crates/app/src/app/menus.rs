@@ -41,6 +41,8 @@ const CMD_FENCE_DELETE: u32 = 303;
 const CMD_FENCE_NEW: u32 = 304;
 /// 新建便签 in the fence menu (only while the notes tool is on).
 const CMD_FENCE_NEW_NOTE: u32 = 307;
+/// 编辑便签 in a note's fence menu.
+const CMD_FENCE_EDIT_NOTE: u32 = 308;
 /// The inbox's 为空时自动隐藏 (in place of 删除栅栏).
 const CMD_FENCE_HIDE_EMPTY: u32 = 305;
 const CMD_FENCE_DESKTOP_LAYOUT: u32 = 306;
@@ -605,198 +607,209 @@ impl App {
             }
         }
         menu.separator();
-        let view_menu = PopupMenu::new();
-        view_menu
-            .item(
-                CMD_FENCE_VIEW_ICONS,
-                pecofence_core::i18n::text("图标"),
-                f.view.layout == ViewLayout::Icons,
-                false,
-            )
-            .item(
-                CMD_FENCE_VIEW_LIST,
-                pecofence_core::i18n::text("列表"),
-                f.view.layout == ViewLayout::List,
-                false,
-            )
-            .item(
-                CMD_FENCE_VIEW_DETAILS,
-                pecofence_core::i18n::text("详细信息"),
-                f.view.layout == ViewLayout::Details,
-                false,
-            )
-            .separator();
-        // A size between the presets (the settings slider) checks none of them.
-        let names = [
-            pecofence_core::i18n::text("小图标"),
-            pecofence_core::i18n::text("中等图标"),
-            pecofence_core::i18n::text("较大图标"),
-            pecofence_core::i18n::text("大图标"),
-        ];
-        for (cmd, (size, name)) in
-            (CMD_FENCE_ICON_FIRST..).zip(ICON_SIZE_PRESETS.into_iter().zip(names))
-        {
-            view_menu.item(cmd, name, f.view.icon_size == size, false);
-        }
-        menu.submenu(pecofence_core::i18n::text("视图"), view_menu)
-            .icon(glyph::VIEW_ALL);
-        let sort_menu = PopupMenu::new();
-        sort_menu
-            .item(
-                CMD_FENCE_SORT_MANUAL,
-                pecofence_core::i18n::text("手动"),
-                f.view.sort == SortMode::Manual,
-                false,
-            )
-            .item(
-                CMD_FENCE_SORT_NAME,
-                pecofence_core::i18n::text("按名称"),
-                f.view.sort == SortMode::Name,
-                false,
-            )
-            .item(
-                CMD_FENCE_SORT_TYPE,
-                pecofence_core::i18n::text("按类型"),
-                f.view.sort == SortMode::Type,
-                false,
-            )
-            .item(
-                CMD_FENCE_SORT_DATE,
-                pecofence_core::i18n::text("按修改日期"),
-                f.view.sort == SortMode::Date,
-                false,
-            )
-            .item(
-                CMD_FENCE_SORT_SIZE,
-                pecofence_core::i18n::text("按大小"),
-                f.view.sort == SortMode::Size,
-                false,
-            )
-            .item(
-                CMD_FENCE_SORT_OPENED,
-                pecofence_core::i18n::text("按打开次数"),
-                f.view.sort == SortMode::OpenCount,
-                false,
-            )
-            .separator()
-            .item(
-                CMD_FENCE_SORT_REVERSE,
-                pecofence_core::i18n::text("倒序"),
-                f.view.reverse,
-                false,
-            )
-            .item(
-                CMD_FENCE_SORT_FOLDERS_FIRST,
-                pecofence_core::i18n::text("文件夹优先"),
-                f.view.folders_first,
-                false,
-            )
-            .separator()
-            .item(
-                CMD_FENCE_SORT_GROUP,
-                pecofence_core::i18n::text("按时间分组"),
-                f.view.group_by_date,
-                false,
-            );
-        menu.submenu(pecofence_core::i18n::text("排序方式"), sort_menu)
-            .icon(glyph::SORT);
-        let new_menu = PopupMenu::new();
-        new_menu
-            .item(
-                CMD_FENCE_NEW_FOLDER,
-                pecofence_core::i18n::text("新建\x04文件夹"),
-                false,
-                false,
-            )
-            .icon(glyph::FOLDER)
-            .item(
-                CMD_FENCE_NEW_TEXT,
-                pecofence_core::i18n::text("文本文档"),
-                false,
-                false,
-            )
-            .icon(glyph::DOCUMENT)
-            .separator()
-            .item(
-                CMD_TAB_NEW,
-                pecofence_core::i18n::text("新建\x04标签页"),
-                false,
-                false,
-            );
-        menu.submenu(pecofence_core::i18n::text("新建"), new_menu)
-            .icon(glyph::ADD)
-            .item(
-                CMD_FENCE_PASTE,
-                pecofence_core::i18n::text("粘贴\tCtrl+V"),
-                false,
-                !clipboard::has_file_list(),
-            )
-            .icon(glyph::PASTE);
-        // Tabbed fences (Fences 6): split a tab out, move it along the strip, or merge this
-        // fence into another window. Hidden when none of that applies.
         let tabs = self.state.tabs_of(host);
         let tab_idx = tabs.iter().position(|t| *t == fence).unwrap_or(0);
-        let other_hosts: Vec<(u32, String)> = self
-            .state
-            .host_fences()
-            .iter()
-            .enumerate()
-            .filter(|(_, o)| o.id != host)
-            .filter(|(_, o)| {
-                !self
-                    .fences
-                    .get(&o.id)
-                    .is_some_and(|w| w.is_desktop_arranged())
-            })
-            .map(|(i, o)| (CMD_TAB_ATTACH_BASE + i as u32, o.title.clone()))
-            .collect();
-        let other_hosts = if self
-            .fences
-            .get(&host)
-            .is_some_and(|w| w.is_desktop_arranged())
-        {
-            Vec::new()
+        // A note (便签) has no items to view, sort, create, paste or merge into tabs.
+        if f.tool.is_some() {
+            menu.item(
+                CMD_FENCE_EDIT_NOTE,
+                pecofence_core::i18n::text("编辑便签"),
+                false,
+                false,
+            )
+            .icon(glyph::RENAME);
         } else {
-            other_hosts
-        };
-        if tabs.len() >= 2 || !other_hosts.is_empty() {
-            let tab_menu = PopupMenu::new();
-            if tabs.len() >= 2 {
-                // A left tab column moves its tabs up and down.
-                let (earlier, later) =
-                    if self.ctx.behavior.tab_bar.get() == pecofence_core::TabBar::Left {
-                        (
-                            pecofence_core::i18n::text("上移"),
-                            pecofence_core::i18n::text("下移"),
-                        )
-                    } else {
-                        (
-                            pecofence_core::i18n::text("左移"),
-                            pecofence_core::i18n::text("右移"),
-                        )
-                    };
-                tab_menu
-                    .item(CMD_TAB_MOVE_LEFT, earlier, false, tab_idx == 0)
-                    .item(CMD_TAB_MOVE_RIGHT, later, false, tab_idx + 1 >= tabs.len())
-                    .item(
-                        CMD_TAB_DETACH,
-                        pecofence_core::i18n::text("拆出为独立栅栏"),
-                        false,
-                        false,
-                    );
+            let view_menu = PopupMenu::new();
+            view_menu
+                .item(
+                    CMD_FENCE_VIEW_ICONS,
+                    pecofence_core::i18n::text("图标"),
+                    f.view.layout == ViewLayout::Icons,
+                    false,
+                )
+                .item(
+                    CMD_FENCE_VIEW_LIST,
+                    pecofence_core::i18n::text("列表"),
+                    f.view.layout == ViewLayout::List,
+                    false,
+                )
+                .item(
+                    CMD_FENCE_VIEW_DETAILS,
+                    pecofence_core::i18n::text("详细信息"),
+                    f.view.layout == ViewLayout::Details,
+                    false,
+                )
+                .separator();
+            // A size between the presets (the settings slider) checks none of them.
+            let names = [
+                pecofence_core::i18n::text("小图标"),
+                pecofence_core::i18n::text("中等图标"),
+                pecofence_core::i18n::text("较大图标"),
+                pecofence_core::i18n::text("大图标"),
+            ];
+            for (cmd, (size, name)) in
+                (CMD_FENCE_ICON_FIRST..).zip(ICON_SIZE_PRESETS.into_iter().zip(names))
+            {
+                view_menu.item(cmd, name, f.view.icon_size == size, false);
             }
-            if !other_hosts.is_empty() {
+            menu.submenu(pecofence_core::i18n::text("视图"), view_menu)
+                .icon(glyph::VIEW_ALL);
+            let sort_menu = PopupMenu::new();
+            sort_menu
+                .item(
+                    CMD_FENCE_SORT_MANUAL,
+                    pecofence_core::i18n::text("手动"),
+                    f.view.sort == SortMode::Manual,
+                    false,
+                )
+                .item(
+                    CMD_FENCE_SORT_NAME,
+                    pecofence_core::i18n::text("按名称"),
+                    f.view.sort == SortMode::Name,
+                    false,
+                )
+                .item(
+                    CMD_FENCE_SORT_TYPE,
+                    pecofence_core::i18n::text("按类型"),
+                    f.view.sort == SortMode::Type,
+                    false,
+                )
+                .item(
+                    CMD_FENCE_SORT_DATE,
+                    pecofence_core::i18n::text("按修改日期"),
+                    f.view.sort == SortMode::Date,
+                    false,
+                )
+                .item(
+                    CMD_FENCE_SORT_SIZE,
+                    pecofence_core::i18n::text("按大小"),
+                    f.view.sort == SortMode::Size,
+                    false,
+                )
+                .item(
+                    CMD_FENCE_SORT_OPENED,
+                    pecofence_core::i18n::text("按打开次数"),
+                    f.view.sort == SortMode::OpenCount,
+                    false,
+                )
+                .separator()
+                .item(
+                    CMD_FENCE_SORT_REVERSE,
+                    pecofence_core::i18n::text("倒序"),
+                    f.view.reverse,
+                    false,
+                )
+                .item(
+                    CMD_FENCE_SORT_FOLDERS_FIRST,
+                    pecofence_core::i18n::text("文件夹优先"),
+                    f.view.folders_first,
+                    false,
+                )
+                .separator()
+                .item(
+                    CMD_FENCE_SORT_GROUP,
+                    pecofence_core::i18n::text("按时间分组"),
+                    f.view.group_by_date,
+                    false,
+                );
+            menu.submenu(pecofence_core::i18n::text("排序方式"), sort_menu)
+                .icon(glyph::SORT);
+            let new_menu = PopupMenu::new();
+            new_menu
+                .item(
+                    CMD_FENCE_NEW_FOLDER,
+                    pecofence_core::i18n::text("新建\x04文件夹"),
+                    false,
+                    false,
+                )
+                .icon(glyph::FOLDER)
+                .item(
+                    CMD_FENCE_NEW_TEXT,
+                    pecofence_core::i18n::text("文本文档"),
+                    false,
+                    false,
+                )
+                .icon(glyph::DOCUMENT)
+                .separator()
+                .item(
+                    CMD_TAB_NEW,
+                    pecofence_core::i18n::text("新建\x04标签页"),
+                    false,
+                    false,
+                );
+            menu.submenu(pecofence_core::i18n::text("新建"), new_menu)
+                .icon(glyph::ADD)
+                .item(
+                    CMD_FENCE_PASTE,
+                    pecofence_core::i18n::text("粘贴\tCtrl+V"),
+                    false,
+                    !clipboard::has_file_list(),
+                )
+                .icon(glyph::PASTE);
+            // Tabbed fences (Fences 6): split a tab out, move it along the strip, or merge this
+            // fence into another window. Hidden when none of that applies.
+            let other_hosts: Vec<(u32, String)> = self
+                .state
+                .host_fences()
+                .iter()
+                .enumerate()
+                .filter(|(_, o)| o.id != host)
+                .filter(|(_, o)| {
+                    !self
+                        .fences
+                        .get(&o.id)
+                        .is_some_and(|w| w.is_desktop_arranged())
+                })
+                .map(|(i, o)| (CMD_TAB_ATTACH_BASE + i as u32, o.title.clone()))
+                .collect();
+            let other_hosts = if self
+                .fences
+                .get(&host)
+                .is_some_and(|w| w.is_desktop_arranged())
+            {
+                Vec::new()
+            } else {
+                other_hosts
+            };
+            if tabs.len() >= 2 || !other_hosts.is_empty() {
+                let tab_menu = PopupMenu::new();
                 if tabs.len() >= 2 {
-                    tab_menu.separator();
+                    // A left tab column moves its tabs up and down.
+                    let (earlier, later) =
+                        if self.ctx.behavior.tab_bar.get() == pecofence_core::TabBar::Left {
+                            (
+                                pecofence_core::i18n::text("上移"),
+                                pecofence_core::i18n::text("下移"),
+                            )
+                        } else {
+                            (
+                                pecofence_core::i18n::text("左移"),
+                                pecofence_core::i18n::text("右移"),
+                            )
+                        };
+                    tab_menu
+                        .item(CMD_TAB_MOVE_LEFT, earlier, false, tab_idx == 0)
+                        .item(CMD_TAB_MOVE_RIGHT, later, false, tab_idx + 1 >= tabs.len())
+                        .item(
+                            CMD_TAB_DETACH,
+                            pecofence_core::i18n::text("拆出为独立栅栏"),
+                            false,
+                            false,
+                        );
                 }
-                let attach_menu = PopupMenu::new();
-                for (id, title) in &other_hosts {
-                    attach_menu.item(*id, title, false, false);
+                if !other_hosts.is_empty() {
+                    if tabs.len() >= 2 {
+                        tab_menu.separator();
+                    }
+                    let attach_menu = PopupMenu::new();
+                    for (id, title) in &other_hosts {
+                        attach_menu.item(*id, title, false, false);
+                    }
+                    tab_menu.submenu(pecofence_core::i18n::text("合并到…"), attach_menu);
                 }
-                tab_menu.submenu(pecofence_core::i18n::text("合并到…"), attach_menu);
+                menu.submenu(pecofence_core::i18n::text("标签页"), tab_menu)
+                    .icon(glyph::TAB);
             }
-            menu.submenu(pecofence_core::i18n::text("标签页"), tab_menu)
-                .icon(glyph::TAB);
         }
         menu.item(
             CMD_FENCE_LOCK,
@@ -991,6 +1004,7 @@ impl App {
                 self.create_fence_with_rename(rect);
             }
             CMD_FENCE_NEW_NOTE => self.queue.push(Command::NewNote { x, y }),
+            CMD_FENCE_EDIT_NOTE => self.edit_note(fence),
             CMD_FENCE_DELETE => self.delete_fence_from_menu(fence),
             CMD_FENCE_HIDE_EMPTY => self.set_fence_hide_when_empty(fence, !f.hide_when_empty),
             CMD_FENCE_DESKTOP_LAYOUT => {

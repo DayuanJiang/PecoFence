@@ -628,5 +628,6 @@
   "桌面上还没有便签": "Noch keine Notizen auf dem Desktop",
   "便签": "Notiz",
   "单击这里写字。行首写 [ ] 的一行是待办，单击方框打勾。": "Zum Schreiben hier klicken. Eine Zeile, die mit [ ] beginnt, ist eine Aufgabe; ein Klick auf das Kästchen hakt sie ab.",
-  "便签里的文字会一起删除。": "Der Text in der Notiz wird mit gelöscht."
+  "便签里的文字会一起删除。": "Der Text in der Notiz wird mit gelöscht.",
+  "编辑便签": "Notiz bearbeiten"
 }

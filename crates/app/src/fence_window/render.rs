@@ -402,7 +402,8 @@ impl FenceViewState {
         }
         let roll_t = self.roll_t.value_at(now);
         // The count is drawn while it fades out after expanding, not only while rolled.
-        let count = (rolled || state.count > 0.0)
+        // A note (便签) has no items to count.
+        let count = ((rolled || state.count > 0.0) && self.note.is_none())
             .then(|| pecofence_core::i18n::format("{0} 项", &[format!("{}", self.items.len())]));
         let opacity = self.material_opacity();
         // Titles and tabs without a 「标题颜色」 of their own follow 「图标名称颜色」 (#141).
