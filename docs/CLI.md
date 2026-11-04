@@ -308,7 +308,10 @@ A tool fence shows a tool in place of desktop items. Each tool has a switch in `
 (`tools.notes`, `tools.clock`, `tools.scripts`, all `false` by default); a tool that is off runs
 nothing and its fences have no window until it is switched on again. `fence create --tool` switches
 the tool on. Tool fences hold no items (rules, `item move --to` and drops refuse them) and take no
-part in tabs (`fence merge` refuses them).
+part in tabs (`fence merge` refuses them). Properties about icons (`iconSize`, `layout`,
+`autoHeight` and the like) and `fence fit` are refused for them. `--text` alone implies `--tool note`.
+An imported configuration (`config import`) with script fences switches `tools.scripts` off until
+the user turns it on again; a backup restore keeps it.
 
 - **Notes and to-dos** (`--tool note`): lines of text; a line starting with `[ ]` (or `[x]`, after
   an optional `- ` or `* `) is a to-do whose box ticks with a click. `fence get` reports
