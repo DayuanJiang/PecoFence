@@ -41,15 +41,22 @@ impl App {
                 self.hide_marquee_band();
                 // 像桌面一样排列: icons the rectangle selected count as touched (no new-fence
                 // offer for them, as for selected Windows icons).
-                let banded = self
-                    .fences
-                    .values()
-                    .find(|w| w.is_desktop_arranged())
-                    .is_some_and(|w| {
-                        let any = w.band_desktop_items(rect);
-                        w.end_desktop_band();
-                        any
-                    });
+                let mut banded = false;
+                if let Some(w) = self.fences.values().find(|w| w.is_desktop_arranged()) {
+                    banded = w.band_desktop_items(rect);
+                    let selected = w.end_desktop_band();
+                    if selected > 0 {
+                        // The press and the release went to Explorer's desktop, which kept
+                        // the keyboard: Delete, F2, Enter or Ctrl+C did nothing to the icons
+                        // (feedback #108). Their fence takes it, as a click on an icon does.
+                        let foreground = window::claim_foreground(w.hwnd());
+                        tracing::info!(
+                            selected,
+                            foreground,
+                            "icons selected on the desktop; their fence takes the keyboard"
+                        );
+                    }
+                }
                 let touched = banded || !self.fences_touching(rect).is_empty();
                 let selection = self.marquee_selection(rect);
                 self.marquee_base = None;

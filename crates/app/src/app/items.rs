@@ -444,19 +444,17 @@ impl App {
             return true;
         }
         let refs: Vec<&std::path::Path> = paths.iter().map(|p| p.as_path()).collect();
-        match ShellContextMenu::for_paths(&refs)
-            .and_then(|mut m| m.invoke_verb(verb, owner, window::cursor_pos(), shift))
-        {
-            Ok(true) => {
-                tracing::info!(count = paths.len(), verb, shift, "shell verb invoked");
+        let started = Instant::now();
+        let result = ShellContextMenu::for_paths(&refs)
+            .and_then(|m| m.invoke_verb(verb, owner, window::cursor_pos(), shift));
+        let ms = crate::share_log::millis(started.elapsed());
+        match result {
+            Ok(()) => {
+                tracing::info!(count = paths.len(), verb, shift, ms, "shell verb invoked");
                 true
             }
-            Ok(false) => {
-                tracing::warn!(verb, "shell menu offers no such verb");
-                false
-            }
             Err(e) => {
-                tracing::warn!(error = %e, verb, "shell verb failed");
+                tracing::warn!(error = %e, verb, ms, "shell verb failed");
                 false
             }
         }

@@ -56,7 +56,7 @@ pub(super) fn on_keydown(
     h: &HandlerCtx,
     _hwnd: HWND,
     wparam: usize,
-    _lparam: isize,
+    lparam: isize,
 ) -> Option<isize> {
     let HandlerCtx { view, queue, .. } = h;
     let fence_id = h.fence_id;
@@ -168,9 +168,13 @@ pub(super) fn on_keydown(
             v.focus_visible = true;
             queue.push(Command::PortalUp(v.active));
         }
-        // Ctrl+D deletes to the Recycle Bin, as on the desktop and in Explorer.
+        // Ctrl+D deletes to the Recycle Bin, as on the desktop and in Explorer. A held key
+        // deletes once: its repeats (bit 30, the key was already down) asked the shell again
+        // for the same files (feedback #108).
         k if k == msg::VK_DELETE || (k == VK_D && ctrl && !shift) => {
-            if !ids.is_empty() {
+            if lparam & (1 << 30) != 0 {
+                tracing::debug!("delete key repeat ignored");
+            } else if !ids.is_empty() {
                 queue.push(Command::DeleteItems {
                     fence: v.active,
                     items: ids,

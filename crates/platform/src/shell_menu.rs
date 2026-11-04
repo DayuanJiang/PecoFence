@@ -14,6 +14,8 @@ use windows_core::{Error, Interface, PCSTR, PCWSTR, PWSTR, Result};
 const WM_MENUCHAR: u32 = 0x0120;
 /// `GCS_VERBW`: ask `GetCommandString` for the canonical verb as UTF-16.
 const GCS_VERBW: u32 = 0x0004;
+/// `CMF_OPTIMIZEFORINVOKE`: the menu is not shown, a verb is invoked by name right after.
+const CMF_OPTIMIZEFORINVOKE: u32 = 0x0800;
 
 thread_local! {
     /// The shell menu currently shown by `TrackPopupMenuEx` on this thread (at most one).
@@ -164,23 +166,50 @@ impl ShellContextMenu {
 }
 
 impl ShellContextMenu {
-    /// Runs the shell command whose canonical verb is `verb` (e.g. `delete`) as if picked from
-    /// the menu, without showing it. Returns `Ok(false)` if the verb is not offered. `shift` =
-    /// Shift held (Shift+Delete deletes permanently).
-    pub fn invoke_verb(&mut self, verb: &str, owner: HWND, pt: POINT, shift: bool) -> Result<bool> {
+    /// Runs the shell command whose canonical verb is `verb` (`delete`, `cut`, `copy`,
+    /// `properties`) without showing a menu, the way Explorer runs Delete or Ctrl+C on its
+    /// selection: the menu is only prepared for invoking (CMF_OPTIMIZEFORINVOKE) and the verb
+    /// goes by name. Building the whole menu to look the verb up loaded every menu extension
+    /// and took up to a second per key press on a PC with many of them (feedback #108). Fails
+    /// when the items do not offer the verb. `shift` = Shift held (Shift+Delete deletes
+    /// permanently).
+    pub fn invoke_verb(&self, verb: &str, owner: HWND, pt: POINT, shift: bool) -> Result<()> {
         // SAFETY: temporary menu owned and destroyed here.
         let hmenu = unsafe { CreatePopupMenu() };
-        let result = (|| -> Result<bool> {
-            let count = self.populate(hmenu, 0, 0x1000, 0x6FFF, false)?;
-            for cmd in 0x1000..0x1000 + count {
-                if self.verb(cmd).is_some_and(|v| v.eq_ignore_ascii_case(verb)) {
-                    self.invoke(cmd, owner, pt, shift)?;
-                    return Ok(true);
-                }
+        let result = (|| -> Result<()> {
+            // SAFETY: hmenu is the menu created above.
+            let hr = unsafe {
+                self.menu
+                    .QueryContextMenu(hmenu, 0, 1, 0x7FFF, CMF_OPTIMIZEFORINVOKE)
+            };
+            if hr.is_err() {
+                return Err(Error::from_hresult(hr));
             }
-            Ok(false)
+            let ansi: Vec<u8> = verb.bytes().chain(std::iter::once(0)).collect();
+            let wide = to_wide(verb);
+            let mut mask = (CMIC_MASK_UNICODE | CMIC_MASK_PTINVOKE) as u32;
+            if shift {
+                mask |= CMIC_MASK_SHIFT_DOWN as u32;
+            }
+            let info = CMINVOKECOMMANDINFOEX {
+                cbSize: std::mem::size_of::<CMINVOKECOMMANDINFOEX>() as u32,
+                fMask: mask,
+                hwnd: owner,
+                lpVerb: PCSTR(ansi.as_ptr()),
+                lpVerbW: PCWSTR(wide.as_ptr()),
+                nShow: SW_SHOWNORMAL,
+                ptInvoke: pt,
+                ..Default::default()
+            };
+            // SAFETY: the verb strings outlive the call; the EX struct starts with the base
+            // struct and cbSize tells the shell which one it is.
+            let hr = unsafe {
+                self.menu.InvokeCommand(
+                    &info as *const CMINVOKECOMMANDINFOEX as *const CMINVOKECOMMANDINFO,
+                )
+            };
+            hr.ok()
         })();
-        ACTIVE.with(|a| *a.borrow_mut() = None);
         // SAFETY: we own the menu.
         let _ = unsafe { DestroyMenu(hmenu) };
         result

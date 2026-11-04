@@ -30,8 +30,12 @@ pub(super) enum FileOpThen {
     /// A rename the filesystem refused, retried through the shell for its permission prompt.
     /// The folder watcher pairs the rename, so the item keeps its fence.
     Rename,
-    /// The shell's own delete; the folder watchers take the items away.
-    Delete { count: usize, permanent: bool },
+    /// The shell's own delete of `paths`; the folder watchers take the items away.
+    Delete {
+        paths: Vec<PathBuf>,
+        permanent: bool,
+        started: Instant,
+    },
     /// 清空回收站: the bin is asked again for its icon.
     EmptyBin,
 }
@@ -77,21 +81,46 @@ impl App {
     /// The shell's `delete` verb on `paths` (Recycle Bin, or permanent with Shift, with
     /// Explorer's own dialogs) on a worker thread. It can return many seconds after the files
     /// are gone (a full Recycle Bin, an antivirus checking each file), and on the UI thread
-    /// every fence stopped responding until then (#92).
-    pub(super) fn start_shell_delete(&mut self, paths: Vec<PathBuf>, owner: HWND, permanent: bool) {
+    /// every fence stopped responding until then (#92). Files a delete still running was
+    /// given are left out: a second press of Delete before the first one finished started
+    /// another delete of the same files (feedback #108).
+    pub(super) fn start_shell_delete(
+        &mut self,
+        mut paths: Vec<PathBuf>,
+        owner: HWND,
+        permanent: bool,
+    ) {
+        let asked = paths.len();
+        paths.retain(|p| !self.deleting.contains(p));
         let count = paths.len();
+        if count < asked {
+            tracing::info!(
+                asked,
+                left = count,
+                "shell delete: files already being deleted are left out"
+            );
+        }
+        if count == 0 {
+            return;
+        }
+        self.deleting.extend(paths.iter().cloned());
         let pt = window::cursor_pos();
         tracing::info!(count, permanent, "shell delete started");
-        self.run_fileop(
-            Some(owner),
-            FileOpThen::Delete { count, permanent },
-            move |owner| {
-                let refs: Vec<&Path> = paths.iter().map(|p| p.as_path()).collect();
-                ShellContextMenu::for_paths(&refs).and_then(|mut m| {
-                    m.invoke_verb("delete", owner.unwrap_or_default(), pt, permanent)
-                })
-            },
-        );
+        let then = FileOpThen::Delete {
+            paths: paths.clone(),
+            permanent,
+            started: Instant::now(),
+        };
+        let job_paths = paths.clone();
+        let spawned = self.run_fileop(Some(owner), then, move |owner| {
+            let refs: Vec<&Path> = job_paths.iter().map(|p| p.as_path()).collect();
+            ShellContextMenu::for_paths(&refs)
+                .and_then(|m| m.invoke_verb("delete", owner.unwrap_or_default(), pt, permanent))
+                .map(|()| true)
+        });
+        if !spawned {
+            self.settle_delete(&paths);
+        }
     }
 
     /// 清空回收站 from the bin's menu, with Windows' confirmation and progress, on a worker
@@ -106,7 +135,7 @@ impl App {
         owner: Option<HWND>,
         then: FileOpThen,
         job: impl FnOnce(Option<HWND>) -> pecofence_platform::Result<bool> + Send + 'static,
-    ) {
+    ) -> bool {
         let owner = owner.map(|h| h.0 as isize);
         let results = self.fileops_done.clone();
         let control = self.control.hwnd().0 as isize;
@@ -133,8 +162,19 @@ impl App {
             Ok(_) => {
                 self.fileops_running += 1;
                 self.fileop_serial = serial;
+                true
             }
-            Err(e) => tracing::warn!(error = %e, "file operation thread failed to start"),
+            Err(e) => {
+                tracing::warn!(error = %e, "file operation thread failed to start");
+                false
+            }
+        }
+    }
+
+    /// The delete of `paths` is over (or never started): another Delete may ask for them again.
+    fn settle_delete(&mut self, paths: &[PathBuf]) {
+        for p in paths {
+            self.deleting.remove(p);
         }
     }
 
@@ -249,11 +289,19 @@ impl App {
                 }
                 self.refresh_portals();
             }
-            FileOpThen::Delete { count, permanent } => match &result {
-                Ok(true) => tracing::info!(count, permanent, "shell delete finished"),
-                Ok(false) => tracing::warn!("shell menu offers no delete verb"),
-                Err(e) => tracing::warn!(error = %e, "shell delete failed"),
-            },
+            FileOpThen::Delete {
+                paths,
+                permanent,
+                started,
+            } => {
+                self.settle_delete(&paths);
+                let count = paths.len();
+                let ms = crate::share_log::millis(started.elapsed());
+                match &result {
+                    Ok(_) => tracing::info!(count, permanent, ms, "shell delete finished"),
+                    Err(e) => tracing::warn!(error = %e, count, ms, "shell delete failed"),
+                }
+            }
             FileOpThen::EmptyBin => {
                 match &result {
                     Ok(_) => tracing::info!("Recycle Bin emptied"),
