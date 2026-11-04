@@ -19,6 +19,7 @@ const fixture = {
     icons: { tintRgb: null, tintStrength: 0.6, chameleon: false, shortcutArrows: true },
     rollUp: { hoverPeek: true, clickToExpand: false, pushNeighbors: true, titleOnHover: false, hideInactiveScrollbar: false, switchTabOnHover: false, hideCountAndChevron: false },
     snapping: { enabled: true, gapPx: 8, sizeToCells: false, guideLines: true }, peek: { enabled: true, dim: true, hotkey: 'ctrlAltSpace' },
+    tools: { notes: false },
   },
   rules: {
     keepUpdated: true, defaultTarget: 'inbox', unmatched: 'defaultTarget',
@@ -235,6 +236,29 @@ async function runTests() {
       }
     }
   });
+  await test('Tools page switches notes on and asks for a new note', async () => {
+    doc = await reset();
+    doc.querySelector('[data-page=tools]').click();
+    const count = doc.getElementById('noteCount').textContent;
+    assert(count === '桌面上还没有便签', 'Unexpected note count text: ' + count);
+    const before = frame.contentWindow.testMessages.length;
+    doc.querySelector('[data-bind="tools.notes"]').click();
+    const patch = frame.contentWindow.testMessages.slice(before).find(m => m.type === 'patchSettings');
+    assert(patch && patch.settings.tools.notes === true, 'Notes switch not posted');
+    doc.getElementById('newNote').click();
+    const last = frame.contentWindow.testMessages.at(-1);
+    assert(last.type === 'action' && last.name === 'newNote', 'New note not asked for: ' + JSON.stringify(last));
+    // A note is no rule target.
+    current().fences.push({ ...current().fences[0], id: 'note-a', title: 'Note A', tool: { kind: 'note' } });
+    frame.contentWindow.testRefresh();
+    await settle();
+    assert(doc.getElementById('noteCount').textContent === '桌面上有 1 个便签', 'Note not counted');
+    rulesPage(doc);
+    assert(![...doc.querySelectorAll('#nrTarget option')].some(o => o.value === 'note-a'), 'A note is offered as a rule target');
+    current().fences.pop();
+    doc = await reset();
+  });
+
   await test('Navigation resets content scroll and announces the current page', async () => {
     doc.querySelector('[data-page=general]').click();
     doc.querySelector('main').scrollTop = 900;

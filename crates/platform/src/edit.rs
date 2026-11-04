@@ -1,4 +1,5 @@
-//! A themed single-line EDIT control with key interception (Enter/Esc via subclassing).
+//! A themed EDIT control (one line, or several for a note) with key interception (Enter/Esc
+//! via subclassing).
 
 use crate::bindings::*;
 use crate::wide::{from_wide, to_wide};
@@ -7,6 +8,15 @@ use windows_core::{Error, PCWSTR, PWSTR, Result};
 pub const EN_KILLFOCUS: u32 = crate::bindings::EN_KILLFOCUS as u32;
 pub const EN_CHANGE: u32 = crate::bindings::EN_CHANGE as u32;
 pub const WM_CTLCOLOREDIT_MSG: u32 = WM_CTLCOLOREDIT as u32;
+
+// Not in the generated bindings (winuser.h).
+const ES_MULTILINE: i32 = 0x0004;
+const ES_AUTOVSCROLL: i32 = 0x0040;
+const ES_WANTRETURN: i32 = 0x1000;
+const WS_VSCROLL: i32 = 0x0020_0000;
+const EM_SETMARGINS: u32 = 0x00D3;
+const EC_LEFTMARGIN: usize = 1;
+const EC_RIGHTMARGIN: usize = 2;
 
 type KeyHandler = fn(u32) -> bool;
 
@@ -31,6 +41,70 @@ impl EditControl {
         dark: bool,
         on_key: KeyHandler,
     ) -> Result<Self> {
+        Self::create_styled(
+            parent,
+            width,
+            height,
+            dpi,
+            font_dip,
+            text,
+            dark,
+            on_key,
+            ES_AUTOHSCROLL,
+        )
+    }
+
+    /// A control for several lines: Enter starts a new line, long lines wrap, and a scroll bar
+    /// appears when the text is taller than the box. `margin_dip` keeps the text off the
+    /// left and right edges.
+    #[allow(clippy::too_many_arguments)]
+    pub fn create_multiline(
+        parent: HWND,
+        width: i32,
+        height: i32,
+        dpi: u32,
+        font_dip: f32,
+        margin_dip: f32,
+        text: &str,
+        dark: bool,
+        on_key: KeyHandler,
+    ) -> Result<Self> {
+        let ctl = Self::create_styled(
+            parent,
+            width,
+            height,
+            dpi,
+            font_dip,
+            text,
+            dark,
+            on_key,
+            ES_MULTILINE | ES_AUTOVSCROLL | ES_WANTRETURN | WS_VSCROLL,
+        )?;
+        let m = (margin_dip * dpi as f32 / 96.0).round() as usize & 0xFFFF;
+        // SAFETY: plain message to our control.
+        unsafe {
+            SendMessageW(
+                ctl.hwnd,
+                EM_SETMARGINS,
+                WPARAM(EC_LEFTMARGIN | EC_RIGHTMARGIN),
+                LPARAM((m | (m << 16)) as isize),
+            );
+        }
+        Ok(ctl)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn create_styled(
+        parent: HWND,
+        width: i32,
+        height: i32,
+        dpi: u32,
+        font_dip: f32,
+        text: &str,
+        dark: bool,
+        on_key: KeyHandler,
+        edit_style: i32,
+    ) -> Result<Self> {
         let class = to_wide("EDIT");
         let text_w = to_wide(text);
         let (text_color, back_color) = if dark {
@@ -44,7 +118,7 @@ impl EditControl {
                 0,
                 PCWSTR(class.as_ptr()),
                 PCWSTR(text_w.as_ptr()),
-                (WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL) as u32,
+                (WS_CHILD | WS_VISIBLE | edit_style) as u32,
                 0,
                 0,
                 width,
@@ -96,6 +170,12 @@ impl EditControl {
 
     pub fn focus_and_select_all(&self) {
         self.focus_and_select(0, -1);
+    }
+
+    /// Focuses the control with the caret after the text.
+    pub fn focus_at_end(&self) {
+        let end = self.text().encode_utf16().count() as i32;
+        self.focus_and_select(end, end);
     }
 
     /// Focuses the control and selects `start..end` (UTF-16 units; `end` = -1 selects to the
@@ -200,7 +280,8 @@ unsafe extern "system" fn subclass_proc(
                 return LRESULT(0);
             }
         }
-        if msg == WM_CHAR as u32 && (wparam.0 == 13 || wparam.0 == 27) {
+        let multiline = GetWindowLongW(hwnd, GWL_STYLE) & ES_MULTILINE != 0;
+        if msg == WM_CHAR as u32 && ((wparam.0 == 13 && !multiline) || wparam.0 == 27) {
             return LRESULT(0); // swallow the beep for Enter/Esc
         }
         DefSubclassProc(hwnd, msg, wparam, lparam)

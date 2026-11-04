@@ -65,6 +65,7 @@ mod items;
 mod live_wallpaper;
 mod menus;
 mod motion;
+mod notes;
 mod peek;
 mod portals;
 mod push;
@@ -2280,6 +2281,10 @@ impl App {
             }
             Command::DeleteFence(fence) => self.delete_fence(fence),
             Command::NewFence { x, y } => self.new_fence_near(x, y),
+            Command::NewNote { x, y } => self.new_note_near(x, y),
+            Command::EditNote { fence } => self.edit_note(fence),
+            Command::ToggleNoteLine { fence, line } => self.toggle_note_line(fence, line),
+            Command::NoteEdited { fence, text } => self.note_edited(fence, &text),
             Command::NewFenceRect(rect) => self.offer_new_fence(rect),
             Command::DesktopMarquee(event) => self.on_desktop_marquee(event),
             Command::ClearFenceSelection => self.set_fence_selection(Vec::new()),

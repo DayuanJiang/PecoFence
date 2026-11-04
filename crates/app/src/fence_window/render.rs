@@ -801,7 +801,49 @@ impl FenceViewState {
         });
     }
 
+    /// 便签与待办: the note's lines in place of items.
+    pub(super) fn redraw_note(&mut self) -> Result<()> {
+        let Some(text) = self.note.clone() else {
+            return Ok(());
+        };
+        use pecofence_core::note::NoteLine;
+        use pecofence_render::fence_chrome::NoteLineDraw;
+        let lines: Vec<NoteLineDraw<'_>> = pecofence_core::note::lines(&text)
+            .into_iter()
+            .map(|l| match l {
+                NoteLine::Text(text) => NoteLineDraw { text, todo: None },
+                NoteLine::Todo { done, text } => NoteLineDraw {
+                    text,
+                    todo: Some(done),
+                },
+            })
+            .collect();
+        let scale = self.scale();
+        let theme = self
+            .material_foreground()
+            .with_label_color(self.behavior.label_color.get());
+        let chrome = self.chrome.clone();
+        let hint =
+            pecofence_core::i18n::text("单击这里写字。行首写 [ ] 的一行是待办，单击方框打勾。");
+        let mut boxes = Vec::new();
+        let ok = self
+            .content_panel
+            .draw_ex(self.dpi, |session, _clip, wd, hd| {
+                boxes = chrome.draw_note(session, &theme, scale, wd, hd, &lines, hint)?;
+                Ok(())
+            })?;
+        self.note_draw_result(ok);
+        self.note_boxes = boxes
+            .into_iter()
+            .map(|(line, r)| (line, [r.left, r.top, r.right, r.bottom]))
+            .collect();
+        Ok(())
+    }
+
     pub(super) fn redraw_content(&mut self) -> Result<()> {
+        if self.note.is_some() {
+            return self.redraw_note();
+        }
         if self.row_metrics().is_some() {
             return self.redraw_rows();
         }

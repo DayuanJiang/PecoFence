@@ -145,6 +145,12 @@ pub struct FenceViewState {
     pub(super) col_drag: Option<ColDrag>,
     /// The fence shown is a folder portal (sort-only: no manual arrangement).
     pub(super) is_portal: bool,
+    /// 便签与待办: the fence shown is a note with this text, drawn in place of items (None =
+    /// it shows items).
+    pub(super) note: Option<String>,
+    /// The note's to-do check boxes as last drawn: line index and (left, top, right, bottom)
+    /// in content DIPs.
+    pub(super) note_boxes: Vec<(usize, [f32; 4])>,
     /// The portal's folder could not be found (its empty state says so).
     pub(super) portal_missing: bool,
     /// Width the cached labels were fitted for; a change invalidates them.
@@ -523,6 +529,31 @@ impl FenceViewState {
     /// 像桌面一样排列: drawn like the Windows desktop (no title row, plate, rim or edges).
     pub(super) fn bare(&self) -> bool {
         self.desktop.is_some()
+    }
+
+    /// 便签与待办: what a press at client point (`x`, `y`) in a note's content does: tick the
+    /// to-do whose check box (with a little slack) is under it, else open the editor. None
+    /// when this window shows no note or the point is not in its content.
+    pub(super) fn note_press(&self, x: i32, y: i32) -> Option<Command> {
+        if self.note.is_none() || self.rolled_up || y < self.content_y || x < self.content_x {
+            return None;
+        }
+        let scale = self.scale();
+        let cx = (x - self.content_x) as f32 / scale;
+        let cy = (y - self.content_y) as f32 / scale;
+        const SLACK: f32 = 4.0;
+        let fence = self.active;
+        let line = self
+            .note_boxes
+            .iter()
+            .find(|(_, r)| {
+                cx >= r[0] - SLACK && cx < r[2] + SLACK && cy >= r[1] - SLACK && cy < r[3] + SLACK
+            })
+            .map(|&(line, _)| line);
+        Some(match line {
+            Some(line) => Command::ToggleNoteLine { fence, line },
+            None => Command::EditNote { fence },
+        })
     }
 
     pub(super) fn title_h_px(&self) -> i32 {

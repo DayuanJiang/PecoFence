@@ -141,6 +141,13 @@ pub struct FenceDto {
     pub title: String,
     /// `virtual` | `inbox` | `portal`.
     pub kind: String,
+    /// 小工具 shown in place of items: `note` (便签与待办; its text is `noteText`). Absent for a
+    /// fence that shows items.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool: Option<String>,
+    /// A note fence's text: one line per line, `[ ]` / `[x]` at the start of a to-do.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note_text: Option<String>,
     /// Expanded geometry in physical px (what `fences.setBounds` sets). A hosted tab reports its
     /// host's rect (the window it is shown in). `null` while the fence's monitor is disconnected.
     pub rect: Option<Rect>,

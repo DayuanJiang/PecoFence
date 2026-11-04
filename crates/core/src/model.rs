@@ -55,6 +55,11 @@ pub struct Config {
     /// Saved layouts the user can return to (Fences "snapshots").
     #[serde(default)]
     pub snapshots: Vec<Snapshot>,
+    /// Text of the note fences (`FenceTool::Note`), keyed by fence id. Kept out of the fences
+    /// so every monitor layout shows the same text and restoring a snapshot does not take a
+    /// note back to older text.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub notes: HashMap<FenceId, String>,
 }
 
 impl Default for Config {
@@ -68,6 +73,7 @@ impl Default for Config {
             rules: crate::rules::RuleSet::default(),
             undo_log: Vec::new(),
             snapshots: Vec::new(),
+            notes: HashMap::new(),
         }
     }
 }
@@ -173,6 +179,39 @@ pub struct Settings {
     /// have its item records re-pointed instead of orphaned.
     #[serde(default)]
     pub desktop_path: Option<String>,
+    /// 小工具: which tools are switched on. A tool that is off runs nothing, and its fences
+    /// have no window until it is switched on again.
+    #[serde(default)]
+    pub tools: ToolSettings,
+}
+
+/// 小工具 switches (all off by default).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct ToolSettings {
+    /// 便签与待办: note fences.
+    #[serde(default)]
+    pub notes: bool,
+}
+
+/// A fence that shows a tool instead of desktop items.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase", tag = "kind")]
+pub enum FenceTool {
+    /// 便签与待办: lines of text (`Config::notes`); a line starting with `[ ]` or `[x]` is a
+    /// to-do with a check box.
+    Note,
+}
+
+impl FenceTool {
+    /// Whether the tool is switched on in `tools`.
+    pub fn enabled(self, tools: &ToolSettings) -> bool {
+        match self {
+            Self::Note => tools.notes,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -283,6 +322,7 @@ impl Default for Settings {
             windows_desktop_hotkey: None,
             icons: IconSettings::default(),
             desktop_path: None,
+            tools: ToolSettings::default(),
         }
     }
 }
@@ -937,6 +977,10 @@ pub struct Fence {
     /// like the Windows desktop with 自动排列图标.
     #[serde(default)]
     pub desktop_layout: bool,
+    /// A tool shown in place of desktop items (小工具). Such a fence holds no items: rules,
+    /// drops and moves never put any in it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool: Option<FenceTool>,
     #[serde(default)]
     pub items: Vec<ItemRef>,
 }
@@ -965,8 +1009,15 @@ impl Fence {
             expand_upward: false,
             bottom_anchored: false,
             desktop_layout: false,
+            tool: None,
             items: Vec::new(),
         }
+    }
+
+    /// Whether routed or dropped desktop items can live in this fence: not in a folder portal
+    /// (it shows its folder) and not in a tool fence.
+    pub fn holds_items(&self) -> bool {
+        self.kind != FenceKind::FolderPortal && self.tool.is_none()
     }
 
     pub fn contains_item(&self, id: ItemId) -> bool {
@@ -1551,6 +1602,25 @@ impl Config {
         last_shown(&self.layouts)
     }
 
+    /// Drops the text of notes no layout and no snapshot has a fence for any more (a snapshot
+    /// that still has the fence brings it back with its text). Returns how many went.
+    pub fn prune_notes(&mut self) -> usize {
+        if self.notes.is_empty() {
+            return 0;
+        }
+        let kept: HashSet<FenceId> = self
+            .layouts
+            .iter()
+            .chain(self.snapshots.iter().flat_map(|s| s.layouts.iter()))
+            .flat_map(|l| l.fences.iter())
+            .filter(|f| f.tool == Some(FenceTool::Note))
+            .map(|f| f.id)
+            .collect();
+        let before = self.notes.len();
+        self.notes.retain(|id, _| kept.contains(id));
+        before - self.notes.len()
+    }
+
     /// Makes `index` the layout shown last; false when it already was.
     pub fn mark_shown(&mut self, index: usize) -> bool {
         let top = self.layouts.iter().map(|l| l.shown).max().unwrap_or(0);
@@ -1729,6 +1799,69 @@ pub fn now_unix() -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn note_geo() -> NormGeometry {
+        NormGeometry {
+            monitor: "M".into(),
+            x: 0.0,
+            y: 0.0,
+            w: 300.0,
+            h: 200.0,
+            work_w: 1920.0,
+            work_h: 1040.0,
+            anchor: Anchor::LeftTop,
+        }
+    }
+
+    /// A fence without a tool writes no `tool` field, so files and snapshots of users who never
+    /// switch a tool on stay as they were; a note fence reads back as one.
+    #[test]
+    fn tool_fences_round_trip() {
+        let plain = Fence::new("a", FenceKind::Virtual, note_geo());
+        let v = serde_json::to_value(&plain).unwrap();
+        assert!(v.get("tool").is_none());
+        assert!(plain.holds_items());
+        let mut note = plain.clone();
+        note.tool = Some(FenceTool::Note);
+        let v = serde_json::to_value(&note).unwrap();
+        assert_eq!(v["tool"], serde_json::json!({"kind": "note"}));
+        let back: Fence = serde_json::from_value(v).unwrap();
+        assert_eq!(back.tool, Some(FenceTool::Note));
+        assert!(!back.holds_items());
+        // Settings written before 小工具 existed load with every tool off.
+        let mut old = serde_json::to_value(Settings::default()).unwrap();
+        old.as_object_mut().unwrap().remove("tools");
+        let settings: Settings = serde_json::from_value(old).unwrap();
+        assert!(!settings.tools.notes);
+    }
+
+    #[test]
+    fn note_text_goes_with_the_last_fence_and_snapshot() {
+        let mut c = Config::default();
+        let mut note = Fence::new("n", FenceKind::Virtual, note_geo());
+        note.tool = Some(FenceTool::Note);
+        let id = note.id;
+        c.layouts.push(Layout {
+            fingerprint: Vec::new(),
+            fences: vec![note.clone()],
+            shown: 1,
+        });
+        c.notes.insert(id, "[ ] a".into());
+        c.notes.insert(Uuid::new_v4(), "orphan".into());
+        assert_eq!(c.prune_notes(), 1);
+        // Deleted from the layout but kept by a snapshot: the text stays for a restore.
+        c.snapshots.push(Snapshot {
+            id: Uuid::new_v4(),
+            name: "s".into(),
+            ts: 0,
+            layouts: c.layouts.clone(),
+        });
+        c.layouts[0].fences.clear();
+        assert_eq!(c.prune_notes(), 0);
+        c.snapshots.clear();
+        assert_eq!(c.prune_notes(), 1);
+        assert!(c.notes.is_empty());
+    }
 
     #[test]
     fn item_keys_still_name_the_file() {

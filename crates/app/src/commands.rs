@@ -263,6 +263,25 @@ pub enum Command {
         x: i32,
         y: i32,
     },
+    /// 便签与待办: a new note fence near the screen point (tray / fence menu, settings page).
+    NewNote {
+        x: i32,
+        y: i32,
+    },
+    /// A click on a note's text: open its editor.
+    EditNote {
+        fence: FenceId,
+    },
+    /// A click on a to-do's check box in a note.
+    ToggleNoteLine {
+        fence: FenceId,
+        line: usize,
+    },
+    /// The note editor closed with this text.
+    NoteEdited {
+        fence: FenceId,
+        text: String,
+    },
     /// Offer a fence with these screen bounds (a desktop marquee that touched no fence).
     NewFenceRect(RECT),
     /// A press / drag / release on the empty desktop: selects the fences the marquee touches.

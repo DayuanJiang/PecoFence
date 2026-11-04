@@ -1465,6 +1465,10 @@ impl App {
                 FenceKind::FolderPortal => "portal",
             }
             .to_string(),
+            tool: f.tool.map(|t| match t {
+                pecofence_core::FenceTool::Note => "note".to_string(),
+            }),
+            note_text: self.state.note_text(f.id).map(str::to_string),
             // A tab is shown in its host's window, so that is where it is on screen.
             rect: connected.then(|| Rect::from(self.state.fence_px_rect(host))),
             // 「桌面」 arranged like the desktop is shown on a connected monitor even while the
@@ -2127,6 +2131,12 @@ impl App {
         to: &str,
     ) -> std::result::Result<(FenceId, Vec<ItemMovePlanDto>), IpcError> {
         let to = self.resolve_fence(to)?;
+        if self.fence_or_err(to)?.tool.is_some() {
+            return Err(unsupported(
+                "a note fence holds no items (it shows text, not desktop items)",
+            )
+            .hint("Move the items to a virtual fence or `inbox`"));
+        }
         let mut ids: Vec<ItemId> = Vec::new();
         for sel in items {
             let id = self.resolve_item(sel)?;
@@ -2665,9 +2675,16 @@ impl App {
             Target::Inbox
         } else {
             let id = self.resolve_fence(target)?;
-            if self.fence_or_err(id)?.kind == FenceKind::FolderPortal {
+            let f = self.fence_or_err(id)?;
+            if f.kind == FenceKind::FolderPortal {
                 return Err(unsupported(
                     "a folder portal cannot be a rule target (it shows a folder, not desktop items)",
+                )
+                .hint("Target a virtual fence or `inbox`"));
+            }
+            if f.tool.is_some() {
+                return Err(unsupported(
+                    "a note fence cannot be a rule target (it shows text, not desktop items)",
                 )
                 .hint("Target a virtual fence or `inbox`"));
             }

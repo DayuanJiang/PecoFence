@@ -663,6 +663,18 @@ impl App {
                         &[moved.to_string()],
                     ));
                 }
+                Some("newNote") => {
+                    // Beside the middle of the primary monitor's work area; the placement
+                    // looks for a free spot from there.
+                    let at = self
+                        .state
+                        .work_areas
+                        .first()
+                        .map(|w| ((w.left + w.right) / 2, (w.top + w.bottom) / 2));
+                    if let Some((x, y)) = at {
+                        self.new_note_near(x, y);
+                    }
+                }
                 Some("addTemplate") => {
                     if let Some(template) = v
                         .get("template")
@@ -837,10 +849,7 @@ impl App {
             .chain(rules.list.iter_mut().map(|r| &mut r.target));
         for t in targets {
             if let Target::Fence(id) = *t
-                && self
-                    .state
-                    .fence(id)
-                    .is_some_and(|f| f.kind == FenceKind::FolderPortal)
+                && self.state.fence(id).is_some_and(|f| !f.holds_items())
             {
                 *t = Target::Inbox;
             }
@@ -1033,6 +1042,8 @@ impl App {
         let push_changed = new.roll_up.push_neighbors != old.roll_up.push_neighbors;
         let inbox_hiding_changed =
             new.hide_inbox_when_icons_shown != old.hide_inbox_when_icons_shown;
+        // A tool switched on brings its fences back; switched off, they go.
+        let tools_changed = new.tools != old.tools;
         // 「调整大小时按整行整列对齐」 switched on keeps every rectangle: the rows fill any
         // height with whole icons (redrawn above), and rounding would undo fences lined up.
         self.state.config.settings = new;
@@ -1054,7 +1065,7 @@ impl App {
             // Pushed fences go back at once when it is switched off.
             self.reflow_pushed();
         }
-        if inbox_hiding_changed {
+        if inbox_hiding_changed || tools_changed {
             self.sync_hidden_fences();
         }
         self.push_settings_state();

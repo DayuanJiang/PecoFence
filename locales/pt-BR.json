@@ -618,5 +618,15 @@
   "已被管理员或组策略关闭，PecoFence 无法打开。": "Desativado por um administrador ou por uma política de grupo: o PecoFence não pode ativá-lo.",
   "已被管理员或组策略打开，PecoFence 无法关闭。": "Ativado por um administrador ou por uma política de grupo: o PecoFence não pode desativá-lo.",
   "闲置天数必须在 1 到 {0} 之间": "Os dias sem uso devem estar entre 1 e {0}",
-  "没能保存这次改动，规则已恢复原样": "Não foi possível salvar esta alteração; as regras voltaram ao que eram"
+  "没能保存这次改动，规则已恢复原样": "Não foi possível salvar esta alteração; as regras voltaram ao que eram",
+  "小工具": "Ferramentas",
+  "小工具放在栅栏里，和普通栅栏一样可以移动、吸附和收起。关着的小工具不运行，也不占内存。": "As ferramentas ficam em grupos: você move, encaixa e recolhe como qualquer outro grupo. Uma ferramenta desligada não roda e não usa memória.",
+  "便签与待办": "Notas e tarefas",
+  "在栅栏里写几行字，单击就能编辑；行首写 [ ] 的那一行变成可以勾选的待办": "Escreva algumas linhas em um grupo e clique para editar; uma linha que começa com [ ] vira uma tarefa que você pode marcar",
+  "新建便签": "Nova nota",
+  "桌面上有 {0} 个便签": "{0} notas na área de trabalho",
+  "桌面上还没有便签": "Ainda não há notas na área de trabalho",
+  "便签": "Nota",
+  "单击这里写字。行首写 [ ] 的一行是待办，单击方框打勾。": "Clique aqui para escrever. Uma linha que começa com [ ] é uma tarefa; clique na caixa para marcá-la.",
+  "便签里的文字会一起删除。": "O texto da nota será excluído junto."
 }

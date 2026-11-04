@@ -402,6 +402,7 @@
     <a href="#general" class="sel" data-page="general" aria-label="常规" title="常规"><span class="ic">&#xE713;</span><span class="nav-text">常规</span></a>
     <a href="#fences" data-page="fences" aria-label="栅栏" title="栅栏"><span class="ic">&#xE71D;</span><span class="nav-text">栅栏</span></a>
     <a href="#rules" data-page="rules" aria-label="整理规则" title="整理规则"><span class="ic">&#xE8FD;</span><span class="nav-text">整理规则</span></a>
+    <a href="#tools" data-page="tools" aria-label="小工具" title="小工具"><span class="ic">&#xEA86;</span><span class="nav-text">小工具</span></a>
     <a href="#layout" data-page="layout" aria-label="布局与备份" title="布局与备份"><span class="ic">&#xE7F4;</span><span class="nav-text">布局与备份</span></a>
     <a href="#about" data-page="about" aria-label="关于" title="关于"><span class="ic">&#xE946;</span><span class="nav-text">关于</span></a>
     <div class="nav-footer"><p id="workspaceSummary">正在连接桌面…</p></div>
@@ -592,6 +593,14 @@
         <div class="actions"><button class="accent" id="copyAiPrompt">复制给 AI 助手的提示词</button><button id="openCliDocs">命令行文档</button></div></div>
     </section>
 
+    <section class="page" id="page-tools">
+      <header class="page-header"><h2>小工具</h2></header>
+      <p class="page-lede">小工具放在栅栏里，和普通栅栏一样可以移动、吸附和收起。关着的小工具不运行，也不占内存。</p>
+      <div class="group">
+        <div class="card"><div class="l"><span class="ic">&#xE70B;</span><div><div class="t">便签与待办</div><div class="s">在栅栏里写几行字，单击就能编辑；行首写 [ ] 的那一行变成可以勾选的待办</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="tools.notes"></div></div>
+        <div class="card child"><div class="l"><div><div class="t" id="noteCount"></div></div></div><button class="accent" id="newNote">新建便签</button></div>
+      </div>
+    </section>
     <section class="page" id="page-layout">
       <header class="page-header"><h2>布局与备份</h2></header>
       <h3>布局快照</h3>
@@ -1010,6 +1019,11 @@
   // shortcut rows (renderPeekHotkey) are what Peek's switch turns on. Gap, whole-cell sizing
   // and dimming apply without them.
   const DEPENDENT = [['snapping.guideLines', 'snapping.enabled'], ['hideInboxWhenIconsShown', '!hideRealIcons'], ['keepIconsHidden', 'hideRealIcons']];
+  // 「小工具」 page: how many notes the desktop has (they show while the switch is on).
+  function renderTools() {
+    const notes = (state.fences || []).filter(f => f.tool && f.tool.kind === 'note').length;
+    document.getElementById('noteCount').textContent = notes ? tf("桌面上有 {0} 个便签", notes) : t("桌面上还没有便签");
+  }
   function renderDependents() {
     for (const [child, master] of DEPENDENT) {
       const value = !!get(state.settings, master.replace('!', ''));
@@ -1372,7 +1386,7 @@
 
   function inboxTitle() { const f = (state.fences || []).find(f => f.kind === 'inbox'); return f ? f.title : t("桌面"); }
   // A portal cannot hold routed items (the app routes such rules to the inbox), so it is shown as one.
-  function fenceTitle(id) { const f = (state.fences || []).find(f => f.id === id); return !f ? t("已删除的栅栏") : f.kind === 'portal' ? inboxTitle() : f.title; }
+  function fenceTitle(id) { const f = (state.fences || []).find(f => f.id === id); return !f ? t("已删除的栅栏") : f.kind === 'portal' || f.tool ? inboxTitle() : f.title; }
   function targetLabel(target) { return tf("“{0}”", target === 'inbox' ? inboxTitle() : (target && target.fence) ? fenceTitle(target.fence) : '?'); }
   const NAME_OPS = {contains:v=>tf("名称包含“{0}”",v),notContains:v=>tf("名称不包含“{0}”",v),startsWith:v=>tf("名称开头是“{0}”",v),endsWith:v=>tf("名称结尾是“{0}”",v),is:v=>tf("名称等于“{0}”",v)};
   const TARGET_OPS = {contains:v=>tf("快捷方式目标包含“{0}”",v),notContains:v=>tf("快捷方式目标不包含“{0}”",v),startsWith:v=>tf("快捷方式目标开头是“{0}”",v),endsWith:v=>tf("快捷方式目标结尾是“{0}”",v),is:v=>tf("快捷方式目标等于“{0}”",v)};
@@ -1428,7 +1442,7 @@
   let editing = null;
   function fillTargets(sel) {
     const selected = sel.value;
-    const options = state.fences.filter(f => f.kind !== 'portal').map(f => `<option value="${esc(f.id)}">${esc(f.title)}</option>`).join('');
+    const options = state.fences.filter(f => f.kind !== 'portal' && !f.tool).map(f => `<option value="${esc(f.id)}">${esc(f.title)}</option>`).join('');
     if (sel.innerHTML !== options) {
       sel.innerHTML = options;
       if ([...sel.options].some(o => o.value === selected)) sel.value = selected;
@@ -1766,6 +1780,7 @@
     panel.querySelectorAll('.cond:not(#nrCond)').forEach(b => b.remove());
   };
   document.getElementById('applyRules').onclick = () => send({ type: 'action', name: 'applyRules' });
+  document.getElementById('newNote').onclick = () => send({ type: 'action', name: 'newNote' });
   document.querySelectorAll('#templates [data-template]').forEach(b => { b.onclick = () => send({ type: 'action', name: 'addTemplate', template: b.dataset.template }); });
   document.getElementById('snapSave').onclick = () => { const n = document.getElementById('snapName').value; send({ type: 'action', name: 'saveSnapshot', snapshotName: n }); document.getElementById('snapName').value = ''; };
   document.getElementById('cfgExport').onclick = () => send({ type: 'action', name: 'exportConfig' });
@@ -1995,7 +2010,7 @@
       document.getElementById('rateStore').hidden = !m.storeEdition;
       renderWorkspaceSummary(m.fences.length, m.itemCount);
       document.getElementById('cfgPath').textContent = m.configPath;
-      bindAll(); bindThemeStyle(); bindCustomTheme(); bindIconTint(); renderDependents(); renderFences(); renderRules(); renderLayout(); updateKind(); renderAppearance(); renderDesktopIconsStatus(); renderStartupNote(); renderWindowsDesktopHotkey();
+      bindAll(); bindThemeStyle(); bindCustomTheme(); bindIconTint(); renderDependents(); renderFences(); renderRules(); renderLayout(); renderTools(); updateKind(); renderAppearance(); renderDesktopIconsStatus(); renderStartupNote(); renderWindowsDesktopHotkey();
       update = m.update; renderUpdate();
       // Transitions come on a frame after this state has been drawn: a single frame would style
       // both changes together and start them after all.

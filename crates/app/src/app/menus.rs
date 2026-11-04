@@ -14,6 +14,8 @@ const CMD_FEEDBACK: u32 = 7;
 const CMD_EXIT: u32 = 9;
 const CMD_PEEK: u32 = 10;
 const CMD_WINDOWS_DESKTOP: u32 = 15;
+/// 新建便签 (tray menu; only while the notes tool is on).
+const CMD_NEW_NOTE: u32 = 16;
 /// Tray 「在桌面显示文件夹」 entries: 11..=14 (see `App::show_folder_submenu`).
 const CMD_SHOW_FOLDER: u32 = 11;
 const CMD_ITEM_OPEN: u32 = 100;
@@ -37,6 +39,8 @@ const CMD_SHELL_LAST: u32 = 0x6FFF;
 const CMD_FENCE_ROLL: u32 = 301;
 const CMD_FENCE_DELETE: u32 = 303;
 const CMD_FENCE_NEW: u32 = 304;
+/// 新建便签 in the fence menu (only while the notes tool is on).
+const CMD_FENCE_NEW_NOTE: u32 = 307;
 /// The inbox's 为空时自动隐藏 (in place of 删除栅栏).
 const CMD_FENCE_HIDE_EMPTY: u32 = 305;
 const CMD_FENCE_DESKTOP_LAYOUT: u32 = 306;
@@ -101,6 +105,8 @@ mod glyph {
     pub const PASTE: char = '\u{E77F}';
     pub const SETTING: char = '\u{E713}';
     pub const ADD_TO: char = '\u{ECC8}';
+    /// QuickNote: 新建便签.
+    pub const NOTE: char = '\u{E70B}';
     pub const FOLDER: char = '\u{E8B7}';
     /// Favicon: a frame with a title strip, like a fence with tabs.
     pub const TAB: char = '\u{E737}';
@@ -158,8 +164,17 @@ impl App {
             false,
             false,
         )
-        .icon(glyph::ADD_TO)
-        .submenu(
+        .icon(glyph::ADD_TO);
+        if self.state.config.settings.tools.notes {
+            menu.item(
+                CMD_NEW_NOTE,
+                pecofence_core::i18n::text("新建便签"),
+                false,
+                false,
+            )
+            .icon(glyph::NOTE);
+        }
+        menu.submenu(
             pecofence_core::i18n::text("在桌面显示文件夹"),
             Self::show_folder_submenu(CMD_SHOW_FOLDER),
         )
@@ -235,6 +250,7 @@ impl App {
             CMD_WINDOWS_DESKTOP => self.set_windows_desktop(!self.windows_desktop, "tray menu"),
             CMD_PEEK => self.queue.push(Command::TogglePeek),
             CMD_NEW_FENCE => self.queue.push(Command::NewFence { x, y: y - 300 }),
+            CMD_NEW_NOTE => self.queue.push(Command::NewNote { x, y: y - 300 }),
             c if (CMD_SHOW_FOLDER..CMD_SHOW_FOLDER + 4).contains(&c) => {
                 self.show_folder_command(c - CMD_SHOW_FOLDER, x, y - 300, None)
             }
@@ -807,12 +823,21 @@ impl App {
                 false,
                 false,
             )
-            .icon(glyph::ADD_TO)
-            .submenu(
-                pecofence_core::i18n::text("在桌面显示文件夹"),
-                Self::show_folder_submenu(CMD_FENCE_SHOW_FOLDER),
+            .icon(glyph::ADD_TO);
+        if self.state.config.settings.tools.notes {
+            menu.item(
+                CMD_FENCE_NEW_NOTE,
+                pecofence_core::i18n::text("新建便签"),
+                false,
+                false,
             )
-            .icon(glyph::FOLDER);
+            .icon(glyph::NOTE);
+        }
+        menu.submenu(
+            pecofence_core::i18n::text("在桌面显示文件夹"),
+            Self::show_folder_submenu(CMD_FENCE_SHOW_FOLDER),
+        )
+        .icon(glyph::FOLDER);
         // The inbox cannot go (new desktop items land there), but it can stay out of sight
         // while it is empty.
         if f.kind == FenceKind::Inbox {
@@ -965,6 +990,7 @@ impl App {
                 let rect = self.place_new_fence(3, 200.0, x, y, Some(host));
                 self.create_fence_with_rename(rect);
             }
+            CMD_FENCE_NEW_NOTE => self.queue.push(Command::NewNote { x, y }),
             CMD_FENCE_DELETE => self.delete_fence_from_menu(fence),
             CMD_FENCE_HIDE_EMPTY => self.set_fence_hide_when_empty(fence, !f.hide_when_empty),
             CMD_FENCE_DESKTOP_LAYOUT => {

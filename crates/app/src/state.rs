@@ -3,8 +3,8 @@
 use pecofence_core::geometry::{self, PxRect, WorkArea};
 use pecofence_core::rules::{Cond, Decision, RuleSet, Target, Template, Unmatched};
 use pecofence_core::{
-    AssignedBy, Config, ConfigStore, Fence, FenceId, FenceKind, IconKey, Item, ItemId, ItemKey,
-    ItemRef, ItemSourceSpec, Layout, LoadOutcome, MonitorIdentity, Origin, SortMode,
+    AssignedBy, Config, ConfigStore, Fence, FenceId, FenceKind, FenceTool, IconKey, Item, ItemId,
+    ItemKey, ItemRef, ItemSourceSpec, Layout, LoadOutcome, MonitorIdentity, Origin, SortMode,
 };
 use pecofence_platform::RECT;
 use pecofence_platform::shell::{self, DesktopEntry, EntryOrigin};
@@ -690,7 +690,9 @@ impl AppState {
     /// when the two are the same window already.
     pub fn attach_tab(&mut self, fence: FenceId, host: FenceId) -> bool {
         let host = self.host_of(host);
-        if fence == host || self.fence(fence).is_none() || self.fence(host).is_none() {
+        // A tool fence (小工具) stays a fence of its own: it neither joins nor hosts tabs.
+        let no_tabs = |id| self.fence(id).is_none_or(|f: &Fence| f.tool.is_some());
+        if fence == host || no_tabs(fence) || no_tabs(host) {
             return false;
         }
         let layout = self.layout;
@@ -781,9 +783,12 @@ impl AppState {
                 let beside_windows_icons = for_windows_icons
                     && f.kind == FenceKind::Inbox
                     && (settings.hide_inbox_when_icons_shown || f.desktop_layout);
-                (empty || beside_windows_icons)
-                    && f.tab_host.is_none()
-                    && self.tabs_of(f.id).len() <= 1
+                // A tool that is switched off shows nothing (tool fences never join tabs).
+                let tool_off = f.tool.is_some_and(|t| !t.enabled(&settings.tools));
+                tool_off
+                    || ((empty || beside_windows_icons)
+                        && f.tab_host.is_none()
+                        && self.tabs_of(f.id).len() <= 1)
             })
             .map(|f| f.id)
             .collect()
@@ -817,6 +822,10 @@ impl AppState {
     pub fn save_if_dirty(&mut self) -> bool {
         if !self.dirty {
             return false;
+        }
+        let pruned = self.config.prune_notes();
+        if pruned > 0 {
+            tracing::info!(pruned, "note texts without a fence dropped");
         }
         match self.store.save(&self.config) {
             Ok(()) => {
@@ -872,9 +881,7 @@ impl AppState {
     /// `fence.items` (its content comes from the folder), so routing into one would make the
     /// item vanish from every fence.
     pub fn routable_fence(&self, id: FenceId) -> Option<FenceId> {
-        self.fence(id)
-            .filter(|f| f.kind != FenceKind::FolderPortal)
-            .map(|f| f.id)
+        self.fence(id).filter(|f| f.holds_items()).map(|f| f.id)
     }
 
     fn target_fence(&self, decision: Decision) -> Option<(FenceId, AssignedBy)> {
@@ -1408,13 +1415,9 @@ impl AppState {
 
     /// Makes regular fence `id` show `dir` (a desktop folder or a folder shortcut's target) in
     /// place of its icons; a folder opened from another opened folder replaces it. Returns false
-    /// if refused (an unknown fence, a folder portal, or a folder that is gone).
+    /// if refused (an unknown fence, a folder portal, a tool fence, or a folder that is gone).
     pub fn open_folder(&mut self, id: FenceId, dir: &Path) -> bool {
-        if self
-            .fence(id)
-            .is_none_or(|f| f.kind == FenceKind::FolderPortal)
-            || !dir.is_dir()
-        {
+        if self.fence(id).is_none_or(|f| !f.holds_items()) || !dir.is_dir() {
             return false;
         }
         self.portal_cwd.remove(&id);
@@ -1784,6 +1787,11 @@ impl AppState {
         // Portal fences show a folder, not desktop membership: nothing can be moved into them,
         // and their (runtime) items cannot be moved out.
         if self.move_target_folder(to).is_some() {
+            return 0;
+        }
+        // A tool fence (便签) shows its tool, never desktop items.
+        if self.fence(to).is_some_and(|f| f.tool.is_some()) {
+            tracing::info!(fence = %to, items = items.len(), "move into a tool fence refused");
             return 0;
         }
         let mut n = 0;
@@ -2372,6 +2380,55 @@ impl AppState {
             "fence created"
         );
         Some(id)
+    }
+
+    /// 便签与待办: a note fence at `rect` showing `text`. None as for [`Self::new_fence`].
+    pub fn new_note(&mut self, title: &str, rect: RECT, text: &str) -> Option<FenceId> {
+        let id = self.new_fence(title, rect)?;
+        if let Some(f) = self.fence_mut(id) {
+            f.tool = Some(FenceTool::Note);
+            f.view.auto_height = false;
+        }
+        self.config.notes.insert(id, text.to_string());
+        tracing::info!(%id, chars = text.chars().count(), "note created");
+        Some(id)
+    }
+
+    /// The text of note fence `id` (empty for a note without text yet); None for any other.
+    pub fn note_text(&self, id: FenceId) -> Option<&str> {
+        self.fence(id)
+            .filter(|f| f.tool == Some(FenceTool::Note))
+            .map(|_| self.config.notes.get(&id).map_or("", String::as_str))
+    }
+
+    /// Replaces note `id`'s text; false when it is no note or the text is the same.
+    pub fn set_note_text(&mut self, id: FenceId, text: &str) -> bool {
+        if self.note_text(id).is_none_or(|old| old == text) {
+            return false;
+        }
+        self.config.notes.insert(id, text.to_string());
+        self.dirty = true;
+        tracing::info!(%id, chars = text.chars().count(), "note text saved");
+        true
+    }
+
+    /// Ticks or unticks the to-do on line `line` of note `id`; false when that line is none.
+    pub fn toggle_note_line(&mut self, id: FenceId, line: usize) -> bool {
+        let Some(text) = self.note_text(id) else {
+            return false;
+        };
+        match pecofence_core::note::toggle(text, line) {
+            Some(new) => {
+                self.config.notes.insert(id, new);
+                self.dirty = true;
+                tracing::info!(%id, line, "note to-do toggled");
+                true
+            }
+            None => {
+                tracing::info!(%id, line, "note toggle ignored: no to-do on that line");
+                false
+            }
+        }
     }
 
     /// "快速添加": a fence for `template` at `rect` plus its rules, inserted ahead of the

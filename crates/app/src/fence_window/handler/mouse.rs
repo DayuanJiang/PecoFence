@@ -224,6 +224,12 @@ pub(super) fn on_lbuttondown(
             queue.push(Command::RaiseFence(hwnd));
             return Some(0);
         }
+        if let Some(cmd) = v.note_press(x, y) {
+            drop(guard);
+            queue.push(cmd);
+            queue.push(Command::RaiseFence(hwnd));
+            return Some(0);
+        }
         let hit = v.hit_item(x, y);
         let mut capture = false;
         match hit {
@@ -608,6 +614,12 @@ pub(super) fn on_lbuttondblclk(
         // animation from the first is still running (with animations off it
         // would otherwise toggle straight back).
         if v.chevron_at(x, y) {
+            return Some(0);
+        }
+        // In a note the second click is another press: a check box ticks back.
+        if let Some(cmd) = v.note_press(x, y) {
+            drop(guard);
+            queue.push(cmd);
             return Some(0);
         }
         // The second click of a rapid double-click on a button is another

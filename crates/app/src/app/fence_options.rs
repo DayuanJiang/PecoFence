@@ -578,6 +578,8 @@ impl App {
                 FenceKind::FolderPortal => "portal",
             },
             "host": (host_id != f.id).then(|| self.state.fence(host_id).map(|h| h.title.clone())),
+            // 小工具: `{"kind": "note"}` for a note fence, null for one that shows items.
+            "tool": f.tool,
             "tabbed": self.state.tabs_of(host_id).len() > 1,
             "iconSize": f.view.icon_size,
             "spacing": spacing,

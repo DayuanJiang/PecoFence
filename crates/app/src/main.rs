@@ -13,6 +13,7 @@ mod icons;
 mod ipc_server;
 mod layout;
 mod marquee_band;
+mod note_edit;
 mod notice;
 mod peek;
 mod peek_search;

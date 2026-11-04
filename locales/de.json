@@ -618,5 +618,15 @@
   "已被管理员或组策略关闭，PecoFence 无法打开。": "Von einem Administrator oder einer Gruppenrichtlinie ausgeschaltet; PecoFence kann es nicht einschalten.",
   "已被管理员或组策略打开，PecoFence 无法关闭。": "Von einem Administrator oder einer Gruppenrichtlinie eingeschaltet; PecoFence kann es nicht ausschalten.",
   "闲置天数必须在 1 到 {0} 之间": "Die Anzahl ungenutzter Tage muss zwischen 1 und {0} liegen",
-  "没能保存这次改动，规则已恢复原样": "Diese Änderung konnte nicht gespeichert werden; die Regeln sind wieder wie vorher"
+  "没能保存这次改动，规则已恢复原样": "Diese Änderung konnte nicht gespeichert werden; die Regeln sind wieder wie vorher",
+  "小工具": "Werkzeuge",
+  "小工具放在栅栏里，和普通栅栏一样可以移动、吸附和收起。关着的小工具不运行，也不占内存。": "Werkzeuge stehen in Bereichen: Sie lassen sich wie jeder andere Bereich verschieben, einrasten und einklappen. Ein ausgeschaltetes Werkzeug läuft nicht und belegt keinen Speicher.",
+  "便签与待办": "Notizen und Aufgaben",
+  "在栅栏里写几行字，单击就能编辑；行首写 [ ] 的那一行变成可以勾选的待办": "Schreiben Sie ein paar Zeilen in einen Bereich und klicken Sie zum Bearbeiten; eine Zeile, die mit [ ] beginnt, wird zu einer Aufgabe zum Abhaken",
+  "新建便签": "Neue Notiz",
+  "桌面上有 {0} 个便签": "{0} Notizen auf dem Desktop",
+  "桌面上还没有便签": "Noch keine Notizen auf dem Desktop",
+  "便签": "Notiz",
+  "单击这里写字。行首写 [ ] 的一行是待办，单击方框打勾。": "Zum Schreiben hier klicken. Eine Zeile, die mit [ ] beginnt, ist eine Aufgabe; ein Klick auf das Kästchen hakt sie ab.",
+  "便签里的文字会一起删除。": "Der Text in der Notiz wird mit gelöscht."
 }
