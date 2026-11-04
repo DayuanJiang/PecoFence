@@ -1,7 +1,7 @@
 //! Keyboard, char, context-menu key and activation / focus messages.
 
 use super::*;
-use pecofence_platform::quicklook;
+use pecofence_platform::{quicklook, seer};
 
 // Selection colour follows activation (Explorer: accent only in the active
 // view). Our own rename popup and a context menu keep the fence "active".
@@ -106,6 +106,7 @@ pub(super) fn on_keydown(
             };
             v.move_cursor(dx, dy, mode);
             if let Some(path) = v.preview_path() {
+                seer::switch(path);
                 quicklook::switch(path);
             }
             let _ = v.redraw_content();
@@ -197,6 +198,7 @@ pub(super) fn on_keydown(
             }
             v.selected.clear();
             v.type_ahead.clear();
+            seer::close();
             quicklook::close();
             if !h.behavior.selection.borrow().is_empty() {
                 queue.push(Command::ClearFenceSelection);
@@ -235,11 +237,13 @@ pub(super) fn on_char(h: &HandlerCtx, _hwnd: HWND, wparam: usize, lparam: isize)
     let Some(v) = guard.as_mut() else {
         return Some(0);
     };
-    // Space outside a prefix opens or closes QuickLook's preview of the focused item, as on
-    // the desktop and in Explorer (nothing without QuickLook); a held Space does not repeat it.
+    // Space outside a prefix opens or closes the preview of the focused item in Seer or
+    // QuickLook, whichever runs (Seer when both do), as on the desktop and in Explorer (nothing
+    // without them); a held Space does not repeat it.
     if ch == ' ' && !v.typing_ahead() && !window::key_down(msg::VK_SHIFT) {
         if lparam & (1 << 30) == 0
             && let Some(path) = v.preview_path()
+            && !seer::toggle(path)
         {
             quicklook::toggle(path);
         }
