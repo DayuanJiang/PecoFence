@@ -9,6 +9,8 @@ use crate::bindings::*;
 use crate::wide::to_wide;
 use std::cell::RefCell;
 use std::path::Path;
+use std::sync::atomic::{AtomicU8, Ordering};
+use std::time::{Duration, Instant};
 use windows_core::{Error, Interface, PCSTR, PCWSTR, PWSTR, Result};
 
 const WM_MENUCHAR: u32 = 0x0120;
@@ -19,6 +21,14 @@ thread_local! {
     /// The shell menu currently shown by `TrackPopupMenuEx` on this thread (at most one).
     static ACTIVE: RefCell<Option<IContextMenu>> = const { RefCell::new(None) };
 }
+
+/// Where `prepare_handler_cache` is: not started, running, or done (whatever its outcome).
+static CACHE_STATE: AtomicU8 = AtomicU8::new(CACHE_NOT_STARTED);
+const CACHE_NOT_STARTED: u8 = 0;
+const CACHE_RUNNING: u8 = 1;
+const CACHE_DONE: u8 = 2;
+/// A menu built while `prepare_handler_cache` still runs waits this long for it at most.
+const CACHE_WAIT: Duration = Duration::from_secs(2);
 
 /// The shell's context menu object for a set of items plus the command-id range it was given.
 pub struct ShellContextMenu {
@@ -70,6 +80,7 @@ impl ShellContextMenu {
         if extended {
             flags |= CMF_EXTENDEDVERBS as u32;
         }
+        wait_for_handler_cache();
         // SAFETY: hmenu is a valid menu owned by the caller.
         let hr = unsafe { self.menu.QueryContextMenu(hmenu, index, first, last, flags) };
         if hr.is_err() {
@@ -215,11 +226,12 @@ pub fn prepare_handler_cache() {
     // Windows' own libraries; a PC may lack some of them, and their file names are English
     // in every display language.
     const LIBRARIES: [&str; 4] = ["Documents", "Pictures", "Music", "Videos"];
+    CACHE_STATE.store(CACHE_RUNNING, Ordering::Release);
     let spawned = std::thread::Builder::new()
         .name("shell handler cache".into())
         .spawn(|| {
             let _sta = crate::com::OleGuard::init();
-            let started = std::time::Instant::now();
+            let started = Instant::now();
             let mut outcome = Err(Error::from_hresult(E_FAIL));
             for name in LIBRARIES {
                 let path = format!("::{{031E4825-7B94-4DC3-B131-E946B44C8DD5}}\\{name}.library-ms");
@@ -229,14 +241,32 @@ pub fn prepare_handler_cache() {
                 }
             }
             let ms = started.elapsed().as_millis() as u64;
+            CACHE_STATE.store(CACHE_DONE, Ordering::Release);
             match outcome {
                 Ok(library) => tracing::info!(ms, library, "shell handler cache prepared"),
                 Err(e) => tracing::warn!(ms, error = %e, "shell handler cache not prepared"),
             }
         });
     if let Err(e) = spawned {
+        CACHE_STATE.store(CACHE_DONE, Ordering::Release);
         tracing::warn!(error = %e, "shell handler cache thread failed to start");
     }
+}
+
+/// A menu built in the first moments after start, while `prepare_handler_cache` still runs
+/// (146 ms on a desktop PC), waits for it: the menu could start the cache itself otherwise.
+/// Waiting is safe here, as the caller holds no loader lock; it ends after `CACHE_WAIT` anyway.
+fn wait_for_handler_cache() {
+    if CACHE_STATE.load(Ordering::Acquire) != CACHE_RUNNING {
+        return;
+    }
+    let started = Instant::now();
+    while CACHE_STATE.load(Ordering::Acquire) == CACHE_RUNNING && started.elapsed() < CACHE_WAIT {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let ms = started.elapsed().as_millis() as u64;
+    let ready = CACHE_STATE.load(Ordering::Acquire) == CACHE_DONE;
+    tracing::info!(ms, ready, "shell menu waited for the shell handler cache");
 }
 
 /// The id lists of `paths` for one shell handler (unknown paths are skipped); free each with
