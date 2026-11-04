@@ -56,7 +56,14 @@
 //!                            next <n> device rebuilds fail (a driver reset in progress)
 //! device-state               log how many fence windows still wait for a working device
 //! crash [<module>]           force an access violation (tests the crash logger); debug builds
-//!                            name <module> (`ExplorerPatcher.amd64.dll`) as the faulting one
+//!                            name <module> (`ExplorerPatcher.amd64.dll`) as the faulting one:
+//!                            a bare name as another program's DLL, a full path by its folder
+//! reenter-desktop-id <n>     debug-only: ask Explorer for the foreground window's virtual
+//!                            desktop <n> times while another thread keeps sending a message
+//!                            whose window procedure asks too (GitHub #166)
+//! reenter-anchor <n>         debug-only: from a window procedure, hold the anchor without the
+//!                            App and send <n> messages to Explorer while another thread
+//!                            keeps sending WM_QUERYENDSESSION to the control window
 //! exit                       quit the process
 //! exit-if-file <path>        quit when a test harness creates a stop marker
 //! ```
@@ -569,6 +576,18 @@ impl App {
                     }
                 }
                 #[cfg(debug_assertions)]
+                ["reenter-desktop-id", count] => {
+                    reenter_desktop_id(count.parse().unwrap_or(500));
+                }
+                #[cfg(debug_assertions)]
+                ["reenter-anchor", count] => {
+                    reenter_anchor(
+                        self.anchor.clone(),
+                        self.control.hwnd(),
+                        count.parse().unwrap_or(500),
+                    );
+                }
+                #[cfg(debug_assertions)]
                 ["stall", ms] => {
                     // Exercises platform::hangwatch: the UI thread stops answering for `ms`.
                     std::thread::sleep(Duration::from_millis(ms.parse().unwrap_or(0)));
@@ -701,6 +720,129 @@ fn test_monitor(spec: &str) -> Option<pecofence_core::geometry::WorkArea> {
         mon_right: x + w,
         mon_bottom: y + h,
     })
+}
+
+/// `reenter-desktop-id <n>`: asks Explorer for the foreground window's virtual desktop `n` times
+/// while another thread keeps sending a message to a window of this thread whose procedure asks
+/// as well. The sent messages come in while COM waits for Explorer's answer, as in GitHub #166,
+/// where the window procedure ran again in the middle of `GetWindowDesktopId`.
+#[cfg(debug_assertions)]
+fn reenter_desktop_id(count: u32) {
+    use pecofence_platform::{HWND, msg, wallpaper};
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, AtomicU32, Ordering::Relaxed};
+    const ASK: u32 = msg::WM_APP + 99;
+    static ASKING: AtomicBool = AtomicBool::new(false);
+    static INSIDE: AtomicU32 = AtomicU32::new(0);
+    static ANSWERED: AtomicU32 = AtomicU32::new(0);
+    let Ok(class) =
+        window::WindowClass::register("PecoFence.TestReenter", window::ClassOptions::default())
+    else {
+        return;
+    };
+    let handler: window::MessageHandler = Box::new(|_, message, _, lparam| {
+        (message == ASK).then(|| {
+            ANSWERED.fetch_add(1, Relaxed);
+            if ASKING.load(Relaxed) {
+                INSIDE.fetch_add(1, Relaxed);
+            }
+            let _ = wallpaper::window_desktop(HWND(lparam as *mut core::ffi::c_void));
+            0
+        })
+    });
+    let Ok(target) = window::WindowBuilder::new(&class).create(handler) else {
+        return;
+    };
+    let foreground = desktop::foreground_window();
+    let stop = Arc::new(AtomicBool::new(false));
+    let (to, about) = (target.hwnd().0 as isize, foreground.0 as isize);
+    let sending = stop.clone();
+    std::thread::spawn(move || {
+        while !sending.load(Relaxed) {
+            window::send_message(HWND(to as *mut core::ffi::c_void), ASK, 0, about);
+        }
+    });
+    let started = Instant::now();
+    let mut known = 0;
+    for _ in 0..count {
+        ASKING.store(true, Relaxed);
+        known += u32::from(wallpaper::window_desktop(foreground).is_some());
+        ASKING.store(false, Relaxed);
+    }
+    stop.store(true, Relaxed);
+    tracing::info!(
+        target: "pecofence::test",
+        count,
+        known,
+        answered = ANSWERED.load(Relaxed),
+        inside = INSIDE.load(Relaxed),
+        ms = started.elapsed().as_millis() as u64,
+        "desktop id asked while sent messages came in"
+    );
+    // The sender may still wait for its last message: the message loop answers it later.
+    std::mem::forget(target);
+    std::mem::forget(class);
+}
+
+/// `reenter-anchor <n>`: what the anchor's sentinel does on a timer, from a window procedure the
+/// message loop runs (the App is free): it holds the anchor and waits on Explorer (`n` messages
+/// to its shell window) while another thread keeps sending WM_QUERYENDSESSION to the control
+/// window, whose App code takes the anchor (as `ControlApp` describes).
+#[cfg(debug_assertions)]
+fn reenter_anchor(
+    anchor: crate::anchor::AnchorCell,
+    control: pecofence_platform::HWND,
+    count: u32,
+) {
+    use pecofence_platform::{HWND, msg};
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, AtomicU32, Ordering::Relaxed};
+    const HOLD: u32 = msg::WM_APP + 98;
+    const WM_NULL: u32 = 0;
+    static ANSWERED: AtomicU32 = AtomicU32::new(0);
+    let Ok(class) =
+        window::WindowClass::register("PecoFence.TestAnchor", window::ClassOptions::default())
+    else {
+        return;
+    };
+    let control = control.0 as isize;
+    let handler: window::MessageHandler = Box::new(move |_, message, _, _| {
+        (message == HOLD).then(|| {
+            let stop = Arc::new(AtomicBool::new(false));
+            let sending = stop.clone();
+            std::thread::spawn(move || {
+                while !sending.load(Relaxed) {
+                    let to = HWND(control as *mut core::ffi::c_void);
+                    window::send_message(to, msg::WM_QUERYENDSESSION, 0, 0);
+                    ANSWERED.fetch_add(1, Relaxed);
+                }
+            });
+            let explorer = desktop::shell_window();
+            let before = ANSWERED.load(Relaxed);
+            let started = Instant::now();
+            if let Ok(_held) = anchor.try_borrow_mut() {
+                for _ in 0..count {
+                    window::send_message(explorer, WM_NULL, 0, 0);
+                }
+            }
+            stop.store(true, Relaxed);
+            tracing::info!(
+                target: "pecofence::test",
+                count,
+                answered = ANSWERED.load(Relaxed) - before,
+                ms = started.elapsed().as_millis() as u64,
+                "anchor held while WM_QUERYENDSESSION came in"
+            );
+            0
+        })
+    });
+    let Ok(target) = window::WindowBuilder::new(&class).create(handler) else {
+        return;
+    };
+    window::post_message(target.hwnd(), HOLD, 0, 0);
+    // The message loop runs it once the script step returns.
+    std::mem::forget(target);
+    std::mem::forget(class);
 }
 
 /// The trailing options of `drop-files` / `drop-marshaled`: an item name to drop onto, and

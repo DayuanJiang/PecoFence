@@ -80,16 +80,29 @@ fn log_records_crash(log: &str) -> bool {
     })
 }
 
-/// The module crashlog's line in a shareable log names as the faulting one
-/// (`at=ExplorerPatcher.amd64.dll+0xc0c1`).
-fn crash_module(log: &str) -> Option<&str> {
+/// A field of crashlog's line in a shareable log (`at`, `module_owner`).
+fn crash_field<'a>(log: &'a str, name: &str) -> Option<&'a str> {
     let line = log
         .lines()
         .find(|line| line.contains(": CRASH (unhandled exception)"))?;
-    let at = line
-        .split_whitespace()
-        .find_map(|w| w.strip_prefix("at="))?;
+    line.split_whitespace()
+        .find_map(|w| w.strip_prefix(name)?.strip_prefix('='))
+}
+
+/// The module crashlog's line in a shareable log names as the faulting one
+/// (`at=ExplorerPatcher.amd64.dll+0xc0c1`).
+fn crash_module(log: &str) -> Option<&str> {
+    let at = crash_field(log, "at")?;
     at.split_once('+').map(|(module, _)| module)
+}
+
+/// The faulting module when it belongs to another program installed on the PC: crashlog found
+/// it outside the Windows folder and PecoFence's own (`module_owner=other`), as WPS Office's
+/// shell extension `qingshellext64.dll` (feedback #97, GitHub #167).
+fn other_programs_module(log: &str) -> Option<&str> {
+    (crash_field(log, "module_owner") == Some("other"))
+        .then(|| crash_module(log))
+        .flatten()
 }
 
 /// ExplorerPatcher's DLL: registered as a shell extension, it loads into every program that
@@ -340,20 +353,24 @@ impl App {
             return;
         }
         tracing::info!("previous run crashed; offering to send feedback");
-        let in_explorer_patcher = previous
-            .as_deref()
-            .and_then(crash_module)
-            .is_some_and(is_explorer_patcher);
-        let text = if in_explorer_patcher {
+        let log = previous.as_deref().unwrap_or_default();
+        let text = if crash_module(log).is_some_and(is_explorer_patcher) {
             tracing::info!("the crash was inside ExplorerPatcher");
             pecofence_core::i18n::text(
                 "上次因 ExplorerPatcher 出错而关闭。请在它的 Properties › File Explorer 中取消勾选“Register as shell extension”，然后重启资源管理器。",
             )
+            .to_string()
+        } else if let Some(module) = other_programs_module(log) {
+            tracing::info!(module, "the crash was inside another program's module");
+            pecofence_core::i18n::format(
+                "PecoFence 上次因 {0} 出错而关闭，这个文件属于电脑上安装的其他程序。更新或卸载那个程序可能会解决。点击这里报告问题。",
+                &[module.to_string()],
+            )
         } else {
-            pecofence_core::i18n::text("PecoFence 上次意外关闭了。点击这里报告问题。")
+            pecofence_core::i18n::text("PecoFence 上次意外关闭了。点击这里报告问题。").to_string()
         };
         if let Some(t) = &self.tray {
-            t.show_info("PecoFence", text, true);
+            t.show_info("PecoFence", &text, true);
             self.feedback.crash_offer_pending = true;
         }
     }
@@ -646,6 +663,27 @@ mod tests {
         // A panic names no module.
         assert_eq!(
             crash_module("t ERROR pecofence: PANIC location=crates/app/src/x.rs:1:2\n"),
+            None
+        );
+    }
+
+    #[test]
+    fn another_programs_module_is_named_only_when_crashlog_says_so() {
+        // As GitHub #167's line, with the owner 0.2.5's crashlog adds.
+        let wps = "t ERROR pecofence_platform::crashlog: CRASH (unhandled exception) code=0xc0000005 at=qingshellext64.dll+0x1b7b3 module_version=12.1.0.29162 module_owner=other access=read stack=  qingshellext64.dll+0x1b7b3\n  shell32.dll+0x349ac\n";
+        assert_eq!(other_programs_module(wps), Some("qingshellext64.dll"));
+        // Windows' own DLLs and PecoFence's are not another program's.
+        let gpu = "t ERROR pecofence_platform::crashlog: CRASH (unhandled exception) code=0xc0000005 at=amdxx64.dll+0xd0c82 module_owner=windows stack=  amdxx64.dll+0xd0c82\n";
+        assert_eq!(other_programs_module(gpu), None);
+        let ours = "t ERROR pecofence_platform::crashlog: CRASH (unhandled exception) code=0xc0000005 at=pecofence.exe+0x1f368 module_owner=pecofence stack=  qingshellext64.dll+0x1\n";
+        assert_eq!(other_programs_module(ours), None);
+        // A log of 0.2.4 or earlier does not say: the plain notice.
+        let old = "t ERROR pecofence_platform::crashlog: CRASH (unhandled exception) code=0xc0000005 at=qingshellext64.dll+0xbf23 module_version=12.1.0.29161 stack=  qingshellext64.dll+0xbf23\n";
+        assert_eq!(other_programs_module(old), None);
+        // Only crashlog's line counts, and only a field of that very name.
+        assert_eq!(crash_field(wps, "module"), None);
+        assert_eq!(
+            other_programs_module("t  INFO x: module_owner=other\n"),
             None
         );
     }
