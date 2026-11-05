@@ -1,6 +1,7 @@
 # <pecofence.type>streamable</pecofence.type>
 # PecoFence script fence example: keeps running and shows the computer's state every 2 seconds.
-# The comment above keeps it running; each ~~~ line it prints replaces what the fence shows.
+# The comment above keeps it running. Each line it prints shows at once; after a ~~~ line
+# the next line starts a new screen in place of the old one.
 # color= colours a row, copy= copies text on a click, open= opens a file or folder, run= runs a
 # program.
 $ip = (Get-NetIPAddress -AddressFamily IPv4 |

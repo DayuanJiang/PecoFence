@@ -135,7 +135,9 @@ fn spawn(path: &Path, env: &RunEnv, stdin: bool) -> Result<std::process::Child, 
             .env("PECOFENCE_ACTION", &env.action)
             .env("PECOFENCE_DATA", &env.data_dir)
             .env("PECOFENCE_THEME", env.theme)
-            .env("PECOFENCE_FENCE", &env.fence);
+            .env("PECOFENCE_FENCE", &env.fence)
+            // A streaming Python script's lines would wait in its buffer otherwise.
+            .env("PYTHONUNBUFFERED", "1");
         if let Some(dir) = path.parent() {
             cmd.current_dir(dir);
         }
@@ -230,8 +232,7 @@ pub fn run(path: &Path, env: &RunEnv) -> Outcome {
 /// What a streaming script sends while it runs.
 #[derive(Clone, Debug, PartialEq)]
 pub enum StreamEvent {
-    /// What the fence shows now: the lines printed since the last `~~~` (until the first
-    /// `~~~`, everything printed so far).
+    /// What the fence shows now.
     Block(String),
     /// The script ended (or was ended).
     Ended(Outcome),
@@ -241,20 +242,71 @@ pub enum StreamEvent {
 /// running; dropping it ends the script and what it started.
 pub struct Stream {
     job: pecofence_platform::job::KillOnCloseJob,
-    stdin: Option<std::process::ChildStdin>,
+    /// Lines for the script's input, written by a thread of their own: a script that does not
+    /// read its input then blocks that thread, never the UI.
+    input: Option<mpsc::Sender<String>>,
 }
 
-/// The first 64 KB of `path` mark it as a streaming script.
+/// The first 8 KB of `path` mark it as a streaming script (the tag sits in the header).
 pub fn is_streamable(path: &Path) -> bool {
-    let mut head = vec![0u8; 64 * 1024];
+    let mut head = vec![0u8; 8 * 1024];
     let n = std::fs::File::open(path)
         .and_then(|mut f| f.read(&mut head))
         .unwrap_or(0);
     pecofence_core::script_output::is_streamable(&String::from_utf8_lossy(&head[..n]))
 }
 
+/// What a streaming script shows, line by line, as SwiftBar does: every line is added at
+/// once; after a `~~~` line the next line starts a new screen. The newest [`MAX_LINES`] stay.
+#[derive(Default)]
+struct Screen {
+    lines: std::collections::VecDeque<String>,
+    reset: bool,
+}
+
+impl Screen {
+    /// Takes one printed line; the text to show when it changed the screen.
+    fn push(&mut self, line: &str) -> Option<String> {
+        if line.trim() == "~~~" {
+            self.reset = true;
+            return None;
+        }
+        if std::mem::take(&mut self.reset) {
+            self.lines.clear();
+        }
+        self.lines.push_back(line.to_string());
+        while self.lines.len() > MAX_LINES {
+            self.lines.pop_front();
+        }
+        Some(self.text())
+    }
+
+    fn text(&self) -> String {
+        clean(&Vec::from(self.lines.clone()).join("\n"))
+    }
+}
+
+/// Everything `pipe` sends, up to [`MAX_BYTES`], on a thread of its own.
+fn drain(pipe: Option<impl Read + Send + 'static>) -> std::thread::JoinHandle<Vec<u8>> {
+    std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        if let Some(mut pipe) = pipe {
+            let mut chunk = [0u8; 4096];
+            while let Ok(n) = pipe.read(&mut chunk) {
+                if n == 0 {
+                    break;
+                }
+                if buf.len() < MAX_BYTES {
+                    buf.extend_from_slice(&chunk[..n.min(MAX_BYTES - buf.len())]);
+                }
+            }
+        }
+        buf
+    })
+}
+
 impl Stream {
-    /// Starts `path`; `on_event` gets its blocks and its end, on a reader thread.
+    /// Starts `path`; `on_event` gets what to show and the end, on a reader thread.
     pub fn start(
         path: &Path,
         env: &RunEnv,
@@ -267,30 +319,29 @@ impl Stream {
             let _ = child.kill();
             return Err(Outcome::NotStarted("job object".into()));
         };
-        let stdin = child.stdin.take();
-        let stdout = child.stdout.take();
-        let stderr = child.stderr.take();
-        let errors = std::thread::spawn(move || {
-            let mut buf = Vec::new();
-            if let Some(mut e) = stderr {
-                let mut chunk = [0u8; 4096];
-                while let Ok(n) = e.read(&mut chunk) {
-                    if n == 0 {
+        let input = child.stdin.take().map(|mut stdin| {
+            let (tx, rx) = mpsc::channel::<String>();
+            std::thread::spawn(move || {
+                use std::io::Write;
+                for line in rx {
+                    if writeln!(stdin, "{line}")
+                        .and_then(|_| stdin.flush())
+                        .is_err()
+                    {
                         break;
                     }
-                    if buf.len() < MAX_BYTES {
-                        buf.extend_from_slice(&chunk[..n.min(MAX_BYTES - buf.len())]);
-                    }
                 }
-            }
-            buf
+            });
+            tx
         });
+        let stdout = child.stdout.take();
+        let errors = drain(child.stderr.take());
         std::thread::Builder::new()
             .name("pecofence-script-stream".into())
             .spawn(move || {
                 use std::io::BufRead;
-                let mut block: Vec<String> = Vec::new();
-                let mut reset_seen = false;
+                let mut screen = Screen::default();
+                let mut shown = String::new();
                 if let Some(out) = stdout {
                     let mut reader = std::io::BufReader::new(out);
                     let mut line = Vec::new();
@@ -305,61 +356,49 @@ impl Stream {
                             Ok(_) => {}
                         }
                         let text = decode(&line);
-                        let text = text.trim_end_matches(['\r', '\n']);
-                        if text.trim() == "~~~" {
-                            reset_seen = true;
-                            on_event(StreamEvent::Block(clean(&block.join("\n"))));
-                            block.clear();
-                            continue;
-                        }
-                        block.push(text.to_string());
-                        if block.len() > MAX_LINES * 4 {
-                            block.remove(0);
-                        }
-                        // Until the first `~~~` the fence shows the lines as they come.
-                        if !reset_seen {
-                            on_event(StreamEvent::Block(clean(&block.join("\n"))));
+                        if let Some(now) = screen.push(text.trim_end_matches(['\r', '\n'])) {
+                            shown = now.clone();
+                            on_event(StreamEvent::Block(now));
                         }
                     }
                 }
                 let status = child.wait().ok();
                 let stderr = clean(&decode(&errors.join().unwrap_or_default()));
+                // A script that ends by itself leaves what it showed last.
                 let outcome = match status.and_then(|s| s.code()) {
-                    Some(0) => Outcome::Done(clean(&block.join("\n"))),
+                    Some(0) => Outcome::Done(shown),
                     code => Outcome::Failed { code, text: stderr },
                 };
                 on_event(StreamEvent::Ended(outcome));
             })
             .map_err(|e| Outcome::NotStarted(e.to_string()))?;
-        Ok(Self { job, stdin })
+        Ok(Self { job, input })
     }
 
     /// Hands `line` (a clicked row's `action=`) to the script's standard input.
     pub fn send(&mut self, line: &str) -> bool {
-        use std::io::Write;
-        let Some(stdin) = self.stdin.as_mut() else {
-            return false;
-        };
-        let ok = writeln!(stdin, "{line}")
-            .and_then(|_| stdin.flush())
-            .is_ok();
-        if !ok {
-            self.stdin = None;
+        let sent = self
+            .input
+            .as_ref()
+            .is_some_and(|tx| tx.send(line.to_string()).is_ok());
+        if !sent {
+            self.input = None;
         }
-        ok
+        sent
     }
 }
 
 impl Drop for Stream {
     fn drop(&mut self) {
-        self.stdin = None;
+        self.input = None;
         self.job.terminate();
     }
 }
 
 /// A row's `run=`: `program` with `args` in the script's folder `dir`, without a window. A
-/// script file runs through its interpreter; a relative path is taken from `dir`. Returns the
-/// started process (the caller may wait for it before running the script again).
+/// script file runs through its interpreter (the first one that starts); a relative path is
+/// taken from `dir`. Returns the started process (the caller may wait for it before running
+/// the script again).
 pub fn run_program(
     program: &str,
     args: &[String],
@@ -377,36 +416,60 @@ pub fn run_program(
         .extension()
         .map(|e| e.to_string_lossy().to_lowercase())
         .unwrap_or_default();
-    // A script file through its interpreter, the arguments after it; .cmd / .bat and programs
-    // directly (Rust quotes the arguments of a batch file for cmd.exe).
-    let mut cmd = match ext.as_str() {
-        "ps1" if path.is_file() => {
-            let mut c = Command::new("powershell.exe");
-            c.args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-File"])
-                .arg(&path);
-            c
-        }
-        "py" | "pyw" if path.is_file() => {
-            let mut c = Command::new("py");
-            c.arg("-3").arg(&path);
-            c
-        }
-        "js" | "mjs" if path.is_file() => {
-            let mut c = Command::new("node");
-            c.arg(&path);
-            c
-        }
-        _ => Command::new(&path),
+    let file = path.is_file();
+    // (program, arguments before the user's): .cmd / .bat and programs run directly (Rust
+    // quotes a batch file's arguments for cmd.exe).
+    let candidates: Vec<(&str, Vec<std::ffi::OsString>)> = match ext.as_str() {
+        "ps1" if file => vec![(
+            "powershell.exe",
+            [
+                "-NoProfile",
+                "-NonInteractive",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+            ]
+            .iter()
+            .map(Into::into)
+            .chain([path.clone().into_os_string()])
+            .collect(),
+        )],
+        "py" | "pyw" if file => vec![
+            ("py", vec!["-3".into(), path.clone().into_os_string()]),
+            ("python", vec![path.clone().into_os_string()]),
+        ],
+        "js" | "mjs" if file => vec![("node", vec![path.clone().into_os_string()])],
+        _ => Vec::new(),
     };
-    cmd.args(args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .creation_flags(CREATE_NO_WINDOW);
-    if let Some(d) = dir {
-        cmd.current_dir(d);
+    let mut commands: Vec<Command> = candidates
+        .into_iter()
+        .map(|(exe, pre)| {
+            let mut c = Command::new(exe);
+            c.args(pre);
+            c
+        })
+        .collect();
+    if commands.is_empty() {
+        commands.push(Command::new(&path));
     }
-    cmd.spawn()
+    let mut last = None;
+    for mut cmd in commands {
+        cmd.args(args)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .creation_flags(CREATE_NO_WINDOW)
+            .env("PYTHONIOENCODING", "utf-8")
+            .env("PYTHONUTF8", "1");
+        if let Some(d) = dir {
+            cmd.current_dir(d);
+        }
+        match cmd.spawn() {
+            Ok(child) => return Ok(child),
+            Err(e) => last = Some(e),
+        }
+    }
+    Err(last.unwrap_or_else(|| std::io::Error::other("nothing to run")))
 }
 
 /// UTF-8 (what the interpreters are asked for), else the system's ANSI code page.
@@ -539,6 +602,29 @@ pub fn weather_example(chinese: bool) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_stream_screen_follows_swiftbar() {
+        let mut s = Screen::default();
+        assert_eq!(s.push("a").as_deref(), Some("a"));
+        assert_eq!(s.push("b").as_deref(), Some("a\nb"));
+        // `~~~` changes nothing until the next line, which starts a new screen.
+        assert_eq!(s.push("~~~"), None);
+        assert_eq!(s.push("c").as_deref(), Some("c"));
+        // SwiftBar's way, `~~~` before each block, works the same.
+        s.push("~~~");
+        s.push("d");
+        assert_eq!(s.push("e").as_deref(), Some("d\ne"));
+        // A log that never prints `~~~` shows its newest lines.
+        let mut log = Screen::default();
+        let mut last = None;
+        for i in 0..100 {
+            last = log.push(&format!("line {i}"));
+        }
+        let last = last.unwrap();
+        assert_eq!(last.lines().count(), MAX_LINES);
+        assert!(last.ends_with("line 99"));
+    }
 
     #[test]
     fn output_is_cleaned_for_the_fence() {

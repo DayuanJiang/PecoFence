@@ -3459,12 +3459,7 @@ impl FenceChrome {
             .metrics()
             .height;
         let px = Px::new(scale);
-        let box_stroke = session.create_solid_brush(with_alpha(theme.text_primary, 0.7))?;
-        let accent = session.create_solid_brush(theme.accent)?;
-        let check = session.create_solid_brush(match theme.mode {
-            crate::theme::ThemeMode::Dark => ColorF::from_rgba8(0, 0, 0, 0xE6),
-            crate::theme::ThemeMode::Light => ColorF::from_rgba8(0xFF, 0xFF, 0xFF, 0xFF),
-        })?;
+        let todo = TodoBrushes::new(session, theme)?;
         let mut boxes = Vec::new();
         let mut y = NOTE_PAD_TOP;
         for (i, line) in lines.iter().enumerate() {
@@ -3501,15 +3496,7 @@ impl FenceChrome {
                 None
             };
             if let Some(done) = line.todo {
-                let top = px.snap(y + (line_h - NOTE_BOX) / 2.0);
-                let r = Rect::from_xywh(px.snap(NOTE_PAD_X), top, NOTE_BOX, NOTE_BOX);
-                if done {
-                    session.fill_rounded_rect(&RoundedRect::uniform(r, 4.0), &accent);
-                    session.draw_text(CHECK_GLYPH, &self.glyph_format, &r, &check);
-                } else {
-                    session.draw_rounded_rect(&px.ring(r, 4.0), &box_stroke, px.hair());
-                }
-                boxes.push((i, r));
+                boxes.push((i, todo.draw(self, session, px, y, line_h, done)));
             }
             let brush = if line.todo == Some(true) {
                 &secondary
@@ -3578,7 +3565,7 @@ impl FenceChrome {
         let px = Px::new(scale);
         let plate = session.create_solid_brush(with_alpha(theme.text_primary, 0.07))?;
         let rule = session.create_solid_brush(with_alpha(theme.text_primary, 0.14))?;
-        let boxes = TodoBrushes::new(session, theme)?;
+        let todo = TodoBrushes::new(session, theme)?;
         let mut hits = Vec::new();
         let mut y = NOTE_PAD_TOP + SCRIPT_ROW_PAD_Y;
         for (i, row) in rows.iter().enumerate() {
@@ -3637,7 +3624,7 @@ impl FenceChrome {
                 session.fill_rounded_rect(&RoundedRect::uniform(plate_rect, 4.0), &plate);
             }
             if let Some(done) = row.todo {
-                boxes.draw(self, session, px, y, line_h, done);
+                todo.draw(self, session, px, y, line_h, done);
             }
             if let Some(icon) = &icon {
                 session.draw_text_layout_color(Vector2::new(x, y), icon, &primary);

@@ -70,14 +70,12 @@ fn parse_one(line: &str) -> ScriptLine {
     if line.trim() == "---" {
         return ScriptLine::Separator;
     }
-    let (text, params) = match line.split_once('|') {
-        Some((text, rest)) => match params(rest) {
-            Some(p) => (text.trim_end(), p),
-            // `a | b` without any key=value stays text.
-            None => (line, Vec::new()),
-        },
-        None => (line, Vec::new()),
-    };
+    // The parameters start at the first `|` whose rest is all key=value pairs, so the text
+    // may hold a `|` itself; `a | b` without any key=value stays text.
+    let (text, params) = line
+        .match_indices('|')
+        .find_map(|(at, _)| params(&line[at + 1..]).map(|p| (line[..at].trim_end(), p)))
+        .unwrap_or((line, Vec::new()));
     let get = |key: &str| {
         params
             .iter()
@@ -219,6 +217,10 @@ mod tests {
         assert!(!r.clickable());
         // A bar without key=value is part of the text.
         assert_eq!(row("a | b").text, "a | b");
+        let r = row("#12  Crash | Win10 | href=https://x/12 tooltip='a | b'");
+        assert_eq!(r.text, "#12  Crash | Win10");
+        assert_eq!(r.action, Some(RowAction::Href("https://x/12".into())));
+        assert_eq!(r.tooltip.as_deref(), Some("a | b"));
         assert_eq!(parse_one(" --- "), ScriptLine::Separator);
     }
 

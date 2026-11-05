@@ -16,9 +16,9 @@ pub(super) struct ScriptRuns {
     last: HashMap<FenceId, (Outcome, i64)>,
     running: HashMap<FenceId, String>,
     due: HashMap<FenceId, Instant>,
-    /// The run a click asked for while the script was running (its `action=`, None for a
-    /// plain refresh): it starts when that run ends.
-    pending: HashMap<FenceId, Option<String>>,
+    /// The runs clicks asked for while the script was running (their `action=`, None for a
+    /// plain refresh), in order: each starts when the run before it ends.
+    pending: HashMap<FenceId, std::collections::VecDeque<Option<String>>>,
     /// Streaming scripts: the script, the start's number (a late end of an earlier start is
     /// not this one's) and the process.
     streams: HashMap<FenceId, (String, u64, crate::scripts::Stream)>,
@@ -337,9 +337,10 @@ impl App {
             return;
         }
         if self.script_runs.running.contains_key(&id) {
-            // A click while the script runs: the next run, once this one ends.
-            if action.is_some() || !self.script_runs.pending.contains_key(&id) {
-                self.script_runs.pending.insert(id, action);
+            // A click while the script runs waits its turn; refreshes in a row count once.
+            let queue = self.script_runs.pending.entry(id).or_default();
+            if (action.is_some() || queue.back() != Some(&None)) && queue.len() < 32 {
+                queue.push_back(action);
             }
             return;
         }
@@ -538,8 +539,13 @@ impl App {
                     tracing::info!(%id, outcome = outcome.kind(), ms, lines, code, "script fence run ended");
                     self.script_runs.last.insert(id, (outcome, at));
                     shown.push(id);
-                    if let Some(action) = self.script_runs.pending.remove(&id) {
-                        tracing::info!(%id, action = action.is_some(), "script fence: the click made during the run runs now");
+                    let next = self
+                        .script_runs
+                        .pending
+                        .get_mut(&id)
+                        .and_then(|q| q.pop_front());
+                    if let Some(action) = next {
+                        tracing::info!(%id, action = action.is_some(), "script fence: a click made during the run runs now");
                         self.start_script_with(id, action);
                     }
                 }

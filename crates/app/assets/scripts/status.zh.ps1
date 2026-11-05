@@ -1,6 +1,6 @@
 # <pecofence.type>streamable</pecofence.type>
 # PecoFence 脚本栅栏示例：一直运行，每 2 秒更新一次电脑的状态。
-# 上面那一行注释让它一直运行；每打印一行 ~~~，栅栏就换成新内容。
+# 上面那一行注释让它一直运行。打印的每一行马上显示；打印一行 ~~~ 以后，下一行开始新的一屏，换掉原来的内容。
 # color= 文字颜色，copy= 点了复制，open= 点了打开，run= 点了运行一个程序。
 $ip = (Get-NetIPAddress -AddressFamily IPv4 |
   Where-Object { $_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.254.*' } |
