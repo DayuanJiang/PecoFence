@@ -81,6 +81,7 @@ pecofence-cli rule apply --dry-run && pecofence-cli rule apply
 pecofence-cli settings set theme dark                          # dotted camelCase path; `settings get` shows them
 pecofence-cli fence create --tool note --title Today --text "[ ] Pay rent"   # 小工具: note, clock, or --script <file>
 pecofence-cli fence set Today noteText "[x] Pay rent`n[ ] Call Anna"           # whole text; `n = new line in PowerShell
+pecofence-cli fence refresh Weather                            # script fence: run its script now
 pecofence-cli snapshot list
 pecofence-cli snapshot restore <id> --dry-run                 # fences it would add / remove / move / update
 pecofence-cli config export "C:\Users\me\Desktop\pecofence-backup.json"   # settings + rules + layouts
@@ -105,12 +106,36 @@ pecofence-cli config export "C:\Users\me\Desktop\pecofence-backup.json"   # sett
 - Tool fences (`fence list` shows `tool`: note, clock, script) hold no items and join no tabs. Each
   tool has a switch (`tools.notes`, `tools.clock`, `tools.scripts`); `fence create --tool` turns it
   on. A script fence runs the user's script every `scriptInterval` minutes, at most 10 s, and shows
-  what it prints; write such scripts for the user on request, print a few short lines, and check the
-  result with `fence get <fence>` (`script.outcome`, `script.output`).
+  what it prints; write such scripts for the user on request (see Script fences below).
 - Switches with no fences, off by default: `tools.dialogJump` (Open / Save dialogs jump to the
   folder of the Explorer window the user comes back from; Ctrl+G), `tools.everything` (the Peek
   search box also lists Everything's whole-computer results; Everything must be installed and
   running) and `peek.doubleCtrl` (Ctrl twice opens the search box).
+
+## Script fences
+
+Each printed line is a row (at most 40 lines, 300 characters each); keep them short.
+- `text | key=value key="with spaces"` (SwiftBar's format; the parameters start at the first `|`
+  followed only by `key=value` pairs). A click: `href=` opens a URL, `open=` a file or folder
+  (relative to the script's folder), `run=` a program without a window (`param1=`, `param2=` ...;
+  .ps1/.py/.js through their interpreter), `copy=` copies text, `action=` runs the script again with
+  `PECOFENCE_ACTION` set to the value, `refresh=true` runs it again afterwards. Look: `color=`
+  red|green|orange|yellow|blue|purple|gray|#rrggbb, `icon=` (an emoji before the text), `tooltip=`.
+  `---` is a separator; `[ ]` / `[x]` at the start makes a to-do (with `action=` its box ticks at
+  once, then the script's output decides). Lines without parameters are plain text.
+- Every run gets `PECOFENCE=1`, `PECOFENCE_ACTION` (empty on a timed run), `PECOFENCE_DATA` (a folder
+  of this fence's own: keep state there), `PECOFENCE_THEME` (light|dark), `PECOFENCE_FENCE` (its id).
+- Streaming: a comment `<pecofence.type>streamable</pecofence.type>` keeps the script running with no
+  time limit until its fence goes. Lines show as they are printed; a `~~~` line makes the next line
+  start a new screen, so print `~~~` before each refresh of the block. `action=` clicks arrive as lines
+  on standard input. In Windows PowerShell read them without blocking:
+  `$in = New-Object IO.StreamReader([Console]::OpenStandardInput()); $pending = $in.ReadLineAsync()`,
+  then in the loop `if ($pending.IsCompleted) { $a = $pending.Result; $pending = $in.ReadLineAsync() }`
+  (`[Console]::In.ReadLineAsync()` blocks there).
+- Save a .ps1 that contains non-ASCII text (emoji, Chinese) as UTF-8 **with BOM**: Windows PowerShell
+  5.1 reads a file without one in the ANSI code page. The output is read as UTF-8.
+- Test it: `fence create --script <file> --title <T>`, or `fence refresh <fence>` after an edit, then
+  `fence get <fence> --fields script` until `script.running` is false; check `outcome` and `output`.
 
 ## Recipes
 

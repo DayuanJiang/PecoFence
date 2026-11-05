@@ -109,6 +109,7 @@ unique id prefix, or a name (only while that name is unique).
 | `fence create --tool note [--text <TEXT>] \| --tool clock \| --script <FILE>` (小工具, see below) | `pecofence-cli fence create --tool note --title Today --text "[ ] Pay rent"` |
 | `fence delete <FENCE>` | `pecofence-cli fence delete Temp` |
 | `fence rename <FENCE> <TITLE>` | `pecofence-cli fence rename Work Projects` |
+| `fence refresh <FENCE>` | `pecofence-cli fence refresh Weather` (script fences: run the script now; other fences are `unsupported`) |
 | `fence move <FENCE> (--rect x,y,w,h \| --x <N> --y <N> \| --monitor <ID>)` | `pecofence-cli fence move Work --x 1200 --y 80` |
 | `fence resize <FENCE> [--w <N>] [--h <N>]` | `pecofence-cli fence resize Work --w 800` |
 | `fence fit <FENCE>` | `pecofence-cli fence fit Tools` (height that shows every item) |
@@ -331,15 +332,127 @@ Peek with the search box). Files and folders opened from the search box are coun
   `settings set tools.clockSeconds true` adds the seconds.
 - **Script fences** (`--script <FILE>`): runs a .ps1, .py, .pyw, .cmd, .bat, .js or .exe every
   `scriptInterval` minutes (30 by default) without a window, at most 10 seconds, and shows what it
-  prints (at most 40 lines). `fence get` reports `script` with `path`, `intervalMinutes`,
+  prints (at most 40 lines). Its lines can be clickable rows, and a streaming script keeps running
+  (see [Script fence output](#script-fence-output)). `fence refresh <FENCE>` runs the script now
+  and restarts a streaming script. `fence get` reports `script` with `path`, `intervalMinutes`,
   `outcome` (`done`, `failed`, `timedOut`, `missing`, `unsupported`, `notStarted`), `output`,
   `lastRun` and `running`. PowerShell scripts are run with UTF-8 output; Python with
   `PYTHONIOENCODING=utf-8`. PecoFence itself does not go online for this: the script does.
+  Settings › 小工具 › 「添加示例…」 writes ready examples into the configuration folder's `scripts`
+  folder: 天气 (weather), GitHub 仓库动态 (a repository's newest issues and pull requests),
+  待办（todo.txt） (to-dos ticked from the fence) and 电脑状态（一直运行） (a streaming script).
 
 ```powershell
 pecofence-cli fence create --tool note --title Today --text "[ ] Pay rent`n[ ] Call Anna"
 pecofence-cli fence create --script "$env:USERPROFILE\Scripts\weather.ps1" --title Weather
 pecofence-cli fence set Weather scriptInterval 15
+```
+
+## Script fence output
+
+A script fence shows each line its script prints. A line can end in parameters, in the format of
+SwiftBar (a menu bar tool for macOS) that make the row clickable or change its look:
+
+```
+text | key=value key="value with spaces" key='value'
+```
+
+The parameters start at the first `|` after which everything is `key=value` pairs; any other `|` is
+part of the text, so `a | b` stays text. Keys are case-insensitive and unknown keys are ignored. A
+line without parameters shows as before, so older scripts need no change. A line that is only `---`
+draws a separator. A row whose text starts with `[ ]` or `[x]` (after an optional `- ` or `* `) is
+drawn as a to-do with a check box.
+
+| Parameter | A click on the row |
+|---|---|
+| `href=<url>` | opens the URL (the default browser, or whatever program handles it) |
+| `open=<path>` | opens a file or folder as a double-click does; a relative path starts at the script's folder |
+| `run=<program>` (or SwiftBar's `bash=`), with `param1=`, `param2=` ... | runs the program with those arguments, without a window, in the script's folder; a relative path that exists there is taken from there, else from PATH. A .ps1, .py or .js runs through Windows PowerShell, `py -3` or `node`. A program that needs administrator rights and has no arguments starts through the shell, so Windows asks first |
+| `copy=<text>` | copies the text to the clipboard |
+| `action=<value>` | runs the same script again with `PECOFENCE_ACTION` set to the value and shows its new output |
+| `refresh=true` | runs the script again after the click; after a `run=` program, once that program has ended (waiting at most 60 seconds) |
+
+A row has one action: with several, the first of `href`, `open`, `run`, `copy`, `action` counts.
+`refresh=true` goes with any of them.
+
+| Parameter | Look |
+|---|---|
+| `color=` | the text colour: `red`, `green`, `orange` (or `amber`), `yellow`, `blue`, `purple`, `gray` (or `grey`) or `#rrggbb`. The named colours are Windows' status colours and get a lighter shade in the dark theme; `#rrggbb` is used as written |
+| `icon=` | text drawn before the row, such as an emoji |
+| `tooltip=` | shown while the pointer rests on a clickable row; without it the tooltip shows the URL, path, program or text to copy |
+
+A clickable row gets a light plate under the pointer and the hand cursor; a row with `href=` or
+`open=` also shows a small arrow on the right. A click on a to-do with `action=` ticks or unticks
+its box at once, and the script's next output decides what stays. A click while the script is still
+running waits and runs when that run ends; of several such clicks, the last one with an `action=`
+is kept. The output limits stay: 40 lines, 16 KB, 300 characters a line; a long row wraps.
+
+Every run gets these environment variables:
+
+| Variable | Value |
+|---|---|
+| `PECOFENCE` | `1` |
+| `PECOFENCE_ACTION` | the clicked row's `action=` value; empty for a timed run, 立即运行, `refresh=true` and `fence refresh` |
+| `PECOFENCE_DATA` | a folder of this fence's own for what the script keeps: `<config folder>\scripts-data\<fence id>` (`pecofence-cli paths` shows the config folder). PecoFence creates it |
+| `PECOFENCE_THEME` | `light` or `dark`, PecoFence's theme |
+| `PECOFENCE_FENCE` | the fence's id |
+
+A to-do list kept in a text file and ticked from the fence (Windows PowerShell 5.1 reads a script
+without a BOM in the ANSI code page: save a script that contains non-ASCII text, such as emoji or
+Chinese, as UTF-8 with BOM):
+
+```powershell
+$file = Join-Path $env:PECOFENCE_DATA 'todo.txt'
+if (-not (Test-Path $file)) { Set-Content $file -Encoding UTF8 -Value '[ ] Pay rent', '[ ] Call Anna' }
+$lines = @(Get-Content $file -Encoding UTF8)
+if ($env:PECOFENCE_ACTION -match '^toggle:(\d+)$') {
+  $i = [int]$Matches[1]
+  $mark = if ($lines[$i].StartsWith('[x]')) { '[ ]' } else { '[x]' }
+  $lines[$i] = $mark + $lines[$i].Substring(3)
+  Set-Content $file $lines -Encoding UTF8
+}
+for ($i = 0; $i -lt $lines.Count; $i++) { "$($lines[$i]) | action=toggle:$i" }
+'---'
+"Open the list | open=""$file"""
+'PecoFence on GitHub | href=https://github.com/DayuanJiang/PecoFence color=blue'
+```
+
+### Streaming scripts
+
+A script that names itself streamable in a comment, `<pecofence.type>streamable</pecofence.type>`
+(SwiftBar's `<swiftbar.type>streamable</swiftbar.type>` works too, within the first 64 KB of the
+file), keeps running: the 10-second limit does not apply. Every line it prints shows at once,
+added below what the fence shows. A line `~~~` marks a new screen: the next line printed replaces
+everything the fence showed, and the lines after it are added below again. So a script may print
+`~~~` before each new block, as SwiftBar scripts do, or after it; the old block stays until the
+next line arrives. The fence keeps the newest 40 lines. Python streaming scripts get
+`PYTHONUNBUFFERED=1`, so their lines arrive as they are printed.
+
+A click on a row with `action=` sends the value as one line to the script's standard input
+(`PECOFENCE_ACTION` stays empty for a streaming script). The script, and the programs it started,
+end when its fence is deleted or gets another script, when `tools.scripts` is switched off and when
+PecoFence exits. When the script ends by itself, the fence keeps what it showed last, and
+PecoFence starts the script again at the next interval. 立即运行, `refresh=true` and
+`fence refresh` start it again at once.
+
+In Windows PowerShell, read the input with a stream reader and check it in the loop;
+`[Console]::In.ReadLineAsync()` would block the loop there:
+
+```powershell
+# <pecofence.type>streamable</pecofence.type>
+$in = New-Object IO.StreamReader([Console]::OpenStandardInput())
+$pending = $in.ReadLineAsync()
+$start = Get-Date
+while ($true) {
+  if ($pending.IsCompleted) {
+    if ($pending.Result -eq 'reset') { $start = Get-Date }
+    $pending = $in.ReadLineAsync()
+  }
+  '~~~'
+  "Running for $([int]((Get-Date) - $start).TotalSeconds) s"
+  'Start again | action=reset'
+  Start-Sleep -Seconds 1
+}
 ```
 
 ## Folder portals move real files
