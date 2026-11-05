@@ -138,7 +138,7 @@ in `en.json`; everything else is escaped.
 
 ## The user manual
 
-`site/manual/` is an interactive manual: 18 lessons whose demos are drawn in HTML and
+`site/manual/` is an interactive manual: 19 lessons whose demos are drawn in HTML and
 CSS (a miniature Windows desktop, fences, a scripted pointer with click rings, gesture
 captions and keycaps), a step list that highlights in sync, a scrub bar and a half-speed
 switch, plus two reference appendices (shortcuts, FAQ). The build writes one copy per
@@ -175,7 +175,9 @@ fence titles ellipsize like the app. A few demo texts follow the page language i
 search lesson types `hyjl` (the pinyin initials of 会议记录) on the Chinese pages and the
 start of the translated 会议记录 elsewhere, so that word must appear unchanged inside the
 translated file names that contain it; the clock of the tools lesson shows `10:24 AM` in
-English. The lessons describe the real app: check behaviour
+English. A script fence is titled with its file's name, so the demos derive those titles from
+the translated file names (`天气.ps1`, `GitHub 动态.ps1`, `待办.ps1` without `.ps1`), and the
+literal `天气` is the 「添加示例…」 menu item, which takes the app's catalog text. The lessons describe the real app: check behaviour
 and UI strings against the code (`crates/app/src/app/menus.rs`, `ui/settings.html`)
 when changing them.
 

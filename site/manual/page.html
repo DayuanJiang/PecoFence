@@ -34,6 +34,7 @@
 <link rel="stylesheet" href="demos/tools.css">
 <script src="demos/search.js" defer></script>
 <script src="demos/tools.js" defer></script>
+<script src="demos/script-rows.js" defer></script>
 <script src="demos/dialog-jump.js" defer></script>
 </head>
 <body>
@@ -105,7 +106,8 @@
     <h2>小工具</h2>
     <ol>
       <li><a href="#tools"><span class="num">7.1</span>便签、时钟和脚本栅栏</a></li>
-      <li><a href="#dialog-jump"><span class="num">7.2</span>对话框跳转</a></li>
+      <li><a href="#script-rows"><span class="num">7.2</span>脚本栅栏里的链接和待办</a></li>
+      <li><a href="#dialog-jump"><span class="num">7.3</span>对话框跳转</a></li>
     </ol>
     </div>
     <div class="toc-group">
@@ -658,7 +660,7 @@
       </header>
       <div class="lesson-body">
         <figure class="demo">
-          <div class="stage" role="img" aria-label="动画：在设置的「小工具」页点「新建便签」，「便签与待办」开关随之打开，桌面上出现一个便签，打了三行字；点别处保存后，行首写了 [ ] 的两行变成待办，点第一行的方框打上勾；点「新建时钟」，出现一个显示时间和日期的时钟；往下翻到「脚本栅栏」，点「添加天气示例」，出现「天气」栅栏，片刻后显示东京的天气"></div>
+          <div class="stage" role="img" aria-label="动画：在设置的「小工具」页点「新建便签」，「便签与待办」开关随之打开，桌面上出现一个便签，打了三行字；点别处保存后，行首写了 [ ] 的两行变成待办，点第一行的方框打上勾；点「新建时钟」，出现一个显示时间和日期的时钟；往下翻到「脚本栅栏」，点「添加示例…」，在弹出的菜单里选「天气」，出现「天气」栅栏，片刻后显示东京的天气"></div>
           <div class="controls">
             <button class="btn play" type="button" data-play aria-label="暂停">
               <svg class="i-pause" viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="2.5" width="3" height="11" rx="1"/><rect x="9.5" y="2.5" width="3" height="11" rx="1"/></svg>
@@ -673,12 +675,46 @@
             <li data-at="0.3"><span class="n">1</span><p>打开「设置」→<b>「小工具」</b>（右键托盘图标，选<b>「设置…」</b>），点<b>「新建便签」</b>。「便签与待办」的开关会跟着打开，桌面上多出一个便签，直接打字就行，按 <kbd>Enter</kbd> 换行。</p></li>
             <li data-at="3.0"><span class="n">2</span><p>点别处就保存了。行首写 <code>[ ]</code> 的一行会变成待办，点前面的方框打上勾，再点一次取消。以后想改，单击便签里的文字。</p></li>
             <li data-at="4.6"><span class="n">3</span><p>点<b>「新建时钟」</b>，桌面上多出一个时钟，显示时间、日期和星期。想看到秒，打开下面的<b>「显示秒」</b>。</p></li>
-            <li data-at="5.6"><span class="n">4</span><p>往下翻到<b>「脚本栅栏」</b>，点<b>「添加天气示例」</b>。脚本栅栏会定时运行一个脚本，把它打印的文字显示出来，这个例子显示的是东京的天气。</p></li>
+            <li data-at="5.6"><span class="n">4</span><p>往下翻到<b>「脚本栅栏」</b>，点<b>「添加示例…」</b>，在菜单里选<b>「天气」</b>。脚本栅栏会定时运行一个脚本，把它打印的文字显示出来，这个例子显示的是东京的天气。</p></li>
           </ol>
           <aside class="tip">
             <h3>小提示</h3>
-            <p>小工具和普通栅栏一样，可以拖动、改大小和收起。右键脚本栅栏，在<b>「运行间隔」</b>里选多久运行一次，从 1 分钟到 3 小时；点<b>「选择脚本…」</b>可以换成你自己的脚本，PowerShell、Python、批处理都行，也可以请 AI 助手帮你写。想看别的城市，选<b>「打开脚本所在的文件夹」</b>，在脚本里把 Tokyo 改成你所在的城市，再选<b>「立即运行」</b>。</p>
+            <p>小工具和普通栅栏一样，可以拖动、改大小和收起。右键脚本栅栏，在<b>「运行间隔」</b>里选多久运行一次，从 1 分钟到 3 小时；点<b>「选择脚本…」</b>可以换成你自己的脚本，PowerShell、Python、批处理都行，也可以请 AI 助手帮你写。想看别的城市，选<b>「编辑脚本」</b>，在记事本里把 Tokyo 改成你所在的城市，保存后再选<b>「立即运行」</b>。</p>
             <p>PecoFence 自己不联网，联网的是你的脚本。导入的配置里有脚本栅栏时，「脚本栅栏」开关会先关上，等你确认脚本可信以后再打开。</p>
+          </aside>
+        </div>
+      </div>
+    </article>
+
+    <article class="lesson" data-lesson="script-rows" id="script-rows">
+      <header class="lesson-head">
+        <p class="kicker">7.2 · 小工具</p>
+        <h2>脚本栅栏里的链接和待办</h2>
+        <p class="lede">脚本打印的一行可以变成链接、按钮或者待办：点一下就打开网页或文件、运行程序、复制文字，或者打上勾。</p>
+      </header>
+      <div class="lesson-body">
+        <figure class="demo">
+          <div class="stage" role="img" aria-label="动画：桌面上有「GitHub 动态」和「待办」两个脚本栅栏。鼠标移到一个 PR 那一行，这一行亮起浅色的底，指针变成小手，右边出现小箭头，随后显示提示；点一下，浏览器打开这个 PR。再点「待办」里「交房租」前面的方框，方框马上打上勾，栅栏底部先显示正在运行，再显示新的更新时间；最后点「打开 todo.txt」，记事本打开这个文件，第一行已经是 [x] 交房租"></div>
+          <div class="controls">
+            <button class="btn play" type="button" data-play aria-label="暂停">
+              <svg class="i-pause" viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="2.5" width="3" height="11" rx="1"/><rect x="9.5" y="2.5" width="3" height="11" rx="1"/></svg>
+              <svg class="i-play" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 2.8v10.4a.8.8 0 0 0 1.2.7l8.4-5.2a.8.8 0 0 0 0-1.4L5.7 2.1a.8.8 0 0 0-1.2.7Z"/></svg>
+            </button>
+            <div class="track" data-track role="slider" tabindex="0" aria-label="播放进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="track-fill"></div></div>
+            <button class="btn speed" type="button" data-speed aria-pressed="false">慢放</button>
+          </div>
+        </figure>
+        <div class="side">
+          <ol class="steps">
+            <li data-at="0.3"><span class="n">1</span><p>这两个栅栏来自<b>「添加示例…」</b>菜单里的<b>「GitHub 仓库动态」</b>和<b>「待办（todo.txt）」</b>。把鼠标移到能点的一行上，这一行会亮起浅色的底，指针变成小手；会打开网页或文件的行，右边还有一个小箭头。停一会儿，会出现提示。</p></li>
+            <li data-at="2.3"><span class="n">2</span><p>点一下，浏览器打开这个 PR。这个栅栏列出一个 GitHub 仓库最新的 issue 和 PR，点最下面的「刷新」会马上再运行一次脚本。</p></li>
+            <li data-at="3.4"><span class="n">3</span><p>点一条待办，方框马上打上勾。PecoFence 接着带上这次点击再运行一次脚本，脚本把勾写进 todo.txt，栅栏底部的更新时间也跟着变。</p></li>
+            <li data-at="5.6"><span class="n">4</span><p>点「打开 todo.txt」，这个文件会用它默认的程序打开，刚才点的那一行已经变成 <code>[x]</code>。</p></li>
+          </ol>
+          <aside class="tip">
+            <h3>小提示</h3>
+            <p>想让自己的脚本这样做，在打印的一行后面加一条竖线，再写上参数，比如 <code>打开主页 | href=https://example.com</code>。<code>href=</code> 打开网址，<code>open=</code> 打开文件或文件夹，<code>run=</code> 运行一个程序，<code>copy=</code> 复制文字，<code>action=</code> 让脚本带着这个值再运行一次，<code>color=</code> 和 <code>icon=</code> 改文字颜色、加图标；单独一行 <code>---</code> 是分隔线。这种写法来自 macOS 的菜单栏工具 SwiftBar。没有竖线和参数的行照常显示成文字，以前写的脚本不用改。请 AI 助手帮你写时，它会从 <code>pecofence-cli skill</code> 里读到这些写法。</p>
+            <p>菜单里的<b>「电脑状态（一直运行）」</b>不会停下来，每 2 秒刷新一次 CPU、内存和 C 盘的剩余空间。想看示例是怎么写的，右键栅栏，选<b>「编辑脚本」</b>，脚本会在记事本里打开。</p>
           </aside>
         </div>
       </div>
@@ -686,7 +722,7 @@
 
     <article class="lesson" data-lesson="dialog-jump" id="dialog-jump">
       <header class="lesson-head">
-        <p class="kicker">7.2 · 小工具</p>
+        <p class="kicker">7.3 · 小工具</p>
         <h2>对话框跳转</h2>
         <p class="lede">在程序里打开或保存文件时，不用在对话框里一层层找文件夹：切到资源管理器再切回来，对话框就跳到那个文件夹。</p>
       </header>
@@ -970,7 +1006,7 @@
         </section>
         <section class="ap-q">
           <h3>脚本栅栏会运行什么？</h3>
-          <p>脚本栅栏运行的是你自己选的脚本文件，每次最多 10 秒，不弹出窗口，脚本启动的程序也会跟着结束。PecoFence 自己不联网，联网的是脚本。别人分享的配置里可能带着脚本栅栏，所以导入的配置里有脚本栅栏时，「脚本栅栏」开关会先关上并给出提示。你看过脚本、确认可信以后，再到「设置」→「小工具」把它打开。</p>
+          <p>脚本栅栏运行的是你自己选的脚本文件，每次最多 10 秒，不弹出窗口，脚本启动的程序也会跟着结束。脚本里写明要一直运行的，会一直运行到栅栏删掉、开关关上或者 PecoFence 退出。点栅栏里的一行时，做的也是脚本写好的事：打开网页或文件，运行它写明的程序，或者再运行一次脚本。PecoFence 自己不联网，联网的是脚本。别人分享的配置里可能带着脚本栅栏，所以导入的配置里有脚本栅栏时，「脚本栅栏」开关会先关上并给出提示。你看过脚本、确认可信以后，再到「设置」→「小工具」把它打开。</p>
         </section>
         <section class="ap-q">
           <h3>遇到问题怎么反馈？</h3>

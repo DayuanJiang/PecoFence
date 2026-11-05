@@ -3,32 +3,37 @@
 // editor open (note_edit.rs); a click elsewhere saves, and the lines starting with [ ] become
 // to-dos whose box a click ticks (fence_chrome.rs draw_note: the box fills with the accent, the
 // text turns secondary). 「新建时钟」 adds the clock (draw_clock: the time large, the long date
-// with the weekday under it). Lower on the page 「添加天气示例」 adds the weather script fence:
-// 「天气.ps1 · 正在运行…」 until the script's lines come, then 「… · 10:24 更新」 at the bottom.
+// with the weekday under it). Lower on the page 「添加示例…」 opens a menu of the four examples
+// at the pointer (tools.rs script_example_menu); 「天气」 adds the weather script fence, named
+// after its file (天气.ps1): 「天气.ps1 · 正在运行…」 until the script's lines come, then
+// 「… · 10:24 更新」 at the bottom.
 // The window is the shared settings mock (window.SM, demos/settings-mock.js).
 (() => {
     'use strict';
-    const { E, ramp, lerp, pathAt, el, put, size, show, text, fence, pointer, drawPointer, taskbar,
-        loopFade, T } = PM;
+    const { E, ramp, lerp, pathAt, el, put, size, show, text, fence, menu, drawMenu, rowY, pointer, drawPointer,
+        taskbar, loopFade, T } = PM;
 
-    const D = 10.8;
+    const D = 11.4;
     const WIN = { x: 18, y: 16, w: 488, h: 392 };
     // The app makes notes 280 x 240, clocks 240 x 140 and script fences 280 x 160 DIP; scaled
     // here to share the right side of the stage.
     const NOTE = { x: 532, y: 16, w: 246, h: 128, title: '便签' };
     const CLOCK = { x: 532, y: 152, w: 246, h: 94, title: '时钟' };
-    const SCRIPT = { x: 532, y: 254, w: 246, h: 158, title: '天气' };
+    const SCRIPT_NAME = '天气.ps1';
+    // a script fence is titled with its file's name (tools.rs create_tool_fence)
+    const SCRIPT = { x: 532, y: 254, w: 246, h: 158, title: SCRIPT_NAME.replace(/\.ps1$/, '') };
 
     const lang = () => document.documentElement.lang || 'zh-CN';
     const TODO = '[ ] 交周报\n[ ] 订会议室\n周五前寄出合同';
     const DATE = '2026年11月5日 星期四';
-    const SCRIPT_NAME = '天气.ps1';
     const WEATHER = ['Tokyo  18°C  多云', '体感 17°C，湿度 62%，风 9 km/h', '今天 12 到 19°C，明天 13 到 21°C，降雨概率 40%'];
 
     const NEW_NOTE = 1.0, TYPE_AT = 1.35, TYPE_STEP = .06, SAVE = 3.4, TICK = 4.15;
-    const NEW_CLOCK = 5.05, SCROLL_A = 5.75, SCROLL_B = 6.55, NEW_SCRIPT = 7.3, OUTPUT = 8.05;
+    const NEW_CLOCK = 5.05, SCROLL_A = 5.75, SCROLL_B = 6.55, EXAMPLE = 7.3, NEW_SCRIPT = 7.95, OUTPUT = 8.7;
+    // 「添加示例…」's menu (scripts.rs Example::ALL)
+    const EXAMPLES = ['天气', 'GitHub 仓库动态', '待办（todo.txt）', '电脑状态（一直运行）'];
     const FADE_IN = .167;
-    let PATH, CLICKS, CHIPS, SCROLL;
+    let PATH, CLICKS, CHIPS, SCROLL, MENU;
     const at = t => pathAt(t, PATH);
 
     // A card with a switch on the right (the page's .card > .toggle).
@@ -73,7 +78,7 @@
         r.scriptRow.t.style.top = '7px';
         r.scriptRow.s.style.top = '22px';
         r.newScript = SM.button(r.scriptRow, '新建脚本栅栏…', 64, { accent: true, top: 37 });
-        r.example = SM.button(r.scriptRow, '添加天气示例', 64, { right: 10 + r.newScript.w + 6, top: 37 });
+        r.example = SM.button(r.scriptRow, '添加示例…', 64, { right: 10 + r.newScript.w + 6, top: 37 });
         g.contentH = SM.stack(g) + 10;
         r.g = g;
         return r;
@@ -125,6 +130,9 @@
         WEATHER.forEach(l => el('div', 'tl-line', r.out, l));
         r.foot = el('div', 'tl-foot', r.W.body);
 
+        r.menu = menu(S, EXAMPLES, 150);
+        r.menu.n.classList.add('tl-menu');       // a popup menu is above the settings window
+
         r.ptr = pointer(S);
         taskbar(root);
 
@@ -140,6 +148,11 @@
         pg.scroll = SCROLL;
         const ex = fix(SM.at(r.page.example));
         pg.scroll = 0;
+        // the menu opens at the pointer, above it when it would run under the taskbar
+        // (TrackPopupMenu flips it)
+        const mh = r.menu.h;
+        MENU = { x: ex.x, y: ex.y + mh > 450 - 28 ? ex.y - mh : ex.y, a: EXAMPLE + .02, b: NEW_SCRIPT };
+        const pick = { x: Math.min(ex.x, 800 - 4 - r.menu.w) + 44, y: MENU.y + rowY(r.menu, '天气') };
         // the first to-do box (note body: 14 px in, line 1)
         const box = { x: NOTE.x + 14 + 6.5, y: NOTE.y + 32 + 2 + 8.5 };
 
@@ -151,10 +164,11 @@
             [4.0, box.x, box.y], [4.4, box.x, box.y],               // tick the first to-do
             [4.9, clock.x, clock.y], [5.3, clock.x, clock.y],       // 新建时钟
             [5.65, 330, 300], [6.6, 330, 300],                      // wheel down to 脚本栅栏
-            [7.1, ex.x, ex.y], [7.6, ex.x, ex.y],                   // 添加天气示例
-            [8.4, 519, 196], [D, 519, 196],                       // rest between the window and the fences
+            [7.1, ex.x, ex.y], [7.45, ex.x, ex.y],                  // 添加示例…
+            [7.8, pick.x, pick.y], [8.1, pick.x, pick.y],           // 天气 in its menu
+            [8.9, 519, 196], [D, 519, 196],                       // rest between the window and the fences
         ];
-        CLICKS = [{ t: NEW_NOTE }, { t: SAVE }, { t: TICK }, { t: NEW_CLOCK }, { t: NEW_SCRIPT }];
+        CLICKS = [{ t: NEW_NOTE }, { t: SAVE }, { t: TICK }, { t: NEW_CLOCK }, { t: EXAMPLE }, { t: NEW_SCRIPT }];
         CHIPS = [[3.15, 3.55, '点别处保存', 16, -30], [3.95, 4.3, '点方框', 16, 18], [SCROLL_A - .05, SCROLL_B - .1, '向下滚动', -96, 14]];
         return r;
     }
@@ -193,7 +207,7 @@
         text(P.scriptRow.t, t >= NEW_SCRIPT + .03 ? T('桌面上有 {0} 个脚本栅栏').replace('{0}', '1') : T('桌面上还没有脚本栅栏'));
         SM.drawButton(P.newNote, p, t >= NEW_NOTE - .08 && t < NEW_NOTE + .08);
         SM.drawButton(P.newClock, p, t >= NEW_CLOCK - .08 && t < NEW_CLOCK + .08);
-        SM.drawButton(P.example, p, t >= NEW_SCRIPT - .08 && t < NEW_SCRIPT + .08);
+        SM.drawButton(P.example, p, t >= EXAMPLE - .08 && t < EXAMPLE + .08);
         SM.drawButton(P.newScript, p);
 
         // the note: the editor opens with it; typed text; a click elsewhere saves and draws the lines
@@ -217,6 +231,9 @@
         // the clock
         appear(r.C, t, NEW_CLOCK + .05);
 
+        // 「添加示例…」's menu: open until 「天气」 is clicked
+        drawMenu(r.menu, t, MENU.x, MENU.y, MENU.a, MENU.b, p);
+
         // the weather fence: running first, then the lines it printed
         appear(r.W, t, NEW_SCRIPT + .05);
         const done = t >= OUTPUT;
@@ -228,5 +245,5 @@
         drawPointer(r.ptr, t, p, { clicks: CLICKS, chips: CHIPS, at });
     }
 
-    PM.register('tools', { duration: D, poster: 8.6, build, render });
+    PM.register('tools', { duration: D, poster: 9.2, build, render });
 })();

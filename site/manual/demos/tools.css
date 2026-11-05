@@ -1,5 +1,6 @@
-/* Lessons 4.4 (search: .sr-*), 7.1 (tools: .tl-*) and 7.2 (dialog-jump: .dj-*). Windows reuse
-   the app windows of demos/peek.css (.pk-win, .pk-titlebar, .pk-caps, .pk-ribbon). */
+/* Lessons 4.4 (search: .sr-*), 7.1 (tools: .tl-*), 7.2 (script-rows: .sx-*) and 7.3
+   (dialog-jump: .dj-*). Windows reuse the app windows of demos/peek.css (.pk-win, .pk-titlebar,
+   .pk-caps, .pk-ribbon, .pk-tip). */
 
 /* ---------- Peek search box (peek_search.rs, light theme) ---------- */
 
@@ -99,6 +100,9 @@
     line-height: 13px;
     white-space: normal;
 }
+
+/* 「添加示例…」's popup menu, above the settings window */
+.menu.tl-menu { z-index: 4; background: #fafafb }
 
 /* the note editor: a white multi-line box over the note's content */
 .tl-edit {
@@ -310,3 +314,69 @@
 }
 
 .dj-btn.acc { background: #005fb8; color: #fff; box-shadow: none }
+
+/* ---------- 脚本栅栏里能点的行 (fence_chrome.rs draw_script) ---------- */
+
+/* rows 21 px (15 px of text, 3 px above and below), the plate 6 px beyond the 14 px margin */
+.sx-rows { left: 8px; right: 8px; top: 0; bottom: 28px; overflow: hidden }
+.sx-row { left: 0; right: 0; top: 0; height: 21px }
+.sx-plate { inset: 0; border-radius: 4px; background: rgba(27, 33, 51, .07) }
+.sx-sep { left: 6px; right: 6px; top: 0; height: 1px; background: rgba(27, 33, 51, .14) }
+.sx-ic { left: 6px; top: 3px; width: 16px; font-size: 11.5px; line-height: 15px; text-align: center }
+
+.sx-t {
+    top: 3px;
+    right: 6px;
+    color: #1b2133;
+    font-size: 11.5px;
+    line-height: 15px;
+    white-space: pre;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.stage-inner .sx-box { left: 6px; top: 4px }
+.sx-row.done .sx-t { color: rgba(27, 33, 51, .55) }
+.sx-row.done .tl-box { background: var(--win-accent); box-shadow: none }
+.sx-row.done .tl-box svg { display: block }
+.sx-go { right: 6px; top: 4px; width: 12px; height: 12px; color: rgba(27, 33, 51, .62) }
+.sx-go svg { position: static; display: block; width: 12px; height: 12px }
+.cursor .k-hand { margin-left: -5px }
+
+/* the browser a PR row opens and the Notepad 「打开 todo.txt」 opens */
+.sx-browser .pk-main { padding: 18px 24px }
+.sx-browser .pk-main h1 { font-size: 17px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+
+.sx-browser .sx-open {
+    display: inline-block;
+    margin: 8px 0 4px;
+    padding: 2px 10px;
+    border-radius: 999px;
+    background: #1f883d;
+    color: #fff;
+    font-size: 10.5px;
+    font-weight: 600;
+}
+
+.sx-notepad { z-index: 3 }
+
+.sx-menu {
+    flex: none;
+    height: 26px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 0 12px;
+    background: #fff;
+    border-bottom: 1px solid #eceef2;
+}
+
+.sx-menu i { width: 26px; height: 6px; border-radius: 3px; background: #dfe2e8 }
+
+.sx-text {
+    flex: 1;
+    padding: 10px 14px;
+    background: #fff;
+    font: 12.5px/19px Consolas, "Cascadia Mono", "Microsoft YaHei UI", monospace;
+    white-space: pre;
+}
