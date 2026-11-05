@@ -4,9 +4,10 @@
 #   unit.sh [run.sh options]
 # Tests that read source files find them through CARGO_MANIFEST_DIR, a dev box path that
 # Windows reads as C:\home\...: the job unpacks crates/, ui/ and locales/ there first.
+# WINTEST_REPO=<checkout> tests another checkout.
 set -uo pipefail
 KIT=$(cd "$(dirname "$0")" && pwd)
-REPO=$(cd "$KIT/../.." && pwd)
+REPO=${WINTEST_REPO:-$(cd "$KIT/../.." && pwd)}
 cd "$REPO" || exit 2
 export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=/usr/bin/gcc CC_aarch64_unknown_linux_gnu=/usr/bin/gcc
 export XWIN_ACCEPT_LICENSE=1

@@ -5,8 +5,9 @@
 #   build.sh [--debug]   a debug build also takes the test-script `input` lines
 #                        (PECOFENCE_UI_TEST_WINDOWS=1) and opens the settings page to CDP
 #                        when started with PECOFENCE_WEBVIEW_ARGS=--remote-debugging-port=9352
+# WINTEST_REPO=<checkout> builds another checkout (into its own target folder).
 set -uo pipefail
-REPO=$(cd "$(dirname "$0")/../.." && pwd)
+REPO=${WINTEST_REPO:-$(cd "$(dirname "$0")/../.." && pwd)}
 cd "$REPO" || exit 2
 PROFILE=release; OUT=$REPO/target/wintest-bin
 [ "${1:-}" = --debug ] && { PROFILE=debug; OUT=$REPO/target/wintest-bin-debug; }
