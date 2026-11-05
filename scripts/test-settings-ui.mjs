@@ -1097,6 +1097,62 @@ async function runTests() {
     const firstCard = doc.querySelector('#page-general .card');
     assert(firstCard.querySelector('[data-bind=language]'), 'The language is not the first card');
   });
+  const key = (target, k, keyCode) => target.dispatchEvent(new frame.contentWindow.KeyboardEvent('keydown', { key: k, keyCode, bubbles: true, cancelable: true }));
+  await test('查找设置 lists matching cards of every page and opens the one picked', async () => {
+    doc = await reset();
+    const box = doc.getElementById('settingsSearch'), list = doc.getElementById('settingsSearchList');
+    const type = text => { box.focus(); box.value = text; box.dispatchEvent(new frame.contentWindow.Event('input', { bubbles: true })); };
+    const rows = () => [...list.querySelectorAll('[role=option]')];
+    const titles = () => rows().map(r => r.querySelector('b').textContent);
+    type('隐藏');
+    assert(!list.hidden && box.getAttribute('aria-expanded') === 'true', 'List not shown');
+    assert(titles().includes('为空时自动隐藏') && titles().includes('隐藏标题栏右侧的项目数和折叠箭头'), 'Cards of other pages missing: ' + titles().join(' | '));
+    // Title hits come before help-line hits: 临时显示 Windows 桌面 says 隐藏 only in its help line.
+    assert(titles().indexOf('自动隐藏滚动条') < titles().indexOf('临时显示 Windows 桌面'), 'Order: ' + titles().join(' | '));
+    const wd = rows()[titles().indexOf('临时显示 Windows 桌面')];
+    assert(wd.querySelector('small').textContent.startsWith('常规 › 隐藏栅栏 · ') && wd.querySelector('small mark'), 'Path or snippet missing: ' + wd.textContent);
+    // A card its page hides now (the keep switch while the Windows icons show) stays out.
+    assert(!titles().includes('关闭 PecoFence 时保持 Windows 桌面图标隐藏'), 'A hidden card was listed');
+    // ↓ and Enter open the pick on its page, tinted, with the focus on its control.
+    const target = titles().indexOf('为空时自动隐藏');
+    for (let i = 0; i < target; i++) key(box, 'ArrowDown', 40);
+    assert(rows()[target].getAttribute('aria-selected') === 'true' && box.getAttribute('aria-activedescendant') === 'searchHit' + target, 'Arrow keys did not move');
+    key(box, 'Enter', 13); await settle();
+    const card = doc.querySelector('[data-fence="hideWhenEmpty"]').closest('.card');
+    assert(doc.getElementById('page-fences').classList.contains('on') && card.classList.contains('found') && list.hidden, 'The pick did not open its page');
+    assert(card.contains(doc.activeElement), 'Focus not on the picked card');
+    // A list choice is found too, and a click opens its card.
+    type('项目放在栅栏里');
+    assert(rows().length === 1 && titles()[0] === 'Windows 桌面图标', 'A list choice was not found: ' + titles().join(' | '));
+    rows()[0].dispatchEvent(new frame.contentWindow.MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+    rows()[0].click(); await settle();
+    assert(doc.getElementById('page-general').classList.contains('on') && doc.getElementById('desktopIcons').closest('.card').classList.contains('found'), 'A click did not open the card');
+    assert(doc.querySelectorAll('.card.found').length === 1, 'An earlier pick still carries its tint');
+    await new Promise(resolve => setTimeout(resolve, 2600));
+    assert(!doc.querySelector('.card.found, .card.fading'), 'The tint did not go');
+    // Every word must occur; nothing found says so; Esc closes and clears.
+    type('图标 快捷方式');
+    assert(titles().includes('显示快捷方式箭头') && !titles().includes('图标着色'), 'Two words: ' + titles().join(' | '));
+    type('zzzz');
+    assert(!rows().length && !list.hidden && list.textContent.includes('zzzz'), 'No-match message missing');
+    key(box, 'Escape', 27);
+    assert(list.hidden && box.value === '', 'Esc did not clear');
+  });
+  await test('Ctrl+F goes to 查找设置, and the search follows the language', async () => {
+    doc = await reset();
+    const box = doc.getElementById('settingsSearch');
+    doc.querySelector('[data-page=rules]').click();
+    doc.body.dispatchEvent(new frame.contentWindow.KeyboardEvent('keydown', { key: 'f', keyCode: 70, ctrlKey: true, bubbles: true, cancelable: true }));
+    assert(doc.activeElement === box, 'Ctrl+F did not focus the box');
+    change(doc, 'language', 'en'); await settle();
+    assert(box.placeholder === 'Find a setting', 'Placeholder not translated: ' + box.placeholder);
+    box.value = 'scrollbar'; box.dispatchEvent(new frame.contentWindow.Event('input', { bubbles: true }));
+    const titles = [...doc.querySelectorAll('#settingsSearchList [role=option] b')].map(b => b.textContent);
+    assert(titles.includes('Automatically hide scrollbars'), 'English search failed: ' + titles.join(' | '));
+    key(box, 'Escape', 27);
+    change(doc, 'language', 'zh-CN'); await settle();
+    doc.querySelector('[data-page=general]').click();
+  });
   await test('Colour swatches drive the hidden selects and keep keyboard focus', async () => {
     const swatches = doc.getElementById('iconTintSwatches');
     const red = swatches.querySelector('[data-value=E74856]');

@@ -713,5 +713,7 @@
   "鼠标停在上面时": "Al passaggio del mouse",
   "单击标题时": "Con un clic sul titolo",
   "只在双击标题或点箭头时": "Solo doppio clic o freccia",
-  "“桌面”栅栏像桌面一样排列时，它的图标已经在 Windows 桌面上，所以不显示它；要同时显示，先在“栅栏”页关掉它的“像桌面一样排列”": "Finché il riquadro «Desktop» è disposto come il desktop, le sue icone sono già sul desktop di Windows e quindi non viene mostrato; per mostrarlo comunque, disattiva prima il suo «Disponi come il desktop» nella pagina «Riquadri»"
+  "“桌面”栅栏像桌面一样排列时，它的图标已经在 Windows 桌面上，所以不显示它；要同时显示，先在“栅栏”页关掉它的“像桌面一样排列”": "Finché il riquadro «Desktop» è disposto come il desktop, le sue icone sono già sul desktop di Windows e quindi non viene mostrato; per mostrarlo comunque, disattiva prima il suo «Disponi come il desktop» nella pagina «Riquadri»",
+  "查找设置": "Trova un’impostazione",
+  "没有找到与“{0}”有关的设置": "Nessuna impostazione corrisponde a «{0}»"
 }

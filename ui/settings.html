@@ -79,6 +79,24 @@
   nav a:hover, nav a.sel { background: var(--subtle); }
   nav a:active { background: var(--subtle-pressed); color: var(--text2); }
   nav a.sel::before { content: ""; position: absolute; left: 0; top: 50%; width: 3px; height: 16px; margin-top: -8px; border-radius: 2px; background: var(--accent); }
+  /* 查找设置: the box under the brand; its list floats over the page (the nav scrolls, so the
+     list is fixed to the window and placed under the box). */
+  .nav-search { position: relative; margin: 0 4px 12px; }
+  .nav-search input { width: 100%; min-width: 0; padding-right: 32px; }
+  .nav-search .ic { position: absolute; right: 10px; top: 8px; font-size: 14px; color: var(--text2); pointer-events: none; }
+  .search-list { position: fixed; z-index: 60; width: 380px; max-width: calc(100vw - 24px); max-height: min(470px, calc(100vh - 80px)); overflow: auto; padding: 4px;
+    border-radius: var(--r-card); background: var(--card); border: 1px solid var(--card-stroke); box-shadow: 0 8px 24px #00000033; }
+  .search-list[hidden] { display: none; }
+  .search-list [role=option] { padding: 8px 10px; border-radius: var(--r-control); cursor: default; }
+  .search-list [role=option][aria-selected=true], .search-list [role=option]:hover { background: var(--control-hover); }
+  .search-list b { display: block; font-weight: 400; font-size: 14px; line-height: 20px; color: var(--text); }
+  .search-list small { display: block; color: var(--text2); font-size: 12px; line-height: 16px; }
+  .search-list mark { background: none; color: var(--accent); font-weight: 600; }
+  .search-list .none { padding: 8px 10px; color: var(--text2); font-size: 13px; }
+  /* A picked result: tinted for a moment, then it fades (no animation, so the tint also shows
+     with reduced motion, where transitions are off and it just goes). */
+  .card.found { background: color-mix(in srgb, var(--accent) 16%, var(--card)); border-color: var(--accent); }
+  .card.fading { transition: background-color .8s ease-out, border-color .8s ease-out; }
   .nav-footer { margin-top: auto; padding: 16px 12px 0; color: var(--text3); font-size: 12px; line-height: 16px; }
   .nav-footer p { margin: 0; }
 
@@ -367,7 +385,7 @@
   @media (max-width: 540px) {
     .app { grid-template-columns: 56px minmax(0, 1fr); } nav { padding: 12px 6px; }
     .brand { justify-content: center; padding: 8px 0 16px; }
-    .brand-name, .nav-text, .nav-footer { display: none; } nav a { justify-content: center; padding: 8px 0; }
+    .brand-name, .nav-text, .nav-footer, .nav-search { display: none; } nav a { justify-content: center; padding: 8px 0; }
     main { padding: 16px 12px 24px; } .card { padding: 12px; } .card.child, .rows > .card { padding-left: 12px; }
     .style-tiles, .theme-files, .chips, .fb-kinds, .fb-field { padding-left: 0; } .newrule, .cond-list, .fb-preview { padding-left: 12px; }
     .about-head { gap: 14px; } .about-head .brand-mark { width: 44px; height: 44px; }
@@ -402,11 +420,13 @@
 </head>
 <body>
 <div class="app">
+  <div class="search-list" id="settingsSearchList" role="listbox" aria-label="查找设置" hidden></div>
   <nav aria-label="设置导航">
     <div class="brand">
       <svg class="brand-mark" viewBox="0 0 64 64" aria-hidden="true"><path d="M27 8H14a6 6 0 0 0-6 6v13M37 8h13a6 6 0 0 1 6 6v13M8 37v13a6 6 0 0 0 6 6h13M56 37v13a6 6 0 0 1-6 6H37" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round"/><rect x="22" y="22" width="8" height="8" rx="2" fill="currentColor"/><rect x="35" y="22" width="8" height="8" rx="2" fill="currentColor" opacity=".65"/><rect x="22" y="35" width="8" height="8" rx="2" fill="currentColor" opacity=".65"/><rect x="35" y="35" width="8" height="8" rx="2" fill="currentColor"/></svg>
       <span class="brand-name">PecoFence</span>
     </div>
+    <div class="nav-search" role="search"><input type="text" id="settingsSearch" placeholder="查找设置" aria-label="查找设置" autocomplete="off" spellcheck="false" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="settingsSearchList"><span class="ic">&#xE721;</span></div>
     <a href="#general" class="sel" data-page="general" aria-label="常规" title="常规"><span class="ic">&#xE713;</span><span class="nav-text">常规</span></a>
     <a href="#fences" data-page="fences" aria-label="栅栏" title="栅栏"><span class="ic">&#xE71D;</span><span class="nav-text">栅栏</span></a>
     <a href="#rules" data-page="rules" aria-label="整理规则" title="整理规则"><span class="ic">&#xE8FD;</span><span class="nav-text">整理规则</span></a>
@@ -1045,6 +1065,125 @@
     ringFence();
   }
   document.querySelectorAll('nav a').forEach(a => a.addEventListener('click', e => { e.preventDefault(); showPage(a.dataset.page); }));
+
+  // 查找设置: every card with a title on every page, read from the page as it is (its language,
+  // the cards the current state shows), so nothing has to be kept in step. All words must occur
+  // in the card's title, descriptions, list choices or heading; title hits come first.
+  const searchBox = document.getElementById('settingsSearch'), searchList = document.getElementById('settingsSearchList');
+  let searchHits = [], searchActive = 0, foundTimer = 0;
+  const fold = s => s.toLowerCase().replace(/\s+/g, ' ');
+  function shownOnItsPage(card) {
+    for (let el = card; el && !el.classList.contains('page'); el = el.parentElement) if (el.hidden || el.style.display === 'none') return false;
+    return true;
+  }
+  function searchSettings(query) {
+    const words = fold(query).trim().split(' ').filter(Boolean);
+    if (!words.length) return [];
+    const hits = [];
+    document.querySelectorAll('main section.page .card').forEach((card, order) => {
+      const title = card.querySelector('.t')?.textContent.trim();
+      if (!title || !shownOnItsPage(card)) return;
+      const page = card.closest('section.page');
+      let heading = '';
+      for (let el = card.closest('.group') || card; el && !heading; el = el.previousElementSibling) if (el.tagName === 'H3') heading = el.textContent;
+      const descs = [...card.querySelectorAll('.s')].map(d => d.textContent.trim()).filter(Boolean);
+      const choices = [...card.querySelectorAll('select:not([hidden]) option')].map(o => o.textContent.trim());
+      const parts = { title: fold(title), choices: fold(choices.join(' ')), descs: fold(descs.join(' ')), heading: fold(heading) };
+      let score = 0;
+      for (const w of words) {
+        const s = (parts.title.includes(w) ? 4 : 0) + (parts.choices.includes(w) ? 2 : 0) + (parts.descs.includes(w) ? 1 : 0) + (parts.heading.includes(w) ? 1 : 0);
+        if (!s) return;
+        score += s;
+      }
+      // Where a word occurs when the title does not show it: a list choice or a bit of a description.
+      const w = words.find(x => !parts.title.includes(x));
+      const where = w ? choices.find(c => fold(c).includes(w)) || descs.find(d => fold(d).includes(w)) || '' : '';
+      hits.push({ card, title, page: page.id.slice(5), path: page.querySelector('h2').textContent + (heading ? ' › ' + heading : ''), where, words, score, order });
+    });
+    return hits.sort((a, b) => b.score - a.score || a.order - b.order);
+  }
+  const markWords = (text, words) => {
+    const lower = fold(text);
+    const marks = new Array(text.length).fill(false);
+    for (const w of words) for (let i = lower.indexOf(w); i >= 0; i = lower.indexOf(w, i + 1)) marks.fill(true, i, i + w.length);
+    let html = '', open = false;
+    [...text].forEach((ch, i) => { if (marks[i] !== open) { html += marks[i] ? '<mark>' : '</mark>'; open = marks[i]; } html += esc(ch); });
+    return html + (open ? '</mark>' : '');
+  };
+  const snippet = (text, words) => {
+    const i = Math.max(0, ...words.map(w => fold(text).indexOf(w)));
+    return text.length <= 36 ? text : (i > 14 ? '…' : '') + text.slice(Math.max(0, i - 14), i + 22) + (i + 22 < text.length ? '…' : '');
+  };
+  function renderSearch() {
+    const query = searchBox.value;
+    searchHits = searchSettings(query);
+    searchActive = 0;
+    const open = !!query.trim();
+    searchList.hidden = !open;
+    searchBox.setAttribute('aria-expanded', String(open));
+    if (!open) return;
+    const r = searchBox.getBoundingClientRect();
+    searchList.style.left = r.left + 'px';
+    searchList.style.top = r.bottom + 4 + 'px';
+    if (!searchHits.length) {
+      searchList.innerHTML = `<div class="none">${esc(tf("没有找到与“{0}”有关的设置", query.trim()))}</div>`;
+      searchBox.removeAttribute('aria-activedescendant');
+      return;
+    }
+    searchList.innerHTML = searchHits.map((h, i) => `<div role="option" id="searchHit${i}" aria-selected="${i === 0}"><b>${markWords(h.title, h.words)}</b><small>${esc(h.path)}${h.where ? ' · ' + markWords(snippet(h.where, h.words), h.words) : ''}</small></div>`).join('');
+    searchBox.setAttribute('aria-activedescendant', 'searchHit0');
+  }
+  function moveSearch(step) {
+    if (!searchHits.length) return;
+    searchActive = (searchActive + step + searchHits.length) % searchHits.length;
+    [...searchList.children].forEach((row, i) => row.setAttribute('aria-selected', String(i === searchActive)));
+    searchList.children[searchActive].scrollIntoView({ block: 'nearest' });
+    searchBox.setAttribute('aria-activedescendant', 'searchHit' + searchActive);
+  }
+  function closeSearch(clear) {
+    searchList.hidden = true;
+    searchBox.setAttribute('aria-expanded', 'false');
+    searchBox.removeAttribute('aria-activedescendant');
+    if (clear) searchBox.value = '';
+  }
+  // A pick: its page, the card in the middle of the view, a short tint, the focus on its control.
+  function openSearchHit(hit) {
+    if (!hit) return;
+    closeSearch(false);
+    showPage(hit.page);
+    const card = hit.card;
+    card.scrollIntoView({ block: 'center' });
+    document.querySelectorAll('.card.found, .card.fading').forEach(c => c.classList.remove('found', 'fading'));
+    clearTimeout(foundTimer);
+    card.classList.add('found');
+    foundTimer = setTimeout(() => {
+      card.classList.add('fading');
+      card.classList.remove('found');
+      foundTimer = setTimeout(() => card.classList.remove('fading'), 900);
+    }, 1500);
+    const control = card.querySelector('.toggle:not([aria-disabled=true]), select:not([hidden]):not(:disabled), button:not(:disabled), input:not([type=hidden]):not(:disabled)');
+    if (control) control.focus({ preventScroll: true });
+  }
+  searchBox.addEventListener('input', renderSearch);
+  searchBox.addEventListener('focus', () => { if (searchBox.value.trim()) renderSearch(); });
+  searchBox.addEventListener('keydown', e => {
+    if (e.isComposing) return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); moveSearch(1); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); moveSearch(-1); }
+    else if (e.key === 'Enter') { e.preventDefault(); openSearchHit(searchHits[searchActive]); }
+    else if (e.key === 'Escape') { e.preventDefault(); if (!searchList.hidden || searchBox.value) closeSearch(true); else searchBox.blur(); }
+  });
+  // A click in the list must not blur the box first (that would close the list).
+  searchList.addEventListener('mousedown', e => e.preventDefault());
+  searchList.addEventListener('click', e => {
+    const row = e.target.closest('[role=option]');
+    if (row) openSearchHit(searchHits[[...searchList.children].indexOf(row)]);
+  });
+  searchBox.addEventListener('blur', () => closeSearch(false));
+  window.addEventListener('resize', () => { if (!searchList.hidden) renderSearch(); });
+  document.addEventListener('keydown', e => {
+    if (e.ctrlKey && !e.altKey && !e.shiftKey && (e.key === 'f' || e.key === 'F')) { e.preventDefault(); searchBox.focus(); searchBox.select(); }
+  });
 
   const get = (obj, path) => path.split('.').reduce((o, k) => (o == null ? undefined : o[k]), obj);
   const set = (obj, path, v) => { const ks = path.split('.'); let o = obj; for (let i = 0; i < ks.length - 1; i++) o = o[ks[i]]; o[ks[ks.length - 1]] = v; };

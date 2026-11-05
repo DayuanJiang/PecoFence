@@ -713,5 +713,7 @@
   "鼠标停在上面时": "Beim Daraufzeigen",
   "单击标题时": "Per Klick auf den Titel",
   "只在双击标题或点箭头时": "Nur per Doppelklick oder Pfeil",
-  "“桌面”栅栏像桌面一样排列时，它的图标已经在 Windows 桌面上，所以不显示它；要同时显示，先在“栅栏”页关掉它的“像桌面一样排列”": "Solange der Bereich „Desktop“ wie der Desktop angeordnet ist, liegen seine Symbole schon auf dem Windows-Desktop, daher wird er nicht angezeigt; um ihn auch anzuzeigen, schalte zuerst auf der Seite „Bereiche“ sein „Wie den Desktop anordnen“ aus"
+  "“桌面”栅栏像桌面一样排列时，它的图标已经在 Windows 桌面上，所以不显示它；要同时显示，先在“栅栏”页关掉它的“像桌面一样排列”": "Solange der Bereich „Desktop“ wie der Desktop angeordnet ist, liegen seine Symbole schon auf dem Windows-Desktop, daher wird er nicht angezeigt; um ihn auch anzuzeigen, schalte zuerst auf der Seite „Bereiche“ sein „Wie den Desktop anordnen“ aus",
+  "查找设置": "Einstellung suchen",
+  "没有找到与“{0}”有关的设置": "Keine Einstellung passt zu „{0}“"
 }
