@@ -64,13 +64,8 @@
         r.secCard = sec;
         r.clockRow = SM.card(g, { t: '桌面上还没有时钟', h: 32, indent: 22, textW: 260, gap: 6 });
         r.newClock = SM.button(r.clockRow, '新建时钟', 64, { accent: true });
-        SM.h3(g, '搜索与跳转');
+        SM.h3(g, '文件对话框');
         toggleCard(g, { ic: '', t: '对话框跳转', s: '打开或保存文件时，切到资源管理器再切回对话框，它就跳到资源管理器里的文件夹；点文件夹栅栏或按 Ctrl+G 也能跳过去' });
-        toggleCard(g, { ic: '', t: '搜索整台电脑（Everything）', s: '速览时打字搜索，除了栅栏里的图标，也列出整台电脑上的文件和文件夹，由免费的 Everything 负责查找' }, { gap: 1 });
-        const ev = SM.card(g, { t: '这台电脑还没有 Everything', s: '安装时会打开一个命令行窗口，用 winget 装 1.5 版，Windows 会询问一次管理员权限', h: 36, indent: 22, textW: 260 });
-        SM.button(ev, '安装 Everything', 64, { accent: true });
-        r.evCard = ev;                             // dimmed while its switch is off (render)
-        toggleCard(g, { ic: '', t: '双击 Ctrl 打开搜索', s: '快速按两下 Ctrl，打开速览和搜索框，再按两下关闭；全屏的游戏或视频在前面时不响应' });
         SM.h3(g, '自己写的小工具');
         r.scripts = toggleCard(g, { ic: '', t: '脚本栅栏', s: '运行你选的脚本（PowerShell、Python、批处理等），把它打印的文字显示在栅栏里：可以每隔 1 分钟到 3 小时运行一次，也可以一直运行、几秒更新一次；脚本还可以让一行变得能点，点一下打开网址、运行程序或者给待办打勾。适合天气、倒计时、服务器状态，也可以让 AI 助手帮你写。PecoFence 不会为脚本栅栏联网，联网的是你的脚本' }, { gap: 1 });
         // two buttons: the text above them (the page's .actions wrap under a long text)
@@ -201,7 +196,6 @@
         SM.drawToggle(P.clock, t >= NEW_CLOCK + .03);
         SM.drawToggle(P.scripts, t >= NEW_SCRIPT + .03);
         P.secCard.n.style.opacity = t >= NEW_CLOCK + .03 ? 1 : .55;   // 显示秒 follows 时钟与日期
-        P.evCard.n.style.opacity = .55;                                // 搜索整台电脑 stays off
         text(P.noteRow.t, t >= NEW_NOTE + .03 ? T('桌面上有 {0} 个便签').replace('{0}', '1') : T('桌面上还没有便签'));
         text(P.clockRow.t, t >= NEW_CLOCK + .03 ? T('桌面上有 {0} 个时钟').replace('{0}', '1') : T('桌面上还没有时钟'));
         text(P.scriptRow.t, t >= NEW_SCRIPT + .03 ? T('桌面上有 {0} 个脚本栅栏').replace('{0}', '1') : T('桌面上还没有脚本栅栏'));
