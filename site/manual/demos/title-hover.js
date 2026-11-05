@@ -19,16 +19,24 @@
     // 常规 below what SM.generalPage builds, in the page's order with its Segoe Fluent glyphs;
     // defaults from model.rs (Settings, IconSettings, RollUpSettings, SnappingSettings)
     const ICON_TINTS = [null, '60CDFF', '10893E', 'F7630C', 'E74856', '8764B8', '7A7574'];   // 不着色 … 灰
+    // o: card options (child cards are indented); dim: greyed out by the switch it depends on
     const DESKTOP = [
         { ic: '', t: '随 Windows 启动', on: true },
-        { ic: '', t: '隐藏 Windows 桌面图标', s: '桌面项目只显示在栅栏里，未归类的进入“桌面”栅栏；回收站等系统图标也会出现在“桌面”栅栏中', on: true },
+        { ic: '', t: '隐藏 Windows 桌面图标', s: '桌面项目只显示在栅栏里，未归类的进入“桌面”栅栏；回收站等系统图标也会出现在“桌面”栅栏中', on: true, o: { gap: 1 } },
+        { t: '关闭 PecoFence 时保持 Windows 桌面图标隐藏', s: '登录时 Windows 会先显示桌面图标，等 PecoFence 启动后才隐藏。打开后，退出或注销时图标保持隐藏，下次登录就不会闪现；PecoFence 没有运行时，桌面上不显示图标。要让图标重新显示，右键桌面，选“查看”→“显示桌面图标”', on: false, o: { indent: 22, gap: 1 } },
+        { t: '显示 Windows 桌面图标时隐藏“桌面”栅栏', s: '未归类的项目只留在 Windows 桌面上；关闭“隐藏 Windows 桌面图标”后可用', on: false, dim: true, o: { indent: 22 } },
         { ic: '', t: '双击桌面空白处隐藏或显示栅栏', on: true },
     ];
+    // 临时显示 Windows 桌面 (no switch) and its 快捷键 box (none set), then the box-drag offer
+    const WINDOWS_DESKTOP = { ic: '\uE7F4', t: '临时显示 Windows 桌面', s: '按快捷键隐藏所有栅栏、显示 Windows 桌面图标，再按一次恢复；托盘菜单里也有这一项' };
+    const OFFER = { ic: '\uE8B3', t: '在桌面空白处拖出矩形时提供“在此新建栅栏”', s: '矩形没有碰到任何栅栏时弹出这一项；关闭后拖出矩形只用来框选，仍可从托盘菜单新建栅栏', on: true };
     const BEHAVIOUR = [
         { ic: '', t: '收起的栅栏悬停时自动展开', s: '鼠标移开后自动收起', on: true },
         { ic: '', t: '收起的栅栏需点击标题才展开', s: '开启后不再悬停展开；拖动标题仍可移动栅栏', on: false },
         { ic: '', t: '展开时把下面的栅栏推开', s: '收起后它们会回到原位', on: true },
         { ic: '', t: '鼠标悬停时才显示标题栏', s: '平时只显示图标，让桌面更清爽；每个栅栏可在“栅栏”页单独设置', on: false },
+        { ic: '\uE70E', t: '隐藏标题栏右侧的项目数和折叠箭头', s: '标题栏只显示名称；双击标题或用右键菜单收起和展开', on: false },
+        { ic: '\uE7C3', t: '鼠标悬停时切换标签页', s: '鼠标在标签页上停留片刻就切换过去，不用点击', on: true },
         { ic: '', t: '自动隐藏滚动条', s: '鼠标移到栅栏上或滚动时才显示', on: false },
     ];
     const TARGET = 3;
@@ -67,10 +75,18 @@
         SM.select(strength, '中', sw);
         strength.n.style.opacity = .55;
         toggleCard(g, { ic: '', t: '图标融入背景（Chameleon）', s: '降低图标饱和度和不透明度，让桌面看起来更清爽', on: false });
+        toggleCard(g, { ic: '\uE71B', t: '显示快捷方式箭头', s: '和 Windows 桌面一样，在快捷方式图标的左下角显示小箭头', on: true });
         SM.select(SM.card(g, { ic: '', t: '显示语言', s: '立即切换界面语言；你的文件和自定义名称保持不变', textW: selW }), '跟随系统', sw);
 
         SM.h3(g, '桌面与启动');
-        DESKTOP.forEach(d => toggleCard(g, d));
+        DESKTOP.forEach(d => {
+            const c = toggleCard(g, d, d.o);
+            if (d.dim) c.b.n.style.opacity = .55;
+        });
+        SM.card(g, { ...WINDOWS_DESKTOP, textW: g.cardW - 34 - 24, gap: 1 });
+        const hk = SM.card(g, { t: '快捷键', h: 32, indent: 22, textW: 100 });
+        SM.button(hk, '未设置', 120).v.style.color = '#8a8a8a';
+        toggleCard(g, OFFER);
         SM.select(SM.card(g, { ic: '', t: '显示桌面 (Win+D) 时', textW: selW }), '保持栅栏可见', sw);
 
         const head = SM.h3(g, '行为');

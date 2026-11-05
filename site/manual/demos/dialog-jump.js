@@ -1,4 +1,4 @@
-// 7.2 对话框跳转 (lesson id dialog-jump; dialog_jump.rs): a program's Open dialog opens in its own
+// 7.3 对话框跳转 (lesson id dialog-jump; dialog_jump.rs): a program's Open dialog opens in its own
 // folder (文档) while File Explorer shows 合同 behind it. A click on Explorer and one back on the
 // dialog make the dialog jump, once, to Explorer's folder; pressing the 设计稿 folder fence with
 // the dialog in front jumps it there at once (the fence takes no activation, so the dialog stays

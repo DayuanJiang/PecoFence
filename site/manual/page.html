@@ -129,7 +129,7 @@
       </header>
       <div class="lesson-body">
         <figure class="demo">
-          <div class="stage" role="img" aria-label="动画：双击打开 PecoFence，桌面图标飞进右边的四个栅栏；新文件自动进了「文件与文档」；从托盘菜单退出后，图标回到桌面原来的位置"></div>
+          <div class="stage" role="img" aria-label="动画：双击打开 PecoFence，桌面图标飞进右边的三个栅栏，没有分到类的「安装日志.log」排到屏幕左上角；新文件自动进了「文件与文档」；从托盘菜单退出后，图标回到桌面原来的位置"></div>
           <div class="controls">
             <button class="btn play" type="button" data-play aria-label="暂停">
               <svg class="i-pause" viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="2.5" width="3" height="11" rx="1"/><rect x="9.5" y="2.5" width="3" height="11" rx="1"/></svg>
@@ -142,7 +142,7 @@
         <div class="side">
           <ol class="steps">
             <li data-at="0.3"><span class="n">1</span><p>打开 PecoFence，从开始菜单或桌面快捷方式打开都行。</p></li>
-            <li data-at="1.8"><span class="n">2</span><p>第一次打开时，它会在屏幕右边建好四个栅栏，把桌面图标按类型放进去。</p></li>
+            <li data-at="1.8"><span class="n">2</span><p>第一次打开时，它会在屏幕右边建好三个栅栏，把桌面图标按类型放进去。其他图标归「桌面」栅栏：这个栅栏不显示标题和边框，图标像 Windows 桌面上一样，从屏幕左上角一列一列往下排。</p></li>
             <li data-at="4.9"><span class="n">3</span><p>以后桌面上有了新文件，也会自动放进对应的栅栏。</p></li>
             <li data-at="6.9"><span class="n">4</span><p>想恢复原样，就右键托盘图标（任务栏右下角的 PecoFence 图标，没看到就先点 <b>^</b>），选<b>「退出 PecoFence」</b>。文件一直在桌面文件夹里，PecoFence 只是把它们放进栅栏显示。</p></li>
           </ol>
@@ -362,7 +362,7 @@
       </header>
       <div class="lesson-body">
         <figure class="demo">
-          <div class="stage" role="img" aria-label="动画：在设置的「整理规则」页新建规则「发票」：名称包含「发票」的放进「报销」，再把它上移到「文件与文档」前面；桌面上新出现的发票自动进了「报销」；点「立即应用」后，原来在「文件与文档」里的发票也移了过去"></div>
+          <div class="stage" role="img" aria-label="动画：在设置的「整理规则」页新建规则「发票」：名称包含「发票」的放进「报销」，新规则排到列表最前面；桌面上新出现的发票自动进了「报销」；点「立即应用」后，原来在「文件与文档」里的发票也移了过去"></div>
           <div class="controls">
             <button class="btn play" type="button" data-play aria-label="暂停">
               <svg class="i-pause" viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="2.5" width="3" height="11" rx="1"/><rect x="9.5" y="2.5" width="3" height="11" rx="1"/></svg>
@@ -375,13 +375,13 @@
         <div class="side">
           <ol class="steps">
             <li data-at="0.3"><span class="n">1</span><p>打开「设置」→「整理规则」（右键托盘图标，选<b>「设置…」</b>），展开<b>「新建规则」</b>。「规则名称」填「发票」，「条件类型」选<b>「名称包含」</b>，「条件值」也填「发票」。</p></li>
-            <li data-at="3.7"><span class="n">2</span><p>「目标栅栏」选「报销」（这里只列出已有的栅栏），点<b>「添加规则」</b>。再点<b>「上移」</b>，把它排到「文件与文档」前面，不然发票会先进「文件与文档」。</p></li>
+            <li data-at="3.7"><span class="n">2</span><p>「目标栅栏」选「报销」（这里只列出已有的栅栏），点<b>「添加规则」</b>。新规则排在列表最前面。规则从上往下比对，用第一条对得上的，所以发票会进「报销」，轮不到下面的「文件与文档」。</p></li>
             <li data-at="6.9"><span class="n">3</span><p>以后桌面上出现名字带「发票」的文件，就会自动进「报销」。</p></li>
             <li data-at="8.75"><span class="n">4</span><p>桌面上原有的图标不会自己挪。点<b>「立即应用」</b>，它们也会按规则重新放好，手动摆放过的除外。</p></li>
           </ol>
           <aside class="tip">
             <h3>小提示</h3>
-            <p>托盘菜单里的「立即应用整理规则」效果一样。想一步建好栅栏和规则，可以用「快速添加」里的按钮。</p>
+            <p>托盘菜单里的「立即应用整理规则」效果一样。想一步建好栅栏和规则，可以用「快速添加」里的按钮。点「添加条件」可以给一条规则再加条件，全部符合的才放进目标栅栏。规则右边的「编辑」用来修改，「上移」和「下移」用来调整顺序。</p>
           </aside>
         </div>
       </div>
@@ -680,7 +680,7 @@
           <aside class="tip">
             <h3>小提示</h3>
             <p>小工具和普通栅栏一样，可以拖动、改大小和收起。右键脚本栅栏，在<b>「运行间隔」</b>里选多久运行一次，从 1 分钟到 3 小时；点<b>「选择脚本…」</b>可以换成你自己的脚本，PowerShell、Python、批处理都行，也可以请 AI 助手帮你写。想看别的城市，选<b>「编辑脚本」</b>，在记事本里把 Tokyo 改成你所在的城市，保存后再选<b>「立即运行」</b>。</p>
-            <p>一直运行的脚本不按间隔运行：它一直开着，几秒就能更新一次，「电脑状态」示例就是这样。</p>
+            <p>一直运行的脚本不按间隔运行：它一直开着，几秒就能更新一次，「电脑状态」示例就是这样。想让自己的脚本这样运行，在它开头的注释里写上 <code>&lt;pecofence.type&gt;streamable&lt;/pecofence.type&gt;</code>。它打印的每一行马上显示出来；打印一行 <code>~~~</code> 以后，下一行开始新的一屏，换掉原来的内容。</p>
             <p>PecoFence 自己不联网，联网的是你的脚本。导入的配置里有脚本栅栏时，「脚本栅栏」开关会先关上，等你确认脚本可信以后再打开。</p>
           </aside>
         </div>
@@ -995,7 +995,7 @@
         </section>
         <section class="ap-q">
           <h3>怎么设置开机启动？</h3>
-          <p>默认就会随 Windows 启动，开关在「设置」→「常规」→<b>「随 Windows 启动」</b>。用 <code>--portable</code> 启动的便携版不会自己设置，要手动打开这个开关。Microsoft Store 版点这个开关，会跳到 Windows 设置的<b>「应用」</b>→<b>「启动」</b>页，在那里打开或关闭 PecoFence。</p>
+          <p>默认就会随 Windows 启动，开关在「设置」→「常规」→<b>「随 Windows 启动」</b>。用 <code>--portable</code> 启动的便携版不会自己设置，要手动打开这个开关。Microsoft Store 版也用这个开关。要是在 Windows 设置的<b>「应用」</b>→<b>「启动」</b>页或任务管理器里关掉过 PecoFence，就只能在那里重新打开，这时点开关会打开那一页。</p>
         </section>
         <section class="ap-q">
           <h3>速览的快捷键按了没反应？</h3>

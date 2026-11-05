@@ -20,6 +20,7 @@
         up: svg('0 0 10 10', `<path d="M1.6 6.6 5 3.2l3.4 3.4" ${stroke} stroke-width="1.15"/>`),
         down: svg('0 0 10 10', `<path d="M1.6 3.4 5 6.8l3.4-3.4" ${stroke} stroke-width="1.15"/>`),
         del: svg('0 0 10 10', `<path d="M1.2 2.3h7.6M3.6 2.3V1.2h2.8v1.1M2.2 2.3l.5 6.5h4.6l.5-6.5" ${stroke} stroke-width="1"/>`),
+        edit: svg('0 0 10 10', `<path d="M6.9 1.4 8.6 3.1 3.3 8.4 1.2 8.8l.4-2.1zM5.9 2.4l1.7 1.7" ${stroke} stroke-width="1"/>`),
         min: svg('0 0 10 10', `<path d="M.5 5h9" ${stroke} stroke-width="1"/>`),
         max: svg('0 0 10 10', `<rect x="1" y="1" width="8" height="8" rx="1" ${stroke} stroke-width="1"/>`),
         close: svg('0 0 10 10', `<path d="m1 1 8 8M9 1 1 9" ${stroke} stroke-width="1"/>`),
@@ -396,8 +397,9 @@
 
     // ---------- the 常规 page (top of it) ----------
 
-    // 外观: 主题风格 tiles (the page's own Fluent / Liquid Glass previews), 颜色模式, 标题对齐,
-    // 默认图标大小. Returns the page and its two tiles (draw with drawTiles).
+    // 外观: 主题风格 tiles (the page's own Fluent / Liquid Glass previews), 自定义主题, 颜色模式,
+    // 图标名称颜色, 标题对齐, 标签栏位置, 默认图标大小. Returns the page and its two tiles (draw with
+    // drawTiles).
     function generalPage(w) {
         const g = page(w, 'general');
         header(g, '常规');
@@ -420,8 +422,18 @@
             return c;
         });
         const sw = Math.min(130, g.cardW - 180);
+        // 自定义主题: its select and two buttons go under the text, as the page wraps them when narrow
+        const custom = card(g, { ic: '\uE790', t: '自定义主题', s: '主题文件放在 themes 文件夹里，选中后代替上面的风格，文件保存后栅栏立即更新', h: 64, textW: g.cardW - 34 - 12 });
+        custom.t.style.top = '7px';
+        custom.s.style.top = '22px';
+        custom.n.querySelector('.set-ic').style.top = '8px';
+        const guide = button(custom, '写法说明', 52, { right: 10, top: 37 });
+        const themes = button(custom, '打开主题文件夹', 70, { right: 16 + guide.w, top: 37 });
+        select(custom, '无', 72, { right: 22 + guide.w + themes.w, top: 37 });
         select(card(g, { ic: '\uE7A1', t: '颜色模式', textW: 120 }), '跟随 Windows 模式', sw);
+        select(card(g, { ic: '\uE8D3', t: '图标名称颜色', s: '自动：液态玻璃按背后壁纸的明暗选深色或浅色，Fluent 跟随颜色模式；白色和黑色也用于标题颜色为“跟随主题”的栅栏标题和标签', textW: g.cardW - sw - 60 }), '自动', sw);
         select(card(g, { ic: '\uE8E4', t: '标题对齐', textW: 120 }), '左对齐', sw);
+        select(card(g, { ic: '\uE90C', t: '标签栏位置', s: '有多个标签页时，标签排在标题栏里，或在栅栏左侧排成一列', textW: g.cardW - sw - 60 }), '顶部', sw);
         // The icon size slider at 48 px, with ticks at 32, 48, 64 and 96 (24 to 128 px).
         slider(card(g, { ic: '\uE8B9', t: '默认图标大小', s: '新建栅栏时使用，每个栅栏可在“栅栏”页或右键菜单中单独设置', textW: g.cardW - sw - 60 }), 24 / 104, [8, 24, 40, 72].map(v => v / 104));
         stack(g);
