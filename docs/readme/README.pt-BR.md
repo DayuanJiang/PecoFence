@@ -104,6 +104,9 @@ Pegue o que precisa e pressione **Esc** para voltar.
 | **Arquivos do jeito que você conhece** | Menus de contexto do Explorador de Arquivos, arrastar e soltar, copiar e colar, seleção múltipla, miniaturas e exibição em ícones, lista ou detalhes. |
 | **Pastas sempre à mão** | Coloque na área de trabalho uma pasta de verdade, sempre atualizada. Navegue pelas subpastas e veja as mudanças na hora. |
 | **Espaço quando você precisa** | Recolha um grupo até o título. Passe o mouse para expandir. Bloqueie o layout quando estiver do seu jeito. Clique duas vezes na área de trabalho para ocultar os grupos. Clique duas vezes de novo para trazê-los de volta. |
+| **Pequenas ferramentas nos grupos** | Notas com tarefas, um relógio com a data e grupos de script que mostram o que o seu próprio script imprime, como o clima. Cada ferramenta fica desligada até você ativá-la em Configurações → Ferramentas. |
+| **Encontre enquanto digita** | Digite enquanto espia os grupos (Ctrl + Alt + Espaço) e uma lista mostra os itens correspondentes, inclusive nomes em chinês por pinyin. Abra um com Enter ou com um atalho de Ctrl+1 a Ctrl+9. Se quiser, o Everything, um buscador de arquivos gratuito, inclui resultados do computador inteiro, e pressionar Ctrl duas vezes abre a pesquisa. |
+| **Caixas de diálogo na pasta certa** | Com “Ir para a pasta nas caixas de diálogo”, uma caixa Abrir ou Salvar vai para a pasta aberta no Explorador de Arquivos quando você vai até ele e volta. Clicar em um grupo de pasta ou pressionar Ctrl+G também funciona. |
 | **Um caminho de volta** | Instantâneos de layout, backups diários, importação e exportação da configuração e troca de grupos entre monitores. |
 | **Leve de verdade** | Um aplicativo nativo em Rust que, ocioso, usa só cerca de 2 a 5 MB de memória (segundo o Gerenciador de Tarefas). O painel de configurações em WebView2 só carrega quando necessário. |
 

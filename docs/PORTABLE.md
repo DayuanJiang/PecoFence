@@ -24,7 +24,9 @@ entry that starts it with `--portable`. An entry an earlier version wrote withou
 the flag gets it the next time the copy is started with `--portable`.
 
 Double-click empty desktop space to hide/show fences. **Ctrl+Alt+Space** brings
-them above other windows. Drag a title to move a fence; double-click it to roll up.
+them above other windows; type while they are there to search them. Drag a title to
+move a fence; double-click it to roll up. **Settings → Tools** has notes, a clock,
+script fences and other small tools, each off until you turn it on.
 
 Automatic organizing rules only change group membership. File operations you
 initiate—moving, renaming, copying and deleting—operate on real files.

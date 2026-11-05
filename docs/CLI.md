@@ -515,6 +515,10 @@ oldest automatic one (`auto-cli-*`, or one the settings page took before a resto
 room; it fails with `limit_reached` only when all 20 are snapshots you saved.
 Restoring snapshots the current layout first and returns that `snapshotId`, so a restore can itself
 be undone. Snapshots do not include settings, rules, or files moved through portals.
+Restoring one also leaves the note texts and the scripts of script fences as they are now. A
+deleted note or script fence keeps its text or script while a snapshot still holds the fence, so
+restoring that snapshot brings it back complete; only the snapshot taken before an import or a
+backup restore puts back the texts and scripts from before.
 
 `snapshot restore <ID> --dry-run` (wire method `snapshots.planRestore`) restores nothing and takes no
 snapshot. It compares the fences shown now with the ones the restore would show on the monitors
