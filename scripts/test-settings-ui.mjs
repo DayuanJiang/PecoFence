@@ -811,7 +811,7 @@ async function runTests() {
     const value = current().rules.list[0].allOf[0].value;
     // The core reads `from_min` / `to_min`; any other spelling makes the host drop all rules.
     assert(value.from_min === 1080 && value.to_min === 360, 'Overnight bounds changed');
-    assert(doc.querySelector('#ruleList .conds').textContent.includes('18:00–06:00'), 'Overnight rule described wrongly');
+    assert(doc.querySelector('#ruleList .conds').textContent.includes('18:00 到 06:00'), 'Overnight rule described wrongly');
   });
   await test('Rule target and unfinished name survive a host refresh', async () => {
     change(doc, 'nrTarget', 'fence-b'); change(doc, 'nrName', 'Unfinished draft');
