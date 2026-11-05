@@ -59,7 +59,7 @@ all six recordings appear with native video controls instead. Five of their cove
 come from the revision-2 desktop, Peek, tabs, automatic sorting and folder scenes; the
 hide/show cover remains a frame from its existing recording.
 
-Below the gallery, the tools block (`#tools`) lists the six switches of Settings › Tools
+Below the gallery, the tools block (`#tools`) lists the six tools of Settings › Tools
 (小工具): notes and to-dos, clock and date, script fences, dialog jump, whole-computer
 search with Everything and pressing Ctrl twice. It has no animation; its items are drawn
 like the small details further down, from `TOOLS` in `build-site.py` and the `tool.*`

@@ -51,13 +51,15 @@ filenames, rule names, snapshot names or fence titles.
 Default group/rule names are localized when created. They are then saved as names
 and are not rewritten by later language changes.
 
-The same holds for the titles of new tool fences (便签, 时钟) and for the weather
-example of 脚本栅栏: its file name follows the display language when it is written
-(`天气.ps1`, `weather.ps1`, `Wetter.ps1` and so on), its labels are Chinese for both
-Chinese languages and English for every other language, and a later language change
-leaves the file as it is. The clock (时钟与日期) writes the time and the date in the
-Windows region format, so their language and the 12 or 24 hour time follow the
-Windows region setting, whatever display language PecoFence uses.
+The same holds for the titles of new tool fences (便签, 时钟) and for the four
+examples of 脚本栅栏 (「添加示例…」): the file name of each follows the display language
+when it is written (`天气.ps1`, `weather.ps1`, `Wetter.ps1`; `GitHub 动态.ps1`,
+`github.ps1`; `待办.ps1`, `todo.ps1`; `电脑状态.ps1`, `pc-status.ps1` and so on), its
+comments and labels are Chinese for both Chinese languages and English for every other
+language, and a later language change leaves the file as it is. The clock (时钟与日期)
+writes the time and the date in the Windows region format, so their language and the
+12 or 24 hour time follow the Windows region setting, whatever display language
+PecoFence uses.
 
 ## Validation and adding a language
 

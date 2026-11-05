@@ -1,6 +1,6 @@
 ---
 name: pecofence-cli
-description: "Configure PecoFence (Windows desktop fences) from the terminal: list/create/move fences, move and rename desktop icons using file metadata, per-fence options, global settings, auto-sorting rules, layout snapshots. Use when the user asks to organise their desktop icons or change PecoFence settings."
+description: "Configure PecoFence (Windows desktop fences) from the terminal: list/create/move fences, move and rename desktop icons using file metadata, per-fence options, global settings, auto-sorting rules, layout snapshots, note, clock and script fences. Use when the user asks to organise their desktop icons, change PecoFence settings or write a script for a script fence."
 ---
 
 # pecofence-cli
@@ -125,10 +125,12 @@ Each printed line is a row (at most 40 lines, 300 characters each); keep them sh
   once, then the script's output decides). Lines without parameters are plain text.
 - Every run gets `PECOFENCE=1`, `PECOFENCE_ACTION` (empty on a timed run), `PECOFENCE_DATA` (a folder
   of this fence's own: keep state there), `PECOFENCE_THEME` (light|dark), `PECOFENCE_FENCE` (its id).
-- Streaming: a comment `<pecofence.type>streamable</pecofence.type>` keeps the script running with no
-  time limit until its fence goes. Lines show as they are printed; a `~~~` line makes the next line
-  start a new screen, so print `~~~` before each refresh of the block. `action=` clicks arrive as lines
-  on standard input. In Windows PowerShell read them without blocking:
+- Streaming: a comment `<pecofence.type>streamable</pecofence.type>` in the first 8 KB keeps the script
+  running with no time limit until its fence is deleted or gets another script, `tools.scripts` goes
+  off or PecoFence exits; a script that ends by itself starts again after `scriptInterval` minutes.
+  Lines show as they are printed; a `~~~` line makes the next line start a new screen, so print `~~~`
+  before each refresh of the block. `action=` clicks arrive as lines on standard input. In Windows
+  PowerShell read them without blocking:
   `$in = New-Object IO.StreamReader([Console]::OpenStandardInput()); $pending = $in.ReadLineAsync()`,
   then in the loop `if ($pending.IsCompleted) { $a = $pending.Result; $pending = $in.ReadLineAsync() }`
   (`[Console]::In.ReadLineAsync()` blocks there).
@@ -136,6 +138,7 @@ Each printed line is a row (at most 40 lines, 300 characters each); keep them sh
   5.1 reads a file without one in the ANSI code page. The output is read as UTF-8.
 - Test it: `fence create --script <file> --title <T>`, or `fence refresh <fence>` after an edit, then
   `fence get <fence> --fields script` until `script.running` is false; check `outcome` and `output`.
+  A streaming script stays `running`: check `output` instead.
 
 ## Recipes
 

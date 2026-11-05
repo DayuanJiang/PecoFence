@@ -383,9 +383,10 @@ A row has one action: with several, the first of `href`, `open`, `run`, `copy`, 
 
 A clickable row gets a light plate under the pointer and the hand cursor; a row with `href=` or
 `open=` also shows a small arrow on the right. A click on a to-do with `action=` ticks or unticks
-its box at once, and the script's next output decides what stays. A click while the script is still
-running waits and runs when that run ends; of several such clicks, the last one with an `action=`
-is kept. The output limits stay: 40 lines, 16 KB, 300 characters a line; a long row wraps.
+its box at once, and the script's next output decides what stays. A run that a click asks for
+(`action=` or `refresh=true`) while the previous run is still going waits for it to end; several
+such clicks run one after another in the order they were made, and repeated plain refreshes count
+once. The output limits stay: 40 lines, 16 KB, 300 characters a line; a long row wraps.
 
 Every run gets these environment variables:
 
@@ -419,9 +420,9 @@ for ($i = 0; $i -lt $lines.Count; $i++) { "$($lines[$i]) | action=toggle:$i" }
 
 ### Streaming scripts
 
-A script that names itself streamable in a comment, `<pecofence.type>streamable</pecofence.type>`
-(SwiftBar's `<swiftbar.type>streamable</swiftbar.type>` works too, within the first 64 KB of the
-file), keeps running: the 10-second limit does not apply. Every line it prints shows at once,
+A script that names itself streamable in a comment within the first 8 KB of the file,
+`<pecofence.type>streamable</pecofence.type>` (SwiftBar's `<swiftbar.type>streamable</swiftbar.type>`
+works too), keeps running: the 10-second limit does not apply. Every line it prints shows at once,
 added below what the fence shows. A line `~~~` marks a new screen: the next line printed replaces
 everything the fence showed, and the lines after it are added below again. So a script may print
 `~~~` before each new block, as SwiftBar scripts do, or after it; the old block stays until the
@@ -431,9 +432,9 @@ next line arrives. The fence keeps the newest 40 lines. Python streaming scripts
 A click on a row with `action=` sends the value as one line to the script's standard input
 (`PECOFENCE_ACTION` stays empty for a streaming script). The script, and the programs it started,
 end when its fence is deleted or gets another script, when `tools.scripts` is switched off and when
-PecoFence exits. When the script ends by itself, the fence keeps what it showed last, and
-PecoFence starts the script again at the next interval. 立即运行, `refresh=true` and
-`fence refresh` start it again at once.
+PecoFence exits. When the script ends by itself, the fence keeps what it showed last (after a
+failure, the error and the exit code), and PecoFence starts the script again at the next
+interval. 立即运行, `refresh=true` and `fence refresh` start it again at once.
 
 In Windows PowerShell, read the input with a stream reader and check it in the loop;
 `[Console]::In.ReadLineAsync()` would block the loop there:

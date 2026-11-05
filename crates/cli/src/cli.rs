@@ -158,7 +158,7 @@ pub enum FenceCmd {
         #[arg(help = FENCE_HELP)]
         fence: String,
     },
-    /// New virtual fence, or a folder portal with --portal
+    /// New virtual fence, a folder portal with --portal, or a tool fence with --tool / --script
     #[command(
         after_help = "Example: pecofence-cli fence create --title Work --rect 100,100,600,400\n         pecofence-cli fence create --title Tools --below Games --size 1152,400\n\n--below/--above/--right-of/--left-of place the fence next to another one, edges aligned and\nthe snapping gap between them; the size defaults to that fence's."
     )]
