@@ -598,7 +598,7 @@
 
     <section class="page" id="page-tools">
       <header class="page-header"><h2>小工具</h2></header>
-      <p class="page-lede">小工具放在栅栏里，和普通栅栏一样可以移动、吸附和收起。关着的小工具不运行，也不占内存。</p>
+      <p class="page-lede">便签、时钟和脚本放在栅栏里，和普通栅栏一样可以移动、吸附和收起。关着的小工具不运行，也不占内存。</p>
       <div class="group">
         <div class="card"><div class="l"><span class="ic">&#xE70B;</span><div><div class="t">便签与待办</div><div class="s">在栅栏里写几行字，单击就能编辑；行首写 [ ] 的那一行变成可以勾选的待办</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="tools.notes"></div></div>
         <div class="card child"><div class="l"><div><div class="t" id="noteCount"></div></div></div><button class="accent" id="newNote">新建便签</button></div>
@@ -617,7 +617,7 @@
       <div class="card"><div class="l"><span class="ic">&#xE765;</span><div><div class="t">双击 Ctrl 打开搜索</div><div class="s">快速按两下 Ctrl，打开速览和搜索框，再按两下关闭；全屏的游戏或视频在前面时不响应</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="peek.doubleCtrl"></div></div>
       <h3>自己写的小工具</h3>
       <div class="group">
-        <div class="card"><div class="l"><span class="ic">&#xE943;</span><div><div class="t">脚本栅栏</div><div class="s">定时运行你选的脚本（PowerShell、Python、批处理等），把它打印的文字显示在栅栏里，适合天气、倒计时、服务器状态，也可以让 AI 助手帮你写。PecoFence 自己不联网，联网的是你的脚本</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="tools.scripts"></div></div>
+        <div class="card"><div class="l"><span class="ic">&#xE943;</span><div><div class="t">脚本栅栏</div><div class="s">运行你选的脚本（PowerShell、Python、批处理等），把它打印的文字显示在栅栏里：可以每隔 1 分钟到 3 小时运行一次，也可以一直运行、几秒更新一次；脚本还可以让一行变得能点，点一下打开网址、运行程序或者给待办打勾。适合天气、倒计时、服务器状态，也可以让 AI 助手帮你写。PecoFence 不会为脚本栅栏联网，联网的是你的脚本</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="tools.scripts"></div></div>
         <div class="card child"><div class="l"><div><div class="t" id="scriptCount"></div><div class="s">脚本最多运行 10 秒（标为一直运行的除外），不弹出窗口；运行间隔在栅栏的右键菜单里改</div></div></div><div class="actions"><button id="newScriptExample">添加示例…</button><button class="accent" id="newScript">新建脚本栅栏…</button></div></div>
       </div>
     </section>
