@@ -48,7 +48,7 @@
         const g = SM.page(w, 'tools');
         SM.header(g, '小工具');
         const lede = SM.block(g, 'tl-lede', 28, 4);
-        lede.n.textContent = T('小工具放在栅栏里，和普通栅栏一样可以移动、吸附和收起。关着的小工具不运行，也不占内存。');
+        lede.n.textContent = T('便签、时钟和脚本放在栅栏里，和普通栅栏一样可以移动、吸附和收起。关着的小工具不运行，也不占内存。');
         // a translation may wrap to a third line: the block grows to the text (layout px)
         lede.n.style.height = 'auto';
         lede.h = Math.max(28, lede.n.offsetHeight + 2);
@@ -72,7 +72,7 @@
         r.evCard = ev;                             // dimmed while its switch is off (render)
         toggleCard(g, { ic: '', t: '双击 Ctrl 打开搜索', s: '快速按两下 Ctrl，打开速览和搜索框，再按两下关闭；全屏的游戏或视频在前面时不响应' });
         SM.h3(g, '自己写的小工具');
-        r.scripts = toggleCard(g, { ic: '', t: '脚本栅栏', s: '定时运行你选的脚本（PowerShell、Python、批处理等），把它打印的文字显示在栅栏里，适合天气、倒计时、服务器状态，也可以让 AI 助手帮你写。PecoFence 自己不联网，联网的是你的脚本' }, { gap: 1 });
+        r.scripts = toggleCard(g, { ic: '', t: '脚本栅栏', s: '运行你选的脚本（PowerShell、Python、批处理等），把它打印的文字显示在栅栏里：可以每隔 1 分钟到 3 小时运行一次，也可以一直运行、几秒更新一次；脚本还可以让一行变得能点，点一下打开网址、运行程序或者给待办打勾。适合天气、倒计时、服务器状态，也可以让 AI 助手帮你写。PecoFence 不会为脚本栅栏联网，联网的是你的脚本' }, { gap: 1 });
         // two buttons: the text above them (the page's .actions wrap under a long text)
         r.scriptRow = SM.card(g, { t: '桌面上还没有脚本栅栏', s: '脚本最多运行 10 秒（标为一直运行的除外），不弹出窗口；运行间隔在栅栏的右键菜单里改', h: 64, indent: 22, textW: g.cardW - 34 - 12, gap: 0 });
         r.scriptRow.t.style.top = '7px';
