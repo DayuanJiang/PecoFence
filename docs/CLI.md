@@ -250,7 +250,8 @@ included. `config.json` and `config export` files write this condition as
 is rejected with `invalid_value` and the hint to re-save it (`| Set-Content -Encoding utf8`).
 
 `settings set` paths are dotted camelCase keys of the Settings object, e.g. `iconSize`, `theme`,
-`themeStyle`, `hideRealIcons`, `keepIconsHidden` (with `hideRealIcons`, Windows' desktop icons stay
+`themeStyle`, `hideRealIcons` and `hideInboxWhenIconsShown` (the settings page shows the two as one
+list, 「Windows 桌面图标」), `keepIconsHidden` (with `hideRealIcons`, Windows' desktop icons stay
 hidden when PecoFence exits, so they do not flash at the next sign-in; default off),
 `hideInboxWhenIconsShown` (while `hideRealIcons` is off, the inbox
 fence shows no window and its items only show among the Windows desktop icons; a tab or a host of
@@ -260,7 +261,7 @@ Peek open by pressing Ctrl twice quickly, with its search box, instead of the sh
 saved but is not registered; setting `peek.hotkey` or `peek.customHotkey` turns it off; works only
 while `peek.enabled` is on; default off), `quickHide.enabled`,
 `titleAlign` (left/center/right: the title and tab strip in every title row),
-`labelColor` (auto/white/black: the item names in every fence and view; auto picks dark or light
+`labelColor` (「文字颜色」 on the settings page; auto/white/black: the item names in every fence and view; auto picks dark or light
 names from the wallpaper in Liquid Glass and follows the colour mode in Fluent; white and black
 also colour the titles, tabs and item counts of fences whose `titleColor` is `theme`, while a fence
 or tab with a `titleColor` of its own keeps it; default auto),
@@ -270,7 +271,9 @@ style; see [THEMES.md](THEMES.md)),
 `tabBar` (top/left: a fence with two or more tabs shows them in its title row, or lists them in a
 column on its left that takes the title row's place; rolled up, such a fence shrinks to the
 column; default top),
-`rollUp.hoverPeek`, `rollUp.clickToExpand`, `rollUp.pushNeighbors` (an expanded fence pushes the
+`rollUp.hoverPeek` and `rollUp.clickToExpand` (the settings page's 「收起的栅栏怎么展开」 list:
+`clickToExpand` true expands on one title click and ignores `hoverPeek`; both false leaves the
+double-click and the chevron; default hover), `rollUp.pushNeighbors` (an expanded fence pushes the
 fences stacked below it down and they slide back when it rolls up; their `rect` stays where it was,
 default on), `rollUp.titleOnHover` (the title row folds away until the
 pointer is over the fence; for every fence whose `titleOnHover` is `default`),

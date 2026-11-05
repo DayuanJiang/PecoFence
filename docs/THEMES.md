@@ -8,7 +8,8 @@ so a theme never moves or resizes a fence.
 
 ## Using a theme
 
-1. Settings › 常规 › 自定义主题 › 打开主题文件夹 opens the `themes` folder next to
+1. Settings › 常规 › 主题风格: choose the third tile, 自定义 · 主题文件. Its row shows in the same
+   card; 打开主题文件夹 there opens the `themes` folder next to
    `config.json` (`%APPDATA%\PecoFence\themes`; the portable edition uses `config\themes` next to
    the program). When the folder is missing, the button makes it and puts three example
    themes in it, named in the interface language: Frosted Glass (a frosted Liquid Glass), Warm
@@ -16,8 +17,8 @@ so a theme never moves or resizes a fence.
    Deleted examples do not come back.
 2. Put a theme file there, or copy an example and change it. Each `.json` file is one theme,
    and its file name is the name Settings lists.
-3. Choose it in the 自定义主题 list. A click on the Fluent or Liquid Glass tile goes back to that
-   built-in style.
+3. Choose it in the list of that row (choosing the tile takes the first file at once). A click
+   on the Fluent or Liquid Glass tile goes back to that built-in style.
 
 The fences change as soon as the chosen file is saved, so you can keep the file open in an
 editor and try values. When the file cannot be read or has a mistake, the fences keep the
@@ -119,12 +120,12 @@ marker take it, with the opacity they normally have. The other keys set one colo
 
 In Liquid Glass, and on fully transparent fences, the text follows the wallpaper behind each
 fence: over a bright wallpaper it takes the theme's `light` text colours, over a dark one the
-`dark` ones, whatever the colour mode. So set text colours for both modes. 图标名称颜色 白色 and
+`dark` ones, whatever the colour mode. So set text colours for both modes. 文字颜色 白色 and
 黑色 take the theme's `dark` and `light` text colour for item names, and for the titles and tabs
 of fences without a title colour of their own.
 
 A fence title or tab takes the first of these that is set: its own 标题颜色 (栅栏选项, anything
-but 跟随主题), 图标名称颜色 白色 or 黑色, the theme's `titleColor`, the theme's `textPrimary`.
+but 跟随主题), 文字颜色 白色 or 黑色, the theme's `titleColor`, the theme's `textPrimary`.
 
 The per-fence options (opacity, tint, title colour) apply on top of the theme as they do on the
 built-in styles.
