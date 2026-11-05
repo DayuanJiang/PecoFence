@@ -95,6 +95,13 @@ function bridge() {
           if (readable) state.rules = structuredClone(message.rules);
           else setTimeout(() => { window.testRefresh(); receive({ data: { type: 'toast', text: '没能保存这次改动，规则已恢复原样', error: true } }); }, 0);
         }
+        // The host's pinyin of the asked characters (a few, enough for the tests).
+        if (message.name === 'pinyin') {
+          const table = { 隐: 'yin', 藏: 'cang', 自: 'zi', 动: 'dong', 滚: 'gun', 条: 'tiao', 开: 'kai', 机: 'ji', 启: 'qi', 标: 'biao', 题: 'ti', 栏: 'lan' };
+          window.testPinyinAsked = message.chars;
+          const map = Object.fromEntries([...message.chars].filter(c => table[c]).map(c => [c, table[c]]));
+          setTimeout(() => receive({ data: { type: 'pinyin', map } }), 0);
+        }
         if (message.name === 'setPeekHotkey') {
           const names = [[8, 'Win'], [2, 'Ctrl'], [1, 'Alt'], [4, 'Shift']].filter(([bit]) => message.mods & bit).map(([, n]) => n);
           const keys = [...names, message.vk === 32 ? '空格' : String.fromCharCode(message.vk)];
@@ -1137,6 +1144,56 @@ async function runTests() {
     assert(!rows().length && !list.hidden && list.textContent.includes('zzzz'), 'No-match message missing');
     key(box, 'Escape', 27);
     assert(list.hidden && box.value === '', 'Esc did not clear');
+  });
+  await test('查找设置 matches pinyin, characters in order and other names', async () => {
+    doc = await reset();
+    const box = doc.getElementById('settingsSearch'), list = doc.getElementById('settingsSearchList');
+    const type = text => { box.focus(); box.value = text; box.dispatchEvent(new frame.contentWindow.Event('input', { bubbles: true })); };
+    const titles = () => [...list.querySelectorAll('[role=option] b')].map(b => b.textContent);
+    const row = title => [...list.querySelectorAll('[role=option]')].find(r => r.querySelector('b').textContent === title);
+    box.focus(); await settle();
+    assert(frame.contentWindow.testPinyinAsked && frame.contentWindow.testPinyinAsked.includes('隐'), 'The page did not ask for pinyin');
+    type('yc');
+    assert(titles().includes('自动隐藏滚动条') && row('自动隐藏滚动条').querySelector('b mark').textContent === '隐藏', 'Pinyin initials: ' + titles().join(' | '));
+    type('zdyc');
+    assert(titles()[0] === '自动隐藏滚动条', 'Mixed pinyin: ' + titles().join(' | '));
+    type('隐滚');
+    assert(titles()[0] === '自动隐藏滚动条' && row('自动隐藏滚动条').querySelectorAll('b mark').length === 2, 'Characters in order: ' + titles().join(' | '));
+    type('开机');
+    assert(titles()[0] === '随 Windows 启动' && row('随 Windows 启动').querySelector('small mark').textContent === '开机', 'Other name: ' + titles().join(' | '));
+    type('kaiji');
+    assert(titles()[0] === '随 Windows 启动', 'Pinyin of another name: ' + titles().join(' | '));
+    type('热键');
+    assert(titles().includes('快捷键') && titles().includes('临时显示 Windows 桌面'), 'Hotkey names: ' + titles().join(' | '));
+    // Exact and prefix hits rank above looser ones.
+    type('快捷键');
+    assert(titles()[0] === '快捷键', 'An exact title is not first: ' + titles().join(' | '));
+    // A long help line is matched only as it is, not by scattered characters.
+    type('桌图');
+    assert(!titles().includes('自动隐藏滚动条'), 'Scattered characters matched a help line: ' + titles().join(' | '));
+    key(box, 'Escape', 27);
+  });
+  await test('In English the search matches in-order letters and other names, without pinyin', async () => {
+    doc = await reset();
+    change(doc, 'language', 'en'); await settle();
+    const box = doc.getElementById('settingsSearch'), list = doc.getElementById('settingsSearchList');
+    const type = text => { box.focus(); box.value = text; box.dispatchEvent(new frame.contentWindow.Event('input', { bubbles: true })); };
+    const titles = () => [...list.querySelectorAll('[role=option] b')].map(b => b.textContent);
+    frame.contentWindow.testPinyinAsked = '';
+    box.focus(); await settle();
+    assert(!frame.contentWindow.testPinyinAsked, 'Pinyin asked in English');
+    type('hdsb');
+    assert(titles().includes('Automatically hide scrollbars'), 'In-order letters: ' + titles().join(' | '));
+    type('hotkey');
+    assert(titles().includes('Keyboard shortcut'), 'Other name in English: ' + titles().join(' | '));
+    type('startup');
+    assert(titles()[0] === 'Start with Windows', 'Start with Windows not first: ' + titles().join(' | '));
+    // Another name that matches cleanly ranks above letters scattered over a title.
+    type('dark mode');
+    assert(titles()[0] === 'Color mode', 'Color mode not first: ' + titles().join(' | '));
+    key(box, 'Escape', 27);
+    change(doc, 'language', 'zh-CN'); await settle();
+    doc.querySelector('[data-page=general]').click();
   });
   await test('Ctrl+F goes to 查找设置, and the search follows the language', async () => {
     doc = await reset();

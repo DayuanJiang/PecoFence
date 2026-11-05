@@ -746,6 +746,22 @@ impl App {
                 Some("openThemeGuide") => {
                     let _ = shell::shell_execute(Path::new(THEME_GUIDE_URL), None, None);
                 }
+                // 查找设置 in a Chinese interface: the pinyin of the page's Chinese characters.
+                Some("pinyin") => {
+                    let chars = v.get("chars").and_then(|c| c.as_str()).unwrap_or("");
+                    let map: serde_json::Map<String, serde_json::Value> = chars
+                        .chars()
+                        .filter_map(|c| {
+                            let syl = pecofence_core::matcher::syllable(c)?;
+                            Some((c.to_string(), serde_json::Value::from(syl)))
+                        })
+                        .collect();
+                    if let Some(host) = &self.settings {
+                        host.post_json(
+                            &serde_json::json!({ "type": "pinyin", "map": map }).to_string(),
+                        );
+                    }
+                }
                 Some("saveSnapshot") => {
                     // A full list drops its oldest automatic snapshot for it (as the CLI
                     // does); only a list of the user's own snapshots refuses it.
