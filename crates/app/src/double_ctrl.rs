@@ -42,7 +42,12 @@ pub fn set_enabled(on: bool, control: HWND) {
     };
     match result {
         Ok(()) => {
-            TRACKER.with(|t| *t.borrow_mut() = Tracker { on, ..Tracker::default() });
+            TRACKER.with(|t| {
+                *t.borrow_mut() = Tracker {
+                    on,
+                    ..Tracker::default()
+                }
+            });
             tracing::info!(on, "double Ctrl");
         }
         Err(e) => tracing::warn!(error = %e, on, "double Ctrl: raw keyboard registration failed"),

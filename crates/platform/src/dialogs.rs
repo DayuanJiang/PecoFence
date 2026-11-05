@@ -7,8 +7,8 @@ use crate::bindings::*;
 use crate::desktop::{class_name, is_visible};
 use crate::wide::to_wide;
 use std::path::{Path, PathBuf};
-use windows_core::{Interface, PCWSTR};
 use std::time::{Duration, Instant};
+use windows_core::{Interface, PCWSTR};
 
 /// How a jump ended, for the log.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -185,7 +185,12 @@ fn click_address_bar(crumbs: HWND, band: HWND) -> Option<HWND> {
     tracing::info!(dpi, x, y, "dialog: click on the address bar");
     // SAFETY: posting mouse messages to another process's window; no pointers involved.
     unsafe {
-        let _ = PostMessageW(Some(crumbs), WM_LBUTTONDOWN as u32, WPARAM(MK_LBUTTON as usize), xy);
+        let _ = PostMessageW(
+            Some(crumbs),
+            WM_LBUTTONDOWN as u32,
+            WPARAM(MK_LBUTTON as usize),
+            xy,
+        );
         let _ = PostMessageW(Some(crumbs), WM_LBUTTONUP as u32, WPARAM(0), xy);
     }
     // The text box is created (or shown) once the dialog has handled the click.

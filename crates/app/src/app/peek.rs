@@ -82,7 +82,10 @@ pub(super) fn search_match(
         .filter(|p| !shell::is_namespace_path(Path::new(p)))
         .and_then(|p| Path::new(p).file_name())
         .and_then(|n| pecofence_core::matcher::match_name(&n.to_string_lossy(), query));
-    let score = shown.as_ref().map(|m| m.score).max(file.as_ref().map(|m| m.score))?;
+    let score = shown
+        .as_ref()
+        .map(|m| m.score)
+        .max(file.as_ref().map(|m| m.score))?;
     Some((score, shown.map(|m| m.ranges).unwrap_or_default()))
 }
 

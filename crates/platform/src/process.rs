@@ -39,8 +39,9 @@ pub fn image_path(pid: u32) -> Option<std::path::PathBuf> {
         }
         let mut buf = vec![0u16; 1024];
         let mut len = buf.len() as u32;
-        let ok = QueryFullProcessImageNameW(process, 0, windows_core::PWSTR(buf.as_mut_ptr()), &mut len)
-            .as_bool();
+        let ok =
+            QueryFullProcessImageNameW(process, 0, windows_core::PWSTR(buf.as_mut_ptr()), &mut len)
+                .as_bool();
         let _ = CloseHandle(process);
         ok.then(|| std::path::PathBuf::from(String::from_utf16_lossy(&buf[..len as usize])))
     }

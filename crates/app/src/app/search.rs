@@ -32,7 +32,10 @@ const CMD_SHELL_LAST: u32 = 0x7FFF;
 pub(super) enum RowKind {
     /// `peek_hits[i]`.
     Fence(usize),
-    File { path: PathBuf, is_folder: bool },
+    File {
+        path: PathBuf,
+        is_folder: bool,
+    },
     /// 「在 Everything 里查看全部结果」.
     ShowAll,
 }
@@ -102,8 +105,13 @@ impl App {
     /// Ranks the fence matches for `query` (lower case): best match first, then the ones opened
     /// most from the search, then reading order. Fills `peek_hits` and their highlights.
     pub(super) fn rank_fence_matches(&mut self, query: &str) {
-        let mut found: Vec<(u32, u32, usize, (FenceId, FenceId, ItemId), Vec<Range<usize>>)> =
-            Vec::new();
+        let mut found: Vec<(
+            u32,
+            u32,
+            usize,
+            (FenceId, FenceId, ItemId),
+            Vec<Range<usize>>,
+        )> = Vec::new();
         if !query.is_empty() {
             let mut windows: Vec<(RECT, FenceId)> =
                 self.fences.iter().map(|(id, w)| (w.rect(), *id)).collect();
@@ -193,12 +201,17 @@ impl App {
             return;
         }
         // The box changed after the query went out: the next query answers for it.
-        let now = crate::peek_search::query().map(|q| q.trim().to_string()).unwrap_or_default();
+        let now = crate::peek_search::query()
+            .map(|q| q.trim().to_string())
+            .unwrap_or_default();
         if now != self.search.sent {
             return;
         }
         let Some((total, hits)) = ev::parse_list2(bytes) else {
-            tracing::warn!(len = bytes.len(), "search: Everything's answer could not be read");
+            tracing::warn!(
+                len = bytes.len(),
+                "search: Everything's answer could not be read"
+            );
             return;
         };
         tracing::debug!(total, got = hits.len(), "search: Everything answered");
@@ -278,8 +291,16 @@ impl App {
         let query = crate::peek_search::query().unwrap_or_default();
         let searching = !query.trim().is_empty();
         self.show_peek_hits(searching);
-        let both = self.search.rows.iter().any(|r| matches!(r, RowKind::Fence(_)))
-            && self.search.rows.iter().any(|r| matches!(r, RowKind::File { .. }));
+        let both = self
+            .search
+            .rows
+            .iter()
+            .any(|r| matches!(r, RowKind::Fence(_)))
+            && self
+                .search
+                .rows
+                .iter()
+                .any(|r| matches!(r, RowKind::File { .. }));
         let mut rows = Vec::with_capacity(self.search.rows.len());
         let mut last_group = None;
         for (i, kind) in self.search.rows.iter().enumerate() {
@@ -352,8 +373,7 @@ impl App {
                     }
                 }
                 RowKind::ShowAll => Row {
-                    name: pecofence_core::i18n::text("在 Everything 里查看全部结果")
-                        .to_string(),
+                    name: pecofence_core::i18n::text("在 Everything 里查看全部结果").to_string(),
                     marks: Vec::new(),
                     detail: pecofence_core::i18n::format(
                         "共 {0} 个",
@@ -401,7 +421,10 @@ impl App {
         let Some(row) = self.search.rows.get(index).cloned() else {
             return;
         };
-        let query = crate::peek_search::query().unwrap_or_default().trim().to_string();
+        let query = crate::peek_search::query()
+            .unwrap_or_default()
+            .trim()
+            .to_string();
         let path = self.row_path(&row);
         if let Some((p, _)) = &path {
             self.state.config.note_search_open(&p.to_string_lossy());
@@ -421,7 +444,10 @@ impl App {
                 match found {
                     Some((exe, pinyin)) => {
                         let text = ev::search_text(&query, pinyin);
-                        let started = std::process::Command::new(exe).arg("-search").arg(text).spawn();
+                        let started = std::process::Command::new(exe)
+                            .arg("-search")
+                            .arg(text)
+                            .spawn();
                         if let Err(e) = started {
                             tracing::warn!(error = %e, "search: Everything did not start");
                         }
@@ -487,12 +513,23 @@ impl App {
                 false,
                 false,
             )
-            .item(CMD_COPY_PATH, pecofence_core::i18n::text("复制路径"), false, false);
+            .item(
+                CMD_COPY_PATH,
+                pecofence_core::i18n::text("复制路径"),
+                false,
+                false,
+            );
         let mut shell_menu = ShellContextMenu::for_paths(&[path.as_path()]).ok();
         if let Some(sm) = shell_menu.as_mut() {
             menu.separator();
             if sm
-                .populate(menu.handle(), menu.len(), CMD_SHELL_FIRST, CMD_SHELL_LAST, false)
+                .populate(
+                    menu.handle(),
+                    menu.len(),
+                    CMD_SHELL_FIRST,
+                    CMD_SHELL_LAST,
+                    false,
+                )
                 .is_ok()
             {
                 sm.remove_verbs(menu.handle(), &["open"]);

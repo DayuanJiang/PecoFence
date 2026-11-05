@@ -152,7 +152,11 @@ fn on_foreground(hwnd: HWND) {
                 j.pending = false;
                 start_jump(hwnd, source, "back in the dialog");
             } else {
-                tracing::debug!(dialog = raw, pending = j.pending, "dialog jump: dialog in front, no jump");
+                tracing::debug!(
+                    dialog = raw,
+                    pending = j.pending,
+                    "dialog jump: dialog in front, no jump"
+                );
             }
             return;
         }
@@ -163,7 +167,10 @@ fn on_foreground(hwnd: HWND) {
         if dialogs::is_explorer(hwnd) {
             j.source = Some(Source::Explorer(raw));
             j.pending = true;
-            tracing::debug!(explorer = raw, "dialog jump: Explorer in front, noted as the source");
+            tracing::debug!(
+                explorer = raw,
+                "dialog jump: Explorer in front, noted as the source"
+            );
         }
     });
 }
@@ -227,7 +234,10 @@ pub fn poll(control: HWND) {
         Some(front)
     });
     if let Some(front) = changed {
-        tracing::debug!(window = front.0 as isize, "dialog jump: front window changed without an event");
+        tracing::debug!(
+            window = front.0 as isize,
+            "dialog jump: front window changed without an event"
+        );
         on_foreground(front);
     }
 }
@@ -257,7 +267,10 @@ pub fn recheck(control: HWND) {
     } else if left > 0 && desktop::is_window(dlg) {
         pecofence_platform::window::set_timer(control, RECHECK_TIMER, RECHECK_MS);
     } else {
-        tracing::info!(window = raw, "dialog jump: a #32770 window in front is no file dialog");
+        tracing::info!(
+            window = raw,
+            "dialog jump: a #32770 window in front is no file dialog"
+        );
     }
 }
 
@@ -275,7 +288,11 @@ pub fn note_folder(dir: &Path) {
             // Pressing a folder fence over a dialog means "go there", seen before or not.
             adopt(j, front);
             j.pending = false;
-            start_jump(front, Source::Folder(dir.to_path_buf()), "folder fence pressed");
+            start_jump(
+                front,
+                Source::Folder(dir.to_path_buf()),
+                "folder fence pressed",
+            );
         } else {
             j.pending = true;
             tracing::debug!(dir = %dir.display(), "dialog jump: folder fence noted as the source");
@@ -305,9 +322,8 @@ pub fn on_hotkey() {
         j.pending = false;
         j.source.clone()
     });
-    let source = source.or_else(|| {
-        dialogs::topmost_explorer().map(|e| Source::Explorer(e.0 as isize))
-    });
+    let source =
+        source.or_else(|| dialogs::topmost_explorer().map(|e| Source::Explorer(e.0 as isize)));
     match source {
         Some(s) => start_jump(front, s, "Ctrl+G"),
         None => tracing::info!("dialog jump: Ctrl+G, but no Explorer window or folder fence yet"),
@@ -369,7 +385,11 @@ fn start_jump(dlg: HWND, source: Source, reason: &'static str) {
                     Source::Explorer(_) => "Explorer",
                     Source::Folder(_) => "folder fence",
                 };
-                tracing::info!(reason, kind, "dialog jump: the source has no folder (closed, or a place like This PC)");
+                tracing::info!(
+                    reason,
+                    kind,
+                    "dialog jump: the source has no folder (closed, or a place like This PC)"
+                );
                 return;
             };
             let outcome = dialogs::jump(h(dlg_raw), &dir);

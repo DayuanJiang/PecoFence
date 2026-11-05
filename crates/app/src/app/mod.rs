@@ -2,11 +2,10 @@
 
 use crate::anchor::{self, AnchorCell, DesktopAnchor, ShowDesktopBehavior, ZMode};
 use crate::commands::{
-    Command, CommandQueue, TransferMode, WM_APP_COMMAND, WM_APP_FRAME, WM_APP_FS_CHANGED,
-    WM_APP_EVERYTHING_SETUP, WM_APP_LIVE_WALLPAPER, WM_APP_PEEK_FOCUSED, WM_APP_PREWARM_DONE,
-    WM_APP_SCRIPT_DONE,
-    WM_APP_SHELL_CHANGED, WM_APP_STARTUP_BACKDROPS, WM_APP_STARTUP_TASK, WM_APP_THEMES_CHANGED,
-    WM_APP_TRAY, WM_APP_WALLPAPER,
+    Command, CommandQueue, TransferMode, WM_APP_COMMAND, WM_APP_EVERYTHING_SETUP, WM_APP_FRAME,
+    WM_APP_FS_CHANGED, WM_APP_LIVE_WALLPAPER, WM_APP_PEEK_FOCUSED, WM_APP_PREWARM_DONE,
+    WM_APP_SCRIPT_DONE, WM_APP_SHELL_CHANGED, WM_APP_STARTUP_BACKDROPS, WM_APP_STARTUP_TASK,
+    WM_APP_THEMES_CHANGED, WM_APP_TRAY, WM_APP_WALLPAPER,
 };
 use crate::fence_window::{
     BackdropMode, BackdropSets, Behavior, FenceContext, FenceWindow, ItemView, SearchMarks, TabView,

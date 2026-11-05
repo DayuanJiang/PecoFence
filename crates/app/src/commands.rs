@@ -334,7 +334,10 @@ pub enum Command {
     /// Right (caret at the end) or Ctrl+O in the search box: the highlighted match's actions.
     PeekSearchActions,
     /// Everything answered a search query (`WM_COPYDATA` to the search box).
-    EverythingResults { kind: usize, bytes: Vec<u8> },
+    EverythingResults {
+        kind: usize,
+        bytes: Vec<u8>,
+    },
     ApplyRulesNow,
     OpenSettings,
     /// Settings window on the 「栅栏」 page with this fence selected.

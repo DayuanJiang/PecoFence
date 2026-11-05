@@ -127,6 +127,10 @@ impl App {
             }
             None => tracing::warn!("Everything start: no Everything.exe found"),
         }
-        window::set_timer(self.control.hwnd(), TIMER_EVERYTHING_STATUS, STATUS_RECHECK_MS);
+        window::set_timer(
+            self.control.hwnd(),
+            TIMER_EVERYTHING_STATUS,
+            STATUS_RECHECK_MS,
+        );
     }
 }

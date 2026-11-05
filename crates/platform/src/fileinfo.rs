@@ -118,7 +118,11 @@ pub fn small_icon(path: &Path, is_folder: bool, exact: bool) -> Option<FileIcon>
         } else {
             FILE_ATTRIBUTE_NORMAL as u32
         };
-        let extra = if exact { 0 } else { SHGFI_USEFILEATTRIBUTES as u32 };
+        let extra = if exact {
+            0
+        } else {
+            SHGFI_USEFILEATTRIBUTES as u32
+        };
         // SAFETY: the string outlives the call; `info` is a live out-struct of the declared size.
         unsafe {
             SHGetFileInfoW(

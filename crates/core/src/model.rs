@@ -1929,7 +1929,9 @@ mod tests {
         assert_eq!(full.search_count("new"), 1);
         assert!(full.search_history.len() <= Config::SEARCH_HISTORY_MAX);
         assert!(
-            full.search_history.iter().all(|(k, n)| k == "new" || *n == 1),
+            full.search_history
+                .iter()
+                .all(|(k, n)| k == "new" || *n == 1),
             "older counts halve"
         );
     }

@@ -128,7 +128,17 @@ impl Paint {
     pub fn icon(&self, x: i32, y: i32, size: i32, icon: &crate::fileinfo::FileIcon) {
         // SAFETY: the icon handle is owned by `icon` and alive for the call.
         unsafe {
-            let _ = DrawIconEx(self.hdc, x, y, icon.handle(), size, size, 0, None, DI_NORMAL as u32);
+            let _ = DrawIconEx(
+                self.hdc,
+                x,
+                y,
+                icon.handle(),
+                size,
+                size,
+                0,
+                None,
+                DI_NORMAL as u32,
+            );
         }
     }
 }

@@ -119,7 +119,12 @@ pub fn copydata(lparam: isize) -> Option<(usize, Vec<u8>)> {
 /// Everything installed but not running: its program file in the usual install folders.
 pub fn installed_exe() -> Option<PathBuf> {
     let mut roots = Vec::new();
-    for var in ["ProgramFiles", "ProgramW6432", "ProgramFiles(x86)", "LOCALAPPDATA"] {
+    for var in [
+        "ProgramFiles",
+        "ProgramW6432",
+        "ProgramFiles(x86)",
+        "LOCALAPPDATA",
+    ] {
         if let Some(v) = std::env::var_os(var) {
             roots.push(PathBuf::from(v));
         }

@@ -72,7 +72,9 @@ pub fn set_text(owner: HWND, text: &str) -> bool {
             if !dst.is_null() {
                 std::ptr::copy_nonoverlapping(wide.as_ptr(), dst, wide.len());
                 let _ = GlobalUnlock(mem);
-                ok = !SetClipboardData(CF_UNICODETEXT as u32, Some(HANDLE(mem.0))).0.is_null();
+                ok = !SetClipboardData(CF_UNICODETEXT as u32, Some(HANDLE(mem.0)))
+                    .0
+                    .is_null();
             }
             if !ok {
                 let _ = GlobalFree(mem);

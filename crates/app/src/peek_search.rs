@@ -281,7 +281,9 @@ pub fn open(text: &str, queue: CommandQueue, dark: bool) {
 fn paint_box(hwnd: HWND) {
     let p = paint::Paint::begin(hwnd);
     ACTIVE.with(|a| {
-        let Ok(mut a) = a.try_borrow_mut() else { return };
+        let Ok(mut a) = a.try_borrow_mut() else {
+            return;
+        };
         let Some(s) = a.as_mut() else { return };
         let (w, h) = window::window_rect_size(hwnd);
         let px = |dip: f32| (dip * s.dpi as f32 / 96.0).round() as i32;
