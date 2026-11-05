@@ -302,17 +302,35 @@ public static class M {
 # Starts a group of checks. The steps after it are plain script lines (variables stay shared
 # between cases); an error in a line becomes a failed check of the current case (the trap in
 # job.ps1) and the next line runs.
+# A popup menu left open by the case before is closed first: while one is open the CLI and the
+# test script wait, and every later check fails after a timeout.
 function Case($name) {
   if ($script:PfCaseClock) { Log "== case $script:PfCase done in $([int]$script:PfCaseClock.Elapsed.TotalSeconds) s" }
+  CloseMenus
   $script:PfCase = $name
   $script:PfCaseClock = [Diagnostics.Stopwatch]::StartNew()
   Log "== case $name"
 }
 
-# run.sh puts `trap { PfTrap $_; continue }` in front of every steps file.
+# Esc until no popup menu (#32768) is open.
+function CloseMenus() {
+  for ($i = 0; $i -lt 4; $i++) {
+    $m = [G]::FindWindowW('#32768', [NullString]::Value)
+    if ($m -eq [IntPtr]::Zero -or -not [G]::IsWindowVisible($m)) { return }
+    [G]::Press(0x1B); Start-Sleep -Milliseconds 300
+  }
+}
+
+# run.sh puts `trap { PfTrap $_; continue }` in front of every steps file. An Add-Type that
+# does not compile only says "Compilation errors occurred": the compiler's messages are the
+# errors just before it, so they go into the table too.
 function PfTrap($e) {
   $where = "$(Split-Path -Leaf $e.InvocationInfo.ScriptName):$($e.InvocationInfo.ScriptLineNumber)"
-  Check 'no error' $false "$($e.Exception.Message) at $where"
+  $msg = $e.Exception.Message
+  if ($msg -match 'Cannot add type') {
+    $msg += ' ' + ((@($Error) | Select-Object -Skip 1 -First 4 | ForEach-Object { "$_" }) -join ' | ')
+  }
+  Check 'no error' $false "$msg at $where"
 }
 
 function Check($name, $ok, $detail = '') {
@@ -340,8 +358,18 @@ function Shot($name) {
 # in %LOCALAPPDATA%\PecoFence\pecofence.<instance>.log). -Script gives test-script lines
 # (written without a BOM: a BOM eats the first line); the default keeps it running an hour.
 # A second PfStart in the same job keeps the config, so it tests a restart.
+# Variables set in $env: before PfStart reach the app (PECOFENCE_WEBVIEW_ARGS,
+# PECOFENCE_UI_TEST_WINDOWS for a debug build).
 function PfStart([string[]]$Script = @('sleep 3600000'), [string]$Lang = 'en', [string]$LogLevel = 'pecofence=debug') {
   if (Get-Process pecofence -ErrorAction SilentlyContinue) { PfQuit }
+  # A start renames the last log to .prev.log and a third start drops it: keep a copy of every
+  # earlier run's log for PfLogAll and the end-of-job check.
+  $cur = PfLogPath
+  if (Test-Path $cur) {
+    New-Item -ItemType Directory -Force "$PfRun\logs" | Out-Null
+    $n = @(Get-ChildItem "$PfRun\logs\app-*.log" -ErrorAction SilentlyContinue).Count + 1
+    Copy-Item $cur "$PfRun\logs\app-$n.log"
+  }
   if (-not (Test-Path "$PfApp\pecofence.exe")) { Copy-Item "$PfBin\*" $PfApp -Force }
   $env:PECOFENCE_INSTANCE = $PfInst
   $env:RUST_LOG = $LogLevel
@@ -375,19 +403,26 @@ function PfAlive() { return [bool](Get-Process pecofence -ErrorAction SilentlyCo
 function Pf {
   $a = @($args | ForEach-Object { $_ })
   $r = & "$PfApp\pecofence-cli.exe" @a 2>&1 | Out-String
-  Log ("cli " + ($a -join ' ') + " -> " + $r.Trim())
+  $t = $r.Trim(); if ($t.Length -gt 300) { $t = $t.Substring(0, 300) + "... ($($t.Length) chars)" }
+  Log ("cli " + ($a -join ' ') + " -> " + $t)
   return $r
 }
+# `fence list`, `item list` and `rule list` print plain arrays (no wrapper object).
 function PfJson { return ((Pf @args) | ConvertFrom-Json) }
 
 function PfLogPath() { return "$env:LOCALAPPDATA\PecoFence\pecofence.$PfInst.log" }
 
-# ERROR / panic lines the app logged since the job began.
-function PfLogErrors() {
-  $p = PfLogPath
-  if (-not (Test-Path $p)) { return @() }
-  return @(Get-Content $p -Encoding UTF8 | Where-Object { $_ -match ' ERROR |panicked' })
+# Every app log of this job: the test instance's earlier runs (kept by PfStart) and the logs in
+# %LOCALAPPDATA%\PecoFence, which run.sh empties before each job, so an installed or portable
+# PecoFence started by the steps is covered too.
+function PfLogFiles() {
+  return @(@(Get-ChildItem "$PfRun\logs\app-*.log" -ErrorAction SilentlyContinue) +
+    @(Get-ChildItem "$env:LOCALAPPDATA\PecoFence\*.log" -ErrorAction SilentlyContinue | Where-Object { $_.Name -ne "pecofence.$PfInst.prev.log" }))
 }
+function PfLogAll() { return @(PfLogFiles | ForEach-Object { Get-Content $_.FullName -Encoding UTF8 }) }
+
+# ERROR / panic lines the app logged since the job began, in any of its logs.
+function PfLogErrors() { return @(PfLogAll | Where-Object { $_ -match ' ERROR |panicked' }) }
 
 # Waits for a log line matching the regex (for example a `>> dump <tag>` line of the test
 # script); returns the line or $null.

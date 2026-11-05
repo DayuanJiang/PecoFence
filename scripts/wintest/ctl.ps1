@@ -10,8 +10,14 @@ $ErrorActionPreference = 'Continue'
 $pfLocal = 'C:\Users\pf\AppData\Local'
 $pfRoaming = 'C:\Users\pf\AppData\Roaming'
 
+# The app, Notepad, Edge (a link or the manual opens it maximized over the desktop) and setup
+# programs a job left behind (from C:\pf\extra, Inno's is-*.tmp copies in pf's Temp, the
+# uninstaller's copy).
 function StopTestProcesses() {
-  Get-Process pecofence, pecofence-watchdog, pecofence-cli, notepad -ErrorAction SilentlyContinue | Stop-Process -Force
+  Get-Process pecofence, pecofence-watchdog, pecofence-cli, notepad, msedge -ErrorAction SilentlyContinue | Stop-Process -Force
+  Get-Process -ErrorAction SilentlyContinue | Where-Object {
+    $_.Path -and ($_.Path -like 'C:\pf\extra\*' -or $_.Path -like 'C:\Users\pf\AppData\Local\Temp\*' -or $_.Path -like '*\unins*.exe')
+  } | Stop-Process -Force -ErrorAction SilentlyContinue
 }
 
 switch ($Cmd) {

@@ -12,8 +12,9 @@ trap {
 . $PfSteps
 Case 'end'
 if (PfAlive) { PfQuit }
-if (-not $PfAllowLogErrors) {
+if (@(PfLogFiles).Count -eq 0) { Log 'no app log in this job: the app log check is skipped' }
+elseif (-not $PfAllowLogErrors) {
   $errs = @(PfLogErrors)
-  Check 'app log has no ERROR or panic line' ($errs.Count -eq 0) (($errs | Select-Object -First 3) -join ' | ')
+  Check 'app log has no ERROR or panic line' ($errs.Count -eq 0) ("$(@(PfLogFiles).Count) logs; " + (($errs | Select-Object -First 3) -join ' | '))
 }
 Set-Content C:\pf\run\done.txt 'done'
