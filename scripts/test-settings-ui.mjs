@@ -973,10 +973,18 @@ async function runTests() {
     assert(!frame.contentWindow.testMessages.slice(before).some(m => m.type === 'patchSettings'), 'A setting changed without a theme file');
     frame.contentWindow.testRefresh(); await settle();
     assert(styleRadio(doc, 'custom').checked && !doc.getElementById('customThemeRow').hidden, 'A refresh closed the 自定义 tile');
-    styleRadio(doc, 'fluent').click(); await settle();
-    assert(doc.getElementById('customThemeRow').hidden && current().settings.customTheme === null, 'Fluent did not close the row');
+    // 打开主题文件夹 puts the examples there: the first one is used, as a click on the tile would.
     current().customThemes = files;
     frame.contentWindow.testRefresh(); await settle();
+    assert(current().settings.customTheme === 'Frosted Glass' && select.value === 'Frosted Glass' && !select.disabled, 'The first theme file that appeared was not used');
+    styleRadio(doc, 'fluent').click(); await settle();
+    assert(doc.getElementById('customThemeRow').hidden && current().settings.customTheme === null, 'Fluent did not close the row');
+    // Theme files that appear while Fluent is chosen change nothing.
+    current().customThemes = [];
+    frame.contentWindow.testRefresh(); await settle();
+    current().customThemes = files;
+    frame.contentWindow.testRefresh(); await settle();
+    assert(current().settings.customTheme === null && styleRadio(doc, 'fluent').checked, 'Theme files chose a theme on their own');
   });
   await test('A chosen theme file that does not load stays listed and says why', async () => {
     current().settings.customTheme = 'Gone';

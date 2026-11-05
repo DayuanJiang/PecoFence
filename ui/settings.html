@@ -916,8 +916,15 @@
   }
   // The theme files of the themes folder; a chosen file that is gone stays listed with its error.
   function bindCustomTheme() {
-    const select = document.getElementById('customTheme'), chosen = state.settings.customTheme || '';
     const names = [...(state.customThemes || [])];
+    // 自定义 chosen while the folder had no theme files: the first file that appears is used, as a
+    // click on the tile would.
+    if (themeCustomOpen && !state.settings.customTheme && names.length) {
+      state.settings.customTheme = names[0];
+      bindThemeStyle();
+      commit('customTheme');
+    }
+    const select = document.getElementById('customTheme'), chosen = state.settings.customTheme || '';
     if (chosen && !names.includes(chosen)) names.push(chosen);
     // Rebuilt only when the list changed: every host state passes through here, and a rebuild
     // closes the list while it is open.
