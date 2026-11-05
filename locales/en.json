@@ -666,7 +666,7 @@
   "电脑状态.ps1": "pc-status.ps1",
   "立即运行": "Run now",
   "脚本": "Scripts",
-  "脚本最多运行 10 秒，不弹出窗口；运行间隔在栅栏的右键菜单里改": "A script runs for at most 10 seconds and opens no window. Change how often it runs from the fence’s right-click menu.",
+  "脚本最多运行 10 秒（标为一直运行的除外），不弹出窗口；运行间隔在栅栏的右键菜单里改": "A script runs for at most 10 seconds, unless it is marked to keep running, and opens no window. Change how often it runs from the fence’s right-click menu.",
   "脚本栅栏": "Script fence",
   "脚本没有输出文字": "The script printed no text",
   "自己写的小工具": "Tools you write yourself",

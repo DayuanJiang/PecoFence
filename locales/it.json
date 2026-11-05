@@ -666,7 +666,7 @@
   "电脑状态.ps1": "stato-pc.ps1",
   "立即运行": "Esegui ora",
   "脚本": "Script",
-  "脚本最多运行 10 秒，不弹出窗口；运行间隔在栅栏的右键菜单里改": "Uno script viene eseguito per massimo 10 secondi e non apre nessuna finestra. Puoi cambiare la frequenza di esecuzione dal menu contestuale del riquadro.",
+  "脚本最多运行 10 秒（标为一直运行的除外），不弹出窗口；运行间隔在栅栏的右键菜单里改": "Uno script viene eseguito per massimo 10 secondi, salvo che sia segnato come sempre attivo, e non apre nessuna finestra. Puoi cambiare la frequenza di esecuzione dal menu contestuale del riquadro.",
   "脚本栅栏": "Riquadro script",
   "脚本没有输出文字": "Lo script non ha stampato nessun testo",
   "自己写的小工具": "Strumenti che scrivi tu",

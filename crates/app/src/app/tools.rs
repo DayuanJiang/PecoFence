@@ -779,7 +779,16 @@ impl App {
             }
         }
         tracing::info!(example = kind.name(), "example script fence");
-        self.new_script_near(x, y, Some(path));
+        // Room for the example's rows (DIPs).
+        let (w, h) = match kind {
+            crate::scripts::Example::Weather => (280.0, 160.0),
+            crate::scripts::Example::GitHub => (360.0, 300.0),
+            crate::scripts::Example::Todo => (280.0, 200.0),
+            crate::scripts::Example::Status => (280.0, 230.0),
+        };
+        let rect = self.place_new_fence_dip(w, h, x, y, None);
+        let script = NewTool::Script(path.to_string_lossy().to_string());
+        self.create_tool_fence(script, None, Some(rect), x, y);
     }
 
     /// Fence menu: another script for fence `id` (runs it at once).

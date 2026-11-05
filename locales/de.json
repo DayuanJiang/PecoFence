@@ -666,7 +666,7 @@
   "电脑状态.ps1": "PC-Status.ps1",
   "立即运行": "Jetzt ausführen",
   "脚本": "Skripte",
-  "脚本最多运行 10 秒，不弹出窗口；运行间隔在栅栏的右键菜单里改": "Ein Skript läuft höchstens 10 Sekunden und öffnet kein Fenster. Das Ausführungsintervall änderst du im Rechtsklickmenü des Bereichs.",
+  "脚本最多运行 10 秒（标为一直运行的除外），不弹出窗口；运行间隔在栅栏的右键菜单里改": "Ein Skript läuft höchstens 10 Sekunden, außer es ist als dauerhaft laufend markiert, und öffnet kein Fenster. Das Ausführungsintervall änderst du im Rechtsklickmenü des Bereichs.",
   "脚本栅栏": "Skriptbereich",
   "脚本没有输出文字": "Das Skript hat keinen Text ausgegeben",
   "自己写的小工具": "Selbst geschriebene Werkzeuge",
