@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.0
 
 - 小工具 (feedback #75, #38, linux.do posts 66 and 94): Settings has a new 「小工具」 page with small tools that live in fences and move, snap and roll up like any fence. Each has its own switch and all start off; a tool that is off makes no window and runs nothing.
   - 便签与待办: a fence with a few lines of text. A click opens the editor; a line that starts with `[ ]` is a to-do with a box that a click ticks (`[x]`). The text is kept in the configuration, so exports, the daily backups and every monitor layout have it. Deleting a note with text asks first.
