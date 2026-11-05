@@ -42,7 +42,7 @@
   "tool.clock.title": "Reloj y fecha",
   "tool.clock.text": "La hora en números grandes, con la fecha y el día de la semana en el formato de tu región de Windows. Con segundos, si quieres.",
   "tool.script.title": "Grupo de script",
-  "tool.script.text": "Ejecuta tu propio script de PowerShell, Python o por lotes con un intervalo de 1 minuto a 3 horas y muestra lo que imprime, como el ejemplo del tiempo ya preparado. PecoFence nunca se conecta a internet por sí mismo; solo lo hace tu script.",
+  "tool.script.text": "Ejecuta tu propio script de PowerShell, Python o por lotes con un intervalo de 1 minuto a 3 horas y muestra lo que imprime, como el ejemplo del tiempo ya preparado. Con un clic en sus filas puedes abrir un enlace, ejecutar un programa o marcar una tarea. PecoFence nunca se conecta a internet por sí mismo; solo lo hace tu script.",
   "tool.dialog.title": "Saltar a la carpeta en los cuadros de diálogo",
   "tool.dialog.text": "En un cuadro de diálogo Abrir o Guardar, cambia al Explorador de archivos y vuelve: el cuadro va a la carpeta abierta allí. Ctrl+G o un clic en un grupo de carpeta también lo hacen, y Entrar en la búsqueda de la vista rápida le pasa el archivo elegido.",
   "tool.everything.title": "Buscar en todo el equipo (Everything)",

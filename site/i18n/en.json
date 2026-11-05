@@ -42,7 +42,7 @@
   "tool.clock.title": "Clock and date",
   "tool.clock.text": "The time in large digits with the date and weekday, in the format of your Windows region. Seconds if you want them.",
   "tool.script.title": "Script fence",
-  "tool.script.text": "Runs your own PowerShell, Python or batch script every 1 minute to 3 hours and shows what it prints, like the ready-made weather example. PecoFence itself never goes online; only your script does.",
+  "tool.script.text": "Runs your own PowerShell, Python or batch script every 1 minute to 3 hours and shows what it prints, like the ready-made weather example. Rows can open a link, run a program or tick a to-do when you click them. PecoFence itself never goes online; only your script does.",
   "tool.dialog.title": "Jump in file dialogs",
   "tool.dialog.text": "In an Open or Save dialog, switch to File Explorer and back, and the dialog goes to the folder open there. Ctrl+G or a click on a folder fence does it too, and Enter in the Peek search hands the dialog the file you picked.",
   "tool.everything.title": "Search the whole computer (Everything)",

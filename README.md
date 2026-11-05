@@ -104,7 +104,7 @@ Grab what you need, then press **Esc** to return.
 | **Familiar file handling** | File Explorer context menus, drag and drop, copy/paste, multi-select, thumbnails and icon/list/details views. |
 | **Keep folders close** | Put a live folder on your desktop. Browse subfolders and see changes as they happen. |
 | **Space when you need it** | Roll a fence up to its title. Hover to expand. Lock a layout you like. Double-click the desktop to hide your fences. Double-click again to bring them back. |
-| **Small tools in fences** | Notes with to-dos, a clock with the date, and script fences that show what your own script prints, such as the weather. Each tool is off until you turn it on in Settings → Tools. |
+| **Small tools in fences** | Notes with to-dos, a clock with the date, and script fences that show what your own script prints, such as the weather; its rows can open a link or tick a to-do when you click them. Each tool is off until you turn it on in Settings → Tools. |
 | **Find it as you type** | Type during Peek (Ctrl + Alt + Space) to list matching items, Chinese names by pinyin included, then open one with Enter or Ctrl+1 to Ctrl+9. Optional switches add whole-computer results from Everything, a free file search, and let you open the search by pressing Ctrl twice. |
 | **The right folder in Open and Save** | With Jump in file dialogs on, an Open or Save dialog goes to the folder open in File Explorer when you switch there and back. Clicking a folder fence or pressing Ctrl+G does it too. |
 | **A way back** | Layout snapshots, daily backups, configuration import/export and swapping fences between displays. |

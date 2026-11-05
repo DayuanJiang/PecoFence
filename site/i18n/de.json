@@ -42,7 +42,7 @@
   "tool.clock.title": "Uhr und Datum",
   "tool.clock.text": "Die Uhrzeit in großen Ziffern, darunter Datum und Wochentag im Format deiner Windows-Region. Auf Wunsch mit Sekunden.",
   "tool.script.title": "Skriptbereich",
-  "tool.script.text": "Führt dein eigenes PowerShell-, Python- oder Batch-Skript im Abstand von 1 Minute bis 3 Stunden aus und zeigt, was es ausgibt, etwa das fertige Wetterbeispiel. PecoFence selbst geht nie online; das macht nur dein Skript.",
+  "tool.script.text": "Führt dein eigenes PowerShell-, Python- oder Batch-Skript im Abstand von 1 Minute bis 3 Stunden aus und zeigt, was es ausgibt, etwa das fertige Wetterbeispiel. Ein Klick auf eine Zeile kann einen Link öffnen, ein Programm starten oder eine Aufgabe abhaken. PecoFence selbst geht nie online; das macht nur dein Skript.",
   "tool.dialog.title": "Sprung im Dateidialog",
   "tool.dialog.text": "Wechselst du in einem Öffnen- oder Speichern-Dialog zum Explorer und zurück, springt der Dialog in den dort geöffneten Ordner. Strg+G oder ein Klick auf einen Ordnerbereich tut das auch, und Eingabe in der Suche übergibt dem Dialog die gewählte Datei.",
   "tool.everything.title": "Ganzen Computer durchsuchen (Everything)",
