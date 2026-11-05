@@ -525,7 +525,7 @@
   "PecoFence 上次意外关闭了，那次的日志会一起发送。如果还记得当时在做什么，请写在下面。": "PecoFence wurde zuletzt unerwartet beendet; das Protokoll dieses Laufs wird mitgesendet. Wenn du noch weißt, was du gerade gemacht hast, beschreib es bitte unten.",
   "其他": "Sonstiges",
   "内容": "Nachricht",
-  "包括版本号、Windows 版本、缩放比例、语言和运行日志，不包含文件名、路径和栅栏名称": "Enthält Version, Windows-Version, Skalierung, Sprache und Ablaufprotokoll – keine Dateinamen, Pfade oder Bereichsnamen",
+  "包括版本号、Windows 版本、缩放比例、语言和运行日志，不包含文件名、路径和栅栏名称": "Enthält Version, Windows-Version, Skalierung, Sprache und Ablaufprotokoll, aber keine Dateinamen, Pfade oder Bereichsnamen",
   "反馈": "Feedback",
   "反馈只会发给 PecoFence 开发者。": "Feedback geht nur an den PecoFence-Entwickler.",
   "说说遇到了什么情况，或者希望怎么改进": "Was ist passiert, oder was ließe sich verbessern?",
