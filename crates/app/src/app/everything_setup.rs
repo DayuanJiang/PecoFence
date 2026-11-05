@@ -121,8 +121,15 @@ impl App {
     pub(super) fn start_everything(&mut self) {
         match everything::installed_exe() {
             Some(exe) => {
-                // Unquoted switches: Everything reads a quoted "-startup" as search text.
-                let started = std::process::Command::new(&exe).arg("-startup").spawn();
+                // Unquoted switches: Everything reads a quoted "-startup" as search text. It
+                // runs in its own folder: it keeps running after PecoFence, and PecoFence's
+                // folder held as its working directory could not be removed by the uninstaller.
+                let mut cmd = std::process::Command::new(&exe);
+                cmd.arg("-startup");
+                if let Some(dir) = exe.parent() {
+                    cmd.current_dir(dir);
+                }
+                let started = cmd.spawn();
                 tracing::info!(exe = %exe.display(), ok = started.is_ok(), "Everything started");
             }
             None => tracing::warn!("Everything start: no Everything.exe found"),

@@ -252,22 +252,28 @@ impl App {
             files.push((score, uses, order, path, hit.is_folder));
         }
         files.sort_by(|a, b| b.1.cmp(&a.1).then(b.0.cmp(&a.0)).then(a.2.cmp(&b.2)));
+        // As many rows as fit under the box: Everything's rows bring two headings and the
+        // "show all" row.
+        let show_all = self.search.everything_total > 0;
+        let max_rows = crate::peek_search::row_room(if files.is_empty() { 0 } else { 2 })
+            .saturating_sub(usize::from(show_all))
+            .clamp(1, MAX_ROWS);
         let fence_room = if files.is_empty() {
-            MAX_ROWS
+            max_rows
         } else {
-            FENCE_ROWS_WITH_EVERYTHING
+            FENCE_ROWS_WITH_EVERYTHING.min(max_rows)
         };
         let mut rows: Vec<RowKind> = (0..self.peek_hits.len())
             .filter(|&i| self.state.item(self.peek_hits[i].2).is_some())
             .take(fence_room)
             .map(RowKind::Fence)
             .collect();
-        let room = MAX_ROWS - rows.len();
+        let room = max_rows - rows.len();
         rows.extend(files.into_iter().take(room).map(|f| RowKind::File {
             path: f.3,
             is_folder: f.4,
         }));
-        if self.search.everything_total > 0 {
+        if show_all {
             rows.push(RowKind::ShowAll);
         }
         self.search.sel = rows

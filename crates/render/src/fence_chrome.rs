@@ -3414,6 +3414,7 @@ impl FenceChrome {
             }
             None => height,
         };
+        let has_footer = footer.is_some_and(|f| !f.is_empty());
         if lines
             .iter()
             .all(|l| l.text.trim().is_empty() && l.todo.is_none())
@@ -3456,6 +3457,26 @@ impl FenceChrome {
             let text = if line.text.is_empty() { " " } else { line.text };
             let layout = TextLayout::new(text, &self.note_format, text_w, f32::MAX)?;
             let h = layout.metrics().height.max(line_h);
+            // A wrapped line that runs past the footer's top shows only its rows that fit whole,
+            // so no text is drawn over the footer.
+            let _clip = if has_footer && y + h > height {
+                let fit = layout
+                    .hit_test_point(Vector2::new(0.0, height - y))
+                    .bounds
+                    .top;
+                if fit <= 0.0 {
+                    break;
+                }
+                Some(pecofence_platform::d2d::push_axis_aligned_clip(
+                    session.raw(),
+                    0.0,
+                    y,
+                    width,
+                    y + fit,
+                )?)
+            } else {
+                None
+            };
             if let Some(done) = line.todo {
                 let top = px.snap(y + (line_h - NOTE_BOX) / 2.0);
                 let r = Rect::from_xywh(px.snap(NOTE_PAD_X), top, NOTE_BOX, NOTE_BOX);

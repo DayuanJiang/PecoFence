@@ -667,7 +667,11 @@ impl App {
                 .into_iter()
                 .enumerate()
             {
-                let label = if minutes < 60 {
+                let label = if minutes == 1 {
+                    pecofence_core::i18n::text("1 分钟").to_string()
+                } else if minutes == 60 {
+                    pecofence_core::i18n::text("1 小时").to_string()
+                } else if minutes < 60 {
                     pecofence_core::i18n::format("{0} 分钟", &[minutes.to_string()])
                 } else {
                     pecofence_core::i18n::format("{0} 小时", &[(minutes / 60).to_string()])

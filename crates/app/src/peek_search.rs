@@ -85,6 +85,8 @@ struct Session {
     x: i32,
     y: i32,
     w: i32,
+    /// Bottom of the work area: the list stops above it.
+    work_bottom: i32,
     /// Glyph and match count colour (COLORREF).
     dim_color: u32,
     glyph_font: Font,
@@ -252,6 +254,7 @@ pub fn open(text: &str, queue: CommandQueue, dark: bool) {
             x,
             y,
             w,
+            work_bottom: wa.bottom,
             dim_color: if dark { 0x00C5_C5C5 } else { 0x005F_5F5F },
             glyph_font: Font::new(fonts::icon_face(), GLYPH_SIZE, dpi),
             status_font: Font::new(fonts::text_face(), STATUS_SIZE, dpi),
@@ -558,6 +561,23 @@ pub fn set_rows(rows: Vec<Row>, selected: Option<usize>) {
         }
         paint::invalidate(hwnd);
     }
+}
+
+/// How many rows fit between the box and the bottom of the work area when `headings` group
+/// headings are among them (a small screen at a high scale holds fewer than nine).
+pub fn row_room(headings: usize) -> usize {
+    ACTIVE.with(|a| {
+        let a = a.borrow();
+        let Some(s) = a.as_ref() else {
+            return usize::MAX;
+        };
+        let free = s.work_bottom
+            - s.y
+            - s.px(HEIGHT)
+            - s.px(LIST_GAP * 3.0)
+            - headings as i32 * s.px(HEADING_H);
+        (free.max(0) / s.px(ROW_H).max(1)) as usize
+    })
 }
 
 /// Screen position under the highlighted row (for its action menu).

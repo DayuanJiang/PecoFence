@@ -81,8 +81,13 @@ impl EditControl {
             ES_MULTILINE | ES_AUTOVSCROLL | ES_WANTRETURN | WS_VSCROLL,
         )?;
         let m = (margin_dip * dpi as f32 / 96.0).round() as usize & 0xFFFF;
-        // SAFETY: plain message to our control.
+        // SAFETY: plain messages and theme call on our control; the buffer outlives the call.
         unsafe {
+            if dark {
+                // A dark scroll bar to go with the dark background.
+                let theme = to_wide("DarkMode_Explorer");
+                let _ = SetWindowTheme(ctl.hwnd, PCWSTR(theme.as_ptr()), PCWSTR::null());
+            }
             SendMessageW(
                 ctl.hwnd,
                 EM_SETMARGINS,
