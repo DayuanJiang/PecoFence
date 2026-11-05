@@ -12,6 +12,7 @@
 - 双击 Ctrl 打开搜索: with this setting on, pressing Ctrl twice anywhere opens the Peek and its search box, and twice again closes it and gives the window you were in its keyboard back. Ctrl pressed with another key, a click or the wheel is no tap, and a full-screen game or video keeps its keys. The keyboard is only listened to: no key is held back.
 - `pecofence-cli` creates and edits the tools (`fence create --tool note|clock`, `--script`, `fence set <fence> noteText|scriptPath|scriptInterval`) and the new settings (`tools.*`, `peek.doubleCtrl`); `pecofence-cli skill` describes them.
 - With 「隐藏标题栏右侧的项目数和折叠箭头」 on, a fence with tabs that is made narrower by dragging its edge no longer keeps a fade at the right end of its tab strip while its last tab is the active one. The fade says that more tabs follow, but none did; it stayed until the pointer next came over the title, in Fluent and in Liquid Glass. The tab strip now moves to the new width before its ends are drawn.
+- A shortcut's right-click menu in a fence has 「打开文件所在的位置」 only once: Windows' own entry, which opens the folder of the shortcut's target with the target selected, as on Windows' desktop. PecoFence's 「打开文件所在位置」 stood above it under nearly the same name and selected the shortcut itself in the desktop folder. Files and folders keep PecoFence's entry.
 
 ## 0.2.5
 
