@@ -2039,14 +2039,15 @@
     };
   }
   // 收起与展开 › 收起的栅栏怎么展开: hover (hoverPeek), one title click (clickToExpand, which
-  // overrides hover) or neither (double-click or the chevron).
+  // overrides hover) or neither (double-click or the chevron). A click keeps hoverPeek on, as the
+  // old switch did: a file dragged onto a rolled title still opens the fence (dnd.rs).
   function bindRollExpand() {
     const r = state.settings.rollUp, select = document.getElementById('rollExpand');
     select.value = r.clickToExpand ? 'click' : r.hoverPeek ? 'hover' : 'double';
     select.onchange = () => {
       const roll = state.settings.rollUp;
       roll.clickToExpand = select.value === 'click';
-      roll.hoverPeek = select.value === 'hover';
+      roll.hoverPeek = select.value !== 'double';
       commit('rollUp');
     };
   }

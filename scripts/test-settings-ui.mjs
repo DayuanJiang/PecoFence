@@ -1073,7 +1073,8 @@ async function runTests() {
     const list = doc.getElementById('rollExpand');
     assert(!doc.querySelector('[data-bind="rollUp.hoverPeek"]') && !doc.querySelector('[data-bind="rollUp.clickToExpand"]'), 'The old switches are still there');
     assert(list.value === 'hover', 'Hover not shown: ' + list.value);
-    for (const [value, hover, click] of [['click', false, true], ['double', false, false], ['hover', true, false]]) {
+    // 单击标题时 keeps hoverPeek: a file dragged onto a rolled title still opens it.
+    for (const [value, hover, click] of [['click', true, true], ['double', false, false], ['hover', true, false]]) {
       change(doc, 'rollExpand', value); await settle();
       const r = current().settings.rollUp;
       assert(r.hoverPeek === hover && r.clickToExpand === click && list.value === value, `${value} posted as hover ${r.hoverPeek}, click ${r.clickToExpand}`);
