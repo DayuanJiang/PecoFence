@@ -418,6 +418,7 @@ impl App {
             "update": self.update_json(),
             "peekHotkey": self.peek_hotkey_json(),
             "windowsDesktopHotkey": self.windows_desktop_hotkey_json(),
+            "everything": self.everything_json(),
         })
         .to_string()
     }
@@ -699,6 +700,8 @@ impl App {
                         }
                     }
                 }
+                Some("installEverything") => self.install_everything(),
+                Some("startEverything") => self.start_everything(),
                 Some("addTemplate") => {
                     if let Some(template) = v
                         .get("template")
@@ -1076,6 +1079,7 @@ impl App {
         self.schedule_save();
         self.sync_peek_hotkey();
         self.sync_windows_desktop_hotkey();
+        self.sync_dialog_jump();
         if icons_toggled {
             self.desktop_icons_setting_changed();
         }

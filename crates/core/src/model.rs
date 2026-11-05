@@ -63,6 +63,9 @@ pub struct Config {
     /// What each script fence (`FenceTool::Script`) runs, keyed by fence id (kept like `notes`).
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub scripts: HashMap<FenceId, ScriptSpec>,
+    /// Paths opened from the search box (lower case) and how often: they rank higher next time.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub search_history: std::collections::BTreeMap<String, u32>,
 }
 
 impl Default for Config {
@@ -78,6 +81,7 @@ impl Default for Config {
             snapshots: Vec::new(),
             notes: HashMap::new(),
             scripts: HashMap::new(),
+            search_history: Default::default(),
         }
     }
 }
@@ -213,6 +217,13 @@ pub struct ToolSettings {
     /// 脚本栅栏: fences that run a script of the user's on an interval and show its output.
     #[serde(default)]
     pub scripts: bool,
+    /// 对话框跳转: an Open / Save dialog jumps to the folder of the Explorer window (or folder
+    /// fence) the user comes back from, and Ctrl+G jumps there at any time.
+    #[serde(default)]
+    pub dialog_jump: bool,
+    /// 搜索整台电脑: the search box also lists what the Everything file search finds.
+    #[serde(default)]
+    pub everything: bool,
 }
 
 /// What a script fence (`FenceTool::Script`) runs, and how often.
@@ -284,6 +295,9 @@ pub struct PeekSettings {
     /// shortcut is ignored the same way.
     #[serde(default)]
     pub custom_hotkey: Option<String>,
+    /// Pressing Ctrl twice opens the search box (with Peek).
+    #[serde(default)]
+    pub double_ctrl: bool,
 }
 
 impl Default for PeekSettings {
@@ -293,6 +307,7 @@ impl Default for PeekSettings {
             dim: true,
             hotkey: PeekHotkey::CtrlAltSpace,
             custom_hotkey: None,
+            double_ctrl: false,
         }
     }
 }
@@ -1646,6 +1661,47 @@ pub fn last_shown(layouts: &[Layout]) -> Option<usize> {
 }
 
 impl Config {
+    /// Most paths `search_history` keeps; the least used go first.
+    pub const SEARCH_HISTORY_MAX: usize = 300;
+
+    /// Counts one more open of `path` from the search box.
+    pub fn note_search_open(&mut self, path: &str) {
+        let key = path.to_lowercase();
+        *self.search_history.entry(key.clone()).or_default() += 1;
+        if self.search_history.len() <= Self::SEARCH_HISTORY_MAX {
+            return;
+        }
+        // Full: older counts halve, so a path opened often lately can pass them.
+        for (k, n) in self.search_history.iter_mut() {
+            if *k != key {
+                *n /= 2;
+            }
+        }
+        self.search_history.retain(|k, n| *n > 0 || *k == key);
+        while self.search_history.len() > Self::SEARCH_HISTORY_MAX {
+            let Some(least) = self
+                .search_history
+                .iter()
+                .filter(|(k, _)| **k != key)
+                .min_by_key(|(_, n)| **n)
+                .map(|(k, _)| k.clone())
+            else {
+                break;
+            };
+            self.search_history.remove(&least);
+        }
+    }
+
+    /// How often `path` was opened from the search box.
+    pub fn search_count(&self, path: &str) -> u32 {
+        self.search_history
+            .get(&path.to_lowercase())
+            .copied()
+            .unwrap_or(0)
+    }
+}
+
+impl Config {
     /// See [`layout_for`].
     pub fn layout_for(&self, monitors: &[WorkArea]) -> Option<LayoutMatch> {
         layout_for(&self.layouts, monitors)
@@ -1857,6 +1913,26 @@ pub fn now_unix() -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn search_history_counts_and_ages() {
+        let mut c = Config::default();
+        c.note_search_open("C:\\Docs\\A.txt");
+        c.note_search_open("c:\\docs\\a.txt");
+        assert_eq!(c.search_count("C:\\DOCS\\A.TXT"), 2);
+        // A full history of paths opened twice still takes a new one in.
+        let mut full = Config::default();
+        for i in 0..Config::SEARCH_HISTORY_MAX {
+            full.search_history.insert(format!("p{i}"), 2);
+        }
+        full.note_search_open("new");
+        assert_eq!(full.search_count("new"), 1);
+        assert!(full.search_history.len() <= Config::SEARCH_HISTORY_MAX);
+        assert!(
+            full.search_history.iter().all(|(k, n)| k == "new" || *n == 1),
+            "older counts halve"
+        );
+    }
 
     fn note_geo() -> NormGeometry {
         NormGeometry {

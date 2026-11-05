@@ -254,7 +254,8 @@ hidden when PecoFence exits, so they do not flash at the next sign-in; default o
 `hideInboxWhenIconsShown` (while `hideRealIcons` is off, the inbox
 fence shows no window and its items only show among the Windows desktop icons; a tab or a host of
 tabs stays; default off), `offerNewFence` (a rectangle drawn on empty desktop that touches no fence
-offers 「在此新建栅栏」; default on), `autostart`, `peek.enabled`, `quickHide.enabled`,
+offers 「在此新建栅栏」; default on), `autostart`, `peek.enabled`, `peek.doubleCtrl` (two short
+taps of Ctrl alone open the Peek with its search box, see Tools below; default off), `quickHide.enabled`,
 `titleAlign` (left/center/right: the title and tab strip in every title row),
 `labelColor` (auto/white/black: the item names in every fence and view; auto picks dark or light
 names from the wallpaper in Liquid Glass and follows the colour mode in Fluent; white and black
@@ -312,6 +313,15 @@ part in tabs (`fence merge` refuses them). Properties about icons (`iconSize`, `
 `autoHeight` and the like) and `fence fit` are refused for them. `--text` alone implies `--tool note`.
 An imported configuration (`config import`) with script fences switches `tools.scripts` off until
 the user turns it on again; a backup restore keeps it.
+
+Three switches of the 「搜索与跳转」 group on the same settings page have no fences, all `false` by
+default: `tools.dialogJump` (an Open, Save As or Select Folder dialog of any program jumps to the
+folder of the File Explorer window or folder fence the user comes back from; Ctrl+G in the dialog
+jumps at any time), `tools.everything` (the Peek search box also lists what Everything, the free
+file search from voidtools, finds on the whole computer; Everything has to be running, and version
+1.5 also matches Chinese names by pinyin) and `peek.doubleCtrl` (two short taps of Ctrl open the
+Peek with the search box). Files and folders opened from the search box are counted in
+`config.json` under `searchHistory` (lower-case paths, at most 300) and rank higher next time.
 
 - **Notes and to-dos** (`--tool note`): lines of text; a line starting with `[ ]` (or `[x]`, after
   an optional `- ` or `* `) is a to-do whose box ticks with a click. `fence get` reports

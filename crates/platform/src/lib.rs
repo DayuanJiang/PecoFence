@@ -13,6 +13,7 @@
     clippy::upper_case_acronyms,
     clippy::missing_transmute_annotations,
     clippy::useless_transmute,
+    clippy::crosspointer_transmute,
     clippy::too_many_arguments,
     dead_code,
     unused_imports
@@ -38,9 +39,11 @@ pub mod com;
 pub mod crashlog;
 pub mod d2d;
 pub mod desktop;
+pub mod dialogs;
 pub mod dispatcher;
 pub mod dragdrop;
 pub mod dwm;
+pub mod everything;
 pub mod edit;
 pub mod filedialog;
 pub mod fileinfo;

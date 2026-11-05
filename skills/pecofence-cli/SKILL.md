@@ -107,6 +107,10 @@ pecofence-cli config export "C:\Users\me\Desktop\pecofence-backup.json"   # sett
   on. A script fence runs the user's script every `scriptInterval` minutes, at most 10 s, and shows
   what it prints; write such scripts for the user on request, print a few short lines, and check the
   result with `fence get <fence>` (`script.outcome`, `script.output`).
+- Switches with no fences, off by default: `tools.dialogJump` (Open / Save dialogs jump to the
+  folder of the Explorer window the user comes back from; Ctrl+G), `tools.everything` (the Peek
+  search box also lists Everything's whole-computer results; Everything must be installed and
+  running) and `peek.doubleCtrl` (Ctrl twice opens the search box).
 
 ## Recipes
 

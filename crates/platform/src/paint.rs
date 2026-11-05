@@ -107,6 +107,32 @@ impl Paint {
     }
 }
 
+impl Paint {
+    /// Width in pixels of `text` in `font` (one line, no clipping).
+    pub fn text_width(&self, text: &str, font: &Font) -> i32 {
+        if text.is_empty() {
+            return 0;
+        }
+        let wide: Vec<u16> = text.encode_utf16().collect();
+        let mut size = SIZE::default();
+        // SAFETY: plain GDI calls on the paint DC; the old font is selected back.
+        unsafe {
+            let old = SelectObject(self.hdc, HGDIOBJ(font.0.0));
+            let _ = GetTextExtentPoint32W(self.hdc, &wide, &mut size);
+            SelectObject(self.hdc, old);
+        }
+        size.cx
+    }
+
+    /// Draws `icon` with its top-left corner at (`x`, `y`), `size` pixels square.
+    pub fn icon(&self, x: i32, y: i32, size: i32, icon: &crate::fileinfo::FileIcon) {
+        // SAFETY: the icon handle is owned by `icon` and alive for the call.
+        unsafe {
+            let _ = DrawIconEx(self.hdc, x, y, icon.handle(), size, size, 0, None, DI_NORMAL as u32);
+        }
+    }
+}
+
 impl Drop for Paint {
     fn drop(&mut self) {
         // SAFETY: ends the paint begun in `begin` with the same structure.

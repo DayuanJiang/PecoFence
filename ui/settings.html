@@ -108,6 +108,7 @@
   /* Controls that wrap under a long description stay on the right, as in Windows Settings. */
   .card:not(.stack) > :not(.l):not(.s) { margin-left: auto; }
   .card.disabled .t, .card.disabled .s { color: var(--text-disabled); }
+  .card.disabled button.accent:disabled { color: var(--text-disabled); background: var(--control-disabled); border-color: var(--control-stroke); }
   /* A master setting and the rows that only matter while it is on share one surface. */
   .group { display: flex; flex-direction: column; gap: 1px; margin-bottom: 4px; }
   .group > .card, .rows > .card { margin: 0; border-radius: 0; }
@@ -607,6 +608,13 @@
         <div class="card child"><div class="l"><div><div class="t">显示秒</div><div class="s">每秒更新一次</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="tools.clockSeconds"></div></div>
         <div class="card child"><div class="l"><div><div class="t" id="clockCount"></div></div></div><button class="accent" id="newClock">新建时钟</button></div>
       </div>
+      <h3>搜索与跳转</h3>
+      <div class="card"><div class="l"><span class="ic">&#xE8DA;</span><div><div class="t">对话框跳转</div><div class="s">打开或保存文件时，切到资源管理器再切回对话框，它就跳到资源管理器里的文件夹；点文件夹栅栏或按 Ctrl+G 也能跳过去</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="tools.dialogJump"></div></div>
+      <div class="group">
+        <div class="card"><div class="l"><span class="ic">&#xE721;</span><div><div class="t">搜索整台电脑（Everything）</div><div class="s">速览时打字搜索，除了栅栏里的图标，也列出整台电脑上的文件和文件夹，由免费的 Everything 负责查找</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="tools.everything"></div></div>
+        <div class="card child" id="everythingCard"><div class="l"><div><div class="t" id="everythingStatus"></div><div class="s" id="everythingHelp"></div></div></div><button class="accent" id="everythingAction"></button></div>
+      </div>
+      <div class="card"><div class="l"><span class="ic">&#xE765;</span><div><div class="t">双击 Ctrl 打开搜索</div><div class="s">快速按两下 Ctrl，打开速览和搜索框，再按两下关闭；全屏的游戏或视频在前面时不响应</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="peek.doubleCtrl"></div></div>
       <h3>自己写的小工具</h3>
       <div class="group">
         <div class="card"><div class="l"><span class="ic">&#xE943;</span><div><div class="t">脚本栅栏</div><div class="s">定时运行你选的脚本（PowerShell、Python、批处理等），把它打印的文字显示在栅栏里，适合天气、倒计时、服务器状态，也可以让 AI 助手帮你写。PecoFence 自己不联网，联网的是你的脚本</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="tools.scripts"></div></div>
@@ -1029,8 +1037,8 @@
   // Only these rows depend on their master switch: guide lines need snapping, hiding the inbox
   // beside the Windows icons needs those icons shown ('!': while the master is off), and the
   // shortcut rows (renderPeekHotkey) are what Peek's switch turns on. Gap, whole-cell sizing
-  // and dimming apply without them.
-  const DEPENDENT = [['snapping.guideLines', 'snapping.enabled'], ['hideInboxWhenIconsShown', '!hideRealIcons'], ['keepIconsHidden', 'hideRealIcons'], ['tools.clockSeconds', 'tools.clock']];
+  // and dimming apply without them. A child starting with '#' is a button's id.
+  const DEPENDENT = [['snapping.guideLines', 'snapping.enabled'], ['hideInboxWhenIconsShown', '!hideRealIcons'], ['keepIconsHidden', 'hideRealIcons'], ['tools.clockSeconds', 'tools.clock'], ['#everythingAction', 'tools.everything']];
   // 「小工具」 page: how many notes the desktop has (they show while the switch is on).
   function renderTools() {
     const count = kind => (state.fences || []).filter(f => f.tool && f.tool.kind === kind).length;
@@ -1038,13 +1046,33 @@
     document.getElementById('noteCount').textContent = notes ? tf("桌面上有 {0} 个便签", notes) : t("桌面上还没有便签");
     document.getElementById('clockCount').textContent = clocks ? tf("桌面上有 {0} 个时钟", clocks) : t("桌面上还没有时钟");
     document.getElementById('scriptCount').textContent = scripts ? tf("桌面上有 {0} 个脚本栅栏", scripts) : t("桌面上还没有脚本栅栏");
+    renderEverything();
+  }
+  // 搜索整台电脑 › Everything's state from the host: running (version, pinyin), installed,
+  // missing or installing; the button installs, starts or upgrades it.
+  function renderEverything() {
+    const e = state.everything, card = document.getElementById('everythingCard');
+    card.hidden = !e;
+    if (!e) return;
+    const [status, help, action] = {
+      running: e.pinyin
+        ? [tf("Everything {0} 正在运行", e.version), t("可以用拼音找中文名，例如输入 ysb 找到“预算表”"), null]
+        : [tf("Everything {0} 正在运行", e.version), t("这个版本不能用拼音找中文名，升级到 1.5 版就可以"), ['installEverything', t("升级到 1.5")]],
+      installed: [t("Everything 已经装好，还没有运行"), t("启动后才能搜索整台电脑"), ['startEverything', t("启动 Everything")]],
+      installing: [t("正在安装 Everything…"), t("装好后会自动启动"), null],
+    }[e.state] || [t("这台电脑还没有 Everything"), t("安装时会打开一个命令行窗口，用 winget 装 1.5 版，Windows 会询问一次管理员权限"), ['installEverything', t("安装 Everything")]];
+    const button = document.getElementById('everythingAction');
+    document.getElementById('everythingStatus').textContent = status;
+    document.getElementById('everythingHelp').textContent = help;
+    button.hidden = !action;
+    if (action) { button.textContent = action[1]; button.onclick = () => send({ type: 'action', name: action[0] }); }
   }
   function renderDependents() {
     for (const [child, master] of DEPENDENT) {
       const value = !!get(state.settings, master.replace('!', ''));
-      const on = master.startsWith('!') ? !value : value, el = document.querySelector(`[data-bind="${child}"]`);
+      const on = master.startsWith('!') ? !value : value, el = document.querySelector(child.startsWith('#') ? child : `[data-bind="${child}"]`);
       el.closest('.card').classList.toggle('disabled', !on);
-      if (el.tagName === 'SELECT') el.disabled = !on;
+      if (el.tagName === 'SELECT' || el.tagName === 'BUTTON') el.disabled = !on;
       else { el.tabIndex = on ? 0 : -1; el.setAttribute('aria-disabled', String(!on)); }
     }
     renderPeekHotkey();

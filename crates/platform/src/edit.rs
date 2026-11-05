@@ -225,6 +225,24 @@ impl EditControl {
         }
     }
 
+    /// True when the caret sits after the last character with nothing selected (Right then
+    /// has nothing left to move over).
+    pub fn caret_at_end(&self) -> bool {
+        let mut start = 0u32;
+        let mut end = 0u32;
+        // SAFETY: EM_GETSEL writes the selection into the two locals.
+        unsafe {
+            SendMessageW(
+                self.hwnd,
+                EM_GETSEL as u32,
+                WPARAM(&mut start as *mut u32 as usize),
+                LPARAM(&mut end as *mut u32 as isize),
+            );
+        }
+        let len = self.text().encode_utf16().count() as u32;
+        start == end && end >= len
+    }
+
     /// Background colour (COLORREF), for a parent that paints around the control.
     pub fn back_color(&self) -> u32 {
         self.back_color

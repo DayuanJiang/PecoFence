@@ -97,6 +97,19 @@ pub fn root_ancestor(hwnd: HWND) -> HWND {
     unsafe { GetAncestor(hwnd, GA_ROOT as u32) }
 }
 
+/// A full-screen program (a game, a video, a presentation) is in front, as the shell decides
+/// it for its notifications. A maximized window is not full screen.
+pub fn fullscreen_app_in_front() -> bool {
+    // SAFETY: plain FFI call with no arguments.
+    match unsafe { SHQueryUserNotificationState() } {
+        Ok(state) => matches!(
+            state,
+            QUNS_BUSY | QUNS_RUNNING_D3D_FULL_SCREEN | QUNS_PRESENTATION_MODE
+        ),
+        Err(_) => false,
+    }
+}
+
 pub fn foreground_window() -> HWND {
     // SAFETY: plain FFI call.
     unsafe { GetForegroundWindow() }

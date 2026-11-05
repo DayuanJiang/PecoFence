@@ -64,6 +64,75 @@ pub fn type_name(path: &Path, is_folder: bool) -> Option<String> {
     (!s.is_empty()).then_some(s)
 }
 
+/// A shell icon (HICON), destroyed on drop.
+pub struct FileIcon(HICON);
+
+impl FileIcon {
+    pub(crate) fn handle(&self) -> HICON {
+        self.0
+    }
+}
+
+impl Drop for FileIcon {
+    fn drop(&mut self) {
+        // SAFETY: the icon came from SHGetFileInfoW and is owned here.
+        unsafe {
+            let _ = DestroyIcon(self.0);
+        }
+    }
+}
+
+/// The small icon Explorer shows for `path`. `exact` reads the file itself (a program's own
+/// icon, a shortcut's target icon); otherwise only its type counts, which never touches the
+/// disk (for network and removable drives). Namespace items (`::{CLSID}`) go through their id
+/// list.
+pub fn small_icon(path: &Path, is_folder: bool, exact: bool) -> Option<FileIcon> {
+    let w = to_wide(&path.to_string_lossy());
+    let mut info = SHFILEINFOW::default();
+    let flags = (SHGFI_ICON | SHGFI_SMALLICON) as u32;
+    let ok = if crate::shell::is_namespace_path(path) {
+        let mut pidl: LPITEMIDLIST = std::ptr::null_mut();
+        // SAFETY: the string outlives the call; the id list is freed below.
+        let hr =
+            unsafe { SHParseDisplayName(PCWSTR(w.as_ptr()), None, &mut pidl, SFGAOF(0), None) };
+        if hr.is_err() || pidl.is_null() {
+            return None;
+        }
+        // SAFETY: with SHGFI_PIDL the first argument is the id list; `info` is a live
+        // out-struct of the declared size.
+        let ok = unsafe {
+            SHGetFileInfoW(
+                PCWSTR(pidl.cast()),
+                0,
+                Some(&mut info),
+                size_of::<SHFILEINFOW>() as u32,
+                flags | SHGFI_PIDL as u32,
+            )
+        };
+        // SAFETY: the id list came from SHParseDisplayName.
+        unsafe { ILFree(Some(pidl)) };
+        ok
+    } else {
+        let attrs = if is_folder {
+            FILE_ATTRIBUTE_DIRECTORY as u32
+        } else {
+            FILE_ATTRIBUTE_NORMAL as u32
+        };
+        let extra = if exact { 0 } else { SHGFI_USEFILEATTRIBUTES as u32 };
+        // SAFETY: the string outlives the call; `info` is a live out-struct of the declared size.
+        unsafe {
+            SHGetFileInfoW(
+                PCWSTR(w.as_ptr()),
+                attrs,
+                Some(&mut info),
+                size_of::<SHFILEINFOW>() as u32,
+                flags | extra,
+            )
+        }
+    };
+    (ok != 0 && !info.hIcon.0.is_null()).then(|| FileIcon(info.hIcon))
+}
+
 /// Unix seconds → the local time of day without seconds in the user's locale ("14:32",
 /// "2:32 PM"). Empty for out-of-range values.
 pub fn format_local_time(unix: i64) -> String {

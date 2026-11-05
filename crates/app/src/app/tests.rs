@@ -24,7 +24,8 @@ fn url_shortcut_names_prefer_the_browser_title() {
 /// case; namespace items match by their shown name only.
 #[test]
 fn peek_search_matches_names_and_hidden_extensions() {
-    use super::peek::search_matches;
+    let search_matches =
+        |name: &str, path: Option<&str>, q: &str| super::peek::search_match(name, path, q).is_some();
     let report = Some(r"c:\users\me\desktop\report 2026.pdf");
     assert!(search_matches("Report 2026", report, "port 20"));
     assert!(search_matches("Report 2026", report, ".pdf"));

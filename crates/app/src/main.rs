@@ -6,6 +6,8 @@
 mod anchor;
 mod app;
 mod commands;
+mod dialog_jump;
+mod double_ctrl;
 mod drag_guides;
 mod drop_preview;
 mod fence_window;

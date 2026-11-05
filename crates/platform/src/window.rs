@@ -446,6 +446,16 @@ pub fn confirm(owner: HWND, text: &str, caption: &str) -> bool {
     }
 }
 
+/// Presses and releases `vk` as if typed (the modifiers held stay as they are): a shortcut
+/// PecoFence registered but does not want this time goes on to the window in front.
+pub fn send_key(vk: u32) {
+    // SAFETY: plain FFI calls injecting one key press.
+    unsafe {
+        keybd_event(vk as u8, 0, 0, 0);
+        keybd_event(vk as u8, 0, KEYEVENTF_KEYUP as u32, 0);
+    }
+}
+
 /// Is the given virtual key currently down?
 pub fn key_down(vk: u32) -> bool {
     // SAFETY: plain FFI call.

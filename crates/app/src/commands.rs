@@ -51,6 +51,8 @@ pub const WM_APP_THEMES_CHANGED: u32 = msg::WM_APP + 18;
 pub const WM_APP_DESKTOP_SHAPE: u32 = msg::WM_APP + 19;
 /// 脚本栅栏: a script run ended on its worker thread; the App collects the result.
 pub const WM_APP_SCRIPT_DONE: u32 = msg::WM_APP + 20;
+/// 搜索整台电脑: the Everything install ended (wParam: 1 done, 0 failed, 2 no winget).
+pub const WM_APP_EVERYTHING_SETUP: u32 = msg::WM_APP + 21;
 
 /// What a file drop does with the dropped paths (Explorer's Move / Copy / Create shortcut, the
 /// effect the drop target reported).
@@ -325,6 +327,14 @@ pub enum Command {
     PeekSearchStep(i32),
     /// Enter in the search box: open the highlighted match.
     PeekSearchOpen,
+    /// A click on a row of the search list, or its Ctrl+digit: open that row.
+    PeekSearchOpenRow(usize),
+    /// Ctrl+Enter in the search box: open the folder holding the highlighted match.
+    PeekSearchOpenFolder,
+    /// Right (caret at the end) or Ctrl+O in the search box: the highlighted match's actions.
+    PeekSearchActions,
+    /// Everything answered a search query (`WM_COPYDATA` to the search box).
+    EverythingResults { kind: usize, bytes: Vec<u8> },
     ApplyRulesNow,
     OpenSettings,
     /// Settings window on the 「栅栏」 page with this fence selected.
