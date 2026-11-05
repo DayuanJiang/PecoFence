@@ -1,0 +1,312 @@
+/* Lessons 4.4 (search: .sr-*), 7.1 (tools: .tl-*) and 7.2 (dialog-jump: .dj-*). Windows reuse
+   the app windows of demos/peek.css (.pk-win, .pk-titlebar, .pk-caps, .pk-ribbon). */
+
+/* ---------- Peek search box (peek_search.rs, light theme) ---------- */
+
+.sr-box {
+    left: 0;
+    top: 0;
+    overflow: hidden;
+    border-radius: 8px;
+    background: #fff;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, .1), 0 8px 24px rgba(0, 0, 0, .22);
+    color: #1e1e1e;
+    transform-origin: 50% 0;
+    z-index: 4;
+}
+
+.sr-glyph { left: 14px; top: 14px; width: 16px; height: 16px; color: #5f5f5f }
+.sr-glyph svg { position: static; display: block; width: 16px; height: 16px }
+.sr-q { left: 40px; top: 0; font-size: 15px; line-height: 44px; white-space: pre }
+.sr-caret { top: 13px; width: 1px; height: 18px; background: #1e1e1e }
+.sr-status { right: 14px; top: 0; color: #5f5f5f; font-size: 11.5px; line-height: 44px; white-space: nowrap }
+.sr-line { left: 0; right: 0; top: 44px; height: 1px; background: #e0e0e0 }
+
+.sr-head {
+    left: 0;
+    top: 0;
+    height: 18px;
+    color: #5f5f5f;
+    font-size: 10px;
+    line-height: 20px;
+    white-space: nowrap;
+}
+
+.sr-row { left: 0; right: 0; top: 0; height: 36px }
+.sr-selbg { left: 4px; right: 4px; top: 0; bottom: 0; background: #e3ebfa; opacity: 0 }
+.sr-row img { left: 12px; top: 10px; width: 16px; height: 16px }
+
+.sr-name {
+    left: 37px;
+    right: 56px;
+    top: 3px;
+    font-size: 12px;
+    line-height: 17px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.sr-name span, .sr-name b { position: static }
+.sr-name b { color: #2a5bd7; font-weight: inherit }
+.sr-all .sr-name { left: 12px }
+
+.sr-detail {
+    left: 37px;
+    right: 56px;
+    top: 19px;
+    color: #5f5f5f;
+    font-size: 10px;
+    line-height: 13px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.sr-all .sr-detail { left: 12px }
+.sr-key { right: 12px; top: 0; color: #5f5f5f; font-size: 10px; line-height: 36px; white-space: nowrap }
+
+/* A match in its fence: the selection colour; the current row's item fully, with the focus frame. */
+.ico.sr-hit {
+    background: color-mix(in srgb, var(--win-accent) 11%, rgba(255, 255, 255, .24));
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--win-accent) 22%, transparent);
+}
+
+.ico.sr-cur {
+    background: color-mix(in srgb, var(--win-accent) 22%, rgba(255, 255, 255, .34));
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--win-accent) 70%, transparent);
+}
+
+/* the spreadsheet that Enter opens */
+.sr-app { z-index: 3 }
+
+.sr-grid {
+    flex: 1;
+    background:
+        linear-gradient(#f3f4f6, #f3f4f6) 0 0 / 100% 20px no-repeat,
+        linear-gradient(#f3f4f6, #f3f4f6) 0 0 / 34px 100% no-repeat,
+        repeating-linear-gradient(to bottom, transparent 0 19px, #e3e5ea 19px 20px),
+        repeating-linear-gradient(to right, transparent 34px, transparent 34px 95px, #e3e5ea 95px 96px),
+        #fff;
+}
+
+/* ---------- 小工具 (fence_chrome.rs draw_note / draw_clock, note_edit.rs) ---------- */
+
+.tl-lede {
+    left: 2px;
+    color: #5d5d5d;
+    font-size: 9.5px;
+    line-height: 13px;
+    white-space: normal;
+}
+
+/* the note editor: a white multi-line box over the note's content */
+.tl-edit {
+    left: 4px;
+    right: 4px;
+    top: 0;
+    bottom: 4px;
+    border-radius: 6px;
+    background: #fff;
+    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .1), inset 0 -2px 0 var(--win-accent);
+    color: #323232;
+    font-size: 12.5px;
+    line-height: 17px;
+}
+
+.tl-edit-t { left: 10px; right: 10px; top: 6px; white-space: pre-wrap }
+.tl-measure { left: 10px; top: 6px; white-space: pre; visibility: hidden }
+.tl-caret { width: 1px; height: 15px; margin-top: 1px; background: #1b1b1b }
+
+/* lines of a note or of a script's output: 14 px in, 5 px apart */
+.tl-lines, .tl-out { left: 14px; right: 14px; top: 2px }
+.stage-inner .tl-lines *, .stage-inner .tl-out * { position: relative }
+.tl-line { display: block; margin-bottom: 5px; font-size: 12.5px; line-height: 17px; color: #1b2133 }
+.tl-line.todo { padding-left: 20px }
+.tl-line.todo.done { color: rgba(27, 33, 51, .55) }
+
+.stage-inner .tl-box {
+    position: absolute;
+    left: 0;
+    top: 2px;
+    width: 13px;
+    height: 13px;
+    border-radius: 3.5px;
+    box-shadow: inset 0 0 0 1px rgba(27, 33, 51, .62);
+}
+
+.tl-box svg { display: none; width: 13px; height: 13px }
+.tl-line.done .tl-box { background: var(--win-accent); box-shadow: none }
+.tl-line.done .tl-box svg { display: block }
+
+/* clock: the time in large light digits, the date under it in the secondary colour */
+.tl-time {
+    left: 14px;
+    top: -4px;
+    font: 300 36px/44px "Segoe UI Variable Display", "Segoe UI", sans-serif;
+    letter-spacing: -.5px;
+    white-space: nowrap;
+}
+
+.tl-date { left: 14px; right: 14px; top: 40px; color: rgba(27, 33, 51, .62); font-size: 12px; line-height: 16px }
+
+/* script fence: its output from the top, the status line at the bottom; lines that do not fit
+   above the status line are cut off, as the app does */
+.tl-out { bottom: 28px; overflow: hidden }
+.tl-out .tl-line { font-size: 11.5px; line-height: 15px; margin-bottom: 3px }
+
+.tl-foot {
+    left: 14px;
+    right: 14px;
+    bottom: 8px;
+    color: rgba(27, 33, 51, .62);
+    font-size: 10.5px;
+    line-height: 14px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* ---------- 对话框跳转: File Explorer and a program's Open dialog (Windows 11) ---------- */
+
+.pk-win.dj-inactive .pk-titlebar > span, .pk-win.dj-inactive .dj-tab span { color: #8a8f9c }
+
+.dj-tabs {
+    flex: none;
+    height: 34px;
+    display: flex;
+    align-items: flex-end;
+    padding-left: 8px;
+    background: #eef0f5;
+}
+
+.dj-tab {
+    width: 150px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 0 11px;
+    border-radius: 8px 8px 0 0;
+    background: #fff;
+    font-size: 11.5px;
+    white-space: nowrap;
+}
+
+.dj-tab img { width: 14px; height: 14px; flex: none }
+.dj-tab span { overflow: hidden; text-overflow: ellipsis }
+.dj-tabs .pk-caps { height: 34px }
+
+.dj-cmd {
+    flex: none;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 0 10px 0 8px;
+    background: #fff;
+    border-bottom: 1px solid #eceef2;
+}
+
+.dj-nav { width: 24px; height: 24px; display: grid; place-items: center; color: #4b5060 }
+.dj-nav.off { color: #b4b8c3 }
+.dj-nav svg { width: 12px; height: 12px }
+
+.dj-addr {
+    flex: 1;
+    min-width: 0;
+    height: 24px;
+    margin: 0 6px;
+    border-radius: 4px;
+    background: #f5f6f8;
+    box-shadow: inset 0 0 0 1px #e3e5ea;
+    font-size: 11px;
+    line-height: 24px;
+    white-space: nowrap;
+    overflow: hidden;
+}
+
+.dj-addr.edit { background: #fff; box-shadow: inset 0 0 0 1px #c9ccd4, inset 0 -2px 0 var(--win-accent) }
+.dj-crumbs { padding: 0 8px; overflow: hidden; text-overflow: ellipsis }
+.dj-crumbs span, .dj-crumbs i { position: static }
+.dj-crumbs i { margin: 0 6px; color: #8a8f9c; font-style: normal }
+.dj-typed { padding: 0 8px; color: #1b1b1b }
+
+.dj-search {
+    flex: none;
+    width: 96px;
+    height: 24px;
+    border-radius: 4px;
+    background: #f5f6f8;
+    box-shadow: inset 0 0 0 1px #e3e5ea;
+}
+
+.dj-search svg { left: 8px; top: 6px; width: 12px; height: 12px; color: #6b7180 }
+
+.dj-icons { flex: 1; background: #fff }
+.pk-win .dj-icons .ico, .pk-win .dj-icons .ico * { position: absolute }
+.dj-icons .ico span { text-shadow: none }
+
+.dj-mid { flex: 1; min-height: 0; display: flex; background: #fff }
+.dj-pane { flex: none; width: 112px; padding: 8px 6px; background: #f9fafb; border-right: 1px solid #eceef2 }
+
+.dj-place {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    height: 24px;
+    padding: 0 6px;
+    font-size: 11px;
+    white-space: nowrap;
+    overflow: hidden;
+}
+
+.dj-place img { flex: none; width: 13px; height: 13px }
+.dj-place span { overflow: hidden; text-overflow: ellipsis }
+.dj-list { flex: 1; min-width: 0; padding: 4px 10px }
+.dj-colhead { height: 24px; padding-left: 26px; color: #5b6070; font-size: 10.5px; line-height: 24px; border-bottom: 1px solid #eceef2 }
+.dj-rows { padding-top: 3px }
+
+.dj-row {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    height: 24px;
+    padding: 0 6px;
+    font-size: 11.5px;
+    white-space: nowrap;
+}
+
+.dj-row img { flex: none; width: 15px; height: 15px; object-fit: contain }
+.dj-row span { overflow: hidden; text-overflow: ellipsis }
+
+.dj-foot { flex: none; padding: 9px 12px 10px; background: #f3f3f5; border-top: 1px solid #e6e8ec }
+.dj-fline { display: flex; align-items: center; gap: 8px; height: 24px; font-size: 11px; white-space: nowrap }
+.dj-finput { flex: 1; height: 22px; border-radius: 4px; background: #fff; box-shadow: inset 0 0 0 1px #d8dbe2, inset 0 -1px 0 #8a8f9c }
+
+.dj-ftype {
+    flex: none;
+    height: 22px;
+    padding: 0 22px 0 8px;
+    border-radius: 4px;
+    background: #fbfbfc;
+    box-shadow: inset 0 0 0 1px #d8dbe2;
+    line-height: 22px;
+}
+
+.dj-btns { display: flex; justify-content: flex-end; gap: 8px; margin-top: 9px }
+
+.dj-btn {
+    min-width: 64px;
+    height: 22px;
+    padding: 0 10px;
+    border-radius: 4px;
+    background: #fbfbfc;
+    box-shadow: inset 0 0 0 1px #d8dbe2;
+    font-size: 11px;
+    line-height: 22px;
+    text-align: center;
+    white-space: nowrap;
+}
+
+.dj-btn.acc { background: #005fb8; color: #fff; box-shadow: none }

@@ -31,6 +31,10 @@
 <link rel="stylesheet" href="demos/peek.css">
 <script src="demos/peek.js" defer></script>
 <script src="demos/portal.js" defer></script>
+<link rel="stylesheet" href="demos/tools.css">
+<script src="demos/search.js" defer></script>
+<script src="demos/tools.js" defer></script>
+<script src="demos/dialog-jump.js" defer></script>
 </head>
 <body>
 <!--manual:header-->
@@ -80,7 +84,8 @@
       <li><a href="#tabs"><span class="num">4.1</span>标签页</a></li>
       <li><a href="#hide"><span class="num">4.2</span>双击桌面隐藏栅栏</a></li>
       <li><a href="#peek"><span class="num">4.3</span>速览</a></li>
-      <li><a href="#portal"><span class="num">4.4</span>在桌面显示文件夹</a></li>
+      <li><a href="#search"><span class="num">4.4</span>搜索图标和文件</a></li>
+      <li><a href="#portal"><span class="num">4.5</span>在桌面显示文件夹</a></li>
     </ol>
     </div>
     <div class="toc-group">
@@ -94,6 +99,13 @@
     <h2>布局与备份</h2>
     <ol>
       <li><a href="#backup"><span class="num">6.1</span>布局快照和备份</a></li>
+    </ol>
+    </div>
+    <div class="toc-group">
+    <h2>小工具</h2>
+    <ol>
+      <li><a href="#tools"><span class="num">7.1</span>便签、时钟和脚本栅栏</a></li>
+      <li><a href="#dialog-jump"><span class="num">7.2</span>对话框跳转</a></li>
     </ol>
     </div>
     <div class="toc-group">
@@ -466,7 +478,41 @@
           <aside class="tip">
             <h3>小提示</h3>
             <p>也可以右键托盘图标（任务栏右下角的 PecoFence 图标），选「速览所有栅栏」。快捷键在「设置」→「常规」→「速览栅栏」里换。点一下那里的快捷键方框，按下想用的组合键就行。</p>
-            <p>速览时直接打字，可以按名字找图标。按 <kbd>Enter</kbd> 打开找到的那个，是文件夹的话会在资源管理器里打开。</p>
+            <p>速览时直接打字，就能按名字找图标和文件，下一节细讲。</p>
+          </aside>
+        </div>
+      </div>
+    </article>
+
+    <article class="lesson" data-lesson="search" id="search">
+      <header class="lesson-head">
+        <p class="kicker">4.4 · 常用技巧</p>
+        <h2>搜索图标和文件</h2>
+        <p class="lede">速览时直接打字，就能按名字找到栅栏里的图标。打开 Everything 以后，整台电脑上的文件也能找到。</p>
+      </header>
+      <div class="lesson-body">
+        <figure class="demo">
+          <div class="stage" role="img" aria-label="动画：快速按两下 Ctrl，速览和搜索框一起打开；输入 hyjl，列表里先出现「文件与文档」里的「会议记录.docx」，栅栏里的这个图标亮起来，别的图标变淡；接着 Everything 在整台电脑上找到的两个文件排在下面；按 ↓ 选中「会议记录 2025.xlsx」，按 Enter 打开它，速览随之结束"></div>
+          <div class="controls">
+            <button class="btn play" type="button" data-play aria-label="暂停">
+              <svg class="i-pause" viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="2.5" width="3" height="11" rx="1"/><rect x="9.5" y="2.5" width="3" height="11" rx="1"/></svg>
+              <svg class="i-play" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 2.8v10.4a.8.8 0 0 0 1.2.7l8.4-5.2a.8.8 0 0 0 0-1.4L5.7 2.1a.8.8 0 0 0-1.2.7Z"/></svg>
+            </button>
+            <div class="track" data-track role="slider" tabindex="0" aria-label="播放进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="track-fill"></div></div>
+            <button class="btn speed" type="button" data-speed aria-pressed="false">慢放</button>
+          </div>
+        </figure>
+        <div class="side">
+          <ol class="steps">
+            <li data-at="0.3"><span class="n">1</span><p>速览时直接打字，搜索框就会出现。在「设置」→「小工具」里打开<b>「双击 Ctrl 打开搜索」</b>以后，随时快速按两下 <kbd>Ctrl</kbd> 就能打开它，再按两下就关上。</p></li>
+            <li data-at="1.4"><span class="n">2</span><p>输入名字里的几个字，框下面就列出找到的图标和它所在的栅栏，栅栏里的这个图标也会亮起来。中文名可以用拼音找，全拼和首字母都行，比如输入 <code>hyjl</code> 就能找到「会议记录」。</p></li>
+            <li data-at="2.3"><span class="n">3</span><p>打开<b>「搜索整台电脑（Everything）」</b>以后，下面还会列出整台电脑上找到的文件。Everything 是一个免费的文件搜索工具，开关下面的<b>「安装 Everything」</b>会帮你装好。</p></li>
+            <li data-at="3.5"><span class="n">4</span><p>按 <kbd>↓</kbd> 或 <kbd>↑</kbd> 选一行，按 <kbd>Enter</kbd> 打开，速览随之结束。按 <kbd>Ctrl</kbd>+<kbd>1</kbd> 到 <kbd>Ctrl</kbd>+<kbd>9</kbd> 可以直接打开对应的那一行。</p></li>
+          </ol>
+          <aside class="tip">
+            <h3>小提示</h3>
+            <p>按 <kbd>Ctrl</kbd>+<kbd>Enter</kbd> 打开所在的文件夹。光标在最后时按 <kbd>→</kbd>，可以选择打开、打开所在文件夹、复制路径，或者用 Windows 的右键菜单。</p>
+            <p>从搜索里打开得越多的项目，下次排得越靠前。这份记录留在这台电脑上，导出的配置里没有它。想用拼音找整台电脑上的文件，需要 Everything 1.5，「安装 Everything」装的就是这个版本。</p>
           </aside>
         </div>
       </div>
@@ -474,7 +520,7 @@
 
     <article class="lesson" data-lesson="portal" id="portal">
       <header class="lesson-head">
-        <p class="kicker">4.4 · 常用技巧</p>
+        <p class="kicker">4.5 · 常用技巧</p>
         <h2>在桌面显示文件夹</h2>
         <p class="lede">把常用的文件夹放到桌面上，变成一个文件夹栅栏。文件夹里有什么，它就显示什么。</p>
       </header>
@@ -604,6 +650,73 @@
       </div>
     </article>
 
+    <article class="lesson" data-lesson="tools" id="tools">
+      <header class="lesson-head">
+        <p class="kicker">7.1 · 小工具</p>
+        <h2>便签、时钟和脚本栅栏</h2>
+        <p class="lede">小工具也放在栅栏里：便签用来记事和列待办，时钟显示时间和日期，脚本栅栏把你的脚本打印的文字显示在桌面上。</p>
+      </header>
+      <div class="lesson-body">
+        <figure class="demo">
+          <div class="stage" role="img" aria-label="动画：在设置的「小工具」页点「新建便签」，「便签与待办」开关随之打开，桌面上出现一个便签，打了三行字；点别处保存后，行首写了 [ ] 的两行变成待办，点第一行的方框打上勾；点「新建时钟」，出现一个显示时间和日期的时钟；往下翻到「脚本栅栏」，点「添加天气示例」，出现「天气」栅栏，片刻后显示东京的天气"></div>
+          <div class="controls">
+            <button class="btn play" type="button" data-play aria-label="暂停">
+              <svg class="i-pause" viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="2.5" width="3" height="11" rx="1"/><rect x="9.5" y="2.5" width="3" height="11" rx="1"/></svg>
+              <svg class="i-play" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 2.8v10.4a.8.8 0 0 0 1.2.7l8.4-5.2a.8.8 0 0 0 0-1.4L5.7 2.1a.8.8 0 0 0-1.2.7Z"/></svg>
+            </button>
+            <div class="track" data-track role="slider" tabindex="0" aria-label="播放进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="track-fill"></div></div>
+            <button class="btn speed" type="button" data-speed aria-pressed="false">慢放</button>
+          </div>
+        </figure>
+        <div class="side">
+          <ol class="steps">
+            <li data-at="0.3"><span class="n">1</span><p>打开「设置」→<b>「小工具」</b>（右键托盘图标，选<b>「设置…」</b>），点<b>「新建便签」</b>。「便签与待办」的开关会跟着打开，桌面上多出一个便签，直接打字就行，按 <kbd>Enter</kbd> 换行。</p></li>
+            <li data-at="3.0"><span class="n">2</span><p>点别处就保存了。行首写 <code>[ ]</code> 的一行会变成待办，点前面的方框打上勾，再点一次取消。以后想改，单击便签里的文字。</p></li>
+            <li data-at="4.6"><span class="n">3</span><p>点<b>「新建时钟」</b>，桌面上多出一个时钟，显示时间、日期和星期。想看到秒，打开下面的<b>「显示秒」</b>。</p></li>
+            <li data-at="5.6"><span class="n">4</span><p>往下翻到<b>「脚本栅栏」</b>，点<b>「添加天气示例」</b>。脚本栅栏会定时运行一个脚本，把它打印的文字显示出来，这个例子显示的是东京的天气。</p></li>
+          </ol>
+          <aside class="tip">
+            <h3>小提示</h3>
+            <p>小工具和普通栅栏一样，可以拖动、改大小和收起。右键脚本栅栏，在<b>「运行间隔」</b>里选多久运行一次，从 1 分钟到 3 小时；点<b>「选择脚本…」</b>可以换成你自己的脚本，PowerShell、Python、批处理都行，也可以请 AI 助手帮你写。想看别的城市，选<b>「打开脚本所在的文件夹」</b>，在脚本里把 Tokyo 改成你所在的城市，再选<b>「立即运行」</b>。</p>
+            <p>PecoFence 自己不联网，联网的是你的脚本。导入的配置里有脚本栅栏时，「脚本栅栏」开关会先关上，等你确认脚本可信以后再打开。</p>
+          </aside>
+        </div>
+      </div>
+    </article>
+
+    <article class="lesson" data-lesson="dialog-jump" id="dialog-jump">
+      <header class="lesson-head">
+        <p class="kicker">7.2 · 小工具</p>
+        <h2>对话框跳转</h2>
+        <p class="lede">在程序里打开或保存文件时，不用在对话框里一层层找文件夹：切到资源管理器再切回来，对话框就跳到那个文件夹。</p>
+      </header>
+      <div class="lesson-body">
+        <figure class="demo">
+          <div class="stage" role="img" aria-label="动画：一个程序的「打开」对话框停在「文档」，后面的资源管理器开着「合同」文件夹；点一下资源管理器，再点回对话框，对话框的地址栏里出现「合同」的路径，随后列出合同文件夹里的文件；再点桌面上的「设计稿」文件夹栅栏，对话框马上跳到「设计稿」"></div>
+          <div class="controls">
+            <button class="btn play" type="button" data-play aria-label="暂停">
+              <svg class="i-pause" viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="2.5" width="3" height="11" rx="1"/><rect x="9.5" y="2.5" width="3" height="11" rx="1"/></svg>
+              <svg class="i-play" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 2.8v10.4a.8.8 0 0 0 1.2.7l8.4-5.2a.8.8 0 0 0 0-1.4L5.7 2.1a.8.8 0 0 0-1.2.7Z"/></svg>
+            </button>
+            <div class="track" data-track role="slider" tabindex="0" aria-label="播放进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="track-fill"></div></div>
+            <button class="btn speed" type="button" data-speed aria-pressed="false">慢放</button>
+          </div>
+        </figure>
+        <div class="side">
+          <ol class="steps">
+            <li data-at="0.3"><span class="n">1</span><p>先在「设置」→「小工具」里打开<b>「对话框跳转」</b>。程序弹出打开、另存为或选择文件夹的对话框时，它先停在程序自己选的文件夹，比如这里的「文档」。</p></li>
+            <li data-at="1.6"><span class="n">2</span><p>点一下资源管理器窗口，再点回对话框。对话框会跳到资源管理器正在显示的文件夹。每切回来一次，就跳一次。在另存为对话框里，已经填好的文件名不会变。</p></li>
+            <li data-at="4.6"><span class="n">3</span><p>点一下桌面上的文件夹栅栏，也就是显示某个文件夹内容的栅栏，对话框马上跳到那个文件夹。</p></li>
+          </ol>
+          <aside class="tip">
+            <h3>小提示</h3>
+            <p>对话框在前面时按 <kbd>Ctrl</kbd>+<kbd>G</kbd>，它会跳到最近用过的资源管理器窗口或文件夹栅栏的文件夹。在别的窗口里，<kbd>Ctrl</kbd>+<kbd>G</kbd> 照常可用。</p>
+            <p>速览搜索也能帮对话框找位置：对话框在前面时按速览快捷键，搜到想要的文件夹或文件后按 <kbd>Enter</kbd>。文件夹会让对话框转过去；文件在打开对话框里直接打开，在另存为对话框里会转到它的文件夹并填上文件名。这个用法不需要打开「对话框跳转」。</p>
+          </aside>
+        </div>
+      </div>
+    </article>
+
     <section class="lesson appendix" id="keys">
       <header class="lesson-head">
         <p class="kicker">附录 A</p>
@@ -617,10 +730,27 @@
             <table class="ap-table" aria-labelledby="keys-global">
               <tbody>
                 <tr><th scope="row"><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>空格</kbd></th><td>速览：所有栅栏浮到窗口上面。再按一次，或点栅栏外面就回去</td></tr>
+                <tr><th scope="row">快速按两下 <kbd>Ctrl</kbd></th><td>打开速览和搜索框，再按两下关闭。要先在「设置」→「小工具」里打开「双击 Ctrl 打开搜索」</td></tr>
                 <tr><th scope="row">点一下或右键托盘图标</th><td>打开托盘菜单</td></tr>
               </tbody>
             </table>
             <p class="ap-note">速览的快捷键可以在「设置」→「常规」→「速览栅栏」里换。</p>
+          </section>
+
+          <section class="ap-card" aria-labelledby="keys-search">
+            <h3 id="keys-search">速览搜索框</h3>
+            <table class="ap-table" aria-labelledby="keys-search">
+              <tbody>
+                <tr><th scope="row">速览时打字</th><td>打开搜索框，按名字找图标</td></tr>
+                <tr><th scope="row"><kbd>↓</kbd> / <kbd>↑</kbd>，或 <kbd>Ctrl</kbd>+<kbd>N</kbd> / <kbd>Ctrl</kbd>+<kbd>P</kbd></th><td>在列表里往下或往上选</td></tr>
+                <tr><th scope="row"><kbd>Enter</kbd>，或单击一行</th><td>打开，速览随之结束</td></tr>
+                <tr><th scope="row"><kbd>Ctrl</kbd>+<kbd>1</kbd> 到 <kbd>Ctrl</kbd>+<kbd>9</kbd></th><td>打开列表里对应的那一行</td></tr>
+                <tr><th scope="row"><kbd>Ctrl</kbd>+<kbd>Enter</kbd></th><td>打开所在的文件夹</td></tr>
+                <tr><th scope="row"><kbd>→</kbd>（光标在最后），或 <kbd>Ctrl</kbd>+<kbd>O</kbd></th><td>打开操作菜单：打开、打开所在文件夹、复制路径，以及 Windows 的右键菜单</td></tr>
+                <tr><th scope="row"><kbd>Esc</kbd></th><td>结束速览</td></tr>
+              </tbody>
+            </table>
+            <p class="ap-note">打开或保存对话框在前面时按速览快捷键，<kbd>Enter</kbd> 会把选中的文件夹或文件交给这个对话框。</p>
           </section>
 
           <section class="ap-card" aria-labelledby="keys-desktop">
@@ -751,6 +881,30 @@
             <p class="ap-note">普通栅栏打开了「双击文件夹或文件夹快捷方式时在此栅栏内打开」以后，双击文件夹也在栅栏里打开，按同样的键回到原来的图标。</p>
           </section>
 
+          <section class="ap-card" aria-labelledby="keys-dialog">
+            <h3 id="keys-dialog">打开或保存对话框</h3>
+            <p class="ap-note ap-note-top">在「设置」→「小工具」里打开「对话框跳转」以后：</p>
+            <table class="ap-table" aria-labelledby="keys-dialog">
+              <tbody>
+                <tr><th scope="row">切到资源管理器，再切回对话框</th><td>对话框跳到资源管理器的文件夹</td></tr>
+                <tr><th scope="row">点文件夹栅栏</th><td>对话框跳到这个文件夹</td></tr>
+                <tr><th scope="row"><kbd>Ctrl</kbd>+<kbd>G</kbd></th><td>跳到最近用过的资源管理器窗口或文件夹栅栏的文件夹</td></tr>
+              </tbody>
+            </table>
+          </section>
+
+          <section class="ap-card" aria-labelledby="keys-note">
+            <h3 id="keys-note">便签</h3>
+            <table class="ap-table" aria-labelledby="keys-note">
+              <tbody>
+                <tr><th scope="row">单击文字</th><td>编辑便签</td></tr>
+                <tr><th scope="row"><kbd>Enter</kbd></th><td>编辑时换行</td></tr>
+                <tr><th scope="row"><kbd>Esc</kbd>、<kbd>Ctrl</kbd>+<kbd>Enter</kbd>，或点别处</th><td>保存</td></tr>
+                <tr><th scope="row">单击待办前面的方框</th><td>打勾或取消</td></tr>
+              </tbody>
+            </table>
+          </section>
+
         </div>
       </div>
     </section>
@@ -796,7 +950,7 @@
         </section>
         <section class="ap-q">
           <h3>配置文件在哪？便携版呢？</h3>
-          <p>打开「设置」→「关于」就能看到配置文件的位置，点<b>「打开配置文件夹」</b>可以直接打开。一般在 <code>%APPDATA%\PecoFence</code>，Microsoft Store 版在 <code>%LOCALAPPDATA%\<wbr>Packages\<wbr>DayuanJiang.PecoFence_0bme5nfnaj27p\<wbr>LocalCache\<wbr>Roaming\<wbr>PecoFence</code>。便携版加上 <code>--portable</code> 参数启动时，会改用程序旁边的 <code>config</code> 文件夹。</p>
+          <p>打开「设置」→「布局与备份」，在「备份」下面就能看到配置文件的位置，点<b>「打开配置文件夹」</b>可以直接打开。一般在 <code>%APPDATA%\PecoFence</code>，Microsoft Store 版在 <code>%LOCALAPPDATA%\<wbr>Packages\<wbr>DayuanJiang.PecoFence_0bme5nfnaj27p\<wbr>LocalCache\<wbr>Roaming\<wbr>PecoFence</code>。便携版加上 <code>--portable</code> 参数启动时，会改用程序旁边的 <code>config</code> 文件夹。</p>
         </section>
         <section class="ap-q">
           <h3>怎么备份？换电脑时怎么办？</h3>
@@ -811,8 +965,16 @@
           <p>右键托盘图标，「速览所有栅栏」后面显示的就是现在能用的快捷键。你选的快捷键被系统或别的程序占用时，PecoFence 会自动换一个能用的，并弹出提示。后面什么都没写，说明速览关掉了，或者快捷键全被占了，这时直接点这个菜单项也行。开关和快捷键都在「设置」→「常规」→<b>「速览栅栏」</b>里。那里的快捷键方框显示的也是现在能用的那个，想换就点一下方框，按下新的组合键。</p>
         </section>
         <section class="ap-q">
+          <h3>搜索时为什么找不到电脑上别的文件？</h3>
+          <p>搜索框默认找的是栅栏里的图标。想找整台电脑上的文件，到「设置」→「小工具」打开<b>「搜索整台电脑（Everything）」</b>。这要用到免费的文件搜索工具 Everything，开关下面会显示它的状态：还没装就点<b>「安装 Everything」</b>，PecoFence 会用 winget 装好 1.5 版并启动它，Windows 会询问一次管理员权限；装了没运行，就点<b>「启动 Everything」</b>。用拼音找整台电脑上的中文名需要 1.5 版，旧版本可以点<b>「升级到 1.5」</b>。</p>
+        </section>
+        <section class="ap-q">
+          <h3>脚本栅栏会运行什么？</h3>
+          <p>脚本栅栏运行的是你自己选的脚本文件，每次最多 10 秒，不弹出窗口，脚本启动的程序也会跟着结束。PecoFence 自己不联网，联网的是脚本。别人分享的配置里可能带着脚本栅栏，所以导入的配置里有脚本栅栏时，「脚本栅栏」开关会先关上并给出提示。你看过脚本、确认可信以后，再到「设置」→「小工具」把它打开。</p>
+        </section>
+        <section class="ap-q">
           <h3>遇到问题怎么反馈？</h3>
-          <p>右键托盘图标，选<b>「发送反馈…」</b>，或者打开「设置」→「反馈」，写好后点<b>「发送」</b>。默认会附上诊断日志，里面没有文件名、路径和栅栏名称，发送前可以点<b>「查看要发送的内容」</b>看一看。</p>
+          <p>右键托盘图标，选<b>「发送反馈…」</b>，或者打开「设置」→「关于」，在下面的「反馈」里写好后点<b>「发送」</b>。默认会附上诊断日志，里面没有文件名、路径和栅栏名称，发送前可以点<b>「查看要发送的内容」</b>看一看。</p>
         </section>
       </div>
     </section>
