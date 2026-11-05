@@ -712,5 +712,6 @@
   "停在上面展开的栅栏，鼠标移开后自动收起；不管选哪种，双击标题或点折叠箭头都能展开和收起": "Fences opened on hover roll up again when the pointer leaves. Whichever you choose, double-clicking the title or clicking the roll-up arrow expands and rolls up",
   "鼠标停在上面时": "On hover",
   "单击标题时": "On a title click",
-  "只在双击标题或点箭头时": "Only on double-click or the arrow"
+  "只在双击标题或点箭头时": "Only on double-click or the arrow",
+  "“桌面”栅栏像桌面一样排列时，它的图标已经在 Windows 桌面上，所以不显示它；要同时显示，先在“栅栏”页关掉它的“像桌面一样排列”": "While the Desktop fence is arranged like the desktop, its icons are already on the Windows desktop, so it is not shown; to show it as well, first turn off its “Arrange like the desktop” on the Fences page"
 }

@@ -712,5 +712,6 @@
   "停在上面展开的栅栏，鼠标移开后自动收起；不管选哪种，双击标题或点折叠箭头都能展开和收起": "Os grupos expandidos ao passar o mouse recolhem quando ele sai. Seja qual for a escolha, clique duplo no título ou clique na seta de recolher expande e recolhe",
   "鼠标停在上面时": "Ao passar o mouse",
   "单击标题时": "Com um clique no título",
-  "只在双击标题或点箭头时": "Só clique duplo ou a seta"
+  "只在双击标题或点箭头时": "Só clique duplo ou a seta",
+  "“桌面”栅栏像桌面一样排列时，它的图标已经在 Windows 桌面上，所以不显示它；要同时显示，先在“栅栏”页关掉它的“像桌面一样排列”": "Enquanto o grupo “Área de trabalho” estiver organizado como a área de trabalho, os ícones dele já estão na área de trabalho do Windows, então ele não aparece; para mostrá-lo também, desative antes o “Organizar como a área de trabalho” dele na página “Grupos”"
 }

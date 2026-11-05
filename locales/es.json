@@ -712,5 +712,6 @@
   "停在上面展开的栅栏，鼠标移开后自动收起；不管选哪种，双击标题或点折叠箭头都能展开和收起": "Los grupos expandidos al pasar el cursor se contraen al apartarlo. Elijas lo que elijas, doble clic en el título o clic en la flecha de contraer expande y contrae",
   "鼠标停在上面时": "Al pasar el cursor",
   "单击标题时": "Con un clic en el título",
-  "只在双击标题或点箭头时": "Solo doble clic o la flecha"
+  "只在双击标题或点箭头时": "Solo doble clic o la flecha",
+  "“桌面”栅栏像桌面一样排列时，它的图标已经在 Windows 桌面上，所以不显示它；要同时显示，先在“栅栏”页关掉它的“像桌面一样排列”": "Mientras el grupo «Escritorio» se organiza como el escritorio, sus iconos ya están en el escritorio de Windows, así que no se muestra; para mostrarlo también, desactiva primero su «Organizar como el escritorio» en la página «Grupos»"
 }

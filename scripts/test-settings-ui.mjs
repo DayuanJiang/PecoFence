@@ -1043,6 +1043,12 @@ async function runTests() {
   await test('Windows 桌面图标 is one list of three; 保持隐藏 shows only for 隐藏', async () => {
     const list = doc.getElementById('desktopIcons'), help = doc.getElementById('desktopIconsHelp'), keepCard = doc.getElementById('keepIconsCard');
     assert(!doc.querySelector('[data-bind=hideRealIcons]') && !doc.querySelector('[data-bind=hideInboxWhenIconsShown]'), 'The old switches are still there');
+    // The mock's 「桌面」 is arranged like the desktop: it never shows beside the Windows icons.
+    assert(list.value === 'showNoInbox' && list.querySelector('option[value=showWithInbox]').disabled && help.textContent.includes('像桌面一样排列'), 'An arranged 桌面 fence not explained: ' + list.value + ' ' + help.textContent);
+    const inbox = current().fences.find(f => f.kind === 'inbox');
+    inbox.desktopLayout = false;
+    frame.contentWindow.testRefresh(); await settle();
+    assert(!list.querySelector('option[value=showWithInbox]').disabled, 'Showing the 桌面 fence still greyed');
     assert(list.value === 'showWithInbox' && keepCard.hidden && help.textContent.includes('同时出现'), 'Shown icons with the Desktop fence not shown: ' + list.value);
     change(doc, 'desktopIcons', 'showNoInbox'); await settle();
     assert(!current().settings.hideRealIcons && current().settings.hideInboxWhenIconsShown && list.value === 'showNoInbox' && help.textContent.includes('不显示'), 'showNoInbox not posted');
@@ -1055,6 +1061,8 @@ async function runTests() {
     // Back to shown: the choice made before for the Desktop fence is not kept by accident.
     change(doc, 'desktopIcons', 'showWithInbox'); await settle();
     assert(!current().settings.hideRealIcons && !current().settings.hideInboxWhenIconsShown && keepCard.hidden, 'showWithInbox not posted');
+    inbox.desktopLayout = true;
+    frame.contentWindow.testRefresh(); await settle();
     const offer = doc.querySelector('[data-bind=offerNewFence]');
     assert(offer.getAttribute('aria-checked') === 'true', 'New fence offer not shown on');
     offer.click(); await settle();

@@ -712,5 +712,6 @@
   "停在上面展开的栅栏，鼠标移开后自动收起；不管选哪种，双击标题或点折叠箭头都能展开和收起": "Les groupes développés au survol se replient quand le pointeur s’en va. Quel que soit le choix, un double-clic sur le titre ou un clic sur la flèche de repli développe et replie",
   "鼠标停在上面时": "Au survol",
   "单击标题时": "D’un clic sur le titre",
-  "只在双击标题或点箭头时": "Seulement double-clic ou flèche"
+  "只在双击标题或点箭头时": "Seulement double-clic ou flèche",
+  "“桌面”栅栏像桌面一样排列时，它的图标已经在 Windows 桌面上，所以不显示它；要同时显示，先在“栅栏”页关掉它的“像桌面一样排列”": "Tant que le groupe « Bureau » est disposé comme le bureau, ses icônes sont déjà sur le Bureau Windows, il n’est donc pas affiché ; pour l’afficher aussi, désactivez d’abord son option « Disposer comme le bureau » dans la page « Groupes »"
 }

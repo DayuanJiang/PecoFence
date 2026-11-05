@@ -2010,14 +2010,21 @@
   document.getElementById('hideIconsAgain').onclick = () => send({ type: 'action', name: 'hideDesktopIcons' });
   // 常规 › Windows 桌面图标: hidden (items in fences), shown with the 「桌面」 fence, or shown
   // without it (hideRealIcons and hideInboxWhenIconsShown together).
+  // A 「桌面」 fence arranged like the desktop (像桌面一样排列) never shows beside the Windows
+  // icons (its icons would be there twice, see State::hidden_fences): 「显示，也显示“桌面”栅栏」
+  // is greyed and the help line says why.
   function bindDesktopIcons() {
     const s = state.settings, select = document.getElementById('desktopIcons');
-    const value = s.hideRealIcons ? 'hide' : s.hideInboxWhenIconsShown ? 'showNoInbox' : 'showWithInbox';
+    const arranged = (state.fences || []).some(f => f.kind === 'inbox' && f.desktopLayout);
+    const value = s.hideRealIcons ? 'hide' : s.hideInboxWhenIconsShown || arranged ? 'showNoInbox' : 'showWithInbox';
+    select.querySelector('option[value=showWithInbox]').disabled = arranged;
     select.value = value;
     document.getElementById('desktopIconsHelp').textContent = {
       hide: t("桌面项目只显示在栅栏里，没有归类的放进“桌面”栅栏；回收站等系统图标也在“桌面”栅栏里"),
       showWithInbox: t("Windows 桌面照常显示图标，没有归类的项目同时出现在“桌面”栅栏里"),
-      showNoInbox: t("没有归类的项目只留在 Windows 桌面上，不显示“桌面”栅栏"),
+      showNoInbox: arranged
+        ? t("“桌面”栅栏像桌面一样排列时，它的图标已经在 Windows 桌面上，所以不显示它；要同时显示，先在“栅栏”页关掉它的“像桌面一样排列”")
+        : t("没有归类的项目只留在 Windows 桌面上，不显示“桌面”栅栏"),
     }[value];
     document.getElementById('keepIconsCard').hidden = value !== 'hide';
     select.onchange = () => {
