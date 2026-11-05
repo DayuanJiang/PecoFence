@@ -493,6 +493,376 @@ function UiaFind($hwnd, $name) {
   return $root.FindFirst([Windows.Automation.TreeScope]::Descendants, $cond)
 }
 
+# ---- which copy the generic helpers talk to
+# Pf / PfJson always mean the test instance (PfStart), Ipf / IpfJson the user's installed or
+# portable copy (user.ps1). ItemFence, ItemPt, RClickItem and StateText use the test instance
+# until PfUseUser switches them to the user's copy.
+$script:PfTarget = 'test'
+function PfUseUser() { $script:PfTarget = 'user' }
+function TCli { if ($script:PfTarget -eq 'user') { return (Ipf @args) }; return (Pf @args) }
+function TJson { if ($script:PfTarget -eq 'user') { return (IpfJson @args) }; return (PfJson @args) }
+
+
+# ---- more input (from the hold-out tests of 2026-11-06)
+
+# Client origin of a window (the settings page's (0,0) is the client area's top left).
+Add-Type @'
+using System; using System.Runtime.InteropServices;
+public static class CW {
+  [StructLayout(LayoutKind.Sequential)] public struct P { public int X, Y; }
+  [DllImport("user32.dll")] public static extern bool ClientToScreen(IntPtr h, ref P p);
+  [DllImport("user32.dll")] static extern void mouse_event(uint f, int dx, int dy, int d, UIntPtr e);
+  public static void Wheel(int notches) { mouse_event(0x0800, 0, 0, notches * 120, UIntPtr.Zero); }
+}
+'@
+function ClientOrigin($h) { $p = New-Object CW+P; [CW]::ClientToScreen($h, [ref]$p) | Out-Null; return $p }
+# Mouse wheel over a client point of a window (negative notches scroll down).
+function WheelAt($h, $cx, $cy, $notches) { $o = ClientOrigin $h; [G]::MoveTo($o.X + $cx, $o.Y + $cy); Start-Sleep -Milliseconds 100; [CW]::Wheel($notches); Start-Sleep -Milliseconds 900 }
+
+# Real mouse: button down / up where the pointer is, a glide in steps (raw input, so drags and
+# the Windows move loop see it), the wheel (notches < 0 = towards the user).
+function MDown() { [G]::mouse_event(2, 0, 0, 0, [UIntPtr]::Zero) }
+function MUp() { [G]::mouse_event(4, 0, 0, 0, [UIntPtr]::Zero) }
+function Glide($x0, $y0, $x1, $y1, $steps = 12, $ms = 25) {
+  for ($i = 1; $i -le $steps; $i++) { [G]::MoveTo([int]($x0 + ($x1 - $x0) * $i / $steps), [int]($y0 + ($y1 - $y0) * $i / $steps)); Start-Sleep -Milliseconds $ms }
+}
+function Wheel($x, $y, $notches) {
+  [G]::MoveTo($x, $y); Start-Sleep -Milliseconds 80
+  $d = [BitConverter]::ToUInt32([BitConverter]::GetBytes([int](120 * $notches)), 0)
+  [G]::mouse_event(0x800, 0, 0, $d, [UIntPtr]::Zero)
+}
+function DoubleClick($x, $y) { [G]::Click($x, $y); Start-Sleep -Milliseconds 90; MDown; Start-Sleep -Milliseconds 30; MUp }
+
+# NcHit: WM_NCHITTEST of a window at a screen point (2 caption, 1 client, 11 right edge ...).
+function NcHit($h, $x, $y) {
+  $res = [IntPtr]::Zero
+  [G]::SendMessageTimeoutW($h, 0x84, [IntPtr]::Zero, [IntPtr](($y -shl 16) -bor ($x -band 0xFFFF)), 2, 1000, [ref]$res) | Out-Null
+  return [int64]$res
+}
+
+# Real mouse: double-click, drag with the button held.
+function DblClick($x, $y) {
+  [G]::MoveTo($x, $y); Start-Sleep -Milliseconds 80
+  [G]::mouse_event(2, 0, 0, 0, [UIntPtr]::Zero); Start-Sleep -Milliseconds 30; [G]::mouse_event(4, 0, 0, 0, [UIntPtr]::Zero)
+  Start-Sleep -Milliseconds 90
+  [G]::mouse_event(2, 0, 0, 0, [UIntPtr]::Zero); Start-Sleep -Milliseconds 30; [G]::mouse_event(4, 0, 0, 0, [UIntPtr]::Zero)
+}
+function DragTo($x1, $y1, $x2, $y2, $steps = 15) {
+  [G]::MoveTo($x1, $y1); Start-Sleep -Milliseconds 150
+  [G]::mouse_event(2, 0, 0, 0, [UIntPtr]::Zero); Start-Sleep -Milliseconds 200
+  for ($s = 1; $s -le $steps; $s++) {
+    [G]::MoveTo([int]($x1 + ($x2 - $x1) * $s / $steps), [int]($y1 + ($y2 - $y1) * $s / $steps)); Start-Sleep -Milliseconds 40
+  }
+  Start-Sleep -Milliseconds 400
+  [G]::mouse_event(4, 0, 0, 0, [UIntPtr]::Zero); Start-Sleep -Milliseconds 800
+}
+
+# ---- popup menus and windows
+
+# The open popup menu (#32768): its item texts, and a click on the item with that text.
+Add-Type @'
+using System; using System.Text; using System.Runtime.InteropServices;
+public static class Menu {
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern IntPtr FindWindowW(string c, string t);
+  [DllImport("user32.dll")] static extern IntPtr SendMessageW(IntPtr h, uint m, IntPtr w, IntPtr l);
+  [DllImport("user32.dll")] static extern int GetMenuItemCount(IntPtr m);
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetMenuStringW(IntPtr m, uint id, StringBuilder s, int n, uint f);
+  [DllImport("user32.dll")] static extern bool GetMenuItemRect(IntPtr w, IntPtr m, uint i, out RC r);
+  [StructLayout(LayoutKind.Sequential)] public struct RC { public int L, T, R, B; }
+  public static IntPtr Handle() { var w = FindWindowW("#32768", null); return w == IntPtr.Zero ? IntPtr.Zero : SendMessageW(w, 0x01E1, IntPtr.Zero, IntPtr.Zero); }
+  public static string Items() {
+    var m = Handle(); if (m == IntPtr.Zero) return null;
+    var sb = new StringBuilder();
+    for (int i = 0; i < GetMenuItemCount(m); i++) { var s = new StringBuilder(256); GetMenuStringW(m, (uint)i, s, 256, 0x400); sb.Append(s.ToString().Replace("&", "") + "|"); }
+    return sb.ToString();
+  }
+  // Centre (x, y) of the first item whose text starts with `text` (screen px), or null.
+  public static int[] ItemPoint(string text) {
+    var m = Handle(); if (m == IntPtr.Zero) return null;
+    for (int i = 0; i < GetMenuItemCount(m); i++) {
+      var s = new StringBuilder(256); GetMenuStringW(m, (uint)i, s, 256, 0x400);
+      if (s.ToString().Replace("&", "").StartsWith(text)) { RC r; GetMenuItemRect(IntPtr.Zero, m, (uint)i, out r); return new int[] { (r.L + r.R) / 2, (r.T + r.B) / 2 }; }
+    }
+    return null;
+  }
+}
+'@
+function MenuClick($text) {
+  $p = [Menu]::ItemPoint($text)
+  if ($null -eq $p) { return $false }
+  [G]::Click($p[0], $p[1]); Start-Sleep -Milliseconds 600; return $true
+}
+
+# Windows of a class, popup menus (owner-drawn: text and rect through MN_GETHMENU), the window
+# under a point, the desktop's own icon view.
+Add-Type @'
+using System;
+using System.Text;
+using System.Collections.Generic;
+using System.Runtime.InteropServices;
+public static class W {
+  public delegate bool EnumProc(IntPtr h, IntPtr l);
+  [DllImport("user32.dll")] static extern bool EnumWindows(EnumProc f, IntPtr l);
+  [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
+  [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
+  [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern int GetClassNameW(IntPtr h, StringBuilder s, int n);
+  [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern int GetWindowTextW(IntPtr h, StringBuilder s, int n);
+  [DllImport("user32.dll")] static extern IntPtr SendMessageW(IntPtr h, uint m, IntPtr w, IntPtr l);
+  [DllImport("user32.dll")] public static extern bool PostMessageW(IntPtr h, uint m, IntPtr w, IntPtr l);
+  [DllImport("user32.dll")] static extern int GetMenuItemCount(IntPtr m);
+  [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern int GetMenuStringW(IntPtr m, uint id, StringBuilder s, int n, uint flags);
+  [DllImport("user32.dll")] static extern uint GetMenuState(IntPtr m, uint id, uint flags);
+  [DllImport("user32.dll")] static extern bool GetMenuItemRect(IntPtr h, IntPtr m, uint i, out RECT r);
+  [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr h, out RECT r);
+  [DllImport("user32.dll")] static extern IntPtr WindowFromPoint(POINT p);
+  [DllImport("user32.dll")] static extern IntPtr GetAncestor(IntPtr h, uint f);
+  [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern IntPtr FindWindowExW(IntPtr p, IntPtr a, string c, string t);
+  [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern IntPtr FindWindowW(string c, string t);
+  [StructLayout(LayoutKind.Sequential)] public struct RECT { public int L, T, R, B; }
+  [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X, Y; }
+  public static string Cls(IntPtr h) { var s = new StringBuilder(256); GetClassNameW(h, s, 256); return s.ToString(); }
+  public static string Title(IntPtr h) { var s = new StringBuilder(512); GetWindowTextW(h, s, 512); return s.ToString(); }
+  public static string ProcOf(IntPtr h) { uint pid; GetWindowThreadProcessId(h, out pid); try { return System.Diagnostics.Process.GetProcessById((int)pid).ProcessName; } catch { return "?"; } }
+  // Visible top-level windows of a class, topmost first.
+  public static IntPtr[] Tops(string cls) {
+    var list = new List<IntPtr>();
+    EnumWindows((h, l) => { if (IsWindowVisible(h) && Cls(h) == cls) list.Add(h); return true; }, IntPtr.Zero);
+    return list.ToArray();
+  }
+  [DllImport("user32.dll")] static extern bool EnumChildWindows(IntPtr p, EnumProc f, IntPtr l);
+  [DllImport("user32.dll")] static extern bool IsWindowEnabled(IntPtr h);
+  [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern IntPtr SendMessageW(IntPtr h, uint m, IntPtr w, StringBuilder l);
+  public static string Text(IntPtr h) { var s = new StringBuilder(2048); SendMessageW(h, 0x0D, (IntPtr)2048, s); return s.ToString(); }
+  // Visible child buttons: "hwnd TAB caption without & TAB enabled TAB L,T,R,B" lines.
+  public static string Buttons(IntPtr top) {
+    var sb = new StringBuilder();
+    EnumChildWindows(top, (h, l) => {
+      if (Cls(h).IndexOf("Button", StringComparison.OrdinalIgnoreCase) >= 0 && IsWindowVisible(h)) {
+        RECT r; GetWindowRect(h, out r);
+        sb.Append((long)h + "\t" + Text(h).Replace("&", "") + "\t" + IsWindowEnabled(h) + "\t" + r.L + "," + r.T + "," + r.R + "," + r.B + "\n");
+      }
+      return true; }, IntPtr.Zero);
+    return sb.ToString();
+  }
+  // The texts of a dialog's static controls (a message box's message).
+  public static string Statics(IntPtr top) {
+    var sb = new StringBuilder();
+    EnumChildWindows(top, (h, l) => { var c = Cls(h); if (c == "Static" || c.StartsWith("TNewStaticText")) sb.Append(Text(h) + " "); return true; }, IntPtr.Zero);
+    return sb.ToString();
+  }
+  public static string Info(IntPtr h) { RECT r; GetWindowRect(h, out r); return ProcOf(h) + " '" + Title(h) + "' " + r.L + "," + r.T + "," + r.R + "," + r.B; }
+  // Items of an open popup menu window: "index TAB text TAB state TAB L,T,R,B" lines.
+  public static string MenuItems(IntPtr menuWnd) {
+    IntPtr m = SendMessageW(menuWnd, 0x01E1, IntPtr.Zero, IntPtr.Zero);
+    if (m == IntPtr.Zero) return "";
+    var sb = new StringBuilder();
+    int n = GetMenuItemCount(m);
+    for (int i = 0; i < n; i++) {
+      var t = new StringBuilder(512);
+      GetMenuStringW(m, (uint)i, t, 512, 0x400);
+      uint st = GetMenuState(m, (uint)i, 0x400);
+      RECT r; GetMenuItemRect(IntPtr.Zero, m, (uint)i, out r);
+      sb.Append(i + "\t" + t.ToString().Replace("\t", " ~ ") + "\t" + st + "\t" + r.L + "," + r.T + "," + r.R + "," + r.B + "\n");
+    }
+    return sb.ToString();
+  }
+  public static string RootClassAt(int x, int y) {
+    var p = new POINT(); p.X = x; p.Y = y;
+    var h = WindowFromPoint(p);
+    return h == IntPtr.Zero ? "" : Cls(GetAncestor(h, 2));
+  }
+  public static IntPtr DefView() {
+    IntPtr found = FindWindowExW(FindWindowW("Progman", null), IntPtr.Zero, "SHELLDLL_DefView", null);
+    if (found != IntPtr.Zero) return found;
+    EnumWindows((h, l) => { if (Cls(h) == "WorkerW") { var d = FindWindowExW(h, IntPtr.Zero, "SHELLDLL_DefView", null); if (d != IntPtr.Zero) { found = d; return false; } } return true; }, IntPtr.Zero);
+    return found;
+  }
+  // Windows' own desktop icons on screen (the FolderView list under SHELLDLL_DefView).
+  public static bool IconsVisible() { var d = DefView(); if (d == IntPtr.Zero) return false; var lv = FindWindowExW(d, IntPtr.Zero, "SysListView32", null); return lv != IntPtr.Zero && IsWindowVisible(lv); }
+  // Explorer's View > Show desktop icons.
+  public static void ToggleIcons() { var d = DefView(); if (d != IntPtr.Zero) PostMessageW(d, 0x111, (IntPtr)0x7402, IntPtr.Zero); }
+}
+'@
+
+# Popup menus: the topmost open one, its rows, a click on the row whose text matches.
+function MenuWin($sec = 6) {
+  for ($i = 0; $i -lt $sec * 10; $i++) { $m = @([W]::Tops('#32768')); if ($m.Count) { return $m[0] }; Start-Sleep -Milliseconds 100 }
+  return [IntPtr]::Zero
+}
+function MenuRows($h) {
+  $rows = @()
+  foreach ($line in ([W]::MenuItems($h) -split "`n")) {
+    if (-not $line) { continue }
+    $p = $line -split "`t"; $r = $p[3] -split ','
+    $rows += [pscustomobject]@{ i = [int]$p[0]; text = ($p[1] -replace '&', ''); state = [int64]$p[2]; L = [int]$r[0]; T = [int]$r[1]; R = [int]$r[2]; B = [int]$r[3] }
+  }
+  return $rows
+}
+# Entry texts, a greyed one marked (off).
+function MenuTexts($h) { return ((@(MenuRows $h) | Where-Object { $_.text } | ForEach-Object { if ($_.state -band 3) { "$($_.text) (off)" } else { $_.text } }) -join ' | ') }
+function MenuDupes($h) { return ((@(MenuRows $h) | Where-Object { $_.text } | Group-Object text | Where-Object { $_.Count -gt 1 } | ForEach-Object { $_.Name }) -join ', ') }
+function MenuPoint($h, $regex) {
+  $row = @(MenuRows $h) | Where-Object { $_.text -match $regex } | Select-Object -First 1
+  if (-not $row) { return $null }
+  return @([int](($row.L + $row.R) / 2), [int](($row.T + $row.B) / 2))
+}
+function MenuPick($regex, $h = [IntPtr]::Zero) {
+  if ($h -eq [IntPtr]::Zero) { $h = MenuWin 5 }
+  if ($h -eq [IntPtr]::Zero) { Log "MenuPick '$regex' found no menu"; return $null }
+  $p = MenuPoint $h $regex
+  if (-not $p) { Log "MenuPick '$regex' not among: $(MenuTexts $h)"; return $null }
+  $t = (@(MenuRows $h) | Where-Object { $_.text -match $regex } | Select-Object -First 1).text
+  [G]::Click($p[0], $p[1])
+  Log "menu pick '$t'"
+  return $t
+}
+
+function WaitGoneWin($cls, $sec) {
+  for ($i = 0; $i -lt $sec * 5; $i++) { $h = [G]::FindWindowW($cls, [NullString]::Value); if ($h -eq [IntPtr]::Zero -or -not [G]::IsWindowVisible($h)) { return $true }; Start-Sleep -Milliseconds 200 }
+  return $false
+}
+
+function VisFences() { return @([W]::Tops('PecoFence.Fence')).Count }
+function BinNames() { return ((@((New-Object -ComObject Shell.Application).NameSpace(10).Items()) | ForEach-Object { $_.Name }) -join ', ') }
+function LogTime($line) { if ($line -match '^(\S+Z)\s') { return [DateTimeOffset]::Parse($Matches[1]).UtcDateTime }; return $null }
+
+# Windows' client-area animations (SPI_GETCLIENTAREAANIMATION): an RDP session starts with them
+# off, which makes PecoFence snap where a normal desktop animates (tab slides, fades).
+Add-Type @'
+using System; using System.Runtime.InteropServices;
+public static class Anim {
+  [DllImport("user32.dll")] static extern bool SystemParametersInfoW(uint a, uint b, ref int v, uint f);
+  [DllImport("user32.dll")] static extern bool SystemParametersInfoW(uint a, uint b, IntPtr v, uint f);
+  public static bool Get() { int v = 0; SystemParametersInfoW(0x1042, 0, ref v, 0); return v != 0; }
+  public static void Set(bool on) { SystemParametersInfoW(0x1043, 0, (IntPtr)(on ? 1 : 0), 3); }
+}
+'@
+
+# ---- fence and item state
+
+# DumpScript: test-script lines that log a `dump dN` every $ms ms for $minutes, so a step can
+# read the fence windows' state at any moment with PfDump.
+function DumpScript($ms = 250, $minutes = 25, $first = 4000) {
+  $n = [int]($minutes * 60000 / $ms)
+  return @("sleep $first") + (1..$n | ForEach-Object { "dump d$_"; "sleep $ms" }) + @('sleep 3600000')
+}
+
+# ParseDumpLine: one `[dN] live ...` dump line as an object: hwnd, l t r b (window rect, px),
+# ox oy (client offset), cw ch (chrome size px), title, ntabs, tabs (strip order of tab
+# titles), rects ((x, w) DIPs per tab, window x; (y, h) in a left column), active (fence id),
+# rolled, tabDrag, winDrag, contentX.
+function ParseDumpLine($s) {
+  $o = [ordered]@{ raw = $s }
+  if ($s -match 'hwnd=0x([0-9a-f]+)') { $o.hwnd = [IntPtr][Convert]::ToInt64($Matches[1], 16) }
+  if ($s -match ' rect=\((-?\d+),(-?\d+),(-?\d+),(-?\d+)\)') { $o.l = [int]$Matches[1]; $o.t = [int]$Matches[2]; $o.r = [int]$Matches[3]; $o.b = [int]$Matches[4] }
+  if ($s -match ' title="((?:[^"\\]|\\.)*)"') { $o.title = $Matches[1] }
+  if ($s -match ' rolled=(\w+)') { $o.rolled = $Matches[1] -eq 'true' }
+  if ($s -match ' tabs=(\d+)') { $o.ntabs = [int]$Matches[1] }
+  if ($s -match ' active=([0-9a-f-]+)') { $o.active = $Matches[1] }
+  if ($s -match ' chrome=\((\d+), (\d+)\)') { $o.cw = [int]$Matches[1]; $o.ch = [int]$Matches[2] }
+  if ($s -match ' client_offset=\((-?\d+),(-?\d+)\)') { $o.ox = [int]$Matches[1]; $o.oy = [int]$Matches[2] }
+  if ($s -match ' content_x=(-?\d+)') { $o.contentX = [int]$Matches[1] }
+  if ($s -match ' tab_fonts=\[(.*?)\] tab_rects') { $o.tabs = @([regex]::Matches($Matches[1], '\("((?:[^"\\]|\\.)*)", \d+\)') | ForEach-Object { $_.Groups[1].Value }) }
+  if ($s -match ' tab_rects=\[(.*?)\]') { $o.rects = @([regex]::Matches($Matches[1], '\((-?[\d.]+), (-?[\d.]+)\)') | ForEach-Object { , @([double]$_.Groups[1].Value, [double]$_.Groups[2].Value) }) }
+  if ($s -match ' tab_drag=(\w+)') { $o.tabDrag = $Matches[1] -eq 'true' }
+  if ($s -match ' window_drag=(\w+)') { $o.winDrag = $Matches[1] -eq 'true' }
+  return [pscustomobject]$o
+}
+
+# PfDump: the first complete dump logged after this call (one object per live fence window),
+# read from the end of the log, so it stays fast however big the log grows.
+function PfDump($sec = 5) {
+  $p = PfLogPath
+  if (-not (Test-Path $p)) { return @() }
+  $fs = [IO.File]::Open($p, 'Open', 'Read', 'ReadWrite'); $start = $fs.Length; $fs.Close()
+  $deadline = (Get-Date).AddSeconds($sec)
+  while ((Get-Date) -lt $deadline) {
+    Start-Sleep -Milliseconds 100
+    $fs = [IO.File]::Open($p, 'Open', 'Read', 'ReadWrite'); $fs.Position = $start
+    $sr = New-Object IO.StreamReader($fs, [Text.Encoding]::UTF8); $buf = $sr.ReadToEnd(); $sr.Close()
+    foreach ($m in [regex]::Matches($buf, '\[(d\d+)\] fences=')) {
+      $tag = $m.Groups[1].Value
+      if ($buf -notmatch ">> dump $tag\b") { continue }
+      return @([regex]::Matches($buf, "\[$tag\] live ([^\r\n]*)") | ForEach-Object { ParseDumpLine $_.Groups[1].Value })
+    }
+  }
+  return @()
+}
+# DumpOf: the window of that fence (its title or one of its tabs) in the next dump.
+function DumpOf($name, $sec = 5) {
+  foreach ($w in @(PfDump $sec)) { if ($w.title -eq $name -or (@($w.tabs) -contains $name)) { return $w } }
+  return $null
+}
+
+
+# fence list as title -> id and id -> title.
+function FenceIds() {
+  $j = PfJson fence list
+  $script:Id = @{}; $script:IdTitle = @{}
+  foreach ($f in @($j.fences) + @($j)) { if ($f -and $f.title) { $script:Id[$f.title] = "$($f.id)"; $script:IdTitle["$($f.id)"] = $f.title } }
+}
+function FenceGet($t) { $j = PfJson fence get $t; if ($j.fence) { return $j.fence }; return $j }
+
+# Desktop files: one with that name (and a line of text), and the fence title of a desktop item.
+function DeskFile($name) { $p = Join-Path $PfDesk $name; Set-Content -LiteralPath $p -Value "hold-out $name" -Encoding ASCII; return $p }
+# The fence an item is in (by display name or file name), read from the test instance or, after
+# PfUseUser, from the user's copy.
+function ItemFence($name) {
+  foreach ($it in @(TJson item list)) { if ($it -and ($it.fileName -eq $name -or $it.name -eq $name)) { return $it.fenceTitle } }
+  return $null
+}
+function WaitItemFence($file, $want, $sec = 10) {
+  for ($k = 0; $k -lt $sec; $k++) { $f = ItemFence $file; if ($f -eq $want) { return $f }; Start-Sleep -Seconds 1 }
+  return $f
+}
+
+# Rules from `rule list`; one rule as a comparable string; a rule by id.
+function Rules() { return @((PfJson rule list).list) }
+function RuleSig($r) { return ($r | Select-Object id, name, enabled, target, allOf, priorityClass, template | ConvertTo-Json -Depth 8 -Compress) }
+function RuleById($id) { return (Rules | Where-Object { $_.id -eq $id } | Select-Object -First 1) }
+function WaitRule($id, [scriptblock]$ok, $sec = 8) {
+  for ($k = 0; $k -lt $sec * 2; $k++) { $r = RuleById $id; if ($r -and (& $ok $r)) { return $r }; Start-Sleep -Milliseconds 500 }
+  return $r
+}
+
+# Where an item's icon is on screen: icons layout at 100 %, sorted by name (namespace items
+# first), 36 px title row, cells 80 x 96 at icon size 48, from `fence get` (windowRect, fit).
+function ItemPt($fence, $name) {
+  $f = TJson fence get $fence
+  $items = @(TJson item list --fence $fence)
+  $order = @(@($items | Where-Object { $_.kind -eq 'namespace' } | Sort-Object name) + @($items | Where-Object { $_.kind -ne 'namespace' } | Sort-Object name) | ForEach-Object { $_.name })
+  $i = [array]::IndexOf($order, $name)
+  if ($i -lt 0 -or -not $f.windowRect) { Log "ItemPt: '$name' not in '$fence' ($($order -join ', '))"; return $null }
+  $wr = $f.windowRect
+  $cols = if ($f.fit -and $f.fit.columns) { [int]$f.fit.columns } else { [math]::Max(1, [math]::Floor($wr.w / 80)) }
+  $pitch = $wr.w / $cols
+  $x = [int]($wr.x + ($i % $cols) * $pitch + $pitch / 2)
+  $y = [int]($wr.y + 36 + 8 + [math]::Floor($i / $cols) * 96 + 32)
+  Log "ItemPt '$name' in '$fence': index $i of $($order.Count), cols $cols -> $x,$y"
+  return @($x, $y)
+}
+function RClickItem($fence, $name) {
+  $p = ItemPt $fence $name
+  if (-not $p) { return [IntPtr]::Zero }
+  [G]::RClick($p[0], $p[1])
+  return (MenuWin 8)
+}
+
+# Fences, rules, item memberships and the theme as sorted text lines (compared across an upgrade).
+function StateText() {
+  $lines = @()
+  foreach ($f in @(TJson fence list) | Sort-Object title) { $r = $f.rect; $lines += "fence $($f.title) | $($r.x),$($r.y),$($r.w),$($r.h) | tint $($f.tint)" }
+  foreach ($r in @((TJson rule list).list)) { $lines += "rule $($r.name) -> $($r.targetTitle) enabled=$($r.enabled)" }
+  foreach ($it in @(TJson item list) | Sort-Object name) { $lines += "item $($it.name) in $($it.fenceTitle)" }
+  $lines += "theme $((TCli settings get theme).Trim())"
+  return $lines
+}
+
+# ---- modules: the settings page over CDP, pixel reads, the user's copy and setup
+. "$PSScriptRoot\page.ps1"
+. "$PSScriptRoot\pixels.ps1"
+. "$PSScriptRoot\user.ps1"
+
 # ---- job start: a known desktop
 
 [G]::Press(0x1B)

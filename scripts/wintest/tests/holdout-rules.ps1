@@ -1,157 +1,9 @@
-# Hold-out test: rule editing in Settings > Sorting rules (feedback #104), done with real clicks
+﻿# Hold-out test: rule editing in Settings > Sorting rules (feedback #104), done with real clicks
 # and typing in the settings page. Debug build: element rects and DOM state over CDP (WebView2
 # with --remote-debugging-port=9352). Release build: the main path (R1) only, by keyboard and
 # client coordinates measured in the debug run.
 
-# ---- lib candidates
-
-# Client origin of a window (the settings page's (0,0) is the client area's top left).
-Add-Type @'
-using System; using System.Runtime.InteropServices;
-public static class CW {
-  [StructLayout(LayoutKind.Sequential)] public struct P { public int X, Y; }
-  [DllImport("user32.dll")] public static extern bool ClientToScreen(IntPtr h, ref P p);
-  [DllImport("user32.dll")] static extern void mouse_event(uint f, int dx, int dy, int d, UIntPtr e);
-  public static void Wheel(int notches) { mouse_event(0x0800, 0, 0, notches * 120, UIntPtr.Zero); }
-}
-'@
-function ClientOrigin($h) { $p = New-Object CW+P; [CW]::ClientToScreen($h, [ref]$p) | Out-Null; return $p }
-# Mouse wheel over a client point of a window (negative notches scroll down).
-function WheelAt($h, $cx, $cy, $notches) { $o = ClientOrigin $h; [G]::MoveTo($o.X + $cx, $o.Y + $cy); Start-Sleep -Milliseconds 100; [CW]::Wheel($notches); Start-Sleep -Milliseconds 900 }
-
-# Whether the build under test is a debug build (only those honour PECOFENCE_WEBVIEW_ARGS).
-function IsDebugBuild() { return [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes("$PfBin\pecofence.exe")).Contains('PECOFENCE_WEBVIEW_ARGS') }
-
-# CDP: connects to the settings page of a debug build started with
-# PECOFENCE_WEBVIEW_ARGS=--remote-debugging-port=9352; $true when connected.
-function CdpOpen($port = 9352, $sec = 30) {
-  for ($i = 0; $i -lt $sec; $i++) {
-    try {
-      $list = (New-Object Net.WebClient).DownloadString("http://127.0.0.1:$port/json") | ConvertFrom-Json
-      $page = @($list | Where-Object { $_.type -eq 'page' }) | Select-Object -First 1
-      if ($page) {
-        $ws = New-Object Net.WebSockets.ClientWebSocket
-        $ws.ConnectAsync([Uri]$page.webSocketDebuggerUrl, [Threading.CancellationToken]::None).Wait(10000) | Out-Null
-        if ($ws.State -eq 'Open') { $script:Cdp = $ws; $script:CdpN = 0; Log "cdp connected: $($page.webSocketDebuggerUrl)"; return $true }
-      }
-    } catch { Log "cdp: $($_.Exception.Message)" }
-    Start-Sleep -Seconds 1
-  }
-  return $false
-}
-
-# Value of a JavaScript expression in the page (through JSON); throws on a page exception.
-function Js([string]$expr) {
-  $script:CdpN++
-  $id = $script:CdpN
-  $body = @{ id = $id; method = 'Runtime.evaluate'; params = @{ expression = "JSON.stringify({ v: ($expr) })"; returnByValue = $true } } | ConvertTo-Json -Depth 5 -Compress
-  $bytes = [Text.Encoding]::UTF8.GetBytes($body)
-  $none = [Threading.CancellationToken]::None
-  $script:Cdp.SendAsync((New-Object 'ArraySegment[byte]' -ArgumentList (, $bytes)), [Net.WebSockets.WebSocketMessageType]::Text, $true, $none).Wait()
-  while ($true) {
-    $ms = New-Object IO.MemoryStream
-    $buf = New-Object byte[] 65536
-    do {
-      $r = $script:Cdp.ReceiveAsync((New-Object 'ArraySegment[byte]' -ArgumentList (, $buf)), $none).Result
-      $ms.Write($buf, 0, $r.Count)
-    } while (-not $r.EndOfMessage)
-    $resp = [Text.Encoding]::UTF8.GetString($ms.ToArray()) | ConvertFrom-Json
-    if ($resp.id -eq $id) { break }
-  }
-  if ($resp.result.exceptionDetails) { throw "page exception: $($resp.result.exceptionDetails.exception.description)" }
-  $s = $resp.result.result.value
-  if (-not $s) { return $null }
-  return ($s | ConvertFrom-Json).v
-}
-function JsWait([string]$expr, $sec = 10) {
-  for ($i = 0; $i -lt $sec * 5; $i++) { $v = Js $expr; if ($v) { return $v }; Start-Sleep -Milliseconds 200 }
-  return $v
-}
-
-# Screen rect of the i-th element matching a CSS selector (scrolled into view when outside);
-# cx/cy = centre, client = the centre relative to the window's client origin.
-function PageRect([string]$sel, [int]$i = 0) {
-  $q = $sel | ConvertTo-Json
-  $r = Js "(() => { const e = document.querySelectorAll($q)[$i]; if (!e) return null; let b = e.getBoundingClientRect(); if (b.top < 0 || b.bottom > innerHeight) { e.scrollIntoView({ block: 'center', behavior: 'instant' }); b = e.getBoundingClientRect(); } const d = devicePixelRatio; return { x: b.left * d, y: b.top * d, w: b.width * d, h: b.height * d }; })()"
-  if (-not $r) { return $null }
-  $o = ClientOrigin ([G]::FindWindowW('PecoFence.Settings', [NullString]::Value))
-  return @{ x = [int]($o.X + $r.x); y = [int]($o.Y + $r.y); w = [int]$r.w; h = [int]$r.h
-    cx = [int]($o.X + $r.x + $r.w / 2); cy = [int]($o.Y + $r.y + $r.h / 2); client = "$([int]($r.x + $r.w / 2)),$([int]($r.y + $r.h / 2))" }
-}
-# A real click on the i-th element matching a selector ($dx: that far from its left edge).
-function PageClick([string]$sel, [int]$i = 0, $dx = $null) {
-  $r = PageRect $sel $i
-  if (-not $r) { throw "no element $sel [$i]" }
-  $x = if ($null -ne $dx) { $r.x + $dx } else { $r.cx }
-  [G]::Click($x, $r.cy); Start-Sleep -Milliseconds 350
-  Log "click $sel [$i] at $x,$($r.cy) (client $($r.client))"
-}
-# Click into a text box, select all and type (an empty text deletes what is there).
-function PageType([string]$sel, [string]$text, [int]$i = 0) {
-  PageClick $sel $i
-  Chord 0x11 0x41; Start-Sleep -Milliseconds 80
-  if ($text -eq '') { [G]::Press(0x2E) } else { [G]::Type($text) }
-  Start-Sleep -Milliseconds 250
-}
-# Picks an option of a <select> by keyboard: a click on its label's caption focuses it (a click
-# on the select opens a popup whose keys proved unreliable), then arrow keys on the closed select.
-function PagePick([string]$sel, [string]$value, [int]$i = 0) {
-  $q = $sel | ConvertTo-Json; $vq = $value | ConvertTo-Json
-  $ix = Js "(() => { const s = document.querySelectorAll($q)[$i]; return s ? [s.selectedIndex, [...s.options].findIndex(o => o.value === $vq)] : null; })()"
-  if (-not $ix -or $ix[1] -lt 0) { throw "no option $value in $sel [$i]" }
-  PageRect $sel $i | Out-Null
-  $lab = Js "(() => { const l = document.querySelectorAll($q)[$i].closest('label'); if (!l) return null; const b = l.getBoundingClientRect(), d = devicePixelRatio; return { x: (b.left + 6) * d, y: (b.top + 6) * d }; })()"
-  if (-not $lab) { throw "no label around $sel [$i]" }
-  $o = ClientOrigin ([G]::FindWindowW('PecoFence.Settings', [NullString]::Value))
-  [G]::Click([int]($o.X + $lab.x), [int]($o.Y + $lab.y)); Start-Sleep -Milliseconds 300
-  if (-not (Js "document.activeElement === document.querySelectorAll($q)[$i]")) { throw "a click on the caption did not focus $sel [$i]" }
-  $n = $ix[1] - $ix[0]
-  $vk = if ($n -gt 0) { 0x28 } else { 0x26 }
-  for ($k = 0; $k -lt [Math]::Abs($n); $k++) { [G]::Press($vk); Start-Sleep -Milliseconds 80 }
-  Start-Sleep -Milliseconds 250
-  $now = Js "document.querySelectorAll($q)[$i].value"
-  if ($now -ne $value) { throw "picked '$now' instead of '$value' in $sel [$i]" }
-}
-# The settings page's message bar: { on, error, text }.
-function PageToast() { return Js "(() => { const e = document.getElementById('toast'); return { on: e.classList.contains('on'), error: e.classList.contains('error'), text: document.getElementById('toastText').textContent }; })()" }
-
-# Opens Settings (pecofence-cli settings open-ui) and, on a debug build, connects over CDP.
-function PfSettings() {
-  Pf settings open-ui | Out-Null
-  $h = WaitWin 'PecoFence.Settings' 30
-  if ($h -eq [IntPtr]::Zero) { return $false }
-  if (-not $PfDebugBuild) { Start-Sleep -Seconds 6; return $true }
-  if (-not (CdpOpen)) { return $false }
-  return [bool](JsWait "document.documentElement.classList.contains('ready') && document.querySelectorAll('#ruleList [data-row-id]').length > 0" 20)
-}
-
-# Desktop files: one with that name (and a line of text), and the fence title of a desktop item.
-function DeskFile($name) { $p = Join-Path $PfDesk $name; Set-Content -LiteralPath $p -Value "hold-out $name" -Encoding ASCII; return $p }
-function ItemFence($file) {
-  $j = PfJson item list
-  foreach ($it in @($j.items) + @($j)) { if ($it -and $it.fileName -eq $file) { return $it.fenceTitle } }
-  return $null
-}
-function WaitItemFence($file, $want, $sec = 10) {
-  for ($k = 0; $k -lt $sec; $k++) { $f = ItemFence $file; if ($f -eq $want) { return $f }; Start-Sleep -Seconds 1 }
-  return $f
-}
-
-# The app log of this job across restarts: a start renames the last log to .prev.log, so
-# after a second PfStart the current log no longer has the lines of the first run.
-function PfLogAll() {
-  $p = PfLogPath
-  return @(@(($p -replace '\.log$', '.prev.log'), $p) | Where-Object { Test-Path $_ } | ForEach-Object { Get-Content $_ -Encoding UTF8 })
-}
-
-# Rules from `rule list`; one rule as a comparable string; a rule by id.
-function Rules() { return @((PfJson rule list).list) }
-function RuleSig($r) { return ($r | Select-Object id, name, enabled, target, allOf, priorityClass, template | ConvertTo-Json -Depth 8 -Compress) }
-function RuleById($id) { return (Rules | Where-Object { $_.id -eq $id } | Select-Object -First 1) }
-function WaitRule($id, [scriptblock]$ok, $sec = 8) {
-  for ($k = 0; $k -lt $sec * 2; $k++) { $r = RuleById $id; if ($r -and (& $ok $r)) { return $r }; Start-Sleep -Milliseconds 500 }
-  return $r
-}
+# (The helpers this test needed are in the kit since 2026-11-06.)
 
 # ---- steps
 
@@ -213,7 +65,7 @@ $docs = $rules0 | Where-Object { ($_.allOf | ConvertTo-Json -Depth 5 -Compress) 
 $docsIx = [array]::IndexOf(@($rules0 | ForEach-Object { $_.id }), $docs.id)
 Check 'a fresh instance has the first-run rules' ($rules0.Count -eq 3 -and $docs -and $alpha -and $beta) "rules=$($rules0.Count) docs='$($docs.name)' at $docsIx; fences Alpha=$($alpha.id) Beta=$($beta.id)"
 Check 'the desktop files start in the documents fence' ((WaitItemFence 'hr-alpha.txt' $docs.targetTitle) -eq $docs.targetTitle) "hr-alpha.txt in '$(ItemFence 'hr-alpha.txt')', want '$($docs.targetTitle)'"
-$opened = PfSettings
+$opened = PfSettings -ReadyJs "document.querySelectorAll('#ruleList [data-row-id]').length > 0"
 Check 'Settings opens (and CDP connects on a debug build)' $opened "debug=$PfDebugBuild"
 if ($PfDebugBuild) {
   $nav = PageRect 'nav a[data-page=rules]'
@@ -590,7 +442,7 @@ PfQuit
 PfStart
 $again = @(Rules | ForEach-Object { RuleSig $_ })
 Check 'after a restart the rule list is the same' (($again -join '|') -eq ($final -join '|')) "before=$($final.Count) after=$($again.Count)"
-$opened = PfSettings
+$opened = PfSettings -ReadyJs "document.querySelectorAll('#ruleList [data-row-id]').length > 0"
 PageClick 'nav a[data-page=rules]'
 $pageNames = @(Js $RowsJs | ForEach-Object { $_.name })
 Check 'and the page lists them' (($pageNames -join '|') -eq ($names -join '|')) ($pageNames -join ' | ')

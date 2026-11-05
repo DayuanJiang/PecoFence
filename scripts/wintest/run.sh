@@ -70,7 +70,7 @@ T_UP=$(now)
 # ---- files: kit and steps every time (UTF-8 with BOM for PowerShell 5.1), build and extras
 # only when their sha256 list differs from the box's
 STAGE=$OUT/.stage; rm -rf "$STAGE"; mkdir -p "$STAGE/kit/steps"
-python3 -I - "$STAGE/kit" "$KIT/lib.ps1" "$KIT/job.ps1" "$KIT/ctl.ps1" -- "$@" <<'EOF'
+python3 -I - "$STAGE/kit" "$KIT"/*.ps1 -- "$@" <<'EOF'
 import os, sys
 dst, rest = sys.argv[1], sys.argv[2:]
 cut = rest.index('--')

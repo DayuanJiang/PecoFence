@@ -64,15 +64,27 @@ Check 'new-note opens the editor' ($ed -ne [IntPtr]::Zero) "editor=$ed"
   `PeekKey`, `DoubleCtrl`, `TitleClick`, `WaitWin`, `Rect`, `Fg`, `[L]::Text/Cls/Tops/MoveWindow`,
   `[M]::BoxText()` (the Peek search box), `[QS]::Address/FileName/SetFileName` (file dialogs),
   `Explorers`, `UiaFind` (native windows only), `CloseWindows`, `CloseMenus`, `Shot`.
-- The settings page is a WebView2 page: UI Automation sees none of its content on the box. Use a
-  debug build (`build.sh --debug`, then `run.sh --bin target/wintest-bin-debug`) started with
-  `$env:PECOFENCE_WEBVIEW_ARGS = '--remote-debugging-port=9352'` and read element rects and DOM
-  state over CDP (`http://127.0.0.1:9352/json`, `Runtime.evaluate`); click with the real pointer.
-  `tests/holdout-rules.ps1` has working helpers for that (not in the kit yet).
-- Not in the kit yet, but written and working in the hold-out tests: drags, wheel, popup menu
-  items and clicks, pixel reads and frame bursts, `dump` state at any moment, Windows animation
-  settings (`tests/holdout-tabs.ps1`); setup wizard and uninstaller by their buttons, the tray
-  icon and menu, icon positions in a fence (`tests/holdout-day.ps1`).
+- More input and state (lib.ps1): `MDown`, `MUp`, `Glide`, `DragTo`, `Wheel`, `WheelAt`,
+  `DoubleClick`, `ClientOrigin`, `NcHit`; popup menus `MenuWin`, `MenuRows`, `MenuTexts`,
+  `MenuDupes`, `MenuPick`, `MenuClick`, `[Menu]::Items()`; windows `[W]::Tops/Buttons/Statics/
+  IconsVisible/ToggleIcons/RootClassAt`, `WaitGoneWin`, `VisFences`; `[Anim]::Get/Set` (Windows
+  animations); fence state at any moment `DumpScript` + `DumpOf` / `PfDump` (the test-script
+  `dump` lines: rects, tab order, `tab_rects`, active tab, rolled), `FenceIds`, `FenceGet`;
+  items `DeskFile`, `ItemFence`, `WaitItemFence`, `ItemPt`, `RClickItem`; rules `Rules`,
+  `RuleById`, `WaitRule`; `StateText` (fences, rules, items, theme as lines to compare), `BinNames`.
+- The settings page (page.ps1) is a WebView2 page: UI Automation sees none of its content on the
+  box. Use a debug build (`build.sh --debug`, then `run.sh --bin target/wintest-bin-debug`)
+  started with `$env:PECOFENCE_WEBVIEW_ARGS = '--remote-debugging-port=9352'`: `PfSettings`
+  opens it and connects, `Js` / `JsWait` evaluate in the page, `PageRect`, `PageClick`,
+  `PageType`, `PagePick` (a `<select>` by keyboard), `PageToast`; `$PfDebugBuild` says which build
+  runs. On a release build, click by coordinates measured on the debug build.
+- Pixels (pixels.ps1): `[Px]::Grab/Ink/FirstInk/MaxInk/Marker/Diff/Burst/Track/Strip`, `Crop`,
+  `GreyWallpaper`.
+- The user's own copy (user.ps1): `Ipf` / `IpfJson` / `UserLog` for the installed copy (set
+  `$script:CliExe` for a portable one), `StartUser`, `WaitNoPf`; `PfUseUser` makes the item and
+  state helpers read that copy; setup and uninstall by their buttons (`Wizard`, `Uninstall`,
+  `SilentSetup`, `SilentUninstall`, `ClickButton`, `SetupBoxes`), the tray (`TrayIconRect`,
+  `TrayMenu`, `TrayPick`), `CloseNotice`. `tests/holdout-*.ps1` show all of them in use.
 - At the end of every job the app logs are checked for ERROR and panic lines (set
   `$PfAllowLogErrors = $true` when a test causes them on purpose); a job without any app log
   says so in `job.log` instead.
