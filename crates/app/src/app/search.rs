@@ -432,6 +432,23 @@ impl App {
             .trim()
             .to_string();
         let path = self.row_path(&row);
+        // Deleted since the list was made: Windows would show its "cannot find" box, which
+        // holds PecoFence until it is closed. The row goes instead.
+        if let Some((p, _)) = &path
+            && !p.exists()
+        {
+            tracing::info!(
+                index,
+                "search row opened: its file is gone, the row is dropped"
+            );
+            self.search.rows.remove(index);
+            self.search.sel = self
+                .search
+                .sel
+                .min(self.search.rows.len().saturating_sub(1));
+            self.show_search_rows();
+            return;
+        }
         if let Some((p, _)) = &path {
             self.state.config.note_search_open(&p.to_string_lossy());
             self.state.mark_dirty();

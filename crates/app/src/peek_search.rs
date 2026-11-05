@@ -590,6 +590,22 @@ pub fn selected_row_point() -> Option<(i32, i32)> {
     })
 }
 
+/// Gives the box the keyboard again, if it is open.
+pub fn focus() {
+    let Some(hwnd) = ACTIVE.with(|a| a.borrow().as_ref().map(|s| s.window.hwnd())) else {
+        return;
+    };
+    if !window::claim_foreground(hwnd) {
+        tracing::debug!("search box: the foreground switch was refused");
+    }
+    ACTIVE.with(|a| {
+        if let Some(s) = a.borrow().as_ref() {
+            s.edit.focus();
+        }
+    });
+    tracing::debug!("search box has the keyboard again");
+}
+
 /// Puts the box back on top of the fences (the Peek band re-raises them).
 pub fn raise() {
     if let Some(hwnd) = ACTIVE.with(|a| a.borrow().as_ref().map(|s| s.window.hwnd())) {

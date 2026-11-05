@@ -22,6 +22,31 @@ pub enum JumpOutcome {
     NoAddressBar,
     /// The address bar did not turn into a text box after the click.
     NoAddressEdit,
+    /// The dialog already shows the folder: nothing was sent.
+    AlreadyThere,
+    /// The folder's path holds `%NAME%` of an environment variable, which the address bar
+    /// would expand (`%OS%` becomes `Windows_NT`) and then fail to find: nothing was sent.
+    VariableInPath,
+}
+
+/// True when the address text (`Address: C:\Users\me\Documents`) shows `dir`.
+fn shows_folder(address: &str, dir: &Path) -> bool {
+    let dir = dir.to_string_lossy().trim_end_matches('\\').to_lowercase();
+    let address = address.trim_end_matches('\\').to_lowercase();
+    if dir.is_empty() || !address.ends_with(&dir) {
+        return false;
+    }
+    let head = &address[..address.len() - dir.len()];
+    head.is_empty() || head.ends_with([' ', ':', '\u{FF1A}'])
+}
+
+/// True when part of `path` between two `%` signs names an environment variable.
+fn expands_variables(path: &str) -> bool {
+    let parts: Vec<&str> = path.split('%').collect();
+    parts.len() > 2
+        && parts[1..parts.len() - 1]
+            .iter()
+            .any(|name| !name.is_empty() && std::env::var_os(name).is_some())
 }
 
 /// All descendants of `parent` (EnumChildWindows walks the whole tree).
@@ -221,8 +246,15 @@ pub fn jump(dlg: HWND, dir: &Path) -> JumpOutcome {
     let Some(crumbs) = breadcrumbs(band) else {
         return JumpOutcome::NoAddressBar;
     };
-    wait_buttons_up(Duration::from_secs(3));
     let before = window_text(crumbs);
+    // The address text would not change to confirm a jump to where the dialog already is.
+    if shows_folder(&before, dir) {
+        return JumpOutcome::AlreadyThere;
+    }
+    if expands_variables(&dir.to_string_lossy()) {
+        return JumpOutcome::VariableInPath;
+    }
+    wait_buttons_up(Duration::from_secs(3));
     let focus = focused_control(dlg).filter(|&f| !descendants(band).contains(&f));
     // Focusing an edit selects all of it: the caret goes back where it was afterwards, so
     // typing does not replace a Save dialog's file name.
@@ -431,6 +463,10 @@ fn set_text(edit: HWND, text: &str) {
 /// name in the file name box (the user still confirms). A Select Folder dialog goes to the
 /// file's folder. Blocks like [`jump`]: call it on a worker thread.
 pub fn choose(dlg: HWND, path: &Path, is_folder: bool) -> JumpOutcome {
+    // The file name box expands `%NAME%` as the address bar does.
+    if expands_variables(&path.to_string_lossy()) {
+        return JumpOutcome::VariableInPath;
+    }
     if is_folder {
         return jump(dlg, path);
     }
@@ -458,5 +494,32 @@ pub fn choose(dlg: HWND, path: &Path, is_folder: bool) -> JumpOutcome {
             Some(dir) => jump(dlg, dir),
             None => JumpOutcome::NoAddressBar,
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn address_text_matches_its_folder() {
+        let dir = Path::new(r"C:\Users\me\Documents");
+        assert!(shows_folder(r"Address: C:\Users\me\Documents", dir));
+        assert!(shows_folder(r"地址: c:\users\me\documents\", dir));
+        assert!(shows_folder("地址\u{FF1A}C:\\Users\\me\\Documents", dir));
+        assert!(!shows_folder(r"Address: C:\Users\me\My Documents", dir));
+        assert!(!shows_folder(r"Address: C:\Users\me", dir));
+        assert!(shows_folder(r"Address: C:\", Path::new(r"C:\")));
+    }
+
+    #[test]
+    fn variables_between_percent_signs() {
+        // SAFETY: the test sets a variable of its own; no other test reads it.
+        unsafe { std::env::set_var("PF_TEST_VAR", "x") };
+        assert!(expands_variables(r"C:\pf\pct %PF_TEST_VAR% and #hash"));
+        assert!(expands_variables(r"C:\a%b\%PF_TEST_VAR%\c"));
+        assert!(!expands_variables(r"C:\pf\50% off"));
+        assert!(!expands_variables(r"C:\pf\%PF_NO_SUCH_VAR_HERE%"));
+        assert!(!expands_variables(r"C:\pf\%%"));
     }
 }

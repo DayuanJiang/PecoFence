@@ -103,7 +103,8 @@ impl App {
         self.everything_installing = false;
         tracing::info!(result, "Everything install finished");
         match result {
-            SETUP_OK => self.start_everything(),
+            // winget also reports success when the administrator prompt was answered No.
+            SETUP_OK if everything::installed_exe().is_some() => self.start_everything(),
             SETUP_NO_WINGET => {
                 let _ = shell::shell_execute(Path::new(DOWNLOAD_PAGE), None, None);
                 self.settings_toast(pecofence_core::i18n::text(

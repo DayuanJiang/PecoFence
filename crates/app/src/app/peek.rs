@@ -345,6 +345,10 @@ impl App {
             a.reanchor("peek focused");
         }
         crate::peek_search::raise();
+        // The dimmer's focus handoff runs on another thread and can land after the search box
+        // took the keyboard (double Ctrl opens both at once): give it back to the box, or
+        // Enter, Backspace and the arrows would go to the dimmer.
+        crate::peek_search::focus();
     }
 
     /// Characters typed on the dimmer: open the search box with them, or add them to it.

@@ -401,7 +401,10 @@ fn start_jump(dlg: HWND, source: Source, reason: &'static str) {
                 address = ?dialogs::dialog_address(h(dlg_raw)),
                 "dialog jump"
             );
-            if outcome != JumpOutcome::Done && outcome != JumpOutcome::Unconfirmed {
+            if !matches!(
+                outcome,
+                JumpOutcome::Done | JumpOutcome::Unconfirmed | JumpOutcome::AlreadyThere
+            ) {
                 tracing::warn!(outcome = ?outcome, "dialog jump failed");
             }
         });
