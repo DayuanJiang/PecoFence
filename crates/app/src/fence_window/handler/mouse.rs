@@ -790,6 +790,33 @@ pub(super) fn on_rbuttonup(
     Some(0)
 }
 
+pub(super) const WM_XBUTTONDOWN: u32 = 0x020B;
+pub(super) const WM_XBUTTONUP: u32 = 0x020C;
+
+/// The mouse's back and forward buttons (feedback #116): back goes up a folder as Backspace
+/// does, forward goes into the folder the last back left. Handled (TRUE) either way, so the
+/// buttons do nothing else in a fence.
+pub(super) fn on_xbuttonup(
+    h: &HandlerCtx,
+    _hwnd: HWND,
+    wparam: usize,
+    _lparam: isize,
+) -> Option<isize> {
+    const XBUTTON1: u32 = 1;
+    const XBUTTON2: u32 = 2;
+    let HandlerCtx { view, queue, .. } = h;
+    let view = view.borrow();
+    let Some(v) = view.as_ref() else {
+        return Some(1);
+    };
+    match msg::hi_u16(wparam) {
+        XBUTTON1 if v.deco.up_button => queue.push(Command::PortalUp(v.active)),
+        XBUTTON2 => queue.push(Command::PortalForward(v.active)),
+        _ => {}
+    }
+    Some(1)
+}
+
 pub(super) fn on_mousewheel(
     h: &HandlerCtx,
     hwnd: HWND,

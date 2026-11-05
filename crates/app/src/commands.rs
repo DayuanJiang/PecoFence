@@ -114,6 +114,8 @@ pub enum Command {
         path: PathBuf,
     },
     PortalUp(FenceId),
+    /// The mouse's forward button: back into the folder the last up (or back button) left.
+    PortalForward(FenceId),
     /// A fence window is being dragged over `target`'s title or left tab column (null = none):
     /// highlight it and, on a tabbed target, open the insertion gap at pointer screen point
     /// `at`.

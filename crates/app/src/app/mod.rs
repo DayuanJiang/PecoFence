@@ -272,6 +272,9 @@ pub struct App {
     /// One watcher per folder-portal fence on the folder it currently shows (kept in sync by
     /// `ensure_portal_watchers`; navigating swaps the watcher).
     portal_watchers: HashMap<FenceId, (PathBuf, DirWatcher)>,
+    /// Per fence, the folders an up (Backspace, the back button) left, newest last: the
+    /// forward button goes back into them. Any other navigation forgets them.
+    portal_forward: HashMap<FenceId, Vec<PathBuf>>,
     /// Portal folders whose watcher could not be started after a long wait (an unreachable
     /// network share): how many times, and when to try again (see `ensure_portal_watchers`).
     watcher_retry: HashMap<PathBuf, (u32, Instant)>,
@@ -1493,6 +1496,7 @@ impl App {
             watchers,
             _shell_watch: shell_watch,
             portal_watchers: HashMap::new(),
+            portal_forward: HashMap::new(),
             watcher_retry: HashMap::new(),
             fs_pending,
             fileops_done: Arc::new(Mutex::new(Vec::new())),
@@ -2121,6 +2125,7 @@ impl App {
             }
             Command::PortalEnter { fence, path } => self.portal_enter(fence, &path),
             Command::PortalUp(fence) => self.portal_up(fence),
+            Command::PortalForward(fence) => self.portal_forward(fence),
             Command::SwitchTab { host, tab } => self.switch_tab(host, tab),
             Command::SetColumnWidths { fence, widths } => {
                 self.state.set_column_widths(fence, widths);
