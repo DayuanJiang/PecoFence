@@ -392,10 +392,17 @@ fn paint_box(hwnd: HWND) {
                 right: text_right,
                 bottom: mid + px(2.0),
             };
-            p.text(name_rect, &row.name, &s.name_font, text_color, Align::Left);
+            let (name, marks) = fit_marks(
+                &p,
+                &row.name,
+                &row.marks,
+                &s.name_font,
+                text_right - text_left,
+            );
+            p.text(name_rect, &name, &s.name_font, text_color, Align::Left);
             // The matched characters again in the accent colour, at their measured offsets.
-            let chars: Vec<char> = row.name.chars().collect();
-            for r in &row.marks {
+            let chars: Vec<char> = name.chars().collect();
+            for r in &marks {
                 if r.start >= chars.len() {
                     continue;
                 }
@@ -446,6 +453,47 @@ fn paint_box(hwnd: HWND) {
             }
         }
     });
+}
+
+/// A name too long for its row whose matched letters lie past what fits: its start gives way
+/// to "…" so they stay in sight. Returns the name to draw and its marks.
+fn fit_marks(
+    p: &paint::Paint,
+    name: &str,
+    marks: &[Range<usize>],
+    font: &Font,
+    room: i32,
+) -> (String, Vec<Range<usize>>) {
+    let chars: Vec<char> = name.chars().collect();
+    let last = marks
+        .iter()
+        .map(|r| r.end.min(chars.len()))
+        .max()
+        .unwrap_or(0);
+    let width = |from: usize, lead: bool| {
+        let text: String = lead
+            .then_some('…')
+            .into_iter()
+            .chain(chars[from..last].iter().copied())
+            .collect();
+        p.text_width(&text, font)
+    };
+    if last == 0 || width(0, false) <= room {
+        return (name.to_string(), marks.to_vec());
+    }
+    let mut cut = 1;
+    while cut < last - 1 && width(cut, true) > room {
+        cut += 1;
+    }
+    let shown = std::iter::once('…')
+        .chain(chars[cut..].iter().copied())
+        .collect();
+    let marks = marks
+        .iter()
+        .filter(|r| r.end > cut)
+        .map(|r| r.start.max(cut) - cut + 1..r.end.min(chars.len()) - cut + 1)
+        .collect();
+    (shown, marks)
 }
 
 fn on_key(vk: u32) -> bool {
