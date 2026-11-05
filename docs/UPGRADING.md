@@ -78,9 +78,9 @@ ordinary fences at their place, and its first save drops what belongs to the too
 
 - the text of every note, and which script each script fence runs and how often
   (the script files themselves stay where they are);
-- the switches on the 小工具 page, including 对话框跳转, 搜索整台电脑（Everything）
-  and 双击 Ctrl 打开搜索, and the search history that puts what you opened from the
-  Peek search box higher in the list.
+- the switches on the 小工具 page, including 对话框跳转; on the 常规 page,
+  速览搜索也找整台电脑（Everything） and 双击 Ctrl as Peek's shortcut; and the search
+  history that puts what you opened from the Peek search box higher in the list.
 
 The fences stay as ordinary fences, in the snapshots too, so restoring a snapshot
 does not bring the tools back. The daily backups still have them: when you return

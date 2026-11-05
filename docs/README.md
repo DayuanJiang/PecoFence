@@ -11,7 +11,7 @@
 - [Product website: build and publishing](WEBSITE.md)
 - [Custom themes: the theme file format](THEMES.md)
 - [Complete feature list, in Chinese](FEATURES.md)
-- [Tools (小工具): notes, clocks, script fences, jump in file dialogs and whole-computer search, in Chinese](FEATURES.md#8-小工具); [the same from the command line](CLI.md#tools-小工具)
+- [Tools (小工具): notes, clocks, script fences and jump in file dialogs, in Chinese](FEATURES.md#8-小工具); [the same from the command line](CLI.md#tools-小工具)
 - [README in other languages](readme/) — the root README is English; translations live in `docs/readme/`
 
 The development checkout may retain historical design proposals and implementation

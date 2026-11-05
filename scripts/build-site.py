@@ -26,8 +26,8 @@ DETAILS = ["glass", "files", "space", "back", "footprint", "safe"]
 FEATURE_ICONS = ["grid", "cursor", "layers", "spark", "folder", "expand"]
 DETAIL_ICONS = ["spark", "cursor", "expand", "restore", "feather", "shield"]
 # The switches of Settings > Tools (小工具), listed below the feature gallery.
-TOOLS = ["note", "clock", "script", "dialog", "everything", "ctrl"]
-TOOL_ICONS = ["note", "clock", "code", "jump", "search", "keyboard"]
+TOOLS = ["note", "clock", "script", "dialog"]
+TOOL_ICONS = ["note", "clock", "code", "jump"]
 # The manual lesson each feature's animation and step-by-step link come from.
 FEATURE_LESSONS = {"groups": "create", "peek": "peek", "tabs": "tabs", "rules": "rules", "portal": "portal",
                    "hide": "hide"}

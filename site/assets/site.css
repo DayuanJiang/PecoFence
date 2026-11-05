@@ -633,6 +633,10 @@ h2 {
     font-size: 14px
 }
 
+.tools .details {
+    grid-template-columns: repeat(2, minmax(0, 1fr))
+}
+
 .tools .details>div {
     border-top-color: #d5dce9
 }

@@ -59,14 +59,17 @@ all six recordings appear with native video controls instead. Five of their cove
 come from the revision-2 desktop, Peek, tabs, automatic sorting and folder scenes; the
 hide/show cover remains a frame from its existing recording.
 
-Below the gallery, the tools block (`#tools`) lists the six tools of Settings › Tools
-(小工具): notes and to-dos, clock and date, script fences, dialog jump, whole-computer
-search with Everything and pressing Ctrl twice. It has no animation; its items are drawn
-like the small details further down, from `TOOLS` in `build-site.py` and the `tool.*`
-keys, with the switch names from `locales/` as titles.
+Below the gallery, the tools block (`#tools`) lists the four tools of Settings › Tools
+(小工具): notes and to-dos, clock and date, script fences and dialog jump, two by two.
+It has no animation; its items are drawn like the small details further down, from
+`TOOLS` in `build-site.py` and the `tool.*` keys, with the switch names from `locales/`
+as titles. Pressing Ctrl twice as Peek's shortcut and the whole-computer search with
+Everything are options of Peek (Settings › General › Peek), so the Peek card's text
+(`feature.peek.text`) names them.
 
 Installation requirements expand without JavaScript; the last one names what the
-optional tools need (Everything 1.5, Python or Node.js for those scripts). Clipboard
+optional extras need (Everything 1.5 for the whole-computer search, Python or Node.js for
+those scripts). Clipboard
 copying is available on HTTPS and localhost. No external fonts, UI libraries or
 additional build dependencies are required.
 
