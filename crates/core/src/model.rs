@@ -214,7 +214,8 @@ pub struct ToolSettings {
     /// Clock fences show the seconds too (and redraw every second instead of every minute).
     #[serde(default)]
     pub clock_seconds: bool,
-    /// 脚本栅栏: fences that run a script of the user's on an interval and show its output.
+    /// 脚本栅栏: fences that run a script of the user's, on an interval or kept running, and show
+    /// its output (rows may be clickable).
     #[serde(default)]
     pub scripts: bool,
     /// 对话框跳转: an Open / Save dialog jumps to the folder of the Explorer window (or folder
@@ -231,11 +232,14 @@ pub struct ToolSettings {
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct ScriptSpec {
-    /// The script or program (.ps1, .py, .pyw, .cmd, .bat, .js or .exe); empty = none chosen.
+    /// The script or program (.ps1, .py, .pyw, .cmd, .bat, .js, .mjs, .exe or .com); empty =
+    /// none chosen.
     #[serde(default)]
     pub path: String,
-    /// Minutes between runs, 1 to 1440.
+    /// Minutes between runs, 1 to 1440. A streaming script (one that keeps running) starts again
+    /// this long after it ended by itself.
     #[serde(default = "ScriptSpec::default_interval")]
+    #[cfg_attr(feature = "schema", schemars(range(min = 1, max = 1440)))]
     pub interval_minutes: u32,
 }
 
@@ -264,7 +268,8 @@ pub enum FenceTool {
     Note,
     /// 时钟与日期: the local time, date and weekday in Windows' region format.
     Clock,
-    /// 脚本栅栏: the text a script of the user's prints (`Config::scripts`), run on an interval.
+    /// 脚本栅栏: the text a script of the user's prints (`Config::scripts`), run on an interval
+    /// or kept running.
     Script,
 }
 
