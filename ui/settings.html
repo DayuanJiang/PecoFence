@@ -207,7 +207,9 @@
   button[aria-pressed=true]:disabled { background: var(--control-disabled); color: var(--text-disabled); border-color: var(--control-stroke); }
 
   /* Theme style tiles double as the live preview of the icon settings below them. */
-  .style-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; padding-left: 40px; }
+  .style-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px; padding-left: 40px; }
+  .theme-files { display: flex; flex-direction: column; gap: 6px; padding-left: 40px; } .theme-files[hidden] { display: none; }
+  .theme-files .actions { justify-content: flex-start; }
   .tile { position: relative; display: flex; flex-direction: column; gap: 8px; padding: 8px 8px 10px; border-radius: 6px;
     border: 1px solid var(--control-stroke); background: var(--control); }
   .tile:hover { background: var(--control-hover); }
@@ -221,6 +223,7 @@
     background: repeating-linear-gradient(0deg, transparent 0 23px, #ffffff0d 23px 24px), repeating-linear-gradient(90deg, transparent 0 23px, #ffffff0d 23px 24px), var(--wall); }
   .mini-fence { position: relative; width: 74%; max-width: 230px; overflow: hidden; display: flex; flex-direction: column; }
   .tile-fluent .mini-fence { border-radius: 8px; background: var(--mini-panel); backdrop-filter: blur(14px) saturate(120%); border: 1px solid var(--mini-stroke); box-shadow: 0 8px 16px #0000003d; }
+  .tile-custom .mini-fence { border-radius: 8px; background: var(--mini-panel); border: 1px dashed var(--control-strong); }
   .tile-glass .mini-fence { border-radius: 16px; box-shadow: 0 12px 22px -8px #15162250, 0 3px 6px -2px #15162224; }
   .tile-glass .mini-fence::before { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; z-index: 2;
     padding: 1px; background: linear-gradient(145deg, #fffffff5, #ffffff25 36%, #53566338 58%, #ffffffcc 88%);
@@ -363,7 +366,7 @@
     .brand { justify-content: center; padding: 8px 0 16px; }
     .brand-name, .nav-text, .nav-footer { display: none; } nav a { justify-content: center; padding: 8px 0; }
     main { padding: 16px 12px 24px; } .card { padding: 12px; } .card.child, .rows > .card { padding-left: 12px; }
-    .style-tiles, .chips, .fb-kinds, .fb-field { padding-left: 0; } .newrule, .cond-list, .fb-preview { padding-left: 12px; }
+    .style-tiles, .theme-files, .chips, .fb-kinds, .fb-field { padding-left: 0; } .newrule, .cond-list, .fb-preview { padding-left: 12px; }
     .about-head { gap: 14px; } .about-head .brand-mark { width: 44px; height: 44px; }
   }
   /* Liquid Glass keeps the Fluent sheet (an opaque window has nothing to refract); only the
@@ -412,6 +415,9 @@
   <main>
     <section class="page on" id="page-general">
       <header class="page-header"><h2>常规</h2></header>
+      <h3>语言</h3>
+      <div class="card"><div class="l"><span class="ic">&#xE774;</span><div><div class="t">显示语言</div><div class="s">立即切换界面语言；你的文件和自定义名称保持不变</div></div></div>
+        <select id="language" data-bind="language"><option value="system">跟随系统</option><option value="zh-CN" data-language-name>简体中文</option><option value="zh-TW" data-language-name>繁體中文</option><option value="en" data-language-name>English</option><option value="ja" data-language-name>日本語</option><option value="ko" data-language-name>한국어</option><option value="de" data-language-name>Deutsch</option><option value="fr" data-language-name>Français</option><option value="es" data-language-name>Español</option><option value="pt-BR" data-language-name>Português (Brasil)</option><option value="ru" data-language-name>Русский</option><option value="it" data-language-name>Italiano</option></select></div>
       <h3>外观</h3>
       <div class="card stack"><div class="l"><span class="ic">&#xE771;</span><div><div class="t" id="themeStyleTitle">主题风格</div></div></div>
         <div class="style-tiles" id="desktopPreview" role="radiogroup" aria-labelledby="themeStyleTitle">
@@ -421,17 +427,23 @@
           <label class="tile tile-glass"><input type="radio" name="themeStyle" value="liquidGlass">
             <span class="shot" aria-hidden="true"><span class="mini-fence"><span class="preview-title">工作空间</span><span class="mini-items"><span class="file-icon folder ic">&#xE8B7;</span><span class="file-icon ic">&#xE8A5;</span><span class="file-icon sheet ic">&#xE9F9;</span></span></span></span>
             <span class="cap">Liquid Glass · 液态玻璃</span></label>
+          <label class="tile tile-custom"><input type="radio" name="themeStyle" value="custom">
+            <span class="shot" aria-hidden="true"><span class="mini-fence"><span class="preview-title">工作空间</span><span class="mini-items"><span class="file-icon folder ic">&#xE8B7;</span><span class="file-icon ic">&#xE8A5;</span><span class="file-icon sheet ic">&#xE9F9;</span></span></span></span>
+            <span class="cap">自定义 · 主题文件</span></label>
+        </div>
+        <div class="theme-files" id="customThemeRow" hidden>
+          <div class="actions"><select id="customTheme" aria-label="主题文件"></select><button id="openThemes">打开主题文件夹</button><button id="themeGuide">写法说明</button></div>
+          <div class="s" id="customThemeHelp"></div>
+          <div class="s error" id="customThemeError" aria-live="polite" hidden></div>
         </div></div>
-      <div class="card"><div class="l"><span class="ic">&#xE790;</span><div><div class="t" id="customThemeTitle">自定义主题</div><div class="s">主题文件放在 themes 文件夹里，选中后代替上面的风格，文件保存后栅栏立即更新</div><div class="s error" id="customThemeError" aria-live="polite" hidden></div></div></div>
-        <div class="actions"><select id="customTheme" aria-labelledby="customThemeTitle"></select><button id="openThemes">打开主题文件夹</button><button id="themeGuide">写法说明</button></div></div>
       <div class="card"><div class="l"><span class="ic">&#xE7A1;</span><div><div class="t">颜色模式</div></div></div>
         <select data-bind="theme"><option value="followWindowsMode">跟随 Windows 模式</option><option value="followAppMode">跟随应用模式</option><option value="light">浅色</option><option value="dark">深色</option></select></div>
-      <div class="card"><div class="l"><span class="ic">&#xE8D3;</span><div><div class="t">图标名称颜色</div><div class="s">自动：液态玻璃按背后壁纸的明暗选深色或浅色，Fluent 跟随颜色模式；白色和黑色也用于标题颜色为“跟随主题”的栅栏标题和标签</div></div></div>
+      <div class="card"><div class="l"><span class="ic">&#xE8D3;</span><div><div class="t">文字颜色</div><div class="s">图标名称，以及标题颜色为“跟随主题”的栅栏标题和标签页。自动：液态玻璃按背后壁纸的明暗选深色或浅色，Fluent 跟随颜色模式</div></div></div>
         <select data-bind="labelColor"><option value="auto">自动</option><option value="white">白色</option><option value="black">黑色</option></select></div>
       <div class="card"><div class="l"><span class="ic">&#xE8E4;</span><div><div class="t">标题对齐</div></div></div>
         <select data-bind="titleAlign"><option value="left">左对齐</option><option value="center">居中</option><option value="right">右对齐</option></select></div>
-      <div class="card"><div class="l"><span class="ic">&#xE90C;</span><div><div class="t">标签栏位置</div><div class="s">有多个标签页时，标签排在标题栏里，或在栅栏左侧排成一列</div></div></div>
-        <select data-bind="tabBar"><option value="top">顶部</option><option value="left">左侧</option></select></div>
+      <div class="card"><div class="l"><span class="ic">&#xE7B1;</span><div><div class="t">自动隐藏滚动条</div><div class="s">鼠标移到栅栏上或滚动时才显示</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="rollUp.hideInactiveScrollbar"></div></div>
+      <h3>图标</h3>
       <div class="card"><div class="l"><span class="ic">&#xE8B9;</span><div><div class="t">默认图标大小</div><div class="s">新建栅栏时使用，每个栅栏可在“栅栏”页或右键菜单中单独设置</div></div></div>
         <div class="slider"><input type="range" id="iconSize" data-bind="iconSize"></div></div>
       <div class="group">
@@ -443,36 +455,34 @@
       </div>
       <div class="card"><div class="l"><span class="ic">&#xE793;</span><div><div class="t">图标融入背景（Chameleon）</div><div class="s">降低图标饱和度和不透明度，让桌面看起来更清爽</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="icons.chameleon"></div></div>
       <div class="card"><div class="l"><span class="ic">&#xE71B;</span><div><div class="t">显示快捷方式箭头</div><div class="s">和 Windows 桌面一样，在快捷方式图标的左下角显示小箭头</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="icons.shortcutArrows"></div></div>
-      <div class="card"><div class="l"><span class="ic">&#xE774;</span><div><div class="t">显示语言</div><div class="s">立即切换界面语言；你的文件和自定义名称保持不变</div></div></div>
-        <select id="language" data-bind="language"><option value="system">跟随系统</option><option value="zh-CN" data-language-name>简体中文</option><option value="zh-TW" data-language-name>繁體中文</option><option value="en" data-language-name>English</option><option value="ja" data-language-name>日本語</option><option value="ko" data-language-name>한국어</option><option value="de" data-language-name>Deutsch</option><option value="fr" data-language-name>Français</option><option value="es" data-language-name>Español</option><option value="pt-BR" data-language-name>Português (Brasil)</option><option value="ru" data-language-name>Русский</option><option value="it" data-language-name>Italiano</option></select></div>
       <h3>桌面与启动</h3>
       <div class="card"><div class="l"><span class="ic">&#xE7E8;</span><div><div class="t">随 Windows 启动</div><div class="s" hidden></div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="autostart"></div></div>
       <div class="group">
-        <div class="card"><div class="l"><span class="ic">&#xE8A9;</span><div><div class="t">隐藏 Windows 桌面图标</div><div class="s">桌面项目只显示在栅栏里，未归类的进入“桌面”栅栏；回收站等系统图标也会出现在“桌面”栅栏中</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="hideRealIcons"></div></div>
-        <div class="card child"><div class="l"><div><div class="t">关闭 PecoFence 时保持 Windows 桌面图标隐藏</div><div class="s">登录时 Windows 会先显示桌面图标，等 PecoFence 启动后才隐藏。打开后，退出或注销时图标保持隐藏，下次登录就不会闪现；PecoFence 没有运行时，桌面上不显示图标。要让图标重新显示，右键桌面，选“查看”→“显示桌面图标”</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="keepIconsHidden"></div></div>
-        <div class="card child"><div class="l"><div><div class="t">显示 Windows 桌面图标时隐藏“桌面”栅栏</div><div class="s">未归类的项目只留在 Windows 桌面上；关闭“隐藏 Windows 桌面图标”后可用</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="hideInboxWhenIconsShown"></div></div>
+        <div class="card"><div class="l"><span class="ic">&#xE8A9;</span><div><div class="t" id="desktopIconsTitle">Windows 桌面图标</div><div class="s" id="desktopIconsHelp"></div></div></div>
+          <select id="desktopIcons" aria-labelledby="desktopIconsTitle" aria-describedby="desktopIconsHelp"><option value="hide">隐藏，项目放在栅栏里</option><option value="showWithInbox">显示，也显示“桌面”栅栏</option><option value="showNoInbox">显示，不显示“桌面”栅栏</option></select></div>
+        <div class="card child" id="keepIconsCard"><div class="l"><div><div class="t">关闭 PecoFence 时保持 Windows 桌面图标隐藏</div><div class="s">登录时 Windows 会先显示桌面图标，等 PecoFence 启动后才隐藏。打开后，退出或注销时图标保持隐藏，下次登录就不会闪现；PecoFence 没有运行时，桌面上不显示图标。要让图标重新显示，右键桌面，选“查看”→“显示桌面图标”</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="keepIconsHidden"></div></div>
       </div>
+      <div class="card"><div class="l"><span class="ic">&#xE8B3;</span><div><div class="t">在桌面空白处拖出矩形时提供“在此新建栅栏”</div><div class="s">矩形没有碰到任何栅栏时弹出这一项；关闭后拖出矩形只用来框选，仍可从托盘菜单新建栅栏</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="offerNewFence"></div></div>
+      <h3>隐藏栅栏</h3>
       <div class="card"><div class="l"><span class="ic">&#xE890;</span><div><div class="t">双击桌面空白处隐藏或显示栅栏</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="quickHide.enabled"></div></div>
-      <div class="group">
-        <div class="card"><div class="l"><span class="ic">&#xE7F4;</span><div><div class="t">临时显示 Windows 桌面</div><div class="s">按快捷键隐藏所有栅栏、显示 Windows 桌面图标，再按一次恢复；托盘菜单里也有这一项</div></div></div></div>
-        <div class="card child"><div class="l"><div><div class="t" id="wdHotkeyTitle">快捷键</div><div class="s" id="wdHotkeyHelp" aria-live="polite"></div></div></div>
+      <div class="card" id="wdHotkeyCard"><div class="l"><span class="ic">&#xE7F4;</span><div><div class="t" id="wdHotkeyTitle">临时显示 Windows 桌面</div><div class="s" id="wdHotkeyHelp" aria-live="polite"></div></div></div>
           <div class="hotkey-edit">
             <button type="button" class="hotkey-box" id="wdHotkey" aria-labelledby="wdHotkeyTitle wdHotkeyKeys" aria-describedby="wdHotkeyHelp"><span class="keys" id="wdHotkeyKeys"></span><span class="ic">&#xE70F;</span></button>
             <label class="hotkey-win"><input type="checkbox" id="wdHotkeyWin">包含 Win 键</label>
             <button type="button" id="wdHotkeyClear">清除</button>
           </div></div>
-      </div>
-      <div class="card"><div class="l"><span class="ic">&#xE8B3;</span><div><div class="t">在桌面空白处拖出矩形时提供“在此新建栅栏”</div><div class="s">矩形没有碰到任何栅栏时弹出这一项；关闭后拖出矩形只用来框选，仍可从托盘菜单新建栅栏</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="offerNewFence"></div></div>
       <div class="card"><div class="l"><span class="ic">&#xE7C4;</span><div><div class="t">显示桌面 (Win+D) 时</div></div></div>
         <select data-bind="showDesktop"><option value="keepVisible">保持栅栏可见</option><option value="hideWithDesktop">随桌面隐藏</option></select></div>
-      <h3>行为</h3>
-      <div class="card"><div class="l"><span class="ic">&#xE70D;</span><div><div class="t">收起的栅栏悬停时自动展开</div><div class="s">鼠标移开后自动收起</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="rollUp.hoverPeek"></div></div>
-      <div class="card"><div class="l"><span class="ic">&#xE7C9;</span><div><div class="t">收起的栅栏需点击标题才展开</div><div class="s">开启后不再悬停展开；拖动标题仍可移动栅栏</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="rollUp.clickToExpand"></div></div>
+      <h3>收起与展开</h3>
+      <div class="card"><div class="l"><span class="ic">&#xE70D;</span><div><div class="t" id="rollExpandTitle">收起的栅栏怎么展开</div><div class="s">停在上面展开的栅栏，鼠标移开后自动收起；不管选哪种，双击标题或点折叠箭头都能展开和收起</div></div></div>
+        <select id="rollExpand" aria-labelledby="rollExpandTitle"><option value="hover">鼠标停在上面时</option><option value="click">单击标题时</option><option value="double">只在双击标题或点箭头时</option></select></div>
       <div class="card"><div class="l"><span class="ic">&#xE74B;</span><div><div class="t">展开时把下面的栅栏推开</div><div class="s">收起后它们会回到原位</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="rollUp.pushNeighbors"></div></div>
+      <h3>标题栏与标签页</h3>
       <div class="card"><div class="l"><span class="ic">&#xE737;</span><div><div class="t">鼠标悬停时才显示标题栏</div><div class="s">平时只显示图标，让桌面更清爽；每个栅栏可在“栅栏”页单独设置</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="rollUp.titleOnHover"></div></div>
       <div class="card"><div class="l"><span class="ic">&#xE70E;</span><div><div class="t">隐藏标题栏右侧的项目数和折叠箭头</div><div class="s">标题栏只显示名称；双击标题或用右键菜单收起和展开</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="rollUp.hideCountAndChevron"></div></div>
+      <div class="card"><div class="l"><span class="ic">&#xE90C;</span><div><div class="t">标签栏位置</div><div class="s">有多个标签页时，标签排在标题栏里，或在栅栏左侧排成一列</div></div></div>
+        <select data-bind="tabBar"><option value="top">顶部</option><option value="left">左侧</option></select></div>
       <div class="card"><div class="l"><span class="ic">&#xE7C3;</span><div><div class="t">鼠标悬停时切换标签页</div><div class="s">鼠标在标签页上停留片刻就切换过去，不用点击</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="rollUp.switchTabOnHover"></div></div>
-      <div class="card"><div class="l"><span class="ic">&#xE7B1;</span><div><div class="t">自动隐藏滚动条</div><div class="s">鼠标移到栅栏上或滚动时才显示</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="rollUp.hideInactiveScrollbar"></div></div>
       <h3>吸附与对齐</h3>
       <div class="group">
         <div class="card"><div class="l"><span class="ic">&#xE8E3;</span><div><div class="t">移动栅栏时吸附对齐</div><div class="s">拖动时吸附到其他栅栏、屏幕边缘和屏幕中线；按住 Alt 可暂时不吸附</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="snapping.enabled"></div></div>
@@ -874,20 +884,35 @@
     preview.style.setProperty('--preview-tint-strength', settings.icons.tintStrength);
     preview.style.setProperty('--preview-title-align', settings.titleAlign || 'left');
   }
-  // A chosen custom theme takes the place of the style tiles: none of them is checked, and a
-  // click on one goes back to that built-in style.
+  // 主题风格: Fluent, Liquid Glass or 自定义 (a theme file of the themes folder, `customTheme`).
+  // 自定义 shows its row of files under the tiles and picks the first file at once; with no file
+  // yet the row says how to add one (the tile stays chosen on this page until another is).
+  let themeCustomOpen = false;
   function bindThemeStyle() {
-    const value = state.settings.customTheme ? '' : state.settings.themeStyle || 'fluent';
+    const custom = !!state.settings.customTheme || themeCustomOpen;
+    const value = custom ? 'custom' : state.settings.themeStyle || 'fluent';
     document.querySelectorAll('input[name=themeStyle]').forEach(radio => {
       radio.checked = radio.value === value;
       radio.onchange = () => {
         if (!radio.checked) return;
+        if (radio.value === 'custom') {
+          themeCustomOpen = true;
+          const first = (state.customThemes || [])[0];
+          if (first && !state.settings.customTheme) {
+            state.settings.customTheme = first;
+            bindThemeStyle(); bindCustomTheme();
+            commit('customTheme');
+          } else { bindThemeStyle(); bindCustomTheme(); }
+          return;
+        }
+        themeCustomOpen = false;
         state.settings.themeStyle = radio.value;
         state.settings.customTheme = null;
-        bindCustomTheme();
+        bindThemeStyle(); bindCustomTheme();
         commit('themeStyle');
       };
     });
+    document.getElementById('customThemeRow').hidden = !custom;
   }
   // The theme files of the themes folder; a chosen file that is gone stays listed with its error.
   function bindCustomTheme() {
@@ -897,10 +922,15 @@
     // Rebuilt only when the list changed: every host state passes through here, and a rebuild
     // closes the list while it is open.
     const listed = [...select.options].map(o => o.text);
-    if (listed.join('\n') !== [t("无"), ...names].join('\n')) {
-      select.replaceChildren(new Option(t("无"), ''), ...names.map(name => new Option(name, name)));
+    const wanted = names.length ? names : [t("还没有主题文件")];
+    if (listed.join('\n') !== wanted.join('\n')) {
+      select.replaceChildren(...(names.length ? names.map(name => new Option(name, name)) : [new Option(wanted[0], '')]));
     }
     select.value = chosen;
+    select.disabled = !names.length;
+    document.getElementById('customThemeHelp').textContent = names.length
+      ? t("主题文件放在 themes 文件夹里，文件保存后栅栏立即更新")
+      : t("themes 文件夹里还没有主题文件：点“打开主题文件夹”放进去，或者看“写法说明”自己写一个");
     select.onchange = () => {
       state.settings.customTheme = select.value || null;
       bindThemeStyle();
@@ -1037,7 +1067,7 @@
   // beside the Windows icons needs those icons shown ('!': while the master is off), and the
   // shortcut rows (renderPeekHotkey) are what Peek's switch turns on. Gap, whole-cell sizing
   // and dimming apply without them. A child starting with '#' is a button's id.
-  const DEPENDENT = [['snapping.guideLines', 'snapping.enabled'], ['hideInboxWhenIconsShown', '!hideRealIcons'], ['keepIconsHidden', 'hideRealIcons'], ['tools.clockSeconds', 'tools.clock'], ['#everythingAction', 'tools.everything']];
+  const DEPENDENT = [['snapping.guideLines', 'snapping.enabled'], ['tools.clockSeconds', 'tools.clock'], ['#everythingAction', 'tools.everything']];
   // 「小工具」 page: how many notes the desktop has (they show while the switch is on).
   function renderTools() {
     const count = kind => (state.fences || []).filter(f => f.tool && f.tool.kind === kind).length;
@@ -1225,12 +1255,12 @@
     const [mods, vk] = v.split(':').map(Number);
     send({ type: 'action', name: 'setPeekHotkey', mods, vk });
   };
-  // 临时显示 Windows 桌面 › 快捷键: none until the user records one; 清除 takes it away again.
+  // 隐藏栅栏 › 临时显示 Windows 桌面: no shortcut until the user records one; 清除 takes it away again.
   const wdRecorder = hotkeyRecorder('wdHotkey', 'windowsDesktopHotkeyRecording', 'setWindowsDesktopHotkey', () => {
     const w = state.windowsDesktopHotkey;
     if (!w) return null;
     const taken = w.chosen && !w.registered;
-    return { on: true, keys: w.chosen && w.chosen.keys, help: taken ? tf("{0} 已被其他程序占用，请换一个", w.chosen.label) : '', tone: taken ? 'error' : '' };
+    return { on: true, keys: w.chosen && w.chosen.keys, help: taken ? tf("{0} 已被其他程序占用，请换一个", w.chosen.label) : t("按快捷键隐藏所有栅栏、显示 Windows 桌面图标，再按一次恢复；托盘菜单里也有这一项"), tone: taken ? 'error' : '' };
   });
   function renderWindowsDesktopHotkey() {
     const w = state && state.windowsDesktopHotkey;
@@ -1971,6 +2001,38 @@
     el.hidden = !note;
   }
   document.getElementById('hideIconsAgain').onclick = () => send({ type: 'action', name: 'hideDesktopIcons' });
+  // 常规 › Windows 桌面图标: hidden (items in fences), shown with the 「桌面」 fence, or shown
+  // without it (hideRealIcons and hideInboxWhenIconsShown together).
+  function bindDesktopIcons() {
+    const s = state.settings, select = document.getElementById('desktopIcons');
+    const value = s.hideRealIcons ? 'hide' : s.hideInboxWhenIconsShown ? 'showNoInbox' : 'showWithInbox';
+    select.value = value;
+    document.getElementById('desktopIconsHelp').textContent = {
+      hide: t("桌面项目只显示在栅栏里，没有归类的放进“桌面”栅栏；回收站等系统图标也在“桌面”栅栏里"),
+      showWithInbox: t("Windows 桌面照常显示图标，没有归类的项目同时出现在“桌面”栅栏里"),
+      showNoInbox: t("没有归类的项目只留在 Windows 桌面上，不显示“桌面”栅栏"),
+    }[value];
+    document.getElementById('keepIconsCard').hidden = value !== 'hide';
+    select.onchange = () => {
+      const settings = state.settings;
+      settings.hideRealIcons = select.value === 'hide';
+      if (select.value !== 'hide') settings.hideInboxWhenIconsShown = select.value === 'showNoInbox';
+      bindDesktopIcons();
+      commit('hideRealIcons');
+    };
+  }
+  // 收起与展开 › 收起的栅栏怎么展开: hover (hoverPeek), one title click (clickToExpand, which
+  // overrides hover) or neither (double-click or the chevron).
+  function bindRollExpand() {
+    const r = state.settings.rollUp, select = document.getElementById('rollExpand');
+    select.value = r.clickToExpand ? 'click' : r.hoverPeek ? 'hover' : 'double';
+    select.onchange = () => {
+      const roll = state.settings.rollUp;
+      roll.clickToExpand = select.value === 'click';
+      roll.hoverPeek = select.value === 'hover';
+      commit('rollUp');
+    };
+  }
   function renderDesktopIconsStatus() {
     const hidden = !!(state.desktopIconsHidden ?? state.settings.hideRealIcons);
     document.getElementById('hideIconsAgain').disabled = hidden && !!state.settings.hideRealIcons;
@@ -2090,7 +2152,7 @@
       document.getElementById('rateStore').hidden = !m.storeEdition;
       renderWorkspaceSummary(m.fences.length, m.itemCount);
       document.getElementById('cfgPath').textContent = m.configPath;
-      bindAll(); bindThemeStyle(); bindCustomTheme(); bindIconTint(); renderDependents(); renderFences(); renderRules(); renderLayout(); renderTools(); updateKind(); renderAppearance(); renderDesktopIconsStatus(); renderStartupNote(); renderWindowsDesktopHotkey();
+      bindAll(); bindThemeStyle(); bindCustomTheme(); bindDesktopIcons(); bindRollExpand(); bindIconTint(); renderDependents(); renderFences(); renderRules(); renderLayout(); renderTools(); updateKind(); renderAppearance(); renderDesktopIconsStatus(); renderStartupNote(); renderWindowsDesktopHotkey();
       update = m.update; renderUpdate();
       // Transitions come on a frame after this state has been drawn: a single frame would style
       // both changes together and start them after all.

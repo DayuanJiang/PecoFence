@@ -432,7 +432,7 @@ pub enum ThemeStyle {
     LiquidGlass,
 }
 
-/// Item name colour (「图标名称颜色」). Auto: Liquid Glass picks dark or light text from the
+/// Item name colour (「文字颜色」). Auto: Liquid Glass picks dark or light text from the
 /// wallpaper under each fence, Fluent follows the colour mode. The halo pairs with the text.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]

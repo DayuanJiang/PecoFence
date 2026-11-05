@@ -3,7 +3,7 @@
 
 use super::*;
 
-/// How to write a theme file (Settings › 常规 › 自定义主题).
+/// How to write a theme file (Settings › 常规 › 主题风格 › 自定义 · 主题文件).
 const THEME_GUIDE_URL: &str = "https://github.com/DayuanJiang/PecoFence/blob/main/docs/THEMES.md";
 
 /// Largest snapping gap honoured, in DIPs; `snapping.gapPx` is clamped to `0..=` this.

@@ -80,7 +80,7 @@ pub struct Theme {
     /// A custom theme's light and dark ink, which the text switches to over a bright or a
     /// dark backdrop (None = the built-in style's).
     pub custom_inks: Option<[Ink; 2]>,
-    /// The 「图标名称颜色」 the text was fixed to by [`Self::with_label_color`]; titles and tabs
+    /// The 「文字颜色」 the text was fixed to by [`Self::with_label_color`]; titles and tabs
     /// over glass keep it instead of picking their ink from the wallpaper (Auto: they pick).
     pub label_color: pecofence_core::LabelColor,
     /// A theme file's title colour for fence titles and tabs without a 「标题颜色」 of their own
@@ -453,7 +453,7 @@ impl Theme {
     }
 
     /// The theme the item names, and the titles and tabs without a 「标题颜色」 of their own,
-    /// are drawn with. 「图标名称颜色」 白色 / 黑色 takes the text of this material's dark /
+    /// are drawn with. 「文字颜色」 白色 / 黑色 takes the text of this material's dark /
     /// light theme whatever the backdrop, also for those titles in place of a theme file's
     /// title colour; the plate, hover and focus tokens stay as picked for it, and the halo
     /// follows the text.

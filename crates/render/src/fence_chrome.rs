@@ -769,7 +769,7 @@ fn header_foreground(
         ..
     } = backdrop
     {
-        // A fixed 「图标名称颜色」 keeps its text; the sample still keeps the lens warm.
+        // A fixed 「文字颜色」 keeps its text; the sample still keeps the lens warm.
         return material
             .borrow_mut()
             .control_foreground(

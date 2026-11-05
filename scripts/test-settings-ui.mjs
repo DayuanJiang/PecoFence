@@ -945,21 +945,38 @@ async function runTests() {
     assert(styleRadio(doc, 'fluent').checked, 'Missing material has no valid selection');
     assert(!doc.documentElement.classList.contains('liquid-glass'), 'Old settings changed the appearance');
   });
-  await test('A custom theme takes the place of the style tiles until a tile is clicked', async () => {
-    const select = doc.getElementById('customTheme');
-    assert([...select.options].map(o => o.value).join('|') === '|Frosted Glass|Warm', 'Theme files not listed after 无');
-    assert(select.value === '' && styleRadio(doc, 'fluent').checked, 'A custom theme was chosen at first');
-    change(doc, 'customTheme', 'Frosted Glass'); await settle();
-    assert(current().settings.customTheme === 'Frosted Glass', 'Host did not receive the custom theme');
+  await test('The 自定义 tile shows the theme files and picks the first; a built-in tile goes back', async () => {
+    const select = doc.getElementById('customTheme'), row = doc.getElementById('customThemeRow');
+    assert(row.hidden && styleRadio(doc, 'fluent').checked && !styleRadio(doc, 'custom').checked, 'A custom theme was chosen at first');
+    styleRadio(doc, 'custom').click(); await settle();
+    assert(!row.hidden && styleRadio(doc, 'custom').checked && current().settings.customTheme === 'Frosted Glass', 'The 自定义 tile did not pick the first theme file');
+    assert([...select.options].map(o => o.value).join('|') === 'Frosted Glass|Warm' && !select.disabled && select.value === 'Frosted Glass', 'Theme files not listed');
     assert(current().settings.themeStyle === 'fluent', 'Choosing a custom theme changed the built-in style');
-    assert(!styleRadio(doc, 'fluent').checked && !styleRadio(doc, 'liquidGlass').checked, 'A style tile stays checked under a custom theme');
     assert(doc.documentElement.classList.contains('liquid-glass'), 'The page does not follow the theme base style');
-    assert(select.value === 'Frosted Glass' && doc.getElementById('customThemeError').hidden, 'A loaded theme is not shown as chosen');
+    assert(doc.getElementById('customThemeError').hidden && doc.getElementById('customThemeHelp').textContent.includes('themes'), 'Help line or error wrong');
+    change(doc, 'customTheme', 'Warm'); await settle();
+    assert(current().settings.customTheme === 'Warm' && styleRadio(doc, 'custom').checked && !doc.documentElement.classList.contains('liquid-glass'), 'Another theme file not applied');
     styleRadio(doc, 'liquidGlass').click(); await settle();
-    assert(current().settings.customTheme === null && current().settings.themeStyle === 'liquidGlass', 'A tile click did not go back to the built-in style');
-    assert(select.value === '' && styleRadio(doc, 'liquidGlass').checked, 'The page did not show the built-in style again');
+    assert(current().settings.customTheme === null && current().settings.themeStyle === 'liquidGlass' && row.hidden, 'A tile click did not go back to the built-in style');
+    assert(styleRadio(doc, 'liquidGlass').checked && !styleRadio(doc, 'custom').checked, 'The page did not show the built-in style again');
     styleRadio(doc, 'fluent').click(); await settle();
     assert(!doc.documentElement.classList.contains('liquid-glass'), 'Fluent did not come back');
+  });
+  await test('With no theme files, 自定义 says how to add one and changes no setting', async () => {
+    const files = current().customThemes;
+    current().customThemes = [];
+    frame.contentWindow.testRefresh(); await settle();
+    const before = frame.contentWindow.testMessages.length;
+    styleRadio(doc, 'custom').click(); await settle();
+    const select = doc.getElementById('customTheme'), help = doc.getElementById('customThemeHelp');
+    assert(!doc.getElementById('customThemeRow').hidden && select.disabled && help.textContent.includes('打开主题文件夹'), 'No hint without theme files: ' + help.textContent);
+    assert(!frame.contentWindow.testMessages.slice(before).some(m => m.type === 'patchSettings'), 'A setting changed without a theme file');
+    frame.contentWindow.testRefresh(); await settle();
+    assert(styleRadio(doc, 'custom').checked && !doc.getElementById('customThemeRow').hidden, 'A refresh closed the 自定义 tile');
+    styleRadio(doc, 'fluent').click(); await settle();
+    assert(doc.getElementById('customThemeRow').hidden && current().settings.customTheme === null, 'Fluent did not close the row');
+    current().customThemes = files;
+    frame.contentWindow.testRefresh(); await settle();
   });
   await test('A chosen theme file that does not load stays listed and says why', async () => {
     current().settings.customTheme = 'Gone';
@@ -968,9 +985,9 @@ async function runTests() {
     const select = doc.getElementById('customTheme'), error = doc.getElementById('customThemeError');
     assert(select.value === 'Gone', 'A chosen file that is gone is not listed');
     assert(!error.hidden && error.textContent.includes('os error 2'), 'The load error is not shown');
-    assert(!styleRadio(doc, 'fluent').checked && !styleRadio(doc, 'liquidGlass').checked, 'A tile is checked for a missing theme');
-    change(doc, 'customTheme', ''); await settle();
-    assert(current().settings.customTheme === null && error.hidden, '无 did not clear the theme and its error');
+    assert(styleRadio(doc, 'custom').checked && !styleRadio(doc, 'fluent').checked, 'The 自定义 tile is not checked for a missing theme');
+    styleRadio(doc, 'fluent').click(); await settle();
+    assert(current().settings.customTheme === null && error.hidden, 'A built-in tile did not clear the theme and its error');
     assert(styleRadio(doc, 'fluent').checked, 'The built-in style is not checked again');
   });
   await test('The theme buttons ask the host for the folder and the guide', async () => {
@@ -1015,33 +1032,53 @@ async function runTests() {
     doc.querySelector('[data-bind="peek.enabled"]').click(); await settle();
     assert(!hotkey.disabled && !doc.getElementById('peekHotkeyChoice').disabled && !doc.getElementById('peekHotkeyCard').classList.contains('disabled'), 'Hotkey stayed disabled');
   });
-  await test('Hiding the desktop fence is available only while the Windows icons show', async () => {
-    const icons = doc.querySelector('[data-bind=hideRealIcons]'), inbox = doc.querySelector('[data-bind=hideInboxWhenIconsShown]');
-    assert(!current().settings.hideRealIcons && !inbox.closest('.card').classList.contains('disabled') && inbox.tabIndex === 0, 'Unavailable while the Windows icons show');
-    inbox.click(); await settle();
-    assert(current().settings.hideInboxWhenIconsShown && inbox.getAttribute('aria-checked') === 'true', 'Switch did not post its setting');
-    icons.click(); await settle();
-    assert(current().settings.hideRealIcons && inbox.closest('.card').classList.contains('disabled') && inbox.getAttribute('aria-disabled') === 'true', 'Still available with the Windows icons hidden');
-    inbox.click(); await settle();
-    assert(current().settings.hideInboxWhenIconsShown, 'A disabled switch still changed its setting');
-    icons.click(); await settle();
-    assert(!inbox.closest('.card').classList.contains('disabled'), 'Did not return with the Windows icons');
-    inbox.click(); await settle();
+  await test('Windows 桌面图标 is one list of three; 保持隐藏 shows only for 隐藏', async () => {
+    const list = doc.getElementById('desktopIcons'), help = doc.getElementById('desktopIconsHelp'), keepCard = doc.getElementById('keepIconsCard');
+    assert(!doc.querySelector('[data-bind=hideRealIcons]') && !doc.querySelector('[data-bind=hideInboxWhenIconsShown]'), 'The old switches are still there');
+    assert(list.value === 'showWithInbox' && keepCard.hidden && help.textContent.includes('同时出现'), 'Shown icons with the Desktop fence not shown: ' + list.value);
+    change(doc, 'desktopIcons', 'showNoInbox'); await settle();
+    assert(!current().settings.hideRealIcons && current().settings.hideInboxWhenIconsShown && list.value === 'showNoInbox' && help.textContent.includes('不显示'), 'showNoInbox not posted');
+    change(doc, 'desktopIcons', 'hide'); await settle();
+    assert(current().settings.hideRealIcons && list.value === 'hide' && !keepCard.hidden, 'hide not posted or 保持隐藏 missing');
+    const keep = doc.querySelector('[data-bind=keepIconsHidden]');
+    keep.click(); await settle();
+    assert(current().settings.keepIconsHidden && keep.getAttribute('aria-checked') === 'true', 'Keep switch did not post its setting');
+    keep.click(); await settle();
+    // Back to shown: the choice made before for the Desktop fence is not kept by accident.
+    change(doc, 'desktopIcons', 'showWithInbox'); await settle();
+    assert(!current().settings.hideRealIcons && !current().settings.hideInboxWhenIconsShown && keepCard.hidden, 'showWithInbox not posted');
     const offer = doc.querySelector('[data-bind=offerNewFence]');
     assert(offer.getAttribute('aria-checked') === 'true', 'New fence offer not shown on');
     offer.click(); await settle();
     assert(current().settings.offerNewFence === false, 'New fence offer switch did not post');
     offer.click(); await settle();
   });
-  await test('Keeping the Windows icons hidden is available only while PecoFence hides them', async () => {
-    const icons = doc.querySelector('[data-bind=hideRealIcons]'), keep = doc.querySelector('[data-bind=keepIconsHidden]');
-    assert(!current().settings.hideRealIcons && keep.closest('.card').classList.contains('disabled'), 'Available while the Windows icons show');
-    icons.click(); await settle();
-    assert(!keep.closest('.card').classList.contains('disabled') && keep.tabIndex === 0, 'Unavailable with the Windows icons hidden');
-    keep.click(); await settle();
-    assert(current().settings.keepIconsHidden && keep.getAttribute('aria-checked') === 'true', 'Switch did not post its setting');
-    keep.click(); await settle();
-    icons.click(); await settle();
+  await test('收起的栅栏怎么展开 is one list for hover, click and double-click', async () => {
+    const list = doc.getElementById('rollExpand');
+    assert(!doc.querySelector('[data-bind="rollUp.hoverPeek"]') && !doc.querySelector('[data-bind="rollUp.clickToExpand"]'), 'The old switches are still there');
+    assert(list.value === 'hover', 'Hover not shown: ' + list.value);
+    for (const [value, hover, click] of [['click', false, true], ['double', false, false], ['hover', true, false]]) {
+      change(doc, 'rollExpand', value); await settle();
+      const r = current().settings.rollUp;
+      assert(r.hoverPeek === hover && r.clickToExpand === click && list.value === value, `${value} posted as hover ${r.hoverPeek}, click ${r.clickToExpand}`);
+    }
+    // A file with both on (an older page allowed it) shows what works: a click.
+    current().settings.rollUp.clickToExpand = true;
+    frame.contentWindow.testRefresh(); await settle();
+    assert(list.value === 'click', 'Both on not shown as click');
+    change(doc, 'rollExpand', 'hover'); await settle();
+  });
+  await test('常规 has the new headings in order, one card for the Windows desktop shortcut', async () => {
+    doc.querySelector('[data-page=general]').click();
+    const heads = [...doc.querySelectorAll('#page-general h3')].map(h => h.textContent).join(' / ');
+    assert(heads === '语言 / 外观 / 图标 / 桌面与启动 / 隐藏栅栏 / 收起与展开 / 标题栏与标签页 / 吸附与对齐 / 速览栅栏', 'Headings: ' + heads);
+    const wd = doc.getElementById('wdHotkeyCard');
+    assert(wd.contains(doc.getElementById('wdHotkey')) && !wd.classList.contains('child') && wd.querySelector('.t').textContent === '临时显示 Windows 桌面', 'The shortcut box is not in the 临时显示 Windows 桌面 card');
+    assert(doc.getElementById('wdHotkeyHelp').textContent.includes('隐藏所有栅栏'), 'The card does not say what it does: ' + doc.getElementById('wdHotkeyHelp').textContent);
+    const textColor = doc.querySelector('[data-bind=labelColor]').closest('.card');
+    assert(textColor.querySelector('.t').textContent === '文字颜色' && textColor.querySelector('.s').textContent.includes('栅栏标题'), 'Text colour card not renamed');
+    const firstCard = doc.querySelector('#page-general .card');
+    assert(firstCard.querySelector('[data-bind=language]'), 'The language is not the first card');
   });
   await test('Colour swatches drive the hidden selects and keep keyboard focus', async () => {
     const swatches = doc.getElementById('iconTintSwatches');
@@ -1538,7 +1575,7 @@ async function runTests() {
     for (let i = 0; i < 3; i++) {
       hide.click(); await settle();
       assert(current().settings.hideRealIcons && hide.disabled, 'Hide did not synchronize state');
-      assert(doc.querySelector('[data-bind=hideRealIcons]').getAttribute('aria-checked') === 'true', 'General toggle out of sync');
+      assert(doc.getElementById('desktopIcons').value === 'hide', 'General list out of sync');
       restore.click(); await settle();
       assert(!current().settings.hideRealIcons && !hide.disabled, 'Restore has no reverse entry');
       assert(doc.getElementById('desktopIconsStatus').textContent.includes('已显示'), 'Wrong visible state');

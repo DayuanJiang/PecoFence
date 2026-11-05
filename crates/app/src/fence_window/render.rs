@@ -406,7 +406,7 @@ impl FenceViewState {
         let count = ((rolled || state.count > 0.0) && !self.shows_tool())
             .then(|| pecofence_core::i18n::format("{0} 项", &[format!("{}", self.items.len())]));
         let opacity = self.material_opacity();
-        // Titles and tabs without a 「标题颜色」 of their own follow 「图标名称颜色」 (#141).
+        // Titles and tabs without a 「标题颜色」 of their own follow 「文字颜色」 (#141).
         let theme = self
             .material_foreground()
             .with_label_color(self.behavior.label_color.get());

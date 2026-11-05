@@ -215,7 +215,7 @@ fn marquee_rect(a: POINT, b: POINT) -> RECT {
     }
 }
 
-/// A press on one of Windows' own desktop icons (they show while 「隐藏 Windows 桌面图标」 is off)
+/// A press on one of Windows' own desktop icons (they show while 「Windows 桌面图标」 is not 隐藏)
 /// selects, opens or drags that icon: it starts no marquee and counts for no quick hide.
 fn on_icon(hit: HWND) -> bool {
     shell_icons::desktop_icon_hovered(hit)
@@ -1456,7 +1456,7 @@ impl DesktopAnchor {
     }
 
     /// The previous run left the icons hidden (`release_desktop_icons`), but this one hides none
-    /// (「隐藏 Windows 桌面图标」 off or `--no-hide-icons`): shows them again. The kept marker
+    /// (「Windows 桌面图标」 shown or `--no-hide-icons`): shows them again. The kept marker
     /// stays while Explorer does not answer, so the next start tries again.
     pub fn show_kept_desktop_icons(&mut self) {
         let kept = self.icons.kept.clone();
