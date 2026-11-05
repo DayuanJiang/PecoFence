@@ -73,7 +73,7 @@ pecofence-cli fence set --all opacity clear
 ## 給每件事留一個位置
 
 <p align="center">
-  <img src="../assets/hero-zh-TW.png" alt="PecoFence — 專案資料夾、PDF 與設計海報，收在 Liquid Glass 圍欄裡。" width="1280">
+  <img src="../assets/hero-zh-TW.png" alt="PecoFence：專案資料夾、PDF 與設計海報，收在 Liquid Glass 圍欄裡。" width="1280">
 </p>
 
 ## 看看它怎麼用
@@ -98,7 +98,7 @@ pecofence-cli fence set --all opacity clear
 
 | 體驗 | 能做什麼 |
 | :--- | :--- |
-| **AI + CLI** | `pecofence-cli` — **說出需求，直接改設定。** 切換主題，調整透明度、圖示大小與全域設定，也能一次改好所有圍欄。 |
+| **AI + CLI** | `pecofence-cli`：**說出需求，直接改設定。** 切換主題，調整透明度、圖示大小與全域設定，也能一次改好所有圍欄。 |
 | **少一點手動整理** | 依類型、副檔名、名稱、萬用字元、捷徑目標、時間和大小設定規則，新檔案會自動找到自己的位置。 |
 | **配得上你的桌布** | Fluent 與 Liquid Glass 兩種風格，支援淺色／深色模式；每個圍欄可各自設定色調與不透明度，還能為圖示著色。 |
 | **熟悉的檔案操作** | 檔案總管右鍵選單、拖放、複製貼上、多選、縮圖，以及圖示／清單／詳細資料三種檢視。 |

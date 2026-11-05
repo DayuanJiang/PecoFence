@@ -73,7 +73,7 @@ Pour les agents et les scripts : `describe` fournit le catalogue de commandes et
 ## Une place pour chaque chose
 
 <p align="center">
-  <img src="../assets/hero-fr.png" alt="PecoFence — Des dossiers de projet, un vrai PDF et des créations graphiques originales dans des groupes Liquid Glass natifs." width="1280">
+  <img src="../assets/hero-fr.png" alt="PecoFence : des dossiers de projet, un vrai PDF et des créations graphiques originales dans des groupes Liquid Glass natifs." width="1280">
 </p>
 
 ## Voyez-le en action
@@ -98,7 +98,7 @@ en cours. Prenez ce qu’il vous faut, puis appuyez sur **Échap** pour y reveni
 
 | Fonction | Ce que vous y gagnez |
 | :--- | :--- |
-| **IA + CLI** | `pecofence-cli` — **Configurez avec vos propres mots.** Modifiez le thème, la transparence, la taille des icônes et les paramètres généraux, ou ajustez tous les groupes à la fois. |
+| **IA + CLI** | `pecofence-cli` : **Configurez avec vos propres mots.** Modifiez le thème, la transparence, la taille des icônes et les paramètres généraux, ou ajustez tous les groupes à la fois. |
 | **Moins de tri** | Des règles par type de fichier, extension, nom, motif, cible de raccourci, date et taille. Les nouveaux fichiers trouvent leur groupe tout seuls. |
 | **Un verre assorti à votre fond d’écran** | Thèmes Fluent et Liquid Glass, modes clair et sombre, couleur, opacité et teinte des icônes réglables groupe par groupe. |
 | **Des fichiers qui se manipulent comme d’habitude** | Menus contextuels de l’Explorateur, glisser-déposer, copier-coller, sélection multiple, miniatures et affichages Icônes, Liste ou Détails. |

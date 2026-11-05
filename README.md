@@ -73,7 +73,7 @@ Built for agents and scripts: `describe` exposes the command catalog and JSON Sc
 ## Give everything a place
 
 <p align="center">
-  <img src="docs/assets/hero-en.png" alt="PecoFence — Project folders, a PDF and original design studies in Liquid Glass fences." width="1280">
+  <img src="docs/assets/hero-en.png" alt="PecoFence: project folders, a PDF and original design studies in Liquid Glass fences." width="1280">
 </p>
 
 ## See it in action
@@ -98,7 +98,7 @@ Grab what you need, then press **Esc** to return.
 
 | Feature | What you get |
 | :--- | :--- |
-| **AI + CLI** | `pecofence-cli` — **Configure it in your own words.** Change themes, transparency, icon sizes and global settings, or adjust every fence at once. |
+| **AI + CLI** | `pecofence-cli`: **Configure it in your own words.** Change themes, transparency, icon sizes and global settings, or adjust every fence at once. |
 | **Less sorting** | Rules for file types, extensions, names, wildcards, shortcut targets, time and size. New files find their fence automatically. |
 | **Glass that fits your desktop** | Fluent and Liquid Glass themes, light/dark modes, per-fence colors, opacity and icon tinting. |
 | **Familiar file handling** | File Explorer context menus, drag and drop, copy/paste, multi-select, thumbnails and icon/list/details views. |
@@ -139,7 +139,7 @@ The Microsoft Store edition is signed by Microsoft, updates automatically and ne
 
 ## Build it. Make it yours.
 
-PecoFence is Apache 2.0 licensed, and contributions are welcome—from a sharper translation
+PecoFence is Apache 2.0 licensed, and contributions are welcome, from a sharper translation
 to a better desktop interaction.
 
 [Contribute](CONTRIBUTING.md) · [Improve a translation](docs/LOCALIZATION.md) · [Development guide](docs/DEVELOPMENT.md)

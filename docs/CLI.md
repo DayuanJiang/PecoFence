@@ -321,10 +321,10 @@ part in tabs (`fence merge` refuses them). Properties about icons (`iconSize`, `
 An imported configuration (`config import`) with script fences switches `tools.scripts` off until
 the user turns it on again; a backup restore keeps it.
 
-`tools.dialogJump` (Settings › 小工具 › 「对话框跳转」, `false` by default) has no fence: an Open,
+`tools.dialogJump` (Settings › 小工具 › 文件对话框 › 「对话框跳转」, `false` by default) has no fence: an Open,
 Save As or Select Folder dialog of any program jumps to the folder of the File Explorer window or
 folder fence the user comes back from, and Ctrl+G in the dialog jumps at any time.
-`tools.everything` (Settings › 常规 › 「速览搜索也找整台电脑（Everything）」, `false` by default) is an
+`tools.everything` (Settings › 常规 › 速览栅栏 › 「速览搜索也找整台电脑（Everything）」, `false` by default) is an
 option of Peek: the Peek search box also lists what Everything, the free file search from voidtools,
 finds on the whole computer; Everything has to be running, and version 1.5 also matches Chinese
 names by pinyin. Files and folders opened from the search box are counted in `config.json` under

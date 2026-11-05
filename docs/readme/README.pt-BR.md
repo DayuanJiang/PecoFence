@@ -73,7 +73,7 @@ Para agentes e scripts: `describe` fornece o catálogo de comandos e os esquemas
 ## Dê um lugar a cada coisa
 
 <p align="center">
-  <img src="../assets/hero-pt-BR.png" alt="PecoFence — Pastas de projetos, um PDF real e estudos gráficos originais em grupos com Liquid Glass nativo." width="1280">
+  <img src="../assets/hero-pt-BR.png" alt="PecoFence: pastas de projetos, um PDF real e estudos gráficos originais em grupos com Liquid Glass nativo." width="1280">
 </p>
 
 ## Veja em ação
@@ -98,7 +98,7 @@ Pegue o que precisa e pressione **Esc** para voltar.
 
 | Experiência | O que você ganha |
 | :--- | :--- |
-| **IA + CLI** | `pecofence-cli` — **Configure com suas próprias palavras.** Altere temas, transparência, tamanho dos ícones e configurações globais, ou ajuste todos os grupos de uma vez. |
+| **IA + CLI** | `pecofence-cli`: **Configure com suas próprias palavras.** Altere temas, transparência, tamanho dos ícones e configurações globais, ou ajuste todos os grupos de uma vez. |
 | **Menos arrumação** | Regras por tipo de arquivo, extensão, nome, curinga, destino do atalho, horário e tamanho. Arquivos novos encontram seu grupo sozinhos. |
 | **Vidro que combina com sua área de trabalho** | Temas Fluent e Liquid Glass, modos claro e escuro, cor por grupo, opacidade e cor dos ícones. |
 | **Arquivos do jeito que você conhece** | Menus de contexto do Explorador de Arquivos, arrastar e soltar, copiar e colar, seleção múltipla, miniaturas e exibição em ícones, lista ou detalhes. |

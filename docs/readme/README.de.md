@@ -73,7 +73,7 @@ Für Agenten und Skripte: `describe` liefert den Befehlskatalog und JSON-Schemas
 ## Alles bekommt seinen Platz
 
 <p align="center">
-  <img src="../assets/hero-de.png" alt="PecoFence — Projektordner, ein echtes PDF und eigene Designstudien in nativen Liquid-Glass-Bereichen." width="1280">
+  <img src="../assets/hero-de.png" alt="PecoFence: Projektordner, ein echtes PDF und eigene Designstudien in nativen Liquid-Glass-Bereichen." width="1280">
 </p>
 
 ## PecoFence in Aktion
@@ -85,7 +85,7 @@ von Project zu Ideas und zieh einen Tab heraus, wenn du mehr Platz brauchst.
 
 ![Zwei Bereiche werden zu Tabs zusammengeführt, dann Wechsel zwischen Project und Ideas; zuletzt wird ein Tab wieder als eigener Bereich herausgezogen.](../assets/tabs.gif)
 
-### Dein Desktop – nur eine Tastenkombination entfernt.
+### Dein Desktop, nur eine Tastenkombination entfernt.
 
 Drücke **Strg + Alt + Leertaste**, um deine Bereiche vor die aktuelle Anwendung zu holen.
 Hol dir, was du brauchst, und kehre mit **Esc** zurück.
@@ -98,7 +98,7 @@ Hol dir, was du brauchst, und kehre mit **Esc** zurück.
 
 | Erlebnis | Was dahintersteckt |
 | :--- | :--- |
-| **KI + CLI** | `pecofence-cli` – **Mit eigenen Worten konfigurieren.** Ändere Design, Transparenz, Symbolgröße und globale Einstellungen oder passe alle Bereiche auf einmal an. |
+| **KI + CLI** | `pecofence-cli`: **Mit eigenen Worten konfigurieren.** Ändere Design, Transparenz, Symbolgröße und globale Einstellungen oder passe alle Bereiche auf einmal an. |
 | **Weniger sortieren** | Regeln nach Dateityp, Endung, Name, Platzhalter, Verknüpfungsziel, Zeit und Größe. Neue Dateien finden ihren Bereich von selbst. |
 | **Glas, das zu deinem Desktop passt** | Die Designs Fluent und Liquid Glass, heller und dunkler Modus, Farbton, Deckkraft und Symbolfärbung je Bereich. |
 | **Vertraute Dateiverwaltung** | Explorer-Kontextmenüs, Drag & Drop, Kopieren/Einfügen, Mehrfachauswahl, Miniaturansichten sowie Symbol-, Listen- und Detailansicht. |
@@ -139,7 +139,7 @@ Die Microsoft-Store-Version ist von Microsoft signiert, aktualisiert sich automa
 
 ## Selbst bauen. Selbst gestalten.
 
-PecoFence steht unter der Apache-2.0-Lizenz, und Beiträge sind willkommen – von einer treffenderen
+PecoFence steht unter der Apache-2.0-Lizenz, und Beiträge sind willkommen, von einer treffenderen
 Übersetzung bis zu einer besseren Desktop-Interaktion.
 
 [Mitwirken](../../CONTRIBUTING.md) · [Übersetzung verbessern](../LOCALIZATION.md) · [Entwicklerhandbuch](../DEVELOPMENT.md)
