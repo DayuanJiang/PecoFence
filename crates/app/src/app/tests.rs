@@ -499,7 +499,7 @@ mod ipc {
         let patched = patch_settings_path(
             &Settings::default(),
             "peek",
-            json!({ "enabled": true, "dim": true, "customHotkey": "Ctrl+Shift+F", "doubleCtrl": true }),
+            json!({ "enabled": true, "dim": true, "hotkey": "ctrlAltSpace", "customHotkey": "Ctrl+Shift+F", "doubleCtrl": true }),
         )
         .unwrap();
         assert!(patched.peek.double_ctrl);
