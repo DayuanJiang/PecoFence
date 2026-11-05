@@ -25,6 +25,9 @@ FEATURES = ["groups", "peek", "tabs", "rules", "portal", "hide"]
 DETAILS = ["glass", "files", "space", "back", "footprint", "safe"]
 FEATURE_ICONS = ["grid", "cursor", "layers", "spark", "folder", "expand"]
 DETAIL_ICONS = ["spark", "cursor", "expand", "restore", "feather", "shield"]
+# The switches of Settings > Tools (小工具), listed below the feature gallery.
+TOOLS = ["note", "clock", "script", "dialog", "everything", "ctrl"]
+TOOL_ICONS = ["note", "clock", "code", "jump", "search", "keyboard"]
 # The manual lesson each feature's animation and step-by-step link come from.
 FEATURE_LESSONS = {"groups": "create", "peek": "peek", "tabs": "tabs", "rules": "rules", "portal": "portal",
                    "hide": "hide"}
@@ -87,12 +90,12 @@ def feature_tabs(strings):
     )
 
 
-def detail_items(strings):
+def detail_items(strings, prefix="detail", names=DETAILS, icons=DETAIL_ICONS):
     return "\n".join(
         f'        <div><dt><span class="detail-icon"><svg class="icon" aria-hidden="true">'
-        f'<use href="#i-{icon}"/></svg></span><br>{html.escape(strings[f"detail.{name}.title"])}</dt>'
-        f'<dd>{html.escape(strings[f"detail.{name}.text"])}</dd></div>'
-        for name, icon in zip(DETAILS, DETAIL_ICONS)
+        f'<use href="#i-{icon}"/></svg></span><br>{html.escape(strings[f"{prefix}.{name}.title"])}</dt>'
+        f'<dd>{html.escape(strings[f"{prefix}.{name}.text"])}</dd></div>'
+        for name, icon in zip(names, icons)
     )
 
 
@@ -203,6 +206,7 @@ def main():
             "features": feature_fences(strings, root),
             "feature_tabs": feature_tabs(strings),
             "details": detail_items(strings),
+            "tools": detail_items(strings, "tool", TOOLS, TOOL_ICONS),
             "year": str(datetime.date.today().year),
             "v": asset_version,
         }
