@@ -719,9 +719,35 @@ impl App {
         self.create_tool_fence(script, None, None, x, y);
     }
 
-    /// 脚本栅栏 example: writes the weather script into the configuration's `scripts` folder
-    /// (kept when it is there already) and makes a fence for it.
+    /// 「添加示例…」: a menu of the examples at the pointer; the chosen one becomes a fence near
+    /// (`x`, `y`).
+    pub(super) fn script_example_menu(&mut self, x: i32, y: i32) {
+        use crate::scripts::Example;
+        let menu = pecofence_platform::tray::PopupMenu::new();
+        for (i, kind) in Example::ALL.iter().enumerate() {
+            menu.item(i as u32 + 1, kind.label(), false, false);
+        }
+        let owner = self
+            .settings
+            .as_ref()
+            .map(|h| h.hwnd())
+            .unwrap_or(self.control.hwnd());
+        let p = window::cursor_pos();
+        let chosen = menu.show_context(owner, p.x, p.y);
+        match Example::ALL.get((chosen as usize).wrapping_sub(1)) {
+            Some(&kind) => self.new_script_example_of(kind, x, y),
+            None => tracing::info!("script example menu dismissed"),
+        }
+    }
+
+    /// The weather example (the test script's `new-script-example`).
     pub(super) fn new_script_example(&mut self, x: i32, y: i32) {
+        self.new_script_example_of(crate::scripts::Example::Weather, x, y);
+    }
+
+    /// 脚本栅栏 example `kind`: writes its script into the configuration's `scripts` folder
+    /// (kept when it is there already) and makes a fence for it.
+    pub(super) fn new_script_example_of(&mut self, kind: crate::scripts::Example, x: i32, y: i32) {
         let Some(dir) = self
             .state
             .config_path_on_disk()
@@ -730,21 +756,29 @@ impl App {
         else {
             return;
         };
-        let path = dir.join(pecofence_core::i18n::text("天气.ps1"));
+        let path = dir.join(kind.file_name());
         if !path.is_file() {
             let chinese = matches!(
                 pecofence_core::i18n::language(),
                 pecofence_core::i18n::Language::SimplifiedChinese
                     | pecofence_core::i18n::Language::TraditionalChinese
             );
-            let written = std::fs::create_dir_all(&dir)
-                .and_then(|_| std::fs::write(&path, crate::scripts::weather_example(chinese)));
+            // Windows PowerShell 5.1 reads a script without a BOM in the ANSI code page: the
+            // emoji and Chinese text need the BOM, and Notepad keeps CRLF.
+            let text = crate::scripts::example(kind, chinese);
+            let text = format!(
+                "\u{feff}{}",
+                text.trim_start_matches('\u{feff}')
+                    .replace("\r\n", "\n")
+                    .replace('\n', "\r\n")
+            );
+            let written = std::fs::create_dir_all(&dir).and_then(|_| std::fs::write(&path, text));
             if let Err(e) = written {
-                tracing::warn!(error = %e, "writing the weather example failed");
+                tracing::warn!(error = %e, example = kind.name(), "writing the example failed");
                 return;
             }
         }
-        tracing::info!("weather example script fence");
+        tracing::info!(example = kind.name(), "example script fence");
         self.new_script_near(x, y, Some(path));
     }
 

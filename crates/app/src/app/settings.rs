@@ -696,7 +696,7 @@ impl App {
                             "newNote" => self.new_note_near(x, y),
                             "newClock" => self.new_clock_near(x, y),
                             "newScript" => self.new_script_near(x, y, None),
-                            _ => self.new_script_example(x, y),
+                            _ => self.script_example_menu(x, y),
                         }
                     }
                 }

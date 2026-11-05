@@ -466,6 +466,66 @@ fn strip_escapes(line: &str) -> String {
     out
 }
 
+/// The script fence examples besides the weather, as (Chinese, English) texts.
+pub fn example(kind: Example, chinese: bool) -> &'static str {
+    match (kind, chinese) {
+        (Example::Weather, c) => weather_example(c),
+        (Example::GitHub, true) => include_str!("../assets/scripts/github.zh.ps1"),
+        (Example::GitHub, false) => include_str!("../assets/scripts/github.en.ps1"),
+        (Example::Todo, true) => include_str!("../assets/scripts/todo.zh.ps1"),
+        (Example::Todo, false) => include_str!("../assets/scripts/todo.en.ps1"),
+        (Example::Status, true) => include_str!("../assets/scripts/status.zh.ps1"),
+        (Example::Status, false) => include_str!("../assets/scripts/status.en.ps1"),
+    }
+}
+
+/// 「添加示例…」: the script fence examples.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Example {
+    /// Today's weather (wttr.in).
+    Weather,
+    /// A GitHub repository's newest issues and pull requests: rows that open in the browser.
+    GitHub,
+    /// A todo.txt with to-dos ticked from the fence (`action=`).
+    Todo,
+    /// The computer's state every 2 seconds (a streaming script): colours, copy, run.
+    Status,
+}
+
+impl Example {
+    pub const ALL: [Self; 4] = [Self::Weather, Self::GitHub, Self::Todo, Self::Status];
+
+    /// Its line in the menu.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Weather => pecofence_core::i18n::text("天气"),
+            Self::GitHub => pecofence_core::i18n::text("GitHub 仓库动态"),
+            Self::Todo => pecofence_core::i18n::text("待办（todo.txt）"),
+            Self::Status => pecofence_core::i18n::text("电脑状态（一直运行）"),
+        }
+    }
+
+    /// The file it is written to in the configuration's `scripts` folder.
+    pub fn file_name(self) -> &'static str {
+        match self {
+            Self::Weather => pecofence_core::i18n::text("天气.ps1"),
+            Self::GitHub => pecofence_core::i18n::text("GitHub 动态.ps1"),
+            Self::Todo => pecofence_core::i18n::text("待办.ps1"),
+            Self::Status => pecofence_core::i18n::text("电脑状态.ps1"),
+        }
+    }
+
+    /// For the log.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Weather => "weather",
+            Self::GitHub => "github",
+            Self::Todo => "todo",
+            Self::Status => "status",
+        }
+    }
+}
+
 /// The 脚本栅栏 example: today's weather from wttr.in; `chinese` = the comments and labels in
 /// Chinese (the conditions come from the service as they are).
 pub fn weather_example(chinese: bool) -> &'static str {
