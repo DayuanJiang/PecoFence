@@ -15,6 +15,9 @@ if ($env:PECOFENCE_ACTION -match '^toggle:(\d+)$') {
     Set-Content $file $lines -Encoding UTF8
   }
 }
-for ($i = 0; $i -lt $lines.Count; $i++) { "$($lines[$i]) | action=toggle:$i" }
+# Only the to-do lines can be clicked; other lines show as they are.
+for ($i = 0; $i -lt $lines.Count; $i++) {
+  if ($lines[$i] -match '^\[[ x]\]') { "$($lines[$i]) | action=toggle:$i" } else { $lines[$i] }
+}
 "---"
 "Open todo.txt | open=""$file"" icon=📄"

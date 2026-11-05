@@ -14,6 +14,9 @@ if ($env:PECOFENCE_ACTION -match '^toggle:(\d+)$') {
     Set-Content $file $lines -Encoding UTF8
   }
 }
-for ($i = 0; $i -lt $lines.Count; $i++) { "$($lines[$i]) | action=toggle:$i" }
+# 只有待办行能点，其他行原样显示。
+for ($i = 0; $i -lt $lines.Count; $i++) {
+  if ($lines[$i] -match '^\[[ x]\]') { "$($lines[$i]) | action=toggle:$i" } else { $lines[$i] }
+}
 "---"
 "打开 todo.txt | open=""$file"" icon=📄"

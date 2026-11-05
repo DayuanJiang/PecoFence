@@ -166,7 +166,9 @@ impl App {
             outcome: outcome.map(str::to_string),
             output,
             last_run: last.map(|(_, at)| *at),
-            running: self.script_runs.running.contains_key(&id),
+            // A streaming script runs as long as it is in `streams`.
+            running: self.script_runs.running.contains_key(&id)
+                || self.script_runs.streams.contains_key(&id),
         })
     }
 
