@@ -42,7 +42,7 @@
   "tool.clock.title": "Orologio e data",
   "tool.clock.text": "L’ora in cifre grandi, con data e giorno della settimana nel formato della tua area geografica di Windows. Con i secondi, se vuoi.",
   "tool.script.title": "Riquadro script",
-  "tool.script.text": "Esegue il tuo script PowerShell, Python o batch a un intervallo da 1 minuto a 3 ore e mostra ciò che stampa, come l’esempio meteo già pronto. Un clic su una riga può aprire un link, avviare un programma o spuntare un’attività. PecoFence di per sé non si collega mai a internet; lo fa solo il tuo script.",
+  "tool.script.text": "Esegue il tuo script PowerShell, Python o batch e mostra ciò che stampa: a un intervallo da 1 minuto a 3 ore, come l’esempio meteo già pronto, oppure sempre attivo e aggiornato ogni pochi secondi, come l’esempio sullo stato del PC. Un clic su una riga può aprire un link, avviare un programma o spuntare un’attività. PecoFence di per sé non si collega mai a internet; lo fa solo il tuo script.",
   "tool.dialog.title": "Salto di cartella nelle finestre di dialogo",
   "tool.dialog.text": "In una finestra Apri o Salva, passa a Esplora file e torna indietro: la finestra va alla cartella aperta lì. Anche Ctrl+G o un clic su un riquadro cartella ci portano, e Invio nella ricerca della vista rapida passa alla finestra il file scelto.",
   "tool.everything.title": "Cerca in tutto il computer (Everything)",

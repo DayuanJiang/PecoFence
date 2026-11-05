@@ -42,7 +42,7 @@
   "tool.clock.title": "Horloge et date",
   "tool.clock.text": "L’heure en grands chiffres, avec la date et le jour au format de votre région Windows. Les secondes si vous le souhaitez.",
   "tool.script.title": "Groupe de script",
-  "tool.script.text": "Exécute votre propre script PowerShell, Python ou batch à un intervalle de 1 minute à 3 heures et affiche ce qu’il imprime, comme l’exemple météo prêt à l’emploi. Un clic sur une ligne peut ouvrir un lien, lancer un programme ou cocher une tâche. PecoFence lui-même ne se connecte jamais à Internet ; seul votre script le fait.",
+  "tool.script.text": "Exécute votre propre script PowerShell, Python ou batch et affiche ce qu’il imprime : à un intervalle de 1 minute à 3 heures, comme l’exemple météo prêt à l’emploi, ou en continu avec une mise à jour toutes les quelques secondes, comme l’exemple d’état du PC. Un clic sur une ligne peut ouvrir un lien, lancer un programme ou cocher une tâche. PecoFence lui-même ne se connecte jamais à Internet ; seul votre script le fait.",
   "tool.dialog.title": "Aller au dossier dans les boîtes de dialogue",
   "tool.dialog.text": "Dans une boîte de dialogue Ouvrir ou Enregistrer, passez à l’Explorateur de fichiers puis revenez : elle va au dossier ouvert dans l’Explorateur. Ctrl+G ou un clic sur un groupe de dossier fait de même, et Entrée dans la recherche de l’aperçu lui passe le fichier choisi.",
   "tool.everything.title": "Rechercher dans tout l’ordinateur (Everything)",

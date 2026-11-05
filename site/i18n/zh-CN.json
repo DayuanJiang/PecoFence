@@ -42,7 +42,7 @@
   "tool.clock.title": "时钟与日期",
   "tool.clock.text": "大字显示时间，下面是日期和星期，格式跟随 Windows 的区域设置，需要的话也能显示秒。",
   "tool.script.title": "脚本栅栏",
-  "tool.script.text": "每隔 1 分钟到 3 小时运行一次你的 PowerShell、Python 或批处理脚本，把它打印的文字显示在栅栏里，比如自带的天气示例。脚本还可以让一行变得能点：点一下打开网址、运行程序，或者给待办打勾。PecoFence 自己不联网，联网的是你的脚本。",
+  "tool.script.text": "运行你自己的 PowerShell、Python 或批处理脚本，把它打印的文字显示在栅栏里：可以每隔 1 分钟到 3 小时运行一次，比如自带的天气示例；也可以一直运行，几秒更新一次，比如电脑状态示例。脚本还可以让一行变得能点：点一下打开网址、运行程序，或者给待办打勾。PecoFence 自己不联网，联网的是你的脚本。",
   "tool.dialog.title": "对话框跳转",
   "tool.dialog.text": "打开或保存文件时，切到资源管理器再切回对话框，它就跳到资源管理器里的文件夹。按 Ctrl+G 或点文件夹栅栏也能跳过去；在速览搜索里按 Enter，选中的文件直接交给对话框。",
   "tool.everything.title": "搜索整台电脑（Everything）",
