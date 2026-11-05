@@ -741,7 +741,7 @@
   "脚本栅栏": "Script fence",
   "定时运行你选的脚本（PowerShell、Python、批处理等），把它打印的文字显示在栅栏里，适合天气、倒计时、服务器状态，也可以让 AI 助手帮你写。PecoFence 自己不联网，联网的是你的脚本": "Runs a script you choose (PowerShell, Python, batch files, and so on) on a schedule, and shows the text it prints in the fence. Good for weather, countdowns, and server status. An AI assistant can write it for you. PecoFence itself doesn’t go online; only your script does.",
   "桌面上还没有脚本栅栏": "No script fences on the desktop yet",
-  "脚本最多运行 10 秒，不弹出窗口；运行间隔在栅栏的右键菜单里改": "A script runs for at most 10 seconds and opens no window. Change how often it runs from the fence’s right-click menu.",
+  "脚本最多运行 10 秒（标为一直运行的除外），不弹出窗口；运行间隔在栅栏的右键菜单里改": "A script runs for at most 10 seconds, unless it is marked to keep running, and opens no window. Change how often it runs from the fence’s right-click menu.",
   "新建脚本栅栏…": "New script fence…",
   "添加示例…": "Add example…",
   "点别处保存": "Click elsewhere to save",

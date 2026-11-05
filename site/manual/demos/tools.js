@@ -74,7 +74,7 @@
         SM.h3(g, '自己写的小工具');
         r.scripts = toggleCard(g, { ic: '', t: '脚本栅栏', s: '定时运行你选的脚本（PowerShell、Python、批处理等），把它打印的文字显示在栅栏里，适合天气、倒计时、服务器状态，也可以让 AI 助手帮你写。PecoFence 自己不联网，联网的是你的脚本' }, { gap: 1 });
         // two buttons: the text above them (the page's .actions wrap under a long text)
-        r.scriptRow = SM.card(g, { t: '桌面上还没有脚本栅栏', s: '脚本最多运行 10 秒，不弹出窗口；运行间隔在栅栏的右键菜单里改', h: 64, indent: 22, textW: g.cardW - 34 - 12, gap: 0 });
+        r.scriptRow = SM.card(g, { t: '桌面上还没有脚本栅栏', s: '脚本最多运行 10 秒（标为一直运行的除外），不弹出窗口；运行间隔在栅栏的右键菜单里改', h: 64, indent: 22, textW: g.cardW - 34 - 12, gap: 0 });
         r.scriptRow.t.style.top = '7px';
         r.scriptRow.s.style.top = '22px';
         r.newScript = SM.button(r.scriptRow, '新建脚本栅栏…', 64, { accent: true, top: 37 });
