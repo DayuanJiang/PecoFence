@@ -83,11 +83,10 @@ impl NewTool {
 }
 
 impl App {
-    /// 对话框跳转 and 双击 Ctrl 打开搜索 follow their switches.
+    /// 对话框跳转 follows its switch.
     pub(super) fn sync_dialog_jump(&self) {
         let settings = &self.state.config.settings;
         crate::dialog_jump::set_enabled(settings.tools.dialog_jump, self.control.hwnd());
-        crate::double_ctrl::set_enabled(settings.peek.double_ctrl, self.control.hwnd());
     }
 
     /// Makes a tool fence at `rect` (physical px; None = a free spot near (`x`, `y`)), titled

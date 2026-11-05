@@ -222,7 +222,8 @@ pub struct ToolSettings {
     /// fence) the user comes back from, and Ctrl+G jumps there at any time.
     #[serde(default)]
     pub dialog_jump: bool,
-    /// 搜索整台电脑: the search box also lists what the Everything file search finds.
+    /// 速览搜索也找整台电脑 (常规 › 速览栅栏 on the settings page): the search box also lists
+    /// what the Everything file search finds.
     #[serde(default)]
     pub everything: bool,
 }
@@ -300,7 +301,9 @@ pub struct PeekSettings {
     /// shortcut is ignored the same way.
     #[serde(default)]
     pub custom_hotkey: Option<String>,
-    /// Pressing Ctrl twice opens the search box (with Peek).
+    /// Peek's shortcut is pressing Ctrl twice (Peek opens with the search box) instead of
+    /// `hotkey` / `customHotkey`, which stay saved but are not registered. Setting another
+    /// shortcut turns this off.
     #[serde(default)]
     pub double_ctrl: bool,
 }

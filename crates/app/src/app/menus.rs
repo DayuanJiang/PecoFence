@@ -224,6 +224,14 @@ impl App {
                 Some(h) => {
                     pecofence_core::i18n::format("速览所有栅栏\t{0}", &[peek_hotkey_label(h)])
                 }
+                None if self.state.config.settings.peek.enabled
+                    && self.state.config.settings.peek.double_ctrl =>
+                {
+                    pecofence_core::i18n::format(
+                        "速览所有栅栏\t{0}",
+                        &[pecofence_core::i18n::text("双击 Ctrl").to_string()],
+                    )
+                }
                 None => pecofence_core::i18n::text("速览所有栅栏").to_string(),
             },
             false,

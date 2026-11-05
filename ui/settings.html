@@ -188,6 +188,7 @@
   /* Peek shortcut: key caps in a box that records the next combination (styled as a focused
      text box meanwhile); the quick choices are toggle buttons. */
   .hotkey-edit { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 16px; max-width: 100%; }
+  #peekHotkeyEdit { flex-basis: 100%; } #peekHotkeyEdit[hidden] { display: none; }
   .hotkey-box { display: inline-flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 200px; padding: 0 10px 0 4px; }
   .hotkey-box .keys { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; min-width: 0; }
   .hotkey-box kbd { font: 600 12px/22px "Segoe UI Variable Text", "Segoe UI", var(--font-cjk), sans-serif; min-width: 26px; padding: 0 7px; border-radius: 3px; text-align: center; color: var(--on-accent); background: var(--accent); }
@@ -484,12 +485,15 @@
       <div class="group">
         <div class="card"><div class="l"><span class="ic">&#xE8A1;</span><div><div class="t">按快捷键让所有栅栏显示在窗口前面</div><div class="s">再按一次、按 Esc 或点击其他位置返回</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="peek.enabled"></div></div>
         <div class="card child" id="peekHotkeyCard"><div class="l"><div><div class="t" id="peekHotkeyTitle">快捷键</div><div class="s" id="peekHotkeyHelp" aria-live="polite"></div></div></div>
-          <div class="hotkey-edit">
+          <select id="peekHotkeyChoice" aria-labelledby="peekHotkeyTitle" aria-describedby="peekHotkeyHelp"></select>
+          <div class="hotkey-edit" id="peekHotkeyEdit" hidden>
             <button type="button" class="hotkey-box" id="peekHotkey" aria-labelledby="peekHotkeyTitle peekHotkeyKeys" aria-describedby="peekHotkeyHelp"><span class="keys" id="peekHotkeyKeys"></span><span class="ic">&#xE70F;</span></button>
             <label class="hotkey-win"><input type="checkbox" id="peekHotkeyWin">包含 Win 键</label>
           </div></div>
-        <div class="card child" id="peekPresetCard"><div class="l"><div><div class="t" id="peekPresetTitle">常用组合</div></div></div>
-          <div class="actions" id="peekPresets" role="group" aria-labelledby="peekPresetTitle"></div></div>
+      </div>
+      <div class="group">
+        <div class="card"><div class="l"><span class="ic">&#xE721;</span><div><div class="t">速览搜索也找整台电脑（Everything）</div><div class="s">速览时打字搜索，除了栅栏里的图标，也列出整台电脑上的文件和文件夹，由免费的 Everything 负责查找</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="tools.everything"></div></div>
+        <div class="card child" id="everythingCard"><div class="l"><div><div class="t" id="everythingStatus"></div><div class="s" id="everythingHelp"></div></div></div><button class="accent" id="everythingAction"></button></div>
       </div>
       <div class="card"><div class="l"><span class="ic">&#xE708;</span><div><div class="t">速览时调暗背景</div><div class="s">栅栏之外的区域变暗，更容易看清</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="peek.dim"></div></div>
     </section>
@@ -608,13 +612,8 @@
         <div class="card child"><div class="l"><div><div class="t">显示秒</div><div class="s">每秒更新一次</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="tools.clockSeconds"></div></div>
         <div class="card child"><div class="l"><div><div class="t" id="clockCount"></div></div></div><button class="accent" id="newClock">新建时钟</button></div>
       </div>
-      <h3>搜索与跳转</h3>
+      <h3>文件对话框</h3>
       <div class="card"><div class="l"><span class="ic">&#xE8DA;</span><div><div class="t">对话框跳转</div><div class="s">打开或保存文件时，切到资源管理器再切回对话框，它就跳到资源管理器里的文件夹；点文件夹栅栏或按 Ctrl+G 也能跳过去</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="tools.dialogJump"></div></div>
-      <div class="group">
-        <div class="card"><div class="l"><span class="ic">&#xE721;</span><div><div class="t">搜索整台电脑（Everything）</div><div class="s">速览时打字搜索，除了栅栏里的图标，也列出整台电脑上的文件和文件夹，由免费的 Everything 负责查找</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="tools.everything"></div></div>
-        <div class="card child" id="everythingCard"><div class="l"><div><div class="t" id="everythingStatus"></div><div class="s" id="everythingHelp"></div></div></div><button class="accent" id="everythingAction"></button></div>
-      </div>
-      <div class="card"><div class="l"><span class="ic">&#xE765;</span><div><div class="t">双击 Ctrl 打开搜索</div><div class="s">快速按两下 Ctrl，打开速览和搜索框，再按两下关闭；全屏的游戏或视频在前面时不响应</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="peek.doubleCtrl"></div></div>
       <h3>自己写的小工具</h3>
       <div class="group">
         <div class="card"><div class="l"><span class="ic">&#xE943;</span><div><div class="t">脚本栅栏</div><div class="s">运行你选的脚本（PowerShell、Python、批处理等），把它打印的文字显示在栅栏里：可以每隔 1 分钟到 3 小时运行一次，也可以一直运行、几秒更新一次；脚本还可以让一行变得能点，点一下打开网址、运行程序或者给待办打勾。适合天气、倒计时、服务器状态，也可以让 AI 助手帮你写。PecoFence 不会为脚本栅栏联网，联网的是你的脚本</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="tools.scripts"></div></div>
@@ -1132,13 +1131,16 @@
       r.recording = false; held = 0; r.error = ''; waitForKeys(false);
       send({ type: 'action', name: recordingAction, on: false });
       r.render();
+      if (r.onEnd) r.onEnd();
     };
     // The host's answer: saved ends the recording (it registered the new shortcut); refused
     // keeps it going and says why.
     r.result = m => {
       r.error = m.ok ? '' : m.text || '';
+      const ended = m.ok && r.recording;
       if (m.ok) { r.recording = false; held = 0; waitForKeys(false); }
       r.render();
+      if (ended && r.onEnd) r.onEnd();
     };
     box.onclick = r.start;
     box.addEventListener('blur', r.stop);
@@ -1164,37 +1166,65 @@
     winBox.onchange = () => { r.start(); r.render(); box.focus(); };
     return r;
   }
+  // 速览栅栏 › 快捷键: one drop-down with the quick choices, the chosen combination when it is
+  // none of them, 「双击 Ctrl」 and 「自定义…」, which shows the recording box in the same card.
+  // 「双击 Ctrl」 and a combination are exclusive (peek.doubleCtrl; a combination clears it).
+  let peekCustom = false;
+  const keyValue = k => `${k.mods}:${k.vk}`;
   const peekRecorder = hotkeyRecorder('peekHotkey', 'peekHotkeyRecording', 'setPeekHotkey', () => {
     const p = state.peekHotkey, on = !!state.settings.peek.enabled;
     if (!p) return null;
     const shown = p.active || p.chosen;
     let help = '', tone = '';
-    if (on && !p.active) { help = tf("{0} 和备用的组合都已被占用，请换一个", p.chosen.label); tone = 'error'; }
+    if (!peekCustom && state.settings.peek.doubleCtrl) help = t("快速按两下 Ctrl 打开速览，直接带搜索框；再按两下关闭。全屏的游戏或视频在前面时不响应");
+    else if (on && !p.active) { help = tf("{0} 和备用的组合都已被占用，请换一个", p.chosen.label); tone = 'error'; }
     else if (on && !sameKey(p.active, p.chosen)) { help = tf("{0} 已被占用，现在使用 {1}", p.chosen.label, p.active.label); tone = 'caution'; }
+    else if (!peekCustom) help = t("也可以选“双击 Ctrl”，或者选“自定义…”按下别的组合键");
     return { on, keys: shown.keys, help, tone };
   });
+  peekRecorder.onEnd = () => { peekCustom = false; renderPeekHotkey(); };
   function renderPeekHotkey() {
     const p = state && state.peekHotkey;
     if (!p) return;
-    const on = !!state.settings.peek.enabled, shown = p.active || p.chosen;
-    for (const id of ['peekHotkeyCard', 'peekPresetCard']) document.getElementById(id).classList.toggle('disabled', !on);
+    const on = !!state.settings.peek.enabled, double = !!state.settings.peek.doubleCtrl;
+    document.getElementById('peekHotkeyCard').classList.toggle('disabled', !on);
+    if (!on) peekCustom = false;
+    document.getElementById('peekHotkeyEdit').hidden = !peekCustom;
     peekRecorder.render();
-    // Quick choices: one button each, reused so that a refresh keeps the focus on it.
-    const presets = document.getElementById('peekPresets');
-    p.presets.forEach((k, i) => {
-      let b = presets.children[i];
-      if (!b) {
-        b = document.createElement('button');
-        b.type = 'button';
-        b.onclick = () => { peekRecorder.error = ''; send({ type: 'action', name: 'setPeekHotkey', mods: Number(b.dataset.mods), vk: Number(b.dataset.vk) }); };
-        presets.append(b);
-      }
-      b.dataset.mods = k.mods; b.dataset.vk = k.vk;
-      b.textContent = k.keys.join(' + ');
-      b.setAttribute('aria-pressed', String(sameKey(k, shown)));
-      b.disabled = !on;
-    });
+    const choices = p.presets.map(k => [keyValue(k), k.keys.join(' + ')]);
+    if (!p.presets.some(k => sameKey(k, p.chosen))) choices.push([keyValue(p.chosen), p.chosen.keys.join(' + ')]);
+    choices.push(['double', t("双击 Ctrl")], ['custom', t("自定义…")]);
+    const sel = document.getElementById('peekHotkeyChoice');
+    // Rebuilt only when the list changes, so that a refresh keeps an open list as it is.
+    const list = JSON.stringify(choices);
+    if (sel.dataset.list !== list) {
+      sel.replaceChildren(...choices.map(([value, label]) => new Option(label, value)));
+      sel.dataset.list = list;
+    }
+    sel.value = peekCustom ? 'custom' : double ? 'double' : keyValue(p.chosen);
+    sel.disabled = !on;
   }
+  document.getElementById('peekHotkeyChoice').onchange = e => {
+    const v = e.target.value;
+    peekRecorder.error = '';
+    if (v === 'custom') {
+      peekCustom = true;
+      renderPeekHotkey();
+      peekRecorder.start();
+      document.getElementById('peekHotkey').focus();
+      return;
+    }
+    peekCustom = false;
+    peekRecorder.stop();
+    if (v === 'double') {
+      state.settings.peek.doubleCtrl = true;
+      renderPeekHotkey();
+      commit('peek.doubleCtrl');
+      return;
+    }
+    const [mods, vk] = v.split(':').map(Number);
+    send({ type: 'action', name: 'setPeekHotkey', mods, vk });
+  };
   // 临时显示 Windows 桌面 › 快捷键: none until the user records one; 清除 takes it away again.
   const wdRecorder = hotkeyRecorder('wdHotkey', 'windowsDesktopHotkeyRecording', 'setWindowsDesktopHotkey', () => {
     const w = state.windowsDesktopHotkey;
@@ -2078,7 +2108,7 @@
     else if (m.type === 'toast') toast(m.text, !!m.error);
     else if (m.type === 'pickedColor') pickedColor(m.target, m.hex);
     else if (m.type === 'update') { update = m.update; renderUpdate(); }
-    else if (m.type === 'peekHotkeyResult') peekRecorder.result(m);
+    else if (m.type === 'peekHotkeyResult') { peekRecorder.result(m); renderPeekHotkey(); }
     else if (m.type === 'windowsDesktopHotkeyResult') wdRecorder.result(m);
   });
   send({ type: 'ready' });

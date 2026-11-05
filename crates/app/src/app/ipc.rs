@@ -360,6 +360,13 @@ pub(super) fn patch_settings_path(
         // One of the 0.2.0 choices: a custom shortcut left in place would override it.
         settings.peek.custom_hotkey = None;
     }
+    // A shortcut that is set replaces 「双击 Ctrl」, as on the settings page, unless the same
+    // patch sets peek.doubleCtrl.
+    let shortcut_set = matches!(pointer.as_str(), "/peek/hotkey" | "/peek/customHotkey")
+        || settings.peek.chosen_hotkey() != current.peek.chosen_hotkey();
+    if shortcut_set && settings.peek.double_ctrl == current.peek.double_ctrl {
+        settings.peek.double_ctrl = false;
+    }
     if settings.windows_desktop_hotkey != current.windows_desktop_hotkey
         && let Some(text) = settings.windows_desktop_hotkey.clone()
     {

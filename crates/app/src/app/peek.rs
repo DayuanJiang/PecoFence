@@ -92,12 +92,14 @@ pub(super) fn search_match(
 impl App {
     /// Registers / re-registers / drops the Peek hotkey to match the settings.
     pub(super) fn sync_peek_hotkey(&mut self) {
+        self.sync_double_ctrl();
         // The settings page is recording a shortcut: `resume_hotkeys` syncs once it ends.
         if self.hotkeys_paused {
             return;
         }
         let peek = &self.state.config.settings.peek;
-        let want = peek.enabled.then(|| peek.chosen_hotkey());
+        // 「双击 Ctrl」 chosen: the combination stays in the settings but is not registered.
+        let want = (peek.enabled && !peek.double_ctrl).then(|| peek.chosen_hotkey());
         // While a fallback is registered `want != peek_hotkey`, so every sync (startup, preset,
         // settings apply) retries the preferred combination first and switches back once free.
         if want == self.peek_hotkey {
@@ -157,6 +159,16 @@ impl App {
         }
     }
 
+    /// 「双击 Ctrl」 as Peek's shortcut: listened to while Peek is on and chosen, and not while
+    /// the settings page records a shortcut (the taps would start a Peek).
+    fn sync_double_ctrl(&self) {
+        let peek = &self.state.config.settings.peek;
+        crate::double_ctrl::set_enabled(
+            peek.enabled && peek.double_ctrl && !self.hotkeys_paused,
+            self.control.hwnd(),
+        );
+    }
+
     /// Whether `h` can be the Peek hotkey right now: it is ours already, or `RegisterHotKey`
     /// takes it (and it is released again at once).
     pub(super) fn peek_hotkey_free(&self, h: Hotkey) -> bool {
@@ -187,6 +199,7 @@ impl App {
             hotkey::unregister(hwnd, HOTKEY_WINDOWS_DESKTOP);
         }
         self.hotkeys_paused = true;
+        self.sync_double_ctrl();
     }
 
     /// Recording ended (or the settings window went away): register the shortcuts again.
@@ -218,8 +231,9 @@ impl App {
         }
     }
 
-    /// 「快捷键」 on the settings page: a recorded key press or a quick choice. A combination
-    /// that is refused or taken leaves the settings as they are and the page keeps recording.
+    /// 「快捷键」 on the settings page: a recorded key press or a combination from the list
+    /// (it replaces 「双击 Ctrl」). A combination that is refused or taken leaves the settings
+    /// as they are and the page keeps recording.
     pub(super) fn set_peek_hotkey_from_page(&mut self, mods: u32, vk: u32) {
         let recording = self.hotkeys_paused;
         self.resume_hotkeys();
@@ -250,6 +264,7 @@ impl App {
             None => {
                 let mut settings = self.state.config.settings.clone();
                 settings.peek.set_hotkey(h);
+                settings.peek.double_ctrl = false;
                 self.apply_settings(settings, "settings");
                 // The choice already in the settings changes nothing above, but while a
                 // fallback stands in for it, it is free again now: switch back.
@@ -269,7 +284,8 @@ impl App {
     }
 
     /// `peekHotkey` of the settings state: the chosen shortcut, the one registered (`null`
-    /// when Peek is off or every combination is taken) and the quick choices.
+    /// when Peek is off, 「双击 Ctrl」 is chosen or every combination is taken) and the quick
+    /// choices.
     pub(super) fn peek_hotkey_json(&self) -> serde_json::Value {
         serde_json::json!({
             "chosen": hotkey_json(self.state.config.settings.peek.chosen_hotkey()),

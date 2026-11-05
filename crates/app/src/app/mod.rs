@@ -816,7 +816,7 @@ impl App {
                             }
                             Some(0)
                         }
-                        // 双击 Ctrl 打开搜索 (raw keyboard input, only listened to).
+                        // Peek's 「双击 Ctrl」 (raw keyboard input, only listened to).
                         msg::WM_INPUT => {
                             if crate::double_ctrl::on_input(lparam)
                                 && let Ok(mut guard) = cell.try_borrow_mut()

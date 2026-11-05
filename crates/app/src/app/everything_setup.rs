@@ -1,4 +1,5 @@
-//! 搜索整台电脑: Everything's state for the settings page, and its 安装 / 启动 buttons.
+//! 速览搜索也找整台电脑 (Everything): Everything's state for the settings page, and its
+//! 安装 / 启动 buttons.
 //! Installing runs winget in a console window the user can watch; Windows asks once for
 //! administrator rights. Version 1.5 is installed because it matches Chinese names by pinyin.
 
@@ -23,7 +24,7 @@ pub(super) static SETUP_RESULT: std::sync::atomic::AtomicUsize =
 const STATUS_RECHECK_MS: u32 = 2500;
 
 impl App {
-    /// The 「搜索整台电脑」 card: running (with version and pinyin), installed, missing, or
+    /// The 「速览搜索也找整台电脑」 card: running (with version and pinyin), installed, missing, or
     /// being installed.
     pub(super) fn everything_json(&self) -> serde_json::Value {
         if self.everything_installing {

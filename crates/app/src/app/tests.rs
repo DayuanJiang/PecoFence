@@ -482,6 +482,33 @@ mod ipc {
     }
 
     #[test]
+    fn settings_patch_of_a_peek_shortcut_replaces_double_ctrl() {
+        let mut double = Settings::default();
+        double.peek.double_ctrl = true;
+        for (path, value) in [
+            ("peek.customHotkey", json!("Ctrl+Shift+F")),
+            ("peek.customHotkey", json!(null)),
+            ("peek.hotkey", json!("ctrlAltSpace")),
+        ] {
+            let patched = patch_settings_path(&double, path, value.clone()).unwrap();
+            assert!(!patched.peek.double_ctrl, "{path} {value}");
+        }
+        // Other paths keep it; a patch that sets it too keeps what it says.
+        let patched = patch_settings_path(&double, "peek.dim", json!(false)).unwrap();
+        assert!(patched.peek.double_ctrl);
+        let patched = patch_settings_path(
+            &Settings::default(),
+            "peek",
+            json!({ "enabled": true, "dim": true, "customHotkey": "Ctrl+Shift+F", "doubleCtrl": true }),
+        )
+        .unwrap();
+        assert!(patched.peek.double_ctrl);
+        let patched =
+            patch_settings_path(&Settings::default(), "peek.doubleCtrl", json!(true)).unwrap();
+        assert!(patched.peek.double_ctrl);
+    }
+
+    #[test]
     fn settings_patch_replaces_the_whole_object() {
         let wanted = Settings {
             icon_size: 64,
