@@ -39,6 +39,9 @@
 .set-nav { left: 0; top: 30px; bottom: 0 }
 .set-brand-m { left: 14px; top: 7px; width: 16px; height: 16px }
 .set-brand-t { left: 38px; top: 7px; font-size: 12px; font-weight: 600; line-height: 16px; white-space: nowrap }
+.set-search { left: 8px; right: 8px; top: 29px; height: 22px; border: 1px solid #e5e5e5; border-bottom-color: #8a8a8a; border-radius: 4px; background: #fff }
+.set-search .set-search-t { left: 8px; top: 0; right: 24px; font-size: 10.5px; line-height: 20px; color: #8a8a8a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.set-search .set-ic { right: 7px; top: 5px; font-size: 10px; color: #6b6b6b }
 .set-nav-i {
     left: 6px;
     right: 6px;

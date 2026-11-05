@@ -153,6 +153,7 @@ JSON 输出报告实际改动，命令目录与 JSON Schema 帮助助手发现�
 | 每日备份 | 自动；设置页一键恢复 | 保留 7 天，另有 config.bak；启动时读不了的 config.json、config.bak 和备份逐个写进日志（含系统错误），反馈的系统信息也带上；商店版装在 C 盘以外、Windows 因文件没加密拒绝读取（错误 409）时托盘提示把 PecoFence 移到 C 盘或改用便携版，恢复备份时也这样提示（反馈 #56） |
 | 桌面文件夹迁移 | 自动 | 桌面搬到 OneDrive / 其他盘后记录自动跟随；桌面盘不可用时不丢记录 |
 | 随 Windows 启动 | 设置 → 随 Windows 启动 | 只登记正式版路径 |
+| 查找设置 | 设置窗口左上角的「查找设置」；Ctrl+F 跳到这个框 | 打字时列出所有页里标题、说明、下拉框选项或小标题包含全部词的设置（标题命中排在前面），每行写明「页 › 小标题」和命中的那段文字；↑↓ 选、Enter 或点击后打开那一页，卡片滚到中间、浅色底色亮 1.5 秒，焦点在它的开关或下拉框上；Esc 清空；按当前界面语言搜索，当前页面隐藏的卡片（例如只对文件夹栅栏显示的选项）不列出 |
 | 恢复显示桌面图标 | 设置 → 关于 → 恢复显示桌面图标；托盘菜单 → 修复桌面图标 | 应急 |
 | 检查更新 | 设置 → 关于 → 检查更新 | 只在点按钮时访问 GitHub；安装版下载新安装包后运行，PecoFence 先退出、装完自动重开；ZIP 版（以及 release 没有安装包时）打开下载页；Store 版不显示（由 Store 更新）；正式版不会收到测试版（如 `v0.2.0-beta.1`）。设置了 `PECOFENCE_INSTANCE` 的测试实例可用 `PECOFENCE_UPDATE_URL=http://127.0.0.1:<端口>/…` 指向本地假 release |
 | 配置位置 | `%APPDATA%\PecoFence\config.json`；`--portable` 时放 exe 旁 | 设置 → 关于可直接打开；文件首行 `$schema` 指向 https://pecofence.jiang.jp/schema/config.json（`pecofence-cli describe --schema Config` 同一份），编辑器可据此补全校验 |

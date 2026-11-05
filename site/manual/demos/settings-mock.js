@@ -85,14 +85,18 @@
         bm.src = 'assets/mark.svg';
         bm.alt = '';
         el('span', 'set-brand-t', nav, 'PecoFence');
+        // 查找设置 under the brand, as in the app.
+        const find = el('div', 'set-search', nav);
+        el('span', 'set-search-t', find, T('查找设置'));
+        el('span', 'set-ic', find, '\uE721');
         w.nav = {};
         const labels = NAV.map(([key, label, glyph], i) => {
             const it = el('div', 'set-nav-i', nav);
-            it.style.top = (34 + i * 28) + 'px';
+            it.style.top = (58 + i * 28) + 'px';
             el('span', 'set-ic', it, glyph);
             const t = el('span', 'set-nav-t', it, T(label));
             const pill = el('div', 'set-nav-pill', it);
-            w.nav[key] = { n: it, pill, y: 34 + i * 28 };
+            w.nav[key] = { n: it, pill, y: 58 + i * 28 };
             return t;
         });
         // a label starts 6 + 32 px from the nav's left and ends 6 px before its item (6 px inset)
