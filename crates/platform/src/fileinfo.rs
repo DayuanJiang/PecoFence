@@ -64,6 +64,165 @@ pub fn type_name(path: &Path, is_folder: bool) -> Option<String> {
     (!s.is_empty()).then_some(s)
 }
 
+/// A shell icon (HICON), destroyed on drop.
+pub struct FileIcon(HICON);
+
+impl FileIcon {
+    pub(crate) fn handle(&self) -> HICON {
+        self.0
+    }
+}
+
+impl Drop for FileIcon {
+    fn drop(&mut self) {
+        // SAFETY: the icon came from SHGetFileInfoW and is owned here.
+        unsafe {
+            let _ = DestroyIcon(self.0);
+        }
+    }
+}
+
+/// The small icon Explorer shows for `path`. `exact` reads the file itself (a program's own
+/// icon, a shortcut's target icon); otherwise only its type counts, which never touches the
+/// disk (for network and removable drives). Namespace items (`::{CLSID}`) go through their id
+/// list.
+pub fn small_icon(path: &Path, is_folder: bool, exact: bool) -> Option<FileIcon> {
+    let w = to_wide(&path.to_string_lossy());
+    let mut info = SHFILEINFOW::default();
+    let flags = (SHGFI_ICON | SHGFI_SMALLICON) as u32;
+    let ok = if crate::shell::is_namespace_path(path) {
+        let mut pidl: LPITEMIDLIST = std::ptr::null_mut();
+        // SAFETY: the string outlives the call; the id list is freed below.
+        let hr =
+            unsafe { SHParseDisplayName(PCWSTR(w.as_ptr()), None, &mut pidl, SFGAOF(0), None) };
+        if hr.is_err() || pidl.is_null() {
+            return None;
+        }
+        // SAFETY: with SHGFI_PIDL the first argument is the id list; `info` is a live
+        // out-struct of the declared size.
+        let ok = unsafe {
+            SHGetFileInfoW(
+                PCWSTR(pidl.cast()),
+                0,
+                Some(&mut info),
+                size_of::<SHFILEINFOW>() as u32,
+                flags | SHGFI_PIDL as u32,
+            )
+        };
+        // SAFETY: the id list came from SHParseDisplayName.
+        unsafe { ILFree(Some(pidl)) };
+        ok
+    } else {
+        let attrs = if is_folder {
+            FILE_ATTRIBUTE_DIRECTORY as u32
+        } else {
+            FILE_ATTRIBUTE_NORMAL as u32
+        };
+        let extra = if exact {
+            0
+        } else {
+            SHGFI_USEFILEATTRIBUTES as u32
+        };
+        // SAFETY: the string outlives the call; `info` is a live out-struct of the declared size.
+        unsafe {
+            SHGetFileInfoW(
+                PCWSTR(w.as_ptr()),
+                attrs,
+                Some(&mut info),
+                size_of::<SHFILEINFOW>() as u32,
+                flags | extra,
+            )
+        }
+    };
+    (ok != 0 && !info.hIcon.0.is_null()).then(|| FileIcon(info.hIcon))
+}
+
+/// Unix seconds → the local time of day without seconds in the user's locale ("14:32",
+/// "2:32 PM"). Empty for out-of-range values.
+pub fn format_local_time(unix: i64) -> String {
+    let Some(st) = local_system_time(unix) else {
+        return String::new();
+    };
+    let mut buf = [0u16; 64];
+    // SAFETY: the buffer is live and its length is passed; `st` is a valid SYSTEMTIME.
+    let n = unsafe {
+        GetTimeFormatEx(
+            PCWSTR::null(),
+            TIME_NOSECONDS as u32,
+            Some(&st),
+            PCWSTR::null(),
+            Some(PWSTR(buf.as_mut_ptr())),
+            buf.len() as i32,
+        )
+    };
+    if n > 1 {
+        String::from_utf16_lossy(&buf[..(n - 1) as usize])
+    } else {
+        String::new()
+    }
+}
+
+/// 时钟与日期: the local time as Windows' region format writes it (12 or 24 hours; `seconds`
+/// adds them) and the region's long date, with the weekday after it when the long date has
+/// none ("2026年11月4日 星期三", "Wednesday, November 4, 2026"), in the user's time zone.
+pub fn clock_texts(seconds: bool) -> (String, String) {
+    let unix = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs() as i64);
+    let Some(st) = local_system_time(unix) else {
+        return (String::new(), String::new());
+    };
+    const DATE_LONGDATE: u32 = 2;
+    let mut buf = [0u16; 96];
+    let text = |n: i32, buf: &[u16]| {
+        if n > 1 {
+            String::from_utf16_lossy(&buf[..(n - 1) as usize])
+        } else {
+            String::new()
+        }
+    };
+    let flags = if seconds { 0 } else { TIME_NOSECONDS as u32 };
+    // SAFETY: the buffer is live and its length is passed; `st` is a valid SYSTEMTIME.
+    let n = unsafe {
+        GetTimeFormatEx(
+            PCWSTR::null(),
+            flags,
+            Some(&st),
+            PCWSTR::null(),
+            Some(PWSTR(buf.as_mut_ptr())),
+            buf.len() as i32,
+        )
+    };
+    let time = text(n, &buf);
+    let date = |flags: u32, picture: Option<&str>| {
+        let picture = picture.map(to_wide);
+        let mut buf = [0u16; 96];
+        // SAFETY: as above; `picture` outlives the call.
+        let n = unsafe {
+            GetDateFormatEx(
+                PCWSTR::null(),
+                flags,
+                Some(&st),
+                picture
+                    .as_ref()
+                    .map_or(PCWSTR::null(), |p| PCWSTR(p.as_ptr())),
+                Some(PWSTR(buf.as_mut_ptr())),
+                buf.len() as i32,
+                PCWSTR::null(),
+            )
+        };
+        text(n, &buf)
+    };
+    let long = date(DATE_LONGDATE, None);
+    let weekday = date(0, Some("dddd"));
+    let line = if weekday.is_empty() || long.contains(&weekday) {
+        long
+    } else {
+        format!("{long} {weekday}")
+    };
+    (time, line)
+}
+
 /// Unix seconds → "short date + time without seconds" in the user's locale and time zone
 /// (Explorer's 修改日期 column). Returns an empty string for out-of-range values.
 pub fn format_local_datetime(unix: i64) -> String {

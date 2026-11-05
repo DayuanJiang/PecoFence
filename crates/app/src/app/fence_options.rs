@@ -83,6 +83,9 @@ pub(super) const FENCE_PROPS: &[&str] = &[
     "portalTitleIcon",
     "hideWhenEmpty",
     "desktopLayout",
+    "noteText",
+    "scriptPath",
+    "scriptInterval",
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -133,6 +136,48 @@ pub(super) enum FenceProp {
     GroupByDate(bool),
     FoldersFirst(bool),
     LabelLines(u8),
+    /// 便签与待办: the whole text of a note fence.
+    NoteText(String),
+    /// 脚本栅栏: the script a script fence runs (runs it at once).
+    ScriptPath(String),
+    /// 脚本栅栏: minutes between runs, 1 to 1440.
+    ScriptInterval(u32),
+}
+
+impl FenceProp {
+    /// A property about the icons a fence holds (their size, layout, order, the height they
+    /// need): a tool fence has none.
+    pub(super) fn is_about_icons(&self) -> bool {
+        matches!(
+            self,
+            Self::IconSize(_)
+                | Self::Spacing(_)
+                | Self::IconAlign(_)
+                | Self::AutoHeight(_)
+                | Self::OpenFoldersInside(_)
+                | Self::PortalNavigate(_)
+                | Self::PortalTitleIcon(_)
+                | Self::HideWhenEmpty(_)
+                | Self::DesktopLayout(_)
+                | Self::Layout(_)
+                | Self::Sort(_)
+                | Self::Reverse(_)
+                | Self::GroupByDate(_)
+                | Self::FoldersFirst(_)
+                | Self::LabelLines(_)
+        )
+    }
+
+    /// The tool a property belongs to, None for one every fence has.
+    pub(super) fn tool(&self) -> Option<pecofence_core::FenceTool> {
+        match self {
+            Self::NoteText(_) => Some(pecofence_core::FenceTool::Note),
+            Self::ScriptPath(_) | Self::ScriptInterval(_) => {
+                Some(pecofence_core::FenceTool::Script)
+            }
+            _ => None,
+        }
+    }
 }
 
 /// Parses `prop` / `value` as the settings page and `fence get` spell them. Unknown property
@@ -288,6 +333,21 @@ pub(super) fn parse_fence_prop(
         "portalTitleIcon" => FenceProp::PortalTitleIcon(as_bool()?),
         "hideWhenEmpty" => FenceProp::HideWhenEmpty(as_bool()?),
         "desktopLayout" => FenceProp::DesktopLayout(as_bool()?),
+        "noteText" => FenceProp::NoteText(as_str(&["<text>"])?.replace("\r\n", "\n")),
+        "scriptPath" => {
+            let path = as_str(&["<full path of a script>"])?;
+            if !std::path::Path::new(path).is_file() {
+                return Err(IpcError::invalid_value(
+                    format!("no such script: {path}"),
+                    &["<full path of an existing .ps1, .py, .cmd, .bat, .js or .exe>"],
+                ));
+            }
+            FenceProp::ScriptPath(path.to_string())
+        }
+        "scriptInterval" => match value.as_u64() {
+            Some(m @ 1..=1440) => FenceProp::ScriptInterval(m as u32),
+            _ => return Err(bad(&["1..1440 (minutes)"])),
+        },
         _ => {
             return Err(IpcError::invalid_value(
                 format!("unknown fence property {prop:?}"),
@@ -578,6 +638,8 @@ impl App {
                 FenceKind::FolderPortal => "portal",
             },
             "host": (host_id != f.id).then(|| self.state.fence(host_id).map(|h| h.title.clone())),
+            // 小工具: `{"kind": "note"}` for a note fence, null for one that shows items.
+            "tool": f.tool,
             "tabbed": self.state.tabs_of(host_id).len() > 1,
             "iconSize": f.view.icon_size,
             "spacing": spacing,
@@ -651,6 +713,26 @@ impl App {
             self.state.fence(host).cloned(),
         );
         match prop {
+            // Tool data lives beside the fence (`Config::notes`, `Config::scripts`).
+            FenceProp::NoteText(text) => {
+                let changed = self.state.set_note_text(fence, &text);
+                if changed {
+                    self.push_note(fence);
+                    self.schedule_save();
+                }
+                return changed;
+            }
+            FenceProp::ScriptPath(path) => return self.set_script_path(fence, &path),
+            FenceProp::ScriptInterval(minutes) => {
+                let old = self
+                    .state
+                    .config
+                    .scripts
+                    .get(&fence)
+                    .map(|s| s.interval_minutes);
+                self.set_script_interval(fence, minutes);
+                return old != Some(minutes) && old.is_some();
+            }
             FenceProp::Title(title) => {
                 self.state.rename_fence(fence, &title);
                 self.refresh_fence(fence);

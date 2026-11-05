@@ -29,6 +29,24 @@ pub fn wait_for_process_exit(pid: u32) -> Option<(u32, std::time::Duration)> {
     }
 }
 
+/// The program file a running process was started from.
+pub fn image_path(pid: u32) -> Option<std::path::PathBuf> {
+    // SAFETY: plain FFI calls; the handle is closed before returning.
+    unsafe {
+        let process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION as u32, false, pid);
+        if process.0.is_null() {
+            return None;
+        }
+        let mut buf = vec![0u16; 1024];
+        let mut len = buf.len() as u32;
+        let ok =
+            QueryFullProcessImageNameW(process, 0, windows_core::PWSTR(buf.as_mut_ptr()), &mut len)
+                .as_bool();
+        let _ = CloseHandle(process);
+        ok.then(|| std::path::PathBuf::from(String::from_utf16_lossy(&buf[..len as usize])))
+    }
+}
+
 pub fn current_pid() -> u32 {
     // SAFETY: plain FFI call.
     unsafe { GetCurrentProcessId() }

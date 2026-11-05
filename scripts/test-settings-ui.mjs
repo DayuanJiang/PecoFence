@@ -18,7 +18,8 @@ const fixture = {
     showDesktop: 'keepVisible', theme: 'dark', themeStyle: 'fluent', labelColor: 'auto', titleAlign: 'left', tabBar: 'top', backdrop: 'acrylic', iconSize: 48,
     icons: { tintRgb: null, tintStrength: 0.6, chameleon: false, shortcutArrows: true },
     rollUp: { hoverPeek: true, clickToExpand: false, pushNeighbors: true, titleOnHover: false, hideInactiveScrollbar: false, switchTabOnHover: false, hideCountAndChevron: false },
-    snapping: { enabled: true, gapPx: 8, sizeToCells: false, guideLines: true }, peek: { enabled: true, dim: true, hotkey: 'ctrlAltSpace' },
+    snapping: { enabled: true, gapPx: 8, sizeToCells: false, guideLines: true }, peek: { enabled: true, dim: true, hotkey: 'ctrlAltSpace', doubleCtrl: false },
+    tools: { notes: false, clock: false, clockSeconds: false, scripts: false, dialogJump: false, everything: false },
   },
   rules: {
     keepUpdated: true, defaultTarget: 'inbox', unmatched: 'defaultTarget',
@@ -51,6 +52,7 @@ const fixture = {
     ],
   },
   windowsDesktopHotkey: { chosen: null, registered: false },
+  everything: { state: 'missing' },
 };
 
 function bridge() {
@@ -225,7 +227,7 @@ async function runTests() {
   });
   await test('Every page fits the minimum settings window width', async () => {
     frame.style.width = '704px';
-    for (const page of ['general', 'fences', 'rules', 'layout', 'about']) {
+    for (const page of ['general', 'fences', 'rules', 'tools', 'layout', 'about']) {
       doc.querySelector(`[data-page=${page}]`).click();
       await settle();
       const main = doc.querySelector('main');
@@ -235,6 +237,94 @@ async function runTests() {
       }
     }
   });
+  await test('Tools page switches notes on and asks for a new note', async () => {
+    doc = await reset();
+    doc.querySelector('[data-page=tools]').click();
+    const count = doc.getElementById('noteCount').textContent;
+    assert(count === '桌面上还没有便签', 'Unexpected note count text: ' + count);
+    const before = frame.contentWindow.testMessages.length;
+    doc.querySelector('[data-bind="tools.notes"]').click();
+    const patch = frame.contentWindow.testMessages.slice(before).find(m => m.type === 'patchSettings');
+    assert(patch && patch.settings.tools.notes === true, 'Notes switch not posted');
+    doc.getElementById('newNote').click();
+    const last = frame.contentWindow.testMessages.at(-1);
+    assert(last.type === 'action' && last.name === 'newNote', 'New note not asked for: ' + JSON.stringify(last));
+    // A note is no rule target.
+    current().fences.push({ ...current().fences[0], id: 'note-a', title: 'Note A', tool: { kind: 'note' } });
+    frame.contentWindow.testRefresh();
+    await settle();
+    assert(doc.getElementById('noteCount').textContent === '桌面上有 1 个便签', 'Note not counted');
+    rulesPage(doc);
+    assert(![...doc.querySelectorAll('#nrTarget option')].some(o => o.value === 'note-a'), 'A note is offered as a rule target');
+    current().fences.pop();
+    doc = await reset();
+  });
+  await test('Tools page posts the dialog jump, Everything and double Ctrl switches', async () => {
+    doc = await reset();
+    doc.querySelector('[data-page=tools]').click();
+    for (const [path, read] of [['tools.dialogJump', s => s.tools.dialogJump], ['tools.everything', s => s.tools.everything], ['peek.doubleCtrl', s => s.peek.doubleCtrl]]) {
+      const before = frame.contentWindow.testMessages.length;
+      doc.querySelector(`[data-bind="${path}"]`).click();
+      const patch = frame.contentWindow.testMessages.slice(before).find(m => m.type === 'patchSettings');
+      assert(patch && read(patch.settings) === true, path + ' not posted');
+      await settle();
+      assert(doc.querySelector(`[data-bind="${path}"]`).classList.contains('on'), path + ' not shown on after the refresh');
+    }
+    doc = await reset();
+  });
+  await test('Everything card shows each state with its button and sends its action', async () => {
+    doc = await reset();
+    doc.querySelector('[data-page=tools]').click();
+    current().settings.tools.everything = true;
+    const card = doc.getElementById('everythingCard'), button = doc.getElementById('everythingAction');
+    const cases = [
+      [{ state: 'running', version: '1.5', pinyin: true }, 'Everything 1.5 正在运行', '拼音', null],
+      [{ state: 'running', version: '1.4', pinyin: false }, 'Everything 1.4 正在运行', '1.5', ['升级到 1.5', 'installEverything']],
+      [{ state: 'installed' }, 'Everything 已经装好，还没有运行', '启动后', ['启动 Everything', 'startEverything']],
+      [{ state: 'missing' }, '这台电脑还没有 Everything', 'winget', ['安装 Everything', 'installEverything']],
+      [{ state: 'installing' }, '正在安装 Everything…', '自动启动', null],
+    ];
+    for (const [everything, status, help, action] of cases) {
+      current().everything = everything;
+      frame.contentWindow.testRefresh();
+      await settle();
+      const label = JSON.stringify(everything);
+      assert(!card.hidden && !card.classList.contains('disabled'), 'Card hidden or disabled: ' + label);
+      assert(doc.getElementById('everythingStatus').textContent === status, 'Wrong status for ' + label + ': ' + doc.getElementById('everythingStatus').textContent);
+      assert(doc.getElementById('everythingHelp').textContent.includes(help), 'Wrong help for ' + label + ': ' + doc.getElementById('everythingHelp').textContent);
+      assert(button.hidden === !action, 'Button shown wrongly for ' + label);
+      if (!action) continue;
+      assert(button.textContent === action[0] && !button.disabled, 'Wrong button for ' + label + ': ' + button.textContent);
+      const before = frame.contentWindow.testMessages.length;
+      button.click();
+      const sent = frame.contentWindow.testMessages.slice(before);
+      assert(sent.length === 1 && sent[0].type === 'action' && sent[0].name === action[1], 'Wrong action for ' + label + ': ' + JSON.stringify(sent));
+      await settle();
+    }
+    // No state from the host (an older one): no card.
+    delete current().everything;
+    frame.contentWindow.testRefresh();
+    assert(card.hidden, 'Card shown without a state');
+    doc = await reset();
+  });
+  await test('Everything card is disabled while its switch is off', async () => {
+    doc = await reset();
+    doc.querySelector('[data-page=tools]').click();
+    const card = doc.getElementById('everythingCard'), button = doc.getElementById('everythingAction');
+    assert(card.classList.contains('disabled') && button.disabled, 'Card usable while the switch is off');
+    const before = frame.contentWindow.testMessages.length;
+    button.click();
+    assert(!frame.contentWindow.testMessages.slice(before).some(m => m.type === 'action'), 'A disabled button sent an action');
+    doc.querySelector('[data-bind="tools.everything"]').click();
+    assert(!card.classList.contains('disabled') && !button.disabled, 'Card still disabled right after the switch went on');
+    await settle();
+    assert(!card.classList.contains('disabled') && !button.disabled, 'Card disabled again after the refresh');
+    doc.querySelector('[data-bind="tools.everything"]').click();
+    await settle();
+    assert(card.classList.contains('disabled') && button.disabled, 'Card usable after the switch went off');
+    doc = await reset();
+  });
+
   await test('Navigation resets content scroll and announces the current page', async () => {
     doc.querySelector('[data-page=general]').click();
     doc.querySelector('main').scrollTop = 900;
@@ -1172,7 +1262,7 @@ async function runTests() {
       for (const mode of ['dark', 'light']) {
         current().themeMode = mode;
         frame.contentWindow.testRefresh();
-        for (const page of ['general', 'fences', 'rules', 'layout', 'about']) {
+        for (const page of ['general', 'fences', 'rules', 'tools', 'layout', 'about']) {
           doc.querySelector(`[data-page=${page}]`).click();
           await settle();
           const main = doc.querySelector('main');
@@ -1745,7 +1835,7 @@ async function runTests() {
       assert(current().fences[0].title === '名称' && current().rules.list[0].name === '保存快照' && current().snapshots[0].name === '桌面 {1}', 'User data changed: ' + language);
       assert(doc.querySelector('#ruleList .t').textContent === '保存快照', 'User rule name translated: ' + language);
       assert(win.PecoFenceI18n.format('{0} 个栅栏', 'title {1}').includes('title {1}'), 'User placeholder was reinterpreted');
-      for (const page of ['general', 'fences', 'rules', 'layout', 'about']) {
+      for (const page of ['general', 'fences', 'rules', 'tools', 'layout', 'about']) {
         doc.querySelector(`[data-page=${page}]`).click();
         const main = doc.querySelector('main');
         assert(main.scrollWidth <= main.clientWidth + 1, language + '/' + page + ' overflows');

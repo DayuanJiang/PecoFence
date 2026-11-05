@@ -69,15 +69,24 @@ pub(super) fn hotkey_json(h: Hotkey) -> serde_json::Value {
     })
 }
 
-/// Peek search: the shown name or the file name (with the extension the shown name may hide)
-/// contains `query`, which is lower case. Shell namespace items (Recycle Bin, ...) match by
-/// their shown name only.
-pub(super) fn search_matches(name: &str, path: Option<&str>, query: &str) -> bool {
-    name.to_lowercase().contains(query)
-        || path
-            .filter(|p| !shell::is_namespace_path(Path::new(p)))
-            .and_then(|p| Path::new(p).file_name())
-            .is_some_and(|n| n.to_string_lossy().to_lowercase().contains(query))
+/// Peek search: how well `query` (lower case) matches the shown name or the file name (with the
+/// extension the shown name may hide): the better score, and the highlights in the shown name.
+/// Shell namespace items (Recycle Bin, ...) match by their shown name only.
+pub(super) fn search_match(
+    name: &str,
+    path: Option<&str>,
+    query: &str,
+) -> Option<(u32, Vec<std::ops::Range<usize>>)> {
+    let shown = pecofence_core::matcher::match_name(name, query);
+    let file = path
+        .filter(|p| !shell::is_namespace_path(Path::new(p)))
+        .and_then(|p| Path::new(p).file_name())
+        .and_then(|n| pecofence_core::matcher::match_name(&n.to_string_lossy(), query));
+    let score = shown
+        .as_ref()
+        .map(|m| m.score)
+        .max(file.as_ref().map(|m| m.score))?;
+    Some((score, shown.map(|m| m.ranges).unwrap_or_default()))
 }
 
 impl App {
@@ -285,6 +294,7 @@ impl App {
         if self.fences.is_empty() {
             return;
         }
+        self.note_search_dialog();
         let dim = self.state.config.settings.peek.dim;
         let overlay = match PeekOverlay::show(
             &self.peek_class,
@@ -335,6 +345,10 @@ impl App {
             a.reanchor("peek focused");
         }
         crate::peek_search::raise();
+        // The dimmer's focus handoff runs on another thread and can land after the search box
+        // took the keyboard (double Ctrl opens both at once): give it back to the box, or
+        // Enter, Backspace and the arrows would go to the dimmer.
+        crate::peek_search::focus();
     }
 
     /// Characters typed on the dimmer: open the search box with them, or add them to it.
@@ -354,60 +368,18 @@ impl App {
     /// fences included. The highlighted match stays if it still matches, else the first one
     /// (fences in reading order: left to right, then top down; tabs in strip order).
     pub(super) fn update_peek_search(&mut self) {
-        let query = crate::peek_search::query()
-            .map(|q| q.trim().to_lowercase())
-            .unwrap_or_default();
-        let previous = self.peek_hits.get(self.peek_hit).copied();
-        let mut hits = Vec::new();
-        if !query.is_empty() {
-            let mut windows: Vec<(RECT, FenceId)> =
-                self.fences.iter().map(|(id, w)| (w.rect(), *id)).collect();
-            windows.sort_by_key(|(r, id)| (r.left, r.top, *id));
-            for (_, host) in windows {
-                for tab in self.state.tabs_of(host) {
-                    let Some(fence) = self.state.fence(tab) else {
-                        continue;
-                    };
-                    for it in self.state.items_of(fence) {
-                        if search_matches(&it.display_name, it.key.as_path(), &query) {
-                            hits.push((host, tab, it.id));
-                        }
-                    }
-                }
-            }
-        }
-        self.peek_hits = hits;
-        self.peek_hit = previous
-            .and_then(|p| self.peek_hits.iter().position(|h| *h == p))
-            .unwrap_or(0);
-        self.show_peek_hits(!query.is_empty());
-    }
-
-    /// Up / Down in the search box: the previous / next match, wrapping around.
-    pub(super) fn step_peek_search(&mut self, step: i32) {
-        let n = self.peek_hits.len() as i32;
-        if n == 0 {
-            return;
-        }
-        self.peek_hit = (self.peek_hit as i32 + step).rem_euclid(n) as usize;
-        self.show_peek_hits(true);
-    }
-
-    /// Enter in the search box: open the highlighted match and end the Peek. A folder opens in
-    /// Explorer: shown inside its fence, it would sit behind the windows the Peek uncovered.
-    pub(super) fn open_peek_hit(&mut self) {
-        let Some(&(_, tab, item)) = self.peek_hits.get(self.peek_hit) else {
-            return;
-        };
-        self.end_peek("search match opened");
-        self.launch(item, tab, false);
+        let typed = crate::peek_search::query().unwrap_or_default();
+        let query = typed.trim().to_lowercase();
+        self.rank_fence_matches(&query);
+        self.schedule_everything(typed.trim());
+        self.refresh_search_rows();
     }
 
     /// Shows the matches: each fence switches to the tab holding its highlighted match, else
     /// stays on its tab if that has matches, else moves to the first tab that has some (the tab
     /// it showed before comes back once it has none, and when the search ends). Then the marks
     /// go to every fence and the match count to the box.
-    fn show_peek_hits(&mut self, searching: bool) {
+    pub(super) fn show_peek_hits(&mut self, searching: bool) {
         let current = self.peek_hits.get(self.peek_hit).copied();
         let hosts: Vec<FenceId> = self.fences.keys().copied().collect();
         for host in hosts {
@@ -454,12 +426,18 @@ impl App {
             });
             w.set_search_marks(marks);
         }
+        let rows = self
+            .search
+            .rows
+            .iter()
+            .filter(|r| !matches!(r, super::search::RowKind::ShowAll))
+            .count();
         let status = if !searching {
             String::new()
-        } else if self.peek_hits.is_empty() {
+        } else if rows == 0 {
             pecofence_core::i18n::text("没有匹配的文件").to_string()
         } else {
-            format!("{} / {}", self.peek_hit + 1, self.peek_hits.len())
+            format!("{} / {}", (self.search.sel + 1).min(rows), rows)
         };
         crate::peek_search::set_status(&status);
     }
@@ -470,6 +448,12 @@ impl App {
         crate::peek_search::close();
         self.peek_hits.clear();
         self.peek_hit = 0;
+        let (dialog, before) = (self.search.dialog, self.search.before);
+        self.search = Default::default();
+        // What was in front stays noted until the next Peek notes it again.
+        self.search.dialog = dialog;
+        self.search.before = before;
+        window::kill_timer(self.control.hwnd(), TIMER_EVERYTHING);
         for (host, tab) in std::mem::take(&mut self.peek_tabs) {
             if self.state.active_tab_of(host) != tab {
                 self.switch_tab(host, tab);

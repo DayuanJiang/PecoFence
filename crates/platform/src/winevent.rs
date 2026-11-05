@@ -65,10 +65,23 @@ unsafe extern "system" fn event_proc(
 ) {
     // OBJID_WINDOW == 0: only whole-window events.
     if id_object != 0 {
+        tracing::debug!(
+            event,
+            id_object,
+            window = hwnd.0 as isize,
+            "win event skipped: not a whole window"
+        );
         return;
     }
     // Take the callback out while running it so a re-entrant event cannot alias it.
     let taken = CALLBACKS.with(|c| c.borrow_mut().remove(&(hook.0 as isize)));
+    if taken.is_none() {
+        tracing::debug!(
+            event,
+            window = hwnd.0 as isize,
+            "win event skipped: its callback is running"
+        );
+    }
     if let Some(mut cb) = taken {
         cb(event, hwnd);
         CALLBACKS.with(|c| {

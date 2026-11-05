@@ -3,8 +3,8 @@
 use pecofence_core::geometry::{self, PxRect, WorkArea};
 use pecofence_core::rules::{Cond, Decision, RuleSet, Target, Template, Unmatched};
 use pecofence_core::{
-    AssignedBy, Config, ConfigStore, Fence, FenceId, FenceKind, IconKey, Item, ItemId, ItemKey,
-    ItemRef, ItemSourceSpec, Layout, LoadOutcome, MonitorIdentity, Origin, SortMode,
+    AssignedBy, Config, ConfigStore, Fence, FenceId, FenceKind, FenceTool, IconKey, Item, ItemId,
+    ItemKey, ItemRef, ItemSourceSpec, Layout, LoadOutcome, MonitorIdentity, Origin, SortMode,
 };
 use pecofence_platform::RECT;
 use pecofence_platform::shell::{self, DesktopEntry, EntryOrigin};
@@ -270,6 +270,14 @@ impl AppState {
             snaps.remove(0);
         }
         config.snapshots = snaps;
+        // Note texts and scripts belong to fences the kept snapshots may hold: keep the current
+        // ones the file has none for (`prune_notes` drops what no layout or snapshot needs).
+        for (id, text) in std::mem::take(&mut self.config.notes) {
+            config.notes.entry(id).or_insert(text);
+        }
+        for (id, spec) in std::mem::take(&mut self.config.scripts) {
+            config.scripts.entry(id).or_insert(spec);
+        }
         config.drop_duplicates();
         pecofence_core::config_store::clamp_sizes(&mut config);
         pecofence_core::config_store::repair_unc_portals(&mut config);
@@ -300,6 +308,8 @@ impl AppState {
             name,
             ts: pecofence_core::now_unix(),
             layouts: self.config.layouts.clone(),
+            notes: Default::default(),
+            scripts: Default::default(),
         };
         let id = snap.id;
         self.config.snapshots.push(snap);
@@ -321,8 +331,30 @@ impl AppState {
     ) -> Option<uuid::Uuid> {
         let snap = self.config.snapshots.iter().find(|s| s.id == id).cloned()?;
         let backup = self.save_snapshot(backup_name);
-        self.apply_snapshot_layouts(snap.layouts);
+        // A snapshot that brings texts back puts the current ones into the backup.
+        if !snap.notes.is_empty() || !snap.scripts.is_empty() {
+            self.keep_tool_data_in(backup);
+        }
+        self.apply_snapshot(snap);
         Some(backup)
+    }
+
+    /// Snapshot `id` keeps the current note texts and scripts: it is the undo snapshot of an
+    /// import or a backup restore, which replace them.
+    pub fn keep_tool_data_in(&mut self, id: uuid::Uuid) {
+        let (notes, scripts) = (self.config.notes.clone(), self.config.scripts.clone());
+        if let Some(s) = self.config.snapshots.iter_mut().find(|s| s.id == id) {
+            s.notes = notes;
+            s.scripts = scripts;
+            self.dirty = true;
+        }
+    }
+
+    /// A snapshot's layouts, and the note texts and scripts it kept (an undo snapshot).
+    fn apply_snapshot(&mut self, snap: pecofence_core::Snapshot) {
+        self.apply_snapshot_layouts(snap.layouts);
+        self.config.notes.extend(snap.notes);
+        self.config.scripts.extend(snap.scripts);
     }
 
     /// Restores a snapshot's layouts without taking a backup first. False when `id` is unknown.
@@ -330,7 +362,7 @@ impl AppState {
         let Some(snap) = self.config.snapshots.iter().find(|s| s.id == id).cloned() else {
             return false;
         };
-        self.apply_snapshot_layouts(snap.layouts);
+        self.apply_snapshot(snap);
         true
     }
 
@@ -690,7 +722,9 @@ impl AppState {
     /// when the two are the same window already.
     pub fn attach_tab(&mut self, fence: FenceId, host: FenceId) -> bool {
         let host = self.host_of(host);
-        if fence == host || self.fence(fence).is_none() || self.fence(host).is_none() {
+        // A tool fence (小工具) stays a fence of its own: it neither joins nor hosts tabs.
+        let no_tabs = |id| self.fence(id).is_none_or(|f: &Fence| f.tool.is_some());
+        if fence == host || no_tabs(fence) || no_tabs(host) {
             return false;
         }
         let layout = self.layout;
@@ -776,14 +810,18 @@ impl AppState {
             .iter()
             .filter(|f| {
                 let empty = f.hide_when_empty
+                    && f.tool.is_none()
                     && !self.can_go_up(f.id)
                     && self.unsorted_held_items_of(f).next().is_none();
                 let beside_windows_icons = for_windows_icons
                     && f.kind == FenceKind::Inbox
                     && (settings.hide_inbox_when_icons_shown || f.desktop_layout);
-                (empty || beside_windows_icons)
-                    && f.tab_host.is_none()
-                    && self.tabs_of(f.id).len() <= 1
+                // A tool that is switched off shows nothing (tool fences never join tabs).
+                let tool_off = f.tool.is_some_and(|t| !t.enabled(&settings.tools));
+                tool_off
+                    || ((empty || beside_windows_icons)
+                        && f.tab_host.is_none()
+                        && self.tabs_of(f.id).len() <= 1)
             })
             .map(|f| f.id)
             .collect()
@@ -817,6 +855,10 @@ impl AppState {
     pub fn save_if_dirty(&mut self) -> bool {
         if !self.dirty {
             return false;
+        }
+        let pruned = self.config.prune_notes();
+        if pruned > 0 {
+            tracing::info!(pruned, "note texts without a fence dropped");
         }
         match self.store.save(&self.config) {
             Ok(()) => {
@@ -872,9 +914,7 @@ impl AppState {
     /// `fence.items` (its content comes from the folder), so routing into one would make the
     /// item vanish from every fence.
     pub fn routable_fence(&self, id: FenceId) -> Option<FenceId> {
-        self.fence(id)
-            .filter(|f| f.kind != FenceKind::FolderPortal)
-            .map(|f| f.id)
+        self.fence(id).filter(|f| f.holds_items()).map(|f| f.id)
     }
 
     fn target_fence(&self, decision: Decision) -> Option<(FenceId, AssignedBy)> {
@@ -1408,13 +1448,9 @@ impl AppState {
 
     /// Makes regular fence `id` show `dir` (a desktop folder or a folder shortcut's target) in
     /// place of its icons; a folder opened from another opened folder replaces it. Returns false
-    /// if refused (an unknown fence, a folder portal, or a folder that is gone).
+    /// if refused (an unknown fence, a folder portal, a tool fence, or a folder that is gone).
     pub fn open_folder(&mut self, id: FenceId, dir: &Path) -> bool {
-        if self
-            .fence(id)
-            .is_none_or(|f| f.kind == FenceKind::FolderPortal)
-            || !dir.is_dir()
-        {
+        if self.fence(id).is_none_or(|f| !f.holds_items()) || !dir.is_dir() {
             return false;
         }
         self.portal_cwd.remove(&id);
@@ -1784,6 +1820,11 @@ impl AppState {
         // Portal fences show a folder, not desktop membership: nothing can be moved into them,
         // and their (runtime) items cannot be moved out.
         if self.move_target_folder(to).is_some() {
+            return 0;
+        }
+        // A tool fence (便签) shows its tool, never desktop items.
+        if self.fence(to).is_some_and(|f| f.tool.is_some()) {
+            tracing::info!(fence = %to, items = items.len(), "move into a tool fence refused");
             return 0;
         }
         let mut n = 0;
@@ -2374,6 +2415,62 @@ impl AppState {
         Some(id)
     }
 
+    /// 便签与待办: a note fence at `rect` showing `text`. None as for [`Self::new_fence`].
+    pub fn new_note(&mut self, title: &str, rect: RECT, text: &str) -> Option<FenceId> {
+        let id = self.new_tool_fence(title, rect, FenceTool::Note)?;
+        self.config.notes.insert(id, text.to_string());
+        tracing::info!(%id, chars = text.chars().count(), "note created");
+        Some(id)
+    }
+
+    /// A fence at `rect` that shows `tool` (小工具). None as for [`Self::new_fence`].
+    pub fn new_tool_fence(&mut self, title: &str, rect: RECT, tool: FenceTool) -> Option<FenceId> {
+        let id = self.new_fence(title, rect)?;
+        if let Some(f) = self.fence_mut(id) {
+            f.tool = Some(tool);
+            f.view.auto_height = false;
+        }
+        tracing::info!(%id, ?tool, "tool fence created");
+        Some(id)
+    }
+
+    /// The text of note fence `id` (empty for a note without text yet); None for any other.
+    pub fn note_text(&self, id: FenceId) -> Option<&str> {
+        self.fence(id)
+            .filter(|f| f.tool == Some(FenceTool::Note))
+            .map(|_| self.config.notes.get(&id).map_or("", String::as_str))
+    }
+
+    /// Replaces note `id`'s text; false when it is no note or the text is the same.
+    pub fn set_note_text(&mut self, id: FenceId, text: &str) -> bool {
+        if self.note_text(id).is_none_or(|old| old == text) {
+            return false;
+        }
+        self.config.notes.insert(id, text.to_string());
+        self.dirty = true;
+        tracing::info!(%id, chars = text.chars().count(), "note text saved");
+        true
+    }
+
+    /// Ticks or unticks the to-do on line `line` of note `id`; false when that line is none.
+    pub fn toggle_note_line(&mut self, id: FenceId, line: usize) -> bool {
+        let Some(text) = self.note_text(id) else {
+            return false;
+        };
+        match pecofence_core::note::toggle(text, line) {
+            Some(new) => {
+                self.config.notes.insert(id, new);
+                self.dirty = true;
+                tracing::info!(%id, line, "note to-do toggled");
+                true
+            }
+            None => {
+                tracing::info!(%id, line, "note toggle ignored: no to-do on that line");
+                false
+            }
+        }
+    }
+
     /// "快速添加": a fence for `template` at `rect` plus its rules, inserted ahead of the
     /// existing rules so they win over the broader first-run presets (an installer is also a
     /// program). `Err(existing)` when the template was added before; `existing` is the fence
@@ -2669,6 +2766,8 @@ mod tests {
             name,
             ts,
             layouts: Vec::new(),
+            notes: Default::default(),
+            scripts: Default::default(),
         };
         let mut state = test_state();
         state.config.snapshots = vec![snap("home".into(), 1), snap("work".into(), 2)];

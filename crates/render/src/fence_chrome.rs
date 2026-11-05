@@ -7,7 +7,7 @@ use crate::bitmaps::BitmapCache;
 use crate::gpu_bindings as b;
 use crate::panel::Clip;
 use crate::text_shadow::TextShadows;
-use crate::theme::{TextFx, Theme, font_small, font_text, lerp, with_alpha};
+use crate::theme::{TextFx, Theme, font_display, font_small, font_text, lerp, with_alpha};
 use std::cell::{Ref, RefCell};
 use std::mem::ManuallyDrop;
 use std::rc::Rc;
@@ -68,6 +68,13 @@ pub struct FenceChrome {
     group_format: TextFormat,
     /// Tab match badge number: 11 / 600, centred.
     badge_format: TextFormat,
+    /// Note fence lines (便签与待办): Body 14, leading, wrapped.
+    note_format: TextFormat,
+    /// A script fence's footer: Caption 12, leading, top-aligned.
+    note_footer_format: TextFormat,
+    /// 时钟与日期: the time (Display 40 / Light) and the date line (Body 14).
+    clock_time_format: TextFormat,
+    clock_date_format: TextFormat,
     /// The blurred masks of a theme's soft text shadow, shared by all fences.
     text_shadows: RefCell<TextShadows>,
 }
@@ -1674,6 +1681,25 @@ impl FenceChrome {
             .with_alignment(TextAlignment::Center)
             .with_paragraph_alignment(ParagraphAlignment::Center)
             .with_word_wrapping(WordWrapping::NoWrap);
+        let note_format = TextFormat::with_locale(font_text(), 14.0, FontWeight::NORMAL, locale)?
+            .with_alignment(TextAlignment::Leading)
+            .with_paragraph_alignment(ParagraphAlignment::Top)
+            .with_word_wrapping(WordWrapping::Wrap);
+        let note_footer_format =
+            TextFormat::with_locale(font_small(), 12.0, FontWeight::NORMAL, locale)?
+                .with_alignment(TextAlignment::Leading)
+                .with_paragraph_alignment(ParagraphAlignment::Top)
+                .with_word_wrapping(WordWrapping::NoWrap);
+        let clock_time_format =
+            TextFormat::with_locale(font_display(), 40.0, FontWeight(300), locale)?
+                .with_alignment(TextAlignment::Leading)
+                .with_paragraph_alignment(ParagraphAlignment::Top)
+                .with_word_wrapping(WordWrapping::NoWrap);
+        let clock_date_format =
+            TextFormat::with_locale(font_text(), 14.0, FontWeight::NORMAL, locale)?
+                .with_alignment(TextAlignment::Leading)
+                .with_paragraph_alignment(ParagraphAlignment::Top)
+                .with_word_wrapping(WordWrapping::Wrap);
         let chrome = Self {
             title_fonts: RefCell::new(Self::build_title_fonts(None, 600)?),
             count_format,
@@ -1684,6 +1710,10 @@ impl FenceChrome {
             title_glyph_format,
             group_format,
             badge_format,
+            note_format,
+            note_footer_format,
+            clock_time_format,
+            clock_date_format,
             text_shadows: RefCell::default(),
         };
         // Labels follow the desktop's icon-title font from the start (12 px / 16 stays the
@@ -3334,7 +3364,170 @@ impl FenceChrome {
     }
 }
 
+/// One line of a note fence (便签与待办) as drawn: its text and, for a to-do, whether it is
+/// ticked.
+pub struct NoteLineDraw<'a> {
+    pub text: &'a str,
+    pub todo: Option<bool>,
+}
+
+/// Note layout in surface DIPs: the text inset from the left and right edges and from the top.
+pub const NOTE_PAD_X: f32 = 14.0;
+pub const NOTE_PAD_TOP: f32 = 2.0;
+/// Edge of a to-do check box and the gap after it.
+pub const NOTE_BOX: f32 = 16.0;
+const NOTE_BOX_GAP: f32 = 8.0;
+/// Extra space between two lines of a note.
+const NOTE_LINE_GAP: f32 = 6.0;
+/// Check mark in Segoe Fluent Icons / Segoe MDL2 Assets.
+const CHECK_GLYPH: &str = "\u{E73E}";
+
 impl FenceChrome {
+    /// Draws a note's lines from the top left, each wrapped to the width; a to-do gets a check
+    /// box before its text, ticked ones in the accent with their text dimmed. `hint` shows in
+    /// the secondary colour while the note has no text. `footer` (a script fence's status line)
+    /// sits at the bottom in the secondary colour and the lines stop above it. Returns each
+    /// to-do's line index with its check box (surface DIPs) for hit-testing.
+    #[allow(clippy::too_many_arguments)]
+    pub fn draw_note(
+        &self,
+        session: &DrawingSession<'_>,
+        theme: &Theme,
+        scale: f32,
+        width: f32,
+        height: f32,
+        lines: &[NoteLineDraw<'_>],
+        hint: &str,
+        footer: Option<&str>,
+    ) -> Result<Vec<(usize, Rect)>> {
+        session.clear(ColorF::TRANSPARENT);
+        let primary = session.create_solid_brush(theme.text_primary)?;
+        let secondary = session.create_solid_brush(theme.text_secondary)?;
+        let w = (width - 2.0 * NOTE_PAD_X).max(1.0);
+        let height = match footer.filter(|f| !f.is_empty()) {
+            Some(footer) => {
+                let layout = TextLayout::new(footer, &self.note_footer_format, w, f32::MAX)?;
+                let h = layout.metrics().height;
+                let top = (height - h - 8.0).max(0.0);
+                session.draw_text_layout(Vector2::new(NOTE_PAD_X, top), &layout, &secondary);
+                (top - 4.0).max(0.0)
+            }
+            None => height,
+        };
+        let has_footer = footer.is_some_and(|f| !f.is_empty());
+        if lines
+            .iter()
+            .all(|l| l.text.trim().is_empty() && l.todo.is_none())
+        {
+            session.draw_text(
+                hint,
+                &self.note_format,
+                &Rect::from_xywh(
+                    NOTE_PAD_X,
+                    NOTE_PAD_TOP,
+                    w,
+                    (height - NOTE_PAD_TOP).max(0.0),
+                ),
+                &secondary,
+            );
+            return Ok(Vec::new());
+        }
+        let line_h = TextLayout::new("Ag", &self.note_format, w, f32::MAX)?
+            .metrics()
+            .height;
+        let px = Px::new(scale);
+        let box_stroke = session.create_solid_brush(with_alpha(theme.text_primary, 0.7))?;
+        let accent = session.create_solid_brush(theme.accent)?;
+        let check = session.create_solid_brush(match theme.mode {
+            crate::theme::ThemeMode::Dark => ColorF::from_rgba8(0, 0, 0, 0xE6),
+            crate::theme::ThemeMode::Light => ColorF::from_rgba8(0xFF, 0xFF, 0xFF, 0xFF),
+        })?;
+        let mut boxes = Vec::new();
+        let mut y = NOTE_PAD_TOP;
+        for (i, line) in lines.iter().enumerate() {
+            if y >= height {
+                break;
+            }
+            let x = match line.todo {
+                Some(_) => NOTE_PAD_X + NOTE_BOX + NOTE_BOX_GAP,
+                None => NOTE_PAD_X,
+            };
+            let text_w = (width - x - NOTE_PAD_X).max(1.0);
+            // An empty line still takes a line's height.
+            let text = if line.text.is_empty() { " " } else { line.text };
+            let layout = TextLayout::new(text, &self.note_format, text_w, f32::MAX)?;
+            let h = layout.metrics().height.max(line_h);
+            // A wrapped line that runs past the footer's top shows only its rows that fit whole,
+            // so no text is drawn over the footer.
+            let _clip = if has_footer && y + h > height {
+                let fit = layout
+                    .hit_test_point(Vector2::new(0.0, height - y))
+                    .bounds
+                    .top;
+                if fit <= 0.0 {
+                    break;
+                }
+                Some(pecofence_platform::d2d::push_axis_aligned_clip(
+                    session.raw(),
+                    0.0,
+                    y,
+                    width,
+                    y + fit,
+                )?)
+            } else {
+                None
+            };
+            if let Some(done) = line.todo {
+                let top = px.snap(y + (line_h - NOTE_BOX) / 2.0);
+                let r = Rect::from_xywh(px.snap(NOTE_PAD_X), top, NOTE_BOX, NOTE_BOX);
+                if done {
+                    session.fill_rounded_rect(&RoundedRect::uniform(r, 4.0), &accent);
+                    session.draw_text(CHECK_GLYPH, &self.glyph_format, &r, &check);
+                } else {
+                    session.draw_rounded_rect(&px.ring(r, 4.0), &box_stroke, px.hair());
+                }
+                boxes.push((i, r));
+            }
+            let brush = if line.todo == Some(true) {
+                &secondary
+            } else {
+                &primary
+            };
+            session.draw_text_layout(Vector2::new(x, y), &layout, brush);
+            y += h + NOTE_LINE_GAP;
+        }
+        Ok(boxes)
+    }
+}
+
+impl FenceChrome {
+    /// 时钟与日期: `time` large at the top left, `date` under it in the secondary colour.
+    pub fn draw_clock(
+        &self,
+        session: &DrawingSession<'_>,
+        theme: &Theme,
+        width: f32,
+        height: f32,
+        time: &str,
+        date: &str,
+    ) -> Result<()> {
+        session.clear(ColorF::TRANSPARENT);
+        let primary = session.create_solid_brush(theme.text_primary)?;
+        let secondary = session.create_solid_brush(theme.text_secondary)?;
+        let w = (width - 2.0 * NOTE_PAD_X).max(1.0);
+        let layout = TextLayout::new(time, &self.clock_time_format, w, f32::MAX)?;
+        let time_h = layout.metrics().height;
+        session.draw_text_layout(Vector2::new(NOTE_PAD_X, 0.0), &layout, &primary);
+        let top = time_h + 2.0;
+        session.draw_text(
+            date,
+            &self.clock_date_format,
+            &Rect::from_xywh(NOTE_PAD_X, top, w, (height - top).max(0.0)),
+            &secondary,
+        );
+        Ok(())
+    }
+
     /// One icon cell: state layers, icon box and label. `unfold` = (full name, line count):
     /// the label grows to that many lines and the state pill grows with it (Windows desktop
     /// focused-icon behaviour); the content surface clips whatever runs past the bottom.

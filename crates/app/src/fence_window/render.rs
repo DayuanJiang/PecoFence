@@ -402,7 +402,8 @@ impl FenceViewState {
         }
         let roll_t = self.roll_t.value_at(now);
         // The count is drawn while it fades out after expanding, not only while rolled.
-        let count = (rolled || state.count > 0.0)
+        // A note (便签) has no items to count.
+        let count = ((rolled || state.count > 0.0) && !self.shows_tool())
             .then(|| pecofence_core::i18n::format("{0} 项", &[format!("{}", self.items.len())]));
         let opacity = self.material_opacity();
         // Titles and tabs without a 「标题颜色」 of their own follow 「图标名称颜色」 (#141).
@@ -801,7 +802,115 @@ impl FenceViewState {
         });
     }
 
+    /// 脚本栅栏: the script's output lines and the footer in place of items.
+    pub(super) fn redraw_script(&mut self) -> Result<()> {
+        let Some(script) = self.script.clone() else {
+            return Ok(());
+        };
+        use pecofence_render::fence_chrome::NoteLineDraw;
+        let lines: Vec<NoteLineDraw<'_>> = script
+            .text
+            .lines()
+            .map(|text| NoteLineDraw { text, todo: None })
+            .collect();
+        let scale = self.scale();
+        let theme = self
+            .material_foreground()
+            .with_label_color(self.behavior.label_color.get());
+        let chrome = self.chrome.clone();
+        let hint = if script.quiet {
+            ""
+        } else {
+            pecofence_core::i18n::text("脚本没有输出文字")
+        };
+        let ok = self
+            .content_panel
+            .draw_ex(self.dpi, |session, _clip, wd, hd| {
+                chrome
+                    .draw_note(
+                        session,
+                        &theme,
+                        scale,
+                        wd,
+                        hd,
+                        &lines,
+                        hint,
+                        Some(&script.footer),
+                    )
+                    .map(|_| ())
+            })?;
+        self.note_draw_result(ok);
+        Ok(())
+    }
+
+    /// 便签与待办: the note's lines in place of items.
+    pub(super) fn redraw_note(&mut self) -> Result<()> {
+        let Some(text) = self.note.clone() else {
+            return Ok(());
+        };
+        use pecofence_core::note::NoteLine;
+        use pecofence_render::fence_chrome::NoteLineDraw;
+        let lines: Vec<NoteLineDraw<'_>> = pecofence_core::note::lines(&text)
+            .into_iter()
+            .map(|l| match l {
+                NoteLine::Text(text) => NoteLineDraw { text, todo: None },
+                NoteLine::Todo { done, text } => NoteLineDraw {
+                    text,
+                    todo: Some(done),
+                },
+            })
+            .collect();
+        let scale = self.scale();
+        let theme = self
+            .material_foreground()
+            .with_label_color(self.behavior.label_color.get());
+        let chrome = self.chrome.clone();
+        let hint =
+            pecofence_core::i18n::text("单击这里写字。行首写 [ ] 的一行是待办，单击方框打勾。");
+        let mut boxes = Vec::new();
+        let ok = self
+            .content_panel
+            .draw_ex(self.dpi, |session, _clip, wd, hd| {
+                boxes = chrome.draw_note(session, &theme, scale, wd, hd, &lines, hint, None)?;
+                Ok(())
+            })?;
+        self.note_draw_result(ok);
+        self.note_boxes = boxes
+            .into_iter()
+            .map(|(line, r)| (line, [r.left, r.top, r.right, r.bottom]))
+            .collect();
+        Ok(())
+    }
+
+    /// 时钟与日期: the time and date in place of items.
+    pub(super) fn redraw_clock(&mut self) -> Result<()> {
+        let Some(seconds) = self.clock else {
+            return Ok(());
+        };
+        let (time, date) = pecofence_platform::fileinfo::clock_texts(seconds);
+        let theme = self
+            .material_foreground()
+            .with_label_color(self.behavior.label_color.get());
+        let chrome = self.chrome.clone();
+        let ok = self
+            .content_panel
+            .draw_ex(self.dpi, |session, _clip, wd, hd| {
+                chrome.draw_clock(session, &theme, wd, hd, &time, &date)
+            })?;
+        self.note_draw_result(ok);
+        Ok(())
+    }
+
     pub(super) fn redraw_content(&mut self) -> Result<()> {
+        if self.note.is_some() {
+            return self.redraw_note();
+        }
+        if self.clock.is_some() {
+            return self.redraw_clock();
+        }
+        if self.script.is_some() {
+            return self.redraw_script();
+        }
         if self.row_metrics().is_some() {
             return self.redraw_rows();
         }

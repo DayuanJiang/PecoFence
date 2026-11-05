@@ -106,6 +106,7 @@ unique id prefix, or a name (only while that name is unique).
 | `fence list` | `pecofence-cli fence list` |
 | `fence get <FENCE>` | `pecofence-cli fence get Work` |
 | `fence create (--title <T> \| --portal <DIR>) [--rect x,y,w,h \| --monitor <ID> \| --below/--above/--right-of/--left-of <FENCE> [--size w,h]]` | `pecofence-cli fence create --title Work --rect 100,100,600,400` |
+| `fence create --tool note [--text <TEXT>] \| --tool clock \| --script <FILE>` (小工具, see below) | `pecofence-cli fence create --tool note --title Today --text "[ ] Pay rent"` |
 | `fence delete <FENCE>` | `pecofence-cli fence delete Temp` |
 | `fence rename <FENCE> <TITLE>` | `pecofence-cli fence rename Work Projects` |
 | `fence move <FENCE> (--rect x,y,w,h \| --x <N> --y <N> \| --monitor <ID>)` | `pecofence-cli fence move Work --x 1200 --y 80` |
@@ -185,7 +186,9 @@ shows that folder inside the fence instead of opening File Explorer; off by defa
 when an item lands in it; a portal hides only at its root folder, a tab or a host of tabs stays;
 this is also how to keep the inbox, which cannot be deleted, out of sight), `desktopLayout` (the inbox
 only: no title row, glass or edges; its icons stand down columns from the top-left of the monitor
-like the Windows desktop, around the other fences).
+like the Windows desktop, around the other fences), `noteText` (note fences: the whole text; a line
+starting with `[ ]` or `[x]` is a to-do), `scriptPath` (script fences: the full path of the script;
+it runs at once) and `scriptInterval` (script fences: minutes between runs, 1 to 1440).
 `--all` applies the option to every fence one call at a time and
 skips tabs hosted inside another fence (their options belong to the host).
 
@@ -251,7 +254,8 @@ hidden when PecoFence exits, so they do not flash at the next sign-in; default o
 `hideInboxWhenIconsShown` (while `hideRealIcons` is off, the inbox
 fence shows no window and its items only show among the Windows desktop icons; a tab or a host of
 tabs stays; default off), `offerNewFence` (a rectangle drawn on empty desktop that touches no fence
-offers 「在此新建栅栏」; default on), `autostart`, `peek.enabled`, `quickHide.enabled`,
+offers 「在此新建栅栏」; default on), `autostart`, `peek.enabled`, `peek.doubleCtrl` (two short
+taps of Ctrl alone open the Peek with its search box, see Tools below; default off), `quickHide.enabled`,
 `titleAlign` (left/center/right: the title and tab strip in every title row),
 `labelColor` (auto/white/black: the item names in every fence and view; auto picks dark or light
 names from the wallpaper in Liquid Glass and follows the colour mode in Fluent; white and black
@@ -298,6 +302,45 @@ them: in Git Bash and other POSIX shells `#ff8800` starts a comment, so write
 `fence set Work tint "#ff8800"` (or `'"#ff8800"'`); in PowerShell `"#ff8800"` works as well. A bare
 `#` makes the CLI see two arguments and fail with `usage: missing FENCE`, whose message repeats this
 rule.
+
+## Tools (小工具)
+
+A tool fence shows a tool in place of desktop items. Each tool has a switch in `settings`
+(`tools.notes`, `tools.clock`, `tools.scripts`, all `false` by default); a tool that is off runs
+nothing and its fences have no window until it is switched on again. `fence create --tool` switches
+the tool on. Tool fences hold no items (rules, `item move --to` and drops refuse them) and take no
+part in tabs (`fence merge` refuses them). Properties about icons (`iconSize`, `layout`,
+`autoHeight` and the like) and `fence fit` are refused for them. `--text` alone implies `--tool note`.
+An imported configuration (`config import`) with script fences switches `tools.scripts` off until
+the user turns it on again; a backup restore keeps it.
+
+Three switches of the 「搜索与跳转」 group on the same settings page have no fences, all `false` by
+default: `tools.dialogJump` (an Open, Save As or Select Folder dialog of any program jumps to the
+folder of the File Explorer window or folder fence the user comes back from; Ctrl+G in the dialog
+jumps at any time), `tools.everything` (the Peek search box also lists what Everything, the free
+file search from voidtools, finds on the whole computer; Everything has to be running, and version
+1.5 also matches Chinese names by pinyin) and `peek.doubleCtrl` (two short taps of Ctrl open the
+Peek with the search box). Files and folders opened from the search box are counted in
+`config.json` under `searchHistory` (lower-case paths, at most 300) and rank higher next time.
+
+- **Notes and to-dos** (`--tool note`): lines of text; a line starting with `[ ]` (or `[x]`, after
+  an optional `- ` or `* `) is a to-do whose box ticks with a click. `fence get` reports
+  `noteText`; `fence set <FENCE> noteText "..."` replaces it (use `\n` for line breaks in JSON).
+  The text is kept in `config.json` under `notes`, so exports and daily backups carry it.
+- **Clock and date** (`--tool clock`): the time and the long date in Windows' region format;
+  `settings set tools.clockSeconds true` adds the seconds.
+- **Script fences** (`--script <FILE>`): runs a .ps1, .py, .pyw, .cmd, .bat, .js or .exe every
+  `scriptInterval` minutes (30 by default) without a window, at most 10 seconds, and shows what it
+  prints (at most 40 lines). `fence get` reports `script` with `path`, `intervalMinutes`,
+  `outcome` (`done`, `failed`, `timedOut`, `missing`, `unsupported`, `notStarted`), `output`,
+  `lastRun` and `running`. PowerShell scripts are run with UTF-8 output; Python with
+  `PYTHONIOENCODING=utf-8`. PecoFence itself does not go online for this: the script does.
+
+```powershell
+pecofence-cli fence create --tool note --title Today --text "[ ] Pay rent`n[ ] Call Anna"
+pecofence-cli fence create --script "$env:USERPROFILE\Scripts\weather.ps1" --title Weather
+pecofence-cli fence set Weather scriptInterval 15
+```
 
 ## Folder portals move real files
 

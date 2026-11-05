@@ -224,6 +224,18 @@ pub(super) fn on_lbuttondown(
             queue.push(Command::RaiseFence(hwnd));
             return Some(0);
         }
+        if let Some(cmd) = v.note_press(x, y) {
+            drop(guard);
+            queue.push(cmd);
+            queue.push(Command::RaiseFence(hwnd));
+            return Some(0);
+        }
+        // Other tools (a clock) take no clicks in their content: no marquee, no selection.
+        if v.shows_tool() && in_content {
+            drop(guard);
+            queue.push(Command::RaiseFence(hwnd));
+            return Some(0);
+        }
         let hit = v.hit_item(x, y);
         let mut capture = false;
         match hit {
@@ -610,6 +622,12 @@ pub(super) fn on_lbuttondblclk(
         if v.chevron_at(x, y) {
             return Some(0);
         }
+        // In a note the second click is another press: a check box ticks back.
+        if let Some(cmd) = v.note_press(x, y) {
+            drop(guard);
+            queue.push(cmd);
+            return Some(0);
+        }
         // The second click of a rapid double-click on a button is another
         // press (a header toggles the sort twice, like Explorer).
         if v.press_button_at(x, y).is_some() {
@@ -789,8 +807,9 @@ pub(super) fn on_mousewheel(
         }
         if ctrl {
             // Ctrl+wheel never scrolls (Explorer); in Icons view it steps the
-            // icon size, one step per whole notch (touchpads accumulate).
-            if v.layout == ViewLayout::Icons {
+            // icon size, one step per whole notch (touchpads accumulate). A tool
+            // fence has no icons to size.
+            if v.layout == ViewLayout::Icons && !v.shows_tool() {
                 v.wheel_zoom_accum += delta;
                 while v.wheel_zoom_accum.abs() >= msg::WHEEL_DELTA {
                     let larger = v.wheel_zoom_accum > 0;

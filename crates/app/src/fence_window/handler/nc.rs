@@ -682,7 +682,7 @@ pub(super) fn on_exitsizemove(
     let esc = window::key_down(msg::VK_ESCAPE) || h.move_cancelled.get();
     let cancelled = rect == at_enter || esc;
     let group = std::mem::take(&mut *h.group.borrow_mut());
-    let merge_into = if moved && !cancelled && group.is_empty() {
+    let merge_into = if moved && !cancelled && group.is_empty() && !shows_tool(view) {
         merge_target_under_cursor(hwnd)
     } else {
         None
@@ -877,7 +877,7 @@ pub(super) fn on_moving(
     let group = h.group.borrow().clone();
     let grab_dpi = h.grab_dpi.get();
     // Drag-to-merge: light up the title of the fence under the cursor.
-    let merge = if group.is_empty() {
+    let merge = if group.is_empty() && !shows_tool(view) {
         merge_target_under_cursor(hwnd)
     } else {
         None
@@ -1048,4 +1048,11 @@ pub(super) fn on_dpichanged(
         "fence WM_DPICHANGED"
     );
     Some(0)
+}
+
+/// The window shows a tool (小工具): it joins no tab strip.
+fn shows_tool(view: &ViewCell) -> bool {
+    view.try_borrow()
+        .ok()
+        .is_some_and(|g| g.as_ref().is_some_and(|v| v.shows_tool()))
 }

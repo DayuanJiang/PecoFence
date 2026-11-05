@@ -164,8 +164,8 @@ pub enum FenceCmd {
     )]
     #[command(group(ArgGroup::new("place").multiple(false)))]
     Create {
-        /// Title of the new fence (defaults to the folder name with --portal)
-        #[arg(long, value_name = "TITLE", required_unless_present = "portal")]
+        /// Title of the new fence (defaults to the folder name with --portal, the tool or script name with --tool / --script)
+        #[arg(long, value_name = "TITLE", required_unless_present_any = ["portal", "tool", "script"])]
         title: Option<String>,
         #[arg(long, value_name = "X,Y,W,H", value_parser = Rect::parse, allow_hyphen_values = true, group = "place", help = RECT_HELP)]
         rect: Option<Rect>,
@@ -190,6 +190,15 @@ pub enum FenceCmd {
         /// Size in physical px with --below/--above/--right-of/--left-of (default: that fence's)
         #[arg(long, value_name = "W,H", value_parser = parse_size)]
         size: Option<(i32, i32)>,
+        /// A tool fence (小工具) instead: note, clock or script (switches the tool on)
+        #[arg(long, value_name = "TOOL", value_parser = ["note", "clock", "script"], conflicts_with = "portal")]
+        tool: Option<String>,
+        /// Text of a new note (with --tool note; lines starting with [ ] are to-dos)
+        #[arg(long, value_name = "TEXT")]
+        text: Option<String>,
+        /// Script a new script fence runs (implies --tool script): .ps1 .py .pyw .cmd .bat .js .exe
+        #[arg(long, value_name = "FILE", conflicts_with = "portal")]
+        script: Option<String>,
     },
     /// Delete a fence; its items return to the desktop (inbox) fence, rules targeting it are removed
     #[command(after_help = "Example: pecofence-cli fence delete Temp")]
@@ -254,7 +263,7 @@ pub enum FenceCmd {
         #[arg(long, group = "size")]
         h: Option<i32>,
     },
-    /// Set a per-fence option (title, iconSize, spacing, spacingPx, iconAlign, autoHeight, locked, expandUpward, excludeFromQuickHide, opacity, tint, tintTitleOnly, tabColor, titleColor, titleSize, titleOnHover, layout, sort, reverse, groupByDate, foldersFirst, labelLines, openFoldersInside, portalNavigate, portalTitleIcon, hideWhenEmpty, desktopLayout); `fence rename` is the friendlier way to set title
+    /// Set a per-fence option (title, iconSize, spacing, spacingPx, iconAlign, autoHeight, locked, expandUpward, excludeFromQuickHide, opacity, tint, tintTitleOnly, tabColor, titleColor, titleSize, titleOnHover, layout, sort, reverse, groupByDate, foldersFirst, labelLines, openFoldersInside, portalNavigate, portalTitleIcon, hideWhenEmpty, desktopLayout, noteText, scriptPath, scriptInterval); `fence rename` is the friendlier way to set title
     #[command(
         override_usage = "pecofence-cli fence set [OPTIONS] <FENCE> <PROP> <VALUE>\n       pecofence-cli fence set [OPTIONS] --all <PROP> <VALUE>",
         after_help = "Arguments:\n  <FENCE>  Fence: id, unique id prefix (>=6 hex), or title (exact, then unique substring)\n  <PROP>   Option name as shown by `fence get` (title: prefer `fence rename`)\n  <VALUE>  JSON value or bare text: 48, true, list, null; quote # colours: \"#ff8800\" or '\"#ff8800\"'\n\nExample: pecofence-cli fence set Work layout list\n         pecofence-cli fence set Work tint \"#ff8800\"\n         pecofence-cli fence set --all opacity clear"

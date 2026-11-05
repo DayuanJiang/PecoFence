@@ -2,10 +2,10 @@
 
 use crate::anchor::{self, AnchorCell, DesktopAnchor, ShowDesktopBehavior, ZMode};
 use crate::commands::{
-    Command, CommandQueue, TransferMode, WM_APP_COMMAND, WM_APP_FRAME, WM_APP_FS_CHANGED,
-    WM_APP_LIVE_WALLPAPER, WM_APP_PEEK_FOCUSED, WM_APP_PREWARM_DONE, WM_APP_SHELL_CHANGED,
-    WM_APP_STARTUP_BACKDROPS, WM_APP_STARTUP_TASK, WM_APP_THEMES_CHANGED, WM_APP_TRAY,
-    WM_APP_WALLPAPER,
+    Command, CommandQueue, TransferMode, WM_APP_COMMAND, WM_APP_EVERYTHING_SETUP, WM_APP_FRAME,
+    WM_APP_FS_CHANGED, WM_APP_LIVE_WALLPAPER, WM_APP_PEEK_FOCUSED, WM_APP_PREWARM_DONE,
+    WM_APP_SCRIPT_DONE, WM_APP_SHELL_CHANGED, WM_APP_STARTUP_BACKDROPS, WM_APP_STARTUP_TASK,
+    WM_APP_THEMES_CHANGED, WM_APP_TRAY, WM_APP_WALLPAPER,
 };
 use crate::fence_window::{
     BackdropMode, BackdropSets, Behavior, FenceContext, FenceWindow, ItemView, SearchMarks, TabView,
@@ -55,6 +55,7 @@ use windows_core::Result;
 
 mod arrange;
 mod dnd;
+mod everything_setup;
 mod feedback;
 mod fence_options;
 mod fences;
@@ -69,12 +70,14 @@ mod peek;
 mod portals;
 mod push;
 mod rating;
+mod search;
 mod settings;
 mod sync;
 mod tabs;
 #[cfg(test)]
 mod tests;
 mod testscript;
+mod tools;
 mod updates;
 mod visuals;
 mod wallpaper_refresh;
@@ -161,6 +164,15 @@ const TIMER_TMP_SETTLE: usize = 65;
 /// The themes folder is read again once its changes have been quiet this long: editors save
 /// a file in several steps (a temporary file, then a rename).
 const TIMER_THEMES: usize = 66;
+/// 脚本栅栏: a script run ended (`WM_APP_SCRIPT_DONE`); retried while the App is borrowed.
+const TIMER_SCRIPT_DONE: usize = 67;
+/// Search box: the typing pause before Everything is asked is over.
+const TIMER_EVERYTHING: usize = 68;
+/// 搜索整台电脑: Everything was installed or started; the settings card asks again.
+const TIMER_EVERYTHING_STATUS: usize = 69;
+/// 搜索整台电脑: the install ended (`WM_APP_EVERYTHING_SETUP`); retried while the App is
+/// borrowed.
+const TIMER_EVERYTHING_SETUP: usize = 71;
 const THEMES_SETTLE_MS: u32 = 300;
 const DEVICE_RETRY_MAX_MS: u32 = 30_000;
 /// Growth of private commit plus GPU memory that logs a memory line before the hour is up.
@@ -334,6 +346,8 @@ pub struct App {
     store_startup_state: Option<pecofence_platform::store::StartupState>,
     /// Signalled when the last startup task switch is done, for a CLI reply that waits for it.
     store_startup_done: Option<std::sync::mpsc::Receiver<()>>,
+    /// 脚本栅栏: last results, running and next due script fences.
+    script_runs: tools::ScriptRuns,
     /// `--light` / `--dark`: pin the theme this run.
     theme_override: Option<ThemeMode>,
     peek_class: WindowClass,
@@ -344,6 +358,10 @@ pub struct App {
     peek_hit: usize,
     /// Fences the search moved to another tab, with the tab each showed before.
     peek_tabs: HashMap<FenceId, FenceId>,
+    /// The search list (rows, Everything's answer, a dialog waiting behind the Peek).
+    search: search::SearchState,
+    /// 「安装 Everything」 is running winget.
+    everything_installing: bool,
     /// A settings slider's live tick is being applied: `apply_cell_snap` waits for the release.
     snap_held: bool,
     /// The desktop folder could not be read at the last sync (removable / network drive).
@@ -755,6 +773,14 @@ impl App {
                             window::set_timer(hwnd, TIMER_STARTUP_TASK, 1);
                             Some(0)
                         }
+                        WM_APP_SCRIPT_DONE => {
+                            window::set_timer(hwnd, TIMER_SCRIPT_DONE, 1);
+                            Some(0)
+                        }
+                        WM_APP_EVERYTHING_SETUP => {
+                            window::set_timer(hwnd, TIMER_EVERYTHING_SETUP, 1);
+                            Some(0)
+                        }
                         WM_APP_THEMES_CHANGED => {
                             window::set_timer(hwnd, TIMER_THEMES, THEMES_SETTLE_MS);
                             Some(0)
@@ -788,6 +814,20 @@ impl App {
                             {
                                 app.toggle_peek();
                             }
+                            Some(0)
+                        }
+                        // 双击 Ctrl 打开搜索 (raw keyboard input, only listened to).
+                        msg::WM_INPUT => {
+                            if crate::double_ctrl::on_input(lparam)
+                                && let Ok(mut guard) = cell.try_borrow_mut()
+                                && let Some(app) = guard.as_mut()
+                            {
+                                app.search_by_double_ctrl();
+                            }
+                            None
+                        }
+                        msg::WM_HOTKEY if wparam as i32 == crate::dialog_jump::HOTKEY_ID => {
+                            crate::dialog_jump::on_hotkey();
                             Some(0)
                         }
                         msg::WM_HOTKEY if wparam as i32 == HOTKEY_WINDOWS_DESKTOP => {
@@ -871,6 +911,12 @@ impl App {
                                         app.trim_if_idle();
                                     }
                                 }
+                                crate::dialog_jump::RECHECK_TIMER => {
+                                    crate::dialog_jump::recheck(hwnd);
+                                }
+                                crate::dialog_jump::POLL_TIMER => {
+                                    crate::dialog_jump::poll(hwnd);
+                                }
                                 TIMER_WALLPAPER_PREWARM
                                 | TIMER_PREWARM_FINISH
                                 | TIMER_LIVE_CAPTURED
@@ -878,6 +924,10 @@ impl App {
                                 | TIMER_STARTUP_TASK
                                 | TIMER_TMP_SETTLE
                                 | TIMER_THEMES
+                                | TIMER_SCRIPT_DONE
+                                | TIMER_EVERYTHING
+                                | TIMER_EVERYTHING_STATUS
+                                | TIMER_EVERYTHING_SETUP
                                 | TIMER_STARTUP_BACKDROPS => {
                                     if let Ok(mut guard) = cell.try_borrow_mut()
                                         && let Some(app) = guard.as_mut()
@@ -890,6 +940,13 @@ impl App {
                                             TIMER_STARTUP_TASK => app.finish_store_startup(),
                                             TIMER_TMP_SETTLE => app.sync_settled_tmp(),
                                             TIMER_THEMES => app.on_themes_changed(),
+                                            TIMER_SCRIPT_DONE => app.drain_scripts(),
+                                            TIMER_EVERYTHING => app.send_everything_query(),
+                                            TIMER_EVERYTHING_STATUS => app.push_settings_state(),
+                                            TIMER_EVERYTHING_SETUP => app.on_everything_setup(
+                                                everything_setup::SETUP_RESULT
+                                                    .load(std::sync::atomic::Ordering::Relaxed),
+                                            ),
                                             TIMER_STARTUP_BACKDROPS => {
                                                 app.finish_startup_backdrops()
                                             }
@@ -1166,6 +1223,7 @@ impl App {
                             if let Ok(mut guard) = cell.try_borrow_mut()
                                 && let Some(app) = guard.as_mut()
                             {
+                                app.commit_open_note();
                                 app.state.save_if_dirty();
                                 if let Some(a) = app.anchor.borrow_mut().as_mut() {
                                     a.release_desktop_icons();
@@ -1473,6 +1531,7 @@ impl App {
             store_startup_refused: Arc::default(),
             store_startup_state: None,
             store_startup_done: None,
+            script_runs: tools::ScriptRuns::default(),
             theme_override: if args.light {
                 Some(ThemeMode::Light)
             } else if args.dark {
@@ -1485,6 +1544,8 @@ impl App {
             peek_hits: Vec::new(),
             peek_hit: 0,
             peek_tabs: HashMap::new(),
+            search: Default::default(),
+            everything_installing: false,
             snap_held: false,
             dying: Vec::new(),
             device_retry_pending: false,
@@ -1537,6 +1598,7 @@ impl App {
         }
         app.sync_peek_hotkey();
         app.sync_windows_desktop_hotkey();
+        app.sync_dialog_jump();
         app.sync_theme_watcher();
         // Before the first fence: a custom theme's fonts.
         app.apply_fonts();
@@ -1725,6 +1787,8 @@ impl App {
             app.schedule_save();
         }
         window::set_coalescable_timer(app.control.hwnd(), TIMER_HOUSEKEEPING, 60_000, 5_000);
+        // 脚本栅栏: the first results, without waiting for the minute.
+        app.run_due_scripts();
         window::set_coalescable_timer(app.control.hwnd(), TIMER_WALLPAPER_POLL, 5_000, 500);
         sync_desktops_differ(app.control.hwnd(), &desktops_differ);
         // Close the gap between the startup snapshot and installing the registry watchers.
@@ -1804,6 +1868,7 @@ impl App {
 
     fn housekeeping(&mut self) {
         self.check_cut_clipboard();
+        self.run_due_scripts();
         if self.state.is_dirty() {
             self.state.save_if_dirty();
             self.notice_save_failure();
@@ -2280,6 +2345,12 @@ impl App {
             }
             Command::DeleteFence(fence) => self.delete_fence(fence),
             Command::NewFence { x, y } => self.new_fence_near(x, y),
+            Command::NewNote { x, y } => self.new_note_near(x, y),
+            Command::NewClock { x, y } => self.new_clock_near(x, y),
+            Command::NewScript { x, y } => self.new_script_near(x, y, None),
+            Command::EditNote { fence } => self.edit_note(fence),
+            Command::ToggleNoteLine { fence, line } => self.toggle_note_line(fence, line),
+            Command::NoteEdited { fence, text } => self.note_edited(fence, &text),
             Command::NewFenceRect(rect) => self.offer_new_fence(rect),
             Command::DesktopMarquee(event) => self.on_desktop_marquee(event),
             Command::ClearFenceSelection => self.set_fence_selection(Vec::new()),
@@ -2287,6 +2358,13 @@ impl App {
             Command::RaiseFence(hwnd) => {
                 if let Some(a) = self.anchor.borrow_mut().as_mut() {
                     a.raise_fence(hwnd);
+                }
+                // 对话框跳转: a pressed folder fence is where the next jump goes.
+                if self.state.config.settings.tools.dialog_jump
+                    && let Some(host) = self.fence_of_hwnd(hwnd)
+                    && let Some(dir) = self.state.portal_path(self.state.active_tab_of(host))
+                {
+                    crate::dialog_jump::note_folder(&dir);
                 }
             }
             Command::SortColumn { fence, sort } => {
@@ -2322,8 +2400,12 @@ impl App {
             Command::PeekDragEnded { elsewhere: false } => self.peek_drag(false),
             Command::PeekSearchType(text) => self.peek_search_type(&text),
             Command::PeekSearchChanged => self.update_peek_search(),
-            Command::PeekSearchStep(step) => self.step_peek_search(step),
-            Command::PeekSearchOpen => self.open_peek_hit(),
+            Command::PeekSearchStep(step) => self.step_search_row(step),
+            Command::PeekSearchOpen => self.open_search_row(self.search.sel),
+            Command::PeekSearchOpenRow(row) => self.open_search_row(row),
+            Command::PeekSearchOpenFolder => self.open_search_row_folder(),
+            Command::PeekSearchActions => self.show_search_actions(),
+            Command::EverythingResults { kind, bytes } => self.on_everything_results(kind, &bytes),
             Command::ApplyRulesNow => {
                 let entries = shell::enumerate_desktop();
                 let moved = self.state.apply_rules_all(&entries);
@@ -2415,6 +2497,7 @@ impl App {
 
     pub fn shutdown(&mut self) {
         self.end_peek_now();
+        self.commit_open_note();
         self.state.save_if_dirty();
         self.fences.clear();
         self.dying.clear();

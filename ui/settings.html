@@ -108,6 +108,7 @@
   /* Controls that wrap under a long description stay on the right, as in Windows Settings. */
   .card:not(.stack) > :not(.l):not(.s) { margin-left: auto; }
   .card.disabled .t, .card.disabled .s { color: var(--text-disabled); }
+  .card.disabled button.accent:disabled { color: var(--text-disabled); background: var(--control-disabled); border-color: var(--control-stroke); }
   /* A master setting and the rows that only matter while it is on share one surface. */
   .group { display: flex; flex-direction: column; gap: 1px; margin-bottom: 4px; }
   .group > .card, .rows > .card { margin: 0; border-radius: 0; }
@@ -402,6 +403,7 @@
     <a href="#general" class="sel" data-page="general" aria-label="常规" title="常规"><span class="ic">&#xE713;</span><span class="nav-text">常规</span></a>
     <a href="#fences" data-page="fences" aria-label="栅栏" title="栅栏"><span class="ic">&#xE71D;</span><span class="nav-text">栅栏</span></a>
     <a href="#rules" data-page="rules" aria-label="整理规则" title="整理规则"><span class="ic">&#xE8FD;</span><span class="nav-text">整理规则</span></a>
+    <a href="#tools" data-page="tools" aria-label="小工具" title="小工具"><span class="ic">&#xEA86;</span><span class="nav-text">小工具</span></a>
     <a href="#layout" data-page="layout" aria-label="布局与备份" title="布局与备份"><span class="ic">&#xE7F4;</span><span class="nav-text">布局与备份</span></a>
     <a href="#about" data-page="about" aria-label="关于" title="关于"><span class="ic">&#xE946;</span><span class="nav-text">关于</span></a>
     <div class="nav-footer"><p id="workspaceSummary">正在连接桌面…</p></div>
@@ -516,6 +518,7 @@
         <select id="fenceTitleSize" data-fence="titleSize"><option value="small">小</option><option value="normal">标准</option><option value="large">大</option><option value="extraLarge">特大</option></select></div>
       <div class="card"><div class="l"><span class="ic">&#xE737;</span><div><div class="t">显示标题栏</div><div class="s">鼠标悬停时显示：平时收起标题行，指针移到栅栏上才出现</div></div></div>
         <select id="fenceTitleOnHover" data-fence="titleOnHover"><option value="default">跟随常规设置</option><option value="always">始终显示</option><option value="hover">鼠标悬停时显示</option></select></div>
+      <div id="fenceLayoutGroup">
       <h3>布局</h3>
       <div class="card"><div class="l"><span class="ic">&#xE8B9;</span><div><div class="t">图标大小</div><div class="s">也可以在栅栏内按住 Ctrl 滚动鼠标滚轮</div></div></div>
         <div class="slider"><input type="range" id="fenceIconSize" data-fence="iconSize"></div></div>
@@ -526,6 +529,7 @@
       <div class="card"><div class="l"><span class="ic">&#xE8E3;</span><div><div class="t">图标对齐</div><div class="s">一行排不满时，居中把空出的宽度平分到左右两边；只用于图标视图</div></div></div>
         <select id="fenceIconAlign" data-fence="iconAlign"><option value="left">左对齐</option><option value="center">居中</option></select></div>
       <div class="card"><div class="l"><span class="ic">&#xE745;</span><div><div class="t">自动高度</div><div class="s">高度跟随内容行数，内容增减时平滑过渡</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="autoHeight"></div></div>
+      </div>
       <h3>行为</h3>
       <div class="card"><div class="l"><span class="ic">&#xE72E;</span><div><div class="t">锁定位置和大小</div><div class="s">边框不再可拖动缩放；标题仍可点击、右键、双击</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="locked"></div></div>
       <div class="card"><div class="l"><span class="ic">&#xE70E;</span><div><div class="t">向上展开</div><div class="s">上方放得下时向上展开，放不下就向下展开；标题栏留在原处。适合放在任务栏上方的栅栏</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="expandUpward"></div></div>
@@ -592,6 +596,31 @@
         <div class="actions"><button class="accent" id="copyAiPrompt">复制给 AI 助手的提示词</button><button id="openCliDocs">命令行文档</button></div></div>
     </section>
 
+    <section class="page" id="page-tools">
+      <header class="page-header"><h2>小工具</h2></header>
+      <p class="page-lede">小工具放在栅栏里，和普通栅栏一样可以移动、吸附和收起。关着的小工具不运行，也不占内存。</p>
+      <div class="group">
+        <div class="card"><div class="l"><span class="ic">&#xE70B;</span><div><div class="t">便签与待办</div><div class="s">在栅栏里写几行字，单击就能编辑；行首写 [ ] 的那一行变成可以勾选的待办</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="tools.notes"></div></div>
+        <div class="card child"><div class="l"><div><div class="t" id="noteCount"></div></div></div><button class="accent" id="newNote">新建便签</button></div>
+      </div>
+      <div class="group">
+        <div class="card"><div class="l"><span class="ic">&#xE121;</span><div><div class="t">时钟与日期</div><div class="s">显示时间、日期和星期，时间格式跟随 Windows 的区域设置</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="tools.clock"></div></div>
+        <div class="card child"><div class="l"><div><div class="t">显示秒</div><div class="s">每秒更新一次</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="tools.clockSeconds"></div></div>
+        <div class="card child"><div class="l"><div><div class="t" id="clockCount"></div></div></div><button class="accent" id="newClock">新建时钟</button></div>
+      </div>
+      <h3>搜索与跳转</h3>
+      <div class="card"><div class="l"><span class="ic">&#xE8DA;</span><div><div class="t">对话框跳转</div><div class="s">打开或保存文件时，切到资源管理器再切回对话框，它就跳到资源管理器里的文件夹；点文件夹栅栏或按 Ctrl+G 也能跳过去</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="tools.dialogJump"></div></div>
+      <div class="group">
+        <div class="card"><div class="l"><span class="ic">&#xE721;</span><div><div class="t">搜索整台电脑（Everything）</div><div class="s">速览时打字搜索，除了栅栏里的图标，也列出整台电脑上的文件和文件夹，由免费的 Everything 负责查找</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="tools.everything"></div></div>
+        <div class="card child" id="everythingCard"><div class="l"><div><div class="t" id="everythingStatus"></div><div class="s" id="everythingHelp"></div></div></div><button class="accent" id="everythingAction"></button></div>
+      </div>
+      <div class="card"><div class="l"><span class="ic">&#xE765;</span><div><div class="t">双击 Ctrl 打开搜索</div><div class="s">快速按两下 Ctrl，打开速览和搜索框，再按两下关闭；全屏的游戏或视频在前面时不响应</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="peek.doubleCtrl"></div></div>
+      <h3>自己写的小工具</h3>
+      <div class="group">
+        <div class="card"><div class="l"><span class="ic">&#xE943;</span><div><div class="t">脚本栅栏</div><div class="s">定时运行你选的脚本（PowerShell、Python、批处理等），把它打印的文字显示在栅栏里，适合天气、倒计时、服务器状态，也可以让 AI 助手帮你写。PecoFence 自己不联网，联网的是你的脚本</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="tools.scripts"></div></div>
+        <div class="card child"><div class="l"><div><div class="t" id="scriptCount"></div><div class="s">脚本最多运行 10 秒，不弹出窗口；运行间隔在栅栏的右键菜单里改</div></div></div><div class="actions"><button id="newScriptExample">添加天气示例</button><button class="accent" id="newScript">新建脚本栅栏…</button></div></div>
+      </div>
+    </section>
     <section class="page" id="page-layout">
       <header class="page-header"><h2>布局与备份</h2></header>
       <h3>布局快照</h3>
@@ -1008,14 +1037,42 @@
   // Only these rows depend on their master switch: guide lines need snapping, hiding the inbox
   // beside the Windows icons needs those icons shown ('!': while the master is off), and the
   // shortcut rows (renderPeekHotkey) are what Peek's switch turns on. Gap, whole-cell sizing
-  // and dimming apply without them.
-  const DEPENDENT = [['snapping.guideLines', 'snapping.enabled'], ['hideInboxWhenIconsShown', '!hideRealIcons'], ['keepIconsHidden', 'hideRealIcons']];
+  // and dimming apply without them. A child starting with '#' is a button's id.
+  const DEPENDENT = [['snapping.guideLines', 'snapping.enabled'], ['hideInboxWhenIconsShown', '!hideRealIcons'], ['keepIconsHidden', 'hideRealIcons'], ['tools.clockSeconds', 'tools.clock'], ['#everythingAction', 'tools.everything']];
+  // 「小工具」 page: how many notes the desktop has (they show while the switch is on).
+  function renderTools() {
+    const count = kind => (state.fences || []).filter(f => f.tool && f.tool.kind === kind).length;
+    const notes = count('note'), clocks = count('clock'), scripts = count('script');
+    document.getElementById('noteCount').textContent = notes ? tf("桌面上有 {0} 个便签", notes) : t("桌面上还没有便签");
+    document.getElementById('clockCount').textContent = clocks ? tf("桌面上有 {0} 个时钟", clocks) : t("桌面上还没有时钟");
+    document.getElementById('scriptCount').textContent = scripts ? tf("桌面上有 {0} 个脚本栅栏", scripts) : t("桌面上还没有脚本栅栏");
+    renderEverything();
+  }
+  // 搜索整台电脑 › Everything's state from the host: running (version, pinyin), installed,
+  // missing or installing; the button installs, starts or upgrades it.
+  function renderEverything() {
+    const e = state.everything, card = document.getElementById('everythingCard');
+    card.hidden = !e;
+    if (!e) return;
+    const [status, help, action] = {
+      running: e.pinyin
+        ? [tf("Everything {0} 正在运行", e.version), t("可以用拼音找中文名，例如输入 ysb 找到“预算表”"), null]
+        : [tf("Everything {0} 正在运行", e.version), t("这个版本不能用拼音找中文名，升级到 1.5 版就可以"), ['installEverything', t("升级到 1.5")]],
+      installed: [t("Everything 已经装好，还没有运行"), t("启动后才能搜索整台电脑"), ['startEverything', t("启动 Everything")]],
+      installing: [t("正在安装 Everything…"), t("装好后会自动启动"), null],
+    }[e.state] || [t("这台电脑还没有 Everything"), t("安装时会打开一个命令行窗口，用 winget 装 1.5 版，Windows 会询问一次管理员权限"), ['installEverything', t("安装 Everything")]];
+    const button = document.getElementById('everythingAction');
+    document.getElementById('everythingStatus').textContent = status;
+    document.getElementById('everythingHelp').textContent = help;
+    button.hidden = !action;
+    if (action) { button.textContent = action[1]; button.onclick = () => send({ type: 'action', name: action[0] }); }
+  }
   function renderDependents() {
     for (const [child, master] of DEPENDENT) {
       const value = !!get(state.settings, master.replace('!', ''));
-      const on = master.startsWith('!') ? !value : value, el = document.querySelector(`[data-bind="${child}"]`);
+      const on = master.startsWith('!') ? !value : value, el = document.querySelector(child.startsWith('#') ? child : `[data-bind="${child}"]`);
       el.closest('.card').classList.toggle('disabled', !on);
-      if (el.tagName === 'SELECT') el.disabled = !on;
+      if (el.tagName === 'SELECT' || el.tagName === 'BUTTON') el.disabled = !on;
       else { el.tabIndex = on ? 0 : -1; el.setAttribute('aria-disabled', String(!on)); }
     }
     renderPeekHotkey();
@@ -1308,7 +1365,11 @@
     document.querySelector('#fenceHideEmpty .s').textContent = f.kind === 'inbox'
       ? t("里面没有图标时就不显示；桌面上一出现新图标，它会自己回来")
       : t("里面没有图标时就不显示；有图标归到这里时，它会自己回来");
-    document.getElementById('fenceOpenFolders').style.display = f.portal ? 'none' : '';
+    document.getElementById('fenceOpenFolders').style.display = f.portal || f.tool ? 'none' : '';
+    // A tool fence (小工具) never holds icons: hiding it while empty would hide it for good.
+    document.getElementById('fenceHideEmpty').style.display = f.tool ? 'none' : '';
+    // Icon size, spacing, names, alignment and auto height are about icons.
+    document.getElementById('fenceLayoutGroup').style.display = f.tool ? 'none' : '';
     document.getElementById('fenceDesktopLayout').style.display = f.kind === 'inbox' ? '' : 'none';
     // List and Details rows keep the name on one line, so the setting does nothing there and is
     // greyed. 像桌面一样排列 shows icons whatever the fence's view (a 「桌面」 with tabs stays a fence).
@@ -1372,7 +1433,7 @@
 
   function inboxTitle() { const f = (state.fences || []).find(f => f.kind === 'inbox'); return f ? f.title : t("桌面"); }
   // A portal cannot hold routed items (the app routes such rules to the inbox), so it is shown as one.
-  function fenceTitle(id) { const f = (state.fences || []).find(f => f.id === id); return !f ? t("已删除的栅栏") : f.kind === 'portal' ? inboxTitle() : f.title; }
+  function fenceTitle(id) { const f = (state.fences || []).find(f => f.id === id); return !f ? t("已删除的栅栏") : f.kind === 'portal' || f.tool ? inboxTitle() : f.title; }
   function targetLabel(target) { return tf("“{0}”", target === 'inbox' ? inboxTitle() : (target && target.fence) ? fenceTitle(target.fence) : '?'); }
   const NAME_OPS = {contains:v=>tf("名称包含“{0}”",v),notContains:v=>tf("名称不包含“{0}”",v),startsWith:v=>tf("名称开头是“{0}”",v),endsWith:v=>tf("名称结尾是“{0}”",v),is:v=>tf("名称等于“{0}”",v)};
   const TARGET_OPS = {contains:v=>tf("快捷方式目标包含“{0}”",v),notContains:v=>tf("快捷方式目标不包含“{0}”",v),startsWith:v=>tf("快捷方式目标开头是“{0}”",v),endsWith:v=>tf("快捷方式目标结尾是“{0}”",v),is:v=>tf("快捷方式目标等于“{0}”",v)};
@@ -1428,7 +1489,7 @@
   let editing = null;
   function fillTargets(sel) {
     const selected = sel.value;
-    const options = state.fences.filter(f => f.kind !== 'portal').map(f => `<option value="${esc(f.id)}">${esc(f.title)}</option>`).join('');
+    const options = state.fences.filter(f => f.kind !== 'portal' && !f.tool).map(f => `<option value="${esc(f.id)}">${esc(f.title)}</option>`).join('');
     if (sel.innerHTML !== options) {
       sel.innerHTML = options;
       if ([...sel.options].some(o => o.value === selected)) sel.value = selected;
@@ -1766,6 +1827,10 @@
     panel.querySelectorAll('.cond:not(#nrCond)').forEach(b => b.remove());
   };
   document.getElementById('applyRules').onclick = () => send({ type: 'action', name: 'applyRules' });
+  document.getElementById('newNote').onclick = () => send({ type: 'action', name: 'newNote' });
+  document.getElementById('newClock').onclick = () => send({ type: 'action', name: 'newClock' });
+  document.getElementById('newScript').onclick = () => send({ type: 'action', name: 'newScript' });
+  document.getElementById('newScriptExample').onclick = () => send({ type: 'action', name: 'newScriptExample' });
   document.querySelectorAll('#templates [data-template]').forEach(b => { b.onclick = () => send({ type: 'action', name: 'addTemplate', template: b.dataset.template }); });
   document.getElementById('snapSave').onclick = () => { const n = document.getElementById('snapName').value; send({ type: 'action', name: 'saveSnapshot', snapshotName: n }); document.getElementById('snapName').value = ''; };
   document.getElementById('cfgExport').onclick = () => send({ type: 'action', name: 'exportConfig' });
@@ -1995,7 +2060,7 @@
       document.getElementById('rateStore').hidden = !m.storeEdition;
       renderWorkspaceSummary(m.fences.length, m.itemCount);
       document.getElementById('cfgPath').textContent = m.configPath;
-      bindAll(); bindThemeStyle(); bindCustomTheme(); bindIconTint(); renderDependents(); renderFences(); renderRules(); renderLayout(); updateKind(); renderAppearance(); renderDesktopIconsStatus(); renderStartupNote(); renderWindowsDesktopHotkey();
+      bindAll(); bindThemeStyle(); bindCustomTheme(); bindIconTint(); renderDependents(); renderFences(); renderRules(); renderLayout(); renderTools(); updateKind(); renderAppearance(); renderDesktopIconsStatus(); renderStartupNote(); renderWindowsDesktopHotkey();
       update = m.update; renderUpdate();
       // Transitions come on a frame after this state has been drawn: a single frame would style
       // both changes together and start them after all.

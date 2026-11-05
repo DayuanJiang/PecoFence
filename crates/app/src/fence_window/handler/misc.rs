@@ -43,6 +43,10 @@ pub(super) fn on_showwindow(
     let (shadow, show) = {
         let mut guard = view.borrow_mut();
         let v = guard.as_mut()?;
+        // A clock hidden for a while shows the time now, not the one from when it went.
+        if wparam != 0 && v.clock.is_some() && !v.rolled_up {
+            let _ = v.redraw_content();
+        }
         if wparam != 0 {
             // A fade-in shows the shadow itself (`show_with_fade`, at
             // alpha 0, fading with the plate).
@@ -131,8 +135,16 @@ pub(super) fn on_app_tab_rail(
     let rail = view
         .try_borrow()
         .ok()
-        // -1: a fence arranged like the desktop (像桌面一样排列) takes no merge.
-        .and_then(|g| g.as_ref().map(|v| if v.bare() { -1 } else { v.content_x }))
+        // -1: a fence arranged like the desktop (像桌面一样排列) or a note takes no merge.
+        .and_then(|g| {
+            g.as_ref().map(|v| {
+                if v.bare() || v.shows_tool() {
+                    -1
+                } else {
+                    v.content_x
+                }
+            })
+        })
         .unwrap_or(0);
     Some(rail as isize)
 }

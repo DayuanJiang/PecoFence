@@ -49,6 +49,10 @@ pub const WM_APP_THEMES_CHANGED: u32 = msg::WM_APP + 18;
 /// 像桌面一样排列: the fence window takes its new shape (posted, so SetWindowRgn's own
 /// messages never arrive while the view is borrowed).
 pub const WM_APP_DESKTOP_SHAPE: u32 = msg::WM_APP + 19;
+/// 脚本栅栏: a script run ended on its worker thread; the App collects the result.
+pub const WM_APP_SCRIPT_DONE: u32 = msg::WM_APP + 20;
+/// 搜索整台电脑: the Everything install ended (wParam: 1 done, 0 failed, 2 no winget).
+pub const WM_APP_EVERYTHING_SETUP: u32 = msg::WM_APP + 21;
 
 /// What a file drop does with the dropped paths (Explorer's Move / Copy / Create shortcut, the
 /// effect the drop target reported).
@@ -263,6 +267,35 @@ pub enum Command {
         x: i32,
         y: i32,
     },
+    /// 便签与待办: a new note fence near the screen point (tray / fence menu, settings page).
+    NewNote {
+        x: i32,
+        y: i32,
+    },
+    /// 时钟与日期: a new clock fence near the screen point.
+    NewClock {
+        x: i32,
+        y: i32,
+    },
+    /// 脚本栅栏: pick a script, then a new script fence near the screen point.
+    NewScript {
+        x: i32,
+        y: i32,
+    },
+    /// A click on a note's text: open its editor.
+    EditNote {
+        fence: FenceId,
+    },
+    /// A click on a to-do's check box in a note.
+    ToggleNoteLine {
+        fence: FenceId,
+        line: usize,
+    },
+    /// The note editor closed with this text.
+    NoteEdited {
+        fence: FenceId,
+        text: String,
+    },
     /// Offer a fence with these screen bounds (a desktop marquee that touched no fence).
     NewFenceRect(RECT),
     /// A press / drag / release on the empty desktop: selects the fences the marquee touches.
@@ -294,6 +327,17 @@ pub enum Command {
     PeekSearchStep(i32),
     /// Enter in the search box: open the highlighted match.
     PeekSearchOpen,
+    /// A click on a row of the search list, or its Ctrl+digit: open that row.
+    PeekSearchOpenRow(usize),
+    /// Ctrl+Enter in the search box: open the folder holding the highlighted match.
+    PeekSearchOpenFolder,
+    /// Right (caret at the end) or Ctrl+O in the search box: the highlighted match's actions.
+    PeekSearchActions,
+    /// Everything answered a search query (`WM_COPYDATA` to the search box).
+    EverythingResults {
+        kind: usize,
+        bytes: Vec<u8>,
+    },
     ApplyRulesNow,
     OpenSettings,
     /// Settings window on the 「栅栏」 page with this fence selected.

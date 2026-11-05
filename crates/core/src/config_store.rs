@@ -158,6 +158,12 @@ impl ConfigStore {
 
     /// Writes the config as pretty JSON to an arbitrary path (export).
     pub fn export_to(cfg: &Config, path: &Path) -> io::Result<()> {
+        // The search history lists the user's file paths: it stays on this computer.
+        if !cfg.search_history.is_empty() {
+            let mut shared = cfg.clone();
+            shared.search_history.clear();
+            return fs::write(path, Self::to_json(&shared)?);
+        }
         fs::write(path, Self::to_json(cfg)?)
     }
 
@@ -694,6 +700,20 @@ mod tests {
     use super::*;
     use crate::model::*;
 
+    #[test]
+    fn export_leaves_the_search_history_out() {
+        let dir = tmpdir("export-history");
+        fs::create_dir_all(&dir).unwrap();
+        let mut c = sample();
+        c.note_search_open("C:\\Users\\me\\secret.txt");
+        let path = dir.join("out.json");
+        ConfigStore::export_to(&c, &path).unwrap();
+        let text = fs::read_to_string(&path).unwrap();
+        assert!(!text.contains("secret"), "{text}");
+        assert!(!text.contains("searchHistory"));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
     fn tmpdir(name: &str) -> PathBuf {
         let d = std::env::temp_dir().join(format!("pecofence-test-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&d);
@@ -1018,6 +1038,8 @@ mod tests {
                 fingerprint: vec![],
                 fences: vec![portal],
             }],
+            notes: Default::default(),
+            scripts: Default::default(),
         });
         assert!(repair_unc_portals(&mut c));
         let path_of = |f: &Fence| match &f.source {

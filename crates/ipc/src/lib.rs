@@ -129,6 +129,16 @@ pub enum Method {
         /// Folder path: create a folder portal showing this folder instead of a virtual fence.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         portal: Option<String>,
+        /// 小工具: `note`, `clock` or `script` makes a tool fence instead (the tool is switched
+        /// on when it is off). A script fence needs `script`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        tool: Option<String>,
+        /// Text of a new note fence (lines; `[ ]` / `[x]` start a to-do).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        text: Option<String>,
+        /// Script a new script fence runs (.ps1, .py, .pyw, .cmd, .bat, .js or .exe).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        script: Option<String>,
     },
     /// Items return to the 「桌面」 (inbox) fence; rules targeting the fence are removed. The
     /// inbox itself cannot be deleted. Result: `{changed, deleted: uuid, snapshotId?}`.
@@ -617,6 +627,9 @@ mod tests {
                 }),
                 monitor: None,
                 portal: None,
+                tool: None,
+                text: None,
+                script: None,
             },
             Method::FencesDelete {
                 fence: "Work".into(),
@@ -769,7 +782,10 @@ mod tests {
                 title: None,
                 rect: None,
                 monitor: None,
-                portal: None
+                portal: None,
+                tool: None,
+                text: None,
+                script: None,
             }
             .name(),
             "fences.create"
