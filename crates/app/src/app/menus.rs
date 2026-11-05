@@ -50,6 +50,7 @@ const CMD_FENCE_NEW_CLOCK: u32 = 309;
 /// 脚本栅栏 in its fence menu: 立即运行, 选择脚本…, 打开脚本所在的文件夹, and 运行间隔's
 /// entries (one per `ScriptSpec::INTERVALS`).
 const CMD_FENCE_SCRIPT_RUN: u32 = 500;
+const CMD_FENCE_SCRIPT_EDIT: u32 = 509;
 const CMD_FENCE_SCRIPT_PICK: u32 = 501;
 const CMD_FENCE_SCRIPT_FOLDER: u32 = 502;
 const CMD_FENCE_SCRIPT_INTERVAL_BASE: u32 = 1900;
@@ -700,6 +701,13 @@ impl App {
             .submenu(pecofence_core::i18n::text("运行间隔"), interval_menu)
             .icon(glyph::CLOCK)
             .item(
+                CMD_FENCE_SCRIPT_EDIT,
+                pecofence_core::i18n::text("编辑脚本"),
+                false,
+                !has_path,
+            )
+            .icon(glyph::RENAME)
+            .item(
                 CMD_FENCE_SCRIPT_FOLDER,
                 pecofence_core::i18n::text("打开脚本所在的文件夹"),
                 false,
@@ -1114,10 +1122,8 @@ impl App {
             CMD_FENCE_NEW_NOTE => self.queue.push(Command::NewNote { x, y }),
             CMD_FENCE_NEW_CLOCK => self.queue.push(Command::NewClock { x, y }),
             CMD_FENCE_EDIT_NOTE => self.edit_note(fence),
-            CMD_FENCE_SCRIPT_RUN => {
-                self.script_runs_reset(fence);
-                self.start_script(fence);
-            }
+            CMD_FENCE_SCRIPT_RUN => self.refresh_script(fence),
+            CMD_FENCE_SCRIPT_EDIT => self.edit_script(fence),
             CMD_FENCE_SCRIPT_PICK => self.pick_script_for(fence),
             CMD_FENCE_SCRIPT_FOLDER => self.open_script_folder(fence),
             c if (CMD_FENCE_SCRIPT_INTERVAL_BASE

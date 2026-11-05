@@ -214,6 +214,12 @@ pub enum FenceCmd {
         /// New title
         title: String,
     },
+    /// Run a script fence's script now (a streaming script starts again)
+    #[command(after_help = "Example: pecofence-cli fence refresh Weather")]
+    Refresh {
+        #[arg(help = FENCE_HELP)]
+        fence: String,
+    },
     /// Move a fence: absolute --rect, new --x/--y, or another --monitor
     #[command(after_help = "Example: pecofence-cli fence move Work --x 1200 --y 80")]
     #[command(group(ArgGroup::new("where").required(true).multiple(true)))]

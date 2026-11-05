@@ -751,6 +751,18 @@ impl App {
                 )
             }
             Method::FencesDelete { fence } => self.ipc_delete_fence(fence),
+            Method::FencesRefresh { fence } => {
+                let id = self.resolve_fence(fence)?;
+                if self
+                    .state
+                    .fence(id)
+                    .is_none_or(|f| f.tool != Some(pecofence_core::FenceTool::Script))
+                {
+                    return Err(unsupported("only a script fence runs a script"));
+                }
+                self.refresh_script(id);
+                Ok(mutation(true, None, self.fence_extra(id)?))
+            }
             Method::FencesRename { fence, title } => {
                 let id = self.resolve_fence(fence)?;
                 let prop = parse_fence_prop("title", &Value::String(title.clone()))?;

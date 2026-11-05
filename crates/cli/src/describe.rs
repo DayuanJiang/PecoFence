@@ -82,6 +82,12 @@ pub const COMMANDS: &[Entry] = &[
         "pecofence-cli fence rename Work Projects"
     ),
     entry!(
+        "fence refresh",
+        Some("fences.refresh"),
+        "Script fences: run the script now (a streaming script starts again)",
+        "pecofence-cli fence refresh Weather"
+    ),
+    entry!(
         "fence move",
         Some("fences.setBounds"),
         "--rect or --x/--y (fences.setBounds), or --monitor (fences.moveToMonitor)",

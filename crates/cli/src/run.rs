@@ -271,6 +271,7 @@ fn run_fence(ctx: &Ctx, cmd: FenceCmd) -> Result<Reply, IpcError> {
         FenceCmd::Fit { fence } => ctx.call(Method::FencesFit { fence }),
         FenceCmd::Delete { fence } => ctx.call(Method::FencesDelete { fence }),
         FenceCmd::Rename { fence, title } => ctx.call(Method::FencesRename { fence, title }),
+        FenceCmd::Refresh { fence } => ctx.call(Method::FencesRefresh { fence }),
         FenceCmd::Move {
             fence,
             rect,

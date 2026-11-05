@@ -155,6 +155,11 @@ pub struct FenceViewState {
     pub(super) clock: Option<bool>,
     /// 脚本栅栏: the fence shown is a script fence with this output and footer.
     pub(super) script: Option<ScriptView>,
+    /// Its clickable rows as last drawn: row index and (left, top, right, bottom) in content
+    /// DIPs.
+    pub(super) script_rows: Vec<(usize, [f32; 4])>,
+    /// The clickable row under the pointer.
+    pub(super) script_hover: Option<usize>,
     /// The portal's folder could not be found (its empty state says so).
     pub(super) portal_missing: bool,
     /// Width the cached labels were fitted for; a change invalidates them.
@@ -557,6 +562,29 @@ impl FenceViewState {
         Some(match line {
             Some(line) => Command::ToggleNoteLine { fence, line },
             None => Command::EditNote { fence },
+        })
+    }
+
+    /// 脚本栅栏: the clickable row at client point (`x`, `y`).
+    pub(super) fn script_row_at(&self, x: i32, y: i32) -> Option<usize> {
+        if self.script.is_none() || self.rolled_up || y < self.content_y || x < self.content_x {
+            return None;
+        }
+        let scale = self.scale();
+        let cx = (x - self.content_x) as f32 / scale;
+        let cy = (y - self.content_y) as f32 / scale;
+        self.script_rows
+            .iter()
+            .find(|(_, r)| cx >= r[0] && cx < r[2] && cy >= r[1] && cy < r[3])
+            .map(|&(row, _)| row)
+    }
+
+    /// 脚本栅栏: a press on a clickable row runs what it asks for.
+    pub(super) fn script_press(&self, x: i32, y: i32) -> Option<Command> {
+        let row = self.script_row_at(x, y)?;
+        Some(Command::ScriptRowClicked {
+            fence: self.active,
+            row,
         })
     }
 

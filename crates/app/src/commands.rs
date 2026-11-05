@@ -291,6 +291,11 @@ pub enum Command {
         fence: FenceId,
         line: usize,
     },
+    /// 脚本栅栏: a click on a clickable row of the script's output.
+    ScriptRowClicked {
+        fence: FenceId,
+        row: usize,
+    },
     /// The note editor closed with this text.
     NoteEdited {
         fence: FenceId,

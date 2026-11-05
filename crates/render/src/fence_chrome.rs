@@ -3381,6 +3381,29 @@ const NOTE_BOX_GAP: f32 = 8.0;
 const NOTE_LINE_GAP: f32 = 6.0;
 /// Check mark in Segoe Fluent Icons / Segoe MDL2 Assets.
 const CHECK_GLYPH: &str = "\u{E73E}";
+/// "Open in new window" in Segoe Fluent Icons / Segoe MDL2 Assets: a script row that opens
+/// something, on hover.
+const OPEN_GLYPH: &str = "\u{E8A7}";
+/// A script row's hover plate reaches this far past its text.
+const SCRIPT_ROW_PAD_X: f32 = 6.0;
+const SCRIPT_ROW_PAD_Y: f32 = 3.0;
+/// Height a `---` separator takes, its line in the middle.
+const SCRIPT_SEPARATOR_H: f32 = 11.0;
+/// Room for the arrow of a row that opens something.
+const SCRIPT_ARROW_W: f32 = 18.0;
+
+/// One row of a script fence (脚本栅栏) to draw.
+pub struct ScriptRowDraw<'a> {
+    pub text: &'a str,
+    pub separator: bool,
+    pub todo: Option<bool>,
+    pub color: Option<ColorF>,
+    pub icon: Option<&'a str>,
+    /// A click does something: a hover plate.
+    pub clickable: bool,
+    /// A click opens a URL or file: an arrow on hover.
+    pub opens: bool,
+}
 
 impl FenceChrome {
     /// Draws a note's lines from the top left, each wrapped to the width; a to-do gets a check
@@ -3497,6 +3520,193 @@ impl FenceChrome {
             y += h + NOTE_LINE_GAP;
         }
         Ok(boxes)
+    }
+}
+
+impl FenceChrome {
+    /// 脚本栅栏: the rows a script printed, from the top left, each wrapped to the width: a
+    /// to-do's check box, an icon, the text in its colour; `---` a hairline. The row under the
+    /// pointer (`hover`) gets a plate when it is clickable, and an arrow when it opens
+    /// something. `footer` sits at the bottom and the rows stop above it, as in
+    /// [`Self::draw_note`]. Returns each clickable row's index and plate (surface DIPs).
+    #[allow(clippy::too_many_arguments)]
+    pub fn draw_script(
+        &self,
+        session: &DrawingSession<'_>,
+        theme: &Theme,
+        scale: f32,
+        width: f32,
+        height: f32,
+        rows: &[ScriptRowDraw<'_>],
+        hover: Option<usize>,
+        hint: &str,
+        footer: &str,
+    ) -> Result<Vec<(usize, Rect)>> {
+        session.clear(ColorF::TRANSPARENT);
+        let primary = session.create_solid_brush(theme.text_primary)?;
+        let secondary = session.create_solid_brush(theme.text_secondary)?;
+        let w = (width - 2.0 * NOTE_PAD_X).max(1.0);
+        let has_footer = !footer.is_empty();
+        let height = if has_footer {
+            let layout = TextLayout::new(footer, &self.note_footer_format, w, f32::MAX)?;
+            let h = layout.metrics().height;
+            let top = (height - h - 8.0).max(0.0);
+            session.draw_text_layout(Vector2::new(NOTE_PAD_X, top), &layout, &secondary);
+            (top - 4.0).max(0.0)
+        } else {
+            height
+        };
+        if rows.iter().all(|r| {
+            !r.separator && r.text.trim().is_empty() && r.todo.is_none() && r.icon.is_none()
+        }) {
+            session.draw_text(
+                hint,
+                &self.note_format,
+                &Rect::from_xywh(
+                    NOTE_PAD_X,
+                    NOTE_PAD_TOP,
+                    w,
+                    (height - NOTE_PAD_TOP).max(0.0),
+                ),
+                &secondary,
+            );
+            return Ok(Vec::new());
+        }
+        let line_h = TextLayout::new("Ag", &self.note_format, w, f32::MAX)?
+            .metrics()
+            .height;
+        let px = Px::new(scale);
+        let plate = session.create_solid_brush(with_alpha(theme.text_primary, 0.07))?;
+        let rule = session.create_solid_brush(with_alpha(theme.text_primary, 0.14))?;
+        let boxes = TodoBrushes::new(session, theme)?;
+        let mut hits = Vec::new();
+        let mut y = NOTE_PAD_TOP + SCRIPT_ROW_PAD_Y;
+        for (i, row) in rows.iter().enumerate() {
+            if y >= height {
+                break;
+            }
+            if row.separator {
+                let line_y = px.snap(y - SCRIPT_ROW_PAD_Y + SCRIPT_SEPARATOR_H / 2.0);
+                session.fill_rect(&Rect::from_xywh(NOTE_PAD_X, line_y, w, px.hair()), &rule);
+                y += SCRIPT_SEPARATOR_H;
+                continue;
+            }
+            let mut x = NOTE_PAD_X;
+            if row.todo.is_some() {
+                x += NOTE_BOX + NOTE_BOX_GAP;
+            }
+            let icon = match row.icon {
+                Some(icon) => Some(TextLayout::new(icon, &self.note_format, w, f32::MAX)?),
+                None => None,
+            };
+            let text_x = x + icon.as_ref().map_or(0.0, |l| {
+                l.metrics().width_including_trailing_whitespace + 6.0
+            });
+            let arrow = if row.opens { SCRIPT_ARROW_W } else { 0.0 };
+            let text_w = (width - text_x - NOTE_PAD_X - arrow).max(1.0);
+            let text = if row.text.is_empty() { " " } else { row.text };
+            let layout = TextLayout::new(text, &self.note_format, text_w, f32::MAX)?;
+            let h = layout.metrics().height.max(line_h);
+            // A row that runs past the footer's top shows only its lines that fit whole.
+            let _clip = if has_footer && y + h > height {
+                let fit = layout
+                    .hit_test_point(Vector2::new(0.0, height - y))
+                    .bounds
+                    .top;
+                if fit <= 0.0 {
+                    break;
+                }
+                Some(pecofence_platform::d2d::push_axis_aligned_clip(
+                    session.raw(),
+                    0.0,
+                    y,
+                    width,
+                    y + fit,
+                )?)
+            } else {
+                None
+            };
+            let plate_rect = Rect::from_xywh(
+                NOTE_PAD_X - SCRIPT_ROW_PAD_X,
+                y - SCRIPT_ROW_PAD_Y,
+                w + 2.0 * SCRIPT_ROW_PAD_X,
+                h + 2.0 * SCRIPT_ROW_PAD_Y,
+            );
+            let hovered = row.clickable && hover == Some(i);
+            if hovered {
+                session.fill_rounded_rect(&RoundedRect::uniform(plate_rect, 4.0), &plate);
+            }
+            if let Some(done) = row.todo {
+                boxes.draw(self, session, px, y, line_h, done);
+            }
+            if let Some(icon) = &icon {
+                session.draw_text_layout_color(Vector2::new(x, y), icon, &primary);
+            }
+            let own = match row.color {
+                Some(c) => Some(session.create_solid_brush(c)?),
+                None => None,
+            };
+            let brush = match (&own, row.todo) {
+                (Some(b), _) => b,
+                (None, Some(true)) => &secondary,
+                (None, _) => &primary,
+            };
+            session.draw_text_layout_color(Vector2::new(text_x, y), &layout, brush);
+            if hovered && row.opens {
+                session.draw_text(
+                    OPEN_GLYPH,
+                    &self.glyph_format,
+                    &Rect::from_xywh(width - NOTE_PAD_X - 14.0, y, 14.0, line_h),
+                    &secondary,
+                );
+            }
+            if row.clickable {
+                hits.push((i, plate_rect));
+            }
+            y += h + 2.0 * SCRIPT_ROW_PAD_Y;
+        }
+        Ok(hits)
+    }
+}
+
+/// The brushes of a to-do's check box: its ring, the accent fill and the check mark.
+struct TodoBrushes {
+    ring: Brush,
+    accent: Brush,
+    check: Brush,
+}
+
+impl TodoBrushes {
+    fn new(session: &DrawingSession<'_>, theme: &Theme) -> Result<Self> {
+        Ok(Self {
+            ring: session.create_solid_brush(with_alpha(theme.text_primary, 0.7))?,
+            accent: session.create_solid_brush(theme.accent)?,
+            check: session.create_solid_brush(match theme.mode {
+                crate::theme::ThemeMode::Dark => ColorF::from_rgba8(0, 0, 0, 0xE6),
+                crate::theme::ThemeMode::Light => ColorF::from_rgba8(0xFF, 0xFF, 0xFF, 0xFF),
+            })?,
+        })
+    }
+
+    /// The box of a to-do whose first line is at `y` (`line_h` tall); returns its rect.
+    fn draw(
+        &self,
+        chrome: &FenceChrome,
+        session: &DrawingSession<'_>,
+        px: Px,
+        y: f32,
+        line_h: f32,
+        done: bool,
+    ) -> Rect {
+        let top = px.snap(y + (line_h - NOTE_BOX) / 2.0);
+        let r = Rect::from_xywh(px.snap(NOTE_PAD_X), top, NOTE_BOX, NOTE_BOX);
+        if done {
+            session.fill_rounded_rect(&RoundedRect::uniform(r, 4.0), &self.accent);
+            session.draw_text(CHECK_GLYPH, &chrome.glyph_format, &r, &self.check);
+        } else {
+            session.draw_rounded_rect(&px.ring(r, 4.0), &self.ring, px.hair());
+        }
+        r
     }
 }
 

@@ -147,6 +147,10 @@ pub enum Method {
     /// Result: `{changed, fence: FenceDto}`.
     #[serde(rename = "fences.rename")]
     FencesRename { fence: String, title: String },
+    /// 脚本栅栏: runs the fence's script now (a streaming script starts again). Other fences:
+    /// `unsupported`. Result: `{changed, fence: FenceDto}`.
+    #[serde(rename = "fences.refresh")]
+    FencesRefresh { fence: String },
     /// Move and/or resize (physical px). Tabs hosted in another fence's window have no
     /// geometry of their own (`unsupported`; address the host). Result: `{changed, fence}`.
     #[serde(rename = "fences.setBounds")]
@@ -637,6 +641,9 @@ mod tests {
             Method::FencesRename {
                 fence: "Work".into(),
                 title: "Play".into(),
+            },
+            Method::FencesRefresh {
+                fence: "Weather".into(),
             },
             Method::FencesSetBounds {
                 fence: "Work".into(),

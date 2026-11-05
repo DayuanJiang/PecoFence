@@ -264,6 +264,19 @@ impl<'a> DrawingSession<'a> {
         }
     }
 
+    /// Like [`draw_text_layout`](Self::draw_text_layout), with colour fonts (emoji) drawn in
+    /// their own colours. PecoFence addition.
+    pub fn draw_text_layout_color(&self, origin: Vector2, layout: &TextLayout, brush: &impl Paint) {
+        unsafe {
+            self.context.DrawTextLayout(
+                origin,
+                layout.raw(),
+                brush.as_raw_brush(),
+                D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT,
+            );
+        }
+    }
+
     /// Draws a path outline with the given DIP stroke width.
     pub fn draw_path(&self, path: &Path, brush: &impl Paint, width: f32) {
         unsafe {

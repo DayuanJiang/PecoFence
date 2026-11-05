@@ -102,35 +102,56 @@ fn command_for(path: &Path) -> Option<Vec<Command>> {
     })
 }
 
-/// Runs `path` once, at most [`TIMEOUT`], in its own folder and without a window.
-pub fn run(path: &Path) -> Outcome {
+/// What a run tells the script, as environment variables.
+#[derive(Clone, Debug, Default)]
+pub struct RunEnv {
+    /// `PECOFENCE_ACTION`: the `action=` of the row clicked; empty for a timed run.
+    pub action: String,
+    /// `PECOFENCE_DATA`: a folder of this fence's own for what the script keeps.
+    pub data_dir: std::path::PathBuf,
+    /// `PECOFENCE_THEME`: `light` or `dark`.
+    pub theme: &'static str,
+    /// `PECOFENCE_FENCE`: the fence's id.
+    pub fence: String,
+}
+
+/// Starts `path` in its own folder without a window, its output piped (and its input when
+/// `stdin` is set: a streaming script reads its actions there).
+fn spawn(path: &Path, env: &RunEnv, stdin: bool) -> Result<std::process::Child, Outcome> {
     use std::os::windows::process::CommandExt;
     if !path.is_file() {
-        return Outcome::Missing;
+        return Err(Outcome::Missing);
     }
     let Some(candidates) = command_for(path) else {
-        return Outcome::Unsupported;
+        return Err(Outcome::Unsupported);
     };
     let mut last_error = String::new();
-    let mut started = None;
     for mut cmd in candidates {
-        cmd.stdin(Stdio::null())
+        cmd.stdin(if stdin { Stdio::piped() } else { Stdio::null() })
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
-            .creation_flags(CREATE_NO_WINDOW);
+            .creation_flags(CREATE_NO_WINDOW)
+            .env("PECOFENCE", "1")
+            .env("PECOFENCE_ACTION", &env.action)
+            .env("PECOFENCE_DATA", &env.data_dir)
+            .env("PECOFENCE_THEME", env.theme)
+            .env("PECOFENCE_FENCE", &env.fence);
         if let Some(dir) = path.parent() {
             cmd.current_dir(dir);
         }
         match cmd.spawn() {
-            Ok(child) => {
-                started = Some(child);
-                break;
-            }
+            Ok(child) => return Ok(child),
             Err(e) => last_error = e.to_string(),
         }
     }
-    let Some(mut child) = started else {
-        return Outcome::NotStarted(last_error);
+    Err(Outcome::NotStarted(last_error))
+}
+
+/// Runs `path` once, at most [`TIMEOUT`], in its own folder and without a window.
+pub fn run(path: &Path, env: &RunEnv) -> Outcome {
+    let mut child = match spawn(path, env, false) {
+        Ok(child) => child,
+        Err(outcome) => return outcome,
     };
     // The programs the script starts go with it: when it ends (or is stopped) the job ends
     // them, so none keeps running or holds the output pipes open.
@@ -204,6 +225,188 @@ pub fn run(path: &Path) -> Outcome {
             text: if stdout.is_empty() { stderr } else { stdout },
         }
     }
+}
+
+/// What a streaming script sends while it runs.
+#[derive(Clone, Debug, PartialEq)]
+pub enum StreamEvent {
+    /// What the fence shows now: the lines printed since the last `~~~` (until the first
+    /// `~~~`, everything printed so far).
+    Block(String),
+    /// The script ended (or was ended).
+    Ended(Outcome),
+}
+
+/// A streaming script (`<swiftbar.type>streamable</swiftbar.type>` in its text) that keeps
+/// running; dropping it ends the script and what it started.
+pub struct Stream {
+    job: pecofence_platform::job::KillOnCloseJob,
+    stdin: Option<std::process::ChildStdin>,
+}
+
+/// The first 64 KB of `path` mark it as a streaming script.
+pub fn is_streamable(path: &Path) -> bool {
+    let mut head = vec![0u8; 64 * 1024];
+    let n = std::fs::File::open(path)
+        .and_then(|mut f| f.read(&mut head))
+        .unwrap_or(0);
+    pecofence_core::script_output::is_streamable(&String::from_utf8_lossy(&head[..n]))
+}
+
+impl Stream {
+    /// Starts `path`; `on_event` gets its blocks and its end, on a reader thread.
+    pub fn start(
+        path: &Path,
+        env: &RunEnv,
+        on_event: impl Fn(StreamEvent) + Send + 'static,
+    ) -> Result<Self, Outcome> {
+        let mut child = spawn(path, env, true)?;
+        // Without a job the script could not be ended with the fence: do not start it.
+        let Some(job) = pecofence_platform::job::KillOnCloseJob::new().filter(|j| j.assign(&child))
+        else {
+            let _ = child.kill();
+            return Err(Outcome::NotStarted("job object".into()));
+        };
+        let stdin = child.stdin.take();
+        let stdout = child.stdout.take();
+        let stderr = child.stderr.take();
+        let errors = std::thread::spawn(move || {
+            let mut buf = Vec::new();
+            if let Some(mut e) = stderr {
+                let mut chunk = [0u8; 4096];
+                while let Ok(n) = e.read(&mut chunk) {
+                    if n == 0 {
+                        break;
+                    }
+                    if buf.len() < MAX_BYTES {
+                        buf.extend_from_slice(&chunk[..n.min(MAX_BYTES - buf.len())]);
+                    }
+                }
+            }
+            buf
+        });
+        std::thread::Builder::new()
+            .name("pecofence-script-stream".into())
+            .spawn(move || {
+                use std::io::BufRead;
+                let mut block: Vec<String> = Vec::new();
+                let mut reset_seen = false;
+                if let Some(out) = stdout {
+                    let mut reader = std::io::BufReader::new(out);
+                    let mut line = Vec::new();
+                    loop {
+                        line.clear();
+                        match reader
+                            .by_ref()
+                            .take(MAX_BYTES as u64)
+                            .read_until(b'\n', &mut line)
+                        {
+                            Ok(0) | Err(_) => break,
+                            Ok(_) => {}
+                        }
+                        let text = decode(&line);
+                        let text = text.trim_end_matches(['\r', '\n']);
+                        if text.trim() == "~~~" {
+                            reset_seen = true;
+                            on_event(StreamEvent::Block(clean(&block.join("\n"))));
+                            block.clear();
+                            continue;
+                        }
+                        block.push(text.to_string());
+                        if block.len() > MAX_LINES * 4 {
+                            block.remove(0);
+                        }
+                        // Until the first `~~~` the fence shows the lines as they come.
+                        if !reset_seen {
+                            on_event(StreamEvent::Block(clean(&block.join("\n"))));
+                        }
+                    }
+                }
+                let status = child.wait().ok();
+                let stderr = clean(&decode(&errors.join().unwrap_or_default()));
+                let outcome = match status.and_then(|s| s.code()) {
+                    Some(0) => Outcome::Done(clean(&block.join("\n"))),
+                    code => Outcome::Failed { code, text: stderr },
+                };
+                on_event(StreamEvent::Ended(outcome));
+            })
+            .map_err(|e| Outcome::NotStarted(e.to_string()))?;
+        Ok(Self { job, stdin })
+    }
+
+    /// Hands `line` (a clicked row's `action=`) to the script's standard input.
+    pub fn send(&mut self, line: &str) -> bool {
+        use std::io::Write;
+        let Some(stdin) = self.stdin.as_mut() else {
+            return false;
+        };
+        let ok = writeln!(stdin, "{line}")
+            .and_then(|_| stdin.flush())
+            .is_ok();
+        if !ok {
+            self.stdin = None;
+        }
+        ok
+    }
+}
+
+impl Drop for Stream {
+    fn drop(&mut self) {
+        self.stdin = None;
+        self.job.terminate();
+    }
+}
+
+/// A row's `run=`: `program` with `args` in the script's folder `dir`, without a window. A
+/// script file runs through its interpreter; a relative path is taken from `dir`. Returns the
+/// started process (the caller may wait for it before running the script again).
+pub fn run_program(
+    program: &str,
+    args: &[String],
+    dir: Option<&Path>,
+) -> std::io::Result<std::process::Child> {
+    use std::os::windows::process::CommandExt;
+    let mut path = std::path::PathBuf::from(program);
+    if path.is_relative()
+        && let Some(d) = dir
+        && d.join(&path).exists()
+    {
+        path = d.join(&path);
+    }
+    let ext = path
+        .extension()
+        .map(|e| e.to_string_lossy().to_lowercase())
+        .unwrap_or_default();
+    // A script file through its interpreter, the arguments after it; .cmd / .bat and programs
+    // directly (Rust quotes the arguments of a batch file for cmd.exe).
+    let mut cmd = match ext.as_str() {
+        "ps1" if path.is_file() => {
+            let mut c = Command::new("powershell.exe");
+            c.args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-File"])
+                .arg(&path);
+            c
+        }
+        "py" | "pyw" if path.is_file() => {
+            let mut c = Command::new("py");
+            c.arg("-3").arg(&path);
+            c
+        }
+        "js" | "mjs" if path.is_file() => {
+            let mut c = Command::new("node");
+            c.arg(&path);
+            c
+        }
+        _ => Command::new(&path),
+    };
+    cmd.args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .creation_flags(CREATE_NO_WINDOW);
+    if let Some(d) = dir {
+        cmd.current_dir(d);
+    }
+    cmd.spawn()
 }
 
 /// UTF-8 (what the interpreters are asked for), else the system's ANSI code page.
@@ -294,6 +497,9 @@ mod tests {
         assert!(command_for(Path::new(r"C:\a\b.ps1")).is_some());
         assert!(command_for(Path::new(r"C:\a\b.PY")).is_some());
         assert!(command_for(Path::new(r"C:\a\b.txt")).is_none());
-        assert_eq!(run(Path::new(r"C:\no\such\file.ps1")), Outcome::Missing);
+        assert_eq!(
+            run(Path::new(r"C:\no\such\file.ps1"), &RunEnv::default()),
+            Outcome::Missing
+        );
     }
 }

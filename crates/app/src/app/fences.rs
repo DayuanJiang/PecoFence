@@ -150,6 +150,8 @@ impl App {
     pub(super) fn resync_windows(&mut self) {
         let before: Vec<HWND> = self.fences.values().map(|w| w.hwnd()).collect();
         self.sync_fence_windows();
+        // A deleted script fence (or one switched off) ends its streaming script now.
+        self.sync_streams();
         if let Some(a) = self.anchor.borrow_mut().as_mut() {
             a.reanchor("windows resynced");
         }

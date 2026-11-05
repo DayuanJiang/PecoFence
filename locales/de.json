@@ -650,6 +650,7 @@
   "天气.ps1": "Wetter.ps1",
   "定时运行你选的脚本（PowerShell、Python、批处理等），把它打印的文字显示在栅栏里，适合天气、倒计时、服务器状态，也可以让 AI 助手帮你写。PecoFence 自己不联网，联网的是你的脚本": "Führt ein von dir gewähltes Skript (PowerShell, Python, Batchdateien und so weiter) regelmäßig aus und zeigt den ausgegebenen Text im Bereich an. Geeignet für Wetter, Countdowns und Serverstatus. Ein KI-Assistent kann es auch für dich schreiben. PecoFence selbst geht nicht online; das macht nur dein Skript.",
   "打开脚本所在的文件夹": "Skriptordner öffnen",
+  "编辑脚本": "Skript bearbeiten",
   "找不到这个文件": "Datei nicht gefunden",
   "新建脚本栅栏…": "Neuer Skriptbereich…",
   "无法启动，检查是否装了运行它的程序（如 Python）": "Konnte nicht gestartet werden. Prüfe, ob das Programm, das es ausführt (z. B. Python), installiert ist.",

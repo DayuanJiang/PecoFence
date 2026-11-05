@@ -2350,6 +2350,7 @@ impl App {
             Command::NewScript { x, y } => self.new_script_near(x, y, None),
             Command::EditNote { fence } => self.edit_note(fence),
             Command::ToggleNoteLine { fence, line } => self.toggle_note_line(fence, line),
+            Command::ScriptRowClicked { fence, row } => self.script_row_clicked(fence, row),
             Command::NoteEdited { fence, text } => self.note_edited(fence, &text),
             Command::NewFenceRect(rect) => self.offer_new_fence(rect),
             Command::DesktopMarquee(event) => self.on_desktop_marquee(event),
