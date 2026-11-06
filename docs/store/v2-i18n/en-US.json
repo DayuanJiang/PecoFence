@@ -41,7 +41,7 @@
     "Press one shortcut and type to find files in your fences, Chinese names by pinyin too, or the whole computer with Everything",
     "Open and Save dialogs jump to the folder File Explorer shows; Ctrl+G jumps at any time",
     "Automatic desktop organization with rules for file types, names, age and size",
-    "Ctrl + Alt + Space or a double press of Ctrl brings your fences above the current app",
+    "Ctrl + Alt + Space brings your fences above the current app",
     "Built-in pecofence-cli, so AI agents like Claude Code, Codex and Cursor can set up fences, rules and appearance",
     "Tabbed fences and live folders on the desktop",
     "Notes and to-dos, a clock and script fences with clickable rows",
