@@ -127,10 +127,10 @@ impl App {
     /// A notice was clicked or went away. The welcome and the rating offer never show at
     /// the same time.
     pub(super) fn on_notice(&mut self, event: crate::notice::NoticeEvent) {
-        if self.welcome.take().is_some() {
-            if event == crate::notice::NoticeEvent::Action {
-                self.open_manual();
-            }
+        if let Some((notice, which)) = self.welcome.take() {
+            // Gone before the next tip registers its window class.
+            drop(notice);
+            self.on_welcome_notice(which, event);
             return;
         }
         self.rating.notice = None;
@@ -141,7 +141,12 @@ impl App {
 
     /// After a render stack rebuild: the notice on screen draws on the new device.
     pub(super) fn redraw_notices(&self) {
-        for notice in self.welcome.iter().chain(&self.rating.notice) {
+        for notice in self
+            .welcome
+            .iter()
+            .map(|(n, _)| n)
+            .chain(&self.rating.notice)
+        {
             notice.redraw();
         }
     }

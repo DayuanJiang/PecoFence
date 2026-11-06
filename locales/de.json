@@ -579,8 +579,6 @@
   "去评分": "Bewerten",
   "使用手册": "Handbuch",
   "每个功能都有动画演示": "Jede Funktion mit kurzer Animation",
-  "桌面整理好了": "Dein Desktop ist aufgeräumt",
-  "文件都没有移动，只是显示在栅栏里。\n在桌面空白处拖出一个框可新建栅栏，双击空白处可隐藏或显示栅栏。": "Deine Dateien bleiben, wo sie sind; die Bereiche zeigen sie nur an.\nZieh auf freier Desktopfläche einen Rahmen auf, um einen Bereich anzulegen, oder doppelklicke dort, um die Bereiche aus- und einzublenden.",
   "没有匹配的文件": "Keine passenden Dateien",
   "AI 助手": "KI-Assistenten",
   "让 AI 助手整理桌面": "Desktop von einem KI-Assistenten aufräumen lassen",
@@ -739,5 +737,17 @@
   "搜索别名\u0004固定|锁住|防止移动": "fixieren|festsetzen|anheften|nicht verschieben|Lock",
   "搜索别名\u0004自动整理|自动分类|分类": "automatisch sortieren|aufräumen|ordnen|kategorisieren|Ordnung",
   "搜索别名\u0004备份|迁移|换电脑|恢复设置": "Backup|Sicherung|Umzug|neuer PC|Einstellungen wiederherstellen",
-  "搜索别名\u0004升级|新版本|检查更新": "Upgrade|neue Version|nach Updates suchen|Aktualisierung|aktualisieren"
+  "搜索别名\u0004升级|新版本|检查更新": "Upgrade|neue Version|nach Updates suchen|Aktualisierung|aktualisieren",
+  "PecoFence {0} 的新功能": "Neu in PecoFence {0}",
+  "· 小工具：便签和待办、时钟、脚本栅栏\n· 速览时直接打字搜索，支持拼音\n· 「打开/保存」对话框跳到刚打开的文件夹\n小工具和对话框跳转默认关着，在设置里打开。": "• Werkzeuge: Notizen und Aufgaben, Uhr, Skriptbereiche\n• Beim Hervorholen einfach tippen, um in den Bereichen zu suchen\n• Öffnen- und Speichern-Dialoge springen in den gerade geöffneten Ordner\nWerkzeuge und der Sprung im Dateidialog bleiben aus, bis du sie in den Einstellungen einschaltest.",
+  "打开小工具设置": "Werkzeug-Einstellungen öffnen",
+  "在桌面空白处按住鼠标拖出一个框，松开后选「在此新建栅栏」。文件都没有移动，只是显示在栅栏里。": "Halte auf freier Desktopfläche die Maustaste gedrückt, zieh einen Rahmen auf, lass los und wähle „Hier einen Bereich erstellen“. Deine Dateien bleiben, wo sie sind; die Bereiche zeigen sie nur an.",
+  "双击桌面空白处，所有栅栏收起来；再双击一次，栅栏就回来。": "Doppelklicke auf freie Desktopfläche, und alle Bereiche verschwinden; ein weiterer Doppelklick holt sie zurück.",
+  "速览和搜索": "Hervorholen und suchen",
+  "按 {0}，栅栏浮到所有窗口前面。这时直接打字，就能搜索栅栏里的图标，按 Enter 打开。": "Drücke {0}, und die Bereiche erscheinen vor allen Fenstern. Dann einfach tippen, um die Symbole darin zu suchen; Eingabe öffnet eins.",
+  "连按两下 Ctrl，栅栏浮到所有窗口前面。这时直接打字，就能搜索栅栏里的图标，按 Enter 打开。": "Drücke zweimal Strg, und die Bereiche erscheinen vor allen Fenstern. Dann einfach tippen, um die Symbole darin zu suchen; Eingabe öffnet eins.",
+  "合成标签页": "Zu Tabs zusammenfassen",
+  "把一个栅栏拖到另一个栅栏的标题上，两个栅栏就合成一个，用标签切换。": "Zieh einen Bereich auf den Titel eines anderen, und beide werden zu einem, in dem du mit Tabs wechselst.",
+  "小技巧 {0}/{1}：{2}": "Tipp {0}/{1}: {2}",
+  "下一条": "Weiter"
 }

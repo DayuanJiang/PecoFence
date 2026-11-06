@@ -579,8 +579,6 @@
   "去评分": "Noter",
   "使用手册": "Manuel",
   "每个功能都有动画演示": "Chaque fonction avec une courte animation",
-  "桌面整理好了": "Votre Bureau est rangé",
-  "文件都没有移动，只是显示在栅栏里。\n在桌面空白处拖出一个框可新建栅栏，双击空白处可隐藏或显示栅栏。": "Vos fichiers n’ont pas bougé : les groupes ne font que les afficher.\nTracez un cadre sur un espace vide du Bureau pour créer un groupe, ou double-cliquez dessus pour masquer ou afficher les groupes.",
   "没有匹配的文件": "Aucun fichier correspondant",
   "AI 助手": "Assistants IA",
   "让 AI 助手整理桌面": "Faire ranger le Bureau par un assistant IA",
@@ -739,5 +737,17 @@
   "搜索别名\u0004固定|锁住|防止移动": "figer|bloquer|épingler|empêcher le déplacement|fixer",
   "搜索别名\u0004自动整理|自动分类|分类": "tri automatique|ranger|organiser|catégoriser|trier",
   "搜索别名\u0004备份|迁移|换电脑|恢复设置": "sauvegarde|migration|nouvel ordinateur|restaurer les paramètres|backup",
-  "搜索别名\u0004升级|新版本|检查更新": "mise à niveau|nouvelle version|rechercher des mises à jour|actualiser|upgrade"
+  "搜索别名\u0004升级|新版本|检查更新": "mise à niveau|nouvelle version|rechercher des mises à jour|actualiser|upgrade",
+  "PecoFence {0} 的新功能": "Nouveautés de PecoFence {0}",
+  "· 小工具：便签和待办、时钟、脚本栅栏\n· 速览时直接打字搜索，支持拼音\n· 「打开/保存」对话框跳到刚打开的文件夹\n小工具和对话框跳转默认关着，在设置里打开。": "• Outils : notes et tâches, horloge, groupes de script\n• Tapez pendant l’aperçu pour chercher dans vos groupes\n• Les boîtes de dialogue Ouvrir et Enregistrer vont au dossier que vous venez d’ouvrir\nLes outils et le saut de dossier restent désactivés tant que vous ne les activez pas dans les paramètres.",
+  "打开小工具设置": "Ouvrir les outils",
+  "在桌面空白处按住鼠标拖出一个框，松开后选「在此新建栅栏」。文件都没有移动，只是显示在栅栏里。": "Sur un espace vide du Bureau, maintenez le bouton de la souris, tracez un cadre, relâchez et choisissez « Créer un groupe ici ». Vos fichiers ne bougent pas : les groupes les affichent simplement.",
+  "双击桌面空白处，所有栅栏收起来；再双击一次，栅栏就回来。": "Double-cliquez sur un espace vide du Bureau pour masquer tous les groupes ; double-cliquez à nouveau pour les faire revenir.",
+  "速览和搜索": "Aperçu et recherche",
+  "按 {0}，栅栏浮到所有窗口前面。这时直接打字，就能搜索栅栏里的图标，按 Enter 打开。": "Appuyez sur {0} : les groupes passent devant toutes les fenêtres. Tapez alors pour chercher parmi leurs icônes, puis Entrée pour en ouvrir une.",
+  "连按两下 Ctrl，栅栏浮到所有窗口前面。这时直接打字，就能搜索栅栏里的图标，按 Enter 打开。": "Appuyez deux fois sur Ctrl : les groupes passent devant toutes les fenêtres. Tapez alors pour chercher parmi leurs icônes, puis Entrée pour en ouvrir une.",
+  "合成标签页": "Regrouper en onglets",
+  "把一个栅栏拖到另一个栅栏的标题上，两个栅栏就合成一个，用标签切换。": "Faites glisser un groupe sur le titre d’un autre : les deux n’en font plus qu’un, avec des onglets pour passer de l’un à l’autre.",
+  "小技巧 {0}/{1}：{2}": "Astuce {0}/{1} : {2}",
+  "下一条": "Suivant"
 }

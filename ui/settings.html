@@ -2443,6 +2443,7 @@
       state.itemCount = m.itemCount;
       renderWorkspaceSummary(m.fenceCount, m.itemCount);
     } else if (m.type === 'showFence') showFence(m.id);
+    else if (m.type === 'showPage') showPage(m.page);
     else if (m.type === 'feedbackInfo') {
       fbInfo = m; fbCrash ||= !!m.crashed; renderFeedback();
       if (fbSendPending) { fbSendPending = false; fbSend.click(); }

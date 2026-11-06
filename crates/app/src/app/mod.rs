@@ -301,13 +301,15 @@ pub struct App {
     settings: Option<SettingsHost>,
     /// Fence to select on the settings page once it reports `ready` (opened via 栅栏选项…).
     settings_focus_fence: Option<FenceId>,
+    /// Page to show once the settings page reports `ready` (the what's-new notice).
+    settings_focus_page: Option<&'static str>,
     /// The 「反馈」 form on 「关于」: pending focus and the crash offer (see `feedback.rs`).
     feedback: feedback::FeedbackState,
     updates: updates::Updates,
     /// The one-time Store rating offer (see `rating.rs`).
     rating: rating::RatingPrompt,
-    /// The first start's welcome notice while it is on screen (see `welcome.rs`).
-    welcome: Option<crate::notice::Notice>,
+    /// The first start's tip or the what's-new notice while it is on screen (see `welcome.rs`).
+    welcome: Option<(crate::notice::Notice, welcome::Welcome)>,
     /// The fence Settings › 「栅栏」 is editing, which wears the selection ring (`group.rs`).
     settings_ring: Option<FenceId>,
     web_env: Option<WebEnvironment>,
@@ -1511,6 +1513,7 @@ impl App {
             instance: args.instance.clone(),
             settings: None,
             settings_focus_fence: None,
+            settings_focus_page: None,
             feedback: Default::default(),
             updates: Default::default(),
             rating,
@@ -1818,9 +1821,7 @@ impl App {
         app.remove_old_update_downloads();
         // Last of the startup balloons, so it is the one left showing.
         app.offer_crash_feedback();
-        if app.state.first_run && args.exit_after_ms.is_none() && args.test_script.is_none() {
-            app.offer_welcome();
-        }
+        app.offer_welcome(args.exit_after_ms.is_none() && args.test_script.is_none());
         if args.open_settings {
             app.queue.push(Command::OpenSettings);
         }

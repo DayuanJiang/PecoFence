@@ -578,8 +578,6 @@
   "去评分": "Valuta",
   "使用手册": "Manuale",
   "每个功能都有动画演示": "Ogni funzione è illustrata con una breve animazione",
-  "桌面整理好了": "Il desktop è in ordine",
-  "文件都没有移动，只是显示在栅栏里。\n在桌面空白处拖出一个框可新建栅栏，双击空白处可隐藏或显示栅栏。": "I file non sono stati spostati: sono solo visualizzati nei riquadri.\nTrascina un rettangolo su un’area vuota del desktop per creare un riquadro; fai doppio clic sull’area vuota per nascondere o mostrare i riquadri.",
   "没有匹配的文件": "Nessun file corrispondente",
   "AI 助手": "Assistenti IA",
   "让 AI 助手整理桌面": "Fai riordinare il desktop a un assistente IA",
@@ -739,5 +737,17 @@
   "搜索别名\u0004固定|锁住|防止移动": "fissare|bloccare|impedire lo spostamento|non spostare|lucchetto",
   "搜索别名\u0004自动整理|自动分类|分类": "ordinare automaticamente|riordinare|classificare|categorie|sistemare il desktop",
   "搜索别名\u0004备份|迁移|换电脑|恢复设置": "backup|copia di sicurezza|migrazione|nuovo computer|ripristina impostazioni",
-  "搜索别名\u0004升级|新版本|检查更新": "aggiornare|nuova versione|cerca aggiornamenti|upgrade|ultima versione"
+  "搜索别名\u0004升级|新版本|检查更新": "aggiornare|nuova versione|cerca aggiornamenti|upgrade|ultima versione",
+  "PecoFence {0} 的新功能": "Novità di PecoFence {0}",
+  "· 小工具：便签和待办、时钟、脚本栅栏\n· 速览时直接打字搜索，支持拼音\n· 「打开/保存」对话框跳到刚打开的文件夹\n小工具和对话框跳转默认关着，在设置里打开。": "• Strumenti: note e attività, orologio, riquadri script\n• Durante la vista rapida scrivi per cercare nei riquadri\n• Le finestre Apri e Salva passano alla cartella appena aperta\nGli strumenti e il salto di cartella restano spenti finché non li attivi nelle impostazioni.",
+  "打开小工具设置": "Apri Strumenti",
+  "在桌面空白处按住鼠标拖出一个框，松开后选「在此新建栅栏」。文件都没有移动，只是显示在栅栏里。": "Tieni premuto il tasto del mouse su un’area vuota del desktop, trascina un rettangolo, rilascia e scegli «Crea un riquadro qui». I file non si spostano: i riquadri li mostrano soltanto.",
+  "双击桌面空白处，所有栅栏收起来；再双击一次，栅栏就回来。": "Fai doppio clic su un’area vuota del desktop e tutti i riquadri si nascondono; con un altro doppio clic tornano.",
+  "速览和搜索": "Vista rapida e ricerca",
+  "按 {0}，栅栏浮到所有窗口前面。这时直接打字，就能搜索栅栏里的图标，按 Enter 打开。": "Premi {0} e i riquadri passano davanti a tutte le finestre. Scrivi per cercare tra le loro icone e premi Invio per aprirne una.",
+  "连按两下 Ctrl，栅栏浮到所有窗口前面。这时直接打字，就能搜索栅栏里的图标，按 Enter 打开。": "Premi due volte Ctrl e i riquadri passano davanti a tutte le finestre. Scrivi per cercare tra le loro icone e premi Invio per aprirne una.",
+  "合成标签页": "Unire in schede",
+  "把一个栅栏拖到另一个栅栏的标题上，两个栅栏就合成一个，用标签切换。": "Trascina un riquadro sul titolo di un altro e i due diventano uno solo, con schede per passare dall’uno all’altro.",
+  "小技巧 {0}/{1}：{2}": "Suggerimento {0}/{1}: {2}",
+  "下一条": "Avanti"
 }

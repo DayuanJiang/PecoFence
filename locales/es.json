@@ -579,8 +579,6 @@
   "去评分": "Valorar",
   "使用手册": "Manual",
   "每个功能都有动画演示": "Cada función con una breve animación",
-  "桌面整理好了": "Tu escritorio está ordenado",
-  "文件都没有移动，只是显示在栅栏里。\n在桌面空白处拖出一个框可新建栅栏，双击空白处可隐藏或显示栅栏。": "Tus archivos no se han movido; los grupos solo los muestran.\nDibuja un recuadro en un área vacía del escritorio para crear un grupo, o haz doble clic en ella para ocultar o mostrar los grupos.",
   "没有匹配的文件": "Ningún archivo coincide",
   "AI 助手": "Asistentes de IA",
   "让 AI 助手整理桌面": "Deja que un asistente de IA ordene el escritorio",
@@ -739,5 +737,17 @@
   "搜索别名\u0004固定|锁住|防止移动": "fijar|anclar|inmovilizar|impedir mover|candado",
   "搜索别名\u0004自动整理|自动分类|分类": "ordenar automáticamente|clasificar|categorizar|ordenar|organizar el escritorio",
   "搜索别名\u0004备份|迁移|换电脑|恢复设置": "copia de seguridad|migrar|equipo nuevo|restaurar ajustes|backup",
-  "搜索别名\u0004升级|新版本|检查更新": "actualizar|nueva versión|buscar actualizaciones|upgrade|última versión"
+  "搜索别名\u0004升级|新版本|检查更新": "actualizar|nueva versión|buscar actualizaciones|upgrade|última versión",
+  "PecoFence {0} 的新功能": "Novedades de PecoFence {0}",
+  "· 小工具：便签和待办、时钟、脚本栅栏\n· 速览时直接打字搜索，支持拼音\n· 「打开/保存」对话框跳到刚打开的文件夹\n小工具和对话框跳转默认关着，在设置里打开。": "• Herramientas: notas y tareas, reloj, grupos de script\n• Escribe durante la vista rápida para buscar en tus grupos\n• Los cuadros de diálogo Abrir y Guardar saltan a la carpeta que acabas de abrir\nLas herramientas y el salto de carpeta siguen desactivados hasta que los actives en Configuración.",
+  "打开小工具设置": "Abrir Herramientas",
+  "在桌面空白处按住鼠标拖出一个框，松开后选「在此新建栅栏」。文件都没有移动，只是显示在栅栏里。": "Mantén pulsado el botón del ratón en un área vacía del escritorio, dibuja un recuadro, suéltalo y elige «Crear grupo aquí». Tus archivos no se mueven; los grupos solo los muestran.",
+  "双击桌面空白处，所有栅栏收起来；再双击一次，栅栏就回来。": "Haz doble clic en un área vacía del escritorio y todos los grupos se ocultan; otro doble clic los trae de vuelta.",
+  "速览和搜索": "Vista rápida y búsqueda",
+  "按 {0}，栅栏浮到所有窗口前面。这时直接打字，就能搜索栅栏里的图标，按 Enter 打开。": "Pulsa {0} y los grupos aparecen delante de todas las ventanas. Escribe para buscar entre sus iconos y pulsa Entrar para abrir uno.",
+  "连按两下 Ctrl，栅栏浮到所有窗口前面。这时直接打字，就能搜索栅栏里的图标，按 Enter 打开。": "Pulsa Ctrl dos veces y los grupos aparecen delante de todas las ventanas. Escribe para buscar entre sus iconos y pulsa Entrar para abrir uno.",
+  "合成标签页": "Unir en pestañas",
+  "把一个栅栏拖到另一个栅栏的标题上，两个栅栏就合成一个，用标签切换。": "Arrastra un grupo sobre el título de otro y los dos se unen en uno, con pestañas para cambiar entre ellos.",
+  "小技巧 {0}/{1}：{2}": "Consejo {0}/{1}: {2}",
+  "下一条": "Siguiente"
 }
