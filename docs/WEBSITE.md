@@ -51,7 +51,7 @@ the detailed setup instructions. Both copy buttons have independent feedback and
 text if clipboard access fails; the prompt and install command remain readable without JavaScript.
 
 The feature gallery shows one feature at a time, with click and Left/Right/Home/End
-keyboard navigation. Search and dialog jump come first. Wider than 840 px the eight tabs sit
+keyboard navigation. Making a fence comes first, then search and dialog jump. Wider than 840 px the eight tabs sit
 in two rows of four; narrower screens scroll them sideways. Each one plays the manual's animation of it in the page's
 language (an iframe of `manual/?only=<lesson>&embed`, `FEATURE_LESSONS` in
 `build-site.py`), loaded the first time its tab opens; it plays while in view, has

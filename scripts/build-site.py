@@ -21,9 +21,9 @@ import manual_i18n  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 SITE = ROOT / "site"
-FEATURES = ["search", "dialog", "groups", "peek", "tabs", "rules", "portal", "hide"]
+FEATURES = ["groups", "search", "dialog", "peek", "tabs", "rules", "portal", "hide"]
 DETAILS = ["glass", "files", "space", "back", "footprint", "safe"]
-FEATURE_ICONS = ["search", "jump", "grid", "cursor", "layers", "spark", "folder", "expand"]
+FEATURE_ICONS = ["grid", "search", "jump", "cursor", "layers", "spark", "folder", "expand"]
 DETAIL_ICONS = ["spark", "cursor", "expand", "restore", "feather", "shield"]
 # The other switches of Settings > Tools (小工具), listed below the feature gallery; dialog jump
 # (feature "dialog") has a card of its own.
