@@ -5,21 +5,27 @@
     "Your files. Without losing your flow.",
     "One fence. Every project.",
     "New files.\nRight place.",
-    "Two moods. Your desktop."
+    "Two moods. Your desktop.",
+    "Type to find a file.",
+    "The right folder in Open and Save."
   ],
   "sub": [
     "Projects, inspiration, everyday files. Beautifully in order.",
     "Bring your desktop files above the app you are working in.",
     "From project files to inspiration. Just switch tabs.",
     "Set a rule by file type.\nLet PecoFence handle the sorting.",
-    "Light or dark. Make your fences feel at home on your wallpaper."
+    "Light or dark. Make your fences feel at home on your wallpaper.",
+    "Press Ctrl + Alt + Space and type a name. Matching files in your fences show up at once.",
+    "Switch to File Explorer and back, and the dialog jumps to the folder open there."
   ],
   "captions": [
     "Project folders, a PDF and original design studies in Liquid Glass fences.",
     "Peek brings fences above a sample document window. Ctrl + Alt + Space to open, Esc to return.",
     "One tabbed fence shown twice: once with Projects open, once with Inspiration.",
     "Extension rules sorted the new files Form study.png and Launch checklist.md without changing their paths or contents.",
-    "The same design files on two desktops, in light and dark Liquid Glass."
+    "The same design files on two desktops, in light and dark Liquid Glass.",
+    "Typing “study” in Peek lists the six files of the Inspiration fence. Ctrl+1 to Ctrl+6 open them.",
+    "Back from File Explorer, Notepad's Open dialog shows the Campaign folder that Explorer has open."
   ],
   "short": "PecoFence tidies your Windows desktop: icons go into glass panels, and new files are sorted for you. Press a shortcut and type to find a file. Chinese names can be found by pinyin too. When you open or save a file, the dialog can jump to the folder you have open in File Explorer. An AI agent can set it all up for you. Free and open source, about 2 to 5 MB of memory at rest, for Windows 10 and 11.",
   "uploadCaptions": [
@@ -27,7 +33,9 @@
     "Peek brings your fences above a sample document. Press Ctrl + Alt + Space to open and Esc to go back.",
     "Projects and Inspiration share one fence. Inspiration is open; select a tab to switch.",
     "Extension rules automatically sorted new PNG and Markdown files into the Images and Documents fences.",
-    "Liquid Glass on a dark wallpaper, with project folders, design references and everyday documents within reach."
+    "Liquid Glass on a dark wallpaper, with project folders, design references and everyday documents within reach.",
+    "Type while Peek is open: “study” lists six files from your fences, and Enter or Ctrl with a number opens one.",
+    "Switch to File Explorer and back, and the Open dialog jumps to the Campaign folder that Explorer has open."
   ],
   "labels": {
     "projects": "PROJECTS",

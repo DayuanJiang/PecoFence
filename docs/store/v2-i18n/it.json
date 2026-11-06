@@ -5,21 +5,27 @@
     "I tuoi file. Senza perdere il filo.",
     "Un riquadro. Ogni progetto.",
     "Nuovi file.\nAl posto giusto.",
-    "Due atmosfere. Il tuo desktop."
+    "Due atmosfere. Il tuo desktop.",
+    "Scrivi e trovi il file.",
+    "La cartella giusta in Apri e Salva."
   ],
   "sub": [
     "Progetti, ispirazioni e file di tutti i giorni. Tutto in perfetto ordine.",
     "Porta i file del desktop in primo piano sopra l’app su cui stai lavorando.",
     "Dai file di progetto alle ispirazioni. Ti basta cambiare scheda.",
     "Imposta una regola per tipo di file.\nA PecoFence penserà l’ordinamento.",
-    "Chiaro o scuro. Armonizza i riquadri con lo sfondo del desktop."
+    "Chiaro o scuro. Armonizza i riquadri con lo sfondo del desktop.",
+    "Premi Ctrl + Alt + Space e scrivi un nome. I file dei tuoi riquadri compaiono subito.",
+    "Passa a Esplora file e torna indietro, e la finestra di dialogo va alla cartella aperta lì."
   ],
   "captions": [
     "Cartelle di progetto, un PDF e studi di design originali nei riquadri Liquid Glass.",
     "La vista rapida porta i riquadri in primo piano sopra una finestra di esempio con un documento. Premi Ctrl + Alt + Space per aprirli e Esc per tornare indietro.",
     "Lo stesso riquadro con schede mostrato due volte: una con Progetti aperta, l’altra con Ispirazioni.",
     "Le regole per estensione hanno ordinato i nuovi file Form study.png e Launch checklist.md senza modificarne i percorsi o i contenuti.",
-    "Gli stessi file di design su due desktop, in Liquid Glass chiaro e scuro."
+    "Gli stessi file di design su due desktop, in Liquid Glass chiaro e scuro.",
+    "Scrivendo «study» nella vista rapida compaiono i sei file del riquadro Inspiration. Da Ctrl+1 a Ctrl+6 li aprono.",
+    "Tornando da Esplora file, la finestra Apri del Blocco note mostra la cartella Campaign aperta in Esplora file."
   ],
   "short": "PecoFence mette in ordine il desktop di Windows: le icone vanno in pannelli di vetro e i nuovi file vengono ordinati per te. Premi una scorciatoia e scrivi per trovare un file. Anche i nomi cinesi si trovano col pinyin. Quando apri o salvi un file, la finestra può andare alla cartella aperta in Esplora file. Un agente IA può configurare tutto per te. Gratuito e open source, usa tra 2 e 5 MB circa di memoria quando è inattivo, per Windows 10 e 11.",
   "uploadCaptions": [
@@ -27,7 +33,9 @@
     "La vista rapida porta i riquadri in primo piano sopra un documento di esempio. Premi Ctrl + Alt + Space per aprirli ed Esc per tornare indietro.",
     "Progetti e Ispirazioni condividono un riquadro. Ispirazioni è aperta; seleziona una scheda per passare all’altra.",
     "Le regole per estensione hanno ordinato automaticamente i nuovi file PNG e Markdown nei riquadri Immagini e Documenti.",
-    "Liquid Glass su uno sfondo scuro, con cartelle di progetto, riferimenti di design e documenti di tutti i giorni a portata di mano."
+    "Liquid Glass su uno sfondo scuro, con cartelle di progetto, riferimenti di design e documenti di tutti i giorni a portata di mano.",
+    "Scrivi durante la vista rapida: «study» elenca sei file dei tuoi riquadri, e Invio o Ctrl con un numero ne apre uno.",
+    "Passa a Esplora file e torna indietro, e la finestra Apri va alla cartella Campaign aperta in Esplora file."
   ],
   "labels": {
     "projects": "PROGETTI",
