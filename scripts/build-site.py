@@ -200,6 +200,10 @@ def main():
             "repository": repository,
             "releases": f"{repository}/releases/latest",
             "docs": docs,
+            # The README section SignPath Foundation asks every signed project to show; the heading
+            # stays English in every translation, so the anchor is the same.
+            "signing_policy": (f"{repository}#code-signing-policy" if code == "en"
+                               else f"{docs}/readme/README.{code}.md#code-signing-policy"),
             "features": feature_fences(strings, root),
             "feature_tabs": feature_tabs(strings),
             "details": detail_items(strings),
