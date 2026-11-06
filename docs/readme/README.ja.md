@@ -137,6 +137,17 @@ PecoFence は Apache 2.0 ライセンスで公開されています。訳文の�
 
 [貢献する](../../CONTRIBUTING.md) · [翻訳を改善する](../LOCALIZATION.md) · [開発ガイド](../DEVELOPMENT.md)
 
+## Code signing policy
+
+コード署名は [SignPath.io](https://about.signpath.io/) が無償で提供し、証明書は [SignPath Foundation](https://signpath.org/) が発行しています。
+
+- コミットとレビュー：[Dayuan Jiang](https://github.com/DayuanJiang)
+- 署名の承認：[Dayuan Jiang](https://github.com/DayuanJiang)
+
+署名するのは、このリポジトリのバージョンタグから GitHub Actions がビルドしたファイルだけです。署名のたびに手作業で承認しています。
+
+**プライバシー：** ユーザー、またはこのプログラムをインストールしたり操作したりする人が明示的に求めない限り、このプログラムがほかのネットワーク上のシステムに情報を送ることはありません。**アップデートを確認**を押すと GitHub の API に接続します。**フィードバック**から送った内容は PecoFence のフィードバック サービスに届きます。設定画面は Microsoft Edge WebView2 で動いており、[Microsoft のプライバシーに関する声明](https://privacy.microsoft.com/privacystatement)が適用されます。
+
 ---
 
 **見るたびに、気持ちのいいデスクトップを。**  

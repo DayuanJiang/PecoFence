@@ -141,6 +141,17 @@ precisa hasta una interacción de escritorio mejor resuelta.
 
 [Contribuir](../../CONTRIBUTING.md) · [Mejorar una traducción](../LOCALIZATION.md) · [Guía de desarrollo](../DEVELOPMENT.md)
 
+## Code signing policy
+
+Firma de código gratuita de [SignPath.io](https://about.signpath.io/), con certificado de la [SignPath Foundation](https://signpath.org/).
+
+- Commits y revisiones: [Dayuan Jiang](https://github.com/DayuanJiang)
+- Aprobación de firmas: [Dayuan Jiang](https://github.com/DayuanJiang)
+
+Solo se firman los archivos que GitHub Actions compila a partir de una etiqueta de versión de este repositorio. Cada firma se aprueba a mano.
+
+**Privacidad:** este programa no transfiere ninguna información a otros sistemas en red, salvo que lo pida expresamente el usuario o la persona que lo instala o lo usa. **Buscar actualizaciones** consulta la API de GitHub. Lo que envías desde **Comentarios** llega al servicio de comentarios de PecoFence. La ventana de configuración funciona con Microsoft Edge WebView2, al que se aplica la [Declaración de privacidad de Microsoft](https://privacy.microsoft.com/privacystatement).
+
 ---
 
 **Hecho para un escritorio al que da gusto volver.**  

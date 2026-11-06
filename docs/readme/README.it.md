@@ -141,6 +141,17 @@ a un’interazione migliore con il desktop.
 
 [Contribuisci](../../CONTRIBUTING.md) · [Migliora una traduzione](../LOCALIZATION.md) · [Guida allo sviluppo](../DEVELOPMENT.md)
 
+## Code signing policy
+
+Firma del codice gratuita offerta da [SignPath.io](https://about.signpath.io/), certificato rilasciato da [SignPath Foundation](https://signpath.org/).
+
+- Commit e revisioni: [Dayuan Jiang](https://github.com/DayuanJiang)
+- Approvazione delle firme: [Dayuan Jiang](https://github.com/DayuanJiang)
+
+Vengono firmati solo i file che GitHub Actions compila da un tag di versione di questo repository. Ogni firma viene approvata a mano.
+
+**Privacy:** questo programma non trasferisce alcuna informazione ad altri sistemi in rete, a meno che non lo chieda espressamente l'utente o la persona che lo installa o lo usa. **Controlla gli aggiornamenti** contatta l'API di GitHub. Quello che invii da **Feedback** arriva al servizio di feedback di PecoFence. La finestra delle impostazioni usa Microsoft Edge WebView2, a cui si applica l'[Informativa sulla privacy di Microsoft](https://privacy.microsoft.com/privacystatement).
+
 ---
 
 **Pensato per un desktop a cui è un piacere tornare.**  
