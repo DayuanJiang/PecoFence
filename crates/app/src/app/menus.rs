@@ -22,6 +22,8 @@ const CMD_NEW_CLOCK: u32 = 17;
 const CMD_SHOW_FOLDER: u32 = 11;
 const CMD_ITEM_OPEN: u32 = 100;
 const CMD_ITEM_LOCATION: u32 = 101;
+/// Canonical verb of Windows' 打开文件所在的位置 on a shortcut (its target's folder).
+const SHELL_VERB_TARGET_LOCATION: &str = "opencontaining";
 const CMD_ITEM_PROPERTIES: u32 = 102;
 const CMD_ITEM_TO_INBOX: u32 = 103;
 const CMD_ITEM_PORTAL: u32 = 104;
@@ -570,6 +572,32 @@ impl App {
                     // Explorer's own 打开 / 删除 (and 重命名 where it adds one, 清空回收站 for
                     // the bin) duplicate ours.
                     sm.remove_verbs(menu.handle(), &["open", "delete", "rename", "empty"]);
+                    // A shortcut gets Windows' own 打开文件所在的位置: it opens the target's
+                    // folder with the target selected, as on Explorer's desktop. Ours, under the
+                    // same name, would select the shortcut itself, so Windows' entry stays alone.
+                    let verbs = sm.verbs(menu.handle());
+                    let target_location = verbs
+                        .iter()
+                        .any(|v| v.eq_ignore_ascii_case(SHELL_VERB_TARGET_LOCATION));
+                    if target_location {
+                        menu.remove(CMD_ITEM_LOCATION);
+                    }
+                    tracing::debug!(?verbs, "item menu: shell verbs");
+                    if target_location {
+                        tracing::info!(
+                            items = items.len(),
+                            shell_ids = n,
+                            own_location = false,
+                            "item menu built: Windows' open file location (shortcut target) replaces ours"
+                        );
+                    } else {
+                        tracing::info!(
+                            items = items.len(),
+                            shell_ids = n,
+                            own_location = true,
+                            "item menu built"
+                        );
+                    }
                     menu.tidy_separators();
                 }
                 Err(e) => tracing::warn!(error = %e, "shell context menu unavailable"),

@@ -362,6 +362,10 @@ impl FenceViewState {
     /// Draws the chrome (backdrop, tabs or title, rim, chevron).
     pub(super) fn draw_chrome_panel(&mut self) -> Result<()> {
         let now = Instant::now();
+        // The tab rects first: they bring the strip's scroll up to this size (the active tab in
+        // view), and the strip's clip in `title_state` reads that scroll. In the other order a
+        // narrowed fence kept the last frame's scroll and a fade at its right end.
+        let rects = self.tab_rects();
         let state = self.title_state(now);
         // DIP size the crop covers (larger than the surface mid size animation).
         let (crop_w, crop_h) = self.backdrop_rect.map_or((0.0, 0.0), |(_, _, w, h)| {
@@ -412,7 +416,6 @@ impl FenceViewState {
             .with_label_color(self.behavior.label_color.get());
         let scale = self.scale();
         let chrome = self.chrome.clone();
-        let rects = self.tab_rects();
         let xs = self.tab_draw_xs(now);
         let active = self.active_index();
         // A pressed tab counts as dragged only past the drag threshold; a plain click keeps the

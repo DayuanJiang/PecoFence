@@ -450,6 +450,18 @@ impl FenceViewState {
             {
                 scroll = scroll_to_show(scroll, x - TAB_LEFT, w, available, max);
             }
+            let before = self.tab_scroll.get();
+            if (scroll - before).abs() > 0.5 {
+                tracing::debug!(
+                    fence = %self.fence_id,
+                    from = before,
+                    to = scroll,
+                    room = available,
+                    max,
+                    active = self.active_index(),
+                    "tab strip scroll: active tab kept in view, or the scroll clamped to the room"
+                );
+            }
             self.tab_scroll.set(scroll);
             return tab_strip_scrolled(&natural, phantom, scroll);
         }
