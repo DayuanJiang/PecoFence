@@ -97,14 +97,22 @@ pub struct PeekOverlay {
 
 /// Takes the keyboard on the primary dimmer so Esc works. SetForegroundWindow can block while
 /// Windows hands focus between input queues, so it runs off the UI thread. Once it completes
-/// the app restores the fence block above the activated topmost dimmer.
-fn hand_focus(dimmer: HWND, control: HWND) {
+/// the app restores the fence block above the activated topmost dimmer. `again`: another
+/// window has the foreground by now, so the foreground lock is passed first
+/// (`claim_foreground`), and the outcome is logged.
+fn hand_focus(dimmer: HWND, control: HWND, again: bool) {
     let dimmer = dimmer.0 as usize;
     let control = control.0 as usize;
     let spawned = std::thread::Builder::new()
         .name("pecofence-peek-focus".into())
         .spawn(move || {
-            window::bring_to_front(HWND(dimmer as *mut core::ffi::c_void));
+            let h = HWND(dimmer as *mut core::ffi::c_void);
+            if again {
+                let ok = window::claim_foreground(h);
+                tracing::info!(ok, "peek took the keyboard back");
+            } else {
+                window::bring_to_front(h);
+            }
             window::post_message(
                 HWND(control as *mut core::ffi::c_void),
                 WM_APP_PEEK_FOCUSED,
@@ -246,7 +254,7 @@ impl PeekOverlay {
             windows.push(w);
         }
         if let Some(first) = windows.first() {
-            hand_focus(first.hwnd(), control);
+            hand_focus(first.hwnd(), control, false);
         }
         // Do not let synchronous window creation consume any of the fade's timeline.
         let now = Instant::now();
@@ -282,7 +290,7 @@ impl PeekOverlay {
     /// Takes the keyboard back on the primary dimmer (another window took the foreground).
     pub fn take_focus(&self, control: HWND) {
         if let Some(first) = self.windows.first() {
-            hand_focus(first.hwnd(), control);
+            hand_focus(first.hwnd(), control, true);
         }
     }
 
