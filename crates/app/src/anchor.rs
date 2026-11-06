@@ -1534,8 +1534,9 @@ impl DesktopAnchor {
                 // Only what the hook missed and matters: the desktop in front or gone from it
                 // (its clicks are followed then). Other changes come as events.
                 if self.is_desktop_window(front) != self.quick.sink_registered {
+                    let cls = desktop::class_name(desktop::root_ancestor(front));
                     tracing::info!(
-                        class = %desktop::class_name(desktop::root_ancestor(front)),
+                        class = %cls,
                         "foreground change Windows did not report; caught by the poll"
                     );
                     self.on_foreground(front);
@@ -1546,10 +1547,8 @@ impl DesktopAnchor {
             TIMER_FOREGROUND_LATER => {
                 self.sentinel.kill_timer(TIMER_FOREGROUND_LATER);
                 let front = desktop::foreground_window();
-                tracing::info!(
-                    class = %desktop::class_name(desktop::root_ancestor(front)),
-                    "foreground change handled after the anchor was busy"
-                );
+                let cls = desktop::class_name(desktop::root_ancestor(front));
+                tracing::info!(class = %cls, "foreground change handled after the anchor was busy");
                 self.on_foreground(front);
             }
             TIMER_RETRY => {
