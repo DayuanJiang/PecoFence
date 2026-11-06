@@ -74,8 +74,9 @@ token in the `SIGNPATH_API_TOKEN` repository secret). It builds with `-BuildOnly
 uploads the three executables as a workflow artifact, has SignPath sign them (artifact
 configuration `app-exes`), packages the signed files with `-SkipBuild`, then signs
 the setup EXE the same way (artifact configuration `installer`) and writes its
-`.sha256` again. Both artifact configurations only accept files whose version
-resources say product `PecoFence` and company `Dayuan Jiang`.
+`.sha256` again. `app-exes` only accepts executables whose version resources say
+product `PecoFence` and company `Dayuan Jiang`. `installer` only checks the file name,
+because Inno Setup pads its version strings with spaces.
 
 A tag push uses the `release-signing` policy and fails unless every signature is
 trusted; each request waits for a manual approval in SignPath (up to one hour). A
