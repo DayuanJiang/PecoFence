@@ -1,8 +1,10 @@
 #!/bin/bash
 # Runs desktop test steps on a Windows test box and prints one pass/fail table.
-#   run.sh [--box NAME|any] [--bin DIR] [--extra DIR] [--out DIR] [--timeout SEC] steps.ps1 [more.ps1 ...]
+#   run.sh [--box NAME|any] [--bin DIR] [--extra DIR] [--out DIR] [--timeout SEC]
+#          [--var NAME=VALUE ...] steps.ps1 [more.ps1 ...]
 # Each steps file is one job: a fresh C:\pf\run and fresh PecoFence data, the build in --bin
-# (default target/wintest-bin, made by build.sh). The command returns when every job is done or
+# (default target/wintest-bin, made by build.sh). --var sets $NAME = 'VALUE' for the steps (for
+# example which part of a long file to run). The command returns when every job is done or
 # hit its timeout (default 900 s each), so it can be the background command itself: never
 # watch its output with a separate wait loop. Exit code: 0 all passed, 1 a check failed,
 # 2 the harness could not run a job.
@@ -11,7 +13,7 @@ KIT=$(cd "$(dirname "$0")" && pwd)
 REPO=$(cd "$KIT/../.." && pwd)
 CONF=${WINTEST_CONF:-$HOME/.config/pecofence-wintest}
 STATE=${WINTEST_STATE:-/tmp/pecofence-wintest}
-BOX=any; BIN=$REPO/target/wintest-bin; EXTRA=; TIMEOUT=900
+BOX=any; BIN=$REPO/target/wintest-bin; EXTRA=; TIMEOUT=900; VARS=
 OUT=${CLAUDE_JOB_DIR:-$STATE}/tmp/wintest-$(date +%m%d-%H%M%S)
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -20,6 +22,10 @@ while [ $# -gt 0 ]; do
     --extra) EXTRA=$2; shift 2 ;;
     --out) OUT=$2; shift 2 ;;
     --timeout) TIMEOUT=$2; shift 2 ;;
+    --var)
+      vn=${2%%=*}; vv=${2#*=}
+      [[ "$2" == *=* && "$vn" =~ ^[A-Za-z_][A-Za-z0-9_]*$ && "$vv" != *\'* ]] || { echo "--var wants NAME=VALUE (no quotes)"; exit 2; }
+      VARS+="\$$vn = '$vv'"$'\r\n'; shift 2 ;;
     -*) echo "unknown option $1"; exit 2 ;;
     *) break ;;
   esac
@@ -113,7 +119,8 @@ T_SYNC=$(now)
 HARNESS=0
 for s in "$@"; do
   name=$(basename "$s" .ps1)
-  printf '$PfSteps = '"'"'C:\\pf\\kit\\steps\\%s.ps1'"'"'\r\n. C:\\pf\\kit\\job.ps1\r\n' "$name" > "$STAGE/job.ps1"
+  { printf '%s' "$VARS"
+    printf '$PfSteps = '"'"'C:\\pf\\kit\\steps\\%s.ps1'"'"'\r\n. C:\\pf\\kit\\job.ps1\r\n' "$name"; } > "$STAGE/job.ps1"
   ctl reset >/dev/null
   scpx "$STAGE/job.ps1" "Administrator@$IP:C:/pf/job.ps1"
   t=$(now)

@@ -54,7 +54,11 @@ Check 'new-note opens the editor' ($ed -ne [IntPtr]::Zero) "editor=$ed"
 ```
 
 - `Case 'name'` starts a group; `Check 'what' <bool> 'detail'` is one row of the table. A failed
-  check saves `FAIL-NN.png`. An error in a line becomes a failed check and the next line runs.
+  check saves `FAIL-NN.png`. An error in a top-level line becomes a failed check and the next
+  line runs; an error inside a block (`if`, a function) skips the rest of that block, so keep
+  steps flat, or give a function of steps its own `trap { PfTrap $_; continue }`.
+- A long file can run in parts across calls: `run.sh --var Part=AB ...` sets `$Part = 'AB'`
+  for the steps (`tests/holdout2-fixes.ps1` reads its part another way, from `--extra`).
 - `PfStart` starts the build under test as a portable instance (own config, own log; `-Script`
   gives test-script lines, `-Lang`; `$env:` variables set before it reach the app), `PfQuit`
   ends it like a sign-out, `Pf` / `PfJson` run `pecofence-cli` against it (`fence list`,
@@ -70,8 +74,18 @@ Check 'new-note opens the editor' ($ed -ne [IntPtr]::Zero) "editor=$ed"
   IconsVisible/ToggleIcons/RootClassAt`, `WaitGoneWin`, `VisFences`; `[Anim]::Get/Set` (Windows
   animations); fence state at any moment `DumpScript` + `DumpOf` / `PfDump` (the test-script
   `dump` lines: rects, tab order, `tab_rects`, active tab, rolled), `FenceIds`, `FenceGet`;
-  items `DeskFile`, `ItemFence`, `WaitItemFence`, `ItemPt`, `RClickItem`; rules `Rules`,
-  `RuleById`, `WaitRule`; `StateText` (fences, rules, items, theme as lines to compare), `BinNames`.
+  items `DeskFile`, `DeskLink`, `ItemFence`, `WaitItemFence`, `ItemPt` (by name, a fence sorted
+  by name; This PC and the Recycle Bin first only when it is arranged like the desktop), `CellPt`
+  and `IconCrop` (by index), `RClickItem`; rules `Rules`, `RuleById`, `WaitRule`; `StateText`
+  (fences, rules, items, theme as lines to compare), `BinNames`, `RecycleDir`, `Snaps`;
+  `PfFresh` (a first run again), `DumpVal` (any field of a dump line), `ShareLog`, `FeedbackInfo`
+  (what the feedback form sends, from a `feedback-info` test-script line); `ClipFiles`,
+  `ClipEffect`; `ShellMenuPoint` (Windows 11's own desktop menu too); `ProcTops`; `[Th]`: suspend
+  a UI thread (a hang), end a process with an exit code (a crash's 0xC0000005), a layered
+  window's alpha, how long a window takes to answer, Explorer's click-to-open, many Recycle Bin
+  items at once.
+- PowerShell 5.1 trap: a property of a plain array (`$list.fences` when the CLI printed an
+  array) gives one `$null` per item, not nothing; filter for real items.
 - The settings page (page.ps1) is a WebView2 page: UI Automation sees none of its content on the
   box. Use a debug build (`build.sh --debug`, then `run.sh --bin target/wintest-bin-debug`)
   started with `$env:PECOFENCE_WEBVIEW_ARGS = '--remote-debugging-port=9352'`: `PfSettings`
@@ -79,7 +93,9 @@ Check 'new-note opens the editor' ($ed -ne [IntPtr]::Zero) "editor=$ed"
   `PageType`, `PagePick` (a `<select>` by keyboard), `PageToast`; `$PfDebugBuild` says which build
   runs. On a release build, click by coordinates measured on the debug build.
 - Pixels (pixels.ps1): `[Px]::Grab/Ink/FirstInk/MaxInk/Marker/Diff/Burst/Track/Strip`, `Crop`,
-  `GreyWallpaper`.
+  `GreyWallpaper`, `MeanRgb`, `ExplorerIconRgb` (Explorer's own icon of a file, a reference for
+  thumbnails), `OcrText` / `ToastOcr` (Windows' OCR: toasts and a release build's settings page,
+  which UI Automation cannot see).
 - The user's own copy (user.ps1): `Ipf` / `IpfJson` / `UserLog` for the installed copy (set
   `$script:CliExe` for a portable one), `StartUser`, `WaitNoPf`; `PfUseUser` makes the item and
   state helpers read that copy; setup and uninstall by their buttons (`Wizard`, `Uninstall`,
@@ -94,6 +110,9 @@ Check 'new-note opens the editor' ($ed -ne [IntPtr]::Zero) "editor=$ed"
   they are in `$PfExtra` (`C:\pf\extra`). Helper scripts of the kit itself are in `assets/`.
 - An RDP session starts with Windows' client-area animations off, so PecoFence snaps where a
   normal desktop animates: switch them on in the steps when a test is about animation.
+- pf's Explorer shows icons only, never thumbnails (IconsOnly=1): switch it off for a thumbnail
+  test. The watchdog does not restart an instance started with `--test-script`: start the one a
+  crash test kills without a script.
 
 ## The boxes
 

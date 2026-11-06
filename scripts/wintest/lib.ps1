@@ -422,7 +422,8 @@ function PfLogFiles() {
 function PfLogAll() { return @(PfLogFiles | ForEach-Object { Get-Content $_.FullName -Encoding UTF8 }) }
 
 # ERROR / panic lines the app logged since the job began, in any of its logs.
-function PfLogErrors() { return @(PfLogAll | Where-Object { $_ -match ' ERROR |panicked' }) }
+# Case-sensitive: a logged text may say "error" (the feedback excerpt's heading does).
+function PfLogErrors() { return @(PfLogAll | Where-Object { $_ -cmatch ' ERROR |panicked' }) }
 
 # Waits for a log line matching the regex (for example a `>> dump <tag>` line of the test
 # script); returns the line or $null.
@@ -825,12 +826,15 @@ function WaitRule($id, [scriptblock]$ok, $sec = 8) {
   return $r
 }
 
-# Where an item's icon is on screen: icons layout at 100 %, sorted by name (namespace items
-# first), 36 px title row, cells 80 x 96 at icon size 48, from `fence get` (windowRect, fit).
+# Where an item's icon is on screen: icons layout at 100 %, sorted by name (other sorts: CellPt
+# with the index), 36 px title row, cells 80 x 96 at icon size 48, from `fence get` (windowRect, fit).
 function ItemPt($fence, $name) {
   $f = TJson fence get $fence
   $items = @(TJson item list --fence $fence)
-  $order = @(@($items | Where-Object { $_.kind -eq 'namespace' } | Sort-Object name) + @($items | Where-Object { $_.kind -ne 'namespace' } | Sort-Object name) | ForEach-Object { $_.name })
+  # As a fence sorted by name shows them: arranged like the desktop (desktopLayout), This PC and
+  # the Recycle Bin come first as on the desktop; any other fence sorts them among the files.
+  $ns = if ($f.desktopLayout) { @($items | Where-Object { $_.kind -eq 'namespace' } | Sort-Object name) } else { @() }
+  $order = @(@($ns) + @($items | Where-Object { $ns -notcontains $_ } | Sort-Object name) | ForEach-Object { $_.name })
   $i = [array]::IndexOf($order, $name)
   if ($i -lt 0 -or -not $f.windowRect) { Log "ItemPt: '$name' not in '$fence' ($($order -join ', '))"; return $null }
   $wr = $f.windowRect
@@ -857,6 +861,160 @@ function StateText() {
   $lines += "theme $((TCli settings get theme).Trim())"
   return $lines
 }
+
+# ---- more from the second hold-out test (2026-11-06)
+
+Add-Type -AssemblyName WindowsBase, Microsoft.VisualBasic
+
+# PfFresh: the test instance as a first run (no config), with a test script.
+function PfFresh([string[]]$Script = @('sleep 3600000')) {
+  if (PfAlive) { PfQuit }
+  Remove-Item -Recurse -Force "$PfApp\config" -ErrorAction SilentlyContinue
+  PfStart -Script $Script
+}
+
+# One field of a dump line the kit's ParseDumpLine leaves out (selected, focused, visible,
+# peeking, rolling, items ...), as text.
+function DumpVal($w, $name) {
+  if ($w -and $w.raw -match "(?:^| )$name=(\S+)") { return $Matches[1].Trim(',') }
+  return $null
+}
+
+# The shareable log of the test instance (what 「反馈」 sends).
+function ShareLog() { return "$env:LOCALAPPDATA\PecoFence\pecofence.$PfInst.share.log" }
+
+# What the 「反馈」 form would send besides the user's text: the JSON the `feedback-info` line of
+# the test script logs (it must be in the script given to PfStart).
+function FeedbackInfo($sec = 30) {
+  $l = PfWaitLog 'feedback-info \{' $sec
+  if (-not $l) { return $null }
+  return ($l.Substring($l.IndexOf('feedback-info {') + 14) | ConvertFrom-Json)
+}
+
+# Snapshots from `snapshot list`. (A missing property of an array's items enumerates as one $null
+# per item in PowerShell 5.1, so `$list.snapshots` of a plain array is a list of $nulls.)
+function Snaps() { return @(@(PfJson snapshot list) | Where-Object { $_ -and $_.id }) }
+
+# Where the i-th icon of a fence is (the kit's ItemPt by position instead of by name: two items
+# with the same display name), and a crop of its 48 px icon.
+function CellPt($fence, $i) {
+  $f = FenceGet $fence
+  $wr = $f.windowRect
+  $cols = if ($f.fit -and $f.fit.columns) { [int]$f.fit.columns } else { [math]::Max(1, [math]::Floor($wr.w / 80)) }
+  $pitch = $wr.w / $cols
+  return @([int]($wr.x + ($i % $cols) * $pitch + $pitch / 2), [int]($wr.y + 36 + 8 + [math]::Floor($i / $cols) * 96 + 32))
+}
+function IconCrop($fence, $i, $name) { $p = CellPt $fence $i; return (Crop $name ($p[0] - 24) ($p[1] - 24) 48 48) }
+# The kit's ItemPt for a fence that holds This PC or the Recycle Bin: ItemPt puts those first,
+# but a fence sorts them by name among the files (the Recycle Bin after h2-full-a).
+function ItemAt($fence, $name) {
+  $order = @(@(TJson item list --fence $fence) | Sort-Object name | ForEach-Object { $_.name })
+  $i = [array]::IndexOf($order, $name)
+  if ($i -lt 0) { Log "ItemAt: '$name' not in '$fence' ($($order -join ', '))"; return $null }
+  $p = CellPt $fence $i
+  Log "ItemAt '$name' in '$fence': index $i of $($order.Count) -> $($p -join ',')"
+  return $p
+}
+
+# Threads, processes, windows: stop a process's UI thread for a while (a hang), end a process
+# with an exit code (a crash's 0xC0000005, Task Manager's 1), a layered window's alpha, how long
+# a window takes to answer, Explorer's click-to-open setting, many Recycle Bin items at once.
+Add-Type @'
+using System; using System.IO; using System.Text; using System.Diagnostics; using System.Runtime.InteropServices;
+public static class Th {
+  [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
+  [DllImport("kernel32.dll")] static extern IntPtr OpenThread(uint access, bool inherit, uint id);
+  [DllImport("kernel32.dll")] static extern uint SuspendThread(IntPtr h);
+  [DllImport("kernel32.dll")] static extern uint ResumeThread(IntPtr h);
+  [DllImport("kernel32.dll")] static extern IntPtr OpenProcess(uint access, bool inherit, uint id);
+  [DllImport("kernel32.dll")] static extern bool TerminateProcess(IntPtr h, uint code);
+  [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr h);
+  [DllImport("user32.dll")] static extern bool GetLayeredWindowAttributes(IntPtr h, out uint key, out byte alpha, out uint flags);
+  [DllImport("user32.dll")] static extern IntPtr SendMessageTimeoutW(IntPtr h, uint m, IntPtr w, IntPtr l, uint f, uint t, out IntPtr r);
+  [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern IntPtr SendMessageTimeoutW(IntPtr h, uint m, IntPtr w, string l, uint f, uint t, out IntPtr r);
+  [DllImport("shell32.dll")] static extern void SHGetSetSettings(byte[] s, uint mask, bool set);
+  public static uint UiThread(IntPtr hwnd) { uint pid; return GetWindowThreadProcessId(hwnd, out pid); }
+  public static bool Freeze(uint tid, int ms) {
+    var h = OpenThread(0x0002, false, tid); if (h == IntPtr.Zero) return false;
+    SuspendThread(h); System.Threading.Thread.Sleep(ms); ResumeThread(h); CloseHandle(h); return true;
+  }
+  public static IntPtr Suspend(uint tid) { var h = OpenThread(0x0002, false, tid); if (h != IntPtr.Zero) SuspendThread(h); return h; }
+  public static int Terminate(int pid, uint code) {
+    var h = OpenProcess(0x0001, false, (uint)pid); if (h == IntPtr.Zero) return 0;
+    bool ok = TerminateProcess(h, code); CloseHandle(h); return ok ? 1 : 0;
+  }
+  public static int Alpha(IntPtr h) { uint k, f; byte a; return GetLayeredWindowAttributes(h, out k, out a, out f) ? a : -1; }
+  // The longest a window took to answer WM_NULL during `ms` (asked again and again).
+  public static int MaxPing(IntPtr h, int ms) {
+    var all = Stopwatch.StartNew(); int max = 0;
+    while (all.ElapsedMilliseconds < ms) {
+      var sw = Stopwatch.StartNew(); IntPtr r; SendMessageTimeoutW(h, 0, IntPtr.Zero, IntPtr.Zero, 0, 20000, out r);
+      max = Math.Max(max, (int)sw.ElapsedMilliseconds); System.Threading.Thread.Sleep(20);
+    }
+    return max;
+  }
+  public static bool SingleClick() { var s = new byte[64]; SHGetSetSettings(s, 0x80, false); return (s[0] & 0x20) == 0; }
+  public static void SetSingleClick(bool on) {
+    var s = new byte[64]; SHGetSetSettings(s, 0x80, false);
+    s[0] = on ? (byte)(s[0] & ~0x20) : (byte)(s[0] | 0x20);
+    SHGetSetSettings(s, 0x80, true);
+    IntPtr r; SendMessageTimeoutW((IntPtr)0xFFFF, 0x1A, IntPtr.Zero, "ShellState", 2, 3000, out r);
+  }
+  // n deleted files in the user's Recycle Bin folder ($I record + $R file, Vista format 2).
+  public static int FillBin(string dir, string desk, int n) {
+    long ft = DateTime.Now.ToFileTime();
+    for (int i = 0; i < n; i++) {
+      string id = "H2" + i.ToString("D5") + ".txt", orig = desk + "\\h2-full-" + i + ".txt";
+      File.WriteAllText(dir + "\\$R" + id, "x");
+      using (var w = new BinaryWriter(File.Create(dir + "\\$I" + id))) {
+        w.Write((long)2); w.Write((long)1); w.Write(ft); w.Write(orig.Length + 1);
+        w.Write(Encoding.Unicode.GetBytes(orig + "\0"));
+      }
+    }
+    return n;
+  }
+  public static int EmptyFill(string dir) {
+    int n = 0;
+    foreach (var f in Directory.GetFiles(dir, "$?H2?????.txt")) { File.Delete(f); n++; }
+    return n;
+  }
+}
+'@
+function RecycleDir() { return "C:\`$Recycle.Bin\$([Security.Principal.WindowsIdentity]::GetCurrent().User.Value)" }
+
+# An entry of the shell's own popup menu by its name: the classic menu (#32768) or the
+# Windows 11 one (UI Automation), centre point or $null.
+function ShellMenuPoint($name, $sec = 5) {
+  $any = [Windows.Automation.Condition]::TrueCondition
+  $byName = New-Object Windows.Automation.PropertyCondition([Windows.Automation.AutomationElement]::NameProperty, $name)
+  $ex = @(Get-Process explorer -ErrorAction SilentlyContinue | ForEach-Object { $_.Id })
+  for ($i = 0; $i -lt $sec * 4; $i++) {
+    $m = @([W]::Tops('#32768'))
+    if ($m.Count) { $p = MenuPoint $m[0] "^$name"; if ($p) { return $p } }
+    foreach ($w in @([Windows.Automation.AutomationElement]::RootElement.FindAll([Windows.Automation.TreeScope]::Children, $any))) {
+      $c = $w.Current
+      if ($ex -notcontains $c.ProcessId -or $c.ClassName -match '^(Progman|WorkerW|Shell_TrayWnd|Shell_SecondaryTrayWnd|CabinetWClass)$') { continue }
+      $e = $w.FindFirst([Windows.Automation.TreeScope]::Descendants, $byName)
+      if ($e) { $r = $e.Current.BoundingRectangle; Log "menu item '$name' in $($c.ClassName) at $r"; return @([int]($r.X + $r.Width / 2), [int]($r.Y + $r.Height / 2)) }
+    }
+    Start-Sleep -Milliseconds 250
+  }
+  return $null
+}
+
+# The clipboard's files and its Preferred DropEffect (1 copy, 2 move, -1 none).
+function ClipFiles() { return @([Windows.Forms.Clipboard]::GetFileDropList()) }
+function ClipEffect() {
+  $d = [Windows.Forms.Clipboard]::GetData('Preferred DropEffect')
+  if (-not $d) { return -1 }
+  $b = New-Object byte[] 4; $d.Read($b, 0, 4) | Out-Null; return [BitConverter]::ToInt32($b, 0)
+}
+
+# A desktop shortcut to Notepad.
+function DeskLink($name) { $p = Join-Path $PfDesk $name; $s = (New-Object -ComObject WScript.Shell).CreateShortcut($p); $s.TargetPath = "$env:WINDIR\notepad.exe"; $s.Save(); return $p }
+
+# Visible windows of a class owned by a process (Properties dialogs of PecoFence, Open With).
+function ProcTops($cls, $proc) { return @([W]::Tops($cls) | Where-Object { [W]::ProcOf($_) -eq $proc }) }
 
 # ---- modules: the settings page over CDP, pixel reads, the user's copy and setup
 . "$PSScriptRoot\page.ps1"
