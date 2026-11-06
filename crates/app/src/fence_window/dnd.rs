@@ -335,6 +335,11 @@ pub(super) struct FenceDropHandler {
     /// read at DragEnter: a plain drag from another volume copies, as in Explorer.
     pub(super) source_volume: Option<String>,
     pub(super) desktop: Option<PathBuf>,
+    /// Only real folders opt into opening with an application's shortcut.
+    pub(super) folder_drag: bool,
+    /// Cache both accepted and rejected shortcuts for this hover (no repeated disk/COM
+    /// lookup at mouse-message rate). Dropping the target balances its DragEnter.
+    pub(super) shortcut_hover: Option<(PathBuf, Option<dragdrop::ShortcutDropTarget>)>,
 }
 
 /// How smoothly the shell's drag image was fed while a drag hovered this window: OLE calls
@@ -396,9 +401,87 @@ impl FenceDropHandler {
         INTERNAL_DRAG.with(|d| d.borrow().clone())
     }
 
+    fn shortcut_feedback(
+        &mut self,
+        pt: Option<DragPoint>,
+        key_state: u32,
+        allowed: u32,
+    ) -> Option<Feedback> {
+        let internal = Self::internal();
+        let candidate = if self.folder_drag {
+            pt.and_then(|pt| {
+                let guard = self.view.try_borrow().ok()?;
+                let v = guard.as_ref().filter(|v| !v.shows_tool())?;
+                let rect = window::window_rect(v.hwnd);
+                let i = v.hit_item(pt.x - rect.left, pt.y - rect.top)?;
+                let item = v.items.get(i)?;
+                (!item.is_folder
+                    && item
+                        .path
+                        .extension()
+                        .is_some_and(|ext| ext.eq_ignore_ascii_case("lnk"))
+                    && !internal
+                        .as_ref()
+                        .is_some_and(|d| d.items.contains(&item.id)))
+                .then(|| (i, item.path.clone(), item.name.clone(), v.hwnd, pt))
+            })
+        } else {
+            None
+        };
+        let Some((i, path, name, hwnd, pt)) = candidate else {
+            self.shortcut_hover = None;
+            return None;
+        };
+        // No view borrow across Shell calls: a drop handler can dispatch window messages.
+        if self
+            .shortcut_hover
+            .as_ref()
+            .is_none_or(|(old, _)| *old != path)
+        {
+            self.shortcut_hover = None;
+            let target = dragdrop::ShortcutDropTarget::bind(&path).ok();
+            self.shortcut_hover = Some((path, target));
+        }
+        let effect = match (&mut self.shortcut_hover, &self.data) {
+            (Some((_, Some(target))), Some(data)) => target.drag_over(data, key_state, pt, allowed),
+            _ => DropEffect::None,
+        };
+        if let Ok(mut guard) = self.view.try_borrow_mut()
+            && let Some(v) = guard.as_mut()
+        {
+            v.apply_drop_feedback(Some(DropSpot {
+                folder: (effect != DropEffect::None).then_some(i),
+                self_drop: true,
+                ..DropSpot::default()
+            }));
+            v.update_drag_scroll(pt);
+        }
+        Some(Feedback {
+            effect,
+            description: Some(if effect == DropEffect::None {
+                drop_description(effect, String::new())
+            } else {
+                (
+                    DropImage::Label,
+                    pecofence_core::i18n::text("使用 %1 打开"),
+                    name,
+                )
+            }),
+            hwnd,
+        })
+    }
+
     /// Resolves the target under `pt`, updates the highlights and returns the effect to report
     /// (plus the badge text for it). `allowed` is the source's effect mask.
-    pub(super) fn feedback(&self, pt: Option<DragPoint>, key_state: u32, allowed: u32) -> Feedback {
+    pub(super) fn feedback(
+        &mut self,
+        pt: Option<DragPoint>,
+        key_state: u32,
+        allowed: u32,
+    ) -> Feedback {
+        if let Some(feedback) = self.shortcut_feedback(pt, key_state, allowed) {
+            return feedback;
+        }
         let none = Feedback {
             effect: DropEffect::None,
             description: None,
@@ -512,6 +595,8 @@ impl FenceDropHandler {
     /// The drag is over (left or dropped): the badge is cleared so the source's next target
     /// starts from the default image, and the data object is released.
     pub(super) fn forget_data(&mut self, clear_description: bool) {
+        self.shortcut_hover = None;
+        self.folder_drag = false;
         if let Some(data) = self.data.take()
             && clear_description
             && self.last_description.is_some()
@@ -534,6 +619,10 @@ impl DropHandler for FenceDropHandler {
         // A drag of only the desktop's own items (This PC, OneDrive) has no paths left: it goes
         // to the shell, which makes their shortcuts.
         let hdrop = dragdrop::has_hdrop(data).then(|| dropped_paths(data, internal));
+        self.shortcut_hover = None;
+        self.folder_drag = hdrop
+            .as_ref()
+            .is_some_and(|paths| !paths.is_empty() && paths.iter().all(|path| path.is_dir()));
         self.kind = classify_drop(
             internal,
             hdrop.as_deref(),
@@ -616,6 +705,29 @@ impl DropHandler for FenceDropHandler {
     ) -> DropEffect {
         self.over_stats.report("drop");
         let drop_started = Instant::now();
+        if let Some(feedback) = self.shortcut_feedback(Some(pt), key_state, allowed) {
+            let target = self.shortcut_hover.take().and_then(|(_, target)| target);
+            self.kind = DropKind::None;
+            self.feedback(None, 0, 0);
+            self.forget_data(false);
+            self.right_button = false;
+            if let Some(helper) = &self.helper {
+                helper.drop(data, pt, feedback.effect);
+            }
+            // Never fall through to membership changes or file moves when a shortcut
+            // rejects the folders, disappears, or fails to launch.
+            return target
+                .filter(|_| feedback.effect != DropEffect::None)
+                .map(|target| {
+                    target
+                        .drop_folders(data, key_state, pt, allowed)
+                        .unwrap_or_else(|error| {
+                            tracing::warn!(%error, "shortcut folder drop failed");
+                            DropEffect::None
+                        })
+                })
+                .unwrap_or(DropEffect::None);
+        }
         let kind = std::mem::replace(&mut self.kind, DropKind::None);
         let internal = Self::internal();
         // Resolve the target and clear the highlights under one borrow.

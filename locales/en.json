@@ -93,6 +93,7 @@
   "移动到当前位置(&M)": "&Move here",
   "复制到当前位置(&C)": "&Copy here",
   "在当前位置创建快捷方式(&S)": "Create &shortcuts here",
+  "使用 %1 打开": "Open with %1",
   "移动到 %1": "Move to %1",
   "复制到 %1": "Copy to %1",
   "在 %1 中创建链接": "Create link in %1",

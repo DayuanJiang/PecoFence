@@ -92,6 +92,7 @@
   "移动到当前位置(&M)": "&Sposta qui",
   "复制到当前位置(&C)": "&Copia qui",
   "在当前位置创建快捷方式(&S)": "Crea co&llegamenti qui",
+  "使用 %1 打开": "Apri con %1",
   "移动到 %1": "Sposta in %1",
   "复制到 %1": "Copia in %1",
   "在 %1 中创建链接": "Crea un collegamento in %1",
