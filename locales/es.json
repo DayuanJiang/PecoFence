@@ -760,5 +760,9 @@
   "已导入配置。其中的脚本还没有运行。确认这些脚本可信后，在「小工具」页打开「小工具」开关。": "Configuración importada. Sus scripts todavía no se ejecutan. Cuando confíes en ellos, activa el interruptor Herramientas en la página Herramientas.",
   "打开设置": "Abrir Configuración",
   "· 速览时直接打字搜索，支持拼音\n· 「打开/保存」对话框能跳到资源管理器里正开着的文件夹\n· 小工具：便签和待办、时钟、脚本栅栏\n对话框跳转要在设置里开启。": "• Escribe durante la vista rápida para buscar en tus grupos, también por pinyin\n• Los cuadros de diálogo Abrir y Guardar pueden saltar a la carpeta abierta en el Explorador de archivos\n• Herramientas: notas y tareas, reloj, grupos de script\nActiva el salto de carpeta en Configuración.",
-  "以后从资源管理器切回「打开/保存」对话框，对话框会自动跳到资源管理器里开着的文件夹。按 Ctrl+G 也能跳。不需要的话，可以在「设置」→「速览与搜索」里关掉。": "A partir de ahora, un cuadro de diálogo Abrir o Guardar va a la carpeta abierta en la ventana del Explorador desde la que vuelves. Ctrl+G también funciona. Puedes desactivarlo en Configuración → Vista rápida y búsqueda."
+  "以后从资源管理器切回「打开/保存」对话框，对话框会自动跳到资源管理器里开着的文件夹。按 Ctrl+G 也能跳。不需要的话，可以在「设置」→「速览与搜索」里关掉。": "A partir de ahora, un cuadro de diálogo Abrir o Guardar va a la carpeta abierta en la ventana del Explorador desde la que vuelves. Ctrl+G también funciona. Puedes desactivarlo en Configuración → Vista rápida y búsqueda.",
+  "Everything 1.5 已经装好，现在运行的是 {0}": "Everything 1.5 está instalado, pero se está ejecutando la {0}",
+  "改用 1.5 后可以用拼音找中文名。1.5 会在登录 Windows 时启动，1.4 不再自动启动。Windows 可能会询问一次管理员权限": "Con la 1.5 puedes buscar nombres chinos por pinyin. La 1.5 se iniciará al entrar en Windows y la 1.4 ya no se iniciará sola. Windows puede pedir permisos de administrador una vez.",
+  "改用 1.5": "Cambiar a 1.5",
+  "已改用 Everything 1.5，以后登录 Windows 时也会启动它": "Ahora se usa Everything 1.5. A partir de ahora también se inicia al entrar en Windows"
 }

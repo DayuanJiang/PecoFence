@@ -733,6 +733,7 @@ impl App {
                 }
                 Some("installEverything") => self.install_everything(),
                 Some("startEverything") => self.start_everything(),
+                Some("useEverything15") => self.use_everything_15(),
                 Some("addTemplate") => {
                     if let Some(template) = v
                         .get("template")

@@ -320,6 +320,7 @@ async function runTests() {
     const cases = [
       [{ state: 'running', version: '1.5', pinyin: true }, 'Everything 1.5 正在运行', '拼音', null],
       [{ state: 'running', version: '1.4', pinyin: false }, 'Everything 1.4 正在运行', '1.5', ['升级到 1.5', 'installEverything']],
+      [{ state: 'running', version: '1.4', pinyin: false, has15: true }, 'Everything 1.5 已经装好，现在运行的是 1.4', '登录 Windows', ['改用 1.5', 'useEverything15']],
       [{ state: 'installed' }, 'Everything 已经装好，还没有运行', '启动后', ['启动 Everything', 'startEverything']],
       [{ state: 'missing' }, '这台电脑还没有 Everything', 'winget', ['安装 Everything', 'installEverything']],
       [{ state: 'installing' }, '正在安装 Everything…', '自动启动', null],

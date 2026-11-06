@@ -760,5 +760,9 @@
   "已导入配置。其中的脚本还没有运行。确认这些脚本可信后，在「小工具」页打开「小工具」开关。": "Konfiguration importiert. Die Skripte darin laufen noch nicht. Wenn du ihnen vertraust, schalte auf der Seite Werkzeuge den Schalter Werkzeuge ein.",
   "打开设置": "Einstellungen öffnen",
   "· 速览时直接打字搜索，支持拼音\n· 「打开/保存」对话框能跳到资源管理器里正开着的文件夹\n· 小工具：便签和待办、时钟、脚本栅栏\n对话框跳转要在设置里开启。": "• Beim Hervorholen einfach tippen, um in den Bereichen zu suchen, auch per Pinyin\n• Öffnen- und Speichern-Dialoge können in den Ordner springen, der im Explorer offen ist\n• Werkzeuge: Notizen und Aufgaben, Uhr, Skriptbereiche\nDen Sprung im Dateidialog schaltest du in den Einstellungen ein.",
-  "以后从资源管理器切回「打开/保存」对话框，对话框会自动跳到资源管理器里开着的文件夹。按 Ctrl+G 也能跳。不需要的话，可以在「设置」→「速览与搜索」里关掉。": "Ab jetzt springt ein Öffnen- oder Speichern-Dialog in den Ordner, der in dem Explorer-Fenster offen ist, aus dem du zurückkommst. Strg+G geht auch. Ausschalten kannst du das unter Einstellungen → Hervorholen und suchen."
+  "以后从资源管理器切回「打开/保存」对话框，对话框会自动跳到资源管理器里开着的文件夹。按 Ctrl+G 也能跳。不需要的话，可以在「设置」→「速览与搜索」里关掉。": "Ab jetzt springt ein Öffnen- oder Speichern-Dialog in den Ordner, der in dem Explorer-Fenster offen ist, aus dem du zurückkommst. Strg+G geht auch. Ausschalten kannst du das unter Einstellungen → Hervorholen und suchen.",
+  "Everything 1.5 已经装好，现在运行的是 {0}": "Everything 1.5 ist installiert, aber es läuft {0}",
+  "改用 1.5 后可以用拼音找中文名。1.5 会在登录 Windows 时启动，1.4 不再自动启动。Windows 可能会询问一次管理员权限": "Mit 1.5 findest du chinesische Namen per Pinyin. 1.5 startet dann bei der Anmeldung bei Windows, 1.4 startet nicht mehr von selbst. Windows fragt eventuell einmal nach Administratorrechten.",
+  "改用 1.5": "Zu 1.5 wechseln",
+  "已改用 Everything 1.5，以后登录 Windows 时也会启动它": "Auf Everything 1.5 gewechselt. Es startet ab jetzt auch bei der Anmeldung bei Windows"
 }

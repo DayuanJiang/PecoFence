@@ -1383,6 +1383,8 @@
     const [status, help, action] = {
       running: e.pinyin
         ? [tf("Everything {0} 正在运行", e.version), t("可以用拼音找中文名，例如输入 ysb 找到“预算表”"), null]
+        : e.has15
+        ? [tf("Everything 1.5 已经装好，现在运行的是 {0}", e.version), t("改用 1.5 后可以用拼音找中文名。1.5 会在登录 Windows 时启动，1.4 不再自动启动。Windows 可能会询问一次管理员权限"), ['useEverything15', t("改用 1.5")]]
         : [tf("Everything {0} 正在运行", e.version), t("这个版本不能用拼音找中文名，升级到 1.5 版就可以"), ['installEverything', t("升级到 1.5")]],
       installed: [t("Everything 已经装好，还没有运行"), t("启动后才能搜索整台电脑"), ['startEverything', t("启动 Everything")]],
       installing: [t("正在安装 Everything…"), t("装好后会自动启动"), null],
