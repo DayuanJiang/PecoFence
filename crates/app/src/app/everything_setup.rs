@@ -157,7 +157,7 @@ impl App {
                 if let Some(old) = &old {
                     let dir = old.parent();
                     let exited = everything::run_program(old, "-exit", dir, false, 5000);
-                    tracing::info!(old = %old.display(), exited, "Everything switch: 1.4 asked to exit");
+                    tracing::info!(exe = %old.display(), exited, "Everything switch: 1.4 asked to exit");
                     // This user's entry (written by Everything's own startup option), if any.
                     let user_entry = pecofence_platform::autostart::registered_path("Everything")
                         .is_some_and(|p| everything::command_names(&p, old));
@@ -177,8 +177,8 @@ impl App {
                     }
                     let machine_left = everything::all_users_run_keys(old).len();
                     tracing::info!(
-                        user_entry, user_removed, machine_keys = keys.len(), removed, machine_left,
-                        "Everything 1.4 closed and taken out of startup exited={exited}"
+                        exited, user_entry, user_removed, machine_keys = keys.len(), removed, machine_left,
+                        "Everything 1.4 closed and taken out of startup"
                     );
                 }
                 let mut cmd = std::process::Command::new(&new);
@@ -191,7 +191,7 @@ impl App {
                 let command = format!("\"{}\" -startup", new.display());
                 let startup =
                     pecofence_platform::autostart::set_command("Everything 1.5a", Some(&command)).is_ok();
-                tracing::info!(new = %new.display(), started, startup, "Everything 1.5 started and set to start at sign-in");
+                tracing::info!(exe = %new.display(), started, startup, "Everything 1.5 started and set to start at sign-in");
                 SETUP_RESULT.store(SETUP_SWITCHED, std::sync::atomic::Ordering::Relaxed);
                 window::post_message(
                     HWND(control as *mut core::ffi::c_void),
