@@ -19,6 +19,7 @@
 - On Windows 10, Peek no longer closes by itself right after it opens when the desktop was clicked just before its shortcut. Windows sometimes makes the desktop the front window about a second after such a click, which PecoFence took for a move to another window; the Peek now stays and takes the keyboard back, so what you type goes to its search.
 - A shortcut's right-click menu in a fence has 「打开文件所在的位置」 only once: Windows' own entry, which opens the folder of the shortcut's target with the target selected, as on Windows' desktop. PecoFence's 「打开文件所在位置」 stood above it under nearly the same name and selected the shortcut itself in the desktop folder. Files and folders keep PecoFence's entry.
 - With 「隐藏标题栏右侧的项目数和折叠箭头」 on, a fence with tabs that is made narrower by dragging its edge no longer keeps a fade at the right end of its tab strip while its last tab is the active one. The fade says that more tabs follow, but none did; it stayed until the pointer next came over the title, in Fluent and in Liquid Glass. The tab strip now moves to the new width before its ends are drawn.
+- `pecofence-cli fence move` (or `fence resize`) right after `fence roll` no longer opens the fence again: the move took the window's roll state, which a roll-up still in flight had not set yet, and the fence came back open. It now keeps the state the fence was given.
 
 ## 0.2.5
 

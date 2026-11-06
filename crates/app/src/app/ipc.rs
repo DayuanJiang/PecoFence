@@ -2105,7 +2105,12 @@ impl App {
         // window first, then the state with the expanded height. Rolled up, only the title bar
         // shows; `h` becomes the height it unrolls to.
         let full = rect_to_win(placed);
-        let rolled = w.is_rolled();
+        // Rolled by the fence's state: a roll-up still in flight (`fence roll` just before)
+        // has not set the window's flag yet, and taking that flag opened the fence again.
+        let rolled = self
+            .state
+            .fence(id)
+            .map_or_else(|| w.is_rolled(), |f| f.rolled_up || w.is_rolled());
         // An explicit place is where the fence rests, even at the top a push gave it.
         self.ctx.behavior.release_push(w.hwnd());
         // Rolled with 向上展开, the title row goes to the bottom of the rect, where it opens
