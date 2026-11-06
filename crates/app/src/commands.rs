@@ -53,6 +53,8 @@ pub const WM_APP_DESKTOP_SHAPE: u32 = msg::WM_APP + 19;
 pub const WM_APP_SCRIPT_DONE: u32 = msg::WM_APP + 20;
 /// 搜索整台电脑: the Everything install ended (wParam: 1 done, 0 failed, 2 no winget).
 pub const WM_APP_EVERYTHING_SETUP: u32 = msg::WM_APP + 21;
+/// 对话框跳转 offer: a file dialog and an Explorer folder to offer (`dialog_jump::take_offer`).
+pub const WM_APP_DIALOG_OFFER: u32 = msg::WM_APP + 22;
 
 /// What a file drop does with the dropped paths (Explorer's Move / Copy / Create shortcut, the
 /// effect the drop target reported).

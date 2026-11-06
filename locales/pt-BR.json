@@ -749,5 +749,17 @@
   "合成标签页": "Juntar em abas",
   "把一个栅栏拖到另一个栅栏的标题上，两个栅栏就合成一个，用标签切换。": "Arraste um grupo até o título de outro e os dois viram um só, com abas para alternar entre eles.",
   "小技巧 {0}/{1}：{2}": "Dica {0}/{1}: {2}",
-  "下一条": "Próxima"
+  "下一条": "Próxima",
+  "怎么用": "Como funciona",
+  "「打开」对话框停在程序自己选的文件夹": "A caixa de diálogo Abrir começa na pasta que o programa escolheu",
+  "切到资源管理器，它正开着「{0}」": "Vá ao Explorador de Arquivos, que mostra “{0}”",
+  "切回对话框，它自动跳到「{0}」": "De volta à caixa de diálogo, ela vai sozinha para “{0}”",
+  "也可以在对话框里按 Ctrl+G，或者点一下文件夹栅栏。": "Você também pode pressionar Ctrl+G na caixa de diálogo ou clicar em um grupo de pasta.",
+  "资源管理器": "Explorador de Arquivos",
+  "对话框跳转演示\u0004项目资料": "Projetos",
+  "让对话框跳到「{0}」？": "Levar esta caixa de diálogo para “{0}”?",
+  "您刚在资源管理器里打开了「{0}」。PecoFence 可以让这个对话框跳过去，以后从资源管理器切回对话框时也自动跳。": "Você acabou de abrir “{0}” no Explorador de Arquivos. O PecoFence pode levar esta caixa de diálogo até lá e fazer o mesmo sempre que você voltar do Explorador para uma caixa de diálogo.",
+  "跳过去并开启": "Ir e ativar",
+  "对话框跳转已开启": "O salto de pasta está ativado",
+  "以后从资源管理器切回「打开/保存」对话框，它会自动跳到那个文件夹；按 Ctrl+G 也能跳。不需要的话，可以在「设置」→「小工具」里关掉。": "De agora em diante, uma caixa de diálogo Abrir ou Salvar vai para a pasta da janela do Explorador de onde você volta; Ctrl+G também funciona. Você pode desativar em Configurações → Ferramentas."
 }

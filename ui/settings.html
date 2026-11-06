@@ -416,6 +416,27 @@
     .preview-glass, .tile-glass .mini-fence::before, .tile-glass .mini-fence::after { display: none; }
     .mini-fence { border: 1px solid CanvasText; }
   }
+  /* 对话框跳转: its three-step demo under the card (drawn by the script, colors per theme). */
+  :root { --dj-panel: #1f1f1f; --dj-win: #3a3a3a; --dj-bar: #454545; --dj-line: #6b6b6b; --dj-row: #5a5a5a; --dj-hot: #1f3b52; }
+  :root.light { --dj-panel: #f3f5f8; --dj-win: #ffffff; --dj-bar: #eef1f4; --dj-line: #9aa3ad; --dj-row: #d9dde2; --dj-hot: #e5f1fb; }
+  .card.dj-demo { display: block; padding: 14px 16px 14px 57px; }
+  .dj-demo .dj-head { font-size: 14px; line-height: 20px; margin-bottom: 8px; }
+  .dj-demo .dj-body { display: flex; flex-wrap: wrap; gap: 20px; align-items: center; }
+  .dj-demo .dj-pic { flex: none; border-radius: var(--r-control); background: var(--dj-panel); padding: 6px; line-height: 0; }
+  .dj-demo ol { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; font-size: 13px; line-height: 18px; color: var(--text2); }
+  .dj-demo li.on { color: var(--text); font-weight: 600; }
+  .dj-demo > .s { margin-top: 10px; }
+  .dj-pic .w { fill: var(--dj-win); stroke: var(--dj-line); }
+  .dj-pic .w.front { stroke: var(--accent); stroke-width: 2; }
+  .dj-pic .bar { fill: var(--dj-bar); }
+  .dj-pic .addr { fill: var(--dj-bar); stroke: var(--dj-line); }
+  .dj-pic .addr.hot { fill: var(--dj-hot); stroke: var(--accent); }
+  .dj-pic .fold { fill: #f8c851; }
+  .dj-pic .row { fill: var(--dj-row); }
+  .dj-pic .back { opacity: .55; }
+  .dj-pic text { fill: var(--text); font-size: 10px; font-family: inherit; }
+  .dj-pic text.hot { fill: var(--accent); font-weight: 600; }
+  .dj-pic .cursor { fill: var(--text); stroke: var(--dj-panel); stroke-width: 1; }
 </style>
 </head>
 <body>
@@ -647,6 +668,7 @@
       </div>
       <h3>文件对话框</h3>
       <div class="card"><div class="l"><span class="ic">&#xE8DA;</span><div><div class="t">对话框跳转</div><div class="s">打开或保存文件时，切到资源管理器再切回对话框，它就跳到资源管理器里的文件夹；点文件夹栅栏或按 Ctrl+G 也能跳过去</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="tools.dialogJump"></div></div>
+      <div class="card child dj-demo" id="dialogJumpDemo"><div class="dj-head">怎么用</div><div class="dj-body"><div class="dj-pic" aria-hidden="true"></div><ol><li>「打开」对话框停在程序自己选的文件夹</li><li></li><li></li></ol></div><div class="s">也可以在对话框里按 Ctrl+G，或者点一下文件夹栅栏。</div></div>
       <h3>自己写的小工具</h3>
       <div class="group">
         <div class="card"><div class="l"><span class="ic">&#xE943;</span><div><div class="t">脚本栅栏</div><div class="s">运行你选的脚本（PowerShell、Python、批处理等），把它打印的文字显示在栅栏里：可以每隔 1 分钟到 3 小时运行一次，也可以一直运行、几秒更新一次；脚本还可以让一行变得能点，点一下打开网址、运行程序或者给待办打勾。适合天气、倒计时、服务器状态，也可以让 AI 助手帮你写。PecoFence 不会为脚本栅栏联网，联网的是你的脚本</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="tools.scripts"></div></div>
@@ -2398,6 +2420,34 @@
     document.getElementById('memDetail').textContent = tf("内存占用 {0} MB · {1} 个栅栏 · {2} 个项目", state.memoryMb.toFixed(1), fenceCount, itemCount);
   }
 
+  // 对话框跳转: its demo shows the three steps one after the other while 小工具 is shown.
+  const djDemo = document.getElementById('dialogJumpDemo');
+  if (djDemo) {
+    const steps = djDemo.querySelectorAll('li'), pic = djDemo.querySelector('.dj-pic');
+    const win = (x, y, title, addr, front, hot) => `<g class="${front ? '' : 'back'}"><rect class="w${front ? ' front' : ''}" x="${x}" y="${y}" width="170" height="118" rx="6"/>`
+      + `<rect class="bar" x="${x + 1}" y="${y + 1}" width="168" height="19" rx="5"/><text x="${x + 10}" y="${y + 14}">${esc(title)}</text>`
+      + `<rect class="addr${hot ? ' hot' : ''}" x="${x + 8}" y="${y + 26}" width="154" height="18" rx="3"/><rect class="fold" x="${x + 13}" y="${y + 31}" width="10" height="8" rx="1"/>`
+      + `<text class="${hot ? 'hot' : ''}" x="${x + 28}" y="${y + 39}">${esc(addr)}</text>`
+      + [96, 72, 84].map((w, i) => `<rect class="row" x="${x + 14}" y="${y + 54 + i * 15}" width="${w}" height="7" rx="2"/>`).join('') + '</g>';
+    let step = 1;
+    const draw = () => {
+      const folder = t("对话框跳转演示\x04项目资料"), front = step !== 2;
+      steps[1].textContent = tf("切到资源管理器，它正开着「{0}」", folder);
+      steps[2].textContent = tf("切回对话框，它自动跳到「{0}」", folder);
+      const ex = win(14, 22, t("资源管理器"), folder, !front, false);
+      const dlg = win(136, 46, t("打开"), step === 3 ? folder : t("文档"), front, step === 3);
+      const cursor = step === 1 ? '' : `<path class="cursor" transform="translate(${step === 2 ? '60 92' : '230 60'})" d="M0 0 l0 14 l4 -4 l3 7 l3 -1 l-3 -7 l5 0 z"/>`;
+      pic.innerHTML = `<svg viewBox="0 0 320 176" width="320" height="176">${front ? ex + dlg : dlg + ex}${cursor}</svg>`;
+      steps.forEach((li, i) => li.classList.toggle('on', i === step - 1));
+    };
+    draw();
+    setInterval(() => {
+      if (document.hidden || !document.getElementById('page-tools').classList.contains('on')) return;
+      step = step % 3 + 1;
+      draw();
+    }, 1800);
+  }
+
   if (wv) wv.addEventListener('message', e => {
     const m = e.data;
     if (m.type === 'state') {
@@ -2443,7 +2493,10 @@
       state.itemCount = m.itemCount;
       renderWorkspaceSummary(m.fenceCount, m.itemCount);
     } else if (m.type === 'showFence') showFence(m.id);
-    else if (m.type === 'showPage') showPage(m.page);
+    else if (m.type === 'showPage') {
+      showPage(m.page);
+      if (m.focus) document.getElementById(m.focus)?.scrollIntoView({ block: 'center' });
+    }
     else if (m.type === 'feedbackInfo') {
       fbInfo = m; fbCrash ||= !!m.crashed; renderFeedback();
       if (fbSendPending) { fbSendPending = false; fbSend.click(); }

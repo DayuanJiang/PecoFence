@@ -139,6 +139,11 @@ impl App {
         }
     }
 
+    /// A welcome, what's-new, 对话框跳转 or rating notice is on screen.
+    pub(super) fn notice_showing(&self) -> bool {
+        self.welcome.is_some() || self.rating.notice.is_some()
+    }
+
     /// After a render stack rebuild: the notice on screen draws on the new device.
     pub(super) fn redraw_notices(&self) {
         for notice in self

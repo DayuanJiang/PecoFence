@@ -749,5 +749,17 @@
   "合成标签页": "Zu Tabs zusammenfassen",
   "把一个栅栏拖到另一个栅栏的标题上，两个栅栏就合成一个，用标签切换。": "Zieh einen Bereich auf den Titel eines anderen, und beide werden zu einem, in dem du mit Tabs wechselst.",
   "小技巧 {0}/{1}：{2}": "Tipp {0}/{1}: {2}",
-  "下一条": "Weiter"
+  "下一条": "Weiter",
+  "怎么用": "So geht’s",
+  "「打开」对话框停在程序自己选的文件夹": "Der Öffnen-Dialog startet in dem Ordner, den sein Programm wählt",
+  "切到资源管理器，它正开着「{0}」": "Wechsle zum Explorer, der „{0}“ zeigt",
+  "切回对话框，它自动跳到「{0}」": "Zurück im Dialog springt er von selbst nach „{0}“",
+  "也可以在对话框里按 Ctrl+G，或者点一下文件夹栅栏。": "Du kannst im Dialog auch Strg+G drücken oder auf einen Ordnerbereich klicken.",
+  "资源管理器": "Explorer",
+  "对话框跳转演示\u0004项目资料": "Projekte",
+  "让对话框跳到「{0}」？": "Diesen Dialog nach „{0}“ springen lassen?",
+  "您刚在资源管理器里打开了「{0}」。PecoFence 可以让这个对话框跳过去，以后从资源管理器切回对话框时也自动跳。": "Du hast gerade „{0}“ im Explorer geöffnet. PecoFence kann diesen Dialog dorthin bringen und das künftig immer tun, wenn du vom Explorer zu einem Dialog zurückkehrst.",
+  "跳过去并开启": "Springen und einschalten",
+  "对话框跳转已开启": "Sprung im Dateidialog ist an",
+  "以后从资源管理器切回「打开/保存」对话框，它会自动跳到那个文件夹；按 Ctrl+G 也能跳。不需要的话，可以在「设置」→「小工具」里关掉。": "Ab jetzt springt ein Öffnen- oder Speichern-Dialog in den Ordner des Explorer-Fensters, aus dem du zurückkommst; Strg+G geht auch. Ausschalten kannst du das unter Einstellungen → Werkzeuge."
 }

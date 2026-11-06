@@ -279,20 +279,24 @@ impl App {
         }
     }
 
-    /// Opens the settings window on `page` (a `data-page` of the navigation).
-    pub(super) fn open_settings_page(&mut self, page: &'static str) {
+    /// Opens the settings window on `page` (a `data-page` of the navigation), scrolled to the
+    /// element with id `focus`.
+    pub(super) fn open_settings_page(&mut self, page: &'static str, focus: Option<&'static str>) {
         self.open_settings();
         match &self.settings {
-            Some(host) if host.ready => self.post_show_page(page),
-            Some(_) => self.settings_focus_page = Some(page),
+            Some(host) if host.ready => self.post_show_page(page, focus),
+            Some(_) => self.settings_focus_page = Some((page, focus)),
             None => {}
         }
     }
 
-    fn post_show_page(&self, page: &str) {
-        tracing::info!(page, "settings page asked to show a page");
+    fn post_show_page(&self, page: &str, focus: Option<&str>) {
+        tracing::info!(page, focus, "settings page asked to show a page");
         if let Some(h) = &self.settings {
-            h.post_json(&serde_json::json!({ "type": "showPage", "page": page }).to_string());
+            h.post_json(
+                &serde_json::json!({ "type": "showPage", "page": page, "focus": focus })
+                    .to_string(),
+            );
         }
     }
 
@@ -644,8 +648,8 @@ impl App {
                     window::show_normal(h.hwnd());
                     window::bring_to_front(h.hwnd());
                 }
-                if let Some(page) = self.settings_focus_page.take() {
-                    self.post_show_page(page);
+                if let Some((page, focus)) = self.settings_focus_page.take() {
+                    self.post_show_page(page, focus);
                 }
                 if let Some(fence) = self.settings_focus_fence.take() {
                     self.post_show_fence(fence);

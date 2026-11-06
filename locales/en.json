@@ -749,5 +749,17 @@
   "合成标签页": "Combine into tabs",
   "把一个栅栏拖到另一个栅栏的标题上，两个栅栏就合成一个，用标签切换。": "Drag a fence onto another fence's title and the two become one, with tabs to switch between them.",
   "小技巧 {0}/{1}：{2}": "Tip {0}/{1}: {2}",
-  "下一条": "Next"
+  "下一条": "Next",
+  "怎么用": "How it works",
+  "「打开」对话框停在程序自己选的文件夹": "The Open dialog starts in the folder its program chose",
+  "切到资源管理器，它正开着「{0}」": "Switch to File Explorer, which shows “{0}”",
+  "切回对话框，它自动跳到「{0}」": "Back in the dialog, it jumps to “{0}” by itself",
+  "也可以在对话框里按 Ctrl+G，或者点一下文件夹栅栏。": "You can also press Ctrl+G in the dialog, or click a folder fence.",
+  "资源管理器": "File Explorer",
+  "对话框跳转演示\u0004项目资料": "Projects",
+  "让对话框跳到「{0}」？": "Jump this dialog to “{0}”?",
+  "您刚在资源管理器里打开了「{0}」。PecoFence 可以让这个对话框跳过去，以后从资源管理器切回对话框时也自动跳。": "You just opened “{0}” in File Explorer. PecoFence can take this dialog there, and do the same whenever you come back to a dialog from File Explorer.",
+  "跳过去并开启": "Jump and turn on",
+  "对话框跳转已开启": "Jump in file dialogs is on",
+  "以后从资源管理器切回「打开/保存」对话框，它会自动跳到那个文件夹；按 Ctrl+G 也能跳。不需要的话，可以在「设置」→「小工具」里关掉。": "From now on, an Open or Save dialog goes to the folder of the File Explorer window you come back from; Ctrl+G works too. You can turn it off in Settings → Tools."
 }

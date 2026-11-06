@@ -87,6 +87,7 @@ impl App {
     pub(super) fn sync_dialog_jump(&self) {
         let settings = &self.state.config.settings;
         crate::dialog_jump::set_enabled(settings.tools.dialog_jump, self.control.hwnd());
+        self.sync_dialog_jump_offer();
     }
 
     /// Makes a tool fence at `rect` (physical px; None = a free spot near (`x`, `y`)), titled

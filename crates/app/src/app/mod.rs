@@ -2,10 +2,11 @@
 
 use crate::anchor::{self, AnchorCell, DesktopAnchor, ShowDesktopBehavior, ZMode};
 use crate::commands::{
-    Command, CommandQueue, TransferMode, WM_APP_COMMAND, WM_APP_EVERYTHING_SETUP, WM_APP_FRAME,
-    WM_APP_FS_CHANGED, WM_APP_LIVE_WALLPAPER, WM_APP_PEEK_FOCUSED, WM_APP_PREWARM_DONE,
-    WM_APP_SCRIPT_DONE, WM_APP_SHELL_CHANGED, WM_APP_STARTUP_BACKDROPS, WM_APP_STARTUP_TASK,
-    WM_APP_THEMES_CHANGED, WM_APP_TRAY, WM_APP_WALLPAPER,
+    Command, CommandQueue, TransferMode, WM_APP_COMMAND, WM_APP_DIALOG_OFFER,
+    WM_APP_EVERYTHING_SETUP, WM_APP_FRAME, WM_APP_FS_CHANGED, WM_APP_LIVE_WALLPAPER,
+    WM_APP_PEEK_FOCUSED, WM_APP_PREWARM_DONE, WM_APP_SCRIPT_DONE, WM_APP_SHELL_CHANGED,
+    WM_APP_STARTUP_BACKDROPS, WM_APP_STARTUP_TASK, WM_APP_THEMES_CHANGED, WM_APP_TRAY,
+    WM_APP_WALLPAPER,
 };
 use crate::fence_window::{
     BackdropMode, BackdropSets, Behavior, FenceContext, FenceWindow, ItemView, SearchMarks, TabView,
@@ -173,6 +174,9 @@ const TIMER_EVERYTHING_STATUS: usize = 69;
 /// 搜索整台电脑: the install ended (`WM_APP_EVERYTHING_SETUP`); retried while the App is
 /// borrowed.
 const TIMER_EVERYTHING_SETUP: usize = 71;
+/// 对话框跳转 offer: a dialog to offer it to (`WM_APP_DIALOG_OFFER`); retried while the App is
+/// borrowed.
+const TIMER_DIALOG_OFFER: usize = 73;
 const THEMES_SETTLE_MS: u32 = 300;
 const DEVICE_RETRY_MAX_MS: u32 = 30_000;
 /// Growth of private commit plus GPU memory that logs a memory line before the hour is up.
@@ -302,14 +306,18 @@ pub struct App {
     /// Fence to select on the settings page once it reports `ready` (opened via 栅栏选项…).
     settings_focus_fence: Option<FenceId>,
     /// Page to show once the settings page reports `ready` (the what's-new notice).
-    settings_focus_page: Option<&'static str>,
+    settings_focus_page: Option<(&'static str, Option<&'static str>)>,
     /// The 「反馈」 form on 「关于」: pending focus and the crash offer (see `feedback.rs`).
     feedback: feedback::FeedbackState,
     updates: updates::Updates,
     /// The one-time Store rating offer (see `rating.rs`).
     rating: rating::RatingPrompt,
-    /// The first start's tip or the what's-new notice while it is on screen (see `welcome.rs`).
+    /// The first start's tip, the what's-new notice or a 对话框跳转 notice while it is on screen
+    /// (see `welcome.rs`).
     welcome: Option<(crate::notice::Notice, welcome::Welcome)>,
+    /// The welcome, what's-new and 对话框跳转 notices may show (not under a test script or
+    /// `--exit-after`).
+    notices: bool,
     /// The fence Settings › 「栅栏」 is editing, which wears the selection ring (`group.rs`).
     settings_ring: Option<FenceId>,
     web_env: Option<WebEnvironment>,
@@ -786,6 +794,10 @@ impl App {
                             window::set_timer(hwnd, TIMER_EVERYTHING_SETUP, 1);
                             Some(0)
                         }
+                        WM_APP_DIALOG_OFFER => {
+                            window::set_timer(hwnd, TIMER_DIALOG_OFFER, 1);
+                            Some(0)
+                        }
                         WM_APP_THEMES_CHANGED => {
                             window::set_timer(hwnd, TIMER_THEMES, THEMES_SETTLE_MS);
                             Some(0)
@@ -933,6 +945,7 @@ impl App {
                                 | TIMER_EVERYTHING
                                 | TIMER_EVERYTHING_STATUS
                                 | TIMER_EVERYTHING_SETUP
+                                | TIMER_DIALOG_OFFER
                                 | TIMER_STARTUP_BACKDROPS => {
                                     if let Ok(mut guard) = cell.try_borrow_mut()
                                         && let Some(app) = guard.as_mut()
@@ -955,6 +968,7 @@ impl App {
                                             TIMER_STARTUP_BACKDROPS => {
                                                 app.finish_startup_backdrops()
                                             }
+                                            TIMER_DIALOG_OFFER => app.offer_dialog_jump(),
                                             _ => app.prewarm_wallpapers(),
                                         }
                                     } else {
@@ -1518,6 +1532,7 @@ impl App {
             updates: Default::default(),
             rating,
             welcome: None,
+            notices: args.exit_after_ms.is_none() && args.test_script.is_none(),
             settings_ring: None,
             web_env: None,
             settings_class,
@@ -1821,7 +1836,7 @@ impl App {
         app.remove_old_update_downloads();
         // Last of the startup balloons, so it is the one left showing.
         app.offer_crash_feedback();
-        app.offer_welcome(args.exit_after_ms.is_none() && args.test_script.is_none());
+        app.offer_welcome();
         if args.open_settings {
             app.queue.push(Command::OpenSettings);
         }

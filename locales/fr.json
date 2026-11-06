@@ -749,5 +749,17 @@
   "合成标签页": "Regrouper en onglets",
   "把一个栅栏拖到另一个栅栏的标题上，两个栅栏就合成一个，用标签切换。": "Faites glisser un groupe sur le titre d’un autre : les deux n’en font plus qu’un, avec des onglets pour passer de l’un à l’autre.",
   "小技巧 {0}/{1}：{2}": "Astuce {0}/{1} : {2}",
-  "下一条": "Suivant"
+  "下一条": "Suivant",
+  "怎么用": "Comment ça marche",
+  "「打开」对话框停在程序自己选的文件夹": "La boîte de dialogue Ouvrir s’ouvre dans le dossier choisi par son programme",
+  "切到资源管理器，它正开着「{0}」": "Passez à l’Explorateur de fichiers, qui affiche « {0} »",
+  "切回对话框，它自动跳到「{0}」": "De retour dans la boîte de dialogue, elle va seule à « {0} »",
+  "也可以在对话框里按 Ctrl+G，或者点一下文件夹栅栏。": "Vous pouvez aussi appuyer sur Ctrl+G dans la boîte de dialogue, ou cliquer sur un groupe de dossier.",
+  "资源管理器": "Explorateur de fichiers",
+  "对话框跳转演示\u0004项目资料": "Projets",
+  "让对话框跳到「{0}」？": "Aller à « {0} » dans cette boîte de dialogue ?",
+  "您刚在资源管理器里打开了「{0}」。PecoFence 可以让这个对话框跳过去，以后从资源管理器切回对话框时也自动跳。": "Vous venez d’ouvrir « {0} » dans l’Explorateur de fichiers. PecoFence peut y emmener cette boîte de dialogue, et le refaire chaque fois que vous revenez à une boîte de dialogue depuis l’Explorateur.",
+  "跳过去并开启": "Y aller et activer",
+  "对话框跳转已开启": "Le saut de dossier est activé",
+  "以后从资源管理器切回「打开/保存」对话框，它会自动跳到那个文件夹；按 Ctrl+G 也能跳。不需要的话，可以在「设置」→「小工具」里关掉。": "Désormais, une boîte de dialogue Ouvrir ou Enregistrer va au dossier de la fenêtre de l’Explorateur d’où vous revenez ; Ctrl+G marche aussi. Vous pouvez le désactiver dans Paramètres → Outils."
 }
