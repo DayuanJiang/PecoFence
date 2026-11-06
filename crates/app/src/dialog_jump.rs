@@ -7,6 +7,8 @@
 //!   an Explorer window; with the dialog in front it jumps at once.
 //! - Ctrl+G in the dialog jumps there at any time. The shortcut is registered only while a
 //!   dialog is in front, so Ctrl+G stays free in every other window.
+//! - While Listary runs, coming back from Explorer leaves the jump to Listary's own Quick
+//!   Switch (see `listary_running`); Ctrl+G and folder fences still jump.
 //!
 //! The foreground is followed with an out-of-context WinEvent hook (callbacks on this thread);
 //! the jump itself runs on a short-lived worker thread, as it waits for the other program.
@@ -150,7 +152,14 @@ fn on_foreground(hwnd: HWND) {
                 && let Some(source) = j.source.clone()
             {
                 j.pending = false;
-                start_jump(hwnd, source, "back in the dialog");
+                if listary_running() {
+                    tracing::info!(
+                        dialog = raw,
+                        "dialog jump: back in the dialog, left to Listary (it runs)"
+                    );
+                } else {
+                    start_jump(hwnd, source, "back in the dialog");
+                }
             } else {
                 tracing::debug!(
                     dialog = raw,
@@ -358,6 +367,21 @@ pub fn send_to_dialog(dlg: HWND, path: PathBuf, is_folder: bool) {
     if let Err(e) = spawned {
         tracing::error!(error = %e, "dialog choose: worker thread failed to start");
     }
+}
+
+/// Listary (Listary.exe) has a window. Its Quick Switch moves the dialog from inside the
+/// dialog's program when the user comes back from Explorer, at the same moment as this jump:
+/// measured with both on, 4 of 20 returns ended in Windows' "... is currently unavailable" box
+/// and 4 more jumped twice. Ctrl+G (PecoFence's hotkey takes it) and folder fences were clean.
+fn listary_running() -> bool {
+    let mut seen = std::collections::HashSet::new();
+    desktop::top_level_windows().into_iter().any(|w| {
+        let pid = desktop::window_pid(w);
+        seen.insert(pid)
+            && pecofence_platform::process::image_path(pid)
+                .and_then(|p| p.file_name().map(|n| n.eq_ignore_ascii_case("Listary.exe")))
+                .unwrap_or(false)
+    })
 }
 
 fn start_jump(dlg: HWND, source: Source, reason: &'static str) {
