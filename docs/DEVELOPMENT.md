@@ -64,7 +64,24 @@ This builds the app/watchdog and CLI in separate Cargo invocations, then package
 identical binaries as a portable ZIP and an Inno Setup installer. Reuse a current
 release build with `-SkipBuild -TargetDir target/package`. `-Format Portable` avoids
 requiring Inno Setup; `scripts/make-portable.ps1` remains a compatibility entry point.
-`-Format Installer` builds only setup. No MSIX staging directory is reused.
+`-Format Installer` builds only setup. `-BuildOnly` builds and checks the three
+executables and stops before packaging. No MSIX staging directory is reused.
+
+### Code signing in the release workflow
+
+`.github/workflows/release.yml` signs through SignPath (project `PecoFence`, CI user
+token in the `SIGNPATH_API_TOKEN` repository secret). It builds with `-BuildOnly`,
+uploads the three executables as a workflow artifact, has SignPath sign them (artifact
+configuration `app-exes`), packages the signed files with `-SkipBuild`, then signs
+the setup EXE the same way (artifact configuration `installer`) and writes its
+`.sha256` again. Both artifact configurations only accept files whose version
+resources say product `PecoFence` and company `Dayuan Jiang`.
+
+A tag push uses the `release-signing` policy and fails unless every signature is
+trusted; each request waits for a manual approval in SignPath (up to one hour). A
+manual run (`gh workflow run release.yml --ref <branch>`) uses `test-signing`,
+publishes nothing and keeps the ZIP, setup and checksums as the `test-signed-release`
+workflow artifact. The uninstaller that Inno Setup writes at install time stays unsigned.
 
 The compiler is found through `-Iscc`, `ISCC`, PATH or common Inno Setup 7 install
 locations (`scripts/find-iscc.ps1`, which the packaging test also uses). `-Python` accepts a Python executable path, including one returned by

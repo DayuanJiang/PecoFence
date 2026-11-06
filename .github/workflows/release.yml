@@ -3,9 +3,19 @@ name: Release
 on:
   push:
     tags: ['v*']
+  # A manual run builds, signs with the SignPath test certificate and keeps the files
+  # as a workflow artifact. Only a tag push publishes a release.
+  workflow_dispatch:
 
 permissions:
   contents: write
+  # SignPath downloads the unsigned workflow artifacts with the job token.
+  actions: read
+
+env:
+  SIGNPATH_ORGANIZATION_ID: 02805bbc-da1e-4081-a9ef-7f5db9072166
+  SIGNPATH_PROJECT: PecoFence
+  SIGNPATH_POLICY: ${{ github.event_name == 'push' && 'release-signing' || 'test-signing' }}
 
 jobs:
   release:
@@ -20,6 +30,7 @@ jobs:
         with:
           python-version: '3.12'
       - name: Check release version
+        if: github.event_name == 'push'
         shell: pwsh
         run: |
           $version = (Select-String -Path Cargo.toml -Pattern '^version = "([^"]+)"').Matches[0].Groups[1].Value
@@ -40,16 +51,98 @@ jobs:
       - name: Install pinned Inno Setup compiler
         shell: pwsh
         run: ./scripts/setup-inno-ci.ps1
+
+      - name: Build executables
+        shell: pwsh
+        run: ./scripts/make-windows.ps1 -BuildOnly
+      - name: Upload unsigned executables
+        id: upload-exes
+        uses: actions/upload-artifact@v7
+        with:
+          name: unsigned-executables
+          if-no-files-found: error
+          path: |
+            target/package/release/pecofence.exe
+            target/package/release/pecofence-cli.exe
+            target/package/release/pecofence-watchdog.exe
+      - name: Sign executables
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ env.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ env.SIGNPATH_PROJECT }}
+          signing-policy-slug: ${{ env.SIGNPATH_POLICY }}
+          artifact-configuration-slug: app-exes
+          github-artifact-id: ${{ steps.upload-exes.outputs.artifact-id }}
+          wait-for-completion: true
+          # Release signing waits for a manual approval in SignPath.
+          wait-for-completion-timeout-in-seconds: 3600
+          output-artifact-directory: target/signed/executables
+      - name: Use signed executables
+        shell: pwsh
+        run: |
+          foreach ($name in "pecofence.exe", "pecofence-cli.exe", "pecofence-watchdog.exe") {
+            $file = "target/signed/executables/$name"
+            $sig = Get-AuthenticodeSignature -LiteralPath $file
+            Write-Host "${name}: $($sig.Status), $($sig.SignerCertificate.Subject)"
+            if (-not $sig.SignerCertificate) { throw "$name came back unsigned" }
+            if ($env:SIGNPATH_POLICY -eq "release-signing" -and $sig.Status -ne "Valid") { throw "$name signature is $($sig.Status)" }
+            Copy-Item -LiteralPath $file -Destination target/package/release -Force
+          }
+
       - name: Package
         shell: pwsh
         env:
           PACKAGE_REPOSITORY: ${{ github.repository }}
-        run: ./scripts/make-windows.ps1 -Repository $env:PACKAGE_REPOSITORY
+        run: ./scripts/make-windows.ps1 -SkipBuild -Repository $env:PACKAGE_REPOSITORY
+      - name: Upload unsigned installer
+        id: upload-setup
+        uses: actions/upload-artifact@v7
+        with:
+          name: unsigned-installer
+          if-no-files-found: error
+          path: dist/pecofence-v*-x64-setup.exe
+      - name: Sign installer
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ env.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ env.SIGNPATH_PROJECT }}
+          signing-policy-slug: ${{ env.SIGNPATH_POLICY }}
+          artifact-configuration-slug: installer
+          github-artifact-id: ${{ steps.upload-setup.outputs.artifact-id }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 3600
+          output-artifact-directory: target/signed/installer
+      - name: Use signed installer
+        shell: pwsh
+        run: |
+          $setup = Get-Item dist/pecofence-v*-x64-setup.exe
+          $file = Join-Path target/signed/installer $setup.Name
+          $sig = Get-AuthenticodeSignature -LiteralPath $file
+          Write-Host "$($setup.Name): $($sig.Status), $($sig.SignerCertificate.Subject)"
+          if (-not $sig.SignerCertificate) { throw "$($setup.Name) came back unsigned" }
+          if ($env:SIGNPATH_POLICY -eq "release-signing" -and $sig.Status -ne "Valid") { throw "$($setup.Name) signature is $($sig.Status)" }
+          Copy-Item -LiteralPath $file -Destination $setup.FullName -Force
+          # Signing changed the installer, so its checksum file must be written again.
+          $hash = (Get-FileHash -LiteralPath $setup.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          [IO.File]::WriteAllText("$($setup.FullName).sha256", "$hash  $($setup.Name)`n", (New-Object System.Text.UTF8Encoding($false)))
+
       - name: Package and installer smoke tests
         env:
           PACKAGE_REPOSITORY: ${{ github.repository }}
         run: python scripts/test-windows-packaging.py --repository "$env:PACKAGE_REPOSITORY"
+      - name: Keep test-signed files
+        if: github.event_name != 'push'
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-signed-release
+          if-no-files-found: error
+          path: |
+            dist/pecofence-v*-x64-portable.zip*
+            dist/pecofence-v*-x64-setup.exe*
       - name: Publish GitHub Release
+        if: github.event_name == 'push'
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}

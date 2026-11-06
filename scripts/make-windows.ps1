@@ -8,7 +8,9 @@ param(
   [string]$Python = "python",
   [string]$Repository = "",
   [string]$Iscc = "",
-  [switch]$SkipBuild
+  [switch]$SkipBuild,
+  # Build and check the executables, then stop (CI signs them before packaging with -SkipBuild).
+  [switch]$BuildOnly
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
@@ -43,7 +45,7 @@ try {
     throw "Repository must be a GitHub owner/repository name"
   }
 
-  if ($Format -ne "Portable") {
+  if ($Format -ne "Portable" -and -not $BuildOnly) {
     . "$PSScriptRoot/find-iscc.ps1"
     $Iscc = Find-Iscc $Iscc
   }
@@ -67,6 +69,7 @@ try {
   # Catch stale --SkipBuild output before assigning it the current release name.
   $builtVersion = (Get-Item -LiteralPath (Join-Path $release "pecofence.exe")).VersionInfo.ProductVersion
   if ($builtVersion -cne $Version) { throw "Built app version '$builtVersion' does not match $Version; rebuild with the Windows SDK installed" }
+  if ($BuildOnly) { Write-Host "Built executables in $release"; return }
 
   $distRoot = Join-Path $root "dist"
   $stagingRoot = [IO.Path]::GetFullPath((Join-Path $distRoot ".staging"))
