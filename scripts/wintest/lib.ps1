@@ -1027,4 +1027,7 @@ function ProcTops($cls, $proc) { return @([W]::Tops($cls) | Where-Object { [W]::
 CloseWindows
 $wp = @('C:\Windows\Web\Wallpaper\Windows\img0.jpg', 'C:\Windows\Web\Screen\img100.jpg') | Where-Object { Test-Path $_ } | Select-Object -First 1
 if ($wp) { [G]::SystemParametersInfoW(0x14, 0, $wp, 3) | Out-Null }
+# A job before may have ended PecoFence the hard way (ctl.ps1 reset), which leaves Windows'
+# desktop icons hidden: show them again, so the build under test meets a user's desktop.
+if (-not [W]::IconsVisible()) { [W]::ToggleIcons(); Start-Sleep -Milliseconds 600; Log "desktop icons were hidden by an earlier job; shown again" }
 Log ("job start: screen " + [G]::GetSystemMetrics(0) + "x" + [G]::GetSystemMetrics(1) + ", instance $PfInst, build " + (Get-FileHash "$PfBin\pecofence.exe").Hash.Substring(0, 12))
