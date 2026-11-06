@@ -18,6 +18,12 @@ pub const SENTINEL_CLASS: &str = "PecoFence.Sentinel";
 const TIMER_ANCHOR_CHECK: usize = 10;
 const TIMER_RETRY: usize = 11;
 const TIMER_QUICKHIDE: usize = 13;
+/// A foreground event came while the anchor was busy (`on_foreground` after all, see the hook).
+const TIMER_FOREGROUND_LATER: usize = 14;
+/// Windows 10 (the legacy desktop) does not always report the desktop coming to the front: a
+/// click on it after closing a window left the double-click unseen. A light poll catches it.
+const TIMER_FOREGROUND_POLL: usize = 15;
+const FOREGROUND_POLL_MS: u32 = 250;
 const QUICKHIDE_DELAY_MS: u32 = 300;
 pub const TIMER_TEST: usize = 20;
 
@@ -328,6 +334,8 @@ pub struct DesktopAnchor {
     placed_above: Option<isize>,
     /// The last window found covering the fences (`note_covered`), logged once.
     covered_by: Option<isize>,
+    /// The window the last `on_foreground` was about (the poll compares with it).
+    last_foreground: isize,
 }
 
 /// The fences' windows as a feedback report describes them.
@@ -410,6 +418,7 @@ impl DesktopAnchor {
 
         let hook = {
             let cell = cell.clone();
+            let sentinel_hwnd = sentinel.hwnd().0 as isize;
             WinEventHook::install(
                 winevent::SYSTEM_FOREGROUND,
                 winevent::SYSTEM_FOREGROUND,
@@ -418,6 +427,17 @@ impl DesktopAnchor {
                         && let Some(anchor) = guard.as_mut()
                     {
                         anchor.on_foreground(hwnd);
+                    } else {
+                        // The hook can run inside a call the anchor makes (a SendMessage pumps
+                        // it): dropped, the desktop coming to the front went unseen and its
+                        // double-click did nothing (Windows 10). The timer handles the change
+                        // once the anchor is free; it repeats until then.
+                        tracing::debug!(?hwnd, "foreground event while the anchor is busy");
+                        window::set_timer(
+                            HWND(sentinel_hwnd as *mut core::ffi::c_void),
+                            TIMER_FOREGROUND_LATER,
+                            30,
+                        );
                     }
                 }),
             )
@@ -457,6 +477,7 @@ impl DesktopAnchor {
             topmost_refused: false,
             placed_above: None,
             covered_by: None,
+            last_foreground: 0,
         };
         // The hook reports only changes of the foreground. With the desktop already in front
         // (a start at sign-in before any window opens) its clicks are followed from now on.
@@ -467,6 +488,11 @@ impl DesktopAnchor {
         anchor
             .sentinel
             .set_coalescable_timer(TIMER_ANCHOR_CHECK, 2000, 1000);
+        if anchor.generation == Generation::Legacy {
+            anchor
+                .sentinel
+                .set_coalescable_timer(TIMER_FOREGROUND_POLL, FOREGROUND_POLL_MS, 50);
+        }
         *cell.borrow_mut() = Some(anchor);
         Ok(cell)
     }
@@ -850,6 +876,7 @@ impl DesktopAnchor {
     }
 
     pub fn on_foreground(&mut self, hwnd: HWND) {
+        self.last_foreground = hwnd.0 as isize;
         if let Some(callback) = self.on_foreground_changed.as_ref() {
             callback(hwnd);
         }
@@ -1493,6 +1520,38 @@ impl DesktopAnchor {
     fn on_timer(&mut self, id: usize) {
         match id {
             TIMER_ANCHOR_CHECK => self.ensure_anchored("periodic check"),
+            TIMER_FOREGROUND_POLL => {
+                let front = desktop::foreground_window();
+                if front.0.is_null() || front.0 as isize == self.last_foreground {
+                    return;
+                }
+                // Our own windows (Peek's dimmer and search box, Settings) are not reported by the
+                // hook either, on purpose.
+                if desktop::window_pid(desktop::root_ancestor(front)) == std::process::id() {
+                    self.last_foreground = front.0 as isize;
+                    return;
+                }
+                // Only what the hook missed and matters: the desktop in front or gone from it
+                // (its clicks are followed then). Other changes come as events.
+                if self.is_desktop_window(front) != self.quick.sink_registered {
+                    tracing::info!(
+                        class = %desktop::class_name(desktop::root_ancestor(front)),
+                        "foreground change Windows did not report; caught by the poll"
+                    );
+                    self.on_foreground(front);
+                } else {
+                    self.last_foreground = front.0 as isize;
+                }
+            }
+            TIMER_FOREGROUND_LATER => {
+                self.sentinel.kill_timer(TIMER_FOREGROUND_LATER);
+                let front = desktop::foreground_window();
+                tracing::info!(
+                    class = %desktop::class_name(desktop::root_ancestor(front)),
+                    "foreground change handled after the anchor was busy"
+                );
+                self.on_foreground(front);
+            }
             TIMER_RETRY => {
                 self.sentinel.kill_timer(TIMER_RETRY);
                 self.ensure_anchored("retry");
