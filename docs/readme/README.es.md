@@ -81,17 +81,20 @@ Para agentes y scripts: `describe` ofrece el catálogo de comandos y los esquema
 ### Encuentra mientras escribes.
 
 Pulsa **Ctrl + Alt + Espacio** y escribe. Los archivos y carpetas de tus grupos que coinciden
-aparecen al instante, también nombres chinos por pinyin, y **Entrar** abre uno.
-Activa Everything y también se busca en todo el equipo.
+aparecen al instante, y **Entrar** abre uno. Los nombres chinos también se encuentran por pinyin.
+Everything es una herramienta gratuita de búsqueda de archivos: activa la búsqueda con Everything en
+Configuración, y también se busca en todo el equipo. La animación usa «Ctrl dos veces», que puedes
+elegir como atajo en Configuración.
 
 ![Pulsar Ctrl dos veces abre la vista rápida con el cuadro de búsqueda; al escribir «meet» aparecen Meeting notes.docx de un grupo y dos archivos que Everything encontró en el equipo; la flecha elige uno y Entrar lo abre.](../assets/search.gif)
 
-### La carpeta correcta en cada cuadro Abrir y Guardar.
+### La carpeta correcta en los cuadros Abrir y Guardar.
 
-En un cuadro Abrir o Guardar, cambia al Explorador de archivos y vuelve: el cuadro salta a la carpeta abierta allí,
-igual que con **Ctrl+G** o un clic en un grupo de carpeta. La función viene desactivada y PecoFence te la ofrece
-cuando pueda ayudarte. Incluso desactivada, **Entrar** en un resultado de la búsqueda de la vista rápida le pasa al
-cuadro ese archivo o carpeta.
+En un cuadro Abrir o Guardar, cambia al Explorador de archivos y vuelve: el cuadro salta a la carpeta abierta allí.
+**Ctrl+G** también salta allí, y un clic en un grupo de carpeta lleva a la carpeta de ese grupo. La función viene
+desactivada de forma predeterminada, y PecoFence te la ofrece la primera vez que pueda ayudarte. Incluso desactivada,
+**Entrar** en un resultado de la búsqueda de la vista rápida funciona con el cuadro: un cuadro Abrir abre el archivo,
+y un cuadro Guardar va a su carpeta.
 
 ![Un cuadro Abrir en Documents salta a la carpeta Contracts tras pasar por el Explorador de archivos y volver, y a Designs tras un clic en ese grupo de carpeta.](../assets/dialog-jump.gif)
 

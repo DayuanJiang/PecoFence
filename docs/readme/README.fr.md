@@ -80,18 +80,22 @@ Pour les agents et les scripts : `describe` fournit le catalogue de commandes et
 
 ### Trouver en tapant.
 
-Appuyez sur **Ctrl + Alt + Espace** et tapez. Les fichiers et dossiers correspondants
-de vos groupes s’affichent aussitôt, noms chinois compris grâce au pinyin, et **Entrée** en ouvre un.
-Activez Everything et la recherche couvre aussi tout l’ordinateur.
+Appuyez sur **Ctrl + Alt + Espace** et tapez. Les fichiers et dossiers correspondants de vos groupes
+s’affichent aussitôt, et **Entrée** en ouvre un. Les noms chinois se trouvent aussi par pinyin.
+Everything est un outil gratuit de recherche de fichiers : activez la recherche Everything dans les
+Paramètres, et la recherche couvre aussi tout l’ordinateur. L’animation utilise « Deux fois Ctrl »,
+que vous pouvez choisir comme raccourci dans les Paramètres.
 
 ![Deux appuis sur Ctrl ouvrent l’aperçu des groupes avec la zone de recherche ; en tapant « meet », Meeting notes.docx s’affiche depuis un groupe, puis deux fichiers trouvés par Everything sur l’ordinateur ; la flèche en choisit un et Entrée l’ouvre.](../assets/search.gif)
 
-### Le bon dossier dans chaque boîte de dialogue Ouvrir et Enregistrer.
+### Le bon dossier dans les boîtes de dialogue Ouvrir et Enregistrer.
 
-Dans une boîte de dialogue Ouvrir ou Enregistrer, passez à l’Explorateur de fichiers puis revenez : elle va au
-dossier ouvert dans l’Explorateur, comme avec **Ctrl+G** ou un clic sur un groupe de dossier. Désactivée au
-départ, la fonction est proposée par PecoFence dès qu’elle peut servir. Même désactivée, **Entrée** sur un
-résultat de la recherche de l’aperçu lui transmet le fichier ou le dossier.
+Dans une boîte de dialogue Ouvrir ou Enregistrer, passez à l’Explorateur de fichiers puis revenez :
+elle va au dossier ouvert dans l’Explorateur. **Ctrl+G** y va aussi, et un clic sur un groupe de
+dossier mène au dossier de ce groupe. La fonction est désactivée par défaut, et PecoFence la propose
+la première fois qu’elle peut servir. Même désactivée, **Entrée** sur un résultat de la recherche de
+l’aperçu agit sur la boîte de dialogue : une boîte Ouvrir ouvre le fichier, une boîte Enregistrer va
+à son dossier.
 
 ![Une boîte de dialogue Ouvrir affichant Documents va au dossier Contracts après un passage par l’Explorateur de fichiers, puis à Designs après un clic sur ce groupe de dossier.](../assets/dialog-jump.gif)
 

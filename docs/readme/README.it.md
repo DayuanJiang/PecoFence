@@ -80,18 +80,22 @@ Progettato per agenti e script: `describe` mostra il catalogo dei comandi e gli 
 
 ### Trova mentre scrivi.
 
-Premi **Ctrl + Alt + Spazio** e scrivi. I file e le cartelle dei tuoi riquadri che
-corrispondono compaiono subito, anche i nomi cinesi tramite pinyin, e **Invio** ne apre uno.
-Attiva Everything e la ricerca copre anche tutto il computer.
+Premi **Ctrl + Alt + Spazio** e scrivi. I file e le cartelle dei tuoi riquadri che corrispondono
+compaiono subito, e **Invio** ne apre uno. Anche i nomi cinesi si trovano col pinyin. Everything è
+un programma gratuito per cercare file: attiva la ricerca Everything nelle Impostazioni, e la
+ricerca copre anche tutto il computer. L’animazione usa «Ctrl due volte», che puoi scegliere come
+scorciatoia nelle Impostazioni.
 
 ![Premere Ctrl due volte apre la vista rapida con la casella di ricerca; scrivendo «meet» compaiono Meeting notes.docx da un riquadro e due file trovati da Everything sul computer; la freccia ne sceglie uno e Invio lo apre.](../assets/search.gif)
 
-### La cartella giusta in ogni finestra Apri e Salva.
+### La cartella giusta nelle finestre Apri e Salva.
 
-In una finestra Apri o Salva, passa a Esplora file e torna indietro: la finestra va alla cartella aperta lì,
-come con **Ctrl+G** o un clic su un riquadro cartella. La funzione parte spenta e PecoFence te la propone
-quando può esserti utile. Anche da spenta, **Invio** su un risultato della ricerca della vista rapida passa
-alla finestra il file o la cartella.
+In una finestra Apri o Salva, passa a Esplora file e torna indietro: la finestra va alla cartella
+aperta lì. Anche **Ctrl+G** ci porta, e un clic su un riquadro cartella porta alla cartella di quel
+riquadro. La funzione è disattivata per impostazione predefinita, e PecoFence te la propone la prima
+volta che può esserti utile. Anche con la funzione disattivata, **Invio** su un risultato della
+ricerca della vista rapida funziona con la finestra: una finestra Apri apre il file, una finestra
+Salva va alla sua cartella.
 
 ![Una finestra Apri su Documents va alla cartella Contracts dopo un passaggio a Esplora file e ritorno, e a Designs dopo un clic su quel riquadro cartella.](../assets/dialog-jump.gif)
 

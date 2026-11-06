@@ -81,17 +81,20 @@ Built for agents and scripts: `describe` exposes the command catalog and JSON Sc
 ### Find it as you type.
 
 Press **Ctrl + Alt + Space** and type. Matching files and folders in your
-fences show up at once, Chinese names by pinyin too, and **Enter** opens one.
-Turn on Everything and the whole computer is searched as well.
+fences show up at once, and **Enter** opens one. Chinese names can be found by pinyin too.
+Everything is a free file search tool: turn on Everything search in Settings, and the whole
+computer is searched as well. The clip uses Press Ctrl twice, which you can choose as the
+shortcut in Settings.
 
 ![Pressing Ctrl twice opens Peek with its search box; typing "meet" lists Meeting notes.docx from a fence, then two files Everything found on the computer; the down arrow picks one and Enter opens it.](docs/assets/search.gif)
 
-### The right folder in every Open and Save dialog.
+### The right folder in Open and Save dialogs.
 
 In an Open or Save dialog, switch to File Explorer and back, and the dialog jumps to the folder
-open there; **Ctrl+G** or a click on a folder fence does it too. It starts off, and PecoFence
-offers it the first time it can help. Even with it off, **Enter** on a Peek search result hands
-that file or folder to the dialog.
+open there. **Ctrl+G** jumps there too, and a click on a folder fence goes to that fence's folder.
+It is off by default, and PecoFence offers it the first time it can help. Even with it off,
+**Enter** on a Peek search result works with the dialog: an Open dialog opens the file, a Save
+dialog goes to its folder.
 
 ![An Open dialog in Documents jumps to the Contracts folder open in File Explorer after a click there and back, then to Designs after a click on that folder fence.](docs/assets/dialog-jump.gif)
 

@@ -80,18 +80,22 @@ Für Agenten und Skripte: `describe` liefert den Befehlskatalog und JSON-Schemas
 
 ### Finden beim Tippen.
 
-Drücke **Strg + Alt + Leertaste** und tippe los. Passende Dateien und Ordner aus deinen
-Bereichen erscheinen sofort, chinesische Namen auch per Pinyin, und **Eingabe** öffnet einen Treffer.
-Schaltest du Everything ein, wird auch der ganze Computer durchsucht.
+Drücke **Strg + Alt + Leertaste** und tippe los. Passende Dateien und Ordner aus deinen Bereichen
+erscheinen sofort, und **Eingabe** öffnet einen Treffer. Chinesische Namen findest du auch per
+Pinyin. Everything ist ein kostenloses Programm zur Dateisuche: Schaltest du in den Einstellungen
+die Everything-Suche ein, wird auch der ganze Computer durchsucht. Der Clip nutzt „Zweimal Strg“,
+das du in den Einstellungen als Tastenkombination wählen kannst.
 
 ![Zweimal Strg holt die Bereiche mit dem Suchfeld hervor; „meet“ listet Meeting notes.docx aus einem Bereich und zwei Dateien, die Everything auf dem Computer gefunden hat; die Pfeiltaste wählt eine aus, Eingabe öffnet sie.](../assets/search.gif)
 
-### Der richtige Ordner in jedem Öffnen- und Speichern-Dialog.
+### Der richtige Ordner in Öffnen- und Speichern-Dialogen.
 
-Wechselst du in einem Öffnen- oder Speichern-Dialog zum Explorer und zurück, springt der Dialog in den dort
-offenen Ordner; **Strg+G** oder ein Klick auf einen Ordnerbereich tut das auch. Anfangs ist die Funktion aus,
-und PecoFence bietet sie an, sobald sie helfen kann. Auch ausgeschaltet übergibt **Eingabe** auf einem
-Suchtreffer beim Hervorholen dem Dialog die Datei oder den Ordner.
+Wechselst du in einem Öffnen- oder Speichern-Dialog zum Explorer und zurück, springt der Dialog in
+den dort offenen Ordner. **Strg+G** springt auch dorthin, und ein Klick auf einen Ordnerbereich
+führt in den Ordner dieses Bereichs. Die Funktion ist standardmäßig aus, und PecoFence bietet sie
+an, wenn sie zum ersten Mal helfen kann. Auch wenn sie aus ist, hilft **Eingabe** auf einem
+Suchtreffer beim Hervorholen dem Dialog: Ein Öffnen-Dialog öffnet die Datei, ein Speichern-Dialog
+wechselt in ihren Ordner.
 
 ![Ein Öffnen-Dialog in Documents springt nach einem Wechsel zum Explorer und zurück in den Ordner Contracts und nach einem Klick auf den Ordnerbereich Designs dorthin.](../assets/dialog-jump.gif)
 

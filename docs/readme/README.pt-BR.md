@@ -81,17 +81,20 @@ Para agentes e scripts: `describe` fornece o catálogo de comandos e os esquemas
 ### Encontre enquanto digita.
 
 Pressione **Ctrl + Alt + Espaço** e digite. Os arquivos e pastas dos seus grupos que
-correspondem aparecem na hora, inclusive nomes em chinês por pinyin, e **Enter** abre um.
-Ative o Everything e o computador inteiro também entra na pesquisa.
+correspondem aparecem na hora, e **Enter** abre um. Nomes em chinês também podem ser encontrados por pinyin.
+O Everything é uma ferramenta gratuita de pesquisa de arquivos: ative a pesquisa com o Everything nas
+Configurações, e o computador inteiro também entra na pesquisa. A animação usa “Ctrl duas vezes”, que você
+pode escolher como atalho nas Configurações.
 
 ![Tocar duas vezes em Ctrl espia os grupos com a caixa de pesquisa aberta; ao digitar “meet”, aparecem Meeting notes.docx de um grupo e dois arquivos que o Everything achou no computador; a seta escolhe um e Enter o abre.](../assets/search.gif)
 
-### A pasta certa em cada caixa Abrir e Salvar.
+### A pasta certa nas caixas Abrir e Salvar.
 
-Em uma caixa Abrir ou Salvar, vá ao Explorador de Arquivos e volte: a caixa vai para a pasta aberta lá, assim como
-com **Ctrl+G** ou um clique em um grupo de pasta. O recurso começa desligado e o PecoFence oferece ativá-lo quando
-puder ajudar. Mesmo desligado, **Enter** em um resultado da pesquisa ao espiar entrega o arquivo ou a pasta à
-caixa.
+Em uma caixa Abrir ou Salvar, vá ao Explorador de Arquivos e volte: a caixa vai para a pasta aberta lá.
+**Ctrl+G** também vai até lá, e um clique em um grupo de pasta leva à pasta desse grupo. O recurso vem desativado
+por padrão, e o PecoFence oferece ativá-lo na primeira vez que puder ajudar. Mesmo desativado, **Enter** em um
+resultado da pesquisa ao espiar funciona com a caixa: uma caixa Abrir abre o arquivo, e uma caixa Salvar vai para
+a pasta dele.
 
 ![Uma caixa Abrir em Documents vai para a pasta Contracts depois de ir ao Explorador de Arquivos e voltar, e para Designs depois de um clique nesse grupo de pasta.](../assets/dialog-jump.gif)
 
