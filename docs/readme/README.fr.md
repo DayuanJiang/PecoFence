@@ -78,6 +78,23 @@ Pour les agents et les scripts : `describe` fournit le catalogue de commandes et
 
 ## Voyez-le en action
 
+### Trouver en tapant.
+
+Appuyez sur **Ctrl + Alt + Espace** et tapez. Les fichiers et dossiers correspondants
+de vos groupes s’affichent aussitôt, noms chinois compris grâce au pinyin, et **Entrée** en ouvre un.
+Activez Everything et la recherche couvre aussi tout l’ordinateur.
+
+![Deux appuis sur Ctrl ouvrent l’aperçu des groupes avec la zone de recherche ; en tapant « meet », Meeting notes.docx s’affiche depuis un groupe, puis deux fichiers trouvés par Everything sur l’ordinateur ; la flèche en choisit un et Entrée l’ouvre.](../assets/search.gif)
+
+### Le bon dossier dans chaque boîte de dialogue Ouvrir et Enregistrer.
+
+Dans une boîte de dialogue Ouvrir ou Enregistrer, passez à l’Explorateur de fichiers puis revenez : elle va au
+dossier ouvert dans l’Explorateur, comme avec **Ctrl+G** ou un clic sur un groupe de dossier. Désactivée au
+départ, la fonction est proposée par PecoFence dès qu’elle peut servir. Même désactivée, **Entrée** sur un
+résultat de la recherche de l’aperçu lui transmet le fichier ou le dossier.
+
+![Une boîte de dialogue Ouvrir affichant Documents va au dossier Contracts après un passage par l’Explorateur de fichiers, puis à Designs après un clic sur ce groupe de dossier.](../assets/dialog-jump.gif)
+
 ### Une fenêtre. Plusieurs espaces de travail.
 
 Rassemblez les groupes qui vont ensemble sous forme d’onglets. Passez de Project à Ideas en un clic,
@@ -105,8 +122,6 @@ en cours. Prenez ce qu’il vous faut, puis appuyez sur **Échap** pour y reveni
 | **Gardez vos dossiers à portée de main** | Posez un dossier en direct sur votre Bureau. Parcourez ses sous-dossiers et voyez les changements au moment où ils se produisent. Le bouton Précédent de la souris remonte d'un dossier, Suivant y revient. |
 | **De la place quand il en faut** | Repliez un groupe sur son titre. Survolez-le pour le développer. Verrouillez une disposition qui vous convient. Double-cliquez sur le Bureau pour masquer vos groupes. Double-cliquez à nouveau pour les retrouver. |
 | **De petits outils dans vos groupes** | Des notes avec des tâches à cocher, une horloge avec la date et des groupes de script qui affichent ce qu’imprime votre propre script, la météo par exemple. Un clic sur une de leurs lignes peut ouvrir un lien ou cocher une tâche. Chaque outil reste désactivé tant que vous ne l’activez pas dans Paramètres → Outils. |
-| **Trouver en tapant** | Tapez pendant l’aperçu des groupes (Ctrl + Alt + Espace) : une liste montre les éléments correspondants, noms chinois compris grâce au pinyin. Ouvrez-en un avec Entrée ou avec un raccourci de Ctrl+1 à Ctrl+9. Everything, un outil de recherche gratuit, peut aussi chercher dans tout l’ordinateur. Avec le raccourci « Deux fois Ctrl », deux appuis rapides sur Ctrl ouvrent l’aperçu avec la zone de recherche. |
-| **Les boîtes de dialogue au bon dossier** | Avec « Aller au dossier dans les boîtes de dialogue », une boîte de dialogue Ouvrir ou Enregistrer va au dossier ouvert dans l’Explorateur de fichiers quand vous y passez puis revenez. Un clic sur un groupe de dossier ou Ctrl+G fait de même. |
 | **Un retour toujours possible** | Instantanés de disposition, sauvegardes quotidiennes, import/export de la configuration et échange entre écrans. |
 | **Rechercher un paramètre** | Tapez dans la zone en haut des Paramètres (Ctrl+F) pour trouver n’importe quel paramètre par ses mots ou par d’autres noms courants. |
 | **Une empreinte légère** | Une application native en Rust qui n’occupe qu’environ 2 à 5 Mo de mémoire au repos (d’après le Gestionnaire des tâches). La fenêtre Paramètres en WebView2 se charge à la demande. |

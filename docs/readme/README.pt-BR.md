@@ -78,6 +78,23 @@ Para agentes e scripts: `describe` fornece o catálogo de comandos e os esquemas
 
 ## Veja em ação
 
+### Encontre enquanto digita.
+
+Pressione **Ctrl + Alt + Espaço** e digite. Os arquivos e pastas dos seus grupos que
+correspondem aparecem na hora, inclusive nomes em chinês por pinyin, e **Enter** abre um.
+Ative o Everything e o computador inteiro também entra na pesquisa.
+
+![Tocar duas vezes em Ctrl espia os grupos com a caixa de pesquisa aberta; ao digitar “meet”, aparecem Meeting notes.docx de um grupo e dois arquivos que o Everything achou no computador; a seta escolhe um e Enter o abre.](../assets/search.gif)
+
+### A pasta certa em cada caixa Abrir e Salvar.
+
+Em uma caixa Abrir ou Salvar, vá ao Explorador de Arquivos e volte: a caixa vai para a pasta aberta lá, assim como
+com **Ctrl+G** ou um clique em um grupo de pasta. O recurso começa desligado e o PecoFence oferece ativá-lo quando
+puder ajudar. Mesmo desligado, **Enter** em um resultado da pesquisa ao espiar entrega o arquivo ou a pasta à
+caixa.
+
+![Uma caixa Abrir em Documents vai para a pasta Contracts depois de ir ao Explorador de Arquivos e voltar, e para Designs depois de um clique nesse grupo de pasta.](../assets/dialog-jump.gif)
+
 ### Uma janela. Vários espaços de trabalho.
 
 Mantenha grupos relacionados juntos como abas. Passe de Project para Ideas com um clique
@@ -105,8 +122,6 @@ Pegue o que precisa e pressione **Esc** para voltar.
 | **Pastas sempre à mão** | Coloque na área de trabalho uma pasta de verdade, sempre atualizada. Navegue pelas subpastas e veja as mudanças na hora. O botão Voltar do mouse sobe uma pasta e o Avançar volta para dentro. |
 | **Espaço quando você precisa** | Recolha um grupo até o título. Passe o mouse para expandir. Bloqueie o layout quando estiver do seu jeito. Clique duas vezes na área de trabalho para ocultar os grupos. Clique duas vezes de novo para trazê-los de volta. |
 | **Pequenas ferramentas nos grupos** | Notas com tarefas, um relógio com a data e grupos de script que mostram o que o seu próprio script imprime, como o clima; um clique nas linhas pode abrir um link ou marcar uma tarefa. Cada ferramenta fica desligada até você ativá-la em Configurações → Ferramentas. |
-| **Encontre enquanto digita** | Digite enquanto espia os grupos (Ctrl + Alt + Espaço) e uma lista mostra os itens correspondentes, inclusive nomes em chinês por pinyin. Abra um com Enter ou com um atalho de Ctrl+1 a Ctrl+9. Se quiser, o Everything, um buscador de arquivos gratuito, inclui resultados do computador inteiro. Com o atalho “Ctrl duas vezes”, tocar duas vezes rápido em Ctrl espia os grupos já com a caixa de pesquisa aberta. |
-| **Caixas de diálogo na pasta certa** | Com “Ir para a pasta nas caixas de diálogo”, uma caixa Abrir ou Salvar vai para a pasta aberta no Explorador de Arquivos quando você vai até ele e volta. Clicar em um grupo de pasta ou pressionar Ctrl+G também funciona. |
 | **Um caminho de volta** | Instantâneos de layout, backups diários, importação e exportação da configuração e troca de grupos entre monitores. |
 | **Localizar uma configuração** | Digite na caixa no alto das Configurações (Ctrl+F) para achar qualquer configuração pelas palavras dela ou por outros nomes comuns. |
 | **Leve de verdade** | Um aplicativo nativo em Rust que, ocioso, usa só cerca de 2 a 5 MB de memória (segundo o Gerenciador de Tarefas). O painel de configurações em WebView2 só carrega quando necessário. |

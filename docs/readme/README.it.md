@@ -78,6 +78,23 @@ Progettato per agenti e script: `describe` mostra il catalogo dei comandi e gli 
 
 ## Scoprilo in azione
 
+### Trova mentre scrivi.
+
+Premi **Ctrl + Alt + Spazio** e scrivi. I file e le cartelle dei tuoi riquadri che
+corrispondono compaiono subito, anche i nomi cinesi tramite pinyin, e **Invio** ne apre uno.
+Attiva Everything e la ricerca copre anche tutto il computer.
+
+![Premere Ctrl due volte apre la vista rapida con la casella di ricerca; scrivendo «meet» compaiono Meeting notes.docx da un riquadro e due file trovati da Everything sul computer; la freccia ne sceglie uno e Invio lo apre.](../assets/search.gif)
+
+### La cartella giusta in ogni finestra Apri e Salva.
+
+In una finestra Apri o Salva, passa a Esplora file e torna indietro: la finestra va alla cartella aperta lì,
+come con **Ctrl+G** o un clic su un riquadro cartella. La funzione parte spenta e PecoFence te la propone
+quando può esserti utile. Anche da spenta, **Invio** su un risultato della ricerca della vista rapida passa
+alla finestra il file o la cartella.
+
+![Una finestra Apri su Documents va alla cartella Contracts dopo un passaggio a Esplora file e ritorno, e a Designs dopo un clic su quel riquadro cartella.](../assets/dialog-jump.gif)
+
 ### Un riquadro. Più spazi di lavoro.
 
 Tieni insieme i riquadri correlati come schede. Passa da Project a Ideas con un clic,
@@ -105,8 +122,6 @@ Prendi quello che ti serve, poi premi **Esc** per tornare indietro.
 | **Le cartelle a portata di mano** | Metti una cartella attiva sul desktop. Sfoglia le sottocartelle e guarda le modifiche comparire man mano che avvengono. Il tasto Indietro del mouse sale di una cartella, Avanti ci rientra. |
 | **Spazio quando serve** | Comprimi un riquadro fino al titolo. Passaci sopra con il puntatore per espanderlo. Blocca il layout quando ti soddisfa. Fai doppio clic sul desktop per nascondere i riquadri e di nuovo per mostrarli. |
 | **Piccoli strumenti nei riquadri** | Note con attività da spuntare, un orologio con la data e riquadri script che mostrano ciò che stampa il tuo script, per esempio il meteo; un clic su una delle loro righe può aprire un link o spuntare un’attività. Ogni strumento resta spento finché non lo attivi in Impostazioni → Strumenti. |
-| **Trova mentre scrivi** | Scrivi durante la vista rapida (Ctrl + Alt + Spazio) e un elenco mostra gli elementi che corrispondono, anche i nomi cinesi tramite pinyin. Aprine uno con Invio o con una scorciatoia da Ctrl+1 a Ctrl+9. Se vuoi, Everything, un programma di ricerca gratuito, aggiunge i risultati di tutto il computer. Con la scorciatoia «Ctrl due volte», premere Ctrl due volte in fretta apre la vista rapida già con la casella di ricerca. |
-| **Finestre di dialogo nella cartella giusta** | Con «Salto di cartella nelle finestre di dialogo», una finestra Apri o Salva va alla cartella aperta in Esplora file quando passi a Esplora file e torni indietro. Anche un clic su un riquadro cartella o Ctrl+G ci porta. |
 | **Un modo per tornare indietro** | Istantanee del layout, backup giornalieri, importazione ed esportazione della configurazione e scambio dei riquadri tra i monitor. |
 | **Trova un’impostazione** | Scrivi nella casella in alto nelle Impostazioni (Ctrl+F) per trovare qualsiasi impostazione dalle sue parole o con altri nomi comuni. |
 | **Ingombro ridotto** | Un’applicazione nativa scritta in Rust che, quando è inattiva, usa solo tra 2 e 5 MB circa di memoria in Gestione attività. Il pannello delle impostazioni in WebView2 si carica solo quando serve. |

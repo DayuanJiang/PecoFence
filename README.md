@@ -78,6 +78,23 @@ Built for agents and scripts: `describe` exposes the command catalog and JSON Sc
 
 ## See it in action
 
+### Find it as you type.
+
+Press **Ctrl + Alt + Space** and type. Matching files and folders in your
+fences show up at once, Chinese names by pinyin too, and **Enter** opens one.
+Turn on Everything and the whole computer is searched as well.
+
+![Pressing Ctrl twice opens Peek with its search box; typing "meet" lists Meeting notes.docx from a fence, then two files Everything found on the computer; the down arrow picks one and Enter opens it.](docs/assets/search.gif)
+
+### The right folder in every Open and Save dialog.
+
+In an Open or Save dialog, switch to File Explorer and back, and the dialog jumps to the folder
+open there; **Ctrl+G** or a click on a folder fence does it too. It starts off, and PecoFence
+offers it the first time it can help. Even with it off, **Enter** on a Peek search result hands
+that file or folder to the dialog.
+
+![An Open dialog in Documents jumps to the Contracts folder open in File Explorer after a click there and back, then to Designs after a click on that folder fence.](docs/assets/dialog-jump.gif)
+
 ### One fence. Multiple workspaces.
 
 Keep related fences together as tabs. Switch from Project to Ideas in a click,
@@ -105,8 +122,6 @@ Grab what you need, then press **Esc** to return.
 | **Keep folders close** | Put a live folder on your desktop. Browse subfolders and see changes as they happen. The mouse's back button goes up a folder and forward goes back in. |
 | **Space when you need it** | Roll a fence up to its title. Hover to expand. Lock a layout you like. Double-click the desktop to hide your fences. Double-click again to bring them back. |
 | **Small tools in fences** | Notes with to-dos, a clock with the date, and script fences that show what your own script prints, such as the weather; their rows can open a link or tick a to-do when you click them. Each tool is off until you turn it on in Settings → Tools. |
-| **Find it as you type** | Type during Peek (Ctrl + Alt + Space) to list matching items, Chinese names by pinyin included, then open one with Enter or Ctrl+1 to Ctrl+9. Optionally, Everything, a free file search, adds whole-computer results, and if you choose "Press Ctrl twice" as Peek's shortcut, a quick double press of Ctrl opens Peek with the search box ready. |
-| **The right folder in Open and Save** | With Jump in file dialogs on, an Open or Save dialog goes to the folder open in File Explorer when you switch there and back. Clicking a folder fence or pressing Ctrl+G does it too. |
 | **A way back** | Layout snapshots, daily backups, configuration import/export and swapping fences between displays. |
 | **Find a setting** | Type in the box at the top of Settings (Ctrl+F) to find any setting by its words, by pinyin in a Chinese interface, or by a common other name such as startup, hotkey or dark mode. |
 | **A small footprint** | A native Rust application that uses only about 2 to 5 MB of memory at rest in Task Manager. The WebView2 settings panel loads on demand. |

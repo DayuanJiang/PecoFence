@@ -13,7 +13,7 @@ The product page at <https://pecofence.jiang.jp> is a static site generated from
 | `site/partials/header.html`, `footer.html` | The header (manual and GitHub links, language picker, download button) and footer, shared by the home page and the manual |
 | `site/assets/base.css` | Tokens, header and footer styles, shared by the home page and the manual |
 | `site/assets/site.css`, `site.js`, `mark.svg` | The home page's styles; the hero trailer's play control, accessible feature tabs and their animations, AI prompt and install command copy buttons, language picker (`site.js` runs on the manual too) and favicon |
-| `site/assets/*.mp4`, `*.jpg`, `panel-*.png`, `wallpaper.jpg` | The 30-second trailer (`promo.mp4`, v3; `--promo-only` re-exports just it and its poster), six feature clips, posters, the three hero fences and the wallpaper, exported by `scripts/make-site-media.py` from the local promo project |
+| `site/assets/*.mp4`, `*.jpg`, `panel-*.png`, `wallpaper.jpg` | The 30-second trailer (`promo.mp4`, v3; `--promo-only` re-exports just it and its poster), eight feature clips, posters, the three hero fences and the wallpaper, exported by `scripts/make-site-media.py` from the local promo project; the search and dialog jump clips and posters come from caption-free renders of their manual lessons (`--lessons-only` re-exports just those) |
 | `site/assets/showcase-wallpaper.jpg` | The hero's backdrop: the original wallpaper from the revision-2 Store scene |
 | `site/i18n/<language>.json` | Copy for each language; `en.json` is the source and every other file must have the same keys |
 | `site/site.json` | Domain, repository URL and the language list |
@@ -51,21 +51,25 @@ the detailed setup instructions. Both copy buttons have independent feedback and
 text if clipboard access fails; the prompt and install command remain readable without JavaScript.
 
 The feature gallery shows one feature at a time, with click and Left/Right/Home/End
-keyboard navigation. Each one plays the manual's animation of it in the page's
+keyboard navigation. Search and dialog jump come first. Wider than 840 px the eight tabs sit
+in two rows of four; narrower screens scroll them sideways. Each one plays the manual's animation of it in the page's
 language (an iframe of `manual/?only=<lesson>&embed`, `FEATURE_LESSONS` in
 `build-site.py`), loaded the first time its tab opens; it plays while in view, has
 its own play / pause button and links to the lesson's steps. With JavaScript disabled
-all six recordings appear with native video controls instead. Five of their covers
+all eight recordings appear with native video controls instead. Five of their covers
 come from the revision-2 desktop, Peek, tabs, automatic sorting and folder scenes; the
-hide/show cover remains a frame from its existing recording.
+hide/show cover remains a frame from its existing recording, and the search and dialog
+jump covers are frames of their manual lessons.
 
-Below the gallery, the tools block (`#tools`) lists the four tools of Settings › Tools
-(小工具): notes and to-dos, clock and date, script fences and dialog jump, two by two.
+Below the gallery, the tools block (`#tools`) lists the other three tools of Settings › Tools
+(小工具): notes and to-dos, clock and date, and script fences, side by side. Dialog jump, also a
+switch there, has its own card in the gallery (`feature.dialog.*`).
 It has no animation; its items are drawn like the small details further down, from
 `TOOLS` in `build-site.py` and the `tool.*` keys, with the switch names from `locales/`
 as titles. Pressing Ctrl twice as Peek's shortcut and the whole-computer search with
-Everything are options of Peek (Settings › General › Peek), so the Peek card's text
-(`feature.peek.text`) names them.
+Everything are options of Peek (Settings › General › Peek); the search card's text
+(`feature.search.text`) names only Everything, since pressing Ctrl twice works only after
+the user picks it as the shortcut.
 
 Installation requirements expand without JavaScript; the last one names what the
 optional extras need (Everything 1.5 for the whole-computer search, Python or Node.js for

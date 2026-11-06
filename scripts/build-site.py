@@ -21,16 +21,17 @@ import manual_i18n  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 SITE = ROOT / "site"
-FEATURES = ["groups", "peek", "tabs", "rules", "portal", "hide"]
+FEATURES = ["search", "dialog", "groups", "peek", "tabs", "rules", "portal", "hide"]
 DETAILS = ["glass", "files", "space", "back", "footprint", "safe"]
-FEATURE_ICONS = ["grid", "cursor", "layers", "spark", "folder", "expand"]
+FEATURE_ICONS = ["search", "jump", "grid", "cursor", "layers", "spark", "folder", "expand"]
 DETAIL_ICONS = ["spark", "cursor", "expand", "restore", "feather", "shield"]
-# The switches of Settings > Tools (小工具), listed below the feature gallery.
-TOOLS = ["note", "clock", "script", "dialog"]
-TOOL_ICONS = ["note", "clock", "code", "jump"]
+# The other switches of Settings > Tools (小工具), listed below the feature gallery; dialog jump
+# (feature "dialog") has a card of its own.
+TOOLS = ["note", "clock", "script"]
+TOOL_ICONS = ["note", "clock", "code"]
 # The manual lesson each feature's animation and step-by-step link come from.
-FEATURE_LESSONS = {"groups": "create", "peek": "peek", "tabs": "tabs", "rules": "rules", "portal": "portal",
-                   "hide": "hide"}
+FEATURE_LESSONS = {"search": "search", "dialog": "dialog-jump", "groups": "create", "peek": "peek", "tabs": "tabs",
+                   "rules": "rules", "portal": "portal", "hide": "hide"}
 STORE = "https://apps.microsoft.com/detail/9MV6WG3XNWSX"
 PLACEHOLDER = re.compile(r"\{\{(t|raw):([\w.]+)\}\}|\{\{(\w+)\}\}")
 OG_LOCALES = {

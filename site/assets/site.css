@@ -418,6 +418,17 @@ h2 {
     scrollbar-color: #b8c4dd transparent
 }
 
+/* On wider screens the eight tabs sit in two even rows of four; narrower screens scroll them. */
+@media(min-width:841px) {
+    .feature-picker {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        justify-items: start;
+        row-gap: 0;
+        overflow-x: visible
+    }
+}
+
 .feature-picker button {
     display: inline-flex;
     align-items: center;
@@ -631,10 +642,6 @@ h2 {
     margin: 0;
     color: var(--ink-soft);
     font-size: 14px
-}
-
-.tools .details {
-    grid-template-columns: repeat(2, minmax(0, 1fr))
 }
 
 .tools .details>div {
