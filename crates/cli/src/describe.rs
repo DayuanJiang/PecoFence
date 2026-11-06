@@ -318,13 +318,7 @@ pub const COMMANDS: &[Entry] = &[
     entry!(
         "peek start",
         Some("peek.start"),
-        "Float every fence above other windows",
-        "pecofence-cli peek start"
-    ),
-    entry!(
-        "peek start --search",
-        Some("peek.search"),
-        "Peek with this text in its search box, as if typed",
+        "Float every fence above other windows; --search <TEXT> (peek.search) opens its search box with the text, as if typed",
         "pecofence-cli peek start --search invoice"
     ),
     entry!(
@@ -371,6 +365,8 @@ const EXTRA_METHODS: &[&str] = &[
     "fences.moveToMonitor",
     "items.planMove",
     "snapshots.planRestore",
+    // `peek start --search`.
+    "peek.search",
 ];
 
 pub const ERROR_CODES: &[(ErrorCode, &str)] = &[
