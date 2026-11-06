@@ -770,6 +770,53 @@ impl App {
                 self.refresh_script(id);
                 Ok(mutation(true, None, self.fence_extra(id)?))
             }
+            Method::FencesUp { fence } | Method::FencesForward { fence } => {
+                let id = self.resolve_fence(fence)?;
+                if self.state.portal_path(id).is_none() && !self.portal_forward.contains_key(&id) {
+                    return Err(unsupported("the fence shows no folder").hint(
+                        "fences.up works in a folder fence or in a fence showing a folder opened in it (fence open-folder)",
+                    ));
+                }
+                let before = self.state.portal_path(id);
+                if matches!(m, Method::FencesUp { .. }) {
+                    self.portal_up(id);
+                } else {
+                    self.portal_forward(id);
+                }
+                let changed = self.state.portal_path(id) != before;
+                tracing::info!(fence = %id, changed, up = matches!(m, Method::FencesUp { .. }), "folder navigation by the cli");
+                Ok(mutation(changed, None, self.fence_extra(id)?))
+            }
+            Method::FencesOpenFolder { fence, folder } => {
+                let id = self.resolve_fence(fence)?;
+                let given = PathBuf::from(folder.trim());
+                let dir = if given.is_absolute() {
+                    given
+                } else if let Some(base) = self.state.portal_path(id) {
+                    base.join(given)
+                } else {
+                    return Err(IpcError::invalid_value(
+                        format!("{folder:?} is relative, and the fence shows no folder"),
+                        &[],
+                    )
+                    .hint("Give the full path of the folder"));
+                };
+                if !dir.is_dir() {
+                    return Err(IpcError::invalid_value(
+                        format!("no folder at {}", dir.display()),
+                        &[],
+                    ));
+                }
+                let before = self.state.portal_path(id);
+                if !self.open_folder_in_fence(id, &dir) {
+                    return Err(unsupported(
+                        "the fence cannot show that folder: a folder fence opens folders inside its own folder, a tool fence none",
+                    ));
+                }
+                let changed = self.state.portal_path(id) != before;
+                tracing::info!(fence = %id, changed, "folder opened by the cli");
+                Ok(mutation(changed, None, self.fence_extra(id)?))
+            }
             Method::FencesRename { fence, title } => {
                 let id = self.resolve_fence(fence)?;
                 let prop = parse_fence_prop("title", &Value::String(title.clone()))?;
@@ -1159,6 +1206,10 @@ impl App {
                 }
                 // toggle_peek declines without fence windows.
                 let changed = idle && self.peek.as_ref().is_some_and(|p| !p.is_closing());
+                Ok(mutation(changed, None, Value::Null))
+            }
+            Method::PeekSearch { text } => {
+                let changed = self.peek_search_text(text);
                 Ok(mutation(changed, None, Value::Null))
             }
             Method::PeekEnd => {

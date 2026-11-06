@@ -88,6 +88,24 @@ pub const COMMANDS: &[Entry] = &[
         "pecofence-cli fence refresh Weather"
     ),
     entry!(
+        "fence open-folder",
+        Some("fences.openFolder"),
+        "Show a folder inside the fence: a subfolder of a folder fence, or any folder in a fence of icons (runtime only)",
+        "pecofence-cli fence open-folder Projects 2026"
+    ),
+    entry!(
+        "fence up",
+        Some("fences.up"),
+        "One folder up in a fence that shows a folder (Backspace, the mouse's back button)",
+        "pecofence-cli fence up Projects"
+    ),
+    entry!(
+        "fence forward",
+        Some("fences.forward"),
+        "Back into the folder the last fence up left (the mouse's forward button)",
+        "pecofence-cli fence forward Projects"
+    ),
+    entry!(
         "fence move",
         Some("fences.setBounds"),
         "--rect or --x/--y (fences.setBounds), or --monitor (fences.moveToMonitor)",
@@ -302,6 +320,12 @@ pub const COMMANDS: &[Entry] = &[
         Some("peek.start"),
         "Float every fence above other windows",
         "pecofence-cli peek start"
+    ),
+    entry!(
+        "peek start --search",
+        Some("peek.search"),
+        "Peek with this text in its search box, as if typed",
+        "pecofence-cli peek start --search invoice"
     ),
     entry!(
         "peek end",

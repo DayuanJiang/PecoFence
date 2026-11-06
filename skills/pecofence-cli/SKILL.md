@@ -82,6 +82,8 @@ pecofence-cli settings set theme dark                          # dotted camelCas
 pecofence-cli fence create --tool note --title Today --text "[ ] Pay rent"   # 小工具: note, clock, or --script <file>
 pecofence-cli fence set Today noteText "[x] Pay rent`n[ ] Call Anna"           # whole text; `n = new line in PowerShell
 pecofence-cli fence refresh Weather                            # script fence: run its script now
+pecofence-cli fence open-folder Projects 2026                  # show a subfolder; fence up / fence forward go back and on
+pecofence-cli peek start --search invoice                      # Peek with the search box showing what matches
 pecofence-cli snapshot list
 pecofence-cli snapshot restore <id> --dry-run                 # fences it would add / remove / move / update
 pecofence-cli config export "C:\Users\me\Desktop\pecofence-backup.json"   # settings + rules + layouts

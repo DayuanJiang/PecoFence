@@ -377,6 +377,24 @@ impl App {
         crate::peek_search::focus();
     }
 
+    /// `pecofence-cli peek start --search`: Peek with `text` in its search box (started when it
+    /// is not running, the text replaced when the box is open). False without fence windows.
+    pub(super) fn peek_search_text(&mut self, text: &str) -> bool {
+        if self.peek.as_ref().is_none_or(|p| p.is_closing()) {
+            self.toggle_peek();
+        }
+        if self.peek.as_ref().is_none_or(|p| p.is_closing()) {
+            return false;
+        }
+        if crate::peek_search::is_open() {
+            crate::peek_search::set_text(text);
+        } else {
+            crate::peek_search::open(text, self.queue.clone(), self.theme_mode == ThemeMode::Dark);
+        }
+        self.update_peek_search();
+        true
+    }
+
     /// Characters typed on the dimmer: open the search box with them, or add them to it.
     pub(super) fn peek_search_type(&mut self, text: &str) {
         if self.peek.as_ref().is_none_or(|p| p.is_closing()) {

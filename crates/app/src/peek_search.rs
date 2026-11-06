@@ -569,6 +569,15 @@ pub fn append(text: &str) {
     });
 }
 
+/// Replaces the text in the box (`pecofence-cli peek start --search`).
+pub fn set_text(text: &str) {
+    ACTIVE.with(|a| {
+        if let Some(s) = a.borrow().as_ref() {
+            s.edit.set_text(text);
+        }
+    });
+}
+
 /// Shows `text` at the right end of the box.
 pub fn set_status(text: &str) {
     let hwnd = ACTIVE.with(|a| {

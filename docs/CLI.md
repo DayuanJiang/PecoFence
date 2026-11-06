@@ -110,6 +110,8 @@ unique id prefix, or a name (only while that name is unique).
 | `fence delete <FENCE>` | `pecofence-cli fence delete Temp` |
 | `fence rename <FENCE> <TITLE>` | `pecofence-cli fence rename Work Projects` |
 | `fence refresh <FENCE>` | `pecofence-cli fence refresh Weather` (script fences: run the script now; other fences are `unsupported`) |
+| `fence open-folder <FENCE> <FOLDER>` | `pecofence-cli fence open-folder Projects 2026` (as a double-click on the folder: a subfolder in a folder fence, or any folder in a fence of icons, shown in place of its icons; a relative `FOLDER` starts at the folder the fence shows; not saved) |
+| `fence up <FENCE>` / `fence forward <FENCE>` | `pecofence-cli fence up Projects` (one folder up, as Backspace and the mouse's back button; `forward` goes back into the folder `up` left, as the forward button; `fence get` shows the folder in `portal.current` or `openedFolder`) |
 | `fence move <FENCE> (--rect x,y,w,h \| --x <N> --y <N> \| --monitor <ID>)` | `pecofence-cli fence move Work --x 1200 --y 80` |
 | `fence resize <FENCE> [--w <N>] [--h <N>]` | `pecofence-cli fence resize Work --w 800` |
 | `fence fit <FENCE>` | `pecofence-cli fence fit Tools` (height that shows every item) |
@@ -143,7 +145,7 @@ unique id prefix, or a name (only while that name is unique).
 | `config check [FILE]` | `pecofence-cli config check C:\Users\me\Desktop\pecofence.json` (offline; defaults to the config in use) |
 | `backup list` | `pecofence-cli backup list` (daily backups beside config.json, newest first) |
 | `backup restore <FILE>` | `pecofence-cli backup restore "C:\Users\me\AppData\Roaming\PecoFence\backups\2026-09-23.json"` (a path from `backup list`) |
-| `peek start` / `peek end` | `pecofence-cli peek start` |
+| `peek start [--search <TEXT>]` / `peek end` | `pecofence-cli peek start --search invoice` (`--search` puts the text in Peek's search box as if typed, so the list of matches shows) |
 | `windows-desktop start` / `windows-desktop end` | `pecofence-cli windows-desktop start` (hide every fence and show the Windows desktop icons until `end`; not saved) |
 | `watch [--fence <FENCE>] [--events <E,...>] [--once] [--heartbeat]` | `pecofence-cli watch --fence inbox --once` |
 | `log [-f] [-n <N>]` | `pecofence-cli log -n 100` (text, not JSON) |
