@@ -200,30 +200,39 @@ pub struct Settings {
     pub tools: ToolSettings,
 }
 
-/// 小工具 switches (all off by default).
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+/// 小工具: one switch for note, clock and script fences (on by default), and the other tool
+/// settings.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct ToolSettings {
-    /// 便签与待办: note fences.
-    #[serde(default)]
-    pub notes: bool,
-    /// 时钟与日期: clock fences.
-    #[serde(default)]
-    pub clock: bool,
-    /// Clock fences show the seconds too (and redraw every second instead of every minute).
+    /// 小工具: note, clock and script fences. Off hides them all and stops every script; an
+    /// imported configuration with script fences switches it off until the user turns it on.
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// Clock fences show the seconds too (and redraw every second instead of every minute);
+    /// 显示秒 in the clock's fence menu.
     #[serde(default)]
     pub clock_seconds: bool,
-    /// 脚本栅栏: fences that run a script of the user's on an interval and show its output.
-    #[serde(default)]
-    pub scripts: bool,
     /// 对话框跳转: an Open / Save dialog jumps to the folder of the Explorer window (or folder
     /// fence) the user comes back from, and Ctrl+G jumps there at any time.
     #[serde(default)]
     pub dialog_jump: bool,
-    /// 搜索整台电脑: the search box also lists what the Everything file search finds.
+    /// 速览搜索也找整台电脑 (速览与搜索 on the settings page): the search box also lists what
+    /// the Everything file search finds.
     #[serde(default)]
     pub everything: bool,
+}
+
+impl Default for ToolSettings {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            clock_seconds: false,
+            dialog_jump: false,
+            everything: false,
+        }
+    }
 }
 
 /// What a script fence (`FenceTool::Script`) runs, and how often.
@@ -231,11 +240,14 @@ pub struct ToolSettings {
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct ScriptSpec {
-    /// The script or program (.ps1, .py, .pyw, .cmd, .bat, .js or .exe); empty = none chosen.
+    /// The script or program (.ps1, .py, .pyw, .cmd, .bat, .js, .mjs, .exe or .com); empty =
+    /// none chosen.
     #[serde(default)]
     pub path: String,
-    /// Minutes between runs, 1 to 1440.
+    /// Minutes between runs, 1 to 1440. A streaming script (one that keeps running) starts again
+    /// this long after it ended by itself.
     #[serde(default = "ScriptSpec::default_interval")]
+    #[cfg_attr(feature = "schema", schemars(range(min = 1, max = 1440)))]
     pub interval_minutes: u32,
 }
 
@@ -264,18 +276,15 @@ pub enum FenceTool {
     Note,
     /// 时钟与日期: the local time, date and weekday in Windows' region format.
     Clock,
-    /// 脚本栅栏: the text a script of the user's prints (`Config::scripts`), run on an interval.
+    /// 脚本栅栏: the text a script of the user's prints (`Config::scripts`), run on an interval
+    /// or kept running.
     Script,
 }
 
 impl FenceTool {
-    /// Whether the tool is switched on in `tools`.
+    /// Whether tool fences are switched on in `tools` (one switch for every kind).
     pub fn enabled(self, tools: &ToolSettings) -> bool {
-        match self {
-            Self::Note => tools.notes,
-            Self::Clock => tools.clock,
-            Self::Script => tools.scripts,
-        }
+        tools.enabled
     }
 }
 
@@ -295,7 +304,9 @@ pub struct PeekSettings {
     /// shortcut is ignored the same way.
     #[serde(default)]
     pub custom_hotkey: Option<String>,
-    /// Pressing Ctrl twice opens the search box (with Peek).
+    /// Peek's shortcut is pressing Ctrl twice (Peek opens with the search box) instead of
+    /// `hotkey` / `customHotkey`, which stay saved but are not registered. Setting another
+    /// shortcut turns this off.
     #[serde(default)]
     pub double_ctrl: bool,
 }
@@ -424,7 +435,7 @@ pub enum ThemeStyle {
     LiquidGlass,
 }
 
-/// Item name colour (「图标名称颜色」). Auto: Liquid Glass picks dark or light text from the
+/// Item name colour (「文字颜色」). Auto: Liquid Glass picks dark or light text from the
 /// wallpaper under each fence, Fluent follows the colour mode. The halo pairs with the text.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
@@ -1964,11 +1975,18 @@ mod tests {
         let back: Fence = serde_json::from_value(v).unwrap();
         assert_eq!(back.tool, Some(FenceTool::Note));
         assert!(!back.holds_items());
-        // Settings written before 小工具 existed load with every tool off.
+        // Settings written before 小工具 existed load with the tools on and dialog jump off, as
+        // does a `tools` object of the 0.3.0 previews (one switch per tool, now ignored).
         let mut old = serde_json::to_value(Settings::default()).unwrap();
         old.as_object_mut().unwrap().remove("tools");
         let settings: Settings = serde_json::from_value(old).unwrap();
-        assert!(!settings.tools.notes);
+        assert!(settings.tools.enabled && !settings.tools.dialog_jump);
+        let tools: ToolSettings = serde_json::from_value(
+            serde_json::json!({"notes": false, "clock": true, "scripts": false, "clockSeconds": true}),
+        )
+        .unwrap();
+        assert!(tools.enabled && tools.clock_seconds);
+        assert!(FenceTool::Script.enabled(&tools) && FenceTool::Note.enabled(&tools));
     }
 
     #[test]

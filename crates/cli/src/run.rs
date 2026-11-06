@@ -129,8 +129,11 @@ pub fn run(ctx: &Ctx, command: Command) -> Result<Reply, IpcError> {
             cmd: BackupCmd::Restore { file },
         } => ctx.call(Method::BackupsRestore { path: file }),
         Command::Peek {
-            cmd: PeekCmd::Start,
+            cmd: PeekCmd::Start { search: None },
         } => ctx.call(Method::PeekStart),
+        Command::Peek {
+            cmd: PeekCmd::Start { search: Some(text) },
+        } => ctx.call(Method::PeekSearch { text }),
         Command::Peek { cmd: PeekCmd::End } => ctx.call(Method::PeekEnd),
         Command::WindowsDesktop {
             cmd: WindowsDesktopCmd::Start,
@@ -271,6 +274,12 @@ fn run_fence(ctx: &Ctx, cmd: FenceCmd) -> Result<Reply, IpcError> {
         FenceCmd::Fit { fence } => ctx.call(Method::FencesFit { fence }),
         FenceCmd::Delete { fence } => ctx.call(Method::FencesDelete { fence }),
         FenceCmd::Rename { fence, title } => ctx.call(Method::FencesRename { fence, title }),
+        FenceCmd::Refresh { fence } => ctx.call(Method::FencesRefresh { fence }),
+        FenceCmd::OpenFolder { fence, folder } => {
+            ctx.call(Method::FencesOpenFolder { fence, folder })
+        }
+        FenceCmd::Up { fence } => ctx.call(Method::FencesUp { fence }),
+        FenceCmd::Forward { fence } => ctx.call(Method::FencesForward { fence }),
         FenceCmd::Move {
             fence,
             rect,

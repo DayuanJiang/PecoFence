@@ -66,7 +66,7 @@ pub const COMMANDS: &[Entry] = &[
     entry!(
         "fence create",
         Some("fences.create"),
-        "New virtual fence (--rect, --monitor, or --below/--above/--right-of/--left-of FENCE [--size W,H]) or folder portal (--portal DIR, --title optional)",
+        "New virtual fence (--rect, --monitor, or --below/--above/--right-of/--left-of FENCE [--size W,H]), folder portal (--portal DIR, --title optional) or tool fence (--tool note [--text TEXT], --tool clock, --script FILE)",
         "pecofence-cli fence create --title Work --rect 100,100,600,400"
     ),
     entry!(
@@ -80,6 +80,30 @@ pub const COMMANDS: &[Entry] = &[
         Some("fences.rename"),
         "Rename",
         "pecofence-cli fence rename Work Projects"
+    ),
+    entry!(
+        "fence refresh",
+        Some("fences.refresh"),
+        "Script fences: run the script now (a streaming script starts again)",
+        "pecofence-cli fence refresh Weather"
+    ),
+    entry!(
+        "fence open-folder",
+        Some("fences.openFolder"),
+        "Show a folder inside the fence: a subfolder of a folder fence, or any folder in a fence of icons (runtime only)",
+        "pecofence-cli fence open-folder Projects 2026"
+    ),
+    entry!(
+        "fence up",
+        Some("fences.up"),
+        "One folder up in a fence that shows a folder (Backspace, the mouse's back button)",
+        "pecofence-cli fence up Projects"
+    ),
+    entry!(
+        "fence forward",
+        Some("fences.forward"),
+        "Back into the folder the last fence up left (the mouse's forward button)",
+        "pecofence-cli fence forward Projects"
     ),
     entry!(
         "fence move",
@@ -294,8 +318,8 @@ pub const COMMANDS: &[Entry] = &[
     entry!(
         "peek start",
         Some("peek.start"),
-        "Float every fence above other windows",
-        "pecofence-cli peek start"
+        "Float every fence above other windows; --search <TEXT> (peek.search) opens its search box with the text, as if typed",
+        "pecofence-cli peek start --search invoice"
     ),
     entry!(
         "peek end",
@@ -341,6 +365,8 @@ const EXTRA_METHODS: &[&str] = &[
     "fences.moveToMonitor",
     "items.planMove",
     "snapshots.planRestore",
+    // `peek start --search`.
+    "peek.search",
 ];
 
 pub const ERROR_CODES: &[(ErrorCode, &str)] = &[
@@ -420,7 +446,7 @@ pub const NOTES: &[&str] = &[
     "Folder portals show real files: item move into or out of a portal is an Explorer file move (undo only via Explorer Ctrl+Z; snapshots do not revert it). item move --glob without --from skips portal items; pass --from <portal> to include them. A virtual fence or the inbox can show a folder opened in it by a double-click (openFoldersInside); fence get reports it as openedFolder, while item list, item move --to and watch keep seeing the fence's own icons (membership only, no file moves).",
     "Shell quoting: values starting with #, [ or * or containing spaces need quotes (Git Bash treats #ff8800 as a comment): fence set Work tint \"#ff8800\" or tint '\"#ff8800\"'. Negative numbers work bare: fence move Work --x -1800.",
     "Geometry: a hosted tab reports its host's rect and windowRect null. fence get .fit {columns, rows, fittingHeight, overflow} says whether the items fit (fence fit applies fittingHeight). When the app changes a rect on its own (autoHeight after setBounds; iconSize/spacing/spacingPx/layout/labelLines snapping to whole columns and rows) the reply carries adjusted {requested, applied, reason}.",
-    "Settings paths are dotted camelCase (peek.enabled, peek.customHotkey (\"Ctrl+Shift+F\"), windowsDesktopHotkey (\"Ctrl+Alt+D\", null = none), quickHide.enabled, rollUp.hoverPeek, snapping.gapPx, iconSize, theme, themeStyle, customTheme (a theme file in the themes folder next to config.json, by name; null = the built-in style), hideRealIcons, keepIconsHidden, autostart, icons.chameleon); see describe --schema Settings.",
+    "Settings paths are dotted camelCase (peek.enabled, peek.customHotkey (\"Ctrl+Shift+F\"), windowsDesktopHotkey (\"Ctrl+Alt+D\", null = none), quickHide.enabled, rollUp.hoverPeek, snapping.gapPx, iconSize, theme, themeStyle, customTheme (a theme file in the themes folder next to config.json, by name; null = the built-in style), hideRealIcons, keepIconsHidden, autostart, icons.chameleon, tools.enabled (小工具: note, clock and script fences; on by default), tools.clockSeconds|dialogJump|everything (false by default; tools.everything lets Peek's search find files on the whole computer), peek.doubleCtrl (true = Peek opens by pressing Ctrl twice instead of the shortcut; setting a shortcut turns it off)); see describe --schema Settings.",
     "fence set props: title (or fence rename), iconSize 24-128 in steps of 4 (the fence menu offers 32|48|64|96), spacing compact|normal|loose, spacingPx -12..32 in steps of 4 (DIPs added to the cell width; compact = -12, normal = 0, loose = 16; fence get reports both, spacing naming the nearest preset), iconAlign left|center (center: a row of icons that does not fill the width, the last one too, sits in the middle; icons view only), autoHeight, locked, expandUpward (opens upward from its title row where it fits above it, else downward; the row stays put; fence get's bottomAnchored says which edge stays put), excludeFromQuickHide, opacity default|clear|solid|transparent, tint \"#RRGGBB\"|null, tintTitleOnly (the tint washes only the title row), tabColor \"#RRGGBB\"|null (the bar under a tab; null = its tint), titleColor theme|tint|white|black|\"#RRGGBB\", titleSize small|normal|large|extraLarge, titleOnHover default|hover|always (default follows rollUp.titleOnHover), layout icons|list|details, sort manual|name|type|date|size|openCount, reverse, groupByDate, foldersFirst (folders above files when sorted), labelLines 0|1|2|3 (lines of the label under each icon; 0 = no labels), openFoldersInside (regular fences: a double-clicked folder or folder shortcut opens inside the fence; off by default), portalNavigate (portals: a double-clicked subfolder opens inside), portalTitleIcon, hideWhenEmpty (no window while the fence is empty; a tab or a host of tabs stays), desktopLayout (inbox only: drawn like the Windows desktop, icons down columns from the top-left of its monitor around the other fences); note fences: noteText (the whole text; lines starting with [ ] or [x] are to-dos); script fences: scriptPath (full path; runs it at once), scriptInterval 1..1440 minutes. --string keeps numeric-looking text (title 2024) a string.",
     "The app must be running; the CLI never edits config.json. --instance <name> only addresses a test instance started with PECOFENCE_INSTANCE=<name>. Offline exceptions: describe, skill, paths, log, config check.",
     "watch streams one EventDto per line (describe --schema EventDto) and never returns by itself; use --once from scripts (wait for one event, then run a batch such as item list + item move). Heartbeats every 30 s are hidden unless --heartbeat. item list carries kind/ext/size/modified/created/openCount/lastOpened/shortcutTarget so most items can be sorted without opening them. items.move of 20+ desktop items takes an automatic snapshot (snapshotId); with a portal on either side it replies fileMove: true and the files arrive a moment later; names that already exist at the destination are skipped (skipped[], warning) instead of opening Explorer's replace dialog.",

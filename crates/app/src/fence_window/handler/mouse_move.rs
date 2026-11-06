@@ -422,7 +422,15 @@ pub(super) fn on_mousemove(
     // Infotip: re-arm when the pointer settles on something else (fed the
     // same filtered hit as the hover, so no tip over the scrollbar strip). Items get none
     // while Explorer's "Show pop-up description" is off, as on the desktop.
-    let tip = v.tip_target_at(x, y, hit.filter(|_| behavior.info_tips.get()));
+    let script_row = if sb_hot || on_control {
+        None
+    } else {
+        v.script_row_at(x, y)
+    };
+    let script_changed = std::mem::replace(&mut v.script_hover, script_row) != script_row;
+    let tip = v
+        .tip_target_at(x, y, hit.filter(|_| behavior.info_tips.get()))
+        .or(script_row.map(TipTarget::ScriptRow));
     v.update_tip_target(tip, x, y);
     let header = if divider.is_some() || on_control {
         None
@@ -451,7 +459,7 @@ pub(super) fn on_mousemove(
     if chrome_changed || title_changed {
         let _ = v.redraw_chrome_only();
     }
-    if (item_changed || header_changed) && !v.rolled_up {
+    if (item_changed || header_changed || script_changed) && !v.rolled_up {
         let _ = v.redraw_content();
     }
     // Hovering the title row of a rolled fence opens the peek, whether the

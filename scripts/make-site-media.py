@@ -16,6 +16,13 @@ OUT = ROOT / "site/assets"
 CLIPS = ["groups", "portal", "tabs", "peek", "hide", "rules"]
 POSTER_SECONDS = {"groups": 6, "portal": 9, "tabs": 5, "peek": 6.8, "hide": 7, "rules": 10}
 REVISION = ROOT / ".cache/store-v2"
+# Features without a promo recording use their manual lesson instead: the Store trailer
+# renderer's caption-free English render (.cache/store-trailers/render.py en <lesson>
+# --no-captions --out .cache/store-trailers/out/en/<lesson>-bare.mp4, which also writes the
+# poster frame as <lesson>-bare.png), cropped to the 1600x900 stage.
+LESSONS = {"search": "search", "dialog": "dialog-jump"}
+LESSON_RENDERS = ROOT / ".cache/store-trailers/out/en"
+STAGE = (160, 22, 1760, 922)
 
 
 def presentation_stills():
@@ -39,6 +46,21 @@ def presentation_stills():
         image.save(OUT / f"{name}.jpg", quality=91, optimize=True, progressive=True)
 
 
+def lesson_clips():
+    left, top, right, bottom = STAGE
+    for name, lesson in LESSONS.items():
+        source = LESSON_RENDERS / f"{lesson}-bare"
+        subprocess.run([
+            "ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", str(source.with_suffix(".mp4")),
+            "-an", "-vf", f"crop={right - left}:{bottom - top}:{left}:{top},fps=30,scale=1290:-2",
+            "-c:v", "libx264", "-preset", "slow", "-crf", "24",
+            "-pix_fmt", "yuv420p", "-movflags", "+faststart", str(OUT / f"{name}.mp4"),
+        ], check=True)
+        poster = Image.open(source.with_suffix(".png")).convert("RGB").crop(STAGE)
+        poster.resize((1290, 726), Image.Resampling.LANCZOS).save(
+            OUT / f"{name}.jpg", quality=91, optimize=True, progressive=True)
+
+
 def promo():
     """The 30-second trailer (v3) with its soundtrack; plays only on request."""
     master = PUBLIC.parent / "out/PecoFence-trailer-v3-1080p60.mp4"
@@ -60,11 +82,17 @@ def main():
                         help="update the revision-2 images without re-encoding unchanged videos")
     parser.add_argument("--promo-only", action="store_true",
                         help="re-export only the trailer and its poster")
+    parser.add_argument("--lessons-only", action="store_true",
+                        help="re-export only the features shown by their manual lesson (LESSONS)")
     args = parser.parse_args()
     OUT.mkdir(parents=True, exist_ok=True)
     if args.promo_only:
         promo()
         print("Updated promo.mp4 and promo.jpg")
+        return
+    if args.lessons_only:
+        lesson_clips()
+        print("Updated " + ", ".join(f"{name}.mp4 and {name}.jpg" for name in LESSONS))
         return
     if args.stills_only:
         presentation_stills()
@@ -89,6 +117,7 @@ def main():
             "ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-ss", str(POSTER_SECONDS[clip]), "-i", str(source),
             "-frames:v", "1", "-vf", "scale=1290:-2", "-q:v", "4", str(OUT / f"{clip}.jpg"),
         ], check=True)
+    lesson_clips()
     promo()
     presentation_stills()
     for path in sorted(OUT.iterdir()):

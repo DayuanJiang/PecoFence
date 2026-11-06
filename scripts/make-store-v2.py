@@ -5,6 +5,7 @@ uv run --with pillow python scripts/make-store-v2.py
 import hashlib
 import html
 import json
+import os
 import shutil
 import zipfile
 from functools import lru_cache
@@ -16,13 +17,19 @@ ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / ".cache/store-v2"
 NATIVE = SOURCE / "native"
 OUT = ROOT / "dist/store-listing-v2"
-FONTS = Path("C:/Windows/Fonts")
+# The Windows fonts; PECOFENCE_FONTS points at a copy when rendering elsewhere.
+FONTS = Path(os.environ.get("PECOFENCE_FONTS", "C:/Windows/Fonts"))
 SIZE = (1920, 1080)
 INK = "#233048"
 LOCALE_ROOT = ROOT / "docs/store/v2-i18n"
 LANGUAGES = [dict(entry, storeCode="en-US" if entry["code"] == "en" else entry["code"])
              for entry in json.loads((ROOT / "site/site.json").read_text(encoding="utf-8"))["languages"]]
 EXPECTED_LOCALES = {entry["storeCode"] for entry in LANGUAGES}
+
+
+# Screenshots per language: the five of the second pack, then search and dialog jump (0.3.0,
+# captured from the release build at 2560x1440 and 200 %).
+SHOTS = 7
 
 
 def load_locales():
@@ -39,8 +46,8 @@ def load_locales():
         site = json.loads((ROOT / "site/i18n" / f"{entry['code']}.json").read_text(encoding="utf-8"))
         data["ui"] = dict(interface[code], language=site["nav.language"], features=site["features.heading"])
         for key in ("titles", "sub", "captions", "uploadCaptions"):
-            if len(data[key]) != 5 or not all(isinstance(value, str) and value.strip() for value in data[key]):
-                raise ValueError(f"{code}: {key} must contain five nonempty translations")
+            if len(data[key]) != SHOTS or not all(isinstance(value, str) and value.strip() for value in data[key]):
+                raise ValueError(f"{code}: {key} must contain {SHOTS} nonempty translations")
         if any(len(caption) > 200 for caption in data["captions"] + data["uploadCaptions"]):
             raise ValueError(f"{code}: screenshot caption exceeds 200 characters")
         if len(data["short"]) > 1000 or len(data["description"]) > 10000:
@@ -57,13 +64,15 @@ def load_locales():
 
 
 TEXT = load_locales()
-NAMES = ["01-desktop", "02-peek", "03-tabs", "04-auto-sort", "05-appearance"]
+NAMES = ["01-desktop", "02-peek", "03-tabs", "04-auto-sort", "05-appearance", "06-search", "07-dialog-jump"]
 UPLOAD_SHOTS = [
     ("01-desktop", "overview", None),
     ("02-peek", "peek", None),
     ("03-tabs", "tabs-inspiration", (435, 280, 2147, 1243)),
     ("04-auto-sort", "auto", (250, 145, 2298, 1297)),
     ("05-appearance", "dark", None),
+    ("06-search", "search", None),
+    ("07-dialog-jump", "dialog", None),
 ]
 UPLOAD_CAPTIONS = {code: data["uploadCaptions"] for code, data in TEXT.items()}
 
@@ -200,6 +209,22 @@ def appearance(language):
     return image
 
 
+def framed(language, number, source, background, white=False):
+    """Headline on top and the native capture below it, like the tabs and appearance scenes."""
+    image = Image.new("RGB", SIZE, background)
+    header(image, language, number, white)
+    paste(image, native(source), (235, 250), 1450, radius=22, shadow=True)
+    return image
+
+
+def search(language):
+    return framed(language, 5, "search", "#ece9f3")
+
+
+def dialog(language):
+    return framed(language, 6, "dialog", "#f2eee9")
+
+
 def artwork():
     """Text-free original image studies grouped into glass-like frames, not app UI."""
     image = Image.open(SOURCE / "paper-light.png").convert("RGB").resize(SIZE)
@@ -316,7 +341,7 @@ def upload_pack(listings):
 
 
 def contact_sheet():
-    sheet = Image.new("RGB", (1600, 1450), "#f5f5f7")
+    sheet = Image.new("RGB", (1600, 1885), "#f5f5f7")
     d = ImageDraw.Draw(sheet)
     label(sheet, "PecoFence / 第二版", (38, 25), 34, INK, "zh-CN", True)
     label(sheet, "重新拍摄的原生界面 · 一图一个主题", (40, 77), 20, "#667184", "zh-CN")
@@ -325,9 +350,9 @@ def contact_sheet():
         x, y = 36 + col*782, 130 + row*435
         with Image.open(OUT / f"screenshots/zh-CN/{name}.png") as image:
             sheet.paste(image.resize((746, 420), Image.Resampling.LANCZOS), (x, y))
-    d.rounded_rectangle((818, 1000, 1564, 1418), radius=16, fill="#e9edf4")
-    label(sheet, "原生 UI，没有重绘。", (860, 1050), 32, INK, "zh-CN", True)
-    label(sheet, f"新的桌面、新的演示文件、\n新的构图和信息层级。\n\n{len(TEXT)} 种语言 · {len(TEXT)*len(NAMES)} 张宣传图\n1920 × 1080", (860, 1130), 25, "#566177", "zh-CN")
+    d.rounded_rectangle((818, 1435, 1564, 1853), radius=16, fill="#e9edf4")
+    label(sheet, "原生 UI，没有重绘。", (860, 1485), 32, INK, "zh-CN", True)
+    label(sheet, f"新的桌面、新的演示文件、\n新的构图和信息层级。\n\n{len(TEXT)} 种语言 · {len(TEXT)*len(NAMES)} 张宣传图\n1920 × 1080", (860, 1565), 25, "#566177", "zh-CN")
     sheet.save(OUT / "contact-sheet.jpg", quality=94)
     overview = Image.new("RGB", (1600, 100 + ((len(LANGUAGES)+1)//2)*485), "#f5f5f7")
     label(overview, f"PecoFence / {len(TEXT)} 种语言", (38, 25), 34, INK, "zh-CN", True)
@@ -359,7 +384,7 @@ def preview(store_copy):
 def main():
     for folder in ("art", "screenshots"):
         (OUT / folder).mkdir(parents=True, exist_ok=True)
-    functions = [cover, peek, tabs, autosort, appearance]
+    functions = [cover, peek, tabs, autosort, appearance, search, dialog]
     for language in TEXT:
         folder = OUT / "screenshots" / language
         folder.mkdir(exist_ok=True)

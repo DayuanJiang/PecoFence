@@ -53,7 +53,7 @@ $now = ((Ipf fence get 'Renamed by test') | ConvertFrom-Json)
 $nr = if ($now.fence) { $now.fence.windowRect } else { $now.windowRect }
 Check 'the moved fence keeps its place' ($nr.x -eq $mr.x -and $nr.y -eq $mr.y) "before=$($mr.x),$($mr.y) after=$($nr.x),$($nr.y)"
 $tools = (Ipf settings get tools) | ConvertFrom-Json
-Check 'every new 小工具 switch is off after the upgrade' (-not ($tools.notes -or $tools.clock -or $tools.scripts -or $tools.dialogJump -or $tools.everything)) ((Ipf settings get tools).Trim())
+Check 'after the upgrade 小工具 is on and the new opt-in switches are off' ($tools.enabled -and -not ($tools.dialogJump -or $tools.everything)) ((Ipf settings get tools).Trim())
 $log = "$env:LOCALAPPDATA\PecoFence\pecofence.log"
 $warn = @(Get-Content $log -Encoding UTF8 -ErrorAction SilentlyContinue | Where-Object { $_ -match ' (ERROR|WARN) .*config' })
 Check 'no config warnings in the log' ($warn.Count -eq 0) (($warn | Select-Object -First 2) -join ' | ')

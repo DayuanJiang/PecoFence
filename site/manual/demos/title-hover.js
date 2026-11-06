@@ -1,7 +1,7 @@
-// 4.2 鼠标移上去才显示标题栏: 设置 → 常规, scrolled down past 外观 and 桌面与启动 to 行为
-// (ui/settings.html order), → 「鼠标悬停时才显示标题栏」 hides the title rows (the glass starts at
-// the icons), the pointer brings them back fence by fence, and 栅栏 page → 「显示标题栏」 →
-// 「始终显示」 keeps 程序's title row for good. The window is the shared settings mock (window.SM,
+// 5.2 鼠标移上去才显示标题栏: 设置 → 常规, scrolled down past 外观, 桌面与启动, 隐藏栅栏 and
+// 收起与展开 to 标题栏与标签页 (ui/settings.html order), → 「鼠标悬停时才显示标题栏」 hides the title
+// rows (the glass starts at the icons), the pointer brings them back fence by fence, and 栅栏 page →
+// 「显示标题栏」 → 「始终显示」 keeps 程序's title row for good. The window is the shared settings mock (window.SM,
 // demos/settings-mock.js). fence_window/render.rs title_state: the plate's top edge glides 167 ms
 // decelerate, the title fades 83 ms linear; the window and its icons never move
 // (roll.rs title_visible_target: pointer anywhere over the window).
@@ -16,30 +16,40 @@
     const F2 = { x: 532, y: 176, w: 246, h: 204 };           // 文件与文档
     const PLATE_S = .25, TITLE_S = .12;                      // 167 / 83 ms, slowed a little to read
 
-    // 常规 below what SM.generalPage builds, in the page's order with its Segoe Fluent glyphs;
-    // defaults from model.rs (Settings, IconSettings, RollUpSettings, SnappingSettings)
+    // 常规 below what SM.generalPage builds (语言, 外观, 图标 › 默认图标大小), in the page's order with
+    // its Segoe Fluent glyphs; defaults from model.rs (Settings, IconSettings, RollUpSettings,
+    // SnappingSettings). v: the chosen item of a list card (a switch card otherwise); o: card
+    // options (child cards are indented)
     const ICON_TINTS = [null, '60CDFF', '10893E', 'F7630C', 'E74856', '8764B8', '7A7574'];   // 不着色 … 灰
+    // 桌面与启动: Windows 桌面图标 is 隐藏, so 关闭 PecoFence 时保持… shows under it (bindDesktopIcons)
     const DESKTOP = [
-        { ic: '', t: '随 Windows 启动', on: true },
-        { ic: '', t: '隐藏 Windows 桌面图标', s: '桌面项目只显示在栅栏里，未归类的进入“桌面”栅栏；回收站等系统图标也会出现在“桌面”栅栏中', on: true },
-        { ic: '', t: '双击桌面空白处隐藏或显示栅栏', on: true },
+        { ic: '\uE7E8', t: '随 Windows 启动', on: true },
+        { ic: '\uE8A9', t: 'Windows 桌面图标', s: '桌面项目只显示在栅栏里，没有归类的放进“桌面”栅栏；回收站等系统图标也在“桌面”栅栏里', v: '隐藏，项目放在栅栏里', o: { gap: 1 } },
+        { t: '关闭 PecoFence 时保持 Windows 桌面图标隐藏', s: '登录时 Windows 会先显示桌面图标，等 PecoFence 启动后才隐藏。打开后，退出或注销时图标保持隐藏，下次登录就不会闪现；PecoFence 没有运行时，桌面上不显示图标。要让图标重新显示，右键桌面，选“查看”→“显示桌面图标”', on: false, o: { indent: 22 } },
+        { ic: '\uE8B3', t: '在桌面空白处拖出矩形时提供“在此新建栅栏”', s: '矩形没有碰到任何栅栏时弹出这一项；关闭后拖出矩形只用来框选，仍可从托盘菜单新建栅栏', on: true },
     ];
-    const BEHAVIOUR = [
-        { ic: '', t: '收起的栅栏悬停时自动展开', s: '鼠标移开后自动收起', on: true },
-        { ic: '', t: '收起的栅栏需点击标题才展开', s: '开启后不再悬停展开；拖动标题仍可移动栅栏', on: false },
-        { ic: '', t: '展开时把下面的栅栏推开', s: '收起后它们会回到原位', on: true },
-        { ic: '', t: '鼠标悬停时才显示标题栏', s: '平时只显示图标，让桌面更清爽；每个栅栏可在“栅栏”页单独设置', on: false },
-        { ic: '', t: '自动隐藏滚动条', s: '鼠标移到栅栏上或滚动时才显示', on: false },
+    // 隐藏栅栏: 临时显示 Windows 桌面 is one card with its shortcut box (none set) and 包含 Win 键
+    const QUICK_HIDE = { ic: '\uE890', t: '双击桌面空白处隐藏或显示栅栏', on: true };
+    const WINDOWS_DESKTOP = { ic: '\uE7F4', t: '临时显示 Windows 桌面', s: '按快捷键隐藏所有栅栏、显示 Windows 桌面图标，再按一次恢复；托盘菜单里也有这一项' };
+    const ROLL = [
+        { ic: '\uE70D', t: '收起的栅栏怎么展开', s: '停在上面展开的栅栏，鼠标移开后自动收起；不管选哪种，双击标题或点折叠箭头都能展开和收起', v: '鼠标停在上面时' },
+        { ic: '\uE74B', t: '展开时把下面的栅栏推开', s: '收起后它们会回到原位', on: true },
     ];
-    const TARGET = 3;
-    // The pages go on below what is built (常规: 调整大小时按整行整列对齐, 速览栅栏; 栅栏: 布局,
-    // 行为): only the scrollbar thumb needs their height.
-    const GEN_MORE = 200, FEN_MORE = 440;
+    const TITLE_BAR = [
+        { ic: '\uE737', t: '鼠标悬停时才显示标题栏', s: '平时只显示图标，让桌面更清爽；每个栅栏可在“栅栏”页单独设置', on: false },
+        { ic: '\uE70E', t: '隐藏标题栏右侧的项目数和折叠箭头', s: '标题栏只显示名称；双击标题或用右键菜单收起和展开', on: false },
+        { ic: '\uE90C', t: '标签栏位置', s: '有多个标签页时，标签排在标题栏里，或在栅栏左侧排成一列', v: '顶部' },
+        { ic: '\uE7C3', t: '鼠标悬停时切换标签页', s: '鼠标在标签页上停留片刻就切换过去，不用点击', on: true },
+    ];
+    const TARGET = 0;
+    // The pages go on below what is built (常规: 吸附与对齐; 栅栏: 布局, 行为): only the scrollbar
+    // thumb needs their height.
+    const GEN_MORE = 120, FEN_MORE = 440;
     // 栅栏 page: 色调 palette (fence_options.rs TINT_PALETTE) and the 「显示标题栏」 options
     const SWATCHES = [null, 'E74856', 'F7630C', 'FFB900', '10893E', '00B7C3', '0078D4', '8764B8', 'E3008C', '7A7574'];
     const OPTIONS = ['跟随常规设置', '始终显示', '鼠标悬停时显示'];
 
-    const SCROLL_A = .62, SCROLL_B = 1.45;                   // wheel: top of 常规 → 行为
+    const SCROLL_A = .62, SCROLL_B = 1.45;                   // wheel: top of 常规 → 标题栏与标签页
     const TOG_AT = 1.85, NAV_AT = 7.3, SEL_AT = 8.3, PICK_AT = 9.1;
     let PATH, CLICKS, CHIPS, POP, SCROLL;
     const at = t => pathAt(t, PATH);
@@ -52,11 +62,19 @@
         return c;
     }
 
+    // A card with a list on the right (the page's .card > select).
+    function selectCard(pg, { ic, t, s, v }, o = {}) {
+        const sw = 130;
+        return SM.select(SM.card(pg, { ic, t, s, textW: pg.cardW - sw - 60, ...o }), v, sw);
+    }
+    // A switch card or a list card, by whether d names a chosen item.
+    const anyCard = (pg, d) => d.v ? selectCard(pg, d, d.o) : toggleCard(pg, d, d.o);
+
     function generalPage(w) {
         const { g, tiles } = SM.generalPage(w);
         SM.drawTiles(tiles, false, null, false);
-        const sw = 130, selW = g.cardW - sw - 60;
-        const tint = SM.card(g, { ic: '', t: '图标着色', textW: 100, gap: 1 });
+        const sw = 130;
+        const tint = SM.card(g, { ic: '\uE790', t: '图标着色', textW: 100, gap: 1 });
         ICON_TINTS.forEach((hex, i) => {
             const c = SM.ctrl(tint, 'set-sw' + (hex ? '' : ' none on'), 15, 15,
                 { right: 10 + (ICON_TINTS.length - 1 - i) * 19.5, label: null });
@@ -66,20 +84,36 @@
         const strength = SM.card(g, { t: '图标着色强度', h: 32, indent: 22, textW: 120 });
         SM.select(strength, '中', sw);
         strength.n.style.opacity = .55;
-        toggleCard(g, { ic: '', t: '图标融入背景（Chameleon）', s: '降低图标饱和度和不透明度，让桌面看起来更清爽', on: false });
-        SM.select(SM.card(g, { ic: '', t: '显示语言', s: '立即切换界面语言；你的文件和自定义名称保持不变', textW: selW }), '跟随系统', sw);
+        toggleCard(g, { ic: '\uE793', t: '图标融入背景（Chameleon）', s: '降低图标饱和度和不透明度，让桌面看起来更清爽', on: false });
+        toggleCard(g, { ic: '\uE71B', t: '显示快捷方式箭头', s: '和 Windows 桌面一样，在快捷方式图标的左下角显示小箭头', on: true });
 
         SM.h3(g, '桌面与启动');
-        DESKTOP.forEach(d => toggleCard(g, d));
-        SM.select(SM.card(g, { ic: '', t: '显示桌面 (Win+D) 时', textW: selW }), '保持栅栏可见', sw);
+        DESKTOP.forEach(d => anyCard(g, d));
 
-        const head = SM.h3(g, '行为');
-        const toggles = BEHAVIOUR.map(d => toggleCard(g, d));
+        SM.h3(g, '隐藏栅栏');
+        toggleCard(g, QUICK_HIDE);
+        // the shortcut box and 包含 Win 键 go under the text, as the page wraps them when narrow
+        const wd = SM.card(g, { ...WINDOWS_DESKTOP, h: 64, textW: g.cardW - 34 - 12 });
+        wd.t.style.top = '7px';
+        wd.s.style.top = '22px';
+        wd.n.querySelector('.set-ic').style.top = '8px';
+        const winKey = SM.ctrl(wd, 'set-chk', 40, 13, { right: 10, top: 41, label: null });
+        el('i', null, winKey.n);
+        SM.grow(winKey, Math.ceil(SM.natW(el('span', null, winKey.n, T('包含 Win 键')))) + 16);
+        SM.button(wd, '未设置', 120, { right: 22 + winKey.w, top: 37 }).v.style.color = '#8a8a8a';
+        selectCard(g, { ic: '\uE7C4', t: '显示桌面 (Win+D) 时', v: '保持栅栏可见' });
+
+        SM.h3(g, '收起与展开');
+        ROLL.forEach(d => anyCard(g, d));
+
+        const head = SM.h3(g, '标题栏与标签页');
+        const toggles = TITLE_BAR.map(d => anyCard(g, d));
 
         SM.h3(g, '吸附与对齐');
-        toggleCard(g, { ic: '', t: '移动栅栏时吸附对齐', s: '拖动时吸附到其他栅栏、屏幕边缘和屏幕中线；按住 Alt 可暂时不吸附', on: true }, { gap: 1 });
+        toggleCard(g, { ic: '\uE8E3', t: '移动栅栏时吸附对齐', s: '拖动时吸附到其他栅栏、屏幕边缘和屏幕中线；按住 Alt 可暂时不吸附', on: true }, { gap: 1 });
         toggleCard(g, { t: '显示对齐参考线', on: true }, { h: 32, indent: 22 });
-        SM.select(SM.card(g, { ic: '', t: '栅栏间距', s: '移动和调整大小时，栅栏之间以及与屏幕边缘保持的距离', textW: selW }), '8 px', sw);
+        selectCard(g, { ic: '\uECA5', t: '栅栏间距', s: '移动和调整大小时，栅栏之间以及与屏幕边缘保持的距离', v: '8 px' });
+        toggleCard(g, { ic: '\uE80A', t: '调整大小时按整行整列对齐', s: '宽度按整列、高度按整行；关闭后可自由调整大小，图标自动铺满', on: false });
         g.contentH = SM.stack(g) + GEN_MORE;
         return { g, head, toggles };
     }
@@ -158,7 +192,7 @@
         r.ptr = pointer(S);
         taskbar(root);
 
-        // targets: the switch once 行为 is at the top, the 栅栏 nav item, the select and its list.
+        // targets: the switch once 标题栏与标签页 is at the top, the 栅栏 nav item, the select and its list.
         // SM.box / SM.at miss a card's CSS left (.set-card left 12px on top of stack's CARD_X), so
         // the real offset is measured once here (0 if the mock gets fixed).
         const scale = root.getBoundingClientRect().width / 800 || 1;
@@ -178,7 +212,7 @@
         PATH = [
             [0, 400, 384], [0.3, 400, 384],
             [0.6, 330, 340], [1.5, 330, 340],                       // over the 常规 page: wheel down
-            [1.75, tog.x, tog.y], [2.2, tog.x, tog.y],              // the 行为 switch
+            [1.75, tog.x, tog.y], [2.2, tog.x, tog.y],              // the 标题栏与标签页 switch
             [3.05, 600, 104], [3.35, 600, 104],                     // into 程序
             [3.85, 712, 62], [4.25, 712, 62],                       // over its title row
             [5.05, 650, 292], [5.45, 650, 292],                     // down into 文件与文档
@@ -224,7 +258,7 @@
         r.scene.style.opacity = loopFade(t, D, looped);
         const p = at(t);
 
-        // settings: wheel down to 行为, the switch, then the 栅栏 page
+        // settings: wheel down to 标题栏与标签页, the switch, then the 栅栏 page
         r.gen.scroll = SCROLL * ramp(t, SCROLL_A, SCROLL_B, E.out);
         const page = SM.drawNav(r.w, t, [[0, 'general'], [NAV_AT + .05, 'fences']], [], p);
         drawThumb(r.thumb, page === 'general' ? r.gen : r.fen, r.w.mainH);

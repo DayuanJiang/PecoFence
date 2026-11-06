@@ -73,10 +73,31 @@ Pour les agents et les scripts : `describe` fournit le catalogue de commandes et
 ## Une place pour chaque chose
 
 <p align="center">
-  <img src="../assets/hero-fr.png" alt="PecoFence — Des dossiers de projet, un vrai PDF et des créations graphiques originales dans des groupes Liquid Glass natifs." width="1280">
+  <img src="../assets/hero-fr.png" alt="PecoFence : des dossiers de projet, un vrai PDF et des créations graphiques originales dans des groupes Liquid Glass natifs." width="1280">
 </p>
 
 ## Voyez-le en action
+
+### Trouver en tapant.
+
+Appuyez sur **Ctrl + Alt + Espace** et tapez. Les fichiers et dossiers correspondants de vos groupes
+s’affichent aussitôt, et **Entrée** en ouvre un. Les noms chinois se trouvent aussi par pinyin.
+Everything est un outil gratuit de recherche de fichiers : activez la recherche Everything dans les
+Paramètres, et la recherche couvre aussi tout l’ordinateur. L’animation utilise « Deux fois Ctrl »,
+que vous pouvez choisir comme raccourci dans les Paramètres.
+
+![Deux appuis sur Ctrl ouvrent l’aperçu des groupes avec la zone de recherche ; en tapant « meet », Meeting notes.docx s’affiche depuis un groupe, puis deux fichiers trouvés par Everything sur l’ordinateur ; la flèche en choisit un et Entrée l’ouvre.](../assets/search.gif)
+
+### Le bon dossier dans les boîtes de dialogue Ouvrir et Enregistrer.
+
+Dans une boîte de dialogue Ouvrir ou Enregistrer, passez à l’Explorateur de fichiers puis revenez :
+elle va au dossier ouvert dans l’Explorateur. **Ctrl+G** y va aussi, et un clic sur un groupe de
+dossier mène au dossier de ce groupe. La fonction est désactivée par défaut, et PecoFence la propose
+la première fois qu’elle peut servir. Même désactivée, **Entrée** sur un résultat de la recherche de
+l’aperçu agit sur la boîte de dialogue : une boîte Ouvrir ouvre le fichier, une boîte Enregistrer va
+à son dossier.
+
+![Une boîte de dialogue Ouvrir affichant Documents va au dossier Contracts après un passage par l’Explorateur de fichiers, puis à Designs après un clic sur ce groupe de dossier.](../assets/dialog-jump.gif)
 
 ### Une fenêtre. Plusieurs espaces de travail.
 
@@ -98,13 +119,15 @@ en cours. Prenez ce qu’il vous faut, puis appuyez sur **Échap** pour y reveni
 
 | Fonction | Ce que vous y gagnez |
 | :--- | :--- |
-| **IA + CLI** | `pecofence-cli` — **Configurez avec vos propres mots.** Modifiez le thème, la transparence, la taille des icônes et les paramètres généraux, ou ajustez tous les groupes à la fois. |
+| **IA + CLI** | `pecofence-cli` : **Configurez avec vos propres mots.** Modifiez le thème, la transparence, la taille des icônes et les paramètres généraux, ou ajustez tous les groupes à la fois. |
 | **Moins de tri** | Des règles par type de fichier, extension, nom, motif, cible de raccourci, date et taille. Les nouveaux fichiers trouvent leur groupe tout seuls. |
 | **Un verre assorti à votre fond d’écran** | Thèmes Fluent et Liquid Glass, modes clair et sombre, couleur, opacité et teinte des icônes réglables groupe par groupe. |
 | **Des fichiers qui se manipulent comme d’habitude** | Menus contextuels de l’Explorateur, glisser-déposer, copier-coller, sélection multiple, miniatures et affichages Icônes, Liste ou Détails. |
-| **Gardez vos dossiers à portée de main** | Posez un dossier en direct sur votre Bureau. Parcourez ses sous-dossiers et voyez les changements au moment où ils se produisent. |
+| **Gardez vos dossiers à portée de main** | Posez un dossier en direct sur votre Bureau. Parcourez ses sous-dossiers et voyez les changements au moment où ils se produisent. Le bouton Précédent de la souris remonte d'un dossier, Suivant y revient. |
 | **De la place quand il en faut** | Repliez un groupe sur son titre. Survolez-le pour le développer. Verrouillez une disposition qui vous convient. Double-cliquez sur le Bureau pour masquer vos groupes. Double-cliquez à nouveau pour les retrouver. |
+| **De petits outils dans vos groupes** | Des notes avec des tâches à cocher, une horloge avec la date et des groupes de script qui affichent ce qu’imprime votre propre script, la météo par exemple. Un clic sur une de leurs lignes peut ouvrir un lien ou cocher une tâche. Vous pouvez les ajouter tout de suite dans Paramètres → Outils ou depuis le menu de la zone de notification. |
 | **Un retour toujours possible** | Instantanés de disposition, sauvegardes quotidiennes, import/export de la configuration et échange entre écrans. |
+| **Rechercher un paramètre** | Tapez dans la zone en haut des Paramètres (Ctrl+F) pour trouver n’importe quel paramètre par ses mots ou par d’autres noms courants. |
 | **Une empreinte légère** | Une application native en Rust qui n’occupe qu’environ 2 à 5 Mo de mémoire au repos (d’après le Gestionnaire des tâches). La fenêtre Paramètres en WebView2 se charge à la demande. |
 
 Les règles de classement automatique laissent les fichiers à leur emplacement d’origine.

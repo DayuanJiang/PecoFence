@@ -19,7 +19,7 @@ const fixture = {
     icons: { tintRgb: null, tintStrength: 0.6, chameleon: false, shortcutArrows: true },
     rollUp: { hoverPeek: true, clickToExpand: false, pushNeighbors: true, titleOnHover: false, hideInactiveScrollbar: false, switchTabOnHover: false, hideCountAndChevron: false },
     snapping: { enabled: true, gapPx: 8, sizeToCells: false, guideLines: true }, peek: { enabled: true, dim: true, hotkey: 'ctrlAltSpace', doubleCtrl: false },
-    tools: { notes: false, clock: false, clockSeconds: false, scripts: false, dialogJump: false, everything: false },
+    tools: { enabled: false, clockSeconds: false, dialogJump: false, everything: false },
   },
   rules: {
     keepUpdated: true, defaultTarget: 'inbox', unmatched: 'defaultTarget',
@@ -95,16 +95,25 @@ function bridge() {
           if (readable) state.rules = structuredClone(message.rules);
           else setTimeout(() => { window.testRefresh(); receive({ data: { type: 'toast', text: '没能保存这次改动，规则已恢复原样', error: true } }); }, 0);
         }
+        // The host's pinyin of the asked characters (a few, enough for the tests).
+        if (message.name === 'pinyin') {
+          const table = { 隐: 'yin', 藏: 'cang', 自: 'zi', 动: 'dong', 滚: 'gun', 条: 'tiao', 开: 'kai', 机: 'ji', 启: 'qi', 标: 'biao', 题: 'ti', 栏: 'lan' };
+          window.testPinyinAsked = message.chars;
+          const map = Object.fromEntries([...message.chars].filter(c => table[c]).map(c => [c, table[c]]));
+          setTimeout(() => receive({ data: { type: 'pinyin', map } }), 0);
+        }
         if (message.name === 'setPeekHotkey') {
           const names = [[8, 'Win'], [2, 'Ctrl'], [1, 'Alt'], [4, 'Shift']].filter(([bit]) => message.mods & bit).map(([, n]) => n);
           const keys = [...names, message.vk === 32 ? '空格' : String.fromCharCode(message.vk)];
           const combo = { mods: message.mods, vk: message.vk, keys, label: keys.join('+') };
-          // Win+Shift+Space stands for a combination Windows holds.
+          // Win+Shift+Space (and testTaken, as "mods:vk") stand for a combination Windows holds.
+          const taken = (message.mods === 12 && message.vk === 32) || window.testTaken === `${message.mods}:${message.vk}`;
           const text = !(message.mods & 11) ? '快捷键需要包含 Ctrl、Alt 或 Win'
-            : message.mods === 12 && message.vk === 32 ? combo.label + ' 已被 Windows 或其他程序占用，请换一个' : null;
+            : taken ? combo.label + ' 已被 Windows 或其他程序占用，请换一个' : null;
           if (!text) {
             state.peekHotkey.chosen = state.peekHotkey.active = combo;
             state.settings.peek.customHotkey = message.mods === 3 && message.vk === 32 ? null : combo.label;
+            state.settings.peek.doubleCtrl = false;
             setTimeout(window.testRefresh, 0);
           }
           setTimeout(() => receive({ data: { type: 'peekHotkeyResult', ok: !text, text } }), 0);
@@ -237,32 +246,63 @@ async function runTests() {
       }
     }
   });
-  await test('Tools page switches notes on and asks for a new note', async () => {
+  await test('Tools page: one switch, a new note, one clock, the examples and the guide', async () => {
     doc = await reset();
     doc.querySelector('[data-page=tools]').click();
-    const count = doc.getElementById('noteCount').textContent;
-    assert(count === '桌面上还没有便签', 'Unexpected note count text: ' + count);
+    const page = doc.getElementById('page-tools');
+    assert(page.querySelectorAll('.toggle').length === 1, 'The tools page has more than one switch');
+    for (const gone of ['tools.notes', 'tools.clock', 'tools.scripts', 'tools.clockSeconds']) {
+      assert(!doc.querySelector(`[data-bind="${gone}"]`), gone + ' still has a switch');
+    }
+    assert(!doc.getElementById('noteCount') && !doc.getElementById('newScriptExample'), 'The count line or 添加示例… is still there');
+    const titles = [...page.querySelectorAll('.card.child .t')].map(t => t.textContent).join(' / ');
+    assert(titles === '便签与待办 / 时钟 / 天气 / GitHub 仓库动态 / 电脑状态 / 用自己的脚本', 'Rows: ' + titles);
     const before = frame.contentWindow.testMessages.length;
-    doc.querySelector('[data-bind="tools.notes"]').click();
+    doc.querySelector('[data-bind="tools.enabled"]').click();
     const patch = frame.contentWindow.testMessages.slice(before).find(m => m.type === 'patchSettings');
-    assert(patch && patch.settings.tools.notes === true, 'Notes switch not posted');
+    assert(patch && patch.settings.tools.enabled === true, 'The 小工具 switch not posted');
+    const last = () => frame.contentWindow.testMessages.at(-1);
     doc.getElementById('newNote').click();
-    const last = frame.contentWindow.testMessages.at(-1);
-    assert(last.type === 'action' && last.name === 'newNote', 'New note not asked for: ' + JSON.stringify(last));
-    // A note is no rule target.
+    assert(last().type === 'action' && last().name === 'newNote', 'New note not asked for: ' + JSON.stringify(last()));
+    const clock = doc.getElementById('newClock');
+    assert(!clock.disabled && clock.textContent === '添加', 'Clock button wrong without a clock: ' + clock.textContent);
+    clock.click();
+    assert(last().name === 'newClock', 'New clock not asked for');
+    for (const [id, example] of [['addWeather', 'weather'], ['addGitHub', 'github'], ['addStatus', 'status']]) {
+      doc.getElementById(id).click();
+      assert(last().name === 'newScriptExample' && last().example === example, id + ' sent ' + JSON.stringify(last()));
+    }
+    doc.getElementById('newScript').click();
+    assert(last().name === 'newScript', 'Own script not asked for');
+    doc.getElementById('scriptGuide').click();
+    assert(last().name === 'scriptGuide', 'Guide not asked for');
+    // One clock at most: its button greys out while the desktop has one.
+    current().fences.push({ ...current().fences[0], id: 'clock-a', title: 'Clock', tool: { kind: 'clock' } });
     current().fences.push({ ...current().fences[0], id: 'note-a', title: 'Note A', tool: { kind: 'note' } });
     frame.contentWindow.testRefresh();
     await settle();
-    assert(doc.getElementById('noteCount').textContent === '桌面上有 1 个便签', 'Note not counted');
+    assert(clock.disabled && clock.textContent === '已在桌面上', 'Clock button not greyed with a clock: ' + clock.textContent);
+    // A note is no rule target.
     rulesPage(doc);
     assert(![...doc.querySelectorAll('#nrTarget option')].some(o => o.value === 'note-a'), 'A note is offered as a rule target');
-    current().fences.pop();
+    current().fences.splice(-2);
     doc = await reset();
   });
-  await test('Tools page posts the dialog jump, Everything and double Ctrl switches', async () => {
+  await test('「速览与搜索」 holds Peek, Everything and dialog jump, and their switches post', async () => {
     doc = await reset();
-    doc.querySelector('[data-page=tools]').click();
-    for (const [path, read] of [['tools.dialogJump', s => s.tools.dialogJump], ['tools.everything', s => s.tools.everything], ['peek.doubleCtrl', s => s.peek.doubleCtrl]]) {
+    const nav = [...doc.querySelectorAll('nav a[data-page]')].map(a => a.dataset.page).join(' ');
+    assert(nav.startsWith('general peek '), 'The page is not right below 常规: ' + nav);
+    const peek = doc.getElementById('page-peek');
+    const heads = [...peek.querySelectorAll('h3')].map(h => h.textContent).join(' / ');
+    assert(heads === '速览 / 搜索 / 文件对话框', 'Headings: ' + heads);
+    for (const bind of ['peek.enabled', 'peek.dim', 'tools.everything', 'tools.dialogJump']) {
+      assert(peek.querySelector(`[data-bind="${bind}"]`), bind + ' is not on 速览与搜索');
+    }
+    assert(peek.contains(doc.getElementById('dialogJumpDemo')) && peek.contains(doc.getElementById('peekHotkeyChoice')), 'The demo or the shortcut list is elsewhere');
+    assert(!doc.querySelector('#page-general [data-bind="peek.enabled"]') && !doc.querySelector('#page-tools [data-bind="tools.dialogJump"]'), 'A switch is still on its old page');
+    assert(!doc.querySelector('[data-bind="peek.doubleCtrl"]'), 'Double Ctrl still has its own switch');
+    doc.querySelector('[data-page=peek]').click();
+    for (const [path, read] of [['tools.dialogJump', s => s.tools.dialogJump], ['tools.everything', s => s.tools.everything]]) {
       const before = frame.contentWindow.testMessages.length;
       doc.querySelector(`[data-bind="${path}"]`).click();
       const patch = frame.contentWindow.testMessages.slice(before).find(m => m.type === 'patchSettings');
@@ -274,12 +314,13 @@ async function runTests() {
   });
   await test('Everything card shows each state with its button and sends its action', async () => {
     doc = await reset();
-    doc.querySelector('[data-page=tools]').click();
+    doc.querySelector('[data-page=peek]').click();
     current().settings.tools.everything = true;
     const card = doc.getElementById('everythingCard'), button = doc.getElementById('everythingAction');
     const cases = [
       [{ state: 'running', version: '1.5', pinyin: true }, 'Everything 1.5 正在运行', '拼音', null],
       [{ state: 'running', version: '1.4', pinyin: false }, 'Everything 1.4 正在运行', '1.5', ['升级到 1.5', 'installEverything']],
+      [{ state: 'running', version: '1.4', pinyin: false, has15: true }, 'Everything 1.5 已经装好，现在运行的是 1.4', '登录 Windows', ['改用 1.5', 'useEverything15']],
       [{ state: 'installed' }, 'Everything 已经装好，还没有运行', '启动后', ['启动 Everything', 'startEverything']],
       [{ state: 'missing' }, '这台电脑还没有 Everything', 'winget', ['安装 Everything', 'installEverything']],
       [{ state: 'installing' }, '正在安装 Everything…', '自动启动', null],
@@ -309,7 +350,7 @@ async function runTests() {
   });
   await test('Everything card is disabled while its switch is off', async () => {
     doc = await reset();
-    doc.querySelector('[data-page=tools]').click();
+    doc.querySelector('[data-page=general]').click();
     const card = doc.getElementById('everythingCard'), button = doc.getElementById('everythingAction');
     assert(card.classList.contains('disabled') && button.disabled, 'Card usable while the switch is off');
     const before = frame.contentWindow.testMessages.length;
@@ -800,7 +841,7 @@ async function runTests() {
     const value = current().rules.list[0].allOf[0].value;
     // The core reads `from_min` / `to_min`; any other spelling makes the host drop all rules.
     assert(value.from_min === 1080 && value.to_min === 360, 'Overnight bounds changed');
-    assert(doc.querySelector('#ruleList .conds').textContent.includes('18:00–06:00'), 'Overnight rule described wrongly');
+    assert(doc.querySelector('#ruleList .conds').textContent.includes('18:00 到 06:00'), 'Overnight rule described wrongly');
   });
   await test('Rule target and unfinished name survive a host refresh', async () => {
     change(doc, 'nrTarget', 'fence-b'); change(doc, 'nrName', 'Unfinished draft');
@@ -941,21 +982,46 @@ async function runTests() {
     assert(styleRadio(doc, 'fluent').checked, 'Missing material has no valid selection');
     assert(!doc.documentElement.classList.contains('liquid-glass'), 'Old settings changed the appearance');
   });
-  await test('A custom theme takes the place of the style tiles until a tile is clicked', async () => {
-    const select = doc.getElementById('customTheme');
-    assert([...select.options].map(o => o.value).join('|') === '|Frosted Glass|Warm', 'Theme files not listed after 无');
-    assert(select.value === '' && styleRadio(doc, 'fluent').checked, 'A custom theme was chosen at first');
-    change(doc, 'customTheme', 'Frosted Glass'); await settle();
-    assert(current().settings.customTheme === 'Frosted Glass', 'Host did not receive the custom theme');
+  await test('The 自定义 tile shows the theme files and picks the first; a built-in tile goes back', async () => {
+    const select = doc.getElementById('customTheme'), row = doc.getElementById('customThemeRow');
+    assert(row.hidden && styleRadio(doc, 'fluent').checked && !styleRadio(doc, 'custom').checked, 'A custom theme was chosen at first');
+    styleRadio(doc, 'custom').click(); await settle();
+    assert(!row.hidden && styleRadio(doc, 'custom').checked && current().settings.customTheme === 'Frosted Glass', 'The 自定义 tile did not pick the first theme file');
+    assert([...select.options].map(o => o.value).join('|') === 'Frosted Glass|Warm' && !select.disabled && select.value === 'Frosted Glass', 'Theme files not listed');
     assert(current().settings.themeStyle === 'fluent', 'Choosing a custom theme changed the built-in style');
-    assert(!styleRadio(doc, 'fluent').checked && !styleRadio(doc, 'liquidGlass').checked, 'A style tile stays checked under a custom theme');
     assert(doc.documentElement.classList.contains('liquid-glass'), 'The page does not follow the theme base style');
-    assert(select.value === 'Frosted Glass' && doc.getElementById('customThemeError').hidden, 'A loaded theme is not shown as chosen');
+    assert(doc.getElementById('customThemeError').hidden && doc.getElementById('customThemeHelp').textContent.includes('themes'), 'Help line or error wrong');
+    change(doc, 'customTheme', 'Warm'); await settle();
+    assert(current().settings.customTheme === 'Warm' && styleRadio(doc, 'custom').checked && !doc.documentElement.classList.contains('liquid-glass'), 'Another theme file not applied');
     styleRadio(doc, 'liquidGlass').click(); await settle();
-    assert(current().settings.customTheme === null && current().settings.themeStyle === 'liquidGlass', 'A tile click did not go back to the built-in style');
-    assert(select.value === '' && styleRadio(doc, 'liquidGlass').checked, 'The page did not show the built-in style again');
+    assert(current().settings.customTheme === null && current().settings.themeStyle === 'liquidGlass' && row.hidden, 'A tile click did not go back to the built-in style');
+    assert(styleRadio(doc, 'liquidGlass').checked && !styleRadio(doc, 'custom').checked, 'The page did not show the built-in style again');
     styleRadio(doc, 'fluent').click(); await settle();
     assert(!doc.documentElement.classList.contains('liquid-glass'), 'Fluent did not come back');
+  });
+  await test('With no theme files, 自定义 says how to add one and changes no setting', async () => {
+    const files = current().customThemes;
+    current().customThemes = [];
+    frame.contentWindow.testRefresh(); await settle();
+    const before = frame.contentWindow.testMessages.length;
+    styleRadio(doc, 'custom').click(); await settle();
+    const select = doc.getElementById('customTheme'), help = doc.getElementById('customThemeHelp');
+    assert(!doc.getElementById('customThemeRow').hidden && select.disabled && help.textContent.includes('打开主题文件夹'), 'No hint without theme files: ' + help.textContent);
+    assert(!frame.contentWindow.testMessages.slice(before).some(m => m.type === 'patchSettings'), 'A setting changed without a theme file');
+    frame.contentWindow.testRefresh(); await settle();
+    assert(styleRadio(doc, 'custom').checked && !doc.getElementById('customThemeRow').hidden, 'A refresh closed the 自定义 tile');
+    // 打开主题文件夹 puts the examples there: the first one is used, as a click on the tile would.
+    current().customThemes = files;
+    frame.contentWindow.testRefresh(); await settle();
+    assert(current().settings.customTheme === 'Frosted Glass' && select.value === 'Frosted Glass' && !select.disabled, 'The first theme file that appeared was not used');
+    styleRadio(doc, 'fluent').click(); await settle();
+    assert(doc.getElementById('customThemeRow').hidden && current().settings.customTheme === null, 'Fluent did not close the row');
+    // Theme files that appear while Fluent is chosen change nothing.
+    current().customThemes = [];
+    frame.contentWindow.testRefresh(); await settle();
+    current().customThemes = files;
+    frame.contentWindow.testRefresh(); await settle();
+    assert(current().settings.customTheme === null && styleRadio(doc, 'fluent').checked, 'Theme files chose a theme on their own');
   });
   await test('A chosen theme file that does not load stays listed and says why', async () => {
     current().settings.customTheme = 'Gone';
@@ -964,9 +1030,9 @@ async function runTests() {
     const select = doc.getElementById('customTheme'), error = doc.getElementById('customThemeError');
     assert(select.value === 'Gone', 'A chosen file that is gone is not listed');
     assert(!error.hidden && error.textContent.includes('os error 2'), 'The load error is not shown');
-    assert(!styleRadio(doc, 'fluent').checked && !styleRadio(doc, 'liquidGlass').checked, 'A tile is checked for a missing theme');
-    change(doc, 'customTheme', ''); await settle();
-    assert(current().settings.customTheme === null && error.hidden, '无 did not clear the theme and its error');
+    assert(styleRadio(doc, 'custom').checked && !styleRadio(doc, 'fluent').checked, 'The 自定义 tile is not checked for a missing theme');
+    styleRadio(doc, 'fluent').click(); await settle();
+    assert(current().settings.customTheme === null && error.hidden, 'A built-in tile did not clear the theme and its error');
     assert(styleRadio(doc, 'fluent').checked, 'The built-in style is not checked again');
   });
   await test('The theme buttons ask the host for the folder and the guide', async () => {
@@ -1006,38 +1072,173 @@ async function runTests() {
     doc.querySelector('[data-bind="snapping.enabled"]').click(); await settle();
     assert(!guides.closest('.card').classList.contains('disabled') && guides.tabIndex === 0, 'Guide lines did not return');
     doc.querySelector('[data-bind="peek.enabled"]').click(); await settle();
-    assert(hotkey.disabled && doc.getElementById('peekHotkeyWin').disabled && [...doc.querySelectorAll('#peekPresets button')].every(b => b.disabled)
+    assert(hotkey.disabled && doc.getElementById('peekHotkeyWin').disabled && doc.getElementById('peekHotkeyChoice').disabled
       && !doc.querySelector('[data-bind="peek.dim"]').closest('.card').classList.contains('disabled'), 'Peek hotkey/dim dependency wrong');
     doc.querySelector('[data-bind="peek.enabled"]').click(); await settle();
-    assert(!hotkey.disabled && !doc.getElementById('peekPresetCard').classList.contains('disabled'), 'Hotkey stayed disabled');
+    assert(!hotkey.disabled && !doc.getElementById('peekHotkeyChoice').disabled && !doc.getElementById('peekHotkeyCard').classList.contains('disabled'), 'Hotkey stayed disabled');
   });
-  await test('Hiding the desktop fence is available only while the Windows icons show', async () => {
-    const icons = doc.querySelector('[data-bind=hideRealIcons]'), inbox = doc.querySelector('[data-bind=hideInboxWhenIconsShown]');
-    assert(!current().settings.hideRealIcons && !inbox.closest('.card').classList.contains('disabled') && inbox.tabIndex === 0, 'Unavailable while the Windows icons show');
-    inbox.click(); await settle();
-    assert(current().settings.hideInboxWhenIconsShown && inbox.getAttribute('aria-checked') === 'true', 'Switch did not post its setting');
-    icons.click(); await settle();
-    assert(current().settings.hideRealIcons && inbox.closest('.card').classList.contains('disabled') && inbox.getAttribute('aria-disabled') === 'true', 'Still available with the Windows icons hidden');
-    inbox.click(); await settle();
-    assert(current().settings.hideInboxWhenIconsShown, 'A disabled switch still changed its setting');
-    icons.click(); await settle();
-    assert(!inbox.closest('.card').classList.contains('disabled'), 'Did not return with the Windows icons');
-    inbox.click(); await settle();
+  await test('Windows 桌面图标 is one list of three; 保持隐藏 shows only for 隐藏', async () => {
+    const list = doc.getElementById('desktopIcons'), help = doc.getElementById('desktopIconsHelp'), keepCard = doc.getElementById('keepIconsCard');
+    assert(!doc.querySelector('[data-bind=hideRealIcons]') && !doc.querySelector('[data-bind=hideInboxWhenIconsShown]'), 'The old switches are still there');
+    // The mock's 「桌面」 is arranged like the desktop: it never shows beside the Windows icons.
+    assert(list.value === 'showNoInbox' && list.querySelector('option[value=showWithInbox]').disabled && help.textContent.includes('像桌面一样排列'), 'An arranged 桌面 fence not explained: ' + list.value + ' ' + help.textContent);
+    const inbox = current().fences.find(f => f.kind === 'inbox');
+    inbox.desktopLayout = false;
+    frame.contentWindow.testRefresh(); await settle();
+    assert(!list.querySelector('option[value=showWithInbox]').disabled, 'Showing the 桌面 fence still greyed');
+    assert(list.value === 'showWithInbox' && keepCard.hidden && help.textContent.includes('同时出现'), 'Shown icons with the Desktop fence not shown: ' + list.value);
+    change(doc, 'desktopIcons', 'showNoInbox'); await settle();
+    assert(!current().settings.hideRealIcons && current().settings.hideInboxWhenIconsShown && list.value === 'showNoInbox' && help.textContent.includes('不显示'), 'showNoInbox not posted');
+    change(doc, 'desktopIcons', 'hide'); await settle();
+    assert(current().settings.hideRealIcons && list.value === 'hide' && !keepCard.hidden, 'hide not posted or 保持隐藏 missing');
+    const keep = doc.querySelector('[data-bind=keepIconsHidden]');
+    keep.click(); await settle();
+    assert(current().settings.keepIconsHidden && keep.getAttribute('aria-checked') === 'true', 'Keep switch did not post its setting');
+    keep.click(); await settle();
+    // Back to shown: the choice made before for the Desktop fence is not kept by accident.
+    change(doc, 'desktopIcons', 'showWithInbox'); await settle();
+    assert(!current().settings.hideRealIcons && !current().settings.hideInboxWhenIconsShown && keepCard.hidden, 'showWithInbox not posted');
+    inbox.desktopLayout = true;
+    frame.contentWindow.testRefresh(); await settle();
     const offer = doc.querySelector('[data-bind=offerNewFence]');
     assert(offer.getAttribute('aria-checked') === 'true', 'New fence offer not shown on');
     offer.click(); await settle();
     assert(current().settings.offerNewFence === false, 'New fence offer switch did not post');
     offer.click(); await settle();
   });
-  await test('Keeping the Windows icons hidden is available only while PecoFence hides them', async () => {
-    const icons = doc.querySelector('[data-bind=hideRealIcons]'), keep = doc.querySelector('[data-bind=keepIconsHidden]');
-    assert(!current().settings.hideRealIcons && keep.closest('.card').classList.contains('disabled'), 'Available while the Windows icons show');
-    icons.click(); await settle();
-    assert(!keep.closest('.card').classList.contains('disabled') && keep.tabIndex === 0, 'Unavailable with the Windows icons hidden');
-    keep.click(); await settle();
-    assert(current().settings.keepIconsHidden && keep.getAttribute('aria-checked') === 'true', 'Switch did not post its setting');
-    keep.click(); await settle();
-    icons.click(); await settle();
+  await test('收起的栅栏怎么展开 is one list for hover, click and double-click', async () => {
+    const list = doc.getElementById('rollExpand');
+    assert(!doc.querySelector('[data-bind="rollUp.hoverPeek"]') && !doc.querySelector('[data-bind="rollUp.clickToExpand"]'), 'The old switches are still there');
+    assert(list.value === 'hover', 'Hover not shown: ' + list.value);
+    // 单击标题时 keeps hoverPeek: a file dragged onto a rolled title still opens it.
+    for (const [value, hover, click] of [['click', true, true], ['double', false, false], ['hover', true, false]]) {
+      change(doc, 'rollExpand', value); await settle();
+      const r = current().settings.rollUp;
+      assert(r.hoverPeek === hover && r.clickToExpand === click && list.value === value, `${value} posted as hover ${r.hoverPeek}, click ${r.clickToExpand}`);
+    }
+    // A file with both on (an older page allowed it) shows what works: a click.
+    current().settings.rollUp.clickToExpand = true;
+    frame.contentWindow.testRefresh(); await settle();
+    assert(list.value === 'click', 'Both on not shown as click');
+    change(doc, 'rollExpand', 'hover'); await settle();
+  });
+  await test('常规 has the new headings in order, one card for the Windows desktop shortcut', async () => {
+    doc.querySelector('[data-page=general]').click();
+    const heads = [...doc.querySelectorAll('#page-general h3')].map(h => h.textContent).join(' / ');
+    assert(heads === '语言 / 外观 / 图标 / 桌面与启动 / 隐藏栅栏 / 收起与展开 / 标题栏与标签页 / 吸附与对齐', 'Headings: ' + heads);
+    const wd = doc.getElementById('wdHotkeyCard');
+    assert(wd.contains(doc.getElementById('wdHotkey')) && !wd.classList.contains('child') && wd.querySelector('.t').textContent === '临时显示 Windows 桌面', 'The shortcut box is not in the 临时显示 Windows 桌面 card');
+    assert(doc.getElementById('wdHotkeyHelp').textContent.includes('隐藏所有栅栏'), 'The card does not say what it does: ' + doc.getElementById('wdHotkeyHelp').textContent);
+    const textColor = doc.querySelector('[data-bind=labelColor]').closest('.card');
+    assert(textColor.querySelector('.t').textContent === '文字颜色' && textColor.querySelector('.s').textContent.includes('栅栏标题'), 'Text colour card not renamed');
+    const firstCard = doc.querySelector('#page-general .card');
+    assert(firstCard.querySelector('[data-bind=language]'), 'The language is not the first card');
+  });
+  const key = (target, k, keyCode) => target.dispatchEvent(new frame.contentWindow.KeyboardEvent('keydown', { key: k, keyCode, bubbles: true, cancelable: true }));
+  await test('查找设置 lists matching cards of every page and opens the one picked', async () => {
+    doc = await reset();
+    const box = doc.getElementById('settingsSearch'), list = doc.getElementById('settingsSearchList');
+    const type = text => { box.focus(); box.value = text; box.dispatchEvent(new frame.contentWindow.Event('input', { bubbles: true })); };
+    const rows = () => [...list.querySelectorAll('[role=option]')];
+    const titles = () => rows().map(r => r.querySelector('b').textContent);
+    type('隐藏');
+    assert(!list.hidden && box.getAttribute('aria-expanded') === 'true', 'List not shown');
+    assert(titles().includes('为空时自动隐藏') && titles().includes('隐藏标题栏右侧的项目数和折叠箭头'), 'Cards of other pages missing: ' + titles().join(' | '));
+    // Title hits come before help-line hits: 临时显示 Windows 桌面 says 隐藏 only in its help line.
+    assert(titles().indexOf('自动隐藏滚动条') < titles().indexOf('临时显示 Windows 桌面'), 'Order: ' + titles().join(' | '));
+    const wd = rows()[titles().indexOf('临时显示 Windows 桌面')];
+    assert(wd.querySelector('small').textContent.startsWith('常规 › 隐藏栅栏 · ') && wd.querySelector('small mark'), 'Path or snippet missing: ' + wd.textContent);
+    // A card its page hides now (the keep switch while the Windows icons show) stays out.
+    assert(!titles().includes('关闭 PecoFence 时保持 Windows 桌面图标隐藏'), 'A hidden card was listed');
+    // ↓ and Enter open the pick on its page, tinted, with the focus on its control.
+    const target = titles().indexOf('为空时自动隐藏');
+    for (let i = 0; i < target; i++) key(box, 'ArrowDown', 40);
+    assert(rows()[target].getAttribute('aria-selected') === 'true' && box.getAttribute('aria-activedescendant') === 'searchHit' + target, 'Arrow keys did not move');
+    key(box, 'Enter', 13); await settle();
+    const card = doc.querySelector('[data-fence="hideWhenEmpty"]').closest('.card');
+    assert(doc.getElementById('page-fences').classList.contains('on') && card.classList.contains('found') && list.hidden, 'The pick did not open its page');
+    assert(card.contains(doc.activeElement), 'Focus not on the picked card');
+    // A list choice is found too, and a click opens its card.
+    type('项目放在栅栏里');
+    assert(rows().length === 1 && titles()[0] === 'Windows 桌面图标', 'A list choice was not found: ' + titles().join(' | '));
+    rows()[0].dispatchEvent(new frame.contentWindow.MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+    rows()[0].click(); await settle();
+    assert(doc.getElementById('page-general').classList.contains('on') && doc.getElementById('desktopIcons').closest('.card').classList.contains('found'), 'A click did not open the card');
+    assert(doc.querySelectorAll('.card.found').length === 1, 'An earlier pick still carries its tint');
+    await new Promise(resolve => setTimeout(resolve, 2600));
+    assert(!doc.querySelector('.card.found, .card.fading'), 'The tint did not go');
+    // Every word must occur; nothing found says so; Esc closes and clears.
+    type('图标 快捷方式');
+    assert(titles().includes('显示快捷方式箭头') && !titles().includes('图标着色'), 'Two words: ' + titles().join(' | '));
+    type('zzzz');
+    assert(!rows().length && !list.hidden && list.textContent.includes('zzzz'), 'No-match message missing');
+    key(box, 'Escape', 27);
+    assert(list.hidden && box.value === '', 'Esc did not clear');
+  });
+  await test('查找设置 matches pinyin, characters in order and other names', async () => {
+    doc = await reset();
+    const box = doc.getElementById('settingsSearch'), list = doc.getElementById('settingsSearchList');
+    const type = text => { box.focus(); box.value = text; box.dispatchEvent(new frame.contentWindow.Event('input', { bubbles: true })); };
+    const titles = () => [...list.querySelectorAll('[role=option] b')].map(b => b.textContent);
+    const row = title => [...list.querySelectorAll('[role=option]')].find(r => r.querySelector('b').textContent === title);
+    box.focus(); await settle();
+    assert(frame.contentWindow.testPinyinAsked && frame.contentWindow.testPinyinAsked.includes('隐'), 'The page did not ask for pinyin');
+    type('yc');
+    assert(titles().includes('自动隐藏滚动条') && row('自动隐藏滚动条').querySelector('b mark').textContent === '隐藏', 'Pinyin initials: ' + titles().join(' | '));
+    type('zdyc');
+    assert(titles()[0] === '自动隐藏滚动条', 'Mixed pinyin: ' + titles().join(' | '));
+    type('隐滚');
+    assert(titles()[0] === '自动隐藏滚动条' && row('自动隐藏滚动条').querySelectorAll('b mark').length === 2, 'Characters in order: ' + titles().join(' | '));
+    type('开机');
+    assert(titles()[0] === '随 Windows 启动' && row('随 Windows 启动').querySelector('small mark').textContent === '开机', 'Other name: ' + titles().join(' | '));
+    type('kaiji');
+    assert(titles()[0] === '随 Windows 启动', 'Pinyin of another name: ' + titles().join(' | '));
+    type('热键');
+    assert(titles().includes('快捷键') && titles().includes('临时显示 Windows 桌面'), 'Hotkey names: ' + titles().join(' | '));
+    // Exact and prefix hits rank above looser ones.
+    type('快捷键');
+    assert(titles()[0] === '快捷键', 'An exact title is not first: ' + titles().join(' | '));
+    // A long help line is matched only as it is, not by scattered characters.
+    type('桌图');
+    assert(!titles().includes('自动隐藏滚动条'), 'Scattered characters matched a help line: ' + titles().join(' | '));
+    key(box, 'Escape', 27);
+  });
+  await test('In English the search matches in-order letters and other names, without pinyin', async () => {
+    doc = await reset();
+    change(doc, 'language', 'en'); await settle();
+    const box = doc.getElementById('settingsSearch'), list = doc.getElementById('settingsSearchList');
+    const type = text => { box.focus(); box.value = text; box.dispatchEvent(new frame.contentWindow.Event('input', { bubbles: true })); };
+    const titles = () => [...list.querySelectorAll('[role=option] b')].map(b => b.textContent);
+    frame.contentWindow.testPinyinAsked = '';
+    box.focus(); await settle();
+    assert(!frame.contentWindow.testPinyinAsked, 'Pinyin asked in English');
+    type('hdsb');
+    assert(titles().includes('Automatically hide scrollbars'), 'In-order letters: ' + titles().join(' | '));
+    type('hotkey');
+    assert(titles().includes('Keyboard shortcut'), 'Other name in English: ' + titles().join(' | '));
+    type('startup');
+    assert(titles()[0] === 'Start with Windows', 'Start with Windows not first: ' + titles().join(' | '));
+    // Another name that matches cleanly ranks above letters scattered over a title.
+    type('dark mode');
+    assert(titles()[0] === 'Color mode', 'Color mode not first: ' + titles().join(' | '));
+    key(box, 'Escape', 27);
+    change(doc, 'language', 'zh-CN'); await settle();
+    doc.querySelector('[data-page=general]').click();
+  });
+  await test('Ctrl+F goes to 查找设置, and the search follows the language', async () => {
+    doc = await reset();
+    const box = doc.getElementById('settingsSearch');
+    doc.querySelector('[data-page=rules]').click();
+    doc.body.dispatchEvent(new frame.contentWindow.KeyboardEvent('keydown', { key: 'f', keyCode: 70, ctrlKey: true, bubbles: true, cancelable: true }));
+    assert(doc.activeElement === box, 'Ctrl+F did not focus the box');
+    change(doc, 'language', 'en'); await settle();
+    assert(box.placeholder === 'Find a setting', 'Placeholder not translated: ' + box.placeholder);
+    box.value = 'scrollbar'; box.dispatchEvent(new frame.contentWindow.Event('input', { bubbles: true }));
+    const titles = [...doc.querySelectorAll('#settingsSearchList [role=option] b')].map(b => b.textContent);
+    assert(titles.includes('Automatically hide scrollbars'), 'English search failed: ' + titles.join(' | '));
+    key(box, 'Escape', 27);
+    change(doc, 'language', 'zh-CN'); await settle();
+    doc.querySelector('[data-page=general]').click();
   });
   await test('Colour swatches drive the hidden selects and keep keyboard focus', async () => {
     const swatches = doc.getElementById('iconTintSwatches');
@@ -1534,7 +1735,7 @@ async function runTests() {
     for (let i = 0; i < 3; i++) {
       hide.click(); await settle();
       assert(current().settings.hideRealIcons && hide.disabled, 'Hide did not synchronize state');
-      assert(doc.querySelector('[data-bind=hideRealIcons]').getAttribute('aria-checked') === 'true', 'General toggle out of sync');
+      assert(doc.getElementById('desktopIcons').value === 'hide', 'General list out of sync');
       restore.click(); await settle();
       assert(!current().settings.hideRealIcons && !hide.disabled, 'Restore has no reverse entry');
       assert(doc.getElementById('desktopIconsStatus').textContent.includes('已显示'), 'Wrong visible state');
@@ -1695,26 +1896,34 @@ async function runTests() {
   const press = (target, key, keyCode, mods = {}) => target.dispatchEvent(new frame.contentWindow.KeyboardEvent('keydown', { key, keyCode, bubbles: true, cancelable: true, ...mods }));
   const sent = name => win().testMessages.filter(m => m.name === name);
   const win = () => frame.contentWindow;
-  await test('The Peek shortcut box records a combination and shows what the host saved', async () => {
+  const choice = () => doc.getElementById('peekHotkeyChoice');
+  const choiceText = () => choice().selectedOptions[0]?.textContent;
+  // Picks an entry of the shortcut list the way a user does (the list sends `change`).
+  const choose = value => { choice().focus(); choice().value = value; choice().dispatchEvent(new frame.contentWindow.Event('change', { bubbles: true })); };
+  await test('The Peek shortcut list records a combination through 自定义… and shows what the host saved', async () => {
     doc = await reset();
-    const box = doc.getElementById('peekHotkey');
-    assert(hotkeyText() === 'Ctrl+Alt+空格' && !doc.getElementById('peekHotkeyWin').checked, 'Active shortcut not shown: ' + hotkeyText());
-    assert(doc.getElementById('peekHotkeyHelp').textContent.includes('包含 Win 键'), 'Help does not mention the Win checkbox');
-    box.focus(); box.click(); await settle();
-    assert(box.classList.contains('recording') && sent('peekHotkeyRecording').at(-1)?.on === true, 'Recording did not start');
+    doc.querySelector('[data-page=peek]').click();
+    const box = doc.getElementById('peekHotkey'), edit = doc.getElementById('peekHotkeyEdit'), help = doc.getElementById('peekHotkeyHelp');
+    assert([...choice().options].map(o => o.textContent).join('|') === 'Ctrl + Alt + 空格|Win + Alt + 空格|Ctrl + Shift + 空格|双击 Ctrl|自定义…', 'Choices wrong: ' + [...choice().options].map(o => o.textContent).join('|'));
+    assert(choiceText() === 'Ctrl + Alt + 空格' && edit.hidden && !doc.getElementById('peekHotkeyWin').checked, 'Active shortcut not shown: ' + choiceText());
+    assert(help.textContent.includes('双击 Ctrl') && help.textContent.includes('自定义…'), 'Help does not mention the other choices: ' + help.textContent);
+    choose('custom'); await settle();
+    assert(!edit.hidden && box.classList.contains('recording') && doc.activeElement === box && sent('peekHotkeyRecording').at(-1)?.on === true, 'Recording did not start');
+    assert(choice().value === 'custom' && help.textContent.includes('Esc'), 'Recording not explained: ' + help.textContent);
     press(box, 'Control', 17, { ctrlKey: true });
     assert(hotkeyText() === 'Ctrl', 'Held modifiers are not shown: ' + hotkeyText());
     press(box, 'k', 75, { ctrlKey: true, altKey: true }); await settle();
     const set = sent('setPeekHotkey').at(-1);
     assert(set && set.mods === 3 && set.vk === 75, 'Wrong combination sent: ' + JSON.stringify(set));
-    assert(!box.classList.contains('recording') && hotkeyText() === 'Ctrl+Alt+K', 'Saved shortcut not shown: ' + hotkeyText());
+    assert(!box.classList.contains('recording') && edit.hidden && choice().value === '3:75' && choiceText() === 'Ctrl + Alt + K', 'Saved shortcut not shown: ' + choiceText());
     assert(current().settings.peek.customHotkey === 'Ctrl+Alt+K', 'Shortcut not saved');
-    assert(![...doc.querySelectorAll('#peekPresets button')].some(b => b.getAttribute('aria-pressed') === 'true'), 'A quick choice still looks selected');
+    assert(choice().options.length === 6, 'The recorded combination is not in the list');
   });
   await test('A refused shortcut keeps recording with the reason; Esc cancels', async () => {
     doc = await reset();
+    doc.querySelector('[data-page=peek]').click();
     const box = doc.getElementById('peekHotkey'), help = doc.getElementById('peekHotkeyHelp'), winBox = doc.getElementById('peekHotkeyWin');
-    box.focus(); box.click(); await settle();
+    choose('custom'); await settle();
     press(box, 'k', 75); await settle();
     assert(help.classList.contains('error') && help.textContent.includes('Ctrl、Alt 或 Win') && box.classList.contains('recording'), 'No-modifier refusal not shown: ' + help.textContent);
     // Win comes from the checkbox: Windows keeps Win+Space before the page sees it.
@@ -1722,17 +1931,17 @@ async function runTests() {
     assert(winBox.checked && box.classList.contains('recording') && doc.activeElement === box && hotkeyText() === 'Win', 'Win checkbox did not start a Win recording');
     press(box, ' ', 32, { shiftKey: true }); await settle();
     assert(sent('setPeekHotkey').at(-1).mods === 12, 'Win was not added');
-    assert(help.textContent.includes('已被 Windows 或其他程序占用') && box.classList.contains('recording'), 'Taken combination not reported: ' + help.textContent);
+    assert(help.textContent.includes('已被 Windows 或其他程序占用') && box.classList.contains('recording') && choice().value === 'custom', 'Taken combination not reported: ' + help.textContent);
     press(box, 'Escape', 27); await settle();
     assert(!box.classList.contains('recording') && sent('peekHotkeyRecording').at(-1).on === false, 'Esc did not end the recording');
-    assert(!winBox.checked && hotkeyText() === 'Ctrl+Alt+空格' && !help.classList.contains('error'), 'Cancel did not restore the shortcut');
+    assert(!winBox.checked && doc.getElementById('peekHotkeyEdit').hidden && choice().value === '3:32' && !help.classList.contains('error'), 'Cancel did not restore the shortcut');
     assert(current().settings.peek.customHotkey == null, 'A refused shortcut was saved');
   });
   await test('Keys that stop arriving during a recording suggest the combination is taken', async () => {
     doc = await reset();
     const box = doc.getElementById('peekHotkey'), help = doc.getElementById('peekHotkeyHelp');
     const quiet = () => new Promise(resolve => setTimeout(resolve, 3200));
-    box.focus(); box.click(); await quiet();
+    choose('custom'); await quiet();
     assert(!help.classList.contains('caution') && help.textContent.includes('Esc'), 'Hint shown before any key: ' + help.textContent);
     // Another program's hotkey keeps the key itself: only the modifiers arrive.
     press(box, 'Control', 17, { ctrlKey: true }); await quiet();
@@ -1744,39 +1953,70 @@ async function runTests() {
     press(box, 'Escape', 27); await settle();
     assert(!box.classList.contains('recording') && !help.classList.contains('caution'), 'Esc left the hint: ' + help.textContent);
     // A refusal of the previous key does not hide the hint for the next, taken combination.
-    box.focus(); box.click(); await settle();
+    choose('custom'); await settle();
     press(box, 'k', 75); await settle();
     assert(help.classList.contains('error'), 'No-modifier refusal not shown: ' + help.textContent);
     press(box, 'Control', 17, { ctrlKey: true }); await quiet();
     assert(help.classList.contains('caution') && help.textContent.includes('其他程序占用'), 'Old refusal hid the hint: ' + help.textContent);
     press(box, 'Escape', 27); await settle();
   });
-  await test('Quick choices set the shortcut; a fallback says which one is in use', async () => {
+  await test('Combinations from the list set the shortcut; a fallback says which one is in use', async () => {
     doc = await reset();
-    const presets = [...doc.querySelectorAll('#peekPresets button')];
-    assert(presets.length === 3 && presets[0].getAttribute('aria-pressed') === 'true' && presets[1].textContent === 'Win + Alt + 空格', 'Quick choices wrong');
-    presets[1].focus(); presets[1].click(); await settle();
-    assert(sent('setPeekHotkey').at(-1).mods === 9 && hotkeyText() === 'Win+Alt+空格', 'Quick choice not applied: ' + hotkeyText());
-    assert(presets[1].getAttribute('aria-pressed') === 'true' && doc.activeElement === presets[1], 'Selected quick choice lost its state or focus');
+    doc.querySelector('[data-page=peek]').click();
+    choose('9:32'); await settle();
+    assert(sent('setPeekHotkey').at(-1).mods === 9 && choice().value === '9:32' && hotkeyText() === 'Win+Alt+空格', 'Choice not applied: ' + choiceText());
+    assert(doc.activeElement === choice() && doc.getElementById('peekHotkeyEdit').hidden, 'The list lost the focus or the recording box showed');
+    // A taken combination from the list: the list stays on the shortcut in use and says why.
+    win().testTaken = '6:32';
+    choose('6:32'); await settle();
+    win().testTaken = null;
+    const help = doc.getElementById('peekHotkeyHelp');
+    assert(sent('setPeekHotkey').at(-1).mods === 6 && choice().value === '9:32' && help.classList.contains('error') && help.textContent.includes('已被 Windows 或其他程序占用'), 'Refused choice not reported: ' + help.textContent);
     // A shortcut with Win does not tick the box for the next recording.
     const box = doc.getElementById('peekHotkey'), winBox = doc.getElementById('peekHotkeyWin');
-    assert(!winBox.checked, 'Win checkbox ticked outside a recording');
-    box.focus(); box.click(); await settle();
+    choose('custom'); await settle();
+    assert(!winBox.checked && !help.classList.contains('error'), 'Win checkbox ticked or old error left at a new recording');
     winBox.click(); await settle();
     assert(winBox.checked && hotkeyText() === 'Win', 'Ticking Win during a recording failed');
     winBox.click(); await settle();
     assert(!winBox.checked && box.classList.contains('recording') && doc.activeElement === box, 'Clearing Win ended the recording');
     press(box, 'k', 75, { ctrlKey: true, altKey: true }); await settle();
-    assert(sent('setPeekHotkey').at(-1).mods === 3 && hotkeyText() === 'Ctrl+Alt+K', 'Win stayed in the next recording');
+    assert(sent('setPeekHotkey').at(-1).mods === 3 && choiceText() === 'Ctrl + Alt + K', 'Win stayed in the next recording');
     // A 0.2.0 file with Win+Space: Windows holds it, Ctrl+Alt+Space works instead.
     current().peekHotkey.chosen = { mods: 8, vk: 32, keys: ['Win', '空格'], label: 'Win+空格' };
     current().peekHotkey.active = current().peekHotkey.presets[0];
     win().testRefresh(); await settle();
-    const help = doc.getElementById('peekHotkeyHelp');
-    assert(hotkeyText() === 'Ctrl+Alt+空格' && help.classList.contains('caution') && help.textContent.includes('Win+空格') && help.textContent.includes('Ctrl+Alt+空格'), 'Fallback not explained: ' + help.textContent);
+    assert(choiceText() === 'Win + 空格' && help.classList.contains('caution') && help.textContent.includes('Win+空格') && help.textContent.includes('Ctrl+Alt+空格'), 'Fallback not explained: ' + help.textContent);
     current().peekHotkey.active = null;
     win().testRefresh(); await settle();
-    assert(help.classList.contains('error') && hotkeyText() === 'Win+空格', 'All-taken state not shown: ' + help.textContent);
+    assert(help.classList.contains('error') && choiceText() === 'Win + 空格', 'All-taken state not shown: ' + help.textContent);
+  });
+  await test('双击 Ctrl is one of the shortcut choices; a combination replaces it', async () => {
+    doc = await reset();
+    const box = doc.getElementById('peekHotkey'), edit = doc.getElementById('peekHotkeyEdit'), help = doc.getElementById('peekHotkeyHelp');
+    const before = win().testMessages.length;
+    choose('double');
+    const patch = win().testMessages.slice(before).find(m => m.type === 'patchSettings');
+    assert(patch && patch.settings.peek.doubleCtrl === true && !win().testMessages.slice(before).some(m => m.name === 'setPeekHotkey'), 'Double Ctrl not posted as peek.doubleCtrl');
+    await settle();
+    assert(choice().value === 'double' && edit.hidden && help.textContent.includes('按两下') && !help.className.includes('error'), 'Double Ctrl not shown: ' + choice().value + ' ' + help.textContent);
+    // The combination is not registered meanwhile: that is no error.
+    current().peekHotkey.active = null;
+    win().testRefresh(); await settle();
+    assert(choice().value === 'double' && !help.classList.contains('error'), 'An unregistered combination reported as taken: ' + help.textContent);
+    // 自定义… and Esc go back to 双击 Ctrl.
+    choose('custom'); await settle();
+    assert(!edit.hidden && box.classList.contains('recording'), 'Recording did not start from 双击 Ctrl');
+    press(box, 'Escape', 27); await settle();
+    assert(choice().value === 'double' && edit.hidden && current().settings.peek.doubleCtrl === true, 'Esc did not go back to 双击 Ctrl');
+    // Peek off: the list is off too.
+    doc.querySelector('[data-bind="peek.enabled"]').click(); await settle();
+    assert(choice().disabled && choice().value === 'double', 'List usable while Peek is off');
+    doc.querySelector('[data-bind="peek.enabled"]').click(); await settle();
+    // A combination from the list replaces it.
+    choose('6:32'); await settle();
+    assert(sent('setPeekHotkey').at(-1).mods === 6 && current().settings.peek.doubleCtrl === false && choice().value === '6:32', 'A combination did not replace 双击 Ctrl');
+    assert(!help.textContent.includes('按两下'), 'Help still describes 双击 Ctrl: ' + help.textContent);
   });
   await test('The Windows desktop shortcut starts unset, records a combination and clears', async () => {
     doc = await reset();

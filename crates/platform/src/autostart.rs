@@ -162,6 +162,33 @@ pub fn set_enabled(value_name: &str, enabled: bool, portable: bool) -> Result<()
     Ok(())
 }
 
+/// Writes `command` as this user's Run value `value_name`, or removes the value (`None`; gone
+/// already is fine). For other programs' entries (Everything 1.5 for 改用 1.5).
+pub fn set_command(value_name: &str, command: Option<&str>) -> Result<()> {
+    let hkey = open_run_key()?;
+    let name = to_wide(value_name);
+    // SAFETY: buffers outlive the calls; key closed afterwards.
+    let status = unsafe {
+        let s = match command {
+            Some(command) => {
+                let cmd = to_wide(command);
+                let bytes: Vec<u8> = cmd.iter().flat_map(|c| c.to_le_bytes()).collect();
+                RegSetValueExW(hkey, PCWSTR(name.as_ptr()), None, REG_SZ, Some(&bytes))
+            }
+            None => {
+                let s = RegDeleteValueW(hkey, PCWSTR(name.as_ptr()));
+                if s.0 == 2 { LSTATUS(0) } else { s }
+            }
+        };
+        let _ = RegCloseKey(hkey);
+        s
+    };
+    if status.0 != 0 {
+        return Err(win32_error(status.0 as u32));
+    }
+    Ok(())
+}
+
 /// The executable path currently registered for `value_name` (quotes stripped), if any.
 pub fn registered_path(value_name: &str) -> Option<String> {
     registered_command(value_name).map(|command| command_path(&command).to_string())

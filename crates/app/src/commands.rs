@@ -53,6 +53,8 @@ pub const WM_APP_DESKTOP_SHAPE: u32 = msg::WM_APP + 19;
 pub const WM_APP_SCRIPT_DONE: u32 = msg::WM_APP + 20;
 /// 搜索整台电脑: the Everything install ended (wParam: 1 done, 0 failed, 2 no winget).
 pub const WM_APP_EVERYTHING_SETUP: u32 = msg::WM_APP + 21;
+/// 对话框跳转 offer: a file dialog and an Explorer folder to offer (`dialog_jump::take_offer`).
+pub const WM_APP_DIALOG_OFFER: u32 = msg::WM_APP + 22;
 
 /// What a file drop does with the dropped paths (Explorer's Move / Copy / Create shortcut, the
 /// effect the drop target reported).
@@ -114,6 +116,8 @@ pub enum Command {
         path: PathBuf,
     },
     PortalUp(FenceId),
+    /// The mouse's forward button: back into the folder the last up (or back button) left.
+    PortalForward(FenceId),
     /// A fence window is being dragged over `target`'s title or left tab column (null = none):
     /// highlight it and, on a tabbed target, open the insertion gap at pointer screen point
     /// `at`.
@@ -272,7 +276,13 @@ pub enum Command {
         x: i32,
         y: i32,
     },
-    /// 时钟与日期: a new clock fence near the screen point.
+    /// 新建小工具 › an example: its script fence near the screen point.
+    NewScriptExample {
+        example: crate::scripts::Example,
+        x: i32,
+        y: i32,
+    },
+    /// 时钟: a new clock fence near the screen point (none while the desktop has one).
     NewClock {
         x: i32,
         y: i32,
@@ -290,6 +300,11 @@ pub enum Command {
     ToggleNoteLine {
         fence: FenceId,
         line: usize,
+    },
+    /// 脚本栅栏: a click on a clickable row of the script's output.
+    ScriptRowClicked {
+        fence: FenceId,
+        row: usize,
     },
     /// The note editor closed with this text.
     NoteEdited {

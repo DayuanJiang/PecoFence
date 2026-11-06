@@ -13,7 +13,7 @@ The product page at <https://pecofence.jiang.jp> is a static site generated from
 | `site/partials/header.html`, `footer.html` | The header (manual and GitHub links, language picker, download button) and footer, shared by the home page and the manual |
 | `site/assets/base.css` | Tokens, header and footer styles, shared by the home page and the manual |
 | `site/assets/site.css`, `site.js`, `mark.svg` | The home page's styles; the hero trailer's play control, accessible feature tabs and their animations, AI prompt and install command copy buttons, language picker (`site.js` runs on the manual too) and favicon |
-| `site/assets/*.mp4`, `*.jpg`, `panel-*.png`, `wallpaper.jpg` | The 30-second trailer (`promo.mp4`, v3; `--promo-only` re-exports just it and its poster), six feature clips, posters, the three hero fences and the wallpaper, exported by `scripts/make-site-media.py` from the local promo project |
+| `site/assets/*.mp4`, `*.jpg`, `panel-*.png`, `wallpaper.jpg` | The 30-second trailer (`promo.mp4`, v3; `--promo-only` re-exports just it and its poster), eight feature clips, posters, the three hero fences and the wallpaper, exported by `scripts/make-site-media.py` from the local promo project; the search and dialog jump clips and posters come from caption-free renders of their manual lessons (`--lessons-only` re-exports just those) |
 | `site/assets/showcase-wallpaper.jpg` | The hero's backdrop: the original wallpaper from the revision-2 Store scene |
 | `site/i18n/<language>.json` | Copy for each language; `en.json` is the source and every other file must have the same keys |
 | `site/site.json` | Domain, repository URL and the language list |
@@ -51,15 +51,31 @@ the detailed setup instructions. Both copy buttons have independent feedback and
 text if clipboard access fails; the prompt and install command remain readable without JavaScript.
 
 The feature gallery shows one feature at a time, with click and Left/Right/Home/End
-keyboard navigation. Each one plays the manual's animation of it in the page's
+keyboard navigation. Making a fence comes first, then search and dialog jump. Wider than 840 px the eight tabs sit
+in two rows of four; narrower screens scroll them sideways. Each one plays the manual's animation of it in the page's
 language (an iframe of `manual/?only=<lesson>&embed`, `FEATURE_LESSONS` in
 `build-site.py`), loaded the first time its tab opens; it plays while in view, has
 its own play / pause button and links to the lesson's steps. With JavaScript disabled
-all six recordings appear with native video controls instead. Five of their covers
+all eight recordings appear with native video controls instead. Five of their covers
 come from the revision-2 desktop, Peek, tabs, automatic sorting and folder scenes; the
-hide/show cover remains a frame from its existing recording. Installation requirements expand without JavaScript;
-clipboard copying is available on HTTPS and localhost. No external fonts, UI libraries
-or additional build dependencies are required.
+hide/show cover remains a frame from its existing recording, and the search and dialog
+jump covers are frames of their manual lessons.
+
+Below the gallery, the tools block (`#tools`) lists the three tools of Settings › Tools
+(小工具): notes and to-dos, the clock and script fences, side by side. Dialog jump, a switch on
+Settings › 速览与搜索, has its own card in the gallery (`feature.dialog.*`).
+It has no animation; its items are drawn like the small details further down, from
+`TOOLS` in `build-site.py` and the `tool.*` keys, with the switch names from `locales/`
+as titles. Pressing Ctrl twice as Peek's shortcut and the whole-computer search with
+Everything are options of Peek (Settings › 速览与搜索); the search card's text
+(`feature.search.text`) names only Everything, since pressing Ctrl twice works only after
+the user picks it as the shortcut.
+
+Installation requirements expand without JavaScript; the last one names what the
+optional extras need (Everything 1.5 for the whole-computer search, Python or Node.js for
+those scripts). Clipboard
+copying is available on HTTPS and localhost. No external fonts, UI libraries or
+additional build dependencies are required.
 
 ## Building locally
 
@@ -129,7 +145,7 @@ in `en.json`; everything else is escaped.
 
 ## The user manual
 
-`site/manual/` is an interactive manual: 15 lessons whose demos are drawn in HTML and
+`site/manual/` is an interactive manual: 19 lessons whose demos are drawn in HTML and
 CSS (a miniature Windows desktop, fences, a scripted pointer with click rings, gesture
 captions and keycaps), a step list that highlights in sync, a scrub bar and a half-speed
 switch, plus two reference appendices (shortcuts, FAQ). The build writes one copy per
@@ -162,9 +178,22 @@ Text in the page that names app UI must use the same catalog wording. `build-sit
 --strict` fails while any manual string of any language is untranslated. Demo texts are
 replaced as whole literals at build time, so lookups such as a menu row found by its
 label keep working in every language; menus grow to fit longer translations and long
-fence titles ellipsize like the app. The lessons describe the real app: check behaviour
-and UI strings against the code (`crates/app/src/app/menus.rs`, `ui/settings.html`)
-when changing them.
+fence titles ellipsize like the app. A few demo texts follow the page language in code: the
+search lesson types `hyjl` (the pinyin initials of 会议记录) on the Chinese pages and the
+start of the translated 会议记录 elsewhere, so that word must appear unchanged inside the
+translated file names that contain it; the clocks and script fence footers of the tools
+lessons show `10:24 AM` in English. A script fence is titled with its file's name, so the
+demos derive those titles from the translated file names (`天气.ps1`, `GitHub 动态.ps1`,
+`电脑状态.ps1` without `.ps1`), and the row titles of the 小工具 page (`天气`, `电脑状态`) take
+the app's catalog text. What the example scripts print is not translated like other demo
+text: the app writes the Chinese examples for both Chinese languages and the English ones
+for every other language (`crates/app/src/scripts.rs`, `example`), so the weather lines,
+「刷新」 and the rows of 电脑状态 stay Simplified Chinese on the zh-TW page
+and English on the other pages, and the page text quotes them the same way. The settings
+window demos follow `ui/settings.html` card by card in the stretch they show (a new card,
+button or menu item in the app belongs in the demo too). The lessons describe the real
+app: check behaviour and UI strings against the code (`crates/app/src/app/menus.rs`,
+`ui/settings.html`) when changing them.
 
 ## Refreshing media
 

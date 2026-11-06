@@ -3,7 +3,7 @@
 
 use super::*;
 
-/// How to write a theme file (Settings › 常规 › 自定义主题).
+/// How to write a theme file (Settings › 常规 › 主题风格 › 自定义 · 主题文件).
 const THEME_GUIDE_URL: &str = "https://github.com/DayuanJiang/PecoFence/blob/main/docs/THEMES.md";
 
 /// Largest snapping gap honoured, in DIPs; `snapping.gapPx` is clamped to `0..=` this.
@@ -137,12 +137,12 @@ impl App {
         // edition's startup switch is Windows': a file does not change it (nor open its page).
         let mut new_settings = self.state.config.settings.clone();
         // An imported file may come from someone else: its script fences do not run until the
-        // user switches 脚本栅栏 on (a backup is the user's own and keeps the switch).
+        // user switches 小工具 on (a backup is the user's own and keeps the switch).
         let scripts_held = matches!(source, ConfigSource::Import)
-            && new_settings.tools.scripts
+            && new_settings.tools.enabled
             && !self.state.config.scripts.is_empty();
         if scripts_held {
-            new_settings.tools.scripts = false;
+            new_settings.tools.enabled = false;
             tracing::info!(
                 scripts = self.state.config.scripts.len(),
                 "imported script fences held off"
@@ -170,7 +170,7 @@ impl App {
         self.push_settings_state();
         if scripts_held {
             self.settings_toast(pecofence_core::i18n::text(
-                "已导入配置。其中的脚本栅栏还没有运行：确认脚本可信后，在「小工具」里打开脚本栅栏。",
+                "已导入配置。其中的脚本还没有运行。确认这些脚本可信后，在「小工具」页打开「小工具」开关。",
             ));
         } else {
             self.settings_toast(source.done());
@@ -276,6 +276,27 @@ impl App {
                 }
                 self.settings_error(&text);
             }
+        }
+    }
+
+    /// Opens the settings window on `page` (a `data-page` of the navigation), scrolled to the
+    /// element with id `focus`.
+    pub(super) fn open_settings_page(&mut self, page: &'static str, focus: Option<&'static str>) {
+        self.open_settings();
+        match &self.settings {
+            Some(host) if host.ready => self.post_show_page(page, focus),
+            Some(_) => self.settings_focus_page = Some((page, focus)),
+            None => {}
+        }
+    }
+
+    fn post_show_page(&self, page: &str, focus: Option<&str>) {
+        tracing::info!(page, focus, "settings page asked to show a page");
+        if let Some(h) = &self.settings {
+            h.post_json(
+                &serde_json::json!({ "type": "showPage", "page": page, "focus": focus })
+                    .to_string(),
+            );
         }
     }
 
@@ -627,6 +648,9 @@ impl App {
                     window::show_normal(h.hwnd());
                     window::bring_to_front(h.hwnd());
                 }
+                if let Some((page, focus)) = self.settings_focus_page.take() {
+                    self.post_show_page(page, focus);
+                }
                 if let Some(fence) = self.settings_focus_fence.take() {
                     self.post_show_fence(fence);
                 }
@@ -684,6 +708,10 @@ impl App {
                     ));
                 }
                 Some(name @ ("newNote" | "newClock" | "newScript" | "newScriptExample")) => {
+                    let example = v
+                        .get("example")
+                        .and_then(|e| e.as_str())
+                        .and_then(crate::scripts::Example::parse);
                     // Beside the middle of the primary monitor's work area; the placement
                     // looks for a free spot from there.
                     let at = self
@@ -696,12 +724,16 @@ impl App {
                             "newNote" => self.new_note_near(x, y),
                             "newClock" => self.new_clock_near(x, y),
                             "newScript" => self.new_script_near(x, y, None),
-                            _ => self.new_script_example(x, y),
+                            _ => match example {
+                                Some(kind) => self.new_script_example_of(kind, x, y),
+                                None => tracing::warn!("unknown script example on the page"),
+                            },
                         }
                     }
                 }
                 Some("installEverything") => self.install_everything(),
                 Some("startEverything") => self.start_everything(),
+                Some("useEverything15") => self.use_everything_15(),
                 Some("addTemplate") => {
                     if let Some(template) = v
                         .get("template")
@@ -745,6 +777,22 @@ impl App {
                 }
                 Some("openThemeGuide") => {
                     let _ = shell::shell_execute(Path::new(THEME_GUIDE_URL), None, None);
+                }
+                // 查找设置 in a Chinese interface: the pinyin of the page's Chinese characters.
+                Some("pinyin") => {
+                    let chars = v.get("chars").and_then(|c| c.as_str()).unwrap_or("");
+                    let map: serde_json::Map<String, serde_json::Value> = chars
+                        .chars()
+                        .filter_map(|c| {
+                            let syl = pecofence_core::matcher::syllable(c)?;
+                            Some((c.to_string(), serde_json::Value::from(syl)))
+                        })
+                        .collect();
+                    if let Some(host) = &self.settings {
+                        host.post_json(
+                            &serde_json::json!({ "type": "pinyin", "map": map }).to_string(),
+                        );
+                    }
                 }
                 Some("saveSnapshot") => {
                     // A full list drops its oldest automatic snapshot for it (as the CLI
@@ -854,6 +902,7 @@ impl App {
                 Some("hideDesktopIcons") => self.set_desktop_icons_hidden(true),
                 Some("rateInStore") => self.open_store_rating(),
                 Some("openManual") => self.open_manual(),
+                Some("scriptGuide") => self.open_manual_at("#write-scripts"),
                 Some("openRepository") => {
                     let url = pecofence_core::brand::REPOSITORY_URL;
                     let _ = shell::shell_execute(std::path::Path::new(url), None, None);

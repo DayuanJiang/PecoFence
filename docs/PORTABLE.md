@@ -24,16 +24,18 @@ entry that starts it with `--portable`. An entry an earlier version wrote withou
 the flag gets it the next time the copy is started with `--portable`.
 
 Double-click empty desktop space to hide/show fences. **Ctrl+Alt+Space** brings
-them above other windows. Drag a title to move a fence; double-click it to roll up.
+them above other windows; type while they are there to search them. Drag a title to
+move a fence; double-click it to roll up. **Settings → Tools** adds notes, a clock
+and script fences to the desktop.
 
 Automatic organizing rules only change group membership. File operations you
-initiate—moving, renaming, copying and deleting—operate on real files.
+initiate, such as moving, renaming, copying and deleting, operate on real files.
 
 **Settings → About → Check for updates** tells you when a newer version is out and
 opens its download page; extract the new ZIP over this folder after exiting PecoFence.
 
-Exit restores Windows desktop icons. If needed, use **Restore Windows desktop
-icons** from the tray menu or Settings → About.
+Exit restores Windows desktop icons. If needed, use **Fix missing desktop icons**
+in the tray menu, or **Show Windows desktop icons** in Settings → About.
 
 `pecofence-cli.exe` lets a terminal or an AI coding agent configure the running app:
 `pecofence-cli fence list`, `pecofence-cli describe`. Run it from this folder or add the

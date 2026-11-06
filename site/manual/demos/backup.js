@@ -128,6 +128,10 @@
         io.n.style.borderRadius = '4px 4px 0 0';
         const imp = SM.button(io, '导入…', 56, { right: 10, top: 40 });
         SM.button(io, '导出…', 56, { right: 16 + imp.w, top: 40 });
+        // 配置文件: where the configuration is (#cfgPath), then the daily backups
+        const cfg = SM.card(pg, { ic: '\uE8A5', t: '配置文件', s: 'C:\\Users\\Lin\\AppData\\Roaming\\PecoFence\\config.json', h: 40, gap: 1, textW: 200 });
+        cfg.n.style.borderRadius = '0';
+        SM.button(cfg, '打开配置文件夹', 70, { right: 10 });
         // daily backups are listed by file name (backups/YYYY-MM-DD.json) in every language
         ['2026-10-06', '2026-10-05', '2026-10-04'].forEach((day, i, all) => {
             const b = SM.card(pg, { t: day, s: '每日自动备份', h: 40, indent: 22, textW: 140, gap: i < all.length - 1 ? 1 : 3 });
@@ -135,7 +139,7 @@
             SM.button(b, '恢复', 46, { right: 10 });
         });
 
-        r.tray = menu(S, ['隐藏所有栅栏', '新建栅栏', { t: '在桌面显示文件夹', sub: 1 },
+        r.tray = menu(S, ['隐藏所有栅栏', '临时显示 Windows 桌面', '新建栅栏', { t: '在桌面显示文件夹', sub: 1 },
             { t: '速览所有栅栏', key: 'Ctrl+Alt+空格' }, '立即应用整理规则', '-', '恢复显示桌面图标',
             '修复桌面图标（图标消失时使用）', '发送反馈…', '设置…', '-', '退出 PecoFence'], 236);
         r.tray.n.style.zIndex = 3;

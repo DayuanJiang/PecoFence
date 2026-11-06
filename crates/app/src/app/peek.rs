@@ -4,6 +4,16 @@
 use super::*;
 use pecofence_core::hotkey::{FALLBACKS, PRESETS, Problem};
 
+/// The reasons `end_peek` gets when the keyboard or the foreground left the Peek's windows.
+const PEEK_FOCUS_LOST: [&str; 3] = [
+    "another window came to the front",
+    "dimmer lost the focus",
+    "search box lost the focus",
+];
+/// How long after the Peek began the desktop coming to the front is taken for the late answer
+/// to a click before the shortcut (seen 0.65 s after it on Windows 10), not for a move away.
+const PEEK_LATE_DESKTOP: Duration = Duration::from_millis(1500);
+
 /// A shortcut as the tray menu and messages show it: `Ctrl+Alt+空格`.
 pub(super) fn peek_hotkey_label(h: Hotkey) -> String {
     hotkey_keys(h).join("+")
@@ -92,12 +102,14 @@ pub(super) fn search_match(
 impl App {
     /// Registers / re-registers / drops the Peek hotkey to match the settings.
     pub(super) fn sync_peek_hotkey(&mut self) {
+        self.sync_double_ctrl();
         // The settings page is recording a shortcut: `resume_hotkeys` syncs once it ends.
         if self.hotkeys_paused {
             return;
         }
         let peek = &self.state.config.settings.peek;
-        let want = peek.enabled.then(|| peek.chosen_hotkey());
+        // 「双击 Ctrl」 chosen: the combination stays in the settings but is not registered.
+        let want = (peek.enabled && !peek.double_ctrl).then(|| peek.chosen_hotkey());
         // While a fallback is registered `want != peek_hotkey`, so every sync (startup, preset,
         // settings apply) retries the preferred combination first and switches back once free.
         if want == self.peek_hotkey {
@@ -157,6 +169,16 @@ impl App {
         }
     }
 
+    /// 「双击 Ctrl」 as Peek's shortcut: listened to while Peek is on and chosen, and not while
+    /// the settings page records a shortcut (the taps would start a Peek).
+    fn sync_double_ctrl(&self) {
+        let peek = &self.state.config.settings.peek;
+        crate::double_ctrl::set_enabled(
+            peek.enabled && peek.double_ctrl && !self.hotkeys_paused,
+            self.control.hwnd(),
+        );
+    }
+
     /// Whether `h` can be the Peek hotkey right now: it is ours already, or `RegisterHotKey`
     /// takes it (and it is released again at once).
     pub(super) fn peek_hotkey_free(&self, h: Hotkey) -> bool {
@@ -187,6 +209,7 @@ impl App {
             hotkey::unregister(hwnd, HOTKEY_WINDOWS_DESKTOP);
         }
         self.hotkeys_paused = true;
+        self.sync_double_ctrl();
     }
 
     /// Recording ended (or the settings window went away): register the shortcuts again.
@@ -218,8 +241,9 @@ impl App {
         }
     }
 
-    /// 「快捷键」 on the settings page: a recorded key press or a quick choice. A combination
-    /// that is refused or taken leaves the settings as they are and the page keeps recording.
+    /// 「快捷键」 on the settings page: a recorded key press or a combination from the list
+    /// (it replaces 「双击 Ctrl」). A combination that is refused or taken leaves the settings
+    /// as they are and the page keeps recording.
     pub(super) fn set_peek_hotkey_from_page(&mut self, mods: u32, vk: u32) {
         let recording = self.hotkeys_paused;
         self.resume_hotkeys();
@@ -250,6 +274,7 @@ impl App {
             None => {
                 let mut settings = self.state.config.settings.clone();
                 settings.peek.set_hotkey(h);
+                settings.peek.double_ctrl = false;
                 self.apply_settings(settings, "settings");
                 // The choice already in the settings changes nothing above, but while a
                 // fallback stands in for it, it is free again now: switch back.
@@ -269,7 +294,8 @@ impl App {
     }
 
     /// `peekHotkey` of the settings state: the chosen shortcut, the one registered (`null`
-    /// when Peek is off or every combination is taken) and the quick choices.
+    /// when Peek is off, 「双击 Ctrl」 is chosen or every combination is taken) and the quick
+    /// choices.
     pub(super) fn peek_hotkey_json(&self) -> serde_json::Value {
         serde_json::json!({
             "chosen": hotkey_json(self.state.config.settings.peek.chosen_hotkey()),
@@ -349,6 +375,24 @@ impl App {
         // took the keyboard (double Ctrl opens both at once): give it back to the box, or
         // Enter, Backspace and the arrows would go to the dimmer.
         crate::peek_search::focus();
+    }
+
+    /// `pecofence-cli peek start --search`: Peek with `text` in its search box (started when it
+    /// is not running, the text replaced when the box is open). False without fence windows.
+    pub(super) fn peek_search_text(&mut self, text: &str) -> bool {
+        if self.peek.as_ref().is_none_or(|p| p.is_closing()) {
+            self.toggle_peek();
+        }
+        if self.peek.as_ref().is_none_or(|p| p.is_closing()) {
+            return false;
+        }
+        if crate::peek_search::is_open() {
+            crate::peek_search::set_text(text);
+        } else {
+            crate::peek_search::open(text, self.queue.clone(), self.theme_mode == ThemeMode::Dark);
+        }
+        self.update_peek_search();
+        true
     }
 
     /// Characters typed on the dimmer: open the search box with them, or add them to it.
@@ -474,6 +518,28 @@ impl App {
         };
         if p.is_closing() {
             return;
+        }
+        // Windows 10 can make the desktop the foreground window about a second after a click
+        // on it that came just before the Peek's shortcut. That click was no move away from the
+        // Peek (the dimmer covers the desktop, so a click during the Peek never reaches it):
+        // keep the Peek and take the keyboard back.
+        let age = p.age(now);
+        if PEEK_FOCUS_LOST.contains(&reason) && age < PEEK_LATE_DESKTOP {
+            let front = desktop::foreground_window();
+            if self
+                .anchor
+                .borrow()
+                .as_ref()
+                .is_some_and(|a| a.is_desktop_window(front))
+            {
+                tracing::info!(
+                    reason,
+                    ms = age.as_millis() as u64,
+                    "desktop came to the front just after the peek began; peek kept"
+                );
+                p.take_focus(self.control.hwnd());
+                return;
+            }
         }
         tracing::info!(reason, "peek ending");
         if !self.ctx.motion.enabled() {

@@ -40,6 +40,11 @@ fn shows_folder(address: &str, dir: &Path) -> bool {
     head.is_empty() || head.ends_with([' ', ':', '\u{FF1A}'])
 }
 
+/// True when the dialog's address bar shows `dir`.
+pub fn dialog_shows(dlg: HWND, dir: &Path) -> bool {
+    dialog_address(dlg).is_some_and(|a| shows_folder(&a, dir))
+}
+
 /// True when part of `path` between two `%` signs names an environment variable.
 fn expands_variables(path: &str) -> bool {
     let parts: Vec<&str> = path.split('%').collect();

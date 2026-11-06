@@ -73,10 +73,30 @@ Para agentes y scripts: `describe` ofrece el catálogo de comandos y los esquema
 ## Dale un lugar a cada cosa
 
 <p align="center">
-  <img src="../assets/hero-es.png" alt="PecoFence — Carpetas de proyecto, un PDF real y diseños originales en grupos nativos de Liquid Glass." width="1280">
+  <img src="../assets/hero-es.png" alt="PecoFence: carpetas de proyecto, un PDF real y diseños originales en grupos nativos de Liquid Glass." width="1280">
 </p>
 
 ## Míralo en acción
+
+### Encuentra mientras escribes.
+
+Pulsa **Ctrl + Alt + Espacio** y escribe. Los archivos y carpetas de tus grupos que coinciden
+aparecen al instante, y **Entrar** abre uno. Los nombres chinos también se encuentran por pinyin.
+Everything es una herramienta gratuita de búsqueda de archivos: activa la búsqueda con Everything en
+Configuración, y también se busca en todo el equipo. La animación usa «Ctrl dos veces», que puedes
+elegir como atajo en Configuración.
+
+![Pulsar Ctrl dos veces abre la vista rápida con el cuadro de búsqueda; al escribir «meet» aparecen Meeting notes.docx de un grupo y dos archivos que Everything encontró en el equipo; la flecha elige uno y Entrar lo abre.](../assets/search.gif)
+
+### La carpeta correcta en los cuadros Abrir y Guardar.
+
+En un cuadro Abrir o Guardar, cambia al Explorador de archivos y vuelve: el cuadro salta a la carpeta abierta allí.
+**Ctrl+G** también salta allí, y un clic en un grupo de carpeta lleva a la carpeta de ese grupo. La función viene
+desactivada de forma predeterminada, y PecoFence te la ofrece la primera vez que pueda ayudarte. Incluso desactivada,
+**Entrar** en un resultado de la búsqueda de la vista rápida funciona con el cuadro: un cuadro Abrir abre el archivo,
+y un cuadro Guardar va a su carpeta.
+
+![Un cuadro Abrir en Documents salta a la carpeta Contracts tras pasar por el Explorador de archivos y volver, y a Designs tras un clic en ese grupo de carpeta.](../assets/dialog-jump.gif)
 
 ### Una ventana. Varios espacios de trabajo.
 
@@ -98,13 +118,15 @@ Toma lo que necesites y presiona **Esc** para volver.
 
 | Experiencia | Qué obtienes |
 | :--- | :--- |
-| **IA + CLI** | `pecofence-cli` — **Configura con tus propias palabras.** Cambia temas, transparencia, tamaño de los iconos y ajustes globales, o modifica todos los grupos a la vez. |
+| **IA + CLI** | `pecofence-cli`: **Configura con tus propias palabras.** Cambia temas, transparencia, tamaño de los iconos y ajustes globales, o modifica todos los grupos a la vez. |
 | **Menos tiempo ordenando** | Reglas por tipo de archivo, extensión, nombre, comodines, destino del acceso directo, hora y tamaño. Los archivos nuevos encuentran su grupo solos. |
 | **Cristal a la medida de tu escritorio** | Temas Fluent y Liquid Glass, modos claro y oscuro, colores por grupo, opacidad y tinte de iconos. |
 | **Archivos como siempre** | Menús contextuales del Explorador de archivos, arrastrar y soltar, copiar y pegar, selección múltiple, miniaturas y vistas de iconos, lista y detalles. |
-| **Ten tus carpetas a mano** | Coloca una carpeta en vivo sobre el escritorio. Navega por sus subcarpetas y ve los cambios al momento. |
+| **Ten tus carpetas a mano** | Coloca una carpeta en vivo sobre el escritorio. Navega por sus subcarpetas y ve los cambios al momento. El botón Atrás del ratón sube una carpeta y Adelante vuelve a entrar. |
 | **Espacio cuando lo necesitas** | Contrae un grupo hasta su título. Pasa el cursor para expandirlo. Bloquea la distribución que te gusta. Haz doble clic en el escritorio para ocultar los grupos. Vuelve a hacer doble clic para recuperarlos. |
+| **Pequeñas herramientas en tus grupos** | Notas con tareas, un reloj con la fecha y grupos de script que muestran lo que imprime tu propio script, como el tiempo; con un clic en sus filas puedes abrir un enlace o marcar una tarea. Puedes añadirlas enseguida en Configuración → Herramientas o desde el menú de la bandeja. |
 | **Siempre puedes volver atrás** | Instantáneas de distribución, copias de seguridad diarias, importación y exportación de la configuración e intercambio entre pantallas. |
+| **Buscar un ajuste** | Escribe en el cuadro de arriba de la Configuración (Ctrl+F) para encontrar cualquier ajuste por sus palabras o por otros nombres comunes. |
 | **Huella mínima** | Una aplicación nativa escrita en Rust que en reposo ocupa solo entre 2 y 5 MB de memoria (según el Administrador de tareas). El panel de Configuración en WebView2 se carga solo cuando hace falta. |
 
 Las reglas de organización automática dejan los archivos en su ubicación original. Los movimientos

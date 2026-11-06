@@ -2,10 +2,11 @@
 
 use crate::anchor::{self, AnchorCell, DesktopAnchor, ShowDesktopBehavior, ZMode};
 use crate::commands::{
-    Command, CommandQueue, TransferMode, WM_APP_COMMAND, WM_APP_EVERYTHING_SETUP, WM_APP_FRAME,
-    WM_APP_FS_CHANGED, WM_APP_LIVE_WALLPAPER, WM_APP_PEEK_FOCUSED, WM_APP_PREWARM_DONE,
-    WM_APP_SCRIPT_DONE, WM_APP_SHELL_CHANGED, WM_APP_STARTUP_BACKDROPS, WM_APP_STARTUP_TASK,
-    WM_APP_THEMES_CHANGED, WM_APP_TRAY, WM_APP_WALLPAPER,
+    Command, CommandQueue, TransferMode, WM_APP_COMMAND, WM_APP_DIALOG_OFFER,
+    WM_APP_EVERYTHING_SETUP, WM_APP_FRAME, WM_APP_FS_CHANGED, WM_APP_LIVE_WALLPAPER,
+    WM_APP_PEEK_FOCUSED, WM_APP_PREWARM_DONE, WM_APP_SCRIPT_DONE, WM_APP_SHELL_CHANGED,
+    WM_APP_STARTUP_BACKDROPS, WM_APP_STARTUP_TASK, WM_APP_THEMES_CHANGED, WM_APP_TRAY,
+    WM_APP_WALLPAPER,
 };
 use crate::fence_window::{
     BackdropMode, BackdropSets, Behavior, FenceContext, FenceWindow, ItemView, SearchMarks, TabView,
@@ -173,6 +174,9 @@ const TIMER_EVERYTHING_STATUS: usize = 69;
 /// 搜索整台电脑: the install ended (`WM_APP_EVERYTHING_SETUP`); retried while the App is
 /// borrowed.
 const TIMER_EVERYTHING_SETUP: usize = 71;
+/// 对话框跳转 offer: a dialog to offer it to (`WM_APP_DIALOG_OFFER`); retried while the App is
+/// borrowed.
+const TIMER_DIALOG_OFFER: usize = 73;
 const THEMES_SETTLE_MS: u32 = 300;
 const DEVICE_RETRY_MAX_MS: u32 = 30_000;
 /// Growth of private commit plus GPU memory that logs a memory line before the hour is up.
@@ -272,6 +276,9 @@ pub struct App {
     /// One watcher per folder-portal fence on the folder it currently shows (kept in sync by
     /// `ensure_portal_watchers`; navigating swaps the watcher).
     portal_watchers: HashMap<FenceId, (PathBuf, DirWatcher)>,
+    /// Per fence, the folders an up (Backspace, the back button) left, newest last: the
+    /// forward button goes back into them. Any other navigation forgets them.
+    portal_forward: HashMap<FenceId, Vec<PathBuf>>,
     /// Portal folders whose watcher could not be started after a long wait (an unreachable
     /// network share): how many times, and when to try again (see `ensure_portal_watchers`).
     watcher_retry: HashMap<PathBuf, (u32, Instant)>,
@@ -298,13 +305,19 @@ pub struct App {
     settings: Option<SettingsHost>,
     /// Fence to select on the settings page once it reports `ready` (opened via 栅栏选项…).
     settings_focus_fence: Option<FenceId>,
+    /// Page to show once the settings page reports `ready` (the what's-new notice).
+    settings_focus_page: Option<(&'static str, Option<&'static str>)>,
     /// The 「反馈」 form on 「关于」: pending focus and the crash offer (see `feedback.rs`).
     feedback: feedback::FeedbackState,
     updates: updates::Updates,
     /// The one-time Store rating offer (see `rating.rs`).
     rating: rating::RatingPrompt,
-    /// The first start's welcome notice while it is on screen (see `welcome.rs`).
-    welcome: Option<crate::notice::Notice>,
+    /// The first start's tip, the what's-new notice or a 对话框跳转 notice while it is on screen
+    /// (see `welcome.rs`).
+    welcome: Option<(crate::notice::Notice, welcome::Welcome)>,
+    /// The welcome, what's-new and 对话框跳转 notices may show (not under a test script or
+    /// `--exit-after`).
+    notices: bool,
     /// The fence Settings › 「栅栏」 is editing, which wears the selection ring (`group.rs`).
     settings_ring: Option<FenceId>,
     web_env: Option<WebEnvironment>,
@@ -781,6 +794,10 @@ impl App {
                             window::set_timer(hwnd, TIMER_EVERYTHING_SETUP, 1);
                             Some(0)
                         }
+                        WM_APP_DIALOG_OFFER => {
+                            window::set_timer(hwnd, TIMER_DIALOG_OFFER, 1);
+                            Some(0)
+                        }
                         WM_APP_THEMES_CHANGED => {
                             window::set_timer(hwnd, TIMER_THEMES, THEMES_SETTLE_MS);
                             Some(0)
@@ -816,7 +833,7 @@ impl App {
                             }
                             Some(0)
                         }
-                        // 双击 Ctrl 打开搜索 (raw keyboard input, only listened to).
+                        // Peek's 「双击 Ctrl」 (raw keyboard input, only listened to).
                         msg::WM_INPUT => {
                             if crate::double_ctrl::on_input(lparam)
                                 && let Ok(mut guard) = cell.try_borrow_mut()
@@ -928,6 +945,7 @@ impl App {
                                 | TIMER_EVERYTHING
                                 | TIMER_EVERYTHING_STATUS
                                 | TIMER_EVERYTHING_SETUP
+                                | TIMER_DIALOG_OFFER
                                 | TIMER_STARTUP_BACKDROPS => {
                                     if let Ok(mut guard) = cell.try_borrow_mut()
                                         && let Some(app) = guard.as_mut()
@@ -950,6 +968,7 @@ impl App {
                                             TIMER_STARTUP_BACKDROPS => {
                                                 app.finish_startup_backdrops()
                                             }
+                                            TIMER_DIALOG_OFFER => app.offer_dialog_jump(),
                                             _ => app.prewarm_wallpapers(),
                                         }
                                     } else {
@@ -1493,6 +1512,7 @@ impl App {
             watchers,
             _shell_watch: shell_watch,
             portal_watchers: HashMap::new(),
+            portal_forward: HashMap::new(),
             watcher_retry: HashMap::new(),
             fs_pending,
             fileops_done: Arc::new(Mutex::new(Vec::new())),
@@ -1507,10 +1527,12 @@ impl App {
             instance: args.instance.clone(),
             settings: None,
             settings_focus_fence: None,
+            settings_focus_page: None,
             feedback: Default::default(),
             updates: Default::default(),
             rating,
             welcome: None,
+            notices: args.exit_after_ms.is_none() && args.test_script.is_none(),
             settings_ring: None,
             web_env: None,
             settings_class,
@@ -1814,9 +1836,7 @@ impl App {
         app.remove_old_update_downloads();
         // Last of the startup balloons, so it is the one left showing.
         app.offer_crash_feedback();
-        if app.state.first_run && args.exit_after_ms.is_none() && args.test_script.is_none() {
-            app.offer_welcome();
-        }
+        app.offer_welcome();
         if args.open_settings {
             app.queue.push(Command::OpenSettings);
         }
@@ -2121,6 +2141,7 @@ impl App {
             }
             Command::PortalEnter { fence, path } => self.portal_enter(fence, &path),
             Command::PortalUp(fence) => self.portal_up(fence),
+            Command::PortalForward(fence) => self.portal_forward(fence),
             Command::SwitchTab { host, tab } => self.switch_tab(host, tab),
             Command::SetColumnWidths { fence, widths } => {
                 self.state.set_column_widths(fence, widths);
@@ -2347,9 +2368,13 @@ impl App {
             Command::NewFence { x, y } => self.new_fence_near(x, y),
             Command::NewNote { x, y } => self.new_note_near(x, y),
             Command::NewClock { x, y } => self.new_clock_near(x, y),
+            Command::NewScriptExample { example, x, y } => {
+                self.new_script_example_of(example, x, y)
+            }
             Command::NewScript { x, y } => self.new_script_near(x, y, None),
             Command::EditNote { fence } => self.edit_note(fence),
             Command::ToggleNoteLine { fence, line } => self.toggle_note_line(fence, line),
+            Command::ScriptRowClicked { fence, row } => self.script_row_clicked(fence, row),
             Command::NoteEdited { fence, text } => self.note_edited(fence, &text),
             Command::NewFenceRect(rect) => self.offer_new_fence(rect),
             Command::DesktopMarquee(event) => self.on_desktop_marquee(event),
