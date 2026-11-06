@@ -46,7 +46,7 @@
   "tool.clock.title": "Clock",
   "tool.clock.text": "The time in large digits with the date and weekday, in the format of your Windows region. Seconds if you want them.",
   "tool.script.title": "Script fence",
-  "tool.script.text": "Runs your own PowerShell, Python, batch or JavaScript script and shows what it prints: every 1 minute to 3 hours, like the ready-made weather example, or kept running and updated every few seconds, like the PC status example. Rows can open a link, run a program or tick a to-do when you click them. PecoFence itself does not go online for the fence; only your script does.",
+  "tool.script.text": "Runs your own PowerShell, Python, batch or JavaScript script and shows what it prints: every 1 minute to 3 hours, like the ready-made weather example, or kept running and updated every few seconds, like the PC status example. Rows can open a link, run a program or tick a to-do when you click them. PecoFence itself does not go online for the fence.",
   "details.heading": "Small details that add up",
   "detail.glass.title": "Glass that fits your wallpaper",
   "detail.glass.text": "Fluent and Liquid Glass themes, light and dark modes, per-fence colors, opacity and icon tinting.",

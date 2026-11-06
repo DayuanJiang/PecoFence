@@ -1,5 +1,5 @@
 // PecoFence manual: a miniature of the settings window (ui/settings.html, light theme) shared
-// by the settings lessons (rules, look, backup, tools). Labels are the page's zh-CN source strings.
+// by the settings lessons (rules, look, title-hover, backup, tools). Labels are the page's zh-CN source strings.
 // Layout is explicit (fixed heights, absolute positions) so a demo's render(t) stays a pure
 // function of t and pointer targets can be computed up front. Exported as window.SM.
 (() => {
@@ -9,8 +9,9 @@
     const TITLE_H = 30;
     const CARD_X = 12, CARD_R = 14;
     // nav order, labels and Segoe Fluent glyphs from ui/settings.html <nav>
-    const NAV = [['general', '常规', '\uE713'], ['fences', '栅栏', '\uE71D'], ['rules', '整理规则', '\uE8FD'],
-        ['tools', '小工具', '\uEA86'], ['layout', '布局与备份', '\uE7F4'], ['about', '关于', '\uE946']];
+    const NAV = [['general', '常规', '\uE713'], ['peek', '速览与搜索', '\uE721'], ['fences', '栅栏', '\uE71D'],
+        ['rules', '整理规则', '\uE8FD'], ['tools', '小工具', '\uEA86'], ['layout', '布局与备份', '\uE7F4'],
+        ['about', '关于', '\uE946']];
     const pageIn = bezier(.1, .9, .2, 1);       // .page.on animation: page-in .2s
 
     const svg = (vb, body) => `<svg viewBox="${vb}" aria-hidden="true">${body}</svg>`;

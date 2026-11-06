@@ -42,9 +42,9 @@
         { ic: '\uE7C3', t: '鼠标悬停时切换标签页', s: '鼠标在标签页上停留片刻就切换过去，不用点击', on: true },
     ];
     const TARGET = 0;
-    // The pages go on below what is built (常规: 速览栅栏; 栅栏: 布局, 行为): only the scrollbar
+    // The pages go on below what is built (常规: 吸附与对齐; 栅栏: 布局, 行为): only the scrollbar
     // thumb needs their height.
-    const GEN_MORE = 240, FEN_MORE = 440;
+    const GEN_MORE = 120, FEN_MORE = 440;
     // 栅栏 page: 色调 palette (fence_options.rs TINT_PALETTE) and the 「显示标题栏」 options
     const SWATCHES = [null, 'E74856', 'F7630C', 'FFB900', '10893E', '00B7C3', '0078D4', '8764B8', 'E3008C', '7A7574'];
     const OPTIONS = ['跟随常规设置', '始终显示', '鼠标悬停时显示'];

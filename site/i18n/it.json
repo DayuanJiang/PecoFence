@@ -46,7 +46,7 @@
   "tool.clock.title": "Orologio",
   "tool.clock.text": "L’ora in cifre grandi, con data e giorno della settimana nel formato della tua area geografica di Windows. Con i secondi, se vuoi.",
   "tool.script.title": "Riquadro script",
-  "tool.script.text": "Esegue il tuo script PowerShell, Python, batch o JavaScript e mostra ciò che stampa: a un intervallo da 1 minuto a 3 ore, come l’esempio meteo già pronto, oppure sempre attivo e aggiornato ogni pochi secondi, come l’esempio sullo stato del PC. Un clic su una riga può aprire un link, avviare un programma o spuntare un’attività. PecoFence di per sé non si collega a internet per questo riquadro; lo fa solo il tuo script.",
+  "tool.script.text": "Esegue il tuo script PowerShell, Python, batch o JavaScript e mostra ciò che stampa: a un intervallo da 1 minuto a 3 ore, come l’esempio meteo già pronto, oppure sempre attivo e aggiornato ogni pochi secondi, come l’esempio sullo stato del PC. Un clic su una riga può aprire un link, avviare un programma o spuntare un’attività. PecoFence di per sé non si collega a internet per questo riquadro.",
   "details.heading": "Piccoli dettagli che fanno la differenza",
   "detail.glass.title": "Un effetto vetro che si adatta allo sfondo",
   "detail.glass.text": "Temi Fluent e Liquid Glass, modalità chiara e scura, colori, opacità e tonalità delle icone personalizzabili per ogni riquadro.",

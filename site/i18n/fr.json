@@ -46,7 +46,7 @@
   "tool.clock.title": "Horloge",
   "tool.clock.text": "L’heure en grands chiffres, avec la date et le jour au format de votre région Windows. Les secondes si vous le souhaitez.",
   "tool.script.title": "Groupe de script",
-  "tool.script.text": "Exécute votre propre script PowerShell, Python, batch ou JavaScript et affiche ce qu’il imprime : à un intervalle de 1 minute à 3 heures, comme l’exemple météo prêt à l’emploi, ou en continu avec une mise à jour toutes les quelques secondes, comme l’exemple d’état du PC. Un clic sur une ligne peut ouvrir un lien, lancer un programme ou cocher une tâche. PecoFence lui-même ne se connecte pas à Internet pour ce groupe ; seul votre script le fait.",
+  "tool.script.text": "Exécute votre propre script PowerShell, Python, batch ou JavaScript et affiche ce qu’il imprime : à un intervalle de 1 minute à 3 heures, comme l’exemple météo prêt à l’emploi, ou en continu avec une mise à jour toutes les quelques secondes, comme l’exemple d’état du PC. Un clic sur une ligne peut ouvrir un lien, lancer un programme ou cocher une tâche. PecoFence lui-même ne se connecte pas à Internet pour ce groupe.",
   "details.heading": "Les petits détails qui changent le quotidien",
   "detail.glass.title": "Un verre assorti à votre fond d’écran",
   "detail.glass.text": "Thèmes Fluent et Liquid Glass, modes clair et sombre, couleur, opacité et teinte des icônes réglables groupe par groupe.",

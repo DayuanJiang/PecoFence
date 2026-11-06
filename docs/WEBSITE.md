@@ -184,11 +184,11 @@ start of the translated 会议记录 elsewhere, so that word must appear unchang
 translated file names that contain it; the clocks and script fence footers of the tools
 lessons show `10:24 AM` in English. A script fence is titled with its file's name, so the
 demos derive those titles from the translated file names (`天气.ps1`, `GitHub 动态.ps1`,
-`待办.ps1` without `.ps1`), and the literal `天气` is the 「添加示例…」 menu item, which takes
+`电脑状态.ps1` without `.ps1`), and the row titles of the 小工具 page (`天气`, `电脑状态`) take
 the app's catalog text. What the example scripts print is not translated like other demo
 text: the app writes the Chinese examples for both Chinese languages and the English ones
 for every other language (`crates/app/src/scripts.rs`, `example`), so the weather lines,
-「刷新」, 「打开 todo.txt」 and the three to-dos stay Simplified Chinese on the zh-TW page
+「刷新」 and the rows of 电脑状态 stay Simplified Chinese on the zh-TW page
 and English on the other pages, and the page text quotes them the same way. The settings
 window demos follow `ui/settings.html` card by card in the stretch they show (a new card,
 button or menu item in the app belongs in the demo too). The lessons describe the real

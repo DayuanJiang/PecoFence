@@ -46,7 +46,7 @@
   "tool.clock.title": "時鐘",
   "tool.clock.text": "大字顯示時間，下方是日期和星期，格式跟隨 Windows 的地區設定，需要的話也能顯示秒。",
   "tool.script.title": "腳本圍欄",
-  "tool.script.text": "執行你自己的 PowerShell、Python、批次檔或 JavaScript 腳本，把它輸出的文字顯示在圍欄裡：可以每隔 1 分鐘到 3 小時執行一次，例如內建的天氣範例；也可以持續執行，每幾秒更新一次，例如電腦狀態範例。腳本輸出的行還可以點：點一下就開啟網址、執行程式，或替待辦打勾。需要連網的是你的腳本，PecoFence 本身不為腳本圍欄連網。",
+  "tool.script.text": "執行你自己的 PowerShell、Python、批次檔或 JavaScript 腳本，把它輸出的文字顯示在圍欄裡：可以每隔 1 分鐘到 3 小時執行一次，例如內建的天氣範例；也可以持續執行，每幾秒更新一次，例如電腦狀態範例。腳本輸出的行還可以點：點一下就開啟網址、執行程式，或替待辦打勾。PecoFence 本身不為腳本圍欄連網。",
   "details.heading": "好用之處藏在細節裡",
   "detail.glass.title": "配得上你的桌布",
   "detail.glass.text": "Fluent 與 Liquid Glass 兩種風格，支援淺色／深色模式；每個圍欄可各自設定色調與不透明度，還能為圖示著色。",

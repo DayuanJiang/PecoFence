@@ -46,7 +46,7 @@
   "tool.clock.title": "시계",
   "tool.clock.text": "시간을 큰 숫자로, 그 아래에 날짜와 요일을 표시합니다. 형식은 Windows 지역 설정을 따르고, 초도 표시할 수 있습니다.",
   "tool.script.title": "스크립트 펜스",
-  "tool.script.text": "직접 만든 PowerShell, Python, 배치, JavaScript 스크립트를 실행해 출력된 텍스트를 펜스에 보여 줍니다. 준비된 날씨 예시처럼 1분에서 3시간마다 실행할 수도 있고, PC 상태 예시처럼 계속 실행하며 몇 초마다 새로 고칠 수도 있습니다. 줄을 클릭해 링크를 열거나, 프로그램을 실행하거나, 할 일을 체크할 수도 있습니다. PecoFence 자체는 이 펜스를 위해 인터넷에 연결하지 않으며, 연결하는 것은 스크립트뿐입니다.",
+  "tool.script.text": "직접 만든 PowerShell, Python, 배치, JavaScript 스크립트를 실행해 출력된 텍스트를 펜스에 보여 줍니다. 준비된 날씨 예시처럼 1분에서 3시간마다 실행할 수도 있고, PC 상태 예시처럼 계속 실행하며 몇 초마다 새로 고칠 수도 있습니다. 줄을 클릭해 링크를 열거나, 프로그램을 실행하거나, 할 일을 체크할 수도 있습니다. PecoFence 자체는 이 펜스를 위해 인터넷에 연결하지 않습니다.",
   "details.heading": "작은 디테일이 매일을 편하게",
   "detail.glass.title": "바탕 화면에 어울리는 유리",
   "detail.glass.text": "Fluent와 Liquid Glass 테마, 밝은/어두운 모드, 펜스별 색조와 불투명도, 아이콘 색조.",

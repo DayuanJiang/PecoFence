@@ -1,6 +1,6 @@
-/* Lessons 4.4 (search: .sr-*), 7.1 (tools: .tl-*), 7.2 (script-rows: .sx-*) and 7.3
-   (dialog-jump: .dj-*). Windows reuse the app windows of demos/peek.css (.pk-win, .pk-titlebar,
-   .pk-caps, .pk-ribbon, .pk-tip). */
+/* Lessons 4.4 (search: .sr-*), 7.1 (tools: .tl-*), 7.2 (script-rows: .sx-*), 7.3 (write-scripts,
+   a reading lesson: .ws-*) and 7.4 (dialog-jump: .dj-*). Windows reuse the app windows of
+   demos/peek.css (.pk-win, .pk-titlebar, .pk-caps, .pk-ribbon, .pk-tip). */
 
 /* ---------- Peek search box (peek_search.rs, light theme) ---------- */
 
@@ -101,8 +101,8 @@
     white-space: normal;
 }
 
-/* 「添加示例…」's popup menu, above the settings window */
-.menu.tl-menu { z-index: 4; background: #fafafb }
+/* a button that cannot be pressed (时钟's 「已在桌面上」) */
+.set-btn.tl-dis, .set-btn.tl-dis.hot { background: rgba(249, 249, 249, .3); box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .06); color: rgba(0, 0, 0, .36) }
 
 /* the note editor: a white multi-line box over the note's content */
 .tl-edit {
@@ -335,15 +335,11 @@
     text-overflow: ellipsis;
 }
 
-.stage-inner .sx-box { left: 6px; top: 4px }
-.sx-row.done .sx-t { color: rgba(27, 33, 51, .55) }
-.sx-row.done .tl-box { background: var(--win-accent); box-shadow: none }
-.sx-row.done .tl-box svg { display: block }
 .sx-go { right: 6px; top: 4px; width: 12px; height: 12px; color: rgba(27, 33, 51, .62) }
 .sx-go svg { position: static; display: block; width: 12px; height: 12px }
 .cursor .k-hand { margin-left: -5px }
 
-/* the browser a PR row opens and the Notepad 「打开 todo.txt」 opens */
+/* the browser a PR row opens */
 .sx-browser .pk-main { padding: 18px 24px }
 .sx-browser .pk-main h1 { font-size: 17px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
 
@@ -358,25 +354,75 @@
     font-weight: 600;
 }
 
-.sx-notepad { z-index: 3 }
+/* 电脑状态: the colours a script asks for (script_output.rs color_rgb, light theme) */
+.sx-t.c-green { color: #0f7b0f }
+.sx-t.c-orange { color: #9d5d00 }
+.sx-t.c-red { color: #c42b1c }
 
-.sx-menu {
-    flex: none;
-    height: 26px;
-    display: flex;
-    align-items: center;
-    gap: 14px;
-    padding: 0 12px;
-    background: #fff;
-    border-bottom: 1px solid #eceef2;
+/* the Task Manager 「打开任务管理器」 starts */
+.sx-taskmgr { z-index: 3 }
+.sx-tm { flex: 1; display: flex; background: #f9f9f9 }
+.sx-tm-nav { flex: none; width: 40px; padding: 10px 0; display: flex; flex-direction: column; align-items: center; gap: 12px }
+.sx-tm-nav i { width: 14px; height: 14px; border-radius: 4px; background: #d5d9e1 }
+.sx-tm-nav i.on { background: var(--win-accent) }
+.sx-tm-main { flex: 1; padding: 10px 14px; background: #fff; border-top-left-radius: 8px; box-shadow: inset 1px 1px 0 #eceef2 }
+.sx-tm-main b { display: block; margin-bottom: 8px; font-size: 13px; font-weight: 600 }
+.sx-tm-row { display: flex; align-items: center; gap: 8px; height: 22px; border-bottom: 1px solid #f0f1f4; font-size: 10.5px }
+.sx-tm-row span { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.sx-tm-row em { width: 44px; font-style: normal; text-align: right; color: #5d5d5d }
+.sx-tm-row:first-of-type { color: #5d5d5d }
+
+/* ---------- 7.3 自己写脚本栅栏: a reading lesson, cards of text, code and tables ---------- */
+
+.ws-main { display: grid; gap: 16px }
+
+.ws-sec {
+    padding: 18px 22px 20px;
+    border-radius: 12px;
+    background: var(--card);
+    box-shadow: 0 0 0 1px var(--edge), 0 6px 18px rgba(25, 36, 58, .05);
 }
 
-.sx-menu i { width: 26px; height: 6px; border-radius: 3px; background: #dfe2e8 }
+.ws-sec h3 { margin: 0 0 6px; color: var(--ink); font: 650 17px/1.45 var(--font) }
+.ws-sec p, .ws-list li { color: var(--ink-soft); font-size: 15px; line-height: 1.7; text-wrap: pretty }
+.ws-sec p { margin: 8px 0 0 }
+.ws-sec h3 + p { margin-top: 0 }
+.ws-sec b { color: var(--ink); font-weight: 650 }
+.ws-list { margin: 0; padding-left: 1.4em; display: grid; gap: 6px }
 
-.sx-text {
-    flex: 1;
-    padding: 10px 14px;
-    background: #fff;
-    font: 12.5px/19px Consolas, "Cascadia Mono", "Microsoft YaHei UI", monospace;
+.ws code {
+    padding: 1px 5px;
+    border-radius: 4px;
+    background: #eef1f7;
+    color: var(--ink);
+    font: 500 13px/1.4 "Cascadia Mono", Consolas, monospace;
+    overflow-wrap: anywhere;
+}
+
+.ws-code {
+    margin: 12px 0 0;
+    padding: 12px 16px;
+    border-radius: 8px;
+    background: #f4f6fb;
+    box-shadow: inset 0 0 0 1px #e2e7f1;
+    overflow-x: auto;
+}
+
+.ws .ws-code code {
+    padding: 0;
+    background: none;
+    font: 13px/1.65 "Cascadia Mono", Consolas, "Microsoft YaHei UI", monospace;
     white-space: pre;
+    overflow-wrap: normal;
 }
+
+.ws-table { width: 100%; margin-top: 10px; border-collapse: collapse; font-size: 14.5px; line-height: 1.55 }
+.ws-table th, .ws-table td { padding: 8px 0; border-top: 1px solid var(--edge); vertical-align: top; text-align: left; text-wrap: pretty }
+.ws-table thead th { padding-top: 0; border-top: 0; color: var(--ink-mute); font-size: 13px; font-weight: 600 }
+.ws-table td:first-child { width: 40%; padding-right: 16px; color: var(--ink) }
+.ws-table td { color: var(--ink-soft) }
+.ws-table tbody tr:first-child td { border-top-color: var(--edge) }
+.ws-table:not(:has(thead)) tbody tr:first-child td { border-top: 0 }
+
+.ws .side code { padding: 1px 5px; border-radius: 5px; background: #eef1f8; font-size: 13px }
+.tip a, .ws a { color: var(--accent) }

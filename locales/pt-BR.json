@@ -754,7 +754,7 @@
   "一直运行，每 2 秒更新 CPU、内存和 C 盘剩余空间。点一行可以复制本机 IP 或打开任务管理器": "Sempre em execução: atualiza a cada 2 segundos a CPU, a memória e o espaço livre na unidade C. Clique em uma linha para copiar o IP do computador ou abrir o Gerenciador de Tarefas",
   "用自己的脚本": "Seu próprio script",
   "用自己的脚本…": "Seu próprio script…",
-  "运行你选的脚本（PowerShell、Python、批处理等），把它打印的文字显示在栅栏里。脚本最多运行 10 秒（一直运行的除外），不弹出窗口。PecoFence 不会为脚本联网，联网的是脚本自己": "Executa um script que você escolher (PowerShell, Python, arquivos em lote etc.) e mostra num grupo o texto que ele imprime. Um script roda no máximo 10 segundos (a menos que esteja marcado para ficar rodando) e não abre janela. O PecoFence nunca se conecta à internet pelos scripts. Só o próprio script faz isso",
+  "运行你选的脚本（PowerShell、Python、批处理等），把它打印的文字显示在栅栏里。脚本最多运行 10 秒（一直运行的除外），不弹出窗口。PecoFence 本身不会为脚本联网": "Executa um script que você escolher (PowerShell, Python, arquivos em lote etc.) e mostra num grupo o texto que ele imprime. Um script roda no máximo 10 segundos (a menos que esteja marcado para ficar rodando) e não abre janela. O PecoFence nunca se conecta à internet pelos scripts",
   "搜索别名\u0004挂件|部件|桌面小部件": "widgets|gadgets|widgets da área de trabalho",
   "新建小工具": "Nova ferramenta",
   "已导入配置。其中的脚本还没有运行。确认这些脚本可信后，在「小工具」页打开「小工具」开关。": "Configuração importada. Os scripts dela ainda não estão rodando. Quando confiar neles, ligue a chave Ferramentas na página Ferramentas.",

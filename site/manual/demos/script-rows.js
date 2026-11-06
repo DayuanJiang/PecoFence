@@ -1,26 +1,27 @@
-// 7.2 脚本栅栏里能点的行 (lesson id script-rows): two script fences made with 「添加示例…」, the
-// GitHub example (assets/scripts/github.*.ps1) and the todo.txt one (todo.*.ps1). A script
-// prints `text | key=value` lines (core script_output.rs); rows that do something get a light
-// plate under the pointer, the hand cursor and a tooltip (the script's, else the target), and
-// rows that open a URL or a file a small arrow on the right (fence_chrome.rs draw_script).
-// A click on the PR row opens it in the browser (href=); a click on a to-do ticks its box at
-// once and runs the script again with the action (tools.rs script_row_clicked), which writes
-// the tick into todo.txt; 「打开 todo.txt」 (open=) opens the file in Notepad.
+// 7.2 脚本栅栏里能点的行 (lesson id script-rows): two script fences added from 设置 → 小工具, the
+// GitHub example (assets/scripts/github.*.ps1) and 电脑状态 (status.*.ps1, a streaming script). A
+// script prints `text | key=value` lines (core script_output.rs); rows that do something get a
+// light plate under the pointer, the hand cursor and a tooltip (the script's, else the target),
+// and rows that open a URL or a file a small arrow on the right (fence_chrome.rs draw_script).
+// A click on the PR row opens it in the browser (href=); 刷新 (refresh=true) runs the script
+// again: 「… · 正在运行…」, then a new time. 电脑状态 keeps running and prints a new screen every
+// 2 s (its footer says it is running); its IP row copies the address (copy=, nothing shows in
+// the app: a caption says so) and 「打开任务管理器」 starts Task Manager (run=).
 (() => {
     'use strict';
     const { E, ramp, lerp, pathAt, el, put, size, show, text, fence, pointer, drawPointer, taskbar,
         loopFade, T, TITLE_H } = PM;
 
-    const D = 9.8;
+    const D = 10.6;
     const lang = () => document.documentElement.lang || 'zh-CN';
 
     // A script fence is titled with its file's name (tools.rs create_tool_fence).
-    const GH_FILE = 'GitHub 动态.ps1', TODO_FILE = '待办.ps1';
+    const GH_FILE = 'GitHub 动态.ps1', PC_FILE = '电脑状态.ps1';
     const stem = f => f.replace(/\.ps1$/, '');
-    const GH = { x: 24, y: 20, w: 300, h: 198, title: stem(GH_FILE) };
-    const TD = { x: 24, y: 232, w: 300, h: 168, title: stem(TODO_FILE) };
-    const BROWSER = { x: 346, y: 20, w: 432, h: 292 };
-    const NOTEPAD = { x: 392, y: 164, w: 340, h: 196 };
+    const GH = { x: 24, y: 18, w: 300, h: 196, title: stem(GH_FILE) };
+    const PC = { x: 24, y: 226, w: 300, h: 182, title: stem(PC_FILE) };
+    const BROWSER = { x: 346, y: 18, w: 432, h: 292 };
+    const TASKMGR = { x: 404, y: 150, w: 360, h: 214 };
 
     // What the two scripts printed, row by row ('-' = the `---` separator line).
     const PR = '对话框跳转和搜索列表';
@@ -31,13 +32,18 @@
         { icon: '🟢', t: '#185  ' + '图标的排列顺序', opens: true },
         { icon: '🟢', t: '#183  ' + '更多快捷键', opens: true },
         '-',
-        { icon: '🔄', t: '刷新', refresh: true },
+        { icon: '🔄', t: '刷新', click: true },
     ];
-    const TODOS = ['交房租', '回复邮件', '买牛奶'];
-    const TD_ROWS = [
-        { todo: 0, t: TODOS[0] }, { todo: 1, t: TODOS[1] }, { todo: 2, t: TODOS[2] },
+    // 电脑状态 prints a new screen every 2 s: CPU and memory change, the rest stays.
+    const CPU = [12, 18, 9, 23, 14, 11], MEM = [41, 41, 42, 42, 41, 41];
+    const IP = '192.168.1.23';
+    const PC_ROWS = [
+        { icon: '🧠', t: 'CPU {0}%', cpu: true, color: 'green' },
+        { icon: '📊', t: '内存已用 {0}%', mem: true, color: 'green' },
+        { icon: '💽', t: 'C 盘剩余 128 GB（27%）', opens: true, color: 'green' },
         '-',
-        { icon: '📄', t: '打开 todo.txt', opens: true },
+        { icon: '📋', t: '本机 IP ' + IP, click: true, tip: '点一下复制' },
+        { icon: '📈', t: '打开任务管理器', click: true },
     ];
 
     // draw_script: rows 15 px of text with 3 px above and below, separators 11 px; the plate
@@ -45,15 +51,15 @@
     const ROW_H = 21, SEP_H = 11, TOP = 2;
 
     const HOVER_PR = 1.0, CLICK_PR = 2.5, BROWSER_AT = 2.62;
-    const CLICK_TODO = 4.55, RAN = 5.35, CLICK_OPEN = 6.85, NOTEPAD_AT = 7.0;
+    const AT_REFRESH = 3.5, CLICK_REFRESH = 3.85, RAN = 4.6;
+    const AT_IP = 5.2, CLICK_IP = 6.3, AT_TM = 7.3, CLICK_TM = 7.65, TM_AT = 7.85;
+    const TIP_WAIT = .4;      // tooltip.rs: the hover time
 
-    let PATH, CLICKS;
+    let PATH, CLICKS, CHIPS, TIPS;
     const at = t => pathAt(t, PATH);
 
     const SVG = (vb, d, extra = '') => `<svg viewBox="${vb}" aria-hidden="true"><path d="${d}" fill="none" ` +
         `stroke="currentColor" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round" ${extra}/></svg>`;
-    const CHECK = '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="m2.6 6.3 2.3 2.3 4.6-4.9" fill="none" ' +
-        'stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
     // Segoe's OpenInNewWindow glyph (E8A7): a window with an arrow leaving its corner
     const GO = SVG('0 0 12 12', 'M5 1.5H2.2a.7.7 0 0 0-.7.7v7.6c0 .4.3.7.7.7h7.6c.4 0 .7-.3.7-.7V7M7 1.5h3.5V5M10.5 1.5 5.6 6.4');
     // the Windows hand cursor (IDC_HAND), its fingertip on the hot spot
@@ -85,16 +91,11 @@
             const plate = el('div', 'sx-plate', n);
             let x = 6;
             const r = { n, plate, row, x0: f.x + 8, x1: f.x + f.w - 8, y0: f.y + TITLE_H + y, y1: f.y + TITLE_H + y + ROW_H };
-            if (row.todo !== undefined) {
-                r.box = el('div', 'tl-box sx-box', n);
-                r.box.innerHTML = CHECK;
-                x += 20;
-            }
             if (row.icon) {
                 el('div', 'sx-ic', n, row.icon);
                 x += 20;
             }
-            r.t = el('div', 'sx-t', n, row.t);
+            r.t = el('div', 'sx-t' + (row.color ? ' c-' + row.color : ''), n, row.t);
             r.t.style.left = x + 'px';
             if (row.opens) {
                 r.t.style.right = '24px';
@@ -129,13 +130,24 @@
         return n;
     }
 
-    function notepad(parent) {
-        const n = el('div', 'pk-win sx-notepad', parent);
-        n.innerHTML = '<div class="pk-titlebar"><img src="assets/icons/txt.png" alt=""><span></span>' + CAPS + '</div>' +
-            '<div class="sx-menu"><i></i><i></i><i></i></div><div class="sx-text"></div>';
-        n.querySelector('.pk-titlebar span').textContent = 'todo.txt - ' + '记事本';
-        put(n, NOTEPAD.x, NOTEPAD.y, 0);
-        size(n, NOTEPAD.w, NOTEPAD.h);
+    // Task Manager (Windows 11): the nav strip on the left, 进程 with a few rows.
+    function taskManager(parent) {
+        const n = el('div', 'pk-win sx-taskmgr', parent);
+        n.innerHTML = '<div class="pk-titlebar"><img src="assets/icons/exe.png" alt=""><span></span>' + CAPS + '</div>' +
+            '<div class="sx-tm"><div class="sx-tm-nav"><i></i><i class="on"></i><i></i><i></i><i></i></div>' +
+            '<div class="sx-tm-main"><b></b></div></div>';
+        n.querySelector('.pk-titlebar span').textContent = '任务管理器';
+        const main = n.querySelector('.sx-tm-main');
+        main.querySelector('b').textContent = '进程';
+        [['名称', 'CPU', '内存'], ['PecoFence', '0.4%', '38 MB'], ['Microsoft Edge', '3.1%', '412 MB'],
+            ['Windows 资源管理器', '0.8%', '96 MB'], ['Windows PowerShell', '0.6%', '62 MB'], ['任务管理器', '1.2%', '24 MB']].forEach(([a, b, c]) => {
+            const row = el('div', 'sx-tm-row', main);
+            el('span', null, row, a);
+            el('em', null, row, b);
+            el('em', null, row, c);
+        });
+        put(n, TASKMGR.x, TASKMGR.y, 0);
+        size(n, TASKMGR.w, TASKMGR.h);
         return n;
     }
 
@@ -145,10 +157,9 @@
         r.scene = el('div', 'scene', root);
         const S = r.scene;
         r.G = scriptRows(fence(S, { ...GH }), GH_ROWS);
-        r.T = scriptRows(fence(S, { ...TD }), TD_ROWS);
+        r.P = scriptRows(fence(S, { ...PC }), PC_ROWS);
         r.browser = browser(S);
-        r.notepad = notepad(S);
-        r.lines = r.notepad.querySelector('.sx-text');
+        r.taskmgr = taskManager(S);
         r.tip = el('div', 'pk-tip', S);
 
         r.ptr = pointer(S);
@@ -156,21 +167,24 @@
         r.hand = r.ptr.n.querySelector('.k-hand');
         taskbar(root);
 
-        const mid = q => ({ x: q.x0 + 116, y: (q.y0 + q.y1) / 2 });
+        const mid = (q, dx = 116) => ({ x: q.x0 + dx, y: (q.y0 + q.y1) / 2 });
         const pr = mid(r.G.rows[1]);
-        const boxPt = { x: r.T.rows[0].x0 + 6 + 6.5, y: r.T.rows[0].y0 + 10.5 };
-        const open = mid(r.T.rows[3]);
-        open.x = r.T.rows[3].x0 + 70;
+        const refresh = mid(r.G.rows[4], 40);
+        const ip = mid(r.P.rows[3], 90);
+        const tm = mid(r.P.rows[4], 80);
         PATH = [
-            [0, 560, 392], [0.3, 560, 392],
-            [HOVER_PR, pr.x, pr.y], [CLICK_PR + .4, pr.x, pr.y],      // rest on the PR row, click it
-            [3.6, 250, 300], [3.75, 250, 300],
-            [4.2, boxPt.x, boxPt.y], [CLICK_TODO + .35, boxPt.x, boxPt.y],   // tick the first to-do
-            [6.3, open.x, open.y], [CLICK_OPEN + .3, open.x, open.y],          // 打开 todo.txt
-            [8.0, 360, 398], [D, 360, 398],
+            [0, 560, 398], [0.3, 560, 398],
+            [HOVER_PR, pr.x, pr.y], [CLICK_PR + .4, pr.x, pr.y],          // rest on the PR row, click it
+            [AT_REFRESH, refresh.x, refresh.y], [CLICK_REFRESH + .3, refresh.x, refresh.y],   // 刷新
+            [AT_IP, ip.x, ip.y], [CLICK_IP + .35, ip.x, ip.y],             // rest on the IP row, click it
+            [AT_TM, tm.x, tm.y], [CLICK_TM + .3, tm.x, tm.y],             // 打开任务管理器
+            [8.9, 372, 400], [D, 372, 400],
         ];
-        CLICKS = [{ t: CLICK_PR }, { t: CLICK_TODO }, { t: CLICK_OPEN }];
-        r.prPt = pr;
+        CLICKS = [{ t: CLICK_PR }, { t: CLICK_REFRESH }, { t: CLICK_IP }, { t: CLICK_TM }];
+        CHIPS = [[CLICK_IP + .1, CLICK_IP + .95, 'IP 地址已复制', 18, 18]];
+        // the script's tooltip after the hover time at rest, at the pointer + (12, 20)
+        // (tooltip.rs show_tip); the press hides it
+        TIPS = [[HOVER_PR + TIP_WAIT, CLICK_PR, r.G.rows[1].row.tip, pr], [AT_IP + TIP_WAIT, CLICK_IP, r.P.rows[3].row.tip, ip]];
         return r;
     }
 
@@ -184,44 +198,41 @@
     function render(t, r, { looped }) {
         r.scene.style.opacity = loopFade(t, D, looped);
         const p = at(t);
-        const ticked = t >= CLICK_TODO;
-        const done = i => i === 2 || (i === 0 && ticked);
         const time = /^en/.test(lang()) ? ' AM' : '';
 
         // the row under the pointer (none while a window covers it)
         let hot = null;
-        for (const f of [r.G, r.T]) {
+        for (const f of [r.G, r.P]) {
             for (const q of f.rows) {
-                const clickable = q.row.opens || q.row.refresh || q.row.todo !== undefined;
+                const clickable = q.row.opens || q.row.click;
                 const on = clickable && p.x >= q.x0 && p.x < q.x1 && p.y >= q.y0 && p.y < q.y1;
                 if (on) hot = q;
                 show(q.plate, on);
                 if (q.go) show(q.go, on);
-                if (q.box) {
-                    q.n.classList.toggle('done', done(q.row.todo));
-                }
             }
         }
-        text(r.G.foot, `${GH_FILE} · ${T('{0} 更新').replace('{0}', '10:24' + time)}`);
-        text(r.T.foot, ticked && t < RAN ? T('{0} · 正在运行…').replace('{0}', TODO_FILE)
-            : `${TODO_FILE} · ${T('{0} 更新').replace('{0}', (ticked ? '10:24' : '10:20') + time)}`);
+        text(r.G.foot, t >= CLICK_REFRESH && t < RAN ? T('{0} · 正在运行…').replace('{0}', GH_FILE)
+            : `${GH_FILE} · ${T('{0} 更新').replace('{0}', (t >= RAN ? '10:25' : '10:24') + time)}`);
 
-        // the script's tooltip after the hover time (400 ms) at rest, at the pointer + (12, 20)
-        // (tooltip.rs show_tip); the press hides it
-        const tipOn = t >= HOVER_PR + .4 && t < CLICK_PR;
-        if (show(r.tip, tipOn)) {
-            text(r.tip, r.G.rows[1].row.tip);
-            put(r.tip, r.prPt.x + 12, r.prPt.y + 20, ramp(t, HOVER_PR + .4, HOVER_PR + .5, E.lin));
+        // 电脑状态: a new screen every 2 s; a script that keeps running says so at the bottom
+        const screen = Math.min(CPU.length - 1, Math.floor(t / 2));
+        text(r.P.rows[0].t, T('CPU {0}%').replace('{0}', CPU[screen]));
+        text(r.P.rows[1].t, T('内存已用 {0}%').replace('{0}', MEM[screen]));
+        text(r.P.foot, T('{0} · 正在运行…').replace('{0}', PC_FILE));
+
+        const tip = TIPS.find(([a, b]) => t >= a && t < b);
+        if (show(r.tip, !!tip)) {
+            text(r.tip, tip[2]);
+            put(r.tip, tip[3].x + 12, tip[3].y + 20, ramp(t, tip[0], tip[0] + .1, E.lin));
         }
 
         opening(r.browser, t, BROWSER_AT, BROWSER);
-        opening(r.notepad, t, NOTEPAD_AT, NOTEPAD);
-        text(r.lines, TODOS.map((s, i) => (done(i) ? '[x] ' : '[ ] ') + s).join('\n'));
+        opening(r.taskmgr, t, TM_AT, TASKMGR);
 
-        drawPointer(r.ptr, t, p, { clicks: CLICKS, at });
+        drawPointer(r.ptr, t, p, { clicks: CLICKS, chips: CHIPS, at });
         show(r.ptr.arrow, !hot);
         show(r.hand, !!hot);
     }
 
-    PM.register('script-rows', { duration: D, poster: 8.4, build, render });
+    PM.register('script-rows', { duration: D, poster: 8.9, build, render });
 })();
