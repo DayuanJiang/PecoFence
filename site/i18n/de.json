@@ -25,7 +25,7 @@
   "feature.groups.title": "Bereich anlegen",
   "feature.groups.text": "Dateien hineinziehen, Bereich skalieren und neben den anderen einrasten lassen.",
   "feature.portal.title": "Ordner in Reichweite",
-  "feature.portal.text": "Ein Live-Ordner auf deinem Desktop. Stöbere in Unterordnern und sieh Änderungen, sobald sie passieren.",
+  "feature.portal.text": "Ein Live-Ordner auf deinem Desktop. Stöbere in Unterordnern und sieh Änderungen, sobald sie passieren. Die Zurück-Taste der Maus geht einen Ordner hoch, die Vorwärts-Taste wieder hinein.",
   "feature.tabs.title": "Tabs für zusammengehörige Bereiche",
   "feature.tabs.text": "Von Projektdateien zur Inspiration. Einfach den Tab wechseln.",
   "feature.peek.title": "Dein Desktop, nur eine Tastenkombination entfernt",

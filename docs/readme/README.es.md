@@ -102,12 +102,13 @@ Toma lo que necesites y presiona **Esc** para volver.
 | **Menos tiempo ordenando** | Reglas por tipo de archivo, extensión, nombre, comodines, destino del acceso directo, hora y tamaño. Los archivos nuevos encuentran su grupo solos. |
 | **Cristal a la medida de tu escritorio** | Temas Fluent y Liquid Glass, modos claro y oscuro, colores por grupo, opacidad y tinte de iconos. |
 | **Archivos como siempre** | Menús contextuales del Explorador de archivos, arrastrar y soltar, copiar y pegar, selección múltiple, miniaturas y vistas de iconos, lista y detalles. |
-| **Ten tus carpetas a mano** | Coloca una carpeta en vivo sobre el escritorio. Navega por sus subcarpetas y ve los cambios al momento. |
+| **Ten tus carpetas a mano** | Coloca una carpeta en vivo sobre el escritorio. Navega por sus subcarpetas y ve los cambios al momento. El botón Atrás del ratón sube una carpeta y Adelante vuelve a entrar. |
 | **Espacio cuando lo necesitas** | Contrae un grupo hasta su título. Pasa el cursor para expandirlo. Bloquea la distribución que te gusta. Haz doble clic en el escritorio para ocultar los grupos. Vuelve a hacer doble clic para recuperarlos. |
 | **Pequeñas herramientas en tus grupos** | Notas con tareas, un reloj con la fecha y grupos de script que muestran lo que imprime tu propio script, como el tiempo; con un clic en sus filas puedes abrir un enlace o marcar una tarea. Cada herramienta está desactivada hasta que la activas en Configuración → Herramientas. |
 | **Encuentra mientras escribes** | Escribe durante la vista rápida (Ctrl + Alt + Espacio) y una lista muestra los elementos que coinciden, también nombres chinos por pinyin. Abre uno con Entrar o con un atajo de Ctrl+1 a Ctrl+9. Si quieres, Everything, un buscador gratuito, añade resultados de todo el equipo. Con el atajo «Ctrl dos veces», pulsar Ctrl dos veces rápido abre la vista rápida con el cuadro de búsqueda listo. |
 | **Cuadros de diálogo en la carpeta correcta** | Con «Saltar a la carpeta en los cuadros de diálogo», un cuadro Abrir o Guardar va a la carpeta abierta en el Explorador de archivos cuando cambias a él y vuelves. También funciona al hacer clic en un grupo de carpeta o pulsar Ctrl+G. |
 | **Siempre puedes volver atrás** | Instantáneas de distribución, copias de seguridad diarias, importación y exportación de la configuración e intercambio entre pantallas. |
+| **Buscar un ajuste** | Escribe en el cuadro de arriba de la Configuración (Ctrl+F) para encontrar cualquier ajuste por sus palabras o por otros nombres comunes. |
 | **Huella mínima** | Una aplicación nativa escrita en Rust que en reposo ocupa solo entre 2 y 5 MB de memoria (según el Administrador de tareas). El panel de Configuración en WebView2 se carga solo cuando hace falta. |
 
 Las reglas de organización automática dejan los archivos en su ubicación original. Los movimientos

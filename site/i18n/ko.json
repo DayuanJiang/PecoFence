@@ -25,7 +25,7 @@
   "feature.groups.title": "펜스 만들기",
   "feature.groups.text": "파일을 끌어다 놓으세요. 펜스 크기를 조절하고 다른 펜스 옆에 착 붙여 정렬하세요.",
   "feature.portal.title": "폴더를 가까이에",
-  "feature.portal.text": "실제 폴더를 바탕 화면 위에 그대로. 하위 폴더를 열고, 변경 사항이 바로 반영되는 모습을 확인하세요.",
+  "feature.portal.text": "실제 폴더를 바탕 화면 위에 그대로. 하위 폴더를 열고, 변경 사항이 바로 반영되는 모습을 확인하세요. 마우스의 뒤로 버튼은 상위 폴더로, 앞으로 버튼은 방금 나온 폴더로 돌아갑니다.",
   "feature.tabs.title": "관련 펜스는 탭으로",
   "feature.tabs.text": "프로젝트 자료에서 영감 이미지로. 탭만 전환하면 됩니다.",
   "feature.peek.title": "단축키 하나로 바탕 화면을 눈앞에",

@@ -25,7 +25,7 @@
   "feature.groups.title": "建一个栅栏",
   "feature.groups.text": "把文件拖进去。调整大小，吸附到其他栅栏旁边。",
   "feature.portal.title": "把文件夹放在手边",
-  "feature.portal.text": "桌面上的实时文件夹。可以进入子文件夹，内容变化即时同步。",
+  "feature.portal.text": "桌面上的实时文件夹。可以进入子文件夹，内容变化即时同步。鼠标的后退键回到上一级，前进键回到刚离开的子文件夹。",
   "feature.tabs.title": "相关的栅栏合成标签页",
   "feature.tabs.text": "从项目资料切到灵感图库，轻点标签就好。",
   "feature.peek.title": "文件就在当前应用前面",

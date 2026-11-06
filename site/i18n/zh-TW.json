@@ -25,7 +25,7 @@
   "feature.groups.title": "建一個圍欄",
   "feature.groups.text": "把檔案拖進去，調整圍欄大小，再貼齊到其他圍欄旁邊。",
   "feature.portal.title": "把資料夾放在手邊",
-  "feature.portal.text": "真實的資料夾就在桌面上。可以進入子資料夾，內容一有變動就即時同步。",
+  "feature.portal.text": "真實的資料夾就在桌面上。可以進入子資料夾，內容一有變動就即時同步。滑鼠的返回鍵回到上一層，前進鍵回到剛離開的子資料夾。",
   "feature.tabs.title": "把相關圍欄合併成分頁",
   "feature.tabs.text": "從專案資料切換到靈感圖庫，輕點分頁就好。",
   "feature.peek.title": "桌面，只差一個快速鍵",
