@@ -164,6 +164,17 @@ PecoFence steht unter der Apache-2.0-Lizenz, und Beiträge sind willkommen, von 
 
 [Mitwirken](../../CONTRIBUTING.md) · [Übersetzung verbessern](../LOCALIZATION.md) · [Entwicklerhandbuch](../DEVELOPMENT.md)
 
+## Code signing policy
+
+Kostenlose Codesignatur durch [SignPath.io](https://about.signpath.io/), Zertifikat von der [SignPath Foundation](https://signpath.org/).
+
+- Commits und Reviews: [Dayuan Jiang](https://github.com/DayuanJiang)
+- Freigabe der Signaturen: [Dayuan Jiang](https://github.com/DayuanJiang)
+
+Signiert werden nur Dateien, die GitHub Actions aus einem Versions-Tag dieses Repositorys baut. Jede Signatur wird von Hand freigegeben.
+
+**Datenschutz:** Dieses Programm überträgt keine Informationen an andere vernetzte Systeme, es sei denn, der Benutzer oder die Person, die es installiert oder bedient, verlangt das ausdrücklich. **Nach Updates suchen** fragt die GitHub-API ab. Was du unter **Feedback** sendest, geht an den Feedback-Dienst von PecoFence. Das Einstellungsfenster läuft auf Microsoft Edge WebView2. Dafür gilt die [Datenschutzerklärung von Microsoft](https://privacy.microsoft.com/privacystatement).
+
 ---
 
 **Für einen Desktop, zu dem du gern zurückkehrst.**  

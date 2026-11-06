@@ -164,6 +164,17 @@ PecoFence est sous licence Apache 2.0 et les contributions sont bienvenues, d’
 
 [Contribuer](../../CONTRIBUTING.md) · [Améliorer une traduction](../LOCALIZATION.md) · [Guide de développement](../DEVELOPMENT.md)
 
+## Code signing policy
+
+Signature de code gratuite fournie par [SignPath.io](https://about.signpath.io/), certificat délivré par la [SignPath Foundation](https://signpath.org/).
+
+- Commits et relectures : [Dayuan Jiang](https://github.com/DayuanJiang)
+- Approbation des signatures : [Dayuan Jiang](https://github.com/DayuanJiang)
+
+Seuls les fichiers que GitHub Actions compile à partir d'un tag de version de ce dépôt sont signés. Chaque signature est approuvée à la main.
+
+**Confidentialité :** ce programme ne transmet aucune information à d'autres systèmes en réseau, sauf si l'utilisateur ou la personne qui l'installe ou l'utilise le demande expressément. **Rechercher des mises à jour** interroge l'API GitHub. Ce que vous envoyez depuis **Commentaires** arrive au service de commentaires de PecoFence. La fenêtre des paramètres repose sur Microsoft Edge WebView2, soumis à la [déclaration de confidentialité de Microsoft](https://privacy.microsoft.com/privacystatement).
+
 ---
 
 **Conçu pour un Bureau où l’on a plaisir à revenir.**  

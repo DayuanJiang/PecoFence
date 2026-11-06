@@ -157,6 +157,17 @@ Microsoft Store 版由微软签名，自动更新，不会出现 SmartScreen 提
 
 [参与贡献](../../CONTRIBUTING.md) · [完善翻译](../LOCALIZATION.md) · [开发文档](../DEVELOPMENT.md)
 
+## Code signing policy
+
+代码签名由 [SignPath.io](https://about.signpath.io/) 免费提供，证书由 [SignPath Foundation](https://signpath.org/) 颁发。
+
+- 提交和审阅：[Dayuan Jiang](https://github.com/DayuanJiang)
+- 批准签名：[Dayuan Jiang](https://github.com/DayuanJiang)
+
+只有 GitHub Actions 从本仓库的版本标签构建出来的文件才会签名。每一次签名都要人工批准。
+
+**隐私：** 除非用户或安装、使用本程序的人明确要求，本程序不会向其他联网系统发送任何信息。点**检查更新**时，它会访问 GitHub 的接口。在**反馈**里发送的内容会送到 PecoFence 的反馈服务。设置窗口基于 Microsoft Edge WebView2，适用 [Microsoft 隐私声明](https://privacy.microsoft.com/privacystatement)。
+
 ---
 
 **让每次回到桌面，都更舒服一点。**  
