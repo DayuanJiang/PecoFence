@@ -697,7 +697,7 @@ impl DesktopAnchor {
     }
 
     /// Is `hwnd`'s root window the desktop icon host (or another Explorer desktop window)?
-    fn is_desktop_window(&self, hwnd: HWND) -> bool {
+    pub fn is_desktop_window(&self, hwnd: HWND) -> bool {
         if hwnd.0.is_null() {
             return false;
         }

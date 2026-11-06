@@ -4,6 +4,16 @@
 use super::*;
 use pecofence_core::hotkey::{FALLBACKS, PRESETS, Problem};
 
+/// The reasons `end_peek` gets when the keyboard or the foreground left the Peek's windows.
+const PEEK_FOCUS_LOST: [&str; 3] = [
+    "another window came to the front",
+    "dimmer lost the focus",
+    "search box lost the focus",
+];
+/// How long after the Peek began the desktop coming to the front is taken for the late answer
+/// to a click before the shortcut (seen 0.65 s after it on Windows 10), not for a move away.
+const PEEK_LATE_DESKTOP: Duration = Duration::from_millis(1500);
+
 /// A shortcut as the tray menu and messages show it: `Ctrl+Alt+空格`.
 pub(super) fn peek_hotkey_label(h: Hotkey) -> String {
     hotkey_keys(h).join("+")
@@ -490,6 +500,28 @@ impl App {
         };
         if p.is_closing() {
             return;
+        }
+        // Windows 10 can make the desktop the foreground window about a second after a click
+        // on it that came just before the Peek's shortcut. That click was no move away from the
+        // Peek (the dimmer covers the desktop, so a click during the Peek never reaches it):
+        // keep the Peek and take the keyboard back.
+        let age = p.age(now);
+        if PEEK_FOCUS_LOST.contains(&reason) && age < PEEK_LATE_DESKTOP {
+            let front = desktop::foreground_window();
+            if self
+                .anchor
+                .borrow()
+                .as_ref()
+                .is_some_and(|a| a.is_desktop_window(front))
+            {
+                tracing::info!(
+                    reason,
+                    ms = age.as_millis() as u64,
+                    "desktop came to the front just after the peek began; peek kept"
+                );
+                p.take_focus(self.control.hwnd());
+                return;
+            }
         }
         tracing::info!(reason, "peek ending");
         if !self.ctx.motion.enabled() {
