@@ -40,7 +40,7 @@
   "feature.rules.text": "Las reglas por tipo de archivo, nombre, comodín, antigüedad o tamaño llevan los elementos nuevos al grupo correcto. Los archivos siguen donde están en el disco.",
   "features.guide": "Paso a paso en el manual",
   "tools.heading": "Herramientas, cuando las quieras",
-  "tools.intro": "Cada herramienta tiene su propio interruptor en Configuración › Herramientas y viene desactivada de forma predeterminada. Una herramienta desactivada no se ejecuta. Las notas, los relojes y los grupos de script se mueven, se ajustan y se contraen como cualquier grupo.",
+  "tools.intro": "Cada herramienta tiene su propio interruptor en Configuración › Herramientas. Las notas vienen activadas de forma predeterminada, y el reloj y los grupos de script, desactivados. Una herramienta desactivada no se ejecuta. Las notas, los relojes y los grupos de script se mueven, se ajustan y se contraen como cualquier grupo.",
   "tool.note.title": "Notas y tareas",
   "tool.note.text": "Unas líneas de texto en el escritorio. Haz clic para editarlas; una línea que empieza con [ ] se convierte en una tarea que marcas con un clic.",
   "tool.clock.title": "Reloj y fecha",

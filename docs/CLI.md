@@ -315,7 +315,7 @@ rule.
 ## Tools (小工具)
 
 A tool fence shows a tool in place of desktop items. Each tool has a switch in `settings`
-(`tools.notes`, `tools.clock`, `tools.scripts`, all `false` by default); a tool that is off runs
+(`tools.notes`, `true` by default, `tools.clock` and `tools.scripts`, `false` by default); a tool that is off runs
 nothing and its fences have no window until it is switched on again. `fence create --tool` switches
 the tool on. Tool fences hold no items (rules, `item move --to` and drops refuse them) and take no
 part in tabs (`fence merge` refuses them). Properties about icons (`iconSize`, `layout`,

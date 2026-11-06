@@ -40,7 +40,7 @@
   "feature.rules.text": "Rules based on file type, name, wildcard, age or size put new items in the right fence. Files stay where they are on disk.",
   "features.guide": "Step by step in the manual",
   "tools.heading": "Tools, when you want them",
-  "tools.intro": "Each tool has its own switch in Settings › Tools and is off by default. A tool that is off does not run. Notes, clocks and script fences move, snap and roll up like any fence.",
+  "tools.intro": "Each tool has its own switch in Settings › Tools. Notes are on by default, the clock and script fences are off. A tool that is off does not run. Notes, clocks and script fences move, snap and roll up like any fence.",
   "tool.note.title": "Notes and to-dos",
   "tool.note.text": "A few lines of text on the desktop. Click to edit them; a line that starts with [ ] becomes a to-do you tick with a click.",
   "tool.clock.title": "Clock and date",

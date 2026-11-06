@@ -739,7 +739,7 @@
   "搜索别名\u0004备份|迁移|换电脑|恢复设置": "Backup|Sicherung|Umzug|neuer PC|Einstellungen wiederherstellen",
   "搜索别名\u0004升级|新版本|检查更新": "Upgrade|neue Version|nach Updates suchen|Aktualisierung|aktualisieren",
   "PecoFence {0} 的新功能": "Neu in PecoFence {0}",
-  "· 速览时直接打字搜索，支持拼音\n· 「打开/保存」对话框能跳到资源管理器里正开着的文件夹\n· 小工具：便签和待办、时钟、脚本栅栏\n对话框跳转和小工具默认关着，在设置里开启。": "• Beim Hervorholen einfach tippen, um in den Bereichen zu suchen, auch per Pinyin\n• Öffnen- und Speichern-Dialoge können in den Ordner springen, der im Explorer offen ist\n• Werkzeuge: Notizen und Aufgaben, Uhr, Skriptbereiche\nDer Sprung im Dateidialog und die Werkzeuge bleiben aus, bis du sie in den Einstellungen einschaltest.",
+  "· 速览时直接打字搜索，支持拼音\n· 「打开/保存」对话框能跳到资源管理器里正开着的文件夹\n· 小工具：便签和待办、时钟、脚本栅栏\n便签默认开着。时钟、脚本栅栏和对话框跳转要在设置里开启。": "• Beim Hervorholen einfach tippen, um in den Bereichen zu suchen, auch per Pinyin\n• Öffnen- und Speichern-Dialoge können in den Ordner springen, der im Explorer offen ist\n• Werkzeuge: Notizen und Aufgaben, Uhr, Skriptbereiche\nNotizen sind standardmäßig eingeschaltet. Uhr, Skriptbereiche und den Sprung im Dateidialog schaltest du in den Einstellungen ein.",
   "打开小工具设置": "Werkzeug-Einstellungen öffnen",
   "在桌面空白处按住鼠标拖出一个框，松开后选「在此新建栅栏」。文件还在原来的位置。": "Halte auf freier Desktopfläche die Maustaste gedrückt, zieh einen Rahmen auf, lass los und wähle „Hier einen Bereich erstellen“. Deine Dateien bleiben, wo sie sind.",
   "双击桌面空白处，所有栅栏都会隐藏。再双击一次，栅栏就回来。": "Doppelklicke auf freie Desktopfläche, um alle Bereiche auszublenden. Ein weiterer Doppelklick blendet sie wieder ein.",

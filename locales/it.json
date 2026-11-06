@@ -739,7 +739,7 @@
   "搜索别名\u0004备份|迁移|换电脑|恢复设置": "backup|copia di sicurezza|migrazione|nuovo computer|ripristina impostazioni",
   "搜索别名\u0004升级|新版本|检查更新": "aggiornare|nuova versione|cerca aggiornamenti|upgrade|ultima versione",
   "PecoFence {0} 的新功能": "Novità di PecoFence {0}",
-  "· 速览时直接打字搜索，支持拼音\n· 「打开/保存」对话框能跳到资源管理器里正开着的文件夹\n· 小工具：便签和待办、时钟、脚本栅栏\n对话框跳转和小工具默认关着，在设置里开启。": "• Durante la vista rapida scrivi per cercare nei riquadri, anche col pinyin\n• Le finestre Apri e Salva possono andare alla cartella aperta in Esplora file\n• Strumenti: note e attività, orologio, riquadri script\nIl salto di cartella e gli strumenti restano disattivati finché non li attivi nelle impostazioni.",
+  "· 速览时直接打字搜索，支持拼音\n· 「打开/保存」对话框能跳到资源管理器里正开着的文件夹\n· 小工具：便签和待办、时钟、脚本栅栏\n便签默认开着。时钟、脚本栅栏和对话框跳转要在设置里开启。": "• Durante la vista rapida scrivi per cercare nei riquadri, anche col pinyin\n• Le finestre Apri e Salva possono andare alla cartella aperta in Esplora file\n• Strumenti: note e attività, orologio, riquadri script\nLe note sono attive per impostazione predefinita. Attiva l’orologio, i riquadri script e il salto di cartella nelle impostazioni.",
   "打开小工具设置": "Apri Strumenti",
   "在桌面空白处按住鼠标拖出一个框，松开后选「在此新建栅栏」。文件还在原来的位置。": "Tieni premuto il tasto del mouse su un’area vuota del desktop, trascina un rettangolo, rilascia e scegli «Crea un riquadro qui». I file restano dove sono.",
   "双击桌面空白处，所有栅栏都会隐藏。再双击一次，栅栏就回来。": "Fai doppio clic su un’area vuota del desktop per nascondere tutti i riquadri. Fai di nuovo doppio clic per mostrarli.",

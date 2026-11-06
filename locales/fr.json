@@ -739,7 +739,7 @@
   "搜索别名\u0004备份|迁移|换电脑|恢复设置": "sauvegarde|migration|nouvel ordinateur|restaurer les paramètres|backup",
   "搜索别名\u0004升级|新版本|检查更新": "mise à niveau|nouvelle version|rechercher des mises à jour|actualiser|upgrade",
   "PecoFence {0} 的新功能": "Nouveautés de PecoFence {0}",
-  "· 速览时直接打字搜索，支持拼音\n· 「打开/保存」对话框能跳到资源管理器里正开着的文件夹\n· 小工具：便签和待办、时钟、脚本栅栏\n对话框跳转和小工具默认关着，在设置里开启。": "• Tapez pendant l’aperçu pour chercher dans vos groupes, aussi par pinyin\n• Les boîtes de dialogue Ouvrir et Enregistrer peuvent aller au dossier ouvert dans l’Explorateur de fichiers\n• Outils : notes et tâches, horloge, groupes de script\nLe saut de dossier et les outils restent désactivés tant que vous ne les activez pas dans les paramètres.",
+  "· 速览时直接打字搜索，支持拼音\n· 「打开/保存」对话框能跳到资源管理器里正开着的文件夹\n· 小工具：便签和待办、时钟、脚本栅栏\n便签默认开着。时钟、脚本栅栏和对话框跳转要在设置里开启。": "• Tapez pendant l’aperçu pour chercher dans vos groupes, aussi par pinyin\n• Les boîtes de dialogue Ouvrir et Enregistrer peuvent aller au dossier ouvert dans l’Explorateur de fichiers\n• Outils : notes et tâches, horloge, groupes de script\nLes notes sont activées par défaut. Activez l’horloge, les groupes de script et le saut de dossier dans les paramètres.",
   "打开小工具设置": "Ouvrir les outils",
   "在桌面空白处按住鼠标拖出一个框，松开后选「在此新建栅栏」。文件还在原来的位置。": "Sur un espace vide du Bureau, maintenez le bouton de la souris, tracez un cadre, relâchez et choisissez « Créer un groupe ici ». Vos fichiers restent à leur place.",
   "双击桌面空白处，所有栅栏都会隐藏。再双击一次，栅栏就回来。": "Double-cliquez sur un espace vide du Bureau pour masquer tous les groupes. Double-cliquez à nouveau pour les réafficher.",

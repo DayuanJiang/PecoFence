@@ -40,7 +40,7 @@
   "feature.rules.text": "Regras por tipo de arquivo, nome, curinga, tempo sem uso ou tamanho levam itens novos ao grupo certo. Os arquivos continuam onde estão no disco.",
   "features.guide": "Passo a passo no manual",
   "tools.heading": "Ferramentas, quando você quiser",
-  "tools.intro": "Cada ferramenta tem sua própria chave em Configurações › Ferramentas e vem desativada por padrão. Uma ferramenta desativada não roda. Notas, relógios e grupos de script se movem, se encaixam e se recolhem como qualquer grupo.",
+  "tools.intro": "Cada ferramenta tem sua própria chave em Configurações › Ferramentas. As notas vêm ativadas por padrão, e o relógio e os grupos de script, desativados. Uma ferramenta desativada não roda. Notas, relógios e grupos de script se movem, se encaixam e se recolhem como qualquer grupo.",
   "tool.note.title": "Notas e tarefas",
   "tool.note.text": "Algumas linhas de texto na área de trabalho. Clique para editar; uma linha que começa com [ ] vira uma tarefa que você marca com um clique.",
   "tool.clock.title": "Relógio e data",

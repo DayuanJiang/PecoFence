@@ -40,7 +40,7 @@
   "feature.rules.text": "Le regole basate su tipo di file, nome, caratteri jolly, età o dimensione collocano i nuovi elementi nel riquadro giusto. I file restano nella loro posizione sul disco.",
   "features.guide": "Segui i passaggi nel manuale",
   "tools.heading": "Strumenti, quando li vuoi",
-  "tools.intro": "Ogni strumento ha il suo interruttore in Impostazioni › Strumenti ed è disattivato per impostazione predefinita. Uno strumento disattivato non viene eseguito. Note, orologi e riquadri script si spostano, si agganciano e si comprimono come qualsiasi riquadro.",
+  "tools.intro": "Ogni strumento ha il suo interruttore in Impostazioni › Strumenti. Le note sono attive per impostazione predefinita, l’orologio e i riquadri script sono disattivati. Uno strumento disattivato non viene eseguito. Note, orologi e riquadri script si spostano, si agganciano e si comprimono come qualsiasi riquadro.",
   "tool.note.title": "Note e attività",
   "tool.note.text": "Qualche riga di testo sul desktop. Fai clic per modificarla; una riga che inizia con [ ] diventa un’attività da spuntare con un clic.",
   "tool.clock.title": "Orologio e data",

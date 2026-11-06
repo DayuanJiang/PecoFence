@@ -739,7 +739,7 @@
   "搜索别名\u0004备份|迁移|换电脑|恢复设置": "backup|migrate|new computer|restore settings",
   "搜索别名\u0004升级|新版本|检查更新": "upgrade|new version|check for updates",
   "PecoFence {0} 的新功能": "What's new in PecoFence {0}",
-  "· 速览时直接打字搜索，支持拼音\n· 「打开/保存」对话框能跳到资源管理器里正开着的文件夹\n· 小工具：便签和待办、时钟、脚本栅栏\n对话框跳转和小工具默认关着，在设置里开启。": "• Type while Peek is open to search your fences, also by pinyin\n• Open and Save dialogs can jump to the folder open in File Explorer\n• Tools: notes and to-dos, a clock, script fences\nJump in file dialogs and the tools are off until you turn them on in Settings.",
+  "· 速览时直接打字搜索，支持拼音\n· 「打开/保存」对话框能跳到资源管理器里正开着的文件夹\n· 小工具：便签和待办、时钟、脚本栅栏\n便签默认开着。时钟、脚本栅栏和对话框跳转要在设置里开启。": "• Type while Peek is open to search your fences, also by pinyin\n• Open and Save dialogs can jump to the folder open in File Explorer\n• Tools: notes and to-dos, a clock, script fences\nNotes are on by default. Turn on the clock, script fences and Jump in file dialogs in Settings.",
   "打开小工具设置": "Open Tools settings",
   "在桌面空白处按住鼠标拖出一个框，松开后选「在此新建栅栏」。文件还在原来的位置。": "Hold the mouse button on empty desktop space, drag a box, let go and choose “Create a fence here”. Your files stay where they are.",
   "双击桌面空白处，所有栅栏都会隐藏。再双击一次，栅栏就回来。": "Double-click empty desktop space to hide all fences. Double-click again to show them.",

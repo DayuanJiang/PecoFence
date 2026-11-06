@@ -106,8 +106,8 @@ pecofence-cli config export "C:\Users\me\Desktop\pecofence-backup.json"   # sett
 - `config import` / `backup restore` replace settings, rules and layouts: `config export` first.
 - The CLI cannot delete files: list duplicates and junk for the user to remove.
 - Tool fences (`fence list` shows `tool`: note, clock, script) hold no items and join no tabs. Each
-  tool has a switch (`tools.notes`, `tools.clock`, `tools.scripts`); `fence create --tool` turns it
-  on. A script fence runs the user's script every `scriptInterval` minutes, at most 10 s, and shows
+  tool has a switch (`tools.notes`, on by default; `tools.clock`, `tools.scripts`, off by default);
+  `fence create --tool` turns it on. A script fence runs the user's script every `scriptInterval` minutes, at most 10 s, and shows
   what it prints; write such scripts for the user on request (see Script fences below).
 - Switches with no fences, off by default: `tools.dialogJump` (Open / Save dialogs jump to the
   folder of the Explorer window the user comes back from; Ctrl+G) and `tools.everything` (the Peek

@@ -166,7 +166,6 @@
   "7.1 · 小工具": "7.1 · Tools",
   "便签、时钟和脚本栅栏": "Notes, clock and script fences",
   "小工具也放在栅栏里：便签用来记事和列待办，时钟显示时间和日期，脚本栅栏把你的脚本打印的文字显示在桌面上。": "Tools live in fences too: a note holds notes and to-dos, a clock shows the time and date, and a script fence shows the text your script prints on the desktop.",
-  "打开「设置」→<b>「小工具」</b>（右键托盘图标，选<b>「设置…」</b>），点<b>「新建便签」</b>。「便签与待办」的开关会跟着打开，桌面上多出一个便签，直接打字就行，按 <kbd>Enter</kbd> 换行。": "Open “Settings” → <b>Tools</b> (right-click the tray icon and select <b>Settings…</b>) and select <b>New note</b>. The “Notes and to-dos” switch turns on with it, and a note appears on the desktop. Just type; <kbd>Enter</kbd> starts a new line.",
   "点别处就保存了。行首写 <code>[ ]</code> 的一行会变成待办，点前面的方框打上勾，再点一次取消。以后想改，单击便签里的文字。": "Click anywhere else to save. A line that starts with <code>[ ]</code> becomes a to-do: click its box to tick it, and click again to untick it. To change the note later, click its text.",
   "点<b>「新建时钟」</b>，桌面上多出一个时钟，显示时间、日期和星期。想看到秒，打开下面的<b>「显示秒」</b>。": "Select <b>New clock</b>, and a clock with the time, date and weekday appears on the desktop. To see the seconds, turn on <b>Show seconds</b> below it.",
   "往下翻到<b>「脚本栅栏」</b>，点<b>「添加示例…」</b>，在菜单里选<b>「天气」</b>。脚本栅栏会定时运行一个脚本，把它打印的文字显示出来，这个例子显示的是东京的天气。": "Scroll down to <b>Script fence</b>, select <b>Add example…</b> and choose <b>Weather</b> in the menu. A script fence runs a script on a schedule and shows the text it prints. This example shows the weather in Tokyo.",
@@ -389,7 +388,8 @@
   "动画：一个程序的「打开」对话框停在「文档」，后面的资源管理器开着「合同」文件夹；点一下资源管理器，再点回对话框，对话框的地址栏里出现「合同」的路径，随后列出合同文件夹里的文件；再点桌面上的「设计稿」文件夹栅栏，对话框马上跳到「设计稿」": "Animation: an app's Open dialog shows “Documents”, with File Explorer behind it showing the “Contracts” folder. A click on File Explorer and one back on the dialog put the path of “Contracts” in the dialog's address bar, and the dialog then lists the files in that folder. A click on the “Designs” folder fence on the desktop sends the dialog to “Designs” at once",
   "第一次打开时，右下角会依次显示几条小技巧，点<b>「下一条」</b>往下看，点 × 就关掉。": "The first time you open it, a few tips show one after another at the bottom right: <b>Next</b> shows the next one, × closes them.",
   "这个功能还没开启时，如果对话框在最前面，资源管理器里又开着另一个文件夹，PecoFence 会在右下角问一次要不要跳过去。点<b>「跳过去并开启」</b>，对话框当场跳过去，这个功能也同时开启。「设置」→「小工具」里的「怎么用」也演示了这几步。": "While the feature is off, PecoFence asks once at the bottom right, the first time a file dialog is in front while File Explorer shows another folder: <b>Jump and turn on</b> takes the dialog there at once and turns the feature on. “How it works” under “Settings” → “Tools” shows the steps too.",
-  "如果 Listary 正在运行，切回对话框时由 Listary 来跳，PecoFence 不再跟着跳。<kbd>Ctrl</kbd>+<kbd>G</kbd> 和文件夹栅栏照常可用。": "While Listary runs, the jump on coming back to a dialog is left to Listary. <kbd>Ctrl</kbd>+<kbd>G</kbd> and folder fences work as usual."
+  "如果 Listary 正在运行，切回对话框时由 Listary 来跳，PecoFence 不再跟着跳。<kbd>Ctrl</kbd>+<kbd>G</kbd> 和文件夹栅栏照常可用。": "While Listary runs, the jump on coming back to a dialog is left to Listary. <kbd>Ctrl</kbd>+<kbd>G</kbd> and folder fences work as usual.",
+  "打开「设置」→<b>「小工具」</b>（右键托盘图标，选<b>「设置…」</b>），点<b>「新建便签」</b>，桌面上多出一个便签，直接打字就行，按 <kbd>Enter</kbd> 换行。「便签与待办」默认开着，关掉过的话，点「新建便签」时它会跟着打开。": "Open “Settings” → <b>“Tools”</b> (right-click the tray icon and choose <b>“Settings…”</b>) and click <b>“New note”</b>. A note appears on the desktop: just type, and press <kbd>Enter</kbd> for a new line. “Notes and to-dos” is on by default; if you turned it off, “New note” turns it back on."
  },
  "stage": {
   "暂停": "Pause",

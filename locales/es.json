@@ -739,7 +739,7 @@
   "搜索别名\u0004备份|迁移|换电脑|恢复设置": "copia de seguridad|migrar|equipo nuevo|restaurar ajustes|backup",
   "搜索别名\u0004升级|新版本|检查更新": "actualizar|nueva versión|buscar actualizaciones|upgrade|última versión",
   "PecoFence {0} 的新功能": "Novedades de PecoFence {0}",
-  "· 速览时直接打字搜索，支持拼音\n· 「打开/保存」对话框能跳到资源管理器里正开着的文件夹\n· 小工具：便签和待办、时钟、脚本栅栏\n对话框跳转和小工具默认关着，在设置里开启。": "• Escribe durante la vista rápida para buscar en tus grupos, también por pinyin\n• Los cuadros de diálogo Abrir y Guardar pueden saltar a la carpeta abierta en el Explorador de archivos\n• Herramientas: notas y tareas, reloj, grupos de script\nEl salto de carpeta y las herramientas están desactivados hasta que los actives en Configuración.",
+  "· 速览时直接打字搜索，支持拼音\n· 「打开/保存」对话框能跳到资源管理器里正开着的文件夹\n· 小工具：便签和待办、时钟、脚本栅栏\n便签默认开着。时钟、脚本栅栏和对话框跳转要在设置里开启。": "• Escribe durante la vista rápida para buscar en tus grupos, también por pinyin\n• Los cuadros de diálogo Abrir y Guardar pueden saltar a la carpeta abierta en el Explorador de archivos\n• Herramientas: notas y tareas, reloj, grupos de script\nLas notas vienen activadas de forma predeterminada. Activa el reloj, los grupos de script y el salto de carpeta en Configuración.",
   "打开小工具设置": "Abrir Herramientas",
   "在桌面空白处按住鼠标拖出一个框，松开后选「在此新建栅栏」。文件还在原来的位置。": "Mantén pulsado el botón del ratón en un área vacía del escritorio, dibuja un recuadro, suéltalo y elige «Crear grupo aquí». Tus archivos se quedan donde están.",
   "双击桌面空白处，所有栅栏都会隐藏。再双击一次，栅栏就回来。": "Haz doble clic en un área vacía del escritorio para ocultar todos los grupos. Otro doble clic los vuelve a mostrar.",

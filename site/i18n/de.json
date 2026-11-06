@@ -40,7 +40,7 @@
   "feature.rules.text": "Regeln nach Dateityp, Name, Platzhalter, Alter oder Größe legen neue Elemente im passenden Bereich ab. Auf der Festplatte bleiben die Dateien, wo sie sind.",
   "features.guide": "Schritt für Schritt im Handbuch",
   "tools.heading": "Werkzeuge, wenn du sie willst",
-  "tools.intro": "Jedes Werkzeug hat unter Einstellungen › Werkzeuge einen eigenen Schalter und ist standardmäßig aus. Ein ausgeschaltetes Werkzeug läuft nicht. Notizen, Uhren und Skriptbereiche lassen sich wie jeder Bereich verschieben, einrasten und einklappen.",
+  "tools.intro": "Jedes Werkzeug hat unter Einstellungen › Werkzeuge einen eigenen Schalter. Notizen sind standardmäßig an, Uhr und Skriptbereiche aus. Ein ausgeschaltetes Werkzeug läuft nicht. Notizen, Uhren und Skriptbereiche lassen sich wie jeder Bereich verschieben, einrasten und einklappen.",
   "tool.note.title": "Notizen und Aufgaben",
   "tool.note.text": "Ein paar Zeilen Text auf dem Desktop. Ein Klick öffnet sie zum Bearbeiten; eine Zeile, die mit [ ] beginnt, wird zu einer Aufgabe, die du mit einem Klick abhakst.",
   "tool.clock.title": "Uhr und Datum",

@@ -200,13 +200,14 @@ pub struct Settings {
     pub tools: ToolSettings,
 }
 
-/// 小工具 switches (all off by default).
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+/// 小工具 switches: 便签与待办 is on by default, the others off.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct ToolSettings {
-    /// 便签与待办: note fences.
-    #[serde(default)]
+    /// 便签与待办: note fences. On by default, so 「新建便签」 is in the menus from the start (a
+    /// note fence appears only when the user makes one).
+    #[serde(default = "default_true")]
     pub notes: bool,
     /// 时钟与日期: clock fences.
     #[serde(default)]
@@ -226,6 +227,19 @@ pub struct ToolSettings {
     /// what the Everything file search finds.
     #[serde(default)]
     pub everything: bool,
+}
+
+impl Default for ToolSettings {
+    fn default() -> Self {
+        Self {
+            notes: true,
+            clock: false,
+            clock_seconds: false,
+            scripts: false,
+            dialog_jump: false,
+            everything: false,
+        }
+    }
 }
 
 /// What a script fence (`FenceTool::Script`) runs, and how often.
@@ -1972,11 +1986,16 @@ mod tests {
         let back: Fence = serde_json::from_value(v).unwrap();
         assert_eq!(back.tool, Some(FenceTool::Note));
         assert!(!back.holds_items());
-        // Settings written before 小工具 existed load with every tool off.
+        // Settings written before 小工具 existed load with notes on and the other tools off, as
+        // does a `tools` object without `notes`.
         let mut old = serde_json::to_value(Settings::default()).unwrap();
         old.as_object_mut().unwrap().remove("tools");
         let settings: Settings = serde_json::from_value(old).unwrap();
-        assert!(!settings.tools.notes);
+        assert!(settings.tools.notes);
+        assert!(!settings.tools.clock && !settings.tools.scripts && !settings.tools.dialog_jump);
+        let tools: ToolSettings =
+            serde_json::from_value(serde_json::json!({"clock": true})).unwrap();
+        assert!(tools.notes && tools.clock && !tools.scripts);
     }
 
     #[test]

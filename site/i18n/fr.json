@@ -40,7 +40,7 @@
   "feature.rules.text": "Des règles par type, nom, motif, date ou taille rangent les nouveaux éléments dans le bon groupe. Les fichiers restent où ils sont sur le disque.",
   "features.guide": "Pas à pas dans le manuel",
   "tools.heading": "Des outils, quand vous en voulez",
-  "tools.intro": "Chaque outil a son propre interrupteur dans Paramètres › Outils et est désactivé par défaut. Un outil désactivé ne s’exécute pas. Notes, horloges et groupes de script se déplacent, s’alignent et se replient comme n’importe quel groupe.",
+  "tools.intro": "Chaque outil a son propre interrupteur dans Paramètres › Outils. Les notes sont activées par défaut, l’horloge et les groupes de script sont désactivés. Un outil désactivé ne s’exécute pas. Notes, horloges et groupes de script se déplacent, s’alignent et se replient comme n’importe quel groupe.",
   "tool.note.title": "Notes et tâches",
   "tool.note.text": "Quelques lignes de texte sur le Bureau. Un clic pour les modifier ; une ligne qui commence par [ ] devient une tâche que vous cochez d’un clic.",
   "tool.clock.title": "Horloge et date",
