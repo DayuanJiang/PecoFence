@@ -14,10 +14,10 @@ const CMD_FEEDBACK: u32 = 7;
 const CMD_EXIT: u32 = 9;
 const CMD_PEEK: u32 = 10;
 const CMD_WINDOWS_DESKTOP: u32 = 15;
-/// 新建便签 (tray menu; only while the notes tool is on).
+/// 新建便签 (tray menu; only while 小工具 is on).
 const CMD_NEW_NOTE: u32 = 16;
-/// 新建时钟 (tray menu; only while the clock tool is on).
-const CMD_NEW_CLOCK: u32 = 17;
+/// The tray's 新建小工具 submenu: 20..=24 (see `App::new_tool_submenu`).
+const CMD_NEW_TOOL: u32 = 20;
 /// Tray 「在桌面显示文件夹」 entries: 11..=14 (see `App::show_folder_submenu`).
 const CMD_SHOW_FOLDER: u32 = 11;
 const CMD_ITEM_OPEN: u32 = 100;
@@ -43,12 +43,14 @@ const CMD_SHELL_LAST: u32 = 0x6FFF;
 const CMD_FENCE_ROLL: u32 = 301;
 const CMD_FENCE_DELETE: u32 = 303;
 const CMD_FENCE_NEW: u32 = 304;
-/// 新建便签 in the fence menu (only while the notes tool is on).
+/// 新建便签 in the fence menu (only while 小工具 is on).
 const CMD_FENCE_NEW_NOTE: u32 = 307;
 /// 编辑便签 in a note's fence menu.
 const CMD_FENCE_EDIT_NOTE: u32 = 308;
-/// 新建时钟 in the fence menu (only while the clock tool is on).
-const CMD_FENCE_NEW_CLOCK: u32 = 309;
+/// 显示秒 in a clock's fence menu.
+const CMD_FENCE_CLOCK_SECONDS: u32 = 515;
+/// The fence menu's 新建小工具 submenu: 520..=524.
+const CMD_FENCE_NEW_TOOL: u32 = 520;
 /// 脚本栅栏 in its fence menu: 立即运行, 选择脚本…, 打开脚本所在的文件夹, and 运行间隔's
 /// entries (one per `ScriptSpec::INTERVALS`).
 const CMD_FENCE_SCRIPT_RUN: u32 = 500;
@@ -56,9 +58,6 @@ const CMD_FENCE_SCRIPT_EDIT: u32 = 509;
 const CMD_FENCE_SCRIPT_PICK: u32 = 501;
 const CMD_FENCE_SCRIPT_FOLDER: u32 = 502;
 const CMD_FENCE_SCRIPT_INTERVAL_BASE: u32 = 1900;
-/// 新建脚本栅栏 (tray and fence menu; only while the script tool is on).
-const CMD_NEW_SCRIPT: u32 = 18;
-const CMD_FENCE_NEW_SCRIPT: u32 = 503;
 /// The inbox's 为空时自动隐藏 (in place of 删除栅栏).
 const CMD_FENCE_HIDE_EMPTY: u32 = 305;
 const CMD_FENCE_DESKTOP_LAYOUT: u32 = 306;
@@ -188,30 +187,17 @@ impl App {
             false,
         )
         .icon(glyph::ADD_TO);
-        if self.state.config.settings.tools.notes {
+        if self.state.config.settings.tools.enabled {
             menu.item(
                 CMD_NEW_NOTE,
                 pecofence_core::i18n::text("新建便签"),
                 false,
                 false,
             )
-            .icon(glyph::NOTE);
-        }
-        if self.state.config.settings.tools.clock {
-            menu.item(
-                CMD_NEW_CLOCK,
-                pecofence_core::i18n::text("新建时钟"),
-                false,
-                false,
-            )
-            .icon(glyph::CLOCK);
-        }
-        if self.state.config.settings.tools.scripts {
-            menu.item(
-                CMD_NEW_SCRIPT,
-                pecofence_core::i18n::text("新建脚本栅栏…"),
-                false,
-                false,
+            .icon(glyph::NOTE)
+            .submenu(
+                pecofence_core::i18n::text("新建小工具"),
+                self.new_tool_submenu(CMD_NEW_TOOL),
             )
             .icon(glyph::CODE);
         }
@@ -300,8 +286,9 @@ impl App {
             CMD_PEEK => self.queue.push(Command::TogglePeek),
             CMD_NEW_FENCE => self.queue.push(Command::NewFence { x, y: y - 300 }),
             CMD_NEW_NOTE => self.queue.push(Command::NewNote { x, y: y - 300 }),
-            CMD_NEW_CLOCK => self.queue.push(Command::NewClock { x, y: y - 300 }),
-            CMD_NEW_SCRIPT => self.queue.push(Command::NewScript { x, y: y - 300 }),
+            c if (CMD_NEW_TOOL..CMD_NEW_TOOL + 5).contains(&c) => {
+                self.new_tool_command(c - CMD_NEW_TOOL, x, y - 300)
+            }
             c if (CMD_SHOW_FOLDER..CMD_SHOW_FOLDER + 4).contains(&c) => {
                 self.show_folder_command(c - CMD_SHOW_FOLDER, x, y - 300, None)
             }
@@ -750,8 +737,14 @@ impl App {
                 !has_path,
             )
             .icon(glyph::FOLDER_OPEN);
-        } else if f.tool.is_some() {
-            // A clock has nothing of its own to offer here.
+        } else if f.tool == Some(pecofence_core::FenceTool::Clock) {
+            menu.item(
+                CMD_FENCE_CLOCK_SECONDS,
+                pecofence_core::i18n::text("显示秒"),
+                self.state.config.settings.tools.clock_seconds,
+                false,
+            )
+            .icon(glyph::CLOCK);
         } else {
             let view_menu = PopupMenu::new();
             view_menu
@@ -971,30 +964,17 @@ impl App {
                 false,
             )
             .icon(glyph::ADD_TO);
-        if self.state.config.settings.tools.notes {
+        if self.state.config.settings.tools.enabled {
             menu.item(
                 CMD_FENCE_NEW_NOTE,
                 pecofence_core::i18n::text("新建便签"),
                 false,
                 false,
             )
-            .icon(glyph::NOTE);
-        }
-        if self.state.config.settings.tools.clock {
-            menu.item(
-                CMD_FENCE_NEW_CLOCK,
-                pecofence_core::i18n::text("新建时钟"),
-                false,
-                false,
-            )
-            .icon(glyph::CLOCK);
-        }
-        if self.state.config.settings.tools.scripts {
-            menu.item(
-                CMD_FENCE_NEW_SCRIPT,
-                pecofence_core::i18n::text("新建脚本栅栏…"),
-                false,
-                false,
+            .icon(glyph::NOTE)
+            .submenu(
+                pecofence_core::i18n::text("新建小工具"),
+                self.new_tool_submenu(CMD_FENCE_NEW_TOOL),
             )
             .icon(glyph::CODE);
         }
@@ -1156,7 +1136,14 @@ impl App {
                 self.create_fence_with_rename(rect);
             }
             CMD_FENCE_NEW_NOTE => self.queue.push(Command::NewNote { x, y }),
-            CMD_FENCE_NEW_CLOCK => self.queue.push(Command::NewClock { x, y }),
+            c if (CMD_FENCE_NEW_TOOL..CMD_FENCE_NEW_TOOL + 5).contains(&c) => {
+                self.new_tool_command(c - CMD_FENCE_NEW_TOOL, x, y)
+            }
+            CMD_FENCE_CLOCK_SECONDS => {
+                let mut settings = self.state.config.settings.clone();
+                settings.tools.clock_seconds = !settings.tools.clock_seconds;
+                self.apply_settings(settings, "clock menu");
+            }
             CMD_FENCE_EDIT_NOTE => self.edit_note(fence),
             CMD_FENCE_SCRIPT_RUN => self.refresh_script(fence),
             CMD_FENCE_SCRIPT_EDIT => self.edit_script(fence),
@@ -1171,7 +1158,6 @@ impl App {
                     [(c - CMD_FENCE_SCRIPT_INTERVAL_BASE) as usize];
                 self.set_script_interval(fence, minutes);
             }
-            CMD_FENCE_NEW_SCRIPT => self.queue.push(Command::NewScript { x, y }),
             CMD_FENCE_DELETE => self.delete_fence_from_menu(fence),
             CMD_FENCE_HIDE_EMPTY => self.set_fence_hide_when_empty(fence, !f.hide_when_empty),
             CMD_FENCE_DESKTOP_LAYOUT => {

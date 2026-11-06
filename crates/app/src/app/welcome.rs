@@ -163,10 +163,10 @@ impl App {
             Welcome::WhatsNew => (
                 format("PecoFence {0} 的新功能", &["0.3.0".to_string()]),
                 text(
-                    "· 速览时直接打字搜索，支持拼音\n· 「打开/保存」对话框能跳到资源管理器里正开着的文件夹\n· 小工具：便签和待办、时钟、脚本栅栏\n便签默认开着。时钟、脚本栅栏和对话框跳转要在设置里开启。",
+                    "· 速览时直接打字搜索，支持拼音\n· 「打开/保存」对话框能跳到资源管理器里正开着的文件夹\n· 小工具：便签和待办、时钟、脚本栅栏\n对话框跳转要在设置里开启。",
                 )
                 .to_string(),
-                text("打开小工具设置"),
+                text("打开设置"),
             ),
             Welcome::DialogJump { dir, .. } => {
                 let name = dir.file_name().map_or_else(
@@ -185,7 +185,7 @@ impl App {
             Welcome::DialogJumpOn => (
                 text("对话框跳转已开启").to_string(),
                 text(
-                    "以后从资源管理器切回「打开/保存」对话框，对话框会自动跳到资源管理器里开着的文件夹。按 Ctrl+G 也能跳。不需要的话，可以在「设置」→「小工具」里关掉。",
+                    "以后从资源管理器切回「打开/保存」对话框，对话框会自动跳到资源管理器里开着的文件夹。按 Ctrl+G 也能跳。不需要的话，可以在「设置」→「速览与搜索」里关掉。",
                 )
                 .to_string(),
                 text("设置…"),
@@ -266,7 +266,7 @@ impl App {
             Welcome::Tip(i) if i + 1 < self.tips().len() => self.show_welcome(Welcome::Tip(i + 1)),
             Welcome::Tip(_) => self.open_manual(),
             Welcome::WhatsNew | Welcome::DialogJumpOn => {
-                self.open_settings_page("tools", Some(DIALOG_JUMP_DEMO))
+                self.open_settings_page("peek", Some(DIALOG_JUMP_DEMO))
             }
             Welcome::DialogJump { dialog, dir } => {
                 let mut new = self.state.config.settings.clone();
@@ -280,13 +280,18 @@ impl App {
 
     /// The manual in the UI language; English lives at the site root.
     pub(super) fn open_manual(&self) {
+        self.open_manual_at("");
+    }
+
+    /// The manual in the UI language at `anchor` (「写法说明」 opens `#write-scripts`).
+    pub(super) fn open_manual_at(&self, anchor: &str) {
         let tag = pecofence_core::i18n::language().tag();
         let dir = if tag == "en" {
             String::new()
         } else {
             format!("{tag}/")
         };
-        let url = format!("https://pecofence.jiang.jp/{dir}manual/");
+        let url = format!("https://pecofence.jiang.jp/{dir}manual/{anchor}");
         tracing::info!(%url, "opening the manual");
         let _ = shell::shell_execute(Path::new(&url), None, None);
     }

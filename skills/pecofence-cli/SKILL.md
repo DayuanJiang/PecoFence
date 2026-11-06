@@ -105,9 +105,9 @@ pecofence-cli config export "C:\Users\me\Desktop\pecofence-backup.json"   # sett
   target a portal and needs at least one condition.
 - `config import` / `backup restore` replace settings, rules and layouts: `config export` first.
 - The CLI cannot delete files: list duplicates and junk for the user to remove.
-- Tool fences (`fence list` shows `tool`: note, clock, script) hold no items and join no tabs. Each
-  tool has a switch (`tools.notes`, on by default; `tools.clock`, `tools.scripts`, off by default);
-  `fence create --tool` turns it on. A script fence runs the user's script every `scriptInterval` minutes, at most 10 s, and shows
+- Tool fences (`fence list` shows `tool`: note, clock, script) hold no items and join no tabs. One
+  switch, `tools.enabled` (on by default), covers them all; `fence create --tool` turns it on. The
+  desktop has one clock at most (a second one fails with `limitReached`). A script fence runs the user's script every `scriptInterval` minutes, at most 10 s, and shows
   what it prints; write such scripts for the user on request (see Script fences below).
 - Switches with no fences, off by default: `tools.dialogJump` (Open / Save dialogs jump to the
   folder of the Explorer window the user comes back from; Ctrl+G) and `tools.everything` (the Peek
@@ -129,7 +129,7 @@ Each printed line is a row (at most 40 lines, 300 characters each); keep them sh
 - Every run gets `PECOFENCE=1`, `PECOFENCE_ACTION` (empty on a timed run), `PECOFENCE_DATA` (a folder
   of this fence's own: keep state there), `PECOFENCE_THEME` (light|dark), `PECOFENCE_FENCE` (its id).
 - Streaming: a comment `<pecofence.type>streamable</pecofence.type>` in the first 8 KB keeps the script
-  running with no time limit until its fence is deleted or gets another script, `tools.scripts` goes
+  running with no time limit until its fence is deleted or gets another script, `tools.enabled` goes
   off or PecoFence exits; a script that ends by itself starts again after `scriptInterval` minutes.
   Lines show as they are printed; a `~~~` line makes the next line start a new screen, so print `~~~`
   before each refresh of the block. `action=` clicks arrive as lines on standard input. In Windows

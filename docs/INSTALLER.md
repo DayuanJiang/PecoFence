@@ -44,7 +44,7 @@ settings. Files appear as needed rather than all being created by Setup:
     ├── backups/
     │   └── YYYY-MM-DD.json               // Daily configuration backups
     ├── themes/                           // Custom theme files
-    ├── scripts/                          // Script fence examples (添加示例…)
+    ├── scripts/                          // Script fence examples (天气, GitHub, 电脑状态)
     └── scripts-data/
         └── <fence id>/                   // Each script fence's PECOFENCE_DATA folder
 

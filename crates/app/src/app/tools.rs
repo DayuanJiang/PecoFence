@@ -172,24 +172,65 @@ impl App {
         })
     }
 
-    /// Switches `tool` on in the settings when it is off (a new fence of it would have no
+    /// Switches 小工具 on in the settings when it is off (a new tool fence would have no
     /// window otherwise).
     fn ensure_tool_on(&mut self, tool: FenceTool) {
         if tool.enabled(&self.state.config.settings.tools) {
             return;
         }
         let mut settings = self.state.config.settings.clone();
-        match tool {
-            FenceTool::Note => settings.tools.notes = true,
-            FenceTool::Clock => settings.tools.clock = true,
-            FenceTool::Script => settings.tools.scripts = true,
-        }
+        settings.tools.enabled = true;
         self.apply_settings(settings, "new tool fence");
     }
 
-    /// A clock fence near (`x`, `y`).
+    /// Whether the desktop has a clock already (there is one at most).
+    pub(super) fn has_clock(&self) -> bool {
+        self.state
+            .fences()
+            .iter()
+            .any(|f| f.tool == Some(FenceTool::Clock))
+    }
+
+    /// A clock fence near (`x`, `y`), unless the desktop has one.
     pub(super) fn new_clock_near(&mut self, x: i32, y: i32) {
+        if self.has_clock() {
+            tracing::info!("new clock skipped: the desktop has one");
+            return;
+        }
         self.create_tool_fence(NewTool::Clock, None, None, x, y);
+    }
+
+    /// 新建小工具 (tray and fence menu), command ids `base`..`base + 5`: 时钟 (while the
+    /// desktop has none), the script examples, then 用自己的脚本….
+    pub(super) fn new_tool_submenu(&self, base: u32) -> PopupMenu {
+        use crate::scripts::Example;
+        let menu = PopupMenu::new();
+        if !self.has_clock() {
+            menu.item(base, pecofence_core::i18n::text("时钟"), false, false);
+        }
+        for (i, kind) in Example::ALL.iter().enumerate() {
+            menu.item(base + 1 + i as u32, kind.label(), false, false);
+        }
+        menu.separator().item(
+            base + 1 + Example::ALL.len() as u32,
+            pecofence_core::i18n::text("用自己的脚本…"),
+            false,
+            false,
+        );
+        menu
+    }
+
+    /// Entry `index` of `new_tool_submenu`, for a fence near (`x`, `y`).
+    pub(super) fn new_tool_command(&mut self, index: u32, x: i32, y: i32) {
+        use crate::scripts::Example;
+        match index {
+            0 => self.queue.push(Command::NewClock { x, y }),
+            i if (i as usize) <= Example::ALL.len() => {
+                let example = Example::ALL[i as usize - 1];
+                self.queue.push(Command::NewScriptExample { example, x, y });
+            }
+            _ => self.queue.push(Command::NewScript { x, y }),
+        }
     }
 
     /// Pushes what each window's shown fence needs of its tool (note text, clock seconds),
@@ -299,7 +340,7 @@ impl App {
     /// the minute housekeeping, and at once after a change that wants a fresh result.
     pub(super) fn run_due_scripts(&mut self) {
         self.sync_streams();
-        if !self.state.config.settings.tools.scripts {
+        if !self.state.config.settings.tools.enabled {
             return;
         }
         let now = Instant::now();
@@ -330,7 +371,7 @@ impl App {
         let Some(spec) = self.state.config.scripts.get(&id).cloned() else {
             return;
         };
-        if spec.path.is_empty() || !self.state.config.settings.tools.scripts {
+        if spec.path.is_empty() || !self.state.config.settings.tools.enabled {
             return;
         }
         let path = std::path::PathBuf::from(&spec.path);
@@ -482,7 +523,7 @@ impl App {
     /// Ends the streaming scripts whose fence went, lost its script or had the tool switched
     /// off.
     pub(super) fn sync_streams(&mut self) {
-        let on = self.state.config.settings.tools.scripts;
+        let on = self.state.config.settings.tools.enabled;
         let keep: Vec<(FenceId, bool)> = self
             .script_runs
             .streams
@@ -727,27 +768,6 @@ impl App {
         self.create_tool_fence(script, None, None, x, y);
     }
 
-    /// 「添加示例…」: a menu of the examples at the pointer; the chosen one becomes a fence near
-    /// (`x`, `y`).
-    pub(super) fn script_example_menu(&mut self, x: i32, y: i32) {
-        use crate::scripts::Example;
-        let menu = pecofence_platform::tray::PopupMenu::new();
-        for (i, kind) in Example::ALL.iter().enumerate() {
-            menu.item(i as u32 + 1, kind.label(), false, false);
-        }
-        let owner = self
-            .settings
-            .as_ref()
-            .map(|h| h.hwnd())
-            .unwrap_or(self.control.hwnd());
-        let p = window::cursor_pos();
-        let chosen = menu.show_context(owner, p.x, p.y);
-        match Example::ALL.get((chosen as usize).wrapping_sub(1)) {
-            Some(&kind) => self.new_script_example_of(kind, x, y),
-            None => tracing::info!("script example menu dismissed"),
-        }
-    }
-
     /// The weather example (the test script's `new-script-example`).
     pub(super) fn new_script_example(&mut self, x: i32, y: i32) {
         self.new_script_example_of(crate::scripts::Example::Weather, x, y);
@@ -791,7 +811,6 @@ impl App {
         let (w, h) = match kind {
             crate::scripts::Example::Weather => (280.0, 160.0),
             crate::scripts::Example::GitHub => (360.0, 300.0),
-            crate::scripts::Example::Todo => (280.0, 200.0),
             crate::scripts::Example::Status => (280.0, 230.0),
         };
         let rect = self.place_new_fence_dip(w, h, x, y, None);

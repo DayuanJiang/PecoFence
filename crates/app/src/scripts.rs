@@ -535,8 +535,6 @@ pub fn example(kind: Example, chinese: bool) -> &'static str {
         (Example::Weather, c) => weather_example(c),
         (Example::GitHub, true) => include_str!("../assets/scripts/github.zh.ps1"),
         (Example::GitHub, false) => include_str!("../assets/scripts/github.en.ps1"),
-        (Example::Todo, true) => include_str!("../assets/scripts/todo.zh.ps1"),
-        (Example::Todo, false) => include_str!("../assets/scripts/todo.en.ps1"),
         (Example::Status, true) => include_str!("../assets/scripts/status.zh.ps1"),
         (Example::Status, false) => include_str!("../assets/scripts/status.en.ps1"),
     }
@@ -549,22 +547,24 @@ pub enum Example {
     Weather,
     /// A GitHub repository's newest issues and pull requests: rows that open in the browser.
     GitHub,
-    /// A todo.txt with to-dos ticked from the fence (`action=`).
-    Todo,
     /// The computer's state every 2 seconds (a streaming script): colours, copy, run.
     Status,
 }
 
 impl Example {
-    pub const ALL: [Self; 4] = [Self::Weather, Self::GitHub, Self::Todo, Self::Status];
+    pub const ALL: [Self; 3] = [Self::Weather, Self::GitHub, Self::Status];
+
+    /// The example a settings page button names (`name()`).
+    pub fn parse(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|e| e.name() == name)
+    }
 
     /// Its line in the menu.
     pub fn label(self) -> &'static str {
         match self {
             Self::Weather => pecofence_core::i18n::text("天气"),
             Self::GitHub => pecofence_core::i18n::text("GitHub 仓库动态"),
-            Self::Todo => pecofence_core::i18n::text("待办（todo.txt）"),
-            Self::Status => pecofence_core::i18n::text("电脑状态（一直运行）"),
+            Self::Status => pecofence_core::i18n::text("电脑状态"),
         }
     }
 
@@ -573,7 +573,6 @@ impl Example {
         match self {
             Self::Weather => pecofence_core::i18n::text("天气.ps1"),
             Self::GitHub => pecofence_core::i18n::text("GitHub 动态.ps1"),
-            Self::Todo => pecofence_core::i18n::text("待办.ps1"),
             Self::Status => pecofence_core::i18n::text("电脑状态.ps1"),
         }
     }
@@ -583,7 +582,6 @@ impl Example {
         match self {
             Self::Weather => "weather",
             Self::GitHub => "github",
-            Self::Todo => "todo",
             Self::Status => "status",
         }
     }

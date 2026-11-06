@@ -2368,6 +2368,9 @@ impl App {
             Command::NewFence { x, y } => self.new_fence_near(x, y),
             Command::NewNote { x, y } => self.new_note_near(x, y),
             Command::NewClock { x, y } => self.new_clock_near(x, y),
+            Command::NewScriptExample { example, x, y } => {
+                self.new_script_example_of(example, x, y)
+            }
             Command::NewScript { x, y } => self.new_script_near(x, y, None),
             Command::EditNote { fence } => self.edit_note(fence),
             Command::ToggleNoteLine { fence, line } => self.toggle_note_line(fence, line),

@@ -449,6 +449,7 @@
     </div>
     <div class="nav-search" role="search"><input type="text" id="settingsSearch" placeholder="查找设置" aria-label="查找设置" autocomplete="off" spellcheck="false" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="settingsSearchList"><span class="ic">&#xE721;</span></div>
     <a href="#general" class="sel" data-page="general" aria-label="常规" title="常规"><span class="ic">&#xE713;</span><span class="nav-text">常规</span></a>
+    <a href="#peek" data-page="peek" aria-label="速览与搜索" title="速览与搜索"><span class="ic">&#xE721;</span><span class="nav-text">速览与搜索</span></a>
     <a href="#fences" data-page="fences" aria-label="栅栏" title="栅栏"><span class="ic">&#xE71D;</span><span class="nav-text">栅栏</span></a>
     <a href="#rules" data-page="rules" aria-label="整理规则" title="整理规则"><span class="ic">&#xE8FD;</span><span class="nav-text">整理规则</span></a>
     <a href="#tools" data-page="tools" aria-label="小工具" title="小工具"><span class="ic">&#xEA86;</span><span class="nav-text">小工具</span></a>
@@ -535,7 +536,12 @@
       <div class="card"><div class="l"><span class="ic">&#xECA5;</span><div><div class="t">栅栏间距</div><div class="s">移动和调整大小时，栅栏之间以及与屏幕边缘保持的距离</div></div></div>
         <select data-bind="snapping.gapPx"><option value="0">0 px</option><option value="4">4 px</option><option value="8">8 px</option><option value="12">12 px</option><option value="16">16 px</option><option value="24">24 px</option><option value="32">32 px</option></select></div>
       <div class="card"><div class="l"><span class="ic">&#xE80A;</span><div><div class="t">调整大小时按整行整列对齐</div><div class="s">宽度按整列、高度按整行；关闭后可自由调整大小，图标自动铺满</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="snapping.sizeToCells"></div></div>
-      <h3>速览栅栏</h3>
+    </section>
+
+    <section class="page" id="page-peek">
+      <header class="page-header"><h2>速览与搜索</h2></header>
+      <p class="page-lede">按快捷键，所有栅栏浮到窗口前面。这时直接打字，就能搜索栅栏里的图标。装了 Everything，还能搜整台电脑。</p>
+      <h3>速览</h3>
       <div class="group">
         <div class="card"><div class="l"><span class="ic">&#xE8A1;</span><div><div class="t">按快捷键让所有栅栏显示在窗口前面</div><div class="s">再按一次、按 Esc 或点击其他位置返回</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="peek.enabled"></div></div>
         <div class="card child" id="peekHotkeyCard"><div class="l"><div><div class="t" id="peekHotkeyTitle">快捷键</div><div class="s" id="peekHotkeyHelp" aria-live="polite"></div></div></div>
@@ -545,11 +551,15 @@
             <label class="hotkey-win"><input type="checkbox" id="peekHotkeyWin">包含 Win 键</label>
           </div></div>
       </div>
+      <div class="card"><div class="l"><span class="ic">&#xE708;</span><div><div class="t">速览时调暗背景</div><div class="s">栅栏之外的区域变暗，更容易看清</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="peek.dim"></div></div>
+      <h3>搜索</h3>
       <div class="group">
         <div class="card"><div class="l"><span class="ic">&#xE721;</span><div><div class="t">速览搜索也找整台电脑（Everything）</div><div class="s">速览时打字搜索，除了栅栏里的图标，也列出整台电脑上的文件和文件夹，由免费的 Everything 负责查找</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="tools.everything"></div></div>
         <div class="card child" id="everythingCard"><div class="l"><div><div class="t" id="everythingStatus"></div><div class="s" id="everythingHelp"></div></div></div><button class="accent" id="everythingAction"></button></div>
       </div>
-      <div class="card"><div class="l"><span class="ic">&#xE708;</span><div><div class="t">速览时调暗背景</div><div class="s">栅栏之外的区域变暗，更容易看清</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="peek.dim"></div></div>
+      <h3>文件对话框</h3>
+      <div class="card"><div class="l"><span class="ic">&#xE8DA;</span><div><div class="t">对话框跳转</div><div class="s">打开或保存文件时，切到资源管理器再切回对话框，它就跳到资源管理器里的文件夹；点文件夹栅栏或按 Ctrl+G 也能跳过去</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="tools.dialogJump"></div></div>
+      <div class="card child dj-demo" id="dialogJumpDemo"><div class="dj-head">怎么用</div><div class="dj-body"><div class="dj-pic" aria-hidden="true"></div><ol><li>「打开」对话框停在程序自己选的文件夹</li><li></li><li></li></ol></div><div class="s">也可以在对话框里按 Ctrl+G，或者点一下文件夹栅栏。</div></div>
     </section>
 
     <section class="page" id="page-fences">
@@ -656,23 +666,15 @@
 
     <section class="page" id="page-tools">
       <header class="page-header"><h2>小工具</h2></header>
-      <p class="page-lede">便签、时钟和脚本放在栅栏里，和普通栅栏一样可以移动、吸附和收起。关着的小工具不运行，也不占内存。</p>
+      <p class="page-lede">便签、时钟和脚本放在栅栏里，和普通栅栏一样可以移动、吸附和收起。</p>
       <div class="group">
-        <div class="card"><div class="l"><span class="ic">&#xE70B;</span><div><div class="t">便签与待办</div><div class="s">在栅栏里写几行字，单击就能编辑；行首写 [ ] 的那一行变成可以勾选的待办</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="tools.notes"></div></div>
-        <div class="card child"><div class="l"><div><div class="t" id="noteCount"></div></div></div><button class="accent" id="newNote">新建便签</button></div>
-      </div>
-      <div class="group">
-        <div class="card"><div class="l"><span class="ic">&#xE121;</span><div><div class="t">时钟与日期</div><div class="s">显示时间、日期和星期，时间格式跟随 Windows 的区域设置</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="tools.clock"></div></div>
-        <div class="card child"><div class="l"><div><div class="t">显示秒</div><div class="s">每秒更新一次</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="tools.clockSeconds"></div></div>
-        <div class="card child"><div class="l"><div><div class="t" id="clockCount"></div></div></div><button class="accent" id="newClock">新建时钟</button></div>
-      </div>
-      <h3>文件对话框</h3>
-      <div class="card"><div class="l"><span class="ic">&#xE8DA;</span><div><div class="t">对话框跳转</div><div class="s">打开或保存文件时，切到资源管理器再切回对话框，它就跳到资源管理器里的文件夹；点文件夹栅栏或按 Ctrl+G 也能跳过去</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="tools.dialogJump"></div></div>
-      <div class="card child dj-demo" id="dialogJumpDemo"><div class="dj-head">怎么用</div><div class="dj-body"><div class="dj-pic" aria-hidden="true"></div><ol><li>「打开」对话框停在程序自己选的文件夹</li><li></li><li></li></ol></div><div class="s">也可以在对话框里按 Ctrl+G，或者点一下文件夹栅栏。</div></div>
-      <h3>自己写的小工具</h3>
-      <div class="group">
-        <div class="card"><div class="l"><span class="ic">&#xE943;</span><div><div class="t">脚本栅栏</div><div class="s">运行你选的脚本（PowerShell、Python、批处理等），把它打印的文字显示在栅栏里：可以每隔 1 分钟到 3 小时运行一次，也可以一直运行、几秒更新一次；脚本还可以让一行变得能点，点一下打开网址、运行程序或者给待办打勾。适合天气、倒计时、服务器状态，也可以让 AI 助手帮你写。PecoFence 不会为脚本栅栏联网，联网的是你的脚本</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="tools.scripts"></div></div>
-        <div class="card child"><div class="l"><div><div class="t" id="scriptCount"></div><div class="s">脚本最多运行 10 秒（标为一直运行的除外），不弹出窗口；运行间隔在栅栏的右键菜单里改</div></div></div><div class="actions"><button id="newScriptExample">添加示例…</button><button class="accent" id="newScript">新建脚本栅栏…</button></div></div>
+        <div class="card"><div class="l"><span class="ic">&#xEA86;</span><div><div class="t">小工具</div><div class="s">关上后，桌面上的小工具都不显示，脚本也全部停下</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="tools.enabled"></div></div>
+        <div class="card child"><div class="l"><div><div class="t">便签与待办</div><div class="s">在栅栏里写几行字，单击就能编辑。行首写 [ ] 的一行会变成可以勾选的待办</div></div></div><button class="accent" id="newNote">新建便签</button></div>
+        <div class="card child"><div class="l"><div><div class="t">时钟</div><div class="s">显示时间、日期和星期。右键时钟可以打开「显示秒」</div></div></div><button id="newClock">添加</button></div>
+        <div class="card child"><div class="l"><div><div class="t">天气</div><div class="s">今天和明天的天气，每 30 分钟更新，数据来自 wttr.in。添加后右键它选「编辑脚本」，把 Tokyo 换成你的城市</div></div></div><button id="addWeather" data-example="weather">添加</button></div>
+        <div class="card child"><div class="l"><div><div class="t">GitHub 仓库动态</div><div class="s">一个仓库最新的 issue 和 PR，点一行在浏览器里打开。添加后右键它选「编辑脚本」，换成你关心的仓库</div></div></div><button id="addGitHub" data-example="github">添加</button></div>
+        <div class="card child"><div class="l"><div><div class="t">电脑状态</div><div class="s">一直运行，每 2 秒更新 CPU、内存和 C 盘剩余空间。点一行可以复制本机 IP 或打开任务管理器</div></div></div><button id="addStatus" data-example="status">添加</button></div>
+        <div class="card child"><div class="l"><div><div class="t">用自己的脚本</div><div class="s">运行你选的脚本（PowerShell、Python、批处理等），把它打印的文字显示在栅栏里。脚本最多运行 10 秒（一直运行的除外），不弹出窗口。PecoFence 不会为脚本联网，联网的是脚本自己</div></div></div><div class="actions"><button id="scriptGuide">写法说明</button><button id="newScript">选择脚本…</button></div></div>
       </div>
     </section>
     <section class="page" id="page-layout">
@@ -1114,7 +1116,8 @@
     ['#peekHotkeyChoice', t("搜索别名\x04热键|组合键|唤出")],
     ['[data-bind="tools.everything"]', t("搜索别名\x04全盘搜索|搜索文件|文件搜索")],
     ['[data-bind="tools.dialogJump"]', t("搜索别名\x04打开对话框|保存对话框|另存为|Quick Switch")],
-    ['[data-bind="tools.scripts"]', t("搜索别名\x04插件|天气|命令|自定义")],
+    ['[data-bind="tools.enabled"]', t("搜索别名\x04挂件|部件|桌面小部件")],
+    ['#newScript', t("搜索别名\x04插件|天气|命令|自定义")],
     ['#fenceOpacity', t("搜索别名\x04透明度|透明|玻璃")],
     ['[data-fence=locked]', t("搜索别名\x04固定|锁住|防止移动")],
     ['[data-bind="rules.keepUpdated"]', t("搜索别名\x04自动整理|自动分类|分类")],
@@ -1362,14 +1365,13 @@
   // beside the Windows icons needs those icons shown ('!': while the master is off), and the
   // shortcut rows (renderPeekHotkey) are what Peek's switch turns on. Gap, whole-cell sizing
   // and dimming apply without them. A child starting with '#' is a button's id.
-  const DEPENDENT = [['snapping.guideLines', 'snapping.enabled'], ['tools.clockSeconds', 'tools.clock'], ['#everythingAction', 'tools.everything']];
-  // 「小工具」 page: how many notes the desktop has (they show while the switch is on).
+  const DEPENDENT = [['snapping.guideLines', 'snapping.enabled'], ['#everythingAction', 'tools.everything']];
+  // 「小工具」 page: there is one clock at most, so its 添加 greys out while the desktop has one.
   function renderTools() {
-    const count = kind => (state.fences || []).filter(f => f.tool && f.tool.kind === kind).length;
-    const notes = count('note'), clocks = count('clock'), scripts = count('script');
-    document.getElementById('noteCount').textContent = notes ? tf("桌面上有 {0} 个便签", notes) : t("桌面上还没有便签");
-    document.getElementById('clockCount').textContent = clocks ? tf("桌面上有 {0} 个时钟", clocks) : t("桌面上还没有时钟");
-    document.getElementById('scriptCount').textContent = scripts ? tf("桌面上有 {0} 个脚本栅栏", scripts) : t("桌面上还没有脚本栅栏");
+    const clocks = (state.fences || []).filter(f => f.tool && f.tool.kind === 'clock').length;
+    const clock = document.getElementById('newClock');
+    clock.disabled = clocks > 0;
+    clock.textContent = clocks ? t("已在桌面上") : t("添加");
     renderEverything();
   }
   // 搜索整台电脑 › Everything's state from the host: running (version, pinyin), installed,
@@ -2185,7 +2187,10 @@
   document.getElementById('newNote').onclick = () => send({ type: 'action', name: 'newNote' });
   document.getElementById('newClock').onclick = () => send({ type: 'action', name: 'newClock' });
   document.getElementById('newScript').onclick = () => send({ type: 'action', name: 'newScript' });
-  document.getElementById('newScriptExample').onclick = () => send({ type: 'action', name: 'newScriptExample' });
+  document.querySelectorAll('#page-tools [data-example]').forEach(b => {
+    b.onclick = () => send({ type: 'action', name: 'newScriptExample', example: b.dataset.example });
+  });
+  document.getElementById('scriptGuide').onclick = () => send({ type: 'action', name: 'scriptGuide' });
   document.querySelectorAll('#templates [data-template]').forEach(b => { b.onclick = () => send({ type: 'action', name: 'addTemplate', template: b.dataset.template }); });
   document.getElementById('snapSave').onclick = () => { const n = document.getElementById('snapName').value; send({ type: 'action', name: 'saveSnapshot', snapshotName: n }); document.getElementById('snapName').value = ''; };
   document.getElementById('cfgExport').onclick = () => send({ type: 'action', name: 'exportConfig' });
@@ -2442,7 +2447,7 @@
     };
     draw();
     setInterval(() => {
-      if (document.hidden || !document.getElementById('page-tools').classList.contains('on')) return;
+      if (document.hidden || !document.getElementById('page-peek').classList.contains('on')) return;
       step = step % 3 + 1;
       draw();
     }, 1800);

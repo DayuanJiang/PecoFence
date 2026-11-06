@@ -314,19 +314,20 @@ rule.
 
 ## Tools (小工具)
 
-A tool fence shows a tool in place of desktop items. Each tool has a switch in `settings`
-(`tools.notes`, `true` by default, `tools.clock` and `tools.scripts`, `false` by default); a tool that is off runs
-nothing and its fences have no window until it is switched on again. `fence create --tool` switches
-the tool on. Tool fences hold no items (rules, `item move --to` and drops refuse them) and take no
+A tool fence shows a tool in place of desktop items. One switch in `settings`, `tools.enabled`
+(Settings › 小工具, `true` by default), covers note, clock and script fences: while it is off nothing
+runs and tool fences have no window until it is switched on again. `fence create --tool` (and
+`--script`) switches it on. The desktop has one clock at most: a second `fence create --tool clock`
+fails with `limitReached`. Tool fences hold no items (rules, `item move --to` and drops refuse them) and take no
 part in tabs (`fence merge` refuses them). Properties about icons (`iconSize`, `layout`,
 `autoHeight` and the like) and `fence fit` are refused for them. `--text` alone implies `--tool note`.
-An imported configuration (`config import`) with script fences switches `tools.scripts` off until
+An imported configuration (`config import`) with script fences switches `tools.enabled` off until
 the user turns it on again; a backup restore keeps it.
 
-`tools.dialogJump` (Settings › 小工具 › 文件对话框 › 「对话框跳转」, `false` by default) has no fence: an Open,
+`tools.dialogJump` (Settings › 速览与搜索 › 文件对话框 › 「对话框跳转」, `false` by default) has no fence: an Open,
 Save As or Select Folder dialog of any program jumps to the folder of the File Explorer window or
 folder fence the user comes back from, and Ctrl+G in the dialog jumps at any time.
-`tools.everything` (Settings › 常规 › 速览栅栏 › 「速览搜索也找整台电脑（Everything）」, `false` by default) is an
+`tools.everything` (Settings › 速览与搜索 › 搜索 › 「速览搜索也找整台电脑（Everything）」, `false` by default) is an
 option of Peek: the Peek search box also lists what Everything, the free file search from voidtools,
 finds on the whole computer; Everything has to be running, and version 1.5 also matches Chinese
 names by pinyin. Files and folders opened from the search box are counted in `config.json` under
@@ -336,8 +337,8 @@ names by pinyin. Files and folders opened from the search box are counted in `co
   an optional `- ` or `* `) is a to-do whose box ticks with a click. `fence get` reports
   `noteText`; `fence set <FENCE> noteText "..."` replaces it (use `\n` for line breaks in JSON).
   The text is kept in `config.json` under `notes`, so exports and daily backups carry it.
-- **Clock and date** (`--tool clock`): the time and the long date in Windows' region format;
-  `settings set tools.clockSeconds true` adds the seconds.
+- **Clock** (`--tool clock`): the time and the long date in Windows' region format;
+  `settings set tools.clockSeconds true` (显示秒 in the clock's fence menu) adds the seconds.
 - **Script fences** (`--script <FILE>`): runs a .ps1, .py, .pyw, .cmd, .bat, .js or .exe every
   `scriptInterval` minutes (30 by default) without a window, at most 10 seconds, and shows what it
   prints (at most 40 lines). Its lines can be clickable rows, and a streaming script keeps running
@@ -346,9 +347,9 @@ names by pinyin. Files and folders opened from the search box are counted in `co
   `outcome` (`done`, `failed`, `timedOut`, `missing`, `unsupported`, `notStarted`), `output`,
   `lastRun` and `running`. PowerShell scripts are run with UTF-8 output; Python with
   `PYTHONIOENCODING=utf-8`. PecoFence itself does not go online for this: the script does.
-  Settings › 小工具 › 「添加示例…」 writes ready examples into the configuration folder's `scripts`
-  folder: 天气 (weather), GitHub 仓库动态 (a repository's newest issues and pull requests),
-  待办（todo.txt） (to-dos ticked from the fence) and 电脑状态（一直运行） (a streaming script).
+  The 添加 buttons in Settings › 小工具 (and 新建小工具 in the tray and fence menus) write ready
+  examples into the configuration folder's `scripts` folder: 天气 (weather), GitHub 仓库动态 (a
+  repository's newest issues and pull requests) and 电脑状态 (a streaming script).
 
 ```powershell
 pecofence-cli fence create --tool note --title Today --text "[ ] Pay rent`n[ ] Call Anna"
@@ -439,7 +440,7 @@ next line arrives. The fence keeps the newest 40 lines. Python streaming scripts
 
 A click on a row with `action=` sends the value as one line to the script's standard input
 (`PECOFENCE_ACTION` stays empty for a streaming script). The script, and the programs it started,
-end when its fence is deleted or gets another script, when `tools.scripts` is switched off and when
+end when its fence is deleted or gets another script, when `tools.enabled` is switched off and when
 PecoFence exits. When the script ends by itself, the fence keeps what it showed last (after a
 failure, the error and the exit code), and PecoFence starts the script again at the next
 interval. 立即运行, `refresh=true` and `fence refresh` start it again at once.

@@ -200,31 +200,26 @@ pub struct Settings {
     pub tools: ToolSettings,
 }
 
-/// 小工具 switches: 便签与待办 is on by default, the others off.
+/// 小工具: one switch for note, clock and script fences (on by default), and the other tool
+/// settings.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct ToolSettings {
-    /// 便签与待办: note fences. On by default, so 「新建便签」 is in the menus from the start (a
-    /// note fence appears only when the user makes one).
+    /// 小工具: note, clock and script fences. Off hides them all and stops every script; an
+    /// imported configuration with script fences switches it off until the user turns it on.
     #[serde(default = "default_true")]
-    pub notes: bool,
-    /// 时钟与日期: clock fences.
-    #[serde(default)]
-    pub clock: bool,
-    /// Clock fences show the seconds too (and redraw every second instead of every minute).
+    pub enabled: bool,
+    /// Clock fences show the seconds too (and redraw every second instead of every minute);
+    /// 显示秒 in the clock's fence menu.
     #[serde(default)]
     pub clock_seconds: bool,
-    /// 脚本栅栏: fences that run a script of the user's, on an interval or kept running, and show
-    /// its output (rows may be clickable).
-    #[serde(default)]
-    pub scripts: bool,
     /// 对话框跳转: an Open / Save dialog jumps to the folder of the Explorer window (or folder
     /// fence) the user comes back from, and Ctrl+G jumps there at any time.
     #[serde(default)]
     pub dialog_jump: bool,
-    /// 速览搜索也找整台电脑 (常规 › 速览栅栏 on the settings page): the search box also lists
-    /// what the Everything file search finds.
+    /// 速览搜索也找整台电脑 (速览与搜索 on the settings page): the search box also lists what
+    /// the Everything file search finds.
     #[serde(default)]
     pub everything: bool,
 }
@@ -232,10 +227,8 @@ pub struct ToolSettings {
 impl Default for ToolSettings {
     fn default() -> Self {
         Self {
-            notes: true,
-            clock: false,
+            enabled: true,
             clock_seconds: false,
-            scripts: false,
             dialog_jump: false,
             everything: false,
         }
@@ -289,13 +282,9 @@ pub enum FenceTool {
 }
 
 impl FenceTool {
-    /// Whether the tool is switched on in `tools`.
+    /// Whether tool fences are switched on in `tools` (one switch for every kind).
     pub fn enabled(self, tools: &ToolSettings) -> bool {
-        match self {
-            Self::Note => tools.notes,
-            Self::Clock => tools.clock,
-            Self::Script => tools.scripts,
-        }
+        tools.enabled
     }
 }
 
@@ -1986,16 +1975,18 @@ mod tests {
         let back: Fence = serde_json::from_value(v).unwrap();
         assert_eq!(back.tool, Some(FenceTool::Note));
         assert!(!back.holds_items());
-        // Settings written before 小工具 existed load with notes on and the other tools off, as
-        // does a `tools` object without `notes`.
+        // Settings written before 小工具 existed load with the tools on and dialog jump off, as
+        // does a `tools` object of the 0.3.0 previews (one switch per tool, now ignored).
         let mut old = serde_json::to_value(Settings::default()).unwrap();
         old.as_object_mut().unwrap().remove("tools");
         let settings: Settings = serde_json::from_value(old).unwrap();
-        assert!(settings.tools.notes);
-        assert!(!settings.tools.clock && !settings.tools.scripts && !settings.tools.dialog_jump);
-        let tools: ToolSettings =
-            serde_json::from_value(serde_json::json!({"clock": true})).unwrap();
-        assert!(tools.notes && tools.clock && !tools.scripts);
+        assert!(settings.tools.enabled && !settings.tools.dialog_jump);
+        let tools: ToolSettings = serde_json::from_value(
+            serde_json::json!({"notes": false, "clock": true, "scripts": false, "clockSeconds": true}),
+        )
+        .unwrap();
+        assert!(tools.enabled && tools.clock_seconds);
+        assert!(FenceTool::Script.enabled(&tools) && FenceTool::Note.enabled(&tools));
     }
 
     #[test]

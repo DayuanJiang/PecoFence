@@ -19,7 +19,7 @@ const fixture = {
     icons: { tintRgb: null, tintStrength: 0.6, chameleon: false, shortcutArrows: true },
     rollUp: { hoverPeek: true, clickToExpand: false, pushNeighbors: true, titleOnHover: false, hideInactiveScrollbar: false, switchTabOnHover: false, hideCountAndChevron: false },
     snapping: { enabled: true, gapPx: 8, sizeToCells: false, guideLines: true }, peek: { enabled: true, dim: true, hotkey: 'ctrlAltSpace', doubleCtrl: false },
-    tools: { notes: false, clock: false, clockSeconds: false, scripts: false, dialogJump: false, everything: false },
+    tools: { enabled: false, clockSeconds: false, dialogJump: false, everything: false },
   },
   rules: {
     keepUpdated: true, defaultTarget: 'inbox', unmatched: 'defaultTarget',
@@ -246,34 +246,63 @@ async function runTests() {
       }
     }
   });
-  await test('Tools page switches notes on and asks for a new note', async () => {
+  await test('Tools page: one switch, a new note, one clock, the examples and the guide', async () => {
     doc = await reset();
     doc.querySelector('[data-page=tools]').click();
-    const count = doc.getElementById('noteCount').textContent;
-    assert(count === '桌面上还没有便签', 'Unexpected note count text: ' + count);
+    const page = doc.getElementById('page-tools');
+    assert(page.querySelectorAll('.toggle').length === 1, 'The tools page has more than one switch');
+    for (const gone of ['tools.notes', 'tools.clock', 'tools.scripts', 'tools.clockSeconds']) {
+      assert(!doc.querySelector(`[data-bind="${gone}"]`), gone + ' still has a switch');
+    }
+    assert(!doc.getElementById('noteCount') && !doc.getElementById('newScriptExample'), 'The count line or 添加示例… is still there');
+    const titles = [...page.querySelectorAll('.card.child .t')].map(t => t.textContent).join(' / ');
+    assert(titles === '便签与待办 / 时钟 / 天气 / GitHub 仓库动态 / 电脑状态 / 用自己的脚本', 'Rows: ' + titles);
     const before = frame.contentWindow.testMessages.length;
-    doc.querySelector('[data-bind="tools.notes"]').click();
+    doc.querySelector('[data-bind="tools.enabled"]').click();
     const patch = frame.contentWindow.testMessages.slice(before).find(m => m.type === 'patchSettings');
-    assert(patch && patch.settings.tools.notes === true, 'Notes switch not posted');
+    assert(patch && patch.settings.tools.enabled === true, 'The 小工具 switch not posted');
+    const last = () => frame.contentWindow.testMessages.at(-1);
     doc.getElementById('newNote').click();
-    const last = frame.contentWindow.testMessages.at(-1);
-    assert(last.type === 'action' && last.name === 'newNote', 'New note not asked for: ' + JSON.stringify(last));
-    // A note is no rule target.
+    assert(last().type === 'action' && last().name === 'newNote', 'New note not asked for: ' + JSON.stringify(last()));
+    const clock = doc.getElementById('newClock');
+    assert(!clock.disabled && clock.textContent === '添加', 'Clock button wrong without a clock: ' + clock.textContent);
+    clock.click();
+    assert(last().name === 'newClock', 'New clock not asked for');
+    for (const [id, example] of [['addWeather', 'weather'], ['addGitHub', 'github'], ['addStatus', 'status']]) {
+      doc.getElementById(id).click();
+      assert(last().name === 'newScriptExample' && last().example === example, id + ' sent ' + JSON.stringify(last()));
+    }
+    doc.getElementById('newScript').click();
+    assert(last().name === 'newScript', 'Own script not asked for');
+    doc.getElementById('scriptGuide').click();
+    assert(last().name === 'scriptGuide', 'Guide not asked for');
+    // One clock at most: its button greys out while the desktop has one.
+    current().fences.push({ ...current().fences[0], id: 'clock-a', title: 'Clock', tool: { kind: 'clock' } });
     current().fences.push({ ...current().fences[0], id: 'note-a', title: 'Note A', tool: { kind: 'note' } });
     frame.contentWindow.testRefresh();
     await settle();
-    assert(doc.getElementById('noteCount').textContent === '桌面上有 1 个便签', 'Note not counted');
+    assert(clock.disabled && clock.textContent === '已在桌面上', 'Clock button not greyed with a clock: ' + clock.textContent);
+    // A note is no rule target.
     rulesPage(doc);
     assert(![...doc.querySelectorAll('#nrTarget option')].some(o => o.value === 'note-a'), 'A note is offered as a rule target');
-    current().fences.pop();
+    current().fences.splice(-2);
     doc = await reset();
   });
-  await test('The dialog jump (小工具) and Everything (速览栅栏) switches post their settings', async () => {
+  await test('「速览与搜索」 holds Peek, Everything and dialog jump, and their switches post', async () => {
     doc = await reset();
-    assert(doc.querySelector('#page-tools [data-bind="tools.dialogJump"]') && doc.querySelector('#page-general [data-bind="tools.everything"]'), 'A switch is on the wrong page');
+    const nav = [...doc.querySelectorAll('nav a[data-page]')].map(a => a.dataset.page).join(' ');
+    assert(nav.startsWith('general peek '), 'The page is not right below 常规: ' + nav);
+    const peek = doc.getElementById('page-peek');
+    const heads = [...peek.querySelectorAll('h3')].map(h => h.textContent).join(' / ');
+    assert(heads === '速览 / 搜索 / 文件对话框', 'Headings: ' + heads);
+    for (const bind of ['peek.enabled', 'peek.dim', 'tools.everything', 'tools.dialogJump']) {
+      assert(peek.querySelector(`[data-bind="${bind}"]`), bind + ' is not on 速览与搜索');
+    }
+    assert(peek.contains(doc.getElementById('dialogJumpDemo')) && peek.contains(doc.getElementById('peekHotkeyChoice')), 'The demo or the shortcut list is elsewhere');
+    assert(!doc.querySelector('#page-general [data-bind="peek.enabled"]') && !doc.querySelector('#page-tools [data-bind="tools.dialogJump"]'), 'A switch is still on its old page');
     assert(!doc.querySelector('[data-bind="peek.doubleCtrl"]'), 'Double Ctrl still has its own switch');
+    doc.querySelector('[data-page=peek]').click();
     for (const [path, read] of [['tools.dialogJump', s => s.tools.dialogJump], ['tools.everything', s => s.tools.everything]]) {
-      doc.querySelector(path === 'tools.dialogJump' ? '[data-page=tools]' : '[data-page=general]').click();
       const before = frame.contentWindow.testMessages.length;
       doc.querySelector(`[data-bind="${path}"]`).click();
       const patch = frame.contentWindow.testMessages.slice(before).find(m => m.type === 'patchSettings');
@@ -285,7 +314,7 @@ async function runTests() {
   });
   await test('Everything card shows each state with its button and sends its action', async () => {
     doc = await reset();
-    doc.querySelector('[data-page=general]').click();
+    doc.querySelector('[data-page=peek]').click();
     current().settings.tools.everything = true;
     const card = doc.getElementById('everythingCard'), button = doc.getElementById('everythingAction');
     const cases = [
@@ -1095,7 +1124,7 @@ async function runTests() {
   await test('常规 has the new headings in order, one card for the Windows desktop shortcut', async () => {
     doc.querySelector('[data-page=general]').click();
     const heads = [...doc.querySelectorAll('#page-general h3')].map(h => h.textContent).join(' / ');
-    assert(heads === '语言 / 外观 / 图标 / 桌面与启动 / 隐藏栅栏 / 收起与展开 / 标题栏与标签页 / 吸附与对齐 / 速览栅栏', 'Headings: ' + heads);
+    assert(heads === '语言 / 外观 / 图标 / 桌面与启动 / 隐藏栅栏 / 收起与展开 / 标题栏与标签页 / 吸附与对齐', 'Headings: ' + heads);
     const wd = doc.getElementById('wdHotkeyCard');
     assert(wd.contains(doc.getElementById('wdHotkey')) && !wd.classList.contains('child') && wd.querySelector('.t').textContent === '临时显示 Windows 桌面', 'The shortcut box is not in the 临时显示 Windows 桌面 card');
     assert(doc.getElementById('wdHotkeyHelp').textContent.includes('隐藏所有栅栏'), 'The card does not say what it does: ' + doc.getElementById('wdHotkeyHelp').textContent);
@@ -1872,6 +1901,7 @@ async function runTests() {
   const choose = value => { choice().focus(); choice().value = value; choice().dispatchEvent(new frame.contentWindow.Event('change', { bubbles: true })); };
   await test('The Peek shortcut list records a combination through 自定义… and shows what the host saved', async () => {
     doc = await reset();
+    doc.querySelector('[data-page=peek]').click();
     const box = doc.getElementById('peekHotkey'), edit = doc.getElementById('peekHotkeyEdit'), help = doc.getElementById('peekHotkeyHelp');
     assert([...choice().options].map(o => o.textContent).join('|') === 'Ctrl + Alt + 空格|Win + Alt + 空格|Ctrl + Shift + 空格|双击 Ctrl|自定义…', 'Choices wrong: ' + [...choice().options].map(o => o.textContent).join('|'));
     assert(choiceText() === 'Ctrl + Alt + 空格' && edit.hidden && !doc.getElementById('peekHotkeyWin').checked, 'Active shortcut not shown: ' + choiceText());
@@ -1890,6 +1920,7 @@ async function runTests() {
   });
   await test('A refused shortcut keeps recording with the reason; Esc cancels', async () => {
     doc = await reset();
+    doc.querySelector('[data-page=peek]').click();
     const box = doc.getElementById('peekHotkey'), help = doc.getElementById('peekHotkeyHelp'), winBox = doc.getElementById('peekHotkeyWin');
     choose('custom'); await settle();
     press(box, 'k', 75); await settle();
@@ -1930,6 +1961,7 @@ async function runTests() {
   });
   await test('Combinations from the list set the shortcut; a fallback says which one is in use', async () => {
     doc = await reset();
+    doc.querySelector('[data-page=peek]').click();
     choose('9:32'); await settle();
     assert(sent('setPeekHotkey').at(-1).mods === 9 && choice().value === '9:32' && hotkeyText() === 'Win+Alt+空格', 'Choice not applied: ' + choiceText());
     assert(doc.activeElement === choice() && doc.getElementById('peekHotkeyEdit').hidden, 'The list lost the focus or the recording box showed');

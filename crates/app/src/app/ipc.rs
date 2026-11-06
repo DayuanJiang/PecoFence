@@ -1925,6 +1925,12 @@ impl App {
         use super::tools::NewTool;
         match name {
             "note" => Ok(NewTool::Note(text.unwrap_or_default().to_string())),
+            // One clock is enough: the desktop shows a second one nowhere better.
+            "clock" if self.has_clock() => Err(IpcError::new(
+                ErrorCode::LimitReached,
+                "the desktop has a clock already",
+            )
+            .hint("pecofence-cli fence list shows it (tool: clock)")),
             "clock" => Ok(NewTool::Clock),
             "script" => {
                 let Some(path) = script.filter(|p| !p.trim().is_empty()) else {

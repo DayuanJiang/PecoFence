@@ -61,13 +61,13 @@ come from the revision-2 desktop, Peek, tabs, automatic sorting and folder scene
 hide/show cover remains a frame from its existing recording, and the search and dialog
 jump covers are frames of their manual lessons.
 
-Below the gallery, the tools block (`#tools`) lists the other three tools of Settings › Tools
-(小工具): notes and to-dos, clock and date, and script fences, side by side. Dialog jump, also a
-switch there, has its own card in the gallery (`feature.dialog.*`).
+Below the gallery, the tools block (`#tools`) lists the three tools of Settings › Tools
+(小工具): notes and to-dos, the clock and script fences, side by side. Dialog jump, a switch on
+Settings › 速览与搜索, has its own card in the gallery (`feature.dialog.*`).
 It has no animation; its items are drawn like the small details further down, from
 `TOOLS` in `build-site.py` and the `tool.*` keys, with the switch names from `locales/`
 as titles. Pressing Ctrl twice as Peek's shortcut and the whole-computer search with
-Everything are options of Peek (Settings › General › Peek); the search card's text
+Everything are options of Peek (Settings › 速览与搜索); the search card's text
 (`feature.search.text`) names only Everything, since pressing Ctrl twice works only after
 the user picks it as the shortcut.
 
