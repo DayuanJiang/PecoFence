@@ -1,5 +1,5 @@
 // PecoFence manual: a miniature of the settings window (ui/settings.html, light theme) shared
-// by the settings lessons (rules, look, backup). Labels are the page's zh-CN source strings.
+// by the settings lessons (rules, look, title-hover, backup, tools). Labels are the page's zh-CN source strings.
 // Layout is explicit (fixed heights, absolute positions) so a demo's render(t) stays a pure
 // function of t and pointer targets can be computed up front. Exported as window.SM.
 (() => {
@@ -9,8 +9,9 @@
     const TITLE_H = 30;
     const CARD_X = 12, CARD_R = 14;
     // nav order, labels and Segoe Fluent glyphs from ui/settings.html <nav>
-    const NAV = [['general', '常规', '\uE713'], ['fences', '栅栏', '\uE71D'], ['rules', '整理规则', '\uE8FD'],
-        ['layout', '布局与备份', '\uE7F4'], ['feedback', '反馈', '\uED15'], ['about', '关于', '\uE946']];
+    const NAV = [['general', '常规', '\uE713'], ['peek', '速览与搜索', '\uE721'], ['fences', '栅栏', '\uE71D'],
+        ['rules', '整理规则', '\uE8FD'], ['tools', '小工具', '\uEA86'], ['layout', '布局与备份', '\uE7F4'],
+        ['about', '关于', '\uE946']];
     const pageIn = bezier(.1, .9, .2, 1);       // .page.on animation: page-in .2s
 
     const svg = (vb, body) => `<svg viewBox="${vb}" aria-hidden="true">${body}</svg>`;
@@ -20,6 +21,7 @@
         up: svg('0 0 10 10', `<path d="M1.6 6.6 5 3.2l3.4 3.4" ${stroke} stroke-width="1.15"/>`),
         down: svg('0 0 10 10', `<path d="M1.6 3.4 5 6.8l3.4-3.4" ${stroke} stroke-width="1.15"/>`),
         del: svg('0 0 10 10', `<path d="M1.2 2.3h7.6M3.6 2.3V1.2h2.8v1.1M2.2 2.3l.5 6.5h4.6l.5-6.5" ${stroke} stroke-width="1"/>`),
+        edit: svg('0 0 10 10', `<path d="M6.9 1.4 8.6 3.1 3.3 8.4 1.2 8.8l.4-2.1zM5.9 2.4l1.7 1.7" ${stroke} stroke-width="1"/>`),
         min: svg('0 0 10 10', `<path d="M.5 5h9" ${stroke} stroke-width="1"/>`),
         max: svg('0 0 10 10', `<rect x="1" y="1" width="8" height="8" rx="1" ${stroke} stroke-width="1"/>`),
         close: svg('0 0 10 10', `<path d="m1 1 8 8M9 1 1 9" ${stroke} stroke-width="1"/>`),
@@ -84,14 +86,18 @@
         bm.src = 'assets/mark.svg';
         bm.alt = '';
         el('span', 'set-brand-t', nav, 'PecoFence');
+        // 查找设置 under the brand, as in the app.
+        const find = el('div', 'set-search', nav);
+        el('span', 'set-search-t', find, T('查找设置'));
+        el('span', 'set-ic', find, '\uE721');
         w.nav = {};
         const labels = NAV.map(([key, label, glyph], i) => {
             const it = el('div', 'set-nav-i', nav);
-            it.style.top = (34 + i * 28) + 'px';
+            it.style.top = (58 + i * 28) + 'px';
             el('span', 'set-ic', it, glyph);
             const t = el('span', 'set-nav-t', it, T(label));
             const pill = el('div', 'set-nav-pill', it);
-            w.nav[key] = { n: it, pill, y: 34 + i * 28 };
+            w.nav[key] = { n: it, pill, y: 58 + i * 28 };
             return t;
         });
         // a label starts 6 + 32 px from the nav's left and ends 6 px before its item (6 px inset)
@@ -396,40 +402,68 @@
 
     // ---------- the 常规 page (top of it) ----------
 
-    // 外观: 主题风格 tiles (the page's own Fluent / Liquid Glass previews), 颜色模式, 标题对齐,
-    // 默认图标大小. Returns the page and its two tiles (draw with drawTiles).
-    function generalPage(w) {
+    // 语言 › 显示语言; 外观: 主题风格 tiles (the page's own Fluent / Liquid Glass / 自定义 previews),
+    // 颜色模式, 文字颜色, 标题对齐, 自动隐藏滚动条; 图标 › 默认图标大小. With `custom` the 自定义 tile
+    // is chosen and its row (the first theme file, 打开主题文件夹, 写法说明) shows in the same card.
+    // Returns the page and its three tiles (draw with drawTiles).
+    function generalPage(w, { custom = false } = {}) {
         const g = page(w, 'general');
         header(g, '常规');
+        const sw = Math.min(130, g.cardW - 180);
+        h3(g, '语言');
+        select(card(g, { ic: '\uE774', t: '显示语言', s: '立即切换界面语言；你的文件和自定义名称保持不变', textW: g.cardW - sw - 60 }), '跟随系统', sw);
         h3(g, '外观');
-        const style = card(g, { ic: '\uE771', t: '主题风格', h: 134 });
+        const TILE_H = 104, ROW = 32 + TILE_H + 8;
+        const style = card(g, { ic: '\uE771', t: '主题风格', h: custom ? ROW + 52 : ROW + 2 });
         style.t.style.top = '10px';
         style.n.querySelector('.set-ic').style.top = '11px';
-        const tw = Math.floor((g.cardW - 34 - 12 - 8) / 2);
-        const tiles = [['fl', 'Fluent · 经典'], ['lg', 'Liquid Glass · 液态玻璃']].map(([k, cap], i) => {
-            const c = ctrl(style, 'set-tile', tw, 92, { left: 34 + i * (tw + 8), top: 32, label: null });
+        const tw = Math.floor((g.cardW - 34 - 12 - 16) / 3);
+        const tiles = [['fl', 'Fluent · 经典'], ['lg', 'Liquid Glass · 液态玻璃'], ['cu', '自定义 · 主题文件']].map(([k, cap], i) => {
+            const c = ctrl(style, 'set-tile', tw, TILE_H, { left: 34 + i * (tw + 8), top: 32, label: null });
             const shot = el('div', 'set-shot', c.n);
-            const mini = el('div', 'set-mini ' + k, shot);
+            const mini = el('div', 'set-mini ' + (k === 'cu' ? 'fl' : k), shot);
+            // .tile-custom .mini-fence: the Fluent panel with a dashed outline in place of its shadow
+            if (k === 'cu') Object.assign(mini.style, { boxShadow: 'none', outline: '1px dashed #8a8a8a', outlineOffset: '-1px' });
             el('span', 'set-mini-t', mini, T('工作空间'));
             [['folder', '\uE8B7'], ['', '\uE8A5'], ['sheet', '\uE9F9']].forEach(([cls, gl], j) => {
                 const ic = el('span', 'set-mini-i set-ic ' + cls, mini, gl);
                 ic.style.left = (8 + j * 21) + 'px';
             });
-            el('span', 'set-cap-r', c.n);
-            el('span', 'set-tile-t', c.n, cap);
+            // the caption wraps to two lines when the tile is narrow, beside a centred radio; in a
+            // very narrow window (the backup lesson's) it is smaller and starts closer to the radio
+            const small = tw < 80, x = small ? 19 : 24, lh = small ? 11 : 13;
+            const radio = el('span', 'set-cap-r', c.n);
+            Object.assign(radio.style, { top: '79.5px', left: small ? '5px' : '' });
+            const t = el('span', 'set-tile-t', c.n, cap);
+            if (small) Object.assign(t.style, { fontSize: '9px', left: x + 'px', right: '4px' });
+            const two = natW(t) > tw - x - (small ? 4 : 6);
+            Object.assign(t.style, { top: (two ? 85 - lh : 85 - lh / 2) + 'px', lineHeight: lh + 'px', whiteSpace: 'normal',
+                display: '-webkit-box', webkitBoxOrient: 'vertical', webkitLineClamp: '2' });
             return c;
         });
-        const sw = Math.min(130, g.cardW - 180);
+        tiles.custom = custom;
+        if (custom) {
+            const file = select(style, '磨砂玻璃', 92, { left: 34, top: ROW });
+            const themes = button(style, '打开主题文件夹', 70, { left: 34 + file.w + 6, top: ROW });
+            button(style, '写法说明', 52, { left: 40 + file.w + 6 + themes.w, top: ROW });
+            const help = el('div', 'set-s', style.n, T('主题文件放在 themes 文件夹里，文件保存后栅栏立即更新'));
+            Object.assign(help.style, { left: '34px', top: ROW + 28 + 'px', width: g.cardW - 34 - 12 + 'px' });
+        }
         select(card(g, { ic: '\uE7A1', t: '颜色模式', textW: 120 }), '跟随 Windows 模式', sw);
+        select(card(g, { ic: '\uE8D3', t: '文字颜色', s: '图标名称，以及标题颜色为“跟随主题”的栅栏标题和标签页。自动：液态玻璃按背后壁纸的明暗选深色或浅色，Fluent 跟随颜色模式', textW: g.cardW - sw - 60 }), '自动', sw);
         select(card(g, { ic: '\uE8E4', t: '标题对齐', textW: 120 }), '左对齐', sw);
+        drawToggle(toggle(card(g, { ic: '\uE7B1', t: '自动隐藏滚动条', s: '鼠标移到栅栏上或滚动时才显示', textW: g.cardW - 34 - 52 - 24 })), false);
+        h3(g, '图标');
         // The icon size slider at 48 px, with ticks at 32, 48, 64 and 96 (24 to 128 px).
         slider(card(g, { ic: '\uE8B9', t: '默认图标大小', s: '新建栅栏时使用，每个栅栏可在“栅栏”页或右键菜单中单独设置', textW: g.cardW - sw - 60 }), 24 / 104, [8, 24, 40, 72].map(v => v / 104));
         stack(g);
         return { g, tiles };
     }
+    // liquidGlass picks the Liquid Glass tile, else Fluent; a page built with `custom` keeps 自定义.
     function drawTiles(tiles, liquidGlass, p, hover = true) {
+        const on = tiles.custom ? 2 : liquidGlass ? 1 : 0;
         tiles.forEach((c, i) => {
-            c.n.classList.toggle('on', liquidGlass === (i === 1));
+            c.n.classList.toggle('on', i === on);
             c.n.classList.toggle('hot', hover && over(c, p));
         });
     }

@@ -7,6 +7,12 @@
 //!   an Explorer window; with the dialog in front it jumps at once.
 //! - Ctrl+G in the dialog jumps there at any time. The shortcut is registered only while a
 //!   dialog is in front, so Ctrl+G stays free in every other window.
+//! - While Listary runs, coming back from Explorer leaves the jump to Listary's own Quick
+//!   Switch (see `listary_running`); Ctrl+G and folder fences still jump.
+//!
+//! While the tool is off and has never been offered, a file dialog that comes to the front
+//! while an Explorer window shows another folder is offered a jump there (`set_offering`); the
+//! app asks once in the corner and switches the tool on when the offer is taken.
 //!
 //! The foreground is followed with an out-of-context WinEvent hook (callbacks on this thread);
 //! the jump itself runs on a short-lived worker thread, as it waits for the other program.
@@ -31,6 +37,9 @@ const POLL_MS: u32 = 400;
 const VK_G: u32 = 0x47;
 /// Dialogs remembered as already seen (so their later activations may jump).
 const SEEN_MAX: usize = 16;
+/// The offer looks at a dialog this long after it came to the front: it builds its address
+/// bar after it is shown.
+const OFFER_SETTLE_MS: u64 = 400;
 
 /// Where a jump goes.
 #[derive(Clone, Debug)]
@@ -150,7 +159,14 @@ fn on_foreground(hwnd: HWND) {
                 && let Some(source) = j.source.clone()
             {
                 j.pending = false;
-                start_jump(hwnd, source, "back in the dialog");
+                if listary_running() {
+                    tracing::info!(
+                        dialog = raw,
+                        "dialog jump: back in the dialog, left to Listary (it runs)"
+                    );
+                } else {
+                    start_jump(hwnd, source, "back in the dialog");
+                }
             } else {
                 tracing::debug!(
                     dialog = raw,
@@ -358,6 +374,149 @@ pub fn send_to_dialog(dlg: HWND, path: PathBuf, is_folder: bool) {
     if let Err(e) = spawned {
         tracing::error!(error = %e, "dialog choose: worker thread failed to start");
     }
+}
+
+/// Listary (Listary.exe) has a window. Its Quick Switch moves the dialog from inside the
+/// dialog's program when the user comes back from Explorer, at the same moment as this jump:
+/// measured with both on, 4 of 20 returns ended in Windows' "... is currently unavailable" box
+/// and 4 more jumped twice. Ctrl+G (PecoFence's hotkey takes it) and folder fences were clean.
+fn listary_running() -> bool {
+    let mut seen = std::collections::HashSet::new();
+    desktop::top_level_windows().into_iter().any(|w| {
+        let pid = desktop::window_pid(w);
+        seen.insert(pid)
+            && pecofence_platform::process::image_path(pid)
+                .and_then(|p| p.file_name().map(|n| n.eq_ignore_ascii_case("Listary.exe")))
+                .unwrap_or(false)
+    })
+}
+
+/// The offer's foreground hook while it watches, and the dialogs it has looked at.
+struct Watch {
+    _hook: WinEventHook,
+    control: HWND,
+    seen: Vec<isize>,
+}
+
+thread_local! {
+    static WATCH: RefCell<Option<Watch>> = const { RefCell::new(None) };
+}
+
+/// What the offer worker found: the dialog and the folder of the Explorer window in front of
+/// the others.
+static FOUND: std::sync::Mutex<Option<(isize, PathBuf)>> = std::sync::Mutex::new(None);
+
+/// Watches for a dialog to offer the tool to (see the module text). `control` receives
+/// `WM_APP_DIALOG_OFFER`.
+pub fn set_offering(on: bool, control: HWND) {
+    let running = WATCH.with(|w| w.borrow().is_some());
+    if on == running {
+        return;
+    }
+    if !on {
+        WATCH.with(|w| w.borrow_mut().take());
+        tracing::info!("dialog jump offer: not watching");
+        return;
+    }
+    let hook = WinEventHook::install(
+        winevent::SYSTEM_FOREGROUND,
+        winevent::SYSTEM_FOREGROUND,
+        Box::new(|_event, hwnd| on_offer_foreground(hwnd)),
+    );
+    match hook {
+        Ok(hook) => {
+            WATCH.with(|w| {
+                *w.borrow_mut() = Some(Watch {
+                    _hook: hook,
+                    control,
+                    seen: Vec::new(),
+                })
+            });
+            tracing::info!("dialog jump offer: watching for a file dialog");
+        }
+        Err(e) => tracing::warn!(error = %e, "dialog jump offer: SetWinEventHook failed"),
+    }
+}
+
+/// A `#32770` window came to the front: the first time for this window, a worker looks
+/// whether it is a file dialog that does not show the folder of the Explorer window on top.
+fn on_offer_foreground(hwnd: HWND) {
+    if desktop::class_name(hwnd) != "#32770" {
+        return;
+    }
+    let raw = hwnd.0 as isize;
+    let control = WATCH.with(|cell| {
+        let mut guard = cell.borrow_mut();
+        let w = guard.as_mut()?;
+        if w.seen.contains(&raw) {
+            return None;
+        }
+        w.seen.retain(|&d| desktop::is_window(h(d)));
+        if w.seen.len() >= SEEN_MAX {
+            w.seen.remove(0);
+        }
+        w.seen.push(raw);
+        Some(w.control.0 as isize)
+    });
+    let Some(control) = control else {
+        return;
+    };
+    let spawned = std::thread::Builder::new()
+        .name("dialog-offer".into())
+        .spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(OFFER_SETTLE_MS));
+            let dlg = h(raw);
+            if !dialogs::is_file_dialog(dlg) || desktop::foreground_window() != dlg {
+                tracing::debug!(
+                    window = raw,
+                    "dialog jump offer: no file dialog in front (any more)"
+                );
+                return;
+            }
+            if listary_running() {
+                tracing::info!(dialog = raw, "dialog jump offer: Listary runs; no offer");
+                return;
+            }
+            // Explorer's COM objects need an apartment on this thread.
+            let _com = pecofence_platform::com::OleGuard::init();
+            let Some(dir) = dialogs::topmost_explorer()
+                .and_then(dialogs::explorer_folder)
+                .filter(|d| d.is_dir())
+            else {
+                tracing::debug!(dialog = raw, "dialog jump offer: no Explorer folder");
+                return;
+            };
+            if dialogs::dialog_shows(dlg, &dir) {
+                tracing::debug!(
+                    dialog = raw,
+                    "dialog jump offer: the dialog shows it already"
+                );
+                return;
+            }
+            tracing::info!(dialog = raw, dir = %dir.display(), "dialog jump offer: found one");
+            if let Ok(mut found) = FOUND.lock() {
+                *found = Some((raw, dir));
+            }
+            pecofence_platform::window::post_message(
+                h(control),
+                crate::commands::WM_APP_DIALOG_OFFER,
+                0,
+                0,
+            );
+        });
+    if let Err(e) = spawned {
+        tracing::error!(error = %e, "dialog jump offer: worker thread failed to start");
+    }
+}
+
+/// The dialog and folder the offer worker found, once.
+pub fn take_offer() -> Option<(HWND, PathBuf)> {
+    FOUND.lock().ok()?.take().map(|(d, dir)| (h(d), dir))
+}
+
+/// The offer was taken: `dlg` goes to `dir` now.
+pub fn jump_to(dlg: HWND, dir: PathBuf) {
+    start_jump(dlg, Source::Folder(dir), "offer taken");
 }
 
 fn start_jump(dlg: HWND, source: Source, reason: &'static str) {

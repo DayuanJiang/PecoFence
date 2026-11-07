@@ -78,6 +78,27 @@ Progettato per agenti e script: `describe` mostra il catalogo dei comandi e gli 
 
 ## Scoprilo in azione
 
+### Trova mentre scrivi.
+
+Premi **Ctrl + Alt + Spazio** e scrivi. I file e le cartelle dei tuoi riquadri che corrispondono
+compaiono subito, e **Invio** ne apre uno. Anche i nomi cinesi si trovano col pinyin. Everything è
+un programma gratuito per cercare file: attiva la ricerca Everything nelle Impostazioni, e la
+ricerca copre anche tutto il computer. L’animazione usa «Ctrl due volte», che puoi scegliere come
+scorciatoia nelle Impostazioni.
+
+![Premere Ctrl due volte apre la vista rapida con la casella di ricerca; scrivendo «meet» compaiono Meeting notes.docx da un riquadro e due file trovati da Everything sul computer; la freccia ne sceglie uno e Invio lo apre.](../assets/search.gif)
+
+### La cartella giusta nelle finestre Apri e Salva.
+
+In una finestra Apri o Salva, passa a Esplora file e torna indietro: la finestra va alla cartella
+aperta lì. Anche **Ctrl+G** ci porta, e un clic su un riquadro cartella porta alla cartella di quel
+riquadro. La funzione è disattivata per impostazione predefinita, e PecoFence te la propone la prima
+volta che può esserti utile. Anche con la funzione disattivata, **Invio** su un risultato della
+ricerca della vista rapida funziona con la finestra: una finestra Apri apre il file, una finestra
+Salva va alla sua cartella.
+
+![Una finestra Apri su Documents va alla cartella Contracts dopo un passaggio a Esplora file e ritorno, e a Designs dopo un clic su quel riquadro cartella.](../assets/dialog-jump.gif)
+
 ### Un riquadro. Più spazi di lavoro.
 
 Tieni insieme i riquadri correlati come schede. Passa da Project a Ideas con un clic,
@@ -102,9 +123,11 @@ Prendi quello che ti serve, poi premi **Esc** per tornare indietro.
 | **Meno ordine manuale** | Regole per tipo di file, estensione, nome, caratteri jolly, destinazione dei collegamenti, data e dimensione. I nuovi file trovano da soli il loro riquadro. |
 | **Un vetro che si adatta al desktop** | Temi Fluent e Liquid Glass, modalità chiara e scura, colori, opacità e colorazione delle icone per ogni riquadro. |
 | **Gestione dei file familiare** | Menu contestuali di Esplora file, trascinamento, copia e incolla, selezione multipla, miniature e viste a icone, elenco o dettagli. |
-| **Le cartelle a portata di mano** | Metti una cartella attiva sul desktop. Sfoglia le sottocartelle e guarda le modifiche comparire man mano che avvengono. |
+| **Le cartelle a portata di mano** | Metti una cartella attiva sul desktop. Sfoglia le sottocartelle e guarda le modifiche comparire man mano che avvengono. Il tasto Indietro del mouse sale di una cartella, Avanti ci rientra. |
 | **Spazio quando serve** | Comprimi un riquadro fino al titolo. Passaci sopra con il puntatore per espanderlo. Blocca il layout quando ti soddisfa. Fai doppio clic sul desktop per nascondere i riquadri e di nuovo per mostrarli. |
+| **Piccoli strumenti nei riquadri** | Note con attività da spuntare, un orologio con la data e riquadri script che mostrano ciò che stampa il tuo script, per esempio il meteo; un clic su una delle loro righe può aprire un link o spuntare un’attività. Puoi aggiungerli subito da Impostazioni → Strumenti o dal menu dell’area di notifica. |
 | **Un modo per tornare indietro** | Istantanee del layout, backup giornalieri, importazione ed esportazione della configurazione e scambio dei riquadri tra i monitor. |
+| **Trova un’impostazione** | Scrivi nella casella in alto nelle Impostazioni (Ctrl+F) per trovare qualsiasi impostazione dalle sue parole o con altri nomi comuni. |
 | **Ingombro ridotto** | Un’applicazione nativa scritta in Rust che, quando è inattiva, usa solo tra 2 e 5 MB circa di memoria in Gestione attività. Il pannello delle impostazioni in WebView2 si carica solo quando serve. |
 
 Le regole di organizzazione automatica lasciano i file nella loro posizione originale.
@@ -140,6 +163,17 @@ PecoFence è distribuito con licenza Apache 2.0 e i contributi sono benvenuti, d
 a un’interazione migliore con il desktop.
 
 [Contribuisci](../../CONTRIBUTING.md) · [Migliora una traduzione](../LOCALIZATION.md) · [Guida allo sviluppo](../DEVELOPMENT.md)
+
+## Code signing policy
+
+Firma del codice gratuita offerta da [SignPath.io](https://about.signpath.io/), certificato rilasciato da [SignPath Foundation](https://signpath.org/).
+
+- Commit e revisioni: [Dayuan Jiang](https://github.com/DayuanJiang)
+- Approvazione delle firme: [Dayuan Jiang](https://github.com/DayuanJiang)
+
+Vengono firmati solo i file che GitHub Actions compila da un tag di versione di questo repository. Ogni firma viene approvata a mano.
+
+**Privacy:** questo programma non trasferisce alcuna informazione ad altri sistemi in rete, a meno che non lo chieda espressamente l'utente o la persona che lo installa o lo usa. **Controlla gli aggiornamenti** contatta l'API di GitHub. Quello che invii da **Feedback** arriva al servizio di feedback di PecoFence. La finestra delle impostazioni usa Microsoft Edge WebView2, a cui si applica l'[Informativa sulla privacy di Microsoft](https://privacy.microsoft.com/privacystatement).
 
 ---
 

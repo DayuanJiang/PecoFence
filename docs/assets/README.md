@@ -7,6 +7,9 @@ These selected assets are part of the public documentation:
   `docs/readme/`). The screenshot shows Liquid Glass with Projects, Inspiration,
   and Today groups. The headline and subline use the same copy as the Store
   campaign in `docs/store/v2-i18n/`. These images also serve as website share previews.
+- `search.gif`: the manual's search lesson (Ctrl twice, type, fence and Everything results, Enter).
+- `dialog-jump.gif`: the manual's dialog jump lesson (switch to File Explorer and back, then
+  click a folder fence).
 - `tabs.gif`: the manual's Tabs lesson (merge two fences, switch tabs, drag one out).
 - `peek.gif`: the manual's Peek lesson (fences above a window, back behind it).
 
@@ -19,4 +22,5 @@ Regenerate still images with
 original local capture `.cache/store-v2/native/overview.png`. Omit `--stills-only`
 to also regenerate the GIFs using FFmpeg from the English Store trailer renders
 `.cache/store-trailers/out/en/<lesson>.mp4` (made by `.cache/store-trailers/render.py`);
-pass `--languages` with no value to skip the hero images.
+pass `--languages` with no value to skip the hero images, and `--gifs <lesson> ...` to
+regenerate only some of the GIFs.

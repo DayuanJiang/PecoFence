@@ -39,9 +39,9 @@ Check 'the click does not open the editor' ((WaitWin 'PecoFence.NoteEdit' 1) -eq
 
 Case 'notes off and on'
 $before = (FenceWindows).Count
-Pf settings set tools.notes false | Out-Null; Start-Sleep -Seconds 1
+Pf settings set tools.enabled false | Out-Null; Start-Sleep -Seconds 1
 $off = (FenceWindows).Count
-Pf settings set tools.notes true | Out-Null; Start-Sleep -Seconds 1
+Pf settings set tools.enabled true | Out-Null; Start-Sleep -Seconds 1
 $on = (FenceWindows).Count
 $note = NoteFence
 Check 'switched off, the note window goes' ($off -eq $before - 1) "windows: before=$before off=$off"

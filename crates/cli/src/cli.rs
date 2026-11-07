@@ -158,7 +158,7 @@ pub enum FenceCmd {
         #[arg(help = FENCE_HELP)]
         fence: String,
     },
-    /// New virtual fence, or a folder portal with --portal
+    /// New virtual fence, a folder portal with --portal, or a tool fence with --tool / --script
     #[command(
         after_help = "Example: pecofence-cli fence create --title Work --rect 100,100,600,400\n         pecofence-cli fence create --title Tools --below Games --size 1152,400\n\n--below/--above/--right-of/--left-of place the fence next to another one, edges aligned and\nthe snapping gap between them; the size defaults to that fence's."
     )]
@@ -213,6 +213,33 @@ pub enum FenceCmd {
         fence: String,
         /// New title
         title: String,
+    },
+    /// Run a script fence's script now (a streaming script starts again)
+    #[command(after_help = "Example: pecofence-cli fence refresh Weather")]
+    Refresh {
+        #[arg(help = FENCE_HELP)]
+        fence: String,
+    },
+    /// Show a folder inside a fence, as a double-click on it does: a subfolder in a folder
+    /// fence, or any folder in a fence of icons (in place of its icons until `fence up`)
+    #[command(after_help = "Example: pecofence-cli fence open-folder Projects 2026")]
+    OpenFolder {
+        #[arg(help = FENCE_HELP)]
+        fence: String,
+        /// The folder: a full path, or a name or path inside the folder the fence shows
+        folder: String,
+    },
+    /// One folder up in a fence that shows a folder (Backspace, the mouse's back button)
+    #[command(after_help = "Example: pecofence-cli fence up Projects")]
+    Up {
+        #[arg(help = FENCE_HELP)]
+        fence: String,
+    },
+    /// Back into the folder the last `fence up` left (the mouse's forward button)
+    #[command(after_help = "Example: pecofence-cli fence forward Projects")]
+    Forward {
+        #[arg(help = FENCE_HELP)]
+        fence: String,
     },
     /// Move a fence: absolute --rect, new --x/--y, or another --monitor
     #[command(after_help = "Example: pecofence-cli fence move Work --x 1200 --y 80")]
@@ -606,8 +633,14 @@ pub enum BackupCmd {
 #[derive(Subcommand, Debug)]
 pub enum PeekCmd {
     /// Float every fence above the current windows
-    #[command(after_help = "Example: pecofence-cli peek start")]
-    Start,
+    #[command(
+        after_help = "Examples:\n  pecofence-cli peek start\n  pecofence-cli peek start --search invoice"
+    )]
+    Start {
+        /// Open the search box with this text, as if typed (replaces the text of an open box)
+        #[arg(long, value_name = "TEXT")]
+        search: Option<String>,
+    },
     /// End Peek
     #[command(after_help = "Example: pecofence-cli peek end")]
     End,

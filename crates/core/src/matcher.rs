@@ -182,8 +182,9 @@ fn fold(c: char) -> char {
     }
 }
 
-/// The pinyin syllable of a Chinese character, without tone ("lü" for 绿).
-fn syllable(c: char) -> Option<&'static str> {
+/// The pinyin syllable of a Chinese character, without tone ("lü" for 绿). The settings page's
+/// search (查找设置) asks for these to match pinyin the same way.
+pub fn syllable(c: char) -> Option<&'static str> {
     if (c as u32) < 0x3000 {
         return None;
     }

@@ -183,6 +183,8 @@ impl FenceWindow {
             note_boxes: Vec::new(),
             clock: None,
             script: None,
+            script_rows: Vec::new(),
+            script_hover: None,
             portal_missing: false,
             label_w: 0.0,
             icons_pending: false,
@@ -1308,6 +1310,10 @@ impl FenceWindow {
     pub fn set_script(&self, script: Option<ScriptView>) {
         self.with_view(|v| {
             if v.script != script {
+                if script.is_none() {
+                    v.script_rows.clear();
+                    v.script_hover = None;
+                }
                 v.script = script;
                 let _ = v.redraw();
             }

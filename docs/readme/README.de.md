@@ -73,10 +73,31 @@ Für Agenten und Skripte: `describe` liefert den Befehlskatalog und JSON-Schemas
 ## Alles bekommt seinen Platz
 
 <p align="center">
-  <img src="../assets/hero-de.png" alt="PecoFence — Projektordner, ein echtes PDF und eigene Designstudien in nativen Liquid-Glass-Bereichen." width="1280">
+  <img src="../assets/hero-de.png" alt="PecoFence: Projektordner, ein echtes PDF und eigene Designstudien in nativen Liquid-Glass-Bereichen." width="1280">
 </p>
 
 ## PecoFence in Aktion
+
+### Finden beim Tippen.
+
+Drücke **Strg + Alt + Leertaste** und tippe los. Passende Dateien und Ordner aus deinen Bereichen
+erscheinen sofort, und **Eingabe** öffnet einen Treffer. Chinesische Namen findest du auch per
+Pinyin. Everything ist ein kostenloses Programm zur Dateisuche: Schaltest du in den Einstellungen
+die Everything-Suche ein, wird auch der ganze Computer durchsucht. Der Clip nutzt „Zweimal Strg“,
+das du in den Einstellungen als Tastenkombination wählen kannst.
+
+![Zweimal Strg holt die Bereiche mit dem Suchfeld hervor; „meet“ listet Meeting notes.docx aus einem Bereich und zwei Dateien, die Everything auf dem Computer gefunden hat; die Pfeiltaste wählt eine aus, Eingabe öffnet sie.](../assets/search.gif)
+
+### Der richtige Ordner in Öffnen- und Speichern-Dialogen.
+
+Wechselst du in einem Öffnen- oder Speichern-Dialog zum Explorer und zurück, springt der Dialog in
+den dort offenen Ordner. **Strg+G** springt auch dorthin, und ein Klick auf einen Ordnerbereich
+führt in den Ordner dieses Bereichs. Die Funktion ist standardmäßig aus, und PecoFence bietet sie
+an, wenn sie zum ersten Mal helfen kann. Auch wenn sie aus ist, hilft **Eingabe** auf einem
+Suchtreffer beim Hervorholen dem Dialog: Ein Öffnen-Dialog öffnet die Datei, ein Speichern-Dialog
+wechselt in ihren Ordner.
+
+![Ein Öffnen-Dialog in Documents springt nach einem Wechsel zum Explorer und zurück in den Ordner Contracts und nach einem Klick auf den Ordnerbereich Designs dorthin.](../assets/dialog-jump.gif)
 
 ### Ein Bereich. Viele Projekte.
 
@@ -85,7 +106,7 @@ von Project zu Ideas und zieh einen Tab heraus, wenn du mehr Platz brauchst.
 
 ![Zwei Bereiche werden zu Tabs zusammengeführt, dann Wechsel zwischen Project und Ideas; zuletzt wird ein Tab wieder als eigener Bereich herausgezogen.](../assets/tabs.gif)
 
-### Dein Desktop – nur eine Tastenkombination entfernt.
+### Dein Desktop, nur eine Tastenkombination entfernt.
 
 Drücke **Strg + Alt + Leertaste**, um deine Bereiche vor die aktuelle Anwendung zu holen.
 Hol dir, was du brauchst, und kehre mit **Esc** zurück.
@@ -98,13 +119,15 @@ Hol dir, was du brauchst, und kehre mit **Esc** zurück.
 
 | Erlebnis | Was dahintersteckt |
 | :--- | :--- |
-| **KI + CLI** | `pecofence-cli` – **Mit eigenen Worten konfigurieren.** Ändere Design, Transparenz, Symbolgröße und globale Einstellungen oder passe alle Bereiche auf einmal an. |
+| **KI + CLI** | `pecofence-cli`: **Mit eigenen Worten konfigurieren.** Ändere Design, Transparenz, Symbolgröße und globale Einstellungen oder passe alle Bereiche auf einmal an. |
 | **Weniger sortieren** | Regeln nach Dateityp, Endung, Name, Platzhalter, Verknüpfungsziel, Zeit und Größe. Neue Dateien finden ihren Bereich von selbst. |
 | **Glas, das zu deinem Desktop passt** | Die Designs Fluent und Liquid Glass, heller und dunkler Modus, Farbton, Deckkraft und Symbolfärbung je Bereich. |
 | **Vertraute Dateiverwaltung** | Explorer-Kontextmenüs, Drag & Drop, Kopieren/Einfügen, Mehrfachauswahl, Miniaturansichten sowie Symbol-, Listen- und Detailansicht. |
-| **Ordner in Reichweite** | Hol dir einen Live-Ordner auf den Desktop. Stöbere in Unterordnern und sieh Änderungen sofort. |
+| **Ordner in Reichweite** | Hol dir einen Live-Ordner auf den Desktop. Stöbere in Unterordnern und sieh Änderungen sofort. Die Zurück-Taste der Maus geht einen Ordner hoch, die Vorwärts-Taste wieder hinein. |
 | **Platz, wenn du ihn brauchst** | Klappe einen Bereich bis auf den Titel ein. Zum Ausklappen einfach mit der Maus darauf zeigen. Sperre ein Layout, das dir gefällt. Ein Doppelklick auf den Desktop blendet alle Bereiche aus. Ein zweiter holt sie zurück. |
+| **Kleine Werkzeuge in Bereichen** | Notizen mit Aufgaben, eine Uhr mit Datum und Skriptbereiche, die zeigen, was dein eigenes Skript ausgibt, etwa das Wetter; ein Klick auf eine Zeile kann einen Link öffnen oder eine Aufgabe abhaken. Du kannst sie gleich unter Einstellungen → Werkzeuge oder im Taskleistenmenü hinzufügen. |
 | **Ein Weg zurück** | Layout-Momentaufnahmen, tägliche Sicherungen, Import/Export der Konfiguration und Tausch zwischen Bildschirmen. |
+| **Einstellung suchen** | Tippe in das Feld oben in den Einstellungen (Strg+F), um jede Einstellung zu finden, über Wörter aus ihr oder über gängige andere Namen. |
 | **Ein kleiner Fußabdruck** | Eine native Rust-Anwendung, die im Leerlauf nur etwa 2 bis 5 MB Arbeitsspeicher belegt (laut Task-Manager). Das Einstellungsfenster (WebView2) wird erst bei Bedarf geladen. |
 
 Automatische Sortierregeln lassen Dateien an ihrem ursprünglichen Speicherort. Verschiebungen,
@@ -136,10 +159,21 @@ Die Microsoft-Store-Version ist von Microsoft signiert, aktualisiert sich automa
 
 ## Selbst bauen. Selbst gestalten.
 
-PecoFence steht unter der Apache-2.0-Lizenz, und Beiträge sind willkommen – von einer treffenderen
+PecoFence steht unter der Apache-2.0-Lizenz, und Beiträge sind willkommen, von einer treffenderen
 Übersetzung bis zu einer besseren Desktop-Interaktion.
 
 [Mitwirken](../../CONTRIBUTING.md) · [Übersetzung verbessern](../LOCALIZATION.md) · [Entwicklerhandbuch](../DEVELOPMENT.md)
+
+## Code signing policy
+
+Kostenlose Codesignatur durch [SignPath.io](https://about.signpath.io/), Zertifikat von der [SignPath Foundation](https://signpath.org/).
+
+- Commits und Reviews: [Dayuan Jiang](https://github.com/DayuanJiang)
+- Freigabe der Signaturen: [Dayuan Jiang](https://github.com/DayuanJiang)
+
+Signiert werden nur Dateien, die GitHub Actions aus einem Versions-Tag dieses Repositorys baut. Jede Signatur wird von Hand freigegeben.
+
+**Datenschutz:** Dieses Programm überträgt keine Informationen an andere vernetzte Systeme, es sei denn, der Benutzer oder die Person, die es installiert oder bedient, verlangt das ausdrücklich. **Nach Updates suchen** fragt die GitHub-API ab. Was du unter **Feedback** sendest, geht an den Feedback-Dienst von PecoFence. Das Einstellungsfenster läuft auf Microsoft Edge WebView2. Dafür gilt die [Datenschutzerklärung von Microsoft](https://privacy.microsoft.com/privacystatement).
 
 ---
 

@@ -1,5 +1,5 @@
-//! 「双击 Ctrl 打开搜索」 (settings `peek.doubleCtrl`): two short taps of Ctrl alone open the
-//! search box, as in Listary. Keyboard raw input is only listened to (`RIDEV_INPUTSINK`), so no
+//! 「双击 Ctrl」 as Peek's shortcut (settings `peek.doubleCtrl`): two short taps of Ctrl alone
+//! open Peek with the search box, as in Listary. Keyboard raw input is only listened to (`RIDEV_INPUTSINK`), so no
 //! key is held back and typing elsewhere does not slow down.
 
 use pecofence_platform::{HWND, rawinput};

@@ -41,8 +41,12 @@ settings. Files appear as needed rather than all being created by Setup:
 └── PecoFence/
     ├── config.json                       // Settings, layouts, rules and snapshots
     ├── config.bak                        // Previous saved configuration
-    └── backups/
-        └── YYYY-MM-DD.json               // Daily configuration backups
+    ├── backups/
+    │   └── YYYY-MM-DD.json               // Daily configuration backups
+    ├── themes/                           // Custom theme files
+    ├── scripts/                          // Script fence examples (天气, GitHub, 电脑状态)
+    └── scripts-data/
+        └── <fence id>/                   // Each script fence's PECOFENCE_DATA folder
 
 %LOCALAPPDATA%/
 └── PecoFence/                            // Separate from Programs/PecoFence

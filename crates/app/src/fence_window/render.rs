@@ -410,7 +410,7 @@ impl FenceViewState {
         let count = ((rolled || state.count > 0.0) && !self.shows_tool())
             .then(|| pecofence_core::i18n::format("{0} 项", &[format!("{}", self.items.len())]));
         let opacity = self.material_opacity();
-        // Titles and tabs without a 「标题颜色」 of their own follow 「图标名称颜色」 (#141).
+        // Titles and tabs without a 「标题颜色」 of their own follow 「文字颜色」 (#141).
         let theme = self
             .material_foreground()
             .with_label_color(self.behavior.label_color.get());
@@ -810,39 +810,58 @@ impl FenceViewState {
         let Some(script) = self.script.clone() else {
             return Ok(());
         };
-        use pecofence_render::fence_chrome::NoteLineDraw;
-        let lines: Vec<NoteLineDraw<'_>> = script
-            .text
-            .lines()
-            .map(|text| NoteLineDraw { text, todo: None })
-            .collect();
+        use pecofence_render::fence_chrome::ScriptRowDraw;
         let scale = self.scale();
         let theme = self
             .material_foreground()
             .with_label_color(self.behavior.label_color.get());
+        let dark = matches!(theme.mode, pecofence_render::ThemeMode::Dark);
+        let rows: Vec<ScriptRowDraw<'_>> = script
+            .rows
+            .iter()
+            .map(|r| ScriptRowDraw {
+                text: &r.text,
+                separator: r.separator,
+                todo: r.todo,
+                color: r
+                    .color
+                    .as_deref()
+                    .and_then(|c| pecofence_core::script_output::color_rgb(c, dark))
+                    .map(|[cr, cg, cb]| ColorF::from_rgba8(cr, cg, cb, 0xFF)),
+                icon: r.icon.as_deref(),
+                clickable: r.clickable,
+                opens: r.opens,
+            })
+            .collect();
         let chrome = self.chrome.clone();
         let hint = if script.quiet {
             ""
         } else {
             pecofence_core::i18n::text("脚本没有输出文字")
         };
+        let hover = self.script_hover;
+        let mut hits = Vec::new();
         let ok = self
             .content_panel
             .draw_ex(self.dpi, |session, _clip, wd, hd| {
-                chrome
-                    .draw_note(
-                        session,
-                        &theme,
-                        scale,
-                        wd,
-                        hd,
-                        &lines,
-                        hint,
-                        Some(&script.footer),
-                    )
-                    .map(|_| ())
+                hits = chrome.draw_script(
+                    session,
+                    &theme,
+                    scale,
+                    wd,
+                    hd,
+                    &rows,
+                    hover,
+                    hint,
+                    &script.footer,
+                )?;
+                Ok(())
             })?;
         self.note_draw_result(ok);
+        self.script_rows = hits
+            .into_iter()
+            .map(|(row, r)| (row, [r.left, r.top, r.right, r.bottom]))
+            .collect();
         Ok(())
     }
 

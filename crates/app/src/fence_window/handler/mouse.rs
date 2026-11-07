@@ -25,6 +25,12 @@ pub(super) fn on_setcursor(
         window::set_standard_cursor(StandardCursor::SizeWE);
         return Some(1);
     }
+    // A script fence's clickable row: the hand, as over a link.
+    if v.script_row_at(pt.x, pt.y).is_some() {
+        drop(guard);
+        window::set_standard_cursor(StandardCursor::Hand);
+        return Some(1);
+    }
     // Explorer's single-click open: the hand over an item, as on the desktop.
     if h.behavior.single_click.get()
         && v.scrollbar_hit(pt.x, pt.y).is_none()
@@ -69,7 +75,7 @@ pub(super) fn on_mouseleave(
         // Leaving the bar starts the 0.5 s contract delay, not an
         // instant collapse.
         v.set_scrollbar_pointer(None);
-        let content_changed = v.header_hover.take().is_some();
+        let content_changed = v.header_hover.take().is_some() | v.script_hover.take().is_some();
         // Onto the caption part of the title row (a gap between tabs): still the row, as in
         // WM_NCMOUSELEAVE; this message can come after the WM_NCMOUSEMOVE there.
         let c = window::screen_to_client(hwnd, pt);
@@ -224,7 +230,7 @@ pub(super) fn on_lbuttondown(
             queue.push(Command::RaiseFence(hwnd));
             return Some(0);
         }
-        if let Some(cmd) = v.note_press(x, y) {
+        if let Some(cmd) = v.note_press(x, y).or_else(|| v.script_press(x, y)) {
             drop(guard);
             queue.push(cmd);
             queue.push(Command::RaiseFence(hwnd));
@@ -628,6 +634,10 @@ pub(super) fn on_lbuttondblclk(
             queue.push(cmd);
             return Some(0);
         }
+        // A script row acts once per double-click: a link opens one tab.
+        if v.script_row_at(x, y).is_some() {
+            return Some(0);
+        }
         // The second click of a rapid double-click on a button is another
         // press (a header toggles the sort twice, like Explorer).
         if v.press_button_at(x, y).is_some() {
@@ -778,6 +788,33 @@ pub(super) fn on_rbuttonup(
         }),
     }
     Some(0)
+}
+
+pub(super) const WM_XBUTTONDOWN: u32 = 0x020B;
+pub(super) const WM_XBUTTONUP: u32 = 0x020C;
+
+/// The mouse's back and forward buttons (feedback #116): back goes up a folder as Backspace
+/// does, forward goes into the folder the last back left. Handled (TRUE) either way, so the
+/// buttons do nothing else in a fence.
+pub(super) fn on_xbuttonup(
+    h: &HandlerCtx,
+    _hwnd: HWND,
+    wparam: usize,
+    _lparam: isize,
+) -> Option<isize> {
+    const XBUTTON1: u32 = 1;
+    const XBUTTON2: u32 = 2;
+    let HandlerCtx { view, queue, .. } = h;
+    let view = view.borrow();
+    let Some(v) = view.as_ref() else {
+        return Some(1);
+    };
+    match msg::hi_u16(wparam) {
+        XBUTTON1 if v.deco.up_button => queue.push(Command::PortalUp(v.active)),
+        XBUTTON2 => queue.push(Command::PortalForward(v.active)),
+        _ => {}
+    }
+    Some(1)
 }
 
 pub(super) fn on_mousewheel(

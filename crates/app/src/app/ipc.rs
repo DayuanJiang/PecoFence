@@ -360,6 +360,13 @@ pub(super) fn patch_settings_path(
         // One of the 0.2.0 choices: a custom shortcut left in place would override it.
         settings.peek.custom_hotkey = None;
     }
+    // A shortcut that is set replaces 「双击 Ctrl」, as on the settings page, unless the same
+    // patch sets peek.doubleCtrl.
+    let shortcut_set = matches!(pointer.as_str(), "/peek/hotkey" | "/peek/customHotkey")
+        || settings.peek.chosen_hotkey() != current.peek.chosen_hotkey();
+    if shortcut_set && settings.peek.double_ctrl == current.peek.double_ctrl {
+        settings.peek.double_ctrl = false;
+    }
     if settings.windows_desktop_hotkey != current.windows_desktop_hotkey
         && let Some(text) = settings.windows_desktop_hotkey.clone()
     {
@@ -751,6 +758,65 @@ impl App {
                 )
             }
             Method::FencesDelete { fence } => self.ipc_delete_fence(fence),
+            Method::FencesRefresh { fence } => {
+                let id = self.resolve_fence(fence)?;
+                if self
+                    .state
+                    .fence(id)
+                    .is_none_or(|f| f.tool != Some(pecofence_core::FenceTool::Script))
+                {
+                    return Err(unsupported("only a script fence runs a script"));
+                }
+                self.refresh_script(id);
+                Ok(mutation(true, None, self.fence_extra(id)?))
+            }
+            Method::FencesUp { fence } | Method::FencesForward { fence } => {
+                let id = self.resolve_fence(fence)?;
+                if self.state.portal_path(id).is_none() && !self.portal_forward.contains_key(&id) {
+                    return Err(unsupported("the fence shows no folder").hint(
+                        "fences.up works in a folder fence or in a fence showing a folder opened in it (fence open-folder)",
+                    ));
+                }
+                let before = self.state.portal_path(id);
+                if matches!(m, Method::FencesUp { .. }) {
+                    self.portal_up(id);
+                } else {
+                    self.portal_forward(id);
+                }
+                let changed = self.state.portal_path(id) != before;
+                tracing::info!(fence = %id, changed, up = matches!(m, Method::FencesUp { .. }), "folder navigation by the cli");
+                Ok(mutation(changed, None, self.fence_extra(id)?))
+            }
+            Method::FencesOpenFolder { fence, folder } => {
+                let id = self.resolve_fence(fence)?;
+                let given = PathBuf::from(folder.trim());
+                let dir = if given.is_absolute() {
+                    given
+                } else if let Some(base) = self.state.portal_path(id) {
+                    base.join(given)
+                } else {
+                    return Err(IpcError::invalid_value(
+                        format!("{folder:?} is relative, and the fence shows no folder"),
+                        &[],
+                    )
+                    .hint("Give the full path of the folder"));
+                };
+                if !dir.is_dir() {
+                    return Err(IpcError::invalid_value(
+                        format!("no folder at {}", dir.display()),
+                        &[],
+                    ));
+                }
+                let before = self.state.portal_path(id);
+                if !self.open_folder_in_fence(id, &dir) {
+                    return Err(unsupported(
+                        "the fence cannot show that folder: a folder fence opens folders inside its own folder, a tool fence none",
+                    ));
+                }
+                let changed = self.state.portal_path(id) != before;
+                tracing::info!(fence = %id, changed, "folder opened by the cli");
+                Ok(mutation(changed, None, self.fence_extra(id)?))
+            }
             Method::FencesRename { fence, title } => {
                 let id = self.resolve_fence(fence)?;
                 let prop = parse_fence_prop("title", &Value::String(title.clone()))?;
@@ -1140,6 +1206,10 @@ impl App {
                 }
                 // toggle_peek declines without fence windows.
                 let changed = idle && self.peek.as_ref().is_some_and(|p| !p.is_closing());
+                Ok(mutation(changed, None, Value::Null))
+            }
+            Method::PeekSearch { text } => {
+                let changed = self.peek_search_text(text);
                 Ok(mutation(changed, None, Value::Null))
             }
             Method::PeekEnd => {
@@ -1855,6 +1925,12 @@ impl App {
         use super::tools::NewTool;
         match name {
             "note" => Ok(NewTool::Note(text.unwrap_or_default().to_string())),
+            // One clock is enough: the desktop shows a second one nowhere better.
+            "clock" if self.has_clock() => Err(IpcError::new(
+                ErrorCode::LimitReached,
+                "the desktop has a clock already",
+            )
+            .hint("pecofence-cli fence list shows it (tool: clock)")),
             "clock" => Ok(NewTool::Clock),
             "script" => {
                 let Some(path) = script.filter(|p| !p.trim().is_empty()) else {
@@ -2086,7 +2162,12 @@ impl App {
         // window first, then the state with the expanded height. Rolled up, only the title bar
         // shows; `h` becomes the height it unrolls to.
         let full = rect_to_win(placed);
-        let rolled = w.is_rolled();
+        // Rolled by the fence's state: a roll-up still in flight (`fence roll` just before)
+        // has not set the window's flag yet, and taking that flag opened the fence again.
+        let rolled = self
+            .state
+            .fence(id)
+            .map_or_else(|| w.is_rolled(), |f| f.rolled_up || w.is_rolled());
         // An explicit place is where the fence rests, even at the top a push gave it.
         self.ctx.behavior.release_push(w.hwnd());
         // Rolled with 向上展开, the title row goes to the bottom of the rect, where it opens

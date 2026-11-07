@@ -267,6 +267,7 @@ impl App {
 
     pub(super) fn portal_enter(&mut self, fence: FenceId, dir: &std::path::Path) {
         if self.state.portal_enter(fence, dir) {
+            self.portal_forward.remove(&fence);
             self.after_portal_navigation(fence, 1, None);
         }
     }
@@ -277,6 +278,7 @@ impl App {
     pub(super) fn open_folder_in_fence(&mut self, fence: FenceId, dir: &std::path::Path) -> bool {
         let entered = self.state.portal_enter(fence, dir) || self.state.open_folder(fence, dir);
         if entered {
+            self.portal_forward.remove(&fence);
             self.after_portal_navigation(fence, 1, None);
         }
         entered
@@ -285,8 +287,27 @@ impl App {
     /// One level up selects the folder just left, as in Explorer.
     pub(super) fn portal_up(&mut self, fence: FenceId) {
         let left = self.state.up_selection(fence);
+        let folder = self.state.portal_path(fence);
         if self.state.portal_up(fence) {
+            if let Some(folder) = folder {
+                self.portal_forward.entry(fence).or_default().push(folder);
+            }
             self.after_portal_navigation(fence, -1, left);
+        }
+    }
+
+    /// The forward button: into the folder the last up left (a subfolder, or the folder that
+    /// was opened in a regular fence). Nothing when no up came before or the folder is gone.
+    pub(super) fn portal_forward(&mut self, fence: FenceId) {
+        let Some(folder) = self.portal_forward.get_mut(&fence).and_then(Vec::pop) else {
+            return;
+        };
+        if self.state.portal_enter(fence, &folder) || self.state.open_folder(fence, &folder) {
+            tracing::info!(fence = %fence, "folder forward");
+            self.after_portal_navigation(fence, 1, None);
+        } else {
+            tracing::info!(fence = %fence, "folder forward: the folder is gone");
+            self.portal_forward.remove(&fence);
         }
     }
 

@@ -70,6 +70,27 @@ To get everything back when you return to 0.2.4, restore the daily backup from
 before the downgrade in Settings → 布局与备份 (the files are in the `backups`
 folder next to `config.json`), or save a snapshot before going back.
 
+## Going back to 0.2.5
+
+0.2.5 reads a configuration a later version has saved, but it does not know the
+小工具 (tools) added after it. It shows note, clock and script fences as empty
+ordinary fences at their place, and its first save drops what belongs to the tools:
+
+- the text of every note, and which script each script fence runs and how often
+  (the script files themselves stay where they are);
+- the switches on the 小工具 page, including 对话框跳转; on the 常规 page,
+  速览搜索也找整台电脑（Everything） and 双击 Ctrl as Peek's shortcut; and the search
+  history that puts what you opened from the Peek search box higher in the list.
+
+The fences stay as ordinary fences, in the snapshots too, so restoring a snapshot
+does not bring the tools back. The daily backups still have them: when you return
+to the later version, restore the daily backup from before the downgrade in
+Settings → 布局与备份 (the files are in the `backups` folder next to `config.json`).
+That folder keeps the last seven backups and 0.2.5 adds one for each day it saves,
+so restore within a week. For a copy that does not age out, export the configuration
+with 导出 / 导入配置文件 before going back and import it later; an import keeps
+脚本栅栏 off until you turn it on again.
+
 ## Windows startup
 
 A normal release launch registers the `PecoFence` startup entry when required.

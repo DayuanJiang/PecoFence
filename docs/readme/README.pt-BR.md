@@ -73,10 +73,30 @@ Para agentes e scripts: `describe` fornece o catálogo de comandos e os esquemas
 ## Dê um lugar a cada coisa
 
 <p align="center">
-  <img src="../assets/hero-pt-BR.png" alt="PecoFence — Pastas de projetos, um PDF real e estudos gráficos originais em grupos com Liquid Glass nativo." width="1280">
+  <img src="../assets/hero-pt-BR.png" alt="PecoFence: pastas de projetos, um PDF real e estudos gráficos originais em grupos com Liquid Glass nativo." width="1280">
 </p>
 
 ## Veja em ação
+
+### Encontre enquanto digita.
+
+Pressione **Ctrl + Alt + Espaço** e digite. Os arquivos e pastas dos seus grupos que
+correspondem aparecem na hora, e **Enter** abre um. Nomes em chinês também podem ser encontrados por pinyin.
+O Everything é uma ferramenta gratuita de pesquisa de arquivos: ative a pesquisa com o Everything nas
+Configurações, e o computador inteiro também entra na pesquisa. A animação usa “Ctrl duas vezes”, que você
+pode escolher como atalho nas Configurações.
+
+![Tocar duas vezes em Ctrl espia os grupos com a caixa de pesquisa aberta; ao digitar “meet”, aparecem Meeting notes.docx de um grupo e dois arquivos que o Everything achou no computador; a seta escolhe um e Enter o abre.](../assets/search.gif)
+
+### A pasta certa nas caixas Abrir e Salvar.
+
+Em uma caixa Abrir ou Salvar, vá ao Explorador de Arquivos e volte: a caixa vai para a pasta aberta lá.
+**Ctrl+G** também vai até lá, e um clique em um grupo de pasta leva à pasta desse grupo. O recurso vem desativado
+por padrão, e o PecoFence oferece ativá-lo na primeira vez que puder ajudar. Mesmo desativado, **Enter** em um
+resultado da pesquisa ao espiar funciona com a caixa: uma caixa Abrir abre o arquivo, e uma caixa Salvar vai para
+a pasta dele.
+
+![Uma caixa Abrir em Documents vai para a pasta Contracts depois de ir ao Explorador de Arquivos e voltar, e para Designs depois de um clique nesse grupo de pasta.](../assets/dialog-jump.gif)
 
 ### Uma janela. Vários espaços de trabalho.
 
@@ -98,13 +118,15 @@ Pegue o que precisa e pressione **Esc** para voltar.
 
 | Experiência | O que você ganha |
 | :--- | :--- |
-| **IA + CLI** | `pecofence-cli` — **Configure com suas próprias palavras.** Altere temas, transparência, tamanho dos ícones e configurações globais, ou ajuste todos os grupos de uma vez. |
+| **IA + CLI** | `pecofence-cli`: **Configure com suas próprias palavras.** Altere temas, transparência, tamanho dos ícones e configurações globais, ou ajuste todos os grupos de uma vez. |
 | **Menos arrumação** | Regras por tipo de arquivo, extensão, nome, curinga, destino do atalho, horário e tamanho. Arquivos novos encontram seu grupo sozinhos. |
 | **Vidro que combina com sua área de trabalho** | Temas Fluent e Liquid Glass, modos claro e escuro, cor por grupo, opacidade e cor dos ícones. |
 | **Arquivos do jeito que você conhece** | Menus de contexto do Explorador de Arquivos, arrastar e soltar, copiar e colar, seleção múltipla, miniaturas e exibição em ícones, lista ou detalhes. |
-| **Pastas sempre à mão** | Coloque na área de trabalho uma pasta de verdade, sempre atualizada. Navegue pelas subpastas e veja as mudanças na hora. |
+| **Pastas sempre à mão** | Coloque na área de trabalho uma pasta de verdade, sempre atualizada. Navegue pelas subpastas e veja as mudanças na hora. O botão Voltar do mouse sobe uma pasta e o Avançar volta para dentro. |
 | **Espaço quando você precisa** | Recolha um grupo até o título. Passe o mouse para expandir. Bloqueie o layout quando estiver do seu jeito. Clique duas vezes na área de trabalho para ocultar os grupos. Clique duas vezes de novo para trazê-los de volta. |
+| **Pequenas ferramentas nos grupos** | Notas com tarefas, um relógio com a data e grupos de script que mostram o que o seu próprio script imprime, como o clima; um clique nas linhas pode abrir um link ou marcar uma tarefa. Você pode adicioná-las logo em Configurações → Ferramentas ou pelo menu da bandeja. |
 | **Um caminho de volta** | Instantâneos de layout, backups diários, importação e exportação da configuração e troca de grupos entre monitores. |
+| **Localizar uma configuração** | Digite na caixa no alto das Configurações (Ctrl+F) para achar qualquer configuração pelas palavras dela ou por outros nomes comuns. |
 | **Leve de verdade** | Um aplicativo nativo em Rust que, ocioso, usa só cerca de 2 a 5 MB de memória (segundo o Gerenciador de Tarefas). O painel de configurações em WebView2 só carrega quando necessário. |
 
 As regras de organização automática mantêm os arquivos onde eles estão. As movimentações
@@ -140,6 +162,17 @@ O PecoFence usa a licença Apache 2.0, e contribuições são bem-vindas: de uma
 a uma interação melhor na área de trabalho.
 
 [Contribua](../../CONTRIBUTING.md) · [Melhore uma tradução](../LOCALIZATION.md) · [Guia de desenvolvimento](../DEVELOPMENT.md)
+
+## Code signing policy
+
+Assinatura de código gratuita fornecida pela [SignPath.io](https://about.signpath.io/), com certificado da [SignPath Foundation](https://signpath.org/).
+
+- Commits e revisões: [Dayuan Jiang](https://github.com/DayuanJiang)
+- Aprovação das assinaturas: [Dayuan Jiang](https://github.com/DayuanJiang)
+
+Só são assinados os arquivos que o GitHub Actions compila a partir de uma tag de versão deste repositório. Cada assinatura é aprovada manualmente.
+
+**Privacidade:** este programa não transfere nenhuma informação para outros sistemas em rede, a menos que o usuário ou a pessoa que o instala ou opera peça isso expressamente. **Verificar atualizações** consulta a API do GitHub. O que você envia em **Comentários** vai para o serviço de comentários do PecoFence. A janela de configurações roda no Microsoft Edge WebView2, ao qual se aplica a [Declaração de Privacidade da Microsoft](https://privacy.microsoft.com/privacystatement).
 
 ---
 

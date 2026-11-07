@@ -147,6 +147,26 @@ pub enum Method {
     /// Result: `{changed, fence: FenceDto}`.
     #[serde(rename = "fences.rename")]
     FencesRename { fence: String, title: String },
+    /// 脚本栅栏: runs the fence's script now (a streaming script starts again). Other fences:
+    /// `unsupported`. Result: `{changed, fence: FenceDto}`.
+    #[serde(rename = "fences.refresh")]
+    FencesRefresh { fence: String },
+    /// A fence that shows a folder (a folder fence, or a folder opened in a fence of icons):
+    /// one folder up, as Backspace and the mouse's back button. At the folder it started from
+    /// a folder fence stays; a fence of icons shows its icons again. Runtime only. Result:
+    /// `{changed, fence: FenceDto}` (`portal.current`, `openedFolder` say what it shows).
+    #[serde(rename = "fences.up")]
+    FencesUp { fence: String },
+    /// Back into the folder the last `fences.up` left, as the mouse's forward button. Runtime
+    /// only. Result: `{changed, fence: FenceDto}`.
+    #[serde(rename = "fences.forward")]
+    FencesForward { fence: String },
+    /// Shows `folder` inside the fence, as a double-click on it does: a subfolder of what a
+    /// folder fence shows, or any folder in a fence of icons (in place of its icons until
+    /// `fences.up`). A relative `folder` starts at the folder the fence shows. Runtime only.
+    /// Result: `{changed, fence: FenceDto}`.
+    #[serde(rename = "fences.openFolder")]
+    FencesOpenFolder { fence: String, folder: String },
     /// Move and/or resize (physical px). Tabs hosted in another fence's window have no
     /// geometry of their own (`unsupported`; address the host). Result: `{changed, fence}`.
     #[serde(rename = "fences.setBounds")]
@@ -307,6 +327,10 @@ pub enum Method {
     PeekStart,
     #[serde(rename = "peek.end")]
     PeekEnd,
+    /// Peek with `text` in its search box, as if typed (starts Peek when it is not running;
+    /// replaces the text when the box is open). Result: `{changed}`.
+    #[serde(rename = "peek.search")]
+    PeekSearch { text: String },
     /// 「临时显示 Windows 桌面」: hide every fence and show the Windows desktop icons
     /// PecoFence hid, until `windowsDesktop.end` (nothing of it is saved). Result: `{changed}`.
     #[serde(rename = "windowsDesktop.start")]
@@ -378,6 +402,10 @@ impl Method {
                 | Method::SettingsOpenUi
                 | Method::PeekStart
                 | Method::PeekEnd
+                | Method::PeekSearch { .. }
+                | Method::FencesUp { .. }
+                | Method::FencesForward { .. }
+                | Method::FencesOpenFolder { .. }
                 | Method::WindowsDesktopStart
                 | Method::WindowsDesktopEnd
                 | Method::EventsSubscribe { .. }
@@ -638,6 +666,19 @@ mod tests {
                 fence: "Work".into(),
                 title: "Play".into(),
             },
+            Method::FencesRefresh {
+                fence: "Weather".into(),
+            },
+            Method::FencesUp {
+                fence: "Projects".into(),
+            },
+            Method::FencesForward {
+                fence: "Projects".into(),
+            },
+            Method::FencesOpenFolder {
+                fence: "Projects".into(),
+                folder: "2026".into(),
+            },
             Method::FencesSetBounds {
                 fence: "Work".into(),
                 rect: Rect {
@@ -744,6 +785,9 @@ mod tests {
             },
             Method::PeekStart,
             Method::PeekEnd,
+            Method::PeekSearch {
+                text: "invoice".into(),
+            },
             Method::WindowsDesktopStart,
             Method::WindowsDesktopEnd,
             Method::SettingsOpenUi,

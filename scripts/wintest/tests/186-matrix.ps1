@@ -95,7 +95,7 @@ foreach ($p in $paths) {
 }
 
 Case 'note editor during the Peek'
-Pf settings set tools.notes true | Out-Null
+Pf settings set tools.enabled true | Out-Null
 Pf fence create --tool note --title PeekNote --text first --rect '760,500,300,160' | Out-Null
 Start-Sleep -Seconds 1
 TitleClick $np
