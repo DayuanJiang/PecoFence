@@ -850,10 +850,18 @@ mod shortcut_tests {
             );
             std::thread::sleep(std::time::Duration::from_millis(25));
         };
-        assert_eq!(Path::new(&lines[0]), base);
+        // Compare canonical paths: %TEMP% can be an 8.3 short path (C:\Users\RUNNER~1 on CI)
+        // while the application reports the long form.
+        let same = |a: &Path, b: &Path| {
+            assert_eq!(
+                std::fs::canonicalize(a).unwrap(),
+                std::fs::canonicalize(b).unwrap()
+            )
+        };
+        same(Path::new(&lines[0]), &base);
         assert_eq!(lines[1], "saved argument");
         for (folder, argument) in folders.iter().zip(&lines[2..]) {
-            assert_eq!(Path::new(argument), folder);
+            same(Path::new(argument), folder);
             assert_eq!(
                 std::fs::read_to_string(folder.join("keep.txt")).unwrap(),
                 "unchanged"
