@@ -1274,16 +1274,17 @@ impl AppState {
                 EntryOrigin::Namespace => Origin::Namespace,
             })
             .collect();
-        // A deleted item keeps its record only where the user placed it (moved it into a
-        // fence or into a spot of its own): an item a rule or the default placed gets the same
-        // place from them when it returns, so its record would only grow the file.
+        // A deleted item keeps its record only where the user moved it into a fence: an item a
+        // rule or the default placed gets the same place from them when it returns, so its
+        // record would only grow the file. A manual position says nothing here: 手动 order
+        // writes one for every icon of the fence when new ones arrive.
         let placed_by_user: HashSet<ItemId> = self
             .config
             .layouts
             .iter()
             .flat_map(|l| &l.fences)
             .flat_map(|f| &f.items)
-            .filter(|r| r.assigned_by == AssignedBy::User || r.manual_index.is_some())
+            .filter(|r| r.assigned_by == AssignedBy::User)
             .map(|r| r.item_id)
             .collect();
         let (mut placed, mut aged) = (0usize, 0usize);
@@ -4115,6 +4116,13 @@ mod tests {
             .collect();
         state.move_items(&by_hand, other);
         let placed_by_default = id_of(&state, &names[20]);
+        // 手动 order writes a position for every icon of a fence when new ones arrive: that is
+        // no sign the user placed this one.
+        for f in &mut state.config.layouts[0].fences {
+            for (i, r) in f.items.iter_mut().enumerate() {
+                r.manual_index = Some(i as u32);
+            }
+        }
         let before = state.config.items.len();
         // All deleted; the hand-placed first ten are the oldest records.
         for (i, id) in by_hand.iter().enumerate() {
