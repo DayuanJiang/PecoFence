@@ -2020,6 +2020,19 @@ impl FenceWindow {
         });
     }
 
+    /// Peek began or ended (`FenceBehavior::floating` changed): redraws this fence if floating
+    /// changes how it looks. Returns whether it did.
+    pub fn redraw_for_floating(&self) -> bool {
+        let mut changes = false;
+        self.with_view(|v| {
+            changes = v.floating_changes_look();
+            if changes {
+                let _ = v.redraw();
+            }
+        });
+        changes
+    }
+
     /// The icon cache has new pictures for these draw keys (`IconCache::take_replaced`):
     /// items showing one of them, or its failure placeholder, take the new one.
     pub fn reload_icons(&self, replaced: &HashSet<String>) {

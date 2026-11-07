@@ -432,6 +432,14 @@ impl FenceViewState {
         self.opacity <= 0.0 || self.bare()
     }
 
+    /// Whether floating above other windows (Peek) draws this fence differently: a fully
+    /// transparent plate shows while it floats (`plate_visible_target`), and Liquid Glass
+    /// floats at full opacity (`material_opacity`). A fence arranged like the desktop looks
+    /// the same either way.
+    pub(super) fn floating_changes_look(&self) -> bool {
+        !self.bare() && (self.opacity <= 0.0 || (self.theme.liquid_glass && self.opacity < 1.0))
+    }
+
     /// Whether the plate is shown right now: always, except on a fully transparent fence,
     /// whose plate appears while the pointer is over it, while it is rolled up, floats above
     /// other windows (Peek) or is selected with a desktop marquee (the ring is part of the
