@@ -6,7 +6,7 @@ use crate::commands::{
     WM_APP_EVERYTHING_SETUP, WM_APP_FRAME, WM_APP_FS_CHANGED, WM_APP_LIVE_WALLPAPER,
     WM_APP_PEEK_FOCUSED, WM_APP_PREWARM_DONE, WM_APP_SCRIPT_DONE, WM_APP_SHELL_CHANGED,
     WM_APP_STARTUP_BACKDROPS, WM_APP_STARTUP_TASK, WM_APP_THEMES_CHANGED, WM_APP_TRAY,
-    WM_APP_WALLPAPER,
+    WM_APP_WALLPAPER, WM_APP_WALLPAPER_READ,
 };
 use crate::fence_window::{
     BackdropMode, BackdropSets, Behavior, FenceContext, FenceWindow, ItemView, SearchMarks, TabView,
@@ -93,7 +93,9 @@ use visuals::{
     load_custom_theme, pick_theme_mode, shadow_style_for, theme_for, tray_icon_image,
     verify_wallpaper_later, write_example_themes,
 };
-use wallpaper_refresh::{BackdropCache, FIRST_CHECK_MS, RefreshSchedule, supersedes};
+use wallpaper_refresh::{
+    BackdropCache, FIRST_CHECK_MS, RefreshSchedule, WallpaperReader, supersedes,
+};
 
 const TIMER_SAVE: usize = 40;
 const TIMER_FS: usize = 41;
@@ -177,6 +179,8 @@ const TIMER_EVERYTHING_SETUP: usize = 71;
 /// 对话框跳转 offer: a dialog to offer it to (`WM_APP_DIALOG_OFFER`); retried while the App is
 /// borrowed.
 const TIMER_DIALOG_OFFER: usize = 73;
+/// The wallpaper reader answered (`WM_APP_WALLPAPER_READ`); retried while the App is borrowed.
+const TIMER_WALLPAPER_READ: usize = 80;
 const THEMES_SETTLE_MS: u32 = 300;
 const DEVICE_RETRY_MAX_MS: u32 = 30_000;
 /// Growth of private commit plus GPU memory that logs a memory line before the hour is up.
@@ -393,6 +397,11 @@ pub struct App {
     activity: Activity,
     /// Fingerprint of the snapshot the current backdrops were built from.
     wallpaper_sig: Option<String>,
+    /// Reads the wallpaper for the checks on a worker (see `WallpaperReader`).
+    wallpaper_reader: WallpaperReader,
+    /// The wallpaper as the last read found it: what live wallpaper captures and the other
+    /// desktops' prepared pictures are laid out by.
+    last_wallpaper: Option<wallpaper::WallpaperSnapshot>,
     wallpaper_cache: BackdropCache,
     /// Another virtual desktop's wallpaper being decoded ahead of a switch there.
     prewarm: Option<visuals::PrewarmJob>,
@@ -708,8 +717,10 @@ impl App {
             let desktops_differ = desktops_differ.clone();
             let session_anchor = session_anchor.clone();
             let queue = queue.clone();
-            // Virtual desktop of the last foreground window (see WM_APP_WALLPAPER).
-            let last_foreground_desktop: Cell<Option<u128>> = Cell::new(None);
+            // Asks which virtual desktop a foreground window is on (see WM_APP_WALLPAPER);
+            // started the first time desktops keep different pictures.
+            let foreground_desktops: RefCell<Option<std::sync::mpsc::Sender<Option<isize>>>> =
+                RefCell::new(None);
             let notify_wallpaper = {
                 let wallpaper_schedule = wallpaper_schedule.clone();
                 move |hwnd| {
@@ -796,6 +807,10 @@ impl App {
                         }
                         WM_APP_DIALOG_OFFER => {
                             window::set_timer(hwnd, TIMER_DIALOG_OFFER, 1);
+                            Some(0)
+                        }
+                        WM_APP_WALLPAPER_READ => {
+                            window::set_timer(hwnd, TIMER_WALLPAPER_READ, 1);
                             Some(0)
                         }
                         WM_APP_THEMES_CHANGED => {
@@ -1003,6 +1018,18 @@ impl App {
                                         window::set_timer(hwnd, TIMER_ICONS, 100);
                                     }
                                 }
+                                TIMER_WALLPAPER_READ => {
+                                    if let Ok(mut guard) = cell.try_borrow_mut()
+                                        && let Some(app) = guard.as_mut()
+                                    {
+                                        window::kill_timer(hwnd, TIMER_WALLPAPER_READ);
+                                        // Monitors settle: an answer from before is not
+                                        // shown (see TIMER_WALLPAPER_POLL).
+                                        app.on_wallpaper_read(display_settling.get());
+                                    } else {
+                                        window::set_timer(hwnd, TIMER_WALLPAPER_READ, 50);
+                                    }
+                                }
                                 TIMER_WALLPAPER => {
                                     window::kill_timer(hwnd, TIMER_WALLPAPER);
                                     if display_settling.get() {
@@ -1160,21 +1187,25 @@ impl App {
                             if wparam == 1 {
                                 // A foreground change: a desktop switch announcing itself. It
                                 // cannot change the picture while every desktop shows the same,
-                                // and a window on the previous one's desktop is no switch.
+                                // and a window on the previous one's desktop is no switch. Which
+                                // desktop it is on is a call into Explorer: a worker asks and
+                                // comes back with wparam 2 when it is another one.
+                                let mut desktops = foreground_desktops.borrow_mut();
                                 if !desktops_differ.get() {
-                                    last_foreground_desktop.set(None);
+                                    if let Some(desktops) = desktops.as_ref() {
+                                        let _ = desktops.send(None);
+                                    }
                                     return Some(0);
                                 }
-                                let desktop = wallpaper::window_desktop(HWND(
-                                    lparam as *mut core::ffi::c_void,
-                                ));
-                                if desktop.is_some()
-                                    && last_foreground_desktop.replace(desktop) == desktop
-                                {
-                                    return Some(0);
+                                if desktops.is_none() {
+                                    *desktops = wallpaper_refresh::start_foreground_desktops(hwnd);
                                 }
-                                // Unknown (the desktop itself, say): the next one counts again.
-                                last_foreground_desktop.set(desktop);
+                                if let Some(desktops) = desktops.as_ref() {
+                                    let _ = desktops.send(Some(lparam));
+                                }
+                                return Some(0);
+                            } else if wparam == 2 {
+                                // The worker found the foreground window on another desktop.
                             } else {
                                 sync_desktops_differ(hwnd, &desktops_differ);
                             }
@@ -1501,6 +1532,8 @@ impl App {
             pecofence_platform::process::is_packaged(),
         );
 
+        let wallpaper_reader =
+            WallpaperReader::start(control.hwnd(), args.wallpaper_override.clone());
         let mut app = App {
             state,
             ctx,
@@ -1595,6 +1628,8 @@ impl App {
             cut_clip_seq: 0,
             cut_paste: None,
             wallpaper_sig: None,
+            wallpaper_reader,
+            last_wallpaper: None,
             wallpaper_cache: BackdropCache::default(),
             prewarm: None,
             startup_backdrops: None,
