@@ -727,13 +727,58 @@ impl App {
 
     /// Menu, Ctrl+wheel, settings page and CLI: one place that changes a fence's icon size and
     /// everything derived from it (window redraw, cell snap, height fit, auto height, save).
+    /// Back at the size it started from, the fence gets the height it had then (not the fitted
+    /// one), so larger and back again leaves it as it was, unless the user sized it meanwhile.
     pub(super) fn apply_icon_size(&mut self, fence: FenceId, size: u32) {
+        let host = self.state.host_of(fence);
+        let old_size = self.state.fence(fence).map(|f| f.view.icon_size);
+        let rest_h = self
+            .fences
+            .get(&host)
+            .filter(|w| !w.is_rolled())
+            .map(|w| w.expanded_height_px());
+        // Sized by hand since the last step: its height is the user's now.
+        if self
+            .icon_size_heights
+            .get(&host)
+            .is_some_and(|&(_, _, _, applied)| rest_h != Some(applied))
+        {
+            self.icon_size_heights.remove(&host);
+        }
+        let fits = self
+            .state
+            .fence(host)
+            .is_some_and(|f| !f.view.auto_height && f.tool.is_none());
+        if let (true, Some(old_size), Some(h)) = (fits, old_size, rest_h)
+            && old_size != size
+            && !self.icon_size_heights.contains_key(&host)
+        {
+            self.icon_size_heights.insert(host, (fence, old_size, h, h));
+        }
         self.state.set_icon_size(fence, size);
         self.show_grid(fence);
         // The old size's extractions still queued would delay the new size's.
         self.drop_unneeded_icon_requests();
         self.apply_cell_snap(fence);
-        self.fit_height_to_content(fence);
+        match self.icon_size_heights.get(&host).copied() {
+            Some((tab, start, h, _)) if tab == fence && start == size => {
+                self.icon_size_heights.remove(&host);
+                if let Some(w) = self.fences.get(&host).filter(|w| !w.is_rolled()) {
+                    let rect = w.apply_height(h, true);
+                    tracing::info!(%fence, size, h, "icon size back where it started: so is the height");
+                    self.record_bounds(host, rect, false, h, "icon size back");
+                }
+            }
+            _ => {
+                self.fit_height_to_content(fence);
+            }
+        }
+        // The height this step left, which the next step expects to find.
+        if let Some(applied) = self.fences.get(&host).map(|w| w.expanded_height_px())
+            && let Some(e) = self.icon_size_heights.get_mut(&host)
+        {
+            e.3 = applied;
+        }
         self.apply_auto_height(fence);
         self.schedule_save();
     }

@@ -405,6 +405,12 @@ pub(super) fn on_nclbuttondblclk(
 ) -> Option<isize> {
     let HandlerCtx { view, queue, .. } = h;
     let fence_id = h.fence_id;
+    // The bottom edge, as Windows' edges stretch a window: the height that shows every icon
+    // (适应内容大小). DefWindowProc would stretch the fence to the screen's height instead.
+    if wparam as isize == msg::HTBOTTOM {
+        queue.push(Command::FitToContent(fence_id));
+        return Some(0);
+    }
     if wparam as isize == msg::HTCAPTION {
         let suppressed = view
             .borrow_mut()
@@ -817,6 +823,8 @@ pub(super) fn on_sizing(h: &HandlerCtx, hwnd: HWND, wparam: usize, lparam: isize
         min_w,
         min_h: (rows.fixed + rows.step).round() as i32,
         rolled_h: v.rolled_up.then(|| v.rolled_h_px()),
+        // A tool fence has no rows of icons to fit.
+        fit_h: (!v.rolled_up && !v.shows_tool()).then(|| v.fitting_height_px()),
     };
     drop(guard);
     // SAFETY: lParam is the RECT* being sized for this message.

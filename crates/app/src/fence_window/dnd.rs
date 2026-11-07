@@ -627,6 +627,7 @@ impl DropHandler for FenceDropHandler {
         allowed: u32,
     ) -> DropEffect {
         let internal = Self::internal().is_some();
+        forget_link_folder();
         // A drag of only the desktop's own items (This PC, OneDrive) has no paths left: it goes
         // to the shell, which makes their shortcuts.
         let hdrop = dragdrop::has_hdrop(data).then(|| dropped_paths(data, internal));
@@ -755,10 +756,7 @@ impl DropHandler for FenceDropHandler {
             g.as_mut().filter(|v| !v.shows_tool()).map(|v| {
                 let spot = v.drop_spot_at(pt.x, pt.y, internal.as_ref());
                 let tab_fence = spot.tab.and_then(|i| v.tabs.get(i)).map(|t| t.id);
-                let folder = spot
-                    .folder
-                    .and_then(|i| v.items.get(i))
-                    .map(|it| it.path.clone());
+                let folder = spot.folder.and_then(|i| v.item_drop_folder(i));
                 let dest = v.drop_folder(&spot);
                 v.drag_scroll = None;
                 if v.snap_scroll() {
@@ -977,12 +975,67 @@ impl DropHandler for FenceDropHandler {
     }
 }
 
+thread_local! {
+    /// The last shortcut a drag hovered and the folder it points to (None: not a folder, or
+    /// not on a local drive): `link_folder` asks the shortcut once per hover, not per DragOver.
+    static LINK_FOLDER: RefCell<Option<(PathBuf, Option<PathBuf>)>> = const { RefCell::new(None) };
+}
+
+/// A new drag starts: shortcuts are asked again (one may have been changed meanwhile).
+pub(super) fn forget_link_folder() {
+    LINK_FOLDER.with(|c| c.borrow_mut().take());
+}
+
+/// The folder a `.lnk` at `path` points to, when it is one on a local drive (fixed or
+/// removable): files dropped on such a shortcut go into that folder, as on the Windows desktop
+/// (feedback #121). A share or a mapped network drive is not asked (that could hold the drag
+/// until the network gives up): the drop goes into the fence as before.
+fn link_folder(path: &Path) -> Option<PathBuf> {
+    if !path
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("lnk"))
+    {
+        return None;
+    }
+    if let Some(known) = LINK_FOLDER.with(|c| {
+        c.borrow()
+            .as_ref()
+            .filter(|(p, _)| p == path)
+            .map(|(_, f)| f.clone())
+    }) {
+        return known;
+    }
+    let target = pecofence_platform::shell::shortcut_target_expanded(path);
+    let place = target
+        .as_deref()
+        .map_or("none", pecofence_platform::shell::drive_kind);
+    let folder = target.filter(|t| matches!(place, "fixed" | "removable") && t.is_dir());
+    tracing::info!(
+        place,
+        folder = folder.is_some(),
+        "shortcut under a drag: drop target if it points to a local folder"
+    );
+    LINK_FOLDER.with(|c| *c.borrow_mut() = Some((path.to_path_buf(), folder.clone())));
+    folder
+}
+
 impl FenceViewState {
-    /// The folder files dropped on `spot` land in: the folder item, else the target tab's or
-    /// the shown fence's portal folder. None = the desktop (a virtual fence's files live there).
+    /// Where files dropped on item `i` go: a folder item's own path, the Recycle Bin, or the
+    /// local folder a shortcut points to (`link_folder`); None for any other item.
+    pub(super) fn item_drop_folder(&self, i: usize) -> Option<PathBuf> {
+        let it = self.items.get(i)?;
+        if it.is_folder || pecofence_platform::shell::is_recycle_bin_path(&it.path) {
+            return Some(it.path.clone());
+        }
+        link_folder(&it.path)
+    }
+
+    /// The folder files dropped on `spot` land in: the folder item (or the folder a shortcut
+    /// item points to), else the target tab's or the shown fence's portal folder. None = the
+    /// desktop (a virtual fence's files live there).
     pub(super) fn drop_folder(&self, spot: &DropSpot) -> Option<PathBuf> {
         if let Some(i) = spot.folder {
-            return self.items.get(i).map(|it| it.path.clone());
+            return self.item_drop_folder(i);
         }
         match spot.tab.and_then(|i| self.tabs.get(i)) {
             Some(t) if t.id != self.active => t.folder.clone(),
@@ -1030,7 +1083,7 @@ impl FenceViewState {
 
     /// A folder item under a client-pixel point that is not one of `exclude` (the items being
     /// dragged): Explorer moves dropped files into it. The Recycle Bin item counts too (a drop
-    /// on it recycles).
+    /// on it recycles), and so does a shortcut to a local folder (`item_drop_folder`).
     pub(super) fn folder_drop_target(
         &self,
         x_px: i32,
@@ -1039,8 +1092,10 @@ impl FenceViewState {
     ) -> Option<usize> {
         let i = self.hit_item(x_px, y_px)?;
         let it = self.items.get(i)?;
-        let target = it.is_folder || pecofence_platform::shell::is_recycle_bin_path(&it.path);
-        (target && !exclude.contains(&it.id)).then_some(i)
+        if exclude.contains(&it.id) {
+            return None;
+        }
+        self.item_drop_folder(i).map(|_| i)
     }
 
     /// Resolves what a drag at screen point (sx, sy) targets in this window.

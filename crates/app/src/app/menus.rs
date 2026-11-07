@@ -74,6 +74,8 @@ const CMD_FENCE_SORT_OPENED: u32 = 326;
 const CMD_FENCE_SORT_GROUP: u32 = 327;
 const CMD_FENCE_SORT_FOLDERS_FIRST: u32 = 328;
 const CMD_FENCE_LOCK: u32 = 333;
+/// 适应内容大小: the height that shows every icon, as a double-click on the bottom edge does.
+const CMD_FENCE_FIT: u32 = 334;
 const CMD_FENCE_RENAME: u32 = 330;
 /// Opens the settings page on the 「栅栏」 tab for this fence.
 const CMD_FENCE_OPTIONS: u32 = 331;
@@ -133,6 +135,8 @@ mod glyph {
     /// Favicon: a frame with a title strip, like a fence with tabs.
     pub const TAB: char = '\u{E737}';
     pub const LOCK: char = '\u{E72E}';
+    /// FitPage: 适应内容大小.
+    pub const FIT: char = '\u{E9A6}';
     pub const UNLOCK: char = '\u{E785}';
     pub const DELETE: char = '\u{E74D}';
     pub const VIEW: char = '\u{E890}';
@@ -938,6 +942,17 @@ impl App {
                     .icon(glyph::TAB);
             }
         }
+        // Fences of icons fit their height to them; nothing to fit while it is rolled, sized
+        // by 自动高度 already, locked, or placed like the desktop.
+        if f.tool.is_none() {
+            menu.item(
+                CMD_FENCE_FIT,
+                pecofence_core::i18n::text("适应内容大小"),
+                false,
+                arranged || rolled || h.locked || h.view.auto_height,
+            )
+            .icon(glyph::FIT);
+        }
         menu.item(
             CMD_FENCE_LOCK,
             if h.locked {
@@ -1130,6 +1145,7 @@ impl App {
                 self.schedule_save();
             }
             CMD_FENCE_LOCK => self.set_fence_locked(host, !h.locked),
+            CMD_FENCE_FIT => self.fit_to_content_by_user(fence, "fence menu"),
             CMD_FENCE_OPTIONS => self.open_fence_options(fence),
             CMD_FENCE_NEW => {
                 let rect = self.place_new_fence(3, 200.0, x, y, Some(host));
