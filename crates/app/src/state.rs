@@ -1708,19 +1708,18 @@ impl AppState {
         Some(id)
     }
 
-    /// Replaces smart fence `id`'s results. Returns true when they changed (set, order or
-    /// content), so the window must redraw.
-    pub fn set_smart_results(&mut self, id: FenceId, entries: Vec<DesktopEntry>) -> bool {
+    /// Replaces smart fence `id`'s results, each with its display name (named on the worker
+    /// that found them, see [`Self::smart_known_names`]). Returns true when they changed (set,
+    /// order or content), so the window must redraw.
+    pub fn set_smart_results(&mut self, id: FenceId, entries: Vec<(DesktopEntry, String)>) -> bool {
         if self.smart_spec(id).is_none() {
             return false;
         }
         let old_items = self.evict_portal_members(id);
-        let known = KnownNames::of(&old_items);
         let mut ids = Vec::with_capacity(entries.len());
         let mut new_items = Vec::with_capacity(entries.len());
-        for entry in entries {
-            let name = known.get(&entry);
-            let item = runtime_item(entry, name);
+        for (entry, name) in entries {
+            let item = runtime_item(entry, Some(name));
             if ids.contains(&item.id) {
                 continue;
             }
@@ -1730,6 +1729,20 @@ impl AppState {
         }
         self.portal_members.insert(id, ids);
         old_items != new_items
+    }
+
+    /// The display names smart fence `id` shows now, for the worker naming its next results:
+    /// an unchanged file keeps its name without asking the shell again.
+    pub(crate) fn smart_known_names(&self, id: FenceId) -> KnownNames {
+        KnownNames(
+            self.portal_members
+                .get(&id)
+                .into_iter()
+                .flatten()
+                .filter_map(|i| self.portal_items.get(i))
+                .map(|it| ((it.key.clone(), it.mtime), it.display_name.clone()))
+                .collect(),
+        )
     }
 
     /// Re-reads every folder a fence shows (startup, watcher batches). Returns the fences that
@@ -2652,7 +2665,7 @@ struct OpenedFolder {
 
 /// Display names of runtime items that survive a re-read: asking the shell costs several ms per
 /// item on a OneDrive folder, and an unchanged file (same path, same mtime) has the same name.
-struct KnownNames(HashMap<(ItemKey, i64), String>);
+pub(crate) struct KnownNames(HashMap<(ItemKey, i64), String>);
 
 impl KnownNames {
     fn of(old: &[Item]) -> Self {
@@ -2663,7 +2676,7 @@ impl KnownNames {
         )
     }
 
-    fn get(&self, entry: &DesktopEntry) -> Option<String> {
+    pub(crate) fn get(&self, entry: &DesktopEntry) -> Option<String> {
         self.0
             .get(&(
                 ItemKey::from_path(&entry.path.to_string_lossy()),
@@ -2676,23 +2689,27 @@ impl KnownNames {
     }
 }
 
+/// The name a folder entry shows: the shell's (no extension, a localized folder's own name),
+/// else the file name without its extension. Asks the shell (COM).
+pub(crate) fn entry_display_name(entry: &DesktopEntry) -> String {
+    shell::display_name(&entry.path).unwrap_or_else(|| {
+        if entry.is_folder {
+            entry.file_name.clone()
+        } else {
+            Path::new(&entry.file_name)
+                .file_stem()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_else(|| entry.file_name.clone())
+        }
+    })
+}
+
 /// The runtime item of a folder portal's entry or a smart fence's result; `display_name` when
 /// already known, else the shell's name for it.
 fn runtime_item(entry: DesktopEntry, display_name: Option<String>) -> Item {
     let path_str = entry.path.to_string_lossy().to_string();
     let (icon_key, _) = crate::icons::icon_key_for(&entry.path, entry.is_folder, entry.mtime);
-    let display_name = display_name.unwrap_or_else(|| {
-        shell::display_name(&entry.path).unwrap_or_else(|| {
-            if entry.is_folder {
-                entry.file_name.clone()
-            } else {
-                Path::new(&entry.file_name)
-                    .file_stem()
-                    .map(|s| s.to_string_lossy().to_string())
-                    .unwrap_or_else(|| entry.file_name.clone())
-            }
-        })
-    });
+    let display_name = display_name.unwrap_or_else(|| entry_display_name(&entry));
     Item {
         id: portal_item_id(&path_str),
         key: ItemKey::from_path(&path_str),

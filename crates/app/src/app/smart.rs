@@ -53,25 +53,41 @@ pub(super) struct SmartRun {
     /// The Everything search sent and the sequence number its answer carries.
     pub query: String,
     pending: Option<u16>,
-    /// The folder read whose result this fence waits for (a newer run drops an older one).
+    /// The worker (a folder read, or the check of Everything's answer) whose result this fence
+    /// waits for (a newer run drops an older one).
     read: Option<u32>,
 }
 
-/// A folder read without Everything, done on a worker.
+/// What a smart fence's worker found: the results kept (newest first, at most the limit), the
+/// matches in all, the entries looked at and how many matched before the limit cut them.
+struct Found {
+    entries: Vec<DesktopEntry>,
+    total: u32,
+    scanned: usize,
+    kept: usize,
+}
+
+/// A smart fence's results worked out on a worker: a folder read without Everything, or
+/// Everything's answer checked file by file. The results come named.
 pub(super) struct FolderRead {
     id: FenceId,
     seq: u32,
-    found: Vec<DesktopEntry>,
+    source: SmartSource,
+    found: Vec<(DesktopEntry, String)>,
     total: u32,
     scanned: usize,
+    kept: usize,
+    /// Time spent finding (reading or checking) and naming the results.
     ms: u64,
+    names_ms: u64,
 }
 
 pub(super) struct SmartState {
     pub runs: HashMap<FenceId, SmartRun>,
     seq: u16,
-    /// Folder reads: the last sequence number, the results coming back from the workers, and
-    /// the fences being read (true: another read waits for this one to end).
+    /// Workers (folder reads, checks of Everything's answers): the last sequence number, the
+    /// results coming back, and the fences whose folder is being read (true: another read
+    /// waits for this one to end).
     read_seq: u32,
     read_tx: mpsc::Sender<FolderRead>,
     read_rx: mpsc::Receiver<FolderRead>,
@@ -255,49 +271,93 @@ impl App {
         }
         if !spec.works_without_everything() {
             tracing::info!(%id, why, "smart fence: needs Everything, which is not running");
-            self.smart_done(id, SmartSource::NeedsEverything, Vec::new(), 0, None);
+            self.smart_done(id, SmartSource::NeedsEverything, Vec::new(), 0);
             return;
         }
         self.read_folder_later(id, spec, why);
     }
 
-    /// Reads smart fence `id`'s folder on a worker (a big folder tree takes a while); the result
-    /// comes back through `WM_APP_SMART_READ`. One read per fence at a time: a run asked for
-    /// meanwhile follows the one in progress.
+    /// Reads smart fence `id`'s folder on a worker (a big folder tree takes a while). One read
+    /// per fence at a time: a run asked for meanwhile follows the one in progress.
     fn read_folder_later(&mut self, id: FenceId, spec: SmartSpec, why: &str) {
         if let Some(again) = self.smart.reading.get_mut(&id) {
             *again = true;
             tracing::debug!(%id, why, "smart fence: a folder read runs already; another follows it");
             return;
         }
+        self.smart.reading.insert(id, false);
+        tracing::info!(%id, why, "smart fence: reading the folder without Everything");
+        let limit = spec.limit as usize;
+        let started = self.smart_work_later(id, SmartSource::Folder, move || {
+            let folder = PathBuf::from(spec.folder.as_deref().unwrap_or_default());
+            let (mut entries, scanned) = read_folder(&spec, &folder);
+            let kept = entries.len();
+            entries.sort_by_key(|e| std::cmp::Reverse(e.mtime));
+            entries.truncate(limit);
+            Found {
+                entries,
+                total: kept as u32,
+                scanned,
+                kept,
+            }
+        });
+        if !started {
+            self.smart.reading.remove(&id);
+        }
+    }
+
+    /// Works out smart fence `id`'s results on a worker: `find` (a folder read, or the check of
+    /// Everything's answer: a file system call per file, a COM call per shortcut when a
+    /// condition looks at targets), then the shell's display name of each result not shown
+    /// already. Both cost too much for the UI thread with thousands of files or a OneDrive
+    /// folder. The result comes back through `WM_APP_SMART_READ`; false when the worker did not
+    /// start.
+    fn smart_work_later(
+        &mut self,
+        id: FenceId,
+        source: SmartSource,
+        find: impl FnOnce() -> Found + Send + 'static,
+    ) -> bool {
         self.smart.read_seq = self.smart.read_seq.wrapping_add(1);
         let seq = self.smart.read_seq;
-        self.smart.reading.insert(id, false);
         self.smart.runs.entry(id).or_default().read = Some(seq);
+        let known = self.state.smart_known_names(id);
         let tx = self.smart.read_tx.clone();
         let control = self.control.hwnd().0 as isize;
-        tracing::info!(%id, why, seq, "smart fence: reading the folder without Everything");
         let spawned = std::thread::Builder::new()
             .name("pecofence-smart-read".into())
             .spawn(move || {
-                // Shortcut targets are read through COM.
-                let _com = spec
-                    .needs_shortcut_targets()
-                    .then(pecofence_platform::com::MtaGuard::init);
+                // Shortcut targets and display names come through COM.
+                let _com = pecofence_platform::com::MtaGuard::init();
                 let started = Instant::now();
-                let folder = PathBuf::from(spec.folder.as_deref().unwrap_or_default());
-                let (mut found, scanned) = read_folder(&spec, &folder);
-                let total = found.len() as u32;
-                found.sort_by_key(|e| std::cmp::Reverse(e.mtime));
-                found.truncate(spec.limit as usize);
+                let Found {
+                    entries,
+                    total,
+                    scanned,
+                    kept,
+                } = find();
                 let ms = started.elapsed().as_millis() as u64;
+                let named_at = Instant::now();
+                let found: Vec<(DesktopEntry, String)> = entries
+                    .into_iter()
+                    .map(|e| {
+                        let name = known
+                            .get(&e)
+                            .unwrap_or_else(|| crate::state::entry_display_name(&e));
+                        (e, name)
+                    })
+                    .collect();
+                let names_ms = named_at.elapsed().as_millis() as u64;
                 let _ = tx.send(FolderRead {
                     id,
                     seq,
+                    source,
                     found,
                     total,
                     scanned,
+                    kept,
                     ms,
+                    names_ms,
                 });
                 window::post_message(
                     HWND(control as *mut core::ffi::c_void),
@@ -306,24 +366,35 @@ impl App {
                     0,
                 );
             });
-        if let Err(e) = spawned {
-            tracing::warn!(%id, error = %e, "smart fence: the folder read did not start");
-            self.smart.reading.remove(&id);
+        if let Err(e) = &spawned {
+            tracing::warn!(%id, source = source.as_str(), error = %e, "smart fence: the worker did not start");
+            if let Some(run) = self.smart.runs.get_mut(&id) {
+                run.read = None;
+            }
         }
+        spawned.is_ok()
     }
 
-    /// `TIMER_SMART_READ`: the folder reads that finished. A result an Everything answer or a
-    /// newer read replaced meanwhile is dropped.
+    /// `TIMER_SMART_READ`: the workers that finished (folder reads, checked Everything
+    /// answers). A result a newer run replaced meanwhile is dropped.
     pub(super) fn drain_smart_reads(&mut self) {
         while let Ok(r) = self.smart.read_rx.try_recv() {
-            let again = self.smart.reading.remove(&r.id).unwrap_or(false);
+            let again = r.source == SmartSource::Folder
+                && self.smart.reading.remove(&r.id).unwrap_or(false);
             let current = self.smart.runs.get(&r.id).and_then(|run| run.read) == Some(r.seq);
             if current && self.state.smart_spec(r.id).is_some() {
-                tracing::info!(id = %r.id, seq = r.seq, scanned = r.scanned, total = r.total, ms = r.ms, "smart fence: folder read without Everything");
                 self.smart.runs.entry(r.id).or_default().read = None;
-                self.smart_done(r.id, SmartSource::Folder, r.found, r.total, None);
+                let shown = r.found.len();
+                let applied_at = Instant::now();
+                self.smart_done(r.id, r.source, r.found, r.total);
+                let ui_ms = applied_at.elapsed().as_millis() as u64;
+                if r.source == SmartSource::Folder {
+                    tracing::info!(id = %r.id, seq = r.seq, scanned = r.scanned, total = r.total, shown, ms = r.ms, names_ms = r.names_ms, ui_ms, "smart fence: folder read without Everything");
+                } else {
+                    tracing::info!(id = %r.id, seq = r.seq, total = r.total, got = r.scanned, kept = r.kept, shown, ms = r.ms, names_ms = r.names_ms, ui_ms, "smart fence: Everything answered");
+                }
             } else {
-                tracing::debug!(id = %r.id, seq = r.seq, "smart fence: an older folder read dropped");
+                tracing::debug!(id = %r.id, seq = r.seq, source = r.source.as_str(), "smart fence: an older result dropped");
             }
             if again {
                 self.run_smart(r.id, "after the read in progress");
@@ -356,32 +427,39 @@ impl App {
             self.ask_next_smart();
             return;
         };
+        // This answer is in: a newer search of the fence (sent from here on) drops its check.
+        if let Some(run) = self.smart.runs.get_mut(&id) {
+            run.pending = None;
+        }
         let Some((total, hits)) = ev::parse_list2(bytes) else {
             tracing::warn!(%id, len = bytes.len(), "smart fence: Everything's answer could not be read");
-            if let Some(run) = self.smart.runs.get_mut(&id) {
-                run.pending = None;
-            }
             self.ask_next_smart();
             return;
         };
+        tracing::debug!(%id, seq, total, got = hits.len(), "smart fence: Everything's answer is checked on a worker");
         // Everything matched on its index; the files themselves say what they are now (gone,
         // hidden, system) and get the conditions Everything cannot test.
-        let now = pecofence_core::now_unix();
-        let targets = spec.needs_shortcut_targets();
-        let got = hits.len();
-        let mut entries: Vec<DesktopEntry> = hits
-            .iter()
-            .filter_map(|h| shell::stat_entry(Path::new(&h.path), EntryOrigin::UserDesktop))
-            .filter(|e| entry_matches(&spec, e, targets, now))
-            .collect();
-        // What was left out here is left out of the total too.
-        let total = total.saturating_sub((got - entries.len()) as u32);
-        let kept = entries.len();
-        entries.truncate(spec.limit as usize);
-        tracing::info!(%id, total, got, kept, shown = entries.len(), "smart fence: Everything answered");
-        self.smart_done(id, SmartSource::Everything, entries, total, Some(seq));
-        // The next fence's search goes once this answer is in: sent earlier, it could mark the
-        // fence's own newer search as answered.
+        let limit = spec.limit as usize;
+        self.smart_work_later(id, SmartSource::Everything, move || {
+            let now = pecofence_core::now_unix();
+            let targets = spec.needs_shortcut_targets();
+            let got = hits.len();
+            let mut entries: Vec<DesktopEntry> = hits
+                .iter()
+                .filter_map(|h| shell::stat_entry(Path::new(&h.path), EntryOrigin::UserDesktop))
+                .filter(|e| entry_matches(&spec, e, targets, now))
+                .collect();
+            let kept = entries.len();
+            entries.truncate(limit);
+            Found {
+                entries,
+                // What was left out here is left out of the total too.
+                total: total.saturating_sub((got - kept) as u32),
+                scanned: got,
+                kept,
+            }
+        });
+        // Everything is free: the next waiting search goes.
         self.ask_next_smart();
     }
 
@@ -429,16 +507,14 @@ impl App {
         }
     }
 
-    /// Puts a run's results into the fence and redraws it when they changed.
-    /// `answered`: the Everything search these results answer; a newer one sent for the fence
-    /// meanwhile stays pending. None (a folder read, no Everything): no search is pending any more.
+    /// Puts a run's results into the fence and redraws it when they changed. The search a
+    /// fence waits for (`SmartRun::pending`) is left alone: an answer clears it as it comes in.
     fn smart_done(
         &mut self,
         id: FenceId,
         source: SmartSource,
-        entries: Vec<DesktopEntry>,
+        entries: Vec<(DesktopEntry, String)>,
         total: u32,
-        answered: Option<u16>,
     ) {
         let count = entries.len();
         let changed = self.state.set_smart_results(id, entries);
@@ -446,9 +522,6 @@ impl App {
         let source_changed = run.source != source || run.total != total;
         run.source = source;
         run.total = total;
-        if answered.is_none_or(|seq| run.pending == Some(seq)) {
-            run.pending = None;
-        }
         if changed || source_changed {
             tracing::info!(%id, source = source.as_str(), count, total, "smart fence results changed");
         }
