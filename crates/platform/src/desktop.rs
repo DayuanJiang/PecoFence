@@ -324,7 +324,18 @@ pub fn insert_above(hwnd: HWND, host: HWND) -> Result<Option<HWND>> {
                     "placement under an elevated window refused; anchoring from the bottom"
                 );
                 SetWindowPos(hwnd, Some(HWND_BOTTOM), 0, 0, 0, 0, ANCHOR_FLAGS).ok()?;
-                SetWindowPos(host, Some(HWND_BOTTOM), 0, 0, 0, 0, ANCHOR_FLAGS).ok()?;
+                // Posted to Explorer's thread: a busy desktop would hold this one (and every
+                // fence) until it answers. `hwnd` waits behind the desktop meanwhile.
+                SetWindowPos(
+                    host,
+                    Some(HWND_BOTTOM),
+                    0,
+                    0,
+                    0,
+                    0,
+                    ANCHOR_FLAGS | SWP_ASYNCWINDOWPOS as u32,
+                )
+                .ok()?;
                 Ok(None)
             }
             Err(e) if e.code() == E_ACCESS_DENIED => {
