@@ -183,6 +183,10 @@ pub struct Pushed {
     pub dy: i32,
     /// The fences that pushed it, directly or through the ones in between.
     pub by: Vec<HWND>,
+    /// The work-area edge stopped it short of where the push wanted it (it still overlaps the
+    /// fence that pushed it), and the largest shift (px) of this push so far: for the log lines.
+    pub blocked: bool,
+    pub max_dy: i32,
 }
 
 /// A window in the system move / size loop and, for a title drag, the selection moving along.
