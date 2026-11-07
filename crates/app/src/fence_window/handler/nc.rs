@@ -748,6 +748,10 @@ pub(super) fn on_exitsizemove(
         // re-checks the cursor and re-arms while it is still inside.
         window::set_timer(hwnd, TIMER_PEEK_CLOSE, PEEK_CLOSE_MS);
     }
+    if cancelled {
+        // Put back under a pointer that stayed elsewhere (Esc over another fence's title).
+        super::leave_if_pointer_gone(hwnd);
+    }
     Some(0)
 }
 

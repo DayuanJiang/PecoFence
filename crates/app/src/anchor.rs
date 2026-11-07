@@ -20,10 +20,16 @@ const TIMER_RETRY: usize = 11;
 const TIMER_QUICKHIDE: usize = 13;
 /// A foreground event came while the anchor was busy (`on_foreground` after all, see the hook).
 const TIMER_FOREGROUND_LATER: usize = 14;
-/// Windows 10 (the legacy desktop) does not always report the desktop coming to the front: a
-/// click on it after closing a window left the double-click unseen. A light poll catches it.
+/// Windows does not always report the desktop coming to the front: on Windows 10 a click on it
+/// after closing a window, on every version a click on it while nothing or the taskbar was in
+/// front (sign-in, the end of a process whose window was in front). A light poll catches it.
 const TIMER_FOREGROUND_POLL: usize = 15;
 const FOREGROUND_POLL_MS: u32 = 250;
+/// Explorer reordered windows while the anchor was busy (`on_shell_reorder` after all).
+const TIMER_REORDER_LATER: usize = 16;
+/// Explorer's z-order changes are checked while the desktop is in front and this long after a
+/// foreground change: show desktop raises the desktop over the fences and lowers it again then.
+const SHELL_REORDER_WATCH_MS: u128 = 1000;
 const QUICKHIDE_DELAY_MS: u32 = 300;
 pub const TIMER_TEST: usize = 20;
 
@@ -345,6 +351,30 @@ pub struct DesktopAnchor {
     covered_by: Option<isize>,
     /// The window the last `on_foreground` was about (the poll compares with it).
     last_foreground: isize,
+    /// That window was the desktop (its comings and goings are logged, and the poll catches the
+    /// ones Windows does not report).
+    desktop_front: bool,
+    /// A fence opened a shell dialog (Properties, a delete confirmation): see
+    /// `dialog_opened_from`.
+    dialog_from: Option<DialogFrom>,
+    /// When the last `on_foreground` ran (`on_shell_reorder` watches Explorer's z-order changes
+    /// for a while after it).
+    last_foreground_at: Instant,
+    /// The hook on Explorer's z-order changes and the process it is for (a new one after an
+    /// Explorer restart).
+    reorder_hook: Option<(u32, WinEventHook)>,
+    /// This anchor's own cell, for the callback of a reorder hook installed later.
+    cell: std::rc::Weak<RefCell<Option<DesktopAnchor>>>,
+}
+
+/// The fence a shell dialog of this process was opened from, and the dialog once the poll saw
+/// it in front. When it closes, Windows activates the desktop (or the window below), since a
+/// fence cannot be activated by the system: the fence takes the foreground back instead, and
+/// its selection stays.
+#[derive(Clone, Copy, Debug)]
+struct DialogFrom {
+    fence: HWND,
+    dialog: Option<HWND>,
 }
 
 /// The fences' windows as a feedback report describes them.
@@ -487,23 +517,99 @@ impl DesktopAnchor {
             placed_above: None,
             covered_by: None,
             last_foreground: 0,
+            desktop_front: false,
+            dialog_from: None,
+            last_foreground_at: Instant::now(),
+            reorder_hook: None,
+            cell: Rc::downgrade(&cell),
         };
-        // The hook reports only changes of the foreground. With the desktop already in front
-        // (a start at sign-in before any window opens) its clicks are followed from now on.
-        if anchor.is_desktop_window(desktop::foreground_window()) {
-            tracing::info!("desktop in front at start; following its clicks");
+        // The hook reports only changes of the foreground. With the desktop, the taskbar or no
+        // window in front (a start at sign-in, a restart after the process whose fence was in
+        // front ended) the desktop's clicks are followed from now on: a click there brings the
+        // desktop to the front without any foreground event.
+        let front = desktop::foreground_window();
+        anchor.last_foreground = front.0 as isize;
+        anchor.desktop_front = anchor.is_desktop_window(front);
+        let cls = desktop::class_name(desktop::root_ancestor(front));
+        if anchor.follows_desktop_clicks(front) {
+            tracing::info!(
+                class = %cls,
+                "following the desktop's clicks from the start"
+            );
             anchor.set_raw_input_sink(true);
+        } else {
+            tracing::info!(
+                class = %cls,
+                "another window in front at start; the desktop's clicks are followed once it is in front"
+            );
         }
         anchor
             .sentinel
             .set_coalescable_timer(TIMER_ANCHOR_CHECK, 2000, 1000);
-        if anchor.generation == Generation::Legacy {
-            anchor
-                .sentinel
-                .set_coalescable_timer(TIMER_FOREGROUND_POLL, FOREGROUND_POLL_MS, 50);
-        }
+        anchor
+            .sentinel
+            .set_coalescable_timer(TIMER_FOREGROUND_POLL, FOREGROUND_POLL_MS, 50);
+        anchor.sync_reorder_hook();
         *cell.borrow_mut() = Some(anchor);
         Ok(cell)
+    }
+
+    /// Show desktop (Win+D) raises the desktop over the fences without telling anyone, a few
+    /// milliseconds after the foreground event (or with none at all when the desktop was in
+    /// front already): the anchor checks found it 50 ms to 2 s later, and the fences were gone
+    /// meanwhile. A hook on the z-order changes Explorer makes reports the raise itself. Installed
+    /// for the Explorer that runs now; `ensure_anchored` installs it again after a restart.
+    fn sync_reorder_hook(&mut self) {
+        let pid = desktop::window_pid(desktop::shell_window());
+        if pid == 0 || self.reorder_hook.as_ref().is_some_and(|(p, _)| *p == pid) {
+            return;
+        }
+        let cell = self.cell.clone();
+        let sentinel = self.sentinel.hwnd().0 as isize;
+        let hook = WinEventHook::install_for(
+            winevent::OBJECT_REORDER,
+            winevent::OBJECT_REORDER,
+            pid,
+            Box::new(move |_event, _hwnd| {
+                let Some(cell) = cell.upgrade() else { return };
+                if let Ok(mut guard) = cell.try_borrow_mut()
+                    && let Some(anchor) = guard.as_mut()
+                {
+                    anchor.on_shell_reorder();
+                } else {
+                    window::set_timer(
+                        HWND(sentinel as *mut core::ffi::c_void),
+                        TIMER_REORDER_LATER,
+                        10,
+                    );
+                }
+            }),
+        );
+        match hook {
+            Ok(h) => {
+                tracing::info!(pid, "following Explorer's z-order changes");
+                self.reorder_hook = Some((pid, h));
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, pid, "hook on Explorer's z-order changes failed");
+                self.reorder_hook = None;
+            }
+        }
+    }
+
+    /// Explorer changed the z-order. While the desktop is in front and right after a foreground
+    /// change, that is show desktop raising the desktop over the fences or lowering it again:
+    /// checked at once, the fences are back above the desktop before the next frame.
+    fn on_shell_reorder(&mut self) {
+        if self.peeking {
+            return;
+        }
+        let watching = self.show_desktop_active
+            || self.last_foreground_at.elapsed().as_millis() < SHELL_REORDER_WATCH_MS
+            || self.is_desktop_window(desktop::foreground_window());
+        if watching {
+            self.ensure_anchored("desktop reordered");
+        }
     }
 
     pub fn register_fence(&mut self, hwnd: HWND, shadow: Option<HWND>) {
@@ -552,6 +658,34 @@ impl DesktopAnchor {
         self.reanchor("raise fence");
     }
 
+    /// The fence `hwnd` is opening a shell dialog of this process (Properties, a delete
+    /// confirmation): when the dialog closes and Windows activates the desktop or another
+    /// window, the fence gets the foreground back and keeps its selection (`on_foreground`).
+    /// Nothing happens unless the poll sees the dialog in front first.
+    pub fn dialog_opened_from(&mut self, hwnd: HWND) {
+        self.dialog_from = Some(DialogFrom {
+            fence: hwnd,
+            dialog: None,
+        });
+    }
+
+    /// The foreground went to `hwnd` without a press of the button that is still held: a dialog
+    /// of ours opened from a fence (and seen in front) closed, when it is gone now. Takes the
+    /// pending dialog either way; returns the fence to give the foreground back to.
+    fn fence_after_dialog(&mut self, held: bool) -> Option<HWND> {
+        let d = self.dialog_from.take()?;
+        let dialog = d.dialog?;
+        let gone = !desktop::is_visible(dialog);
+        let back = gone && !held && self.fences.iter().any(|(f, _)| *f == d.fence);
+        tracing::info!(
+            gone,
+            held,
+            back,
+            "foreground changed after a dialog opened from a fence"
+        );
+        back.then_some(d.fence)
+    }
+
     #[allow(dead_code)]
     pub fn sentinel_window(&self) -> &Window {
         &self.sentinel
@@ -576,8 +710,9 @@ impl DesktopAnchor {
 
     /// Peek or show desktop in progress: keep every fence (and shadow) in the topmost band,
     /// ordered like `fences` (last = on top). Used instead of host insertion while `peeking`
-    /// or while the raised desktop would cover the fences, so windows created / detached /
-    /// raised meanwhile end up above the dimmer or the desktop instead of behind it.
+    /// or while the raised desktop would cover the fences (no normal window can go above it),
+    /// so windows created / detached / raised meanwhile end up above the dimmer or the desktop
+    /// instead of behind it.
     fn place_topmost_band(&mut self) {
         let mut refused = None;
         self.with_anchoring(|s| {
@@ -747,6 +882,32 @@ impl DesktopAnchor {
             && desktop::window_pid(root) == desktop::window_pid(desktop::shell_window())
     }
 
+    /// Is `hwnd`'s root window Explorer's taskbar (on any monitor)?
+    fn is_taskbar(&self, hwnd: HWND) -> bool {
+        if hwnd.0.is_null() {
+            return false;
+        }
+        let root = desktop::root_ancestor(hwnd);
+        let cls = desktop::class_name(root);
+        (cls == "Shell_TrayWnd" || cls == "Shell_SecondaryTrayWnd")
+            && desktop::window_pid(root) == desktop::window_pid(desktop::shell_window())
+    }
+
+    /// The desktop's clicks are followed (the raw input sink is on) while the desktop, the
+    /// taskbar or no window at all is in front. From the last two a click brings the desktop to
+    /// the front without a foreground event (sign-in, the end of a process whose window was in
+    /// front), so waiting for that event lost the double-click. Windows 10 often reports no
+    /// event for a click on the desktop from any window (an app that opened at sign-in, a
+    /// virtual desktop switch): there they are followed all the time. The sink takes only
+    /// presses on the bare desktop (`begin_marquee`); it costs one message per pointer move
+    /// (measured: under 1 % of a core while the pointer moves without a pause).
+    fn follows_desktop_clicks(&self, hwnd: HWND) -> bool {
+        self.generation == Generation::Legacy
+            || hwnd.0.is_null()
+            || self.is_desktop_window(hwnd)
+            || self.is_taskbar(hwnd)
+    }
+
     /// One of our fences, popups (rename, notice) or menus: show desktop goes on while it is in
     /// front. Settings and the dialogs of this process (Explorer's Properties, a confirmation)
     /// end it like any app's window, or the floating fences would cover them.
@@ -758,27 +919,28 @@ impl DesktopAnchor {
             && desktop::window_pid(root) == std::process::id()
     }
 
-    /// Have our windows ended up *below* the host? (Explorer raised the desktop.)
-    fn desktop_is_raised_over_us(&self) -> bool {
-        let Some(h) = self.host else { return false };
+    /// Have our windows ended up *below* the desktop window `host`? (Explorer raised it.)
+    fn desktop_is_raised_over_us(host: Option<IconHost>) -> bool {
+        let Some(h) = host else { return false };
         desktop::is_below(h.host, SENTINEL_CLASS) || desktop::is_below(h.host, FENCE_CLASS)
     }
 
     /// Show desktop (Win+D): Explorer raises the desktop window over every other window, the
     /// fences included, and gives it the foreground; it is over once another window comes to
-    /// the front. On 24H2+ Progman itself moves up (the fences keep their place in the z-order,
-    /// so inserting them "just above" it again is not reliable), on older builds the WorkerW
-    /// the icons were moved into, which `reanchor` follows as a host change.
+    /// the front. On 24H2+ Progman itself moves up, on older builds the WorkerW the icons were
+    /// moved into (`host`, as resolved now). Windows lets no normal window go above the raised
+    /// desktop (SetWindowPos succeeds and changes nothing), so with 「保持栅栏可见」 the fences
+    /// float in the topmost band until it ends; with 「随桌面隐藏」 they stay behind it.
     /// `reason`: which check found it (the foreground hook, its retry, the periodic check).
-    fn check_show_desktop(&mut self, reason: &'static str) {
+    fn check_show_desktop(&mut self, host: Option<IconHost>, reason: &'static str) {
         let foreground = desktop::foreground_window();
         if !self.show_desktop_active {
-            if self.desktop_is_raised_over_us() && self.is_desktop_window(foreground) {
+            if Self::desktop_is_raised_over_us(host) && self.is_desktop_window(foreground) {
                 self.show_desktop_active = true;
                 if let Some(callback) = self.on_desktop_front.as_ref() {
                     callback();
                 }
-                let host_kind = self.host.map(|h| h.kind);
+                let host_kind = host.map(|h| h.kind);
                 match self.behavior {
                     ShowDesktopBehavior::KeepVisible => tracing::info!(
                         reason,
@@ -801,21 +963,15 @@ impl DesktopAnchor {
         }
     }
 
-    /// Leaves the topmost band; the caller re-anchors above the host.
+    /// Leaves the topmost band straight into the fences' place above the desktop: the windows
+    /// Windows restores (and the one that came to the front) stay above them. Taking the topmost
+    /// flag away first put the fences over every window until the next check.
     fn end_show_desktop(&mut self, reason: &'static str) {
         self.show_desktop_active = false;
         self.topmost_refused = false;
         let front = desktop::root_ancestor(desktop::foreground_window());
         tracing::info!(reason, class = %desktop::class_name(front), "show desktop ended");
-        if self.behavior == ShowDesktopBehavior::KeepVisible {
-            self.with_anchoring(|s| {
-                for (f, shadow) in s.fences.clone() {
-                    for h in std::iter::once(f).chain(shadow) {
-                        let _ = desktop::set_topmost(h, false);
-                    }
-                }
-            });
-        }
+        self.reanchor(reason);
     }
 
     /// The window that sits between the host and our windows, or the host itself when some of
@@ -886,6 +1042,7 @@ impl DesktopAnchor {
 
     pub fn on_foreground(&mut self, hwnd: HWND) {
         self.last_foreground = hwnd.0 as isize;
+        self.last_foreground_at = Instant::now();
         if let Some(callback) = self.on_foreground_changed.as_ref() {
             callback(hwnd);
         }
@@ -912,12 +1069,16 @@ impl DesktopAnchor {
             return;
         }
         let is_desktop = self.is_desktop_window(hwnd);
-        let raised = self.desktop_is_raised_over_us();
+        let follow = self.follows_desktop_clicks(hwnd);
+        let raised = Self::desktop_is_raised_over_us(self.host);
+        let held = window::primary_button_down_async();
+        let back_to = self.fence_after_dialog(held);
         tracing::debug!(?hwnd, %cls, is_desktop, raised, "foreground changed");
-        // Only the changes to and from the desktop, once each: they start and end following its
-        // clicks (quick hide, marquee), and say what was in front when they did. Leaving the
-        // desktop, the line also counts what raw input reported meanwhile.
-        if is_desktop != self.quick.sink_registered {
+        // Only the changes to and from the desktop, once each: they say what was in front and
+        // whether the desktop's clicks (quick hide, marquee) are followed. Leaving the desktop,
+        // the line also counts what raw input reported since the last such line.
+        if is_desktop != self.desktop_front {
+            self.desktop_front = is_desktop;
             let button_down = window::primary_button_down_async();
             let pt = window::cursor_pos();
             if is_desktop {
@@ -934,6 +1095,7 @@ impl DesktopAnchor {
                 tracing::info!(
                     class = %cls,
                     desktop = is_desktop,
+                    follow,
                     raised,
                     button_down,
                     ?pt,
@@ -956,21 +1118,21 @@ impl DesktopAnchor {
             let sink_was_on = self.quick.sink_registered;
             self.set_raw_input_sink(true);
             let pt = window::cursor_pos();
-            let held = window::primary_button_down_async();
             self.quick
                 .desktop_activated(sink_was_on, held, Instant::now(), pt);
             // The press that activated the desktop reached Explorer before the sink existed: a
             // drag it starts still draws a marquee (from where the pointer is now). Activated
-            // any other way, the desktop ends the fence selection like a click on it does.
+            // any other way, the desktop ends the fence selection like a click on it does,
+            // unless a dialog opened from a fence just closed (the fence takes it back below).
             if held {
                 self.begin_marquee(pt);
-            } else {
+            } else if back_to.is_none() {
                 self.emit_marquee(MarqueeEvent::Pressed {
                     additive: additive_modifier(),
                 });
             }
         } else {
-            self.set_raw_input_sink(false);
+            self.set_raw_input_sink(follow);
             self.quick.pending_click = None;
             if self.quick.marquee_origin.take().is_some()
                 && std::mem::take(&mut self.quick.marquee_live)
@@ -984,6 +1146,14 @@ impl DesktopAnchor {
         self.ensure_anchored("foreground");
         self.retry_step = 0;
         self.sentinel.set_timer(TIMER_RETRY, RETRY_DELAYS_MS[0]);
+        if let Some(fence) = back_to {
+            // As Explorer's window gets the keyboard back when its Properties close.
+            let claimed = window::claim_foreground(fence);
+            tracing::info!(
+                claimed,
+                "the fence the dialog was opened from takes the foreground back"
+            );
+        }
     }
 
     /// Peek (Fences Win+Space): float every fence into the topmost band above `over` (the
@@ -1032,7 +1202,7 @@ impl DesktopAnchor {
             });
             // Show desktop may have ended during the peek, which suspends its checks; left
             // active, the fences would float above the window that came to the front.
-            self.check_show_desktop("peek off");
+            self.check_show_desktop(self.host, "peek off");
             self.reanchor("peek off");
             tracing::info!("peek off");
         }
@@ -1070,8 +1240,13 @@ impl DesktopAnchor {
             // Explorer restarted: the raised desktop went with it.
             self.end_show_desktop("icon host changed");
         }
-        self.check_show_desktop(reason);
+        self.check_show_desktop(resolved, reason);
         if self.show_desktop_active {
+            if resolved != self.host {
+                // Windows 10: the WorkerW the icons moved into is the raised desktop.
+                tracing::info!(reason, old = ?self.host, new = ?resolved, "icon host changed");
+                self.host = resolved;
+            }
             if self.behavior == ShowDesktopBehavior::KeepVisible
                 && !self.fences.iter().all(|(f, _)| desktop::is_topmost(*f))
             {
@@ -1079,6 +1254,7 @@ impl DesktopAnchor {
             }
             return;
         }
+        self.sync_reorder_hook();
         let host_changed = resolved != self.host;
         if host_changed || !self.is_anchored() {
             if !host_changed {
@@ -1560,18 +1736,39 @@ impl DesktopAnchor {
             TIMER_ANCHOR_CHECK => self.ensure_anchored("periodic check"),
             TIMER_FOREGROUND_POLL => {
                 let front = desktop::foreground_window();
-                if front.0.is_null() || front.0 as isize == self.last_foreground {
+                if front.0 as isize == self.last_foreground {
+                    return;
+                }
+                if front.0.is_null() {
+                    // No window in front (a window closed, nothing else was activated): the
+                    // click that brings the desktop back may come without an event.
+                    self.last_foreground = 0;
+                    if !self.quick.sink_registered {
+                        tracing::info!("no window in front; following the desktop's clicks");
+                        self.set_raw_input_sink(true);
+                    }
                     return;
                 }
                 // Our own windows (Peek's dimmer and search box, Settings) are not reported by the
                 // hook either, on purpose.
                 if desktop::window_pid(desktop::root_ancestor(front)) == std::process::id() {
                     self.last_foreground = front.0 as isize;
+                    let root = desktop::root_ancestor(front);
+                    if let Some(d) = self.dialog_from.as_mut()
+                        && d.dialog.is_none()
+                        && desktop::class_name(root) == "#32770"
+                    {
+                        d.dialog = Some(root);
+                        tracing::info!("a dialog opened from a fence is in front");
+                    }
                     return;
                 }
-                // Only what the hook missed and matters: the desktop in front or gone from it
-                // (its clicks are followed then). Other changes come as events.
-                if self.is_desktop_window(front) != self.quick.sink_registered {
+                // Only what the hook missed and matters: the desktop in front or gone from it, or
+                // the taskbar (the desktop's clicks are followed then). Other changes come as
+                // events.
+                if self.is_desktop_window(front) != self.desktop_front
+                    || self.follows_desktop_clicks(front) != self.quick.sink_registered
+                {
                     let cls = desktop::class_name(desktop::root_ancestor(front));
                     tracing::info!(
                         class = %cls,
@@ -1581,6 +1778,10 @@ impl DesktopAnchor {
                 } else {
                     self.last_foreground = front.0 as isize;
                 }
+            }
+            TIMER_REORDER_LATER => {
+                self.sentinel.kill_timer(TIMER_REORDER_LATER);
+                self.on_shell_reorder();
             }
             TIMER_FOREGROUND_LATER => {
                 self.sentinel.kill_timer(TIMER_FOREGROUND_LATER);

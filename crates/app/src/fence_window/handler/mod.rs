@@ -105,8 +105,21 @@ pub(super) fn finish_drag_cancel(
             clear_hint(hinted);
             put_back(view, hwnd, rect);
             restore_members(&group);
+            leave_if_pointer_gone(hwnd);
         }
         DragCancel::Tab => {}
+    }
+}
+
+/// A title drag held the capture, so no WM_MOUSELEAVE came while the pointer left the window;
+/// cancelled, the window goes back to a place the pointer is not at, and it kept its hover look
+/// (title plate, chevron) until the pointer passed again. Posts that leave once.
+pub(super) fn leave_if_pointer_gone(hwnd: HWND) {
+    // WindowFromPoint sends WM_NCHITTEST synchronously: no borrow of a view may be held.
+    let pt = window::cursor_pos();
+    if desktop::root_ancestor(desktop::window_from_point(pt.x, pt.y)) != hwnd {
+        tracing::debug!(?pt, "drag ended off the window; leaving its hover state");
+        window::post_message(hwnd, msg::WM_MOUSELEAVE, 0, 0);
     }
 }
 
