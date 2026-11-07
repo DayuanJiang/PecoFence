@@ -1,7 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.3.1
 
+- Folders dropped onto a program in a fence open with that program (#194, thanks to lizt12): drop one or more folders onto an application's shortcut (a .lnk to an .exe, .com, .bat or .cmd) or onto a program file itself, and the program starts with the folders, with the shortcut's saved arguments and start folder. The folders stay where they are and keep their fence, and the badge says 「使用 <名称> 打开」. Files, files and folders together, and shortcuts that are not programs (documents, folders, broken or Store app links) go into the fence as before.
 - The installer runs on Windows 10 2004 and later (build 19041, as the Store edition), so Windows 10 21H2 and LTSC 2021 no longer get 「此程序不支持当前计算机运行的 Windows 版本」; before, it needed 22H2 (build 19045) although the ZIP ran there.
 
 ## 0.3.0
