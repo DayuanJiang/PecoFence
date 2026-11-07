@@ -444,6 +444,9 @@ impl FenceDropHandler {
         }
         let effect = match (&mut self.shortcut_hover, &self.data) {
             (Some((_, Some(target))), Some(data)) => target.drag_over(data, key_state, pt, allowed),
+            // No application's shortcut (a document, a folder, a broken or a Store app's
+            // link): the folders drop on the fence as before.
+            (Some((_, None)), _) => return None,
             _ => DropEffect::None,
         };
         if let Ok(mut guard) = self.view.try_borrow_mut()
