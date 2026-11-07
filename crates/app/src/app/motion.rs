@@ -324,37 +324,42 @@ impl App {
         if more {
             self.ctx.frames.request();
         } else {
-            // End of an animation run: counted for the activity line, stuttered when it had a
-            // gap of two 60 Hz frames or a frame that took longer than a 60 Hz period to
-            // produce. One by one at info only when it stuttered badly (a gap of six frames, a
-            // frame of three): smaller hitches came by the dozen in an hour and filled most of
-            // the feedback logs.
-            let r = &self.frame_run;
-            let total = now.duration_since(r.started.unwrap_or(now));
-            let ms = crate::share_log::millis;
-            self.activity.animation_runs += 1;
-            if r.max_gap > Duration::from_millis(33) || r.max_frame > Duration::from_millis(16) {
-                self.activity.stuttered_runs += 1;
-                self.activity.max_gap_ms = self.activity.max_gap_ms.max(ms(r.max_gap));
-            }
-            if r.max_gap > Duration::from_millis(100) || r.max_frame > Duration::from_millis(50) {
-                tracing::info!(
-                    frames = r.frames + 1,
-                    total_ms = ms(total),
-                    max_gap_ms = ms(r.max_gap),
-                    max_frame_ms = ms(r.max_frame),
-                    "animation run stuttered"
-                );
-            } else {
-                tracing::debug!(
-                    frames = r.frames + 1,
-                    total_ms = ms(total),
-                    max_gap_ms = ms(r.max_gap),
-                    max_frame_ms = ms(r.max_frame),
-                    "animation run"
-                );
-            }
-            self.frame_prev = None;
+            self.end_frame_run(now);
         }
+    }
+
+    /// Closes the animation run in progress, whose last frame was at `now`.
+    pub(super) fn end_frame_run(&mut self, now: Instant) {
+        // End of an animation run: counted for the activity line, stuttered when it had a
+        // gap of two 60 Hz frames or a frame that took longer than a 60 Hz period to
+        // produce. One by one at info only when it stuttered badly (a gap of six frames, a
+        // frame of three): smaller hitches came by the dozen in an hour and filled most of
+        // the feedback logs.
+        let r = &self.frame_run;
+        let total = now.duration_since(r.started.unwrap_or(now));
+        let ms = crate::share_log::millis;
+        self.activity.animation_runs += 1;
+        if r.max_gap > Duration::from_millis(33) || r.max_frame > Duration::from_millis(16) {
+            self.activity.stuttered_runs += 1;
+            self.activity.max_gap_ms = self.activity.max_gap_ms.max(ms(r.max_gap));
+        }
+        if r.max_gap > Duration::from_millis(100) || r.max_frame > Duration::from_millis(50) {
+            tracing::info!(
+                frames = r.frames + 1,
+                total_ms = ms(total),
+                max_gap_ms = ms(r.max_gap),
+                max_frame_ms = ms(r.max_frame),
+                "animation run stuttered"
+            );
+        } else {
+            tracing::debug!(
+                frames = r.frames + 1,
+                total_ms = ms(total),
+                max_gap_ms = ms(r.max_gap),
+                max_frame_ms = ms(r.max_frame),
+                "animation run"
+            );
+        }
+        self.frame_prev = None;
     }
 }

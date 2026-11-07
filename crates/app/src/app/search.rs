@@ -561,7 +561,7 @@ impl App {
                 shell_menu = None;
             }
         }
-        let cmd = menu.show_context(owner, x, y);
+        let cmd = self.track_menu(|| menu.show_context(owner, x, y));
         if let Some(sm) = shell_menu.as_ref()
             && sm.contains(cmd)
         {
