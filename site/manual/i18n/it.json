@@ -288,7 +288,7 @@
   "双击空白处": "Fai doppio clic su una zona vuota",
   "隐藏所有栅栏，再双击一次显示": "Nascondi tutti i riquadri; fai di nuovo doppio clic per mostrarli",
   "在空白处拖出一个框": "Trascina per disegnare un riquadro di selezione su una zona vuota",
-  "选中框碰到的栅栏。没碰到栅栏时，松开后可以点「在此新建栅栏」": "Seleziona i riquadri toccati dal riquadro di selezione. Se non ne tocca nessuno, dopo aver rilasciato il pulsante puoi fare clic su «Crea un riquadro qui»",
+  "选中框碰到的栅栏。没碰到栅栏时，松开后可以点「在此新建栅栏」或「在此显示文件夹…」": "Seleziona i riquadri toccati dal riquadro di selezione. Se non ne tocca nessuno, dopo aver rilasciato il pulsante puoi fare clic su «Crea un riquadro qui» o «Mostra una cartella qui…»",
   "按住 <kbd>Ctrl</kbd> 或 <kbd>Shift</kbd> 拖框": "Tieni premuto <kbd>Ctrl</kbd> o <kbd>Shift</kbd> mentre trascini per disegnare un riquadro di selezione",
   "在已选的栅栏之外再加几个": "Aggiungi altri riquadri alla selezione",
   "按住其中一个的标题栏拖动": "Trascina la barra del titolo di uno dei riquadri selezionati",
@@ -457,7 +457,17 @@
   "动画：右键托盘图标打开设置，在「布局与备份」页输入名字保存快照；随后把两个栅栏拖到桌面空白处；点快照右边的「恢复」，栅栏回到保存时的样子，列表里多了一份「恢复快照前」": "Animazione: clicca con il tasto destro sull’icona nell’area di notifica per aprire le Impostazioni. Nella pagina «Disposizione e backup», inserisci un nome e salva un’istantanea. Poi trascina due riquadri su altre aree vuote del Desktop. Seleziona «Ripristina» accanto all’istantanea per riportare i riquadri alla disposizione salvata. Nell’elenco compare una nuova voce: «Prima del ripristino dell’istantanea».",
   "动画：设置的「小工具」页最上面的「小工具」开关开着；点「便签与待办」右边的「新建便签」，桌面上出现一个便签，打了三行字；点别处保存后，行首写了 [ ] 的两行变成待办，点第一行的方框打上勾；点「时钟」右边的「添加」，出现一个显示时间和日期的时钟，按钮变成灰色的「已在桌面上」；点「天气」右边的「添加」，出现「天气」栅栏，片刻后显示东京的天气": "Animazione: nella pagina «Strumenti» delle Impostazioni, l’interruttore «Strumenti» in alto è attivo. «Nuova nota» a destra di «Note e attività» mette sul desktop una nota in cui vengono scritte tre righe. Un clic altrove la salva, le due righe che iniziano con [ ] diventano attività e un clic spunta la prima. «Aggiungi» a destra di «Orologio» aggiunge un orologio con l’ora e la data, e il pulsante diventa grigio e mostra «Già sul desktop». «Aggiungi» a destra di «Meteo» aggiunge un riquadro «meteo» che poco dopo mostra il meteo di Tokyo",
   "动画：桌面上有「GitHub 动态」和「电脑状态」两个脚本栅栏。鼠标移到一个 PR 那一行，这一行亮起浅色的底，指针变成小手，右边出现小箭头，随后显示提示；点一下，浏览器打开这个 PR。再点「刷新」，栅栏底部先显示正在运行，再显示新的更新时间。「电脑状态」里的数字每 2 秒变一次；点「本机 IP」那一行，IP 地址就复制好了；最后点「打开任务管理器」，任务管理器打开": "Animazione: sul desktop ci sono due riquadri script, «github» e «stato-pc». Il puntatore si sposta sulla riga di una pull request: la riga prende uno sfondo chiaro, il puntatore diventa una mano, a destra compare una piccola freccia e poi un suggerimento. Un clic apre la pull request nel browser. Dopo un clic su «Refresh», la riga in fondo al riquadro indica prima che lo script è in esecuzione, poi mostra un nuovo orario di aggiornamento. I numeri in «stato-pc» cambiano ogni 2 secondi. Un clic sulla riga «IP address» copia l’indirizzo e infine «Open Task Manager» apre Gestione attività",
-  "动画：一个程序的「打开」对话框停在「文档」，后面的资源管理器开着「合同」文件夹；点一下资源管理器，再点回对话框，对话框的地址栏里出现「合同」的路径，随后列出合同文件夹里的文件；再点桌面上的「设计稿」文件夹栅栏，对话框马上跳到「设计稿」": "Animazione: la finestra di dialogo Apri di un’applicazione mostra «Documenti», mentre dietro Esplora file mostra la cartella «Contratti». Dopo un clic su Esplora file e uno di nuovo sulla finestra di dialogo, nella sua barra degli indirizzi compare il percorso di «Contratti», e poi la finestra elenca i file di quella cartella. Un clic sul riquadro cartella «Bozze di design» sul desktop porta subito la finestra di dialogo a «Bozze di design»"
+  "动画：一个程序的「打开」对话框停在「文档」，后面的资源管理器开着「合同」文件夹；点一下资源管理器，再点回对话框，对话框的地址栏里出现「合同」的路径，随后列出合同文件夹里的文件；再点桌面上的「设计稿」文件夹栅栏，对话框马上跳到「设计稿」": "Animazione: la finestra di dialogo Apri di un’applicazione mostra «Documenti», mentre dietro Esplora file mostra la cartella «Contratti». Dopo un clic su Esplora file e uno di nuovo sulla finestra di dialogo, nella sua barra degli indirizzi compare il percorso di «Contratti», e poi la finestra elenca i file di quella cartella. Un clic sul riquadro cartella «Bozze di design» sul desktop porta subito la finestra di dialogo a «Bozze di design»",
+  "展开得太快或太慢，可以在它下面的「展开快慢」里选「快」或「慢」。": "Se si espande troppo in fretta o troppo lentamente, scegli «Veloce» o «Lenta» in «Velocità di espansione», subito sotto.",
+  "在最上层的文件夹里，单击标题前的小文件夹图标，就用资源管理器打开这个文件夹。": "Nella cartella di primo livello, un clic sulla piccola icona di cartella prima del titolo apre la cartella in Esplora file.",
+  "也可以在桌面空白处拖出一个框，松开后选<b>「在此显示文件夹…」</b>，文件夹栅栏就放在框的位置。": "Puoi anche tracciare un rettangolo in una zona vuota del desktop e scegliere <b>«Mostra una cartella qui…»</b> al rilascio: il riquadro della cartella va al posto del rettangolo.",
+  "更快的办法：右键一个文件，选<b>「以后把 .pdf 文件都放到这里」</b>（菜单里显示的是这个文件的扩展名）。以后这种文件会自动放进这个栅栏。": "Più veloce: fai clic destro su un file e scegli <b>«Metti qui tutti i file .pdf d’ora in poi»</b> (il menu mostra l’estensione di quel file). Da quel momento i file di quel tipo finiranno da soli in questo riquadro.",
+  "返回上一级 / 回到刚离开的文件夹": "Sali di un livello / Torna nella cartella appena lasciata",
+  "在最上层的文件夹里单击标题前的文件夹图标": "Clic sull’icona di cartella prima del titolo, nella cartella di primo livello",
+  "用资源管理器打开这个文件夹": "Apre la cartella in Esplora file",
+  "把键盘移到下一个或上一个栅栏": "Sposta la tastiera nel riquadro successivo o precedente",
+  "速览时按 <kbd>Tab</kbd> 或方向键": "<kbd>Tab</kbd> o una freccia durante l’anteprima",
+  "键盘进到第一个栅栏，选中它的第一个图标": "La tastiera entra nel primo riquadro, sulla sua prima icona"
  },
  "stage": {
   "暂停": "Pausa",

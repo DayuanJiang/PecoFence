@@ -288,7 +288,7 @@
   "双击空白处": "Doble clic en una zona vacía",
   "隐藏所有栅栏，再双击一次显示": "Ocultar todos los grupos; otro doble clic los muestra",
   "在空白处拖出一个框": "Dibujar un rectángulo en una zona vacía",
-  "选中框碰到的栅栏。没碰到栅栏时，松开后可以点「在此新建栅栏」": "Seleccionar los grupos que toca. Si no toca ninguno, al soltar puedes hacer clic en «Crear grupo aquí»",
+  "选中框碰到的栅栏。没碰到栅栏时，松开后可以点「在此新建栅栏」或「在此显示文件夹…」": "Seleccionar los grupos que toca. Si no toca ninguno, al soltar puedes hacer clic en «Crear grupo aquí» o «Mostrar una carpeta aquí…»",
   "按住 <kbd>Ctrl</kbd> 或 <kbd>Shift</kbd> 拖框": "Dibujar el rectángulo con <kbd>Ctrl</kbd> o <kbd>Mayús</kbd> presionada",
   "在已选的栅栏之外再加几个": "Agregar más grupos a la selección",
   "按住其中一个的标题栏拖动": "Arrastrar la barra de título de uno de ellos",
@@ -457,7 +457,17 @@
   "动画：右键托盘图标打开设置，在「布局与备份」页输入名字保存快照；随后把两个栅栏拖到桌面空白处；点快照右边的「恢复」，栅栏回到保存时的样子，列表里多了一份「恢复快照前」": "Animación: con clic derecho en el icono de la bandeja se abre la configuración y, en la página «Distribución y copias de seguridad», se escribe un nombre y se guarda una instantánea; después se arrastran dos grupos a una zona vacía del escritorio; un clic en «Restaurar», a la derecha de la instantánea, devuelve los grupos a como estaban al guardarla, y en la lista aparece «Antes de restaurar la instantánea»",
   "动画：设置的「小工具」页最上面的「小工具」开关开着；点「便签与待办」右边的「新建便签」，桌面上出现一个便签，打了三行字；点别处保存后，行首写了 [ ] 的两行变成待办，点第一行的方框打上勾；点「时钟」右边的「添加」，出现一个显示时间和日期的时钟，按钮变成灰色的「已在桌面上」；点「天气」右边的「添加」，出现「天气」栅栏，片刻后显示东京的天气": "Animación: en la página «Herramientas» de la configuración, el interruptor «Herramientas» de arriba está activado. «Nueva nota», a la derecha de «Notas y tareas», pone una nota en el escritorio, donde se escriben tres líneas. Un clic en otro sitio la guarda, las dos líneas que empiezan con [ ] se convierten en tareas y un clic marca la primera. «Añadir», a la derecha de «Reloj», agrega un reloj con la hora y la fecha, y el botón se vuelve gris y dice «En el escritorio». «Añadir», a la derecha de «Tiempo», agrega un grupo «tiempo» que poco después muestra el tiempo en Tokio",
   "动画：桌面上有「GitHub 动态」和「电脑状态」两个脚本栅栏。鼠标移到一个 PR 那一行，这一行亮起浅色的底，指针变成小手，右边出现小箭头，随后显示提示；点一下，浏览器打开这个 PR。再点「刷新」，栅栏底部先显示正在运行，再显示新的更新时间。「电脑状态」里的数字每 2 秒变一次；点「本机 IP」那一行，IP 地址就复制好了；最后点「打开任务管理器」，任务管理器打开": "Animación: en el escritorio hay dos grupos de script, «github» y «estado-pc». El cursor llega a la fila de un pull request: la fila se resalta con un fondo claro, el cursor se convierte en una mano, aparece una flechita a la derecha y luego una descripción emergente. Un clic abre el pull request en el navegador. Después, un clic en «Refresh» hace que la parte inferior del grupo indique primero que el script está en ejecución y luego muestre una nueva hora de actualización. Los números de «estado-pc» cambian cada 2 segundos. Un clic en la fila «IP address» copia la dirección y, por último, «Open Task Manager» abre el Administrador de tareas",
-  "动画：一个程序的「打开」对话框停在「文档」，后面的资源管理器开着「合同」文件夹；点一下资源管理器，再点回对话框，对话框的地址栏里出现「合同」的路径，随后列出合同文件夹里的文件；再点桌面上的「设计稿」文件夹栅栏，对话框马上跳到「设计稿」": "Animación: el cuadro de diálogo Abrir de una aplicación muestra «Documentos», y detrás el Explorador de archivos tiene abierta la carpeta «Contratos»; un clic en el Explorador y otro de vuelta en el cuadro de diálogo ponen la ruta de «Contratos» en su barra de direcciones, y luego el cuadro muestra los archivos de esa carpeta; un clic en el grupo de carpeta «Diseños» del escritorio lleva el cuadro de diálogo al instante a «Diseños»"
+  "动画：一个程序的「打开」对话框停在「文档」，后面的资源管理器开着「合同」文件夹；点一下资源管理器，再点回对话框，对话框的地址栏里出现「合同」的路径，随后列出合同文件夹里的文件；再点桌面上的「设计稿」文件夹栅栏，对话框马上跳到「设计稿」": "Animación: el cuadro de diálogo Abrir de una aplicación muestra «Documentos», y detrás el Explorador de archivos tiene abierta la carpeta «Contratos»; un clic en el Explorador y otro de vuelta en el cuadro de diálogo ponen la ruta de «Contratos» en su barra de direcciones, y luego el cuadro muestra los archivos de esa carpeta; un clic en el grupo de carpeta «Diseños» del escritorio lleva el cuadro de diálogo al instante a «Diseños»",
+  "展开得太快或太慢，可以在它下面的「展开快慢」里选「快」或「慢」。": "Si se expande demasiado rápido o demasiado lento, elige «Rápida» o «Lenta» en «Velocidad al expandir», justo debajo.",
+  "在最上层的文件夹里，单击标题前的小文件夹图标，就用资源管理器打开这个文件夹。": "En la carpeta de nivel superior, haz clic en el pequeño icono de carpeta delante del título para abrir la carpeta en el Explorador de archivos.",
+  "也可以在桌面空白处拖出一个框，松开后选<b>「在此显示文件夹…」</b>，文件夹栅栏就放在框的位置。": "También puedes trazar un rectángulo en una zona vacía del escritorio y elegir <b>«Mostrar una carpeta aquí…»</b> al soltar: el grupo de la carpeta queda en el lugar del rectángulo.",
+  "更快的办法：右键一个文件，选<b>「以后把 .pdf 文件都放到这里」</b>（菜单里显示的是这个文件的扩展名）。以后这种文件会自动放进这个栅栏。": "Más rápido: haz clic derecho en un archivo y elige <b>«Poner aquí todos los archivos .pdf a partir de ahora»</b> (el menú muestra la extensión de ese archivo). A partir de entonces, los archivos de ese tipo irán solos a este grupo.",
+  "返回上一级 / 回到刚离开的文件夹": "Subir un nivel / Volver a la carpeta que acabas de dejar",
+  "在最上层的文件夹里单击标题前的文件夹图标": "Clic en el icono de carpeta delante del título, en la carpeta de nivel superior",
+  "用资源管理器打开这个文件夹": "Abrir la carpeta en el Explorador de archivos",
+  "把键盘移到下一个或上一个栅栏": "Llevar el teclado al grupo siguiente o anterior",
+  "速览时按 <kbd>Tab</kbd> 或方向键": "<kbd>Tab</kbd> o una flecha durante el vistazo",
+  "键盘进到第一个栅栏，选中它的第一个图标": "El teclado entra en el primer grupo, en su primer icono"
  },
  "stage": {
   "暂停": "Pausar",

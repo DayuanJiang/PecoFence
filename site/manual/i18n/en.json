@@ -288,7 +288,7 @@
   "双击空白处": "Double-click an empty spot",
   "隐藏所有栅栏，再双击一次显示": "Hide all fences. Double-click again to show them",
   "在空白处拖出一个框": "Drag a box on an empty spot",
-  "选中框碰到的栅栏。没碰到栅栏时，松开后可以点「在此新建栅栏」": "Select the fences the box touches. If it touches none, you can select “Create a fence here” when you release",
+  "选中框碰到的栅栏。没碰到栅栏时，松开后可以点「在此新建栅栏」或「在此显示文件夹…」": "Select the fences the box touches. If it touches none, you can select “Create a fence here” or “Show a folder here…” when you release",
   "按住 <kbd>Ctrl</kbd> 或 <kbd>Shift</kbd> 拖框": "Hold <kbd>Ctrl</kbd> or <kbd>Shift</kbd> and drag a box",
   "在已选的栅栏之外再加几个": "Add more fences to the selection",
   "按住其中一个的标题栏拖动": "Drag the title bar of a selected fence",
@@ -457,7 +457,17 @@
   "动画：右键托盘图标打开设置，在「布局与备份」页输入名字保存快照；随后把两个栅栏拖到桌面空白处；点快照右边的「恢复」，栅栏回到保存时的样子，列表里多了一份「恢复快照前」": "Animation: Settings is opened from the tray icon's menu, and a snapshot is named and saved on the “Layout and backups” page. Then two fences are dragged to other parts of the desktop. “Restore” next to the snapshot puts the fences back the way they were, and a “Before snapshot restore” entry appears in the list",
   "动画：设置的「小工具」页最上面的「小工具」开关开着；点「便签与待办」右边的「新建便签」，桌面上出现一个便签，打了三行字；点别处保存后，行首写了 [ ] 的两行变成待办，点第一行的方框打上勾；点「时钟」右边的「添加」，出现一个显示时间和日期的时钟，按钮变成灰色的「已在桌面上」；点「天气」右边的「添加」，出现「天气」栅栏，片刻后显示东京的天气": "Animation: on the “Tools” page of Settings, the “Tools” switch at the top is on. “New note” on the right of “Notes and to-dos” puts a note on the desktop, where three lines are typed. A click elsewhere saves it, the two lines that start with [ ] become to-dos, and a click ticks the first one. “Add” on the right of “Clock” adds a clock with the time and date, and the button turns grey and reads “On the desktop”. “Add” on the right of “Weather” adds a “weather” fence that shows the weather in Tokyo a moment later",
   "动画：桌面上有「GitHub 动态」和「电脑状态」两个脚本栅栏。鼠标移到一个 PR 那一行，这一行亮起浅色的底，指针变成小手，右边出现小箭头，随后显示提示；点一下，浏览器打开这个 PR。再点「刷新」，栅栏底部先显示正在运行，再显示新的更新时间。「电脑状态」里的数字每 2 秒变一次；点「本机 IP」那一行，IP 地址就复制好了；最后点「打开任务管理器」，任务管理器打开": "Animation: two script fences, “github” and “pc-status”, are on the desktop. The pointer moves onto the row of a pull request: the row gets a light background, the pointer becomes a hand, a small arrow appears on the right, and a tooltip follows. A click opens the pull request in the browser. Next, a click on “Refresh” makes the bottom line of the fence say the script is running, then show a new update time. The numbers in “pc-status” change every 2 seconds. A click on the “IP address” row copies the address, and last, “Open Task Manager” opens Task Manager",
-  "动画：一个程序的「打开」对话框停在「文档」，后面的资源管理器开着「合同」文件夹；点一下资源管理器，再点回对话框，对话框的地址栏里出现「合同」的路径，随后列出合同文件夹里的文件；再点桌面上的「设计稿」文件夹栅栏，对话框马上跳到「设计稿」": "Animation: an app's Open dialog shows “Documents”, with File Explorer behind it showing the “Contracts” folder. A click on File Explorer and one back on the dialog put the path of “Contracts” in the dialog's address bar, and the dialog then lists the files in that folder. A click on the “Designs” folder fence on the desktop sends the dialog to “Designs” at once"
+  "动画：一个程序的「打开」对话框停在「文档」，后面的资源管理器开着「合同」文件夹；点一下资源管理器，再点回对话框，对话框的地址栏里出现「合同」的路径，随后列出合同文件夹里的文件；再点桌面上的「设计稿」文件夹栅栏，对话框马上跳到「设计稿」": "Animation: an app's Open dialog shows “Documents”, with File Explorer behind it showing the “Contracts” folder. A click on File Explorer and one back on the dialog put the path of “Contracts” in the dialog's address bar, and the dialog then lists the files in that folder. A click on the “Designs” folder fence on the desktop sends the dialog to “Designs” at once",
+  "展开得太快或太慢，可以在它下面的「展开快慢」里选「快」或「慢」。": "If it expands too fast or too slowly, choose “Fast” or “Slow” under “Expand speed” just below.",
+  "在最上层的文件夹里，单击标题前的小文件夹图标，就用资源管理器打开这个文件夹。": "At the folder's top level, click the small folder icon before the title to open the folder in File Explorer.",
+  "也可以在桌面空白处拖出一个框，松开后选<b>「在此显示文件夹…」</b>，文件夹栅栏就放在框的位置。": "You can also drag a box on an empty part of the desktop and choose <b>“Show a folder here…”</b> when you release: the folder fence goes where the box was.",
+  "更快的办法：右键一个文件，选<b>「以后把 .pdf 文件都放到这里」</b>（菜单里显示的是这个文件的扩展名）。以后这种文件会自动放进这个栅栏。": "Quicker: right-click a file and choose <b>“Put all .pdf files here from now on”</b> (the menu shows that file's extension). From then on, files of that type go into this fence by themselves.",
+  "返回上一级 / 回到刚离开的文件夹": "Go up a level / Go back into the folder you just left",
+  "在最上层的文件夹里单击标题前的文件夹图标": "Click the folder icon before the title at the top folder",
+  "用资源管理器打开这个文件夹": "Open the folder in File Explorer",
+  "把键盘移到下一个或上一个栅栏": "Move the keyboard to the next or previous fence",
+  "速览时按 <kbd>Tab</kbd> 或方向键": "<kbd>Tab</kbd> or an arrow key during Peek",
+  "键盘进到第一个栅栏，选中它的第一个图标": "The keyboard goes into the first fence, on its first icon"
  },
  "stage": {
   "暂停": "Pause",

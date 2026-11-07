@@ -276,7 +276,10 @@ column; default top),
 `rollUp.hoverPeek` and `rollUp.clickToExpand` (the settings page's 「收起的栅栏怎么展开」 list:
 `clickToExpand` true expands on one title click and ignores `hoverPeek` for the pointer (the page
 keeps `hoverPeek` on with it, so a file dragged onto a rolled title still expands it); both false
-leaves the double-click and the chevron; default hover), `rollUp.pushNeighbors` (an expanded fence pushes the
+leaves the double-click and the chevron; default hover), `rollUp.hoverSpeed` (the page's 「展开快慢」:
+how long the pointer or a dragged file rests on a rolled fence before it expands, `fast` 150 ms,
+`normal` Windows' mouse hover time (400 ms unless changed), `slow` 1 s; default `normal`),
+`rollUp.pushNeighbors` (an expanded fence pushes the
 fences stacked below it down and they slide back when it rolls up; their `rect` stays where it was,
 default on), `rollUp.titleOnHover` (the title row folds away until the
 pointer is over the fence; for every fence whose `titleOnHover` is `default`),

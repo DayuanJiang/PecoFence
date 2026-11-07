@@ -288,7 +288,7 @@
   "双击空白处": "Doppelklick auf eine freie Stelle",
   "隐藏所有栅栏，再双击一次显示": "Alle Bereiche ausblenden, ein weiterer Doppelklick zeigt sie wieder",
   "在空白处拖出一个框": "Auf einer freien Stelle ein Rechteck aufziehen",
-  "选中框碰到的栅栏。没碰到栅栏时，松开后可以点「在此新建栅栏」": "Wählt die Bereiche aus, die das Rechteck berührt. Berührt es keinen, kannst du nach dem Loslassen auf „Hier einen Bereich erstellen“ klicken",
+  "选中框碰到的栅栏。没碰到栅栏时，松开后可以点「在此新建栅栏」或「在此显示文件夹…」": "Wählt die Bereiche aus, die das Rechteck berührt. Berührt es keinen, kannst du nach dem Loslassen auf „Hier einen Bereich erstellen“ oder „Hier einen Ordner anzeigen…“ klicken",
   "按住 <kbd>Ctrl</kbd> 或 <kbd>Shift</kbd> 拖框": "Rechteck mit gedrückter <kbd>Strg</kbd>- oder <kbd>Umschalt</kbd>-Taste aufziehen",
   "在已选的栅栏之外再加几个": "Weitere Bereiche zur Auswahl hinzufügen",
   "按住其中一个的标题栏拖动": "An der Titelleiste eines ausgewählten Bereichs ziehen",
@@ -457,7 +457,17 @@
   "动画：右键托盘图标打开设置，在「布局与备份」页输入名字保存快照；随后把两个栅栏拖到桌面空白处；点快照右边的「恢复」，栅栏回到保存时的样子，列表里多了一份「恢复快照前」": "Animation: Über das Taskleistensymbol werden die Einstellungen geöffnet, und auf der Seite „Layout und Sicherungen“ wird mit einem Namen eine Momentaufnahme gespeichert; dann werden zwei Bereiche auf freie Stellen des Desktops gezogen; nach „Wiederherstellen“ rechts neben der Momentaufnahme sind die Bereiche wieder wie beim Speichern, und in der Liste steht zusätzlich „Vor dem Wiederherstellen der Momentaufnahme“",
   "动画：设置的「小工具」页最上面的「小工具」开关开着；点「便签与待办」右边的「新建便签」，桌面上出现一个便签，打了三行字；点别处保存后，行首写了 [ ] 的两行变成待办，点第一行的方框打上勾；点「时钟」右边的「添加」，出现一个显示时间和日期的时钟，按钮变成灰色的「已在桌面上」；点「天气」右边的「添加」，出现「天气」栅栏，片刻后显示东京的天气": "Animation: Auf der Einstellungsseite „Werkzeuge“ ist der Schalter „Werkzeuge“ ganz oben eingeschaltet. „Neue Notiz“ rechts neben „Notizen und Aufgaben“ legt eine Notiz auf den Desktop, in die drei Zeilen getippt werden. Ein Klick daneben speichert sie, die beiden Zeilen, die mit [ ] beginnen, werden zu Aufgaben, und ein Klick hakt die erste ab. „Hinzufügen“ rechts neben „Uhr“ fügt eine Uhr mit Uhrzeit und Datum hinzu, und die Schaltfläche wird grau und zeigt „Auf dem Desktop“. „Hinzufügen“ rechts neben „Wetter“ fügt einen Bereich „Wetter“ hinzu, der kurz darauf das Wetter in Tokio zeigt",
   "动画：桌面上有「GitHub 动态」和「电脑状态」两个脚本栅栏。鼠标移到一个 PR 那一行，这一行亮起浅色的底，指针变成小手，右边出现小箭头，随后显示提示；点一下，浏览器打开这个 PR。再点「刷新」，栅栏底部先显示正在运行，再显示新的更新时间。「电脑状态」里的数字每 2 秒变一次；点「本机 IP」那一行，IP 地址就复制好了；最后点「打开任务管理器」，任务管理器打开": "Animation: Auf dem Desktop stehen zwei Skriptbereiche, „GitHub“ und „PC-Status“. Der Mauszeiger bewegt sich auf die Zeile eines Pull-Requests: Die Zeile bekommt einen hellen Hintergrund, der Zeiger wird zur Hand, rechts erscheint ein kleiner Pfeil und kurz darauf ein Tooltip. Ein Klick öffnet den Pull-Request im Browser. Nach einem Klick auf „Refresh“ zeigt die unterste Zeile des Bereichs erst, dass das Skript läuft, dann eine neue Aktualisierungszeit. Die Zahlen in „PC-Status“ ändern sich alle 2 Sekunden. Ein Klick auf die Zeile „IP address“ kopiert die Adresse, und zuletzt öffnet „Open Task Manager“ den Task-Manager",
-  "动画：一个程序的「打开」对话框停在「文档」，后面的资源管理器开着「合同」文件夹；点一下资源管理器，再点回对话框，对话框的地址栏里出现「合同」的路径，随后列出合同文件夹里的文件；再点桌面上的「设计稿」文件夹栅栏，对话框马上跳到「设计稿」": "Animation: Der Dialog „Öffnen“ eines Programms zeigt „Dokumente“, dahinter zeigt der Explorer den Ordner „Verträge“. Nach einem Klick auf den Explorer und einem zurück auf den Dialog steht der Pfad von „Verträge“ in der Adressleiste des Dialogs, und der Dialog listet dann die Dateien in diesem Ordner auf. Ein Klick auf den Ordnerbereich „Entwürfe“ auf dem Desktop lässt den Dialog sofort zu „Entwürfe“ springen"
+  "动画：一个程序的「打开」对话框停在「文档」，后面的资源管理器开着「合同」文件夹；点一下资源管理器，再点回对话框，对话框的地址栏里出现「合同」的路径，随后列出合同文件夹里的文件；再点桌面上的「设计稿」文件夹栅栏，对话框马上跳到「设计稿」": "Animation: Der Dialog „Öffnen“ eines Programms zeigt „Dokumente“, dahinter zeigt der Explorer den Ordner „Verträge“. Nach einem Klick auf den Explorer und einem zurück auf den Dialog steht der Pfad von „Verträge“ in der Adressleiste des Dialogs, und der Dialog listet dann die Dateien in diesem Ordner auf. Ein Klick auf den Ordnerbereich „Entwürfe“ auf dem Desktop lässt den Dialog sofort zu „Entwürfe“ springen",
+  "展开得太快或太慢，可以在它下面的「展开快慢」里选「快」或「慢」。": "Klappt er zu schnell oder zu langsam auf, wähle direkt darunter bei „Aufklapptempo“ „Schnell“ oder „Langsam“.",
+  "在最上层的文件夹里，单击标题前的小文件夹图标，就用资源管理器打开这个文件夹。": "Im obersten Ordner öffnet ein Klick auf das kleine Ordnersymbol vor dem Titel den Ordner im Explorer.",
+  "也可以在桌面空白处拖出一个框，松开后选<b>「在此显示文件夹…」</b>，文件夹栅栏就放在框的位置。": "Du kannst auch auf einer freien Stelle des Desktops ein Rechteck aufziehen und nach dem Loslassen <b>„Hier einen Ordner anzeigen…“</b> wählen: Der Ordnerbereich kommt genau dorthin.",
+  "更快的办法：右键一个文件，选<b>「以后把 .pdf 文件都放到这里」</b>（菜单里显示的是这个文件的扩展名）。以后这种文件会自动放进这个栅栏。": "Schneller geht es so: Klick mit der rechten Maustaste auf eine Datei und wähle <b>„.pdf-Dateien ab jetzt immer hierher“</b> (das Menü zeigt die Endung dieser Datei). Ab dann landen Dateien dieses Typs von selbst in diesem Bereich.",
+  "返回上一级 / 回到刚离开的文件夹": "Eine Ebene nach oben / Zurück in den Ordner, den du gerade verlassen hast",
+  "在最上层的文件夹里单击标题前的文件夹图标": "Im obersten Ordner auf das Ordnersymbol vor dem Titel klicken",
+  "用资源管理器打开这个文件夹": "Öffnet den Ordner im Explorer",
+  "把键盘移到下一个或上一个栅栏": "Bringt die Tastatur in den nächsten oder vorherigen Bereich",
+  "速览时按 <kbd>Tab</kbd> 或方向键": "<kbd>Tab</kbd> oder eine Pfeiltaste in der Vorschau",
+  "键盘进到第一个栅栏，选中它的第一个图标": "Die Tastatur geht in den ersten Bereich, auf sein erstes Symbol"
  },
  "stage": {
   "暂停": "Pause",

@@ -288,7 +288,7 @@
   "双击空白处": "Clicar duas vezes em um espaço vazio",
   "隐藏所有栅栏，再双击一次显示": "Ocultar todos os grupos; clique duas vezes de novo para mostrá-los",
   "在空白处拖出一个框": "Desenhar um retângulo em um espaço vazio",
-  "选中框碰到的栅栏。没碰到栅栏时，松开后可以点「在此新建栅栏」": "Selecionar os grupos que o retângulo tocar. Se ele não tocar em nenhum, ao soltar você pode clicar em “Criar grupo aqui”",
+  "选中框碰到的栅栏。没碰到栅栏时，松开后可以点「在此新建栅栏」或「在此显示文件夹…」": "Selecionar os grupos que o retângulo tocar. Se ele não tocar em nenhum, ao soltar você pode clicar em “Criar grupo aqui” ou “Mostrar uma pasta aqui…”",
   "按住 <kbd>Ctrl</kbd> 或 <kbd>Shift</kbd> 拖框": "Desenhar o retângulo com <kbd>Ctrl</kbd> ou <kbd>Shift</kbd> pressionada",
   "在已选的栅栏之外再加几个": "Adicionar mais grupos à seleção",
   "按住其中一个的标题栏拖动": "Arrastar a barra de título de um deles",
@@ -457,7 +457,17 @@
   "动画：右键托盘图标打开设置，在「布局与备份」页输入名字保存快照；随后把两个栅栏拖到桌面空白处；点快照右边的「恢复」，栅栏回到保存时的样子，列表里多了一份「恢复快照前」": "Animação: as configurações são abertas pelo menu do ícone na bandeja e, na página “Layout e backup”, um instantâneo é salvo com um nome; depois dois grupos são arrastados para um espaço vazio da área de trabalho; um clique em “Restaurar” ao lado do instantâneo devolve os grupos ao estado salvo, e a lista ganha “Antes de restaurar o instantâneo”",
   "动画：设置的「小工具」页最上面的「小工具」开关开着；点「便签与待办」右边的「新建便签」，桌面上出现一个便签，打了三行字；点别处保存后，行首写了 [ ] 的两行变成待办，点第一行的方框打上勾；点「时钟」右边的「添加」，出现一个显示时间和日期的时钟，按钮变成灰色的「已在桌面上」；点「天气」右边的「添加」，出现「天气」栅栏，片刻后显示东京的天气": "Animação: na página “Ferramentas” das configurações, a opção “Ferramentas” no topo está ativada. Um clique em “Nova nota”, à direita de “Notas e tarefas”, faz uma nota aparecer na área de trabalho, onde três linhas são digitadas. Um clique fora salva a nota, as duas linhas que começam com [ ] viram tarefas e um clique marca a caixa da primeira. Um clique em “Adicionar”, à direita de “Relógio”, cria um relógio com a hora e a data, e o botão fica cinza e passa a dizer “Na área de trabalho”. Um clique em “Adicionar”, à direita de “Clima”, cria o grupo “clima”, que pouco depois mostra o clima em Tóquio",
   "动画：桌面上有「GitHub 动态」和「电脑状态」两个脚本栅栏。鼠标移到一个 PR 那一行，这一行亮起浅色的底，指针变成小手，右边出现小箭头，随后显示提示；点一下，浏览器打开这个 PR。再点「刷新」，栅栏底部先显示正在运行，再显示新的更新时间。「电脑状态」里的数字每 2 秒变一次；点「本机 IP」那一行，IP 地址就复制好了；最后点「打开任务管理器」，任务管理器打开": "Animação: na área de trabalho há dois grupos de script, “github” e “status-pc”. O cursor vai até a linha de um pull request: a linha ganha um fundo claro, o cursor vira uma mãozinha, uma pequena seta aparece à direita e, em seguida, uma dica. Um clique abre o pull request no navegador. Depois, um clique em “Refresh” faz a parte de baixo do grupo mostrar primeiro que o script está em execução e depois um novo horário de atualização. Os números em “status-pc” mudam a cada 2 segundos. Um clique na linha “IP address” copia o endereço e, por fim, “Open Task Manager” abre o Gerenciador de Tarefas",
-  "动画：一个程序的「打开」对话框停在「文档」，后面的资源管理器开着「合同」文件夹；点一下资源管理器，再点回对话框，对话框的地址栏里出现「合同」的路径，随后列出合同文件夹里的文件；再点桌面上的「设计稿」文件夹栅栏，对话框马上跳到「设计稿」": "Animação: a caixa de diálogo Abrir de um programa mostra “Documentos”, e atrás dela o Explorador de Arquivos mostra a pasta “Contratos”; um clique no Explorador de Arquivos e outro de volta na caixa de diálogo colocam o caminho de “Contratos” na barra de endereços da caixa, que em seguida lista os arquivos dessa pasta; um clique no grupo de pasta “Design” na área de trabalho leva a caixa de diálogo na hora para “Design”"
+  "动画：一个程序的「打开」对话框停在「文档」，后面的资源管理器开着「合同」文件夹；点一下资源管理器，再点回对话框，对话框的地址栏里出现「合同」的路径，随后列出合同文件夹里的文件；再点桌面上的「设计稿」文件夹栅栏，对话框马上跳到「设计稿」": "Animação: a caixa de diálogo Abrir de um programa mostra “Documentos”, e atrás dela o Explorador de Arquivos mostra a pasta “Contratos”; um clique no Explorador de Arquivos e outro de volta na caixa de diálogo colocam o caminho de “Contratos” na barra de endereços da caixa, que em seguida lista os arquivos dessa pasta; um clique no grupo de pasta “Design” na área de trabalho leva a caixa de diálogo na hora para “Design”",
+  "展开得太快或太慢，可以在它下面的「展开快慢」里选「快」或「慢」。": "Se ele se expandir rápido ou devagar demais, escolha “Rápida” ou “Lenta” em “Velocidade ao expandir”, logo abaixo.",
+  "在最上层的文件夹里，单击标题前的小文件夹图标，就用资源管理器打开这个文件夹。": "Na pasta de nível mais alto, clique no pequeno ícone de pasta antes do título para abrir a pasta no Explorador de Arquivos.",
+  "也可以在桌面空白处拖出一个框，松开后选<b>「在此显示文件夹…」</b>，文件夹栅栏就放在框的位置。": "Você também pode arrastar um retângulo numa área vazia da área de trabalho e escolher <b>“Mostrar uma pasta aqui…”</b> ao soltar: o grupo da pasta fica no lugar do retângulo.",
+  "更快的办法：右键一个文件，选<b>「以后把 .pdf 文件都放到这里」</b>（菜单里显示的是这个文件的扩展名）。以后这种文件会自动放进这个栅栏。": "Mais rápido: clique com o botão direito num arquivo e escolha <b>“Colocar aqui todos os arquivos .pdf daqui em diante”</b> (o menu mostra a extensão desse arquivo). A partir daí, arquivos desse tipo vão sozinhos para este grupo.",
+  "返回上一级 / 回到刚离开的文件夹": "Subir um nível / Voltar à pasta que você acabou de deixar",
+  "在最上层的文件夹里单击标题前的文件夹图标": "Clicar no ícone de pasta antes do título, na pasta de nível mais alto",
+  "用资源管理器打开这个文件夹": "Abrir a pasta no Explorador de Arquivos",
+  "把键盘移到下一个或上一个栅栏": "Levar o teclado ao grupo seguinte ou anterior",
+  "速览时按 <kbd>Tab</kbd> 或方向键": "<kbd>Tab</kbd> ou uma seta durante a espiada",
+  "键盘进到第一个栅栏，选中它的第一个图标": "O teclado entra no primeiro grupo, no primeiro ícone"
  },
  "stage": {
   "暂停": "Pausar",

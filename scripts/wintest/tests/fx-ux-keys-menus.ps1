@@ -3,7 +3,8 @@
 # marquee's 「在此显示文件夹…」 (U14), first-start names after a language change, the icon size
 # names and the centred rename box (U16), 栅栏选项… beside the fence (U5) and the hover delay
 # setting (U18). Real keys and clicks; outcomes read from the foreground window, dumps, the CLI
-# and Explorer's windows. Two parts: run.sh --var Part=A (U7, U13) and --var Part=B (the rest).
+# and Explorer's windows. Three parts: run.sh --var Part=A (U7, U13), --var Part=B (U12, U14, U16,
+# U5, U18) and --var Part=C (the new menu texts in every language); the default runs A and B.
 
 if (-not $Part) { $Part = 'AB' }
 
@@ -415,10 +416,73 @@ foreach ($speed in 'fast', 'normal', 'slow') {
 Check 'fast < normal < slow, about 150 / 400 / 1000 ms' ($res['fast'] -gt 0 -and $res['fast'] -lt $res['normal'] - 100 -and $res['normal'] -lt $res['slow'] - 300) "fast=$($res['fast']) normal=$($res['normal']) slow=$($res['slow'])"
 Pf settings set rollUp.hoverSpeed normal | Out-Null
 Pf fence unroll Beta | Out-Null
+Case 'U18 Expand speed on the settings page, only with On hover'
+foreach ($mode in 'hover', 'click') {
+  Pf settings set rollUp.clickToExpand ($mode -eq 'click').ToString().ToLower() | Out-Null
+  Pf settings open-ui | Out-Null
+  $sw = WaitWin 'PecoFence.Settings' 20; Start-Sleep -Seconds 3
+  $sr = Rect $sw; $o = ClientOrigin $sw
+  $txt = ''
+  for ($i = 0; $i -lt 10 -and $txt -notmatch 'How rolled-up fences expand'; $i++) {
+    Wheel ($o.X + 700) ($o.Y + 400) -3; Start-Sleep -Milliseconds 700
+    $txt = OcrText ($o.X + 260) $o.Y ($sr.R - $sr.L - 280) ($sr.B - $o.Y - 8) "u18-settings-$mode"
+  }
+  Wheel ($o.X + 700) ($o.Y + 400) -2; Start-Sleep -Milliseconds 700
+  Shot "u18-settings-$mode"
+  if ($mode -eq 'hover') {
+    Check 'On hover: Expand speed sits under How rolled-up fences expand' ($txt -match 'How rolled-up fences expand' -and $txt -match 'Expand speed') "ocr: $txt"
+  } else {
+    Check 'On a title click: no Expand speed' ($txt -match 'How rolled-up fences expand' -and $txt -notmatch 'Expand speed') "ocr: $txt"
+  }
+  [L]::PostMessageW($sw, 0x10, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null; Start-Sleep -Seconds 1
+}
+Pf settings set rollUp.clickToExpand false | Out-Null
+}
+
+# Part C: the new menu entries and the icon size names in every interface language (the texts
+# as locales/*.json has them, the item menu's with .pdf filled in).
+$KxLang = @{
+  'zh-CN' = @{ K1 = '以后把 .pdf 文件都放到这里'; K9 = '在此显示文件夹…'; V = '视图'; L64 = '较大图标'; L96 = '大图标' }
+  'en' = @{ K1 = 'Put all .pdf files here from now on'; K9 = 'Show a folder here…'; V = 'View'; L64 = 'Medium-large icons'; L96 = 'Large icons' }
+  'ja' = @{ K1 = '今後 .pdf ファイルはすべてここに置く'; K9 = 'ここにフォルダーを表示…'; V = '表示'; L64 = 'やや大きいアイコン'; L96 = '大アイコン' }
+  'zh-TW' = @{ K1 = '以後把 .pdf 檔案都放到這裡'; K9 = '在此顯示資料夾…'; V = '檢視'; L64 = '較大圖示'; L96 = '大圖示' }
+  'ko' = @{ K1 = '앞으로 .pdf 파일은 모두 여기에 두기'; K9 = '여기에 폴더 표시…'; V = '보기'; L64 = '조금 큰 아이콘'; L96 = '큰 아이콘' }
+  'de' = @{ K1 = '.pdf-Dateien ab jetzt immer hierher'; K9 = 'Hier einen Ordner anzeigen…'; V = 'Ansicht'; L64 = 'Größere Symbole'; L96 = 'Große Symbole' }
+  'fr' = @{ K1 = 'Mettre ici tous les fichiers .pdf désormais'; K9 = 'Afficher un dossier ici…'; V = 'Affichage'; L64 = 'Icônes assez grandes'; L96 = 'Grandes icônes' }
+  'es' = @{ K1 = 'Poner aquí todos los archivos .pdf a partir de ahora'; K9 = 'Mostrar una carpeta aquí…'; V = 'Vista'; L64 = 'Iconos mediano-grandes'; L96 = 'Iconos grandes' }
+  'pt-BR' = @{ K1 = 'Colocar aqui todos os arquivos .pdf daqui em diante'; K9 = 'Mostrar uma pasta aqui…'; V = 'Exibir'; L64 = 'Ícones médio-grandes'; L96 = 'Ícones grandes' }
+  'ru' = @{ K1 = 'Отныне класть сюда все файлы .pdf'; K9 = 'Показать папку здесь…'; V = 'Вид'; L64 = 'Увеличенные значки'; L96 = 'Крупные значки' }
+  'it' = @{ K1 = 'Metti qui tutti i file .pdf d’’ora in poi'; K9 = 'Mostra una cartella qui…'; V = 'Visualizzazione'; L64 = 'Icone medio-grandi'; L96 = 'Icone grandi' }
+}
+function KxPartC {
+trap { PfTrap $_; continue }
+foreach ($l in $KxLang.Keys) {
+  $t = $KxLang[$l]
+  Case "all languages: $l"
+  Pf settings set language $l | Out-Null; Start-Sleep -Milliseconds 1500
+  KxDeskClick
+  $m = RClickItem 'Alpha' 'kx doc'
+  $items = if ($m -ne [IntPtr]::Zero) { MenuTexts $m } else { '' }
+  CloseMenus
+  Check "$l item menu: $($t.K1)" ($items.Contains($t.K1)) "menu: $items"
+  DragTo 820 120 1120 380
+  $m = MenuWin 5
+  $marq = if ($m -ne [IntPtr]::Zero) { MenuTexts $m } else { '' }
+  CloseMenus
+  Check "$l marquee menu: $($t.K9)" ($marq.Contains($t.K9)) "menu: $marq"
+  $m = KxTitleMenu 'Gamma' 160
+  $sub = KxSubMenu $m ('^' + [regex]::Escape($t.V))
+  $rows = if ($sub -ne [IntPtr]::Zero) { (@(MenuRows $sub) | ForEach-Object { $_.text }) -join ' | ' } else { '' }
+  CloseMenus
+  $i64 = $rows.IndexOf($t.L64 + ' |'); $i96 = $rows.LastIndexOf('| ' + $t.L96)
+  Check "$l View menu: $($t.L64) (64 px) before $($t.L96) (96 px, the last size)" ($i64 -ge 0 -and $i96 -gt $i64 -and $rows.EndsWith($t.L96)) "rows: $rows"
+}
+Pf settings set language en | Out-Null
 }
 
 if ($Part -match 'A') { KxPartA }
 if ($Part -match 'B') { KxPartB }
+if ($Part -match 'C') { KxPartC }
 
 Case 'end'
 PfQuit
