@@ -243,13 +243,13 @@ impl Template {
 
     /// The fence's title (and the menu entry).
     pub fn title(self) -> &'static str {
-        crate::i18n::text(match self {
-            Template::Downloads => "最近 7 天下载",
-            Template::Screenshots => "最近一周的截图",
-            Template::Large => "大于 1 GB 的文件",
-            Template::Psd => "所有 .psd 文件",
-            Template::Recent => "最近打开的文件",
-        })
+        match self {
+            Template::Downloads => crate::i18n::text("最近 7 天下载"),
+            Template::Screenshots => crate::i18n::text("最近一周的截图"),
+            Template::Large => crate::i18n::text("大于 1 GB 的文件"),
+            Template::Psd => crate::i18n::text("所有 .psd 文件"),
+            Template::Recent => crate::i18n::text("最近打开的文件"),
+        }
     }
 
     /// Whether it searches every drive, which only Everything can do.

@@ -765,5 +765,22 @@
   "Everything 1.5 已经装好，现在运行的是 {0}": "O Everything 1.5 está instalado, mas a versão em execução é a {0}",
   "改用 1.5 后可以用拼音找中文名。1.5 会在登录 Windows 时启动，1.4 不再自动启动。Windows 可能会询问一次管理员权限": "Com a 1.5, você encontra nomes em chinês por pinyin. A 1.5 passa a iniciar quando você entra no Windows, e a 1.4 não inicia mais sozinha. O Windows pode pedir permissão de administrador uma vez.",
   "改用 1.5": "Mudar para 1.5",
-  "已改用 Everything 1.5，以后登录 Windows 时也会启动它": "Agora o Everything 1.5 está em uso. Ele também inicia quando você entra no Windows"
+  "已改用 Everything 1.5，以后登录 Windows 时也会启动它": "Agora o Everything 1.5 está em uso. Ele também inicia quando você entra no Windows",
+  "新建智能栅栏": "Nova cerca inteligente",
+  "智能栅栏": "Cerca inteligente",
+  "最近 7 天下载": "Downloads dos últimos 7 dias",
+  "最近一周的截图": "Capturas da última semana",
+  "大于 1 GB 的文件": "Arquivos com mais de 1 GB",
+  "所有 .psd 文件": "Todos os arquivos .psd",
+  "最近打开的文件": "Arquivos abertos recentemente",
+  "正在搜索…": "Pesquisando…",
+  "要搜索整台电脑，需要先打开 Everything。": "Para pesquisar o computador inteiro, abra o Everything primeiro.",
+  "没有符合条件的文件。": "Nenhum arquivo corresponde.",
+  "{0} 个，自动更新": "{0}, atualiza sozinho",
+  "筛选「{0}」": "Filtrar “{0}”",
+  "{0} · 筛选：{1}": "{0} · Filtro: {1}",
+  "{0} · 输入文字筛选": "{0} · Digite para filtrar",
+  "没有符合筛选的文件。": "Nenhum arquivo corresponde ao filtro.",
+  "筛选…\tCtrl+F": "Filtrar…\tCtrl+F",
+  "清除筛选\tEsc": "Limpar filtro\tEsc"
 }
