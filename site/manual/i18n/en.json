@@ -364,7 +364,7 @@
   "放进那个栅栏": "Put it in that fence",
   "在栅栏里拖动": "Drag within the fence",
   "调整顺序（排序方式是「手动」时）": "Change the order (when Sort by is “Manual”)",
-  "把文件夹拖到程序的快捷方式上": "Drag folders onto an app’s shortcut",
+  "把文件夹拖到程序或它的快捷方式上": "Drag folders onto an app or its shortcut",
   "用这个程序打开文件夹": "Open the folders with that app",
   "拖动文件时": "Dragging files",
   "从资源管理器把文件拖进栅栏，或者把图标拖到文件夹图标、文件夹栅栏、别的程序上时：": "When you drag files from File Explorer into a fence, or drag icons onto a folder icon, a folder fence or another app:",
