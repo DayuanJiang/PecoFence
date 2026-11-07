@@ -1398,8 +1398,8 @@ impl App {
     }
 
     /// Item by id, by full path (case-insensitive), or by a unique display / file name.
-    fn resolve_item(&self, sel: &str) -> std::result::Result<ItemId, IpcError> {
-        let sel = sel.trim();
+    fn resolve_item(&self, raw: &str) -> std::result::Result<ItemId, IpcError> {
+        let sel = raw.trim();
         let mut all: Vec<(&Item, &Fence)> = Vec::new();
         for f in self.state.fences() {
             all.extend(self.state.held_items_of(f).into_iter().map(|it| (it, f)));
@@ -1418,8 +1418,13 @@ impl App {
                 .map(|(it, _)| it.id)
                 .ok_or_else(not_found);
         }
-        let key = ItemKey::from_path(sel);
-        if let Some((it, _)) = all.iter().find(|(it, _)| it.key == key) {
+        // A path as given first: a name may end in spaces (made outside Explorer).
+        let (key, raw_key) = (ItemKey::from_path(sel), ItemKey::from_path(raw));
+        if let Some((it, _)) = all
+            .iter()
+            .find(|(it, _)| it.key == raw_key)
+            .or_else(|| all.iter().find(|(it, _)| it.key == key))
+        {
             return Ok(it.id);
         }
         let lower = sel.to_lowercase();
@@ -2417,8 +2422,8 @@ impl App {
             .then(|| self.auto_snapshot())
             .flatten();
         // Portal sources / targets move real files on a worker thread; the fences update when
-        // the shell reports back.
-        self.move_items(&accepted, to);
+        // the shell reports back. Not a step of Ctrl+Z in the fences: that undoes the user's.
+        self.move_items_unrecorded(&accepted, to);
         self.push_settings_state();
         Ok(mutation(
             true,

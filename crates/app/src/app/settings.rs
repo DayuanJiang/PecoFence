@@ -58,6 +58,8 @@ fn log_page_error(v: &serde_json::Value) {
 pub(super) enum ConfigSource {
     Import,
     Backup,
+    /// The saved files, read once another program stopped holding them open.
+    Unlocked,
 }
 
 impl ConfigSource {
@@ -65,13 +67,16 @@ impl ConfigSource {
         match self {
             Self::Import => pecofence_core::i18n::text("已导入配置"),
             Self::Backup => pecofence_core::i18n::text("已恢复备份"),
+            Self::Unlocked => pecofence_core::i18n::text("已读到配置文件，你的栅栏已恢复。"),
         }
     }
 
+    /// The name of the snapshot taken before a restore from a file (an import or a backup;
+    /// reading the unlocked files takes none).
     fn before(self) -> &'static str {
         match self {
             Self::Import => pecofence_core::i18n::text("导入配置前"),
-            Self::Backup => pecofence_core::i18n::text("恢复备份前"),
+            Self::Backup | Self::Unlocked => pecofence_core::i18n::text("恢复备份前"),
         }
     }
 }
@@ -87,6 +92,7 @@ pub(super) fn snapshot_room(
 ) -> bool {
     let auto = [
         pecofence_core::i18n::text("恢复快照前"),
+        pecofence_core::i18n::text("删除栅栏前"),
         ConfigSource::Import.before(),
         ConfigSource::Backup.before(),
     ];
@@ -237,6 +243,49 @@ impl App {
             );
         }
         self.picked_colors.insert(target.to_string(), hex);
+    }
+
+    /// `TIMER_CONFIG_LOCKED`: the config file another program held open at start is read as
+    /// soon as it opens, and replaces what showed meanwhile (which was never saved).
+    pub(super) fn retry_locked_config(&mut self) {
+        self.config_lock_tries += 1;
+        let Some((outcome, report)) = self.state.load_after_lock() else {
+            if let Some(path) = &self.state.locked_config {
+                if self.config_lock_tries.is_multiple_of(30) {
+                    tracing::info!(path = %path.display(), tries = self.config_lock_tries, "config file still locked by another program; saves held");
+                }
+                window::set_timer(
+                    self.control.hwnd(),
+                    super::TIMER_CONFIG_LOCKED,
+                    super::CONFIG_LOCKED_RETRY_MS,
+                );
+            }
+            return;
+        };
+        for (what, path, error) in &report.failures {
+            let what = *what;
+            tracing::warn!(what, path = %path.display(), error = %error, "config file unusable");
+        }
+        let source = match &outcome {
+            pecofence_core::LoadOutcome::Primary(_) => "config.json",
+            pecofence_core::LoadOutcome::Recovered(_, from)
+                if from.extension().is_some_and(|e| e == "bak") =>
+            {
+                "config.bak"
+            }
+            pecofence_core::LoadOutcome::Recovered(..) => "daily backup",
+            pecofence_core::LoadOutcome::Fresh(_) => "new: files unusable",
+        };
+        tracing::info!(
+            source,
+            tries = self.config_lock_tries,
+            moved_aside = report.moved_to.is_some(),
+            "config files readable again; loaded"
+        );
+        self.adopt_config(outcome.into_config(), ConfigSource::Unlocked);
+        if let Some(t) = &self.tray {
+            t.show_info("PecoFence", ConfigSource::Unlocked.done(), false);
+        }
     }
 
     pub(super) fn import_config(&mut self) {

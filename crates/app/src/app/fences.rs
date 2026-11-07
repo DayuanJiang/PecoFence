@@ -695,6 +695,7 @@ impl App {
 
     /// Re-applies every fence's saved geometry to its window (after a swap / restore / import).
     pub(super) fn relayout_from_state(&mut self) {
+        self.clear_undo("layout replaced");
         self.state.ensure_layout();
         self.resync_windows();
         for fence in self.state.host_fences() {
@@ -924,7 +925,27 @@ impl App {
                 return;
             }
         }
-        self.delete_fence(fence);
+        // As the CLI does: a snapshot first (with the note text), so the fence can come back
+        // after a restart too; a list full of the user's own snapshots gets none.
+        let title = self
+            .state
+            .fence(fence)
+            .map(|f| f.title.clone())
+            .unwrap_or_default();
+        if super::settings::snapshot_room(&mut self.state.config.snapshots, None) {
+            let snap = self
+                .state
+                .save_snapshot(pecofence_core::i18n::text("删除栅栏前"));
+            self.state.keep_tool_data_in(snap);
+        } else {
+            tracing::info!("no room for the snapshot before a fence delete");
+        }
+        let Some(deleted) = self.state.delete_fence_keeping(fence) else {
+            return;
+        };
+        self.note_deleted_for_undo(deleted);
+        self.after_fence_deleted(fence);
+        self.offer_undo_delete(fence, &title);
     }
 
     /// What deleting `fence` takes with it, as a question; None when nothing would be lost (no
@@ -985,13 +1006,17 @@ impl App {
     /// Deletes a fence (or a tab); a deleted host's next tab takes its place and keeps the rest.
     pub(super) fn delete_fence(&mut self, fence: FenceId) {
         if self.state.delete_fence(fence) {
-            if let Some(w) = self.fences.remove(&fence) {
-                self.retire_window(w);
-            }
-            self.resync_windows();
-            self.refresh_all();
-            self.schedule_save();
+            self.after_fence_deleted(fence);
         }
+    }
+
+    fn after_fence_deleted(&mut self, fence: FenceId) {
+        if let Some(w) = self.fences.remove(&fence) {
+            self.retire_window(w);
+        }
+        self.resync_windows();
+        self.refresh_all();
+        self.schedule_save();
     }
 
     /// Fences "dock to the top of the screen": the fence moves flush against the top of its

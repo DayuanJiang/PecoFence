@@ -11,7 +11,11 @@ use pecofence_platform::shell::{self, DesktopEntry, EntryOrigin};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
+/// How long the record of a deleted desktop item the user placed is kept, so the item goes back
+/// to its fence and spot when it returns (a restore from the Recycle Bin, a re-download).
 const ORPHAN_GC_SECS: i64 = 7 * 24 * 3600;
+/// At most this many such records are kept; the oldest go first.
+const MAX_ORPHANS: usize = 200;
 
 pub struct AppState {
     pub config: Config,
@@ -47,6 +51,10 @@ pub struct AppState {
         PathBuf,
         pecofence_core::config_store::ReadError,
     )>,
+    /// A config file another program held open at load (see `ConfigStore::load_waiting`):
+    /// what shows came from a file further down the line or is the defaults, and no save may
+    /// replace or rotate the files until this one is read (`load_after_lock`).
+    pub locked_config: Option<PathBuf>,
 }
 
 /// Summary of a desktop sync pass.
@@ -154,10 +162,18 @@ impl AppState {
                 .failures
                 .push(("config.json", store.primary_path(), error));
         }
+        if !report.waited.is_zero() {
+            tracing::info!(
+                waited_ms = report.waited.as_millis() as u64,
+                still_locked = report.locked.is_some(),
+                "config files held open by another program at load; waited"
+            );
+        }
+        // Defaults standing in for files another program holds open are no first start.
         let (config, first_run, recovered_from) = match outcome {
             LoadOutcome::Primary(c) => (c, false, None),
             LoadOutcome::Recovered(c, from) => (c, false, Some(from)),
-            LoadOutcome::Fresh(c) => (c, true, None),
+            LoadOutcome::Fresh(c) => (c, report.locked.is_none(), None),
         };
         pecofence_core::i18n::set_language(
             config
@@ -183,7 +199,25 @@ impl AppState {
             recovered_from,
             unreadable_moved_to: report.moved_to,
             load_failures: report.failures,
+            locked_config: report.locked,
         };
+        // A newer version saved this file: what it keeps that this one does not know (the text
+        // of a newer kind of fence, say) goes at this version's first save. A copy stays in the
+        // backups for when the newer version comes back (docs/UPGRADING.md).
+        if let Some(by) = state.config.saved_by.clone()
+            && pecofence_core::config_store::newer_version(&by, env!("CARGO_PKG_VERSION"))
+            && state.recovered_from.is_none()
+            && state.locked_config.is_none()
+        {
+            match state.store.keep_copy(&by) {
+                Ok(path) => {
+                    tracing::info!(saved_by = %by, copy = %path.display(), "config from a newer version kept as a backup")
+                }
+                Err(error) => {
+                    tracing::warn!(saved_by = %by, %error, "config from a newer version not copied")
+                }
+            }
+        }
         state.rebuild_catalog();
         if state.config.drop_duplicates() {
             tracing::warn!("duplicate fences or memberships in the configuration dropped");
@@ -243,6 +277,29 @@ impl AppState {
         v.sort();
         v.reverse();
         v
+    }
+
+    /// While `locked_config` is set: loads the files again, without waiting, once that file
+    /// opens. `None` while it (or another file in line) is still held open.
+    pub fn load_after_lock(
+        &mut self,
+    ) -> Option<(LoadOutcome, pecofence_core::config_store::LoadReport)> {
+        let path = self.locked_config.as_ref()?;
+        if ConfigStore::is_locked(path) {
+            return None;
+        }
+        let (outcome, report) = self.store.load_waiting(std::time::Duration::ZERO);
+        if report.locked.is_some() {
+            self.locked_config = report.locked;
+            return None;
+        }
+        self.locked_config = None;
+        // What showed meanwhile was never saved: the files' own snapshots, notes and scripts
+        // replace it whole (`replace_config` would keep them beside the file's).
+        self.config.snapshots.clear();
+        self.config.notes.clear();
+        self.config.scripts.clear();
+        Some((outcome, report))
     }
 
     /// Replaces the whole configuration (import / backup restore) and re-derives the runtime
@@ -393,6 +450,7 @@ impl AppState {
             recovered_from: None,
             unreadable_moved_to: None,
             load_failures: Vec::new(),
+            locked_config: None,
         };
         scratch.apply_snapshot_layouts(snap.layouts.clone());
         let layout = scratch.layout;
@@ -871,10 +929,16 @@ impl AppState {
         if !self.dirty {
             return false;
         }
+        if let Some(locked) = &self.locked_config {
+            // Saving would rotate the user's files away while they cannot be read.
+            tracing::debug!(path = %locked.display(), "config save held: a config file is locked by another program");
+            return false;
+        }
         let pruned = self.config.prune_notes();
         if pruned > 0 {
             tracing::info!(pruned, "note texts without a fence dropped");
         }
+        self.config.saved_by = Some(env!("CARGO_PKG_VERSION").to_string());
         match self.store.save(&self.config) {
             Ok(()) => {
                 self.dirty = false;
@@ -1207,20 +1271,57 @@ impl AppState {
                 EntryOrigin::Namespace => Origin::Namespace,
             })
             .collect();
+        // A deleted item keeps its record only where the user placed it (moved it into a
+        // fence or into a spot of its own): an item a rule or the default placed gets the same
+        // place from them when it returns, so its record would only grow the file.
+        let placed_by_user: HashSet<ItemId> = self
+            .config
+            .layouts
+            .iter()
+            .flat_map(|l| &l.fences)
+            .flat_map(|f| &f.items)
+            .filter(|r| r.assigned_by == AssignedBy::User || r.manual_index.is_some())
+            .map(|r| r.item_id)
+            .collect();
+        let (mut placed, mut aged) = (0usize, 0usize);
         let mut to_remove = Vec::new();
+        let mut kept: Vec<(i64, ItemId)> = Vec::new();
         for (id, item) in self.config.items.iter_mut() {
             if seen.contains(id) || unread.contains(&item.origin) {
                 continue;
             }
-            match item.orphaned_since {
+            let since = match item.orphaned_since {
+                Some(since) => since,
                 None => {
                     item.orphaned_since = Some(now);
                     report.removed += 1;
                     self.dirty = true;
+                    now
                 }
-                Some(since) if now - since > ORPHAN_GC_SECS => to_remove.push(*id),
-                Some(_) => {}
+            };
+            if !placed_by_user.contains(id) {
+                placed += 1;
+                to_remove.push(*id);
+            } else if now - since > ORPHAN_GC_SECS {
+                aged += 1;
+                to_remove.push(*id);
+            } else {
+                kept.push((since, *id));
             }
+        }
+        let over = kept.len().saturating_sub(MAX_ORPHANS);
+        if over > 0 {
+            kept.sort();
+            to_remove.extend(kept.drain(..over).map(|(_, id)| id));
+        }
+        if !to_remove.is_empty() {
+            tracing::info!(
+                placed_by_rules = placed,
+                older_than_7_days = aged,
+                over_limit = over,
+                kept = kept.len(),
+                "records of deleted desktop items dropped"
+            );
         }
         for id in to_remove {
             self.remove_item_record(id);
@@ -2584,19 +2685,20 @@ impl AppState {
 
     /// Deletes a fence; its items go back to the inbox. The inbox itself cannot be deleted.
     pub fn delete_fence(&mut self, id: FenceId) -> bool {
-        let Some(inbox) = self.inbox_id() else {
-            return false;
-        };
+        self.delete_fence_keeping(id).is_some()
+    }
+
+    /// [`Self::delete_fence`], returning what [`Self::undelete_fence`] needs to put it back.
+    pub fn delete_fence_keeping(&mut self, id: FenceId) -> Option<DeletedFence> {
+        let inbox = self.inbox_id()?;
         if inbox == id {
-            return false;
+            return None;
         }
         // Out of its tab group first: a deleted host hands its place to the next tab, which
         // keeps the others (they would otherwise all open on the host's rect).
-        self.detach_tab(id);
-        let Some(pos) = self.fences().iter().position(|f| f.id == id) else {
-            return false;
-        };
-        let removed = self.config.layouts[self.layout].fences.remove(pos);
+        let tabs = self.detach_tab(id);
+        let index = self.fences().iter().position(|f| f.id == id)?;
+        let removed = self.config.layouts[self.layout].fences.remove(index);
         tracing::info!(
             %id,
             items = removed.items.len(),
@@ -2612,6 +2714,15 @@ impl AppState {
             self.config
                 .assign(self.layout, item, inbox, AssignedBy::Migration);
         }
+        let rules: Vec<(usize, pecofence_core::rules::Rule)> = self
+            .config
+            .rules
+            .list
+            .iter()
+            .enumerate()
+            .filter(|(_, r)| r.target == Target::Fence(id))
+            .map(|(i, r)| (i, r.clone()))
+            .collect();
         self.config
             .rules
             .list
@@ -2619,8 +2730,125 @@ impl AppState {
         // Its tabs (if it hosted any) become windows again; a deleted tab leaves its host.
         self.normalize_tabs();
         self.dirty = true;
+        Some(DeletedFence {
+            note: self.config.notes.get(&id).cloned(),
+            script: self.config.scripts.get(&id).cloned(),
+            fence: removed,
+            index,
+            tabs,
+            rules,
+        })
+    }
+
+    /// Puts a fence [`Self::delete_fence_keeping`] deleted back: at its place in the list,
+    /// in its tab group, with its rules, note text or script, and the icons the deletion sent
+    /// to the inbox (one moved elsewhere since stays there). False when it exists again.
+    pub fn undelete_fence(&mut self, d: DeletedFence) -> bool {
+        let id = d.fence.id;
+        if self.fence(id).is_some() {
+            return false;
+        }
+        let inbox = self.inbox_id();
+        let layout = self.layout;
+        let mut fence = d.fence;
+        let in_inbox = |state: &Self, item: ItemId| {
+            state.config.items.contains_key(&item)
+                && state.config.fence_of_item(layout, item) == inbox
+        };
+        fence.items.retain(|r| in_inbox(self, r.item_id));
+        let back: HashSet<ItemId> = fence.items.iter().map(|r| r.item_id).collect();
+        for f in &mut self.config.layouts[layout].fences {
+            f.items.retain(|r| !back.contains(&r.item_id));
+        }
+        let fences = &mut self.config.layouts[layout].fences;
+        fences.insert(d.index.min(fences.len()), fence);
+        let regrouped = d
+            .tabs
+            .as_ref()
+            .is_some_and(|change| self.cancel_tab_detach(change));
+        let list = &mut self.config.rules.list;
+        let mut rules = 0;
+        for (i, rule) in d.rules {
+            if !list.iter().any(|r| r.id == rule.id) {
+                list.insert(i.min(list.len()), rule);
+                rules += 1;
+            }
+        }
+        if let Some(text) = d.note {
+            self.config.notes.entry(id).or_insert(text);
+        }
+        if let Some(spec) = d.script {
+            self.config.scripts.entry(id).or_insert(spec);
+        }
+        self.normalize_tabs();
+        self.dirty = true;
+        tracing::info!(
+            %id,
+            items = back.len(),
+            rules,
+            tab_group = d.tabs.is_some(),
+            regrouped,
+            "deleted fence put back"
+        );
         true
     }
+
+    /// Where each of `items` is now in the current layout: its fence and its entry there (for
+    /// putting it back, [`Self::put_items_back`]). Items in no fence are left out.
+    pub fn item_places(&self, items: &[ItemId]) -> Vec<(FenceId, pecofence_core::ItemRef)> {
+        self.fences()
+            .iter()
+            .flat_map(|f| {
+                f.items
+                    .iter()
+                    .filter(|r| items.contains(&r.item_id))
+                    .map(|r| (f.id, r.clone()))
+            })
+            .collect()
+    }
+
+    /// Moves items back to the places [`Self::item_places`] noted, each only while it is still
+    /// in `moved_to` (the user may have moved it on). Returns how many went back.
+    pub fn put_items_back(
+        &mut self,
+        places: &[(FenceId, pecofence_core::ItemRef)],
+        moved_to: FenceId,
+    ) -> usize {
+        let layout = self.layout;
+        let mut back = 0;
+        for (from, r) in places {
+            if self.config.fence_of_item(layout, r.item_id) != Some(moved_to)
+                || self.routable_fence(*from).is_none()
+            {
+                continue;
+            }
+            for f in &mut self.config.layouts[layout].fences {
+                f.items.retain(|x| x.item_id != r.item_id);
+            }
+            if let Some(f) = self.fence_mut(*from) {
+                f.items.push(r.clone());
+                back += 1;
+            }
+        }
+        if back > 0 {
+            self.dirty = true;
+        }
+        back
+    }
+}
+
+/// Everything [`AppState::undelete_fence`] needs to put a deleted fence back.
+#[derive(Clone, Debug)]
+pub struct DeletedFence {
+    pub fence: Fence,
+    /// Its place in the layout's fence list.
+    index: usize,
+    /// It was in a tab group (or hosted one): how the group was.
+    tabs: Option<pecofence_core::TabDetach>,
+    /// The rules that pointed at it, with their places in the list.
+    rules: Vec<(usize, pecofence_core::rules::Rule)>,
+    note: Option<String>,
+    script: Option<pecofence_core::ScriptSpec>,
 }
 
 fn ext_of_key(key: &ItemKey) -> String {
@@ -2764,6 +2992,7 @@ mod tests {
             recovered_from: None,
             unreadable_moved_to: None,
             load_failures: Vec::new(),
+            locked_config: None,
         };
         state.ensure_layout();
         state
@@ -3722,6 +3951,9 @@ mod tests {
         let mine = state
             .item_id_for_path(Path::new("C:/Users/Me/Desktop/mine.txt"))
             .unwrap();
+        // Placed by hand, so its record stays while it is gone.
+        let other = state.fences()[1].id;
+        state.move_items(&[mine], other);
         let report = state.sync_desktop_partly_read(&[], &[EntryOrigin::PublicDesktop]);
         assert_eq!(report.removed, 1);
         assert!(state.config.items[&shared].orphaned_since.is_none());
@@ -3735,6 +3967,8 @@ mod tests {
         state.sync_desktop(&[desktop_entry("proj")]);
         let id = state.item_id_for_path(&path).unwrap();
         assert!(!state.config.items[&id].is_folder);
+        let other = state.fences()[1].id;
+        state.move_items(&[id], other);
         // Deleted, then a folder of that name within the week: the record is reused.
         state.sync_desktop(&[]);
         let mut folder = desktop_entry("proj");
@@ -3742,6 +3976,72 @@ mod tests {
         state.sync_desktop(&[folder]);
         assert_eq!(state.item_id_for_path(&path), Some(id));
         assert!(state.config.items[&id].is_folder);
+    }
+
+    /// Fence review S13: deleting many files a rule or the default placed must not grow the
+    /// configuration; a file the user placed keeps its record (and its fence) for a week, at
+    /// most `MAX_ORPHANS` of them, the oldest dropped first.
+    #[test]
+    fn deleted_items_keep_a_record_only_where_the_user_placed_them() {
+        let mut state = test_state();
+        let names: Vec<String> = (0..MAX_ORPHANS + 50).map(|i| format!("f{i}.txt")).collect();
+        let entries: Vec<DesktopEntry> = names.iter().map(|n| desktop_entry(n)).collect();
+        state.sync_desktop(&entries);
+        let id_of = |state: &AppState, n: &str| {
+            state
+                .item_id_for_path(&PathBuf::from(format!("C:/Users/Me/Desktop/{n}")))
+                .unwrap()
+        };
+        let routed_to = state.config.fence_of_item(0, id_of(&state, &names[0]));
+        let other = state
+            .fences()
+            .iter()
+            .find(|f| Some(f.id) != routed_to && f.holds_items())
+            .unwrap()
+            .id;
+        // The first ten and the last MAX_ORPHANS go to another fence by hand.
+        let by_hand: Vec<ItemId> = names[..10]
+            .iter()
+            .chain(&names[50..])
+            .map(|n| id_of(&state, n))
+            .collect();
+        state.move_items(&by_hand, other);
+        let placed_by_default = id_of(&state, &names[20]);
+        let before = state.config.items.len();
+        // All deleted; the hand-placed first ten are the oldest records.
+        for (i, id) in by_hand.iter().enumerate() {
+            if i < 10 {
+                state.config.items.get_mut(id).unwrap().orphaned_since = Some(100);
+            }
+        }
+        let report = state.sync_desktop(&[]);
+        assert_eq!(report.removed, before - 10, "newly gone");
+        assert!(!state.config.items.contains_key(&placed_by_default));
+        assert_eq!(state.config.items.len(), MAX_ORPHANS);
+        assert!(
+            by_hand[..10]
+                .iter()
+                .all(|id| !state.config.items.contains_key(id)),
+            "over the limit: the oldest go"
+        );
+        assert!(
+            state
+                .fences()
+                .iter()
+                .all(|f| !f.contains_item(placed_by_default))
+        );
+        // A kept one comes back into the fence it was put in.
+        let back = names[60].clone();
+        state.sync_desktop(&[desktop_entry(&back)]);
+        let id = id_of(&state, &back);
+        assert_eq!(id, by_hand[20]);
+        assert_eq!(state.config.fence_of_item(0, id), Some(other));
+        assert!(state.config.items[&id].orphaned_since.is_none());
+        // One the default placed comes back as new, where the default puts it again.
+        state.sync_desktop(&[desktop_entry(&back), desktop_entry(&names[20])]);
+        let again = id_of(&state, &names[20]);
+        assert_ne!(again, placed_by_default);
+        assert_eq!(state.config.fence_of_item(0, again), routed_to);
     }
 
     /// Issue #39: the inbox cannot be deleted, but 为空时自动隐藏 keeps an empty one out of sight.

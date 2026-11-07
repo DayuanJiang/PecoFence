@@ -129,7 +129,7 @@ impl App {
                 None => true,
             });
         for (id, fence, rename) in landed {
-            self.move_items(&[id], fence);
+            self.move_items_unrecorded(&[id], fence);
             if rename {
                 // The rules may have filed the item here already: then nothing moved, the
                 // window does not list it yet, and the label the edit box needs has no rect.
@@ -662,7 +662,21 @@ impl App {
     /// Moves items into `to`. Virtual fences only change membership (files stay put), also while
     /// they show a folder opened in them; a portal as source or target means a real file move
     /// (portal = folder view).
+    /// The user moved `items` into `to`: one step of Ctrl+Z in the fences, unless files move
+    /// into a folder (Windows undoes those).
     pub(super) fn move_items(&mut self, items: &[ItemId], to: FenceId) {
+        let places = if self.state.move_target_folder(to).is_none() {
+            self.state.item_places(items)
+        } else {
+            Vec::new()
+        };
+        if self.move_items_unrecorded(items, to) > 0 {
+            self.note_items_for_undo(to, places);
+        }
+    }
+
+    /// [`Self::move_items`] without the undo step; returns how many fence entries moved.
+    pub(super) fn move_items_unrecorded(&mut self, items: &[ItemId], to: FenceId) -> usize {
         if self.state.move_target_folder(to).is_some() {
             // Namespace items cannot be moved into a folder; they stay where they are.
             let paths: Vec<PathBuf> = items
@@ -672,7 +686,7 @@ impl App {
                 .filter_map(|it| it.path().map(PathBuf::from))
                 .collect();
             self.move_files_into_portal(paths, to);
-            return;
+            return 0;
         }
         let (portal_items, desktop_items): (Vec<ItemId>, Vec<ItemId>) = items
             .iter()
@@ -682,7 +696,7 @@ impl App {
             self.move_portal_items_to_desktop(&portal_items, to);
         }
         if desktop_items.is_empty() {
-            return;
+            return 0;
         }
         let affected: Vec<FenceId> = self
             .state
@@ -691,12 +705,14 @@ impl App {
             .filter(|f| f.id == to || f.items.iter().any(|r| desktop_items.contains(&r.item_id)))
             .map(|f| f.id)
             .collect();
-        if self.state.move_items(&desktop_items, to) > 0 {
+        let moved = self.state.move_items(&desktop_items, to);
+        if moved > 0 {
             for id in affected {
                 self.refresh_fence(id);
             }
             self.schedule_save();
         }
+        moved
     }
 }
 
