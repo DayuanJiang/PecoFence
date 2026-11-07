@@ -13,6 +13,17 @@ function DeskCell($i) {
   $rows = [math]::Floor(([Windows.Forms.Screen]::PrimaryScreen.WorkingArea.Height - 4) / 96)
   return @([int](4 + [math]::Floor($i / $rows) * 80 + 40), [int](4 + ($i % $rows) * 96 + 40))
 }
+# Where icon $name (display index $i) stands: its saved cell when the build places the icons
+# freely (`fence get` desktopCells, 自由摆放), else the cell of its place in the order.
+function IconCell($name, $i) {
+  $g = FenceGet inbox
+  if ($g.desktopCells) {
+    $id = "$((@(PfJson item list --fence inbox) | Where-Object { $_.name -eq $name } | Select-Object -First 1).id)"
+    $c = $g.desktopCells.PSObject.Properties[$id]
+    if ($c) { return @([int](4 + $c.Value[0] * 80 + 40), [int](4 + $c.Value[1] * 96 + 40)) }
+  }
+  return DeskCell $i
+}
 $names = @('fxc-a.txt', 'fxc-b.txt', 'fxc-c.txt', 'fxc-d.txt', 'fxc-e.txt')
 
 Case 'setup'
@@ -66,7 +77,7 @@ foreach ($run in 1, 2) {
   $ic = [array]::IndexOf($order, 'fxc-c')
   # The file shown just before fxc-c goes away during the rectangle: fxc-c moves up one cell.
   $gone = if ($ic -gt 0 -and $order[$ic - 1] -like 'fxc-*') { "$($order[$ic - 1]).txt" } else { 'fxc-a.txt' }
-  $p = DeskCell $ic
+  $p = IconCell 'fxc-c' $ic
   # A click on the empty desktop first: the first desktop press after a start can go unseen.
   [G]::Click(1000, 700); Start-Sleep -Milliseconds 500
   [G]::Click($p[0], $p[1]); Start-Sleep -Milliseconds 700
