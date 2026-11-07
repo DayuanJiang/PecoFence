@@ -270,8 +270,9 @@ if ($n2 -ne $n0) { Pf fence show-all | Out-Null; Start-Sleep -Seconds 1 }
 
 Case '1 刷新 (Refresh) in the desktop menu, double-clicked, leaves the fences shown'
 # The menu opens down and right from the pointer: from here its Refresh lies over the bare
-# desktop (run 13 opened it over a fence, so the second click hit that fence).
-$menuAt = @(1010, 130)
+# desktop (run 13 opened it over a fence, so the second click hit that fence). Left of the test
+# fences and below the 「桌面」 fence: since U15 the first-run fences fill x 1088 to 1584 at the top.
+$menuAt = @(60, 420)
 $n0 = VisFences
 # Where Refresh shows, with the menu closed again: the bare desktop.
 [G]::RClick($menuAt[0], $menuAt[1])
