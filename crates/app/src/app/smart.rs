@@ -80,8 +80,11 @@ pub(super) struct SmartState {
     /// fences whose search waits for its answer.
     in_flight: Option<(FenceId, u16, Instant)>,
     waiting: VecDeque<FenceId>,
-    /// One watcher per smart fence with a folder (its subfolders too when it searches them).
+    /// One watcher per smart fence with a folder (its subfolders too when it searches them),
+    /// and the fences whose watcher saw a change since the last look. Kept apart from the
+    /// desktop's batch: a change (or an overflow) there never syncs the desktop.
     watchers: HashMap<FenceId, (PathBuf, DirWatcher)>,
+    changed: Arc<Mutex<HashSet<FenceId>>>,
     /// Fences to run again when `TIMER_SMART_SOON` fires, and whether a second run follows.
     soon: HashSet<FenceId>,
     again: bool,
@@ -100,6 +103,7 @@ impl Default for SmartState {
             in_flight: None,
             waiting: VecDeque::new(),
             watchers: HashMap::new(),
+            changed: Arc::new(Mutex::new(HashSet::new())),
             soon: HashSet::new(),
             again: false,
         }
@@ -473,15 +477,19 @@ impl App {
             if self.smart.watchers.contains_key(&id) {
                 continue;
             }
-            let pending = self.fs_pending.clone();
+            let changed = self.smart.changed.clone();
             let control = self.control.hwnd().0 as isize;
+            // Every event of this watcher lies in the fence's folder: the fence is all it names.
             let on_events = move |events: Vec<FsEvent>| {
-                if let Ok(mut p) = pending.lock() {
-                    p.extend(events);
+                if events.iter().any(|e| matches!(e, FsEvent::Overflow)) {
+                    tracing::info!(%id, "smart fence watcher overflowed; its search runs again");
+                }
+                if let Ok(mut c) = changed.lock() {
+                    c.insert(id);
                 }
                 window::post_message(
                     HWND(control as *mut core::ffi::c_void),
-                    WM_APP_FS_CHANGED,
+                    crate::commands::WM_APP_SMART_FS,
                     0,
                     0,
                 );
@@ -525,13 +533,38 @@ impl App {
                 (all || inside).then_some(f.id)
             })
             .collect();
+        self.run_smart_soon(hit, "a desktop or portal watcher");
+    }
+
+    /// `WM_APP_SMART_FS`: the fences whose own watcher saw a change run again shortly.
+    pub(super) fn smart_watchers_fired(&mut self) {
+        let ids: Vec<FenceId> = self
+            .smart
+            .changed
+            .lock()
+            .map(|mut c| c.drain().collect())
+            .unwrap_or_default();
+        let ids: Vec<FenceId> = ids
+            .into_iter()
+            .filter(|id| self.state.smart_spec(*id).is_some())
+            .collect();
+        self.run_smart_soon(ids, "its own watcher");
+    }
+
+    /// Fences `hit` run again after `SOON_MS`, and once more `AGAIN_MS` later. A timer that is
+    /// already set is left as it is, so a folder that keeps changing (a long download) still
+    /// gets its runs.
+    fn run_smart_soon(&mut self, hit: Vec<FenceId>, by: &str) {
         if hit.is_empty() {
             return;
         }
-        tracing::debug!(fences = hit.len(), "smart fence folders changed");
+        let armed = !self.smart.soon.is_empty();
+        tracing::debug!(fences = hit.len(), by, armed, "smart fence folders changed");
         self.smart.soon.extend(hit);
         self.smart.again = true;
-        window::set_timer(self.control.hwnd(), TIMER_SMART_SOON, SOON_MS);
+        if !armed {
+            window::set_timer(self.control.hwnd(), TIMER_SMART_SOON, SOON_MS);
+        }
     }
 
     /// `TIMER_SMART_SOON`: runs the fences a folder change named, once more a few seconds later.

@@ -57,6 +57,9 @@ pub const WM_APP_EVERYTHING_SETUP: u32 = msg::WM_APP + 21;
 pub const WM_APP_DIALOG_OFFER: u32 = msg::WM_APP + 22;
 /// 智能栅栏: a folder read without Everything finished on its worker.
 pub const WM_APP_SMART_READ: u32 = msg::WM_APP + 30;
+/// 智能栅栏: a smart fence's own folder watcher saw a change (the fences wait in
+/// `SmartState::changed`).
+pub const WM_APP_SMART_FS: u32 = msg::WM_APP + 31;
 
 /// What a file drop does with the dropped paths (Explorer's Move / Copy / Create shortcut, the
 /// effect the drop target reported).
