@@ -38,9 +38,6 @@ const CMD_ITEM_FENCE_OPTIONS: u32 = 109;
 const CMD_ITEM_EXT_RULE: u32 = 110;
 const CMD_FENCE_OPEN_FOLDER: u32 = 332;
 const CMD_ITEM_MOVE_BASE: u32 = 200;
-const CMD_NEW_FENCE_HERE: u32 = 250;
-/// 在此显示文件夹… in the same marquee menu.
-const CMD_SHOW_FOLDER_HERE: u32 = 251;
 /// Command-id range handed to Explorer's `IContextMenu`.
 const CMD_SHELL_FIRST: u32 = 0x1000;
 const CMD_SHELL_LAST: u32 = 0x6FFF;
@@ -1248,51 +1245,6 @@ impl App {
                     w.set_column_widths(widths);
                 }
                 self.schedule_save();
-            }
-            _ => {}
-        }
-    }
-
-    /// Marquee on the empty desktop: a menu offers a new fence or a folder fence in the drawn
-    /// rectangle.
-    pub(super) fn offer_new_fence(&mut self, rect: RECT) {
-        // Menus need a visible owner window from this thread; any fence will do.
-        let Some(owner) = self.fences.values().map(|w| w.hwnd()).next() else {
-            return;
-        };
-        // The marquee's clicks went to Explorer, so the plain SetForegroundWindow in
-        // `show_context` is refused; a menu whose owner is not in the foreground ignores
-        // clicks outside it and Esc, and could only be closed by choosing its item.
-        if !window::claim_foreground(owner) {
-            tracing::warn!("new fence offer could not take the foreground");
-        }
-        let pt = window::cursor_pos();
-        let menu = PopupMenu::new();
-        menu.item(
-            CMD_NEW_FENCE_HERE,
-            pecofence_core::i18n::text("在此新建栅栏"),
-            false,
-            false,
-        )
-        .item(
-            CMD_SHOW_FOLDER_HERE,
-            pecofence_core::i18n::text("在此显示文件夹…"),
-            false,
-            false,
-        );
-        // Saved first, as for the tray menu.
-        self.state.save_if_dirty();
-        match menu.show_context(owner, pt.x, pt.y) {
-            CMD_NEW_FENCE_HERE => self.create_fence_with_rename(rect),
-            CMD_SHOW_FOLDER_HERE => {
-                match pecofence_platform::filedialog::pick_folder(
-                    None,
-                    pecofence_core::i18n::text("选择要在桌面显示的文件夹"),
-                ) {
-                    Ok(Some(folder)) => self.create_portal_in(folder, rect),
-                    Ok(None) => tracing::info!("show folder here: no folder picked"),
-                    Err(e) => tracing::warn!(error = %e, "folder picker failed"),
-                }
             }
             _ => {}
         }

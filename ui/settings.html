@@ -507,7 +507,7 @@
           <select id="desktopIcons" aria-labelledby="desktopIconsTitle" aria-describedby="desktopIconsHelp"><option value="hide">隐藏，项目放在栅栏里</option><option value="showWithInbox">显示，也显示“桌面”栅栏</option><option value="showNoInbox">显示，不显示“桌面”栅栏</option></select></div>
         <div class="card child" id="keepIconsCard"><div class="l"><div><div class="t">关闭 PecoFence 时保持 Windows 桌面图标隐藏</div><div class="s">登录时 Windows 会先显示桌面图标，等 PecoFence 启动后才隐藏。打开后，退出或注销时图标保持隐藏，下次登录就不会闪现；PecoFence 没有运行时，桌面上不显示图标。要让图标重新显示，右键桌面，选“查看”→“显示桌面图标”</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="keepIconsHidden"></div></div>
       </div>
-      <div class="card"><div class="l"><span class="ic">&#xE8B3;</span><div><div class="t">在桌面空白处拖出矩形时提供“在此新建栅栏”</div><div class="s">矩形没有碰到任何栅栏时弹出这一项；关闭后拖出矩形只用来框选，仍可从托盘菜单新建栅栏</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="offerNewFence"></div></div>
+      <div class="card"><div class="l"><span class="ic">&#xE8B3;</span><div><div class="t">在桌面空白处拖出矩形时显示“新建栅栏”按钮</div><div class="s">矩形没有碰到任何栅栏时，在它的右下角显示“新建栅栏”和“在此显示文件夹…”两个小按钮，不点的话几秒后消失；关闭后拖出矩形只用来框选，仍可从托盘菜单新建栅栏</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="offerNewFence"></div></div>
       <h3>隐藏栅栏</h3>
       <div class="card"><div class="l"><span class="ic">&#xE890;</span><div><div class="t">双击桌面空白处隐藏或显示栅栏</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="quickHide.enabled"></div></div>
       <div class="card" id="wdHotkeyCard"><div class="l"><span class="ic">&#xE7F4;</span><div><div class="t" id="wdHotkeyTitle">临时显示 Windows 桌面</div><div class="s" id="wdHotkeyHelp" aria-live="polite"></div></div></div>

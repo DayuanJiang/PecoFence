@@ -164,7 +164,8 @@ pub struct Settings {
     /// show only among Windows' own desktop icons.
     #[serde(default)]
     pub hide_inbox_when_icons_shown: bool,
-    /// A rectangle drawn on the empty desktop that touches no fence offers 「在此新建栅栏」.
+    /// A rectangle drawn on the empty desktop that touches no fence shows the 「新建栅栏」 and
+    /// 「在此显示文件夹…」 buttons at its corner.
     #[serde(default = "default_true")]
     pub offer_new_fence: bool,
     /// Unused (see [`UNUSED_SETTINGS`]).

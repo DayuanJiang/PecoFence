@@ -3,10 +3,10 @@
 # marquee's 「在此显示文件夹…」 (U14), first-start names after a language change, the icon size
 # names and the centred rename box (U16), 栅栏选项… beside the fence (U5) and the hover delay
 # setting (U18). Real keys and clicks; outcomes read from the foreground window, dumps, the CLI
-# and Explorer's windows. Three parts: run.sh --var Part=A (U7, U13), --var Part=B (U12, U14, U16,
-# U5, U18) and --var Part=C (the new menu texts in every language); the default runs A and B.
+# and Explorer's windows. Parts: run.sh --var Part=A (U7, U13), B (U12, U14, U16, U5, U18),
+# C (the new menu texts in every language), D (the marquee buttons, U10); the default is ABD.
 
-if (-not $Part) { $Part = 'AB' }
+if (-not $Part) { $Part = 'ABD' }
 
 Add-Type -Namespace Kx -Name W -MemberDefinition @'
 [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern IntPtr FindWindowExW(IntPtr p, IntPtr a, string c, string t);
@@ -59,12 +59,42 @@ function KxSubMenu($m, $regex) {
   if ($ms.Count -ge 2) { return $ms[0] }
   return [IntPtr]::Zero
 }
+# The new-fence offer after an empty marquee: its window (Zero while none shows), the drawn
+# rectangle used by the checks, and a click on one of its two buttons (folder left, new right).
+function KxOffer() {
+  $h = [G]::FindWindowW('PecoFence.MarqueeOffer', [NullString]::Value)
+  if ($h -ne [IntPtr]::Zero -and [G]::IsWindowVisible($h)) { return $h }
+  return [IntPtr]::Zero
+}
+function KxWaitOffer($sec = 3) {
+  for ($i = 0; $i -lt $sec * 20; $i++) { $h = KxOffer; if ($h -ne [IntPtr]::Zero) { return $h }; Start-Sleep -Milliseconds 50 }
+  return [IntPtr]::Zero
+}
+function KxMarquee() { DragTo 820 120 1120 380 }
+# The fences the desktop marquee selected (white ring), from the newest dump.
+function KxGroupSelected() {
+  Start-Sleep -Milliseconds 700
+  $l = PfWaitLog '\] selection=\[' 3
+  if ($l -match 'ringed=\[([^\]]*)\]') { return $Matches[1] }
+  return ''
+}
+function KxOfferClick($which) {
+  $h = KxWaitOffer 2
+  if ($h -eq [IntPtr]::Zero) { Log 'no offer to click'; return $false }
+  $r = Rect $h; $y = [int](($r.T + $r.B) / 2)
+  $x = if ($which -eq 'new') { $r.R - 30 } else { $r.L + 30 }
+  Glide ($x - 60) ($y + 40) $x $y 8 25; Start-Sleep -Milliseconds 200
+  [G]::Click($x, $y); Start-Sleep -Milliseconds 600
+  return $true
+}
 function KxFenceHwnd($t) { return (@([W]::Tops('PecoFence.Fence') | Where-Object { [W]::Title($_) -eq $t }) | Select-Object -First 1) }
 # A click on the empty desktop: every fence's icons lose their selection.
 function KxDeskClick() { [G]::Click(1000, 800); Start-Sleep -Milliseconds 700 }
 
 Case 'setup'
 CloseWindows
+# A shell question left by an earlier, cut-off run (Delete File) would sit over the desktop.
+foreach ($d in @([W]::Tops('#32770') | Where-Object { [W]::Title($_) -match 'Delete' })) { Log "closing left-over dialog $([W]::Info($d))"; [L]::PostMessageW($d, 0x10, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null }
 KxClean
 Remove-Item -LiteralPath $KxRoot -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force "$KxRoot\Sub A", "$KxRoot\Sub B" | Out-Null
@@ -297,12 +327,12 @@ Check 'no offer on a shortcut, a folder or a file in a folder fence' ($t1 -and $
 Case 'U14 the marquee offers a folder fence in the drawn rectangle'
 KxDeskClick
 $c0 = @(PfJson fence list).Count
-DragTo 820 120 1120 380
-$m = MenuWin 5
-$texts = if ($m -ne [IntPtr]::Zero) { MenuTexts $m } else { '' }
+KxMarquee
+$off = KxWaitOffer
+$texts = if ($off -ne [IntPtr]::Zero) { [W]::Title($off) } else { '' }
 Shot 'u14-marquee-menu'
-Check 'the marquee menu has Create a fence here and Show a folder here...' ($texts -match 'Create a fence here' -and $texts -match 'Show a folder here') "menu: $texts"
-$t = MenuPick 'Show a folder here' $m
+Check 'after the marquee: Show a folder here... next to New fence' ($texts -match '^Show a folder here…\|New fence$') "offer: '$texts'"
+KxOfferClick 'folder' | Out-Null
 CloseMenus
 $dlg = [IntPtr]::Zero
 for ($i = 0; $i -lt 50 -and $dlg -eq [IntPtr]::Zero; $i++) { $dlg = @([W]::Tops('#32770') | Where-Object { [W]::ProcOf($_) -eq 'pecofence' } | Select-Object -First 1)[0]; if (-not $dlg) { $dlg = [IntPtr]::Zero }; Start-Sleep -Milliseconds 100 }
@@ -428,6 +458,8 @@ foreach ($mode in 'hover', 'click') {
     $txt = OcrText ($o.X + 260) $o.Y ($sr.R - $sr.L - 280) ($sr.B - $o.Y - 8) "u18-settings-$mode"
   }
   Wheel ($o.X + 700) ($o.Y + 400) -2; Start-Sleep -Milliseconds 700
+  # The cards under the heading may sit below the fold at first: read again after the scroll.
+  $txt += ' ' + (OcrText ($o.X + 260) $o.Y ($sr.R - $sr.L - 280) ($sr.B - $o.Y - 8) "u18-settings-$mode-2")
   Shot "u18-settings-$mode"
   if ($mode -eq 'hover') {
     Check 'On hover: Expand speed sits under How rolled-up fences expand' ($txt -match 'How rolled-up fences expand' -and $txt -match 'Expand speed') "ocr: $txt"
@@ -439,20 +471,111 @@ foreach ($mode in 'hover', 'click') {
 Pf settings set rollUp.clickToExpand false | Out-Null
 }
 
+# Part D: the decision on the marquee offer (U10 option B): two small buttons instead of the menu.
+function KxPartD {
+trap { PfTrap $_; continue }
+Case 'U10 an empty marquee: two small buttons, the desktop keeps the keyboard'
+KxDeskClick
+$c0 = @(PfJson fence list).Count
+KxMarquee
+$sw = [Diagnostics.Stopwatch]::StartNew()
+$off = KxWaitOffer
+$or = Rect $off
+$menu = MenuWin 1
+$fgc = [L]::Cls([L]::GetForegroundWindow())
+Shot 'u10-offer'
+Crop 'u10-offer-crop' 700 80 520 380 | Out-Null
+Check 'small buttons at the bottom-right corner of the rectangle (right edges lined up)' ($off -ne [IntPtr]::Zero -and [math]::Abs($or.R - 1120) -le 4 -and $or.T -ge 380 -and $or.T -le 400 -and ($or.B - $or.T) -le 40) "offer=$off rect=$($or.L),$($or.T),$($or.R),$($or.B)"
+Check 'no popup menu, the foreground stays with the desktop' ($menu -eq [IntPtr]::Zero -and $fgc -match '^(Progman|WorkerW)$') "menu=$menu fg=$fgc"
+while ((KxOffer) -ne [IntPtr]::Zero -and $sw.ElapsedMilliseconds -lt 6000) { Start-Sleep -Milliseconds 50 }
+$gone = $sw.ElapsedMilliseconds + 800
+Check 'untouched, they fade out about 3 s after the release' ((KxOffer) -eq [IntPtr]::Zero -and $gone -ge 2600 -and $gone -le 4200) "gone ${gone} ms after the release"
+CloseMenus
+KxMarquee
+$on = (KxWaitOffer) -ne [IntPtr]::Zero
+[G]::Press(0x1B); Start-Sleep -Milliseconds 400
+Check 'Esc: the buttons go' ($on -and (KxOffer) -eq [IntPtr]::Zero) "shown=$on after Esc=$(KxOffer)"
+CloseMenus
+KxMarquee
+$on = (KxWaitOffer) -ne [IntPtr]::Zero
+[G]::Click(1000, 780); Start-Sleep -Milliseconds 500
+Check 'a click elsewhere on the desktop: the buttons go' ($on -and (KxOffer) -eq [IntPtr]::Zero) "shown=$on after the click=$(KxOffer)"
+CloseMenus
+KxMarquee
+$on = (KxWaitOffer) -ne [IntPtr]::Zero
+DragTo 80 60 520 140
+Check 'a new drag right away selects the fences it touches (the first press is not eaten)' ($on -and (KxOffer) -eq [IntPtr]::Zero -and (KxGroupSelected) -match 'Alpha' -and (KxGroupSelected) -match 'Beta') "shown=$on selected: $(KxGroupSelected)"
+CloseMenus
+KxDeskClick
+Case 'U10 Delete right after an empty marquee acts on the desktop'
+Pf settings set hideInboxWhenIconsShown true | Out-Null
+Pf settings set hideRealIcons false | Out-Null; Start-Sleep -Seconds 3
+$df = Join-Path $PfDesk 'kx del.txt'; Set-Content -LiteralPath $df 'delete me'; Start-Sleep -Seconds 2
+KxMarquee
+$on = (KxWaitOffer) -ne [IntPtr]::Zero
+[G]::Type('kx del'); Start-Sleep -Milliseconds 600
+[G]::Press(0x2E); Start-Sleep -Seconds 2
+$deleted = -not (Test-Path -LiteralPath $df)
+Shot 'u10-delete-after'
+Check 'typing a name and Delete reach the desktop: kx del.txt goes to the Recycle Bin' $deleted "offer shown=$on; file still there=$(Test-Path -LiteralPath $df); fg=$([L]::Cls([L]::GetForegroundWindow()))"
+CloseMenus
+# Out of the Recycle Bin again by its own $I / $R files (a shell verb would ask first).
+$rd = RecycleDir
+foreach ($i in @(Get-ChildItem -LiteralPath $rd -Filter '$I*' -Force -ErrorAction SilentlyContinue)) {
+  if ([Text.Encoding]::Unicode.GetString([IO.File]::ReadAllBytes($i.FullName)) -match 'kx del\.txt') {
+    Remove-Item -LiteralPath $i.FullName -Force
+    Remove-Item -LiteralPath (Join-Path $rd ('$R' + $i.Name.Substring(2))) -Force -ErrorAction SilentlyContinue
+  }
+}
+Remove-Item -LiteralPath $df -Force -ErrorAction SilentlyContinue
+Pf settings set hideRealIcons true | Out-Null; Start-Sleep -Seconds 3
+Case 'U10 the New fence button makes the fence in the drawn rectangle'
+KxDeskClick
+$c0 = @(PfJson fence list).Count
+KxMarquee
+$clicked = KxOfferClick 'new'
+$ren = WaitWin 'PecoFence.Rename' 3
+[G]::Type('Offer fence'); [G]::Press(0x0D); Start-Sleep -Seconds 2
+$nf = FenceGet 'Offer fence'; $nr = $nf.windowRect
+Shot 'u10-new-fence'
+Check 'New fence: a fence in the rectangle, its name typed straight away' ($clicked -and $nf.title -eq 'Offer fence' -and [math]::Abs($nr.x - 820) -le 24 -and [math]::Abs($nr.y - 120) -le 24 -and @(PfJson fence list).Count -eq $c0 + 1) "rename=$ren rect=$($nr.x),$($nr.y),$($nr.w),$($nr.h)"
+if ($nf.title -eq 'Offer fence') { Pf fence delete 'Offer fence' | Out-Null }
+Case 'U10 no buttons when the rectangle touches a fence, or with the setting off'
+KxDeskClick
+DragTo 300 300 700 520
+$touch = KxWaitOffer 1
+Pf settings set offerNewFence false | Out-Null
+KxDeskClick
+KxMarquee
+$off2 = KxWaitOffer 1
+Pf settings set offerNewFence true | Out-Null
+Check 'a rectangle over fences, or offerNewFence off: no buttons' ($touch -eq [IntPtr]::Zero -and $off2 -eq [IntPtr]::Zero) "over fences=$touch setting off=$off2"
+KxDeskClick
+Case 'U10 Liquid Glass look'
+Pf settings set themeStyle liquidGlass | Out-Null; Start-Sleep -Seconds 2
+KxDeskClick
+KxMarquee
+$off = KxWaitOffer
+Crop 'u10-offer-glass-crop' 700 80 520 380 | Out-Null
+Check 'Liquid Glass: the buttons show too' ($off -ne [IntPtr]::Zero) "offer=$off"
+[G]::Press(0x1B); Start-Sleep -Milliseconds 400
+Pf settings set themeStyle fluent | Out-Null; Start-Sleep -Seconds 2
+}
+
 # Part C: the new menu entries and the icon size names in every interface language (the texts
 # as locales/*.json has them, the item menu's with .pdf filled in).
 $KxLang = @{
-  'zh-CN' = @{ K1 = '以后把 .pdf 文件都放到这里'; K9 = '在此显示文件夹…'; V = '视图'; L64 = '较大图标'; L96 = '大图标' }
-  'en' = @{ K1 = 'Put all .pdf files here from now on'; K9 = 'Show a folder here…'; V = 'View'; L64 = 'Medium-large icons'; L96 = 'Large icons' }
-  'ja' = @{ K1 = '今後 .pdf ファイルはすべてここに置く'; K9 = 'ここにフォルダーを表示…'; V = '表示'; L64 = 'やや大きいアイコン'; L96 = '大アイコン' }
-  'zh-TW' = @{ K1 = '以後把 .pdf 檔案都放到這裡'; K9 = '在此顯示資料夾…'; V = '檢視'; L64 = '較大圖示'; L96 = '大圖示' }
-  'ko' = @{ K1 = '앞으로 .pdf 파일은 모두 여기에 두기'; K9 = '여기에 폴더 표시…'; V = '보기'; L64 = '조금 큰 아이콘'; L96 = '큰 아이콘' }
-  'de' = @{ K1 = '.pdf-Dateien ab jetzt immer hierher'; K9 = 'Hier einen Ordner anzeigen…'; V = 'Ansicht'; L64 = 'Größere Symbole'; L96 = 'Große Symbole' }
-  'fr' = @{ K1 = 'Mettre ici tous les fichiers .pdf désormais'; K9 = 'Afficher un dossier ici…'; V = 'Affichage'; L64 = 'Icônes assez grandes'; L96 = 'Grandes icônes' }
-  'es' = @{ K1 = 'Poner aquí todos los archivos .pdf a partir de ahora'; K9 = 'Mostrar una carpeta aquí…'; V = 'Vista'; L64 = 'Iconos mediano-grandes'; L96 = 'Iconos grandes' }
-  'pt-BR' = @{ K1 = 'Colocar aqui todos os arquivos .pdf daqui em diante'; K9 = 'Mostrar uma pasta aqui…'; V = 'Exibir'; L64 = 'Ícones médio-grandes'; L96 = 'Ícones grandes' }
-  'ru' = @{ K1 = 'Отныне класть сюда все файлы .pdf'; K9 = 'Показать папку здесь…'; V = 'Вид'; L64 = 'Увеличенные значки'; L96 = 'Крупные значки' }
-  'it' = @{ K1 = 'Metti qui tutti i file .pdf d’’ora in poi'; K9 = 'Mostra una cartella qui…'; V = 'Visualizzazione'; L64 = 'Icone medio-grandi'; L96 = 'Icone grandi' }
+  'zh-CN' = @{ K1 = '以后把 .pdf 文件都放到这里'; K9 = '在此显示文件夹…'; V = '视图'; L64 = '较大图标'; L96 = '大图标'; NEW = '新建栅栏' }
+  'en' = @{ K1 = 'Put all .pdf files here from now on'; K9 = 'Show a folder here…'; V = 'View'; L64 = 'Medium-large icons'; L96 = 'Large icons'; NEW = 'New fence' }
+  'ja' = @{ K1 = '今後 .pdf ファイルはすべてここに置く'; K9 = 'ここにフォルダーを表示…'; V = '表示'; L64 = 'やや大きいアイコン'; L96 = '大アイコン'; NEW = 'フェンスを作成' }
+  'zh-TW' = @{ K1 = '以後把 .pdf 檔案都放到這裡'; K9 = '在此顯示資料夾…'; V = '檢視'; L64 = '較大圖示'; L96 = '大圖示'; NEW = '新增圍欄' }
+  'ko' = @{ K1 = '앞으로 .pdf 파일은 모두 여기에 두기'; K9 = '여기에 폴더 표시…'; V = '보기'; L64 = '조금 큰 아이콘'; L96 = '큰 아이콘'; NEW = '새 펜스' }
+  'de' = @{ K1 = '.pdf-Dateien ab jetzt immer hierher'; K9 = 'Hier einen Ordner anzeigen…'; V = 'Ansicht'; L64 = 'Größere Symbole'; L96 = 'Große Symbole'; NEW = 'Neuer Bereich' }
+  'fr' = @{ K1 = 'Mettre ici tous les fichiers .pdf désormais'; K9 = 'Afficher un dossier ici…'; V = 'Affichage'; L64 = 'Icônes assez grandes'; L96 = 'Grandes icônes'; NEW = 'Nouveau groupe' }
+  'es' = @{ K1 = 'Poner aquí todos los archivos .pdf a partir de ahora'; K9 = 'Mostrar una carpeta aquí…'; V = 'Vista'; L64 = 'Iconos mediano-grandes'; L96 = 'Iconos grandes'; NEW = 'Nuevo grupo' }
+  'pt-BR' = @{ K1 = 'Colocar aqui todos os arquivos .pdf daqui em diante'; K9 = 'Mostrar uma pasta aqui…'; V = 'Exibir'; L64 = 'Ícones médio-grandes'; L96 = 'Ícones grandes'; NEW = 'Novo grupo' }
+  'ru' = @{ K1 = 'Отныне класть сюда все файлы .pdf'; K9 = 'Показать папку здесь…'; V = 'Вид'; L64 = 'Увеличенные значки'; L96 = 'Крупные значки'; NEW = 'Создать область' }
+  'it' = @{ K1 = 'Metti qui tutti i file .pdf d’’ora in poi'; K9 = 'Mostra una cartella qui…'; V = 'Visualizzazione'; L64 = 'Icone medio-grandi'; L96 = 'Icone grandi'; NEW = 'Nuovo riquadro' }
 }
 function KxPartC {
 trap { PfTrap $_; continue }
@@ -465,11 +588,12 @@ foreach ($l in $KxLang.Keys) {
   $items = if ($m -ne [IntPtr]::Zero) { MenuTexts $m } else { '' }
   CloseMenus
   Check "$l item menu: $($t.K1)" ($items.Contains($t.K1)) "menu: $items"
-  DragTo 820 120 1120 380
-  $m = MenuWin 5
-  $marq = if ($m -ne [IntPtr]::Zero) { MenuTexts $m } else { '' }
+  KxMarquee
+  $off = KxWaitOffer
+  $marq = if ($off -ne [IntPtr]::Zero) { [W]::Title($off) } else { '' }
+  [G]::Press(0x1B); Start-Sleep -Milliseconds 300
   CloseMenus
-  Check "$l marquee menu: $($t.K9)" ($marq.Contains($t.K9)) "menu: $marq"
+  Check "$l marquee buttons: $($t.K9) | $($t.NEW)" ($marq -eq "$($t.K9)|$($t.NEW)") "offer: '$marq'"
   $m = KxTitleMenu 'Gamma' 160
   $sub = KxSubMenu $m ('^' + [regex]::Escape($t.V))
   $rows = if ($sub -ne [IntPtr]::Zero) { (@(MenuRows $sub) | ForEach-Object { $_.text }) -join ' | ' } else { '' }
@@ -483,6 +607,7 @@ Pf settings set language en | Out-Null
 if ($Part -match 'A') { KxPartA }
 if ($Part -match 'B') { KxPartB }
 if ($Part -match 'C') { KxPartC }
+if ($Part -match 'D') { KxPartD }
 
 Case 'end'
 PfQuit

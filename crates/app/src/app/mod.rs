@@ -317,6 +317,8 @@ pub struct App {
     /// The first start's tip, the what's-new notice or a 对话框跳转 notice while it is on screen
     /// (see `welcome.rs`).
     welcome: Option<(crate::notice::Notice, welcome::Welcome)>,
+    /// The 「新建栅栏」 / 「在此显示文件夹…」 buttons after a desktop marquee, with its rectangle.
+    marquee_offer: Option<(crate::marquee_offer::MarqueeOffer, RECT)>,
     /// The welcome, what's-new and 对话框跳转 notices may show (not under a test script or
     /// `--exit-after`).
     notices: bool,
@@ -1535,6 +1537,7 @@ impl App {
             updates: Default::default(),
             rating,
             welcome: None,
+            marquee_offer: None,
             notices: args.exit_after_ms.is_none() && args.test_script.is_none(),
             settings_ring: None,
             web_env: None,
@@ -2382,6 +2385,7 @@ impl App {
             Command::ScriptRowClicked { fence, row } => self.script_row_clicked(fence, row),
             Command::NoteEdited { fence, text } => self.note_edited(fence, &text),
             Command::NewFenceRect(rect) => self.offer_new_fence(rect),
+            Command::MarqueeOffer(event) => self.on_marquee_offer(event),
             Command::DesktopMarquee(event) => self.on_desktop_marquee(event),
             Command::ClearFenceSelection => self.set_fence_selection(Vec::new()),
             Command::EndItemSelection { except } => self.end_item_selection(except),

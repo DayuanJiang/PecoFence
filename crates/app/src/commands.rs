@@ -322,6 +322,8 @@ pub enum Command {
     },
     /// Offer a fence with these screen bounds (a desktop marquee that touched no fence).
     NewFenceRect(RECT),
+    /// The buttons that offer were clicked, or went away.
+    MarqueeOffer(crate::marquee_offer::OfferEvent),
     /// A press / drag / release on the empty desktop: selects the fences the marquee touches.
     DesktopMarquee(crate::anchor::MarqueeEvent),
     /// A click elsewhere ended the desktop fence selection.
