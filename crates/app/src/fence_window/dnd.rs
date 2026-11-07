@@ -443,7 +443,13 @@ impl FenceDropHandler {
             self.shortcut_hover = Some((path, target));
         }
         let effect = match (&mut self.shortcut_hover, &self.data) {
-            (Some((_, Some(target))), Some(data)) => target.drag_over(data, key_state, pt, allowed),
+            (Some((_, Some(target))), Some(data)) => {
+                let effect = target.drag_over(data, key_state, pt, allowed);
+                // The Shell's target writes its own badge (named after the program, in
+                // Windows' language): ours goes on again.
+                self.last_description = None;
+                effect
+            }
             // No application's shortcut (a document, a folder, a broken or a Store app's
             // link): the folders drop on the fence as before.
             (Some((_, None)), _) => return None,
