@@ -167,6 +167,11 @@ pub struct Settings {
     /// A rectangle drawn on the empty desktop that touches no fence offers 「在此新建栅栏」.
     #[serde(default = "default_true")]
     pub offer_new_fence: bool,
+    /// 功能提示: one-time cards in the corner when a feature would help right now (收起 after
+    /// the 4th fence, 在桌面显示此文件夹 for a folder opened often, a rule for files of one
+    /// type dragged into one fence). Off shows none of them; the first start's tips stay.
+    #[serde(default = "default_true")]
+    pub feature_tips: bool,
     /// Unused (see [`UNUSED_SETTINGS`]).
     #[serde(default)]
     #[cfg_attr(feature = "schema", schemars(skip))]
@@ -393,6 +398,7 @@ impl Default for Settings {
             keep_icons_hidden: false,
             hide_inbox_when_icons_shown: false,
             offer_new_fence: true,
+            feature_tips: true,
             show_real_icons_when_fences_hidden: false,
             snapping: SnappingSettings::default(),
             zorder: ZOrderSetting::InsertAboveHost,
@@ -2116,10 +2122,12 @@ mod tests {
         let mut json = serde_json::to_value(Settings::default()).unwrap();
         let obj = json.as_object_mut().unwrap();
         assert!(obj.remove("offerNewFence").is_some());
+        assert!(obj.remove("featureTips").is_some());
         assert!(obj.remove("hideInboxWhenIconsShown").is_some());
         assert!(obj.remove("keepIconsHidden").is_some());
         let legacy: Settings = serde_json::from_value(json).unwrap();
         assert!(legacy.offer_new_fence);
+        assert!(legacy.feature_tips);
         assert!(!legacy.hide_inbox_when_icons_shown);
         assert!(!legacy.keep_icons_hidden);
     }

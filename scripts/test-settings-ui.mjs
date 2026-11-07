@@ -14,7 +14,7 @@ const fixture = {
   locale: 'zh-CN', translations: {},
   settings: {
     language: 'zh-CN',
-    autostart: false, hideRealIcons: false, keepIconsHidden: false, hideInboxWhenIconsShown: false, offerNewFence: true, quickHide: { enabled: true },
+    autostart: false, hideRealIcons: false, keepIconsHidden: false, hideInboxWhenIconsShown: false, offerNewFence: true, featureTips: true, quickHide: { enabled: true },
     showDesktop: 'keepVisible', theme: 'dark', themeStyle: 'fluent', labelColor: 'auto', titleAlign: 'left', tabBar: 'top', backdrop: 'acrylic', iconSize: 48,
     icons: { tintRgb: null, tintStrength: 0.6, chameleon: false, shortcutArrows: true },
     rollUp: { hoverPeek: true, clickToExpand: false, pushNeighbors: true, titleOnHover: false, hideInactiveScrollbar: false, switchTabOnHover: false, hideCountAndChevron: false },
@@ -1105,6 +1105,11 @@ async function runTests() {
     offer.click(); await settle();
     assert(current().settings.offerNewFence === false, 'New fence offer switch did not post');
     offer.click(); await settle();
+    const tips = doc.querySelector('[data-bind=featureTips]');
+    assert(tips.getAttribute('aria-checked') === 'true', 'Feature tips not shown on');
+    tips.click(); await settle();
+    assert(current().settings.featureTips === false, 'Feature tips switch did not post');
+    tips.click(); await settle();
   });
   await test('收起的栅栏怎么展开 is one list for hover, click and double-click', async () => {
     const list = doc.getElementById('rollExpand');

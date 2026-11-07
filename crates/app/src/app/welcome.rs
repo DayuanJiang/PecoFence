@@ -6,7 +6,12 @@
 //!   opens Settings › 「小工具」 at the 对话框跳转 demo;
 //! - while 对话框跳转 is off, the first file dialog that comes up while File Explorer shows
 //!   another folder is offered a jump there (`dialog_jump::set_offering`), once; taking it jumps
-//!   the dialog and switches the tool on.
+//!   the dialog and switches the tool on;
+//! - 功能提示 (Settings › 常规, `featureTips`): three cards, each once ever, when a feature
+//!   would help right then: 收起 once the user's new fence makes four fences besides 「桌面」;
+//!   在桌面显示此文件夹 when a folder in a fence is opened for the third time; a rule after
+//!   three files of one extension were dragged into one fence in a run. A card that cannot show
+//!   (another card is up) waits for the next such moment.
 //!
 //! None of them shows under a test script or `--exit-after`. What was shown is kept in
 //! `notices.json` beside config.json.
@@ -27,7 +32,19 @@ struct Saved {
     whats_new: u32,
     /// The 对话框跳转 offer was shown.
     dialog_jump_offered: bool,
+    /// 功能提示 shown: 收起, 在桌面显示此文件夹, the rule offer.
+    roll_tip_shown: bool,
+    folder_tip_shown: bool,
+    rule_tip_shown: bool,
 }
+
+/// 功能提示: the roll-up tip shows once this many fences with their own window hold items
+/// (「桌面」, tabs and tool fences not counted; a first start makes three).
+const ROLL_TIP_FENCES: usize = 4;
+/// 功能提示: opens of one folder item before the folder tip.
+pub(super) const FOLDER_TIP_OPENS: u32 = 3;
+/// 功能提示: files of one extension dragged into one fence before the rule tip.
+const RULE_TIP_FILES: u32 = 3;
 
 /// The notice in `App::welcome`.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -42,6 +59,21 @@ pub(super) enum Welcome {
     },
     /// 对话框跳转 was switched on by the offer.
     DialogJumpOn,
+    /// 功能提示: fences roll up.
+    RollTip,
+    /// 功能提示: `dir`, opened from `fence` again and again (`name` as the fence shows it), can
+    /// be shown on the desktop.
+    FolderTip {
+        fence: FenceId,
+        dir: PathBuf,
+        name: String,
+    },
+    /// 功能提示: a rule for `ext` files (`.pdf`) into `fence`, where `count` of them were dragged.
+    RuleTip {
+        fence: FenceId,
+        ext: String,
+        count: u32,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -190,6 +222,44 @@ impl App {
                 .to_string(),
                 text("设置…"),
             ),
+            Welcome::RollTip => {
+                let roll = &self.state.config.settings.roll_up;
+                let body = if roll.click_to_expand {
+                    text("双击标题就只留一行标题，单击标题会展开。")
+                } else if roll.hover_peek {
+                    text("双击标题就只留一行标题，鼠标停在标题上会自动展开。")
+                } else {
+                    text("双击标题就只留一行标题，再双击一次就展开。")
+                };
+                (
+                    text("栅栏多了可以收起").to_string(),
+                    body.to_string(),
+                    text("知道了"),
+                )
+            }
+            Welcome::FolderTip { name, .. } => (
+                text("把常用的文件夹放到桌面上").to_string(),
+                format(
+                    "你常从栅栏打开「{0}」。右键它 → 在桌面显示此文件夹，就能直接在桌面上浏览里面的文件。",
+                    std::slice::from_ref(name),
+                ),
+                text("试一试"),
+            ),
+            Welcome::RuleTip { fence, ext, count } => {
+                let title = self
+                    .state
+                    .fence(*fence)
+                    .map(|f| self.state.display_title(f))
+                    .unwrap_or_default();
+                (
+                    text("让新文件自动进来").to_string(),
+                    format(
+                        "你把 {0} 个 {1} 文件拖进了「{2}」。以后新的 {1} 文件也自动放到这里吗？",
+                        &[count.to_string(), ext.clone(), title],
+                    ),
+                    text("添加规则"),
+                )
+            }
             Welcome::Tip(i) => {
                 let i = *i;
                 let tips = self.tips();
@@ -246,8 +316,17 @@ impl App {
             }
         };
         let kind = welcome_kind(&which);
-        match crate::notice::Notice::show(&self.ctx, &title, &body, action, crate::notice::locale())
-        {
+        // The two offers can be turned down; the roll-up tip only informs.
+        let secondary = matches!(which, Welcome::FolderTip { .. } | Welcome::RuleTip { .. })
+            .then(|| text("不用"));
+        match crate::notice::Notice::show_with(
+            &self.ctx,
+            &title,
+            &body,
+            action,
+            secondary,
+            crate::notice::locale(),
+        ) {
             Ok(notice) => {
                 tracing::info!(notice = %kind, "welcome notice shown");
                 self.welcome = Some((notice, which));
@@ -275,7 +354,210 @@ impl App {
                 crate::dialog_jump::jump_to(HWND(dialog as *mut core::ffi::c_void), dir);
                 self.show_welcome(Welcome::DialogJumpOn);
             }
+            Welcome::RollTip => {}
+            Welcome::FolderTip { fence, dir, .. } => {
+                // Beside the fence it was opened from, as 在桌面显示此文件夹 places it.
+                let (x, y) = self.window_for(fence).map_or_else(
+                    || {
+                        let p = window::cursor_pos();
+                        (p.x, p.y)
+                    },
+                    |w| {
+                        let r = w.rect();
+                        (r.right, r.top)
+                    },
+                );
+                self.create_portal(dir, x, y, Some(fence));
+            }
+            Welcome::RuleTip { fence, ext, .. } => self.add_ext_rule(fence, &ext),
         }
+    }
+
+    /// 功能提示 may show a card now: switched on, not a test run, no other card on screen.
+    fn feature_tip_allowed(&self, what: &'static str) -> bool {
+        let on = self.state.config.settings.feature_tips;
+        let other_card = self.notice_showing();
+        let allowed = self.notices && on && !other_card;
+        tracing::info!(
+            what,
+            notices = self.notices,
+            on,
+            other_card,
+            allowed,
+            "feature tip due"
+        );
+        allowed
+    }
+
+    /// After the user made a fence: the roll-up tip once there are [`ROLL_TIP_FENCES`].
+    pub(super) fn offer_roll_tip(&mut self) {
+        let fences = self
+            .state
+            .host_fences()
+            .iter()
+            .filter(|f| f.tool.is_none() && f.kind != FenceKind::Inbox)
+            .count();
+        if fences < ROLL_TIP_FENCES {
+            return;
+        }
+        let mut saved = self.load_notices();
+        if saved.roll_tip_shown || !self.feature_tip_allowed("roll") {
+            return;
+        }
+        self.show_welcome(Welcome::RollTip);
+        if self.welcome.is_some() {
+            tracing::info!(fences, "roll tip shown");
+            saved.roll_tip_shown = true;
+            self.save_notices(&saved);
+        }
+    }
+
+    /// After a folder item (or a shortcut to a folder) opened in Explorer from `from`: the
+    /// folder tip once it was opened [`FOLDER_TIP_OPENS`] times and no folder fence shows it.
+    pub(super) fn offer_folder_tip(&mut self, item: ItemId, from: FenceId, dir: &Path) {
+        let Some((opens, name)) = self
+            .state
+            .item(item)
+            .map(|it| (it.open_count, it.display_name.clone()))
+        else {
+            return;
+        };
+        if opens < FOLDER_TIP_OPENS {
+            return;
+        }
+        let shown = self.state.fences().iter().any(|f| {
+            self.state.portal_root(f.id).is_some_and(|p| {
+                p.to_string_lossy()
+                    .eq_ignore_ascii_case(&dir.to_string_lossy())
+            })
+        });
+        let mut saved = self.load_notices();
+        tracing::info!(
+            opens,
+            shown,
+            seen = saved.folder_tip_shown,
+            "folder tip: folder opened"
+        );
+        if shown || saved.folder_tip_shown || !self.feature_tip_allowed("folder") {
+            return;
+        }
+        self.show_welcome(Welcome::FolderTip {
+            fence: from,
+            dir: dir.to_path_buf(),
+            name,
+        });
+        if self.welcome.is_some() {
+            saved.folder_tip_shown = true;
+            self.save_notices(&saved);
+        }
+    }
+
+    /// The fence and file names of a drag and drop that the rule tip counts: a queued
+    /// `MoveItems` (from another fence) or `ExternalDrop` (from Explorer). A paste calls the
+    /// handler directly and is not counted.
+    pub(super) fn tip_drop(&self, cmd: &Command) -> Option<(FenceId, Vec<String>)> {
+        if !self.notices || !self.state.config.settings.feature_tips {
+            return None;
+        }
+        let file_name = |p: &Path| p.file_name().map(|n| n.to_string_lossy().into_owned());
+        match cmd {
+            Command::MoveItems { items, to } => Some((
+                *to,
+                items
+                    .iter()
+                    .filter_map(|id| self.state.item(*id))
+                    .filter(|it| !it.is_folder && !it.is_namespace())
+                    .filter_map(|it| it.path().and_then(|p| file_name(Path::new(p))))
+                    .collect(),
+            )),
+            Command::ExternalDrop { paths, to, mode } if *mode != TransferMode::Link => Some((
+                *to,
+                paths
+                    .iter()
+                    .filter(|p| !p.is_dir())
+                    .filter_map(|p| file_name(p))
+                    .collect(),
+            )),
+            _ => None,
+        }
+    }
+
+    /// Files the user dragged into `to` (from another fence or from Explorer): the rule tip
+    /// once [`RULE_TIP_FILES`] of one extension went into one fence that the rules do not
+    /// already fill with them. Shortcuts and folders are left out: one rule for every `.lnk`
+    /// would take all of them.
+    pub(super) fn note_tip_drag(&mut self, to: FenceId, names: &[String]) {
+        let target_ok = self
+            .state
+            .fence(to)
+            .is_some_and(|f| f.kind == FenceKind::Virtual && f.tool.is_none());
+        if !target_ok {
+            return;
+        }
+        let mut due = None;
+        for name in names {
+            let ext = pecofence_core::rules::ext_of(name);
+            if ext.is_empty() || ext == ".lnk" || ext == ".url" {
+                continue;
+            }
+            let facts = pecofence_core::ItemFacts {
+                file_name: name.clone(),
+                ..Default::default()
+            };
+            let routed_here = matches!(
+                self.state.config.rules.evaluate(&facts),
+                pecofence_core::rules::Decision::Route { target: Target::Fence(id), .. } if id == to
+            );
+            if routed_here {
+                continue;
+            }
+            let count = self.tip_drags.entry((to, ext.clone())).or_default();
+            *count += 1;
+            if *count >= RULE_TIP_FILES {
+                due = Some((ext, *count));
+            }
+        }
+        let Some((ext, count)) = due else {
+            return;
+        };
+        let mut saved = self.load_notices();
+        tracing::info!(
+            count,
+            seen = saved.rule_tip_shown,
+            "rule tip: files dragged into a fence"
+        );
+        if saved.rule_tip_shown || !self.feature_tip_allowed("rule") {
+            return;
+        }
+        self.show_welcome(Welcome::RuleTip {
+            fence: to,
+            ext,
+            count,
+        });
+        if self.welcome.is_some() {
+            saved.rule_tip_shown = true;
+            self.save_notices(&saved);
+        }
+    }
+
+    /// The rule tip's 添加规则: new `ext` files go into `fence`. First in the list, so it wins
+    /// over a type rule (文档 → 文件与文档) that would take them otherwise.
+    fn add_ext_rule(&mut self, fence: FenceId, ext: &str) {
+        if self.state.fence(fence).is_none() {
+            tracing::warn!("rule tip: the fence is gone; no rule added");
+            return;
+        }
+        let name = pecofence_core::i18n::format("{0} 文件", &[ext.to_string()]);
+        let rule = pecofence_core::Rule::new(
+            &name,
+            Target::Fence(fence),
+            vec![pecofence_core::Cond::Ext(vec![ext.to_string()])],
+        );
+        tracing::info!(rule = %rule.id, fence = %fence, "rule added by the rule tip");
+        self.state.config.rules.list.insert(0, rule);
+        self.state.mark_dirty();
+        self.schedule_save();
+        self.push_settings_state();
     }
 
     /// The manual in the UI language; English lives at the site root.
@@ -304,5 +586,8 @@ fn welcome_kind(which: &Welcome) -> String {
         Welcome::WhatsNew => "WhatsNew".into(),
         Welcome::DialogJump { dialog, .. } => format!("DialogJump(dialog={dialog})"),
         Welcome::DialogJumpOn => "DialogJumpOn".into(),
+        Welcome::RollTip => "RollTip".into(),
+        Welcome::FolderTip { .. } => "FolderTip".into(),
+        Welcome::RuleTip { count, .. } => format!("RuleTip(count={count})"),
     }
 }

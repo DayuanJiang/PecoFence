@@ -617,10 +617,28 @@ impl App {
             return;
         }
         match shell::shell_execute(&path, None, None) {
-            Ok(()) => self.note_opened(item),
+            Ok(()) => {
+                self.note_opened(item);
+                self.folder_opened(item, from, &path, is_folder);
+            }
             Err(e) => {
                 tracing::warn!(path = %path.display(), place = shell::path_place(&path), error = %e, "launch failed")
             }
+        }
+    }
+
+    /// 功能提示: a folder (or a shortcut to one) opened in Explorer may earn the folder tip.
+    /// The cheap checks come first: a shortcut's target is read only when the tip could show.
+    fn folder_opened(&mut self, item: ItemId, from: FenceId, path: &Path, is_folder: bool) {
+        let often = self
+            .state
+            .item(item)
+            .is_some_and(|it| it.open_count >= super::welcome::FOLDER_TIP_OPENS);
+        if !often || !self.notices || !self.state.config.settings.feature_tips {
+            return;
+        }
+        if let Some(dir) = folder_to_open(path, is_folder) {
+            self.offer_folder_tip(item, from, &dir);
         }
     }
 
