@@ -243,7 +243,7 @@ impl App {
         }
         if !spec.works_without_everything() {
             tracing::info!(%id, why, "smart fence: needs Everything, which is not running");
-            self.smart_done(id, SmartSource::NeedsEverything, Vec::new(), 0);
+            self.smart_done(id, SmartSource::NeedsEverything, Vec::new(), 0, None);
             return;
         }
         self.read_folder_later(id, spec, why);
@@ -309,7 +309,7 @@ impl App {
             if current && self.state.smart_spec(r.id).is_some() {
                 tracing::info!(id = %r.id, seq = r.seq, scanned = r.scanned, total = r.total, ms = r.ms, "smart fence: folder read without Everything");
                 self.smart.runs.entry(r.id).or_default().read = None;
-                self.smart_done(r.id, SmartSource::Folder, r.found, r.total);
+                self.smart_done(r.id, SmartSource::Folder, r.found, r.total, None);
             } else {
                 tracing::debug!(id = %r.id, seq = r.seq, "smart fence: an older folder read dropped");
             }
@@ -325,6 +325,10 @@ impl App {
             return;
         }
         let seq = (kind & 0xFFFF) as u16;
+        // Everything is free again whatever happens to this answer: the next search may go.
+        if self.smart.in_flight.is_some_and(|(_, s, _)| s == seq) {
+            self.smart.in_flight = None;
+        }
         let Some(id) = self
             .smart
             .runs
@@ -333,17 +337,19 @@ impl App {
             .map(|(id, _)| *id)
         else {
             tracing::debug!(seq, "smart fence: answer to an older search dropped");
+            self.ask_next_smart();
             return;
         };
-        if self.smart.in_flight.is_some_and(|(_, s, _)| s == seq) {
-            self.smart.in_flight = None;
-        }
-        self.ask_next_smart();
         let Some(spec) = self.state.smart_spec(id).cloned() else {
+            self.ask_next_smart();
             return;
         };
         let Some((total, hits)) = ev::parse_list2(bytes) else {
             tracing::warn!(%id, len = bytes.len(), "smart fence: Everything's answer could not be read");
+            if let Some(run) = self.smart.runs.get_mut(&id) {
+                run.pending = None;
+            }
+            self.ask_next_smart();
             return;
         };
         // Everything matched on its index; the files themselves say what they are now (gone,
@@ -362,7 +368,10 @@ impl App {
         let kept = entries.len();
         entries.truncate(spec.limit as usize);
         tracing::info!(%id, total, got, kept, shown = entries.len(), "smart fence: Everything answered");
-        self.smart_done(id, SmartSource::Everything, entries, total);
+        self.smart_done(id, SmartSource::Everything, entries, total, Some(seq));
+        // The next fence's search goes once this answer is in: sent earlier, it could mark the
+        // fence's own newer search as answered.
+        self.ask_next_smart();
     }
 
     /// Sends the next waiting fence's search once Everything has answered the one before.
@@ -378,12 +387,15 @@ impl App {
     }
 
     /// Puts a run's results into the fence and redraws it when they changed.
+    /// `answered`: the Everything search these results answer; a newer one sent for the fence
+    /// meanwhile stays pending. None (a folder read, no Everything): no search is pending any more.
     fn smart_done(
         &mut self,
         id: FenceId,
         source: SmartSource,
         entries: Vec<DesktopEntry>,
         total: u32,
+        answered: Option<u16>,
     ) {
         let count = entries.len();
         let changed = self.state.set_smart_results(id, entries);
@@ -391,7 +403,9 @@ impl App {
         let source_changed = run.source != source || run.total != total;
         run.source = source;
         run.total = total;
-        run.pending = None;
+        if answered.is_none_or(|seq| run.pending == Some(seq)) {
+            run.pending = None;
+        }
         if changed || source_changed {
             tracing::info!(%id, source = source.as_str(), count, total, "smart fence results changed");
         }
