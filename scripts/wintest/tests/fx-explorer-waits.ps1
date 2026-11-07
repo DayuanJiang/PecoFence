@@ -436,7 +436,9 @@ if ($Part -eq 'drop') {
     $etid = [Th]::UiThread($prog)
     $ok = [Xw]::Freeze($etid, 40000, 150, 10)
     $t = [Diagnostics.Stopwatch]::StartNew()
-    DragTo $p[0] $p[1] 1300 700 12
+    # Empty desktop space: the first spot no fence covers (the first-run layout differs by build).
+    $to = @(@(800, 700), @(700, 600), @(900, 500), @(1300, 700)) | Where-Object { [W]::RootClassAt($_[0], $_[1]) -ne 'PecoFence.Fence' } | Select-Object -First 1
+    DragTo $p[0] $p[1] $to[0] $to[1] 12
     # DragTo waits 0.8 s after the release; the first CLI answer after it comes once the drop
     # is handled.
     $first = XTimed --timeout 120000 status
