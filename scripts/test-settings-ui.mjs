@@ -14,7 +14,7 @@ const fixture = {
   locale: 'zh-CN', translations: {},
   settings: {
     language: 'zh-CN',
-    autostart: false, hideRealIcons: false, keepIconsHidden: false, hideInboxWhenIconsShown: false, offerNewFence: true, quickHide: { enabled: true },
+    autostart: false, hideRealIcons: false, keepIconsHidden: false, hideInboxWhenIconsShown: false, offerNewFence: true, perDesktopFences: false, quickHide: { enabled: true },
     showDesktop: 'keepVisible', theme: 'dark', themeStyle: 'fluent', labelColor: 'auto', titleAlign: 'left', tabBar: 'top', backdrop: 'acrylic', iconSize: 48,
     icons: { tintRgb: null, tintStrength: 0.6, chameleon: false, shortcutArrows: true },
     rollUp: { hoverPeek: true, clickToExpand: false, pushNeighbors: true, titleOnHover: false, hideInactiveScrollbar: false, switchTabOnHover: false, hideCountAndChevron: false },
@@ -29,7 +29,7 @@ const fixture = {
     ],
   },
   fences: [
-    { id: 'fence-a', title: 'Documents', kind: 'virtual', host: null, iconSize: 48, spacing: 'normal', spacingPx: 0, labelLines: 2, layout: 'icons', iconAlign: 'left', autoHeight: false, locked: false, excludeFromQuickHide: false, opacity: 'default', tint: null, titleColor: 'theme', titleSize: 'normal', titleOnHover: 'default', openFoldersInside: false, portal: null },
+    { id: 'fence-a', title: 'Documents', kind: 'virtual', host: null, virtualDesktops: ['{B}'], iconSize: 48, spacing: 'normal', spacingPx: 0, labelLines: 2, layout: 'icons', iconAlign: 'left', autoHeight: false, locked: false, excludeFromQuickHide: false, opacity: 'default', tint: null, titleColor: 'theme', titleSize: 'normal', titleOnHover: 'default', openFoldersInside: false, portal: null },
     { id: 'fence-b', title: 'Images', kind: 'virtual', host: 'Documents', iconSize: 96, spacing: 'loose', spacingPx: 16, labelLines: 1, layout: 'list', autoHeight: true, locked: false, excludeFromQuickHide: false, opacity: 'transparent', tint: null, tabColor: 'E74856', titleColor: 'theme', titleSize: 'normal', titleOnHover: 'default', portal: null },
     { id: 'inbox', title: 'Desktop', kind: 'inbox', host: null, iconSize: 48, spacing: 'normal', spacingPx: 0, labelLines: 3, layout: 'icons', autoHeight: false, locked: true, excludeFromQuickHide: true, opacity: 'solid', tint: '0078D4', tintTitleOnly: true, titleColor: 'tint', titleSize: 'large', titleOnHover: 'hover', hideWhenEmpty: true, desktopLayout: true, openFoldersInside: true, expandUpward: true, portal: null },
     { id: 'portal', title: 'Portal', kind: 'portal', host: null, iconSize: 32, spacing: 'compact', spacingPx: -12, labelLines: 0, layout: 'icons', iconAlign: 'center', autoHeight: false, locked: false, excludeFromQuickHide: false, opacity: 'clear', tint: '123456', titleColor: 'ABCDEF', titleSize: 'small', titleOnHover: 'always', portal: { navigate: true, titleIcon: false } },
@@ -38,6 +38,7 @@ const fixture = {
   snapshots: [{ id: 'snapshot-a', name: 'Before changes', date: '2026-09-09', fenceCount: 4 }],
   backups: [{ name: '2026-09-09', path: 'C:\\PecoFence\\backups\\2026-09-09.json' }],
   monitors: [{ id: 'one', label: 'Display 1' }, { id: 'two', label: 'Display 2' }],
+  virtualDesktops: [{ id: '{A}', name: 'Work', current: true }, { id: '{B}', name: 'Games', current: false }],
   desktopIconsHidden: false,
   version: 'test', configPath: 'C:\\PecoFence\\config.json', memoryMb: 28, itemCount: 12,
   themeMode: 'dark', accent: '#60CDFF',
@@ -150,6 +151,8 @@ function bridge() {
           const fence = state.fences.find(f => f.id === message.id);
           if (message.prop === 'portalNavigate') fence.portal.navigate = message.value;
           else if (message.prop === 'portalTitleIcon') fence.portal.titleIcon = message.value;
+          // 在哪个虚拟桌面显示: `all` or one desktop's id, kept as the list of ids.
+          else if (message.prop === 'virtualDesktops') fence.virtualDesktops = message.value === 'all' ? [] : [message.value];
           else if (message.prop !== 'dockTop') fence[message.prop] = message.value;
           if (message.prop === 'spacingPx') fence.spacing = message.value <= -8 ? 'compact' : message.value >= 12 ? 'loose' : 'normal';
         }
@@ -450,6 +453,41 @@ async function runTests() {
     assert(doc.querySelector('[data-fence=iconAlign]').value === 'left', 'Left icon alignment not shown');
     change(doc, 'fenceIconAlign', 'center'); await settle();
     assert(messages().at(-1).id === 'fence-a' && messages().at(-1).prop === 'iconAlign' && messages().at(-1).value === 'center', 'Icon alignment not posted');
+  });
+  await test('在哪个虚拟桌面显示 lists the desktops, shows the choice and posts it; none for the inbox or one desktop', async () => {
+    doc.querySelector('[data-page=fences]').click();
+    const messages = () => frame.contentWindow.testMessages.filter(m => m.type === 'setFence' && m.prop === 'virtualDesktops');
+    change(doc, 'fenceSel', 'fence-a');
+    const card = doc.getElementById('fenceVdCard'), sel = doc.getElementById('fenceVd');
+    assert(card.style.display !== 'none', 'Card hidden with two desktops');
+    const names = [...sel.options].map(o => o.textContent).join('|');
+    assert(names === '所有虚拟桌面|Work（当前）|Games', 'Options: ' + names);
+    assert(sel.value === '{B}', 'The desktop the fence is on is not chosen: ' + sel.value);
+    change(doc, 'fenceVd', ''); await settle();
+    assert(messages().at(-1).id === 'fence-a' && messages().at(-1).value === 'all', '所有虚拟桌面 not posted as all');
+    assert(doc.getElementById('fenceVd').value === '', 'Every desktop not shown after the refresh');
+    change(doc, 'fenceVd', '{A}'); await settle();
+    assert(messages().at(-1).value === '{A}' && doc.getElementById('fenceVd').value === '{A}', 'A desktop not posted or not shown');
+    change(doc, 'fenceSel', 'inbox');
+    assert(doc.getElementById('fenceVdCard').style.display === 'none', 'The inbox offers a choice');
+    const desktops = current().virtualDesktops;
+    current().virtualDesktops = [];
+    change(doc, 'fenceSel', 'fence-b');
+    frame.contentWindow.testRefresh(); await settle();
+    assert(doc.getElementById('fenceVdCard').style.display === 'none', 'Card shown with one desktop');
+    current().virtualDesktops = desktops;
+    change(doc, 'fenceSel', 'fence-a');
+    frame.contentWindow.testRefresh(); await settle();
+    assert(doc.getElementById('fenceVdCard').style.display !== 'none', 'A bound fence lost its card');
+  });
+  await test('每个虚拟桌面各用一套栅栏 is posted from the General page', async () => {
+    doc.querySelector('[data-page=general]').click();
+    const toggle = doc.querySelector('[data-bind=perDesktopFences]');
+    assert(toggle && !toggle.classList.contains('on'), 'Switch missing or on by default');
+    toggle.click(); await settle();
+    assert(current().settings.perDesktopFences === true, 'Turning it on was not posted');
+    toggle.click(); await settle();
+    assert(current().settings.perDesktopFences === false, 'Turning it off was not posted');
   });
   await test('Icon labels grey out with a reason where no icons show, and stay live on a desktop-arranged inbox', async () => {
     doc.querySelector('[data-page=fences]').click();

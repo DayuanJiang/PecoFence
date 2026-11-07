@@ -83,6 +83,8 @@ pecofence-cli fence create --tool note --title Today --text "[ ] Pay rent"   # å
 pecofence-cli fence set Today noteText "[x] Pay rent`n[ ] Call Anna"           # whole text; `n = new line in PowerShell
 pecofence-cli fence refresh Weather                            # script fence: run its script now
 pecofence-cli fence open-folder Projects 2026                  # show a subfolder; fence up / fence forward go back and on
+pecofence-cli virtual-desktop list                             # Windows virtual desktops: id, number, name, current
+pecofence-cli fence set Games virtualDesktops 2                # only on desktop 2 (all | current | numbers, names or ids, comma-separated)
 pecofence-cli peek start --search invoice                      # Peek with the search box showing what matches
 pecofence-cli snapshot list
 pecofence-cli snapshot restore <id> --dry-run                 # fences it would add / remove / move / update
@@ -104,6 +106,11 @@ pecofence-cli config export "C:\Users\me\Desktop\pecofence-backup.json"   # sett
 - Rules: the first match wins, and new desktop items are filed by them as they arrive. A rule cannot
   target a portal and needs at least one condition.
 - `config import` / `backup restore` replace settings, rules and layouts: `config export` first.
+- Virtual desktops: a fence on some desktops only is hidden on the others (`fence get` says
+  `onCurrentDesktop: false`); it is still there, so do not create it again. `virtualDesktops`
+  belongs to the whole window (a tab sets its host and every tab); the inbox is always on every
+  desktop. `perDesktopFences true` makes every new fence, `fence create` too, belong to the current
+  desktop. With one desktop, `virtual-desktop list` is empty.
 - The CLI cannot delete files: list duplicates and junk for the user to remove.
 - Tool fences (`fence list` shows `tool`: note, clock, script) hold no items and join no tabs. One
   switch, `tools.enabled` (on by default), covers them all; `fence create --tool` turns it on. The
