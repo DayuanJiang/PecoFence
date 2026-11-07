@@ -59,6 +59,9 @@ foreach ($n in $FpNames + $FpExtra) { Remove-Item -LiteralPath (Join-Path $PfDes
 foreach ($n in $FpNames) { DeskFile $n | Out-Null }
 PfStart -Script (DumpScript 300 14)
 Start-Sleep -Seconds 3
+# 自由摆放 is on in a new configuration: the old-behaviour run switches it off (0.3.1 refuses the
+# option, which changes nothing there).
+if (-not $New) { Pf fence set inbox freePlacement false | Out-Null; Start-Sleep -Seconds 1 }
 Park
 $g = FenceGet inbox
 Log "fences: $((@(PfJson fence list) | Where-Object { $_ -and $_.title } | ForEach-Object { "$($_.title)[$($_.windowRect.x),$($_.windowRect.y),$($_.windowRect.w)x$($_.windowRect.h)]" }) -join ' ; ')"
@@ -67,7 +70,8 @@ Log "memory arranged: $(FpMem)"
 Shot "$Build-01-arranged"
 
 if ($New) {
-  Case 'switch on (CLI)'
+  Case 'on in a new configuration'
+  Check 'a new configuration has Place freely on' ((FenceGet inbox).freePlacement -eq $true) ''
   Pf fence set inbox freePlacement true | Out-Null
   Start-Sleep -Seconds 2
   FpLog 'on'

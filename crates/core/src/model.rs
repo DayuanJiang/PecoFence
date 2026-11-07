@@ -1058,7 +1058,8 @@ pub struct Fence {
     #[serde(default)]
     pub desktop_layout: bool,
     /// 自由摆放 (with `desktop_layout`): an icon stays in the grid cell it is dropped in, as
-    /// on a Windows desktop with 自动排列图标 off and 将图标与网格对齐 on.
+    /// on a Windows desktop with 自动排列图标 off and 将图标与网格对齐 on. On in a new
+    /// configuration, off in one saved before the option existed.
     #[serde(default)]
     pub free_placement: bool,
     /// 自由摆放: the grid cell `[column, row]` of each icon, counted from the top-left of the

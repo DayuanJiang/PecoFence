@@ -668,9 +668,12 @@ impl AppState {
             inbox_geo,
         );
         inbox.view.icon_size = icon;
-        // New configurations show the unsorted icons like the Windows desktop's (像桌面一样排列);
-        // a configuration saved before the option existed reads it as off.
+        // New configurations show the unsorted icons like the Windows desktop's (像桌面一样排列),
+        // and as on a new Windows desktop (自动排列图标 off, 将图标与网格对齐 on) they stay where
+        // they are dropped (自由摆放); a configuration saved before an option existed reads it
+        // as off.
         inbox.desktop_layout = true;
+        inbox.free_placement = true;
         fences.push(inbox);
         self.config.rules = RuleSet::default_presets(ids[0], ids[1], ids[2]);
         fences
@@ -3068,6 +3071,19 @@ mod tests {
             state.store.load(),
             pecofence_core::LoadOutcome::Primary(_)
         ));
+    }
+
+    /// 自由摆放 follows a new Windows desktop (自动排列图标 off, 将图标与网格对齐 on): a new
+    /// configuration has it on, one saved before the option existed reads it as off.
+    #[test]
+    fn a_new_configuration_places_loose_icons_freely() {
+        let state = test_state();
+        let inbox = state.fence(state.inbox_id().unwrap()).unwrap();
+        assert!(inbox.desktop_layout && inbox.free_placement);
+        let mut saved = serde_json::to_value(inbox).unwrap();
+        saved.as_object_mut().unwrap().remove("freePlacement");
+        let read: pecofence_core::Fence = serde_json::from_value(saved).unwrap();
+        assert!(read.desktop_layout && !read.free_placement);
     }
 
     /// 自由摆放: the window's cells are saved only while the cells it placed the icons from

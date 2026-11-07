@@ -220,7 +220,7 @@ pub struct FenceDto {
     #[serde(default)]
     pub desktop_layout: bool,
     /// The inbox only, while `desktopLayout`: 自由摆放, each icon stays in the grid cell it is
-    /// dropped in instead of standing down the columns in order.
+    /// dropped in instead of standing down the columns in order (on in a new configuration).
     #[serde(default)]
     pub free_placement: bool,
     /// 自由摆放: the grid cell `[column, row]` of each icon (by item id) on these monitors,
