@@ -372,6 +372,7 @@ impl App {
                 })
                 .map(|(_, label, _)| label)
                 .collect();
+            tracing::info!(fence = %host, desktops = names.len(), reason, "notice: the fence now shows on another desktop");
             t.show_info(
                 "PecoFence",
                 &pecofence_core::i18n::format(
