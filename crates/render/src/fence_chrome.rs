@@ -366,6 +366,9 @@ pub const RAIL_COLLAPSED_BOTTOM: f32 = RAIL_TOP;
 pub struct TitleDeco {
     pub folder_icon: bool,
     pub up_button: bool,
+    /// 智能栅栏: the glyph before the title is a magnifier (Search, E721) in place of the
+    /// folder.
+    pub search_glyph: bool,
 }
 
 /// Interaction state of the title row, sampled per draw: fade alphas (0..=1) from the app's
@@ -1952,11 +1955,14 @@ impl FenceChrome {
     }
 
     /// Lays out a single title (no tab strip) in a title row `width` wide that keeps `reserve`
-    /// DIPs free for the rolled item count: where its unit (the folder glyph, then the title)
-    /// starts, the fitted title and the room the title gets.
+    /// DIPs free for the rolled item count: where its unit (the folder glyph, the title, then
+    /// a smart fence's `count` after it) starts, the fitted title and the room the title gets.
+    /// The title gives way first: the count stays whole.
+    #[allow(clippy::too_many_arguments)]
     fn lone_title_place(
         &self,
         title: &str,
+        count: Option<&str>,
         size: u8,
         align: pecofence_core::TitleAlign,
         width: f32,
@@ -1975,9 +1981,10 @@ impl FenceChrome {
             0.0
         };
         let end = width - TITLE_RIGHT_RESERVE - reserve;
-        let title_w = (end - start - glyph_w).max(0.0);
+        let count_w = count.map_or(0.0, |c| crate::text::measure_width(c, fmt));
+        let title_w = (end - start - glyph_w - count_w).max(0.0);
         let fitted = crate::text::fit_width(title, fmt, title_w);
-        let unit_w = glyph_w + crate::text::measure_width(&fitted, fmt).min(title_w);
+        let unit_w = glyph_w + crate::text::measure_width(&fitted, fmt).min(title_w) + count_w;
         (aligned_x(align, width, start, end, unit_w), fitted, title_w)
     }
 
@@ -1995,8 +2002,9 @@ impl FenceChrome {
         let deco = TitleDeco {
             folder_icon: true,
             up_button: true,
+            search_glyph: false,
         };
-        let (x, _, _) = self.lone_title_place(title, size, align, width, deco, reserve);
+        let (x, _, _) = self.lone_title_place(title, None, size, align, width, deco, reserve);
         glyph_up_square(x + 8.0, title_h)
     }
 
@@ -2052,6 +2060,7 @@ impl FenceChrome {
         height: f32,
         backdrop: Backdrop<'_>,
         title: &str,
+        title_count: Option<&str>,
         caption: Option<&str>,
         rolled_up: bool,
         roll_t: f32,
@@ -2478,6 +2487,7 @@ impl FenceChrome {
             // button stays at the far left.
             let (mut x, fitted, title_w) = self.lone_title_place(
                 title,
+                title_count,
                 style.title_size,
                 style.title_align,
                 width,
@@ -2502,7 +2512,12 @@ impl FenceChrome {
                         },
                     );
                 } else {
-                    session.draw_text("\u{E8B7}", &self.title_glyph_format, &slot, &secondary);
+                    let glyph = if deco.search_glyph {
+                        "\u{E721}"
+                    } else {
+                        "\u{E8B7}"
+                    };
+                    session.draw_text(glyph, &self.title_glyph_format, &slot, &secondary);
                 }
                 x += TitleDeco::ICON_W;
             }
@@ -2517,6 +2532,23 @@ impl FenceChrome {
                 &text,
                 fx,
             );
+            // 智能栅栏: the number of files shown, right after the name in the secondary ink
+            // (part of the title row, never of the name).
+            if let Some(count) = title_count {
+                let after = x + crate::text::measure_width(&fitted, title_format).min(title_w);
+                let w = crate::text::measure_width(count, title_format) + 2.0;
+                let fx = legible
+                    .as_ref()
+                    .map(|l| l.fx(theme, foreground.text_secondary, title_a, false));
+                self.draw_caption(
+                    session,
+                    count,
+                    title_format,
+                    &Rect::from_xywh(after, 0.0, w, title_h),
+                    &secondary,
+                    fx,
+                );
+            }
         }
         if count_a > 0.0
             && count_w > 0.0
@@ -3964,6 +3996,7 @@ mod tests {
         let up = TitleDeco {
             folder_icon: true,
             up_button: true,
+            search_glyph: false,
         };
         assert_eq!(up.title_x(), 16.0 + TitleDeco::ICON_W);
         let left = chrome.lone_up_box("2026", 1, Left, 300.0, 0.0, 36.0);
@@ -3979,6 +4012,7 @@ mod tests {
         let hidden = TitleDeco {
             folder_icon: false,
             up_button: true,
+            search_glyph: false,
         };
         assert!(hidden.up_at_left());
         assert_eq!(hidden.title_x(), 16.0 + TitleDeco::UP_W);

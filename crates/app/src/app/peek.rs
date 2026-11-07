@@ -474,7 +474,12 @@ impl App {
             .search
             .rows
             .iter()
-            .filter(|r| !matches!(r, super::search::RowKind::ShowAll))
+            .filter(|r| {
+                !matches!(
+                    r,
+                    super::search::RowKind::ShowAll | super::search::RowKind::ToDesktop
+                )
+            })
             .count();
         let status = if !searching {
             String::new()

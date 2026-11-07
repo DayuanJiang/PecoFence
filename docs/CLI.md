@@ -107,9 +107,10 @@ unique id prefix, or a name (only while that name is unique).
 | `fence get <FENCE>` | `pecofence-cli fence get Work` |
 | `fence create (--title <T> \| --portal <DIR>) [--rect x,y,w,h \| --monitor <ID> \| --below/--above/--right-of/--left-of <FENCE> [--size w,h]]` | `pecofence-cli fence create --title Work --rect 100,100,600,400` |
 | `fence create --tool note [--text <TEXT>] \| --tool clock \| --script <FILE>` (小工具, see below) | `pecofence-cli fence create --tool note --title Today --text "[ ] Pay rent"` |
+| `fence create --smart <TEMPLATE>` \| `--title <T> [--smart-folder <DIR>] [--within-days <N>] [--ext <EXTS>] [--name-matches <TEXT>] [--everything <SEARCH>]` (智能栅栏, see below) | `pecofence-cli fence create --smart downloads` |
 | `fence delete <FENCE>` | `pecofence-cli fence delete Temp` |
 | `fence rename <FENCE> <TITLE>` | `pecofence-cli fence rename Work Projects` |
-| `fence refresh <FENCE>` | `pecofence-cli fence refresh Weather` (script fences: run the script now; other fences are `unsupported`) |
+| `fence refresh <FENCE>` | `pecofence-cli fence refresh Weather` (script fences: run the script now; smart fences: search again now; other fences are `unsupported`) |
 | `fence open-folder <FENCE> <FOLDER>` | `pecofence-cli fence open-folder Projects 2026` (as a double-click on the folder: a subfolder in a folder fence, or any folder in a fence of icons, shown in place of its icons; a relative `FOLDER` starts at the folder the fence shows; not saved) |
 | `fence up <FENCE>` / `fence forward <FENCE>` | `pecofence-cli fence up Projects` (one folder up, as Backspace and the mouse's back button; `forward` goes back into the folder `up` left, as the forward button; `fence get` shows the folder in `portal.current` or `openedFolder`) |
 | `fence move <FENCE> (--rect x,y,w,h \| --x <N> --y <N> \| --monitor <ID>)` | `pecofence-cli fence move Work --x 1200 --y 80` |
@@ -191,7 +192,10 @@ this is also how to keep the inbox, which cannot be deleted, out of sight), `des
 only: no title row, glass or edges; its icons stand down columns from the top-left of the monitor
 like the Windows desktop, around the other fences), `noteText` (note fences: the whole text; a line
 starting with `[ ]` or `[x]` is a to-do), `scriptPath` (script fences: the full path of the script;
-it runs at once) and `scriptInterval` (script fences: minutes between runs, 1 to 1440).
+it runs at once), `scriptInterval` (script fences: minutes between runs, 1 to 1440) and the search
+of a smart fence (see [Smart fences](#smart-fences-智能栅栏)): `smartFolder`, `smartSubfolders`,
+`smartWithinDays`, `smartConditions`, `smartName`, `smartEverything`, `smartLimit`; on any other
+fence these are `unsupported`. `portalTitleIcon` also switches a smart fence's magnifier.
 `--all` applies the option to every fence one call at a time and
 skips tabs hosted inside another fence (their options belong to the host).
 
@@ -487,6 +491,49 @@ reports that folder, or the subfolder of it shown, as `openedFolder` (`null` oth
 fence's own icons: `item move --to` that fence only changes membership and never moves a file into
 the folder it shows, and `watch` reports the change as `fence.changed` with `openedFolder` in
 `changed`.
+
+## Smart fences (智能栅栏)
+
+A smart fence shows the live result of a saved search instead of icons of its own: the newest files
+that match, where they are (nothing is moved or copied). It holds no items, so rules, `item move
+--to` and drops never put anything into it; `item list --fence <FENCE>` lists its results with
+`"assignedBy": "smart"`, and they open, move, rename and delete like a folder fence's files.
+
+`fence create --smart <TEMPLATE>` makes one from a template (titled in the UI language):
+`downloads` (the Downloads folder and its subfolders, files of the last 7 days), `screenshots` (the
+Screenshots folder, images of the last 7 days), `large` (every drive, files over 1 GB), `psd` (every
+drive, `.psd` files) and `recent` (Windows' Recent Items, its shortcuts, at most 40). Or write the
+search: `--title` and any of `--smart-folder <DIR>` (absent: every drive), `--within-days <N>`
+(created or written in the last N days), `--ext pdf,docx`, `--name-matches <TEXT>` (names matched
+as the Peek search matches them, pinyin too) and `--everything <SEARCH>` (Everything syntax sent as
+it is, in place of the conditions; the folder still applies).
+
+```powershell
+pecofence-cli fence create --smart downloads
+pecofence-cli fence create --title Invoices --smart-folder "$env:USERPROFILE\Documents" --ext pdf --name-matches invoice
+pecofence-cli fence set Invoices smartWithinDays 90
+pecofence-cli fence set Invoices smartConditions '[{\"cond\":\"ext\",\"value\":[\"pdf\"]},{\"cond\":\"sizeMb\",\"value\":{\"min\":1,\"max\":null}}]'
+pecofence-cli fence refresh Invoices
+```
+
+`fence get` has a `smart` object: `spec` (the saved search: `folder` or none, `subfolders`,
+`allOf` (rule conditions, as in `rule list`), `withinDays`, `name`, `everything`, `limit`,
+`template`), `source` (`everything`, `folder` when PecoFence read the folder itself because
+Everything does not run, `needsEverything` for a whole-computer or Everything-syntax search while
+Everything does not run, `waiting` before the first answer), `total` (matches in all), `shown` and
+`query` (the search sent to Everything). The search runs with Everything when it runs, one search at
+a time; without it a folder search reads the folder on a worker (at most 20000 entries). It runs
+again 1 s and 4 s after a change in the folder, once a minute, after `fence refresh`, an import, a
+snapshot restore or a monitor layout change, and as soon as Everything starts. `fence set` changes
+the search (`smartFolder` a full path or `null`, `smartSubfolders`, `smartWithinDays` 1 to 36500 or
+`null`, `smartConditions` a JSON array of rule conditions, `smartName` and `smartEverything` text or
+`null`, `smartLimit` 1 to 2000); a folder set this way is no longer the template's, so an import on
+another PC keeps it (a template's own folder is replaced there by that PC's Downloads, Screenshots or
+Recent Items).
+
+A fence that shows a folder (a folder fence, a folder opened in a fence, a smart fence) can be
+filtered with Ctrl+F or its menu's 筛选…; `fence get` then has `filter` (`text`, `shown`). The filter
+is not saved and the CLI does not set it.
 
 ## Watching for changes
 

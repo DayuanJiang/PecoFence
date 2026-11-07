@@ -171,6 +171,17 @@ pub struct FenceDto {
     /// A script fence's script and its last run.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub script: Option<ScriptDto>,
+    /// 智能栅栏: `{spec, source, total, shown, query}`: the saved search, where the last run's
+    /// results came from (`everything`, `folder`, `needsEverything`, `waiting`), how many
+    /// matched in all and are shown, and the Everything search sent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "describe", schemars(with = "Option<serde_json::Value>"))]
+    pub smart: Option<serde_json::Value>,
+    /// 筛选: `{text, shown}` while the fence is filtered (runtime only): the typed text and
+    /// how many items the fence shows.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "describe", schemars(with = "Option<serde_json::Value>"))]
+    pub filter: Option<serde_json::Value>,
     /// Expanded geometry in physical px (what `fences.setBounds` sets). A hosted tab reports its
     /// host's rect (the window it is shown in). `null` while the fence's monitor is disconnected.
     pub rect: Option<Rect>,

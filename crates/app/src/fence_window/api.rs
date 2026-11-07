@@ -186,6 +186,10 @@ impl FenceWindow {
             script_rows: Vec::new(),
             script_hover: None,
             portal_missing: false,
+            empty_override: None,
+            title_count: None,
+            filter_active: false,
+            refuses_drops: false,
             label_w: 0.0,
             icons_pending: false,
             hover: None,
@@ -414,8 +418,10 @@ impl FenceWindow {
             },
         );
         format!(
-            "title={:?} opacity={:.2} scale={:.3} fade={fade} retired={} rolled={} rolling={} peeking={} items={} tabs={} selected={} focused={:?} shadow_visible={} shadow_alpha={} layout={:?} locked={} auto_height={} active={} scroll={:.1} client={:?} client_offset=({},{}) chrome={:?} glass={:?} wallpaper_uploads={} title_size={} tab_fonts={:?} tab_rects={:?} content_x={} content={:?} capture={} tab_drag={} window_drag={} detach_pending={} plate_inset={} plate_alpha={:.2} mouse_inside={}",
+            "title={:?} title_count={:?} filtered={} opacity={:.2} scale={:.3} fade={fade} retired={} rolled={} rolling={} peeking={} items={} tabs={} selected={} focused={:?} shadow_visible={} shadow_alpha={} layout={:?} locked={} auto_height={} active={} scroll={:.1} client={:?} client_offset=({},{}) chrome={:?} glass={:?} wallpaper_uploads={} title_size={} tab_fonts={:?} tab_rects={:?} content_x={} content={:?} capture={} tab_drag={} window_drag={} detach_pending={} plate_inset={} plate_alpha={:.2} mouse_inside={}",
             v.title,
+            v.title_count,
+            v.filter_active,
             v.root.opacity(),
             v.root.scale().x,
             v.retired,
@@ -1229,10 +1235,12 @@ impl FenceWindow {
         });
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn set_portal_deco(
         &self,
         is_portal: bool,
         folder_icon: bool,
+        search_glyph: bool,
         up_button: bool,
         navigate_folders: bool,
         folder_missing: bool,
@@ -1242,6 +1250,7 @@ impl FenceWindow {
             let deco = TitleDeco {
                 folder_icon,
                 up_button,
+                search_glyph,
             };
             let changed = v.deco != deco || v.navigate_folders != navigate_folders;
             let portal_changed = v.is_portal != is_portal || v.portal_missing != folder_missing;
@@ -1266,6 +1275,33 @@ impl FenceWindow {
                 let _ = v.redraw_content();
             }
         });
+    }
+
+    /// What the fence says while it shows nothing (`empty`: a smart fence searching, finding
+    /// nothing or needing Everything, a filter matching nothing; None = the usual text) and a
+    /// smart fence's count after its name (`count`, " · 6"; None for any other fence).
+    pub fn set_status_view(&self, empty: Option<&'static str>, count: Option<String>) {
+        self.with_view(|v| {
+            if v.empty_override == empty && v.title_count == count {
+                return;
+            }
+            v.empty_override = empty;
+            v.title_count = count;
+            let _ = v.redraw_chrome_only();
+            if v.items.is_empty() && !v.rolled_up {
+                let _ = v.redraw_content();
+            }
+        });
+    }
+
+    /// 筛选: whether the fence is filtered (Esc in it then clears the filter).
+    pub fn set_filtered(&self, active: bool) {
+        self.with_view(|v| v.filter_active = active);
+    }
+
+    /// 智能栅栏: the fence shown takes no drops (it shows a search).
+    pub fn set_refuses_drops(&self, on: bool) {
+        self.with_view(|v| v.refuses_drops = on);
     }
 
     /// The fence whose items this window currently shows (host or active tab).

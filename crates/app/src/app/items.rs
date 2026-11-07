@@ -30,9 +30,16 @@ fn rename_error(e: std::io::Error) -> RenameError {
 
 impl App {
     pub(super) fn item_views(&self, fence: &pecofence_core::Fence) -> Vec<ItemView> {
+        // 筛选: only what matches the fence's filter.
+        let filter = self.fence_filter(fence.id);
         self.state
             .items_of(fence)
             .into_iter()
+            .filter(|it| {
+                filter
+                    .as_deref()
+                    .is_none_or(|q| filter::filter_keeps(it, q))
+            })
             .map(|it| {
                 let path = PathBuf::from(it.path().unwrap_or(""));
                 let (_, icon_only) = crate::icons::icon_key_for(&path, it.is_folder, it.mtime);
@@ -520,8 +527,12 @@ impl App {
     /// the rules, since their names are only known to the shell).
     pub(super) fn paste_into(&mut self, fence: FenceId) {
         // A note (便签) holds no files: Ctrl+V on it does nothing.
-        if self.state.fence(fence).is_some_and(|f| f.tool.is_some()) {
-            tracing::info!(%fence, "paste into a tool fence ignored");
+        if self
+            .state
+            .fence(fence)
+            .is_some_and(|f| f.tool.is_some() || f.smart.is_some())
+        {
+            tracing::info!(%fence, "paste into a tool or smart fence ignored");
             return;
         }
         let Some((paths, cut)) = clipboard::file_list() else {

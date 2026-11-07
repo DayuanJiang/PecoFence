@@ -731,6 +731,21 @@ impl App {
                         }
                     }
                 }
+                Some(name @ ("pickSmartFolder" | "refreshSmart")) => {
+                    let fence = v
+                        .get("id")
+                        .and_then(|i| i.as_str())
+                        .and_then(|i| uuid::Uuid::parse_str(i).ok())
+                        .filter(|id| self.state.smart_spec(*id).is_some());
+                    match (name, fence) {
+                        ("pickSmartFolder", Some(id)) => self.pick_smart_folder(id),
+                        (_, Some(id)) => {
+                            self.run_smart(id, "settings page");
+                            self.push_settings_state();
+                        }
+                        (_, None) => tracing::warn!(name, "smart fence action for no smart fence"),
+                    }
+                }
                 Some("installEverything") => self.install_everything(),
                 Some("startEverything") => self.start_everything(),
                 Some("useEverything15") => self.use_everything_15(),

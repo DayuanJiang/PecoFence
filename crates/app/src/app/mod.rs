@@ -5,8 +5,8 @@ use crate::commands::{
     Command, CommandQueue, TransferMode, WM_APP_COMMAND, WM_APP_DIALOG_OFFER,
     WM_APP_EVERYTHING_SETUP, WM_APP_FRAME, WM_APP_FS_CHANGED, WM_APP_LIVE_WALLPAPER,
     WM_APP_PEEK_FOCUSED, WM_APP_PREWARM_DONE, WM_APP_SCRIPT_DONE, WM_APP_SHELL_CHANGED,
-    WM_APP_STARTUP_BACKDROPS, WM_APP_STARTUP_TASK, WM_APP_THEMES_CHANGED, WM_APP_TRAY,
-    WM_APP_WALLPAPER,
+    WM_APP_SMART_READ, WM_APP_STARTUP_BACKDROPS, WM_APP_STARTUP_TASK, WM_APP_THEMES_CHANGED,
+    WM_APP_TRAY, WM_APP_WALLPAPER,
 };
 use crate::fence_window::{
     BackdropMode, BackdropSets, Behavior, FenceContext, FenceWindow, ItemView, SearchMarks, TabView,
@@ -61,6 +61,7 @@ mod feedback;
 mod fence_options;
 mod fences;
 mod fileops;
+mod filter;
 mod group;
 mod ipc;
 mod items;
@@ -73,6 +74,7 @@ mod push;
 mod rating;
 mod search;
 mod settings;
+mod smart;
 mod sync;
 mod tabs;
 #[cfg(test)]
@@ -177,6 +179,10 @@ const TIMER_EVERYTHING_SETUP: usize = 71;
 /// 对话框跳转 offer: a dialog to offer it to (`WM_APP_DIALOG_OFFER`); retried while the App is
 /// borrowed.
 const TIMER_DIALOG_OFFER: usize = 73;
+/// 智能栅栏: a watched folder changed; the searches of its fences run again.
+const TIMER_SMART_SOON: usize = 90;
+/// 智能栅栏: a folder read finished (`WM_APP_SMART_READ`); retried while the App is borrowed.
+const TIMER_SMART_READ: usize = 91;
 const THEMES_SETTLE_MS: u32 = 300;
 const DEVICE_RETRY_MAX_MS: u32 = 30_000;
 /// Growth of private commit plus GPU memory that logs a memory line before the hour is up.
@@ -276,6 +282,10 @@ pub struct App {
     /// One watcher per folder-portal fence on the folder it currently shows (kept in sync by
     /// `ensure_portal_watchers`; navigating swaps the watcher).
     portal_watchers: HashMap<FenceId, (PathBuf, DirWatcher)>,
+    /// 智能栅栏: each smart fence's last run and folder watcher.
+    smart: smart::SmartState,
+    /// 筛选: the text each filtered fence is filtered by (runtime only).
+    fence_filters: HashMap<FenceId, String>,
     /// Per fence, the folders an up (Backspace, the back button) left, newest last: the
     /// forward button goes back into them. Any other navigation forgets them.
     portal_forward: HashMap<FenceId, Vec<PathBuf>>,
@@ -798,6 +808,19 @@ impl App {
                             window::set_timer(hwnd, TIMER_DIALOG_OFFER, 1);
                             Some(0)
                         }
+                        WM_APP_SMART_READ => {
+                            window::set_timer(hwnd, TIMER_SMART_READ, 1);
+                            Some(0)
+                        }
+                        // Everything's answer to a smart fence's search.
+                        pecofence_platform::everything::WM_COPYDATA_MSG => {
+                            if let Some((kind, bytes)) =
+                                pecofence_platform::everything::copydata(lparam)
+                            {
+                                queue.push(Command::SmartResults { kind, bytes });
+                            }
+                            Some(1)
+                        }
                         WM_APP_THEMES_CHANGED => {
                             window::set_timer(hwnd, TIMER_THEMES, THEMES_SETTLE_MS);
                             Some(0)
@@ -946,6 +969,8 @@ impl App {
                                 | TIMER_EVERYTHING_STATUS
                                 | TIMER_EVERYTHING_SETUP
                                 | TIMER_DIALOG_OFFER
+                                | TIMER_SMART_SOON
+                                | TIMER_SMART_READ
                                 | TIMER_STARTUP_BACKDROPS => {
                                     if let Ok(mut guard) = cell.try_borrow_mut()
                                         && let Some(app) = guard.as_mut()
@@ -960,7 +985,12 @@ impl App {
                                             TIMER_THEMES => app.on_themes_changed(),
                                             TIMER_SCRIPT_DONE => app.drain_scripts(),
                                             TIMER_EVERYTHING => app.send_everything_query(),
-                                            TIMER_EVERYTHING_STATUS => app.push_settings_state(),
+                                            TIMER_EVERYTHING_STATUS => {
+                                                // Everything was started or installed: the
+                                                // smart fences waiting for it search now.
+                                                app.run_waiting_smart();
+                                                app.push_settings_state();
+                                            }
                                             TIMER_EVERYTHING_SETUP => app.on_everything_setup(
                                                 everything_setup::SETUP_RESULT
                                                     .load(std::sync::atomic::Ordering::Relaxed),
@@ -969,6 +999,8 @@ impl App {
                                                 app.finish_startup_backdrops()
                                             }
                                             TIMER_DIALOG_OFFER => app.offer_dialog_jump(),
+                                            TIMER_SMART_SOON => app.run_soon_smart(),
+                                            TIMER_SMART_READ => app.drain_smart_reads(),
                                             _ => app.prewarm_wallpapers(),
                                         }
                                     } else {
@@ -1512,6 +1544,8 @@ impl App {
             watchers,
             _shell_watch: shell_watch,
             portal_watchers: HashMap::new(),
+            smart: Default::default(),
+            fence_filters: HashMap::new(),
             portal_forward: HashMap::new(),
             watcher_retry: HashMap::new(),
             fs_pending,
@@ -1811,6 +1845,8 @@ impl App {
         window::set_coalescable_timer(app.control.hwnd(), TIMER_HOUSEKEEPING, 60_000, 5_000);
         // 脚本栅栏: the first results, without waiting for the minute.
         app.run_due_scripts();
+        // 智能栅栏: the first search, likewise.
+        app.run_all_smart("startup");
         window::set_coalescable_timer(app.control.hwnd(), TIMER_WALLPAPER_POLL, 5_000, 500);
         sync_desktops_differ(app.control.hwnd(), &desktops_differ);
         // Close the gap between the startup snapshot and installing the registry watchers.
@@ -1889,6 +1925,9 @@ impl App {
     fn housekeeping(&mut self) {
         self.check_cut_clipboard();
         self.run_due_scripts();
+        // 智能栅栏: files age out of a time window, Everything may have started or stopped,
+        // and a folder without a watcher changes unseen.
+        self.run_all_smart("minute");
         if self.state.is_dirty() {
             self.state.save_if_dirty();
             self.notice_save_failure();
@@ -2350,6 +2389,10 @@ impl App {
             Command::NewFolder { fence } => self.create_desktop_item(fence, true),
             Command::StepIconSize { fence, larger } => self.step_icon_size(fence, larger),
             Command::ItemProperties { fence, items } => self.show_properties(fence, &items),
+            // F5 in a smart fence runs its search again.
+            Command::RefreshFence(fence) if self.state.smart_spec(fence).is_some() => {
+                self.run_smart(fence, "f5")
+            }
             Command::RefreshFence(fence) => self.manual_refresh(fence),
             Command::RenameFence { fence, title } => {
                 self.end_item_rename_visuals();
@@ -2368,6 +2411,21 @@ impl App {
             Command::NewFence { x, y } => self.new_fence_near(x, y),
             Command::NewNote { x, y } => self.new_note_near(x, y),
             Command::NewClock { x, y } => self.new_clock_near(x, y),
+            Command::NewSmartFence { template, x, y } => {
+                self.new_smart_from_template(template, x, y)
+            }
+            Command::SmartResults { kind, bytes } => self.on_smart_results(kind, &bytes),
+            Command::OpenFenceFilter(fence) => self.open_fence_filter(fence, "ctrl+f"),
+            Command::FenceFilterText { fence, text } => {
+                self.set_fence_filter(fence, text, "filter box")
+            }
+            Command::FenceFilterClosed(fence) => {
+                tracing::info!(%fence, filtered = self.fence_filter(fence).is_some(), "filter box closed");
+                self.apply_portal_deco(self.state.host_of(fence));
+            }
+            Command::ClearFenceFilter(fence) => {
+                self.set_fence_filter(fence, String::new(), "esc in the fence")
+            }
             Command::NewScriptExample { example, x, y } => {
                 self.new_script_example_of(example, x, y)
             }

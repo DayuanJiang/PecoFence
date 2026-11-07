@@ -162,6 +162,15 @@ pub struct FenceViewState {
     pub(super) script_hover: Option<usize>,
     /// The portal's folder could not be found (its empty state says so).
     pub(super) portal_missing: bool,
+    /// The empty-state text in place of the usual one (a smart fence's state, a filter that
+    /// matches nothing), and a smart fence's count drawn after its name (" · 6"; see
+    /// `FenceWindow::set_status_view`).
+    pub(super) empty_override: Option<&'static str>,
+    pub(super) title_count: Option<String>,
+    /// 筛选: the fence is filtered right now (Esc clears it).
+    pub(super) filter_active: bool,
+    /// 智能栅栏: the fence shows a search, so nothing is dropped into it.
+    pub(super) refuses_drops: bool,
     /// Width the cached labels were fitted for; a change invalidates them.
     pub(super) label_w: f32,
     /// An item near the viewport was still waiting for its icon at the last content draw
@@ -592,6 +601,11 @@ impl FenceViewState {
     /// marquee, and counts no items.
     pub(super) fn shows_tool(&self) -> bool {
         self.note.is_some() || self.clock.is_some() || self.script.is_some()
+    }
+
+    /// Nothing can be dropped here: a tool fence, or a smart fence (it shows a search).
+    pub(super) fn takes_no_drops(&self) -> bool {
+        self.shows_tool() || self.refuses_drops
     }
 
     /// Arms TIMER_CLOCK for just after the next minute (or second) boundary, or stops it when

@@ -40,6 +40,12 @@ enum Kind {
 /// Longest query term the pinyin matcher handles (one bit per query position in a `u64`).
 const PINYIN_MAX: usize = 63;
 
+/// Whether a [`Match::score`] is only the loosest kind (the query's letters in order, apart),
+/// which a filter leaves out.
+pub fn is_loose_score(score: u32) -> bool {
+    score >> 24 == Kind::Fuzzy as u32
+}
+
 /// Matches `query` against `name`, ignoring case. An empty (or blank) query matches nothing.
 ///
 /// Score: the kind of match decides first; within a kind an earlier match wins, then a shorter

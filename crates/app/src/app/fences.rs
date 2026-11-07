@@ -704,6 +704,8 @@ impl App {
         }
         self.settle_unplaced(false);
         self.refresh_all();
+        // Smart fences of an imported file, a snapshot or another monitor layout search now.
+        self.run_all_smart("layout replaced");
         self.push_settings_state();
     }
 

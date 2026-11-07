@@ -1061,6 +1061,10 @@ pub struct Fence {
     /// drops and moves never put any in it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool: Option<FenceTool>,
+    /// 智能栅栏: the fence shows the live result of this search in place of desktop items, and
+    /// holds none itself. Versions without it read such a fence as an empty one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub smart: Option<crate::smart::SmartSpec>,
     #[serde(default)]
     pub items: Vec<ItemRef>,
 }
@@ -1090,14 +1094,15 @@ impl Fence {
             bottom_anchored: false,
             desktop_layout: false,
             tool: None,
+            smart: None,
             items: Vec::new(),
         }
     }
 
     /// Whether routed or dropped desktop items can live in this fence: not in a folder portal
-    /// (it shows its folder) and not in a tool fence.
+    /// (it shows its folder), a tool fence or a smart fence (it shows its search).
     pub fn holds_items(&self) -> bool {
-        self.kind != FenceKind::FolderPortal && self.tool.is_none()
+        self.kind != FenceKind::FolderPortal && self.tool.is_none() && self.smart.is_none()
     }
 
     pub fn contains_item(&self, id: ItemId) -> bool {

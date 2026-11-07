@@ -11,6 +11,7 @@ mod double_ctrl;
 mod drag_guides;
 mod drop_preview;
 mod fence_window;
+mod filter_box;
 mod icons;
 mod ipc_server;
 mod layout;
