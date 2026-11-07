@@ -24,6 +24,13 @@ const TIMER_FOREGROUND_LATER: usize = 14;
 /// click on it after closing a window left the double-click unseen. A light poll catches it.
 const TIMER_FOREGROUND_POLL: usize = 15;
 const FOREGROUND_POLL_MS: u32 = 250;
+/// Win+Ctrl+←/→ puts Windows' switcher window in front, and when it goes the desktop gets the
+/// foreground back without an event: the double-click (quick hide) went unseen after every
+/// virtual-desktop switch. A few looks at the foreground catch it.
+const TIMER_FOREGROUND_AFTER_SWITCH: usize = 16;
+const AFTER_SWITCH_LOOK_MS: u32 = 300;
+const AFTER_SWITCH_LOOKS: u8 = 6;
+const SWITCHER_CLASS: &str = "VirtualDesktopHotkeySwitcher";
 const QUICKHIDE_DELAY_MS: u32 = 300;
 pub const TIMER_TEST: usize = 20;
 
@@ -336,6 +343,8 @@ pub struct DesktopAnchor {
     covered_by: Option<isize>,
     /// The window the last `on_foreground` was about (the poll compares with it).
     last_foreground: isize,
+    /// Looks at the foreground left after a virtual-desktop switch (`TIMER_FOREGROUND_AFTER_SWITCH`).
+    switch_looks: u8,
 }
 
 /// The fences' windows as a feedback report describes them.
@@ -478,6 +487,7 @@ impl DesktopAnchor {
             placed_above: None,
             covered_by: None,
             last_foreground: 0,
+            switch_looks: 0,
         };
         // The hook reports only changes of the foreground. With the desktop already in front
         // (a start at sign-in before any window opens) its clicks are followed from now on.
@@ -905,6 +915,11 @@ impl DesktopAnchor {
         let is_desktop = self.is_desktop_window(hwnd);
         let raised = self.desktop_is_raised_over_us();
         tracing::debug!(?hwnd, %cls, is_desktop, raised, "foreground changed");
+        if cls == SWITCHER_CLASS {
+            self.switch_looks = AFTER_SWITCH_LOOKS;
+            self.sentinel
+                .set_timer(TIMER_FOREGROUND_AFTER_SWITCH, AFTER_SWITCH_LOOK_MS);
+        }
         // Only the changes to and from the desktop, once each: they start and end following its
         // clicks (quick hide, marquee), and say what was in front when they did. Leaving the
         // desktop, the line also counts what raw input reported meanwhile.
@@ -1542,6 +1557,25 @@ impl DesktopAnchor {
                     self.on_foreground(front);
                 } else {
                     self.last_foreground = front.0 as isize;
+                }
+            }
+            TIMER_FOREGROUND_AFTER_SWITCH => {
+                let front = desktop::foreground_window();
+                self.switch_looks = self.switch_looks.saturating_sub(1);
+                let missed = !front.0.is_null()
+                    && front.0 as isize != self.last_foreground
+                    && self.is_desktop_window(front) != self.quick.sink_registered;
+                if missed || self.switch_looks == 0 {
+                    self.sentinel.kill_timer(TIMER_FOREGROUND_AFTER_SWITCH);
+                }
+                if missed {
+                    let cls = desktop::class_name(desktop::root_ancestor(front));
+                    tracing::info!(
+                        class = %cls,
+                        looks_left = self.switch_looks,
+                        "foreground after a virtual desktop switch caught"
+                    );
+                    self.on_foreground(front);
                 }
             }
             TIMER_FOREGROUND_LATER => {
