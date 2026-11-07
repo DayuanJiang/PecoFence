@@ -84,6 +84,13 @@ for ($k = 0; $k -lt 2; $k++) {
 }
 $seen = @(PfLogAll | Where-Object { $_ -match 'virtual desktop switch seen by the foreground poll' -and $_ -notmatch 'omitted' }) | Select-Object -Last 1
 Log "poll: $seen"
+# Not clicked within 10 s: the desktop's clicks are no longer followed (every mouse move reaches
+# PecoFence while they are).
+VdRight
+[G]::MoveTo(900, 500); Start-Sleep -Seconds 11
+$end = @(PfLogAll | Where-Object { $_ -match 'its clicks are no longer followed' -and $_ -notmatch 'omitted' }) | Select-Object -Last 1
+Check 'ten seconds after a switch without a click on the desktop, its clicks are let go' ([bool]$end) "$end"
+VdLeft
 
 Case 'new fences with the switch on'
 Pf settings set perDesktopFences true | Out-Null
