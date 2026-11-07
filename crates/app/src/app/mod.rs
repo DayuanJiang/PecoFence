@@ -177,6 +177,10 @@ const TIMER_EVERYTHING_SETUP: usize = 71;
 /// 对话框跳转 offer: a dialog to offer it to (`WM_APP_DIALOG_OFFER`); retried while the App is
 /// borrowed.
 const TIMER_DIALOG_OFFER: usize = 73;
+/// A config file another program held open at start: try to read it again (one shot, re-armed
+/// while it stays locked; see `retry_locked_config`).
+const TIMER_CONFIG_LOCKED: usize = 77;
+const CONFIG_LOCKED_RETRY_MS: u32 = 2_000;
 const THEMES_SETTLE_MS: u32 = 300;
 const DEVICE_RETRY_MAX_MS: u32 = 30_000;
 /// Growth of private commit plus GPU memory that logs a memory line before the hour is up.
@@ -381,6 +385,8 @@ pub struct App {
     desktop_unavailable: bool,
     /// The tray told the user that the configuration cannot be saved (once per run).
     save_failure_shown: bool,
+    /// Tries to read the config file another program held open at start (`retry_locked_config`).
+    config_lock_tries: u32,
     /// Last run of the rules that depend on the clock ("闲置天数"); see `housekeeping`.
     idle_rules_checked: Option<Instant>,
     /// When the last memory line was logged and the total it showed; see `log_memory`.
@@ -633,6 +639,7 @@ impl App {
         let source = match &state.recovered_from {
             Some(from) if from.extension().is_some_and(|e| e == "bak") => "config.bak",
             Some(_) => "daily backup",
+            None if state.locked_config.is_some() => "new: files locked",
             None if state.first_run && !state.load_failures.is_empty() => "new: files unusable",
             None if state.first_run => "new",
             None => "config.json",
@@ -655,6 +662,12 @@ impl App {
         }
         if let Some(p) = &state.unreadable_moved_to {
             tracing::warn!(to = %p.display(), "config.json unreadable; kept aside");
+        }
+        if let Some(p) = &state.locked_config {
+            tracing::warn!(
+                path = %p.display(),
+                "config file locked by another program; saves held until it can be read"
+            );
         }
         log_start_state(&state);
 
@@ -946,6 +959,7 @@ impl App {
                                 | TIMER_EVERYTHING_STATUS
                                 | TIMER_EVERYTHING_SETUP
                                 | TIMER_DIALOG_OFFER
+                                | TIMER_CONFIG_LOCKED
                                 | TIMER_STARTUP_BACKDROPS => {
                                     if let Ok(mut guard) = cell.try_borrow_mut()
                                         && let Some(app) = guard.as_mut()
@@ -969,6 +983,7 @@ impl App {
                                                 app.finish_startup_backdrops()
                                             }
                                             TIMER_DIALOG_OFFER => app.offer_dialog_jump(),
+                                            TIMER_CONFIG_LOCKED => app.retry_locked_config(),
                                             _ => app.prewarm_wallpapers(),
                                         }
                                     } else {
@@ -1586,6 +1601,7 @@ impl App {
             windows_desktop_hotkey_taken: None,
             desktop_unavailable: false,
             save_failure_shown: false,
+            config_lock_tries: 0,
             idle_rules_checked: None,
             memory_logged: None,
             started,
@@ -1654,7 +1670,22 @@ impl App {
             .load_failures
             .iter()
             .any(|(_, _, e)| e.not_encrypted());
-        if not_encrypted && let Some(t) = &app.tray {
+        if app.state.locked_config.is_some() {
+            window::set_timer(
+                app.control.hwnd(),
+                TIMER_CONFIG_LOCKED,
+                CONFIG_LOCKED_RETRY_MS,
+            );
+            if let Some(t) = &app.tray {
+                t.show_info(
+                    "PecoFence",
+                    pecofence_core::i18n::text(
+                        "配置文件正被其他程序占用（可能是杀毒或同步软件）。读到它之前，PecoFence 不保存任何更改；读到后自动换回你的栅栏。",
+                    ),
+                    true,
+                );
+            }
+        } else if not_encrypted && let Some(t) = &app.tray {
             // Short enough for the four lines a notice shows.
             t.show_info(
                 "PecoFence",
@@ -1870,7 +1901,8 @@ impl App {
     /// After a save: one that failed leaves the state dirty. The first time in a run the tray
     /// says so, since the changes are lost at exit and only the log had the reason.
     fn notice_save_failure(&mut self) {
-        if !self.state.is_dirty() || self.save_failure_shown {
+        // Saves held for a locked file are no failure (its own notice is up).
+        if !self.state.is_dirty() || self.save_failure_shown || self.state.locked_config.is_some() {
             return;
         }
         let Some(t) = &self.tray else { return };

@@ -47,6 +47,10 @@ pub struct AppState {
         PathBuf,
         pecofence_core::config_store::ReadError,
     )>,
+    /// A config file another program held open at load (see `ConfigStore::load_waiting`):
+    /// what shows came from a file further down the line or is the defaults, and no save may
+    /// replace or rotate the files until this one is read (`load_after_lock`).
+    pub locked_config: Option<PathBuf>,
 }
 
 /// Summary of a desktop sync pass.
@@ -154,10 +158,18 @@ impl AppState {
                 .failures
                 .push(("config.json", store.primary_path(), error));
         }
+        if !report.waited.is_zero() {
+            tracing::info!(
+                waited_ms = report.waited.as_millis() as u64,
+                still_locked = report.locked.is_some(),
+                "config files held open by another program at load; waited"
+            );
+        }
+        // Defaults standing in for files another program holds open are no first start.
         let (config, first_run, recovered_from) = match outcome {
             LoadOutcome::Primary(c) => (c, false, None),
             LoadOutcome::Recovered(c, from) => (c, false, Some(from)),
-            LoadOutcome::Fresh(c) => (c, true, None),
+            LoadOutcome::Fresh(c) => (c, report.locked.is_none(), None),
         };
         pecofence_core::i18n::set_language(
             config
@@ -183,6 +195,7 @@ impl AppState {
             recovered_from,
             unreadable_moved_to: report.moved_to,
             load_failures: report.failures,
+            locked_config: report.locked,
         };
         state.rebuild_catalog();
         if state.config.drop_duplicates() {
@@ -243,6 +256,29 @@ impl AppState {
         v.sort();
         v.reverse();
         v
+    }
+
+    /// While `locked_config` is set: loads the files again, without waiting, once that file
+    /// opens. `None` while it (or another file in line) is still held open.
+    pub fn load_after_lock(
+        &mut self,
+    ) -> Option<(LoadOutcome, pecofence_core::config_store::LoadReport)> {
+        let path = self.locked_config.as_ref()?;
+        if ConfigStore::is_locked(path) {
+            return None;
+        }
+        let (outcome, report) = self.store.load_waiting(std::time::Duration::ZERO);
+        if report.locked.is_some() {
+            self.locked_config = report.locked;
+            return None;
+        }
+        self.locked_config = None;
+        // What showed meanwhile was never saved: the files' own snapshots, notes and scripts
+        // replace it whole (`replace_config` would keep them beside the file's).
+        self.config.snapshots.clear();
+        self.config.notes.clear();
+        self.config.scripts.clear();
+        Some((outcome, report))
     }
 
     /// Replaces the whole configuration (import / backup restore) and re-derives the runtime
@@ -393,6 +429,7 @@ impl AppState {
             recovered_from: None,
             unreadable_moved_to: None,
             load_failures: Vec::new(),
+            locked_config: None,
         };
         scratch.apply_snapshot_layouts(snap.layouts.clone());
         let layout = scratch.layout;
@@ -854,6 +891,11 @@ impl AppState {
 
     pub fn save_if_dirty(&mut self) -> bool {
         if !self.dirty {
+            return false;
+        }
+        if let Some(locked) = &self.locked_config {
+            // Saving would rotate the user's files away while they cannot be read.
+            tracing::debug!(path = %locked.display(), "config save held: a config file is locked by another program");
             return false;
         }
         let pruned = self.config.prune_notes();
@@ -2701,6 +2743,7 @@ mod tests {
             recovered_from: None,
             unreadable_moved_to: None,
             load_failures: Vec::new(),
+            locked_config: None,
         };
         state.ensure_layout();
         state
