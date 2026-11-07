@@ -326,6 +326,7 @@ impl App {
             action,
             secondary,
             crate::notice::locale(),
+            &self.notice_avoid_rects(),
         ) {
             Ok(notice) => {
                 tracing::info!(notice = %kind, "welcome notice shown");

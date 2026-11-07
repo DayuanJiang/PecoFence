@@ -1792,6 +1792,58 @@ impl Config {
         unplaced
     }
 
+    /// A new layout `to` for the connected monitors `now`, about to take the fences of `from`
+    /// ([`Self::carry_fences`]): a fence `from` has on a monitor that runs at another resolution
+    /// or scale there than now takes its spot from the layout shown last that has that monitor
+    /// at the current resolution and scale, when that layout has the fence on it. So going back
+    /// to a scale shown before restores the layout made there, also with another set of monitors
+    /// (a layout squeezed onto a 150 % screen is not carried back to 100 %). Returns, per fence
+    /// given a spot, the layout it came from.
+    pub fn seed_layout(
+        &mut self,
+        from: usize,
+        to: usize,
+        now: &[WorkArea],
+    ) -> Vec<(FenceId, usize)> {
+        let mut seeded = Vec::new();
+        for f in &self.layouts[from].fences {
+            let monitor = &f.geometry.monitor;
+            let Some(area) = now.iter().find(|w| w.device_path == *monitor) else {
+                continue;
+            };
+            let at = |l: &Layout| {
+                l.fingerprint
+                    .iter()
+                    .find(|m| m.device_path == *monitor)
+                    .is_some_and(|m| m.knows_mode() && m.same_mode(area))
+            };
+            if at(&self.layouts[from]) {
+                continue;
+            }
+            let spot = self
+                .layouts
+                .iter()
+                .enumerate()
+                .filter(|(i, l)| *i != from && *i != to && at(l))
+                .filter_map(|(i, l)| {
+                    let g = l
+                        .fences
+                        .iter()
+                        .find(|g| g.id == f.id && g.geometry.monitor == *monitor)?;
+                    Some((l.shown, i, g))
+                })
+                .max_by_key(|(shown, _, _)| *shown);
+            if let Some((_, i, g)) = spot {
+                seeded.push((g.clone(), i));
+            }
+        }
+        let ids = seeded.iter().map(|(g, i)| (g.id, *i)).collect();
+        self.layouts[to]
+            .fences
+            .extend(seeded.into_iter().map(|(g, _)| g));
+        ids
+    }
+
     /// Files from 0.1.3 and earlier kept separate fences per monitor set. Brings the other
     /// layouts' fences into `into` so that none is lost: a fence only another set has is added
     /// (so one deleted on just one set comes back), and an item `into` holds only because it
@@ -2811,6 +2863,63 @@ mod tests {
             ("A2", 40.0, true)
         );
         assert_eq!(l[1].geometry, new.geometry);
+    }
+
+    /// Fence review S7: 100 %, then a 150 % sign-in (squeezed spots), then a second monitor at
+    /// 150 %, then both at 100 %. The new 100 % set takes the main monitor's spots from the first
+    /// 100 % layout; a fence moved to the second monitor keeps that spot.
+    #[test]
+    fn a_new_set_takes_the_spots_of_the_same_monitor_at_the_same_scale() {
+        let at = |id: &str, dpi: u32| WorkArea {
+            dpi,
+            ..monitor(id, D1)
+        };
+        let set = |monitors: &[WorkArea], fences: Vec<Fence>, shown: u64| Layout {
+            fingerprint: monitors.iter().map(MonitorIdentity::of).collect(),
+            fences,
+            shown,
+        };
+        let on = |f: &Fence, monitor: &str, x: f32| {
+            let mut f = f.clone();
+            f.geometry.monitor = monitor.into();
+            f.geometry.x = x;
+            f
+        };
+        let media = Fence::new("Media", FenceKind::Virtual, geo());
+        let locked = Fence::new("Locked", FenceKind::Virtual, geo());
+        let mut c = Config::default();
+        c.layouts.push(set(
+            &[at("M1", 96)],
+            vec![on(&media, "M1", 440.0), on(&locked, "M1", 40.0)],
+            1,
+        ));
+        c.layouts.push(set(
+            &[at("M1", 144)],
+            vec![on(&media, "M1", 408.0), on(&locked, "M1", 30.0)],
+            2,
+        ));
+        c.layouts.push(set(
+            &[at("M1", 144), at("M2", 144)],
+            vec![on(&media, "M1", 408.0), on(&locked, "M2", 200.0)],
+            3,
+        ));
+        let now = [at("M1", 96), at("M2", 96)];
+        c.layouts.push(set(&now, vec![], 0));
+        assert_eq!(c.seed_layout(2, 3, &now), vec![(media.id, 0)]);
+        assert!(c.carry_fences(2, 3).contains(&locked.id));
+        let l = &c.layouts[3].fences;
+        let x = |id: FenceId| l.iter().find(|f| f.id == id).map(|f| f.geometry.x);
+        assert_eq!((x(media.id), x(locked.id)), (Some(440.0), Some(200.0)));
+        // At the scale the last layout was shown at, its spots are the right ones already.
+        let now = [at("M1", 144), at("M3", 96)];
+        c.layouts.push(set(&now, vec![], 0));
+        assert!(c.seed_layout(2, 4, &now).is_empty());
+        // A layout that has the fence on another monitor gives it no spot here: the one shown
+        // before it that has it on this monitor does.
+        c.layouts[0].fences[0].geometry.monitor = "M9".into();
+        let now = [at("M1", 96), at("M4", 96)];
+        c.layouts.push(set(&now, vec![], 0));
+        assert_eq!(c.seed_layout(2, 5, &now), vec![(media.id, 3)]);
     }
 
     #[test]

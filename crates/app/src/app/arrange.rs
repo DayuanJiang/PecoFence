@@ -124,6 +124,10 @@ impl App {
         self.ctx.behavior.release_push(w.hwnd());
         w.set_bounds(rect);
         let rolled = w.is_rolled();
+        // Made shorter to fit a spot (`clearance::pull_apart`): the height it opens to as well.
+        if !rolled && w.expanded_height_px() != rect.bottom - rect.top {
+            w.apply_height(rect.bottom - rect.top, false);
+        }
         let expanded = if rolled {
             w.expanded_height_px()
         } else {
@@ -207,6 +211,14 @@ impl App {
                         right: wa.right,
                         bottom: wa.bottom,
                     });
+                // Where no spot has room for it, a fence may get as short as its title row and
+                // one row of icons; rolled up it is its title row already.
+                let h = rect.bottom - rect.top;
+                let scale = monitors::dpi_for_window(w.hwnd()).max(96) as f32 / 96.0;
+                let min_h = match self.grid_steps(*id, scale) {
+                    Some(steps) if !w.is_rolled() => steps.rows_height(1).min(h),
+                    _ => h,
+                };
                 let rest = clearance::Resting {
                     rect,
                     work,
@@ -216,6 +228,7 @@ impl App {
                     // above it could not push it clear; one with no spot on these monitors moves.
                     movable: movers.contains(id)
                         || (all && !self.state.fence(*id).is_some_and(|f| f.locked)),
+                    min_h,
                 };
                 (*id, rest)
             })
@@ -223,7 +236,9 @@ impl App {
         let rests: Vec<clearance::Resting> = fences.iter().map(|(_, r)| *r).collect();
         for (i, spot) in clearance::pull_apart(&rests) {
             let (id, from) = (fences[i].0, fences[i].1.rect);
-            tracing::info!(%id, from = ?(from.left, from.top), to = ?(spot.left, spot.top), "overlapping fence moved");
+            let (from_h, to_h) = (from.bottom - from.top, spot.bottom - spot.top);
+            // `shorter`: no spot had room for its height (a screen made smaller).
+            tracing::info!(%id, from = ?(from.left, from.top), to = ?(spot.left, spot.top), from_h, to_h, shorter = to_h < from_h, "overlapping fence moved");
             self.relocate(id, spot);
         }
     }
@@ -302,9 +317,23 @@ impl App {
         self.record_bounds(id, r, true, h, "expand clamp");
     }
 
+    /// Where a notice in the corner (`crate::notice`) must not go: the fence windows on show,
+    /// but for 「桌面」 arranged like the desktop, which lies under everything as the desktop does.
+    pub(super) fn notice_avoid_rects(&self) -> Vec<RECT> {
+        self.fences
+            .values()
+            .filter(|w| {
+                pecofence_platform::desktop::is_visible(w.hwnd()) && !w.is_desktop_arranged()
+            })
+            .map(|w| w.rect())
+            .collect()
+    }
+
     /// First run: the default column is sized to what the rules sorted into it, in whole rows,
     /// and restacked from the top. Fixed heights left a half-cut row in one fence and mostly
-    /// empty plates in the others.
+    /// empty plates in the others. Every fence shows all its rows: where the column has no room
+    /// for the next one (a short screen, many icons), that one starts another column to the left
+    /// of it; only a fence taller than the whole screen scrolls.
     pub(super) fn fit_first_run_column(&mut self) {
         // 像桌面一样排列: the 「桌面」 fence stands on the desktop, not in the column.
         let ids: Vec<FenceId> = self
@@ -326,7 +355,10 @@ impl App {
         };
         let scale = monitors::dpi_for_window(hwnd).max(96) as f32 / 96.0;
         let gap = (16.0 * scale).round() as i32;
-        let mut want = Vec::new();
+        let work = monitor.work_area;
+        let column_h = work.bottom - work.top - gap * 2;
+        let mut heights = Vec::new();
+        let mut rows = Vec::new();
         for &id in &ids {
             let (Some(w), Some(steps)) = (self.fences.get(&id), self.grid_steps(id, scale)) else {
                 return;
@@ -335,37 +367,19 @@ impl App {
                 return;
             };
             // Every row, not `fitting_height_px`: that stops at the work area's bottom from
-            // where the fence sits before the restack.
-            want.push((steps.rows_height(fit.rows.max(1) as u32), steps));
-        }
-        // One row each, then one more row each in turn while it fits: fences with a few
-        // icons stop at their fitting height, the others share the rest of the column.
-        let work = monitor.work_area;
-        let mut left = work.bottom - work.top - gap * (ids.len() as i32 + 1);
-        let mut rows = vec![1; ids.len()];
-        let mut heights: Vec<i32> = want
-            .iter()
-            .map(|(fit, s)| s.rows_height(1).min(*fit))
-            .collect();
-        left -= heights.iter().sum::<i32>();
-        let mut grew = true;
-        while grew {
-            grew = false;
-            for ((h, n), (fit, steps)) in heights.iter_mut().zip(&mut rows).zip(&want) {
-                let taller = steps.rows_height(*n + 1).min(*fit);
-                if taller > *h && taller - *h <= left {
-                    left -= taller - *h;
-                    *h = taller;
-                    *n += 1;
-                    grew = true;
-                }
-            }
+            // where the fence sits before the restack. Taller than the column: the rows that
+            // fit in it.
+            let fit_rows = fit.rows.max(1) as u32;
+            let room = ((column_h as f32 - steps.fixed) / steps.row)
+                .floor()
+                .max(1.0) as u32;
+            heights.push(steps.rows_height(fit_rows.min(room)));
+            rows.push(fit_rows);
         }
         let mut top = work.top + gap;
-        // Fences the column has no room for (a small screen at a high scale) start another
-        // column to the left of it.
         let mut shift = 0;
-        for (&id, h) in ids.iter().zip(heights) {
+        let mut columns = 1;
+        for (&id, &h) in ids.iter().zip(&heights) {
             let Some(w) = self.fences.get(&id) else {
                 continue;
             };
@@ -373,6 +387,7 @@ impl App {
             if top + h > work.bottom - gap && top > work.top + gap {
                 shift += r.right - r.left + gap;
                 top = work.top + gap;
+                columns += 1;
             }
             let rect = RECT {
                 left: r.left - shift,
@@ -385,6 +400,14 @@ impl App {
             self.record_bounds(id, rect, false, h, "first run");
             top += h + gap;
         }
+        tracing::info!(
+            fences = ids.len(),
+            ?rows,
+            ?heights,
+            column_h,
+            columns,
+            "first run: fences laid out in columns"
+        );
         self.schedule_save();
     }
 

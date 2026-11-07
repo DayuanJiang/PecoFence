@@ -552,8 +552,9 @@ impl App {
             }
         }
         // Fences new to these monitors (or whose monitor is gone) move out of the others' way;
-        // the rest stay where this layout saved them.
-        self.settle_unplaced(false);
+        // the rest stay where this layout saved them. Then, as at startup, no two stay on top of
+        // each other (a layout saved with an overlap by an older version gets pulled apart too).
+        self.settle_unplaced(true);
         self.log_placement(&before, &unplaced, from_layout);
         for w in self.fences.values() {
             w.repaint_shadow();
