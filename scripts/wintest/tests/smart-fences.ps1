@@ -73,6 +73,66 @@ Check 'Ctrl+V into it pastes nothing' (-not (Test-Path -LiteralPath (Join-Path $
 Remove-Item -LiteralPath $desk
 Check 'the files are still in Downloads, none on the desktop' ((Test-Path -LiteralPath (Join-Path $PfDl 'quarterly report.pdf')) -and -not (Get-ChildItem -LiteralPath $PfDesk | Where-Object { $_.Name -match 'quarterly' })) ''
 
+Case 'a link dragged onto a smart fence''s tab lands nowhere'
+# A browser-like drag source (a WinForms window offering UniformResourceLocatorW) in its own
+# process: the real mouse drags from it. First onto the shown plain tab (a .url is made), then
+# onto the smart fence's pill next to it (refused: before the fix it landed in the shown tab).
+Pf fence create --title Links --rect '60,520,420,220' | Out-Null
+Pf fence create --title 'Smart tab' --smart-folder $PfDocs --rect '520,560,300,200' | Out-Null
+Pf fence merge 'Smart tab' --into Links | Out-Null
+Start-Sleep -Seconds 1
+$links = (FenceGet Links).id
+function PillPt($d, $name) { $i = [array]::IndexOf(@($d.tabs), $name); if ($i -lt 0) { return $null }; return @([int]($d.l + $d.ox + $d.rects[$i][0] + $d.rects[$i][1] / 2), [int]($d.t + $d.oy + 18)) }
+$d = DumpOf Links
+if ($d -and $d.active -ne $links) { $pt = PillPt $d 'Links'; if ($pt) { [G]::Click($pt[0], $pt[1]); Start-Sleep -Seconds 1; $d = DumpOf Links } }
+Check 'Links shows its own tab, the smart fence is the tab next to it' ($d -and $d.active -eq $links -and @($d.tabs) -contains 'Smart tab') "tabs=$(@($d.tabs) -join ',') active=$($d.active)"
+$src = "$PfRun\urlsrc.ps1"
+@'
+Add-Type -AssemblyName System.Windows.Forms
+$url = 'https://example.com/smart-tab-drop'
+$f = New-Object Windows.Forms.Form
+$f.Text = 'pf-url-source'; $f.StartPosition = 'Manual'; $f.TopMost = $true
+$f.Location = New-Object Drawing.Point(1180, 600); $f.Size = New-Object Drawing.Size(260, 160)
+$l = New-Object Windows.Forms.Label; $l.Text = 'drag me'; $l.Dock = 'Fill'; $f.Controls.Add($l)
+$l.Add_MouseDown({
+  $d = New-Object Windows.Forms.DataObject
+  $d.SetData('UniformResourceLocatorW', (New-Object IO.MemoryStream (, [Text.Encoding]::Unicode.GetBytes($url + [char]0))))
+  $d.SetData('UniformResourceLocator', (New-Object IO.MemoryStream (, [Text.Encoding]::ASCII.GetBytes($url + [char]0))))
+  $r = $l.DoDragDrop($d, [Windows.Forms.DragDropEffects]'Copy, Link')
+  Add-Content 'C:\pf\run\urlsrc.txt' "$r"
+})
+# Started hidden (no console window over the fences): the process's first ShowWindow takes
+# that hidden state, so the window shows on the later ones.
+$f.Show(); $f.Hide()
+[Windows.Forms.Application]::Run($f)
+'@ | Set-Content -LiteralPath $src -Encoding UTF8
+$proc = Start-Process powershell -ArgumentList '-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-File', $src -WindowStyle Hidden -PassThru
+$sw = [IntPtr]::Zero
+for ($i = 0; $i -lt 50 -and $sw -eq [IntPtr]::Zero; $i++) { Start-Sleep -Milliseconds 200; $sw = [G]::FindWindowW([NullString]::Value, 'pf-url-source') }
+Check 'the link source window is up' ($sw -ne [IntPtr]::Zero) ''
+function DragLink($x, $y) {
+  [G]::MoveTo(1310, 690); Start-Sleep -Milliseconds 300
+  MDown; Start-Sleep -Milliseconds 300
+  Glide 1310 690 $x $y 20 30; Start-Sleep -Milliseconds 500
+  MUp; Start-Sleep -Seconds 2
+  return (@(Get-Content 'C:\pf\run\urlsrc.txt' -ErrorAction SilentlyContinue) | Select-Object -Last 1)
+}
+# The links this case makes (also ones an earlier run left behind).
+function DropLinks() { Get-ChildItem -LiteralPath $PfDesk -Filter *.url | Where-Object { (Get-Content -LiteralPath $_.FullName -Raw) -match 'smart-tab-drop' } | Remove-Item -Force -ErrorAction SilentlyContinue }
+DropLinks
+$urls0 = @(Get-ChildItem -LiteralPath $PfDesk -Filter *.url).Count
+$r1 = DragLink ([int]($d.l + 210)) ([int]($d.t + 140))
+$urls1 = @(Get-ChildItem -LiteralPath $PfDesk -Filter *.url).Count
+Check 'onto the shown plain tab: a link is made' ($r1 -match 'Link|Copy' -and $urls1 -eq $urls0 + 1) "effect=$r1 urls $urls0 -> $urls1"
+$pt = PillPt (DumpOf Links) 'Smart tab'
+$r2 = if ($pt) { DragLink $pt[0] $pt[1] } else { 'no pill' }
+$urls2 = @(Get-ChildItem -LiteralPath $PfDesk -Filter *.url).Count
+Check 'onto the smart fence''s pill: refused, no link in the shown tab' ($r2 -eq 'None' -and $urls2 -eq $urls1) "effect=$r2 urls $urls1 -> $urls2 pill=$pt"
+if ($proc) { Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue }
+Start-Sleep -Seconds 1; DropLinks
+Pf fence delete 'Smart tab' | Out-Null; Pf fence delete Links | Out-Null
+Start-Sleep -Seconds 1
+
 Case 'its menu: refresh, folder, no New or Paste'
 $m = FenceMenuOf $Dl
 $t = MenuTexts $m
