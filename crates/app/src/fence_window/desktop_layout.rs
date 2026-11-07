@@ -344,6 +344,10 @@ impl FenceViewState {
         cursor: (i32, i32),
         drops: &[(ItemId, (i32, i32))],
     ) -> Option<Vec<(ItemId, [u16; 2])>> {
+        // The grid of the last free placement stays behind once 「桌面」 is a normal fence again.
+        if !self.places_freely() {
+            return None;
+        }
         let (grid, placed) = self.desktop_free.as_ref()?;
         let moving: HashSet<ItemId> = drops.iter().map(|(id, _)| *id).collect();
         let taken: HashSet<(i32, i32)> = self
