@@ -58,7 +58,7 @@ The keys below belong to the `settings.realtimeGlass` object in `config.json`; u
 | Field | Range or options | Default | CLI path |
 | --- | --- | --- | --- |
 | `enabled` | `true` / `false` | `false` | `realtimeGlass.enabled` |
-| `fps` | Integer, 5–60 | `30` | `realtimeGlass.fps` |
+| `fps` | Integer, 5–240 | `30` | `realtimeGlass.fps` |
 | `quality` | `performance` / `balanced` / `quality` | `balanced` | `realtimeGlass.quality` |
 | `blur` | 0–30, in physical pixels of the original image | `8` | `realtimeGlass.blur` |
 | `refraction` | 0–2; 0 disables refraction | `1` | `realtimeGlass.refraction` |
@@ -69,6 +69,8 @@ The keys below belong to the `settings.realtimeGlass` object in `config.json`; u
 Floating-point parameters must be finite. `blur` uses physical pixels and does not increase with Windows DIP scaling. `tint` is a white veil, not an automatically selected light or dark background tint.
 
 Sampling quality sets the width and height of the intermediate background-processing texture: each dimension is 1/4 of the original in Performance mode, 1/2 in Balanced mode and unchanged in Quality mode. Lower settings reduce some material-processing and texture costs; **the native WGC frame pool and input copy still use the original resolution**. FPS is a refresh limit; actual speed also depends on wallpaper playback, system scheduling and the GPU.
+
+The selectable refresh limit was raised from 60 to 240 FPS on 2026-11-07, while retaining the 30 FPS default. Settings validation, schema, refresh clock, capture-producer limit and UI use the expanded range. Values above 60 FPS have not yet been verified in native visual or performance tests; the earlier measurements below do not establish high-refresh throughput or resource costs.
 
 After confirming that the intended PF instance is running, use the CLI supplied with the build to change its settings. For example, from the repository root:
 
@@ -158,6 +160,17 @@ On 2026-11-04, upstream commit `ef888bf878f7cb634971123eae1dff931e537b30` was me
 - All 5 production Windows binding files regenerated identically to the merged files.
 
 The merged desktop application was not launched for new visual or performance measurements. The earlier measurements below still describe the previous experimental build.
+
+### Validation of the expanded refresh range
+
+On 2026-11-07, the 5–240 FPS range change passed the following checks with Rust 1.95.0:
+
+- Formatting and strict workspace/all-target Clippy passed.
+- `cargo test --workspace --locked`: **531 passed, 1 existing test ignored**, including deserialization/configuration boundaries and schema bounds.
+- Browser Settings UI regressions: **96 passed, 0 failed**, including saving 5, 60, 120, 144, 165 and 240 FPS on slider release, preserving the 30 FPS default and retaining the selected value after a host refresh.
+- Coverage checks passed for 633 messages across 11 languages and for 11 README translations.
+
+These checks validate the accepted range and settings flow; they do not measure native rendering throughput at 240 FPS.
 
 ## Bounded diagnostics
 

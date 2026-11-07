@@ -426,7 +426,7 @@
       <h3>实时液态玻璃（实验版）</h3>
       <div class="group">
         <div class="card"><div class="l"><span class="ic">&#xE774;</span><div><div class="t">启用实时玻璃</div><div class="s">实验功能：让液态玻璃背景随画面更新。采集帧只留在内存，不保存截图或视频。兼容性和实际帧率取决于系统与壁纸。</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="realtimeGlass.enabled"></div></div>
-        <div class="card child"><div class="l"><div><div class="t">刷新上限</div><div class="s">5–60 FPS；降低上限可减少持续负载。实际刷新可能低于所选值。</div></div></div><div class="slider"><input type="range" id="realtimeGlassFps" data-bind="realtimeGlass.fps"></div></div>
+        <div class="card child"><div class="l"><div><div class="t">刷新上限</div><div class="s">5–240 FPS；降低上限可减少持续负载。实际刷新可能低于所选值。</div></div></div><div class="slider"><input type="range" id="realtimeGlassFps" data-bind="realtimeGlass.fps"></div></div>
         <div class="card child"><div class="l"><div><div class="t">背景采样质量</div><div class="s">更高分辨率保留更多细节，也可能增加 GPU 占用和内存。</div></div></div><select data-bind="realtimeGlass.quality"><option value="performance">省电：1/4 分辨率</option><option value="balanced">均衡：1/2 分辨率</option><option value="quality">精细：原分辨率</option></select></div>
         <div class="card child"><div class="l"><div><div class="t">背景模糊</div><div class="s">原始画面的 0–30 物理像素；0 保留清晰背景。</div></div></div><div class="slider"><input type="range" id="realtimeGlassBlur" data-bind="realtimeGlass.blur"></div></div>
         <div class="card child"><div class="l"><div><div class="t">折射强度</div><div class="s">0–2；0 关闭边缘折射。</div></div></div><div class="slider"><input type="range" id="realtimeGlassRefraction" data-bind="realtimeGlass.refraction"></div></div>
@@ -835,7 +835,7 @@
   // These controls commit on release, avoiding repeated capture-backend restarts while dragged.
   const glassNumber = v => String(Number(v.toFixed(2)));
   const realtimeGlassSliders = new Map([
-    ['realtimeGlassFps', { min: 5, max: 60, step: 1, ticks: [15, 24, 30, 45, 60], tick: glassNumber, format: v => glassNumber(v) + ' FPS' }],
+    ['realtimeGlassFps', { min: 5, max: 240, step: 1, ticks: [15, 30, 60, 120, 240], tick: glassNumber, format: v => glassNumber(v) + ' FPS' }],
     ['realtimeGlassBlur', { min: 0, max: 30, ticks: [0, 8, 30], format: v => glassNumber(v) + ' px' }],
     ['realtimeGlassRefraction', { min: 0, max: 2, step: .05, ticks: [0, 1, 2], format: glassNumber }],
     ['realtimeGlassSaturation', { min: 0, max: 2, step: .05, ticks: [0, 1, 2], format: glassNumber }],

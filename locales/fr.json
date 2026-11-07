@@ -605,7 +605,7 @@
   "启用实时玻璃": "Enable real-time glass",
   "实验功能：让液态玻璃背景随画面更新。采集帧只留在内存，不保存截图或视频。兼容性和实际帧率取决于系统与壁纸。": "Experimental: update Liquid Glass as the background changes. Captured frames stay in memory; no screenshots or videos are saved. Compatibility and actual frame rate depend on your system and wallpaper.",
   "刷新上限": "Frame rate limit",
-  "5–60 FPS；降低上限可减少持续负载。实际刷新可能低于所选值。": "5–60 FPS. Lower limits reduce ongoing load. Actual updates may be slower than the selected rate.",
+  "5–240 FPS；降低上限可减少持续负载。实际刷新可能低于所选值。": "5–240 FPS. Lower limits reduce ongoing load. Actual updates may be slower than the selected rate.",
   "背景采样质量": "Background sampling quality",
   "更高分辨率保留更多细节，也可能增加 GPU 占用和内存。": "Higher resolutions retain more detail and may increase GPU and memory use.",
   "省电：1/4 分辨率": "Performance: quarter resolution",

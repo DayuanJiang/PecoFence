@@ -8,6 +8,7 @@ use crate::{
     HWND,
     bindings::{self as b, HANDLE},
 };
+use pecofence_core::{REALTIME_GLASS_FPS_MAX, REALTIME_GLASS_FPS_MIN};
 use std::{
     io,
     sync::atomic::{AtomicBool, Ordering},
@@ -82,10 +83,15 @@ pub struct RealtimeClock {
 
 impl RealtimeClock {
     pub fn start(hwnd: HWND, timer_id: usize, fps: u32) -> io::Result<Self> {
-        if hwnd.0.is_null() || timer_id == 0 || !(5..=60).contains(&fps) {
+        if hwnd.0.is_null()
+            || timer_id == 0
+            || !(REALTIME_GLASS_FPS_MIN..=REALTIME_GLASS_FPS_MAX).contains(&fps)
+        {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
-                "realtime clock requires a window, nonzero timer id and 5..60 fps",
+                format!(
+                    "realtime clock requires a window, nonzero timer id and {REALTIME_GLASS_FPS_MIN}..{REALTIME_GLASS_FPS_MAX} fps"
+                ),
             ));
         }
         // SAFETY: create an unnamed, manually reset event owned only by this clock.

@@ -15,6 +15,7 @@
 )]
 mod b;
 
+use pecofence_core::REALTIME_GLASS_FPS_MAX;
 use std::{
     sync::{
         Arc,
@@ -315,7 +316,7 @@ impl LiveCapture {
     /// E_NOINTERFACE and consumer-side pacing remains in effect.
     pub fn set_max_fps(&self, fps: u32) -> Result<()> {
         self.session.SetMinUpdateInterval(b::TimeSpan {
-            Duration: 10_000_000 / i64::from(fps.clamp(1, 120)),
+            Duration: 10_000_000 / i64::from(fps.clamp(1, REALTIME_GLASS_FPS_MAX)),
         })
     }
 

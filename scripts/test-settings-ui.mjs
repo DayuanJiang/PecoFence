@@ -851,6 +851,27 @@ async function runTests() {
     assert(styleRadio(doc, 'fluent').checked, 'Missing material has no valid selection');
     assert(!doc.documentElement.classList.contains('liquid-glass'), 'Old settings changed the appearance');
   });
+  await test('Real-time glass supports 5 to 240 FPS and preserves the legacy 30 FPS default', async () => {
+    doc = await reset();
+    const input = doc.getElementById('realtimeGlassFps');
+    assert(input.min === '5' && input.max === '240', 'Wrong refresh range');
+    assert(input.value === '30' && input.disabled, 'Old settings must retain 30 FPS with live glass off');
+    styleRadio(doc, 'liquidGlass').click(); await settle();
+    doc.querySelector('[data-bind="realtimeGlass.enabled"]').click(); await settle();
+    assert(!input.disabled && current().settings.realtimeGlass.enabled, 'Refresh control did not enable');
+    const patches = () => frame.contentWindow.testMessages.filter(m => m.type === 'patchSettings').length;
+    for (const fps of [5, 60, 120, 144, 165, 240]) {
+      const before = patches();
+      slide('realtimeGlassFps', String(fps));
+      assert(patches() === before, 'Refresh rate saved during drag');
+      release('realtimeGlassFps'); await settle();
+      assert(patches() === before + 1 && current().settings.realtimeGlass.fps === fps, 'Released FPS was not saved: ' + fps);
+      assert(input.getAttribute('aria-valuetext') === fps + ' FPS', 'Wrong announced FPS: ' + fps);
+    }
+    frame.contentWindow.testRefresh(); await settle();
+    assert(input.value === '240', 'Host refresh lost the maximum FPS');
+    doc = await reset();
+  });
   await test('A custom theme takes the place of the style tiles until a tile is clicked', async () => {
     const select = doc.getElementById('customTheme');
     assert([...select.options].map(o => o.value).join('|') === '|Frosted Glass|Warm', 'Theme files not listed after 无');

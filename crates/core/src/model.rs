@@ -7,6 +7,10 @@ use uuid::Uuid;
 
 pub const SCHEMA_VERSION: u32 = 1;
 
+/// Supported real-time glass presentation rates, shared by settings and GPU scheduling.
+pub const REALTIME_GLASS_FPS_MIN: u32 = 5;
+pub const REALTIME_GLASS_FPS_MAX: u32 = 240;
+
 /// Published JSON Schema of `config.json` (`pecofence-cli describe --schema Config` prints the
 /// same document). Written into the file's `$schema` field so editors validate and complete it.
 pub const CONFIG_SCHEMA_URL: &str = "https://pecofence.jiang.jp/schema/config.json";
@@ -328,7 +332,10 @@ pub struct RealtimeGlassSettings {
     pub enabled: bool,
     /// Maximum presentation rate, not a promise that the source can supply this many frames.
     #[serde(deserialize_with = "realtime_glass_fps")]
-    #[cfg_attr(feature = "schema", schemars(range(min = 5, max = 60)))]
+    #[cfg_attr(
+        feature = "schema",
+        schemars(range(min = REALTIME_GLASS_FPS_MIN, max = REALTIME_GLASS_FPS_MAX))
+    )]
     pub fps: u32,
     pub quality: RealtimeGlassQuality,
     /// Blur radius in physical pixels of the original captured image, before downsampling.
@@ -366,8 +373,10 @@ impl Default for RealtimeGlassSettings {
 impl RealtimeGlassSettings {
     /// Also checks configurations constructed in Rust, where serde's checks do not run.
     pub fn validate(&self) -> Result<(), String> {
-        if !(5..=60).contains(&self.fps) {
-            return Err("realtimeGlass.fps must be between 5 and 60".into());
+        if !(REALTIME_GLASS_FPS_MIN..=REALTIME_GLASS_FPS_MAX).contains(&self.fps) {
+            return Err(format!(
+                "realtimeGlass.fps must be between {REALTIME_GLASS_FPS_MIN} and {REALTIME_GLASS_FPS_MAX}"
+            ));
         }
         for (name, value, max) in [
             ("blur", self.blur, 30.0),
@@ -402,10 +411,10 @@ fn check_realtime_glass_float(name: &str, value: f32, max: f32) -> Result<(), St
 
 fn realtime_glass_fps<'de, D: serde::Deserializer<'de>>(d: D) -> Result<u32, D::Error> {
     let fps = u32::deserialize(d)?;
-    if !(5..=60).contains(&fps) {
-        return Err(serde::de::Error::custom(
-            "realtimeGlass.fps must be between 5 and 60",
-        ));
+    if !(REALTIME_GLASS_FPS_MIN..=REALTIME_GLASS_FPS_MAX).contains(&fps) {
+        return Err(serde::de::Error::custom(format!(
+            "realtimeGlass.fps must be between {REALTIME_GLASS_FPS_MIN} and {REALTIME_GLASS_FPS_MAX}"
+        )));
     }
     Ok(fps)
 }
@@ -2031,7 +2040,7 @@ mod tests {
 
     #[test]
     fn realtime_glass_rejects_invalid_fps_and_float_ranges_at_deserialization() {
-        for fps in [5, 15, 24, 30, 45, 60] {
+        for fps in [5, 15, 24, 30, 45, 60, 61, 120, 144, 165, 239, 240] {
             assert!(
                 serde_json::from_value::<RealtimeGlassSettings>(serde_json::json!({
                     "fps": fps
@@ -2041,7 +2050,8 @@ mod tests {
         }
         for fps in [
             serde_json::json!(4),
-            serde_json::json!(61),
+            serde_json::json!(241),
+            serde_json::json!(u32::MAX),
             serde_json::json!(-1),
             serde_json::json!(30.5),
         ] {
@@ -2079,6 +2089,36 @@ mod tests {
             );
         }
         assert!(serde_json::from_str::<RealtimeGlassSettings>(r#"{"quality":"ultra"}"#).is_err());
+    }
+
+    #[test]
+    fn realtime_glass_fps_bounds_also_apply_to_in_memory_configs() {
+        for fps in [5, 60, 120, 144, 165, 240] {
+            let mut config = Config::default();
+            config.settings.realtime_glass.fps = fps;
+            assert!(config.settings.realtime_glass.validate().is_ok(), "{fps}");
+            assert!(crate::config_store::validate(&config).is_ok(), "{fps}");
+        }
+        for fps in [0, 4, 241, u32::MAX] {
+            let mut config = Config::default();
+            config.settings.realtime_glass.fps = fps;
+            assert!(config.settings.realtime_glass.validate().is_err(), "{fps}");
+            assert!(crate::config_store::validate(&config).is_err(), "{fps}");
+        }
+    }
+
+    #[cfg(feature = "schema")]
+    #[test]
+    fn realtime_glass_schema_matches_supported_fps_bounds() {
+        let schema = serde_json::to_value(schemars::schema_for!(RealtimeGlassSettings)).unwrap();
+        assert_eq!(
+            schema["properties"]["fps"]["minimum"],
+            REALTIME_GLASS_FPS_MIN
+        );
+        assert_eq!(
+            schema["properties"]["fps"]["maximum"],
+            REALTIME_GLASS_FPS_MAX
+        );
     }
 
     #[test]
