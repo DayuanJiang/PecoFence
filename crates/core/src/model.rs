@@ -545,7 +545,8 @@ pub struct RollUpSettings {
     #[cfg_attr(feature = "schema", schemars(skip))]
     pub close_grace_ms: u32,
     /// A rolled fence expands on a single title click instead of on hover (Fences "require a
-    /// click to expand"). Hover peek is ignored while this is on.
+    /// click to expand"), and the next title click rolls it up again. Hover peek is ignored
+    /// while this is on.
     #[serde(default)]
     pub click_to_expand: bool,
     /// Draw the title (and tabs) only while the mouse is over the fence; a fence's

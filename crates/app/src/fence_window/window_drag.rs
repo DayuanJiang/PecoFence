@@ -50,7 +50,18 @@ pub(super) fn flush_window_drag(
     now: Instant,
     release: Option<(i32, i32)>,
 ) -> bool {
-    let (target_hwnd, point, offset, snapping, gap_dip, override_height, behavior, radius, group) = {
+    let (
+        target_hwnd,
+        point,
+        offset,
+        snapping,
+        gap_dip,
+        override_height,
+        behavior,
+        radius,
+        group,
+        hang,
+    ) = {
         let mut guard = view.borrow_mut();
         let Some(v) = guard.as_mut() else {
             return false;
@@ -59,6 +70,12 @@ pub(super) fn flush_window_drag(
             .roll_anim
             .as_ref()
             .map(|a| a.height.value_at(now).round() as i32);
+        // The room a rolled-up fence opens into (the landing outline keeps it on screen).
+        let hang = v
+            .remote_drag
+            .as_ref()
+            .filter(|d| d.hwnd == controller)
+            .map_or((0, 0), |d| v.open_hang_px(&window::window_rect(d.hwnd)));
         let Some(drag) = v.remote_drag.as_mut() else {
             return false;
         };
@@ -90,6 +107,7 @@ pub(super) fn flush_window_drag(
                 }
                 _ => None,
             },
+            hang,
         )
     };
     let began = Instant::now();
@@ -160,7 +178,7 @@ pub(super) fn flush_window_drag(
             move_members(members, &placed);
             show_guides(&behavior, target_hwnd, &guides);
         }
-        None => update_drag_feedback(&behavior, target_hwnd, &rect, merge, &guides, radius),
+        None => update_drag_feedback(&behavior, target_hwnd, &rect, hang, merge, &guides, radius),
     }
     if hint_changed {
         queue.push(Command::MergeHint {

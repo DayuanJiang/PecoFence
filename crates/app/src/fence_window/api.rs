@@ -303,6 +303,7 @@ impl FenceWindow {
             plate_inset_px: 0,
             plate_alpha: 1.0,
             peeking: false,
+            hover_raised: false,
             placing: false,
             behavior: ctx.behavior.clone(),
         };
@@ -629,6 +630,7 @@ impl FenceWindow {
             (rect.top + rect.bottom) / 2,
         );
         let target_dpi = monitors::query(monitor).map(|m| m.dpi);
+        let hwnd = self.hwnd();
         self.with_view(|v| {
             if let Some(dpi) = target_dpi {
                 v.apply_dpi(dpi);
@@ -637,6 +639,10 @@ impl FenceWindow {
             v.roll_anim = None;
             v.height_anim = None;
             v.peeking = false;
+            // A hover peek ended here, not by its roll-up: back among the other fences too.
+            if std::mem::take(&mut v.hover_raised) {
+                v.queue.push(Command::EndHoverRaise(hwnd));
+            }
             v.rolled_up = rolled;
             v.expanded_h_px = expanded_h;
             v.expanded_w_px = rect.right - rect.left;
@@ -1393,11 +1399,14 @@ impl FenceWindow {
         });
     }
 
+    /// Rolled up as it rests: also while hover-peeking open (the peek closes by itself) and
+    /// while a roll-up is still in flight (`rolled_up` is only set as it lands, so a toggle, a
+    /// move or a save in those 167 ms read it as rolled up, not as open at a passing height).
     pub fn is_rolled(&self) -> bool {
         self.view
             .borrow()
             .as_ref()
-            .is_some_and(|v| v.rolled_up || v.peeking)
+            .is_some_and(|v| v.roll_target() || v.peeking)
     }
 
     pub fn dpi(&self) -> u32 {
@@ -1440,27 +1449,63 @@ impl FenceWindow {
         });
     }
 
-    /// The window as it rests: a rolled fence that is hover-peeking or rolling counts as its
-    /// title row (see `resting_heights_px`).
+    /// The window as it rests: a rolled fence that is hover-peeking or rolling up counts as its
+    /// title row, and one in a roll or height animation at the height it ends at (see
+    /// `resting_heights_px`). A peek committed open counts at its full height at once.
     pub fn resting_rect(&self) -> RECT {
         let mut r = self.rect();
-        // Rolled (and maybe hover-peeking open) by its state, not by a roll in flight: a peek
-        // committed open counts at its full height at once.
-        let rolled = self.view.try_borrow().ok().and_then(|g| {
-            g.as_ref()
-                .map(|v| (v.rolled_up || v.peeking, v.rolled_h_px()))
+        let rest = self.view.try_borrow().ok().and_then(|g| {
+            g.as_ref().map(|v| {
+                let h = if v.roll_target() || v.peeking {
+                    v.rolled_h_px()
+                } else {
+                    v.height_target_px().unwrap_or(r.bottom - r.top)
+                };
+                // The edge a height animation keeps, else the title row's.
+                let upward = if v.height_animating() {
+                    v.anim_upward
+                } else {
+                    v.row_bottom
+                };
+                (h, upward)
+            })
         });
-        if let Some((true, rest)) = rolled
-            && rest > 0
-            && rest < r.bottom - r.top
+        if let Some((h, upward)) = rest
+            && h > 0
+            && h != r.bottom - r.top
         {
-            if self.row_at_bottom() {
-                r.top = r.bottom - rest;
-            } else {
-                r.bottom = r.top + rest;
-            }
+            r.top = top_for_height(upward, &r, h);
+            r.bottom = r.top + h;
         }
         r
+    }
+
+    /// A roll-up or expand is in flight.
+    pub fn rolling(&self) -> bool {
+        self.view
+            .try_borrow()
+            .ok()
+            .is_some_and(|g| g.as_ref().is_some_and(|v| v.roll_anim.is_some()))
+    }
+
+    /// The height a roll or height animation in flight ends at, and whether it keeps the
+    /// bottom edge (None when none runs).
+    pub fn animation_end_height_px(&self) -> Option<(i32, bool)> {
+        let guard = self.view.try_borrow().ok()?;
+        let v = guard.as_ref()?;
+        v.height_target_px().map(|h| (h, v.anim_upward))
+    }
+
+    /// How far the fence reaches beyond `resting_rect` once it opens, to the right and below:
+    /// a rolled-up fence whose title row is its top edge (no 向上展开) opens downward to its
+    /// expanded height, and one collapsed to its left tab column also to its expanded width.
+    /// Placement keeps that whole room inside the work area (`clearance::landing_spot`).
+    pub fn open_hang_px(&self) -> (i32, i32) {
+        let rest = self.resting_rect();
+        self.view
+            .borrow()
+            .as_ref()
+            .map_or((0, 0), |v| v.open_hang_px(&rest))
     }
 
     /// Title-row height and the height the window settles at: the title row while it is rolled

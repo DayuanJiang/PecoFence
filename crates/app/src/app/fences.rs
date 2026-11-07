@@ -341,11 +341,17 @@ impl App {
         if w.is_desktop_arranged() {
             return;
         }
-        let r = w.rect();
         let scale = monitors::dpi_for_window(w.hwnd()).max(96) as f32 / 96.0;
         let Some(steps) = self.grid_steps(id, scale) else {
             return;
         };
+        // A roll in flight owns the window's size for its 167 to 333 ms: rows taken from a
+        // passing height would be saved as the expanded height.
+        if steps.cells && w.rolling() {
+            tracing::info!(%id, "cell snap skipped: a roll is in flight");
+            return;
+        }
+        let r = w.rect();
         // Collapsed to its left tab column, the window is as wide as the column.
         if !steps.cells || w.collapsed_expanded_width_px().is_some() {
             return;
@@ -1101,10 +1107,13 @@ impl App {
         at(left, top)
     }
 
+    /// Rolls up an open fence and expands a rolled one. A roll still in flight counts as the
+    /// state it rolls to (`is_rolled`), so a click during it turns it round.
     pub(super) fn toggle_roll(&mut self, fence: FenceId) {
         let fence = self.state.host_of(fence);
         if let Some(w) = self.fences.get(&fence) {
             let rolled = !w.is_rolled();
+            tracing::info!(%fence, rolled, rolling = w.rolling(), "roll toggled");
             self.set_roll(fence, rolled);
         }
     }

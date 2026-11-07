@@ -368,6 +368,11 @@ pub enum Command {
     FadeOutDone(HWND),
     /// The user clicked a fence: bring it above the other fences.
     RaiseFence(HWND),
+    /// A hover peek (or a file drag resting on its title) opened a rolled fence: above the
+    /// other fences while it is open (#197).
+    RaiseForHover(HWND),
+    /// That peek rolled it up again: back to its place among the other fences.
+    EndHoverRaise(HWND),
     /// Details-view header click: sort by that column (again = reverse).
     SortColumn {
         fence: FenceId,

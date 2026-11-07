@@ -323,6 +323,10 @@ pub(super) fn on_lbuttonup(
     _wparam: usize,
     lparam: isize,
 ) -> Option<isize> {
+    // The release of a click-to-expand title press (it captured the mouse).
+    if super::nc::release_click_pending(h, hwnd) {
+        return Some(0);
+    }
     let HandlerCtx { view, queue, .. } = h;
     let fence_id = h.fence_id;
     let x = msg::lo_i16(lparam);
@@ -459,7 +463,16 @@ pub(super) fn on_lbuttonup(
                 fence: v.active,
                 sort: column_sort(col),
             }),
-            PressTarget::Chevron if v.roll_anim.is_none() => {
+            // Also while a roll is still in flight: the toggle goes against the state it is
+            // rolling to (`is_rolled`), so the roll turns round.
+            PressTarget::Chevron => {
+                tracing::info!(
+                    fence = %fence_id,
+                    peeking = v.peeking,
+                    rolling = v.roll_anim.is_some(),
+                    rolling_to = ?v.roll_anim.as_ref().map(|a| a.rolled_at_end),
+                    "chevron clicked"
+                );
                 if v.peeking {
                     // Already expanded by peek: commit the expanded state.
                     v.peeking = false;
@@ -543,6 +556,7 @@ pub(super) fn on_capturechanged(
     let mut guard = view.borrow_mut();
     if let Some(v) = guard.as_mut() {
         v.drag = None;
+        v.click_pending = None;
         v.rbutton_press = None;
         v.clear_pressed();
         if v.detach_pending || v.remote_drag.is_some() {
