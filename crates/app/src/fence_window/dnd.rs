@@ -1065,6 +1065,15 @@ impl FenceViewState {
                 spot.self_drop = true;
                 return spot;
             }
+            // A smart fence's pill takes nothing: "not allowed", as over the fence itself.
+            if spot
+                .tab
+                .is_some_and(|i| self.tabs.get(i).is_some_and(|t| !t.takes_drops))
+            {
+                spot.tab = None;
+                spot.self_drop = true;
+                return spot;
+            }
         }
         if spot.tab.is_some() {
             return spot;

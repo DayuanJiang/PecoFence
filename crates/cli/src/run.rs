@@ -233,8 +233,8 @@ fn run_fence(ctx: &Ctx, cmd: FenceCmd) -> Result<Reply, IpcError> {
             // The app would resolve a relative path against its own working directory.
             let absolute =
                 |p: String| std::path::absolute(&p).map_or(p, |a| a.display().to_string());
-            // 智能栅栏 written on the command line: a folder (or every drive with
-            // --everything), the time window and the extensions.
+            // 智能栅栏 written on the command line: a folder (or every drive), the time window,
+            // the extensions, the name and the Everything text, all of them at once.
             let custom = smart_folder.is_some()
                 || everything.is_some()
                 || within_days.is_some()

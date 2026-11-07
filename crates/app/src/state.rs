@@ -1749,19 +1749,18 @@ impl AppState {
         Some(id)
     }
 
-    /// Replaces smart fence `id`'s results. Returns true when they changed (set, order or
-    /// content), so the window must redraw.
-    pub fn set_smart_results(&mut self, id: FenceId, entries: Vec<DesktopEntry>) -> bool {
+    /// Replaces smart fence `id`'s results, each with its display name (named on the worker
+    /// that found them, see [`Self::smart_known_names`]). Returns true when they changed (set,
+    /// order or content), so the window must redraw.
+    pub fn set_smart_results(&mut self, id: FenceId, entries: Vec<(DesktopEntry, String)>) -> bool {
         if self.smart_spec(id).is_none() {
             return false;
         }
         let old_items = self.evict_portal_members(id);
-        let known = KnownNames::of(&old_items);
         let mut ids = Vec::with_capacity(entries.len());
         let mut new_items = Vec::with_capacity(entries.len());
-        for entry in entries {
-            let name = known.get(&entry);
-            let item = runtime_item(entry, name);
+        for (entry, name) in entries {
+            let item = runtime_item(entry, Some(name));
             if ids.contains(&item.id) {
                 continue;
             }
@@ -1771,6 +1770,20 @@ impl AppState {
         }
         self.portal_members.insert(id, ids);
         old_items != new_items
+    }
+
+    /// The display names smart fence `id` shows now, for the worker naming its next results:
+    /// an unchanged file keeps its name without asking the shell again.
+    pub(crate) fn smart_known_names(&self, id: FenceId) -> KnownNames {
+        KnownNames(
+            self.portal_members
+                .get(&id)
+                .into_iter()
+                .flatten()
+                .filter_map(|i| self.portal_items.get(i))
+                .map(|it| ((it.key.clone(), it.mtime), it.display_name.clone()))
+                .collect(),
+        )
     }
 
     /// Re-reads every folder a fence shows (startup, watcher batches). Returns the fences that
@@ -1875,9 +1888,11 @@ impl AppState {
         if self.move_target_folder(to).is_some() {
             return 0;
         }
-        // A tool fence (便签) shows its tool, never desktop items.
-        if self.fence(to).is_some_and(|f| f.tool.is_some()) {
-            tracing::info!(fence = %to, items = items.len(), "move into a tool fence refused");
+        // A tool fence (便签) shows its tool and a smart fence its search, never desktop items:
+        // an item moved there would vanish from every fence.
+        if let Some(f) = self.fence(to).filter(|f| !f.holds_items()) {
+            let kind = if f.smart.is_some() { "smart" } else { "tool" };
+            tracing::info!(fence = %to, kind, items = items.len(), "move into a fence that holds no items refused");
             return 0;
         }
         let mut n = 0;
@@ -2723,7 +2738,7 @@ struct OpenedFolder {
 
 /// Display names of runtime items that survive a re-read: asking the shell costs several ms per
 /// item on a OneDrive folder, and an unchanged file (same path, same mtime) has the same name.
-struct KnownNames(HashMap<(ItemKey, i64), String>);
+pub(crate) struct KnownNames(HashMap<(ItemKey, i64), String>);
 
 impl KnownNames {
     fn of(old: &[Item]) -> Self {
@@ -2734,7 +2749,7 @@ impl KnownNames {
         )
     }
 
-    fn get(&self, entry: &DesktopEntry) -> Option<String> {
+    pub(crate) fn get(&self, entry: &DesktopEntry) -> Option<String> {
         self.0
             .get(&(
                 ItemKey::from_path(&entry.path.to_string_lossy()),
@@ -2747,23 +2762,27 @@ impl KnownNames {
     }
 }
 
+/// The name a folder entry shows: the shell's (no extension, a localized folder's own name),
+/// else the file name without its extension. Asks the shell (COM).
+pub(crate) fn entry_display_name(entry: &DesktopEntry) -> String {
+    shell::display_name(&entry.path).unwrap_or_else(|| {
+        if entry.is_folder {
+            entry.file_name.clone()
+        } else {
+            Path::new(&entry.file_name)
+                .file_stem()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_else(|| entry.file_name.clone())
+        }
+    })
+}
+
 /// The runtime item of a folder portal's entry or a smart fence's result; `display_name` when
 /// already known, else the shell's name for it.
 fn runtime_item(entry: DesktopEntry, display_name: Option<String>) -> Item {
     let path_str = entry.path.to_string_lossy().to_string();
     let (icon_key, _) = crate::icons::icon_key_for(&entry.path, entry.is_folder, entry.mtime);
-    let display_name = display_name.unwrap_or_else(|| {
-        shell::display_name(&entry.path).unwrap_or_else(|| {
-            if entry.is_folder {
-                entry.file_name.clone()
-            } else {
-                Path::new(&entry.file_name)
-                    .file_stem()
-                    .map(|s| s.to_string_lossy().to_string())
-                    .unwrap_or_else(|| entry.file_name.clone())
-            }
-        })
-    });
+    let display_name = display_name.unwrap_or_else(|| entry_display_name(&entry));
     Item {
         id: portal_item_id(&path_str),
         key: ItemKey::from_path(&path_str),
@@ -3386,6 +3405,37 @@ mod tests {
         assert_eq!(state.move_target_folder(portal), state.portal_path(portal));
         assert_eq!(state.move_items(&[docs], portal), 0);
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    /// A smart fence shows a search and a tool fence its tool: an icon moved there would show
+    /// in no fence, so the move is refused and the icon stays where it was.
+    #[test]
+    fn nothing_moves_into_a_smart_or_tool_fence() {
+        let mut state = test_state();
+        let inbox = state.inbox_id().unwrap();
+        let docs = add_item(&mut state, inbox, "Docs");
+        let spec = pecofence_core::smart::SmartSpec {
+            template: None,
+            folder: None,
+            subfolders: true,
+            all_of: Vec::new(),
+            within_days: None,
+            name: None,
+            everything: Some("x".into()),
+            limit: 10,
+        };
+        let smart = state
+            .new_smart_fence("Smart", RECT::default(), spec)
+            .unwrap();
+        let note = state
+            .new_tool_fence("Note", RECT::default(), FenceTool::Note)
+            .unwrap();
+        assert!(state.move_target_folder(smart).is_none());
+        assert_eq!(state.move_items(&[docs], smart), 0);
+        assert_eq!(state.move_items(&[docs], note), 0);
+        assert!(state.fence(inbox).unwrap().contains_item(docs));
+        assert!(!state.fence(smart).unwrap().contains_item(docs));
+        assert!(state.routable_fence(smart).is_none());
     }
 
     #[test]

@@ -797,7 +797,7 @@
   "只显示名称和这段文字匹配的文件，匹配方式和速览搜索一样，可以用拼音首字母": "Shows only files whose names match this text, matched as in the Peek search (pinyin initials too)",
   "只显示这段时间里新建或改过的文件": "Shows only files created or changed in this time",
   "在哪里找": "Where to look",
-  "填写后代替上面的条件，文件夹仍然有效；需要 Everything 在运行": "Replaces the conditions above when filled in; the folder still applies. Needs Everything to be running",
+  "填写后和上面的条件一起筛选；需要 Everything 在运行": "Narrows the search together with the conditions above. Needs Everything to be running",
   "已保存条件": "Conditions saved",
   "把筛选存为智能栅栏": "Save filter as a smart fence",
   "把这次搜索放到桌面": "Put this search on the desktop",

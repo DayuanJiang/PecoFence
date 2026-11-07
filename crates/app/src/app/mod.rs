@@ -5,8 +5,8 @@ use crate::commands::{
     Command, CommandQueue, TransferMode, WM_APP_COMMAND, WM_APP_DIALOG_OFFER,
     WM_APP_EVERYTHING_SETUP, WM_APP_FRAME, WM_APP_FS_CHANGED, WM_APP_LIVE_WALLPAPER,
     WM_APP_PEEK_FOCUSED, WM_APP_PREWARM_DONE, WM_APP_SCRIPT_DONE, WM_APP_SHELL_CHANGED,
-    WM_APP_SMART_READ, WM_APP_STARTUP_BACKDROPS, WM_APP_STARTUP_TASK, WM_APP_THEMES_CHANGED,
-    WM_APP_TRAY, WM_APP_WALLPAPER,
+    WM_APP_SMART_FS, WM_APP_SMART_READ, WM_APP_STARTUP_BACKDROPS, WM_APP_STARTUP_TASK,
+    WM_APP_THEMES_CHANGED, WM_APP_TRAY, WM_APP_WALLPAPER,
 };
 use crate::fence_window::{
     BackdropMode, BackdropSets, Behavior, FenceContext, FenceWindow, ItemView, SearchMarks, TabView,
@@ -184,6 +184,9 @@ const TIMER_DIALOG_OFFER: usize = 73;
 const TIMER_SMART_SOON: usize = 90;
 /// 智能栅栏: a folder read finished (`WM_APP_SMART_READ`); retried while the App is borrowed.
 const TIMER_SMART_READ: usize = 91;
+/// 智能栅栏: a smart fence's watcher saw a change (`WM_APP_SMART_FS`); retried while the App is
+/// borrowed.
+const TIMER_SMART_FS: usize = 92;
 const THEMES_SETTLE_MS: u32 = 300;
 const DEVICE_RETRY_MAX_MS: u32 = 30_000;
 /// Growth of private commit plus GPU memory that logs a memory line before the hour is up.
@@ -819,6 +822,10 @@ impl App {
                             window::set_timer(hwnd, TIMER_SMART_READ, 1);
                             Some(0)
                         }
+                        WM_APP_SMART_FS => {
+                            window::set_timer(hwnd, TIMER_SMART_FS, 1);
+                            Some(0)
+                        }
                         // Everything's answer to a smart fence's search.
                         pecofence_platform::everything::WM_COPYDATA_MSG => {
                             if let Some((kind, bytes)) =
@@ -978,6 +985,7 @@ impl App {
                                 | TIMER_DIALOG_OFFER
                                 | TIMER_SMART_SOON
                                 | TIMER_SMART_READ
+                                | TIMER_SMART_FS
                                 | TIMER_STARTUP_BACKDROPS => {
                                     if let Ok(mut guard) = cell.try_borrow_mut()
                                         && let Some(app) = guard.as_mut()
@@ -1008,6 +1016,7 @@ impl App {
                                             TIMER_DIALOG_OFFER => app.offer_dialog_jump(),
                                             TIMER_SMART_SOON => app.run_soon_smart(),
                                             TIMER_SMART_READ => app.drain_smart_reads(),
+                                            TIMER_SMART_FS => app.smart_watchers_fired(),
                                             _ => app.prewarm_wallpapers(),
                                         }
                                     } else {
@@ -2305,6 +2314,16 @@ impl App {
                         self.move_items(&items, inbox);
                     }
                 }
+            }
+            // Dropped on a smart fence's tab (its window refuses drops already): no file is moved
+            // to the desktop for a fence that would not show it.
+            Command::ExternalDrop { to, .. }
+            | Command::ExternalUrlDrop {
+                to, folder: None, ..
+            } if self.state.portal_path(to).is_none()
+                && self.state.fence(to).is_some_and(|f| !f.holds_items()) =>
+            {
+                tracing::info!(fence = %to, "drop refused: the fence holds no items");
             }
             Command::ExternalDrop { paths, to, mode } if self.state.portal_path(to).is_some() => {
                 self.transfer_files_into_portal(paths, to, mode);

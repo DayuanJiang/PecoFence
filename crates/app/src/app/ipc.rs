@@ -2431,6 +2431,12 @@ impl App {
                     .hint("Move the items to a virtual fence or `inbox`"),
             );
         }
+        if self.fence_or_err(to)?.smart.is_some() {
+            return Err(
+                unsupported("a smart fence shows a search and holds no desktop items")
+                    .hint("Move the items to a virtual fence or `inbox`; `fence set` changes what a smart fence finds"),
+            );
+        }
         let mut ids: Vec<ItemId> = Vec::new();
         for sel in items {
             let id = self.resolve_item(sel)?;

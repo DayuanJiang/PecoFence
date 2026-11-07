@@ -797,7 +797,7 @@
   "只显示名称和这段文字匹配的文件，匹配方式和速览搜索一样，可以用拼音首字母": "Affiche seulement les fichiers dont le nom correspond à ce texte, comme dans la recherche de l’aperçu (initiales pinyin comprises)",
   "只显示这段时间里新建或改过的文件": "Affiche seulement les fichiers créés ou modifiés pendant cette période",
   "在哪里找": "Où chercher",
-  "填写后代替上面的条件，文件夹仍然有效；需要 Everything 在运行": "Remplace les conditions ci-dessus une fois rempli ; le dossier reste valable. Everything doit être lancé",
+  "填写后和上面的条件一起筛选；需要 Everything 在运行": "Filtre en plus des conditions ci-dessus. Everything doit être lancé",
   "已保存条件": "Conditions enregistrées",
   "把筛选存为智能栅栏": "Enregistrer le filtre comme groupe intelligent",
   "把这次搜索放到桌面": "Mettre cette recherche sur le bureau",

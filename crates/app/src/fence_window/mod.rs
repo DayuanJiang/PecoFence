@@ -451,6 +451,8 @@ pub struct TabView {
     pub up_button: bool,
     /// The window shows on some virtual desktops only: the pill carries the Task View glyph.
     pub desktop_icon: bool,
+    /// Items and files can be dropped on its pill (not on a smart fence's).
+    pub takes_drops: bool,
 }
 
 type ViewCell = Rc<RefCell<Option<FenceViewState>>>;

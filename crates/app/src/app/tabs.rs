@@ -28,6 +28,7 @@ impl App {
                     && (f.kind == FenceKind::FolderPortal || self.state.can_go_up(f.id)),
                 up_button: self.state.can_go_up(f.id),
                 desktop_icon: bound,
+                takes_drops: f.holds_items() || self.state.portal_path(f.id).is_some(),
             })
             .collect()
     }

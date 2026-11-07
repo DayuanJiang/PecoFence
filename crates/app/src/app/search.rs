@@ -54,6 +54,9 @@ pub(super) struct SearchState {
     /// Sequence number of the last query sent, and its text.
     pub seq: u32,
     pub sent: String,
+    /// When that query went to Everything, until its answer is in: the smart fences' searches
+    /// wait meanwhile (Everything answers one search at a time, a new one cancels the last).
+    pub asked_at: Option<Instant>,
     /// The Open / Save dialog in front when the Peek began.
     pub dialog: Option<isize>,
     /// The window in front when the Peek began (double Ctrl gives the foreground back to it).
@@ -150,8 +153,10 @@ impl App {
             self.search.everything.clear();
             self.search.everything_total = 0;
             self.search.sent.clear();
+            self.search.asked_at = None;
             // An answer still on its way is for text that is gone.
             self.search.seq = self.search.seq.wrapping_add(1);
+            self.ask_next_smart();
             return;
         }
         window::set_timer(self.control.hwnd(), TIMER_EVERYTHING, EVERYTHING_DELAY_MS);
@@ -176,6 +181,9 @@ impl App {
             return;
         };
         let text = ev::search_text(&query, instance.supports_pinyin());
+        // The Peek search goes first: a smart fence's search out now would be cancelled by
+        // this one, so that fence asks again after the Peek's answer.
+        self.smart_yield_to_peek();
         self.search.seq = self.search.seq.wrapping_add(1);
         let kind = REPLY_TAG | (self.search.seq as usize & 0xFFFF);
         let payload = ev::query2w(
@@ -194,6 +202,7 @@ impl App {
         );
         if sent {
             self.search.sent = query;
+            self.search.asked_at = Some(Instant::now());
         }
     }
 
@@ -217,9 +226,12 @@ impl App {
             return;
         };
         tracing::debug!(total, got = hits.len(), "search: Everything answered");
+        self.search.asked_at = None;
         self.search.everything = hits;
         self.search.everything_total = total;
         self.refresh_search_rows();
+        // Smart fences that waited for the Peek search ask now.
+        self.ask_next_smart();
     }
 
     /// Rebuilds the list from `peek_hits` and Everything's results, keeps the highlighted row

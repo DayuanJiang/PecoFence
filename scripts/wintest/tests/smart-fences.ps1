@@ -127,6 +127,15 @@ Check 'a folder picked by hand drops the template' ($null -eq (SmartOf $Seven).s
 Pf fence set $Seven smartEverything 'quarterly' | Out-Null
 Pf fence set $Seven smartFolder $PfDl | Out-Null
 Check 'smartEverything: the typed search in the folder' (WaitSmart $Seven { $n.Count -eq 1 -and $n[0] -match 'quarterly' } 15) (SmartLine $Seven)
+# The typed search narrows the other conditions, it does not replace them.
+Pf fence set $Seven smartEverything 'pdf' | Out-Null
+Check 'smartEverything pdf: the three PDFs' (WaitSmart $Seven { $n.Count -eq 3 -and $n -match 'old contract' } 15) (SmartLine $Seven)
+Pf fence set $Seven smartWithinDays 7 | Out-Null
+Check 'with smartWithinDays 7 the time window still applies' (WaitSmart $Seven { $n.Count -eq 2 -and -not ($n -match 'old contract') } 15) (SmartLine $Seven)
+Pf fence set $Seven smartWithinDays null | Out-Null
+Pf fence set $Seven smartName 'contract' | Out-Null
+Check 'and the name filter too' (WaitSmart $Seven { $n.Count -eq 1 -and $n[0] -match 'old contract' } 15) (SmartLine $Seven)
+Pf fence set $Seven smartName null | Out-Null
 Pf fence set $Seven smartEverything null | Out-Null
 $bad = & "$PfApp\pecofence-cli.exe" fence set Programs smartWithinDays 7 2>&1 | Out-String
 Check 'a search property on a plain fence is refused' ($LASTEXITCODE -ne 0 -and $bad -match 'smart fences') $bad

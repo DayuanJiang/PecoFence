@@ -33,8 +33,8 @@ pub struct SmartSpec {
     /// pinyin too, not the loosest letters-in-order match). Tested by the app on every file.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
-    /// An Everything search typed by the user, sent as it is in place of the conditions (with
-    /// the folder still in front). Needs Everything.
+    /// An Everything search typed by the user, sent with the folder, the conditions and the
+    /// time window, which all still apply (as does the name). Needs Everything.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub everything: Option<String>,
     /// Most results shown, newest first.
@@ -73,10 +73,10 @@ impl SmartSpec {
         })
     }
 
-    /// The Everything search text: the folder, the conditions Everything can test, the time
-    /// window (`since_date`, see [`everything_date`]) and, over every drive, the system folders
-    /// left out. The app tests every condition
-    /// again on the answer (`matches`), so a condition left out here only costs results.
+    /// The Everything search text: the folder, the user's own Everything text, the conditions
+    /// Everything can test, the time window (`since_date`, see [`everything_date`]) and, over
+    /// every drive, the system folders left out. The app tests every condition again on the
+    /// answer (`matches`), so a condition left out here only costs results.
     pub fn everything_query(&self, since_date: Option<&str>) -> String {
         let mut terms: Vec<String> = Vec::new();
         match &self.folder {
@@ -104,7 +104,6 @@ impl SmartSpec {
             && !raw.is_empty()
         {
             terms.push(raw.to_string());
-            return terms.join(" ");
         }
         for cond in &self.all_of {
             if let Some(t) = everything_term(cond) {
@@ -139,10 +138,10 @@ impl SmartSpec {
         self.all_of.iter().all(|c| rules::cond_matches(c, facts))
     }
 
-    /// How many results to ask Everything for: the name filter is tested here on the answer,
-    /// so it takes more than the fence shows.
+    /// How many results to ask Everything for: the name filter and the conditions Everything
+    /// cannot test are tested here on the answer, so it takes more than the fence shows.
     pub fn everything_max(&self) -> u32 {
-        if self.name.is_some() {
+        if self.name.is_some() || self.all_of.iter().any(|c| everything_term(c).is_none()) {
             self.limit.max(Self::NAME_FILTER_ASK)
         } else {
             self.limit
@@ -155,29 +154,44 @@ fn quote(text: &str) -> String {
     format!("\"{}\"", text.replace('"', "&quot:"))
 }
 
-/// The Everything form of a rule condition, when it has one.
+/// The Everything form of a rule condition, when it has one: the same files or more (the app
+/// tests every condition again on the answer), never fewer.
 fn everything_term(cond: &Cond) -> Option<String> {
-    let exts = |list: &[&str]| {
-        let list: Vec<&str> = list.iter().map(|e| e.trim_start_matches('.')).collect();
-        format!("ext:{}", list.join(";"))
-    };
     Some(match cond {
         Cond::Ext(list) => {
             let list: Vec<&str> = list.iter().map(String::as_str).collect();
-            exts(&list)
+            exts_term(&list)?
         }
         Cond::Type(cats) => {
+            let mut folders = false;
             let mut all: Vec<&str> = Vec::new();
             for cat in cats {
                 match cat {
-                    TypeCategory::Folders => return Some("folder:".into()),
-                    // Programs and installers depend on shortcut targets and names: the app
-                    // tests them on the answer.
-                    TypeCategory::Programs | TypeCategory::Installers => return None,
+                    TypeCategory::Folders => folders = true,
+                    // A program or a shortcut is told by more than its extension (a shortcut's
+                    // target, a setup's name): these extensions take every one of them in.
+                    TypeCategory::Programs => {
+                        all.extend([".exe", ".msi", ".bat", ".cmd", ".appref-ms", ".lnk"])
+                    }
+                    TypeCategory::Installers => all.extend([
+                        ".msi",
+                        ".msix",
+                        ".msixbundle",
+                        ".appx",
+                        ".appxbundle",
+                        ".appinstaller",
+                        ".exe",
+                    ]),
+                    TypeCategory::Shortcuts => all.extend([".lnk", ".url", ".website"]),
                     c => all.extend_from_slice(rules::category_exts(*c)),
                 }
             }
-            exts(&all)
+            match (folders, exts_term(&all)) {
+                (true, Some(e)) => format!("<folder:|{e}>"),
+                (true, None) => "folder:".into(),
+                (false, Some(e)) => e,
+                (false, None) => return None,
+            }
         }
         Cond::Name { op, value } => match op {
             StrOp::Contains => quote(value),
@@ -210,6 +224,33 @@ fn everything_term(cond: &Cond) -> Option<String> {
         | Cond::Origin(_)
         | Cond::IdleDays { .. } => return None,
     })
+}
+
+/// Extensions as one Everything term: `ext:` for plain ones, a name ending for one with a dot
+/// inside (`tar.gz`: Everything's `ext:` sees only `gz`), OR'ed. None for an empty list.
+fn exts_term(list: &[&str]) -> Option<String> {
+    let mut plain: Vec<String> = Vec::new();
+    let mut endings: Vec<String> = Vec::new();
+    for e in list {
+        let e = e.trim().trim_start_matches('.');
+        if e.is_empty() {
+            continue;
+        }
+        if e.contains('.') {
+            endings.push(format!("endwith:{}", quote(&format!(".{e}"))));
+        } else if !plain.iter().any(|p| p.eq_ignore_ascii_case(e)) {
+            plain.push(e.to_string());
+        }
+    }
+    let mut parts = endings;
+    if !plain.is_empty() {
+        parts.insert(0, format!("ext:{}", plain.join(";")));
+    }
+    match parts.len() {
+        0 => None,
+        1 => parts.pop(),
+        _ => Some(format!("<{}>", parts.join("|"))),
+    }
 }
 
 /// A local date as Everything's `dm:>=` takes it (`YYYY-MM-DD`, any Everything version and
@@ -372,17 +413,6 @@ mod tests {
     }
 
     #[test]
-    fn typed_everything_text_replaces_the_conditions() {
-        let mut spec = Template::Downloads.spec(&folders()).unwrap();
-        spec.everything = Some("*.pdf invoice".into());
-        assert_eq!(
-            spec.everything_query(Some("2026-10-31")),
-            r#""C:\Users\pf\Downloads\" *.pdf invoice"#
-        );
-        assert!(!spec.works_without_everything());
-    }
-
-    #[test]
     fn conditions_become_everything_terms() {
         let t = |c: Cond| everything_term(&c);
         assert_eq!(
@@ -401,8 +431,87 @@ mod tests {
             t(Cond::Type(vec![TypeCategory::Music])).unwrap(),
             "ext:mp3;flac;wav;m4a;aac;ogg;wma;opus"
         );
-        assert_eq!(t(Cond::Type(vec![TypeCategory::Programs])), None);
         assert_eq!(t(Cond::IdleDays { min: 30 }), None);
+    }
+
+    /// What Everything is asked for takes in every file the rule condition does (the app tests
+    /// the condition again on the answer): folders together with file types, shortcuts by
+    /// their extensions, extensions with a dot inside by the name's ending.
+    #[test]
+    fn type_and_extension_terms_take_in_every_match() {
+        let t = |c: Cond| everything_term(&c).unwrap();
+        assert_eq!(
+            t(Cond::Type(vec![
+                TypeCategory::Folders,
+                TypeCategory::Archives
+            ])),
+            "<folder:|ext:zip;7z;rar;tar;gz;bz2;xz;iso;cab>"
+        );
+        assert_eq!(t(Cond::Type(vec![TypeCategory::Folders])), "folder:");
+        assert_eq!(
+            t(Cond::Type(vec![TypeCategory::Shortcuts])),
+            "ext:lnk;url;website"
+        );
+        assert_eq!(
+            t(Cond::Type(vec![TypeCategory::Programs])),
+            "ext:exe;msi;bat;cmd;appref-ms;lnk"
+        );
+        assert_eq!(
+            t(Cond::Ext(vec![
+                "tar.gz".into(),
+                ".pdf".into(),
+                "PDF".into()
+            ])),
+            r#"<ext:pdf|endwith:".tar.gz">"#
+        );
+        assert_eq!(t(Cond::Ext(vec!["tar.gz".into()])), r#"endwith:".tar.gz""#);
+        assert_eq!(everything_term(&Cond::Ext(vec![" ".into()])), None);
+        // Every category's own test agrees with the term: a file it matches has an extension
+        // the term lists (or is a folder).
+        for cat in rules::CLASSIFY_ORDER {
+            let term = t(Cond::Type(vec![*cat]));
+            for ext in rules::category_exts(*cat) {
+                assert!(
+                    term.contains(ext.trim_start_matches('.')),
+                    "{cat:?} {ext} in {term}"
+                );
+            }
+        }
+        // A condition Everything cannot test asks for more results.
+        let mut spec = Template::Downloads.spec(&folders()).unwrap();
+        assert_eq!(spec.everything_max(), spec.limit);
+        spec.all_of.push(Cond::IdleDays { min: 30 });
+        assert_eq!(spec.everything_max(), SmartSpec::NAME_FILTER_ASK);
+    }
+
+    /// The user's own Everything text narrows the search: the folder, the conditions and the
+    /// time window go with it, and the name and conditions are tested on the answer as always.
+    #[test]
+    fn typed_everything_text_keeps_the_conditions_and_the_window() {
+        let mut spec = Template::Downloads.spec(&folders()).unwrap();
+        spec.everything = Some("  invoice|receipt ".into());
+        spec.all_of.push(Cond::Ext(vec!["pdf".into()]));
+        assert_eq!(
+            spec.everything_query(Some("2026-10-31")),
+            r#""C:\Users\pf\Downloads\" invoice|receipt file: ext:pdf <dm:>=2026-10-31|dc:>=2026-10-31>"#
+        );
+        assert!(!spec.works_without_everything());
+        spec.name = Some("2026".into());
+        let now = 1_800_000_000;
+        let f = |n: &str| ItemFacts {
+            file_name: n.into(),
+            ..Default::default()
+        };
+        assert!(spec.matches(&f("invoice 2026.pdf"), now, now));
+        assert!(!spec.matches(&f("invoice 2025.pdf"), now, now), "name");
+        assert!(
+            !spec.matches(&f("invoice 2026.docx"), now, now),
+            "condition"
+        );
+        assert!(
+            !spec.matches(&f("invoice 2026.pdf"), now - 8 * 86_400, now),
+            "time window"
+        );
     }
 
     #[test]
