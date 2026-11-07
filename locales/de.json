@@ -765,5 +765,7 @@
   "Everything 1.5 已经装好，现在运行的是 {0}": "Everything 1.5 ist installiert, aber es läuft {0}",
   "改用 1.5 后可以用拼音找中文名。1.5 会在登录 Windows 时启动，1.4 不再自动启动。Windows 可能会询问一次管理员权限": "Mit 1.5 findest du chinesische Namen per Pinyin. 1.5 startet dann bei der Anmeldung bei Windows, 1.4 startet nicht mehr von selbst. Windows fragt eventuell einmal nach Administratorrechten.",
   "改用 1.5": "Zu 1.5 wechseln",
-  "已改用 Everything 1.5，以后登录 Windows 时也会启动它": "Auf Everything 1.5 gewechselt. Es startet ab jetzt auch bei der Anmeldung bei Windows"
+  "已改用 Everything 1.5，以后登录 Windows 时也会启动它": "Auf Everything 1.5 gewechselt. Es startet ab jetzt auch bei der Anmeldung bei Windows",
+  "已复制": "Kopiert",
+  "复制失败，请重试": "Kopieren fehlgeschlagen. Bitte erneut versuchen."
 }

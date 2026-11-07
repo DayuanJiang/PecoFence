@@ -723,6 +723,9 @@ impl App {
             Some(RowAction::Copy(text)) => {
                 let copied = pecofence_platform::clipboard::set_text(self.control.hwnd(), &text);
                 tracing::info!(%fence, copied, "script row: text copied");
+                if let Some(w) = self.window_for(fence) {
+                    w.show_script_copy_result(index, copied);
+                }
             }
             Some(RowAction::Script(action)) => {
                 // A to-do ticks at once; the script's next output has the final say.
@@ -811,7 +814,7 @@ impl App {
         let (w, h) = match kind {
             crate::scripts::Example::Weather => (280.0, 160.0),
             crate::scripts::Example::GitHub => (360.0, 300.0),
-            crate::scripts::Example::Status => (280.0, 230.0),
+            crate::scripts::Example::Status => (280.0, 300.0),
         };
         let rect = self.place_new_fence_dip(w, h, x, y, None);
         let script = NewTool::Script(path.to_string_lossy().to_string());
