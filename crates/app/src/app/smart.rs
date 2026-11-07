@@ -62,18 +62,6 @@ pub(super) struct SmartState {
     again: bool,
 }
 
-/// Which mark tells a smart fence from a normal one (a temporary switch for the screenshots of
-/// the decision: `PECOFENCE_SAMPLE_SMART_MARK` = A magnifier before the title, B the count
-/// after the title, C the count at the right of the title row).
-pub(super) fn smart_mark() -> char {
-    std::env::var("PECOFENCE_SAMPLE_SMART_MARK")
-        .ok()
-        .and_then(|v| v.trim().chars().next())
-        .map(|c| c.to_ascii_uppercase())
-        .filter(|c| matches!(c, 'A' | 'B' | 'C'))
-        .unwrap_or('A')
-}
-
 /// The folders the templates search on this computer.
 pub(super) fn known_folders() -> KnownFolders {
     let text = |p: Option<PathBuf>| p.map(|p| p.to_string_lossy().into_owned());
@@ -362,12 +350,16 @@ impl App {
         }
     }
 
-    /// The fence's empty-state text and its count caption (mark C).
-    pub(super) fn smart_view(&self, id: FenceId) -> (Option<&'static str>, Option<String>) {
-        let Some(spec) = self.state.smart_spec(id) else {
+    /// Smart fence `id`'s empty-state text and the count after its name: the files it shows
+    /// (after a filter), with a "+" when the limit cut the results. None for other fences.
+    pub(super) fn smart_view(
+        &self,
+        f: &pecofence_core::Fence,
+    ) -> (Option<&'static str>, Option<String>) {
+        let Some(spec) = f.smart.as_ref() else {
             return (None, None);
         };
-        let run = self.smart.runs.get(&id);
+        let run = self.smart.runs.get(&f.id);
         let source = run.map_or(SmartSource::Waiting, |r| r.source);
         let empty = Some(match source {
             SmartSource::Waiting => pecofence_core::i18n::text("正在搜索…"),
@@ -378,28 +370,13 @@ impl App {
                 pecofence_core::i18n::text("没有符合条件的文件。")
             }
         });
-        let caption = (smart_mark() == 'C' && source != SmartSource::NeedsEverything).then(|| {
-            let shown = run.map_or(0, |r| r.total).min(spec.limit);
-            pecofence_core::i18n::format("{0} 个，自动更新", &[shown.to_string()])
+        let count = matches!(source, SmartSource::Everything | SmartSource::Folder).then(|| {
+            let shown = self.item_views(f).len();
+            let cut =
+                run.is_some_and(|r| r.total > spec.limit) && self.fence_filter(f.id).is_none();
+            format!(" · {shown}{}", if cut { "+" } else { "" })
         });
-        (empty, caption)
-    }
-
-    /// The title of smart fence `id` with mark B (its count after it), else as it is.
-    pub(super) fn smart_title(&self, id: FenceId, title: String) -> String {
-        if self.state.smart_spec(id).is_none() || smart_mark() != 'B' {
-            return title;
-        }
-        match self.smart.runs.get(&id) {
-            Some(r) if r.source != SmartSource::Waiting => {
-                format!(
-                    "{title} · {}",
-                    r.total
-                        .min(self.state.smart_spec(id).map_or(0, |s| s.limit))
-                )
-            }
-            _ => title,
-        }
+        (empty, count)
     }
 
     /// 智能栅栏 for `fence get` / `fence list`: the search and its last run.
@@ -429,7 +406,7 @@ fn entry_matches(spec: &SmartSpec, e: &DesktopEntry, targets: bool, now: i64) ->
     } else {
         crate::state::AppState::plain_facts(e, None, now)
     };
-    spec.matches(&facts, e.mtime, now)
+    spec.matches(&facts, e.mtime.max(e.created), now)
 }
 
 /// Reads `folder` (and its subfolders when the search takes them) without Everything, at most

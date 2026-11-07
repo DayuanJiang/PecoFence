@@ -187,8 +187,7 @@ impl FenceWindow {
             script_hover: None,
             portal_missing: false,
             empty_override: None,
-            smart_caption: None,
-            type_filters: false,
+            title_count: None,
             filter_active: false,
             label_w: 0.0,
             icons_pending: false,
@@ -1275,16 +1274,16 @@ impl FenceWindow {
         });
     }
 
-    /// 智能栅栏: what the fence says while it has no results (`empty`: searching, no match,
-    /// needs Everything) and a caption kept at the right of the title row (`caption`, the
-    /// number of results); None for any other fence.
-    pub fn set_smart_view(&self, empty: Option<&'static str>, caption: Option<String>) {
+    /// What the fence says while it shows nothing (`empty`: a smart fence searching, finding
+    /// nothing or needing Everything, a filter matching nothing; None = the usual text) and a
+    /// smart fence's count after its name (`count`, " · 6"; None for any other fence).
+    pub fn set_status_view(&self, empty: Option<&'static str>, count: Option<String>) {
         self.with_view(|v| {
-            if v.empty_override == empty && v.smart_caption == caption {
+            if v.empty_override == empty && v.title_count == count {
                 return;
             }
             v.empty_override = empty;
-            v.smart_caption = caption;
+            v.title_count = count;
             let _ = v.redraw_chrome_only();
             if v.items.is_empty() && !v.rolled_up {
                 let _ = v.redraw_content();
@@ -1292,12 +1291,9 @@ impl FenceWindow {
         });
     }
 
-    /// 筛选: whether typing filters this fence (`type_filters`) and whether it is filtered.
-    pub fn set_filter_state(&self, type_filters: bool, active: bool) {
-        self.with_view(|v| {
-            v.type_filters = type_filters;
-            v.filter_active = active;
-        });
+    /// 筛选: whether the fence is filtered (Esc in it then clears the filter).
+    pub fn set_filtered(&self, active: bool) {
+        self.with_view(|v| v.filter_active = active);
     }
 
     /// The fence whose items this window currently shows (host or active tab).

@@ -1955,11 +1955,14 @@ impl FenceChrome {
     }
 
     /// Lays out a single title (no tab strip) in a title row `width` wide that keeps `reserve`
-    /// DIPs free for the rolled item count: where its unit (the folder glyph, then the title)
-    /// starts, the fitted title and the room the title gets.
+    /// DIPs free for the rolled item count: where its unit (the folder glyph, the title, then
+    /// a smart fence's `count` after it) starts, the fitted title and the room the title gets.
+    /// The title gives way first: the count stays whole.
+    #[allow(clippy::too_many_arguments)]
     fn lone_title_place(
         &self,
         title: &str,
+        count: Option<&str>,
         size: u8,
         align: pecofence_core::TitleAlign,
         width: f32,
@@ -1978,9 +1981,10 @@ impl FenceChrome {
             0.0
         };
         let end = width - TITLE_RIGHT_RESERVE - reserve;
-        let title_w = (end - start - glyph_w).max(0.0);
+        let count_w = count.map_or(0.0, |c| crate::text::measure_width(c, fmt));
+        let title_w = (end - start - glyph_w - count_w).max(0.0);
         let fitted = crate::text::fit_width(title, fmt, title_w);
-        let unit_w = glyph_w + crate::text::measure_width(&fitted, fmt).min(title_w);
+        let unit_w = glyph_w + crate::text::measure_width(&fitted, fmt).min(title_w) + count_w;
         (aligned_x(align, width, start, end, unit_w), fitted, title_w)
     }
 
@@ -2000,7 +2004,7 @@ impl FenceChrome {
             up_button: true,
             search_glyph: false,
         };
-        let (x, _, _) = self.lone_title_place(title, size, align, width, deco, reserve);
+        let (x, _, _) = self.lone_title_place(title, None, size, align, width, deco, reserve);
         glyph_up_square(x + 8.0, title_h)
     }
 
@@ -2056,6 +2060,7 @@ impl FenceChrome {
         height: f32,
         backdrop: Backdrop<'_>,
         title: &str,
+        title_count: Option<&str>,
         caption: Option<&str>,
         rolled_up: bool,
         roll_t: f32,
@@ -2482,6 +2487,7 @@ impl FenceChrome {
             // button stays at the far left.
             let (mut x, fitted, title_w) = self.lone_title_place(
                 title,
+                title_count,
                 style.title_size,
                 style.title_align,
                 width,
@@ -2526,6 +2532,23 @@ impl FenceChrome {
                 &text,
                 fx,
             );
+            // 智能栅栏: the number of files shown, right after the name in the secondary ink
+            // (part of the title row, never of the name).
+            if let Some(count) = title_count {
+                let after = x + crate::text::measure_width(&fitted, title_format).min(title_w);
+                let w = crate::text::measure_width(count, title_format) + 2.0;
+                let fx = legible
+                    .as_ref()
+                    .map(|l| l.fx(theme, foreground.text_secondary, title_a, false));
+                self.draw_caption(
+                    session,
+                    count,
+                    title_format,
+                    &Rect::from_xywh(after, 0.0, w, title_h),
+                    &secondary,
+                    fx,
+                );
+            }
         }
         if count_a > 0.0
             && count_w > 0.0

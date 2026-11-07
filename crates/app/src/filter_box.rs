@@ -25,21 +25,13 @@ struct FilterSession {
     queue: CommandQueue,
 }
 
-/// Where the box sits in the title row (the sample's switch, see `App::filter_ui`): over the
-/// whole row in place of the title, or in its right half beside the title.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Placement {
-    WholeRow,
-    RightHalf,
-}
-
-/// Opens (or moves) the filter box over `fence_hwnd`'s title row with `current` in it.
+/// Opens (or moves) the filter box over `fence_hwnd`'s title row with `current` in it; `cue`
+/// is the grey hint while it is empty.
 pub fn open(
     fence_hwnd: HWND,
     fence: FenceId,
     current: &str,
     cue: &str,
-    placement: Placement,
     queue: CommandQueue,
     mode: ThemeMode,
 ) {
@@ -49,11 +41,9 @@ pub fn open(
     let scale = dpi as f32 / 96.0;
     let px = |dip: f32| (dip * scale) as i32;
     let h = px(24.0);
+    // Over the whole title row, as the rename box: the roll-up chevron stays clear.
     let right = r.right - px(44.0);
-    let left = match placement {
-        Placement::WholeRow => r.left + px(8.0),
-        Placement::RightHalf => (r.left + (r.right - r.left) * 9 / 20).min(right - px(80.0)),
-    };
+    let left = r.left + px(8.0);
     let rect = RECT {
         left,
         top: r.top + px(6.0),

@@ -2406,7 +2406,9 @@ impl App {
                 tracing::info!(%fence, filtered = self.fence_filter(fence).is_some(), "filter box closed");
                 self.apply_portal_deco(self.state.host_of(fence));
             }
-            Command::FenceFilterKey { fence, key } => self.fence_filter_key(fence, key),
+            Command::ClearFenceFilter(fence) => {
+                self.set_fence_filter(fence, String::new(), "esc in the fence")
+            }
             Command::NewScriptExample { example, x, y } => {
                 self.new_script_example_of(example, x, y)
             }

@@ -314,8 +314,7 @@ impl FenceViewState {
             self.chevron_hovered as u8 as f32,
             now,
         );
-        let count_shown = rolled || self.smart_caption.is_some();
-        f.set(animate, ChromeKey::Count, count_shown as u8 as f32, now);
+        f.set(animate, ChromeKey::Count, rolled as u8 as f32, now);
         let ntabs = if self.tabs.len() > 1 {
             self.tabs.len()
         } else {
@@ -358,9 +357,8 @@ impl FenceViewState {
         self.chrome_fades.snap(ChromeKey::Title, title, now);
         self.title_reveal = Tween::at(title, now);
         self.plate_reveal = Tween::at(self.plate_visible_target() as u8 as f32, now);
-        let count_shown = self.roll_target() || self.smart_caption.is_some();
         self.chrome_fades
-            .snap(ChromeKey::Count, count_shown as u8 as f32, now);
+            .snap(ChromeKey::Count, self.roll_target() as u8 as f32, now);
     }
 
     /// Draws the chrome (backdrop, tabs or title, rim, chevron).
@@ -411,11 +409,12 @@ impl FenceViewState {
         let roll_t = self.roll_t.value_at(now);
         // The count is drawn while it fades out after expanding, not only while rolled.
         // A note (便签) has no items to count.
-        let count = ((rolled || state.count > 0.0) && !self.shows_tool()).then(|| {
-            self.smart_caption.clone().unwrap_or_else(|| {
-                pecofence_core::i18n::format("{0} 项", &[format!("{}", self.items.len())])
-            })
-        });
+        // A smart fence shows its count after the name, rolled or not: no second one.
+        let count = ((rolled || state.count > 0.0)
+            && !self.shows_tool()
+            && self.title_count.is_none())
+        .then(|| pecofence_core::i18n::format("{0} 项", &[format!("{}", self.items.len())]));
+        let title_count = self.title_count.clone();
         let opacity = self.material_opacity();
         // Titles and tabs without a 「标题颜色」 of their own follow 「文字颜色」 (#141).
         let theme = self
@@ -492,6 +491,7 @@ impl FenceViewState {
                 hd,
                 backdrop,
                 &title,
+                title_count.as_deref(),
                 count.as_deref(),
                 rolled,
                 roll_t,

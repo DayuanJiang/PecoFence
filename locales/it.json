@@ -776,10 +776,8 @@
   "正在搜索…": "Ricerca in corso…",
   "要搜索整台电脑，需要先打开 Everything。": "Per cercare in tutto il computer, avvia prima Everything.",
   "没有符合条件的文件。": "Nessun file corrisponde.",
-  "{0} 个，自动更新": "{0}, si aggiorna da solo",
   "筛选「{0}」": "Filtra «{0}»",
   "{0} · 筛选：{1}": "{0} · Filtro: {1}",
-  "{0} · 输入文字筛选": "{0} · Digita per filtrare",
   "没有符合筛选的文件。": "Nessun file corrisponde al filtro.",
   "筛选…\tCtrl+F": "Filtra…\tCtrl+F",
   "清除筛选\tEsc": "Cancella filtro\tEsc"

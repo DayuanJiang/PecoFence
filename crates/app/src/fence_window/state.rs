@@ -162,13 +162,12 @@ pub struct FenceViewState {
     pub(super) script_hover: Option<usize>,
     /// The portal's folder could not be found (its empty state says so).
     pub(super) portal_missing: bool,
-    /// 智能栅栏: the empty-state text in place of the usual one, and the result count kept at
-    /// the right of the title row (see `FenceWindow::set_smart_view`).
+    /// The empty-state text in place of the usual one (a smart fence's state, a filter that
+    /// matches nothing), and a smart fence's count drawn after its name (" · 6"; see
+    /// `FenceWindow::set_status_view`).
     pub(super) empty_override: Option<&'static str>,
-    pub(super) smart_caption: Option<String>,
-    /// 筛选: typed characters go to the fence's filter instead of selecting by name
-    /// (`type_filters`), and the fence is filtered right now (`filter_active`: Esc clears it).
-    pub(super) type_filters: bool,
+    pub(super) title_count: Option<String>,
+    /// 筛选: the fence is filtered right now (Esc clears it).
     pub(super) filter_active: bool,
     /// Width the cached labels were fitted for; a change invalidates them.
     pub(super) label_w: f32,

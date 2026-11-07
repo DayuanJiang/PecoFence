@@ -25,7 +25,8 @@ pub struct SmartSpec {
     /// Every condition must hold (the conditions of the sorting rules).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub all_of: Vec<Cond>,
-    /// Only what was written in the last this many days.
+    /// Only what was created or written in the last this many days (the later of the two: a
+    /// download keeps the server's date as its write time with some download tools).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub within_days: Option<u32>,
     /// An Everything search typed by the user, sent as it is in place of the conditions (with
@@ -105,20 +106,20 @@ impl SmartSpec {
             }
         }
         if let (Some(_), Some(date)) = (self.within_days, since_date) {
-            terms.push(format!("dm:>={date}"));
+            terms.push(format!("<dm:>={date}|dc:>={date}>"));
         }
         terms.join(" ")
     }
 
     /// Whether one file found (by Everything or in the folder) belongs in the fence: every
-    /// condition holds and it was written inside the time window. `mtime` and `now` are Unix
-    /// seconds.
-    pub fn matches(&self, facts: &ItemFacts, mtime: i64, now: i64) -> bool {
+    /// condition holds and it was created or written inside the time window. `newest` (the
+    /// later of creation and last write) and `now` are Unix seconds.
+    pub fn matches(&self, facts: &ItemFacts, newest: i64, now: i64) -> bool {
         if rules::is_temporary(&facts.file_name, facts.age_secs) {
             return false;
         }
         if let Some(days) = self.within_days
-            && mtime < now - i64::from(days) * 86_400
+            && newest < now - i64::from(days) * 86_400
         {
             return false;
         }
@@ -313,7 +314,7 @@ mod tests {
         let spec = Template::Downloads.spec(&folders()).unwrap();
         assert_eq!(
             spec.everything_query(Some("2026-10-31")),
-            r#""C:\Users\pf\Downloads\" file: dm:>=2026-10-31"#
+            r#""C:\Users\pf\Downloads\" file: <dm:>=2026-10-31|dc:>=2026-10-31>"#
         );
     }
 

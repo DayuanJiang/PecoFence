@@ -17,34 +17,31 @@ impl App {
         };
         let folder = self.state.portal_path(active);
         let is_portal = folder.is_some();
-        // 智能栅栏: a magnifier before the title (mark A of the sample's switch).
+        // 智能栅栏: a magnifier in the folder glyph's place.
         let smart = f.smart.is_some();
         w.set_portal_deco(
             is_portal,
-            (f.kind == FenceKind::FolderPortal && !f.hide_title_icon)
-                || (smart && smart::smart_mark() == 'A'),
+            (f.kind == FenceKind::FolderPortal || smart) && !f.hide_title_icon,
             smart,
             self.state.can_go_up(active),
             is_portal && f.navigates_folders(),
             is_portal && self.state.portal_missing(active),
             folder,
         );
-        let (empty, caption) = self.smart_view(active);
+        let (empty, count) = self.smart_view(f);
         let filtered = self.fence_filter(active).is_some();
         let empty = if filtered {
             Some(pecofence_core::i18n::text("没有符合筛选的文件。"))
         } else {
             empty
         };
-        w.set_smart_view(empty, caption);
-        w.set_filter_state(
-            self.filterable(active) && filter::filter_ui() == 'C',
-            self.fence_filters.contains_key(&active),
-        );
+        // The count belongs to a single title; in a tab strip the tab shows the name only.
+        let count = count.filter(|_| active == host && self.state.tabs_of(host).len() <= 1);
+        w.set_status_view(empty, count);
+        w.set_filtered(filtered);
         if let Some(h) = self.state.fence(host) {
             let title = if active == host {
-                let title = self.smart_title(host, self.state.display_title(h));
-                self.filter_title(host, title)
+                self.filter_title(host, self.state.display_title(h))
             } else {
                 h.title.clone()
             };

@@ -1118,11 +1118,7 @@ impl App {
             }
             CMD_PORTAL_UP => self.portal_up(fence),
             CMD_FENCE_FILTER => self.open_fence_filter(fence, "fence menu"),
-            CMD_FENCE_FILTER_CLEAR => {
-                self.set_fence_filter(fence, String::new(), "fence menu");
-                self.fence_filters.remove(&fence);
-                self.apply_portal_deco(host);
-            }
+            CMD_FENCE_FILTER_CLEAR => self.set_fence_filter(fence, String::new(), "fence menu"),
             c if (CMD_FENCE_SHOW_FOLDER..CMD_FENCE_SHOW_FOLDER + 4).contains(&c) => {
                 self.show_folder_command(c - CMD_FENCE_SHOW_FOLDER, x, y, Some(host))
             }

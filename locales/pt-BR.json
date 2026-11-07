@@ -776,10 +776,8 @@
   "正在搜索…": "Pesquisando…",
   "要搜索整台电脑，需要先打开 Everything。": "Para pesquisar o computador inteiro, abra o Everything primeiro.",
   "没有符合条件的文件。": "Nenhum arquivo corresponde.",
-  "{0} 个，自动更新": "{0}, atualiza sozinho",
   "筛选「{0}」": "Filtrar “{0}”",
   "{0} · 筛选：{1}": "{0} · Filtro: {1}",
-  "{0} · 输入文字筛选": "{0} · Digite para filtrar",
   "没有符合筛选的文件。": "Nenhum arquivo corresponde ao filtro.",
   "筛选…\tCtrl+F": "Filtrar…\tCtrl+F",
   "清除筛选\tEsc": "Limpar filtro\tEsc"
