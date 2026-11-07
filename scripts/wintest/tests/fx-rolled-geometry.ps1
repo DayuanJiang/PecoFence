@@ -67,6 +67,23 @@ if ($Part -match 'A') {
       Check "S3 $style ($how): same place after a restart" ($before -eq (Saved Low)) "before: $before; after: $(Saved Low)"
     }
   }
+  # While a rolled fence is dragged low, the white outline already shows where it will land.
+  foreach ($style in 'fluent', 'liquidGlass') {
+    Case "S3 $style, landing outline during a low drag"
+    Pf settings set themeStyle $style | Out-Null; Start-Sleep -Milliseconds 800
+    Pf fence unroll Low | Out-Null; Pf fence move Low --rect '100,100,300,250' | Out-Null; Start-Sleep -Milliseconds 600
+    Pf fence roll Low | Out-Null; Park
+    [G]::MoveTo(200, 118); Start-Sleep -Milliseconds 150; MDown; Start-Sleep -Milliseconds 200
+    Glide 200 118 1200 798 16 40
+    Start-Sleep -Milliseconds 400
+    $pv = @([W]::Tops('PecoFence.DropPreview'))
+    $r = if ($pv.Count) { Rect $pv[0] } else { $null }
+    Shot "S3-outline-$style"
+    MUp; Start-Sleep -Milliseconds 900; Park
+    $t = (FenceGet Low).windowRect
+    $txt = if ($r) { "$($r.L),$($r.T),$($r.R),$($r.B)" } else { 'none' }
+    Check "S3 $style the outline shows where the low drop lands" ($r -and [math]::Abs($r.L - $t.x) -le 2 -and [math]::Abs($r.T - $t.y) -le 2) "outline $txt; landed $($t.x),$($t.y),$($t.w),$($t.h)"
+  }
   # A column of rolled fences stays a column: a title row let go between two others keeps its spot.
   Case 'S3 column of rolled fences'
   Pf settings set themeStyle fluent | Out-Null
