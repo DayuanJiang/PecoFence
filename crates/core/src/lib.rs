@@ -13,6 +13,7 @@ pub mod model;
 pub mod note;
 pub mod rules;
 pub mod script_output;
+pub mod smart;
 pub mod updates;
 
 pub use config_store::{ConfigStore, Lint, LintLevel, LoadOutcome};

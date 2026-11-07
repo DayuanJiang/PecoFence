@@ -162,6 +162,10 @@ pub struct FenceViewState {
     pub(super) script_hover: Option<usize>,
     /// The portal's folder could not be found (its empty state says so).
     pub(super) portal_missing: bool,
+    /// 智能栅栏: the empty-state text in place of the usual one, and the result count kept at
+    /// the right of the title row (see `FenceWindow::set_smart_view`).
+    pub(super) empty_override: Option<&'static str>,
+    pub(super) smart_caption: Option<String>,
     /// Width the cached labels were fitted for; a change invalidates them.
     pub(super) label_w: f32,
     /// An item near the viewport was still waiting for its icon at the last content draw

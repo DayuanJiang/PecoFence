@@ -17,17 +17,23 @@ impl App {
         };
         let folder = self.state.portal_path(active);
         let is_portal = folder.is_some();
+        // 智能栅栏: a magnifier before the title (mark A of the sample's switch).
+        let smart = f.smart.is_some();
         w.set_portal_deco(
             is_portal,
-            f.kind == FenceKind::FolderPortal && !f.hide_title_icon,
+            (f.kind == FenceKind::FolderPortal && !f.hide_title_icon)
+                || (smart && smart::smart_mark() == 'A'),
+            smart,
             self.state.can_go_up(active),
             is_portal && f.navigates_folders(),
             is_portal && self.state.portal_missing(active),
             folder,
         );
+        let (empty, caption) = self.smart_view(active);
+        w.set_smart_view(empty, caption);
         if let Some(h) = self.state.fence(host) {
             let title = if active == host {
-                self.state.display_title(h)
+                self.smart_title(host, self.state.display_title(h))
             } else {
                 h.title.clone()
             };
@@ -37,6 +43,7 @@ impl App {
 
     /// Starts/stops folder watchers so every portal fence follows its folder.
     pub(super) fn ensure_portal_watchers(&mut self) {
+        self.ensure_smart_watchers();
         let portals: Vec<(FenceId, PathBuf)> = self
             .state
             .fences()

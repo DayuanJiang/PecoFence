@@ -186,6 +186,8 @@ impl FenceWindow {
             script_rows: Vec::new(),
             script_hover: None,
             portal_missing: false,
+            empty_override: None,
+            smart_caption: None,
             label_w: 0.0,
             icons_pending: false,
             hover: None,
@@ -1229,10 +1231,12 @@ impl FenceWindow {
         });
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn set_portal_deco(
         &self,
         is_portal: bool,
         folder_icon: bool,
+        search_glyph: bool,
         up_button: bool,
         navigate_folders: bool,
         folder_missing: bool,
@@ -1242,6 +1246,7 @@ impl FenceWindow {
             let deco = TitleDeco {
                 folder_icon,
                 up_button,
+                search_glyph,
             };
             let changed = v.deco != deco || v.navigate_folders != navigate_folders;
             let portal_changed = v.is_portal != is_portal || v.portal_missing != folder_missing;
@@ -1263,6 +1268,23 @@ impl FenceWindow {
             if portal_changed && v.items.is_empty() && !v.rolled_up {
                 // The empty-state wording differs for a folder portal, and for a folder that
                 // cannot be found.
+                let _ = v.redraw_content();
+            }
+        });
+    }
+
+    /// 智能栅栏: what the fence says while it has no results (`empty`: searching, no match,
+    /// needs Everything) and a caption kept at the right of the title row (`caption`, the
+    /// number of results); None for any other fence.
+    pub fn set_smart_view(&self, empty: Option<&'static str>, caption: Option<String>) {
+        self.with_view(|v| {
+            if v.empty_override == empty && v.smart_caption == caption {
+                return;
+            }
+            v.empty_override = empty;
+            v.smart_caption = caption;
+            let _ = v.redraw_chrome_only();
+            if v.items.is_empty() && !v.rolled_up {
                 let _ = v.redraw_content();
             }
         });

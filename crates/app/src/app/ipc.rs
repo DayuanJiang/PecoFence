@@ -742,7 +742,17 @@ impl App {
                 tool,
                 text,
                 script,
+                smart,
+                smart_spec,
             } => {
+                if smart.is_some() || smart_spec.is_some() {
+                    return self.ipc_create_smart(
+                        title.as_deref(),
+                        *rect,
+                        smart.as_deref(),
+                        smart_spec.as_deref().cloned(),
+                    );
+                }
                 let tool = match tool.as_deref() {
                     None => None,
                     Some(name) => {
@@ -760,6 +770,10 @@ impl App {
             Method::FencesDelete { fence } => self.ipc_delete_fence(fence),
             Method::FencesRefresh { fence } => {
                 let id = self.resolve_fence(fence)?;
+                if self.state.smart_spec(id).is_some() {
+                    self.run_smart(id, "cli");
+                    return Ok(mutation(true, None, self.fence_extra(id)?));
+                }
                 if self
                     .state
                     .fence(id)
@@ -1585,6 +1599,7 @@ impl App {
             }),
             note_text: self.state.note_text(f.id).map(str::to_string),
             script: self.script_dto(f.id),
+            smart: self.smart_dto(f.id),
             // A tab is shown in its host's window, so that is where it is on screen.
             rect: connected.then(|| Rect::from(self.state.fence_px_rect(host))),
             // 「桌面」 arranged like the desktop is shown on a connected monitor even while the
@@ -1694,6 +1709,9 @@ impl App {
     fn assignment_of(&self, f: &Fence, item: ItemId) -> (&'static str, Option<String>) {
         if f.kind == FenceKind::FolderPortal {
             return ("portal", None);
+        }
+        if f.smart.is_some() {
+            return ("smart", None);
         }
         match f
             .items
@@ -1951,6 +1969,58 @@ impl App {
                 &["note", "clock", "script"],
             )),
         }
+    }
+
+    /// `fences.create` with `smart` (a template) or `smartSpec` (a whole search).
+    fn ipc_create_smart(
+        &mut self,
+        title: Option<&str>,
+        rect: Option<Rect>,
+        template: Option<&str>,
+        spec: Option<pecofence_core::smart::SmartSpec>,
+    ) -> IpcResult {
+        use pecofence_core::smart::Template;
+        let title = title.map(|t| checked_name("title", t)).transpose()?;
+        let (spec, default_title) = match (template, spec) {
+            (_, Some(spec)) => (spec, None),
+            (Some(key), None) => {
+                let keys: Vec<&str> = Template::ALL.iter().map(|t| t.key()).collect();
+                let t = Template::parse(key).ok_or_else(|| {
+                    IpcError::invalid_value(format!("unknown smart fence template {key:?}"), &keys)
+                })?;
+                let spec = t.spec(&super::smart::known_folders()).ok_or_else(|| {
+                    unsupported("the template's folder is unknown on this computer")
+                })?;
+                (spec, Some(t.title()))
+            }
+            (None, None) => return Err(unsupported("no search given")),
+        };
+        if let Some(folder) = &spec.folder
+            && !Path::new(folder).is_dir()
+        {
+            return Err(IpcError::invalid_value(
+                format!("no folder at {folder}"),
+                &[],
+            ));
+        }
+        let rect = match rect {
+            Some(r) => {
+                validate_rect(r, &self.state.work_areas)?;
+                Some(rect_to_win(r))
+            }
+            None => None,
+        };
+        let (cx, cy) = self
+            .state
+            .work_areas
+            .first()
+            .map(|a| ((a.left + a.right) / 2, (a.top + a.bottom) / 2))
+            .ok_or_else(|| unsupported("no monitor is connected"))?;
+        let id = self
+            .create_smart_fence(spec, title.as_deref().or(default_title), rect, cx, cy)
+            .ok_or_else(|| unsupported("no room for another fence"))?;
+        self.push_settings_state();
+        Ok(mutation(true, None, self.fence_extra(id)?))
     }
 
     fn ipc_create_fence(

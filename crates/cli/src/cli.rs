@@ -165,7 +165,7 @@ pub enum FenceCmd {
     #[command(group(ArgGroup::new("place").multiple(false)))]
     Create {
         /// Title of the new fence (defaults to the folder name with --portal, the tool or script name with --tool / --script)
-        #[arg(long, value_name = "TITLE", required_unless_present_any = ["portal", "tool", "script"])]
+        #[arg(long, value_name = "TITLE", required_unless_present_any = ["portal", "tool", "script", "template"])]
         title: Option<String>,
         #[arg(long, value_name = "X,Y,W,H", value_parser = Rect::parse, allow_hyphen_values = true, group = "place", help = RECT_HELP)]
         rect: Option<Rect>,
@@ -199,6 +199,9 @@ pub enum FenceCmd {
         /// Script a new script fence runs (implies --tool script): .ps1 .py .pyw .cmd .bat .js .exe
         #[arg(long, value_name = "FILE", conflicts_with = "portal")]
         script: Option<String>,
+        /// 智能栅栏 (a smart fence) options
+        #[command(flatten)]
+        smart: Box<SmartArgs>,
     },
     /// Delete a fence; its items return to the desktop (inbox) fence, rules targeting it are removed
     #[command(after_help = "Example: pecofence-cli fence delete Temp")]
@@ -654,6 +657,26 @@ pub enum WindowsDesktopCmd {
     /// Show the fences and hide the Windows desktop icons again
     #[command(after_help = "Example: pecofence-cli windows-desktop end")]
     End,
+}
+
+/// `fence create` options that make a smart fence (智能栅栏).
+#[derive(Args, Debug, Default)]
+pub struct SmartArgs {
+    /// A smart fence showing a saved search: downloads, screenshots, large, psd or recent
+    #[arg(long = "smart", id = "template", value_name = "TEMPLATE", value_parser = ["downloads", "screenshots", "large", "psd", "recent"], conflicts_with_all = ["portal", "tool", "script"])]
+    pub template: Option<String>,
+    /// A smart fence over this folder (with --everything, --within-days, --ext)
+    #[arg(long, value_name = "DIR", conflicts_with_all = ["portal", "tool", "script", "template"])]
+    pub smart_folder: Option<String>,
+    /// Smart fence: an Everything search sent as it is (needs Everything)
+    #[arg(long, value_name = "SEARCH", conflicts_with_all = ["portal", "tool", "script", "template"])]
+    pub everything: Option<String>,
+    /// Smart fence: only files written in the last N days
+    #[arg(long, value_name = "N", conflicts_with_all = ["portal", "tool", "script", "template"])]
+    pub within_days: Option<u32>,
+    /// Smart fence: only these extensions (comma-separated, e.g. pdf,docx)
+    #[arg(long, value_name = "EXTS", value_delimiter = ',', conflicts_with_all = ["portal", "tool", "script", "template"])]
+    pub ext: Vec<String>,
 }
 
 /// `W,H` for `fence create --size`: two positive integers.

@@ -366,6 +366,9 @@ pub const RAIL_COLLAPSED_BOTTOM: f32 = RAIL_TOP;
 pub struct TitleDeco {
     pub folder_icon: bool,
     pub up_button: bool,
+    /// 智能栅栏: the glyph before the title is a magnifier (Search, E721) in place of the
+    /// folder.
+    pub search_glyph: bool,
 }
 
 /// Interaction state of the title row, sampled per draw: fade alphas (0..=1) from the app's
@@ -1995,6 +1998,7 @@ impl FenceChrome {
         let deco = TitleDeco {
             folder_icon: true,
             up_button: true,
+            search_glyph: false,
         };
         let (x, _, _) = self.lone_title_place(title, size, align, width, deco, reserve);
         glyph_up_square(x + 8.0, title_h)
@@ -2502,7 +2506,12 @@ impl FenceChrome {
                         },
                     );
                 } else {
-                    session.draw_text("\u{E8B7}", &self.title_glyph_format, &slot, &secondary);
+                    let glyph = if deco.search_glyph {
+                        "\u{E721}"
+                    } else {
+                        "\u{E8B7}"
+                    };
+                    session.draw_text(glyph, &self.title_glyph_format, &slot, &secondary);
                 }
                 x += TitleDeco::ICON_W;
             }
@@ -3964,6 +3973,7 @@ mod tests {
         let up = TitleDeco {
             folder_icon: true,
             up_button: true,
+            search_glyph: false,
         };
         assert_eq!(up.title_x(), 16.0 + TitleDeco::ICON_W);
         let left = chrome.lone_up_box("2026", 1, Left, 300.0, 0.0, 36.0);
@@ -3979,6 +3989,7 @@ mod tests {
         let hidden = TitleDeco {
             folder_icon: false,
             up_button: true,
+            search_glyph: false,
         };
         assert!(hidden.up_at_left());
         assert_eq!(hidden.title_x(), 16.0 + TitleDeco::UP_W);

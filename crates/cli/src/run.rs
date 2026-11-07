@@ -10,7 +10,7 @@ use serde_json::{Value, json};
 use crate::cli::split_set_args;
 use crate::cli::{
     BackupCmd, Command, ConfigCmd, FenceCmd, ItemCmd, MonitorCmd, PeekCmd, RuleAddArgs, RuleCmd,
-    SettingsCmd, SnapshotCmd, WindowsDesktopCmd,
+    SettingsCmd, SmartArgs, SnapshotCmd, WindowsDesktopCmd,
 };
 use crate::output::{Reply, Style};
 use crate::{client, describe, local, output};
@@ -217,10 +217,39 @@ fn run_fence(ctx: &Ctx, cmd: FenceCmd) -> Result<Reply, IpcError> {
             tool,
             text,
             script,
+            smart: smart_args,
         } => {
+            let SmartArgs {
+                template: smart,
+                smart_folder,
+                everything,
+                within_days,
+                ext,
+            } = *smart_args;
             // The app would resolve a relative path against its own working directory.
             let absolute =
                 |p: String| std::path::absolute(&p).map_or(p, |a| a.display().to_string());
+            // 智能栅栏 written on the command line: a folder (or every drive with
+            // --everything), the time window and the extensions.
+            let custom = smart_folder.is_some()
+                || everything.is_some()
+                || within_days.is_some()
+                || !ext.is_empty();
+            let smart_spec = custom.then(|| {
+                let mut all_of = vec![pecofence_core::Cond::FilesOnly];
+                if !ext.is_empty() {
+                    all_of.push(pecofence_core::Cond::Ext(ext.clone()));
+                }
+                Box::new(pecofence_core::smart::SmartSpec {
+                    template: None,
+                    folder: smart_folder.clone().map(absolute),
+                    subfolders: true,
+                    all_of,
+                    within_days,
+                    everything: everything.clone(),
+                    limit: pecofence_core::smart::SmartSpec::DEFAULT_LIMIT,
+                })
+            });
             let portal = portal.map(absolute);
             let script = script.map(absolute);
             // --script means a script fence, --text a note.
@@ -250,6 +279,8 @@ fn run_fence(ctx: &Ctx, cmd: FenceCmd) -> Result<Reply, IpcError> {
                     tool,
                     text,
                     script,
+                    smart,
+                    smart_spec,
                 });
             };
             let (rect, overlaps) = placed_rect(ctx, side, &anchor, size)?;
@@ -261,6 +292,8 @@ fn run_fence(ctx: &Ctx, cmd: FenceCmd) -> Result<Reply, IpcError> {
                 tool,
                 text,
                 script,
+                smart,
+                smart_spec,
             })?;
             if !overlaps.is_empty() {
                 let w = format!("the new fence overlaps {}", overlaps.join(", "));

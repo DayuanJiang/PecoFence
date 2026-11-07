@@ -292,6 +292,17 @@ pub enum Command {
         x: i32,
         y: i32,
     },
+    /// 新建智能栅栏 › a template: a smart fence near the screen point.
+    NewSmartFence {
+        template: pecofence_core::smart::Template,
+        x: i32,
+        y: i32,
+    },
+    /// Everything answered a smart fence's search (`WM_COPYDATA` to the control window).
+    SmartResults {
+        kind: usize,
+        bytes: Vec<u8>,
+    },
     /// A click on a note's text: open its editor.
     EditNote {
         fence: FenceId,
