@@ -397,7 +397,7 @@ impl App {
                 }
             }
             CMD_ITEM_PROPERTIES => self.show_properties(fence, &items),
-            CMD_ITEM_TO_INBOX => {
+            CMD_ITEM_TO_INBOX if self.state.smart_spec(fence).is_none() => {
                 if let Some(inbox) = self.state.inbox_id() {
                     self.move_items(&items, inbox);
                 }
@@ -420,7 +420,10 @@ impl App {
                 self.push_settings_state();
             }
             CMD_ITEM_FENCE_OPTIONS => self.open_fence_options(fence),
-            c if c >= CMD_ITEM_MOVE_BASE && c < CMD_ITEM_MOVE_BASE + 1000 => {
+            c if c >= CMD_ITEM_MOVE_BASE
+                && c < CMD_ITEM_MOVE_BASE + 1000
+                && self.state.smart_spec(fence).is_none() =>
+            {
                 let idx = (c - CMD_ITEM_MOVE_BASE) as usize;
                 if let Some(target) = self.state.fences().get(idx).map(|f| f.id) {
                     self.move_items(&items, target);
@@ -514,48 +517,53 @@ impl App {
                 false,
             );
         }
-        let inbox = self.state.inbox_id();
-        let from_portal = self.state.portal_path(fence).is_some();
-        let move_menu = PopupMenu::new();
-        let targets: Vec<(u32, String, bool)> = self
-            .state
-            .fences()
-            .iter()
-            .enumerate()
-            // A tool or smart fence holds no items; a folder fence takes the files into its
-            // folder (the index stays the fence's own).
-            .filter(|(_, f)| f.holds_items() || self.state.move_target_folder(f.id).is_some())
-            .map(|(i, f)| {
-                let label = if self.state.move_target_folder(f.id).is_some() {
-                    pecofence_core::i18n::format(
-                        "{0}（文件会移到此文件夹）",
-                        &[self.state.display_title(f).to_string()],
-                    )
-                } else if from_portal {
-                    pecofence_core::i18n::format(
-                        "{0}（文件会移到桌面）",
-                        std::slice::from_ref(&f.title),
-                    )
+        // A smart fence's results are files where they are: they have no fence to move to,
+        // and 移出 would move the real file to the desktop (open, rename, delete, properties
+        // and the Windows menu stay).
+        if self.state.smart_spec(fence).is_none() {
+            let inbox = self.state.inbox_id();
+            let from_portal = self.state.portal_path(fence).is_some();
+            let move_menu = PopupMenu::new();
+            let targets: Vec<(u32, String, bool)> = self
+                .state
+                .fences()
+                .iter()
+                .enumerate()
+                // A tool or smart fence holds no items; a folder fence takes the files into its
+                // folder (the index stays the fence's own).
+                .filter(|(_, f)| f.holds_items() || self.state.move_target_folder(f.id).is_some())
+                .map(|(i, f)| {
+                    let label = if self.state.move_target_folder(f.id).is_some() {
+                        pecofence_core::i18n::format(
+                            "{0}（文件会移到此文件夹）",
+                            &[self.state.display_title(f).to_string()],
+                        )
+                    } else if from_portal {
+                        pecofence_core::i18n::format(
+                            "{0}（文件会移到桌面）",
+                            std::slice::from_ref(&f.title),
+                        )
+                    } else {
+                        f.title.clone()
+                    };
+                    (CMD_ITEM_MOVE_BASE + i as u32, label, f.id == fence)
+                })
+                .collect();
+            for (id, title, disabled) in &targets {
+                move_menu.item(*id, title, false, *disabled);
+            }
+            menu.submenu(pecofence_core::i18n::text("移动到栅栏"), move_menu);
+            menu.item(
+                CMD_ITEM_TO_INBOX,
+                if self.state.portal_path(fence).is_some() {
+                    pecofence_core::i18n::text("移出到桌面（移动文件）")
                 } else {
-                    f.title.clone()
-                };
-                (CMD_ITEM_MOVE_BASE + i as u32, label, f.id == fence)
-            })
-            .collect();
-        for (id, title, disabled) in &targets {
-            move_menu.item(*id, title, false, *disabled);
+                    pecofence_core::i18n::text("移出栅栏（放回“桌面”）")
+                },
+                false,
+                inbox == Some(fence),
+            );
         }
-        menu.submenu(pecofence_core::i18n::text("移动到栅栏"), move_menu);
-        menu.item(
-            CMD_ITEM_TO_INBOX,
-            if self.state.portal_path(fence).is_some() {
-                pecofence_core::i18n::text("移出到桌面（移动文件）")
-            } else {
-                pecofence_core::i18n::text("移出栅栏（放回“桌面”）")
-            },
-            false,
-            inbox == Some(fence),
-        );
         if self
             .window_for(fence)
             .is_some_and(|w| w.is_desktop_arranged())
