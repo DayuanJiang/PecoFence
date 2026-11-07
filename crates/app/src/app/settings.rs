@@ -3,7 +3,7 @@
 
 use super::*;
 
-/// How to write a theme file (Settings › 常规 › 自定义主题).
+/// How to write a theme file (Settings › 常规 › 主题风格 › 自定义 · 主题文件).
 const THEME_GUIDE_URL: &str = "https://github.com/DayuanJiang/PecoFence/blob/main/docs/THEMES.md";
 
 /// Largest snapping gap honoured, in DIPs; `snapping.gapPx` is clamped to `0..=` this.
@@ -136,6 +136,18 @@ impl App {
         // What the file (plus the desktop-path migration) wants the settings to be. The Store
         // edition's startup switch is Windows': a file does not change it (nor open its page).
         let mut new_settings = self.state.config.settings.clone();
+        // An imported file may come from someone else: its script fences do not run until the
+        // user switches 小工具 on (a backup is the user's own and keeps the switch).
+        let scripts_held = matches!(source, ConfigSource::Import)
+            && new_settings.tools.enabled
+            && !self.state.config.scripts.is_empty();
+        if scripts_held {
+            new_settings.tools.enabled = false;
+            tracing::info!(
+                scripts = self.state.config.scripts.len(),
+                "imported script fences held off"
+            );
+        }
         if pecofence_platform::process::is_packaged() {
             new_settings.autostart = old_settings.autostart;
         }
@@ -156,7 +168,13 @@ impl App {
         self.refresh_visuals(true);
         self.state.save_if_dirty();
         self.push_settings_state();
-        self.settings_toast(source.done());
+        if scripts_held {
+            self.settings_toast(pecofence_core::i18n::text(
+                "已导入配置。其中的脚本还没有运行。确认这些脚本可信后，在「小工具」页打开「小工具」开关。",
+            ));
+        } else {
+            self.settings_toast(source.done());
+        }
     }
 
     pub(super) fn export_config(&mut self) {
@@ -245,7 +263,8 @@ impl App {
                     self.settings_error(&snapshot_limit_text());
                     return;
                 }
-                self.state.save_snapshot(source.before());
+                let undo = self.state.save_snapshot(source.before());
+                self.state.keep_tool_data_in(undo);
                 self.adopt_config(cfg, source);
             }
             Err(e) => {
@@ -257,6 +276,27 @@ impl App {
                 }
                 self.settings_error(&text);
             }
+        }
+    }
+
+    /// Opens the settings window on `page` (a `data-page` of the navigation), scrolled to the
+    /// element with id `focus`.
+    pub(super) fn open_settings_page(&mut self, page: &'static str, focus: Option<&'static str>) {
+        self.open_settings();
+        match &self.settings {
+            Some(host) if host.ready => self.post_show_page(page, focus),
+            Some(_) => self.settings_focus_page = Some((page, focus)),
+            None => {}
+        }
+    }
+
+    fn post_show_page(&self, page: &str, focus: Option<&str>) {
+        tracing::info!(page, focus, "settings page asked to show a page");
+        if let Some(h) = &self.settings {
+            h.post_json(
+                &serde_json::json!({ "type": "showPage", "page": page, "focus": focus })
+                    .to_string(),
+            );
         }
     }
 
@@ -399,6 +439,7 @@ impl App {
             "update": self.update_json(),
             "peekHotkey": self.peek_hotkey_json(),
             "windowsDesktopHotkey": self.windows_desktop_hotkey_json(),
+            "everything": self.everything_json(),
         })
         .to_string()
     }
@@ -607,6 +648,9 @@ impl App {
                     window::show_normal(h.hwnd());
                     window::bring_to_front(h.hwnd());
                 }
+                if let Some((page, focus)) = self.settings_focus_page.take() {
+                    self.post_show_page(page, focus);
+                }
                 if let Some(fence) = self.settings_focus_fence.take() {
                     self.post_show_fence(fence);
                 }
@@ -663,6 +707,33 @@ impl App {
                         &[moved.to_string()],
                     ));
                 }
+                Some(name @ ("newNote" | "newClock" | "newScript" | "newScriptExample")) => {
+                    let example = v
+                        .get("example")
+                        .and_then(|e| e.as_str())
+                        .and_then(crate::scripts::Example::parse);
+                    // Beside the middle of the primary monitor's work area; the placement
+                    // looks for a free spot from there.
+                    let at = self
+                        .state
+                        .work_areas
+                        .first()
+                        .map(|w| ((w.left + w.right) / 2, (w.top + w.bottom) / 2));
+                    if let Some((x, y)) = at {
+                        match name {
+                            "newNote" => self.new_note_near(x, y),
+                            "newClock" => self.new_clock_near(x, y),
+                            "newScript" => self.new_script_near(x, y, None),
+                            _ => match example {
+                                Some(kind) => self.new_script_example_of(kind, x, y),
+                                None => tracing::warn!("unknown script example on the page"),
+                            },
+                        }
+                    }
+                }
+                Some("installEverything") => self.install_everything(),
+                Some("startEverything") => self.start_everything(),
+                Some("useEverything15") => self.use_everything_15(),
                 Some("addTemplate") => {
                     if let Some(template) = v
                         .get("template")
@@ -706,6 +777,22 @@ impl App {
                 }
                 Some("openThemeGuide") => {
                     let _ = shell::shell_execute(Path::new(THEME_GUIDE_URL), None, None);
+                }
+                // 查找设置 in a Chinese interface: the pinyin of the page's Chinese characters.
+                Some("pinyin") => {
+                    let chars = v.get("chars").and_then(|c| c.as_str()).unwrap_or("");
+                    let map: serde_json::Map<String, serde_json::Value> = chars
+                        .chars()
+                        .filter_map(|c| {
+                            let syl = pecofence_core::matcher::syllable(c)?;
+                            Some((c.to_string(), serde_json::Value::from(syl)))
+                        })
+                        .collect();
+                    if let Some(host) = &self.settings {
+                        host.post_json(
+                            &serde_json::json!({ "type": "pinyin", "map": map }).to_string(),
+                        );
+                    }
                 }
                 Some("saveSnapshot") => {
                     // A full list drops its oldest automatic snapshot for it (as the CLI
@@ -815,6 +902,7 @@ impl App {
                 Some("hideDesktopIcons") => self.set_desktop_icons_hidden(true),
                 Some("rateInStore") => self.open_store_rating(),
                 Some("openManual") => self.open_manual(),
+                Some("scriptGuide") => self.open_manual_at("#write-scripts"),
                 Some("openRepository") => {
                     let url = pecofence_core::brand::REPOSITORY_URL;
                     let _ = shell::shell_execute(std::path::Path::new(url), None, None);
@@ -837,10 +925,7 @@ impl App {
             .chain(rules.list.iter_mut().map(|r| &mut r.target));
         for t in targets {
             if let Target::Fence(id) = *t
-                && self
-                    .state
-                    .fence(id)
-                    .is_some_and(|f| f.kind == FenceKind::FolderPortal)
+                && self.state.fence(id).is_some_and(|f| !f.holds_items())
             {
                 *t = Target::Inbox;
             }
@@ -1034,6 +1119,8 @@ impl App {
         let push_changed = new.roll_up.push_neighbors != old.roll_up.push_neighbors;
         let inbox_hiding_changed =
             new.hide_inbox_when_icons_shown != old.hide_inbox_when_icons_shown;
+        // A tool switched on brings its fences back; switched off, they go.
+        let tools_changed = new.tools != old.tools;
         // 「调整大小时按整行整列对齐」 switched on keeps every rectangle: the rows fill any
         // height with whole icons (redrawn above), and rounding would undo fences lined up.
         self.state.config.settings = new;
@@ -1042,6 +1129,7 @@ impl App {
         self.schedule_save();
         self.sync_peek_hotkey();
         self.sync_windows_desktop_hotkey();
+        self.sync_dialog_jump();
         if icons_toggled {
             self.desktop_icons_setting_changed();
         }
@@ -1058,8 +1146,12 @@ impl App {
             // Pushed fences go back at once when it is switched off.
             self.reflow_pushed();
         }
-        if inbox_hiding_changed {
+        if inbox_hiding_changed || tools_changed {
             self.sync_hidden_fences();
+        }
+        if tools_changed {
+            self.refresh_tool_views();
+            self.run_due_scripts();
         }
         self.push_settings_state();
     }

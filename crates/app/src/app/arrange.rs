@@ -394,7 +394,12 @@ impl App {
     /// auto-height fence's.
     pub(super) fn fit_height_to_content(&mut self, id: FenceId) {
         let id = self.state.host_of(id);
-        if self.state.fence(id).is_none_or(|f| f.view.auto_height) {
+        // A tool fence keeps the height the user gave it (it has no rows of icons).
+        if self
+            .state
+            .fence(id)
+            .is_none_or(|f| f.view.auto_height || f.tool.is_some())
+        {
             return;
         }
         let Some(w) = self.fences.get(&id) else {

@@ -129,8 +129,11 @@ pub fn run(ctx: &Ctx, command: Command) -> Result<Reply, IpcError> {
             cmd: BackupCmd::Restore { file },
         } => ctx.call(Method::BackupsRestore { path: file }),
         Command::Peek {
-            cmd: PeekCmd::Start,
+            cmd: PeekCmd::Start { search: None },
         } => ctx.call(Method::PeekStart),
+        Command::Peek {
+            cmd: PeekCmd::Start { search: Some(text) },
+        } => ctx.call(Method::PeekSearch { text }),
         Command::Peek { cmd: PeekCmd::End } => ctx.call(Method::PeekEnd),
         Command::WindowsDesktop {
             cmd: WindowsDesktopCmd::Start,
@@ -218,10 +221,19 @@ fn run_fence(ctx: &Ctx, cmd: FenceCmd) -> Result<Reply, IpcError> {
             right_of,
             left_of,
             size,
+            tool,
+            text,
+            script,
         } => {
-            // The app would resolve a relative folder against its own working directory.
-            let portal =
-                portal.map(|p| std::path::absolute(&p).map_or(p, |a| a.display().to_string()));
+            // The app would resolve a relative path against its own working directory.
+            let absolute =
+                |p: String| std::path::absolute(&p).map_or(p, |a| a.display().to_string());
+            let portal = portal.map(absolute);
+            let script = script.map(absolute);
+            // --script means a script fence, --text a note.
+            let tool = tool
+                .or_else(|| script.as_ref().map(|_| "script".to_string()))
+                .or_else(|| text.as_ref().map(|_| "note".to_string()));
             let placement = [
                 (Side::Below, below),
                 (Side::Above, above),
@@ -242,6 +254,9 @@ fn run_fence(ctx: &Ctx, cmd: FenceCmd) -> Result<Reply, IpcError> {
                     rect,
                     monitor,
                     portal,
+                    tool,
+                    text,
+                    script,
                 });
             };
             let (rect, overlaps) = placed_rect(ctx, side, &anchor, size)?;
@@ -250,6 +265,9 @@ fn run_fence(ctx: &Ctx, cmd: FenceCmd) -> Result<Reply, IpcError> {
                 rect: Some(rect),
                 monitor: None,
                 portal,
+                tool,
+                text,
+                script,
             })?;
             if !overlaps.is_empty() {
                 let w = format!("the new fence overlaps {}", overlaps.join(", "));
@@ -263,6 +281,12 @@ fn run_fence(ctx: &Ctx, cmd: FenceCmd) -> Result<Reply, IpcError> {
         FenceCmd::Fit { fence } => ctx.call(Method::FencesFit { fence }),
         FenceCmd::Delete { fence } => ctx.call(Method::FencesDelete { fence }),
         FenceCmd::Rename { fence, title } => ctx.call(Method::FencesRename { fence, title }),
+        FenceCmd::Refresh { fence } => ctx.call(Method::FencesRefresh { fence }),
+        FenceCmd::OpenFolder { fence, folder } => {
+            ctx.call(Method::FencesOpenFolder { fence, folder })
+        }
+        FenceCmd::Up { fence } => ctx.call(Method::FencesUp { fence }),
+        FenceCmd::Forward { fence } => ctx.call(Method::FencesForward { fence }),
         FenceCmd::Move {
             fence,
             rect,
@@ -309,7 +333,14 @@ fn run_fence(ctx: &Ctx, cmd: FenceCmd) -> Result<Reply, IpcError> {
         FenceCmd::Set { args, all, string } => {
             let (fence, prop, value) =
                 split_set_args(&args, all).map_err(|m| IpcError::usage(m).hint(SET_USAGE))?;
-            let value = parse_value(value, string);
+            let mut value = parse_value(value, string);
+            // The app would resolve a relative path against its own working directory.
+            if prop == "scriptPath"
+                && let Some(p) = value.as_str()
+                && let Ok(abs) = std::path::absolute(p)
+            {
+                value = serde_json::Value::String(abs.display().to_string());
+            }
             let prop = prop.to_string();
             if all {
                 for_each_fence(&|m| ctx.send(m), |fence| Method::FencesSetOption {

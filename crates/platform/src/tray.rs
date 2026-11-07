@@ -475,6 +475,14 @@ impl PopupMenu {
         self
     }
 
+    /// Removes the item with command `id`; nothing happens when the menu has none.
+    pub fn remove(&self, id: u32) {
+        // SAFETY: plain FFI call on a menu we own; MF_BYCOMMAND looks `id` up as a command.
+        unsafe {
+            let _ = RemoveMenu(self.hmenu, id, MF_BYCOMMAND as u32);
+        }
+    }
+
     /// Top-level labels in order, separators as `-` (test dumps).
     pub fn labels(&self) -> Vec<String> {
         let mut out = Vec::new();

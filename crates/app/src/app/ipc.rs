@@ -360,6 +360,13 @@ pub(super) fn patch_settings_path(
         // One of the 0.2.0 choices: a custom shortcut left in place would override it.
         settings.peek.custom_hotkey = None;
     }
+    // A shortcut that is set replaces 「双击 Ctrl」, as on the settings page, unless the same
+    // patch sets peek.doubleCtrl.
+    let shortcut_set = matches!(pointer.as_str(), "/peek/hotkey" | "/peek/customHotkey")
+        || settings.peek.chosen_hotkey() != current.peek.chosen_hotkey();
+    if shortcut_set && settings.peek.double_ctrl == current.peek.double_ctrl {
+        settings.peek.double_ctrl = false;
+    }
     if settings.windows_desktop_hotkey != current.windows_desktop_hotkey
         && let Some(text) = settings.windows_desktop_hotkey.clone()
     {
@@ -732,13 +739,84 @@ impl App {
                 rect,
                 monitor,
                 portal,
-            } => self.ipc_create_fence(
-                title.as_deref(),
-                *rect,
-                monitor.as_deref(),
-                portal.as_deref(),
-            ),
+                tool,
+                text,
+                script,
+            } => {
+                let tool = match tool.as_deref() {
+                    None => None,
+                    Some(name) => {
+                        Some(self.ipc_tool_spec(name, text.as_deref(), script.as_deref())?)
+                    }
+                };
+                self.ipc_create_fence(
+                    title.as_deref(),
+                    *rect,
+                    monitor.as_deref(),
+                    portal.as_deref(),
+                    tool,
+                )
+            }
             Method::FencesDelete { fence } => self.ipc_delete_fence(fence),
+            Method::FencesRefresh { fence } => {
+                let id = self.resolve_fence(fence)?;
+                if self
+                    .state
+                    .fence(id)
+                    .is_none_or(|f| f.tool != Some(pecofence_core::FenceTool::Script))
+                {
+                    return Err(unsupported("only a script fence runs a script"));
+                }
+                self.refresh_script(id);
+                Ok(mutation(true, None, self.fence_extra(id)?))
+            }
+            Method::FencesUp { fence } | Method::FencesForward { fence } => {
+                let id = self.resolve_fence(fence)?;
+                if self.state.portal_path(id).is_none() && !self.portal_forward.contains_key(&id) {
+                    return Err(unsupported("the fence shows no folder").hint(
+                        "fences.up works in a folder fence or in a fence showing a folder opened in it (fence open-folder)",
+                    ));
+                }
+                let before = self.state.portal_path(id);
+                if matches!(m, Method::FencesUp { .. }) {
+                    self.portal_up(id);
+                } else {
+                    self.portal_forward(id);
+                }
+                let changed = self.state.portal_path(id) != before;
+                tracing::info!(fence = %id, changed, up = matches!(m, Method::FencesUp { .. }), "folder navigation by the cli");
+                Ok(mutation(changed, None, self.fence_extra(id)?))
+            }
+            Method::FencesOpenFolder { fence, folder } => {
+                let id = self.resolve_fence(fence)?;
+                let given = PathBuf::from(folder.trim());
+                let dir = if given.is_absolute() {
+                    given
+                } else if let Some(base) = self.state.portal_path(id) {
+                    base.join(given)
+                } else {
+                    return Err(IpcError::invalid_value(
+                        format!("{folder:?} is relative, and the fence shows no folder"),
+                        &[],
+                    )
+                    .hint("Give the full path of the folder"));
+                };
+                if !dir.is_dir() {
+                    return Err(IpcError::invalid_value(
+                        format!("no folder at {}", dir.display()),
+                        &[],
+                    ));
+                }
+                let before = self.state.portal_path(id);
+                if !self.open_folder_in_fence(id, &dir) {
+                    return Err(unsupported(
+                        "the fence cannot show that folder: a folder fence opens folders inside its own folder, a tool fence none",
+                    ));
+                }
+                let changed = self.state.portal_path(id) != before;
+                tracing::info!(fence = %id, changed, "folder opened by the cli");
+                Ok(mutation(changed, None, self.fence_extra(id)?))
+            }
             Method::FencesRename { fence, title } => {
                 let id = self.resolve_fence(fence)?;
                 let prop = parse_fence_prop("title", &Value::String(title.clone()))?;
@@ -759,13 +837,41 @@ impl App {
             {
                 Err(desktop_arranged_error())
             }
+            Method::FencesMerge { fence, into }
+                if self.is_tool_fence(fence) || self.is_tool_fence(into) =>
+            {
+                Err(
+                    unsupported("a tool fence (note, clock, script) takes no part in tabs")
+                        .hint("Merge two fences that show items"),
+                )
+            }
             Method::FencesSetBounds { fence, rect } => self.ipc_set_bounds(fence, *rect),
             Method::FencesMoveToMonitor { fence, monitor } => {
                 self.ipc_move_to_monitor(fence, monitor)
             }
             Method::FencesSetOption { fence, prop, value } => {
                 let id = self.resolve_fence(fence)?;
+                let prop_name = prop.as_str();
                 let prop = parse_fence_prop(prop, value)?;
+                if prop.is_about_icons() && self.fence_or_err(id)?.tool.is_some() {
+                    return Err(unsupported(format!(
+                        "{prop_name} is about icons, and a tool fence (note, clock, script) has none"
+                    ))
+                    .hint("Set it on a fence that shows items"));
+                }
+                if let Some(tool) = prop.tool()
+                    && self.fence_or_err(id)?.tool != Some(tool)
+                {
+                    return Err(unsupported(format!(
+                        "this property is for {} fences",
+                        match tool {
+                            pecofence_core::FenceTool::Note => "note",
+                            pecofence_core::FenceTool::Clock => "clock",
+                            pecofence_core::FenceTool::Script => "script",
+                        }
+                    ))
+                    .hint("fence list shows each fence's tool"));
+                }
                 // Icon size, spacing, layout and label lines snap the window to whole cells
                 // (snapping.sizeToCells) or fit it to the content: report it instead of letting the caller find out from
                 // a changed rect.
@@ -1102,6 +1208,10 @@ impl App {
                 let changed = idle && self.peek.as_ref().is_some_and(|p| !p.is_closing());
                 Ok(mutation(changed, None, Value::Null))
             }
+            Method::PeekSearch { text } => {
+                let changed = self.peek_search_text(text);
+                Ok(mutation(changed, None, Value::Null))
+            }
             Method::PeekEnd => {
                 let active = self.peek.as_ref().is_some_and(|p| !p.is_closing());
                 if active {
@@ -1254,6 +1364,9 @@ impl App {
             )
         })?;
         let snapshot = self.auto_snapshot();
+        if let Some(id) = snapshot {
+            self.state.keep_tool_data_in(id);
+        }
         self.adopt_config(cfg, origin);
         Ok(mutation(
             true,
@@ -1468,6 +1581,13 @@ impl App {
                 FenceKind::FolderPortal => "portal",
             }
             .to_string(),
+            tool: f.tool.map(|t| match t {
+                pecofence_core::FenceTool::Note => "note".to_string(),
+                pecofence_core::FenceTool::Clock => "clock".to_string(),
+                pecofence_core::FenceTool::Script => "script".to_string(),
+            }),
+            note_text: self.state.note_text(f.id).map(str::to_string),
+            script: self.script_dto(f.id),
             // A tab is shown in its host's window, so that is where it is on screen.
             rect: connected.then(|| Rect::from(self.state.fence_px_rect(host))),
             // 「桌面」 arranged like the desktop is shown on a connected monitor even while the
@@ -1798,12 +1918,51 @@ impl App {
 
     // ---- fence mutations -----------------------------------------------------------------
 
+    /// `fences.create`'s tool, text and script, checked: the tool and what it starts with.
+    fn ipc_tool_spec(
+        &self,
+        name: &str,
+        text: Option<&str>,
+        script: Option<&str>,
+    ) -> std::result::Result<super::tools::NewTool, IpcError> {
+        use super::tools::NewTool;
+        match name {
+            "note" => Ok(NewTool::Note(text.unwrap_or_default().to_string())),
+            // One clock is enough: the desktop shows a second one nowhere better.
+            "clock" if self.has_clock() => Err(IpcError::new(
+                ErrorCode::LimitReached,
+                "the desktop has a clock already",
+            )
+            .hint("pecofence-cli fence list shows it (tool: clock)")),
+            "clock" => Ok(NewTool::Clock),
+            "script" => {
+                let Some(path) = script.filter(|p| !p.trim().is_empty()) else {
+                    return Err(IpcError::usage("a script fence needs --script <file>")
+                        .hint("pecofence-cli fence create --script C:\\path\\weather.ps1"));
+                };
+                if !std::path::Path::new(path).is_file() {
+                    return Err(IpcError::new(
+                        ErrorCode::InvalidValue,
+                        format!("no such script: {path}"),
+                    )
+                    .hint("Give the full path of an existing .ps1, .py, .cmd, .bat, .js or .exe"));
+                }
+                Ok(NewTool::Script(path.to_string()))
+            }
+            other => Err(IpcError::invalid_value(
+                format!("unknown tool {other:?}"),
+                &["note", "clock", "script"],
+            )),
+        }
+    }
+
     fn ipc_create_fence(
         &mut self,
         title: Option<&str>,
         rect: Option<Rect>,
         monitor: Option<&str>,
         portal: Option<&str>,
+        tool: Option<super::tools::NewTool>,
     ) -> IpcResult {
         let title = title.map(|t| checked_name("title", t)).transpose()?;
         let title = title.as_deref();
@@ -1853,6 +2012,14 @@ impl App {
             .hint("Delete or merge a fence first"));
         }
         let requested = rect;
+        if let Some(tool) = tool {
+            let rect = rect.map(rect_to_win);
+            let id = self
+                .create_tool_fence(tool, title, rect, cx, cy)
+                .ok_or_else(|| unsupported("no monitor to place the fence on"))?;
+            self.push_settings_state();
+            return Ok(mutation(true, None, self.fence_extra(id)?));
+        }
         let rect = match rect {
             Some(r) => rect_to_win(r),
             None => self.place_new_fence(3, 200.0, cx, cy, None),
@@ -1959,6 +2126,12 @@ impl App {
     }
 
     /// `sel` names the fence 像桌面一样排列 arranges (unknown selectors are not).
+    /// `sel` is a tool fence (小工具: note, clock, script).
+    fn is_tool_fence(&self, sel: &str) -> bool {
+        self.resolve_fence(sel)
+            .is_ok_and(|id| self.state.fence(id).is_some_and(|f| f.tool.is_some()))
+    }
+
     fn is_desktop_arranged(&self, sel: &str) -> bool {
         self.resolve_fence(sel).is_ok_and(|id| {
             self.fences
@@ -1992,7 +2165,12 @@ impl App {
         // window first, then the state with the expanded height. Rolled up, only the title bar
         // shows; `h` becomes the height it unrolls to.
         let full = rect_to_win(placed);
-        let rolled = w.is_rolled();
+        // Rolled by the fence's state: a roll-up still in flight (`fence roll` just before)
+        // has not set the window's flag yet, and taking that flag opened the fence again.
+        let rolled = self
+            .state
+            .fence(id)
+            .map_or_else(|| w.is_rolled(), |f| f.rolled_up || w.is_rolled());
         // An explicit place is where the fence rests, even at the top a push gave it.
         self.ctx.behavior.release_push(w.hwnd());
         // Rolled with 向上展开, the title row goes to the bottom of the rect, where it opens
@@ -2130,6 +2308,12 @@ impl App {
         to: &str,
     ) -> std::result::Result<(FenceId, Vec<ItemMovePlanDto>), IpcError> {
         let to = self.resolve_fence(to)?;
+        if self.fence_or_err(to)?.tool.is_some() {
+            return Err(
+                unsupported("a tool fence (note, clock, script) holds no desktop items")
+                    .hint("Move the items to a virtual fence or `inbox`"),
+            );
+        }
         let mut ids: Vec<ItemId> = Vec::new();
         for sel in items {
             let id = self.resolve_item(sel)?;
@@ -2255,6 +2439,11 @@ impl App {
     fn ipc_fit(&mut self, sel: &str) -> IpcResult {
         let id = self.resolve_fence(sel)?;
         let f = self.fence_or_err(id)?.clone();
+        if f.tool.is_some() {
+            return Err(unsupported(
+                "a tool fence (note, clock, script) has no icons to fit; resize it with fence resize",
+            ));
+        }
         let host = self.state.host_of(id);
         let Some(w) = self.fences.get(&host) else {
             return Err(unsupported(format!(
@@ -2668,9 +2857,16 @@ impl App {
             Target::Inbox
         } else {
             let id = self.resolve_fence(target)?;
-            if self.fence_or_err(id)?.kind == FenceKind::FolderPortal {
+            let f = self.fence_or_err(id)?;
+            if f.kind == FenceKind::FolderPortal {
                 return Err(unsupported(
                     "a folder portal cannot be a rule target (it shows a folder, not desktop items)",
+                )
+                .hint("Target a virtual fence or `inbox`"));
+            }
+            if f.tool.is_some() {
+                return Err(unsupported(
+                    "a tool fence (note, clock, script) cannot be a rule target (it holds no desktop items)",
                 )
                 .hint("Target a virtual fence or `inbox`"));
             }

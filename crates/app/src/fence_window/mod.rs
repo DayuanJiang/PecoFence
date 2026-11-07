@@ -372,6 +372,68 @@ impl ItemView {
     }
 }
 
+/// 脚本栅栏: what a script fence shows, the rows of its last output and a footer line (script
+/// name, update time or what went wrong).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ScriptView {
+    pub rows: Vec<ScriptRowView>,
+    pub footer: String,
+    /// No "printed no text" hint while the body is empty (the first run has not ended).
+    pub quiet: bool,
+}
+
+/// One row of a script fence as drawn (see `pecofence_core::script_output`).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ScriptRowView {
+    pub text: String,
+    pub separator: bool,
+    pub todo: Option<bool>,
+    /// `color=` as the script wrote it, resolved for the theme when drawn.
+    pub color: Option<String>,
+    pub icon: Option<String>,
+    /// The script's tooltip, else what a click opens, runs or copies.
+    pub tip: Option<String>,
+    pub clickable: bool,
+    /// A click opens a URL or a file (an arrow shows on hover).
+    pub opens: bool,
+}
+
+impl ScriptRowView {
+    /// `text` as plain rows (an error, a hint).
+    pub fn plain(text: &str) -> Vec<Self> {
+        text.lines()
+            .map(|t| Self {
+                text: t.to_string(),
+                ..Self::default()
+            })
+            .collect()
+    }
+
+    /// A script's output read as rows with their parameters.
+    pub fn from_output(text: &str) -> Vec<Self> {
+        use pecofence_core::script_output::{RowAction, ScriptLine, parse};
+        parse(text)
+            .into_iter()
+            .map(|line| match line {
+                ScriptLine::Separator => Self {
+                    separator: true,
+                    ..Self::default()
+                },
+                ScriptLine::Row(r) => Self {
+                    tip: r.tooltip.clone().or_else(|| r.target().map(str::to_string)),
+                    clickable: r.clickable(),
+                    opens: matches!(r.action, Some(RowAction::Href(_) | RowAction::Open(_))),
+                    text: r.text,
+                    separator: false,
+                    todo: r.todo,
+                    color: r.color,
+                    icon: r.icon,
+                },
+            })
+            .collect()
+    }
+}
+
 /// One tab of a tabbed fence window (Fences 6): another fence shown inside this window.
 #[derive(Clone, Debug)]
 pub struct TabView {

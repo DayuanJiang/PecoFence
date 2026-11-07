@@ -91,6 +91,38 @@ pub struct PeekOverlay {
     alpha: Tween,
     /// The fade-out is running; the app tears the overlay down when it lands.
     closing: bool,
+    /// When the Peek began.
+    started: Instant,
+}
+
+/// Takes the keyboard on the primary dimmer so Esc works. SetForegroundWindow can block while
+/// Windows hands focus between input queues, so it runs off the UI thread. Once it completes
+/// the app restores the fence block above the activated topmost dimmer. `again`: another
+/// window has the foreground by now, so the foreground lock is passed first
+/// (`claim_foreground`), and the outcome is logged.
+fn hand_focus(dimmer: HWND, control: HWND, again: bool) {
+    let dimmer = dimmer.0 as usize;
+    let control = control.0 as usize;
+    let spawned = std::thread::Builder::new()
+        .name("pecofence-peek-focus".into())
+        .spawn(move || {
+            let h = HWND(dimmer as *mut core::ffi::c_void);
+            if again {
+                let ok = window::claim_foreground(h);
+                tracing::info!(ok, "peek took the keyboard back");
+            } else {
+                window::bring_to_front(h);
+            }
+            window::post_message(
+                HWND(control as *mut core::ffi::c_void),
+                WM_APP_PEEK_FOCUSED,
+                dimmer,
+                0,
+            );
+        });
+    if let Err(e) = spawned {
+        tracing::warn!(error = %e, "peek focus thread failed to start");
+    }
 }
 
 impl PeekOverlay {
@@ -221,26 +253,8 @@ impl PeekOverlay {
             w.show_no_activate();
             windows.push(w);
         }
-        // Take the keyboard on the primary dimmer so Esc works. SetForegroundWindow can block
-        // while Windows hands focus between input queues, so keep it off the UI thread. Once
-        // it completes the app restores the fence block above the activated topmost dimmer.
         if let Some(first) = windows.first() {
-            let dimmer = first.hwnd().0 as usize;
-            let control = control.0 as usize;
-            let spawned = std::thread::Builder::new()
-                .name("pecofence-peek-focus".into())
-                .spawn(move || {
-                    window::bring_to_front(HWND(dimmer as *mut core::ffi::c_void));
-                    window::post_message(
-                        HWND(control as *mut core::ffi::c_void),
-                        WM_APP_PEEK_FOCUSED,
-                        dimmer,
-                        0,
-                    );
-                });
-            if let Err(e) = spawned {
-                tracing::warn!(error = %e, "peek focus thread failed to start");
-            }
+            hand_focus(first.hwnd(), control, false);
         }
         // Do not let synchronous window creation consume any of the fade's timeline.
         let now = Instant::now();
@@ -260,11 +274,24 @@ impl PeekOverlay {
             dim,
             alpha,
             closing: false,
+            started: now,
         };
         // Applied once synchronously so a zero-duration tween (animations off) lands at the
         // resting alpha before the first frame is composed.
         overlay.apply(now);
         Ok(overlay)
+    }
+
+    /// How long ago the Peek began.
+    pub fn age(&self, now: Instant) -> Duration {
+        now.saturating_duration_since(self.started)
+    }
+
+    /// Takes the keyboard back on the primary dimmer (another window took the foreground).
+    pub fn take_focus(&self, control: HWND) {
+        if let Some(first) = self.windows.first() {
+            hand_focus(first.hwnd(), control, true);
+        }
     }
 
     pub fn hwnds(&self) -> Vec<HWND> {

@@ -17,6 +17,8 @@ pub(super) enum TipTarget {
     Item(usize),
     Tab(usize),
     Up,
+    /// A script fence's clickable row.
+    ScriptRow(usize),
 }
 
 /// TME_HOVER rectangle test: has the pointer left the `rect` (SPI_GETMOUSEHOVERWIDTH x
@@ -122,6 +124,7 @@ impl FenceViewState {
     pub(super) fn tip_text(&self) -> Option<String> {
         match self.tip_target? {
             TipTarget::Up => Some(pecofence_core::i18n::text("向上").to_string()),
+            TipTarget::ScriptRow(i) => self.script.as_ref()?.rows.get(i)?.tip.clone(),
             TipTarget::Tab(i) => {
                 let t = self.tabs.get(i)?;
                 let fits = if self.tabs_on_rail() {

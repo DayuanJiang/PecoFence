@@ -59,6 +59,17 @@ pub struct Config {
     /// Saved layouts the user can return to (Fences "snapshots").
     #[serde(default)]
     pub snapshots: Vec<Snapshot>,
+    /// Text of the note fences (`FenceTool::Note`), keyed by fence id. Kept out of the fences
+    /// so every monitor layout shows the same text and restoring a snapshot does not take a
+    /// note back to older text.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub notes: HashMap<FenceId, String>,
+    /// What each script fence (`FenceTool::Script`) runs, keyed by fence id (kept like `notes`).
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub scripts: HashMap<FenceId, ScriptSpec>,
+    /// Paths opened from the search box (lower case) and how often: they rank higher next time.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub search_history: std::collections::BTreeMap<String, u32>,
 }
 
 impl Default for Config {
@@ -72,6 +83,9 @@ impl Default for Config {
             rules: crate::rules::RuleSet::default(),
             undo_log: Vec::new(),
             snapshots: Vec::new(),
+            notes: HashMap::new(),
+            scripts: HashMap::new(),
+            search_history: Default::default(),
         }
     }
 }
@@ -85,6 +99,13 @@ pub struct Snapshot {
     pub name: String,
     pub ts: i64,
     pub layouts: Vec<Layout>,
+    /// Note texts and scripts as they were, kept only by the snapshot taken before an import or
+    /// a backup restore (which replace them): restoring it brings them back. Other snapshots
+    /// leave the current texts alone.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub notes: HashMap<FenceId, String>,
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub scripts: HashMap<FenceId, ScriptSpec>,
 }
 
 pub const MAX_SNAPSHOTS: usize = 20;
@@ -180,6 +201,98 @@ pub struct Settings {
     /// have its item records re-pointed instead of orphaned.
     #[serde(default)]
     pub desktop_path: Option<String>,
+    /// 小工具: which tools are switched on. A tool that is off runs nothing, and its fences
+    /// have no window until it is switched on again.
+    #[serde(default)]
+    pub tools: ToolSettings,
+}
+
+/// 小工具: one switch for note, clock and script fences (on by default), and the other tool
+/// settings.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct ToolSettings {
+    /// 小工具: note, clock and script fences. Off hides them all and stops every script; an
+    /// imported configuration with script fences switches it off until the user turns it on.
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// Clock fences show the seconds too (and redraw every second instead of every minute);
+    /// 显示秒 in the clock's fence menu.
+    #[serde(default)]
+    pub clock_seconds: bool,
+    /// 对话框跳转: an Open / Save dialog jumps to the folder of the Explorer window (or folder
+    /// fence) the user comes back from, and Ctrl+G jumps there at any time.
+    #[serde(default)]
+    pub dialog_jump: bool,
+    /// 速览搜索也找整台电脑 (速览与搜索 on the settings page): the search box also lists what
+    /// the Everything file search finds.
+    #[serde(default)]
+    pub everything: bool,
+}
+
+impl Default for ToolSettings {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            clock_seconds: false,
+            dialog_jump: false,
+            everything: false,
+        }
+    }
+}
+
+/// What a script fence (`FenceTool::Script`) runs, and how often.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct ScriptSpec {
+    /// The script or program (.ps1, .py, .pyw, .cmd, .bat, .js, .mjs, .exe or .com); empty =
+    /// none chosen.
+    #[serde(default)]
+    pub path: String,
+    /// Minutes between runs, 1 to 1440. A streaming script (one that keeps running) starts again
+    /// this long after it ended by itself.
+    #[serde(default = "ScriptSpec::default_interval")]
+    #[cfg_attr(feature = "schema", schemars(range(min = 1, max = 1440)))]
+    pub interval_minutes: u32,
+}
+
+impl ScriptSpec {
+    pub const INTERVALS: [u32; 6] = [1, 5, 15, 30, 60, 180];
+
+    fn default_interval() -> u32 {
+        30
+    }
+
+    pub fn new(path: &str) -> Self {
+        Self {
+            path: path.to_string(),
+            interval_minutes: Self::default_interval(),
+        }
+    }
+}
+
+/// A fence that shows a tool instead of desktop items.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase", tag = "kind")]
+pub enum FenceTool {
+    /// 便签与待办: lines of text (`Config::notes`); a line starting with `[ ]` or `[x]` is a
+    /// to-do with a check box.
+    Note,
+    /// 时钟与日期: the local time, date and weekday in Windows' region format.
+    Clock,
+    /// 脚本栅栏: the text a script of the user's prints (`Config::scripts`), run on an interval
+    /// or kept running.
+    Script,
+}
+
+impl FenceTool {
+    /// Whether tool fences are switched on in `tools` (one switch for every kind).
+    pub fn enabled(self, tools: &ToolSettings) -> bool {
+        tools.enabled
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -198,6 +311,11 @@ pub struct PeekSettings {
     /// shortcut is ignored the same way.
     #[serde(default)]
     pub custom_hotkey: Option<String>,
+    /// Peek's shortcut is pressing Ctrl twice (Peek opens with the search box) instead of
+    /// `hotkey` / `customHotkey`, which stay saved but are not registered. Setting another
+    /// shortcut turns this off.
+    #[serde(default)]
+    pub double_ctrl: bool,
 }
 
 impl Default for PeekSettings {
@@ -207,6 +325,7 @@ impl Default for PeekSettings {
             dim: true,
             hotkey: PeekHotkey::CtrlAltSpace,
             custom_hotkey: None,
+            double_ctrl: false,
         }
     }
 }
@@ -291,6 +410,7 @@ impl Default for Settings {
             windows_desktop_hotkey: None,
             icons: IconSettings::default(),
             desktop_path: None,
+            tools: ToolSettings::default(),
         }
     }
 }
@@ -445,7 +565,7 @@ fn realtime_glass_tint<'de, D: serde::Deserializer<'de>>(d: D) -> Result<f32, D:
     realtime_glass_float(d, "tint", 0.5)
 }
 
-/// Item name colour (「图标名称颜色」). Auto: Liquid Glass picks dark or light text from the
+/// Item name colour (「文字颜色」). Auto: Liquid Glass picks dark or light text from the
 /// wallpaper under each fence, Fluent follows the colour mode. The halo pairs with the text.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
@@ -1067,6 +1187,10 @@ pub struct Fence {
     /// like the Windows desktop with 自动排列图标.
     #[serde(default)]
     pub desktop_layout: bool,
+    /// A tool shown in place of desktop items (小工具). Such a fence holds no items: rules,
+    /// drops and moves never put any in it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool: Option<FenceTool>,
     #[serde(default)]
     pub items: Vec<ItemRef>,
 }
@@ -1095,8 +1219,15 @@ impl Fence {
             expand_upward: false,
             bottom_anchored: false,
             desktop_layout: false,
+            tool: None,
             items: Vec::new(),
         }
+    }
+
+    /// Whether routed or dropped desktop items can live in this fence: not in a folder portal
+    /// (it shows its folder) and not in a tool fence.
+    pub fn holds_items(&self) -> bool {
+        self.kind != FenceKind::FolderPortal && self.tool.is_none()
     }
 
     pub fn contains_item(&self, id: ItemId) -> bool {
@@ -1671,6 +1802,47 @@ pub fn last_shown(layouts: &[Layout]) -> Option<usize> {
 }
 
 impl Config {
+    /// Most paths `search_history` keeps; the least used go first.
+    pub const SEARCH_HISTORY_MAX: usize = 300;
+
+    /// Counts one more open of `path` from the search box.
+    pub fn note_search_open(&mut self, path: &str) {
+        let key = path.to_lowercase();
+        *self.search_history.entry(key.clone()).or_default() += 1;
+        if self.search_history.len() <= Self::SEARCH_HISTORY_MAX {
+            return;
+        }
+        // Full: older counts halve, so a path opened often lately can pass them.
+        for (k, n) in self.search_history.iter_mut() {
+            if *k != key {
+                *n /= 2;
+            }
+        }
+        self.search_history.retain(|k, n| *n > 0 || *k == key);
+        while self.search_history.len() > Self::SEARCH_HISTORY_MAX {
+            let Some(least) = self
+                .search_history
+                .iter()
+                .filter(|(k, _)| **k != key)
+                .min_by_key(|(_, n)| **n)
+                .map(|(k, _)| k.clone())
+            else {
+                break;
+            };
+            self.search_history.remove(&least);
+        }
+    }
+
+    /// How often `path` was opened from the search box.
+    pub fn search_count(&self, path: &str) -> u32 {
+        self.search_history
+            .get(&path.to_lowercase())
+            .copied()
+            .unwrap_or(0)
+    }
+}
+
+impl Config {
     /// See [`layout_for`].
     pub fn layout_for(&self, monitors: &[WorkArea]) -> Option<LayoutMatch> {
         layout_for(&self.layouts, monitors)
@@ -1679,6 +1851,29 @@ impl Config {
     /// See [`last_shown`].
     pub fn last_shown(&self) -> Option<usize> {
         last_shown(&self.layouts)
+    }
+
+    /// Drops the text of notes and the scripts of script fences no layout and no snapshot has
+    /// a fence for any more (a snapshot that still has the fence brings it back with them).
+    /// Returns how many went.
+    pub fn prune_notes(&mut self) -> usize {
+        if self.notes.is_empty() && self.scripts.is_empty() {
+            return 0;
+        }
+        let kept = |tool: FenceTool| -> HashSet<FenceId> {
+            self.layouts
+                .iter()
+                .chain(self.snapshots.iter().flat_map(|s| s.layouts.iter()))
+                .flat_map(|l| l.fences.iter())
+                .filter(|f| f.tool == Some(tool))
+                .map(|f| f.id)
+                .collect()
+        };
+        let (notes, scripts) = (kept(FenceTool::Note), kept(FenceTool::Script));
+        let before = self.notes.len() + self.scripts.len();
+        self.notes.retain(|id, _| notes.contains(id));
+        self.scripts.retain(|id, _| scripts.contains(id));
+        before - self.notes.len() - self.scripts.len()
     }
 
     /// Makes `index` the layout shown last; false when it already was.
@@ -1859,6 +2054,100 @@ pub fn now_unix() -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn search_history_counts_and_ages() {
+        let mut c = Config::default();
+        c.note_search_open("C:\\Docs\\A.txt");
+        c.note_search_open("c:\\docs\\a.txt");
+        assert_eq!(c.search_count("C:\\DOCS\\A.TXT"), 2);
+        // A full history of paths opened twice still takes a new one in.
+        let mut full = Config::default();
+        for i in 0..Config::SEARCH_HISTORY_MAX {
+            full.search_history.insert(format!("p{i}"), 2);
+        }
+        full.note_search_open("new");
+        assert_eq!(full.search_count("new"), 1);
+        assert!(full.search_history.len() <= Config::SEARCH_HISTORY_MAX);
+        assert!(
+            full.search_history
+                .iter()
+                .all(|(k, n)| k == "new" || *n == 1),
+            "older counts halve"
+        );
+    }
+
+    fn note_geo() -> NormGeometry {
+        NormGeometry {
+            monitor: "M".into(),
+            x: 0.0,
+            y: 0.0,
+            w: 300.0,
+            h: 200.0,
+            work_w: 1920.0,
+            work_h: 1040.0,
+            anchor: Anchor::LeftTop,
+        }
+    }
+
+    /// A fence without a tool writes no `tool` field, so files and snapshots of users who never
+    /// switch a tool on stay as they were; a note fence reads back as one.
+    #[test]
+    fn tool_fences_round_trip() {
+        let plain = Fence::new("a", FenceKind::Virtual, note_geo());
+        let v = serde_json::to_value(&plain).unwrap();
+        assert!(v.get("tool").is_none());
+        assert!(plain.holds_items());
+        let mut note = plain.clone();
+        note.tool = Some(FenceTool::Note);
+        let v = serde_json::to_value(&note).unwrap();
+        assert_eq!(v["tool"], serde_json::json!({"kind": "note"}));
+        let back: Fence = serde_json::from_value(v).unwrap();
+        assert_eq!(back.tool, Some(FenceTool::Note));
+        assert!(!back.holds_items());
+        // Settings written before 小工具 existed load with the tools on and dialog jump off, as
+        // does a `tools` object of the 0.3.0 previews (one switch per tool, now ignored).
+        let mut old = serde_json::to_value(Settings::default()).unwrap();
+        old.as_object_mut().unwrap().remove("tools");
+        let settings: Settings = serde_json::from_value(old).unwrap();
+        assert!(settings.tools.enabled && !settings.tools.dialog_jump);
+        let tools: ToolSettings = serde_json::from_value(
+            serde_json::json!({"notes": false, "clock": true, "scripts": false, "clockSeconds": true}),
+        )
+        .unwrap();
+        assert!(tools.enabled && tools.clock_seconds);
+        assert!(FenceTool::Script.enabled(&tools) && FenceTool::Note.enabled(&tools));
+    }
+
+    #[test]
+    fn note_text_goes_with_the_last_fence_and_snapshot() {
+        let mut c = Config::default();
+        let mut note = Fence::new("n", FenceKind::Virtual, note_geo());
+        note.tool = Some(FenceTool::Note);
+        let id = note.id;
+        c.layouts.push(Layout {
+            fingerprint: Vec::new(),
+            fences: vec![note.clone()],
+            shown: 1,
+        });
+        c.notes.insert(id, "[ ] a".into());
+        c.notes.insert(Uuid::new_v4(), "orphan".into());
+        assert_eq!(c.prune_notes(), 1);
+        // Deleted from the layout but kept by a snapshot: the text stays for a restore.
+        c.snapshots.push(Snapshot {
+            id: Uuid::new_v4(),
+            name: "s".into(),
+            ts: 0,
+            layouts: c.layouts.clone(),
+            notes: Default::default(),
+            scripts: Default::default(),
+        });
+        c.layouts[0].fences.clear();
+        assert_eq!(c.prune_notes(), 0);
+        c.snapshots.clear();
+        assert_eq!(c.prune_notes(), 1);
+        assert!(c.notes.is_empty());
+    }
 
     #[test]
     fn item_keys_still_name_the_file() {
@@ -2303,6 +2592,8 @@ mod tests {
             name: "旧布局".into(),
             ts: 1,
             layouts: config.layouts.clone(),
+            notes: Default::default(),
+            scripts: Default::default(),
         });
 
         for legacy in ["micaLike", "solid", "acrylic"] {

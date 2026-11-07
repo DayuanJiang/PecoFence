@@ -85,13 +85,15 @@ def main():
     parser.add_argument("--stills-only", action="store_true")
     parser.add_argument("--languages", nargs="*", default=sorted(HERO_TEXT),
                         help="hero images to render (default: every language)")
+    parser.add_argument("--gifs", nargs="*", default=["search", "dialog-jump", "tabs", "peek"],
+                        help="manual lessons to export as GIFs (default: all four)")
     args = parser.parse_args()
     OUTPUT.mkdir(parents=True, exist_ok=True)
     for language in args.languages:
         hero(language)
     if not args.stills_only:
-        gif("tabs")
-        gif("peek")
+        for lesson in args.gifs:
+            gif(lesson)
     for path in sorted(OUTPUT.glob("*")):
         if path.is_file():
             print(f"{path.name}: {path.stat().st_size / 1024:.0f} KiB")

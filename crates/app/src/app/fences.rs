@@ -150,6 +150,8 @@ impl App {
     pub(super) fn resync_windows(&mut self) {
         let before: Vec<HWND> = self.fences.values().map(|w| w.hwnd()).collect();
         self.sync_fence_windows();
+        // A deleted script fence (or one switched off) ends its streaming script now.
+        self.sync_streams();
         if let Some(a) = self.anchor.borrow_mut().as_mut() {
             a.reanchor("windows resynced");
         }
@@ -283,6 +285,7 @@ impl App {
                 w.set_rolled(f.rolled_up);
             }
         }
+        self.push_tool_view(id);
         self.apply_fence_appearance(id); // locked + backdrop/opacity + quick-hide exclusion
         self.apply_portal_deco(id);
         self.apply_auto_height(id);
@@ -896,7 +899,12 @@ impl App {
             .iter()
             .filter(|r| r.target == Target::Fence(fence))
             .count();
-        if icons == 0 && rules == 0 {
+        // 便签与待办: a note with text asks too, since the text goes with it.
+        let note_text = self
+            .state
+            .note_text(fence)
+            .is_some_and(|t| !t.trim().is_empty());
+        if icons == 0 && rules == 0 && !note_text {
             return None;
         }
         let mut text = i18n::format("要删除栅栏“{0}”吗？", std::slice::from_ref(&f.title));
@@ -919,6 +927,10 @@ impl App {
                 "指向它的 {0} 条规则也会一并删除。",
                 &[rules.to_string()],
             ));
+        }
+        if note_text {
+            text.push_str("\n\n");
+            text.push_str(i18n::text("便签里的文字会一起删除。"));
         }
         Some(text)
     }

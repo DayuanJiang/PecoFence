@@ -179,6 +179,12 @@ impl FenceWindow {
             columns_visible: [true; 3],
             col_drag: None,
             is_portal: false,
+            note: None,
+            note_boxes: Vec::new(),
+            clock: None,
+            script: None,
+            script_rows: Vec::new(),
+            script_hover: None,
             portal_missing: false,
             label_w: 0.0,
             icons_pending: false,
@@ -1272,6 +1278,54 @@ impl FenceWindow {
         self.view.borrow().as_ref().and_then(|v| v.renaming)
     }
 
+    /// 便签与待办: the fence being shown is a note with `text`, whose lines are drawn in place of
+    /// items; None = it shows items.
+    pub fn set_note(&self, text: Option<String>) {
+        self.with_view(|v| {
+            if v.note != text {
+                v.note = text;
+                v.note_boxes.clear();
+                let _ = v.redraw();
+            }
+        });
+    }
+
+    /// 时钟与日期: the fence being shown is a clock (Some(true) = with seconds), drawn in place of
+    /// items and redrawn each minute or second; None = it shows items.
+    pub fn set_clock(&self, clock: Option<bool>) {
+        self.with_view(|v| {
+            if v.clock != clock {
+                v.clock = clock;
+                v.arm_clock();
+                let _ = v.redraw();
+            }
+        });
+    }
+
+    /// 脚本栅栏: the fence being shown is a script fence showing `script`; None = it shows items.
+    pub fn set_script(&self, script: Option<ScriptView>) {
+        self.with_view(|v| {
+            if v.script != script {
+                if script.is_none() {
+                    v.script_rows.clear();
+                    v.script_hover = None;
+                }
+                v.script = script;
+                let _ = v.redraw();
+            }
+        });
+    }
+
+    /// Screen rect of the content below the title row (the note editor opens over it).
+    pub fn content_screen_rect(&self) -> RECT {
+        let mut r = self.rect();
+        if let Some(v) = self.view.borrow().as_ref() {
+            r.left += v.content_x;
+            r.top += v.content_y;
+        }
+        r
+    }
+
     /// Whether the fence being shown is the desktop Inbox (chooses the empty-state text).
     pub fn set_is_inbox(&self, on: bool) {
         self.with_view(|v| {
@@ -1654,7 +1708,7 @@ impl FenceWindow {
         self.view
             .borrow()
             .as_ref()
-            .filter(|v| !v.bare())
+            .filter(|v| !v.bare() && !v.shows_tool())
             .and_then(|v| v.auto_height_px())
     }
 

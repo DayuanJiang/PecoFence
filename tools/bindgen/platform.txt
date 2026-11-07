@@ -205,6 +205,19 @@
     GetCapture
     GetKeyState
     GetAsyncKeyState
+    SHQueryUserNotificationState
+    QUNS_BUSY
+    QUNS_RUNNING_D3D_FULL_SCREEN
+    QUNS_PRESENTATION_MODE
+    SetWindowsHookExW
+    UnhookWindowsHookEx
+    CallNextHookEx
+    WH_MOUSE_LL
+    WM_MOUSEHWHEEL
+    WM_XBUTTONDOWN
+    VK_LBUTTON
+    VK_RBUTTON
+    VK_MBUTTON
     VK_ESCAPE
     VK_RETURN
     VK_DELETE
@@ -442,7 +455,6 @@
     RAWINPUTHEADER
     RAWMOUSE
     HRAWINPUT
-    RIDEV_INPUTSINK
     RIDEV_REMOVE
     RID_INPUT
     RIM_TYPEMOUSE
@@ -452,6 +464,8 @@
     RI_MOUSE_RIGHT_BUTTON_UP
     HID_USAGE_PAGE_GENERIC
     HID_USAGE_GENERIC_MOUSE
+    HID_USAGE_GENERIC_KEYBOARD
+    RIDEV_INPUTSINK
     SM_CXDOUBLECLK
     SM_CYDOUBLECLK
     SM_SWAPBUTTON
@@ -979,3 +993,58 @@
     VK_UP
     VK_BACK
     WM_SYSKEYUP
+
+    // ---- 对话框跳转: file dialogs, Explorer folders; Everything IPC
+    EnumChildWindows
+    GetDlgCtrlID
+    GetDlgItem
+    GetGUIThreadInfo
+    GUITHREADINFO
+    AttachThreadInput
+    GetAsyncKeyState
+    SHQueryUserNotificationState
+    QUNS_BUSY
+    QUNS_RUNNING_D3D_FULL_SCREEN
+    QUNS_PRESENTATION_MODE
+    SetWindowsHookExW
+    UnhookWindowsHookEx
+    CallNextHookEx
+    WH_MOUSE_LL
+    WM_MOUSEHWHEEL
+    WM_XBUTTONDOWN
+    VK_LBUTTON
+    VK_RBUTTON
+    VK_MBUTTON
+    GetParent
+    WM_GETTEXT
+    EM_GETSEL
+    OpenClipboard
+    EmptyClipboard
+    SetClipboardData
+    CloseClipboard
+    GlobalAlloc
+    GlobalFree
+    CF_UNICODETEXT
+    GMEM_MOVEABLE
+    WM_SETTEXT
+    IShellWindows
+    ShellWindows
+    IServiceProvider
+    IShellBrowser
+    IShellView
+    IOleWindow
+    IFolderView
+    SID_STopLevelBrowser
+    VT_I4
+    COPYDATASTRUCT
+    WM_COPYDATA
+    QueryFullProcessImageNameW
+    GetTextExtentPoint32W
+    DrawIconEx
+    DI_NORMAL
+    SHGFI_ICON
+    SHGFI_SMALLICON
+    WM_USER
+    PROCESS_QUERY_LIMITED_INFORMATION
+    RI_KEY_BREAK
+    RIM_TYPEKEYBOARD

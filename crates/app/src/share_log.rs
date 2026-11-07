@@ -713,6 +713,8 @@ mod tests {
         ("old", "?before"),             // store::StartupState enum
         ("old", "?self.store_startup_state"), // Option<store::StartupState>
         ("outcome", "?effect.as_ref().map(|r|(r.dropped,r.effect))"), // (bool, DropEffect)
+        ("outcome", "outcome.kind()"),  // scripts::Outcome::kind: fixed names
+        ("outcome", "?outcome"),        // dialogs::JumpOutcome enum (dialog_jump.rs)
         ("payload", "payload"),         // panic payload when `&'static str`
         ("position", "?snapshot.position"), // WallpaperPosition enum
         ("prop", "prop"),               // fence property key from our settings page

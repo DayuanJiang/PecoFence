@@ -79,6 +79,32 @@ pub fn open_json(owner: Option<HWND>, title: &str) -> Result<Option<PathBuf>> {
     }
 }
 
+/// "Open" for a script a script fence runs (脚本栅栏): PowerShell, Python, batch, JavaScript or a
+/// program. `None` when the user cancelled.
+pub fn open_script(owner: Option<HWND>, title: &str) -> Result<Option<PathBuf>> {
+    let title_w = to_wide(title);
+    let filter_name = to_wide(pecofence_core::i18n::text("脚本"));
+    let filter_spec = to_wide("*.ps1;*.py;*.pyw;*.cmd;*.bat;*.js;*.exe");
+    // SAFETY: COM object created here; all strings outlive the calls.
+    unsafe {
+        let dialog: IFileOpenDialog = CoCreateInstance(&FileOpenDialog, None, CLSCTX_ALL as u32)?;
+        let base: IFileDialog = dialog.cast()?;
+        base.SetOptions(FOS_FORCEFILESYSTEM | FOS_PATHMUSTEXIST | FOS_FILEMUSTEXIST)
+            .ok()?;
+        let spec = COMDLG_FILTERSPEC {
+            pszName: PCWSTR(filter_name.as_ptr()),
+            pszSpec: PCWSTR(filter_spec.as_ptr()),
+        };
+        base.SetFileTypes(1, &spec).ok()?;
+        base.SetTitle(PCWSTR(title_w.as_ptr())).ok()?;
+        let hr = base.Show(owner);
+        if hr.is_err() {
+            return Ok(None);
+        }
+        result_path(&base).map(Some)
+    }
+}
+
 /// "Select folder" picker. `None` when the user cancelled.
 pub fn pick_folder(owner: Option<HWND>, title: &str) -> Result<Option<PathBuf>> {
     let title_w = to_wide(title);

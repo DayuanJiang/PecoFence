@@ -145,6 +145,21 @@ pub struct FenceViewState {
     pub(super) col_drag: Option<ColDrag>,
     /// The fence shown is a folder portal (sort-only: no manual arrangement).
     pub(super) is_portal: bool,
+    /// 便签与待办: the fence shown is a note with this text, drawn in place of items (None =
+    /// it shows items).
+    pub(super) note: Option<String>,
+    /// The note's to-do check boxes as last drawn: line index and (left, top, right, bottom)
+    /// in content DIPs.
+    pub(super) note_boxes: Vec<(usize, [f32; 4])>,
+    /// 时钟与日期: the fence shown is a clock; true = with seconds. None = it shows items.
+    pub(super) clock: Option<bool>,
+    /// 脚本栅栏: the fence shown is a script fence with this output and footer.
+    pub(super) script: Option<ScriptView>,
+    /// Its clickable rows as last drawn: row index and (left, top, right, bottom) in content
+    /// DIPs.
+    pub(super) script_rows: Vec<(usize, [f32; 4])>,
+    /// The clickable row under the pointer.
+    pub(super) script_hover: Option<usize>,
     /// The portal's folder could not be found (its empty state says so).
     pub(super) portal_missing: bool,
     /// Width the cached labels were fitted for; a change invalidates them.
@@ -523,6 +538,76 @@ impl FenceViewState {
     /// 像桌面一样排列: drawn like the Windows desktop (no title row, plate, rim or edges).
     pub(super) fn bare(&self) -> bool {
         self.desktop.is_some()
+    }
+
+    /// 便签与待办: what a press at client point (`x`, `y`) in a note's content does: tick the
+    /// to-do whose check box (with a little slack) is under it, else open the editor. None
+    /// when this window shows no note or the point is not in its content.
+    pub(super) fn note_press(&self, x: i32, y: i32) -> Option<Command> {
+        if self.note.is_none() || self.rolled_up || y < self.content_y || x < self.content_x {
+            return None;
+        }
+        let scale = self.scale();
+        let cx = (x - self.content_x) as f32 / scale;
+        let cy = (y - self.content_y) as f32 / scale;
+        const SLACK: f32 = 4.0;
+        let fence = self.active;
+        let line = self
+            .note_boxes
+            .iter()
+            .find(|(_, r)| {
+                cx >= r[0] - SLACK && cx < r[2] + SLACK && cy >= r[1] - SLACK && cy < r[3] + SLACK
+            })
+            .map(|&(line, _)| line);
+        Some(match line {
+            Some(line) => Command::ToggleNoteLine { fence, line },
+            None => Command::EditNote { fence },
+        })
+    }
+
+    /// 脚本栅栏: the clickable row at client point (`x`, `y`).
+    pub(super) fn script_row_at(&self, x: i32, y: i32) -> Option<usize> {
+        if self.script.is_none() || self.rolled_up || y < self.content_y || x < self.content_x {
+            return None;
+        }
+        let scale = self.scale();
+        let cx = (x - self.content_x) as f32 / scale;
+        let cy = (y - self.content_y) as f32 / scale;
+        self.script_rows
+            .iter()
+            .find(|(_, r)| cx >= r[0] && cx < r[2] && cy >= r[1] && cy < r[3])
+            .map(|&(row, _)| row)
+    }
+
+    /// 脚本栅栏: a press on a clickable row runs what it asks for.
+    pub(super) fn script_press(&self, x: i32, y: i32) -> Option<Command> {
+        let row = self.script_row_at(x, y)?;
+        Some(Command::ScriptRowClicked {
+            fence: self.active,
+            row,
+        })
+    }
+
+    /// The fence shown is a tool (小工具) in place of items: it takes no drops, merges or
+    /// marquee, and counts no items.
+    pub(super) fn shows_tool(&self) -> bool {
+        self.note.is_some() || self.clock.is_some() || self.script.is_some()
+    }
+
+    /// Arms TIMER_CLOCK for just after the next minute (or second) boundary, or stops it when
+    /// the window shows no clock.
+    pub(super) fn arm_clock(&self) {
+        match self.clock {
+            Some(seconds) => {
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default();
+                let period_ms: u128 = if seconds { 1000 } else { 60_000 };
+                let wait = period_ms - now.as_millis() % period_ms + 20;
+                window::set_timer(self.hwnd, TIMER_CLOCK, wait as u32);
+            }
+            None => window::kill_timer(self.hwnd, TIMER_CLOCK),
+        }
     }
 
     pub(super) fn title_h_px(&self) -> i32 {

@@ -1,0 +1,597 @@
+//! The Peek search list (Listary-style): fence matches ranked by how well they match (pinyin
+//! included) and how often they were opened from the search, Everything's whole-computer
+//! results under them, and what Enter / Ctrl+Enter / the actions menu do with a row. When an
+//! Open / Save dialog was in front as the Peek began, Enter hands the row to that dialog.
+
+use super::*;
+use crate::peek_search::Row;
+use pecofence_core::everything as ev;
+use pecofence_core::matcher;
+use pecofence_platform::{clipboard, dialogs, everything};
+use std::ops::Range;
+use std::os::windows::process::CommandExt;
+
+/// Rows of the list (Ctrl+1 .. Ctrl+9 reach them all).
+const MAX_ROWS: usize = 9;
+/// Fence rows kept when Everything has results too.
+const FENCE_ROWS_WITH_EVERYTHING: usize = 5;
+/// Everything results asked for; they are ranked again here.
+const EVERYTHING_MAX: u32 = 60;
+/// Typing pause before Everything is asked.
+const EVERYTHING_DELAY_MS: u32 = 120;
+/// `dwData` of Everything's replies: this tag plus the query's sequence number.
+const REPLY_TAG: usize = 0x5046_0000;
+
+const CMD_OPEN: u32 = 1;
+const CMD_OPEN_FOLDER: u32 = 2;
+const CMD_COPY_PATH: u32 = 3;
+const CMD_SHELL_FIRST: u32 = 0x100;
+const CMD_SHELL_LAST: u32 = 0x7FFF;
+
+#[derive(Clone, Debug, PartialEq)]
+pub(super) enum RowKind {
+    /// `peek_hits[i]`.
+    Fence(usize),
+    File {
+        path: PathBuf,
+        is_folder: bool,
+    },
+    /// 「在 Everything 里查看全部结果」.
+    ShowAll,
+}
+
+#[derive(Default)]
+pub(super) struct SearchState {
+    pub rows: Vec<RowKind>,
+    pub sel: usize,
+    /// Highlight ranges of each `peek_hits` entry in its shown name.
+    pub fence_marks: Vec<Vec<Range<usize>>>,
+    /// Everything's last answer for the current text, and how many it found in all.
+    pub everything: Vec<ev::Hit>,
+    pub everything_total: u32,
+    /// Sequence number of the last query sent, and its text.
+    pub seq: u32,
+    pub sent: String,
+    /// The Open / Save dialog in front when the Peek began.
+    pub dialog: Option<isize>,
+    /// The window in front when the Peek began (double Ctrl gives the foreground back to it).
+    pub before: Option<isize>,
+}
+
+fn hwnd_of(raw: isize) -> HWND {
+    HWND(raw as *mut core::ffi::c_void)
+}
+
+impl App {
+    /// Notes an Open / Save dialog in front as the Peek begins (Enter then hands it the row).
+    pub(super) fn note_search_dialog(&mut self) {
+        let front = desktop::foreground_window();
+        self.search.dialog = dialogs::is_file_dialog(front).then_some(front.0 as isize);
+        self.search.before = (!front.0.is_null()
+            && desktop::window_pid(front) != pecofence_platform::process::current_pid())
+        .then_some(front.0 as isize);
+        if self.search.dialog.is_some() {
+            tracing::info!(kind = ?dialogs::dialog_kind(front), "peek began over a file dialog");
+        }
+    }
+
+    /// Ctrl pressed twice: the search box (with the Peek), or the Peek ends when the box is
+    /// already open. Ignored while a full-screen program (a game, a video) is in front.
+    pub(super) fn search_by_double_ctrl(&mut self) {
+        if desktop::fullscreen_app_in_front() {
+            tracing::debug!("double Ctrl ignored: a full-screen window is in front");
+            return;
+        }
+        let peeking = self.peek.as_ref().is_some_and(|p| !p.is_closing());
+        if peeking && crate::peek_search::is_open() {
+            let before = self.search.before;
+            self.end_peek("Ctrl pressed twice");
+            if let Some(b) = before.map(hwnd_of).filter(|&b| desktop::is_window(b)) {
+                window::bring_to_front(b);
+            }
+            return;
+        }
+        if !peeking {
+            self.toggle_peek();
+        }
+        if self.peek.is_none() {
+            return;
+        }
+        tracing::info!("search box opened by double Ctrl");
+        crate::peek_search::open("", self.queue.clone(), self.theme_mode == ThemeMode::Dark);
+        self.update_peek_search();
+    }
+
+    /// Ranks the fence matches for `query` (lower case): best match first, then the ones opened
+    /// most from the search, then reading order. Fills `peek_hits` and their highlights.
+    pub(super) fn rank_fence_matches(&mut self, query: &str) {
+        let mut found: Vec<(
+            u32,
+            u32,
+            usize,
+            (FenceId, FenceId, ItemId),
+            Vec<Range<usize>>,
+        )> = Vec::new();
+        if !query.is_empty() {
+            let mut windows: Vec<(RECT, FenceId)> =
+                self.fences.iter().map(|(id, w)| (w.rect(), *id)).collect();
+            windows.sort_by_key(|(r, id)| (r.left, r.top, *id));
+            for (_, host) in windows {
+                for tab in self.state.tabs_of(host) {
+                    let Some(fence) = self.state.fence(tab) else {
+                        continue;
+                    };
+                    for it in self.state.items_of(fence) {
+                        let Some((score, marks)) =
+                            super::peek::search_match(&it.display_name, it.key.as_path(), query)
+                        else {
+                            continue;
+                        };
+                        let uses = it
+                            .path()
+                            .map(|p| self.state.config.search_count(p))
+                            .unwrap_or(0);
+                        let order = found.len();
+                        found.push((score, uses, order, (host, tab, it.id), marks));
+                    }
+                }
+            }
+        }
+        found.sort_by(|a, b| b.0.cmp(&a.0).then(b.1.cmp(&a.1)).then(a.2.cmp(&b.2)));
+        self.peek_hits = found.iter().map(|f| f.3).collect();
+        self.search.fence_marks = found.into_iter().map(|f| f.4).collect();
+    }
+
+    /// Asks Everything after a short typing pause (switch 搜索整台电脑 on, text in the box).
+    pub(super) fn schedule_everything(&mut self, query: &str) {
+        if !self.state.config.settings.tools.everything || query.is_empty() {
+            self.search.everything.clear();
+            self.search.everything_total = 0;
+            self.search.sent.clear();
+            // An answer still on its way is for text that is gone.
+            self.search.seq = self.search.seq.wrapping_add(1);
+            return;
+        }
+        window::set_timer(self.control.hwnd(), TIMER_EVERYTHING, EVERYTHING_DELAY_MS);
+    }
+
+    /// `TIMER_EVERYTHING`: sends the box's text to Everything (the answer comes to the box).
+    pub(super) fn send_everything_query(&mut self) {
+        let Some(query) = crate::peek_search::query().map(|q| q.trim().to_string()) else {
+            return;
+        };
+        let Some(reply_to) = crate::peek_search::hwnd() else {
+            return;
+        };
+        if query.is_empty() || query == self.search.sent {
+            return;
+        }
+        let Some(instance) = everything::find() else {
+            tracing::debug!("search: Everything is not running");
+            self.search.everything.clear();
+            self.search.everything_total = 0;
+            self.refresh_search_rows();
+            return;
+        };
+        let text = ev::search_text(&query, instance.supports_pinyin());
+        self.search.seq = self.search.seq.wrapping_add(1);
+        let kind = REPLY_TAG | (self.search.seq as usize & 0xFFFF);
+        let payload = ev::query2w(
+            reply_to.0 as usize as u32,
+            kind as u32,
+            &text,
+            EVERYTHING_MAX,
+            ev::SORT_DATE_MODIFIED_DESCENDING,
+        );
+        let sent = everything::send_query(instance.hwnd, reply_to, ev::COPYDATA_QUERY2W, &payload);
+        tracing::debug!(
+            sent,
+            version = %format!("{}.{}", instance.major, instance.minor),
+            search = %text,
+            "search: Everything asked"
+        );
+        if sent {
+            self.search.sent = query;
+        }
+    }
+
+    /// Everything's answer (`WM_COPYDATA` to the search box). Answers to older text are dropped.
+    pub(super) fn on_everything_results(&mut self, kind: usize, bytes: &[u8]) {
+        if kind != REPLY_TAG | (self.search.seq as usize & 0xFFFF) {
+            return;
+        }
+        // The box changed after the query went out: the next query answers for it.
+        let now = crate::peek_search::query()
+            .map(|q| q.trim().to_string())
+            .unwrap_or_default();
+        if now != self.search.sent {
+            return;
+        }
+        let Some((total, hits)) = ev::parse_list2(bytes) else {
+            tracing::warn!(
+                len = bytes.len(),
+                "search: Everything's answer could not be read"
+            );
+            return;
+        };
+        tracing::debug!(total, got = hits.len(), "search: Everything answered");
+        self.search.everything = hits;
+        self.search.everything_total = total;
+        self.refresh_search_rows();
+    }
+
+    /// Rebuilds the list from `peek_hits` and Everything's results, keeps the highlighted row
+    /// when it is still there, and shows it.
+    pub(super) fn refresh_search_rows(&mut self) {
+        let query = crate::peek_search::query()
+            .map(|q| q.trim().to_lowercase())
+            .unwrap_or_default();
+        let before = self.search.rows.get(self.search.sel).cloned();
+        let before_hit = match before {
+            Some(RowKind::Fence(i)) => self.peek_hits.get(i).copied(),
+            _ => None,
+        };
+        let fence_paths: Vec<String> = self
+            .peek_hits
+            .iter()
+            .filter_map(|(_, _, item)| self.state.item(*item)?.path().map(|p| p.to_lowercase()))
+            .collect();
+        // Everything's results, ranked here: Everything sorts by date only.
+        let mut files: Vec<(u32, u32, usize, PathBuf, bool)> = Vec::new();
+        for (order, hit) in self.search.everything.iter().enumerate() {
+            if fence_paths.contains(&hit.path.to_lowercase()) {
+                continue;
+            }
+            let path = PathBuf::from(&hit.path);
+            let name = path
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| hit.path.clone());
+            let score = matcher::match_name(&name, &query).map_or(0, |m| m.score);
+            let uses = self.state.config.search_count(&hit.path);
+            files.push((score, uses, order, path, hit.is_folder));
+        }
+        files.sort_by(|a, b| b.1.cmp(&a.1).then(b.0.cmp(&a.0)).then(a.2.cmp(&b.2)));
+        // As many rows as fit under the box: Everything's rows bring two headings and the
+        // "show all" row.
+        let show_all = self.search.everything_total > 0;
+        let max_rows = crate::peek_search::row_room(if files.is_empty() { 0 } else { 2 })
+            .saturating_sub(usize::from(show_all))
+            .clamp(1, MAX_ROWS);
+        let fence_room = if files.is_empty() {
+            max_rows
+        } else {
+            FENCE_ROWS_WITH_EVERYTHING.min(max_rows)
+        };
+        let mut rows: Vec<RowKind> = (0..self.peek_hits.len())
+            .filter(|&i| self.state.item(self.peek_hits[i].2).is_some())
+            .take(fence_room)
+            .map(RowKind::Fence)
+            .collect();
+        let room = max_rows - rows.len();
+        rows.extend(files.into_iter().take(room).map(|f| RowKind::File {
+            path: f.3,
+            is_folder: f.4,
+        }));
+        if show_all {
+            rows.push(RowKind::ShowAll);
+        }
+        self.search.sel = rows
+            .iter()
+            .position(|r| match (r, &before, before_hit) {
+                (RowKind::Fence(i), _, Some(h)) => self.peek_hits.get(*i) == Some(&h),
+                (r, Some(b), None) => r == b,
+                _ => false,
+            })
+            .unwrap_or(0);
+        self.search.rows = rows;
+        self.show_search_rows();
+    }
+
+    /// Puts the list in the box and the fence highlight on the selected fence row.
+    pub(super) fn show_search_rows(&mut self) {
+        self.peek_hit = match self.search.rows.get(self.search.sel) {
+            Some(RowKind::Fence(i)) => *i,
+            _ => usize::MAX,
+        };
+        let query = crate::peek_search::query().unwrap_or_default();
+        let searching = !query.trim().is_empty();
+        self.show_peek_hits(searching);
+        let both = self
+            .search
+            .rows
+            .iter()
+            .any(|r| matches!(r, RowKind::Fence(_)))
+            && self
+                .search
+                .rows
+                .iter()
+                .any(|r| matches!(r, RowKind::File { .. }));
+        let mut rows = Vec::with_capacity(self.search.rows.len());
+        let mut last_group = None;
+        for (i, kind) in self.search.rows.iter().enumerate() {
+            let group = matches!(kind, RowKind::Fence(_));
+            let heading = (both && last_group != Some(group) && !matches!(kind, RowKind::ShowAll))
+                .then(|| {
+                    if group {
+                        pecofence_core::i18n::text("栅栏里").to_string()
+                    } else {
+                        pecofence_core::i18n::text("整台电脑（Everything）").to_string()
+                    }
+                });
+            if !matches!(kind, RowKind::ShowAll) {
+                last_group = Some(group);
+            }
+            let shortcut = (i < MAX_ROWS).then_some(i as u8 + 1);
+            let row = match kind {
+                RowKind::Fence(h) => {
+                    let (_, tab, item) = self.peek_hits[*h];
+                    let Some(it) = self.state.item(item) else {
+                        // Gone since the rows were made: an empty row keeps the others in place.
+                        rows.push(Row {
+                            name: String::new(),
+                            marks: Vec::new(),
+                            detail: String::new(),
+                            icon_path: None,
+                            is_folder: false,
+                            exact_icon: false,
+                            heading,
+                            shortcut,
+                        });
+                        continue;
+                    };
+                    let path = it.key.as_path().map(PathBuf::from);
+                    Row {
+                        name: it.display_name.clone(),
+                        marks: self.search.fence_marks.get(*h).cloned().unwrap_or_default(),
+                        detail: self
+                            .state
+                            .fence(tab)
+                            .map(|f| f.title.clone())
+                            .unwrap_or_default(),
+                        exact_icon: path.as_deref().is_some_and(shell::is_on_fixed_drive),
+                        icon_path: path,
+                        is_folder: it.is_folder,
+                        heading,
+                        shortcut,
+                    }
+                }
+                RowKind::File { path, is_folder } => {
+                    let name = path
+                        .file_name()
+                        .map(|n| n.to_string_lossy().to_string())
+                        .unwrap_or_else(|| path.to_string_lossy().to_string());
+                    let marks = matcher::match_name(&name, &query.trim().to_lowercase())
+                        .map(|m| m.ranges)
+                        .unwrap_or_default();
+                    Row {
+                        name,
+                        marks,
+                        detail: path
+                            .parent()
+                            .map(|p| p.to_string_lossy().to_string())
+                            .unwrap_or_default(),
+                        exact_icon: shell::is_on_fixed_drive(path),
+                        icon_path: Some(path.clone()),
+                        is_folder: *is_folder,
+                        heading,
+                        shortcut,
+                    }
+                }
+                RowKind::ShowAll => Row {
+                    name: pecofence_core::i18n::text("在 Everything 里查看全部结果").to_string(),
+                    marks: Vec::new(),
+                    detail: pecofence_core::i18n::format(
+                        "共 {0} 个",
+                        &[self.search.everything_total.to_string()],
+                    ),
+                    icon_path: None,
+                    is_folder: false,
+                    exact_icon: false,
+                    heading: None,
+                    shortcut,
+                },
+            };
+            rows.push(row);
+        }
+        let selected = (!rows.is_empty()).then_some(self.search.sel);
+        crate::peek_search::set_rows(rows, selected);
+    }
+
+    /// Up / Down (Ctrl+P / Ctrl+N) in the box: the previous / next row, wrapping around.
+    pub(super) fn step_search_row(&mut self, step: i32) {
+        let n = self.search.rows.len() as i32;
+        if n == 0 {
+            return;
+        }
+        self.search.sel = (self.search.sel as i32 + step).rem_euclid(n) as usize;
+        self.show_search_rows();
+    }
+
+    /// The path behind a row (`None` for a namespace item or the show-all row).
+    fn row_path(&self, row: &RowKind) -> Option<(PathBuf, bool)> {
+        match row {
+            RowKind::Fence(i) => {
+                let (_, _, item) = *self.peek_hits.get(*i)?;
+                let it = self.state.item(item)?;
+                let p = it.path()?;
+                (!shell::is_namespace_path(Path::new(p))).then(|| (PathBuf::from(p), it.is_folder))
+            }
+            RowKind::File { path, is_folder } => Some((path.clone(), *is_folder)),
+            RowKind::ShowAll => None,
+        }
+    }
+
+    /// Enter, a click or Ctrl+digit on row `index`.
+    pub(super) fn open_search_row(&mut self, index: usize) {
+        let Some(row) = self.search.rows.get(index).cloned() else {
+            return;
+        };
+        let query = crate::peek_search::query()
+            .unwrap_or_default()
+            .trim()
+            .to_string();
+        let path = self.row_path(&row);
+        // Deleted since the list was made: Windows would show its "cannot find" box, which
+        // holds PecoFence until it is closed. The row goes instead.
+        if let Some((p, _)) = &path
+            && !p.exists()
+        {
+            tracing::info!(
+                index,
+                "search row opened: its file is gone, the row is dropped"
+            );
+            self.search.rows.remove(index);
+            self.search.sel = self
+                .search
+                .sel
+                .min(self.search.rows.len().saturating_sub(1));
+            self.show_search_rows();
+            return;
+        }
+        if let Some((p, _)) = &path {
+            self.state.config.note_search_open(&p.to_string_lossy());
+            self.state.mark_dirty();
+            self.schedule_save();
+        }
+        let dialog = self
+            .search
+            .dialog
+            .filter(|d| desktop::is_window(hwnd_of(*d)) && dialogs::is_file_dialog(hwnd_of(*d)));
+        tracing::info!(row = ?row, dialog = dialog.is_some(), "search row opened");
+        match (&row, path, dialog) {
+            (RowKind::ShowAll, _, _) => {
+                self.end_peek("search: show all in Everything");
+                // The same search as the list (pinyin included), in Everything's window.
+                let found = everything::find().and_then(|i| Some((i.exe()?, i.supports_pinyin())));
+                match found {
+                    Some((exe, pinyin)) => {
+                        let text = ev::search_text(&query, pinyin);
+                        let started = std::process::Command::new(exe)
+                            .arg("-search")
+                            .arg(text)
+                            .spawn();
+                        if let Err(e) = started {
+                            tracing::warn!(error = %e, "search: Everything did not start");
+                        }
+                    }
+                    None => tracing::info!("search: Everything is no longer running"),
+                }
+            }
+            (_, Some((p, is_folder)), Some(d)) => {
+                self.end_peek("search result sent to a dialog");
+                crate::dialog_jump::send_to_dialog(hwnd_of(d), p, is_folder);
+            }
+            (RowKind::Fence(i), _, _) => {
+                let Some(&(_, tab, item)) = self.peek_hits.get(*i) else {
+                    return;
+                };
+                self.end_peek("search match opened");
+                self.launch(item, tab, false);
+            }
+            (RowKind::File { .. }, Some((p, _)), None) => {
+                self.end_peek("search: whole-computer result opened");
+                if let Err(e) = shell::shell_execute(&p, None, Some(self.control.hwnd())) {
+                    tracing::warn!(error = %e, path = %p.display(), "search: open failed");
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Ctrl+Enter: Explorer with the highlighted row's file selected.
+    pub(super) fn open_search_row_folder(&mut self) {
+        let Some(row) = self.search.rows.get(self.search.sel).cloned() else {
+            return;
+        };
+        let Some((path, _)) = self.row_path(&row) else {
+            return;
+        };
+        self.end_peek("search: containing folder opened");
+        open_containing_folder(&path);
+    }
+
+    /// Right (caret at the end) or Ctrl+O: 打开 / 打开所在文件夹 / 复制路径, then the
+    /// Windows context menu of the highlighted row.
+    pub(super) fn show_search_actions(&mut self) {
+        let Some(row) = self.search.rows.get(self.search.sel).cloned() else {
+            return;
+        };
+        let Some((path, _)) = self.row_path(&row) else {
+            return;
+        };
+        let Some(owner) = crate::peek_search::hwnd() else {
+            return;
+        };
+        let (x, y) = crate::peek_search::selected_row_point().unwrap_or_else(|| {
+            let p = window::cursor_pos();
+            (p.x, p.y)
+        });
+        let menu = PopupMenu::new();
+        menu.item(CMD_OPEN, pecofence_core::i18n::text("打开"), false, false)
+            .default_item(CMD_OPEN)
+            .item(
+                CMD_OPEN_FOLDER,
+                pecofence_core::i18n::text("打开所在文件夹\tCtrl+Enter"),
+                false,
+                false,
+            )
+            .item(
+                CMD_COPY_PATH,
+                pecofence_core::i18n::text("复制路径"),
+                false,
+                false,
+            );
+        let mut shell_menu = ShellContextMenu::for_paths(&[path.as_path()]).ok();
+        if let Some(sm) = shell_menu.as_mut() {
+            menu.separator();
+            if sm
+                .populate(
+                    menu.handle(),
+                    menu.len(),
+                    CMD_SHELL_FIRST,
+                    CMD_SHELL_LAST,
+                    false,
+                )
+                .is_ok()
+            {
+                sm.remove_verbs(menu.handle(), &["open"]);
+                menu.tidy_separators();
+            } else {
+                shell_menu = None;
+            }
+        }
+        let cmd = menu.show_context(owner, x, y);
+        if let Some(sm) = shell_menu.as_ref()
+            && sm.contains(cmd)
+        {
+            let verb = sm.verb(cmd).unwrap_or_default();
+            tracing::info!(%verb, "search: shell verb invoked");
+            if let Err(e) = sm.invoke(cmd, owner, POINT { x, y }, false) {
+                tracing::warn!(error = %e, %verb, "search: shell verb failed");
+            }
+            return;
+        }
+        drop(shell_menu);
+        match cmd {
+            CMD_OPEN => self.open_search_row(self.search.sel),
+            CMD_OPEN_FOLDER => self.open_search_row_folder(),
+            CMD_COPY_PATH => {
+                let ok = clipboard::set_text(owner, &path.to_string_lossy());
+                tracing::info!(ok, "search: path copied");
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Explorer with `path` selected in its folder.
+fn open_containing_folder(path: &Path) {
+    // `/select,"<path>"`: quoted as a whole.
+    let spawned = std::process::Command::new("explorer.exe")
+        .raw_arg(format!("/select,\"{}\"", path.display()))
+        .spawn();
+    if let Err(e) = spawned {
+        tracing::warn!(error = %e, "search: Explorer did not start");
+    }
+}

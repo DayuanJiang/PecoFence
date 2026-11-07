@@ -158,14 +158,14 @@ pub enum FenceCmd {
         #[arg(help = FENCE_HELP)]
         fence: String,
     },
-    /// New virtual fence, or a folder portal with --portal
+    /// New virtual fence, a folder portal with --portal, or a tool fence with --tool / --script
     #[command(
         after_help = "Example: pecofence-cli fence create --title Work --rect 100,100,600,400\n         pecofence-cli fence create --title Tools --below Games --size 1152,400\n\n--below/--above/--right-of/--left-of place the fence next to another one, edges aligned and\nthe snapping gap between them; the size defaults to that fence's."
     )]
     #[command(group(ArgGroup::new("place").multiple(false)))]
     Create {
-        /// Title of the new fence (defaults to the folder name with --portal)
-        #[arg(long, value_name = "TITLE", required_unless_present = "portal")]
+        /// Title of the new fence (defaults to the folder name with --portal, the tool or script name with --tool / --script)
+        #[arg(long, value_name = "TITLE", required_unless_present_any = ["portal", "tool", "script"])]
         title: Option<String>,
         #[arg(long, value_name = "X,Y,W,H", value_parser = Rect::parse, allow_hyphen_values = true, group = "place", help = RECT_HELP)]
         rect: Option<Rect>,
@@ -190,6 +190,15 @@ pub enum FenceCmd {
         /// Size in physical px with --below/--above/--right-of/--left-of (default: that fence's)
         #[arg(long, value_name = "W,H", value_parser = parse_size)]
         size: Option<(i32, i32)>,
+        /// A tool fence (小工具) instead: note, clock or script (switches the tool on)
+        #[arg(long, value_name = "TOOL", value_parser = ["note", "clock", "script"], conflicts_with = "portal")]
+        tool: Option<String>,
+        /// Text of a new note (with --tool note; lines starting with [ ] are to-dos)
+        #[arg(long, value_name = "TEXT")]
+        text: Option<String>,
+        /// Script a new script fence runs (implies --tool script): .ps1 .py .pyw .cmd .bat .js .exe
+        #[arg(long, value_name = "FILE", conflicts_with = "portal")]
+        script: Option<String>,
     },
     /// Delete a fence; its items return to the desktop (inbox) fence, rules targeting it are removed
     #[command(after_help = "Example: pecofence-cli fence delete Temp")]
@@ -204,6 +213,33 @@ pub enum FenceCmd {
         fence: String,
         /// New title
         title: String,
+    },
+    /// Run a script fence's script now (a streaming script starts again)
+    #[command(after_help = "Example: pecofence-cli fence refresh Weather")]
+    Refresh {
+        #[arg(help = FENCE_HELP)]
+        fence: String,
+    },
+    /// Show a folder inside a fence, as a double-click on it does: a subfolder in a folder
+    /// fence, or any folder in a fence of icons (in place of its icons until `fence up`)
+    #[command(after_help = "Example: pecofence-cli fence open-folder Projects 2026")]
+    OpenFolder {
+        #[arg(help = FENCE_HELP)]
+        fence: String,
+        /// The folder: a full path, or a name or path inside the folder the fence shows
+        folder: String,
+    },
+    /// One folder up in a fence that shows a folder (Backspace, the mouse's back button)
+    #[command(after_help = "Example: pecofence-cli fence up Projects")]
+    Up {
+        #[arg(help = FENCE_HELP)]
+        fence: String,
+    },
+    /// Back into the folder the last `fence up` left (the mouse's forward button)
+    #[command(after_help = "Example: pecofence-cli fence forward Projects")]
+    Forward {
+        #[arg(help = FENCE_HELP)]
+        fence: String,
     },
     /// Move a fence: absolute --rect, new --x/--y, or another --monitor
     #[command(after_help = "Example: pecofence-cli fence move Work --x 1200 --y 80")]
@@ -254,7 +290,7 @@ pub enum FenceCmd {
         #[arg(long, group = "size")]
         h: Option<i32>,
     },
-    /// Set a per-fence option (title, iconSize, spacing, spacingPx, iconAlign, autoHeight, locked, expandUpward, excludeFromQuickHide, opacity, tint, tintTitleOnly, tabColor, titleColor, titleSize, titleOnHover, layout, sort, reverse, groupByDate, foldersFirst, labelLines, openFoldersInside, portalNavigate, portalTitleIcon, hideWhenEmpty, desktopLayout); `fence rename` is the friendlier way to set title
+    /// Set a per-fence option (title, iconSize, spacing, spacingPx, iconAlign, autoHeight, locked, expandUpward, excludeFromQuickHide, opacity, tint, tintTitleOnly, tabColor, titleColor, titleSize, titleOnHover, layout, sort, reverse, groupByDate, foldersFirst, labelLines, openFoldersInside, portalNavigate, portalTitleIcon, hideWhenEmpty, desktopLayout, noteText, scriptPath, scriptInterval); `fence rename` is the friendlier way to set title
     #[command(
         override_usage = "pecofence-cli fence set [OPTIONS] <FENCE> <PROP> <VALUE>\n       pecofence-cli fence set [OPTIONS] --all <PROP> <VALUE>",
         after_help = "Arguments:\n  <FENCE>  Fence: id, unique id prefix (>=6 hex), or title (exact, then unique substring)\n  <PROP>   Option name as shown by `fence get` (title: prefer `fence rename`)\n  <VALUE>  JSON value or bare text: 48, true, list, null; quote # colours: \"#ff8800\" or '\"#ff8800\"'\n\nExample: pecofence-cli fence set Work layout list\n         pecofence-cli fence set Work tint \"#ff8800\"\n         pecofence-cli fence set --all opacity clear"
@@ -597,8 +633,14 @@ pub enum BackupCmd {
 #[derive(Subcommand, Debug)]
 pub enum PeekCmd {
     /// Float every fence above the current windows
-    #[command(after_help = "Example: pecofence-cli peek start")]
-    Start,
+    #[command(
+        after_help = "Examples:\n  pecofence-cli peek start\n  pecofence-cli peek start --search invoice"
+    )]
+    Start {
+        /// Open the search box with this text, as if typed (replaces the text of an open box)
+        #[arg(long, value_name = "TEXT")]
+        search: Option<String>,
+    },
     /// End Peek
     #[command(after_help = "Example: pecofence-cli peek end")]
     End,

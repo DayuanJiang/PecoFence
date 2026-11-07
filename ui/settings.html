@@ -79,6 +79,24 @@
   nav a:hover, nav a.sel { background: var(--subtle); }
   nav a:active { background: var(--subtle-pressed); color: var(--text2); }
   nav a.sel::before { content: ""; position: absolute; left: 0; top: 50%; width: 3px; height: 16px; margin-top: -8px; border-radius: 2px; background: var(--accent); }
+  /* 查找设置: the box under the brand; its list floats over the page (the nav scrolls, so the
+     list is fixed to the window and placed under the box). */
+  .nav-search { position: relative; margin: 0 4px 12px; }
+  .nav-search input { width: 100%; min-width: 0; padding-right: 32px; }
+  .nav-search .ic { position: absolute; right: 10px; top: 8px; font-size: 14px; color: var(--text2); pointer-events: none; }
+  .search-list { position: fixed; z-index: 60; width: 380px; max-width: calc(100vw - 24px); max-height: min(470px, calc(100vh - 80px)); overflow: auto; padding: 4px;
+    border-radius: var(--r-card); background: var(--card); border: 1px solid var(--card-stroke); box-shadow: 0 8px 24px #00000033; }
+  .search-list[hidden] { display: none; }
+  .search-list [role=option] { padding: 8px 10px; border-radius: var(--r-control); cursor: default; }
+  .search-list [role=option][aria-selected=true], .search-list [role=option]:hover { background: var(--control-hover); }
+  .search-list b { display: block; font-weight: 400; font-size: 14px; line-height: 20px; color: var(--text); }
+  .search-list small { display: block; color: var(--text2); font-size: 12px; line-height: 16px; }
+  .search-list mark { background: none; color: var(--accent); font-weight: 600; }
+  .search-list .none { padding: 8px 10px; color: var(--text2); font-size: 13px; }
+  /* A picked result: tinted for a moment, then it fades (no animation, so the tint also shows
+     with reduced motion, where transitions are off and it just goes). */
+  .card.found { background: color-mix(in srgb, var(--accent) 16%, var(--card)); border-color: var(--accent); }
+  .card.fading { transition: background-color .8s ease-out, border-color .8s ease-out; }
   .nav-footer { margin-top: auto; padding: 16px 12px 0; color: var(--text3); font-size: 12px; line-height: 16px; }
   .nav-footer p { margin: 0; }
 
@@ -108,6 +126,7 @@
   /* Controls that wrap under a long description stay on the right, as in Windows Settings. */
   .card:not(.stack) > :not(.l):not(.s) { margin-left: auto; }
   .card.disabled .t, .card.disabled .s { color: var(--text-disabled); }
+  .card.disabled button.accent:disabled { color: var(--text-disabled); background: var(--control-disabled); border-color: var(--control-stroke); }
   /* A master setting and the rows that only matter while it is on share one surface. */
   .group { display: flex; flex-direction: column; gap: 1px; margin-bottom: 4px; }
   .group > .card, .rows > .card { margin: 0; border-radius: 0; }
@@ -187,6 +206,7 @@
   /* Peek shortcut: key caps in a box that records the next combination (styled as a focused
      text box meanwhile); the quick choices are toggle buttons. */
   .hotkey-edit { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 16px; max-width: 100%; }
+  #peekHotkeyEdit { flex-basis: 100%; } #peekHotkeyEdit[hidden] { display: none; }
   .hotkey-box { display: inline-flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 200px; padding: 0 10px 0 4px; }
   .hotkey-box .keys { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; min-width: 0; }
   .hotkey-box kbd { font: 600 12px/22px "Segoe UI Variable Text", "Segoe UI", var(--font-cjk), sans-serif; min-width: 26px; padding: 0 7px; border-radius: 3px; text-align: center; color: var(--on-accent); background: var(--accent); }
@@ -205,7 +225,9 @@
   button[aria-pressed=true]:disabled { background: var(--control-disabled); color: var(--text-disabled); border-color: var(--control-stroke); }
 
   /* Theme style tiles double as the live preview of the icon settings below them. */
-  .style-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; padding-left: 40px; }
+  .style-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px; padding-left: 40px; }
+  .theme-files { display: flex; flex-direction: column; gap: 6px; padding-left: 40px; } .theme-files[hidden] { display: none; }
+  .theme-files .actions { justify-content: flex-start; }
   .tile { position: relative; display: flex; flex-direction: column; gap: 8px; padding: 8px 8px 10px; border-radius: 6px;
     border: 1px solid var(--control-stroke); background: var(--control); }
   .tile:hover { background: var(--control-hover); }
@@ -217,8 +239,9 @@
   .tile:has(input:checked) .cap::before { border: 5px solid var(--accent); background: var(--on-accent); }
   .shot { position: relative; height: 112px; border-radius: 4px; overflow: hidden; display: grid; place-items: center;
     background: repeating-linear-gradient(0deg, transparent 0 23px, #ffffff0d 23px 24px), repeating-linear-gradient(90deg, transparent 0 23px, #ffffff0d 23px 24px), var(--wall); }
-  .mini-fence { position: relative; width: 74%; max-width: 230px; overflow: hidden; display: flex; flex-direction: column; }
+  .mini-fence { position: relative; width: 84%; max-width: 230px; overflow: hidden; display: flex; flex-direction: column; }
   .tile-fluent .mini-fence { border-radius: 8px; background: var(--mini-panel); backdrop-filter: blur(14px) saturate(120%); border: 1px solid var(--mini-stroke); box-shadow: 0 8px 16px #0000003d; }
+  .tile-custom .mini-fence { border-radius: 8px; background: var(--mini-panel); border: 1px dashed var(--control-strong); }
   .tile-glass .mini-fence { border-radius: 16px; box-shadow: 0 12px 22px -8px #15162250, 0 3px 6px -2px #15162224; }
   .tile-glass .mini-fence::before { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; z-index: 2;
     padding: 1px; background: linear-gradient(145deg, #fffffff5, #ffffff25 36%, #53566338 58%, #ffffffcc 88%);
@@ -229,10 +252,13 @@
   .preview-glass { position: absolute; inset: -20px; background: var(--glass-panel); backdrop-filter: blur(.65px) saturate(110%); pointer-events: none; }
   .preview-title { position: relative; z-index: 1; padding: 7px 12px 0; font-size: 12px; line-height: 16px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: var(--preview-title-align, left); }
   .tile-glass .preview-title { text-shadow: var(--glass-label-shadow); }
-  .mini-items { position: relative; z-index: 1; display: flex; align-items: center; gap: 10px; padding: 8px 12px 10px; min-height: 52px; }
+  .mini-items { position: relative; z-index: 1; display: flex; align-items: center; gap: 8px; padding: 8px 10px 10px; min-height: 52px; }
   .file-icon { width: var(--preview-icon-size, 26px); height: var(--preview-icon-size, 26px); position: relative; display: grid; place-items: center; border-radius: 5px; font-size: 13px; flex: none;
     color: #eef7ff; background: #749cca; box-shadow: inset 0 1px 0 #ffffff5c, 0 3px 6px #00000012; transition: width .2s, height .2s, opacity .2s; }
   .file-icon.folder { background: #d1ac65; } .file-icon.sheet { background: #689d88; }
+  /* Three tiles in a narrow window: two icons fit the small preview, the third would be cut. */
+  .tile { container-type: inline-size; }
+  @container (max-width: 150px) { .file-icon.sheet { display: none; } }
   .file-icon::after { content: ""; position: absolute; inset: 0; border-radius: inherit; background: var(--preview-tint, transparent); opacity: var(--preview-tint-strength, .6); mix-blend-mode: color; }
   #desktopPreview.chameleon .file-icon { filter: saturate(.35); opacity: .65; }
 
@@ -359,9 +385,9 @@
   @media (max-width: 540px) {
     .app { grid-template-columns: 56px minmax(0, 1fr); } nav { padding: 12px 6px; }
     .brand { justify-content: center; padding: 8px 0 16px; }
-    .brand-name, .nav-text, .nav-footer { display: none; } nav a { justify-content: center; padding: 8px 0; }
+    .brand-name, .nav-text, .nav-footer, .nav-search { display: none; } nav a { justify-content: center; padding: 8px 0; }
     main { padding: 16px 12px 24px; } .card { padding: 12px; } .card.child, .rows > .card { padding-left: 12px; }
-    .style-tiles, .chips, .fb-kinds, .fb-field { padding-left: 0; } .newrule, .cond-list, .fb-preview { padding-left: 12px; }
+    .style-tiles, .theme-files, .chips, .fb-kinds, .fb-field { padding-left: 0; } .newrule, .cond-list, .fb-preview { padding-left: 12px; }
     .about-head { gap: 14px; } .about-head .brand-mark { width: 44px; height: 44px; }
   }
   /* Liquid Glass keeps the Fluent sheet (an opaque window has nothing to refract); only the
@@ -390,18 +416,43 @@
     .preview-glass, .tile-glass .mini-fence::before, .tile-glass .mini-fence::after { display: none; }
     .mini-fence { border: 1px solid CanvasText; }
   }
+  /* 对话框跳转: its three-step demo under the card (drawn by the script, colors per theme). */
+  :root { --dj-panel: #1f1f1f; --dj-win: #3a3a3a; --dj-bar: #454545; --dj-line: #6b6b6b; --dj-row: #5a5a5a; --dj-hot: #1f3b52; }
+  :root.light { --dj-panel: #f3f5f8; --dj-win: #ffffff; --dj-bar: #eef1f4; --dj-line: #9aa3ad; --dj-row: #d9dde2; --dj-hot: #e5f1fb; }
+  .card.dj-demo { display: block; padding: 14px 16px 14px 57px; }
+  .dj-demo .dj-head { font-size: 14px; line-height: 20px; margin-bottom: 8px; }
+  .dj-demo .dj-body { display: flex; flex-wrap: wrap; gap: 20px; align-items: center; }
+  .dj-demo .dj-pic { flex: none; border-radius: var(--r-control); background: var(--dj-panel); padding: 6px; line-height: 0; }
+  .dj-demo ol { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; font-size: 13px; line-height: 18px; color: var(--text2); }
+  .dj-demo li.on { color: var(--text); font-weight: 600; }
+  .dj-demo > .s { margin-top: 10px; }
+  .dj-pic .w { fill: var(--dj-win); stroke: var(--dj-line); }
+  .dj-pic .w.front { stroke: var(--accent); stroke-width: 2; }
+  .dj-pic .bar { fill: var(--dj-bar); }
+  .dj-pic .addr { fill: var(--dj-bar); stroke: var(--dj-line); }
+  .dj-pic .addr.hot { fill: var(--dj-hot); stroke: var(--accent); }
+  .dj-pic .fold { fill: #f8c851; }
+  .dj-pic .row { fill: var(--dj-row); }
+  .dj-pic .back { opacity: .55; }
+  .dj-pic text { fill: var(--text); font-size: 10px; font-family: inherit; }
+  .dj-pic text.hot { fill: var(--accent); font-weight: 600; }
+  .dj-pic .cursor { fill: var(--text); stroke: var(--dj-panel); stroke-width: 1; }
 </style>
 </head>
 <body>
 <div class="app">
+  <div class="search-list" id="settingsSearchList" role="listbox" aria-label="查找设置" hidden></div>
   <nav aria-label="设置导航">
     <div class="brand">
       <svg class="brand-mark" viewBox="0 0 64 64" aria-hidden="true"><path d="M27 8H14a6 6 0 0 0-6 6v13M37 8h13a6 6 0 0 1 6 6v13M8 37v13a6 6 0 0 0 6 6h13M56 37v13a6 6 0 0 1-6 6H37" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round"/><rect x="22" y="22" width="8" height="8" rx="2" fill="currentColor"/><rect x="35" y="22" width="8" height="8" rx="2" fill="currentColor" opacity=".65"/><rect x="22" y="35" width="8" height="8" rx="2" fill="currentColor" opacity=".65"/><rect x="35" y="35" width="8" height="8" rx="2" fill="currentColor"/></svg>
       <span class="brand-name">PecoFence</span>
     </div>
+    <div class="nav-search" role="search"><input type="text" id="settingsSearch" placeholder="查找设置" aria-label="查找设置" autocomplete="off" spellcheck="false" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="settingsSearchList"><span class="ic">&#xE721;</span></div>
     <a href="#general" class="sel" data-page="general" aria-label="常规" title="常规"><span class="ic">&#xE713;</span><span class="nav-text">常规</span></a>
+    <a href="#peek" data-page="peek" aria-label="速览与搜索" title="速览与搜索"><span class="ic">&#xE721;</span><span class="nav-text">速览与搜索</span></a>
     <a href="#fences" data-page="fences" aria-label="栅栏" title="栅栏"><span class="ic">&#xE71D;</span><span class="nav-text">栅栏</span></a>
     <a href="#rules" data-page="rules" aria-label="整理规则" title="整理规则"><span class="ic">&#xE8FD;</span><span class="nav-text">整理规则</span></a>
+    <a href="#tools" data-page="tools" aria-label="小工具" title="小工具"><span class="ic">&#xEA86;</span><span class="nav-text">小工具</span></a>
     <a href="#layout" data-page="layout" aria-label="布局与备份" title="布局与备份"><span class="ic">&#xE7F4;</span><span class="nav-text">布局与备份</span></a>
     <a href="#about" data-page="about" aria-label="关于" title="关于"><span class="ic">&#xE946;</span><span class="nav-text">关于</span></a>
     <div class="nav-footer"><p id="workspaceSummary">正在连接桌面…</p></div>
@@ -409,6 +460,9 @@
   <main>
     <section class="page on" id="page-general">
       <header class="page-header"><h2>常规</h2></header>
+      <h3>语言</h3>
+      <div class="card"><div class="l"><span class="ic">&#xE774;</span><div><div class="t">显示语言</div><div class="s">立即切换界面语言；你的文件和自定义名称保持不变</div></div></div>
+        <select id="language" data-bind="language"><option value="system">跟随系统</option><option value="zh-CN" data-language-name>简体中文</option><option value="zh-TW" data-language-name>繁體中文</option><option value="en" data-language-name>English</option><option value="ja" data-language-name>日本語</option><option value="ko" data-language-name>한국어</option><option value="de" data-language-name>Deutsch</option><option value="fr" data-language-name>Français</option><option value="es" data-language-name>Español</option><option value="pt-BR" data-language-name>Português (Brasil)</option><option value="ru" data-language-name>Русский</option><option value="it" data-language-name>Italiano</option></select></div>
       <h3>外观</h3>
       <div class="card stack"><div class="l"><span class="ic">&#xE771;</span><div><div class="t" id="themeStyleTitle">主题风格</div></div></div>
         <div class="style-tiles" id="desktopPreview" role="radiogroup" aria-labelledby="themeStyleTitle">
@@ -418,9 +472,15 @@
           <label class="tile tile-glass"><input type="radio" name="themeStyle" value="liquidGlass">
             <span class="shot" aria-hidden="true"><span class="mini-fence"><span class="preview-title">工作空间</span><span class="mini-items"><span class="file-icon folder ic">&#xE8B7;</span><span class="file-icon ic">&#xE8A5;</span><span class="file-icon sheet ic">&#xE9F9;</span></span></span></span>
             <span class="cap">Liquid Glass · 液态玻璃</span></label>
+          <label class="tile tile-custom"><input type="radio" name="themeStyle" value="custom">
+            <span class="shot" aria-hidden="true"><span class="mini-fence"><span class="preview-title">工作空间</span><span class="mini-items"><span class="file-icon folder ic">&#xE8B7;</span><span class="file-icon ic">&#xE8A5;</span><span class="file-icon sheet ic">&#xE9F9;</span></span></span></span>
+            <span class="cap">自定义 · 主题文件</span></label>
+        </div>
+        <div class="theme-files" id="customThemeRow" hidden>
+          <div class="actions"><select id="customTheme" aria-label="主题文件"></select><button id="openThemes">打开主题文件夹</button><button id="themeGuide">写法说明</button></div>
+          <div class="s" id="customThemeHelp"></div>
+          <div class="s error" id="customThemeError" aria-live="polite" hidden></div>
         </div></div>
-      <div class="card"><div class="l"><span class="ic">&#xE790;</span><div><div class="t" id="customThemeTitle">自定义主题</div><div class="s">主题文件放在 themes 文件夹里，选中后代替上面的风格，文件保存后栅栏立即更新</div><div class="s error" id="customThemeError" aria-live="polite" hidden></div></div></div>
-        <div class="actions"><select id="customTheme" aria-labelledby="customThemeTitle"></select><button id="openThemes">打开主题文件夹</button><button id="themeGuide">写法说明</button></div></div>
       <div class="card"><div class="l"><span class="ic">&#xE7A1;</span><div><div class="t">颜色模式</div></div></div>
         <select data-bind="theme"><option value="followWindowsMode">跟随 Windows 模式</option><option value="followAppMode">跟随应用模式</option><option value="light">浅色</option><option value="dark">深色</option></select></div>
       <h3>实时液态玻璃（实验版）</h3>
@@ -434,12 +494,12 @@
         <div class="card child"><div class="l"><div><div class="t">玻璃底色浓度</div><div class="s">0–50%；叠加白色薄底色，数值越大越明亮。</div></div></div><div class="slider"><input type="range" id="realtimeGlassTint" data-bind="realtimeGlass.tint"></div></div>
         <div class="card child"><div class="l"><div><div class="t">被遮挡时暂停更新</div><div class="s">栅栏被其他窗口完全遮挡时暂停，以减少后台负载。</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="realtimeGlass.pauseWhenCovered"></div></div>
       </div>
-      <div class="card"><div class="l"><span class="ic">&#xE8D3;</span><div><div class="t">图标名称颜色</div><div class="s">自动：液态玻璃按背后壁纸的明暗选深色或浅色，Fluent 跟随颜色模式；白色和黑色也用于标题颜色为“跟随主题”的栅栏标题和标签</div></div></div>
+      <div class="card"><div class="l"><span class="ic">&#xE8D3;</span><div><div class="t">文字颜色</div><div class="s">图标名称，以及标题颜色为“跟随主题”的栅栏标题和标签页。自动：液态玻璃按背后壁纸的明暗选深色或浅色，Fluent 跟随颜色模式</div></div></div>
         <select data-bind="labelColor"><option value="auto">自动</option><option value="white">白色</option><option value="black">黑色</option></select></div>
       <div class="card"><div class="l"><span class="ic">&#xE8E4;</span><div><div class="t">标题对齐</div></div></div>
         <select data-bind="titleAlign"><option value="left">左对齐</option><option value="center">居中</option><option value="right">右对齐</option></select></div>
-      <div class="card"><div class="l"><span class="ic">&#xE90C;</span><div><div class="t">标签栏位置</div><div class="s">有多个标签页时，标签排在标题栏里，或在栅栏左侧排成一列</div></div></div>
-        <select data-bind="tabBar"><option value="top">顶部</option><option value="left">左侧</option></select></div>
+      <div class="card"><div class="l"><span class="ic">&#xE7B1;</span><div><div class="t">自动隐藏滚动条</div><div class="s">鼠标移到栅栏上或滚动时才显示</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="rollUp.hideInactiveScrollbar"></div></div>
+      <h3>图标</h3>
       <div class="card"><div class="l"><span class="ic">&#xE8B9;</span><div><div class="t">默认图标大小</div><div class="s">新建栅栏时使用，每个栅栏可在“栅栏”页或右键菜单中单独设置</div></div></div>
         <div class="slider"><input type="range" id="iconSize" data-bind="iconSize"></div></div>
       <div class="group">
@@ -451,36 +511,34 @@
       </div>
       <div class="card"><div class="l"><span class="ic">&#xE793;</span><div><div class="t">图标融入背景（Chameleon）</div><div class="s">降低图标饱和度和不透明度，让桌面看起来更清爽</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="icons.chameleon"></div></div>
       <div class="card"><div class="l"><span class="ic">&#xE71B;</span><div><div class="t">显示快捷方式箭头</div><div class="s">和 Windows 桌面一样，在快捷方式图标的左下角显示小箭头</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="icons.shortcutArrows"></div></div>
-      <div class="card"><div class="l"><span class="ic">&#xE774;</span><div><div class="t">显示语言</div><div class="s">立即切换界面语言；你的文件和自定义名称保持不变</div></div></div>
-        <select id="language" data-bind="language"><option value="system">跟随系统</option><option value="zh-CN" data-language-name>简体中文</option><option value="zh-TW" data-language-name>繁體中文</option><option value="en" data-language-name>English</option><option value="ja" data-language-name>日本語</option><option value="ko" data-language-name>한국어</option><option value="de" data-language-name>Deutsch</option><option value="fr" data-language-name>Français</option><option value="es" data-language-name>Español</option><option value="pt-BR" data-language-name>Português (Brasil)</option><option value="ru" data-language-name>Русский</option><option value="it" data-language-name>Italiano</option></select></div>
       <h3>桌面与启动</h3>
       <div class="card"><div class="l"><span class="ic">&#xE7E8;</span><div><div class="t">随 Windows 启动</div><div class="s" hidden></div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="autostart"></div></div>
       <div class="group">
-        <div class="card"><div class="l"><span class="ic">&#xE8A9;</span><div><div class="t">隐藏 Windows 桌面图标</div><div class="s">桌面项目只显示在栅栏里，未归类的进入“桌面”栅栏；回收站等系统图标也会出现在“桌面”栅栏中</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="hideRealIcons"></div></div>
-        <div class="card child"><div class="l"><div><div class="t">关闭 PecoFence 时保持 Windows 桌面图标隐藏</div><div class="s">登录时 Windows 会先显示桌面图标，等 PecoFence 启动后才隐藏。打开后，退出或注销时图标保持隐藏，下次登录就不会闪现；PecoFence 没有运行时，桌面上不显示图标。要让图标重新显示，右键桌面，选“查看”→“显示桌面图标”</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="keepIconsHidden"></div></div>
-        <div class="card child"><div class="l"><div><div class="t">显示 Windows 桌面图标时隐藏“桌面”栅栏</div><div class="s">未归类的项目只留在 Windows 桌面上；关闭“隐藏 Windows 桌面图标”后可用</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="hideInboxWhenIconsShown"></div></div>
+        <div class="card"><div class="l"><span class="ic">&#xE8A9;</span><div><div class="t" id="desktopIconsTitle">Windows 桌面图标</div><div class="s" id="desktopIconsHelp"></div></div></div>
+          <select id="desktopIcons" aria-labelledby="desktopIconsTitle" aria-describedby="desktopIconsHelp"><option value="hide">隐藏，项目放在栅栏里</option><option value="showWithInbox">显示，也显示“桌面”栅栏</option><option value="showNoInbox">显示，不显示“桌面”栅栏</option></select></div>
+        <div class="card child" id="keepIconsCard"><div class="l"><div><div class="t">关闭 PecoFence 时保持 Windows 桌面图标隐藏</div><div class="s">登录时 Windows 会先显示桌面图标，等 PecoFence 启动后才隐藏。打开后，退出或注销时图标保持隐藏，下次登录就不会闪现；PecoFence 没有运行时，桌面上不显示图标。要让图标重新显示，右键桌面，选“查看”→“显示桌面图标”</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="keepIconsHidden"></div></div>
       </div>
+      <div class="card"><div class="l"><span class="ic">&#xE8B3;</span><div><div class="t">在桌面空白处拖出矩形时提供“在此新建栅栏”</div><div class="s">矩形没有碰到任何栅栏时弹出这一项；关闭后拖出矩形只用来框选，仍可从托盘菜单新建栅栏</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="offerNewFence"></div></div>
+      <h3>隐藏栅栏</h3>
       <div class="card"><div class="l"><span class="ic">&#xE890;</span><div><div class="t">双击桌面空白处隐藏或显示栅栏</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="quickHide.enabled"></div></div>
-      <div class="group">
-        <div class="card"><div class="l"><span class="ic">&#xE7F4;</span><div><div class="t">临时显示 Windows 桌面</div><div class="s">按快捷键隐藏所有栅栏、显示 Windows 桌面图标，再按一次恢复；托盘菜单里也有这一项</div></div></div></div>
-        <div class="card child"><div class="l"><div><div class="t" id="wdHotkeyTitle">快捷键</div><div class="s" id="wdHotkeyHelp" aria-live="polite"></div></div></div>
+      <div class="card" id="wdHotkeyCard"><div class="l"><span class="ic">&#xE7F4;</span><div><div class="t" id="wdHotkeyTitle">临时显示 Windows 桌面</div><div class="s" id="wdHotkeyHelp" aria-live="polite"></div></div></div>
           <div class="hotkey-edit">
             <button type="button" class="hotkey-box" id="wdHotkey" aria-labelledby="wdHotkeyTitle wdHotkeyKeys" aria-describedby="wdHotkeyHelp"><span class="keys" id="wdHotkeyKeys"></span><span class="ic">&#xE70F;</span></button>
             <label class="hotkey-win"><input type="checkbox" id="wdHotkeyWin">包含 Win 键</label>
             <button type="button" id="wdHotkeyClear">清除</button>
           </div></div>
-      </div>
-      <div class="card"><div class="l"><span class="ic">&#xE8B3;</span><div><div class="t">在桌面空白处拖出矩形时提供“在此新建栅栏”</div><div class="s">矩形没有碰到任何栅栏时弹出这一项；关闭后拖出矩形只用来框选，仍可从托盘菜单新建栅栏</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="offerNewFence"></div></div>
       <div class="card"><div class="l"><span class="ic">&#xE7C4;</span><div><div class="t">显示桌面 (Win+D) 时</div></div></div>
         <select data-bind="showDesktop"><option value="keepVisible">保持栅栏可见</option><option value="hideWithDesktop">随桌面隐藏</option></select></div>
-      <h3>行为</h3>
-      <div class="card"><div class="l"><span class="ic">&#xE70D;</span><div><div class="t">收起的栅栏悬停时自动展开</div><div class="s">鼠标移开后自动收起</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="rollUp.hoverPeek"></div></div>
-      <div class="card"><div class="l"><span class="ic">&#xE7C9;</span><div><div class="t">收起的栅栏需点击标题才展开</div><div class="s">开启后不再悬停展开；拖动标题仍可移动栅栏</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="rollUp.clickToExpand"></div></div>
+      <h3>收起与展开</h3>
+      <div class="card"><div class="l"><span class="ic">&#xE70D;</span><div><div class="t" id="rollExpandTitle">收起的栅栏怎么展开</div><div class="s">停在上面展开的栅栏，鼠标移开后自动收起；不管选哪种，双击标题或点折叠箭头都能展开和收起</div></div></div>
+        <select id="rollExpand" aria-labelledby="rollExpandTitle"><option value="hover">鼠标停在上面时</option><option value="click">单击标题时</option><option value="double">只在双击标题或点箭头时</option></select></div>
       <div class="card"><div class="l"><span class="ic">&#xE74B;</span><div><div class="t">展开时把下面的栅栏推开</div><div class="s">收起后它们会回到原位</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="rollUp.pushNeighbors"></div></div>
+      <h3>标题栏与标签页</h3>
       <div class="card"><div class="l"><span class="ic">&#xE737;</span><div><div class="t">鼠标悬停时才显示标题栏</div><div class="s">平时只显示图标，让桌面更清爽；每个栅栏可在“栅栏”页单独设置</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="rollUp.titleOnHover"></div></div>
       <div class="card"><div class="l"><span class="ic">&#xE70E;</span><div><div class="t">隐藏标题栏右侧的项目数和折叠箭头</div><div class="s">标题栏只显示名称；双击标题或用右键菜单收起和展开</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="rollUp.hideCountAndChevron"></div></div>
+      <div class="card"><div class="l"><span class="ic">&#xE90C;</span><div><div class="t">标签栏位置</div><div class="s">有多个标签页时，标签排在标题栏里，或在栅栏左侧排成一列</div></div></div>
+        <select data-bind="tabBar"><option value="top">顶部</option><option value="left">左侧</option></select></div>
       <div class="card"><div class="l"><span class="ic">&#xE7C3;</span><div><div class="t">鼠标悬停时切换标签页</div><div class="s">鼠标在标签页上停留片刻就切换过去，不用点击</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="rollUp.switchTabOnHover"></div></div>
-      <div class="card"><div class="l"><span class="ic">&#xE7B1;</span><div><div class="t">自动隐藏滚动条</div><div class="s">鼠标移到栅栏上或滚动时才显示</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="rollUp.hideInactiveScrollbar"></div></div>
       <h3>吸附与对齐</h3>
       <div class="group">
         <div class="card"><div class="l"><span class="ic">&#xE8E3;</span><div><div class="t">移动栅栏时吸附对齐</div><div class="s">拖动时吸附到其他栅栏、屏幕边缘和屏幕中线；按住 Alt 可暂时不吸附</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="snapping.enabled"></div></div>
@@ -489,18 +547,30 @@
       <div class="card"><div class="l"><span class="ic">&#xECA5;</span><div><div class="t">栅栏间距</div><div class="s">移动和调整大小时，栅栏之间以及与屏幕边缘保持的距离</div></div></div>
         <select data-bind="snapping.gapPx"><option value="0">0 px</option><option value="4">4 px</option><option value="8">8 px</option><option value="12">12 px</option><option value="16">16 px</option><option value="24">24 px</option><option value="32">32 px</option></select></div>
       <div class="card"><div class="l"><span class="ic">&#xE80A;</span><div><div class="t">调整大小时按整行整列对齐</div><div class="s">宽度按整列、高度按整行；关闭后可自由调整大小，图标自动铺满</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="snapping.sizeToCells"></div></div>
-      <h3>速览栅栏</h3>
+    </section>
+
+    <section class="page" id="page-peek">
+      <header class="page-header"><h2>速览与搜索</h2></header>
+      <p class="page-lede">按快捷键，所有栅栏浮到窗口前面。这时直接打字，就能搜索栅栏里的图标。装了 Everything，还能搜整台电脑。</p>
+      <h3>速览</h3>
       <div class="group">
         <div class="card"><div class="l"><span class="ic">&#xE8A1;</span><div><div class="t">按快捷键让所有栅栏显示在窗口前面</div><div class="s">再按一次、按 Esc 或点击其他位置返回</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="peek.enabled"></div></div>
         <div class="card child" id="peekHotkeyCard"><div class="l"><div><div class="t" id="peekHotkeyTitle">快捷键</div><div class="s" id="peekHotkeyHelp" aria-live="polite"></div></div></div>
-          <div class="hotkey-edit">
+          <select id="peekHotkeyChoice" aria-labelledby="peekHotkeyTitle" aria-describedby="peekHotkeyHelp"></select>
+          <div class="hotkey-edit" id="peekHotkeyEdit" hidden>
             <button type="button" class="hotkey-box" id="peekHotkey" aria-labelledby="peekHotkeyTitle peekHotkeyKeys" aria-describedby="peekHotkeyHelp"><span class="keys" id="peekHotkeyKeys"></span><span class="ic">&#xE70F;</span></button>
             <label class="hotkey-win"><input type="checkbox" id="peekHotkeyWin">包含 Win 键</label>
           </div></div>
-        <div class="card child" id="peekPresetCard"><div class="l"><div><div class="t" id="peekPresetTitle">常用组合</div></div></div>
-          <div class="actions" id="peekPresets" role="group" aria-labelledby="peekPresetTitle"></div></div>
       </div>
       <div class="card"><div class="l"><span class="ic">&#xE708;</span><div><div class="t">速览时调暗背景</div><div class="s">栅栏之外的区域变暗，更容易看清</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="peek.dim"></div></div>
+      <h3>搜索</h3>
+      <div class="group">
+        <div class="card"><div class="l"><span class="ic">&#xE721;</span><div><div class="t">速览搜索也找整台电脑（Everything）</div><div class="s">速览时打字搜索，除了栅栏里的图标，也列出整台电脑上的文件和文件夹，由免费的 Everything 负责查找</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="tools.everything"></div></div>
+        <div class="card child" id="everythingCard"><div class="l"><div><div class="t" id="everythingStatus"></div><div class="s" id="everythingHelp"></div></div></div><button class="accent" id="everythingAction"></button></div>
+      </div>
+      <h3>文件对话框</h3>
+      <div class="card"><div class="l"><span class="ic">&#xE8DA;</span><div><div class="t">对话框跳转</div><div class="s">打开或保存文件时，切到资源管理器再切回对话框，它就跳到资源管理器里的文件夹；点文件夹栅栏或按 Ctrl+G 也能跳过去</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="tools.dialogJump"></div></div>
+      <div class="card child dj-demo" id="dialogJumpDemo"><div class="dj-head">怎么用</div><div class="dj-body"><div class="dj-pic" aria-hidden="true"></div><ol><li>「打开」对话框停在程序自己选的文件夹</li><li></li><li></li></ol></div><div class="s">也可以在对话框里按 Ctrl+G，或者点一下文件夹栅栏。</div></div>
     </section>
 
     <section class="page" id="page-fences">
@@ -527,6 +597,7 @@
         <select id="fenceTitleSize" data-fence="titleSize"><option value="small">小</option><option value="normal">标准</option><option value="large">大</option><option value="extraLarge">特大</option></select></div>
       <div class="card"><div class="l"><span class="ic">&#xE737;</span><div><div class="t">显示标题栏</div><div class="s">鼠标悬停时显示：平时收起标题行，指针移到栅栏上才出现</div></div></div>
         <select id="fenceTitleOnHover" data-fence="titleOnHover"><option value="default">跟随常规设置</option><option value="always">始终显示</option><option value="hover">鼠标悬停时显示</option></select></div>
+      <div id="fenceLayoutGroup">
       <h3>布局</h3>
       <div class="card"><div class="l"><span class="ic">&#xE8B9;</span><div><div class="t">图标大小</div><div class="s">也可以在栅栏内按住 Ctrl 滚动鼠标滚轮</div></div></div>
         <div class="slider"><input type="range" id="fenceIconSize" data-fence="iconSize"></div></div>
@@ -537,6 +608,7 @@
       <div class="card"><div class="l"><span class="ic">&#xE8E3;</span><div><div class="t">图标对齐</div><div class="s">一行排不满时，居中把空出的宽度平分到左右两边；只用于图标视图</div></div></div>
         <select id="fenceIconAlign" data-fence="iconAlign"><option value="left">左对齐</option><option value="center">居中</option></select></div>
       <div class="card"><div class="l"><span class="ic">&#xE745;</span><div><div class="t">自动高度</div><div class="s">高度跟随内容行数，内容增减时平滑过渡</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="autoHeight"></div></div>
+      </div>
       <h3>行为</h3>
       <div class="card"><div class="l"><span class="ic">&#xE72E;</span><div><div class="t">锁定位置和大小</div><div class="s">边框不再可拖动缩放；标题仍可点击、右键、双击</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="locked"></div></div>
       <div class="card"><div class="l"><span class="ic">&#xE70E;</span><div><div class="t">向上展开</div><div class="s">上方放得下时向上展开，放不下就向下展开；标题栏留在原处。适合放在任务栏上方的栅栏</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="expandUpward"></div></div>
@@ -603,6 +675,19 @@
         <div class="actions"><button class="accent" id="copyAiPrompt">复制给 AI 助手的提示词</button><button id="openCliDocs">命令行文档</button></div></div>
     </section>
 
+    <section class="page" id="page-tools">
+      <header class="page-header"><h2>小工具</h2></header>
+      <p class="page-lede">便签、时钟和脚本放在栅栏里，和普通栅栏一样可以移动、吸附和收起。</p>
+      <div class="group">
+        <div class="card"><div class="l"><span class="ic">&#xEA86;</span><div><div class="t">小工具</div><div class="s">关上后，桌面上的小工具都不显示，脚本也全部停下</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="tools.enabled"></div></div>
+        <div class="card child"><div class="l"><div><div class="t">便签与待办</div><div class="s">在栅栏里写几行字，单击就能编辑。行首写 [ ] 的一行会变成可以勾选的待办</div></div></div><button class="accent" id="newNote">新建便签</button></div>
+        <div class="card child"><div class="l"><div><div class="t">时钟</div><div class="s">显示时间、日期和星期。右键时钟可以打开「显示秒」</div></div></div><button id="newClock">添加</button></div>
+        <div class="card child"><div class="l"><div><div class="t">天气</div><div class="s">今天和明天的天气，每 30 分钟更新，数据来自 wttr.in。添加后右键它选「编辑脚本」，把 Tokyo 换成你的城市</div></div></div><button id="addWeather" data-example="weather">添加</button></div>
+        <div class="card child"><div class="l"><div><div class="t">GitHub 仓库动态</div><div class="s">一个仓库最新的 issue 和 PR，点一行在浏览器里打开。添加后右键它选「编辑脚本」，换成你关心的仓库</div></div></div><button id="addGitHub" data-example="github">添加</button></div>
+        <div class="card child"><div class="l"><div><div class="t">电脑状态</div><div class="s">一直运行，每 2 秒更新 CPU、内存和 C 盘剩余空间。点一行可以复制本机 IP 或打开任务管理器</div></div></div><button id="addStatus" data-example="status">添加</button></div>
+        <div class="card child"><div class="l"><div><div class="t">用自己的脚本</div><div class="s">运行你选的脚本（PowerShell、Python、批处理等），把它打印的文字显示在栅栏里。脚本最多运行 10 秒（一直运行的除外），不弹出窗口。PecoFence 本身不会为脚本联网</div></div></div><div class="actions"><button id="scriptGuide">写法说明</button><button id="newScript">选择脚本…</button></div></div>
+      </div>
+    </section>
     <section class="page" id="page-layout">
       <header class="page-header"><h2>布局与备份</h2></header>
       <h3>布局快照</h3>
@@ -870,33 +955,60 @@
     preview.style.setProperty('--preview-tint-strength', settings.icons.tintStrength);
     preview.style.setProperty('--preview-title-align', settings.titleAlign || 'left');
   }
-  // A chosen custom theme takes the place of the style tiles: none of them is checked, and a
-  // click on one goes back to that built-in style.
+  // 主题风格: Fluent, Liquid Glass or 自定义 (a theme file of the themes folder, `customTheme`).
+  // 自定义 shows its row of files under the tiles and picks the first file at once; with no file
+  // yet the row says how to add one (the tile stays chosen on this page until another is).
+  let themeCustomOpen = false;
   function bindThemeStyle() {
-    const value = state.settings.customTheme ? '' : state.settings.themeStyle || 'fluent';
+    const custom = !!state.settings.customTheme || themeCustomOpen;
+    const value = custom ? 'custom' : state.settings.themeStyle || 'fluent';
     document.querySelectorAll('input[name=themeStyle]').forEach(radio => {
       radio.checked = radio.value === value;
       radio.onchange = () => {
         if (!radio.checked) return;
+        if (radio.value === 'custom') {
+          themeCustomOpen = true;
+          const first = (state.customThemes || [])[0];
+          if (first && !state.settings.customTheme) {
+            state.settings.customTheme = first;
+            bindThemeStyle(); bindCustomTheme();
+            commit('customTheme');
+          } else { bindThemeStyle(); bindCustomTheme(); }
+          return;
+        }
+        themeCustomOpen = false;
         state.settings.themeStyle = radio.value;
         state.settings.customTheme = null;
-        bindCustomTheme();
+        bindThemeStyle(); bindCustomTheme();
         commit('themeStyle');
       };
     });
+    document.getElementById('customThemeRow').hidden = !custom;
   }
   // The theme files of the themes folder; a chosen file that is gone stays listed with its error.
   function bindCustomTheme() {
-    const select = document.getElementById('customTheme'), chosen = state.settings.customTheme || '';
     const names = [...(state.customThemes || [])];
+    // 自定义 chosen while the folder had no theme files: the first file that appears is used, as a
+    // click on the tile would.
+    if (themeCustomOpen && !state.settings.customTheme && names.length) {
+      state.settings.customTheme = names[0];
+      bindThemeStyle();
+      commit('customTheme');
+    }
+    const select = document.getElementById('customTheme'), chosen = state.settings.customTheme || '';
     if (chosen && !names.includes(chosen)) names.push(chosen);
     // Rebuilt only when the list changed: every host state passes through here, and a rebuild
     // closes the list while it is open.
     const listed = [...select.options].map(o => o.text);
-    if (listed.join('\n') !== [t("无"), ...names].join('\n')) {
-      select.replaceChildren(new Option(t("无"), ''), ...names.map(name => new Option(name, name)));
+    const wanted = names.length ? names : [t("还没有主题文件")];
+    if (listed.join('\n') !== wanted.join('\n')) {
+      select.replaceChildren(...(names.length ? names.map(name => new Option(name, name)) : [new Option(wanted[0], '')]));
     }
     select.value = chosen;
+    select.disabled = !names.length;
+    document.getElementById('customThemeHelp').textContent = names.length
+      ? t("主题文件放在 themes 文件夹里，文件保存后栅栏立即更新")
+      : t("themes 文件夹里还没有主题文件：点“打开主题文件夹”放进去，或者看“写法说明”自己写一个");
     select.onchange = () => {
       state.settings.customTheme = select.value || null;
       bindThemeStyle();
@@ -1002,6 +1114,250 @@
   }
   document.querySelectorAll('nav a').forEach(a => a.addEventListener('click', e => { e.preventDefault(); showPage(a.dataset.page); }));
 
+  // 查找设置: every card with a title on every page, read from the page as it is (its language,
+  // the cards the current state shows), so nothing has to be kept in step. Every word must
+  // match the card's title, one of its other names, a list choice, its heading or a help line.
+  const searchBox = document.getElementById('settingsSearch'), searchList = document.getElementById('settingsSearchList');
+  let searchHits = [], searchActive = 0, foundTimer = 0;
+  // Other names people search the common settings by ('|' between names; each language has its
+  // own list in its locale file).
+  const SEARCH_NAMES = () => [
+    ['[data-bind=language]', t("搜索别名\x04界面语言|语言切换|中文|英文|English")],
+    ['#desktopPreview', t("搜索别名\x04皮肤|外观|毛玻璃|玻璃|亚克力|主题")],
+    ['[data-bind=theme]', t("搜索别名\x04深色|暗色|夜间|黑暗模式|浅色|亮色|白天")],
+    ['[data-bind=labelColor]', t("搜索别名\x04字体颜色|文本颜色|白字|黑字")],
+    ['#iconSize', t("搜索别名\x04图标尺寸|大图标|小图标|缩放")],
+    ['[data-bind="icons.chameleon"]', t("搜索别名\x04变淡|半透明|褪色|低饱和")],
+    ['[data-bind=autostart]', t("搜索别名\x04开机|开机启动|自启|自动启动|登录时启动")],
+    ['#desktopIcons', t("搜索别名\x04隐藏桌面图标|显示桌面图标|系统图标|原来的图标")],
+    ['[data-bind="quickHide.enabled"]', t("搜索别名\x04一键隐藏|快速隐藏|隐藏全部")],
+    ['#wdHotkey', t("搜索别名\x04看桌面|热键|组合键")],
+    ['[data-bind=showDesktop]', t("搜索别名\x04最小化|显示桌面")],
+    ['#rollExpand', t("搜索别名\x04折叠|卷起|收缩|悬停展开|点击展开")],
+    ['[data-bind="snapping.enabled"]', t("搜索别名\x04磁吸|贴边|网格|自动对齐")],
+    ['[data-bind="snapping.gapPx"]', t("搜索别名\x04间隔|边距|缝隙")],
+    ['[data-bind="peek.enabled"]', t("搜索别名\x04速览|预览|置顶|显示在最前")],
+    ['#peekHotkeyChoice', t("搜索别名\x04热键|组合键|唤出")],
+    ['[data-bind="tools.everything"]', t("搜索别名\x04全盘搜索|搜索文件|文件搜索")],
+    ['[data-bind="tools.dialogJump"]', t("搜索别名\x04打开对话框|保存对话框|另存为|Quick Switch")],
+    ['[data-bind="tools.enabled"]', t("搜索别名\x04挂件|部件|桌面小部件")],
+    ['#newScript', t("搜索别名\x04插件|天气|命令|自定义")],
+    ['#fenceOpacity', t("搜索别名\x04透明度|透明|玻璃")],
+    ['[data-fence=locked]', t("搜索别名\x04固定|锁住|防止移动")],
+    ['[data-bind="rules.keepUpdated"]', t("搜索别名\x04自动整理|自动分类|分类")],
+    ['#cfgExport', t("搜索别名\x04备份|迁移|换电脑|恢复设置")],
+    ['#updateAction', t("搜索别名\x04升级|新版本|检查更新")],
+  ];
+  // The kinds of match of the Peek search (crates/core/src/matcher.rs), best first. Pinyin (a
+  // Chinese interface; the host sends the syllables) and the in-order match look only at short
+  // texts (title, other names, list choices, heading): in a long help line they would match
+  // almost anything.
+  const KIND = { exact: 6, prefix: 5, word: 4, pinyin: 3, substring: 2, fuzzy: 1 };
+  let pinyinMap = {}, pinyinAsked = '';
+  const isCjk = c => /[⺀-鿿가-힯豈-﫿＀-￯]/.test(c);
+  const foldChars = text => [...text].map(c => { const l = c.toLowerCase(); return l.length === 1 ? l : c; });
+  const wordStart = (orig, i) => {
+    if (i === 0) return true;
+    const p = orig[i - 1], c = orig[i];
+    return /[\s_\-.(\[（【·›,，、/]/.test(p) || isCjk(c) || isCjk(p) || (/[a-z]/.test(p) && /[A-Z]/.test(c)) || (/[A-Za-z]/.test(p) && /[0-9]/.test(c));
+  };
+  const at = (low, term, i) => term.every((q, k) => low[i + k] === q);
+  // The shortest run of characters that matches `term` as pinyin: each Chinese character takes
+  // a prefix of its syllable, any other character itself.
+  function pinyinRun(low, term) {
+    if (term.length > 63 || !term.some(c => c >= 'a' && c <= 'z') || !low.some(c => pinyinMap[c])) return null;
+    for (let start = 0; start < low.length; start++) {
+      let states = new Set([0]);
+      for (let i = start; i < low.length; i++) {
+        const c = low[i], next = new Set();
+        for (const p of states) {
+          if (p >= term.length) continue;
+          if (c === term[p]) next.add(p + 1);
+          const syl = pinyinMap[c] || '';
+          for (let k = 0; k < syl.length && p + k < term.length; k++) {
+            const sc = syl[k], q = term[p + k];
+            if (!(sc === q || (sc === 'ü' && (q === 'v' || q === 'u')) || (sc === 'ê' && q === 'e'))) break;
+            next.add(p + k + 1);
+          }
+        }
+        if (next.has(term.length)) return [[start, i + 1]];
+        if (!next.size) break;
+        states = next;
+      }
+    }
+    return null;
+  }
+  function inOrder(low, term) {
+    const ranges = [];
+    let from = 0;
+    for (const q of term) {
+      const i = low.indexOf(q, from);
+      if (i < 0) return null;
+      const last = ranges[ranges.length - 1];
+      if (last && last[1] === i) last[1]++; else ranges.push([i, i + 1]);
+      from = i + 1;
+    }
+    return ranges;
+  }
+  // The best match of one folded term in `text`: { kind, ranges } (char indices) or null.
+  function matchText(text, term, loose) {
+    const orig = [...text], low = foldChars(text), n = low.length, m = term.length;
+    if (!n || !m) return null;
+    if (n === m && at(low, term, 0)) return { kind: KIND.exact, ranges: [[0, n]] };
+    let first = -1;
+    for (let i = 0; i + m <= n; i++) {
+      if (!at(low, term, i)) continue;
+      if (wordStart(orig, i)) return { kind: i === 0 ? KIND.prefix : KIND.word, ranges: [[i, i + m]] };
+      if (first < 0) first = i;
+    }
+    if (loose) { const run = pinyinRun(low, term); if (run) return { kind: KIND.pinyin, ranges: run }; }
+    if (first >= 0) return { kind: KIND.substring, ranges: [[first, first + m]] };
+    if (loose && m >= 2) { const r = inOrder(low, term); if (r) return { kind: KIND.fuzzy, ranges: r }; }
+    return null;
+  }
+  function shownOnItsPage(card) {
+    for (let el = card; el && !el.classList.contains('page'); el = el.parentElement) if (el.hidden || el.style.display === 'none') return false;
+    return true;
+  }
+  function searchSettings(query) {
+    const terms = query.trim().split(/\s+/).filter(Boolean).map(foldChars);
+    if (!terms.length) return [];
+    const names = new Map();
+    for (const [sel, list] of SEARCH_NAMES()) {
+      const card = document.querySelector(sel)?.closest('.card');
+      if (card) names.set(card, list.split('|').map(x => x.trim()).filter(Boolean));
+    }
+    const hits = [];
+    document.querySelectorAll('main section.page .card').forEach((card, order) => {
+      const title = card.querySelector('.t')?.textContent.trim();
+      if (!title || !shownOnItsPage(card)) return;
+      const page = card.closest('section.page');
+      let heading = '';
+      for (let el = card.closest('.group') || card; el && !heading; el = el.previousElementSibling) if (el.tagName === 'H3') heading = el.textContent;
+      // Weight of the field, the text, whether pinyin and the in-order match apply.
+      const fields = [[4, title, true], ...(names.get(card) || []).map(x => [3, x, true]),
+        ...[...card.querySelectorAll('select:not([hidden]) option')].map(o => [2, o.textContent.trim(), true]),
+        [1, heading, true], ...[...card.querySelectorAll('.s')].map(d => [1, d.textContent.trim(), false])].filter(f => f[1]);
+      let score = 0;
+      const titleRanges = [];
+      let where = null;
+      for (const term of terms) {
+        let best = null;
+        for (const [weight, text, loose] of fields) {
+          const m = matchText(text, term, loose);
+          // Scattered characters rank below every other kind of match ("dark" as another name
+          // of 颜色模式 beats d…a…r…k spread over a title); then the field, the kind and an
+          // earlier start decide.
+          const value = m && (m.kind === KIND.fuzzy ? 0 : 10000) + weight * 1000 + m.kind * 100 + (99 - Math.min(99, m.ranges[0][0]));
+          if (m && (!best || value > best.value)) best = { value, text, ranges: m.ranges, isTitle: text === title && weight === 4 };
+        }
+        if (!best) return;
+        score += best.value;
+        if (best.isTitle) titleRanges.push(...best.ranges);
+        else if (!where) where = best;
+      }
+      hits.push({ card, title, titleRanges, where, page: page.id.slice(5), path: page.querySelector('h2').textContent + (heading ? ' › ' + heading : ''), score, order });
+    });
+    return hits.sort((a, b) => b.score - a.score || a.order - b.order);
+  }
+  // `text` with the char ranges in <mark>.
+  function markRanges(text, ranges) {
+    const chars = [...text], marks = new Array(chars.length).fill(false);
+    for (const [from, to] of ranges) marks.fill(true, from, to);
+    let html = '', open = false;
+    chars.forEach((ch, i) => { if (marks[i] !== open) { html += marks[i] ? '<mark>' : '</mark>'; open = marks[i]; } html += esc(ch); });
+    return html + (open ? '</mark>' : '');
+  }
+  // A long help line shortened around its match.
+  function whereHtml(w) {
+    const chars = [...w.text];
+    if (chars.length <= 36) return markRanges(w.text, w.ranges);
+    const from = Math.max(0, w.ranges[0][0] - 14), to = Math.min(chars.length, w.ranges[0][0] + 22);
+    const part = chars.slice(from, to).join(''), ranges = w.ranges.map(([a, b]) => [a - from, b - from]).filter(([a, b]) => b > 0 && a < to - from);
+    return (from > 0 ? '…' : '') + markRanges(part, ranges.map(([a, b]) => [Math.max(0, a), Math.min(to - from, b)])) + (to < chars.length ? '…' : '');
+  }
+  // A Chinese interface asks the host once for the pinyin of the page's Chinese characters (the
+  // short texts pinyin looks at); the answer arrives as a `pinyin` message.
+  function askPinyin() {
+    if (!String(state && state.locale || '').startsWith('zh')) return;
+    const texts = [...document.querySelectorAll('main section.page .card .t, main section.page h3, main section.page option')].map(el => el.textContent);
+    for (const [, list] of SEARCH_NAMES()) texts.push(list);
+    const chars = [...new Set([...texts.join('')].filter(isCjk))].sort().join('');
+    if (chars === pinyinAsked) return;
+    pinyinAsked = chars;
+    send({ type: 'action', name: 'pinyin', chars });
+  }
+  function renderSearch() {
+    const query = searchBox.value;
+    searchHits = searchSettings(query);
+    searchActive = 0;
+    const open = !!query.trim();
+    searchList.hidden = !open;
+    searchBox.setAttribute('aria-expanded', String(open));
+    if (!open) return;
+    const r = searchBox.getBoundingClientRect();
+    searchList.style.left = r.left + 'px';
+    searchList.style.top = r.bottom + 4 + 'px';
+    if (!searchHits.length) {
+      searchList.innerHTML = `<div class="none">${esc(tf("没有找到与“{0}”有关的设置", query.trim()))}</div>`;
+      searchBox.removeAttribute('aria-activedescendant');
+      return;
+    }
+    searchList.innerHTML = searchHits.map((h, i) => `<div role="option" id="searchHit${i}" aria-selected="${i === 0}"><b>${markRanges(h.title, h.titleRanges)}</b><small>${esc(h.path)}${h.where ? ' · ' + whereHtml(h.where) : ''}</small></div>`).join('');
+    searchBox.setAttribute('aria-activedescendant', 'searchHit0');
+  }
+  function moveSearch(step) {
+    if (!searchHits.length) return;
+    searchActive = (searchActive + step + searchHits.length) % searchHits.length;
+    [...searchList.children].forEach((row, i) => row.setAttribute('aria-selected', String(i === searchActive)));
+    searchList.children[searchActive].scrollIntoView({ block: 'nearest' });
+    searchBox.setAttribute('aria-activedescendant', 'searchHit' + searchActive);
+  }
+  function closeSearch(clear) {
+    searchList.hidden = true;
+    searchBox.setAttribute('aria-expanded', 'false');
+    searchBox.removeAttribute('aria-activedescendant');
+    if (clear) searchBox.value = '';
+  }
+  // A pick: its page, the card in the middle of the view, a short tint, the focus on its control.
+  function openSearchHit(hit) {
+    if (!hit) return;
+    closeSearch(false);
+    showPage(hit.page);
+    const card = hit.card;
+    card.scrollIntoView({ block: 'center' });
+    document.querySelectorAll('.card.found, .card.fading').forEach(c => c.classList.remove('found', 'fading'));
+    clearTimeout(foundTimer);
+    card.classList.add('found');
+    foundTimer = setTimeout(() => {
+      card.classList.add('fading');
+      card.classList.remove('found');
+      foundTimer = setTimeout(() => card.classList.remove('fading'), 900);
+    }, 1500);
+    const control = card.querySelector('.toggle:not([aria-disabled=true]), select:not([hidden]):not(:disabled), button:not(:disabled), input:not([type=hidden]):not(:disabled)');
+    if (control) control.focus({ preventScroll: true });
+  }
+  searchBox.addEventListener('input', renderSearch);
+  searchBox.addEventListener('focus', () => { askPinyin(); if (searchBox.value.trim()) renderSearch(); });
+  searchBox.addEventListener('keydown', e => {
+    if (e.isComposing) return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); moveSearch(1); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); moveSearch(-1); }
+    else if (e.key === 'Enter') { e.preventDefault(); openSearchHit(searchHits[searchActive]); }
+    else if (e.key === 'Escape') { e.preventDefault(); if (!searchList.hidden || searchBox.value) closeSearch(true); else searchBox.blur(); }
+  });
+  // A click in the list must not blur the box first (that would close the list).
+  searchList.addEventListener('mousedown', e => e.preventDefault());
+  searchList.addEventListener('click', e => {
+    const row = e.target.closest('[role=option]');
+    if (row) openSearchHit(searchHits[[...searchList.children].indexOf(row)]);
+  });
+  searchBox.addEventListener('blur', () => closeSearch(false));
+  window.addEventListener('resize', () => { if (!searchList.hidden) renderSearch(); });
+  document.addEventListener('keydown', e => {
+    if (e.ctrlKey && !e.altKey && !e.shiftKey && (e.key === 'f' || e.key === 'F')) { e.preventDefault(); searchBox.focus(); searchBox.select(); }
+  });
+
   const get = (obj, path) => path.split('.').reduce((o, k) => (o == null ? undefined : o[k]), obj);
   const set = (obj, path, v) => { const ks = path.split('.'); let o = obj; for (let i = 0; i < ks.length - 1; i++) o = o[ks[i]]; o[ks[ks.length - 1]] = v; };
   const keyToggle = (el) => { el.onkeydown = (e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); el.click(); } }; };
@@ -1036,15 +1392,44 @@
   // Only these rows depend on their master switch: guide lines need snapping, hiding the inbox
   // beside the Windows icons needs those icons shown ('!': while the master is off), and the
   // shortcut rows (renderPeekHotkey) are what Peek's switch turns on. Gap, whole-cell sizing
-  // and dimming apply without them.
-  const DEPENDENT = [['snapping.guideLines', 'snapping.enabled'], ['hideInboxWhenIconsShown', '!hideRealIcons'], ['keepIconsHidden', 'hideRealIcons'],
+  // and dimming apply without them. A child starting with '#' is a button's id.
+  const DEPENDENT = [['snapping.guideLines', 'snapping.enabled'], ['#everythingAction', 'tools.everything'],
     ...['fps', 'quality', 'blur', 'refraction', 'saturation', 'tint', 'pauseWhenCovered'].map(key => ['realtimeGlass.' + key, 'realtimeGlass.enabled'])];
+  // 「小工具」 page: there is one clock at most, so its 添加 greys out while the desktop has one.
+  function renderTools() {
+    const clocks = (state.fences || []).filter(f => f.tool && f.tool.kind === 'clock').length;
+    const clock = document.getElementById('newClock');
+    clock.disabled = clocks > 0;
+    clock.textContent = clocks ? t("已在桌面上") : t("添加");
+    renderEverything();
+  }
+  // 搜索整台电脑 › Everything's state from the host: running (version, pinyin), installed,
+  // missing or installing; the button installs, starts or upgrades it.
+  function renderEverything() {
+    const e = state.everything, card = document.getElementById('everythingCard');
+    card.hidden = !e;
+    if (!e) return;
+    const [status, help, action] = {
+      running: e.pinyin
+        ? [tf("Everything {0} 正在运行", e.version), t("可以用拼音找中文名，例如输入 ysb 找到“预算表”"), null]
+        : e.has15
+        ? [tf("Everything 1.5 已经装好，现在运行的是 {0}", e.version), t("改用 1.5 后可以用拼音找中文名。1.5 会在登录 Windows 时启动，1.4 不再自动启动。Windows 可能会询问一次管理员权限"), ['useEverything15', t("改用 1.5")]]
+        : [tf("Everything {0} 正在运行", e.version), t("这个版本不能用拼音找中文名，升级到 1.5 版就可以"), ['installEverything', t("升级到 1.5")]],
+      installed: [t("Everything 已经装好，还没有运行"), t("启动后才能搜索整台电脑"), ['startEverything', t("启动 Everything")]],
+      installing: [t("正在安装 Everything…"), t("装好后会自动启动"), null],
+    }[e.state] || [t("这台电脑还没有 Everything"), t("安装时会打开一个命令行窗口，用 winget 装 1.5 版，Windows 会询问一次管理员权限"), ['installEverything', t("安装 Everything")]];
+    const button = document.getElementById('everythingAction');
+    document.getElementById('everythingStatus').textContent = status;
+    document.getElementById('everythingHelp').textContent = help;
+    button.hidden = !action;
+    if (action) { button.textContent = action[1]; button.onclick = () => send({ type: 'action', name: action[0] }); }
+  }
   function renderDependents() {
     for (const [child, master] of DEPENDENT) {
       const value = !!get(state.settings, master.replace('!', ''));
-      const on = master.startsWith('!') ? !value : value, el = document.querySelector(`[data-bind="${child}"]`);
+      const on = master.startsWith('!') ? !value : value, el = document.querySelector(child.startsWith('#') ? child : `[data-bind="${child}"]`);
       el.closest('.card').classList.toggle('disabled', !on);
-      if (el.tagName === 'SELECT' || el.tagName === 'INPUT') el.disabled = !on;
+      if (el.tagName === 'SELECT' || el.tagName === 'INPUT' || el.tagName === 'BUTTON') el.disabled = !on;
       else { el.tabIndex = on ? 0 : -1; el.setAttribute('aria-disabled', String(!on)); }
     }
     renderPeekHotkey();
@@ -1104,13 +1489,16 @@
       r.recording = false; held = 0; r.error = ''; waitForKeys(false);
       send({ type: 'action', name: recordingAction, on: false });
       r.render();
+      if (r.onEnd) r.onEnd();
     };
     // The host's answer: saved ends the recording (it registered the new shortcut); refused
     // keeps it going and says why.
     r.result = m => {
       r.error = m.ok ? '' : m.text || '';
+      const ended = m.ok && r.recording;
       if (m.ok) { r.recording = false; held = 0; waitForKeys(false); }
       r.render();
+      if (ended && r.onEnd) r.onEnd();
     };
     box.onclick = r.start;
     box.addEventListener('blur', r.stop);
@@ -1136,43 +1524,71 @@
     winBox.onchange = () => { r.start(); r.render(); box.focus(); };
     return r;
   }
+  // 速览栅栏 › 快捷键: one drop-down with the quick choices, the chosen combination when it is
+  // none of them, 「双击 Ctrl」 and 「自定义…」, which shows the recording box in the same card.
+  // 「双击 Ctrl」 and a combination are exclusive (peek.doubleCtrl; a combination clears it).
+  let peekCustom = false;
+  const keyValue = k => `${k.mods}:${k.vk}`;
   const peekRecorder = hotkeyRecorder('peekHotkey', 'peekHotkeyRecording', 'setPeekHotkey', () => {
     const p = state.peekHotkey, on = !!state.settings.peek.enabled;
     if (!p) return null;
     const shown = p.active || p.chosen;
     let help = '', tone = '';
-    if (on && !p.active) { help = tf("{0} 和备用的组合都已被占用，请换一个", p.chosen.label); tone = 'error'; }
+    if (!peekCustom && state.settings.peek.doubleCtrl) help = t("快速按两下 Ctrl 打开速览，直接带搜索框；再按两下关闭。全屏的游戏或视频在前面时不响应");
+    else if (on && !p.active) { help = tf("{0} 和备用的组合都已被占用，请换一个", p.chosen.label); tone = 'error'; }
     else if (on && !sameKey(p.active, p.chosen)) { help = tf("{0} 已被占用，现在使用 {1}", p.chosen.label, p.active.label); tone = 'caution'; }
+    else if (!peekCustom) help = t("也可以选“双击 Ctrl”，或者选“自定义…”按下别的组合键");
     return { on, keys: shown.keys, help, tone };
   });
+  peekRecorder.onEnd = () => { peekCustom = false; renderPeekHotkey(); };
   function renderPeekHotkey() {
     const p = state && state.peekHotkey;
     if (!p) return;
-    const on = !!state.settings.peek.enabled, shown = p.active || p.chosen;
-    for (const id of ['peekHotkeyCard', 'peekPresetCard']) document.getElementById(id).classList.toggle('disabled', !on);
+    const on = !!state.settings.peek.enabled, double = !!state.settings.peek.doubleCtrl;
+    document.getElementById('peekHotkeyCard').classList.toggle('disabled', !on);
+    if (!on) peekCustom = false;
+    document.getElementById('peekHotkeyEdit').hidden = !peekCustom;
     peekRecorder.render();
-    // Quick choices: one button each, reused so that a refresh keeps the focus on it.
-    const presets = document.getElementById('peekPresets');
-    p.presets.forEach((k, i) => {
-      let b = presets.children[i];
-      if (!b) {
-        b = document.createElement('button');
-        b.type = 'button';
-        b.onclick = () => { peekRecorder.error = ''; send({ type: 'action', name: 'setPeekHotkey', mods: Number(b.dataset.mods), vk: Number(b.dataset.vk) }); };
-        presets.append(b);
-      }
-      b.dataset.mods = k.mods; b.dataset.vk = k.vk;
-      b.textContent = k.keys.join(' + ');
-      b.setAttribute('aria-pressed', String(sameKey(k, shown)));
-      b.disabled = !on;
-    });
+    const choices = p.presets.map(k => [keyValue(k), k.keys.join(' + ')]);
+    if (!p.presets.some(k => sameKey(k, p.chosen))) choices.push([keyValue(p.chosen), p.chosen.keys.join(' + ')]);
+    choices.push(['double', t("双击 Ctrl")], ['custom', t("自定义…")]);
+    const sel = document.getElementById('peekHotkeyChoice');
+    // Rebuilt only when the list changes, so that a refresh keeps an open list as it is.
+    const list = JSON.stringify(choices);
+    if (sel.dataset.list !== list) {
+      sel.replaceChildren(...choices.map(([value, label]) => new Option(label, value)));
+      sel.dataset.list = list;
+    }
+    sel.value = peekCustom ? 'custom' : double ? 'double' : keyValue(p.chosen);
+    sel.disabled = !on;
   }
-  // 临时显示 Windows 桌面 › 快捷键: none until the user records one; 清除 takes it away again.
+  document.getElementById('peekHotkeyChoice').onchange = e => {
+    const v = e.target.value;
+    peekRecorder.error = '';
+    if (v === 'custom') {
+      peekCustom = true;
+      renderPeekHotkey();
+      peekRecorder.start();
+      document.getElementById('peekHotkey').focus();
+      return;
+    }
+    peekCustom = false;
+    peekRecorder.stop();
+    if (v === 'double') {
+      state.settings.peek.doubleCtrl = true;
+      renderPeekHotkey();
+      commit('peek.doubleCtrl');
+      return;
+    }
+    const [mods, vk] = v.split(':').map(Number);
+    send({ type: 'action', name: 'setPeekHotkey', mods, vk });
+  };
+  // 隐藏栅栏 › 临时显示 Windows 桌面: no shortcut until the user records one; 清除 takes it away again.
   const wdRecorder = hotkeyRecorder('wdHotkey', 'windowsDesktopHotkeyRecording', 'setWindowsDesktopHotkey', () => {
     const w = state.windowsDesktopHotkey;
     if (!w) return null;
     const taken = w.chosen && !w.registered;
-    return { on: true, keys: w.chosen && w.chosen.keys, help: taken ? tf("{0} 已被其他程序占用，请换一个", w.chosen.label) : '', tone: taken ? 'error' : '' };
+    return { on: true, keys: w.chosen && w.chosen.keys, help: taken ? tf("{0} 已被其他程序占用，请换一个", w.chosen.label) : t("按快捷键隐藏所有栅栏、显示 Windows 桌面图标，再按一次恢复；托盘菜单里也有这一项"), tone: taken ? 'error' : '' };
   });
   function renderWindowsDesktopHotkey() {
     const w = state && state.windowsDesktopHotkey;
@@ -1337,7 +1753,11 @@
     document.querySelector('#fenceHideEmpty .s').textContent = f.kind === 'inbox'
       ? t("里面没有图标时就不显示；桌面上一出现新图标，它会自己回来")
       : t("里面没有图标时就不显示；有图标归到这里时，它会自己回来");
-    document.getElementById('fenceOpenFolders').style.display = f.portal ? 'none' : '';
+    document.getElementById('fenceOpenFolders').style.display = f.portal || f.tool ? 'none' : '';
+    // A tool fence (小工具) never holds icons: hiding it while empty would hide it for good.
+    document.getElementById('fenceHideEmpty').style.display = f.tool ? 'none' : '';
+    // Icon size, spacing, names, alignment and auto height are about icons.
+    document.getElementById('fenceLayoutGroup').style.display = f.tool ? 'none' : '';
     document.getElementById('fenceDesktopLayout').style.display = f.kind === 'inbox' ? '' : 'none';
     // List and Details rows keep the name on one line, so the setting does nothing there and is
     // greyed. 像桌面一样排列 shows icons whatever the fence's view (a 「桌面」 with tabs stays a fence).
@@ -1401,7 +1821,7 @@
 
   function inboxTitle() { const f = (state.fences || []).find(f => f.kind === 'inbox'); return f ? f.title : t("桌面"); }
   // A portal cannot hold routed items (the app routes such rules to the inbox), so it is shown as one.
-  function fenceTitle(id) { const f = (state.fences || []).find(f => f.id === id); return !f ? t("已删除的栅栏") : f.kind === 'portal' ? inboxTitle() : f.title; }
+  function fenceTitle(id) { const f = (state.fences || []).find(f => f.id === id); return !f ? t("已删除的栅栏") : f.kind === 'portal' || f.tool ? inboxTitle() : f.title; }
   function targetLabel(target) { return tf("“{0}”", target === 'inbox' ? inboxTitle() : (target && target.fence) ? fenceTitle(target.fence) : '?'); }
   const NAME_OPS = {contains:v=>tf("名称包含“{0}”",v),notContains:v=>tf("名称不包含“{0}”",v),startsWith:v=>tf("名称开头是“{0}”",v),endsWith:v=>tf("名称结尾是“{0}”",v),is:v=>tf("名称等于“{0}”",v)};
   const TARGET_OPS = {contains:v=>tf("快捷方式目标包含“{0}”",v),notContains:v=>tf("快捷方式目标不包含“{0}”",v),startsWith:v=>tf("快捷方式目标开头是“{0}”",v),endsWith:v=>tf("快捷方式目标结尾是“{0}”",v),is:v=>tf("快捷方式目标等于“{0}”",v)};
@@ -1419,9 +1839,9 @@
       case 'foldersOnly': return t("仅文件夹");
       case 'filesOnly': return t("仅文件");
       case 'plainFiles': return t("普通文件");
-      case 'sizeMb': return v.min != null && v.max != null ? tf("大小 {0}–{1} MB", v.min, v.max)
+      case 'sizeMb': return v.min != null && v.max != null ? tf("大小 {0} 到 {1} MB", v.min, v.max)
         : v.min != null ? tf("大小 ≥ {0} MB", v.min) : v.max != null ? tf("大小 ≤ {0} MB", v.max) : t("大小");
-      case 'createdTime': return tf("创建时间 {0}–{1}", hm(v.from_min), hm(v.to_min));
+      case 'createdTime': return tf("创建时间 {0} 到 {1}", hm(v.from_min), hm(v.to_min));
       case 'createdWeekday': return tf("创建于{0}", v.map(d => WEEK()[d] || d).join(t("、")));
       case 'origin': return t("来源：") + (v === 'publicDesktop' ? t("公共桌面") : t("用户桌面"));
       case 'idleDays': return tf("闲置 ≥ {0} 天", v.min);
@@ -1457,7 +1877,7 @@
   let editing = null;
   function fillTargets(sel) {
     const selected = sel.value;
-    const options = state.fences.filter(f => f.kind !== 'portal').map(f => `<option value="${esc(f.id)}">${esc(f.title)}</option>`).join('');
+    const options = state.fences.filter(f => f.kind !== 'portal' && !f.tool).map(f => `<option value="${esc(f.id)}">${esc(f.title)}</option>`).join('');
     if (sel.innerHTML !== options) {
       sel.innerHTML = options;
       if ([...sel.options].some(o => o.value === selected)) sel.value = selected;
@@ -1795,6 +2215,13 @@
     panel.querySelectorAll('.cond:not(#nrCond)').forEach(b => b.remove());
   };
   document.getElementById('applyRules').onclick = () => send({ type: 'action', name: 'applyRules' });
+  document.getElementById('newNote').onclick = () => send({ type: 'action', name: 'newNote' });
+  document.getElementById('newClock').onclick = () => send({ type: 'action', name: 'newClock' });
+  document.getElementById('newScript').onclick = () => send({ type: 'action', name: 'newScript' });
+  document.querySelectorAll('#page-tools [data-example]').forEach(b => {
+    b.onclick = () => send({ type: 'action', name: 'newScriptExample', example: b.dataset.example });
+  });
+  document.getElementById('scriptGuide').onclick = () => send({ type: 'action', name: 'scriptGuide' });
   document.querySelectorAll('#templates [data-template]').forEach(b => { b.onclick = () => send({ type: 'action', name: 'addTemplate', template: b.dataset.template }); });
   document.getElementById('snapSave').onclick = () => { const n = document.getElementById('snapName').value; send({ type: 'action', name: 'saveSnapshot', snapshotName: n }); document.getElementById('snapName').value = ''; };
   document.getElementById('cfgExport').onclick = () => send({ type: 'action', name: 'exportConfig' });
@@ -1905,6 +2332,46 @@
     el.hidden = !note;
   }
   document.getElementById('hideIconsAgain').onclick = () => send({ type: 'action', name: 'hideDesktopIcons' });
+  // 常规 › Windows 桌面图标: hidden (items in fences), shown with the 「桌面」 fence, or shown
+  // without it (hideRealIcons and hideInboxWhenIconsShown together).
+  // A 「桌面」 fence arranged like the desktop (像桌面一样排列) never shows beside the Windows
+  // icons (its icons would be there twice, see State::hidden_fences): 「显示，也显示“桌面”栅栏」
+  // is greyed and the help line says why.
+  function bindDesktopIcons() {
+    const s = state.settings, select = document.getElementById('desktopIcons');
+    const arranged = (state.fences || []).some(f => f.kind === 'inbox' && f.desktopLayout);
+    const value = s.hideRealIcons ? 'hide' : s.hideInboxWhenIconsShown || arranged ? 'showNoInbox' : 'showWithInbox';
+    select.querySelector('option[value=showWithInbox]').disabled = arranged;
+    select.value = value;
+    document.getElementById('desktopIconsHelp').textContent = {
+      hide: t("桌面项目只显示在栅栏里，没有归类的放进“桌面”栅栏；回收站等系统图标也在“桌面”栅栏里"),
+      showWithInbox: t("Windows 桌面照常显示图标，没有归类的项目同时出现在“桌面”栅栏里"),
+      showNoInbox: arranged
+        ? t("“桌面”栅栏像桌面一样排列时，它的图标已经在 Windows 桌面上，所以不显示它；要同时显示，先在“栅栏”页关掉它的“像桌面一样排列”")
+        : t("没有归类的项目只留在 Windows 桌面上，不显示“桌面”栅栏"),
+    }[value];
+    document.getElementById('keepIconsCard').hidden = value !== 'hide';
+    select.onchange = () => {
+      const settings = state.settings;
+      settings.hideRealIcons = select.value === 'hide';
+      if (select.value !== 'hide') settings.hideInboxWhenIconsShown = select.value === 'showNoInbox';
+      bindDesktopIcons();
+      commit('hideRealIcons');
+    };
+  }
+  // 收起与展开 › 收起的栅栏怎么展开: hover (hoverPeek), one title click (clickToExpand, which
+  // overrides hover) or neither (double-click or the chevron). A click keeps hoverPeek on, as the
+  // old switch did: a file dragged onto a rolled title still opens the fence (dnd.rs).
+  function bindRollExpand() {
+    const r = state.settings.rollUp, select = document.getElementById('rollExpand');
+    select.value = r.clickToExpand ? 'click' : r.hoverPeek ? 'hover' : 'double';
+    select.onchange = () => {
+      const roll = state.settings.rollUp;
+      roll.clickToExpand = select.value === 'click';
+      roll.hoverPeek = select.value !== 'double';
+      commit('rollUp');
+    };
+  }
   function renderDesktopIconsStatus() {
     const hidden = !!(state.desktopIconsHidden ?? state.settings.hideRealIcons);
     document.getElementById('hideIconsAgain').disabled = hidden && !!state.settings.hideRealIcons;
@@ -1989,6 +2456,34 @@
     document.getElementById('memDetail').textContent = tf("内存占用 {0} MB · {1} 个栅栏 · {2} 个项目", state.memoryMb.toFixed(1), fenceCount, itemCount);
   }
 
+  // 对话框跳转: its demo shows the three steps one after the other while 小工具 is shown.
+  const djDemo = document.getElementById('dialogJumpDemo');
+  if (djDemo) {
+    const steps = djDemo.querySelectorAll('li'), pic = djDemo.querySelector('.dj-pic');
+    const win = (x, y, title, addr, front, hot) => `<g class="${front ? '' : 'back'}"><rect class="w${front ? ' front' : ''}" x="${x}" y="${y}" width="170" height="118" rx="6"/>`
+      + `<rect class="bar" x="${x + 1}" y="${y + 1}" width="168" height="19" rx="5"/><text x="${x + 10}" y="${y + 14}">${esc(title)}</text>`
+      + `<rect class="addr${hot ? ' hot' : ''}" x="${x + 8}" y="${y + 26}" width="154" height="18" rx="3"/><rect class="fold" x="${x + 13}" y="${y + 31}" width="10" height="8" rx="1"/>`
+      + `<text class="${hot ? 'hot' : ''}" x="${x + 28}" y="${y + 39}">${esc(addr)}</text>`
+      + [96, 72, 84].map((w, i) => `<rect class="row" x="${x + 14}" y="${y + 54 + i * 15}" width="${w}" height="7" rx="2"/>`).join('') + '</g>';
+    let step = 1;
+    const draw = () => {
+      const folder = t("对话框跳转演示\x04项目资料"), front = step !== 2;
+      steps[1].textContent = tf("切到资源管理器，它正开着「{0}」", folder);
+      steps[2].textContent = tf("切回对话框，它自动跳到「{0}」", folder);
+      const ex = win(14, 22, t("资源管理器"), folder, !front, false);
+      const dlg = win(136, 46, t("打开"), step === 3 ? folder : t("文档"), front, step === 3);
+      const cursor = step === 1 ? '' : `<path class="cursor" transform="translate(${step === 2 ? '60 92' : '230 60'})" d="M0 0 l0 14 l4 -4 l3 7 l3 -1 l-3 -7 l5 0 z"/>`;
+      pic.innerHTML = `<svg viewBox="0 0 320 176" width="320" height="176">${front ? ex + dlg : dlg + ex}${cursor}</svg>`;
+      steps.forEach((li, i) => li.classList.toggle('on', i === step - 1));
+    };
+    draw();
+    setInterval(() => {
+      if (document.hidden || !document.getElementById('page-peek').classList.contains('on')) return;
+      step = step % 3 + 1;
+      draw();
+    }, 1800);
+  }
+
   if (wv) wv.addEventListener('message', e => {
     const m = e.data;
     if (m.type === 'state') {
@@ -2025,7 +2520,7 @@
       document.getElementById('rateStore').hidden = !m.storeEdition;
       renderWorkspaceSummary(m.fences.length, m.itemCount);
       document.getElementById('cfgPath').textContent = m.configPath;
-      bindAll(); bindThemeStyle(); bindCustomTheme(); bindIconTint(); renderDependents(); renderFences(); renderRules(); renderLayout(); updateKind(); renderAppearance(); renderDesktopIconsStatus(); renderStartupNote(); renderWindowsDesktopHotkey();
+      bindAll(); bindThemeStyle(); bindCustomTheme(); bindDesktopIcons(); bindRollExpand(); bindIconTint(); renderDependents(); renderFences(); renderRules(); renderLayout(); renderTools(); updateKind(); renderAppearance(); renderDesktopIconsStatus(); renderStartupNote(); renderWindowsDesktopHotkey();
       update = m.update; renderUpdate();
       // Transitions come on a frame after this state has been drawn: a single frame would style
       // both changes together and start them after all.
@@ -2035,6 +2530,10 @@
       state.itemCount = m.itemCount;
       renderWorkspaceSummary(m.fenceCount, m.itemCount);
     } else if (m.type === 'showFence') showFence(m.id);
+    else if (m.type === 'showPage') {
+      showPage(m.page);
+      if (m.focus) document.getElementById(m.focus)?.scrollIntoView({ block: 'center' });
+    }
     else if (m.type === 'feedbackInfo') {
       fbInfo = m; fbCrash ||= !!m.crashed; renderFeedback();
       if (fbSendPending) { fbSendPending = false; fbSend.click(); }
@@ -2043,7 +2542,8 @@
     else if (m.type === 'toast') toast(m.text, !!m.error);
     else if (m.type === 'pickedColor') pickedColor(m.target, m.hex);
     else if (m.type === 'update') { update = m.update; renderUpdate(); }
-    else if (m.type === 'peekHotkeyResult') peekRecorder.result(m);
+    else if (m.type === 'peekHotkeyResult') { peekRecorder.result(m); renderPeekHotkey(); }
+    else if (m.type === 'pinyin') { pinyinMap = m.map || {}; if (!searchList.hidden) renderSearch(); }
     else if (m.type === 'windowsDesktopHotkeyResult') wdRecorder.result(m);
   });
   send({ type: 'ready' });

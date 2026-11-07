@@ -53,3 +53,34 @@ pub fn sequence() -> u32 {
     // SAFETY: plain FFI call.
     unsafe { GetClipboardSequenceNumber() }
 }
+
+/// Puts `text` on the clipboard as Unicode text (the search's 复制路径).
+pub fn set_text(owner: HWND, text: &str) -> bool {
+    let wide: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
+    let bytes = wide.len() * 2;
+    // SAFETY: the global block is filled while locked; on success the clipboard owns it,
+    // otherwise it is freed here.
+    unsafe {
+        if !OpenClipboard(Some(owner)).as_bool() {
+            return false;
+        }
+        let _ = EmptyClipboard();
+        let mem = GlobalAlloc(GMEM_MOVEABLE as u32, bytes);
+        let mut ok = false;
+        if !mem.0.is_null() {
+            let dst = GlobalLock(mem) as *mut u16;
+            if !dst.is_null() {
+                std::ptr::copy_nonoverlapping(wide.as_ptr(), dst, wide.len());
+                let _ = GlobalUnlock(mem);
+                ok = !SetClipboardData(CF_UNICODETEXT as u32, Some(HANDLE(mem.0)))
+                    .0
+                    .is_null();
+            }
+            if !ok {
+                let _ = GlobalFree(mem);
+            }
+        }
+        let _ = CloseClipboard();
+        ok
+    }
+}

@@ -284,6 +284,8 @@ impl FenceWindow {
                     }
                     msg::WM_RBUTTONUP => mouse::on_rbuttonup(h, hwnd, wparam, lparam),
                     msg::WM_MOUSEWHEEL => mouse::on_mousewheel(h, hwnd, wparam, lparam),
+                    mouse::WM_XBUTTONDOWN => Some(1),
+                    mouse::WM_XBUTTONUP => mouse::on_xbuttonup(h, hwnd, wparam, lparam),
                     msg::WM_SIZE => nc::on_size(h, hwnd, wparam, lparam),
                     msg::WM_MOVE => nc::on_move(h, hwnd, wparam, lparam),
                     msg::WM_SHOWWINDOW => misc::on_showwindow(h, hwnd, wparam, lparam),
@@ -332,6 +334,7 @@ impl FenceWindow {
                     msg::WM_TIMER if wparam == TIMER_TAB_HOVER => {
                         timers::on_timer_tab_hover(h, hwnd, wparam, lparam)
                     }
+                    msg::WM_TIMER if wparam == TIMER_CLOCK => timers::on_timer_clock(h),
                     msg::WM_TIMER if wparam == TIMER_HOVER_SELECT => {
                         timers::on_timer_hover_select(h, hwnd, wparam, lparam)
                     }

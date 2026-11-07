@@ -117,6 +117,17 @@ impl ShellContextMenu {
         removed
     }
 
+    /// Canonical verbs of the shell's top-level items in `hmenu`, in menu order; items without
+    /// one (submenus such as 发送到, most extensions) are left out.
+    pub fn verbs(&self, hmenu: HMENU) -> Vec<String> {
+        // SAFETY: plain FFI calls on the caller's menu.
+        unsafe {
+            (0..GetMenuItemCount(Some(hmenu)).max(0))
+                .filter_map(|pos| self.verb(GetMenuItemID(hmenu, pos)))
+                .collect()
+        }
+    }
+
     /// True when `cmd` (as returned by `TrackPopupMenuEx`) belongs to the shell's range.
     pub fn contains(&self, cmd: u32) -> bool {
         self.end > self.first && cmd >= self.first && cmd < self.end

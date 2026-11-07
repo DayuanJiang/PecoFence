@@ -453,7 +453,7 @@ mod tests {
             on_dark.title_ink(primary),
             ColorF::from_rgba8(0xFF, 0xD8, 0x90, 0xFF)
         );
-        // 「图标名称颜色」 白色 / 黑色 wins over the theme's title colour.
+        // 「文字颜色」 白色 / 黑色 wins over the theme's title colour.
         let white = on_bright.with_label_color(LabelColor::White);
         assert_eq!(white.title_ink(white.text_primary), white.text_primary);
         assert_eq!(

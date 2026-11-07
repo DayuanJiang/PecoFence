@@ -172,6 +172,21 @@ On 2026-11-07, the 5–240 FPS range change passed the following checks with Rus
 
 These checks validate the accepted range and settings flow; they do not measure native rendering throughput at 240 FPS.
 
+### Validation after merging upstream 0.3.0
+
+On 2026-11-07, upstream commit `52e1d4264485f0d3eed522c00b6f1669340e6992` was merged with the real-time glass implementation and 5–240 FPS range retained. Both startup hooks and the updated custom-theme/settings UI were preserved. The real-time refresh and watchdog timers were moved to a separate ID range because upstream now uses their previous IDs for script completion and Everything search.
+
+Validation with Rust 1.95.0:
+
+- Formatting and strict workspace/all-target Clippy passed.
+- `cargo test --workspace --locked`: **576 passed, 2 existing tests ignored**.
+- Browser Settings UI regressions: **107 passed, 0 failed**, including the high-refresh settings flow and upstream's updated settings pages.
+- Coverage checks passed for 761 messages across 11 languages and for 11 README translations.
+- All 5 production Windows binding files regenerated without changes; the website build produced 22 pages.
+- Separate Release builds of the app/watchdog and CLI passed, with version 0.3.0 in all three executables. The CLI's offline schema confirmed 5–240 FPS with a 30 FPS default.
+
+The merged desktop application was not launched for native visual or performance validation. The earlier measurements remain historical results for the earlier experimental build.
+
 ## Bounded diagnostics
 
 An independent probe can check whether the desktop host image keeps changing without starting another PF desktop-management instance:
@@ -235,6 +250,6 @@ A reproduction report should include the Windows build, monitor topology/scaling
 
 ## Origin, version and license
 
-The upstream project is [DayuanJiang/PecoFence](https://github.com/DayuanJiang/PecoFence). This experiment initially used upstream commit `40b2acf6dcc349b477b426862acdf78900a79768`, whose base version is `0.2.4`, with the experimental package version `0.2.4-liveglass.1`. It now incorporates upstream `0.2.5` at commit `ef888bf878f7cb634971123eae1dff931e537b30`. The package version in `Cargo.toml` follows upstream at `0.2.5`; real-time glass remains an optional addition on this feature branch, not a claim that upstream has released it.
+The upstream project is [DayuanJiang/PecoFence](https://github.com/DayuanJiang/PecoFence). This experiment initially used upstream commit `40b2acf6dcc349b477b426862acdf78900a79768`, whose base version is `0.2.4`, with the experimental package version `0.2.4-liveglass.1`. It incorporated upstream `0.2.5` at commit `ef888bf878f7cb634971123eae1dff931e537b30` and now includes upstream `0.3.0` at commit `52e1d4264485f0d3eed522c00b6f1669340e6992`. The package version in `Cargo.toml` follows upstream at `0.3.0`; real-time glass remains an optional addition on this feature branch, not a claim that upstream has released it.
 
 The migration retains the full upstream project, existing functionality and `vendor` dependencies, adding the real-time glass implementation and settings on that base. The license remains [Apache License 2.0](LICENSE). Retain the original author's attribution, third-party notices and each vendored dependency's license files; see the [third-party dependency notes](third_party/README.md).

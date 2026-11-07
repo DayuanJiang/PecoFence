@@ -73,10 +73,30 @@ Built for agents and scripts: `describe` exposes the command catalog and JSON Sc
 ## Give everything a place
 
 <p align="center">
-  <img src="docs/assets/hero-en.png" alt="PecoFence — Project folders, a PDF and original design studies in Liquid Glass fences." width="1280">
+  <img src="docs/assets/hero-en.png" alt="PecoFence: project folders, a PDF and original design studies in Liquid Glass fences." width="1280">
 </p>
 
 ## See it in action
+
+### Find it as you type.
+
+Press **Ctrl + Alt + Space** and type. Matching files and folders in your
+fences show up at once, and **Enter** opens one. Chinese names can be found by pinyin too.
+Everything is a free file search tool: turn on Everything search in Settings, and the whole
+computer is searched as well. The clip uses Press Ctrl twice, which you can choose as the
+shortcut in Settings.
+
+![Pressing Ctrl twice opens Peek with its search box; typing "meet" lists Meeting notes.docx from a fence, then two files Everything found on the computer; the down arrow picks one and Enter opens it.](docs/assets/search.gif)
+
+### The right folder in Open and Save dialogs.
+
+In an Open or Save dialog, switch to File Explorer and back, and the dialog jumps to the folder
+open there. **Ctrl+G** jumps there too, and a click on a folder fence goes to that fence's folder.
+It is off by default, and PecoFence offers it the first time it can help. Even with it off,
+**Enter** on a Peek search result works with the dialog: an Open dialog opens the file, a Save
+dialog goes to its folder.
+
+![An Open dialog in Documents jumps to the Contracts folder open in File Explorer after a click there and back, then to Designs after a click on that folder fence.](docs/assets/dialog-jump.gif)
 
 ### One fence. Multiple workspaces.
 
@@ -98,13 +118,15 @@ Grab what you need, then press **Esc** to return.
 
 | Feature | What you get |
 | :--- | :--- |
-| **AI + CLI** | `pecofence-cli` — **Configure it in your own words.** Change themes, transparency, icon sizes and global settings, or adjust every fence at once. |
+| **AI + CLI** | `pecofence-cli`: **Configure it in your own words.** Change themes, transparency, icon sizes and global settings, or adjust every fence at once. |
 | **Less sorting** | Rules for file types, extensions, names, wildcards, shortcut targets, time and size. New files find their fence automatically. |
 | **Glass that fits your desktop** | Fluent and Liquid Glass themes, light/dark modes, per-fence colors, opacity and icon tinting. |
 | **Familiar file handling** | File Explorer context menus, drag and drop, copy/paste, multi-select, thumbnails and icon/list/details views. |
-| **Keep folders close** | Put a live folder on your desktop. Browse subfolders and see changes as they happen. |
+| **Keep folders close** | Put a live folder on your desktop. Browse subfolders and see changes as they happen. The mouse's back button goes up a folder and forward goes back in. |
 | **Space when you need it** | Roll a fence up to its title. Hover to expand. Lock a layout you like. Double-click the desktop to hide your fences. Double-click again to bring them back. |
+| **Small tools in fences** | Notes with to-dos, a clock with the date, and script fences that show what your own script prints, such as the weather; their rows can open a link or tick a to-do when you click them. You can add them right away in Settings → Tools or from the tray menu. |
 | **A way back** | Layout snapshots, daily backups, configuration import/export and swapping fences between displays. |
+| **Find a setting** | Type in the box at the top of Settings (Ctrl+F) to find any setting by its words, by pinyin in a Chinese interface, or by a common other name such as startup, hotkey or dark mode. |
 | **A small footprint** | A native Rust application that uses only about 2 to 5 MB of memory at rest in Task Manager. The WebView2 settings panel loads on demand. |
 
 Automatic sorting rules keep files in their original locations. File moves you
@@ -136,10 +158,21 @@ The Microsoft Store edition is signed by Microsoft, updates automatically and ne
 
 ## Build it. Make it yours.
 
-PecoFence is Apache 2.0 licensed, and contributions are welcome—from a sharper translation
+PecoFence is Apache 2.0 licensed, and contributions are welcome, from a sharper translation
 to a better desktop interaction.
 
 [Contribute](CONTRIBUTING.md) · [Improve a translation](docs/LOCALIZATION.md) · [Development guide](docs/DEVELOPMENT.md)
+
+## Code signing policy
+
+Free code signing provided by [SignPath.io](https://about.signpath.io/), certificate by [SignPath Foundation](https://signpath.org/).
+
+- Committers and reviewers: [Dayuan Jiang](https://github.com/DayuanJiang)
+- Approvers: [Dayuan Jiang](https://github.com/DayuanJiang)
+
+Only the files that GitHub Actions builds from a version tag of this repository are signed, and every signing request is approved by hand.
+
+**Privacy:** This program will not transfer any information to other networked systems unless specifically requested by the user or the person installing or operating it. **Check for updates** contacts the GitHub API. A message you send from **Feedback** goes to the PecoFence feedback service. The Settings window runs on Microsoft Edge WebView2, which follows the [Microsoft Privacy Statement](https://privacy.microsoft.com/privacystatement).
 
 ---
 

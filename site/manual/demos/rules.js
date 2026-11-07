@@ -1,6 +1,7 @@
-// 2.3 自动整理规则: 设置 → 整理规则 → 新建规则 (规则名称「发票」, 名称包含「发票」→「报销」) → 添加规则, move it
-// above the first-run 「文件与文档」 rule (first match wins, a new rule is appended last), a new
-// invoice lands in 报销, and 立即应用 re-sorts the invoice already on the desktop.
+// 3.3 自动整理规则: 设置 → 整理规则 → 新建规则 (规则名称「发票」, 名称包含「发票」→「报销」) → 添加规则.
+// The new rule goes to the top of the list (settings.html nrAdd: rules match in list order, so a
+// new one is put before the broad first-run 「文件与文档」 rule), a new invoice lands in 报销, and
+// 立即应用 re-sorts the invoice already on the desktop.
 (() => {
     'use strict';
     const { E, ramp, lerp, pathAt, el, put, show, text, local, icon, fence, pointer, drawPointer, drawChip,
@@ -17,8 +18,7 @@
     const KIND_CLICK = 2.1, KIND_AT = 2.95;      // 条件类型 → 名称包含
     const VALUE_CLICK = 3.35, TYPE_AT = 3.47;    // 条件值 「发票」
     const TARGET_CLICK = 4.05, TARGET_AT = 4.85; // 目标栅栏 → 报销
-    const ADD_AT = 5.4;                          // 添加规则
-    const SWAP_AT = 6.45;                        // 上移
+    const ADD_AT = 5.4;                          // 添加规则 (the rule appears first in the list)
     const NEW_AT = 7.45;                         // 10月发票.pdf appears on the desktop
     const SCROLL = [9.0, 9.5];
     const APPLY_AT = 10.15;                      // 立即应用
@@ -34,13 +34,12 @@
         valueFocus: t >= VALUE_CLICK && t < TARGET_CLICK,
         target: t >= TARGET_AT + .02 ? '报销' : '程序',
         added: t >= ADD_AT + .05,
-        swapped: t >= SWAP_AT + .02,
         scroll: lerp(S0, S1, ramp(t, SCROLL[0], SCROLL[1], E.out)),
     });
 
     const KINDS = ['文件类型', '扩展名（逗号分隔）', '名称包含', '名称不包含', '名称开头是', '名称结尾是',
         '完整文件名（含扩展名，用逗号分隔）', '通配符（*.png）', '快捷方式目标包含', '创建时段', '创建于星期几',
-        '大小范围（MB）', '闲置天数（未修改也未打开）', '仅文件夹', '仅文件'];
+        '大小范围（MB）', '闲置天数（未修改也未打开）', '仅文件夹', '仅文件', '普通文件（程序和快捷方式除外）'];
     const FENCES = ['程序', '文件夹', '文件与文档', '桌面', '报销'];
     const CATS = ['程序', '快捷方式', '文件夹', '文档', '图片', '音乐', '视频', '压缩包', '安装包'];
     // [name, conditions] as condLabel() + "→ 放入“…”" render them
@@ -75,6 +74,8 @@
         SM.header(pg, '整理规则');
         const auto = SM.card(pg, { ic: '\uE8CB', t: '新项目出现在桌面时自动归类', s: '先看快捷方式目标规则，再按列表顺序匹配；都不符合的放进“桌面”栅栏', textW: 240 });
         SM.drawToggle(SM.toggle(auto), true);
+        const unmatched = SM.card(pg, { ic: '\uE718', t: '没有命中规则的项目', s: '应用规则时，已在某个栅栏里但不符合任何规则的项目放在哪里；不符合规则的新项目总是放进“桌面”栅栏', textW: 240 });
+        SM.select(unmatched, '回到“桌面”栅栏', 104);
         const apply = SM.card(pg, { ic: '\uE8AB', t: '立即对桌面上的全部项目应用规则', s: '手动摆放过的项目保持原位', textW: 240 });
         r.apply = SM.button(apply, '立即应用', 64);
         SM.h3(pg, '快速添加');
@@ -83,7 +84,7 @@
         tpl.s.style.top = '23px';
         // template chips sized to their labels; they wrap onto more rows when a translation is long
         let cx = 34, cy = 39;
-        [['\uEB9F', '图片'], ['\uE8D6', '音乐'], ['\uE714', '视频'], ['\uF012', '压缩包'], ['\uE7B8', '安装包'], ['\uEA99', '待清理']].forEach(([g, l]) => {
+        [['\uEB9F', '图片'], ['\uE8D6', '音乐'], ['\uE714', '视频'], ['\uE7FC', '游戏'], ['\uF012', '压缩包'], ['\uE7B8', '安装包'], ['\uEA99', '待清理']].forEach(([g, l]) => {
             const c = SM.ctrl(tpl, 'set-btn', 0, 20, { left: cx, top: cy, label: null });
             c.n.style.borderRadius = '10px';
             c.n.style.height = '20px';
@@ -109,6 +110,7 @@
             b.num = el('span', 'set-num', b.n);
             b.num.style.left = '6px';
             b.num.style.top = '10px';
+            b.edit = SM.iconButton(b, 'edit', { right: 112 });
             b.up = SM.iconButton(b, 'up', { right: 90 });
             b.down = SM.iconButton(b, 'down', { right: 68 });
             SM.drawToggle(SM.toggle(b, { caption: false, right: 32 }), true);
@@ -134,16 +136,22 @@
             n.style.top = y + 'px';
             return n;
         };
-        r.form = [label('规则名称', COL[0], 42), label('目标栅栏', COL[1], 42), label('条件类型', COL[0], 87)];
+        r.form = [label('规则名称', COL[0], 42), label('目标栅栏', COL[1], 42), label('条件（全部符合时放入目标栅栏）', COL[0], 86)];
+        r.condBox = el('div', 'set-cond', d.n);
+        Object.assign(r.condBox.style, { left: (COL[0] - 6) + 'px', top: '100px', width: (2 * FW + 22) + 'px' });
+        r.form.push(r.condBox, label('条件类型', COL[0], 106), label('条件值', COL[1], 106));
         r.nameIn = SM.input(d, '例如：截图', FW, { left: COL[0], top: 57 });
         r.target = SM.select(d, '程序', FW, { left: COL[1], top: 57 });
-        r.kind = SM.select(d, '文件类型', FW, { left: COL[0], top: 102 });
-        r.valueLabel = label('条件值', COL[1], 87);
-        r.valueIn = SM.input(d, '截图', FW, { left: COL[1], top: 102 });  // placeholder 示例\x04截图
+        r.kind = SM.select(d, '文件类型', FW, { left: COL[0], top: 120 });
+        r.valueIn = SM.input(d, '截图', FW, { left: COL[1], top: 120 });  // placeholder 示例\x04截图
+        r.hint = label('有空格也直接输入，不用加引号', COL[1], 146);
+        // the condition heading and the hint end at the form's edge (a longer translation ellipsizes)
+        [[r.form[2], 2 * FW + 10], [r.hint, FW]].forEach(([n, w]) => Object.assign(n.style,
+            { width: w + 'px', overflow: 'hidden', textOverflow: 'ellipsis' }));
         // the type checkboxes, measured; rows past the second push the button and the scroll down
         const catsW = 2 * FW + 10;
         r.cats = el('div', null, d.n);
-        Object.assign(r.cats.style, { left: '34px', top: '134px', width: catsW + 'px' });
+        Object.assign(r.cats.style, { left: '34px', top: '148px', width: catsW + 'px' });
         let x = 0, y = 0;
         for (const c of CATS) {
             const n = el('div', 'set-chk', r.cats);
@@ -159,9 +167,13 @@
         }
         r.cats.style.height = (y + 14) + 'px';
         r.typeExtra = Math.max(0, y - 18);
-        S0 = 222 + chipExtra + (r.typeExtra && Math.max(r.typeExtra, 26));   // 26: hide the 规则列表 heading whole
-        r.addBtn = SM.button(d, '添加规则', 70, { accent: true, right: 12, top: 174 + r.typeExtra });
-        r.form.push(r.nameIn.n, r.target.n, r.kind.n, d.line);
+        // the scroll shows the rules from the first row (the 规则列表 heading just above the view)
+        // with the form open below them; type checkboxes that wrap further run past the bottom
+        S0 = 288 + chipExtra;
+        r.addCond = el('div', 'set-lbl set-link', d.n, T('添加条件'));
+        r.addCond.style.left = COL[0] + 'px';
+        r.addBtn = SM.button(d, '添加规则', 70, { accent: true, right: 12, top: 0 });
+        r.form.push(r.nameIn.n, r.target.n, r.kind.n, r.valueIn.n, d.line, r.addCond);
 
         r.kindPop = SM.popup(S, KINDS, 196, 8);
         r.targetPop = SM.popup(S, FENCES, 147);
@@ -177,12 +189,15 @@
     function layout(r, s) {
         const d = r.det, name = s.kind !== '文件类型';
         r.newRow.on = s.added;
-        d.h = !s.open ? 32 : name ? 163 : 208 + r.typeExtra;
-        PM.size(d.n, r.pg.cardW, d.h);
-        r.addBtn.top = name ? 129 : 174 + r.typeExtra;
+        const boxH = name ? 64 : 82 + r.typeExtra;              // 条件类型 / 条件值 (+ hint or checkboxes)
+        r.condBox.style.height = boxH + 'px';
+        r.addCond.style.top = (100 + boxH + 8) + 'px';
+        r.addBtn.top = 100 + boxH + 30;
         r.addBtn.n.style.top = r.addBtn.top + 'px';
+        d.h = !s.open ? 32 : r.addBtn.top + 22 + 10;
+        PM.size(d.n, r.pg.cardW, d.h);
         r.pg.scroll = s.scroll;
-        const rows = s.swapped ? [r.rows[0], r.rows[1], r.newRow, r.rows[2]] : [...r.rows, r.newRow];
+        const rows = [r.newRow, ...r.rows];
         const blocks = r.pg.blocks.filter(b => !rows.includes(b) && b !== d);
         const at = blocks.indexOf(r.listHead) + 1;
         r.pg.blocks = [...blocks.slice(0, at), ...rows, d];
@@ -213,7 +228,6 @@
         const value = pos(VALUE_CLICK, r.valueIn, -20, 0);
         const target = pos(TARGET_CLICK, r.target, -14, 0);
         const add = pos(ADD_AT, r.addBtn, 0, 0);
-        const up = pos(SWAP_AT, r.newRow.up, 0, 0);
         const applyBtn = pos(APPLY_AT, r.apply, 0, 0);
 
         // popups: the kind list opens above (no room below), the fence list below
@@ -236,14 +250,13 @@
             [3.97, target.x, target.y], [4.1, target.x, target.y],   // 目标栅栏
             [4.45, targetRow.x, targetRow.y], [4.9, targetRow.x, targetRow.y],
             [5.3, add.x, add.y], [5.7, add.x, add.y],                // 添加规则
-            [6.3, up.x, up.y], [6.65, up.x, up.y],                   // 上移
-            [7.25, 455, 250], [8.65, 455, 250],
+            [6.5, 455, 250], [8.65, 455, 250],
             [8.95, 300, 250], [9.55, 300, 250],                      // wheel up
             [10.05, applyBtn.x, applyBtn.y], [10.65, applyBtn.x, applyBtn.y], // 立即应用
             [11.35, 662, 384], [D, 662, 384],
         ];
         CLICKS = [{ t: OPEN_AT }, { t: NAME_CLICK }, { t: KIND_CLICK }, { t: KIND_AT }, { t: VALUE_CLICK }, { t: TARGET_CLICK }, { t: TARGET_AT },
-            { t: ADD_AT }, { t: SWAP_AT }, { t: APPLY_AT }];
+            { t: ADD_AT }, { t: APPLY_AT }];
         PRESSES = [[ADD_AT - .08, ADD_AT + .02], [APPLY_AT - .08, APPLY_AT + .02]];
         CHIPS = [[8.97, 9.55, '滚动']];
         r.layout(st(0));
@@ -263,8 +276,8 @@
         d.n.style.background = !s.open && PM.inside(p, { ...sb, h: 32 }) ? '#f4f4f4' : '';
         for (const n of r.form) show(n, s.open);
         show(r.addBtn.n, s.open);
-        show(r.valueLabel, s.open && name);
         show(r.valueIn.n, s.open && name);
+        show(r.hint, s.open && name);
         show(r.cats, s.open && !name);
         SM.drawInput(r.nameIn, s.name, s.nameFocus, t);
         SM.drawInput(r.valueIn, s.value, s.valueFocus, t);
@@ -273,9 +286,6 @@
         SM.drawSelect(r.target, s.target, p, targetOpen);
         SM.drawButton(r.addBtn, p, t >= ADD_AT - .08 && t < ADD_AT + .02);
         SM.drawButton(r.apply, p, t >= APPLY_AT - .08 && t < APPLY_AT + .02);
-        for (const b of [...r.rows, r.newRow]) {
-            b.up.n.classList.toggle('hot', SM.over(b.up, p) && !b.up.n.classList.contains('off'));
-        }
         SM.drawPopup(r.kindPop, t, POP.kind.x, POP.kind.y, KIND_CLICK + .02, KIND_AT, p, '文件类型');
         SM.drawPopup(r.targetPop, t, POP.target.x, POP.target.y, TARGET_CLICK + .02, TARGET_AT, p, '程序');
         SM.drawToast(r.w, t, [[ADD_AT + .05, T('已添加规则'), TOAST], [APPLY_AT + .05, T('已按规则整理 {0} 个项目').replace('{0}', '1'), TOAST]]);

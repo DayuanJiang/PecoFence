@@ -24,7 +24,9 @@ fn url_shortcut_names_prefer_the_browser_title() {
 /// case; namespace items match by their shown name only.
 #[test]
 fn peek_search_matches_names_and_hidden_extensions() {
-    use super::peek::search_matches;
+    let search_matches = |name: &str, path: Option<&str>, q: &str| {
+        super::peek::search_match(name, path, q).is_some()
+    };
     let report = Some(r"c:\users\me\desktop\report 2026.pdf");
     assert!(search_matches("Report 2026", report, "port 20"));
     assert!(search_matches("Report 2026", report, ".pdf"));
@@ -480,6 +482,33 @@ mod ipc {
     }
 
     #[test]
+    fn settings_patch_of_a_peek_shortcut_replaces_double_ctrl() {
+        let mut double = Settings::default();
+        double.peek.double_ctrl = true;
+        for (path, value) in [
+            ("peek.customHotkey", json!("Ctrl+Shift+F")),
+            ("peek.customHotkey", json!(null)),
+            ("peek.hotkey", json!("ctrlAltSpace")),
+        ] {
+            let patched = patch_settings_path(&double, path, value.clone()).unwrap();
+            assert!(!patched.peek.double_ctrl, "{path} {value}");
+        }
+        // Other paths keep it; a patch that sets it too keeps what it says.
+        let patched = patch_settings_path(&double, "peek.dim", json!(false)).unwrap();
+        assert!(patched.peek.double_ctrl);
+        let patched = patch_settings_path(
+            &Settings::default(),
+            "peek",
+            json!({ "enabled": true, "dim": true, "hotkey": "ctrlAltSpace", "customHotkey": "Ctrl+Shift+F", "doubleCtrl": true }),
+        )
+        .unwrap();
+        assert!(patched.peek.double_ctrl);
+        let patched =
+            patch_settings_path(&Settings::default(), "peek.doubleCtrl", json!(true)).unwrap();
+        assert!(patched.peek.double_ctrl);
+    }
+
+    #[test]
     fn settings_patch_replaces_the_whole_object() {
         let wanted = Settings {
             icon_size: 64,
@@ -691,6 +720,8 @@ mod ipc {
             name: name.to_string(),
             ts,
             layouts: Vec::new(),
+            notes: Default::default(),
+            scripts: Default::default(),
         }
     }
 
