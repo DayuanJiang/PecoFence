@@ -1783,7 +1783,7 @@
     // 在哪个虚拟桌面显示: once there is more than one desktop; 「桌面」 shows on every one.
     const desktops = state.virtualDesktops || [];
     const bound = f.virtualDesktops || [];
-    document.getElementById('fenceVdCard').style.display = f.kind !== 'inbox' && (desktops.length > 1 || bound.length) ? '' : 'none';
+    document.getElementById('fenceVdCard').style.display = f.kind !== 'inbox' && !f.inboxWindow && (desktops.length > 1 || bound.length) ? '' : 'none';
     const vdSel = document.getElementById('fenceVd');
     const vdOptions = `<option value="">${esc(t("所有虚拟桌面"))}</option>` + desktops.map(d => `<option value="${esc(d.id)}">${esc(d.current ? tf("{0}（当前）", d.name) : d.name)}</option>`).join('');
     if (vdSel.innerHTML !== vdOptions) vdSel.innerHTML = vdOptions;

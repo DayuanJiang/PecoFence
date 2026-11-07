@@ -316,6 +316,12 @@ impl App {
         reason: &'static str,
     ) -> bool {
         let host = self.state.host_of(fence);
+        // 「桌面」 (and a window holding it as a tab) shows on every desktop: new desktop items
+        // land in it.
+        if !desktops.is_empty() && self.state.window_holds_inbox(host) {
+            tracing::info!(%fence, %host, ?desktops, reason, "virtual desktops refused: the window holds the inbox");
+            return false;
+        }
         let before = self.state.fence(host).map(|f| f.virtual_desktops.clone());
         if before.as_ref() == Some(&desktops) {
             tracing::info!(%fence, ?desktops, reason, "fence virtual desktops unchanged");
