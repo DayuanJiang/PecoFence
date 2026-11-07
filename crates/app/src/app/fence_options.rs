@@ -570,6 +570,9 @@ impl App {
         let Some(host) = &self.settings else {
             return;
         };
+        if let Some(w) = self.window_for(fence) {
+            host.place_beside(w.rect());
+        }
         if host.ready {
             self.post_show_fence(fence);
         } else {

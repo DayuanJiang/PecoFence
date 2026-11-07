@@ -1188,7 +1188,7 @@ impl FenceViewState {
         {
             // A rolled fence is one title-bar target: any position within it keeps the dwell.
             self.drag_peek_armed = true;
-            window::set_timer(self.hwnd, TIMER_DRAG_PEEK, Tooltip::hover_delay_ms());
+            window::set_timer(self.hwnd, TIMER_DRAG_PEEK, self.behavior.hover_open_ms());
         }
     }
 

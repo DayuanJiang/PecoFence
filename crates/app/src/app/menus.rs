@@ -34,9 +34,13 @@ const CMD_ITEM_EMPTY_BIN: u32 = 107;
 /// menu is out of reach (its window is only the icon cells).
 const CMD_ITEM_DESKTOP_LAYOUT: u32 = 108;
 const CMD_ITEM_FENCE_OPTIONS: u32 = 109;
+/// 以后把 .pdf 文件都放到这里: an extension rule to this fence.
+const CMD_ITEM_EXT_RULE: u32 = 110;
 const CMD_FENCE_OPEN_FOLDER: u32 = 332;
 const CMD_ITEM_MOVE_BASE: u32 = 200;
 const CMD_NEW_FENCE_HERE: u32 = 250;
+/// 在此显示文件夹… in the same marquee menu.
+const CMD_SHOW_FOLDER_HERE: u32 = 251;
 /// Command-id range handed to Explorer's `IContextMenu`.
 const CMD_SHELL_FIRST: u32 = 0x1000;
 const CMD_SHELL_LAST: u32 = 0x6FFF;
@@ -385,6 +389,11 @@ impl App {
                 self.push_settings_state();
             }
             CMD_ITEM_FENCE_OPTIONS => self.open_fence_options(fence),
+            CMD_ITEM_EXT_RULE => {
+                if let Some(ext) = self.ext_rule_offer(fence, &items) {
+                    self.add_ext_rule(fence, &ext, owner);
+                }
+            }
             c if c >= CMD_ITEM_MOVE_BASE && c < CMD_ITEM_MOVE_BASE + 1000 => {
                 let idx = (c - CMD_ITEM_MOVE_BASE) as usize;
                 if let Some(target) = self.state.fences().get(idx).map(|f| f.id) {
@@ -510,6 +519,14 @@ impl App {
             move_menu.item(*id, title, false, *disabled);
         }
         menu.submenu(pecofence_core::i18n::text("移动到栅栏"), move_menu);
+        if let Some(ext) = self.ext_rule_offer(fence, items) {
+            menu.item(
+                CMD_ITEM_EXT_RULE,
+                &pecofence_core::i18n::format("以后把 {0} 文件都放到这里", &[ext]),
+                false,
+                false,
+            );
+        }
         menu.item(
             CMD_ITEM_TO_INBOX,
             if self.state.portal_path(fence).is_some() {
@@ -1062,11 +1079,7 @@ impl App {
                     self.schedule_save();
                 }
             }
-            CMD_FENCE_OPEN_FOLDER => {
-                if let Some(dir) = portal_dir.as_deref() {
-                    let _ = shell::shell_execute(dir, None, None);
-                }
-            }
+            CMD_FENCE_OPEN_FOLDER => self.open_portal_folder(fence, "fence menu"),
             CMD_PORTAL_UP => self.portal_up(fence),
             c if (CMD_FENCE_SHOW_FOLDER..CMD_FENCE_SHOW_FOLDER + 4).contains(&c) => {
                 self.show_folder_command(c - CMD_FENCE_SHOW_FOLDER, x, y, Some(host))
@@ -1240,7 +1253,8 @@ impl App {
         }
     }
 
-    /// Marquee on the empty desktop: confirm with a one-item menu, then create the fence there.
+    /// Marquee on the empty desktop: a menu offers a new fence or a folder fence in the drawn
+    /// rectangle.
     pub(super) fn offer_new_fence(&mut self, rect: RECT) {
         // Menus need a visible owner window from this thread; any fence will do.
         let Some(owner) = self.fences.values().map(|w| w.hwnd()).next() else {
@@ -1259,11 +1273,28 @@ impl App {
             pecofence_core::i18n::text("在此新建栅栏"),
             false,
             false,
+        )
+        .item(
+            CMD_SHOW_FOLDER_HERE,
+            pecofence_core::i18n::text("在此显示文件夹…"),
+            false,
+            false,
         );
         // Saved first, as for the tray menu.
         self.state.save_if_dirty();
-        if menu.show_context(owner, pt.x, pt.y) == CMD_NEW_FENCE_HERE {
-            self.create_fence_with_rename(rect);
+        match menu.show_context(owner, pt.x, pt.y) {
+            CMD_NEW_FENCE_HERE => self.create_fence_with_rename(rect),
+            CMD_SHOW_FOLDER_HERE => {
+                match pecofence_platform::filedialog::pick_folder(
+                    None,
+                    pecofence_core::i18n::text("选择要在桌面显示的文件夹"),
+                ) {
+                    Ok(Some(folder)) => self.create_portal_in(folder, rect),
+                    Ok(None) => tracing::info!("show folder here: no folder picked"),
+                    Err(e) => tracing::warn!(error = %e, "folder picker failed"),
+                }
+            }
+            _ => {}
         }
     }
 }

@@ -51,10 +51,11 @@ pub(super) fn on_killfocus(
 
 // Keyboard during a focus session (plan §5.12): F2 rename, Enter open,
 // Delete or Ctrl+D → shell delete (Shift+Delete = permanent), Esc clears the selection,
-// Ctrl+C / X / V clipboard, Ctrl+Shift+N new folder, F5 refresh, Ctrl+Tab.
+// Ctrl+C / X / V clipboard, Ctrl+Shift+N new folder, F5 refresh, Ctrl+Tab, Tab to the next
+// fence.
 pub(super) fn on_keydown(
     h: &HandlerCtx,
-    _hwnd: HWND,
+    hwnd: HWND,
     wparam: usize,
     lparam: isize,
 ) -> Option<isize> {
@@ -154,6 +155,12 @@ pub(super) fn on_keydown(
                 tab: v.tabs[next].id,
             });
         }
+        // Tab / Shift+Tab: the keyboard moves to the next / previous fence in reading order
+        // (Explorer's Tab between panes). Ctrl+Tab stays with the tabs above.
+        VK_TAB if !ctrl => queue.push(Command::FocusNextFence {
+            from: hwnd,
+            back: shift,
+        }),
         VK_F5 => queue.push(Command::RefreshFence(v.active)),
         k if k == msg::VK_F2 => {
             if let [item] = ids[..] {
@@ -272,7 +279,8 @@ pub(super) fn on_char(h: &HandlerCtx, _hwnd: HWND, wparam: usize, lparam: isize)
     Some(0)
 }
 
-// Alt+Enter = 属性, Alt+Up = portal up (bit 29 of lParam: Alt was down).
+// Alt+Enter = 属性, Alt+Up = portal up, Alt+Left / Alt+Right = back / forward as in Explorer
+// (back is up, as the mouse's back button; bit 29 of lParam: Alt was down).
 pub(super) fn on_syskeydown(
     h: &HandlerCtx,
     _hwnd: HWND,
@@ -280,7 +288,9 @@ pub(super) fn on_syskeydown(
     lparam: isize,
 ) -> Option<isize> {
     let HandlerCtx { view, queue, .. } = h;
+    const VK_LEFT: u32 = 0x25;
     const VK_UP: u32 = 0x26;
+    const VK_RIGHT: u32 = 0x27;
     let vk = wparam as u32;
     let alt = (lparam >> 29) & 1 == 1;
     if !alt {
@@ -298,9 +308,15 @@ pub(super) fn on_syskeydown(
         }
         return Some(0);
     }
-    if vk == VK_UP && v.deco.up_button {
+    if (vk == VK_UP || vk == VK_LEFT) && v.deco.up_button {
         v.focus_visible = true;
         queue.push(Command::PortalUp(v.active));
+        return Some(0);
+    }
+    // Like the mouse's forward button: the app goes nowhere when no up came before.
+    if vk == VK_RIGHT {
+        v.focus_visible = true;
+        queue.push(Command::PortalForward(v.active));
         return Some(0);
     }
     None

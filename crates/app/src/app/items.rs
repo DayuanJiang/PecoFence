@@ -218,6 +218,12 @@ impl App {
             it.is_folder,
         );
         let dpi = monitors::dpi_for_window(w.hwnd());
+        // In the icon view the name is centred under the icon, and so is the box's text.
+        let centered = self
+            .state
+            .fence(fence)
+            .is_some_and(|f| f.view.layout == ViewLayout::Icons);
+        tracing::info!(?rect, centered, "item rename box opened");
         w.set_renaming(Some(item));
         crate::rename::begin_item_rename(
             rect,
@@ -226,6 +232,7 @@ impl App {
             item,
             current,
             select_end,
+            centered,
             self.queue.clone(),
             self.theme_mode,
         );

@@ -529,6 +529,31 @@ pub enum QuickHideScope {
     FencesOnly,
 }
 
+/// 「展开快慢」 beside 「收起的栅栏怎么展开」: the hover delay before a rolled fence expands.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase")]
+pub enum HoverSpeed {
+    /// 150 ms.
+    Fast,
+    /// Windows' mouse hover time (400 ms unless changed).
+    #[default]
+    Normal,
+    /// 1 s.
+    Slow,
+}
+
+impl HoverSpeed {
+    /// The delay in ms; `system` is Windows' mouse hover time.
+    pub fn delay_ms(self, system: u32) -> u32 {
+        match self {
+            Self::Fast => 150,
+            Self::Normal => system,
+            Self::Slow => 1000,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase", default)]
@@ -548,6 +573,10 @@ pub struct RollUpSettings {
     /// click to expand"). Hover peek is ignored while this is on.
     #[serde(default)]
     pub click_to_expand: bool,
+    /// How long the pointer (or a dragged file) rests on a rolled fence before it expands:
+    /// `normal` is Windows' mouse hover time (feedback #98).
+    #[serde(default)]
+    pub hover_speed: HoverSpeed,
     /// Draw the title (and tabs) only while the mouse is over the fence; a fence's
     /// `appearance.titleOnHover` overrides it.
     #[serde(default)]
@@ -578,6 +607,7 @@ impl Default for RollUpSettings {
             hover_open_ms: 400,
             close_grace_ms: 400,
             click_to_expand: false,
+            hover_speed: HoverSpeed::Normal,
             title_on_hover: false,
             hide_inactive_scrollbar: false,
             push_neighbors: true,

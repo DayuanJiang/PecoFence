@@ -877,8 +877,8 @@
   "详细信息": "Detalles",
   "小图标": "Iconos pequeños",
   "中等图标": "Iconos medianos",
-  "较大图标": "Iconos grandes",
-  "大图标": "Iconos muy grandes"
+  "较大图标": "Iconos mediano-grandes",
+  "大图标": "Iconos grandes"
  },
  "keys": {
   "Ctrl": "Ctrl",

@@ -454,6 +454,8 @@ pub(super) fn on_lbuttonup(
     // Release-fired controls act only when released over the same control.
     if let Some((p, true)) = press {
         match p {
+            // At the portal's root its glyph opens the folder in Explorer (#192).
+            PressTarget::Up if !v.deco.up_button => queue.push(Command::OpenPortalFolder(v.active)),
             PressTarget::Up => queue.push(Command::PortalUp(v.active)),
             PressTarget::Header(col) => queue.push(Command::SortColumn {
                 fence: v.active,
@@ -636,6 +638,10 @@ pub(super) fn on_lbuttondblclk(
         }
         // A script row acts once per double-click: a link opens one tab.
         if v.script_row_at(x, y).is_some() {
+            return Some(0);
+        }
+        // The folder glyph at a portal's root opens Explorer once per double-click.
+        if v.glyph_opens_folder() && v.up_button_at(x, y) {
             return Some(0);
         }
         // The second click of a rapid double-click on a button is another

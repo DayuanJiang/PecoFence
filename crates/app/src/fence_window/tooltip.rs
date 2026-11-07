@@ -120,9 +120,13 @@ impl FenceViewState {
     }
 
     /// Infotip text: items get Explorer's name / 类型 / 大小 / 修改日期, a shrunken tab pill its
-    /// full caption, the portal up button "向上".
+    /// full caption, the portal up button "向上" (at the root, where its glyph opens the folder,
+    /// 在资源管理器中打开文件夹).
     pub(super) fn tip_text(&self) -> Option<String> {
         match self.tip_target? {
+            TipTarget::Up if self.glyph_opens_folder() => {
+                Some(pecofence_core::i18n::text("在资源管理器中打开文件夹").to_string())
+            }
             TipTarget::Up => Some(pecofence_core::i18n::text("向上").to_string()),
             TipTarget::ScriptRow(i) => self.script.as_ref()?.rows.get(i)?.tip.clone(),
             TipTarget::Tab(i) => {
