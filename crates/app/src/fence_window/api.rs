@@ -336,6 +336,8 @@ impl FenceWindow {
                 over_stats: Default::default(),
                 source_volume: None,
                 desktop: None,
+                folder_drag: false,
+                shortcut_hover: None,
             }),
         )
         .map_err(|e| tracing::warn!(error = %e, "RegisterDragDrop failed"))
@@ -503,6 +505,8 @@ impl FenceWindow {
             over_stats: Default::default(),
             source_volume: None,
             desktop: None,
+            folder_drag: false,
+            shortcut_hover: None,
         };
         let entered = handler.drag_enter(data, key_state, pt, allowed);
         if !perform {

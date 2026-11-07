@@ -618,6 +618,285 @@ pub fn shell_folder_drop(
     }
 }
 
+/// A program file the Shell opens dropped folders with (`.exe`, `.com`, `.bat`, `.cmd`), by
+/// its extension.
+pub fn is_program_path(path: &Path) -> bool {
+    path.extension().is_some_and(|ext| {
+        ["exe", "com", "bat", "cmd"]
+            .iter()
+            .any(|suffix| ext.eq_ignore_ascii_case(suffix))
+    })
+}
+
+/// A drag delegated to a program file or an application's `.lnk` (preserving its arguments and
+/// working directory). Keep it for one hover, and call without holding a view's RefCell borrow:
+/// Shell extensions may pump messages. Dropping opens the folders, never transfers them.
+pub struct ShortcutDropTarget {
+    target: IDropTarget,
+    entered: bool,
+    button: u32,
+}
+
+impl ShortcutDropTarget {
+    pub fn bind(shortcut: &Path) -> Result<Self> {
+        let link = shortcut
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("lnk"));
+        let resolved = if link {
+            crate::shell::shortcut_target_expanded(shortcut)
+        } else {
+            Some(shortcut.to_path_buf())
+        };
+        let app = resolved
+            .as_ref()
+            .is_some_and(|p| is_program_path(p) && p.is_file());
+        // Not an application: a document, a folder, a missing program, or a Store app's link
+        // (no file path).
+        tracing::debug!(
+            shortcut = %shortcut.display(),
+            target = ?resolved,
+            app,
+            "program or shortcut under a folder drag"
+        );
+        if !app {
+            return Err(windows_core::Error::from_hresult(E_FAIL));
+        }
+        // Resolve only to check the target type. Bind the link (or the program) itself, so
+        // the Shell keeps its saved arguments, working directory and launch behaviour.
+        let path = to_wide(&shortcut.to_string_lossy());
+        // SAFETY: COM is initialized on the UI STA and the string outlives the call.
+        let target = unsafe {
+            let item: IShellItem = SHCreateItemFromParsingName(PCWSTR(path.as_ptr()), None)?;
+            item.BindToHandler(None, &BHID_SFUIObject)?
+        };
+        Ok(Self {
+            target,
+            entered: false,
+            button: MK_LBUTTON,
+        })
+    }
+
+    pub fn drag_over(
+        &mut self,
+        data: &IDataObject,
+        keys: u32,
+        pt: DragPoint,
+        allowed: u32,
+    ) -> DropEffect {
+        // An application consumes paths; MOVE would let a source remove its originals.
+        let mut effect = allowed & (DROPEFFECT_COPY | DROPEFFECT_LINK) as u32;
+        let point = POINTL { x: pt.x, y: pt.y };
+        if keys & (MK_LBUTTON | MK_RBUTTON) != 0 {
+            self.button = keys & (MK_LBUTTON | MK_RBUTTON);
+        }
+        // The final hover check happens after button-up. The Shell remembers which
+        // button carried the drag from DragEnter/DragOver, not from Drop.
+        let keys = keys | self.button;
+        // SAFETY: one DragEnter per hover, balanced by Drop or DragLeave on this STA.
+        let result = unsafe {
+            if self.entered {
+                self.target.DragOver(keys, point, &mut effect)
+            } else {
+                let result = self.target.DragEnter(data, keys, point, &mut effect);
+                self.entered = result.is_ok();
+                result
+            }
+        };
+        if result.is_err() {
+            return DropEffect::None;
+        }
+        DropEffect::from_raw(effect & allowed & (DROPEFFECT_COPY | DROPEFFECT_LINK) as u32)
+    }
+
+    pub fn drop_folders(
+        mut self,
+        data: &IDataObject,
+        keys: u32,
+        pt: DragPoint,
+        allowed: u32,
+    ) -> Result<DropEffect> {
+        if self.drag_over(data, keys, pt, allowed) == DropEffect::None {
+            return Ok(DropEffect::None);
+        }
+        let mut effect = allowed & (DROPEFFECT_COPY | DROPEFFECT_LINK) as u32;
+        self.entered = false;
+        // SAFETY: a successful DragEnter preceded this Drop; data lives through the call.
+        unsafe {
+            self.target
+                .Drop(
+                    data,
+                    keys & !(MK_LBUTTON | MK_RBUTTON),
+                    POINTL { x: pt.x, y: pt.y },
+                    &mut effect,
+                )
+                .ok()?;
+        }
+        Ok(DropEffect::from_raw(
+            effect & allowed & (DROPEFFECT_COPY | DROPEFFECT_LINK) as u32,
+        ))
+    }
+}
+
+impl Drop for ShortcutDropTarget {
+    fn drop(&mut self) {
+        if self.entered {
+            // SAFETY: balance an entered hover when it leaves, is rejected or is cancelled.
+            unsafe {
+                let _ = self.target.DragLeave();
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod shortcut_tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    fn shortcut(path: &Path, target: &Path, args: &str, cwd: &Path) {
+        let path = to_wide(&path.to_string_lossy());
+        let target = to_wide(&target.to_string_lossy());
+        let args = to_wide(args);
+        let cwd = to_wide(&cwd.to_string_lossy());
+        // SAFETY: COM is initialized by the test and every string outlives the call.
+        unsafe {
+            let link: IShellLinkW =
+                CoCreateInstance(&ShellLink, None, CLSCTX_INPROC_SERVER).unwrap();
+            link.SetPath(PCWSTR(target.as_ptr())).ok().unwrap();
+            link.SetArguments(PCWSTR(args.as_ptr())).ok().unwrap();
+            link.SetWorkingDirectory(PCWSTR(cwd.as_ptr())).ok().unwrap();
+            link.SetShowCmd(0).ok().unwrap();
+            let persist: IPersistFile = link.cast().unwrap();
+            persist.Save(PCWSTR(path.as_ptr()), true).ok().unwrap();
+        }
+    }
+
+    /// Real Shell drop: the shortcut keeps its arguments/cwd, folder paths containing
+    /// spaces and Chinese arrive intact, and neither the source folders nor their files move.
+    #[test]
+    fn shortcut_drop_opens_folders_without_moving_them() {
+        let _ole = crate::com::OleGuard::init().unwrap();
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let base = std::env::temp_dir().join(format!(
+            "pecofence-shortcut-{}-{unique}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&base).unwrap();
+        let folders = [base.join("项目 one"), base.join("project two")];
+        for folder in &folders {
+            std::fs::create_dir(folder).unwrap();
+            std::fs::write(folder.join("keep.txt"), "unchanged").unwrap();
+        }
+        let script = base.join("capture.ps1");
+        std::fs::write(&script, "[IO.File]::WriteAllLines((Join-Path $PSScriptRoot 'received.txt'), (@((Get-Location).Path) + @($args)), [Text.UTF8Encoding]::new($false))").unwrap();
+        let executable = PathBuf::from(std::env::var_os("SystemRoot").unwrap())
+            .join(r"System32\WindowsPowerShell\v1.0\powershell.exe");
+        let link = base.join("test application.lnk");
+        shortcut(
+            &link,
+            &executable,
+            &format!(
+                "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"{}\" \"saved argument\"",
+                script.display()
+            ),
+            &base,
+        );
+        let refs: Vec<&Path> = folders.iter().map(|p| p.as_path()).collect();
+        let data = data_object_for_paths(&refs).unwrap();
+        let pt = DragPoint { x: 0, y: 0 };
+        let received = base.join("received.txt");
+        {
+            let mut cancelled = ShortcutDropTarget::bind(&link).unwrap();
+            assert_eq!(
+                cancelled.drag_over(&data, MK_LBUTTON, pt, DropEffect::Move.to_raw()),
+                DropEffect::None
+            );
+        }
+        {
+            let mut cancelled = ShortcutDropTarget::bind(&link).unwrap();
+            assert_ne!(
+                cancelled.drag_over(&data, MK_LBUTTON, pt, ALL_EFFECTS),
+                DropEffect::None
+            );
+        }
+        assert!(
+            !received.exists(),
+            "hovering/cancelling must not launch the application"
+        );
+        let mut target = ShortcutDropTarget::bind(&link).unwrap();
+        let entered = target.drag_over(&data, MK_LBUTTON, pt, ALL_EFFECTS);
+        assert!(
+            matches!(entered, DropEffect::Copy | DropEffect::Link),
+            "{entered:?}"
+        );
+        let dropped = target.drop_folders(&data, 0, pt, ALL_EFFECTS).unwrap();
+        assert!(
+            matches!(dropped, DropEffect::Copy | DropEffect::Link),
+            "{dropped:?}"
+        );
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+        let lines = loop {
+            let text = std::fs::read_to_string(&received).unwrap_or_default();
+            let lines: Vec<String> = text.lines().map(str::to_string).collect();
+            if lines.len() == 4 {
+                break lines;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "application did not receive the folders: {text:?}"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(25));
+        };
+        // Compare canonical paths: %TEMP% can be an 8.3 short path (C:\Users\RUNNER~1 on CI)
+        // while the application reports the long form.
+        let same = |a: &Path, b: &Path| {
+            assert_eq!(
+                std::fs::canonicalize(a).unwrap(),
+                std::fs::canonicalize(b).unwrap()
+            )
+        };
+        same(Path::new(&lines[0]), &base);
+        assert_eq!(lines[1], "saved argument");
+        for (folder, argument) in folders.iter().zip(&lines[2..]) {
+            same(Path::new(argument), folder);
+            assert_eq!(
+                std::fs::read_to_string(folder.join("keep.txt")).unwrap(),
+                "unchanged"
+            );
+        }
+        // Neither a folder shortcut nor a document shortcut is an application drop target.
+        for (name, destination) in [
+            ("folder", folders[0].as_path()),
+            ("document", script.as_path()),
+        ] {
+            let path = base.join(format!("{name}.lnk"));
+            shortcut(&path, destination, "", &base);
+            assert!(ShortcutDropTarget::bind(&path).is_err());
+        }
+        let missing = base.join("missing.lnk");
+        shortcut(&missing, &base.join("missing.exe"), "", &base);
+        assert!(ShortcutDropTarget::bind(&missing).is_err());
+        // A program file itself is a target too; a document or a missing program is not.
+        let bat = base.join("run.bat");
+        std::fs::write(&bat, "@echo off").unwrap();
+        assert!(ShortcutDropTarget::bind(&executable).is_ok());
+        assert!(ShortcutDropTarget::bind(&bat).is_ok());
+        assert!(ShortcutDropTarget::bind(&script).is_err());
+        assert!(ShortcutDropTarget::bind(&base.join("missing.exe")).is_err());
+        // The launched PowerShell can keep the folder as its working directory for a moment
+        // after writing its file (os error 32 on CI), so cleanup retries and never fails the test.
+        for _ in 0..50 {
+            if std::fs::remove_dir_all(&base).is_ok() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+    }
+}
+
 /// Test hook: a data object another process marshaled into `bytes` (`CoMarshalInterface`,
 /// table-strong) — a cross-process source like Outlook's drag, without moving the mouse.
 #[cfg(debug_assertions)]

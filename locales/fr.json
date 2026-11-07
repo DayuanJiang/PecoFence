@@ -93,6 +93,7 @@
   "移动到当前位置(&M)": "&Déplacer ici",
   "复制到当前位置(&C)": "&Copier ici",
   "在当前位置创建快捷方式(&S)": "Créer un &raccourci ici",
+  "使用 %1 打开": "Ouvrir avec %1",
   "移动到 %1": "Déplacer vers %1",
   "复制到 %1": "Copier vers %1",
   "在 %1 中创建链接": "Créer un lien dans %1",

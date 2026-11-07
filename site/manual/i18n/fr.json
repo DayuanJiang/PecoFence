@@ -364,6 +364,8 @@
   "放进那个栅栏": "Ranger l’icône dans ce groupe",
   "在栅栏里拖动": "Glisser à l’intérieur du groupe",
   "调整顺序（排序方式是「手动」时）": "Changer l’ordre (quand le tri est « Ordre manuel »)",
+  "把文件夹拖到程序或它的快捷方式上": "Glisser des dossiers sur une application ou son raccourci",
+  "用这个程序打开文件夹": "Ouvrir les dossiers avec cette application",
   "拖动文件时": "En faisant glisser des fichiers",
   "从资源管理器把文件拖进栅栏，或者把图标拖到文件夹图标、文件夹栅栏、别的程序上时：": "Quand vous faites glisser des fichiers de l’Explorateur de fichiers vers un groupe, ou une icône vers une icône de dossier, un groupe dossier ou une autre application :",
   "按住 <kbd>Ctrl</kbd>": "Maintenir <kbd>Ctrl</kbd>",
