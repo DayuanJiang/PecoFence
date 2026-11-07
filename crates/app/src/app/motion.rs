@@ -360,6 +360,14 @@ impl App {
                 );
             }
             self.frame_prev = None;
+            if std::mem::take(&mut self.desktop_arrange_after_frames) {
+                let started = Instant::now();
+                self.arrange_desktop_fence();
+                tracing::debug!(
+                    ms = ms(started.elapsed()),
+                    "desktop fence arranged after the push animation"
+                );
+            }
         }
     }
 }

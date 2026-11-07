@@ -359,9 +359,16 @@ impl App {
             }
         }
         *self.ctx.behavior.pushed.borrow_mut() = next;
-        // 像桌面一样排列: the loose icons flow around the fences where the push left them.
+        // 像桌面一样排列: the loose icons flow around the fences where the push left them. While
+        // an animation pushes fences frame by frame they wait for the end of the run: arranged
+        // every frame, the desktop fence was re-cut each time a sliding fence crossed a cell,
+        // 11 to 19 ms frames on a PC without a GPU.
         if moved {
-            self.arrange_desktop_fence();
+            if self.frame_prev.is_some() {
+                self.desktop_arrange_after_frames = true;
+            } else {
+                self.arrange_desktop_fence();
+            }
         }
     }
 

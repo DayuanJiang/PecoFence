@@ -344,6 +344,9 @@ pub struct App {
     frame_prev: Option<Instant>,
     /// Cadence statistics of the animation run in progress.
     frame_run: FrameRun,
+    /// A push moved fences during an animation run: the desktop fence re-arranges its loose
+    /// icons once the run ends (`reflow_pushed_except`).
+    desktop_arrange_after_frames: bool,
     /// `--no-hide-icons`: keep Explorer's icons visible this run without persisting the choice.
     no_hide_icons: bool,
     /// `--portable`: the configuration lives next to the program, and so must the startup entry.
@@ -1546,6 +1549,7 @@ impl App {
             pending_routes: Vec::new(),
             shell_drop_claim: None,
             frame_prev: None,
+            desktop_arrange_after_frames: false,
             frame_run: FrameRun::default(),
             no_hide_icons: args.no_hide_icons,
             portable: args.portable,
