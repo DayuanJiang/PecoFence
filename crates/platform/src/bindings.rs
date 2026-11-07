@@ -2396,6 +2396,11 @@ pub unsafe fn SetTextColor(hdc: HDC, color: COLORREF) -> COLORREF {
     unsafe { SetTextColor(hdc, color) }
 }
 #[inline]
+pub unsafe fn SetThreadExecutionState(esflags: EXECUTION_STATE) -> EXECUTION_STATE {
+    windows_core::link!("kernel32.dll" "system" fn SetThreadExecutionState(esflags : EXECUTION_STATE) -> EXECUTION_STATE);
+    unsafe { SetThreadExecutionState(esflags) }
+}
+#[inline]
 pub unsafe fn SetTimer(
     hwnd: Option<HWND>,
     nidevent: usize,
@@ -3970,6 +3975,9 @@ pub const ERROR_OPERATION_ABORTED: i32 = 995;
 pub const ERROR_PIPE_CONNECTED: i32 = 535;
 pub const ERROR_TIMEOUT: i32 = 1460;
 pub const ES_AUTOHSCROLL: i32 = 128;
+pub const ES_CONTINUOUS: u32 = 2147483648;
+pub const ES_DISPLAY_REQUIRED: u32 = 2;
+pub const ES_SYSTEM_REQUIRED: u32 = 1;
 pub const EVENT_OBJECT_DESTROY: i32 = 32769;
 pub const EVENT_SYSTEM_FOREGROUND: i32 = 3;
 pub const EVENT_SYSTEM_MINIMIZEEND: i32 = 23;
@@ -3995,6 +4003,9 @@ impl Default for EXCEPTION_RECORD {
         unsafe { core::mem::zeroed() }
     }
 }
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub struct EXECUTION_STATE(pub u32);
 pub const E_FAIL: windows_core::HRESULT = windows_core::HRESULT(0x80004005_u32 as _);
 pub const E_INVALIDARG: windows_core::HRESULT = windows_core::HRESULT(0x80070057_u32 as _);
 pub type FARPROC = Option<unsafe extern "system" fn() -> isize>;

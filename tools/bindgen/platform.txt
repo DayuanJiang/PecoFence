@@ -15,6 +15,12 @@
     GetCurrentThreadId
     GetTickCount64
 
+    // ---- prevent idle display-off / sleep
+    SetThreadExecutionState
+    ES_CONTINUOUS
+    ES_DISPLAY_REQUIRED
+    ES_SYSTEM_REQUIRED
+
     // ---- window classes / creation
     WNDCLASSEXW
     RegisterClassExW

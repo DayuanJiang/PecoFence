@@ -14,7 +14,7 @@ const fixture = {
   locale: 'zh-CN', translations: {},
   settings: {
     language: 'zh-CN',
-    autostart: false, hideRealIcons: false, keepIconsHidden: false, hideInboxWhenIconsShown: false, offerNewFence: true, quickHide: { enabled: true },
+    autostart: false, keepScreenOn: false, hideRealIcons: false, keepIconsHidden: false, hideInboxWhenIconsShown: false, offerNewFence: true, quickHide: { enabled: true },
     showDesktop: 'keepVisible', theme: 'dark', themeStyle: 'fluent', labelColor: 'auto', titleAlign: 'left', tabBar: 'top', backdrop: 'acrylic', iconSize: 48,
     icons: { tintRgb: null, tintStrength: 0.6, chameleon: false, shortcutArrows: true },
     rollUp: { hoverPeek: true, clickToExpand: false, pushNeighbors: true, titleOnHover: false, hideInactiveScrollbar: false, switchTabOnHover: false, hideCountAndChevron: false },
@@ -1050,6 +1050,16 @@ async function runTests() {
     assert(toggle.classList.contains('on') && shown().join() === '开', 'Clicking the caption did not toggle the switch');
     toggle.click(); await settle();
     assert(!current().settings.autostart && shown().join() === '关', 'Caption did not follow the switch');
+  });
+  await test('Keep screen on is opt-in and posts both switch states', async () => {
+    doc.querySelector('[data-page=general]').click();
+    const toggle = doc.querySelector('#page-general [data-bind=keepScreenOn]');
+    assert(toggle && !toggle.classList.contains('on'), 'Switch missing or enabled by default');
+    assert(toggle.closest('.card').textContent.includes('自动睡眠'), 'The sleep behavior is not explained');
+    toggle.click(); await settle();
+    assert(current().settings.keepScreenOn === true && toggle.getAttribute('aria-checked') === 'true', 'Enabling was not posted or rendered');
+    toggle.click(); await settle();
+    assert(current().settings.keepScreenOn === false && toggle.getAttribute('aria-checked') === 'false', 'Disabling was not posted or rendered');
   });
   await test('Hiding the title bar count and chevron is posted', async () => {
     doc.querySelector('[data-page=general]').click();

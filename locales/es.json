@@ -765,5 +765,8 @@
   "Everything 1.5 已经装好，现在运行的是 {0}": "Everything 1.5 está instalado, pero se está ejecutando la {0}",
   "改用 1.5 后可以用拼音找中文名。1.5 会在登录 Windows 时启动，1.4 不再自动启动。Windows 可能会询问一次管理员权限": "Con la 1.5 puedes buscar nombres chinos por pinyin. La 1.5 se iniciará al entrar en Windows y la 1.4 ya no se iniciará sola. Windows puede pedir permisos de administrador una vez.",
   "改用 1.5": "Cambiar a 1.5",
-  "已改用 Everything 1.5，以后登录 Windows 时也会启动它": "Ahora se usa Everything 1.5. A partir de ahora también se inicia al entrar en Windows"
+  "已改用 Everything 1.5，以后登录 Windows 时也会启动它": "Ahora se usa Everything 1.5. A partir de ahora también se inicia al entrar en Windows",
+  "保持屏幕常亮": "Mantener la pantalla encendida",
+  "PecoFence 运行时阻止自动熄屏和自动睡眠；关闭开关或退出应用后恢复": "Evita que la pantalla se apague y el equipo entre en suspensión automáticamente mientras PecoFence está abierto. Desactiva esta opción o cierra la aplicación para restaurar el comportamiento normal",
+  "未能更改“保持屏幕常亮”，请稍后重试。": "No se pudo cambiar «Mantener la pantalla encendida». Inténtalo de nuevo más tarde."
 }
