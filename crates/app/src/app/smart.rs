@@ -86,8 +86,8 @@ pub(super) struct SmartState {
     pub runs: HashMap<FenceId, SmartRun>,
     seq: u16,
     /// Workers (folder reads, checks of Everything's answers): the last sequence number, the
-    /// results coming back, and the fences whose folder is being read (true: another read
-    /// waits for this one to end).
+    /// results coming back, and the fences whose results a worker is working out (true: the
+    /// fence runs again once they are in). One worker per fence at a time.
     read_seq: u32,
     read_tx: mpsc::Sender<FolderRead>,
     read_rx: mpsc::Receiver<FolderRead>,
@@ -211,6 +211,14 @@ impl App {
         let Some(spec) = self.state.smart_spec(id).cloned() else {
             return;
         };
+        // One worker per fence: a run asked for while one works out the fence's results (a
+        // slow drive, a folder that keeps changing) follows it, so those results still show
+        // and no threads pile up.
+        if let Some(again) = self.smart.reading.get_mut(&id) {
+            *again = true;
+            tracing::debug!(%id, why, "smart fence: its results are being worked out; it runs again after them");
+            return;
+        }
         if let Some(instance) = everything::find() {
             // The Peek search waits for Everything's answer: it goes first.
             if self.peek_waits_for_everything() {
@@ -277,18 +285,11 @@ impl App {
         self.read_folder_later(id, spec, why);
     }
 
-    /// Reads smart fence `id`'s folder on a worker (a big folder tree takes a while). One read
-    /// per fence at a time: a run asked for meanwhile follows the one in progress.
+    /// Reads smart fence `id`'s folder on a worker (a big folder tree takes a while).
     fn read_folder_later(&mut self, id: FenceId, spec: SmartSpec, why: &str) {
-        if let Some(again) = self.smart.reading.get_mut(&id) {
-            *again = true;
-            tracing::debug!(%id, why, "smart fence: a folder read runs already; another follows it");
-            return;
-        }
-        self.smart.reading.insert(id, false);
         tracing::info!(%id, why, "smart fence: reading the folder without Everything");
         let limit = spec.limit as usize;
-        let started = self.smart_work_later(id, SmartSource::Folder, move || {
+        self.smart_work_later(id, SmartSource::Folder, move || {
             let folder = PathBuf::from(spec.folder.as_deref().unwrap_or_default());
             let (mut entries, scanned) = read_folder(&spec, &folder);
             let kept = entries.len();
@@ -301,26 +302,24 @@ impl App {
                 kept,
             }
         });
-        if !started {
-            self.smart.reading.remove(&id);
-        }
     }
 
     /// Works out smart fence `id`'s results on a worker: `find` (a folder read, or the check of
     /// Everything's answer: a file system call per file, a COM call per shortcut when a
     /// condition looks at targets), then the shell's display name of each result not shown
     /// already. Both cost too much for the UI thread with thousands of files or a OneDrive
-    /// folder. The result comes back through `WM_APP_SMART_READ`; false when the worker did not
-    /// start.
+    /// folder. The result comes back through `WM_APP_SMART_READ`; until then the fence's
+    /// runs wait (`SmartState::reading`).
     fn smart_work_later(
         &mut self,
         id: FenceId,
         source: SmartSource,
         find: impl FnOnce() -> Found + Send + 'static,
-    ) -> bool {
+    ) {
         self.smart.read_seq = self.smart.read_seq.wrapping_add(1);
         let seq = self.smart.read_seq;
         self.smart.runs.entry(id).or_default().read = Some(seq);
+        self.smart.reading.insert(id, false);
         let known = self.state.smart_known_names(id);
         let tx = self.smart.read_tx.clone();
         let control = self.control.hwnd().0 as isize;
@@ -371,16 +370,15 @@ impl App {
             if let Some(run) = self.smart.runs.get_mut(&id) {
                 run.read = None;
             }
+            self.smart.reading.remove(&id);
         }
-        spawned.is_ok()
     }
 
     /// `TIMER_SMART_READ`: the workers that finished (folder reads, checked Everything
     /// answers). A result a newer run replaced meanwhile is dropped.
     pub(super) fn drain_smart_reads(&mut self) {
         while let Ok(r) = self.smart.read_rx.try_recv() {
-            let again = r.source == SmartSource::Folder
-                && self.smart.reading.remove(&r.id).unwrap_or(false);
+            let again = self.smart.reading.remove(&r.id).unwrap_or(false);
             let current = self.smart.runs.get(&r.id).and_then(|run| run.read) == Some(r.seq);
             if current && self.state.smart_spec(r.id).is_some() {
                 self.smart.runs.entry(r.id).or_default().read = None;
@@ -397,7 +395,7 @@ impl App {
                 tracing::debug!(id = %r.id, seq = r.seq, source = r.source.as_str(), "smart fence: an older result dropped");
             }
             if again {
-                self.run_smart(r.id, "after the read in progress");
+                self.run_smart(r.id, "after the results in progress");
             }
         }
     }
@@ -427,9 +425,16 @@ impl App {
             self.ask_next_smart();
             return;
         };
-        // This answer is in: a newer search of the fence (sent from here on) drops its check.
         if let Some(run) = self.smart.runs.get_mut(&id) {
             run.pending = None;
+        }
+        // A late answer to a search sent before the fence's worker started (a folder read
+        // while Everything was gone): the fence runs again after that worker instead.
+        if let Some(again) = self.smart.reading.get_mut(&id) {
+            *again = true;
+            tracing::debug!(%id, seq, "smart fence: answer dropped, a worker is busy with the fence");
+            self.ask_next_smart();
+            return;
         }
         let Some((total, hits)) = ev::parse_list2(bytes) else {
             tracing::warn!(%id, len = bytes.len(), "smart fence: Everything's answer could not be read");
