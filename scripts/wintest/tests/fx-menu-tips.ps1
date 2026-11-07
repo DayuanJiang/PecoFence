@@ -4,6 +4,8 @@
 #   run.sh --var Part=T ...                        the three tips in English (and once only, also
 #                                                 after a restart); Part=TZ the same in Chinese
 #   run.sh --var Part=S ...                        no tip under a test script or with the switch off
+#   run.sh --bin target/wintest-bin-debug --var Part=P ...   the 功能提示 switch on the settings
+#                                                 page (CDP: a debug build)
 # A 0.3.1 build for the "before" runs: add --var Old=1 (skips the steps that would act on items
 # the old menu does not have).
 
@@ -462,4 +464,56 @@ ShotNotice 's-roll-on'
 Case 'cleanup switch'
 PfQuit
 foreach ($f in $made) { Remove-Item -LiteralPath $f -Recurse -Force -ErrorAction SilentlyContinue }
+}
+
+# ---- Part P: the 功能提示 switch on the settings page (debug build, CDP)
+
+if ($Part -eq 'P') {
+Case 'settings page switch'
+CloseWindows
+Set-Culture en-US
+if ($PfDebugBuild) { $env:PECOFENCE_WEBVIEW_ARGS = '--remote-debugging-port=9352' }
+PfStart -Lang en
+$ok = PfSettings
+Check 'settings open over CDP' $ok "debug=$PfDebugBuild"
+$card = Js "(() => { const t = document.querySelector('[data-bind=featureTips]'); if (!t) return null; const c = t.closest('.card'); let h = c; while (h && h.tagName !== 'H3') h = h.previousElementSibling; return { title: c.querySelector('.t').textContent, help: c.querySelector('.s').textContent, on: t.getAttribute('aria-checked'), page: t.closest('section').id, section: h ? h.textContent : '' }; })()"
+Log "card: $($card | ConvertTo-Json -Compress)"
+Check 'General page has Feature tips, on' ($card -and $card.title -eq 'Feature tips' -and $card.on -eq 'true' -and $card.page -eq 'page-general') ($card | ConvertTo-Json -Compress)
+PageRect '[data-bind=featureTips]' | Out-Null
+Start-Sleep -Milliseconds 500
+Shot 'p-switch-on-en'
+PageClick '[data-bind=featureTips]'
+Start-Sleep -Seconds 1
+Check 'a click on the switch turns featureTips off' ((Pf settings get featureTips) -match 'false') (Pf settings get featureTips)
+Check 'the switch shows off' ((Js "document.querySelector('[data-bind=featureTips]').getAttribute('aria-checked')") -eq 'false')
+PageClick '[data-bind=featureTips]'
+Start-Sleep -Seconds 1
+Check 'a second click turns it back on' ((Pf settings get featureTips) -match 'true') (Pf settings get featureTips)
+Pf settings set featureTips false | Out-Null
+Start-Sleep -Seconds 1
+Check 'the CLI turns the page switch off' ((Js "document.querySelector('[data-bind=featureTips]').getAttribute('aria-checked')") -eq 'false')
+Pf settings set featureTips true | Out-Null
+foreach ($q in 'feature tips', 'hints') {
+  PageType '#settingsSearch' $q
+  Start-Sleep -Milliseconds 800
+  $hits = Js "document.getElementById('settingsSearchList').textContent"
+  Check "Find a setting: '$q' finds Feature tips" ($hits -match 'Feature tips') $hits
+}
+Shot 'p-search-en'
+PageType '#settingsSearch' ''
+Pf settings set language zh-CN | Out-Null
+$zh = JsWait "(() => { const t = document.querySelector('[data-bind=featureTips]'); return !!t && t.closest('.card').querySelector('.t').textContent === '功能提示'; })()" 10
+$zhText = Js "document.querySelector('[data-bind=featureTips]').closest('.card').innerText"
+Check 'in Chinese: 功能提示 with its description' ($zh -and $zhText -match '每条只出现一次') $zhText
+PageRect '[data-bind=featureTips]' | Out-Null
+Start-Sleep -Milliseconds 500
+Shot 'p-switch-zh'
+PageType '#settingsSearch' '小技巧'
+Start-Sleep -Milliseconds 800
+$hits = Js "document.getElementById('settingsSearchList').textContent"
+Check "查找设置: '小技巧' finds 功能提示" ($hits -match '功能提示') $hits
+PageType '#settingsSearch' ''
+
+Case 'cleanup page'
+PfQuit
 }

@@ -106,7 +106,9 @@ Check 'New note opens the note editor' ($ed -ne [IntPtr]::Zero)
 Check 'the note is made' ((ToolFences 'note').Count -eq 1)
 PageClick '#scriptGuide'; Start-Sleep -Seconds 2
 Check 'Write-up opens the manual lesson' ((PfLogAll) -match 'opening the manual url=https://pecofence\.jiang\.jp/manual/#write-scripts') ([regex]::Match((PfLogAll), '.*opening the manual.*').Value)
-Get-Process msedge -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle -match 'PecoFence|manual' } | Stop-Process -Force -ErrorAction SilentlyContinue
+# All of Edge: on a new box its first-run window (another title) covers the settings page.
+Get-Process msedge -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+Start-Sleep -Seconds 1
 
 Case 'the one switch hides all tools and stops scripts'
 $before = (FenceWindows).Count
