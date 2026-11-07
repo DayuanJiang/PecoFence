@@ -886,7 +886,14 @@ mod shortcut_tests {
         assert!(ShortcutDropTarget::bind(&bat).is_ok());
         assert!(ShortcutDropTarget::bind(&script).is_err());
         assert!(ShortcutDropTarget::bind(&base.join("missing.exe")).is_err());
-        std::fs::remove_dir_all(base).unwrap();
+        // The launched PowerShell can keep the folder as its working directory for a moment
+        // after writing its file (os error 32 on CI), so cleanup retries and never fails the test.
+        for _ in 0..50 {
+            if std::fs::remove_dir_all(&base).is_ok() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
     }
 }
 
