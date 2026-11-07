@@ -1006,12 +1006,15 @@ fn link_folder(path: &Path) -> Option<PathBuf> {
         return known;
     }
     let target = pecofence_platform::shell::shortcut_target_expanded(path);
-    let place = target
-        .as_deref()
-        .map_or("none", pecofence_platform::shell::drive_kind);
-    let folder = target.filter(|t| matches!(place, "fixed" | "removable") && t.is_dir());
+    let local = target.as_deref().is_some_and(|t| {
+        matches!(
+            pecofence_platform::shell::drive_kind(t),
+            "fixed" | "removable"
+        )
+    });
+    let folder = target.filter(|t| local && t.is_dir());
     tracing::info!(
-        place,
+        local,
         folder = folder.is_some(),
         "shortcut under a drag: drop target if it points to a local folder"
     );
