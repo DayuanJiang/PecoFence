@@ -1834,9 +1834,11 @@ impl AppState {
         if self.move_target_folder(to).is_some() {
             return 0;
         }
-        // A tool fence (便签) shows its tool, never desktop items.
-        if self.fence(to).is_some_and(|f| f.tool.is_some()) {
-            tracing::info!(fence = %to, items = items.len(), "move into a tool fence refused");
+        // A tool fence (便签) shows its tool and a smart fence its search, never desktop items:
+        // an item moved there would vanish from every fence.
+        if let Some(f) = self.fence(to).filter(|f| !f.holds_items()) {
+            let kind = if f.smart.is_some() { "smart" } else { "tool" };
+            tracing::info!(fence = %to, kind, items = items.len(), "move into a fence that holds no items refused");
             return 0;
         }
         let mut n = 0;
@@ -3312,6 +3314,37 @@ mod tests {
         assert_eq!(state.move_target_folder(portal), state.portal_path(portal));
         assert_eq!(state.move_items(&[docs], portal), 0);
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    /// A smart fence shows a search and a tool fence its tool: an icon moved there would show
+    /// in no fence, so the move is refused and the icon stays where it was.
+    #[test]
+    fn nothing_moves_into_a_smart_or_tool_fence() {
+        let mut state = test_state();
+        let inbox = state.inbox_id().unwrap();
+        let docs = add_item(&mut state, inbox, "Docs");
+        let spec = pecofence_core::smart::SmartSpec {
+            template: None,
+            folder: None,
+            subfolders: true,
+            all_of: Vec::new(),
+            within_days: None,
+            name: None,
+            everything: Some("x".into()),
+            limit: 10,
+        };
+        let smart = state
+            .new_smart_fence("Smart", RECT::default(), spec)
+            .unwrap();
+        let note = state
+            .new_tool_fence("Note", RECT::default(), FenceTool::Note)
+            .unwrap();
+        assert!(state.move_target_folder(smart).is_none());
+        assert_eq!(state.move_items(&[docs], smart), 0);
+        assert_eq!(state.move_items(&[docs], note), 0);
+        assert!(state.fence(inbox).unwrap().contains_item(docs));
+        assert!(!state.fence(smart).unwrap().contains_item(docs));
+        assert!(state.routable_fence(smart).is_none());
     }
 
     #[test]

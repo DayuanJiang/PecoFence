@@ -449,6 +449,8 @@ pub struct TabView {
     /// A folder portal shown inside a subfolder: while it is the shown tab, its folder glyph is
     /// the up button.
     pub up_button: bool,
+    /// Items and files can be dropped on its pill (not on a smart fence's).
+    pub takes_drops: bool,
 }
 
 type ViewCell = Rc<RefCell<Option<FenceViewState>>>;

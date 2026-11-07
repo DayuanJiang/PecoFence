@@ -2278,6 +2278,16 @@ impl App {
                     }
                 }
             }
+            // Dropped on a smart fence's tab (its window refuses drops already): no file is moved
+            // to the desktop for a fence that would not show it.
+            Command::ExternalDrop { to, .. }
+            | Command::ExternalUrlDrop {
+                to, folder: None, ..
+            } if self.state.portal_path(to).is_none()
+                && self.state.fence(to).is_some_and(|f| !f.holds_items()) =>
+            {
+                tracing::info!(fence = %to, "drop refused: the fence holds no items");
+            }
             Command::ExternalDrop { paths, to, mode } if self.state.portal_path(to).is_some() => {
                 self.transfer_files_into_portal(paths, to, mode);
             }

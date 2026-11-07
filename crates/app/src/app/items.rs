@@ -61,6 +61,15 @@ impl App {
     /// asked for it; the watcher's next Added event routes it there and opens rename.
     pub(super) fn create_desktop_item(&mut self, fence: FenceId, folder: bool) {
         let portal_dir = self.state.portal_path(fence);
+        // Ctrl+Shift+N in a smart or tool fence: it has no folder to make it in and would not
+        // show a desktop item routed to it.
+        if portal_dir.is_none()
+            && let Some(f) = self.state.fence(fence).filter(|f| !f.holds_items())
+        {
+            let kind = if f.smart.is_some() { "smart" } else { "tool" };
+            tracing::info!(%fence, kind, folder, "new item refused: the fence holds no items");
+            return;
+        }
         let Some(dir) = portal_dir.clone().or_else(shell::user_desktop) else {
             return;
         };
@@ -656,6 +665,15 @@ impl App {
     /// they show a folder opened in them; a portal as source or target means a real file move
     /// (portal = folder view).
     pub(super) fn move_items(&mut self, items: &[ItemId], to: FenceId) {
+        // A smart or tool fence takes nothing: refused before a folder fence's file is moved
+        // out to the desktop on its way there.
+        if self.state.move_target_folder(to).is_none()
+            && let Some(f) = self.state.fence(to).filter(|f| !f.holds_items())
+        {
+            let kind = if f.smart.is_some() { "smart" } else { "tool" };
+            tracing::info!(fence = %to, kind, items = items.len(), "move refused: the fence holds no items");
+            return;
+        }
         if self.state.move_target_folder(to).is_some() {
             // Namespace items cannot be moved into a folder; they stay where they are.
             let paths: Vec<PathBuf> = items

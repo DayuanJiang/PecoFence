@@ -22,6 +22,7 @@ impl App {
                 folder_icon: !f.hide_title_icon
                     && (f.kind == FenceKind::FolderPortal || self.state.can_go_up(f.id)),
                 up_button: self.state.can_go_up(f.id),
+                takes_drops: f.holds_items() || self.state.portal_path(f.id).is_some(),
             })
             .collect()
     }

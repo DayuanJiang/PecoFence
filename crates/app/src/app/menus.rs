@@ -522,8 +522,9 @@ impl App {
             .fences()
             .iter()
             .enumerate()
-            // A tool fence holds no items (the index stays the fence's own).
-            .filter(|(_, f)| f.tool.is_none())
+            // A tool or smart fence holds no items; a folder fence takes the files into its
+            // folder (the index stays the fence's own).
+            .filter(|(_, f)| f.holds_items() || self.state.move_target_folder(f.id).is_some())
             .map(|(i, f)| {
                 let label = if self.state.move_target_folder(f.id).is_some() {
                     pecofence_core::i18n::format(
