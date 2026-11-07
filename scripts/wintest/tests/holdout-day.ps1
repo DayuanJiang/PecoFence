@@ -272,6 +272,9 @@ Start-Sleep -Seconds 1
 $in = ItemFence 'Eta drag'
 Check 'an icon dragged into another fence lands there' ($in -eq 'Work') "Eta drag is in '$in'"
 $p = ItemPt 'Drag' 'Zeta drag'
+# The fifth fence (the marquee's) brings the 「栅栏多了可以收起」 tip card to the bottom-right corner,
+# right over the drop point: close it first.
+CloseNotice | Out-Null
 DragTo $p[0] $p[1] 1300 780
 Start-Sleep -Seconds 1
 $in = ItemFence 'Zeta drag'
