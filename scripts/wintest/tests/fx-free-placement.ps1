@@ -103,7 +103,9 @@ if ($Part -eq 'A' -and $New) {
   $ch = FpCell 'Charlie.fpx'
   Check 'Charlie dropped on Alpha goes to a free cell next to it' ($ch -ne '10,4' -and (FpCell 'Alpha.fpx') -eq '10,4' -and @('9,4', '11,4', '10,3', '10,5') -contains $ch) "Charlie=$ch; $(FpAll)"
   Check 'no two icons share a cell' (-not (FpDupes)) "dupes: $(FpDupes)"
-  # Into another fence and back to the desktop.
+  # Into another fence and back to the desktop. ItemPt finds an icon by its place in name order:
+  # Programs is sorted by name so that holds (sorted by hand, a dropped icon goes to the end).
+  Pf fence set Programs sort name | Out-Null
   FenceIds
   $prog = FenceGet 'Programs'
   $from = FpAt (FpCell 'Delta.fpx')
