@@ -687,7 +687,7 @@
   "还没有主题文件": "Ainda não há arquivos de tema",
   "主题文件放在 themes 文件夹里，文件保存后栅栏立即更新": "Os arquivos de tema ficam na pasta themes, e os grupos mudam assim que um arquivo é salvo",
   "themes 文件夹里还没有主题文件：点“打开主题文件夹”放进去，或者看“写法说明”自己写一个": "A pasta themes ainda não tem arquivos de tema: clique em “Abrir pasta de temas” para colocar um, ou veja “Como escrever” para criar o seu",
-  "停在上面展开的栅栏，鼠标移开后自动收起；不管选哪种，双击标题或点折叠箭头都能展开和收起": "Os grupos expandidos ao passar o mouse recolhem quando ele sai. Seja qual for a escolha, clique duplo no título ou clique na seta de recolher expande e recolhe",
+  "停在上面展开的栅栏，鼠标移开后自动收起；单击标题展开的，再单击标题收起；不管选哪种，双击标题或点折叠箭头都能展开和收起": "Os grupos expandidos ao passar o mouse recolhem quando ele sai; os expandidos com um clique no título, no clique seguinte no título. Seja qual for a escolha, clique duplo no título ou clique na seta de recolher expande e recolhe",
   "鼠标停在上面时": "Ao passar o mouse",
   "单击标题时": "Com um clique no título",
   "只在双击标题或点箭头时": "Só clique duplo ou a seta",

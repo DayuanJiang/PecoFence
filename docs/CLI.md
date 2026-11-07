@@ -274,7 +274,8 @@ style; see [THEMES.md](THEMES.md)),
 column on its left that takes the title row's place; rolled up, such a fence shrinks to the
 column; default top),
 `rollUp.hoverPeek` and `rollUp.clickToExpand` (the settings page's 「收起的栅栏怎么展开」 list:
-`clickToExpand` true expands on one title click and ignores `hoverPeek` for the pointer (the page
+`clickToExpand` true expands a rolled fence on one title click, rolls an open one up on the next,
+and ignores `hoverPeek` for the pointer (the page
 keeps `hoverPeek` on with it, so a file dragged onto a rolled title still expands it); both false
 leaves the double-click and the chevron; default hover), `rollUp.pushNeighbors` (an expanded fence pushes the
 fences stacked below it down and they slide back when it rolls up; their `rect` stays where it was,
