@@ -2228,8 +2228,26 @@ const server = http.createServer(async (request, response) => {
       initial.settings.language = language;
       initial.locale = language;
       initial.translations = catalogs[language] || {};
+      let sample = '';
       if (url.pathname === '/preview') {
         html = html.replace('<title>PecoFence 设置</title>', '<title>PecoFence · 设计预览</title>');
+        // Sample (smart-editor): ?sample=A|B|C&shot=new|edit shows that editor option with two
+        // smart fences among Chinese-named fences, Everything running.
+        const alt = url.searchParams.get('sample');
+        if (alt) {
+          const shot = url.searchParams.get('shot') || 'edit';
+          sample = `<script>window.PECOFENCE_SAMPLE=${JSON.stringify({ alt, shot })};</script>`;
+          html = html.replace('<title>PecoFence · 设计预览</title>', `<title>${alt === 'A' ? (shot === 'new' ? '新建智能栅栏' : '编辑智能栅栏') : 'PecoFence 设置'}</title>`);
+          const names = { 'fence-a': '文档', 'fence-b': '图片', inbox: '桌面', portal: '项目文件夹' };
+          initial.fences.forEach(f => { f.title = names[f.id] || f.title; if (f.host) f.host = '文档'; });
+          const base = initial.fences[0];
+          initial.fences.push(
+            { ...base, id: 'smart-dl', title: '最近 7 天下载', host: null, virtualDesktops: [], portal: { navigate: false, titleIcon: true },
+              smart: { spec: { template: 'downloads', folder: 'C:\\Users\\pf\\Downloads', subfolders: true, allOf: [{ cond: 'filesOnly', value: null }], withinDays: 7, limit: 200 }, source: 'everything', total: 30, shown: 30 } },
+            { ...base, id: 'smart-psd', title: '所有 .psd 文件', host: null, virtualDesktops: [], portal: { navigate: false, titleIcon: true },
+              smart: { spec: { template: 'psd', folder: null, subfolders: true, allOf: [{ cond: 'ext', value: ['.psd'] }], limit: 200 }, source: 'everything', total: 2, shown: 2 } });
+          initial.everything = { state: 'running' };
+        }
         if (url.searchParams.get('style') === 'liquidGlass') initial.settings.themeStyle = 'liquidGlass';
         if (url.searchParams.get('mode') === 'light') {
           initial.settings.theme = 'light';
@@ -2239,7 +2257,7 @@ const server = http.createServer(async (request, response) => {
       }
       const safeJson = value => JSON.stringify(value).replace(/</g, '\\u003c');
       html = html.replace('<!-- PECOFENCE_LOCALE -->', `<script>window.PECOFENCE_LOCALE=${safeJson({locale: language, translations: initial.translations})};</script>`);
-      const setup = `<script type="application/json" id="fixture">${safeJson(initial)}</script><script type="application/json" id="fixture-catalogs">${safeJson(catalogs)}</script><script>(${bridge})();</script>`;
+      const setup = sample + `<script type="application/json" id="fixture">${safeJson(initial)}</script><script type="application/json" id="fixture-catalogs">${safeJson(catalogs)}</script><script>(${bridge})();</script>`;
       response.end(html.replace('<body>', '<body>' + setup).replace('<html lang="zh-CN">', '<html lang="zh-CN" class="no-mica">'));
     } else {
       response.end(`<!doctype html><meta charset="utf-8"><title>Settings UI regressions</title>

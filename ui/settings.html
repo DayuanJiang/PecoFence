@@ -442,6 +442,57 @@
   .dj-pic text { fill: var(--text); font-size: 10px; font-family: inherit; }
   .dj-pic text.hot { fill: var(--accent); font-weight: 600; }
   .dj-pic .cursor { fill: var(--text); stroke: var(--dj-panel); stroke-width: 1; }
+
+  /* Sample (smart-editor A/B/C): the Notes-style smart fence editor. One row per condition:
+     the first menu is the kind, the rest of the row follows it; - and + at the end. */
+  .se { display: flex; flex-direction: column; gap: 12px; }
+  .se-namel { display: flex; align-items: center; gap: 12px; }
+  .se-namel > span { flex: none; width: 56px; color: var(--text2); }
+  .se-namel input { flex: 1; min-width: 0; }
+  .se-presets { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .se-presets .chip { height: 28px; font-size: 13px; }
+  .se-cap { color: var(--text2); flex: none; }
+  .se-match { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .se-match select { min-width: 88px; }
+  .se-rows { display: flex; flex-direction: column; border: 1px solid var(--card-stroke); border-radius: var(--r-card); background: var(--control-alt); }
+  .se-row { display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 10px; min-height: 48px; }
+  .se-row + .se-row { border-top: 1px solid var(--line); }
+  .se-row > .se-kind { flex: none; width: 132px; min-width: 0; }
+  .se-val { flex: 1; min-width: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; }
+  .se-val select { min-width: 0; flex: none; }
+  .se-val input[type=text] { flex: 1 1 140px; min-width: 0; }
+  .se-val input[type=number] { width: 84px; min-width: 0; }
+  .se-val input[type=time] { width: 104px; min-width: 0; }
+  .se-path { flex: 1 1 120px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text2); }
+  .se-val button { min-width: 0; }
+  .se-chips { flex: 1 1 200px; display: flex; flex-wrap: wrap; gap: 4px; }
+  .se-chips label { display: inline-flex; align-items: center; height: 24px; padding: 0 9px; border-radius: 12px; font-size: 12px; border: 1px solid var(--control-stroke); background: var(--control); }
+  .se-chips label.on { background: var(--accent); color: var(--on-accent); border-color: transparent; }
+  .se-chips input { display: none; }
+  .se-row .iconbtn { flex: none; height: 28px; width: 28px; font-size: 12px; border: 1px solid var(--control-stroke); background: var(--control); }
+  .se-foot { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 16px; }
+  .se-count { flex: 1 1 180px; display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .se-count > div { display: flex; flex-direction: column; }
+  .se-count .ic { color: var(--accent); }
+  .se-count b { font-weight: 600; }
+  .se-count .s { color: var(--text2); font-size: 12px; }
+  .se-limit { display: flex; align-items: center; gap: 8px; color: var(--text2); }
+  .se-limit select { min-width: 96px; color: var(--text); }
+  .se-btns { display: flex; gap: 8px; margin-left: auto; }
+  /* A: the editor is the whole window (a small window of its own). */
+  body.se-only .app { display: none; }
+  body.se-only #seWindow { display: block; height: 100%; overflow: auto; padding: 20px 24px; }
+  #seWindow { display: none; }
+  body.se-only #seWindow h2 { font-size: 20px; line-height: 28px; margin: 0 0 16px; }
+  /* B: inside the 搜索条件 group of the 栅栏 page. */
+  .se-card { padding: 16px; border-radius: var(--r-card); background: var(--card); border: 1px solid var(--card-stroke); margin-bottom: 4px; }
+  /* C: the 智能栅栏 page, one card per smart fence; the open one has an accent border. */
+  .se-item { flex-wrap: nowrap; }
+  .se-item .se-sum { color: var(--text2); font-size: 12px; line-height: 16px; }
+  .se-item .se-n { flex: none; color: var(--text2); }
+  .se-item.open { display: block; border-color: var(--accent); }
+  .se-item.open > .se-head { display: flex; align-items: center; gap: 20px; margin-bottom: 16px; }
+  .se-item .se-head .l { flex: 1 1 auto; }
 </style>
 </head>
 <body>
@@ -761,6 +812,7 @@
     </section>
   </main>
 </div>
+<div id="seWindow"></div>
 <div class="infobar" id="toast" role="status"><span class="ic" aria-hidden="true"></span><span id="toastText"></span></div>
 <script>
 (() => {
@@ -2571,6 +2623,140 @@
     }, 1800);
   }
 
+
+  // ---- Sample (smart-editor A/B/C): the Notes-style smart fence editor. Not wired to the
+  // host yet: the harness sets window.PECOFENCE_SAMPLE = { alt: 'A'|'B'|'C', shot: 'new'|'edit' }
+  // and the page shows that option with the fixture's smart fences.
+  const SE_KINDS = [['where', '位置'], ['sub', '子文件夹'], ['time', '时间'], ['type', '类型'], ['ext', '扩展名'], ['name', '名称'], ['size', '大小'],
+    ['created', '创建时段'], ['weekday', '创建于星期'], ['target', '快捷方式目标'], ['idle', '闲置天数'], ['everything', 'Everything 语法']];
+  const SE_TYPES = () => [['files', '文件'], ...CATS()];
+  const SE_NAME_OPS = [['contains', '包含'], ['notContains', '不包含'], ['startsWith', '开头是'], ['endsWith', '结尾是'], ['is', '是'], ['matches', '像速览一样匹配']];
+  const SE_DAYS = [[1, '最近 1 天'], [3, '最近 3 天'], [7, '最近 7 天'], [30, '最近 30 天'], [90, '最近 90 天'], [365, '最近一年']];
+  const SE_PRESETS = [['downloads', '最近 7 天下载'], ['screenshots', '最近一周的截图'], ['large', '大于 1 GB 的文件'], ['psd', '所有 .psd 文件'], ['recent', '最近打开的文件']];
+  const seOpts = (list, cur) => list.map(([v, l]) => `<option value="${esc(String(v))}"${String(v) === String(cur) ? ' selected' : ''}>${esc(l)}</option>`).join('');
+  // The rows of a saved search: where, subfolders, time, each condition, the name, Everything text.
+  function seRowsOf(spec) {
+    const rows = [];
+    if (spec.folder !== undefined) rows.push({ kind: 'where', folder: spec.folder });
+    if (spec.folder) rows.push({ kind: 'sub', on: spec.subfolders !== false });
+    if (spec.withinDays != null) rows.push({ kind: 'time', days: spec.withinDays });
+    for (const c of spec.allOf || []) {
+      const v = c.value;
+      if (c.cond === 'filesOnly') rows.push({ kind: 'type', cats: ['files'] });
+      else if (c.cond === 'foldersOnly') rows.push({ kind: 'type', cats: ['folders'] });
+      else if (c.cond === 'type') rows.push({ kind: 'type', cats: v });
+      else if (c.cond === 'ext') rows.push({ kind: 'ext', text: v.map(x => x.replace(/^\./, '')).join(', ') });
+      else if (c.cond === 'name') rows.push({ kind: 'name', op: v.op, text: v.value });
+      else if (c.cond === 'sizeMb') rows.push({ kind: 'size', op: v.min != null ? 'gt' : 'lt', mb: v.min ?? v.max });
+      else if (c.cond === 'createdTime') rows.push({ kind: 'created', from: hm(v.from_min), to: hm(v.to_min) });
+      else if (c.cond === 'createdWeekday') rows.push({ kind: 'weekday', days: v });
+      else if (c.cond === 'shortcutTarget') rows.push({ kind: 'target', text: v.value });
+      else if (c.cond === 'idleDays') rows.push({ kind: 'idle', days: v.min });
+    }
+    if (spec.name) rows.push({ kind: 'name', op: 'matches', text: spec.name });
+    if (spec.everything) rows.push({ kind: 'everything', text: spec.everything });
+    return rows;
+  }
+  // The rest of a row after its kind menu.
+  function seVal(row) {
+    switch (row.kind) {
+      case 'where': return `<select class="se-op">${seOpts([['folder', '文件夹'], ['all', '整台电脑']], row.folder ? 'folder' : 'all')}</select>`
+        + (row.folder ? `<span class="se-path" title="${esc(row.folder)}">${esc(row.folder)}</span><button class="se-pick">选择…</button>` : '');
+      case 'sub': return `<select>${seOpts([['on', '包含子文件夹'], ['off', '不含子文件夹']], row.on === false ? 'off' : 'on')}</select>`;
+      case 'time': return `<span class="se-cap">新建或改过于</span><select>${seOpts(SE_DAYS, row.days ?? 7)}</select>`;
+      case 'type': return `<span class="se-cap">是</span><div class="se-chips">${SE_TYPES().map(([k, l]) => { const on = (row.cats || []).includes(k); return `<label class="${on ? 'on' : ''}"><input type="checkbox" value="${k}"${on ? ' checked' : ''}>${esc(l)}</label>`; }).join('')}</div>`;
+      case 'ext': return `<span class="se-cap">是</span><input type="text" value="${esc(row.text || '')}" placeholder="pdf, docx">`;
+      case 'name': return `<select class="se-op">${seOpts(SE_NAME_OPS, row.op || 'contains')}</select><input type="text" value="${esc(row.text || '')}" placeholder="发票">`;
+      case 'size': return `<select class="se-op">${seOpts([['gt', '大于'], ['lt', '小于']], row.op || 'gt')}</select><input type="number" value="${esc(String(row.mb ?? ''))}" min="0"><span class="se-cap">MB</span>`;
+      case 'created': return `<span class="se-cap">从</span><input type="time" value="${row.from || '18:00'}"><span class="se-cap">到</span><input type="time" value="${row.to || '06:00'}">`;
+      case 'weekday': return `<div class="se-chips">${WEEKDAYS().map(([v, l]) => { const on = (row.days || []).map(String).includes(v); return `<label class="${on ? 'on' : ''}"><input type="checkbox" value="${v}"${on ? ' checked' : ''}>${esc(l)}</label>`; }).join('')}</div>`;
+      case 'target': return `<span class="se-cap">包含</span><input type="text" value="${esc(row.text || '')}" placeholder="steam">`;
+      case 'idle': return `<span class="se-cap">至少</span><input type="number" value="${row.days ?? 30}" min="1"><span class="se-cap">天没有改过或打开</span>`;
+      default: return `<input type="text" value="${esc(row.text || '')}" placeholder="例如 *.pdf invoice">`;
+    }
+  }
+  function seRow(row) {
+    const el = document.createElement('div');
+    el.className = 'se-row';
+    el.innerHTML = `<select class="se-kind" aria-label="条件">${seOpts(SE_KINDS, row.kind)}</select><div class="se-val">${seVal(row)}</div>`
+      + `<button class="iconbtn se-minus" title="删除这一行" aria-label="删除这一行">&#xE738;</button><button class="iconbtn se-plus" title="在下面加一行" aria-label="在下面加一行">&#xE710;</button>`;
+    el.querySelector('.se-kind').onchange = e => el.replaceWith(seRow({ kind: e.target.value }));
+    el.querySelector('.se-minus').onclick = () => { if (el.parentElement.children.length > 1) el.remove(); };
+    el.querySelector('.se-plus').onclick = () => el.after(seRow({ kind: 'name' }));
+    el.querySelectorAll('.se-chips input').forEach(i => { i.onchange = () => i.parentElement.classList.toggle('on', i.checked); });
+    return el;
+  }
+  // The editor: name (optional), presets for a new fence, all/any, the rows, the live count and
+  // OK / Cancel.
+  function smartEditor(o) {
+    const el = document.createElement('div');
+    el.className = 'se';
+    el.innerHTML = (o.nameField ? `<label class="se-namel"><span>名称</span><input type="text" class="se-name" value="${esc(o.title || '')}" placeholder="新建智能栅栏"></label>` : '')
+      + (o.isNew ? `<div class="se-presets"><span class="se-cap">从模板开始</span>${SE_PRESETS.map(([k, l]) => `<button class="chip" data-preset="${k}">${esc(l)}</button>`).join('')}</div>` : '')
+      + `<div class="se-match"><span>包含符合以下</span><select class="se-all" aria-label="全部或任一">${seOpts([['all', '全部'], ['any', '任一']], o.match)}</select><span>条件的文件</span></div>`
+      + `<div class="se-rows"></div>`
+      + `<div class="se-foot"><div class="se-count"><span class="ic">&#xE721;</span><div><span>现在找到 <b>${o.count.n}</b> 个文件</span><span class="s">${esc(o.count.how)}</span></div></div>`
+      + `<label class="se-limit">最多显示<select>${seOpts([[50, '50 个'], [100, '100 个'], [200, '200 个'], [500, '500 个'], [1000, '1000 个']], o.spec.limit || 200)}</select></label>`
+      + `<div class="se-btns"><button class="se-cancel">取消</button><button class="accent se-ok">${o.isNew ? '创建' : '好'}</button></div></div>`;
+    const rows = el.querySelector('.se-rows');
+    (o.rows || seRowsOf(o.spec)).forEach(r => rows.append(seRow(r)));
+    return el;
+  }
+  // The same mock data in every option: 最近 7 天下载 to edit, or a new fence with two rows and 任一.
+  function seMock(s, dl) {
+    return s.shot === 'new'
+      ? { isNew: true, title: '', match: 'any', spec: { limit: 200 }, rows: [{ kind: 'ext', text: 'pdf, docx' }, { kind: 'name', op: 'contains', text: '发票' }],
+          count: { n: 37, how: '整台电脑，由 Everything 搜索' } }
+      : { isNew: false, title: dl.title, match: 'all', spec: dl.smart.spec, count: { n: dl.smart.total, how: '由 Everything 搜索' } };
+  }
+  function showSample(s) {
+    const dl = state.fences.find(f => f.smart && f.smart.spec.template === 'downloads');
+    const m = seMock(s, dl);
+    if (s.alt === 'A') {
+      document.body.classList.add('se-only');
+      const w = document.getElementById('seWindow');
+      w.replaceChildren(smartEditor({ ...m, nameField: true }));
+    } else if (s.alt === 'B') {
+      showPage('fences');
+      const sel = document.getElementById('fenceSel');
+      if (m.isNew) {
+        fenceSel = dl.id; renderFences();
+        sel.insertAdjacentHTML('afterbegin', '<option value="new">新建智能栅栏（还没有保存）</option>');
+        sel.value = 'new';
+        const title = document.getElementById('fenceTitle');
+        title.value = ''; title.placeholder = '新建智能栅栏';
+        document.getElementById('fenceBadge').textContent = '';
+        // Until it is made, the new fence has only its name and its search.
+        [...document.getElementById('fenceBody').children].forEach((c, i) => { if (i > 0 && c.id !== 'fenceSmartGroup') c.style.display = 'none'; });
+      } else { fenceSel = dl.id; renderFences(); }
+      const g = document.getElementById('fenceSmartGroup');
+      const card = document.createElement('div');
+      card.className = 'se-card';
+      card.append(smartEditor({ ...m, nameField: false }));
+      const keep = [...g.querySelectorAll('[data-fence=portalTitleIcon]')].map(t => t.closest('.card'));
+      g.replaceChildren(Object.assign(document.createElement('h3'), { textContent: '搜索条件' }), card, ...(m.isNew ? [] : keep));
+    } else {
+      const nav = document.querySelector('nav a[data-page="fences"]');
+      nav.insertAdjacentHTML('afterend', '<a href="#smart" data-page="smart" aria-label="智能栅栏" title="智能栅栏"><span class="ic" aria-hidden="true">&#xE721;</span><span class="nav-text">智能栅栏</span></a>');
+      document.querySelector('nav a[data-page="smart"]').onclick = e => { e.preventDefault(); showPage('smart'); };
+      const page = document.createElement('section');
+      page.className = 'page'; page.id = 'page-smart';
+      const smart = state.fences.filter(f => f.smart);
+      const sum = f => { const sp = f.smart.spec; return [sp.folder ? (({ Downloads: '下载' })[sp.folder.split('\\').pop()] || sp.folder.split('\\').pop()) + ('文件夹' + (sp.subfolders ? '（含子文件夹）' : '')) : '整台电脑', sp.withinDays ? `最近 ${sp.withinDays} 天` : '', ...(sp.allOf || []).map(condLabel)].filter(Boolean).join(' · '); };
+      const item = (f, open) => open
+        ? `<div class="card se-item open" data-id="${esc(f.id)}"><div class="se-head"><div class="l"><span class="ic">&#xE721;</span><div><div class="t">${esc(f.title)}</div><div class="se-sum">${esc(sum(f))}</div></div></div><span class="se-n">${f.smart.total} 个</span><span class="ic">&#xE70E;</span></div></div>`
+        : `<div class="card se-item" data-id="${esc(f.id)}"><div class="l"><span class="ic">&#xE721;</span><div><div class="t">${esc(f.title)}</div><div class="se-sum">${esc(sum(f))}</div></div></div><span class="se-n">${f.smart.total} 个</span><span class="ic">&#xE70D;</span></div>`;
+      page.innerHTML = `<header class="page-header"><h2>智能栅栏</h2></header><p class="page-lede">智能栅栏显示一次保存好的搜索：文件留在原处，栅栏里总是最新的结果。</p>`
+        + (m.isNew ? `<div class="card se-item open" id="seNew"><div class="se-head"><div class="l"><span class="ic">&#xE710;</span><div><div class="t">新建智能栅栏</div></div></div><span class="ic">&#xE70E;</span></div></div>`
+                   : `<div class="card"><div class="l"><span class="ic">&#xE710;</span><div><div class="t">新建智能栅栏</div><div class="s">从空白开始，或者用一个模板</div></div></div><button class="accent">新建…</button></div>`)
+        + `<h3>桌面上的智能栅栏</h3>` + smart.map(f => item(f, !m.isNew && f === dl)).join('');
+      document.querySelector('main').append(page);
+      (m.isNew ? page.querySelector('#seNew') : page.querySelector(`.se-item.open`)).append(smartEditor({ ...m, nameField: true }));
+      showPage('smart');
+    }
+  }
+  let sampleShown = false;
+
   if (wv) wv.addEventListener('message', e => {
     const m = e.data;
     if (m.type === 'state') {
@@ -2611,6 +2797,7 @@
       // Transitions come on a frame after this state has been drawn: a single frame would style
       // both changes together and start them after all.
       requestAnimationFrame(() => requestAnimationFrame(() => document.documentElement.classList.add('ready')));
+      if (window.PECOFENCE_SAMPLE && !sampleShown) { sampleShown = true; showSample(window.PECOFENCE_SAMPLE); }
     } else if (m.type === 'workspaceSummary') {
       if (!state) return;
       state.itemCount = m.itemCount;
