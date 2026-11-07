@@ -222,6 +222,11 @@ impl App {
             .iter()
             .any(|f| !f.virtual_desktops.is_empty());
         let want = bound || self.state.config.settings.per_desktop_fences;
+        // Also at startup: a list left from earlier use goes once nothing needs it. A snapshot's
+        // bound fence still needs it to follow when it is restored.
+        if !want && !self.state.config.uses_virtual_desktops() {
+            self.forget_desktop_list("no fence is bound and the switch is off");
+        }
         if want == self.desktop_poll {
             return;
         }
@@ -252,6 +257,12 @@ impl App {
     /// taken for one Explorer is still writing, and changes nothing. Returns whether anything
     /// changed.
     fn follow_desktops(&mut self, current: Option<&str>) -> bool {
+        // Nothing bound anywhere and the switch off: the file keeps no desktop list (and no Task
+        // View names) for someone who does not use the feature.
+        if !self.state.config.uses_virtual_desktops() {
+            self.forget_desktop_list("the feature is not in use");
+            return false;
+        }
         let now = Self::read_desktops();
         let consistent = current.is_some_and(|c| now.iter().any(|d| d.id.eq_ignore_ascii_case(c)));
         if now.is_empty() || !consistent {
@@ -306,6 +317,21 @@ impl App {
             self.schedule_save();
         }
         listed_changed || moved > 0
+    }
+
+    /// Drops the saved desktop list (Config.virtual_desktops) while the feature is not in use.
+    fn forget_desktop_list(&mut self, reason: &'static str) {
+        if self.state.config.virtual_desktops.is_empty() {
+            return;
+        }
+        tracing::info!(
+            desktops = self.state.config.virtual_desktops.len(),
+            reason,
+            "virtual desktop list dropped from the configuration"
+        );
+        self.state.config.virtual_desktops.clear();
+        self.state.mark_dirty();
+        self.schedule_save();
     }
 
     /// A snapshot restore, an import or a backup restore replaced the fences: those bound to
