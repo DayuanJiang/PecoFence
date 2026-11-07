@@ -175,11 +175,11 @@ pub enum Command {
         items: Vec<ItemId>,
         at: Option<DesktopDrop>,
     },
-    /// 自由摆放: the grid cells the 「桌面」 fence gave its icons (new ones, or ones moved off a
-    /// fence or into a smaller work area), to be saved for this monitor setup.
+    /// 自由摆放: the 「桌面」 fence gave icons other cells than their saved ones (new icons, or
+    /// ones moved off a fence or into a smaller work area): save what its latest pass placed
+    /// for this monitor setup.
     DesktopCellsPlaced {
         fence: FenceId,
-        cells: Vec<(ItemId, [u16; 2])>,
     },
     /// Files dropped from Explorer onto a fence with the effect the drop reported (Explorer's
     /// modifier table: Ctrl copy, Alt / Ctrl+Shift shortcut, otherwise move).

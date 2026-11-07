@@ -300,34 +300,37 @@ impl FenceViewState {
             .chain(std::iter::once(&spare))
             .map(|c| grid.rect(*c))
             .collect();
-        let new = wanted.iter().filter(|w| w.is_none()).count();
-        let moved = wanted
+        // The icons that did not get their saved cell. The app reads them from the latest pass
+        // (`desktop_free_changes`) when it gets the note, so a pass that a later one replaced
+        // (other fences not yet moved for new monitors, say) is never saved. One note per
+        // change, not one on every pass that finds it.
+        let cell = |c: (i32, i32)| [c.0.max(0) as u16, c.1.max(0) as u16];
+        let changes: Vec<(ItemId, [u16; 2])> = self
+            .items
             .iter()
+            .zip(&wanted)
             .zip(&placed)
-            .filter(|(w, p)| w.is_some_and(|w| w != **p))
-            .count();
-        if new + moved > 0 {
+            .filter(|((_, w), p)| **w != Some(**p))
+            .map(|((it, _), p)| (it.id, cell(*p)))
+            .collect();
+        if !changes.is_empty() && self.desktop_free_sent.as_ref() != Some(&changes) {
+            let added = wanted.iter().filter(|w| w.is_none()).count();
             tracing::info!(
                 fence = %self.fence_id,
                 icons = placed.len(),
-                new,
-                moved,
+                added,
+                moved = changes.len() - added,
                 cols = grid.cols,
                 rows = grid.rows,
                 covered = area.covered.len(),
+                first = ?changes.first().map(|c| c.1),
                 "free placement: cells placed"
             );
-            let cells = self
-                .items
-                .iter()
-                .zip(&placed)
-                .map(|(it, c)| (it.id, [c.0.max(0) as u16, c.1.max(0) as u16]))
-                .collect();
             self.queue.push(Command::DesktopCellsPlaced {
                 fence: self.fence_id,
-                cells,
             });
         }
+        self.desktop_free_sent = (!changes.is_empty()).then_some(changes);
         self.desktop_free = Some((grid, placed));
         rects
     }
@@ -378,6 +381,15 @@ impl FenceViewState {
                 Some((it.id, (cx - px, cy - py)))
             })
             .collect()
+    }
+
+    /// 自由摆放: the cells the latest pass gave icons other than their saved ones, and the saved
+    /// cells it placed them from; None when every icon has its saved cell.
+    pub(super) fn desktop_free_changes(
+        &self,
+    ) -> Option<(BTreeMap<ItemId, [u16; 2]>, Vec<(ItemId, [u16; 2])>)> {
+        let from = self.desktop.as_ref()?.free.clone()?;
+        Some((from, self.desktop_free_sent.clone()?))
     }
 
     /// Whether the icons stay where they are dropped (自由摆放 on an arranged 「桌面」).

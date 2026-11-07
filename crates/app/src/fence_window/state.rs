@@ -324,6 +324,9 @@ pub struct FenceViewState {
     /// 自由摆放: the grid the icons stand on and the cell (column, row) of each item, from
     /// `arrange_desktop`; None while the icons are arranged in columns.
     pub(super) desktop_free: Option<(super::desktop_layout::FreeGrid, Vec<(i32, i32)>)>,
+    /// 自由摆放: the icons the latest pass gave a cell other than their saved one (the app
+    /// saves them when it reads the note `arrange_desktop` sent).
+    pub(super) desktop_free_sent: Option<Vec<(ItemId, [u16; 2])>>,
     /// The icons selected when a rectangle drawn on the desktop started (kept with Ctrl or
     /// Shift); None while no rectangle is drawn.
     pub(super) desktop_band_base: Option<HashSet<usize>>,
