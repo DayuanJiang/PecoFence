@@ -40,7 +40,9 @@ UsePreviousAppDir=yes
 DisableProgramGroupPage=yes
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
-MinVersion=10.0.19045
+; Windows 10 2004 (build 19041) and later, as the Store package; 20H2 to 22H2 and LTSC 2021
+; (19042 to 19045) are the same release with enablement packages.
+MinVersion=10.0.19041
 SetupIconFile=..\..\crates\app\assets\pecofence.ico
 UninstallDisplayIcon={app}\pecofence.exe
 OutputBaseFilename=pecofence-v{#AppVersion}-x64-setup

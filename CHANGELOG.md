@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- The installer runs on Windows 10 2004 and later (build 19041, as the Store edition), so Windows 10 21H2 and LTSC 2021 no longer get 「此程序不支持当前计算机运行的 Windows 版本」; before, it needed 22H2 (build 19045) although the ZIP ran there.
+
 ## 0.3.0
 
 - The Peek search box lists its matches (Listary's search as the model). Under the box, the best matches show with their icon, the fence they are in and Ctrl+1 to Ctrl+9; ↑↓ or Ctrl+P / Ctrl+N move, Enter opens, Ctrl+Enter opens the containing folder, and → (with the caret at the end) or Ctrl+O shows 打开, 打开所在文件夹, 复制路径 and the Windows context menu. Names match by pinyin as well, full or initials (`hyjl` finds 会议记录; each character's most common reading), and by letters in order; the whole name ranks first, then a match at its start, at the start of a word, by pinyin, anywhere in the name, and last the letters in order. What you open from the search ranks higher next time; that history stays on this PC and is left out of exported configurations. When an Open or Save dialog was in front as the Peek began, Enter hands the folder or file to that dialog instead.
