@@ -61,6 +61,8 @@ struct Slot {
     /// from the last pass).
     y: i32,
     by: Vec<HWND>,
+    /// The top the push wanted before the work area stopped it (`y` when nothing stopped it).
+    want: i32,
 }
 
 impl Slot {
@@ -146,8 +148,9 @@ fn stack(slots: &mut [Slot], enabled: bool) {
                     binding = Some(i);
                 }
             }
-            if let Some((_, _, bottom)) = b.work {
-                y = y.min(bottom - b.h).max(b.base);
+            slots[j].want = y;
+            if let Some((_, _, bottom)) = slots[j].work {
+                y = y.min(bottom - slots[j].h).max(slots[j].base);
             }
         }
         if slots[j].role != Role::Held {
@@ -188,7 +191,8 @@ fn stack(slots: &mut [Slot], enabled: bool) {
         let Some((y, i)) = lift else {
             continue;
         };
-        let y = f.work.map_or(y, |(_, top, _)| y.max(top));
+        slots[j].want = y;
+        let y = slots[j].work.map_or(y, |(_, top, _)| y.max(top));
         slots[j].by = if y != slots[j].base {
             std::iter::once(slots[i].hwnd)
                 .chain(slots[i].by.iter().copied())
@@ -336,26 +340,50 @@ impl App {
                     lifts: !is_dragged && !settles,
                     y: r.top,
                     by,
+                    want: r.top,
                 });
             }
         }
         stack(&mut slots, enabled);
         self.keep_expand_rooms(enabled.then(|| rooms(&slots)));
         // No borrow held: SetWindowPos runs the fences' handlers synchronously.
+        let prev = std::mem::take(&mut *self.ctx.behavior.pushed.borrow_mut());
+        let id_of = |hwnd: HWND| slots.iter().find(|s| s.hwnd == hwnd).map(|s| s.id);
         let mut next = Vec::new();
         let mut moved = false;
-        for s in slots {
+        for s in &slots {
             if s.y != s.top {
                 let _ = window::move_window_to(s.hwnd, s.left, s.y);
                 moved = true;
             }
-            if s.y != s.base {
-                next.push(Pushed {
-                    hwnd: s.hwnd,
-                    top: s.y,
-                    dy: s.y - s.base,
-                    by: s.by,
-                });
+            if s.y == s.base {
+                continue;
+            }
+            let was = prev.iter().find(|p| p.hwnd == s.hwnd);
+            // Stopped by the work-area edge short of the room the push wanted for it.
+            let blocked = s.role == Role::Free && s.want != s.y;
+            let pusher = s.by.first().and_then(|&h| id_of(h));
+            // One line when a push starts and when the work area stops it, never per frame.
+            if was.is_none() {
+                tracing::info!(id = %s.id, pushed_by = ?pusher, from = s.base, to = s.y, "fence pushed");
+            }
+            if blocked && !was.is_some_and(|p| p.blocked) {
+                tracing::info!(id = %s.id, pushed_by = ?pusher, want_top = s.want, got_top = s.y, short_px = (s.want - s.y).abs(), "pushed fence stopped at the edge of the work area");
+            }
+            next.push(Pushed {
+                hwnd: s.hwnd,
+                top: s.y,
+                dy: s.y - s.base,
+                by: s.by.clone(),
+                blocked,
+                max_dy: was.map_or(0, |p| p.max_dy).max((s.y - s.base).abs()),
+            });
+        }
+        for p in &prev {
+            if !next.iter().any(|n| n.hwnd == p.hwnd)
+                && let Some(id) = id_of(p.hwnd)
+            {
+                tracing::info!(%id, largest_shift = p.max_dy, "pushed fence back at its place");
             }
         }
         *self.ctx.behavior.pushed.borrow_mut() = next;
@@ -511,6 +539,7 @@ mod tests {
             lifts: true,
             y,
             by: Vec::new(),
+            want: y,
         }
     }
 
@@ -551,6 +580,42 @@ mod tests {
             .iter_mut()
             .find(|s| s.id == FenceId::from_u128(n))
             .unwrap()
+    }
+
+    /// holdout2-fixes case 38 at 1600 x 852 with the first-run column: a fence saved expanded
+    /// (16..454) pushes Upper, saved at 420 inside it, down to 462; Upper's real window then
+    /// pushes Lower to 462 + 250 + 8 = 720, which the work area (bottom 852) stops at
+    /// 852 - 150 = 702, 10 px inside Upper. The pass marks that shortfall (`want`) for the log.
+    #[test]
+    fn a_push_the_work_area_stops_is_marked() {
+        let mut s = vec![
+            slot(1, 88, 16, 438, 438),
+            slot(2, 0, 420, 250, 250),
+            slot(3, 0, 500, 150, 150),
+        ];
+        for f in &mut s {
+            f.work = Some((0, 0, 852));
+        }
+        stack(&mut s, true);
+        assert_eq!(ys(&s, &[1, 2, 3]), vec![16, 462, 702]);
+        let wants: Vec<i32> = [1, 2, 3]
+            .iter()
+            .map(|&n| {
+                s.iter()
+                    .find(|f| f.id == FenceId::from_u128(n))
+                    .unwrap()
+                    .want
+            })
+            .collect();
+        // Upper got all it needed; Lower was stopped 18 px short.
+        assert_eq!(wants, vec![16, 462, 720]);
+        // With room below, nothing is stopped.
+        for f in &mut s {
+            f.work = Some((0, 0, 1000));
+            f.y = f.base;
+        }
+        stack(&mut s, true);
+        assert_eq!(ys(&s, &[1, 2, 3]), vec![16, 462, 720]);
     }
 
     #[test]
