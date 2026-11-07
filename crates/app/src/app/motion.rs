@@ -301,6 +301,8 @@ impl App {
                 started: Some(now),
                 ..FrameRun::default()
             };
+            // Counted per run: frames started by the clock's timeout instead of a compositor tick.
+            self.ctx.frames.take_timeouts();
         }
         let mut more = false;
         // Dying windows are ticked too: their shadow fades on the frame clock until the exit
@@ -331,6 +333,7 @@ impl App {
             // the feedback logs.
             let r = &self.frame_run;
             let total = now.duration_since(r.started.unwrap_or(now));
+            let timer_frames = self.ctx.frames.take_timeouts();
             let ms = crate::share_log::millis;
             self.activity.animation_runs += 1;
             if r.max_gap > Duration::from_millis(33) || r.max_frame > Duration::from_millis(16) {
@@ -343,6 +346,7 @@ impl App {
                     total_ms = ms(total),
                     max_gap_ms = ms(r.max_gap),
                     max_frame_ms = ms(r.max_frame),
+                    timer_frames,
                     "animation run stuttered"
                 );
             } else {
@@ -351,6 +355,7 @@ impl App {
                     total_ms = ms(total),
                     max_gap_ms = ms(r.max_gap),
                     max_frame_ms = ms(r.max_frame),
+                    timer_frames,
                     "animation run"
                 );
             }

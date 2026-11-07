@@ -433,6 +433,26 @@ pub unsafe fn CreateSolidBrush(color: COLORREF) -> HBRUSH {
     unsafe { CreateSolidBrush(color) }
 }
 #[inline]
+pub unsafe fn CreateWaitableTimerExW<P1>(
+    lptimerattributes: Option<*const SECURITY_ATTRIBUTES>,
+    lptimername: P1,
+    dwflags: u32,
+    dwdesiredaccess: u32,
+) -> HANDLE
+where
+    P1: windows_core::Param<windows_core::PCWSTR>,
+{
+    windows_core::link!("kernel32.dll" "system" fn CreateWaitableTimerExW(lptimerattributes : *const SECURITY_ATTRIBUTES, lptimername : windows_core::PCWSTR, dwflags : u32, dwdesiredaccess : u32) -> HANDLE);
+    unsafe {
+        CreateWaitableTimerExW(
+            lptimerattributes.unwrap_or(core::mem::zeroed()) as _,
+            lptimername.param().abi(),
+            dwflags,
+            dwdesiredaccess,
+        )
+    }
+}
+#[inline]
 pub unsafe fn CreateWindowExW<P1, P2>(
     dwexstyle: u32,
     lpclassname: P1,
@@ -2422,6 +2442,27 @@ pub unsafe fn SetUnhandledExceptionFilter(
     }
 }
 #[inline]
+pub unsafe fn SetWaitableTimer(
+    htimer: HANDLE,
+    lpduetime: *const i64,
+    lperiod: i32,
+    pfncompletionroutine: PTIMERAPCROUTINE,
+    lpargtocompletionroutine: Option<*const core::ffi::c_void>,
+    fresume: bool,
+) -> windows_core::BOOL {
+    windows_core::link!("kernel32.dll" "system" fn SetWaitableTimer(htimer : HANDLE, lpduetime : *const i64, lperiod : i32, pfncompletionroutine : PTIMERAPCROUTINE, lpargtocompletionroutine : *const core::ffi::c_void, fresume : windows_core::BOOL) -> windows_core::BOOL);
+    unsafe {
+        SetWaitableTimer(
+            htimer,
+            lpduetime,
+            lperiod,
+            pfncompletionroutine,
+            lpargtocompletionroutine.unwrap_or(core::mem::zeroed()) as _,
+            fresume.into(),
+        )
+    }
+}
+#[inline]
 pub unsafe fn SetWinEventHook(
     eventmin: u32,
     eventmax: u32,
@@ -3294,6 +3335,7 @@ pub struct COPYDATASTRUCT {
 pub const CP_ACP: i32 = 0;
 pub const CREATE_ALWAYS: i32 = 2;
 pub const CREATE_NO_WINDOW: i32 = 134217728;
+pub const CREATE_WAITABLE_TIMER_HIGH_RESOLUTION: i32 = 2;
 pub const CS_DBLCLKS: i32 = 8;
 pub const CS_HREDRAW: i32 = 2;
 pub const CS_VREDRAW: i32 = 1;
@@ -18246,6 +18288,13 @@ pub struct PSECURITY_DESCRIPTOR(pub *mut core::ffi::c_void);
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub struct PSID(pub *mut core::ffi::c_void);
+pub type PTIMERAPCROUTINE = Option<
+    unsafe extern "system" fn(
+        lpargtocompletionroutine: *const core::ffi::c_void,
+        dwtimerlowvalue: u32,
+        dwtimerhighvalue: u32,
+    ),
+>;
 pub type PTOP_LEVEL_EXCEPTION_FILTER =
     Option<unsafe extern "system" fn(exceptioninfo: *const EXCEPTION_POINTERS) -> i32>;
 pub type PTRANSLATE_ADDRESS_ROUTINE64 = Option<
@@ -18864,6 +18913,7 @@ pub const THREAD_TERMINATE: i32 = 1;
 pub type TIMERPROC =
     Option<unsafe extern "system" fn(param0: HWND, param1: u32, param2: usize, param3: u32)>;
 pub const TIMERV_DEFAULT_COALESCING: i32 = 0;
+pub const TIMER_ALL_ACCESS: i32 = 2031619;
 pub const TIME_NOSECONDS: i32 = 2;
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -19103,6 +19153,7 @@ pub const VirtualDesktopManager: windows_core::GUID =
     windows_core::GUID::from_u128(0xaa509086_5ca9_4c25_8f95_589d3c07b48a);
 pub const WAIT_FAILED: u32 = 4294967295;
 pub const WAIT_OBJECT_0: i32 = 0;
+pub const WAIT_TIMEOUT: i32 = 258;
 pub const WHEEL_DELTA: i32 = 120;
 pub const WH_MOUSE_LL: i32 = 14;
 pub type WICBitmapAlphaChannelOption = i32;
