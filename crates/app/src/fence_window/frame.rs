@@ -78,7 +78,34 @@ impl FenceViewState {
     }
 }
 
+/// What a frame needs of a fence window, so that its animations can go on while a popup menu
+/// keeps the App borrowed (see `App::track_menu`).
+pub struct FrameHandle {
+    id: FenceId,
+    hwnd: HWND,
+    view: Rc<RefCell<Option<FenceViewState>>>,
+}
+
 impl FenceWindow {
+    pub fn frame_handle(&self) -> FrameHandle {
+        FrameHandle {
+            id: self.id,
+            hwnd: self.hwnd(),
+            view: self.view.clone(),
+        }
+    }
+
+    /// One compositor frame, see [`FrameHandle::on_frame`].
+    pub fn on_frame(&self, now: Instant) -> bool {
+        self.frame_handle().on_frame(now)
+    }
+}
+
+impl FrameHandle {
+    fn hwnd(&self) -> HWND {
+        self.hwnd
+    }
+
     /// One compositor frame: advances the roll / auto-height animation and every other client
     /// tween. Returns true while something still moves (the app then asks the frame clock for
     /// the next frame). Re-entrancy: the window is resized with no borrow held.

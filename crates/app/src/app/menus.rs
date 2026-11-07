@@ -279,7 +279,8 @@ impl App {
         // A sign-out while a menu is open ends the process before the menu returns, and the
         // menu keeps TIMER_SAVE from saving meanwhile: save pending changes first.
         self.state.save_if_dirty();
-        let cmd = menu.show(self.control.hwnd(), x, y);
+        let owner = self.control.hwnd();
+        let cmd = self.track_menu(|| menu.show(owner, x, y));
         match cmd {
             CMD_TOGGLE_FENCES => self.toggle_all_fences("tray menu"),
             CMD_WINDOWS_DESKTOP => self.set_windows_desktop(!self.windows_desktop, "tray menu"),
@@ -317,7 +318,7 @@ impl App {
             .unwrap_or(self.control.hwnd());
         // Saved first, as for the tray menu.
         self.state.save_if_dirty();
-        let cmd = menu.show_context(owner, x, y);
+        let cmd = self.track_menu(|| menu.show_context(owner, x, y));
         if let Some(sm) = shell_menu.as_ref()
             && sm.contains(cmd)
         {
@@ -418,6 +419,7 @@ impl App {
         fence: FenceId,
         items: &[ItemId],
     ) -> (PopupMenu, Option<ShellContextMenu>, Vec<PathBuf>) {
+        let started = Instant::now();
         let menu = PopupMenu::new();
         // Namespace items (Recycle Bin, ...) have no file: rename and "open location" are off.
         let single_namespace = matches!(
@@ -575,6 +577,7 @@ impl App {
                             items = items.len(),
                             shell_ids = n,
                             own_location = false,
+                            ms = started.elapsed().as_millis() as u64,
                             "item menu built: Windows' open file location (shortcut target) replaces ours"
                         );
                     } else {
@@ -582,6 +585,7 @@ impl App {
                             items = items.len(),
                             shell_ids = n,
                             own_location = true,
+                            ms = started.elapsed().as_millis() as u64,
                             "item menu built"
                         );
                     }
@@ -1014,7 +1018,7 @@ impl App {
             .unwrap_or(self.control.hwnd());
         // Saved first, as for the tray menu.
         self.state.save_if_dirty();
-        let cmd = menu.show_context(owner, x, y);
+        let cmd = self.track_menu(|| menu.show_context(owner, x, y));
         match cmd {
             CMD_FENCE_ROLL => self.toggle_roll(host),
             CMD_FENCE_RENAME => self.begin_rename(fence),
@@ -1208,7 +1212,7 @@ impl App {
             .unwrap_or(self.control.hwnd());
         // Saved first, as for the tray menu.
         self.state.save_if_dirty();
-        let cmd = menu.show_context(owner, x, y);
+        let cmd = self.track_menu(|| menu.show_context(owner, x, y));
         match cmd {
             CMD_COL_DATE | CMD_COL_TYPE | CMD_COL_SIZE => {
                 let i = match cmd {
@@ -1262,7 +1266,7 @@ impl App {
         );
         // Saved first, as for the tray menu.
         self.state.save_if_dirty();
-        if menu.show_context(owner, pt.x, pt.y) == CMD_NEW_FENCE_HERE {
+        if self.track_menu(|| menu.show_context(owner, pt.x, pt.y)) == CMD_NEW_FENCE_HERE {
             self.create_fence_with_rename(rect);
         }
     }

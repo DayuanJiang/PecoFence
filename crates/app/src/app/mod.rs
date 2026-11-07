@@ -65,6 +65,7 @@ mod group;
 mod ipc;
 mod items;
 mod live_wallpaper;
+mod menu_frames;
 mod menus;
 mod motion;
 mod peek;
@@ -1151,7 +1152,9 @@ impl App {
                                 && let Some(app) = guard.as_mut()
                             {
                                 app.on_frame();
-                            } else {
+                            } else if !menu_frames::menu_frame() {
+                                // A modal loop holds the App (a popup menu's loop ticks the
+                                // fences itself, a dialog's gets the frame again shortly).
                                 window::set_timer(hwnd, TIMER_FRAME_RETRY, 16);
                             }
                             Some(0)
@@ -1853,6 +1856,28 @@ impl App {
             icons_hidden = pecofence_platform::shell_icons::desktop_icons_hidden(),
             "startup done"
         );
+        // The first item menu would load every installed program's menu extensions while the
+        // user waits for it: load them in the background once things have settled. Not after a
+        // run that crashed or stopped: one of them may have been the cause, and loading it at
+        // every start would bring that back each time instead of at a right-click.
+        let file = app
+            .state
+            .config
+            .items
+            .values()
+            .filter_map(|it| it.path())
+            .take(32)
+            .map(PathBuf::from)
+            .find(|p| p.is_file());
+        match file {
+            _ if !app.previous_run_ended_normally() => {
+                tracing::info!("shell menu not prewarmed: the previous run did not end normally");
+            }
+            Some(path) => {
+                pecofence_platform::shell_menu::prewarm(path, Duration::from_secs(2));
+            }
+            None => tracing::info!("shell menu not prewarmed: no file on the desktop"),
+        }
         if args.dump_stats {
             match pecofence_platform::memstats::MemoryStats::current() {
                 Ok(m) => tracing::info!(memory = %m.summary(), "startup memory"),
