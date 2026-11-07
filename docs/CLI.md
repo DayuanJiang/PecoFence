@@ -212,7 +212,8 @@ A fence shows on every Windows virtual desktop (the default) or only on some; sw
 id, comma-separated (`virtualDesktops 1,3`, `virtualDesktops Games`); naming every desktop is
 `all`, and a name two desktops share is `invalid_value` (give the number). It acts on the whole
 window: a tab sets its host and every tab, and a fence merged into a window takes the window's
-desktops. The inbox shows on every desktop (`unsupported`). `fence get` reports
+desktops. The inbox shows on every desktop (`unsupported`), and so does a window that holds it as a
+tab: merging the inbox into a bound window makes the window show on every desktop. `fence get` reports
 `virtualDesktops` (the ids, empty for every desktop) and `onCurrentDesktop` (false: hidden until a
 switch there). The setting `perDesktopFences` (Settings › 常规, 「每个虚拟桌面各用一套栅栏」) makes
 every new fence, `fence create` too, belong to the current desktop. When a desktop is closed its

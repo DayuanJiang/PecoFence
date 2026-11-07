@@ -1056,12 +1056,14 @@ impl App {
         // 在哪个虚拟桌面显示: offered once there is more than one virtual desktop (or the
         // window is bound to one already). 「桌面」 shows on every desktop: new desktop items
         // land there.
-        let desktops = if f.kind == FenceKind::Inbox {
+        // A window that holds 「桌面」 as one of its tabs counts as 「桌面」.
+        let holds_inbox = self.state.window_holds_inbox(fence);
+        let desktops = if holds_inbox {
             Vec::new()
         } else {
             self.desktop_labels()
         };
-        if desktops.len() > 1 || (f.kind != FenceKind::Inbox && !h.virtual_desktops.is_empty()) {
+        if desktops.len() > 1 || (!holds_inbox && !h.virtual_desktops.is_empty()) {
             let vd_menu = PopupMenu::new();
             vd_menu
                 .item(

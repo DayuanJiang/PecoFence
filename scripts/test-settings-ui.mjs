@@ -470,6 +470,12 @@ async function runTests() {
     assert(messages().at(-1).value === '{A}' && doc.getElementById('fenceVd').value === '{A}', 'A desktop not posted or not shown');
     change(doc, 'fenceSel', 'inbox');
     assert(doc.getElementById('fenceVdCard').style.display === 'none', 'The inbox offers a choice');
+    const tabbed = current().fences.find(f => f.id === 'fence-b');
+    tabbed.inboxWindow = true;
+    change(doc, 'fenceSel', 'fence-b');
+    frame.contentWindow.testRefresh(); await settle();
+    assert(doc.getElementById('fenceVdCard').style.display === 'none', 'A tab in a window with the inbox offers a choice');
+    delete tabbed.inboxWindow;
     const desktops = current().virtualDesktops;
     current().virtualDesktops = [];
     change(doc, 'fenceSel', 'fence-b');

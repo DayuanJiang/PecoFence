@@ -31,6 +31,11 @@ const TIMER_FOREGROUND_AFTER_SWITCH: usize = 16;
 const AFTER_SWITCH_LOOK_MS: u32 = 300;
 const AFTER_SWITCH_LOOKS: u8 = 6;
 const SWITCHER_CLASS: &str = "VirtualDesktopHotkeySwitcher";
+/// Windows 10: the desktop's clicks followed after a switch (`follow_desktop_after_switch`)
+/// stop being followed this long after it unless the desktop came to the front meanwhile: the
+/// sink gets every mouse move while it is on.
+const TIMER_SWITCH_FOLLOW_END: usize = 17;
+const SWITCH_FOLLOW_MS: u32 = 10_000;
 const QUICKHIDE_DELAY_MS: u32 = 300;
 pub const TIMER_TEST: usize = 20;
 
@@ -57,6 +62,11 @@ fn set_fence_visible(fence: HWND, shadow: Option<HWND>, show: bool) {
             desktop::hide_window(h);
         }
     }
+}
+
+/// The taskbar (it keeps the foreground after a Windows 10 virtual-desktop switch).
+fn is_taskbar(class: &str) -> bool {
+    class == "Shell_TrayWnd" || class == "Shell_SecondaryTrayWnd"
 }
 
 /// Our own click-through drag feedback (the drop outline sits directly below the dragged fence,
@@ -553,16 +563,28 @@ impl DesktopAnchor {
     /// comes to the front (`on_foreground`).
     fn follow_desktop_after_switch(&mut self) {
         let front = desktop::foreground_window();
-        let cls = desktop::class_name(desktop::root_ancestor(front));
+        let root = desktop::root_ancestor(front);
+        let cls = desktop::class_name(root);
+        self.last_foreground = front.0 as isize;
+        // An ordinary program in front (Windows gave it the new desktop's foreground): its
+        // clicks are the program's, and a click on the desktop brings the desktop to the front
+        // with an event, as without a switch.
+        let program = !front.0.is_null()
+            && !self.is_desktop_window(front)
+            && !is_taskbar(&cls)
+            && desktop::window_pid(root) != std::process::id();
         tracing::info!(
             class = %cls,
             following = self.quick.sink_registered,
-            "virtual desktop switch seen by the foreground poll; following the desktop's clicks"
+            program,
+            "virtual desktop switch seen by the foreground poll"
         );
-        self.last_foreground = front.0 as isize;
-        if !self.quick.sink_registered {
-            self.set_raw_input_sink(true);
+        if program || self.quick.sink_registered {
+            return;
         }
+        self.set_raw_input_sink(true);
+        self.sentinel
+            .set_timer(TIMER_SWITCH_FOLLOW_END, SWITCH_FOLLOW_MS);
     }
 
     /// Marks a fence window as belonging to other virtual desktops (`FenceWindow` hides it).
@@ -1615,6 +1637,18 @@ impl DesktopAnchor {
                     self.last_foreground = front.0 as isize;
                 }
             }
+            TIMER_SWITCH_FOLLOW_END => {
+                self.sentinel.kill_timer(TIMER_SWITCH_FOLLOW_END);
+                let front = desktop::foreground_window();
+                if self.quick.sink_registered && !self.is_desktop_window(front) {
+                    let cls = desktop::class_name(desktop::root_ancestor(front));
+                    tracing::info!(
+                        class = %cls,
+                        "the desktop did not come to the front after the switch; its clicks are no longer followed"
+                    );
+                    self.set_raw_input_sink(false);
+                }
+            }
             TIMER_FOREGROUND_AFTER_SWITCH => {
                 let front = desktop::foreground_window();
                 self.switch_looks = self.switch_looks.saturating_sub(1);
@@ -1802,6 +1836,12 @@ mod tests {
         let mut q = QuickHide::default();
         q.desktop_activated(false, false, t, pt(390, 204));
         assert_eq!(q.desktop_press(ms(t, 120), pt(390, 204), 500, (2, 2)), None);
+    }
+
+    #[test]
+    fn after_a_windows_10_switch_only_the_taskbar_counts_as_no_program_in_front() {
+        assert!(is_taskbar("Shell_TrayWnd") && is_taskbar("Shell_SecondaryTrayWnd"));
+        assert!(!is_taskbar("Notepad") && !is_taskbar("Progman") && !is_taskbar(""));
     }
 
     #[test]

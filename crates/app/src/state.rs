@@ -733,28 +733,12 @@ impl AppState {
             return false;
         }
         let layout = self.layout;
-        // The window's virtual desktops apply to every tab in it.
-        let desktops = self
-            .fence(host)
-            .map(|h| h.virtual_desktops.clone())
-            .unwrap_or_default();
         for f in &mut self.config.layouts[layout].fences {
             if f.id == fence {
                 f.tab_host = Some(host);
                 f.active_tab = None;
             } else if f.tab_host == Some(fence) {
                 f.tab_host = Some(host);
-            } else {
-                continue;
-            }
-            if f.virtual_desktops != desktops {
-                tracing::info!(
-                    fence = %f.id,
-                    from = ?f.virtual_desktops,
-                    to = ?desktops,
-                    "tab takes its new window's virtual desktops"
-                );
-                f.virtual_desktops = desktops.clone();
             }
         }
         if let Some(h) = self.fence_mut(host) {
@@ -763,7 +747,43 @@ impl AppState {
         self.normalize_tabs();
         self.dirty = true;
         tracing::info!(%fence, %host, tabs = self.tabs_of(host).len(), "tab attached");
+        // The window's virtual desktops apply to every tab in it; a window that holds the inbox
+        // shows on every desktop (new desktop items land in the inbox).
+        let host_desktops = self
+            .fence(host)
+            .map(|h| h.virtual_desktops.clone())
+            .unwrap_or_default();
+        let holds_inbox = self.window_holds_inbox(host);
+        let desktops = if holds_inbox {
+            Vec::new()
+        } else {
+            host_desktops.clone()
+        };
+        let differ = self
+            .tabs_of(host)
+            .iter()
+            .filter_map(|t| self.fence(*t))
+            .any(|f| f.virtual_desktops != desktops);
+        if differ {
+            tracing::info!(
+                %host,
+                window = ?host_desktops,
+                holds_inbox,
+                to = ?desktops,
+                "the tabs take their window's virtual desktops"
+            );
+            self.set_virtual_desktops(host, desktops);
+        }
         true
+    }
+
+    /// Whether the window `fence` is shown in holds the inbox (as its host or as a tab): such a
+    /// window shows on every virtual desktop.
+    pub fn window_holds_inbox(&self, fence: FenceId) -> bool {
+        self.tabs_of(self.host_of(fence))
+            .iter()
+            .filter_map(|t| self.fence(*t))
+            .any(|f| f.kind == FenceKind::Inbox)
     }
 
     pub fn detach_tab(&mut self, fence: FenceId) -> Option<pecofence_core::TabDetach> {
@@ -2240,8 +2260,12 @@ impl AppState {
     /// Whether the window of `fence` (its host's, for a tab) shows on the current virtual
     /// desktop.
     pub fn on_current_desktop(&self, fence: FenceId) -> bool {
-        self.fence(self.host_of(fence))
-            .is_none_or(|f| f.shows_on_desktop(self.current_desktop.as_deref()))
+        self.fence(self.host_of(fence)).is_none_or(|f| {
+            f.shows_on_desktop(
+                self.current_desktop.as_deref(),
+                &self.config.virtual_desktops,
+            )
+        })
     }
 
     /// 在哪个虚拟桌面显示, for the window of `id`: its host and every tab of it (empty: every
@@ -3765,6 +3789,39 @@ mod tests {
         state.sync_desktop(&[folder]);
         assert_eq!(state.item_id_for_path(&path), Some(id));
         assert!(state.config.items[&id].is_folder);
+    }
+
+    /// Review finding 4: a window that holds the inbox shows on every virtual desktop. A bound
+    /// fence merged with the inbox loses its binding, and so does a bound window the inbox joins;
+    /// other tabs take their window's desktops.
+    #[test]
+    fn a_window_with_the_inbox_stays_on_every_virtual_desktop() {
+        let mut state = test_state();
+        let inbox = state.inbox_id().unwrap();
+        let others: Vec<FenceId> = state
+            .fences()
+            .iter()
+            .filter(|f| f.id != inbox)
+            .map(|f| f.id)
+            .collect();
+        let (a, b, c) = (others[0], others[1], others[2]);
+        let bound = vec!["{D2}".to_string()];
+        state.set_virtual_desktops(a, bound.clone());
+        assert!(!state.window_holds_inbox(a));
+        // A plain fence joining a bound window takes its desktops.
+        state.attach_tab(b, a);
+        assert_eq!(state.fence(b).unwrap().virtual_desktops, bound);
+        // The inbox joining the bound window: every tab shows everywhere.
+        state.attach_tab(inbox, a);
+        assert!(state.window_holds_inbox(b));
+        for id in [a, b, inbox] {
+            assert!(state.fence(id).unwrap().virtual_desktops.is_empty(), "{id}");
+        }
+        // A bound fence merged into the inbox's window: no binding either.
+        state.set_virtual_desktops(c, bound.clone());
+        assert_eq!(state.fence(c).unwrap().virtual_desktops, bound);
+        state.attach_tab(c, inbox);
+        assert!(state.fence(c).unwrap().virtual_desktops.is_empty());
     }
 
     /// Issue #39: the inbox cannot be deleted, but 为空时自动隐藏 keeps an empty one out of sight.

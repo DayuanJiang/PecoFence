@@ -36,9 +36,28 @@ impl App {
             .collect()
     }
 
+    /// The current desktop for the menu, the page and the CLI: the one followed while the poll
+    /// runs, else read now (no switch is followed then, so the one kept may be old).
+    fn current_desktop_now(&self) -> Option<String> {
+        if self.desktop_poll {
+            self.state.current_desktop.clone()
+        } else {
+            let now = Self::read_current_desktop();
+            if now != self.state.current_desktop {
+                tracing::debug!(
+                    kept = ?self.state.current_desktop,
+                    now = ?now,
+                    "current virtual desktop read afresh (no switch is followed)"
+                );
+            }
+            now
+        }
+    }
+
     /// The desktops in Task View order as the menu, the page and the CLI show them: key, label
     /// (its Task View name, or 桌面 N), whether it is the current one.
     pub(super) fn desktop_labels(&self) -> Vec<(String, String, bool)> {
+        let current = self.current_desktop_now();
         Self::read_desktops()
             .into_iter()
             .enumerate()
@@ -46,9 +65,7 @@ impl App {
                 let label = d.name.unwrap_or_else(|| {
                     pecofence_core::i18n::format("桌面 {0}", &[(i + 1).to_string()])
                 });
-                let current = self
-                    .state
-                    .current_desktop
+                let current = current
                     .as_deref()
                     .is_some_and(|c| c.eq_ignore_ascii_case(&d.id));
                 (d.id, label, current)
@@ -228,51 +245,44 @@ impl App {
     }
 
     /// Takes in the desktops Windows lists now (saved for the next start). Fences bound to a
-    /// desktop that is gone, in every monitor layout, follow it ([`vdesk::desktop_after_change`]:
-    /// the left neighbour of a closed one, the same name or position in a new set) or show on
-    /// every desktop when nothing tells. A list that does not hold the current desktop is taken
-    /// for one Explorer is still writing, and changes nothing. Returns whether anything changed.
+    /// desktop that is gone, in every monitor layout, follow it ([`vdesk::follow`]: the left
+    /// neighbour of a closed one, the same name or position in a new set) or show on every
+    /// desktop when nothing tells; that also catches bindings brought back by a snapshot or an
+    /// import while the list stayed the same. A list that does not hold the current desktop is
+    /// taken for one Explorer is still writing, and changes nothing. Returns whether anything
+    /// changed.
     fn follow_desktops(&mut self, current: Option<&str>) -> bool {
         let now = Self::read_desktops();
         let consistent = current.is_some_and(|c| now.iter().any(|d| d.id.eq_ignore_ascii_case(c)));
-        if now.is_empty() || !consistent || now == self.state.config.virtual_desktops {
+        if now.is_empty() || !consistent {
             return false;
         }
-        let old = std::mem::replace(&mut self.state.config.virtual_desktops, now.clone());
-        self.state.mark_dirty();
-        tracing::info!(
-            before = old.len(),
-            now = now.len(),
-            ids = ?now.iter().map(|d| d.id.as_str()).collect::<Vec<_>>(),
-            "virtual desktops listed"
-        );
-        let listed = |d: &String| now.iter().any(|n| n.id.eq_ignore_ascii_case(d));
+        let old = self.state.config.virtual_desktops.clone();
+        let listed_changed = now != old;
+        if listed_changed {
+            self.state.config.virtual_desktops = now.clone();
+            self.state.mark_dirty();
+            tracing::info!(
+                before = old.len(),
+                now = now.len(),
+                ids = ?now.iter().map(|d| d.id.as_str()).collect::<Vec<_>>(),
+                "virtual desktops listed"
+            );
+        }
         let mut moved = 0;
         for layout in &mut self.state.config.layouts {
             for f in &mut layout.fences {
-                if f.virtual_desktops.iter().all(listed) {
+                let Some((keep, gone)) = vdesk::follow(&f.virtual_desktops, &old, &now) else {
                     continue;
-                }
-                let mut keep: Vec<String> = f
-                    .virtual_desktops
-                    .iter()
-                    .filter(|d| listed(d))
-                    .cloned()
-                    .collect();
-                for gone in f.virtual_desktops.iter().filter(|d| !listed(d)) {
-                    let to = vdesk::desktop_after_change(gone, &old, &now);
+                };
+                for g in &gone {
                     tracing::info!(
                         fence = %f.id,
-                        gone,
-                        to = ?to.as_ref().map(|(id, _)| id.as_str()),
-                        why = ?to.as_ref().map(|(_, why)| *why),
+                        gone = %g.id,
+                        to = ?g.to.as_ref().map(|(id, _)| id.as_str()),
+                        why = ?g.to.as_ref().map(|(_, why)| *why),
                         "fence of a virtual desktop that is gone"
                     );
-                    if let Some((to, _)) = to
-                        && !keep.iter().any(|k| k.eq_ignore_ascii_case(&to))
-                    {
-                        keep.push(to);
-                    }
                 }
                 // Nothing left to name (an empty list): every desktop, rather than none.
                 tracing::info!(
@@ -286,13 +296,32 @@ impl App {
             }
         }
         if moved > 0 {
+            self.state.mark_dirty();
             // Tab pills carry the glyph of their window's binding.
             for host in self.fences.keys().copied().collect::<Vec<_>>() {
                 self.refresh_fence(host);
             }
         }
-        self.schedule_save();
-        true
+        if listed_changed || moved > 0 {
+            self.schedule_save();
+        }
+        listed_changed || moved > 0
+    }
+
+    /// A snapshot restore, an import or a backup restore replaced the fences: those bound to
+    /// desktops Windows no longer lists follow the desktops now, not at the next list change.
+    pub(super) fn follow_desktops_after(&mut self, reason: &'static str) {
+        let current = Self::read_current_desktop();
+        let changed = self.follow_desktops(current.as_deref());
+        tracing::info!(
+            reason,
+            changed,
+            desktop = ?current,
+            "virtual desktops checked after the fences were replaced"
+        );
+        if self.desktop_poll {
+            self.state.current_desktop = current;
+        }
     }
 
     /// Binds the window of `fence` (every tab of it) to `desktops` (empty: every desktop) and
@@ -304,6 +333,12 @@ impl App {
         reason: &'static str,
     ) -> bool {
         let host = self.state.host_of(fence);
+        // 「桌面」 (and a window holding it as a tab) shows on every desktop: new desktop items
+        // land in it.
+        if !desktops.is_empty() && self.state.window_holds_inbox(host) {
+            tracing::info!(%fence, %host, ?desktops, reason, "virtual desktops refused: the window holds the inbox");
+            return false;
+        }
         let before = self.state.fence(host).map(|f| f.virtual_desktops.clone());
         if before.as_ref() == Some(&desktops) {
             tracing::info!(%fence, ?desktops, reason, "fence virtual desktops unchanged");
@@ -365,7 +400,7 @@ impl App {
             let key = if spec.eq_ignore_ascii_case("all") {
                 return Ok(Vec::new());
             } else if spec.eq_ignore_ascii_case("current") {
-                self.state.current_desktop.clone()
+                self.current_desktop_now()
             } else if let Ok(n) = spec.parse::<usize>() {
                 n.checked_sub(1)
                     .and_then(|i| desktops.get(i))

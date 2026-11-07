@@ -773,6 +773,8 @@ impl App {
             "desktopLayout": f.desktop_layout,
             "openFoldersInside": f.open_folders_inside,
             "virtualDesktops": h.virtual_desktops,
+            // 「桌面」 or a window holding it: always on every virtual desktop.
+            "inboxWindow": self.state.window_holds_inbox(f.id),
             "portal": portal,
             // 智能栅栏: its search and the last run (see `App::smart_dto`), and the magnifier.
             "smart": self.smart_dto(f.id).map(|mut s| {

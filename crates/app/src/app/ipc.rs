@@ -883,10 +883,11 @@ impl App {
                 let prop_name = prop.as_str();
                 let prop = parse_fence_prop(prop, value)?;
                 if let fence_options::FenceProp::VirtualDesktops(specs) = &prop {
-                    if self.fence_or_err(id)?.kind == FenceKind::Inbox {
+                    if self.state.window_holds_inbox(id) {
                         return Err(unsupported(
-                            "the inbox shows on every virtual desktop: new desktop items land in it",
-                        ));
+                            "the inbox, and a window that holds it as a tab, shows on every virtual desktop: new desktop items land in it",
+                        )
+                        .hint("fence detach the inbox (or this fence) from the window first"));
                     }
                     let keys = self.resolve_desktop_specs(specs).map_err(|message| {
                         IpcError::invalid_value(
