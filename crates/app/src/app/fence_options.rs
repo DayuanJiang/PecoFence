@@ -83,6 +83,7 @@ pub(super) const FENCE_PROPS: &[&str] = &[
     "portalTitleIcon",
     "hideWhenEmpty",
     "desktopLayout",
+    "freePlacement",
     "noteText",
     "scriptPath",
     "scriptInterval",
@@ -130,6 +131,8 @@ pub(super) enum FenceProp {
     HideWhenEmpty(bool),
     /// 像桌面一样排列 (the inbox only).
     DesktopLayout(bool),
+    /// 自由摆放 (the inbox only; acts while it is arranged like the desktop).
+    FreePlacement(bool),
     Layout(ViewLayout),
     Sort(SortMode),
     Reverse(bool),
@@ -159,6 +162,7 @@ impl FenceProp {
                 | Self::PortalTitleIcon(_)
                 | Self::HideWhenEmpty(_)
                 | Self::DesktopLayout(_)
+                | Self::FreePlacement(_)
                 | Self::Layout(_)
                 | Self::Sort(_)
                 | Self::Reverse(_)
@@ -333,6 +337,7 @@ pub(super) fn parse_fence_prop(
         "portalTitleIcon" => FenceProp::PortalTitleIcon(as_bool()?),
         "hideWhenEmpty" => FenceProp::HideWhenEmpty(as_bool()?),
         "desktopLayout" => FenceProp::DesktopLayout(as_bool()?),
+        "freePlacement" => FenceProp::FreePlacement(as_bool()?),
         "noteText" => FenceProp::NoteText(as_str(&["<text>"])?.replace("\r\n", "\n")),
         "scriptPath" => {
             let path = as_str(&["<full path of a script>"])?;
@@ -433,6 +438,53 @@ impl App {
         self.sync_hidden_fences();
         self.apply_fence_view(fence);
         self.schedule_save();
+    }
+
+    /// 自由摆放 of the 「桌面」 fence arranged like the desktop.
+    pub(super) fn set_fence_free_placement(&mut self, fence: FenceId, on: bool, from: &str) {
+        let cells = self.state.fence(fence).map_or(0, |f| f.desktop_cells.len());
+        tracing::info!(%fence, on, from, saved_cells = cells, "free placement switched");
+        self.state.set_free_placement(fence, on);
+        self.arrange_desktop_fence();
+        self.schedule_save();
+    }
+
+    /// 自由摆放: icons dropped on the desktop (or on the icons of 「桌面」) stay in the grid
+    /// cells they landed in. False when 「桌面」 does not place its icons freely: then they go
+    /// back to it as before.
+    pub(super) fn drop_on_free_desktop(
+        &mut self,
+        inbox: FenceId,
+        items: &[ItemId],
+        at: &crate::commands::DesktopDrop,
+    ) -> bool {
+        let Some(cells) = self
+            .fences
+            .get(&inbox)
+            .and_then(|w| w.desktop_drop_cells(at))
+        else {
+            return false;
+        };
+        let own = self
+            .state
+            .fence(inbox)
+            .is_some_and(|f| items.iter().all(|i| f.contains_item(*i)));
+        tracing::info!(
+            items = items.len(),
+            own,
+            cursor = ?at.cursor,
+            first_cell = ?cells.first().map(|c| c.1),
+            "free placement: icons dropped"
+        );
+        self.state.set_desktop_cells(inbox, &cells);
+        // The window takes the new cells first, so icons that come from another fence land in
+        // them rather than in the first free ones.
+        self.arrange_desktop_fence();
+        if !own {
+            self.move_items(items, inbox);
+        }
+        self.schedule_save();
+        true
     }
 
     /// 为空时自动隐藏 (feedback #88: every fence, not only the inbox).
@@ -663,6 +715,7 @@ impl App {
             "titleOnHover": title_on_hover,
             "hideWhenEmpty": f.hide_when_empty,
             "desktopLayout": f.desktop_layout,
+            "freePlacement": f.free_placement,
             "openFoldersInside": f.open_folders_inside,
             "portal": portal,
         })
@@ -773,6 +826,9 @@ impl App {
             FenceProp::HideWhenEmpty(on) => self.set_fence_hide_when_empty(fence, on),
             FenceProp::DesktopLayout(on) => {
                 self.set_fence_desktop_layout(fence, on, "settings or CLI")
+            }
+            FenceProp::FreePlacement(on) => {
+                self.set_fence_free_placement(fence, on, "settings or CLI")
             }
             FenceProp::Layout(layout) => {
                 // Same steps as the fence menu's 视图 items.

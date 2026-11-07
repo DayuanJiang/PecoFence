@@ -209,6 +209,7 @@ pub(super) fn on_mousemove(
         let from_portal = v.is_portal;
         v.ole_drag = true;
         v.ole_drag_press = (sx, sy);
+        let offsets = v.drag_offsets();
         let _ = v.redraw();
         drop(guard);
         // ReleaseCapture sends WM_CAPTURECHANGED synchronously: no borrow held.
@@ -237,6 +238,7 @@ pub(super) fn on_mousemove(
                         from,
                         items: ids.clone(),
                         paths: paths.clone(),
+                        offsets: offsets.clone(),
                     })
                 });
                 // Nested message loop until the button is released.
@@ -298,7 +300,19 @@ pub(super) fn on_mousemove(
                     && !from_portal
                     && matches!(r.effect, DropEffect::None | DropEffect::Move) =>
             {
-                queue.push(Command::MoveItemsToInbox { items: ids });
+                // Where the icons landed, for a 「桌面」 that places them freely (自由摆放).
+                let c = window::cursor_pos();
+                let at = DesktopDrop {
+                    cursor: (c.x, c.y),
+                    centres: offsets
+                        .iter()
+                        .map(|(id, (dx, dy))| (*id, (c.x + dx, c.y + dy)))
+                        .collect(),
+                };
+                queue.push(Command::MoveItemsToInbox {
+                    items: ids,
+                    at: Some(at),
+                });
             }
             Some(r)
                 if matches!(r.effect, DropEffect::Move | DropEffect::Copy)

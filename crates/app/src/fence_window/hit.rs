@@ -241,7 +241,10 @@ impl FenceViewState {
             None if self.bare() && !self.desktop_slots.is_empty() => {
                 // 像桌面一样排列: the cells `arrange_desktop` placed down the columns.
                 let grid = Grid::grouped(self.grid_metrics(), width_dip, n, &[]);
-                ItemLayout::Grid(grid.with_slots(self.desktop_slots.clone(), n))
+                ItemLayout::Grid(
+                    grid.with_slots(self.desktop_slots.clone(), n)
+                        .placed_freely(self.places_freely()),
+                )
             }
             None => {
                 ItemLayout::Grid(

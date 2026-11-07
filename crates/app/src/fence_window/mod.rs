@@ -5,7 +5,7 @@
 
 use crate::anchor::{self, AnchorCell};
 use crate::commands::{
-    Command, CommandQueue, TransferMode, WM_APP_DESKTOP_SHAPE, WM_APP_FADE_DONE,
+    Command, CommandQueue, DesktopDrop, TransferMode, WM_APP_DESKTOP_SHAPE, WM_APP_FADE_DONE,
     WM_APP_SET_VISIBLE, WM_APP_TAB_RAIL, WM_APP_TAB_SWAP_DONE,
 };
 use crate::icons::{IconCache, Lookup};
@@ -42,7 +42,7 @@ use pecofence_render::{
     Panel, Rect, RenderStack, Theme,
 };
 use std::cell::{Cell, RefCell};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::time::{Duration, Instant};

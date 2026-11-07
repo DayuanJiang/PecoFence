@@ -66,6 +66,14 @@ pub enum TransferMode {
     Link,
 }
 
+/// Where dragged icons landed on the desktop (screen px): the cursor, and the centre of each
+/// icon (as far from the cursor as it was when the drag started).
+#[derive(Clone, Debug, PartialEq)]
+pub struct DesktopDrop {
+    pub cursor: (i32, i32),
+    pub centres: Vec<(ItemId, (i32, i32))>,
+}
+
 #[derive(Debug)]
 #[allow(dead_code)]
 pub enum Command {
@@ -161,9 +169,17 @@ pub enum Command {
         tab: FenceId,
         to: usize,
     },
-    /// Internal drag dropped on the bare desktop: back to the inbox.
+    /// Internal drag dropped on the bare desktop: back to the inbox. `at`: where the icons
+    /// landed, for 自由摆放 (None from a test script).
     MoveItemsToInbox {
         items: Vec<ItemId>,
+        at: Option<DesktopDrop>,
+    },
+    /// 自由摆放: the grid cells the 「桌面」 fence gave its icons (new ones, or ones moved off a
+    /// fence or into a smaller work area), to be saved for this monitor setup.
+    DesktopCellsPlaced {
+        fence: FenceId,
+        cells: Vec<(ItemId, [u16; 2])>,
     },
     /// Files dropped from Explorer onto a fence with the effect the drop reported (Explorer's
     /// modifier table: Ctrl copy, Alt / Ctrl+Shift shortcut, otherwise move).

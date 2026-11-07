@@ -9,6 +9,9 @@ pub struct DesktopArea {
     pub work: RECT,
     /// Other fences' rects: cells under them stay free.
     pub covered: Vec<RECT>,
+    /// 自由摆放: the saved grid cell `[column, row]` of each icon (the fence's
+    /// `desktop_cells`); None = the icons stand down the columns in their order.
+    pub free: Option<BTreeMap<ItemId, [u16; 2]>>,
 }
 
 pub struct FenceViewState {
@@ -318,6 +321,9 @@ pub struct FenceViewState {
     /// The cells of the items (and one more for a drop after the last), content-local DIPs,
     /// from `arrange_desktop`.
     pub(super) desktop_slots: Vec<CellRect>,
+    /// 自由摆放: the grid the icons stand on and the cell (column, row) of each item, from
+    /// `arrange_desktop`; None while the icons are arranged in columns.
+    pub(super) desktop_free: Option<(super::desktop_layout::FreeGrid, Vec<(i32, i32)>)>,
     /// The icons selected when a rectangle drawn on the desktop started (kept with Ctrl or
     /// Shift); None while no rectangle is drawn.
     pub(super) desktop_band_base: Option<HashSet<usize>>,

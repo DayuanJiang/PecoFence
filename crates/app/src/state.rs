@@ -2149,6 +2149,7 @@ impl AppState {
             && f.view.reverse != on
         {
             f.view.reverse = on;
+            Self::sort_free_cells(f);
             self.dirty = true;
         }
     }
@@ -2173,6 +2174,7 @@ impl AppState {
             changed = true;
         }
         if changed {
+            Self::sort_free_cells(f);
             self.dirty = true;
         }
     }
@@ -2202,6 +2204,34 @@ impl AppState {
             f.desktop_layout = on;
             self.dirty = true;
         }
+    }
+
+    /// 自由摆放 for the 「桌面」 fence arranged like the desktop. The icon cells stay saved
+    /// while it is off, so switching it on again puts the icons back where they were.
+    pub fn set_free_placement(&mut self, id: FenceId, on: bool) {
+        if let Some(f) = self.fence_mut(id)
+            && f.free_placement != on
+        {
+            f.free_placement = on;
+            self.dirty = true;
+        }
+    }
+
+    /// 自由摆放: the grid cells `cells` of the fence's icons on this monitor setup, merged into
+    /// the saved ones. Cells of items PecoFence no longer knows go. True when something changed.
+    pub fn set_desktop_cells(&mut self, id: FenceId, cells: &[(ItemId, [u16; 2])]) -> bool {
+        let known: HashSet<ItemId> = self.config.items.keys().copied().collect();
+        let Some(f) = self.fence_mut(id) else {
+            return false;
+        };
+        let before = f.desktop_cells.clone();
+        for (item, cell) in cells {
+            f.desktop_cells.insert(*item, *cell);
+        }
+        f.desktop_cells.retain(|item, _| known.contains(item));
+        let changed = f.desktop_cells != before;
+        self.dirty |= changed;
+        changed
     }
 
     pub fn set_hide_when_empty(&mut self, id: FenceId, on: bool) {
@@ -2350,7 +2380,17 @@ impl AppState {
             changed = true;
         }
         if changed {
+            Self::sort_free_cells(f);
             self.dirty = true;
+        }
+    }
+
+    /// 自由摆放: a new sort order lines the icons up again from the top-left in that order, as
+    /// Explorer's 排序方式 does on a desktop without 自动排列图标.
+    fn sort_free_cells(f: &mut Fence) {
+        if f.free_placement && !f.desktop_cells.is_empty() {
+            tracing::info!(fence = %f.id, cells = f.desktop_cells.len(), "free placement: sort lines the icons up again");
+            f.desktop_cells.clear();
         }
     }
 
@@ -2373,6 +2413,7 @@ impl AppState {
             changed = true;
         }
         if changed {
+            Self::sort_free_cells(f);
             self.dirty = true;
         }
     }

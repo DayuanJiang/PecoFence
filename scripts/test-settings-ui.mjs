@@ -381,6 +381,7 @@ async function runTests() {
     assert(doc.getElementById('fencePortalGroup').style.display === 'none', 'Portal options shown for an ordinary fence');
     assert(doc.getElementById('fenceHideEmpty').style.display === '', 'Hide-when-empty not offered for an ordinary fence');
     assert(doc.getElementById('fenceDesktopLayout').style.display === 'none', 'Desktop layout offered for an ordinary fence');
+    assert(doc.getElementById('fenceFreePlacement').style.display === 'none', 'Free placement offered for an ordinary fence');
     const fenceHideNote = doc.querySelector('#fenceHideEmpty .s').textContent;
     assert(doc.getElementById('fenceOpenFolders').style.display === '' && !doc.querySelector('[data-fence=openFoldersInside]').classList.contains('on'), 'Open-folders-inside missing or on for an ordinary fence');
     assert(doc.getElementById('fenceTintTitleOnly').style.display === 'none', 'Title-only tint offered without a tint');
@@ -394,6 +395,7 @@ async function runTests() {
     assert(doc.querySelector('[data-fence=expandUpward]').classList.contains('on'), 'Expand upward not shown');
     assert(doc.getElementById('fenceHideEmpty').style.display === '' && doc.querySelector('[data-fence=hideWhenEmpty]').classList.contains('on'), 'Inbox hide-when-empty not shown');
     assert(doc.getElementById('fenceDesktopLayout').style.display === '' && doc.querySelector('[data-fence=desktopLayout]').classList.contains('on'), 'Inbox desktop layout not shown');
+    assert(doc.getElementById('fenceFreePlacement').style.display === '' && !doc.querySelector('[data-fence=freePlacement]').classList.contains('on'), 'Inbox free placement not shown, or on');
     assert(doc.querySelector('#fenceHideEmpty .s').textContent !== fenceHideNote, 'Inbox hide-when-empty note is the one of other fences');
     assert(doc.querySelector('[data-fence=openFoldersInside]').classList.contains('on'), 'Open-folders-inside state not shown');
     assert(doc.getElementById('fenceTintTitleOnly').style.display === '' && doc.querySelector('[data-fence=tintTitleOnly]').classList.contains('on'), 'Title-only tint not shown');
@@ -463,12 +465,17 @@ async function runTests() {
     // Arranged like the desktop, the inbox shows icons whatever its own view.
     inbox.layout = 'details'; frame.contentWindow.testRefresh();
     assert(!card.classList.contains('disabled') && !select.disabled, 'Desktop-arranged inbox: labels card greyed');
+    inbox.freePlacement = true; frame.contentWindow.testRefresh();
+    assert(doc.querySelector('[data-fence=freePlacement]').classList.contains('on'), 'Free placement state not shown');
     inbox.desktopLayout = false; frame.contentWindow.testRefresh();
     assert(greyed() && note() === '只用于图标视图', 'Details inbox: labels card not greyed');
+    // 自由摆放 is part of 像桌面一样排列: no card while that is off.
+    assert(doc.getElementById('fenceFreePlacement').style.display === 'none', 'Free placement offered while the inbox is not arranged');
     // A 「桌面」 with tabs stays a fence and shows its own view.
     inbox.desktopLayout = true; inbox.tabbed = true; frame.contentWindow.testRefresh();
     assert(greyed(), 'Tabbed inbox in details: labels card not greyed');
-    delete inbox.tabbed; inbox.layout = 'icons'; frame.contentWindow.testRefresh();
+    assert(doc.getElementById('fenceFreePlacement').style.display === 'none', 'Free placement offered for a tabbed inbox');
+    delete inbox.tabbed; delete inbox.freePlacement; inbox.layout = 'icons'; frame.contentWindow.testRefresh();
     assert(!greyed(), 'Labels card stays greyed after the inbox shows icons again');
     change(doc, 'fenceSel', 'fence-a');
   });

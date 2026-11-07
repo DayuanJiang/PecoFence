@@ -265,6 +265,7 @@ impl FenceWindow {
             opacity: 1.0,
             desktop: None,
             desktop_slots: Vec::new(),
+            desktop_free: None,
             desktop_band_base: None,
             desktop_shape_for: None,
             desktop_shape_pending: None,
@@ -1779,6 +1780,15 @@ impl FenceWindow {
             selected = v.selected.len();
         });
         selected
+    }
+
+    /// 自由摆放: the grid cells icons dropped at `at` take on this 「桌面」 (see
+    /// `FenceViewState::desktop_drop_cells`); None when it does not place its icons freely.
+    pub fn desktop_drop_cells(&self, at: &DesktopDrop) -> Option<Vec<(ItemId, [u16; 2])>> {
+        self.view
+            .borrow()
+            .as_ref()
+            .and_then(|v| v.desktop_drop_cells(at.cursor, &at.centres))
     }
 
     /// 像桌面一样排列 is on for this window.
