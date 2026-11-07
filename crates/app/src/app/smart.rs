@@ -17,6 +17,9 @@ const REPLY_TAG: usize = 0x5053_0000;
 const SOON_MS: u32 = 1_000;
 /// A second run after a change, for an Everything that took longer to see it.
 const AGAIN_MS: u32 = 4_000;
+/// Everything answers one search at a time (a new one cancels the one before): the next
+/// fence's search waits for the answer, or this long for one that never comes.
+const ANSWER_WAIT: Duration = Duration::from_secs(3);
 
 /// Where a smart fence's results came from at its last run.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -73,6 +76,10 @@ pub(super) struct SmartState {
     read_tx: mpsc::Sender<FolderRead>,
     read_rx: mpsc::Receiver<FolderRead>,
     reading: HashMap<FenceId, bool>,
+    /// The search Everything is working on (fence, sequence number, when it was sent) and the
+    /// fences whose search waits for its answer.
+    in_flight: Option<(FenceId, u16, Instant)>,
+    waiting: VecDeque<FenceId>,
     /// One watcher per smart fence with a folder (its subfolders too when it searches them).
     watchers: HashMap<FenceId, (PathBuf, DirWatcher)>,
     /// Fences to run again when `TIMER_SMART_SOON` fires, and whether a second run follows.
@@ -90,6 +97,8 @@ impl Default for SmartState {
             read_tx,
             read_rx,
             reading: HashMap::new(),
+            in_flight: None,
+            waiting: VecDeque::new(),
             watchers: HashMap::new(),
             soon: HashSet::new(),
             again: false,
@@ -183,6 +192,23 @@ impl App {
             return;
         };
         if let Some(instance) = everything::find() {
+            match self.smart.in_flight {
+                Some((busy, _, at)) if at.elapsed() < ANSWER_WAIT => {
+                    if !self.smart.waiting.contains(&id) {
+                        self.smart.waiting.push_back(id);
+                    }
+                    tracing::debug!(%id, why, %busy, queued = self.smart.waiting.len(), "smart fence: waits for Everything's answer to another search");
+                    return;
+                }
+                Some((lost, _, _)) => {
+                    tracing::info!(%lost, "smart fence: Everything did not answer; its search runs again later");
+                    if lost != id && !self.smart.waiting.contains(&lost) {
+                        self.smart.waiting.push_back(lost);
+                    }
+                    self.smart.in_flight = None;
+                }
+                None => {}
+            }
             let since = spec.within_days.and_then(|days| {
                 let start = pecofence_core::now_unix() - i64::from(days) * 86_400;
                 pecofence_platform::fileinfo::local_civil_date(start).map(|(y, m, d)| {
@@ -211,6 +237,7 @@ impl App {
                 run.query = query;
                 run.pending = Some(seq);
                 run.read = None;
+                self.smart.in_flight = Some((id, seq, Instant::now()));
                 return;
             }
         }
@@ -308,6 +335,10 @@ impl App {
             tracing::debug!(seq, "smart fence: answer to an older search dropped");
             return;
         };
+        if self.smart.in_flight.is_some_and(|(_, s, _)| s == seq) {
+            self.smart.in_flight = None;
+        }
+        self.ask_next_smart();
         let Some(spec) = self.state.smart_spec(id).cloned() else {
             return;
         };
@@ -332,6 +363,18 @@ impl App {
         entries.truncate(spec.limit as usize);
         tracing::info!(%id, total, got, kept, shown = entries.len(), "smart fence: Everything answered");
         self.smart_done(id, SmartSource::Everything, entries, total);
+    }
+
+    /// Sends the next waiting fence's search once Everything has answered the one before.
+    fn ask_next_smart(&mut self) {
+        while self.smart.in_flight.is_none() {
+            let Some(next) = self.smart.waiting.pop_front() else {
+                return;
+            };
+            if self.state.smart_spec(next).is_some() {
+                self.run_smart(next, "waited for another search");
+            }
+        }
     }
 
     /// Puts a run's results into the fence and redraws it when they changed.

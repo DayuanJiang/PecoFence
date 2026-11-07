@@ -51,13 +51,16 @@ function DownloadsScene() {
 function ClearDownloads() { Get-ChildItem -LiteralPath $PfDl -Force -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue }
 
 # A smart fence's `smart` field ({spec, source, total, shown, query}) and the names it shows.
+# JSON for `fence set` goes through PowerShell 5.1, which drops bare double quotes on the way
+# to a program: write them as \" (see smart-fences.ps1).
 function SmartOf($fence) { return (FenceGet $fence).smart }
 function SmartNames($fence) { return @(@(PfJson item list --fence $fence) | Where-Object { $_ -and $_.name } | ForEach-Object { $_.name }) }
 function SmartLine($fence) { $s = SmartOf $fence; return "source=$($s.source) total=$($s.total) shown=$($s.shown) names=$((SmartNames $fence) -join ', ') query=$($s.query)" }
-# Waits until $ok (a scriptblock over $s = the smart field, $n = the names) holds.
+# Waits until $ok (a scriptblock over $s = the smart field, $n = the names, always an array)
+# holds.
 function WaitSmart($fence, [scriptblock]$ok, $sec = 20) {
   for ($i = 0; $i -lt $sec * 2; $i++) {
-    $s = SmartOf $fence; $n = SmartNames $fence
+    $s = SmartOf $fence; $n = @(SmartNames $fence)
     if (& $ok) { return $true }
     Start-Sleep -Milliseconds 500
   }
