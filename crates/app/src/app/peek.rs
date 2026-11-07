@@ -498,7 +498,12 @@ impl App {
         self.peek_hits.clear();
         self.peek_hit = 0;
         let (dialog, before) = (self.search.dialog, self.search.before);
+        let waited = self.search.asked_at.is_some();
         self.search = Default::default();
+        // Smart fences that waited for an answer the closed search box will not get.
+        if waited {
+            self.ask_next_smart();
+        }
         // What was in front stays noted until the next Peek notes it again.
         self.search.dialog = dialog;
         self.search.before = before;

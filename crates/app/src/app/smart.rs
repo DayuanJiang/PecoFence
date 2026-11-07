@@ -19,7 +19,7 @@ const SOON_MS: u32 = 1_000;
 const AGAIN_MS: u32 = 4_000;
 /// Everything answers one search at a time (a new one cancels the one before): the next
 /// fence's search waits for the answer, or this long for one that never comes.
-const ANSWER_WAIT: Duration = Duration::from_secs(3);
+pub(super) const ANSWER_WAIT: Duration = Duration::from_secs(3);
 
 /// Where a smart fence's results came from at its last run.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -192,6 +192,14 @@ impl App {
             return;
         };
         if let Some(instance) = everything::find() {
+            // The Peek search waits for Everything's answer: it goes first.
+            if self.peek_waits_for_everything() {
+                if !self.smart.waiting.contains(&id) {
+                    self.smart.waiting.push_back(id);
+                }
+                tracing::debug!(%id, why, queued = self.smart.waiting.len(), "smart fence: waits for the Peek search's answer");
+                return;
+            }
             match self.smart.in_flight {
                 Some((busy, _, at)) if at.elapsed() < ANSWER_WAIT => {
                     if !self.smart.waiting.contains(&id) {
@@ -375,14 +383,46 @@ impl App {
     }
 
     /// Sends the next waiting fence's search once Everything has answered the one before.
-    fn ask_next_smart(&mut self) {
-        while self.smart.in_flight.is_none() {
+    /// The Peek search's query to Everything got no answer in time (a smart search cancelled
+    /// it, or Everything was busy) is sent again first.
+    pub(super) fn ask_next_smart(&mut self) {
+        if self
+            .search
+            .asked_at
+            .is_some_and(|t| t.elapsed() >= ANSWER_WAIT)
+        {
+            tracing::info!("search: Everything did not answer the Peek search; asked again");
+            self.search.asked_at = None;
+            self.search.sent.clear();
+            self.send_everything_query();
+            if self.search.asked_at.is_some() {
+                return;
+            }
+        }
+        while self.smart.in_flight.is_none() && !self.peek_waits_for_everything() {
             let Some(next) = self.smart.waiting.pop_front() else {
                 return;
             };
             if self.state.smart_spec(next).is_some() {
                 self.run_smart(next, "waited for another search");
             }
+        }
+    }
+
+    /// Whether the Peek search's query is out and its answer not in yet.
+    fn peek_waits_for_everything(&self) -> bool {
+        self.search
+            .asked_at
+            .is_some_and(|t| t.elapsed() < ANSWER_WAIT)
+    }
+
+    /// The Peek search is about to ask Everything: a smart fence's search out now would be
+    /// cancelled, so that fence asks again first after the Peek's answer.
+    pub(super) fn smart_yield_to_peek(&mut self) {
+        if let Some((id, _, _)) = self.smart.in_flight.take() {
+            self.smart.waiting.retain(|w| *w != id);
+            self.smart.waiting.push_front(id);
+            tracing::info!(%id, "smart fence: its search gives way to the Peek search");
         }
     }
 
