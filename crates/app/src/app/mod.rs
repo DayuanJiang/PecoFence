@@ -1457,6 +1457,7 @@ impl App {
                 pushed: std::cell::RefCell::new(Vec::new()),
                 expand_room: std::cell::RefCell::new(Vec::new()),
                 size_move: std::cell::RefCell::new(None),
+                defer_backdrop: std::cell::Cell::new(false),
             }),
         });
 

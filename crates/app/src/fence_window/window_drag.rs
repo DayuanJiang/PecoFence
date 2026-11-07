@@ -1,4 +1,5 @@
-//! Latest-pointer window movement, applied once per compositor tick.
+//! Latest-pointer window movement: applied on each mouse move (the backdrop catches up on the
+//! next compositor tick), on the tick for what a mouse move left, and on the release.
 use super::*;
 
 pub(super) fn passed_drag_threshold(

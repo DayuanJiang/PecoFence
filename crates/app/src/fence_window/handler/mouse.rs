@@ -334,6 +334,15 @@ pub(super) fn on_lbuttonup(
         v.remote_drag.take()
     });
     if let Some(drag) = remote {
+        let r = window::window_rect(drag.hwnd);
+        tracing::debug!(
+            started = drag.started,
+            release = ?(release.x, release.y),
+            rect = ?(r.left, r.top, r.right - r.left, r.bottom - r.top),
+            requests = drag.requests,
+            applied = drag.applied,
+            "title drag released"
+        );
         window::release_capture();
         hide_drag_feedback(&h.behavior);
         if !drag.started {

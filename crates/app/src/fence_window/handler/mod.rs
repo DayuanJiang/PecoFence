@@ -182,6 +182,8 @@ pub(super) struct HandlerCtx {
     /// The other selected fences moving along with this one in the system move loop (a title
     /// drag of a fence in the desktop selection); empty otherwise.
     pub(super) group: RefCell<Vec<GroupMember>>,
+    /// WM_MOVING messages of the system move loop in progress (for its debug line at the end).
+    pub(super) movings: Cell<u32>,
 }
 
 impl FenceWindow {
@@ -210,6 +212,7 @@ impl FenceWindow {
             merge_target: Cell::new(0isize),
             merge_at: Cell::new((i32::MIN, i32::MIN)),
             group: RefCell::new(Vec::new()),
+            movings: Cell::new(0),
         };
         let trace_test_input = cfg!(debug_assertions)
             && pecofence_core::brand::var_os("PECOFENCE_UI_TEST_WINDOWS").is_some();

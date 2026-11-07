@@ -202,6 +202,7 @@ impl FenceWindow {
             backdrops: ctx.backdrops.borrow().clone(),
             backdrop_crop: None,
             backdrop_rect: None,
+            backdrop_stale: false,
             backdrop_origin: None,
             backdrop_key: format!("backdrop:{:x}", hwnd.0 as isize),
             gpu_glass: RefCell::new(pecofence_render::gpu_glass::GpuGlass::default()),
