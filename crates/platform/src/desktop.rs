@@ -309,8 +309,15 @@ pub fn insert_above(hwnd: HWND, host: HWND) -> Result<Option<HWND>> {
         if above == hwnd {
             return Ok(None);
         }
+        // A topmost `hwnd` (show desktop just ended) leaves the topmost band in this one move:
+        // placed after a normal window it becomes a normal window; at the top of the normal
+        // band only HWND_NOTOPMOST takes it there (HWND_TOP keeps it topmost).
         let insert_after = if above.0.is_null() || (is_topmost(above) && !is_topmost(host)) {
-            HWND_TOP
+            if is_topmost(hwnd) && !is_topmost(host) {
+                HWND_NOTOPMOST
+            } else {
+                HWND_TOP
+            }
         } else {
             above
         };

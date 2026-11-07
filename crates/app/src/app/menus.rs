@@ -325,6 +325,11 @@ impl App {
             tracing::info!(cmd, %verb, count = paths.len(), "shell verb invoked");
             // Shift at the moment of choosing (Shift+click on 删除 = permanent, as in Explorer).
             let shift = window::key_down(msg::VK_SHIFT);
+            // A dialog the verb opens (Properties, a confirmation) gives the fence the keyboard
+            // back when it closes.
+            if let Some(a) = self.anchor.borrow_mut().as_mut() {
+                a.dialog_opened_from(owner);
+            }
             if let Err(e) = sm.invoke(cmd, owner, POINT { x, y }, shift) {
                 tracing::warn!(error = %e, %verb, "shell verb failed");
             }

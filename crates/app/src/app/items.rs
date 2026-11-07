@@ -439,6 +439,13 @@ impl App {
             .window_for(fence)
             .map(|w| w.hwnd())
             .unwrap_or(self.control.hwnd());
+        if !matches!(verb, "cut" | "copy")
+            && let Some(a) = self.anchor.borrow_mut().as_mut()
+        {
+            // Properties and the delete confirmation: closing them gives the fence the
+            // keyboard back with its selection.
+            a.dialog_opened_from(owner);
+        }
         if verb == "delete" {
             self.start_shell_delete(paths, owner, shift);
             return true;

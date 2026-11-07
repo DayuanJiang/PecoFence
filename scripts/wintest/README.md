@@ -96,6 +96,10 @@ Check 'new-note opens the editor' ($ed -ne [IntPtr]::Zero) "editor=$ed"
   `GreyWallpaper`, `MeanRgb`, `ExplorerIconRgb` (Explorer's own icon of a file, a reference for
   thumbnails), `OcrText` / `ToastOcr` (Windows' OCR: toasts and a release build's settings page,
   which UI Automation cannot see).
+- Z-order (zorder.ps1, dot-source `C:\pf\kit\zorder.ps1`): `[Zs]::Run` presses Win+<key> and
+  records which of the fences, the desktop windows and the test's Notepad / Explorer windows are
+  above which (as fast as EnumWindows allows, frames optional), `ZsStats` sums up how long the
+  fences were covered, topmost or over a window; `tests/fx-desktop-input.ps1` uses it for Win+D.
 - The user's own copy (user.ps1): `Ipf` / `IpfJson` / `UserLog` for the installed copy (set
   `$script:CliExe` for a portable one), `StartUser`, `WaitNoPf`; `PfUseUser` makes the item and
   state helpers read that copy; setup and uninstall by their buttons (`Wizard`, `Uninstall`,
