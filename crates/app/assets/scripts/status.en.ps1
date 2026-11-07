@@ -14,12 +14,13 @@ while ($true) {
   $cpu = [int](Get-CimInstance Win32_Processor | Measure-Object -Property LoadPercentage -Average).Average
   $os = Get-CimInstance Win32_OperatingSystem
   $mem = [int](100 - $os.FreePhysicalMemory * 100 / $os.TotalVisibleMemorySize)
-  $cpuColor = if ($cpu -gt 80) { 'red' } elseif ($cpu -gt 50) { 'orange' } else { 'green' }
-  "CPU $cpu% | color=$cpuColor icon=🧠"
-  "Memory used $mem% | color=$(if ($mem -gt 85) { 'red' } else { 'green' }) icon=📊"
+  # Finish data queries before output so a slow disk query cannot leave a partial frame.
   $disks = Get-CimInstance Win32_LogicalDisk |
     Where-Object { $_.DriveType -in 2, 3, 5, 6 -and $_.Size -gt 0 } |
     Sort-Object DeviceID
+  $cpuColor = if ($cpu -gt 80) { 'red' } elseif ($cpu -gt 50) { 'orange' } else { 'green' }
+  "CPU $cpu% | color=$cpuColor icon=🧠"
+  "Memory used $mem% | color=$(if ($mem -gt 85) { 'red' } else { 'green' }) icon=📊"
   foreach ($disk in $disks) {
     $free = [int]($disk.FreeSpace / 1GB)
     $pct = [int]($disk.FreeSpace * 100 / $disk.Size)

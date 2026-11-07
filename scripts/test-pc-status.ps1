@@ -21,6 +21,8 @@ function Get-NetIPAddress {
 }
 function Get-CimInstance {
     param([string]$ClassName)
+    # A slow query after output starts leaves a visibly incomplete streaming frame.
+    if ($lines.Count -gt 0) { throw "Partial frame visible during $ClassName query: $($lines.Count) rows" }
     switch ($ClassName) {
         'Win32_Processor' { [pscustomobject]@{ LoadPercentage = 10 } }
         'Win32_OperatingSystem' {
