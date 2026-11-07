@@ -364,12 +364,11 @@ impl App {
         // hidden, system) and get the conditions Everything cannot test.
         let now = pecofence_core::now_unix();
         let targets = spec.needs_shortcut_targets();
-        let typed = spec.everything.is_some();
         let got = hits.len();
         let mut entries: Vec<DesktopEntry> = hits
             .iter()
             .filter_map(|h| shell::stat_entry(Path::new(&h.path), EntryOrigin::UserDesktop))
-            .filter(|e| typed || entry_matches(&spec, e, targets, now))
+            .filter(|e| entry_matches(&spec, e, targets, now))
             .collect();
         // What was left out here is left out of the total too.
         let total = total.saturating_sub((got - entries.len()) as u32);
@@ -693,16 +692,20 @@ impl App {
     }
 
     /// 把筛选存为智能栅栏: a new smart fence showing what filtered fence `fence` shows now: the
-    /// folder it shows (only that folder, as the folder fence does) or its own search, and the
-    /// filter as its name condition.
+    /// folder it shows (only that folder, as the folder fence does) or its own search (folder,
+    /// conditions, time, Everything text and name), and the filter added to its name condition.
     pub(super) fn save_filter_as_smart(&mut self, fence: FenceId, x: i32, y: i32) {
         let Some(filter) = self.fence_filters.get(&fence).map(|t| t.trim().to_string()) else {
             return;
         };
         let spec = match (self.state.smart_spec(fence), self.state.portal_path(fence)) {
+            // The fence's own name condition still holds: every word must match.
             (Some(spec), _) => SmartSpec {
                 template: None,
-                name: Some(filter.clone()),
+                name: Some(match spec.name.as_deref().map(str::trim) {
+                    Some(own) if !own.is_empty() => format!("{own} {filter}"),
+                    _ => filter.clone(),
+                }),
                 ..spec.clone()
             },
             (None, Some(dir)) => SmartSpec {
@@ -724,8 +727,10 @@ impl App {
             .unwrap_or_default();
         let title = pecofence_core::i18n::format("{0}：{1}", &[base, filter]);
         let folder = spec.folder.is_some();
+        let typed = spec.everything.is_some();
+        let conditions = spec.all_of.len();
         if let Some(id) = self.create_smart_fence(spec, Some(&title), None, x, y) {
-            tracing::info!(from = %fence, %id, folder, "filter saved as a smart fence");
+            tracing::info!(from = %fence, %id, folder, typed, conditions, "filter saved as a smart fence");
         }
     }
 

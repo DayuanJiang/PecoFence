@@ -505,8 +505,8 @@ Screenshots folder, images of the last 7 days), `large` (every drive, files over
 drive, `.psd` files) and `recent` (Windows' Recent Items, its shortcuts, at most 40). Or write the
 search: `--title` and any of `--smart-folder <DIR>` (absent: every drive), `--within-days <N>`
 (created or written in the last N days), `--ext pdf,docx`, `--name-matches <TEXT>` (names matched
-as the Peek search matches them, pinyin too) and `--everything <SEARCH>` (Everything syntax sent as
-it is, in place of the conditions; the folder still applies).
+as the Peek search matches them, pinyin too) and `--everything <SEARCH>` (Everything syntax, needs
+Everything; the folder, the time window, the extensions and the name still apply).
 
 ```powershell
 pecofence-cli fence create --smart downloads

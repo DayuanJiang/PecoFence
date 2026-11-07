@@ -33,8 +33,8 @@ pub struct SmartSpec {
     /// pinyin too, not the loosest letters-in-order match). Tested by the app on every file.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
-    /// An Everything search typed by the user, sent as it is in place of the conditions (with
-    /// the folder still in front). Needs Everything.
+    /// An Everything search typed by the user, sent with the folder, the conditions and the
+    /// time window, which all still apply (as does the name). Needs Everything.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub everything: Option<String>,
     /// Most results shown, newest first.
@@ -73,10 +73,10 @@ impl SmartSpec {
         })
     }
 
-    /// The Everything search text: the folder, the conditions Everything can test, the time
-    /// window (`since_date`, see [`everything_date`]) and, over every drive, the system folders
-    /// left out. The app tests every condition
-    /// again on the answer (`matches`), so a condition left out here only costs results.
+    /// The Everything search text: the folder, the user's own Everything text, the conditions
+    /// Everything can test, the time window (`since_date`, see [`everything_date`]) and, over
+    /// every drive, the system folders left out. The app tests every condition again on the
+    /// answer (`matches`), so a condition left out here only costs results.
     pub fn everything_query(&self, since_date: Option<&str>) -> String {
         let mut terms: Vec<String> = Vec::new();
         match &self.folder {
@@ -104,7 +104,6 @@ impl SmartSpec {
             && !raw.is_empty()
         {
             terms.push(raw.to_string());
-            return terms.join(" ");
         }
         for cond in &self.all_of {
             if let Some(t) = everything_term(cond) {
@@ -414,17 +413,6 @@ mod tests {
     }
 
     #[test]
-    fn typed_everything_text_replaces_the_conditions() {
-        let mut spec = Template::Downloads.spec(&folders()).unwrap();
-        spec.everything = Some("*.pdf invoice".into());
-        assert_eq!(
-            spec.everything_query(Some("2026-10-31")),
-            r#""C:\Users\pf\Downloads\" *.pdf invoice"#
-        );
-        assert!(!spec.works_without_everything());
-    }
-
-    #[test]
     fn conditions_become_everything_terms() {
         let t = |c: Cond| everything_term(&c);
         assert_eq!(
@@ -494,6 +482,36 @@ mod tests {
         assert_eq!(spec.everything_max(), spec.limit);
         spec.all_of.push(Cond::IdleDays { min: 30 });
         assert_eq!(spec.everything_max(), SmartSpec::NAME_FILTER_ASK);
+    }
+
+    /// The user's own Everything text narrows the search: the folder, the conditions and the
+    /// time window go with it, and the name and conditions are tested on the answer as always.
+    #[test]
+    fn typed_everything_text_keeps_the_conditions_and_the_window() {
+        let mut spec = Template::Downloads.spec(&folders()).unwrap();
+        spec.everything = Some("  invoice|receipt ".into());
+        spec.all_of.push(Cond::Ext(vec!["pdf".into()]));
+        assert_eq!(
+            spec.everything_query(Some("2026-10-31")),
+            r#""C:\Users\pf\Downloads\" invoice|receipt file: ext:pdf <dm:>=2026-10-31|dc:>=2026-10-31>"#
+        );
+        assert!(!spec.works_without_everything());
+        spec.name = Some("2026".into());
+        let now = 1_800_000_000;
+        let f = |n: &str| ItemFacts {
+            file_name: n.into(),
+            ..Default::default()
+        };
+        assert!(spec.matches(&f("invoice 2026.pdf"), now, now));
+        assert!(!spec.matches(&f("invoice 2025.pdf"), now, now), "name");
+        assert!(
+            !spec.matches(&f("invoice 2026.docx"), now, now),
+            "condition"
+        );
+        assert!(
+            !spec.matches(&f("invoice 2026.pdf"), now - 8 * 86_400, now),
+            "time window"
+        );
     }
 
     #[test]

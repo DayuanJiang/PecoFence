@@ -668,7 +668,7 @@ pub struct SmartArgs {
     /// A smart fence over this folder (with --everything, --within-days, --ext)
     #[arg(long, value_name = "DIR", conflicts_with_all = ["portal", "tool", "script", "template"])]
     pub smart_folder: Option<String>,
-    /// Smart fence: an Everything search sent as it is (needs Everything)
+    /// Smart fence: an Everything search, narrowed by the other options too (needs Everything)
     #[arg(long, value_name = "SEARCH", conflicts_with_all = ["portal", "tool", "script", "template"])]
     pub everything: Option<String>,
     /// Smart fence: only files written in the last N days

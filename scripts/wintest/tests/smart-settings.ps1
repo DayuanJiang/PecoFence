@@ -61,7 +61,7 @@ PageSet 'smartLimit' '50'
 Check 'show at most 50' (WaitSmart $D { $s.spec.limit -eq 50 } 10) (SmartLine $D)
 Js "(() => { document.getElementById('smartAdvanced').open = true; return true; })()" | Out-Null
 PageType '#smartEverything' 'meeting'; [G]::Press(0x0D); Start-Sleep -Milliseconds 800
-Check 'Everything syntax replaces the conditions' (WaitSmart $D { $s.spec.everything -eq 'meeting' -and $s.shown -eq 1 } 15) (SmartLine $D)
+Check 'Everything syntax narrows the search with the conditions' (WaitSmart $D { $s.spec.everything -eq 'meeting' -and $s.shown -eq 1 } 15) (SmartLine $D)
 PageType '#smartEverything' ''; [G]::Press(0x0D); Start-Sleep -Milliseconds 800
 Check 'and gone again' (WaitSmart $D { $null -eq $s.spec.everything -and $s.shown -gt 1 } 15) (SmartLine $D)
 $t = Js "document.querySelector('#fenceSmartGroup [data-fence=portalTitleIcon]').classList.contains('on')"
