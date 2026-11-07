@@ -251,8 +251,9 @@ pub struct App {
     device_retry_pending: bool,
     device_retry_ms: u32,
     /// GPU memory at the first idle point after startup or the last rebuild that handed it
-    /// back, and when that rebuild ran (`motion::hand_back_gpu_memory`).
-    gpu_baseline: Option<u64>,
+    /// back, and when that rebuild ran (`motion::hand_back_gpu_memory`). With `true` it is the
+    /// private commit instead: software rendering reports no GPU memory.
+    gpu_baseline: Option<(bool, u64)>,
     gpu_rebuilt: Option<Instant>,
     /// `--test-script` state while a script runs.
     test: Option<testscript::TestScript>,
