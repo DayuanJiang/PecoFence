@@ -539,6 +539,9 @@ impl FenceDropHandler {
             .is_some_and(|it| pecofence_platform::shell::is_recycle_bin_path(&it.path));
         let effect = match self.kind {
             DropKind::None => DropEffect::None,
+            // A smart fence's pill takes no link and no shell items either (they would land in
+            // the tab shown instead).
+            DropKind::Url | DropKind::Shell if spot.self_drop => DropEffect::None,
             // A link is written as a new file: into a folder item, but not into the bin.
             DropKind::Url if on_bin => DropEffect::None,
             // A browser usually offers COPY|LINK: Link when it may, else the best it allows.
@@ -793,6 +796,16 @@ impl DropHandler for FenceDropHandler {
             let same_volume =
                 dragdrop::same_volume(self.source_volume.take().as_deref(), dest.as_deref());
             let to = tab_fence.unwrap_or(active);
+            // Over its own fence, or over a pill that takes nothing (a smart fence's): whatever
+            // the drag carries, nothing lands in the tab shown instead.
+            if spot.self_drop {
+                tracing::info!(
+                    ?kind,
+                    internal = internal.is_some(),
+                    "drop refused: its own fence or a tab that takes nothing"
+                );
+                break 'resolve DropEffect::None;
+            }
             match kind {
                 DropKind::None => DropEffect::None,
                 DropKind::Url => {
