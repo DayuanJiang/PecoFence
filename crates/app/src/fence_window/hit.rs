@@ -541,6 +541,15 @@ impl FenceViewState {
             return None;
         }
         let y = y + self.scroll_y;
+        if self.bare() {
+            // 像桌面一样排列: as on the Windows desktop only the icon and its name take a press;
+            // the rest of a cell is desktop, where a press starts a rectangle (a press at the top
+            // right of a cell dragged the whole 「桌面」 fence, then the Recycle Bin).
+            let m = self.grid_metrics();
+            return layout
+                .hit_test(x, y, self.items.len())
+                .filter(|&i| on_icon_or_label(&m, &layout.cell(i), x, y));
+        }
         if self.item_motion.is_empty() {
             return layout.hit_test(x, y, self.items.len());
         }
@@ -555,4 +564,14 @@ impl FenceViewState {
             c.contains(x, y)
         })
     }
+}
+
+/// The icon of `cell` (with a few DIPs of slack) or the name under it, in content DIPs.
+pub(super) fn on_icon_or_label(m: &GridMetrics, cell: &CellRect, x: f32, y: f32) -> bool {
+    const SLACK: f32 = 4.0;
+    let left = cell.x + (cell.w - m.icon) / 2.0 - SLACK;
+    let top = cell.y + m.icon_top - SLACK;
+    let size = m.icon + 2.0 * SLACK;
+    let on_icon = x >= left && x < left + size && y >= top && y < top + size;
+    on_icon || m.label_rect(*cell).contains(x, y)
 }

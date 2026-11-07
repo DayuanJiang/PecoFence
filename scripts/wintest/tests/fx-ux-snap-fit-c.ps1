@@ -34,7 +34,9 @@ Case 'S6 a press beside the top icon of the last column of the Desktop fence'
 # the Desktop fence is one column wide, as in the review).
 $rows = @(); $ok = 0
 $right = (Rect (DumpOf $ib.title).hwnd).R
-foreach ($pt in @(@(($right - 16), 8), @(($right - 22), 12), @(($right - 10), 20))) {
+$order0 = (@(PfJson item list --fence inbox) | ForEach-Object { $_.name }) -join ', '
+# Beside the top icon of the last column, off the icon and its name (those take an icon drag).
+foreach ($pt in @(@(($right - 16), 8), @(($right - 8), 20), @(($right - 10), 60))) {
   $h = (DumpOf $ib.title).hwnd
   $before = WinRect $h
   $hit = NcHit $h $pt[0] $pt[1]
@@ -51,6 +53,8 @@ foreach ($pt in @(@(($right - 16), 8), @(($right - 22), 12), @(($right - 10), 20
 }
 Shot 's6-after-drags'
 Check 'a drag from beside the first icon leaves the Desktop fence in place (3 points)' ($ok -eq 3) "$($rows -join ' | ')"
+$order1 = (@(PfJson item list --fence inbox) | ForEach-Object { $_.name }) -join ', '
+Check 'and it drags no icon either (a rectangle; the order stays)' ($order1 -eq $order0) "before [$order0] after [$order1]"
 
 Case 'C16 a Ctrl rectangle on the desktop while a file goes away'
 $ok = 0; $rows = @()
