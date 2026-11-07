@@ -1705,6 +1705,20 @@ pub fn last_shown(layouts: &[Layout]) -> Option<usize> {
 }
 
 impl Config {
+    /// 在哪个虚拟桌面显示 is in use: some fence of a monitor layout or of a snapshot is bound to
+    /// virtual desktops, or 「每个虚拟桌面各用一套栅栏」 is on. Only then is `virtual_desktops`
+    /// (the desktops and their Task View names) kept in the file.
+    pub fn uses_virtual_desktops(&self) -> bool {
+        let bound = |layouts: &[Layout]| {
+            layouts
+                .iter()
+                .any(|l| l.fences.iter().any(|f| !f.virtual_desktops.is_empty()))
+        };
+        self.settings.per_desktop_fences
+            || bound(&self.layouts)
+            || self.snapshots.iter().any(|s| bound(&s.layouts))
+    }
+
     /// Most paths `search_history` keeps; the least used go first.
     pub const SEARCH_HISTORY_MAX: usize = 300;
 
@@ -1991,6 +2005,39 @@ mod tests {
             work_h: 1040.0,
             anchor: Anchor::LeftTop,
         }
+    }
+
+    /// Review finding C: the desktop list is kept only while the feature is in use: a fence of a
+    /// layout or a snapshot bound to desktops, or the switch on. A fresh configuration writes no
+    /// `virtualDesktops` anywhere.
+    #[test]
+    fn virtual_desktops_are_in_use_only_with_a_binding_or_the_switch() {
+        let mut c = Config::default();
+        c.layouts.push(Layout {
+            fingerprint: Vec::new(),
+            fences: vec![Fence::new("a", FenceKind::Virtual, note_geo())],
+            shown: 0,
+        });
+        assert!(!c.uses_virtual_desktops());
+        let v = serde_json::to_value(&c).unwrap();
+        assert!(!v.to_string().contains("virtualDesktops"), "{v}");
+        c.settings.per_desktop_fences = true;
+        assert!(c.uses_virtual_desktops());
+        c.settings.per_desktop_fences = false;
+        let mut snap = c.layouts.clone();
+        snap[0].fences[0].virtual_desktops = vec!["{A}".into()];
+        c.snapshots.push(Snapshot {
+            id: Uuid::new_v4(),
+            name: "s".into(),
+            ts: 0,
+            layouts: snap.clone(),
+            notes: HashMap::new(),
+            scripts: HashMap::new(),
+        });
+        assert!(c.uses_virtual_desktops(), "a bound fence in a snapshot");
+        c.snapshots.clear();
+        c.layouts = snap;
+        assert!(c.uses_virtual_desktops(), "a bound fence in a layout");
     }
 
     /// A fence on every virtual desktop writes no `virtualDesktops` field (configs stay as they

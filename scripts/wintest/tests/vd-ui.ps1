@@ -45,10 +45,16 @@ Pf fence create --title Games --rect '600,80,420,240' | Out-Null
 ParkPointer
 Start-Sleep -Seconds 2
 $plain = TitleCrop 'Games' 'title-plain'
+Pf config export "$PfRun\vd-fresh.json" | Out-Null
+$x = Get-Content "$PfRun\vd-fresh.json" -Raw -Encoding UTF8
+Check 'an export with no fence bound and the switch off has no desktop list' (-not ($x -match 'virtualDesktops')) ''
 
 Case 'the glyph and its infotip'
 Pf fence set Games virtualDesktops 1 | Out-Null
 Start-Sleep -Seconds 1
+Pf config export "$PfRun\vd-bound.json" | Out-Null
+$x = Get-Content "$PfRun\vd-bound.json" -Raw -Encoding UTF8 | ConvertFrom-Json
+Check 'bound: the export keeps the desktop list' (@($x.virtualDesktops).Count -eq 2 -and $x.virtualDesktops[1].name -eq 'Games') "list=$($x.virtualDesktops | ConvertTo-Json -Compress)"
 $d = DumpOf 'Games'
 Check 'dump: Games has the desktop mark naming Work' ($d.raw -match 'desktop_tip=Some\("Only on “Work”"\)') ($d.raw -replace '.*(off_desktop=.*)', '$1')
 $marked = TitleCrop 'Games' 'title-marked'
@@ -87,6 +93,9 @@ $d = DumpOf 'Games'
 $back = TitleCrop 'Games' 'title-back'
 Check 'dump: no mark' ($d.raw -match 'desktop_tip=None') ($d.raw -replace '.*(desktop_tip=.*)', '$1')
 Check 'the title row looks as before' ([Px]::Diff($plain, $back, 10, 120, 6, 30) -lt 2) "diff=$([math]::Round([Px]::Diff($plain, $back, 10, 120, 6, 30), 1))"
+Pf config export "$PfRun\vd-unbound.json" | Out-Null
+$x = Get-Content "$PfRun\vd-unbound.json" -Raw -Encoding UTF8
+Check 'nothing bound again: the export drops the desktop list' (-not ($x -match 'virtualDesktops')) ''
 
 Case 'tabs of a bound window'
 Pf fence create --title Mods --rect '600,420,300,160' | Out-Null
