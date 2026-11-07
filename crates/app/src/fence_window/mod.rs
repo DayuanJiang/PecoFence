@@ -126,6 +126,8 @@ pub struct Behavior {
     pub backdrop: std::cell::Cell<BackdropMode>,
     /// Rolled fences expand on a single title click (hover peek off while set).
     pub click_to_expand: std::cell::Cell<bool>,
+    /// How long the pointer rests on a rolled fence before it expands (`rollUp.hoverSpeed`).
+    pub hover_speed: std::cell::Cell<pecofence_core::HoverSpeed>,
     /// Title row drawn only while hovered; at rest the plate starts at the content.
     pub title_on_hover: std::cell::Cell<bool>,
     /// Title (or tab strip) position in the title row (`titleAlign`).
@@ -192,6 +194,11 @@ pub struct SizeMove {
 }
 
 impl Behavior {
+    /// The wait before a rolled fence expands under the pointer or a dragged file.
+    pub fn hover_open_ms(&self) -> u32 {
+        self.hover_speed.get().delay_ms(Tooltip::hover_delay_ms())
+    }
+
     /// `rect`, `hwnd`'s window rectangle, without the push shift: what the layout records.
     pub fn resting_rect(&self, hwnd: HWND, mut rect: RECT) -> RECT {
         if let Some(p) = self

@@ -177,7 +177,7 @@
         <div class="side">
           <ol class="steps">
             <li data-at="0.3"><span class="n">1</span><p>在桌面空白处按住鼠标，拖出一个框。框不要碰到已有的栅栏。</p></li>
-            <li data-at="2.5"><span class="n">2</span><p>松开鼠标，点<b>「在此新建栅栏」</b>。</p></li>
+            <li data-at="2.5"><span class="n">2</span><p>松开鼠标，点框右下角的<b>「新建栅栏」</b>。</p></li>
             <li data-at="3.9"><span class="n">3</span><p>把图标拖进新栅栏。</p></li>
             <li data-at="6.7"><span class="n">4</span><p>右键标题栏，选<b>「重命名…」</b>，输入名字后按 <kbd>Enter</kbd>。</p></li>
           </ol>
@@ -248,6 +248,7 @@
           <aside class="tip">
             <h3>小提示</h3>
             <p>不想鼠标一停就展开，可以在「设置」→「常规」→「收起与展开」里把「收起的栅栏怎么展开」改成「单击标题时」，以后点一下标题栏才展开，再点一下就收起。选「鼠标停在上面时」（默认）或「单击标题时」，拖着文件停在收起的标题栏上，它都会展开，方便把文件放进去；选「只在双击标题或点箭头时」，就只能双击标题栏或点箭头展开。</p>
+            <p>展开得太快或太慢，可以在它下面的「展开快慢」里选「快」或「慢」。</p>
           </aside>
         </div>
       </div>
@@ -384,6 +385,7 @@
           <aside class="tip">
             <h3>小提示</h3>
             <p>托盘菜单里的「立即应用整理规则」效果一样。想一步建好栅栏和规则，可以用「快速添加」里的按钮。点「添加条件」可以给一条规则再加条件，全部符合的才放进目标栅栏。规则右边的「编辑」用来修改，「上移」和「下移」用来调整顺序。</p>
+            <p>更快的办法：右键一个文件，选<b>「以后把 .pdf 文件都放到这里」</b>（菜单里显示的是这个文件的扩展名）。以后这种文件会自动放进这个栅栏。</p>
           </aside>
         </div>
       </div>
@@ -550,6 +552,8 @@
           <aside class="tip">
             <h3>小提示</h3>
             <p>托盘菜单里的「在桌面显示文件夹」可以直接选文档、下载、图片等文件夹。把文件从这里拖到普通栅栏或桌面上，文件会移到桌面。不想要了就右键标题栏选「删除栅栏」，文件夹和里面的文件都还在。</p>
+            <p>在最上层的文件夹里，单击标题前的小文件夹图标，就用资源管理器打开这个文件夹。</p>
+            <p>也可以在桌面空白处拖出一个框，松开后点框右下角的<b>「在此显示文件夹…」</b>，文件夹栅栏就放在框的位置。</p>
             <p>普通栅栏里双击文件夹，默认用资源管理器打开。想让它也在栅栏里打开，右键标题栏选「栅栏选项…」，打开<b>「双击文件夹或文件夹快捷方式时在此栅栏内打开」</b>。点向上箭头、按 <kbd>Backspace</kbd> 或按鼠标的后退键，栅栏就回到原来的图标。</p>
           </aside>
         </div>
@@ -929,7 +933,7 @@ while ($true) {
             <table class="ap-table" aria-labelledby="keys-desktop">
               <tbody>
                 <tr><th scope="row">双击空白处</th><td>隐藏所有栅栏，再双击一次显示</td></tr>
-                <tr><th scope="row">在空白处拖出一个框</th><td>选中框碰到的栅栏。没碰到栅栏时，松开后可以点「在此新建栅栏」</td></tr>
+                <tr><th scope="row">在空白处拖出一个框</th><td>选中框碰到的栅栏。没碰到栅栏时，框的右下角会出现「新建栅栏」和「在此显示文件夹…」两个小按钮，几秒后自动消失</td></tr>
                 <tr><th scope="row">按住 <kbd>Ctrl</kbd> 或 <kbd>Shift</kbd> 拖框</th><td>在已选的栅栏之外再加几个</td></tr>
                 <tr><th scope="row">按住其中一个的标题栏拖动</th><td>选中的栅栏一起移动</td></tr>
                 <tr><th scope="row">单击空白处</th><td>取消选择</td></tr>
@@ -1002,6 +1006,8 @@ while ($true) {
                 <tr><th scope="row"><kbd>Ctrl</kbd>+<kbd>A</kbd></th><td>全选</td></tr>
                 <tr><th scope="row">方向键、<kbd>Home</kbd>、<kbd>End</kbd>、<kbd>PageUp</kbd>、<kbd>PageDown</kbd></th><td>移动选择，同时按住 <kbd>Shift</kbd> 就连选</td></tr>
                 <tr><th scope="row"><kbd>Ctrl</kbd>+方向键</th><td>只移动焦点框，选择不变。再按 <kbd>Ctrl</kbd>+<kbd>空格</kbd> 选中或取消</td></tr>
+                <tr><th scope="row"><kbd>Tab</kbd> / <kbd>Shift</kbd>+<kbd>Tab</kbd></th><td>把键盘移到下一个或上一个栅栏</td></tr>
+                <tr><th scope="row">速览时按 <kbd>Tab</kbd> 或方向键</th><td>键盘进到第一个栅栏，选中它的第一个图标</td></tr>
                 <tr><th scope="row">输入名字的开头</th><td>跳到这个图标</td></tr>
                 <tr><th scope="row"><kbd>Esc</kbd></th><td>取消选择</td></tr>
               </tbody>
@@ -1050,6 +1056,8 @@ while ($true) {
                 <tr><th scope="row">双击子文件夹</th><td>在栅栏里打开</td></tr>
                 <tr><th scope="row"><kbd>Backspace</kbd>、<kbd>Alt</kbd>+<kbd>↑</kbd>、鼠标的后退键，或点标题栏最左边的向上箭头</th><td>返回上一级</td></tr>
                 <tr><th scope="row">鼠标的前进键</th><td>回到刚离开的文件夹</td></tr>
+                <tr><th scope="row"><kbd>Alt</kbd>+<kbd>←</kbd> / <kbd>Alt</kbd>+<kbd>→</kbd></th><td>返回上一级 / 回到刚离开的文件夹</td></tr>
+                <tr><th scope="row">在最上层的文件夹里单击标题前的文件夹图标</th><td>用资源管理器打开这个文件夹</td></tr>
               </tbody>
             </table>
             <p class="ap-note">普通栅栏打开了「双击文件夹或文件夹快捷方式时在此栅栏内打开」以后，双击文件夹也在栅栏里打开，按同样的键回到原来的图标。</p>

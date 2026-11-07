@@ -261,7 +261,8 @@ hidden when PecoFence exits, so they do not flash at the next sign-in; default o
 `hideInboxWhenIconsShown` (while `hideRealIcons` is off, the inbox
 fence shows no window and its items only show among the Windows desktop icons; a tab or a host of
 tabs stays; default off), `offerNewFence` (a rectangle drawn on empty desktop that touches no fence
-offers 「在此新建栅栏」; default on), `featureTips` (「功能提示」: one-time cards in the corner when a
+shows two small buttons at its bottom-right corner, 「新建栅栏」 and 「在此显示文件夹…」;
+default on), `featureTips` (「功能提示」: one-time cards in the corner when a
 feature would help, such as rolling up fences once there are many, showing a folder opened often on
 the desktop, or a rule for files of one type dragged into one fence; each shows once; default on),
 `autostart`, `peek.enabled`, `peek.doubleCtrl` (`true` makes
@@ -283,7 +284,10 @@ column; default top),
 `clickToExpand` true expands a rolled fence on one title click, rolls an open one up on the next,
 and ignores `hoverPeek` for the pointer (the page
 keeps `hoverPeek` on with it, so a file dragged onto a rolled title still expands it); both false
-leaves the double-click and the chevron; default hover), `rollUp.pushNeighbors` (an expanded fence pushes the
+leaves the double-click and the chevron; default hover), `rollUp.hoverSpeed` (the page's 「展开快慢」:
+how long the pointer or a dragged file rests on a rolled fence before it expands, `fast` 150 ms,
+`normal` Windows' mouse hover time (400 ms unless changed), `slow` 1 s; default `normal`),
+`rollUp.pushNeighbors` (an expanded fence pushes the
 fences stacked below it down and they slide back when it rolls up; their `rect` stays where it was,
 default on), `rollUp.titleOnHover` (the title row folds away until the
 pointer is over the fence; for every fence whose `titleOnHover` is `default`),

@@ -57,6 +57,7 @@ use windows_core::Result;
 mod arrange;
 mod dnd;
 mod everything_setup;
+mod ext_rule;
 mod feedback;
 mod fence_options;
 mod fences;
@@ -64,6 +65,7 @@ mod fileops;
 mod group;
 mod ipc;
 mod items;
+mod keyfocus;
 mod live_wallpaper;
 mod menu_frames;
 mod menus;
@@ -339,6 +341,8 @@ pub struct App {
     undo: Vec<undo::UndoStep>,
     /// The 「已删除栅栏」 notice with 撤销, and the fence it puts back.
     undo_notice: Option<(crate::notice::Notice, FenceId)>,
+    /// The 「新建栅栏」 / 「在此显示文件夹…」 buttons after a desktop marquee, with its rectangle.
+    marquee_offer: Option<(crate::marquee_offer::MarqueeOffer, RECT)>,
     /// The welcome, what's-new and 对话框跳转 notices may show (not under a test script or
     /// `--exit-after`).
     notices: bool,
@@ -1495,6 +1499,7 @@ impl App {
                 click_to_expand: std::cell::Cell::new(
                     state.config.settings.roll_up.click_to_expand,
                 ),
+                hover_speed: std::cell::Cell::new(state.config.settings.roll_up.hover_speed),
                 title_on_hover: std::cell::Cell::new(state.config.settings.roll_up.title_on_hover),
                 title_align: std::cell::Cell::new(state.config.settings.title_align),
                 tab_bar: std::cell::Cell::new(state.config.settings.tab_bar),
@@ -1612,6 +1617,7 @@ impl App {
             welcome: None,
             undo: Vec::new(),
             undo_notice: None,
+            marquee_offer: None,
             notices: args.exit_after_ms.is_none() && args.test_script.is_none(),
             tip_drags: HashMap::new(),
             settings_ring: None,
@@ -2290,6 +2296,8 @@ impl App {
             Command::PortalEnter { fence, path } => self.portal_enter(fence, &path),
             Command::PortalUp(fence) => self.portal_up(fence),
             Command::PortalForward(fence) => self.portal_forward(fence),
+            Command::FocusNextFence { from, back } => self.focus_next_fence(from, back),
+            Command::OpenPortalFolder(fence) => self.open_portal_folder(fence, "title glyph"),
             Command::SwitchTab { host, tab } => self.switch_tab(host, tab),
             Command::SetColumnWidths { fence, widths } => {
                 self.state.set_column_widths(fence, widths);
@@ -2550,6 +2558,7 @@ impl App {
             Command::ScriptRowClicked { fence, row } => self.script_row_clicked(fence, row),
             Command::NoteEdited { fence, text } => self.note_edited(fence, &text),
             Command::NewFenceRect(rect) => self.offer_new_fence(rect),
+            Command::MarqueeOffer(event) => self.on_marquee_offer(event),
             Command::DesktopMarquee(event) => self.on_desktop_marquee(event),
             Command::ClearFenceSelection => self.set_fence_selection(Vec::new()),
             Command::EndItemSelection { except } => self.end_item_selection(except),

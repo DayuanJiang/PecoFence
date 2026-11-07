@@ -2423,6 +2423,11 @@ impl FenceChrome {
                         ))?;
                         session.draw_text("\u{E74A}", &self.title_glyph_format, &slot, &ink);
                     } else {
+                        // At the root the shown tab's glyph opens the folder in Explorer.
+                        if tab.active {
+                            let box_r = glyph_up_square(tab_glyph_centre(caption_x), title_h);
+                            draw_up_box_fill(session, &backdrop, theme, scale, box_r, state, ta)?;
+                        }
                         session.draw_text("\u{E8B7}", &self.title_glyph_format, &slot, &brush);
                     }
                 }
@@ -2486,24 +2491,25 @@ impl FenceChrome {
             );
             if deco.folder_icon {
                 // Folder glyph (E8B7) aligned with the title baseline. Inside a subfolder it is
-                // the up button (E74A), as in a folder tab.
+                // the up button (E74A), as in a folder tab; at the root it opens the folder in
+                // Explorer, with the same hover fill and pressed look.
                 let slot = Rect::from_xywh(x - 2.0, 0.0, 20.0, title_h);
-                if deco.up_button {
-                    let box_r = glyph_up_square(x + 8.0, title_h);
-                    draw_up_box_fill(session, &backdrop, theme, scale, box_r, state, title_a)?;
-                    session.draw_text(
-                        "\u{E74A}",
-                        &self.title_glyph_format,
-                        &slot,
-                        if state.up_pressed {
-                            &tertiary
-                        } else {
-                            &secondary
-                        },
-                    );
-                } else {
-                    session.draw_text("\u{E8B7}", &self.title_glyph_format, &slot, &secondary);
-                }
+                let box_r = glyph_up_square(x + 8.0, title_h);
+                draw_up_box_fill(session, &backdrop, theme, scale, box_r, state, title_a)?;
+                session.draw_text(
+                    if deco.up_button {
+                        "\u{E74A}"
+                    } else {
+                        "\u{E8B7}"
+                    },
+                    &self.title_glyph_format,
+                    &slot,
+                    if state.up_pressed {
+                        &tertiary
+                    } else {
+                        &secondary
+                    },
+                );
                 x += TitleDeco::ICON_W;
             }
             let fx = legible

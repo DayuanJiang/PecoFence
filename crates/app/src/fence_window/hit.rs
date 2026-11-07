@@ -82,12 +82,26 @@ impl FenceViewState {
         y >= 0.0 && y < self.row_metrics_of(ViewLayout::Details).header_h
     }
 
+    /// At its root folder a portal's title glyph opens that folder in Explorer (#192); inside
+    /// a subfolder the same glyph is the up button. A left tab column has no glyph button at
+    /// the root, and a folder that cannot be found opens nothing.
+    pub(super) fn glyph_opens_folder(&self) -> bool {
+        self.is_portal
+            && self.deco.folder_icon
+            && !self.deco.up_button
+            && !self.portal_missing
+            && !self.tabs_on_rail()
+    }
+
     /// Is the client-pixel point on the portal "up" button? A tab strip in the title row has it
     /// on the shown tab's folder glyph (`FenceChrome::tab_up_box`); a left tab column at the end
     /// of the shown tab's row (`rail_up_box`); a single title on its folder glyph
-    /// (`FenceChrome::lone_up_box`), or at the far left while the glyph is hidden.
+    /// (`FenceChrome::lone_up_box`), or at the far left while the glyph is hidden. At the
+    /// portal's root the glyph is the same button, opening the folder instead
+    /// ([`Self::glyph_opens_folder`]).
     pub(super) fn up_button_at(&self, x_px: i32, y_px: i32) -> bool {
-        if !self.deco.up_button {
+        let opens = self.glyph_opens_folder();
+        if !self.deco.up_button && !opens {
             return false;
         }
         let scale = self.scale();
@@ -96,7 +110,11 @@ impl FenceViewState {
             // The pill is where it is drawn (sliding, dragged); a scrolled strip's cut-off part
             // takes no click (`tab_at`). A tab without its folder glyph has no button.
             let i = self.active_index();
-            let Some(t) = self.tabs.get(i).filter(|t| t.up_button && t.folder_icon) else {
+            let Some(t) = self
+                .tabs
+                .get(i)
+                .filter(|t| (t.up_button || opens) && t.folder_icon)
+            else {
                 return false;
             };
             let (Some(&tab_x), Some(&(_, tab_w))) = (

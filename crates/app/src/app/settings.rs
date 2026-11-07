@@ -1113,6 +1113,7 @@ impl App {
             .behavior
             .click_to_expand
             .set(new.roll_up.click_to_expand);
+        self.ctx.behavior.hover_speed.set(new.roll_up.hover_speed);
         self.ctx
             .behavior
             .title_on_hover
@@ -1213,6 +1214,7 @@ impl App {
         }
         pecofence_core::i18n::set_language(language);
         tracing::info!(language = language.tag(), "interface language changed");
+        self.localize_auto_names();
         if let Some(host) = &self.settings {
             host.update_language();
         }
@@ -1220,6 +1222,52 @@ impl App {
             window.redraw();
         }
         self.push_settings_state();
+    }
+}
+
+impl App {
+    /// The first start's fences (程序, 文件夹, 文件与文档, 桌面) and rules keep their names in the
+    /// interface language until the user renames them: a name that is PecoFence's own in some
+    /// language becomes the same name in the new one. Every saved layout, not only this one.
+    fn localize_auto_names(&mut self) {
+        const FENCES: &[&str] = &["程序", "文件夹", "文件与文档"];
+        const INBOX: &[&str] = &["桌面"];
+        const RULES: &[&str] = &["程序与快捷方式", "文件夹", "文件与文档"];
+        let shown: Vec<FenceId> = self.state.fences().iter().map(|f| f.id).collect();
+        let mut renamed = Vec::new();
+        for layout in &mut self.state.config.layouts {
+            for f in &mut layout.fences {
+                let keys = match f.kind {
+                    FenceKind::Inbox => INBOX,
+                    FenceKind::Virtual if f.tool.is_none() => FENCES,
+                    _ => continue,
+                };
+                if let Some(title) = pecofence_core::i18n::retranslated(&f.title, keys) {
+                    f.title = title.to_string();
+                    renamed.push(f.id);
+                }
+            }
+        }
+        let mut rules = 0;
+        for r in &mut self.state.config.rules.list {
+            if let Some(name) = pecofence_core::i18n::retranslated(&r.name, RULES) {
+                r.name = name.to_string();
+                rules += 1;
+            }
+        }
+        tracing::info!(
+            fences = renamed.len(),
+            rules,
+            "first-start names follow the interface language"
+        );
+        if renamed.is_empty() && rules == 0 {
+            return;
+        }
+        for id in renamed.iter().filter(|id| shown.contains(id)) {
+            self.refresh_fence(*id);
+        }
+        self.state.mark_dirty();
+        self.schedule_save();
     }
 }
 

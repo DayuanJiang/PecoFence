@@ -501,7 +501,7 @@ pub(super) fn on_mousemove(
         && !menu_open.get()
         && !peek_armed.replace(true)
     {
-        window::set_timer(hwnd, TIMER_PEEK_OPEN, Tooltip::hover_delay_ms());
+        window::set_timer(hwnd, TIMER_PEEK_OPEN, behavior.hover_open_ms());
     }
     if v.peeking {
         window::kill_timer(hwnd, TIMER_PEEK_CLOSE);

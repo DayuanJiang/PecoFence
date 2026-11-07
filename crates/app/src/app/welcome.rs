@@ -74,6 +74,13 @@ pub(super) enum Welcome {
         ext: String,
         count: u32,
     },
+    /// The item menu's 「以后把 .pdf 文件都放到这里」 made (`already`: found) the rule that
+    /// sends files ending in `ext` to the fence named `fence`.
+    RuleAdded {
+        ext: String,
+        fence: String,
+        already: bool,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -189,7 +196,7 @@ impl App {
             .collect()
     }
 
-    fn show_welcome(&mut self, which: Welcome) {
+    pub(super) fn show_welcome(&mut self, which: Welcome) {
         use pecofence_core::i18n::{format, text};
         let (title, body, action) = match &which {
             Welcome::WhatsNew => (
@@ -260,6 +267,29 @@ impl App {
                     text("添加规则"),
                 )
             }
+            Welcome::RuleAdded {
+                ext,
+                fence,
+                already,
+            } => (
+                if *already {
+                    text("规则已经存在").to_string()
+                } else {
+                    text("已添加整理规则").to_string()
+                },
+                if self.state.config.rules.keep_updated {
+                    format(
+                        "以后桌面上新出现的 {0} 文件会自动放进“{1}”。要修改或删除这条规则，打开“设置”→“整理规则”。",
+                        &[ext.clone(), fence.clone()],
+                    )
+                } else {
+                    format(
+                        "“新项目出现在桌面时自动归类”现在是关闭的：打开它，或从托盘菜单选“立即应用整理规则”，{0} 文件才会放进“{1}”。规则在“设置”→“整理规则”里修改。",
+                        &[ext.clone(), fence.clone()],
+                    )
+                },
+                text("打开整理规则"),
+            ),
             Welcome::Tip(i) => {
                 let i = *i;
                 let tips = self.tips();
@@ -270,7 +300,7 @@ impl App {
                     Tip::Create => (
                         text("新建栅栏"),
                         text(
-                            "在桌面空白处按住鼠标拖出一个框，松开后选「在此新建栅栏」。文件还在原来的位置。",
+                            "在桌面空白处按住鼠标拖出一个框，松开后点框右下角的「新建栅栏」。文件还在原来的位置。",
                         )
                         .to_string(),
                     ),
@@ -348,6 +378,7 @@ impl App {
             Welcome::WhatsNew | Welcome::DialogJumpOn => {
                 self.open_settings_page("peek", Some(DIALOG_JUMP_DEMO))
             }
+            Welcome::RuleAdded { .. } => self.open_settings_page("rules", None),
             Welcome::DialogJump { dialog, dir } => {
                 let mut new = self.state.config.settings.clone();
                 new.tools.dialog_jump = true;
@@ -370,7 +401,9 @@ impl App {
                 );
                 self.create_portal(dir, x, y, Some(fence));
             }
-            Welcome::RuleTip { fence, ext, .. } => self.add_ext_rule(fence, &ext),
+            Welcome::RuleTip { fence, ext, .. } => {
+                self.add_ext_rule(fence, &ext, self.control.hwnd())
+            }
         }
     }
 
@@ -541,26 +574,6 @@ impl App {
         }
     }
 
-    /// The rule tip's 添加规则: new `ext` files go into `fence`. First in the list, so it wins
-    /// over a type rule (文档 → 文件与文档) that would take them otherwise.
-    fn add_ext_rule(&mut self, fence: FenceId, ext: &str) {
-        if self.state.fence(fence).is_none() {
-            tracing::warn!("rule tip: the fence is gone; no rule added");
-            return;
-        }
-        let name = pecofence_core::i18n::format("{0} 文件", &[ext.to_string()]);
-        let rule = pecofence_core::Rule::new(
-            &name,
-            Target::Fence(fence),
-            vec![pecofence_core::Cond::Ext(vec![ext.to_string()])],
-        );
-        tracing::info!(rule = %rule.id, fence = %fence, "rule added by the rule tip");
-        self.state.config.rules.list.insert(0, rule);
-        self.state.mark_dirty();
-        self.schedule_save();
-        self.push_settings_state();
-    }
-
     /// The manual in the UI language; English lives at the site root.
     pub(super) fn open_manual(&self) {
         self.open_manual_at("");
@@ -590,5 +603,6 @@ fn welcome_kind(which: &Welcome) -> String {
         Welcome::RollTip => "RollTip".into(),
         Welcome::FolderTip { .. } => "FolderTip".into(),
         Welcome::RuleTip { count, .. } => format!("RuleTip(count={count})"),
+        Welcome::RuleAdded { already, .. } => format!("RuleAdded(already={already})"),
     }
 }

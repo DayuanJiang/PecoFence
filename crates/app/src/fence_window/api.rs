@@ -1259,7 +1259,7 @@ impl FenceWindow {
             v.portal_folder = portal_folder;
             v.is_portal = is_portal;
             v.portal_missing = folder_missing;
-            if !up_button {
+            if !up_button && !v.glyph_opens_folder() {
                 v.up_hovered = false;
                 if v.pressed == Some(PressTarget::Up) {
                     v.pressed = None;
@@ -2003,6 +2003,42 @@ impl FenceWindow {
             v.shadow.invalidate();
             v.update_shadow();
         });
+    }
+
+    /// Tab / Shift+Tab can move the keyboard here: the window is shown, not rolled up, and has
+    /// icons to put the focus on (a tool fence or an empty fence has none).
+    pub fn takes_keyboard(&self) -> bool {
+        desktop::is_visible(self.hwnd())
+            && self.view.try_borrow().ok().is_some_and(|g| {
+                g.as_ref()
+                    .is_some_and(|v| !v.retired && !v.rolled_up && !v.items.is_empty())
+            })
+    }
+
+    /// The keyboard comes here from another fence (Tab / Shift+Tab) or from the Peek's first
+    /// key: the focused icon shows its focus ring, and with nothing selected the first icon is
+    /// selected, as in Explorer's file list. Then the window takes the keyboard (during a Peek
+    /// the dimmer passes the keys on to it). Call with no borrow of the view held.
+    pub fn focus_by_keyboard(&self) {
+        self.with_view(|v| {
+            if v.items.is_empty() {
+                return;
+            }
+            let focused = v
+                .anchor_index
+                .filter(|a| v.selected.contains(a))
+                .or_else(|| v.selected.iter().min().copied());
+            match focused {
+                Some(i) => {
+                    v.anchor_index = Some(i);
+                    v.focus_visible = true;
+                    v.scroll_into_view(i, true);
+                }
+                None => v.cursor_to(0, CursorMode::Select),
+            }
+            let _ = v.redraw_content();
+        });
+        handler::focus_session(&self.view, self.hwnd());
     }
 
     /// A press on the desktop or in another fence: the items lose their selection, as icons

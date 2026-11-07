@@ -131,6 +131,15 @@ pub enum Command {
     PortalUp(FenceId),
     /// The mouse's forward button: back into the folder the last up (or back button) left.
     PortalForward(FenceId),
+    /// A click on a folder fence's title glyph at its root folder: Explorer opens the folder.
+    OpenPortalFolder(FenceId),
+    /// Tab / Shift+Tab in fence window `from`: the keyboard moves to the next / previous
+    /// fence in reading order. A null `from` is the Peek's first Tab or arrow key, which no
+    /// fence received: the first fence (the last one for Shift+Tab).
+    FocusNextFence {
+        from: HWND,
+        back: bool,
+    },
     /// A fence window is being dragged over `target`'s title or left tab column (null = none):
     /// highlight it and, on a tabbed target, open the insertion gap at pointer screen point
     /// `at`.
@@ -334,6 +343,8 @@ pub enum Command {
     },
     /// Offer a fence with these screen bounds (a desktop marquee that touched no fence).
     NewFenceRect(RECT),
+    /// The buttons that offer were clicked, or went away.
+    MarqueeOffer(crate::marquee_offer::OfferEvent),
     /// A press / drag / release on the empty desktop: selects the fences the marquee touches.
     DesktopMarquee(crate::anchor::MarqueeEvent),
     /// A click elsewhere ended the desktop fence selection.

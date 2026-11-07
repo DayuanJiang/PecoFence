@@ -75,7 +75,11 @@ pub fn keeps_peek(other: HWND) -> bool {
 
 pub const PEEK_CLASS: &str = "PecoFence.PeekDimmer";
 const WA_INACTIVE: usize = 0;
+const VK_TAB: u32 = 0x09;
+const VK_LEFT: u32 = 0x25;
 const VK_UP: u32 = 0x26;
+const VK_RIGHT: u32 = 0x27;
+const VK_DOWN: u32 = 0x28;
 /// 30 % black (WinUI `SmokeFillColorDefault` #4D000000), the resting alpha of the dimmer.
 const DIM_ALPHA: u8 = 0x4D;
 /// Never 0: a fully transparent layered window is not hit-tested, and the dimmer must catch
@@ -173,14 +177,37 @@ impl PeekOverlay {
                                 Some(0)
                             }
                             // The other keys work on the clicked fence's icons. Letters still
-                            // open the search box: their WM_CHAR comes to the dimmer.
+                            // open the search box: their WM_CHAR comes to the dimmer. Before any
+                            // fence has the keys, Tab and the arrows put them into the first
+                            // fence (Shift+Tab: the last one).
                             msg::WM_KEYDOWN if wparam as u32 != msg::VK_ESCAPE => {
-                                send_to_key_fence(message, wparam, lparam).then_some(0)
+                                if send_to_key_fence(message, wparam, lparam) {
+                                    Some(0)
+                                } else if matches!(wparam as u32, VK_TAB | VK_LEFT..=VK_DOWN) {
+                                    let back =
+                                        wparam as u32 == VK_TAB && window::key_down(msg::VK_SHIFT);
+                                    tracing::info!(
+                                        key = wparam,
+                                        back,
+                                        "peek key: the keyboard goes into a fence"
+                                    );
+                                    queue.push(Command::FocusNextFence {
+                                        from: HWND(std::ptr::null_mut()),
+                                        back,
+                                    });
+                                    Some(0)
+                                } else {
+                                    None
+                                }
                             }
-                            // Alt+Enter (properties) and Alt+Up (the folder above), the Alt keys
-                            // a fence handles. Other Alt keys stay with the dimmer.
+                            // Alt+Enter (properties), Alt+Up / Alt+Left (the folder above) and
+                            // Alt+Right (forward), the Alt keys a fence handles. Other Alt keys
+                            // stay with the dimmer.
                             msg::WM_SYSKEYDOWN
-                                if wparam as u32 == msg::VK_RETURN || wparam as u32 == VK_UP =>
+                                if matches!(
+                                    wparam as u32,
+                                    msg::VK_RETURN | VK_LEFT | VK_UP | VK_RIGHT
+                                ) =>
                             {
                                 send_to_key_fence(message, wparam, lparam).then_some(0)
                             }

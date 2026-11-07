@@ -72,6 +72,11 @@ pub fn window_pid(hwnd: HWND) -> u32 {
     pid
 }
 
+pub fn style(hwnd: HWND) -> u32 {
+    // SAFETY: plain FFI call.
+    unsafe { GetWindowLongW(hwnd, GWL_STYLE) as u32 }
+}
+
 pub fn ex_style(hwnd: HWND) -> u32 {
     // SAFETY: plain FFI call.
     unsafe { GetWindowLongW(hwnd, GWL_EXSTYLE) as u32 }
