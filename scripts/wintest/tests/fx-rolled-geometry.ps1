@@ -48,6 +48,25 @@ if ($Part -match 'A') {
       Check "S3 $style, $($d[2]): same place after a restart" ($before -eq $after) "before: $before; after: $after"
     }
   }
+  # The bottom edge dragged under the taskbar stops at the work area: open, and while a rolled
+  # fence is hover-expanded (the monkey's seed 11 left one 48 px under it, moved by the restart).
+  foreach ($style in 'fluent', 'liquidGlass') {
+    Pf settings set themeStyle $style | Out-Null; Start-Sleep -Milliseconds 800
+    foreach ($how in 'open', 'hover-expanded') {
+      Case "S3 $style, bottom edge dragged under the taskbar ($how)"
+      Pf fence unroll Low | Out-Null; Pf fence move Low --rect "900,$($WorkB - 300),300,250" | Out-Null; Start-Sleep -Milliseconds 700
+      if ($how -eq 'hover-expanded') { Pf fence roll Low | Out-Null; Park; $t = (FenceGet Low).windowRect; [G]::MoveTo($t.x + 120, $t.y + 18); Start-Sleep -Milliseconds 1300 }
+      $hw = [G]::FindWindowW('PecoFence.Fence', 'Low'); $e = Rect $hw
+      [G]::MoveTo($e.L + 150, $e.B - 2); Start-Sleep -Milliseconds 300
+      MDown; Start-Sleep -Milliseconds 150; Glide ($e.L + 150) ($e.B - 2) ($e.L + 150) ($e.B + 90) 10 25; Start-Sleep -Milliseconds 300; MUp
+      Start-Sleep -Milliseconds 600; Park; Start-Sleep -Milliseconds 900
+      $f = FenceGet Low
+      Check "S3 $style ($how): the edge stopped at the work area" ($f.rect.y + $f.rect.h -le $WorkB -and [math]::Abs($f.rect.y - $f.windowRect.y) -le 2) "before $($e.L),$($e.T),$($e.R),$($e.B); now $(Saved Low)"
+      $before = Saved Low
+      PfQuit; PfStart -Script @('sleep 3600000'); Start-Sleep -Seconds 1
+      Check "S3 $style ($how): same place after a restart" ($before -eq (Saved Low)) "before: $before; after: $(Saved Low)"
+    }
+  }
   # A column of rolled fences stays a column: a title row let go between two others keeps its spot.
   Case 'S3 column of rolled fences'
   Pf settings set themeStyle fluent | Out-Null

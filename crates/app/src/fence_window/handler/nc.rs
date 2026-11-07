@@ -884,13 +884,33 @@ pub(super) fn on_sizing(h: &HandlerCtx, hwnd: HWND, wparam: usize, lparam: isize
         dist: (SNAP_DIST_DIP as f32 * scale) as i32,
         align: !snap_paused(),
     });
+    let edges = SizingEdges::from_wmsz(wparam);
     let guides = size_among(
         rect,
         &window::window_rect(hwnd),
-        SizingEdges::from_wmsz(wparam),
+        edges,
         &rules,
         near.as_ref(),
     );
+    // A dragged edge stops at the work area (under the taskbar the fence could not be reached,
+    // and a restart, which keeps saved rects inside the work area, would move it): the saved
+    // rect stays where the window is.
+    if let Some(w) = work {
+        // A rolled title row keeps its height whichever edge is dragged.
+        let vertical = rules.rolled_h.is_none();
+        if edges.bottom && vertical {
+            rect.bottom = rect.bottom.min(w.bottom).max(rect.top + rules.min_h);
+        }
+        if edges.top && vertical {
+            rect.top = rect.top.max(w.top).min(rect.bottom - rules.min_h);
+        }
+        if edges.right {
+            rect.right = rect.right.min(w.right).max(rect.left + rules.min_w);
+        }
+        if edges.left {
+            rect.left = rect.left.max(w.left).min(rect.right - rules.min_w);
+        }
+    }
     show_guides(behavior, hwnd, &guides);
     Some(1)
 }
