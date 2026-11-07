@@ -286,6 +286,43 @@ mod tests {
         );
     }
 
+    /// As on the Windows desktop, a press takes an icon only on the icon or its name: the top
+    /// right of the cell (where a fence with a title has its roll-up arrow) is desktop.
+    #[test]
+    fn only_the_icon_and_its_name_take_a_press() {
+        use crate::layout::GridSpec;
+        let m = GridSpec {
+            icon_size: 48,
+            label_lines: 2,
+            spacing: 0,
+            icon_align: pecofence_core::IconAlign::Left,
+            layout: ViewLayout::Icons,
+        }
+        .metrics(16.0);
+        let cell = CellRect {
+            x: 0.0,
+            y: 0.0,
+            w: m.cell_w,
+            h: m.cell_h,
+        };
+        assert!(
+            super::super::hit::on_icon_or_label(&m, &cell, 40.0, 30.0),
+            "the icon"
+        );
+        assert!(
+            super::super::hit::on_icon_or_label(&m, &cell, 40.0, 70.0),
+            "the name"
+        );
+        assert!(
+            !super::super::hit::on_icon_or_label(&m, &cell, 76.0, 4.0),
+            "top right"
+        );
+        assert!(
+            !super::super::hit::on_icon_or_label(&m, &cell, 4.0, 20.0),
+            "beside the icon"
+        );
+    }
+
     #[test]
     fn an_empty_desktop_still_has_the_cell_a_drop_takes() {
         let cells = desktop_cells(&rect(0, 0, 500, 500), &[], (80, 100), 4, 0);
