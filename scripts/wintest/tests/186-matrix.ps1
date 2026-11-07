@@ -5,21 +5,24 @@ Case 'setup'
 $paths = @('w', 'x', 'y', 'z')
 $how = @{ w = 'Ctrl+Alt+Space, wait'; x = 'Ctrl+Alt+Space, at once'; y = 'double Ctrl, wait'; z = 'double Ctrl, at once' }
 $made = @()
+# Files an earlier failed run saved from Notepad (q*.txt on the desktop) would rank first.
+Get-ChildItem -LiteralPath $PfDesk -Filter 'q*.txt' -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
 foreach ($p in $paths) { foreach ($c in 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'k') { foreach ($n in 'one', 'two') {
   $f = "$PfDesk\q$p$c $n.txt"; Set-Content $f $n; $made += $f } } }
 Set-Culture en-US
 PfStart
 Pf settings set tools.dialogJump true | Out-Null
-Pf settings set peek.doubleCtrl true | Out-Null
 Start-Process notepad.exe -WorkingDirectory C:\pf
 Start-Sleep -Seconds 2
 $np = [G]::FindWindowW('Notepad', [NullString]::Value)
 [L]::MoveWindow($np, 10, 40, 700, 600, $true) | Out-Null; Start-Sleep -Milliseconds 500
 Check 'Notepad is there' ($np -ne [IntPtr]::Zero)
 
-# Opens the box the given way, with Notepad in front first.
+# Opens the box the given way, with Notepad in front first. A Notepad with unsaved text (keys
+# that missed the box) would open its save prompt and Save As dialog on the next Ctrl+N or
+# Enter, and an open dialog takes the search's Enter (dialog jump): start a clean one then.
 function OpenBox($p) {
-  Get-Process notepad -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle -like 'q*' } | Stop-Process -Force
+  Get-Process notepad -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle -like 'q*' -or $_.MainWindowTitle -like '`**' } | Stop-Process -Force
   (New-Object -ComObject Shell.Application).Windows() | ForEach-Object { $_.Quit() }
   Start-Sleep -Milliseconds 300
   $script:np = [G]::FindWindowW('Notepad', [NullString]::Value)
@@ -45,6 +48,12 @@ function CloseBox() { for ($i = 0; $i -lt 3 -and [M]::BoxText() -ne $null; $i++)
 foreach ($p in $paths) {
   $h = $how[$p]
   Case "opened by $h"
+  # Since 0.3.0 choosing double Ctrl (peek.doubleCtrl) leaves the key combination unregistered:
+  # each way of opening has its own setting.
+  $double = $p -in 'y', 'z'
+  Pf settings set peek.doubleCtrl ($double.ToString().ToLower()) | Out-Null
+  Start-Sleep -Milliseconds 500
+  Log ("peek settings: " + ((Pf settings get peek) -replace '\s+', ' '))
   OpenBox $p; [G]::Type("q${p}a oneq"); Start-Sleep -Milliseconds 400; [G]::Press(0x08); Start-Sleep -Milliseconds 400
   $t = [M]::BoxText(); Check 'Backspace' ($t -eq "q${p}a one") "box='$t'"
   [G]::Press(0x0D); $r = Opened "q${p}a one"; Check 'Enter after Backspace' $r[0] "notepad=$($r[1])"
