@@ -321,8 +321,10 @@ impl App {
         // The tab pills' glyphs, then the window's.
         self.refresh_fence(host);
         self.apply_desktop_visibility(reason);
-        // Picked on one desktop for another: it is gone from here, say where it went.
-        if !self.on_current_desktop(host)
+        // Picked on one desktop for another: it is gone from here, say where it went (a CLI
+        // caller reads the reply instead).
+        if reason != "CLI"
+            && !self.on_current_desktop(host)
             && let (Some(t), Some(f)) = (&self.tray, self.state.fence(host))
         {
             let names: Vec<String> = self

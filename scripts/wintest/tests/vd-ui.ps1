@@ -134,6 +134,9 @@ $made = @((PfJson fence list) | Where-Object { $_ -and $_.title -eq 'New fence' 
 Check 'a fence made from the fence menu belongs to Games' ($made.Count -eq 1 -and $made[0].virtualDesktops[0] -eq "{$($ids[1])}") "found=$($made.Count) vd=$($made[0].virtualDesktops)"
 $d = DumpOf 'Games portal'
 Check 'the portal shows the folder glyph and the Task View glyph' ($d.raw -match 'desktop_tip=Some') ($d.raw -replace '.*(desktop_tip=.*)', '$1')
+# The Task View glyph follows the folder glyph's slot (16 + 24 DIPs, 100 % here).
+$tip = HoverTip ($d.l + $d.ox + 50) ($d.t + $d.oy + 18) 'tip-portal'
+Check 'the portal glyph infotip names Games' ($tip -match 'Only on' -and $tip -match 'Games') "tip='$tip'"
 Shot 'ui-switch-new-fences'
 Pf settings set perDesktopFences false | Out-Null
 Pf fence create --title 'New off' --rect '80,620,300,160' | Out-Null

@@ -2038,8 +2038,13 @@ impl FenceChrome {
         title_h: f32,
     ) -> Rect {
         let (x, _, _) = self.lone_title_place(title, size, align, width, deco, reserve);
-        let x = x + tab_icon_w(deco.folder_icon);
-        Rect::from_xywh(x - 2.0, 0.0, TitleDeco::ICON_W, title_h)
+        let x = x + if deco.folder_icon {
+            TitleDeco::ICON_W
+        } else {
+            0.0
+        };
+        // The glyph's slot as drawn: 20 DIPs from 2 before its place.
+        Rect::from_xywh(x - 2.0, 0.0, 20.0, title_h)
     }
 
     /// Width a caption gets in a row of a `rail_w` DIP left tab column: after the colour dot's

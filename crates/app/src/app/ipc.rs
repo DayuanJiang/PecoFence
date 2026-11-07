@@ -874,7 +874,7 @@ impl App {
                             "the inbox shows on every virtual desktop: new desktop items land in it",
                         ));
                     }
-                    self.resolve_desktop_specs(specs).map_err(|message| {
+                    let keys = self.resolve_desktop_specs(specs).map_err(|message| {
                         IpcError::invalid_value(
                             message,
                             &[
@@ -885,6 +885,10 @@ impl App {
                         )
                         .hint("Run `pecofence-cli virtual-desktop list`")
                     })?;
+                    // From the CLI the reply says where it went: no notice on the desktop.
+                    let changed = self.set_fence_desktops(id, keys, "CLI");
+                    self.push_settings_state();
+                    return Ok(mutation(changed, None, self.fence_extra(id)?));
                 }
                 if prop.is_about_icons() && self.fence_or_err(id)?.tool.is_some() {
                     return Err(unsupported(format!(
