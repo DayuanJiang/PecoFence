@@ -395,7 +395,8 @@ $u = FenceGet Upper
 $du = DumpOf Upper; $dl1 = DumpOf Lower
 Shot '38-expanded'
 Check 'the locked fence below moves out of the way while the upper one is expanded' ($du -and -not $du.rolled -and $dl1 -and $dl1.t -ge $du.b) "Upper window $($du.t)..$($du.b) rolled=$($du.rolled); Lower top $($dl0.t) -> $($dl1.t)"
-[G]::MoveTo(200, 780); Start-Sleep -Seconds 2
+# Off both fences: over Lower, which Upper pushed, the hover peek stays open.
+[G]::MoveTo(700, 780); Start-Sleep -Seconds 2
 $dl2 = DumpOf Lower; $lo2 = FenceGet Lower
 Check 'and goes back to its place, its saved place unchanged' ($dl2 -and [math]::Abs($dl2.t - $dl0.t) -le 2 -and $lo2.rect.y -eq $lo0.rect.y) "Lower top $($dl2.t), saved y $($lo0.rect.y) -> $($lo2.rect.y)"
 # Saved expanded, then a restart: the locked fence keeps its saved place.
