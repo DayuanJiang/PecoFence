@@ -36,9 +36,28 @@ impl App {
             .collect()
     }
 
+    /// The current desktop for the menu, the page and the CLI: the one followed while the poll
+    /// runs, else read now (no switch is followed then, so the one kept may be old).
+    fn current_desktop_now(&self) -> Option<String> {
+        if self.desktop_poll {
+            self.state.current_desktop.clone()
+        } else {
+            let now = Self::read_current_desktop();
+            if now != self.state.current_desktop {
+                tracing::debug!(
+                    kept = ?self.state.current_desktop,
+                    now = ?now,
+                    "current virtual desktop read afresh (no switch is followed)"
+                );
+            }
+            now
+        }
+    }
+
     /// The desktops in Task View order as the menu, the page and the CLI show them: key, label
     /// (its Task View name, or 桌面 N), whether it is the current one.
     pub(super) fn desktop_labels(&self) -> Vec<(String, String, bool)> {
+        let current = self.current_desktop_now();
         Self::read_desktops()
             .into_iter()
             .enumerate()
@@ -46,9 +65,7 @@ impl App {
                 let label = d.name.unwrap_or_else(|| {
                     pecofence_core::i18n::format("桌面 {0}", &[(i + 1).to_string()])
                 });
-                let current = self
-                    .state
-                    .current_desktop
+                let current = current
                     .as_deref()
                     .is_some_and(|c| c.eq_ignore_ascii_case(&d.id));
                 (d.id, label, current)
@@ -383,7 +400,7 @@ impl App {
             let key = if spec.eq_ignore_ascii_case("all") {
                 return Ok(Vec::new());
             } else if spec.eq_ignore_ascii_case("current") {
-                self.state.current_desktop.clone()
+                self.current_desktop_now()
             } else if let Ok(n) = spec.parse::<usize>() {
                 n.checked_sub(1)
                     .and_then(|i| desktops.get(i))
