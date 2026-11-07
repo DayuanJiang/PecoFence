@@ -16,7 +16,13 @@ function FxClean() {
     $p = Join-Path $PfDesk $n
     if (Test-Path -LiteralPath $p) { Remove-Item -LiteralPath $p -Recurse -Force -ErrorAction SilentlyContinue }
   }
-  Get-ChildItem $PfDesk -Filter 'FxTool *.lnk' -ErrorAction SilentlyContinue | Remove-Item -Force
+  # Explorer may still hold a shortcut it just showed: try again for a few seconds.
+  foreach ($k in 1..10) {
+    $left = @(Get-ChildItem $PfDesk -Filter 'FxTool *.lnk' -ErrorAction SilentlyContinue)
+    if ($left.Count -eq 0) { break }
+    $left | Remove-Item -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Milliseconds 500
+  }
 }
 function FxSeed() {
   FxClean
@@ -84,4 +90,4 @@ Check 'the log says the card moved' ([bool](PfLogAll | Select-String 'notice mov
 Case 'cleanup'
 if (PfAlive) { PfQuit }
 FxClean
-Check 'test files removed' (-not (Test-Path (Join-Path $PfDesk 'FxPhotos'))) ''
+Check 'test files removed' (-not (Test-Path (Join-Path $PfDesk 'FxPhotos')) -and @(Get-ChildItem $PfDesk -Filter 'FxTool *.lnk').Count -eq 0) ''
