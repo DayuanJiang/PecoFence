@@ -415,11 +415,13 @@ impl FenceDropHandler {
                 let rect = window::window_rect(v.hwnd);
                 let i = v.hit_item(pt.x - rect.left, pt.y - rect.top)?;
                 let item = v.items.get(i)?;
+                // A shortcut, or a program file itself (a portable app's .exe).
                 (!item.is_folder
-                    && item
+                    && (item
                         .path
                         .extension()
                         .is_some_and(|ext| ext.eq_ignore_ascii_case("lnk"))
+                        || dragdrop::is_program_path(&item.path))
                     && !internal
                         .as_ref()
                         .is_some_and(|d| d.items.contains(&item.id)))
@@ -450,8 +452,8 @@ impl FenceDropHandler {
                 self.last_description = None;
                 effect
             }
-            // No application's shortcut (a document, a folder, a broken or a Store app's
-            // link): the folders drop on the fence as before.
+            // No program and no application's shortcut (a document, a folder, a broken or a
+            // Store app's link): the folders drop on the fence as before.
             (Some((_, None)), _) => return None,
             _ => DropEffect::None,
         };
@@ -742,7 +744,7 @@ impl DropHandler for FenceDropHandler {
                 folders = dragdrop::hdrop_paths(data).len(),
                 refused = feedback.effect == DropEffect::None,
                 ?effect,
-                "folders dropped on an application shortcut"
+                "folders dropped on a program or its shortcut"
             );
             return effect;
         }

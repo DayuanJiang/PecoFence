@@ -618,8 +618,18 @@ pub fn shell_folder_drop(
     }
 }
 
-/// A drag delegated to an application's `.lnk`, preserving its arguments and working
-/// directory. Keep it for one hover, and call without holding a view's RefCell borrow:
+/// A program file the Shell opens dropped folders with (`.exe`, `.com`, `.bat`, `.cmd`), by
+/// its extension.
+pub fn is_program_path(path: &Path) -> bool {
+    path.extension().is_some_and(|ext| {
+        ["exe", "com", "bat", "cmd"]
+            .iter()
+            .any(|suffix| ext.eq_ignore_ascii_case(suffix))
+    })
+}
+
+/// A drag delegated to a program file or an application's `.lnk` (preserving its arguments and
+/// working directory). Keep it for one hover, and call without holding a view's RefCell borrow:
 /// Shell extensions may pump messages. Dropping opens the folders, never transfers them.
 pub struct ShortcutDropTarget {
     target: IDropTarget,
@@ -629,27 +639,30 @@ pub struct ShortcutDropTarget {
 
 impl ShortcutDropTarget {
     pub fn bind(shortcut: &Path) -> Result<Self> {
-        let resolved = crate::shell::shortcut_target_expanded(shortcut);
-        let app = resolved.as_ref().is_some_and(|p| {
-            p.extension().is_some_and(|ext| {
-                ["exe", "com", "bat", "cmd"]
-                    .iter()
-                    .any(|suffix| ext.eq_ignore_ascii_case(suffix))
-            }) && p.is_file()
-        });
+        let link = shortcut
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("lnk"));
+        let resolved = if link {
+            crate::shell::shortcut_target_expanded(shortcut)
+        } else {
+            Some(shortcut.to_path_buf())
+        };
+        let app = resolved
+            .as_ref()
+            .is_some_and(|p| is_program_path(p) && p.is_file());
         // Not an application: a document, a folder, a missing program, or a Store app's link
         // (no file path).
         tracing::debug!(
             shortcut = %shortcut.display(),
             target = ?resolved,
             app,
-            "shortcut under a folder drag"
+            "program or shortcut under a folder drag"
         );
         if !app {
             return Err(windows_core::Error::from_hresult(E_FAIL));
         }
-        // Resolve only to check the target type. Bind the link itself, so the Shell keeps
-        // its saved arguments, working directory and launch behaviour.
+        // Resolve only to check the target type. Bind the link (or the program) itself, so
+        // the Shell keeps its saved arguments, working directory and launch behaviour.
         let path = to_wide(&shortcut.to_string_lossy());
         // SAFETY: COM is initialized on the UI STA and the string outlives the call.
         let target = unsafe {
@@ -858,6 +871,13 @@ mod shortcut_tests {
         let missing = base.join("missing.lnk");
         shortcut(&missing, &base.join("missing.exe"), "", &base);
         assert!(ShortcutDropTarget::bind(&missing).is_err());
+        // A program file itself is a target too; a document or a missing program is not.
+        let bat = base.join("run.bat");
+        std::fs::write(&bat, "@echo off").unwrap();
+        assert!(ShortcutDropTarget::bind(&executable).is_ok());
+        assert!(ShortcutDropTarget::bind(&bat).is_ok());
+        assert!(ShortcutDropTarget::bind(&script).is_err());
+        assert!(ShortcutDropTarget::bind(&base.join("missing.exe")).is_err());
         std::fs::remove_dir_all(base).unwrap();
     }
 }
