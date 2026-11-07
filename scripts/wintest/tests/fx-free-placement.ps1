@@ -1,9 +1,10 @@
 # 自由摆放 (free placement) of the 「桌面」 fence arranged like the desktop, with the real mouse.
 #   run.sh tests/fx-free-placement.ps1                        drags, menus, keys, restart, fences, files
 #   run.sh --var Build=old tests/fx-free-placement.ps1        the same drags on a build without it
-#   tests/fx-free-placement.sh                                 part B: the RDP size changes mid-run
-# Part B needs the dev box to change the RDP size while the job waits: fx-free-placement.sh runs
-# run.sh --var Part=B and answers the job's C:\pf\resize-want.txt requests.
+#   tests/fx-free-placement.sh [--part C]                      part B: the RDP size changes mid-run
+#                                                              part C: the scale goes to 150 %
+# Parts B and C need the dev box to change the RDP session while the job waits:
+# fx-free-placement.sh runs run.sh --var Part=B (or C) and answers C:\pf\resize-want.txt.
 if (-not (Get-Variable Part -ErrorAction SilentlyContinue)) { $Part = 'A' }
 if (-not (Get-Variable Build -ErrorAction SilentlyContinue)) { $Build = 'new' }
 $New = $Build -ne 'old'
@@ -11,7 +12,8 @@ $FpNames = @('Alpha.fpx', 'Bravo.fpx', 'Charlie.fpx', 'Delta.fpx', 'Echo.fpx', '
 $FpExtra = @('Golf.fpx', 'Hotel.fpx')
 
 function FpItems() { return @(@(PfJson item list --fence inbox) | Where-Object { $_ -and $_.id }) }
-function FpId($name) { return "$((FpItems | Where-Object { $_.fileName -eq $name } | Select-Object -First 1).id)" }
+function FpId($name) { return "$((FpItems | Where-Object { $_.fileName -eq $name -or $_.name -eq $name } | Select-Object -First 1).id)" }
+function FpMem() { $p = Get-Process pecofence -ErrorAction SilentlyContinue | Select-Object -First 1; if ($p) { return "private $([int]($p.PrivateMemorySize64 / 1MB)) MB, working set $([int]($p.WorkingSet64 / 1MB)) MB" }; return '' }
 function FpCells() {
   $h = @{}; $g = FenceGet inbox
   if ($g.desktopCells) { foreach ($p in $g.desktopCells.PSObject.Properties) { $h[$p.Name] = "$($p.Value[0]),$($p.Value[1])" } }
@@ -52,6 +54,7 @@ Park
 $g = FenceGet inbox
 Log "fences: $((@(PfJson fence list) | Where-Object { $_ -and $_.title } | ForEach-Object { "$($_.title)[$($_.windowRect.x),$($_.windowRect.y),$($_.windowRect.w)x$($_.windowRect.h)]" }) -join ' ; ')"
 Check 'the inbox is arranged like the desktop' ($g.desktopLayout -eq $true) "rect $($g.windowRect | ConvertTo-Json -Compress)"
+Log "memory arranged: $(FpMem)"
 Shot "$Build-01-arranged"
 
 if ($New) {
@@ -98,6 +101,14 @@ if ($Part -eq 'A' -and $New) {
   if ($p) { DragTo $p[0] $p[1] 604 220 20 }
   Start-Sleep -Milliseconds 800
   Check 'Delta dragged back lands in its drop cell' ((ItemFence 'Delta.fpx') -eq 'Desktop' -and (FpCell 'Delta.fpx') -eq '7,2') "fence $(ItemFence 'Delta.fpx'), cell $(FpCell 'Delta.fpx')"
+  # From Programs onto Charlie (9,4), an icon of Desktop that is no folder: the free cell
+  # nearest to it, (8,4), as Explorer does.
+  $p = ItemPt 'Programs' 'Microsoft Edge'
+  $to = FpAt '9,4'
+  if ($p) { DragTo $p[0] $p[1] $to[0] $to[1] 20 }
+  Start-Sleep -Milliseconds 800
+  Check 'an icon from a fence dropped on an icon of Desktop goes next to it' ((ItemFence 'Microsoft Edge') -eq 'Desktop' -and (FpCell 'Microsoft Edge') -eq '8,4' -and (FpCell 'Charlie.fpx') -eq '9,4') "fence $(ItemFence 'Microsoft Edge'), cell $(FpCell 'Microsoft Edge'); $(FpAll)"
+  Log "memory with icons spread: $(FpMem)"
   Park
   Shot 'new-03-four-dropped'
 
@@ -173,6 +184,7 @@ if ($Part -eq 'A' -and $New) {
   $texts = if ($m -ne [IntPtr]::Zero) { MenuTexts $m } else { '' }
   $row = @(MenuRows $m) | Where-Object { $_.text -eq 'Place freely' } | Select-Object -First 1
   Check 'the item menu has Place freely, ticked' ($row -and ($row.state -band 8)) "state=$($row.state) menu: $texts"
+  Shot 'new-08a-item-menu'
   $t = MenuPick '^Place freely$' $m
   Start-Sleep -Seconds 1
   Park
@@ -203,6 +215,22 @@ if ($Part -eq 'A' -and $New) {
   $inOrder = $true; for ($k = 1; $k -lt $order.Count; $k++) { if ($order[$k] -le $order[$k - 1]) { $inOrder = $false } }
   Check 'sorted by name: the icons stand down the columns in name order' ($inOrder -and $order[0] -le 1) "cells $($order -join ' '); $(FpAll)"
   Shot 'new-09-sorted'
+
+  Case 'the fence menu while not arranged'
+  $sorted = FpAll
+  Pf fence set inbox desktopLayout false | Out-Null
+  Start-Sleep -Seconds 2
+  $r = (FenceGet inbox).windowRect
+  [G]::RClick($r.x + 60, $r.y + 14)
+  $m = MenuWin 8
+  $row = @(MenuRows $m) | Where-Object { $_.text -eq 'Place freely' } | Select-Object -First 1
+  Check 'the Desktop fence menu has Place freely, ticked and greyed while not arranged' ($row -and ($row.state -band 3) -and ($row.state -band 8)) "state=$($row.state) menu: $(if ($m -ne [IntPtr]::Zero) { MenuTexts $m })"
+  Shot 'new-10-fence-menu'
+  CloseMenus
+  Pf fence set inbox desktopLayout true | Out-Null
+  Start-Sleep -Seconds 2
+  Park
+  Check 'arranged again: the icons are back in their cells' ((FpAll) -eq $sorted) "before $sorted | now $(FpAll)"
 }
 
 if ($Part -eq 'A' -and -not $New) {
@@ -214,9 +242,9 @@ if ($Part -eq 'A' -and -not $New) {
   Shot 'old-03-after-restart'
 }
 
-if ($Part -eq 'B') {
-  # The RDP size changes while PecoFence runs: a smaller work area, then the old one again.
-  Case 'resolution change'
+if ($Part -eq 'B' -or $Part -eq 'C') {
+  # The RDP size (B) or scale (C) changes while PecoFence runs, then goes back.
+  Case "monitor change (part $Part)"
   # Bravo to the bottom right (17,7), Charlie to the top right (15,0), Delta to the bottom (7,7).
   foreach ($d in @(@('Bravo.fpx', 1404, 750), @('Charlie.fpx', 1244, 30), @('Delta.fpx', 604, 750))) {
     $from = FpAt (FpCell $d[0])
@@ -237,15 +265,40 @@ public static class FpScr {
   public static int[] Work() { var r = new RC(); SystemParametersInfoW(0x30, 0, ref r, 0); return new int[] { r.L, r.T, r.R, r.B }; }
 }
 '@
-  function WantSize($w, $h) {
-    Set-Content C:\pf\resize-want.txt "${w}x${h}" -Encoding ASCII
+  function WantSize($w, $h, $scale = '') {
+    $want = if ($scale) { "${w}x${h}@$scale" } else { "${w}x${h}" }
+    Set-Content C:\pf\resize-want.txt $want -Encoding ASCII
     for ($k = 0; $k -lt 150; $k++) {
       Start-Sleep -Seconds 1
-      if ([FpScr]::Size() -eq "${w}x${h}" -and -not (Test-Path C:\pf\resize-want.txt)) { break }
+      if (-not (Test-Path C:\pf\resize-want.txt) -and ($scale -or [FpScr]::Size() -eq "${w}x${h}")) { break }
     }
+    if ($scale) { $l = PfWaitLog "dpi=$([int]$scale * 96 / 100) origin" 60; Log "monitor line: $l" }
     Start-Sleep -Seconds 8
     Log "screen now $([FpScr]::Size()), work area $([FpScr]::Work() -join ',')"
   }
+}
+if ($Part -eq 'C') {
+  # 150 %: cells of 120 x 144 px, 6 px in; the icons keep their columns and rows where they fit.
+  WantSize 1600 900 150
+  Park
+  FpLog 'at 150 %'
+  $g = FenceGet inbox
+  $wa = [FpScr]::Work()
+  $cols = [math]::Floor(($wa[2] - $wa[0] - 6) / 120); $rows = [math]::Floor(($wa[3] - $wa[1] - 6) / 144)
+  $outside = @((FpCells).Values | Where-Object { $p = $_ -split ','; [int]$p[0] -ge $cols -or [int]$p[1] -ge $rows })
+  Check 'at 150 % every icon is inside the work area' ($outside.Count -eq 0) "grid ${cols}x$rows; outside: $($outside -join ' '); $(FpAll)"
+  Check 'no two icons share a cell at 150 %' (-not (FpDupes)) "dupes: $(FpDupes)"
+  # Echo (0,4) still fits; Alpha (10,4) is under a fence at 150 %, Foxtrot and the Recycle Bin
+  # (rows 5, 6) are past the last row: they take the free cells nearest to theirs.
+  Check 'at 150 % an icon that fits keeps its column and row' ((FpCell 'Echo.fpx') -eq '0,4' -and (FpCell 'Alpha.fpx') -eq '9,4') "$(FpAll)"
+  Shot 'scale-02-150'
+  WantSize 1600 900
+  Park
+  FpLog 'back at 100 %'
+  Check 'back at 100 % every icon is where it was' ((FpAll) -eq $big) "before $big | now $(FpAll)"
+  Shot 'scale-03-back'
+}
+if ($Part -eq 'B') {
   WantSize 1280 720
   Park
   FpLog 'at 1280x720'
