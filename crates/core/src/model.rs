@@ -66,6 +66,11 @@ pub struct Config {
     /// Paths opened from the search box (lower case) and how often: they rank higher next time.
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub search_history: std::collections::BTreeMap<String, u32>,
+    /// The Windows virtual desktops in Task View order as last seen while some fence was bound
+    /// to one (`Fence.virtualDesktops`): where those fences go when the desktops change while
+    /// PecoFence does not run, or the file moves to another PC (see [`crate::vdesk`]).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub virtual_desktops: Vec<crate::vdesk::DesktopRef>,
 }
 
 impl Default for Config {
@@ -82,6 +87,7 @@ impl Default for Config {
             notes: HashMap::new(),
             scripts: HashMap::new(),
             search_history: Default::default(),
+            virtual_desktops: Vec::new(),
         }
     }
 }
@@ -167,6 +173,11 @@ pub struct Settings {
     /// A rectangle drawn on the empty desktop that touches no fence offers 「在此新建栅栏」.
     #[serde(default = "default_true")]
     pub offer_new_fence: bool,
+    /// 每个虚拟桌面各用一套栅栏: a new fence shows only on the Windows virtual desktop it is made
+    /// on (its `virtualDesktops`); off, new fences show on every desktop. Fences that exist keep
+    /// their own choice either way.
+    #[serde(default)]
+    pub per_desktop_fences: bool,
     /// Unused (see [`UNUSED_SETTINGS`]).
     #[serde(default)]
     #[cfg_attr(feature = "schema", schemars(skip))]
@@ -393,6 +404,7 @@ impl Default for Settings {
             keep_icons_hidden: false,
             hide_inbox_when_icons_shown: false,
             offer_new_fence: true,
+            per_desktop_fences: false,
             show_real_icons_when_fences_hidden: false,
             snapping: SnappingSettings::default(),
             zorder: ZOrderSetting::InsertAboveHost,
@@ -1061,6 +1073,10 @@ pub struct Fence {
     /// drops and moves never put any in it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool: Option<FenceTool>,
+    /// The Windows virtual desktops it shows on (在哪个虚拟桌面显示), as Explorer names them in
+    /// the registry (`{GUID}`); empty = every desktop. A window with tabs follows its host's.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub virtual_desktops: Vec<String>,
     #[serde(default)]
     pub items: Vec<ItemRef>,
 }
@@ -1090,7 +1106,23 @@ impl Fence {
             bottom_anchored: false,
             desktop_layout: false,
             tool: None,
+            virtual_desktops: Vec::new(),
             items: Vec::new(),
+        }
+    }
+
+    /// Whether it shows on the virtual desktop `current` (`None`: Windows names no current
+    /// desktop, there is only one, so every fence shows).
+    pub fn shows_on_desktop(&self, current: Option<&str>) -> bool {
+        match current {
+            None => true,
+            Some(d) => {
+                self.virtual_desktops.is_empty()
+                    || self
+                        .virtual_desktops
+                        .iter()
+                        .any(|v| v.eq_ignore_ascii_case(d))
+            }
         }
     }
 
@@ -1958,6 +1990,27 @@ mod tests {
             work_h: 1040.0,
             anchor: Anchor::LeftTop,
         }
+    }
+
+    /// A fence on every virtual desktop writes no `virtualDesktops` field (configs stay as they
+    /// were, older versions read them); one bound to a desktop reads back bound, and shows only
+    /// there (ids compare without regard to case). No current desktop shows every fence.
+    #[test]
+    fn virtual_desktops_round_trip() {
+        let plain = Fence::new("a", FenceKind::Virtual, note_geo());
+        let v = serde_json::to_value(&plain).unwrap();
+        assert!(v.get("virtualDesktops").is_none());
+        let back: Fence = serde_json::from_value(v).unwrap();
+        assert!(back.virtual_desktops.is_empty());
+        assert!(back.shows_on_desktop(Some("{A}")));
+        let mut bound = plain.clone();
+        bound.virtual_desktops = vec!["{0A1B}".into()];
+        let v = serde_json::to_value(&bound).unwrap();
+        assert_eq!(v["virtualDesktops"], serde_json::json!(["{0A1B}"]));
+        let back: Fence = serde_json::from_value(v).unwrap();
+        assert!(back.shows_on_desktop(Some("{0a1b}")));
+        assert!(!back.shows_on_desktop(Some("{FFFF}")));
+        assert!(back.shows_on_desktop(None));
     }
 
     /// A fence without a tool writes no `tool` field, so files and snapshots of users who never

@@ -17,6 +17,8 @@ pub(super) enum TipTarget {
     Item(usize),
     Tab(usize),
     Up,
+    /// The Task View glyph of a single title: the desktops the fence shows on.
+    Desktops,
     /// A script fence's clickable row.
     ScriptRow(usize),
 }
@@ -40,6 +42,9 @@ impl FenceViewState {
     ) -> Option<TipTarget> {
         if self.up_button_at(x_px, y_px) {
             return Some(TipTarget::Up);
+        }
+        if self.desktop_glyph_at(x_px, y_px) {
+            return Some(TipTarget::Desktops);
         }
         if let Some(t) = self.tab_at(x_px, y_px) {
             return Some(TipTarget::Tab(t));
@@ -124,6 +129,7 @@ impl FenceViewState {
     pub(super) fn tip_text(&self) -> Option<String> {
         match self.tip_target? {
             TipTarget::Up => Some(pecofence_core::i18n::text("向上").to_string()),
+            TipTarget::Desktops => self.desktop_tip.clone(),
             TipTarget::ScriptRow(i) => self.script.as_ref()?.rows.get(i)?.tip.clone(),
             TipTarget::Tab(i) => {
                 let t = self.tabs.get(i)?;
@@ -132,12 +138,13 @@ impl FenceViewState {
                     let active = t.id == self.active;
                     let colored = self.tabs.iter().any(|t| t.color.is_some());
                     let folders = self.tabs.iter().any(|t| t.folder_icon);
+                    let desktops = self.tabs.iter().any(|t| t.desktop_icon);
                     let badge = self.tab_badge(t.id);
                     let up = active && self.deco.up_button;
                     let room = self.chrome.rail_title_room(
                         self.rail_w(),
                         colored,
-                        folders,
+                        (folders, desktops),
                         badge.as_deref(),
                         up,
                     );
@@ -155,11 +162,20 @@ impl FenceViewState {
                         &t.title,
                         w,
                         t.title_size,
-                        t.folder_icon,
+                        (t.folder_icon, t.desktop_icon),
                         &self.theme,
                     )
                 };
-                (!fits).then(|| t.title.clone())
+                // A tab of a window bound to virtual desktops names them (its Task View glyph
+                // is on the pill), after the caption when that is cut off.
+                let caption = (!fits).then(|| t.title.clone());
+                match (
+                    caption,
+                    self.desktop_tip.as_ref().filter(|_| t.desktop_icon),
+                ) {
+                    (Some(c), Some(d)) => Some(format!("{c}\n{d}")),
+                    (c, d) => c.or_else(|| d.cloned()),
+                }
             }
             TipTarget::Item(i) => {
                 let it = self.items.get(i)?;

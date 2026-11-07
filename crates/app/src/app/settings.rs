@@ -421,6 +421,12 @@ impl App {
             "backups": backups,
             "monitors": monitors,
             "tintPalette": fence_options::tint_palette_json(),
+            // 在哪个虚拟桌面显示: the desktops in Task View order.
+            "virtualDesktops": self
+                .desktop_labels()
+                .into_iter()
+                .map(|(id, name, current)| serde_json::json!({ "id": id, "name": name, "current": current }))
+                .collect::<Vec<_>>(),
             "pickedColors": self.picked_colors,
             "version": env!("CARGO_PKG_VERSION"),
             "storeEdition": pecofence_platform::process::is_packaged(),
@@ -1120,6 +1126,14 @@ impl App {
             new.hide_inbox_when_icons_shown != old.hide_inbox_when_icons_shown;
         // A tool switched on brings its fences back; switched off, they go.
         let tools_changed = new.tools != old.tools;
+        let per_desktop_changed = new.per_desktop_fences != old.per_desktop_fences;
+        if per_desktop_changed {
+            tracing::info!(
+                on = new.per_desktop_fences,
+                desktop = ?self.state.current_desktop,
+                "per-desktop fences switched"
+            );
+        }
         // 「调整大小时按整行整列对齐」 switched on keeps every rectangle: the rows fill any
         // height with whole icons (redrawn above), and rounding would undo fences lined up.
         self.state.config.settings = new;
@@ -1148,6 +1162,10 @@ impl App {
         if tools_changed {
             self.refresh_tool_views();
             self.run_due_scripts();
+        }
+        if per_desktop_changed {
+            // New fences follow the current desktop from now on: it is followed while on.
+            self.apply_desktop_visibility("per-desktop fences switched");
         }
         self.push_settings_state();
     }

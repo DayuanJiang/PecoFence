@@ -765,5 +765,14 @@
   "Everything 1.5 已经装好，现在运行的是 {0}": "Everything 1.5 está instalado, pero se está ejecutando la {0}",
   "改用 1.5 后可以用拼音找中文名。1.5 会在登录 Windows 时启动，1.4 不再自动启动。Windows 可能会询问一次管理员权限": "Con la 1.5 puedes buscar nombres chinos por pinyin. La 1.5 se iniciará al entrar en Windows y la 1.4 ya no se iniciará sola. Windows puede pedir permisos de administrador una vez.",
   "改用 1.5": "Cambiar a 1.5",
-  "已改用 Everything 1.5，以后登录 Windows 时也会启动它": "Ahora se usa Everything 1.5. A partir de ahora también se inicia al entrar en Windows"
+  "已改用 Everything 1.5，以后登录 Windows 时也会启动它": "Ahora se usa Everything 1.5. A partir de ahora también se inicia al entrar en Windows",
+  "在哪个虚拟桌面显示": "Mostrar en el escritorio virtual",
+  "所有虚拟桌面": "Todos los escritorios virtuales",
+  "桌面 {0}": "Escritorio {0}",
+  "{0}（当前）": "{0} (actual)",
+  "栅栏“{0}”现在只在“{1}”上显示，切换到那个虚拟桌面就能看到它。": "El grupo «{0}» ahora solo se muestra en «{1}». Cambie a ese escritorio virtual para verlo.",
+  "按 Win+Ctrl+左右键切换虚拟桌面时，不属于那个桌面的栅栏会淡出": "Al cambiar de escritorio virtual con Win+Ctrl+Izquierda/Derecha, los grupos que no son de ese escritorio se desvanecen",
+  "只在“{0}”上显示": "Solo en «{0}»",
+  "每个虚拟桌面各用一套栅栏": "Grupos propios en cada escritorio virtual",
+  "打开后，新建的栅栏只在当前虚拟桌面显示。已有的栅栏不变，可以在栅栏右键菜单或“栅栏”页里改": "Si está activado, un grupo nuevo solo se muestra en el escritorio virtual actual. Los grupos que ya existen no cambian; puede cambiarlos en el menú contextual del grupo o en la página «Grupos»"
 }

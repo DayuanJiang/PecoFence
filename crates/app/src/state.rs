@@ -47,6 +47,9 @@ pub struct AppState {
         PathBuf,
         pecofence_core::config_store::ReadError,
     )>,
+    /// The current Windows virtual desktop's key (`None`: Windows names none, there is one
+    /// desktop). The App keeps it current while it follows the switches (`vdesktops.rs`).
+    pub current_desktop: Option<String>,
 }
 
 /// Summary of a desktop sync pass.
@@ -183,6 +186,7 @@ impl AppState {
             recovered_from,
             unreadable_moved_to: report.moved_to,
             load_failures: report.failures,
+            current_desktop: None,
         };
         state.rebuild_catalog();
         if state.config.drop_duplicates() {
@@ -393,6 +397,7 @@ impl AppState {
             recovered_from: None,
             unreadable_moved_to: None,
             load_failures: Vec::new(),
+            current_desktop: None,
         };
         scratch.apply_snapshot_layouts(snap.layouts.clone());
         let layout = scratch.layout;
@@ -728,12 +733,28 @@ impl AppState {
             return false;
         }
         let layout = self.layout;
+        // The window's virtual desktops apply to every tab in it.
+        let desktops = self
+            .fence(host)
+            .map(|h| h.virtual_desktops.clone())
+            .unwrap_or_default();
         for f in &mut self.config.layouts[layout].fences {
             if f.id == fence {
                 f.tab_host = Some(host);
                 f.active_tab = None;
             } else if f.tab_host == Some(fence) {
                 f.tab_host = Some(host);
+            } else {
+                continue;
+            }
+            if f.virtual_desktops != desktops {
+                tracing::info!(
+                    fence = %f.id,
+                    from = ?f.virtual_desktops,
+                    to = ?desktops,
+                    "tab takes its new window's virtual desktops"
+                );
+                f.virtual_desktops = desktops.clone();
             }
         }
         if let Some(h) = self.fence_mut(host) {
@@ -2204,6 +2225,26 @@ impl AppState {
         }
     }
 
+    /// Whether the window of `fence` (its host's, for a tab) shows on the current virtual
+    /// desktop.
+    pub fn on_current_desktop(&self, fence: FenceId) -> bool {
+        self.fence(self.host_of(fence))
+            .is_none_or(|f| f.shows_on_desktop(self.current_desktop.as_deref()))
+    }
+
+    /// 在哪个虚拟桌面显示, for the window of `id`: its host and every tab of it (empty: every
+    /// desktop), so a tab split out later keeps the window's choice.
+    pub fn set_virtual_desktops(&mut self, id: FenceId, desktops: Vec<String>) {
+        for tab in self.tabs_of(self.host_of(id)) {
+            if let Some(f) = self.fence_mut(tab)
+                && f.virtual_desktops != desktops
+            {
+                f.virtual_desktops = desktops.clone();
+                self.dirty = true;
+            }
+        }
+    }
+
     pub fn set_hide_when_empty(&mut self, id: FenceId, on: bool) {
         if let Some(f) = self.fence_mut(id)
             && f.hide_when_empty != on
@@ -2403,13 +2444,21 @@ impl AppState {
         let geo = geometry::normalize(px, &work);
         let mut fence = Fence::new(title, FenceKind::Virtual, geo);
         fence.view.icon_size = self.config.settings.icon_size;
+        // 每个虚拟桌面各用一套栅栏: it shows on the desktop it is made on.
+        if self.config.settings.per_desktop_fences
+            && let Some(desktop) = &self.current_desktop
+        {
+            fence.virtual_desktops = vec![desktop.clone()];
+        }
         let id = fence.id;
+        let desktops = fence.virtual_desktops.clone();
         self.config.layouts[self.layout].fences.push(fence);
         self.dirty = true;
         tracing::info!(
             %id,
             rect = ?(rect.left, rect.top, rect.right, rect.bottom),
             fences = self.fences().len(),
+            ?desktops,
             "fence created"
         );
         Some(id)
@@ -2701,6 +2750,7 @@ mod tests {
             recovered_from: None,
             unreadable_moved_to: None,
             load_failures: Vec::new(),
+            current_desktop: None,
         };
         state.ensure_layout();
         state

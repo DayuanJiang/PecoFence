@@ -80,6 +80,7 @@ mod tests;
 mod testscript;
 mod tools;
 mod updates;
+mod vdesktops;
 mod visuals;
 mod wallpaper_refresh;
 mod welcome;
@@ -415,6 +416,10 @@ pub struct App {
     /// 「临时显示 Windows 桌面」 is on: every fence hidden, the icons PecoFence hid shown. Never
     /// saved.
     windows_desktop: bool,
+    /// 在哪个虚拟桌面显示 (see `vdesktops.rs`): whether the virtual-desktop poll runs, and (a
+    /// test-script switch) whether only the poll is followed, as the Store edition must.
+    desktop_poll: bool,
+    vd_poll_only: bool,
     /// Its shortcut as registered (None = none chosen, or taken).
     windows_desktop_hotkey: Option<Hotkey>,
     /// The chosen shortcut last found taken, so a lasting conflict is told once.
@@ -490,6 +495,7 @@ fn log_start_state(state: &AppState) {
         hover_peek = s.roll_up.hover_peek,
         snapping = s.snapping.enabled,
         offer_new_fence = s.offer_new_fence,
+        per_desktop_fences = s.per_desktop_fences,
         liquid_glass = s.theme_style == pecofence_core::ThemeStyle::LiquidGlass,
         custom_theme = s.custom_theme.is_some(),
         icon_size = s.icon_size,
@@ -511,6 +517,7 @@ fn log_start_state(state: &AppState) {
         rolled = count(&|f| f.rolled_up),
         locked = count(&|f| f.locked),
         desktop_layout = count(&|f| f.desktop_layout),
+        on_some_desktops = count(&|f| !f.virtual_desktops.is_empty()),
         items = state.config.items.len(),
         layouts = state.config.layouts.len(),
         layout = state.layout,
@@ -1035,6 +1042,13 @@ impl App {
                                         app.check_wallpaper("poll");
                                     }
                                 }
+                                vdesktops::TIMER_VD_POLL => {
+                                    if let Ok(mut guard) = cell.try_borrow_mut()
+                                        && let Some(app) = guard.as_mut()
+                                    {
+                                        app.check_virtual_desktop("poll");
+                                    }
+                                }
                                 TIMER_DESKTOP_ID => {
                                     if let Some(id) = wallpaper::desktop_id()
                                         && last_desktop_id.replace(Some(id)) != Some(id)
@@ -1157,6 +1171,17 @@ impl App {
                             Some(0)
                         }
                         WM_APP_WALLPAPER => {
+                            // A virtual-desktop switch shows other fences (the poll catches
+                            // it when the App is busy now).
+                            if let Ok(mut guard) = cell.try_borrow_mut()
+                                && let Some(app) = guard.as_mut()
+                            {
+                                app.check_virtual_desktop(if wparam == 1 {
+                                    "foreground"
+                                } else {
+                                    "registry"
+                                });
+                            }
                             if wparam == 1 {
                                 // A foreground change: a desktop switch announcing itself. It
                                 // cannot change the picture while every desktop shows the same,
@@ -1582,6 +1607,8 @@ impl App {
             peek_hotkey_wanted: None,
             hotkeys_paused: false,
             windows_desktop: false,
+            desktop_poll: false,
+            vd_poll_only: false,
             windows_desktop_hotkey: None,
             windows_desktop_hotkey_taken: None,
             desktop_unavailable: false,
@@ -1602,6 +1629,7 @@ impl App {
             live_capture: None,
             live_abandoned: None,
         };
+        app.state.current_desktop = App::read_current_desktop();
         // Watch the wallpaper settings, virtual-desktop state and Explorer's copies of the
         // picture; any signal starts a bounded burst of fast reads, because the image may arrive
         // after the notification.

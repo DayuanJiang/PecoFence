@@ -765,5 +765,14 @@
   "Everything 1.5 已经装好，现在运行的是 {0}": "Everything 1.5 ist installiert, aber es läuft {0}",
   "改用 1.5 后可以用拼音找中文名。1.5 会在登录 Windows 时启动，1.4 不再自动启动。Windows 可能会询问一次管理员权限": "Mit 1.5 findest du chinesische Namen per Pinyin. 1.5 startet dann bei der Anmeldung bei Windows, 1.4 startet nicht mehr von selbst. Windows fragt eventuell einmal nach Administratorrechten.",
   "改用 1.5": "Zu 1.5 wechseln",
-  "已改用 Everything 1.5，以后登录 Windows 时也会启动它": "Auf Everything 1.5 gewechselt. Es startet ab jetzt auch bei der Anmeldung bei Windows"
+  "已改用 Everything 1.5，以后登录 Windows 时也会启动它": "Auf Everything 1.5 gewechselt. Es startet ab jetzt auch bei der Anmeldung bei Windows",
+  "在哪个虚拟桌面显示": "Auf virtuellem Desktop anzeigen",
+  "所有虚拟桌面": "Alle virtuellen Desktops",
+  "桌面 {0}": "Desktop {0}",
+  "{0}（当前）": "{0} (aktuell)",
+  "栅栏“{0}”现在只在“{1}”上显示，切换到那个虚拟桌面就能看到它。": "Der Bereich „{0}“ wird jetzt nur auf „{1}“ angezeigt. Wechseln Sie zu diesem virtuellen Desktop, um ihn zu sehen.",
+  "按 Win+Ctrl+左右键切换虚拟桌面时，不属于那个桌面的栅栏会淡出": "Beim Wechsel des virtuellen Desktops mit Win+Strg+Links/Rechts werden Bereiche, die nicht zu diesem Desktop gehören, ausgeblendet",
+  "只在“{0}”上显示": "Nur auf „{0}“",
+  "每个虚拟桌面各用一套栅栏": "Eigene Bereiche für jeden virtuellen Desktop",
+  "打开后，新建的栅栏只在当前虚拟桌面显示。已有的栅栏不变，可以在栅栏右键菜单或“栅栏”页里改": "Wenn aktiviert, wird ein neuer Bereich nur auf dem aktuellen virtuellen Desktop angezeigt. Vorhandene Bereiche bleiben, wie sie sind; ändern Sie sie im Kontextmenü des Bereichs oder auf der Seite „Bereiche“"
 }

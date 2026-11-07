@@ -319,6 +319,9 @@ pub struct DesktopAnchor {
     pub on_marquee: Option<Box<dyn Fn(MarqueeEvent)>>,
     /// Fence windows (as raw handles) that stay visible during quick hide.
     quick_hide_excluded: std::collections::HashSet<isize>,
+    /// Fence windows of other virtual desktops than the current one: hidden, and not shown
+    /// again by the anchor's own checks.
+    off_desktop: std::collections::HashSet<isize>,
     /// Peek in progress: fences are topmost and anchoring is suspended.
     peeking: bool,
     /// Fences (hidden by quick hide) that Peek showed and must hide again afterwards.
@@ -477,6 +480,7 @@ impl DesktopAnchor {
             quit_requested: false,
             on_marquee: None,
             quick_hide_excluded: std::collections::HashSet::new(),
+            off_desktop: std::collections::HashSet::new(),
             peeking: false,
             peek_shown: Vec::new(),
             on_peek_interrupted: None,
@@ -536,6 +540,22 @@ impl DesktopAnchor {
 
     pub fn unregister_fence(&mut self, hwnd: HWND) {
         self.fences.retain(|(h, _)| *h != hwnd);
+        self.off_desktop.remove(&(hwnd.0 as isize));
+    }
+
+    /// Marks a fence window as belonging to other virtual desktops (`FenceWindow` hides it).
+    pub fn set_off_desktop(&mut self, hwnd: HWND, off: bool) {
+        if off {
+            self.off_desktop.insert(hwnd.0 as isize);
+        } else {
+            self.off_desktop.remove(&(hwnd.0 as isize));
+        }
+    }
+
+    /// Whether quick hide (or 「临时显示 Windows 桌面」, `every`) keeps this fence hidden now.
+    pub fn quick_hides(&self, hwnd: HWND, every: bool) -> bool {
+        self.quick.fences_hidden
+            && (every || !self.quick_hide_excluded.contains(&(hwnd.0 as isize)))
     }
 
     /// Puts `hwnd` above the other fences (clicked / newly created), keeping all of them just
@@ -1098,7 +1118,10 @@ impl DesktopAnchor {
                         tracing::warn!(hwnd = ?w, error = %e, "uncloaking a fence failed");
                     }
                 }
-                if (!desktop::is_visible(w) || desktop::is_iconic(w)) && !self.quick.fences_hidden {
+                if (!desktop::is_visible(w) || desktop::is_iconic(w))
+                    && !self.quick.fences_hidden
+                    && !self.off_desktop.contains(&(w.0 as isize))
+                {
                     tracing::info!(hwnd = ?w, "fence hidden/minimized; showing");
                     desktop::show_no_activate(w);
                 }

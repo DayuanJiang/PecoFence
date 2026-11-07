@@ -765,5 +765,14 @@
   "Everything 1.5 已经装好，现在运行的是 {0}": "Everything 1.5 is installed, but {0} is running",
   "改用 1.5 后可以用拼音找中文名。1.5 会在登录 Windows 时启动，1.4 不再自动启动。Windows 可能会询问一次管理员权限": "With 1.5 you can find Chinese names by pinyin. 1.5 then starts when you sign in to Windows, and 1.4 no longer starts by itself. Windows may ask once for administrator rights.",
   "改用 1.5": "Switch to 1.5",
-  "已改用 Everything 1.5，以后登录 Windows 时也会启动它": "Switched to Everything 1.5. It also starts when you sign in to Windows from now on"
+  "已改用 Everything 1.5，以后登录 Windows 时也会启动它": "Switched to Everything 1.5. It also starts when you sign in to Windows from now on",
+  "在哪个虚拟桌面显示": "Show on virtual desktop",
+  "所有虚拟桌面": "All virtual desktops",
+  "桌面 {0}": "Desktop {0}",
+  "{0}（当前）": "{0} (current)",
+  "栅栏“{0}”现在只在“{1}”上显示，切换到那个虚拟桌面就能看到它。": "The fence “{0}” now shows only on “{1}”. Switch to that virtual desktop to see it.",
+  "按 Win+Ctrl+左右键切换虚拟桌面时，不属于那个桌面的栅栏会淡出": "When you switch virtual desktops with Win+Ctrl+Left/Right, fences that do not belong to that desktop fade out",
+  "只在“{0}”上显示": "Only on “{0}”",
+  "每个虚拟桌面各用一套栅栏": "Separate fences for each virtual desktop",
+  "打开后，新建的栅栏只在当前虚拟桌面显示。已有的栅栏不变，可以在栅栏右键菜单或“栅栏”页里改": "When on, a new fence shows only on the current virtual desktop. Existing fences stay as they are; change them in the fence's right-click menu or on the Fences page"
 }

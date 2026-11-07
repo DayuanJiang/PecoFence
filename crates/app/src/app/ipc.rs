@@ -17,7 +17,8 @@ use pecofence_ipc::{
     AdjustedDto, BIG_MOVE_SNAPSHOT_ITEMS, BackupDto, EVENT_HEARTBEAT_SECS, EVENT_NAMES, ErrorCode,
     EventDto, FenceDto, FitDto, IpcError, ItemDto, ItemMovePlanDto, MAX_SUBSCRIBERS, Method,
     MonitorDto, PROTOCOL_VERSION, PlannedMoveDto, PortalDto, Rect, Response, RuleEntry,
-    RuleListDto, SnapshotDto, SnapshotFenceDto, StatusDto, dotted_to_pointer, mutation,
+    RuleListDto, SnapshotDto, SnapshotFenceDto, StatusDto, VirtualDesktopDto, dotted_to_pointer,
+    mutation,
 };
 use serde_json::{Value, json};
 use std::sync::mpsc;
@@ -686,6 +687,20 @@ impl App {
         match m {
             Method::StatusGet => to_json(&self.status_dto()),
             Method::MonitorsList => to_json(&self.monitor_dtos()),
+            Method::VirtualDesktopsList => {
+                let list: Vec<VirtualDesktopDto> = self
+                    .desktop_labels()
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, (id, name, current))| VirtualDesktopDto {
+                        id,
+                        number: i + 1,
+                        name,
+                        current,
+                    })
+                    .collect();
+                to_json(&list)
+            }
             Method::FencesList => {
                 let list: Vec<FenceDto> = self
                     .state
@@ -853,6 +868,24 @@ impl App {
                 let id = self.resolve_fence(fence)?;
                 let prop_name = prop.as_str();
                 let prop = parse_fence_prop(prop, value)?;
+                if let fence_options::FenceProp::VirtualDesktops(specs) = &prop {
+                    if self.fence_or_err(id)?.kind == FenceKind::Inbox {
+                        return Err(unsupported(
+                            "the inbox shows on every virtual desktop: new desktop items land in it",
+                        ));
+                    }
+                    self.resolve_desktop_specs(specs).map_err(|message| {
+                        IpcError::invalid_value(
+                            message,
+                            &[
+                                "all",
+                                "current",
+                                "<numbers, names or ids from virtual-desktop list>",
+                            ],
+                        )
+                        .hint("Run `pecofence-cli virtual-desktop list`")
+                    })?;
+                }
                 if prop.is_about_icons() && self.fence_or_err(id)?.tool.is_some() {
                     return Err(unsupported(format!(
                         "{prop_name} is about icons, and a tool fence (note, clock, script) has none"
@@ -1646,6 +1679,8 @@ impl App {
                 .then(|| self.state.portal_path(f.id))
                 .flatten()
                 .map(|p| p.to_string_lossy().into_owned()),
+            virtual_desktops: host.virtual_desktops.clone(),
+            on_current_desktop: self.on_current_desktop(f.id),
             portal,
             // Only the fence the window currently shows has a measured layout.
             fit: (connected && measure)

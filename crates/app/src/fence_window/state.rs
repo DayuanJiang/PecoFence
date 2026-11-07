@@ -38,7 +38,7 @@ pub struct FenceViewState {
     /// aside. None = no hint, or a plain (single-tab) title.
     pub(super) merge_gap: Option<usize>,
     /// Natural pill widths by caption (folder glyph and search badge), see `tab_natural_widths`.
-    pub(super) tab_natural_w: RefCell<Vec<(String, u8, bool, bool, Option<String>, f32)>>,
+    pub(super) tab_natural_w: RefCell<Vec<(String, u8, bool, (bool, bool), Option<String>, f32)>>,
     /// How far (DIPs) a title-row strip too wide for its room is scrolled, see `tab_rects`.
     pub(super) tab_scroll: Cell<f32>,
     /// Last frame of the strip's edge auto-scroll (`tab_strip_autoscroll`); None while idle.
@@ -64,8 +64,12 @@ pub struct FenceViewState {
     pub(super) detach_pending: bool,
     pub(super) detach_cancelled: bool,
     pub(super) remote_drag: Option<RemoteDrag>,
-    /// Portal title decorations (folder glyph, up button) for the fence being shown.
+    /// Title decorations of the fence being shown: the portal's folder glyph and up button, the
+    /// Task View glyph of a window bound to virtual desktops.
     pub(super) deco: TitleDeco,
+    /// The infotip of the Task View glyph (the desktops it shows on), `None` while it shows on
+    /// every desktop.
+    pub(super) desktop_tip: Option<String>,
     pub(super) up_hovered: bool,
     pub(super) chevron_hovered: bool,
     /// Control the mouse button is held on, and whether the pointer is still over it (Win32
@@ -356,6 +360,9 @@ pub struct FenceViewState {
     /// `FenceWindow::retire` was called: the window is fading out for good and lives only in
     /// `App::dying`. Nothing may show it again, and every hide must end in `FadeOutDone`.
     pub(super) retired: bool,
+    /// The fence belongs to other virtual desktops than the current one (在哪个虚拟桌面显示):
+    /// it stays hidden, whoever asks to show it (quick hide, Peek, a new window).
+    pub(super) off_desktop: bool,
     /// Outgoing content panels of tab switches, still fading out under the new panel (a
     /// second switch mid-swap hands off from the current opacity instead of snapping, so more
     /// than one can be in flight); all parked in `spares` when `WM_APP_TAB_SWAP_DONE` arrives

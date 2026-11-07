@@ -285,6 +285,8 @@ impl FenceWindow {
             vis_deadline: None,
             fade_trace: FadeTrace::default(),
             retired: false,
+            off_desktop: false,
+            desktop_tip: None,
             outgoing: Vec::new(),
             spares: Vec::new(),
             swap_gen: 0,
@@ -365,6 +367,44 @@ impl FenceWindow {
         show_with_fade(&self.view, self.hwnd(), entrance);
     }
 
+    /// 在哪个虚拟桌面显示: `tip` names the desktops of a window that shows on some of them only
+    /// (the Task View glyph before its title, the text its infotip shows); `None` for one on
+    /// every desktop.
+    pub fn set_desktop_mark(&self, tip: Option<String>) {
+        self.with_view(|v| {
+            if v.desktop_tip == tip {
+                return;
+            }
+            v.deco.desktop_icon = tip.is_some();
+            v.desktop_tip = tip;
+            let _ = v.redraw_chrome_only();
+        });
+    }
+
+    /// The fence belongs (or no longer belongs) to other virtual desktops than the current one:
+    /// off, it fades out as for quick hide and nothing shows it until this is cleared; the
+    /// caller shows it again when it is back (unless quick hide holds it). Returns whether the
+    /// flag changed.
+    pub fn set_off_desktop(&self, off: bool) -> bool {
+        let hwnd = self.hwnd();
+        let changed = match self.view.borrow_mut().as_mut() {
+            Some(v) if v.off_desktop != off => {
+                v.off_desktop = off;
+                true
+            }
+            _ => false,
+        };
+        if let Ok(mut guard) = self.anchor.try_borrow_mut()
+            && let Some(a) = guard.as_mut()
+        {
+            a.set_off_desktop(hwnd, off);
+        }
+        if changed && off {
+            hide_with_fade(&self.view, hwnd, false, false);
+        }
+        changed
+    }
+
     /// Fades the window out (167 ms, shrinking to 0.97) ahead of its destruction. Returns
     /// true when the fade runs — the owner must keep the `FenceWindow` alive until
     /// `Command::FadeOutDone` arrives for its hwnd; false = already hidden, drop it now.
@@ -414,7 +454,7 @@ impl FenceWindow {
             },
         );
         format!(
-            "title={:?} opacity={:.2} scale={:.3} fade={fade} retired={} rolled={} rolling={} peeking={} items={} tabs={} selected={} focused={:?} shadow_visible={} shadow_alpha={} layout={:?} locked={} auto_height={} active={} scroll={:.1} client={:?} client_offset=({},{}) chrome={:?} glass={:?} wallpaper_uploads={} title_size={} tab_fonts={:?} tab_rects={:?} content_x={} content={:?} capture={} tab_drag={} window_drag={} detach_pending={} plate_inset={} plate_alpha={:.2} mouse_inside={}",
+            "title={:?} opacity={:.2} scale={:.3} fade={fade} retired={} rolled={} rolling={} peeking={} items={} tabs={} selected={} focused={:?} shadow_visible={} shadow_alpha={} layout={:?} locked={} auto_height={} active={} scroll={:.1} client={:?} client_offset=({},{}) chrome={:?} glass={:?} wallpaper_uploads={} title_size={} tab_fonts={:?} tab_rects={:?} content_x={} content={:?} capture={} tab_drag={} window_drag={} detach_pending={} plate_inset={} plate_alpha={:.2} mouse_inside={} off_desktop={} desktop_tip={:?}",
             v.title,
             v.root.opacity(),
             v.root.scale().x,
@@ -456,6 +496,8 @@ impl FenceWindow {
             v.plate_inset_px,
             v.plate_alpha,
             v.mouse_inside,
+            v.off_desktop,
+            v.desktop_tip,
         )
     }
 
@@ -966,6 +1008,7 @@ impl FenceWindow {
                         && a.title_size == b.title_size
                         && a.title_color == b.title_color
                         && a.folder_icon == b.folder_icon
+                        && a.desktop_icon == b.desktop_icon
                         && a.up_button == b.up_button
                 });
             let same_set = v.tabs.len() == tabs.len()
@@ -1242,6 +1285,7 @@ impl FenceWindow {
             let deco = TitleDeco {
                 folder_icon,
                 up_button,
+                desktop_icon: v.deco.desktop_icon,
             };
             let changed = v.deco != deco || v.navigate_folders != navigate_folders;
             let portal_changed = v.is_portal != is_portal || v.portal_missing != folder_missing;

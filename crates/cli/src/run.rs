@@ -10,7 +10,7 @@ use serde_json::{Value, json};
 use crate::cli::split_set_args;
 use crate::cli::{
     BackupCmd, Command, ConfigCmd, FenceCmd, ItemCmd, MonitorCmd, PeekCmd, RuleAddArgs, RuleCmd,
-    SettingsCmd, SnapshotCmd, WindowsDesktopCmd,
+    SettingsCmd, SnapshotCmd, VirtualDesktopCmd, WindowsDesktopCmd,
 };
 use crate::output::{Reply, Style};
 use crate::{client, describe, local, output};
@@ -77,6 +77,9 @@ pub fn run(ctx: &Ctx, command: Command) -> Result<Reply, IpcError> {
         Command::Monitor {
             cmd: MonitorCmd::List,
         } => ctx.call(Method::MonitorsList),
+        Command::VirtualDesktop {
+            cmd: VirtualDesktopCmd::List,
+        } => ctx.call(Method::VirtualDesktopsList),
         Command::Describe { schema } => describe::run(schema.as_deref()).map(Reply::new),
         Command::Skill => {
             // Verbatim text, not JSON: the file is meant to be redirected into a skills folder.

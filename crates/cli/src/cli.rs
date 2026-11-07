@@ -49,6 +49,12 @@ pub enum Command {
         #[command(subcommand)]
         cmd: MonitorCmd,
     },
+    /// Windows virtual desktops (a fence can show on all of them or only on some)
+    #[command(name = "virtual-desktop")]
+    VirtualDesktop {
+        #[command(subcommand)]
+        cmd: VirtualDesktopCmd,
+    },
     /// Machine-readable catalog of commands, exit codes and JSON Schemas (works offline)
     #[command(after_help = "Example: pecofence-cli describe --schema Settings")]
     Describe {
@@ -144,6 +150,13 @@ pub enum Command {
 pub enum MonitorCmd {
     /// Connected monitors with id, rect, work area, DPI
     #[command(after_help = "Example: pecofence-cli monitor list")]
+    List,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum VirtualDesktopCmd {
+    /// Virtual desktops in Task View order with id, number, name and which one is current
+    #[command(after_help = "Example: pecofence-cli virtual-desktop list")]
     List,
 }
 
@@ -290,7 +303,7 @@ pub enum FenceCmd {
         #[arg(long, group = "size")]
         h: Option<i32>,
     },
-    /// Set a per-fence option (title, iconSize, spacing, spacingPx, iconAlign, autoHeight, locked, expandUpward, excludeFromQuickHide, opacity, tint, tintTitleOnly, tabColor, titleColor, titleSize, titleOnHover, layout, sort, reverse, groupByDate, foldersFirst, labelLines, openFoldersInside, portalNavigate, portalTitleIcon, hideWhenEmpty, desktopLayout, noteText, scriptPath, scriptInterval); `fence rename` is the friendlier way to set title
+    /// Set a per-fence option (title, iconSize, spacing, spacingPx, iconAlign, autoHeight, locked, expandUpward, excludeFromQuickHide, opacity, tint, tintTitleOnly, tabColor, titleColor, titleSize, titleOnHover, layout, sort, reverse, groupByDate, foldersFirst, labelLines, openFoldersInside, portalNavigate, portalTitleIcon, hideWhenEmpty, desktopLayout, noteText, scriptPath, scriptInterval, virtualDesktops); `fence rename` is the friendlier way to set title
     #[command(
         override_usage = "pecofence-cli fence set [OPTIONS] <FENCE> <PROP> <VALUE>\n       pecofence-cli fence set [OPTIONS] --all <PROP> <VALUE>",
         after_help = "Arguments:\n  <FENCE>  Fence: id, unique id prefix (>=6 hex), or title (exact, then unique substring)\n  <PROP>   Option name as shown by `fence get` (title: prefer `fence rename`)\n  <VALUE>  JSON value or bare text: 48, true, list, null; quote # colours: \"#ff8800\" or '\"#ff8800\"'\n\nExample: pecofence-cli fence set Work layout list\n         pecofence-cli fence set Work tint \"#ff8800\"\n         pecofence-cli fence set --all opacity clear"

@@ -77,24 +77,32 @@ pub fn signature() -> Option<String> {
 }
 
 /// A cheap hint for detecting missed desktop notifications. Never use it as the wallpaper
-/// itself: Explorer may publish the new picture slightly after changing this value.
+/// itself: Explorer may publish the new picture slightly after changing this value. Windows 11
+/// keeps it in the `VirtualDesktops` key, Windows 10 under the sign-in session's
+/// `SessionInfo\<id>\VirtualDesktops` instead; neither has it while there is one desktop.
 pub fn desktop_id() -> Option<[u8; 16]> {
-    let mut id = [0u8; 16];
-    let mut size = id.len() as u32;
-    // RRF_RT_REG_BINARY constrains the type; RegGetValueW opens the current key on each read,
-    // so this also survives Explorer replacing a key that a registry watcher had opened.
-    let status = unsafe {
-        RegGetValueW(
-            HKEY_CURRENT_USER,
-            windows_core::w!(r"Software\Microsoft\Windows\CurrentVersion\Explorer\VirtualDesktops"),
-            windows_core::w!("CurrentVirtualDesktop"),
-            0x08,
-            None,
-            Some(id.as_mut_ptr().cast()),
-            Some(&mut size),
-        )
+    const RRF_RT_REG_BINARY: u32 = 0x08;
+    // RegGetValueW opens the current key on each read, so this also survives Explorer
+    // replacing a key that a registry watcher had opened.
+    let read = |key: &str| {
+        registry_value(key, "CurrentVirtualDesktop", RRF_RT_REG_BINARY)
+            .and_then(|data| <[u8; 16]>::try_from(data.as_slice()).ok())
     };
-    (status.0 == 0 && size == 16).then_some(id)
+    read(DESKTOPS_KEY).or_else(|| {
+        read(&format!(
+            r"Software\Microsoft\Windows\CurrentVersion\Explorer\SessionInfo\{}\VirtualDesktops",
+            session_id()?
+        ))
+    })
+}
+
+/// The Remote Desktop Services session this process runs in (the key of Windows 10's
+/// `SessionInfo`).
+fn session_id() -> Option<u32> {
+    windows_core::link!("kernel32.dll" "system" fn ProcessIdToSessionId(process: u32, session: *mut u32) -> i32);
+    let mut session = 0u32;
+    // SAFETY: plain FFI call with a valid out pointer.
+    (unsafe { ProcessIdToSessionId(GetCurrentProcessId(), &mut session) } != 0).then_some(session)
 }
 
 const DESKTOPS_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Explorer\VirtualDesktops";
@@ -170,8 +178,42 @@ pub fn desktop_wallpapers() -> Vec<([u8; 16], Option<PathBuf>)> {
         .collect()
 }
 
-/// The NUL-terminated UTF-16LE path at the start of `data`, `None` when it is empty.
-fn utf16_path(data: &[u8]) -> Option<PathBuf> {
+/// The registry name of a virtual desktop id (`{GUID}`, the key under `Desktops`): what a
+/// fence keeps to say which desktops it shows on.
+pub fn desktop_key(id: &[u8; 16]) -> String {
+    guid_string(id)
+}
+
+/// The virtual desktops' [`desktop_key`]s in Task View order. Empty while there is only one
+/// desktop: Explorer writes the list with the second one. An Explorer detail like
+/// [`desktop_id`]; one registry read.
+pub fn virtual_desktop_keys() -> Vec<String> {
+    const RRF_RT_REG_BINARY: u32 = 0x08;
+    registry_value(DESKTOPS_KEY, "VirtualDesktopIDs", RRF_RT_REG_BINARY)
+        .map(|ids| ids.as_chunks::<16>().0.iter().map(guid_string).collect())
+        .unwrap_or_default()
+}
+
+/// [`virtual_desktop_keys`] with the name each desktop was given in Task View (`None` until it
+/// is renamed: Task View calls it 桌面 N by position).
+pub fn virtual_desktops() -> Vec<(String, Option<String>)> {
+    const RRF_RT_REG_SZ: u32 = 0x02;
+    virtual_desktop_keys()
+        .into_iter()
+        .map(|key| {
+            let name = registry_value(
+                &format!(r"{DESKTOPS_KEY}\Desktops\{key}"),
+                "Name",
+                RRF_RT_REG_SZ,
+            )
+            .and_then(|data| utf16_text(&data));
+            (key, name)
+        })
+        .collect()
+}
+
+/// The NUL-terminated UTF-16LE text at the start of `data`, `None` when it is empty.
+fn utf16_text(data: &[u8]) -> Option<String> {
     let wide: Vec<u16> = data
         .as_chunks::<2>()
         .0
@@ -179,7 +221,12 @@ fn utf16_path(data: &[u8]) -> Option<PathBuf> {
         .map(|c| u16::from_le_bytes([c[0], c[1]]))
         .take_while(|&c| c != 0)
         .collect();
-    (!wide.is_empty()).then(|| PathBuf::from(String::from_utf16_lossy(&wide)))
+    (!wide.is_empty()).then(|| String::from_utf16_lossy(&wide))
+}
+
+/// The NUL-terminated UTF-16LE path at the start of `data`, `None` when it is empty.
+fn utf16_path(data: &[u8]) -> Option<PathBuf> {
+    utf16_text(data).map(PathBuf::from)
 }
 
 /// The copy Windows made of the picture `path` when it was set as the wallpaper, for a

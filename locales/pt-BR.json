@@ -765,5 +765,14 @@
   "Everything 1.5 已经装好，现在运行的是 {0}": "O Everything 1.5 está instalado, mas a versão em execução é a {0}",
   "改用 1.5 后可以用拼音找中文名。1.5 会在登录 Windows 时启动，1.4 不再自动启动。Windows 可能会询问一次管理员权限": "Com a 1.5, você encontra nomes em chinês por pinyin. A 1.5 passa a iniciar quando você entra no Windows, e a 1.4 não inicia mais sozinha. O Windows pode pedir permissão de administrador uma vez.",
   "改用 1.5": "Mudar para 1.5",
-  "已改用 Everything 1.5，以后登录 Windows 时也会启动它": "Agora o Everything 1.5 está em uso. Ele também inicia quando você entra no Windows"
+  "已改用 Everything 1.5，以后登录 Windows 时也会启动它": "Agora o Everything 1.5 está em uso. Ele também inicia quando você entra no Windows",
+  "在哪个虚拟桌面显示": "Mostrar na área de trabalho virtual",
+  "所有虚拟桌面": "Todas as áreas de trabalho virtuais",
+  "桌面 {0}": "Área de Trabalho {0}",
+  "{0}（当前）": "{0} (atual)",
+  "栅栏“{0}”现在只在“{1}”上显示，切换到那个虚拟桌面就能看到它。": "O grupo “{0}” agora aparece só em “{1}”. Mude para essa área de trabalho virtual para vê-lo.",
+  "按 Win+Ctrl+左右键切换虚拟桌面时，不属于那个桌面的栅栏会淡出": "Ao trocar de área de trabalho virtual com Win+Ctrl+Esquerda/Direita, os grupos que não pertencem a ela desaparecem aos poucos",
+  "只在“{0}”上显示": "Só em “{0}”",
+  "每个虚拟桌面各用一套栅栏": "Grupos separados em cada área de trabalho virtual",
+  "打开后，新建的栅栏只在当前虚拟桌面显示。已有的栅栏不变，可以在栅栏右键菜单或“栅栏”页里改": "Ligado, um grupo novo aparece só na área de trabalho virtual atual. Os grupos que já existem não mudam; altere-os no menu de contexto do grupo ou na página “Grupos”"
 }
