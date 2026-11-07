@@ -318,6 +318,9 @@ pub struct App {
     /// The welcome, what's-new and 对话框跳转 notices may show (not under a test script or
     /// `--exit-after`).
     notices: bool,
+    /// 功能提示: files of one extension the user dragged into a fence during this run, per
+    /// (fence, extension), for the rule tip (`welcome.rs`).
+    tip_drags: HashMap<(FenceId, String), u32>,
     /// The fence Settings › 「栅栏」 is editing, which wears the selection ring (`group.rs`).
     settings_ring: Option<FenceId>,
     web_env: Option<WebEnvironment>,
@@ -490,6 +493,7 @@ fn log_start_state(state: &AppState) {
         hover_peek = s.roll_up.hover_peek,
         snapping = s.snapping.enabled,
         offer_new_fence = s.offer_new_fence,
+        feature_tips = s.feature_tips,
         liquid_glass = s.theme_style == pecofence_core::ThemeStyle::LiquidGlass,
         custom_theme = s.custom_theme.is_some(),
         icon_size = s.icon_size,
@@ -1533,6 +1537,7 @@ impl App {
             rating,
             welcome: None,
             notices: args.exit_after_ms.is_none() && args.test_script.is_none(),
+            tip_drags: HashMap::new(),
             settings_ring: None,
             web_env: None,
             settings_class,
@@ -2039,11 +2044,15 @@ impl App {
                     "DragOutFinished" => self.activity.drags_out += 1,
                     _ => {}
                 }
+                let tip_drop = self.tip_drop(&cmd);
                 let started = Instant::now();
                 let in_menus = tray::time_in_menus();
                 pecofence_platform::hangwatch::running(Some(&name));
                 self.handle(cmd);
                 pecofence_platform::hangwatch::running(None);
+                if let Some((to, names)) = tip_drop {
+                    self.note_tip_drag(to, &names);
+                }
                 // A menu it opened waited for the user, which is no delay of ours.
                 let spent = started
                     .elapsed()

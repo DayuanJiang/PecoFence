@@ -851,6 +851,7 @@ impl App {
     pub(super) fn create_fence_with_rename(&mut self, rect: RECT) {
         if let Some(id) = self.create_fence_at(rect, None) {
             self.begin_rename(id);
+            self.offer_roll_tip();
         }
     }
 

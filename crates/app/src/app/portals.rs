@@ -201,6 +201,7 @@ impl App {
                 w.show(true);
             }
             self.schedule_save();
+            self.offer_roll_tip();
         }
     }
 

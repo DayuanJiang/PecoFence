@@ -938,51 +938,27 @@ impl App {
                     .icon(glyph::TAB);
             }
         }
-        menu.item(
-            CMD_FENCE_LOCK,
-            if h.locked {
-                pecofence_core::i18n::text("解除锁定")
-            } else {
-                pecofence_core::i18n::text("锁定位置和大小")
-            },
-            false,
-            arranged,
-        )
-        .icon(if h.locked { glyph::UNLOCK } else { glyph::LOCK });
+        // This fence's own settings, then (last) 添加到桌面 with what makes something new on
+        // the desktop, as Explorer keeps 新建 in a submenu below the object's own commands.
         menu.separator()
+            .item(
+                CMD_FENCE_LOCK,
+                if h.locked {
+                    pecofence_core::i18n::text("解除锁定")
+                } else {
+                    pecofence_core::i18n::text("锁定位置和大小")
+                },
+                false,
+                arranged,
+            )
+            .icon(if h.locked { glyph::UNLOCK } else { glyph::LOCK })
             .item(
                 CMD_FENCE_OPTIONS,
                 pecofence_core::i18n::text("栅栏选项…"),
                 false,
                 false,
             )
-            .icon(glyph::SETTING)
-            .item(
-                CMD_FENCE_NEW,
-                pecofence_core::i18n::text("新建栅栏"),
-                false,
-                false,
-            )
-            .icon(glyph::ADD_TO);
-        if self.state.config.settings.tools.enabled {
-            menu.item(
-                CMD_FENCE_NEW_NOTE,
-                pecofence_core::i18n::text("新建便签"),
-                false,
-                false,
-            )
-            .icon(glyph::NOTE)
-            .submenu(
-                pecofence_core::i18n::text("新建小工具"),
-                self.new_tool_submenu(CMD_FENCE_NEW_TOOL),
-            )
-            .icon(glyph::CODE);
-        }
-        menu.submenu(
-            pecofence_core::i18n::text("在桌面显示文件夹"),
-            Self::show_folder_submenu(CMD_FENCE_SHOW_FOLDER),
-        )
-        .icon(glyph::FOLDER);
+            .icon(glyph::SETTING);
         // The inbox cannot go (new desktop items land there), but it can stay out of sight
         // while it is empty.
         if f.kind == FenceKind::Inbox {
@@ -1007,6 +983,45 @@ impl App {
             )
             .icon(glyph::DELETE);
         }
+        let add_menu = PopupMenu::new();
+        add_menu
+            .item(
+                CMD_FENCE_NEW,
+                pecofence_core::i18n::text("新建栅栏"),
+                false,
+                false,
+            )
+            .icon(glyph::ADD_TO);
+        if self.state.config.settings.tools.enabled {
+            add_menu
+                .item(
+                    CMD_FENCE_NEW_NOTE,
+                    pecofence_core::i18n::text("新建便签"),
+                    false,
+                    false,
+                )
+                .icon(glyph::NOTE)
+                .submenu(
+                    pecofence_core::i18n::text("新建小工具"),
+                    self.new_tool_submenu(CMD_FENCE_NEW_TOOL),
+                )
+                .icon(glyph::CODE);
+        }
+        add_menu
+            .submenu(
+                pecofence_core::i18n::text("在桌面显示文件夹"),
+                Self::show_folder_submenu(CMD_FENCE_SHOW_FOLDER),
+            )
+            .icon(glyph::FOLDER);
+        menu.separator()
+            .submenu(pecofence_core::i18n::text("添加到桌面"), add_menu)
+            .icon(glyph::MONITOR);
+        tracing::info!(
+            fence = %fence,
+            host = %host,
+            labels = ?menu.labels(),
+            "fence menu built"
+        );
         let owner = self
             .fences
             .get(&host)
@@ -1015,6 +1030,7 @@ impl App {
         // Saved first, as for the tray menu.
         self.state.save_if_dirty();
         let cmd = menu.show_context(owner, x, y);
+        tracing::info!(cmd, "fence menu closed");
         match cmd {
             CMD_FENCE_ROLL => self.toggle_roll(host),
             CMD_FENCE_RENAME => self.begin_rename(fence),
