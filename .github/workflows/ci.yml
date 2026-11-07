@@ -28,7 +28,7 @@ jobs:
         run: |
           cargo run -p tool_bindgen
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          git diff --exit-code -- crates/platform/src/bindings.rs crates/platform/src/store_bindings.rs crates/render/src/comp.rs crates/render/src/gpu_bindings.rs
+          git diff --exit-code -- crates/platform/src/bindings.rs crates/platform/src/store_bindings.rs crates/render/src/comp.rs crates/render/src/gpu_bindings.rs crates/render/src/live_capture_bindings.rs
       - name: Translation coverage
         run: python scripts/check-locales.py
       - name: README translations

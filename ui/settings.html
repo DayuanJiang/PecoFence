@@ -483,6 +483,17 @@
         </div></div>
       <div class="card"><div class="l"><span class="ic">&#xE7A1;</span><div><div class="t">颜色模式</div></div></div>
         <select data-bind="theme"><option value="followWindowsMode">跟随 Windows 模式</option><option value="followAppMode">跟随应用模式</option><option value="light">浅色</option><option value="dark">深色</option></select></div>
+      <h3>实时液态玻璃（实验版）</h3>
+      <div class="group">
+        <div class="card"><div class="l"><span class="ic">&#xE774;</span><div><div class="t">启用实时玻璃</div><div class="s">实验功能：让液态玻璃背景随画面更新。采集帧只留在内存，不保存截图或视频。兼容性和实际帧率取决于系统与壁纸。</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="realtimeGlass.enabled"></div></div>
+        <div class="card child"><div class="l"><div><div class="t">刷新上限</div><div class="s">5–240 FPS；降低上限可减少持续负载。实际刷新可能低于所选值。</div></div></div><div class="slider"><input type="range" id="realtimeGlassFps" data-bind="realtimeGlass.fps"></div></div>
+        <div class="card child"><div class="l"><div><div class="t">背景采样质量</div><div class="s">更高分辨率保留更多细节，也可能增加 GPU 占用和内存。</div></div></div><select data-bind="realtimeGlass.quality"><option value="performance">省电：1/4 分辨率</option><option value="balanced">均衡：1/2 分辨率</option><option value="quality">精细：原分辨率</option></select></div>
+        <div class="card child"><div class="l"><div><div class="t">背景模糊</div><div class="s">原始画面的 0–30 物理像素；0 保留清晰背景。</div></div></div><div class="slider"><input type="range" id="realtimeGlassBlur" data-bind="realtimeGlass.blur"></div></div>
+        <div class="card child"><div class="l"><div><div class="t">折射强度</div><div class="s">0–2；0 关闭边缘折射。</div></div></div><div class="slider"><input type="range" id="realtimeGlassRefraction" data-bind="realtimeGlass.refraction"></div></div>
+        <div class="card child"><div class="l"><div><div class="t">背景饱和度</div><div class="s">0 为灰度，1 为原色，2 为增强。</div></div></div><div class="slider"><input type="range" id="realtimeGlassSaturation" data-bind="realtimeGlass.saturation"></div></div>
+        <div class="card child"><div class="l"><div><div class="t">玻璃底色浓度</div><div class="s">0–50%；叠加白色薄底色，数值越大越明亮。</div></div></div><div class="slider"><input type="range" id="realtimeGlassTint" data-bind="realtimeGlass.tint"></div></div>
+        <div class="card child"><div class="l"><div><div class="t">被遮挡时暂停更新</div><div class="s">栅栏被其他窗口完全遮挡时暂停，以减少后台负载。</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="realtimeGlass.pauseWhenCovered"></div></div>
+      </div>
       <div class="card"><div class="l"><span class="ic">&#xE8D3;</span><div><div class="t">文字颜色</div><div class="s">图标名称，以及标题颜色为“跟随主题”的栅栏标题和标签页。自动：液态玻璃按背后壁纸的明暗选深色或浅色，Fluent 跟随颜色模式</div></div></div>
         <select data-bind="labelColor"><option value="auto">自动</option><option value="white">白色</option><option value="black">黑色</option></select></div>
       <div class="card"><div class="l"><span class="ic">&#xE8E4;</span><div><div class="t">标题对齐</div></div></div>
@@ -770,7 +781,7 @@
   // gesture, nor for half a second after one when the host repeats a value the gesture sent.
   // set(value, true) switches subject (another fence) and drops a gesture. A gesture that already
   // sent values first gets its onChange, which still belongs to the old subject.
-  function slider(input, { min, max, step = 1, ticks = [], snap = 0, liveMs = 0, value = String, name = () => '', tick = name }) {
+  function slider(input, { min, max, step = 1, ticks = [], snap = 0, liveMs = 0, value = String, name = () => '', tick = name, format = null }) {
     const track = document.createElement('div'), marks = document.createElement('div'), bubble = document.createElement('span');
     track.className = 'slider-track'; marks.className = 'slider-ticks'; bubble.className = 'slider-bubble';
     bubble.setAttribute('aria-hidden', 'true');
@@ -813,11 +824,11 @@
       input.value = v;
       input.style.setProperty('--fill', at(v));
       bubble.style.left = at(v);
-      const px = tf("{0} px", value(v)), preset = name(v);
+      const px = format ? format(v) : tf("{0} px", value(v)), preset = name(v);
       const b = document.createElement('b'), small = document.createElement('small');
       b.textContent = px; small.textContent = preset;
       bubble.replaceChildren(b, ...(preset ? [small] : []));
-      input.setAttribute('aria-valuetext', preset ? tf("{0} · {1} px", preset, value(v)) : px);
+      input.setAttribute('aria-valuetext', preset ? (format ? preset + ' · ' + px : tf("{0} · {1} px", preset, value(v))) : px);
       ticks.forEach((tv, i) => marks.children[i].classList.toggle('on', tv === v));
       // The bold current label is wider.
       fit();
@@ -906,6 +917,19 @@
     name: v => ({ [-12]: t("图标间距\x04紧凑"), 0: t("图标间距\x04标准"), 16: t("图标间距\x04宽松") })[v],
   });
   const fenceSliders = new Map([fenceIconSize, fenceSpacing].map(s => [s.input, s]));
+  // These controls commit on release, avoiding repeated capture-backend restarts while dragged.
+  const glassNumber = v => String(Number(v.toFixed(2)));
+  const realtimeGlassSliders = new Map([
+    ['realtimeGlassFps', { min: 5, max: 240, step: 1, ticks: [15, 30, 60, 120, 240], tick: glassNumber, format: v => glassNumber(v) + ' FPS' }],
+    ['realtimeGlassBlur', { min: 0, max: 30, ticks: [0, 8, 30], format: v => glassNumber(v) + ' px' }],
+    ['realtimeGlassRefraction', { min: 0, max: 2, step: .05, ticks: [0, 1, 2], format: glassNumber }],
+    ['realtimeGlassSaturation', { min: 0, max: 2, step: .05, ticks: [0, 1, 2], format: glassNumber }],
+    ['realtimeGlassTint', { min: 0, max: .5, step: .01, ticks: [0, .08, .5], format: v => Math.round(v * 100) + '%' }],
+  ].map(([id, options]) => {
+    options.tick ||= options.format;
+    const control = slider(document.getElementById(id), options);
+    return [control.input, control];
+  }));
   // Preview icon edge (px) for an icon size: the four menu sizes map to 21 / 26 / 31 / 36, and
   // other sizes interpolate between their neighbours.
   const PREVIEW_ICON = [[24, 18], [32, 21], [48, 26], [64, 31], [96, 36], [128, 40]];
@@ -1358,6 +1382,10 @@
         defaultIconSize.set(cur);
         defaultIconSize.onInput = v => { set(root, p, v); renderAppearance(); };
         defaultIconSize.onChange = v => { set(root, p, v); commit(path); };
+      } else if (realtimeGlassSliders.has(el)) {
+        const control = realtimeGlassSliders.get(el);
+        control.set(cur);
+        control.onChange = v => { set(root, p, Number(v.toFixed(2))); commit(path); };
       }
     });
   }
@@ -1365,7 +1393,8 @@
   // beside the Windows icons needs those icons shown ('!': while the master is off), and the
   // shortcut rows (renderPeekHotkey) are what Peek's switch turns on. Gap, whole-cell sizing
   // and dimming apply without them. A child starting with '#' is a button's id.
-  const DEPENDENT = [['snapping.guideLines', 'snapping.enabled'], ['#everythingAction', 'tools.everything']];
+  const DEPENDENT = [['snapping.guideLines', 'snapping.enabled'], ['#everythingAction', 'tools.everything'],
+    ...['fps', 'quality', 'blur', 'refraction', 'saturation', 'tint', 'pauseWhenCovered'].map(key => ['realtimeGlass.' + key, 'realtimeGlass.enabled'])];
   // 「小工具」 page: there is one clock at most, so its 添加 greys out while the desktop has one.
   function renderTools() {
     const clocks = (state.fences || []).filter(f => f.tool && f.tool.kind === 'clock').length;
@@ -1400,7 +1429,7 @@
       const value = !!get(state.settings, master.replace('!', ''));
       const on = master.startsWith('!') ? !value : value, el = document.querySelector(child.startsWith('#') ? child : `[data-bind="${child}"]`);
       el.closest('.card').classList.toggle('disabled', !on);
-      if (el.tagName === 'SELECT' || el.tagName === 'BUTTON') el.disabled = !on;
+      if (el.tagName === 'SELECT' || el.tagName === 'INPUT' || el.tagName === 'BUTTON') el.disabled = !on;
       else { el.tabIndex = on ? 0 : -1; el.setAttribute('aria-disabled', String(!on)); }
     }
     renderPeekHotkey();
@@ -2480,6 +2509,7 @@
         document.getElementById('iconTintStrength').setAttribute('aria-label', t("图标着色强度"));
       }
       state.settings.themeStyle ||= 'fluent';
+      state.settings.realtimeGlass = { enabled: false, fps: 30, quality: 'balanced', blur: 8, refraction: 1, saturation: 1.05, tint: .08, pauseWhenCovered: true, ...state.settings.realtimeGlass };
       document.documentElement.classList.toggle('light', m.themeMode === 'light');
       if (m.accent) {
         document.documentElement.style.setProperty('--accent', m.accent);

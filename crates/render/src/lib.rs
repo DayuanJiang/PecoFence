@@ -36,9 +36,11 @@ pub mod fence_chrome;
 mod gpu_bindings;
 pub mod gpu_glass;
 pub mod liquid_glass;
+pub mod live_capture;
 pub mod motion;
 pub mod notice;
 pub mod panel;
+mod realtime_material;
 pub mod stack;
 pub mod text;
 pub mod text_shadow;
@@ -56,3 +58,7 @@ pub use windows_canvas::{
 };
 pub use windows_composition::{ContainerVisual, DesktopWindowTarget, SpriteVisual, Visual};
 pub use windows_core::Result;
+
+pub fn is_device_lost(code: windows_core::HRESULT) -> bool {
+    windows_canvas::is_device_lost(code)
+}

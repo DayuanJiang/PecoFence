@@ -286,6 +286,39 @@ pub fn has_visible_surface(hwnd: HWND) -> bool {
         && rect.bottom > rect.top
 }
 
+/// Conservative occlusion test. Reads z-order only; never activates or moves any window.
+/// Translucent/layered windows cannot establish full coverage. Bound the walk during churn.
+pub fn has_covering_window_above(target: HWND) -> bool {
+    let mut target_rect = RECT::default();
+    if !unsafe { GetWindowRect(target, &mut target_rect).as_bool() } {
+        return false;
+    }
+    let own = std::process::id();
+    let mut above = unsafe { GetWindow(target, GW_HWNDPREV as u32) };
+    for _ in 0..512 {
+        if above.0.is_null() {
+            break;
+        }
+        if window_pid(above) != own
+            && has_visible_surface(above)
+            && ex_style(above) & (WS_EX_LAYERED as u32 | WS_EX_TRANSPARENT as u32) == 0
+            && !matches!(class_name(above).as_str(), "Progman" | "WorkerW")
+        {
+            let mut r = RECT::default();
+            if unsafe { GetWindowRect(above, &mut r).as_bool() }
+                && r.left <= target_rect.left
+                && r.top <= target_rect.top
+                && r.right >= target_rect.right
+                && r.bottom >= target_rect.bottom
+            {
+                return true;
+            }
+        }
+        above = unsafe { GetWindow(above, GW_HWNDPREV as u32) };
+    }
+    false
+}
+
 /// `HRESULT_FROM_WIN32(ERROR_ACCESS_DENIED)`: what `SetWindowPos` reports when UIPI refuses it.
 const E_ACCESS_DENIED: windows_core::HRESULT = windows_core::HRESULT(0x8007_0005_u32 as i32);
 

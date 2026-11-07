@@ -1115,6 +1115,7 @@ impl App {
             || new.custom_theme != old.custom_theme
             || new.backdrop != old.backdrop;
         let icons_changed = new.icons != old.icons;
+        let realtime_changed = new.realtime_glass != old.realtime_glass;
         let push_changed = new.roll_up.push_neighbors != old.roll_up.push_neighbors;
         let inbox_hiding_changed =
             new.hide_inbox_when_icons_shown != old.hide_inbox_when_icons_shown;
@@ -1137,6 +1138,9 @@ impl App {
         }
         if visual_changed {
             self.refresh_visuals(true);
+        }
+        if realtime_changed || visual_changed {
+            self.reset_realtime_glass();
         }
         if push_changed {
             // Pushed fences go back at once when it is switched off.

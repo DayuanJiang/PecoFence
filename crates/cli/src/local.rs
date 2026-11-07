@@ -25,6 +25,21 @@ pub struct Paths {
 }
 
 impl Paths {
+    /// Honour only an absolute runtime log directory from the same status reply that
+    /// supplied the config path. Missing fields from older apps keep the default log path.
+    pub fn apply_runtime_log_dir(&mut self, runtime_log_dir: Option<&str>) {
+        let Some(directory) = runtime_log_dir
+            .map(Path::new)
+            .filter(|path| path.is_absolute())
+        else {
+            return;
+        };
+        self.log_dir = directory.to_path_buf();
+        self.log = self
+            .log_dir
+            .join(brand::log_file_name(self.instance.as_deref(), brand::LOG));
+    }
+
     pub fn config_dir(&self) -> PathBuf {
         self.config
             .parent()
@@ -271,6 +286,47 @@ pub fn print_log(path: &Path, lines: usize, follow: bool) -> Result<(), IpcError
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn runtime_log_override_requires_an_absolute_path_and_preserves_instance_names() {
+        for instance in [None, Some(" test ")] {
+            let mut paths = Paths {
+                instance: instance.map(str::to_string),
+                running: true,
+                source: "status",
+                config: PathBuf::from(r"C:\portable\config\config.json"),
+                log_dir: PathBuf::from(r"C:\Users\me\AppData\Local\PecoFence"),
+                log: PathBuf::from(r"C:\Users\me\AppData\Local\PecoFence")
+                    .join(brand::log_file_name(instance, brand::LOG)),
+            };
+            let original = paths.clone();
+            for invalid in [
+                None,
+                Some(""),
+                Some("runtime/logs"),
+                Some(r"C:runtime\logs"),
+                Some(r"\runtime\logs"),
+            ] {
+                paths.apply_runtime_log_dir(invalid);
+                assert_eq!(paths, original, "{invalid:?}");
+            }
+            let isolated = Path::new(r"C:\portable\runtime\logs");
+            paths.apply_runtime_log_dir(isolated.to_str());
+            assert_eq!(paths.log_dir, isolated);
+            assert_eq!(
+                paths.log,
+                isolated.join(brand::log_file_name(instance, brand::LOG))
+            );
+            assert_eq!(
+                paths.sibling_log(brand::PREVIOUS_LOG),
+                isolated.join(brand::log_file_name(instance, brand::PREVIOUS_LOG))
+            );
+            assert_eq!(paths.config, original.config);
+            assert_eq!(paths.instance, original.instance);
+            assert_eq!(paths.source, "status");
+            assert!(paths.running);
+        }
+    }
 
     #[test]
     fn default_paths_follow_the_apps_rules() {

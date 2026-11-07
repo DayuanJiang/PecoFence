@@ -71,6 +71,7 @@ mod peek;
 mod portals;
 mod push;
 mod rating;
+mod realtime_glass;
 mod search;
 mod settings;
 mod sync;
@@ -96,6 +97,9 @@ use visuals::{
 use wallpaper_refresh::{BackdropCache, FIRST_CHECK_MS, RefreshSchedule, supersedes};
 
 const TIMER_SAVE: usize = 40;
+// Keep feature timers separate from upstream's sequential control-window timer IDs.
+const TIMER_REALTIME_GLASS: usize = 0x5046_0001;
+const TIMER_REALTIME_GLASS_WATCHDOG: usize = 0x5046_0002;
 const TIMER_FS: usize = 41;
 /// Folder-change coalescing window: the first event of a batch is handled this soon.
 const FS_DEBOUNCE_MS: u64 = 60;
@@ -241,6 +245,7 @@ pub struct Args {
 }
 
 pub struct App {
+    realtime_glass: realtime_glass::RealtimeGlassRuntime,
     state: AppState,
     ctx: Rc<FenceContext>,
     fences: HashMap<FenceId, FenceWindow>,
@@ -887,6 +892,22 @@ impl App {
                         }
                         msg::WM_TIMER => {
                             match wparam {
+                                TIMER_REALTIME_GLASS => {
+                                    pecofence_platform::realtime_clock::RealtimeClock::acknowledge(
+                                    );
+                                    if let Ok(mut guard) = cell.try_borrow_mut()
+                                        && let Some(app) = guard.as_mut()
+                                    {
+                                        app.tick_realtime_glass();
+                                    }
+                                }
+                                TIMER_REALTIME_GLASS_WATCHDOG => {
+                                    if let Ok(mut guard) = cell.try_borrow_mut()
+                                        && let Some(app) = guard.as_mut()
+                                    {
+                                        app.watch_realtime_glass_clock();
+                                    }
+                                }
                                 TIMER_SAVE => {
                                     if let Ok(mut guard) = cell.try_borrow_mut()
                                         && let Some(app) = guard.as_mut()
@@ -1502,6 +1523,7 @@ impl App {
         );
 
         let mut app = App {
+            realtime_glass: Default::default(),
             state,
             ctx,
             fences: HashMap::new(),
@@ -1809,6 +1831,7 @@ impl App {
             app.schedule_save();
         }
         window::set_coalescable_timer(app.control.hwnd(), TIMER_HOUSEKEEPING, 60_000, 5_000);
+        app.reset_realtime_glass();
         // 脚本栅栏: the first results, without waiting for the minute.
         app.run_due_scripts();
         window::set_coalescable_timer(app.control.hwnd(), TIMER_WALLPAPER_POLL, 5_000, 500);

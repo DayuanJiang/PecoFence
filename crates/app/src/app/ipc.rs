@@ -1475,6 +1475,8 @@ impl App {
                 .config_path_on_disk()
                 .to_string_lossy()
                 .into_owned(),
+            runtime_log_dir: crate::runtime_root()
+                .map(|root| root.join("logs").to_string_lossy().into_owned()),
             fence_count: self.state.fences().len(),
             item_count: self.state.workspace_item_count(),
             memory_mb,
@@ -1486,6 +1488,7 @@ impl App {
             .to_string(),
             desktop_icons_hidden: pecofence_platform::shell_icons::desktop_icons_hidden(),
             live_wallpapers: self.live_wallpaper_dtos(),
+            realtime_glass: Some(self.realtime_glass.dto()),
         }
     }
 

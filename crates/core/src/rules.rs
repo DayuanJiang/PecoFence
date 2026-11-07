@@ -236,7 +236,7 @@ pub fn is_temporary(file_name: &str, age_secs: Option<u64>) -> bool {
     let lower = file_name.to_lowercase();
     lower.starts_with("~$")
         || TEMPORARY_EXTS.iter().any(|e| lower.ends_with(e))
-        || (lower.ends_with(".tmp") && !age_secs.is_some_and(|s| s >= TMP_SETTLE_SECS))
+        || (lower.ends_with(".tmp") && age_secs.is_none_or(|s| s < TMP_SETTLE_SECS))
 }
 
 /// The categories in the order [`classify`] reports them. A `.lnk` to a program counts as a

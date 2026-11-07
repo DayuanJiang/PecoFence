@@ -182,7 +182,7 @@ fn capture_and_build(work: Vec<(MonitorRecipe, Option<isize>)>) -> Result<Built>
 /// The foreground window's rectangle when it belongs to another program than Explorer and this
 /// one. The fences sit under other programs' windows: it hides the fences inside it, and a
 /// maximized or full-screen window every fence on its monitor.
-fn foreground_rect() -> Option<RECT> {
+pub(super) fn foreground_rect() -> Option<RECT> {
     let root = desktop::root_ancestor(desktop::foreground_window());
     let pid = desktop::window_pid(root);
     let other = !root.0.is_null()
@@ -205,6 +205,13 @@ fn live_wallpaper_state(live: &[LiveWallpaper], monitor: RECT) -> &'static str {
 impl App {
     /// `status.get`'s `liveWallpapers`: one entry per connected monitor.
     pub(super) fn live_wallpaper_dtos(&self) -> Vec<pecofence_ipc::LiveWallpaperDto> {
+        // The desktop-host GPU material can read a composited wallpaper whose individual
+        // renderer rejects PrintWindow. Report the source the fences actually use, rather
+        // than that snapshot backend's stale failure. Paused/disabled states retain the
+        // existing per-monitor snapshot diagnostics.
+        let realtime_active = self.state.config.settings.realtime_glass.enabled
+            && self.realtime_glass.state == "active"
+            && self.ctx.bitmaps.borrow().has_realtime_glass();
         self.state
             .work_areas
             .iter()
@@ -217,7 +224,12 @@ impl App {
                 };
                 pecofence_ipc::LiveWallpaperDto {
                     monitor: w.device_path.clone(),
-                    state: live_wallpaper_state(&self.live, monitor).to_string(),
+                    state: if realtime_active {
+                        "capturedRealtime"
+                    } else {
+                        live_wallpaper_state(&self.live, monitor)
+                    }
+                    .to_string(),
                 }
             })
             .collect()
@@ -324,6 +336,8 @@ impl App {
             }
         }
         if self.live_capture.is_some()
+            || (self.state.config.settings.realtime_glass.enabled
+                && self.ctx.bitmaps.borrow().has_realtime_glass())
             || !self.live.iter().any(due)
             || pecofence_core::brand::var_os("PECOFENCE_SOLID").is_some()
         {

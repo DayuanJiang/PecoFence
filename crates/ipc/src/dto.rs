@@ -75,6 +75,9 @@ pub struct StatusDto {
     /// `PECOFENCE_INSTANCE` of the answering process; `null` for the main instance.
     pub instance: Option<String>,
     pub config_path: String,
+    /// An isolated runtime's absolute log directory. Older/default runtimes omit this.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runtime_log_dir: Option<String>,
     pub fence_count: usize,
     pub item_count: usize,
     pub memory_mb: f64,
@@ -85,6 +88,9 @@ pub struct StatusDto {
     /// live wallpaper (Wallpaper Engine, Lively) on it.
     #[serde(default)]
     pub live_wallpapers: Vec<LiveWallpaperDto>,
+    /// Runtime diagnostics of the optional GPU glass path, absent on older builds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub realtime_glass: Option<serde_json::Value>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -93,11 +99,13 @@ pub struct StatusDto {
 pub struct LiveWallpaperDto {
     /// Monitor device id (see `monitors.list`).
     pub monitor: String,
+    /// `capturedRealtime`: an active GPU material supplies the composited desktop host's
+    /// live image; this does not mean the individual wallpaper renderer is directly
+    /// capturable. Otherwise, including while realtime glass is disabled or paused:
     /// `none`: no live wallpaper covers the monitor, the backdrops show the Windows wallpaper |
-    /// `pending`: one does, but no capture of it has worked yet (the Windows wallpaper until
-    /// then) | `captured`: the backdrops show its latest capture | `notCapturable`: it draws
-    /// nothing a capture can read (Wallpaper Engine scenes, for one), so the backdrops show a
-    /// neutral colour.
+    /// `pending`: one does, but no snapshot of it has worked yet (the Windows wallpaper until
+    /// then) | `captured`: the backdrops show its latest snapshot | `notCapturable`: the
+    /// snapshot backend cannot read the wallpaper renderer, so its fallback is a neutral colour.
     pub state: String,
 }
 

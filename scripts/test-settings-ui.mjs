@@ -982,6 +982,27 @@ async function runTests() {
     assert(styleRadio(doc, 'fluent').checked, 'Missing material has no valid selection');
     assert(!doc.documentElement.classList.contains('liquid-glass'), 'Old settings changed the appearance');
   });
+  await test('Real-time glass supports 5 to 240 FPS and preserves the legacy 30 FPS default', async () => {
+    doc = await reset();
+    const input = doc.getElementById('realtimeGlassFps');
+    assert(input.min === '5' && input.max === '240', 'Wrong refresh range');
+    assert(input.value === '30' && input.disabled, 'Old settings must retain 30 FPS with live glass off');
+    styleRadio(doc, 'liquidGlass').click(); await settle();
+    doc.querySelector('[data-bind="realtimeGlass.enabled"]').click(); await settle();
+    assert(!input.disabled && current().settings.realtimeGlass.enabled, 'Refresh control did not enable');
+    const patches = () => frame.contentWindow.testMessages.filter(m => m.type === 'patchSettings').length;
+    for (const fps of [5, 60, 120, 144, 165, 240]) {
+      const before = patches();
+      slide('realtimeGlassFps', String(fps));
+      assert(patches() === before, 'Refresh rate saved during drag');
+      release('realtimeGlassFps'); await settle();
+      assert(patches() === before + 1 && current().settings.realtimeGlass.fps === fps, 'Released FPS was not saved: ' + fps);
+      assert(input.getAttribute('aria-valuetext') === fps + ' FPS', 'Wrong announced FPS: ' + fps);
+    }
+    frame.contentWindow.testRefresh(); await settle();
+    assert(input.value === '240', 'Host refresh lost the maximum FPS');
+    doc = await reset();
+  });
   await test('The 自定义 tile shows the theme files and picks the first; a built-in tile goes back', async () => {
     const select = doc.getElementById('customTheme'), row = doc.getElementById('customThemeRow');
     assert(row.hidden && styleRadio(doc, 'fluent').checked && !styleRadio(doc, 'custom').checked, 'A custom theme was chosen at first');
@@ -1125,7 +1146,7 @@ async function runTests() {
   await test('常规 has the new headings in order, one card for the Windows desktop shortcut', async () => {
     doc.querySelector('[data-page=general]').click();
     const heads = [...doc.querySelectorAll('#page-general h3')].map(h => h.textContent).join(' / ');
-    assert(heads === '语言 / 外观 / 图标 / 桌面与启动 / 隐藏栅栏 / 收起与展开 / 标题栏与标签页 / 吸附与对齐', 'Headings: ' + heads);
+    assert(heads === '语言 / 外观 / 实时液态玻璃（实验版） / 图标 / 桌面与启动 / 隐藏栅栏 / 收起与展开 / 标题栏与标签页 / 吸附与对齐', 'Headings: ' + heads);
     const wd = doc.getElementById('wdHotkeyCard');
     assert(wd.contains(doc.getElementById('wdHotkey')) && !wd.classList.contains('child') && wd.querySelector('.t').textContent === '临时显示 Windows 桌面', 'The shortcut box is not in the 临时显示 Windows 桌面 card');
     assert(doc.getElementById('wdHotkeyHelp').textContent.includes('隐藏所有栅栏'), 'The card does not say what it does: ' + doc.getElementById('wdHotkeyHelp').textContent);

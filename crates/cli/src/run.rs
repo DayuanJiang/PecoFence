@@ -147,11 +147,18 @@ pub fn run(ctx: &Ctx, command: Command) -> Result<Reply, IpcError> {
 /// Where the app keeps its files: asks a running instance first (`status.get`), otherwise the
 /// default locations.
 fn paths(ctx: &Ctx) -> local::Paths {
-    let from_status = ctx
-        .call(Method::StatusGet)
-        .ok()
-        .and_then(|r| r.result["configPath"].as_str().map(str::to_string));
-    local::resolve(ctx.instance.as_deref(), from_status)
+    let status = ctx.call(Method::StatusGet).ok().map(|reply| reply.result);
+    let from_status = status
+        .as_ref()
+        .and_then(|value| value["configPath"].as_str())
+        .map(str::to_string);
+    let mut paths = local::resolve(ctx.instance.as_deref(), from_status);
+    paths.apply_runtime_log_dir(
+        status
+            .as_ref()
+            .and_then(|value| value["runtimeLogDir"].as_str()),
+    );
+    paths
 }
 
 /// `watch`: prints each event as one JSON document (`--once`: returns the first as the result).

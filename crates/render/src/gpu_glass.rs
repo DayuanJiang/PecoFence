@@ -90,11 +90,49 @@ pub struct WallpaperCache {
     /// Most recent first.
     entries: Vec<Upload>,
     pub uploads: u64,
+    realtime: Option<crate::realtime_material::RealtimeMaterial>,
 }
 
 impl WallpaperCache {
     pub fn clear(&mut self) {
         self.entries.clear();
+        self.realtime = None;
+    }
+
+    pub(crate) fn has_realtime(&self) -> bool {
+        self.realtime.is_some()
+    }
+
+    pub(crate) fn realtime_refraction(&self) -> Option<f32> {
+        self.realtime.as_ref().map(|m| m.refraction())
+    }
+
+    pub(crate) fn clear_realtime(&mut self) -> bool {
+        self.realtime.take().is_some()
+    }
+
+    pub(crate) fn update_realtime(
+        &mut self,
+        stack: &crate::RenderStack,
+        surface: &windows_core::IUnknown,
+        size: (u32, u32),
+        bounds: [i32; 4],
+        options: &pecofence_core::RealtimeGlassSettings,
+    ) -> Result<()> {
+        if self
+            .realtime
+            .as_ref()
+            .is_none_or(|m| !m.matches(surface, size, bounds, options))
+        {
+            self.realtime = Some(crate::realtime_material::RealtimeMaterial::new(
+                stack.material_context()?,
+                surface,
+                size,
+                bounds,
+                options,
+            )?);
+        }
+        self.realtime.as_mut().unwrap().update()
     }
 
     /// Releases the textures of sets nobody holds any more (a replaced wallpaper, or every
@@ -117,6 +155,13 @@ impl WallpaperCache {
         context: &b::ID2D1DeviceContext,
         sources: &Rc<Vec<MonitorBackdrop>>,
     ) -> Result<Rc<Wallpaper>> {
+        if let Some(live) = &self.realtime {
+            // A fresh wrapper invalidates each lens's cached effect input after an external
+            // GPU copy. All wrappers share the same persistent texture and effect graph.
+            return Ok(Rc::new(Wallpaper {
+                image: live.image()?,
+            }));
+        }
         self.entries.retain(|e| e.source.strong_count() > 0);
         let key = Rc::downgrade(sources);
         if let Some(index) = self.entries.iter().position(|e| e.source.ptr_eq(&key)) {
@@ -422,6 +467,7 @@ pub struct GpuGlass {
     controls: HashMap<u128, Control>,
     text_inks: HashMap<u128, (bool, u64)>,
     lens: Lens,
+    resolved_refraction: Option<f32>,
 }
 
 struct Control {
@@ -573,7 +619,14 @@ impl GpuGlass {
             (rect.width() * scale).ceil().max(1.0) as u32,
             (rect.height() * scale).ceil().max(1.0) as u32,
         );
-        if effects.geometry(&context, w, h, scale, radius, self.lens.refraction)? {
+        if effects.geometry(
+            &context,
+            w,
+            h,
+            scale,
+            radius,
+            self.resolved_refraction.unwrap_or(self.lens.refraction),
+        )? {
             self.stats.control_map_builds += 1;
         }
         effects.set_light(RIM_LIGHT * self.lens.rim_light)?;
@@ -629,6 +682,7 @@ impl GpuGlass {
     ) -> Result<()> {
         let context: b::ID2D1DeviceContext = session.raw().cast()?;
         let source = cache.get(&context, sources)?;
+        self.resolved_refraction = cache.realtime_refraction();
         if self.effects.is_none() {
             self.effects = Some(Effects::new(&context)?);
         }
@@ -643,7 +697,14 @@ impl GpuGlass {
         }
         let w = rect[2].max(1) as u32;
         let h = rect[3].max(1) as u32;
-        if effects.geometry(&context, w, h, scale, radius, self.lens.refraction)? {
+        if effects.geometry(
+            &context,
+            w,
+            h,
+            scale,
+            radius,
+            self.resolved_refraction.unwrap_or(self.lens.refraction),
+        )? {
             self.stats.map_builds += 1;
         }
         matrix(

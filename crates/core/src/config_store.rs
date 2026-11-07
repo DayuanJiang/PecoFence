@@ -346,6 +346,7 @@ pub fn validate(cfg: &Config) -> Result<(), String> {
     if cfg.schema_version == 0 || cfg.schema_version > SCHEMA_VERSION {
         return Err(format!("unsupported schemaVersion {}", cfg.schema_version));
     }
+    cfg.settings.realtime_glass.validate()?;
     for layout in &cfg.layouts {
         if layout.fences.len() > MAX_FENCES {
             return Err(format!("too many fences: {}", layout.fences.len()));
