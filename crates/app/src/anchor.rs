@@ -10,7 +10,7 @@ use pecofence_platform::{HWND, POINT, RECT, Result, msg, rawinput, shell_icons};
 use std::cell::{Cell, RefCell};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 pub const FENCE_CLASS: &str = "PecoFence.Fence";
 pub const SENTINEL_CLASS: &str = "PecoFence.Sentinel";
@@ -31,6 +31,15 @@ const RETRY_DELAYS_MS: [u32; 6] = [50, 150, 350, 750, 1500, 1200];
 /// Retries of a failed "hide desktop icons" request (logon: Explorer's desktop not ready yet),
 /// one per TIMER_ANCHOR_CHECK tick (~30 s at the 2 s cadence) before giving up.
 const HIDE_ICONS_MAX_ATTEMPTS: u32 = 15;
+/// How long startup and the retries wait for Explorer to hide or show the icons. It needs
+/// about 0.3 s for 1400 icons when idle, 20 s right after sign-in: the toggle goes on without
+/// us, and the next check finds the icons hidden (`hide_desktop_icons_within`).
+const ICONS_QUICK_WAIT: Duration = Duration::from_millis(100);
+/// The same for a click in Settings or the tray, which waits for its answer.
+const ICONS_ASKED_WAIT: Duration = Duration::from_millis(1500);
+/// Showing them again (exit, the setting turned off, 「临时显示 Windows 桌面」): a toggle still out
+/// when the process ends is lost, and the icons stay hidden until the watchdog shows them.
+const ICONS_RESTORE_WAIT: Duration = Duration::from_secs(4);
 
 thread_local! {
     static ANCHORING: Cell<bool> = const { Cell::new(false) };
@@ -1047,7 +1056,7 @@ impl DesktopAnchor {
         // when the z-order is off, so the setting converges with reality without a toggle.
         if self.icons.pending && self.icons.pending_attempts < HIDE_ICONS_MAX_ATTEMPTS {
             self.icons.pending_attempts += 1;
-            if self.hide_desktop_icons() {
+            if self.hide_desktop_icons_within(ICONS_QUICK_WAIT) {
                 tracing::info!(
                     attempts = self.icons.pending_attempts,
                     "desktop icons hidden on retry"
@@ -1327,6 +1336,13 @@ impl DesktopAnchor {
 
     /// Hides the real desktop icons (writing the crash-recovery marker first).
     pub fn hide_desktop_icons(&mut self) -> bool {
+        self.hide_desktop_icons_within(ICONS_ASKED_WAIT)
+    }
+
+    /// `hide_desktop_icons`, waiting `wait` at most for Explorer. A toggle it has not answered
+    /// by then stays out with the marker: the retries (`pending`) find the icons hidden and
+    /// adopt them, and send no second toggle meanwhile.
+    fn hide_desktop_icons_within(&mut self, wait: Duration) -> bool {
         if self.host.is_none() {
             self.host = desktop::resolve_icon_host(self.generation);
         }
@@ -1335,9 +1351,10 @@ impl DesktopAnchor {
         if shell_icons::desktop_icons_hidden() {
             if self.icons.marker.exists() || kept.exists() {
                 // Our previous run died without restoring them, or left them hidden on purpose
-                // (`release_desktop_icons`). Taking them back lets exit restore or keep them as
-                // the setting says, and a fresh watchdog covers a crash.
-                tracing::info!("desktop icons still hidden by our previous run; adopting");
+                // (`release_desktop_icons`), or Explorer answered our toggle late. Taking them
+                // back lets exit restore or keep them as the setting says, and a fresh watchdog
+                // covers a crash.
+                tracing::info!("desktop icons hidden under our marker; adopting");
                 if let Some(dir) = self.icons.marker.parent() {
                     let _ = std::fs::create_dir_all(dir);
                 }
@@ -1356,12 +1373,21 @@ impl DesktopAnchor {
             let _ = std::fs::create_dir_all(dir);
         }
         let _ = std::fs::write(&self.icons.marker, b"pecofence hid desktop icons\n");
-        match shell_icons::set_desktop_icons_hidden(true, h.def_view, h.host) {
-            Some(true) => {
+        match shell_icons::set_desktop_icons_hidden_within(true, h.def_view, h.host, wait) {
+            shell_icons::IconToggle::Done(true) => {
                 self.icons.we_hid_them = true;
                 tracing::info!("desktop icons hidden (0x7402)");
                 self.spawn_watchdog();
                 true
+            }
+            shell_icons::IconToggle::Waiting => {
+                // Retried from ensure_anchored: the first check after Explorer answered adopts.
+                self.icons.pending = true;
+                tracing::info!(
+                    wait_ms = wait.as_millis(),
+                    "desktop icons hide out; Explorer has not answered it yet"
+                );
+                false
             }
             other => {
                 tracing::warn!(?other, "hiding desktop icons failed");
@@ -1374,14 +1400,14 @@ impl DesktopAnchor {
     /// Requests hiding; if it cannot be done now (Explorer not ready) keeps retrying from
     /// ensure_anchored until it works or the retry budget is spent.
     pub fn request_hide_desktop_icons(&mut self) -> bool {
-        if self.hide_desktop_icons() {
+        if self.hide_desktop_icons_within(ICONS_QUICK_WAIT) {
             self.icons.pending = false;
             self.icons.pending_attempts = 0;
             return true;
         }
         self.icons.pending = true;
         self.icons.pending_attempts = 0;
-        tracing::warn!("hiding desktop icons failed; will retry when the desktop is ready");
+        tracing::warn!("desktop icons not hidden yet; will retry when the desktop is ready");
         false
     }
 
@@ -1450,8 +1476,13 @@ impl DesktopAnchor {
             .host
             .or_else(|| desktop::resolve_icon_host(self.generation));
         if let Some(h) = host {
-            match shell_icons::set_desktop_icons_hidden(false, h.def_view, h.host) {
-                Some(false) => tracing::info!("desktop icons restored"),
+            match shell_icons::set_desktop_icons_hidden_within(
+                false,
+                h.def_view,
+                h.host,
+                ICONS_RESTORE_WAIT,
+            ) {
+                shell_icons::IconToggle::Done(false) => tracing::info!("desktop icons restored"),
                 other => {
                     tracing::warn!(?other, "restoring desktop icons failed");
                     // Keep ownership and the crash-recovery marker until restoration
@@ -1494,8 +1525,15 @@ impl DesktopAnchor {
             let shown = self
                 .host
                 .or_else(|| desktop::resolve_icon_host(self.generation))
-                .and_then(|h| shell_icons::set_desktop_icons_hidden(false, h.def_view, h.host));
-            if shown != Some(false) {
+                .map(|h| {
+                    shell_icons::set_desktop_icons_hidden_within(
+                        false,
+                        h.def_view,
+                        h.host,
+                        ICONS_QUICK_WAIT,
+                    )
+                });
+            if shown != Some(shell_icons::IconToggle::Done(false)) {
                 tracing::warn!(?shown, "showing the kept desktop icons failed");
                 return;
             }

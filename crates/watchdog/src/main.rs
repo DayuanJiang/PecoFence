@@ -89,8 +89,14 @@ fn restore_icons(marker: &Path, mutex: &str) {
         }
         let restored = !shell_icons::desktop_icons_hidden()
             || desktop::resolve_icon_host(desktop::detect_generation()).is_some_and(|host| {
-                shell_icons::set_desktop_icons_hidden(false, host.def_view, host.host)
-                    == Some(false)
+                // One toggle at a time, sent after Explorer has handled what PecoFence sent
+                // before it quit: a second one while Explorer is busy hid the icons again.
+                shell_icons::set_desktop_icons_hidden_within(
+                    false,
+                    host.def_view,
+                    host.host,
+                    Duration::from_secs(10),
+                ) == shell_icons::IconToggle::Done(false)
             });
         if restored {
             let _ = std::fs::remove_file(marker);

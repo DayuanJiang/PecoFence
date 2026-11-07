@@ -745,14 +745,18 @@ pub(super) fn verify_wallpaper_later(control: HWND, signature: String) {
 
 pub(super) fn build_backdrop_sets(
     theme: &Theme,
-    wallpaper_override: Option<&str>,
+    snapshot: &wallpaper::WallpaperSnapshot,
     live: &[LiveWallpaper],
 ) -> Result<(Rc<BackdropSets>, String)> {
-    let snapshot = wallpaper_snapshot(wallpaper_override)?;
-    let signature = backdrop_signature(&snapshot, live);
-    let backdrops = build_snapshot_backdrops(theme, &snapshot, live, &signature)?;
+    let signature = backdrop_signature(snapshot, live);
+    let backdrops = build_snapshot_backdrops(theme, snapshot, live, &signature)?;
     Ok((backdrops, signature))
 }
+
+/// How long a theme, scale or monitor change waits for the wallpaper read it rebuilds the
+/// backdrops from. Explorer answers within a few ms; when it is busy the fences take the new
+/// theme on the backdrops they have, and the read's answer rebuilds them.
+const REFRESH_WAIT: Duration = Duration::from_millis(150);
 
 /// Another virtual desktop's wallpaper, decoded on a worker thread ahead of a switch there:
 /// a cache miss at switch time (a 4K decode) outlasts the switch animation, so the fences
@@ -979,7 +983,8 @@ impl App {
         let Some(current) = self.wallpaper_sig.clone() else {
             return;
         };
-        let Ok(snapshot) = wallpaper::query() else {
+        // The last check's read: asking Explorer again here would wait on it on the UI thread.
+        let Some(snapshot) = self.last_wallpaper.clone() else {
             return;
         };
         if snapshot.signature() != current {
@@ -1147,12 +1152,58 @@ impl App {
     }
 
     /// A wallpaper signal or the 5 s poll: follows the Windows wallpaper and the live
-    /// wallpapers over it, and captures those that are due.
-    pub(super) fn check_wallpaper(&mut self, reason: &str) {
-        let Ok(snapshot) = wallpaper_snapshot(self.wallpaper_override.as_deref()) else {
-            return;
-        };
-        self.follow_snapshot(&snapshot, reason);
+    /// wallpapers over it, and captures those that are due, once the reader's worker has read
+    /// it (`on_wallpaper_read`). A poll while a read is out is skipped.
+    pub(super) fn check_wallpaper(&mut self, reason: &'static str) {
+        self.wallpaper_reader.request(reason);
+    }
+
+    /// The reader's answer: the check it was for runs on it, then a check asked for meanwhile
+    /// starts. `discard` while the monitors settle: the display change rebuilds the backdrops.
+    pub(super) fn on_wallpaper_read(&mut self, discard: bool) {
+        if let Some((reason, read)) = self.wallpaper_reader.answer(Duration::ZERO) {
+            match read {
+                Ok(snapshot) if discard => {
+                    self.last_wallpaper = Some(snapshot);
+                    tracing::debug!(reason, "wallpaper read while monitors settle; not shown");
+                }
+                Ok(snapshot) => self.follow_snapshot(&snapshot, reason),
+                Err(error) => tracing::debug!(reason, %error, "wallpaper not readable"),
+            }
+        }
+        if let Some(reason) = self.wallpaper_reader.take_again() {
+            self.wallpaper_reader.request(reason);
+        }
+    }
+
+    /// A fresh read for a rebuild, waited for `REFRESH_WAIT` at most; None when Explorer did not
+    /// answer in time (its answer then runs a check, which rebuilds the backdrops).
+    fn read_wallpaper_now(
+        &mut self,
+    ) -> Option<std::result::Result<wallpaper::WallpaperSnapshot, String>> {
+        let started = Instant::now();
+        if self.wallpaper_reader.is_pending() {
+            // A check's read, started before what this rebuild is for (a display change): its
+            // check runs again afterwards (`on_wallpaper_read`), and a new read follows.
+            let Some((reason, _)) = self.wallpaper_reader.answer(REFRESH_WAIT) else {
+                tracing::info!(
+                    waited_ms = started.elapsed().as_millis(),
+                    "wallpaper read still out; backdrops rebuilt when it is back"
+                );
+                return None;
+            };
+            self.wallpaper_reader.queue(reason);
+        }
+        self.wallpaper_reader.request(wallpaper_refresh::REFRESH);
+        let left = REFRESH_WAIT.saturating_sub(started.elapsed());
+        let answer = self.wallpaper_reader.answer(left).map(|(_, read)| read);
+        if answer.is_none() {
+            tracing::info!(
+                waited_ms = started.elapsed().as_millis(),
+                "Explorer did not answer the wallpaper read in time; backdrops rebuilt when it does"
+            );
+        }
+        answer
     }
 
     /// What a check does once the wallpaper has been read (also run on the startup snapshot,
@@ -1162,6 +1213,7 @@ impl App {
         snapshot: &wallpaper::WallpaperSnapshot,
         reason: &str,
     ) {
+        self.last_wallpaper = Some(snapshot.clone());
         self.detect_live_wallpapers(snapshot);
         let refreshed = self.show_wallpaper(snapshot, reason);
         // A wallpaper signal, or a new wallpaper the poll found without one.
@@ -1396,17 +1448,29 @@ impl App {
                 TIMER_WALLPAPER_PREWARM,
                 WALLPAPER_PREWARM_DELAY_MS,
             );
-            match build_backdrop_sets(&theme, self.wallpaper_override.as_deref(), &self.live) {
-                Ok((backdrops, signature)) => {
+            let built = self.read_wallpaper_now().map(|read| {
+                let snapshot = read.map_err(|error| {
+                    windows_core::Error::new(windows_core::HRESULT(0x8000_4005_u32 as i32), error)
+                })?;
+                self.last_wallpaper = Some(snapshot.clone());
+                build_backdrop_sets(&theme, &snapshot, &self.live)
+            });
+            match built {
+                Some(Ok((backdrops, signature))) => {
                     self.wallpaper_cache
                         .insert(signature.clone(), backdrops.clone());
                     self.wallpaper_sig = Some(signature);
                     backdrops
                 }
-                Err(error) => {
+                Some(Err(error)) => {
                     tracing::warn!(%error, "backdrop refresh deferred until wallpaper is readable");
                     self.wallpaper_sig = None;
                     window::post_message(self.control.hwnd(), WM_APP_WALLPAPER, 0, 0);
+                    self.ctx.backdrops.borrow().clone()
+                }
+                // The read's answer runs a check: with no signature it rebuilds the backdrops.
+                None => {
+                    self.wallpaper_sig = None;
                     self.ctx.backdrops.borrow().clone()
                 }
             }

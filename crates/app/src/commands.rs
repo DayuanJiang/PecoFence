@@ -14,8 +14,11 @@ pub const WM_APP_COMMAND: u32 = msg::WM_APP + 1;
 /// holds (a menu verb that changed a namespace item).
 pub const WM_APP_FS_CHANGED: u32 = msg::WM_APP + 2;
 pub const WM_APP_TRAY: u32 = msg::WM_APP + 3;
-/// The wallpaper registry key changed (worker thread → UI thread).
+/// The wallpaper registry key changed (worker thread → UI thread). wparam 1: a foreground
+/// change (lparam the window); 2: the foreground window is on another virtual desktop.
 pub const WM_APP_WALLPAPER: u32 = msg::WM_APP + 6;
+/// The wallpaper reader answered (`WallpaperReader`, worker thread → UI thread).
+pub const WM_APP_WALLPAPER_READ: u32 = msg::WM_APP + 30;
 /// Posted by the compositor frame clock (`FrameClock`) when a fence asked for a frame.
 pub const WM_APP_FRAME: u32 = msg::WM_APP + 7;
 /// Posted to a fence window (from the compositor's callback thread) when its whole-window
