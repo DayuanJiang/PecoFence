@@ -629,15 +629,25 @@ pub struct ShortcutDropTarget {
 
 impl ShortcutDropTarget {
     pub fn bind(shortcut: &Path) -> Result<Self> {
-        crate::shell::shortcut_target_expanded(shortcut)
-            .filter(|p| {
-                p.extension().is_some_and(|ext| {
-                    ["exe", "com", "bat", "cmd"]
-                        .iter()
-                        .any(|suffix| ext.eq_ignore_ascii_case(suffix))
-                }) && p.is_file()
-            })
-            .ok_or_else(|| windows_core::Error::from_hresult(E_FAIL))?;
+        let resolved = crate::shell::shortcut_target_expanded(shortcut);
+        let app = resolved.as_ref().is_some_and(|p| {
+            p.extension().is_some_and(|ext| {
+                ["exe", "com", "bat", "cmd"]
+                    .iter()
+                    .any(|suffix| ext.eq_ignore_ascii_case(suffix))
+            }) && p.is_file()
+        });
+        // Not an application: a document, a folder, a missing program, or a Store app's link
+        // (no file path).
+        tracing::debug!(
+            shortcut = %shortcut.display(),
+            target = ?resolved,
+            app,
+            "shortcut under a folder drag"
+        );
+        if !app {
+            return Err(windows_core::Error::from_hresult(E_FAIL));
+        }
         // Resolve only to check the target type. Bind the link itself, so the Shell keeps
         // its saved arguments, working directory and launch behaviour.
         let path = to_wide(&shortcut.to_string_lossy());

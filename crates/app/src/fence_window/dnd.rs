@@ -715,7 +715,8 @@ impl DropHandler for FenceDropHandler {
         self.over_stats.report("drop");
         let drop_started = Instant::now();
         if let Some(feedback) = self.shortcut_feedback(Some(pt), key_state, allowed) {
-            let target = self.shortcut_hover.take().and_then(|(_, target)| target);
+            let (shortcut, target) = self.shortcut_hover.take().unzip();
+            let target = target.flatten();
             self.kind = DropKind::None;
             self.feedback(None, 0, 0);
             self.forget_data(false);
@@ -725,7 +726,7 @@ impl DropHandler for FenceDropHandler {
             }
             // Never fall through to membership changes or file moves when a shortcut
             // rejects the folders, disappears, or fails to launch.
-            return target
+            let effect = target
                 .filter(|_| feedback.effect != DropEffect::None)
                 .map(|target| {
                     target
@@ -736,6 +737,14 @@ impl DropHandler for FenceDropHandler {
                         })
                 })
                 .unwrap_or(DropEffect::None);
+            tracing::info!(
+                shortcut = %shortcut.unwrap_or_default().display(),
+                folders = dragdrop::hdrop_paths(data).len(),
+                refused = feedback.effect == DropEffect::None,
+                ?effect,
+                "folders dropped on an application shortcut"
+            );
+            return effect;
         }
         let kind = std::mem::replace(&mut self.kind, DropKind::None);
         let internal = Self::internal();
