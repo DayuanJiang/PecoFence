@@ -293,5 +293,11 @@ impl FenceViewState {
         if let Some(m) = self.marquee.as_mut() {
             m.base = remap_indices(old_ids, &new, &m.base);
         }
+        // A Ctrl / Shift rectangle on the desktop beside 像桌面一样排列 keeps the icons selected
+        // when it started: by identity too, or a file coming or going meanwhile selects
+        // another icon.
+        if let Some(base) = self.desktop_band_base.as_mut() {
+            *base = remap_indices(old_ids, &new, base);
+        }
     }
 }

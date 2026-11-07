@@ -78,6 +78,8 @@ pub enum Command {
     /// if it now covers another fence, it moves to the nearest free spot.
     FenceDropped(FenceId),
     ToggleRollUp(FenceId),
+    /// A double-click on the bottom edge: the height that shows every icon (适应内容大小).
+    FitToContent(FenceId),
     /// A hover-peeked fence was double-clicked: keep it expanded.
     CommitExpanded(FenceId),
     /// Open `item` from fence `from` (a folder opens in place when `from` is a navigating portal).

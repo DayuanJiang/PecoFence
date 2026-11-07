@@ -178,7 +178,9 @@ impl FenceViewState {
         let (w_px, h_px) = self.chrome_panel.size_px();
         // Under the tabs of a left tab column (the fence's title bar). Collapsed to the column
         // there is none: a tab click expands the fence. Hidden by the user, its spot is title.
-        if self.column_collapsed || self.behavior.hide_count_and_chevron.get() {
+        // 像桌面一样排列 has no title row: the spot is part of an icon's cell, where a press
+        // starts a rectangle (a drag from it moved the whole 「桌面」 fence).
+        if self.column_collapsed || self.behavior.hide_count_and_chevron.get() || self.bare() {
             return false;
         }
         let r = if self.tabs_on_rail() {

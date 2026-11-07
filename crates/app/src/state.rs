@@ -1030,6 +1030,15 @@ impl AppState {
             .iter()
             .flat_map(|f| f.items.iter().map(|r| r.item_id))
             .collect();
+        // Fences that showed icons before this pass: what lands in one of them now goes after
+        // its icons (`place_last`). Into an empty fence (the first run) the icons come by name.
+        let shown: HashSet<FenceId> = self
+            .fences()
+            .iter()
+            .filter(|f| self.own_item_count(f) > 0)
+            .map(|f| f.id)
+            .collect();
+        let mut arrived: Vec<(FenceId, ItemId)> = Vec::new();
         // Naming new entries one at a time costs several ms each on a OneDrive desktop: a batch
         // of them (first run, an unpacked archive) is named per folder in one go, as
         // `refresh_portal` does.
@@ -1109,6 +1118,9 @@ impl AppState {
                     {
                         report.updated += 1;
                         self.dirty = true;
+                        if shown.contains(&fence) {
+                            arrived.push((fence, id));
+                        }
                     }
                 }
                 continue;
@@ -1161,11 +1173,15 @@ impl AppState {
             report.note_route(target.as_ref());
             if let Some((fence, by)) = target {
                 self.config.assign(self.layout, id, fence, by);
+                if shown.contains(&fence) {
+                    arrived.push((fence, id));
+                }
             }
             report.added += 1;
             self.dirty = true;
         }
         report.unread = unread.len();
+        self.place_last(&arrived);
 
         // Orphans.
         let unread: Vec<Origin> = unread
@@ -1195,6 +1211,31 @@ impl AppState {
             self.remove_item_record(id);
         }
         report
+    }
+
+    /// 手动 order: icons that just arrived in a fence that already showed icons go after them,
+    /// as new files do on the Windows desktop; the icons there keep the order they are shown
+    /// in (a fence never arranged by hand shows them by name: that order is written down
+    /// now). Sorted fences and folders shown in a fence ignore it.
+    fn place_last(&mut self, arrived: &[(FenceId, ItemId)]) {
+        let mut fences: Vec<FenceId> = arrived.iter().map(|(f, _)| *f).collect();
+        fences.sort();
+        fences.dedup();
+        for fence in fences {
+            let items: Vec<ItemId> = arrived
+                .iter()
+                .filter(|(f, _)| *f == fence)
+                .map(|(_, i)| *i)
+                .collect();
+            let Some(f) = self.fence(fence) else {
+                continue;
+            };
+            if f.view.sort != SortMode::Manual || self.portal_path(fence).is_some() {
+                continue;
+            }
+            let moved = self.reorder_items(fence, &items, usize::MAX);
+            tracing::info!(%fence, items = items.len(), moved, "new icons placed after the others (manual order)");
+        }
     }
 
     /// Removes a desktop item's record from the table, the catalog and the fences.
@@ -1827,7 +1868,10 @@ impl AppState {
             tracing::info!(fence = %to, items = items.len(), "move into a tool fence refused");
             return 0;
         }
+        // A fence that shows icons takes the moved ones after them (手动 order).
+        let shown = self.fence(to).is_some_and(|f| self.own_item_count(f) > 0);
         let mut n = 0;
+        let mut arrived = Vec::new();
         for &id in items {
             if !self.config.items.contains_key(&id) {
                 continue;
@@ -1838,11 +1882,15 @@ impl AppState {
                 .is_some()
             {
                 n += 1;
+                if shown {
+                    arrived.push((to, id));
+                }
             }
         }
         if n > 0 {
             self.dirty = true;
         }
+        self.place_last(&arrived);
         n
     }
 
@@ -3321,6 +3369,43 @@ mod tests {
         // A sorted fence refuses.
         state.set_sort(fence, SortMode::Name);
         assert!(!state.reorder_items(fence, &[a], 0));
+    }
+
+    /// 手动 order (feedback #125): a file that appears while its fence shows icons goes after
+    /// them, whatever its name, as on the Windows desktop; the icons shown keep their places.
+    /// The first pass into an empty fence (the first run) lists them by name.
+    #[test]
+    fn new_desktop_files_go_after_the_shown_ones_in_manual_order() {
+        let mut state = test_state();
+        let mut desk = vec![
+            desktop_entry("b.txt"),
+            desktop_entry("d.txt"),
+            desktop_entry("a.txt"),
+        ];
+        state.sync_desktop(&desk);
+        let a = state
+            .item_by_path(Path::new("C:/Users/Me/Desktop/a.txt"))
+            .unwrap();
+        let fence = state.config.fence_of_item(0, a).unwrap();
+        assert_eq!(state.fence(fence).unwrap().view.sort, SortMode::Manual);
+        assert_eq!(names(&state, fence), ["a", "b", "d"]);
+        desk.push(desktop_entry("c.txt"));
+        state.sync_desktop(&desk);
+        assert_eq!(names(&state, fence), ["a", "b", "d", "c"]);
+        desk.push(desktop_entry("0.txt"));
+        desk.push(desktop_entry("e.txt"));
+        state.sync_desktop(&desk);
+        assert_eq!(names(&state, fence), ["a", "b", "d", "c", "0", "e"]);
+        // Sorted by name they follow the names; back to 手动, the order written down returns.
+        state.set_sort(fence, SortMode::Name);
+        assert_eq!(names(&state, fence), ["0", "a", "b", "c", "d", "e"]);
+        state.set_sort(fence, SortMode::Manual);
+        assert_eq!(names(&state, fence), ["a", "b", "d", "c", "0", "e"]);
+        // Moved in from another fence, an icon goes last too.
+        let other = state.fences().iter().find(|f| f.id != fence).unwrap().id;
+        let moved = add_item(&mut state, other, "1");
+        assert_eq!(state.move_items(&[moved], fence), 1);
+        assert_eq!(names(&state, fence), ["a", "b", "d", "c", "0", "e", "1"]);
     }
 
     #[test]

@@ -177,6 +177,9 @@ const TIMER_EVERYTHING_SETUP: usize = 71;
 /// 对话框跳转 offer: a dialog to offer it to (`WM_APP_DIALOG_OFFER`); retried while the App is
 /// borrowed.
 const TIMER_DIALOG_OFFER: usize = 73;
+/// A folder shown in a fence is gone: look for it again soon (`check_missing_portals`), not
+/// only at the minute's housekeeping.
+const TIMER_PORTAL_BACK: usize = 80;
 const THEMES_SETTLE_MS: u32 = 300;
 const DEVICE_RETRY_MAX_MS: u32 = 30_000;
 /// Growth of private commit plus GPU memory that logs a memory line before the hour is up.
@@ -282,6 +285,12 @@ pub struct App {
     /// Portal folders whose watcher could not be started after a long wait (an unreachable
     /// network share): how many times, and when to try again (see `ensure_portal_watchers`).
     watcher_retry: HashMap<PathBuf, (u32, Instant)>,
+    /// `TIMER_PORTAL_BACK` is set: a folder shown in a fence is gone (see `sync.rs`).
+    portal_back_armed: bool,
+    /// Per window: the tab, icon size and height before its icon size changed, and the height
+    /// the last change left (`apply_icon_size`): stepping back to that size gives that height
+    /// back, unless the height is no longer the one the last change left (sized by hand).
+    icon_size_heights: HashMap<FenceId, (FenceId, u32, i32, i32)>,
     fs_pending: Arc<Mutex<Vec<FsEvent>>>,
     /// Finished shell file operations from the worker threads (see `fileops.rs`).
     fileops_done: fileops::FileOpResults,
@@ -950,6 +959,7 @@ impl App {
                                 | TIMER_EVERYTHING_STATUS
                                 | TIMER_EVERYTHING_SETUP
                                 | TIMER_DIALOG_OFFER
+                                | TIMER_PORTAL_BACK
                                 | TIMER_STARTUP_BACKDROPS => {
                                     if let Ok(mut guard) = cell.try_borrow_mut()
                                         && let Some(app) = guard.as_mut()
@@ -973,6 +983,7 @@ impl App {
                                                 app.finish_startup_backdrops()
                                             }
                                             TIMER_DIALOG_OFFER => app.offer_dialog_jump(),
+                                            TIMER_PORTAL_BACK => app.check_missing_portals(),
                                             _ => app.prewarm_wallpapers(),
                                         }
                                     } else {
@@ -1518,6 +1529,8 @@ impl App {
             portal_watchers: HashMap::new(),
             portal_forward: HashMap::new(),
             watcher_retry: HashMap::new(),
+            portal_back_armed: false,
+            icon_size_heights: HashMap::new(),
             fs_pending,
             fileops_done: Arc::new(Mutex::new(Vec::new())),
             fileops_running: 0,
@@ -2103,6 +2116,9 @@ impl App {
             }
             Command::FenceDropped(fence) => self.move_out_of_overlap(fence),
             Command::ToggleRollUp(fence) => self.toggle_roll(fence),
+            Command::FitToContent(fence) => {
+                self.fit_to_content_by_user(fence, "bottom edge double-click")
+            }
             Command::CommitExpanded(fence) => {
                 if let Some(w) = self.fences.get(&fence) {
                     w.commit_expanded();

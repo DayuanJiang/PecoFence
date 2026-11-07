@@ -388,11 +388,13 @@ impl App {
         self.schedule_save();
     }
 
-    /// Icon size, spacing or label lines changed on a fixed-height fence: the height follows the
-    /// content (no band of empty rows after shrinking the cells, no scrollbar after growing
-    /// them), growing only as far as the next fence below. The bottom edge glides there like an
-    /// auto-height fence's.
-    pub(super) fn fit_height_to_content(&mut self, id: FenceId) {
+    /// Icon size, spacing or label lines changed on a fixed-height fence, or 适应内容大小: the
+    /// height follows the content (no band of empty rows after shrinking the cells, no
+    /// scrollbar after growing them). With 推开下方的栅栏 the fences below make room, as for an
+    /// expand, and come back when it shrinks; without it the fence grows only as far as the next
+    /// fence below. The bottom edge glides there like an auto-height fence's. Returns the new
+    /// height (None: nothing changed).
+    pub(super) fn fit_height_to_content(&mut self, id: FenceId) -> Option<i32> {
         let id = self.state.host_of(id);
         // A tool fence keeps the height the user gave it (it has no rows of icons).
         if self
@@ -400,21 +402,19 @@ impl App {
             .fence(id)
             .is_none_or(|f| f.view.auto_height || f.tool.is_some())
         {
-            return;
+            return None;
         }
-        let Some(w) = self.fences.get(&id) else {
-            return;
-        };
+        let w = self.fences.get(&id)?;
         if w.is_rolled() {
-            return;
+            return None;
         }
-        let Some(fit) = w.fit_report() else {
-            return;
-        };
+        let fit = w.fit_report()?;
         let r = w.rect();
         let scale = monitors::dpi_for_window(w.hwnd()).max(96) as f32 / 96.0;
         let mut h = fit.fitting_height_px;
-        if let Some(limit) = self.growth_limit_below(id, &r)
+        let push = self.state.config.settings.roll_up.push_neighbors;
+        if !push
+            && let Some(limit) = self.growth_limit_below(id, &r)
             && let Some(steps) = self.grid_steps(id, scale)
         {
             let limit = limit.max(r.bottom);
@@ -432,10 +432,45 @@ impl App {
             }
         }
         if h == r.bottom - r.top {
-            return;
+            return None;
         }
         let rect = w.apply_height(h, true);
         self.record_bounds(id, rect, false, h, "fit");
         self.schedule_save();
+        Some(h)
+    }
+
+    /// 适应内容大小 (fence menu) and a double-click on the bottom edge: the height that shows
+    /// every icon (`fit_height_to_content`). Nothing for a fence placed like the desktop, a
+    /// locked, rolled or auto-height one (it fits already), or a tool fence.
+    pub(super) fn fit_to_content_by_user(&mut self, fence: FenceId, by: &'static str) {
+        let host = self.state.host_of(fence);
+        let Some(w) = self.fences.get(&host) else {
+            return;
+        };
+        let from_h = w.rect().bottom - w.rect().top;
+        let f = self.state.fence(host);
+        let skip = if w.is_desktop_arranged() {
+            Some("desktop layout")
+        } else if f.is_some_and(|f| f.locked) {
+            Some("locked")
+        } else if w.is_rolled() {
+            Some("rolled")
+        } else if f.is_some_and(|f| f.view.auto_height) {
+            Some("auto height")
+        } else if self.state.fence(fence).is_some_and(|f| f.tool.is_some()) {
+            Some("tool fence")
+        } else {
+            None
+        };
+        if let Some(reason) = skip {
+            tracing::info!(%fence, by, reason, "fit to content skipped");
+            return;
+        }
+        // The height the user asks for now is the one an icon-size step comes back to.
+        self.icon_size_heights.remove(&host);
+        let to_h = self.fit_height_to_content(fence);
+        tracing::info!(%fence, by, from_h, ?to_h, "fit to content");
+        self.push_settings_state();
     }
 }

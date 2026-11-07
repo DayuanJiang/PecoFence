@@ -2,6 +2,9 @@
 
 use super::*;
 
+/// How often a gone folder shown in a fence is looked for (`check_missing_portals`).
+const PORTAL_BACK_MS: u32 = 1500;
+
 /// Starts a watcher on `dir` whose batches land in `pending` and poke the control window.
 pub(super) fn start_watcher(
     dir: &Path,
@@ -113,6 +116,60 @@ impl App {
             self.ensure_portal_watchers();
         }
         self.refresh_portal_fences(&changed);
+        self.arm_portal_back_check();
+    }
+
+    /// While a fence shows a folder that is gone (deleted, renamed away, an undo yet to come),
+    /// look for it every `PORTAL_BACK_MS` instead of only at the minute's `revive_watchers`: a
+    /// folder made again is back in its fence within a second or two. Only folders on a local
+    /// drive are looked for this often (asking a share can block until the network gives up).
+    pub(super) fn arm_portal_back_check(&mut self) {
+        if self.portal_back_armed {
+            return;
+        }
+        let missing = self.missing_local_portals();
+        if missing.is_empty() {
+            return;
+        }
+        tracing::info!(
+            missing = missing.len(),
+            every_ms = PORTAL_BACK_MS,
+            "folder shown in a fence is gone; looking for it"
+        );
+        self.portal_back_armed = true;
+        window::set_timer(self.control.hwnd(), TIMER_PORTAL_BACK, PORTAL_BACK_MS);
+    }
+
+    /// The fences showing a folder on a local drive that was last read as missing.
+    fn missing_local_portals(&self) -> Vec<PathBuf> {
+        self.state
+            .fences()
+            .iter()
+            .filter(|f| self.state.portal_missing(f.id))
+            .filter_map(|f| self.state.portal_path(f.id))
+            .filter(|p| matches!(shell::drive_kind(p), "fixed" | "removable"))
+            .collect()
+    }
+
+    /// TIMER_PORTAL_BACK: a missing folder that exists again is watched and read now; the
+    /// check goes on while any is still missing.
+    pub(super) fn check_missing_portals(&mut self) {
+        self.portal_back_armed = false;
+        let missing = self.missing_local_portals();
+        let back = missing.iter().filter(|p| p.is_dir()).count();
+        if back > 0 {
+            tracing::info!(
+                back,
+                missing = missing.len(),
+                "folder shown in a fence is back"
+            );
+            self.revive_watchers();
+        }
+        // Quietly: the line above already said it is being looked for.
+        if !self.missing_local_portals().is_empty() {
+            self.portal_back_armed = true;
+            window::set_timer(self.control.hwnd(), TIMER_PORTAL_BACK, PORTAL_BACK_MS);
+        }
     }
 
     /// `desktop`: the batch carries a shell notice or a menu's request, so the desktop is
@@ -244,6 +301,8 @@ impl App {
             self.schedule_save();
         }
         self.push_workspace_summary();
+        // A folder shown in a fence that this batch took away is looked for from now on.
+        self.arm_portal_back_check();
     }
 
     /// TIMER_TMP_SETTLE: the `.tmp` the rules held back are old enough now.

@@ -128,7 +128,7 @@ pub(super) fn place_group(
         let work = work_for(&bbox);
         let mut snapped = bbox;
         snap_among(&mut snapped, others, work.as_ref(), gap, dist);
-        guides = alignment_guides(&snapped, others, work.as_ref(), dist);
+        guides = alignment_guides(&snapped, others, work.as_ref());
         (sx, sy) = (snapped.left - bbox.left, snapped.top - bbox.top);
     }
     *rect = shifted(rect, sx, sy);
