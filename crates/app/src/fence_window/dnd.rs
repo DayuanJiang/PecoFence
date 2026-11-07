@@ -13,6 +13,9 @@ pub(super) struct InternalDrag {
     pub(super) from: FenceId,
     pub(super) items: Vec<ItemId>,
     pub(super) paths: Vec<PathBuf>,
+    /// Each item's centre less the press point (screen px): where the icons land when they
+    /// are dropped on a 「桌面」 that places them freely (自由摆放).
+    pub(super) offsets: Vec<(ItemId, (i32, i32))>,
 }
 
 thread_local! {
@@ -763,7 +766,8 @@ impl DropHandler for FenceDropHandler {
                     let _ = v.redraw_content();
                 }
                 v.apply_drop_feedback(None);
-                (spot, v.active, tab_fence, folder, v.hwnd, dest)
+                let free = v.places_freely();
+                (spot, v.active, tab_fence, folder, v.hwnd, dest, free)
             })
         });
         self.forget_data(false);
@@ -781,7 +785,7 @@ impl DropHandler for FenceDropHandler {
             }
         };
         let effect = 'resolve: {
-            let Some((spot, active, tab_fence, folder, hwnd, dest)) = resolved else {
+            let Some((spot, active, tab_fence, folder, hwnd, dest, free)) = resolved else {
                 break 'resolve DropEffect::None;
             };
             // No folder from the view: a virtual fence, whose files live on the desktop.
@@ -884,6 +888,23 @@ impl DropHandler for FenceDropHandler {
                             mode,
                         });
                         break 'resolve effect;
+                    }
+                    if free {
+                        // 自由摆放: dropped on the icons of 「桌面」 (its own or another fence's
+                        // icons): they stay where they land, beside the icons that are there.
+                        let at = DesktopDrop {
+                            cursor: (pt.x, pt.y),
+                            centres: d
+                                .offsets
+                                .iter()
+                                .map(|(id, (dx, dy))| (*id, (pt.x + dx, pt.y + dy)))
+                                .collect(),
+                        };
+                        self.queue.push(Command::MoveItemsToInbox {
+                            items: d.items,
+                            at: Some(at),
+                        });
+                        break 'resolve DropEffect::Move;
                     }
                     if let Some(index) = spot.insert {
                         self.queue.push(Command::ReorderItems {
@@ -1133,6 +1154,7 @@ impl FenceViewState {
         }
         if let Some(d) = internal
             && d.from == self.active
+            && !self.places_freely()
         {
             match self.insertion_at(cx, cy) {
                 Some(i) => spot.insert = Some(i),

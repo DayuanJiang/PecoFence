@@ -466,8 +466,10 @@ impl App {
                             .fence(id)
                             .and_then(|f| f.items.first().map(|r| r.item_id))
                     {
-                        self.queue
-                            .push(Command::MoveItemsToInbox { items: vec![item] });
+                        self.queue.push(Command::MoveItemsToInbox {
+                            items: vec![item],
+                            at: None,
+                        });
                     }
                 }
                 ["move", title, into] => {

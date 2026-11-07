@@ -2,7 +2,7 @@
 
 use crate::geometry::{WorkArea, monitor_model};
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use uuid::Uuid;
 
 pub const SCHEMA_VERSION: u32 = 1;
@@ -1068,6 +1068,16 @@ pub struct Fence {
     /// like the Windows desktop with 自动排列图标.
     #[serde(default)]
     pub desktop_layout: bool,
+    /// 自由摆放 (with `desktop_layout`): an icon stays in the grid cell it is dropped in, as
+    /// on a Windows desktop with 自动排列图标 off and 将图标与网格对齐 on. On in a new
+    /// configuration, off in one saved before the option existed.
+    #[serde(default)]
+    pub free_placement: bool,
+    /// 自由摆放: the grid cell `[column, row]` of each icon, counted from the top-left of the
+    /// work area. Kept per monitor setup like `geometry` (Explorer keeps its icon positions
+    /// per resolution too).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub desktop_cells: BTreeMap<ItemId, [u16; 2]>,
     /// A tool shown in place of desktop items (小工具). Such a fence holds no items: rules,
     /// drops and moves never put any in it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1100,6 +1110,8 @@ impl Fence {
             expand_upward: false,
             bottom_anchored: false,
             desktop_layout: false,
+            free_placement: false,
+            desktop_cells: BTreeMap::new(),
             tool: None,
             items: Vec::new(),
         }
@@ -1776,19 +1788,28 @@ impl Config {
     /// roll state `to` saved for it. Returns the fences `to` had no spot for: they keep the one
     /// they had in `from`.
     pub fn carry_fences(&mut self, from: usize, to: usize) -> Vec<FenceId> {
-        let spots: HashMap<FenceId, (NormGeometry, bool, f32)> = self.layouts[to]
+        type Spot = (NormGeometry, bool, f32, BTreeMap<ItemId, [u16; 2]>);
+        let spots: HashMap<FenceId, Spot> = self.layouts[to]
             .fences
             .iter()
-            .map(|f| (f.id, (f.geometry.clone(), f.rolled_up, f.expanded_h)))
+            .map(|f| {
+                let cells = f.desktop_cells.clone();
+                (f.id, (f.geometry.clone(), f.rolled_up, f.expanded_h, cells))
+            })
             .collect();
         let mut fences = self.layouts[from].fences.clone();
         let mut unplaced = Vec::new();
         for f in &mut fences {
             match spots.get(&f.id) {
-                Some((geometry, rolled_up, expanded_h)) => {
+                Some((geometry, rolled_up, expanded_h, cells)) => {
                     f.geometry = geometry.clone();
                     f.rolled_up = *rolled_up;
                     f.expanded_h = *expanded_h;
+                    // 自由摆放: the icon cells these monitors saved; a setup that saved none
+                    // starts from the other one's (fitted into this work area when shown).
+                    if !cells.is_empty() {
+                        f.desktop_cells = cells.clone();
+                    }
                 }
                 None => unplaced.push(f.id),
             }
@@ -2925,6 +2946,34 @@ mod tests {
         let now = [at("M1", 96), at("M4", 96)];
         c.layouts.push(set(&now, vec![], 0));
         assert_eq!(c.seed_layout(2, 5, &now), vec![(media.id, 3)]);
+    }
+
+    /// 自由摆放: each monitor setup keeps its own icon cells, as Explorer keeps its icon
+    /// positions per resolution; a setup that saved none starts from the one shown before.
+    #[test]
+    fn icon_cells_stay_with_their_monitor_setup() {
+        let mut c = Config::default();
+        let (x, y) = (Uuid::new_v4(), Uuid::new_v4());
+        let mut inbox = Fence::new("桌面", FenceKind::Inbox, geo());
+        inbox.free_placement = true;
+        inbox.desktop_cells = BTreeMap::from([(x, [3, 1]), (y, [0, 0])]);
+        let mut on_laptop = inbox.clone();
+        on_laptop.desktop_cells = BTreeMap::from([(x, [1, 4])]);
+        c.layouts.push(saved(&[("GSM7787#A", D1)]));
+        c.layouts.push(saved(&[("BOE1#L", D1)]));
+        c.layouts.push(saved(&[("BOE1#L", D2)]));
+        c.layouts[0].fences = vec![inbox.clone()];
+        c.layouts[1].fences = vec![on_laptop];
+        let mut never_free = inbox.clone();
+        never_free.desktop_cells.clear();
+        c.layouts[2].fences = vec![never_free];
+        c.carry_fences(0, 1);
+        assert_eq!(
+            c.layouts[1].fences[0].desktop_cells,
+            BTreeMap::from([(x, [1, 4])])
+        );
+        c.carry_fences(0, 2);
+        assert_eq!(c.layouts[2].fences[0].desktop_cells, inbox.desktop_cells);
     }
 
     #[test]

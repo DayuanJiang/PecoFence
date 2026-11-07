@@ -1627,6 +1627,8 @@ impl App {
             exclude_from_quick_hide: flag("excludeFromQuickHide"),
             hide_when_empty: flag("hideWhenEmpty"),
             desktop_layout: flag("desktopLayout"),
+            free_placement: flag("freePlacement"),
+            desktop_cells: f.desktop_cells.clone(),
             opacity: text("opacity"),
             tint: opts
                 .get("tint")

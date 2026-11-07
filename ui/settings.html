@@ -604,7 +604,8 @@
       <div class="card"><div class="l"><span class="ic">&#xE70E;</span><div><div class="t">向上展开</div><div class="s">上方放得下时向上展开，放不下就向下展开；标题栏留在原处。适合放在任务栏上方的栅栏</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="expandUpward"></div></div>
       <div class="card"><div class="l"><span class="ic">&#xE890;</span><div><div class="t">双击桌面隐藏时保留此栅栏</div><div class="s">其他栅栏隐藏时，这个栅栏仍留在桌面上</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="excludeFromQuickHide"></div></div>
       <div class="card" id="fenceHideEmpty"><div class="l"><span class="ic">&#xED1A;</span><div><div class="t">为空时自动隐藏</div><div class="s">里面没有图标时就不显示；桌面上一出现新图标，它会自己回来</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="hideWhenEmpty"></div></div>
-      <div class="card" id="fenceDesktopLayout"><div class="l"><span class="ic">&#xE80A;</span><div><div class="t">像桌面一样排列</div><div class="s">图标从屏幕左上角一列一列往下排，绕开其他栅栏，像 Windows 桌面的“自动排列图标”，不能随意摆放。关闭后“桌面”变回普通栅栏，可以移动和调整大小</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="desktopLayout"></div></div>
+      <div class="card" id="fenceDesktopLayout"><div class="l"><span class="ic">&#xE80A;</span><div><div class="t">像桌面一样排列</div><div class="s">图标像 Windows 桌面上一样从屏幕左上角一列一列往下排，绕开其他栅栏。关闭后“桌面”变回普通栅栏，可以移动和调整大小</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="desktopLayout"></div></div>
+      <div class="card" id="fenceFreePlacement"><div class="l"><span class="ic">&#xE7C2;</span><div><div class="t">自由摆放</div><div class="s">图标拖到桌面上哪里，就停在哪个格子里，像 Windows 桌面关掉“自动排列图标”时一样。关闭后图标按顺序排列</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="freePlacement"></div></div>
       <div class="card"><div class="l"><span class="ic">&#xE74A;</span><div><div class="t">停靠到屏幕顶部</div><div class="s">贴到屏幕顶边并收起，鼠标悬停时展开，像一个下拉抽屉</div></div></div><button id="fenceDock">停靠</button></div>
       <div class="card" id="fenceOpenFolders"><div class="l"><span class="ic">&#xE838;</span><div><div class="t">双击文件夹或文件夹快捷方式时在此栅栏内打开</div><div class="s">在栅栏里显示文件夹的内容，点向上箭头或按 Backspace 回到原来的图标</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="openFoldersInside"></div></div>
       <div id="fencePortalGroup">
@@ -1732,6 +1733,8 @@
     // Icon size, spacing, names, alignment and auto height are about icons.
     document.getElementById('fenceLayoutGroup').style.display = f.tool ? 'none' : '';
     document.getElementById('fenceDesktopLayout').style.display = f.kind === 'inbox' ? '' : 'none';
+    // 自由摆放 is a way of 像桌面一样排列 (a 「桌面」 with tabs stays a fence).
+    document.getElementById('fenceFreePlacement').style.display = f.kind === 'inbox' && f.desktopLayout && !f.tabbed ? '' : 'none';
     // List and Details rows keep the name on one line, so the setting does nothing there and is
     // greyed. 像桌面一样排列 shows icons whatever the fence's view (a 「桌面」 with tabs stays a fence).
     const nameLines = [t("图标名称\x04不显示"), t("图标名称\x04一行"), t("图标名称\x04两行"), t("图标名称\x04三行")];

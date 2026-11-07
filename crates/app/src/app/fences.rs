@@ -190,6 +190,14 @@ impl App {
                 w.set_sort_indicator(f.view.sort, f.view.reverse);
             }
         }
+        // 自由摆放: the window takes the saved cells again (a new sort order clears them).
+        if self
+            .state
+            .fence(host)
+            .is_some_and(|f| f.kind == FenceKind::Inbox && f.free_placement)
+        {
+            self.arrange_desktop_fence();
+        }
         self.apply_portal_deco(host);
         self.apply_auto_height(host);
         self.sync_hidden_fences();
@@ -472,10 +480,21 @@ impl App {
             .filter(|(fid, _)| **fid != id)
             .map(|(_, o)| o.resting_rect())
             .collect();
+        // 自由摆放: the cells the icons were saved at on these monitors (not while a folder
+        // opened inside 「桌面」 is shown: its entries stand down the columns).
+        let free = self
+            .state
+            .fence(id)
+            .filter(|f| f.free_placement && self.state.portal_path(id).is_none())
+            .map(|f| f.desktop_cells.clone());
         let Some(w) = self.fences.get(&id) else {
             return;
         };
-        w.set_desktop_area(Some(crate::fence_window::DesktopArea { work, covered }));
+        w.set_desktop_area(Some(crate::fence_window::DesktopArea {
+            work,
+            covered,
+            free,
+        }));
         if let Some(a) = self.anchor.borrow_mut().as_mut() {
             a.lower_desktop_fence();
         }

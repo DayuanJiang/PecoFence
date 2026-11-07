@@ -741,9 +741,12 @@ impl AppState {
             inbox_geo,
         );
         inbox.view.icon_size = icon;
-        // New configurations show the unsorted icons like the Windows desktop's (像桌面一样排列);
-        // a configuration saved before the option existed reads it as off.
+        // New configurations show the unsorted icons like the Windows desktop's (像桌面一样排列),
+        // and as on a new Windows desktop (自动排列图标 off, 将图标与网格对齐 on) they stay where
+        // they are dropped (自由摆放); a configuration saved before an option existed reads it
+        // as off.
         inbox.desktop_layout = true;
+        inbox.free_placement = true;
         fences.push(inbox);
         self.config.rules = RuleSet::default_presets(ids[0], ids[1], ids[2]);
         fences
@@ -2313,6 +2316,7 @@ impl AppState {
             && f.view.reverse != on
         {
             f.view.reverse = on;
+            Self::sort_free_cells(f);
             self.dirty = true;
         }
     }
@@ -2337,6 +2341,7 @@ impl AppState {
             changed = true;
         }
         if changed {
+            Self::sort_free_cells(f);
             self.dirty = true;
         }
     }
@@ -2366,6 +2371,54 @@ impl AppState {
             f.desktop_layout = on;
             self.dirty = true;
         }
+    }
+
+    /// 自由摆放 for the 「桌面」 fence arranged like the desktop. The icon cells stay saved
+    /// while it is off, so switching it on again puts the icons back where they were.
+    pub fn set_free_placement(&mut self, id: FenceId, on: bool) {
+        if let Some(f) = self.fence_mut(id)
+            && f.free_placement != on
+        {
+            f.free_placement = on;
+            self.dirty = true;
+        }
+    }
+
+    /// 自由摆放: the grid cells `cells` of the fence's icons on this monitor setup, merged into
+    /// the saved ones. Cells of items PecoFence no longer knows go. True when something changed.
+    pub fn set_desktop_cells(&mut self, id: FenceId, cells: &[(ItemId, [u16; 2])]) -> bool {
+        let known: HashSet<ItemId> = self.config.items.keys().copied().collect();
+        let Some(f) = self.fence_mut(id) else {
+            return false;
+        };
+        let before = f.desktop_cells.clone();
+        for (item, cell) in cells {
+            f.desktop_cells.insert(*item, *cell);
+        }
+        f.desktop_cells.retain(|item, _| known.contains(item));
+        let changed = f.desktop_cells != before;
+        self.dirty |= changed;
+        changed
+    }
+
+    /// 自由摆放: cells the window gave icons when it placed them from the saved cells `from`.
+    /// Left out when the saved cells changed since (a drop, a switch to the cells of other
+    /// monitors): the window places the icons again from the new ones. True when saved.
+    pub fn place_desktop_cells(
+        &mut self,
+        id: FenceId,
+        from: &std::collections::BTreeMap<ItemId, [u16; 2]>,
+        cells: &[(ItemId, [u16; 2])],
+    ) -> bool {
+        if self.fence(id).is_none_or(|f| f.desktop_cells != *from) {
+            tracing::info!(
+                fence = %id,
+                cells = cells.len(),
+                "free placement: cells placed from older saved cells left out"
+            );
+            return false;
+        }
+        self.set_desktop_cells(id, cells)
     }
 
     pub fn set_hide_when_empty(&mut self, id: FenceId, on: bool) {
@@ -2514,7 +2567,17 @@ impl AppState {
             changed = true;
         }
         if changed {
+            Self::sort_free_cells(f);
             self.dirty = true;
+        }
+    }
+
+    /// 自由摆放: a new sort order lines the icons up again from the top-left in that order, as
+    /// Explorer's 排序方式 does on a desktop without 自动排列图标.
+    fn sort_free_cells(f: &mut Fence) {
+        if f.free_placement && !f.desktop_cells.is_empty() {
+            tracing::info!(fence = %f.id, cells = f.desktop_cells.len(), "free placement: sort lines the icons up again");
+            f.desktop_cells.clear();
         }
     }
 
@@ -2537,6 +2600,7 @@ impl AppState {
             changed = true;
         }
         if changed {
+            Self::sort_free_cells(f);
             self.dirty = true;
         }
     }
@@ -3299,6 +3363,50 @@ mod tests {
             state.store.load(),
             pecofence_core::LoadOutcome::Primary(_)
         ));
+    }
+
+    /// 自由摆放 follows a new Windows desktop (自动排列图标 off, 将图标与网格对齐 on): a new
+    /// configuration has it on, one saved before the option existed reads it as off.
+    #[test]
+    fn a_new_configuration_places_loose_icons_freely() {
+        let state = test_state();
+        let inbox = state.fence(state.inbox_id().unwrap()).unwrap();
+        assert!(inbox.desktop_layout && inbox.free_placement);
+        let mut saved = serde_json::to_value(inbox).unwrap();
+        saved.as_object_mut().unwrap().remove("freePlacement");
+        let read: pecofence_core::Fence = serde_json::from_value(saved).unwrap();
+        assert!(read.desktop_layout && !read.free_placement);
+    }
+
+    /// 自由摆放: the window's cells are saved only while the cells it placed the icons from
+    /// are still the saved ones, so a pass made before a drop cannot undo the drop; a new sort
+    /// order lines the icons up again.
+    #[test]
+    fn free_cells_from_an_earlier_pass_do_not_undo_a_drop() {
+        let mut state = test_state();
+        let inbox = state.inbox_id().unwrap();
+        state.set_free_placement(inbox, true);
+        let (a, b) = (
+            add_item(&mut state, inbox, "a"),
+            add_item(&mut state, inbox, "b"),
+        );
+        // The window gave both new icons a cell.
+        let none = std::collections::BTreeMap::new();
+        assert!(state.place_desktop_cells(inbox, &none, &[(a, [0, 0]), (b, [0, 1])]));
+        let placed = state.fence(inbox).unwrap().desktop_cells.clone();
+        // A drop moves A, then a report of a pass from before the drop arrives.
+        state.set_desktop_cells(inbox, &[(a, [5, 3])]);
+        assert!(!state.place_desktop_cells(inbox, &placed, &[(a, [0, 2])]));
+        let cells = &state.fence(inbox).unwrap().desktop_cells;
+        assert_eq!(cells.get(&a), Some(&[5, 3]));
+        assert_eq!(cells.get(&b), Some(&[0, 1]));
+        // An item PecoFence no longer knows loses its cell.
+        state.config.items.remove(&b);
+        state.set_desktop_cells(inbox, &[]);
+        assert!(!state.fence(inbox).unwrap().desktop_cells.contains_key(&b));
+        assert_ne!(state.fence(inbox).unwrap().view.sort, SortMode::Size);
+        state.set_sort(inbox, SortMode::Size);
+        assert!(state.fence(inbox).unwrap().desktop_cells.is_empty());
     }
 
     fn add_item(state: &mut AppState, fence: FenceId, name: &str) -> ItemId {

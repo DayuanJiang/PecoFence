@@ -2354,11 +2354,36 @@ impl App {
             } => self.detach_tab(tab, x, y, from_drag),
             Command::CancelDetach { change } => self.cancel_tab_detach(*change),
             Command::ReorderTab { host, tab, to } => self.reorder_tab(host, tab, to),
-            Command::MoveItemsToInbox { items } => {
+            Command::DesktopCellsPlaced { fence } => {
+                // The icons of 「桌面」 itself (not a folder opened inside it), as its window
+                // placed them last.
+                if self
+                    .state
+                    .fence(fence)
+                    .is_some_and(|f| f.free_placement && f.desktop_layout)
+                    && self.state.portal_path(fence).is_none()
+                    && let Some((from, cells)) = self
+                        .fences
+                        .get(&fence)
+                        .and_then(|w| w.desktop_free_changes())
+                    && self.state.place_desktop_cells(fence, &from, &cells)
+                {
+                    self.schedule_save();
+                    // The window's copy of the saved cells catches up (it placed them so).
+                    self.arrange_desktop_fence();
+                }
+            }
+            Command::MoveItemsToInbox { items, at } => {
                 // Dropped on the bare desktop: back to the inbox, as 「移出栅栏」 in the item
                 // menu does. The rules sent a shortcut straight back to 「程序」, so it could
                 // not be taken out of its fence by dragging (feedback #49).
-                if let Some(inbox) = self.state.inbox_id() {
+                // 自由摆放: they stay where they were dropped.
+                let placed = self
+                    .state
+                    .inbox_id()
+                    .zip(at)
+                    .is_some_and(|(inbox, at)| self.drop_on_free_desktop(inbox, &items, &at));
+                if !placed && let Some(inbox) = self.state.inbox_id() {
                     // 像桌面一样排列: icons of 「桌面」 itself dropped on the empty desktop beside
                     // them go to the end of the columns (sorted 手动), as on a desktop that
                     // arranges its icons.

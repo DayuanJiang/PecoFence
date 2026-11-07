@@ -265,6 +265,8 @@ impl FenceWindow {
             opacity: 1.0,
             desktop: None,
             desktop_slots: Vec::new(),
+            desktop_free: None,
+            desktop_free_sent: None,
             desktop_band_base: None,
             desktop_shape_for: None,
             desktop_shape_pending: None,
@@ -1725,6 +1727,8 @@ impl FenceWindow {
             if v.desktop != area {
                 style_changed = v.desktop.is_some() != area.is_some();
                 v.desktop = area;
+                // 自由摆放: cells placed from the new saved ones are sent again.
+                v.desktop_free_sent = None;
                 if !v.bare() {
                     v.desktop_slots.clear();
                 }
@@ -1779,6 +1783,25 @@ impl FenceWindow {
             selected = v.selected.len();
         });
         selected
+    }
+
+    /// 自由摆放: the grid cells icons dropped at `at` take on this 「桌面」 (see
+    /// `FenceViewState::desktop_drop_cells`); None when it does not place its icons freely.
+    pub fn desktop_drop_cells(&self, at: &DesktopDrop) -> Option<Vec<(ItemId, [u16; 2])>> {
+        self.view
+            .borrow()
+            .as_ref()
+            .and_then(|v| v.desktop_drop_cells(at.cursor, &at.centres))
+    }
+
+    /// 自由摆放: see `FenceViewState::desktop_free_changes`.
+    pub fn desktop_free_changes(
+        &self,
+    ) -> Option<(BTreeMap<ItemId, [u16; 2]>, Vec<(ItemId, [u16; 2])>)> {
+        self.view
+            .borrow()
+            .as_ref()
+            .and_then(|v| v.desktop_free_changes())
     }
 
     /// 像桌面一样排列 is on for this window.

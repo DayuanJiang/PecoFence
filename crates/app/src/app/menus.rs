@@ -34,6 +34,8 @@ const CMD_ITEM_EMPTY_BIN: u32 = 107;
 /// menu is out of reach (its window is only the icon cells).
 const CMD_ITEM_DESKTOP_LAYOUT: u32 = 108;
 const CMD_ITEM_FENCE_OPTIONS: u32 = 109;
+/// 自由摆放 in the item menu of the arranged 「桌面」 fence, below 像桌面一样排列.
+const CMD_ITEM_FREE_PLACEMENT: u32 = 118;
 const CMD_FENCE_OPEN_FOLDER: u32 = 332;
 const CMD_ITEM_MOVE_BASE: u32 = 200;
 const CMD_NEW_FENCE_HERE: u32 = 250;
@@ -61,6 +63,8 @@ const CMD_FENCE_SCRIPT_INTERVAL_BASE: u32 = 1900;
 /// The inbox's 为空时自动隐藏 (in place of 删除栅栏).
 const CMD_FENCE_HIDE_EMPTY: u32 = 305;
 const CMD_FENCE_DESKTOP_LAYOUT: u32 = 306;
+/// 自由摆放 in the 「桌面」 fence menu (on only while it is arranged like the desktop).
+const CMD_FENCE_FREE_PLACEMENT: u32 = 398;
 /// 小图标 … 大图标: one id per `layout::ICON_SIZE_PRESETS` entry, in its order.
 const CMD_FENCE_ICON_FIRST: u32 = 310;
 const CMD_FENCE_ICON_LAST: u32 = CMD_FENCE_ICON_FIRST + ICON_SIZE_PRESETS.len() as u32 - 1;
@@ -389,6 +393,11 @@ impl App {
                 // An open settings page shows this switch too.
                 self.push_settings_state();
             }
+            CMD_ITEM_FREE_PLACEMENT => {
+                let on = self.state.fence(fence).is_some_and(|f| f.free_placement);
+                self.set_fence_free_placement(fence, !on, "item menu");
+                self.push_settings_state();
+            }
             CMD_ITEM_FENCE_OPTIONS => self.open_fence_options(fence),
             c if c >= CMD_ITEM_MOVE_BASE && c < CMD_ITEM_MOVE_BASE + 1000 => {
                 let idx = (c - CMD_ITEM_MOVE_BASE) as usize;
@@ -535,6 +544,12 @@ impl App {
                     CMD_ITEM_DESKTOP_LAYOUT,
                     pecofence_core::i18n::text("像桌面一样排列"),
                     true,
+                    false,
+                )
+                .item(
+                    CMD_ITEM_FREE_PLACEMENT,
+                    pecofence_core::i18n::text("自由摆放"),
+                    self.state.fence(fence).is_some_and(|f| f.free_placement),
                     false,
                 )
                 .item(
@@ -992,6 +1007,12 @@ impl App {
                 pecofence_core::i18n::text("像桌面一样排列"),
                 f.desktop_layout,
                 false,
+            )
+            .item(
+                CMD_FENCE_FREE_PLACEMENT,
+                pecofence_core::i18n::text("自由摆放"),
+                f.free_placement,
+                !f.desktop_layout,
             );
         } else {
             menu.item(
@@ -1198,6 +1219,9 @@ impl App {
             CMD_FENCE_HIDE_EMPTY => self.set_fence_hide_when_empty(fence, !f.hide_when_empty),
             CMD_FENCE_DESKTOP_LAYOUT => {
                 self.set_fence_desktop_layout(fence, !f.desktop_layout, "fence menu")
+            }
+            CMD_FENCE_FREE_PLACEMENT => {
+                self.set_fence_free_placement(fence, !f.free_placement, "fence menu")
             }
             _ => return,
         }

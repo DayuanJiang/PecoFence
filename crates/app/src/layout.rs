@@ -513,6 +513,8 @@ pub struct Grid {
     /// 像桌面一样排列 (`Fence::desktop_layout`): one fixed cell per item in list order, plus
     /// one for a drop after the last (`with_slots`). Empty = the usual rows.
     slots: Vec<CellRect>,
+    /// 自由摆放: the slots stand anywhere on the desktop, not down the columns in list order.
+    free: bool,
 }
 
 impl Grid {
@@ -534,6 +536,7 @@ impl Grid {
             bands,
             centre: false,
             slots: Vec::new(),
+            free: false,
         }
     }
 
@@ -556,12 +559,35 @@ impl Grid {
         !self.slots.is_empty()
     }
 
+    /// 自由摆放: the slots are where the icons were put, so the arrow keys go by place only.
+    pub fn placed_freely(mut self, on: bool) -> Self {
+        self.free = on;
+        self
+    }
+
     /// Keyboard neighbour among fixed slots: up / down step along the list (it runs down the
-    /// columns); left / right go to the nearest item in the next column that way.
+    /// columns); left / right go to the nearest item in the next column that way. Placed
+    /// freely (自由摆放), every arrow goes to the nearest item that way, the ones in the same
+    /// row (or column) first, as on a Windows desktop without 自动排列图标.
     fn slot_neighbour(&self, index: usize, dx: i32, dy: i32, count: usize) -> Option<usize> {
         let count = count.min(self.slots.len());
         if count == 0 || index >= count {
             return None;
+        }
+        if self.free {
+            let c = self.slots[index];
+            let (ax, ay) = (dx.signum() as f32, dy.signum() as f32);
+            return (0..count)
+                .filter(|&i| (self.slots[i].x - c.x) * ax + (self.slots[i].y - c.y) * ay > 0.5)
+                .min_by(|&a, &b| {
+                    let d = |i: usize| {
+                        let (sx, sy) = (self.slots[i].x - c.x, self.slots[i].y - c.y);
+                        let along = (sx * ax + sy * ay).abs();
+                        let across = (sx * ay - sy * ax).abs();
+                        across * 4.0 + along
+                    };
+                    d(a).total_cmp(&d(b))
+                });
         }
         if dx == 0 {
             let last = count as i64 - 1;
