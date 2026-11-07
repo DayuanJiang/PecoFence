@@ -957,23 +957,23 @@ impl App {
             .icon(glyph::FIT);
         }
         menu.item(
-                CMD_FENCE_LOCK,
-                if h.locked {
-                    pecofence_core::i18n::text("解除锁定")
-                } else {
-                    pecofence_core::i18n::text("锁定位置和大小")
-                },
-                false,
-                arranged,
-            )
-            .icon(if h.locked { glyph::UNLOCK } else { glyph::LOCK })
-            .item(
-                CMD_FENCE_OPTIONS,
-                pecofence_core::i18n::text("栅栏选项…"),
-                false,
-                false,
-            )
-            .icon(glyph::SETTING);
+            CMD_FENCE_LOCK,
+            if h.locked {
+                pecofence_core::i18n::text("解除锁定")
+            } else {
+                pecofence_core::i18n::text("锁定位置和大小")
+            },
+            false,
+            arranged,
+        )
+        .icon(if h.locked { glyph::UNLOCK } else { glyph::LOCK })
+        .item(
+            CMD_FENCE_OPTIONS,
+            pecofence_core::i18n::text("栅栏选项…"),
+            false,
+            false,
+        )
+        .icon(glyph::SETTING);
         // The inbox cannot go (new desktop items land there), but it can stay out of sight
         // while it is empty.
         if f.kind == FenceKind::Inbox {
