@@ -86,19 +86,51 @@ function NoticesJson() {
 # A box on the empty left part of the desktop, then 「在此新建栅栏」 and Esc for the title box.
 # Right of the 「桌面」 fence's cells (arranged like the desktop at the top left). One retry when
 # the box offered nothing.
+# What the box offers: the 「在此新建栅栏」 menu (0.3.1 and this branch) or, since the marquee
+# decision (U10 B), two small buttons in PecoFence.MarqueeOffer with 「＋ 新建栅栏」 on the right.
+function MarqueeOfferWin($sec = 4) {
+  for ($i = 0; $i -lt $sec * 10; $i++) {
+    $m = @([W]::Tops('#32768')); if ($m.Count) { return @('menu', $m[0]) }
+    $o = [G]::FindWindowW('PecoFence.MarqueeOffer', [NullString]::Value)
+    if ($o -ne [IntPtr]::Zero -and [G]::IsWindowVisible($o)) { return @('buttons', $o) }
+    Start-Sleep -Milliseconds 100
+  }
+  return @('', [IntPtr]::Zero)
+}
 function MarqueeFence($y, $x = 110) {
   DragTo $x $y ($x + 170) ($y + 130) 12
-  $m = MenuWin 5
-  if ($m -eq [IntPtr]::Zero) {
+  $o = MarqueeOfferWin
+  if ($o[1] -eq [IntPtr]::Zero) {
     Log "marquee at $x,$y offered nothing; once more"
     [G]::Click($x + 100, $y + 60); Start-Sleep -Milliseconds 800
     DragTo $x $y ($x + 170) ($y + 130) 12
-    $m = MenuWin 5
+    $o = MarqueeOfferWin
   }
-  $picked = MenuPick 'Create a fence here|在此新建栅栏' $m
+  $picked = ''
+  if ($o[0] -eq 'menu') { $picked = MenuPick 'Create a fence here|在此新建栅栏' $o[1] }
+  if ($o[0] -eq 'buttons') {
+    $r = Rect $o[1]; $bx = $r.R - 30; $by = [int](($r.T + $r.B) / 2)
+    Glide ($bx - 50) ($by + 30) $bx $by 8 25; Start-Sleep -Milliseconds 200
+    [G]::Click($bx, $by); $picked = 'New fence button'
+    Log "marquee buttons at $($r.L),$($r.T),$($r.R),$($r.B); clicked $bx,$by"
+  }
   Start-Sleep -Milliseconds 900
   [G]::Press(0x1B); Start-Sleep -Milliseconds 700
   return $picked
+}
+# 添加规则 may be followed by a card saying where rules are edited (the item menu's rule offer
+# shares it since the merge): read its title and close it with its x.
+function CloseRuleAddedCard() {
+  $n = WaitNotice 3
+  if ($n -eq [IntPtr]::Zero) { return '' }
+  $t = NoticeTitle
+  if ($t -notmatch 'Sorting rule added|已添加整理规则') { return $t }
+  $r = Rect $n
+  [G]::Click($r.R - 24, $r.T + 24); Start-Sleep -Milliseconds 300
+  [G]::MoveTo($Park[0], $Park[1])
+  WaitGoneWin 'PecoFence.Notice' 3 | Out-Null
+  Log "closed the card '$t'"
+  return $t
 }
 # ItemPt by the name without its extension (the fence may show either).
 function ItemAt($fence, $name) {
@@ -171,11 +203,11 @@ foreach ($combo in @(@('fluent', 'en'), @('liquidGlass', 'en'), @('fluent', 'zh-
   Log "menu $style $lang : $line"
   Check "$style $lang fence menu opens" ($m -ne [IntPtr]::Zero) $line
   if ($lang -eq 'en') {
-    $want = 'Roll up | Rename | - | View | Sort by | New | Paste | Tabs | - | Lock position and size | Fence options… | Delete fence | - | Add to desktop'
+    $want = '^Roll up \| Rename \| - \| View \| Sort by \| New \| Paste \| Tabs \| - \| (Fit to content \| )?Lock position and size \| Fence options… \| Delete fence \| - \| Add to desktop$'
   } else {
-    $want = '收起 | 重命名… | - | 视图 | 排序方式 | 新建 | 粘贴 | 标签页 | - | 锁定位置和大小 | 栅栏选项… | 删除栅栏 | - | 添加到桌面'
+    $want = '^收起 \| 重命名… \| - \| 视图 \| 排序方式 \| 新建 \| 粘贴 \| 标签页 \| - \| (适应内容大小 \| )?锁定位置和大小 \| 栅栏选项… \| 删除栅栏 \| - \| 添加到桌面$'
   }
-  Check "$style $lang fence menu in the new order" ((PlainLine $line) -eq $want) $line
+  Check "$style $lang fence menu in the new order" ((PlainLine $line) -match $want) $line
   Shot "m-$style-$lang-menu"
   $ok = HoverRow $m 'Add to desktop|添加到桌面'
   $sub = MenuWith 'New fence|新建栅栏'
@@ -193,8 +225,8 @@ Start-Sleep -Seconds 1
 
 Case 'every kind of fence'
 $kinds = @(
-  @('Work', 'tab fence', 'Roll up \| Rename \| - \| View \| Sort by \| New \| Paste \| Tabs \| - \| Lock position and size \| Fence options… \| Delete fence \| - \| Add to desktop$'),
-  @('Shared docs', 'folder fence', '^Roll up \| Rename \| Open folder in File Explorer .*\| - \| View .*\| - \| Lock position and size \| Fence options… \| Delete fence \| - \| Add to desktop$'),
+  @('Work', 'tab fence', 'Roll up \| Rename \| - \| View \| Sort by \| New \| Paste \| Tabs \| - \| (Fit to content \| )?Lock position and size \| Fence options… \| Delete fence \| - \| Add to desktop$'),
+  @('Shared docs', 'folder fence', '^Roll up \| Rename \| Open folder in File Explorer .*\| - \| View .*\| - \| (Fit to content \| )?Lock position and size \| Fence options… \| Delete fence \| - \| Add to desktop$'),
   @('Today', 'note', '^Roll up \| Rename \| - \| Edit note \| - \| Lock position and size \| Fence options… \| Delete fence \| - \| Add to desktop$'),
   @('Clock', 'clock', '^Roll up \| Rename \| - \| Show seconds \| - \| Lock position and size \| Fence options… \| Delete fence \| - \| Add to desktop$')
 )
@@ -216,7 +248,7 @@ Start-Sleep -Seconds 1
 $m = TitleMenu 'Desktop'
 $line = MenuLine $m
 Log "menu inbox: $line"
-Check 'Desktop fence menu: hide when empty and arrange like the desktop in place of delete' ((PlainLine $line) -match '^Roll up \| Rename \| - \| View .*\| - \| Lock position and size \| Fence options… \| Hide when empty \| Arrange like the desktop \| - \| Add to desktop$') $line
+Check 'Desktop fence menu: hide when empty and arrange like the desktop in place of delete' ((PlainLine $line) -match '^Roll up \| Rename \| - \| View .*\| - \| (Fit to content \| )?Lock position and size \| Fence options… \| Hide when empty \| Arrange like the desktop( \| Place freely)? \| - \| Add to desktop$') $line
 Shot 'k-inbox'
 CloseMenus
 ParkPointer
@@ -293,8 +325,6 @@ if ($Zh) {
 } else {
   $TRoll = 'Roll up fences when there are many'; $TFolder = 'Put a folder you use often on the desktop'; $TRule = 'Let new files come in by themselves'
 }
-# The first start names its fences in the box's language (English) before PfStart sets $Lng.
-$FFiles = 'Files and documents'
 
 Case "setup tips $Lng"
 CloseWindows
@@ -307,6 +337,11 @@ Set-Content "$PfDesk\Projects\plan.txt" 'plan'
 $made += "$PfDesk\Projects"
 PfStart -Lang $Lng
 if ($Zh) { Pf settings set themeStyle liquidGlass | Out-Null }
+# The first start's 文件与文档 fence: named in the box's language (English), or in $Lng where the
+# untouched first-start names follow the language.
+Start-Sleep -Seconds 1
+$FFiles = (@(PfJson fence list) | Where-Object { $_ -and $_.title -in @('Files and documents', '文件与文档') } | Select-Object -First 1).title
+Log "the documents fence is '$FFiles'"
 FenceIds
 Log "fences at start: $($Id.Keys -join ', ')"
 # Two fences besides 桌面 (文件与文档 and Work): the third the user makes gives no tip yet.
@@ -355,6 +390,8 @@ if ($Zh) {
 }
 if (-not $Zh) {
   ClickAccent
+  $added = CloseRuleAddedCard
+  Log "after Add rule: '$added'"
   Start-Sleep -Seconds 1
   $first = @(Rules)[0]
   Check 'Add rule puts a .pdf rule into Work first in the list' (@(Rules).Count -eq $rulesBefore + 1 -and $first.targetTitle -eq 'Work') "name=$($first.name) target=$($first.targetTitle) count $rulesBefore -> $(@(Rules).Count)"
