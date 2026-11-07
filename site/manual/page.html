@@ -550,6 +550,8 @@
           <aside class="tip">
             <h3>小提示</h3>
             <p>托盘菜单里的「在桌面显示文件夹」可以直接选文档、下载、图片等文件夹。把文件从这里拖到普通栅栏或桌面上，文件会移到桌面。不想要了就右键标题栏选「删除栅栏」，文件夹和里面的文件都还在。</p>
+            <p>文件夹里的东西多时，在栅栏里按 <kbd>Ctrl</kbd>+<kbd>F</kbd>，或者右键标题栏选「筛选…」，标题栏变成输入框，打字就只显示名字对得上的文件，可以用拼音首字母。按 <kbd>Esc</kbd> 恢复全部。</p>
+            <p>只想看最近下载的文件？托盘菜单或栅栏菜单里的<b>「新建智能栅栏」</b>有「最近 7 天下载」「最近一周的截图」等几种：栅栏里只显示符合条件的文件，新文件会自己出现，文件还在原来的文件夹里。标题前是放大镜，名字后面是文件个数。条件在「栅栏选项…」的「搜索条件」里改。</p>
             <p>普通栅栏里双击文件夹，默认用资源管理器打开。想让它也在栅栏里打开，右键标题栏选「栅栏选项…」，打开<b>「双击文件夹或文件夹快捷方式时在此栅栏内打开」</b>。点向上箭头、按 <kbd>Backspace</kbd> 或按鼠标的后退键，栅栏就回到原来的图标。</p>
           </aside>
         </div>
@@ -921,6 +923,7 @@ while ($true) {
               </tbody>
             </table>
             <p class="ap-note">打开或保存对话框在前面时按速览快捷键，<kbd>Enter</kbd> 会把选中的文件夹或文件交给这个对话框。</p>
+            <p class="ap-note">打开「速览搜索也找整台电脑」后，列表最后一行「把这次搜索放到桌面」会把这次搜索变成一个智能栅栏。</p>
           </section>
 
           <section class="ap-card" aria-labelledby="keys-desktop">
@@ -947,7 +950,8 @@ while ($true) {
                 <tr><th scope="row"><kbd>Ctrl</kbd>+滚轮</th><td>改图标大小（只在「图标」视图里，锁定的栅栏不变）</td></tr>
                 <tr><th scope="row"><kbd>Ctrl</kbd>+<kbd>V</kbd></th><td>把复制的文件粘贴进来</td></tr>
                 <tr><th scope="row"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>N</kbd></th><td>新建文件夹</td></tr>
-                <tr><th scope="row"><kbd>F5</kbd></th><td>刷新图标</td></tr>
+                <tr><th scope="row"><kbd>F5</kbd></th><td>刷新图标，智能栅栏重新搜索</td></tr>
+                <tr><th scope="row"><kbd>Ctrl</kbd>+<kbd>F</kbd></th><td>在文件夹栅栏或智能栅栏里筛选</td></tr>
               </tbody>
             </table>
           </section>

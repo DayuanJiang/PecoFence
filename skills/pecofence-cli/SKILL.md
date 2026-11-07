@@ -1,6 +1,6 @@
 ---
 name: pecofence-cli
-description: "Configure PecoFence (Windows desktop fences) from the terminal: list/create/move fences, move and rename desktop icons using file metadata, per-fence options, global settings, auto-sorting rules, layout snapshots, note, clock and script fences. Use when the user asks to organise their desktop icons, change PecoFence settings or write a script for a script fence."
+description: "Configure PecoFence (Windows desktop fences) from the terminal: list/create/move fences, move and rename desktop icons using file metadata, per-fence options, global settings, auto-sorting rules, layout snapshots, smart fences (a live search, e.g. recent downloads), note, clock and script fences. Use when the user asks to organise their desktop icons, change PecoFence settings or write a script for a script fence."
 ---
 
 # pecofence-cli
@@ -81,7 +81,10 @@ pecofence-cli rule apply --dry-run && pecofence-cli rule apply
 pecofence-cli settings set theme dark                          # dotted camelCase path; `settings get` shows them
 pecofence-cli fence create --tool note --title Today --text "[ ] Pay rent"   # 小工具: note, clock, or --script <file>
 pecofence-cli fence set Today noteText "[x] Pay rent`n[ ] Call Anna"           # whole text; `n = new line in PowerShell
-pecofence-cli fence refresh Weather                            # script fence: run its script now
+pecofence-cli fence refresh Weather                            # script fence: run its script now; smart fence: search again
+pecofence-cli fence create --smart downloads                   # 智能栅栏: downloads|screenshots|large|psd|recent
+pecofence-cli fence create --title PDFs --smart-folder "C:\Users\me\Documents" --ext pdf --within-days 30
+pecofence-cli fence set PDFs smartName invoice                 # smartFolder|smartSubfolders|smartWithinDays|smartConditions|smartName|smartEverything|smartLimit
 pecofence-cli fence open-folder Projects 2026                  # show a subfolder; fence up / fence forward go back and on
 pecofence-cli peek start --search invoice                      # Peek with the search box showing what matches
 pecofence-cli snapshot list
@@ -105,6 +108,11 @@ pecofence-cli config export "C:\Users\me\Desktop\pecofence-backup.json"   # sett
   target a portal and needs at least one condition.
 - `config import` / `backup restore` replace settings, rules and layouts: `config export` first.
 - The CLI cannot delete files: list duplicates and junk for the user to remove.
+- Smart fences (`fence list` shows `smart`) show the newest files matching a saved search where they
+  are (Everything when it runs, else PecoFence reads the folder; a whole-computer search then waits:
+  `smart.source` is `needsEverything`). They hold no items: rules, drops and `item move --to` never
+  put anything in; `item list --fence` lists the results (`assignedBy: smart`), and moving or
+  deleting those moves or deletes real files. `smartConditions` takes rule conditions as JSON.
 - Tool fences (`fence list` shows `tool`: note, clock, script) hold no items and join no tabs. One
   switch, `tools.enabled` (on by default), covers them all; `fence create --tool` turns it on. The
   desktop has one clock at most (a second one fails with `limitReached`). A script fence runs the user's script every `scriptInterval` minutes, at most 10 s, and shows
