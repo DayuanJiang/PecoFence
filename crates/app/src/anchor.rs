@@ -348,6 +348,9 @@ pub struct DesktopAnchor {
     last_foreground: isize,
     /// Looks at the foreground left after a virtual-desktop switch (`TIMER_FOREGROUND_AFTER_SWITCH`).
     switch_looks: u8,
+    /// Windows 10 (the legacy desktop): the virtual desktop the foreground poll saw last (see
+    /// `follow_desktop_after_switch`).
+    poll_desktop: Option<[u8; 16]>,
 }
 
 /// The fences' windows as a feedback report describes them.
@@ -492,6 +495,7 @@ impl DesktopAnchor {
             covered_by: None,
             last_foreground: 0,
             switch_looks: 0,
+            poll_desktop: pecofence_platform::wallpaper::desktop_id(),
         };
         // The hook reports only changes of the foreground. With the desktop already in front
         // (a start at sign-in before any window opens) its clicks are followed from now on.
@@ -541,6 +545,24 @@ impl DesktopAnchor {
     pub fn unregister_fence(&mut self, hwnd: HWND) {
         self.fences.retain(|(h, _)| *h != hwnd);
         self.off_desktop.remove(&(hwnd.0 as isize));
+    }
+
+    /// Windows 10, a virtual-desktop switch seen by the foreground poll: the desktop's clicks are
+    /// followed now (the raw-input sink, which takes only presses on the bare desktop), so the
+    /// click that brings the desktop to the front counts for a double-click, until another window
+    /// comes to the front (`on_foreground`).
+    fn follow_desktop_after_switch(&mut self) {
+        let front = desktop::foreground_window();
+        let cls = desktop::class_name(desktop::root_ancestor(front));
+        tracing::info!(
+            class = %cls,
+            following = self.quick.sink_registered,
+            "virtual desktop switch seen by the foreground poll; following the desktop's clicks"
+        );
+        self.last_foreground = front.0 as isize;
+        if !self.quick.sink_registered {
+            self.set_raw_input_sink(true);
+        }
     }
 
     /// Marks a fence window as belonging to other virtual desktops (`FenceWindow` hides it).
@@ -1559,6 +1581,17 @@ impl DesktopAnchor {
         match id {
             TIMER_ANCHOR_CHECK => self.ensure_anchored("periodic check"),
             TIMER_FOREGROUND_POLL => {
+                // Windows 10 reports no foreground change when Win+Ctrl+Left/Right shows another
+                // virtual desktop, and the desktop comes to the front only with the first click on
+                // it: that click went unseen and the first double-click hid nothing. The current
+                // desktop is one registry read, so the poll notices the switch itself.
+                let current = pecofence_platform::wallpaper::desktop_id();
+                if current != self.poll_desktop {
+                    let before = std::mem::replace(&mut self.poll_desktop, current);
+                    if before.is_some() && current.is_some() {
+                        self.follow_desktop_after_switch();
+                    }
+                }
                 let front = desktop::foreground_window();
                 if front.0.is_null() || front.0 as isize == self.last_foreground {
                     return;

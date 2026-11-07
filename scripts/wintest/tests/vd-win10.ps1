@@ -70,19 +70,20 @@ $tip = HoverTip ($d.l + $d.ox + 24) ($d.t + $d.oy + 18) 'tip-win10'
 Check 'hovering the glyph shows Desktop 2' ($tip -match 'Only on' -and $tip -match 'Desktop 2') "tip='$tip'"
 Shot 'win10-glyph-tip'
 
-Case 'quick hide after a switch'
-# Windows 10 hands the desktop the foreground only with the first click after a switch (no
-# foreground event; main is the same, the Windows 11 fix does not apply): that click activates
-# it, the double-click after it hides.
-VdLeft
-DoubleClick 1100 700; Start-Sleep -Seconds 1
-Log "first double-click right after Win+Ctrl+Left: Work visible=$(FVis Work) fg=$(Fg)"
-if ((FVis Work) -eq $false) { DoubleClick 1100 700; Start-Sleep -Seconds 1 }
-[G]::Click(1100, 700); Start-Sleep -Milliseconds 700
-DoubleClick 1100 700; Start-Sleep -Seconds 1
-Check 'once the desktop is in front, a double-click hides Work' ((FVis Work) -eq $false) "Work=$(FVis Work) fg=$(Fg)"
-DoubleClick 1100 700; Start-Sleep -Seconds 1
-Check 'and the next one shows it' ((FVis Work) -eq $true) "Work=$(FVis Work)"
+Case 'quick hide right after a switch'
+# Windows 10 reports no foreground change on a switch, and the desktop comes to the front only
+# with the first click on it: PecoFence's foreground poll sees the switch and follows the
+# desktop's clicks from then on, so that click counts.
+for ($k = 0; $k -lt 2; $k++) {
+  if ($k -eq 0) { VdLeft } else { VdRight; VdLeft }
+  $fg = Fg
+  DoubleClick 1100 700; Start-Sleep -Seconds 1
+  Check "round ${k}: the first double-click after the switch hides Work" ((FVis Work) -eq $false) "Work=$(FVis Work) fg before=$fg after=$(Fg)"
+  DoubleClick 1100 700; Start-Sleep -Seconds 1
+  Check "round ${k}: and the next one shows it" ((FVis Work) -eq $true) "Work=$(FVis Work)"
+}
+$seen = @(PfLogAll | Where-Object { $_ -match 'virtual desktop switch seen by the foreground poll' -and $_ -notmatch 'omitted' }) | Select-Object -Last 1
+Log "poll: $seen"
 
 Case 'new fences with the switch on'
 Pf settings set perDesktopFences true | Out-Null
