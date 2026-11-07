@@ -364,6 +364,8 @@
   "放进那个栅栏": "Llevarlo a ese grupo",
   "在栅栏里拖动": "Arrastrar dentro del grupo",
   "调整顺序（排序方式是「手动」时）": "Cambiar el orden (con el orden «Manual»)",
+  "把文件夹拖到程序的快捷方式上": "Arrastrar carpetas al acceso directo de un programa",
+  "用这个程序打开文件夹": "Abrir las carpetas con ese programa",
   "拖动文件时": "Al arrastrar archivos",
   "从资源管理器把文件拖进栅栏，或者把图标拖到文件夹图标、文件夹栅栏、别的程序上时：": "Al arrastrar archivos del Explorador de archivos a un grupo, o iconos a una carpeta, a un grupo de carpeta o a otra aplicación:",
   "按住 <kbd>Ctrl</kbd>": "Mantener presionada <kbd>Ctrl</kbd>",

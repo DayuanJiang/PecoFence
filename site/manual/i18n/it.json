@@ -364,6 +364,8 @@
   "放进那个栅栏": "Sposta l’elemento in quel riquadro",
   "在栅栏里拖动": "Trascina all’interno del riquadro",
   "调整顺序（排序方式是「手动」时）": "Modifica l’ordine (quando il criterio di ordinamento è «Manuale»)",
+  "把文件夹拖到程序的快捷方式上": "Trascina cartelle sul collegamento di un programma",
+  "用这个程序打开文件夹": "Apri le cartelle con quel programma",
   "拖动文件时": "Trascinamento dei file",
   "从资源管理器把文件拖进栅栏，或者把图标拖到文件夹图标、文件夹栅栏、别的程序上时：": "Quando trascini file da Esplora file in un riquadro, oppure trascini icone su un’icona di cartella, su un riquadro di cartelle o su un’altra applicazione:",
   "按住 <kbd>Ctrl</kbd>": "Tieni premuto <kbd>Ctrl</kbd>",
