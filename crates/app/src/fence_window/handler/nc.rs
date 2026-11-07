@@ -357,6 +357,9 @@ pub(super) fn on_nclbuttondown(
             return Some(0);
         }
     }
+    // A title or edge press takes the keyboard like a content click (and the Glass drag above):
+    // Ctrl+Z after a move or resize, Delete and F2 reach this fence, not the window in front.
+    focus_session(view, hwnd);
     if wparam as isize == msg::HTCAPTION && behavior.click_to_expand.get() {
         // Swallow the press: a release without a drag expands the rolled
         // fence (WM_NCLBUTTONUP); a drag hands over to SC_MOVE.

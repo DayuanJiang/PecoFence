@@ -79,6 +79,7 @@ mod tabs;
 mod tests;
 mod testscript;
 mod tools;
+mod undo;
 mod updates;
 mod visuals;
 mod wallpaper_refresh;
@@ -319,6 +320,10 @@ pub struct App {
     /// The first start's tip, the what's-new notice or a 对话框跳转 notice while it is on screen
     /// (see `welcome.rs`).
     welcome: Option<(crate::notice::Notice, welcome::Welcome)>,
+    /// Ctrl+Z in a fence: the newest undoable step last (see `undo.rs`).
+    undo: Vec<undo::UndoStep>,
+    /// The 「已删除栅栏」 notice with 撤销, and the fence it puts back.
+    undo_notice: Option<(crate::notice::Notice, FenceId)>,
     /// The welcome, what's-new and 对话框跳转 notices may show (not under a test script or
     /// `--exit-after`).
     notices: bool,
@@ -1547,6 +1552,8 @@ impl App {
             updates: Default::default(),
             rating,
             welcome: None,
+            undo: Vec::new(),
+            undo_notice: None,
             notices: args.exit_after_ms.is_none() && args.test_script.is_none(),
             settings_ring: None,
             web_env: None,
@@ -2118,7 +2125,25 @@ impl App {
                     .get(&fence)
                     .map(|w| (w.is_rolled(), w.expanded_height_px()))
                     .unwrap_or((false, rect.bottom - rect.top));
+                let saved = |s: &crate::state::AppState| {
+                    s.fence(fence).map(|f| {
+                        let r = s.fence_px_rect(f);
+                        RECT {
+                            left: r.left,
+                            top: r.top,
+                            right: r.right,
+                            bottom: r.bottom,
+                        }
+                    })
+                };
+                let before = saved(&self.state);
                 self.record_bounds(fence, rect, rolled, expanded, "user");
+                // A move or resize (a roll keeps the expanded rect): Ctrl+Z puts it back.
+                if let Some(before) = before
+                    && saved(&self.state).is_some_and(|after| after != before)
+                {
+                    self.note_bounds_for_undo(fence, before);
+                }
                 self.schedule_save();
                 self.apply_auto_height(fence);
                 // Another fence moved or resized: the desktop-arranged one flows around it.
@@ -2360,7 +2385,7 @@ impl App {
                     }
                 }
                 if !ids.is_empty() {
-                    self.move_items(&ids, to);
+                    self.move_items_unrecorded(&ids, to);
                 }
             }
             Command::ExternalUrlDrop {
@@ -2510,6 +2535,7 @@ impl App {
             }
             Command::SettingsMessage(json) => self.on_settings_message(&json),
             Command::Notice(event) => self.on_notice(event),
+            Command::Undo => self.undo_last("Ctrl+Z"),
         }
     }
 

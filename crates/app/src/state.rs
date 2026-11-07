@@ -2604,19 +2604,20 @@ impl AppState {
 
     /// Deletes a fence; its items go back to the inbox. The inbox itself cannot be deleted.
     pub fn delete_fence(&mut self, id: FenceId) -> bool {
-        let Some(inbox) = self.inbox_id() else {
-            return false;
-        };
+        self.delete_fence_keeping(id).is_some()
+    }
+
+    /// [`Self::delete_fence`], returning what [`Self::undelete_fence`] needs to put it back.
+    pub fn delete_fence_keeping(&mut self, id: FenceId) -> Option<DeletedFence> {
+        let inbox = self.inbox_id()?;
         if inbox == id {
-            return false;
+            return None;
         }
         // Out of its tab group first: a deleted host hands its place to the next tab, which
         // keeps the others (they would otherwise all open on the host's rect).
-        self.detach_tab(id);
-        let Some(pos) = self.fences().iter().position(|f| f.id == id) else {
-            return false;
-        };
-        let removed = self.config.layouts[self.layout].fences.remove(pos);
+        let tabs = self.detach_tab(id);
+        let index = self.fences().iter().position(|f| f.id == id)?;
+        let removed = self.config.layouts[self.layout].fences.remove(index);
         tracing::info!(
             %id,
             items = removed.items.len(),
@@ -2632,6 +2633,15 @@ impl AppState {
             self.config
                 .assign(self.layout, item, inbox, AssignedBy::Migration);
         }
+        let rules: Vec<(usize, pecofence_core::rules::Rule)> = self
+            .config
+            .rules
+            .list
+            .iter()
+            .enumerate()
+            .filter(|(_, r)| r.target == Target::Fence(id))
+            .map(|(i, r)| (i, r.clone()))
+            .collect();
         self.config
             .rules
             .list
@@ -2639,8 +2649,125 @@ impl AppState {
         // Its tabs (if it hosted any) become windows again; a deleted tab leaves its host.
         self.normalize_tabs();
         self.dirty = true;
+        Some(DeletedFence {
+            note: self.config.notes.get(&id).cloned(),
+            script: self.config.scripts.get(&id).cloned(),
+            fence: removed,
+            index,
+            tabs,
+            rules,
+        })
+    }
+
+    /// Puts a fence [`Self::delete_fence_keeping`] deleted back: at its place in the list,
+    /// in its tab group, with its rules, note text or script, and the icons the deletion sent
+    /// to the inbox (one moved elsewhere since stays there). False when it exists again.
+    pub fn undelete_fence(&mut self, d: DeletedFence) -> bool {
+        let id = d.fence.id;
+        if self.fence(id).is_some() {
+            return false;
+        }
+        let inbox = self.inbox_id();
+        let layout = self.layout;
+        let mut fence = d.fence;
+        let in_inbox = |state: &Self, item: ItemId| {
+            state.config.items.contains_key(&item)
+                && state.config.fence_of_item(layout, item) == inbox
+        };
+        fence.items.retain(|r| in_inbox(self, r.item_id));
+        let back: HashSet<ItemId> = fence.items.iter().map(|r| r.item_id).collect();
+        for f in &mut self.config.layouts[layout].fences {
+            f.items.retain(|r| !back.contains(&r.item_id));
+        }
+        let fences = &mut self.config.layouts[layout].fences;
+        fences.insert(d.index.min(fences.len()), fence);
+        let regrouped = d
+            .tabs
+            .as_ref()
+            .is_some_and(|change| self.cancel_tab_detach(change));
+        let list = &mut self.config.rules.list;
+        let mut rules = 0;
+        for (i, rule) in d.rules {
+            if !list.iter().any(|r| r.id == rule.id) {
+                list.insert(i.min(list.len()), rule);
+                rules += 1;
+            }
+        }
+        if let Some(text) = d.note {
+            self.config.notes.entry(id).or_insert(text);
+        }
+        if let Some(spec) = d.script {
+            self.config.scripts.entry(id).or_insert(spec);
+        }
+        self.normalize_tabs();
+        self.dirty = true;
+        tracing::info!(
+            %id,
+            items = back.len(),
+            rules,
+            tab_group = d.tabs.is_some(),
+            regrouped,
+            "deleted fence put back"
+        );
         true
     }
+
+    /// Where each of `items` is now in the current layout: its fence and its entry there (for
+    /// putting it back, [`Self::put_items_back`]). Items in no fence are left out.
+    pub fn item_places(&self, items: &[ItemId]) -> Vec<(FenceId, pecofence_core::ItemRef)> {
+        self.fences()
+            .iter()
+            .flat_map(|f| {
+                f.items
+                    .iter()
+                    .filter(|r| items.contains(&r.item_id))
+                    .map(|r| (f.id, r.clone()))
+            })
+            .collect()
+    }
+
+    /// Moves items back to the places [`Self::item_places`] noted, each only while it is still
+    /// in `moved_to` (the user may have moved it on). Returns how many went back.
+    pub fn put_items_back(
+        &mut self,
+        places: &[(FenceId, pecofence_core::ItemRef)],
+        moved_to: FenceId,
+    ) -> usize {
+        let layout = self.layout;
+        let mut back = 0;
+        for (from, r) in places {
+            if self.config.fence_of_item(layout, r.item_id) != Some(moved_to)
+                || self.routable_fence(*from).is_none()
+            {
+                continue;
+            }
+            for f in &mut self.config.layouts[layout].fences {
+                f.items.retain(|x| x.item_id != r.item_id);
+            }
+            if let Some(f) = self.fence_mut(*from) {
+                f.items.push(r.clone());
+                back += 1;
+            }
+        }
+        if back > 0 {
+            self.dirty = true;
+        }
+        back
+    }
+}
+
+/// Everything [`AppState::undelete_fence`] needs to put a deleted fence back.
+#[derive(Clone, Debug)]
+pub struct DeletedFence {
+    pub fence: Fence,
+    /// Its place in the layout's fence list.
+    index: usize,
+    /// It was in a tab group (or hosted one): how the group was.
+    tabs: Option<pecofence_core::TabDetach>,
+    /// The rules that pointed at it, with their places in the list.
+    rules: Vec<(usize, pecofence_core::rules::Rule)>,
+    note: Option<String>,
+    script: Option<pecofence_core::ScriptSpec>,
 }
 
 fn ext_of_key(key: &ItemKey) -> String {

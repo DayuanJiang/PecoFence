@@ -165,6 +165,7 @@
   "之后栅栏怎么挪都没关系。": "Now move your fences around as much as you like.",
   "点快照右边的<b>「恢复」</b>，栅栏的位置、大小和里面的图标都会回到保存时的样子。列表里还会多出一份「恢复快照前」，后悔了可以用它退回去。": "Select <b>Restore</b> next to the snapshot. The fences' positions, sizes and icons go back to how they were when you saved it. A “Before snapshot restore” entry also appears in the list, in case you change your mind.",
   "快照只管栅栏布局。设置和整理规则可以用「导出…」存成文件，换电脑时再「导入…」。PecoFence 每天还会自动备份一份完整配置，保留最近 7 份；恢复备份会把设置和规则也换掉。": "Snapshots cover only the fence layout. To save your settings and sorting rules to a file, use “Export…”, then “Import…” on your new PC. PecoFence also backs up your full configuration every day and keeps the last 7. Restoring a backup replaces your settings and rules as well.",
+  "拖错了栅栏、改错了大小、把图标拖进了别的栅栏，或者删错了栅栏，点一下栅栏的标题再按 <kbd>Ctrl</kbd>+<kbd>Z</kbd> 就能撤销。从栅栏菜单删除栅栏后，右下角还会出现一张带<b>「撤销」</b>的卡片，并自动存一份「删除栅栏前」快照。": "Dragged a fence to the wrong place, resized it by mistake, dragged an icon into the wrong fence or deleted the wrong fence? Click a fence's title and press <kbd>Ctrl</kbd>+<kbd>Z</kbd> to undo it. After you delete a fence from its menu, a card with <b>Undo</b> also appears in the bottom-right corner, and a “Before fence delete” snapshot is saved automatically.",
   "7.1 · 小工具": "7.1 · Tools",
   "便签、时钟和脚本栅栏": "Notes, clock and script fences",
   "小工具也放在栅栏里：便签用来记事和列待办，时钟显示时间和日期，脚本栅栏把脚本打印的文字显示在桌面上，比如天气。": "Tools live in fences too: a note holds notes and to-dos, a clock shows the time and date, and a script fence shows the text a script prints on the desktop, such as the weather.",

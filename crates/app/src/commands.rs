@@ -377,6 +377,8 @@ pub enum Command {
     SettingsMessage(String),
     /// The rating notice was clicked or went away (see `notice.rs`).
     Notice(crate::notice::NoticeEvent),
+    /// Ctrl+Z in a fence (see `app/undo.rs`).
+    Undo,
 }
 
 #[derive(Clone)]

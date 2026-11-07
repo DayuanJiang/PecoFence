@@ -87,6 +87,7 @@ pub(super) fn on_keydown(
     const VK_N: u32 = 0x4E;
     const VK_V: u32 = 0x56;
     const VK_X: u32 = 0x58;
+    const VK_Z: u32 = 0x5A;
     const VK_F5: u32 = 0x74;
     const VK_SPACE: u32 = 0x20;
     let mode = cursor_mode(shift, ctrl);
@@ -139,6 +140,9 @@ pub(super) fn on_keydown(
             }
         }
         VK_V if ctrl => queue.push(Command::Paste { fence: v.active }),
+        // Ctrl+Z undoes the last fence move, resize, icon move or fence delete (app/undo.rs);
+        // a held key undoes once.
+        VK_Z if ctrl && !shift && lparam & (1 << 30) == 0 => queue.push(Command::Undo),
         VK_N if ctrl && shift => queue.push(Command::NewFolder { fence: v.active }),
         VK_TAB if ctrl && v.tabs.len() > 1 => {
             // Ctrl+Tab / Ctrl+Shift+Tab cycle the tabs (Explorer).

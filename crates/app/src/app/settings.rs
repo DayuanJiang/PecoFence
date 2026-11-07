@@ -92,6 +92,7 @@ pub(super) fn snapshot_room(
 ) -> bool {
     let auto = [
         pecofence_core::i18n::text("恢复快照前"),
+        pecofence_core::i18n::text("删除栅栏前"),
         ConfigSource::Import.before(),
         ConfigSource::Backup.before(),
     ];

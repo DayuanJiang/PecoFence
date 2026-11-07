@@ -100,7 +100,7 @@ impl App {
                 )
                 && store::user_accepts_notifications()
         };
-        if !ready || self.rating.failed || self.rating.notice.is_some() || self.welcome.is_some() {
+        if !ready || self.rating.failed || self.notice_showing() {
             return;
         }
         match crate::notice::Notice::show(
@@ -127,6 +127,11 @@ impl App {
     /// A notice was clicked or went away. The welcome and the rating offer never show at
     /// the same time.
     pub(super) fn on_notice(&mut self, event: crate::notice::NoticeEvent) {
+        if let Some((notice, fence)) = self.undo_notice.take() {
+            drop(notice);
+            self.on_undo_notice(fence, event);
+            return;
+        }
         if let Some((notice, which)) = self.welcome.take() {
             // Gone before the next tip registers its window class.
             drop(notice);
@@ -141,7 +146,7 @@ impl App {
 
     /// A welcome, what's-new, 对话框跳转 or rating notice is on screen.
     pub(super) fn notice_showing(&self) -> bool {
-        self.welcome.is_some() || self.rating.notice.is_some()
+        self.welcome.is_some() || self.rating.notice.is_some() || self.undo_notice.is_some()
     }
 
     /// After a render stack rebuild: the notice on screen draws on the new device.
@@ -151,6 +156,7 @@ impl App {
             .iter()
             .map(|(n, _)| n)
             .chain(&self.rating.notice)
+            .chain(self.undo_notice.iter().map(|(n, _)| n))
         {
             notice.redraw();
         }
