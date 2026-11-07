@@ -61,6 +61,7 @@ pub mod monitors;
 pub mod msg;
 pub mod paint;
 pub mod pipe;
+pub mod power;
 pub mod process;
 pub mod quicklook;
 pub mod rawinput;

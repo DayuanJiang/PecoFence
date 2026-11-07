@@ -494,6 +494,7 @@ fn log_start_state(state: &AppState) {
         custom_theme = s.custom_theme.is_some(),
         icon_size = s.icon_size,
         autostart = s.autostart,
+        keep_screen_on = s.keep_screen_on,
         // The Desktop folder seen at the last run is kept once one run saved it; it does not
         // say that the desktop moved.
         desktop_path_saved = s.desktop_path.is_some(),
@@ -1803,6 +1804,12 @@ impl App {
             }
         }
         app.query_store_startup();
+        if app.state.config.settings.keep_screen_on
+            && !pecofence_platform::power::keep_screen_on(true)
+        {
+            app.state.config.settings.keep_screen_on = false;
+            app.state.mark_dirty();
+        }
         // What startup changed is derived again on the next start: write it once the fences
         // are up instead of before the message loop runs.
         if app.state.is_dirty() {
@@ -2521,6 +2528,9 @@ impl App {
     }
 
     pub fn shutdown(&mut self) {
+        if self.state.config.settings.keep_screen_on {
+            pecofence_platform::power::keep_screen_on(false);
+        }
         self.end_peek_now();
         self.commit_open_note();
         self.state.save_if_dirty();

@@ -174,6 +174,9 @@ pub struct Settings {
     pub snapping: SnappingSettings,
     pub zorder: ZOrderSetting,
     pub autostart: bool,
+    /// Prevent idle display-off and sleep while PecoFence is running.
+    #[serde(default)]
+    pub keep_screen_on: bool,
     /// Unused (see [`UNUSED_SETTINGS`]).
     #[serde(default)]
     #[cfg_attr(feature = "schema", schemars(skip))]
@@ -397,6 +400,7 @@ impl Default for Settings {
             snapping: SnappingSettings::default(),
             zorder: ZOrderSetting::InsertAboveHost,
             autostart: true,
+            keep_screen_on: false,
             telemetry: false,
             peek: PeekSettings::default(),
             windows_desktop_hotkey: None,
@@ -2118,10 +2122,22 @@ mod tests {
         assert!(obj.remove("offerNewFence").is_some());
         assert!(obj.remove("hideInboxWhenIconsShown").is_some());
         assert!(obj.remove("keepIconsHidden").is_some());
+        assert!(obj.remove("keepScreenOn").is_some());
         let legacy: Settings = serde_json::from_value(json).unwrap();
         assert!(legacy.offer_new_fence);
         assert!(!legacy.hide_inbox_when_icons_shown);
         assert!(!legacy.keep_icons_hidden);
+        assert!(!legacy.keep_screen_on);
+    }
+
+    #[test]
+    fn keep_screen_on_is_opt_in_and_persists() {
+        let mut settings = Settings::default();
+        assert!(!settings.keep_screen_on);
+        settings.keep_screen_on = true;
+        let json = serde_json::to_value(&settings).unwrap();
+        assert_eq!(json["keepScreenOn"], true);
+        assert_eq!(serde_json::from_value::<Settings>(json).unwrap(), settings);
     }
 
     #[test]

@@ -258,7 +258,9 @@ hidden when PecoFence exits, so they do not flash at the next sign-in; default o
 `hideInboxWhenIconsShown` (while `hideRealIcons` is off, the inbox
 fence shows no window and its items only show among the Windows desktop icons; a tab or a host of
 tabs stays; default off), `offerNewFence` (a rectangle drawn on empty desktop that touches no fence
-offers 「在此新建栅栏」; default on), `autostart`, `peek.enabled`, `peek.doubleCtrl` (`true` makes
+offers 「在此新建栅栏」; default on), `autostart`, `keepScreenOn` (prevents automatic display-off
+and sleep while PecoFence runs; default off; released when disabled or on exit),
+`peek.enabled`, `peek.doubleCtrl` (`true` makes
 Peek open by pressing Ctrl twice quickly, with its search box, instead of the shortcut, which stays
 saved but is not registered; setting `peek.hotkey` or `peek.customHotkey` turns it off; works only
 while `peek.enabled` is on; default off), `quickHide.enabled`,

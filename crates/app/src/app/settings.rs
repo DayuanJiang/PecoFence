@@ -993,6 +993,14 @@ impl App {
         }
         let what = changed_settings(&old, &new);
         tracing::info!(what = what.as_str(), by, "settings changed");
+        if new.keep_screen_on != old.keep_screen_on
+            && !pecofence_platform::power::keep_screen_on(new.keep_screen_on)
+        {
+            new.keep_screen_on = old.keep_screen_on;
+            self.settings_error(pecofence_core::i18n::text(
+                "未能更改“保持屏幕常亮”，请稍后重试。",
+            ));
+        }
         if new.autostart != old.autostart {
             if let Err(e) =
                 pecofence_platform::autostart::set_product_enabled(new.autostart, self.portable)
