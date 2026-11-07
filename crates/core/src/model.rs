@@ -42,6 +42,10 @@ pub struct Config {
     #[serde(rename = "$schema", default, skip_serializing_if = "Option::is_none")]
     pub schema: Option<String>,
     pub schema_version: u32,
+    /// The PecoFence version that last saved this file (`0.3.2`). Missing in files of 0.3.1
+    /// and earlier; an older version drops it when it saves.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub saved_by: Option<String>,
     pub settings: Settings,
     /// Global item table keyed by id.
     pub items: HashMap<ItemId, Item>,
@@ -73,6 +77,7 @@ impl Default for Config {
         Self {
             schema: None,
             schema_version: SCHEMA_VERSION,
+            saved_by: None,
             settings: Settings::default(),
             items: HashMap::new(),
             layouts: Vec::new(),

@@ -201,6 +201,23 @@ impl AppState {
             load_failures: report.failures,
             locked_config: report.locked,
         };
+        // A newer version saved this file: what it keeps that this one does not know (the text
+        // of a newer kind of fence, say) goes at this version's first save. A copy stays in the
+        // backups for when the newer version comes back (docs/UPGRADING.md).
+        if let Some(by) = state.config.saved_by.clone()
+            && pecofence_core::config_store::newer_version(&by, env!("CARGO_PKG_VERSION"))
+            && state.recovered_from.is_none()
+            && state.locked_config.is_none()
+        {
+            match state.store.keep_copy(&by) {
+                Ok(path) => {
+                    tracing::info!(saved_by = %by, copy = %path.display(), "config from a newer version kept as a backup")
+                }
+                Err(error) => {
+                    tracing::warn!(saved_by = %by, %error, "config from a newer version not copied")
+                }
+            }
+        }
         state.rebuild_catalog();
         if state.config.drop_duplicates() {
             tracing::warn!("duplicate fences or memberships in the configuration dropped");
@@ -906,6 +923,7 @@ impl AppState {
         if pruned > 0 {
             tracing::info!(pruned, "note texts without a fence dropped");
         }
+        self.config.saved_by = Some(env!("CARGO_PKG_VERSION").to_string());
         match self.store.save(&self.config) {
             Ok(()) => {
                 self.dirty = false;

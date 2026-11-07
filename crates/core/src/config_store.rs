@@ -294,6 +294,19 @@ impl ConfigStore {
         Some(to)
     }
 
+    /// Copies `config.json` into the backups as `backups/<today>-<tag>.json` (once a day per
+    /// tag): a file a newer version wrote, before this version's first save replaces what that
+    /// version keeps and this one does not know (see [`newer_version`]).
+    pub fn keep_copy(&self, tag: &str) -> io::Result<PathBuf> {
+        let dir = self.backups_dir();
+        fs::create_dir_all(&dir)?;
+        let path = dir.join(format!("{}-{tag}.json", today_yyyy_mm_dd()));
+        if !path.exists() {
+            fs::copy(self.primary_path(), &path)?;
+        }
+        Ok(path)
+    }
+
     /// Daily backups (`backups/YYYY-MM-DD.json`), unsorted.
     pub fn list_backups(&self) -> Vec<PathBuf> {
         fs::read_dir(self.backups_dir())
@@ -370,6 +383,17 @@ impl ConfigStore {
         }
         Ok(())
     }
+}
+
+/// `saved_by` names a version newer than `ours` (`0.4.0` against `0.3.2`; a suffix such as
+/// `-beta` is ignored). False for anything that does not read as a version.
+pub fn newer_version(saved_by: &str, ours: &str) -> bool {
+    fn parts(v: &str) -> Option<(u32, u32, u32)> {
+        let core = v.trim().split(['-', '+']).next()?;
+        let mut it = core.split('.').map(|p| p.parse::<u32>().ok());
+        Some((it.next()??, it.next()??, it.next().unwrap_or(Some(0))?))
+    }
+    matches!((parts(saved_by), parts(ours)), (Some(a), Some(b)) if a > b)
 }
 
 /// Range checks from plan §7.5.
@@ -1239,6 +1263,37 @@ mod tests {
         store.save(&clean).unwrap();
         let reloaded = ConfigStore::parse_file(&store.primary_path()).unwrap();
         assert_eq!(lint(&reloaded), Vec::<Lint>::new());
+    }
+
+    #[test]
+    fn versions_compare_by_number() {
+        assert!(newer_version("0.4.0", "0.3.2"));
+        assert!(newer_version("0.3.10", "0.3.9"));
+        assert!(newer_version("1.0", "0.9.9"));
+        assert!(newer_version("0.4.0-beta.1", "0.3.2"));
+        assert!(!newer_version("0.3.2", "0.3.2"));
+        assert!(!newer_version("0.2.5", "0.3.2"));
+        assert!(!newer_version("garbage", "0.3.2"));
+        assert!(!newer_version("", "0.3.2"));
+    }
+
+    #[test]
+    fn a_copy_of_the_primary_goes_to_the_backups_once_a_day() {
+        let store = ConfigStore::new(tmpdir("keep-copy"));
+        let mut c = sample();
+        c.saved_by = Some("9.9.9".into());
+        store.save(&c).unwrap();
+        let text = fs::read_to_string(store.primary_path()).unwrap();
+        assert!(text.contains("\"savedBy\": \"9.9.9\""), "{text}");
+        let copy = store.keep_copy("9.9.9").unwrap();
+        assert_eq!(fs::read_to_string(&copy).unwrap(), text);
+        assert!(store.list_backups().contains(&copy));
+        // A later save keeps it; the same day's second copy does not replace it.
+        c.saved_by = Some("0.0.1".into());
+        store.save(&c).unwrap();
+        assert_eq!(store.keep_copy("9.9.9").unwrap(), copy);
+        assert_eq!(fs::read_to_string(&copy).unwrap(), text);
+        assert!(ConfigStore::parse_file(&copy).is_ok());
     }
 
     #[test]
