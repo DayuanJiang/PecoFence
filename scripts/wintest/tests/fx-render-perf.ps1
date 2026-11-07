@@ -85,6 +85,9 @@ Case 'P6: a Liquid Glass title drag follows every mouse move'
 PfFresh
 PfStart
 Pf settings set themeStyle liquidGlass | Out-Null
+# Snapping off: an alignment with another fence's edge moves the window off the pointer path
+# by a few pixels on purpose (it is not lag).
+Pf settings set snapping.enabled false | Out-Null
 Pf fence create --title G --rect '1000,60,300,180' | Out-Null
 Start-Sleep -Seconds 3
 $h = [G]::FindWindowW('PecoFence.Fence', 'G')
