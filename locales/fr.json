@@ -827,5 +827,14 @@
   "要搜索整台电脑，需要先打开 Everything：右键这个栅栏可以启动或安装它。": "Pour chercher dans tout l’ordinateur, il faut Everything : clic droit sur ce groupe pour le lancer ou l’installer.",
   "选择文件夹…": "Choisir un dossier…",
   "选择智能栅栏要搜索的文件夹": "Choisir le dossier où cherche le groupe intelligent",
-  "，包含子文件夹": ", sous-dossiers compris"
+  "，包含子文件夹": ", sous-dossiers compris",
+  "在哪个虚拟桌面显示": "Afficher sur le bureau virtuel",
+  "所有虚拟桌面": "Tous les bureaux virtuels",
+  "桌面 {0}": "Bureau {0}",
+  "{0}（当前）": "{0} (actuel)",
+  "栅栏“{0}”现在只在“{1}”上显示，切换到那个虚拟桌面就能看到它。": "Le groupe « {0} » ne s’affiche plus que sur « {1} ». Passez à ce bureau virtuel pour le voir.",
+  "按 Win+Ctrl+左右键切换虚拟桌面时，不属于那个桌面的栅栏会淡出": "Quand vous changez de bureau virtuel avec Win+Ctrl+Gauche/Droite, les groupes qui n’appartiennent pas à ce bureau s’estompent",
+  "只在“{0}”上显示": "Uniquement sur « {0} »",
+  "每个虚拟桌面各用一套栅栏": "Des groupes propres à chaque bureau virtuel",
+  "打开后，新建的栅栏只在当前虚拟桌面显示。已有的栅栏不变，可以在栅栏右键菜单或“栅栏”页里改": "Activé, un nouveau groupe ne s’affiche que sur le bureau virtuel actuel. Les groupes existants ne changent pas ; modifiez-les dans le menu contextuel du groupe ou sur la page « Groupes »"
 }

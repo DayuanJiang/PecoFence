@@ -85,8 +85,9 @@ pub(super) fn show_with_fade(view: &ViewCell, hwnd: HWND, entrance: bool) {
     let animate = {
         let mut guard = view.borrow_mut();
         match guard.as_mut() {
-            // A retired window is on its way out: nothing may bring it back.
-            Some(v) if v.retired => return,
+            // A retired window is on its way out: nothing may bring it back. One of another
+            // virtual desktop waits for a switch there.
+            Some(v) if v.retired || v.off_desktop => return,
             // Visible and not mid fade-out: nothing to do.
             Some(v) if visible && v.vis_fade.is_none() => return,
             Some(v) => v.prepare_fade_in(entrance),

@@ -827,5 +827,14 @@
   "要搜索整台电脑，需要先打开 Everything：右键这个栅栏可以启动或安装它。": "Per cercare in tutto il computer serve Everything: fai clic destro su questo riquadro per avviarlo o installarlo.",
   "选择文件夹…": "Scegli cartella…",
   "选择智能栅栏要搜索的文件夹": "Scegli la cartella in cui cerca il riquadro intelligente",
-  "，包含子文件夹": ", con sottocartelle"
+  "，包含子文件夹": ", con sottocartelle",
+  "在哪个虚拟桌面显示": "Mostra sul desktop virtuale",
+  "所有虚拟桌面": "Tutti i desktop virtuali",
+  "桌面 {0}": "Desktop {0}",
+  "{0}（当前）": "{0} (corrente)",
+  "栅栏“{0}”现在只在“{1}”上显示，切换到那个虚拟桌面就能看到它。": "Il riquadro «{0}» ora è visibile solo su «{1}». Passa a quel desktop virtuale per vederlo.",
+  "按 Win+Ctrl+左右键切换虚拟桌面时，不属于那个桌面的栅栏会淡出": "Quando cambi desktop virtuale con Win+Ctrl+Sinistra/Destra, i riquadri che non appartengono a quel desktop svaniscono",
+  "只在“{0}”上显示": "Solo su «{0}»",
+  "每个虚拟桌面各用一套栅栏": "Riquadri separati per ogni desktop virtuale",
+  "打开后，新建的栅栏只在当前虚拟桌面显示。已有的栅栏不变，可以在栅栏右键菜单或“栅栏”页里改": "Se attivo, un nuovo riquadro è visibile solo sul desktop virtuale corrente. I riquadri esistenti restano come sono; puoi cambiarli dal menu contestuale del riquadro o nella pagina «Riquadri»"
 }

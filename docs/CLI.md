@@ -101,6 +101,7 @@ unique id prefix, or a name (only while that name is unique).
 |---|---|
 | `status` | `pecofence-cli status` (version, config path, counts, and per monitor `liveWallpapers`) |
 | `monitor list` | `pecofence-cli monitor list` |
+| `virtual-desktop list` | `pecofence-cli virtual-desktop list` (Windows virtual desktops in Task View order: `id`, `number`, `name`, `current`) |
 | `describe [--schema <NAME>]` | `pecofence-cli describe --schema Settings` |
 | `skill` | `pecofence-cli skill > SKILL.md` |
 | `fence list` | `pecofence-cli fence list` |
@@ -192,12 +193,31 @@ this is also how to keep the inbox, which cannot be deleted, out of sight), `des
 only: no title row, glass or edges; its icons stand down columns from the top-left of the monitor
 like the Windows desktop, around the other fences), `noteText` (note fences: the whole text; a line
 starting with `[ ]` or `[x]` is a to-do), `scriptPath` (script fences: the full path of the script;
-it runs at once), `scriptInterval` (script fences: minutes between runs, 1 to 1440) and the search
-of a smart fence (see [Smart fences](#smart-fences-智能栅栏)): `smartFolder`, `smartSubfolders`,
-`smartWithinDays`, `smartConditions`, `smartName`, `smartEverything`, `smartLimit`; on any other
-fence these are `unsupported`. `portalTitleIcon` also switches a smart fence's magnifier.
+it runs at once), `scriptInterval` (script fences: minutes between runs, 1 to 1440),
+`virtualDesktops` (see *Virtual desktops* below) and the search of a smart fence (see
+[Smart fences](#smart-fences-智能栅栏)): `smartFolder`, `smartSubfolders`, `smartWithinDays`,
+`smartConditions`, `smartName`, `smartEverything`, `smartLimit`; on any other fence these are
+`unsupported`. `portalTitleIcon` also switches a smart fence's magnifier.
 `--all` applies the option to every fence one call at a time and
 skips tabs hosted inside another fence (their options belong to the host).
+
+### Virtual desktops
+
+A fence shows on every Windows virtual desktop (the default) or only on some; switching desktops
+(Win+Ctrl+Left/Right, Task View) fades the other desktops' fences out, as quick hide does.
+`virtual-desktop list` (method `virtualDesktops.list`) prints the desktops in Task View order:
+`id` (Explorer's `{GUID}`), `number` (from 1), `name` (the Task View name, else `Desktop N`) and
+`current`. With one desktop the list is empty: Windows keeps none until the second exists.
+`fence set <FENCE> virtualDesktops <VALUE>` takes `all`, `current`, or desktops by number, name or
+id, comma-separated (`virtualDesktops 1,3`, `virtualDesktops Games`); naming every desktop is
+`all`, and a name two desktops share is `invalid_value` (give the number). It acts on the whole
+window: a tab sets its host and every tab, and a fence merged into a window takes the window's
+desktops. The inbox shows on every desktop (`unsupported`). `fence get` reports
+`virtualDesktops` (the ids, empty for every desktop) and `onCurrentDesktop` (false: hidden until a
+switch there). The setting `perDesktopFences` (Settings › 常规, 「每个虚拟桌面各用一套栅栏」) makes
+every new fence, `fence create` too, belong to the current desktop. When a desktop is closed its
+fences go to the desktop Windows moves its windows to (the left neighbour); a configuration from
+another PC (`config import`) is matched to this PC's desktops by name, then by position.
 
 `item list` describes every item with `kind` (`folders`, `programs`, `installers`, `shortcuts`,
 `documents`, `images`, `music`, `video`, `archives`, `namespace`, `other`; the same tests the `type`

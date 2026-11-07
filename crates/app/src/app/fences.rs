@@ -132,12 +132,16 @@ impl App {
             ) {
                 Ok(w) => {
                     w.set_tabs(tabs, active);
+                    // A fence of another virtual desktop is created hidden and stays so.
+                    w.set_off_desktop(!self.on_current_desktop(fence.id));
                     self.fences.insert(fence.id, w);
                     self.apply_fence_view(fence.id);
                 }
                 Err(e) => tracing::error!(title = %fence.title, error = %e, "fence window failed"),
             }
         }
+        // A window kept across a merge or a layout switch may now belong to other desktops.
+        self.apply_desktop_visibility("windows synced");
     }
 
     /// The window a fence is shown in (its own, or its tab host's).
@@ -465,11 +469,12 @@ impl App {
         };
         // Where the other fences rest: one hover-peeking open over the icons does not move them.
         // Windows not shown yet count too (startup creates them hidden), so the first arrange
-        // is already the right one; a fence with no window (为空时自动隐藏) takes no cells.
+        // is already the right one; a fence with no window (为空时自动隐藏) takes no cells, nor
+        // one of another virtual desktop.
         let covered: Vec<RECT> = self
             .fences
             .iter()
-            .filter(|(fid, _)| **fid != id)
+            .filter(|(fid, _)| **fid != id && self.on_current_desktop(**fid))
             .map(|(_, o)| o.resting_rect())
             .collect();
         let Some(w) = self.fences.get(&id) else {

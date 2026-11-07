@@ -87,6 +87,10 @@ pub enum Method {
     /// Connected monitors with virtual-screen rectangles. Result: `[MonitorDto]`.
     #[serde(rename = "monitors.list")]
     MonitorsList,
+    /// Windows virtual desktops in Task View order (a fence's `virtualDesktops` names them by
+    /// `id`). Result: `[VirtualDesktopDto]`.
+    #[serde(rename = "virtualDesktops.list")]
+    VirtualDesktopsList,
     /// Fences of the active layout (the current monitor set). Result: `[FenceDto]`.
     #[serde(rename = "fences.list")]
     FencesList,
@@ -395,6 +399,7 @@ impl Method {
             self,
             Method::StatusGet
                 | Method::MonitorsList
+                | Method::VirtualDesktopsList
                 | Method::FencesList
                 | Method::FencesGet { .. }
                 | Method::ItemsList { .. }
@@ -639,6 +644,7 @@ mod tests {
         vec![
             Method::StatusGet,
             Method::MonitorsList,
+            Method::VirtualDesktopsList,
             Method::FencesList,
             Method::FencesGet {
                 fence: "Work".into(),

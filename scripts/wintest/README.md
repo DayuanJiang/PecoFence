@@ -96,6 +96,13 @@ Check 'new-note opens the editor' ($ed -ne [IntPtr]::Zero) "editor=$ed"
   `GreyWallpaper`, `MeanRgb`, `ExplorerIconRgb` (Explorer's own icon of a file, a reference for
   thumbnails), `OcrText` / `ToastOcr` (Windows' OCR: toasts and a release build's settings page,
   which UI Automation cannot see).
+- Virtual desktops (vdesk.ps1): `VdNew`, `VdClose`, `VdLeft`, `VdRight` (Win+Ctrl+D/F4/←/→),
+  `VdOnlyOne` (every job starts with one desktop), `VdTwo a b` (two desktops named in Task View),
+  `VdRename`, `TaskView`, `TaskViewPick n`, `VdIds`, `VdCurrent` (Windows 10 too), `VdName`,
+  `VdState`; fences by title shown or hidden: `[VD]::Fence`, `FVis`, `VisText`; `FenceMenu`,
+  `VdSubmenu`, `CloseAllMenus` (an open fence menu holds PecoFence: switches are followed when it
+  closes), `CloseToast`. Explorer caches desktop names: rename in Task View, never in the registry.
+  `tests/vd-*.ps1` use them; `vd-win10.ps1` is for the PF-Win10 guest (no Task View clicks).
 - The user's own copy (user.ps1): `Ipf` / `IpfJson` / `UserLog` for the installed copy (set
   `$script:CliExe` for a portable one), `StartUser`, `WaitNoPf`; `PfUseUser` makes the item and
   state helpers read that copy; setup and uninstall by their buttons (`Wizard`, `Uninstall`,

@@ -513,6 +513,7 @@
         <div class="card child" id="keepIconsCard"><div class="l"><div><div class="t">关闭 PecoFence 时保持 Windows 桌面图标隐藏</div><div class="s">登录时 Windows 会先显示桌面图标，等 PecoFence 启动后才隐藏。打开后，退出或注销时图标保持隐藏，下次登录就不会闪现；PecoFence 没有运行时，桌面上不显示图标。要让图标重新显示，右键桌面，选“查看”→“显示桌面图标”</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="keepIconsHidden"></div></div>
       </div>
       <div class="card"><div class="l"><span class="ic">&#xE8B3;</span><div><div class="t">在桌面空白处拖出矩形时提供“在此新建栅栏”</div><div class="s">矩形没有碰到任何栅栏时弹出这一项；关闭后拖出矩形只用来框选，仍可从托盘菜单新建栅栏</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="offerNewFence"></div></div>
+      <div class="card" id="perDesktopCard"><div class="l"><span class="ic">&#xE7C4;</span><div><div class="t">每个虚拟桌面各用一套栅栏</div><div class="s">打开后，新建的栅栏只在当前虚拟桌面显示。已有的栅栏不变，可以在栅栏右键菜单或“栅栏”页里改</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="perDesktopFences"></div></div>
       <h3>隐藏栅栏</h3>
       <div class="card"><div class="l"><span class="ic">&#xE890;</span><div><div class="t">双击桌面空白处隐藏或显示栅栏</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="quickHide.enabled"></div></div>
       <div class="card" id="wdHotkeyCard"><div class="l"><span class="ic">&#xE7F4;</span><div><div class="t" id="wdHotkeyTitle">临时显示 Windows 桌面</div><div class="s" id="wdHotkeyHelp" aria-live="polite"></div></div></div>
@@ -625,6 +626,8 @@
       <h3>行为</h3>
       <div class="card"><div class="l"><span class="ic">&#xE72E;</span><div><div class="t">锁定位置和大小</div><div class="s">边框不再可拖动缩放；标题仍可点击、右键、双击</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="locked"></div></div>
       <div class="card"><div class="l"><span class="ic">&#xE70E;</span><div><div class="t">向上展开</div><div class="s">上方放得下时向上展开，放不下就向下展开；标题栏留在原处。适合放在任务栏上方的栅栏</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="expandUpward"></div></div>
+      <div class="card" id="fenceVdCard"><div class="l"><span class="ic">&#xE7C4;</span><div><div class="t">在哪个虚拟桌面显示</div><div class="s">按 Win+Ctrl+左右键切换虚拟桌面时，不属于那个桌面的栅栏会淡出</div></div></div>
+        <select id="fenceVd" aria-label="在哪个虚拟桌面显示"></select></div>
       <div class="card"><div class="l"><span class="ic">&#xE890;</span><div><div class="t">双击桌面隐藏时保留此栅栏</div><div class="s">其他栅栏隐藏时，这个栅栏仍留在桌面上</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="excludeFromQuickHide"></div></div>
       <div class="card" id="fenceHideEmpty"><div class="l"><span class="ic">&#xED1A;</span><div><div class="t">为空时自动隐藏</div><div class="s">里面没有图标时就不显示；桌面上一出现新图标，它会自己回来</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="hideWhenEmpty"></div></div>
       <div class="card" id="fenceDesktopLayout"><div class="l"><span class="ic">&#xE80A;</span><div><div class="t">像桌面一样排列</div><div class="s">图标从屏幕左上角一列一列往下排，绕开其他栅栏，像 Windows 桌面的“自动排列图标”，不能随意摆放。关闭后“桌面”变回普通栅栏，可以移动和调整大小</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="desktopLayout"></div></div>
@@ -1802,6 +1805,16 @@
     renderSwatches(fenceTintSwatches, tintSel, 'fenceTint');
     renderSwatches(fenceTabColorSwatches, tabSel, 'tabColor');
     document.getElementById('fenceDock').onclick = () => { setFence(f.id, 'dockTop', null); toast(t("已停靠到屏幕顶部")); };
+    // 在哪个虚拟桌面显示: once there is more than one desktop; 「桌面」 shows on every one.
+    const desktops = state.virtualDesktops || [];
+    const bound = f.virtualDesktops || [];
+    document.getElementById('fenceVdCard').style.display = f.kind !== 'inbox' && (desktops.length > 1 || bound.length) ? '' : 'none';
+    const vdSel = document.getElementById('fenceVd');
+    const vdOptions = `<option value="">${esc(t("所有虚拟桌面"))}</option>` + desktops.map(d => `<option value="${esc(d.id)}">${esc(d.current ? tf("{0}（当前）", d.name) : d.name)}</option>`).join('');
+    if (vdSel.innerHTML !== vdOptions) vdSel.innerHTML = vdOptions;
+    const vdOn = desktops.find(d => bound.some(b => b.toUpperCase() === d.id.toUpperCase()));
+    vdSel.value = vdOn ? vdOn.id : '';
+    vdSel.onchange = () => setFence(f.id, 'virtualDesktops', vdSel.value || 'all');
     ringFence();
   }
   // 智能栅栏: the 「搜索条件」 group of the selected fence. Each box saves on change; the

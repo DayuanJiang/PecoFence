@@ -93,6 +93,7 @@ pub(super) const FENCE_PROPS: &[&str] = &[
     "smartName",
     "smartEverything",
     "smartLimit",
+    "virtualDesktops",
 ];
 
 /// 智能栅栏: one change to a smart fence's search (`fence set` / the settings page).
@@ -166,6 +167,9 @@ pub(super) enum FenceProp {
     ScriptInterval(u32),
     /// 智能栅栏: a change to its search.
     Smart(SmartChange),
+    /// 在哪个虚拟桌面显示, as given: `all`, `current`, numbers, names or keys (see
+    /// `App::resolve_desktop_specs`).
+    VirtualDesktops(Vec<String>),
 }
 
 impl FenceProp {
@@ -427,6 +431,31 @@ pub(super) fn parse_fence_prop(
             Some(n @ 1..=2000) => FenceProp::Smart(SmartChange::Limit(n as u32)),
             _ => return Err(bad(&["1..2000"])),
         },
+        "virtualDesktops" => {
+            const ALLOWED: &[&str] = &[
+                "all",
+                "current",
+                "<desktop numbers, names or ids, comma-separated>",
+            ];
+            let specs: Vec<String> = match value {
+                serde_json::Value::String(s) => vec![s.clone()],
+                serde_json::Value::Number(n) => vec![n.to_string()],
+                serde_json::Value::Array(a) => a
+                    .iter()
+                    .map(|v| match v {
+                        serde_json::Value::String(s) => Some(s.clone()),
+                        serde_json::Value::Number(n) => Some(n.to_string()),
+                        _ => None,
+                    })
+                    .collect::<Option<_>>()
+                    .ok_or_else(|| bad(ALLOWED))?,
+                _ => return Err(bad(ALLOWED)),
+            };
+            if specs.iter().all(|s| s.trim().is_empty()) {
+                return Err(bad(ALLOWED));
+            }
+            FenceProp::VirtualDesktops(specs)
+        }
         _ => {
             return Err(IpcError::invalid_value(
                 format!("unknown fence property {prop:?}"),
@@ -743,6 +772,7 @@ impl App {
             "hideWhenEmpty": f.hide_when_empty,
             "desktopLayout": f.desktop_layout,
             "openFoldersInside": f.open_folders_inside,
+            "virtualDesktops": h.virtual_desktops,
             "portal": portal,
             // 智能栅栏: its search and the last run (see `App::smart_dto`), and the magnifier.
             "smart": self.smart_dto(f.id).map(|mut s| {
@@ -808,6 +838,15 @@ impl App {
             }
             FenceProp::ScriptPath(path) => return self.set_script_path(fence, &path),
             FenceProp::Smart(change) => return self.change_smart(fence, change),
+            FenceProp::VirtualDesktops(specs) => {
+                return match self.resolve_desktop_specs(&specs) {
+                    Ok(keys) => self.set_fence_desktops(fence, keys, "settings or CLI"),
+                    Err(error) => {
+                        tracing::warn!(%error, "virtual desktops not set");
+                        false
+                    }
+                };
+            }
             FenceProp::ScriptInterval(minutes) => {
                 let old = self
                     .state

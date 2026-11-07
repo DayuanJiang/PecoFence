@@ -111,12 +111,20 @@ const CMD_PORTAL_UP: u32 = 380;
 const CMD_PORTAL_HOME: u32 = 381;
 /// Fence-menu 「在桌面显示文件夹」 entries: 390..=393.
 const CMD_FENCE_SHOW_FOLDER: u32 = 390;
+/// 在哪个虚拟桌面显示 ▸ 所有虚拟桌面, then one entry per desktop (base + Task View index).
+const CMD_FENCE_VD_ALL: u32 = 1960;
+const CMD_FENCE_VD_BASE: u32 = 1961;
+const VD_MENU_MAX: usize = 39;
 /// "合并到 ▸ <host>" entries: base + index into `host_fences()`.
 const CMD_TAB_ATTACH_BASE: u32 = 2000;
 // The open-ended BASE ranges must not swallow neighbouring fixed ids (a 400 base once
 // captured the title-colour / spacing items and merged the fence into a random host).
 const _: () = assert!(
     CMD_TAB_ATTACH_BASE > CMD_COL_RESET_WIDTHS && CMD_TAB_ATTACH_BASE + 1000 <= CMD_SHELL_FIRST
+);
+const _: () = assert!(
+    CMD_FENCE_SCRIPT_INTERVAL_BASE + 10 < CMD_FENCE_VD_ALL
+        && CMD_FENCE_VD_BASE + VD_MENU_MAX as u32 <= CMD_TAB_ATTACH_BASE
 );
 
 /// Segoe Fluent Icons glyphs beside the main tray and fence menu items (`PopupMenu::icon`).
@@ -975,6 +983,8 @@ impl App {
                 .iter()
                 .enumerate()
                 .filter(|(_, o)| o.id != host && o.tool.is_none())
+                // A window of another virtual desktop is not on screen to merge into.
+                .filter(|(_, o)| self.on_current_desktop(o.id))
                 .filter(|(_, o)| {
                     !self
                         .fences
@@ -1043,6 +1053,39 @@ impl App {
             arranged,
         )
         .icon(if h.locked { glyph::UNLOCK } else { glyph::LOCK });
+        // 在哪个虚拟桌面显示: offered once there is more than one virtual desktop (or the
+        // window is bound to one already). 「桌面」 shows on every desktop: new desktop items
+        // land there.
+        let desktops = if f.kind == FenceKind::Inbox {
+            Vec::new()
+        } else {
+            self.desktop_labels()
+        };
+        if desktops.len() > 1 || (f.kind != FenceKind::Inbox && !h.virtual_desktops.is_empty()) {
+            let vd_menu = PopupMenu::new();
+            vd_menu
+                .item(
+                    CMD_FENCE_VD_ALL,
+                    pecofence_core::i18n::text("所有虚拟桌面"),
+                    h.virtual_desktops.is_empty(),
+                    false,
+                )
+                .separator();
+            for (i, (key, label, current)) in desktops.iter().enumerate().take(VD_MENU_MAX) {
+                let label = if *current {
+                    pecofence_core::i18n::format("{0}（当前）", std::slice::from_ref(label))
+                } else {
+                    label.clone()
+                };
+                let on = h
+                    .virtual_desktops
+                    .iter()
+                    .any(|d| d.eq_ignore_ascii_case(key));
+                vd_menu.item(CMD_FENCE_VD_BASE + i as u32, &label, on, false);
+            }
+            menu.submenu(pecofence_core::i18n::text("在哪个虚拟桌面显示"), vd_menu)
+                .icon(glyph::TASK_VIEW);
+        }
         menu.separator()
             .item(
                 CMD_FENCE_OPTIONS,
@@ -1254,6 +1297,13 @@ impl App {
                 self.schedule_save();
             }
             CMD_FENCE_LOCK => self.set_fence_locked(host, !h.locked),
+            CMD_FENCE_VD_ALL => {
+                self.set_fence_desktops(host, Vec::new(), "fence menu");
+            }
+            c if (CMD_FENCE_VD_BASE..CMD_FENCE_VD_BASE + desktops.len() as u32).contains(&c) => {
+                let key = desktops[(c - CMD_FENCE_VD_BASE) as usize].0.clone();
+                self.set_fence_desktops(host, vec![key], "fence menu");
+            }
             CMD_FENCE_OPTIONS => self.open_fence_options(fence),
             CMD_FENCE_NEW => {
                 let rect = self.place_new_fence(3, 200.0, x, y, Some(host));

@@ -449,6 +449,8 @@ pub struct TabView {
     /// A folder portal shown inside a subfolder: while it is the shown tab, its folder glyph is
     /// the up button.
     pub up_button: bool,
+    /// The window shows on some virtual desktops only: the pill carries the Task View glyph.
+    pub desktop_icon: bool,
 }
 
 type ViewCell = Rc<RefCell<Option<FenceViewState>>>;

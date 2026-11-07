@@ -115,6 +115,7 @@ impl FenceViewState {
                 tab_w,
                 &t.title,
                 t.title_size,
+                t.desktop_icon,
                 badge.as_deref(),
             )
         } else if self.tabs_on_rail() {
@@ -135,12 +136,45 @@ impl FenceViewState {
                 self.style.title_size,
                 self.behavior.title_align.get(),
                 width,
+                self.deco.desktop_icon,
                 reserve,
                 self.theme.title_height,
             )
         } else {
             TitleDeco::up_box(self.theme.title_height)
         };
+        x >= r.left && x < r.right && y >= r.top && y < r.bottom
+    }
+
+    /// Is the client-pixel point on the Task View glyph of a single title (a window bound to
+    /// virtual desktops; its infotip names them)? A tab strip has it on every pill, where the
+    /// tab's own infotip names them.
+    pub(super) fn desktop_glyph_at(&self, x_px: i32, y_px: i32) -> bool {
+        if !self.deco.desktop_icon || self.title_row_strip() || self.tabs_on_rail() {
+            return false;
+        }
+        let scale = self.scale();
+        let (x, y) = (x_px as f32 / scale, y_px as f32 / scale);
+        let width = self.chrome_panel.size_px().0 as f32 / scale;
+        // As drawn: a smart fence's count follows its name, so no rolled count at the right.
+        let reserve = if self.roll_target()
+            && !self.behavior.hide_count_and_chevron.get()
+            && self.title_count.is_none()
+        {
+            pecofence_render::fence_chrome::header_count_width(width, 1, self.deco.title_x())
+        } else {
+            0.0
+        };
+        let r = self.chrome.lone_desktop_box(
+            &self.title,
+            self.title_count.as_deref(),
+            self.style.title_size,
+            self.behavior.title_align.get(),
+            width,
+            self.deco,
+            reserve,
+            self.theme.title_height,
+        );
         x >= r.left && x < r.right && y >= r.top && y < r.bottom
     }
 

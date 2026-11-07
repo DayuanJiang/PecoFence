@@ -15,6 +15,7 @@ pub mod rules;
 pub mod script_output;
 pub mod smart;
 pub mod updates;
+pub mod vdesk;
 
 pub use config_store::{ConfigStore, Lint, LintLevel, LoadOutcome};
 pub use date_group::{CivilDate, DateBucket, date_bucket};

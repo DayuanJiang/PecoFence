@@ -24,6 +24,13 @@ const TIMER_FOREGROUND_LATER: usize = 14;
 /// click on it after closing a window left the double-click unseen. A light poll catches it.
 const TIMER_FOREGROUND_POLL: usize = 15;
 const FOREGROUND_POLL_MS: u32 = 250;
+/// Win+Ctrl+←/→ puts Windows' switcher window in front, and when it goes the desktop gets the
+/// foreground back without an event: the double-click (quick hide) went unseen after every
+/// virtual-desktop switch. A few looks at the foreground catch it.
+const TIMER_FOREGROUND_AFTER_SWITCH: usize = 16;
+const AFTER_SWITCH_LOOK_MS: u32 = 300;
+const AFTER_SWITCH_LOOKS: u8 = 6;
+const SWITCHER_CLASS: &str = "VirtualDesktopHotkeySwitcher";
 const QUICKHIDE_DELAY_MS: u32 = 300;
 pub const TIMER_TEST: usize = 20;
 
@@ -312,6 +319,9 @@ pub struct DesktopAnchor {
     pub on_marquee: Option<Box<dyn Fn(MarqueeEvent)>>,
     /// Fence windows (as raw handles) that stay visible during quick hide.
     quick_hide_excluded: std::collections::HashSet<isize>,
+    /// Fence windows of other virtual desktops than the current one: hidden, and not shown
+    /// again by the anchor's own checks.
+    off_desktop: std::collections::HashSet<isize>,
     /// Peek in progress: fences are topmost and anchoring is suspended.
     peeking: bool,
     /// Fences (hidden by quick hide) that Peek showed and must hide again afterwards.
@@ -336,6 +346,8 @@ pub struct DesktopAnchor {
     covered_by: Option<isize>,
     /// The window the last `on_foreground` was about (the poll compares with it).
     last_foreground: isize,
+    /// Looks at the foreground left after a virtual-desktop switch (`TIMER_FOREGROUND_AFTER_SWITCH`).
+    switch_looks: u8,
 }
 
 /// The fences' windows as a feedback report describes them.
@@ -468,6 +480,7 @@ impl DesktopAnchor {
             quit_requested: false,
             on_marquee: None,
             quick_hide_excluded: std::collections::HashSet::new(),
+            off_desktop: std::collections::HashSet::new(),
             peeking: false,
             peek_shown: Vec::new(),
             on_peek_interrupted: None,
@@ -478,6 +491,7 @@ impl DesktopAnchor {
             placed_above: None,
             covered_by: None,
             last_foreground: 0,
+            switch_looks: 0,
         };
         // The hook reports only changes of the foreground. With the desktop already in front
         // (a start at sign-in before any window opens) its clicks are followed from now on.
@@ -526,6 +540,22 @@ impl DesktopAnchor {
 
     pub fn unregister_fence(&mut self, hwnd: HWND) {
         self.fences.retain(|(h, _)| *h != hwnd);
+        self.off_desktop.remove(&(hwnd.0 as isize));
+    }
+
+    /// Marks a fence window as belonging to other virtual desktops (`FenceWindow` hides it).
+    pub fn set_off_desktop(&mut self, hwnd: HWND, off: bool) {
+        if off {
+            self.off_desktop.insert(hwnd.0 as isize);
+        } else {
+            self.off_desktop.remove(&(hwnd.0 as isize));
+        }
+    }
+
+    /// Whether quick hide (or 「临时显示 Windows 桌面」, `every`) keeps this fence hidden now.
+    pub fn quick_hides(&self, hwnd: HWND, every: bool) -> bool {
+        self.quick.fences_hidden
+            && (every || !self.quick_hide_excluded.contains(&(hwnd.0 as isize)))
     }
 
     /// Puts `hwnd` above the other fences (clicked / newly created), keeping all of them just
@@ -905,6 +935,11 @@ impl DesktopAnchor {
         let is_desktop = self.is_desktop_window(hwnd);
         let raised = self.desktop_is_raised_over_us();
         tracing::debug!(?hwnd, %cls, is_desktop, raised, "foreground changed");
+        if cls == SWITCHER_CLASS {
+            self.switch_looks = AFTER_SWITCH_LOOKS;
+            self.sentinel
+                .set_timer(TIMER_FOREGROUND_AFTER_SWITCH, AFTER_SWITCH_LOOK_MS);
+        }
         // Only the changes to and from the desktop, once each: they start and end following its
         // clicks (quick hide, marquee), and say what was in front when they did. Leaving the
         // desktop, the line also counts what raw input reported meanwhile.
@@ -1083,7 +1118,10 @@ impl DesktopAnchor {
                         tracing::warn!(hwnd = ?w, error = %e, "uncloaking a fence failed");
                     }
                 }
-                if (!desktop::is_visible(w) || desktop::is_iconic(w)) && !self.quick.fences_hidden {
+                if (!desktop::is_visible(w) || desktop::is_iconic(w))
+                    && !self.quick.fences_hidden
+                    && !self.off_desktop.contains(&(w.0 as isize))
+                {
                     tracing::info!(hwnd = ?w, "fence hidden/minimized; showing");
                     desktop::show_no_activate(w);
                 }
@@ -1542,6 +1580,25 @@ impl DesktopAnchor {
                     self.on_foreground(front);
                 } else {
                     self.last_foreground = front.0 as isize;
+                }
+            }
+            TIMER_FOREGROUND_AFTER_SWITCH => {
+                let front = desktop::foreground_window();
+                self.switch_looks = self.switch_looks.saturating_sub(1);
+                let missed = !front.0.is_null()
+                    && front.0 as isize != self.last_foreground
+                    && self.is_desktop_window(front) != self.quick.sink_registered;
+                if missed || self.switch_looks == 0 {
+                    self.sentinel.kill_timer(TIMER_FOREGROUND_AFTER_SWITCH);
+                }
+                if missed {
+                    let cls = desktop::class_name(desktop::root_ancestor(front));
+                    tracing::info!(
+                        class = %cls,
+                        looks_left = self.switch_looks,
+                        "foreground after a virtual desktop switch caught"
+                    );
+                    self.on_foreground(front);
                 }
             }
             TIMER_FOREGROUND_LATER => {

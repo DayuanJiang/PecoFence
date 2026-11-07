@@ -827,5 +827,14 @@
   "要搜索整台电脑，需要先打开 Everything：右键这个栅栏可以启动或安装它。": "Für die Suche auf dem ganzen Computer braucht es Everything: Rechtsklick auf diesen Bereich startet oder installiert es.",
   "选择文件夹…": "Ordner wählen…",
   "选择智能栅栏要搜索的文件夹": "Ordner wählen, den der intelligente Bereich durchsucht",
-  "，包含子文件夹": ", mit Unterordnern"
+  "，包含子文件夹": ", mit Unterordnern",
+  "在哪个虚拟桌面显示": "Auf virtuellem Desktop anzeigen",
+  "所有虚拟桌面": "Alle virtuellen Desktops",
+  "桌面 {0}": "Desktop {0}",
+  "{0}（当前）": "{0} (aktuell)",
+  "栅栏“{0}”现在只在“{1}”上显示，切换到那个虚拟桌面就能看到它。": "Der Bereich „{0}“ wird jetzt nur auf „{1}“ angezeigt. Wechseln Sie zu diesem virtuellen Desktop, um ihn zu sehen.",
+  "按 Win+Ctrl+左右键切换虚拟桌面时，不属于那个桌面的栅栏会淡出": "Beim Wechsel des virtuellen Desktops mit Win+Strg+Links/Rechts werden Bereiche, die nicht zu diesem Desktop gehören, ausgeblendet",
+  "只在“{0}”上显示": "Nur auf „{0}“",
+  "每个虚拟桌面各用一套栅栏": "Eigene Bereiche für jeden virtuellen Desktop",
+  "打开后，新建的栅栏只在当前虚拟桌面显示。已有的栅栏不变，可以在栅栏右键菜单或“栅栏”页里改": "Wenn aktiviert, wird ein neuer Bereich nur auf dem aktuellen virtuellen Desktop angezeigt. Vorhandene Bereiche bleiben, wie sie sind; ändern Sie sie im Kontextmenü des Bereichs oder auf der Seite „Bereiche“"
 }

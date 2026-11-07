@@ -5,6 +5,11 @@ use super::*;
 impl App {
     /// Tab strip of a host window: the host first, then its hosted fences.
     pub(super) fn tab_views(&self, host: FenceId) -> Vec<TabView> {
+        // Every tab of a window bound to virtual desktops carries the Task View glyph.
+        let bound = self
+            .state
+            .fence(self.state.host_of(host))
+            .is_some_and(|h| !h.virtual_desktops.is_empty());
         self.state
             .tabs_of(host)
             .into_iter()
@@ -22,6 +27,7 @@ impl App {
                 folder_icon: !f.hide_title_icon
                     && (f.kind == FenceKind::FolderPortal || self.state.can_go_up(f.id)),
                 up_button: self.state.can_go_up(f.id),
+                desktop_icon: bound,
             })
             .collect()
     }

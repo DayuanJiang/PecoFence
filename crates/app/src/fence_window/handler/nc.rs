@@ -189,6 +189,19 @@ pub(super) fn on_ncmousemove(
         if title {
             let _ = v.redraw_chrome_only();
         }
+        // The Task View glyph of a single title lies on the caption: its infotip (the desktops
+        // the fence shows on) is armed here; elsewhere on the caption no infotip shows.
+        let pt = window::screen_to_client(
+            hwnd,
+            pecofence_platform::POINT {
+                x: msg::lo_i16(lparam),
+                y: msg::hi_i16(lparam),
+            },
+        );
+        let tip = v
+            .desktop_glyph_at(pt.x, pt.y)
+            .then_some(TipTarget::Desktops);
+        v.update_tip_target(tip, pt.x, pt.y);
         if item && !v.rolled_up {
             let _ = v.redraw_content();
         }
@@ -260,6 +273,11 @@ pub(super) fn on_ncmouseleave(
         v.click_pending = None;
         if !inside {
             v.set_mouse_inside(false);
+        }
+        // Off the Task View glyph's caption spot: its infotip goes (WM_MOUSEMOVE decides
+        // over the client area).
+        if v.tip_target == Some(TipTarget::Desktops) {
+            v.hide_tip();
         }
         // Onto a control of the title row (a tab, the chevron box): still the row. This
         // message can come after the WM_MOUSEMOVE there, which already counted the row as

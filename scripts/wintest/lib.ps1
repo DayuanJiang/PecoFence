@@ -1021,11 +1021,14 @@ function ProcTops($cls, $proc) { return @([W]::Tops($cls) | Where-Object { [W]::
 . "$PSScriptRoot\pixels.ps1"
 . "$PSScriptRoot\user.ps1"
 . "$PSScriptRoot\smart.ps1"
+. "$PSScriptRoot\vdesk.ps1"
 
 # ---- job start: a known desktop
 
 [G]::Press(0x1B)
 CloseWindows
+# One virtual desktop: an earlier job may have left more.
+VdOnlyOne
 $wp = @('C:\Windows\Web\Wallpaper\Windows\img0.jpg', 'C:\Windows\Web\Screen\img100.jpg') | Where-Object { Test-Path $_ } | Select-Object -First 1
 if ($wp) { [G]::SystemParametersInfoW(0x14, 0, $wp, 3) | Out-Null }
 Log ("job start: screen " + [G]::GetSystemMetrics(0) + "x" + [G]::GetSystemMetrics(1) + ", instance $PfInst, build " + (Get-FileHash "$PfBin\pecofence.exe").Hash.Substring(0, 12))
