@@ -34,7 +34,7 @@ $E = '#ruleList .rule.editing'
 
 # Client coordinates (100 %, 1600x900) the release run clicks, measured in the debug run.
 # The page scrolls by wheel: to the bottom for the rule rows, back to the top for Apply now.
-$Fixed = @{ nav = '120,166'; edit2 = '699,297'; apply = '827,294' }
+$Fixed = @{ nav = '120,254'; edit2 = '699,297'; apply = '827,294' }
 function FixedClick($name) {
   $h = [G]::FindWindowW('PecoFence.Settings', [NullString]::Value)
   $o = ClientOrigin $h
