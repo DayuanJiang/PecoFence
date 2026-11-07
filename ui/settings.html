@@ -310,6 +310,11 @@
   .cond-list-h, .c-and { color: var(--text2); font-size: 12px; line-height: 16px; }
   .cond { display: flex; flex-direction: column; gap: 8px; }
   .c-and { padding-left: 12px; }
+  /* 智能栅栏: its conditions in a card of their own, the Everything text under its summary. */
+  .smart-conds { width: 100%; }
+  .smart-conds .cond-list { padding-top: 0; }
+  .smart-everything { padding: 0 16px 16px 56px; }
+  .smart-everything input { width: 100%; }
   .cond-list-h + .cond > .c-and { display: none; }
   .c-box { display: flex; align-items: flex-start; gap: 8px; padding: 10px 8px 10px 12px; border-radius: var(--r-card); background: var(--subtle); border: 1px solid var(--card-stroke); }
   .c-main { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px 12px; }
@@ -570,6 +575,25 @@
       <div id="fenceBody">
       <div class="card"><div class="l"><span class="ic">&#xE8AC;</span><div><div class="t">栅栏名称</div></div></div>
         <input type="text" id="fenceTitle" data-fence="title" maxlength="120"></div>
+      <div id="fenceSmartGroup">
+      <h3>搜索条件</h3>
+      <div class="card"><div class="l"><span class="ic">&#xE8B7;</span><div><div class="t">在哪里找</div><div class="s" id="smartWhereText"></div></div></div>
+        <div class="actions"><select id="smartScope" aria-label="在哪里找"><option value="folder">一个文件夹</option><option value="all">整台电脑（需要 Everything）</option></select><button id="smartPick">选择文件夹…</button></div></div>
+      <div class="card" id="smartSubCard"><div class="l"><span class="ic">&#xE8B7;</span><div><div class="t">包含子文件夹</div><div class="s">也找这个文件夹里各层子文件夹中的文件</div></div></div><div class="toggle" role="switch" tabindex="0" id="smartSub"></div></div>
+      <div class="card"><div class="l"><span class="ic">&#xE787;</span><div><div class="t">时间</div><div class="s">只显示这段时间里新建或改过的文件</div></div></div>
+        <select id="smartDays" aria-label="时间"><option value="">不限</option><option value="1">最近 1 天</option><option value="3">最近 3 天</option><option value="7">最近 7 天</option><option value="30">最近 30 天</option><option value="90">最近 90 天</option><option value="365">最近一年</option></select></div>
+      <div class="card stack"><div class="redit smart-conds" id="smartConds"><div class="cond-list"><div class="cond-list-h">其他条件（全部符合才显示，和整理规则的条件相同）</div><button class="c-add" id="smartAddCond"><span class="ic" aria-hidden="true">&#xE710;</span>添加条件</button></div>
+        <div class="newrule-foot"><button class="accent" id="smartSaveConds">保存条件</button></div></div></div>
+      <div class="card"><div class="l"><span class="ic">&#xE721;</span><div><div class="t">名称包含</div><div class="s">只显示名称和这段文字匹配的文件，匹配方式和速览搜索一样，可以用拼音首字母</div></div></div>
+        <input type="text" id="smartName" maxlength="200" aria-label="名称包含"></div>
+      <div class="card"><div class="l"><span class="ic">&#xE8FD;</span><div><div class="t">最多显示</div><div class="s">按修改时间，最新的在前</div></div></div>
+        <select id="smartLimit" aria-label="最多显示"><option value="50">50 个</option><option value="100">100 个</option><option value="200">200 个</option><option value="500">500 个</option><option value="1000">1000 个</option></select></div>
+      <div class="card"><div class="l"><span class="ic">&#xE721;</span><div><div class="t">标题前显示放大镜</div><div class="s">一眼看出这个栅栏会自己更新</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="portalTitleIcon"></div></div>
+      <details class="card" id="smartAdvanced"><summary><div class="l"><span class="ic">&#xE943;</span><div><div class="t">用 Everything 的搜索语法</div><div class="s">填写后代替上面的条件，文件夹仍然有效；需要 Everything 在运行</div></div></div><span class="ic chev">&#xE70D;</span></summary>
+        <div class="smart-everything"><input type="text" id="smartEverything" maxlength="500" placeholder="*.pdf invoice" aria-label="Everything 搜索"></div></details>
+      <div class="card" id="smartStatusCard"><div class="l"><span class="ic">&#xE895;</span><div><div class="t" id="smartStatus"></div><div class="s" id="smartStatusHelp"></div></div></div>
+        <div class="actions"><button id="smartEverythingBtn" hidden></button><button id="smartRefresh">立即刷新</button></div></div>
+      </div>
       <h3>外观</h3>
       <div class="card"><div class="l"><span class="ic">&#xE744;</span><div><div class="t">不透明度</div><div class="s">默认：透出桌面。更厚实：多一层底色。全透明：鼠标悬停时才显示玻璃。</div></div></div>
         <select id="fenceOpacity" data-fence="opacity"><option value="transparent">全透明</option><option value="clear">更透明</option><option value="default">默认</option><option value="solid">更厚实</option></select></div>
@@ -1724,7 +1748,8 @@
     document.querySelector('#fenceHideEmpty .s').textContent = f.kind === 'inbox'
       ? t("里面没有图标时就不显示；桌面上一出现新图标，它会自己回来")
       : t("里面没有图标时就不显示；有图标归到这里时，它会自己回来");
-    document.getElementById('fenceOpenFolders').style.display = f.portal || f.tool ? 'none' : '';
+    document.getElementById('fenceOpenFolders').style.display = f.portal || f.tool || f.smart ? 'none' : '';
+    renderSmart(f);
     // A tool fence (小工具) never holds icons: hiding it while empty would hide it for good.
     document.getElementById('fenceHideEmpty').style.display = f.tool ? 'none' : '';
     // Icon size, spacing, names, alignment and auto height are about icons.
@@ -1750,7 +1775,7 @@
     document.getElementById('fenceTabColor').style.display = f.host || f.tabbed ? '' : 'none';
     document.querySelectorAll('[data-fence]').forEach(el => {
       const prop = el.dataset.fence;
-      const cur = prop === 'portalNavigate' ? !!(f.portal && f.portal.navigate) : prop === 'portalTitleIcon' ? !!(f.portal && f.portal.titleIcon) : f[prop];
+      const cur = prop === 'portalNavigate' ? !!(f.portal && f.portal.navigate) : prop === 'portalTitleIcon' ? !!((f.portal || f.smart || {}).titleIcon) : f[prop];
       if (el.classList.contains('toggle')) {
         el.classList.toggle('on', !!cur); el.setAttribute('aria-checked', String(!!cur));
         el.onclick = () => { const on = !el.classList.contains('on'); el.classList.toggle('on', on); el.setAttribute('aria-checked', String(on)); setFence(f.id, prop, on); };
@@ -1778,6 +1803,84 @@
     renderSwatches(fenceTabColorSwatches, tabSel, 'tabColor');
     document.getElementById('fenceDock').onclick = () => { setFence(f.id, 'dockTop', null); toast(t("已停靠到屏幕顶部")); };
     ringFence();
+  }
+  // 智能栅栏: the 「搜索条件」 group of the selected fence. Each box saves on change; the
+  // conditions save with their button, as a rule does.
+  let smartCondsOf = null;
+  function renderSmart(f) {
+    const group = document.getElementById('fenceSmartGroup');
+    group.style.display = f.smart ? '' : 'none';
+    if (!f.smart) return;
+    const spec = f.smart.spec, all = !spec.folder;
+    const set = (prop, value) => setFence(f.id, prop, value);
+    document.getElementById('smartWhereText').textContent = all
+      ? t("整台电脑，不含 Windows、AppData 和回收站")
+      : spec.folder + (spec.subfolders ? t("，包含子文件夹") : '');
+    const scope = document.getElementById('smartScope');
+    scope.value = all ? 'all' : 'folder';
+    scope.onchange = () => { if (scope.value === 'all') set('smartFolder', null); else send({ type: 'action', name: 'pickSmartFolder', id: f.id }); };
+    document.getElementById('smartPick').onclick = () => send({ type: 'action', name: 'pickSmartFolder', id: f.id });
+    document.getElementById('smartSubCard').style.display = all ? 'none' : '';
+    const sub = document.getElementById('smartSub');
+    sub.classList.toggle('on', !!spec.subfolders); sub.setAttribute('aria-checked', String(!!spec.subfolders));
+    sub.onclick = () => set('smartSubfolders', !sub.classList.contains('on'));
+    keyToggle(sub);
+    const days = document.getElementById('smartDays');
+    const d = spec.withinDays == null ? '' : String(spec.withinDays);
+    ensureOption(days, d, tf("最近 {0} 天", d));
+    days.value = d;
+    days.onchange = () => set('smartWithinDays', days.value ? Number(days.value) : null);
+    // The condition boxes are built again only for another fence or after a save from elsewhere.
+    const box = document.getElementById('smartConds');
+    const sig = f.id + JSON.stringify(spec.allOf || []);
+    if (smartCondsOf !== sig) {
+      smartCondsOf = sig;
+      box.querySelectorAll('.cond').forEach(b => b.remove());
+      (spec.allOf || []).forEach(c => box.querySelector('.c-add').before(smartCond(c)));
+    }
+    document.getElementById('smartAddCond').onclick = () => { box.querySelector('.c-add').before(smartCond()); };
+    document.getElementById('smartSaveConds').onclick = () => {
+      const conds = [];
+      for (const block of box.querySelectorAll('.cond')) { const c = readCond(block); if (!c) return; conds.push(c); }
+      smartCondsOf = f.id + JSON.stringify(conds);
+      set('smartConditions', conds);
+      toast(t("已保存条件"));
+    };
+    const name = document.getElementById('smartName');
+    if (document.activeElement !== name) name.value = spec.name || '';
+    name.onchange = () => set('smartName', name.value.trim() || null);
+    name.onkeydown = (e) => { if (e.key === 'Enter') name.blur(); };
+    const limit = document.getElementById('smartLimit');
+    ensureOption(limit, String(spec.limit), tf("{0} 个", spec.limit));
+    limit.value = String(spec.limit);
+    limit.onchange = () => set('smartLimit', Number(limit.value));
+    const ev = document.getElementById('smartEverything');
+    if (document.activeElement !== ev) ev.value = spec.everything || '';
+    if (spec.everything) document.getElementById('smartAdvanced').open = true;
+    ev.onchange = () => set('smartEverything', ev.value.trim() || null);
+    ev.onkeydown = (e) => { if (e.key === 'Enter') ev.blur(); };
+    // What the last run found, and how.
+    const everything = (state.everything || {}).state;
+    const shown = f.smart.shown || 0;
+    const status = { everything: tf("现在显示 {0} 个文件", shown), folder: tf("现在显示 {0} 个文件", shown), needsEverything: t("没有找到文件"), waiting: t("正在搜索…") }[f.smart.source] || '';
+    const help = { everything: t("由 Everything 搜索；文件夹有变化或每过一分钟就重新搜一次"), folder: t("Everything 没有运行，由 PecoFence 读这个文件夹；有变化时自动更新"), needsEverything: t("要搜索整台电脑，需要先打开 Everything"), waiting: '' }[f.smart.source] || '';
+    document.getElementById('smartStatus').textContent = status;
+    document.getElementById('smartStatusHelp').textContent = help;
+    const evBtn = document.getElementById('smartEverythingBtn');
+    const needs = f.smart.source === 'needsEverything' && (everything === 'installed' || everything === 'missing');
+    evBtn.hidden = !needs;
+    evBtn.textContent = everything === 'installed' ? t("启动 Everything") : t("安装 Everything");
+    evBtn.onclick = () => send({ type: 'action', name: everything === 'installed' ? 'startEverything' : 'installEverything' });
+    document.getElementById('smartRefresh').onclick = () => send({ type: 'action', name: 'refreshSmart', id: f.id });
+  }
+  // A condition box of the smart fence: a rule's box whose remove button is always there (a
+  // smart fence may have no other condition at all).
+  function smartCond(c) {
+    const block = newCond(c);
+    const del = block.querySelector('.c-del');
+    del.hidden = false;
+    del.onclick = () => { block.remove(); document.getElementById('smartAddCond').focus(); };
+    return block;
   }
   // While 「栅栏」 is open, the fence it edits wears the desktop's selection ring.
   function ringFence() {

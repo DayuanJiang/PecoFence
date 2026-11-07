@@ -7,6 +7,7 @@ use pecofence_core::everything as ev;
 use pecofence_core::smart::{KnownFolders, SmartSpec, Template};
 use pecofence_platform::everything;
 use pecofence_platform::shell::{DesktopEntry, EntryOrigin};
+use std::sync::mpsc;
 
 /// `dwData` of Everything's replies to smart fence searches: this tag plus a sequence number
 /// (the Peek search uses another tag).
@@ -49,17 +50,51 @@ pub(super) struct SmartRun {
     /// The Everything search sent and the sequence number its answer carries.
     pub query: String,
     pending: Option<u16>,
+    /// The folder read whose result this fence waits for (a newer run drops an older one).
+    read: Option<u32>,
 }
 
-#[derive(Default)]
+/// A folder read without Everything, done on a worker.
+pub(super) struct FolderRead {
+    id: FenceId,
+    seq: u32,
+    found: Vec<DesktopEntry>,
+    total: u32,
+    scanned: usize,
+    ms: u64,
+}
+
 pub(super) struct SmartState {
     pub runs: HashMap<FenceId, SmartRun>,
     seq: u16,
+    /// Folder reads: the last sequence number, the results coming back from the workers, and
+    /// the fences being read (true: another read waits for this one to end).
+    read_seq: u32,
+    read_tx: mpsc::Sender<FolderRead>,
+    read_rx: mpsc::Receiver<FolderRead>,
+    reading: HashMap<FenceId, bool>,
     /// One watcher per smart fence with a folder (its subfolders too when it searches them).
     watchers: HashMap<FenceId, (PathBuf, DirWatcher)>,
     /// Fences to run again when `TIMER_SMART_SOON` fires, and whether a second run follows.
     soon: HashSet<FenceId>,
     again: bool,
+}
+
+impl Default for SmartState {
+    fn default() -> Self {
+        let (read_tx, read_rx) = mpsc::channel();
+        Self {
+            runs: HashMap::new(),
+            seq: 0,
+            read_seq: 0,
+            read_tx,
+            read_rx,
+            reading: HashMap::new(),
+            watchers: HashMap::new(),
+            soon: HashSet::new(),
+            again: false,
+        }
+    }
 }
 
 /// The folders the templates search on this computer.
@@ -143,6 +178,7 @@ impl App {
     /// Runs smart fence `id`'s search: asks Everything when it runs (the answer comes to the
     /// control window), else reads the folder.
     pub(super) fn run_smart(&mut self, id: FenceId, why: &str) {
+        self.refind_template_folder(id);
         let Some(spec) = self.state.smart_spec(id).cloned() else {
             return;
         };
@@ -160,7 +196,7 @@ impl App {
                 self.control.hwnd().0 as usize as u32,
                 (REPLY_TAG | usize::from(seq)) as u32,
                 &query,
-                spec.limit,
+                spec.everything_max(),
                 ev::SORT_DATE_MODIFIED_DESCENDING,
             );
             let sent = everything::send_query(
@@ -174,6 +210,7 @@ impl App {
                 let run = self.smart.runs.entry(id).or_default();
                 run.query = query;
                 run.pending = Some(seq);
+                run.read = None;
                 return;
             }
         }
@@ -182,15 +219,77 @@ impl App {
             self.smart_done(id, SmartSource::NeedsEverything, Vec::new(), 0);
             return;
         }
-        let started = Instant::now();
-        let folder = PathBuf::from(spec.folder.as_deref().unwrap_or_default());
-        let (found, scanned) = read_folder(&spec, &folder);
-        let total = found.len() as u32;
-        let mut found = found;
-        found.sort_by_key(|e| std::cmp::Reverse(e.mtime));
-        found.truncate(spec.limit as usize);
-        tracing::info!(%id, why, folder = %folder.display(), scanned, total, ms = crate::share_log::millis(started.elapsed()), "smart fence: folder read without Everything");
-        self.smart_done(id, SmartSource::Folder, found, total);
+        self.read_folder_later(id, spec, why);
+    }
+
+    /// Reads smart fence `id`'s folder on a worker (a big folder tree takes a while); the result
+    /// comes back through `WM_APP_SMART_READ`. One read per fence at a time: a run asked for
+    /// meanwhile follows the one in progress.
+    fn read_folder_later(&mut self, id: FenceId, spec: SmartSpec, why: &str) {
+        if let Some(again) = self.smart.reading.get_mut(&id) {
+            *again = true;
+            tracing::debug!(%id, why, "smart fence: a folder read runs already; another follows it");
+            return;
+        }
+        self.smart.read_seq = self.smart.read_seq.wrapping_add(1);
+        let seq = self.smart.read_seq;
+        self.smart.reading.insert(id, false);
+        self.smart.runs.entry(id).or_default().read = Some(seq);
+        let tx = self.smart.read_tx.clone();
+        let control = self.control.hwnd().0 as isize;
+        tracing::info!(%id, why, seq, "smart fence: reading the folder without Everything");
+        let spawned = std::thread::Builder::new()
+            .name("pecofence-smart-read".into())
+            .spawn(move || {
+                // Shortcut targets are read through COM.
+                let _com = spec
+                    .needs_shortcut_targets()
+                    .then(pecofence_platform::com::MtaGuard::init);
+                let started = Instant::now();
+                let folder = PathBuf::from(spec.folder.as_deref().unwrap_or_default());
+                let (mut found, scanned) = read_folder(&spec, &folder);
+                let total = found.len() as u32;
+                found.sort_by_key(|e| std::cmp::Reverse(e.mtime));
+                found.truncate(spec.limit as usize);
+                let ms = started.elapsed().as_millis() as u64;
+                let _ = tx.send(FolderRead {
+                    id,
+                    seq,
+                    found,
+                    total,
+                    scanned,
+                    ms,
+                });
+                window::post_message(
+                    HWND(control as *mut core::ffi::c_void),
+                    crate::commands::WM_APP_SMART_READ,
+                    0,
+                    0,
+                );
+            });
+        if let Err(e) = spawned {
+            tracing::warn!(%id, error = %e, "smart fence: the folder read did not start");
+            self.smart.reading.remove(&id);
+        }
+    }
+
+    /// `TIMER_SMART_READ`: the folder reads that finished. A result an Everything answer or a
+    /// newer read replaced meanwhile is dropped.
+    pub(super) fn drain_smart_reads(&mut self) {
+        while let Ok(r) = self.smart.read_rx.try_recv() {
+            let again = self.smart.reading.remove(&r.id).unwrap_or(false);
+            let current = self.smart.runs.get(&r.id).and_then(|run| run.read) == Some(r.seq);
+            if current && self.state.smart_spec(r.id).is_some() {
+                tracing::info!(id = %r.id, seq = r.seq, scanned = r.scanned, total = r.total, ms = r.ms, "smart fence: folder read without Everything");
+                self.smart.runs.entry(r.id).or_default().read = None;
+                self.smart_done(r.id, SmartSource::Folder, r.found, r.total);
+            } else {
+                tracing::debug!(id = %r.id, seq = r.seq, "smart fence: an older folder read dropped");
+            }
+            if again {
+                self.run_smart(r.id, "after the read in progress");
+            }
+        }
     }
 
     /// Everything's answer to a smart fence's search (`WM_COPYDATA` to the control window).
@@ -222,14 +321,16 @@ impl App {
         let targets = spec.needs_shortcut_targets();
         let typed = spec.everything.is_some();
         let got = hits.len();
-        let entries: Vec<DesktopEntry> = hits
+        let mut entries: Vec<DesktopEntry> = hits
             .iter()
             .filter_map(|h| shell::stat_entry(Path::new(&h.path), EntryOrigin::UserDesktop))
             .filter(|e| typed || entry_matches(&spec, e, targets, now))
             .collect();
         // What was left out here is left out of the total too.
         let total = total.saturating_sub((got - entries.len()) as u32);
-        tracing::info!(%id, total, got, kept = entries.len(), "smart fence: Everything answered");
+        let kept = entries.len();
+        entries.truncate(spec.limit as usize);
+        tracing::info!(%id, total, got, kept, shown = entries.len(), "smart fence: Everything answered");
         self.smart_done(id, SmartSource::Everything, entries, total);
     }
 
@@ -350,6 +451,215 @@ impl App {
         }
     }
 
+    /// One change to smart fence `fence`'s search (`fence set`, the settings page): saved, the
+    /// watcher follows a new folder, and the search runs again. False when nothing changed.
+    pub(super) fn change_smart(
+        &mut self,
+        fence: FenceId,
+        change: super::fence_options::SmartChange,
+    ) -> bool {
+        use super::fence_options::SmartChange as C;
+        let Some(spec) = self.state.fence_mut(fence).and_then(|f| f.smart.as_mut()) else {
+            tracing::info!(%fence, "smart fence change refused: not a smart fence");
+            return false;
+        };
+        let before = spec.clone();
+        let what = match change {
+            C::Folder(folder) => {
+                spec.folder = folder;
+                "folder"
+            }
+            C::Subfolders(on) => {
+                spec.subfolders = on;
+                "subfolders"
+            }
+            C::WithinDays(days) => {
+                spec.within_days = days;
+                "within days"
+            }
+            C::Conditions(conds) => {
+                spec.all_of = conds;
+                "conditions"
+            }
+            C::Name(name) => {
+                spec.name = name;
+                "name"
+            }
+            C::Everything(text) => {
+                spec.everything = text;
+                "everything search"
+            }
+            C::Limit(n) => {
+                spec.limit = n;
+                "limit"
+            }
+        };
+        if *spec == before {
+            return false;
+        }
+        // A folder picked by hand is the user's own: an import keeps it as it is.
+        if spec.folder != before.folder {
+            spec.template = None;
+        }
+        let (folder, days, conds, limit) = (
+            spec.folder.is_some(),
+            spec.within_days,
+            spec.all_of.len(),
+            spec.limit,
+        );
+        tracing::info!(%fence, what, folder, within_days = ?days, conditions = conds, limit, "smart fence search changed");
+        self.state.mark_dirty();
+        self.schedule_save();
+        self.ensure_smart_watchers();
+        self.run_smart(fence, "search changed");
+        self.apply_portal_deco(self.state.host_of(fence));
+        true
+    }
+
+    /// A template's folder that is not on this computer (a configuration imported from another
+    /// one, a moved Downloads folder): this computer's folder of the same kind takes its place.
+    fn refind_template_folder(&mut self, id: FenceId) {
+        let Some(spec) = self.state.smart_spec(id) else {
+            return;
+        };
+        let (Some(key), Some(folder)) = (spec.template.clone(), spec.folder.clone()) else {
+            return;
+        };
+        if Path::new(&folder).is_dir() {
+            return;
+        }
+        let found = Template::parse(&key)
+            .and_then(|t| t.spec(&known_folders()))
+            .and_then(|s| s.folder)
+            .filter(|f| Path::new(f).is_dir());
+        let Some(found) = found else {
+            tracing::info!(%id, template = %key, "smart fence: the template's folder is missing here too");
+            return;
+        };
+        tracing::info!(%id, template = %key, "smart fence: the template's folder found on this computer");
+        if let Some(spec) = self.state.fence_mut(id).and_then(|f| f.smart.as_mut()) {
+            spec.folder = Some(found);
+        }
+        self.state.mark_dirty();
+        self.schedule_save();
+        self.ensure_smart_watchers();
+    }
+
+    /// The settings page's 「选择文件夹…」 for smart fence `fence`.
+    pub(super) fn pick_smart_folder(&mut self, fence: FenceId) {
+        let start = self.state.smart_spec(fence).and_then(|s| s.folder.clone());
+        tracing::info!(%fence, has_folder = start.is_some(), "smart fence: picking a folder");
+        let owner = self.settings.as_ref().map(|h| h.hwnd());
+        match pecofence_platform::filedialog::pick_folder(
+            owner,
+            pecofence_core::i18n::text("选择智能栅栏要搜索的文件夹"),
+        ) {
+            Ok(Some(dir)) => {
+                let dir = crate::state::canonical_path(dir)
+                    .to_string_lossy()
+                    .into_owned();
+                self.change_smart(fence, super::fence_options::SmartChange::Folder(Some(dir)));
+            }
+            Ok(None) => tracing::info!(%fence, "smart fence: folder picker cancelled"),
+            Err(e) => tracing::warn!(error = %e, "smart fence: folder picker failed"),
+        }
+        self.push_settings_state();
+    }
+
+    /// Whether smart fence `id` waits for Everything (every drive, or a typed Everything
+    /// search, while it does not run).
+    pub(super) fn smart_needs_everything(&self, id: FenceId) -> bool {
+        self.smart
+            .runs
+            .get(&id)
+            .is_some_and(|r| r.source == SmartSource::NeedsEverything)
+    }
+
+    /// Everything was started or installed: the smart fences that waited for it search again.
+    pub(super) fn run_waiting_smart(&mut self) {
+        let waiting: Vec<FenceId> = self
+            .smart
+            .runs
+            .iter()
+            .filter(|(_, r)| r.source == SmartSource::NeedsEverything)
+            .map(|(id, _)| *id)
+            .collect();
+        if !waiting.is_empty() {
+            tracing::info!(
+                fences = waiting.len(),
+                "smart fences waiting for Everything search again"
+            );
+        }
+        for id in waiting {
+            self.run_smart(id, "everything started");
+        }
+    }
+
+    /// 把筛选存为智能栅栏: a new smart fence showing what filtered fence `fence` shows now: the
+    /// folder it shows (only that folder, as the folder fence does) or its own search, and the
+    /// filter as its name condition.
+    pub(super) fn save_filter_as_smart(&mut self, fence: FenceId, x: i32, y: i32) {
+        let Some(filter) = self.fence_filters.get(&fence).map(|t| t.trim().to_string()) else {
+            return;
+        };
+        let spec = match (self.state.smart_spec(fence), self.state.portal_path(fence)) {
+            (Some(spec), _) => SmartSpec {
+                template: None,
+                name: Some(filter.clone()),
+                ..spec.clone()
+            },
+            (None, Some(dir)) => SmartSpec {
+                template: None,
+                folder: Some(dir.to_string_lossy().into_owned()),
+                subfolders: false,
+                all_of: Vec::new(),
+                within_days: None,
+                name: Some(filter.clone()),
+                everything: None,
+                limit: SmartSpec::DEFAULT_LIMIT,
+            },
+            (None, None) => return,
+        };
+        let base = self
+            .state
+            .fence(fence)
+            .map(|f| self.state.display_title(f))
+            .unwrap_or_default();
+        let title = pecofence_core::i18n::format("{0}：{1}", &[base, filter]);
+        let folder = spec.folder.is_some();
+        if let Some(id) = self.create_smart_fence(spec, Some(&title), None, x, y) {
+            tracing::info!(from = %fence, %id, folder, "filter saved as a smart fence");
+        }
+    }
+
+    /// The Peek search's 「把这次搜索放到桌面」: a smart fence with the same Everything search
+    /// (pinyin included when Everything has it) over every drive, titled after the text.
+    pub(super) fn search_to_desktop(&mut self, query: &str) {
+        let Some(instance) = everything::find() else {
+            tracing::info!("search to desktop: Everything is no longer running");
+            return;
+        };
+        let spec = SmartSpec {
+            template: None,
+            folder: None,
+            subfolders: true,
+            all_of: Vec::new(),
+            within_days: None,
+            name: None,
+            everything: Some(ev::search_text(query, instance.supports_pinyin())),
+            limit: SmartSpec::DEFAULT_LIMIT,
+        };
+        let title = pecofence_core::i18n::format("搜索“{0}”", &[query.to_string()]);
+        let (x, y) = self
+            .state
+            .work_areas
+            .first()
+            .map_or((0, 0), |w| ((w.left + w.right) / 2, (w.top + w.bottom) / 2));
+        if let Some(id) = self.create_smart_fence(spec, Some(&title), None, x, y) {
+            tracing::info!(%id, chars = query.chars().count(), "search put on the desktop as a smart fence");
+        }
+    }
+
     /// Smart fence `id`'s empty-state text and the count after its name: the files it shows
     /// (after a filter), with a "+" when the limit cut the results. None for other fences.
     pub(super) fn smart_view(
@@ -363,9 +673,9 @@ impl App {
         let source = run.map_or(SmartSource::Waiting, |r| r.source);
         let empty = Some(match source {
             SmartSource::Waiting => pecofence_core::i18n::text("正在搜索…"),
-            SmartSource::NeedsEverything => {
-                pecofence_core::i18n::text("要搜索整台电脑，需要先打开 Everything。")
-            }
+            SmartSource::NeedsEverything => pecofence_core::i18n::text(
+                "要搜索整台电脑，需要先打开 Everything：右键这个栅栏可以启动或安装它。",
+            ),
             SmartSource::Everything | SmartSource::Folder => {
                 pecofence_core::i18n::text("没有符合条件的文件。")
             }

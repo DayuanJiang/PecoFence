@@ -411,7 +411,7 @@ impl FenceDropHandler {
         let candidate = if self.folder_drag {
             pt.and_then(|pt| {
                 let guard = self.view.try_borrow().ok()?;
-                let v = guard.as_ref().filter(|v| !v.shows_tool())?;
+                let v = guard.as_ref().filter(|v| !v.takes_no_drops())?;
                 let rect = window::window_rect(v.hwnd);
                 let i = v.hit_item(pt.x - rect.left, pt.y - rect.top)?;
                 let item = v.items.get(i)?;
@@ -520,8 +520,9 @@ impl FenceDropHandler {
                 ..none
             };
         };
-        // A tool fence (便签, 时钟) holds no items: nothing drops on it.
-        if v.shows_tool() {
+        // A tool fence (便签, 时钟) holds no items and a smart fence shows a search: nothing
+        // drops on them.
+        if v.takes_no_drops() {
             return Feedback {
                 hwnd: v.hwnd,
                 ..none
@@ -752,7 +753,7 @@ impl DropHandler for FenceDropHandler {
         let internal = Self::internal();
         // Resolve the target and clear the highlights under one borrow.
         let resolved = self.view.try_borrow_mut().ok().and_then(|mut g| {
-            g.as_mut().filter(|v| !v.shows_tool()).map(|v| {
+            g.as_mut().filter(|v| !v.takes_no_drops()).map(|v| {
                 let spot = v.drop_spot_at(pt.x, pt.y, internal.as_ref());
                 let tab_fence = spot.tab.and_then(|i| v.tabs.get(i)).map(|t| t.id);
                 let folder = spot

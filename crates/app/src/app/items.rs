@@ -527,8 +527,12 @@ impl App {
     /// the rules, since their names are only known to the shell).
     pub(super) fn paste_into(&mut self, fence: FenceId) {
         // A note (便签) holds no files: Ctrl+V on it does nothing.
-        if self.state.fence(fence).is_some_and(|f| f.tool.is_some()) {
-            tracing::info!(%fence, "paste into a tool fence ignored");
+        if self
+            .state
+            .fence(fence)
+            .is_some_and(|f| f.tool.is_some() || f.smart.is_some())
+        {
+            tracing::info!(%fence, "paste into a tool or smart fence ignored");
             return;
         }
         let Some((paths, cut)) = clipboard::file_list() else {

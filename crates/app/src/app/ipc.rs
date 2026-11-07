@@ -873,6 +873,12 @@ impl App {
                     ))
                     .hint("Set it on a fence that shows items"));
                 }
+                if matches!(prop, super::fence_options::FenceProp::Smart(_))
+                    && self.fence_or_err(id)?.smart.is_none()
+                {
+                    return Err(unsupported(format!("{prop_name} is for smart fences"))
+                        .hint("fence list shows the smart fences (their `smart` field)"));
+                }
                 if let Some(tool) = prop.tool()
                     && self.fence_or_err(id)?.tool != Some(tool)
                 {

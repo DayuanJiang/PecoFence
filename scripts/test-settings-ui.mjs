@@ -149,7 +149,7 @@ function bridge() {
           // Mirror the host: a portal flag lands in `portal`, everything else on the fence.
           const fence = state.fences.find(f => f.id === message.id);
           if (message.prop === 'portalNavigate') fence.portal.navigate = message.value;
-          else if (message.prop === 'portalTitleIcon') fence.portal.titleIcon = message.value;
+          else if (message.prop === 'portalTitleIcon') (fence.portal || fence.smart).titleIcon = message.value;
           else if (message.prop !== 'dockTop') fence[message.prop] = message.value;
           if (message.prop === 'spacingPx') fence.spacing = message.value <= -8 ? 'compact' : message.value >= 12 ? 'loose' : 'normal';
         }
@@ -735,6 +735,82 @@ async function runTests() {
     const fence = current().fences.find(f => f.id === 'fence-a');
     fence.iconSize = 48; fence.spacingPx = 0; fence.spacing = 'normal';
     frame.contentWindow.testRefresh();
+  });
+  await test('A smart fence shows its 搜索条件 group and posts every change', async () => {
+    const win = frame.contentWindow;
+    try {
+    const spec = { template: 'downloads', folder: 'C:\\Users\\me\\Downloads', subfolders: true, allOf: [{ cond: 'filesOnly', value: null }], withinDays: 7, limit: 200 };
+    const base = current().fences.find(f => f.id === 'fence-a');
+    win.testState.fences.push({ ...structuredClone(base), id: 'smart', title: 'Recent downloads', smart: { spec, source: 'everything', total: 6, shown: 6, query: 'q', titleIcon: true } });
+    win.testRefresh(); await settle();
+    doc.querySelector('[data-page=fences]').click();
+    change(doc, 'fenceSel', 'fence-a');
+    assert(doc.getElementById('fenceSmartGroup').style.display === 'none', 'Search conditions shown for an ordinary fence');
+    change(doc, 'fenceSel', 'smart');
+    assert(doc.getElementById('fenceSmartGroup').style.display === '', 'Search conditions hidden for a smart fence');
+    assert(doc.getElementById('fenceOpenFolders').style.display === 'none', 'Open-folders-inside offered for a smart fence');
+    assert(doc.getElementById('smartWhereText').textContent === 'C:\\Users\\me\\Downloads，包含子文件夹', 'Folder not shown: ' + doc.getElementById('smartWhereText').textContent);
+    assert(doc.getElementById('smartScope').value === 'folder' && doc.getElementById('smartSub').classList.contains('on'), 'Scope or subfolders wrong');
+    assert(doc.getElementById('smartDays').value === '7' && doc.getElementById('smartLimit').value === '200', 'Time window or limit wrong');
+    assert(doc.querySelectorAll('#smartConds .cond').length === 1 && doc.querySelector('#smartConds .c-kind').value === 'files', 'Condition boxes wrong');
+    assert(!doc.querySelector('#smartConds .c-del').hidden, 'A lone condition cannot be removed');
+    assert(doc.getElementById('smartStatus').textContent === '现在显示 6 个文件' && doc.getElementById('smartEverythingBtn').hidden, 'Status wrong: ' + doc.getElementById('smartStatus').textContent);
+    const sent = () => win.testMessages.slice(before);
+    const before = win.testMessages.length;
+    change(doc, 'smartDays', '30');
+    change(doc, 'smartDays', '');
+    doc.getElementById('smartSub').click(); await settle();
+    change(doc, 'smartName', '  bg ');
+    change(doc, 'smartName', '');
+    change(doc, 'smartLimit', '50');
+    change(doc, 'smartEverything', '*.pdf invoice');
+    doc.querySelector('#fenceSmartGroup [data-fence=portalTitleIcon]').click(); await settle();
+    doc.getElementById('smartRefresh').click();
+    doc.getElementById('smartPick').click();
+    change(doc, 'smartScope', 'all');
+    await settle();
+    const errors = sent().filter(m => m.name === 'pageError');
+    assert(!errors.length, 'Page error: ' + JSON.stringify(errors));
+    const got = sent().filter(m => m.type === 'setFence' || m.type === 'action').map(m => m.type === 'setFence' ? `${m.prop}=${JSON.stringify(m.value)}` : `${m.name}:${m.id}`).join(' | ');
+    assert(got === 'smartWithinDays=30 | smartWithinDays=null | smartSubfolders=false | smartName="bg" | smartName=null | smartLimit=50 | smartEverything="*.pdf invoice" | portalTitleIcon=false | refreshSmart:smart | pickSmartFolder:smart | smartFolder=null', 'Posted: ' + got);
+    // A condition is added, filled in and saved as a rule's would be.
+    const mark = win.testMessages.length;
+    doc.getElementById('smartAddCond').click(); await settle();
+    const boxes = doc.querySelectorAll('#smartConds .cond');
+    assert(boxes.length === 2, 'No new condition box');
+    const kind = boxes[1].querySelector('.c-kind');
+    kind.value = 'ext'; kind.dispatchEvent(new win.Event('change', { bubbles: true }));
+    boxes[1].querySelector('.c-text').value = 'pdf, docx';
+    doc.getElementById('smartSaveConds').click(); await settle();
+    const saved = win.testMessages.slice(mark).find(m => m.prop === 'smartConditions');
+    assert(saved && JSON.stringify(saved.value) === '[{"cond":"filesOnly","value":null},{"cond":"ext","value":["pdf","docx"]}]', 'Conditions not posted: ' + JSON.stringify(saved));
+    // An unfinished condition is not sent.
+    const mark2 = win.testMessages.length;
+    doc.getElementById('smartAddCond').click(); await settle();
+    const last = [...doc.querySelectorAll('#smartConds .cond')].at(-1).querySelector('.c-kind');
+    last.value = 'ext'; last.dispatchEvent(new win.Event('change', { bubbles: true }));
+    doc.getElementById('smartSaveConds').click(); await settle();
+    assert(!win.testMessages.slice(mark2).some(m => m.prop === 'smartConditions') && errorShown(doc), 'An empty extension was saved');
+    // Every drive without Everything: the card offers to start or install it.
+    const smart = win.testState.fences.find(f => f.id === 'smart');
+    smart.smart.spec = { ...spec, folder: null }; smart.smart.source = 'needsEverything'; smart.smart.shown = 0;
+    win.testState.everything = { state: 'installed' };
+    win.testRefresh(); await settle();
+    const evBtn = doc.getElementById('smartEverythingBtn');
+    assert(doc.getElementById('smartScope').value === 'all' && doc.getElementById('smartSubCard').style.display === 'none', 'Every drive not shown');
+    assert(!evBtn.hidden && evBtn.textContent === '启动 Everything', 'Start button missing: ' + evBtn.textContent);
+    evBtn.click();
+    win.testState.everything = { state: 'missing' }; win.testRefresh(); await settle();
+    assert(evBtn.textContent === '安装 Everything', 'Install button missing');
+    evBtn.click(); await settle();
+    const actions = win.testMessages.filter(m => m.type === 'action').slice(-2).map(m => m.name).join();
+    assert(actions === 'startEverything,installEverything', 'Everything actions: ' + actions);
+    } finally {
+      win.testState.fences = win.testState.fences.filter(f => f.id !== 'smart');
+      win.testState.everything = { state: 'missing' };
+      win.testRefresh(); await settle();
+      change(doc, 'fenceSel', 'fence-a');
+    }
   });
   await test('showFence opens the fence page with that fence selected', async () => {
     doc.querySelector('[data-page=general]').click();

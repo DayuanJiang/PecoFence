@@ -5,8 +5,8 @@ use crate::commands::{
     Command, CommandQueue, TransferMode, WM_APP_COMMAND, WM_APP_DIALOG_OFFER,
     WM_APP_EVERYTHING_SETUP, WM_APP_FRAME, WM_APP_FS_CHANGED, WM_APP_LIVE_WALLPAPER,
     WM_APP_PEEK_FOCUSED, WM_APP_PREWARM_DONE, WM_APP_SCRIPT_DONE, WM_APP_SHELL_CHANGED,
-    WM_APP_STARTUP_BACKDROPS, WM_APP_STARTUP_TASK, WM_APP_THEMES_CHANGED, WM_APP_TRAY,
-    WM_APP_WALLPAPER,
+    WM_APP_SMART_READ, WM_APP_STARTUP_BACKDROPS, WM_APP_STARTUP_TASK, WM_APP_THEMES_CHANGED,
+    WM_APP_TRAY, WM_APP_WALLPAPER,
 };
 use crate::fence_window::{
     BackdropMode, BackdropSets, Behavior, FenceContext, FenceWindow, ItemView, SearchMarks, TabView,
@@ -180,7 +180,9 @@ const TIMER_EVERYTHING_SETUP: usize = 71;
 /// borrowed.
 const TIMER_DIALOG_OFFER: usize = 73;
 /// 智能栅栏: a watched folder changed; the searches of its fences run again.
-const TIMER_SMART_SOON: usize = 74;
+const TIMER_SMART_SOON: usize = 90;
+/// 智能栅栏: a folder read finished (`WM_APP_SMART_READ`); retried while the App is borrowed.
+const TIMER_SMART_READ: usize = 91;
 const THEMES_SETTLE_MS: u32 = 300;
 const DEVICE_RETRY_MAX_MS: u32 = 30_000;
 /// Growth of private commit plus GPU memory that logs a memory line before the hour is up.
@@ -806,6 +808,10 @@ impl App {
                             window::set_timer(hwnd, TIMER_DIALOG_OFFER, 1);
                             Some(0)
                         }
+                        WM_APP_SMART_READ => {
+                            window::set_timer(hwnd, TIMER_SMART_READ, 1);
+                            Some(0)
+                        }
                         // Everything's answer to a smart fence's search.
                         pecofence_platform::everything::WM_COPYDATA_MSG => {
                             if let Some((kind, bytes)) =
@@ -964,6 +970,7 @@ impl App {
                                 | TIMER_EVERYTHING_SETUP
                                 | TIMER_DIALOG_OFFER
                                 | TIMER_SMART_SOON
+                                | TIMER_SMART_READ
                                 | TIMER_STARTUP_BACKDROPS => {
                                     if let Ok(mut guard) = cell.try_borrow_mut()
                                         && let Some(app) = guard.as_mut()
@@ -978,7 +985,12 @@ impl App {
                                             TIMER_THEMES => app.on_themes_changed(),
                                             TIMER_SCRIPT_DONE => app.drain_scripts(),
                                             TIMER_EVERYTHING => app.send_everything_query(),
-                                            TIMER_EVERYTHING_STATUS => app.push_settings_state(),
+                                            TIMER_EVERYTHING_STATUS => {
+                                                // Everything was started or installed: the
+                                                // smart fences waiting for it search now.
+                                                app.run_waiting_smart();
+                                                app.push_settings_state();
+                                            }
                                             TIMER_EVERYTHING_SETUP => app.on_everything_setup(
                                                 everything_setup::SETUP_RESULT
                                                     .load(std::sync::atomic::Ordering::Relaxed),
@@ -988,6 +1000,7 @@ impl App {
                                             }
                                             TIMER_DIALOG_OFFER => app.offer_dialog_jump(),
                                             TIMER_SMART_SOON => app.run_soon_smart(),
+                                            TIMER_SMART_READ => app.drain_smart_reads(),
                                             _ => app.prewarm_wallpapers(),
                                         }
                                     } else {
@@ -2376,6 +2389,10 @@ impl App {
             Command::NewFolder { fence } => self.create_desktop_item(fence, true),
             Command::StepIconSize { fence, larger } => self.step_icon_size(fence, larger),
             Command::ItemProperties { fence, items } => self.show_properties(fence, &items),
+            // F5 in a smart fence runs its search again.
+            Command::RefreshFence(fence) if self.state.smart_spec(fence).is_some() => {
+                self.run_smart(fence, "f5")
+            }
             Command::RefreshFence(fence) => self.manual_refresh(fence),
             Command::RenameFence { fence, title } => {
                 self.end_item_rename_visuals();

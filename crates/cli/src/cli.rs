@@ -674,6 +674,9 @@ pub struct SmartArgs {
     /// Smart fence: only files written in the last N days
     #[arg(long, value_name = "N", conflicts_with_all = ["portal", "tool", "script", "template"])]
     pub within_days: Option<u32>,
+    /// Smart fence: only names matching this text, as the Peek search matches (pinyin too)
+    #[arg(long, value_name = "TEXT", conflicts_with_all = ["portal", "tool", "script", "template"])]
+    pub name_matches: Option<String>,
     /// Smart fence: only these extensions (comma-separated, e.g. pdf,docx)
     #[arg(long, value_name = "EXTS", value_delimiter = ',', conflicts_with_all = ["portal", "tool", "script", "template"])]
     pub ext: Vec<String>,

@@ -86,7 +86,29 @@ pub(super) const FENCE_PROPS: &[&str] = &[
     "noteText",
     "scriptPath",
     "scriptInterval",
+    "smartFolder",
+    "smartSubfolders",
+    "smartWithinDays",
+    "smartConditions",
+    "smartName",
+    "smartEverything",
+    "smartLimit",
 ];
+
+/// 智能栅栏: one change to a smart fence's search (`fence set` / the settings page).
+#[derive(Clone, Debug, PartialEq)]
+pub(super) enum SmartChange {
+    /// None = every drive (needs Everything).
+    Folder(Option<String>),
+    Subfolders(bool),
+    WithinDays(Option<u32>),
+    Conditions(Vec<pecofence_core::Cond>),
+    /// The name filter (matched as the Peek search and 筛选 match names).
+    Name(Option<String>),
+    /// A typed Everything search in place of the conditions.
+    Everything(Option<String>),
+    Limit(u32),
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum TitleColorChoice {
@@ -142,6 +164,8 @@ pub(super) enum FenceProp {
     ScriptPath(String),
     /// 脚本栅栏: minutes between runs, 1 to 1440.
     ScriptInterval(u32),
+    /// 智能栅栏: a change to its search.
+    Smart(SmartChange),
 }
 
 impl FenceProp {
@@ -347,6 +371,61 @@ pub(super) fn parse_fence_prop(
         "scriptInterval" => match value.as_u64() {
             Some(m @ 1..=1440) => FenceProp::ScriptInterval(m as u32),
             _ => return Err(bad(&["1..1440 (minutes)"])),
+        },
+        "smartFolder" => FenceProp::Smart(SmartChange::Folder(match value {
+            serde_json::Value::Null => None,
+            serde_json::Value::String(s) if s.trim().is_empty() => None,
+            serde_json::Value::String(s) => {
+                let dir = std::path::Path::new(s.trim());
+                if !dir.is_absolute() || !dir.is_dir() {
+                    return Err(IpcError::invalid_value(
+                        format!("no folder at {s}"),
+                        &["<full path of a folder>", "null (every drive)"],
+                    ));
+                }
+                Some(
+                    crate::state::canonical_path(dir.to_path_buf())
+                        .to_string_lossy()
+                        .into_owned(),
+                )
+            }
+            _ => return Err(bad(&["<full path of a folder>", "null (every drive)"])),
+        })),
+        "smartSubfolders" => FenceProp::Smart(SmartChange::Subfolders(as_bool()?)),
+        "smartWithinDays" => FenceProp::Smart(SmartChange::WithinDays(match value {
+            serde_json::Value::Null => None,
+            v => match v.as_u64() {
+                Some(d @ 1..=36500) => Some(d as u32),
+                _ => return Err(bad(&["1..36500 (days)", "null (any time)"])),
+            },
+        })),
+        "smartConditions" => {
+            let conds: Vec<pecofence_core::Cond> =
+                serde_json::from_value(value.clone()).map_err(|e| {
+                    IpcError::invalid_value(
+                        format!("smartConditions: {e}"),
+                        &[r#"[{"cond":"ext","value":["pdf"]}, ...] (rule conditions)"#],
+                    )
+                })?;
+            FenceProp::Smart(SmartChange::Conditions(conds))
+        }
+        "smartName" | "smartEverything" => {
+            let text = match value {
+                serde_json::Value::Null => None,
+                serde_json::Value::String(s) => {
+                    Some(s.trim().to_string()).filter(|s| !s.is_empty())
+                }
+                _ => return Err(bad(&["<text>", "null"])),
+            };
+            FenceProp::Smart(if prop == "smartName" {
+                SmartChange::Name(text)
+            } else {
+                SmartChange::Everything(text)
+            })
+        }
+        "smartLimit" => match value.as_u64() {
+            Some(n @ 1..=2000) => FenceProp::Smart(SmartChange::Limit(n as u32)),
+            _ => return Err(bad(&["1..2000"])),
         },
         _ => {
             return Err(IpcError::invalid_value(
@@ -665,6 +744,11 @@ impl App {
             "desktopLayout": f.desktop_layout,
             "openFoldersInside": f.open_folders_inside,
             "portal": portal,
+            // 智能栅栏: its search and the last run (see `App::smart_dto`), and the magnifier.
+            "smart": self.smart_dto(f.id).map(|mut s| {
+                s["titleIcon"] = serde_json::Value::Bool(!f.hide_title_icon);
+                s
+            }),
         })
     }
 
@@ -723,6 +807,7 @@ impl App {
                 return changed;
             }
             FenceProp::ScriptPath(path) => return self.set_script_path(fence, &path),
+            FenceProp::Smart(change) => return self.change_smart(fence, change),
             FenceProp::ScriptInterval(minutes) => {
                 let old = self
                     .state

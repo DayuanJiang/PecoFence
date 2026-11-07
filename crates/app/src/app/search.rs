@@ -38,6 +38,8 @@ pub(super) enum RowKind {
     },
     /// 「在 Everything 里查看全部结果」.
     ShowAll,
+    /// 「把这次搜索放到桌面」: a smart fence with this search.
+    ToDesktop,
 }
 
 #[derive(Default)]
@@ -256,7 +258,7 @@ impl App {
         // "show all" row.
         let show_all = self.search.everything_total > 0;
         let max_rows = crate::peek_search::row_room(if files.is_empty() { 0 } else { 2 })
-            .saturating_sub(usize::from(show_all))
+            .saturating_sub(2 * usize::from(show_all))
             .clamp(1, MAX_ROWS);
         let fence_room = if files.is_empty() {
             max_rows
@@ -275,6 +277,7 @@ impl App {
         }));
         if show_all {
             rows.push(RowKind::ShowAll);
+            rows.push(RowKind::ToDesktop);
         }
         self.search.sel = rows
             .iter()
@@ -311,15 +314,15 @@ impl App {
         let mut last_group = None;
         for (i, kind) in self.search.rows.iter().enumerate() {
             let group = matches!(kind, RowKind::Fence(_));
-            let heading = (both && last_group != Some(group) && !matches!(kind, RowKind::ShowAll))
-                .then(|| {
-                    if group {
-                        pecofence_core::i18n::text("栅栏里").to_string()
-                    } else {
-                        pecofence_core::i18n::text("整台电脑（Everything）").to_string()
-                    }
-                });
-            if !matches!(kind, RowKind::ShowAll) {
+            let footer = matches!(kind, RowKind::ShowAll | RowKind::ToDesktop);
+            let heading = (both && last_group != Some(group) && !footer).then(|| {
+                if group {
+                    pecofence_core::i18n::text("栅栏里").to_string()
+                } else {
+                    pecofence_core::i18n::text("整台电脑（Everything）").to_string()
+                }
+            });
+            if !footer {
                 last_group = Some(group);
             }
             let shortcut = (i < MAX_ROWS).then_some(i as u8 + 1);
@@ -391,6 +394,17 @@ impl App {
                     heading: None,
                     shortcut,
                 },
+                RowKind::ToDesktop => Row {
+                    name: pecofence_core::i18n::text("把这次搜索放到桌面").to_string(),
+                    marks: Vec::new(),
+                    detail: pecofence_core::i18n::text("新建一个智能栅栏，结果跟着文件自动更新")
+                        .to_string(),
+                    icon_path: None,
+                    is_folder: false,
+                    exact_icon: false,
+                    heading: None,
+                    shortcut,
+                },
             };
             rows.push(row);
         }
@@ -418,7 +432,7 @@ impl App {
                 (!shell::is_namespace_path(Path::new(p))).then(|| (PathBuf::from(p), it.is_folder))
             }
             RowKind::File { path, is_folder } => Some((path.clone(), *is_folder)),
-            RowKind::ShowAll => None,
+            RowKind::ShowAll | RowKind::ToDesktop => None,
         }
     }
 
@@ -460,6 +474,10 @@ impl App {
             .filter(|d| desktop::is_window(hwnd_of(*d)) && dialogs::is_file_dialog(hwnd_of(*d)));
         tracing::info!(row = ?row, dialog = dialog.is_some(), "search row opened");
         match (&row, path, dialog) {
+            (RowKind::ToDesktop, _, _) => {
+                self.end_peek("search: put on the desktop");
+                self.search_to_desktop(&query);
+            }
             (RowKind::ShowAll, _, _) => {
                 self.end_peek("search: show all in Everything");
                 // The same search as the list (pinyin included), in Everything's window.

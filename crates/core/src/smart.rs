@@ -29,6 +29,10 @@ pub struct SmartSpec {
     /// download keeps the server's date as its write time with some download tools).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub within_days: Option<u32>,
+    /// Only names that match this text, as the Peek search and 筛选 match names (every word,
+    /// pinyin too, not the loosest letters-in-order match). Tested by the app on every file.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
     /// An Everything search typed by the user, sent as it is in place of the conditions (with
     /// the folder still in front). Needs Everything.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -50,6 +54,8 @@ impl SmartSpec {
     pub const DEFAULT_LIMIT: u32 = 200;
     /// Most entries the folder reading without Everything looks at.
     pub const MAX_SCANNED: usize = 20_000;
+    /// Results asked of Everything when the app filters names itself.
+    pub const NAME_FILTER_ASK: u32 = 5_000;
 
     /// Whether the search can run without Everything: it has a folder to read and no
     /// Everything-only text.
@@ -123,7 +129,24 @@ impl SmartSpec {
         {
             return false;
         }
+        if let Some(q) = self.name.as_deref().map(|q| q.trim().to_lowercase())
+            && !q.is_empty()
+            && !crate::matcher::match_name(&facts.file_name, &q)
+                .is_some_and(|m| !crate::matcher::is_loose_score(m.score))
+        {
+            return false;
+        }
         self.all_of.iter().all(|c| rules::cond_matches(c, facts))
+    }
+
+    /// How many results to ask Everything for: the name filter is tested here on the answer,
+    /// so it takes more than the fence shows.
+    pub fn everything_max(&self) -> u32 {
+        if self.name.is_some() {
+            self.limit.max(Self::NAME_FILTER_ASK)
+        } else {
+            self.limit
+        }
     }
 }
 
@@ -266,6 +289,7 @@ impl Template {
             subfolders: true,
             all_of: vec![Cond::FilesOnly],
             within_days: None,
+            name: None,
             everything: None,
             limit: SmartSpec::DEFAULT_LIMIT,
         };
@@ -416,6 +440,29 @@ mod tests {
         assert!(spec.works_without_everything());
         let back: SmartSpec = serde_json::from_value(serde_json::to_value(&spec).unwrap()).unwrap();
         assert_eq!(back, spec);
+    }
+
+    #[test]
+    fn the_name_filter_matches_like_the_peek_search() {
+        let mut spec = Template::Downloads.spec(&folders()).unwrap();
+        spec.name = Some("bg".into());
+        let now = 1_800_000_000;
+        let f = |n: &str| ItemFacts {
+            file_name: n.into(),
+            ..Default::default()
+        };
+        assert!(
+            spec.matches(&f("季度报告.pdf"), now, now),
+            "pinyin initials"
+        );
+        assert!(!spec.matches(&f("旧合同.pdf"), now, now));
+        spec.name = Some("pdf".into());
+        assert!(spec.matches(&f("旧合同.pdf"), now, now));
+        assert!(
+            !spec.matches(&f("photo_d_final.png"), now, now),
+            "loose match left out"
+        );
+        assert_eq!(spec.everything_max(), SmartSpec::NAME_FILTER_ASK);
     }
 
     #[test]

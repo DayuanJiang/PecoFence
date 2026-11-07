@@ -39,6 +39,7 @@ impl App {
         let count = count.filter(|_| active == host && self.state.tabs_of(host).len() <= 1);
         w.set_status_view(empty, count);
         w.set_filtered(filtered);
+        w.set_refuses_drops(smart);
         if let Some(h) = self.state.fence(host) {
             let title = if active == host {
                 self.filter_title(host, self.state.display_title(h))

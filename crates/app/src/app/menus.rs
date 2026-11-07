@@ -59,6 +59,12 @@ const SMART_TEMPLATES: u32 = pecofence_core::smart::Template::ALL.len() as u32;
 /// 筛选… / 清除筛选 in the menu of a folder fence or a smart fence.
 const CMD_FENCE_FILTER: u32 = 540;
 const CMD_FENCE_FILTER_CLEAR: u32 = 541;
+/// 把筛选存为智能栅栏 in a filtered fence's menu.
+const CMD_FENCE_SAVE_SMART: u32 = 542;
+/// A smart fence's 立即刷新, 在资源管理器中打开文件夹 and 启动 / 安装 Everything.
+const CMD_FENCE_SMART_REFRESH: u32 = 543;
+const CMD_FENCE_SMART_FOLDER: u32 = 544;
+const CMD_FENCE_SMART_EVERYTHING: u32 = 545;
 /// 脚本栅栏 in its fence menu: 立即运行, 选择脚本…, 打开脚本所在的文件夹, and 运行间隔's
 /// entries (one per `ScriptSpec::INTERVALS`).
 const CMD_FENCE_SCRIPT_RUN: u32 = 500;
@@ -140,6 +146,8 @@ mod glyph {
     pub const FOLDER: char = '\u{E8B7}';
     /// 新建智能栅栏: a magnifier, as smart fences show before their title.
     pub const SEARCH: char = '\u{E721}';
+    /// A smart fence's 立即刷新.
+    pub const REFRESH: char = '\u{E72C}';
     /// Favicon: a frame with a title strip, like a fence with tabs.
     pub const TAB: char = '\u{E737}';
     pub const LOCK: char = '\u{E72E}';
@@ -683,6 +691,45 @@ impl App {
                     pecofence_core::i18n::text("清除筛选\tEsc"),
                     false,
                     false,
+                )
+                .item(
+                    CMD_FENCE_SAVE_SMART,
+                    pecofence_core::i18n::text("把筛选存为智能栅栏"),
+                    false,
+                    false,
+                )
+                .icon(glyph::SEARCH);
+            }
+        }
+        // 智能栅栏: run the search now, see its folder, start or get Everything.
+        if let Some(spec) = f.smart.as_ref() {
+            menu.item(
+                CMD_FENCE_SMART_REFRESH,
+                pecofence_core::i18n::text("立即刷新\tF5"),
+                false,
+                false,
+            )
+            .icon(glyph::REFRESH);
+            if spec.folder.is_some() {
+                menu.item(
+                    CMD_FENCE_SMART_FOLDER,
+                    pecofence_core::i18n::text("在资源管理器中打开文件夹"),
+                    false,
+                    false,
+                )
+                .icon(glyph::FOLDER_OPEN);
+            }
+            if self.smart_needs_everything(fence) {
+                let installed = pecofence_platform::everything::installed_exe().is_some();
+                menu.item(
+                    CMD_FENCE_SMART_EVERYTHING,
+                    if installed {
+                        pecofence_core::i18n::text("启动 Everything")
+                    } else {
+                        pecofence_core::i18n::text("安装 Everything")
+                    },
+                    false,
+                    self.everything_installing,
                 );
             }
         }
@@ -908,15 +955,18 @@ impl App {
                     false,
                     false,
                 );
-            menu.submenu(pecofence_core::i18n::text("新建"), new_menu)
-                .icon(glyph::ADD)
-                .item(
-                    CMD_FENCE_PASTE,
-                    pecofence_core::i18n::text("粘贴\tCtrl+V"),
-                    false,
-                    !clipboard::has_file_list(),
-                )
-                .icon(glyph::PASTE);
+            // A smart fence shows a search: nothing is made or pasted into it.
+            if f.smart.is_none() {
+                menu.submenu(pecofence_core::i18n::text("新建"), new_menu)
+                    .icon(glyph::ADD)
+                    .item(
+                        CMD_FENCE_PASTE,
+                        pecofence_core::i18n::text("粘贴\tCtrl+V"),
+                        false,
+                        !clipboard::has_file_list(),
+                    )
+                    .icon(glyph::PASTE);
+            }
             // Tabbed fences (Fences 6): split a tab out, move it along the strip, or merge this
             // fence into another window. Hidden when none of that applies.
             let other_hosts: Vec<(u32, String)> = self
@@ -1119,6 +1169,20 @@ impl App {
             CMD_PORTAL_UP => self.portal_up(fence),
             CMD_FENCE_FILTER => self.open_fence_filter(fence, "fence menu"),
             CMD_FENCE_FILTER_CLEAR => self.set_fence_filter(fence, String::new(), "fence menu"),
+            CMD_FENCE_SAVE_SMART => self.save_filter_as_smart(fence, x, y),
+            CMD_FENCE_SMART_REFRESH => self.run_smart(fence, "fence menu"),
+            CMD_FENCE_SMART_FOLDER => {
+                if let Some(dir) = self.state.smart_spec(fence).and_then(|s| s.folder.clone()) {
+                    let _ = shell::shell_execute(std::path::Path::new(&dir), None, None);
+                }
+            }
+            CMD_FENCE_SMART_EVERYTHING => {
+                if pecofence_platform::everything::installed_exe().is_some() {
+                    self.start_everything();
+                } else {
+                    self.install_everything();
+                }
+            }
             c if (CMD_FENCE_SHOW_FOLDER..CMD_FENCE_SHOW_FOLDER + 4).contains(&c) => {
                 self.show_folder_command(c - CMD_FENCE_SHOW_FOLDER, x, y, Some(host))
             }

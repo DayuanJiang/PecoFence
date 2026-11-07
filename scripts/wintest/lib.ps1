@@ -1020,6 +1020,7 @@ function ProcTops($cls, $proc) { return @([W]::Tops($cls) | Where-Object { [W]::
 . "$PSScriptRoot\page.ps1"
 . "$PSScriptRoot\pixels.ps1"
 . "$PSScriptRoot\user.ps1"
+. "$PSScriptRoot\smart.ps1"
 
 # ---- job start: a known desktop
 

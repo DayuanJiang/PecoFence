@@ -189,6 +189,7 @@ impl FenceWindow {
             empty_override: None,
             title_count: None,
             filter_active: false,
+            refuses_drops: false,
             label_w: 0.0,
             icons_pending: false,
             hover: None,
@@ -417,8 +418,10 @@ impl FenceWindow {
             },
         );
         format!(
-            "title={:?} opacity={:.2} scale={:.3} fade={fade} retired={} rolled={} rolling={} peeking={} items={} tabs={} selected={} focused={:?} shadow_visible={} shadow_alpha={} layout={:?} locked={} auto_height={} active={} scroll={:.1} client={:?} client_offset=({},{}) chrome={:?} glass={:?} wallpaper_uploads={} title_size={} tab_fonts={:?} tab_rects={:?} content_x={} content={:?} capture={} tab_drag={} window_drag={} detach_pending={} plate_inset={} plate_alpha={:.2} mouse_inside={}",
+            "title={:?} title_count={:?} filtered={} opacity={:.2} scale={:.3} fade={fade} retired={} rolled={} rolling={} peeking={} items={} tabs={} selected={} focused={:?} shadow_visible={} shadow_alpha={} layout={:?} locked={} auto_height={} active={} scroll={:.1} client={:?} client_offset=({},{}) chrome={:?} glass={:?} wallpaper_uploads={} title_size={} tab_fonts={:?} tab_rects={:?} content_x={} content={:?} capture={} tab_drag={} window_drag={} detach_pending={} plate_inset={} plate_alpha={:.2} mouse_inside={}",
             v.title,
+            v.title_count,
+            v.filter_active,
             v.root.opacity(),
             v.root.scale().x,
             v.retired,
@@ -1294,6 +1297,11 @@ impl FenceWindow {
     /// 筛选: whether the fence is filtered (Esc in it then clears the filter).
     pub fn set_filtered(&self, active: bool) {
         self.with_view(|v| v.filter_active = active);
+    }
+
+    /// 智能栅栏: the fence shown takes no drops (it shows a search).
+    pub fn set_refuses_drops(&self, on: bool) {
+        self.with_view(|v| v.refuses_drops = on);
     }
 
     /// The fence whose items this window currently shows (host or active tab).

@@ -224,6 +224,7 @@ fn run_fence(ctx: &Ctx, cmd: FenceCmd) -> Result<Reply, IpcError> {
                 smart_folder,
                 everything,
                 within_days,
+                name_matches,
                 ext,
             } = *smart_args;
             // The app would resolve a relative path against its own working directory.
@@ -234,6 +235,7 @@ fn run_fence(ctx: &Ctx, cmd: FenceCmd) -> Result<Reply, IpcError> {
             let custom = smart_folder.is_some()
                 || everything.is_some()
                 || within_days.is_some()
+                || name_matches.is_some()
                 || !ext.is_empty();
             let smart_spec = custom.then(|| {
                 let mut all_of = vec![pecofence_core::Cond::FilesOnly];
@@ -246,6 +248,7 @@ fn run_fence(ctx: &Ctx, cmd: FenceCmd) -> Result<Reply, IpcError> {
                     subfolders: true,
                     all_of,
                     within_days,
+                    name: name_matches.clone(),
                     everything: everything.clone(),
                     limit: pecofence_core::smart::SmartSpec::DEFAULT_LIMIT,
                 })
