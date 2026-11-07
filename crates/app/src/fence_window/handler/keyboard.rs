@@ -84,6 +84,7 @@ pub(super) fn on_keydown(
     const VK_A: u32 = 0x41;
     const VK_C: u32 = 0x43;
     const VK_D: u32 = 0x44;
+    const VK_F: u32 = 0x46;
     const VK_N: u32 = 0x4E;
     const VK_V: u32 = 0x56;
     const VK_X: u32 = 0x58;
@@ -139,6 +140,12 @@ pub(super) fn on_keydown(
             }
         }
         VK_V if ctrl => queue.push(Command::Paste { fence: v.active }),
+        VK_F if ctrl => queue.push(Command::OpenFenceFilter(v.active)),
+        // Filtering as you type: Backspace takes the last character back.
+        VK_BACK if v.type_filters && v.filter_active => queue.push(Command::FenceFilterKey {
+            fence: v.active,
+            key: '\u{8}',
+        }),
         VK_N if ctrl && shift => queue.push(Command::NewFolder { fence: v.active }),
         VK_TAB if ctrl && v.tabs.len() > 1 => {
             // Ctrl+Tab / Ctrl+Shift+Tab cycle the tabs (Explorer).
@@ -213,6 +220,13 @@ pub(super) fn on_keydown(
                 window::release_capture();
                 return Some(0);
             }
+            // A filtered fence: Esc clears the filter first.
+            if v.filter_active {
+                queue.push(Command::FenceFilterKey {
+                    fence: v.active,
+                    key: '\u{1b}',
+                });
+            }
             v.selected.clear();
             v.type_ahead.clear();
             seer::close();
@@ -254,6 +268,15 @@ pub(super) fn on_char(h: &HandlerCtx, _hwnd: HWND, wparam: usize, lparam: isize)
     let Some(v) = guard.as_mut() else {
         return Some(0);
     };
+    // Filtering as you type: the characters go to the fence's filter (a space only once
+    // something is typed, else it previews as below).
+    if v.type_filters && (ch != ' ' || v.filter_active) {
+        h.queue.push(Command::FenceFilterKey {
+            fence: v.active,
+            key: ch,
+        });
+        return Some(0);
+    }
     // Space outside a prefix opens or closes the preview of the focused item in Seer or
     // QuickLook, whichever runs (Seer when both do), as on the desktop and in Explorer (nothing
     // without them); a held Space does not repeat it.

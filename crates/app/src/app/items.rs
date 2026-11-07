@@ -30,9 +30,16 @@ fn rename_error(e: std::io::Error) -> RenameError {
 
 impl App {
     pub(super) fn item_views(&self, fence: &pecofence_core::Fence) -> Vec<ItemView> {
+        // 筛选: only what matches the fence's filter.
+        let filter = self.fence_filter(fence.id);
         self.state
             .items_of(fence)
             .into_iter()
+            .filter(|it| {
+                filter
+                    .as_deref()
+                    .is_none_or(|q| filter::filter_keeps(it, q))
+            })
             .map(|it| {
                 let path = PathBuf::from(it.path().unwrap_or(""));
                 let (_, icon_only) = crate::icons::icon_key_for(&path, it.is_folder, it.mtime);

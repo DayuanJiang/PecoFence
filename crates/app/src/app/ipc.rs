@@ -1600,6 +1600,10 @@ impl App {
             note_text: self.state.note_text(f.id).map(str::to_string),
             script: self.script_dto(f.id),
             smart: self.smart_dto(f.id),
+            filter: self
+                .fence_filters
+                .get(&f.id)
+                .map(|text| json!({ "text": text, "shown": self.item_views(f).len() })),
             // A tab is shown in its host's window, so that is where it is on screen.
             rect: connected.then(|| Rect::from(self.state.fence_px_rect(host))),
             // 「桌面」 arranged like the desktop is shown on a connected monitor even while the

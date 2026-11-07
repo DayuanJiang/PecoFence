@@ -56,6 +56,9 @@ const CMD_FENCE_NEW_TOOL: u32 = 520;
 /// The fence menu's 新建智能栅栏 submenu: one id per `smart::Template::ALL` entry from 530.
 const CMD_FENCE_NEW_SMART: u32 = 530;
 const SMART_TEMPLATES: u32 = pecofence_core::smart::Template::ALL.len() as u32;
+/// 筛选… / 清除筛选 in the menu of a folder fence or a smart fence.
+const CMD_FENCE_FILTER: u32 = 540;
+const CMD_FENCE_FILTER_CLEAR: u32 = 541;
 /// 脚本栅栏 in its fence menu: 立即运行, 选择脚本…, 打开脚本所在的文件夹, and 运行间隔's
 /// entries (one per `ScriptSpec::INTERVALS`).
 const CMD_FENCE_SCRIPT_RUN: u32 = 500;
@@ -666,6 +669,23 @@ impl App {
             false,
         )
         .icon(glyph::RENAME);
+        if self.filterable(fence) {
+            menu.item(
+                CMD_FENCE_FILTER,
+                pecofence_core::i18n::text("筛选…\tCtrl+F"),
+                false,
+                false,
+            )
+            .icon(glyph::SEARCH);
+            if self.fence_filter(fence).is_some() {
+                menu.item(
+                    CMD_FENCE_FILTER_CLEAR,
+                    pecofence_core::i18n::text("清除筛选\tEsc"),
+                    false,
+                    false,
+                );
+            }
+        }
         let portal_dir = self.state.portal_path(fence);
         if portal_dir.is_some() {
             menu.item(
@@ -1097,6 +1117,12 @@ impl App {
                 }
             }
             CMD_PORTAL_UP => self.portal_up(fence),
+            CMD_FENCE_FILTER => self.open_fence_filter(fence, "fence menu"),
+            CMD_FENCE_FILTER_CLEAR => {
+                self.set_fence_filter(fence, String::new(), "fence menu");
+                self.fence_filters.remove(&fence);
+                self.apply_portal_deco(host);
+            }
             c if (CMD_FENCE_SHOW_FOLDER..CMD_FENCE_SHOW_FOLDER + 4).contains(&c) => {
                 self.show_folder_command(c - CMD_FENCE_SHOW_FOLDER, x, y, Some(host))
             }

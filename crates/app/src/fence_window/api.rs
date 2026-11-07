@@ -188,6 +188,8 @@ impl FenceWindow {
             portal_missing: false,
             empty_override: None,
             smart_caption: None,
+            type_filters: false,
+            filter_active: false,
             label_w: 0.0,
             icons_pending: false,
             hover: None,
@@ -1287,6 +1289,14 @@ impl FenceWindow {
             if v.items.is_empty() && !v.rolled_up {
                 let _ = v.redraw_content();
             }
+        });
+    }
+
+    /// 筛选: whether typing filters this fence (`type_filters`) and whether it is filtered.
+    pub fn set_filter_state(&self, type_filters: bool, active: bool) {
+        self.with_view(|v| {
+            v.type_filters = type_filters;
+            v.filter_active = active;
         });
     }
 

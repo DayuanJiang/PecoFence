@@ -166,6 +166,10 @@ pub struct FenceViewState {
     /// the right of the title row (see `FenceWindow::set_smart_view`).
     pub(super) empty_override: Option<&'static str>,
     pub(super) smart_caption: Option<String>,
+    /// 筛选: typed characters go to the fence's filter instead of selecting by name
+    /// (`type_filters`), and the fence is filtered right now (`filter_active`: Esc clears it).
+    pub(super) type_filters: bool,
+    pub(super) filter_active: bool,
     /// Width the cached labels were fitted for; a change invalidates them.
     pub(super) label_w: f32,
     /// An item near the viewport was still waiting for its icon at the last content draw

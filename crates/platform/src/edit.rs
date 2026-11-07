@@ -248,6 +248,22 @@ impl EditControl {
         start == end && end >= len
     }
 
+    /// Grey hint text shown while the box is empty (EM_SETCUEBANNER), also while it has the
+    /// focus.
+    pub fn set_cue(&self, text: &str) {
+        const EM_SETCUEBANNER: u32 = 0x1501;
+        let wide = to_wide(text);
+        // SAFETY: the buffer outlives the call; a plain message to our control.
+        unsafe {
+            SendMessageW(
+                self.hwnd,
+                EM_SETCUEBANNER,
+                WPARAM(1),
+                LPARAM(wide.as_ptr() as isize),
+            );
+        }
+    }
+
     /// Background colour (COLORREF), for a parent that paints around the control.
     pub fn back_color(&self) -> u32 {
         self.back_color

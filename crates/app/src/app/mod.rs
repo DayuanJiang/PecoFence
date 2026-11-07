@@ -61,6 +61,7 @@ mod feedback;
 mod fence_options;
 mod fences;
 mod fileops;
+mod filter;
 mod group;
 mod ipc;
 mod items;
@@ -281,6 +282,8 @@ pub struct App {
     portal_watchers: HashMap<FenceId, (PathBuf, DirWatcher)>,
     /// 智能栅栏: each smart fence's last run and folder watcher.
     smart: smart::SmartState,
+    /// 筛选: the text each filtered fence is filtered by (runtime only).
+    fence_filters: HashMap<FenceId, String>,
     /// Per fence, the folders an up (Backspace, the back button) left, newest last: the
     /// forward button goes back into them. Any other navigation forgets them.
     portal_forward: HashMap<FenceId, Vec<PathBuf>>,
@@ -1529,6 +1532,7 @@ impl App {
             _shell_watch: shell_watch,
             portal_watchers: HashMap::new(),
             smart: Default::default(),
+            fence_filters: HashMap::new(),
             portal_forward: HashMap::new(),
             watcher_retry: HashMap::new(),
             fs_pending,
@@ -2394,6 +2398,15 @@ impl App {
                 self.new_smart_from_template(template, x, y)
             }
             Command::SmartResults { kind, bytes } => self.on_smart_results(kind, &bytes),
+            Command::OpenFenceFilter(fence) => self.open_fence_filter(fence, "ctrl+f"),
+            Command::FenceFilterText { fence, text } => {
+                self.set_fence_filter(fence, text, "filter box")
+            }
+            Command::FenceFilterClosed(fence) => {
+                tracing::info!(%fence, filtered = self.fence_filter(fence).is_some(), "filter box closed");
+                self.apply_portal_deco(self.state.host_of(fence));
+            }
+            Command::FenceFilterKey { fence, key } => self.fence_filter_key(fence, key),
             Command::NewScriptExample { example, x, y } => {
                 self.new_script_example_of(example, x, y)
             }

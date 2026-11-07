@@ -303,6 +303,21 @@ pub enum Command {
         kind: usize,
         bytes: Vec<u8>,
     },
+    /// Ctrl+F or 筛选… in a folder fence: open its filter box (or start typing to filter).
+    OpenFenceFilter(FenceId),
+    /// The filter box's text changed (empty: no filter).
+    FenceFilterText {
+        fence: FenceId,
+        text: String,
+    },
+    /// The filter box closed (the filter stays as typed).
+    FenceFilterClosed(FenceId),
+    /// A key typed into a fence that filters as you type: a character, Backspace (`\u{8}`) or
+    /// Esc (`\u{1b}`, clears the filter).
+    FenceFilterKey {
+        fence: FenceId,
+        key: char,
+    },
     /// A click on a note's text: open its editor.
     EditNote {
         fence: FenceId,

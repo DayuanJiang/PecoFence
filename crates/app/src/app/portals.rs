@@ -30,10 +30,21 @@ impl App {
             folder,
         );
         let (empty, caption) = self.smart_view(active);
+        let filtered = self.fence_filter(active).is_some();
+        let empty = if filtered {
+            Some(pecofence_core::i18n::text("没有符合筛选的文件。"))
+        } else {
+            empty
+        };
         w.set_smart_view(empty, caption);
+        w.set_filter_state(
+            self.filterable(active) && filter::filter_ui() == 'C',
+            self.fence_filters.contains_key(&active),
+        );
         if let Some(h) = self.state.fence(host) {
             let title = if active == host {
-                self.smart_title(host, self.state.display_title(h))
+                let title = self.smart_title(host, self.state.display_title(h));
+                self.filter_title(host, title)
             } else {
                 h.title.clone()
             };
@@ -325,6 +336,7 @@ impl App {
         dir: i8,
         select: Option<ItemId>,
     ) {
+        self.clear_fence_filter(fence, "another folder shown");
         self.ensure_portal_watchers();
         if let Some(w) = self.window_for(fence)
             && w.active_fence() == fence
