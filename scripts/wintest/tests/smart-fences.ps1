@@ -1,4 +1,4 @@
-# 智能栅栏 with Everything 1.4 (installed on the box, see smart.ps1): every way to make one (CLI
+# 智能栅栏 with Everything 1.4 or 1.5 (installed on the box, see smart.ps1): every way to make one (CLI
 # template, CLI conditions, tray menu, fence menu, the Peek search's last row) and what a smart
 # fence does: Everything's results, the count after the name, live updates (new, subfolder,
 # deleted, written again, a download in flight), F5 and 立即刷新, fence set on each search
@@ -14,7 +14,7 @@ public static class Rd { [DllImport("shell32.dll", CharSet = CharSet.Unicode)] p
 "@
 $recent = [Environment]::GetFolderPath('Recent')
 foreach ($n in @('weekly.docx', 'budget.xlsx', 'slides.pptx')) { [Rd]::SHAddToRecentDocs(3, (AgedFile $PfDocs $n 1)) }
-Check 'Everything 1.4 runs in pf session' (EvStart) "installed=$(EvInstalled)"
+Check 'Everything runs in pf session' (EvStart) "installed=$(EvInstalled)"
 PfStart -Lang en -Script (DumpScript 500 20)
 Start-Sleep -Seconds 2
 $Dl = 'Downloads of the last 7 days'
@@ -145,7 +145,9 @@ Start-Sleep -Milliseconds 400
 Shot 's04-peek-rows'
 [G]::Press(0x26); Start-Sleep -Milliseconds 300
 [G]::Press(0x0D); Start-Sleep -Seconds 2
-$made = @(@(PfJson fence list) | Where-Object { $_ -and $_.smart -and $_.smart.spec.everything -eq 'quarterly' })
+# The same search as the list: with Everything 1.5 it carries the pinyin forms as well
+# (<quarterly|py:quarterly|pyj:quarterly>).
+$made = @(@(PfJson fence list) | Where-Object { $_ -and $_.smart -and $_.smart.spec.everything -match '^<?quarterly(\||$)' })
 Check 'the last row makes a smart fence with that search' ($made.Count -eq 1 -and $made[0].title -match 'quarterly') (($made | ForEach-Object { $_.title }) -join ', ')
 if ($made.Count -eq 1) { Check 'it finds the file' (WaitSmart $made[0].title { $n -match 'quarterly' } 20) (SmartLine $made[0].title) }
 
