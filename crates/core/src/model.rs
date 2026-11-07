@@ -1112,18 +1112,14 @@ impl Fence {
     }
 
     /// Whether it shows on the virtual desktop `current` (`None`: Windows names no current
-    /// desktop, there is only one, so every fence shows).
-    pub fn shows_on_desktop(&self, current: Option<&str>) -> bool {
-        match current {
-            None => true,
-            Some(d) => {
-                self.virtual_desktops.is_empty()
-                    || self
-                        .virtual_desktops
-                        .iter()
-                        .any(|v| v.eq_ignore_ascii_case(d))
-            }
-        }
+    /// desktop, there is only one, so every fence shows), given the desktops Windows lists
+    /// (`listed`, see [`crate::vdesk::shows_on`]).
+    pub fn shows_on_desktop(
+        &self,
+        current: Option<&str>,
+        listed: &[crate::vdesk::DesktopRef],
+    ) -> bool {
+        crate::vdesk::shows_on(&self.virtual_desktops, current, listed)
     }
 
     /// Whether routed or dropped desktop items can live in this fence: not in a folder portal
@@ -2002,15 +1998,15 @@ mod tests {
         assert!(v.get("virtualDesktops").is_none());
         let back: Fence = serde_json::from_value(v).unwrap();
         assert!(back.virtual_desktops.is_empty());
-        assert!(back.shows_on_desktop(Some("{A}")));
+        assert!(back.shows_on_desktop(Some("{A}"), &[]));
         let mut bound = plain.clone();
         bound.virtual_desktops = vec!["{0A1B}".into()];
         let v = serde_json::to_value(&bound).unwrap();
         assert_eq!(v["virtualDesktops"], serde_json::json!(["{0A1B}"]));
         let back: Fence = serde_json::from_value(v).unwrap();
-        assert!(back.shows_on_desktop(Some("{0a1b}")));
-        assert!(!back.shows_on_desktop(Some("{FFFF}")));
-        assert!(back.shows_on_desktop(None));
+        assert!(back.shows_on_desktop(Some("{0a1b}"), &[]));
+        assert!(!back.shows_on_desktop(Some("{FFFF}"), &[]));
+        assert!(back.shows_on_desktop(None, &[]));
     }
 
     /// A fence without a tool writes no `tool` field, so files and snapshots of users who never

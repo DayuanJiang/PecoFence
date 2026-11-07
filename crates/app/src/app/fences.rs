@@ -700,6 +700,8 @@ impl App {
     /// Re-applies every fence's saved geometry to its window (after a swap / restore / import).
     pub(super) fn relayout_from_state(&mut self) {
         self.state.ensure_layout();
+        // Restored or imported fences may name virtual desktops that are gone.
+        self.follow_desktops_after("fences replaced");
         self.resync_windows();
         for fence in self.state.host_fences() {
             if self.fences.contains_key(&fence.id) {

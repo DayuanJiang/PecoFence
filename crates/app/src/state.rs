@@ -2228,8 +2228,12 @@ impl AppState {
     /// Whether the window of `fence` (its host's, for a tab) shows on the current virtual
     /// desktop.
     pub fn on_current_desktop(&self, fence: FenceId) -> bool {
-        self.fence(self.host_of(fence))
-            .is_none_or(|f| f.shows_on_desktop(self.current_desktop.as_deref()))
+        self.fence(self.host_of(fence)).is_none_or(|f| {
+            f.shows_on_desktop(
+                self.current_desktop.as_deref(),
+                &self.config.virtual_desktops,
+            )
+        })
     }
 
     /// 在哪个虚拟桌面显示, for the window of `id`: its host and every tab of it (empty: every
