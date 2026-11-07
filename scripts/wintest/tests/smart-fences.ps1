@@ -103,34 +103,34 @@ Check 'Windows, AppData and the Recycle Bin are left out' ((SmartOf 'All .psd fi
 CloseMenus
 
 Case 'fence set: each search property'
-$S = 'Downloads of the last 7 days'
-Pf fence set $S smartWithinDays 30 | Out-Null
-Check 'smartWithinDays 30: the files of 12 and 25 days come in' (WaitSmart $S { $n -match 'old contract' -and $n -match 'wallpaper' -and -not ($n -match 'drivers') } 15) (SmartLine $S)
-Pf fence set $S smartWithinDays null | Out-Null
-Check 'smartWithinDays null: every file' (WaitSmart $S { $n -match 'drivers' -and $n -match '简历' } 15) (SmartLine $S)
-Pf fence set $S smartConditions '[{\"cond\":\"ext\",\"value\":[\"pdf\"]}]' | Out-Null
-Check 'smartConditions ext pdf: only PDFs' (WaitSmart $S { $n.Count -ge 2 -and -not ($n | Where-Object { $_ -notmatch 'pdf|quarterly|invoice|contract' }) } 15) (SmartLine $S)
-Pf fence set $S smartName 'quart' | Out-Null
-Check 'smartName quart: one file' (WaitSmart $S { $n.Count -eq 1 -and $n[0] -match 'quarterly' } 15) (SmartLine $S)
-Pf fence set $S smartName null | Out-Null
-Pf fence set $S smartLimit 2 | Out-Null
-Check 'smartLimit 2: two shown, the count says more' (WaitSmart $S { $s.shown -eq 2 } 15) (SmartLine $S)
-$w = DumpOf $S
+$Seven = 'Downloads of the last 7 days'
+Pf fence set $Seven smartWithinDays 30 | Out-Null
+Check 'smartWithinDays 30: the files of 12 and 25 days come in' (WaitSmart $Seven { $n -match 'old contract' -and $n -match 'wallpaper' -and -not ($n -match 'drivers') } 15) (SmartLine $Seven)
+Pf fence set $Seven smartWithinDays null | Out-Null
+Check 'smartWithinDays null: every file' (WaitSmart $Seven { $n -match 'drivers' -and $n -match '简历' } 15) (SmartLine $Seven)
+Pf fence set $Seven smartConditions '[{\"cond\":\"ext\",\"value\":[\"pdf\"]}]' | Out-Null
+Check 'smartConditions ext pdf: only PDFs' (WaitSmart $Seven { $n.Count -ge 2 -and -not ($n | Where-Object { $_ -notmatch 'pdf|quarterly|invoice|contract' }) } 15) (SmartLine $Seven)
+Pf fence set $Seven smartName 'quart' | Out-Null
+Check 'smartName quart: one file' (WaitSmart $Seven { $n.Count -eq 1 -and $n[0] -match 'quarterly' } 15) (SmartLine $Seven)
+Pf fence set $Seven smartName null | Out-Null
+Pf fence set $Seven smartLimit 2 | Out-Null
+Check 'smartLimit 2: two shown, the count says more' (WaitSmart $Seven { $s.shown -eq 2 } 15) (SmartLine $Seven)
+$w = DumpOf $Seven
 Check 'the count after the name reads · 2+' ($w.raw -match 'title_count=Some\(" · 2\+"\)') ([regex]::Match($w.raw, 'title_count=\S+ \S*').Value)
-Pf fence set $S smartLimit 200 | Out-Null
-Pf fence set $S smartConditions '[]' | Out-Null
-Pf fence set $S smartSubfolders false | Out-Null
-Check 'smartSubfolders false: the subfolder file leaves' (WaitSmart $S { -not ($n -match 'requirements') -and ($n -match 'quarterly') } 15) (SmartLine $S)
-Pf fence set $S smartFolder $PfDocs | Out-Null
-Check 'smartFolder Documents: the documents, no downloads' (WaitSmart $S { $n -match 'weekly' -and -not ($n -match 'quarterly') } 15) (SmartLine $S)
-Check 'a folder picked by hand drops the template' ($null -eq (SmartOf $S).spec.template) ((SmartOf $S).spec | ConvertTo-Json -Compress)
-Pf fence set $S smartEverything 'quarterly' | Out-Null
-Pf fence set $S smartFolder $PfDl | Out-Null
-Check 'smartEverything: the typed search in the folder' (WaitSmart $S { $n.Count -eq 1 -and $n[0] -match 'quarterly' } 15) (SmartLine $S)
-Pf fence set $S smartEverything null | Out-Null
+Pf fence set $Seven smartLimit 200 | Out-Null
+Pf fence set $Seven smartConditions '[]' | Out-Null
+Pf fence set $Seven smartSubfolders false | Out-Null
+Check 'smartSubfolders false: the subfolder file leaves' (WaitSmart $Seven { -not ($n -match 'requirements') -and ($n -match 'quarterly') } 15) (SmartLine $Seven)
+Pf fence set $Seven smartFolder $PfDocs | Out-Null
+Check 'smartFolder Documents: the documents, no downloads' (WaitSmart $Seven { $n -match 'weekly' -and -not ($n -match 'quarterly') } 15) (SmartLine $Seven)
+Check 'a folder picked by hand drops the template' ($null -eq (SmartOf $Seven).spec.template) ((SmartOf $Seven).spec | ConvertTo-Json -Compress)
+Pf fence set $Seven smartEverything 'quarterly' | Out-Null
+Pf fence set $Seven smartFolder $PfDl | Out-Null
+Check 'smartEverything: the typed search in the folder' (WaitSmart $Seven { $n.Count -eq 1 -and $n[0] -match 'quarterly' } 15) (SmartLine $Seven)
+Pf fence set $Seven smartEverything null | Out-Null
 $bad = & "$PfApp\pecofence-cli.exe" fence set Programs smartWithinDays 7 2>&1 | Out-String
 Check 'a search property on a plain fence is refused' ($LASTEXITCODE -ne 0 -and $bad -match 'smart fences') $bad
-$bad = & "$PfApp\pecofence-cli.exe" fence set $S smartFolder 'C:\no\such\folder' 2>&1 | Out-String
+$bad = & "$PfApp\pecofence-cli.exe" fence set $Seven smartFolder 'C:\no\such\folder' 2>&1 | Out-String
 Check 'a folder that is not there is refused' ($LASTEXITCODE -ne 0 -and $bad -match 'no folder') $bad
 $log = (PfLogAll) -join "`n"
 Check 'log: each change with what changed' ($log -match 'smart fence search changed.*what="within days"' -and $log -match 'what="conditions"' -and $log -match 'what="folder"') ''
