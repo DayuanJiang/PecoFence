@@ -42,6 +42,15 @@ function FpUnder() {
 }
 # Whether an icon of 「桌面」 is at the screen point (the window there is a fence cell).
 function FpIconAt($x, $y) { return ([W]::RootClassAt($x, $y) -eq 'PecoFence.Fence') }
+# Whether PecoFence follows the desktop's mouse now (its latest raw input sink line says on).
+function FpSinkOn() {
+  for ($i = 0; $i -lt 10; $i++) {
+    $l = @(Get-Content (PfLogPath) -Encoding UTF8 | Where-Object { $_ -match 'raw input sink on=' }) | Select-Object -Last 1
+    if ($l -match 'on=true') { return $true }
+    Start-Sleep -Milliseconds 200
+  }
+  return $false
+}
 function FpLog($what) { Log "$what :: $(FpAll)" }
 function Park() { [G]::MoveTo(1560, 820); Start-Sleep -Milliseconds 300 }
 
@@ -124,8 +133,16 @@ if ($Part -eq 'A' -and $New) {
   Check 'Up goes to Delta, the nearest icon above' ($f[3] -match 'Delta') "$($f -join ' ')"
   Check 'Left from Delta goes to Echo, the nearest icon that way' ($f[4] -match 'Echo') "$($f -join ' ')"
   # A click on the empty desktop after one on an icon also brings the desktop to the front for
-  # the rectangle below (one with the desktop already in front is not seen: finding S2).
-  [G]::Click(700, 120); Start-Sleep -Milliseconds 800
+  # the rectangle below. PecoFence does not always see that (finding S2, fixed elsewhere): the
+  # clicks are repeated until its log says it follows the desktop's mouse, at most three times.
+  $tries = 0
+  for ($k = 0; $k -lt 3; $k++) {
+    $tries++
+    [G]::Click(700, 120); Start-Sleep -Milliseconds 800
+    if (FpSinkOn) { break }
+    $p = FpAt '10,4'; [G]::Click($p[0], $p[1]); Start-Sleep -Milliseconds 500
+  }
+  Log "desktop in front for PecoFence after $tries click(s)"
   Park
 
   Case 'two icons at once'
@@ -134,7 +151,7 @@ if ($Part -eq 'A' -and $New) {
   Start-Sleep -Milliseconds 500
   $d = DumpOf 'Desktop'
   Log "after the rectangle: selected=$(DumpVal $d 'selected') focused=$(DumpVal $d 'focused')"
-  Check 'the rectangle selects the two icons' ((DumpVal $d 'selected') -eq '2') "selected=$(DumpVal $d 'selected')"
+  Check 'the rectangle selects the two icons' ((DumpVal $d 'selected') -eq '2') "selected=$(DumpVal $d 'selected'); desktop clicks needed: $tries"
   $from = FpAt (FpCell 'Echo.fpx')
   DragTo $from[0] $from[1] 1004 520 20
   Start-Sleep -Milliseconds 800

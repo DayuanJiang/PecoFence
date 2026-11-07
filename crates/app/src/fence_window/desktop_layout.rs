@@ -304,14 +304,14 @@ impl FenceViewState {
         // (`desktop_free_changes`) when it gets the note, so a pass that a later one replaced
         // (other fences not yet moved for new monitors, say) is never saved. One note per
         // change, not one on every pass that finds it.
-        let cell = |c: (i32, i32)| [c.0.max(0) as u16, c.1.max(0) as u16];
+        let saved_form = |c: (i32, i32)| [c.0.max(0) as u16, c.1.max(0) as u16];
         let changes: Vec<(ItemId, [u16; 2])> = self
             .items
             .iter()
             .zip(&wanted)
             .zip(&placed)
             .filter(|((_, w), p)| **w != Some(**p))
-            .map(|((it, _), p)| (it.id, cell(*p)))
+            .map(|((it, _), p)| (it.id, saved_form(*p)))
             .collect();
         if !changes.is_empty() && self.desktop_free_sent.as_ref() != Some(&changes) {
             let added = wanted.iter().filter(|w| w.is_none()).count();
