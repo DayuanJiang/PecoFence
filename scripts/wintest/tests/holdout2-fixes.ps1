@@ -378,8 +378,11 @@ Check "a shortcut dragged onto the desktop stays in '$inbox' (the rules do not s
 Shot '35-after'
 
 Case '38 the push pass moves a locked fence below an expanding one'
-Pf fence create --title Upper --rect '1000,420,300,250' | Out-Null
-Pf fence create --title Lower --rect '1000,500,300,150' | Out-Null
+# Left of this part's fences and clear of the first-run column (since U15 it fills x 1088 to 1584 at
+# the top): a fence pushed under it could not clear Upper above the taskbar (no room, see
+# push.rs a_push_the_work_area_stops_is_marked).
+Pf fence create --title Upper --rect '20,420,260,250' | Out-Null
+Pf fence create --title Lower --rect '20,500,260,150' | Out-Null
 Start-Sleep -Seconds 1
 Pf fence set Lower locked true | Out-Null
 Pf fence roll Upper | Out-Null
