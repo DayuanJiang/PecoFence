@@ -118,6 +118,25 @@ Check 'new-note opens the editor' ($ed -ne [IntPtr]::Zero) "editor=$ed"
   test. The watchdog does not restart an instance started with `--test-script`: start the one a
   crash test kills without a script.
 
+## Before/after animations
+
+For a change a reviewer should see rather than read, record the same steps on the old build and on the
+new one and compose them side by side:
+
+- In the steps file: `. C:\pf\kit\rec.ps1`, then `RecStart 'U3-before' -X 200 -Y 100 -W 960 -H 540`
+  (`-Fps 12` by default, up to about 30 on the EC2 boxes), `RecMark 'step text'` before every user step
+  (the same marks in the same order on both builds), `RecMetric <number>` for values to chart (wait
+  seconds, frame gap ms, MB), `RecStop`. Frames, pointer positions and button presses land in
+  `shots/rec-<name>/`, which run.sh brings back.
+- On the dev box: `uv run -q --with pillow python -I scripts/wintest/mkanim.py <spec.json>` writes
+  `<out>.webm` and `<out>-sheet.jpg` (the spec format is in the script's header): the old build left
+  with a red label, the new one right with a green one, a step caption, the pointer drawn in, a timer
+  per side, highlight boxes, an optional metric chart, steps over 5 s fast-forwarded on both sides, and
+  a result banner per side at the end. It uses Playwright's ffmpeg build (VP9) and the WenQuanYi font.
+- Keep one idea per animation, 2 to 4 steps, about 20 s, plain words of what the user does and sees.
+  Screen grabs load the box: timing effects (frame gaps, drag lag) look smaller while recording, so
+  show them with a metric and slow motion, and check the sheet before using the animation.
+
 ## The boxes
 
 `box.sh create <name>` launches a box from `~/.config/pecofence-wintest/userdata.ps1` (OpenSSH
