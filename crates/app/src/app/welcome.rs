@@ -246,8 +246,14 @@ impl App {
             }
         };
         let kind = welcome_kind(&which);
-        match crate::notice::Notice::show(&self.ctx, &title, &body, action, crate::notice::locale())
-        {
+        match crate::notice::Notice::show(
+            &self.ctx,
+            &title,
+            &body,
+            action,
+            crate::notice::locale(),
+            &self.notice_avoid_rects(),
+        ) {
             Ok(notice) => {
                 tracing::info!(notice = %kind, "welcome notice shown");
                 self.welcome = Some((notice, which));

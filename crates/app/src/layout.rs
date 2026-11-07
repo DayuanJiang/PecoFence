@@ -1143,7 +1143,8 @@ pub mod clearance {
 
     /// The position nearest to `r` (same size) inside `work` that overlaps none of `others`:
     /// candidates are `r`'s own row / column and every edge of the other fences and the work
-    /// area with the snapping gap. `None` when there is no such spot.
+    /// area with the snapping gap. A candidate pushed back into the work area may sit closer
+    /// than the gap, but never on another fence. `None` when there is no such spot.
     pub fn nearest_free(r: &RECT, others: &[RECT], work: &RECT, gap: i32) -> Option<RECT> {
         let (w, h) = (r.right - r.left, r.bottom - r.top);
         if w > work.right - work.left || h > work.bottom - work.top {
@@ -1164,7 +1165,7 @@ pub mod clearance {
                     right: x.clamp(work.left, work.right - w) + w,
                     bottom: y.clamp(work.top, work.bottom - h) + h,
                 };
-                if others.iter().any(|o| overlaps(&c, o, gap)) {
+                if others.iter().any(|o| overlaps(&c, o, 0)) {
                     continue;
                 }
                 let (dx, dy) = ((c.left - r.left) as i64, (c.top - r.top) as i64);
@@ -1177,6 +1178,39 @@ pub mod clearance {
         best.map(|(_, c)| c)
     }
 
+    /// `a` is at least `gap` away from `b`, beside, above or below it.
+    fn apart(a: &RECT, b: &RECT, gap: i32) -> bool {
+        a.left >= b.right + gap
+            || a.right + gap <= b.left
+            || a.top >= b.bottom + gap
+            || a.bottom + gap <= b.top
+    }
+
+    /// [`nearest_free`] for `r` made shorter, down to `min_h`: the tallest height that has a free
+    /// spot the gap away from every other fence, at the spot of that height nearest to `r`.
+    /// `None` when not even `min_h` fits.
+    pub fn nearest_free_shorter(
+        r: &RECT,
+        others: &[RECT],
+        work: &RECT,
+        gap: i32,
+        min_h: i32,
+    ) -> Option<RECT> {
+        const STEPS: i32 = 16;
+        let h = r.bottom - r.top;
+        if min_h >= h {
+            return None;
+        }
+        (1..=STEPS).find_map(|k| {
+            let cut = RECT {
+                bottom: r.top + h - (h - min_h) * k / STEPS,
+                ..*r
+            };
+            nearest_free(&cut, others, work, gap)
+                .filter(|s| others.iter().all(|o| apart(s, o, gap)))
+        })
+    }
+
     /// One fence for [`pull_apart`].
     #[derive(Clone, Copy, Debug)]
     pub struct Resting {
@@ -1187,12 +1221,18 @@ pub mod clearance {
         /// Kept in this order: 0 for a fence at its own spot, higher for ones placed later.
         pub rank: u8,
         pub movable: bool,
+        /// The shortest it may be made where no spot has room for its height (its title row and
+        /// one row of icons; its own height when it may not be made shorter).
+        pub min_h: i32,
     }
 
     /// Pulls overlapping fences apart. In order of rank, then the larger first, each fence
     /// stays where it is unless it covers one kept before it; then, if it may move, it goes to
     /// the nearest spot free of every other fence (or, failing that, of the kept ones), so the
-    /// fewest and smallest move. With no free spot it stays. Returns (index, new rect) moves.
+    /// fewest and smallest move. Where no spot has room for its height (a screen that got
+    /// smaller, as at 150 %), it goes to the nearest spot it fits made shorter, down to its
+    /// `min_h`; its items scroll. With no free spot at all it stays. Returns (index, new rect)
+    /// moves.
     pub fn pull_apart(fences: &[Resting]) -> Vec<(usize, RECT)> {
         let area = |r: &RECT| (r.right - r.left) as i64 * (r.bottom - r.top) as i64;
         let mut order: Vec<usize> = (0..fences.len()).collect();
@@ -1215,7 +1255,9 @@ pub mod clearance {
                 .map(|j| rects[j])
                 .collect();
             let spot = nearest_free(&r, &others, &work, f.gap)
-                .or_else(|| nearest_free(&r, &kept, &work, f.gap));
+                .or_else(|| nearest_free(&r, &kept, &work, f.gap))
+                .or_else(|| nearest_free_shorter(&r, &others, &work, f.gap, f.min_h))
+                .or_else(|| nearest_free_shorter(&r, &kept, &work, f.gap, f.min_h));
             if let Some(spot) = spot {
                 rects[i] = spot;
                 moves.push((i, spot));
@@ -1337,12 +1379,13 @@ mod tests {
     fn fences_from_a_bigger_screen_are_pulled_apart() {
         use clearance::{Resting, overlaps, pull_apart};
         let work = rc(0, 0, 1920, 1020);
-        let fence = |rect, rank| Resting {
+        let fence = |rect: pecofence_platform::RECT, rank| Resting {
             rect,
             work: Some(work),
             gap: 10,
             rank,
             movable: rank > 0,
+            min_h: rect.bottom - rect.top,
         };
         let mut fences = vec![
             fence(rc(592, 27, 1516, 607), 2),   // 新栅栏
@@ -1376,6 +1419,61 @@ mod tests {
         settle(&mut fences);
         assert_eq!(fences[1].rect, rc(100, 100, 300, 300));
         assert!(!overlaps(&fences[0].rect, &fences[1].rect, 10));
+    }
+
+    /// Fence review S8: seven fences laid out at 100 % on 1600x900, then 150 % on Windows 11 (a
+    /// 72 px taskbar). Two fences have no spot with room for their height; they are made shorter
+    /// into the nearest one rather than left on top of their neighbours.
+    #[test]
+    fn fences_with_no_room_for_their_height_get_shorter() {
+        use clearance::{Resting, nearest_free_shorter, overlaps, pull_apart};
+        let work = rc(0, 0, 1600, 828);
+        let fence = |rect: pecofence_platform::RECT, min_h| Resting {
+            rect,
+            work: Some(work),
+            gap: 12,
+            rank: 1,
+            movable: true,
+            min_h,
+        };
+        let mut fences = vec![
+            fence(rc(60, 60, 600, 510), 225),    // Files and documents
+            fence(rc(1000, 60, 1540, 510), 225), // portal
+            fence(rc(60, 350, 600, 680), 225),   // Locked
+            fence(rc(760, 60, 1240, 390), 225),  // Folders (two tabs)
+            fence(rc(350, 12, 890, 66), 54),     // Programs, rolled up
+            fence(rc(350, 350, 890, 404), 54),   // Media, rolled up
+        ];
+        let widths: Vec<i32> = fences.iter().map(|f| f.rect.right - f.rect.left).collect();
+        for (i, spot) in pull_apart(&fences) {
+            fences[i].rect = spot;
+        }
+        assert_eq!(fences[0].rect, rc(60, 60, 600, 510));
+        assert_eq!(fences[1].rect, rc(1000, 60, 1540, 510));
+        for (i, a) in fences.iter().enumerate() {
+            let r = a.rect;
+            assert!(
+                r.left >= 0 && r.top >= 0 && r.right <= 1600 && r.bottom <= 828,
+                "{r:?}"
+            );
+            assert!(r.bottom - r.top >= a.min_h, "{r:?}");
+            assert_eq!(r.right - r.left, widths[i], "{r:?}");
+            for b in &fences[i + 1..] {
+                assert!(!overlaps(&r, &b.rect, 12), "{r:?} covers {:?}", b.rect);
+            }
+        }
+        assert!(fences[2].rect.bottom - fences[2].rect.top < 330);
+        assert!(fences[3].rect.bottom - fences[3].rect.top < 330);
+        // Not shorter than the minimum, and no spot at all on a full screen.
+        let full = [rc(0, 0, 1600, 828)];
+        assert_eq!(
+            nearest_free_shorter(&rc(10, 10, 110, 410), &full, &work, 12, 100),
+            None
+        );
+        assert_eq!(
+            nearest_free_shorter(&rc(10, 10, 110, 110), &[], &work, 12, 100),
+            None
+        );
     }
 
     /// Dragged edges stop at neighbours beyond them, and a neighbour already inside the gap

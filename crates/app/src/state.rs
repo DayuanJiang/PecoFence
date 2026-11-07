@@ -546,6 +546,21 @@ impl AppState {
             }
             base
         });
+        // A new set takes the spots a layout made for the same monitor at the same resolution and
+        // scale (back at 100 % after a 150 % one: not the squeezed 150 % spots).
+        if found.is_none() && source != target {
+            let seeded = self.config.seed_layout(source, target, &self.work_areas);
+            let mut from: Vec<usize> = seeded.iter().map(|(_, i)| *i).collect();
+            from.sort_unstable();
+            from.dedup();
+            tracing::info!(
+                layout = target,
+                from_layout = source,
+                seeded = seeded.len(),
+                seeded_from = ?from,
+                "new monitor set: spots taken from layouts with the same monitor, resolution and scale"
+            );
+        }
         let mut unplaced = if source == target {
             // Import / snapshot restore run this twice before the App settles them: keep the
             // fences the first pass found no spot for.

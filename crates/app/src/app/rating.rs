@@ -109,6 +109,7 @@ impl App {
             pecofence_core::i18n::text("在 Microsoft Store 给它打个分，几秒钟就好。"),
             pecofence_core::i18n::text("去评分"),
             crate::notice::locale(),
+            &self.notice_avoid_rects(),
         ) {
             Ok(notice) => {
                 self.rating.notice = Some(notice);

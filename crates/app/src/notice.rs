@@ -112,14 +112,16 @@ pub struct Notice {
 
 impl Notice {
     /// Shows `title`, `body` and an `action` button at the bottom-right of the primary
-    /// monitor's work area. `locale` is the text's language (fonts for Han, kana, Hangul).
-    /// Clicks and the timeout arrive as [`Command::Notice`].
+    /// monitor's work area, or at the nearest spot there that covers none of `avoid` (the
+    /// fences: the first start's tips talk about them). `locale` is the text's language (fonts
+    /// for Han, kana, Hangul). Clicks and the timeout arrive as [`Command::Notice`].
     pub fn show(
         ctx: &FenceContext,
         title: &str,
         body: &str,
         action: &str,
         locale: &str,
+        avoid: &[RECT],
     ) -> Result<Self> {
         let monitor = monitors::enumerate()
             .into_iter()
@@ -135,11 +137,33 @@ impl Notice {
         );
         let margin = (MARGIN * scale).round() as i32;
         let work = monitor.work_area;
-        let rect = RECT {
+        let corner = RECT {
             left: work.right - margin - w,
             top: work.bottom - margin - h,
             right: work.right - margin,
             bottom: work.bottom - margin,
+        };
+        let rect = if avoid
+            .iter()
+            .any(|a| crate::layout::clearance::overlaps(&corner, a, margin))
+        {
+            let spot = crate::layout::clearance::nearest_free(&corner, avoid, &work, margin);
+            match spot {
+                Some(r) => tracing::info!(
+                    corner = ?(corner.left, corner.top),
+                    to = ?(r.left, r.top),
+                    avoided = avoid.len(),
+                    "notice moved off the fences"
+                ),
+                None => tracing::info!(
+                    corner = ?(corner.left, corner.top),
+                    avoided = avoid.len(),
+                    "notice stays in the corner over a fence: no free spot"
+                ),
+            }
+            spot.unwrap_or(corner)
+        } else {
+            corner
         };
 
         let class = WindowClass::register(CLASS, ClassOptions::default())?;
