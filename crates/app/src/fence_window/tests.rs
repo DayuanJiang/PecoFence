@@ -955,7 +955,7 @@ fn drag_snaps_to_the_work_area_centre_lines() {
     let mut r = rc(1600, 900, 2241, 1161); // 641 x 261: centred across, 2 px above the middle
     snap_among(&mut r, &[], Some(&work), 16, 20);
     assert_eq!((r.left, r.top), (1920 - 641 / 2, 1032 - 261 / 2));
-    let guides = alignment_guides(&r, &[], Some(&work), 20);
+    let guides = alignment_guides(&r, &[], Some(&work));
     assert_eq!(
         guides,
         vec![
@@ -976,24 +976,25 @@ fn drag_snaps_to_the_work_area_centre_lines() {
     let mut far = rc(1000, 300, 1641, 561);
     snap_among(&mut far, &[], Some(&work), 16, 20);
     assert_eq!((far.left, far.top), (1000, 300));
-    assert!(alignment_guides(&far, &[], Some(&work), 20).is_empty());
+    assert!(alignment_guides(&far, &[], Some(&work)).is_empty());
 }
 
-/// Edges level with a nearby fence get one guide spanning both fences (a second fence on the
-/// same line extends it); a gap-apart neighbour or a far fence gets none.
+/// Edges level with another fence get one guide spanning both fences (a second fence on the
+/// same line extends it), however far apart they are (feedback #100); a gap-apart neighbour's
+/// facing edge is no guide.
 #[test]
-fn guides_join_level_edges_of_nearby_fences() {
+fn guides_join_level_edges_of_nearby_and_far_fences() {
     let above = rc(100, 100, 500, 400);
     let below_far = rc(100, 1500, 300, 1600);
     let beside = rc(708, 416, 900, 700);
     // Stacked a gap below `above`, same left edge; `beside` is a gap to the right, same top.
     let me = rc(100, 416, 692, 700);
-    let guides = alignment_guides(&me, &[above, below_far, beside], None, 20);
+    let guides = alignment_guides(&me, &[above, below_far, beside], None);
     assert!(guides.contains(&GuideLine {
         vertical: true,
         at: 100,
         from: 100,
-        to: 700,
+        to: 1600,
     }));
     assert!(guides.contains(&GuideLine {
         vertical: false,
@@ -1010,7 +1011,7 @@ fn guides_join_level_edges_of_nearby_fences() {
     assert_eq!(guides.len(), 3, "{guides:?}");
     // A second stacked fence on the same left edge lengthens the same guide.
     let under = rc(100, 716, 400, 900);
-    let guides = alignment_guides(&me, &[above, under], None, 20);
+    let guides = alignment_guides(&me, &[above, under], None);
     assert_eq!(
         guides
             .iter()
@@ -1047,6 +1048,63 @@ fn nearest_pull_wins_between_fences_and_centre_lines() {
     );
 }
 
+/// A fence dropped beside (or under) another, 3 to 15 px off the 8 px gap and 5 px off level,
+/// gets the gap and the same top (left) edge together: the gap counts towards being across
+/// (the review's sweep: 12 and 15 px stayed 5 px off).
+#[test]
+fn a_fence_dropped_a_gap_beside_another_lines_up_with_it() {
+    let work = rc(0, 0, 1600, 860);
+    let other = rc(420, 120, 720, 370);
+    for pre_gap in [3, 6, 9, 12, 15] {
+        let left = 720 + pre_gap;
+        let mut beside = rc(left, 125, left + 240, 325);
+        snap_among(&mut beside, &[other], Some(&work), 8, 10);
+        assert_eq!(
+            (beside.left, beside.top),
+            (728, 120),
+            "beside, pre-gap {pre_gap}"
+        );
+        let top = 370 + pre_gap;
+        let mut under = rc(425, top, 665, top + 200);
+        snap_among(&mut under, &[other], Some(&work), 8, 10);
+        assert_eq!(
+            (under.left, under.top),
+            (420, 378),
+            "under, pre-gap {pre_gap}"
+        );
+    }
+}
+
+/// Two fences at the two ends of the screen: a top within the snap distance of the other's
+/// becomes level with it and a guide joins them; farther off nothing pulls, and no gap is
+/// kept to a fence that far away (feedback #100).
+#[test]
+fn far_fences_in_one_row_line_up_and_show_a_guide() {
+    let far = rc(100, 120, 400, 370);
+    for off in [2, 4, 6, -6] {
+        let mut r = rc(1000, 120 + off, 1240, 320 + off);
+        snap_among(&mut r, &[far], None, 8, 10);
+        assert_eq!((r.left, r.top), (1000, 120), "{off} px off");
+        assert_eq!(
+            alignment_guides(&r, &[far], None),
+            vec![GuideLine {
+                vertical: false,
+                at: 120,
+                from: 100,
+                to: 1240,
+            }]
+        );
+    }
+    let mut r = rc(1000, 150, 1240, 350);
+    snap_among(&mut r, &[far], None, 8, 10);
+    assert_eq!((r.left, r.top), (1000, 150), "30 px off stays");
+    assert!(alignment_guides(&r, &[far], None).is_empty());
+    // Its left edge 4 px right of the far fence's right + gap: no pull from across the screen.
+    let mut r = rc(412, 600, 652, 800);
+    snap_among(&mut r, &[far], None, 8, 10);
+    assert_eq!(r.left, 412);
+}
+
 /// 48 px icons (80 x 96 DIP cells) at 100 %: 36 DIP title, 8 DIP pads, whole columns and rows.
 fn cell_rules() -> SizeRules {
     SizeRules {
@@ -1061,6 +1119,7 @@ fn cell_rules() -> SizeRules {
         min_w: 80,
         min_h: 150,
         rolled_h: None,
+        fit_h: None,
     }
 }
 

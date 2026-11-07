@@ -299,7 +299,18 @@ pub fn note_folder(dir: &Path) {
             return;
         };
         j.source = Some(Source::Folder(dir.to_path_buf()));
-        let front = desktop::foreground_window();
+        let mut front = desktop::foreground_window();
+        // A press on a fence's title or edge takes the keyboard, so the fence may be in front
+        // by now: the dialog it took the front from (our windows give no events) is the one.
+        if desktop::window_pid(front) == pecofence_platform::process::current_pid()
+            && let Some(last) = j.last_front.map(h).filter(|&d| dialogs::is_file_dialog(d))
+        {
+            tracing::info!(
+                dialog = last.0 as isize,
+                "dialog jump: the pressed fence is in front; the dialog it came from jumps"
+            );
+            front = last;
+        }
         if dialogs::is_file_dialog(front) {
             // Pressing a folder fence over a dialog means "go there", seen before or not.
             adopt(j, front);

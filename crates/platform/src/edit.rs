@@ -10,6 +10,7 @@ pub const EN_CHANGE: u32 = crate::bindings::EN_CHANGE as u32;
 pub const WM_CTLCOLOREDIT_MSG: u32 = WM_CTLCOLOREDIT as u32;
 
 // Not in the generated bindings (winuser.h).
+const ES_CENTER: i32 = 0x0001;
 const ES_MULTILINE: i32 = 0x0004;
 const ES_AUTOVSCROLL: i32 = 0x0040;
 const ES_WANTRETURN: i32 = 0x1000;
@@ -51,6 +52,32 @@ impl EditControl {
             dark,
             on_key,
             ES_AUTOHSCROLL,
+        )
+    }
+
+    /// Like [`Self::create`] with the text centred in the box: the rename box of an icon, whose
+    /// name is centred under it (Explorer).
+    #[allow(clippy::too_many_arguments)]
+    pub fn create_centered(
+        parent: HWND,
+        width: i32,
+        height: i32,
+        dpi: u32,
+        font_dip: f32,
+        text: &str,
+        dark: bool,
+        on_key: KeyHandler,
+    ) -> Result<Self> {
+        Self::create_styled(
+            parent,
+            width,
+            height,
+            dpi,
+            font_dip,
+            text,
+            dark,
+            on_key,
+            ES_AUTOHSCROLL | ES_CENTER,
         )
     }
 

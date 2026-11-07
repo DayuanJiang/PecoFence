@@ -14,6 +14,9 @@ thread_local! {
 pub const SYSTEM_FOREGROUND: u32 = EVENT_SYSTEM_FOREGROUND as u32;
 pub const SYSTEM_MINIMIZESTART: u32 = EVENT_SYSTEM_MINIMIZESTART as u32;
 pub const SYSTEM_MINIMIZEEND: u32 = EVENT_SYSTEM_MINIMIZEEND as u32;
+/// A window changed the z-order of its children; for top-level windows the desktop window
+/// reports it (`OBJID_CLIENT`), once per change, from the thread that made it.
+pub const OBJECT_REORDER: u32 = 0x8004;
 
 /// An installed hook; unhooked on drop.
 pub struct WinEventHook {
@@ -24,6 +27,17 @@ impl WinEventHook {
     /// Installs an out-of-context hook for `[event_min, event_max]` that skips our own
     /// process. The thread must pump messages for callbacks to be delivered.
     pub fn install(event_min: u32, event_max: u32, callback: EventCallback) -> Result<Self> {
+        Self::install_for(event_min, event_max, 0, callback)
+    }
+
+    /// Like [`install`](Self::install), for the events that the threads of process `pid`
+    /// cause (0: every process).
+    pub fn install_for(
+        event_min: u32,
+        event_max: u32,
+        pid: u32,
+        callback: EventCallback,
+    ) -> Result<Self> {
         // SAFETY: the callback is a `extern "system"` fn with the documented signature.
         let hook = unsafe {
             SetWinEventHook(
@@ -31,7 +45,7 @@ impl WinEventHook {
                 event_max,
                 None,
                 Some(event_proc),
-                0,
+                pid,
                 0,
                 (WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS) as u32,
             )
@@ -63,8 +77,8 @@ unsafe extern "system" fn event_proc(
     _thread: u32,
     _time: u32,
 ) {
-    // OBJID_WINDOW == 0: only whole-window events.
-    if id_object != 0 {
+    // OBJID_WINDOW == 0: only whole-window events (a reorder names the parent's client area).
+    if id_object != 0 && event != OBJECT_REORDER {
         tracing::debug!(
             event,
             id_object,

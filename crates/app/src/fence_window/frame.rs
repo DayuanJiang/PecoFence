@@ -78,13 +78,47 @@ impl FenceViewState {
     }
 }
 
+/// What a frame needs of a fence window, so that its animations can go on while a popup menu
+/// keeps the App borrowed (see `App::track_menu`).
+pub struct FrameHandle {
+    id: FenceId,
+    hwnd: HWND,
+    view: Rc<RefCell<Option<FenceViewState>>>,
+}
+
 impl FenceWindow {
+    pub fn frame_handle(&self) -> FrameHandle {
+        FrameHandle {
+            id: self.id,
+            hwnd: self.hwnd(),
+            view: self.view.clone(),
+        }
+    }
+
+    /// One compositor frame, see [`FrameHandle::on_frame`].
+    pub fn on_frame(&self, now: Instant) -> bool {
+        self.frame_handle().on_frame(now)
+    }
+}
+
+impl FrameHandle {
+    fn hwnd(&self) -> HWND {
+        self.hwnd
+    }
+
     /// One compositor frame: advances the roll / auto-height animation and every other client
     /// tween. Returns true while something still moves (the app then asks the frame clock for
     /// the next frame). Re-entrancy: the window is resized with no borrow held.
     pub fn on_frame(&self, now: Instant) -> bool {
         let hwnd = self.hwnd();
         let moved = flush_window_drag(&self.view, hwnd, now, None);
+        // A title drag moved the window on mouse moves since the last frame: the backdrop
+        // catches up once for where it is now.
+        if let Some(v) = self.view.borrow_mut().as_mut()
+            && v.backdrop_stale
+        {
+            v.refresh_backdrop();
+        }
         // Phase 1: compute under a short borrow.
         let (height, more, upward) = {
             let mut guard = self.view.borrow_mut();
@@ -142,6 +176,10 @@ impl FenceWindow {
                 v.rolled_up = rolled;
                 v.content_panel.visual.set_opacity(1.0);
                 v.content_panel.visual.set_visible(!rolled);
+                // Rolled up after a hover peek raised it: back among the other fences.
+                if rolled && std::mem::take(&mut v.hover_raised) {
+                    v.queue.push(Command::EndHoverRaise(hwnd));
+                }
             }
             // The resting window gets a crop cut for its final rect (one crop + upload per
             // animation, in the pass that redraws everything anyway).

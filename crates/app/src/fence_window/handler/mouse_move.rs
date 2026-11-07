@@ -19,6 +19,12 @@ pub(super) fn on_mousemove(
     } = h;
     let x = msg::lo_i16(lparam);
     let y = msg::hi_i16(lparam);
+    // A click-to-expand title press captured the mouse: past the drag threshold it moves the
+    // fence, however far the first move went (it may already be off the title row).
+    let pt = window::client_to_screen(hwnd, pecofence_platform::POINT { x, y });
+    if super::nc::drag_click_pending(h, hwnd, (pt.x, pt.y)) {
+        return Some(0);
+    }
     let mut guard = view.borrow_mut();
     let Some(v) = guard.as_mut() else {
         return Some(0);
@@ -96,7 +102,13 @@ pub(super) fn on_mousemove(
         let point = (pt.x, pt.y);
         drag.track_pointer(point, window::drag_threshold());
         if drag.pending_pointer.is_some() {
-            v.frames.request();
+            // The window follows the pointer at once, as in Windows' own move loop (once per
+            // frame it trailed it by up to a frame and more); what it shows of the wallpaper
+            // is redrawn on the next frame (`Behavior::defer_backdrop`).
+            drop(guard);
+            behavior.defer_backdrop.set(true);
+            flush_window_drag(view, hwnd, Instant::now(), None);
+            behavior.defer_backdrop.set(false);
         }
         return Some(0);
     }
@@ -209,6 +221,7 @@ pub(super) fn on_mousemove(
         let from_portal = v.is_portal;
         v.ole_drag = true;
         v.ole_drag_press = (sx, sy);
+        let offsets = v.drag_offsets();
         let _ = v.redraw();
         drop(guard);
         // ReleaseCapture sends WM_CAPTURECHANGED synchronously: no borrow held.
@@ -237,6 +250,7 @@ pub(super) fn on_mousemove(
                         from,
                         items: ids.clone(),
                         paths: paths.clone(),
+                        offsets: offsets.clone(),
                     })
                 });
                 // Nested message loop until the button is released.
@@ -298,7 +312,19 @@ pub(super) fn on_mousemove(
                     && !from_portal
                     && matches!(r.effect, DropEffect::None | DropEffect::Move) =>
             {
-                queue.push(Command::MoveItemsToInbox { items: ids });
+                // Where the icons landed, for a 「桌面」 that places them freely (自由摆放).
+                let c = window::cursor_pos();
+                let at = DesktopDrop {
+                    cursor: (c.x, c.y),
+                    centres: offsets
+                        .iter()
+                        .map(|(id, (dx, dy))| (*id, (c.x + dx, c.y + dy)))
+                        .collect(),
+                };
+                queue.push(Command::MoveItemsToInbox {
+                    items: ids,
+                    at: Some(at),
+                });
             }
             Some(r)
                 if matches!(r.effect, DropEffect::Move | DropEffect::Copy)
@@ -475,7 +501,7 @@ pub(super) fn on_mousemove(
         && !menu_open.get()
         && !peek_armed.replace(true)
     {
-        window::set_timer(hwnd, TIMER_PEEK_OPEN, Tooltip::hover_delay_ms());
+        window::set_timer(hwnd, TIMER_PEEK_OPEN, behavior.hover_open_ms());
     }
     if v.peeking {
         window::kill_timer(hwnd, TIMER_PEEK_CLOSE);

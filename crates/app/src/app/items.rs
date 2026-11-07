@@ -129,7 +129,7 @@ impl App {
                 None => true,
             });
         for (id, fence, rename) in landed {
-            self.move_items(&[id], fence);
+            self.move_items_unrecorded(&[id], fence);
             if rename {
                 // The rules may have filed the item here already: then nothing moved, the
                 // window does not list it yet, and the label the edit box needs has no rect.
@@ -218,6 +218,12 @@ impl App {
             it.is_folder,
         );
         let dpi = monitors::dpi_for_window(w.hwnd());
+        // In the icon view the name is centred under the icon, and so is the box's text.
+        let centered = self
+            .state
+            .fence(fence)
+            .is_some_and(|f| f.view.layout == ViewLayout::Icons);
+        tracing::info!(?rect, centered, "item rename box opened");
         w.set_renaming(Some(item));
         crate::rename::begin_item_rename(
             rect,
@@ -226,6 +232,7 @@ impl App {
             item,
             current,
             select_end,
+            centered,
             self.queue.clone(),
             self.theme_mode,
         );
@@ -439,6 +446,13 @@ impl App {
             .window_for(fence)
             .map(|w| w.hwnd())
             .unwrap_or(self.control.hwnd());
+        if !matches!(verb, "cut" | "copy")
+            && let Some(a) = self.anchor.borrow_mut().as_mut()
+        {
+            // Properties and the delete confirmation: closing them gives the fence the
+            // keyboard back with its selection.
+            a.dialog_opened_from(owner);
+        }
         if verb == "delete" {
             self.start_shell_delete(paths, owner, shift);
             return true;
@@ -617,10 +631,28 @@ impl App {
             return;
         }
         match shell::shell_execute(&path, None, None) {
-            Ok(()) => self.note_opened(item),
+            Ok(()) => {
+                self.note_opened(item);
+                self.folder_opened(item, from, &path, is_folder);
+            }
             Err(e) => {
                 tracing::warn!(path = %path.display(), place = shell::path_place(&path), error = %e, "launch failed")
             }
+        }
+    }
+
+    /// 功能提示: a folder (or a shortcut to one) opened in Explorer may earn the folder tip.
+    /// The cheap checks come first: a shortcut's target is read only when the tip could show.
+    fn folder_opened(&mut self, item: ItemId, from: FenceId, path: &Path, is_folder: bool) {
+        let often = self
+            .state
+            .item(item)
+            .is_some_and(|it| it.open_count >= super::welcome::FOLDER_TIP_OPENS);
+        if !often || !self.notices || !self.state.config.settings.feature_tips {
+            return;
+        }
+        if let Some(dir) = folder_to_open(path, is_folder) {
+            self.offer_folder_tip(item, from, &dir);
         }
     }
 
@@ -644,7 +676,21 @@ impl App {
     /// Moves items into `to`. Virtual fences only change membership (files stay put), also while
     /// they show a folder opened in them; a portal as source or target means a real file move
     /// (portal = folder view).
+    /// The user moved `items` into `to`: one step of Ctrl+Z in the fences, unless files move
+    /// into a folder (Windows undoes those).
     pub(super) fn move_items(&mut self, items: &[ItemId], to: FenceId) {
+        let places = if self.state.move_target_folder(to).is_none() {
+            self.state.item_places(items)
+        } else {
+            Vec::new()
+        };
+        if self.move_items_unrecorded(items, to) > 0 {
+            self.note_items_for_undo(to, places);
+        }
+    }
+
+    /// [`Self::move_items`] without the undo step; returns how many fence entries moved.
+    pub(super) fn move_items_unrecorded(&mut self, items: &[ItemId], to: FenceId) -> usize {
         if self.state.move_target_folder(to).is_some() {
             // Namespace items cannot be moved into a folder; they stay where they are.
             let paths: Vec<PathBuf> = items
@@ -654,7 +700,7 @@ impl App {
                 .filter_map(|it| it.path().map(PathBuf::from))
                 .collect();
             self.move_files_into_portal(paths, to);
-            return;
+            return 0;
         }
         let (portal_items, desktop_items): (Vec<ItemId>, Vec<ItemId>) = items
             .iter()
@@ -664,7 +710,7 @@ impl App {
             self.move_portal_items_to_desktop(&portal_items, to);
         }
         if desktop_items.is_empty() {
-            return;
+            return 0;
         }
         let affected: Vec<FenceId> = self
             .state
@@ -673,12 +719,14 @@ impl App {
             .filter(|f| f.id == to || f.items.iter().any(|r| desktop_items.contains(&r.item_id)))
             .map(|f| f.id)
             .collect();
-        if self.state.move_items(&desktop_items, to) > 0 {
+        let moved = self.state.move_items(&desktop_items, to);
+        if moved > 0 {
             for id in affected {
                 self.refresh_fence(id);
             }
             self.schedule_save();
         }
+        moved
     }
 }
 

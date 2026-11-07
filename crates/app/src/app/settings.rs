@@ -58,6 +58,8 @@ fn log_page_error(v: &serde_json::Value) {
 pub(super) enum ConfigSource {
     Import,
     Backup,
+    /// The saved files, read once another program stopped holding them open.
+    Unlocked,
 }
 
 impl ConfigSource {
@@ -65,13 +67,16 @@ impl ConfigSource {
         match self {
             Self::Import => pecofence_core::i18n::text("已导入配置"),
             Self::Backup => pecofence_core::i18n::text("已恢复备份"),
+            Self::Unlocked => pecofence_core::i18n::text("已读到配置文件，你的栅栏已恢复。"),
         }
     }
 
+    /// The name of the snapshot taken before a restore from a file (an import or a backup;
+    /// reading the unlocked files takes none).
     fn before(self) -> &'static str {
         match self {
             Self::Import => pecofence_core::i18n::text("导入配置前"),
-            Self::Backup => pecofence_core::i18n::text("恢复备份前"),
+            Self::Backup | Self::Unlocked => pecofence_core::i18n::text("恢复备份前"),
         }
     }
 }
@@ -87,6 +92,7 @@ pub(super) fn snapshot_room(
 ) -> bool {
     let auto = [
         pecofence_core::i18n::text("恢复快照前"),
+        pecofence_core::i18n::text("删除栅栏前"),
         ConfigSource::Import.before(),
         ConfigSource::Backup.before(),
     ];
@@ -237,6 +243,49 @@ impl App {
             );
         }
         self.picked_colors.insert(target.to_string(), hex);
+    }
+
+    /// `TIMER_CONFIG_LOCKED`: the config file another program held open at start is read as
+    /// soon as it opens, and replaces what showed meanwhile (which was never saved).
+    pub(super) fn retry_locked_config(&mut self) {
+        self.config_lock_tries += 1;
+        let Some((outcome, report)) = self.state.load_after_lock() else {
+            if let Some(path) = &self.state.locked_config {
+                if self.config_lock_tries.is_multiple_of(30) {
+                    tracing::info!(path = %path.display(), tries = self.config_lock_tries, "config file still locked by another program; saves held");
+                }
+                window::set_timer(
+                    self.control.hwnd(),
+                    super::TIMER_CONFIG_LOCKED,
+                    super::CONFIG_LOCKED_RETRY_MS,
+                );
+            }
+            return;
+        };
+        for (what, path, error) in &report.failures {
+            let what = *what;
+            tracing::warn!(what, path = %path.display(), error = %error, "config file unusable");
+        }
+        let source = match &outcome {
+            pecofence_core::LoadOutcome::Primary(_) => "config.json",
+            pecofence_core::LoadOutcome::Recovered(_, from)
+                if from.extension().is_some_and(|e| e == "bak") =>
+            {
+                "config.bak"
+            }
+            pecofence_core::LoadOutcome::Recovered(..) => "daily backup",
+            pecofence_core::LoadOutcome::Fresh(_) => "new: files unusable",
+        };
+        tracing::info!(
+            source,
+            tries = self.config_lock_tries,
+            moved_aside = report.moved_to.is_some(),
+            "config files readable again; loaded"
+        );
+        self.adopt_config(outcome.into_config(), ConfigSource::Unlocked);
+        if let Some(t) = &self.tray {
+            t.show_info("PecoFence", ConfigSource::Unlocked.done(), false);
+        }
     }
 
     pub(super) fn import_config(&mut self) {
@@ -1064,6 +1113,7 @@ impl App {
             .behavior
             .click_to_expand
             .set(new.roll_up.click_to_expand);
+        self.ctx.behavior.hover_speed.set(new.roll_up.hover_speed);
         self.ctx
             .behavior
             .title_on_hover
@@ -1164,6 +1214,7 @@ impl App {
         }
         pecofence_core::i18n::set_language(language);
         tracing::info!(language = language.tag(), "interface language changed");
+        self.localize_auto_names();
         if let Some(host) = &self.settings {
             host.update_language();
         }
@@ -1171,6 +1222,52 @@ impl App {
             window.redraw();
         }
         self.push_settings_state();
+    }
+}
+
+impl App {
+    /// The first start's fences (程序, 文件夹, 文件与文档, 桌面) and rules keep their names in the
+    /// interface language until the user renames them: a name that is PecoFence's own in some
+    /// language becomes the same name in the new one. Every saved layout, not only this one.
+    fn localize_auto_names(&mut self) {
+        const FENCES: &[&str] = &["程序", "文件夹", "文件与文档"];
+        const INBOX: &[&str] = &["桌面"];
+        const RULES: &[&str] = &["程序与快捷方式", "文件夹", "文件与文档"];
+        let shown: Vec<FenceId> = self.state.fences().iter().map(|f| f.id).collect();
+        let mut renamed = Vec::new();
+        for layout in &mut self.state.config.layouts {
+            for f in &mut layout.fences {
+                let keys = match f.kind {
+                    FenceKind::Inbox => INBOX,
+                    FenceKind::Virtual if f.tool.is_none() => FENCES,
+                    _ => continue,
+                };
+                if let Some(title) = pecofence_core::i18n::retranslated(&f.title, keys) {
+                    f.title = title.to_string();
+                    renamed.push(f.id);
+                }
+            }
+        }
+        let mut rules = 0;
+        for r in &mut self.state.config.rules.list {
+            if let Some(name) = pecofence_core::i18n::retranslated(&r.name, RULES) {
+                r.name = name.to_string();
+                rules += 1;
+            }
+        }
+        tracing::info!(
+            fences = renamed.len(),
+            rules,
+            "first-start names follow the interface language"
+        );
+        if renamed.is_empty() && rules == 0 {
+            return;
+        }
+        for id in renamed.iter().filter(|id| shown.contains(id)) {
+            self.refresh_fence(*id);
+        }
+        self.state.mark_dirty();
+        self.schedule_save();
     }
 }
 

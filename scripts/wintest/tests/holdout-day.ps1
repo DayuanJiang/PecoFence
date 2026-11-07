@@ -232,11 +232,16 @@ Case 'D6 marquee: new fence here'
 $c0 = @(IpfJson fence list).Count
 [G]::Click(1300, 650); Start-Sleep -Milliseconds 1000
 DragTo 1150 120 1450 360
-$m = MenuWin 5
-$texts = if ($m -ne [IntPtr]::Zero) { MenuTexts $m } else { '' }
+# Two small buttons at the rectangle's bottom-right corner (no menu); their window title names
+# both: 'Show a folder here…|New fence'. New fence is the right one.
+$off = [IntPtr]::Zero
+for ($i = 0; $i -lt 40 -and $off -eq [IntPtr]::Zero; $i++) { $h = [G]::FindWindowW('PecoFence.MarqueeOffer', [NullString]::Value); if ($h -ne [IntPtr]::Zero -and [G]::IsWindowVisible($h)) { $off = $h }; Start-Sleep -Milliseconds 50 }
+$texts = if ($off -ne [IntPtr]::Zero) { [W]::Title($off) } else { '' }
+$m = MenuWin 1
 Shot 'd6-marquee'
-Check 'a rectangle on the empty desktop offers Create a fence here' ($texts -match 'Create a fence here') "menu: $texts"
-$t = MenuPick 'Create a fence here' $m
+Check 'a rectangle on the empty desktop shows the New fence button at its corner, no menu' ($texts -match 'New fence' -and $m -eq [IntPtr]::Zero) "buttons: '$texts' menu=$m"
+$or = Rect $off
+[G]::Click($or.R - 30, [int](($or.T + $or.B) / 2))
 $ren = WaitWin 'PecoFence.Rename' 5
 Start-Sleep -Milliseconds 300
 [G]::Type('Marquee fence'); [G]::Press(0x0D); Start-Sleep -Seconds 2
@@ -267,6 +272,9 @@ Start-Sleep -Seconds 1
 $in = ItemFence 'Eta drag'
 Check 'an icon dragged into another fence lands there' ($in -eq 'Work') "Eta drag is in '$in'"
 $p = ItemPt 'Drag' 'Zeta drag'
+# The fifth fence (the marquee's) brings the 「栅栏多了可以收起」 tip card to the bottom-right corner,
+# right over the drop point: close it first.
+CloseNotice | Out-Null
 DragTo $p[0] $p[1] 1300 780
 Start-Sleep -Seconds 1
 $in = ItemFence 'Zeta drag'
@@ -305,17 +313,18 @@ Check 'Settings opens from the tray menu' ($sh -ne [IntPtr]::Zero) "pick='$t'"
 [L]::MoveWindow($sh, 150, 20, 1200, 840, $true) | Out-Null; Start-Sleep -Seconds 3
 Shot 'd6-settings'
 $s0 = IpfJson settings get
-# The other theme style tile, the colour mode list (Dark), the Chameleon switch.
-$tile = if ($s0.themeStyle -eq 'fluent') { @(1090, 270) } else { @(680, 270) }
+# The other theme style tile, the colour mode list (Dark), the Chameleon switch. Screen points
+# for the window at 150,20 1200x840, measured on a debug build over CDP (2026-11-08).
+$tile = if ($s0.themeStyle -eq 'fluent') { @(880, 404) } else { @(614, 404) }
 [G]::Click($tile[0], $tile[1]); Start-Sleep -Seconds 2
 $s1 = IpfJson settings get
 Check 'a click on the other theme style tile switches the style' ($s1.themeStyle -ne $s0.themeStyle) "themeStyle $($s0.themeStyle) -> $($s1.themeStyle)"
 Shot 'd6-settings-style'
-[G]::Click(1188, 513); Start-Sleep -Milliseconds 800
+[G]::Click(1188, 535); Start-Sleep -Milliseconds 800
 [G]::Press(0x23); Start-Sleep -Milliseconds 300; [G]::Press(0x0D); Start-Sleep -Seconds 2
 $s2 = IpfJson settings get
 Check 'the Color mode list picks Dark' ($s2.theme -eq 'dark') "theme $($s1.theme) -> $($s2.theme)"
-[G]::Click(1192, 667); Start-Sleep -Milliseconds 800
+[G]::Click(1193, 689); Start-Sleep -Milliseconds 800
 [G]::Press(0x28); Start-Sleep -Milliseconds 300; [G]::Press(0x0D); Start-Sleep -Seconds 2
 $s3 = IpfJson settings get
 Check 'the Title alignment list picks Center' ($s3.titleAlign -eq 'center') "titleAlign $($s2.titleAlign) -> $($s3.titleAlign)"

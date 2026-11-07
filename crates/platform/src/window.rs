@@ -470,6 +470,15 @@ pub fn key_down_async(vk: u32) -> bool {
     unsafe { GetAsyncKeyState(vk as i32) < 0 }
 }
 
+/// Is `vk` down now, or was it pressed since the previous call? The "since" part is best
+/// effort (another program's query can take it), but it catches a press shorter than the
+/// caller's polling interval most of the time. Call once to forget earlier presses.
+pub fn key_pressed_async(vk: u32) -> bool {
+    // SAFETY: plain FFI call.
+    let state = unsafe { GetAsyncKeyState(vk as i32) };
+    state < 0 || state & 1 != 0
+}
+
 /// Is the primary mouse button physically down ([`key_down_async`] sees physical buttons)?
 pub fn primary_button_down_async() -> bool {
     let vk = if crate::rawinput::buttons_swapped() {

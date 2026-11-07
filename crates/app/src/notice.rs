@@ -49,6 +49,8 @@ pub enum NoticeEvent {
     Action,
     /// Closed with ×, or left alone until it timed out.
     Dismissed,
+    /// The plain second button (「不用」) was clicked.
+    Declined,
 }
 
 struct View {
@@ -66,6 +68,8 @@ struct View {
     fade: Option<Tween>,
     /// Fading out; the notice no longer reacts.
     closing: bool,
+    /// Closed by the second button: the fade's end reports [`NoticeEvent::Declined`].
+    declined: bool,
 }
 
 impl View {
@@ -112,14 +116,31 @@ pub struct Notice {
 
 impl Notice {
     /// Shows `title`, `body` and an `action` button at the bottom-right of the primary
-    /// monitor's work area. `locale` is the text's language (fonts for Han, kana, Hangul).
-    /// Clicks and the timeout arrive as [`Command::Notice`].
+    /// monitor's work area, or at the nearest spot there that covers none of `avoid` (the
+    /// fences: the first start's tips talk about them). `locale` is the text's language (fonts
+    /// for Han, kana, Hangul). Clicks and the timeout arrive as [`Command::Notice`].
     pub fn show(
         ctx: &FenceContext,
         title: &str,
         body: &str,
         action: &str,
         locale: &str,
+        avoid: &[RECT],
+    ) -> Result<Self> {
+        Self::show_with(ctx, title, body, action, None, locale, avoid)
+    }
+
+    /// [`Self::show`] with a plain `secondary` button left of the action (「不用」): it closes
+    /// the notice like × and reports [`NoticeEvent::Declined`]; a click on the card's body
+    /// then does nothing.
+    pub fn show_with(
+        ctx: &FenceContext,
+        title: &str,
+        body: &str,
+        action: &str,
+        secondary: Option<&str>,
+        locale: &str,
+        avoid: &[RECT],
     ) -> Result<Self> {
         let monitor = monitors::enumerate()
             .into_iter()
@@ -127,7 +148,10 @@ impl Notice {
             .ok_or_else(windows_core::Error::empty)?;
         let dpi = monitor.dpi.max(96);
         let scale = dpi as f32 / 96.0;
-        let card = NoticeCard::new(title, body, action, locale)?;
+        let mut card = NoticeCard::new(title, body, action, locale)?;
+        if let Some(text) = secondary {
+            card = card.with_secondary(text);
+        }
         let layout = card.layout()?;
         let (w, h) = (
             (WIDTH * scale).round() as i32,
@@ -135,11 +159,33 @@ impl Notice {
         );
         let margin = (MARGIN * scale).round() as i32;
         let work = monitor.work_area;
-        let rect = RECT {
+        let corner = RECT {
             left: work.right - margin - w,
             top: work.bottom - margin - h,
             right: work.right - margin,
             bottom: work.bottom - margin,
+        };
+        let rect = if avoid
+            .iter()
+            .any(|a| crate::layout::clearance::overlaps(&corner, a, margin))
+        {
+            let spot = crate::layout::clearance::nearest_free(&corner, avoid, &work, margin);
+            match spot {
+                Some(r) => tracing::info!(
+                    corner = ?(corner.left, corner.top),
+                    to = ?(r.left, r.top),
+                    avoided = avoid.len(),
+                    "notice moved off the fences"
+                ),
+                None => tracing::info!(
+                    corner = ?(corner.left, corner.top),
+                    avoided = avoid.len(),
+                    "notice stays in the corner over a fence: no free spot"
+                ),
+            }
+            spot.unwrap_or(corner)
+        } else {
+            corner
         };
 
         let class = WindowClass::register(CLASS, ClassOptions::default())?;
@@ -186,6 +232,7 @@ impl Notice {
             shadow,
             fade: Some(Tween::at(0.0, Instant::now())),
             closing: false,
+            declined: false,
         }));
         shared.borrow_mut().redraw();
         *view.borrow_mut() = Some(shared.clone());
@@ -266,16 +313,25 @@ fn handle(
             Some(0)
         }
         msg::WM_SETCURSOR => {
+            // The body of a card with two buttons does nothing: the arrow there.
+            let v = view.borrow();
+            if v.layout.has_secondary() && matches!(v.hover, NoticeHit::None | NoticeHit::Card) {
+                return None;
+            }
             window::set_standard_cursor(StandardCursor::Hand);
             Some(1)
         }
         msg::WM_LBUTTONUP => {
             let hit = view.borrow().hit(lparam);
-            if hit == NoticeHit::None {
+            let inert_body = hit == NoticeHit::Card && view.borrow().layout.has_secondary();
+            if hit == NoticeHit::None || inert_body {
                 return Some(0);
             }
             window::kill_timer(hwnd, TIMER_DISMISS);
             if hit == NoticeHit::Close {
+                fade_out(hwnd, view);
+            } else if hit == NoticeHit::Secondary {
+                view.borrow_mut().declined = true;
                 fade_out(hwnd, view);
             } else {
                 // What the click opens should not wait for the exit fade.
@@ -305,7 +361,11 @@ fn handle(
                 v.fade = None;
                 window::kill_timer(hwnd, TIMER_FADE);
                 if v.closing {
-                    queue.push(Command::Notice(NoticeEvent::Dismissed));
+                    queue.push(Command::Notice(if v.declined {
+                        NoticeEvent::Declined
+                    } else {
+                        NoticeEvent::Dismissed
+                    }));
                 }
             }
             Some(0)

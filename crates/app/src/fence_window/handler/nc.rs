@@ -39,6 +39,13 @@ pub(super) fn on_windowposchanging(
             window::windowpos_move_rect(lparam, window::window_rect(hwnd))
         }
     {
+        if h.behavior.defer_backdrop.get() {
+            // A title drag moves the window on every mouse move: the next frame redraws the
+            // glass for where it is then (`FenceWindow::on_frame`).
+            v.backdrop_stale = true;
+            v.frames.request();
+            return None;
+        }
         let started = Instant::now();
         let old_ink = v.material_foreground().text_primary;
         if v.update_backdrop_at(next) {
@@ -194,22 +201,10 @@ pub(super) fn on_ncmousemove(
         }
         // Click-to-expand pressed and now moving: hand the drag to the
         // system move loop (the press itself was swallowed).
-        if let Some((px, py)) = v.click_pending
-            && window::key_down(msg::VK_LBUTTON)
-        {
-            let (tx, ty) = window::drag_threshold();
-            let (cx, cy) = (msg::lo_i16(lparam), msg::hi_i16(lparam));
-            if (cx - px).abs() > tx || (cy - py).abs() > ty {
-                v.click_pending = None;
-                drop(guard);
-                window::send_message(
-                    hwnd,
-                    msg::WM_SYSCOMMAND,
-                    SC_MOVE_CAPTION,
-                    msg::make_lparam(px, py),
-                );
-                return Some(0);
-            }
+        if v.click_pending.is_some() {
+            drop(guard);
+            drag_click_pending(h, hwnd, (msg::lo_i16(lparam), msg::hi_i16(lparam)));
+            return Some(0);
         }
         if v.rolled_up
             && !v.peeking
@@ -220,7 +215,7 @@ pub(super) fn on_ncmousemove(
             && !menu_open.get()
             && !peek_armed.replace(true)
         {
-            window::set_timer(hwnd, TIMER_PEEK_OPEN, Tooltip::hover_delay_ms());
+            window::set_timer(hwnd, TIMER_PEEK_OPEN, behavior.hover_open_ms());
         }
         if v.peeking {
             window::kill_timer(hwnd, TIMER_PEEK_CLOSE);
@@ -255,9 +250,14 @@ pub(super) fn on_ncmouseleave(
     // non-client area (into the chevron, a tab, another window) the release goes elsewhere,
     // and a later release on the title must not act on the old press.
     h.ncrbutton_press.set(false);
+    // A click-to-expand press holds the mouse captured until its release or drag: leaving the
+    // row then is part of that drag.
+    let captured = window::get_capture() == hwnd;
     let mut guard = view.borrow_mut();
     if let Some(v) = guard.as_mut() {
-        v.click_pending = None;
+        if !captured {
+            v.click_pending = None;
+        }
         if !inside {
             v.set_mouse_inside(false);
         }
@@ -307,14 +307,13 @@ pub(super) fn on_nclbuttondown(
             let mut guard = view.borrow_mut();
             if let Some(v) = guard.as_mut() {
                 if v.locked {
-                    // No drag, but a click on a rolled title still expands it (the drag
-                    // handed over in WM_NCMOUSEMOVE is refused by WM_SYSCOMMAND).
-                    if behavior.click_to_expand.get()
-                        && v.rolled_up
-                        && !v.peeking
-                        && v.roll_anim.is_none()
-                    {
+                    // No drag, but with 「单击标题时展开」 a click on the title still expands it,
+                    // or rolls it up again (the drag handed over on a move is refused by
+                    // WM_SYSCOMMAND).
+                    if behavior.click_to_expand.get() {
                         v.click_pending = Some(start);
+                        drop(guard);
+                        window::set_capture(hwnd);
                     }
                     return Some(0);
                 }
@@ -328,12 +327,11 @@ pub(super) fn on_nclbuttondown(
                         merge_target: 0,
                         merge_at: (i32::MIN, i32::MIN),
                         moved_once: false,
+                        // 「单击标题时展开」: a click without a drag expands a rolled fence and
+                        // rolls an open one up again.
                         origin: WindowDragOrigin::Caption {
                             rect,
-                            click_expand: behavior.click_to_expand.get()
-                                && v.rolled_up
-                                && !v.peeking
-                                && v.roll_anim.is_none(),
+                            click_expand: behavior.click_to_expand.get(),
                         },
                         group: group_members(behavior, hwnd),
                         press: start,
@@ -357,41 +355,102 @@ pub(super) fn on_nclbuttondown(
             return Some(0);
         }
     }
+    // A title or edge press takes the keyboard like a content click (and the Glass drag above):
+    // Ctrl+Z after a move or resize, Delete and F2 reach this fence, not the window in front.
+    focus_session(view, hwnd);
     if wparam as isize == msg::HTCAPTION && behavior.click_to_expand.get() {
-        // Swallow the press: a release without a drag expands the rolled
-        // fence (WM_NCLBUTTONUP); a drag hands over to SC_MOVE.
+        // Swallow the press: a release without a drag expands a rolled fence and rolls an open
+        // one up again; a drag hands over to SC_MOVE. The mouse is captured, so a first move
+        // that already leaves the title row still arrives (WM_MOUSEMOVE, WM_LBUTTONUP).
         let mut guard = view.borrow_mut();
-        if let Some(v) = guard.as_mut()
-            && v.rolled_up
-            && !v.peeking
-            && v.roll_anim.is_none()
-        {
+        if let Some(v) = guard.as_mut() {
             v.click_pending = Some((msg::lo_i16(lparam), msg::hi_i16(lparam)));
+            drop(guard);
+            window::set_capture(hwnd);
             return Some(0);
         }
     }
     None
 }
 
-pub(super) fn on_nclbuttonup(
-    h: &HandlerCtx,
-    _hwnd: HWND,
-    _wparam: usize,
-    _lparam: isize,
-) -> Option<isize> {
-    let HandlerCtx { view, queue, .. } = h;
-    let fence_id = h.fence_id;
-    let expand = view.borrow_mut().as_mut().is_some_and(|v| {
+/// Click-to-expand (`click_pending`, the swallowed title press): the pointer moved to `pt`
+/// (screen px) with the button held. Past the drag threshold the press becomes a title drag
+/// in the system move loop, grabbed at the press point, so the fence follows the pointer from
+/// the first step however far that one went. True while a press was pending.
+pub(super) fn drag_click_pending(h: &HandlerCtx, hwnd: HWND, pt: (i32, i32)) -> bool {
+    let start = {
+        let mut guard = h.view.borrow_mut();
+        let Some(v) = guard.as_mut() else {
+            return false;
+        };
+        let Some((px, py)) = v.click_pending else {
+            return false;
+        };
+        if !window::key_down(msg::VK_LBUTTON) {
+            // The release went elsewhere: no click, no drag.
+            v.click_pending = None;
+            drop(guard);
+            window::release_capture();
+            return true;
+        }
+        let (tx, ty) = window::drag_threshold();
+        if (pt.0 - px).abs() <= tx && (pt.1 - py).abs() <= ty {
+            return true;
+        }
+        v.click_pending = None;
+        (px, py)
+    };
+    tracing::info!(
+        fence = %h.fence_id,
+        moved = ?(pt.0 - start.0, pt.1 - start.1),
+        "click-to-expand press became a title drag"
+    );
+    // ReleaseCapture sends WM_CAPTURECHANGED synchronously: no borrow held.
+    window::release_capture();
+    window::send_message(
+        hwnd,
+        msg::WM_SYSCOMMAND,
+        SC_MOVE_CAPTION,
+        msg::make_lparam(start.0, start.1),
+    );
+    true
+}
+
+/// Click-to-expand: the swallowed title press was released without a drag (wherever the
+/// pointer is: the press captured the mouse). The click toggles the roll. True when a press
+/// was pending.
+pub(super) fn release_click_pending(h: &HandlerCtx, hwnd: HWND) -> bool {
+    let pending = h.view.borrow_mut().as_mut().is_some_and(|v| {
         let e = v.click_pending.take().is_some();
         if e {
-            // The next press may arrive as WM_NCLBUTTONDBLCLK; it must not
-            // re-roll the fence this click just expanded.
+            // The next press may arrive as WM_NCLBUTTONDBLCLK; it must not toggle the fence
+            // again (this click already did).
             v.suppress_dblclk = true;
         }
         e
     });
-    if expand {
-        queue.push(Command::ToggleRollUp(fence_id));
+    if !pending {
+        return false;
+    }
+    if window::get_capture() == hwnd {
+        window::release_capture();
+    }
+    tracing::info!(fence = %h.fence_id, "title clicked: click-to-expand toggles the roll");
+    h.queue.push(Command::ToggleRollUp(h.fence_id));
+    // A title click ends the desktop selection, as a click elsewhere would.
+    if !h.behavior.selection.borrow().is_empty() {
+        h.queue.push(Command::ClearFenceSelection);
+    }
+    true
+}
+
+pub(super) fn on_nclbuttonup(
+    h: &HandlerCtx,
+    hwnd: HWND,
+    _wparam: usize,
+    _lparam: isize,
+) -> Option<isize> {
+    if release_click_pending(h, hwnd) {
         return Some(0);
     }
     None
@@ -405,6 +464,12 @@ pub(super) fn on_nclbuttondblclk(
 ) -> Option<isize> {
     let HandlerCtx { view, queue, .. } = h;
     let fence_id = h.fence_id;
+    // The bottom edge, as Windows' edges stretch a window: the height that shows every icon
+    // (适应内容大小). DefWindowProc would stretch the fence to the screen's height instead.
+    if wparam as isize == msg::HTBOTTOM {
+        queue.push(Command::FitToContent(fence_id));
+        return Some(0);
+    }
     if wparam as isize == msg::HTCAPTION {
         let suppressed = view
             .borrow_mut()
@@ -560,16 +625,12 @@ pub(super) fn on_move(
     let HandlerCtx { view, .. } = h;
     let mut guard = view.borrow_mut();
     if let Some(v) = guard.as_mut() {
-        let old_ink = v.material_foreground().text_primary;
-        if v.update_backdrop() {
-            if old_ink != v.material_foreground().text_primary
-                || (v.theme.liquid_glass && v.row_metrics().is_some())
-            {
-                // Moving clear glass across a light/dark boundary also changes the icon labels.
-                let _ = v.redraw();
-            } else {
-                let _ = v.redraw_chrome_only();
-            }
+        if h.behavior.defer_backdrop.get() {
+            // Moved by a title drag on a mouse move: the next frame redraws the backdrop.
+            v.backdrop_stale = true;
+            v.frames.request();
+        } else {
+            v.refresh_backdrop();
         }
         v.update_shadow();
     }
@@ -626,6 +687,14 @@ pub(super) fn on_entersizemove(
     rect_at_enter.set(r);
     grab_offset.set((start_x - r.left, start_y - r.top));
     h.grab_dpi.set(monitors::dpi_for_window(hwnd));
+    h.movings.set(0);
+    tracing::debug!(
+        caption = caption.is_some(),
+        start = ?(start_x, start_y),
+        cursor = ?(pt.x, pt.y),
+        rect = ?(r.left, r.top, r.right - r.left, r.bottom - r.top),
+        "move loop entered"
+    );
     merge_target.set(0);
     merge_at.set((i32::MIN, i32::MIN));
     window::kill_timer(hwnd, TIMER_PEEK_OPEN);
@@ -681,6 +750,17 @@ pub(super) fn on_exitsizemove(
     // where it is (possibly on another fence's title): never merge then.
     let esc = window::key_down(msg::VK_ESCAPE) || h.move_cancelled.get();
     let cancelled = rect == at_enter || esc;
+    let cursor = window::cursor_pos();
+    tracing::debug!(
+        moved,
+        cancelled,
+        esc,
+        movings = h.movings.get(),
+        rect = ?(rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top),
+        at_enter = ?(at_enter.left, at_enter.top),
+        cursor = ?(cursor.x, cursor.y),
+        "move loop ended"
+    );
     let group = std::mem::take(&mut *h.group.borrow_mut());
     let merge_into = if moved && !cancelled && group.is_empty() && !shows_tool(view) {
         merge_target_under_cursor(hwnd)
@@ -738,6 +818,10 @@ pub(super) fn on_exitsizemove(
         // The close timer was cancelled on WM_ENTERSIZEMOVE; its arm
         // re-checks the cursor and re-arms while it is still inside.
         window::set_timer(hwnd, TIMER_PEEK_CLOSE, PEEK_CLOSE_MS);
+    }
+    if cancelled {
+        // Put back under a pointer that stayed elsewhere (Esc over another fence's title).
+        super::leave_if_pointer_gone(hwnd);
     }
     Some(0)
 }
@@ -817,6 +901,8 @@ pub(super) fn on_sizing(h: &HandlerCtx, hwnd: HWND, wparam: usize, lparam: isize
         min_w,
         min_h: (rows.fixed + rows.step).round() as i32,
         rolled_h: v.rolled_up.then(|| v.rolled_h_px()),
+        // A tool fence has no rows of icons to fit.
+        fit_h: (!v.rolled_up && !v.shows_tool()).then(|| v.fitting_height_px()),
     };
     drop(guard);
     // SAFETY: lParam is the RECT* being sized for this message.
@@ -835,13 +921,33 @@ pub(super) fn on_sizing(h: &HandlerCtx, hwnd: HWND, wparam: usize, lparam: isize
         dist: (SNAP_DIST_DIP as f32 * scale) as i32,
         align: !snap_paused(),
     });
+    let edges = SizingEdges::from_wmsz(wparam);
     let guides = size_among(
         rect,
         &window::window_rect(hwnd),
-        SizingEdges::from_wmsz(wparam),
+        edges,
         &rules,
         near.as_ref(),
     );
+    // A dragged edge stops at the work area (under the taskbar the fence could not be reached,
+    // and a restart, which keeps saved rects inside the work area, would move it): the saved
+    // rect stays where the window is.
+    if let Some(w) = work {
+        // A rolled title row keeps its height whichever edge is dragged.
+        let vertical = rules.rolled_h.is_none();
+        if edges.bottom && vertical {
+            rect.bottom = rect.bottom.min(w.bottom).max(rect.top + rules.min_h);
+        }
+        if edges.top && vertical {
+            rect.top = rect.top.max(w.top).min(rect.bottom - rules.min_h);
+        }
+        if edges.right {
+            rect.right = rect.right.min(w.right).max(rect.left + rules.min_w);
+        }
+        if edges.left {
+            rect.left = rect.left.max(w.left).min(rect.right - rules.min_w);
+        }
+    }
     show_guides(behavior, hwnd, &guides);
     Some(1)
 }
@@ -865,6 +971,7 @@ pub(super) fn on_moving(
     // SAFETY: lParam is the RECT* of the window being dragged for this
     // message.
     let rect = unsafe { &mut *(lparam as *mut RECT) };
+    h.movings.set(h.movings.get() + 1);
     // The loop does not pass a right press on to WM_RBUTTONDOWN: read the button itself.
     if !h.move_cancelled.get() && window::secondary_button_down_async() {
         cancel_move(h, hwnd);
@@ -927,12 +1034,15 @@ pub(super) fn on_moving(
             (SNAP_DIST_DIP as f32 * scale) as i32,
         );
     }
-    let radius = view
+    let (radius, hang) = view
         .try_borrow()
         .ok()
-        .and_then(|g| g.as_ref().map(|v| v.theme.corner_radius))
-        .unwrap_or(8.0);
-    update_drag_feedback(behavior, hwnd, rect, merge, &guides, radius);
+        .and_then(|g| {
+            g.as_ref()
+                .map(|v| (v.theme.corner_radius, v.open_hang_px(rect)))
+        })
+        .unwrap_or((8.0, (0, 0)));
+    update_drag_feedback(behavior, hwnd, rect, hang, merge, &guides, radius);
     // Re-sent while the pointer moves along a target's strip so the
     // insertion gap follows it (cheap: the target ignores an unchanged slot).
     let target_changed = merge_target.replace(target) != target;

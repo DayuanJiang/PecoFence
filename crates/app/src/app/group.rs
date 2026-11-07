@@ -3,7 +3,8 @@
 //! the selection, and a click on the desktop or on any fence ends it. Selected fences wear a
 //! white ring, like the other drag feedback; a title drag of one of them moves them all
 //! (`fence_window::group`). A marquee that touches no fence and selects no Windows icon still
-//! offers a new fence there, unless 「在桌面空白处拖出矩形时提供“在此新建栅栏”」 is off.
+//! offers a new fence or a folder fence there (two small buttons at its corner, see
+//! `marquee_offer.rs`), unless 「在桌面空白处拖出矩形时显示“新建栅栏”按钮」 is off.
 
 use super::*;
 use crate::anchor::{MARQUEE_MIN_PX, MarqueeEvent};
@@ -81,6 +82,39 @@ impl App {
                     w.end_desktop_band();
                 }
             }
+        }
+    }
+
+    /// A marquee on the empty desktop that touched nothing: two small buttons at its
+    /// bottom-right corner offer a fence or a folder fence there. They take neither the
+    /// foreground nor the keyboard (the menu that came before took both, so Delete and a new
+    /// drag did nothing until it was closed).
+    pub(super) fn offer_new_fence(&mut self, rect: RECT) {
+        self.marquee_offer = None;
+        match crate::marquee_offer::MarqueeOffer::show(&self.ctx, rect) {
+            Ok(offer) => self.marquee_offer = Some((offer, rect)),
+            Err(e) => tracing::warn!(error = %e, "marquee offer not shown"),
+        }
+    }
+
+    /// The offer's buttons were clicked or went away (`Command::MarqueeOffer`).
+    pub(super) fn on_marquee_offer(&mut self, event: crate::marquee_offer::OfferEvent) {
+        use crate::marquee_offer::OfferEvent;
+        let Some((_offer, rect)) = self.marquee_offer.take() else {
+            return;
+        };
+        tracing::info!(?event, ?rect, "marquee offer answered");
+        match event {
+            OfferEvent::NewFence => self.create_fence_with_rename(rect),
+            OfferEvent::ShowFolder => match pecofence_platform::filedialog::pick_folder(
+                None,
+                pecofence_core::i18n::text("选择要在桌面显示的文件夹"),
+            ) {
+                Ok(Some(folder)) => self.create_portal_in(folder, rect),
+                Ok(None) => tracing::info!("show folder here: no folder picked"),
+                Err(e) => tracing::warn!(error = %e, "folder picker failed"),
+            },
+            OfferEvent::Dismissed(_) => {}
         }
     }
 

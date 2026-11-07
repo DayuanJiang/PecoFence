@@ -219,6 +219,14 @@ pub struct FenceDto {
     /// of its monitor around the other fences (像桌面一样排列).
     #[serde(default)]
     pub desktop_layout: bool,
+    /// The inbox only, while `desktopLayout`: 自由摆放, each icon stays in the grid cell it is
+    /// dropped in instead of standing down the columns in order (on in a new configuration).
+    #[serde(default)]
+    pub free_placement: bool,
+    /// 自由摆放: the grid cell `[column, row]` of each icon (by item id) on these monitors,
+    /// counted from the top-left of the work area.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub desktop_cells: std::collections::BTreeMap<Uuid, [u16; 2]>,
     /// `default` | `clear` | `solid` | `transparent`.
     pub opacity: String,
     /// `#RRGGBB` or `null`.

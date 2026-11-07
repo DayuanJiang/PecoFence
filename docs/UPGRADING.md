@@ -87,9 +87,25 @@ does not bring the tools back. The daily backups still have them: when you retur
 to the later version, restore the daily backup from before the downgrade in
 Settings → 布局与备份 (the files are in the `backups` folder next to `config.json`).
 That folder keeps the last seven backups and 0.2.5 adds one for each day it saves,
-so restore within a week. For a copy that does not age out, export the configuration
-with 导出 / 导入配置文件 before going back and import it later; an import keeps
-脚本栅栏 off until you turn it on again.
+so restore within a week.
+
+A daily backup is made at the first save of the day, so it does not have what you
+changed later that day: a note written on the day you go back is in no daily
+backup. Before going back, export the configuration with 导出 / 导入配置文件 and
+import that file when you return (an import keeps 脚本栅栏 off until you turn it on
+again); such a file also does not age out. Without an export, the text may still be
+in `config.bak` next to `config.json` while 0.2.5 has saved only once: copy that
+file somewhere else before you start the later version again (its first save
+replaces `config.bak`), then import the copy.
+
+## Going back to an earlier version from a later one
+
+Versions after 0.3.1 record at every save which version made it (`savedBy` in
+`config.json`). When such a version opens a file a later version saved, it first keeps
+a copy in the `backups` folder, named for the day and the later version
+(`2026-12-01-0.4.0.json`), because its own first save drops what only the later
+version knows. When you return to the later version, restore that copy in
+Settings → 布局与备份. Like the daily backups, it ages out after seven newer ones.
 
 ## Windows startup
 

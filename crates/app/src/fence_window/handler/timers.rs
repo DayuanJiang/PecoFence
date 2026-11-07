@@ -224,6 +224,10 @@ pub(super) fn on_timer_peek_open(
                 v.expanded_h_px = v.title_h_px() + (200.0 * v.scale()) as i32;
             }
             v.start_roll_anim(false);
+            // Above the other fences while it is open: a neighbour the push cannot clear (it
+            // stops at the bottom of the screen) must not cover it (#197).
+            v.hover_raised = true;
+            h.queue.push(Command::RaiseForHover(hwnd));
         }
     }
     Some(0)
@@ -259,6 +263,8 @@ pub(super) fn on_timer_drag_peek(
                 v.expanded_h_px = v.title_h_px() + (200.0 * v.scale()) as i32;
             }
             v.start_roll_anim(false);
+            v.hover_raised = true;
+            h.queue.push(Command::RaiseForHover(hwnd));
         }
     }
     Some(0)

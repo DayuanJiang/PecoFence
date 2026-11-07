@@ -82,12 +82,26 @@ impl FenceViewState {
         y >= 0.0 && y < self.row_metrics_of(ViewLayout::Details).header_h
     }
 
+    /// At its root folder a portal's title glyph opens that folder in Explorer (#192); inside
+    /// a subfolder the same glyph is the up button. A left tab column has no glyph button at
+    /// the root, and a folder that cannot be found opens nothing.
+    pub(super) fn glyph_opens_folder(&self) -> bool {
+        self.is_portal
+            && self.deco.folder_icon
+            && !self.deco.up_button
+            && !self.portal_missing
+            && !self.tabs_on_rail()
+    }
+
     /// Is the client-pixel point on the portal "up" button? A tab strip in the title row has it
     /// on the shown tab's folder glyph (`FenceChrome::tab_up_box`); a left tab column at the end
     /// of the shown tab's row (`rail_up_box`); a single title on its folder glyph
-    /// (`FenceChrome::lone_up_box`), or at the far left while the glyph is hidden.
+    /// (`FenceChrome::lone_up_box`), or at the far left while the glyph is hidden. At the
+    /// portal's root the glyph is the same button, opening the folder instead
+    /// ([`Self::glyph_opens_folder`]).
     pub(super) fn up_button_at(&self, x_px: i32, y_px: i32) -> bool {
-        if !self.deco.up_button {
+        let opens = self.glyph_opens_folder();
+        if !self.deco.up_button && !opens {
             return false;
         }
         let scale = self.scale();
@@ -96,7 +110,11 @@ impl FenceViewState {
             // The pill is where it is drawn (sliding, dragged); a scrolled strip's cut-off part
             // takes no click (`tab_at`). A tab without its folder glyph has no button.
             let i = self.active_index();
-            let Some(t) = self.tabs.get(i).filter(|t| t.up_button && t.folder_icon) else {
+            let Some(t) = self
+                .tabs
+                .get(i)
+                .filter(|t| (t.up_button || opens) && t.folder_icon)
+            else {
                 return false;
             };
             let (Some(&tab_x), Some(&(_, tab_w))) = (
@@ -178,7 +196,9 @@ impl FenceViewState {
         let (w_px, h_px) = self.chrome_panel.size_px();
         // Under the tabs of a left tab column (the fence's title bar). Collapsed to the column
         // there is none: a tab click expands the fence. Hidden by the user, its spot is title.
-        if self.column_collapsed || self.behavior.hide_count_and_chevron.get() {
+        // 像桌面一样排列 has no title row: the spot is part of an icon's cell, where a press
+        // starts a rectangle (a drag from it moved the whole 「桌面」 fence).
+        if self.column_collapsed || self.behavior.hide_count_and_chevron.get() || self.bare() {
             return false;
         }
         let r = if self.tabs_on_rail() {
@@ -241,7 +261,10 @@ impl FenceViewState {
             None if self.bare() && !self.desktop_slots.is_empty() => {
                 // 像桌面一样排列: the cells `arrange_desktop` placed down the columns.
                 let grid = Grid::grouped(self.grid_metrics(), width_dip, n, &[]);
-                ItemLayout::Grid(grid.with_slots(self.desktop_slots.clone(), n))
+                ItemLayout::Grid(
+                    grid.with_slots(self.desktop_slots.clone(), n)
+                        .placed_freely(self.places_freely()),
+                )
             }
             None => {
                 ItemLayout::Grid(
@@ -539,6 +562,15 @@ impl FenceViewState {
             return None;
         }
         let y = y + self.scroll_y;
+        if self.bare() {
+            // 像桌面一样排列: as on the Windows desktop only the icon and its name take a press;
+            // the rest of a cell is desktop, where a press starts a rectangle (a press at the top
+            // right of a cell dragged the whole 「桌面」 fence, then the Recycle Bin).
+            let m = self.grid_metrics();
+            return layout
+                .hit_test(x, y, self.items.len())
+                .filter(|&i| on_icon_or_label(&m, &layout.cell(i), x, y));
+        }
         if self.item_motion.is_empty() {
             return layout.hit_test(x, y, self.items.len());
         }
@@ -553,4 +585,14 @@ impl FenceViewState {
             c.contains(x, y)
         })
     }
+}
+
+/// The icon of `cell` (with a few DIPs of slack) or the name under it, in content DIPs.
+pub(super) fn on_icon_or_label(m: &GridMetrics, cell: &CellRect, x: f32, y: f32) -> bool {
+    const SLACK: f32 = 4.0;
+    let left = cell.x + (cell.w - m.icon) / 2.0 - SLACK;
+    let top = cell.y + m.icon_top - SLACK;
+    let size = m.icon + 2.0 * SLACK;
+    let on_icon = x >= left && x < left + size && y >= top && y < top + size;
+    on_icon || m.label_rect(*cell).contains(x, y)
 }

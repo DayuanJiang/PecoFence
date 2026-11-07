@@ -537,7 +537,9 @@ impl PopupMenu {
     }
 
     /// Shows the menu at screen coordinates and returns the chosen command id (0 = dismissed).
-    /// `owner` is brought to the foreground first (required for tray menus to dismiss properly).
+    /// `owner` is brought to the foreground first: a menu without it cannot be dismissed. When
+    /// another window keeps the foreground the menu does not open (0), and an open menu that
+    /// finds itself without it closes.
     pub fn show(&self, owner: HWND, x: i32, y: i32) -> u32 {
         self.show_aligned(owner, x, y, true)
     }
@@ -552,15 +554,109 @@ impl PopupMenu {
         if bottom_align {
             flags |= TPM_BOTTOMALIGN as u32;
         }
-        // SAFETY: plain FFI calls; WM_NULL nudge is the documented tray-menu workaround.
+        // A menu opened while another thread has the foreground never gets Esc, and clicks
+        // outside it go to the other window: it stays open until an item is chosen, and the
+        // UI thread waits in it all that time (a Windows Security toast took the foreground
+        // right at a right-click, and PecoFence stood still for 20 minutes).
+        let Some(foreground_step) = take_foreground(owner) else {
+            let class = crate::desktop::class_name(crate::desktop::foreground_window());
+            tracing::warn!(
+                class = %class,
+                "popup menu not opened: another window keeps the foreground"
+            );
+            return 0;
+        };
+        MENU_FOREGROUND_LOST.with(|n| n.set(0));
+        // SAFETY: plain FFI calls; WM_NULL nudge is the documented tray-menu workaround. The
+        // timer's procedure runs on this thread inside the menu's message loop.
         unsafe {
-            let _ = SetForegroundWindow(owner);
+            let timer = SetTimer(
+                Some(owner),
+                MENU_FOREGROUND_TIMER,
+                MENU_FOREGROUND_CHECK_MS,
+                Some(check_menu_foreground),
+            );
             let shown = Instant::now();
             let cmd = TrackPopupMenuEx(self.hmenu, flags, x, y, owner, None);
-            MENU_TIME_US.fetch_add(shown.elapsed().as_micros() as u64, Ordering::Relaxed);
+            let open = shown.elapsed();
+            if timer != 0 {
+                let _ = KillTimer(Some(owner), MENU_FOREGROUND_TIMER);
+            }
+            MENU_TIME_US.fetch_add(open.as_micros() as u64, Ordering::Relaxed);
             let _ = PostMessageW(Some(owner), WM_NULL as u32, WPARAM(0), LPARAM(0));
+            let lost = MENU_FOREGROUND_LOST.with(|n| n.get()) >= MENU_FOREGROUND_CHECKS;
+            tracing::info!(
+                cmd = cmd.0,
+                open_ms = open.as_millis() as u64,
+                foreground_step,
+                check_timer = timer != 0,
+                closed_for_lost_foreground = lost,
+                "popup menu closed"
+            );
             cmd.0 as u32
         }
+    }
+}
+
+/// How often an open popup menu checks that this thread still has the foreground, and how many
+/// checks in a row must find another thread's window there before the menu is closed.
+const MENU_FOREGROUND_CHECK_MS: u32 = 100;
+const MENU_FOREGROUND_CHECKS: u32 = 2;
+/// The check's timer id on the menu's owner (its own procedure, so the owner never sees it).
+const MENU_FOREGROUND_TIMER: usize = 0x5046_4D43;
+
+thread_local! {
+    /// Checks in a row that found another thread's window in the foreground while a menu is
+    /// open (see [`check_menu_foreground`]).
+    static MENU_FOREGROUND_LOST: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+}
+
+/// Whether the foreground window belongs to this thread: only then does an open menu get Esc
+/// and the clicks outside it that close it.
+fn foreground_is_ours() -> bool {
+    // SAFETY: plain FFI calls.
+    unsafe {
+        let fg = GetForegroundWindow();
+        !fg.0.is_null() && GetWindowThreadProcessId(fg, None) == GetCurrentThreadId()
+    }
+}
+
+/// Brings `owner` to the foreground before its menu opens. Returns the step that made this
+/// thread the foreground one: 1 a plain SetForegroundWindow, 2 the same after an empty input
+/// event (the foreground lock refuses a process that did not get the last input, as for a
+/// menu the CLI opens). None when another thread still has it. (Attaching to the foreground
+/// thread's input for the call was tried as well: the fence menu it opened ignored Esc.)
+fn take_foreground(owner: HWND) -> Option<u32> {
+    // SAFETY: plain FFI calls; the injected event has no flags, so it moves and presses nothing.
+    unsafe {
+        let _ = SetForegroundWindow(owner);
+        if foreground_is_ours() {
+            return Some(1);
+        }
+        mouse_event(0, 0, 0, 0, 0);
+        let _ = SetForegroundWindow(owner);
+        foreground_is_ours().then_some(2)
+    }
+}
+
+/// Timer procedure while a popup menu is open: when another program took the foreground
+/// between [`take_foreground`] and the menu's start, nothing could close the menu any more, so
+/// it is closed here once the foreground stayed elsewhere for two checks. (Measured: a
+/// foreground change after the menu opened closes it by itself.)
+unsafe extern "system" fn check_menu_foreground(_: HWND, _: u32, _: usize, _: u32) {
+    let lost = if foreground_is_ours() {
+        0
+    } else {
+        MENU_FOREGROUND_LOST.with(|n| n.get()) + 1
+    };
+    MENU_FOREGROUND_LOST.with(|n| n.set(lost));
+    if lost == MENU_FOREGROUND_CHECKS {
+        let class = crate::desktop::class_name(crate::desktop::foreground_window());
+        tracing::warn!(
+            class = %class,
+            "popup menu without the foreground; closing it"
+        );
+        end_menu();
     }
 }
 

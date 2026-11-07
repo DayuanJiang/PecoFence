@@ -1,5 +1,6 @@
-//! A notice card in the fence look: title, one message, an accent action button and a close
-//! glyph on an opaque card (the app's `notice.rs` owns the window). Sizes follow the Windows 11
+//! A notice card in the fence look: title, one message, an accent action button (with an
+//! optional plain button beside it, e.g. 「不用」) and a close glyph on an opaque card (the
+//! app's `notice.rs` owns the window). Sizes follow the Windows 11
 //! toast: 360 DIPs wide, Body Strong 14 title, Body 14 message, a 32 DIP button.
 
 use crate::theme::{Theme, font_icons, font_text, with_alpha};
@@ -14,6 +15,8 @@ const PAD: f32 = 16.0;
 const CLOSE: f32 = 32.0;
 const BUTTON_H: f32 = 32.0;
 const BUTTON_MIN_W: f32 = 120.0;
+/// Between the plain and the accent button (WinUI's ContentDialog button spacing).
+const BUTTON_GAP: f32 = 8.0;
 /// ChromeClose in Segoe Fluent Icons.
 const CLOSE_GLYPH: &str = "\u{E8BB}";
 
@@ -22,9 +25,12 @@ const CLOSE_GLYPH: &str = "\u{E8BB}";
 pub enum NoticeHit {
     #[default]
     None,
-    /// The card itself, which acts like the button (a toast's body opens it too).
+    /// The card itself, which acts like the button (a toast's body opens it too) unless the
+    /// card has a second button: then the body does nothing.
     Card,
     Button,
+    /// The plain button left of the accent one ([`NoticeCard::with_secondary`]).
+    Secondary,
     Close,
 }
 
@@ -35,10 +41,16 @@ pub struct NoticeLayout {
     title: Rect,
     body: Rect,
     button: Rect,
+    secondary: Option<Rect>,
     close: Rect,
 }
 
 impl NoticeLayout {
+    /// The card has a second button, so a click on its body does nothing.
+    pub fn has_secondary(&self) -> bool {
+        self.secondary.is_some()
+    }
+
     pub fn hit(&self, x: f32, y: f32) -> NoticeHit {
         let inside = |r: &Rect| x >= r.left && x < r.right && y >= r.top && y < r.bottom;
         if !(0.0..WIDTH).contains(&x) || !(0.0..self.height).contains(&y) {
@@ -47,6 +59,8 @@ impl NoticeLayout {
             NoticeHit::Close
         } else if inside(&self.button) {
             NoticeHit::Button
+        } else if self.secondary.as_ref().is_some_and(inside) {
+            NoticeHit::Secondary
         } else {
             NoticeHit::Card
         }
@@ -57,6 +71,7 @@ pub struct NoticeCard {
     title: String,
     body: String,
     action: String,
+    secondary: Option<String>,
     title_format: TextFormat,
     body_format: TextFormat,
     button_format: TextFormat,
@@ -80,6 +95,7 @@ impl NoticeCard {
             title: title.to_string(),
             body: body.to_string(),
             action: action.to_string(),
+            secondary: None,
             title_format: wrapping(TextFormat::with_locale(
                 font_text(),
                 14.0,
@@ -105,6 +121,13 @@ impl NoticeCard {
                 locale,
             )?),
         })
+    }
+
+    /// Adds a plain button labelled `text` left of the action button (「不用」 beside
+    /// 「试一试」).
+    pub fn with_secondary(mut self, text: &str) -> Self {
+        self.secondary = Some(text.to_string());
+        self
     }
 
     pub fn layout(&self) -> Result<NoticeLayout> {
@@ -134,12 +157,31 @@ impl NoticeCard {
             WIDTH - PAD,
             button_top + BUTTON_H,
         );
+        let secondary = match &self.secondary {
+            Some(text) => {
+                let label_w = TextLayout::new(text, &self.button_format, 1000.0, 100.0)?
+                    .metrics()
+                    .width;
+                let w = (label_w + 24.0)
+                    .max(BUTTON_MIN_W)
+                    .min(body_w - button_w - BUTTON_GAP);
+                let right = button.left - BUTTON_GAP;
+                Some(Rect::new(
+                    right - w,
+                    button_top,
+                    right,
+                    button_top + BUTTON_H,
+                ))
+            }
+            None => None,
+        };
         let close = Rect::new(WIDTH - 8.0 - CLOSE, 8.0, WIDTH - 8.0, 8.0 + CLOSE);
         Ok(NoticeLayout {
             height: button.bottom + PAD,
             title,
             body,
             button,
+            secondary,
             close,
         })
     }
@@ -162,7 +204,7 @@ impl NoticeCard {
             &RoundedRect::uniform(card, theme.corner_radius),
             &s.create_solid_brush(with_alpha(theme.solid_fill, 1.0))?,
         );
-        if hover == NoticeHit::Card {
+        if hover == NoticeHit::Card && layout.secondary.is_none() {
             s.fill_rounded_rect(
                 &RoundedRect::uniform(card, theme.corner_radius),
                 &s.create_solid_brush(theme.subtle_hover)?,
@@ -221,6 +263,32 @@ impl NoticeCard {
             &layout.button,
             &s.create_solid_brush(on_accent)?,
         );
+
+        // The plain button: WinUI's standard button (control fill, hairline stroke).
+        if let (Some(text), Some(rect)) = (&self.secondary, &layout.secondary) {
+            let shape = RoundedRect::uniform(*rect, 4.0);
+            s.fill_rounded_rect(&shape, &s.create_solid_brush(theme.layer_fill)?);
+            if hover == NoticeHit::Secondary {
+                s.fill_rounded_rect(&shape, &s.create_solid_brush(theme.subtle_hover)?);
+            }
+            let inset = Rect::new(
+                rect.left + 0.5,
+                rect.top + 0.5,
+                rect.right - 0.5,
+                rect.bottom - 0.5,
+            );
+            s.draw_rounded_rect(
+                &RoundedRect::uniform(inset, 4.0),
+                &s.create_solid_brush(theme.stroke)?,
+                1.0,
+            );
+            s.draw_text(
+                text,
+                &self.button_format,
+                rect,
+                &s.create_solid_brush(theme.text_primary)?,
+            );
+        }
 
         if hover == NoticeHit::Close {
             s.fill_rounded_rect(

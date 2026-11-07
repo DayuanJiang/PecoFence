@@ -301,6 +301,12 @@
     DwmExtendFrameIntoClientArea
     DwmIsCompositionEnabled
     DwmFlush
+    // ---- frame clock timeout (frameclock.rs)
+    CreateWaitableTimerExW
+    SetWaitableTimer
+    CREATE_WAITABLE_TIMER_HIGH_RESOLUTION
+    TIMER_ALL_ACCESS
+    WAIT_TIMEOUT
     LoadLibraryExW
     LOAD_LIBRARY_SEARCH_SYSTEM32
     WAIT_FAILED

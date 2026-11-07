@@ -29,9 +29,8 @@
 //! merge <title> <into-title> merge a fence into another one's tab strip
 //! delete <title>
 //! menu-delete <title>        the fence menu's 删除栅栏 (the same path, including its prompt)
-//! new-fence <x> <y> <w> <h>  open the 「在此新建栅栏」 menu for that rectangle (physical px), as
-//!                            a desktop marquee over no fence does; the script waits until
-//!                            the menu is closed
+//! new-fence <x> <y> <w> <h>  show the 「新建栅栏」 / 「在此显示文件夹…」 buttons for that
+//!                            rectangle (physical px), as a desktop marquee over no fence does
 //! drop-desktop <title>       first item of the fence dropped on the bare desktop (inbox + rules)
 //! move <title> <into-title>  first item of the fence moved into another fence (drop minus OLE)
 //! transfer <path> <title>    shell-move a file into the portal fence's folder (worker thread)
@@ -429,7 +428,7 @@ impl App {
                 // What the anchor reports for a drag over the bare desktop from (x, y) to
                 // (x + w, y + h); `add` = Ctrl / Shift held. `marquee` presses, drags and
                 // releases; `marquee-drag` stops before the release, `marquee-end` releases.
-                // Releasing over no fence opens the new-fence menu, so scripts draw over fences.
+                // Releasing over no fence shows the new-fence buttons, so scripts draw over fences.
                 [
                     verb @ ("marquee" | "marquee-drag" | "marquee-end"),
                     x,
@@ -466,8 +465,10 @@ impl App {
                             .fence(id)
                             .and_then(|f| f.items.first().map(|r| r.item_id))
                     {
-                        self.queue
-                            .push(Command::MoveItemsToInbox { items: vec![item] });
+                        self.queue.push(Command::MoveItemsToInbox {
+                            items: vec![item],
+                            at: None,
+                        });
                     }
                 }
                 ["move", title, into] => {

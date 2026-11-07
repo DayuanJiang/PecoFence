@@ -11,6 +11,10 @@ pub(super) static TEST_FAILING_RECOVERIES: std::sync::atomic::AtomicU32 =
 /// GPU memory (dedicated plus shared) this process may gain over its baseline before an idle
 /// point rebuilds the render stack to hand it back (`hand_back_gpu_memory`).
 const GPU_REBUILD_GROWTH: u64 = 64 << 20;
+/// The same for software rendering (WARP, the basic display adapter of a virtual machine), whose
+/// surfaces live in this process's own memory and show in its private commit: rolling a fence up
+/// and down kept 35 to 65 KB there each time, which only a rebuild gave back.
+const SOFTWARE_REBUILD_GROWTH: u64 = 8 << 20;
 /// The shortest time between two of those rebuilds.
 const GPU_REBUILD_MIN_GAP: Duration = Duration::from_secs(300);
 
@@ -213,19 +217,28 @@ impl App {
     /// the render stack the way device loss does. DirectComposition and the GPU driver keep
     /// some memory no trim gives back (each new surface size, Liquid Glass resources sized to
     /// every glide frame); a new device starts without it. On integrated GPUs this is system
-    /// memory. WARP and the basic display adapter report 0, so nothing is rebuilt there.
+    /// memory. WARP and the basic display adapter report 0: there the private commit is
+    /// watched instead, with `SOFTWARE_REBUILD_GROWTH`.
     fn hand_back_gpu_memory(&mut self) {
-        let Some((local, shared)) = self.ctx.stack.gpu_memory() else {
+        let Some((software, used)) = self.rebuild_measure() else {
             return;
         };
-        let used = local + shared;
         let mb = |b: u64| (b as f64 / (1u64 << 20) as f64 * 10.0).round() / 10.0;
-        let Some(baseline) = self.gpu_baseline else {
-            tracing::debug!(gpu_mb = mb(used), "GPU memory baseline");
-            self.gpu_baseline = Some(used);
+        let Some(baseline) = self
+            .gpu_baseline
+            .filter(|&(kind, _)| kind == software)
+            .map(|(_, b)| b)
+        else {
+            tracing::debug!(software, mb = mb(used), "GPU memory baseline");
+            self.gpu_baseline = Some((software, used));
             return;
         };
-        if used < baseline.saturating_add(GPU_REBUILD_GROWTH)
+        let growth = if software {
+            SOFTWARE_REBUILD_GROWTH
+        } else {
+            GPU_REBUILD_GROWTH
+        };
+        if used < baseline.saturating_add(growth)
             || self
                 .gpu_rebuilt
                 .is_some_and(|t| t.elapsed() < GPU_REBUILD_MIN_GAP)
@@ -244,13 +257,26 @@ impl App {
             self.schedule_device_retry();
         }
         self.gpu_baseline = None;
-        let after = self.ctx.stack.gpu_memory().map_or(0, |(l, s)| l + s);
+        let after = self.rebuild_measure().map_or(0, |(_, m)| m);
         tracing::info!(
+            software,
+            baseline_mb = mb(baseline),
             before_mb = mb(used),
             after_mb = mb(after),
             ms = (started.elapsed().as_secs_f32() * 1000.0).round(),
             "render stack rebuilt to hand back GPU memory"
         );
+    }
+
+    /// What `hand_back_gpu_memory` watches: `(false, GPU memory)`, or `(true, private commit)`
+    /// when the adapter reports no GPU memory (software rendering).
+    fn rebuild_measure(&self) -> Option<(bool, u64)> {
+        match self.ctx.stack.gpu_memory() {
+            Some((local, shared)) if local + shared > 0 => Some((false, local + shared)),
+            _ => pecofence_platform::memstats::MemoryStats::current()
+                .ok()
+                .map(|m| (true, m.private_commit as u64)),
+        }
     }
 
     pub(super) fn on_icons_ready(&mut self) {
@@ -301,6 +327,8 @@ impl App {
                 started: Some(now),
                 ..FrameRun::default()
             };
+            // Counted per run: frames started by the clock's timeout instead of a compositor tick.
+            self.ctx.frames.take_timeouts();
         }
         let mut more = false;
         // Dying windows are ticked too: their shadow fades on the frame clock until the exit
@@ -324,37 +352,53 @@ impl App {
         if more {
             self.ctx.frames.request();
         } else {
-            // End of an animation run: counted for the activity line, stuttered when it had a
-            // gap of two 60 Hz frames or a frame that took longer than a 60 Hz period to
-            // produce. One by one at info only when it stuttered badly (a gap of six frames, a
-            // frame of three): smaller hitches came by the dozen in an hour and filled most of
-            // the feedback logs.
-            let r = &self.frame_run;
-            let total = now.duration_since(r.started.unwrap_or(now));
-            let ms = crate::share_log::millis;
-            self.activity.animation_runs += 1;
-            if r.max_gap > Duration::from_millis(33) || r.max_frame > Duration::from_millis(16) {
-                self.activity.stuttered_runs += 1;
-                self.activity.max_gap_ms = self.activity.max_gap_ms.max(ms(r.max_gap));
-            }
-            if r.max_gap > Duration::from_millis(100) || r.max_frame > Duration::from_millis(50) {
-                tracing::info!(
-                    frames = r.frames + 1,
-                    total_ms = ms(total),
-                    max_gap_ms = ms(r.max_gap),
-                    max_frame_ms = ms(r.max_frame),
-                    "animation run stuttered"
-                );
-            } else {
-                tracing::debug!(
-                    frames = r.frames + 1,
-                    total_ms = ms(total),
-                    max_gap_ms = ms(r.max_gap),
-                    max_frame_ms = ms(r.max_frame),
-                    "animation run"
-                );
-            }
-            self.frame_prev = None;
+            self.end_frame_run(now);
+        }
+    }
+
+    /// Closes the animation run in progress, whose last frame was at `now`.
+    pub(super) fn end_frame_run(&mut self, now: Instant) {
+        // End of an animation run: counted for the activity line, stuttered when it had a
+        // gap of two 60 Hz frames or a frame that took longer than a 60 Hz period to
+        // produce. One by one at info only when it stuttered badly (a gap of six frames, a
+        // frame of three): smaller hitches came by the dozen in an hour and filled most of
+        // the feedback logs.
+        let r = &self.frame_run;
+        let total = now.duration_since(r.started.unwrap_or(now));
+        let timer_frames = self.ctx.frames.take_timeouts();
+        let ms = crate::share_log::millis;
+        self.activity.animation_runs += 1;
+        if r.max_gap > Duration::from_millis(33) || r.max_frame > Duration::from_millis(16) {
+            self.activity.stuttered_runs += 1;
+            self.activity.max_gap_ms = self.activity.max_gap_ms.max(ms(r.max_gap));
+        }
+        if r.max_gap > Duration::from_millis(100) || r.max_frame > Duration::from_millis(50) {
+            tracing::info!(
+                frames = r.frames + 1,
+                total_ms = ms(total),
+                max_gap_ms = ms(r.max_gap),
+                max_frame_ms = ms(r.max_frame),
+                timer_frames,
+                "animation run stuttered"
+            );
+        } else {
+            tracing::debug!(
+                frames = r.frames + 1,
+                total_ms = ms(total),
+                max_gap_ms = ms(r.max_gap),
+                max_frame_ms = ms(r.max_frame),
+                timer_frames,
+                "animation run"
+            );
+        }
+        self.frame_prev = None;
+        if std::mem::take(&mut self.desktop_arrange_after_frames) {
+            let started = Instant::now();
+            self.arrange_desktop_fence();
+            tracing::debug!(
+                ms = ms(started.elapsed()),
+                "desktop fence arranged after the push animation"
+            );
         }
     }
 }

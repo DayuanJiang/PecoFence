@@ -219,6 +219,11 @@ pub const TEMPORARY_EXTS: &[&str] = &[
     ".opdownload",
 ];
 
+/// An extension as rules compare it: lower case, no leading dot (`.PDF` → `pdf`).
+fn bare_ext(ext: &str) -> String {
+    ext.trim().trim_start_matches('.').to_lowercase()
+}
+
 pub fn ext_of(file_name: &str) -> String {
     match file_name.rfind('.') {
         Some(i) if i > 0 => file_name[i..].to_lowercase(),
@@ -506,6 +511,43 @@ impl RuleSet {
         Decision::Default(self.default_target)
     }
 
+    /// The first enabled rule whose only condition is a list of extensions naming `ext`
+    /// (`pdf` or `.pdf`, any case): the rule the item menu's 「以后把 .pdf 文件都放到这里」
+    /// reports and changes.
+    pub fn extension_rule(&self, ext: &str) -> Option<usize> {
+        let want = bare_ext(ext);
+        self.list.iter().position(|r| {
+            r.enabled
+                && matches!(&r.all_of[..], [Cond::Ext(exts)] if exts.iter().any(|e| bare_ext(e) == want))
+        })
+    }
+
+    /// 「以后把 .pdf 文件都放到这里」: files ending in `ext` go to `target` from now on. The
+    /// rule goes first in the list, so a type rule further up (文件与文档) does not take them.
+    /// The rule [`Self::extension_rule`] finds moves to the front with the new target when
+    /// `ext` is all it lists; otherwise `ext` leaves it and a new rule named `name` goes first.
+    /// Returns the id of the rule that now routes `ext`.
+    pub fn put_extension_first(&mut self, ext: &str, target: Target, name: &str) -> RuleId {
+        let want = bare_ext(ext);
+        if let Some(i) = self.extension_rule(ext) {
+            let Cond::Ext(exts) = &mut self.list[i].all_of[0] else {
+                unreachable!("extension_rule found an extension rule");
+            };
+            if exts.iter().all(|e| bare_ext(e) == want) {
+                let mut rule = self.list.remove(i);
+                rule.target = target;
+                let id = rule.id;
+                self.list.insert(0, rule);
+                return id;
+            }
+            exts.retain(|e| bare_ext(e) != want);
+        }
+        let rule = Rule::new(name, target, vec![Cond::Ext(vec![want])]);
+        let id = rule.id;
+        self.list.insert(0, rule);
+        id
+    }
+
     /// Whether any enabled rule depends on the clock (idle days), so it must be re-run
     /// periodically rather than only when the desktop changes.
     pub fn has_idle_rules(&self) -> bool {
@@ -709,6 +751,56 @@ mod tests {
             origin: Origin::UserDesktop,
             ..Default::default()
         }
+    }
+
+    fn routed(rs: &RuleSet, name: &str) -> Option<Target> {
+        match rs.evaluate(&facts(name)) {
+            Decision::Route { target, .. } => Some(target),
+            _ => None,
+        }
+    }
+
+    /// 「以后把 .pdf 文件都放到这里」 wins over the first-run type rule, moves an extension
+    /// rule of its own to the front, and takes the extension out of a shared one.
+    #[test]
+    fn put_extension_first_routes_the_extension_to_the_target() {
+        let (programs, folders, docs, work, other) = (
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+        );
+        let mut rs = RuleSet::default_presets(programs, folders, docs);
+        assert_eq!(routed(&rs, "Invoice.pdf"), Some(Target::Fence(docs)));
+        assert_eq!(rs.extension_rule(".pdf"), None);
+        let id = rs.put_extension_first(".PDF", Target::Fence(work), ".pdf 文件");
+        assert_eq!(rs.list[0].id, id);
+        assert_eq!(rs.list.len(), 4);
+        assert_eq!(routed(&rs, "Invoice.pdf"), Some(Target::Fence(work)));
+        assert_eq!(routed(&rs, "Notes.docx"), Some(Target::Fence(docs)));
+        assert_eq!(rs.extension_rule("pdf"), Some(0));
+        // Again for another fence: the same rule changes its target (no second rule).
+        rs.list.swap(0, 3);
+        let again = rs.put_extension_first("pdf", Target::Fence(other), "x");
+        assert_eq!((again, rs.list[0].id, rs.list.len()), (id, id, 4));
+        assert_eq!(routed(&rs, "Invoice.pdf"), Some(Target::Fence(other)));
+        // A rule listing several extensions keeps the others.
+        rs.list.insert(
+            0,
+            Rule::new(
+                "office",
+                Target::Fence(docs),
+                vec![Cond::Ext(vec!["docx".into(), "xlsx".into()])],
+            ),
+        );
+        rs.put_extension_first(".xlsx", Target::Inbox, ".xlsx 文件");
+        assert_eq!(routed(&rs, "Budget.xlsx"), Some(Target::Inbox));
+        assert_eq!(routed(&rs, "Notes.docx"), Some(Target::Fence(docs)));
+        assert_eq!(rs.list.len(), 6);
+        // A disabled rule is not the extension's rule.
+        rs.list[0].enabled = false;
+        assert_eq!(rs.extension_rule("xlsx"), None);
     }
 
     #[test]
