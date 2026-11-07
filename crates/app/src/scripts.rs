@@ -602,6 +602,31 @@ mod tests {
     use super::*;
 
     #[test]
+    fn pc_status_selects_a_connected_ipv4_gateway_and_local_disks() {
+        use std::os::windows::process::CommandExt;
+
+        let test = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scripts/test-pc-status.ps1");
+        let output = Command::new("powershell.exe")
+            .args([
+                "-NoProfile",
+                "-NonInteractive",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+            ])
+            .arg(test)
+            .creation_flags(CREATE_NO_WINDOW)
+            .output()
+            .expect("run the PC status regression tests in Windows PowerShell");
+        assert!(
+            output.status.success(),
+            "{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    #[test]
     fn a_stream_screen_follows_swiftbar() {
         let mut s = Screen::default();
         assert_eq!(s.push("a").as_deref(), Some("a"));
