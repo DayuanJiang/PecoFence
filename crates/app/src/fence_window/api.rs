@@ -202,6 +202,7 @@ impl FenceWindow {
             backdrops: ctx.backdrops.borrow().clone(),
             backdrop_crop: None,
             backdrop_rect: None,
+            backdrop_stale: false,
             backdrop_origin: None,
             backdrop_key: format!("backdrop:{:x}", hwnd.0 as isize),
             gpu_glass: RefCell::new(pecofence_render::gpu_glass::GpuGlass::default()),
@@ -2086,6 +2087,19 @@ impl FenceWindow {
         self.with_view(|v| {
             let _ = v.redraw();
         });
+    }
+
+    /// Peek began or ended (`FenceBehavior::floating` changed): redraws this fence if floating
+    /// changes how it looks. Returns whether it did.
+    pub fn redraw_for_floating(&self) -> bool {
+        let mut changes = false;
+        self.with_view(|v| {
+            changes = v.floating_changes_look();
+            if changes {
+                let _ = v.redraw();
+            }
+        });
+        changes
     }
 
     /// The icon cache has new pictures for these draw keys (`IconCache::take_replaced`):

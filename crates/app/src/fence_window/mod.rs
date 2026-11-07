@@ -164,6 +164,9 @@ pub struct Behavior {
     pub expand_room: std::cell::RefCell<Vec<(HWND, i32, i32)>>,
     /// The system move / size loop in progress (one at a time: it is modal).
     pub size_move: std::cell::RefCell<Option<SizeMove>>,
+    /// Set while a title drag moves windows on a mouse move (`window_drag.rs`): they move at
+    /// once and redraw their backdrop for the new place on the next frame instead.
+    pub defer_backdrop: std::cell::Cell<bool>,
 }
 
 /// A fence window the push pass moved down (or up, out of the way of a fence that expands

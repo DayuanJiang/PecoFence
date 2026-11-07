@@ -264,8 +264,9 @@ pub struct App {
     device_retry_pending: bool,
     device_retry_ms: u32,
     /// GPU memory at the first idle point after startup or the last rebuild that handed it
-    /// back, and when that rebuild ran (`motion::hand_back_gpu_memory`).
-    gpu_baseline: Option<u64>,
+    /// back, and when that rebuild ran (`motion::hand_back_gpu_memory`). With `true` it is the
+    /// private commit instead: software rendering reports no GPU memory.
+    gpu_baseline: Option<(bool, u64)>,
     gpu_rebuilt: Option<Instant>,
     /// `--test-script` state while a script runs.
     test: Option<testscript::TestScript>,
@@ -370,6 +371,9 @@ pub struct App {
     frame_prev: Option<Instant>,
     /// Cadence statistics of the animation run in progress.
     frame_run: FrameRun,
+    /// A push moved fences during an animation run: the desktop fence re-arranges its loose
+    /// icons once the run ends (`reflow_pushed_except`).
+    desktop_arrange_after_frames: bool,
     /// `--no-hide-icons`: keep Explorer's icons visible this run without persisting the choice.
     no_hide_icons: bool,
     /// `--portable`: the configuration lives next to the program, and so must the startup entry.
@@ -1523,6 +1527,7 @@ impl App {
                 pushed: std::cell::RefCell::new(Vec::new()),
                 expand_room: std::cell::RefCell::new(Vec::new()),
                 size_move: std::cell::RefCell::new(None),
+                defer_backdrop: std::cell::Cell::new(false),
             }),
         });
 
@@ -1622,6 +1627,7 @@ impl App {
             pending_routes: Vec::new(),
             shell_drop_claim: None,
             frame_prev: None,
+            desktop_arrange_after_frames: false,
             frame_run: FrameRun::default(),
             no_hide_icons: args.no_hide_icons,
             portable: args.portable,

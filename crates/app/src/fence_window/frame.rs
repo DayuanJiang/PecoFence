@@ -112,6 +112,13 @@ impl FrameHandle {
     pub fn on_frame(&self, now: Instant) -> bool {
         let hwnd = self.hwnd();
         let moved = flush_window_drag(&self.view, hwnd, now, None);
+        // A title drag moved the window on mouse moves since the last frame: the backdrop
+        // catches up once for where it is now.
+        if let Some(v) = self.view.borrow_mut().as_mut()
+            && v.backdrop_stale
+        {
+            v.refresh_backdrop();
+        }
         // Phase 1: compute under a short borrow.
         let (height, more, upward) = {
             let mut guard = self.view.borrow_mut();

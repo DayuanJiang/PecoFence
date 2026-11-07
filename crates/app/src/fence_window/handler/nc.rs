@@ -39,6 +39,13 @@ pub(super) fn on_windowposchanging(
             window::windowpos_move_rect(lparam, window::window_rect(hwnd))
         }
     {
+        if h.behavior.defer_backdrop.get() {
+            // A title drag moves the window on every mouse move: the next frame redraws the
+            // glass for where it is then (`FenceWindow::on_frame`).
+            v.backdrop_stale = true;
+            v.frames.request();
+            return None;
+        }
         let started = Instant::now();
         let old_ink = v.material_foreground().text_primary;
         if v.update_backdrop_at(next) {
@@ -618,16 +625,12 @@ pub(super) fn on_move(
     let HandlerCtx { view, .. } = h;
     let mut guard = view.borrow_mut();
     if let Some(v) = guard.as_mut() {
-        let old_ink = v.material_foreground().text_primary;
-        if v.update_backdrop() {
-            if old_ink != v.material_foreground().text_primary
-                || (v.theme.liquid_glass && v.row_metrics().is_some())
-            {
-                // Moving clear glass across a light/dark boundary also changes the icon labels.
-                let _ = v.redraw();
-            } else {
-                let _ = v.redraw_chrome_only();
-            }
+        if h.behavior.defer_backdrop.get() {
+            // Moved by a title drag on a mouse move: the next frame redraws the backdrop.
+            v.backdrop_stale = true;
+            v.frames.request();
+        } else {
+            v.refresh_backdrop();
         }
         v.update_shadow();
     }
@@ -684,6 +687,14 @@ pub(super) fn on_entersizemove(
     rect_at_enter.set(r);
     grab_offset.set((start_x - r.left, start_y - r.top));
     h.grab_dpi.set(monitors::dpi_for_window(hwnd));
+    h.movings.set(0);
+    tracing::debug!(
+        caption = caption.is_some(),
+        start = ?(start_x, start_y),
+        cursor = ?(pt.x, pt.y),
+        rect = ?(r.left, r.top, r.right - r.left, r.bottom - r.top),
+        "move loop entered"
+    );
     merge_target.set(0);
     merge_at.set((i32::MIN, i32::MIN));
     window::kill_timer(hwnd, TIMER_PEEK_OPEN);
@@ -739,6 +750,17 @@ pub(super) fn on_exitsizemove(
     // where it is (possibly on another fence's title): never merge then.
     let esc = window::key_down(msg::VK_ESCAPE) || h.move_cancelled.get();
     let cancelled = rect == at_enter || esc;
+    let cursor = window::cursor_pos();
+    tracing::debug!(
+        moved,
+        cancelled,
+        esc,
+        movings = h.movings.get(),
+        rect = ?(rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top),
+        at_enter = ?(at_enter.left, at_enter.top),
+        cursor = ?(cursor.x, cursor.y),
+        "move loop ended"
+    );
     let group = std::mem::take(&mut *h.group.borrow_mut());
     let merge_into = if moved && !cancelled && group.is_empty() && !shows_tool(view) {
         merge_target_under_cursor(hwnd)
@@ -949,6 +971,7 @@ pub(super) fn on_moving(
     // SAFETY: lParam is the RECT* of the window being dragged for this
     // message.
     let rect = unsafe { &mut *(lparam as *mut RECT) };
+    h.movings.set(h.movings.get() + 1);
     // The loop does not pass a right press on to WM_RBUTTONDOWN: read the button itself.
     if !h.move_cancelled.get() && window::secondary_button_down_async() {
         cancel_move(h, hwnd);

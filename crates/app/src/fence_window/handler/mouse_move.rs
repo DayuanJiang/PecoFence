@@ -102,7 +102,13 @@ pub(super) fn on_mousemove(
         let point = (pt.x, pt.y);
         drag.track_pointer(point, window::drag_threshold());
         if drag.pending_pointer.is_some() {
-            v.frames.request();
+            // The window follows the pointer at once, as in Windows' own move loop (once per
+            // frame it trailed it by up to a frame and more); what it shows of the wallpaper
+            // is redrawn on the next frame (`Behavior::defer_backdrop`).
+            drop(guard);
+            behavior.defer_backdrop.set(true);
+            flush_window_drag(view, hwnd, Instant::now(), None);
+            behavior.defer_backdrop.set(false);
         }
         return Some(0);
     }
