@@ -906,9 +906,10 @@ function CellPt($fence, $i) {
 }
 function IconCrop($fence, $i, $name) { $p = CellPt $fence $i; return (Crop $name ($p[0] - 24) ($p[1] - 24) 48 48) }
 # The kit's ItemPt for a fence that holds This PC or the Recycle Bin: ItemPt puts those first,
-# but a fence sorts them by name among the files (the Recycle Bin after h2-full-a).
+# but a fence shows them among the files. In the order the fence shows them, which `item list`
+# keeps: by name, or in 手动 order with the icons that came later after the others.
 function ItemAt($fence, $name) {
-  $order = @(@(TJson item list --fence $fence) | Sort-Object name | ForEach-Object { $_.name })
+  $order = @(@(TJson item list --fence $fence) | ForEach-Object { $_.name })
   $i = [array]::IndexOf($order, $name)
   if ($i -lt 0) { Log "ItemAt: '$name' not in '$fence' ($($order -join ', '))"; return $null }
   $p = CellPt $fence $i
