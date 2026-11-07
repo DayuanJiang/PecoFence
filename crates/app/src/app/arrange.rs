@@ -116,14 +116,44 @@ impl App {
             .collect()
     }
 
-    /// Moves host `id` to `rect` and records it (it rests there now).
-    fn relocate(&mut self, id: FenceId, rect: RECT) {
+    /// Where the other showing fences rest: without a push shift, and a rolled one (also while
+    /// it hover-peeks or rolls up) as its title row. A drop is judged against these, so a spot
+    /// a push or a peek only lends for a while does not count as free.
+    pub(super) fn resting_fence_rects(&self, id: FenceId) -> Vec<RECT> {
+        self.fences
+            .iter()
+            .filter(|(fid, w)| {
+                **fid != id
+                    && pecofence_platform::desktop::is_visible(w.hwnd())
+                    && !crate::anchor::is_desktop_fence(w.hwnd())
+            })
+            .map(|(_, w)| self.ctx.behavior.resting_rect(w.hwnd(), w.resting_rect()))
+            .collect()
+    }
+
+    /// Moves host `id` so that its resting rect `from` goes to `to`, and records it there (it
+    /// rests there now). The window keeps its size: a hover peek or a roll in flight goes on
+    /// from the new spot.
+    fn relocate(&mut self, id: FenceId, from: RECT, to: RECT) {
         let Some(w) = self.fences.get(&id) else {
             return;
         };
         self.ctx.behavior.release_push(w.hwnd());
-        w.set_bounds(rect);
+        let (dx, dy) = (to.left - from.left, to.top - from.top);
+        let r = w.rect();
         let rolled = w.is_rolled();
+        let mut rect = RECT {
+            left: r.left + dx,
+            top: r.top + dy,
+            right: r.right + dx,
+            bottom: r.bottom + dy,
+        };
+        // Made shorter to fit a spot (`clearance::pull_apart`): an open fence takes the spot's
+        // height; a rolled-up one is its title row and keeps it.
+        if !rolled {
+            rect.bottom = rect.top + (to.bottom - to.top);
+        }
+        w.set_bounds(rect);
         // Made shorter to fit a spot (`clearance::pull_apart`): the height it opens to as well.
         if !rolled && w.expanded_height_px() != rect.bottom - rect.top {
             w.apply_height(rect.bottom - rect.top, false);
@@ -140,7 +170,10 @@ impl App {
     /// A fence the user dropped onto another one moves the shortest way to a free spot on its
     /// monitor (the snapping gap kept); with no free spot it stays where it was dropped. One
     /// dropped partly off the screen (a torn-off tab follows the pointer to the screen edge)
-    /// is pulled back in the same way, where a restart would place it anyway.
+    /// is pulled back in the same way, where a restart would place it anyway. A rolled-up fence
+    /// counts with the room it opens into ([`clearance::landing_spot`]): let go near the
+    /// bottom of the screen, it moves up to where it opens above the taskbar, and its saved
+    /// rect is where its window is.
     pub(super) fn move_out_of_overlap(&mut self, fence: FenceId) {
         let id = self.state.host_of(fence);
         let Some(w) = self.fences.get(&id) else {
@@ -150,9 +183,10 @@ impl App {
         if w.is_desktop_arranged() {
             return;
         }
-        let r = w.rect();
+        let r = w.resting_rect();
+        let hang = w.open_hang_px();
         let gap = self.gap_px(w.hwnd());
-        let others = self.other_fence_rects(id);
+        let others = self.resting_fence_rects(id);
         let Some(wa) = self.work_area_at((r.left + r.right) / 2, (r.top + r.bottom) / 2) else {
             return;
         };
@@ -164,23 +198,29 @@ impl App {
         };
         // Off the screen means outside every work area: a fence dropped across two monitors
         // is left where it is.
+        let foot = RECT {
+            right: r.right + hang.0,
+            bottom: r.bottom + hang.1,
+            ..r
+        };
         let on_screen = |x: i32, y: i32| {
             self.state
                 .work_areas
                 .iter()
                 .any(|w| x >= w.left && x < w.right && y >= w.top && y < w.bottom)
         };
-        let off_screen = !(on_screen(r.left, r.top)
-            && on_screen(r.right - 1, r.top)
-            && on_screen(r.left, r.bottom - 1)
-            && on_screen(r.right - 1, r.bottom - 1));
-        if !off_screen && !others.iter().any(|o| clearance::overlaps(&r, o, gap)) {
+        let off_screen = !(on_screen(foot.left, foot.top)
+            && on_screen(foot.right - 1, foot.top)
+            && on_screen(foot.left, foot.bottom - 1)
+            && on_screen(foot.right - 1, foot.bottom - 1));
+        let Some(spot) = clearance::landing_spot(&r, hang, &others, &work, !off_screen, gap) else {
+            if off_screen {
+                tracing::info!(%id, rect = ?(r.left, r.top, r.right, r.bottom), ?hang, "dropped fence off the screen stays: no spot");
+            }
             return;
-        }
-        if let Some(spot) = clearance::nearest_free(&r, &others, &work, gap) {
-            tracing::info!(%id, off_screen, from = ?(r.left, r.top), to = ?(spot.left, spot.top), "fence moved out of an overlap");
-            self.relocate(id, spot);
-        }
+        };
+        tracing::info!(%id, off_screen, ?hang, from = ?(r.left, r.top), to = ?(spot.left, spot.top), "fence moved out of an overlap");
+        self.relocate(id, r, spot);
     }
 
     /// Pulls overlapping fences apart ([`clearance::pull_apart`]): any fence with `all` (at
@@ -229,6 +269,7 @@ impl App {
                     movable: movers.contains(id)
                         || (all && !self.state.fence(*id).is_some_and(|f| f.locked)),
                     min_h,
+                    hang: w.open_hang_px(),
                 };
                 (*id, rest)
             })
@@ -238,8 +279,8 @@ impl App {
             let (id, from) = (fences[i].0, fences[i].1.rect);
             let (from_h, to_h) = (from.bottom - from.top, spot.bottom - spot.top);
             // `shorter`: no spot had room for its height (a screen made smaller).
-            tracing::info!(%id, from = ?(from.left, from.top), to = ?(spot.left, spot.top), from_h, to_h, shorter = to_h < from_h, "overlapping fence moved");
-            self.relocate(id, spot);
+            tracing::info!(%id, from = ?(from.left, from.top), to = ?(spot.left, spot.top), from_h, to_h, shorter = to_h < from_h, hang = ?fences[i].1.hang, "overlapping fence moved");
+            self.relocate(id, from, spot);
         }
     }
 

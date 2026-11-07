@@ -700,7 +700,7 @@
   "还没有主题文件": "No theme files yet",
   "主题文件放在 themes 文件夹里，文件保存后栅栏立即更新": "Theme files go in the themes folder, and fences update as soon as a file is saved",
   "themes 文件夹里还没有主题文件：点“打开主题文件夹”放进去，或者看“写法说明”自己写一个": "The themes folder has no theme files yet: click “Open themes folder” to put one there, or see “How to write one” to write your own",
-  "停在上面展开的栅栏，鼠标移开后自动收起；不管选哪种，双击标题或点折叠箭头都能展开和收起": "Fences opened on hover roll up again when the pointer leaves. Whichever you choose, double-clicking the title or clicking the roll-up arrow expands and rolls up",
+  "停在上面展开的栅栏，鼠标移开后自动收起；单击标题展开的，再单击标题收起；不管选哪种，双击标题或点折叠箭头都能展开和收起": "Fences opened on hover roll up again when the pointer leaves; one opened by a title click rolls up at the next title click. Whichever you choose, double-clicking the title or clicking the roll-up arrow expands and rolls up",
   "鼠标停在上面时": "On hover",
   "单击标题时": "On a title click",
   "只在双击标题或点箭头时": "Only on double-click or the arrow",

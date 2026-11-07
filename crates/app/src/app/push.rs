@@ -448,6 +448,15 @@ impl App {
         let (rect, row_bottom, choose) = match self.fences.get(&id) {
             Some(w) => {
                 let mut rect = self.ctx.behavior.resting_rect(w.hwnd(), rect);
+                // Open, but a roll or height animation is still in flight (a move, a snap or a
+                // save in those few frames): the height it ends at, never a passing one.
+                if !rolled && let Some((h, upward)) = w.animation_end_height_px() {
+                    if upward {
+                        rect.top = rect.bottom - h;
+                    } else {
+                        rect.bottom = rect.top + h;
+                    }
+                }
                 // Collapsed to its left tab column: the fence keeps the width it expands to.
                 if rolled && let Some(ew) = w.collapsed_expanded_width_px() {
                     rect.right = rect.left + ew;

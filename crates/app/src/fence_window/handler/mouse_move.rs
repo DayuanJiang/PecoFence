@@ -19,6 +19,12 @@ pub(super) fn on_mousemove(
     } = h;
     let x = msg::lo_i16(lparam);
     let y = msg::hi_i16(lparam);
+    // A click-to-expand title press captured the mouse: past the drag threshold it moves the
+    // fence, however far the first move went (it may already be off the title row).
+    let pt = window::client_to_screen(hwnd, pecofence_platform::POINT { x, y });
+    if super::nc::drag_click_pending(h, hwnd, (pt.x, pt.y)) {
+        return Some(0);
+    }
     let mut guard = view.borrow_mut();
     let Some(v) = guard.as_mut() else {
         return Some(0);

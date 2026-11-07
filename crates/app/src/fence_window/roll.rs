@@ -218,6 +218,25 @@ impl FenceViewState {
         self.roll_anim.is_some() || self.height_anim.is_some()
     }
 
+    /// How far the fence reaches beyond its window rect `rest` once it opens, to the right and
+    /// below (see `FenceWindow::open_hang_px`).
+    pub(super) fn open_hang_px(&self, rest: &RECT) -> (i32, i32) {
+        if !(self.roll_target() || self.peeking) {
+            return (0, 0);
+        }
+        let right = if self.column_collapsed {
+            (rest.left + self.expanded_w_px - rest.right).max(0)
+        } else {
+            0
+        };
+        let below = if self.expand_upward || self.row_bottom {
+            0
+        } else {
+            (rest.top + self.expanded_h_px - rest.bottom).max(0)
+        };
+        (right, below)
+    }
+
     pub(super) fn rolled_at_rest(&self) -> bool {
         self.rolled_up && !self.peeking && !self.height_animating() && !self.retired
     }

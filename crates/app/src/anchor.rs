@@ -310,6 +310,9 @@ pub struct DesktopAnchor {
     host: Option<IconHost>,
     sentinel: Window,
     fences: Vec<(HWND, Option<HWND>)>,
+    /// Fences a hover peek brought to the top (`raise_for_hover`), with the place in `fences` they
+    /// go back to when the peek ends.
+    hover_raised: Vec<(HWND, usize)>,
     show_desktop_active: bool,
     retry_step: usize,
     _hook: Option<WinEventHook>,
@@ -496,6 +499,7 @@ impl DesktopAnchor {
             host: None,
             sentinel,
             fences: Vec::new(),
+            hover_raised: Vec::new(),
             show_desktop_active: false,
             retry_step: 0,
             _hook: hook,
@@ -641,11 +645,55 @@ impl DesktopAnchor {
 
     pub fn unregister_fence(&mut self, hwnd: HWND) {
         self.fences.retain(|(h, _)| *h != hwnd);
+        self.hover_raised.retain(|(h, _)| *h != hwnd);
     }
 
     /// Puts `hwnd` above the other fences (clicked / newly created), keeping all of them just
-    /// above the icon host.
+    /// above the icon host. It stays there: a hover peek that raised it no longer puts it back.
     pub fn raise_fence(&mut self, hwnd: HWND) {
+        self.hover_raised.retain(|(h, _)| *h != hwnd);
+        self.move_to_top(hwnd, "raise fence");
+    }
+
+    /// A hover peek (or a file drag resting on the title) opened rolled fence `hwnd`: it goes
+    /// above the other fences while it is open, so a neighbour the push could not clear (it
+    /// stops at the bottom of the screen) does not cover it (#197). `end_hover_raise` puts it back.
+    pub fn raise_for_hover(&mut self, hwnd: HWND) {
+        let Some(pos) = self.fences.iter().position(|(h, _)| *h == hwnd) else {
+            return;
+        };
+        if !self.hover_raised.iter().any(|(h, _)| *h == hwnd) {
+            self.hover_raised.push((hwnd, pos));
+        }
+        tracing::info!(
+            from = pos,
+            of = self.fences.len(),
+            "fence raised for a hover peek"
+        );
+        self.move_to_top(hwnd, "hover peek raise");
+    }
+
+    /// The peek that raised `hwnd` rolled it up again: back to its old place among the fences
+    /// (unless a click raised it for good meanwhile).
+    pub fn end_hover_raise(&mut self, hwnd: HWND) {
+        let Some(i) = self.hover_raised.iter().position(|(h, _)| *h == hwnd) else {
+            return;
+        };
+        let (_, at) = self.hover_raised.remove(i);
+        let Some(pos) = self.fences.iter().position(|(h, _)| *h == hwnd) else {
+            return;
+        };
+        let entry = self.fences.remove(pos);
+        let at = at.min(self.fences.len());
+        self.fences.insert(at, entry);
+        tracing::info!(from = pos, to = at, "fence put back after a hover peek");
+        if at != pos {
+            self.keep_desktop_fence_lowest();
+            self.reanchor("hover peek end");
+        }
+    }
+
+    fn move_to_top(&mut self, hwnd: HWND, reason: &'static str) {
         let Some(pos) = self.fences.iter().position(|(h, _)| *h == hwnd) else {
             return;
         };
@@ -655,7 +703,7 @@ impl DesktopAnchor {
         let entry = self.fences.remove(pos);
         self.fences.push(entry);
         self.keep_desktop_fence_lowest();
-        self.reanchor("raise fence");
+        self.reanchor(reason);
     }
 
     /// The fence `hwnd` is opening a shell dialog of this process (Properties, a delete

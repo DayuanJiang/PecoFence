@@ -65,13 +65,15 @@ pub(super) fn snap_paused() -> bool {
 }
 
 /// While `hwnd` is dragged to `rect`: the white outline around the fence it would join as a tab
-/// (`merge`), else around the spot it will move to on release when it covers another fence
-/// (`FenceDropped`). The alignment `guides` show only while neither applies. `radius_dip` is
-/// the fences' corner radius.
+/// (`merge`), else around the spot it will move to on release (`FenceDropped`): when it covers
+/// another fence, or when the room it opens into (`hang` beyond `rect`, a rolled-up fence's
+/// expanded rect) is not on the screen. The alignment `guides` show only while neither
+/// applies. `radius_dip` is the fences' corner radius.
 pub(super) fn update_drag_feedback(
     behavior: &Behavior,
     hwnd: HWND,
     rect: &RECT,
+    hang: (i32, i32),
     merge: Option<HWND>,
     guides: &[GuideLine],
     radius_dip: f32,
@@ -82,14 +84,29 @@ pub(super) fn update_drag_feedback(
         Some(target) => (true, Some(window::window_rect(target))),
         None => {
             let others = other_fence_rects(hwnd);
-            if others
+            let covers = others
                 .iter()
-                .any(|o| crate::layout::clearance::overlaps(rect, o, gap))
-            {
+                .any(|o| crate::layout::clearance::overlaps(rect, o, gap));
+            // Each corner of that room in the work area of the monitor it is on (a fence
+            // across two monitors stays where it is let go).
+            let in_work = |x: i32, y: i32| {
+                monitors::query(monitors::monitor_from_point(x, y)).is_some_and(|m| {
+                    let w = m.work_area;
+                    x >= w.left && x < w.right && y >= w.top && y < w.bottom
+                })
+            };
+            let (right, bottom) = (rect.right + hang.0, rect.bottom + hang.1);
+            let on_screen = in_work(rect.left, rect.top)
+                && in_work(right - 1, rect.top)
+                && in_work(rect.left, bottom - 1)
+                && in_work(right - 1, bottom - 1);
+            if covers || !on_screen {
                 let spot = work_area_under(rect).and_then(|work| {
-                    crate::layout::clearance::nearest_free(rect, &others, &work, gap)
+                    crate::layout::clearance::landing_spot(
+                        rect, hang, &others, &work, on_screen, gap,
+                    )
                 });
-                (true, spot)
+                (spot.is_some(), spot)
             } else {
                 (false, None)
             }

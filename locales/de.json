@@ -700,7 +700,7 @@
   "还没有主题文件": "Noch keine Designdateien",
   "主题文件放在 themes 文件夹里，文件保存后栅栏立即更新": "Designdateien liegen im Ordner themes, und die Bereiche ändern sich, sobald eine Datei gespeichert ist",
   "themes 文件夹里还没有主题文件：点“打开主题文件夹”放进去，或者看“写法说明”自己写一个": "Im Ordner themes liegt noch keine Designdatei: Lege mit „Designordner öffnen“ eine hinein, oder schreib mit der „Anleitung“ selbst eine",
-  "停在上面展开的栅栏，鼠标移开后自动收起；不管选哪种，双击标题或点折叠箭头都能展开和收起": "Beim Daraufzeigen ausgeklappte Bereiche klappen wieder ein, wenn der Zeiger geht. Bei jeder Wahl klappt ein Doppelklick auf den Titel oder ein Klick auf den Einklapppfeil aus und ein",
+  "停在上面展开的栅栏，鼠标移开后自动收起；单击标题展开的，再单击标题收起；不管选哪种，双击标题或点折叠箭头都能展开和收起": "Beim Daraufzeigen ausgeklappte Bereiche klappen wieder ein, wenn der Zeiger geht; per Klick auf den Titel ausgeklappte beim nächsten Klick auf den Titel. Bei jeder Wahl klappt ein Doppelklick auf den Titel oder ein Klick auf den Einklapppfeil aus und ein",
   "鼠标停在上面时": "Beim Daraufzeigen",
   "单击标题时": "Per Klick auf den Titel",
   "只在双击标题或点箭头时": "Nur per Doppelklick oder Pfeil",

@@ -194,22 +194,10 @@ pub(super) fn on_ncmousemove(
         }
         // Click-to-expand pressed and now moving: hand the drag to the
         // system move loop (the press itself was swallowed).
-        if let Some((px, py)) = v.click_pending
-            && window::key_down(msg::VK_LBUTTON)
-        {
-            let (tx, ty) = window::drag_threshold();
-            let (cx, cy) = (msg::lo_i16(lparam), msg::hi_i16(lparam));
-            if (cx - px).abs() > tx || (cy - py).abs() > ty {
-                v.click_pending = None;
-                drop(guard);
-                window::send_message(
-                    hwnd,
-                    msg::WM_SYSCOMMAND,
-                    SC_MOVE_CAPTION,
-                    msg::make_lparam(px, py),
-                );
-                return Some(0);
-            }
+        if v.click_pending.is_some() {
+            drop(guard);
+            drag_click_pending(h, hwnd, (msg::lo_i16(lparam), msg::hi_i16(lparam)));
+            return Some(0);
         }
         if v.rolled_up
             && !v.peeking
@@ -255,9 +243,14 @@ pub(super) fn on_ncmouseleave(
     // non-client area (into the chevron, a tab, another window) the release goes elsewhere,
     // and a later release on the title must not act on the old press.
     h.ncrbutton_press.set(false);
+    // A click-to-expand press holds the mouse captured until its release or drag: leaving the
+    // row then is part of that drag.
+    let captured = window::get_capture() == hwnd;
     let mut guard = view.borrow_mut();
     if let Some(v) = guard.as_mut() {
-        v.click_pending = None;
+        if !captured {
+            v.click_pending = None;
+        }
         if !inside {
             v.set_mouse_inside(false);
         }
@@ -307,14 +300,13 @@ pub(super) fn on_nclbuttondown(
             let mut guard = view.borrow_mut();
             if let Some(v) = guard.as_mut() {
                 if v.locked {
-                    // No drag, but a click on a rolled title still expands it (the drag
-                    // handed over in WM_NCMOUSEMOVE is refused by WM_SYSCOMMAND).
-                    if behavior.click_to_expand.get()
-                        && v.rolled_up
-                        && !v.peeking
-                        && v.roll_anim.is_none()
-                    {
+                    // No drag, but with 「单击标题时展开」 a click on the title still expands it,
+                    // or rolls it up again (the drag handed over on a move is refused by
+                    // WM_SYSCOMMAND).
+                    if behavior.click_to_expand.get() {
                         v.click_pending = Some(start);
+                        drop(guard);
+                        window::set_capture(hwnd);
                     }
                     return Some(0);
                 }
@@ -328,12 +320,11 @@ pub(super) fn on_nclbuttondown(
                         merge_target: 0,
                         merge_at: (i32::MIN, i32::MIN),
                         moved_once: false,
+                        // 「单击标题时展开」: a click without a drag expands a rolled fence and
+                        // rolls an open one up again.
                         origin: WindowDragOrigin::Caption {
                             rect,
-                            click_expand: behavior.click_to_expand.get()
-                                && v.rolled_up
-                                && !v.peeking
-                                && v.roll_anim.is_none(),
+                            click_expand: behavior.click_to_expand.get(),
                         },
                         group: group_members(behavior, hwnd),
                         press: start,
@@ -361,40 +352,98 @@ pub(super) fn on_nclbuttondown(
     // Ctrl+Z after a move or resize, Delete and F2 reach this fence, not the window in front.
     focus_session(view, hwnd);
     if wparam as isize == msg::HTCAPTION && behavior.click_to_expand.get() {
-        // Swallow the press: a release without a drag expands the rolled
-        // fence (WM_NCLBUTTONUP); a drag hands over to SC_MOVE.
+        // Swallow the press: a release without a drag expands a rolled fence and rolls an open
+        // one up again; a drag hands over to SC_MOVE. The mouse is captured, so a first move
+        // that already leaves the title row still arrives (WM_MOUSEMOVE, WM_LBUTTONUP).
         let mut guard = view.borrow_mut();
-        if let Some(v) = guard.as_mut()
-            && v.rolled_up
-            && !v.peeking
-            && v.roll_anim.is_none()
-        {
+        if let Some(v) = guard.as_mut() {
             v.click_pending = Some((msg::lo_i16(lparam), msg::hi_i16(lparam)));
+            drop(guard);
+            window::set_capture(hwnd);
             return Some(0);
         }
     }
     None
 }
 
-pub(super) fn on_nclbuttonup(
-    h: &HandlerCtx,
-    _hwnd: HWND,
-    _wparam: usize,
-    _lparam: isize,
-) -> Option<isize> {
-    let HandlerCtx { view, queue, .. } = h;
-    let fence_id = h.fence_id;
-    let expand = view.borrow_mut().as_mut().is_some_and(|v| {
+/// Click-to-expand (`click_pending`, the swallowed title press): the pointer moved to `pt`
+/// (screen px) with the button held. Past the drag threshold the press becomes a title drag
+/// in the system move loop, grabbed at the press point, so the fence follows the pointer from
+/// the first step however far that one went. True while a press was pending.
+pub(super) fn drag_click_pending(h: &HandlerCtx, hwnd: HWND, pt: (i32, i32)) -> bool {
+    let start = {
+        let mut guard = h.view.borrow_mut();
+        let Some(v) = guard.as_mut() else {
+            return false;
+        };
+        let Some((px, py)) = v.click_pending else {
+            return false;
+        };
+        if !window::key_down(msg::VK_LBUTTON) {
+            // The release went elsewhere: no click, no drag.
+            v.click_pending = None;
+            drop(guard);
+            window::release_capture();
+            return true;
+        }
+        let (tx, ty) = window::drag_threshold();
+        if (pt.0 - px).abs() <= tx && (pt.1 - py).abs() <= ty {
+            return true;
+        }
+        v.click_pending = None;
+        (px, py)
+    };
+    tracing::info!(
+        fence = %h.fence_id,
+        moved = ?(pt.0 - start.0, pt.1 - start.1),
+        "click-to-expand press became a title drag"
+    );
+    // ReleaseCapture sends WM_CAPTURECHANGED synchronously: no borrow held.
+    window::release_capture();
+    window::send_message(
+        hwnd,
+        msg::WM_SYSCOMMAND,
+        SC_MOVE_CAPTION,
+        msg::make_lparam(start.0, start.1),
+    );
+    true
+}
+
+/// Click-to-expand: the swallowed title press was released without a drag (wherever the
+/// pointer is: the press captured the mouse). The click toggles the roll. True when a press
+/// was pending.
+pub(super) fn release_click_pending(h: &HandlerCtx, hwnd: HWND) -> bool {
+    let pending = h.view.borrow_mut().as_mut().is_some_and(|v| {
         let e = v.click_pending.take().is_some();
         if e {
-            // The next press may arrive as WM_NCLBUTTONDBLCLK; it must not
-            // re-roll the fence this click just expanded.
+            // The next press may arrive as WM_NCLBUTTONDBLCLK; it must not toggle the fence
+            // again (this click already did).
             v.suppress_dblclk = true;
         }
         e
     });
-    if expand {
-        queue.push(Command::ToggleRollUp(fence_id));
+    if !pending {
+        return false;
+    }
+    if window::get_capture() == hwnd {
+        window::release_capture();
+    }
+    tracing::info!(fence = %h.fence_id, "title clicked: click-to-expand toggles the roll");
+    h.queue.push(Command::ToggleRollUp(h.fence_id));
+    // A title click ends the desktop selection, as a click elsewhere would.
+    if !h.behavior.selection.borrow().is_empty() {
+        h.queue.push(Command::ClearFenceSelection);
+    }
+    true
+}
+
+pub(super) fn on_nclbuttonup(
+    h: &HandlerCtx,
+    hwnd: HWND,
+    _wparam: usize,
+    _lparam: isize,
+) -> Option<isize> {
+    if release_click_pending(h, hwnd) {
         return Some(0);
     }
     None
@@ -850,13 +899,33 @@ pub(super) fn on_sizing(h: &HandlerCtx, hwnd: HWND, wparam: usize, lparam: isize
         dist: (SNAP_DIST_DIP as f32 * scale) as i32,
         align: !snap_paused(),
     });
+    let edges = SizingEdges::from_wmsz(wparam);
     let guides = size_among(
         rect,
         &window::window_rect(hwnd),
-        SizingEdges::from_wmsz(wparam),
+        edges,
         &rules,
         near.as_ref(),
     );
+    // A dragged edge stops at the work area (under the taskbar the fence could not be reached,
+    // and a restart, which keeps saved rects inside the work area, would move it): the saved
+    // rect stays where the window is.
+    if let Some(w) = work {
+        // A rolled title row keeps its height whichever edge is dragged.
+        let vertical = rules.rolled_h.is_none();
+        if edges.bottom && vertical {
+            rect.bottom = rect.bottom.min(w.bottom).max(rect.top + rules.min_h);
+        }
+        if edges.top && vertical {
+            rect.top = rect.top.max(w.top).min(rect.bottom - rules.min_h);
+        }
+        if edges.right {
+            rect.right = rect.right.min(w.right).max(rect.left + rules.min_w);
+        }
+        if edges.left {
+            rect.left = rect.left.max(w.left).min(rect.right - rules.min_w);
+        }
+    }
     show_guides(behavior, hwnd, &guides);
     Some(1)
 }
@@ -942,12 +1011,15 @@ pub(super) fn on_moving(
             (SNAP_DIST_DIP as f32 * scale) as i32,
         );
     }
-    let radius = view
+    let (radius, hang) = view
         .try_borrow()
         .ok()
-        .and_then(|g| g.as_ref().map(|v| v.theme.corner_radius))
-        .unwrap_or(8.0);
-    update_drag_feedback(behavior, hwnd, rect, merge, &guides, radius);
+        .and_then(|g| {
+            g.as_ref()
+                .map(|v| (v.theme.corner_radius, v.open_hang_px(rect)))
+        })
+        .unwrap_or((8.0, (0, 0)));
+    update_drag_feedback(behavior, hwnd, rect, hang, merge, &guides, radius);
     // Re-sent while the pointer moves along a target's strip so the
     // insertion gap follows it (cheap: the target ignores an unchanged slot).
     let target_changed = merge_target.replace(target) != target;

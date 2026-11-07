@@ -700,7 +700,7 @@
   "还没有主题文件": "Aucun fichier de thème pour l’instant",
   "主题文件放在 themes 文件夹里，文件保存后栅栏立即更新": "Les fichiers de thème vont dans le dossier themes, et les groupes changent dès qu’un fichier est enregistré",
   "themes 文件夹里还没有主题文件：点“打开主题文件夹”放进去，或者看“写法说明”自己写一个": "Le dossier themes n’a pas encore de fichier de thème : cliquez sur « Ouvrir le dossier des thèmes » pour en placer un, ou lisez le « Mode d’emploi » pour écrire le vôtre",
-  "停在上面展开的栅栏，鼠标移开后自动收起；不管选哪种，双击标题或点折叠箭头都能展开和收起": "Les groupes développés au survol se replient quand le pointeur s’en va. Quel que soit le choix, un double-clic sur le titre ou un clic sur la flèche de repli développe et replie",
+  "停在上面展开的栅栏，鼠标移开后自动收起；单击标题展开的，再单击标题收起；不管选哪种，双击标题或点折叠箭头都能展开和收起": "Les groupes développés au survol se replient quand le pointeur s’en va ; ceux développés d’un clic sur le titre, au clic suivant sur le titre. Quel que soit le choix, un double-clic sur le titre ou un clic sur la flèche de repli développe et replie",
   "鼠标停在上面时": "Au survol",
   "单击标题时": "D’un clic sur le titre",
   "只在双击标题或点箭头时": "Seulement double-clic ou flèche",

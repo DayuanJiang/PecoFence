@@ -169,6 +169,10 @@ impl FrameHandle {
                 v.rolled_up = rolled;
                 v.content_panel.visual.set_opacity(1.0);
                 v.content_panel.visual.set_visible(!rolled);
+                // Rolled up after a hover peek raised it: back among the other fences.
+                if rolled && std::mem::take(&mut v.hover_raised) {
+                    v.queue.push(Command::EndHoverRaise(hwnd));
+                }
             }
             // The resting window gets a crop cut for its final rect (one crop + upload per
             // animation, in the pass that redraws everything anyway).
