@@ -49,6 +49,58 @@ pub(super) fn start_desktop_watchers(
 }
 
 impl App {
+    /// The desktop folder was moved while PecoFence runs (its Properties › Location › Move):
+    /// the item records follow it before the sync, as at startup, or every icon would read as
+    /// new and the rules would place them all again, the hand-placed ones too. Then the new
+    /// folder is watched instead of the old one.
+    fn follow_moved_desktop(&mut self, reason: &'static str) {
+        let Some(desk) = shell::user_desktop() else {
+            return;
+        };
+        let moved = self
+            .state
+            .config
+            .settings
+            .desktop_path
+            .as_deref()
+            .is_some_and(|known| {
+                pecofence_core::ItemKey::from_path(known)
+                    != pecofence_core::ItemKey::from_path(&desk.to_string_lossy())
+            });
+        if !moved {
+            return;
+        }
+        let n = self.state.migrate_desktop_path(&desk);
+        let folders = desktop_folders();
+        self.watchers.retain(|(dir, _)| folders.contains(dir));
+        let missing: Vec<PathBuf> = folders
+            .into_iter()
+            .filter(|d| !self.watchers.iter().any(|(p, _)| p == d))
+            .collect();
+        let started = start_desktop_watchers(missing, self.control.hwnd(), &self.fs_pending);
+        tracing::info!(
+            count = n,
+            reason,
+            to = %desk.display(),
+            watchers_started = started.len(),
+            "desktop folder moved while running; records migrated"
+        );
+        self.watchers.extend(started);
+        self.schedule_save();
+        if n > 0
+            && let Some(t) = &self.tray
+        {
+            t.show_info(
+                "PecoFence",
+                &pecofence_core::i18n::format(
+                    "检测到桌面文件夹已移动，已迁移 {0} 个项目的记录。",
+                    &[n.to_string()],
+                ),
+                false,
+            );
+        }
+    }
+
     /// A watcher exits when its folder is deleted, renamed or unmounted. Once a minute, watch
     /// the folders that are back again and show what they hold now.
     pub(super) fn revive_watchers(&mut self) {
@@ -282,6 +334,7 @@ impl App {
             tracing::info!(reason, "desktop folder is back");
             self.desktop_unavailable = false;
         }
+        self.follow_moved_desktop(reason);
         let (mut entries, unread) = shell::enumerate_desktop_reporting();
         // With the real icons hidden, the Recycle Bin and the other special desktop items would
         // be unreachable: surface the ones Windows shows inside the inbox fence. When the
