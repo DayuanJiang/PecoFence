@@ -142,12 +142,21 @@ pub fn split(query: &str) -> (Vec<TypeToken>, String) {
 }
 
 /// Whether a file `name` (a folder when `is_folder`) is of every type in `tokens`, as the
-/// `type` and `ext` rule conditions test it.
-pub fn matches(tokens: &[TypeToken], name: &str, is_folder: bool) -> bool {
+/// `type` and `ext` rule conditions test it. `target` reads a shortcut's target, called only
+/// when a type needs it (a shortcut is a program when it points to one, or to nothing known).
+pub fn matches(
+    tokens: &[TypeToken],
+    name: &str,
+    is_folder: bool,
+    target: impl FnOnce() -> Option<String>,
+) -> bool {
     let ext = rules::ext_of(name);
+    let needs_target =
+        !is_folder && ext == ".lnk" && tokens.contains(&TypeToken::Cat(TypeCategory::Programs));
+    let target = if needs_target { target() } else { None };
     tokens.iter().all(|t| match t {
         TypeToken::Ext(e) => !is_folder && ext == format!(".{e}"),
-        TypeToken::Cat(c) => rules::file_in_category(*c, name, is_folder),
+        TypeToken::Cat(c) => rules::file_in_category(*c, name, is_folder, target.as_deref()),
     })
 }
 
@@ -220,18 +229,54 @@ mod tests {
 
     #[test]
     fn a_type_matches_as_the_rule_conditions_do() {
+        let none = || None;
         let pdf = [TypeToken::Ext("pdf".into())];
-        assert!(matches(&pdf, "季度报告.pdf", false));
-        assert!(!matches(&pdf, "季度报告.docx", false));
-        assert!(!matches(&pdf, "pdf", true));
+        assert!(matches(&pdf, "季度报告.pdf", false, none));
+        assert!(!matches(&pdf, "季度报告.docx", false, none));
+        assert!(!matches(&pdf, "pdf", true, none));
         let docs = [TypeToken::Cat(TypeCategory::Documents)];
-        assert!(matches(&docs, "季度报告.docx", false));
-        assert!(matches(&docs, "季度报告.PDF", false));
-        assert!(!matches(&docs, "季度海报.png", false));
+        assert!(matches(&docs, "季度报告.docx", false, none));
+        assert!(matches(&docs, "季度报告.PDF", false, none));
+        assert!(!matches(&docs, "季度海报.png", false, none));
         let folders = [TypeToken::Cat(TypeCategory::Folders)];
-        assert!(matches(&folders, "照片", true));
-        assert!(!matches(&folders, "照片.jpg", false));
-        assert!(matches(&[], "anything", false));
+        assert!(matches(&folders, "照片", true, none));
+        assert!(!matches(&folders, "照片.jpg", false, none));
+        assert!(matches(&[], "anything", false, none));
+    }
+
+    /// A shortcut is a program by its target, as the 类型 rule condition reads it: one to a
+    /// document or a folder is not, one without a target path (a Store app) is. The target is
+    /// read only when the type needs it.
+    #[test]
+    fn a_shortcut_is_a_program_by_its_target() {
+        let programs = [TypeToken::Cat(TypeCategory::Programs)];
+        let to = |t: &'static str| move || Some(t.to_string());
+        assert!(matches(
+            &programs,
+            "微信.lnk",
+            false,
+            to(r"C:\Program Files\WeChat\WeChat.exe")
+        ));
+        assert!(!matches(
+            &programs,
+            "季度报告.lnk",
+            false,
+            to(r"C:\Users\pf\季度报告.pdf")
+        ));
+        assert!(!matches(
+            &programs,
+            "下载.lnk",
+            false,
+            to(r"C:\Users\pf\Downloads")
+        ));
+        assert!(matches(&programs, "计算器.lnk", false, || None));
+        let docs = [TypeToken::Cat(TypeCategory::Documents)];
+        assert!(!matches(
+            &docs,
+            "季度报告.lnk",
+            false,
+            || -> Option<String> { panic!("the target is read only for 程序") }
+        ));
     }
 
     #[test]

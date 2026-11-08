@@ -16,7 +16,7 @@ pub(super) fn filter_keeps(item: &pecofence_core::Item, query: &str) -> bool {
             .and_then(|p| std::path::Path::new(p).file_name())
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_else(|| item.display_name.clone());
-        if !pecofence_core::type_filter::matches(&types, &file, item.is_folder) {
+        if !is_of_types(&types, &file, item.is_folder, item.path()) {
             return false;
         }
         if text.is_empty() {
@@ -27,6 +27,20 @@ pub(super) fn filter_keeps(item: &pecofence_core::Item, query: &str) -> bool {
         Some((score, _)) => !pecofence_core::matcher::is_loose_score(score),
         None => false,
     }
+}
+
+/// Whether the file `file` at `path` is of `types`, a shortcut by its real target as the
+/// rules read it (so the filter, the Peek's type tab, Everything's words and a saved smart
+/// fence agree).
+pub(super) fn is_of_types(
+    types: &[pecofence_core::type_filter::TypeToken],
+    file: &str,
+    is_folder: bool,
+    path: Option<&str>,
+) -> bool {
+    pecofence_core::type_filter::matches(types, file, is_folder, || {
+        path.and_then(|p| shell::shortcut_target(std::path::Path::new(p)))
+    })
 }
 
 impl App {

@@ -273,7 +273,7 @@ impl App {
                 .map(|n| n.to_string_lossy().to_string())
                 .unwrap_or_else(|| hit.path.clone());
             // Asked with the type's words already; the same test as the fences' items.
-            if !type_filter::matches(&types, &name, hit.is_folder) {
+            if !super::filter::is_of_types(&types, &name, hit.is_folder, Some(&hit.path)) {
                 continue;
             }
             let score = matcher::match_name(&name, &query).map_or(0, |m| m.score);
@@ -773,7 +773,7 @@ fn item_is_of(types: &[type_filter::TypeToken], it: &pecofence_core::Item) -> bo
         .and_then(|p| Path::new(p).file_name())
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_else(|| it.display_name.clone());
-    type_filter::matches(types, &file, it.is_folder)
+    super::filter::is_of_types(types, &file, it.is_folder, it.key.as_path())
 }
 
 /// `text` with Everything's words for the type tab after it.
