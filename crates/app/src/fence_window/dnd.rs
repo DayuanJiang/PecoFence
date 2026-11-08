@@ -108,6 +108,12 @@ fn dropped_paths(data: &IDataObject, internal: bool) -> Vec<PathBuf> {
         .collect()
 }
 
+/// How many of the dragged paths are files and how many folders (for the log).
+fn item_kinds(paths: &[PathBuf]) -> (usize, usize) {
+    let folders = paths.iter().filter(|p| p.is_dir()).count();
+    (paths.len() - folders, folders)
+}
+
 /// The entries directly in `dir` (the desktop, before and after a shell drop).
 fn dir_entries(dir: &Path) -> HashSet<PathBuf> {
     std::fs::read_dir(dir)
@@ -338,8 +344,9 @@ pub(super) struct FenceDropHandler {
     /// read at DragEnter: a plain drag from another volume copies, as in Explorer.
     pub(super) source_volume: Option<String>,
     pub(super) desktop: Option<PathBuf>,
-    /// Only real folders opt into opening with an application's shortcut.
-    pub(super) folder_drag: bool,
+    /// The drag holds real files or folders (`CF_HDROP` paths): dropped on a program or its
+    /// shortcut, they open with it, as on the Windows desktop (#198).
+    pub(super) path_drag: bool,
     /// Cache both accepted and rejected shortcuts for this hover (no repeated disk/COM
     /// lookup at mouse-message rate). Dropping the target balances its DragEnter.
     pub(super) shortcut_hover: Option<(PathBuf, Option<dragdrop::ShortcutDropTarget>)>,
@@ -411,7 +418,7 @@ impl FenceDropHandler {
         allowed: u32,
     ) -> Option<Feedback> {
         let internal = Self::internal();
-        let candidate = if self.folder_drag {
+        let candidate = if self.path_drag {
             pt.and_then(|pt| {
                 let guard = self.view.try_borrow().ok()?;
                 let v = guard.as_ref().filter(|v| !v.shows_tool())?;
@@ -444,8 +451,28 @@ impl FenceDropHandler {
             .is_none_or(|(old, _)| *old != path)
         {
             self.shortcut_hover = None;
-            let target = dragdrop::ShortcutDropTarget::bind(&path).ok();
-            self.shortcut_hover = Some((path, target));
+            let bound = dragdrop::ShortcutDropTarget::bind(&path);
+            let (files, folders) = self
+                .data
+                .as_ref()
+                .map(|d| item_kinds(&dragdrop::hdrop_paths(d)))
+                .unwrap_or_default();
+            let reason = match &bound {
+                Ok(_) => "a program: the items open with it",
+                Err(why) => why,
+            };
+            let link = path
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("lnk"));
+            tracing::info!(
+                link,
+                program = bound.is_ok(),
+                files,
+                folders,
+                reason,
+                "icon under a drag of files or folders"
+            );
+            self.shortcut_hover = Some((path, bound.ok()));
         }
         let effect = match (&mut self.shortcut_hover, &self.data) {
             (Some((_, Some(target))), Some(data)) => {
@@ -456,7 +483,8 @@ impl FenceDropHandler {
                 effect
             }
             // No program and no application's shortcut (a document, a folder, a broken or a
-            // Store app's link): the folders drop on the fence as before.
+            // Store app's link): the items drop as on any other icon (into the folder a
+            // shortcut points to, else into the fence).
             (Some((_, None)), _) => return None,
             _ => DropEffect::None,
         };
@@ -610,7 +638,7 @@ impl FenceDropHandler {
     /// starts from the default image, and the data object is released.
     pub(super) fn forget_data(&mut self, clear_description: bool) {
         self.shortcut_hover = None;
-        self.folder_drag = false;
+        self.path_drag = false;
         if let Some(data) = self.data.take()
             && clear_description
             && self.last_description.is_some()
@@ -635,15 +663,14 @@ impl DropHandler for FenceDropHandler {
         // to the shell, which makes their shortcuts.
         let hdrop = dragdrop::has_hdrop(data).then(|| dropped_paths(data, internal));
         self.shortcut_hover = None;
-        self.folder_drag = hdrop
-            .as_ref()
-            .is_some_and(|paths| !paths.is_empty() && paths.iter().all(|path| path.is_dir()));
         self.kind = classify_drop(
             internal,
             hdrop.as_deref(),
             || dragdrop::has_inet_url(data),
             || dragdrop::has_shell_items(data),
         );
+        self.path_drag =
+            self.kind == DropKind::Files && hdrop.as_ref().is_some_and(|paths| !paths.is_empty());
         self.data = Some(data.clone());
         self.last_description = None;
         self.right_button = key_state & dragdrop::MK_RBUTTON != 0;
@@ -726,29 +753,32 @@ impl DropHandler for FenceDropHandler {
             self.kind = DropKind::None;
             self.feedback(None, 0, 0);
             self.forget_data(false);
-            self.right_button = false;
+            let right = std::mem::take(&mut self.right_button);
             if let Some(helper) = &self.helper {
                 helper.drop(data, pt, feedback.effect);
             }
-            // Never fall through to membership changes or file moves when a shortcut
-            // rejects the folders, disappears, or fails to launch.
+            // Never fall through to membership changes or file moves when a program refuses
+            // the items, disappears, or fails to launch.
             let effect = target
                 .filter(|_| feedback.effect != DropEffect::None)
                 .map(|target| {
                     target
-                        .drop_folders(data, key_state, pt, allowed)
+                        .drop_items(data, key_state, pt, allowed)
                         .unwrap_or_else(|error| {
-                            tracing::warn!(%error, "shortcut folder drop failed");
+                            tracing::warn!(%error, "drop on a program or its shortcut failed");
                             DropEffect::None
                         })
                 })
                 .unwrap_or(DropEffect::None);
+            let (files, folders) = item_kinds(&dragdrop::hdrop_paths(data));
             tracing::info!(
                 shortcut = %shortcut.unwrap_or_default().display(),
-                folders = dragdrop::hdrop_paths(data).len(),
+                files,
+                folders,
+                right,
                 refused = feedback.effect == DropEffect::None,
                 ?effect,
-                "folders dropped on a program or its shortcut"
+                "items dropped on a program or its shortcut, none moved"
             );
             return effect;
         }

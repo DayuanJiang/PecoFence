@@ -630,7 +630,8 @@ pub fn is_program_path(path: &Path) -> bool {
 
 /// A drag delegated to a program file or an application's `.lnk` (preserving its arguments and
 /// working directory). Keep it for one hover, and call without holding a view's RefCell borrow:
-/// Shell extensions may pump messages. Dropping opens the folders, never transfers them.
+/// Shell extensions may pump messages. Dropping opens the dragged files and folders, never
+/// transfers them.
 pub struct ShortcutDropTarget {
     target: IDropTarget,
     entered: bool,
@@ -638,7 +639,9 @@ pub struct ShortcutDropTarget {
 }
 
 impl ShortcutDropTarget {
-    pub fn bind(shortcut: &Path) -> Result<Self> {
+    /// The Shell's drop target of a program file or of a shortcut to one. Anything else is no
+    /// target, and the error says why (a fixed text for the caller's log).
+    pub fn bind(shortcut: &Path) -> std::result::Result<Self, &'static str> {
         let link = shortcut
             .extension()
             .is_some_and(|ext| ext.eq_ignore_ascii_case("lnk"));
@@ -647,28 +650,35 @@ impl ShortcutDropTarget {
         } else {
             Some(shortcut.to_path_buf())
         };
-        let app = resolved
-            .as_ref()
-            .is_some_and(|p| is_program_path(p) && p.is_file());
-        // Not an application: a document, a folder, a missing program, or a Store app's link
-        // (no file path).
+        let refused = match &resolved {
+            // A Store app's link, or a shortcut that cannot be read.
+            None => Some("shortcut without a file target"),
+            // A document or a folder.
+            Some(p) if !is_program_path(p) => Some("target is no program"),
+            // A broken shortcut, or a program file that is gone.
+            Some(p) if !p.is_file() => Some("program is missing"),
+            Some(_) => None,
+        };
         tracing::debug!(
             shortcut = %shortcut.display(),
             target = ?resolved,
-            app,
-            "program or shortcut under a folder drag"
+            refused,
+            "program or shortcut under a drag of files or folders"
         );
-        if !app {
-            return Err(windows_core::Error::from_hresult(E_FAIL));
+        if let Some(reason) = refused {
+            return Err(reason);
         }
         // Resolve only to check the target type. Bind the link (or the program) itself, so
         // the Shell keeps its saved arguments, working directory and launch behaviour.
         let path = to_wide(&shortcut.to_string_lossy());
         // SAFETY: COM is initialized on the UI STA and the string outlives the call.
-        let target = unsafe {
-            let item: IShellItem = SHCreateItemFromParsingName(PCWSTR(path.as_ptr()), None)?;
-            item.BindToHandler(None, &BHID_SFUIObject)?
+        let target: Result<IDropTarget> = unsafe {
+            match SHCreateItemFromParsingName::<_, _, IShellItem>(PCWSTR(path.as_ptr()), None) {
+                Ok(item) => item.BindToHandler(None, &BHID_SFUIObject),
+                Err(e) => Err(e),
+            }
         };
+        let target = target.map_err(|_| "the Shell gave no drop target")?;
         Ok(Self {
             target,
             entered: false,
@@ -708,7 +718,7 @@ impl ShortcutDropTarget {
         DropEffect::from_raw(effect & allowed & (DROPEFFECT_COPY | DROPEFFECT_LINK) as u32)
     }
 
-    pub fn drop_folders(
+    pub fn drop_items(
         mut self,
         data: &IDataObject,
         keys: u32,
@@ -771,10 +781,11 @@ mod shortcut_tests {
         }
     }
 
-    /// Real Shell drop: the shortcut keeps its arguments/cwd, folder paths containing
-    /// spaces and Chinese arrive intact, and neither the source folders nor their files move.
+    /// Real Shell drop: the shortcut keeps its arguments/cwd, folder and file paths containing
+    /// spaces and Chinese arrive intact, and neither the source folders, their files nor the
+    /// dropped file move (#198: files open with a program as folders do).
     #[test]
-    fn shortcut_drop_opens_folders_without_moving_them() {
+    fn shortcut_drop_opens_items_without_moving_them() {
         let _ole = crate::com::OleGuard::init().unwrap();
         let unique = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -804,7 +815,13 @@ mod shortcut_tests {
             ),
             &base,
         );
-        let refs: Vec<&Path> = folders.iter().map(|p| p.as_path()).collect();
+        let file = base.join("说明 note.txt");
+        std::fs::write(&file, "unchanged").unwrap();
+        let refs: Vec<&Path> = folders
+            .iter()
+            .map(|p| p.as_path())
+            .chain([file.as_path()])
+            .collect();
         let data = data_object_for_paths(&refs).unwrap();
         let pt = DragPoint { x: 0, y: 0 };
         let received = base.join("received.txt");
@@ -832,7 +849,7 @@ mod shortcut_tests {
             matches!(entered, DropEffect::Copy | DropEffect::Link),
             "{entered:?}"
         );
-        let dropped = target.drop_folders(&data, 0, pt, ALL_EFFECTS).unwrap();
+        let dropped = target.drop_items(&data, 0, pt, ALL_EFFECTS).unwrap();
         assert!(
             matches!(dropped, DropEffect::Copy | DropEffect::Link),
             "{dropped:?}"
@@ -841,12 +858,12 @@ mod shortcut_tests {
         let lines = loop {
             let text = std::fs::read_to_string(&received).unwrap_or_default();
             let lines: Vec<String> = text.lines().map(str::to_string).collect();
-            if lines.len() == 4 {
+            if lines.len() == 5 {
                 break lines;
             }
             assert!(
                 std::time::Instant::now() < deadline,
-                "application did not receive the folders: {text:?}"
+                "application did not receive the items: {text:?}"
             );
             std::thread::sleep(std::time::Duration::from_millis(25));
         };
@@ -860,13 +877,15 @@ mod shortcut_tests {
         };
         same(Path::new(&lines[0]), &base);
         assert_eq!(lines[1], "saved argument");
-        for (folder, argument) in folders.iter().zip(&lines[2..]) {
+        for (folder, argument) in folders.iter().zip(&lines[2..4]) {
             same(Path::new(argument), folder);
             assert_eq!(
                 std::fs::read_to_string(folder.join("keep.txt")).unwrap(),
                 "unchanged"
             );
         }
+        same(Path::new(&lines[4]), &file);
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "unchanged");
         // Neither a folder shortcut nor a document shortcut is an application drop target.
         for (name, destination) in [
             ("folder", folders[0].as_path()),
@@ -874,11 +893,17 @@ mod shortcut_tests {
         ] {
             let path = base.join(format!("{name}.lnk"));
             shortcut(&path, destination, "", &base);
-            assert!(ShortcutDropTarget::bind(&path).is_err());
+            assert_eq!(
+                ShortcutDropTarget::bind(&path).err(),
+                Some("target is no program")
+            );
         }
         let missing = base.join("missing.lnk");
         shortcut(&missing, &base.join("missing.exe"), "", &base);
-        assert!(ShortcutDropTarget::bind(&missing).is_err());
+        assert_eq!(
+            ShortcutDropTarget::bind(&missing).err(),
+            Some("program is missing")
+        );
         // A program file itself is a target too; a document or a missing program is not.
         let bat = base.join("run.bat");
         std::fs::write(&bat, "@echo off").unwrap();
