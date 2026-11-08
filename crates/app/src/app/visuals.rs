@@ -1434,6 +1434,7 @@ impl App {
             }
             self.push_settings_state();
         }
+        self.smart_editor_theme_changed(theme_changed.then_some((mode, theme.liquid_glass)));
         for w in self.fences.values() {
             w.set_theme(theme, backdrops.clone(), shadow);
         }

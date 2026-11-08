@@ -1,5 +1,7 @@
 //! On-demand WebView2 settings window (plan §9): created when opened, destroyed when closed so
-//! the browser processes go away and nothing stays resident.
+//! the browser processes go away and nothing stays resident. The smart fence editor
+//! (智能栅栏编辑器, `HostKind::SmartEditor`) is the same page in a small window of its own that
+//! shows only the editor.
 //!
 //! IPC: the page posts JSON (`{"type": "ready" | "patchSettings" | "setRules" | "action"}`);
 //! the host pushes `{"type": "state", ...}` / `{"type": "toast", ...}` with `post_json`.
@@ -17,6 +19,15 @@ use windows_core::Result;
 use windows_webview::{Controller, Environment, EnvironmentOptions, WebView};
 
 pub const SETTINGS_CLASS: &str = "PecoFence.Settings";
+pub const SMART_EDITOR_CLASS: &str = "PecoFence.SmartEditor";
+
+/// Which window the host is: the settings, or the smart fence editor. The editor's page
+/// messages come as `Command::EditorMessage`, the settings page's as `SettingsMessage`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HostKind {
+    Settings,
+    SmartEditor,
+}
 const SETTINGS_HTML: &str = include_str!("../../../ui/settings.html");
 const I18N_JS: &str = include_str!("../../../ui/i18n.js");
 
@@ -89,18 +100,28 @@ pub struct SettingsHost {
 }
 
 impl SettingsHost {
-    pub fn register_class() -> Result<WindowClass> {
-        WindowClass::register(SETTINGS_CLASS, ClassOptions::default())
+    pub fn register_class(kind: HostKind) -> Result<WindowClass> {
+        let name = match kind {
+            HostKind::Settings => SETTINGS_CLASS,
+            HostKind::SmartEditor => SMART_EDITOR_CLASS,
+        };
+        WindowClass::register(name, ClassOptions::default())
     }
 
     /// Creates the window and the WebView2 controller and loads the settings page. Page
-    /// messages are forwarded to the command queue as `Command::SettingsMessage`.
+    /// messages are forwarded to the command queue as `Command::SettingsMessage` (the editor's
+    /// as `Command::EditorMessage`). The settings open on the primary monitor, the editor on
+    /// the monitor of `near` (the point its menu opened at), centred on its work area.
+    #[allow(clippy::too_many_arguments)]
     pub fn open(
         class: &WindowClass,
         env: &WebEnvironment,
         mode: ThemeMode,
         _liquid_glass: bool,
         queue: CommandQueue,
+        kind: HostKind,
+        title: &str,
+        near: Option<(i32, i32)>,
     ) -> Result<Self> {
         let opened = std::time::Instant::now();
         let state = Rc::new(RefCell::new(HostState {
@@ -110,11 +131,23 @@ impl SettingsHost {
 
         let mons = monitors::enumerate();
         let primary = mons.iter().find(|m| m.primary).or(mons.first());
-        let scale = primary.map(|m| m.scale()).unwrap_or(1.0);
-        let place = primary.map(|m| placement(m.work_area, scale));
+        let monitor = near
+            .and_then(|(x, y)| {
+                mons.iter().find(|m| {
+                    let r = m.work_area;
+                    x >= r.left && x < r.right && y >= r.top && y < r.bottom
+                })
+            })
+            .or(primary);
+        let scale = monitor.map(|m| m.scale()).unwrap_or(1.0);
+        let place_on = move |work: RECT, scale: f32| match kind {
+            HostKind::Settings => placement(work, scale),
+            HostKind::SmartEditor => editor_placement(work, scale),
+        };
+        let place = monitor.map(|m| place_on(m.work_area, scale));
         let (min_w, min_h) = place
             .map(|p| (p.min_w, p.min_h))
-            .unwrap_or(((720.0 * scale) as i32, (480.0 * scale) as i32));
+            .unwrap_or(((560.0 * scale) as i32, (420.0 * scale) as i32));
 
         let handler: MessageHandler = {
             let state = state.clone();
@@ -144,7 +177,7 @@ impl SettingsHost {
                             // scale than the one it opened on.
                             let (min_w, min_h) =
                                 monitors::query(monitors::monitor_from_window(hwnd))
-                                    .map(|m| placement(m.work_area, m.scale()))
+                                    .map(|m| place_on(m.work_area, m.scale()))
                                     .map_or((min_w, min_h), |p| (p.min_w, p.min_h));
                             // SAFETY: lParam is the MINMAXINFO for this message.
                             unsafe { window::minmaxinfo_set_min_track(lparam, min_w, min_h) };
@@ -173,7 +206,7 @@ impl SettingsHost {
                             }
                             Some(0)
                         }
-                        msg::WM_ACTIVATE if wparam & 0xffff != 0 => {
+                        msg::WM_ACTIVATE if wparam & 0xffff != 0 && kind == HostKind::Settings => {
                             queue.push(Command::SettingsActivated);
                             None
                         }
@@ -206,7 +239,7 @@ impl SettingsHost {
         ));
 
         let window = WindowBuilder::new(class)
-            .title(pecofence_core::i18n::text("PecoFence 设置"))
+            .title(title)
             .style(style::OVERLAPPEDWINDOW | style::CLIPCHILDREN)
             .bounds(x, y, w, h)
             .create(handler)?;
@@ -243,22 +276,40 @@ impl SettingsHost {
         {
             let queue = queue.clone();
             registrations.push(webview.on_web_message_received(move |args| {
-                queue.push(Command::SettingsMessage(args.web_message_as_json()));
+                let json = args.web_message_as_json();
+                queue.push(match kind {
+                    HostKind::Settings => Command::SettingsMessage(json),
+                    HostKind::SmartEditor => Command::EditorMessage(json),
+                });
             })?);
         }
         // Tell the page whether it sits on Mica before it renders (opaque fallback class).
         let payload = pecofence_core::i18n::ui_payload()
             .to_string()
             .replace('<', "\\u003c");
+        // The editor's page says what it is: the page shows only the editor, and a test finds
+        // it among the browser's pages by its title.
+        let editor = match kind {
+            HostKind::Settings => "",
+            HostKind::SmartEditor => "window.PECOFENCE_MODE='smartEditor';",
+        };
         let document = SETTINGS_HTML
             .replace(
                 "<!-- PECOFENCE_LOCALE -->",
-                &format!("<script>window.PECOFENCE_LOCALE={payload};</script>"),
+                &format!("<script>window.PECOFENCE_LOCALE={payload};{editor}</script>"),
             )
             .replace(
                 "<script src=\"i18n.js\"></script>",
                 &format!("<script>{I18N_JS}</script>"),
             );
+        let document = match kind {
+            HostKind::Settings => document,
+            HostKind::SmartEditor => document.replacen(
+                "<title>PecoFence 设置</title>",
+                "<title>PecoFence smart fence editor</title>",
+                1,
+            ),
+        };
         let html = if mica {
             document
         } else {
@@ -297,11 +348,10 @@ impl SettingsHost {
         self.window.hwnd()
     }
 
-    pub fn update_language(&self) {
-        window::set_title(
-            self.window.hwnd(),
-            pecofence_core::i18n::text("PecoFence 设置"),
-        );
+    /// The window's caption (the settings' after a language change, the editor's for the fence
+    /// it shows).
+    pub fn set_title(&self, title: &str) {
+        window::set_title(self.window.hwnd(), title);
     }
 
     /// Sets the window's caption icons (`WM_SETICON` small + big) from premultiplied BGRA.
@@ -333,15 +383,17 @@ impl SettingsHost {
         }
     }
 
-    /// Closes the browser and destroys the window.
-    #[allow(dead_code)]
+    /// Closes the browser and destroys the window. The browser is taken out of the state
+    /// before it closes: closing it sends the window messages (focus, size) whose handling
+    /// reads the state.
     pub fn close(self) {
-        {
+        let (webview, controller) = {
             let mut s = self.state.borrow_mut();
-            s.webview = None;
-            if let Some(c) = s.controller.take() {
-                let _ = c.close();
-            }
+            (s.webview.take(), s.controller.take())
+        };
+        drop(webview);
+        if let Some(c) = controller {
+            let _ = c.close();
         }
         drop(self.window);
     }
@@ -386,6 +438,22 @@ struct Placement {
     h: i32,
     min_w: i32,
     min_h: i32,
+}
+
+/// The smart fence editor: 680 x 560 DIP (minimum 560 x 420), centred on the work area, and
+/// smaller on a work area that has no room for it.
+fn editor_placement(work: RECT, scale: f32) -> Placement {
+    let (area_w, area_h) = (work.right - work.left, work.bottom - work.top);
+    let w = ((680.0 * scale) as i32).min(area_w);
+    let h = ((560.0 * scale) as i32).min(area_h);
+    Placement {
+        x: work.left + (area_w - w) / 2,
+        y: work.top + (area_h - h) / 2,
+        w,
+        h,
+        min_w: ((560.0 * scale) as i32).min(w),
+        min_h: ((420.0 * scale) as i32).min(h),
+    }
 }
 
 /// The designed 960 x 660 DIP window (minimum 720 x 480), centred on the work area. Both
@@ -445,5 +513,18 @@ mod tests {
         let p = placement(work(2560, 1392), 1.0);
         assert_eq!((p.w, p.h), (960, 660));
         assert_eq!((p.x, p.y), (800, 366));
+    }
+
+    #[test]
+    fn the_smart_fence_editor_is_a_small_window_that_fits() {
+        let p = editor_placement(work(1600, 852), 1.0);
+        assert_eq!((p.w, p.h, p.x, p.y), (680, 560, 460, 146));
+        for (area, scale) in [(work(1366, 708), 1.5), (work(1280, 672), 1.75)] {
+            let p = editor_placement(area, scale);
+            assert!(
+                p.y + p.h <= area.bottom && p.x >= 0 && p.min_h <= p.h,
+                "{p:?}"
+            );
+        }
     }
 }

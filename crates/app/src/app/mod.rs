@@ -15,7 +15,7 @@ use crate::icons::{IconCache, IconVariant, WM_APP_ICON_READY};
 use crate::ipc_server::{IpcServer, PendingQueue};
 use crate::layout::GridSpec;
 use crate::peek::PeekOverlay;
-use crate::settings_host::{SettingsHost, WebEnvironment};
+use crate::settings_host::{HostKind, SettingsHost, WebEnvironment};
 use crate::shadow::{ShadowStyle, ShadowWindow};
 use crate::state::AppState;
 use pecofence_core::geometry::WorkArea;
@@ -75,6 +75,7 @@ mod rating;
 mod search;
 mod settings;
 mod smart;
+mod smart_editor;
 mod sync;
 mod tabs;
 #[cfg(test)]
@@ -336,6 +337,9 @@ pub struct App {
     settings_ring: Option<FenceId>,
     web_env: Option<WebEnvironment>,
     settings_class: WindowClass,
+    /// 智能栅栏编辑器: its window class and the editor while it is open (one at a time).
+    editor_class: WindowClass,
+    smart_editor: Option<smart_editor::SmartEditor>,
     theme_mode: ThemeMode,
     /// The user's accent palette at the last visual refresh (None = built-in default look).
     accent: Option<systheme::AccentPalette>,
@@ -1550,7 +1554,8 @@ impl App {
             .map_err(|e| tracing::warn!(error = %e, "shell change notifications unavailable"))
             .ok();
 
-        let settings_class = SettingsHost::register_class()?;
+        let settings_class = SettingsHost::register_class(HostKind::Settings)?;
+        let editor_class = SettingsHost::register_class(HostKind::SmartEditor)?;
         let peek_class = PeekOverlay::register_class()?;
 
         // CLI named pipe: requests land in `ipc_pending`, the control window is poked.
@@ -1604,6 +1609,8 @@ impl App {
             settings_ring: None,
             web_env: None,
             settings_class,
+            editor_class,
+            smart_editor: None,
             theme_mode,
             accent,
             custom_theme,
@@ -2458,8 +2465,8 @@ impl App {
             Command::NewFence { x, y } => self.new_fence_near(x, y),
             Command::NewNote { x, y } => self.new_note_near(x, y),
             Command::NewClock { x, y } => self.new_clock_near(x, y),
-            Command::NewSmartFence { template, x, y } => {
-                self.new_smart_from_template(template, x, y)
+            Command::OpenSmartEditor { fence, x, y, by } => {
+                self.open_smart_editor(fence, (x, y), by)
             }
             Command::SmartResults { kind, bytes } => self.on_smart_results(kind, &bytes),
             Command::OpenFenceFilter(fence) => self.open_fence_filter(fence, "ctrl+f"),
@@ -2576,12 +2583,14 @@ impl App {
                     self.set_settings_ring(None);
                     self.resume_hotkeys();
                 }
+                self.smart_editor_gone(hwnd);
             }
             Command::FadeOutDone(hwnd) => {
                 // Dropping the window destroys it (RevokeDragDrop + DestroyWindow).
                 self.dying.retain(|w| w.hwnd() != hwnd);
             }
             Command::SettingsMessage(json) => self.on_settings_message(&json),
+            Command::EditorMessage(json) => self.on_editor_message(&json),
             Command::Notice(event) => self.on_notice(event),
         }
     }

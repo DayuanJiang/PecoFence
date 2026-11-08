@@ -297,11 +297,13 @@ pub enum Command {
         x: i32,
         y: i32,
     },
-    /// 新建智能栅栏 › a template: a smart fence near the screen point.
-    NewSmartFence {
-        template: pecofence_core::smart::Template,
+    /// 新建智能栅栏… (`fence` None; the new fence goes near the screen point) or 编辑条件… of a
+    /// smart fence: the smart fence editor.
+    OpenSmartEditor {
+        fence: Option<FenceId>,
         x: i32,
         y: i32,
+        by: &'static str,
     },
     /// Everything answered a smart fence's search (`WM_COPYDATA` to the control window).
     SmartResults {
@@ -402,6 +404,8 @@ pub enum Command {
     },
     /// JSON message from the settings page.
     SettingsMessage(String),
+    /// JSON message from the smart fence editor's page.
+    EditorMessage(String),
     /// The rating notice was clicked or went away (see `notice.rs`).
     Notice(crate::notice::NoticeEvent),
 }

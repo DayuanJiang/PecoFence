@@ -137,28 +137,7 @@ pub(super) fn known_folders() -> KnownFolders {
 }
 
 impl App {
-    /// 新建智能栅栏 (tray and fence menu), command ids `base..base + Template::ALL.len()`.
-    pub(super) fn new_smart_submenu(base: u32) -> PopupMenu {
-        let menu = PopupMenu::new();
-        for (i, t) in Template::ALL.iter().enumerate() {
-            menu.item(base + i as u32, t.title(), false, false);
-        }
-        menu
-    }
-
-    /// A smart fence from template `template` near the screen point.
-    pub(super) fn new_smart_from_template(&mut self, template: Template, x: i32, y: i32) {
-        let Some(spec) = template.spec(&known_folders()) else {
-            tracing::warn!(
-                template = template.key(),
-                "smart fence: the template's folder is unknown"
-            );
-            return;
-        };
-        self.create_smart_fence(spec, Some(template.title()), None, x, y);
-    }
-
-    /// Creates a smart fence (menu, CLI) and runs its search at once.
+    /// Creates a smart fence (the editor, the CLI, Peek) and runs its search at once.
     pub(super) fn create_smart_fence(
         &mut self,
         spec: SmartSpec,
@@ -717,20 +696,38 @@ impl App {
         if spec.folders != before.folders {
             spec.template = None;
         }
-        let (folders, matching, days, conds, limit) = (
-            spec.folders.len(),
-            spec.matching.as_str(),
-            spec.within_days,
-            spec.all_of.len(),
-            spec.limit,
-        );
-        tracing::info!(%fence, what, folders, matching, within_days = ?days, conditions = conds, limit, "smart fence search changed");
+        self.smart_search_changed(fence, what);
+        true
+    }
+
+    /// The smart fence editor's 好: the whole search at once. The template it came from stays
+    /// only while the folders are the template's. False when nothing changed.
+    pub(super) fn replace_smart_spec(&mut self, fence: FenceId, mut spec: SmartSpec) -> bool {
+        let Some(cur) = self.state.fence_mut(fence).and_then(|f| f.smart.as_mut()) else {
+            tracing::info!(%fence, "smart fence change refused: not a smart fence");
+            return false;
+        };
+        spec.template = cur.template.clone().filter(|_| spec.folders == cur.folders);
+        if *cur == spec {
+            tracing::info!(%fence, "smart fence editor: the search is unchanged");
+            return false;
+        }
+        *cur = spec;
+        self.smart_search_changed(fence, "the whole search");
+        true
+    }
+
+    /// After a change to smart fence `fence`'s search: logged, saved, the watchers follow its
+    /// folders, the search runs again and the title shows its new state.
+    fn smart_search_changed(&mut self, fence: FenceId, what: &str) {
+        if let Some(spec) = self.state.smart_spec(fence) {
+            tracing::info!(%fence, what, folders = spec.folders.len(), matching = spec.matching.as_str(), subfolders = spec.subfolders, within_days = ?spec.within_days, conditions = spec.all_of.len(), name = spec.name.is_some(), everything = spec.everything.is_some(), limit = spec.limit, "smart fence search changed");
+        }
         self.state.mark_dirty();
         self.schedule_save();
         self.ensure_smart_watchers();
         self.run_smart(fence, "search changed");
         self.apply_portal_deco(self.state.host_of(fence));
-        true
     }
 
     /// A template's folder that is not on this computer (a configuration imported from another

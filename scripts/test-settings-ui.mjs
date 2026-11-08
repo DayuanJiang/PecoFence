@@ -179,6 +179,51 @@ function bridge() {
   };
 }
 
+// 智能栅栏编辑器: what the host sends the editor's page (`editor`), for a new fence, for 最近 7 天下载
+// and for a search that uses every kind of row.
+const editorDl = 'C:\\Users\\me\\Downloads';
+const editorTemplates = [
+  { key: 'downloads', title: '最近 7 天下载', spec: { template: 'downloads', folders: [editorDl], subfolders: true, allOf: [{ cond: 'filesOnly', value: null }], withinDays: 7, limit: 200 } },
+  { key: 'screenshots', title: '最近一周的截图', spec: null },
+  { key: 'large', title: '大于 1 GB 的文件', spec: { template: 'large', subfolders: true, allOf: [{ cond: 'filesOnly', value: null }, { cond: 'sizeMb', value: { min: 1024, max: null } }], limit: 200 } },
+  { key: 'psd', title: '所有 .psd 文件', spec: { template: 'psd', subfolders: true, allOf: [{ cond: 'filesOnly', value: null }, { cond: 'ext', value: ['.psd'] }], limit: 200 } },
+  { key: 'recent', title: '最近打开的文件', spec: { template: 'recent', folders: ['C:\\Users\\me\\Recent'], subfolders: false, allOf: [{ cond: 'filesOnly', value: null }, { cond: 'ext', value: ['.lnk'] }], limit: 40 } },
+];
+const editorFixtures = {
+  new: { type: 'editor', fence: null, isNew: true, title: '', spec: { subfolders: true, limit: 200 }, templates: editorTemplates, everything: { state: 'running' } },
+  dl: { type: 'editor', fence: 'smart-dl', isNew: false, title: '最近 7 天下载', spec: editorTemplates[0].spec, templates: editorTemplates, everything: { state: 'running' } },
+  every: { type: 'editor', fence: 'smart-all', isNew: false, title: 'Every row', templates: editorTemplates, everything: { state: 'running' },
+    spec: { folders: ['D:\\Work', 'E:\\Archive'], subfolders: false, match: 'any', withinDays: 30, name: 'bg', everything: 'invoice|receipt', limit: 500,
+      allOf: [
+        { cond: 'type', value: ['images', 'music'] }, { cond: 'ext', value: ['pdf', 'tar.gz'] }, { cond: 'name', value: { op: 'startsWith', value: 'IMG_' } },
+        { cond: 'sizeMb', value: { min: 1024, max: null } }, { cond: 'sizeMb', value: { min: 1.5, max: 20 } }, { cond: 'createdTime', value: { from_min: 1320, to_min: 360 } },
+        { cond: 'createdWeekday', value: [5, 6] }, { cond: 'shortcutTarget', value: { op: 'contains', value: 'steam' } }, { cond: 'idleDays', value: { min: 45 } },
+        { cond: 'glob', value: '*.bak' },
+      ] } },
+};
+
+function editorBridge() {
+  const state = JSON.parse(document.getElementById('fixture').textContent);
+  window.testEditor = JSON.parse(document.getElementById('fixture-editor').textContent);
+  window.testMessages = [];
+  let receive;
+  window.testReceive = data => receive({ data: structuredClone(data) });
+  window.testState = state;
+  delete Crypto.prototype.randomUUID;
+  window.chrome = {
+    webview: {
+      addEventListener(_type, handler) { receive = handler; },
+      postMessage(message) {
+        window.testMessages.push(structuredClone(message));
+        // Mirror the host: the page's language and theme first, then the fence.
+        if (message.type === 'ready') setTimeout(() => { receive({ data: structuredClone(state) }); receive({ data: structuredClone(window.testEditor) }); }, 0);
+        // The folder picker answers with testPickPath (null: cancelled).
+        if (message.type === 'editorPickFolder') setTimeout(() => receive({ data: { type: 'editorFolder', row: message.row, path: window.testPickPath === undefined ? 'D:\\Picked' : window.testPickPath } }), 0);
+      },
+    },
+  };
+}
+
 async function runTests() {
   const frame = document.querySelector('iframe');
   const results = document.getElementById('results');
@@ -2207,6 +2252,169 @@ async function runTests() {
     }
   });
 
+  // ---- 智能栅栏编辑器 (the page in the editor's own window, with a mock host) ----
+  const openEditor = async (query) => {
+    await new Promise(resolve => { frame.onload = resolve; frame.src = '/editor?' + query; });
+    await settle(); await settle();
+    return frame.contentDocument;
+  };
+  const ew = () => frame.contentWindow;
+  const posted = (type, since = 0) => ew().testMessages.slice(since).filter(m => m.type === type);
+  const rowsOf = d => [...d.querySelectorAll('#seWindow .se-row')];
+  const kindsOf = d => rowsOf(d).map(r => r.dataset.kind).join(',');
+  const seKey = (d, k, opts = {}) => d.activeElement.dispatchEvent(new (ew().KeyboardEvent)('keydown', { key: k, bubbles: true, cancelable: true, ...opts }));
+  const sePick = (el, value) => { el.value = value; el.dispatchEvent(new (ew().Event)('change', { bubbles: true })); };
+  const seType = (el, text) => { el.focus(); el.value = text; el.dispatchEvent(new (ew().Event)('input', { bubbles: true })); };
+  const saved = (since = 0) => posted('editorSave', since).at(-1);
+  await test('Smart fence editor: a new fence starts blank and Enter creates it only when every row is filled in', async () => {
+    doc = await openEditor('fence=new');
+    const w = doc.getElementById('seWindow');
+    assert(doc.body.classList.contains('se-only') && ew().getComputedStyle(doc.querySelector('.app')).display === 'none', 'The settings show behind the editor');
+    assert(w.querySelector('h2').textContent === '新建智能栅栏' && w.querySelector('.se-ok').textContent === '创建', 'Not the new-fence editor');
+    assert(doc.activeElement === w.querySelector('.se-name') && w.querySelector('.se-name').value === '', 'The name box does not have the cursor');
+    assert(kindsOf(doc) === 'where,name' && w.querySelector('.se-where').value === 'all', 'Rows of a new fence: ' + kindsOf(doc));
+    assert(w.querySelectorAll('[data-preset]').length === 5 && w.querySelector('[data-preset=screenshots]').disabled, 'Templates wrong (a template without its folder must be off)');
+    assert(!posted('editorDirty').length, 'Unsaved before any change');
+    seKey(doc, 'Enter'); await settle();
+    assert(!saved() && w.querySelector('.se-msg').textContent === '请输入关键字' && rowsOf(doc)[1].classList.contains('bad'), 'An empty row was saved: ' + w.querySelector('.se-msg').textContent);
+    assert(doc.activeElement === rowsOf(doc)[1].querySelector('.se-text'), 'The cursor is not in the empty box');
+    seType(rowsOf(doc)[1].querySelector('.se-text'), ' 发票 ');
+    assert(posted('editorDirty').length === 1 && posted('editorDirty')[0].dirty === true, 'editorDirty not posted once');
+    assert(!w.querySelector('.se-msg').textContent && !rowsOf(doc)[1].classList.contains('bad'), 'The error stays after typing');
+    seKey(doc, 'Enter'); await settle();
+    const s = saved();
+    assert(s && s.title === '' && JSON.stringify(s.spec) === JSON.stringify({ template: null, folders: [], subfolders: true, match: 'all', allOf: [{ cond: 'name', value: { op: 'contains', value: '发票' } }], withinDays: null, name: null, everything: null, limit: 200 }), 'Saved: ' + JSON.stringify(s));
+  });
+  await test('Smart fence editor: a template fills the rows and the name, and keeps a name the user typed', async () => {
+    doc = await openEditor('fence=new');
+    const w = doc.getElementById('seWindow'), name = w.querySelector('.se-name');
+    w.querySelector('[data-preset=downloads]').click(); await settle();
+    assert(name.value === '最近 7 天下载' && kindsOf(doc) === 'where,sub,time,type', 'Downloads template: ' + name.value + ' ' + kindsOf(doc));
+    assert(rowsOf(doc)[0].querySelector('.se-path').textContent === 'C:\\Users\\me\\Downloads' && rowsOf(doc)[2].querySelector('.se-days').value === '7', 'Folder or days wrong');
+    w.querySelector('.se-ok').click(); await settle();
+    assert(JSON.stringify(saved().spec) === JSON.stringify({ template: 'downloads', folders: ['C:\\Users\\me\\Downloads'], subfolders: true, match: 'all', allOf: [{ cond: 'filesOnly', value: null }], withinDays: 7, name: null, everything: null, limit: 200 }), 'Saved: ' + JSON.stringify(saved().spec));
+    w.querySelector('[data-preset=recent]').click(); await settle();
+    assert(name.value === '最近打开的文件' && w.querySelector('.se-limit select').value === '40' && rowsOf(doc)[1].querySelector('.se-sub').value === 'off', 'The second template did not take the name, limit or subfolders');
+    seType(name, 'My big files');
+    w.querySelector('[data-preset=large]').click(); await settle();
+    assert(name.value === 'My big files' && kindsOf(doc) === 'where,type,size', 'A typed name was replaced or rows wrong: ' + kindsOf(doc));
+    const size = rowsOf(doc)[2];
+    assert(size.querySelector('.se-n1').value === '1' && size.querySelector('.se-unit').value === 'gb', '1024 MB not shown as 1 GB');
+    w.querySelector('.se-ok').click(); await settle();
+    assert(saved().title === 'My big files' && JSON.stringify(saved().spec.allOf) === '[{"cond":"filesOnly","value":null},{"cond":"sizeMb","value":{"min":1024,"max":null}}]' && saved().spec.folders.length === 0, 'Saved: ' + JSON.stringify(saved()));
+  });
+  await test('Smart fence editor: every kind of row reads and saves back unchanged', async () => {
+    doc = await openEditor('fence=every');
+    const w = doc.getElementById('seWindow');
+    assert(w.querySelector('h2').textContent === '编辑智能栅栏' && w.querySelector('.se-ok').textContent === '好' && !w.querySelector('.se-presets'), 'Not the edit editor');
+    assert(kindsOf(doc) === 'where,where,sub,time,type,ext,name,size,size,created,weekday,target,idle,keep,name,everything', 'Rows: ' + kindsOf(doc));
+    assert(w.querySelector('.se-all').value === 'any' && !w.querySelector('.se-always').hidden, '任一 or its note not shown');
+    assert(rowsOf(doc)[13].querySelector('.se-kind').disabled && rowsOf(doc)[13].textContent.includes('*.bak'), 'A condition the editor has no row for is not kept as it is');
+    w.querySelector('.se-ok').click(); await settle();
+    const want = { template: null, folders: ['D:\\Work', 'E:\\Archive'], subfolders: false, match: 'any', allOf: ew().testEditor.spec.allOf, withinDays: 30, name: 'bg', everything: 'invoice|receipt', limit: 500 };
+    assert(JSON.stringify(saved().spec) === JSON.stringify(want), 'Changed on the way: ' + JSON.stringify(saved().spec));
+    assert(saved().title === 'Every row' && !posted('editorDirty').length, 'Title or dirty wrong');
+  });
+  await test('Smart fence editor: kind menus, + and -, the once-only kinds, 文件 alone and 介于', async () => {
+    doc = await openEditor('fence=dl');
+    const w = doc.getElementById('seWindow');
+    const time = rowsOf(doc)[2];
+    assert(rowsOf(doc)[3].querySelector('.se-kind option[value=time]').disabled && !time.querySelector('.se-kind option[value=time]').disabled, '时间 offered twice');
+    rowsOf(doc)[3].querySelector('.se-plus').click(); await settle();
+    assert(kindsOf(doc) === 'where,sub,time,type,name' && doc.activeElement === rowsOf(doc)[4].querySelector('.se-text'), '+ did not add a name row with the cursor');
+    sePick(rowsOf(doc)[4].querySelector('.se-kind'), 'ext'); await settle();
+    assert(kindsOf(doc) === 'where,sub,time,type,ext', 'Kind change: ' + kindsOf(doc));
+    seType(rowsOf(doc)[4].querySelector('.se-text'), '.PNG, jpg  tar.gz');
+    sePick(rowsOf(doc)[3].querySelector('.se-kind'), 'size'); await settle();
+    sePick(rowsOf(doc)[3].querySelector('.se-op'), 'between'); await settle();
+    const size = rowsOf(doc)[3];
+    assert(size.querySelectorAll('input[type=number]').length === 2, '介于 has no second number');
+    size.querySelector('.se-n1').value = '5'; size.querySelector('.se-n2').value = '2';
+    w.querySelector('.se-ok').click(); await settle();
+    assert(w.querySelector('.se-msg').textContent === '最大大小不能小于最小大小' && !saved(), 'A wrong size range was saved');
+    size.querySelector('.se-n2').value = '2'; size.querySelectorAll('.se-unit')[1].value = 'gb';
+    sePick(rowsOf(doc)[0].querySelector('.se-where'), 'all'); await settle();
+    assert(kindsOf(doc) === 'where,time,size,ext', '整台电脑 left other 位置 or 子文件夹 rows: ' + kindsOf(doc));
+    w.querySelector('.se-ok').click(); await settle();
+    const s = saved().spec;
+    assert(s.folders.length === 0 && JSON.stringify(s.allOf) === '[{"cond":"sizeMb","value":{"min":5,"max":2048}},{"cond":"ext","value":["PNG","jpg","tar.gz"]}]' && s.template === 'downloads', 'Saved: ' + JSON.stringify(s));
+    // - removes a row, never the last one.
+    while (rowsOf(doc).length > 1) { rowsOf(doc)[0].querySelector('.se-minus').click(); await settle(); }
+    rowsOf(doc)[0].querySelector('.se-minus').click(); await settle();
+    assert(rowsOf(doc).length === 1, 'The last row went');
+    // 文件 goes alone among the types.
+    sePick(rowsOf(doc)[0].querySelector('.se-kind'), 'type'); await settle();
+    const chip = v => rowsOf(doc)[0].querySelector(`.se-cats input[value=${v}]`);
+    const tick = v => { chip(v).checked = true; chip(v).dispatchEvent(new (ew().Event)('change', { bubbles: true })); };
+    tick('images'); tick('music'); tick('files');
+    assert(chip('files').checked && !chip('images').checked && !chip('music').checked && chip('files').parentElement.classList.contains('on'), '文件 kept other types');
+    tick('video');
+    assert(!chip('files').checked && chip('video').checked, 'Another type kept 文件');
+  });
+  await test('Smart fence editor: 位置 asks the host for a folder; several folders are searched together', async () => {
+    doc = await openEditor('fence=new');
+    const w = doc.getElementById('seWindow');
+    const mark = ew().testMessages.length;
+    sePick(rowsOf(doc)[0].querySelector('.se-where'), 'folder'); await settle(); await settle();
+    assert(posted('editorPickFolder', mark).length === 1, 'No folder picker asked for');
+    assert(rowsOf(doc)[0].querySelector('.se-path').textContent === 'D:\\Picked', 'The picked folder is not shown');
+    rowsOf(doc)[0].querySelector('.se-plus').click(); await settle();
+    ew().testPickPath = null;
+    sePick(rowsOf(doc)[1].querySelector('.se-kind'), 'where'); await settle();
+    rowsOf(doc)[1].querySelector('.se-pick').click(); await settle(); await settle();
+    assert(rowsOf(doc)[1].querySelector('.se-path').classList.contains('none'), 'A cancelled pick filled the row');
+    w.querySelector('.se-ok').click(); await settle();
+    assert(w.querySelector('.se-msg').textContent === '请选择文件夹' && doc.activeElement === rowsOf(doc)[1].querySelector('.se-pick'), 'A row without its folder was not pointed at');
+    ew().testPickPath = 'E:\\Two';
+    rowsOf(doc)[1].querySelector('.se-pick').click(); await settle(); await settle();
+    seType(rowsOf(doc)[2].querySelector('.se-text'), 'x');
+    sePick(w.querySelector('.se-all'), 'any'); await settle();
+    w.querySelector('.se-ok').click(); await settle();
+    const s = saved().spec;
+    assert(JSON.stringify(s.folders) === '["D:\\\\Picked","E:\\\\Two"]' && s.match === 'any' && s.subfolders === true, 'Saved: ' + JSON.stringify(s));
+  });
+  await test('Smart fence editor: Esc cancels, Enter on a button is that button, a host error shows', async () => {
+    doc = await openEditor('fence=dl');
+    const w = doc.getElementById('seWindow');
+    w.querySelector('.se-cancel').focus();
+    seKey(doc, 'Enter'); await settle();
+    assert(!saved(), 'Enter on 取消 saved');
+    rowsOf(doc)[0].querySelector('.se-kind').focus();
+    seKey(doc, 'Enter'); await settle();
+    assert(saved(), 'Enter on a menu did not save');
+    seKey(doc, 'Escape'); await settle();
+    assert(posted('editorCancel').length === 1, 'Esc did not cancel');
+    w.querySelector('.se-cancel').click(); await settle();
+    assert(posted('editorCancel').length === 2, '取消 did not cancel');
+    ew().testReceive({ type: 'editorError', text: '找不到文件夹 D:\\Gone' }); await settle();
+    assert(w.querySelector('.se-msg').textContent === '找不到文件夹 D:\\Gone', 'Host error not shown');
+    const errors = ew().testMessages.filter(m => m.name === 'pageError');
+    assert(!errors.length, 'Page error: ' + JSON.stringify(errors));
+  });
+  await test('Smart fence editor: fits its window in every language and keeps the rows when the language changes', async () => {
+    doc = await openEditor('fence=every');
+    frame.style.width = '680px'; frame.style.height = '560px';
+    try {
+      const w = doc.getElementById('seWindow');
+      seType(w.querySelector('.se-name'), 'Kept name');
+      rowsOf(doc)[6].querySelector('.se-text').value = 'kept text';
+      for (const language of ['en', 'ja', 'zh-TW', 'ko', 'de', 'fr', 'es', 'pt-BR', 'ru', 'it', 'zh-CN']) {
+        const catalogs = JSON.parse(doc.getElementById('fixture-catalogs').textContent);
+        ew().testReceive({ ...ew().testState, locale: language, translations: catalogs[language] || {} }); await settle();
+        const w2 = doc.getElementById('seWindow');
+        assert(w2.scrollWidth <= w2.clientWidth + 1, language + ': the editor overflows sideways');
+        for (const el of w2.querySelectorAll('.se-row select, .se-row button, .se-foot button, .se-foot select')) {
+          const box = el.getBoundingClientRect();
+          assert(box.right <= w2.getBoundingClientRect().right + 1, language + ': a control is outside the window');
+        }
+        assert(w2.querySelector('.se-foot .se-ok').getBoundingClientRect().bottom <= 560, language + ': 好 is below the window');
+        assert(w2.querySelector('.se-name').value === 'Kept name' && rowsOf(doc)[6].querySelector('.se-text').value === 'kept text' && rowsOf(doc).length === 16, language + ': the rows were not kept');
+        assert(w2.querySelector('h2').textContent === ew().PecoFenceI18n.text('编辑智能栅栏'), language + ': title not translated');
+      }
+    } finally { frame.style.width = ''; frame.style.height = ''; }
+    doc = await reset();
+  });
+
   document.getElementById('summary').textContent = `${passed} passed; ${failed} failed`;
   document.title = failed ? 'FAIL — settings UI regressions' : 'PASS — settings UI regressions';
   window.testResults = { passed, failed };
@@ -2221,6 +2429,22 @@ const server = http.createServer(async (request, response) => {
       response.end(await readFile(new URL('../ui/i18n.js', import.meta.url), 'utf8'));
       return;
     }
+    if (url.pathname === '/editor') {
+      // The smart fence editor: ?fence=new|dl|every, &language=, &mode=light.
+      const language = url.searchParams.get('language') || 'zh-CN';
+      const initial = structuredClone(fixture);
+      initial.settings.language = language;
+      initial.locale = language;
+      initial.translations = catalogs[language] || {};
+      if (url.searchParams.get('mode') === 'light') { initial.settings.theme = 'light'; initial.themeMode = 'light'; initial.accent = '#005FB8'; }
+      const editor = editorFixtures[url.searchParams.get('fence') || 'new'];
+      const safeJson = value => JSON.stringify(value).replace(/</g, '\\u003c');
+      let html = await readFile(settingsUrl, 'utf8');
+      html = html.replace('<!-- PECOFENCE_LOCALE -->', `<script>window.PECOFENCE_LOCALE=${safeJson({ locale: language, translations: initial.translations })};window.PECOFENCE_MODE='smartEditor';</script>`);
+      const setup = `<script type="application/json" id="fixture">${safeJson(initial)}</script><script type="application/json" id="fixture-editor">${safeJson(editor)}</script><script type="application/json" id="fixture-catalogs">${safeJson(catalogs)}</script><script>(${editorBridge})();</script>`;
+      response.end(html.replace('<body>', '<body>' + setup).replace('<html lang="zh-CN">', '<html lang="zh-CN" class="no-mica">'));
+      return;
+    }
     if (url.pathname === '/settings' || url.pathname === '/preview') {
       let html = await readFile(settingsUrl, 'utf8');
       const initial = structuredClone(fixture);
@@ -2228,26 +2452,8 @@ const server = http.createServer(async (request, response) => {
       initial.settings.language = language;
       initial.locale = language;
       initial.translations = catalogs[language] || {};
-      let sample = '';
       if (url.pathname === '/preview') {
         html = html.replace('<title>PecoFence 设置</title>', '<title>PecoFence · 设计预览</title>');
-        // Sample (smart-editor): ?sample=A|B|C&shot=new|edit shows that editor option with two
-        // smart fences among Chinese-named fences, Everything running.
-        const alt = url.searchParams.get('sample');
-        if (alt) {
-          const shot = url.searchParams.get('shot') || 'edit';
-          sample = `<script>window.PECOFENCE_SAMPLE=${JSON.stringify({ alt, shot })};</script>`;
-          html = html.replace('<title>PecoFence · 设计预览</title>', `<title>${alt === 'A' ? (shot === 'new' ? '新建智能栅栏' : '编辑智能栅栏') : 'PecoFence 设置'}</title>`);
-          const names = { 'fence-a': '文档', 'fence-b': '图片', inbox: '桌面', portal: '项目文件夹' };
-          initial.fences.forEach(f => { f.title = names[f.id] || f.title; if (f.host) f.host = '文档'; });
-          const base = initial.fences[0];
-          initial.fences.push(
-            { ...base, id: 'smart-dl', title: '最近 7 天下载', host: null, virtualDesktops: [], portal: { navigate: false, titleIcon: true },
-              smart: { spec: { template: 'downloads', folder: 'C:\\Users\\pf\\Downloads', subfolders: true, allOf: [{ cond: 'filesOnly', value: null }], withinDays: 7, limit: 200 }, source: 'everything', total: 30, shown: 30 } },
-            { ...base, id: 'smart-psd', title: '所有 .psd 文件', host: null, virtualDesktops: [], portal: { navigate: false, titleIcon: true },
-              smart: { spec: { template: 'psd', folder: null, subfolders: true, allOf: [{ cond: 'ext', value: ['.psd'] }], limit: 200 }, source: 'everything', total: 2, shown: 2 } });
-          initial.everything = { state: 'running' };
-        }
         if (url.searchParams.get('style') === 'liquidGlass') initial.settings.themeStyle = 'liquidGlass';
         if (url.searchParams.get('mode') === 'light') {
           initial.settings.theme = 'light';
@@ -2257,7 +2463,7 @@ const server = http.createServer(async (request, response) => {
       }
       const safeJson = value => JSON.stringify(value).replace(/</g, '\\u003c');
       html = html.replace('<!-- PECOFENCE_LOCALE -->', `<script>window.PECOFENCE_LOCALE=${safeJson({locale: language, translations: initial.translations})};</script>`);
-      const setup = sample + `<script type="application/json" id="fixture">${safeJson(initial)}</script><script type="application/json" id="fixture-catalogs">${safeJson(catalogs)}</script><script>(${bridge})();</script>`;
+      const setup = `<script type="application/json" id="fixture">${safeJson(initial)}</script><script type="application/json" id="fixture-catalogs">${safeJson(catalogs)}</script><script>(${bridge})();</script>`;
       response.end(html.replace('<body>', '<body>' + setup).replace('<html lang="zh-CN">', '<html lang="zh-CN" class="no-mica">'));
     } else {
       response.end(`<!doctype html><meta charset="utf-8"><title>Settings UI regressions</title>

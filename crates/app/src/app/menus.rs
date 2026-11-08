@@ -20,7 +20,7 @@ const CMD_NEW_NOTE: u32 = 16;
 const CMD_NEW_TOOL: u32 = 20;
 /// Tray 「在桌面显示文件夹」 entries: 11..=14 (see `App::show_folder_submenu`).
 const CMD_SHOW_FOLDER: u32 = 11;
-/// The tray's 新建智能栅栏 submenu: one id per `smart::Template::ALL` entry from 30.
+/// The tray's 新建智能栅栏…: the smart fence editor for a new fence.
 const CMD_NEW_SMART: u32 = 30;
 const CMD_ITEM_OPEN: u32 = 100;
 const CMD_ITEM_LOCATION: u32 = 101;
@@ -53,9 +53,9 @@ const CMD_FENCE_EDIT_NOTE: u32 = 308;
 const CMD_FENCE_CLOCK_SECONDS: u32 = 515;
 /// The fence menu's 新建小工具 submenu: 520..=524.
 const CMD_FENCE_NEW_TOOL: u32 = 520;
-/// The fence menu's 新建智能栅栏 submenu: one id per `smart::Template::ALL` entry from 530.
+/// The fence menu's 新建智能栅栏… (the editor for a new fence) and a smart fence's 编辑条件….
 const CMD_FENCE_NEW_SMART: u32 = 530;
-const SMART_TEMPLATES: u32 = pecofence_core::smart::Template::ALL.len() as u32;
+const CMD_FENCE_SMART_EDIT: u32 = 546;
 /// 筛选… / 清除筛选 in the menu of a folder fence or a smart fence.
 const CMD_FENCE_FILTER: u32 = 540;
 const CMD_FENCE_FILTER_CLEAR: u32 = 541;
@@ -156,6 +156,8 @@ mod glyph {
     pub const SEARCH: char = '\u{E721}';
     /// A smart fence's 立即刷新.
     pub const REFRESH: char = '\u{E72C}';
+    /// A smart fence's 编辑条件…: a filter.
+    pub const FILTER: char = '\u{E71C}';
     /// Favicon: a frame with a title strip, like a fence with tabs.
     pub const TAB: char = '\u{E737}';
     pub const LOCK: char = '\u{E72E}';
@@ -232,9 +234,11 @@ impl App {
             Self::show_folder_submenu(CMD_SHOW_FOLDER),
         )
         .icon(glyph::FOLDER)
-        .submenu(
-            pecofence_core::i18n::text("新建智能栅栏"),
-            Self::new_smart_submenu(CMD_NEW_SMART),
+        .item(
+            CMD_NEW_SMART,
+            pecofence_core::i18n::text("新建智能栅栏…"),
+            false,
+            false,
         )
         .icon(glyph::SEARCH)
         .item(
@@ -323,18 +327,12 @@ impl App {
             c if (CMD_SHOW_FOLDER..CMD_SHOW_FOLDER + 4).contains(&c) => {
                 self.show_folder_command(c - CMD_SHOW_FOLDER, x, y - 300, None)
             }
-            c if (CMD_NEW_SMART..CMD_NEW_SMART + SMART_TEMPLATES).contains(&c) => {
-                let template = pecofence_core::smart::Template::ALL[(c - CMD_NEW_SMART) as usize];
-                tracing::info!(
-                    template = template.key(),
-                    "new smart fence from the tray menu"
-                );
-                self.queue.push(Command::NewSmartFence {
-                    template,
-                    x,
-                    y: y - 300,
-                });
-            }
+            CMD_NEW_SMART => self.queue.push(Command::OpenSmartEditor {
+                fence: None,
+                x,
+                y: y - 300,
+                by: "tray menu",
+            }),
             CMD_APPLY_RULES => self.queue.push(Command::ApplyRulesNow),
             CMD_REPAIR_ICONS => self.set_desktop_icons_hidden(false),
             CMD_HIDE_ICONS_AGAIN => {
@@ -718,9 +716,16 @@ impl App {
                 .icon(glyph::SEARCH);
             }
         }
-        // 智能栅栏: run the search now, see its folder, start or get Everything.
+        // 智能栅栏: change the search, run it now, see its folders, start or get Everything.
         if let Some(spec) = f.smart.as_ref() {
             menu.item(
+                CMD_FENCE_SMART_EDIT,
+                pecofence_core::i18n::text("编辑条件…"),
+                false,
+                false,
+            )
+            .icon(glyph::FILTER)
+            .item(
                 CMD_FENCE_SMART_REFRESH,
                 pecofence_core::i18n::text("立即刷新\tF5"),
                 false,
@@ -1131,9 +1136,11 @@ impl App {
             Self::show_folder_submenu(CMD_FENCE_SHOW_FOLDER),
         )
         .icon(glyph::FOLDER)
-        .submenu(
-            pecofence_core::i18n::text("新建智能栅栏"),
-            Self::new_smart_submenu(CMD_FENCE_NEW_SMART),
+        .item(
+            CMD_FENCE_NEW_SMART,
+            pecofence_core::i18n::text("新建智能栅栏…"),
+            false,
+            false,
         )
         .icon(glyph::SEARCH);
         // The inbox cannot go (new desktop items land there), but it can stay out of sight
@@ -1247,15 +1254,18 @@ impl App {
             c if (CMD_FENCE_SHOW_FOLDER..CMD_FENCE_SHOW_FOLDER + 4).contains(&c) => {
                 self.show_folder_command(c - CMD_FENCE_SHOW_FOLDER, x, y, Some(host))
             }
-            c if (CMD_FENCE_NEW_SMART..CMD_FENCE_NEW_SMART + SMART_TEMPLATES).contains(&c) => {
-                let template =
-                    pecofence_core::smart::Template::ALL[(c - CMD_FENCE_NEW_SMART) as usize];
-                tracing::info!(
-                    template = template.key(),
-                    "new smart fence from the fence menu"
-                );
-                self.queue.push(Command::NewSmartFence { template, x, y });
-            }
+            CMD_FENCE_NEW_SMART => self.queue.push(Command::OpenSmartEditor {
+                fence: None,
+                x,
+                y,
+                by: "fence menu",
+            }),
+            CMD_FENCE_SMART_EDIT => self.queue.push(Command::OpenSmartEditor {
+                fence: Some(fence),
+                x,
+                y,
+                by: "fence menu",
+            }),
             CMD_PORTAL_HOME => {
                 if self.state.portal_home(fence) {
                     self.after_portal_navigation(fence, -1, None);
