@@ -224,6 +224,29 @@ impl FenceViewState {
         }
     }
 
+    /// Is the client-pixel point on the × of the filter tag (筛选, a single title)?
+    pub(super) fn filter_tag_clear_at(&self, x_px: i32, y_px: i32) -> bool {
+        let Some((text, count)) = self.filter_tag.as_ref() else {
+            return false;
+        };
+        if self.title_row_strip() || self.tabs_on_rail() || self.bare() {
+            return false;
+        }
+        let scale = self.scale();
+        let width = self.chrome_panel.size_px().0 as f32 / scale;
+        let r = self.chrome.filter_tag_rect(
+            width,
+            self.theme.title_height,
+            (text, count),
+            self.title_count.as_deref(),
+        );
+        let (x, y) = (x_px as f32 / scale, y_px as f32 / scale);
+        x >= r.right - pecofence_render::fence_chrome::TAG_CLEAR_W
+            && x < r.right
+            && y >= r.top
+            && y < r.bottom
+    }
+
     /// Is the client-pixel point on the roll-up chevron button (right end of the title row)?
     pub(super) fn chevron_at(&self, x_px: i32, y_px: i32) -> bool {
         let scale = self.scale();

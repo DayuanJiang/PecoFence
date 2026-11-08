@@ -415,6 +415,7 @@ impl FenceViewState {
             && self.title_count.is_none())
         .then(|| pecofence_core::i18n::format("{0} 项", &[format!("{}", self.items.len())]));
         let title_count = self.title_count.clone();
+        let filter_tag = self.filter_tag.clone();
         let opacity = self.material_opacity();
         // Titles and tabs without a 「标题颜色」 of their own follow 「文字颜色」 (#141).
         let theme = self
@@ -493,6 +494,7 @@ impl FenceViewState {
                 backdrop,
                 &title,
                 title_count.as_deref(),
+                filter_tag.as_ref().map(|(t, c)| (t.as_str(), c.as_str())),
                 count.as_deref(),
                 rolled,
                 roll_t,

@@ -44,7 +44,7 @@ impl App {
             .fence(fence)
             .map(|f| self.state.display_title(f))
             .unwrap_or_default();
-        let cue = pecofence_core::i18n::format("筛选「{0}」", &[title]);
+        let cue = pecofence_core::i18n::format("筛选“{0}”", &[title]);
         let current = self.fence_filters.get(&fence).cloned().unwrap_or_default();
         filter_box::open(
             w.hwnd(),
@@ -54,6 +54,56 @@ impl App {
             self.queue.clone(),
             self.theme_mode,
         );
+        self.sync_filter_view(fence);
+    }
+
+    /// 筛选: how many items fence `f` shows now and has without its filter.
+    fn filter_counts(&self, f: &pecofence_core::Fence) -> (usize, usize) {
+        let items = self.state.items_of(f);
+        let shown = match self.fence_filter(f.id) {
+            Some(q) => items.iter().filter(|it| filter_keeps(it, &q)).count(),
+            None => items.len(),
+        };
+        (shown, items.len())
+    }
+
+    /// 筛选: the count in the open box ("4 / 31", all of them while the text is empty), and the
+    /// tag of a filtered single title once its box is closed (its text, and its count unless
+    /// the smart fence's count capsule shows it already).
+    pub(super) fn sync_filter_view(&self, fence: FenceId) {
+        let Some(f) = self.state.fence(fence) else {
+            return;
+        };
+        let text = self.fence_filters.get(&fence).map_or("", |t| t.trim());
+        let open = filter_box::active_fence() == Some(fence);
+        let host = self.state.host_of(fence);
+        if !open && text.is_empty() {
+            if let Some(w) = self.fences.get(&host) {
+                w.set_filter_tag(None);
+            }
+            return;
+        }
+        let (shown, total) = self.filter_counts(f);
+        if open {
+            let count = if text.is_empty() {
+                pecofence_core::i18n::format("{0} 项", &[total.to_string()])
+            } else {
+                format!("{shown} / {total}")
+            };
+            filter_box::set_count(&count);
+        }
+        let single = host == fence && self.state.tabs_of(host).len() <= 1;
+        let tag = (single && !open && !text.is_empty()).then(|| {
+            let count = if f.smart.is_some() {
+                String::new()
+            } else {
+                format!("{shown} / {total}")
+            };
+            (text.to_string(), count)
+        });
+        if let Some(w) = self.fences.get(&host) {
+            w.set_filter_tag(tag);
+        }
     }
 
     /// The filter of fence `fence` is now `text` (empty: none): the fence shows what matches.
@@ -68,6 +118,7 @@ impl App {
             return;
         }
         self.refresh_fence(fence);
+        self.sync_filter_view(fence);
         let shown = self
             .state
             .fence(fence)
@@ -83,12 +134,14 @@ impl App {
         if self.fence_filters.remove(&fence).is_some() {
             tracing::info!(%fence, why, "filter cleared");
         }
+        self.sync_filter_view(fence);
     }
 
-    /// The title of a filtered fence: `<title> · 筛选：<text>`; the plain title while its box
-    /// shows the text.
+    /// The title of a filtered fence in a tab strip: `<title> · 筛选：<text>`. A single title
+    /// keeps its name (its tag shows the filter), as it does while its box shows the text.
     pub(super) fn filter_title(&self, id: FenceId, title: String) -> String {
-        if filter_box::active_fence() == Some(id) {
+        let single = self.state.host_of(id) == id && self.state.tabs_of(id).len() <= 1;
+        if filter_box::active_fence() == Some(id) || single {
             return title;
         }
         match self.fence_filters.get(&id).map(|t| t.trim()) {

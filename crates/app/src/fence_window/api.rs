@@ -192,6 +192,7 @@ impl FenceWindow {
             empty_override: None,
             title_count: None,
             filter_active: false,
+            filter_tag: None,
             refuses_drops: false,
             label_w: 0.0,
             icons_pending: false,
@@ -1360,6 +1361,16 @@ impl FenceWindow {
     /// 筛选: whether the fence is filtered (Esc in it then clears the filter).
     pub fn set_filtered(&self, active: bool) {
         self.with_view(|v| v.filter_active = active);
+    }
+
+    /// 筛选: the tag in the title row (`tag`: the text and the count; None: no tag).
+    pub fn set_filter_tag(&self, tag: Option<(String, String)>) {
+        self.with_view(|v| {
+            if v.filter_tag != tag {
+                v.filter_tag = tag;
+                let _ = v.redraw_chrome_only();
+            }
+        });
     }
 
     /// 智能栅栏: the fence shown takes no drops (it shows a search).

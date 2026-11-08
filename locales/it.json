@@ -818,7 +818,7 @@
   "最近打开的文件": "File aperti di recente",
   "正在搜索…": "Ricerca in corso…",
   "没有符合条件的文件。": "Nessun file corrisponde.",
-  "筛选「{0}」": "Filtra «{0}»",
+  "筛选“{0}”": "Filtra «{0}»",
   "{0} · 筛选：{1}": "{0} · Filtro: {1}",
   "没有符合筛选的文件。": "Nessun file corrisponde al filtro.",
   "筛选…\tCtrl+F": "Filtra…\tCtrl+F",

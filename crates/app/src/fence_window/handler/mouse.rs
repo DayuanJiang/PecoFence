@@ -129,6 +129,14 @@ pub(super) fn on_lbuttondown(
         // ring lives on the content surface: arms that do not repaint it
         // anyway do so once below (one raster per click).
         let focus_cleared = std::mem::take(&mut v.focus_visible) && !v.rolled_up;
+        // 筛选: the × of the filter tag clears the filter.
+        if v.filter_tag_clear_at(x, y) {
+            let fence = v.active;
+            drop(guard);
+            tracing::info!(%fence, "filter tag: × clears the filter");
+            queue.push(Command::ClearFenceFilter(fence));
+            return Some(0);
+        }
         // Up button / chevron: pressed look now, action on release inside. In a title-row tab
         // strip the up button is the shown tab's folder glyph, pressed as part of its tab below.
         let up = v.up_button_at(x, y);

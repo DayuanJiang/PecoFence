@@ -39,6 +39,8 @@ impl App {
         let count = count.filter(|_| active == host && self.state.tabs_of(host).len() <= 1);
         w.set_status_view(empty, count);
         w.set_filtered(filtered);
+        // The tag's count follows what the fence shows (files come and go).
+        self.sync_filter_view(active);
         w.set_refuses_drops(smart);
         if let Some(h) = self.state.fence(host) {
             let title = if active == host {

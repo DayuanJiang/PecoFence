@@ -2671,6 +2671,7 @@ impl App {
             }
             Command::FenceFilterClosed(fence) => {
                 tracing::info!(%fence, filtered = self.fence_filter(fence).is_some(), "filter box closed");
+                self.sync_filter_view(fence);
                 self.apply_portal_deco(self.state.host_of(fence));
             }
             Command::ClearFenceFilter(fence) => {

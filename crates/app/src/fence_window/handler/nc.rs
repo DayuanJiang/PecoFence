@@ -104,8 +104,10 @@ pub(super) fn on_nchittest(
     // free part of a left tab column. A fence collapsed to its column has no
     // resize edges.
     let in_rail = left < v.content_x;
-    let on_control =
-        v.tab_at(left, top).is_some() || v.up_button_at(left, top) || v.chevron_at(left, top);
+    let on_control = v.tab_at(left, top).is_some()
+        || v.up_button_at(left, top)
+        || v.chevron_at(left, top)
+        || v.filter_tag_clear_at(left, top);
     let clear_of_edges = if in_rail {
         rolled || (left >= border && bottom > border)
     } else {

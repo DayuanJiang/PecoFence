@@ -88,6 +88,8 @@ pub struct FenceChrome {
     badge_format: TextFormat,
     /// 智能栅栏: the 10 px magnifier over the lower right of the folder glyph.
     folder_badge_format: TextFormat,
+    /// 筛选's tag: the text, 13 px, leading.
+    tag_format: TextFormat,
     /// Note and script fence lines (便签与待办, 脚本栅栏) at each 文字大小: leading, wrapped.
     tool_text: [ToolText; 4],
     /// A script fence's footer: Caption 12, leading, top-aligned.
@@ -637,6 +639,9 @@ pub const ROLLED_COUNT_W: f32 = 64.0;
 
 /// Tab match badge (WinUI InfoBadge): 16 DIPs high, 5 DIPs of padding beside the number, 6 DIPs
 /// after the caption.
+/// 筛选's tag (DIPs): height and the × at its right end.
+pub const TAG_H: f32 = 22.0;
+pub const TAG_CLEAR_W: f32 = 22.0;
 /// 智能栅栏's count capsule (DIPs): height and text padding.
 const COUNT_CAPSULE_H: f32 = 18.0;
 const COUNT_CAPSULE_PAD: f32 = 7.0;
@@ -1754,6 +1759,10 @@ impl FenceChrome {
                 .with_alignment(TextAlignment::Center)
                 .with_paragraph_alignment(ParagraphAlignment::Center)
                 .with_word_wrapping(WordWrapping::NoWrap);
+        let tag_format = TextFormat::with_locale(font_text(), 13.0, FontWeight::NORMAL, locale)?
+            .with_alignment(TextAlignment::Leading)
+            .with_paragraph_alignment(ParagraphAlignment::Center)
+            .with_word_wrapping(WordWrapping::NoWrap);
         let tool_text = |size: f32| -> Result<ToolText> {
             let k = size / TOOL_TEXT_SIZES[1];
             Ok(ToolText {
@@ -1796,6 +1805,7 @@ impl FenceChrome {
             group_format,
             badge_format,
             folder_badge_format,
+            tag_format,
             tool_text,
             note_footer_format,
             clock_time_format,
@@ -2148,6 +2158,81 @@ impl FenceChrome {
         Ok(())
     }
 
+    /// 筛选: the tag a filtered fence shows after its box closed (magnifier, the text, the
+    /// count when not already in the capsule, ×), right before the capsule (or the chevron's
+    /// place). The app hit-tests its × in the same box: the rightmost `TAG_CLEAR_W` DIPs.
+    pub fn filter_tag_rect(
+        &self,
+        width: f32,
+        title_h: f32,
+        tag: (&str, &str),
+        title_count: Option<&str>,
+    ) -> Rect {
+        let (text, count) = tag;
+        let w = 22.0
+            + crate::text::measure_width(text, &self.tag_format)
+            + if count.is_empty() {
+                0.0
+            } else {
+                8.0 + crate::text::measure_width(count, &self.count_format)
+            }
+            + TAG_CLEAR_W;
+        let right = TitleDeco::chevron_box(width, title_h).left
+            - 2.0
+            - title_count.map_or(0.0, |c| self.count_capsule_w(c));
+        Rect::from_xywh(right - w, ((title_h - TAG_H) * 0.5).round(), w, TAG_H)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn draw_filter_tag(
+        &self,
+        session: &DrawingSession<'_>,
+        theme: &Theme,
+        foreground: &Theme,
+        width: f32,
+        title_h: f32,
+        tag: (&str, &str),
+        title_count: Option<&str>,
+        alpha: f32,
+    ) -> Result<()> {
+        let (text, count) = tag;
+        let r = self.filter_tag_rect(width, title_h, tag, title_count);
+        let tint = session.create_solid_brush(with_alpha(theme.accent, 0.14 * alpha))?;
+        session.fill_rounded_rect(&RoundedRect::uniform(r, TAG_H * 0.5), &tint);
+        let accent = session.create_solid_brush(with_alpha(theme.accent, alpha))?;
+        let dim = session.create_solid_brush(with_alpha(foreground.text_secondary, alpha))?;
+        session.draw_text(
+            "\u{E721}",
+            &self.glyph_format,
+            &Rect::from_xywh(r.left + 4.0, r.top, 18.0, TAG_H),
+            &accent,
+        );
+        let text_w = crate::text::measure_width(text, &self.tag_format);
+        session.draw_text(
+            text,
+            &self.tag_format,
+            &Rect::from_xywh(r.left + 22.0, r.top, text_w + 2.0, TAG_H),
+            &accent,
+        );
+        if !count.is_empty() {
+            let cw = crate::text::measure_width(count, &self.count_format);
+            session.draw_text(
+                count,
+                &self.count_format,
+                &Rect::from_xywh(r.left + 30.0 + text_w, r.top, cw + 2.0, TAG_H),
+                &dim,
+            );
+        }
+        // Cancel (E711): a click clears the filter.
+        session.draw_text(
+            "\u{E711}",
+            &self.sort_glyph_format,
+            &Rect::from_xywh(r.right - TAG_CLEAR_W, r.top, TAG_CLEAR_W - 4.0, TAG_H),
+            &accent,
+        );
+        Ok(())
+    }
+
     fn lone_title_place(
         &self,
         title: &str,
@@ -2273,6 +2358,7 @@ impl FenceChrome {
         backdrop: Backdrop<'_>,
         title: &str,
         title_count: Option<&str>,
+        filter_tag: Option<(&str, &str)>,
         caption: Option<&str>,
         rolled_up: bool,
         roll_t: f32,
@@ -2710,6 +2796,9 @@ impl FenceChrome {
             }
             // The folder glyph travels with the title to the chosen alignment; a separate up
             // button stays at the far left.
+            let tag_w = filter_tag.map_or(0.0, |t| {
+                self.filter_tag_rect(width, title_h, t, None).width() + 6.0
+            });
             let (mut x, fitted, title_w) = self.lone_title_place(
                 title,
                 title_count,
@@ -2717,7 +2806,7 @@ impl FenceChrome {
                 style.title_align,
                 width,
                 deco,
-                title_reserve,
+                title_reserve + tag_w,
             );
             if deco.folder_icon {
                 // Folder glyph (E8B7) aligned with the title baseline. Inside a subfolder it is
@@ -2774,6 +2863,18 @@ impl FenceChrome {
                     count,
                     width,
                     title_h,
+                    title_a,
+                )?;
+            }
+            if let Some(tag) = filter_tag {
+                self.draw_filter_tag(
+                    session,
+                    theme,
+                    &foreground,
+                    width,
+                    title_h,
+                    tag,
+                    title_count,
                     title_a,
                 )?;
             }
