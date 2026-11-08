@@ -606,6 +606,22 @@ impl FenceViewState {
         true
     }
 
+    /// The window moved: re-crops the backdrop for where it is now and redraws what shows it.
+    pub(super) fn refresh_backdrop(&mut self) {
+        self.backdrop_stale = false;
+        let old_ink = self.material_foreground().text_primary;
+        if self.update_backdrop() {
+            if old_ink != self.material_foreground().text_primary
+                || (self.theme.liquid_glass && self.row_metrics().is_some())
+            {
+                // Moving clear glass across a light/dark boundary also changes the icon labels.
+                let _ = self.redraw();
+            } else {
+                let _ = self.redraw_chrome_only();
+            }
+        }
+    }
+
     /// Forces a fresh crop (new wallpaper set, material or theme) even at the same rect.
     pub(super) fn invalidate_backdrop(&mut self) {
         self.backdrop_rect = None;
@@ -848,6 +864,7 @@ impl FenceViewState {
             pecofence_core::i18n::text("脚本没有输出文字")
         };
         let hover = self.script_hover;
+        let text_size = self.text_size;
         let mut hits = Vec::new();
         let ok = self
             .content_panel
@@ -858,6 +875,7 @@ impl FenceViewState {
                     scale,
                     wd,
                     hd,
+                    text_size,
                     &rows,
                     hover,
                     hint,
@@ -897,11 +915,14 @@ impl FenceViewState {
         let chrome = self.chrome.clone();
         let hint =
             pecofence_core::i18n::text("单击这里写字。行首写 [ ] 的一行是待办，单击方框打勾。");
+        let text_size = self.text_size;
         let mut boxes = Vec::new();
         let ok = self
             .content_panel
             .draw_ex(self.dpi, |session, _clip, wd, hd| {
-                boxes = chrome.draw_note(session, &theme, scale, wd, hd, &lines, hint, None)?;
+                boxes = chrome.draw_note(
+                    session, &theme, scale, wd, hd, text_size, &lines, hint, None,
+                )?;
                 Ok(())
             })?;
         self.note_draw_result(ok);
@@ -922,12 +943,32 @@ impl FenceViewState {
             .material_foreground()
             .with_label_color(self.behavior.label_color.get());
         let chrome = self.chrome.clone();
+        let mut sizes = self.clock_text;
+        let mut area = (0.0, 0.0);
         let ok = self
             .content_panel
             .draw_ex(self.dpi, |session, _clip, wd, hd| {
-                chrome.draw_clock(session, &theme, wd, hd, &time, &date)
+                area = (wd, hd);
+                sizes = chrome.draw_clock(session, &theme, wd, hd, &time, &date)?;
+                Ok(())
             })?;
         self.note_draw_result(ok);
+        self.clock_text = sizes;
+        // Once per size the user ends up with: not on every step of a resize drag (the end of
+        // the drag draws the clock again).
+        if sizes != self.clock_text_logged && self.behavior.size_move.borrow().is_none() {
+            tracing::info!(
+                fence = %self.active,
+                area_w = area.0.round(),
+                area_h = area.1.round(),
+                time_dip = sizes.0,
+                date_dip = sizes.1,
+                from_time_dip = self.clock_text_logged.0,
+                from_date_dip = self.clock_text_logged.1,
+                "clock text size"
+            );
+            self.clock_text_logged = sizes;
+        }
         Ok(())
     }
 

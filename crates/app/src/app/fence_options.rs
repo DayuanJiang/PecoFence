@@ -71,6 +71,7 @@ pub(super) const FENCE_PROPS: &[&str] = &[
     "tabColor",
     "titleColor",
     "titleSize",
+    "textSize",
     "titleOnHover",
     "layout",
     "sort",
@@ -83,6 +84,7 @@ pub(super) const FENCE_PROPS: &[&str] = &[
     "portalTitleIcon",
     "hideWhenEmpty",
     "desktopLayout",
+    "freePlacement",
     "noteText",
     "scriptPath",
     "scriptInterval",
@@ -186,6 +188,8 @@ pub(super) enum FenceProp {
     TitleColor(TitleColorChoice),
     /// None = normal.
     TitleSize(Option<TitleSize>),
+    /// 文字大小 of a note or script fence (None = normal).
+    TextSize(Option<TitleSize>),
     /// None = the global `rollUp.titleOnHover`.
     TitleOnHover(Option<bool>),
     /// Regular fences: a double-clicked folder opens inside the fence.
@@ -196,6 +200,8 @@ pub(super) enum FenceProp {
     HideWhenEmpty(bool),
     /// 像桌面一样排列 (the inbox only).
     DesktopLayout(bool),
+    /// 自由摆放 (the inbox only; acts while it is arranged like the desktop).
+    FreePlacement(bool),
     Layout(ViewLayout),
     Sort(SortMode),
     Reverse(bool),
@@ -230,6 +236,7 @@ impl FenceProp {
                 | Self::PortalTitleIcon(_)
                 | Self::HideWhenEmpty(_)
                 | Self::DesktopLayout(_)
+                | Self::FreePlacement(_)
                 | Self::Layout(_)
                 | Self::Sort(_)
                 | Self::Reverse(_)
@@ -349,15 +356,20 @@ pub(super) fn parse_fence_prop(
                 other => TitleColorChoice::Rgb(parse_hex(other).ok_or_else(|| bad(ALLOWED))?),
             })
         }
-        "titleSize" => {
+        "titleSize" | "textSize" => {
             const ALLOWED: &[&str] = &["small", "normal", "large", "extraLarge"];
-            FenceProp::TitleSize(match as_str(ALLOWED)? {
+            let size = match as_str(ALLOWED)? {
                 "small" => Some(TitleSize::Small),
                 "normal" => None,
                 "large" => Some(TitleSize::Large),
                 "extraLarge" => Some(TitleSize::ExtraLarge),
                 _ => return Err(bad(ALLOWED)),
-            })
+            };
+            if prop == "titleSize" {
+                FenceProp::TitleSize(size)
+            } else {
+                FenceProp::TextSize(size)
+            }
         }
         "titleOnHover" => {
             const ALLOWED: &[&str] = &["default", "hover", "always"];
@@ -404,6 +416,7 @@ pub(super) fn parse_fence_prop(
         "portalTitleIcon" => FenceProp::PortalTitleIcon(as_bool()?),
         "hideWhenEmpty" => FenceProp::HideWhenEmpty(as_bool()?),
         "desktopLayout" => FenceProp::DesktopLayout(as_bool()?),
+        "freePlacement" => FenceProp::FreePlacement(as_bool()?),
         "noteText" => FenceProp::NoteText(as_str(&["<text>"])?.replace("\r\n", "\n")),
         "scriptPath" => {
             let path = as_str(&["<full path of a script>"])?;
@@ -536,6 +549,16 @@ pub(super) fn parse_fence_prop(
     })
 }
 
+/// A title or text size as the page, `fence get` and `fence set` spell it.
+pub(super) fn size_name(size: Option<TitleSize>) -> &'static str {
+    match size.unwrap_or_default() {
+        TitleSize::Small => "small",
+        TitleSize::Normal => "normal",
+        TitleSize::Large => "large",
+        TitleSize::ExtraLarge => "extraLarge",
+    }
+}
+
 /// String forms of `FenceView.layout` / `.sort` as the page, `fence get` and `fence set` use.
 pub(super) fn layout_name(layout: ViewLayout) -> &'static str {
     match layout {
@@ -609,9 +632,62 @@ impl App {
     pub(super) fn set_fence_desktop_layout(&mut self, fence: FenceId, on: bool, from: &str) {
         tracing::info!(%fence, on, from, "desktop layout switched");
         self.state.set_desktop_layout(fence, on);
+        if on {
+            self.want_windows_places();
+        }
         self.sync_hidden_fences();
         self.apply_fence_view(fence);
         self.schedule_save();
+    }
+
+    /// 自由摆放 of the 「桌面」 fence arranged like the desktop.
+    pub(super) fn set_fence_free_placement(&mut self, fence: FenceId, on: bool, from: &str) {
+        let cells = self.state.fence(fence).map_or(0, |f| f.desktop_cells.len());
+        tracing::info!(%fence, on, from, saved_cells = cells, "free placement switched");
+        self.state.set_free_placement(fence, on);
+        if on {
+            self.want_windows_places();
+        }
+        self.arrange_desktop_fence();
+        self.schedule_save();
+    }
+
+    /// 自由摆放: icons dropped on the desktop (or on the icons of 「桌面」) stay in the grid
+    /// cells they landed in. False when 「桌面」 does not place its icons freely: then they go
+    /// back to it as before.
+    pub(super) fn drop_on_free_desktop(
+        &mut self,
+        inbox: FenceId,
+        items: &[ItemId],
+        at: &crate::commands::DesktopDrop,
+    ) -> bool {
+        let Some(cells) = self
+            .fences
+            .get(&inbox)
+            .and_then(|w| w.desktop_drop_cells(at))
+        else {
+            return false;
+        };
+        let own = self
+            .state
+            .fence(inbox)
+            .is_some_and(|f| items.iter().all(|i| f.contains_item(*i)));
+        tracing::info!(
+            items = items.len(),
+            own,
+            cursor = ?at.cursor,
+            first_cell = ?cells.first().map(|c| c.1),
+            "free placement: icons dropped"
+        );
+        self.state.set_desktop_cells(inbox, &cells);
+        // The window takes the new cells first, so icons that come from another fence land in
+        // them rather than in the first free ones.
+        self.arrange_desktop_fence();
+        if !own {
+            self.move_items(items, inbox);
+        }
+        self.schedule_save();
+        true
     }
 
     /// 为空时自动隐藏 (feedback #88: every fence, not only the inbox).
@@ -686,6 +762,18 @@ impl App {
         self.schedule_save();
     }
 
+    /// 文字大小 of a note or script fence: its lines, check boxes and clickable rows (and the
+    /// note editor) take the size.
+    pub(super) fn set_fence_text_size(&mut self, fence: FenceId, size: Option<TitleSize>) {
+        self.state.set_text_size(fence, size);
+        // Numbers only, so the shareable log keeps them: 0 small to 3 extra large.
+        let text_size = self.state.fence(fence).map_or(1, text_size_index);
+        let font_dip = pecofence_render::fence_chrome::TOOL_TEXT_SIZES[usize::from(text_size)];
+        tracing::info!(%fence, text_size, font_dip, "fence text size set");
+        self.apply_fence_appearance(fence);
+        self.schedule_save();
+    }
+
     /// `None` = follow the global 「鼠标悬停时才显示标题栏」.
     pub(super) fn set_fence_title_on_hover(&mut self, fence: FenceId, on: Option<bool>) {
         let host = self.state.host_of(fence);
@@ -749,6 +837,9 @@ impl App {
         let Some(host) = &self.settings else {
             return;
         };
+        if let Some(w) = self.window_for(fence) {
+            host.place_beside(w.rect());
+        }
         if host.ready {
             self.post_show_fence(fence);
         } else {
@@ -791,12 +882,7 @@ impl App {
             Some(true) => "hover",
             Some(false) => "always",
         };
-        let title_size = match title_size.unwrap_or_default() {
-            TitleSize::Small => "small",
-            TitleSize::Normal => "normal",
-            TitleSize::Large => "large",
-            TitleSize::ExtraLarge => "extraLarge",
-        };
+        let title_size = size_name(title_size);
         let spacing = match Spacing::nearest(f.view.spacing) {
             Spacing::Compact => "compact",
             Spacing::Normal => "normal",
@@ -839,9 +925,12 @@ impl App {
             "tabColor": f.appearance.as_ref().and_then(|a| a.tab_rgb).map(hex),
             "titleColor": title_color,
             "titleSize": title_size,
+            // 文字大小 (note and script fences).
+            "textSize": size_name(f.appearance.as_ref().and_then(|a| a.text_size)),
             "titleOnHover": title_on_hover,
             "hideWhenEmpty": f.hide_when_empty,
             "desktopLayout": f.desktop_layout,
+            "freePlacement": f.free_placement,
             "openFoldersInside": f.open_folders_inside,
             "virtualDesktops": h.virtual_desktops,
             // 「桌面」 or a window holding it: always on every virtual desktop.
@@ -964,6 +1053,7 @@ impl App {
                 let (_, title_rgb, _) = self.style_of(fence);
                 self.set_fence_title_style(fence, title_rgb, size);
             }
+            FenceProp::TextSize(size) => self.set_fence_text_size(fence, size),
             FenceProp::TitleOnHover(on) => self.set_fence_title_on_hover(fence, on),
             FenceProp::OpenFoldersInside(on) => self.set_fence_open_folders_inside(fence, on),
             FenceProp::PortalNavigate(on) => self.set_fence_portal_navigate(fence, on),
@@ -971,6 +1061,9 @@ impl App {
             FenceProp::HideWhenEmpty(on) => self.set_fence_hide_when_empty(fence, on),
             FenceProp::DesktopLayout(on) => {
                 self.set_fence_desktop_layout(fence, on, "settings or CLI")
+            }
+            FenceProp::FreePlacement(on) => {
+                self.set_fence_free_placement(fence, on, "settings or CLI")
             }
             FenceProp::Layout(layout) => {
                 // Same steps as the fence menu's 视图 items.

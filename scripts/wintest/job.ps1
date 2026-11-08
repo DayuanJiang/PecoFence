@@ -12,6 +12,14 @@ trap {
 . $PfSteps
 Case 'end'
 if (PfAlive) { PfQuit }
+# Defender's machine-learning detections sometimes take an unsigned test build (or a kit script)
+# away mid-run; then most checks fail for that one reason. Say so in one row.
+try {
+  $det = @(Get-MpThreatDetection -ErrorAction Stop | Where-Object { $_.InitialDetectionTime -ge $PfJobStart -and ($_.Resources -join ' ') -match 'C:\\pf\\' })
+  $names = @($det | ForEach-Object { (Get-MpThreat -ThreatID $_.ThreatID -ErrorAction SilentlyContinue).ThreatName } | Sort-Object -Unique) -join ', '
+  $what = (($det | ForEach-Object { "$($_.InitialDetectionTime.ToString('HH:mm:ss')) $($_.Resources -join '; ')" }) -join ' || ')
+  Check 'Windows Defender left the test files alone' ($det.Count -eq 0) "$what $(if ($names) { "($names)" })"
+} catch { Log "Defender detections unreadable: $_" }
 if (@(PfLogFiles).Count -eq 0) { Log 'no app log in this job: the app log check is skipped' }
 elseif (-not $PfAllowLogErrors) {
   $errs = @(PfLogErrors)

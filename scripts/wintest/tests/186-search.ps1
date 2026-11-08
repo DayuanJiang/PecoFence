@@ -8,7 +8,7 @@ foreach ($n in $files) { Set-Content "$PfDesk\$n" 'sample' }
 PfStart -Lang zh-CN
 Pf settings set theme light | Out-Null
 function SearchFor($text) {
-  [G]::Click(1500, 820); Start-Sleep -Milliseconds 400
+  DeskClick 1500 820 | Out-Null
   PeekKey; Start-Sleep -Milliseconds 800
   [G]::Type($text); Start-Sleep -Milliseconds 900
 }

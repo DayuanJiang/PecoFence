@@ -16,6 +16,7 @@ mod icons;
 mod ipc_server;
 mod layout;
 mod marquee_band;
+mod marquee_offer;
 mod note_edit;
 mod notice;
 mod peek;

@@ -182,6 +182,9 @@ impl FenceWindow {
             note: None,
             note_boxes: Vec::new(),
             clock: None,
+            clock_text: (0.0, 0.0),
+            clock_text_logged: (0.0, 0.0),
+            text_size: 1,
             script: None,
             script_rows: Vec::new(),
             script_hover: None,
@@ -206,6 +209,7 @@ impl FenceWindow {
             backdrops: ctx.backdrops.borrow().clone(),
             backdrop_crop: None,
             backdrop_rect: None,
+            backdrop_stale: false,
             backdrop_origin: None,
             backdrop_key: format!("backdrop:{:x}", hwnd.0 as isize),
             gpu_glass: RefCell::new(pecofence_render::gpu_glass::GpuGlass::default()),
@@ -269,6 +273,8 @@ impl FenceWindow {
             opacity: 1.0,
             desktop: None,
             desktop_slots: Vec::new(),
+            desktop_free: None,
+            desktop_free_sent: None,
             desktop_band_base: None,
             desktop_shape_for: None,
             desktop_shape_pending: None,
@@ -309,6 +315,7 @@ impl FenceWindow {
             plate_inset_px: 0,
             plate_alpha: 1.0,
             peeking: false,
+            hover_raised: false,
             placing: false,
             behavior: ctx.behavior.clone(),
         };
@@ -342,7 +349,7 @@ impl FenceWindow {
                 over_stats: Default::default(),
                 source_volume: None,
                 desktop: None,
-                folder_drag: false,
+                path_drag: false,
                 shortcut_hover: None,
             }),
         )
@@ -458,7 +465,7 @@ impl FenceWindow {
             },
         );
         format!(
-            "title={:?} title_count={:?} filtered={} opacity={:.2} scale={:.3} fade={fade} retired={} rolled={} rolling={} peeking={} items={} tabs={} selected={} focused={:?} shadow_visible={} shadow_alpha={} layout={:?} locked={} auto_height={} active={} scroll={:.1} client={:?} client_offset=({},{}) chrome={:?} glass={:?} wallpaper_uploads={} title_size={} tab_fonts={:?} tab_rects={:?} content_x={} content={:?} capture={} tab_drag={} window_drag={} detach_pending={} plate_inset={} plate_alpha={:.2} mouse_inside={} off_desktop={} desktop_tip={:?}",
+            "title={:?} title_count={:?} filtered={} opacity={:.2} scale={:.3} fade={fade} retired={} rolled={} rolling={} peeking={} items={} tabs={} selected={} focused={:?} shadow_visible={} shadow_alpha={} layout={:?} locked={} auto_height={} active={} scroll={:.1} client={:?} client_offset=({},{}) chrome={:?} glass={:?} wallpaper_uploads={} title_size={} tab_fonts={:?} tab_rects={:?} content_x={} content={:?} capture={} tab_drag={} window_drag={} detach_pending={} plate_inset={} plate_alpha={:.2} mouse_inside={} content_y={} text_size={} clock_text={}/{} note_boxes={} script_rows={} off_desktop={} desktop_tip={:?}",
             v.title,
             v.title_count,
             v.filter_active,
@@ -502,6 +509,12 @@ impl FenceWindow {
             v.plate_inset_px,
             v.plate_alpha,
             v.mouse_inside,
+            v.content_y,
+            v.text_size,
+            v.clock_text.0,
+            v.clock_text.1,
+            dump_rects(&v.note_boxes),
+            dump_rects(&v.script_rows),
             v.off_desktop,
             v.desktop_tip,
         )
@@ -553,7 +566,7 @@ impl FenceWindow {
             over_stats: Default::default(),
             source_volume: None,
             desktop: None,
-            folder_drag: false,
+            path_drag: false,
             shortcut_hover: None,
         };
         let entered = handler.drag_enter(data, key_state, pt, allowed);
@@ -677,6 +690,7 @@ impl FenceWindow {
             (rect.top + rect.bottom) / 2,
         );
         let target_dpi = monitors::query(monitor).map(|m| m.dpi);
+        let hwnd = self.hwnd();
         self.with_view(|v| {
             if let Some(dpi) = target_dpi {
                 v.apply_dpi(dpi);
@@ -685,6 +699,10 @@ impl FenceWindow {
             v.roll_anim = None;
             v.height_anim = None;
             v.peeking = false;
+            // A hover peek ended here, not by its roll-up: back among the other fences too.
+            if std::mem::take(&mut v.hover_raised) {
+                v.queue.push(Command::EndHoverRaise(hwnd));
+            }
             v.rolled_up = rolled;
             v.expanded_h_px = expanded_h;
             v.expanded_w_px = rect.right - rect.left;
@@ -1303,7 +1321,7 @@ impl FenceWindow {
             v.portal_folder = portal_folder;
             v.is_portal = is_portal;
             v.portal_missing = folder_missing;
-            if !up_button {
+            if !up_button && !v.glyph_opens_folder() {
                 v.up_hovered = false;
                 if v.pressed == Some(PressTarget::Up) {
                     v.pressed = None;
@@ -1374,6 +1392,27 @@ impl FenceWindow {
         });
     }
 
+    /// A script's copy action uses a short, non-activating tip beside the pointer.
+    pub fn show_script_copy_result(&self, index: usize, copied: bool) {
+        self.with_view(|v| {
+            v.hide_tip();
+            v.tip_target = Some(TipTarget::ScriptRow(index));
+            let text = if copied {
+                pecofence_core::i18n::text("已复制")
+            } else {
+                pecofence_core::i18n::text("复制失败，请重试")
+            };
+            let pt = window::cursor_pos();
+            let scale = v.scale();
+            v.show_tip_text_at(
+                text,
+                pt.x + (12.0 * scale).round() as i32,
+                pt.y + (20.0 * scale).round() as i32,
+            );
+            window::set_timer(v.hwnd, TIMER_TIP_HIDE, 2000);
+        });
+    }
+
     /// 时钟与日期: the fence being shown is a clock (Some(true) = with seconds), drawn in place of
     /// items and redrawn each minute or second; None = it shows items.
     pub fn set_clock(&self, clock: Option<bool>) {
@@ -1396,6 +1435,18 @@ impl FenceWindow {
                 }
                 v.script = script;
                 let _ = v.redraw();
+            }
+        });
+    }
+
+    /// 文字大小 of the note or script fence shown (0 to 3, 1 = normal).
+    pub fn set_text_size(&self, size: u8) {
+        self.with_view(|v| {
+            if v.text_size != size {
+                v.text_size = size;
+                if v.note.is_some() || v.script.is_some() {
+                    let _ = v.redraw_content();
+                }
             }
         });
     }
@@ -1473,11 +1524,14 @@ impl FenceWindow {
         });
     }
 
+    /// Rolled up as it rests: also while hover-peeking open (the peek closes by itself) and
+    /// while a roll-up is still in flight (`rolled_up` is only set as it lands, so a toggle, a
+    /// move or a save in those 167 ms read it as rolled up, not as open at a passing height).
     pub fn is_rolled(&self) -> bool {
         self.view
             .borrow()
             .as_ref()
-            .is_some_and(|v| v.rolled_up || v.peeking)
+            .is_some_and(|v| v.roll_target() || v.peeking)
     }
 
     pub fn dpi(&self) -> u32 {
@@ -1520,27 +1574,63 @@ impl FenceWindow {
         });
     }
 
-    /// The window as it rests: a rolled fence that is hover-peeking or rolling counts as its
-    /// title row (see `resting_heights_px`).
+    /// The window as it rests: a rolled fence that is hover-peeking or rolling up counts as its
+    /// title row, and one in a roll or height animation at the height it ends at (see
+    /// `resting_heights_px`). A peek committed open counts at its full height at once.
     pub fn resting_rect(&self) -> RECT {
         let mut r = self.rect();
-        // Rolled (and maybe hover-peeking open) by its state, not by a roll in flight: a peek
-        // committed open counts at its full height at once.
-        let rolled = self.view.try_borrow().ok().and_then(|g| {
-            g.as_ref()
-                .map(|v| (v.rolled_up || v.peeking, v.rolled_h_px()))
+        let rest = self.view.try_borrow().ok().and_then(|g| {
+            g.as_ref().map(|v| {
+                let h = if v.roll_target() || v.peeking {
+                    v.rolled_h_px()
+                } else {
+                    v.height_target_px().unwrap_or(r.bottom - r.top)
+                };
+                // The edge a height animation keeps, else the title row's.
+                let upward = if v.height_animating() {
+                    v.anim_upward
+                } else {
+                    v.row_bottom
+                };
+                (h, upward)
+            })
         });
-        if let Some((true, rest)) = rolled
-            && rest > 0
-            && rest < r.bottom - r.top
+        if let Some((h, upward)) = rest
+            && h > 0
+            && h != r.bottom - r.top
         {
-            if self.row_at_bottom() {
-                r.top = r.bottom - rest;
-            } else {
-                r.bottom = r.top + rest;
-            }
+            r.top = top_for_height(upward, &r, h);
+            r.bottom = r.top + h;
         }
         r
+    }
+
+    /// A roll-up or expand is in flight.
+    pub fn rolling(&self) -> bool {
+        self.view
+            .try_borrow()
+            .ok()
+            .is_some_and(|g| g.as_ref().is_some_and(|v| v.roll_anim.is_some()))
+    }
+
+    /// The height a roll or height animation in flight ends at, and whether it keeps the
+    /// bottom edge (None when none runs).
+    pub fn animation_end_height_px(&self) -> Option<(i32, bool)> {
+        let guard = self.view.try_borrow().ok()?;
+        let v = guard.as_ref()?;
+        v.height_target_px().map(|h| (h, v.anim_upward))
+    }
+
+    /// How far the fence reaches beyond `resting_rect` once it opens, to the right and below:
+    /// a rolled-up fence whose title row is its top edge (no 向上展开) opens downward to its
+    /// expanded height, and one collapsed to its left tab column also to its expanded width.
+    /// Placement keeps that whole room inside the work area (`clearance::landing_spot`).
+    pub fn open_hang_px(&self) -> (i32, i32) {
+        let rest = self.resting_rect();
+        self.view
+            .borrow()
+            .as_ref()
+            .map_or((0, 0), |v| v.open_hang_px(&rest))
     }
 
     /// Title-row height and the height the window settles at: the title row while it is rolled
@@ -1805,6 +1895,8 @@ impl FenceWindow {
             if v.desktop != area {
                 style_changed = v.desktop.is_some() != area.is_some();
                 v.desktop = area;
+                // 自由摆放: cells placed from the new saved ones are sent again.
+                v.desktop_free_sent = None;
                 if !v.bare() {
                     v.desktop_slots.clear();
                 }
@@ -1859,6 +1951,25 @@ impl FenceWindow {
             selected = v.selected.len();
         });
         selected
+    }
+
+    /// 自由摆放: the grid cells icons dropped at `at` take on this 「桌面」 (see
+    /// `FenceViewState::desktop_drop_cells`); None when it does not place its icons freely.
+    pub fn desktop_drop_cells(&self, at: &DesktopDrop) -> Option<Vec<(ItemId, [u16; 2])>> {
+        self.view
+            .borrow()
+            .as_ref()
+            .and_then(|v| v.desktop_drop_cells(at.cursor, &at.centres))
+    }
+
+    /// 自由摆放: see `FenceViewState::desktop_free_changes`.
+    pub fn desktop_free_changes(
+        &self,
+    ) -> Option<(BTreeMap<ItemId, [u16; 2]>, Vec<(ItemId, [u16; 2])>)> {
+        self.view
+            .borrow()
+            .as_ref()
+            .and_then(|v| v.desktop_free_changes())
     }
 
     /// 像桌面一样排列 is on for this window.
@@ -2016,6 +2127,42 @@ impl FenceWindow {
         });
     }
 
+    /// Tab / Shift+Tab can move the keyboard here: the window is shown, not rolled up, and has
+    /// icons to put the focus on (a tool fence or an empty fence has none).
+    pub fn takes_keyboard(&self) -> bool {
+        desktop::is_visible(self.hwnd())
+            && self.view.try_borrow().ok().is_some_and(|g| {
+                g.as_ref()
+                    .is_some_and(|v| !v.retired && !v.rolled_up && !v.items.is_empty())
+            })
+    }
+
+    /// The keyboard comes here from another fence (Tab / Shift+Tab) or from the Peek's first
+    /// key: the focused icon shows its focus ring, and with nothing selected the first icon is
+    /// selected, as in Explorer's file list. Then the window takes the keyboard (during a Peek
+    /// the dimmer passes the keys on to it). Call with no borrow of the view held.
+    pub fn focus_by_keyboard(&self) {
+        self.with_view(|v| {
+            if v.items.is_empty() {
+                return;
+            }
+            let focused = v
+                .anchor_index
+                .filter(|a| v.selected.contains(a))
+                .or_else(|| v.selected.iter().min().copied());
+            match focused {
+                Some(i) => {
+                    v.anchor_index = Some(i);
+                    v.focus_visible = true;
+                    v.scroll_into_view(i, true);
+                }
+                None => v.cursor_to(0, CursorMode::Select),
+            }
+            let _ = v.redraw_content();
+        });
+        handler::focus_session(&self.view, self.hwnd());
+    }
+
     /// A press on the desktop or in another fence: the items lose their selection, as icons
     /// on the Windows desktop do.
     pub fn end_item_selection(&self) {
@@ -2100,6 +2247,19 @@ impl FenceWindow {
         });
     }
 
+    /// Peek began or ended (`FenceBehavior::floating` changed): redraws this fence if floating
+    /// changes how it looks. Returns whether it did.
+    pub fn redraw_for_floating(&self) -> bool {
+        let mut changes = false;
+        self.with_view(|v| {
+            changes = v.floating_changes_look();
+            if changes {
+                let _ = v.redraw();
+            }
+        });
+        changes
+    }
+
     /// The icon cache has new pictures for these draw keys (`IconCache::take_replaced`):
     /// items showing one of them, or its failure placeholder, take the new one.
     pub fn reload_icons(&self, replaced: &HashSet<String>) {
@@ -2143,4 +2303,17 @@ fn selection_ring(theme: &Theme) -> crate::shadow::SelectionRing {
     crate::shadow::SelectionRing {
         radius_dip: theme.corner_radius,
     }
+}
+
+/// Hit rects of a note's check boxes or a script's rows for `debug_state`, without spaces:
+/// `index:left,top,right,bottom` (content DIPs) joined by `;`, `-` when there are none.
+fn dump_rects(rects: &[(usize, [f32; 4])]) -> String {
+    if rects.is_empty() {
+        return "-".to_string();
+    }
+    rects
+        .iter()
+        .map(|(i, r)| format!("{i}:{:.1},{:.1},{:.1},{:.1}", r[0], r[1], r[2], r[3]))
+        .collect::<Vec<_>>()
+        .join(";")
 }

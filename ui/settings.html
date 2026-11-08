@@ -560,8 +560,9 @@
           <select id="desktopIcons" aria-labelledby="desktopIconsTitle" aria-describedby="desktopIconsHelp"><option value="hide">隐藏，项目放在栅栏里</option><option value="showWithInbox">显示，也显示“桌面”栅栏</option><option value="showNoInbox">显示，不显示“桌面”栅栏</option></select></div>
         <div class="card child" id="keepIconsCard"><div class="l"><div><div class="t">关闭 PecoFence 时保持 Windows 桌面图标隐藏</div><div class="s">登录时 Windows 会先显示桌面图标，等 PecoFence 启动后才隐藏。打开后，退出或注销时图标保持隐藏，下次登录就不会闪现；PecoFence 没有运行时，桌面上不显示图标。要让图标重新显示，右键桌面，选“查看”→“显示桌面图标”</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="keepIconsHidden"></div></div>
       </div>
-      <div class="card"><div class="l"><span class="ic">&#xE8B3;</span><div><div class="t">在桌面空白处拖出矩形时提供“在此新建栅栏”</div><div class="s">矩形没有碰到任何栅栏时弹出这一项；关闭后拖出矩形只用来框选，仍可从托盘菜单新建栅栏</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="offerNewFence"></div></div>
+      <div class="card"><div class="l"><span class="ic">&#xE8B3;</span><div><div class="t">在桌面空白处拖出矩形时显示“新建栅栏”按钮</div><div class="s">矩形没有碰到任何栅栏时，在它的右下角显示“新建栅栏”和“在此显示文件夹…”两个小按钮，不点的话几秒后消失；关闭后拖出矩形只用来框选，仍可从托盘菜单新建栅栏</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="offerNewFence"></div></div>
       <div class="card" id="perDesktopCard"><div class="l"><span class="ic">&#xE7C4;</span><div><div class="t">每个虚拟桌面各用一套栅栏</div><div class="s">打开后，新建的栅栏只在当前虚拟桌面显示。已有的栅栏不变，可以在栅栏右键菜单或“栅栏”页里改</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="perDesktopFences"></div></div>
+      <div class="card"><div class="l"><span class="ic">&#xE82F;</span><div><div class="t">功能提示</div><div class="s">用得上某个功能时提示一次，例如栅栏多了可以收起、常开的文件夹可以放到桌面上。每条只出现一次</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="featureTips"></div></div>
       <h3>隐藏栅栏</h3>
       <div class="card"><div class="l"><span class="ic">&#xE890;</span><div><div class="t">双击桌面空白处隐藏或显示栅栏</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="quickHide.enabled"></div></div>
       <div class="card" id="wdHotkeyCard"><div class="l"><span class="ic">&#xE7F4;</span><div><div class="t" id="wdHotkeyTitle">临时显示 Windows 桌面</div><div class="s" id="wdHotkeyHelp" aria-live="polite"></div></div></div>
@@ -573,8 +574,12 @@
       <div class="card"><div class="l"><span class="ic">&#xE7C4;</span><div><div class="t">显示桌面 (Win+D) 时</div></div></div>
         <select data-bind="showDesktop"><option value="keepVisible">保持栅栏可见</option><option value="hideWithDesktop">随桌面隐藏</option></select></div>
       <h3>收起与展开</h3>
-      <div class="card"><div class="l"><span class="ic">&#xE70D;</span><div><div class="t" id="rollExpandTitle">收起的栅栏怎么展开</div><div class="s">停在上面展开的栅栏，鼠标移开后自动收起；不管选哪种，双击标题或点折叠箭头都能展开和收起</div></div></div>
-        <select id="rollExpand" aria-labelledby="rollExpandTitle"><option value="hover">鼠标停在上面时</option><option value="click">单击标题时</option><option value="double">只在双击标题或点箭头时</option></select></div>
+      <div class="group">
+        <div class="card"><div class="l"><span class="ic">&#xE70D;</span><div><div class="t" id="rollExpandTitle">收起的栅栏怎么展开</div><div class="s">停在上面展开的栅栏，鼠标移开后自动收起；单击标题展开的，再单击标题收起；不管选哪种，双击标题或点折叠箭头都能展开和收起</div></div></div>
+          <select id="rollExpand" aria-labelledby="rollExpandTitle"><option value="hover">鼠标停在上面时</option><option value="click">单击标题时</option><option value="double">只在双击标题或点箭头时</option></select></div>
+        <div class="card child" id="hoverSpeedCard"><div class="l"><div><div class="t" id="hoverSpeedTitle">展开快慢</div><div class="s">鼠标停多久栅栏才展开；“默认”跟随 Windows 的鼠标悬停时间</div></div></div>
+          <select data-bind="rollUp.hoverSpeed" aria-labelledby="hoverSpeedTitle"><option value="fast">快</option><option value="normal">默认</option><option value="slow">慢</option></select></div>
+      </div>
       <div class="card"><div class="l"><span class="ic">&#xE74B;</span><div><div class="t">展开时把下面的栅栏推开</div><div class="s">收起后它们会回到原位</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="rollUp.pushNeighbors"></div></div>
       <h3>标题栏与标签页</h3>
       <div class="card"><div class="l"><span class="ic">&#xE737;</span><div><div class="t">鼠标悬停时才显示标题栏</div><div class="s">平时只显示图标，让桌面更清爽；每个栅栏可在“栅栏”页单独设置</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="rollUp.titleOnHover"></div></div>
@@ -624,6 +629,7 @@
       <div id="fenceBody">
       <div class="card"><div class="l"><span class="ic">&#xE8AC;</span><div><div class="t">栅栏名称</div></div></div>
         <input type="text" id="fenceTitle" data-fence="title" maxlength="120"></div>
+      <div class="card" id="fenceAutoHeight"><div class="l"><span class="ic">&#xE745;</span><div><div class="t">自动高度</div><div class="s">高度跟随内容行数，内容增减时平滑过渡</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="autoHeight"></div></div>
       <div id="fenceSmartGroup">
       <h3>搜索条件</h3>
       <div class="card" id="smartSummaryCard"><div class="l"><span class="ic">&#xE721;</span><div><div class="t" id="smartSummary"></div><div class="s" id="smartStatus"></div></div></div>
@@ -644,6 +650,8 @@
         <select id="fenceTitleColor" data-fence="titleColor"><option value="theme">跟随主题</option><option value="tint">跟随色调</option><option value="white">白色</option><option value="black">黑色</option></select></div>
       <div class="card"><div class="l"><span class="ic">&#xE8E9;</span><div><div class="t">标题字号</div><div class="s">栅栏标题和标签页文字的大小</div></div></div>
         <select id="fenceTitleSize" data-fence="titleSize"><option value="small">小</option><option value="normal">标准</option><option value="large">大</option><option value="extraLarge">特大</option></select></div>
+      <div class="card" id="fenceTextSize"><div class="l"><span class="ic">&#xE70B;</span><div><div class="t">文字大小</div><div class="s">栅栏里文字的大小</div></div></div>
+        <select id="fenceTextSizeSel" data-fence="textSize"><option value="small">小</option><option value="normal">标准</option><option value="large">大</option><option value="extraLarge">特大</option></select></div>
       <div class="card"><div class="l"><span class="ic">&#xE737;</span><div><div class="t">显示标题栏</div><div class="s">鼠标悬停时显示：平时收起标题行，指针移到栅栏上才出现</div></div></div>
         <select id="fenceTitleOnHover" data-fence="titleOnHover"><option value="default">跟随常规设置</option><option value="always">始终显示</option><option value="hover">鼠标悬停时显示</option></select></div>
       <div id="fenceLayoutGroup">
@@ -656,7 +664,6 @@
         <select id="fenceLabelLines" data-fence="labelLines"><option value="0"></option><option value="1"></option><option value="2"></option><option value="3"></option></select></div>
       <div class="card"><div class="l"><span class="ic">&#xE8E3;</span><div><div class="t">图标对齐</div><div class="s">一行排不满时，居中把空出的宽度平分到左右两边；只用于图标视图</div></div></div>
         <select id="fenceIconAlign" data-fence="iconAlign"><option value="left">左对齐</option><option value="center">居中</option></select></div>
-      <div class="card"><div class="l"><span class="ic">&#xE745;</span><div><div class="t">自动高度</div><div class="s">高度跟随内容行数，内容增减时平滑过渡</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="autoHeight"></div></div>
       </div>
       <h3>行为</h3>
       <div class="card"><div class="l"><span class="ic">&#xE72E;</span><div><div class="t">锁定位置和大小</div><div class="s">边框不再可拖动缩放；标题仍可点击、右键、双击</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="locked"></div></div>
@@ -665,7 +672,8 @@
         <select id="fenceVd" aria-label="在哪个虚拟桌面显示"></select></div>
       <div class="card"><div class="l"><span class="ic">&#xE890;</span><div><div class="t">双击桌面隐藏时保留此栅栏</div><div class="s">其他栅栏隐藏时，这个栅栏仍留在桌面上</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="excludeFromQuickHide"></div></div>
       <div class="card" id="fenceHideEmpty"><div class="l"><span class="ic">&#xED1A;</span><div><div class="t">为空时自动隐藏</div><div class="s">里面没有图标时就不显示；桌面上一出现新图标，它会自己回来</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="hideWhenEmpty"></div></div>
-      <div class="card" id="fenceDesktopLayout"><div class="l"><span class="ic">&#xE80A;</span><div><div class="t">像桌面一样排列</div><div class="s">图标从屏幕左上角一列一列往下排，绕开其他栅栏，像 Windows 桌面的“自动排列图标”，不能随意摆放。关闭后“桌面”变回普通栅栏，可以移动和调整大小</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="desktopLayout"></div></div>
+      <div class="card" id="fenceDesktopLayout"><div class="l"><span class="ic">&#xE80A;</span><div><div class="t">像桌面一样排列</div><div class="s">图标像 Windows 桌面上一样从屏幕左上角一列一列往下排，绕开其他栅栏。关闭后“桌面”变回普通栅栏，可以移动和调整大小</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="desktopLayout"></div></div>
+      <div class="card" id="fenceFreePlacement"><div class="l"><span class="ic">&#xE7C2;</span><div><div class="t">自由摆放</div><div class="s">图标拖到桌面上哪里，就停在哪个格子里，像 Windows 桌面关掉“自动排列图标”时一样。关闭后图标按顺序排列</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="freePlacement"></div></div>
       <div class="card"><div class="l"><span class="ic">&#xE74A;</span><div><div class="t">停靠到屏幕顶部</div><div class="s">贴到屏幕顶边并收起，鼠标悬停时展开，像一个下拉抽屉</div></div></div><button id="fenceDock">停靠</button></div>
       <div class="card" id="fenceOpenFolders"><div class="l"><span class="ic">&#xE838;</span><div><div class="t">双击文件夹或文件夹快捷方式时在此栅栏内打开</div><div class="s">在栅栏里显示文件夹的内容，点向上箭头或按 Backspace 回到原来的图标</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="openFoldersInside"></div></div>
       <div id="fencePortalGroup">
@@ -735,7 +743,7 @@
         <div class="card child"><div class="l"><div><div class="t">时钟</div><div class="s">显示时间、日期和星期。右键时钟可以打开「显示秒」</div></div></div><button id="newClock">添加</button></div>
         <div class="card child"><div class="l"><div><div class="t">天气</div><div class="s">今天和明天的天气，每 30 分钟更新，数据来自 wttr.in。添加后右键它选「编辑脚本」，把 Tokyo 换成你的城市</div></div></div><button id="addWeather" data-example="weather">添加</button></div>
         <div class="card child"><div class="l"><div><div class="t">GitHub 仓库动态</div><div class="s">一个仓库最新的 issue 和 PR，点一行在浏览器里打开。添加后右键它选「编辑脚本」，换成你关心的仓库</div></div></div><button id="addGitHub" data-example="github">添加</button></div>
-        <div class="card child"><div class="l"><div><div class="t">电脑状态</div><div class="s">一直运行，每 2 秒更新 CPU、内存和 C 盘剩余空间。点一行可以复制本机 IP 或打开任务管理器</div></div></div><button id="addStatus" data-example="status">添加</button></div>
+        <div class="card child"><div class="l"><div><div class="t">电脑状态</div><div class="s">一直运行，每 2 秒更新 CPU、内存和每个磁盘的剩余空间。点一行可以复制本机 IP 或打开任务管理器</div></div></div><button id="addStatus" data-example="status">添加</button></div>
         <div class="card child"><div class="l"><div><div class="t">用自己的脚本</div><div class="s">运行你选的脚本（PowerShell、Python、批处理等），把它打印的文字显示在栅栏里。脚本最多运行 10 秒（一直运行的除外），不弹出窗口。PecoFence 本身不会为脚本联网</div></div></div><div class="actions"><button id="scriptGuide">写法说明</button><button id="newScript">选择脚本…</button></div></div>
       </div>
     </section>
@@ -1172,6 +1180,7 @@
     ['[data-bind="icons.chameleon"]', t("搜索别名\x04变淡|半透明|褪色|低饱和")],
     ['[data-bind=autostart]', t("搜索别名\x04开机|开机启动|自启|自动启动|登录时启动")],
     ['#desktopIcons', t("搜索别名\x04隐藏桌面图标|显示桌面图标|系统图标|原来的图标")],
+    ['[data-bind=featureTips]', t("搜索别名\x04小技巧|提示卡片|新手提示|引导")],
     ['[data-bind="quickHide.enabled"]', t("搜索别名\x04一键隐藏|快速隐藏|隐藏全部")],
     ['#wdHotkey', t("搜索别名\x04看桌面|热键|组合键")],
     ['[data-bind=showDesktop]', t("搜索别名\x04最小化|显示桌面")],
@@ -1186,6 +1195,7 @@
     ['#newScript', t("搜索别名\x04插件|天气|命令|自定义")],
     ['#fenceOpacity', t("搜索别名\x04透明度|透明|玻璃")],
     ['[data-fence=locked]', t("搜索别名\x04固定|锁住|防止移动")],
+    ['[data-fence=textSize]', t("搜索别名\x04字体大小|字号|放大文字|看不清")],
     ['[data-bind="rules.keepUpdated"]', t("搜索别名\x04自动整理|自动分类|分类")],
     ['#cfgExport', t("搜索别名\x04备份|迁移|换电脑|恢复设置")],
     ['#updateAction', t("搜索别名\x04升级|新版本|检查更新")],
@@ -1796,7 +1806,12 @@
     document.getElementById('fenceHideEmpty').style.display = f.tool ? 'none' : '';
     // Icon size, spacing, names, alignment and auto height are about icons.
     document.getElementById('fenceLayoutGroup').style.display = f.tool ? 'none' : '';
+    document.getElementById('fenceAutoHeight').style.display = f.tool ? 'none' : '';
+    // 文字大小: notes and script fences (a clock's text follows the fence size).
+    document.getElementById('fenceTextSize').style.display = f.tool && (f.tool.kind === 'note' || f.tool.kind === 'script') ? '' : 'none';
     document.getElementById('fenceDesktopLayout').style.display = f.kind === 'inbox' ? '' : 'none';
+    // 自由摆放 is a way of 像桌面一样排列 (a 「桌面」 with tabs stays a fence).
+    document.getElementById('fenceFreePlacement').style.display = f.kind === 'inbox' && f.desktopLayout && !f.tabbed ? '' : 'none';
     // List and Details rows keep the name on one line, so the setting does nothing there and is
     // greyed. 像桌面一样排列 shows icons whatever the fence's view (a 「桌面」 with tabs stays a fence).
     const nameLines = [t("图标名称\x04不显示"), t("图标名称\x04一行"), t("图标名称\x04两行"), t("图标名称\x04三行")];
@@ -2453,10 +2468,13 @@
   function bindRollExpand() {
     const r = state.settings.rollUp, select = document.getElementById('rollExpand');
     select.value = r.clickToExpand ? 'click' : r.hoverPeek ? 'hover' : 'double';
+    // 展开快慢 is the hover delay: only with 「鼠标停在上面时」.
+    document.getElementById('hoverSpeedCard').hidden = select.value !== 'hover';
     select.onchange = () => {
       const roll = state.settings.rollUp;
       roll.clickToExpand = select.value === 'click';
       roll.hoverPeek = select.value !== 'double';
+      document.getElementById('hoverSpeedCard').hidden = select.value !== 'hover';
       commit('rollUp');
     };
   }

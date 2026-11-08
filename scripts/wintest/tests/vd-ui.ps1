@@ -137,7 +137,8 @@ Start-Sleep -Milliseconds 800
 $note = FenceGet 'Games note'; $portal = FenceGet 'Games portal'
 Check 'a note and a folder portal made on Games belong to Games' ($note.virtualDesktops[0] -eq "{$($ids[1])}" -and $portal.virtualDesktops[0] -eq "{$($ids[1])}") "note=$($note.virtualDesktops) portal=$($portal.virtualDesktops)"
 $m = FenceMenu 'Games'
-MenuPick '^New fence$' $m | Out-Null; Start-Sleep -Milliseconds 1200
+$sub = OpenSubmenu $m '^Add to desktop' '^New fence'
+MenuPick '^New fence$' $sub | Out-Null; Start-Sleep -Milliseconds 1200
 [G]::Press(0x0D); Start-Sleep -Milliseconds 800
 $made = @((PfJson fence list) | Where-Object { $_ -and $_.title -eq 'New fence' })
 Check 'a fence made from the fence menu belongs to Games' ($made.Count -eq 1 -and $made[0].virtualDesktops[0] -eq "{$($ids[1])}") "found=$($made.Count) vd=$($made[0].virtualDesktops)"

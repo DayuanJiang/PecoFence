@@ -17,7 +17,15 @@ function FenceMenu($f) {
   [G]::RClick([int]($wr.x + $wr.w / 2), [int]($wr.y + 14)); Start-Sleep -Milliseconds 700
   return (MenuWin 5)
 }
-# Opens the 新建小工具 submenu of the open fence menu; its texts.
+# Opens 添加到桌面 of the open fence menu (新建便签 and 新建小工具 live there).
+function AddToDesktop($h) {
+  $p = MenuPoint $h '^Add to desktop'
+  if (-not $p) { return $null }
+  [G]::Click($p[0], $p[1]); Start-Sleep -Milliseconds 700
+  foreach ($m in @([W]::Tops('#32768'))) { if ((MenuTexts $m) -match '^New fence') { return $m } }
+  return $null
+}
+# Opens the 新建小工具 submenu of the open 添加到桌面 submenu; its texts.
 function ToolSubmenu($h) {
   $p = MenuPoint $h '^New tool'
   if (-not $p) { return $null }
@@ -33,9 +41,9 @@ Check 'the old per-tool switches are gone' ($null -eq $t.notes -and $null -eq $t
 
 Case 'fence menu: 新建便签 and 新建小工具'
 $f = PlainFence
-$h = FenceMenu $f
-$texts = MenuTexts $h
-Check 'the fence menu has New note and New tool' ($texts -match 'New note' -and $texts -match 'New tool') $texts
+$h = AddToDesktop (FenceMenu $f)
+$texts = if ($h) { MenuTexts $h } else { '' }
+Check 'the fence menu has New note and New tool (in Add to desktop)' ($texts -match 'New note' -and $texts -match 'New tool') $texts
 Check 'no old New clock / New script fence items' ($texts -notmatch 'New clock' -and $texts -notmatch 'New script fence') $texts
 $sub = ToolSubmenu $h
 $subTexts = if ($sub) { MenuTexts $sub } else { '' }
@@ -48,7 +56,7 @@ Check 'Clock from the submenu makes a clock' ((ToolFences 'clock').Count -eq 1) 
 CloseMenus
 
 Case 'one clock'
-$h = FenceMenu (PlainFence)
+$h = AddToDesktop (FenceMenu (PlainFence))
 $sub = ToolSubmenu $h
 $subTexts = if ($sub) { MenuTexts $sub } else { '' }
 Check 'with a clock on the desktop, New tool has no Clock' ($subTexts -notmatch '^Clock' -and $subTexts -match 'Weather') $subTexts
@@ -98,7 +106,9 @@ Check 'New note opens the note editor' ($ed -ne [IntPtr]::Zero)
 Check 'the note is made' ((ToolFences 'note').Count -eq 1)
 PageClick '#scriptGuide'; Start-Sleep -Seconds 2
 Check 'Write-up opens the manual lesson' ((PfLogAll) -match 'opening the manual url=https://pecofence\.jiang\.jp/manual/#write-scripts') ([regex]::Match((PfLogAll), '.*opening the manual.*').Value)
-Get-Process msedge -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle -match 'PecoFence|manual' } | Stop-Process -Force -ErrorAction SilentlyContinue
+# All of Edge: on a new box its first-run window (another title) covers the settings page.
+Get-Process msedge -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+Start-Sleep -Seconds 1
 
 Case 'the one switch hides all tools and stops scripts'
 $before = (FenceWindows).Count
@@ -108,9 +118,9 @@ $g = PfJson fence get $st[0].id
 $s = if ($g.fence) { $g.fence.script } else { $g.script }
 Check 'off: the clock, the note and the script fence go' ($off -eq $before - 3) "windows before=$before off=$off"
 Check 'off: the streaming script stops' (-not $s.running) "running=$($s.running)"
-$h = FenceMenu (PlainFence)
-$texts = MenuTexts $h
-Check 'off: the fence menu has no New note / New tool' ($texts -notmatch 'New note' -and $texts -notmatch 'New tool') $texts
+$h = AddToDesktop (FenceMenu (PlainFence))
+$texts = if ($h) { MenuTexts $h } else { '' }
+Check 'off: the fence menu has no New note / New tool' ($texts -match '^New fence' -and $texts -notmatch 'New note' -and $texts -notmatch 'New tool') $texts
 CloseMenus
 PageClick '#page-tools .toggle[data-bind="tools.enabled"]'; Start-Sleep -Seconds 4
 Check 'on again: the three come back' ((FenceWindows).Count -eq $before) "windows=$((FenceWindows).Count)"

@@ -14,8 +14,11 @@ pub const WM_APP_COMMAND: u32 = msg::WM_APP + 1;
 /// holds (a menu verb that changed a namespace item).
 pub const WM_APP_FS_CHANGED: u32 = msg::WM_APP + 2;
 pub const WM_APP_TRAY: u32 = msg::WM_APP + 3;
-/// The wallpaper registry key changed (worker thread → UI thread).
+/// The wallpaper registry key changed (worker thread → UI thread). wparam 1: a foreground
+/// change (lparam the window); 2: the foreground window is on another virtual desktop.
 pub const WM_APP_WALLPAPER: u32 = msg::WM_APP + 6;
+/// The wallpaper reader answered (`WallpaperReader`, worker thread → UI thread).
+pub const WM_APP_WALLPAPER_READ: u32 = msg::WM_APP + 30;
 /// Posted by the compositor frame clock (`FrameClock`) when a fence asked for a frame.
 pub const WM_APP_FRAME: u32 = msg::WM_APP + 7;
 /// Posted to a fence window (from the compositor's callback thread) when its whole-window
@@ -56,10 +59,10 @@ pub const WM_APP_EVERYTHING_SETUP: u32 = msg::WM_APP + 21;
 /// 对话框跳转 offer: a file dialog and an Explorer folder to offer (`dialog_jump::take_offer`).
 pub const WM_APP_DIALOG_OFFER: u32 = msg::WM_APP + 22;
 /// 智能栅栏: a folder read without Everything finished on its worker.
-pub const WM_APP_SMART_READ: u32 = msg::WM_APP + 30;
+pub const WM_APP_SMART_READ: u32 = msg::WM_APP + 32;
 /// 智能栅栏: a smart fence's own folder watcher saw a change (the fences wait in
 /// `SmartState::changed`).
-pub const WM_APP_SMART_FS: u32 = msg::WM_APP + 31;
+pub const WM_APP_SMART_FS: u32 = msg::WM_APP + 33;
 
 /// What a file drop does with the dropped paths (Explorer's Move / Copy / Create shortcut, the
 /// effect the drop target reported).
@@ -69,6 +72,14 @@ pub enum TransferMode {
     Copy,
     /// Create `.lnk` shortcuts to the paths at the destination; the originals stay.
     Link,
+}
+
+/// Where dragged icons landed on the desktop (screen px): the cursor, and the centre of each
+/// icon (as far from the cursor as it was when the drag started).
+#[derive(Clone, Debug, PartialEq)]
+pub struct DesktopDrop {
+    pub cursor: (i32, i32),
+    pub centres: Vec<(ItemId, (i32, i32))>,
 }
 
 #[derive(Debug)]
@@ -83,6 +94,8 @@ pub enum Command {
     /// if it now covers another fence, it moves to the nearest free spot.
     FenceDropped(FenceId),
     ToggleRollUp(FenceId),
+    /// A double-click on the bottom edge: the height that shows every icon (适应内容大小).
+    FitToContent(FenceId),
     /// A hover-peeked fence was double-clicked: keep it expanded.
     CommitExpanded(FenceId),
     /// Open `item` from fence `from` (a folder opens in place when `from` is a navigating portal).
@@ -123,6 +136,15 @@ pub enum Command {
     PortalUp(FenceId),
     /// The mouse's forward button: back into the folder the last up (or back button) left.
     PortalForward(FenceId),
+    /// A click on a folder fence's title glyph at its root folder: Explorer opens the folder.
+    OpenPortalFolder(FenceId),
+    /// Tab / Shift+Tab in fence window `from`: the keyboard moves to the next / previous
+    /// fence in reading order. A null `from` is the Peek's first Tab or arrow key, which no
+    /// fence received: the first fence (the last one for Shift+Tab).
+    FocusNextFence {
+        from: HWND,
+        back: bool,
+    },
     /// A fence window is being dragged over `target`'s title or left tab column (null = none):
     /// highlight it and, on a tabbed target, open the insertion gap at pointer screen point
     /// `at`.
@@ -166,9 +188,17 @@ pub enum Command {
         tab: FenceId,
         to: usize,
     },
-    /// Internal drag dropped on the bare desktop: back to the inbox.
+    /// Internal drag dropped on the bare desktop: back to the inbox. `at`: where the icons
+    /// landed, for 自由摆放 (None from a test script).
     MoveItemsToInbox {
         items: Vec<ItemId>,
+        at: Option<DesktopDrop>,
+    },
+    /// 自由摆放: the 「桌面」 fence gave icons other cells than their saved ones (new icons, or
+    /// ones moved off a fence or into a smaller work area): save what its latest pass placed
+    /// for this monitor setup.
+    DesktopCellsPlaced {
+        fence: FenceId,
     },
     /// Files dropped from Explorer onto a fence with the effect the drop reported (Explorer's
     /// modifier table: Ctrl copy, Alt / Ctrl+Shift shortcut, otherwise move).
@@ -342,6 +372,8 @@ pub enum Command {
     },
     /// Offer a fence with these screen bounds (a desktop marquee that touched no fence).
     NewFenceRect(RECT),
+    /// The buttons that offer were clicked, or went away.
+    MarqueeOffer(crate::marquee_offer::OfferEvent),
     /// A press / drag / release on the empty desktop: selects the fences the marquee touches.
     DesktopMarquee(crate::anchor::MarqueeEvent),
     /// A click elsewhere ended the desktop fence selection.
@@ -375,8 +407,16 @@ pub enum Command {
     PeekSearchOpenRow(usize),
     /// Ctrl+Enter in the search box: open the folder holding the highlighted match.
     PeekSearchOpenFolder,
-    /// Right (caret at the end) or Ctrl+O in the search box: the highlighted match's actions.
+    /// Right (caret at the end), Ctrl+O, the menu key or Shift+F10 in the search box: the
+    /// highlighted match's actions, under its row.
     PeekSearchActions,
+    /// A right-click on a row of the search list: highlight it and show its actions at the
+    /// pointer (`x`, `y`: screen pixels).
+    PeekSearchRowMenu {
+        row: usize,
+        x: i32,
+        y: i32,
+    },
     /// Everything answered a search query (`WM_COPYDATA` to the search box).
     EverythingResults {
         kind: usize,
@@ -397,6 +437,11 @@ pub enum Command {
     FadeOutDone(HWND),
     /// The user clicked a fence: bring it above the other fences.
     RaiseFence(HWND),
+    /// A hover peek (or a file drag resting on its title) opened a rolled fence: above the
+    /// other fences while it is open (#197).
+    RaiseForHover(HWND),
+    /// That peek rolled it up again: back to its place among the other fences.
+    EndHoverRaise(HWND),
     /// Details-view header click: sort by that column (again = reverse).
     SortColumn {
         fence: FenceId,
@@ -408,6 +453,8 @@ pub enum Command {
     EditorMessage(String),
     /// The rating notice was clicked or went away (see `notice.rs`).
     Notice(crate::notice::NoticeEvent),
+    /// Ctrl+Z in a fence (see `app/undo.rs`).
+    Undo,
 }
 
 #[derive(Clone)]

@@ -2,6 +2,7 @@
 # EC2 Windows test boxes for scripts/wintest.
 #   box.sh create <name>     launch a new box (ready about 20 minutes later)
 #   box.sh up <name>         start it if stopped, wait for ssh, keep an RDP session open
+#                            (WINTEST_SIZE, default 1600x900; WINTEST_SCALE, a desktop scale %)
 #   box.sh down <name>       end the RDP session and stop the instance
 #   box.sh status            state of every box
 #   box.sh ssh <name> [cmd]  PowerShell on the box as Administrator
@@ -34,7 +35,7 @@ rdp_loop() {
   rm -f "$STATE/rdp-$name.stop"
   while true; do
     xvfb-run -a -s "-screen 0 ${WINTEST_SIZE:-1600x900}x24" xfreerdp3 "/v:$ip" /u:pf "/p:$WINTEST_PF_PASSWORD" \
-      "/size:${WINTEST_SIZE:-1600x900}" /cert:ignore /log-level:WARN +auto-reconnect >> "$STATE/rdp-$name.log" 2>&1
+      "/size:${WINTEST_SIZE:-1600x900}" ${WINTEST_SCALE:+/scale-desktop:$WINTEST_SCALE} /cert:ignore /log-level:WARN +auto-reconnect >> "$STATE/rdp-$name.log" 2>&1
     [ -f "$STATE/rdp-$name.stop" ] && exit 0
     sleep 5
   done

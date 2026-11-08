@@ -375,6 +375,10 @@ impl App {
             return;
         }
         let path = std::path::PathBuf::from(&spec.path);
+        if !self.script_runs.streams.contains_key(&id) && crate::scripts::update_old_example(&path)
+        {
+            tracing::info!(%id, "script fence runs the updated example");
+        }
         if crate::scripts::is_streamable(&path) {
             self.start_stream(id, &spec, action);
             return;
@@ -723,6 +727,9 @@ impl App {
             Some(RowAction::Copy(text)) => {
                 let copied = pecofence_platform::clipboard::set_text(self.control.hwnd(), &text);
                 tracing::info!(%fence, copied, "script row: text copied");
+                if let Some(w) = self.window_for(fence) {
+                    w.show_script_copy_result(index, copied);
+                }
             }
             Some(RowAction::Script(action)) => {
                 // A to-do ticks at once; the script's next output has the final say.
@@ -791,15 +798,7 @@ impl App {
                 pecofence_core::i18n::Language::SimplifiedChinese
                     | pecofence_core::i18n::Language::TraditionalChinese
             );
-            // Windows PowerShell 5.1 reads a script without a BOM in the ANSI code page: the
-            // emoji and Chinese text need the BOM, and Notepad keeps CRLF.
-            let text = crate::scripts::example(kind, chinese);
-            let text = format!(
-                "\u{feff}{}",
-                text.trim_start_matches('\u{feff}')
-                    .replace("\r\n", "\n")
-                    .replace('\n', "\r\n")
-            );
+            let text = crate::scripts::example_file_text(kind, chinese);
             let written = std::fs::create_dir_all(&dir).and_then(|_| std::fs::write(&path, text));
             if let Err(e) = written {
                 tracing::warn!(error = %e, example = kind.name(), "writing the example failed");
@@ -811,7 +810,7 @@ impl App {
         let (w, h) = match kind {
             crate::scripts::Example::Weather => (280.0, 160.0),
             crate::scripts::Example::GitHub => (360.0, 300.0),
-            crate::scripts::Example::Status => (280.0, 230.0),
+            crate::scripts::Example::Status => (280.0, 300.0),
         };
         let rect = self.place_new_fence_dip(w, h, x, y, None);
         let script = NewTool::Script(path.to_string_lossy().to_string());
@@ -944,14 +943,26 @@ impl App {
         };
         let rect = w.content_screen_rect();
         let dpi = monitors::dpi_for_window(w.hwnd());
+        let text_size = self.state.fence(fence).map_or(1, text_size_index);
+        let font_dip = pecofence_render::fence_chrome::TOOL_TEXT_SIZES[usize::from(text_size)];
         tracing::info!(
             %fence,
             rect = ?(rect.left, rect.top, rect.right, rect.bottom),
             dpi,
+            text_size,
+            font_dip,
             chars = text.chars().count(),
             "note editor opened"
         );
-        crate::note_edit::open(rect, dpi, fence, &text, self.queue.clone(), self.theme_mode);
+        crate::note_edit::open(
+            rect,
+            dpi,
+            fence,
+            &text,
+            self.queue.clone(),
+            self.theme_mode,
+            font_dip,
+        );
     }
 
     /// Quitting: the text of a note editor still open goes into the note now (its commit through

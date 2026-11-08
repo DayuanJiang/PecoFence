@@ -9,6 +9,38 @@ pub struct DesktopArea {
     pub work: RECT,
     /// Other fences' rects: cells under them stay free.
     pub covered: Vec<RECT>,
+    /// 自由摆放: the saved grid cell `[column, row]` of each icon (the fence's
+    /// `desktop_cells`); None = the icons stand down the columns in their order.
+    pub free: Option<BTreeMap<ItemId, [u16; 2]>>,
+    /// 自由摆放 with no saved cells yet: where Windows' own desktop has the icons, so they keep
+    /// those places (#204). Icons with a saved cell keep theirs.
+    pub windows: Option<WindowsIconPlaces>,
+}
+
+/// Windows' own desktop icons, as Explorer's desktop view had them when PecoFence read it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct WindowsIconPlaces {
+    /// The spacing of Windows' icon grid as Explorer reports it (px at `explorer_dpi`).
+    pub spacing: (i32, i32),
+    /// The scale Explorer started at, which its reported spacing stays in.
+    pub explorer_dpi: Option<u32>,
+    /// The top-left of each icon's place on Windows' desktop (screen px).
+    pub places: BTreeMap<ItemId, (i32, i32)>,
+}
+
+impl WindowsIconPlaces {
+    /// Windows' grid spacing in px on a monitor at `scale` (its DPI / 96): Explorer reports it
+    /// in the scale it started at, while the icons stand at the monitor's scale.
+    pub fn spacing_at(&self, scale: f32) -> (i32, i32) {
+        let k = self
+            .explorer_dpi
+            .filter(|d| *d > 0)
+            .map_or(1.0, |d| scale * 96.0 / d as f32);
+        (
+            (self.spacing.0 as f32 * k).round() as i32,
+            (self.spacing.1 as f32 * k).round() as i32,
+        )
+    }
 }
 
 pub struct FenceViewState {
@@ -157,6 +189,11 @@ pub struct FenceViewState {
     pub(super) note_boxes: Vec<(usize, [f32; 4])>,
     /// 时钟与日期: the fence shown is a clock; true = with seconds. None = it shows items.
     pub(super) clock: Option<bool>,
+    /// The clock's time and date text sizes (DIPs) as last drawn, and as last logged.
+    pub(super) clock_text: (f32, f32),
+    pub(super) clock_text_logged: (f32, f32),
+    /// 文字大小 of a note or script fence: 0 small, 1 normal, 2 large, 3 extra large.
+    pub(super) text_size: u8,
     /// 脚本栅栏: the fence shown is a script fence with this output and footer.
     pub(super) script: Option<ScriptView>,
     /// Its clickable rows as last drawn: row index and (left, top, right, bottom) in content
@@ -210,6 +247,9 @@ pub struct FenceViewState {
     /// Screen rect (left, top, width, height) `backdrop_crop` was cut for. While the height
     /// animates the crop covers the taller end, so the per-frame chrome draws reuse it.
     pub(super) backdrop_rect: Option<(i32, i32, i32, i32)>,
+    /// A drag moved the window without redrawing the backdrop for its new place
+    /// (`Behavior::defer_backdrop`): the next frame does.
+    pub(super) backdrop_stale: bool,
     /// Acrylic: `MonitorBackdrop::crop_origin` of `backdrop_crop` (a move within one texel of
     /// the quarter-size image cuts the same pixels).
     pub(super) backdrop_origin: Option<(i32, i32, i32, i32)>,
@@ -331,6 +371,12 @@ pub struct FenceViewState {
     /// The cells of the items (and one more for a drop after the last), content-local DIPs,
     /// from `arrange_desktop`.
     pub(super) desktop_slots: Vec<CellRect>,
+    /// 自由摆放: the grid the icons stand on and the cell (column, row) of each item, from
+    /// `arrange_desktop`; None while the icons are arranged in columns.
+    pub(super) desktop_free: Option<(super::desktop_layout::FreeGrid, Vec<(i32, i32)>)>,
+    /// 自由摆放: the icons the latest pass gave a cell other than their saved one (the app
+    /// saves them when it reads the note `arrange_desktop` sent).
+    pub(super) desktop_free_sent: Option<Vec<(ItemId, [u16; 2])>>,
     /// The icons selected when a rectangle drawn on the desktop started (kept with Ctrl or
     /// Shift); None while no rectangle is drawn.
     pub(super) desktop_band_base: Option<HashSet<usize>>,
@@ -405,6 +451,9 @@ pub struct FenceViewState {
     pub(super) plate_alpha: f32,
     /// Temporarily expanded by hovering a rolled fence (state stays "rolled" for persistence).
     pub(super) peeking: bool,
+    /// A hover peek (or a file drag) opened it and raised it above the other fences
+    /// (`Command::RaiseForHover`): the roll-up that follows puts it back.
+    pub(super) hover_raised: bool,
     /// The app is placing the window (`FenceWindow::place_window`, a cancelled drag put back):
     /// the rect it sets is already in the target monitor's pixels, so a WM_DPICHANGED sent
     /// inside that SetWindowPos (a move onto a monitor with another scale) must not scale it

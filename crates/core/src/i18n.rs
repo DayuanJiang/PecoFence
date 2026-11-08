@@ -195,6 +195,24 @@ pub fn text(source: &'static str) -> &'static str {
     text_in(language(), source)
 }
 
+/// A name PecoFence gave in some language for one of `keys` (a first-start fence the user never
+/// renamed): the same name in `language`, when that differs.
+pub fn retranslated_in(
+    language: Language,
+    name: &str,
+    keys: &[&'static str],
+) -> Option<&'static str> {
+    keys.iter().find_map(|key| {
+        let now = text_in(language, key);
+        (name != now && SUPPORTED.iter().any(|l| text_in(*l, key) == name)).then_some(now)
+    })
+}
+
+/// [`retranslated_in`] the current language.
+pub fn retranslated(name: &str, keys: &[&'static str]) -> Option<&'static str> {
+    retranslated_in(language(), name, keys)
+}
+
 pub fn ui_payload() -> serde_json::Value {
     let active = language();
     let translations = if active == Language::SimplifiedChinese {
@@ -235,6 +253,27 @@ pub fn format(source: &'static str, arguments: &[String]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn first_start_names_follow_the_language_until_renamed() {
+        let keys = ["程序", "文件夹", "文件与文档"];
+        assert_eq!(
+            retranslated_in(Language::English, "程序", &keys),
+            Some("Programs")
+        );
+        assert_eq!(
+            retranslated_in(Language::SimplifiedChinese, "Folders", &keys),
+            Some("文件夹")
+        );
+        assert_eq!(
+            retranslated_in(Language::Japanese, "Files and documents", &keys),
+            Some(text_in(Language::Japanese, "文件与文档"))
+        );
+        // Already in the language, or a name the user chose: left alone.
+        assert_eq!(retranslated_in(Language::English, "Programs", &keys), None);
+        assert_eq!(retranslated_in(Language::English, "My apps", &keys), None);
+        assert_eq!(retranslated_in(Language::English, "程序 2", &keys), None);
+    }
 
     #[test]
     fn resolves_ui_language_and_falls_back_to_english() {

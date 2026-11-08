@@ -13,6 +13,9 @@ pub(super) struct InternalDrag {
     pub(super) from: FenceId,
     pub(super) items: Vec<ItemId>,
     pub(super) paths: Vec<PathBuf>,
+    /// Each item's centre less the press point (screen px): where the icons land when they
+    /// are dropped on a 「桌面」 that places them freely (自由摆放).
+    pub(super) offsets: Vec<(ItemId, (i32, i32))>,
 }
 
 thread_local! {
@@ -103,6 +106,12 @@ fn dropped_paths(data: &IDataObject, internal: bool) -> Vec<PathBuf> {
             })
         })
         .collect()
+}
+
+/// How many of the dragged paths are files and how many folders (for the log).
+fn item_kinds(paths: &[PathBuf]) -> (usize, usize) {
+    let folders = paths.iter().filter(|p| p.is_dir()).count();
+    (paths.len() - folders, folders)
 }
 
 /// The entries directly in `dir` (the desktop, before and after a shell drop).
@@ -335,8 +344,9 @@ pub(super) struct FenceDropHandler {
     /// read at DragEnter: a plain drag from another volume copies, as in Explorer.
     pub(super) source_volume: Option<String>,
     pub(super) desktop: Option<PathBuf>,
-    /// Only real folders opt into opening with an application's shortcut.
-    pub(super) folder_drag: bool,
+    /// The drag holds real files or folders (`CF_HDROP` paths): dropped on a program or its
+    /// shortcut, they open with it, as on the Windows desktop (#198).
+    pub(super) path_drag: bool,
     /// Cache both accepted and rejected shortcuts for this hover (no repeated disk/COM
     /// lookup at mouse-message rate). Dropping the target balances its DragEnter.
     pub(super) shortcut_hover: Option<(PathBuf, Option<dragdrop::ShortcutDropTarget>)>,
@@ -408,7 +418,7 @@ impl FenceDropHandler {
         allowed: u32,
     ) -> Option<Feedback> {
         let internal = Self::internal();
-        let candidate = if self.folder_drag {
+        let candidate = if self.path_drag {
             pt.and_then(|pt| {
                 let guard = self.view.try_borrow().ok()?;
                 let v = guard.as_ref().filter(|v| !v.takes_no_drops())?;
@@ -441,8 +451,28 @@ impl FenceDropHandler {
             .is_none_or(|(old, _)| *old != path)
         {
             self.shortcut_hover = None;
-            let target = dragdrop::ShortcutDropTarget::bind(&path).ok();
-            self.shortcut_hover = Some((path, target));
+            let bound = dragdrop::ShortcutDropTarget::bind(&path);
+            let (files, folders) = self
+                .data
+                .as_ref()
+                .map(|d| item_kinds(&dragdrop::hdrop_paths(d)))
+                .unwrap_or_default();
+            let reason = match &bound {
+                Ok(_) => "a program: the items open with it",
+                Err(why) => why,
+            };
+            let link = path
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("lnk"));
+            tracing::info!(
+                link,
+                program = bound.is_ok(),
+                files,
+                folders,
+                reason,
+                "icon under a drag of files or folders"
+            );
+            self.shortcut_hover = Some((path, bound.ok()));
         }
         let effect = match (&mut self.shortcut_hover, &self.data) {
             (Some((_, Some(target))), Some(data)) => {
@@ -453,7 +483,8 @@ impl FenceDropHandler {
                 effect
             }
             // No program and no application's shortcut (a document, a folder, a broken or a
-            // Store app's link): the folders drop on the fence as before.
+            // Store app's link): the items drop as on any other icon (into the folder a
+            // shortcut points to, else into the fence).
             (Some((_, None)), _) => return None,
             _ => DropEffect::None,
         };
@@ -611,7 +642,7 @@ impl FenceDropHandler {
     /// starts from the default image, and the data object is released.
     pub(super) fn forget_data(&mut self, clear_description: bool) {
         self.shortcut_hover = None;
-        self.folder_drag = false;
+        self.path_drag = false;
         if let Some(data) = self.data.take()
             && clear_description
             && self.last_description.is_some()
@@ -631,19 +662,19 @@ impl DropHandler for FenceDropHandler {
         allowed: u32,
     ) -> DropEffect {
         let internal = Self::internal().is_some();
+        forget_link_folder();
         // A drag of only the desktop's own items (This PC, OneDrive) has no paths left: it goes
         // to the shell, which makes their shortcuts.
         let hdrop = dragdrop::has_hdrop(data).then(|| dropped_paths(data, internal));
         self.shortcut_hover = None;
-        self.folder_drag = hdrop
-            .as_ref()
-            .is_some_and(|paths| !paths.is_empty() && paths.iter().all(|path| path.is_dir()));
         self.kind = classify_drop(
             internal,
             hdrop.as_deref(),
             || dragdrop::has_inet_url(data),
             || dragdrop::has_shell_items(data),
         );
+        self.path_drag =
+            self.kind == DropKind::Files && hdrop.as_ref().is_some_and(|paths| !paths.is_empty());
         self.data = Some(data.clone());
         self.last_description = None;
         self.right_button = key_state & dragdrop::MK_RBUTTON != 0;
@@ -726,29 +757,32 @@ impl DropHandler for FenceDropHandler {
             self.kind = DropKind::None;
             self.feedback(None, 0, 0);
             self.forget_data(false);
-            self.right_button = false;
+            let right = std::mem::take(&mut self.right_button);
             if let Some(helper) = &self.helper {
                 helper.drop(data, pt, feedback.effect);
             }
-            // Never fall through to membership changes or file moves when a shortcut
-            // rejects the folders, disappears, or fails to launch.
+            // Never fall through to membership changes or file moves when a program refuses
+            // the items, disappears, or fails to launch.
             let effect = target
                 .filter(|_| feedback.effect != DropEffect::None)
                 .map(|target| {
                     target
-                        .drop_folders(data, key_state, pt, allowed)
+                        .drop_items(data, key_state, pt, allowed)
                         .unwrap_or_else(|error| {
-                            tracing::warn!(%error, "shortcut folder drop failed");
+                            tracing::warn!(%error, "drop on a program or its shortcut failed");
                             DropEffect::None
                         })
                 })
                 .unwrap_or(DropEffect::None);
+            let (files, folders) = item_kinds(&dragdrop::hdrop_paths(data));
             tracing::info!(
                 shortcut = %shortcut.unwrap_or_default().display(),
-                folders = dragdrop::hdrop_paths(data).len(),
+                files,
+                folders,
+                right,
                 refused = feedback.effect == DropEffect::None,
                 ?effect,
-                "folders dropped on a program or its shortcut"
+                "items dropped on a program or its shortcut, none moved"
             );
             return effect;
         }
@@ -759,17 +793,15 @@ impl DropHandler for FenceDropHandler {
             g.as_mut().filter(|v| !v.takes_no_drops()).map(|v| {
                 let spot = v.drop_spot_at(pt.x, pt.y, internal.as_ref());
                 let tab_fence = spot.tab.and_then(|i| v.tabs.get(i)).map(|t| t.id);
-                let folder = spot
-                    .folder
-                    .and_then(|i| v.items.get(i))
-                    .map(|it| it.path.clone());
+                let folder = spot.folder.and_then(|i| v.item_drop_folder(i));
                 let dest = v.drop_folder(&spot);
                 v.drag_scroll = None;
                 if v.snap_scroll() {
                     let _ = v.redraw_content();
                 }
                 v.apply_drop_feedback(None);
-                (spot, v.active, tab_fence, folder, v.hwnd, dest)
+                let free = v.places_freely();
+                (spot, v.active, tab_fence, folder, v.hwnd, dest, free)
             })
         });
         self.forget_data(false);
@@ -787,7 +819,7 @@ impl DropHandler for FenceDropHandler {
             }
         };
         let effect = 'resolve: {
-            let Some((spot, active, tab_fence, folder, hwnd, dest)) = resolved else {
+            let Some((spot, active, tab_fence, folder, hwnd, dest, free)) = resolved else {
                 break 'resolve DropEffect::None;
             };
             // No folder from the view: a virtual fence, whose files live on the desktop.
@@ -901,6 +933,23 @@ impl DropHandler for FenceDropHandler {
                         });
                         break 'resolve effect;
                     }
+                    if free {
+                        // 自由摆放: dropped on the icons of 「桌面」 (its own or another fence's
+                        // icons): they stay where they land, beside the icons that are there.
+                        let at = DesktopDrop {
+                            cursor: (pt.x, pt.y),
+                            centres: d
+                                .offsets
+                                .iter()
+                                .map(|(id, (dx, dy))| (*id, (pt.x + dx, pt.y + dy)))
+                                .collect(),
+                        };
+                        self.queue.push(Command::MoveItemsToInbox {
+                            items: d.items,
+                            at: Some(at),
+                        });
+                        break 'resolve DropEffect::Move;
+                    }
                     if let Some(index) = spot.insert {
                         self.queue.push(Command::ReorderItems {
                             fence: active,
@@ -991,12 +1040,70 @@ impl DropHandler for FenceDropHandler {
     }
 }
 
+thread_local! {
+    /// The last shortcut a drag hovered and the folder it points to (None: not a folder, or
+    /// not on a local drive): `link_folder` asks the shortcut once per hover, not per DragOver.
+    static LINK_FOLDER: RefCell<Option<(PathBuf, Option<PathBuf>)>> = const { RefCell::new(None) };
+}
+
+/// A new drag starts: shortcuts are asked again (one may have been changed meanwhile).
+pub(super) fn forget_link_folder() {
+    LINK_FOLDER.with(|c| c.borrow_mut().take());
+}
+
+/// The folder a `.lnk` at `path` points to, when it is one on a local drive (fixed or
+/// removable): files dropped on such a shortcut go into that folder, as on the Windows desktop
+/// (feedback #121). A share or a mapped network drive is not asked (that could hold the drag
+/// until the network gives up): the drop goes into the fence as before.
+fn link_folder(path: &Path) -> Option<PathBuf> {
+    if !path
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("lnk"))
+    {
+        return None;
+    }
+    if let Some(known) = LINK_FOLDER.with(|c| {
+        c.borrow()
+            .as_ref()
+            .filter(|(p, _)| p == path)
+            .map(|(_, f)| f.clone())
+    }) {
+        return known;
+    }
+    let target = pecofence_platform::shell::shortcut_target_expanded(path);
+    let local = target.as_deref().is_some_and(|t| {
+        matches!(
+            pecofence_platform::shell::drive_kind(t),
+            "fixed" | "removable"
+        )
+    });
+    let folder = target.filter(|t| local && t.is_dir());
+    tracing::info!(
+        local,
+        folder = folder.is_some(),
+        "shortcut under a drag: drop target if it points to a local folder"
+    );
+    LINK_FOLDER.with(|c| *c.borrow_mut() = Some((path.to_path_buf(), folder.clone())));
+    folder
+}
+
 impl FenceViewState {
-    /// The folder files dropped on `spot` land in: the folder item, else the target tab's or
-    /// the shown fence's portal folder. None = the desktop (a virtual fence's files live there).
+    /// Where files dropped on item `i` go: a folder item's own path, the Recycle Bin, or the
+    /// local folder a shortcut points to (`link_folder`); None for any other item.
+    pub(super) fn item_drop_folder(&self, i: usize) -> Option<PathBuf> {
+        let it = self.items.get(i)?;
+        if it.is_folder || pecofence_platform::shell::is_recycle_bin_path(&it.path) {
+            return Some(it.path.clone());
+        }
+        link_folder(&it.path)
+    }
+
+    /// The folder files dropped on `spot` land in: the folder item (or the folder a shortcut
+    /// item points to), else the target tab's or the shown fence's portal folder. None = the
+    /// desktop (a virtual fence's files live there).
     pub(super) fn drop_folder(&self, spot: &DropSpot) -> Option<PathBuf> {
         if let Some(i) = spot.folder {
-            return self.items.get(i).map(|it| it.path.clone());
+            return self.item_drop_folder(i);
         }
         match spot.tab.and_then(|i| self.tabs.get(i)) {
             Some(t) if t.id != self.active => t.folder.clone(),
@@ -1044,7 +1151,7 @@ impl FenceViewState {
 
     /// A folder item under a client-pixel point that is not one of `exclude` (the items being
     /// dragged): Explorer moves dropped files into it. The Recycle Bin item counts too (a drop
-    /// on it recycles).
+    /// on it recycles), and so does a shortcut to a local folder (`item_drop_folder`).
     pub(super) fn folder_drop_target(
         &self,
         x_px: i32,
@@ -1053,8 +1160,10 @@ impl FenceViewState {
     ) -> Option<usize> {
         let i = self.hit_item(x_px, y_px)?;
         let it = self.items.get(i)?;
-        let target = it.is_folder || pecofence_platform::shell::is_recycle_bin_path(&it.path);
-        (target && !exclude.contains(&it.id)).then_some(i)
+        if exclude.contains(&it.id) {
+            return None;
+        }
+        self.item_drop_folder(i).map(|_| i)
     }
 
     /// Resolves what a drag at screen point (sx, sy) targets in this window.
@@ -1098,6 +1207,7 @@ impl FenceViewState {
         }
         if let Some(d) = internal
             && d.from == self.active
+            && !self.places_freely()
         {
             match self.insertion_at(cx, cy) {
                 Some(i) => spot.insert = Some(i),
@@ -1211,7 +1321,7 @@ impl FenceViewState {
         {
             // A rolled fence is one title-bar target: any position within it keeps the dwell.
             self.drag_peek_armed = true;
-            window::set_timer(self.hwnd, TIMER_DRAG_PEEK, Tooltip::hover_delay_ms());
+            window::set_timer(self.hwnd, TIMER_DRAG_PEEK, self.behavior.hover_open_ms());
         }
     }
 

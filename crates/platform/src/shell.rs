@@ -1289,16 +1289,26 @@ pub fn rename_with_prompt(path: &Path, new_name: &str, owner: Option<HWND>) -> R
 
 /// `path` for a file API: as is when short, beyond that in the `\\?\` form `std::fs` uses
 /// (`\\?\C:\…`, `\\?\UNC\server\share\…`), without which the call fails on a long path. The
-/// threshold is std's: 248 UTF-16 units including the NUL (the limit for a folder).
+/// threshold is std's: 248 UTF-16 units including the NUL (the limit for a folder). A name that
+/// ends in a dot or a space (`x...`, made outside Explorer) also needs that form: Win32 drops
+/// those when it normalises a path, and then finds no such file.
 fn long_path_wide(path: &Path) -> Vec<u16> {
     use std::os::windows::ffi::OsStrExt;
     use std::path::{Component, Prefix};
     let plain = path_wide(path);
-    if plain.len() < 248 {
+    let odd_name = path
+        .components()
+        .any(|c| matches!(c, Component::Normal(n) if n.to_string_lossy().ends_with(['.', ' '])));
+    if plain.len() < 248 && !odd_name {
         return plain;
     }
-    // The prefix turns normalisation off, so the path must be absolute and clean first.
-    let abs = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
+    // The prefix turns normalisation off, so the path must be absolute and clean first. An
+    // absolute one with such a name is taken as it is: normalising it would drop them again.
+    let abs = if odd_name && path.is_absolute() {
+        PathBuf::from(path.to_string_lossy().replace('/', "\\"))
+    } else {
+        std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf())
+    };
     let abs_w: Vec<u16> = abs.as_os_str().encode_wide().collect();
     let mut w: Vec<u16> = r"\\?\".encode_utf16().collect();
     match abs.components().next() {
@@ -1612,6 +1622,22 @@ mod path_tests {
         );
         let verbatim = format!(r"\\?\{deep}");
         assert_eq!(long_path_wide(Path::new(&verbatim)), wide(&verbatim));
+        // Names ending in dots or spaces keep them, whatever the length.
+        for odd in [
+            r"C:\Users\me\Desktop\x...",
+            r"C:\Users\me\Desktop\notes ",
+            r"C:\dir.\a.txt",
+        ] {
+            assert_eq!(
+                long_path_wide(Path::new(odd)),
+                wide(&format!(r"\\?\{odd}")),
+                "{odd}"
+            );
+        }
+        assert_eq!(
+            long_path_wide(Path::new("C:/Users/me/x.")),
+            wide(r"\\?\C:\Users\me\x.")
+        );
     }
 
     /// A drive's root, which has no file name, gets Explorer's "Local Disk (C:)", or only its

@@ -180,6 +180,9 @@ default/clear/solid/transparent (transparent: no glass, rim or shadow until the 
 fence), `tint` `"#RRGGBB"` or `null`, `tintTitleOnly` (the tint washes only the title row),
 `tabColor` `"#RRGGBB"` or `null` (the bar under the fence's tab in a tab strip; `null` follows its
 tint), `titleColor` theme/tint/white/black/`"#RRGGBB"`, `titleSize` small/normal/large/extraLarge,
+`textSize` small/normal/large/extraLarge (note and script fences: the size of their text, check
+boxes and clickable rows, 12/14/18/24 DIPs; normal by default; other fences refuse it, and a
+clock's text follows the size of its fence instead),
 `titleOnHover` default/hover/always (hover: the title row folds away until the pointer is over the
 fence; default follows `rollUp.titleOnHover`), `layout` icons/list/details,
 `sort` manual/name/type/date/size/openCount, `reverse`, `groupByDate`, `foldersFirst` (folders above files in a sorted fence), `labelLines` 0/1/2/3 (lines
@@ -191,7 +194,11 @@ shows that folder inside the fence instead of opening File Explorer; off by defa
 when an item lands in it; a portal hides only at its root folder, a tab or a host of tabs stays;
 this is also how to keep the inbox, which cannot be deleted, out of sight), `desktopLayout` (the inbox
 only: no title row, glass or edges; its icons stand down columns from the top-left of the monitor
-like the Windows desktop, around the other fences), `noteText` (note fences: the whole text; a line
+like the Windows desktop, around the other fences), `freePlacement` (the inbox only, while
+`desktopLayout` is on: an icon dropped on the desktop stays in that grid cell, as on a Windows desktop
+with auto arrange off; on in a new configuration; with no cells saved yet the icons start in the cells of
+their places on the Windows desktop; new icons take the first free cell down the columns; `fence get` lists each
+icon's `[column, row]` on the current monitors in `desktopCells`), `noteText` (note fences: the whole text; a line
 starting with `[ ]` or `[x]` is a to-do), `scriptPath` (script fences: the full path of the script;
 it runs at once), `scriptInterval` (script fences: minutes between runs, 1 to 1440),
 `virtualDesktops` (see *Virtual desktops* below) and the search of a smart fence (see
@@ -283,7 +290,11 @@ hidden when PecoFence exits, so they do not flash at the next sign-in; default o
 `hideInboxWhenIconsShown` (while `hideRealIcons` is off, the inbox
 fence shows no window and its items only show among the Windows desktop icons; a tab or a host of
 tabs stays; default off), `offerNewFence` (a rectangle drawn on empty desktop that touches no fence
-offers 「在此新建栅栏」; default on), `autostart`, `peek.enabled`, `peek.doubleCtrl` (`true` makes
+shows two small buttons at its bottom-right corner, 「新建栅栏」 and 「在此显示文件夹…」;
+default on), `featureTips` (「功能提示」: one-time cards in the corner when a
+feature would help, such as rolling up fences once there are many, showing a folder opened often on
+the desktop, or a rule for files of one type dragged into one fence; each shows once; default on),
+`autostart`, `peek.enabled`, `peek.doubleCtrl` (`true` makes
 Peek open by pressing Ctrl twice quickly, with its search box, instead of the shortcut, which stays
 saved but is not registered; setting `peek.hotkey` or `peek.customHotkey` turns it off; works only
 while `peek.enabled` is on; default off), `quickHide.enabled`,
@@ -299,9 +310,13 @@ style; see [THEMES.md](THEMES.md)),
 column on its left that takes the title row's place; rolled up, such a fence shrinks to the
 column; default top),
 `rollUp.hoverPeek` and `rollUp.clickToExpand` (the settings page's 「收起的栅栏怎么展开」 list:
-`clickToExpand` true expands on one title click and ignores `hoverPeek` for the pointer (the page
+`clickToExpand` true expands a rolled fence on one title click, rolls an open one up on the next,
+and ignores `hoverPeek` for the pointer (the page
 keeps `hoverPeek` on with it, so a file dragged onto a rolled title still expands it); both false
-leaves the double-click and the chevron; default hover), `rollUp.pushNeighbors` (an expanded fence pushes the
+leaves the double-click and the chevron; default hover), `rollUp.hoverSpeed` (the page's 「展开快慢」:
+how long the pointer or a dragged file rests on a rolled fence before it expands, `fast` 150 ms,
+`normal` Windows' mouse hover time (400 ms unless changed), `slow` 1 s; default `normal`),
+`rollUp.pushNeighbors` (an expanded fence pushes the
 fences stacked below it down and they slide back when it rolls up; their `rect` stays where it was,
 default on), `rollUp.titleOnHover` (the title row folds away until the
 pointer is over the fence; for every fence whose `titleOnHover` is `default`),
@@ -571,7 +586,7 @@ text or `null`, `smartLimit` 1 to 2000); a folder set this way is no longer the 
 another PC keeps it (a template's own folder is replaced there by that PC's Downloads, Screenshots or
 Recent Items).
 
-In the app, 新建智能栅栏… (tray menu, fence menu) and 编辑条件… (a smart fence's menu, Settings ›
+In the app, 新建智能栅栏… (tray menu, fence menu › 添加到桌面) and 编辑条件… (a smart fence's menu, Settings ›
 栅栏) open the smart fence editor, a small window with the same search in rows and a live count; the
 CLI does not open it.
 

@@ -65,13 +65,15 @@ pub(super) fn snap_paused() -> bool {
 }
 
 /// While `hwnd` is dragged to `rect`: the white outline around the fence it would join as a tab
-/// (`merge`), else around the spot it will move to on release when it covers another fence
-/// (`FenceDropped`). The alignment `guides` show only while neither applies. `radius_dip` is
-/// the fences' corner radius.
+/// (`merge`), else around the spot it will move to on release (`FenceDropped`): when it covers
+/// another fence, or when the room it opens into (`hang` beyond `rect`, a rolled-up fence's
+/// expanded rect) is not on the screen. The alignment `guides` show only while neither
+/// applies. `radius_dip` is the fences' corner radius.
 pub(super) fn update_drag_feedback(
     behavior: &Behavior,
     hwnd: HWND,
     rect: &RECT,
+    hang: (i32, i32),
     merge: Option<HWND>,
     guides: &[GuideLine],
     radius_dip: f32,
@@ -82,14 +84,29 @@ pub(super) fn update_drag_feedback(
         Some(target) => (true, Some(window::window_rect(target))),
         None => {
             let others = other_fence_rects(hwnd);
-            if others
+            let covers = others
                 .iter()
-                .any(|o| crate::layout::clearance::overlaps(rect, o, gap))
-            {
+                .any(|o| crate::layout::clearance::overlaps(rect, o, gap));
+            // Each corner of that room in the work area of the monitor it is on (a fence
+            // across two monitors stays where it is let go).
+            let in_work = |x: i32, y: i32| {
+                monitors::query(monitors::monitor_from_point(x, y)).is_some_and(|m| {
+                    let w = m.work_area;
+                    x >= w.left && x < w.right && y >= w.top && y < w.bottom
+                })
+            };
+            let (right, bottom) = (rect.right + hang.0, rect.bottom + hang.1);
+            let on_screen = in_work(rect.left, rect.top)
+                && in_work(right - 1, rect.top)
+                && in_work(rect.left, bottom - 1)
+                && in_work(right - 1, bottom - 1);
+            if covers || !on_screen {
                 let spot = work_area_under(rect).and_then(|work| {
-                    crate::layout::clearance::nearest_free(rect, &others, &work, gap)
+                    crate::layout::clearance::landing_spot(
+                        rect, hang, &others, &work, on_screen, gap,
+                    )
                 });
-                (true, spot)
+                (spot.is_some(), spot)
             } else {
                 (false, None)
             }
@@ -158,12 +175,13 @@ pub(super) fn snap_rect(rect: &mut RECT, me: HWND, gap: i32, dist: i32) -> Vec<G
     let others = other_fence_rects(me);
     let work = work_area_under(rect);
     snap_among(rect, &others, work.as_ref(), gap, dist);
-    alignment_guides(rect, &others, work.as_ref(), dist)
+    alignment_guides(rect, &others, work.as_ref())
 }
 
 /// Moves `rect` by the shortest pull within `dist` on each axis, towards: outer edges a `gap`
-/// from a nearby fence's, edges level with a nearby fence's, the work-area edges (`gap`
-/// inside) and the work area's centre lines.
+/// from a nearby fence's, edges level with any other fence's (same row or column, however far
+/// apart, as edge drags already do), the work-area edges (`gap` inside) and the work area's
+/// centre lines.
 pub(super) fn snap_among(
     rect: &mut RECT,
     others: &[RECT],
@@ -187,22 +205,25 @@ pub(super) fn snap_among(
             best_dy = Some(d);
         }
     };
-    // Other fences: align outer edges with a gap, and align same edges.
+    // Other fences: outer edges a gap apart from a neighbour across from it, same edges with
+    // any fence. A neighbour a gap away still counts as across (its gap is part of the reach):
+    // a fence dropped 12 px beside another gets the gap and the same top together.
     for o in others {
-        let overlap_y = rect.top < o.bottom + dist && rect.bottom > o.top - dist;
-        let overlap_x = rect.left < o.right + dist && rect.right > o.left - dist;
+        let reach = gap + dist;
+        let overlap_y = rect.top < o.bottom + reach && rect.bottom > o.top - reach;
+        let overlap_x = rect.left < o.right + reach && rect.right > o.left - reach;
         if overlap_y {
             consider_x(o.right + gap); // my left to their right
             consider_x(o.left - gap - w); // my right to their left
-            consider_x(o.left); // same left
-            consider_x(o.right - w); // same right
         }
         if overlap_x {
             consider_y(o.bottom + gap);
             consider_y(o.top - gap - h);
-            consider_y(o.top);
-            consider_y(o.bottom - h);
         }
+        consider_x(o.left); // same left
+        consider_x(o.right - w); // same right
+        consider_y(o.top);
+        consider_y(o.bottom - h);
     }
     if let Some(wa) = work {
         consider_x(wa.left + gap);
@@ -267,6 +288,9 @@ pub(super) struct SizeRules {
     pub min_h: i32,
     /// Rolled up: exactly this tall (the title bar), whichever edge is dragged.
     pub rolled_h: Option<i32>,
+    /// The height that shows every icon (`fitting_height_px`): a dragged top or bottom edge
+    /// stops there for a moment, as at another fence's edge (适应内容大小).
+    pub fit_h: Option<i32>,
 }
 
 /// The other fences a resized edge lines up with and stops at (snapping on).
@@ -281,8 +305,9 @@ pub(super) struct Neighbours<'a> {
 
 /// WM_SIZING: places the dragged `edges` of `rect` (where the pointer puts them; `cur` is the
 /// window now). With `near`, an edge within `dist` of an alignment target goes there, whatever
-/// the icon sizes: another fence's edge, a gap outside a fence across from it, or the work
-/// area's edge a gap inside. Otherwise it takes whole cells when `rules` has them. An edge never
+/// the icon sizes: another fence's edge, a gap outside a fence across from it, the work area's
+/// edge a gap inside, or the height that shows every icon (`rules.fit_h`). Otherwise it takes
+/// whole cells when `rules` has them. An edge never
 /// passes a fence lying beyond it (it stops a gap short). Returns the guides along dragged edges
 /// that are level with another fence's edge.
 pub(super) fn size_among(
@@ -312,10 +337,20 @@ pub(super) fn size_among(
             rect.bottom = rect.top + h;
         }
     } else if edges.bottom {
-        let t = targets(false, true, rect);
+        let mut t = targets(false, true, rect);
+        if align.is_some()
+            && let Some(fit) = rules.fit_h
+        {
+            t.push(rect.top + fit);
+        }
         rect.bottom = place_edge(rect.top, rect.bottom, 1, rules.rows, rules.min_h, &t, dist);
     } else if edges.top {
-        let t = targets(false, false, rect);
+        let mut t = targets(false, false, rect);
+        if align.is_some()
+            && let Some(fit) = rules.fit_h
+        {
+            t.push(rect.bottom - fit);
+        }
         rect.top = place_edge(rect.bottom, rect.top, -1, rules.rows, rules.min_h, &t, dist);
     }
     let Some(n) = near else {
@@ -349,7 +384,7 @@ pub(super) fn size_among(
     if !n.align {
         return Vec::new();
     }
-    alignment_guides(rect, n.others, None, i32::MAX / 4)
+    alignment_guides(rect, n.others, None)
         .into_iter()
         .filter(|g| {
             if g.vertical {
@@ -414,14 +449,14 @@ fn edge_targets(n: &Neighbours, rect: &RECT, vertical: bool, max_side: bool) -> 
     targets
 }
 
-/// Guides for `rect` as placed: each of its edges that lies exactly on an edge of a fence within
-/// `dist` across (a line spanning both), and the work area's centre line through its centre
-/// (spanning the work area).
+/// Guides for `rect` as placed: each of its edges that lies exactly on an edge of another fence
+/// in the same row or column, however far apart (a line spanning both: lining a fence up with
+/// one at the other end of the screen, feedback #100), and the work area's centre line through
+/// its centre (spanning the work area).
 pub(super) fn alignment_guides(
     rect: &RECT,
     others: &[RECT],
     work: Option<&RECT>,
-    dist: i32,
 ) -> Vec<GuideLine> {
     let mut lines: Vec<GuideLine> = Vec::new();
     let mut add = |vertical: bool, at: i32, from: i32, to: i32| match lines
@@ -440,20 +475,16 @@ pub(super) fn alignment_guides(
         }),
     };
     for o in others {
-        if rect.top < o.bottom + dist && rect.bottom > o.top - dist {
-            let (from, to) = (rect.top.min(o.top), rect.bottom.max(o.bottom));
-            for x in [rect.left, rect.right] {
-                if x == o.left || x == o.right {
-                    add(true, x, from, to);
-                }
+        let (from, to) = (rect.top.min(o.top), rect.bottom.max(o.bottom));
+        for x in [rect.left, rect.right] {
+            if x == o.left || x == o.right {
+                add(true, x, from, to);
             }
         }
-        if rect.left < o.right + dist && rect.right > o.left - dist {
-            let (from, to) = (rect.left.min(o.left), rect.right.max(o.right));
-            for y in [rect.top, rect.bottom] {
-                if y == o.top || y == o.bottom {
-                    add(false, y, from, to);
-                }
+        let (from, to) = (rect.left.min(o.left), rect.right.max(o.right));
+        for y in [rect.top, rect.bottom] {
+            if y == o.top || y == o.bottom {
+                add(false, y, from, to);
             }
         }
     }

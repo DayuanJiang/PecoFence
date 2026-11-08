@@ -164,9 +164,9 @@ Check 'recent files: the three documents opened' (WaitSmart 'Recently opened fil
 
 Case 'fence menu: New smart fence… and Edit conditions…'
 $m = FenceMenuOf $Dl
-MenuPick '^New smart fence' $m | Out-Null
+PickNewSmart $m | Out-Null
 $ed = WaitWin 'PecoFence.SmartEditor' 20
-Check 'New smart fence… in a fence''s menu opens the editor' ($ed -ne [IntPtr]::Zero -and [W]::Title($ed) -eq 'New smart fence') ([W]::Title($ed))
+Check 'New smart fence… in Add to desktop of a fence''s menu opens the editor' ($ed -ne [IntPtr]::Zero -and [W]::Title($ed) -eq 'New smart fence') ([W]::Title($ed))
 Start-Sleep -Milliseconds 800
 [G]::Press(0x1B)
 Check 'Esc closes it' (WaitGoneWin 'PecoFence.SmartEditor' 10) ''

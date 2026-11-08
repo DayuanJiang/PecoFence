@@ -5,7 +5,7 @@
 
 use crate::anchor::{self, AnchorCell};
 use crate::commands::{
-    Command, CommandQueue, TransferMode, WM_APP_DESKTOP_SHAPE, WM_APP_FADE_DONE,
+    Command, CommandQueue, DesktopDrop, TransferMode, WM_APP_DESKTOP_SHAPE, WM_APP_FADE_DONE,
     WM_APP_SET_VISIBLE, WM_APP_TAB_RAIL, WM_APP_TAB_SWAP_DONE,
 };
 use crate::icons::{IconCache, Lookup};
@@ -42,7 +42,7 @@ use pecofence_render::{
     Panel, Rect, RenderStack, Theme,
 };
 use std::cell::{Cell, RefCell};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::time::{Duration, Instant};
@@ -71,7 +71,8 @@ mod window_drag;
 
 pub use api::FenceWindow;
 pub use dnd::filter_folder_paths;
-pub use state::DesktopArea;
+pub use frame::FrameHandle;
+pub use state::{DesktopArea, WindowsIconPlaces};
 
 use self::consts::*;
 use self::dnd::*;
@@ -125,6 +126,8 @@ pub struct Behavior {
     pub backdrop: std::cell::Cell<BackdropMode>,
     /// Rolled fences expand on a single title click (hover peek off while set).
     pub click_to_expand: std::cell::Cell<bool>,
+    /// How long the pointer rests on a rolled fence before it expands (`rollUp.hoverSpeed`).
+    pub hover_speed: std::cell::Cell<pecofence_core::HoverSpeed>,
     /// Title row drawn only while hovered; at rest the plate starts at the content.
     pub title_on_hover: std::cell::Cell<bool>,
     /// Title (or tab strip) position in the title row (`titleAlign`).
@@ -163,6 +166,9 @@ pub struct Behavior {
     pub expand_room: std::cell::RefCell<Vec<(HWND, i32, i32)>>,
     /// The system move / size loop in progress (one at a time: it is modal).
     pub size_move: std::cell::RefCell<Option<SizeMove>>,
+    /// Set while a title drag moves windows on a mouse move (`window_drag.rs`): they move at
+    /// once and redraw their backdrop for the new place on the next frame instead.
+    pub defer_backdrop: std::cell::Cell<bool>,
 }
 
 /// A fence window the push pass moved down (or up, out of the way of a fence that expands
@@ -177,6 +183,10 @@ pub struct Pushed {
     pub dy: i32,
     /// The fences that pushed it, directly or through the ones in between.
     pub by: Vec<HWND>,
+    /// The work-area edge stopped it short of where the push wanted it (it still overlaps the
+    /// fence that pushed it), and the largest shift (px) of this push so far: for the log lines.
+    pub blocked: bool,
+    pub max_dy: i32,
 }
 
 /// A window in the system move / size loop and, for a title drag, the selection moving along.
@@ -188,6 +198,11 @@ pub struct SizeMove {
 }
 
 impl Behavior {
+    /// The wait before a rolled fence expands under the pointer or a dragged file.
+    pub fn hover_open_ms(&self) -> u32 {
+        self.hover_speed.get().delay_ms(Tooltip::hover_delay_ms())
+    }
+
     /// `rect`, `hwnd`'s window rectangle, without the push shift: what the layout records.
     pub fn resting_rect(&self, hwnd: HWND, mut rect: RECT) -> RECT {
         if let Some(p) = self

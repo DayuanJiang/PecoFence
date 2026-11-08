@@ -72,6 +72,11 @@ pub fn window_pid(hwnd: HWND) -> u32 {
     pid
 }
 
+pub fn style(hwnd: HWND) -> u32 {
+    // SAFETY: plain FFI call.
+    unsafe { GetWindowLongW(hwnd, GWL_STYLE) as u32 }
+}
+
 pub fn ex_style(hwnd: HWND) -> u32 {
     // SAFETY: plain FFI call.
     unsafe { GetWindowLongW(hwnd, GWL_EXSTYLE) as u32 }
@@ -309,8 +314,15 @@ pub fn insert_above(hwnd: HWND, host: HWND) -> Result<Option<HWND>> {
         if above == hwnd {
             return Ok(None);
         }
+        // A topmost `hwnd` (show desktop just ended) leaves the topmost band in this one move:
+        // placed after a normal window it becomes a normal window; at the top of the normal
+        // band only HWND_NOTOPMOST takes it there (HWND_TOP keeps it topmost).
         let insert_after = if above.0.is_null() || (is_topmost(above) && !is_topmost(host)) {
-            HWND_TOP
+            if is_topmost(hwnd) && !is_topmost(host) {
+                HWND_NOTOPMOST
+            } else {
+                HWND_TOP
+            }
         } else {
             above
         };
@@ -324,7 +336,18 @@ pub fn insert_above(hwnd: HWND, host: HWND) -> Result<Option<HWND>> {
                     "placement under an elevated window refused; anchoring from the bottom"
                 );
                 SetWindowPos(hwnd, Some(HWND_BOTTOM), 0, 0, 0, 0, ANCHOR_FLAGS).ok()?;
-                SetWindowPos(host, Some(HWND_BOTTOM), 0, 0, 0, 0, ANCHOR_FLAGS).ok()?;
+                // Posted to Explorer's thread: a busy desktop would hold this one (and every
+                // fence) until it answers. `hwnd` waits behind the desktop meanwhile.
+                SetWindowPos(
+                    host,
+                    Some(HWND_BOTTOM),
+                    0,
+                    0,
+                    0,
+                    0,
+                    ANCHOR_FLAGS | SWP_ASYNCWINDOWPOS as u32,
+                )
+                .ok()?;
                 Ok(None)
             }
             Err(e) if e.code() == E_ACCESS_DENIED => {

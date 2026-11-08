@@ -22,13 +22,13 @@ $Dl = 'Downloads of the last 7 days'
 # window once crashed it: the browser's close re-entered the window's state).
 $AppPid = (Get-Process pecofence -ErrorAction SilentlyContinue | Select-Object -First 1).Id
 
-# Opens the editor by $entry: 'tray' and 'fence menu' (新建智能栅栏…, a new fence), 'edit menu'
+# Opens the editor by $entry: 'tray' and 'fence menu' (新建智能栅栏…, a new fence; in the fence menu it is in 添加到桌面), 'edit menu'
 # (编辑条件… of $fence) and 'settings' (the button on Settings › 栅栏 for $fence). The editor's
 # window with its page connected, or zero.
 function OpenEditor($entry, $fence) {
   switch ($entry) {
     'tray' { $m = TrayMenu; MenuPick '^New smart fence' $m | Out-Null }
-    'fence menu' { $m = FenceMenuOf 'Programs'; MenuPick '^New smart fence' $m | Out-Null }
+    'fence menu' { $m = FenceMenuOf 'Programs'; PickNewSmart $m | Out-Null }
     'edit menu' { $m = FenceMenuOf $fence; MenuPick '^Edit conditions' $m | Out-Null }
     'settings' {
       if ([G]::FindWindowW('PecoFence.Settings', [NullString]::Value) -eq [IntPtr]::Zero) { PfSettings | Out-Null } else { CdpOpen | Out-Null }

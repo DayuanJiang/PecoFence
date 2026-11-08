@@ -10,6 +10,7 @@ pub const EN_CHANGE: u32 = crate::bindings::EN_CHANGE as u32;
 pub const WM_CTLCOLOREDIT_MSG: u32 = WM_CTLCOLOREDIT as u32;
 
 // Not in the generated bindings (winuser.h).
+const ES_CENTER: i32 = 0x0001;
 const ES_MULTILINE: i32 = 0x0004;
 const ES_AUTOVSCROLL: i32 = 0x0040;
 const ES_WANTRETURN: i32 = 0x1000;
@@ -19,6 +20,11 @@ const EC_LEFTMARGIN: usize = 1;
 const EC_RIGHTMARGIN: usize = 2;
 
 type KeyHandler = fn(u32) -> bool;
+
+/// The code a key handler gets for the menu key or Shift+F10 (a `WM_CONTEXTMENU` from the
+/// keyboard). Outside the virtual-key range; returning true keeps the control's own text menu
+/// away. A right-click always gives the text menu.
+pub const KEY_CONTEXT_MENU: u32 = 0x1_0000;
 
 pub struct EditControl {
     hwnd: HWND,
@@ -51,6 +57,32 @@ impl EditControl {
             dark,
             on_key,
             ES_AUTOHSCROLL,
+        )
+    }
+
+    /// Like [`Self::create`] with the text centred in the box: the rename box of an icon, whose
+    /// name is centred under it (Explorer).
+    #[allow(clippy::too_many_arguments)]
+    pub fn create_centered(
+        parent: HWND,
+        width: i32,
+        height: i32,
+        dpi: u32,
+        font_dip: f32,
+        text: &str,
+        dark: bool,
+        on_key: KeyHandler,
+    ) -> Result<Self> {
+        Self::create_styled(
+            parent,
+            width,
+            height,
+            dpi,
+            font_dip,
+            text,
+            dark,
+            on_key,
+            ES_AUTOHSCROLL | ES_CENTER,
         )
     }
 
@@ -316,6 +348,13 @@ unsafe extern "system" fn subclass_proc(
         if msg == WM_KEYDOWN as u32 && refdata != 0 {
             let handler: KeyHandler = core::mem::transmute::<usize, KeyHandler>(refdata);
             if handler(wparam.0 as u32) {
+                return LRESULT(0);
+            }
+        }
+        // The menu key and Shift+F10: DefWindowProc sends WM_CONTEXTMENU with lParam -1.
+        if msg == WM_CONTEXTMENU as u32 && lparam.0 as u32 == u32::MAX && refdata != 0 {
+            let handler: KeyHandler = core::mem::transmute::<usize, KeyHandler>(refdata);
+            if handler(KEY_CONTEXT_MENU) {
                 return LRESULT(0);
             }
         }

@@ -118,14 +118,48 @@ impl App {
             .collect()
     }
 
-    /// Moves host `id` to `rect` and records it (it rests there now).
-    fn relocate(&mut self, id: FenceId, rect: RECT) {
+    /// Where the other showing fences rest: without a push shift, and a rolled one (also while
+    /// it hover-peeks or rolls up) as its title row. A drop is judged against these, so a spot
+    /// a push or a peek only lends for a while does not count as free.
+    pub(super) fn resting_fence_rects(&self, id: FenceId) -> Vec<RECT> {
+        self.fences
+            .iter()
+            .filter(|(fid, w)| {
+                **fid != id
+                    && pecofence_platform::desktop::is_visible(w.hwnd())
+                    && !crate::anchor::is_desktop_fence(w.hwnd())
+            })
+            .map(|(_, w)| self.ctx.behavior.resting_rect(w.hwnd(), w.resting_rect()))
+            .collect()
+    }
+
+    /// Moves host `id` so that its resting rect `from` goes to `to`, and records it there (it
+    /// rests there now). The window keeps its size: a hover peek or a roll in flight goes on
+    /// from the new spot.
+    fn relocate(&mut self, id: FenceId, from: RECT, to: RECT) {
         let Some(w) = self.fences.get(&id) else {
             return;
         };
         self.ctx.behavior.release_push(w.hwnd());
-        w.set_bounds(rect);
+        let (dx, dy) = (to.left - from.left, to.top - from.top);
+        let r = w.rect();
         let rolled = w.is_rolled();
+        let mut rect = RECT {
+            left: r.left + dx,
+            top: r.top + dy,
+            right: r.right + dx,
+            bottom: r.bottom + dy,
+        };
+        // Made shorter to fit a spot (`clearance::pull_apart`): an open fence takes the spot's
+        // height; a rolled-up one is its title row and keeps it.
+        if !rolled {
+            rect.bottom = rect.top + (to.bottom - to.top);
+        }
+        w.set_bounds(rect);
+        // Made shorter to fit a spot (`clearance::pull_apart`): the height it opens to as well.
+        if !rolled && w.expanded_height_px() != rect.bottom - rect.top {
+            w.apply_height(rect.bottom - rect.top, false);
+        }
         let expanded = if rolled {
             w.expanded_height_px()
         } else {
@@ -138,7 +172,10 @@ impl App {
     /// A fence the user dropped onto another one moves the shortest way to a free spot on its
     /// monitor (the snapping gap kept); with no free spot it stays where it was dropped. One
     /// dropped partly off the screen (a torn-off tab follows the pointer to the screen edge)
-    /// is pulled back in the same way, where a restart would place it anyway.
+    /// is pulled back in the same way, where a restart would place it anyway. A rolled-up fence
+    /// counts with the room it opens into ([`clearance::landing_spot`]): let go near the
+    /// bottom of the screen, it moves up to where it opens above the taskbar, and its saved
+    /// rect is where its window is.
     pub(super) fn move_out_of_overlap(&mut self, fence: FenceId) {
         let id = self.state.host_of(fence);
         let Some(w) = self.fences.get(&id) else {
@@ -148,9 +185,10 @@ impl App {
         if w.is_desktop_arranged() {
             return;
         }
-        let r = w.rect();
+        let r = w.resting_rect();
+        let hang = w.open_hang_px();
         let gap = self.gap_px(w.hwnd());
-        let others = self.other_fence_rects(id);
+        let others = self.resting_fence_rects(id);
         let Some(wa) = self.work_area_at((r.left + r.right) / 2, (r.top + r.bottom) / 2) else {
             return;
         };
@@ -162,23 +200,29 @@ impl App {
         };
         // Off the screen means outside every work area: a fence dropped across two monitors
         // is left where it is.
+        let foot = RECT {
+            right: r.right + hang.0,
+            bottom: r.bottom + hang.1,
+            ..r
+        };
         let on_screen = |x: i32, y: i32| {
             self.state
                 .work_areas
                 .iter()
                 .any(|w| x >= w.left && x < w.right && y >= w.top && y < w.bottom)
         };
-        let off_screen = !(on_screen(r.left, r.top)
-            && on_screen(r.right - 1, r.top)
-            && on_screen(r.left, r.bottom - 1)
-            && on_screen(r.right - 1, r.bottom - 1));
-        if !off_screen && !others.iter().any(|o| clearance::overlaps(&r, o, gap)) {
+        let off_screen = !(on_screen(foot.left, foot.top)
+            && on_screen(foot.right - 1, foot.top)
+            && on_screen(foot.left, foot.bottom - 1)
+            && on_screen(foot.right - 1, foot.bottom - 1));
+        let Some(spot) = clearance::landing_spot(&r, hang, &others, &work, !off_screen, gap) else {
+            if off_screen {
+                tracing::info!(%id, rect = ?(r.left, r.top, r.right, r.bottom), ?hang, "dropped fence off the screen stays: no spot");
+            }
             return;
-        }
-        if let Some(spot) = clearance::nearest_free(&r, &others, &work, gap) {
-            tracing::info!(%id, off_screen, from = ?(r.left, r.top), to = ?(spot.left, spot.top), "fence moved out of an overlap");
-            self.relocate(id, spot);
-        }
+        };
+        tracing::info!(%id, off_screen, ?hang, from = ?(r.left, r.top), to = ?(spot.left, spot.top), "fence moved out of an overlap");
+        self.relocate(id, r, spot);
     }
 
     /// Pulls overlapping fences apart ([`clearance::pull_apart`]): any fence with `all` (at
@@ -210,6 +254,14 @@ impl App {
                         right: wa.right,
                         bottom: wa.bottom,
                     });
+                // Where no spot has room for it, a fence may get as short as its title row and
+                // one row of icons; rolled up it is its title row already.
+                let h = rect.bottom - rect.top;
+                let scale = monitors::dpi_for_window(w.hwnd()).max(96) as f32 / 96.0;
+                let min_h = match self.grid_steps(*id, scale) {
+                    Some(steps) if !w.is_rolled() => steps.rows_height(1).min(h),
+                    _ => h,
+                };
                 let rest = clearance::Resting {
                     rect,
                     work,
@@ -219,6 +271,8 @@ impl App {
                     // above it could not push it clear; one with no spot on these monitors moves.
                     movable: movers.contains(id)
                         || (all && !self.state.fence(*id).is_some_and(|f| f.locked)),
+                    min_h,
+                    hang: w.open_hang_px(),
                 };
                 (*id, rest)
             })
@@ -226,8 +280,10 @@ impl App {
         let rests: Vec<clearance::Resting> = fences.iter().map(|(_, r)| *r).collect();
         for (i, spot) in clearance::pull_apart(&rests) {
             let (id, from) = (fences[i].0, fences[i].1.rect);
-            tracing::info!(%id, from = ?(from.left, from.top), to = ?(spot.left, spot.top), "overlapping fence moved");
-            self.relocate(id, spot);
+            let (from_h, to_h) = (from.bottom - from.top, spot.bottom - spot.top);
+            // `shorter`: no spot had room for its height (a screen made smaller).
+            tracing::info!(%id, from = ?(from.left, from.top), to = ?(spot.left, spot.top), from_h, to_h, shorter = to_h < from_h, hang = ?fences[i].1.hang, "overlapping fence moved");
+            self.relocate(id, from, spot);
         }
     }
 
@@ -305,9 +361,23 @@ impl App {
         self.record_bounds(id, r, true, h, "expand clamp");
     }
 
+    /// Where a notice in the corner (`crate::notice`) must not go: the fence windows on show,
+    /// but for 「桌面」 arranged like the desktop, which lies under everything as the desktop does.
+    pub(super) fn notice_avoid_rects(&self) -> Vec<RECT> {
+        self.fences
+            .values()
+            .filter(|w| {
+                pecofence_platform::desktop::is_visible(w.hwnd()) && !w.is_desktop_arranged()
+            })
+            .map(|w| w.rect())
+            .collect()
+    }
+
     /// First run: the default column is sized to what the rules sorted into it, in whole rows,
     /// and restacked from the top. Fixed heights left a half-cut row in one fence and mostly
-    /// empty plates in the others.
+    /// empty plates in the others. Every fence shows all its rows: where the column has no room
+    /// for the next one (a short screen, many icons), that one starts another column to the left
+    /// of it; only a fence taller than the whole screen scrolls.
     pub(super) fn fit_first_run_column(&mut self) {
         // 像桌面一样排列: the 「桌面」 fence stands on the desktop, not in the column.
         let ids: Vec<FenceId> = self
@@ -329,7 +399,10 @@ impl App {
         };
         let scale = monitors::dpi_for_window(hwnd).max(96) as f32 / 96.0;
         let gap = (16.0 * scale).round() as i32;
-        let mut want = Vec::new();
+        let work = monitor.work_area;
+        let column_h = work.bottom - work.top - gap * 2;
+        let mut heights = Vec::new();
+        let mut rows = Vec::new();
         for &id in &ids {
             let (Some(w), Some(steps)) = (self.fences.get(&id), self.grid_steps(id, scale)) else {
                 return;
@@ -338,37 +411,19 @@ impl App {
                 return;
             };
             // Every row, not `fitting_height_px`: that stops at the work area's bottom from
-            // where the fence sits before the restack.
-            want.push((steps.rows_height(fit.rows.max(1) as u32), steps));
-        }
-        // One row each, then one more row each in turn while it fits: fences with a few
-        // icons stop at their fitting height, the others share the rest of the column.
-        let work = monitor.work_area;
-        let mut left = work.bottom - work.top - gap * (ids.len() as i32 + 1);
-        let mut rows = vec![1; ids.len()];
-        let mut heights: Vec<i32> = want
-            .iter()
-            .map(|(fit, s)| s.rows_height(1).min(*fit))
-            .collect();
-        left -= heights.iter().sum::<i32>();
-        let mut grew = true;
-        while grew {
-            grew = false;
-            for ((h, n), (fit, steps)) in heights.iter_mut().zip(&mut rows).zip(&want) {
-                let taller = steps.rows_height(*n + 1).min(*fit);
-                if taller > *h && taller - *h <= left {
-                    left -= taller - *h;
-                    *h = taller;
-                    *n += 1;
-                    grew = true;
-                }
-            }
+            // where the fence sits before the restack. Taller than the column: the rows that
+            // fit in it.
+            let fit_rows = fit.rows.max(1) as u32;
+            let room = ((column_h as f32 - steps.fixed) / steps.row)
+                .floor()
+                .max(1.0) as u32;
+            heights.push(steps.rows_height(fit_rows.min(room)));
+            rows.push(fit_rows);
         }
         let mut top = work.top + gap;
-        // Fences the column has no room for (a small screen at a high scale) start another
-        // column to the left of it.
         let mut shift = 0;
-        for (&id, h) in ids.iter().zip(heights) {
+        let mut columns = 1;
+        for (&id, &h) in ids.iter().zip(&heights) {
             let Some(w) = self.fences.get(&id) else {
                 continue;
             };
@@ -376,6 +431,7 @@ impl App {
             if top + h > work.bottom - gap && top > work.top + gap {
                 shift += r.right - r.left + gap;
                 top = work.top + gap;
+                columns += 1;
             }
             let rect = RECT {
                 left: r.left - shift,
@@ -388,14 +444,24 @@ impl App {
             self.record_bounds(id, rect, false, h, "first run");
             top += h + gap;
         }
+        tracing::info!(
+            fences = ids.len(),
+            ?rows,
+            ?heights,
+            column_h,
+            columns,
+            "first run: fences laid out in columns"
+        );
         self.schedule_save();
     }
 
-    /// Icon size, spacing or label lines changed on a fixed-height fence: the height follows the
-    /// content (no band of empty rows after shrinking the cells, no scrollbar after growing
-    /// them), growing only as far as the next fence below. The bottom edge glides there like an
-    /// auto-height fence's.
-    pub(super) fn fit_height_to_content(&mut self, id: FenceId) {
+    /// Icon size, spacing or label lines changed on a fixed-height fence, or 适应内容大小: the
+    /// height follows the content (no band of empty rows after shrinking the cells, no
+    /// scrollbar after growing them). With 推开下方的栅栏 the fences below make room, as for an
+    /// expand, and come back when it shrinks; without it the fence grows only as far as the next
+    /// fence below. The bottom edge glides there like an auto-height fence's. Returns the new
+    /// height (None: nothing changed).
+    pub(super) fn fit_height_to_content(&mut self, id: FenceId) -> Option<i32> {
         let id = self.state.host_of(id);
         // A tool fence keeps the height the user gave it (it has no rows of icons).
         if self
@@ -403,21 +469,19 @@ impl App {
             .fence(id)
             .is_none_or(|f| f.view.auto_height || f.tool.is_some())
         {
-            return;
+            return None;
         }
-        let Some(w) = self.fences.get(&id) else {
-            return;
-        };
+        let w = self.fences.get(&id)?;
         if w.is_rolled() {
-            return;
+            return None;
         }
-        let Some(fit) = w.fit_report() else {
-            return;
-        };
+        let fit = w.fit_report()?;
         let r = w.rect();
         let scale = monitors::dpi_for_window(w.hwnd()).max(96) as f32 / 96.0;
         let mut h = fit.fitting_height_px;
-        if let Some(limit) = self.growth_limit_below(id, &r)
+        let push = self.state.config.settings.roll_up.push_neighbors;
+        if !push
+            && let Some(limit) = self.growth_limit_below(id, &r)
             && let Some(steps) = self.grid_steps(id, scale)
         {
             let limit = limit.max(r.bottom);
@@ -435,10 +499,45 @@ impl App {
             }
         }
         if h == r.bottom - r.top {
-            return;
+            return None;
         }
         let rect = w.apply_height(h, true);
         self.record_bounds(id, rect, false, h, "fit");
         self.schedule_save();
+        Some(h)
+    }
+
+    /// 适应内容大小 (fence menu) and a double-click on the bottom edge: the height that shows
+    /// every icon (`fit_height_to_content`). Nothing for a fence placed like the desktop, a
+    /// locked, rolled or auto-height one (it fits already), or a tool fence.
+    pub(super) fn fit_to_content_by_user(&mut self, fence: FenceId, by: &'static str) {
+        let host = self.state.host_of(fence);
+        let Some(w) = self.fences.get(&host) else {
+            return;
+        };
+        let from_h = w.rect().bottom - w.rect().top;
+        let f = self.state.fence(host);
+        let skip = if w.is_desktop_arranged() {
+            Some("desktop layout")
+        } else if f.is_some_and(|f| f.locked) {
+            Some("locked")
+        } else if w.is_rolled() {
+            Some("rolled")
+        } else if f.is_some_and(|f| f.view.auto_height) {
+            Some("auto height")
+        } else if self.state.fence(fence).is_some_and(|f| f.tool.is_some()) {
+            Some("tool fence")
+        } else {
+            None
+        };
+        if let Some(reason) = skip {
+            tracing::info!(%fence, by, reason, "fit to content skipped");
+            return;
+        }
+        // The height the user asks for now is the one an icon-size step comes back to.
+        self.icon_size_heights.remove(&host);
+        let to_h = self.fit_height_to_content(fence);
+        tracing::info!(%fence, by, from_h, ?to_h, "fit to content");
+        self.push_settings_state();
     }
 }

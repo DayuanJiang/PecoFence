@@ -1059,7 +1059,7 @@ fn entry_matches(spec: &SmartSpec, e: &DesktopEntry, targets: bool, now: i64) ->
         f.shortcut_target_ext = f
             .shortcut_target
             .as_deref()
-            .map(pecofence_core::rules::ext_of);
+            .map(pecofence_core::rules::target_ext);
         f
     } else {
         crate::state::AppState::plain_facts(e, None, now)

@@ -219,6 +219,25 @@ impl FenceViewState {
         self.roll_anim.is_some() || self.height_anim.is_some()
     }
 
+    /// How far the fence reaches beyond its window rect `rest` once it opens, to the right and
+    /// below (see `FenceWindow::open_hang_px`).
+    pub(super) fn open_hang_px(&self, rest: &RECT) -> (i32, i32) {
+        if !(self.roll_target() || self.peeking) {
+            return (0, 0);
+        }
+        let right = if self.column_collapsed {
+            (rest.left + self.expanded_w_px - rest.right).max(0)
+        } else {
+            0
+        };
+        let below = if self.expand_upward || self.row_bottom {
+            0
+        } else {
+            (rest.top + self.expanded_h_px - rest.bottom).max(0)
+        };
+        (right, below)
+    }
+
     pub(super) fn rolled_at_rest(&self) -> bool {
         self.rolled_up && !self.peeking && !self.height_animating() && !self.retired
     }
@@ -431,6 +450,14 @@ impl FenceViewState {
     /// 外观 → 全透明: no plate (glass, tint, rim, shadow) at rest.
     pub(super) fn is_clear(&self) -> bool {
         self.opacity <= 0.0 || self.bare()
+    }
+
+    /// Whether floating above other windows (Peek) draws this fence differently: a fully
+    /// transparent plate shows while it floats (`plate_visible_target`), and Liquid Glass
+    /// floats at full opacity (`material_opacity`). A fence arranged like the desktop looks
+    /// the same either way.
+    pub(super) fn floating_changes_look(&self) -> bool {
+        !self.bare() && (self.opacity <= 0.0 || (self.theme.liquid_glass && self.opacity < 1.0))
     }
 
     /// Whether the plate is shown right now: always, except on a fully transparent fence,

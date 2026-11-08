@@ -169,6 +169,25 @@ impl App {
 
     /// Item menu 「在桌面显示此文件夹」: a new fence that mirrors `folder` (plan §12 文件夹门户).
     pub(super) fn create_portal(&mut self, folder: PathBuf, x: i32, y: i32, near: Option<FenceId>) {
+        self.create_portal_at(folder, x, y, near, None);
+    }
+
+    /// The desktop marquee's 「在此显示文件夹…」: the folder fence fills the drawn rectangle.
+    pub(super) fn create_portal_in(&mut self, folder: PathBuf, rect: RECT) {
+        let (x, y) = (rect.left, rect.top);
+        self.create_portal_at(folder, x, y, None, Some(rect));
+    }
+
+    /// A folder fence for `folder` at `rect`, or placed near (`x`, `y`) / fence `near` like a
+    /// new fence when `rect` is None.
+    fn create_portal_at(
+        &mut self,
+        folder: PathBuf,
+        x: i32,
+        y: i32,
+        near: Option<FenceId>,
+        rect: Option<RECT>,
+    ) {
         if !folder.is_dir() {
             tracing::warn!(folder = %folder.display(), "portal: not a directory");
             if let Some(t) = &self.tray {
@@ -197,6 +216,7 @@ impl App {
             .map(|f| f.id)
         {
             // Already shown: just bring attention to it (switch to its tab if hosted).
+            tracing::info!(fence = %existing, place = shell::path_place(&folder), "folder portal exists: shown instead of a new one");
             let host = self.state.host_of(existing);
             if host != existing {
                 self.switch_tab(host, existing);
@@ -209,14 +229,16 @@ impl App {
         if !self.fence_room_or_notice() {
             return;
         }
-        let rect = self.place_new_fence(4, 260.0, x, y, near);
+        let drawn = rect.is_some();
+        let rect = rect.unwrap_or_else(|| self.place_new_fence(4, 260.0, x, y, near));
         if let Some(id) = self.state.new_portal_fence(&folder, rect) {
-            tracing::info!(folder = %folder.display(), place = shell::path_place(&folder), %id, "folder portal created");
+            tracing::info!(folder = %folder.display(), place = shell::path_place(&folder), %id, drawn, ?rect, "folder portal created");
             self.resync_windows();
             if let Some(w) = self.fences.get(&id) {
                 w.show(true);
             }
             self.schedule_save();
+            self.offer_roll_tip();
         }
     }
 
@@ -310,6 +332,17 @@ impl App {
             }
             self.after_portal_navigation(fence, -1, left);
         }
+    }
+
+    /// Opens the folder `fence` shows in Explorer (the title glyph at the root, the fence
+    /// menu's 在资源管理器中打开文件夹). `by` names the control for the log.
+    pub(super) fn open_portal_folder(&self, fence: FenceId, by: &'static str) {
+        let Some(dir) = self.state.portal_path(fence) else {
+            tracing::info!(fence = %fence, by, "open folder: not a folder fence");
+            return;
+        };
+        let ok = shell::shell_execute(&dir, None, None).is_ok();
+        tracing::info!(fence = %fence, by, place = shell::path_place(&dir), ok, "folder opened in Explorer");
     }
 
     /// The forward button: into the folder the last up left (a subfolder, or the folder that

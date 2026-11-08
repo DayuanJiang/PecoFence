@@ -3,8 +3,10 @@
 //! match and highlight the matches (`App::update_peek_search`); a list under the box shows the
 //! best matches, the fences' first and then what Everything finds on the whole computer, as
 //! Listary's launcher does. Up / Down (or Ctrl+N / Ctrl+P) move through the list, Enter opens,
-//! Ctrl+Enter opens the containing folder, Right (with the caret at the end) or Ctrl+O shows
-//! the actions, Ctrl+1 to Ctrl+9 open a row directly, Esc ends the Peek.
+//! Ctrl+Enter opens the containing folder, Right (with the caret at the end), Ctrl+O, the menu
+//! key or Shift+F10 show the actions, Ctrl+1 to Ctrl+9 open a row directly, Esc ends the Peek.
+//! A right-click on a row highlights it and shows its actions at the pointer, as in Explorer;
+//! a right-click on the typed text gives the text box's own menu.
 //!
 //! A small activatable popup hosting an EDIT control, like the rename popup, so IME input,
 //! the caret and clipboard keys work as in any text box. The popup paints its background, the
@@ -17,7 +19,7 @@ use pecofence_platform::paint::{self, Align, Font};
 use pecofence_platform::window::{
     self, ClassOptions, MessageHandler, Window, WindowBuilder, WindowClass, style,
 };
-use pecofence_platform::{HWND, RECT, desktop, dwm, edit, everything, fonts, monitors, msg};
+use pecofence_platform::{HWND, POINT, RECT, desktop, dwm, edit, everything, fonts, monitors, msg};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::ops::Range;
@@ -190,6 +192,24 @@ pub fn open(text: &str, queue: CommandQueue, dark: bool) {
                         let row = ACTIVE.with(|a| a.try_borrow().ok()?.as_ref()?.row_at(y));
                         if let Some(row) = row {
                             queue.push(Command::PeekSearchOpenRow(row));
+                        }
+                        Some(0)
+                    }
+                    // DefWindowProc sends it on a right-click's button up (screen point). A row
+                    // gets its actions at the pointer; elsewhere (around the box, a heading)
+                    // there is no menu, as on an empty spot of a Windows list. The edit box
+                    // never sends it here: it shows its own text menu.
+                    msg::WM_CONTEXTMENU if lparam as u32 != u32::MAX => {
+                        let (x, y) = (msg::lo_i16(lparam), msg::hi_i16(lparam));
+                        let client = window::screen_to_client(hwnd, POINT { x, y });
+                        let row = ACTIVE.with(|a| a.try_borrow().ok()?.as_ref()?.row_at(client.y));
+                        match row {
+                            Some(row) => queue.push(Command::PeekSearchRowMenu { row, x, y }),
+                            None => tracing::info!(
+                                x = client.x,
+                                y = client.y,
+                                "search: right-click outside the result rows, no menu"
+                            ),
                         }
                         Some(0)
                     }
@@ -507,6 +527,19 @@ fn on_key(vk: u32) -> bool {
         0x50 if ctrl => Command::PeekSearchStep(-1),
         0x4E if ctrl => Command::PeekSearchStep(1),
         0x4F if ctrl => Command::PeekSearchActions,
+        // The menu key or Shift+F10: the highlighted row's actions, as a right-click on it
+        // shows them. With no row the box keeps its own text menu.
+        edit::KEY_CONTEXT_MENU => {
+            let has_row =
+                ACTIVE.with(|a| a.borrow().as_ref().is_some_and(|s| s.selected.is_some()));
+            if !has_row {
+                tracing::info!(
+                    "search: menu key or Shift+F10 with no result row, the text box menu shows"
+                );
+                return false;
+            }
+            Command::PeekSearchActions
+        }
         // Ctrl+1 .. Ctrl+9: the row showing that digit.
         0x31..=0x39 if ctrl => {
             let digit = (vk - 0x30) as u8;

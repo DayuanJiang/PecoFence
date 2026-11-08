@@ -125,9 +125,13 @@ impl FenceViewState {
     }
 
     /// Infotip text: items get Explorer's name / 类型 / 大小 / 修改日期, a shrunken tab pill its
-    /// full caption, the portal up button "向上".
+    /// full caption, the portal up button "向上" (at the root, where its glyph opens the folder,
+    /// 在资源管理器中打开文件夹).
     pub(super) fn tip_text(&self) -> Option<String> {
         match self.tip_target? {
+            TipTarget::Up if self.glyph_opens_folder() => {
+                Some(pecofence_core::i18n::text("在资源管理器中打开文件夹").to_string())
+            }
             TipTarget::Up => Some(pecofence_core::i18n::text("向上").to_string()),
             TipTarget::Desktops => self.desktop_tip.clone(),
             TipTarget::ScriptRow(i) => self.script.as_ref()?.rows.get(i)?.tip.clone(),
@@ -238,6 +242,10 @@ impl FenceViewState {
         let Some(text) = self.tip_text() else {
             return;
         };
+        self.show_tip_text_at(&text, x, y);
+    }
+
+    pub(super) fn show_tip_text_at(&mut self, text: &str, x: i32, y: i32) {
         if self.tip.is_none() {
             let dark = matches!(self.theme.mode, pecofence_render::ThemeMode::Dark);
             self.tip = Tooltip::create(self.hwnd, dark)
@@ -245,7 +253,7 @@ impl FenceViewState {
                 .ok();
         }
         if let Some(t) = self.tip.as_mut() {
-            t.show(&text, x, y);
+            t.show(text, x, y);
             self.tip_shown = true;
             self.tip_armed = false;
             window::set_timer(

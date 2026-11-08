@@ -93,3 +93,9 @@ function OpenSubmenu($menu, $regex, $inside) {
   foreach ($m in @([W]::Tops('#32768'))) { if ((MenuTexts $m) -match $inside) { return $m } }
   return [IntPtr]::Zero
 }
+# Picks 新建智能栅栏… in 添加到桌面 of the open fence menu $m; the picked text or $null.
+function PickNewSmart($m) {
+  $sub = OpenSubmenu $m '^Add to desktop' 'New smart fence'
+  if ($sub -eq [IntPtr]::Zero) { Log "no Add to desktop submenu with New smart fence among: $(MenuTexts $m)"; return $null }
+  return (MenuPick '^New smart fence' $sub)
+}

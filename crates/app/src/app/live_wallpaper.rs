@@ -4,7 +4,7 @@
 //! is taken again for a new window, after a wallpaper signal, when the desktop comes to the
 //! front, and once a minute while a fence on that monitor can be seen.
 
-use super::visuals::{MonitorRecipe, backdrop_signature, monitor_recipes, wallpaper_snapshot};
+use super::visuals::{MonitorRecipe, backdrop_signature, monitor_recipes};
 use super::*;
 use crate::commands::WM_APP_LIVE_WALLPAPER;
 use pecofence_platform::live_wallpaper;
@@ -357,7 +357,9 @@ impl App {
         if targets.is_empty() {
             return;
         }
-        let Ok(snapshot) = wallpaper_snapshot(self.wallpaper_override.as_deref()) else {
+        // The last check's read (asking Explorer here would wait on it on the UI thread): its
+        // monitors and the pictures beside the live wallpapers.
+        let Some(snapshot) = self.last_wallpaper.clone() else {
             return;
         };
         let theme = *self.ctx.theme.borrow();

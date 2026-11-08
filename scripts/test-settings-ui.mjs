@@ -14,7 +14,7 @@ const fixture = {
   locale: 'zh-CN', translations: {},
   settings: {
     language: 'zh-CN',
-    autostart: false, hideRealIcons: false, keepIconsHidden: false, hideInboxWhenIconsShown: false, offerNewFence: true, perDesktopFences: false, quickHide: { enabled: true },
+    autostart: false, hideRealIcons: false, keepIconsHidden: false, hideInboxWhenIconsShown: false, offerNewFence: true, featureTips: true, perDesktopFences: false, quickHide: { enabled: true },
     showDesktop: 'keepVisible', theme: 'dark', themeStyle: 'fluent', labelColor: 'auto', titleAlign: 'left', tabBar: 'top', backdrop: 'acrylic', iconSize: 48,
     icons: { tintRgb: null, tintStrength: 0.6, chameleon: false, shortcutArrows: true },
     rollUp: { hoverPeek: true, clickToExpand: false, pushNeighbors: true, titleOnHover: false, hideInactiveScrollbar: false, switchTabOnHover: false, hideCountAndChevron: false },
@@ -346,6 +346,32 @@ async function runTests() {
     current().fences.splice(-2);
     doc = await reset();
   });
+  await test('文字大小 for notes and script fences, not for a clock or an ordinary fence', async () => {
+    doc = await reset();
+    current().fences.push({ ...current().fences[0], id: 'clock-a', title: 'Clock', tool: { kind: 'clock' }, textSize: 'normal' });
+    current().fences.push({ ...current().fences[0], id: 'note-a', title: 'Note A', tool: { kind: 'note' }, textSize: 'large' });
+    current().fences.push({ ...current().fences[0], id: 'script-a', title: 'Weather', tool: { kind: 'script' }, textSize: 'normal' });
+    frame.contentWindow.testRefresh();
+    await settle();
+    doc.querySelector('[data-page=fences]').click();
+    const card = doc.getElementById('fenceTextSize');
+    change(doc, 'fenceSel', 'fence-a');
+    assert(card.style.display === 'none', 'Text size offered for an ordinary fence');
+    change(doc, 'fenceSel', 'clock-a');
+    assert(card.style.display === 'none', 'Text size offered for a clock');
+    change(doc, 'fenceSel', 'note-a');
+    assert(card.style.display === '' && doc.getElementById('fenceTextSizeSel').value === 'large', 'Note text size not shown');
+    const choices = [...doc.querySelectorAll('#fenceTextSizeSel option')].map(o => o.value + o.textContent).join();
+    assert(choices === 'small小,normal标准,large大,extraLarge特大', 'Text size choices wrong: ' + choices);
+    const before = frame.contentWindow.testMessages.length;
+    change(doc, 'fenceTextSizeSel', 'extraLarge');
+    const sent = frame.contentWindow.testMessages.slice(before).filter(m => m.type === 'setFence');
+    assert(sent.length === 1 && sent[0].id === 'note-a' && sent[0].prop === 'textSize' && sent[0].value === 'extraLarge', 'Text size not posted: ' + JSON.stringify(sent));
+    change(doc, 'fenceSel', 'script-a');
+    assert(card.style.display === '' && doc.getElementById('fenceTextSizeSel').value === 'normal', 'Script text size not shown');
+    current().fences.splice(-3);
+    doc = await reset();
+  });
   await test('「速览与搜索」 holds Peek, Everything and dialog jump, and their switches post', async () => {
     doc = await reset();
     const nav = [...doc.querySelectorAll('nav a[data-page]')].map(a => a.dataset.page).join(' ');
@@ -439,6 +465,7 @@ async function runTests() {
     assert(doc.getElementById('fencePortalGroup').style.display === 'none', 'Portal options shown for an ordinary fence');
     assert(doc.getElementById('fenceHideEmpty').style.display === '', 'Hide-when-empty not offered for an ordinary fence');
     assert(doc.getElementById('fenceDesktopLayout').style.display === 'none', 'Desktop layout offered for an ordinary fence');
+    assert(doc.getElementById('fenceFreePlacement').style.display === 'none', 'Free placement offered for an ordinary fence');
     const fenceHideNote = doc.querySelector('#fenceHideEmpty .s').textContent;
     assert(doc.getElementById('fenceOpenFolders').style.display === '' && !doc.querySelector('[data-fence=openFoldersInside]').classList.contains('on'), 'Open-folders-inside missing or on for an ordinary fence');
     assert(doc.getElementById('fenceTintTitleOnly').style.display === 'none', 'Title-only tint offered without a tint');
@@ -452,6 +479,7 @@ async function runTests() {
     assert(doc.querySelector('[data-fence=expandUpward]').classList.contains('on'), 'Expand upward not shown');
     assert(doc.getElementById('fenceHideEmpty').style.display === '' && doc.querySelector('[data-fence=hideWhenEmpty]').classList.contains('on'), 'Inbox hide-when-empty not shown');
     assert(doc.getElementById('fenceDesktopLayout').style.display === '' && doc.querySelector('[data-fence=desktopLayout]').classList.contains('on'), 'Inbox desktop layout not shown');
+    assert(doc.getElementById('fenceFreePlacement').style.display === '' && !doc.querySelector('[data-fence=freePlacement]').classList.contains('on'), 'Inbox free placement not shown, or on');
     assert(doc.querySelector('#fenceHideEmpty .s').textContent !== fenceHideNote, 'Inbox hide-when-empty note is the one of other fences');
     assert(doc.querySelector('[data-fence=openFoldersInside]').classList.contains('on'), 'Open-folders-inside state not shown');
     assert(doc.getElementById('fenceTintTitleOnly').style.display === '' && doc.querySelector('[data-fence=tintTitleOnly]').classList.contains('on'), 'Title-only tint not shown');
@@ -562,12 +590,17 @@ async function runTests() {
     // Arranged like the desktop, the inbox shows icons whatever its own view.
     inbox.layout = 'details'; frame.contentWindow.testRefresh();
     assert(!card.classList.contains('disabled') && !select.disabled, 'Desktop-arranged inbox: labels card greyed');
+    inbox.freePlacement = true; frame.contentWindow.testRefresh();
+    assert(doc.querySelector('[data-fence=freePlacement]').classList.contains('on'), 'Free placement state not shown');
     inbox.desktopLayout = false; frame.contentWindow.testRefresh();
     assert(greyed() && note() === '只用于图标视图', 'Details inbox: labels card not greyed');
+    // 自由摆放 is part of 像桌面一样排列: no card while that is off.
+    assert(doc.getElementById('fenceFreePlacement').style.display === 'none', 'Free placement offered while the inbox is not arranged');
     // A 「桌面」 with tabs stays a fence and shows its own view.
     inbox.desktopLayout = true; inbox.tabbed = true; frame.contentWindow.testRefresh();
     assert(greyed(), 'Tabbed inbox in details: labels card not greyed');
-    delete inbox.tabbed; inbox.layout = 'icons'; frame.contentWindow.testRefresh();
+    assert(doc.getElementById('fenceFreePlacement').style.display === 'none', 'Free placement offered for a tabbed inbox');
+    delete inbox.tabbed; delete inbox.freePlacement; inbox.layout = 'icons'; frame.contentWindow.testRefresh();
     assert(!greyed(), 'Labels card stays greyed after the inbox shows icons again');
     change(doc, 'fenceSel', 'fence-a');
   });
@@ -1254,6 +1287,11 @@ async function runTests() {
     offer.click(); await settle();
     assert(current().settings.offerNewFence === false, 'New fence offer switch did not post');
     offer.click(); await settle();
+    const tips = doc.querySelector('[data-bind=featureTips]');
+    assert(tips.getAttribute('aria-checked') === 'true', 'Feature tips not shown on');
+    tips.click(); await settle();
+    assert(current().settings.featureTips === false, 'Feature tips switch did not post');
+    tips.click(); await settle();
   });
   await test('收起的栅栏怎么展开 is one list for hover, click and double-click', async () => {
     const list = doc.getElementById('rollExpand');
