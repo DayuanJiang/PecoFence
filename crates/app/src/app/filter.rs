@@ -6,27 +6,22 @@
 use super::*;
 use crate::filter_box;
 
-/// Whether `item` stays in a fence filtered by `query` (lower case, trimmed): of its 类型 (the
-/// `kind:` words) and matching the rest.
+/// Whether `item` stays in a fence filtered by `query` (lower case, trimmed): matching the text
+/// and of its 类型 (the `kind:` words). The text first: 程序 reads a shortcut's target.
 pub(super) fn filter_keeps(item: &pecofence_core::Item, query: &str) -> bool {
     let (types, text) = pecofence_core::type_filter::split(query);
-    if !types.is_empty() {
-        let file = item
-            .path()
-            .and_then(|p| std::path::Path::new(p).file_name())
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_else(|| item.display_name.clone());
-        if !is_of_types(&types, &file, item.is_folder, item.path()) {
-            return false;
-        }
-        if text.is_empty() {
-            return true;
-        }
+    let named = text.is_empty()
+        || peek::search_match(&item.display_name, item.path(), &text)
+            .is_some_and(|(score, _)| !pecofence_core::matcher::is_loose_score(score));
+    if !named || types.is_empty() {
+        return named;
     }
-    match peek::search_match(&item.display_name, item.path(), &text) {
-        Some((score, _)) => !pecofence_core::matcher::is_loose_score(score),
-        None => false,
-    }
+    let file = item
+        .path()
+        .and_then(|p| std::path::Path::new(p).file_name())
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| item.display_name.clone());
+    is_of_types(&types, &file, item.is_folder, item.path(), Some(item.mtime))
 }
 
 /// A filter's text as the UI shows it: its `kind:` words as their labels (类型：PDF, in the UI
@@ -41,18 +36,64 @@ pub(super) fn filter_words(text: &str) -> String {
         .join(" ")
 }
 
-/// Whether the file `file` at `path` is of `types`, a shortcut by its real target as the
-/// rules read it (so the filter, the Peek's type tab, Everything's words and a saved smart
-/// fence agree).
+/// Whether the file `file` at `path` (last written at `mtime`, unix seconds; None: read it) is
+/// of `types`, a shortcut by its real target as the rules read it (so the filter, the Peek's
+/// type tab, Everything's words and a saved smart fence agree).
 pub(super) fn is_of_types(
     types: &[pecofence_core::type_filter::TypeToken],
     file: &str,
     is_folder: bool,
     path: Option<&str>,
+    mtime: Option<i64>,
 ) -> bool {
     pecofence_core::type_filter::matches(types, file, is_folder, || {
-        path.and_then(|p| shell::shortcut_target(std::path::Path::new(p)))
+        path.and_then(|p| shortcut_target_cached(p, mtime))
     })
+}
+
+thread_local! {
+    /// Shortcut targets read for 类型：程序, by lower-case path, with the mtime they were read
+    /// at: IShellLink is a COM round trip per file (slow on a share), and the filter and the
+    /// Peek test every item on each key and each folder refresh.
+    static TARGETS: std::cell::RefCell<HashMap<String, (i64, Option<String>)>> =
+        std::cell::RefCell::new(HashMap::new());
+}
+
+/// The cache stops here and starts over (a folder of shortcuts is a few hundred).
+const TARGETS_MAX: usize = 4096;
+
+/// [`shell::shortcut_target`] of `path`, read again only once the file changed.
+fn shortcut_target_cached(path: &str, mtime: Option<i64>) -> Option<String> {
+    let mtime = mtime
+        .or_else(|| {
+            let m = std::fs::metadata(path).ok()?.modified().ok()?;
+            Some(m.duration_since(std::time::UNIX_EPOCH).ok()?.as_secs() as i64)
+        })
+        .unwrap_or(0);
+    let key = path.to_lowercase();
+    let known = TARGETS.with(|c| {
+        c.borrow()
+            .get(&key)
+            .filter(|(m, _)| *m == mtime)
+            .map(|(_, t)| t.clone())
+    });
+    if let Some(target) = known {
+        return target;
+    }
+    let target = shell::shortcut_target(std::path::Path::new(path));
+    TARGETS.with(|c| {
+        let mut c = c.borrow_mut();
+        if c.len() >= TARGETS_MAX {
+            c.clear();
+        }
+        tracing::debug!(
+            cached = c.len() + 1,
+            found = target.is_some(),
+            "type filter: shortcut target read"
+        );
+        c.insert(key, (mtime, target.clone()));
+    });
+    target
 }
 
 impl App {
