@@ -23,7 +23,7 @@ Case 'a folder search without Everything'
 Pf fence create --smart downloads --rect '420,140,560,330' | Out-Null
 Check 'the six files of the last week, read from the folder' (WaitSmart $Dl { $s.source -eq 'folder' -and $s.shown -eq 6 } 20) (SmartLine $Dl)
 $log = (PfLogAll) -join "`n"
-Check 'log: read on a worker, then the result' ($log -match 'smart fence: reading the folder without Everything' -and $log -match 'smart fence: folder read without Everything.*scanned=\d+.*ms=\d+') ([regex]::Match($log, '.*folder read without Everything.*').Value)
+Check 'log: read on a worker, then the result' ($log -match 'smart fence: reading the folders without Everything.*folders=1' -and $log -match 'smart fence: folder read without Everything.*scanned=\d+.*ms=\d+') ([regex]::Match($log, '.*folder read without Everything.*').Value)
 $w = DumpOf $Dl
 Check 'the count after the name: · 6' ($w.raw -match 'title_count=Some\(" · 6"\)') ([regex]::Match($w.raw, 'title_count=\S+ \S*').Value)
 AgedFile $PfDl 'offline invoice.pdf' 0 | Out-Null

@@ -1,5 +1,6 @@
 # 智能栅栏 with Everything 1.4 or 1.5 (installed on the box, see smart.ps1): every way to make one (CLI
-# template, CLI conditions, tray menu, fence menu, the Peek search's last row) and what a smart
+# template, CLI conditions, the Peek search's last row; the editor's window from the tray and
+# fence menus opens and closes by keys here, smart-editor.ps1 tests it in full) and what a smart
 # fence does: Everything's results, the count after the name, live updates (new, subfolder,
 # deleted, written again, a download in flight), F5 and 立即刷新, fence set on each search
 # property, no drops or paste into it, files left where they are, a restart, deleting it.
@@ -55,7 +56,8 @@ FocusFence $Dl
 [G]::Press(0x74); Start-Sleep -Milliseconds 800
 Pf fence refresh $Dl | Out-Null; Start-Sleep -Milliseconds 800
 $log = (PfLogAll) -join "`n"
-Check 'F5 asks Everything again' ($log -match 'smart fence: Everything asked.*why="f5"') ''
+# A run of the fence still being checked takes F5 after it (one worker per fence).
+Check 'F5 asks Everything again (at once, or right after the run in progress)' ($log -match 'smart fence: Everything asked.*why="f5"' -or ($log -match 'it runs again after them.*why="f5"' -and $log -match 'smart fence: Everything asked.*why="after the results in progress"')) ''
 Check 'fence refresh asks Everything again' ($log -match 'smart fence: Everything asked.*why="cli"') ''
 
 Case 'nothing is dropped or pasted into it, nothing is moved'
@@ -133,31 +135,49 @@ Start-Sleep -Seconds 1; DropLinks
 Pf fence delete 'Smart tab' | Out-Null; Pf fence delete Links | Out-Null
 Start-Sleep -Seconds 1
 
-Case 'its menu: refresh, folder, no New or Paste'
+Case 'its menu: edit conditions, refresh, folder, no New or Paste'
 $m = FenceMenuOf $Dl
 $t = MenuTexts $m
-Check 'Refresh now F5 and Open folder in File Explorer' ($t -match 'Refresh now ~ F5' -and $t -match 'Open folder in File Explorer') $t
+Check 'Edit conditions…, Refresh now F5 and Open folder in File Explorer' ($t -match 'Edit conditions… \| Refresh now ~ F5' -and $t -match 'Open folder in File Explorer') $t
 Check 'no New and no Paste' (-not ($t -match '(^| )New \|') -and -not ($t -match 'Paste')) $t
-Check 'the New smart fence submenu' ($t -match 'New smart fence') $t
+Check 'New smart fence… is one entry, no submenu' ($t -match 'New smart fence…' -and -not ($t -match 'Downloads of the last 7 days')) $t
 Shot 's02-fence-menu'
 CloseMenus
 
-Case 'tray menu: New smart fence › Recently opened files'
+Case 'tray menu: New smart fence… opens the editor, Esc closes it'
+$before = @(@(PfJson fence list) | Where-Object { $_ -and $_.smart }).Count
 $m = TrayMenu
 $t = MenuTexts $m
-Check 'New smart fence follows Show a folder on the desktop' ($t -match 'Show a folder on the desktop \| New smart fence') $t
-$sub = OpenSubmenu $m '^New smart fence' 'Downloads of the last 7 days'
-$st = MenuTexts $sub
-Check 'five templates' ($st -eq 'Downloads of the last 7 days | Screenshots of the last week | Files over 1 GB | All .psd files | Recently opened files') $st
-Shot 's03-tray-submenu'
-MenuPick '^Recently opened files' $sub | Out-Null
+Check 'New smart fence… follows Show a folder on the desktop' ($t -match 'Show a folder on the desktop \| New smart fence…') $t
+MenuPick '^New smart fence' $m | Out-Null
+$ed = WaitWin 'PecoFence.SmartEditor' 20
+Check 'the editor window opens: New smart fence' ($ed -ne [IntPtr]::Zero -and [W]::Title($ed) -eq 'New smart fence') "$ed $([W]::Title($ed))"
+Start-Sleep -Seconds 1
+Shot 's03-tray-editor'
+# The name box has the keyboard; the empty name row keeps Enter from saving.
+[G]::Press(0x0D); Start-Sleep -Milliseconds 600
+Check 'Enter with a row not filled in: the editor stays' ([G]::IsWindowVisible($ed)) ''
+[G]::Press(0x1B)
+Check 'Esc closes it and makes nothing' ((WaitGoneWin 'PecoFence.SmartEditor' 10) -and @(@(PfJson fence list) | Where-Object { $_ -and $_.smart }).Count -eq $before) ''
+Pf fence create --smart recent --rect '40,420,400,300' | Out-Null
 Check 'recent files: the three documents opened' (WaitSmart 'Recently opened files' { $s.source -eq 'everything' -and (($n -join ',') -match 'weekly') -and (($n -join ',') -match 'slides') } 30) (SmartLine 'Recently opened files')
-CloseMenus
 
-Case 'fence menu: New smart fence › All .psd files'
+Case 'fence menu: New smart fence… and Edit conditions…'
 $m = FenceMenuOf $Dl
-$sub = OpenSubmenu $m '^New smart fence' 'All \.psd files'
-MenuPick '^All \.psd files' $sub | Out-Null
+MenuPick '^New smart fence' $m | Out-Null
+$ed = WaitWin 'PecoFence.SmartEditor' 20
+Check 'New smart fence… in a fence''s menu opens the editor' ($ed -ne [IntPtr]::Zero -and [W]::Title($ed) -eq 'New smart fence') ([W]::Title($ed))
+Start-Sleep -Milliseconds 800
+[G]::Press(0x1B)
+Check 'Esc closes it' (WaitGoneWin 'PecoFence.SmartEditor' 10) ''
+$m = FenceMenuOf $Dl
+MenuPick '^Edit conditions' $m | Out-Null
+$ed = WaitWin 'PecoFence.SmartEditor' 20
+Check 'Edit conditions… opens it on the fence' ($ed -ne [IntPtr]::Zero -and [W]::Title($ed) -eq 'Edit smart fence') ([W]::Title($ed))
+Start-Sleep -Milliseconds 800
+[G]::Press(0x0D)
+Check 'Enter is OK: it closes and the search stays as it was' ((WaitGoneWin 'PecoFence.SmartEditor' 10) -and ((PfLogAll) -join "`n") -match 'smart fence editor: the search is unchanged') ''
+Pf fence create --smart psd --rect '480,420,400,300' | Out-Null
 Check 'both .psd files of Documents, from the whole computer' (WaitSmart 'All .psd files' { $s.source -eq 'everything' -and ($n -match 'poster') -and ($n -match '封面') } 30) (SmartLine 'All .psd files')
 Check 'Windows, AppData and the Recycle Bin are left out' ((SmartOf 'All .psd files').query -match '^!"C:\\Windows\\" !\\AppData\\ ') (SmartOf 'All .psd files').query
 CloseMenus
@@ -203,6 +223,30 @@ $bad = & "$PfApp\pecofence-cli.exe" fence set $Seven smartFolder 'C:\no\such\fol
 Check 'a folder that is not there is refused' ($LASTEXITCODE -ne 0 -and $bad -match 'no folder') $bad
 $log = (PfLogAll) -join "`n"
 Check 'log: each change with what changed' ($log -match 'smart fence search changed.*what="within days"' -and $log -match 'what="conditions"' -and $log -match 'what="folders"') ''
+
+Case 'CLI: several folders, --match any, smartMatch and smartFolder as a list'
+Pf fence create --title 'Two places' --smart-folder $PfDl --smart-folder $PfDocs --ext pdf --name-matches weekly --match any --rect '40,60,400,260' | Out-Null
+$s = SmartOf 'Two places'
+Check 'fence get: match any and both folders' ($s.match -eq 'any' -and @($s.folders).Count -eq 2 -and $s.spec.match -eq 'any' -and -not (@($s.spec.allOf) | Where-Object { $_.cond -eq 'filesOnly' })) ($s | ConvertTo-Json -Compress -Depth 5)
+Check 'any: the PDFs of Downloads and weekly.docx of Documents' (WaitSmart 'Two places' { $n -match 'weekly' -and $n -match 'quarterly' -and $n -match 'old contract' -and -not ($n -match 'budget|meeting') } 20) (SmartLine 'Two places')
+Pf fence set 'Two places' smartMatch all | Out-Null
+Check 'smartMatch all: no PDF is named weekly' (WaitSmart 'Two places' { $s.match -eq 'all' -and $s.shown -eq 0 } 15) (SmartLine 'Two places')
+Check 'all is not written into the saved search' ($null -eq (SmartOf 'Two places').spec.match) ((SmartOf 'Two places').spec | ConvertTo-Json -Compress -Depth 5)
+$docs = '[\"' + ($PfDocs -replace '\\', '\\') + '\"]'
+Pf fence set 'Two places' smartMatch any | Out-Null
+Pf fence set 'Two places' smartFolder $docs | Out-Null
+Check 'smartFolder as a list of one: Documents only' (WaitSmart 'Two places' { @($s.folders).Count -eq 1 -and $n -match 'weekly' -and -not ($n -match 'quarterly') } 15) (SmartLine 'Two places')
+$bad = & "$PfApp\pecofence-cli.exe" fence set 'Two places' smartMatch some 2>&1 | Out-String
+Check 'smartMatch some is refused' ($LASTEXITCODE -ne 0 -and $bad -match 'any') $bad
+$bad = & "$PfApp\pecofence-cli.exe" fence set 'Two places' smartConditions '[{\"cond\":\"origin\",\"value\":\"publicDesktop\"}]' 2>&1 | Out-String
+Check 'an origin condition is refused' ($LASTEXITCODE -ne 0 -and $bad -match 'origin') $bad
+$bad = & "$PfApp\pecofence-cli.exe" fence create --title Nope --match any 2>&1 | Out-String
+Check '--match without a smart fence is refused' ($LASTEXITCODE -ne 0 -and $bad -match 'match') $bad
+Pf fence create --smart large --match any --rect '40,60,400,260' --title 'Large any' | Out-Null
+Check '--match any goes with a template too' ((SmartOf 'Large any').match -eq 'any') ((SmartOf 'Large any') | ConvertTo-Json -Compress -Depth 5)
+Pf fence delete 'Two places' | Out-Null; Pf fence delete 'Large any' | Out-Null
+$log = (PfLogAll) -join "`n"
+Check 'log: match and folders changed' ($log -match 'what="match".*matching="all"' -and $log -match 'what="folders".*folders=1') ''
 
 Case 'Peek search: put this search on the desktop'
 Pf settings set tools.everything true | Out-Null

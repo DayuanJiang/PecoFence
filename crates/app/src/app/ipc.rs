@@ -759,6 +759,7 @@ impl App {
                 script,
                 smart,
                 smart_spec,
+                smart_match,
             } => {
                 if smart.is_some() || smart_spec.is_some() {
                     return self.ipc_create_smart(
@@ -766,7 +767,12 @@ impl App {
                         *rect,
                         smart.as_deref(),
                         smart_spec.as_deref().cloned(),
+                        *smart_match,
                     );
+                }
+                if smart_match.is_some() {
+                    return Err(IpcError::usage("smartMatch goes with a smart fence")
+                        .hint("Give --smart TEMPLATE or --smart-folder, --ext and the like"));
                 }
                 let tool = match tool.as_deref() {
                     None => None,
@@ -2021,17 +2027,19 @@ impl App {
         }
     }
 
-    /// `fences.create` with `smart` (a template) or `smartSpec` (a whole search).
+    /// `fences.create` with `smart` (a template) or `smartSpec` (a whole search), and
+    /// `smartMatch` for either.
     fn ipc_create_smart(
         &mut self,
         title: Option<&str>,
         rect: Option<Rect>,
         template: Option<&str>,
         spec: Option<pecofence_core::smart::SmartSpec>,
+        matching: Option<pecofence_core::smart::SmartMatch>,
     ) -> IpcResult {
         use pecofence_core::smart::Template;
         let title = title.map(|t| checked_name("title", t)).transpose()?;
-        let (spec, default_title) = match (template, spec) {
+        let (mut spec, default_title) = match (template, spec) {
             (_, Some(spec)) => (spec, None),
             (Some(key), None) => {
                 let keys: Vec<&str> = Template::ALL.iter().map(|t| t.key()).collect();
@@ -2045,6 +2053,9 @@ impl App {
             }
             (None, None) => return Err(unsupported("no search given")),
         };
+        if let Some(m) = matching {
+            spec.matching = m;
+        }
         if let Some(problem) = spec.problem() {
             return Err(IpcError::invalid_value(problem, &[]));
         }

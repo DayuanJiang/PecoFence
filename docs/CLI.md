@@ -108,7 +108,7 @@ unique id prefix, or a name (only while that name is unique).
 | `fence get <FENCE>` | `pecofence-cli fence get Work` |
 | `fence create (--title <T> \| --portal <DIR>) [--rect x,y,w,h \| --monitor <ID> \| --below/--above/--right-of/--left-of <FENCE> [--size w,h]]` | `pecofence-cli fence create --title Work --rect 100,100,600,400` |
 | `fence create --tool note [--text <TEXT>] \| --tool clock \| --script <FILE>` (小工具, see below) | `pecofence-cli fence create --tool note --title Today --text "[ ] Pay rent"` |
-| `fence create --smart <TEMPLATE>` \| `--title <T> [--smart-folder <DIR>] [--within-days <N>] [--ext <EXTS>] [--name-matches <TEXT>] [--everything <SEARCH>]` (智能栅栏, see below) | `pecofence-cli fence create --smart downloads` |
+| `fence create --smart <TEMPLATE>` \| `--title <T> [--smart-folder <DIR> ...] [--within-days <N>] [--ext <EXTS>] [--name-matches <TEXT>] [--everything <SEARCH>]`, both with `[--match all\|any]` (智能栅栏, see below) | `pecofence-cli fence create --smart downloads` |
 | `fence delete <FENCE>` | `pecofence-cli fence delete Temp` |
 | `fence rename <FENCE> <TITLE>` | `pecofence-cli fence rename Work Projects` |
 | `fence refresh <FENCE>` | `pecofence-cli fence refresh Weather` (script fences: run the script now; smart fences: search again now; other fences are `unsupported`) |
@@ -195,8 +195,8 @@ like the Windows desktop, around the other fences), `noteText` (note fences: the
 starting with `[ ]` or `[x]` is a to-do), `scriptPath` (script fences: the full path of the script;
 it runs at once), `scriptInterval` (script fences: minutes between runs, 1 to 1440),
 `virtualDesktops` (see *Virtual desktops* below) and the search of a smart fence (see
-[Smart fences](#smart-fences-智能栅栏)): `smartFolder`, `smartSubfolders`, `smartWithinDays`,
-`smartConditions`, `smartName`, `smartEverything`, `smartLimit`; on any other fence these are
+[Smart fences](#smart-fences-智能栅栏)): `smartFolder`, `smartMatch`, `smartSubfolders`,
+`smartWithinDays`, `smartConditions`, `smartName`, `smartEverything`, `smartLimit`; on any other fence these are
 `unsupported`. `portalTitleIcon` also switches a smart fence's magnifier.
 `--all` applies the option to every fence one call at a time and
 skips tabs hosted inside another fence (their options belong to the host).
@@ -524,33 +524,45 @@ that match, where they are (nothing is moved or copied). It holds no items, so r
 `downloads` (the Downloads folder and its subfolders, files of the last 7 days), `screenshots` (the
 Screenshots folder, images of the last 7 days), `large` (every drive, files over 1 GB), `psd` (every
 drive, `.psd` files) and `recent` (Windows' Recent Items, its shortcuts, at most 40). Or write the
-search: `--title` and any of `--smart-folder <DIR>` (absent: every drive), `--within-days <N>`
-(created or written in the last N days), `--ext pdf,docx`, `--name-matches <TEXT>` (names matched
-as the Peek search matches them, pinyin too) and `--everything <SEARCH>` (Everything syntax, needs
-Everything; the folder, the time window, the extensions and the name still apply).
+search: `--title` and any of `--smart-folder <DIR>` (repeat it to search several folders together;
+absent: every drive), `--within-days <N>` (created or written in the last N days), `--ext pdf,docx`,
+`--name-matches <TEXT>` (names matched as the Peek search matches them, pinyin too) and
+`--everything <SEARCH>` (Everything syntax, needs Everything). `--match all` (the default) wants
+every one of these; `--match any` takes a file that meets one of them (the time window, the
+extensions, the name, the Everything text), and goes with a template too. The folders always
+apply. A written search keeps to files, unless it is `--match any`: then a folder whose name
+matches shows as well.
 
 ```powershell
 pecofence-cli fence create --smart downloads
 pecofence-cli fence create --title Invoices --smart-folder "$env:USERPROFILE\Documents" --ext pdf --name-matches invoice
+pecofence-cli fence create --title Papers --smart-folder D:\Work --smart-folder E:\Archive --ext pdf,docx --name-matches 发票 --match any
 pecofence-cli fence set Invoices smartWithinDays 90
+pecofence-cli fence set Papers smartMatch all
 pecofence-cli fence set Invoices smartConditions '[{\"cond\":\"ext\",\"value\":[\"pdf\"]},{\"cond\":\"sizeMb\",\"value\":{\"min\":1,\"max\":null}}]'
 pecofence-cli fence refresh Invoices
 ```
 
-`fence get` has a `smart` object: `spec` (the saved search: `folder` or none, `subfolders`,
-`allOf` (rule conditions, as in `rule list`), `withinDays`, `name`, `everything`, `limit`,
-`template`), `source` (`everything`, `folder` when PecoFence read the folder itself because
+`fence get` has a `smart` object: `match` (`all` or `any`) and `folders` (none: every drive), then
+`spec` (the saved search: `folders`, `subfolders`, `match` only when it is `any`, `allOf` (rule
+conditions, as in `rule list`), `withinDays`, `name`, `everything`, `limit`, `template`; a search
+saved with one `folder` reads as that one folder), `source` (`everything`, `folder` when PecoFence read the folders itself because
 Everything does not run, `needsEverything` for a whole-computer or Everything-syntax search while
 Everything does not run, `waiting` before the first answer), `total` (matches in all), `shown` and
 `query` (the search sent to Everything). The search runs with Everything when it runs, one search at
 a time; without it a folder search reads the folder on a worker (at most 20000 entries). It runs
 again 1 s and 4 s after a change in the folder, once a minute, after `fence refresh`, an import, a
 snapshot restore or a monitor layout change, and as soon as Everything starts. `fence set` changes
-the search (`smartFolder` a full path or `null`, `smartSubfolders`, `smartWithinDays` 1 to 36500 or
-`null`, `smartConditions` a JSON array of rule conditions, `smartName` and `smartEverything` text or
-`null`, `smartLimit` 1 to 2000); a folder set this way is no longer the template's, so an import on
+the search (`smartFolder` a full path, a JSON array of full paths searched together, or `null`;
+`smartMatch` `all` or `any`; `smartSubfolders`, `smartWithinDays` 1 to 36500 or `null`,
+`smartConditions` a JSON array of rule conditions (not `origin`), `smartName` and `smartEverything`
+text or `null`, `smartLimit` 1 to 2000); a folder set this way is no longer the template's, so an import on
 another PC keeps it (a template's own folder is replaced there by that PC's Downloads, Screenshots or
 Recent Items).
+
+In the app, 新建智能栅栏… (tray menu, fence menu) and 编辑条件… (a smart fence's menu, Settings ›
+栅栏) open the smart fence editor, a small window with the same search in rows and a live count; the
+CLI does not open it.
 
 A fence that shows a folder (a folder fence, a folder opened in a fence, a smart fence) can be
 filtered with Ctrl+F or its menu's 筛选…; `fence get` then has `filter` (`text`, `shown`). The filter

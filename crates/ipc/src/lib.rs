@@ -147,10 +147,14 @@ pub enum Method {
         /// smart fence showing that search instead.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         smart: Option<String>,
-        /// 智能栅栏: the whole search (`{folder?, subfolders?, allOf?, withinDays?, everything?,
-        /// limit?}`), in place of a template.
+        /// 智能栅栏: the whole search (`{folders?, subfolders?, match?, allOf?, withinDays?,
+        /// name?, everything?, limit?}`), in place of a template.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         smart_spec: Option<Box<pecofence_core::smart::SmartSpec>>,
+        /// 智能栅栏: `all` (every condition, the default) or `any` (one is enough) for the
+        /// template's or the given search; the folders always apply.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        smart_match: Option<pecofence_core::smart::SmartMatch>,
     },
     /// Items return to the 「桌面」 (inbox) fence; rules targeting the fence are removed. The
     /// inbox itself cannot be deleted. Result: `{changed, deleted: uuid, snapshotId?}`.
@@ -674,6 +678,7 @@ mod tests {
                 script: None,
                 smart: None,
                 smart_spec: None,
+                smart_match: None,
             },
             Method::FencesDelete {
                 fence: "Work".into(),
@@ -848,6 +853,7 @@ mod tests {
                 script: None,
                 smart: None,
                 smart_spec: None,
+                smart_match: None,
             }
             .name(),
             "fences.create"

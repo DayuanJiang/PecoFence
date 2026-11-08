@@ -266,6 +266,8 @@ public static class QS {
     return old;
   }
   public static void SetFileName(IntPtr dlg, string text) { var e = FileNameEdit(dlg); if (e != IntPtr.Zero) SendMessageW(e, 0x0C, IntPtr.Zero, text); }
+  // The folder picker's Folder: box (then IDOK picks what it names).
+  public static bool SetPickerFolder(IntPtr dlg, string text) { var e = FileNameEdit(dlg, true); if (e == IntPtr.Zero) return false; SendMessageW(e, 0x0C, IntPtr.Zero, text); return true; }
   // The tab window (ShellTabWindowClass) of one ShellWindows item.
   public static IntPtr TabWindow(object item) {
     var sp = item as IServiceProviderX;

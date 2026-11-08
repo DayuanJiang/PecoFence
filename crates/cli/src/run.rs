@@ -225,6 +225,7 @@ fn run_fence(ctx: &Ctx, cmd: FenceCmd) -> Result<Reply, IpcError> {
             let SmartArgs {
                 template: smart,
                 smart_folder,
+                smart_match,
                 everything,
                 within_days,
                 name_matches,
@@ -235,18 +236,24 @@ fn run_fence(ctx: &Ctx, cmd: FenceCmd) -> Result<Reply, IpcError> {
                 |p: String| std::path::absolute(&p).map_or(p, |a| a.display().to_string());
             // 智能栅栏 written on the command line: a folder (or every drive), the time window,
             // the extensions, the name and the Everything text, all of them at once.
-            let custom = smart_folder.is_some()
+            let custom = !smart_folder.is_empty()
                 || everything.is_some()
                 || within_days.is_some()
                 || name_matches.is_some()
                 || !ext.is_empty();
+            // Files only, as a condition of its own: with --match any it would let every file
+            // in, so then a folder whose name matches shows too.
+            let any = smart_match.as_deref() == Some("any");
             let smart_spec = custom.then(|| {
-                let mut all_of = vec![pecofence_core::Cond::FilesOnly];
+                let mut all_of = Vec::new();
+                if !any {
+                    all_of.push(pecofence_core::Cond::FilesOnly);
+                }
                 if !ext.is_empty() {
                     all_of.push(pecofence_core::Cond::Ext(ext.clone()));
                 }
                 Box::new(pecofence_core::smart::SmartSpec {
-                    folders: smart_folder.clone().map(absolute).into_iter().collect(),
+                    folders: smart_folder.iter().cloned().map(absolute).collect(),
                     all_of,
                     within_days,
                     name: name_matches.clone(),
@@ -254,6 +261,14 @@ fn run_fence(ctx: &Ctx, cmd: FenceCmd) -> Result<Reply, IpcError> {
                     ..Default::default()
                 })
             });
+            if smart_match.is_some() && smart.is_none() && !custom {
+                return Err(IpcError::usage("--match goes with a smart fence").hint(
+                    "Add --smart TEMPLATE or --smart-folder, --ext, --within-days and the like",
+                ));
+            }
+            let smart_match = smart_match
+                .as_deref()
+                .and_then(pecofence_core::smart::SmartMatch::parse);
             let portal = portal.map(absolute);
             let script = script.map(absolute);
             // --script means a script fence, --text a note.
@@ -285,6 +300,7 @@ fn run_fence(ctx: &Ctx, cmd: FenceCmd) -> Result<Reply, IpcError> {
                     script,
                     smart,
                     smart_spec,
+                    smart_match,
                 });
             };
             let (rect, overlaps) = placed_rect(ctx, side, &anchor, size)?;
@@ -298,6 +314,7 @@ fn run_fence(ctx: &Ctx, cmd: FenceCmd) -> Result<Reply, IpcError> {
                 script,
                 smart,
                 smart_spec,
+                smart_match,
             })?;
             if !overlaps.is_empty() {
                 let w = format!("the new fence overlaps {}", overlaps.join(", "));

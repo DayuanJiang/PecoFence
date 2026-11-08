@@ -678,9 +678,14 @@ pub struct SmartArgs {
     /// A smart fence showing a saved search: downloads, screenshots, large, psd or recent
     #[arg(long = "smart", id = "template", value_name = "TEMPLATE", value_parser = ["downloads", "screenshots", "large", "psd", "recent"], conflicts_with_all = ["portal", "tool", "script"])]
     pub template: Option<String>,
-    /// A smart fence over this folder (with --everything, --within-days, --ext)
+    /// A smart fence over this folder (with --everything, --within-days, --ext); repeat it to
+    /// search several folders together
     #[arg(long, value_name = "DIR", conflicts_with_all = ["portal", "tool", "script", "template"])]
-    pub smart_folder: Option<String>,
+    pub smart_folder: Vec<String>,
+    /// Smart fence: all (every condition must hold, the default) or any (one is enough); the
+    /// folders always apply
+    #[arg(long = "match", value_name = "all|any", value_parser = ["all", "any"], conflicts_with_all = ["portal", "tool", "script"])]
+    pub smart_match: Option<String>,
     /// Smart fence: an Everything search, narrowed by the other options too (needs Everything)
     #[arg(long, value_name = "SEARCH", conflicts_with_all = ["portal", "tool", "script", "template"])]
     pub everything: Option<String>,

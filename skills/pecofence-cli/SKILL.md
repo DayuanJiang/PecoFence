@@ -84,7 +84,8 @@ pecofence-cli fence set Today noteText "[x] Pay rent`n[ ] Call Anna"           #
 pecofence-cli fence refresh Weather                            # script fence: run its script now; smart fence: search again
 pecofence-cli fence create --smart downloads                   # 智能栅栏: downloads|screenshots|large|psd|recent
 pecofence-cli fence create --title PDFs --smart-folder "C:\Users\me\Documents" --ext pdf --within-days 30
-pecofence-cli fence set PDFs smartName invoice                 # smartFolder|smartSubfolders|smartWithinDays|smartConditions|smartName|smartEverything|smartLimit
+pecofence-cli fence create --title Papers --smart-folder D:\Work --smart-folder E:\Old --ext pdf --name-matches invoice --match any   # several folders; any one condition
+pecofence-cli fence set PDFs smartName invoice                 # smartFolder (path or JSON array)|smartMatch all/any|smartSubfolders|smartWithinDays|smartConditions|smartName|smartEverything|smartLimit
 pecofence-cli fence open-folder Projects 2026                  # show a subfolder; fence up / fence forward go back and on
 pecofence-cli virtual-desktop list                             # Windows virtual desktops: id, number, name, current
 pecofence-cli fence set Games virtualDesktops 2                # only on desktop 2 (all | current | numbers, names or ids, comma-separated)
@@ -119,7 +120,9 @@ pecofence-cli config export "C:\Users\me\Desktop\pecofence-backup.json"   # sett
   are (Everything when it runs, else PecoFence reads the folder; a whole-computer search then waits:
   `smart.source` is `needsEverything`). They hold no items: rules, drops and `item move --to` never
   put anything in; `item list --fence` lists the results (`assignedBy: smart`), and moving or
-  deleting those moves or deletes real files. `smartConditions` takes rule conditions as JSON.
+  deleting those moves or deletes real files. `smartConditions` takes rule conditions as JSON (not
+  `origin`). `smart.match` is `all` or `any` (one condition is enough; the folders always apply),
+  `smart.folders` the folders searched together (none: every drive).
 - Tool fences (`fence list` shows `tool`: note, clock, script) hold no items and join no tabs. One
   switch, `tools.enabled` (on by default), covers them all; `fence create --tool` turns it on. The
   desktop has one clock at most (a second one fails with `limitReached`). A script fence runs the user's script every `scriptInterval` minutes, at most 10 s, and shows
