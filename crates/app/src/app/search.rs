@@ -510,12 +510,19 @@ impl App {
                 self.search_to_desktop(&query, tab);
             }
             (RowKind::ShowAll, _, _) => {
+                // Read before the box closes with the Peek.
+                let types = peek_types();
                 self.end_peek("search: show all in Everything");
-                // The same search as the list (pinyin included), in Everything's window.
+                // The same search as the list (pinyin included, the type tab's words too), in
+                // Everything's window.
                 let found = everything::find().and_then(|i| Some((i.exe()?, i.supports_pinyin())));
                 match found {
                     Some((exe, pinyin)) => {
-                        let text = with_type_words(ev::search_text(&query, pinyin));
+                        let mut text = ev::search_text(&query, pinyin);
+                        if !types.is_empty() {
+                            text = format!("{text} {}", type_filter::everything_words(&types));
+                        }
+                        tracing::info!(search = %text, types = types.len(), "search: shown in Everything");
                         let started = std::process::Command::new(exe)
                             .arg("-search")
                             .arg(text)
