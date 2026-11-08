@@ -84,12 +84,17 @@ for ($k = 0; $k -lt 2; $k++) {
 }
 $seen = @(PfLogAll | Where-Object { $_ -match 'virtual desktop switch seen by the foreground poll' -and $_ -notmatch 'omitted' }) | Select-Object -Last 1
 Log "poll: $seen"
-# Not clicked within 10 s: the desktop's clicks are no longer followed (every mouse move reaches
-# PecoFence while they are).
+# Windows 10 often reports no foreground event for a click on the desktop, so its clicks are
+# followed all the time there (anchor.rs follows_desktop_clicks, since PR #205): the 10 s end
+# that Windows 11 has after a switch does not let them go here.
 VdRight
 [G]::MoveTo(900, 500); Start-Sleep -Seconds 11
 $end = @(PfLogAll | Where-Object { $_ -match 'its clicks are no longer followed' -and $_ -notmatch 'omitted' }) | Select-Object -Last 1
-Check 'ten seconds after a switch without a click on the desktop, its clicks are let go' ([bool]$end) "$end"
+Check 'ten seconds after a switch the desktop''s clicks are still followed (Windows 10 follows them all the time)' (-not $end) "$end"
+DoubleClick 1100 700; Start-Sleep -Seconds 1
+Check 'and a double-click on the desktop after those 11 s hides Games' ((FVis Games) -eq $false) "Games=$(FVis Games) fg=$(Fg)"
+DoubleClick 1100 700; Start-Sleep -Seconds 1
+Check 'the next one shows it again' ((FVis Games) -eq $true) "Games=$(FVis Games)"
 VdLeft
 
 Case 'new fences with the switch on'
