@@ -964,7 +964,7 @@ impl App {
             let shown = self.item_views(f).len();
             let cut =
                 run.is_some_and(|r| r.total > spec.limit) && self.fence_filter(f.id).is_none();
-            format!(" · {shown}{}", if cut { "+" } else { "" })
+            format!("{shown}{}", if cut { "+" } else { "" })
         });
         (empty, count)
     }

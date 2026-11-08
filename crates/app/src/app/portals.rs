@@ -17,7 +17,7 @@ impl App {
         };
         let folder = self.state.portal_path(active);
         let is_portal = folder.is_some();
-        // 智能栅栏: a magnifier in the folder glyph's place.
+        // 智能栅栏: the folder glyph with a magnifier badge.
         let smart = f.smart.is_some();
         w.set_portal_deco(
             is_portal,

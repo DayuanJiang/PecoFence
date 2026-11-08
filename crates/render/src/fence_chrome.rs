@@ -86,6 +86,8 @@ pub struct FenceChrome {
     group_format: TextFormat,
     /// Tab match badge number: 11 / 600, centred.
     badge_format: TextFormat,
+    /// 智能栅栏: the 10 px magnifier over the lower right of the folder glyph.
+    folder_badge_format: TextFormat,
     /// Note and script fence lines (便签与待办, 脚本栅栏) at each 文字大小: leading, wrapped.
     tool_text: [ToolText; 4],
     /// A script fence's footer: Caption 12, leading, top-aligned.
@@ -390,8 +392,8 @@ pub const RAIL_COLLAPSED_BOTTOM: f32 = RAIL_TOP;
 pub struct TitleDeco {
     pub folder_icon: bool,
     pub up_button: bool,
-    /// 智能栅栏: the glyph before the title is a magnifier (Search, E721) in place of the
-    /// folder.
+    /// 智能栅栏: the folder glyph carries a magnifier badge (a saved search, as Windows' Saved
+    /// Searches and Outlook's Search Folders show it) and is no button.
     pub search_glyph: bool,
     pub desktop_icon: bool,
 }
@@ -635,6 +637,9 @@ pub const ROLLED_COUNT_W: f32 = 64.0;
 
 /// Tab match badge (WinUI InfoBadge): 16 DIPs high, 5 DIPs of padding beside the number, 6 DIPs
 /// after the caption.
+/// 智能栅栏's count capsule (DIPs): height and text padding.
+const COUNT_CAPSULE_H: f32 = 18.0;
+const COUNT_CAPSULE_PAD: f32 = 7.0;
 const TAB_BADGE_H: f32 = 16.0;
 const TAB_BADGE_PAD: f32 = 5.0;
 const TAB_BADGE_GAP: f32 = 6.0;
@@ -1744,6 +1749,11 @@ impl FenceChrome {
             .with_alignment(TextAlignment::Center)
             .with_paragraph_alignment(ParagraphAlignment::Center)
             .with_word_wrapping(WordWrapping::NoWrap);
+        let folder_badge_format =
+            TextFormat::with_locale(crate::theme::font_icons(), 10.0, FontWeight::NORMAL, locale)?
+                .with_alignment(TextAlignment::Center)
+                .with_paragraph_alignment(ParagraphAlignment::Center)
+                .with_word_wrapping(WordWrapping::NoWrap);
         let tool_text = |size: f32| -> Result<ToolText> {
             let k = size / TOOL_TEXT_SIZES[1];
             Ok(ToolText {
@@ -1785,6 +1795,7 @@ impl FenceChrome {
             title_glyph_format,
             group_format,
             badge_format,
+            folder_badge_format,
             tool_text,
             note_footer_format,
             clock_time_format,
@@ -2059,6 +2070,84 @@ impl FenceChrome {
     /// a smart fence's `count` after it) starts, the fitted title and the room the title gets.
     /// The title gives way first: the count stays whole.
     #[allow(clippy::too_many_arguments)]
+    /// Room a smart fence's count capsule takes at the right end of the title row (its gap
+    /// before the chevron included).
+    fn count_capsule_w(&self, count: &str) -> f32 {
+        crate::text::measure_width(count, &self.badge_format) + COUNT_CAPSULE_PAD * 2.0 + 8.0
+    }
+
+    /// 智能栅栏: the count as a grey capsule right before the chevron's place, so it never reads
+    /// as part of the name (mail apps show a folder's count the same way).
+    #[allow(clippy::too_many_arguments)]
+    fn draw_count_capsule(
+        &self,
+        session: &DrawingSession<'_>,
+        theme: &Theme,
+        foreground: &Theme,
+        count: &str,
+        width: f32,
+        title_h: f32,
+        alpha: f32,
+    ) -> Result<()> {
+        let w = crate::text::measure_width(count, &self.badge_format) + COUNT_CAPSULE_PAD * 2.0;
+        let right = TitleDeco::chevron_box(width, title_h).left - 2.0;
+        let r = Rect::from_xywh(
+            right - w,
+            ((title_h - COUNT_CAPSULE_H) * 0.5).round(),
+            w,
+            COUNT_CAPSULE_H,
+        );
+        // ControlFillColorSecondary-like: a faint wash of the text colour.
+        let wash = if theme.mode == crate::theme::ThemeMode::Dark {
+            ColorF::from_rgba8(0xFF, 0xFF, 0xFF, 0x1A)
+        } else {
+            ColorF::from_rgba8(0, 0, 0, 0x0F)
+        };
+        let fill = session.create_solid_brush(with_alpha(wash, alpha))?;
+        session.fill_rounded_rect(&RoundedRect::uniform(r, COUNT_CAPSULE_H * 0.5), &fill);
+        let ink = session.create_solid_brush(with_alpha(foreground.text_secondary, alpha))?;
+        session.draw_text(count, &self.badge_format, &r, &ink);
+        Ok(())
+    }
+
+    /// 智能栅栏: the 10 px magnifier over the lower right of the folder glyph at `x`, in the
+    /// accent, with a 1 px ring in the title row's colour (eight copies around it) so the
+    /// folder's lines stop short of it; drawn twice half a DIP apart for the folder's weight.
+    fn draw_folder_badge(
+        &self,
+        session: &DrawingSession<'_>,
+        theme: &Theme,
+        x: f32,
+        title_h: f32,
+        alpha: f32,
+    ) -> Result<()> {
+        let ring = if theme.mode == crate::theme::ThemeMode::Dark {
+            ColorF::from_rgba8(0x20, 0x20, 0x20, 0xF0)
+        } else {
+            ColorF::from_rgba8(0xF2, 0xF6, 0xFA, 0xF0)
+        };
+        let ring = session.create_solid_brush(with_alpha(ring, alpha))?;
+        let accent = session.create_solid_brush(with_alpha(theme.accent, alpha))?;
+        let r = Rect::from_xywh(x + 8.0, title_h * 0.5 - 2.0, 12.0, 12.0);
+        for (dx, dy) in [
+            (-1.0, -1.0),
+            (0.0, -1.0),
+            (1.0, -1.0),
+            (-1.0, 0.0),
+            (1.0, 0.0),
+            (-1.0, 1.0),
+            (0.0, 1.0),
+            (1.0, 1.0),
+        ] {
+            let o = Rect::from_xywh(r.left + dx, r.top + dy, r.width(), r.height());
+            session.draw_text("\u{E721}", &self.folder_badge_format, &o, &ring);
+        }
+        session.draw_text("\u{E721}", &self.folder_badge_format, &r, &accent);
+        let r2 = Rect::from_xywh(r.left + 0.5, r.top, r.width(), r.height());
+        session.draw_text("\u{E721}", &self.folder_badge_format, &r2, &accent);
+        Ok(())
+    }
+
     fn lone_title_place(
         &self,
         title: &str,
@@ -2076,11 +2165,12 @@ impl FenceChrome {
             16.0
         };
         let glyph_w = deco.glyphs_w();
-        let end = width - TITLE_RIGHT_RESERVE - reserve;
-        let count_w = count.map_or(0.0, |c| crate::text::measure_width(c, fmt));
-        let title_w = (end - start - glyph_w - count_w).max(0.0);
+        // A smart fence's count is a capsule at the right end, before the chevron.
+        let end =
+            width - TITLE_RIGHT_RESERVE - reserve - count.map_or(0.0, |c| self.count_capsule_w(c));
+        let title_w = (end - start - glyph_w).max(0.0);
         let fitted = crate::text::fit_width(title, fmt, title_w);
-        let unit_w = glyph_w + crate::text::measure_width(&fitted, fmt).min(title_w) + count_w;
+        let unit_w = glyph_w + crate::text::measure_width(&fitted, fmt).min(title_w);
         (aligned_x(align, width, start, end, unit_w), fitted, title_w)
     }
 
@@ -2634,10 +2724,11 @@ impl FenceChrome {
                 // the up button (E74A), as in a folder tab; at the root it opens the folder in
                 // Explorer, with the same hover fill and pressed look.
                 let slot = Rect::from_xywh(x - 2.0, 0.0, 20.0, title_h);
-                // 智能栅栏: a magnifier in the glyph's place, not a button (a smart fence shows
+                // 智能栅栏: the folder with a magnifier badge, not a button (a smart fence shows
                 // no folder of its own to open).
                 if deco.search_glyph && !deco.up_button {
-                    session.draw_text("\u{E721}", &self.title_glyph_format, &slot, &secondary);
+                    session.draw_text("\u{E8B7}", &self.title_glyph_format, &slot, &secondary);
+                    self.draw_folder_badge(session, theme, x, title_h, title_a)?;
                 } else {
                     let box_r = glyph_up_square(x + 8.0, title_h);
                     draw_up_box_fill(session, &backdrop, theme, scale, box_r, state, title_a)?;
@@ -2674,22 +2765,17 @@ impl FenceChrome {
                 &text,
                 fx,
             );
-            // 智能栅栏: the number of files shown, right after the name in the secondary ink
-            // (part of the title row, never of the name).
+            // 智能栅栏: the number of files shown, in its capsule at the right end.
             if let Some(count) = title_count {
-                let after = x + crate::text::measure_width(&fitted, title_format).min(title_w);
-                let w = crate::text::measure_width(count, title_format) + 2.0;
-                let fx = legible
-                    .as_ref()
-                    .map(|l| l.fx(theme, foreground.text_secondary, title_a, false));
-                self.draw_caption(
+                self.draw_count_capsule(
                     session,
+                    theme,
+                    &foreground,
                     count,
-                    title_format,
-                    &Rect::from_xywh(after, 0.0, w, title_h),
-                    &secondary,
-                    fx,
-                );
+                    width,
+                    title_h,
+                    title_a,
+                )?;
             }
         }
         if count_a > 0.0

@@ -204,7 +204,7 @@ pub struct FenceViewState {
     /// The portal's folder could not be found (its empty state says so).
     pub(super) portal_missing: bool,
     /// The empty-state text in place of the usual one (a smart fence's state, a filter that
-    /// matches nothing), and a smart fence's count drawn after its name (" · 6"; see
+    /// matches nothing), and a smart fence's count in its capsule at the right ("6"; see
     /// `FenceWindow::set_status_view`).
     pub(super) empty_override: Option<&'static str>,
     pub(super) title_count: Option<String>,

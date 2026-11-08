@@ -174,7 +174,7 @@ impl FenceViewState {
         let scale = self.scale();
         let (x, y) = (x_px as f32 / scale, y_px as f32 / scale);
         let width = self.chrome_panel.size_px().0 as f32 / scale;
-        // As drawn: a smart fence's count follows its name, so no rolled count at the right.
+        // As drawn: a smart fence's count is its capsule, so no rolled count at the right.
         let reserve = if self.roll_target()
             && !self.behavior.hide_count_and_chevron.get()
             && self.title_count.is_none()

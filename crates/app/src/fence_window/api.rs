@@ -1341,7 +1341,8 @@ impl FenceWindow {
 
     /// What the fence says while it shows nothing (`empty`: a smart fence searching, finding
     /// nothing or needing Everything, a filter matching nothing; None = the usual text) and a
-    /// smart fence's count after its name (`count`, " · 6"; None for any other fence).
+    /// smart fence's count in its capsule at the right of the title row (`count`, "6"; None
+    /// for any other fence).
     pub fn set_status_view(&self, empty: Option<&'static str>, count: Option<String>) {
         self.with_view(|v| {
             if v.empty_override == empty && v.title_count == count {
