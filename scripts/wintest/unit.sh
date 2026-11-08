@@ -3,7 +3,8 @@
 # desktop anchor tests fail in an ssh session).
 #   unit.sh [run.sh options]
 # Tests that read source files find them through CARGO_MANIFEST_DIR, a dev box path that
-# Windows reads as C:\home\...: the job unpacks crates/, ui/ and locales/ there first.
+# Windows reads as C:\home\...: the job unpacks crates/, ui/, locales/ and the PC status
+# test script there first.
 # WINTEST_REPO=<checkout> tests another checkout.
 set -uo pipefail
 KIT=$(cd "$(dirname "$0")" && pwd)
@@ -27,7 +28,7 @@ for line in sys.stdin:
 n=$(ls "$EX/exe" | wc -l)
 [ "$n" -gt 0 ] || { echo "no test executables built"; exit 2; }
 cp third_party/webview2/WebView2Loader.x64.dll "$EX/exe/WebView2Loader.dll"
-tar -cf "$EX/src.tar" crates ui/src ui/index.html locales 2>/dev/null || tar -cf "$EX/src.tar" crates locales
+tar -cf "$EX/src.tar" crates ui/src ui/index.html locales scripts/test-pc-status.ps1 2>/dev/null || tar -cf "$EX/src.tar" crates locales
 echo "$REPO" > "$EX/repo-path.txt"
 echo "$n test executables"
 exec "$KIT/run.sh" --extra "$EX" "$@" "$KIT/tests/unit.ps1"
