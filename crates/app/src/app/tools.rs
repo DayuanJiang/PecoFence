@@ -375,6 +375,10 @@ impl App {
             return;
         }
         let path = std::path::PathBuf::from(&spec.path);
+        if !self.script_runs.streams.contains_key(&id) && crate::scripts::update_old_example(&path)
+        {
+            tracing::info!(%id, "script fence runs the updated example");
+        }
         if crate::scripts::is_streamable(&path) {
             self.start_stream(id, &spec, action);
             return;
@@ -794,15 +798,7 @@ impl App {
                 pecofence_core::i18n::Language::SimplifiedChinese
                     | pecofence_core::i18n::Language::TraditionalChinese
             );
-            // Windows PowerShell 5.1 reads a script without a BOM in the ANSI code page: the
-            // emoji and Chinese text need the BOM, and Notepad keeps CRLF.
-            let text = crate::scripts::example(kind, chinese);
-            let text = format!(
-                "\u{feff}{}",
-                text.trim_start_matches('\u{feff}')
-                    .replace("\r\n", "\n")
-                    .replace('\n', "\r\n")
-            );
+            let text = crate::scripts::example_file_text(kind, chinese);
             let written = std::fs::create_dir_all(&dir).and_then(|_| std::fs::write(&path, text));
             if let Err(e) = written {
                 tracing::warn!(error = %e, example = kind.name(), "writing the example failed");
