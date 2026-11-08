@@ -5,6 +5,10 @@
 # (Finder): a text naming a type offers it, Tab takes it, kind: words become one, Backspace in
 # an empty box takes it back, the kept tag shows the type and the text apart, and
 # 把筛选存为智能栅栏 keeps it as an extension condition. Chinese UI.
+# Review fixes: 「N 个结果」 counts every result, 「在 Everything 里查看全部结果」 keeps the tab, a
+# shortcut is a program by its target, kind:docx is not cut at kind:doc, Tab leaves no hidden
+# character, a rolled filtered fence shows the tag only, a tab strip names the type, and the
+# Ctrl+Tab hint is translated and stays in view in long languages.
 $Dl = '最近 7 天下载'; $Fold = '下载'
 function Laid() { return @(PfLogAll | Where-Object { $_ -match 'search list laid out' -and $_ -notmatch 'omitted' }) | Select-Object -Last 1 }
 function Results($line) { if ($line -match 'results=(\d+)') { return [int]$Matches[1] }; return -1 }
@@ -99,7 +103,99 @@ $saved = @(@(PfJson fence list) | Where-Object { $_ -and $_.smart -and $_.title 
 $spec = if ($saved.Count) { (FenceGet $saved[0].title).smart.spec } else { $null }
 Check 'a smart fence 下载：类型：PNG over the folder with the .png condition' ($saved.Count -eq 1 -and (@($spec.allOf) | Where-Object { $_.cond -eq 'ext' -and @($_.value) -contains '.png' })) "$($saved.title) $($spec | ConvertTo-Json -Compress -Depth 5)"
 
+Case 'the total, and 在 Everything 里查看全部结果 keeps the tab'
+$Tot = Join-Path $PfDocs 'pf-total'
+1..12 | ForEach-Object { AgedFile $Tot ('季度附件{0:D2}.txt' -f $_) 9 | Out-Null }
+Start-Sleep -Seconds 2
+Pf peek start --search '季度附件' | Out-Null; Start-Sleep -Seconds 3
+$l = WaitTab '全部'
+$total = if ($l -match 'total=(\d+)') { [int]$Matches[1] } else { -1 }
+Check '「N 个结果」 counts all 12 files, more than the rows shown' ($total -eq 12 -and (Results $l) -lt 12) "$l"
+Shot 't04-total'
+Pf peek end | Out-Null; Start-Sleep -Seconds 1
+Pf peek start --search '季度' | Out-Null; Start-Sleep -Seconds 3
+WaitTab '全部' | Out-Null
+ClickTab 2; WaitTab '文档' | Out-Null
+$r = Rect (SearchWin)
+[G]::Click([int]($r.L + 200), [int]($r.B - 110)); Start-Sleep -Seconds 3
+$shown = @(PfLogAll | Where-Object { $_ -match 'search: shown in Everything' -and $_ -notmatch 'omitted' }) | Select-Object -Last 1
+Check '在 Everything 里查看全部结果 on 文档: Everything gets the type words too' ("$shown" -match 'ext:' -and "$shown" -match 'types=1') "$shown"
+Get-Process Everything -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne [IntPtr]::Zero } | ForEach-Object { [L]::PostMessageW($_.MainWindowHandle, 0x10, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null }
+Start-Sleep -Seconds 1
+
+Case 'a shortcut is a program by its target'
+$sh = New-Object -ComObject WScript.Shell
+# ASCII names: WScript.Shell cannot save a shortcut with Chinese in its path on this box.
+$a = $sh.CreateShortcut((Join-Path $PfDl 'pfkj-notes.lnk')); $a.TargetPath = "$env:WINDIR\win.ini"; $a.Save()
+$b = $sh.CreateShortcut((Join-Path $PfDl 'pfkj-tool.lnk')); $b.TargetPath = "$env:WINDIR\notepad.exe"; $b.Save()
+Start-Sleep -Seconds 3
+Pf peek start --search 'pfkj' | Out-Null; Start-Sleep -Seconds 3
+$all = WaitTab '全部'
+ClickTab 7
+$prog = WaitTab '程序'
+Check '程序 in the Peek: the shortcut to notepad only, half of 全部' ((Results $all) -ge 2 -and (Results $prog) * 2 -eq (Results $all)) "all=$all prog=$prog"
+Pf peek end | Out-Null; Start-Sleep -Seconds 1
+FocusFence $Fold; [G]::Press(0x1B); Start-Sleep -Milliseconds 700
+Chord 0x11 0x46; Start-Sleep -Milliseconds 800
+[G]::Type('kind:programs '); Start-Sleep -Milliseconds 900
+Check '程序 in the filter box: the shortcut to notepad only' ((FilterOf $Fold).text -eq 'kind:programs' -and (WaitFilterShown $Fold 1)) ((FilterOf $Fold) | ConvertTo-Json -Compress)
+[G]::Press(0x1B); Start-Sleep -Milliseconds 700
+
+Case 'kind:docx is not cut at kind:doc; Tab leaves no character behind'
+FocusFence $Fold; Chord 0x11 0x46; Start-Sleep -Milliseconds 800
+$n0 = @(PfLogAll | Where-Object { $_ -match 'a typed type word became a chip' -and $_ -notmatch 'omitted' }).Count
+[G]::Type('kind:docx'); Start-Sleep -Milliseconds 900
+$early = @(PfLogAll | Where-Object { $_ -match 'a typed type word became a chip' -and $_ -notmatch 'omitted' }).Count - $n0
+[G]::Type(' '); Start-Sleep -Milliseconds 900
+$chip = @(PfLogAll | Where-Object { $_ -match 'a typed type word became a chip' -and $_ -notmatch 'omitted' }) | Select-Object -Last 1
+Check 'no chip while typing kind:docx; the space makes it one' ($early -eq 0 -and "$chip" -match 'token=kind:docx') "early=$early $chip"
+FenceCrop $Fold 'f04-docx' 10 | Out-Null
+[G]::Press(0x08); Start-Sleep -Milliseconds 700
+[G]::Type('kind:xlsx'); Start-Sleep -Milliseconds 700; [G]::Press(0x09); Start-Sleep -Milliseconds 800
+$fin = @(PfLogAll | Where-Object { $_ -match 'Tab finishes the kind: word' -and $_ -notmatch 'omitted' }).Count
+Check 'Tab finishes kind:xlsx into a chip' ($fin -ge 1 -and (FilterOf $Fold).text -eq 'kind:xlsx') "fin=$fin $((FilterOf $Fold) | ConvertTo-Json -Compress)"
+[G]::Press(0x08); Start-Sleep -Milliseconds 700
+[G]::Type('pdf'); Start-Sleep -Milliseconds 900; [G]::Press(0x09); Start-Sleep -Milliseconds 800
+$took = (FilterOf $Fold).text
+[G]::Press(0x08); Start-Sleep -Milliseconds 900
+$now = FilterOf $Fold
+Check 'after Tab took 类型：PDF, one Backspace takes it back' ($took -eq 'kind:pdf' -and ($now -eq $null -or -not $now.text)) "took=$took now=$($now | ConvertTo-Json -Compress)"
+[G]::Press(0x1B); Start-Sleep -Milliseconds 700
+
+Case 'a rolled filtered fence shows the tag only'
+FocusFence $Fold; Chord 0x11 0x46; Start-Sleep -Milliseconds 800
+[G]::Type('kind:png '); Start-Sleep -Milliseconds 700; [G]::Press(0x0D); Start-Sleep -Milliseconds 800
+Pf fence roll $Fold | Out-Null; [G]::MoveTo(1250, 780); Start-Sleep -Seconds 2
+$w = DumpOf $Fold
+Check 'rolled with a filter: the tag, no 「N 项」 beside it' ($w.raw -match 'rolled=true' -and $w.raw -match 'filter_tag=Some' -and $w.raw -match 'rolled_count=false') ([regex]::Match($w.raw, 'rolled=\S+').Value + ' ' + [regex]::Match($w.raw, 'filter_tag=\S+ \S+ \S+').Value + ' ' + [regex]::Match($w.raw, 'rolled_count=\S+').Value)
+FenceCrop $Fold 'f05-rolled' 10 | Out-Null
+Pf fence unroll $Fold | Out-Null; Start-Sleep -Seconds 1
+
+Case 'a tab strip names the type'
+Pf fence create --portal $PfDocs --title '文档' --rect '460,360,420,300' | Out-Null; Start-Sleep -Seconds 2
+# 下载 hosts the strip and stays the shown tab: its title carries the filter.
+Pf fence merge '文档' --into $Fold | Out-Null; Start-Sleep -Seconds 2
+# The merged tab is shown: a click on the 下载 pill shows the filtered host again.
+$wr = (FenceGet $Fold).windowRect; [G]::Click([int]$wr.x + 40, [int]$wr.y + 17); Start-Sleep -Milliseconds 900
+[G]::MoveTo(1250, 780); Start-Sleep -Seconds 1
+$w = DumpOf $Fold
+Check 'the strip: 下载 · 筛选：类型：PNG' ($w -and $w.raw -match 'title="下载 · 筛选：类型：PNG"') ([regex]::Match("$($w.raw)", 'title="[^"]*"').Value + ' ' + [regex]::Match("$($w.raw)", 'tab_fonts=\[[^\]]*\]').Value)
+FenceCrop $Fold 'f06-strip' 10 | Out-Null
+
+Case 'the Ctrl+Tab hint stays in view in long languages'
+foreach ($lng in 'es', 'it', 'pt-BR', 'de') {
+  PfStart -Lang $lng -Script (DumpScript 500 15)
+  Pf peek start --search 'zz' | Out-Null; Start-Sleep -Seconds 3
+  $t = @(PfLogAll | Where-Object { $_ -match 'search tabs drawn' }) | Select-Object -Last 1
+  $room = if ("$t" -match 'hint_room=(-?\d+)') { [int]$Matches[1] } else { -999 }
+  $want = if ($lng -eq 'de') { 'hint=Strg\+Tab' } else { 'hint=Ctrl\+Tab' }
+  Check "${lng}: the hint is in view ($want)" ($room -ge 0 -and "$t" -match $want) "$t"
+  Shot "t05-tabs-$lng"
+  Pf peek end | Out-Null; Start-Sleep -Seconds 1
+}
+
 Case 'cleanup'
 PfQuit
+Remove-Item -LiteralPath (Join-Path $PfDocs 'pf-total') -Recurse -ErrorAction SilentlyContinue
 Remove-Item -LiteralPath (Join-Path $PfDocs '季度计划.docx') -ErrorAction SilentlyContinue
 ClearDownloads

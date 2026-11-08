@@ -402,7 +402,7 @@ fn paint_box(hwnd: HWND) {
             - px(2.0) * (tabs - 1)
             - labels_w;
         // The strip takes 2 pads per tab less half a pad at the left: 2 * spare / (4 * tabs - 1).
-        let pad = (2 * spare / (4 * tabs - 1)).clamp(px(4.0), px(TAB_PAD));
+        let pad = (2 * spare / (4 * tabs - 1)).clamp(px(3.0), px(TAB_PAD));
         let mut x = px(ROW_PAD) - pad / 2;
         s.tab_spans.clear();
         for i in 0..=type_filter::TABS.len() {
@@ -428,7 +428,8 @@ fn paint_box(hwnd: HWND) {
             s.tab_spans.push((r.left, r.right));
             x = r.right + px(2.0);
         }
-        tracing::debug!(spans = ?s.tab_spans, tab = tab_label(s.tab), pad, hint_room = w - px(ROW_PAD) - x - p.text_width(&hint, &s.detail_font), "search tabs drawn");
+        let hint_room = w - px(ROW_PAD) - x - p.text_width(&hint, &s.detail_font);
+        tracing::debug!(spans = ?s.tab_spans, tab = tab_label(s.tab), pad, %hint, hint_room, "search tabs drawn");
         p.text(
             RECT {
                 left: x,
