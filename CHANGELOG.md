@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- A type filter, as asked: the Peek search has a row of type tabs under the box (全部, 文件夹, 文档, 图片, 视频, 音乐, 压缩包, 程序) as Windows 11's Start search does; a click or Ctrl+Tab / Ctrl+Shift+Tab picks one, and the fences' matches and Everything's results keep only that type; 「把这次搜索放到桌面」 takes it along as the smart fence's 类型 condition. In the 筛选 box a type is a tag, as in Finder: type pdf or 图片, press Tab, and the fence shows only that type while you go on typing a name; Backspace in the empty box removes it, and 把筛选存为智能栅栏 keeps it.
 - A smart fence's title now reads as a saved search: a folder with a small magnifier badge (as Windows' Saved Searches and Outlook's Search Folders show one), and the number of files in a grey capsule at the right end of the title row, so it no longer looks like part of the name. The magnifier alone looked like a search button.
 - The 筛选 box looks like Windows 11's search box: rounded, a magnifier, the hint 「筛选“下载”」, how many files show (「4 / 31」) and × to clear the text. After Enter a fence with one title keeps its name and shows a tag with the text before the chevron; its × clears the filter.
 - The Peek search list follows Windows 11: rounded, a heading over every group (「栅栏里」, 「整台电脑（Everything）」, 「操作」), a glyph on the two action rows, the Ctrl+digit only on the highlighted row, and a bottom bar with the keys (↵ 打开, Ctrl+Enter 打开所在文件夹, → 更多操作) and the number of results. Chinese names in the list show in Simplified forms on English Windows too (下载 came out as 下載).
