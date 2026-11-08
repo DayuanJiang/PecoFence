@@ -4566,16 +4566,21 @@ mod tests {
             "季度报告 2026 第三季度 预算 草稿 修改版",
             "3 / 31",
         );
+        // Wide: all of it. Medium: the text shortened, the tag within 60 % of the row.
         let wide = chrome.filter_tag_rect(1200.0, 36.0, long, None);
-        let narrow = chrome.filter_tag_rect(240.0, 36.0, long, None);
-        assert!(narrow.width() < wide.width());
-        assert!(narrow.width() <= 240.0 * 0.6 + 1.0, "{narrow:?}");
-        let short = chrome.filter_tag_rect(240.0, 36.0, ("类型：PDF", "", "3 / 31"), None);
-        assert!(narrow.width() >= short.width());
         assert_eq!(chrome.tag_text(1200.0, long, None), long.1);
+        let medium = chrome.filter_tag_rect(400.0, 36.0, long, None);
+        let cut = chrome.tag_text(400.0, long, None);
+        assert!(medium.width() < wide.width());
+        assert!(medium.width() <= 400.0 * 0.6 + 1.0, "{medium:?}");
+        assert!(cut.ends_with('…') && cut.chars().count() > 1, "{cut}");
+        // Narrow: the type chip, the count and × alone, never cut.
+        let bare = ("类型：PDF", "", "3 / 31");
+        let narrow = chrome.filter_tag_rect(240.0, 36.0, long, None);
+        let fixed = chrome.filter_tag_rect(240.0, 36.0, bare, None);
         assert!(
-            chrome.tag_text(240.0, long, None).ends_with('…')
-                || chrome.tag_text(240.0, long, None).is_empty()
+            (narrow.width() - fixed.width()).abs() < 1.0,
+            "{narrow:?} {fixed:?}"
         );
     }
 
