@@ -759,14 +759,24 @@ impl App {
                         }
                     }
                 }
-                Some(name @ ("pickSmartFolder" | "refreshSmart")) => {
+                Some(name @ ("editSmart" | "refreshSmart")) => {
                     let fence = v
                         .get("id")
                         .and_then(|i| i.as_str())
                         .and_then(|i| uuid::Uuid::parse_str(i).ok())
                         .filter(|id| self.state.smart_spec(*id).is_some());
                     match (name, fence) {
-                        ("pickSmartFolder", Some(id)) => self.pick_smart_folder(id),
+                        // 编辑条件…: the editor opens on the settings window's monitor.
+                        ("editSmart", Some(id)) => {
+                            let at = self
+                                .settings
+                                .as_ref()
+                                .map(|h| window::window_rect(h.hwnd()))
+                                .map_or((0, 0), |r| {
+                                    ((r.left + r.right) / 2, (r.top + r.bottom) / 2)
+                                });
+                            self.open_smart_editor(Some(id), at, "settings page");
+                        }
                         (_, Some(id)) => {
                             self.run_smart(id, "settings page");
                             self.push_settings_state();

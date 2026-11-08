@@ -850,30 +850,6 @@ impl App {
         self.ensure_smart_watchers();
     }
 
-    /// The settings page's 「选择文件夹…」 for smart fence `fence`.
-    pub(super) fn pick_smart_folder(&mut self, fence: FenceId) {
-        let start = self
-            .state
-            .smart_spec(fence)
-            .and_then(|s| s.folders.first().cloned());
-        tracing::info!(%fence, has_folder = start.is_some(), "smart fence: picking a folder");
-        let owner = self.settings.as_ref().map(|h| h.hwnd());
-        match pecofence_platform::filedialog::pick_folder(
-            owner,
-            pecofence_core::i18n::text("选择智能栅栏要搜索的文件夹"),
-        ) {
-            Ok(Some(dir)) => {
-                let dir = crate::state::canonical_path(dir)
-                    .to_string_lossy()
-                    .into_owned();
-                self.change_smart(fence, super::fence_options::SmartChange::Folders(vec![dir]));
-            }
-            Ok(None) => tracing::info!(%fence, "smart fence: folder picker cancelled"),
-            Err(e) => tracing::warn!(error = %e, "smart fence: folder picker failed"),
-        }
-        self.push_settings_state();
-    }
-
     /// Whether smart fence `id` waits for Everything (every drive, or a typed Everything
     /// search, while it does not run).
     pub(super) fn smart_needs_everything(&self, id: FenceId) -> bool {
