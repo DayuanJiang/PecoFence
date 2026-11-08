@@ -701,6 +701,17 @@ impl App {
             )
             .icon(glyph::SEARCH);
             if self.fence_filter(fence).is_some() {
+                // A 任一 search of two rows or more and the filter cannot be one search: the
+                // filter would be one more 任一 row, and the fence would show far more.
+                let any_rows = f
+                    .smart
+                    .as_ref()
+                    .filter(|s| s.matching == pecofence_core::smart::SmartMatch::Any)
+                    .map_or(0, |s| s.rows());
+                let off = any_rows >= 2;
+                if off {
+                    tracing::info!(%fence, rows = any_rows, "save filter as smart fence: off for an any search of several rows");
+                }
                 menu.item(
                     CMD_FENCE_FILTER_CLEAR,
                     pecofence_core::i18n::text("清除筛选\tEsc"),
@@ -711,9 +722,14 @@ impl App {
                     CMD_FENCE_SAVE_SMART,
                     pecofence_core::i18n::text("把筛选存为智能栅栏"),
                     false,
-                    false,
+                    off,
                 )
                 .icon(glyph::SEARCH);
+                if off {
+                    menu.tip(pecofence_core::i18n::text(
+                        "这个栅栏的条件是「任一」，筛选没法和它合成一个搜索，所以不能存。",
+                    ));
+                }
             }
         }
         // 智能栅栏: change the search, run it now, see its folders, start or get Everything.

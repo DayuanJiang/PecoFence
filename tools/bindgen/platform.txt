@@ -213,6 +213,9 @@
     UnhookWindowsHookEx
     CallNextHookEx
     WH_MOUSE_LL
+    WH_CALLWNDPROC
+    CWPSTRUCT
+    GetMenuItemRect
     WM_MOUSEHWHEEL
     WM_XBUTTONDOWN
     VK_LBUTTON

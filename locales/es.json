@@ -907,5 +907,6 @@
   "这个栅栏用了 Everything 语法，需要先打开 Everything：右键这个栅栏可以启动或安装它。": "Este grupo usa la sintaxis de Everything, que debe estar abierto: haz clic derecho en el grupo para abrirlo o instalarlo.",
   "「来源」不能作为智能栅栏的条件，请删掉这一行": "«Origen» no puede ser una condición de un grupo inteligente. Quite esta fila",
   "至少要有一行位置": "Hace falta al menos una fila de ubicación",
-  "这个栅栏的条件刚在别处改过，按「好」会换成这里的条件": "Las condiciones de este grupo acaban de cambiar en otro sitio; «Aceptar» pone en su lugar las de aquí"
+  "这个栅栏的条件刚在别处改过，按「好」会换成这里的条件": "Las condiciones de este grupo acaban de cambiar en otro sitio; «Aceptar» pone en su lugar las de aquí",
+  "这个栅栏的条件是「任一」，筛选没法和它合成一个搜索，所以不能存。": "Las condiciones de este grupo usan «alguna de» y el filtro no puede unirse a ellas en una sola búsqueda, así que no se puede guardar."
 }

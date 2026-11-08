@@ -141,6 +141,18 @@ impl SmartSpec {
         !self.folders.is_empty() && self.everything.is_none()
     }
 
+    /// The rows 全部 / 任一 decide (the folders and subfolders always apply): the conditions,
+    /// the time window, the name and the Everything text. With one row or none, `any` and
+    /// `all` find the same files.
+    pub fn rows(&self) -> usize {
+        let text =
+            |t: &Option<String>| usize::from(t.as_deref().is_some_and(|t| !t.trim().is_empty()));
+        self.all_of.len()
+            + usize::from(self.within_days.is_some())
+            + text(&self.name)
+            + text(&self.everything)
+    }
+
     /// Whether a condition looks at shortcut targets (the target condition, the program type),
     /// which costs a COM round trip per shortcut to read.
     pub fn needs_shortcut_targets(&self) -> bool {
@@ -911,6 +923,18 @@ mod tests {
         spec.matching = SmartMatch::Any;
         spec.everything = None;
         assert_eq!(spec.problem(), None, "no typed text");
+    }
+
+    /// The rows 全部 / 任一 decide: conditions, the time window, the name and the typed text.
+    #[test]
+    fn rows_count_what_all_or_any_decides() {
+        let mut spec = Template::Downloads.spec(&folders()).unwrap();
+        assert_eq!(spec.rows(), 2, "files only and the last 7 days");
+        spec.name = Some(" ".into());
+        assert_eq!(spec.rows(), 2, "an empty name is no row");
+        spec.everything = Some("x".into());
+        assert_eq!(spec.rows(), 3);
+        assert_eq!(SmartSpec::default().rows(), 0);
     }
 
     #[test]

@@ -106,6 +106,51 @@ Check 'a new matching download joins the filtered fence' (WaitFilterShown $D 4 1
 $w = DumpOf $D
 Check 'the count after the name is what the filter shows' ($w.raw -match 'title_count=Some\(" · 4"\)') ([regex]::Match($w.raw, 'title_count=\S+ \S*').Value)
 Shot 'r05-smart-filtered'
+Case 'save the filter of a smart fence: all, any of one row, any of two rows'
+# 全部: the filter is one more condition.
+$m = FenceMenuOf $D
+MenuPick '^Save filter as a smart fence' $m | Out-Null
+Start-Sleep -Seconds 2
+$s = SmartOf "${D}: pdf"
+Check 'an all fence: saved, the filter as its name, all' ($s -and $s.match -eq 'all' -and $s.spec.name -eq 'pdf' -and $s.spec.withinDays -eq 7) ($s.spec | ConvertTo-Json -Compress -Depth 4)
+Check 'it shows what the filtered fence showed (the recent PDFs)' (WaitSmart "${D}: pdf" { $s.shown -eq 4 } 20) (SmartLine "${D}: pdf")
+# 任一 of one row is 全部: saved as all.
+Pf fence create --title 'Any one' --smart-folder $PfDl --ext pdf --match any --rect '40,500,420,300' | Out-Null
+Check 'any of one row is filled' (WaitSmart 'Any one' { $s.shown -ge 3 } 20) (SmartLine 'Any one')
+FocusFence 'Any one'
+Chord 0x11 0x46; Start-Sleep -Milliseconds 500
+[G]::Type('contract'); Start-Sleep -Milliseconds 500
+[G]::Press(0x0D); Start-Sleep -Milliseconds 400
+$m = FenceMenuOf 'Any one'
+MenuPick '^Save filter as a smart fence' $m | Out-Null
+Start-Sleep -Seconds 2
+$s = SmartOf 'Any one: contract'
+Check 'any of one row: saved as all with the filter' ($s -and $s.match -eq 'all' -and $s.spec.name -eq 'contract' -and (WaitSmart 'Any one: contract' { $s.shown -eq 1 -and $n -match 'old contract' } 20)) "$($s.spec | ConvertTo-Json -Compress -Depth 4) $(SmartLine 'Any one: contract')"
+# 任一 of two rows: the item is off and its tip says why.
+Pf fence create --title 'Any two' --smart-folder $PfDl --ext pdf --within-days 3 --match any --rect '480,500,420,300' | Out-Null
+Check 'any of two rows is filled' (WaitSmart 'Any two' { $s.shown -ge 4 } 20) (SmartLine 'Any two')
+FocusFence 'Any two'
+Chord 0x11 0x46; Start-Sleep -Milliseconds 500
+[G]::Type('pdf'); Start-Sleep -Milliseconds 500
+[G]::Press(0x0D); Start-Sleep -Milliseconds 400
+$before = @(@(PfJson fence list) | Where-Object { $_ -and $_.smart }).Count
+$m = FenceMenuOf 'Any two'
+$t = MenuTexts $m
+Check 'any of two rows: Save filter as a smart fence is off' ($t -match 'Save filter as a smart fence \(off\)') $t
+$p = MenuPoint $m '^Save filter as a smart fence'
+if ($p) { [G]::MoveTo($p[0] - 30, $p[1]); Start-Sleep -Milliseconds 200; [G]::MoveTo($p[0], $p[1]); Start-Sleep -Milliseconds 900 }
+# The tip is a tooltip control beside the item: its text read by OCR.
+$tips = @([W]::Tops('tooltips_class32') | Where-Object { [W]::ProcOf($_) -eq 'pecofence' })
+$tip = ''
+foreach ($h in $tips) { $r = Rect $h; if ($r.R - $r.L -gt 40) { $tip += (OcrText $r.L $r.T ($r.R - $r.L) ($r.B - $r.T) 'menu-tip') } }
+Check 'its tip says why in one sentence' ($tip -match 'any one' -and $tip -match 'cannot be saved') "tips=$($tips.Count) $tip"
+Shot 'r06-any-save-off'
+if ($p) { [G]::Click($p[0], $p[1]); Start-Sleep -Milliseconds 800 }
+CloseMenus
+Check 'a click on it makes nothing' (@(@(PfJson fence list) | Where-Object { $_ -and $_.smart }).Count -eq $before) ''
+$log = (PfLogAll) -join "`n"
+Check 'log: off for any of several rows, any of one row saved as all' ($log -match 'save filter as smart fence: off for an any search of several rows.*rows=2' -and $log -match 'any of one row or none saved as all') ''
+
 $log = (PfLogAll) -join "`n"
 Check 'log: filter opened, changed (with the count shown), box closed, cleared, saved' ($log -match 'filter opened' -and $log -match 'filter changed.*shown=' -and $log -match 'filter box closed' -and $log -match 'filter saved as a smart fence') ''
 PfQuit

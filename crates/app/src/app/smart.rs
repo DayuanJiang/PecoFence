@@ -868,15 +868,30 @@ impl App {
             return;
         };
         let spec = match (self.state.smart_spec(fence), self.state.portal_path(fence)) {
-            // The fence's own name condition still holds: every word must match.
-            (Some(spec), _) => SmartSpec {
-                template: None,
-                name: Some(match spec.name.as_deref().map(str::trim) {
-                    Some(own) if !own.is_empty() => format!("{own} {filter}"),
-                    _ => filter.clone(),
-                }),
-                ..spec.clone()
-            },
+            // 任一 over two rows or more and the filter are not one search (the menu item is
+            // off for such a fence).
+            (Some(spec), _)
+                if spec.matching == pecofence_core::smart::SmartMatch::Any && spec.rows() >= 2 =>
+            {
+                tracing::info!(%fence, rows = spec.rows(), "filter not saved as a smart fence: an any search of several rows");
+                return;
+            }
+            // The fence's own name condition still holds: every word must match. With one row
+            // or none, 任一 is 全部: the filter joins it as one more condition that must hold.
+            (Some(spec), _) => {
+                if spec.matching == pecofence_core::smart::SmartMatch::Any {
+                    tracing::info!(%fence, rows = spec.rows(), "filter saved as a smart fence: any of one row or none saved as all");
+                }
+                SmartSpec {
+                    template: None,
+                    matching: pecofence_core::smart::SmartMatch::All,
+                    name: Some(match spec.name.as_deref().map(str::trim) {
+                        Some(own) if !own.is_empty() => format!("{own} {filter}"),
+                        _ => filter.clone(),
+                    }),
+                    ..spec.clone()
+                }
+            }
             (None, Some(dir)) => SmartSpec {
                 folders: vec![dir.to_string_lossy().into_owned()],
                 subfolders: false,

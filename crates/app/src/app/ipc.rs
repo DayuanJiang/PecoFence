@@ -934,12 +934,8 @@ impl App {
                         ));
                     }
                     // Files only is one of the rows: with any, every file of the folders passes.
-                    let rows = spec.all_of.len()
-                        + usize::from(spec.within_days.is_some())
-                        + usize::from(spec.name.is_some())
-                        + usize::from(spec.everything.is_some());
                     if spec.matching == pecofence_core::smart::SmartMatch::Any
-                        && rows > 1
+                        && spec.rows() > 1
                         && spec
                             .all_of
                             .iter()
