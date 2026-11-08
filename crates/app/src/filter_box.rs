@@ -66,12 +66,29 @@ impl FilterSession {
     }
 }
 
-/// The text changed: `kind:` / `类型:` words become chips, a text that names a type offers it.
+/// The finished `kind:` / `类型:` words of `text` (a space after them; the last word may still
+/// grow, kind:doc into kind:docx) and the text without them.
+fn finished_types(text: &str) -> (Vec<TypeToken>, String) {
+    let all_done = text.ends_with(char::is_whitespace);
+    let words: Vec<&str> = text.split_whitespace().collect();
+    let mut found = Vec::new();
+    let mut rest = Vec::new();
+    for (i, w) in words.iter().enumerate() {
+        match type_filter::parse_word(w).filter(|_| all_done || i + 1 < words.len()) {
+            Some(t) => found.push(t),
+            None => rest.push(*w),
+        }
+    }
+    (found, rest.join(" "))
+}
+
+/// The text changed: finished `kind:` / `类型:` words become chips, a text that names a type
+/// offers it (Tab takes either).
 fn type_change() {
     let rest = ACTIVE.with(|a| {
         let mut a = a.try_borrow_mut().ok()?;
         let s = a.as_mut()?;
-        let (found, rest) = type_filter::split(&s.edit.text());
+        let (found, rest) = finished_types(&s.edit.text());
         for t in found.iter().cloned() {
             if !s.tokens.contains(&t) {
                 tracing::info!(fence = %s.fence, token = %type_filter::word(&t), "filter box: a typed type word became a chip");
@@ -368,7 +385,22 @@ fn on_key(vk: u32) -> bool {
             tracing::info!(fence = %s.fence, token = %type_filter::word(&t), "filter box: Tab takes the type");
             s.tokens.push(t);
             paint::invalidate(s.window.hwnd());
-            return Some(true);
+            return Some(Some(String::new()));
+        }
+        // Tab after a kind: word still being typed finishes it.
+        if vk == 0x09 {
+            let text = s.edit.text();
+            let (found, rest) = finished_types(&format!("{text} "));
+            if !found.is_empty() {
+                tracing::info!(fence = %s.fence, chips = found.len(), "filter box: Tab finishes the kind: word");
+                for t in found {
+                    if !s.tokens.contains(&t) {
+                        s.tokens.push(t);
+                    }
+                }
+                paint::invalidate(s.window.hwnd());
+                return Some(Some(rest));
+            }
         }
         if vk == 0x08 && s.edit.text().is_empty() && s.tokens.pop().is_some() {
             tracing::info!(fence = %s.fence, "filter box: Backspace takes the last chip back");
@@ -377,21 +409,22 @@ fn on_key(vk: u32) -> bool {
                 text: s.combined(),
             });
             paint::invalidate(s.window.hwnd());
-            return Some(false);
+            return Some(None);
         }
         None
     });
     match took {
         // The text leaves for the chip after the borrow: its change pushes the filter.
-        Some(true) => {
+        Some(Some(rest)) => {
             ACTIVE.with(|a| {
                 if let Some(s) = a.borrow().as_ref() {
-                    s.edit.set_text("");
+                    s.edit.set_text(&rest);
+                    s.edit.focus_at_end();
                 }
             });
             return true;
         }
-        Some(false) => return true,
+        Some(None) => return true,
         None => {}
     }
     match vk {

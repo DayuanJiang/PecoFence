@@ -359,8 +359,12 @@ unsafe extern "system" fn subclass_proc(
             }
         }
         let multiline = GetWindowLongW(hwnd, GWL_STYLE) & ES_MULTILINE != 0;
-        if msg == WM_CHAR as u32 && ((wparam.0 == 13 && !multiline) || wparam.0 == 27) {
-            return LRESULT(0); // swallow the beep for Enter/Esc
+        // Enter, Esc and (one line) Tab: their keys act through the handler; the character
+        // would beep or, for Tab, sit hidden in the text and eat the next Backspace.
+        if msg == WM_CHAR as u32
+            && (((wparam.0 == 13 || wparam.0 == 9) && !multiline) || wparam.0 == 27)
+        {
+            return LRESULT(0);
         }
         DefSubclassProc(hwnd, msg, wparam, lparam)
     }
