@@ -378,8 +378,16 @@ pub enum Command {
     PeekSearchOpenRow(usize),
     /// Ctrl+Enter in the search box: open the folder holding the highlighted match.
     PeekSearchOpenFolder,
-    /// Right (caret at the end) or Ctrl+O in the search box: the highlighted match's actions.
+    /// Right (caret at the end), Ctrl+O, the menu key or Shift+F10 in the search box: the
+    /// highlighted match's actions, under its row.
     PeekSearchActions,
+    /// A right-click on a row of the search list: highlight it and show its actions at the
+    /// pointer (`x`, `y`: screen pixels).
+    PeekSearchRowMenu {
+        row: usize,
+        x: i32,
+        y: i32,
+    },
     /// Everything answered a search query (`WM_COPYDATA` to the search box).
     EverythingResults {
         kind: usize,

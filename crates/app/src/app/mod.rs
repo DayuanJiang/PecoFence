@@ -2621,7 +2621,8 @@ impl App {
             Command::PeekSearchOpen => self.open_search_row(self.search.sel),
             Command::PeekSearchOpenRow(row) => self.open_search_row(row),
             Command::PeekSearchOpenFolder => self.open_search_row_folder(),
-            Command::PeekSearchActions => self.show_search_actions(),
+            Command::PeekSearchActions => self.show_search_actions(None),
+            Command::PeekSearchRowMenu { row, x, y } => self.search_row_menu(row, x, y),
             Command::EverythingResults { kind, bytes } => self.on_everything_results(kind, &bytes),
             Command::ApplyRulesNow => {
                 let entries = shell::enumerate_desktop();
