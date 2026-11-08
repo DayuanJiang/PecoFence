@@ -84,7 +84,7 @@ pecofence-cli fence set Today noteText "[x] Pay rent`n[ ] Call Anna"           #
 pecofence-cli fence refresh Weather                            # script fence: run its script now; smart fence: search again
 pecofence-cli fence create --smart downloads                   # 智能栅栏: downloads|screenshots|large|psd|recent
 pecofence-cli fence create --title PDFs --smart-folder "C:\Users\me\Documents" --ext pdf --within-days 30
-pecofence-cli fence create --title Papers --smart-folder D:\Work --smart-folder E:\Old --ext pdf --name-matches invoice --match any   # several folders; any one condition
+pecofence-cli fence create --title Papers --smart-folder D:\Work --smart-folder E:\Old --ext pdf --everything invoice --match any   # several folders; any one condition
 pecofence-cli fence set PDFs smartName invoice                 # smartFolder (path or JSON array)|smartMatch all/any|smartSubfolders|smartWithinDays|smartConditions|smartName|smartEverything|smartLimit
 pecofence-cli fence open-folder Projects 2026                  # show a subfolder; fence up / fence forward go back and on
 pecofence-cli virtual-desktop list                             # Windows virtual desktops: id, number, name, current

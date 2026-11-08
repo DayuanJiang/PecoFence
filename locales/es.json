@@ -890,9 +890,7 @@
   "找不到文件夹 {0}": "No se encuentra la carpeta {0}",
   "名称太长了": "El nombre es demasiado largo",
   "现在找到 {0} 个文件": "Archivos encontrados ahora: {0}",
-  "现在找到约 {0} 个文件": "Archivos encontrados ahora: unos {0}",
   "由 Everything 搜索": "Buscado por Everything",
-  "有些条件由 PecoFence 逐个检查，这个数是估计的": "PecoFence comprueba algunas condiciones archivo por archivo, así que es una estimación",
   "Everything 没有运行，由 PecoFence 读文件夹": "Everything no está abierto, así que PecoFence lee las carpetas",
   "栅栏里显示最新的 {0} 个": "el grupo muestra los {0} más recientes",
   "填好条件后显示找到几个文件": "Complete las condiciones para ver cuántos archivos encuentran",
@@ -902,5 +900,9 @@
   "名称匹配“{0}”": "El nombre coincide con «{0}»",
   "Everything 搜索“{0}”": "Búsqueda de Everything «{0}»",
   "任一条件：": "Alguna de estas: ",
-  "选「任一」时，Everything 语法不能和这一行一起用": "Con «alguna de», la sintaxis de Everything no puede ir con esta fila"
+  "选「任一」时，Everything 语法不能和这一行一起用": "Con «alguna de», la sintaxis de Everything no puede ir con esta fila",
+  "文件很多，只检查了最新的 {0} 个": "Muchos archivos: solo se revisaron los {0} más recientes",
+  "文件很多，只读了其中的 {0} 个": "Muchos archivos: solo se leyeron {0}",
+  "用了 Everything 语法，需要先打开 Everything": "Usa la sintaxis de Everything, así que Everything debe estar abierto",
+  "这个栅栏用了 Everything 语法，需要先打开 Everything：右键这个栅栏可以启动或安装它。": "Este grupo usa la sintaxis de Everything, que debe estar abierto: haz clic derecho en el grupo para abrirlo o instalarlo."
 }

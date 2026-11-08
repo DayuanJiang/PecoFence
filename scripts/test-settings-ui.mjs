@@ -2421,16 +2421,22 @@ async function runTests() {
     ew().testReceive({ ...older, n: 99 }); await settle();
     assert(line().includes('现在找到 4 个文件') && !line().includes('99'), 'An older answer replaced the newer one: ' + line());
     ew().testHoldCount = false;
-    // About a number, the folder read, more than the limit, Everything needed.
-    ew().testCount = () => ({ source: 'everything', n: 1234, approx: true });
+    // Only the newest files checked, the folder read and where it stopped, more than the
+    // limit, Everything needed (for the whole computer, or for the syntax of a folder search).
+    ew().testCount = () => ({ source: 'everything', n: 1234, checkedNewest: 5000 });
     seType(rowsOf(doc)[4].querySelector('.se-text'), 'x'); await new Promise(r => setTimeout(r, 420));
-    assert(line().includes('现在找到约 1234 个文件') && line().includes('估计') && line().includes('栅栏里显示最新的 200 个'), 'Estimate: ' + line());
-    ew().testCount = () => ({ source: 'folder', n: 6, approx: false });
+    assert(line().includes('现在找到 1234 个文件') && line().includes('只检查了最新的 5000 个') && line().includes('栅栏里显示最新的 200 个') && !line().includes('约'), 'Newest checked: ' + line());
+    ew().testCount = () => ({ source: 'folder', n: 6, readOnly: 20000 });
     seType(rowsOf(doc)[4].querySelector('.se-text'), 'y'); await new Promise(r => setTimeout(r, 420));
-    assert(line().includes('现在找到 6 个文件') && line().includes('Everything 没有运行'), 'Folder read: ' + line());
-    ew().testCount = () => ({ source: 'needsEverything', n: 0, approx: false });
+    assert(line().includes('现在找到 6 个文件') && line().includes('Everything 没有运行') && line().includes('只读了其中的 20000 个'), 'Folder read: ' + line());
+    ew().testCount = () => ({ source: 'needsEverything', n: 0 });
+    rowsOf(doc)[4].querySelector('.se-plus').click(); await settle();
+    sePick(rowsOf(doc)[5].querySelector('.se-kind'), 'everything'); await settle();
+    seType(rowsOf(doc)[5].querySelector('.se-text'), 'invoice'); await new Promise(r => setTimeout(r, 420));
+    assert(line().includes('用了 Everything 语法，需要先打开 Everything'), 'Folder with Everything syntax: ' + line());
+    rowsOf(doc)[5].querySelector('.se-minus').click(); await settle();
     sePick(rowsOf(doc)[0].querySelector('.se-where'), 'all'); await new Promise(r => setTimeout(r, 420));
-    assert(line().includes('需要先打开 Everything'), 'Everything needed: ' + line());
+    assert(line().includes('要搜索整台电脑，需要先打开 Everything'), 'Everything needed: ' + line());
     // An unfinished row is not counted.
     const asked = posted('editorCount').length;
     seType(rowsOf(doc).at(-1).querySelector('.se-text'), ''); await new Promise(r => setTimeout(r, 420));

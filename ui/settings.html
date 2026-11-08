@@ -1870,7 +1870,8 @@
     const everything = (state.everything || {}).state;
     const shown = f.smart.shown || 0;
     const status = { everything: tf("现在显示 {0} 个文件", shown), folder: tf("现在显示 {0} 个文件", shown), needsEverything: t("没有找到文件"), waiting: t("正在搜索…") }[f.smart.source] || '';
-    const help = { everything: t("由 Everything 搜索；文件夹有变化或每过一分钟就重新搜一次"), folder: t("Everything 没有运行，由 PecoFence 读这个文件夹；有变化时自动更新"), needsEverything: t("要搜索整台电脑，需要先打开 Everything"), waiting: '' }[f.smart.source] || '';
+    const needsText = (f.smart.spec.folders || []).length ? t("用了 Everything 语法，需要先打开 Everything") : t("要搜索整台电脑，需要先打开 Everything");
+    const help = { everything: t("由 Everything 搜索；文件夹有变化或每过一分钟就重新搜一次"), folder: t("Everything 没有运行，由 PecoFence 读这个文件夹；有变化时自动更新"), needsEverything: needsText, waiting: '' }[f.smart.source] || '';
     document.getElementById('smartStatus').textContent = [status, help].filter(Boolean).join(' · ');
     const evBtn = document.getElementById('smartEverythingBtn');
     const needs = f.smart.source === 'needsEverything' && (everything === 'installed' || everything === 'missing');
@@ -2855,6 +2856,7 @@
     // A row not filled in yet waits; a search that cannot be saved says why at once.
     if (r.error) { se.countSeq++; seCountLine(esc(r.lasting ? r.error : t("填好条件后显示找到几个文件")), ''); return; }
     se.countSeq++;
+    se.countSpec = r.spec;
     send({ type: 'editorCount', seq: se.countSeq, spec: r.spec });
     // The last number stays (dimmed) until the new one comes.
     box.classList.add('busy');
@@ -2865,8 +2867,9 @@
     box.innerHTML = `<span class="ic" aria-hidden="true">&#xE721;</span><div><span class="se-n">${main}</span>${how ? `<span class="s se-how">${esc(how)}</span>` : ''}</div>`;
     if (button) { const b = document.createElement('button'); b.textContent = button.text; b.onclick = button.click; box.querySelector('div').append(b); }
   }
-  // The host's count: Everything's total, about a number while the app checks a condition on
-  // part of Everything's answer, the folder read without Everything, or Everything needed.
+  // The host's count, of the files the fence will show: Everything's total, or what matched
+  // among the newest files the app checked itself (said when not all were checked), the folder
+  // read without Everything (said when it stopped early), or Everything needed.
   function seCounted(m) {
     if (!se || m.seq !== se.countSeq) return;
     const box = document.querySelector('#seWindow .se-count');
@@ -2879,9 +2882,11 @@
     if (m.source === 'needsEverything') {
       const button = ev === 'installed' ? { text: t("启动 Everything"), click: () => send({ type: 'action', name: 'startEverything' }) }
         : ev === 'missing' ? { text: t("安装 Everything"), click: () => send({ type: 'action', name: 'installEverything' }) } : null;
-      seCountLine(esc(t("要搜索整台电脑，需要先打开 Everything")), '', button);
-    } else if (m.source === 'folder') seCountLine(num(m.approx ? t("现在找到约 {0} 个文件") : t("现在找到 {0} 个文件")), how(t("Everything 没有运行，由 PecoFence 读文件夹"), more));
-    else seCountLine(num(m.approx ? t("现在找到约 {0} 个文件") : t("现在找到 {0} 个文件")), how(m.approx ? t("有些条件由 PecoFence 逐个检查，这个数是估计的") : t("由 Everything 搜索"), more));
+      // A folder search needs Everything only for its Everything syntax.
+      const folders = se.countSpec && se.countSpec.folders.length;
+      seCountLine(esc(folders ? t("用了 Everything 语法，需要先打开 Everything") : t("要搜索整台电脑，需要先打开 Everything")), '', button);
+    } else if (m.source === 'folder') seCountLine(num(t("现在找到 {0} 个文件")), how(t("Everything 没有运行，由 PecoFence 读文件夹"), m.readOnly ? tf("文件很多，只读了其中的 {0} 个", m.readOnly) : '', more));
+    else seCountLine(num(t("现在找到 {0} 个文件")), how(t("由 Everything 搜索"), m.checkedNewest ? tf("文件很多，只检查了最新的 {0} 个", m.checkedNewest) : '', more));
   }
   function seShowError(text, at, row) {
     const w = document.getElementById('seWindow');

@@ -151,12 +151,13 @@ impl SmartSpec {
         })
     }
 
-    /// Whether only the app can tell which files match: the name filter, or a condition
-    /// Everything has no term for (shortcut target, creation time or weekday, idle days).
-    /// Everything's count is then more than the fence shows.
+    /// Whether only the app can tell which files match: the name filter, or a condition that
+    /// Everything cannot test or tests only roughly (shortcut target, creation time or
+    /// weekday, idle days, programs, installers). Everything's count is then more than the
+    /// fence shows, and the app checks the files Everything found.
     pub fn app_checks(&self) -> bool {
         self.name.as_deref().is_some_and(|n| !n.trim().is_empty())
-            || self.all_of.iter().any(|c| everything_term(c).is_none())
+            || self.all_of.iter().any(inexact)
     }
 
     /// Why the search cannot be saved (a 来源 condition, which says where a desktop icon came
@@ -199,11 +200,13 @@ impl SmartSpec {
     }
 
     /// The Everything search text: the folders (always), then the user's own Everything text,
-    /// the conditions Everything can test and the time window (`since_date`, see
-    /// [`everything_date`]): all of them, or with `any` one of them; over every drive, the
-    /// system folders are left out. The app tests every condition again on the answer
-    /// (`matches`), so a condition left out here only costs results.
-    pub fn everything_query(&self, since_date: Option<&str>) -> String {
+    /// the conditions Everything can test (exactly, or roughly as more files: a shortcut
+    /// target as `.lnk` files, idle days as written before a date) and the time window: all of
+    /// them, or with `any` one of them; over every drive, the system folders are left out.
+    /// `date_ago(n)` is the local date n days ago (see [`everything_date`]), None when unknown.
+    /// The app tests every condition again on the answer (`matches`), so a condition left out
+    /// here only costs results.
+    pub fn everything_query(&self, date_ago: &dyn Fn(u32) -> Option<String>) -> String {
         let mut terms: Vec<String> = Vec::new();
         let folders: Vec<String> = self
             .folders
@@ -239,9 +242,16 @@ impl SmartSpec {
         {
             rows.push(Some(raw.to_string()));
         }
-        rows.extend(self.all_of.iter().map(everything_term));
-        if self.within_days.is_some() {
-            rows.push(since_date.map(|date| format!("<dm:>={date}|dc:>={date}>")));
+        rows.extend(self.all_of.iter().map(|c| match c {
+            // Only a `.lnk` has a target the app reads.
+            Cond::ShortcutTarget { .. } => Some("ext:lnk".to_string()),
+            // Idle days count from the last write (a smart fence knows of no open): written on
+            // or before that day.
+            Cond::IdleDays { min } => date_ago(*min).map(|date| format!("dm:<={date}")),
+            c => everything_term(c),
+        }));
+        if let Some(days) = self.within_days {
+            rows.push(date_ago(days).map(|date| format!("<dm:>={date}|dc:>={date}>")));
         }
         if self.name.as_deref().is_some_and(|n| !n.trim().is_empty()) {
             rows.push(None);
@@ -565,7 +575,7 @@ mod tests {
     fn downloads_template_searches_the_folder_tree_by_date() {
         let spec = Template::Downloads.spec(&folders()).unwrap();
         assert_eq!(
-            spec.everything_query(Some("2026-10-31")),
+            spec.everything_query(&|_| Some("2026-10-31".into())),
             r#""C:\Users\pf\Downloads\" file: <dm:>=2026-10-31|dc:>=2026-10-31>"#
         );
     }
@@ -575,7 +585,7 @@ mod tests {
         let q = Template::Large
             .spec(&folders())
             .unwrap()
-            .everything_query(None);
+            .everything_query(&|_| None);
         assert_eq!(
             q,
             r#"!"C:\Windows\" !\AppData\ !"\$Recycle.Bin\" file: size:>=1073741824"#
@@ -583,7 +593,7 @@ mod tests {
         let q = Template::Psd
             .spec(&folders())
             .unwrap()
-            .everything_query(None);
+            .everything_query(&|_| None);
         assert!(q.ends_with("file: ext:psd"), "{q}");
     }
 
@@ -592,7 +602,7 @@ mod tests {
         let q = Template::Recent
             .spec(&folders())
             .unwrap()
-            .everything_query(None);
+            .everything_query(&|_| None);
         assert_eq!(
             q,
             r#"parent:"C:\Users\pf\AppData\Roaming\Microsoft\Windows\Recent" file: ext:lnk"#
@@ -679,7 +689,7 @@ mod tests {
         spec.everything = Some("  invoice|receipt ".into());
         spec.all_of.push(Cond::Ext(vec!["pdf".into()]));
         assert_eq!(
-            spec.everything_query(Some("2026-10-31")),
+            spec.everything_query(&|_| Some("2026-10-31".into())),
             r#""C:\Users\pf\Downloads\" invoice|receipt file: ext:pdf <dm:>=2026-10-31|dc:>=2026-10-31>"#
         );
         assert!(!spec.works_without_everything());
@@ -758,15 +768,15 @@ mod tests {
         let mut spec = Template::Downloads.spec(&folders()).unwrap();
         spec.folders.push(r"D:\Inbox\".into());
         assert_eq!(
-            spec.everything_query(Some("2026-10-31")),
+            spec.everything_query(&|_| Some("2026-10-31".into())),
             r#"<"C:\Users\pf\Downloads\"|"D:\Inbox\"> file: <dm:>=2026-10-31|dc:>=2026-10-31>"#
         );
         spec.subfolders = false;
         assert!(
-            spec.everything_query(None)
+            spec.everything_query(&|_| None)
                 .starts_with(r#"<parent:"C:\Users\pf\Downloads"|parent:"D:\Inbox">"#),
             "{}",
-            spec.everything_query(None)
+            spec.everything_query(&|_| None)
         );
     }
 
@@ -793,7 +803,7 @@ mod tests {
             limit: 200,
         };
         assert_eq!(
-            spec.everything_query(None),
+            spec.everything_query(&|_| None),
             r#""C:\Docs\" <<ext:pdf;docx>|<"发票">>"#
         );
         assert!(!spec.app_checks());
@@ -814,14 +824,40 @@ mod tests {
         assert!(spec.matches(&f("photo.png"), now - 86_400, now));
         assert!(!spec.matches(&f("photo.png"), now - 8 * 86_400, now));
         assert_eq!(
-            spec.everything_query(Some("2026-10-31")),
+            spec.everything_query(&|_| Some("2026-10-31".into())),
             r#""C:\Docs\" <<ext:pdf;docx>|<"发票">|<<dm:>=2026-10-31|dc:>=2026-10-31>>>"#
         );
         // A row only the app tests: Everything is asked for the folder, the app decides.
-        spec.all_of.push(Cond::IdleDays { min: 30 });
-        assert_eq!(spec.everything_query(Some("2026-10-31")), r#""C:\Docs\""#);
+        spec.all_of.push(Cond::CreatedWeekday(vec![5]));
+        assert_eq!(
+            spec.everything_query(&|_| Some("2026-10-31".into())),
+            r#""C:\Docs\""#
+        );
         assert!(spec.app_checks());
         assert_eq!(spec.everything_max(), SmartSpec::NAME_FILTER_ASK);
+        // Idle days and a shortcut target narrow it as more files: written on or before the
+        // day the idle time starts, and `.lnk` files.
+        spec.all_of = vec![
+            Cond::IdleDays { min: 30 },
+            Cond::ShortcutTarget {
+                op: StrOp::Contains,
+                value: "steam".into(),
+            },
+        ];
+        spec.within_days = None;
+        let date_ago = |days: u32| Some(format!("day-{days}"));
+        assert_eq!(
+            spec.everything_query(&date_ago),
+            r#""C:\Docs\" <<dm:<=day-30>|<ext:lnk>>"#
+        );
+        spec.matching = SmartMatch::All;
+        assert_eq!(
+            spec.everything_query(&date_ago),
+            r#""C:\Docs\" dm:<=day-30 ext:lnk"#
+        );
+        assert!(spec.app_checks(), "the app still tests both");
+        spec.matching = SmartMatch::Any;
+        spec.within_days = Some(7);
         // No row at all: everything in the folders.
         spec.all_of.clear();
         spec.within_days = None;
@@ -831,7 +867,7 @@ mod tests {
         spec.all_of.push(Cond::Ext(vec!["pdf".into()]));
         assert!(spec.matches(&f("invoice.png"), now, now));
         assert_eq!(
-            spec.everything_query(None),
+            spec.everything_query(&|_| None),
             r#""C:\Docs\" <<invoice>|<ext:pdf>>"#
         );
         assert_eq!(spec.problem(), None);

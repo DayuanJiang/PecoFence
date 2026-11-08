@@ -220,18 +220,39 @@ if ($Part -match 'B') {
   Js "(() => { const s = document.querySelector('#seWindow .se-row[data-kind=name] .se-op'); s.value = 'notContains'; s.dispatchEvent(new Event('change', { bubbles: true })); return true; })()" | Out-Null
   Check 'does not contain: five' (WaitCount 'Files found now: 5(?!\d)' 15) (EdState).count
   EndEditor 'esc' | Out-Null
-  # A condition only the app can test, over the whole computer: about a number.
+  # Idle days in a folder: the count is the files the fence then shows.
+  Pf fence create --title 'Idle' --smart-folder $PfDl --rect '480,400,420,260' | Out-Null
+  $h = OpenEditor 'edit menu' 'Idle'
+  PageClick '#seWindow .se-row:last-child .se-plus'; Start-Sleep -Milliseconds 300
+  Js "(() => { const s = [...document.querySelectorAll('#seWindow .se-kind')].at(-1); s.value = 'idle'; s.dispatchEvent(new Event('change', { bubbles: true })); return true; })()" | Out-Null
+  Check 'idle 30 days in Downloads: the four old files (40 to 200 days)' (WaitCount 'Files found now: 4(?!\d)' 20) (EdState).count
+  EndEditor 'ok' | Out-Null
+  Check 'the fence shows the same four, nothing newer' (WaitSmart 'Idle' { $s.total -eq 4 -and $s.shown -eq 4 -and ($n -match 'annual') -and ($n -match 'readme') -and -not ($n -match 'quarterly|wallpaper|old contract') } 20) (SmartLine 'Idle')
+  Check 'Everything narrows idle days to files written before that day' ((SmartOf 'Idle').query -match 'dm:<=\d{4}-\d\d-\d\d') (SmartOf 'Idle').query
+  Pf fence delete 'Idle' | Out-Null
+  # The whole computer with idle days: the count says when only the newest 5000 were checked,
+  # and it is what the fence then shows.
+  $h = OpenEditor 'tray'
+  PageType '#seWindow .se-name' 'Idle everywhere'
+  Js "(() => { const s = [...document.querySelectorAll('#seWindow .se-kind')].at(-1); s.value = 'idle'; s.dispatchEvent(new Event('change', { bubbles: true })); return true; })()" | Out-Null
+  Check 'the whole computer with idle days: a count, and whether only the newest 5000 were checked' (WaitCount 'Files found now: \d+' 30) (EdState).count
+  $line = (EdState).count
+  $edN = [int]([regex]::Match($line, 'Files found now: (\d+)').Groups[1].Value)
+  Check 'more than 5000 old files: it says only the newest 5000 were checked' ($edN -lt 5000 -or $line -match 'only the newest 5000 were checked') $line
+  Shot 'b03-newest'
+  EndEditor 'ok' | Out-Null
+  Check 'the fence''s total is the same number' (WaitSmart 'Idle everywhere' { $s.source -eq 'everything' -and [math]::Abs($s.total - $edN) -le 5 } 30) "editor=$edN $(SmartLine 'Idle everywhere' | ForEach-Object { $_.Substring(0, [math]::Min(200, $_.Length)) })"
+  Pf fence delete 'Idle everywhere' | Out-Null
   $h = OpenEditor 'tray'
   Js "(() => { const s = [...document.querySelectorAll('#seWindow .se-kind')].at(-1); s.value = 'idle'; s.dispatchEvent(new Event('change', { bubbles: true })); return true; })()" | Out-Null
-  Check 'the whole computer with idle days: about a number, checked file by file' (WaitCount 'Files found now: about \d+.*estimate' 30) (EdState).count
-  Shot 'b03-about'
+  WaitCount 'Files found now: \d+' 30 | Out-Null
   Check 'Everything stops' (EvStop)
   PageType '#seWindow .se-row[data-kind=idle] .se-n1' '31'
   Check 'the whole computer without Everything: it says so and offers to start it' ((WaitCount 'needs Everything|Everything first' 20) -and (Js "!!document.querySelector('#seWindow .se-count button')")) (EdState).count
   Shot 'b04-needs-everything'
   PageClick '#seWindow .se-count button'
   for ($i = 0; $i -lt 30 -and -not (EvRunning); $i++) { Start-Sleep -Milliseconds 500 }
-  Check 'the button starts Everything and the count comes' ((EvRunning) -and (WaitCount 'Files found now: about \d+' 40)) (EdState).count
+  Check 'the button starts Everything and the count comes' ((EvRunning) -and (WaitCount 'Files found now: \d+' 40)) (EdState).count
   EndEditor 'cancel' | Out-Null
   Check 'Everything stops again' (EvStop)
   $h = OpenEditor 'edit menu' $Dl
@@ -239,7 +260,7 @@ if ($Part -match 'B') {
   EndEditor 'esc' | Out-Null
   Check 'Everything runs again' (EvStart)
   $log = (PfLogAll) -join "`n"
-  Check 'log: counted by Everything, on a worker and from the folder' ($log -match 'smart fence editor: counted by Everything' -and $log -match 'smart fence editor: counted source="everything"' -and $log -match 'smart fence editor: counted source="folder"' -and $log -match 'count shown.*approx=true') ''
+  Check 'log: counted by Everything, on a worker and from the folder' ($log -match 'smart fence editor: counted by Everything' -and $log -match 'smart fence editor: counted source="everything"' -and $log -match 'smart fence editor: counted source="folder"' -and $log -match 'count shown.*newest=5000|count shown.*n=\d{1,3} ') ''
 
   Case '任一 over two folders from the folder picker'
   $h = OpenEditor 'tray'

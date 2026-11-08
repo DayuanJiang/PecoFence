@@ -540,7 +540,7 @@ matches shows as well.
 ```powershell
 pecofence-cli fence create --smart downloads
 pecofence-cli fence create --title Invoices --smart-folder "$env:USERPROFILE\Documents" --ext pdf --name-matches invoice
-pecofence-cli fence create --title Papers --smart-folder D:\Work --smart-folder E:\Archive --ext pdf,docx --name-matches 发票 --match any
+pecofence-cli fence create --title Papers --smart-folder D:\Work --smart-folder E:\Archive --ext pdf,docx --everything 发票 --match any
 pecofence-cli fence set Invoices smartWithinDays 90
 pecofence-cli fence set Papers smartMatch all
 pecofence-cli fence set Invoices smartConditions '[{\"cond\":\"ext\",\"value\":[\"pdf\"]},{\"cond\":\"sizeMb\",\"value\":{\"min\":1,\"max\":null}}]'
@@ -552,7 +552,11 @@ pecofence-cli fence refresh Invoices
 conditions, as in `rule list`), `withinDays`, `name`, `everything`, `limit`, `template`; a search
 saved with one `folder` reads as that one folder), `source` (`everything`, `folder` when PecoFence read the folders itself because
 Everything does not run, `needsEverything` for a whole-computer or Everything-syntax search while
-Everything does not run, `waiting` before the first answer), `total` (matches in all), `shown` and
+Everything does not run, `waiting` before the first answer), `total` (matches in all; with a
+condition PecoFence tests itself (shortcut target, creation time or weekday, idle days, programs,
+installers, `--name-matches`), the matches among the newest 5000 files Everything gives, which are
+all it checks: Everything first narrows a shortcut target to `.lnk` files and idle days to files
+written before that day), `shown` and
 `query` (the search sent to Everything). The search runs with Everything when it runs, one search at
 a time; without it a folder search reads the folder on a worker (at most 20000 entries). It runs
 again 1 s and 4 s after a change in the folder, once a minute, after `fence refresh`, an import, a

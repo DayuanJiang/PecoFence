@@ -113,6 +113,8 @@ pub(super) struct SmartState {
     /// number of the request the run in progress counts.
     preview: Option<(SmartSpec, u64)>,
     preview_sent: u64,
+    /// Everything's total in its last answer to the editor's count.
+    preview_total: u32,
 }
 
 impl Default for SmartState {
@@ -133,6 +135,7 @@ impl Default for SmartState {
             again: false,
             preview: None,
             preview_sent: 0,
+            preview_total: 0,
         }
     }
 }
@@ -237,13 +240,17 @@ impl App {
                 }
                 None => {}
             }
-            let since = spec.within_days.and_then(|days| {
-                let start = pecofence_core::now_unix() - i64::from(days) * 86_400;
-                pecofence_platform::fileinfo::local_civil_date(start).map(|(y, m, d)| {
-                    pecofence_core::smart::everything_date(pecofence_core::CivilDate::new(y, m, d))
-                })
-            });
-            let query = spec.everything_query(since.as_deref());
+            let now = pecofence_core::now_unix();
+            let date_ago = |days: u32| {
+                pecofence_platform::fileinfo::local_civil_date(now - i64::from(days) * 86_400).map(
+                    |(y, m, d)| {
+                        pecofence_core::smart::everything_date(pecofence_core::CivilDate::new(
+                            y, m, d,
+                        ))
+                    },
+                )
+            };
+            let query = spec.everything_query(&date_ago);
             self.smart.seq = self.smart.seq.wrapping_add(1);
             let seq = self.smart.seq;
             // The editor's count needs only Everything's total, unless the app checks a
@@ -256,20 +263,13 @@ impl App {
             if id == PREVIEW {
                 self.smart.preview_sent = self.smart.preview.as_ref().map_or(0, |p| p.1);
             }
-            // The editor's estimate checks a sample of Everything's answer: in name order, which
-            // has nothing to do with the dates idle days or creation times look at (the newest
-            // files first would all fail "not opened for 30 days").
-            let sort = if id == PREVIEW {
-                ev::SORT_NAME_ASCENDING
-            } else {
-                ev::SORT_DATE_MODIFIED_DESCENDING
-            };
+            // The editor's count checks the same files the fence does: the newest first.
             let payload = ev::query2w(
                 self.control.hwnd().0 as usize as u32,
                 (REPLY_TAG | usize::from(seq)) as u32,
                 &query,
                 max,
-                sort,
+                ev::SORT_DATE_MODIFIED_DESCENDING,
             );
             let sent = everything::send_query(
                 instance.hwnd,
@@ -418,11 +418,9 @@ impl App {
                         ms = r.ms,
                         "smart fence editor: counted"
                     );
-                    // Everything's own total: the worker's left out what the app dropped.
+                    // Everything's own total, kept as its answer came in.
                     let total = match r.source {
-                        SmartSource::Everything => {
-                            r.total + r.scanned.saturating_sub(r.kept) as u32
-                        }
+                        SmartSource::Everything => self.smart.preview_total,
                         _ => r.total,
                     };
                     self.preview_done(r.source, total, r.scanned, r.kept);
@@ -500,6 +498,9 @@ impl App {
             self.ask_next_smart();
             return;
         }
+        if id == PREVIEW {
+            self.smart.preview_total = total;
+        }
         tracing::debug!(%id, seq, total, got = hits.len(), "smart fence: Everything's answer is checked on a worker");
         // Everything matched on its index; the files themselves say what they are now (gone,
         // hidden, system) and get the conditions Everything cannot test.
@@ -508,6 +509,7 @@ impl App {
         } else {
             spec.limit as usize
         };
+        let app_checks = spec.app_checks();
         self.smart_work_later(id, SmartSource::Everything, move || {
             let now = pecofence_core::now_unix();
             let targets = spec.needs_shortcut_targets();
@@ -521,8 +523,14 @@ impl App {
             entries.truncate(limit);
             Found {
                 entries,
-                // What was left out here is left out of the total too.
-                total: total.saturating_sub((got - kept) as u32),
+                // What was left out here is left out of the total too. When the app tests a
+                // condition itself, Everything's total says nothing about the files not checked:
+                // the total is what matched among the newest checked.
+                total: if app_checks {
+                    kept as u32
+                } else {
+                    total.saturating_sub((got - kept) as u32)
+                },
                 scanned: got,
                 kept,
             }
@@ -924,6 +932,10 @@ impl App {
         let source = run.map_or(SmartSource::Waiting, |r| r.source);
         let empty = Some(match source {
             SmartSource::Waiting => pecofence_core::i18n::text("正在搜索…"),
+            // A folder search waits for Everything only for its Everything syntax.
+            SmartSource::NeedsEverything if !spec.folders.is_empty() => pecofence_core::i18n::text(
+                "这个栅栏用了 Everything 语法，需要先打开 Everything：右键这个栅栏可以启动或安装它。",
+            ),
             SmartSource::NeedsEverything => pecofence_core::i18n::text(
                 "要搜索整台电脑，需要先打开 Everything：右键这个栅栏可以启动或安装它。",
             ),
@@ -979,29 +991,32 @@ impl App {
         self.smart.waiting.retain(|id| *id != PREVIEW);
     }
 
-    /// A count for the editor: how it was counted, Everything's total (or what the folder read
-    /// found), and of the files the app checked (`got`), how many matched (`kept`). With app
-    /// checks on part of Everything's answer, the count is an estimate: the share that matched
-    /// times the total.
+    /// A count for the editor, of the same files the fence shows: Everything's total, or when
+    /// the app tests a condition itself what matched among the newest files Everything gave
+    /// (`got`; the fence checks the same ones), or what the folder read found (it stops after
+    /// `SmartSpec::MAX_SCANNED` entries). The page says when not every file was checked.
     fn preview_done(&mut self, source: SmartSource, total: u32, got: usize, kept: usize) {
         let Some(spec) = self.smart.preview.as_ref().map(|p| &p.0) else {
             return;
         };
-        let (n, approx) = match source {
-            SmartSource::Everything if spec.app_checks() && got > 0 && (got as u32) < total => (
-                ((kept as f64 / got as f64) * f64::from(total)).round() as u64,
-                true,
+        let (n, newest, read) = match source {
+            SmartSource::Everything if spec.app_checks() => {
+                (kept as u64, ((got as u32) < total).then_some(got), None)
+            }
+            SmartSource::Folder => (
+                u64::from(total),
+                None,
+                (got > SmartSpec::MAX_SCANNED).then_some(SmartSpec::MAX_SCANNED),
             ),
-            SmartSource::Everything if spec.app_checks() => (kept as u64, false),
-            SmartSource::Folder => (u64::from(total), got > SmartSpec::MAX_SCANNED),
-            _ => (u64::from(total), false),
+            _ => (u64::from(total), None, None),
         };
         let seq = self.smart.preview_sent;
         tracing::info!(
             seq,
             source = source.as_str(),
             n,
-            approx,
+            newest,
+            read,
             "smart fence editor: count shown"
         );
         let json = serde_json::json!({
@@ -1009,7 +1024,9 @@ impl App {
             "seq": seq,
             "source": source.as_str(),
             "n": n,
-            "approx": approx,
+            // Only the newest this many files were checked, or this many entries read.
+            "checkedNewest": newest,
+            "readOnly": read,
             "everything": self.everything_json(),
         })
         .to_string();
