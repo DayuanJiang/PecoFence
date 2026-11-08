@@ -1366,8 +1366,8 @@ impl FenceWindow {
         self.with_view(|v| v.filter_active = active);
     }
 
-    /// 筛选: the tag in the title row (`tag`: the text and the count; None: no tag).
-    pub fn set_filter_tag(&self, tag: Option<(String, String)>) {
+    /// 筛选: the tag in the title row (`tag`: the type, the text and the count; None: no tag).
+    pub fn set_filter_tag(&self, tag: Option<(String, String, String)>) {
         self.with_view(|v| {
             if v.filter_tag != tag {
                 v.filter_tag = tag;

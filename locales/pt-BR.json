@@ -954,5 +954,7 @@
   "这个栅栏的条件是「任一」，筛选没法和它合成一个搜索，所以不能存。": "As condições deste grupo usam “uma das” e o filtro não pode se juntar a elas numa só pesquisa, então não dá para salvar.",
   "更多操作": "Mais ações",
   "操作": "Ações",
-  "{0} 个结果": "Resultados: {0}"
+  "{0} 个结果": "Resultados: {0}",
+  "类型\u0004全部": "Tudo",
+  "类型：{0}": "Tipo: {0}"
 }

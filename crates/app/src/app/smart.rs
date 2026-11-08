@@ -864,8 +864,25 @@ impl App {
     /// folder it shows (only that folder, as the folder fence does) or its own search (folder,
     /// conditions, time, Everything text and name), and the filter added to its name condition.
     pub(super) fn save_filter_as_smart(&mut self, fence: FenceId, x: i32, y: i32) {
-        let Some(filter) = self.fence_filters.get(&fence).map(|t| t.trim().to_string()) else {
+        let Some(whole) = self.fence_filters.get(&fence).map(|t| t.trim().to_string()) else {
             return;
+        };
+        // A 类型 chip becomes the smart fence's 类型 (or extension) condition, the text its name.
+        let (types, filter) = pecofence_core::type_filter::split(&whole);
+        let type_conds: Vec<_> = types
+            .iter()
+            .map(pecofence_core::type_filter::cond)
+            .collect();
+        let name = |own: Option<&str>| -> Option<String> {
+            match (
+                own.map(str::trim).filter(|o| !o.is_empty()),
+                filter.is_empty(),
+            ) {
+                (Some(own), true) => Some(own.to_string()),
+                (Some(own), false) => Some(format!("{own} {filter}")),
+                (None, true) => None,
+                (None, false) => Some(filter.clone()),
+            }
         };
         let spec = match (self.state.smart_spec(fence), self.state.portal_path(fence)) {
             // 任一 over two rows or more and the filter are not one search (the menu item is
@@ -885,17 +902,16 @@ impl App {
                 SmartSpec {
                     template: None,
                     matching: pecofence_core::smart::SmartMatch::All,
-                    name: Some(match spec.name.as_deref().map(str::trim) {
-                        Some(own) if !own.is_empty() => format!("{own} {filter}"),
-                        _ => filter.clone(),
-                    }),
+                    name: name(spec.name.as_deref()),
+                    all_of: spec.all_of.iter().cloned().chain(type_conds).collect(),
                     ..spec.clone()
                 }
             }
             (None, Some(dir)) => SmartSpec {
                 folders: vec![dir.to_string_lossy().into_owned()],
                 subfolders: false,
-                name: Some(filter.clone()),
+                name: name(None),
+                all_of: type_conds,
                 ..SmartSpec::default()
             },
             (None, None) => return,
@@ -905,7 +921,13 @@ impl App {
             .fence(fence)
             .map(|f| self.state.display_title(f))
             .unwrap_or_default();
-        let title = pecofence_core::i18n::format("{0}：{1}", &[base, filter]);
+        let shown = types
+            .iter()
+            .map(pecofence_core::type_filter::label)
+            .chain((!filter.is_empty()).then(|| filter.clone()))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let title = pecofence_core::i18n::format("{0}：{1}", &[base, shown]);
         let folders = spec.folders.len();
         let typed = spec.everything.is_some();
         let conditions = spec.all_of.len();
@@ -915,16 +937,31 @@ impl App {
     }
 
     /// The Peek search's 「把这次搜索放到桌面」: a smart fence with the same Everything search
-    /// (pinyin included when Everything has it) over every drive, titled after the text.
-    pub(super) fn search_to_desktop(&mut self, query: &str) {
+    /// (pinyin included when Everything has it) over every drive, titled after the text, of
+    /// the type tab's type when one is picked.
+    pub(super) fn search_to_desktop(
+        &mut self,
+        query: &str,
+        tab: Option<pecofence_core::rules::TypeCategory>,
+    ) {
         let Some(instance) = everything::find() else {
             tracing::info!("search to desktop: Everything is no longer running");
             return;
         };
+        // The type tab comes along as the smart fence's 类型 condition.
         let spec = SmartSpec {
             everything: Some(ev::search_text(query, instance.supports_pinyin())),
+            all_of: tab
+                .map(|c| {
+                    pecofence_core::type_filter::cond(&pecofence_core::type_filter::TypeToken::Cat(
+                        c,
+                    ))
+                })
+                .into_iter()
+                .collect(),
             ..SmartSpec::default()
         };
+        tracing::info!(tab = ?tab, "search to desktop: the type tab as a condition");
         let title = pecofence_core::i18n::format("搜索“{0}”", &[query.to_string()]);
         let (x, y) = self
             .state

@@ -2153,18 +2153,20 @@ impl FenceChrome {
         Ok(())
     }
 
-    /// 筛选: the tag a filtered fence shows after its box closed (magnifier, the text, the
-    /// count when not already in the capsule, ×), right before the capsule (or the chevron's
-    /// place). The app hit-tests its × in the same box: the rightmost `TAG_CLEAR_W` DIPs.
+    /// 筛选: the tag a filtered fence shows after its box closed (magnifier, the type in a chip
+    /// of its own, the text, the count when not already in the capsule, ×), right before the
+    /// capsule (or the chevron's place). The app hit-tests its × in the same box: the
+    /// rightmost `TAG_CLEAR_W` DIPs.
     pub fn filter_tag_rect(
         &self,
         width: f32,
         title_h: f32,
-        tag: (&str, &str),
+        tag: (&str, &str, &str),
         title_count: Option<&str>,
     ) -> Rect {
-        let (text, count) = tag;
+        let (kind, text, count) = tag;
         let w = 22.0
+            + self.tag_kind_w(kind)
             + crate::text::measure_width(text, &self.tag_format)
             + if count.is_empty() {
                 0.0
@@ -2178,6 +2180,15 @@ impl FenceChrome {
         Rect::from_xywh(right - w, ((title_h - TAG_H) * 0.5).round(), w, TAG_H)
     }
 
+    /// The type chip's room in the tag (its gap after it included); 0 without a type.
+    fn tag_kind_w(&self, kind: &str) -> f32 {
+        if kind.is_empty() {
+            0.0
+        } else {
+            crate::text::measure_width(kind, &self.badge_format) + 12.0 + 6.0
+        }
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn draw_filter_tag(
         &self,
@@ -2186,11 +2197,11 @@ impl FenceChrome {
         foreground: &Theme,
         width: f32,
         title_h: f32,
-        tag: (&str, &str),
+        tag: (&str, &str, &str),
         title_count: Option<&str>,
         alpha: f32,
     ) -> Result<()> {
-        let (text, count) = tag;
+        let (kind, text, count) = tag;
         let r = self.filter_tag_rect(width, title_h, tag, title_count);
         let tint = session.create_solid_brush(with_alpha(theme.accent, 0.14 * alpha))?;
         session.fill_rounded_rect(&RoundedRect::uniform(r, TAG_H * 0.5), &tint);
@@ -2202,19 +2213,29 @@ impl FenceChrome {
             &Rect::from_xywh(r.left + 4.0, r.top, 18.0, TAG_H),
             &accent,
         );
+        // The type in a chip of its own, a step stronger than the tag's wash.
+        let kind_w = self.tag_kind_w(kind);
+        if kind_w > 0.0 {
+            let chip = Rect::from_xywh(r.left + 22.0, r.top + 3.0, kind_w - 6.0, TAG_H - 6.0);
+            let strong = session.create_solid_brush(with_alpha(theme.accent, 0.22 * alpha))?;
+            session.fill_rounded_rect(&RoundedRect::uniform(chip, (TAG_H - 6.0) * 0.5), &strong);
+            session.draw_text(kind, &self.badge_format, &chip, &accent);
+        }
+        let text_x = r.left + 22.0 + kind_w;
         let text_w = crate::text::measure_width(text, &self.tag_format);
         session.draw_text(
             text,
             &self.tag_format,
-            &Rect::from_xywh(r.left + 22.0, r.top, text_w + 2.0, TAG_H),
+            &Rect::from_xywh(text_x, r.top, text_w + 2.0, TAG_H),
             &accent,
         );
         if !count.is_empty() {
             let cw = crate::text::measure_width(count, &self.count_format);
+            let gap = if text.is_empty() { 0.0 } else { 8.0 };
             session.draw_text(
                 count,
                 &self.count_format,
-                &Rect::from_xywh(r.left + 30.0 + text_w, r.top, cw + 2.0, TAG_H),
+                &Rect::from_xywh(text_x + text_w + gap, r.top, cw + 2.0, TAG_H),
                 &dim,
             );
         }
@@ -2353,7 +2374,7 @@ impl FenceChrome {
         backdrop: Backdrop<'_>,
         title: &str,
         title_count: Option<&str>,
-        filter_tag: Option<(&str, &str)>,
+        filter_tag: Option<(&str, &str, &str)>,
         caption: Option<&str>,
         rolled_up: bool,
         roll_t: f32,

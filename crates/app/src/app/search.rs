@@ -7,6 +7,7 @@ use super::*;
 use crate::peek_search::Row;
 use pecofence_core::everything as ev;
 use pecofence_core::matcher;
+use pecofence_core::type_filter;
 use pecofence_platform::{clipboard, dialogs, everything};
 use std::ops::Range;
 use std::os::windows::process::CommandExt;
@@ -117,6 +118,8 @@ impl App {
             (FenceId, FenceId, ItemId),
             Vec<Range<usize>>,
         )> = Vec::new();
+        // The type tab keeps the matches to its type (as the rule conditions test it).
+        let types = peek_types();
         if !query.is_empty() {
             let mut windows: Vec<(RECT, FenceId)> =
                 self.fences.iter().map(|(id, w)| (w.rect(), *id)).collect();
@@ -127,6 +130,9 @@ impl App {
                         continue;
                     };
                     for it in self.state.items_of(fence) {
+                        if !types.is_empty() && !item_is_of(&types, it) {
+                            continue;
+                        }
                         let Some((score, marks)) =
                             super::peek::search_match(&it.display_name, it.key.as_path(), query)
                         else {
@@ -170,7 +176,9 @@ impl App {
         let Some(reply_to) = crate::peek_search::hwnd() else {
             return;
         };
-        if query.is_empty() || query == self.search.sent {
+        // The type tab is part of what was asked.
+        let asked = with_type_words(query.clone());
+        if query.is_empty() || asked == self.search.sent {
             return;
         }
         let Some(instance) = everything::find() else {
@@ -180,7 +188,7 @@ impl App {
             self.refresh_search_rows();
             return;
         };
-        let text = ev::search_text(&query, instance.supports_pinyin());
+        let text = with_type_words(ev::search_text(&query, instance.supports_pinyin()));
         // The Peek search goes first: a smart fence's search out now would be cancelled by
         // this one, so that fence asks again after the Peek's answer.
         self.smart_yield_to_peek();
@@ -201,7 +209,7 @@ impl App {
             "search: Everything asked"
         );
         if sent {
-            self.search.sent = query;
+            self.search.sent = asked;
             self.search.asked_at = Some(Instant::now());
         }
     }
@@ -212,9 +220,11 @@ impl App {
             return;
         }
         // The box changed after the query went out: the next query answers for it.
-        let now = crate::peek_search::query()
-            .map(|q| q.trim().to_string())
-            .unwrap_or_default();
+        let now = with_type_words(
+            crate::peek_search::query()
+                .map(|q| q.trim().to_string())
+                .unwrap_or_default(),
+        );
         if now != self.search.sent {
             return;
         }
@@ -240,6 +250,7 @@ impl App {
         let query = crate::peek_search::query()
             .map(|q| q.trim().to_lowercase())
             .unwrap_or_default();
+        let types = peek_types();
         let before = self.search.rows.get(self.search.sel).cloned();
         let before_hit = match before {
             Some(RowKind::Fence(i)) => self.peek_hits.get(i).copied(),
@@ -261,6 +272,10 @@ impl App {
                 .file_name()
                 .map(|n| n.to_string_lossy().to_string())
                 .unwrap_or_else(|| hit.path.clone());
+            // Asked with the type's words already; the same test as the fences' items.
+            if !type_filter::matches(&types, &name, hit.is_folder) {
+                continue;
+            }
             let score = matcher::match_name(&name, &query).map_or(0, |m| m.score);
             let uses = self.state.config.search_count(&hit.path);
             files.push((score, uses, order, path, hit.is_folder));
@@ -489,8 +504,10 @@ impl App {
         tracing::info!(row = ?row, dialog = dialog.is_some(), "search row opened");
         match (&row, path, dialog) {
             (RowKind::ToDesktop, _, _) => {
+                // Read before the box closes with the Peek.
+                let tab = crate::peek_search::type_tab();
                 self.end_peek("search: put on the desktop");
-                self.search_to_desktop(&query);
+                self.search_to_desktop(&query, tab);
             }
             (RowKind::ShowAll, _, _) => {
                 self.end_peek("search: show all in Everything");
@@ -498,7 +515,7 @@ impl App {
                 let found = everything::find().and_then(|i| Some((i.exe()?, i.supports_pinyin())));
                 match found {
                     Some((exe, pinyin)) => {
-                        let text = ev::search_text(&query, pinyin);
+                        let text = with_type_words(ev::search_text(&query, pinyin));
                         let started = std::process::Command::new(exe)
                             .arg("-search")
                             .arg(text)
@@ -731,4 +748,32 @@ fn open_containing_folder(path: &Path) {
     if let Err(e) = spawned {
         tracing::warn!(error = %e, "search: Explorer did not start");
     }
+}
+
+/// The Peek search's type tab as tokens (none on 全部).
+fn peek_types() -> Vec<type_filter::TypeToken> {
+    crate::peek_search::type_tab()
+        .map(type_filter::TypeToken::Cat)
+        .into_iter()
+        .collect()
+}
+
+/// Whether a fence's item is of `types` (its file name with the extension).
+fn item_is_of(types: &[type_filter::TypeToken], it: &pecofence_core::Item) -> bool {
+    let file = it
+        .key
+        .as_path()
+        .and_then(|p| Path::new(p).file_name())
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| it.display_name.clone());
+    type_filter::matches(types, &file, it.is_folder)
+}
+
+/// `text` with Everything's words for the type tab after it.
+fn with_type_words(text: String) -> String {
+    let types = peek_types();
+    if types.is_empty() {
+        return text;
+    }
+    format!("{text} {}", type_filter::everything_words(&types))
 }

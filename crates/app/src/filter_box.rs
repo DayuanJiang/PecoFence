@@ -4,15 +4,21 @@
 //! files show ("4 / 31") and × to clear the text, with the accent line of a focused text box
 //! at the bottom. Every change filters the fence at once; Enter or a click elsewhere closes
 //! the box and keeps the filter, Esc clears it.
+//!
+//! A type as Finder takes it: a text that names one (pdf, 图片) offers 「类型：PDF」 at the right,
+//! Tab makes it a chip before the text (`kind:` or `类型:` words become one too), Backspace in
+//! an empty box takes the last chip back. The fence is filtered by `kind:<type>` words in
+//! front of the text.
 
 use crate::commands::{Command, CommandQueue};
 use pecofence_core::FenceId;
+use pecofence_core::type_filter::{self, TypeToken};
 use pecofence_platform::window::{
     self, ClassOptions, MessageHandler, Window, WindowBuilder, WindowClass, style,
 };
 use pecofence_platform::{HWND, RECT, dwm, edit, fonts, monitors, msg, paint};
 use pecofence_render::ThemeMode;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 
 const FILTER_CLASS: &str = "PecoFence.Filter";
 
@@ -22,6 +28,7 @@ const GLYPH_W: f32 = 30.0;
 const COUNT_W: f32 = 56.0;
 const CLEAR_W: f32 = 28.0;
 const EDIT_H: f32 = 20.0;
+const SUGGEST_W: f32 = 140.0;
 
 thread_local! {
     static ACTIVE: RefCell<Option<FilterSession>> = const { RefCell::new(None) };
@@ -39,11 +46,54 @@ struct FilterSession {
     glyph_font: paint::Font,
     count_font: paint::Font,
     clear_font: paint::Font,
+    /// The type chips before the text, the type the text names (Tab takes it), and the text
+    /// box's left edge and width as last placed.
+    tokens: Vec<TypeToken>,
+    suggest: Option<TypeToken>,
+    edit_at: Cell<(i32, i32)>,
 }
 
 impl FilterSession {
     fn px(&self, dip: f32) -> i32 {
         (dip * self.dpi as f32 / 96.0).round() as i32
+    }
+
+    /// What the fence is filtered by: the chips as `kind:` words, then the text.
+    fn combined(&self) -> String {
+        let mut words: Vec<String> = self.tokens.iter().map(type_filter::word).collect();
+        words.push(self.edit.text());
+        words.join(" ").trim().to_string()
+    }
+}
+
+/// The text changed: `kind:` / `类型:` words become chips, a text that names a type offers it.
+fn type_change() {
+    let rest = ACTIVE.with(|a| {
+        let mut a = a.try_borrow_mut().ok()?;
+        let s = a.as_mut()?;
+        let (found, rest) = type_filter::split(&s.edit.text());
+        for t in found.iter().cloned() {
+            if !s.tokens.contains(&t) {
+                tracing::info!(fence = %s.fence, token = %type_filter::word(&t), "filter box: a typed type word became a chip");
+                s.tokens.push(t);
+            }
+        }
+        let suggest = type_filter::suggest(rest.trim()).filter(|t| !s.tokens.contains(t));
+        if suggest != s.suggest {
+            tracing::info!(fence = %s.fence, offered = ?suggest.as_ref().map(type_filter::word), "filter box: the text names a type");
+            s.suggest = suggest;
+        }
+        paint::invalidate(s.window.hwnd());
+        (!found.is_empty()).then_some(rest)
+    });
+    // The words leave the text once the borrow is over: that change pushes the filter again.
+    if let Some(rest) = rest {
+        ACTIVE.with(|a| {
+            if let Some(s) = a.borrow().as_ref() {
+                s.edit.set_text(&rest);
+                s.edit.focus_at_end();
+            }
+        });
     }
 }
 
@@ -75,11 +125,12 @@ pub fn open(
         move |hwnd: HWND, message: u32, wparam: usize, lparam: isize| -> Option<isize> {
             match message {
                 msg::WM_COMMAND if msg::hi_u16(wparam) == edit::EN_CHANGE => {
+                    type_change();
                     ACTIVE.with(|a| {
                         if let Some(s) = a.try_borrow().ok().as_ref().and_then(|a| a.as_ref()) {
                             s.queue.push(Command::FenceFilterText {
                                 fence: s.fence,
-                                text: s.edit.text(),
+                                text: s.combined(),
                             });
                         }
                     });
@@ -100,15 +151,31 @@ pub fn open(
                 // × clears the text; the box stays open.
                 msg::WM_LBUTTONDOWN => {
                     let (w, _) = window::window_rect_size(hwnd);
-                    ACTIVE.with(|a| {
-                        if let Some(s) = a.try_borrow().ok().as_ref().and_then(|a| a.as_ref())
-                            && msg::lo_i16(lparam) >= w - s.px(CLEAR_W + 2.0)
-                        {
-                            tracing::info!(fence = %s.fence, "filter box: × clears the text");
-                            s.edit.set_text("");
-                            s.edit.focus_at_end();
+                    // × clears the text and the chips; the box stays open.
+                    let cleared = ACTIVE.with(|a| {
+                        let mut a = a.try_borrow_mut().ok()?;
+                        let s = a.as_mut()?;
+                        if msg::lo_i16(lparam) < w - s.px(CLEAR_W + 2.0) {
+                            return None;
                         }
+                        tracing::info!(fence = %s.fence, chips = s.tokens.len(), "filter box: × clears the text");
+                        s.tokens.clear();
+                        s.suggest = None;
+                        s.queue.push(Command::FenceFilterText {
+                            fence: s.fence,
+                            text: String::new(),
+                        });
+                        paint::invalidate(s.window.hwnd());
+                        Some(())
                     });
+                    if cleared.is_some() {
+                        ACTIVE.with(|a| {
+                            if let Some(s) = a.borrow().as_ref() {
+                                s.edit.set_text("");
+                                s.edit.focus_at_end();
+                            }
+                        });
+                    }
                     Some(0)
                 }
                 msg::WM_DESTROY => Some(0),
@@ -134,13 +201,15 @@ pub fn open(
     let _ = dwm::set_corner_preference(window.hwnd(), dwm::CornerPreference::RoundSmall);
     let edit_x = px(GLYPH_W);
     let edit_w = (w - edit_x - px(COUNT_W + CLEAR_W + 4.0)).max(px(40.0));
+    // A type in the current filter comes back as its chip.
+    let (tokens, typed) = type_filter::split(current);
     let Ok(ctl) = edit::EditControl::create(
         window.hwnd(),
         edit_w,
         px(EDIT_H),
         dpi,
         14.0,
-        current,
+        &typed,
         mode == ThemeMode::Dark,
         on_key,
     ) else {
@@ -162,6 +231,9 @@ pub fn open(
             glyph_font: paint::Font::new(fonts::icon_face(), 13.0, dpi),
             count_font: paint::Font::new(fonts::text_face(), 12.0, dpi),
             clear_font: paint::Font::new(fonts::icon_face(), 10.0, dpi),
+            tokens,
+            suggest: None,
+            edit_at: Cell::new((edit_x, edit_w)),
         })
     });
 }
@@ -212,13 +284,52 @@ fn paint_box(hwnd: HWND) {
             dim,
             paint::Align::Center,
         );
-        p.text(
-            row(w - s.px(COUNT_W + CLEAR_W + 2.0), w - s.px(CLEAR_W + 2.0)),
-            &s.count,
-            &s.count_font,
-            dim,
-            paint::Align::Right,
-        );
+        // The type chips, then the text box after them.
+        let tint = if dark { 0x0060_4A33 } else { 0x00F7_E8D9 };
+        let accent_text = if dark { 0x00FF_C060 } else { 0x00B8_5F00 };
+        let mut x = s.px(GLYPH_W);
+        for t in &s.tokens {
+            let label = type_filter::label(t);
+            let cw = p.text_width(&label, &s.count_font) + s.px(16.0);
+            let r = RECT {
+                left: x,
+                top: s.px(4.0),
+                right: x + cw,
+                bottom: h - s.px(5.0),
+            };
+            p.round_rect(r, (r.bottom - r.top) / 2, tint, tint);
+            p.text(r, &label, &s.count_font, accent_text, paint::Align::Center);
+            x = r.right + s.px(4.0);
+        }
+        // The suggestion needs more room at the right than the count.
+        let right = if s.suggest.is_some() {
+            s.px(SUGGEST_W + CLEAR_W + 4.0)
+        } else {
+            s.px(COUNT_W + CLEAR_W + 4.0)
+        };
+        let ew = (w - x - right).max(s.px(30.0));
+        if (x, ew) != s.edit_at.get() {
+            s.edit_at.set((x, ew));
+            s.edit
+                .set_bounds(x, (h - s.px(EDIT_H)) / 2, ew, s.px(EDIT_H));
+        }
+        match &s.suggest {
+            // The type the text names, taken with Tab, in place of the count.
+            Some(t) => p.text(
+                row(w - s.px(SUGGEST_W + CLEAR_W + 2.0), w - s.px(CLEAR_W + 2.0)),
+                &format!("{}  Tab", type_filter::label(t)),
+                &s.count_font,
+                accent_text,
+                paint::Align::Right,
+            ),
+            None => p.text(
+                row(w - s.px(COUNT_W + CLEAR_W + 2.0), w - s.px(CLEAR_W + 2.0)),
+                &s.count,
+                &s.count_font,
+                dim,
+                paint::Align::Right,
+            ),
+        }
         // Cancel (E711): clears the text.
         p.text(
             row(w - s.px(CLEAR_W), w - s.px(4.0)),
@@ -248,6 +359,41 @@ pub fn set_count(text: &str) {
 }
 
 fn on_key(vk: u32) -> bool {
+    // Tab takes the type the text names; Backspace in an empty box takes the last chip back.
+    let took = ACTIVE.with(|a| {
+        let mut a = a.try_borrow_mut().ok()?;
+        let s = a.as_mut()?;
+        if vk == 0x09 && s.suggest.is_some() {
+            let t = s.suggest.take()?;
+            tracing::info!(fence = %s.fence, token = %type_filter::word(&t), "filter box: Tab takes the type");
+            s.tokens.push(t);
+            paint::invalidate(s.window.hwnd());
+            return Some(true);
+        }
+        if vk == 0x08 && s.edit.text().is_empty() && s.tokens.pop().is_some() {
+            tracing::info!(fence = %s.fence, "filter box: Backspace takes the last chip back");
+            s.queue.push(Command::FenceFilterText {
+                fence: s.fence,
+                text: s.combined(),
+            });
+            paint::invalidate(s.window.hwnd());
+            return Some(false);
+        }
+        None
+    });
+    match took {
+        // The text leaves for the chip after the borrow: its change pushes the filter.
+        Some(true) => {
+            ACTIVE.with(|a| {
+                if let Some(s) = a.borrow().as_ref() {
+                    s.edit.set_text("");
+                }
+            });
+            return true;
+        }
+        Some(false) => return true,
+        None => {}
+    }
     match vk {
         k if k == msg::VK_RETURN => {
             close();

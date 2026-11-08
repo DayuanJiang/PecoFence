@@ -494,7 +494,9 @@ impl FenceViewState {
                 backdrop,
                 &title,
                 title_count.as_deref(),
-                filter_tag.as_ref().map(|(t, c)| (t.as_str(), c.as_str())),
+                filter_tag
+                    .as_ref()
+                    .map(|(k, t, c)| (k.as_str(), t.as_str(), c.as_str())),
                 count.as_deref(),
                 rolled,
                 roll_t,

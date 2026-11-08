@@ -226,7 +226,7 @@ impl FenceViewState {
 
     /// Is the client-pixel point on the × of the filter tag (筛选, a single title)?
     pub(super) fn filter_tag_clear_at(&self, x_px: i32, y_px: i32) -> bool {
-        let Some((text, count)) = self.filter_tag.as_ref() else {
+        let Some((kind, text, count)) = self.filter_tag.as_ref() else {
             return false;
         };
         if self.title_row_strip() || self.tabs_on_rail() || self.bare() {
@@ -237,7 +237,7 @@ impl FenceViewState {
         let r = self.chrome.filter_tag_rect(
             width,
             self.theme.title_height,
-            (text, count),
+            (kind, text, count),
             self.title_count.as_deref(),
         );
         let (x, y) = (x_px as f32 / scale, y_px as f32 / scale);

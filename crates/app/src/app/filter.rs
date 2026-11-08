@@ -6,9 +6,24 @@
 use super::*;
 use crate::filter_box;
 
-/// Whether `item` stays in a fence filtered by `query` (lower case, trimmed).
+/// Whether `item` stays in a fence filtered by `query` (lower case, trimmed): of its 类型 (the
+/// `kind:` words) and matching the rest.
 pub(super) fn filter_keeps(item: &pecofence_core::Item, query: &str) -> bool {
-    match peek::search_match(&item.display_name, item.path(), query) {
+    let (types, text) = pecofence_core::type_filter::split(query);
+    if !types.is_empty() {
+        let file = item
+            .path()
+            .and_then(|p| std::path::Path::new(p).file_name())
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| item.display_name.clone());
+        if !pecofence_core::type_filter::matches(&types, &file, item.is_folder) {
+            return false;
+        }
+        if text.is_empty() {
+            return true;
+        }
+    }
+    match peek::search_match(&item.display_name, item.path(), &text) {
         Some((score, _)) => !pecofence_core::matcher::is_loose_score(score),
         None => false,
     }
@@ -99,7 +114,14 @@ impl App {
             } else {
                 format!("{shown} / {total}")
             };
-            (text.to_string(), count)
+            // The type and the text apart: a chip of its own for the type.
+            let (types, typed) = pecofence_core::type_filter::split(text);
+            let kind = types
+                .iter()
+                .map(pecofence_core::type_filter::label)
+                .collect::<Vec<_>>()
+                .join(" ");
+            (kind, typed, count)
         });
         if let Some(w) = self.fences.get(&host) {
             w.set_filter_tag(tag);

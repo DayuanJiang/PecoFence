@@ -954,5 +954,7 @@
   "这个栅栏的条件是「任一」，筛选没法和它合成一个搜索，所以不能存。": "This fence’s conditions use “any one”, and the filter cannot be joined with them into one search, so it cannot be saved.",
   "更多操作": "More actions",
   "操作": "Actions",
-  "{0} 个结果": "Results: {0}"
+  "{0} 个结果": "Results: {0}",
+  "类型\u0004全部": "All",
+  "类型：{0}": "Type: {0}"
 }

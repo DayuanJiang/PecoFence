@@ -11,6 +11,9 @@
 //! Windows 11's look: rounded corners (by Windows, where it rounds), group headings (栅栏里,
 //! 整台电脑, 操作), a glyph on the two action rows, the Ctrl+digit of the highlighted row only,
 //! and a bottom bar with the keys and the number of results, as PowerToys' Command Palette.
+//! Under the box a row of type tabs (全部, 文件夹, 文档, …), as Windows 11's Start search has:
+//! a click or Ctrl+Tab / Ctrl+Shift+Tab picks one, and the fences' items and Everything's
+//! results are only of that type.
 //!
 //! A small activatable popup hosting an EDIT control, like the rename popup, so IME input,
 //! the caret and clipboard keys work as in any text box. The popup paints its background, the
@@ -18,6 +21,8 @@
 //! window as `WM_COPYDATA`.
 
 use crate::commands::{Command, CommandQueue};
+use pecofence_core::rules::TypeCategory;
+use pecofence_core::type_filter;
 use pecofence_platform::fileinfo::{self, FileIcon};
 use pecofence_platform::paint::{self, Align, Font};
 use pecofence_platform::window::{
@@ -58,6 +63,8 @@ const NAME_SIZE: f32 = 14.0;
 const DETAIL_SIZE: f32 = 11.5;
 const HEADING_SIZE: f32 = 11.5;
 const BAR_H: f32 = 36.0;
+const TABS_H: f32 = 38.0;
+const TAB_PAD: f32 = 12.0;
 
 /// One line of the result list.
 pub struct Row {
@@ -111,6 +118,10 @@ struct Session {
     selected: Option<usize>,
     /// Top and bottom (client pixels) of each row, from the last layout.
     row_spans: Vec<(i32, i32)>,
+    /// The type tab: 0 全部, else `type_filter::TABS[tab - 1]`; and each tab's left and right
+    /// (client pixels) as last drawn.
+    tab: usize,
+    tab_spans: Vec<(i32, i32)>,
     icons: HashMap<PathBuf, Option<FileIcon>>,
 }
 
@@ -121,7 +132,7 @@ impl Session {
 
     /// Lays the rows out under the box; returns the window height.
     fn layout(&mut self) -> i32 {
-        let mut y = self.px(HEIGHT);
+        let mut y = self.px(HEIGHT) + self.px(TABS_H);
         if self.rows.is_empty() {
             self.row_spans.clear();
             return y;
@@ -138,6 +149,15 @@ impl Session {
         }
         self.row_spans = spans;
         y + self.px(LIST_GAP * 2.0) + self.px(BAR_H)
+    }
+
+    /// The type tab under client point (`x`, `y`).
+    fn tab_at(&self, x: i32, y: i32) -> Option<usize> {
+        let top = self.px(HEIGHT);
+        if y < top || y >= top + self.px(TABS_H) {
+            return None;
+        }
+        self.tab_spans.iter().position(|&(l, r)| x >= l && x < r)
     }
 
     fn row_at(&self, y: i32) -> Option<usize> {
@@ -160,7 +180,7 @@ pub fn open(text: &str, queue: CommandQueue, dark: bool) {
     };
     let dpi = m.dpi.max(96);
     let px = |dip: f32| (dip * dpi as f32 / 96.0).round() as i32;
-    let (w, h) = (px(WIDTH), px(HEIGHT));
+    let (w, h) = (px(WIDTH), px(HEIGHT) + px(TABS_H));
     let wa = m.work_area;
     let x = (wa.left + wa.right) / 2 - w / 2;
     let y = wa.top + ((wa.bottom - wa.top - h) as f32 * TOP_FRACTION) as i32;
@@ -197,7 +217,12 @@ pub fn open(text: &str, queue: CommandQueue, dark: bool) {
                         Some(0)
                     }
                     msg::WM_LBUTTONDOWN => {
-                        let y = msg::hi_i16(lparam);
+                        let (x, y) = (msg::lo_i16(lparam), msg::hi_i16(lparam));
+                        let tab = ACTIVE.with(|a| a.try_borrow().ok()?.as_ref()?.tab_at(x, y));
+                        if let Some(t) = tab {
+                            set_tab(t, "click");
+                            return Some(0);
+                        }
                         let row = ACTIVE.with(|a| a.try_borrow().ok()?.as_ref()?.row_at(y));
                         if let Some(row) = row {
                             queue.push(Command::PeekSearchOpenRow(row));
@@ -271,7 +296,8 @@ pub fn open(text: &str, queue: CommandQueue, dark: bool) {
     ) else {
         return;
     };
-    ctl.set_bounds(edit_x, (h - px(EDIT_H)) / 2, edit_w, px(EDIT_H));
+    // In the box above the tabs.
+    ctl.set_bounds(edit_x, (px(HEIGHT) - px(EDIT_H)) / 2, edit_w, px(EDIT_H));
     let hwnd = window.hwnd();
     ACTIVE.with(|a| {
         *a.borrow_mut() = Some(Session {
@@ -295,6 +321,8 @@ pub fn open(text: &str, queue: CommandQueue, dark: bool) {
             rows: Vec::new(),
             selected: None,
             row_spans: Vec::new(),
+            tab: 0,
+            tab_spans: Vec::new(),
             icons: HashMap::new(),
         })
     });
@@ -355,22 +383,65 @@ fn paint_box(hwnd: HWND) {
             s.dim_color,
             Align::Right,
         );
+        let line = if s.dark { 0x0040_4040 } else { 0x00E0_E0E0 };
+        let accent = if s.dark { 0x00FF_C060 } else { 0x00D7_5B2A };
+        // The type tabs: the chosen one in an accent-tinted capsule, the keys at the right.
+        let tabs_top = box_h;
+        let tint = if s.dark { 0x0060_4A33 } else { 0x00F7_E8D9 };
+        let mut x = px(ROW_PAD) - px(TAB_PAD / 2.0);
+        s.tab_spans.clear();
+        for i in 0..=type_filter::TABS.len() {
+            let label = tab_label(i);
+            let tw = p.text_width(label, &s.detail_font) + px(TAB_PAD * 2.0);
+            let r = RECT {
+                left: x,
+                top: tabs_top + px(6.0),
+                right: x + tw,
+                bottom: tabs_top + px(TABS_H - 6.0),
+            };
+            let on = i == s.tab;
+            if on {
+                p.round_rect(r, (r.bottom - r.top) / 2, tint, tint);
+            }
+            p.text(
+                r,
+                label,
+                &s.detail_font,
+                if on { accent } else { s.dim_color },
+                Align::Center,
+            );
+            s.tab_spans.push((r.left, r.right));
+            x = r.right + px(2.0);
+        }
+        tracing::debug!(spans = ?s.tab_spans, tab = tab_label(s.tab), "search tabs drawn");
+        p.text(
+            RECT {
+                left: x,
+                top: tabs_top,
+                right: w - px(ROW_PAD),
+                bottom: tabs_top + px(TABS_H),
+            },
+            "Ctrl+Tab",
+            &s.detail_font,
+            s.dim_color,
+            Align::Right,
+        );
+        // Hairlines under the box and under the tabs.
+        for y in [box_h, tabs_top + px(TABS_H) - 1] {
+            p.fill(
+                RECT {
+                    left: 0,
+                    top: y,
+                    right: w,
+                    bottom: y + 1.max(px(1.0)),
+                },
+                line,
+            );
+        }
         if s.rows.is_empty() {
             return;
         }
-        // A hairline between the box and the list.
-        let line = if s.dark { 0x0040_4040 } else { 0x00E0_E0E0 };
-        p.fill(
-            RECT {
-                left: 0,
-                top: box_h,
-                right: w,
-                bottom: box_h + 1.max(px(1.0)),
-            },
-            line,
-        );
         let text_color = if s.dark { 0x00F0_F0F0 } else { 0x001E_1E1E };
-        let accent = if s.dark { 0x00FF_C060 } else { 0x00D7_5B2A };
         let selected_back = if s.dark { 0x0048_3A2E } else { 0x00FA_EBE3 };
         let (pad, icon) = (px(ROW_PAD), px(ICON));
         let hint_w = px(56.0);
@@ -576,8 +647,55 @@ fn fit_marks(
     (shown, marks)
 }
 
+/// Tab `i`'s caption: 全部, then the categories.
+fn tab_label(i: usize) -> &'static str {
+    match i.checked_sub(1).and_then(|t| type_filter::TABS.get(t)) {
+        Some(c) => type_filter::category_label(*c),
+        None => pecofence_core::i18n::text("类型\x04全部"),
+    }
+}
+
+/// Picks type tab `t` (`by`: click, Ctrl+Tab, Ctrl+Shift+Tab); the search runs again.
+fn set_tab(t: usize, by: &str) {
+    let changed = ACTIVE.with(|a| {
+        let mut a = a.try_borrow_mut().ok()?;
+        let s = a.as_mut()?;
+        if s.tab == t {
+            return None;
+        }
+        s.tab = t;
+        paint::invalidate(s.window.hwnd());
+        Some(s.queue.clone())
+    });
+    if let Some(queue) = changed {
+        tracing::info!(tab = tab_label(t), by, "search: type tab picked");
+        queue.push(Command::PeekSearchChanged);
+    }
+}
+
+/// The type the tabs keep the search to; None on 全部.
+pub fn type_tab() -> Option<TypeCategory> {
+    ACTIVE.with(|a| {
+        let t = a.try_borrow().ok()?.as_ref()?.tab;
+        type_filter::TABS.get(t.checked_sub(1)?).copied()
+    })
+}
+
 fn on_key(vk: u32) -> bool {
     let ctrl = window::key_down(msg::VK_CONTROL);
+    // Ctrl+Tab / Ctrl+Shift+Tab: the next / previous type tab, wrapping around.
+    if vk == 0x09 && ctrl {
+        let back = window::key_down(0x10);
+        let n = type_filter::TABS.len() + 1;
+        let now = ACTIVE.with(|a| a.borrow().as_ref().map_or(0, |s| s.tab));
+        let next = if back {
+            (now + n - 1) % n
+        } else {
+            (now + 1) % n
+        };
+        set_tab(next, if back { "Ctrl+Shift+Tab" } else { "Ctrl+Tab" });
+        return true;
+    }
     let cmd = match vk {
         k if k == msg::VK_RETURN && ctrl => Command::PeekSearchOpenFolder,
         k if k == msg::VK_RETURN => Command::PeekSearchOpen,
@@ -705,6 +823,7 @@ pub fn set_rows(rows: Vec<Row>, selected: Option<usize>) {
             action_glyphs = s.rows.iter().filter(|r| r.glyph.is_some()).count(),
             selected = ?s.selected,
             bar = !s.rows.is_empty(),
+            tab = tab_label(s.tab),
             "search list laid out"
         );
         Some((s.window.hwnd(), s.x, s.y, s.w, h))
@@ -733,6 +852,7 @@ pub fn row_room(headings: usize) -> usize {
         let free = s.work_bottom
             - s.y
             - s.px(HEIGHT)
+            - s.px(TABS_H)
             - s.px(LIST_GAP * 3.0)
             - s.px(BAR_H)
             - headings as i32 * s.px(HEADING_H);

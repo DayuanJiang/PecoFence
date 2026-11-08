@@ -210,9 +210,9 @@ pub struct FenceViewState {
     pub(super) title_count: Option<String>,
     /// 筛选: the fence is filtered right now (Esc clears it).
     pub(super) filter_active: bool,
-    /// 筛选: the tag of a filtered single title once its box closed: the text and the count
-    /// (empty when the count capsule shows it).
-    pub(super) filter_tag: Option<(String, String)>,
+    /// 筛选: the tag of a filtered single title once its box closed: the type (「类型：PDF」, or
+    /// empty), the text and the count (empty when the count capsule shows it).
+    pub(super) filter_tag: Option<(String, String, String)>,
     /// 智能栅栏: the fence shows a search, so nothing is dropped into it.
     pub(super) refuses_drops: bool,
     /// Width the cached labels were fitted for; a change invalidates them.
