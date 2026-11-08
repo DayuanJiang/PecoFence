@@ -21,6 +21,11 @@ const EC_RIGHTMARGIN: usize = 2;
 
 type KeyHandler = fn(u32) -> bool;
 
+/// The code a key handler gets for the menu key or Shift+F10 (a `WM_CONTEXTMENU` from the
+/// keyboard). Outside the virtual-key range; returning true keeps the control's own text menu
+/// away. A right-click always gives the text menu.
+pub const KEY_CONTEXT_MENU: u32 = 0x1_0000;
+
 pub struct EditControl {
     hwnd: HWND,
     font: HFONT,
@@ -327,6 +332,13 @@ unsafe extern "system" fn subclass_proc(
         if msg == WM_KEYDOWN as u32 && refdata != 0 {
             let handler: KeyHandler = core::mem::transmute::<usize, KeyHandler>(refdata);
             if handler(wparam.0 as u32) {
+                return LRESULT(0);
+            }
+        }
+        // The menu key and Shift+F10: DefWindowProc sends WM_CONTEXTMENU with lParam -1.
+        if msg == WM_CONTEXTMENU as u32 && lparam.0 as u32 == u32::MAX && refdata != 0 {
+            let handler: KeyHandler = core::mem::transmute::<usize, KeyHandler>(refdata);
+            if handler(KEY_CONTEXT_MENU) {
                 return LRESULT(0);
             }
         }

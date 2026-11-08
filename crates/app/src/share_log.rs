@@ -715,7 +715,7 @@ mod tests {
         ("outcome", "?effect.as_ref().map(|r|(r.dropped,r.effect))"), // (bool, DropEffect)
         ("outcome", "outcome.kind()"),  // scripts::Outcome::kind: fixed names
         ("outcome", "?outcome"),        // dialogs::JumpOutcome enum (dialog_jump.rs)
-        ("outcome", "outcome"),         // state::log_route: `&'static str` rule outcomes
+        ("outcome", "outcome"),         // fixed words: log_route outcomes, search menu choice
         ("payload", "payload"),         // panic payload when `&'static str`
         ("position", "?snapshot.position"), // WallpaperPosition enum
         ("prop", "prop"),               // fence property key from our settings page
@@ -730,6 +730,7 @@ mod tests {
         ("verb", "%verb"),
         ("wanted", "%h"),          // Hotkey
         ("what", "what"),          // `&'static str` operation names, rules::category_name
+        ("what", "row_kind"),      // App::row_kind: fixed words for a search row
         ("what", "e.step"),        // ConfigStore::save step name
         ("what", "kind"),          // JavaScript error type from a fixed list
         ("what", "what.as_str()"), // settings::changed_settings: `Settings` field names
