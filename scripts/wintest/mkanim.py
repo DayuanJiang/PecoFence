@@ -7,6 +7,7 @@
 #   "subtitle": "桌面一次进来 2000 个文件，同时拖动一个栅栏",  # optional
 #   "before": {"dir": "rec-S1-before", "result": "✗ 松开 21 秒后栅栏才动"},
 #   "after":  {"dir": "rec-S1-after",  "result": "✓ 松开后马上停在新位置"},
+#   "before_label": "修复前（main）", "after_label": "修复后",  # optional; default 修复前（0.3.1）
 #   "steps": ["开始拖动标题", "松开鼠标", "等待"],        # optional; else the marks' texts (same count both sides)
 #   "crop": [x, y, w, h],                              # optional zoom (recorded pixels, same for both sides)
 #   "highlights": [{"step": 2, "side": "before", "rect": [x, y, w, h], "text": "还在原处", "keep": false}],
@@ -160,7 +161,8 @@ def main():
         for k, s in enumerate(sides):
             x0 = pad + k * (pw + pad)
             y0 = top + 40
-            chip(d, (x0, top + 4), "修复前（0.3.1）" if k == 0 else "修复后", RED if k == 0 else GREEN, fchip)
+            label = spec.get("before_label", "修复前（0.3.1）") if k == 0 else spec.get("after_label", "修复后")
+            chip(d, (x0, top + 4), label, RED if k == 0 else GREEN, fchip)
             start, length = s.seg(i)
             real = min(r * 1000.0, length)
             fr, f = s.frame_at(start + real)

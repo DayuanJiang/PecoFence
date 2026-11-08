@@ -77,6 +77,14 @@ pub struct SyncReport {
     pub unread: usize,
 }
 
+/// What [`AppState::apply_rules_all`] did: how many icons moved, and where they were, grouped
+/// by the fence each went to (`AppState::put_items_back` takes one group).
+#[derive(Debug, Default)]
+pub struct Refiled {
+    pub moved: usize,
+    pub places: Vec<(FenceId, Vec<(FenceId, pecofence_core::ItemRef)>)>,
+}
+
 /// One move the rule engine would make (see [`AppState::plan_rules`]).
 #[derive(Clone, Debug, PartialEq)]
 pub struct PlannedRuleMove {
@@ -2230,16 +2238,37 @@ impl AppState {
         true
     }
 
-    /// Re-runs the rules over every item (user assignments are respected).
-    pub fn apply_rules_all(&mut self, entries: &[DesktopEntry]) -> usize {
-        let moved = self.apply_rules_filtered(entries, false);
+    /// 「立即应用」: re-runs the rules over every item. Icons the user put into a fence stay;
+    /// those on the desktop (「桌面」) are sorted, also the ones dragged there. Returns where the
+    /// moved icons were, so the step can be undone.
+    pub fn apply_rules_all(&mut self, entries: &[DesktopEntry]) -> Refiled {
+        let plan = self.plan_rules(entries, false);
+        let mut refiled = Refiled::default();
+        for m in plan {
+            let before = self.item_places(&[m.item]);
+            if self
+                .config
+                .assign(self.layout, m.item, m.to, m.by)
+                .is_none()
+            {
+                continue;
+            }
+            refiled.moved += 1;
+            match refiled.places.iter_mut().find(|(to, _)| *to == m.to) {
+                Some((_, places)) => places.extend(before),
+                None => refiled.places.push((m.to, before)),
+            }
+        }
+        if refiled.moved > 0 {
+            self.dirty = true;
+        }
         tracing::info!(
-            moved,
+            moved = refiled.moved,
             items = entries.len(),
             rules = self.config.rules.list.len(),
             "rules applied"
         );
-        moved
+        refiled
     }
 
     /// The hourly sweep for clock-dependent rules: only an item whose winning rule has an
@@ -2270,7 +2299,12 @@ impl AppState {
     /// item that is not pinned by a manual placement and whose rule target differs from the
     /// fence it is in now (`idle_only`: see [`apply_idle_rules`](Self::apply_idle_rules)). With
     /// [`Unmatched::Stay`] an item in a fence that no rule matches stays there.
+    ///
+    /// A placement in 「桌面」 pins only for the hourly sweep: 「立即应用」 sorts everything on the
+    /// desktop, including icons dragged out of a fence onto it to be sorted again. Dropping one
+    /// there still runs no rule at once (feedback #49).
     pub fn plan_rules(&self, entries: &[DesktopEntry], idle_only: bool) -> Vec<PlannedRuleMove> {
+        let inbox = self.inbox_id();
         let mut plan = Vec::new();
         for entry in entries {
             if entry.origin == EntryOrigin::Namespace {
@@ -2282,6 +2316,7 @@ impl AppState {
             };
             let current = self.fences().iter().find(|f| f.contains_item(id));
             if let Some(f) = current
+                && (idle_only || Some(f.id) != inbox)
                 && f.items
                     .iter()
                     .any(|r| r.item_id == id && r.assigned_by == AssignedBy::User)
@@ -4263,6 +4298,85 @@ mod tests {
         assert!(state.config.fence_of_item(0, e).is_some());
     }
 
+    /// 「立即应用」 sorts the icons on the desktop, also the ones dragged out of a fence to be
+    /// sorted again; an icon dragged into another fence stays. The hourly sweep leaves the
+    /// dragged ones alone, and the step can be undone icon by icon.
+    #[test]
+    fn apply_now_sorts_what_was_dragged_to_the_desktop_and_keeps_fence_placements() {
+        use pecofence_core::rules::{Rule, TypeCategory};
+        let mut state = test_state();
+        let (programs, docs) = (state.fences()[0].id, state.fences()[2].id);
+        let inbox = state.inbox_id().unwrap();
+        let cleanup = state.new_fence("待清理", rect(0, 0, 300, 200)).unwrap();
+        let entries: Vec<DesktopEntry> = ["Notepad.lnk", "tool.exe", "backup.zip"]
+            .map(desktop_entry)
+            .into();
+        state.sync_desktop(&entries);
+        let id = |state: &AppState, name: &str| {
+            state
+                .item_id_for_path(Path::new(&format!("C:/Users/Me/Desktop/{name}")))
+                .unwrap()
+        };
+        let fence_of =
+            |state: &AppState, name: &str| state.config.fence_of_item(0, id(state, name));
+        assert_eq!(fence_of(&state, "Notepad.lnk"), Some(programs));
+        // Archives untouched for 30 days go to 待清理 (the entries are from 1970); first in the
+        // list, as a new rule is.
+        state.config.rules.list.insert(
+            0,
+            Rule::new(
+                "旧压缩包",
+                Target::Fence(cleanup),
+                vec![
+                    Cond::Type(vec![TypeCategory::Archives]),
+                    Cond::IdleDays { min: 30 },
+                ],
+            ),
+        );
+        // Dragged out onto the desktop, and into the wrong fence on purpose.
+        let (lnk, exe, zip) = (
+            id(&state, "Notepad.lnk"),
+            id(&state, "tool.exe"),
+            id(&state, "backup.zip"),
+        );
+        state.move_items(&[lnk, zip], inbox);
+        state.move_items(&[exe], docs);
+        assert_eq!(
+            state.apply_idle_rules(&entries),
+            0,
+            "the sweep keeps the desktop's"
+        );
+        assert_eq!(fence_of(&state, "backup.zip"), Some(inbox));
+
+        let refiled = state.apply_rules_all(&entries);
+        assert_eq!(refiled.moved, 2);
+        assert_eq!(fence_of(&state, "Notepad.lnk"), Some(programs));
+        assert_eq!(fence_of(&state, "backup.zip"), Some(cleanup));
+        assert_eq!(
+            fence_of(&state, "tool.exe"),
+            Some(docs),
+            "put there by hand"
+        );
+        let mut targets: Vec<FenceId> = refiled.places.iter().map(|(to, _)| *to).collect();
+        targets.sort();
+        let mut want = vec![programs, cleanup];
+        want.sort();
+        assert_eq!(targets, want);
+
+        // Undo puts each back where it was, still placed by hand.
+        for (to, back) in &refiled.places {
+            assert_eq!(state.put_items_back(back, *to), 1);
+        }
+        assert_eq!(fence_of(&state, "Notepad.lnk"), Some(inbox));
+        assert_eq!(fence_of(&state, "backup.zip"), Some(inbox));
+        assert_eq!(state.apply_idle_rules(&entries), 0);
+        assert_eq!(
+            state.apply_rules_all(&entries).moved,
+            2,
+            "and 立即应用 sorts them again"
+        );
+    }
+
     /// #69 / #71: the shortcut rule is disabled and type rules plus a final 「普通文件」 rule are
     /// applied. With 「留在当前栅栏」 the programs and shortcuts stay where that rule put them;
     /// with the default they fall back to 「桌面」 as before. A new item still goes to 「桌面」.
@@ -4329,7 +4443,7 @@ mod tests {
             plan.iter()
                 .all(|m| shortcuts.iter().all(|n| m.item != id(&state, n)))
         );
-        assert_eq!(state.apply_rules_all(&entries), plan.len());
+        assert_eq!(state.apply_rules_all(&entries).moved, plan.len());
         for (name, fence) in [
             ("Notepad.lnk", programs),
             ("tool.exe", programs),

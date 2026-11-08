@@ -891,10 +891,7 @@ impl App {
                 if let Some(w) = self.fences.get(&id) {
                     w.show(true);
                 }
-                let entries = shell::enumerate_desktop();
-                let moved = self.state.apply_rules_all(&entries);
-                self.refresh_all();
-                self.schedule_save();
+                let (moved, _) = self.apply_rules_now();
                 self.push_settings_state();
                 self.settings_toast(&pecofence_core::i18n::format(
                     "已添加“{0}”，整理了 {1} 个项目",

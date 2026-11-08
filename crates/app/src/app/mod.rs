@@ -355,8 +355,8 @@ pub struct App {
     welcome: Option<(crate::notice::Notice, welcome::Welcome)>,
     /// Ctrl+Z in a fence: the newest undoable step last (see `undo.rs`).
     undo: Vec<undo::UndoStep>,
-    /// The 「已删除栅栏」 notice with 撤销, and the fence it puts back.
-    undo_notice: Option<(crate::notice::Notice, FenceId)>,
+    /// The 「已删除栅栏」 or 「已按规则整理」 notice with 撤销, and what it undoes.
+    undo_notice: Option<(crate::notice::Notice, undo::UndoNotice)>,
     /// The 「新建栅栏」 / 「在此显示文件夹…」 buttons after a desktop marquee, with its rectangle.
     marquee_offer: Option<(crate::marquee_offer::MarqueeOffer, RECT)>,
     /// The welcome, what's-new and 对话框跳转 notices may show (not under a test script or
@@ -2752,11 +2752,9 @@ impl App {
             Command::PeekSearchRowMenu { row, x, y } => self.search_row_menu(row, x, y),
             Command::EverythingResults { kind, bytes } => self.on_everything_results(kind, &bytes),
             Command::ApplyRulesNow => {
-                let entries = shell::enumerate_desktop();
-                let moved = self.state.apply_rules_all(&entries);
-                self.refresh_all();
-                self.schedule_save();
-                if let Some(t) = &self.tray {
+                let (moved, step) = self.apply_rules_now();
+                let shown = step.is_some_and(|id| self.offer_undo_refiled(id, moved));
+                if !shown && let Some(t) = &self.tray {
                     t.show_info(
                         "PecoFence",
                         &pecofence_core::i18n::format(
