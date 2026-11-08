@@ -83,6 +83,7 @@ impl App {
     fn rebuild_render_stack(&mut self) -> windows_core::Result<()> {
         self.rebuild_stack()?;
         self.ctx.bitmaps.borrow_mut().clear();
+        self.ctx.chrome.forget_text_layouts();
         for w in self.fences.values() {
             w.recreate_surfaces(&self.ctx.stack);
         }
