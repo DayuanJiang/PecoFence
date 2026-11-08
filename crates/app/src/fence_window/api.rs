@@ -340,7 +340,7 @@ impl FenceWindow {
                 over_stats: Default::default(),
                 source_volume: None,
                 desktop: None,
-                folder_drag: false,
+                path_drag: false,
                 shortcut_hover: None,
             }),
         )
@@ -509,7 +509,7 @@ impl FenceWindow {
             over_stats: Default::default(),
             source_volume: None,
             desktop: None,
-            folder_drag: false,
+            path_drag: false,
             shortcut_hover: None,
         };
         let entered = handler.drag_enter(data, key_state, pt, allowed);
