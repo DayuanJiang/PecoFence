@@ -491,7 +491,46 @@ fn push_strip_fade(
     Ok(brush)
 }
 
-/// Ends the layer `push_strip_fade` started.
+/// A layer over `bounds` that leaves a clear disc of `radius` around `center`: what is drawn
+/// inside stops short of a badge drawn there afterwards, over any title background (a fixed
+/// ring colour smudged on tinted, Mica or glass titles). End it with `pop_strip_fade`.
+fn push_cut_out(
+    session: &DrawingSession<'_>,
+    bounds: Rect,
+    center: Vector2,
+    radius: f32,
+) -> Result<b::ID2D1Brush> {
+    let opaque = ColorF::new(0.0, 0.0, 0.0, 1.0);
+    let gradient = session.create_radial_gradient(
+        center,
+        radius,
+        radius,
+        &[
+            GradientStop::new(0.0, ColorF::TRANSPARENT),
+            GradientStop::new(0.82, ColorF::TRANSPARENT),
+            GradientStop::new(1.0, opaque),
+        ],
+    )?;
+    let brush: b::ID2D1Brush = gradient.as_raw_brush().cast()?;
+    let context: b::ID2D1DeviceContext = session.raw().cast()?;
+    let params = b::D2D1_LAYER_PARAMETERS1 {
+        contentBounds: b::D2D_RECT_F {
+            left: bounds.left,
+            top: bounds.top,
+            right: bounds.right,
+            bottom: bounds.bottom,
+        },
+        maskTransform: windows_numerics::Matrix3x2::identity(),
+        opacity: 1.0,
+        opacityBrush: ManuallyDrop::new(Some(brush.clone())),
+        ..Default::default()
+    };
+    unsafe { context.PushLayer(&params, None::<&b::ID2D1Layer>) };
+    drop(ManuallyDrop::into_inner(params.opacityBrush));
+    Ok(brush)
+}
+
+/// Ends the layer `push_strip_fade` (or `push_cut_out`) started.
 fn pop_strip_fade(session: &DrawingSession<'_>, _brush: b::ID2D1Brush) {
     if let Ok(context) = session.raw().cast::<b::ID2D1DeviceContext>() {
         unsafe { context.PopLayer() };
@@ -2088,6 +2127,7 @@ impl FenceChrome {
         width: f32,
         title_h: f32,
         alpha: f32,
+        legible: Option<&Legible>,
     ) -> Result<()> {
         let w = crate::text::measure_width(count, &self.badge_format) + COUNT_CAPSULE_PAD * 2.0;
         let right = TitleDeco::chevron_box(width, title_h).left - 2.0;
@@ -2106,42 +2146,32 @@ impl FenceChrome {
         let fill = session.create_solid_brush(with_alpha(wash, alpha))?;
         session.fill_rounded_rect(&RoundedRect::uniform(r, COUNT_CAPSULE_H * 0.5), &fill);
         let ink = session.create_solid_brush(with_alpha(foreground.text_secondary, alpha))?;
-        session.draw_text(count, &self.badge_format, &r, &ink);
+        let fx = legible.map(|l| l.fx(theme, foreground.text_secondary, alpha, false));
+        self.draw_caption(session, count, &self.badge_format, &r, &ink, fx);
         Ok(())
     }
 
-    /// 智能栅栏: the 10 px magnifier over the lower right of the folder glyph at `x`, in the
-    /// accent, with a 1 px ring in the title row's colour (eight copies around it) so the
-    /// folder's lines stop short of it; drawn twice half a DIP apart for the folder's weight.
-    fn draw_folder_badge(
+    /// 智能栅栏: the folder glyph in `slot` with the 10 px magnifier over its lower right, in
+    /// the accent. The folder is drawn with a clear disc around the magnifier, so its lines
+    /// stop short of it over any title background; the magnifier is drawn twice half a DIP
+    /// apart for the folder's weight.
+    #[allow(clippy::too_many_arguments)]
+    fn draw_badged_folder(
         &self,
         session: &DrawingSession<'_>,
         theme: &Theme,
+        slot: Rect,
         x: f32,
         title_h: f32,
         alpha: f32,
+        folder: &Brush,
     ) -> Result<()> {
-        let ring = if theme.mode == crate::theme::ThemeMode::Dark {
-            ColorF::from_rgba8(0x20, 0x20, 0x20, 0xF0)
-        } else {
-            ColorF::from_rgba8(0xF2, 0xF6, 0xFA, 0xF0)
-        };
-        let ring = session.create_solid_brush(with_alpha(ring, alpha))?;
-        let accent = session.create_solid_brush(with_alpha(theme.accent, alpha))?;
         let r = Rect::from_xywh(x + 8.0, title_h * 0.5 - 2.0, 12.0, 12.0);
-        for (dx, dy) in [
-            (-1.0, -1.0),
-            (0.0, -1.0),
-            (1.0, -1.0),
-            (-1.0, 0.0),
-            (1.0, 0.0),
-            (-1.0, 1.0),
-            (0.0, 1.0),
-            (1.0, 1.0),
-        ] {
-            let o = Rect::from_xywh(r.left + dx, r.top + dy, r.width(), r.height());
-            session.draw_text("\u{E721}", &self.folder_badge_format, &o, &ring);
-        }
+        let center = Vector2::new(r.left + 6.0, r.top + 6.0);
+        let layer = push_cut_out(session, slot, center, 7.5)?;
+        session.draw_text("\u{E8B7}", &self.title_glyph_format, &slot, folder);
+        pop_strip_fade(session, layer);
+        let accent = session.create_solid_brush(with_alpha(theme.accent, alpha))?;
         session.draw_text("\u{E721}", &self.folder_badge_format, &r, &accent);
         let r2 = Rect::from_xywh(r.left + 0.5, r.top, r.width(), r.height());
         session.draw_text("\u{E721}", &self.folder_badge_format, &r2, &accent);
@@ -2207,8 +2237,10 @@ impl FenceChrome {
         tag: (&str, &str, &str),
         title_count: Option<&str>,
         alpha: f32,
+        legible: Option<&Legible>,
     ) -> Result<()> {
         let (kind, _, count) = tag;
+        let accent_fx = || legible.map(|l| l.fx(theme, theme.accent, alpha, false));
         let text = &self.tag_text(width, tag, title_count);
         let r = self.filter_tag_rect(width, title_h, tag, title_count);
         let tint = session.create_solid_brush(with_alpha(theme.accent, 0.14 * alpha))?;
@@ -2227,24 +2259,35 @@ impl FenceChrome {
             let chip = Rect::from_xywh(r.left + 22.0, r.top + 3.0, kind_w - 6.0, TAG_H - 6.0);
             let strong = session.create_solid_brush(with_alpha(theme.accent, 0.22 * alpha))?;
             session.fill_rounded_rect(&RoundedRect::uniform(chip, (TAG_H - 6.0) * 0.5), &strong);
-            session.draw_text(kind, &self.badge_format, &chip, &accent);
+            self.draw_caption(
+                session,
+                kind,
+                &self.badge_format,
+                &chip,
+                &accent,
+                accent_fx(),
+            );
         }
         let text_x = r.left + 22.0 + kind_w;
         let text_w = crate::text::measure_width(text, &self.tag_format);
-        session.draw_text(
+        self.draw_caption(
+            session,
             text,
             &self.tag_format,
             &Rect::from_xywh(text_x, r.top, text_w + 2.0, TAG_H),
             &accent,
+            accent_fx(),
         );
         if !count.is_empty() {
             let cw = crate::text::measure_width(count, &self.count_format);
             let gap = if text.is_empty() { 0.0 } else { 8.0 };
-            session.draw_text(
+            self.draw_caption(
+                session,
                 count,
                 &self.count_format,
                 &Rect::from_xywh(text_x + text_w + gap, r.top, cw + 2.0, TAG_H),
                 &dim,
+                legible.map(|l| l.fx(theme, foreground.text_secondary, alpha, false)),
             );
         }
         // Cancel (E711): a click clears the filter.
@@ -2854,8 +2897,7 @@ impl FenceChrome {
                 // 智能栅栏: the folder with a magnifier badge, not a button (a smart fence shows
                 // no folder of its own to open).
                 if deco.search_glyph && !deco.up_button {
-                    session.draw_text("\u{E8B7}", &self.title_glyph_format, &slot, &secondary);
-                    self.draw_folder_badge(session, theme, x, title_h, title_a)?;
+                    self.draw_badged_folder(session, theme, slot, x, title_h, title_a, &secondary)?;
                 } else {
                     let box_r = glyph_up_square(x + 8.0, title_h);
                     draw_up_box_fill(session, &backdrop, theme, scale, box_r, state, title_a)?;
@@ -2892,6 +2934,14 @@ impl FenceChrome {
                 &text,
                 fx,
             );
+            // The capsule's and the tag's texts get a halo as the title does, and on Liquid
+            // Glass too (their washes are faint over a bright or busy wallpaper).
+            let chip_legible = if legible.is_none() && theme.liquid_glass {
+                Some(Legible::new(session)?)
+            } else {
+                None
+            };
+            let chip_legible = legible.as_ref().or(chip_legible.as_ref());
             // 智能栅栏: the number of files shown, in its capsule at the right end.
             if let Some(count) = title_count {
                 self.draw_count_capsule(
@@ -2902,6 +2952,7 @@ impl FenceChrome {
                     width,
                     title_h,
                     title_a,
+                    chip_legible,
                 )?;
             }
             if let Some(tag) = filter_tag {
@@ -2914,6 +2965,7 @@ impl FenceChrome {
                     tag,
                     title_count,
                     title_a,
+                    chip_legible,
                 )?;
             }
         }
