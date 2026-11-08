@@ -2486,6 +2486,11 @@ impl AppState {
         });
     }
 
+    /// 文字大小 of a note or script fence (None = normal).
+    pub fn set_text_size(&mut self, id: FenceId, size: Option<pecofence_core::TitleSize>) {
+        self.edit_appearance(id, |a| a.text_size = size);
+    }
+
     /// Per-fence title on hover (None = follow `rollUp.titleOnHover`).
     pub fn set_title_on_hover(&mut self, id: FenceId, on: Option<bool>) {
         self.edit_appearance(id, |a| a.title_on_hover = on);

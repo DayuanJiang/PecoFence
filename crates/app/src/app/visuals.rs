@@ -845,6 +845,22 @@ pub(super) fn fence_style_for(f: &pecofence_core::Fence) -> FenceStyle {
     }
 }
 
+/// 文字大小 of a note or script fence as its window takes it: 0 small, 1 normal, 2 large, 3
+/// extra large (`pecofence_render::fence_chrome::TOOL_TEXT_SIZES`).
+pub(super) fn text_size_index(f: &pecofence_core::Fence) -> u8 {
+    match f
+        .appearance
+        .as_ref()
+        .and_then(|a| a.text_size)
+        .unwrap_or_default()
+    {
+        TitleSize::Small => 0,
+        TitleSize::Normal => 1,
+        TitleSize::Large => 2,
+        TitleSize::ExtraLarge => 3,
+    }
+}
+
 pub(super) fn shadow_style_for(theme: &Theme) -> ShadowStyle {
     let mut shadow = match theme.mode {
         ThemeMode::Dark => ShadowStyle::DARK,

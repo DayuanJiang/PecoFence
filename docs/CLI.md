@@ -178,6 +178,9 @@ default/clear/solid/transparent (transparent: no glass, rim or shadow until the 
 fence), `tint` `"#RRGGBB"` or `null`, `tintTitleOnly` (the tint washes only the title row),
 `tabColor` `"#RRGGBB"` or `null` (the bar under the fence's tab in a tab strip; `null` follows its
 tint), `titleColor` theme/tint/white/black/`"#RRGGBB"`, `titleSize` small/normal/large/extraLarge,
+`textSize` small/normal/large/extraLarge (note and script fences: the size of their text, check
+boxes and clickable rows, 12/14/18/24 DIPs; normal by default; other fences refuse it, and a
+clock's text follows the size of its fence instead),
 `titleOnHover` default/hover/always (hover: the title row folds away until the pointer is over the
 fence; default follows `rollUp.titleOnHover`), `layout` icons/list/details,
 `sort` manual/name/type/date/size/openCount, `reverse`, `groupByDate`, `foldersFirst` (folders above files in a sorted fence), `labelLines` 0/1/2/3 (lines

@@ -944,14 +944,26 @@ impl App {
         };
         let rect = w.content_screen_rect();
         let dpi = monitors::dpi_for_window(w.hwnd());
+        let text_size = self.state.fence(fence).map_or(1, text_size_index);
+        let font_dip = pecofence_render::fence_chrome::TOOL_TEXT_SIZES[usize::from(text_size)];
         tracing::info!(
             %fence,
             rect = ?(rect.left, rect.top, rect.right, rect.bottom),
             dpi,
+            text_size,
+            font_dip,
             chars = text.chars().count(),
             "note editor opened"
         );
-        crate::note_edit::open(rect, dpi, fence, &text, self.queue.clone(), self.theme_mode);
+        crate::note_edit::open(
+            rect,
+            dpi,
+            fence,
+            &text,
+            self.queue.clone(),
+            self.theme_mode,
+            font_dip,
+        );
     }
 
     /// Quitting: the text of a note editor still open goes into the note now (its commit through

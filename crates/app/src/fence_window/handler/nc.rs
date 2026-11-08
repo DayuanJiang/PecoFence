@@ -784,6 +784,10 @@ pub(super) fn on_exitsizemove(
                 if !v.rolled_up && !v.height_animating() {
                     v.expanded_h_px = rect.bottom - rect.top;
                 }
+                // A clock logs the text size the resize ended with.
+                if v.clock.is_some() && !v.rolled_up {
+                    let _ = v.redraw_clock();
+                }
                 v.peeking
             }
             None => false,

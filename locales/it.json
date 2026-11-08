@@ -592,6 +592,8 @@
   "标签页文字下方那条色条的颜色，方便区分同一个栅栏里的标签页": "Colore della barra sotto il nome della scheda, utile per distinguere le schede dello stesso riquadro",
   "特大": "Molto grande",
   "栅栏标题和标签页文字的大小": "Dimensione del titolo del riquadro e dei nomi delle schede",
+  "文字大小": "Dimensione del testo",
+  "栅栏里文字的大小": "Dimensione del testo nel riquadro",
   "喜欢 PecoFence 吗？": "Ti piace PecoFence?",
   "你的支持能让更多人发现它。": "Il tuo supporto può aiutare altre persone a scoprirlo.",
   "在 Microsoft Store 评分": "Lascia una valutazione sul Microsoft Store",
@@ -802,5 +804,6 @@
   "Everything 1.5 已经装好，现在运行的是 {0}": "Everything 1.5 è installato, ma è in esecuzione la {0}",
   "改用 1.5 后可以用拼音找中文名。1.5 会在登录 Windows 时启动，1.4 不再自动启动。Windows 可能会询问一次管理员权限": "Con la 1.5 trovi i nomi cinesi col pinyin. La 1.5 si avvierà all’accesso a Windows e la 1.4 non partirà più da sola. Windows può chiedere una volta i diritti di amministratore.",
   "改用 1.5": "Passa alla 1.5",
-  "已改用 Everything 1.5，以后登录 Windows 时也会启动它": "Ora si usa Everything 1.5. Da adesso si avvia anche all’accesso a Windows"
+  "已改用 Everything 1.5，以后登录 Windows 时也会启动它": "Ora si usa Everything 1.5. Da adesso si avvia anche all’accesso a Windows",
+  "搜索别名\u0004字体大小|字号|放大文字|看不清": "dimensione carattere|carattere più grande|testo più grande|difficile da leggere"
 }

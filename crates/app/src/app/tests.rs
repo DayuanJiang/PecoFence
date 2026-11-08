@@ -649,6 +649,19 @@ mod ipc {
             parse_fence_prop("titleSize", &json!("extraLarge")).unwrap(),
             FenceProp::TitleSize(Some(pecofence_core::TitleSize::ExtraLarge))
         );
+        // linux.do: the text of notes and script fences in four sizes.
+        assert_eq!(
+            parse_fence_prop("textSize", &json!("extraLarge")).unwrap(),
+            FenceProp::TextSize(Some(pecofence_core::TitleSize::ExtraLarge))
+        );
+        assert_eq!(
+            parse_fence_prop("textSize", &json!("normal")).unwrap(),
+            FenceProp::TextSize(None)
+        );
+        assert_eq!(
+            parse_fence_prop("textSize", &json!(24)).unwrap_err().code,
+            ErrorCode::InvalidValue
+        );
         assert_eq!(
             parse_fence_prop("hideWhenEmpty", &json!(true)).unwrap(),
             FenceProp::HideWhenEmpty(true)

@@ -590,6 +590,8 @@
         <select id="fenceTitleColor" data-fence="titleColor"><option value="theme">跟随主题</option><option value="tint">跟随色调</option><option value="white">白色</option><option value="black">黑色</option></select></div>
       <div class="card"><div class="l"><span class="ic">&#xE8E9;</span><div><div class="t">标题字号</div><div class="s">栅栏标题和标签页文字的大小</div></div></div>
         <select id="fenceTitleSize" data-fence="titleSize"><option value="small">小</option><option value="normal">标准</option><option value="large">大</option><option value="extraLarge">特大</option></select></div>
+      <div class="card" id="fenceTextSize"><div class="l"><span class="ic">&#xE70B;</span><div><div class="t">文字大小</div><div class="s">栅栏里文字的大小</div></div></div>
+        <select id="fenceTextSizeSel" data-fence="textSize"><option value="small">小</option><option value="normal">标准</option><option value="large">大</option><option value="extraLarge">特大</option></select></div>
       <div class="card"><div class="l"><span class="ic">&#xE737;</span><div><div class="t">显示标题栏</div><div class="s">鼠标悬停时显示：平时收起标题行，指针移到栅栏上才出现</div></div></div>
         <select id="fenceTitleOnHover" data-fence="titleOnHover"><option value="default">跟随常规设置</option><option value="always">始终显示</option><option value="hover">鼠标悬停时显示</option></select></div>
       <div id="fenceLayoutGroup">
@@ -1127,6 +1129,7 @@
     ['#newScript', t("搜索别名\x04插件|天气|命令|自定义")],
     ['#fenceOpacity', t("搜索别名\x04透明度|透明|玻璃")],
     ['[data-fence=locked]', t("搜索别名\x04固定|锁住|防止移动")],
+    ['[data-fence=textSize]', t("搜索别名\x04字体大小|字号|放大文字|看不清")],
     ['[data-bind="rules.keepUpdated"]', t("搜索别名\x04自动整理|自动分类|分类")],
     ['#cfgExport', t("搜索别名\x04备份|迁移|换电脑|恢复设置")],
     ['#updateAction', t("搜索别名\x04升级|新版本|检查更新")],
@@ -1737,6 +1740,8 @@
     // Icon size, spacing, names, alignment and auto height are about icons.
     document.getElementById('fenceLayoutGroup').style.display = f.tool ? 'none' : '';
     document.getElementById('fenceAutoHeight').style.display = f.tool ? 'none' : '';
+    // 文字大小: notes and script fences (a clock's text follows the fence size).
+    document.getElementById('fenceTextSize').style.display = f.tool && (f.tool.kind === 'note' || f.tool.kind === 'script') ? '' : 'none';
     document.getElementById('fenceDesktopLayout').style.display = f.kind === 'inbox' ? '' : 'none';
     // 自由摆放 is a way of 像桌面一样排列 (a 「桌面」 with tabs stays a fence).
     document.getElementById('fenceFreePlacement').style.display = f.kind === 'inbox' && f.desktopLayout && !f.tabbed ? '' : 'none';

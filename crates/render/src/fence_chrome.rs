@@ -53,6 +53,23 @@ struct TitleFonts {
     weight: i32,
 }
 
+/// A note or script fence's text at one 文字大小: the lines, and the glyphs (check mark, open
+/// arrow) that grow with them.
+struct ToolText {
+    body: TextFormat,
+    glyph: TextFormat,
+    /// The size over the normal 14 DIPs: check boxes, gaps and the arrow scale by it.
+    k: f32,
+}
+
+/// The clock's formats at `time` / `date` DIPs.
+struct ClockFonts {
+    time: f32,
+    date: f32,
+    time_format: TextFormat,
+    date_format: TextFormat,
+}
+
 pub struct FenceChrome {
     title_fonts: RefCell<TitleFonts>,
     count_format: TextFormat,
@@ -68,13 +85,16 @@ pub struct FenceChrome {
     group_format: TextFormat,
     /// Tab match badge number: 11 / 600, centred.
     badge_format: TextFormat,
-    /// Note fence lines (便签与待办): Body 14, leading, wrapped.
-    note_format: TextFormat,
+    /// Note and script fence lines (便签与待办, 脚本栅栏) at each 文字大小: leading, wrapped.
+    tool_text: [ToolText; 4],
     /// A script fence's footer: Caption 12, leading, top-aligned.
     note_footer_format: TextFormat,
-    /// 时钟与日期: the time (Display 40 / Light) and the date line (Body 14).
+    /// 时钟与日期: the time (Display 40 / Light) and the date line (Body 14) at the size of a new
+    /// clock, which the text sizes are measured with.
     clock_time_format: TextFormat,
     clock_date_format: TextFormat,
+    /// The clock's time and date formats at the sizes last drawn (there is one clock at most).
+    clock_fonts: RefCell<Option<ClockFonts>>,
     /// The blurred masks of a theme's soft text shadow, shared by all fences.
     text_shadows: RefCell<TextShadows>,
 }
@@ -1681,25 +1701,37 @@ impl FenceChrome {
             .with_alignment(TextAlignment::Center)
             .with_paragraph_alignment(ParagraphAlignment::Center)
             .with_word_wrapping(WordWrapping::NoWrap);
-        let note_format = TextFormat::with_locale(font_text(), 14.0, FontWeight::NORMAL, locale)?
-            .with_alignment(TextAlignment::Leading)
-            .with_paragraph_alignment(ParagraphAlignment::Top)
-            .with_word_wrapping(WordWrapping::Wrap);
+        let tool_text = |size: f32| -> Result<ToolText> {
+            let k = size / TOOL_TEXT_SIZES[1];
+            Ok(ToolText {
+                body: Self::build_tool_format(font_text(), size, FontWeight::NORMAL, true)?,
+                glyph: TextFormat::with_locale(
+                    crate::theme::font_icons(),
+                    12.0 * k,
+                    FontWeight::NORMAL,
+                    locale,
+                )?
+                .with_alignment(TextAlignment::Center)
+                .with_paragraph_alignment(ParagraphAlignment::Center)
+                .with_word_wrapping(WordWrapping::NoWrap),
+                k,
+            })
+        };
+        let tool_text = [
+            tool_text(TOOL_TEXT_SIZES[0])?,
+            tool_text(TOOL_TEXT_SIZES[1])?,
+            tool_text(TOOL_TEXT_SIZES[2])?,
+            tool_text(TOOL_TEXT_SIZES[3])?,
+        ];
         let note_footer_format =
             TextFormat::with_locale(font_small(), 12.0, FontWeight::NORMAL, locale)?
                 .with_alignment(TextAlignment::Leading)
                 .with_paragraph_alignment(ParagraphAlignment::Top)
                 .with_word_wrapping(WordWrapping::NoWrap);
         let clock_time_format =
-            TextFormat::with_locale(font_display(), 40.0, FontWeight(300), locale)?
-                .with_alignment(TextAlignment::Leading)
-                .with_paragraph_alignment(ParagraphAlignment::Top)
-                .with_word_wrapping(WordWrapping::NoWrap);
+            Self::build_tool_format(font_display(), CLOCK_TIME_DIP, FontWeight(300), false)?;
         let clock_date_format =
-            TextFormat::with_locale(font_text(), 14.0, FontWeight::NORMAL, locale)?
-                .with_alignment(TextAlignment::Leading)
-                .with_paragraph_alignment(ParagraphAlignment::Top)
-                .with_word_wrapping(WordWrapping::Wrap);
+            Self::build_tool_format(font_text(), CLOCK_DATE_DIP, FontWeight::NORMAL, true)?;
         let chrome = Self {
             title_fonts: RefCell::new(Self::build_title_fonts(None, 600)?),
             count_format,
@@ -1710,10 +1742,11 @@ impl FenceChrome {
             title_glyph_format,
             group_format,
             badge_format,
-            note_format,
+            tool_text,
             note_footer_format,
             clock_time_format,
             clock_date_format,
+            clock_fonts: RefCell::default(),
             text_shadows: RefCell::default(),
         };
         // Labels follow the desktop's icon-title font from the start (12 px / 16 stays the
@@ -1774,6 +1807,25 @@ impl FenceChrome {
         }
         *self.title_fonts.borrow_mut() = Self::build_title_fonts(face, weight)?;
         Ok(true)
+    }
+
+    /// Leading, top-aligned text of a tool fence, wrapped or on one line.
+    fn build_tool_format(
+        family: &str,
+        size: f32,
+        weight: FontWeight,
+        wrap: bool,
+    ) -> Result<TextFormat> {
+        Ok(
+            TextFormat::with_locale(family, size, weight, text_locale())?
+                .with_alignment(TextAlignment::Leading)
+                .with_paragraph_alignment(ParagraphAlignment::Top)
+                .with_word_wrapping(if wrap {
+                    WordWrapping::Wrap
+                } else {
+                    WordWrapping::NoWrap
+                }),
+        )
     }
 
     fn build_label_format(family: &str, size: f32, weight: FontWeight) -> Result<TextFormat> {
@@ -3380,11 +3432,14 @@ pub struct NoteLineDraw<'a> {
 /// Note layout in surface DIPs: the text inset from the left and right edges and from the top.
 pub const NOTE_PAD_X: f32 = 14.0;
 pub const NOTE_PAD_TOP: f32 = 2.0;
-/// Edge of a to-do check box and the gap after it.
+/// Edge of a to-do check box and the gap after it (at the normal text size).
 pub const NOTE_BOX: f32 = 16.0;
 const NOTE_BOX_GAP: f32 = 8.0;
-/// Extra space between two lines of a note.
+/// Extra space between two lines of a note (at the normal text size).
 const NOTE_LINE_GAP: f32 = 6.0;
+/// 文字大小 of note and script fences: 小, 标准, 大, 特大 (0 to 3) in DIPs. 标准 is the Body 14
+/// the notes always had.
+pub const TOOL_TEXT_SIZES: [f32; 4] = [12.0, 14.0, 18.0, 24.0];
 /// Check mark in Segoe Fluent Icons / Segoe MDL2 Assets.
 const CHECK_GLYPH: &str = "\u{E73E}";
 /// "Open in new window" in Segoe Fluent Icons / Segoe MDL2 Assets: a script row that opens
@@ -3393,10 +3448,20 @@ const OPEN_GLYPH: &str = "\u{E8A7}";
 /// A script row's hover plate reaches this far past its text.
 const SCRIPT_ROW_PAD_X: f32 = 6.0;
 const SCRIPT_ROW_PAD_Y: f32 = 3.0;
-/// Height a `---` separator takes, its line in the middle.
+/// Height a `---` separator takes, its line in the middle (at the normal text size).
 const SCRIPT_SEPARATOR_H: f32 = 11.0;
-/// Room for the arrow of a row that opens something.
+/// Room for the arrow of a row that opens something (at the normal text size).
 const SCRIPT_ARROW_W: f32 = 18.0;
+/// 时钟与日期 in a new clock (240 × 140 DIPs, so 104 DIPs under its title row): the time and
+/// date sizes in DIPs. A clock of another size scales them (`FenceChrome::clock_text_sizes`).
+const CLOCK_TIME_DIP: f32 = 40.0;
+const CLOCK_DATE_DIP: f32 = 14.0;
+const CLOCK_BASE_H: f32 = 104.0;
+/// How far the clock's text shrinks and grows from the sizes above.
+const CLOCK_SCALE_MIN: f32 = 0.6;
+const CLOCK_SCALE_MAX: f32 = 4.0;
+/// The smallest date text: under it the date is hard to read.
+const CLOCK_DATE_MIN_DIP: f32 = 11.0;
 
 /// One row of a script fence (脚本栅栏) to draw.
 pub struct ScriptRowDraw<'a> {
@@ -3412,11 +3477,17 @@ pub struct ScriptRowDraw<'a> {
 }
 
 impl FenceChrome {
-    /// Draws a note's lines from the top left, each wrapped to the width; a to-do gets a check
-    /// box before its text, ticked ones in the accent with their text dimmed. `hint` shows in
-    /// the secondary colour while the note has no text. `footer` (a script fence's status line)
-    /// sits at the bottom in the secondary colour and the lines stop above it. Returns each
-    /// to-do's line index with its check box (surface DIPs) for hit-testing.
+    /// The text of a note or script fence at 文字大小 `size` (0 to 3, 1 = normal).
+    fn tool_text(&self, size: u8) -> &ToolText {
+        &self.tool_text[usize::from(size.min(3))]
+    }
+
+    /// Draws a note's lines from the top left, each wrapped to the width, at 文字大小
+    /// `text_size` (0 to 3); a to-do gets a check box before its text, ticked ones in the
+    /// accent with their text dimmed. `hint` shows in the secondary colour while the note has
+    /// no text. `footer` (a script fence's status line) sits at the bottom in the secondary
+    /// colour and the lines stop above it. Returns each to-do's line index with its check box
+    /// (surface DIPs) for hit-testing.
     #[allow(clippy::too_many_arguments)]
     pub fn draw_note(
         &self,
@@ -3425,11 +3496,13 @@ impl FenceChrome {
         scale: f32,
         width: f32,
         height: f32,
+        text_size: u8,
         lines: &[NoteLineDraw<'_>],
         hint: &str,
         footer: Option<&str>,
     ) -> Result<Vec<(usize, Rect)>> {
         session.clear(ColorF::TRANSPARENT);
+        let tt = self.tool_text(text_size);
         let primary = session.create_solid_brush(theme.text_primary)?;
         let secondary = session.create_solid_brush(theme.text_secondary)?;
         let w = (width - 2.0 * NOTE_PAD_X).max(1.0);
@@ -3450,7 +3523,7 @@ impl FenceChrome {
         {
             session.draw_text(
                 hint,
-                &self.note_format,
+                &tt.body,
                 &Rect::from_xywh(
                     NOTE_PAD_X,
                     NOTE_PAD_TOP,
@@ -3461,7 +3534,7 @@ impl FenceChrome {
             );
             return Ok(Vec::new());
         }
-        let line_h = TextLayout::new("Ag", &self.note_format, w, f32::MAX)?
+        let line_h = TextLayout::new("Ag", &tt.body, w, f32::MAX)?
             .metrics()
             .height;
         let px = Px::new(scale);
@@ -3473,13 +3546,13 @@ impl FenceChrome {
                 break;
             }
             let x = match line.todo {
-                Some(_) => NOTE_PAD_X + NOTE_BOX + NOTE_BOX_GAP,
+                Some(_) => NOTE_PAD_X + tt.todo_room(),
                 None => NOTE_PAD_X,
             };
             let text_w = (width - x - NOTE_PAD_X).max(1.0);
             // An empty line still takes a line's height.
             let text = if line.text.is_empty() { " " } else { line.text };
-            let layout = TextLayout::new(text, &self.note_format, text_w, f32::MAX)?;
+            let layout = TextLayout::new(text, &tt.body, text_w, f32::MAX)?;
             let h = layout.metrics().height.max(line_h);
             // A wrapped line that runs past the footer's top shows only its rows that fit whole,
             // so no text is drawn over the footer.
@@ -3502,7 +3575,7 @@ impl FenceChrome {
                 None
             };
             if let Some(done) = line.todo {
-                boxes.push((i, todo.draw(self, session, px, y, line_h, done)));
+                boxes.push((i, todo.draw(tt, session, px, y, line_h, done)));
             }
             let brush = if line.todo == Some(true) {
                 &secondary
@@ -3510,18 +3583,31 @@ impl FenceChrome {
                 &primary
             };
             session.draw_text_layout(Vector2::new(x, y), &layout, brush);
-            y += h + NOTE_LINE_GAP;
+            y += h + NOTE_LINE_GAP * tt.k;
         }
         Ok(boxes)
     }
 }
 
+impl ToolText {
+    /// A to-do's check box edge in DIPs (whole DIPs, 16 at the normal size).
+    fn box_edge(&self) -> f32 {
+        (NOTE_BOX * self.k).round()
+    }
+
+    /// Room a to-do's check box takes before its text.
+    fn todo_room(&self) -> f32 {
+        self.box_edge() + (NOTE_BOX_GAP * self.k).round()
+    }
+}
+
 impl FenceChrome {
-    /// 脚本栅栏: the rows a script printed, from the top left, each wrapped to the width: a
-    /// to-do's check box, an icon, the text in its colour; `---` a hairline. The row under the
-    /// pointer (`hover`) gets a plate when it is clickable, and an arrow when it opens
-    /// something. `footer` sits at the bottom and the rows stop above it, as in
-    /// [`Self::draw_note`]. Returns each clickable row's index and plate (surface DIPs).
+    /// 脚本栅栏: the rows a script printed, from the top left, each wrapped to the width, at
+    /// 文字大小 `text_size` (0 to 3): a to-do's check box, an icon, the text in its colour;
+    /// `---` a hairline. The row under the pointer (`hover`) gets a plate when it is
+    /// clickable, and an arrow when it opens something. `footer` sits at the bottom and the
+    /// rows stop above it, as in [`Self::draw_note`]. Returns each clickable row's index and
+    /// plate (surface DIPs).
     #[allow(clippy::too_many_arguments)]
     pub fn draw_script(
         &self,
@@ -3530,12 +3616,14 @@ impl FenceChrome {
         scale: f32,
         width: f32,
         height: f32,
+        text_size: u8,
         rows: &[ScriptRowDraw<'_>],
         hover: Option<usize>,
         hint: &str,
         footer: &str,
     ) -> Result<Vec<(usize, Rect)>> {
         session.clear(ColorF::TRANSPARENT);
+        let tt = self.tool_text(text_size);
         let primary = session.create_solid_brush(theme.text_primary)?;
         let secondary = session.create_solid_brush(theme.text_secondary)?;
         let w = (width - 2.0 * NOTE_PAD_X).max(1.0);
@@ -3554,7 +3642,7 @@ impl FenceChrome {
         }) {
             session.draw_text(
                 hint,
-                &self.note_format,
+                &tt.body,
                 &Rect::from_xywh(
                     NOTE_PAD_X,
                     NOTE_PAD_TOP,
@@ -3565,13 +3653,16 @@ impl FenceChrome {
             );
             return Ok(Vec::new());
         }
-        let line_h = TextLayout::new("Ag", &self.note_format, w, f32::MAX)?
+        let line_h = TextLayout::new("Ag", &tt.body, w, f32::MAX)?
             .metrics()
             .height;
         let px = Px::new(scale);
         let plate = session.create_solid_brush(with_alpha(theme.text_primary, 0.07))?;
         let rule = session.create_solid_brush(with_alpha(theme.text_primary, 0.14))?;
         let todo = TodoBrushes::new(session, theme)?;
+        let separator_h = (SCRIPT_SEPARATOR_H * tt.k).round();
+        let arrow_w = (SCRIPT_ARROW_W * tt.k).round();
+        let glyph_w = (14.0 * tt.k).round();
         let mut hits = Vec::new();
         let mut y = NOTE_PAD_TOP + SCRIPT_ROW_PAD_Y;
         for (i, row) in rows.iter().enumerate() {
@@ -3579,26 +3670,26 @@ impl FenceChrome {
                 break;
             }
             if row.separator {
-                let line_y = px.snap(y - SCRIPT_ROW_PAD_Y + SCRIPT_SEPARATOR_H / 2.0);
+                let line_y = px.snap(y - SCRIPT_ROW_PAD_Y + separator_h / 2.0);
                 session.fill_rect(&Rect::from_xywh(NOTE_PAD_X, line_y, w, px.hair()), &rule);
-                y += SCRIPT_SEPARATOR_H;
+                y += separator_h;
                 continue;
             }
             let mut x = NOTE_PAD_X;
             if row.todo.is_some() {
-                x += NOTE_BOX + NOTE_BOX_GAP;
+                x += tt.todo_room();
             }
             let icon = match row.icon {
-                Some(icon) => Some(TextLayout::new(icon, &self.note_format, w, f32::MAX)?),
+                Some(icon) => Some(TextLayout::new(icon, &tt.body, w, f32::MAX)?),
                 None => None,
             };
             let text_x = x + icon.as_ref().map_or(0.0, |l| {
-                l.metrics().width_including_trailing_whitespace + 6.0
+                l.metrics().width_including_trailing_whitespace + 6.0 * tt.k
             });
-            let arrow = if row.opens { SCRIPT_ARROW_W } else { 0.0 };
+            let arrow = if row.opens { arrow_w } else { 0.0 };
             let text_w = (width - text_x - NOTE_PAD_X - arrow).max(1.0);
             let text = if row.text.is_empty() { " " } else { row.text };
-            let layout = TextLayout::new(text, &self.note_format, text_w, f32::MAX)?;
+            let layout = TextLayout::new(text, &tt.body, text_w, f32::MAX)?;
             let h = layout.metrics().height.max(line_h);
             // A row that runs past the footer's top shows only its lines that fit whole.
             let _clip = if has_footer && y + h > height {
@@ -3630,7 +3721,7 @@ impl FenceChrome {
                 session.fill_rounded_rect(&RoundedRect::uniform(plate_rect, 4.0), &plate);
             }
             if let Some(done) = row.todo {
-                todo.draw(self, session, px, y, line_h, done);
+                todo.draw(tt, session, px, y, line_h, done);
             }
             if let Some(icon) = &icon {
                 session.draw_text_layout_color(Vector2::new(x, y), icon, &primary);
@@ -3648,8 +3739,8 @@ impl FenceChrome {
             if hovered && row.opens {
                 session.draw_text(
                     OPEN_GLYPH,
-                    &self.glyph_format,
-                    &Rect::from_xywh(width - NOTE_PAD_X - 14.0, y, 14.0, line_h),
+                    &tt.glyph,
+                    &Rect::from_xywh(width - NOTE_PAD_X - glyph_w, y, glyph_w, line_h),
                     &secondary,
                 );
             }
@@ -3681,21 +3772,23 @@ impl TodoBrushes {
         })
     }
 
-    /// The box of a to-do whose first line is at `y` (`line_h` tall); returns its rect.
+    /// The box of a to-do whose first line is at `y` (`line_h` tall), sized for the text
+    /// `tt`; returns its rect.
     fn draw(
         &self,
-        chrome: &FenceChrome,
+        tt: &ToolText,
         session: &DrawingSession<'_>,
         px: Px,
         y: f32,
         line_h: f32,
         done: bool,
     ) -> Rect {
-        let top = px.snap(y + (line_h - NOTE_BOX) / 2.0);
-        let r = Rect::from_xywh(px.snap(NOTE_PAD_X), top, NOTE_BOX, NOTE_BOX);
+        let edge = tt.box_edge();
+        let top = px.snap(y + (line_h - edge) / 2.0);
+        let r = Rect::from_xywh(px.snap(NOTE_PAD_X), top, edge, edge);
         if done {
             session.fill_rounded_rect(&RoundedRect::uniform(r, 4.0), &self.accent);
-            session.draw_text(CHECK_GLYPH, &chrome.glyph_format, &r, &self.check);
+            session.draw_text(CHECK_GLYPH, &tt.glyph, &r, &self.check);
         } else {
             session.draw_rounded_rect(&px.ring(r, 4.0), &self.ring, px.hair());
         }
@@ -3704,7 +3797,26 @@ impl TodoBrushes {
 }
 
 impl FenceChrome {
-    /// 时钟与日期: `time` large at the top left, `date` under it in the secondary colour.
+    /// 时钟与日期: the time's and the date's text size in DIPs for a content area `width` ×
+    /// `height` DIPs showing `time` and `date`. A new clock's area shows them at 40 and 14;
+    /// another area scales both by its height, at most as far as the wider of the two lines
+    /// still fits the width, from 0.6 to 4 times (the date never under 11). The time size is
+    /// whole DIPs, so the text keeps its size while the strings change by a digit.
+    pub fn clock_text_sizes(&self, width: f32, height: f32, time: &str, date: &str) -> (f32, f32) {
+        let w = (width - 2.0 * NOTE_PAD_X).max(1.0);
+        let need = crate::text::measure_width(time, &self.clock_time_format)
+            .max(crate::text::measure_width(date, &self.clock_date_format))
+            .max(1.0);
+        let k = (height / CLOCK_BASE_H)
+            .min(w / need)
+            .clamp(CLOCK_SCALE_MIN, CLOCK_SCALE_MAX);
+        let time = (CLOCK_TIME_DIP * k).round();
+        let date = (CLOCK_DATE_DIP * time / CLOCK_TIME_DIP).max(CLOCK_DATE_MIN_DIP);
+        (time, date)
+    }
+
+    /// 时钟与日期: `time` large at the top left, `date` under it in the secondary colour, at
+    /// the sizes [`Self::clock_text_sizes`] gives for the area. Returns those sizes.
     pub fn draw_clock(
         &self,
         session: &DrawingSession<'_>,
@@ -3713,22 +3825,50 @@ impl FenceChrome {
         height: f32,
         time: &str,
         date: &str,
-    ) -> Result<()> {
+    ) -> Result<(f32, f32)> {
         session.clear(ColorF::TRANSPARENT);
+        let (time_dip, date_dip) = self.clock_text_sizes(width, height, time, date);
+        let fresh = self
+            .clock_fonts
+            .borrow()
+            .as_ref()
+            .is_some_and(|f| f.time == time_dip && f.date == date_dip);
+        if !fresh {
+            *self.clock_fonts.borrow_mut() = Some(ClockFonts {
+                time: time_dip,
+                date: date_dip,
+                time_format: Self::build_tool_format(
+                    font_display(),
+                    time_dip,
+                    FontWeight(300),
+                    false,
+                )?,
+                date_format: Self::build_tool_format(
+                    font_text(),
+                    date_dip,
+                    FontWeight::NORMAL,
+                    true,
+                )?,
+            });
+        }
+        let fonts = self.clock_fonts.borrow();
+        let Some(fonts) = fonts.as_ref() else {
+            return Ok((time_dip, date_dip));
+        };
         let primary = session.create_solid_brush(theme.text_primary)?;
         let secondary = session.create_solid_brush(theme.text_secondary)?;
         let w = (width - 2.0 * NOTE_PAD_X).max(1.0);
-        let layout = TextLayout::new(time, &self.clock_time_format, w, f32::MAX)?;
+        let layout = TextLayout::new(time, &fonts.time_format, w, f32::MAX)?;
         let time_h = layout.metrics().height;
         session.draw_text_layout(Vector2::new(NOTE_PAD_X, 0.0), &layout, &primary);
-        let top = time_h + 2.0;
+        let top = time_h + 2.0 * time_dip / CLOCK_TIME_DIP;
         session.draw_text(
             date,
-            &self.clock_date_format,
+            &fonts.date_format,
             &Rect::from_xywh(NOTE_PAD_X, top, w, (height - top).max(0.0)),
             &secondary,
         );
-        Ok(())
+        Ok((time_dip, date_dip))
     }
 
     /// One icon cell: state layers, icon box and label. `unfold` = (full name, line count):

@@ -288,6 +288,32 @@ async function runTests() {
     current().fences.splice(-2);
     doc = await reset();
   });
+  await test('文字大小 for notes and script fences, not for a clock or an ordinary fence', async () => {
+    doc = await reset();
+    current().fences.push({ ...current().fences[0], id: 'clock-a', title: 'Clock', tool: { kind: 'clock' }, textSize: 'normal' });
+    current().fences.push({ ...current().fences[0], id: 'note-a', title: 'Note A', tool: { kind: 'note' }, textSize: 'large' });
+    current().fences.push({ ...current().fences[0], id: 'script-a', title: 'Weather', tool: { kind: 'script' }, textSize: 'normal' });
+    frame.contentWindow.testRefresh();
+    await settle();
+    doc.querySelector('[data-page=fences]').click();
+    const card = doc.getElementById('fenceTextSize');
+    change(doc, 'fenceSel', 'fence-a');
+    assert(card.style.display === 'none', 'Text size offered for an ordinary fence');
+    change(doc, 'fenceSel', 'clock-a');
+    assert(card.style.display === 'none', 'Text size offered for a clock');
+    change(doc, 'fenceSel', 'note-a');
+    assert(card.style.display === '' && doc.getElementById('fenceTextSizeSel').value === 'large', 'Note text size not shown');
+    const choices = [...doc.querySelectorAll('#fenceTextSizeSel option')].map(o => o.value + o.textContent).join();
+    assert(choices === 'small小,normal标准,large大,extraLarge特大', 'Text size choices wrong: ' + choices);
+    const before = frame.contentWindow.testMessages.length;
+    change(doc, 'fenceTextSizeSel', 'extraLarge');
+    const sent = frame.contentWindow.testMessages.slice(before).filter(m => m.type === 'setFence');
+    assert(sent.length === 1 && sent[0].id === 'note-a' && sent[0].prop === 'textSize' && sent[0].value === 'extraLarge', 'Text size not posted: ' + JSON.stringify(sent));
+    change(doc, 'fenceSel', 'script-a');
+    assert(card.style.display === '' && doc.getElementById('fenceTextSizeSel').value === 'normal', 'Script text size not shown');
+    current().fences.splice(-3);
+    doc = await reset();
+  });
   await test('「速览与搜索」 holds Peek, Everything and dialog jump, and their switches post', async () => {
     doc = await reset();
     const nav = [...doc.querySelectorAll('nav a[data-page]')].map(a => a.dataset.page).join(' ');

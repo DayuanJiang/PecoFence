@@ -13,8 +13,7 @@ use pecofence_render::ThemeMode;
 use std::cell::RefCell;
 
 const NOTE_EDIT_CLASS: &str = "PecoFence.NoteEdit";
-/// Text size and side margin in DIPs (the note draws its lines at 14 DIP too).
-const FONT_DIP: f32 = 14.0;
+/// Side margin in DIPs.
 const MARGIN_DIP: f32 = 10.0;
 
 thread_local! {
@@ -51,7 +50,9 @@ struct Session {
     queue: CommandQueue,
 }
 
-/// Opens the editor over `rect` (screen px) with `text`, the caret after the last line.
+/// Opens the editor over `rect` (screen px) with `text`, the caret after the last line, its
+/// text `font_dip` DIPs high (the note's 文字大小).
+#[allow(clippy::too_many_arguments)]
 pub fn open(
     rect: RECT,
     dpi: u32,
@@ -59,6 +60,7 @@ pub fn open(
     text: &str,
     queue: CommandQueue,
     mode: ThemeMode,
+    font_dip: f32,
 ) {
     // An editor still open (or just closed) on this note holds newer text than the App has:
     // its commit is only queued. Start from that text.
@@ -119,7 +121,7 @@ pub fn open(
         w,
         h,
         dpi,
-        FONT_DIP,
+        font_dip,
         MARGIN_DIP,
         &shown,
         mode == ThemeMode::Dark,
