@@ -133,7 +133,7 @@ impl FreeGrid {
             return None;
         }
         let w = &self.work;
-        if !((w.left..w.right).contains(&at.0) && (w.top..w.bottom).contains(&at.1)) {
+        if !self.on_work(at) {
             return Some(self.cell_at(at.0 + sx / 2, at.1 + sy / 2));
         }
         // Windows' columns and rows on this work area, and the icon's.
@@ -152,6 +152,12 @@ impl FreeGrid {
             }
         };
         Some((fit(c, theirs.0, self.cols), fit(r, theirs.1, self.rows)))
+    }
+
+    /// Whether a point (screen px) is on this grid's work area, the monitor 「桌面」 is on.
+    pub(super) fn on_work(&self, at: (i32, i32)) -> bool {
+        let w = &self.work;
+        (w.left..w.right).contains(&at.0) && (w.top..w.bottom).contains(&at.1)
     }
 
     /// Takes a cell for one icon: `want` (moved into the grid) when it is free, else the free
@@ -209,15 +215,30 @@ impl FreeGrid {
     /// The cells of icons that saved `wanted` (None: a new icon). An icon whose saved cell is
     /// inside the grid, not under a fence and not taken keeps it; the others then take the
     /// free cell nearest to theirs, and the new ones the first free cells down the columns.
-    pub(super) fn place(&self, wanted: &[Option<(i32, i32)>]) -> Vec<(i32, i32)> {
+    /// The cells of the icons marked in `near` are only where to look from (an icon Windows has
+    /// on another monitor, #204): they take the free cell nearest to theirs after every other
+    /// icon with a cell got its own or the one nearest to it, so they never take the cell of
+    /// an icon that stands there on this monitor.
+    pub(super) fn place(&self, wanted: &[Option<(i32, i32)>], near: &[bool]) -> Vec<(i32, i32)> {
+        let near = |i: usize| near.get(i).copied().unwrap_or(false);
         let mut taken = HashSet::new();
         let mut cells: Vec<Option<(i32, i32)>> = wanted
             .iter()
-            .map(|w| w.filter(|&c| self.inside(c) && !self.blocked(c) && taken.insert(c)))
+            .enumerate()
+            .map(|(i, w)| {
+                w.filter(|&c| !near(i) && self.inside(c) && !self.blocked(c) && taken.insert(c))
+            })
             .collect();
-        for pass_new in [false, true] {
+        // Moved ones (cell taken, under a fence, off the grid), then the other monitors' ones,
+        // then the new ones.
+        for pass in 0..3 {
             for (i, w) in wanted.iter().enumerate() {
-                if cells[i].is_none() && w.is_none() == pass_new {
+                let this_pass = match (w, near(i)) {
+                    (None, _) => 2,
+                    (Some(_), true) => 1,
+                    (Some(_), false) => 0,
+                };
+                if cells[i].is_none() && this_pass == pass {
                     cells[i] = Some(self.claim(&mut taken, *w));
                 }
             }
@@ -343,7 +364,22 @@ impl FenceViewState {
             .zip(&from_windows)
             .map(|(w, win)| w.or(*win))
             .collect();
-        let placed = grid.place(&asked);
+        // A place on another monitor only says where to look: it never takes the cell of an
+        // icon that stands there on this one.
+        let near: Vec<bool> = self
+            .items
+            .iter()
+            .zip(&wanted)
+            .map(|(it, w)| {
+                w.is_none()
+                    && area
+                        .windows
+                        .as_ref()
+                        .and_then(|win| win.places.get(&it.id))
+                        .is_some_and(|at| !grid.on_work(*at))
+            })
+            .collect();
+        let placed = grid.place(&asked, &near);
         let mut taken: HashSet<(i32, i32)> = placed.iter().copied().collect();
         let spare = grid.claim(&mut taken, None);
         let rects = placed
@@ -402,11 +438,10 @@ impl FenceViewState {
         placed: &[(i32, i32)],
         added: usize,
     ) {
-        let work = &grid.work;
         let mut other_monitor = 0;
         for it in &self.items {
-            if let Some(&(x, y)) = windows.places.get(&it.id)
-                && !((work.left..work.right).contains(&x) && (work.top..work.bottom).contains(&y))
+            if let Some(&at) = windows.places.get(&it.id)
+                && !grid.on_work(at)
             {
                 other_monitor += 1;
             }
@@ -708,7 +743,10 @@ mod tests {
         let g = free_grid(&[]);
         assert_eq!((g.cols, g.rows), (12, 3));
         assert_eq!(g.rect((2, 1)), rect(164, 104, 244, 204));
-        let placed = g.place(&[Some((5, 2)), None, Some((0, 0)), None, Some((11, 1))]);
+        let placed = g.place(
+            &[Some((5, 2)), None, Some((0, 0)), None, Some((11, 1))],
+            &[],
+        );
         assert_eq!(
             placed,
             vec![(5, 2), (0, 1), (0, 0), (0, 2), (11, 1)],
@@ -720,7 +758,7 @@ mod tests {
     fn a_fence_over_an_icon_moves_it_to_the_nearest_free_cell() {
         // The fence covers columns 4 and 5 of the middle row.
         let g = free_grid(&[rect(330, 150, 470, 190)]);
-        let placed = g.place(&[Some((4, 1)), Some((5, 1)), Some((3, 1))]);
+        let placed = g.place(&[Some((4, 1)), Some((5, 1)), Some((3, 1))], &[]);
         assert_eq!(placed[2], (3, 1), "an icon beside the fence stays");
         // (4, 1) has a taken cell and the fence beside it: up a row (100 px). (5, 1) goes
         // right, 80 px, the nearest.
@@ -736,7 +774,10 @@ mod tests {
     fn a_smaller_work_area_moves_icons_inside_without_stacking_them() {
         // Saved on a larger screen: column 20 and row 7 are past this grid's edges.
         let g = free_grid(&[]);
-        let placed = g.place(&[Some((20, 0)), Some((11, 0)), Some((3, 7)), Some((11, 2))]);
+        let placed = g.place(
+            &[Some((20, 0)), Some((11, 0)), Some((3, 7)), Some((11, 2))],
+            &[],
+        );
         assert_eq!(
             placed[1],
             (11, 0),
@@ -755,7 +796,7 @@ mod tests {
     fn a_full_grid_puts_the_rest_past_the_right_edge() {
         let g = FreeGrid::new(&rect(0, 0, 168, 208), &[], (80, 100), 4);
         assert_eq!((g.cols, g.rows), (2, 2));
-        let placed = g.place(&[None, None, None, None, None, Some((0, 0))]);
+        let placed = g.place(&[None, None, None, None, None, Some((0, 0))], &[]);
         assert_eq!(placed[5], (0, 0), "the saved cell wins over the new icons");
         assert_eq!(&placed[..5], &[(0, 1), (1, 0), (1, 1), (2, 0), (2, 1)]);
     }
@@ -824,6 +865,29 @@ mod tests {
         );
     }
 
+    /// Two monitors, the other one on the left (PF-Win11-2): an icon from there, listed first,
+    /// wants the cell nearest its place, 0,0, where the Recycle Bin stands on this monitor. The
+    /// bin keeps it; the other monitor's icon takes the free cell nearest to it.
+    #[test]
+    fn an_icon_from_another_monitor_never_takes_a_cell_of_this_one() {
+        let g = free_grid(&[]);
+        let sp = (76, 102);
+        let from_left = g.windows_cell((-1905, 2), sp);
+        let bin = g.windows_cell((14, 2), sp);
+        assert_eq!((from_left, bin), (Some((0, 0)), Some((0, 0))));
+        assert!(!g.on_work((-1905, 2)) && g.on_work((14, 2)));
+        let placed = g.place(&[from_left, bin, Some((0, 1))], &[true, false, false]);
+        assert_eq!(placed[1], (0, 0), "the bin keeps its own cell");
+        assert_eq!(placed[2], (0, 1));
+        assert_eq!(
+            placed[0],
+            (1, 0),
+            "the nearest free cell (80 px right, not 100 down)"
+        );
+        // Without the mark it was the other way round: the first in the list took 0,0.
+        assert_eq!(g.place(&[from_left, bin], &[])[0], (0, 0));
+    }
+
     /// After a scale change Explorer reports its spacing in the scale it started at (measured on
     /// the test box): 76 x 104 at 150 % with icons 114 x 156 apart, 114 x 153 back at 100 %.
     #[test]
@@ -854,7 +918,7 @@ mod tests {
                 .iter()
                 .map(|&(c, r)| g.windows_cell((2 + c * 75, 3 + r * 86), sp))
                 .collect();
-        let placed = g.place(&asked);
+        let placed = g.place(&asked, &[]);
         assert_eq!(&placed[..3], &[(0, 0), (0, 1), (0, 2)]);
         assert_eq!(
             placed[3],
