@@ -140,9 +140,11 @@ $m = FenceMenuOf $Dl
 $t = MenuTexts $m
 Check 'Edit conditions…, Refresh now F5 and Open folder in File Explorer' ($t -match 'Edit conditions… \| Refresh now ~ F5' -and $t -match 'Open folder in File Explorer') $t
 Check 'no New and no Paste' (-not ($t -match '(^| )New \|') -and -not ($t -match 'Paste')) $t
-Check 'New smart fence… is one entry, no submenu' ($t -match 'New smart fence…' -and -not ($t -match 'Downloads of the last 7 days')) $t
+$sub = OpenSubmenu $m '^Add to desktop' 'New smart fence'
+$st = if ($sub -ne [IntPtr]::Zero) { MenuTexts $sub } else { '' }
+Check 'New smart fence… is one entry of Add to desktop, no submenu' ($st -match 'New smart fence…$' -and -not ($st -match 'Downloads of the last 7 days') -and -not ($t -match 'New smart fence')) "top: $t; Add to desktop: $st"
 Shot 's02-fence-menu'
-CloseMenus
+CloseAllMenus
 
 Case 'tray menu: New smart fence… opens the editor, Esc closes it'
 $before = @(@(PfJson fence list) | Where-Object { $_ -and $_.smart }).Count
