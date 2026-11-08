@@ -114,7 +114,11 @@ function SendToByExplorer($name) {
   trap { PfTrap $_; continue }
   $w = ExplorerAt $Src
   if (-not $w) { return 'no Explorer window' }
-  TitleClick ([IntPtr]$w.HWND)
+  # A window that has just opened may not be in front yet: Shift+F10 then opens the desktop's
+  # menu (View, Sort by, ...). Click its title until it is the foreground window.
+  $h = [IntPtr]$w.HWND
+  for ($k = 0; $k -lt 4 -and [L]::GetForegroundWindow() -ne $h; $k++) { Start-Sleep -Milliseconds 500; TitleClick $h }
+  if ([L]::GetForegroundWindow() -ne $h) { Log "Explorer not in front; fg $(Fg)"; return 'Explorer not in front' }
   $w.Document.SelectItem($w.Document.Folder.ParseName($name), 29)
   Start-Sleep -Milliseconds 500
   Chord 0x10 0x79
