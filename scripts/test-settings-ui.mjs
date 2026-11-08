@@ -217,6 +217,13 @@ function editorBridge() {
         window.testMessages.push(structuredClone(message));
         // Mirror the host: the page's language and theme first, then the fence.
         if (message.type === 'ready') setTimeout(() => { receive({ data: structuredClone(state) }); receive({ data: structuredClone(window.testEditor) }); }, 0);
+        // The count: testCount(spec) gives the answer ({source, n, approx}); testHoldCount keeps
+        // the answers back for the test to send (out of order, say).
+        if (message.type === 'editorCount') {
+          const answer = { type: 'editorCount', seq: message.seq, everything: { state: 'running' }, ...(window.testCount ? window.testCount(message.spec) : { source: 'everything', n: 37, approx: false }) };
+          if (window.testHoldCount) window.testHeld = [...(window.testHeld || []), answer];
+          else setTimeout(() => receive({ data: answer }), 0);
+        }
         // The folder picker answers with testPickPath (null: cancelled).
         if (message.type === 'editorPickFolder') setTimeout(() => receive({ data: { type: 'editorFolder', row: message.row, path: window.testPickPath === undefined ? 'D:\\Picked' : window.testPickPath } }), 0);
       },
@@ -2390,6 +2397,44 @@ async function runTests() {
     assert(w.querySelector('.se-msg').textContent === '找不到文件夹 D:\\Gone', 'Host error not shown');
     const errors = ew().testMessages.filter(m => m.name === 'pageError');
     assert(!errors.length, 'Page error: ' + JSON.stringify(errors));
+  });
+  await test('Smart fence editor: the live count follows the search, a moment after the last change', async () => {
+    doc = await openEditor('fence=dl');
+    const w = doc.getElementById('seWindow'), line = () => w.querySelector('.se-count').textContent;
+    await new Promise(r => setTimeout(r, 50));
+    assert(posted('editorCount').length === 1 && line().includes('现在找到 37 个文件') && line().includes('由 Everything 搜索'), 'First count: ' + line());
+    assert(JSON.stringify(posted('editorCount')[0].spec.folders) === '["C:\\\\Users\\\\me\\\\Downloads"]', 'Counted another search');
+    // Three quick changes are one request.
+    rowsOf(doc)[3].querySelector('.se-plus').click();
+    for (const text of ['r', 're', 'rep']) seType(rowsOf(doc)[4].querySelector('.se-text'), text);
+    await new Promise(r => setTimeout(r, 120));
+    assert(posted('editorCount').length === 1 && w.querySelector('.se-count').classList.contains('busy') === false, 'Asked before the typing paused');
+    await new Promise(r => setTimeout(r, 400));
+    assert(posted('editorCount').length === 2 && posted('editorCount')[1].spec.allOf.at(-1).value.value === 'rep', 'Not one request after typing: ' + posted('editorCount').length);
+    // Only the newest answer shows.
+    ew().testHoldCount = true;
+    seType(rowsOf(doc)[4].querySelector('.se-text'), 'repo'); await new Promise(r => setTimeout(r, 420));
+    seType(rowsOf(doc)[4].querySelector('.se-text'), 'report'); await new Promise(r => setTimeout(r, 420));
+    const [older, newer] = ew().testHeld;
+    ew().testReceive({ ...newer, n: 4 }); await settle();
+    ew().testReceive({ ...older, n: 99 }); await settle();
+    assert(line().includes('现在找到 4 个文件') && !line().includes('99'), 'An older answer replaced the newer one: ' + line());
+    ew().testHoldCount = false;
+    // About a number, the folder read, more than the limit, Everything needed.
+    ew().testCount = () => ({ source: 'everything', n: 1234, approx: true });
+    seType(rowsOf(doc)[4].querySelector('.se-text'), 'x'); await new Promise(r => setTimeout(r, 420));
+    assert(line().includes('现在找到约 1234 个文件') && line().includes('估计') && line().includes('栅栏里显示最新的 200 个'), 'Estimate: ' + line());
+    ew().testCount = () => ({ source: 'folder', n: 6, approx: false });
+    seType(rowsOf(doc)[4].querySelector('.se-text'), 'y'); await new Promise(r => setTimeout(r, 420));
+    assert(line().includes('现在找到 6 个文件') && line().includes('Everything 没有运行'), 'Folder read: ' + line());
+    ew().testCount = () => ({ source: 'needsEverything', n: 0, approx: false });
+    sePick(rowsOf(doc)[0].querySelector('.se-where'), 'all'); await new Promise(r => setTimeout(r, 420));
+    assert(line().includes('需要先打开 Everything'), 'Everything needed: ' + line());
+    // An unfinished row is not counted.
+    const asked = posted('editorCount').length;
+    seType(rowsOf(doc).at(-1).querySelector('.se-text'), ''); await new Promise(r => setTimeout(r, 420));
+    assert(posted('editorCount').length === asked && line().includes('填好条件后'), 'An unfinished search was counted: ' + line());
+    ew().testCount = null;
   });
   await test('Smart fence editor: fits its window in every language and keeps the rows when the language changes', async () => {
     doc = await openEditor('fence=every');

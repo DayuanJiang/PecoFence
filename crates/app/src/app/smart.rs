@@ -20,6 +20,11 @@ const AGAIN_MS: u32 = 4_000;
 /// Everything answers one search at a time (a new one cancels the one before): the next
 /// fence's search waits for the answer, or this long for one that never comes.
 pub(super) const ANSWER_WAIT: Duration = Duration::from_secs(3);
+/// The smart fence editor's live count runs as this make-believe fence: it takes its turn with
+/// Everything (after the Peek search, between the fences' own runs) and its workers like a
+/// fence's, and its results go to the editor instead of a fence.
+pub(super) const PREVIEW: FenceId =
+    uuid::Uuid::from_u128(0x5053_4d41_5254_0000_0000_0000_0000_0001);
 
 /// Where a smart fence's results came from at its last run.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -104,6 +109,10 @@ pub(super) struct SmartState {
     /// Fences to run again when `TIMER_SMART_SOON` fires, and whether a second run follows.
     soon: HashSet<FenceId>,
     again: bool,
+    /// The editor's search to count (`PREVIEW`) and the number of the page's request, and the
+    /// number of the request the run in progress counts.
+    preview: Option<(SmartSpec, u64)>,
+    preview_sent: u64,
 }
 
 impl Default for SmartState {
@@ -122,6 +131,8 @@ impl Default for SmartState {
             changed: Arc::new(Mutex::new(HashSet::new())),
             soon: HashSet::new(),
             again: false,
+            preview: None,
+            preview_sent: 0,
         }
     }
 }
@@ -176,7 +187,9 @@ impl App {
             .map(|f| f.id)
             .collect();
         // Fences that are gone (deleted, another layout shown) stop being searched.
-        self.smart.runs.retain(|id, _| ids.contains(id));
+        self.smart
+            .runs
+            .retain(|id, _| ids.contains(id) || *id == PREVIEW);
         self.ensure_smart_watchers();
         for id in ids {
             self.run_smart(id, why);
@@ -187,7 +200,7 @@ impl App {
     /// control window), else reads the folder.
     pub(super) fn run_smart(&mut self, id: FenceId, why: &str) {
         self.refind_template_folder(id);
-        let Some(spec) = self.state.smart_spec(id).cloned() else {
+        let Some(spec) = self.smart_spec_of(id) else {
             return;
         };
         // One worker per fence: a run asked for while one works out the fence's results (a
@@ -233,12 +246,30 @@ impl App {
             let query = spec.everything_query(since.as_deref());
             self.smart.seq = self.smart.seq.wrapping_add(1);
             let seq = self.smart.seq;
+            // The editor's count needs only Everything's total, unless the app checks a
+            // condition on the files.
+            let max = if id == PREVIEW && !spec.app_checks() {
+                1
+            } else {
+                spec.everything_max()
+            };
+            if id == PREVIEW {
+                self.smart.preview_sent = self.smart.preview.as_ref().map_or(0, |p| p.1);
+            }
+            // The editor's estimate checks a sample of Everything's answer: in name order, which
+            // has nothing to do with the dates idle days or creation times look at (the newest
+            // files first would all fail "not opened for 30 days").
+            let sort = if id == PREVIEW {
+                ev::SORT_NAME_ASCENDING
+            } else {
+                ev::SORT_DATE_MODIFIED_DESCENDING
+            };
             let payload = ev::query2w(
                 self.control.hwnd().0 as usize as u32,
                 (REPLY_TAG | usize::from(seq)) as u32,
                 &query,
-                spec.everything_max(),
-                ev::SORT_DATE_MODIFIED_DESCENDING,
+                max,
+                sort,
             );
             let sent = everything::send_query(
                 instance.hwnd,
@@ -256,6 +287,9 @@ impl App {
                 return;
             }
         }
+        if id == PREVIEW {
+            self.smart.preview_sent = self.smart.preview.as_ref().map_or(0, |p| p.1);
+        }
         if !spec.works_without_everything() {
             tracing::info!(%id, why, "smart fence: needs Everything, which is not running");
             self.smart_done(id, SmartSource::NeedsEverything, Vec::new(), 0);
@@ -264,10 +298,23 @@ impl App {
         self.read_folder_later(id, spec, why);
     }
 
+    /// The search of fence `id`, or the editor's search to count for `PREVIEW`.
+    fn smart_spec_of(&self, id: FenceId) -> Option<SmartSpec> {
+        if id == PREVIEW {
+            return self.smart.preview.as_ref().map(|p| p.0.clone());
+        }
+        self.state.smart_spec(id).cloned()
+    }
+
     /// Reads smart fence `id`'s folders on a worker (a big folder tree takes a while).
     fn read_folder_later(&mut self, id: FenceId, spec: SmartSpec, why: &str) {
         tracing::info!(%id, why, folders = spec.folders.len(), "smart fence: reading the folders without Everything");
-        let limit = spec.limit as usize;
+        // The editor's count names nothing: it shows only how many.
+        let limit = if id == PREVIEW {
+            0
+        } else {
+            spec.limit as usize
+        };
         self.smart_work_later(id, SmartSource::Folder, move || {
             let (mut entries, scanned) = read_folders(&spec);
             let kept = entries.len();
@@ -358,6 +405,33 @@ impl App {
         while let Ok(r) = self.smart.read_rx.try_recv() {
             let again = self.smart.reading.remove(&r.id).unwrap_or(false);
             let current = self.smart.runs.get(&r.id).and_then(|run| run.read) == Some(r.seq);
+            if r.id == PREVIEW {
+                if current && self.smart.preview.is_some() {
+                    if let Some(run) = self.smart.runs.get_mut(&PREVIEW) {
+                        run.read = None;
+                    }
+                    tracing::info!(
+                        source = r.source.as_str(),
+                        total = r.total,
+                        got = r.scanned,
+                        kept = r.kept,
+                        ms = r.ms,
+                        "smart fence editor: counted"
+                    );
+                    // Everything's own total: the worker's left out what the app dropped.
+                    let total = match r.source {
+                        SmartSource::Everything => {
+                            r.total + r.scanned.saturating_sub(r.kept) as u32
+                        }
+                        _ => r.total,
+                    };
+                    self.preview_done(r.source, total, r.scanned, r.kept);
+                }
+                if again {
+                    self.run_smart(PREVIEW, "after the count in progress");
+                }
+                continue;
+            }
             if current && self.state.smart_spec(r.id).is_some() {
                 self.smart.runs.entry(r.id).or_default().read = None;
                 let shown = r.found.len();
@@ -399,7 +473,7 @@ impl App {
             self.ask_next_smart();
             return;
         };
-        let Some(spec) = self.state.smart_spec(id).cloned() else {
+        let Some(spec) = self.smart_spec_of(id) else {
             self.ask_next_smart();
             return;
         };
@@ -419,10 +493,21 @@ impl App {
             self.ask_next_smart();
             return;
         };
+        // The editor's count of a search Everything tests whole: Everything's total.
+        if id == PREVIEW && !spec.app_checks() {
+            tracing::info!(total, "smart fence editor: counted by Everything");
+            self.preview_done(SmartSource::Everything, total, 0, 0);
+            self.ask_next_smart();
+            return;
+        }
         tracing::debug!(%id, seq, total, got = hits.len(), "smart fence: Everything's answer is checked on a worker");
         // Everything matched on its index; the files themselves say what they are now (gone,
         // hidden, system) and get the conditions Everything cannot test.
-        let limit = spec.limit as usize;
+        let limit = if id == PREVIEW {
+            0
+        } else {
+            spec.limit as usize
+        };
         self.smart_work_later(id, SmartSource::Everything, move || {
             let now = pecofence_core::now_unix();
             let targets = spec.needs_shortcut_targets();
@@ -467,7 +552,7 @@ impl App {
             let Some(next) = self.smart.waiting.pop_front() else {
                 return;
             };
-            if self.state.smart_spec(next).is_some() {
+            if self.smart_spec_of(next).is_some() {
                 self.run_smart(next, "waited for another search");
             }
         }
@@ -499,6 +584,11 @@ impl App {
         entries: Vec<(DesktopEntry, String)>,
         total: u32,
     ) {
+        if id == PREVIEW {
+            self.smart.runs.entry(PREVIEW).or_default().source = source;
+            self.preview_done(source, total, 0, 0);
+            return;
+        }
         let count = entries.len();
         let changed = self.state.set_smart_results(id, entries);
         let run = self.smart.runs.entry(id).or_default();
@@ -917,6 +1007,66 @@ impl App {
             "shown": self.state.fence(id).map_or(0, |f| self.state.items_of(f).len()),
             "query": run.map(|r| r.query.clone()).filter(|q| !q.is_empty()),
         }))
+    }
+}
+
+impl App {
+    /// `editorCount {seq, spec}`: counts the editor's search (the page asks again after each
+    /// change, a moment after the last one). A newer request replaces one that waits.
+    pub(super) fn count_editor_search(&mut self, spec: SmartSpec, seq: u64) {
+        tracing::debug!(
+            seq,
+            folders = spec.folders.len(),
+            matching = spec.matching.as_str(),
+            conditions = spec.all_of.len(),
+            "smart fence editor: count asked"
+        );
+        self.smart.preview = Some((spec, seq));
+        self.run_smart(PREVIEW, "editor");
+    }
+
+    /// The editor closed: its count stops (an answer still on its way is dropped).
+    pub(super) fn stop_editor_count(&mut self) {
+        self.smart.preview = None;
+        self.smart.runs.remove(&PREVIEW);
+        self.smart.waiting.retain(|id| *id != PREVIEW);
+    }
+
+    /// A count for the editor: how it was counted, Everything's total (or what the folder read
+    /// found), and of the files the app checked (`got`), how many matched (`kept`). With app
+    /// checks on part of Everything's answer, the count is an estimate: the share that matched
+    /// times the total.
+    fn preview_done(&mut self, source: SmartSource, total: u32, got: usize, kept: usize) {
+        let Some(spec) = self.smart.preview.as_ref().map(|p| &p.0) else {
+            return;
+        };
+        let (n, approx) = match source {
+            SmartSource::Everything if spec.app_checks() && got > 0 && (got as u32) < total => (
+                ((kept as f64 / got as f64) * f64::from(total)).round() as u64,
+                true,
+            ),
+            SmartSource::Everything if spec.app_checks() => (kept as u64, false),
+            SmartSource::Folder => (u64::from(total), got > SmartSpec::MAX_SCANNED),
+            _ => (u64::from(total), false),
+        };
+        let seq = self.smart.preview_sent;
+        tracing::info!(
+            seq,
+            source = source.as_str(),
+            n,
+            approx,
+            "smart fence editor: count shown"
+        );
+        let json = serde_json::json!({
+            "type": "editorCount",
+            "seq": seq,
+            "source": source.as_str(),
+            "n": n,
+            "approx": approx,
+            "everything": self.everything_json(),
+        })
+        .to_string();
+        self.post_to_smart_editor(&json);
     }
 }
 

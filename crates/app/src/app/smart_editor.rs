@@ -332,9 +332,35 @@ impl App {
 }
 
 impl App {
-    /// `editorCount`: the live count while editing (not yet).
-    fn smart_editor_count(&mut self, _v: &serde_json::Value) {}
+    /// `editorCount {seq, spec}`: the live count while editing (`smart.rs` counts it). A search
+    /// the app cannot read is not counted.
+    fn smart_editor_count(&mut self, v: &serde_json::Value) {
+        let seq = v.get("seq").and_then(|s| s.as_u64()).unwrap_or(0);
+        match v
+            .get("spec")
+            .cloned()
+            .map(serde_json::from_value::<SmartSpec>)
+        {
+            Some(Ok(spec)) if spec.problem().is_none() => self.count_editor_search(spec, seq),
+            Some(Ok(spec)) => {
+                tracing::info!(seq, problem = ?spec.problem(), "smart fence editor: not counted")
+            }
+            Some(Err(e)) => {
+                tracing::warn!(seq, error = %e, "smart fence editor: a search to count the app cannot read")
+            }
+            None => {}
+        }
+    }
 
-    /// The editor closed: a count it waits for is no longer wanted (not yet).
-    fn smart_count_cancel(&mut self) {}
+    /// The editor closed: a count it waits for is no longer wanted.
+    fn smart_count_cancel(&mut self) {
+        self.stop_editor_count();
+    }
+
+    /// A message for the editor's page, when it is open and ready.
+    pub(super) fn post_to_smart_editor(&self, json: &str) {
+        if let Some(ed) = self.smart_editor.as_ref().filter(|e| e.host.ready) {
+            ed.post_json(json);
+        }
+    }
 }

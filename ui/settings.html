@@ -489,6 +489,7 @@
   .se-count b { font-weight: 600; }
   .se-count .s { color: var(--text2); font-size: 12px; }
   .se-count button { min-width: 0; height: 26px; font-size: 12px; align-self: flex-start; margin-top: 2px; }
+  .se-count.busy .se-n { opacity: .55; }
   .se-limit { display: flex; align-items: center; gap: 8px; color: var(--text2); }
   .se-limit select { min-width: 96px; color: var(--text); }
   .se-btns { display: flex; gap: 8px; margin-left: auto; }
@@ -2684,7 +2685,7 @@
     switch (row.kind) {
       case 'where': {
         const all = !!row.all;
-        return `<select class="se-where" aria-label="${esc(t("位置"))}">${seOpts([['folder', t("文件夹")], ['all', t("整台电脑")]], all ? 'all' : 'folder')}</select>`
+        return `<select class="se-where" aria-label="${esc(t("位置"))}">${seOpts([['folder', t("位置\x04文件夹")], ['all', t("整台电脑")]], all ? 'all' : 'folder')}</select>`
           + (all ? `<span class="se-path">${esc(t("不含 Windows、AppData 和回收站"))}</span>`
             : `<span class="se-path${row.folder ? '' : ' none'}" title="${esc(row.folder || '')}">${esc(row.folder || t("还没有选择文件夹"))}</span><button class="se-pick">${esc(t("选择…"))}</button>`);
       }
@@ -2878,12 +2879,53 @@
       if (op) op.disabled = others.some(r => r.dataset.kind === 'name' && r.querySelector('.se-op').value === 'matches');
     }
   }
-  // Something changed: unsaved now, the menus follow, an old error goes.
+  // Something changed: unsaved now, the menus follow, an old error goes, the count follows.
   function seChanged() {
     if (!se) return;
     seKindsOnce();
     seShowError(null);
     if (!se.dirty) { se.dirty = true; send({ type: 'editorDirty', dirty: true }); }
+    seCountSoon();
+  }
+  // The live count: the host counts the search a moment after the last change (typing does
+  // not ask for every key); only the answer to the newest request is shown.
+  function seCountSoon() {
+    clearTimeout(se.countTimer);
+    se.countTimer = setTimeout(seCount, 350);
+  }
+  function seCount() {
+    if (!se) return;
+    const r = seSpec(), box = document.querySelector('#seWindow .se-count');
+    box.hidden = false;
+    if (r.error) { se.countSeq++; seCountLine(t("填好条件后显示找到几个文件"), ''); return; }
+    se.countSeq++;
+    send({ type: 'editorCount', seq: se.countSeq, spec: r.spec });
+    // The last number stays (dimmed) until the new one comes.
+    box.classList.add('busy');
+    if (!box.querySelector('b')) seCountLine(t("正在搜索…"), '');
+  }
+  function seCountLine(main, how, button) {
+    const box = document.querySelector('#seWindow .se-count');
+    box.innerHTML = `<span class="ic" aria-hidden="true">&#xE721;</span><div><span class="se-n">${main}</span>${how ? `<span class="s se-how">${esc(how)}</span>` : ''}</div>`;
+    if (button) { const b = document.createElement('button'); b.textContent = button.text; b.onclick = button.click; box.querySelector('div').append(b); }
+  }
+  // The host's count: Everything's total, about a number while the app checks a condition on
+  // part of Everything's answer, the folder read without Everything, or Everything needed.
+  function seCounted(m) {
+    if (!se || m.seq !== se.countSeq) return;
+    const box = document.querySelector('#seWindow .se-count');
+    box.classList.remove('busy');
+    const limit = Number(document.querySelector('#seWindow .se-limit select').value);
+    const num = text => esc(text).replace('{0}', `<b>${esc(String(m.n))}</b>`);
+    const more = m.n > limit ? tf("栅栏里显示最新的 {0} 个", limit) : '';
+    const how = (...parts) => parts.filter(Boolean).join(' · ');
+    const ev = (m.everything || {}).state;
+    if (m.source === 'needsEverything') {
+      const button = ev === 'installed' ? { text: t("启动 Everything"), click: () => send({ type: 'action', name: 'startEverything' }) }
+        : ev === 'missing' ? { text: t("安装 Everything"), click: () => send({ type: 'action', name: 'installEverything' }) } : null;
+      seCountLine(esc(t("要搜索整台电脑，需要先打开 Everything")), '', button);
+    } else if (m.source === 'folder') seCountLine(num(m.approx ? t("现在找到约 {0} 个文件") : t("现在找到 {0} 个文件")), how(t("Everything 没有运行，由 PecoFence 读文件夹"), more));
+    else seCountLine(num(m.approx ? t("现在找到约 {0} 个文件") : t("现在找到 {0} 个文件")), how(m.approx ? t("有些条件由 PecoFence 逐个检查，这个数是估计的") : t("由 Everything 搜索"), more));
   }
   function seShowError(text, at, row) {
     const w = document.getElementById('seWindow');
@@ -2909,7 +2951,8 @@
   function seRender(m, keep) {
     const w = document.getElementById('seWindow');
     const isNew = m.isNew;
-    se = { fence: m.fence || null, isNew, templates: m.templates || [], template: keep ? keep.template : (m.spec && m.spec.template) || null, dirty: keep ? keep.dirty : false, nextRow: 1, lastTemplateTitle: keep ? keep.lastTemplateTitle : null, msg: m };
+    if (se) clearTimeout(se.countTimer);
+    se = { fence: m.fence || null, isNew, templates: m.templates || [], template: keep ? keep.template : (m.spec && m.spec.template) || null, dirty: keep ? keep.dirty : false, nextRow: 1, lastTemplateTitle: keep ? keep.lastTemplateTitle : null, msg: m, countSeq: keep ? keep.countSeq : 0, countTimer: 0 };
     const spec = m.spec || {};
     const presets = isNew ? `<div class="se-presets"><span class="se-cap">${esc(t("从模板开始"))}</span>${se.templates.map(tp => `<button class="chip" data-preset="${esc(tp.key)}"${tp.spec ? '' : ` disabled title="${esc(t("这台电脑上没有这个文件夹"))}"`}>${esc(tp.title)}</button>`).join('')}</div>` : '';
     const limit = keep ? keep.limit : spec.limit || 200;
@@ -2938,7 +2981,8 @@
     // Any typing or choice is a change (the rows' own handlers rebuild what follows from it).
     w.oninput = w.onchange = e => { if (e.target.closest('.se-name, .se-row, .se-limit')) seChanged(); };
     w.querySelectorAll('[data-preset]').forEach(b => b.onclick = () => seTemplate(b.dataset.preset));
-    if (!keep) (name).focus();
+    if (!keep) name.focus();
+    seCount();
   }
   // A template chip: its rows, 全部, its limit, and its name while the name box is empty or
   // still holds the name of the chip picked before.
@@ -2964,7 +3008,7 @@
     if (!se) return;
     const w = document.getElementById('seWindow');
     const keep = { rows: [...w.querySelectorAll('.se-row')].map(seRaw), title: w.querySelector('.se-name').value, match: w.querySelector('.se-all').value,
-      limit: Number(w.querySelector('.se-limit select').value), template: se.template, dirty: se.dirty, lastTemplateTitle: se.lastTemplateTitle };
+      limit: Number(w.querySelector('.se-limit select').value), template: se.template, dirty: se.dirty, lastTemplateTitle: se.lastTemplateTitle, countSeq: se.countSeq };
     seRender(se.msg, keep);
   }
   // The folder the host's picker returned for a 位置 row (null: cancelled).
@@ -3058,6 +3102,7 @@
     else if (m.type === 'editor') seRender(m);
     else if (m.type === 'editorFolder') seFolder(m);
     else if (m.type === 'editorError') seShowError(m.text);
+    else if (m.type === 'editorCount') seCounted(m);
   });
   send({ type: 'ready' });
 })();
