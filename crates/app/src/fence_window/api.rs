@@ -182,6 +182,9 @@ impl FenceWindow {
             note: None,
             note_boxes: Vec::new(),
             clock: None,
+            clock_text: (0.0, 0.0),
+            clock_text_logged: (0.0, 0.0),
+            text_size: 1,
             script: None,
             script_rows: Vec::new(),
             script_hover: None,
@@ -418,7 +421,7 @@ impl FenceWindow {
             },
         );
         format!(
-            "title={:?} opacity={:.2} scale={:.3} fade={fade} retired={} rolled={} rolling={} peeking={} items={} tabs={} selected={} focused={:?} shadow_visible={} shadow_alpha={} layout={:?} locked={} auto_height={} active={} scroll={:.1} client={:?} client_offset=({},{}) chrome={:?} glass={:?} wallpaper_uploads={} title_size={} tab_fonts={:?} tab_rects={:?} content_x={} content={:?} capture={} tab_drag={} window_drag={} detach_pending={} plate_inset={} plate_alpha={:.2} mouse_inside={}",
+            "title={:?} opacity={:.2} scale={:.3} fade={fade} retired={} rolled={} rolling={} peeking={} items={} tabs={} selected={} focused={:?} shadow_visible={} shadow_alpha={} layout={:?} locked={} auto_height={} active={} scroll={:.1} client={:?} client_offset=({},{}) chrome={:?} glass={:?} wallpaper_uploads={} title_size={} tab_fonts={:?} tab_rects={:?} content_x={} content={:?} capture={} tab_drag={} window_drag={} detach_pending={} plate_inset={} plate_alpha={:.2} mouse_inside={} content_y={} text_size={} clock_text={}/{} note_boxes={} script_rows={}",
             v.title,
             v.root.opacity(),
             v.root.scale().x,
@@ -460,6 +463,12 @@ impl FenceWindow {
             v.plate_inset_px,
             v.plate_alpha,
             v.mouse_inside,
+            v.content_y,
+            v.text_size,
+            v.clock_text.0,
+            v.clock_text.1,
+            dump_rects(&v.note_boxes),
+            dump_rects(&v.script_rows),
         )
     }
 
@@ -1350,6 +1359,18 @@ impl FenceWindow {
         });
     }
 
+    /// 文字大小 of the note or script fence shown (0 to 3, 1 = normal).
+    pub fn set_text_size(&self, size: u8) {
+        self.with_view(|v| {
+            if v.text_size != size {
+                v.text_size = size;
+                if v.note.is_some() || v.script.is_some() {
+                    let _ = v.redraw_content();
+                }
+            }
+        });
+    }
+
     /// Screen rect of the content below the title row (the note editor opens over it).
     pub fn content_screen_rect(&self) -> RECT {
         let mut r = self.rect();
@@ -2202,4 +2223,17 @@ fn selection_ring(theme: &Theme) -> crate::shadow::SelectionRing {
     crate::shadow::SelectionRing {
         radius_dip: theme.corner_radius,
     }
+}
+
+/// Hit rects of a note's check boxes or a script's rows for `debug_state`, without spaces:
+/// `index:left,top,right,bottom` (content DIPs) joined by `;`, `-` when there are none.
+fn dump_rects(rects: &[(usize, [f32; 4])]) -> String {
+    if rects.is_empty() {
+        return "-".to_string();
+    }
+    rects
+        .iter()
+        .map(|(i, r)| format!("{i}:{:.1},{:.1},{:.1},{:.1}", r[0], r[1], r[2], r[3]))
+        .collect::<Vec<_>>()
+        .join(";")
 }

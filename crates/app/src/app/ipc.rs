@@ -872,6 +872,17 @@ impl App {
                     ))
                     .hint("fence list shows each fence's tool"));
                 }
+                if matches!(prop, fence_options::FenceProp::TextSize(_))
+                    && !matches!(
+                        self.fence_or_err(id)?.tool,
+                        Some(pecofence_core::FenceTool::Note | pecofence_core::FenceTool::Script)
+                    )
+                {
+                    return Err(unsupported(
+                        "textSize is for note and script fences (a clock's text follows the fence size)",
+                    )
+                    .hint("fence list shows each fence's tool"));
+                }
                 // Icon size, spacing, layout and label lines snap the window to whole cells
                 // (snapping.sizeToCells) or fit it to the content: report it instead of letting the caller find out from
                 // a changed rect.
@@ -1641,6 +1652,7 @@ impl App {
                 .map(|t| with_hash(t.to_string())),
             title_color: with_hash(text("titleColor")),
             title_size: text("titleSize"),
+            text_size: text("textSize"),
             title_on_hover: text("titleOnHover"),
             layout: layout_name(f.view.layout).to_string(),
             sort: sort_name(f.view.sort).to_string(),

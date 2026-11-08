@@ -185,6 +185,11 @@ pub struct FenceViewState {
     pub(super) note_boxes: Vec<(usize, [f32; 4])>,
     /// 时钟与日期: the fence shown is a clock; true = with seconds. None = it shows items.
     pub(super) clock: Option<bool>,
+    /// The clock's time and date text sizes (DIPs) as last drawn, and as last logged.
+    pub(super) clock_text: (f32, f32),
+    pub(super) clock_text_logged: (f32, f32),
+    /// 文字大小 of a note or script fence: 0 small, 1 normal, 2 large, 3 extra large.
+    pub(super) text_size: u8,
     /// 脚本栅栏: the fence shown is a script fence with this output and footer.
     pub(super) script: Option<ScriptView>,
     /// Its clickable rows as last drawn: row index and (left, top, right, bottom) in content
