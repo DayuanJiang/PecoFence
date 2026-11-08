@@ -248,7 +248,12 @@ Check 'create: --match any with --everything and --name-matches is refused' ($LA
 $bad = & "$PfApp\pecofence-cli.exe" fence set 'Two places' smartEverything invoice 2>&1 | Out-String
 Check 'set: an Everything search on an any fence with a name filter is refused, the search stays' ($LASTEXITCODE -ne 0 -and $bad -match 'cannot go with' -and $null -eq (SmartOf 'Two places').spec.everything) $bad
 Pf fence create --smart large --match any --rect '40,60,400,260' --title 'Large any' | Out-Null
-Check '--match any goes with a template too' ((SmartOf 'Large any').match -eq 'any') ((SmartOf 'Large any') | ConvertTo-Json -Compress -Depth 5)
+$la = SmartOf 'Large any'
+Check '--match any goes with a template too, without its files-only row' ($la.match -eq 'any' -and (@($la.spec.allOf) | ForEach-Object { $_.cond }) -join ',' -eq 'sizeMb') ($la | ConvertTo-Json -Compress -Depth 5)
+Pf fence create --smart downloads --title 'Files any' --rect '40,60,400,260' | Out-Null
+$r = Pf fence set 'Files any' smartMatch any
+Check 'fence set smartMatch any on a search with files only and another row: a warning says so' ($r -match 'filesOnly condition lets every file') $r
+Pf fence delete 'Files any' | Out-Null
 Pf fence delete 'Two places' | Out-Null; Pf fence delete 'Large any' | Out-Null
 $log = (PfLogAll) -join "`n"
 Check 'log: match and folders changed' ($log -match 'what="match".*matching="all"' -and $log -match 'what="folders".*folders=1') ''

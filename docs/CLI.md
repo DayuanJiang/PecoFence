@@ -535,7 +535,10 @@ tests itself (shortcut target, creation time or weekday, idle days, programs or 
 Everything would have to return every file of the folders for that row, and PecoFence cannot tell
 which of them the Everything text matched, so such a search is refused (`invalidValue`), also
 when `fence set` would make one. A written search keeps to files, unless it is `--match any`: then a folder whose name
-matches shows as well.
+matches shows as well. A template with `--match any` leaves out its files-only row the same way
+(`--smart downloads --match any` is anything new or changed in the last 7 days, folders too), and
+`fence set <fence> smartMatch any` on a search whose conditions include `filesOnly` and others
+warns that the files-only row lets every file of the folders in.
 
 ```powershell
 pecofence-cli fence create --smart downloads

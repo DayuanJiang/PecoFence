@@ -933,6 +933,24 @@ impl App {
                             "Use smartMatch all, or leave out the Everything search or that condition",
                         ));
                     }
+                    // Files only is one of the rows: with any, every file of the folders passes.
+                    let rows = spec.all_of.len()
+                        + usize::from(spec.within_days.is_some())
+                        + usize::from(spec.name.is_some())
+                        + usize::from(spec.everything.is_some());
+                    if spec.matching == pecofence_core::smart::SmartMatch::Any
+                        && rows > 1
+                        && spec
+                            .all_of
+                            .iter()
+                            .any(|c| matches!(c, pecofence_core::Cond::FilesOnly))
+                    {
+                        self.ipc_warnings.push(
+                            "with smartMatch any, the filesOnly condition lets every file of the folders in; \
+                             leave it out of smartConditions to show only what the other conditions find"
+                                .to_string(),
+                        );
+                    }
                 }
                 if let Some(tool) = prop.tool()
                     && self.fence_or_err(id)?.tool != Some(tool)
@@ -2066,6 +2084,12 @@ impl App {
         };
         if let Some(m) = matching {
             spec.matching = m;
+            // A template keeps to files with a row of its own: with any, that row would let
+            // every file of its folders in (a written search leaves it out the same way).
+            if template.is_some() && m == pecofence_core::smart::SmartMatch::Any {
+                spec.all_of
+                    .retain(|c| !matches!(c, pecofence_core::Cond::FilesOnly));
+            }
         }
         if let Some(problem) = spec.problem() {
             return Err(IpcError::invalid_value(problem, &[]));
