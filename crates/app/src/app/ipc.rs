@@ -1756,7 +1756,7 @@ impl App {
                 size_bytes: it.size,
                 shortcut_target: shortcut_target.clone(),
                 shortcut_target_ext: match ext.as_str() {
-                    ".lnk" => shortcut_target.as_deref().map(rules::ext_of),
+                    ".lnk" => shortcut_target.as_deref().map(rules::target_ext),
                     ".url" => Some(".url".into()),
                     _ => None,
                 },

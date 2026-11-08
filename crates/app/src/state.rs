@@ -16,6 +16,8 @@ use std::path::{Path, PathBuf};
 const ORPHAN_GC_SECS: i64 = 7 * 24 * 3600;
 /// At most this many such records are kept; the oldest go first.
 const MAX_ORPHANS: usize = 200;
+/// Desktop items routed in one sync pass that get a log line each (`AppState::log_route`).
+const ROUTE_LOG_MAX: usize = 20;
 
 pub struct AppState {
     pub config: Config,
@@ -968,16 +970,29 @@ impl AppState {
 
     /// Rules only run automatically while "新项目出现在桌面时自动归类" is on; otherwise new
     /// items go to the inbox until the user applies the rules by hand.
-    fn route_decision(&self, entry: &DesktopEntry) -> Decision {
+    /// Also returns the facts the rules saw (`None`: the rules did not run).
+    fn route_decision(
+        &self,
+        entry: &DesktopEntry,
+    ) -> (Decision, Option<pecofence_core::ItemFacts>) {
         // The Recycle Bin and friends are not files: they always live in the inbox ("桌面").
         if entry.origin == EntryOrigin::Namespace {
-            return Decision::Default(Target::Inbox);
+            return (Decision::Default(Target::Inbox), None);
         }
         if self.config.rules.keep_updated {
             let facts = self.facts_for(entry);
-            let decision = self.config.rules.evaluate(&facts);
+            // A shortcut with no bytes yet: the shell creates the file a moment before it
+            // writes the link (Send To › 桌面快捷方式, feedback #125), and the rules would see
+            // no target. It is routed once written (the write is the next folder event), or
+            // once it has lasted as long as a `.tmp`.
+            let unwritten = Self::unwritten_shortcut(&facts);
+            let decision = if unwritten {
+                Decision::Skip
+            } else {
+                self.config.rules.evaluate(&facts)
+            };
             if decision == Decision::Skip
-                && facts.file_name.to_lowercase().ends_with(".tmp")
+                && (unwritten || facts.file_name.to_lowercase().ends_with(".tmp"))
                 && let Some(age) = facts.age_secs
                 && age < pecofence_core::rules::TMP_SETTLE_SECS
             {
@@ -986,10 +1001,60 @@ impl AppState {
                 let soonest = self.tmp_settle_at.get().map_or(at, |t| t.min(at));
                 self.tmp_settle_at.set(Some(soonest));
             }
-            decision
+            (decision, Some(facts))
         } else {
-            Decision::Default(Target::Inbox)
+            (Decision::Default(Target::Inbox), None)
         }
+    }
+
+    /// One line per desktop item the rules just placed or left out: the facts they saw (type,
+    /// whether a shortcut's target could be read), which rule matched and where the item went,
+    /// so a report of an icon in the wrong fence can be read from the log. A big batch (the
+    /// first run, an unpacked archive) logs only its first [`ROUTE_LOG_MAX`] items.
+    fn log_route(
+        &self,
+        reason: &'static str,
+        facts: Option<&pecofence_core::ItemFacts>,
+        decision: Decision,
+        target: Option<&(FenceId, AssignedBy)>,
+        logged: &mut usize,
+    ) {
+        if *logged >= ROUTE_LOG_MAX {
+            return;
+        }
+        *logged += 1;
+        let outcome = match (decision, facts) {
+            (_, None) => "rules off",
+            (Decision::Skip, Some(f)) if Self::unwritten_shortcut(f) => "shortcut not written yet",
+            (Decision::Skip, _) => "left out",
+            (Decision::Route { .. }, _) => "rule matched",
+            (Decision::Default(_), _) => "no rule matched",
+        };
+        let rule_index = match decision {
+            Decision::Route { rule, .. } => {
+                self.config.rules.list.iter().position(|r| r.id == rule)
+            }
+            _ => None,
+        };
+        let what = facts
+            .and_then(pecofence_core::rules::classify)
+            .map_or("other", pecofence_core::rules::category_name);
+        let lnk = facts.is_some_and(|f| f.file_name.to_lowercase().ends_with(".lnk"));
+        tracing::info!(
+            reason,
+            outcome,
+            what,
+            ?rule_index,
+            rules = self.config.rules.list.len(),
+            lnk,
+            lnk_target_read = lnk && facts.is_some_and(|f| f.shortcut_target.is_some()),
+            folder = facts.is_some_and(|f| f.is_folder),
+            size = facts.map_or(0, |f| f.size_bytes),
+            age_s = ?facts.and_then(|f| f.age_secs),
+            placed = target.is_some(),
+            inbox = target.is_some_and(|(f, _)| Some(*f) == self.inbox_id()),
+            "desktop item routed"
+        );
     }
 
     /// `id` if it is a fence that can hold routed desktop items. A folder portal never shows
@@ -1046,7 +1111,7 @@ impl AppState {
         let lower = entry.file_name.to_lowercase();
         let (shortcut_target, shortcut_target_ext) = if lower.ends_with(".lnk") {
             let t = shell::shortcut_target(&entry.path);
-            let ext = t.as_deref().map(pecofence_core::rules::ext_of);
+            let ext = t.as_deref().map(pecofence_core::rules::target_ext);
             (t, ext)
         } else if lower.ends_with(".url") {
             (shell::url_shortcut_target(&entry.path), Some(".url".into()))
@@ -1073,6 +1138,18 @@ impl AppState {
             idle_days: Self::idle_days(entry.mtime, last_opened, now),
             age_secs: Self::age_secs(entry.created, entry.mtime, now),
         }
+    }
+
+    /// A `.lnk` of 0 bytes that appeared less than [`TMP_SETTLE_SECS`] ago: still being written.
+    ///
+    /// [`TMP_SETTLE_SECS`]: pecofence_core::rules::TMP_SETTLE_SECS
+    fn unwritten_shortcut(facts: &pecofence_core::ItemFacts) -> bool {
+        !facts.is_folder
+            && facts.size_bytes == 0
+            && facts.file_name.to_lowercase().ends_with(".lnk")
+            && facts
+                .age_secs
+                .is_some_and(|s| s < pecofence_core::rules::TMP_SETTLE_SECS)
     }
 
     /// Seconds since the later of creation and last write; `None` when the file reports no
@@ -1121,6 +1198,8 @@ impl AppState {
             .map(|f| f.id)
             .collect();
         let mut arrived: Vec<(FenceId, ItemId)> = Vec::new();
+        // Items routed this pass that got a log line (see `log_route`).
+        let mut logged = 0usize;
         // Naming new entries one at a time costs several ms each on a OneDrive desktop: a batch
         // of them (first run, an unpacked archive) is named per folder in one go, as
         // `refresh_portal` does.
@@ -1192,9 +1271,19 @@ impl AppState {
                 // An item that exists but is in no fence (e.g. its fence was deleted, or a .tmp
                 // skipped while fresh) → route. Counted, so the caller refreshes the windows.
                 if !in_fence.contains(&id) {
-                    let decision = self.route_decision(entry);
+                    let (decision, facts) = self.route_decision(entry);
                     let target = self.target_fence(decision);
                     report.note_route(target.as_ref());
+                    // Logged once it lands: an Office lock file stays left out sync after sync.
+                    if target.is_some() {
+                        self.log_route(
+                            "in no fence",
+                            facts.as_ref(),
+                            decision,
+                            target.as_ref(),
+                            &mut logged,
+                        );
+                    }
                     if let Some((fence, by)) = target
                         && self.config.assign(self.layout, id, fence, by).is_some()
                     {
@@ -1250,9 +1339,18 @@ impl AppState {
             self.config.items.insert(id, item);
             self.catalog.insert(key, id);
             seen.insert(id);
-            let decision = self.route_decision(entry);
+            let (decision, facts) = self.route_decision(entry);
             let target = self.target_fence(decision);
             report.note_route(target.as_ref());
+            if entry.origin != EntryOrigin::Namespace {
+                self.log_route(
+                    "new item",
+                    facts.as_ref(),
+                    decision,
+                    target.as_ref(),
+                    &mut logged,
+                );
+            }
             if let Some((fence, by)) = target {
                 self.config.assign(self.layout, id, fence, by);
                 if shown.contains(&fence) {
@@ -3934,6 +4032,38 @@ mod tests {
         assert_eq!(state.config.fence_of_item(0, doc), Some(work));
         let bak = state.item_id_for_path(&desk("report.bak")).unwrap();
         assert_eq!(state.config.fence_of_item(0, bak), Some(inbox));
+    }
+
+    /// Feedback #125: Send To › 桌面快捷方式 makes the `.lnk` empty and writes the link a
+    /// moment later. A sync in between leaves it in no fence; the sync after the write routes
+    /// it, and one still empty is routed like a `.tmp` once it has lasted a minute.
+    #[test]
+    fn an_empty_new_shortcut_waits_for_its_link() {
+        let desk = |name: &str| PathBuf::from(format!("C:/Users/Me/Desktop/{name}"));
+        let mut state = test_state();
+        let mut lnk = desktop_entry("note - Shortcut.lnk");
+        lnk.created = pecofence_core::now_unix();
+        state.sync_desktop(&[lnk.clone()]);
+        let id = state
+            .item_id_for_path(&desk("note - Shortcut.lnk"))
+            .unwrap();
+        assert_eq!(state.config.fence_of_item(0, id), None);
+        assert!(state.take_tmp_settle_at().is_some());
+        lnk.size = 1130;
+        let report = state.sync_desktop(std::slice::from_ref(&lnk));
+        assert!(
+            report.changed(),
+            "a routed shortcut must show up in the report"
+        );
+        assert!(state.config.fence_of_item(0, id).is_some());
+        let mut empty = desktop_entry("empty.lnk");
+        empty.created = pecofence_core::now_unix();
+        state.sync_desktop(&[lnk.clone(), empty.clone()]);
+        let e = state.item_id_for_path(&desk("empty.lnk")).unwrap();
+        assert_eq!(state.config.fence_of_item(0, e), None);
+        empty.created -= pecofence_core::rules::TMP_SETTLE_SECS as i64;
+        state.sync_desktop(&[lnk, empty]);
+        assert!(state.config.fence_of_item(0, e).is_some());
     }
 
     /// #69 / #71: the shortcut rule is disabled and type rules plus a final 「普通文件」 rule are
