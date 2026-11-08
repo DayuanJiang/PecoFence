@@ -29,6 +29,18 @@ pub(super) fn filter_keeps(item: &pecofence_core::Item, query: &str) -> bool {
     }
 }
 
+/// A filter's text as the UI shows it: its `kind:` words as their labels (类型：PDF, in the UI
+/// language), then the rest.
+pub(super) fn filter_words(text: &str) -> String {
+    let (types, typed) = pecofence_core::type_filter::split(text);
+    types
+        .iter()
+        .map(pecofence_core::type_filter::label)
+        .chain((!typed.is_empty()).then_some(typed))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 /// Whether the file `file` at `path` is of `types`, a shortcut by its real target as the
 /// rules read it (so the filter, the Peek's type tab, Everything's words and a saved smart
 /// fence agree).
@@ -182,7 +194,7 @@ impl App {
         }
         match self.fence_filters.get(&id).map(|t| t.trim()) {
             Some(t) if !t.is_empty() => {
-                pecofence_core::i18n::format("{0} · 筛选：{1}", &[title, t.to_string()])
+                pecofence_core::i18n::format("{0} · 筛选：{1}", &[title, filter_words(t)])
             }
             _ => title,
         }
