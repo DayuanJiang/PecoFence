@@ -747,14 +747,14 @@ impl App {
             }
             Some("action") => match v.get("name").and_then(|n| n.as_str()) {
                 Some("applyRules") => {
-                    let entries = shell::enumerate_desktop();
-                    let moved = self.state.apply_rules_all(&entries);
-                    self.refresh_all();
-                    self.schedule_save();
-                    self.settings_toast(&pecofence_core::i18n::format(
-                        "已按规则整理 {0} 个项目",
-                        &[moved.to_string()],
-                    ));
+                    // The notice with 撤销 says how many moved; without it, the page does.
+                    let (moved, step) = self.apply_rules_now();
+                    if !step.is_some_and(|id| self.offer_undo_refiled(id, moved)) {
+                        self.settings_toast(&pecofence_core::i18n::format(
+                            "已按规则整理 {0} 个项目",
+                            &[moved.to_string()],
+                        ));
+                    }
                 }
                 Some(name @ ("newNote" | "newClock" | "newScript" | "newScriptExample")) => {
                     let example = v

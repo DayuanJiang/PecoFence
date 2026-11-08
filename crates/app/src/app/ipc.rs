@@ -1089,7 +1089,7 @@ impl App {
                 // Re-filing every desktop item rewrites memberships: keep a way back, but only
                 // when something is going to move.
                 let snapshot = (!plan.is_empty()).then(|| self.auto_snapshot()).flatten();
-                let moved = self.state.apply_rules_all(&entries);
+                let moved = self.state.apply_rules_all(&entries).moved;
                 self.refresh_all();
                 self.schedule_save();
                 self.push_settings_state();
