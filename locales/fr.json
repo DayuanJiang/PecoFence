@@ -901,5 +901,6 @@
   "（含子文件夹）": " (avec les sous-dossiers)",
   "名称匹配“{0}”": "Le nom correspond à « {0} »",
   "Everything 搜索“{0}”": "Recherche Everything « {0} »",
-  "任一条件：": "L’une de ces conditions : "
+  "任一条件：": "L’une de ces conditions : ",
+  "选「任一」时，Everything 语法不能和这一行一起用": "Avec « l’une de », la syntaxe Everything ne peut pas aller avec cette ligne"
 }

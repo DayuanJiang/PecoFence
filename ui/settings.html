@@ -2745,6 +2745,16 @@
       else if (r.everything) spec.everything = r.everything;
     }
     if (all) spec.folders = [];
+    // 任一 with an Everything text: a row only PecoFence tests (or Everything only roughly) would
+    // let every file of the folders in, so the host refuses such a search (SmartSpec::problem).
+    if (spec.match === 'any' && spec.everything) {
+      const rough = [...w.querySelectorAll('.se-row')].find(el => {
+        const k = el.dataset.kind, r = seRead(el);
+        return ['target', 'created', 'weekday', 'idle'].includes(k) || (k === 'name' && r.name)
+          || (r.cond && ((r.cond.cond === 'type' && r.cond.value.some(v => v === 'programs' || v === 'installers')) || r.cond.cond === 'plainFiles'));
+      });
+      if (rough) return { error: t("选「任一」时，Everything 语法不能和这一行一起用"), at: rough.querySelector('.se-kind'), row: rough, lasting: true };
+    }
     return { spec };
   }
   // One row: its kind menu, its value boxes, - and +.
@@ -2842,7 +2852,8 @@
     if (!se) return;
     const r = seSpec(), box = document.querySelector('#seWindow .se-count');
     box.hidden = false;
-    if (r.error) { se.countSeq++; seCountLine(t("填好条件后显示找到几个文件"), ''); return; }
+    // A row not filled in yet waits; a search that cannot be saved says why at once.
+    if (r.error) { se.countSeq++; seCountLine(esc(r.lasting ? r.error : t("填好条件后显示找到几个文件")), ''); return; }
     se.countSeq++;
     send({ type: 'editorCount', seq: se.countSeq, spec: r.spec });
     // The last number stays (dimmed) until the new one comes.

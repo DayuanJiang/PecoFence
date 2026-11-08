@@ -530,7 +530,11 @@ absent: every drive), `--within-days <N>` (created or written in the last N days
 `--everything <SEARCH>` (Everything syntax, needs Everything). `--match all` (the default) wants
 every one of these; `--match any` takes a file that meets one of them (the time window, the
 extensions, the name, the Everything text), and goes with a template too. The folders always
-apply. A written search keeps to files, unless it is `--match any`: then a folder whose name
+apply. With `any`, `--everything` cannot go with `--name-matches` or with a condition PecoFence
+tests itself (shortcut target, creation time or weekday, idle days, programs or installers):
+Everything would have to return every file of the folders for that row, and PecoFence cannot tell
+which of them the Everything text matched, so such a search is refused (`invalidValue`), also
+when `fence set` would make one. A written search keeps to files, unless it is `--match any`: then a folder whose name
 matches shows as well.
 
 ```powershell

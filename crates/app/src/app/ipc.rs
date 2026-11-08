@@ -923,6 +923,17 @@ impl App {
                     return Err(unsupported(format!("{prop_name} is for smart fences"))
                         .hint("fence list shows the smart fences (their `smart` field)"));
                 }
+                // The search as it would be after the change must be one a smart fence can run.
+                if let super::fence_options::FenceProp::Smart(change) = &prop
+                    && let Some(mut spec) = self.state.smart_spec(id).cloned()
+                {
+                    change.clone().apply(&mut spec);
+                    if let Some(problem) = spec.problem() {
+                        return Err(IpcError::invalid_value(problem, &[]).hint(
+                            "Use smartMatch all, or leave out the Everything search or that condition",
+                        ));
+                    }
+                }
                 if let Some(tool) = prop.tool()
                     && self.fence_or_err(id)?.tool != Some(tool)
                 {

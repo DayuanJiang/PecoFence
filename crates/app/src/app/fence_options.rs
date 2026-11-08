@@ -114,6 +114,46 @@ pub(super) enum SmartChange {
     Limit(u32),
 }
 
+impl SmartChange {
+    /// Makes the change to `spec`; what changed, for the log.
+    pub(super) fn apply(self, spec: &mut pecofence_core::smart::SmartSpec) -> &'static str {
+        match self {
+            SmartChange::Folders(folders) => {
+                spec.folders = folders;
+                "folders"
+            }
+            SmartChange::Match(matching) => {
+                spec.matching = matching;
+                "match"
+            }
+            SmartChange::Subfolders(on) => {
+                spec.subfolders = on;
+                "subfolders"
+            }
+            SmartChange::WithinDays(days) => {
+                spec.within_days = days;
+                "within days"
+            }
+            SmartChange::Conditions(conds) => {
+                spec.all_of = conds;
+                "conditions"
+            }
+            SmartChange::Name(name) => {
+                spec.name = name;
+                "name"
+            }
+            SmartChange::Everything(text) => {
+                spec.everything = text;
+                "everything search"
+            }
+            SmartChange::Limit(n) => {
+                spec.limit = n;
+                "limit"
+            }
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum TitleColorChoice {
     Theme,

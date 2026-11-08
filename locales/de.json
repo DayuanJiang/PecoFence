@@ -901,5 +901,6 @@
   "（含子文件夹）": " (mit Unterordnern)",
   "名称匹配“{0}”": "Name passt zu „{0}“",
   "Everything 搜索“{0}”": "Everything-Suche „{0}“",
-  "任一条件：": "Eine davon: "
+  "任一条件：": "Eine davon: ",
+  "选「任一」时，Everything 语法不能和这一行一起用": "Bei „eine“ geht die Everything-Syntax nicht mit dieser Zeile zusammen"
 }

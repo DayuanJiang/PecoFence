@@ -901,5 +901,6 @@
   "（含子文件夹）": " (con subcarpetas)",
   "名称匹配“{0}”": "El nombre coincide con «{0}»",
   "Everything 搜索“{0}”": "Búsqueda de Everything «{0}»",
-  "任一条件：": "Alguna de estas: "
+  "任一条件：": "Alguna de estas: ",
+  "选「任一」时，Everything 语法不能和这一行一起用": "Con «alguna de», la sintaxis de Everything no puede ir con esta fila"
 }

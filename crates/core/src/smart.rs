@@ -160,10 +160,20 @@ impl SmartSpec {
     }
 
     /// Why the search cannot be saved (a 来源 condition, which says where a desktop icon came
-    /// from and means nothing for files found anywhere; a limit out of range). None when it can.
+    /// from and means nothing for files found anywhere; a limit out of range; with `any`, an
+    /// Everything text beside a row the app tests itself, see [`Self::any_text_clash`]). None
+    /// when it can.
     pub fn problem(&self) -> Option<String> {
         if self.all_of.iter().any(|c| matches!(c, Cond::Origin(_))) {
             return Some("origin is not a smart fence condition".into());
+        }
+        if self.any_text_clash() {
+            return Some(
+                "with match any, an Everything search cannot go with a condition PecoFence tests \
+                 itself (shortcut target, creation time or weekday, idle days, programs or \
+                 installers, the name filter)"
+                    .into(),
+            );
         }
         if !(1..=2000).contains(&self.limit) {
             return Some(format!("limit {} is not in 1..2000", self.limit));
@@ -172,6 +182,20 @@ impl SmartSpec {
             return Some("an empty folder".into());
         }
         None
+    }
+
+    /// With `any`, an Everything text and a row that only the app can test (or that Everything
+    /// tests only roughly): Everything would have to return the whole scope for that row, and
+    /// the app cannot tell which of those files the Everything text matched, so the fence would
+    /// show every file of its folders (or of the computer).
+    pub fn any_text_clash(&self) -> bool {
+        self.matching == SmartMatch::Any
+            && self
+                .everything
+                .as_deref()
+                .is_some_and(|t| !t.trim().is_empty())
+            && (self.name.as_deref().is_some_and(|n| !n.trim().is_empty())
+                || self.all_of.iter().any(inexact))
     }
 
     /// The Everything search text: the folders (always), then the user's own Everything text,
@@ -285,7 +309,9 @@ impl SmartSpec {
                     }
                     any_row = true;
                 }
-                // No row at all, or one only Everything tested: what was found matches.
+                // No row at all, or one only Everything tested (it holds when no other row does:
+                // with a typed text every other row is one Everything tests exactly, see
+                // `any_text_clash`): what was found matches.
                 typed || !any_row
             }
         }
@@ -299,6 +325,19 @@ impl SmartSpec {
         } else {
             self.limit
         }
+    }
+}
+
+/// Whether the app tests a condition itself, or Everything's term for it takes in more files
+/// than the condition (a program or an installer is told by more than its extension).
+fn inexact(cond: &Cond) -> bool {
+    match cond {
+        // `file:` takes in the programs and shortcuts this condition leaves out.
+        Cond::PlainFiles => true,
+        Cond::Type(cats) => cats
+            .iter()
+            .any(|c| matches!(c, TypeCategory::Programs | TypeCategory::Installers)),
+        c => everything_term(c).is_none(),
     }
 }
 
@@ -795,6 +834,47 @@ mod tests {
             spec.everything_query(None),
             r#""C:\Docs\" <<invoice>|<ext:pdf>>"#
         );
+        assert_eq!(spec.problem(), None);
+    }
+
+    /// 任一 with an Everything text and a row only the app tests would ask Everything for the
+    /// whole scope and keep every file: such a search cannot be saved. With 全部, or rows that
+    /// Everything tests exactly, it can.
+    #[test]
+    fn any_with_a_typed_text_refuses_rows_the_app_tests() {
+        let mut spec = SmartSpec {
+            matching: SmartMatch::Any,
+            everything: Some("invoice".into()),
+            all_of: vec![Cond::IdleDays { min: 30 }],
+            ..SmartSpec::default()
+        };
+        assert!(spec.any_text_clash() && spec.problem().is_some());
+        for row in [
+            Cond::ShortcutTarget {
+                op: StrOp::Contains,
+                value: "steam".into(),
+            },
+            Cond::CreatedWeekday(vec![5]),
+            Cond::Type(vec![TypeCategory::Programs]),
+        ] {
+            spec.all_of = vec![row];
+            assert!(spec.problem().is_some(), "{:?}", spec.all_of);
+        }
+        spec.all_of = vec![];
+        spec.name = Some("bg".into());
+        assert!(spec.problem().is_some(), "the name filter");
+        spec.name = None;
+        spec.all_of = vec![
+            Cond::Ext(vec!["pdf".into()]),
+            Cond::Type(vec![TypeCategory::Images]),
+        ];
+        assert_eq!(spec.problem(), None, "rows Everything tests exactly");
+        spec.all_of.push(Cond::IdleDays { min: 30 });
+        spec.matching = SmartMatch::All;
+        assert_eq!(spec.problem(), None, "all: every row narrows");
+        spec.matching = SmartMatch::Any;
+        spec.everything = None;
+        assert_eq!(spec.problem(), None, "no typed text");
     }
 
     #[test]

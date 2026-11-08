@@ -287,12 +287,17 @@ if ($Part -match 'B') {
     Js "(() => { const s = [...document.querySelectorAll('#seWindow .se-kind')].at(-1); s.value = '$k'; s.dispatchEvent(new Event('change', { bubbles: true })); return true; })()" | Out-Null
   }
   Js "(() => { const r = document.querySelector('#seWindow .se-row[data-kind=type] .se-cats input[value=documents]'); r.checked = true; r.dispatchEvent(new Event('change', { bubbles: true })); const w = document.querySelector('#seWindow .se-row[data-kind=weekday] .se-week input[value=\'5\']'); w.checked = true; w.dispatchEvent(new Event('change', { bubbles: true })); document.querySelector('#seWindow .se-row[data-kind=size] .se-n1').value = '2'; document.querySelector('#seWindow .se-row[data-kind=target] .se-text').value = 'steam'; document.querySelector('#seWindow .se-row[data-kind=everything] .se-text').value = 'report'; return true; })()" | Out-Null
+  # 任一 with Everything syntax and rows only PecoFence tests: refused, the row is marked.
+  PageClick '#seWindow .se-ok'; Start-Sleep -Milliseconds 600
+  $st = EdState
+  Check 'any with Everything syntax and a row PecoFence tests: not saved, the row named' ((EditorCount) -eq 1 -and $st.msg -match 'Everything syntax cannot go with this row' -and (Js "['created', 'weekday', 'target', 'idle'].includes((document.querySelector('#seWindow .se-row.bad') || {}).dataset?.kind)")) ($st | ConvertTo-Json -Compress)
+  Js "(() => { const s = document.querySelector('#seWindow .se-all'); s.value = 'all'; s.dispatchEvent(new Event('change', { bubbles: true })); return true; })()" | Out-Null
   EndEditor 'ok' | Out-Null
   $s = SmartOf 'Any two'
   $conds = (@($s.spec.allOf) | ForEach-Object { $_.cond }) -join ','
-  Check 'fence get: every condition, the window and the Everything text' ($conds -eq 'name,ext,type,sizeMb,createdTime,createdWeekday,shortcutTarget,idleDays' -and $s.spec.withinDays -eq 7 -and $s.spec.everything -eq 'report' -and $s.match -eq 'any') "$conds days=$($s.spec.withinDays) ev=$($s.spec.everything)"
+  Check 'all: fence get has every condition, the window and the Everything text' ($conds -eq 'name,ext,type,sizeMb,createdTime,createdWeekday,shortcutTarget,idleDays' -and $s.spec.withinDays -eq 7 -and $s.spec.everything -eq 'report' -and $s.match -eq 'all') "$conds days=$($s.spec.withinDays) ev=$($s.spec.everything)"
   $log = (PfLogAll) -join "`n"
-  Check 'log: the whole search saved' ($log -match 'smart fence search changed.*what="the whole search".*matching="any"') ''
+  Check 'log: the whole search saved' ($log -match 'smart fence search changed.*what="the whole search".*matching="all"') ''
   Pf fence delete 'Any two' | Out-Null
 }
 

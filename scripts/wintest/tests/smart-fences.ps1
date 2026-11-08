@@ -242,6 +242,11 @@ $bad = & "$PfApp\pecofence-cli.exe" fence set 'Two places' smartConditions '[{\"
 Check 'an origin condition is refused' ($LASTEXITCODE -ne 0 -and $bad -match 'origin') $bad
 $bad = & "$PfApp\pecofence-cli.exe" fence create --title Nope --match any 2>&1 | Out-String
 Check '--match without a smart fence is refused' ($LASTEXITCODE -ne 0 -and $bad -match 'match') $bad
+# 任一 with Everything syntax and the name filter would let every file in: refused.
+$bad = & "$PfApp\pecofence-cli.exe" fence create --title Wide --smart-folder $PfDl --everything invoice --name-matches inv --match any 2>&1 | Out-String
+Check 'create: --match any with --everything and --name-matches is refused' ($LASTEXITCODE -ne 0 -and $bad -match 'cannot go with') $bad
+$bad = & "$PfApp\pecofence-cli.exe" fence set 'Two places' smartEverything invoice 2>&1 | Out-String
+Check 'set: an Everything search on an any fence with a name filter is refused, the search stays' ($LASTEXITCODE -ne 0 -and $bad -match 'cannot go with' -and $null -eq (SmartOf 'Two places').spec.everything) $bad
 Pf fence create --smart large --match any --rect '40,60,400,260' --title 'Large any' | Out-Null
 Check '--match any goes with a template too' ((SmartOf 'Large any').match -eq 'any') ((SmartOf 'Large any') | ConvertTo-Json -Compress -Depth 5)
 Pf fence delete 'Two places' | Out-Null; Pf fence delete 'Large any' | Out-Null

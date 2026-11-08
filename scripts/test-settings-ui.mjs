@@ -193,7 +193,7 @@ const editorFixtures = {
   new: { type: 'editor', fence: null, isNew: true, title: '', spec: { subfolders: true, limit: 200 }, templates: editorTemplates, everything: { state: 'running' } },
   dl: { type: 'editor', fence: 'smart-dl', isNew: false, title: '最近 7 天下载', spec: editorTemplates[0].spec, templates: editorTemplates, everything: { state: 'running' } },
   every: { type: 'editor', fence: 'smart-all', isNew: false, title: 'Every row', templates: editorTemplates, everything: { state: 'running' },
-    spec: { folders: ['D:\\Work', 'E:\\Archive'], subfolders: false, match: 'any', withinDays: 30, name: 'bg', everything: 'invoice|receipt', limit: 500,
+    spec: { folders: ['D:\\Work', 'E:\\Archive'], subfolders: false, withinDays: 30, name: 'bg', everything: 'invoice|receipt', limit: 500,
       allOf: [
         { cond: 'type', value: ['images', 'music'] }, { cond: 'ext', value: ['pdf', 'tar.gz'] }, { cond: 'name', value: { op: 'startsWith', value: 'IMG_' } },
         { cond: 'sizeMb', value: { min: 1024, max: null } }, { cond: 'sizeMb', value: { min: 1.5, max: 20 } }, { cond: 'createdTime', value: { from_min: 1320, to_min: 360 } },
@@ -2289,10 +2289,10 @@ async function runTests() {
     const w = doc.getElementById('seWindow');
     assert(w.querySelector('h2').textContent === '编辑智能栅栏' && w.querySelector('.se-ok').textContent === '好' && !w.querySelector('.se-presets'), 'Not the edit editor');
     assert(kindsOf(doc) === 'where,where,sub,time,type,ext,name,size,size,created,weekday,target,idle,keep,name,everything', 'Rows: ' + kindsOf(doc));
-    assert(w.querySelector('.se-all').value === 'any' && !w.querySelector('.se-always').hidden, '任一 or its note not shown');
+    assert(w.querySelector('.se-all').value === 'all' && w.querySelector('.se-always').hidden, '全部 not shown, or the note of 任一 shown');
     assert(rowsOf(doc)[13].querySelector('.se-kind').disabled && rowsOf(doc)[13].textContent.includes('*.bak'), 'A condition the editor has no row for is not kept as it is');
     w.querySelector('.se-ok').click(); await settle();
-    const want = { template: null, folders: ['D:\\Work', 'E:\\Archive'], subfolders: false, match: 'any', allOf: ew().testEditor.spec.allOf, withinDays: 30, name: 'bg', everything: 'invoice|receipt', limit: 500 };
+    const want = { template: null, folders: ['D:\\Work', 'E:\\Archive'], subfolders: false, match: 'all', allOf: ew().testEditor.spec.allOf, withinDays: 30, name: 'bg', everything: 'invoice|receipt', limit: 500 };
     assert(JSON.stringify(saved().spec) === JSON.stringify(want), 'Changed on the way: ' + JSON.stringify(saved().spec));
     assert(saved().title === 'Every row' && !posted('editorDirty').length, 'Title or dirty wrong');
   });
@@ -2371,6 +2371,33 @@ async function runTests() {
     assert(w.querySelector('.se-msg').textContent === '找不到文件夹 D:\\Gone', 'Host error not shown');
     const errors = ew().testMessages.filter(m => m.name === 'pageError');
     assert(!errors.length, 'Page error: ' + JSON.stringify(errors));
+  });
+  await test('Smart fence editor: 任一 with Everything syntax refuses a row only PecoFence tests, and says which', async () => {
+    doc = await openEditor('fence=new');
+    const w = doc.getElementById('seWindow');
+    sePick(rowsOf(doc)[1].querySelector('.se-kind'), 'everything'); await settle();
+    seType(rowsOf(doc)[1].querySelector('.se-text'), 'invoice');
+    rowsOf(doc)[1].querySelector('.se-plus').click(); await settle();
+    sePick(rowsOf(doc)[2].querySelector('.se-kind'), 'idle'); await settle();
+    sePick(w.querySelector('.se-all'), 'any'); await settle();
+    await new Promise(r => setTimeout(r, 420));
+    const asked = posted('editorCount').length;
+    assert(w.querySelector('.se-count').textContent.includes('Everything 语法不能和这一行一起用'), 'The count does not say why: ' + w.querySelector('.se-count').textContent);
+    w.querySelector('.se-ok').click(); await settle();
+    assert(!saved() && w.querySelector('.se-msg').textContent === '选「任一」时，Everything 语法不能和这一行一起用' && rowsOf(doc)[2].classList.contains('bad'), 'Saved or the row not marked: ' + w.querySelector('.se-msg').textContent);
+    for (const [kind, ok] of [['target', false], ['ext', true]]) {
+      sePick(rowsOf(doc)[2].querySelector('.se-kind'), kind); await settle();
+      if (kind === 'target' || kind === 'ext') seType(rowsOf(doc)[2].querySelector('.se-text'), 'x');
+      w.querySelector('.se-ok').click(); await settle();
+      assert(!!saved() === ok, kind + ': saved=' + !!saved());
+    }
+    // 全部 with the same rows is fine.
+    const n = posted('editorSave').length;
+    sePick(rowsOf(doc)[2].querySelector('.se-kind'), 'idle'); await settle();
+    sePick(w.querySelector('.se-all'), 'all'); await settle();
+    w.querySelector('.se-ok').click(); await settle();
+    assert(posted('editorSave').length === n + 1 && saved().spec.match === 'all', '全部 was refused');
+    assert(asked >= 0 && !ew().testMessages.some(m => m.name === 'pageError'), 'page error');
   });
   await test('Smart fence editor: the live count follows the search, a moment after the last change', async () => {
     doc = await openEditor('fence=dl');

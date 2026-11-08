@@ -901,5 +901,6 @@
   "（含子文件夹）": " (with subfolders)",
   "名称匹配“{0}”": "Name matches “{0}”",
   "Everything 搜索“{0}”": "Everything search “{0}”",
-  "任一条件：": "Any one of: "
+  "任一条件：": "Any one of: ",
+  "选「任一」时，Everything 语法不能和这一行一起用": "With “any one”, Everything syntax cannot go with this row"
 }

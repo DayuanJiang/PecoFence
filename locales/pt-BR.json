@@ -901,5 +901,6 @@
   "（含子文件夹）": " (com subpastas)",
   "名称匹配“{0}”": "O nome corresponde a “{0}”",
   "Everything 搜索“{0}”": "Pesquisa do Everything “{0}”",
-  "任一条件：": "Alguma destas: "
+  "任一条件：": "Alguma destas: ",
+  "选「任一」时，Everything 语法不能和这一行一起用": "Com “uma das”, a sintaxe do Everything não pode ir com esta linha"
 }

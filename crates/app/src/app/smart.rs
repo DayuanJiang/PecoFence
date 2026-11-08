@@ -739,46 +739,17 @@ impl App {
         fence: FenceId,
         change: super::fence_options::SmartChange,
     ) -> bool {
-        use super::fence_options::SmartChange as C;
         let Some(spec) = self.state.fence_mut(fence).and_then(|f| f.smart.as_mut()) else {
             tracing::info!(%fence, "smart fence change refused: not a smart fence");
             return false;
         };
         let before = spec.clone();
-        let what = match change {
-            C::Folders(folders) => {
-                spec.folders = folders;
-                "folders"
-            }
-            C::Match(matching) => {
-                spec.matching = matching;
-                "match"
-            }
-            C::Subfolders(on) => {
-                spec.subfolders = on;
-                "subfolders"
-            }
-            C::WithinDays(days) => {
-                spec.within_days = days;
-                "within days"
-            }
-            C::Conditions(conds) => {
-                spec.all_of = conds;
-                "conditions"
-            }
-            C::Name(name) => {
-                spec.name = name;
-                "name"
-            }
-            C::Everything(text) => {
-                spec.everything = text;
-                "everything search"
-            }
-            C::Limit(n) => {
-                spec.limit = n;
-                "limit"
-            }
-        };
+        let what = change.apply(spec);
+        if let Some(problem) = spec.problem() {
+            tracing::info!(%fence, what, problem, "smart fence change refused");
+            *spec = before;
+            return false;
+        }
         if *spec == before {
             return false;
         }

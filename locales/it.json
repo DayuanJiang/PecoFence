@@ -901,5 +901,6 @@
   "（含子文件夹）": " (con sottocartelle)",
   "名称匹配“{0}”": "Il nome corrisponde a «{0}»",
   "Everything 搜索“{0}”": "Ricerca di Everything «{0}»",
-  "任一条件：": "Una di queste: "
+  "任一条件：": "Una di queste: ",
+  "选「任一」时，Everything 语法不能和这一行一起用": "Con «una di», la sintassi di Everything non può stare con questa riga"
 }
