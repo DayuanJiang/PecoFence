@@ -8,6 +8,10 @@
 //! A right-click on a row highlights it and shows its actions at the pointer, as in Explorer;
 //! a right-click on the typed text gives the text box's own menu.
 //!
+//! Windows 11's look: rounded corners (by Windows, where it rounds), group headings (栅栏里,
+//! 整台电脑, 操作), a glyph on the two action rows, the Ctrl+digit of the highlighted row only,
+//! and a bottom bar with the keys and the number of results, as PowerToys' Command Palette.
+//!
 //! A small activatable popup hosting an EDIT control, like the rename popup, so IME input,
 //! the caret and clipboard keys work as in any text box. The popup paints its background, the
 //! search glyph, the match count and the list itself (GDI). Everything's answers come to this
@@ -53,6 +57,7 @@ const ICON: f32 = 20.0;
 const NAME_SIZE: f32 = 14.0;
 const DETAIL_SIZE: f32 = 11.5;
 const HEADING_SIZE: f32 = 11.5;
+const BAR_H: f32 = 36.0;
 
 /// One line of the result list.
 pub struct Row {
@@ -70,6 +75,8 @@ pub struct Row {
     pub heading: Option<String>,
     /// The digit of its Ctrl+digit shortcut.
     pub shortcut: Option<u8>,
+    /// An action row's glyph (Segoe Fluent), drawn in the accent where a file has its icon.
+    pub glyph: Option<&'static str>,
 }
 
 thread_local! {
@@ -96,6 +103,8 @@ struct Session {
     name_font: Font,
     detail_font: Font,
     heading_font: Font,
+    /// The 14 px glyph of an action row.
+    row_glyph_font: Font,
     /// Match count shown at the right ("2 / 5", or that nothing matches).
     status: String,
     rows: Vec<Row>,
@@ -128,7 +137,7 @@ impl Session {
             spans.push((top, y));
         }
         self.row_spans = spans;
-        y + self.px(LIST_GAP * 2.0)
+        y + self.px(LIST_GAP * 2.0) + self.px(BAR_H)
     }
 
     fn row_at(&self, y: i32) -> Option<usize> {
@@ -278,9 +287,10 @@ pub fn open(text: &str, queue: CommandQueue, dark: bool) {
             dim_color: if dark { 0x00C5_C5C5 } else { 0x005F_5F5F },
             glyph_font: Font::new(fonts::icon_face(), GLYPH_SIZE, dpi),
             status_font: Font::new(fonts::text_face(), STATUS_SIZE, dpi),
-            name_font: Font::new(fonts::text_face(), NAME_SIZE, dpi),
-            detail_font: Font::new(fonts::text_face(), DETAIL_SIZE, dpi),
-            heading_font: Font::new(fonts::text_face(), HEADING_SIZE, dpi),
+            name_font: Font::new(fonts::han_text_face(), NAME_SIZE, dpi),
+            detail_font: Font::new(fonts::han_text_face(), DETAIL_SIZE, dpi),
+            heading_font: Font::new(fonts::han_text_face(), HEADING_SIZE, dpi),
+            row_glyph_font: Font::new(fonts::icon_face(), 14.0, dpi),
             status: String::new(),
             rows: Vec::new(),
             selected: None,
@@ -382,15 +392,13 @@ fn paint_box(hwnd: HWND) {
                 );
             }
             if s.selected == Some(i) {
-                p.fill(
-                    RECT {
-                        left: px(6.0),
-                        top,
-                        right: w - px(6.0),
-                        bottom,
-                    },
-                    selected_back,
-                );
+                let r = RECT {
+                    left: px(6.0),
+                    top,
+                    right: w - px(6.0),
+                    bottom,
+                };
+                p.round_rect(r, px(4.0), selected_back, selected_back);
             }
             let mid = (top + bottom) / 2;
             if let Some(path) = row.icon_path.clone() {
@@ -402,6 +410,19 @@ fn paint_box(hwnd: HWND) {
                 if let Some(ico) = ico {
                     p.icon(pad, mid - icon / 2, icon, ico);
                 }
+            } else if let Some(g) = row.glyph {
+                p.text(
+                    RECT {
+                        left: pad,
+                        top,
+                        right: pad + icon,
+                        bottom,
+                    },
+                    g,
+                    &s.row_glyph_font,
+                    accent,
+                    Align::Center,
+                );
             }
             let row = &s.rows[i];
             let text_left = pad + icon + px(12.0);
@@ -457,7 +478,10 @@ fn paint_box(hwnd: HWND) {
                 s.dim_color,
                 Align::Left,
             );
-            if let Some(d) = row.shortcut {
+            // Only the highlighted row's: every row's read as part of its name.
+            if s.selected == Some(i)
+                && let Some(d) = row.shortcut
+            {
                 p.text(
                     RECT {
                         left: w - pad - hint_w,
@@ -472,7 +496,43 @@ fn paint_box(hwnd: HWND) {
                 );
             }
         }
+        // The bottom bar: what the keys do, and how many results (the action rows aside).
+        let y0 = h - px(BAR_H);
+        p.fill(
+            RECT {
+                left: 0,
+                top: y0,
+                right: w,
+                bottom: y0 + 1.max(px(1.0)),
+            },
+            line,
+        );
+        let bar = RECT {
+            left: pad,
+            top: y0,
+            right: w - pad,
+            bottom: h,
+        };
+        p.text(bar, &bar_keys(), &s.detail_font, s.dim_color, Align::Left);
+        let results = s.rows.iter().filter(|r| r.glyph.is_none()).count();
+        p.text(
+            bar,
+            &pecofence_core::i18n::format("{0} 个结果", &[results.to_string()]),
+            &s.detail_font,
+            s.dim_color,
+            Align::Right,
+        );
     });
+}
+
+/// 「↵ 打开   Ctrl+Enter 打开所在文件夹   → 更多操作」 in the UI language (the key names as the
+/// actions menu writes them).
+fn bar_keys() -> String {
+    let open = pecofence_core::i18n::text("打开");
+    let folder = pecofence_core::i18n::text("打开所在文件夹\tCtrl+Enter");
+    let (folder, folder_key) = folder.split_once('\t').unwrap_or((folder, "Ctrl+Enter"));
+    let more = pecofence_core::i18n::text("更多操作");
+    format!("↵ {open}      {folder_key} {folder}      → {more}")
 }
 
 /// A name too long for its row whose matched letters lie past what fits: its start gives way
@@ -665,6 +725,7 @@ pub fn row_room(headings: usize) -> usize {
             - s.y
             - s.px(HEIGHT)
             - s.px(LIST_GAP * 3.0)
+            - s.px(BAR_H)
             - headings as i32 * s.px(HEADING_H);
         (free.max(0) / s.px(ROW_H).max(1)) as usize
     })

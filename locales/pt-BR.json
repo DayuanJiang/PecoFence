@@ -951,5 +951,8 @@
   "「来源」不能作为智能栅栏的条件，请删掉这一行": "“Origem” não pode ser uma condição de um grupo inteligente. Remova esta linha",
   "至少要有一行位置": "É preciso pelo menos uma linha de local",
   "这个栅栏的条件刚在别处改过，按「好」会换成这里的条件": "As condições deste grupo acabaram de mudar em outro lugar; “OK” coloca as daqui no lugar delas",
-  "这个栅栏的条件是「任一」，筛选没法和它合成一个搜索，所以不能存。": "As condições deste grupo usam “uma das” e o filtro não pode se juntar a elas numa só pesquisa, então não dá para salvar."
+  "这个栅栏的条件是「任一」，筛选没法和它合成一个搜索，所以不能存。": "As condições deste grupo usam “uma das” e o filtro não pode se juntar a elas numa só pesquisa, então não dá para salvar.",
+  "更多操作": "Mais ações",
+  "操作": "Ações",
+  "{0} 个结果": "Resultados: {0}"
 }

@@ -269,7 +269,9 @@ impl App {
         // As many rows as fit under the box: Everything's rows bring two headings and the
         // "show all" row.
         let show_all = self.search.everything_total > 0;
-        let max_rows = crate::peek_search::row_room(if files.is_empty() { 0 } else { 2 })
+        // Headings: 栅栏里, 整台电脑 when Everything found some, 操作 before the action rows.
+        let headings = 1 + usize::from(!files.is_empty()) + usize::from(show_all);
+        let max_rows = crate::peek_search::row_room(headings)
             .saturating_sub(2 * usize::from(show_all))
             .clamp(1, MAX_ROWS);
         let fence_room = if files.is_empty() {
@@ -312,31 +314,24 @@ impl App {
         let query = crate::peek_search::query().unwrap_or_default();
         let searching = !query.trim().is_empty();
         self.show_peek_hits(searching);
-        let both = self
-            .search
-            .rows
-            .iter()
-            .any(|r| matches!(r, RowKind::Fence(_)))
-            && self
-                .search
-                .rows
-                .iter()
-                .any(|r| matches!(r, RowKind::File { .. }));
         let mut rows = Vec::with_capacity(self.search.rows.len());
         let mut last_group = None;
         for (i, kind) in self.search.rows.iter().enumerate() {
-            let group = matches!(kind, RowKind::Fence(_));
-            let footer = matches!(kind, RowKind::ShowAll | RowKind::ToDesktop);
-            let heading = (both && last_group != Some(group) && !footer).then(|| {
-                if group {
-                    pecofence_core::i18n::text("栅栏里").to_string()
-                } else {
-                    pecofence_core::i18n::text("整台电脑（Everything）").to_string()
+            // Every group under its heading, the two action rows too.
+            let group = match kind {
+                RowKind::Fence(_) => 0,
+                RowKind::File { .. } => 1,
+                RowKind::ShowAll | RowKind::ToDesktop => 2,
+            };
+            let heading = (last_group != Some(group)).then(|| {
+                match group {
+                    0 => pecofence_core::i18n::text("栅栏里"),
+                    1 => pecofence_core::i18n::text("整台电脑（Everything）"),
+                    _ => pecofence_core::i18n::text("操作"),
                 }
+                .to_string()
             });
-            if !footer {
-                last_group = Some(group);
-            }
+            last_group = Some(group);
             let shortcut = (i < MAX_ROWS).then_some(i as u8 + 1);
             let row = match kind {
                 RowKind::Fence(h) => {
@@ -352,6 +347,7 @@ impl App {
                             exact_icon: false,
                             heading,
                             shortcut,
+                            glyph: None,
                         });
                         continue;
                     };
@@ -369,6 +365,7 @@ impl App {
                         is_folder: it.is_folder,
                         heading,
                         shortcut,
+                        glyph: None,
                     }
                 }
                 RowKind::File { path, is_folder } => {
@@ -391,6 +388,7 @@ impl App {
                         is_folder: *is_folder,
                         heading,
                         shortcut,
+                        glyph: None,
                     }
                 }
                 RowKind::ShowAll => Row {
@@ -403,8 +401,10 @@ impl App {
                     icon_path: None,
                     is_folder: false,
                     exact_icon: false,
-                    heading: None,
+                    heading,
                     shortcut,
+                    // Search (E721): more of the same search, in Everything.
+                    glyph: Some("\u{E721}"),
                 },
                 RowKind::ToDesktop => Row {
                     name: pecofence_core::i18n::text("把这次搜索放到桌面").to_string(),
@@ -414,8 +414,10 @@ impl App {
                     icon_path: None,
                     is_folder: false,
                     exact_icon: false,
-                    heading: None,
+                    heading,
                     shortcut,
+                    // Pin (E718): the search stays on the desktop.
+                    glyph: Some("\u{E718}"),
                 },
             };
             rows.push(row);

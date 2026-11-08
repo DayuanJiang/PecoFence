@@ -479,12 +479,11 @@ impl App {
                 )
             })
             .count();
-        let status = if !searching {
-            String::new()
-        } else if rows == 0 {
+        // The bottom bar says how many there are; the box says it only when there are none.
+        let status = if searching && rows == 0 {
             pecofence_core::i18n::text("没有匹配的文件").to_string()
         } else {
-            format!("{} / {}", (self.search.sel + 1).min(rows), rows)
+            String::new()
         };
         crate::peek_search::set_status(&status);
     }

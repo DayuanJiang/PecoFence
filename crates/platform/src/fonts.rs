@@ -101,6 +101,22 @@ pub fn display_face() -> &'static str {
     pick(&FACE, "Segoe UI Variable Display", "Segoe UI")
 }
 
+/// Han text drawn with GDI (the Peek search list) as the fence titles draw it with
+/// DirectWrite in the UI's Han locale: GDI's font linking on an English Windows reaches a
+/// Japanese face first, so 下载 came out in Japanese or Traditional forms. Microsoft YaHei UI
+/// (Simplified, the default), JhengHei UI, Yu Gothic UI or Malgun Gothic after the UI
+/// language; their Latin letters are Segoe UI's. Segoe UI when the face is missing.
+pub fn han_text_face() -> &'static str {
+    static FACE: OnceLock<&'static str> = OnceLock::new();
+    let preferred = match crate::locale::ui_language() {
+        "zh-TW" => "Microsoft JhengHei UI",
+        "ja" => "Yu Gothic UI",
+        "ko" => "Malgun Gothic",
+        _ => "Microsoft YaHei UI",
+    };
+    pick(&FACE, preferred, text_face())
+}
+
 /// Glyph font: Segoe Fluent Icons, or Segoe MDL2 Assets on Windows 10. The two fonts share
 /// their code points for everything this app draws except `Hide` (see `fluent_icons`).
 pub fn icon_face() -> &'static str {
