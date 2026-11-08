@@ -1,6 +1,6 @@
 # Fence fix round 2026-11-07, explorer-waits: the fences keep answering while Explorer is busy
 # or stuck (S1, P2, X4), and the wallpaper is still followed.
-#   run.sh --var Part=freeze tests/fx-explorer-waits.ps1     Explorer's desktop thread stopped 20 s
+#   run.sh --var Part=freeze tests/explorer-busy.ps1     Explorer's desktop thread stopped 20 s
 #   run.sh --var Part=burst ...                              1500 and 2000 new desktop files
 #   run.sh --var Part=start ...                              start while Explorer adds 1400 files
 #   run.sh --var Part=wallpaper ...                          picture change, slideshow, per monitor

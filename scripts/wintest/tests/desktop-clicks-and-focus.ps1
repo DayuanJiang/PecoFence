@@ -9,12 +9,13 @@ if (-not $Part) { $Part = 'ABC' }
 if ($FxBin) { $PfBin = $FxBin }
 . C:\pf\kit\zorder.ps1
 $PfAllowLogErrors = $true
-$free = @(1100, 650)
 
 function Sel($t) { $d = DumpOf $t 3; return "selected=$(DumpVal $d 'selected') focused=$(DumpVal $d 'focused')" }
 function Inside($t) { return (DumpVal (DumpOf $t 3) 'mouse_inside') }
 function FRect($t) { return (FenceGet $t).windowRect }
-function Park() { [G]::MoveTo(1100, 830); Start-Sleep -Milliseconds 300 }
+function Park() { ParkMouse 1100 830 }
+# Empty desktop for the clicks and double-clicks, found again whenever the layout may differ.
+function Free() { $p = FreeSpot 1100 650; if ($p) { return $p }; return @(1100, 650) }
 function PropsWin() { return @([W]::Tops('#32770') | Where-Object { [W]::Title($_) -match 'Properties' -and [W]::ProcOf($_) -eq 'pecofence' }) }
 function WaitProps($sec = 6) { for ($i = 0; $i -lt $sec * 5; $i++) { $p = @(PropsWin); if ($p.Count) { return $p[0] }; Start-Sleep -Milliseconds 200 }; return [IntPtr]::Zero }
 function OpenNote($tag, $x, $y, $w, $h) {
@@ -26,8 +27,8 @@ function OpenNote($tag, $x, $y, $w, $h) {
 }
 # Double-click on the bare desktop: did the fences hide (and show again on a second one)?
 function QuickHideWorks() {
-  $n0 = VisFences; DblClick $free[0] $free[1]; Start-Sleep -Milliseconds 1200; $n1 = VisFences
-  if ($n1 -eq 0) { DblClick $free[0] $free[1]; Start-Sleep -Milliseconds 1200 }
+  $n0 = VisFences; $f = Free; DblClick $f[0] $f[1]; Start-Sleep -Milliseconds 1200; $n1 = VisFences
+  if ($n1 -eq 0) { $f = Free; DblClick $f[0] $f[1]; Start-Sleep -Milliseconds 1200 }
   $n2 = VisFences
   if ($n2 -eq 0) { Pf fence show-all | Out-Null; Start-Sleep -Milliseconds 800 }
   return @(($n0 -gt 0 -and $n1 -eq 0 -and $n2 -eq $n0), "$n0 -> $n1 -> $n2")
@@ -85,7 +86,7 @@ if ($Part -match 'A') {
   [G]::KeyDown(0x12); [G]::Press(0x0D); [G]::KeyUp(0x12)
   $dlg = WaitProps
   Start-Sleep -Milliseconds 800
-  [G]::Click($free[0], $free[1]); Start-Sleep -Milliseconds 900
+  $f = Free; [G]::Click($f[0], $f[1]); Start-Sleep -Milliseconds 900
   Check 'still ends the selection, as a desktop click does' ((Sel 'Alpha') -match 'selected=0\b') "$(Sel 'Alpha') fg=$(Fg)"
   foreach ($d in @(PropsWin)) { [W]::PostMessageW($d, 0x10, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null }
   Start-Sleep -Milliseconds 900
@@ -100,7 +101,7 @@ if ($Part -match 'A') {
   [G]::Press(0x1B); Start-Sleep -Milliseconds 1200
   Check 'with Notepad open too, Esc gives the fence the keyboard back' ((Sel 'Alpha') -match 'selected=1\b' -and (Fg) -match '^PecoFence.Fence') "$(Sel 'Alpha') fg=$(Fg)"
   CloseWindows
-  [G]::Click($free[0], $free[1]); Start-Sleep -Milliseconds 600
+  $f = Free; [G]::Click($f[0], $f[1]); Start-Sleep -Milliseconds 600
 
   foreach ($style in 'liquidGlass', 'fluent') {
     Case "S9 Esc on a merge hover, $style"
@@ -142,7 +143,7 @@ if ($Part -match 'A') {
   }
   Case 'P5 Win+D on a bare desktop'
   CloseWindows; Start-Sleep -Milliseconds 800
-  [G]::Click($free[0], $free[1]); Start-Sleep -Milliseconds 600
+  $f = Free; [G]::Click($f[0], $f[1]); Start-Sleep -Milliseconds 600
   for ($k = 1; $k -le 2; $k++) {
     $in = ZsStats ([Zs]::Run(1600, 150, 0x44, [NullString]::Value, 0))
     Start-Sleep -Seconds 1
@@ -162,12 +163,12 @@ if ($Part -match 'B') {
     $fg = Fg
     PfQuit; $gone = Fg
     PfStart -Script (DumpScript 250 25); Start-Sleep -Seconds 2
-    [G]::Click($free[0], $free[1]); Start-Sleep -Milliseconds 700
+    $f = Free; [G]::Click($f[0], $f[1]); Start-Sleep -Milliseconds 700
     $q = QuickHideWorks
     Check "quick hide after a restart #$k" $q[0] "$($q[1]); fg before: $fg; when it was gone: $gone; now: $(Fg)"
     $m = PfLogAll | Where-Object { $_ -match 'in front at start' } | Select-Object -Last 1
     Log "start line: $m"
-    if (-not $q[0]) { [G]::Click(200, 876); Start-Sleep -Milliseconds 500; [G]::Click($free[0], $free[1]); Start-Sleep -Milliseconds 500 }
+    if (-not $q[0]) { [G]::Click(200, 876); Start-Sleep -Milliseconds 500; $f = Free; [G]::Click($f[0], $f[1]); Start-Sleep -Milliseconds 500 }
   }
   Case 'S2 twenty Notepad rounds'
   $fails = @()
@@ -214,7 +215,7 @@ if ($Part -match 'C') {
     $h = WaitWin 'PecoFence.Control' 30 -Hidden
     Start-Sleep -Seconds 4
     $fgStart = Fg
-    [G]::Click($free[0], $free[1]); Start-Sleep -Milliseconds 700
+    $f = Free; [G]::Click($f[0], $f[1]); Start-Sleep -Milliseconds 700
     $q = QuickHideWorks
     Check "quick hide after the watchdog restart #$k" $q[0] "$($q[1]); restarted=$($h -ne [IntPtr]::Zero); fg before the crash: $fg; when it was gone: $gone; after the restart: $fgStart"
   }

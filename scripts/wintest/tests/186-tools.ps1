@@ -32,7 +32,7 @@ Case 'tick a to-do'
 $wr = $note.windowRect
 # The first to-do's box: 14 DIP from the left edge, below the 36 DIP title row (100 % box).
 [G]::Click($wr.x + 22, $wr.y + 36 + 11); Start-Sleep -Milliseconds 700
-[G]::MoveTo(500, 700)
+ParkMouse 500 700
 $note = NoteFence
 Check 'a click on the box ticks the first to-do' ($note.noteText -like '`[x`] pay the rent*') ("noteText=" + ($note.noteText -replace "`n", ' / '))
 Check 'the click does not open the editor' ((WaitWin 'PecoFence.NoteEdit' 1) -eq [IntPtr]::Zero)

@@ -1,5 +1,5 @@
 ﻿# Fence menu grouping (添加到桌面 submenu) and the three 功能提示 cards, with real mouse and keys.
-#   run.sh --var Part=M tests/fx-menu-tips.ps1    fence menus: every kind of fence, Fluent and
+#   run.sh --var Part=M tests/fence-menu-and-tips.ps1    fence menus: every kind of fence, Fluent and
 #                                                 Liquid Glass, English and Chinese, keyboard path
 #   run.sh --var Part=T ...                        the three tips in English (and once only, also
 #                                                 after a restart); Part=TZ the same in Chinese
@@ -168,7 +168,7 @@ function OpenFolderItem($fence, $name) {
 function FenceCount() { return @(@(PfJson fence list) | Where-Object { $_ -and $_.title }).Count }
 
 $Park = @(700, 820)
-function ParkPointer() { [G]::MoveTo($Park[0], $Park[1]); Start-Sleep -Milliseconds 300 }
+function ParkPointer() { ParkMouse $Park[0] $Park[1] }
 
 # ---- Part M: the fence menus
 

@@ -11,7 +11,7 @@ foreach ($i in 1..6) { Set-Content "$PfDesk\rg-$i.txt" "rg$i" }
 $AnimWas = [Anim]::Get(); [Anim]::Set($true)
 PfStart -Script @('sleep 3600000')
 $WorkB = [Windows.Forms.Screen]::PrimaryScreen.WorkingArea.Bottom
-function Park() { [G]::MoveTo(1450, 300); Start-Sleep -Milliseconds 700 }
+function Park() { ParkMouse 1450 300; Start-Sleep -Milliseconds 400 }
 function Win($t) { return (Rect ([G]::FindWindowW('PecoFence.Fence', $t))) }
 function Saved($t) { $f = FenceGet $t; return "rect=$($f.rect.x),$($f.rect.y),$($f.rect.w),$($f.rect.h) window=$($f.windowRect.x),$($f.windowRect.y),$($f.windowRect.w),$($f.windowRect.h) rolled=$($f.rolledUp)" }
 function Overlap($p, $q) { return ($p.x -lt $q.x + $q.w -and $q.x -lt $p.x + $p.w -and $p.y -lt $q.y + $q.h -and $q.y -lt $p.y + $p.h) }

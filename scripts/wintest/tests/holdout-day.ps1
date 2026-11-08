@@ -219,7 +219,8 @@ Check 'no UI thread not responding in the log, app alive' ($hang.Count -eq 0 -an
 
 Case 'D6 double-click the desktop'
 CloseWindows
-$free = @(1300, 650)
+$free = FreeSpot 1300 650
+if (-not $free) { $free = @(1300, 650) }
 [G]::Click($free[0], $free[1]); Start-Sleep -Milliseconds 1200
 $n0 = VisFences
 DblClick $free[0] $free[1]; Start-Sleep -Seconds 2
@@ -230,8 +231,11 @@ Check 'a double-click on the empty desktop hides the fences, another shows them'
 
 Case 'D6 marquee: new fence here'
 $c0 = @(IpfJson fence list).Count
-[G]::Click(1300, 650); Start-Sleep -Milliseconds 1000
-DragTo 1150 120 1450 360
+[G]::Click($free[0], $free[1]); Start-Sleep -Milliseconds 1000
+# A rectangle of empty desktop (the first-run fences and cards move between builds).
+$mr = FreeRect 300 240 1150 120
+if (-not $mr) { $mr = @(1150, 120, 1450, 360) }
+DragTo $mr[0] $mr[1] $mr[2] $mr[3]
 # Two small buttons at the rectangle's bottom-right corner (no menu); their window title names
 # both: 'Show a folder here…|New fence'. New fence is the right one.
 $off = [IntPtr]::Zero
@@ -247,7 +251,7 @@ Start-Sleep -Milliseconds 300
 [G]::Type('Marquee fence'); [G]::Press(0x0D); Start-Sleep -Seconds 2
 $mf = IpfJson fence get 'Marquee fence'
 $r = $mf.rect
-Check 'the new fence is there, titled as typed, where the rectangle was' ($mf.title -eq 'Marquee fence' -and [math]::Abs($r.x - 1150) -le 40 -and [math]::Abs($r.y - 120) -le 40 -and @(IpfJson fence list).Count -eq $c0 + 1) "rename editor=$ren rect=$($r.x),$($r.y),$($r.w),$($r.h)"
+Check 'the new fence is there, titled as typed, where the rectangle was' ($mf.title -eq 'Marquee fence' -and [math]::Abs($r.x - $mr[0]) -le 40 -and [math]::Abs($r.y - $mr[1]) -le 40 -and @(IpfJson fence list).Count -eq $c0 + 1) "rename editor=$ren rect=$($r.x),$($r.y),$($r.w),$($r.h)"
 
 Case 'D6 Peek hotkey'
 Start-Process notepad.exe; Start-Sleep -Seconds 2
@@ -313,18 +317,23 @@ Check 'Settings opens from the tray menu' ($sh -ne [IntPtr]::Zero) "pick='$t'"
 [L]::MoveWindow($sh, 150, 20, 1200, 840, $true) | Out-Null; Start-Sleep -Seconds 3
 Shot 'd6-settings'
 $s0 = IpfJson settings get
-# The other theme style tile, the colour mode list (Dark), the Chameleon switch. Screen points
-# for the window at 150,20 1200x840, measured on a debug build over CDP (2026-11-08).
-$tile = if ($s0.themeStyle -eq 'fluent') { @(880, 404) } else { @(614, 404) }
+# The other theme style tile, the colour mode list (Dark), the title alignment list. Each is
+# found by its label (OCR), so a page that gains or loses a row still works; the lists sit at the
+# right end of their label's row. The points measured on a debug build over CDP (2026-11-08,
+# window at 150,20 1200x840) are the fallback.
+$tile = OcrFind $(if ($s0.themeStyle -eq 'fluent') { '^Liquid Glass$' } else { '^Fluent$' }) 150 20 1200 840
+if (-not $tile) { $tile = if ($s0.themeStyle -eq 'fluent') { @(880, 404) } else { @(614, 404) } }
 [G]::Click($tile[0], $tile[1]); Start-Sleep -Seconds 2
 $s1 = IpfJson settings get
 Check 'a click on the other theme style tile switches the style' ($s1.themeStyle -ne $s0.themeStyle) "themeStyle $($s0.themeStyle) -> $($s1.themeStyle)"
 Shot 'd6-settings-style'
-[G]::Click(1188, 535); Start-Sleep -Milliseconds 800
+$row = OcrFind '^Color mode' 150 20 1200 840
+[G]::Click(1188, $(if ($row) { $row[1] } else { 535 })); Start-Sleep -Milliseconds 800
 [G]::Press(0x23); Start-Sleep -Milliseconds 300; [G]::Press(0x0D); Start-Sleep -Seconds 2
 $s2 = IpfJson settings get
 Check 'the Color mode list picks Dark' ($s2.theme -eq 'dark') "theme $($s1.theme) -> $($s2.theme)"
-[G]::Click(1193, 689); Start-Sleep -Milliseconds 800
+$row = OcrFind '^Title alignment' 150 20 1200 840
+[G]::Click(1193, $(if ($row) { $row[1] } else { 689 })); Start-Sleep -Milliseconds 800
 [G]::Press(0x28); Start-Sleep -Milliseconds 300; [G]::Press(0x0D); Start-Sleep -Seconds 2
 $s3 = IpfJson settings get
 Check 'the Title alignment list picks Center' ($s3.titleAlign -eq 'center') "titleAlign $($s2.titleAlign) -> $($s3.titleAlign)"

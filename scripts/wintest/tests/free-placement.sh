@@ -1,9 +1,9 @@
 #!/bin/bash
-# Parts B and C of fx-free-placement.ps1: the screen size (B) or the scale (C) changes while
+# Parts B and C of free-placement.ps1: the screen size (B) or the scale (C) changes while
 # PecoFence runs. The job asks for one by writing C:\pf\resize-want.txt (WIDTHxHEIGHT or
 # WIDTHxHEIGHT@SCALE); this script reconnects the box's RDP session so and removes the file.
 # Ends with the session back at WINTEST_SIZE and 100 %.
-#   tests/fx-free-placement.sh [--box ec2-2] [--part B|C] [run.sh options ...]
+#   tests/free-placement.sh [--box ec2-2] [--part B|C] [run.sh options ...]
 set -uo pipefail
 KIT=$(cd "$(dirname "$0")/.." && pwd)
 CONF=${WINTEST_CONF:-$HOME/.config/pecofence-wintest}
@@ -27,7 +27,7 @@ rdp_at() {
   echo "rdp session for $BOX at $1"
 }
 
-"$KIT/run.sh" --box "$BOX" --var Part="$PART" "$@" "$KIT/tests/fx-free-placement.ps1" &
+"$KIT/run.sh" --box "$BOX" --var Part="$PART" "$@" "$KIT/tests/free-placement.ps1" &
 RUN=$!
 while kill -0 "$RUN" 2>/dev/null; do
   want=$("$KIT/box.sh" ssh "$BOX" 'if (Test-Path C:\pf\resize-want.txt) { Get-Content C:\pf\resize-want.txt }' 2>/dev/null | tr -d '\r ')

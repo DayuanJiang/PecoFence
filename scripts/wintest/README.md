@@ -26,6 +26,24 @@ box ec2-2; lock wait 0s, box up 3s, files 6s (build same), jobs 250s
 Each job folder has `results.tsv`, `job.log`, `logs/` (the app's log) and `shots/`. Look at
 the screenshots of failed checks first; the others are for reports and visual checks.
 
+## The whole suite
+
+```bash
+scripts/wintest/build.sh && scripts/wintest/build.sh --debug
+scripts/wintest/installers.sh                  # old-setup.exe, new-setup.exe, portable.zip of a CI run
+scripts/wintest/suite.sh --installers <the folder it printed>          # about 25 min on three boxes
+scripts/wintest/suite.sh --only 'tabs|rolled' --bin <older release>    # a few lines, another build
+```
+
+`suite.txt` lists every steps file once per part (a line: name, minutes, where, build, file,
+run.sh options). `suite.sh` spreads the lines over the boxes (`--boxes ec2-2,ec2-3,ec2-4`, each
+takes the longest job still waiting), runs the `vm` lines in a Hyper-V guest with `--vm`
+(`--in-vm` sends the ec2 lines there too), skips the lines that need `--installers` without it
+and the `manual` ones, and prints one table: passed and failed per job, the failures, what it
+skipped. Run it as the background command. A new steps file gets a line in `suite.txt`.
+`installers.sh` downloads the build under test from a CI run (default: the latest green run on
+main) and the release a user upgrades from (`--old v0.2.5`).
+
 ## Rules for test rounds
 
 - **Make sure the end of `run.sh` reaches whoever waits for it.** It returns when every job is
@@ -41,6 +59,13 @@ the screenshots of failed checks first; the others are for reports and visual ch
   For parallel rounds, make another box (`box.sh create ec2-3`).
 - Put the checks that combine features first (every way of opening a window x every key), and
   read outcomes (window text, which file opened, `fence get`) rather than judging screenshots.
+- **Name what you mean, not where it was.** The first-run fences, the scene tips, new buttons and
+  the settings page move between builds; a point that was empty desktop on one build is a fence
+  or a card on the next (10 of the 14 failures that were not PecoFence's fault in the 2026-11-08
+  round). Ask the kit instead: `FreeSpot` / `DeskClick` / `ParkMouse` / `FreeRect` for empty
+  desktop, `ItemPt` for an icon, `OcrFind` / `OcrClick` for a label on a release build's page,
+  `ClearFences` before steps that build their own layout at fixed places. Keep literal points
+  only for geometry the check is about (a drop 20 px above the taskbar, a fence the steps made).
 
 ## Writing steps
 
@@ -99,7 +124,7 @@ Check 'new-note opens the editor' ($ed -ne [IntPtr]::Zero) "editor=$ed"
 - Z-order (zorder.ps1, dot-source `C:\pf\kit\zorder.ps1`): `[Zs]::Run` presses Win+<key> and
   records which of the fences, the desktop windows and the test's Notepad / Explorer windows are
   above which (as fast as EnumWindows allows, frames optional), `ZsStats` sums up how long the
-  fences were covered, topmost or over a window; `tests/fx-desktop-input.ps1` uses it for Win+D.
+  fences were covered, topmost or over a window; `tests/desktop-clicks-and-focus.ps1` uses it for Win+D.
 - The user's own copy (user.ps1): `Ipf` / `IpfJson` / `UserLog` for the installed copy (set
   `$script:CliExe` for a portable one), `StartUser`, `WaitNoPf`; `PfUseUser` makes the item and
   state helpers read that copy; setup and uninstall by their buttons (`Wizard`, `Uninstall`,
@@ -108,6 +133,18 @@ Check 'new-note opens the editor' ($ed -ne [IntPtr]::Zero) "editor=$ed"
 - At the end of every job the app logs are checked for ERROR and panic lines (set
   `$PfAllowLogErrors = $true` when a test causes them on purpose); a job without any app log
   says so in `job.log` instead.
+- Layout-independent points (lib.ps1): `FreeSpot [x] [y]` (bare desktop near a point, no fence,
+  card, button or menu there or within 40 px), `DeskClick`, `ParkMouse`, `FreeRect W H [x] [y]`
+  (an empty rectangle for a marquee), `ClearFences` (every fence but the inbox deleted);
+  pixels.ps1: `OcrFind '^Label$' [x y w h]` (the centre of the words, anchored regex) and
+  `OcrClick`.
+- When a check fails, `job.log` gets a `FAIL NN context` line: the foreground window and every
+  window above the fences (a popup, a terminal, a card), before anyone opens the screenshot.
+- Windows Defender: a job whose build is gone at the start gets one failed row saying so, and
+  every job ends with a `Windows Defender left the test files alone` row that names any detection
+  of `C:\pf` files during the job. Its machine-learning verdicts (`Trojan:Win32/Bearfoos.A!ml`,
+  `Behavior:Win32/Persistence.A!ml`) take unsigned builds away now and then, mostly in the
+  Hyper-V guests; build again (another hash) and rerun.
 - Each job starts with fresh PecoFence data and ends Edge, Notepad and setup programs, but the
   desktop's files and an installed PecoFence stay: steps remove what they create and install.
 - Files the steps need (installers, test programs) go in a folder given with `--extra`; on the box
