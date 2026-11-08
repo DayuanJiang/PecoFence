@@ -128,7 +128,8 @@ Check 'new-note opens the editor' ($ed -ne [IntPtr]::Zero) "editor=$ed"
   `VdRename`, `TaskView`, `TaskViewPick n`, `VdIds`, `VdCurrent` (Windows 10 too), `VdName`,
   `VdState`; fences by title shown or hidden: `[VD]::Fence`, `FVis`, `VisText`; `FenceMenu`,
   `VdSubmenu`, `CloseAllMenus` (an open fence menu holds PecoFence: switches are followed when it
-  closes), `CloseToast`. Explorer caches desktop names: rename in Task View, never in the registry.
+  closes), `CloseToast`, `ClearPfNotices` (drops PecoFence's notices still on screen or queued;
+  every vd test calls it at the end). Explorer caches desktop names: rename in Task View, never in the registry.
   `tests/vd-*.ps1` use them; `vd-win10.ps1` is for the PF-Win10 guest (no Task View clicks).
 - Z-order (zorder.ps1, dot-source `C:\pf\kit\zorder.ps1`): `[Zs]::Run` presses Win+<key> and
   records which of the fences, the desktop windows and the test's Notepad / Explorer windows are

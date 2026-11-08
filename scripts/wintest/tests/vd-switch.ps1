@@ -171,5 +171,6 @@ for ($i = 0; $i -lt 3 -and [M]::BoxText() -ne $null; $i++) { [G]::Press(0x1B); S
 Case 'cleanup'
 PfQuit
 VdOnlyOne
+ClearPfNotices
 foreach ($n in $made) { Remove-Item "$PfDesk\$n" -ErrorAction SilentlyContinue }
 [Anim]::Set($AnimWas)

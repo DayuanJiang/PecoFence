@@ -189,3 +189,4 @@ CloseSettings
 Case 'cleanup'
 PfQuit
 VdOnlyOne
+ClearPfNotices

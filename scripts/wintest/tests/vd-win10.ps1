@@ -125,4 +125,5 @@ Check 'Games moves to Desktop 1 with the windows' ((VdCurrent) -eq $ids[0] -and 
 Case 'cleanup'
 PfQuit
 VdOnlyOne
+ClearPfNotices
 foreach ($n in $made) { Remove-Item "$PfDesk\$n" -ErrorAction SilentlyContinue }

@@ -142,4 +142,5 @@ Check 'the poll stopped' ($poll -match 'on=false') $poll
 Case 'cleanup'
 PfQuit
 VdOnlyOne
+ClearPfNotices
 foreach ($n in $made) { Remove-Item "$PfDesk\$n" -ErrorAction SilentlyContinue }

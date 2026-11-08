@@ -101,3 +101,15 @@ function VdSubmenu($t, $entry = 'Show on virtual desktop|在哪个虚拟桌面�
 function CloseAllMenus() { for ($i = 0; $i -lt 4 -and @([W]::Tops('#32768')).Count -gt 0; $i++) { [G]::Press(0x1B); Start-Sleep -Milliseconds 300 } }
 # Windows shows a tray balloon as a toast at the bottom right: its close button.
 function CloseToast() { [G]::Click(1556, 734); Start-Sleep -Milliseconds 500; [G]::MoveTo(1250, 760) }
+# Removes PecoFence's notices, on screen or still waiting in Windows' queue (a vd test makes many
+# in a row, and one left over covered a fence in the next test file). Windows files a tray icon's
+# notices under an app id it makes (NotifyIconGeneratedAumid_<n>); its AppUserModelId key names
+# the exe (DisplayName pecofence.exe).
+function ClearPfNotices() {
+  $null = [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime]
+  $ids = @(Get-ChildItem 'HKCU:\Software\Classes\AppUserModelId' -ErrorAction SilentlyContinue | Where-Object { (Get-ItemProperty $_.PSPath -ErrorAction SilentlyContinue).DisplayName -match 'pecofence' } | ForEach-Object { $_.PSChildName })
+  if (-not $ids) { Log 'notices: no app id for pecofence.exe'; return }
+  foreach ($id in $ids) {
+    try { [Windows.UI.Notifications.ToastNotificationManager]::History.Clear($id); Log "notices of $id cleared" } catch { Log "notices of $id not cleared: $($_.Exception.Message)" }
+  }
+}
