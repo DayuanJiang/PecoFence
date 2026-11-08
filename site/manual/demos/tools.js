@@ -61,7 +61,7 @@
         r.addClock = SM.button(row(g, '时钟', '显示时间、日期和星期。右键时钟可以打开「显示秒」'), '添加', 52);
         r.addWeather = SM.button(row(g, '天气', '今天和明天的天气，每 30 分钟更新，数据来自 wttr.in。添加后右键它选「编辑脚本」，把 Tokyo 换成你的城市'), '添加', 52);
         SM.button(row(g, 'GitHub 仓库动态', '一个仓库最新的 issue 和 PR，点一行在浏览器里打开。添加后右键它选「编辑脚本」，换成你关心的仓库'), '添加', 52);
-        SM.button(row(g, '电脑状态', '一直运行，每 2 秒更新 CPU、内存和 C 盘剩余空间。点一行可以复制本机 IP 或打开任务管理器'), '添加', 52);
+        SM.button(row(g, '电脑状态', '一直运行，每 2 秒更新 CPU、内存和每个磁盘的剩余空间。点一行可以复制本机 IP 或打开任务管理器'), '添加', 52);
         const own = row(g, '用自己的脚本', '运行你选的脚本（PowerShell、Python、批处理等），把它打印的文字显示在栅栏里。脚本最多运行 10 秒（一直运行的除外），不弹出窗口。PecoFence 本身不会为脚本联网', 0);
         const pick = SM.button(own, '选择脚本…', 64);
         SM.button(own, '写法说明', 52, { right: 10 + pick.w + 6 });

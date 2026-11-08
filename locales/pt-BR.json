@@ -789,7 +789,7 @@
   "今天和明天的天气，每 30 分钟更新，数据来自 wttr.in。添加后右键它选「编辑脚本」，把 Tokyo 换成你的城市": "O clima de hoje e de amanhã, atualizado a cada 30 minutos, com dados do wttr.in. Depois de adicionar, clique com o botão direito, escolha “Editar script” e troque Tokyo pela sua cidade",
   "一个仓库最新的 issue 和 PR，点一行在浏览器里打开。添加后右键它选「编辑脚本」，换成你关心的仓库": "As issues e pull requests mais recentes de um repositório. Clique em uma linha para abrir no navegador. Depois de adicionar, clique com o botão direito, escolha “Editar script” e coloque o repositório que você acompanha",
   "电脑状态": "Status do PC",
-  "一直运行，每 2 秒更新 CPU、内存和 C 盘剩余空间。点一行可以复制本机 IP 或打开任务管理器": "Sempre em execução: atualiza a cada 2 segundos a CPU, a memória e o espaço livre na unidade C. Clique em uma linha para copiar o IP do computador ou abrir o Gerenciador de Tarefas",
+  "一直运行，每 2 秒更新 CPU、内存和每个磁盘的剩余空间。点一行可以复制本机 IP 或打开任务管理器": "Sempre em execução: atualiza a cada 2 segundos a CPU, a memória e o espaço livre de cada unidade. Clique em uma linha para copiar o IP do computador ou abrir o Gerenciador de Tarefas",
   "用自己的脚本": "Seu próprio script",
   "用自己的脚本…": "Seu próprio script…",
   "运行你选的脚本（PowerShell、Python、批处理等），把它打印的文字显示在栅栏里。脚本最多运行 10 秒（一直运行的除外），不弹出窗口。PecoFence 本身不会为脚本联网": "Executa um script que você escolher (PowerShell, Python, arquivos em lote etc.) e mostra num grupo o texto que ele imprime. Um script roda no máximo 10 segundos (a menos que esteja marcado para ficar rodando) e não abre janela. O PecoFence nunca se conecta à internet pelos scripts",
@@ -802,5 +802,7 @@
   "Everything 1.5 已经装好，现在运行的是 {0}": "O Everything 1.5 está instalado, mas a versão em execução é a {0}",
   "改用 1.5 后可以用拼音找中文名。1.5 会在登录 Windows 时启动，1.4 不再自动启动。Windows 可能会询问一次管理员权限": "Com a 1.5, você encontra nomes em chinês por pinyin. A 1.5 passa a iniciar quando você entra no Windows, e a 1.4 não inicia mais sozinha. O Windows pode pedir permissão de administrador uma vez.",
   "改用 1.5": "Mudar para 1.5",
-  "已改用 Everything 1.5，以后登录 Windows 时也会启动它": "Agora o Everything 1.5 está em uso. Ele também inicia quando você entra no Windows"
+  "已改用 Everything 1.5，以后登录 Windows 时也会启动它": "Agora o Everything 1.5 está em uso. Ele também inicia quando você entra no Windows",
+  "已复制": "Copiado",
+  "复制失败，请重试": "Falha ao copiar. Tente novamente."
 }
