@@ -159,7 +159,9 @@ Case 'the General page switch'
 Pf settings set language zh-CN | Out-Null
 Start-Sleep -Seconds 1
 Pf settings open-ui | Out-Null
-SettingsScrolled 4 | Out-Null
+$h = SettingsScrolled 4
+# Where open-ui puts the window: the page's points below were measured there.
+$Centered = Rect $h
 Shot 'ui-page-switch-before'
 [G]::Click(1183, 518); Start-Sleep -Seconds 1
 $on = (Pf settings get perDesktopFences).Trim()
@@ -173,14 +175,17 @@ CloseSettings
 Case 'the 栅栏 page select'
 $m = FenceMenu 'Work'
 MenuPick '^栅栏选项' $m | Out-Null
-SettingsScrolled 4 | Out-Null
+$h = SettingsScrolled 4
+# 栅栏选项… opens the window beside the fence: the same points, moved with it.
+$r = Rect $h; $dx = $r.L - $Centered.L; $dy = $r.T - $Centered.T
+Log "settings window at $($r.L),$($r.T): $dx,$dy from where open-ui puts it"
 Shot 'ui-page-select-before'
-[G]::Click(1120, 380); Start-Sleep -Milliseconds 900
+[G]::Click(1120 + $dx, 380 + $dy); Start-Sleep -Milliseconds 900
 Shot 'ui-page-select-open'
 [G]::Press(0x24); [G]::Press(0x28); [G]::Press(0x28); Start-Sleep -Milliseconds 200; [G]::Press(0x0D); Start-Sleep -Seconds 1
 $w = FenceGet 'Work'
 Check 'page: Work now on Games only, hidden here' (@($w.virtualDesktops).Count -eq 1 -and $w.virtualDesktops[0] -eq "{$($ids[1])}" -and (FVis 'Work') -eq $false) "vd=$($w.virtualDesktops) vis=$(FVis 'Work')"
-[G]::Click(1120, 380); Start-Sleep -Milliseconds 900
+[G]::Click(1120 + $dx, 380 + $dy); Start-Sleep -Milliseconds 900
 [G]::Press(0x24); Start-Sleep -Milliseconds 200; [G]::Press(0x0D); Start-Sleep -Seconds 1
 $w = FenceGet 'Work'
 Check 'page: 所有虚拟桌面 puts it back everywhere' (@($w.virtualDesktops).Count -eq 0 -and (FVis 'Work') -eq $true) "vd=$($w.virtualDesktops) vis=$(FVis 'Work')"
