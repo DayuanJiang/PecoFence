@@ -435,6 +435,9 @@ impl App {
     pub(super) fn set_fence_desktop_layout(&mut self, fence: FenceId, on: bool, from: &str) {
         tracing::info!(%fence, on, from, "desktop layout switched");
         self.state.set_desktop_layout(fence, on);
+        if on {
+            self.want_windows_places();
+        }
         self.sync_hidden_fences();
         self.apply_fence_view(fence);
         self.schedule_save();
@@ -445,6 +448,9 @@ impl App {
         let cells = self.state.fence(fence).map_or(0, |f| f.desktop_cells.len());
         tracing::info!(%fence, on, from, saved_cells = cells, "free placement switched");
         self.state.set_free_placement(fence, on);
+        if on {
+            self.want_windows_places();
+        }
         self.arrange_desktop_fence();
         self.schedule_save();
     }

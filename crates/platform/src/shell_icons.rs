@@ -307,3 +307,141 @@ pub fn set_desktop_icons_hidden_within(
     }
     outcome
 }
+
+/// Windows' own desktop icons where its desktop view has them (Explorer keeps them while
+/// PecoFence hides them): 自由摆放 starts from these places when it has no cells of its own.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct DesktopIconPlaces {
+    /// The spacing of Windows' icon grid as Explorer reports it: one column, one row, in px of
+    /// the scale Explorer started at ([`Self::explorer_dpi`]).
+    pub spacing: (i32, i32),
+    /// The system DPI of Explorer's process (the scale it started at). After a scale change
+    /// Explorer keeps reporting the spacing in that scale until it restarts, while the icon
+    /// places follow the new scale (measured: 76 x 104 reported at 150 %, icons 114 x 156 apart).
+    pub explorer_dpi: Option<u32>,
+    /// Windows' 「自动排列图标」 is on.
+    pub auto_arrange: bool,
+    /// Each icon's parsing name (a file path, or `::{CLSID}` for This PC, the Recycle Bin, ...)
+    /// and the top-left of its place (screen px).
+    pub icons: Vec<(String, (i32, i32))>,
+}
+
+/// `IShellWindows::FindWindowSW` class of the desktop, and its "give me a dispatch" option.
+const SWC_DESKTOP: i32 = 8;
+const SWFO_NEEDDISPATCH: i32 = 1;
+/// `IFolderView::ItemCount` / `Item`: every item of the view, not only the selected ones.
+const SVGIO_ALLVIEW: u32 = 2;
+windows_core::link!("user32.dll" "system" fn GetSystemDpiForProcess(hprocess: HANDLE) -> u32);
+
+/// The system DPI of the process that owns the desktop window (Explorer).
+fn explorer_system_dpi() -> Option<u32> {
+    let pid = crate::desktop::window_pid(crate::desktop::shell_window());
+    if pid == 0 {
+        return None;
+    }
+    // SAFETY: plain FFI calls; the handle is closed before returning.
+    unsafe {
+        let process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION as u32, false, pid);
+        if process.0.is_null() {
+            return None;
+        }
+        let dpi = GetSystemDpiForProcess(process);
+        let _ = CloseHandle(process);
+        (dpi > 0).then_some(dpi)
+    }
+}
+
+/// `GetSystemMetrics`: the top-left of all monitors together.
+const SM_XVIRTUALSCREEN: i32 = 76;
+const SM_YVIRTUALSCREEN: i32 = 77;
+
+/// Reads [`DesktopIconPlaces`] from Explorer's desktop view (the desktop's top-level browser,
+/// its active view, `IFolderView`). Explorer answers these calls itself, so call it on a worker
+/// thread with COM initialized. The error is the step that failed (no desktop yet at sign-in,
+/// for one) and Windows' error.
+pub fn desktop_icon_places() -> Result<DesktopIconPlaces, (&'static str, String)> {
+    use windows_core::Interface;
+    // SAFETY: COM calls on interfaces this function owns; every result is checked, and every
+    // item ID list the view hands out is freed once.
+    unsafe {
+        let windows: IShellWindows = CoCreateInstance(&ShellWindows, None, CLSCTX_ALL as u32)
+            .map_err(|e| ("ShellWindows", e.to_string()))?;
+        // CSIDL_DESKTOP (0) as the location, as the shell's own samples ask for the desktop.
+        let mut loc = VARIANT::default();
+        (*loc.Anonymous.Anonymous).vt = VARTYPE(VT_I4 as u16);
+        (*loc.Anonymous.Anonymous).Anonymous.lVal = 0;
+        let root = VARIANT::default();
+        let mut hwnd = 0i32;
+        let desktop = windows
+            .FindWindowSW(&loc, &root, SWC_DESKTOP, &mut hwnd, SWFO_NEEDDISPATCH)
+            .map_err(|e| ("FindWindowSW", e.to_string()))?;
+        let view = desktop
+            .cast::<IServiceProvider>()
+            .and_then(|sp| sp.QueryService::<IShellBrowser>(&SID_STopLevelBrowser))
+            .and_then(|b| b.QueryActiveShellView())
+            .map_err(|e| ("desktop view", e.to_string()))?;
+        let folder_view = view
+            .cast::<IFolderView>()
+            .map_err(|e| ("IFolderView", e.to_string()))?;
+        let mut spacing = POINT::default();
+        folder_view
+            .GetSpacing(&mut spacing)
+            .ok()
+            .map_err(|e| ("GetSpacing", e.to_string()))?;
+        let auto_arrange = folder_view.GetAutoArrange() == S_OK;
+        // The positions are the list view's client coordinates; its client area starts at the
+        // top-left of all monitors together. (The view's own GetWindow is an input-synchronous
+        // call, which a worker thread may not make: RPC_E_CANTCALLOUT_ININPUTSYNCCALL.)
+        let mut origin = POINT {
+            x: GetSystemMetrics(SM_XVIRTUALSCREEN),
+            y: GetSystemMetrics(SM_YVIRTUALSCREEN),
+        };
+        if let Some(host) = crate::desktop::resolve_icon_host(crate::desktop::detect_generation())
+            && !host.def_view.0.is_null()
+        {
+            let class = to_wide("SysListView32");
+            let list = FindWindowExW(
+                Some(host.def_view),
+                None,
+                PCWSTR(class.as_ptr()),
+                PCWSTR::null(),
+            );
+            let mut at = POINT::default();
+            if !list.0.is_null() && ClientToScreen(list, &mut at).as_bool() {
+                origin = at;
+            }
+        }
+        let names = SHGetDesktopFolder().map_err(|e| ("desktop folder", e.to_string()))?;
+        let count = folder_view
+            .ItemCount(SVGIO_ALLVIEW)
+            .map_err(|e| ("ItemCount", e.to_string()))?;
+        let mut icons = Vec::with_capacity(count.max(0) as usize);
+        for i in 0..count {
+            let Ok(pidl) = folder_view.Item(i) else {
+                continue;
+            };
+            let at = folder_view.GetItemPosition(pidl);
+            let mut name = STRRET::default();
+            let mut parsing = windows_core::PWSTR::null();
+            let path = if names
+                .GetDisplayNameOf(pidl, SHGDN_FORPARSING, &mut name)
+                .is_ok()
+                && StrRetToStrW(&mut name, Some(pidl), &mut parsing).is_ok()
+            {
+                crate::shell::take_string(parsing)
+            } else {
+                String::new()
+            };
+            ILFree(Some(pidl));
+            if let (Ok(p), false) = (at, path.is_empty()) {
+                icons.push((path, (p.x + origin.x, p.y + origin.y)));
+            }
+        }
+        Ok(DesktopIconPlaces {
+            spacing: (spacing.x, spacing.y),
+            explorer_dpi: explorer_system_dpi(),
+            auto_arrange,
+            icons,
+        })
+    }
+}
