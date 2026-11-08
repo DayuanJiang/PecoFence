@@ -698,6 +698,15 @@ pub fn set_rows(rows: Vec<Row>, selected: Option<usize>) {
         let keep: Vec<PathBuf> = s.rows.iter().filter_map(|r| r.icon_path.clone()).collect();
         s.icons.retain(|p, _| keep.contains(p));
         let h = s.layout();
+        tracing::debug!(
+            rows = s.rows.len(),
+            headings = s.rows.iter().filter(|r| r.heading.is_some()).count(),
+            results = s.rows.iter().filter(|r| r.glyph.is_none()).count(),
+            action_glyphs = s.rows.iter().filter(|r| r.glyph.is_some()).count(),
+            selected = ?s.selected,
+            bar = !s.rows.is_empty(),
+            "search list laid out"
+        );
         Some((s.window.hwnd(), s.x, s.y, s.w, h))
     });
     if let Some((hwnd, x, y, w, h)) = resize {

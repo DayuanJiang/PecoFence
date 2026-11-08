@@ -25,7 +25,7 @@ Check 'the six files of the last week, read from the folder' (WaitSmart $Dl { $s
 $log = (PfLogAll) -join "`n"
 Check 'log: read on a worker, then the result' ($log -match 'smart fence: reading the folders without Everything.*folders=1' -and $log -match 'smart fence: folder read without Everything.*scanned=\d+.*ms=\d+') ([regex]::Match($log, '.*folder read without Everything.*').Value)
 $w = DumpOf $Dl
-Check 'the count after the name: · 6' ($w.raw -match 'title_count=Some\(" · 6"\)') ([regex]::Match($w.raw, 'title_count=\S+ \S*').Value)
+Check 'the count in its capsule: 6' ($w.raw -match 'title_count=Some\("6"\)') ([regex]::Match($w.raw, 'title_count=\S+ \S*').Value)
 AgedFile $PfDl 'offline invoice.pdf' 0 | Out-Null
 $t0 = Get-Date
 Check 'a new file shows without Everything too' (WaitSmart $Dl { $n -match 'offline invoice' } 15) "$([int]((Get-Date) - $t0).TotalSeconds) s; $(SmartLine $Dl)"
@@ -42,7 +42,7 @@ Check 'the read stops at 20000 entries' ($line -ne '') $line
 $readMs = if ($line -match 'ms=(\d+)') { [int]$Matches[1] } else { -1 }
 Check "the CLI answered at once while the folder was read ($statusMs ms, the read took $readMs ms)" ($statusMs -lt 1500) ''
 $w = DumpOf 'Bulk'
-Check 'the count says more than shown: · 200+' ($w.raw -match 'title_count=Some\(" · 200\+"\)') ([regex]::Match($w.raw, 'title_count=\S+ \S*').Value)
+Check 'the count says more than shown: 200+' ($w.raw -match 'title_count=Some\("200\+"\)') ([regex]::Match($w.raw, 'title_count=\S+ \S*').Value)
 Pf fence delete 'Bulk' | Out-Null
 
 Case 'the whole computer needs Everything'

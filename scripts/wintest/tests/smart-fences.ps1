@@ -30,7 +30,7 @@ Check 'none of the older files, newest first' (-not ($n -match 'old contract|ann
 $q = (SmartOf $Dl).query
 Check 'the search names the folder, files and both dates' ($q -match 'Downloads\\' -and $q -match 'file:' -and $q -match '<dm:>=\d{4}-\d\d-\d\d\|dc:>=') $q
 $w = DumpOf $Dl
-Check 'the count is drawn after the name, the name stays the name' ($w -and $w.title -eq $Dl -and $w.raw -match 'title_count=Some\(" · 6"\)') ($w.raw.Substring(0, [math]::Min(220, $w.raw.Length)))
+Check 'the count is drawn in its capsule, the name stays the name, the folder has the magnifier badge' ($w -and $w.title -eq $Dl -and $w.raw -match 'title_count=Some\("6"\)' -and $w.raw -match ' badge=true') ($w.raw.Substring(0, [math]::Min(220, $w.raw.Length)))
 Check 'a smart fence holds no items of its own (item list says smart)' (@(@(PfJson item list --fence $Dl) | Where-Object { $_ -and $_.assignedBy -ne 'smart' }).Count -eq 0) ''
 Shot 's01-downloads'
 
@@ -39,7 +39,7 @@ AgedFile $PfDl 'new invoice.pdf' 0 | Out-Null
 $t0 = Get-Date
 Check 'a new download shows (within 15 s)' (WaitSmart $Dl { $n -match 'new invoice' } 15) "$([int]((Get-Date) - $t0).TotalSeconds) s; $(SmartLine $Dl)"
 $w = DumpOf $Dl
-Check 'the count follows: · 7' ($w.raw -match 'title_count=Some\(" · 7"\)') ([regex]::Match($w.raw, 'title_count=\S+ \S*').Value)
+Check 'the count follows: 7' ($w.raw -match 'title_count=Some\("7"\)') ([regex]::Match($w.raw, 'title_count=\S+ \S*').Value)
 AgedFile "$PfDl\project" 'requirements.docx' 0.2 | Out-Null
 Check 'a new file in a subfolder shows' (WaitSmart $Dl { $n -match 'requirements' } 15) (SmartLine $Dl)
 Remove-Item -LiteralPath (Join-Path $PfDl '数据表.xlsx')
@@ -198,7 +198,7 @@ Pf fence set $Seven smartName null | Out-Null
 Pf fence set $Seven smartLimit 2 | Out-Null
 Check 'smartLimit 2: two shown, the count says more' (WaitSmart $Seven { $s.shown -eq 2 } 15) (SmartLine $Seven)
 $w = DumpOf $Seven
-Check 'the count after the name reads · 2+' ($w.raw -match 'title_count=Some\(" · 2\+"\)') ([regex]::Match($w.raw, 'title_count=\S+ \S*').Value)
+Check 'the count capsule reads 2+' ($w.raw -match 'title_count=Some\("2\+"\)') ([regex]::Match($w.raw, 'title_count=\S+ \S*').Value)
 Pf fence set $Seven smartLimit 200 | Out-Null
 Pf fence set $Seven smartConditions '[]' | Out-Null
 Pf fence set $Seven smartSubfolders false | Out-Null

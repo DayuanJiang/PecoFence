@@ -24,12 +24,14 @@ Check 'Ctrl+F opens the filter box' (FilterBoxOpen) (Fg)
 Shot 'r01-box-empty'
 [G]::Type('pdf'); Start-Sleep -Milliseconds 600
 Check 'pdf: the three PDFs' (WaitFilterShown $P 3) ((FilterOf $P) | ConvertTo-Json -Compress)
+$cnt = @(PfLogAll | Where-Object { $_ -match 'filter box count' -and $_ -notmatch 'omitted' }) | Select-Object -Last 1
+Check 'the box says how many show: 3 / all' ($cnt -match 'count="?3 / \d+') "$cnt"
 $w = DumpOf $P
 Check 'while the box is open the title is the plain name' ($w.title -eq $P) $w.title
 [G]::Press(0x0D); Start-Sleep -Milliseconds 500
 Check 'Enter closes the box and keeps the filter' (-not (FilterBoxOpen) -and (FilterOf $P).text -eq 'pdf') ((FilterOf $P) | ConvertTo-Json -Compress)
 $w = DumpOf $P
-Check 'the title says what it is filtered by' ($w.title -eq 'Downloads · Filter: pdf' -and $w.raw -match ' filtered=true') $w.title
+Check 'the title stays, a tag says what it is filtered by and how many show' ($w.title -eq $P -and $w.raw -match ' filtered=true' -and $w.raw -match 'filter_tag=Some\(\("pdf", "3 / \d+"\)\)') ([regex]::Match($w.raw, 'filter_tag=\S+ \S+').Value)
 Shot 'r02-filtered'
 Check 'the folder itself is untouched' (@(Get-ChildItem -LiteralPath $PfDl).Count -eq $all) "items=$all files=$(@(Get-ChildItem -LiteralPath $PfDl).Count)"
 FocusFence $P
@@ -104,7 +106,7 @@ Check 'the smart fence: pdf leaves the recent PDFs' (WaitFilterShown $D 3) ((Fil
 AgedFile $PfDl 'newer.pdf' 0 | Out-Null
 Check 'a new matching download joins the filtered fence' (WaitFilterShown $D 4 15) ((FilterOf $D) | ConvertTo-Json -Compress)
 $w = DumpOf $D
-Check 'the count after the name is what the filter shows' ($w.raw -match 'title_count=Some\(" · 4"\)') ([regex]::Match($w.raw, 'title_count=\S+ \S*').Value)
+Check 'the count capsule says what the filter shows' ($w.raw -match 'title_count=Some\("4"\)') ([regex]::Match($w.raw, 'title_count=\S+ \S*').Value)
 Shot 'r05-smart-filtered'
 Case 'save the filter of a smart fence: all, any of one row, any of two rows'
 # 全部: the filter is one more condition.

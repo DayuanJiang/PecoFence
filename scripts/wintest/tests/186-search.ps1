@@ -35,6 +35,10 @@ Case 'several rows'
 # Text files only, so every row opens in Notepad (the box has no Office).
 SearchFor 'csbg'
 Shot 's03-csbg-list'
+# Windows 11's look: a heading over the group, the bottom bar, results counted without the
+# action rows, one Ctrl+digit (the highlighted row's).
+$laid = @(PfLogAll | Where-Object { $_ -match 'search list laid out' -and $_ -notmatch 'omitted' }) | Select-Object -Last 1
+Check 'the list: a heading, the bottom bar, 2 results, a row highlighted' ($laid -match 'headings=1' -and $laid -match 'results=2' -and $laid -match 'bar=true' -and $laid -match 'selected=Some') "$laid"
 [G]::Press(0x0D); Start-Sleep -Seconds 3
 $first = NotepadTitles
 Get-Process notepad -ErrorAction SilentlyContinue | Stop-Process -Force; Start-Sleep -Milliseconds 500

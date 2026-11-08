@@ -239,6 +239,7 @@ pub fn set_count(text: &str) {
             return None;
         }
         s.count = text.to_string();
+        tracing::debug!(fence = %s.fence, count = text, "filter box count");
         Some(s.window.hwnd())
     });
     if let Some(h) = hwnd {
