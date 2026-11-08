@@ -593,6 +593,8 @@
   "标签页文字下方那条色条的颜色，方便区分同一个栅栏里的标签页": "The bar under the tab's name, to tell the tabs of a fence apart",
   "特大": "Extra large",
   "栅栏标题和标签页文字的大小": "Size of the fence title and tab names",
+  "文字大小": "Text size",
+  "栅栏里文字的大小": "Size of the text in the fence",
   "喜欢 PecoFence 吗？": "Enjoying PecoFence?",
   "你的支持能让更多人发现它。": "Your support helps more people find it.",
   "在 Microsoft Store 评分": "Rate in Microsoft Store",
@@ -804,5 +806,6 @@
   "改用 1.5": "Switch to 1.5",
   "已改用 Everything 1.5，以后登录 Windows 时也会启动它": "Switched to Everything 1.5. It also starts when you sign in to Windows from now on",
   "已复制": "Copied",
-  "复制失败，请重试": "Copy failed. Try again."
+  "复制失败，请重试": "Copy failed. Try again.",
+  "搜索别名\u0004字体大小|字号|放大文字|看不清": "font size|text size|bigger text|larger font|hard to read"
 }

@@ -511,22 +511,88 @@ impl App {
         open_containing_folder(&path);
     }
 
-    /// Right (caret at the end) or Ctrl+O: 打开 / 打开所在文件夹 / 复制路径, then the
-    /// Windows context menu of the highlighted row.
-    pub(super) fn show_search_actions(&mut self) {
-        let Some(row) = self.search.rows.get(self.search.sel).cloned() else {
+    /// What a row is, in fixed words for the log.
+    fn row_kind(&self, row: &RowKind) -> &'static str {
+        match row {
+            RowKind::Fence(i) => {
+                let Some(&(_, tab, item)) = self.peek_hits.get(*i) else {
+                    return "fence row, gone";
+                };
+                let Some(it) = self.state.item(item) else {
+                    return "fence row, gone";
+                };
+                let folder_fence = self
+                    .state
+                    .fence(tab)
+                    .is_some_and(|f| f.kind == FenceKind::FolderPortal);
+                let system = it.is_namespace()
+                    || it
+                        .path()
+                        .is_none_or(|p| shell::is_namespace_path(Path::new(p)));
+                match (system, folder_fence, it.is_folder) {
+                    (true, _, _) => "fence system item",
+                    (false, true, true) => "folder fence, folder",
+                    (false, true, false) => "folder fence, file",
+                    (false, false, true) => "fence, folder",
+                    (false, false, false) => "fence, file",
+                }
+            }
+            RowKind::File {
+                is_folder: true, ..
+            } => "Everything, folder",
+            RowKind::File { .. } => "Everything, file",
+            RowKind::ShowAll => "show all in Everything",
+        }
+    }
+
+    /// A right-click on row `index` (`x`, `y`: screen pixels): the row is highlighted and its
+    /// actions open at the pointer, as in Explorer.
+    pub(super) fn search_row_menu(&mut self, index: usize, x: i32, y: i32) {
+        if index >= self.search.rows.len() {
+            tracing::info!(
+                row = index,
+                rows = self.search.rows.len(),
+                "search: right-click on a row that is gone, no menu"
+            );
+            return;
+        }
+        self.search.sel = index;
+        self.show_search_rows();
+        self.show_search_actions(Some((x, y)));
+    }
+
+    /// The highlighted row's actions: 打开 / 打开所在文件夹 / 复制路径, then its Windows
+    /// context menu. `at`: the right-click's screen point; `None` for the keys (Right at the
+    /// end, Ctrl+O, the menu key, Shift+F10), which show it under the row. The Peek and the
+    /// box stay while it is open, after Esc and after 复制路径; 打开, 打开所在文件夹 and the
+    /// Windows entries end the Peek. A click on the dimmer closes the menu and, as any click
+    /// there, the Peek.
+    pub(super) fn show_search_actions(&mut self, at: Option<(i32, i32)>) {
+        let by = if at.is_some() { "right-click" } else { "keys" };
+        let index = self.search.sel;
+        let Some(row) = self.search.rows.get(index).cloned() else {
+            tracing::info!(by, "search actions: no row, no menu");
             return;
         };
+        let row_kind = self.row_kind(&row);
         let Some((path, _)) = self.row_path(&row) else {
+            tracing::info!(
+                row = index,
+                by,
+                what = row_kind,
+                "search actions: the row has no file path, no menu"
+            );
             return;
         };
         let Some(owner) = crate::peek_search::hwnd() else {
             return;
         };
-        let (x, y) = crate::peek_search::selected_row_point().unwrap_or_else(|| {
-            let p = window::cursor_pos();
-            (p.x, p.y)
-        });
+        let (x, y) = at
+            .or_else(crate::peek_search::selected_row_point)
+            .unwrap_or_else(|| {
+                let p = window::cursor_pos();
+                (p.x, p.y)
+            });
         let menu = PopupMenu::new();
         menu.item(CMD_OPEN, pecofence_core::i18n::text("打开"), false, false)
             .default_item(CMD_OPEN)
@@ -542,39 +608,77 @@ impl App {
                 false,
                 false,
             );
-        let mut shell_menu = ShellContextMenu::for_paths(&[path.as_path()]).ok();
+        let mut shell_menu = match ShellContextMenu::for_paths(&[path.as_path()]) {
+            Ok(sm) => Some(sm),
+            Err(e) => {
+                tracing::info!(error = %e, "search actions: no Windows menu for the row");
+                None
+            }
+        };
         if let Some(sm) = shell_menu.as_mut() {
             menu.separator();
-            if sm
-                .populate(
-                    menu.handle(),
-                    menu.len(),
-                    CMD_SHELL_FIRST,
-                    CMD_SHELL_LAST,
-                    false,
-                )
-                .is_ok()
-            {
-                sm.remove_verbs(menu.handle(), &["open"]);
-                menu.tidy_separators();
-            } else {
-                shell_menu = None;
+            match sm.populate(
+                menu.handle(),
+                menu.len(),
+                CMD_SHELL_FIRST,
+                CMD_SHELL_LAST,
+                false,
+            ) {
+                Ok(_) => {
+                    sm.remove_verbs(menu.handle(), &["open"]);
+                    menu.tidy_separators();
+                }
+                Err(e) => {
+                    tracing::info!(error = %e, "search actions: the Windows menu could not be added");
+                    shell_menu = None;
+                }
             }
         }
+        tracing::info!(
+            row = index,
+            by,
+            what = row_kind,
+            windows_menu = shell_menu.is_some(),
+            x,
+            y,
+            "search actions menu shown"
+        );
         let cmd = self.track_menu(|| menu.show_context(owner, x, y));
         if let Some(sm) = shell_menu.as_ref()
             && sm.contains(cmd)
         {
             let verb = sm.verb(cmd).unwrap_or_default();
-            tracing::info!(%verb, "search: shell verb invoked");
+            tracing::info!(row = index, by, %verb, "search: shell verb invoked");
+            // The window an entry opens (Properties, Open with, the program of Edit, a delete
+            // confirmation) would sit under the Peek, which stays topmost. The Peek ends first,
+            // as for 打开, and at once: a confirmation runs inside `invoke`, where no frame of
+            // the fade would run.
+            self.end_peek("search: Windows menu entry chosen");
+            self.end_peek_now();
+            let owner = self.control.hwnd();
             if let Err(e) = sm.invoke(cmd, owner, POINT { x, y }, false) {
                 tracing::warn!(error = %e, %verb, "search: shell verb failed");
             }
             return;
         }
         drop(shell_menu);
+        let outcome = match cmd {
+            CMD_OPEN => "open",
+            CMD_OPEN_FOLDER => "open containing folder",
+            CMD_COPY_PATH => "copy path",
+            0 => "closed without a choice",
+            _ => "unknown command",
+        };
+        tracing::info!(
+            row = index,
+            by,
+            outcome,
+            peek = self.peek.is_some(),
+            box_open = crate::peek_search::is_open(),
+            "search actions menu closed"
+        );
         match cmd {
-            CMD_OPEN => self.open_search_row(self.search.sel),
+            CMD_OPEN => self.open_search_row(index),
             CMD_OPEN_FOLDER => self.open_search_row_folder(),
             CMD_COPY_PATH => {
                 let ok = clipboard::set_text(owner, &path.to_string_lossy());

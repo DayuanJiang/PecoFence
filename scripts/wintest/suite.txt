@@ -58,3 +58,19 @@ snap-and-fit       2   ec2    release snap-and-fit.ps1
 new-icons-drops    3   ec2    release new-icons-and-drops.ps1
 desktop-fence      1   ec2    release desktop-fence-clicks.ps1
 unit               1   unit   release unit.ps1
+peek-search-menu   3   manual release fb-peek-rclick.ps1             --var Part=hdtk
+peek-menu-clips    1   manual release fb-peek-rclick-rec.ps1
+tool-text-notes    3   ec2    release fb-tool-text-size.ps1          --var Part=N
+tool-text-scripts  2   ec2    release fb-tool-text-size.ps1          --var Part=S
+tool-text-clock    2   ec2    release fb-tool-text-size.ps1          --var Part=C
+tool-text-page     1   ec2    debug   fb-tool-text-size.ps1          --var Part=P
+drop-on-program-A  2   ec2    release fb-file-drop-program.ps1       --var Part=A
+drop-on-program-B  2   ec2    release fb-file-drop-program.ps1       --var Part=B
+drop-on-program-C  2   ec2    release fb-file-drop-program.ps1       --var Part=C
+drop-on-program-D  3   ec2    release fb-file-drop-program.ps1       --var Part=D
+drop-on-notepad    1   ec2    release fb-file-drop-program.ps1       --var Part=N
+free-place-windows 3   ec2    release fb-free-place-import.ps1
+send-to-rules      2   ec2    release fb-sendto-rules.ps1
+send-to-upgrade    1   manual release fb-sendto-upgrade.ps1
+send-to-clip       1   manual release fb-sendto-rec.ps1
+pc-status          3   manual release fb-pr201.ps1

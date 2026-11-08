@@ -72,7 +72,7 @@ mod window_drag;
 pub use api::FenceWindow;
 pub use dnd::filter_folder_paths;
 pub use frame::FrameHandle;
-pub use state::DesktopArea;
+pub use state::{DesktopArea, WindowsIconPlaces};
 
 use self::consts::*;
 use self::dnd::*;

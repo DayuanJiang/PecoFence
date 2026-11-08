@@ -241,6 +241,10 @@ pub struct FenceDto {
     pub title_color: String,
     /// `small` | `normal` | `large` | `extraLarge`.
     pub title_size: String,
+    /// 文字大小 of a note or script fence: `small` | `normal` | `large` | `extraLarge`
+    /// (`normal` for other fences; a clock's text follows the fence size).
+    #[serde(default)]
+    pub text_size: String,
     /// `default` (the global `rollUp.titleOnHover`) | `hover` | `always`.
     #[serde(default)]
     pub title_on_hover: String,

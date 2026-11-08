@@ -250,6 +250,7 @@ impl App {
         w.set_appearance(bd, op);
         w.set_title_on_hover(f.appearance.as_ref().and_then(|a| a.title_on_hover));
         w.set_style(fence_style_for(&f));
+        w.set_text_size(text_size_index(&f));
         if let Some(a) = self.anchor.borrow_mut().as_mut() {
             a.set_quick_hide_excluded(w.hwnd(), f.exclude_from_quick_hide);
         }
@@ -488,11 +489,13 @@ impl App {
             .collect();
         // 自由摆放: the cells the icons were saved at on these monitors (not while a folder
         // opened inside 「桌面」 is shown: its entries stand down the columns).
-        let free = self
+        let mut free = self
             .state
             .fence(id)
             .filter(|f| f.free_placement && self.state.portal_path(id).is_none())
             .map(|f| f.desktop_cells.clone());
+        // None saved yet: the places Windows' own desktop has the icons at (#204).
+        let windows = self.windows_places_for(id, &mut free);
         let Some(w) = self.fences.get(&id) else {
             return;
         };
@@ -500,6 +503,7 @@ impl App {
             work,
             covered,
             free,
+            windows,
         }));
         if let Some(a) = self.anchor.borrow_mut().as_mut() {
             a.lower_desktop_fence();

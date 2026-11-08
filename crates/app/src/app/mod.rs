@@ -55,6 +55,7 @@ use std::time::{Duration, Instant};
 use windows_core::Result;
 
 mod arrange;
+mod desktop_import;
 mod dnd;
 mod everything_setup;
 mod ext_rule;
@@ -94,8 +95,8 @@ use fileops::{FileOp, FileOpThen};
 use peek::peek_hotkey_label;
 use visuals::{
     StartupBackdrops, backdrop_mode_for, custom_theme_names, fence_style_for, icon_variant_for,
-    load_custom_theme, pick_theme_mode, shadow_style_for, theme_for, tray_icon_image,
-    verify_wallpaper_later, write_example_themes,
+    load_custom_theme, pick_theme_mode, shadow_style_for, text_size_index, theme_for,
+    tray_icon_image, verify_wallpaper_later, write_example_themes,
 };
 use wallpaper_refresh::{
     BackdropCache, FIRST_CHECK_MS, RefreshSchedule, WallpaperReader, supersedes,
@@ -469,6 +470,8 @@ pub struct App {
     /// operation and the clipboard sequence number at the paste. The clipboard is emptied when
     /// the move succeeds, unless something else was put on it meanwhile (see `paste_into`).
     cut_paste: Option<(u64, u32)>,
+    /// 自由摆放 with no saved cells: Windows' own icon places, read once (#204).
+    windows_places: desktop_import::WindowsPlaces,
 }
 
 pub type AppCell = Rc<RefCell<Option<App>>>;
@@ -849,6 +852,10 @@ impl App {
                             window::set_timer(hwnd, TIMER_DIALOG_OFFER, 1);
                             Some(0)
                         }
+                        desktop_import::WM_APP_WINDOWS_PLACES => {
+                            window::set_timer(hwnd, desktop_import::TIMER_WINDOWS_PLACES, 1);
+                            Some(0)
+                        }
                         WM_APP_WALLPAPER_READ => {
                             window::set_timer(hwnd, TIMER_WALLPAPER_READ, 1);
                             Some(0)
@@ -1003,6 +1010,7 @@ impl App {
                                 | TIMER_DIALOG_OFFER
                                 | TIMER_PORTAL_BACK
                                 | TIMER_CONFIG_LOCKED
+                                | desktop_import::TIMER_WINDOWS_PLACES
                                 | TIMER_STARTUP_BACKDROPS => {
                                     if let Ok(mut guard) = cell.try_borrow_mut()
                                         && let Some(app) = guard.as_mut()
@@ -1028,6 +1036,9 @@ impl App {
                                             TIMER_DIALOG_OFFER => app.offer_dialog_jump(),
                                             TIMER_PORTAL_BACK => app.check_missing_portals(),
                                             TIMER_CONFIG_LOCKED => app.retry_locked_config(),
+                                            desktop_import::TIMER_WINDOWS_PLACES => {
+                                                app.finish_windows_places()
+                                            }
                                             _ => app.prewarm_wallpapers(),
                                         }
                                     } else {
@@ -1683,6 +1694,7 @@ impl App {
             cut_items: HashSet::new(),
             cut_clip_seq: 0,
             cut_paste: None,
+            windows_places: desktop_import::WindowsPlaces::default(),
             wallpaper_sig: None,
             wallpaper_reader,
             last_wallpaper: None,
@@ -1846,6 +1858,9 @@ impl App {
                 .unwrap_or((400, 300));
             app.create_portal(PathBuf::from(folder), cx, cy, None);
         }
+        // 自由摆放 with no saved cells reads Windows' icon places: taken before the fences show,
+        // so the icons do not jump into them.
+        app.windows_places_before_show();
         if let Some(a) = app.anchor.borrow_mut().as_mut() {
             a.reanchor("startup");
         }
@@ -2621,7 +2636,8 @@ impl App {
             Command::PeekSearchOpen => self.open_search_row(self.search.sel),
             Command::PeekSearchOpenRow(row) => self.open_search_row(row),
             Command::PeekSearchOpenFolder => self.open_search_row_folder(),
-            Command::PeekSearchActions => self.show_search_actions(),
+            Command::PeekSearchActions => self.show_search_actions(None),
+            Command::PeekSearchRowMenu { row, x, y } => self.search_row_menu(row, x, y),
             Command::EverythingResults { kind, bytes } => self.on_everything_results(kind, &bytes),
             Command::ApplyRulesNow => {
                 let entries = shell::enumerate_desktop();

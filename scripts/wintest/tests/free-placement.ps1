@@ -57,6 +57,23 @@ function Park() { ParkMouse 1560 820 }
 Case 'seed'
 foreach ($n in $FpNames + $FpExtra) { Remove-Item -LiteralPath (Join-Path $PfDesk $n) -Force -ErrorAction SilentlyContinue }
 foreach ($n in $FpNames) { DeskFile $n | Out-Null }
+# A first start takes the places Windows has the icons at (#204): line them up there in name
+# order down the first column, with the Recycle Bin after them and the shortcuts (they go to
+# Programs) out of the way. Windows snaps each to its grid (76 x 102 px at 100 %, but the
+# spacing of the scale Explorer started at until it restarts) within a second or two.
+. C:\pf\kit\deskicons.ps1
+Start-Sleep -Seconds 2
+[DeskIcons]::SetFlags(1, 0) | Out-Null
+$sp = ([DeskIcons]::Spacing() -split ' ')[0] -split ','; $sx = [int]$sp[0]; $sy = [int]$sp[1]
+$row = 0
+foreach ($l in @([DeskIcons]::List())) {
+  $n = ($l -split '\|')[0]
+  if ($FpNames -notcontains (Split-Path -Leaf $n)) { [DeskIcons]::Place($n, 14 + 12 * $sx, 2 + $row * $sy) | Out-Null; $row++ }
+}
+$i = 0
+foreach ($n in $FpNames + @('::{645FF040-5081-101B-9F08-00AA002F954E}')) { [DeskIcons]::Place($n, 14, 2 + $i * $sy) | Out-Null; $i++ }
+Start-Sleep -Seconds 3
+Log "Windows icons: $((@([DeskIcons]::List()) | ForEach-Object { $p = $_ -split '\|'; "$(Split-Path -Leaf $p[0])@$($p[1]),$($p[2])" }) -join ' ')"
 PfStart -Script (DumpScript 300 14)
 Start-Sleep -Seconds 3
 # 自由摆放 is on in a new configuration: the old-behaviour run switches it off (0.3.1 refuses the

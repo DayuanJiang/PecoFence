@@ -593,6 +593,8 @@
   "标签页文字下方那条色条的颜色，方便区分同一个栅栏里的标签页": "A barra sob o nome da aba, para distinguir as abas de um mesmo grupo",
   "特大": "Muito grande",
   "栅栏标题和标签页文字的大小": "Tamanho do título do grupo e dos nomes das abas",
+  "文字大小": "Tamanho do texto",
+  "栅栏里文字的大小": "Tamanho do texto no grupo",
   "喜欢 PecoFence 吗？": "Está gostando do PecoFence?",
   "你的支持能让更多人发现它。": "Seu apoio ajuda mais pessoas a descobri-lo.",
   "在 Microsoft Store 评分": "Avaliar na Microsoft Store",
@@ -804,5 +806,6 @@
   "改用 1.5": "Mudar para 1.5",
   "已改用 Everything 1.5，以后登录 Windows 时也会启动它": "Agora o Everything 1.5 está em uso. Ele também inicia quando você entra no Windows",
   "已复制": "Copiado",
-  "复制失败，请重试": "Falha ao copiar. Tente novamente."
+  "复制失败，请重试": "Falha ao copiar. Tente novamente.",
+  "搜索别名\u0004字体大小|字号|放大文字|看不清": "tamanho da fonte|letra maior|texto maior|difícil de ler"
 }

@@ -71,6 +71,7 @@ pub(super) const FENCE_PROPS: &[&str] = &[
     "tabColor",
     "titleColor",
     "titleSize",
+    "textSize",
     "titleOnHover",
     "layout",
     "sort",
@@ -121,6 +122,8 @@ pub(super) enum FenceProp {
     TitleColor(TitleColorChoice),
     /// None = normal.
     TitleSize(Option<TitleSize>),
+    /// 文字大小 of a note or script fence (None = normal).
+    TextSize(Option<TitleSize>),
     /// None = the global `rollUp.titleOnHover`.
     TitleOnHover(Option<bool>),
     /// Regular fences: a double-clicked folder opens inside the fence.
@@ -282,15 +285,20 @@ pub(super) fn parse_fence_prop(
                 other => TitleColorChoice::Rgb(parse_hex(other).ok_or_else(|| bad(ALLOWED))?),
             })
         }
-        "titleSize" => {
+        "titleSize" | "textSize" => {
             const ALLOWED: &[&str] = &["small", "normal", "large", "extraLarge"];
-            FenceProp::TitleSize(match as_str(ALLOWED)? {
+            let size = match as_str(ALLOWED)? {
                 "small" => Some(TitleSize::Small),
                 "normal" => None,
                 "large" => Some(TitleSize::Large),
                 "extraLarge" => Some(TitleSize::ExtraLarge),
                 _ => return Err(bad(ALLOWED)),
-            })
+            };
+            if prop == "titleSize" {
+                FenceProp::TitleSize(size)
+            } else {
+                FenceProp::TextSize(size)
+            }
         }
         "titleOnHover" => {
             const ALLOWED: &[&str] = &["default", "hover", "always"];
@@ -360,6 +368,16 @@ pub(super) fn parse_fence_prop(
             ));
         }
     })
+}
+
+/// A title or text size as the page, `fence get` and `fence set` spell it.
+pub(super) fn size_name(size: Option<TitleSize>) -> &'static str {
+    match size.unwrap_or_default() {
+        TitleSize::Small => "small",
+        TitleSize::Normal => "normal",
+        TitleSize::Large => "large",
+        TitleSize::ExtraLarge => "extraLarge",
+    }
 }
 
 /// String forms of `FenceView.layout` / `.sort` as the page, `fence get` and `fence set` use.
@@ -435,6 +453,9 @@ impl App {
     pub(super) fn set_fence_desktop_layout(&mut self, fence: FenceId, on: bool, from: &str) {
         tracing::info!(%fence, on, from, "desktop layout switched");
         self.state.set_desktop_layout(fence, on);
+        if on {
+            self.want_windows_places();
+        }
         self.sync_hidden_fences();
         self.apply_fence_view(fence);
         self.schedule_save();
@@ -445,6 +466,9 @@ impl App {
         let cells = self.state.fence(fence).map_or(0, |f| f.desktop_cells.len());
         tracing::info!(%fence, on, from, saved_cells = cells, "free placement switched");
         self.state.set_free_placement(fence, on);
+        if on {
+            self.want_windows_places();
+        }
         self.arrange_desktop_fence();
         self.schedule_save();
     }
@@ -559,6 +583,18 @@ impl App {
         self.schedule_save();
     }
 
+    /// 文字大小 of a note or script fence: its lines, check boxes and clickable rows (and the
+    /// note editor) take the size.
+    pub(super) fn set_fence_text_size(&mut self, fence: FenceId, size: Option<TitleSize>) {
+        self.state.set_text_size(fence, size);
+        // Numbers only, so the shareable log keeps them: 0 small to 3 extra large.
+        let text_size = self.state.fence(fence).map_or(1, text_size_index);
+        let font_dip = pecofence_render::fence_chrome::TOOL_TEXT_SIZES[usize::from(text_size)];
+        tracing::info!(%fence, text_size, font_dip, "fence text size set");
+        self.apply_fence_appearance(fence);
+        self.schedule_save();
+    }
+
     /// `None` = follow the global 「鼠标悬停时才显示标题栏」.
     pub(super) fn set_fence_title_on_hover(&mut self, fence: FenceId, on: Option<bool>) {
         let host = self.state.host_of(fence);
@@ -667,12 +703,7 @@ impl App {
             Some(true) => "hover",
             Some(false) => "always",
         };
-        let title_size = match title_size.unwrap_or_default() {
-            TitleSize::Small => "small",
-            TitleSize::Normal => "normal",
-            TitleSize::Large => "large",
-            TitleSize::ExtraLarge => "extraLarge",
-        };
+        let title_size = size_name(title_size);
         let spacing = match Spacing::nearest(f.view.spacing) {
             Spacing::Compact => "compact",
             Spacing::Normal => "normal",
@@ -715,6 +746,8 @@ impl App {
             "tabColor": f.appearance.as_ref().and_then(|a| a.tab_rgb).map(hex),
             "titleColor": title_color,
             "titleSize": title_size,
+            // 文字大小 (note and script fences).
+            "textSize": size_name(f.appearance.as_ref().and_then(|a| a.text_size)),
             "titleOnHover": title_on_hover,
             "hideWhenEmpty": f.hide_when_empty,
             "desktopLayout": f.desktop_layout,
@@ -822,6 +855,7 @@ impl App {
                 let (_, title_rgb, _) = self.style_of(fence);
                 self.set_fence_title_style(fence, title_rgb, size);
             }
+            FenceProp::TextSize(size) => self.set_fence_text_size(fence, size),
             FenceProp::TitleOnHover(on) => self.set_fence_title_on_hover(fence, on),
             FenceProp::OpenFoldersInside(on) => self.set_fence_open_folders_inside(fence, on),
             FenceProp::PortalNavigate(on) => self.set_fence_portal_navigate(fence, on),

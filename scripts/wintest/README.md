@@ -127,6 +127,13 @@ Check 'new-note opens the editor' ($ed -ne [IntPtr]::Zero) "editor=$ed"
   records which of the fences, the desktop windows and the test's Notepad / Explorer windows are
   above which (as fast as EnumWindows allows, frames optional), `ZsStats` sums up how long the
   fences were covered, topmost or over a window; `tests/desktop-clicks-and-focus.ps1` uses it for Win+D.
+- Windows' own desktop icons (deskicons.ps1, dot-source `C:\pf\kit\deskicons.ps1`): `[DeskIcons]::List()`
+  (each icon's parsing name and place), `Place` (IFolderView::SelectAndPositionItems), `Spacing`,
+  `Flags` / `SetFlags` (1 自动排列图标). Explorer snaps a placed icon to its grid a second or two later.
+  A place set only with `Place` does not last: hiding and showing the icons (0x7402) or an Explorer
+  restart can put the icon back in the columns. Make a user's own layout with real mouse drags
+  (`DragTo` from the icon's centre), which last like a user's. After a scale change Explorer keeps
+  the old scale's grid until it restarts. `tests/fb-free-place-import.ps1` shows all of it.
 - The user's own copy (user.ps1): `Ipf` / `IpfJson` / `UserLog` for the installed copy (set
   `$script:CliExe` for a portable one), `StartUser`, `WaitNoPf`; `PfUseUser` makes the item and
   state helpers read that copy; setup and uninstall by their buttons (`Wizard`, `Uninstall`,

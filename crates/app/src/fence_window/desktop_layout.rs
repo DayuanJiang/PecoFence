@@ -119,6 +119,47 @@ impl FreeGrid {
         ))
     }
 
+    /// The cell for an icon that Windows' own desktop shows with its top-left at `at` (screen
+    /// px), on Windows' grid of `spacing` px: on this work area the same column and row of
+    /// Windows' grid, so the icons keep their order and the gaps between them although
+    /// Windows' spacing differs from these cells (it follows Windows' icon and text size). A
+    /// column or row past this grid's edge counts from that edge instead, so icons at the far
+    /// right or bottom stay there. A place on another monitor takes the cell nearest to it.
+    /// Windows' first column and row sit a few px in from the work area's edge, less than
+    /// half a cell. None without a spacing to count with.
+    pub(super) fn windows_cell(&self, at: (i32, i32), spacing: (i32, i32)) -> Option<(i32, i32)> {
+        let (sx, sy) = spacing;
+        if sx <= 0 || sy <= 0 {
+            return None;
+        }
+        let w = &self.work;
+        if !self.on_work(at) {
+            return Some(self.cell_at(at.0 + sx / 2, at.1 + sy / 2));
+        }
+        // Windows' columns and rows on this work area, and the icon's.
+        let theirs = ((w.right - w.left) / sx, (w.bottom - w.top) / sy);
+        let (c, r) = (
+            (at.0 - w.left + sx / 2).div_euclid(sx),
+            (at.1 - w.top + sy / 2).div_euclid(sy),
+        );
+        let fit = |i: i32, theirs: i32, ours: i32| {
+            if i < ours {
+                i
+            } else {
+                // Counted from the far edge (Windows' last is this grid's last), never into
+                // the near half.
+                (ours - (theirs - i).max(1)).max(ours / 2)
+            }
+        };
+        Some((fit(c, theirs.0, self.cols), fit(r, theirs.1, self.rows)))
+    }
+
+    /// Whether a point (screen px) is on this grid's work area, the monitor 「桌面」 is on.
+    pub(super) fn on_work(&self, at: (i32, i32)) -> bool {
+        let w = &self.work;
+        (w.left..w.right).contains(&at.0) && (w.top..w.bottom).contains(&at.1)
+    }
+
     /// Takes a cell for one icon: `want` (moved into the grid) when it is free, else the free
     /// cell nearest to it; without `want` the first free cell down the columns. When the grid
     /// is full, the first free cell in the columns past its right edge.
@@ -174,15 +215,30 @@ impl FreeGrid {
     /// The cells of icons that saved `wanted` (None: a new icon). An icon whose saved cell is
     /// inside the grid, not under a fence and not taken keeps it; the others then take the
     /// free cell nearest to theirs, and the new ones the first free cells down the columns.
-    pub(super) fn place(&self, wanted: &[Option<(i32, i32)>]) -> Vec<(i32, i32)> {
+    /// The cells of the icons marked in `near` are only where to look from (an icon Windows has
+    /// on another monitor, #204): they take the free cell nearest to theirs after every other
+    /// icon with a cell got its own or the one nearest to it, so they never take the cell of
+    /// an icon that stands there on this monitor.
+    pub(super) fn place(&self, wanted: &[Option<(i32, i32)>], near: &[bool]) -> Vec<(i32, i32)> {
+        let near = |i: usize| near.get(i).copied().unwrap_or(false);
         let mut taken = HashSet::new();
         let mut cells: Vec<Option<(i32, i32)>> = wanted
             .iter()
-            .map(|w| w.filter(|&c| self.inside(c) && !self.blocked(c) && taken.insert(c)))
+            .enumerate()
+            .map(|(i, w)| {
+                w.filter(|&c| !near(i) && self.inside(c) && !self.blocked(c) && taken.insert(c))
+            })
             .collect();
-        for pass_new in [false, true] {
+        // Moved ones (cell taken, under a fence, off the grid), then the other monitors' ones,
+        // then the new ones.
+        for pass in 0..3 {
             for (i, w) in wanted.iter().enumerate() {
-                if cells[i].is_none() && w.is_none() == pass_new {
+                let this_pass = match (w, near(i)) {
+                    (None, _) => 2,
+                    (Some(_), true) => 1,
+                    (Some(_), false) => 0,
+                };
+                if cells[i].is_none() && this_pass == pass {
                     cells[i] = Some(self.claim(&mut taken, *w));
                 }
             }
@@ -292,7 +348,38 @@ impl FenceViewState {
                     .map(|c| (i32::from(c[0]), i32::from(c[1])))
             })
             .collect();
-        let placed = grid.place(&wanted);
+        // No saved cell yet (#204): the cell of the icon's place on Windows' own desktop.
+        let spacing = area.windows.as_ref().map(|w| w.spacing_at(self.scale()));
+        let from_windows: Vec<Option<(i32, i32)>> = self
+            .items
+            .iter()
+            .zip(&wanted)
+            .map(|(it, w)| {
+                let windows = area.windows.as_ref().filter(|_| w.is_none())?;
+                grid.windows_cell(*windows.places.get(&it.id)?, spacing?)
+            })
+            .collect();
+        let asked: Vec<Option<(i32, i32)>> = wanted
+            .iter()
+            .zip(&from_windows)
+            .map(|(w, win)| w.or(*win))
+            .collect();
+        // A place on another monitor only says where to look: it never takes the cell of an
+        // icon that stands there on this one.
+        let near: Vec<bool> = self
+            .items
+            .iter()
+            .zip(&wanted)
+            .map(|(it, w)| {
+                w.is_none()
+                    && area
+                        .windows
+                        .as_ref()
+                        .and_then(|win| win.places.get(&it.id))
+                        .is_some_and(|at| !grid.on_work(*at))
+            })
+            .collect();
+        let placed = grid.place(&asked, &near);
         let mut taken: HashSet<(i32, i32)> = placed.iter().copied().collect();
         let spare = grid.claim(&mut taken, None);
         let rects = placed
@@ -315,6 +402,9 @@ impl FenceViewState {
             .collect();
         if !changes.is_empty() && self.desktop_free_sent.as_ref() != Some(&changes) {
             let added = wanted.iter().filter(|w| w.is_none()).count();
+            if let (Some(windows), Some(spacing)) = (&area.windows, spacing) {
+                self.log_windows_places(&grid, windows, spacing, &from_windows, &placed, added);
+            }
             tracing::info!(
                 fence = %self.fence_id,
                 icons = placed.len(),
@@ -333,6 +423,49 @@ impl FenceViewState {
         self.desktop_free_sent = (!changes.is_empty()).then_some(changes);
         self.desktop_free = Some((grid, placed));
         rects
+    }
+
+    /// 自由摆放 from Windows' own places (#204): how many icons got the cell of their place on
+    /// Windows' desktop, how many the nearest free one (that cell taken, under another fence
+    /// or past this grid's edge), how many came from another monitor and how many Windows did
+    /// not show (the first free cells, as new icons).
+    fn log_windows_places(
+        &self,
+        grid: &FreeGrid,
+        windows: &WindowsIconPlaces,
+        spacing: (i32, i32),
+        from_windows: &[Option<(i32, i32)>],
+        placed: &[(i32, i32)],
+        added: usize,
+    ) {
+        let mut other_monitor = 0;
+        for it in &self.items {
+            if let Some(&at) = windows.places.get(&it.id)
+                && !grid.on_work(at)
+            {
+                other_monitor += 1;
+            }
+        }
+        let asked = from_windows.iter().flatten().count();
+        let kept = from_windows
+            .iter()
+            .zip(placed)
+            .filter(|(w, p)| **w == Some(**p))
+            .count();
+        tracing::info!(
+            fence = %self.fence_id,
+            icons = placed.len(),
+            without_cell = added,
+            windows_place = kept,
+            nearest_free = asked - kept,
+            other_monitor,
+            not_on_windows = added - asked,
+            windows_spacing = ?spacing,
+            cell = ?grid.cell,
+            cols = grid.cols,
+            rows = grid.rows,
+            "free placement: cells taken from the Windows desktop"
+        );
     }
 
     /// 自由摆放: where icons dropped on the desktop go. `drops` are the items and where their
@@ -610,7 +743,10 @@ mod tests {
         let g = free_grid(&[]);
         assert_eq!((g.cols, g.rows), (12, 3));
         assert_eq!(g.rect((2, 1)), rect(164, 104, 244, 204));
-        let placed = g.place(&[Some((5, 2)), None, Some((0, 0)), None, Some((11, 1))]);
+        let placed = g.place(
+            &[Some((5, 2)), None, Some((0, 0)), None, Some((11, 1))],
+            &[],
+        );
         assert_eq!(
             placed,
             vec![(5, 2), (0, 1), (0, 0), (0, 2), (11, 1)],
@@ -622,7 +758,7 @@ mod tests {
     fn a_fence_over_an_icon_moves_it_to_the_nearest_free_cell() {
         // The fence covers columns 4 and 5 of the middle row.
         let g = free_grid(&[rect(330, 150, 470, 190)]);
-        let placed = g.place(&[Some((4, 1)), Some((5, 1)), Some((3, 1))]);
+        let placed = g.place(&[Some((4, 1)), Some((5, 1)), Some((3, 1))], &[]);
         assert_eq!(placed[2], (3, 1), "an icon beside the fence stays");
         // (4, 1) has a taken cell and the fence beside it: up a row (100 px). (5, 1) goes
         // right, 80 px, the nearest.
@@ -638,7 +774,10 @@ mod tests {
     fn a_smaller_work_area_moves_icons_inside_without_stacking_them() {
         // Saved on a larger screen: column 20 and row 7 are past this grid's edges.
         let g = free_grid(&[]);
-        let placed = g.place(&[Some((20, 0)), Some((11, 0)), Some((3, 7)), Some((11, 2))]);
+        let placed = g.place(
+            &[Some((20, 0)), Some((11, 0)), Some((3, 7)), Some((11, 2))],
+            &[],
+        );
         assert_eq!(
             placed[1],
             (11, 0),
@@ -657,7 +796,7 @@ mod tests {
     fn a_full_grid_puts_the_rest_past_the_right_edge() {
         let g = FreeGrid::new(&rect(0, 0, 168, 208), &[], (80, 100), 4);
         assert_eq!((g.cols, g.rows), (2, 2));
-        let placed = g.place(&[None, None, None, None, None, Some((0, 0))]);
+        let placed = g.place(&[None, None, None, None, None, Some((0, 0))], &[]);
         assert_eq!(placed[5], (0, 0), "the saved cell wins over the new icons");
         assert_eq!(&placed[..5], &[(0, 1), (1, 0), (1, 1), (2, 0), (2, 1)]);
     }
@@ -690,6 +829,111 @@ mod tests {
         // A point off the work area lands in the nearest cell inside it.
         assert_eq!(g.cell_at(-50, 900), (0, 2));
         assert_eq!(g.cell_at(5000, 10), (11, 0));
+    }
+
+    /// #204: an icon takes the column and row it has on Windows' own grid, whatever Windows'
+    /// spacing; one Windows has on another monitor takes the cell nearest to its place.
+    #[test]
+    fn windows_places_keep_their_column_and_row() {
+        let g = free_grid(&[]);
+        // Windows' grid: 75 x 86 px, its first icon 2 px in from the work area's corner.
+        let at = |c: i32, r: i32| (2 + c * 75, 3 + r * 86);
+        let sp = (75, 86);
+        assert_eq!(g.windows_cell(at(0, 0), sp), Some((0, 0)));
+        assert_eq!(
+            g.windows_cell(at(3, 2), sp),
+            Some((3, 2)),
+            "Windows' fourth column stays the fourth, though 3 x 75 px is in this grid's third"
+        );
+        assert_eq!(g.windows_cell(at(5, 1), sp), Some((5, 1)));
+        // Windows has 13 columns and 4 rows here (1000 / 75, 400 / 86), this grid 12 and 3:
+        // Windows' last column and row, past this grid's edges, are this grid's last ones.
+        assert_eq!(g.windows_cell(at(12, 3), sp), Some((11, 2)));
+        assert_eq!(
+            g.windows_cell(at(11, 0), sp),
+            Some((11, 0)),
+            "fits: the same"
+        );
+        // A place between two of Windows' columns (将图标与网格对齐 off) takes the nearer one.
+        assert_eq!(g.windows_cell((2 + 75 + 40, 3), sp), Some((2, 0)));
+        // Another monitor, left of this one: the nearest cell, in the first column.
+        assert_eq!(g.windows_cell((-600, 220), sp), Some((0, 2)));
+        assert_eq!(
+            g.windows_cell((10, 10), (0, 86)),
+            None,
+            "no grid to count on"
+        );
+    }
+
+    /// Two monitors, the other one on the left (PF-Win11-2): an icon from there, listed first,
+    /// wants the cell nearest its place, 0,0, where the Recycle Bin stands on this monitor. The
+    /// bin keeps it; the other monitor's icon takes the free cell nearest to it.
+    #[test]
+    fn an_icon_from_another_monitor_never_takes_a_cell_of_this_one() {
+        let g = free_grid(&[]);
+        let sp = (76, 102);
+        let from_left = g.windows_cell((-1905, 2), sp);
+        let bin = g.windows_cell((14, 2), sp);
+        assert_eq!((from_left, bin), (Some((0, 0)), Some((0, 0))));
+        assert!(!g.on_work((-1905, 2)) && g.on_work((14, 2)));
+        let placed = g.place(&[from_left, bin, Some((0, 1))], &[true, false, false]);
+        assert_eq!(placed[1], (0, 0), "the bin keeps its own cell");
+        assert_eq!(placed[2], (0, 1));
+        assert_eq!(
+            placed[0],
+            (1, 0),
+            "the nearest free cell (80 px right, not 100 down)"
+        );
+        // Without the mark it was the other way round: the first in the list took 0,0.
+        assert_eq!(g.place(&[from_left, bin], &[])[0], (0, 0));
+    }
+
+    /// After a scale change Explorer reports its spacing in the scale it started at (measured on
+    /// the test box): 76 x 104 at 150 % with icons 114 x 156 apart, 114 x 153 back at 100 %.
+    #[test]
+    fn windows_spacing_follows_the_monitor_scale() {
+        let at = |spacing, explorer_dpi| WindowsIconPlaces {
+            spacing,
+            explorer_dpi,
+            places: BTreeMap::new(),
+        };
+        assert_eq!(at((76, 104), Some(96)).spacing_at(1.5), (114, 156));
+        assert_eq!(at((114, 153), Some(144)).spacing_at(1.0), (76, 102));
+        assert_eq!(at((114, 156), Some(144)).spacing_at(1.5), (114, 156));
+        assert_eq!(
+            at((76, 102), None).spacing_at(1.5),
+            (76, 102),
+            "not known: as reported"
+        );
+    }
+
+    #[test]
+    fn windows_places_fill_the_grid_without_stacking_icons() {
+        let g = free_grid(&[]);
+        let sp = (75, 86);
+        // A dense first column of Windows' four rows (this grid has three), and Windows' two
+        // right-most columns.
+        let asked: Vec<Option<(i32, i32)>> =
+            [(0, 0), (0, 1), (0, 2), (0, 3), (12, 0), (11, 0), (12, 1)]
+                .iter()
+                .map(|&(c, r)| g.windows_cell((2 + c * 75, 3 + r * 86), sp))
+                .collect();
+        let placed = g.place(&asked, &[]);
+        assert_eq!(&placed[..3], &[(0, 0), (0, 1), (0, 2)]);
+        assert_eq!(
+            placed[3],
+            (1, 2),
+            "the one more than fits goes beside the column's end"
+        );
+        assert_eq!(
+            &placed[4..],
+            &[(11, 0), (10, 0), (11, 1)],
+            "far right stays far right"
+        );
+        let mut unique = placed.clone();
+        unique.sort();
+        unique.dedup();
+        assert_eq!(unique.len(), placed.len(), "never two icons in one cell");
     }
 
     #[test]

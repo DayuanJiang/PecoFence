@@ -906,6 +906,10 @@ pub struct AppearanceOverride {
     pub title_rgb: Option<[u8; 3]>,
     #[serde(default)]
     pub title_size: Option<TitleSize>,
+    /// 文字大小 of a note or script fence's text (None = normal); a clock's text follows the
+    /// fence size instead.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text_size: Option<TitleSize>,
     /// The title row folds away until the pointer is over the fence (None = the global
     /// `rollUp.titleOnHover`).
     #[serde(default)]
@@ -2091,6 +2095,17 @@ mod tests {
         let back: Fence = serde_json::from_value(v).unwrap();
         assert_eq!(back.tool, Some(FenceTool::Note));
         assert!(!back.holds_items());
+        // 文字大小: written only when chosen, so an appearance without it reads as before.
+        let mut a = AppearanceOverride {
+            tint_rgb: Some([1, 2, 3]),
+            ..Default::default()
+        };
+        assert!(serde_json::to_value(&a).unwrap().get("textSize").is_none());
+        a.text_size = Some(TitleSize::ExtraLarge);
+        let v = serde_json::to_value(&a).unwrap();
+        assert_eq!(v["textSize"], "extraLarge");
+        let back: AppearanceOverride = serde_json::from_value(v).unwrap();
+        assert_eq!(back.text_size, Some(TitleSize::ExtraLarge));
         // Settings written before 小工具 existed load with the tools on and dialog jump off, as
         // does a `tools` object of the 0.3.0 previews (one switch per tool, now ignored).
         let mut old = serde_json::to_value(Settings::default()).unwrap();
