@@ -294,18 +294,22 @@ Pf fence move StatusTray --x 80 --y 90 | Out-Null
 Pf fence resize StatusTray --w 440 --h 330 | Out-Null
 $w = WaitRows 'StatusTray' 1 30
 ScriptSizes 'StatusTray' $sid 1
-# 特大: a click low on the 「C: free」 row (open=C:\) opens C:\ in File Explorer. (Its IP row
-# shows its parameters as text: the example's unquoted tooltip=Click to copy, before this change
-# too.)
-CloseWindows
-$w = WaitRows 'StatusTray' 1
-$p = @(DumpRects $w 'script_rows')[0]
-if ($p) { $at = ContentPt $w (($p.l + $p.r) / 2) ($p.b - 4); [G]::Click($at[0], $at[1]) }
-$ex = ''
-for ($i = 0; $i -lt 20 -and $ex -notmatch 'path=C:\\'; $i++) { Start-Sleep -Milliseconds 500; $ex = Explorers }
+# 特大: a click low on the IP row (copy=) copies the address. The example shows the row once its
+# first lookup is done (its first screen says it is looking it up), above the drive rows.
+Set-Clipboard -Value 'nothing yet'
+$out = ''
+for ($i = 0; $i -lt 40 -and $out -notmatch 'copy='; $i++) { Start-Sleep -Milliseconds 500; $out = ScriptOut $sid }
+$w = WaitRows 'StatusTray' 2
+$out = ScriptOut $sid
+# The IP row's place among the clickable rows (the ones with something to do on a click).
+$ipRow = -1; $k = -1
+foreach ($line in ($out -split "`n")) { if ($line -match '\|.*\b(open|copy|run|href|action)=') { $k++; if ($line -match 'copy=') { $ipRow = $k } } }
+$ip = [regex]::Match($out, 'copy=(\S+)').Groups[1].Value
+$p = if ($ipRow -ge 0) { @(DumpRects $w 'script_rows')[$ipRow] } else { $null }
+if ($p) { $at = ContentPt $w (($p.l + $p.r) / 2) ($p.b - 4); [G]::Click($at[0], $at[1]); Start-Sleep -Milliseconds 800 }
 [G]::MoveTo(800, 880)
-Check 'StatusTray extraLarge: a click low on the C: row opens C:\ in File Explorer' ($ex -match 'path=C:\\') "explorers=$($ex -replace "`n", ' ; ') plate=$($p | ConvertTo-Json -Compress)"
-CloseWindows
+$clip = Get-Clipboard
+Check 'StatusTray extraLarge: a click low on the IP row copies the address' ($ip -and "$clip".Trim() -eq $ip) "clip='$clip' ip=$ip row=$ipRow plate=$($p | ConvertTo-Json -Compress) rows=$(DumpVal $w 'script_rows')"
 
 Case 'S2 Weather from the fence menu'
 $before = AllIds
