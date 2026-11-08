@@ -120,7 +120,7 @@ if ($Part -match 'A') {
       $after = SmartTitles
       if ($isNew -and $saves) {
         $s = SmartOf $name
-        Check 'a new smart fence with the name and the .psd search over every drive' ($s -and $s.spec.template -eq 'psd' -and @($s.folders).Count -eq 0 -and (@($s.spec.allOf) | Where-Object { $_.cond -eq 'ext' }).value -contains 'psd') "$($s.spec | ConvertTo-Json -Compress -Depth 4)"
+        Check 'a new smart fence with the name and the .psd search over every drive' ($s -and $s.spec.template -eq 'psd' -and @($s.folders).Count -eq 0 -and ((@($s.spec.allOf) | Where-Object { $_.cond -eq 'ext' }).value -join ',') -eq '.psd') "$($s.spec | ConvertTo-Json -Compress -Depth 4)"
         Check 'one fence more, nothing else' ($after.Count -eq $before.Count + 1) "$($before.Count) -> $($after.Count)"
       } elseif ($isNew) {
         Check 'nothing made' ($after.Count -eq $before.Count -and -not ($after -contains $name)) ($after -join ', ')

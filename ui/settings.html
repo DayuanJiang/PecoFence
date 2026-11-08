@@ -2604,7 +2604,7 @@
     if (folders.length) rows.push({ kind: 'sub', on: spec.subfolders !== false });
     if (spec.withinDays != null) rows.push({ kind: 'time', days: spec.withinDays });
     for (const c of spec.allOf || []) {
-      const v = c.value;
+      const v = c.value, at = rows.length;
       switch (c.cond) {
         case 'filesOnly': case 'plainFiles': rows.push({ kind: 'type', cats: ['files'] }); break;
         case 'foldersOnly': rows.push({ kind: 'type', cats: ['folders'] }); break;
@@ -2618,6 +2618,8 @@
         case 'idleDays': rows.push({ kind: 'idle', days: v.min }); break;
         default: rows.push({ kind: 'keep', cond: c });
       }
+      // The condition as saved, kept while its row is not changed (plain files, `.psd`).
+      rows[at].cond0 = c;
     }
     if (spec.name) rows.push({ kind: 'name', op: 'matches', text: spec.name });
     if (spec.everything) rows.push({ kind: 'everything', text: spec.everything });
@@ -2661,8 +2663,12 @@
     }
   }
   // What a row holds now, as seRow takes it (also an unfinished row: the language can change
-  // while one is being filled in).
+  // while one is being filled in), with the condition it was made from while unchanged.
   function seRaw(el) {
+    const r = seValues(el);
+    return el.cond0 ? { ...r, cond0: el.cond0, raw0: el.raw0 } : r;
+  }
+  function seValues(el) {
     const q = sel => el.querySelector(sel), kind = el.dataset.kind;
     const checked = sel => [...el.querySelectorAll(sel + ' input:checked')].map(i => i.value);
     const text = () => q('.se-text').value;
@@ -2689,8 +2695,10 @@
   // The part of the search a row gives ({ cond } or { where, sub, days, name, everything }),
   // or { error, at } naming what is missing and the box to fix.
   function seRead(el) {
-    const r = seRaw(el), q = sel => el.querySelector(sel);
+    const r = seValues(el), q = sel => el.querySelector(sel);
     const need = (text, at) => ({ error: text, at: q(at) });
+    // A row not changed gives back the condition it was made from, as it was saved.
+    if (el.cond0 && r.kind !== 'keep' && JSON.stringify(r) === el.raw0) return { cond: el.cond0 };
     switch (r.kind) {
       case 'where': return r.all ? { all: true } : r.folder ? { folder: r.folder } : need(t("请选择文件夹"), '.se-pick');
       case 'sub': return { sub: r.on };
@@ -2726,7 +2734,8 @@
         if (days < 1 || days > MAX_IDLE_DAYS) return need(tf("闲置天数必须在 1 到 {0} 之间", MAX_IDLE_DAYS), '.se-n1');
         return { cond: { cond: 'idleDays', value: { min: Math.floor(days) } } };
       }
-      default: return { cond: r.cond };
+      // 来源 says where a desktop icon came from: nothing a found file has.
+      default: return r.cond.cond === 'origin' ? { error: t("「来源」不能作为智能栅栏的条件，请删掉这一行"), at: q('.se-minus'), lasting: true } : { cond: r.cond };
     }
   }
   // The whole search, or { error, at, row } for the first row that is not filled in.
@@ -2752,7 +2761,7 @@
       const rough = [...w.querySelectorAll('.se-row')].find(el => {
         const k = el.dataset.kind, r = seRead(el);
         return ['target', 'created', 'weekday', 'idle'].includes(k) || (k === 'name' && r.name)
-          || (r.cond && ((r.cond.cond === 'type' && r.cond.value.some(v => v === 'programs' || v === 'installers')) || r.cond.cond === 'plainFiles'));
+          || (r.cond && ((r.cond.cond === 'type' && r.cond.value.some(v => v === 'programs' || v === 'installers')) || (r.cond.cond === 'filesOnly' && r.cond.plain)));
       });
       if (rough) return { error: t("选「任一」时，Everything 语法不能和这一行一起用"), at: rough.querySelector('.se-kind'), row: rough, lasting: true };
     }
@@ -2766,10 +2775,12 @@
     el.dataset.row = String(se.nextRow++);
     if (row.kind === 'where') el.folder = row.all ? null : row.folder || null;
     if (row.kind === 'keep') el.cond = row.cond;
+    if (row.cond0) el.cond0 = row.cond0;
     const kinds = row.kind === 'keep' ? [['keep', t("其他")]] : SE_KINDS();
     el.innerHTML = `<select class="se-kind" aria-label="${esc(t("条件"))}"${row.kind === 'keep' ? ' disabled' : ''}>${seOpts(kinds, row.kind)}</select><div class="se-val">${seVal(row)}</div>`
       + `<button class="iconbtn se-minus" title="${esc(t("删除这一行"))}" aria-label="${esc(t("删除这一行"))}">&#xE738;</button>`
       + `<button class="iconbtn se-plus" title="${esc(t("在下面加一行"))}" aria-label="${esc(t("在下面加一行"))}">&#xE710;</button>`;
+    if (el.cond0) el.raw0 = row.raw0 || JSON.stringify(seValues(el));
     const q = sel => el.querySelector(sel);
     q('.se-kind').onchange = e => {
       const next = seRow({ kind: e.target.value, ...(e.target.value === 'name' || e.target.value === 'target' ? { op: 'contains' } : {}) });
@@ -2827,6 +2838,12 @@
   }
   // A kind the search holds once is offered to one row only; so is 像速览一样匹配.
   function seKindsOnce() {
+    // The search always says where it looks: the last 位置 row cannot go, and a kind change that
+    // took it brings back 整台电脑 at the top.
+    const list = document.querySelector('#seWindow .se-rows');
+    if (list && list.children.length && !list.querySelector('.se-row[data-kind=where]')) list.prepend(seRow({ kind: 'where', all: true }));
+    const wheres = [...document.querySelectorAll('#seWindow .se-row[data-kind=where]')];
+    wheres.forEach(w => { const m = w.querySelector('.se-minus'); m.disabled = wheres.length === 1; m.title = wheres.length === 1 ? t("至少要有一行位置") : t("删除这一行"); });
     const rows = [...document.querySelectorAll('#seWindow .se-row')];
     for (const el of rows) {
       const others = rows.filter(r => r !== el);
@@ -2913,7 +2930,7 @@
     const w = document.getElementById('seWindow');
     const isNew = m.isNew;
     if (se) clearTimeout(se.countTimer);
-    se = { fence: m.fence || null, isNew, templates: m.templates || [], template: keep ? keep.template : (m.spec && m.spec.template) || null, dirty: keep ? keep.dirty : false, nextRow: 1, lastTemplateTitle: keep ? keep.lastTemplateTitle : null, msg: m, countSeq: keep ? keep.countSeq : 0, countTimer: 0 };
+    se = { fence: m.fence || null, isNew, templates: m.templates || [], template: keep ? keep.template : (m.spec && m.spec.template) || null, dirty: keep ? keep.dirty : false, nextRow: 1, lastTemplateTitle: keep ? keep.lastTemplateTitle : null, msg: m, countSeq: se ? se.countSeq : 0, countTimer: 0 };
     const spec = m.spec || {};
     const presets = isNew ? `<div class="se-presets"><span class="se-cap">${esc(t("从模板开始"))}</span>${se.templates.map(tp => `<button class="chip" data-preset="${esc(tp.key)}"${tp.spec ? '' : ` disabled title="${esc(t("这台电脑上没有这个文件夹"))}"`}>${esc(tp.title)}</button>`).join('')}</div>` : '';
     const limit = keep ? keep.limit : spec.limit || 200;

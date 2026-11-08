@@ -190,6 +190,9 @@ const editorTemplates = [
   { key: 'recent', title: '最近打开的文件', spec: { template: 'recent', folders: ['C:\\Users\\me\\Recent'], subfolders: false, allOf: [{ cond: 'filesOnly', value: null }, { cond: 'ext', value: ['.lnk'] }], limit: 40 } },
 ];
 const editorFixtures = {
+  // Saved by an older build or the CLI: plain files, a dotted extension, an origin condition.
+  odd: { type: 'editor', fence: 'smart-odd', isNew: false, title: 'Odd', templates: editorTemplates, everything: { state: 'running' },
+    spec: { folders: ['D:\\Odd'], subfolders: true, allOf: [{ cond: 'filesOnly', value: null, plain: true }, { cond: 'ext', value: ['.psd'] }, { cond: 'origin', value: 'publicDesktop' }], limit: 200 } },
   new: { type: 'editor', fence: null, isNew: true, title: '', spec: { subfolders: true, limit: 200 }, templates: editorTemplates, everything: { state: 'running' } },
   dl: { type: 'editor', fence: 'smart-dl', isNew: false, title: '最近 7 天下载', spec: editorTemplates[0].spec, templates: editorTemplates, everything: { state: 'running' } },
   every: { type: 'editor', fence: 'smart-all', isNew: false, title: 'Every row', templates: editorTemplates, everything: { state: 'running' },
@@ -2319,13 +2322,14 @@ async function runTests() {
     w.querySelector('.se-ok').click(); await settle();
     const s = saved().spec;
     assert(s.folders.length === 0 && JSON.stringify(s.allOf) === '[{"cond":"sizeMb","value":{"min":5,"max":2048}},{"cond":"ext","value":["PNG","jpg","tar.gz"]}]' && s.template === 'downloads', 'Saved: ' + JSON.stringify(s));
-    // - removes a row, never the last one.
-    while (rowsOf(doc).length > 1) { rowsOf(doc)[0].querySelector('.se-minus').click(); await settle(); }
+    // - removes a row, never the last one (the 位置 row stays).
+    while (rowsOf(doc).length > 1) { rowsOf(doc).at(-1).querySelector('.se-minus').click(); await settle(); }
     rowsOf(doc)[0].querySelector('.se-minus').click(); await settle();
-    assert(rowsOf(doc).length === 1, 'The last row went');
+    assert(rowsOf(doc).length === 1 && rowsOf(doc)[0].dataset.kind === 'where', 'The last row went');
     // 文件 goes alone among the types.
-    sePick(rowsOf(doc)[0].querySelector('.se-kind'), 'type'); await settle();
-    const chip = v => rowsOf(doc)[0].querySelector(`.se-cats input[value=${v}]`);
+    rowsOf(doc)[0].querySelector('.se-plus').click(); await settle();
+    sePick(rowsOf(doc)[1].querySelector('.se-kind'), 'type'); await settle();
+    const chip = v => rowsOf(doc)[1].querySelector(`.se-cats input[value=${v}]`);
     const tick = v => { chip(v).checked = true; chip(v).dispatchEvent(new (ew().Event)('change', { bubbles: true })); };
     tick('images'); tick('music'); tick('files');
     assert(chip('files').checked && !chip('images').checked && !chip('music').checked && chip('files').parentElement.classList.contains('on'), '文件 kept other types');
@@ -2442,6 +2446,42 @@ async function runTests() {
     seType(rowsOf(doc).at(-1).querySelector('.se-text'), ''); await new Promise(r => setTimeout(r, 420));
     assert(posted('editorCount').length === asked && line().includes('填好条件后'), 'An unfinished search was counted: ' + line());
     ew().testCount = null;
+  });
+  await test('Smart fence editor: unchanged rows keep their conditions as saved; an origin row is named; a location stays', async () => {
+    doc = await openEditor('fence=odd');
+    const w = doc.getElementById('seWindow');
+    await new Promise(r => setTimeout(r, 420));
+    assert(w.querySelector('.se-count').textContent.includes('「来源」不能作为智能栅栏的条件'), 'The count does not name the origin row: ' + w.querySelector('.se-count').textContent);
+    w.querySelector('.se-ok').click(); await settle();
+    const origin = rowsOf(doc).find(r => r.dataset.kind === 'keep' && r.textContent.includes('来源'));
+    assert(!saved() && origin.classList.contains('bad') && w.querySelector('.se-msg').textContent.includes('请删掉这一行'), 'The origin row was not named');
+    origin.querySelector('.se-minus').click(); await settle();
+    w.querySelector('.se-ok').click(); await settle();
+    assert(JSON.stringify(saved().spec.allOf) === '[{"cond":"filesOnly","value":null,"plain":true},{"cond":"ext","value":[".psd"]}]', 'Unchanged rows changed: ' + JSON.stringify(saved().spec.allOf));
+    // A changed row is read again.
+    seType(rowsOf(doc).find(r => r.dataset.kind === 'ext').querySelector('.se-text'), 'psd, ai');
+    w.querySelector('.se-ok').click(); await settle();
+    assert(JSON.stringify(saved().spec.allOf[1]) === '{"cond":"ext","value":["psd","ai"]}', 'A changed row was not read: ' + JSON.stringify(saved().spec.allOf));
+    // The only 位置 row cannot be removed; turned into another kind, 整台电脑 comes back on top.
+    const where = rowsOf(doc)[0];
+    assert(where.dataset.kind === 'where' && where.querySelector('.se-minus').disabled, 'The only location row can be removed');
+    sePick(where.querySelector('.se-kind'), 'name'); await settle();
+    assert(rowsOf(doc)[0].dataset.kind === 'where' && rowsOf(doc)[0].querySelector('.se-where').value === 'all', 'No location row after a kind change: ' + kindsOf(doc));
+  });
+  await test('Smart fence editor: a late count of the fence shown before does not show on the next one', async () => {
+    doc = await openEditor('fence=dl');
+    const w = doc.getElementById('seWindow');
+    await new Promise(r => setTimeout(r, 100));
+    ew().testHoldCount = true; ew().testHeld = [];
+    seType(w.querySelector('.se-name'), 'x'); await new Promise(r => setTimeout(r, 420));
+    const late = ew().testHeld.at(-1);
+    ew().testReceive({ type: 'editor', fence: 'other', isNew: false, title: 'Other', spec: { folders: ['D:\\Other'], subfolders: true, limit: 200 }, templates: [], everything: { state: 'running' } }); await settle();
+    ew().testReceive({ ...late, n: 99 }); await settle();
+    assert(w.querySelector('.se-name').value === 'Other' && !w.querySelector('.se-count').textContent.includes('99'), 'The old fence\'s count shows on the new one: ' + w.querySelector('.se-count').textContent);
+    const mine = ew().testHeld.at(-1);
+    ew().testReceive({ ...mine, n: 5 }); await settle();
+    assert(w.querySelector('.se-count').textContent.includes('现在找到 5 个文件'), 'The new fence\'s count does not show');
+    ew().testHoldCount = false;
   });
   await test('Smart fence editor: fits its window in every language and keeps the rows when the language changes', async () => {
     doc = await openEditor('fence=every');

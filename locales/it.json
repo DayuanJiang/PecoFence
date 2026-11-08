@@ -904,5 +904,7 @@
   "文件很多，只检查了最新的 {0} 个": "Molti file: controllati solo i {0} più recenti",
   "文件很多，只读了其中的 {0} 个": "Molti file: letti solo {0}",
   "用了 Everything 语法，需要先打开 Everything": "Usa la sintassi di Everything, quindi Everything deve essere aperto",
-  "这个栅栏用了 Everything 语法，需要先打开 Everything：右键这个栅栏可以启动或安装它。": "Questo riquadro usa la sintassi di Everything, che deve essere aperto: fai clic destro sul riquadro per avviarlo o installarlo."
+  "这个栅栏用了 Everything 语法，需要先打开 Everything：右键这个栅栏可以启动或安装它。": "Questo riquadro usa la sintassi di Everything, che deve essere aperto: fai clic destro sul riquadro per avviarlo o installarlo.",
+  "「来源」不能作为智能栅栏的条件，请删掉这一行": "«Origine» non può essere una condizione di un riquadro intelligente. Rimuovi questa riga",
+  "至少要有一行位置": "Serve almeno una riga di posizione"
 }
