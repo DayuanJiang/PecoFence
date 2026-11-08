@@ -2468,6 +2468,21 @@ async function runTests() {
     sePick(where.querySelector('.se-kind'), 'name'); await settle();
     assert(rowsOf(doc)[0].dataset.kind === 'where' && rowsOf(doc)[0].querySelector('.se-where').value === 'all', 'No location row after a kind change: ' + kindsOf(doc));
   });
+  await test('Smart fence editor: a change made elsewhere stays said until 好 or 取消; plain files count as a rough row', async () => {
+    doc = await openEditor('fence=dl');
+    const w = doc.getElementById('seWindow');
+    ew().testReceive({ type: 'editorNotice', text: '这个栅栏的条件刚在别处改过，按「好」会换成这里的条件' }); await settle();
+    seType(w.querySelector('.se-name'), 'typed after');
+    await new Promise(r => setTimeout(r, 420));
+    assert(w.querySelector('.se-msg').textContent.includes('刚在别处改过'), 'The notice went with the next edit: ' + w.querySelector('.se-msg').textContent);
+    // A smart spec writes plain files as plainFiles: with 任一 and Everything syntax it is refused.
+    ew().testReceive({ type: 'editor', fence: 'p', isNew: false, title: 'P', templates: [], everything: { state: 'running' },
+      spec: { folders: ['D:\\P'], subfolders: true, match: 'any', allOf: [{ cond: 'plainFiles', value: null }], everything: 'invoice', limit: 200 } }); await settle();
+    await new Promise(r => setTimeout(r, 420));
+    assert(w.querySelector('.se-count').textContent.includes('Everything 语法不能和这一行一起用') && !w.querySelector('.se-msg').textContent, 'plainFiles not refused, or an old notice kept: ' + w.querySelector('.se-count').textContent);
+    w.querySelector('.se-ok').click(); await settle();
+    assert(rowsOf(doc).find(r => r.dataset.kind === 'type').classList.contains('bad'), 'The plain files row is not marked');
+  });
   await test('Smart fence editor: a late count of the fence shown before does not show on the next one', async () => {
     doc = await openEditor('fence=dl');
     const w = doc.getElementById('seWindow');

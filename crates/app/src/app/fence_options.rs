@@ -937,6 +937,7 @@ impl App {
                     w.redraw();
                 }
                 self.schedule_save();
+                self.smart_editor_fence_changed(fence);
             }
             FenceProp::IconSize(size) => self.apply_icon_size(fence, size),
             FenceProp::Spacing(spacing) => self.set_fence_spacing(fence, spacing),

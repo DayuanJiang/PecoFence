@@ -538,6 +538,8 @@ impl PopupMenu {
         let h = sub.hmenu;
         // `take` leaves `sub` an empty Vec without a buffer for `forget` to leak.
         self.bitmaps.borrow_mut().extend(sub.bitmaps.take());
+        // The hook of the menu shown looks a highlighted item's tip up by id, submenus' too.
+        self.tips.borrow_mut().extend(sub.tips.take());
         std::mem::forget(sub);
         // SAFETY: string outlives the call; submenu handle is now owned by the parent.
         unsafe {

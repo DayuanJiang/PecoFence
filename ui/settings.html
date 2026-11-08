@@ -2761,7 +2761,7 @@
       const rough = [...w.querySelectorAll('.se-row')].find(el => {
         const k = el.dataset.kind, r = seRead(el);
         return ['target', 'created', 'weekday', 'idle'].includes(k) || (k === 'name' && r.name)
-          || (r.cond && ((r.cond.cond === 'type' && r.cond.value.some(v => v === 'programs' || v === 'installers')) || (r.cond.cond === 'filesOnly' && r.cond.plain)));
+          || (r.cond && ((r.cond.cond === 'type' && r.cond.value.some(v => v === 'programs' || v === 'installers')) || r.cond.cond === 'plainFiles' || (r.cond.cond === 'filesOnly' && r.cond.plain)));
       });
       if (rough) return { error: t("选「任一」时，Everything 语法不能和这一行一起用"), at: rough.querySelector('.se-kind'), row: rough, lasting: true };
     }
@@ -2908,7 +2908,8 @@
   function seShowError(text, at, row) {
     const w = document.getElementById('seWindow');
     w.querySelectorAll('.se-row.bad').forEach(r => r.classList.remove('bad'));
-    w.querySelector('.se-msg').textContent = text || '';
+    // A change made elsewhere stays said until 好 or 取消.
+    w.querySelector('.se-msg').textContent = text || (se && se.notice) || '';
     if (row) row.classList.add('bad');
     if (at) at.focus();
   }
@@ -3079,7 +3080,8 @@
     else if (m.type === 'windowsDesktopHotkeyResult') wdRecorder.result(m);
     else if (m.type === 'editor') seRender(m);
     else if (m.type === 'editorFolder') seFolder(m);
-    else if (m.type === 'editorError' || m.type === 'editorNotice') seShowError(m.text);
+    else if (m.type === 'editorError') seShowError(m.text);
+    else if (m.type === 'editorNotice') { if (se) se.notice = m.text; seShowError(m.text); }
     else if (m.type === 'editorCount') seCounted(m);
   });
   send({ type: 'ready' });

@@ -190,14 +190,23 @@ if ($Part -match 'B') {
   Pf fence set 'Both' smartWithinDays 30 | Out-Null
   $d = JsWait "(() => { const s = document.querySelector('#seWindow .se-days'); return s && s.value === '30' ? s.value : null; })()" 10
   Check 'nothing unsaved: the editor shows the new search' ($d -eq '30' -and (EdState).msg -eq '') "days=$d msg=$((EdState).msg)"
+  Pf fence rename 'Both' 'Both by CLI' | Out-Null
+  $nm = JsWait "(() => { const v = document.querySelector('#seWindow .se-name').value; return v === 'Both by CLI' ? v : null; })()" 10
+  Check 'nothing unsaved: a rename by the CLI shows in the name box' ($nm -eq 'Both by CLI') "name=$((EdState).name)"
   PageType '#seWindow .se-name' 'Both renamed'
   Start-Sleep -Milliseconds 400
-  Pf fence set 'Both' smartWithinDays 90 | Out-Null
+  Pf fence set 'Both by CLI' smartWithinDays 90 | Out-Null
   $m = JsWait "(() => { const t = document.querySelector('#seWindow .se-msg').textContent; return t || null; })()" 10
   Check 'something unsaved: the editor says OK would replace that change, and keeps its rows' ($m -match 'changed elsewhere' -and (Js "document.querySelector('#seWindow .se-days').value") -eq '30') "msg=$m"
+  Pf fence rename 'Both by CLI' 'Both again' | Out-Null
+  Start-Sleep -Milliseconds 800
+  Check 'something unsaved: a rename by the CLI does not touch the name box' ((EdState).name -eq 'Both renamed') "name=$((EdState).name)"
+  PagePick '#seWindow .se-limit select' '50'
+  Start-Sleep -Milliseconds 500
+  Check 'the notice stays after another edit' ((EdState).msg -match 'changed elsewhere') "msg=$((EdState).msg)"
   EndEditor 'ok' | Out-Null
   $s = SmartOf 'Both renamed'
-  Check 'OK: the editor''s search and name' ($s -and $s.spec.withinDays -eq 30) "$($s.spec | ConvertTo-Json -Compress -Depth 4)"
+  Check 'OK: the editor''s search and name' ($s -and $s.spec.withinDays -eq 30 -and $s.spec.limit -eq 50) "$($s.spec | ConvertTo-Json -Compress -Depth 4)"
   $log = (PfLogAll) -join "`n"
   Check 'log: shown again, then the notice' ($log -match 'the search changed elsewhere; shown again' -and $log -match 'the search changed elsewhere; OK would replace it') ''
   Pf fence delete 'Both renamed' | Out-Null

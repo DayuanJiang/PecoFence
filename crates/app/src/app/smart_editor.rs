@@ -258,6 +258,8 @@ impl App {
         };
         match fence.filter(|id| self.state.smart_spec(*id).is_some()) {
             Some(id) => {
+                // Closed first: its own changes are not changes made elsewhere.
+                self.close_smart_editor("saved");
                 let changed = self.replace_smart_spec(id, spec);
                 let renamed = title.is_some_and(|t| {
                     self.apply_fence_prop(id, super::fence_options::FenceProp::Title(t))
@@ -312,8 +314,8 @@ impl App {
         }
     }
 
-    /// Fence `fence`'s search changed elsewhere (`fence set`, a template's folder found again)
-    /// while the editor shows it: with nothing unsaved the editor shows the new search, else it
+    /// Fence `fence`'s search or name changed elsewhere (`fence set`, `fence rename`, the
+    /// settings page, a template's folder found again) while the editor shows it: with nothing unsaved the editor shows the new search, else it
     /// says that 好 would put its own search in place of that change.
     pub(super) fn smart_editor_fence_changed(&mut self, fence: FenceId) {
         let Some(ed) = self
