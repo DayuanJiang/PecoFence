@@ -312,6 +312,14 @@ if ($Part -eq 'k') {
   $m = RightClickRow 0
   Shot 'k06-rclick-row'
   Check 'a right-click on a row opens its menu at the pointer' ($m -ne [IntPtr]::Zero -and $script:near -and (MenuTexts $m) -match '复制路径') "menu at=$(MenuAt $m) items=$(MenuTexts $m)"
+  # PopupMenu shows item tooltips only where an entry has one: none here.
+  $tips = 0; $swept = @(MenuRows $m | Where-Object { $_.text })
+  foreach ($r in $swept) {
+    [G]::MoveTo([int](($r.L + $r.R) / 2), [int](($r.T + $r.B) / 2)); Start-Sleep -Milliseconds 300
+    $tips = [math]::Max($tips, @([W]::Tops('tooltips_class32') | Where-Object { [W]::ProcOf($_) -eq 'pecofence' }).Count)
+  }
+  Check 'no PecoFence tooltip over the rows of the row menu' ($tips -eq 0 -and $swept.Count -gt 5) "tips=$tips rows=$($swept.Count)"
+  CloseAllMenus
   EndSearch
 }
 
