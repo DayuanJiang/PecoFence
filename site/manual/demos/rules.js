@@ -76,7 +76,7 @@
         SM.drawToggle(SM.toggle(auto), true);
         const unmatched = SM.card(pg, { ic: '\uE718', t: '没有命中规则的项目', s: '应用规则时，已在某个栅栏里但不符合任何规则的项目放在哪里；不符合规则的新项目总是放进“桌面”栅栏', textW: 240 });
         SM.select(unmatched, '回到“桌面”栅栏', 104);
-        const apply = SM.card(pg, { ic: '\uE8AB', t: '立即对桌面上的全部项目应用规则', s: '手动摆放过的项目保持原位', textW: 240 });
+        const apply = SM.card(pg, { ic: '\uE8AB', t: '立即对桌面上的全部项目应用规则', s: '手动放进栅栏的项目保持原位', textW: 240 });
         r.apply = SM.button(apply, '立即应用', 64);
         SM.h3(pg, '快速添加');
         const tpl = SM.card(pg, { ic: '\uE8F4', t: '一键创建栅栏并添加规则', s: '“待清理”只归拢 30 天没用过的安装包和压缩包，不删除任何文件', h: 64, textW: 300 });
