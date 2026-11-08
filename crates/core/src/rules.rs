@@ -231,6 +231,12 @@ pub fn ext_of(file_name: &str) -> String {
     }
 }
 
+/// [`ItemFacts::shortcut_target_ext`] of a target path: the extension of the target's own name,
+/// so a dot in a folder above it (`C:\Users\jane.doe\Notes`) is no extension.
+pub fn target_ext(target: &str) -> String {
+    ext_of(target.rsplit(['\\', '/']).next().unwrap_or(target))
+}
+
 /// How long a `.tmp` file must have lasted before the rules route it: an Office "safe save"
 /// writes one and renames it over the document in the same moment.
 pub const TMP_SETTLE_SECS: u64 = 60;
@@ -288,13 +294,16 @@ fn category_matches(cat: TypeCategory, facts: &ItemFacts) -> bool {
     let target_ext = facts.shortcut_target_ext.as_deref().unwrap_or("");
     match cat {
         TypeCategory::Folders => facts.is_folder,
+        // A shortcut is a program when its target is one, or when it has no target path to
+        // read (a Store app, an advertised Office shortcut). One to a folder is a shortcut.
         TypeCategory::Programs => {
             !facts.is_folder
                 && (matches!(
                     ext.as_str(),
                     ".exe" | ".msi" | ".bat" | ".cmd" | ".appref-ms"
                 ) || (ext == ".lnk"
-                    && matches!(target_ext, ".exe" | ".msi" | ".bat" | ".cmd" | "")))
+                    && (matches!(target_ext, ".exe" | ".msi" | ".bat" | ".cmd")
+                        || (target_ext.is_empty() && facts.shortcut_target.is_none()))))
         }
         TypeCategory::Shortcuts => {
             !facts.is_folder && matches!(ext.as_str(), ".lnk" | ".url" | ".website")
@@ -828,6 +837,29 @@ mod tests {
         assert_eq!(classify(&lnk).map(category_name), Some("programs"));
         lnk.shortcut_target_ext = Some(".docx".into());
         assert_eq!(classify(&lnk).map(category_name), Some("shortcuts"));
+        // Feedback #125: one to a folder is a shortcut (with or without a dot in a name on the
+        // way); one whose target cannot be read (a Store app) is a program.
+        for target in [
+            r"D:\Projects",
+            r"C:\Users\jane.doe\Notes",
+            r"D:\Builds\v1.2",
+        ] {
+            lnk.shortcut_target = Some(target.into());
+            lnk.shortcut_target_ext = Some(target_ext(target));
+            assert_eq!(
+                classify(&lnk).map(category_name),
+                Some("shortcuts"),
+                "{target}"
+            );
+        }
+        lnk.shortcut_target = Some(r"C:\Users\jane.doe\Tools\run.CMD".into());
+        lnk.shortcut_target_ext = Some(target_ext(r"C:\Users\jane.doe\Tools\run.CMD"));
+        assert_eq!(classify(&lnk).map(category_name), Some("programs"));
+        lnk.shortcut_target = None;
+        lnk.shortcut_target_ext = None;
+        assert_eq!(classify(&lnk).map(category_name), Some("programs"));
+        assert_eq!(target_ext(r"C:\Users\jane.doe\Notes"), "");
+        assert_eq!(target_ext("%ProgramFiles%/App/App.EXE"), ".exe");
         // Every category has a name and the names are the serde spellings.
         for cat in CLASSIFY_ORDER {
             let json = serde_json::to_value(cat).unwrap();
