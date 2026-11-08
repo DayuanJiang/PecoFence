@@ -21,7 +21,7 @@ Pf fence create --title Photos --rect '900,500,240,200' | Out-Null
 Pf fence create --title Games --rect '200,560,240,200' | Out-Null
 Pf item move @($names | ForEach-Object { Join-Path $PfDesk $_ }) --to Work | Out-Null
 Start-Sleep -Seconds 2
-[G]::MoveTo(1100, 830)
+ParkMouse 1100 830
 Log "fences: $((@(PfJson fence list) | Where-Object { $_.title } | ForEach-Object { "$($_.title) $($_.windowRect.x),$($_.windowRect.y) $($_.windowRect.w)x$($_.windowRect.h)" }) -join ' ; ')"
 
 Case 'U3 dropped beside another fence'

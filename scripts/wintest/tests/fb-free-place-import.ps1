@@ -2,7 +2,7 @@
 #   run.sh tests/fb-free-place-import.ps1                     part A at 100 %: first start, restart,
 #                                                              sort, Windows auto-arrange, switching on
 #   run.sh --var Build=old tests/fb-free-place-import.ps1     the first start on a build without it
-#   tests/fx-free-placement.sh --part C --steps tests/fb-free-place-import.ps1
+#   tests/free-placement.sh --part C --steps tests/fb-free-place-import.ps1
 #                                                              part C: the first start at 150 %
 #   run.sh --var Part=R tests/fb-free-place-import.ps1        the before/after recording (with Build)
 # The user's own layout is made with real mouse drags of Windows' icons (a place set only with
@@ -261,7 +261,7 @@ if ($Part -eq 'A') {
 }
 
 if ($Part -eq 'C') {
-  # The first start at 150 % (fx-free-placement.sh answers the scale request).
+  # The first start at 150 % (free-placement.sh answers the scale request).
   Case 'first start at 150 %'
   Set-Content C:\pf\resize-want.txt '1600x900@150' -Encoding ASCII
   for ($k = 0; $k -lt 150 -and (Test-Path C:\pf\resize-want.txt); $k++) { Start-Sleep -Seconds 1 }

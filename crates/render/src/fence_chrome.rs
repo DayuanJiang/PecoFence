@@ -6,6 +6,7 @@ use crate::backdrop::Image;
 use crate::bitmaps::BitmapCache;
 use crate::gpu_bindings as b;
 use crate::panel::Clip;
+use crate::text::TextLayouts;
 use crate::text_shadow::TextShadows;
 use crate::theme::{TextFx, Theme, font_display, font_small, font_text, lerp, with_alpha};
 use std::cell::{Ref, RefCell};
@@ -97,6 +98,8 @@ pub struct FenceChrome {
     clock_fonts: RefCell<Option<ClockFonts>>,
     /// The blurred masks of a theme's soft text shadow, shared by all fences.
     text_shadows: RefCell<TextShadows>,
+    /// Labels and row names shaped for an earlier frame, shared by all fences.
+    text_layouts: RefCell<TextLayouts>,
 }
 
 /// A "按时间分组" section header band in surface DIPs (already scrolled; for rows already
@@ -1560,13 +1563,14 @@ impl FenceChrome {
         brush: &Brush,
         fx: Option<CaptionFx<'_>>,
     ) {
-        let Some(fx) = fx.filter(|f| f.halo.is_some() || f.shadow.is_some()) else {
+        // Shaped once for all passes and kept for the next frames: `draw_text` lays the text
+        // out anew on every call.
+        let Ok(layout) = self.layout(text, format, rect) else {
             session.draw_text(text, format, rect, brush);
             return;
         };
-        // Shaped once for all passes: `draw_text` lays the text out anew on every call.
-        let Ok(layout) = TextLayout::new(text, format, rect.width(), rect.height()) else {
-            session.draw_text(text, format, rect, brush);
+        let Some(fx) = fx.filter(|f| f.halo.is_some() || f.shadow.is_some()) else {
+            session.draw_text_layout(Vector2::new(rect.left, rect.top), &layout, brush);
             return;
         };
         if let Some(shadow) = fx.shadow {
@@ -1605,20 +1609,34 @@ impl FenceChrome {
         fx: Option<CaptionFx<'_>>,
         spread: f32,
     ) {
-        if let Some(shadow) = fx.and_then(|f| f.shadow)
-            && let Ok(layout) = TextLayout::new(text, format, rect.width(), rect.height())
-        {
+        let Ok(layout) = self.layout(text, format, rect) else {
+            session.draw_text(text, format, rect, brush);
+            return;
+        };
+        if let Some(shadow) = fx.and_then(|f| f.shadow) {
             self.draw_text_shadow(session, &layout, text, format, rect, shadow);
         }
         if let Some((halo, _)) = fx.and_then(|f| f.halo) {
-            let shifted = Rect {
-                top: rect.top + spread,
-                bottom: rect.bottom + spread,
-                ..*rect
-            };
-            session.draw_text(text, format, &shifted, halo);
+            session.draw_text_layout(Vector2::new(rect.left, rect.top + spread), &layout, halo);
         }
-        session.draw_text(text, format, rect, brush);
+        session.draw_text_layout(Vector2::new(rect.left, rect.top), &layout, brush);
+    }
+
+    /// `text` shortened to `max_width` with an ellipsis, as worked out for an earlier frame.
+    fn fit_width(&self, text: &str, format: &TextFormat, max_width: f32) -> String {
+        match self.text_layouts.try_borrow_mut() {
+            Ok(mut layouts) => layouts.fit_width(text, format, max_width),
+            Err(_) => crate::text::fit_width(text, format, max_width),
+        }
+    }
+
+    /// `text` laid out with `format` in `rect`, shaped for an earlier frame when it was drawn
+    /// in a box of the same size.
+    fn layout(&self, text: &str, format: &TextFormat, rect: &Rect) -> Result<TextLayout> {
+        match self.text_layouts.try_borrow_mut() {
+            Ok(mut layouts) => layouts.get(text, format, rect.width(), rect.height()),
+            Err(_) => TextLayout::new(text, format, rect.width(), rect.height()),
+        }
     }
 
     /// A theme's soft shadow under `text` (laid out as `layout` in `rect`), from its mask.
@@ -1748,6 +1766,7 @@ impl FenceChrome {
             clock_date_format,
             clock_fonts: RefCell::default(),
             text_shadows: RefCell::default(),
+            text_layouts: RefCell::default(),
         };
         // Labels follow the desktop's icon-title font from the start (12 px / 16 stays the
         // fallback when the system call fails).
@@ -1878,6 +1897,8 @@ impl FenceChrome {
             .map(|l| l.metrics().height.ceil())
             .unwrap_or(DEFAULT_LABEL_LINE_H)
             .max(1.0);
+        // The old formats' layouts would never be asked for again.
+        self.text_layouts.borrow_mut().clear();
         *self.label_font.borrow_mut() = LabelFont {
             format,
             row: Self::build_row_format(face, size, weight, false)?,
@@ -2959,7 +2980,9 @@ impl FenceChrome {
                           right: bool| {
             // Only the glass backdrop samples under the text; measuring builds a layout.
             let foreground = backdrop.map_or(*theme, |(background, opacity, tint)| {
-                let measured = crate::text::measure_width(text, format)
+                let measured = self
+                    .layout(text, format, &Rect::from_xywh(0.0, 0.0, 10_000.0, 10_000.0))
+                    .map_or(0.0, |l| l.metrics().width_including_trailing_whitespace)
                     .min(rect.width())
                     .max(1.0);
                 let area = Rect::from_xywh(
@@ -2993,7 +3016,7 @@ impl FenceChrome {
                              alpha: f32,
                              right: bool|
          -> Result<()> {
-            let fitted = crate::text::fit_width(text, format, rect.width());
+            let fitted = self.fit_width(text, format, rect.width());
             let paint = || {
                 paint_text(&fitted, format, rect, key, true, alpha, right);
                 Ok(())

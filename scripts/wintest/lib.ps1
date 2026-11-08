@@ -24,6 +24,7 @@ $PfShots = "$PfRun\shots"
 $PfApp = "$PfRun\app"
 $PfInst = 'wt' + (Get-Random -Minimum 10000 -Maximum 99999)
 $PfDesk = [Environment]::GetFolderPath('Desktop')
+$PfJobStart = Get-Date
 New-Item -ItemType Directory -Force $PfShots, $PfApp | Out-Null
 $script:PfCase = 'setup'
 $script:PfFails = 0
@@ -342,6 +343,12 @@ function Check($name, $ok, $detail = '') {
   if (-not $ok) {
     $script:PfFails++
     Shot ('FAIL-{0:D2}' -f $script:PfFails)
+    # What was in front: a popup (Edge, a terminal, a toast), a card or a menu over the spot
+    # explains many failures before anyone opens the screenshot.
+    try {
+      $above = ([W]::Above() -split "`n" | Where-Object { $_ } | Select-Object -First 8) -join ' || '
+      Log ("FAIL {0:D2} context: foreground $(Fg); above the fences: $(if ($above) { $above } else { 'nothing' })" -f $script:PfFails)
+    } catch { Log "FAIL context unavailable: $_" }
   }
 }
 
@@ -398,6 +405,92 @@ function PfQuit() {
 function Quit() { PfQuit }
 
 function PfAlive() { return [bool](Get-Process pecofence -ErrorAction SilentlyContinue) }
+
+# A point on bare desktop, for a drop or a click "on the empty desktop": Windows' desktop at the
+# point and at the corners of a box $Margin px around it, so no fence, card, button, menu or
+# other window is there. The first-run fences, the scene tips and new buttons move between
+# builds, so steps ask for a free spot instead of naming one. The point asked for is tried first
+# (default: the middle), then points 40 px apart around it, nearest first. $null when none.
+function Lattice([int]$at, [int]$lo, [int]$hi) {
+  $at = [math]::Min([math]::Max($at, $lo), $hi)
+  for ($v = $at - 40 * [math]::Floor(($at - $lo) / 40); $v -le $hi; $v += 40) { $v }
+}
+function FreeSpot([int]$NearX = -1, [int]$NearY = -1, [int]$Margin = 40) {
+  $wa = [Windows.Forms.Screen]::PrimaryScreen.WorkingArea
+  if ($NearX -lt 0) { $NearX = $wa.X + [int]($wa.Width / 2) }
+  if ($NearY -lt 0) { $NearY = $wa.Y + [int]($wa.Height / 2) }
+  $ys = @(Lattice $NearY ($wa.Top + $Margin) ($wa.Bottom - $Margin))
+  $pts = foreach ($x in (Lattice $NearX ($wa.Left + $Margin) ($wa.Right - $Margin))) {
+    foreach ($y in $ys) { , @($x, $y, (($x - $NearX) * ($x - $NearX) + ($y - $NearY) * ($y - $NearY))) }
+  }
+  $desk = @('Progman', 'WorkerW')
+  foreach ($p in ($pts | Sort-Object { $_[2] })) {
+    $bare = $true
+    foreach ($d in @(@(0, 0), @(-$Margin, -$Margin), @($Margin, -$Margin), @(-$Margin, $Margin), @($Margin, $Margin))) {
+      if ($desk -notcontains [W]::RootClassAt($p[0] + $d[0], $p[1] + $d[1])) { $bare = $false; break }
+    }
+    if ($bare) { Log "FreeSpot near $NearX,$NearY -> $($p[0]),$($p[1])"; return @($p[0], $p[1]) }
+  }
+  Log "FreeSpot near ${NearX},${NearY}: no bare desktop left"
+  return $null
+}
+
+# The pointer moved off every fence and card (so nothing hovers), near the point given.
+function ParkMouse([int]$NearX = 1100, [int]$NearY = 830) {
+  $p = FreeSpot $NearX $NearY
+  if (-not $p) { $p = @($NearX, $NearY) }
+  [G]::MoveTo($p[0], $p[1]); Start-Sleep -Milliseconds 300
+}
+# A click on empty desktop near the point given (the desktop gets the foreground, a selection
+# in a fence ends); returns the point it clicked.
+function DeskClick([int]$NearX = 1000, [int]$NearY = 780) {
+  $p = FreeSpot $NearX $NearY
+  if (-not $p) { $p = @($NearX, $NearY) }
+  [G]::Click($p[0], $p[1]); Start-Sleep -Milliseconds 500
+  return $p
+}
+# A W x H rectangle of bare desktop, for a marquee or a drop area: @(left, top, right, bottom),
+# Windows' desktop at every point 40 px apart in it and along its edges. Its top-left is the point
+# asked for when that has room, else the nearest point 40 px apart around it. $null when none.
+function FreeRect([int]$W, [int]$H, [int]$NearX = -1, [int]$NearY = -1) {
+  $wa = [Windows.Forms.Screen]::PrimaryScreen.WorkingArea
+  if ($NearX -lt 0) { $NearX = $wa.X + 40 }
+  if ($NearY -lt 0) { $NearY = $wa.Y + 40 }
+  $desk = @('Progman', 'WorkerW')
+  $seen = @{}
+  $isBare = { param($x, $y) $k = "$x,$y"; if (-not $seen.ContainsKey($k)) { $seen[$k] = ($desk -contains [W]::RootClassAt($x, $y)) }; $seen[$k] }
+  $ys = @(Lattice $NearY ($wa.Top + 4) ($wa.Bottom - 4 - $H))
+  $cands = foreach ($x in (Lattice $NearX ($wa.Left + 4) ($wa.Right - 4 - $W))) {
+    foreach ($y in $ys) { , @($x, $y, (($x - $NearX) * ($x - $NearX) + ($y - $NearY) * ($y - $NearY))) }
+  }
+  $dxs = @(for ($d = 0; $d -lt $W; $d += 40) { $d }) + $W
+  $dys = @(for ($d = 0; $d -lt $H; $d += 40) { $d }) + $H
+  foreach ($c in ($cands | Sort-Object { $_[2] })) {
+    $ok = $true
+    foreach ($dx in $dxs) {
+      foreach ($dy in $dys) { if (-not (& $isBare ($c[0] + $dx) ($c[1] + $dy))) { $ok = $false; break } }
+      if (-not $ok) { break }
+    }
+    if ($ok) { Log "FreeRect ${W}x${H} near $NearX,$NearY -> $($c[0]),$($c[1])"; return @($c[0], $c[1], ($c[0] + $W), ($c[1] + $H)) }
+  }
+  Log "FreeRect ${W}x${H}: no room"
+  return $null
+}
+
+# Deletes every fence but the inbox (their icons go back to it), for steps that build their own
+# layout at fixed places: the first-run fences then cannot sit in the way, whatever a build's
+# first run puts where. Returns how many fences it deleted.
+function ClearFences() {
+  $n = 0
+  foreach ($f in @(PfJson fence list)) {
+    if (-not $f -or -not $f.id -or $f.kind -eq 'inbox') { continue }
+    Pf fence delete $f.id | Out-Null
+    $n++
+  }
+  Start-Sleep -Milliseconds 600
+  Log "ClearFences: deleted $n"
+  return $n
+}
 
 # pecofence-cli against the running test instance; returns its output as one string.
 function Pf {
@@ -665,6 +758,22 @@ public static class W {
       RECT r; GetMenuItemRect(IntPtr.Zero, m, (uint)i, out r);
       sb.Append(i + "\t" + t.ToString().Replace("\t", " ~ ") + "\t" + st + "\t" + r.L + "," + r.T + "," + r.R + "," + r.B + "\n");
     }
+    return sb.ToString();
+  }
+  [DllImport("dwmapi.dll")] static extern int DwmGetWindowAttribute(IntPtr h, int a, out int v, int size);
+  // Visible, uncloaked top-level windows with a size, top of the z-order first, down to the first
+  // PecoFence fence: "process | class | title | rect" per line. Says what covered the screen.
+  public static string Above() {
+    var sb = new StringBuilder();
+    EnumWindows((h, l) => {
+      if (!IsWindowVisible(h)) return true;
+      int cloaked; if (DwmGetWindowAttribute(h, 14, out cloaked, 4) == 0 && cloaked != 0) return true;
+      RECT r; GetWindowRect(h, out r);
+      if (r.R - r.L < 8 || r.B - r.T < 8) return true;
+      string cls = Cls(h);
+      if (cls == "PecoFence.Fence" || cls == "Progman" || cls == "WorkerW") return false;
+      sb.Append(ProcOf(h) + " | " + cls + " | " + Text(h).Replace("\n", " ") + " | " + r.L + "," + r.T + "," + r.R + "," + r.B + "\n");
+      return true; }, IntPtr.Zero);
     return sb.ToString();
   }
   public static string RootClassAt(int x, int y) {
@@ -1037,4 +1146,12 @@ function ProcTops($cls, $proc) { return @([W]::Tops($cls) | Where-Object { [W]::
 CloseWindows
 $wp = @('C:\Windows\Web\Wallpaper\Windows\img0.jpg', 'C:\Windows\Web\Screen\img100.jpg') | Where-Object { Test-Path $_ } | Select-Object -First 1
 if ($wp) { [G]::SystemParametersInfoW(0x14, 0, $wp, 3) | Out-Null }
-Log ("job start: screen " + [G]::GetSystemMetrics(0) + "x" + [G]::GetSystemMetrics(1) + ", instance $PfInst, build " + (Get-FileHash "$PfBin\pecofence.exe").Hash.Substring(0, 12))
+# A job before may have ended PecoFence the hard way (ctl.ps1 reset), which leaves Windows'
+# desktop icons hidden: show them again, so the build under test meets a user's desktop.
+if (-not [W]::IconsVisible()) { [W]::ToggleIcons(); Start-Sleep -Milliseconds 600; Log "desktop icons were hidden by an earlier job; shown again" }
+if (-not (Test-Path "$PfBin\pecofence.exe")) {
+  $det = try { (@(Get-MpThreatDetection -ErrorAction Stop | Sort-Object InitialDetectionTime | Select-Object -Last 3 | ForEach-Object { "$($_.InitialDetectionTime) $($_.Resources -join '; ')" }) -join ' || ') } catch { "detections unreadable: $_" }
+  $script:PfCase = 'job start'
+  Check 'the build under test is on the box' $false "C:\pf\bin\pecofence.exe is gone: Defender may have removed it. Last detections: $det"
+}
+Log ("job start: screen " + [G]::GetSystemMetrics(0) + "x" + [G]::GetSystemMetrics(1) + ", instance $PfInst, build " + $(if (Test-Path "$PfBin\pecofence.exe") { (Get-FileHash "$PfBin\pecofence.exe").Hash.Substring(0, 12) } else { 'missing' }))

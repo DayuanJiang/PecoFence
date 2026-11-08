@@ -1,5 +1,5 @@
 # Fence fix round 2026-11-07, area config-undo: checks of S16, S13, S11, S12, U2 and C5 (the
-# watchdog checks of C14 are in fx-config-undo-watchdog.ps1). One job, about 5 minutes.
+# watchdog checks of C14 are in watchdog-restart.ps1). One job, about 5 minutes.
 # The C5 part moves the Desktop folder to another C: folder and back at its end.
 $PfAllowLogErrors = $true
 

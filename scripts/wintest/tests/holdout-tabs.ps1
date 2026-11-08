@@ -9,7 +9,7 @@
 # ---- tab strip helpers of this test
 
 $Park = @(1150, 720)
-function ParkPointer() { [G]::MoveTo($Park[0], $Park[1]); Start-Sleep -Milliseconds 300 }
+function ParkPointer() { ParkMouse $Park[0] $Park[1] }
 function ActiveIdx($d) { return [array]::IndexOf(@($d.tabs), $IdTitle[$d.active]) }
 function ActiveName($d) { return $IdTitle[$d.active] }
 function Sx($d, $x) { return [int]($d.l + $d.ox + $x) }

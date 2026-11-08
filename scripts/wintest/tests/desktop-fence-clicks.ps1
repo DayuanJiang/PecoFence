@@ -35,7 +35,7 @@ Pf item move @($names | ForEach-Object { Join-Path $PfDesk $_ }) --to inbox | Ou
 $ib = FenceGet 'inbox'
 if (-not $ib.desktopLayout) { Pf fence set inbox desktopLayout true | Out-Null; Start-Sleep -Seconds 1; $ib = FenceGet 'inbox' }
 Start-Sleep -Seconds 2
-[G]::MoveTo(1100, 830)
+ParkMouse 1100 830
 $d = DumpOf $ib.title
 Log "inbox '$($ib.title)' desktopLayout=$($ib.desktopLayout) window $(WinRect $d.hwnd); order [$((@(PfJson item list --fence inbox) | ForEach-Object { $_.name }) -join ', ')]"
 Shot 'c-start'
@@ -79,17 +79,20 @@ foreach ($run in 1, 2) {
   $gone = if ($ic -gt 0 -and $order[$ic - 1] -like 'fxc-*') { "$($order[$ic - 1]).txt" } else { 'fxc-a.txt' }
   $p = IconCell 'fxc-c' $ic
   # A click on the empty desktop first: the first desktop press after a start can go unseen.
-  [G]::Click(1000, 700); Start-Sleep -Milliseconds 500
+  DeskClick 1000 700 | Out-Null
   [G]::Click($p[0], $p[1]); Start-Sleep -Milliseconds 700
   $sel0 = DumpVal (DumpOf $ib.title) 'selected'
   # Ctrl held: a rectangle on the empty desktop that touches no icon; meanwhile the file
   # before fxc-c goes away.
+  $q = FreeRect 80 40 820 480
+  if (-not $q) { $q = @(830, 495, 910, 535) }
+  $sx = $q[2] - 10; $sy = $q[1] + 5
   [G]::KeyDown(0x11); Start-Sleep -Milliseconds 100
-  [G]::MoveTo(900, 500); Start-Sleep -Milliseconds 150; MDown; Start-Sleep -Milliseconds 150
-  Glide 900 500 860 520 6 30
+  [G]::MoveTo($sx, $sy); Start-Sleep -Milliseconds 150; MDown; Start-Sleep -Milliseconds 150
+  Glide $sx $sy ($sx - 40) ($sy + 20) 6 30
   Remove-Item -LiteralPath (Join-Path $PfDesk $gone)
   Start-Sleep -Milliseconds 2500
-  Glide 860 520 840 530 4 30; Start-Sleep -Milliseconds 400
+  Glide ($sx - 40) ($sy + 20) ($sx - 60) ($sy + 30) 4 30; Start-Sleep -Milliseconds 400
   MUp; Start-Sleep -Milliseconds 200; [G]::KeyUp(0x11); Start-Sleep -Milliseconds 800
   CloseMenus
   Chord 0x11 0x43; Start-Sleep -Milliseconds 700
@@ -97,7 +100,7 @@ foreach ($run in 1, 2) {
   if ($run -eq 1) { Shot 'c16-after-rectangle' }
   if ($clip -eq 'fxc-c.txt') { $ok++ }
   $rows += "run ${run}: fxc-c at $ic of [$($order -join ', ')], $gone deleted, selected before $sel0, copied after the rectangle [$clip]"
-  [G]::Click(1000, 700); Start-Sleep -Milliseconds 500
+  DeskClick 1000 700 | Out-Null
 }
 Check 'the icon selected before the rectangle is still the one selected (2 runs)' ($ok -eq 2) "$($rows -join ' | ')"
 
