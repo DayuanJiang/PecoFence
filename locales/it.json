@@ -906,5 +906,6 @@
   "用了 Everything 语法，需要先打开 Everything": "Usa la sintassi di Everything, quindi Everything deve essere aperto",
   "这个栅栏用了 Everything 语法，需要先打开 Everything：右键这个栅栏可以启动或安装它。": "Questo riquadro usa la sintassi di Everything, che deve essere aperto: fai clic destro sul riquadro per avviarlo o installarlo.",
   "「来源」不能作为智能栅栏的条件，请删掉这一行": "«Origine» non può essere una condizione di un riquadro intelligente. Rimuovi questa riga",
-  "至少要有一行位置": "Serve almeno una riga di posizione"
+  "至少要有一行位置": "Serve almeno una riga di posizione",
+  "这个栅栏的条件刚在别处改过，按「好」会换成这里的条件": "Le condizioni di questo riquadro sono appena cambiate altrove; «OK» le sostituisce con quelle di qui"
 }

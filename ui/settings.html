@@ -3079,7 +3079,7 @@
     else if (m.type === 'windowsDesktopHotkeyResult') wdRecorder.result(m);
     else if (m.type === 'editor') seRender(m);
     else if (m.type === 'editorFolder') seFolder(m);
-    else if (m.type === 'editorError') seShowError(m.text);
+    else if (m.type === 'editorError' || m.type === 'editorNotice') seShowError(m.text);
     else if (m.type === 'editorCount') seCounted(m);
   });
   send({ type: 'ready' });

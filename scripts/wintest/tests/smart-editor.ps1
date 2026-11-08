@@ -183,6 +183,40 @@ if ($Part -match 'B') {
   Check 'log: deleted meanwhile, made anew' (((PfLogAll) -join "`n") -match 'the fence was deleted meanwhile; a new one is made') ''
   Pf fence delete 'Gone' | Out-Null
 
+  Case 'a change made with the CLI while the editor is open'
+  Pf fence create --smart downloads --title 'Both' --rect '480,400,420,260' | Out-Null
+  Start-Sleep -Seconds 1
+  $h = OpenEditor 'edit menu' 'Both'
+  Pf fence set 'Both' smartWithinDays 30 | Out-Null
+  $d = JsWait "(() => { const s = document.querySelector('#seWindow .se-days'); return s && s.value === '30' ? s.value : null; })()" 10
+  Check 'nothing unsaved: the editor shows the new search' ($d -eq '30' -and (EdState).msg -eq '') "days=$d msg=$((EdState).msg)"
+  PageType '#seWindow .se-name' 'Both renamed'
+  Start-Sleep -Milliseconds 400
+  Pf fence set 'Both' smartWithinDays 90 | Out-Null
+  $m = JsWait "(() => { const t = document.querySelector('#seWindow .se-msg').textContent; return t || null; })()" 10
+  Check 'something unsaved: the editor says OK would replace that change, and keeps its rows' ($m -match 'changed elsewhere' -and (Js "document.querySelector('#seWindow .se-days').value") -eq '30') "msg=$m"
+  EndEditor 'ok' | Out-Null
+  $s = SmartOf 'Both renamed'
+  Check 'OK: the editor''s search and name' ($s -and $s.spec.withinDays -eq 30) "$($s.spec | ConvertTo-Json -Compress -Depth 4)"
+  $log = (PfLogAll) -join "`n"
+  Check 'log: shown again, then the notice' ($log -match 'the search changed elsewhere; shown again' -and $log -match 'the search changed elsewhere; OK would replace it') ''
+  Pf fence delete 'Both renamed' | Out-Null
+
+  Case 'no room for another fence: the editor stays open with its rows'
+  $have = @(@(PfJson fence list) | Where-Object { $_ -and $_.id }).Count
+  for ($i = $have; $i -lt 64; $i++) { & "$PfApp\pecofence-cli.exe" fence create --title "Fill $i" --rect "$(20 + ($i % 8) * 10),$(20 + ($i % 8) * 10),200,120" 2>&1 | Out-Null }
+  Check '64 fences' (@(@(PfJson fence list) | Where-Object { $_ -and $_.id }).Count -eq 64) ''
+  $h = OpenEditor 'tray'
+  PageClick '#seWindow [data-preset=psd]'; Start-Sleep -Milliseconds 300
+  PageClick '#seWindow .se-ok'; Start-Sleep -Seconds 1
+  $st = EdState
+  Check 'Create at the limit: the editor stays, says why, keeps the rows' ((EditorCount) -eq 1 -and $st.msg -match '64' -and $st.rows -eq 'where,type,ext') ($st | ConvertTo-Json -Compress)
+  for ($i = $have; $i -lt 64; $i++) { & "$PfApp\pecofence-cli.exe" fence delete "Fill $i" 2>&1 | Out-Null }
+  PageClick '#seWindow .se-ok'
+  Check 'room again: Create makes it' ((WaitGoneWin 'PecoFence.SmartEditor' 10) -and (SmartOf 'All .psd files')) ''
+  Check 'log: refused for the limit' (((PfLogAll) -join "`n") -match 'smart fence editor: not saved.*no room for another fence') ''
+  Pf fence delete 'All .psd files' | Out-Null
+
   Case 'the window: size, place, title'
   $h = OpenEditor 'edit menu' 'One'
   $r = Rect $h

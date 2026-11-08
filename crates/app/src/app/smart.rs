@@ -766,6 +766,7 @@ impl App {
             spec.template = None;
         }
         self.smart_search_changed(fence, what);
+        self.smart_editor_fence_changed(fence);
         true
     }
 
@@ -827,6 +828,7 @@ impl App {
         self.state.mark_dirty();
         self.schedule_save();
         self.ensure_smart_watchers();
+        self.smart_editor_fence_changed(id);
     }
 
     /// Whether smart fence `id` waits for Everything (every drive, or a typed Everything

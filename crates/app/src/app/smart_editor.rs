@@ -278,8 +278,13 @@ impl App {
                 if fence.is_some() {
                     tracing::info!(fence = ?fence, "smart fence editor: the fence was deleted meanwhile; a new one is made");
                 }
-                let id = self.create_smart_fence(spec, title.as_deref(), None, at.0, at.1);
-                tracing::info!(id = ?id, template = ?template, "smart fence editor: new smart fence created");
+                let Some(id) = self.create_smart_fence(spec, title.as_deref(), None, at.0, at.1)
+                else {
+                    // No room for another fence: the editor stays open with its rows.
+                    let text = super::fences::fence_limit_text();
+                    return refuse(self, "no room for another fence", &text);
+                };
+                tracing::info!(%id, template = ?template, "smart fence editor: new smart fence created");
             }
         }
         self.close_smart_editor("saved");
@@ -304,6 +309,33 @@ impl App {
         {
             tracing::info!(fence = ?ed.fence, unsaved = ed.dirty, "smart fence editor closed by its window");
             self.smart_count_cancel();
+        }
+    }
+
+    /// Fence `fence`'s search changed elsewhere (`fence set`, a template's folder found again)
+    /// while the editor shows it: with nothing unsaved the editor shows the new search, else it
+    /// says that 好 would put its own search in place of that change.
+    pub(super) fn smart_editor_fence_changed(&mut self, fence: FenceId) {
+        let Some(ed) = self
+            .smart_editor
+            .as_ref()
+            .filter(|e| e.fence == Some(fence) && e.host.ready)
+        else {
+            return;
+        };
+        if ed.dirty {
+            tracing::info!(%fence, "smart fence editor: the search changed elsewhere; OK would replace it");
+            ed.post_json(
+                &serde_json::json!({
+                    "type": "editorNotice",
+                    "text": pecofence_core::i18n::text("这个栅栏的条件刚在别处改过，按「好」会换成这里的条件"),
+                })
+                .to_string(),
+            );
+        } else {
+            tracing::info!(%fence, "smart fence editor: the search changed elsewhere; shown again");
+            let json = self.smart_editor_json();
+            self.post_to_smart_editor(&json);
         }
     }
 

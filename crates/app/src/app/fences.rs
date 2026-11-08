@@ -1149,7 +1149,7 @@ impl App {
     }
 }
 
-fn fence_limit_text() -> String {
+pub(super) fn fence_limit_text() -> String {
     pecofence_core::i18n::format(
         "最多只能有 {0} 个栅栏（含标签页），请先删除或合并一些。",
         &[pecofence_core::config_store::MAX_FENCES.to_string()],
