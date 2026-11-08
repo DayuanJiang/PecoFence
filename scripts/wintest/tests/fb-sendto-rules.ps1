@@ -1,10 +1,11 @@
 ﻿# Private feedback #125 point 1: 「发送到 › 桌面快捷方式」 and the sorting rules. Every way to make
 # the shortcut (Explorer's Send to menu, PecoFence's own item menu, the SendTo drop target the menu
-# uses) for every kind of target, under the first-run rules, under rules that split programs from
-# shortcuts, and under rules without the shortcut type; plus slow writers (an empty .lnk filled
-# later, a .tmp renamed to .lnk). Each check reads where the new shortcut landed (`item list`) and
-# the app log's "desktop item routed" line. Outcomes the 0.3.1 build gets wrong: a shortcut to a
-# folder counted as a program, and an empty .lnk filed before its target could be read.
+# uses) for every kind of target, under the first-run rules (part A), under rules that split
+# programs from shortcuts (B), with the first rule cut down to programs (C), and with only a .txt
+# extension rule and a programs rule (D); plus slow writers (an empty .lnk filled later, a .tmp
+# renamed to .lnk). Each check reads where the new shortcut landed (`item list`) and the app log's
+# "desktop item routed" line. Outcomes the 0.3.1 build gets wrong: a shortcut to a folder counted
+# as a program, and an empty .lnk filed before its target could be read.
 #   run.sh --box <box> tests/fb-sendto-rules.ps1        (about 2 minutes; --var Part=B for one part)
 
 # Desktop events with the file size at that moment (what the shell writes when), and the SendTo
@@ -186,7 +187,7 @@ function RouteFacts($line) { if ($line -match 'desktop item routed (.*)$') { ret
 
 $Names = @('st-tool.exe', 'st-note.txt', 'st-report.docx', 'st-paper.pdf', 'st-folder', 'st-v1.2')
 function LinkName($n) { return "$([IO.Path]::GetFileNameWithoutExtension($n)) - Shortcut.lnk" }
-if (-not $Part) { $Part = 'ABC' }
+if (-not $Part) { $Part = 'ABCD' }
 
 Case 'setup'
 CloseWindows
@@ -286,9 +287,36 @@ Shot 'c-no-shortcut-rule-desktop-fence'
 CleanLinks; Start-Sleep -Seconds 1
 }
 
+function PartD {
+trap { PfTrap $_; continue }
+Case 'D only a .txt extension rule and a programs type rule'
+for ($k = 0; $k -lt 12 -and (Rules).Count -gt 0; $k++) { Pf rule remove 0 | Out-Null }
+if (-not (PfFence 'Docs')) { Pf fence create --title Docs --rect '40,560,300,200' | Out-Null }
+Pf rule add --name 'txt to Docs' --ext txt --to Docs --index 0 | Out-Null
+Pf rule add --name 'Programs' --type programs --to Programs --index 1 | Out-Null
+Log "rules: $((Rules | ForEach-Object { "$($_.name) -> $($_.targetTitle)" }) -join ' ;; ')"
+Probe 'D' 'explorer' 'st-tool.exe' 'Programs' 'outcome="?rule matched.*what="?programs'
+Probe 'D' 'explorer' 'st-note.txt' 'Desktop' 'outcome="?no rule matched.*what="?shortcuts'
+Probe 'D' 'explorer' 'st-report.docx' 'Desktop' 'outcome="?no rule matched.*what="?shortcuts'
+Probe 'D' 'explorer' 'st-folder' 'Desktop' 'outcome="?no rule matched.*what="?shortcuts'
+CloseWindows
+Set-Content "$PfDesk\st-d.txt" 'd'
+Check 'D a new .txt file goes to Docs' ((WaitItemFence 'st-d.txt' 'Docs' 5) -eq 'Docs') "$(ItemInfo (ItemOf 'st-d.txt'))"
+$bytes = [IO.File]::ReadAllBytes("$Src\st-ready.lnk")
+[IO.File]::WriteAllBytes("$PfDesk\st-slow.lnk", [byte[]]@())
+Start-Sleep -Milliseconds 700
+$early = ItemOf 'st-slow.lnk'
+[IO.File]::WriteAllBytes("$PfDesk\st-slow.lnk", $bytes)
+$late = WaitItemFence 'st-slow.lnk' 'Desktop' 5
+Check 'D an empty .lnk to a .txt: in no fence until written' (-not $early -or -not $early.fenceTitle) "before the write: $(ItemInfo $early)"
+Check 'D then no rule matches it: Desktop' ($late -eq 'Desktop') "$(ItemInfo (ItemOf 'st-slow.lnk'))"
+CleanLinks; Remove-Item -LiteralPath "$PfDesk\st-d.txt" -Force -ErrorAction SilentlyContinue; Start-Sleep -Seconds 1
+}
+
 if ($Part -match 'A') { PartA }
 if ($Part -match 'B') { PartB }
 if ($Part -match 'C') { PartC }
+if ($Part -match 'D') { PartD }
 
 Case 'cleanup'
 CloseWindows
