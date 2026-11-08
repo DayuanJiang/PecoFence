@@ -199,7 +199,8 @@ pub(super) fn on_ncmousemove(
             let _ = v.redraw_chrome_only();
         }
         // The Task View glyph of a single title lies on the caption: its infotip (the desktops
-        // the fence shows on) is armed here; elsewhere on the caption no infotip shows.
+        // the fence shows on) is armed here, as is a cut filter tag's (the whole filter);
+        // elsewhere on the caption no infotip shows.
         let pt = window::screen_to_client(
             hwnd,
             pecofence_platform::POINT {
@@ -207,9 +208,12 @@ pub(super) fn on_ncmousemove(
                 y: msg::hi_i16(lparam),
             },
         );
-        let tip = v
-            .desktop_glyph_at(pt.x, pt.y)
-            .then_some(TipTarget::Desktops);
+        let tip = if v.desktop_glyph_at(pt.x, pt.y) {
+            Some(TipTarget::Desktops)
+        } else {
+            v.cut_filter_tag_at(pt.x, pt.y)
+                .then_some(TipTarget::FilterTag)
+        };
         v.update_tip_target(tip, pt.x, pt.y);
         if item && !v.rolled_up {
             let _ = v.redraw_content();
@@ -276,9 +280,12 @@ pub(super) fn on_ncmouseleave(
         if !inside {
             v.set_mouse_inside(false);
         }
-        // Off the Task View glyph's caption spot: its infotip goes (WM_MOUSEMOVE decides
-        // over the client area).
-        if v.tip_target == Some(TipTarget::Desktops) {
+        // Off the Task View glyph's or the filter tag's caption spot: its infotip goes
+        // (WM_MOUSEMOVE decides over the client area).
+        if matches!(
+            v.tip_target,
+            Some(TipTarget::Desktops | TipTarget::FilterTag)
+        ) {
             v.hide_tip();
         }
         // Onto a control of the title row (a tab, the chevron box): still the row. This

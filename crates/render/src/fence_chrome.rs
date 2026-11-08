@@ -619,6 +619,26 @@ pub const DESKTOP_GLYPH: &str = "\u{E7C4}";
 /// Least room kept free at the right end of the title row: the roll-up chevron.
 pub const TITLE_RIGHT_RESERVE: f32 = 40.0;
 
+/// A filter tag never reaches left of this (the title's left padding).
+const TAG_LEFT_LIMIT: f32 = 16.0;
+
+/// What of a filter tag fits its title row (`FenceChrome::filter_tag_fit`): its box, the text as
+/// shown, and whether the count and the type chip are.
+#[derive(Clone, Debug, PartialEq)]
+pub struct TagFit {
+    pub rect: Rect,
+    pub text: String,
+    pub count: bool,
+    pub kind: bool,
+}
+
+impl TagFit {
+    /// Everything of `tag` shows (no tooltip needed).
+    pub fn whole(&self, (kind, text, count): (&str, &str, &str)) -> bool {
+        self.text == text && (self.count || count.is_empty()) && (self.kind || kind.is_empty())
+    }
+}
+
 /// Left edge of a title-row unit `unit_w` DIPs wide (the title with its folder glyph, or the
 /// whole tab strip) that may occupy `start..end` of a row `width` DIPs wide. Centred means
 /// centred on the whole fence, pushed aside only when it would reach into `start` / `end`.
@@ -2180,41 +2200,61 @@ impl FenceChrome {
 
     /// 筛选: the tag a filtered fence shows after its box closed (magnifier, the type in a chip
     /// of its own, the text, the count when not already in the capsule, ×), right before the
-    /// capsule (or the chevron's place). The app hit-tests its × in the same box: the
-    /// rightmost `TAG_CLEAR_W` DIPs.
-    pub fn filter_tag_rect(
+    /// capsule (or the chevron's place), and how much of it fits: the text is shortened to about
+    /// 60 % of the row, then the parts give way in order (the text, the count, the type chip)
+    /// down to the magnifier and ×, never past the title's left padding. None when not even
+    /// those fit. The app hit-tests its × in the same box: the rightmost `TAG_CLEAR_W` DIPs.
+    pub fn filter_tag_fit(
         &self,
         width: f32,
         title_h: f32,
         tag: (&str, &str, &str),
         title_count: Option<&str>,
-    ) -> Rect {
-        let text = self.tag_text(width, tag, title_count);
-        let w = self.tag_fixed_w(tag) + crate::text::measure_width(&text, &self.tag_format);
-        let right = TitleDeco::chevron_box(width, title_h).left
-            - 2.0
-            - title_count.map_or(0.0, |c| self.count_capsule_w(c));
-        Rect::from_xywh(right - w, ((title_h - TAG_H) * 0.5).round(), w, TAG_H)
-    }
-
-    /// The tag's room without its text: magnifier, type chip, count, ×.
-    fn tag_fixed_w(&self, (kind, _, count): (&str, &str, &str)) -> f32 {
-        22.0 + self.tag_kind_w(kind)
-            + if count.is_empty() {
-                0.0
-            } else {
-                8.0 + crate::text::measure_width(count, &self.count_format)
-            }
-            + TAG_CLEAR_W
-    }
-
-    /// The filter text as the tag shows it: shortened with an ellipsis so the tag takes at
-    /// most about 60 % of the title row (the type chip, the count and × stay whole).
-    fn tag_text(&self, width: f32, tag: (&str, &str, &str), title_count: Option<&str>) -> String {
-        let room = width * 0.6
-            - title_count.map_or(0.0, |c| self.count_capsule_w(c))
-            - self.tag_fixed_w(tag);
-        crate::text::fit_width(tag.1, &self.tag_format, room.max(0.0))
+    ) -> Option<TagFit> {
+        let (kind, text, count) = tag;
+        let capsule = title_count.map_or(0.0, |c| self.count_capsule_w(c));
+        let right = TitleDeco::chevron_box(width, title_h).left - 2.0 - capsule;
+        let room = right - TAG_LEFT_LIMIT;
+        let kind_w = self.tag_kind_w(kind);
+        let count_w = if count.is_empty() {
+            0.0
+        } else {
+            8.0 + crate::text::measure_width(count, &self.count_format)
+        };
+        let ends = 22.0 + TAG_CLEAR_W;
+        let text_room = (width * 0.6 - capsule).min(room) - ends - kind_w - count_w;
+        let fitted = crate::text::fit_width(text, &self.tag_format, text_room.max(0.0));
+        // A lone "…" says nothing: the text goes instead.
+        let fitted = if fitted == "…" {
+            String::new()
+        } else {
+            fitted
+        };
+        let fitted_w = crate::text::measure_width(&fitted, &self.tag_format);
+        let shown_kind = !kind.is_empty();
+        let shown_count = !count.is_empty();
+        [
+            (fitted, fitted_w, shown_count, shown_kind),
+            (String::new(), 0.0, shown_count, shown_kind),
+            (String::new(), 0.0, false, shown_kind),
+            (String::new(), 0.0, false, false),
+        ]
+        .into_iter()
+        .map(|(text, text_w, count, kind)| {
+            let w =
+                ends + text_w + if count { count_w } else { 0.0 } + if kind { kind_w } else { 0.0 };
+            (
+                w,
+                TagFit {
+                    rect: Rect::from_xywh(right - w, ((title_h - TAG_H) * 0.5).round(), w, TAG_H),
+                    text,
+                    count,
+                    kind,
+                },
+            )
+        })
+        .find(|(w, _)| *w <= room)
+        .map(|(_, fit)| fit)
     }
 
     /// The type chip's room in the tag (its gap after it included); 0 without a type.
@@ -2239,10 +2279,14 @@ impl FenceChrome {
         alpha: f32,
         legible: Option<&Legible>,
     ) -> Result<()> {
-        let (kind, _, count) = tag;
+        let Some(fit) = self.filter_tag_fit(width, title_h, tag, title_count) else {
+            return Ok(());
+        };
+        let kind = if fit.kind { tag.0 } else { "" };
+        let count = if fit.count { tag.2 } else { "" };
+        let text = &fit.text;
+        let r = fit.rect;
         let accent_fx = || legible.map(|l| l.fx(theme, theme.accent, alpha, false));
-        let text = &self.tag_text(width, tag, title_count);
-        let r = self.filter_tag_rect(width, title_h, tag, title_count);
         let tint = session.create_solid_brush(with_alpha(theme.accent, 0.14 * alpha))?;
         session.fill_rounded_rect(&RoundedRect::uniform(r, TAG_H * 0.5), &tint);
         let accent = session.create_solid_brush(with_alpha(theme.accent, alpha))?;
@@ -2325,9 +2369,9 @@ impl FenceChrome {
         };
         let glyph_w = deco.glyphs_w();
         // A smart fence's count is a capsule at the right end, before the chevron.
-        let tag_w = tag.map_or(0.0, |t| {
-            self.filter_tag_rect(width, 0.0, t, count).width() + 6.0
-        });
+        let tag_w = tag
+            .and_then(|t| self.filter_tag_fit(width, 0.0, t, count))
+            .map_or(0.0, |f| f.rect.width() + 6.0);
         let end = width
             - TITLE_RIGHT_RESERVE
             - reserve
@@ -4566,21 +4610,56 @@ mod tests {
             "季度报告 2026 第三季度 预算 草稿 修改版",
             "3 / 31",
         );
-        // Wide: all of it. Medium: the text shortened, the tag within 60 % of the row.
-        let wide = chrome.filter_tag_rect(1200.0, 36.0, long, None);
-        assert_eq!(chrome.tag_text(1200.0, long, None), long.1);
-        let medium = chrome.filter_tag_rect(400.0, 36.0, long, None);
-        let cut = chrome.tag_text(400.0, long, None);
-        assert!(medium.width() < wide.width());
-        assert!(medium.width() <= 400.0 * 0.6 + 1.0, "{medium:?}");
-        assert!(cut.ends_with('…') && cut.chars().count() > 1, "{cut}");
-        // Narrow: the type chip, the count and × alone, never cut.
-        let bare = ("类型：PDF", "", "3 / 31");
-        let narrow = chrome.filter_tag_rect(240.0, 36.0, long, None);
-        let fixed = chrome.filter_tag_rect(240.0, 36.0, bare, None);
+        let fit = |w: f32| chrome.filter_tag_fit(w, 36.0, long, None);
+        // Wide: all of it, no tooltip needed.
+        let wide = fit(1200.0).unwrap();
+        assert!(wide.whole(long) && wide.text == long.1, "{wide:?}");
+        // Medium: the text shortened, the tag within 60 % of the row.
+        let medium = fit(400.0).unwrap();
+        assert!(medium.rect.width() <= 400.0 * 0.6 + 1.0, "{medium:?}");
         assert!(
-            (narrow.width() - fixed.width()).abs() < 1.0,
-            "{narrow:?} {fixed:?}"
+            medium.text.ends_with('…') && medium.text.chars().count() > 1,
+            "{medium:?}"
+        );
+        assert!(medium.count && medium.kind && !medium.whole(long));
+        // Narrower: the text goes first, then the count, then the type chip; never past the
+        // title's left padding.
+        // 200: the type chip stays, the text is gone; 120: the magnifier and × only; 64: none.
+        let f200 = fit(200.0).unwrap();
+        assert!(f200.kind && f200.text.is_empty(), "{f200:?}");
+        let f120 = fit(120.0).unwrap();
+        assert!(
+            !f120.kind && !f120.count && f120.text.is_empty(),
+            "{f120:?}"
+        );
+        assert_eq!(fit(64.0), None);
+        // From wide to narrow the parts only go, in order (text, count, chip).
+        let mut last = (true, true, true);
+        for w in (60..=1200).rev().step_by(4).map(|w| w as f32) {
+            let Some(f) = fit(w) else {
+                assert!(w < 100.0, "{w}: no tag");
+                continue;
+            };
+            assert!(f.rect.left >= TAG_LEFT_LIMIT, "{w}: {f:?}");
+            assert!(
+                f.rect.right <= TitleDeco::chevron_box(w, 36.0).left,
+                "{w}: {f:?}"
+            );
+            let now = (!f.text.is_empty(), f.count, f.kind);
+            assert!(
+                (!now.0 || now.1) && (!now.1 || now.2),
+                "{w}: out of order {f:?}"
+            );
+            assert!(now <= last, "{w}: a part came back {f:?}");
+            last = now;
+        }
+        // A smart fence's capsule takes its room first.
+        let with_capsule = chrome
+            .filter_tag_fit(200.0, 36.0, long, Some("200+"))
+            .unwrap();
+        assert!(
+            with_capsule.rect.left >= TAG_LEFT_LIMIT && !with_capsule.kind,
+            "{with_capsule:?}"
         );
     }
 
@@ -4607,7 +4686,7 @@ mod tests {
         assert!(right.right <= 300.0 - TITLE_RIGHT_RESERVE - ROLLED_COUNT_W);
         // And of a filter tag, as drawn (one layout for both).
         let tag = ("", "pdf", "3 / 31");
-        let tag_r = chrome.filter_tag_rect(300.0, 36.0, tag, None);
+        let tag_r = chrome.filter_tag_fit(300.0, 36.0, tag, None).unwrap().rect;
         let tagged = chrome.lone_up_box("2026", Some(tag), 1, Right, 300.0, false, 0.0, 36.0);
         assert!(tagged.right <= tag_r.left, "{tagged:?} {tag_r:?}");
         // With the glyph hidden, the button stays at the far left.

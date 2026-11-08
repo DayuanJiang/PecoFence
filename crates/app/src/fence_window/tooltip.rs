@@ -21,6 +21,8 @@ pub(super) enum TipTarget {
     Desktops,
     /// A script fence's clickable row.
     ScriptRow(usize),
+    /// A filter tag too narrow for all of the filter.
+    FilterTag,
 }
 
 /// TME_HOVER rectangle test: has the pointer left the `rect` (SPI_GETMOUSEHOVERWIDTH x
@@ -40,6 +42,9 @@ impl FenceViewState {
         y_px: i32,
         hit: Option<usize>,
     ) -> Option<TipTarget> {
+        if self.cut_filter_tag_at(x_px, y_px) {
+            return Some(TipTarget::FilterTag);
+        }
         if self.up_button_at(x_px, y_px) {
             return Some(TipTarget::Up);
         }
@@ -134,6 +139,15 @@ impl FenceViewState {
             }
             TipTarget::Up => Some(pecofence_core::i18n::text("向上").to_string()),
             TipTarget::Desktops => self.desktop_tip.clone(),
+            // The whole filter: the type, the text and the count.
+            TipTarget::FilterTag => self.filter_tag.as_ref().map(|(kind, text, count)| {
+                [kind, text, count]
+                    .iter()
+                    .filter(|s| !s.is_empty())
+                    .map(|s| s.as_str())
+                    .collect::<Vec<_>>()
+                    .join("  ")
+            }),
             TipTarget::ScriptRow(i) => self.script.as_ref()?.rows.get(i)?.tip.clone(),
             TipTarget::Tab(i) => {
                 let t = self.tabs.get(i)?;

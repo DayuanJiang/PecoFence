@@ -245,25 +245,48 @@ impl FenceViewState {
             .map(|(k, t, c)| (k.as_str(), t.as_str(), c.as_str()))
     }
 
-    /// The filter tag's box (DIPs) when a single title shows one.
-    fn filter_tag_box(&self) -> Option<Rect> {
+    /// What of the filter tag a single title shows, as drawn (None: no tag, or not even its
+    /// magnifier and × fit).
+    pub(super) fn filter_tag_fit(&self) -> Option<pecofence_render::fence_chrome::TagFit> {
         let tag = self.filter_tag_ref()?;
         if self.title_row_strip() || self.tabs_on_rail() || self.bare() {
             return None;
         }
         let width = self.chrome_panel.size_px().0 as f32 / self.scale();
-        Some(self.chrome.filter_tag_rect(
+        self.chrome.filter_tag_fit(
             width,
             self.theme.title_height,
             tag,
             self.title_count.as_deref(),
-        ))
+        )
+    }
+
+    /// The filter tag's box (DIPs) when a single title shows one.
+    fn filter_tag_box(&self) -> Option<Rect> {
+        self.filter_tag_fit().map(|f| f.rect)
     }
 
     /// Is the DIP point on the filter tag?
     fn on_filter_tag(&self, x: f32, y: f32) -> bool {
         self.filter_tag_box()
             .is_some_and(|r| x >= r.left && x < r.right && y >= r.top && y < r.bottom)
+    }
+
+    /// Is the client-pixel point on a filter tag that shows only part of the filter (its
+    /// infotip names all of it)?
+    pub(super) fn cut_filter_tag_at(&self, x_px: i32, y_px: i32) -> bool {
+        let scale = self.scale();
+        let (x, y) = (x_px as f32 / scale, y_px as f32 / scale);
+        match (self.filter_tag_fit(), self.filter_tag_ref()) {
+            (Some(f), Some(tag)) => {
+                !f.whole(tag)
+                    && x >= f.rect.left
+                    && x < f.rect.right
+                    && y >= f.rect.top
+                    && y < f.rect.bottom
+            }
+            _ => false,
+        }
     }
 
     /// Is the client-pixel point on the × of the filter tag (筛选, a single title)?
