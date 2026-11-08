@@ -58,6 +58,18 @@ snap-and-fit       2   ec2    release snap-and-fit.ps1
 new-icons-drops    3   ec2    release new-icons-and-drops.ps1
 desktop-fence      1   ec2    release desktop-fence-clicks.ps1
 unit               1   unit   release unit.ps1
+# smart-*: Everything must be installed on the box (smart.ps1 says how; ec2-7 has 1.5).
+smart-fences       2   ec2    release smart-fences.ps1
+smart-filter       1   ec2    release smart-filter.ps1
+smart-fallback     2   ec2    release smart-fallback.ps1
+smart-perf         1   ec2    release smart-perf.ps1
+smart-settings     1   ec2    debug   smart-settings.ps1
+smart-editor-A     3   ec2    debug   smart-editor.ps1               --var Part=A
+smart-editor-B     2   ec2    debug   smart-editor.ps1               --var Part=B
+vd-switch          2   ec2    release vd-switch.ps1
+vd-desktops        2   ec2    release vd-desktops.ps1
+vd-ui              2   ec2    release vd-ui.ps1
+vd-win10           2   vm     release vd-win10.ps1
 peek-search-menu   3   manual release fb-peek-rclick.ps1             --var Part=hdtk
 peek-menu-clips    1   manual release fb-peek-rclick-rec.ps1
 tool-text-notes    3   ec2    release fb-tool-text-size.ps1          --var Part=N
