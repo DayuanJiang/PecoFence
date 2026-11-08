@@ -37,6 +37,17 @@ Check 'the folder itself is untouched' (@(Get-ChildItem -LiteralPath $PfDl).Coun
 FocusFence $P
 [G]::Press(0x1B); Start-Sleep -Milliseconds 600
 Check 'Esc in the fence clears the filter' (WaitFilterGone $P) ((FilterOf $P) | ConvertTo-Json -Compress)
+# The tag's × clears it too: the tag ends before the chevron's place (32 + 4 + 2 DIPs from the
+# right edge, 100 % here), its × is the last 22 DIPs.
+FocusFence $P
+Chord 0x11 0x46; Start-Sleep -Milliseconds 600
+[G]::Type('pdf'); Start-Sleep -Milliseconds 600
+[G]::Press(0x0D); Start-Sleep -Milliseconds 600
+$wr = (FenceGet $P).windowRect
+[G]::Click([int]($wr.x + $wr.w - 49), [int]($wr.y + 18)); Start-Sleep -Milliseconds 600
+Check 'a click on the tag''s × clears the filter' (WaitFilterGone $P) ((FilterOf $P) | ConvertTo-Json -Compress)
+$w = DumpOf $P
+Check 'and the tag is gone' ($w.raw -match 'filter_tag=None') ([regex]::Match($w.raw, 'filter_tag=\S+').Value)
 
 Case 'matching: pinyin initials, Chinese, nothing loose'
 FocusFence $P
