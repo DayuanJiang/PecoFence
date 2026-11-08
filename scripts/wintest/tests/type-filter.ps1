@@ -8,7 +8,8 @@
 # Review fixes: 「N 个结果」 counts every result, 「在 Everything 里查看全部结果」 keeps the tab, a
 # shortcut is a program by its target, kind:docx is not cut at kind:doc, Tab leaves no hidden
 # character, a rolled filtered fence shows the tag only, a tab strip names the type, and the
-# Ctrl+Tab hint is translated and stays in view in long languages.
+# Ctrl+Tab hint is translated and stays in view in long languages. Re-check: a narrow fence's tag
+# gives way part by part and its infotip names the filter; shortcut targets are read once.
 $Dl = '最近 7 天下载'; $Fold = '下载'
 function Laid() { return @(PfLogAll | Where-Object { $_ -match 'search list laid out' -and $_ -notmatch 'omitted' }) | Select-Object -Last 1 }
 function Results($line) { if ($line -match 'results=(\d+)') { return [int]$Matches[1] }; return -1 }
@@ -23,6 +24,20 @@ function ClickTab($i) {
   [G]::Click([int]($r.L + ($edges[2 * $i] + $edges[2 * $i + 1]) / 2), [int]($r.T + 56 + 19)); Start-Sleep -Milliseconds 1500
 }
 function FenceCrop($t, $name, $m = 10) { $r = (FenceGet $t).windowRect; return (Crop $name ([int]$r.x - $m) ([int]$r.y - $m) ([int]$r.w + 2 * $m) ([int]$r.h + 2 * $m)) }
+# The infotip PecoFence shows now (OCR of its window), '' when none is up.
+function TipText($name) {
+  $tip = @([W]::Tops('tooltips_class32') | Where-Object { [W]::ProcOf($_) -eq 'pecofence' }) | Select-Object -First 1
+  if (-not $tip) { return '' }
+  $r = Rect $tip
+  return (OcrText $r.L $r.T ($r.R - $r.L) ($r.B - $r.T) $name)
+}
+function HoverTip($x, $y, $name) {
+  [G]::MoveTo(1250, 780); Start-Sleep -Milliseconds 400
+  [G]::MoveTo($x - 3, $y); Start-Sleep -Milliseconds 120; [G]::MoveTo($x, $y)
+  for ($i = 0; $i -lt 10; $i++) { Start-Sleep -Milliseconds 300; $t = TipText $name; if ($t) { return $t } }
+  return ''
+}
+function Reads() { return @(PfLogAll | Where-Object { $_ -match 'type filter: shortcut target read' }).Count }
 function WaitTab($name, $sec = 6) {
   for ($i = 0; $i -lt $sec * 4; $i++) { $l = Laid; if ($l -match "tab=$name") { return $l }; Start-Sleep -Milliseconds 250 }
   return (Laid)
@@ -139,6 +154,10 @@ FocusFence $Fold; [G]::Press(0x1B); Start-Sleep -Milliseconds 700
 Chord 0x11 0x46; Start-Sleep -Milliseconds 800
 [G]::Type('kind:programs '); Start-Sleep -Milliseconds 900
 Check '程序 in the filter box: the shortcut to notepad only' ((FilterOf $Fold).text -eq 'kind:programs' -and (WaitFilterShown $Fold 1)) ((FilterOf $Fold) | ConvertTo-Json -Compress)
+$r0 = Reads
+[G]::Type('pfkj'); Start-Sleep -Milliseconds 1200
+$r1 = Reads
+Check 'typing a name after 程序 reads no shortcut again (cached by path and time)' ($r0 -ge 1 -and $r1 -eq $r0 -and (WaitFilterShown $Fold 1)) "reads before=$r0 after=$r1"
 [G]::Press(0x1B); Start-Sleep -Milliseconds 700
 
 Case 'kind:docx is not cut at kind:doc; Tab leaves no character behind'
@@ -171,6 +190,23 @@ Check 'rolled with a filter: the tag, no 「N 项」 beside it' ($w.raw -match '
 FenceCrop $Fold 'f05-rolled' 10 | Out-Null
 Pf fence unroll $Fold | Out-Null; Start-Sleep -Seconds 1
 
+Case 'a narrow fence: the tag gives way, its infotip names the filter'
+Pf fence move $Fold --rect '24,360,150,300' | Out-Null; [G]::MoveTo(1250, 780); Start-Sleep -Seconds 2
+$w = DumpOf $Fold
+$fit = [regex]::Match("$($w.raw)", 'tag_fit=Some\(TagFit \{ rect: Rect \{ left: ([\d.]+), top: ([\d.]+), right: ([\d.]+), bottom: ([\d.]+) \}, text: "([^"]*)", count: (\w+), kind: (\w+) \}\)')
+Check '150 wide: the magnifier and × only, right of the title padding' ($fit.Success -and [double]$fit.Groups[1].Value -ge 16 -and $fit.Groups[6].Value -eq 'false' -and $fit.Groups[7].Value -eq 'false') ([regex]::Match("$($w.raw)", 'tag_fit=.*$').Value)
+FenceCrop $Fold 'f06-narrow' 10 | Out-Null
+if ($fit.Success) {
+  $x = [int]($w.l + $w.ox + [double]$fit.Groups[1].Value + 10)
+  $y = [int]($w.t + $w.oy + ([double]$fit.Groups[2].Value + [double]$fit.Groups[4].Value) / 2)
+  $tip = HoverTip $x $y 'tag-tip'
+  Check 'its infotip names the whole filter' ($tip -match 'PNG') "tip='$tip'"
+  Shot 't06-tag-tip'
+}
+Pf fence move $Fold --rect '24,360,420,300' | Out-Null; [G]::MoveTo(1250, 780); Start-Sleep -Seconds 1
+$w = DumpOf $Fold
+Check '420 wide again: the whole tag' ("$($w.raw)" -match 'tag_fit=Some\(TagFit \{ rect: Rect \{ left: [\d.]+, top: [\d.]+, right: [\d.]+, bottom: [\d.]+ \}, text: "", count: true, kind: true') ([regex]::Match("$($w.raw)", 'tag_fit=.*$').Value)
+
 Case 'a tab strip names the type'
 Pf fence create --portal $PfDocs --title '文档' --rect '460,360,420,300' | Out-Null; Start-Sleep -Seconds 2
 # 下载 hosts the strip and stays the shown tab: its title carries the filter.
@@ -180,7 +216,7 @@ $wr = (FenceGet $Fold).windowRect; [G]::Click([int]$wr.x + 40, [int]$wr.y + 17);
 [G]::MoveTo(1250, 780); Start-Sleep -Seconds 1
 $w = DumpOf $Fold
 Check 'the strip: 下载 · 筛选：类型：PNG' ($w -and $w.raw -match 'title="下载 · 筛选：类型：PNG"') ([regex]::Match("$($w.raw)", 'title="[^"]*"').Value + ' ' + [regex]::Match("$($w.raw)", 'tab_fonts=\[[^\]]*\]').Value)
-FenceCrop $Fold 'f06-strip' 10 | Out-Null
+FenceCrop $Fold 'f07-strip' 10 | Out-Null
 
 Case 'the Ctrl+Tab hint stays in view in long languages'
 foreach ($lng in 'es', 'it', 'pt-BR', 'de') {
