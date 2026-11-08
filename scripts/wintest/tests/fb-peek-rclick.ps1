@@ -238,14 +238,22 @@ if ($Part -eq 'k') {
   $m = MenuWin 1
   Check 'a right-click on the box around the text: no menu, the search stays' ($m -eq [IntPtr]::Zero -and [M]::BoxText() -eq "rkke$Tag") "menu=$(MenuTexts $m) box='$([M]::BoxText())'"
   CloseMenus
-  # The show-all row is the last one (no group headings: 44 px rows under the 56 px box).
+  # The list ends with the show-all row and 把这次搜索放到桌面 (no group headings: 44 px rows
+  # under the 56 px box).
   $rows = [int](($box.B - $box.T - 68) / 44)
-  $q = RowPt ($rows - 1)
-  [G]::RClick($q[0], $q[1]); Start-Sleep -Milliseconds 900
-  $m = MenuWin 1
-  $line = @(PfLogAll | Where-Object { $_ -match 'the row has no file path' -and $_ -match 'show all in Everything' }).Count
-  Check 'a right-click on 在 Everything 里查看全部结果: no menu, the search stays' ($m -eq [IntPtr]::Zero -and [M]::BoxText() -eq "rkke$Tag" -and $line -gt 0) "menu=$(MenuTexts $m) box='$([M]::BoxText())' log lines=$line rows=$rows"
-  CloseMenus
+  foreach ($foot in @(@(2, 'show all in Everything', '在 Everything 里查看全部结果'), @(1, 'put the search on the desktop', '把这次搜索放到桌面'))) {
+    $q = RowPt ($rows - $foot[0])
+    [G]::RClick($q[0], $q[1]); Start-Sleep -Milliseconds 900
+    $m = MenuWin 1
+    $line = @(PfLogAll | Where-Object { $_ -match 'the row has no file path' -and $_ -match $foot[1] }).Count
+    Check "a right-click on $($foot[2]): no menu, the search stays" ($m -eq [IntPtr]::Zero -and [M]::BoxText() -eq "rkke$Tag" -and $line -gt 0) "menu=$(MenuTexts $m) box='$([M]::BoxText())' log lines=$line rows=$rows"
+    CloseMenus
+    # The right-click highlighted the row: Ctrl+O on it has no menu either.
+    Chord 0x11 0x4F; Start-Sleep -Milliseconds 900
+    $m = MenuWin 1
+    Check "Ctrl+O on $($foot[2]): no menu, the search stays" ($m -eq [IntPtr]::Zero -and [M]::BoxText() -eq "rkke$Tag") "menu=$(MenuTexts $m) box='$([M]::BoxText())'"
+    CloseMenus
+  }
   EndSearch
 
   Case 'a folder row'
