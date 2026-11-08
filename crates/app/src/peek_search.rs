@@ -116,6 +116,8 @@ struct Session {
     status: String,
     rows: Vec<Row>,
     selected: Option<usize>,
+    /// How many results the search has in all (more than the rows shown).
+    total: usize,
     /// Top and bottom (client pixels) of each row, from the last layout.
     row_spans: Vec<(i32, i32)>,
     /// The type tab: 0 全部, else `type_filter::TABS[tab - 1]`; and each tab's left and right
@@ -320,6 +322,7 @@ pub fn open(text: &str, queue: CommandQueue, dark: bool) {
             status: String::new(),
             rows: Vec::new(),
             selected: None,
+            total: 0,
             row_spans: Vec::new(),
             tab: 0,
             tab_spans: Vec::new(),
@@ -567,7 +570,7 @@ fn paint_box(hwnd: HWND) {
                 );
             }
         }
-        // The bottom bar: what the keys do, and how many results (the action rows aside).
+        // The bottom bar: what the keys do, and how many results in all (more than shown).
         let y0 = h - px(BAR_H);
         p.fill(
             RECT {
@@ -585,10 +588,9 @@ fn paint_box(hwnd: HWND) {
             bottom: h,
         };
         p.text(bar, &bar_keys(), &s.detail_font, s.dim_color, Align::Left);
-        let results = s.rows.iter().filter(|r| r.glyph.is_none()).count();
         p.text(
             bar,
-            &pecofence_core::i18n::format("{0} 个结果", &[results.to_string()]),
+            &pecofence_core::i18n::format("{0} 个结果", &[s.total.to_string()]),
             &s.detail_font,
             s.dim_color,
             Align::Right,
@@ -806,11 +808,12 @@ pub fn set_status(text: &str) {
 }
 
 /// Replaces the list under the box and the highlighted row; the window grows or shrinks to fit.
-pub fn set_rows(rows: Vec<Row>, selected: Option<usize>) {
+pub fn set_rows(rows: Vec<Row>, selected: Option<usize>, total: usize) {
     let resize = ACTIVE.with(|a| {
         let mut a = a.borrow_mut();
         let s = a.as_mut()?;
         s.rows = rows;
+        s.total = total;
         s.selected = selected.filter(|&i| i < s.rows.len());
         // Icons of rows that went away are dropped (they are cheap to get again).
         let keep: Vec<PathBuf> = s.rows.iter().filter_map(|r| r.icon_path.clone()).collect();
@@ -822,6 +825,7 @@ pub fn set_rows(rows: Vec<Row>, selected: Option<usize>) {
             results = s.rows.iter().filter(|r| r.glyph.is_none()).count(),
             action_glyphs = s.rows.iter().filter(|r| r.glyph.is_some()).count(),
             selected = ?s.selected,
+            total,
             bar = !s.rows.is_empty(),
             tab = tab_label(s.tab),
             "search list laid out"

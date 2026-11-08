@@ -52,6 +52,9 @@ pub(super) struct SearchState {
     /// Everything's last answer for the current text, and how many it found in all.
     pub everything: Vec<ev::Hit>,
     pub everything_total: u32,
+    /// How many results the search has in all (the bottom bar): the fences' matches and
+    /// Everything's, less those of its answer already in a fence or not of the type tab.
+    pub total: usize,
     /// Sequence number of the last query sent, and its text.
     pub seq: u32,
     pub sent: String,
@@ -130,14 +133,15 @@ impl App {
                         continue;
                     };
                     for it in self.state.items_of(fence) {
-                        if !types.is_empty() && !item_is_of(&types, it) {
-                            continue;
-                        }
                         let Some((score, marks)) =
                             super::peek::search_match(&it.display_name, it.key.as_path(), query)
                         else {
                             continue;
                         };
+                        // After the name: 程序 reads a shortcut's target.
+                        if !types.is_empty() && !item_is_of(&types, it) {
+                            continue;
+                        }
                         let uses = it
                             .path()
                             .map(|p| self.state.config.search_count(p))
@@ -263,8 +267,10 @@ impl App {
             .collect();
         // Everything's results, ranked here: Everything sorts by date only.
         let mut files: Vec<(u32, u32, usize, PathBuf, bool)> = Vec::new();
+        let mut skipped = 0;
         for (order, hit) in self.search.everything.iter().enumerate() {
             if fence_paths.contains(&hit.path.to_lowercase()) {
+                skipped += 1;
                 continue;
             }
             let path = PathBuf::from(&hit.path);
@@ -274,6 +280,7 @@ impl App {
                 .unwrap_or_else(|| hit.path.clone());
             // Asked with the type's words already; the same test as the fences' items.
             if !super::filter::is_of_types(&types, &name, hit.is_folder, Some(&hit.path)) {
+                skipped += 1;
                 continue;
             }
             let score = matcher::match_name(&name, &query).map_or(0, |m| m.score);
@@ -294,8 +301,13 @@ impl App {
         } else {
             FENCE_ROWS_WITH_EVERYTHING.min(max_rows)
         };
-        let mut rows: Vec<RowKind> = (0..self.peek_hits.len())
+        let in_fences: Vec<usize> = (0..self.peek_hits.len())
             .filter(|&i| self.state.item(self.peek_hits[i].2).is_some())
+            .collect();
+        self.search.total =
+            in_fences.len() + (self.search.everything_total as usize).saturating_sub(skipped);
+        let mut rows: Vec<RowKind> = in_fences
+            .into_iter()
             .take(fence_room)
             .map(RowKind::Fence)
             .collect();
@@ -438,7 +450,7 @@ impl App {
             rows.push(row);
         }
         let selected = (!rows.is_empty()).then_some(self.search.sel);
-        crate::peek_search::set_rows(rows, selected);
+        crate::peek_search::set_rows(rows, selected, self.search.total);
     }
 
     /// Up / Down (Ctrl+P / Ctrl+N) in the box: the previous / next row, wrapping around.
