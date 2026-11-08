@@ -2070,11 +2070,6 @@ impl FenceChrome {
         )
     }
 
-    /// Lays out a single title (no tab strip) in a title row `width` wide that keeps `reserve`
-    /// DIPs free for the rolled item count: where its unit (the folder glyph, the title, then
-    /// a smart fence's `count` after it) starts, the fitted title and the room the title gets.
-    /// The title gives way first: the count stays whole.
-    #[allow(clippy::too_many_arguments)]
     /// Room a smart fence's count capsule takes at the right end of the title row (its gap
     /// before the chevron included).
     fn count_capsule_w(&self, count: &str) -> f32 {
@@ -2164,20 +2159,32 @@ impl FenceChrome {
         tag: (&str, &str, &str),
         title_count: Option<&str>,
     ) -> Rect {
-        let (kind, text, count) = tag;
-        let w = 22.0
-            + self.tag_kind_w(kind)
-            + crate::text::measure_width(text, &self.tag_format)
+        let text = self.tag_text(width, tag, title_count);
+        let w = self.tag_fixed_w(tag) + crate::text::measure_width(&text, &self.tag_format);
+        let right = TitleDeco::chevron_box(width, title_h).left
+            - 2.0
+            - title_count.map_or(0.0, |c| self.count_capsule_w(c));
+        Rect::from_xywh(right - w, ((title_h - TAG_H) * 0.5).round(), w, TAG_H)
+    }
+
+    /// The tag's room without its text: magnifier, type chip, count, ×.
+    fn tag_fixed_w(&self, (kind, _, count): (&str, &str, &str)) -> f32 {
+        22.0 + self.tag_kind_w(kind)
             + if count.is_empty() {
                 0.0
             } else {
                 8.0 + crate::text::measure_width(count, &self.count_format)
             }
-            + TAG_CLEAR_W;
-        let right = TitleDeco::chevron_box(width, title_h).left
-            - 2.0
-            - title_count.map_or(0.0, |c| self.count_capsule_w(c));
-        Rect::from_xywh(right - w, ((title_h - TAG_H) * 0.5).round(), w, TAG_H)
+            + TAG_CLEAR_W
+    }
+
+    /// The filter text as the tag shows it: shortened with an ellipsis so the tag takes at
+    /// most about 60 % of the title row (the type chip, the count and × stay whole).
+    fn tag_text(&self, width: f32, tag: (&str, &str, &str), title_count: Option<&str>) -> String {
+        let room = width * 0.6
+            - title_count.map_or(0.0, |c| self.count_capsule_w(c))
+            - self.tag_fixed_w(tag);
+        crate::text::fit_width(tag.1, &self.tag_format, room.max(0.0))
     }
 
     /// The type chip's room in the tag (its gap after it included); 0 without a type.
@@ -2201,7 +2208,8 @@ impl FenceChrome {
         title_count: Option<&str>,
         alpha: f32,
     ) -> Result<()> {
-        let (kind, text, count) = tag;
+        let (kind, _, count) = tag;
+        let text = &self.tag_text(width, tag, title_count);
         let r = self.filter_tag_rect(width, title_h, tag, title_count);
         let tint = session.create_solid_brush(with_alpha(theme.accent, 0.14 * alpha))?;
         session.fill_rounded_rect(&RoundedRect::uniform(r, TAG_H * 0.5), &tint);
@@ -2249,10 +2257,17 @@ impl FenceChrome {
         Ok(())
     }
 
+    /// Lays out a single title (no tab strip) in a title row `width` wide that keeps `reserve`
+    /// DIPs free for the rolled item count: where its unit (the folder glyph, the title) starts,
+    /// the fitted title and the room the title gets. A smart fence's `count` capsule and a
+    /// filter `tag` sit at the right end; the title gives way first, they stay whole. Drawing
+    /// and the app's hit tests share it.
+    #[allow(clippy::too_many_arguments)]
     fn lone_title_place(
         &self,
         title: &str,
         count: Option<&str>,
+        tag: Option<(&str, &str, &str)>,
         size: u8,
         align: pecofence_core::TitleAlign,
         width: f32,
@@ -2267,8 +2282,14 @@ impl FenceChrome {
         };
         let glyph_w = deco.glyphs_w();
         // A smart fence's count is a capsule at the right end, before the chevron.
-        let end =
-            width - TITLE_RIGHT_RESERVE - reserve - count.map_or(0.0, |c| self.count_capsule_w(c));
+        let tag_w = tag.map_or(0.0, |t| {
+            self.filter_tag_rect(width, 0.0, t, count).width() + 6.0
+        });
+        let end = width
+            - TITLE_RIGHT_RESERVE
+            - reserve
+            - tag_w
+            - count.map_or(0.0, |c| self.count_capsule_w(c));
         let title_w = (end - start - glyph_w).max(0.0);
         let fitted = crate::text::fit_width(title, fmt, title_w);
         let unit_w = glyph_w + crate::text::measure_width(&fitted, fmt).min(title_w);
@@ -2277,9 +2298,11 @@ impl FenceChrome {
 
     /// The up button of a single folder title inside a subfolder: the square around its folder
     /// glyph, which moves with the title's alignment. The app hit-tests the same box.
+    #[allow(clippy::too_many_arguments)]
     pub fn lone_up_box(
         &self,
         title: &str,
+        tag: Option<(&str, &str, &str)>,
         size: u8,
         align: pecofence_core::TitleAlign,
         width: f32,
@@ -2293,7 +2316,7 @@ impl FenceChrome {
             search_glyph: false,
             desktop_icon,
         };
-        let (x, _, _) = self.lone_title_place(title, None, size, align, width, deco, reserve);
+        let (x, _, _) = self.lone_title_place(title, None, tag, size, align, width, deco, reserve);
         glyph_up_square(x + 8.0, title_h)
     }
 
@@ -2304,6 +2327,7 @@ impl FenceChrome {
         &self,
         title: &str,
         count: Option<&str>,
+        tag: Option<(&str, &str, &str)>,
         size: u8,
         align: pecofence_core::TitleAlign,
         width: f32,
@@ -2311,7 +2335,7 @@ impl FenceChrome {
         reserve: f32,
         title_h: f32,
     ) -> Rect {
-        let (x, _, _) = self.lone_title_place(title, count, size, align, width, deco, reserve);
+        let (x, _, _) = self.lone_title_place(title, count, tag, size, align, width, deco, reserve);
         let x = x + if deco.folder_icon {
             TitleDeco::ICON_W
         } else {
@@ -2812,17 +2836,15 @@ impl FenceChrome {
             }
             // The folder glyph travels with the title to the chosen alignment; a separate up
             // button stays at the far left.
-            let tag_w = filter_tag.map_or(0.0, |t| {
-                self.filter_tag_rect(width, title_h, t, None).width() + 6.0
-            });
             let (mut x, fitted, title_w) = self.lone_title_place(
                 title,
                 title_count,
+                filter_tag,
                 style.title_size,
                 style.title_align,
                 width,
                 deco,
-                title_reserve + tag_w,
+                title_reserve,
             );
             if deco.folder_icon {
                 // Folder glyph (E8B7) aligned with the title baseline. Inside a subfolder it is
@@ -4466,20 +4488,43 @@ mod tests {
             desktop_icon: true,
         };
         assert_eq!(both.title_x(), 16.0 + 2.0 * TitleDeco::ICON_W);
-        let glyph = chrome.lone_desktop_box("2026", None, 1, Left, 300.0, both, 0.0, 36.0);
+        let glyph = chrome.lone_desktop_box("2026", None, None, 1, Left, 300.0, both, 0.0, 36.0);
         assert_eq!(glyph.left, 16.0 + TitleDeco::ICON_W - 2.0);
         let alone = TitleDeco {
             desktop_icon: true,
             ..TitleDeco::default()
         };
-        let glyph = chrome.lone_desktop_box("2026", None, 1, Left, 300.0, alone, 0.0, 36.0);
+        let glyph = chrome.lone_desktop_box("2026", None, None, 1, Left, 300.0, alone, 0.0, 36.0);
         assert_eq!(
             (glyph.left, alone.title_x()),
             (14.0, 16.0 + TitleDeco::ICON_W)
         );
         // The lone up button keeps its glyph's place with the Task View glyph after it.
-        let up = chrome.lone_up_box("2026", 1, Left, 300.0, true, 0.0, 36.0);
+        let up = chrome.lone_up_box("2026", None, 1, Left, 300.0, true, 0.0, 36.0);
         assert_eq!(up.left, 14.0);
+    }
+
+    /// A long filter text is shortened so the tag leaves the title room; the type chip, the
+    /// count and × stay whole.
+    #[test]
+    fn a_long_filter_text_is_shortened_in_the_tag() {
+        let chrome = FenceChrome::new().unwrap();
+        let long = (
+            "类型：PDF",
+            "季度报告 2026 第三季度 预算 草稿 修改版",
+            "3 / 31",
+        );
+        let wide = chrome.filter_tag_rect(1200.0, 36.0, long, None);
+        let narrow = chrome.filter_tag_rect(240.0, 36.0, long, None);
+        assert!(narrow.width() < wide.width());
+        assert!(narrow.width() <= 240.0 * 0.6 + 1.0, "{narrow:?}");
+        let short = chrome.filter_tag_rect(240.0, 36.0, ("类型：PDF", "", "3 / 31"), None);
+        assert!(narrow.width() >= short.width());
+        assert_eq!(chrome.tag_text(1200.0, long, None), long.1);
+        assert!(
+            chrome.tag_text(240.0, long, None).ends_with('…')
+                || chrome.tag_text(240.0, long, None).is_empty()
+        );
     }
 
     #[test]
@@ -4494,15 +4539,20 @@ mod tests {
             desktop_icon: false,
         };
         assert_eq!(up.title_x(), 16.0 + TitleDeco::ICON_W);
-        let left = chrome.lone_up_box("2026", 1, Left, 300.0, false, 0.0, 36.0);
+        let left = chrome.lone_up_box("2026", None, 1, Left, 300.0, false, 0.0, 36.0);
         assert_eq!(
             (left.left, left.top, left.right, left.bottom),
             (14.0, 8.0, 34.0, 28.0)
         );
         // It moves with the title, which keeps clear of the rolled count.
-        let right = chrome.lone_up_box("2026", 1, Right, 300.0, false, ROLLED_COUNT_W, 36.0);
+        let right = chrome.lone_up_box("2026", None, 1, Right, 300.0, false, ROLLED_COUNT_W, 36.0);
         assert!(right.left > left.left);
         assert!(right.right <= 300.0 - TITLE_RIGHT_RESERVE - ROLLED_COUNT_W);
+        // And of a filter tag, as drawn (one layout for both).
+        let tag = ("", "pdf", "3 / 31");
+        let tag_r = chrome.filter_tag_rect(300.0, 36.0, tag, None);
+        let tagged = chrome.lone_up_box("2026", Some(tag), 1, Right, 300.0, false, 0.0, 36.0);
+        assert!(tagged.right <= tag_r.left, "{tagged:?} {tag_r:?}");
         // With the glyph hidden, the button stays at the far left.
         let hidden = TitleDeco {
             folder_icon: false,

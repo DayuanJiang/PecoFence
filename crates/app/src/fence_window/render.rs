@@ -409,11 +409,10 @@ impl FenceViewState {
         let roll_t = self.roll_t.value_at(now);
         // The count is drawn while it fades out after expanding, not only while rolled.
         // A note (便签) has no items to count.
-        // A smart fence shows its count after the name, rolled or not: no second one.
-        let count = ((rolled || state.count > 0.0)
-            && !self.shows_tool()
-            && self.title_count.is_none())
-        .then(|| pecofence_core::i18n::format("{0} 项", &[format!("{}", self.items.len())]));
+        // A smart fence shows its count after the name, rolled or not: no second one. A
+        // filter tag carries the count too.
+        let count = ((rolled || state.count > 0.0) && self.shows_rolled_count())
+            .then(|| pecofence_core::i18n::format("{0} 项", &[format!("{}", self.items.len())]));
         let title_count = self.title_count.clone();
         let filter_tag = self.filter_tag.clone();
         let opacity = self.material_opacity();

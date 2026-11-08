@@ -142,15 +142,23 @@ impl FenceViewState {
                 None => return false,
             }
         } else if self.deco.folder_icon {
-            // The title moves aside for the rolled item count, as drawn.
+            // The title moves aside for the rolled item count and the filter tag, as drawn;
+            // the tag over the glyph of a narrow fence takes the click.
+            if self.on_filter_tag(x, y) {
+                return false;
+            }
             let width = self.chrome_panel.size_px().0 as f32 / scale;
-            let reserve = if self.roll_target() && !self.behavior.hide_count_and_chevron.get() {
+            let reserve = if self.roll_target()
+                && !self.behavior.hide_count_and_chevron.get()
+                && self.filter_tag.is_none()
+            {
                 pecofence_render::fence_chrome::header_count_width(width, 1, self.deco.title_x())
             } else {
                 0.0
             };
             self.chrome.lone_up_box(
                 &self.title,
+                self.filter_tag_ref(),
                 self.style.title_size,
                 self.behavior.title_align.get(),
                 width,
@@ -174,10 +182,15 @@ impl FenceViewState {
         let scale = self.scale();
         let (x, y) = (x_px as f32 / scale, y_px as f32 / scale);
         let width = self.chrome_panel.size_px().0 as f32 / scale;
-        // As drawn: a smart fence's count is its capsule, so no rolled count at the right.
+        if self.on_filter_tag(x, y) {
+            return false;
+        }
+        // As drawn: a smart fence's count is its capsule and a filter tag carries one, so no
+        // rolled count at the right.
         let reserve = if self.roll_target()
             && !self.behavior.hide_count_and_chevron.get()
             && self.title_count.is_none()
+            && self.filter_tag.is_none()
         {
             pecofence_render::fence_chrome::header_count_width(width, 1, self.deco.title_x())
         } else {
@@ -186,6 +199,7 @@ impl FenceViewState {
         let r = self.chrome.lone_desktop_box(
             &self.title,
             self.title_count.as_deref(),
+            self.filter_tag_ref(),
             self.style.title_size,
             self.behavior.title_align.get(),
             width,
@@ -224,27 +238,44 @@ impl FenceViewState {
         }
     }
 
-    /// Is the client-pixel point on the × of the filter tag (筛选, a single title)?
-    pub(super) fn filter_tag_clear_at(&self, x_px: i32, y_px: i32) -> bool {
-        let Some((kind, text, count)) = self.filter_tag.as_ref() else {
-            return false;
-        };
+    /// The filter tag of a single title (筛选), as drawn.
+    fn filter_tag_ref(&self) -> Option<(&str, &str, &str)> {
+        self.filter_tag
+            .as_ref()
+            .map(|(k, t, c)| (k.as_str(), t.as_str(), c.as_str()))
+    }
+
+    /// The filter tag's box (DIPs) when a single title shows one.
+    fn filter_tag_box(&self) -> Option<Rect> {
+        let tag = self.filter_tag_ref()?;
         if self.title_row_strip() || self.tabs_on_rail() || self.bare() {
-            return false;
+            return None;
         }
-        let scale = self.scale();
-        let width = self.chrome_panel.size_px().0 as f32 / scale;
-        let r = self.chrome.filter_tag_rect(
+        let width = self.chrome_panel.size_px().0 as f32 / self.scale();
+        Some(self.chrome.filter_tag_rect(
             width,
             self.theme.title_height,
-            (kind, text, count),
+            tag,
             self.title_count.as_deref(),
-        );
+        ))
+    }
+
+    /// Is the DIP point on the filter tag?
+    fn on_filter_tag(&self, x: f32, y: f32) -> bool {
+        self.filter_tag_box()
+            .is_some_and(|r| x >= r.left && x < r.right && y >= r.top && y < r.bottom)
+    }
+
+    /// Is the client-pixel point on the × of the filter tag (筛选, a single title)?
+    pub(super) fn filter_tag_clear_at(&self, x_px: i32, y_px: i32) -> bool {
+        let scale = self.scale();
         let (x, y) = (x_px as f32 / scale, y_px as f32 / scale);
-        x >= r.right - pecofence_render::fence_chrome::TAG_CLEAR_W
-            && x < r.right
-            && y >= r.top
-            && y < r.bottom
+        self.filter_tag_box().is_some_and(|r| {
+            x >= r.right - pecofence_render::fence_chrome::TAG_CLEAR_W
+                && x < r.right
+                && y >= r.top
+                && y < r.bottom
+        })
     }
 
     /// Is the client-pixel point on the roll-up chevron button (right end of the title row)?

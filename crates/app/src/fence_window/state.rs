@@ -662,6 +662,12 @@ impl FenceViewState {
         self.note.is_some() || self.clock.is_some() || self.script.is_some()
     }
 
+    /// The rolled title shows 「N 项」 before the chevron: not for a tool (no items), a smart
+    /// fence (its capsule counts) or a filter tag (it carries the count).
+    pub(super) fn shows_rolled_count(&self) -> bool {
+        !self.shows_tool() && self.title_count.is_none() && self.filter_tag.is_none()
+    }
+
     /// Nothing can be dropped here: a tool fence, or a smart fence (it shows a search).
     pub(super) fn takes_no_drops(&self) -> bool {
         self.shows_tool() || self.refuses_drops
