@@ -317,6 +317,17 @@ pub fn category_exts(cat: TypeCategory) -> &'static [&'static str] {
     }
 }
 
+/// Whether a file `file_name` (a folder when `is_folder`) is in `cat`, by the tests the `type`
+/// rule condition uses (a shortcut whose target is unknown counts as a program, as there).
+pub fn file_in_category(cat: TypeCategory, file_name: &str, is_folder: bool) -> bool {
+    let facts = ItemFacts {
+        file_name: file_name.to_string(),
+        is_folder,
+        ..ItemFacts::default()
+    };
+    category_matches(cat, &facts)
+}
+
 fn category_matches(cat: TypeCategory, facts: &ItemFacts) -> bool {
     let ext = ext_of(&facts.file_name);
     let target_ext = facts.shortcut_target_ext.as_deref().unwrap_or("");

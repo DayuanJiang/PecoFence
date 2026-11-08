@@ -1577,12 +1577,7 @@ fn draw_scrollbar(
 /// everything else gets Microsoft YaHei UI (upstream's `en-us` would pick Yu Gothic UI and draw
 /// Chinese names with Japanese glyph forms).
 fn text_locale() -> &'static str {
-    match pecofence_platform::locale::ui_language() {
-        "zh-TW" => "zh-TW",
-        "ja" => "ja-JP",
-        "ko" => "ko-KR",
-        _ => "zh-CN",
-    }
+    pecofence_core::i18n::han_for(pecofence_platform::locale::ui_language()).0
 }
 
 impl FenceChrome {

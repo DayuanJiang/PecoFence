@@ -101,19 +101,12 @@ pub fn display_face() -> &'static str {
     pick(&FACE, "Segoe UI Variable Display", "Segoe UI")
 }
 
-/// Han text drawn with GDI (the Peek search list) as the fence titles draw it with
-/// DirectWrite in the UI's Han locale: GDI's font linking on an English Windows reaches a
-/// Japanese face first, so 下载 came out in Japanese or Traditional forms. Microsoft YaHei UI
-/// (Simplified, the default), JhengHei UI, Yu Gothic UI or Malgun Gothic after the UI
-/// language; their Latin letters are Segoe UI's. Segoe UI when the face is missing.
+/// Han text drawn with GDI (the Peek search list) as the fence titles draw it with DirectWrite:
+/// the face `pecofence_core::i18n::han_for` gives the UI language (GDI's own fallback on an
+/// English Windows drew 下载 in Japanese or Traditional forms). Segoe UI when it is missing.
 pub fn han_text_face() -> &'static str {
     static FACE: OnceLock<&'static str> = OnceLock::new();
-    let preferred = match crate::locale::ui_language() {
-        "zh-TW" => "Microsoft JhengHei UI",
-        "ja" => "Yu Gothic UI",
-        "ko" => "Malgun Gothic",
-        _ => "Microsoft YaHei UI",
-    };
+    let (_, preferred) = pecofence_core::i18n::han_for(crate::locale::ui_language());
     pick(&FACE, preferred, text_face())
 }
 

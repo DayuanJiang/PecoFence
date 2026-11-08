@@ -191,6 +191,20 @@ pub fn text_in(language: Language, source: &'static str) -> &'static str {
         .unwrap_or(bare)
 }
 
+/// The Han locale and the GDI face for Windows' UI language `ui` (`zh-TW`, `ja`, `ko`, …):
+/// Han characters take the forms of that language, and Simplified Chinese's for every other
+/// one. The fence titles (DirectWrite) use the locale, the Peek search list (GDI) the face, so
+/// both show 下载 the same way; on an English Windows GDI's own fallback drew it in Japanese or
+/// Traditional forms.
+pub fn han_for(ui: &str) -> (&'static str, &'static str) {
+    match ui {
+        "zh-TW" => ("zh-TW", "Microsoft JhengHei UI"),
+        "ja" => ("ja-JP", "Yu Gothic UI"),
+        "ko" => ("ko-KR", "Malgun Gothic"),
+        _ => ("zh-CN", "Microsoft YaHei UI"),
+    }
+}
+
 pub fn text(source: &'static str) -> &'static str {
     text_in(language(), source)
 }
@@ -253,6 +267,17 @@ pub fn format(source: &'static str, arguments: &[String]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn han_text_takes_the_forms_of_the_ui_language_and_simplified_for_the_rest() {
+        assert_eq!(han_for("zh-CN"), ("zh-CN", "Microsoft YaHei UI"));
+        assert_eq!(han_for("zh-TW"), ("zh-TW", "Microsoft JhengHei UI"));
+        assert_eq!(han_for("ja"), ("ja-JP", "Yu Gothic UI"));
+        assert_eq!(han_for("ko"), ("ko-KR", "Malgun Gothic"));
+        for other in ["en", "de", "fr", "es", "pt-BR", "ru", "it", ""] {
+            assert_eq!(han_for(other), ("zh-CN", "Microsoft YaHei UI"), "{other}");
+        }
+    }
 
     #[test]
     fn first_start_names_follow_the_language_until_renamed() {

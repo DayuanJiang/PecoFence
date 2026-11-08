@@ -14,6 +14,7 @@ pub mod note;
 pub mod rules;
 pub mod script_output;
 pub mod smart;
+pub mod type_filter;
 pub mod updates;
 pub mod vdesk;
 
