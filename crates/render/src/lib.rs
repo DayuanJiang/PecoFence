@@ -36,6 +36,7 @@ pub mod fence_chrome;
 mod gpu_bindings;
 pub mod gpu_glass;
 pub mod liquid_glass;
+pub mod marquee_offer;
 pub mod motion;
 pub mod notice;
 pub mod panel;

@@ -1,8 +1,13 @@
-//! Short, non-postponing wallpaper checks and a bounded cache for desktop round trips.
+//! Short, non-postponing wallpaper checks, the worker that reads the wallpaper for them, and a
+//! bounded cache for desktop round trips.
 
+use crate::commands::{WM_APP_WALLPAPER, WM_APP_WALLPAPER_READ};
 use crate::fence_window::BackdropSets;
+use pecofence_platform::wallpaper::{self, WallpaperSnapshot};
+use pecofence_platform::{HWND, window};
 use std::collections::VecDeque;
 use std::rc::Rc;
+use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::{Duration, Instant};
 
 pub(super) const FIRST_CHECK_MS: u32 = 50;
@@ -39,6 +44,200 @@ impl RefreshSchedule {
         } else {
             self.next = None;
             self.settle_until = None;
+            None
+        }
+    }
+}
+
+/// A read that waited this long for Explorer is logged (once while it waits, once answered).
+const LATE_READ: Duration = Duration::from_secs(1);
+
+/// What a check is for (`App::follow_snapshot` reads it): the 5 s poll, a change signal, a
+/// rebuild after a theme or display change, a live wallpaper capture that needs new backdrops.
+pub(super) const POLL: &str = "poll";
+pub(super) const NOTIFICATION: &str = "notification";
+pub(super) const REFRESH: &str = "refresh";
+
+/// Reads the wallpaper (`IDesktopWallpaper`, COM calls into Explorer) on a worker thread of its
+/// own. Explorer answers within a few ms, but while it is busy (1500 new desktop files, its
+/// desktop thread stuck) it answered after 20 to 99 s, and every fence froze that long when the
+/// UI thread asked. One read is out at a time: a poll while one is out is skipped, any other
+/// check runs once the answer is back.
+pub(super) struct WallpaperReader {
+    requests: Option<Sender<()>>,
+    answers: Receiver<std::result::Result<WallpaperSnapshot, String>>,
+    /// The read out now: when it started and the check it is for.
+    pending: Option<(Instant, &'static str)>,
+    /// A check asked for while `pending` was out.
+    again: Option<&'static str>,
+    /// `pending` waits longer than `LATE_READ` and was logged.
+    reported: bool,
+}
+
+impl WallpaperReader {
+    /// Starts the worker; it posts `WM_APP_WALLPAPER_READ` to `control` after every read.
+    pub(super) fn start(control: HWND, wallpaper_override: Option<String>) -> Self {
+        let (requests, jobs) = mpsc::channel::<()>();
+        let (answer, answers) = mpsc::channel();
+        let control = control.0 as isize;
+        let spawned = std::thread::Builder::new()
+            .name("pecofence-wallpaper-read".into())
+            .spawn(move || {
+                let _com = pecofence_platform::com::MtaGuard::init();
+                while jobs.recv().is_ok() {
+                    let read = super::visuals::wallpaper_snapshot(wallpaper_override.as_deref())
+                        .map_err(|error| error.to_string());
+                    if answer.send(read).is_err() {
+                        break;
+                    }
+                    window::post_message(
+                        HWND(control as *mut core::ffi::c_void),
+                        WM_APP_WALLPAPER_READ,
+                        0,
+                        0,
+                    );
+                }
+            });
+        if let Err(error) = &spawned {
+            tracing::warn!(%error, "wallpaper reader thread failed to start; wallpaper not followed");
+        }
+        Self {
+            requests: spawned.is_ok().then_some(requests),
+            answers,
+            pending: None,
+            again: None,
+            reported: false,
+        }
+    }
+
+    pub(super) fn is_pending(&self) -> bool {
+        self.pending.is_some()
+    }
+
+    /// Asks for a read for the check `reason`. While one is out, a poll is skipped and any
+    /// other check is kept for `take_again` (a signal before a poll).
+    pub(super) fn request(&mut self, reason: &'static str) {
+        if let Some((started, _)) = self.pending {
+            if reason != POLL {
+                self.queue(reason);
+            }
+            if started.elapsed() >= LATE_READ && !self.reported {
+                self.reported = true;
+                // `reason`: the check that waits (the read's own comes with its answer).
+                tracing::info!(
+                    waited_ms = started.elapsed().as_millis(),
+                    reason,
+                    "wallpaper read still waits for Explorer; fences go on, checks wait for it"
+                );
+            }
+            return;
+        }
+        let Some(requests) = &self.requests else {
+            return;
+        };
+        if requests.send(()).is_ok() {
+            self.pending = Some((Instant::now(), reason));
+            self.reported = false;
+        }
+    }
+
+    /// Keeps `reason` for after the read out now; a signal's check wins over the others.
+    pub(super) fn queue(&mut self, reason: &'static str) {
+        if self.again != Some(NOTIFICATION) {
+            self.again = Some(reason);
+        }
+    }
+
+    /// The check kept while a read was out, once none is.
+    pub(super) fn take_again(&mut self) -> Option<&'static str> {
+        if self.pending.is_some() {
+            return None;
+        }
+        self.again.take()
+    }
+
+    /// The answer of the read out now with the check it was for: at once if it has come,
+    /// else after waiting `wait` at most. None when nothing is out or it has not come.
+    pub(super) fn answer(
+        &mut self,
+        wait: Duration,
+    ) -> Option<(&'static str, std::result::Result<WallpaperSnapshot, String>)> {
+        let (started, reason) = self.pending?;
+        let read = if wait.is_zero() {
+            self.answers
+                .try_recv()
+                .map_err(|e| e == mpsc::TryRecvError::Disconnected)
+        } else {
+            self.answers
+                .recv_timeout(wait)
+                .map_err(|e| e == mpsc::RecvTimeoutError::Disconnected)
+        };
+        let read = match read {
+            Ok(read) => read,
+            Err(gone) => {
+                if gone {
+                    tracing::warn!("wallpaper reader thread ended; wallpaper not followed");
+                    self.pending = None;
+                    self.requests = None;
+                }
+                return None;
+            }
+        };
+        self.pending = None;
+        let waited = started.elapsed();
+        if waited >= LATE_READ {
+            tracing::info!(
+                reason,
+                waited_ms = waited.as_millis(),
+                "wallpaper read answered late"
+            );
+        }
+        Some((reason, read))
+    }
+}
+
+/// Asks which virtual desktop the foreground window is on from a worker thread
+/// (`IVirtualDesktopManager`, a COM call into Explorer) and posts `WM_APP_WALLPAPER` (wparam
+/// 2) to `control` when it is not the desktop of the last window asked about. `Some(hwnd)`
+/// asks about a window, `None` forgets the last desktop.
+pub(super) fn start_foreground_desktops(control: HWND) -> Option<Sender<Option<isize>>> {
+    let (send, jobs) = mpsc::channel::<Option<isize>>();
+    let control = control.0 as isize;
+    let spawned = std::thread::Builder::new()
+        .name("pecofence-window-desktop".into())
+        .spawn(move || {
+            let _com = pecofence_platform::com::MtaGuard::init();
+            let mut last: Option<u128> = None;
+            while let Ok(first) = jobs.recv() {
+                // Only the newest window counts; a `None` on the way forgets the last desktop.
+                let mut window = None;
+                for job in std::iter::once(first).chain(jobs.try_iter()) {
+                    window = job;
+                    if job.is_none() {
+                        last = None;
+                    }
+                }
+                let Some(hwnd) = window else {
+                    continue;
+                };
+                let desktop = wallpaper::window_desktop(HWND(hwnd as *mut core::ffi::c_void));
+                // Unknown (the desktop itself, say): the next one counts again.
+                let same = desktop.is_some() && last == desktop;
+                last = desktop;
+                if !same {
+                    window::post_message(
+                        HWND(control as *mut core::ffi::c_void),
+                        WM_APP_WALLPAPER,
+                        2,
+                        0,
+                    );
+                }
+            }
+        });
+    match spawned {
+        Ok(_) => Some(send),
+        Err(error) => {
+            tracing::warn!(%error, "window desktop thread failed to start");
             None
         }
     }
@@ -198,6 +397,72 @@ impl BackdropCache {
 mod tests {
     use super::*;
     use pecofence_render::{Image, MonitorBackdrop};
+
+    /// A reader without its worker: the test answers through `answer_tx`.
+    fn reader() -> (
+        WallpaperReader,
+        Receiver<()>,
+        Sender<std::result::Result<WallpaperSnapshot, String>>,
+    ) {
+        let (requests, jobs) = mpsc::channel();
+        let (answer_tx, answers) = mpsc::channel();
+        let reader = WallpaperReader {
+            requests: Some(requests),
+            answers,
+            pending: None,
+            again: None,
+            reported: false,
+        };
+        (reader, jobs, answer_tx)
+    }
+
+    #[test]
+    fn one_read_at_a_time_and_a_poll_is_skipped_while_one_is_out() {
+        let (mut reader, jobs, answer) = reader();
+        reader.request(POLL);
+        reader.request(POLL);
+        reader.request(POLL);
+        assert_eq!(jobs.try_iter().count(), 1);
+        assert!(reader.answer(Duration::ZERO).is_none());
+        assert!(reader.is_pending());
+        answer.send(Err("busy".into())).unwrap();
+        let (reason, read) = reader.answer(Duration::ZERO).unwrap();
+        assert_eq!(reason, POLL);
+        assert!(read.is_err());
+        // Polls skipped meanwhile do not run afterwards.
+        assert_eq!(reader.take_again(), None);
+    }
+
+    #[test]
+    fn a_signal_while_a_read_is_out_runs_once_it_is_back() {
+        let (mut reader, jobs, answer) = reader();
+        reader.request(POLL);
+        reader.request(NOTIFICATION);
+        reader.request(REFRESH);
+        reader.request(POLL);
+        assert_eq!(jobs.try_iter().count(), 1);
+        // Still out: nothing to run yet.
+        assert_eq!(reader.take_again(), None);
+        answer.send(Err("busy".into())).unwrap();
+        assert_eq!(reader.answer(Duration::ZERO).unwrap().0, POLL);
+        // The signal's check wins over the rebuild's and runs once.
+        assert_eq!(reader.take_again(), Some(NOTIFICATION));
+        assert_eq!(reader.take_again(), None);
+        reader.request(NOTIFICATION);
+        assert_eq!(jobs.try_iter().count(), 1);
+    }
+
+    #[test]
+    fn a_reader_whose_worker_ended_stops_asking() {
+        let (mut reader, jobs, answer) = reader();
+        reader.request(POLL);
+        drop(answer);
+        assert!(reader.answer(Duration::from_millis(10)).is_none());
+        assert!(!reader.is_pending());
+        reader.request(NOTIFICATION);
+        assert_eq!(jobs.try_iter().count(), 1);
+        assert!(!reader.is_pending());
+    }
 
     #[test]
     fn notification_storm_does_not_postpone_first_check() {

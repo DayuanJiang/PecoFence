@@ -13,6 +13,17 @@ pub const DAILY_BACKUPS_KEPT: usize = 7;
 /// Unreadable primaries moved aside by [`ConfigStore::load_reporting`]; the oldest go first.
 pub const UNREADABLE_KEPT: usize = 5;
 const UNREADABLE_PREFIX: &str = "config.unreadable-";
+/// How long a start waits for config files another program holds open (antivirus, backup and
+/// sync tools) before it goes on without them.
+pub const LOCK_WAIT: std::time::Duration = std::time::Duration::from_secs(10);
+/// Pause between two tries to open a file another program holds open.
+const LOCK_RETRY: std::time::Duration = std::time::Duration::from_millis(250);
+
+/// ERROR_SHARING_VIOLATION or ERROR_LOCK_VIOLATION: another program holds the file open
+/// without sharing it. It is not damaged, only unavailable for now.
+fn held_open(e: &io::Error) -> bool {
+    matches!(e.raw_os_error(), Some(32 | 33))
+}
 
 #[derive(Debug)]
 pub enum LoadOutcome {
@@ -51,6 +62,11 @@ impl ReadError {
     pub fn not_encrypted(&self) -> bool {
         matches!(self, ReadError::Io(e) if e.raw_os_error() == Some(APPX_FILE_NOT_ENCRYPTED))
     }
+
+    /// Another program holds the file open without sharing it (see [`held_open`]).
+    pub fn locked(&self) -> bool {
+        matches!(self, ReadError::Io(e) if held_open(e))
+    }
 }
 
 impl std::fmt::Display for ReadError {
@@ -70,6 +86,12 @@ pub struct LoadReport {
     /// The files that exist but could not be used, in the order tried: which one
     /// (`config.json`, `config.bak` or `backup`), its path and why.
     pub failures: Vec<(&'static str, PathBuf, ReadError)>,
+    /// The first file in line that another program still held open after the wait: the
+    /// outcome comes from a file further down the line (or is the defaults), so nothing may be
+    /// saved over the files until this one can be read again ([`ConfigStore::is_locked`]).
+    pub locked: Option<PathBuf>,
+    /// How long the load waited for files held open by another program.
+    pub waited: std::time::Duration,
 }
 
 /// A failed [`ConfigStore::save`]: the step that failed (a fixed name, safe to log) and why.
@@ -128,23 +150,6 @@ impl ConfigStore {
         self.dir.join("backups")
     }
 
-    /// [`Self::parse_file`] for a fallback: a file that exists but cannot be used goes to
-    /// `failures` under `name`.
-    fn parse(
-        path: &Path,
-        name: &'static str,
-        failures: &mut Vec<(&'static str, PathBuf, ReadError)>,
-    ) -> Option<Config> {
-        match Self::parse_file(path) {
-            Ok(c) => Some(c),
-            Err(ReadError::Io(e)) if e.kind() == io::ErrorKind::NotFound => None,
-            Err(e) => {
-                failures.push((name, path.to_path_buf(), e));
-                None
-            }
-        }
-    }
-
     /// Reads and validates any config file (import / backup restore), with the reason on error.
     pub fn parse_file(path: &Path) -> Result<Config, ReadError> {
         let text = fs::read_to_string(path).map_err(ReadError::Io)?;
@@ -188,30 +193,73 @@ impl ConfigStore {
     /// used. A `config.json` that exists but does not parse or validate (written by a newer
     /// version, or hand-edited) is renamed to `config.unreadable-<date>-<secs>.json` first: the
     /// `.bak` rotation in [`Self::save`] would otherwise turn it into `config.bak` and delete it
-    /// on the next save.
+    /// on the next save. Files another program holds open are waited for up to [`LOCK_WAIT`].
     pub fn load_reporting(&self) -> (LoadOutcome, LoadReport) {
-        let primary = self.primary_path();
-        // Antivirus, backup and sync tools can hold the file open without read sharing for a
-        // moment (ERROR_SHARING_VIOLATION, ERROR_LOCK_VIOLATION); wait for them before the
-        // file counts as unreadable.
-        for attempt in 1..=5 {
-            match fs::File::open(&primary) {
-                Err(e) if attempt < 5 && matches!(e.raw_os_error(), Some(32 | 33)) => {
-                    std::thread::sleep(std::time::Duration::from_millis(300))
-                }
-                _ => break,
-            }
-        }
+        self.load_waiting(LOCK_WAIT)
+    }
+
+    /// [`Self::load_reporting`] with its own wait for files another program holds open. A file
+    /// still held open after it is skipped like a missing one, but never moved aside, and
+    /// `LoadReport::locked` names it: it is not damaged, the caller must not save over it.
+    pub fn load_waiting(&self, wait: std::time::Duration) -> (LoadOutcome, LoadReport) {
+        let deadline = std::time::Instant::now() + wait;
         let mut report = LoadReport::default();
-        match Self::parse_file(&primary) {
+        let primary = self.primary_path();
+        let mut candidates = vec![("config.bak", self.bak_path())];
+        let mut backups = self.list_backups();
+        backups.sort();
+        candidates.extend(backups.into_iter().rev().map(|p| ("backup", p)));
+        match self.read_when_free(&primary, deadline, &mut report) {
             Ok(c) => return (LoadOutcome::Primary(c), report),
-            Err(_) if !primary.exists() => {}
+            Err(ReadError::Io(e)) if e.kind() == io::ErrorKind::NotFound => {}
             Err(e) => {
-                report.moved_to = self.quarantine(&primary);
+                if !e.locked() {
+                    report.moved_to = self.quarantine(&primary);
+                }
                 report.failures.push(("config.json", primary, e));
             }
         }
-        (self.load_fallbacks(&mut report.failures), report)
+        let mut outcome = LoadOutcome::Fresh(Config::default());
+        for (name, path) in candidates {
+            match self.read_when_free(&path, deadline, &mut report) {
+                Ok(c) => {
+                    outcome = LoadOutcome::Recovered(c, path);
+                    break;
+                }
+                Err(ReadError::Io(e)) if e.kind() == io::ErrorKind::NotFound => {}
+                Err(e) => report.failures.push((name, path, e)),
+            }
+        }
+        report.locked = report
+            .failures
+            .iter()
+            .find(|(_, _, e)| e.locked())
+            .map(|(_, path, _)| path.clone());
+        (outcome, report)
+    }
+
+    /// [`Self::parse_file`], trying again until `deadline` while another program holds the
+    /// file open; the time spent waiting adds to `report.waited`.
+    fn read_when_free(
+        &self,
+        path: &Path,
+        deadline: std::time::Instant,
+        report: &mut LoadReport,
+    ) -> Result<Config, ReadError> {
+        loop {
+            match Self::parse_file(path) {
+                Err(e) if e.locked() && std::time::Instant::now() < deadline => {
+                    std::thread::sleep(LOCK_RETRY);
+                    report.waited += LOCK_RETRY;
+                }
+                other => return other,
+            }
+        }
+    }
+
+    /// Whether another program still holds `path` open without sharing it.
+    pub fn is_locked(path: &Path) -> bool {
+        fs::File::open(path).is_err_and(|e| held_open(&e))
     }
 
     fn quarantine(&self, primary: &Path) -> Option<PathBuf> {
@@ -246,21 +294,17 @@ impl ConfigStore {
         Some(to)
     }
 
-    fn load_fallbacks(
-        &self,
-        failures: &mut Vec<(&'static str, PathBuf, ReadError)>,
-    ) -> LoadOutcome {
-        if let Some(c) = Self::parse(&self.bak_path(), "config.bak", failures) {
-            return LoadOutcome::Recovered(c, self.bak_path());
+    /// Copies `config.json` into the backups as `backups/<today>-<tag>.json` (once a day per
+    /// tag): a file a newer version wrote, before this version's first save replaces what that
+    /// version keeps and this one does not know (see [`newer_version`]).
+    pub fn keep_copy(&self, tag: &str) -> io::Result<PathBuf> {
+        let dir = self.backups_dir();
+        fs::create_dir_all(&dir)?;
+        let path = dir.join(format!("{}-{tag}.json", today_yyyy_mm_dd()));
+        if !path.exists() {
+            fs::copy(self.primary_path(), &path)?;
         }
-        let mut backups = self.list_backups();
-        backups.sort();
-        for p in backups.into_iter().rev() {
-            if let Some(c) = Self::parse(&p, "backup", failures) {
-                return LoadOutcome::Recovered(c, p);
-            }
-        }
-        LoadOutcome::Fresh(Config::default())
+        Ok(path)
     }
 
     /// Daily backups (`backups/YYYY-MM-DD.json`), unsorted.
@@ -339,6 +383,17 @@ impl ConfigStore {
         }
         Ok(())
     }
+}
+
+/// `saved_by` names a version newer than `ours` (`0.4.0` against `0.3.2`; a suffix such as
+/// `-beta` is ignored). False for anything that does not read as a version.
+pub fn newer_version(saved_by: &str, ours: &str) -> bool {
+    fn parts(v: &str) -> Option<(u32, u32, u32)> {
+        let core = v.trim().split(['-', '+']).next()?;
+        let mut it = core.split('.').map(|p| p.parse::<u32>().ok());
+        Some((it.next()??, it.next()??, it.next().unwrap_or(Some(0))?))
+    }
+    matches!((parts(saved_by), parts(ours)), (Some(a), Some(b)) if a > b)
 }
 
 /// Range checks from plan §7.5.
@@ -837,6 +892,73 @@ mod tests {
         assert!(report.failures.is_empty());
     }
 
+    /// Opens `path` without sharing, as a scanner or a sync tool does.
+    #[cfg(windows)]
+    fn hold(path: &Path) -> fs::File {
+        use std::os::windows::fs::OpenOptionsExt;
+        fs::OpenOptions::new()
+            .read(true)
+            .share_mode(0)
+            .open(path)
+            .unwrap()
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_primary_locked_past_the_wait_is_named_and_left_alone() {
+        let store = ConfigStore::new(tmpdir("locked-long"));
+        store.save(&sample()).unwrap();
+        store.save(&sample()).unwrap(); // config.bak
+        let original = fs::read(store.primary_path()).unwrap();
+        let lock = hold(&store.primary_path());
+        assert!(ConfigStore::is_locked(&store.primary_path()));
+        let (outcome, report) = store.load_waiting(std::time::Duration::from_millis(600));
+        assert!(
+            matches!(&outcome, LoadOutcome::Recovered(_, from) if *from == store.bak_path()),
+            "{outcome:?}"
+        );
+        assert_eq!(report.locked, Some(store.primary_path()));
+        assert_eq!(report.moved_to, None, "a locked file is not damaged");
+        assert!(report.waited >= std::time::Duration::from_millis(500));
+        drop(lock);
+        assert!(!ConfigStore::is_locked(&store.primary_path()));
+        assert_eq!(fs::read(store.primary_path()).unwrap(), original);
+        let (outcome, report) = store.load_waiting(std::time::Duration::ZERO);
+        assert!(matches!(outcome, LoadOutcome::Primary(_)), "{outcome:?}");
+        assert_eq!(report.locked, None);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn every_file_locked_gives_the_defaults_and_names_the_primary() {
+        let store = ConfigStore::new(tmpdir("locked-all"));
+        store.save(&sample()).unwrap();
+        store.save(&sample()).unwrap();
+        let mut held = vec![hold(&store.primary_path()), hold(&store.bak_path())];
+        held.extend(store.list_backups().iter().map(|p| hold(p)));
+        let started = std::time::Instant::now();
+        let (outcome, report) = store.load_waiting(std::time::Duration::from_millis(400));
+        // One shared wait, not one per file.
+        assert!(started.elapsed() < std::time::Duration::from_millis(1500));
+        assert!(matches!(outcome, LoadOutcome::Fresh(_)), "{outcome:?}");
+        assert_eq!(report.locked, Some(store.primary_path()));
+        assert_eq!(report.failures.len(), 3, "{report:?}");
+        assert!(report.failures.iter().all(|(_, _, e)| e.locked()));
+        drop(held);
+        assert!(matches!(store.load(), LoadOutcome::Primary(_)));
+    }
+
+    #[test]
+    fn a_free_or_missing_file_is_not_locked() {
+        let store = ConfigStore::new(tmpdir("not-locked"));
+        assert!(!ConfigStore::is_locked(&store.primary_path()));
+        store.save(&sample()).unwrap();
+        assert!(!ConfigStore::is_locked(&store.primary_path()));
+        let (_, report) = store.load_reporting();
+        assert_eq!(report.locked, None);
+        assert_eq!(report.waited, std::time::Duration::ZERO);
+    }
+
     #[cfg(unix)]
     #[test]
     fn primary_without_read_access_is_not_waited_for() {
@@ -1141,6 +1263,37 @@ mod tests {
         store.save(&clean).unwrap();
         let reloaded = ConfigStore::parse_file(&store.primary_path()).unwrap();
         assert_eq!(lint(&reloaded), Vec::<Lint>::new());
+    }
+
+    #[test]
+    fn versions_compare_by_number() {
+        assert!(newer_version("0.4.0", "0.3.2"));
+        assert!(newer_version("0.3.10", "0.3.9"));
+        assert!(newer_version("1.0", "0.9.9"));
+        assert!(newer_version("0.4.0-beta.1", "0.3.2"));
+        assert!(!newer_version("0.3.2", "0.3.2"));
+        assert!(!newer_version("0.2.5", "0.3.2"));
+        assert!(!newer_version("garbage", "0.3.2"));
+        assert!(!newer_version("", "0.3.2"));
+    }
+
+    #[test]
+    fn a_copy_of_the_primary_goes_to_the_backups_once_a_day() {
+        let store = ConfigStore::new(tmpdir("keep-copy"));
+        let mut c = sample();
+        c.saved_by = Some("9.9.9".into());
+        store.save(&c).unwrap();
+        let text = fs::read_to_string(store.primary_path()).unwrap();
+        assert!(text.contains("\"savedBy\": \"9.9.9\""), "{text}");
+        let copy = store.keep_copy("9.9.9").unwrap();
+        assert_eq!(fs::read_to_string(&copy).unwrap(), text);
+        assert!(store.list_backups().contains(&copy));
+        // A later save keeps it; the same day's second copy does not replace it.
+        c.saved_by = Some("0.0.1".into());
+        store.save(&c).unwrap();
+        assert_eq!(store.keep_copy("9.9.9").unwrap(), copy);
+        assert_eq!(fs::read_to_string(&copy).unwrap(), text);
+        assert!(ConfigStore::parse_file(&copy).is_ok());
     }
 
     #[test]

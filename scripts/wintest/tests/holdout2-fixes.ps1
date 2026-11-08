@@ -270,8 +270,9 @@ if ($n2 -ne $n0) { Pf fence show-all | Out-Null; Start-Sleep -Seconds 1 }
 
 Case '1 刷新 (Refresh) in the desktop menu, double-clicked, leaves the fences shown'
 # The menu opens down and right from the pointer: from here its Refresh lies over the bare
-# desktop (run 13 opened it over a fence, so the second click hit that fence).
-$menuAt = @(1010, 130)
+# desktop (run 13 opened it over a fence, so the second click hit that fence). Left of the test
+# fences and below the 「桌面」 fence: since U15 the first-run fences fill x 1088 to 1584 at the top.
+$menuAt = @(60, 420)
 $n0 = VisFences
 # Where Refresh shows, with the menu closed again: the bare desktop.
 [G]::RClick($menuAt[0], $menuAt[1])
@@ -377,8 +378,11 @@ Check "a shortcut dragged onto the desktop stays in '$inbox' (the rules do not s
 Shot '35-after'
 
 Case '38 the push pass moves a locked fence below an expanding one'
-Pf fence create --title Upper --rect '1000,420,300,250' | Out-Null
-Pf fence create --title Lower --rect '1000,500,300,150' | Out-Null
+# Left of this part's fences and clear of the first-run column (since U15 it fills x 1088 to 1584 at
+# the top): a fence pushed under it could not clear Upper above the taskbar (no room, see
+# push.rs a_push_the_work_area_stops_is_marked).
+Pf fence create --title Upper --rect '20,420,260,250' | Out-Null
+Pf fence create --title Lower --rect '20,500,260,150' | Out-Null
 Start-Sleep -Seconds 1
 Pf fence set Lower locked true | Out-Null
 Pf fence roll Upper | Out-Null
@@ -391,7 +395,8 @@ $u = FenceGet Upper
 $du = DumpOf Upper; $dl1 = DumpOf Lower
 Shot '38-expanded'
 Check 'the locked fence below moves out of the way while the upper one is expanded' ($du -and -not $du.rolled -and $dl1 -and $dl1.t -ge $du.b) "Upper window $($du.t)..$($du.b) rolled=$($du.rolled); Lower top $($dl0.t) -> $($dl1.t)"
-[G]::MoveTo(200, 780); Start-Sleep -Seconds 2
+# Off both fences: over Lower, which Upper pushed, the hover peek stays open.
+[G]::MoveTo(700, 780); Start-Sleep -Seconds 2
 $dl2 = DumpOf Lower; $lo2 = FenceGet Lower
 Check 'and goes back to its place, its saved place unchanged' ($dl2 -and [math]::Abs($dl2.t - $dl0.t) -le 2 -and $lo2.rect.y -eq $lo0.rect.y) "Lower top $($dl2.t), saved y $($lo0.rect.y) -> $($lo2.rect.y)"
 # Saved expanded, then a restart: the locked fence keeps its saved place.

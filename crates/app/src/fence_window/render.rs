@@ -598,6 +598,22 @@ impl FenceViewState {
         true
     }
 
+    /// The window moved: re-crops the backdrop for where it is now and redraws what shows it.
+    pub(super) fn refresh_backdrop(&mut self) {
+        self.backdrop_stale = false;
+        let old_ink = self.material_foreground().text_primary;
+        if self.update_backdrop() {
+            if old_ink != self.material_foreground().text_primary
+                || (self.theme.liquid_glass && self.row_metrics().is_some())
+            {
+                // Moving clear glass across a light/dark boundary also changes the icon labels.
+                let _ = self.redraw();
+            } else {
+                let _ = self.redraw_chrome_only();
+            }
+        }
+    }
+
     /// Forces a fresh crop (new wallpaper set, material or theme) even at the same rect.
     pub(super) fn invalidate_backdrop(&mut self) {
         self.backdrop_rect = None;

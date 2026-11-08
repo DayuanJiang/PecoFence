@@ -77,6 +77,7 @@ pub fn begin_inline_rename(
         RenameTarget::Fence(fence),
         current,
         None,
+        false,
         queue,
         mode,
     );
@@ -141,7 +142,8 @@ pub fn has_reserved_char(name: &str) -> bool {
 /// Opens the rename popup over an item's label rectangle (screen pixels). `select_end` limits
 /// the initial selection to the first N UTF-16 units (the stem); `None` selects everything.
 /// `text_scale` (`layout::row_text_scale`) makes the box and its 14 DIP text larger with the
-/// item names (Windows' text size).
+/// item names (Windows' text size). `centered`: an icon's name, centred under it, keeps the
+/// text centred in the box (Explorer), so a short name stays over its own column.
 #[allow(clippy::too_many_arguments)]
 pub fn begin_item_rename(
     label_rect: RECT,
@@ -150,6 +152,7 @@ pub fn begin_item_rename(
     item: ItemId,
     current: String,
     select_end: Option<usize>,
+    centered: bool,
     queue: CommandQueue,
     mode: ThemeMode,
 ) {
@@ -170,6 +173,7 @@ pub fn begin_item_rename(
         RenameTarget::Item(item),
         current,
         select_end,
+        centered,
         queue,
         mode,
     );
@@ -188,6 +192,7 @@ fn begin_rename_at(
     target: RenameTarget,
     current: String,
     select_end: Option<usize>,
+    centered: bool,
     queue: CommandQueue,
     mode: ThemeMode,
 ) {
@@ -229,7 +234,12 @@ fn begin_rename_at(
             .ok()
     });
     let Some(window) = created else { return };
-    let Ok(ctl) = edit::EditControl::create(
+    let create = if centered {
+        edit::EditControl::create_centered
+    } else {
+        edit::EditControl::create
+    };
+    let Ok(ctl) = create(
         window.hwnd(),
         w,
         h,

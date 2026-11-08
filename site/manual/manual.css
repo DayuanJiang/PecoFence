@@ -516,6 +516,39 @@ main > .lesson:first-child { border-top: 0 }
     box-shadow: 0 0 0 1px rgba(20, 24, 40, .38);
 }
 
+/* The two small buttons at a desktop box's bottom-right corner (新建栅栏, 在此显示文件夹…) */
+
+.offer {
+    left: 0;
+    top: 0;
+    display: flex;
+    gap: 6px;
+    white-space: nowrap;
+    font-size: 12px;
+}
+
+.offer > div, .offer span, .offer svg { position: relative }
+
+.offer > div {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    height: 28px;
+    padding: 0 10px;
+    border-radius: 4px;
+}
+
+.offer .sec {
+    background: rgba(250, 250, 251, .97);
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, .12);
+    color: #1b1b1b;
+}
+
+.offer .acc { background: #0067c0; color: #fff }
+.offer .acc.hot { background: #1a74c4 }
+.offer svg { width: 14px; height: 14px }
+.offer .plus { font-size: 15px; line-height: 1 }
+
 /* Windows 11 style menu */
 
 .menu {

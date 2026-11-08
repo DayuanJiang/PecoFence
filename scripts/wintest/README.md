@@ -96,6 +96,10 @@ Check 'new-note opens the editor' ($ed -ne [IntPtr]::Zero) "editor=$ed"
   `GreyWallpaper`, `MeanRgb`, `ExplorerIconRgb` (Explorer's own icon of a file, a reference for
   thumbnails), `OcrText` / `ToastOcr` (Windows' OCR: toasts and a release build's settings page,
   which UI Automation cannot see).
+- Z-order (zorder.ps1, dot-source `C:\pf\kit\zorder.ps1`): `[Zs]::Run` presses Win+<key> and
+  records which of the fences, the desktop windows and the test's Notepad / Explorer windows are
+  above which (as fast as EnumWindows allows, frames optional), `ZsStats` sums up how long the
+  fences were covered, topmost or over a window; `tests/fx-desktop-input.ps1` uses it for Win+D.
 - The user's own copy (user.ps1): `Ipf` / `IpfJson` / `UserLog` for the installed copy (set
   `$script:CliExe` for a portable one), `StartUser`, `WaitNoPf`; `PfUseUser` makes the item and
   state helpers read that copy; setup and uninstall by their buttons (`Wizard`, `Uninstall`,
@@ -113,6 +117,25 @@ Check 'new-note opens the editor' ($ed -ne [IntPtr]::Zero) "editor=$ed"
 - pf's Explorer shows icons only, never thumbnails (IconsOnly=1): switch it off for a thumbnail
   test. The watchdog does not restart an instance started with `--test-script`: start the one a
   crash test kills without a script.
+
+## Before/after animations
+
+For a change a reviewer should see rather than read, record the same steps on the old build and on the
+new one and compose them side by side:
+
+- In the steps file: `. C:\pf\kit\rec.ps1`, then `RecStart 'U3-before' -X 200 -Y 100 -W 960 -H 540`
+  (`-Fps 12` by default, up to about 30 on the EC2 boxes), `RecMark 'step text'` before every user step
+  (the same marks in the same order on both builds), `RecMetric <number>` for values to chart (wait
+  seconds, frame gap ms, MB), `RecStop`. Frames, pointer positions and button presses land in
+  `shots/rec-<name>/`, which run.sh brings back.
+- On the dev box: `uv run -q --with pillow python -I scripts/wintest/mkanim.py <spec.json>` writes
+  `<out>.webm` and `<out>-sheet.jpg` (the spec format is in the script's header): the old build left
+  with a red label, the new one right with a green one, a step caption, the pointer drawn in, a timer
+  per side, highlight boxes, an optional metric chart, steps over 5 s fast-forwarded on both sides, and
+  a result banner per side at the end. It uses Playwright's ffmpeg build (VP9) and the WenQuanYi font.
+- Keep one idea per animation, 2 to 4 steps, about 20 s, plain words of what the user does and sees.
+  Screen grabs load the box: timing effects (frame gaps, drag lag) look smaller while recording, so
+  show them with a metric and slow motion, and check the sheet before using the animation.
 
 ## The boxes
 

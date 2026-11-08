@@ -2,7 +2,7 @@
 
 use crate::geometry::{WorkArea, monitor_model};
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use uuid::Uuid;
 
 pub const SCHEMA_VERSION: u32 = 1;
@@ -42,6 +42,10 @@ pub struct Config {
     #[serde(rename = "$schema", default, skip_serializing_if = "Option::is_none")]
     pub schema: Option<String>,
     pub schema_version: u32,
+    /// The PecoFence version that last saved this file (`0.3.2`). Missing in files of 0.3.1
+    /// and earlier; an older version drops it when it saves.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub saved_by: Option<String>,
     pub settings: Settings,
     /// Global item table keyed by id.
     pub items: HashMap<ItemId, Item>,
@@ -73,6 +77,7 @@ impl Default for Config {
         Self {
             schema: None,
             schema_version: SCHEMA_VERSION,
+            saved_by: None,
             settings: Settings::default(),
             items: HashMap::new(),
             layouts: Vec::new(),
@@ -164,9 +169,15 @@ pub struct Settings {
     /// show only among Windows' own desktop icons.
     #[serde(default)]
     pub hide_inbox_when_icons_shown: bool,
-    /// A rectangle drawn on the empty desktop that touches no fence offers 「在此新建栅栏」.
+    /// A rectangle drawn on the empty desktop that touches no fence shows the 「新建栅栏」 and
+    /// 「在此显示文件夹…」 buttons at its corner.
     #[serde(default = "default_true")]
     pub offer_new_fence: bool,
+    /// 功能提示: one-time cards in the corner when a feature would help right now (收起 after
+    /// the 4th fence, 在桌面显示此文件夹 for a folder opened often, a rule for files of one
+    /// type dragged into one fence). Off shows none of them; the first start's tips stay.
+    #[serde(default = "default_true")]
+    pub feature_tips: bool,
     /// Unused (see [`UNUSED_SETTINGS`]).
     #[serde(default)]
     #[cfg_attr(feature = "schema", schemars(skip))]
@@ -393,6 +404,7 @@ impl Default for Settings {
             keep_icons_hidden: false,
             hide_inbox_when_icons_shown: false,
             offer_new_fence: true,
+            feature_tips: true,
             show_real_icons_when_fences_hidden: false,
             snapping: SnappingSettings::default(),
             zorder: ZOrderSetting::InsertAboveHost,
@@ -529,6 +541,31 @@ pub enum QuickHideScope {
     FencesOnly,
 }
 
+/// 「展开快慢」 beside 「收起的栅栏怎么展开」: the hover delay before a rolled fence expands.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase")]
+pub enum HoverSpeed {
+    /// 150 ms.
+    Fast,
+    /// Windows' mouse hover time (400 ms unless changed).
+    #[default]
+    Normal,
+    /// 1 s.
+    Slow,
+}
+
+impl HoverSpeed {
+    /// The delay in ms; `system` is Windows' mouse hover time.
+    pub fn delay_ms(self, system: u32) -> u32 {
+        match self {
+            Self::Fast => 150,
+            Self::Normal => system,
+            Self::Slow => 1000,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase", default)]
@@ -545,9 +582,14 @@ pub struct RollUpSettings {
     #[cfg_attr(feature = "schema", schemars(skip))]
     pub close_grace_ms: u32,
     /// A rolled fence expands on a single title click instead of on hover (Fences "require a
-    /// click to expand"). Hover peek is ignored while this is on.
+    /// click to expand"), and the next title click rolls it up again. Hover peek is ignored
+    /// while this is on.
     #[serde(default)]
     pub click_to_expand: bool,
+    /// How long the pointer (or a dragged file) rests on a rolled fence before it expands:
+    /// `normal` is Windows' mouse hover time (feedback #98).
+    #[serde(default)]
+    pub hover_speed: HoverSpeed,
     /// Draw the title (and tabs) only while the mouse is over the fence; a fence's
     /// `appearance.titleOnHover` overrides it.
     #[serde(default)]
@@ -578,6 +620,7 @@ impl Default for RollUpSettings {
             hover_open_ms: 400,
             close_grace_ms: 400,
             click_to_expand: false,
+            hover_speed: HoverSpeed::Normal,
             title_on_hover: false,
             hide_inactive_scrollbar: false,
             push_neighbors: true,
@@ -1057,6 +1100,16 @@ pub struct Fence {
     /// like the Windows desktop with 自动排列图标.
     #[serde(default)]
     pub desktop_layout: bool,
+    /// 自由摆放 (with `desktop_layout`): an icon stays in the grid cell it is dropped in, as
+    /// on a Windows desktop with 自动排列图标 off and 将图标与网格对齐 on. On in a new
+    /// configuration, off in one saved before the option existed.
+    #[serde(default)]
+    pub free_placement: bool,
+    /// 自由摆放: the grid cell `[column, row]` of each icon, counted from the top-left of the
+    /// work area. Kept per monitor setup like `geometry` (Explorer keeps its icon positions
+    /// per resolution too).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub desktop_cells: BTreeMap<ItemId, [u16; 2]>,
     /// A tool shown in place of desktop items (小工具). Such a fence holds no items: rules,
     /// drops and moves never put any in it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1089,6 +1142,8 @@ impl Fence {
             expand_upward: false,
             bottom_anchored: false,
             desktop_layout: false,
+            free_placement: false,
+            desktop_cells: BTreeMap::new(),
             tool: None,
             items: Vec::new(),
         }
@@ -1765,25 +1820,86 @@ impl Config {
     /// roll state `to` saved for it. Returns the fences `to` had no spot for: they keep the one
     /// they had in `from`.
     pub fn carry_fences(&mut self, from: usize, to: usize) -> Vec<FenceId> {
-        let spots: HashMap<FenceId, (NormGeometry, bool, f32)> = self.layouts[to]
+        type Spot = (NormGeometry, bool, f32, BTreeMap<ItemId, [u16; 2]>);
+        let spots: HashMap<FenceId, Spot> = self.layouts[to]
             .fences
             .iter()
-            .map(|f| (f.id, (f.geometry.clone(), f.rolled_up, f.expanded_h)))
+            .map(|f| {
+                let cells = f.desktop_cells.clone();
+                (f.id, (f.geometry.clone(), f.rolled_up, f.expanded_h, cells))
+            })
             .collect();
         let mut fences = self.layouts[from].fences.clone();
         let mut unplaced = Vec::new();
         for f in &mut fences {
             match spots.get(&f.id) {
-                Some((geometry, rolled_up, expanded_h)) => {
+                Some((geometry, rolled_up, expanded_h, cells)) => {
                     f.geometry = geometry.clone();
                     f.rolled_up = *rolled_up;
                     f.expanded_h = *expanded_h;
+                    // 自由摆放: the icon cells these monitors saved; a setup that saved none
+                    // starts from the other one's (fitted into this work area when shown).
+                    if !cells.is_empty() {
+                        f.desktop_cells = cells.clone();
+                    }
                 }
                 None => unplaced.push(f.id),
             }
         }
         self.layouts[to].fences = fences;
         unplaced
+    }
+
+    /// A new layout `to` for the connected monitors `now`, about to take the fences of `from`
+    /// ([`Self::carry_fences`]): a fence `from` has on a monitor that runs at another resolution
+    /// or scale there than now takes its spot from the layout shown last that has that monitor
+    /// at the current resolution and scale, when that layout has the fence on it. So going back
+    /// to a scale shown before restores the layout made there, also with another set of monitors
+    /// (a layout squeezed onto a 150 % screen is not carried back to 100 %). Returns, per fence
+    /// given a spot, the layout it came from.
+    pub fn seed_layout(
+        &mut self,
+        from: usize,
+        to: usize,
+        now: &[WorkArea],
+    ) -> Vec<(FenceId, usize)> {
+        let mut seeded = Vec::new();
+        for f in &self.layouts[from].fences {
+            let monitor = &f.geometry.monitor;
+            let Some(area) = now.iter().find(|w| w.device_path == *monitor) else {
+                continue;
+            };
+            let at = |l: &Layout| {
+                l.fingerprint
+                    .iter()
+                    .find(|m| m.device_path == *monitor)
+                    .is_some_and(|m| m.knows_mode() && m.same_mode(area))
+            };
+            if at(&self.layouts[from]) {
+                continue;
+            }
+            let spot = self
+                .layouts
+                .iter()
+                .enumerate()
+                .filter(|(i, l)| *i != from && *i != to && at(l))
+                .filter_map(|(i, l)| {
+                    let g = l
+                        .fences
+                        .iter()
+                        .find(|g| g.id == f.id && g.geometry.monitor == *monitor)?;
+                    Some((l.shown, i, g))
+                })
+                .max_by_key(|(shown, _, _)| *shown);
+            if let Some((_, i, g)) = spot {
+                seeded.push((g.clone(), i));
+            }
+        }
+        let ids = seeded.iter().map(|(g, i)| (g.id, *i)).collect();
+        self.layouts[to]
+            .fences
+            .extend(seeded.into_iter().map(|(g, _)| g));
+        ids
     }
 
     /// Files from 0.1.3 and earlier kept separate fences per monitor set. Brings the other
@@ -2116,10 +2232,12 @@ mod tests {
         let mut json = serde_json::to_value(Settings::default()).unwrap();
         let obj = json.as_object_mut().unwrap();
         assert!(obj.remove("offerNewFence").is_some());
+        assert!(obj.remove("featureTips").is_some());
         assert!(obj.remove("hideInboxWhenIconsShown").is_some());
         assert!(obj.remove("keepIconsHidden").is_some());
         let legacy: Settings = serde_json::from_value(json).unwrap();
         assert!(legacy.offer_new_fence);
+        assert!(legacy.feature_tips);
         assert!(!legacy.hide_inbox_when_icons_shown);
         assert!(!legacy.keep_icons_hidden);
     }
@@ -2803,6 +2921,91 @@ mod tests {
             ("A2", 40.0, true)
         );
         assert_eq!(l[1].geometry, new.geometry);
+    }
+
+    /// Fence review S7: 100 %, then a 150 % sign-in (squeezed spots), then a second monitor at
+    /// 150 %, then both at 100 %. The new 100 % set takes the main monitor's spots from the first
+    /// 100 % layout; a fence moved to the second monitor keeps that spot.
+    #[test]
+    fn a_new_set_takes_the_spots_of_the_same_monitor_at_the_same_scale() {
+        let at = |id: &str, dpi: u32| WorkArea {
+            dpi,
+            ..monitor(id, D1)
+        };
+        let set = |monitors: &[WorkArea], fences: Vec<Fence>, shown: u64| Layout {
+            fingerprint: monitors.iter().map(MonitorIdentity::of).collect(),
+            fences,
+            shown,
+        };
+        let on = |f: &Fence, monitor: &str, x: f32| {
+            let mut f = f.clone();
+            f.geometry.monitor = monitor.into();
+            f.geometry.x = x;
+            f
+        };
+        let media = Fence::new("Media", FenceKind::Virtual, geo());
+        let locked = Fence::new("Locked", FenceKind::Virtual, geo());
+        let mut c = Config::default();
+        c.layouts.push(set(
+            &[at("M1", 96)],
+            vec![on(&media, "M1", 440.0), on(&locked, "M1", 40.0)],
+            1,
+        ));
+        c.layouts.push(set(
+            &[at("M1", 144)],
+            vec![on(&media, "M1", 408.0), on(&locked, "M1", 30.0)],
+            2,
+        ));
+        c.layouts.push(set(
+            &[at("M1", 144), at("M2", 144)],
+            vec![on(&media, "M1", 408.0), on(&locked, "M2", 200.0)],
+            3,
+        ));
+        let now = [at("M1", 96), at("M2", 96)];
+        c.layouts.push(set(&now, vec![], 0));
+        assert_eq!(c.seed_layout(2, 3, &now), vec![(media.id, 0)]);
+        assert!(c.carry_fences(2, 3).contains(&locked.id));
+        let l = &c.layouts[3].fences;
+        let x = |id: FenceId| l.iter().find(|f| f.id == id).map(|f| f.geometry.x);
+        assert_eq!((x(media.id), x(locked.id)), (Some(440.0), Some(200.0)));
+        // At the scale the last layout was shown at, its spots are the right ones already.
+        let now = [at("M1", 144), at("M3", 96)];
+        c.layouts.push(set(&now, vec![], 0));
+        assert!(c.seed_layout(2, 4, &now).is_empty());
+        // A layout that has the fence on another monitor gives it no spot here: the one shown
+        // before it that has it on this monitor does.
+        c.layouts[0].fences[0].geometry.monitor = "M9".into();
+        let now = [at("M1", 96), at("M4", 96)];
+        c.layouts.push(set(&now, vec![], 0));
+        assert_eq!(c.seed_layout(2, 5, &now), vec![(media.id, 3)]);
+    }
+
+    /// 自由摆放: each monitor setup keeps its own icon cells, as Explorer keeps its icon
+    /// positions per resolution; a setup that saved none starts from the one shown before.
+    #[test]
+    fn icon_cells_stay_with_their_monitor_setup() {
+        let mut c = Config::default();
+        let (x, y) = (Uuid::new_v4(), Uuid::new_v4());
+        let mut inbox = Fence::new("桌面", FenceKind::Inbox, geo());
+        inbox.free_placement = true;
+        inbox.desktop_cells = BTreeMap::from([(x, [3, 1]), (y, [0, 0])]);
+        let mut on_laptop = inbox.clone();
+        on_laptop.desktop_cells = BTreeMap::from([(x, [1, 4])]);
+        c.layouts.push(saved(&[("GSM7787#A", D1)]));
+        c.layouts.push(saved(&[("BOE1#L", D1)]));
+        c.layouts.push(saved(&[("BOE1#L", D2)]));
+        c.layouts[0].fences = vec![inbox.clone()];
+        c.layouts[1].fences = vec![on_laptop];
+        let mut never_free = inbox.clone();
+        never_free.desktop_cells.clear();
+        c.layouts[2].fences = vec![never_free];
+        c.carry_fences(0, 1);
+        assert_eq!(
+            c.layouts[1].fences[0].desktop_cells,
+            BTreeMap::from([(x, [1, 4])])
+        );
+        c.carry_fences(0, 2);
+        assert_eq!(c.layouts[2].fences[0].desktop_cells, inbox.desktop_cells);
     }
 
     #[test]

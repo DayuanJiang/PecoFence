@@ -9,7 +9,7 @@ use crate::bindings::*;
 use crate::wide::to_wide;
 use std::cell::RefCell;
 use std::path::Path;
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::time::{Duration, Instant};
 use windows_core::{Error, Interface, PCSTR, PCWSTR, PWSTR, Result};
 
@@ -31,6 +31,8 @@ const CACHE_RUNNING: u8 = 1;
 const CACHE_DONE: u8 = 2;
 /// A menu built while `prepare_handler_cache` still runs waits this long for it at most.
 const CACHE_WAIT: Duration = Duration::from_secs(2);
+/// `prepare_handler_cache` got the cache started (its library icon came back).
+static CACHE_READY: AtomicBool = AtomicBool::new(false);
 
 /// The shell's context menu object for a set of items plus the command-id range it was given.
 pub struct ShellContextMenu {
@@ -281,6 +283,7 @@ pub fn prepare_handler_cache() {
                 }
             }
             let ms = started.elapsed().as_millis() as u64;
+            CACHE_READY.store(outcome.is_ok(), Ordering::Release);
             CACHE_STATE.store(CACHE_DONE, Ordering::Release);
             match outcome {
                 Ok(library) => tracing::info!(ms, library, "shell handler cache prepared"),
@@ -291,6 +294,87 @@ pub fn prepare_handler_cache() {
         CACHE_STATE.store(CACHE_DONE, Ordering::Release);
         tracing::warn!(error = %e, "shell handler cache thread failed to start");
     }
+}
+
+/// Builds the shell's menu for the file `path` once on a worker thread, `after` from now, and
+/// drops it unseen: the first item menu after a start loads every menu extension of the
+/// installed programs, which took 0.5 to 0.9 s on a PC with many of them (the later menus 60 to
+/// 180 ms), and that loading is done here instead. The modules it loaded are pinned: the
+/// worker's COM apartment would unload the extensions again when it ends, while those the UI
+/// thread loads stay anyway. Only once `prepare_handler_cache` got the handler cache started,
+/// and only for a file: a folder's menu runs Windows' 「包含到库中」 helper, where the 0.2.4
+/// freeze started (see there).
+pub fn prewarm(path: std::path::PathBuf, after: Duration) {
+    let spawned = std::thread::Builder::new()
+        .name("shell menu prewarm".into())
+        .spawn(move || {
+            std::thread::sleep(after);
+            wait_for_handler_cache();
+            if !CACHE_READY.load(Ordering::Acquire) {
+                tracing::info!("shell menu not prewarmed: the handler cache is not prepared");
+                return;
+            }
+            let _sta = crate::com::OleGuard::init();
+            let started = Instant::now();
+            let before = loaded_modules();
+            let built = (|| -> Result<u32> {
+                let mut menu = ShellContextMenu::for_paths(&[path.as_path()])?;
+                // SAFETY: a menu of our own, destroyed below; ids as the item menu hands out.
+                let hmenu = unsafe { CreatePopupMenu() };
+                let n = menu.populate(hmenu, 0, 0x1000, 0x6FFF, false);
+                // SAFETY: as above.
+                let _ = unsafe { DestroyMenu(hmenu) };
+                n
+            })();
+            let mut pinned = 0;
+            for module in loaded_modules() {
+                if before.contains(&module) {
+                    continue;
+                }
+                let mut out = HMODULE::default();
+                // SAFETY: `module` is the base address of a module loaded in this process.
+                let ok = unsafe {
+                    GetModuleHandleExW(
+                        (GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_PIN)
+                            as u32,
+                        PCWSTR(module.0 as *const u16),
+                        &mut out,
+                    )
+                };
+                pinned += ok.as_bool() as u32;
+            }
+            let ms = started.elapsed().as_millis() as u64;
+            match built {
+                Ok(shell_ids) => tracing::info!(ms, shell_ids, pinned, "shell menu prewarmed"),
+                Err(e) => tracing::warn!(ms, pinned, error = %e, "shell menu prewarm failed"),
+            }
+        });
+    if let Err(e) = spawned {
+        tracing::warn!(error = %e, "shell menu prewarm thread failed to start");
+    }
+}
+
+/// The modules loaded in this process (their base addresses).
+fn loaded_modules() -> Vec<HMODULE> {
+    windows_core::link!("kernel32.dll" "system" fn K32EnumProcessModules(process: HANDLE, modules: *mut HMODULE, cb: u32, needed: *mut u32) -> windows_core::BOOL);
+    let mut modules = vec![HMODULE::default(); 2048];
+    let mut needed = 0u32;
+    // SAFETY: the buffer's size in bytes is passed; Windows fills at most that much.
+    let ok = unsafe {
+        K32EnumProcessModules(
+            GetCurrentProcess(),
+            modules.as_mut_ptr(),
+            (modules.len() * size_of::<HMODULE>()) as u32,
+            &mut needed,
+        )
+    };
+    let n = if ok.as_bool() {
+        needed as usize / size_of::<HMODULE>()
+    } else {
+        0
+    };
+    modules.truncate(n);
+    modules
 }
 
 /// A menu built in the first moments after start, while `prepare_handler_cache` still runs

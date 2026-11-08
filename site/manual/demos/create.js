@@ -1,4 +1,4 @@
-// 1.2 新建栅栏: marquee on the empty desktop → 在此新建栅栏 → drag an icon in → rename.
+// 1.2 新建栅栏: marquee on the empty desktop → the 新建栅栏 button at its corner → drag an icon in → rename.
 (() => {
     'use strict';
     const { E, ramp, lerp, inside, pathAt, firstWhen, el, put, show, text, slot, icon, fence, menu, drawMenu,
@@ -9,7 +9,7 @@
         [0, 560, 400], [0.3, 560, 400],
         [1.0, 318, 56], [1.2, 318, 56],          // marquee start
         [2.4, 642, 236], [2.7, 642, 236],        // marquee end, release
-        [3.1, 765, 257], [3.4, 765, 257],        // 在此新建栅栏
+        [3.1, 592, 257], [3.4, 592, 257],        // 新建栅栏 at the box's corner
         [4.5, 151, 244], [4.8, 151, 244],        // grab 周报.docx
         [6.0, 400, 205], [6.7, 400, 205],        // drop into the new fence
         [7.3, 372, 74], [7.6, 372, 74],          // right-click its title
@@ -20,7 +20,8 @@
     const PRESSES = [[1.2, 2.5], [4.8, 6.1]];
     const CHIPS = [[1.2, 2.4, '按住拖动'], [4.8, 6.0, '拖进新栅栏', 16, -30], [7.3, 7.58, '右键标题栏', -30, -48], [8.7, 9.5, '输入名字']];
     const KEYS = [{ a: 9.35, b: 10.1, keys: ['Enter'], down: 9.65 }];
-    const MENU1 = { x: 644, y: 238, a: 2.55, b: 3.36 };
+    // The two small buttons under the box's bottom-right corner (right edges lined up).
+    const OFFER = { right: 642, y: 243, a: 2.55, b: 3.36 };
     const MENU2 = { x: 374, y: 76, a: 7.5, b: 8.24 };
     const DROP_AT = 6.1;
 
@@ -47,10 +48,17 @@
         r.badge = el('div', 'badge', S);
         r.badge.innerHTML = '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M1.5 6h8M6.5 2.8 9.7 6 6.5 9.2" ' +
             'fill="none" stroke="#1663c7" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>移动到 <b>新栅栏</b>';
-        r.menu1 = menu(S, ['在此新建栅栏'], 148);
+        r.offer = el('div', 'offer', S);
+        const folderBtn = el('div', 'sec', r.offer);
+        folderBtn.innerHTML = '<svg viewBox="0 0 14 14" aria-hidden="true"><path d="M1.5 3.5h4l1.2 1.3h5.8v6.7h-11z" ' +
+            'fill="none" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round"/></svg>';
+        el('span', null, folderBtn, '在此显示文件夹…');
+        r.newBtn = el('div', 'acc', r.offer);
+        el('span', 'plus', r.newBtn, '+');
+        el('span', null, r.newBtn, '新建栅栏');
         r.menu2 = menu(S, ['收起', '重命名…', '-', { t: '视图', sub: 1 }, { t: '排序方式', sub: 1 }, { t: '新建', sub: 1 },
-            { t: '粘贴', key: 'Ctrl+V', dis: 1 }, { t: '标签页', sub: 1 }, '锁定位置和大小', '-', '栅栏选项…', '新建栅栏',
-            { t: '在桌面显示文件夹', sub: 1 }, '删除栅栏'], 196);
+            { t: '粘贴', key: 'Ctrl+V', dis: 1 }, { t: '标签页', sub: 1 }, '-', '锁定位置和大小', '栅栏选项…', '删除栅栏', '-',
+            { t: '添加到桌面', sub: 1 }], 196);
         r.keys = el('div', 'keys', S);
         r.ptr = pointer(S);
         taskbar(root);
@@ -71,8 +79,14 @@
             put(r.marquee, x0, y0, 1 - ramp(t, 2.5, 2.58, E.lin));
         }
 
-        // 2. one-item menu, then the fence fades in where the box was
-        drawMenu(r.menu1, t, MENU1.x, MENU1.y, MENU1.a, MENU1.b, p);
+        // 2. the buttons at the box's corner (they take no keyboard), then the fence fades in
+        //    where the box was
+        if (show(r.offer, t >= OFFER.a && t < OFFER.b + .1)) {
+            const o = ramp(t, OFFER.a, OFFER.a + .083, E.lin) * (1 - ramp(t, OFFER.b, OFFER.b + .08, E.lin));
+            put(r.offer, OFFER.right - r.offer.offsetWidth, OFFER.y, o);
+            // the pointer reaches 新建栅栏 at 3.1 s (PATH)
+            r.newBtn.classList.toggle('hot', t >= 3.05 && t < OFFER.b);
+        }
         if (show(r.neu.n, t >= 3.4)) {
             const o = ramp(t, 3.4, 3.62);
             put(r.neu.n, r.neu.x, r.neu.y, o, ` scale(${lerp(.965, 1, o)})`);

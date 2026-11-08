@@ -337,6 +337,12 @@ impl App {
         read.map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
     }
 
+    /// The previous run ended normally: it neither crashed nor stopped without its last line
+    /// (known once `offer_crash_feedback` ran).
+    pub(super) fn previous_run_ended_normally(&self) -> bool {
+        !self.feedback.previous_run_crashed && !self.feedback.previous_run_unfinished
+    }
+
     /// At startup: if the last run crashed, offer to report it from a tray balloon.
     pub(super) fn offer_crash_feedback(&mut self) {
         let previous = self.share_log(pecofence_core::brand::PREVIOUS_SHARE_LOG);

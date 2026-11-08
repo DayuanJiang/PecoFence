@@ -8,7 +8,7 @@ use crate::commands::{Command, CommandQueue};
 use pecofence_platform::window::{
     self, ClassOptions, MessageHandler, Window, WindowBuilder, WindowClass, style,
 };
-use pecofence_platform::{HWND, RECT, dwm, monitors, msg};
+use pecofence_platform::{HWND, RECT, desktop, dwm, monitors, msg};
 use pecofence_render::ThemeMode;
 use std::cell::RefCell;
 use std::path::PathBuf;
@@ -297,6 +297,32 @@ impl SettingsHost {
         self.window.hwnd()
     }
 
+    /// 栅栏选项…: moves the window beside `fence` (screen px) on the fence's monitor, on the
+    /// side with room for it, so the fence stays in view while its options change. A
+    /// maximized window stays as it is.
+    pub fn place_beside(&self, fence: RECT) {
+        const WS_MAXIMIZE: u32 = 0x0100_0000;
+        let hwnd = self.window.hwnd();
+        if desktop::style(hwnd) & WS_MAXIMIZE != 0 {
+            tracing::info!("settings window maximized: not moved beside the fence");
+            return;
+        }
+        let (cx, cy) = (
+            (fence.left + fence.right) / 2,
+            (fence.top + fence.bottom) / 2,
+        );
+        let Some(m) = monitors::query(monitors::monitor_from_point(cx, cy)) else {
+            return;
+        };
+        let scale = m.scale();
+        let p = placement(m.work_area, scale);
+        let cur = window::window_rect(hwnd);
+        let size = (cur.right - cur.left, cur.bottom - cur.top);
+        let r = beside(fence, m.work_area, size, p.min_w, (12.0 * scale) as i32);
+        tracing::info!(?fence, ?r, work = ?m.work_area, "settings window placed beside the fence");
+        let _ = window::set_window_bounds(hwnd, r.left, r.top, r.right - r.left, r.bottom - r.top);
+    }
+
     pub fn update_language(&self) {
         window::set_title(
             self.window.hwnd(),
@@ -405,9 +431,75 @@ fn placement(work: RECT, scale: f32) -> Placement {
     }
 }
 
+/// Where a window of `size` goes beside `fence` in `work` (screen px), `gap` apart: to the
+/// right when it fits there, else to the left, else on the side with more room, narrowed to
+/// that room but not below `min_w` (then it may cover part of the fence). The top lines up
+/// with the fence's; the window stays inside `work`.
+fn beside(fence: RECT, work: RECT, size: (i32, i32), min_w: i32, gap: i32) -> RECT {
+    let (w, h) = (
+        size.0.min(work.right - work.left),
+        size.1.min(work.bottom - work.top),
+    );
+    let right_room = work.right - fence.right - gap;
+    let left_room = fence.left - work.left - gap;
+    let (on_right, room) = if right_room >= w {
+        (true, right_room)
+    } else if left_room >= w {
+        (false, left_room)
+    } else if right_room >= left_room {
+        (true, right_room)
+    } else {
+        (false, left_room)
+    };
+    let w = w.min(room.max(min_w));
+    let x = if on_right {
+        fence.right + gap
+    } else {
+        fence.left - gap - w
+    };
+    let x = x.clamp(work.left, (work.right - w).max(work.left));
+    let y = fence.top.clamp(work.top, (work.bottom - h).max(work.top));
+    RECT {
+        left: x,
+        top: y,
+        right: x + w,
+        bottom: y + h,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn rect(left: i32, top: i32, right: i32, bottom: i32) -> RECT {
+        RECT {
+            left,
+            top,
+            right,
+            bottom,
+        }
+    }
+
+    /// 栅栏选项… keeps the fence in view: the window goes to the free side of it.
+    #[test]
+    fn fence_options_window_goes_beside_the_fence() {
+        let work = rect(0, 0, 1600, 852);
+        // The first start's right-hand column: the window opens to its left.
+        let r = beside(rect(1270, 16, 1584, 262), work, (960, 660), 720, 12);
+        assert_eq!((r.left, r.right, r.top), (298, 1258, 16));
+        // A fence at the left edge: to its right; a low fence lifts the window into the area.
+        let r = beside(rect(20, 600, 320, 840), work, (960, 660), 720, 12);
+        assert_eq!((r.left, r.top, r.bottom), (332, 192, 852));
+        // In the middle with no room for the full width: the larger side, narrowed.
+        let r = beside(rect(600, 100, 900, 400), work, (960, 660), 720, 12);
+        assert_eq!((r.left, r.right), (880, 1600));
+        let r = beside(rect(700, 100, 1000, 400), work, (960, 660), 600, 12);
+        assert_eq!((r.left, r.right), (0, 688));
+        // A second monitor to the right keeps the window on the fence's own monitor.
+        let work2 = rect(1600, 0, 3520, 1040);
+        let r = beside(rect(3200, 40, 3500, 300), work2, (960, 660), 720, 12);
+        assert!(r.left >= work2.left && r.right <= 3200 - 12, "{r:?}");
+    }
 
     fn work(w: i32, h: i32) -> RECT {
         RECT {

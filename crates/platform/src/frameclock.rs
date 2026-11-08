@@ -13,13 +13,21 @@
 
 use crate::bindings::*;
 use crate::wide::to_wide;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 use windows_core::{PCSTR, PCWSTR};
 
 /// A missing compositor tick must not hold a short client animation past its endpoint.
+/// The wait's own timeout is rounded up to the system timer (15.6 ms unless some app raised
+/// its resolution), which made 16 ms into 31 ms: on a PC without a GPU, whose compositor
+/// skips ticks, every animation alternated 16 and 31 ms frames. A high-resolution waitable
+/// timer among the waited handles ends the wait on time instead.
+const COMPOSITOR_TIMEOUT: Duration = Duration::from_millis(16);
+/// The plain timeout: without the timer (Windows 10 before 1803 has no high-resolution
+/// timers, but it also has no compositor clock), and as a backstop when the timer is used.
 const COMPOSITOR_TIMEOUT_MS: u32 = 16;
+const BACKSTOP_TIMEOUT_MS: u32 = 50;
 /// Some Windows builds occasionally return from the zero-handle wait without waiting at all.
 const IMMEDIATE_WAIT: Duration = Duration::from_millis(1);
 /// Pace that fast-return path without limiting a real high-refresh compositor signal.
@@ -54,11 +62,35 @@ fn compositor_clock() -> Option<WaitForCompositorClock> {
     }
 }
 
+/// A high-resolution waitable timer for the wait timeout, or `None` where Windows has none.
+fn high_resolution_timer() -> Option<HANDLE> {
+    // SAFETY: plain FFI call; the handle is owned by the clock thread for its lifetime.
+    let timer = unsafe {
+        CreateWaitableTimerExW(
+            None,
+            PCWSTR::null(),
+            CREATE_WAITABLE_TIMER_HIGH_RESOLUTION as u32,
+            TIMER_ALL_ACCESS as u32,
+        )
+    };
+    (!timer.0.is_null()).then_some(timer)
+}
+
+/// Sets `timer` to fire once, `after` from now. False when Windows refused.
+fn arm_timer(timer: HANDLE, after: Duration) -> bool {
+    // Relative due times are negative, in 100 ns units.
+    let due = -((after.as_nanos() / 100) as i64);
+    // SAFETY: `timer` is a live waitable timer handle; no completion routine.
+    unsafe { SetWaitableTimer(timer, &due, 0, None, None, false) }.as_bool()
+}
+
 struct Shared {
     armed: AtomicBool,
     quit: AtomicBool,
     wake: Mutex<()>,
     cv: Condvar,
+    /// Frames the timeout started instead of a compositor tick, since the last `take_timeouts`.
+    timeouts: AtomicU32,
 }
 
 pub struct FrameClock {
@@ -74,14 +106,18 @@ impl FrameClock {
             quit: AtomicBool::new(false),
             wake: Mutex::new(()),
             cv: Condvar::new(),
+            timeouts: AtomicU32::new(0),
         });
         let worker = shared.clone();
         std::thread::Builder::new()
             .name("frame-clock".into())
             .spawn(move || {
                 let clock = compositor_clock();
+                let timer = clock.and_then(|_| high_resolution_timer());
                 if clock.is_none() {
                     tracing::info!("compositor clock unavailable; pacing frames with DwmFlush");
+                } else if timer.is_none() {
+                    tracing::info!("no high-resolution timer; compositor clock timeout is coarse");
                 }
                 loop {
                     {
@@ -93,17 +129,34 @@ impl FrameClock {
                         }
                     }
                     if worker.quit.load(Ordering::Acquire) {
+                        if let Some(timer) = timer {
+                            // SAFETY: the timer handle is owned by this thread.
+                            unsafe {
+                                let _ = CloseHandle(timer);
+                            }
+                        }
                         return;
                     }
                     let wait_started = Instant::now();
-                    let waited = match clock {
-                        // SAFETY: no handles, plain timeout wait. A real compositor signal
-                        // keeps the display's native cadence; timeout bounds a missing signal
-                        // to 60 Hz.
-                        Some(wait) => unsafe { wait(0, std::ptr::null(), COMPOSITOR_TIMEOUT_MS) },
+                    let waited = match (clock, timer) {
+                        // A real compositor signal keeps the display's native cadence; the
+                        // timer bounds a missing signal to 60 Hz. With one handle the wait
+                        // returns WAIT_OBJECT_0 + 1 for a tick and WAIT_OBJECT_0 for the timer.
+                        (Some(wait), Some(timer)) if arm_timer(timer, COMPOSITOR_TIMEOUT) => {
+                            // SAFETY: one live timer handle; the backstop bounds the wait.
+                            let r = unsafe { wait(1, &timer, BACKSTOP_TIMEOUT_MS) };
+                            if r == WAIT_OBJECT_0 as u32 || r == WAIT_TIMEOUT as u32 {
+                                worker.timeouts.fetch_add(1, Ordering::Relaxed);
+                            }
+                            r
+                        }
+                        // SAFETY: no handles, plain timeout wait.
+                        (Some(wait), _) => unsafe {
+                            wait(0, std::ptr::null(), COMPOSITOR_TIMEOUT_MS)
+                        },
                         // Windows 10: block until the next desktop composition pass.
                         // SAFETY: plain FFI call without arguments.
-                        None => {
+                        (None, _) => {
                             if unsafe { DwmFlush() }.is_ok() {
                                 0
                             } else {
@@ -126,6 +179,12 @@ impl FrameClock {
             })
             .expect("frame-clock thread");
         Self { shared }
+    }
+
+    /// How many frames the timeout started instead of a compositor tick since the last call
+    /// (for the animation run diagnostics).
+    pub fn take_timeouts(&self) -> u32 {
+        self.shared.timeouts.swap(0, Ordering::Relaxed)
     }
 
     /// Asks for one more frame callback. Idempotent within a frame.

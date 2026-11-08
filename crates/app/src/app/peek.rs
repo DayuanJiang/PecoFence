@@ -339,9 +339,7 @@ impl App {
         let animating = overlay.animating(Instant::now());
         self.peek = Some(overlay);
         self.ctx.behavior.floating.set(true);
-        for window in self.fences.values() {
-            window.redraw();
-        }
+        self.redraw_for_floating();
         if let Some(a) = self.anchor.borrow_mut().as_mut() {
             a.set_peek(true, &over);
         }
@@ -557,19 +555,47 @@ impl App {
     }
 
     /// Ends the peek at once (layout rebuilds, config swaps, shutdown).
+    /// After `floating` changed: only the fences that float differently are redrawn. Redrawing
+    /// every fence took 15 to 20 ms in the last frame of the Peek's fade out on a 4K screen.
+    fn redraw_for_floating(&self) {
+        let started = Instant::now();
+        let redrawn = self
+            .fences
+            .values()
+            .filter(|w| w.redraw_for_floating())
+            .count();
+        tracing::debug!(
+            floating = self.ctx.behavior.floating.get(),
+            redrawn,
+            fences = self.fences.len(),
+            ms = crate::share_log::millis(started.elapsed()),
+            "fences redrawn for the Peek"
+        );
+    }
+
     pub(super) fn end_peek_now(&mut self) {
         if self.peek.is_none() {
             return;
         }
+        let started = Instant::now();
         self.end_peek_search();
+        let searched = Instant::now();
         self.ctx.behavior.floating.set(false);
-        for window in self.fences.values() {
-            window.redraw();
-        }
+        self.redraw_for_floating();
+        let redrawn = Instant::now();
         if let Some(a) = self.anchor.borrow_mut().as_mut() {
             a.set_peek(false, &[]);
         }
+        let anchored = Instant::now();
         // Dropping the windows destroys them (after the fences left the topmost band).
         self.peek = None;
+        let ms = crate::share_log::millis;
+        tracing::debug!(
+            search_ms = ms(searched - started),
+            redraw_ms = ms(redrawn - searched),
+            zorder_ms = ms(anchored - redrawn),
+            dimmer_ms = ms(anchored.elapsed()),
+            "peek ended"
+        );
     }
 }
