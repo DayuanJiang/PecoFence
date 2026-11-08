@@ -1303,6 +1303,27 @@ impl FenceWindow {
         });
     }
 
+    /// A script's copy action uses a short, non-activating tip beside the pointer.
+    pub fn show_script_copy_result(&self, index: usize, copied: bool) {
+        self.with_view(|v| {
+            v.hide_tip();
+            v.tip_target = Some(TipTarget::ScriptRow(index));
+            let text = if copied {
+                pecofence_core::i18n::text("已复制")
+            } else {
+                pecofence_core::i18n::text("复制失败，请重试")
+            };
+            let pt = window::cursor_pos();
+            let scale = v.scale();
+            v.show_tip_text_at(
+                text,
+                pt.x + (12.0 * scale).round() as i32,
+                pt.y + (20.0 * scale).round() as i32,
+            );
+            window::set_timer(v.hwnd, TIMER_TIP_HIDE, 2000);
+        });
+    }
+
     /// 时钟与日期: the fence being shown is a clock (Some(true) = with seconds), drawn in place of
     /// items and redrawn each minute or second; None = it shows items.
     pub fn set_clock(&self, clock: Option<bool>) {

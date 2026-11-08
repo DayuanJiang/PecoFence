@@ -540,6 +540,71 @@ pub fn example(kind: Example, chinese: bool) -> &'static str {
     }
 }
 
+/// The text an example's file gets: Windows PowerShell 5.1 reads a script without a BOM in the
+/// ANSI code page (the emoji and Chinese text need the BOM), and Notepad keeps CRLF.
+pub fn example_file_text(kind: Example, chinese: bool) -> String {
+    format!(
+        "\u{feff}{}",
+        unify_lines(example(kind, chinese)).replace('\n', "\r\n")
+    )
+}
+
+/// Without a BOM, with LF line ends.
+fn unify_lines(text: &str) -> String {
+    text.trim_start_matches('\u{feff}').replace("\r\n", "\n")
+}
+
+/// Examples as earlier versions wrote them, with the example and language that replace each:
+/// 0.3.0 and 0.3.1's PC status showed the IPv4 address of a disconnected adapter and drive C:
+/// only.
+const OLD_EXAMPLES: [(&str, Example, bool); 2] = [
+    (
+        include_str!("../assets/scripts/old/status.zh.0.3.0.ps1"),
+        Example::Status,
+        true,
+    ),
+    (
+        include_str!("../assets/scripts/old/status.en.0.3.0.ps1"),
+        Example::Status,
+        false,
+    ),
+];
+
+/// A script file that still holds an earlier version's example unchanged gets the current one,
+/// so a fence made from an old example shows its fixes; an edited copy stays as it is. True
+/// when the file was replaced.
+pub fn update_old_example(path: &Path) -> bool {
+    // Only small files can be an example (a script fence may run a large .exe).
+    let small = std::fs::metadata(path).is_ok_and(|m| m.len() <= 16 * 1024);
+    if !small {
+        return false;
+    }
+    let Ok(now) = std::fs::read_to_string(path) else {
+        return false;
+    };
+    let now = unify_lines(&now);
+    let Some(&(_, kind, chinese)) = OLD_EXAMPLES
+        .iter()
+        .find(|(old, _, _)| unify_lines(old) == now)
+    else {
+        return false;
+    };
+    match std::fs::write(path, example_file_text(kind, chinese)) {
+        Ok(()) => {
+            tracing::info!(
+                example = kind.name(),
+                chinese,
+                "unedited example script of an earlier version replaced by the current one"
+            );
+            true
+        }
+        Err(e) => {
+            tracing::warn!(example = kind.name(), error = %e, "updating an old example script failed");
+            false
+        }
+    }
+}
+
 /// 「添加示例…」: the script fence examples.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Example {
@@ -600,6 +665,55 @@ pub fn weather_example(chinese: bool) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pc_status_selects_a_connected_ipv4_gateway_and_local_disks() {
+        use std::os::windows::process::CommandExt;
+
+        let test = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scripts/test-pc-status.ps1");
+        let output = Command::new("powershell.exe")
+            .args([
+                "-NoProfile",
+                "-NonInteractive",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+            ])
+            .arg(test)
+            .creation_flags(CREATE_NO_WINDOW)
+            .output()
+            .expect("run the PC status regression tests in Windows PowerShell");
+        assert!(
+            output.status.success(),
+            "{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    #[test]
+    fn an_unedited_old_example_gets_the_current_one() {
+        let dir = std::env::temp_dir().join(format!("pf-old-example-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        for (old, kind, chinese) in OLD_EXAMPLES {
+            // As 0.3.0 wrote it: a BOM and CRLF.
+            let written = format!("\u{feff}{}", unify_lines(old).replace('\n', "\r\n"));
+            let path = dir.join(format!("{}-{chinese}.ps1", kind.name()));
+            std::fs::write(&path, &written).unwrap();
+            assert!(update_old_example(&path));
+            let now = std::fs::read_to_string(&path).unwrap();
+            assert_eq!(now, example_file_text(kind, chinese));
+            assert_ne!(now, written);
+            // The current one is left alone, and so is an edited old copy.
+            assert!(!update_old_example(&path));
+            let edited = written.replace("$ip", "$myIp");
+            std::fs::write(&path, &edited).unwrap();
+            assert!(!update_old_example(&path));
+            assert_eq!(std::fs::read_to_string(&path).unwrap(), edited);
+        }
+        assert!(!update_old_example(&dir.join("missing.ps1")));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn a_stream_screen_follows_swiftbar() {

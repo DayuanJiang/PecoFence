@@ -789,7 +789,7 @@
   "今天和明天的天气，每 30 分钟更新，数据来自 wttr.in。添加后右键它选「编辑脚本」，把 Tokyo 换成你的城市": "Il meteo di oggi e domani, aggiornato ogni 30 minuti, dati da wttr.in. Dopo averlo aggiunto, fai clic destro, scegli «Modifica script» e sostituisci Tokyo con la tua città",
   "一个仓库最新的 issue 和 PR，点一行在浏览器里打开。添加后右键它选「编辑脚本」，换成你关心的仓库": "Le issue e le pull request più recenti di un repository. Fai clic su una riga per aprirla nel browser. Dopo averlo aggiunto, fai clic destro, scegli «Modifica script» e metti il repository che ti interessa",
   "电脑状态": "Stato del PC",
-  "一直运行，每 2 秒更新 CPU、内存和 C 盘剩余空间。点一行可以复制本机 IP 或打开任务管理器": "Sempre attivo: ogni 2 secondi aggiorna CPU, memoria e spazio libero sull’unità C. Fai clic su una riga per copiare l’IP del PC o aprire Gestione attività",
+  "一直运行，每 2 秒更新 CPU、内存和每个磁盘的剩余空间。点一行可以复制本机 IP 或打开任务管理器": "Sempre attivo: ogni 2 secondi aggiorna CPU, memoria e spazio libero di ogni unità. Fai clic su una riga per copiare l’IP del PC o aprire Gestione attività",
   "用自己的脚本": "Il tuo script",
   "用自己的脚本…": "Il tuo script…",
   "运行你选的脚本（PowerShell、Python、批处理等），把它打印的文字显示在栅栏里。脚本最多运行 10 秒（一直运行的除外），不弹出窗口。PecoFence 本身不会为脚本联网": "Esegue uno script a tua scelta (PowerShell, Python, file batch e altro) e mostra in un riquadro il testo che stampa. Uno script gira al massimo 10 secondi (salvo quelli segnati per restare attivi) e non apre finestre. PecoFence non va mai online per gli script",
@@ -802,5 +802,7 @@
   "Everything 1.5 已经装好，现在运行的是 {0}": "Everything 1.5 è installato, ma è in esecuzione la {0}",
   "改用 1.5 后可以用拼音找中文名。1.5 会在登录 Windows 时启动，1.4 不再自动启动。Windows 可能会询问一次管理员权限": "Con la 1.5 trovi i nomi cinesi col pinyin. La 1.5 si avvierà all’accesso a Windows e la 1.4 non partirà più da sola. Windows può chiedere una volta i diritti di amministratore.",
   "改用 1.5": "Passa alla 1.5",
-  "已改用 Everything 1.5，以后登录 Windows 时也会启动它": "Ora si usa Everything 1.5. Da adesso si avvia anche all’accesso a Windows"
+  "已改用 Everything 1.5，以后登录 Windows 时也会启动它": "Ora si usa Everything 1.5. Da adesso si avvia anche all’accesso a Windows",
+  "已复制": "Copiato",
+  "复制失败，请重试": "Copia non riuscita. Riprova."
 }

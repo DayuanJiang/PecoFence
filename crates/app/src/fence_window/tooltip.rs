@@ -226,6 +226,10 @@ impl FenceViewState {
         let Some(text) = self.tip_text() else {
             return;
         };
+        self.show_tip_text_at(&text, x, y);
+    }
+
+    pub(super) fn show_tip_text_at(&mut self, text: &str, x: i32, y: i32) {
         if self.tip.is_none() {
             let dark = matches!(self.theme.mode, pecofence_render::ThemeMode::Dark);
             self.tip = Tooltip::create(self.hwnd, dark)
@@ -233,7 +237,7 @@ impl FenceViewState {
                 .ok();
         }
         if let Some(t) = self.tip.as_mut() {
-            t.show(&text, x, y);
+            t.show(text, x, y);
             self.tip_shown = true;
             self.tip_armed = false;
             window::set_timer(
