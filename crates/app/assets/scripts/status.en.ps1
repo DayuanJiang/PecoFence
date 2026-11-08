@@ -15,10 +15,12 @@ function Get-LocalIP {
     Where-Object { $_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.254.*' } |
     Select-Object -First 1 -ExpandProperty IPAddress
 }
+# The first screen shows at once and the address comes with the second (the first lookup takes a
+# few seconds); then it is looked up every 30 seconds (a network joined later, another Wi-Fi).
+$ip = 'looking'
 $tick = 0
 while ($true) {
-  # The address is looked up again every 30 seconds (a network joined later, another Wi-Fi).
-  if ($tick % 15 -eq 0) { $ip = Get-LocalIP }
+  if ($tick % 15 -eq 1) { $ip = Get-LocalIP }
   $tick++
   $cpu = [int](Get-CimInstance Win32_Processor | Measure-Object -Property LoadPercentage -Average).Average
   $os = Get-CimInstance Win32_OperatingSystem
@@ -32,18 +34,22 @@ while ($true) {
   $cpuColor = if ($cpu -gt 80) { 'red' } elseif ($cpu -gt 50) { 'orange' } else { 'green' }
   "CPU $cpu% | color=$cpuColor icon=🧠"
   "Memory used $mem% | color=$(if ($mem -gt 85) { 'red' } else { 'green' }) icon=📊"
-  foreach ($disk in $disks) {
-    $free = [int]($disk.FreeSpace / 1GB)
-    $pct = [int]($disk.FreeSpace * 100 / $disk.Size)
-    "$($disk.DeviceID) free $free GB ($pct%) | open=$($disk.DeviceID)\ color=$(if ($pct -lt 10) { 'red' } else { 'green' }) icon=💽"
-  }
   "---"
-  if ($ip) {
+  if ($ip -eq 'looking') {
+    "IP address: looking it up… | color=gray icon=📋"
+  } elseif ($ip) {
     "IP address $ip | copy=$ip icon=📋 tooltip=""Click to copy"""
   } else {
     "IP address: not connected | color=gray icon=📋"
   }
   "Open Task Manager | run=taskmgr.exe icon=📈"
+  # The drives come last: when the fence is too short, the last drives are what goes out of view.
+  "---"
+  foreach ($disk in $disks) {
+    $free = [int]($disk.FreeSpace / 1GB)
+    $pct = [int]($disk.FreeSpace * 100 / $disk.Size)
+    "$($disk.DeviceID) free $free GB ($pct%) | open=$($disk.DeviceID)\ color=$(if ($pct -lt 10) { 'red' } else { 'green' }) icon=💽"
+  }
   "~~~"
   Start-Sleep -Seconds 2
 }

@@ -233,9 +233,10 @@ OldCase
 function ManyCase() {
   trap { PfTrap $_; continue }
   $fake = "$PfRun\many-drives.ps1"
-  $rows = @('CPU 12% | color=green icon=🧠', 'Memory used 41% | color=green icon=📊') +
-    @('C', 'D', 'E', 'F', 'G', 'H', 'I' | ForEach-Object { "${_}: free 120 GB (40%) | open=${_}:\ color=green icon=💽" }) +
-    @('---', 'IP address 192.168.1.23 | copy=192.168.1.23 icon=📋 tooltip="Click to copy"', 'Open Task Manager | run=taskmgr.exe icon=📈')
+  # The order of the PC status example: CPU, memory, the IP and Task Manager rows, then the drives.
+  $rows = @('CPU 12% | color=green icon=🧠', 'Memory used 41% | color=green icon=📊', '---',
+    'IP address 192.168.1.23 | copy=192.168.1.23 icon=📋 tooltip="Click to copy"', 'Open Task Manager | run=taskmgr.exe icon=📈', '---') +
+    @('C', 'D', 'E', 'F', 'G', 'H', 'I' | ForEach-Object { "${_}: free 120 GB (40%) | open=${_}:\ color=green icon=💽" })
   WriteScript $fake (($rows | ForEach-Object { "'" + ($_ -replace "'", "''") + "'" }) -join "`r`n")
   Pf fence create --script $fake | Out-Null
   Start-Sleep -Seconds 6
@@ -249,7 +250,8 @@ function ManyCase() {
     Crop "many-$h" ($wr.x - 10) ($wr.y - 10) ($wr.w + 20) ($wr.h + 20) | Out-Null
     $txt = (OcrLines $wr.x $wr.y $wr.w $wr.h "many-$h-ocr" | ForEach-Object { $_.Text }) -join ' | '
     Log "many $h : $txt"
-    Check "7 drives in a fence $h tall: which rows show" $true "IP row: $($txt -match '192\.168') | Task Manager row: $($txt -match 'Task Manager') | last drive shown: $([regex]::Matches($txt, '([C-I]): free') | Select-Object -Last 1 | ForEach-Object { $_.Groups[1].Value })"
+    $last = [regex]::Matches($txt, '([C-I]): free') | Select-Object -Last 1 | ForEach-Object { $_.Groups[1].Value }
+    Check "7 drives in a fence $h tall: the IP and Task Manager rows stay in view" ($txt -match '192\.168' -and $txt -match 'Task Manager') "last drive shown: $last | $txt"
   }
 }
 Case 'many drives'

@@ -5,7 +5,7 @@
 // and rows that open a URL or a file a small arrow on the right (fence_chrome.rs draw_script).
 // A click on the PR row opens it in the browser (href=); 刷新 (refresh=true) runs the script
 // again: 「… · 正在运行…」, then a new time. 电脑状态 keeps running and prints a new screen every
-// 2 s (its footer says it is running): a row per drive; its IP row copies the address (copy=,
+// 2 s (its footer says it is running): a row per drive at the bottom; its IP row copies the address (copy=,
 // then 「已复制」 shows by the pointer, tools.rs show_script_copy_result) and 「打开任务管理器」
 // starts Task Manager (run=).
 (() => {
@@ -20,7 +20,7 @@
     const GH_FILE = 'GitHub 动态.ps1', PC_FILE = '电脑状态.ps1';
     const stem = f => f.replace(/\.ps1$/, '');
     const GH = { x: 24, y: 18, w: 300, h: 175, title: stem(GH_FILE) };
-    const PC = { x: 24, y: 205, w: 300, h: 203, title: stem(PC_FILE) };
+    const PC = { x: 24, y: 205, w: 300, h: 214, title: stem(PC_FILE) };
     const BROWSER = { x: 346, y: 18, w: 432, h: 292 };
     const TASKMGR = { x: 404, y: 150, w: 360, h: 214 };
 
@@ -40,11 +40,12 @@
     const PC_ROWS = [
         { icon: '🧠', t: 'CPU {0}%', cpu: true, color: 'green' },
         { icon: '📊', t: '内存已用 {0}%', mem: true, color: 'green' },
-        { icon: '💽', t: 'C 盘剩余 128 GB（27%）', opens: true, color: 'green' },
-        { icon: '💽', t: 'D 盘剩余 412 GB（44%）', opens: true, color: 'green' },
         '-',
         { icon: '📋', t: '本机 IP ' + IP, click: true, tip: '点一下复制' },
         { icon: '📈', t: '打开任务管理器', click: true },
+        '-',
+        { icon: '💽', t: 'C 盘剩余 128 GB（27%）', opens: true, color: 'green' },
+        { icon: '💽', t: 'D 盘剩余 412 GB（44%）', opens: true, color: 'green' },
     ];
 
     // draw_script: rows 15 px of text with 3 px above and below, separators 11 px; the plate
@@ -172,8 +173,8 @@
         const mid = (q, dx = 116) => ({ x: q.x0 + dx, y: (q.y0 + q.y1) / 2 });
         const pr = mid(r.G.rows[1]);
         const refresh = mid(r.G.rows[3], 40);
-        const ip = mid(r.P.rows[4], 90);
-        const tm = mid(r.P.rows[5], 80);
+        const ip = mid(r.P.rows[2], 90);
+        const tm = mid(r.P.rows[3], 80);
         PATH = [
             [0, 560, 398], [0.3, 560, 398],
             [HOVER_PR, pr.x, pr.y], [CLICK_PR + .4, pr.x, pr.y],          // rest on the PR row, click it
@@ -186,7 +187,7 @@
         CHIPS = [];
         // the script's tooltip after the hover time at rest, at the pointer + (12, 20)
         // (tooltip.rs show_tip); the press hides it, and a copy shows 「已复制」 in its place
-        TIPS = [[HOVER_PR + TIP_WAIT, CLICK_PR, r.G.rows[1].row.tip, pr], [AT_IP + TIP_WAIT, CLICK_IP, r.P.rows[4].row.tip, ip],
+        TIPS = [[HOVER_PR + TIP_WAIT, CLICK_PR, r.G.rows[1].row.tip, pr], [AT_IP + TIP_WAIT, CLICK_IP, r.P.rows[2].row.tip, ip],
             [CLICK_IP + .05, CLICK_IP + COPIED, '已复制', ip]];
         return r;
     }

@@ -12,10 +12,11 @@ function Get-LocalIP {
     Where-Object { $_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.254.*' } |
     Select-Object -First 1 -ExpandProperty IPAddress
 }
+# 第一屏马上显示，地址跟着第二屏出来（第一次查要几秒钟），之后每 30 秒重新查一次（后来才连上网络，或者换了 Wi-Fi）。
+$ip = '查找中'
 $tick = 0
 while ($true) {
-  # 每 30 秒重新查一次地址（后来才连上网络，或者换了 Wi-Fi）。
-  if ($tick % 15 -eq 0) { $ip = Get-LocalIP }
+  if ($tick % 15 -eq 1) { $ip = Get-LocalIP }
   $tick++
   $cpu = [int](Get-CimInstance Win32_Processor | Measure-Object -Property LoadPercentage -Average).Average
   $os = Get-CimInstance Win32_OperatingSystem
@@ -28,18 +29,22 @@ while ($true) {
   $cpuColor = if ($cpu -gt 80) { 'red' } elseif ($cpu -gt 50) { 'orange' } else { 'green' }
   "CPU $cpu% | color=$cpuColor icon=🧠"
   "内存已用 $mem% | color=$(if ($mem -gt 85) { 'red' } else { 'green' }) icon=📊"
-  foreach ($disk in $disks) {
-    $free = [int]($disk.FreeSpace / 1GB)
-    $pct = [int]($disk.FreeSpace * 100 / $disk.Size)
-    "$($disk.DeviceID.TrimEnd(':')) 盘剩余 $free GB（$pct%） | open=$($disk.DeviceID)\ color=$(if ($pct -lt 10) { 'red' } else { 'green' }) icon=💽"
-  }
   "---"
-  if ($ip) {
+  if ($ip -eq '查找中') {
+    "本机 IP：正在查找… | color=gray icon=📋"
+  } elseif ($ip) {
     "本机 IP $ip | copy=$ip icon=📋 tooltip=点一下复制"
   } else {
     "本机 IP：没有连接网络 | color=gray icon=📋"
   }
   "打开任务管理器 | run=taskmgr.exe icon=📈"
+  # 磁盘放在最后：栅栏放不下时，先看不到的是最后几个盘。
+  "---"
+  foreach ($disk in $disks) {
+    $free = [int]($disk.FreeSpace / 1GB)
+    $pct = [int]($disk.FreeSpace * 100 / $disk.Size)
+    "$($disk.DeviceID.TrimEnd(':')) 盘剩余 $free GB（$pct%） | open=$($disk.DeviceID)\ color=$(if ($pct -lt 10) { 'red' } else { 'green' }) icon=💽"
+  }
   "~~~"
   Start-Sleep -Seconds 2
 }

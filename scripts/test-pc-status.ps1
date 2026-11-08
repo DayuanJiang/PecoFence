@@ -44,8 +44,9 @@ function Get-PSDrive {
     param([string]$Name)
     [pscustomobject]@{ Free = 50GB; Used = 50GB }
 }
-# Ends the run after $script:stopAfter frames; $lines keeps the last frame. A case with Later
-# changes the network after frame 15: the script looks up the address every 15 frames (30 s).
+# Ends the run after $script:stopAfter frames; $lines keeps the last frame. The address comes
+# with frame 2 (frame 1 shows before the first lookup), then every 15 frames (30 s): a case with
+# Later changes the network after frame 15, and frame 17 shows it.
 function Start-Sleep {
     param([int]$Seconds)
     $script:frames++
@@ -55,6 +56,12 @@ function Start-Sleep {
 }
 
 $cases = @(
+    @{
+        Name = 'the first screen comes before the first lookup and copies nothing'
+        Configurations = @((New-Configuration 'Up' @('192.168.40.162') $true))
+        Frames = 1
+        Expected = ''
+    }
     @{
         Name = 'disconnected stale IP and virtual adapters before Wi-Fi'
         Configurations = @(
@@ -121,14 +128,14 @@ $cases = @(
         Name = 'not connected at sign-in, Wi-Fi connects a little later'
         Configurations = @()
         Later = @((New-Configuration 'Up' @('192.168.40.162') $true))
-        Frames = 16
+        Frames = 17
         Expected = '192.168.40.162'
     }
     @{
         Name = 'moved to another Wi-Fi'
         Configurations = @((New-Configuration 'Up' @('192.168.40.162') $true))
         Later = @((New-Configuration 'Up' @('10.1.2.3') $true))
-        Frames = 16
+        Frames = 17
         Expected = '10.1.2.3'
     }
 )
@@ -157,7 +164,7 @@ foreach ($language in 'en', 'zh') {
     foreach ($case in $cases) {
         $script:configurations = $case.Configurations
         $script:later = $case.Later
-        $script:stopAfter = if ($case.Frames) { $case.Frames } else { 1 }
+        $script:stopAfter = if ($case.Frames) { $case.Frames } else { 2 }
         $script:frames = 0
         $lines = New-Object 'System.Collections.Generic.List[string]'
         try {
@@ -181,6 +188,13 @@ foreach ($language in 'en', 'zh') {
             Write-Host "PASS $language / $($case.Name)"
         }
         $diskRows = @($lines | Where-Object { $_ -match ' \| open=' })
+        # The drives come last, so a short fence cuts drives, not the IP or Task Manager rows.
+        $firstDisk = [array]::FindIndex([string[]]$lines, [Predicate[string]] { param($l) $l -match ' \| open=' })
+        $taskRow = [array]::FindIndex([string[]]$lines, [Predicate[string]] { param($l) $l -match 'run=taskmgr' })
+        if ($firstDisk -lt $taskRow) {
+            Write-Host "FAIL $language / $($case.Name): a drive row comes before the Task Manager row"
+            $failures++
+        }
         if ($diskRows.Count -ne $expectedDisks.Count) {
             Write-Host "FAIL $language / local disks: expected $($expectedDisks.Count) rows, got $($diskRows.Count)"
             $failures++
