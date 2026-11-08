@@ -29,7 +29,8 @@ public static class TT {
     return BitConverter.ToInt32(b, 0);
   }
   static int Lum(int c) { return (((c >> 16) & 255) * 299 + ((c >> 8) & 255) * 587 + (c & 255) * 114) / 1000; }
-  // Rows of a screen region with text in them (a pixel `thr` brighter than the region's median),
+  // Rows of a screen region with text in them (a pixel `thr` lighter or darker than the region's
+  // median),
   // as blocks "y0-y1" joined by spaces; a gap of 3 rows ends a block.
   public static string InkBlocks(int x, int y, int w, int h, int thr) {
     var b = new Bitmap(w, h, PixelFormat.Format32bppArgb);
@@ -41,7 +42,7 @@ public static class TT {
     var sb = new StringBuilder(); int start = -1, last = -10;
     for (int yy = 0; yy < h; yy++) {
       bool ink = false;
-      for (int xx = 0; xx < w && !ink; xx++) if (all[yy * w + xx] - med >= thr) ink = true;
+      for (int xx = 0; xx < w && !ink; xx++) if (Math.Abs(all[yy * w + xx] - med) >= thr) ink = true;
       if (ink) { if (start < 0 || yy - last > 3) { if (start >= 0) sb.Append(start + "-" + last + " "); start = yy; } last = yy; }
     }
     if (start >= 0) sb.Append(start + "-" + last);
@@ -183,6 +184,10 @@ function NoteSizes($title, $id) {
 }
 
 if ($Part -eq 'N') {
+# The config schema with textSize, for site/schema/config.json.
+$schema = & "$PfApp\pecofence-cli.exe" describe --schema Config --compact | Out-String
+[IO.File]::WriteAllText("$PfShots\config-schema.json", $schema.Trim(), (New-Object Text.UTF8Encoding($false)))
+Check 'the config schema has textSize' ($schema -match '"textSize"') "length=$($schema.Length)"
 Case 'N1 note from the tray menu'
 $before = AllIds
 $m = TrayOpen
@@ -287,22 +292,20 @@ Check 'New tool > PC status makes a script fence' ($sid -and $picked) "picked=$p
 Pf fence rename $sid StatusTray | Out-Null
 Pf fence move StatusTray --x 80 --y 90 | Out-Null
 Pf fence resize StatusTray --w 440 --h 330 | Out-Null
-$w = WaitRows 'StatusTray' 3 30
-ScriptSizes 'StatusTray' $sid 3
-# 特大: a click on the IP row (copy=) copies the address.
-Set-Clipboard -Value 'nothing yet'
-$w = WaitRows 'StatusTray' 3
-$plates = @(DumpRects $w 'script_rows')
-$out = ScriptOut $sid
-# The IP row's place among the clickable rows (the ones with something to do on a click).
-$ipRow = 0; $k = -1
-foreach ($line in ($out -split "`n")) { if ($line -match '\|.*\b(open|copy|run|href|action)=') { $k++; if ($line -match 'copy=') { $ipRow = $k } } }
-$ip = [regex]::Match($out, 'copy=(\S+)').Groups[1].Value
-$p = $plates | Where-Object { $_.i -ge 0 } | Select-Object -Skip $ipRow -First 1
-if ($p) { $at = ContentPt $w (($p.l + $p.r) / 2) ($p.b - 4); [G]::Click($at[0], $at[1]); Start-Sleep -Milliseconds 800 }
+$w = WaitRows 'StatusTray' 1 30
+ScriptSizes 'StatusTray' $sid 1
+# 特大: a click low on the 「C: free」 row (open=C:\) opens C:\ in File Explorer. (Its IP row
+# shows its parameters as text: the example's unquoted tooltip=Click to copy, before this change
+# too.)
+CloseWindows
+$w = WaitRows 'StatusTray' 1
+$p = @(DumpRects $w 'script_rows')[0]
+if ($p) { $at = ContentPt $w (($p.l + $p.r) / 2) ($p.b - 4); [G]::Click($at[0], $at[1]) }
+$ex = ''
+for ($i = 0; $i -lt 20 -and $ex -notmatch 'path=C:\\'; $i++) { Start-Sleep -Milliseconds 500; $ex = Explorers }
 [G]::MoveTo(800, 880)
-$clip = Get-Clipboard
-Check 'StatusTray extraLarge: a click low on the IP row copies the address' ($ip -and "$clip".Trim() -eq $ip) "clip='$clip' ip=$ip plate=$($p | ConvertTo-Json -Compress)"
+Check 'StatusTray extraLarge: a click low on the C: row opens C:\ in File Explorer' ($ex -match 'path=C:\\') "explorers=$($ex -replace "`n", ' ; ') plate=$($p | ConvertTo-Json -Compress)"
+CloseWindows
 
 Case 'S2 Weather from the fence menu'
 $before = AllIds
@@ -375,7 +378,8 @@ function ClockChecks($label, $id) {
   $ink0 = TimeInk $w
   Shot "c-$label-new"
   # Bigger with the mouse: one log line for the whole drag, with the size it ended at.
-  $logBefore = @(PfLogAll | Where-Object { $_ -match 'clock text size' }).Count
+  # The app's own log (the shareable copy repeats each line).
+  $logBefore = @(Get-Content (PfLogPath) -Encoding UTF8 | Where-Object { $_ -match 'clock text size' }).Count
   $c = CornerPt $w
   DragTo $c[0] $c[1] ($c[0] + 240) ($c[1] + 140) 20
   Start-Sleep -Milliseconds 800
@@ -385,16 +389,18 @@ function ClockChecks($label, $id) {
   $want = [math]::Min(160, [math]::Round(40 * $ch / 104.0))
   $ink1 = TimeInk $w
   Check "${label}: dragged bigger, the time grows with the height ($want DIPs)" ($ct[0] -ge $want - 1 -and $ct[0] -le $want -and $ct[0] -gt 40 -and $ink1 -gt $ink0 * 1.6) "clock_text=$(DumpVal $w 'clock_text') content_h=$ch ink $ink0 -> $ink1 px"
-  $lines = @(PfLogAll | Where-Object { $_ -match 'clock text size' })
+  $lines = @(Get-Content (PfLogPath) -Encoding UTF8 | Where-Object { $_ -match 'clock text size' })
   Check "${label}: the drag logs the size once, at its end" ($lines.Count -eq $logBefore + 1 -and $lines[-1] -match "time_dip=$([int]$ct[0])\b") "new lines=$($lines.Count - $logBefore) last=$($lines[-1])"
   Shot "c-$label-bigger"
-  # Smaller than a new clock: the time stops at 24 DIPs and the date at 11.
+  # As small as a fence goes (150 x 150): smaller text than a new clock, the date at least 11
+  # DIPs, and the time still inside the width.
   $c = CornerPt $w
   DragTo $c[0] $c[1] ($c[0] - 330) ($c[1] - 200) 20
   Start-Sleep -Milliseconds 800
   $w = DumpOf 'Clock'
   $ct = ClockText $w
-  Check "${label}: dragged very small, the text stops at 24 / 11 DIPs" ($ct[0] -eq 24 -and $ct[1] -eq 11) "clock_text=$(DumpVal $w 'clock_text') window=$($w.r - $w.l)x$($w.b - $w.t)"
+  $edge = [TT]::InkBlocks($w.r - 11, $w.t + [int](DumpVal $w 'content_y'), 9, 60, 90)
+  Check "${label}: dragged to the smallest fence, the text gets smaller and stays inside" ($ct[0] -lt 40 -and $ct[0] -ge 24 -and $ct[1] -ge 11 -and -not $edge) "clock_text=$(DumpVal $w 'clock_text') window=$($w.r - $w.l)x$($w.b - $w.t) ink at the right edge='$edge'"
   Shot "c-$label-small"
   # By the CLI; then very large: at most 160 DIPs.
   Pf fence resize $id --w 360 --h 200 | Out-Null
@@ -464,7 +470,7 @@ PfStart -Script (DumpScript 500 25 3000)
 Start-Sleep -Seconds 2
 $after = ClockText (DumpOf 'Clock')
 Check 'after a restart the clock shows the same text size' ($after[0] -eq $beforeQuit[0] -and $after[1] -eq $beforeQuit[1] -and $after[0] -gt 40) "before=$($beforeQuit -join '/') after=$($after -join '/')"
-$l = @(PfLogAll | Where-Object { $_ -match 'clock text size' }) | Select-Object -Last 1
+$l = @(Get-Content (PfLogPath) -Encoding UTF8 | Where-Object { $_ -match 'clock text size' }) | Select-Object -Last 1
 Check 'the start logs the clock text size' ($l -match "time_dip=$([int]$after[0])\b") $l
 Shot 'c-after-restart'
 }
