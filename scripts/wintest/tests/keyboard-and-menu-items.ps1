@@ -485,8 +485,8 @@ $or = Rect $off
 $menu = MenuWin 1
 $fgc = [L]::Cls([L]::GetForegroundWindow())
 Shot 'u10-offer'
-Crop 'u10-offer-crop' 700 80 520 380 | Out-Null
-Check 'small buttons at the bottom-right corner of the rectangle (right edges lined up)' ($off -ne [IntPtr]::Zero -and [math]::Abs($or.R - 1120) -le 4 -and $or.T -ge 380 -and $or.T -le 400 -and ($or.B - $or.T) -le 40) "offer=$off rect=$($or.L),$($or.T),$($or.R),$($or.B)"
+Crop 'u10-offer-crop' ($script:KxM[0] - 120) ($script:KxM[1] - 40) 520 380 | Out-Null
+Check 'small buttons at the bottom-right corner of the rectangle (right edges lined up)' ($off -ne [IntPtr]::Zero -and [math]::Abs($or.R - $script:KxM[2]) -le 4 -and $or.T -ge $script:KxM[3] -and $or.T -le ($script:KxM[3] + 20) -and ($or.B - $or.T) -le 40) "offer=$off rect=$($or.L),$($or.T),$($or.R),$($or.B)"
 Check 'no popup menu, the foreground stays with the desktop' ($menu -eq [IntPtr]::Zero -and $fgc -match '^(Progman|WorkerW)$') "menu=$menu fg=$fgc"
 while ((KxOffer) -ne [IntPtr]::Zero -and $sw.ElapsedMilliseconds -lt 6000) { Start-Sleep -Milliseconds 50 }
 $gone = $sw.ElapsedMilliseconds + 800
@@ -557,7 +557,7 @@ Pf settings set themeStyle liquidGlass | Out-Null; Start-Sleep -Seconds 2
 KxDeskClick
 KxMarquee
 $off = KxWaitOffer
-Crop 'u10-offer-glass-crop' 700 80 520 380 | Out-Null
+Crop 'u10-offer-glass-crop' ($script:KxM[0] - 120) ($script:KxM[1] - 40) 520 380 | Out-Null
 Check 'Liquid Glass: the buttons show too' ($off -ne [IntPtr]::Zero) "offer=$off"
 [G]::Press(0x1B); Start-Sleep -Milliseconds 400
 Pf settings set themeStyle fluent | Out-Null; Start-Sleep -Seconds 2

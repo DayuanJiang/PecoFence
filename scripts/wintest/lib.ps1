@@ -409,16 +409,19 @@ function PfAlive() { return [bool](Get-Process pecofence -ErrorAction SilentlyCo
 # A point on bare desktop, for a drop or a click "on the empty desktop": Windows' desktop at the
 # point and at the corners of a box $Margin px around it, so no fence, card, button, menu or
 # other window is there. The first-run fences, the scene tips and new buttons move between
-# builds, so steps ask for a free spot instead of naming one. Grid points 40 px apart inside the
-# work area are tried nearest to (NearX, NearY) first (default: the middle). $null when none.
+# builds, so steps ask for a free spot instead of naming one. The point asked for is tried first
+# (default: the middle), then points 40 px apart around it, nearest first. $null when none.
+function Lattice([int]$at, [int]$lo, [int]$hi) {
+  $at = [math]::Min([math]::Max($at, $lo), $hi)
+  for ($v = $at - 40 * [math]::Floor(($at - $lo) / 40); $v -le $hi; $v += 40) { $v }
+}
 function FreeSpot([int]$NearX = -1, [int]$NearY = -1, [int]$Margin = 40) {
   $wa = [Windows.Forms.Screen]::PrimaryScreen.WorkingArea
   if ($NearX -lt 0) { $NearX = $wa.X + [int]($wa.Width / 2) }
   if ($NearY -lt 0) { $NearY = $wa.Y + [int]($wa.Height / 2) }
-  $pts = for ($x = $wa.Left + $Margin; $x -le $wa.Right - $Margin; $x += 40) {
-    for ($y = $wa.Top + $Margin; $y -le $wa.Bottom - $Margin; $y += 40) {
-      , @($x, $y, (($x - $NearX) * ($x - $NearX) + ($y - $NearY) * ($y - $NearY)))
-    }
+  $ys = @(Lattice $NearY ($wa.Top + $Margin) ($wa.Bottom - $Margin))
+  $pts = foreach ($x in (Lattice $NearX ($wa.Left + $Margin) ($wa.Right - $Margin))) {
+    foreach ($y in $ys) { , @($x, $y, (($x - $NearX) * ($x - $NearX) + ($y - $NearY) * ($y - $NearY))) }
   }
   $desk = @('Progman', 'WorkerW')
   foreach ($p in ($pts | Sort-Object { $_[2] })) {
@@ -447,24 +450,26 @@ function DeskClick([int]$NearX = 1000, [int]$NearY = 780) {
   return $p
 }
 # A W x H rectangle of bare desktop, for a marquee or a drop area: @(left, top, right, bottom),
-# its top-left nearest to (NearX, NearY), Windows' desktop at every point of a 40 px lattice in
-# it. $null when there is no such room.
+# Windows' desktop at every point 40 px apart in it and along its edges. Its top-left is the point
+# asked for when that has room, else the nearest point 40 px apart around it. $null when none.
 function FreeRect([int]$W, [int]$H, [int]$NearX = -1, [int]$NearY = -1) {
   $wa = [Windows.Forms.Screen]::PrimaryScreen.WorkingArea
   if ($NearX -lt 0) { $NearX = $wa.X + 40 }
   if ($NearY -lt 0) { $NearY = $wa.Y + 40 }
   $desk = @('Progman', 'WorkerW')
-  $bare = @{}
-  for ($x = $wa.Left + 20; $x -le $wa.Right - 20; $x += 40) {
-    for ($y = $wa.Top + 20; $y -le $wa.Bottom - 20; $y += 40) { $bare["$x,$y"] = ($desk -contains [W]::RootClassAt($x, $y)) }
+  $seen = @{}
+  $isBare = { param($x, $y) $k = "$x,$y"; if (-not $seen.ContainsKey($k)) { $seen[$k] = ($desk -contains [W]::RootClassAt($x, $y)) }; $seen[$k] }
+  $ys = @(Lattice $NearY ($wa.Top + 4) ($wa.Bottom - 4 - $H))
+  $cands = foreach ($x in (Lattice $NearX ($wa.Left + 4) ($wa.Right - 4 - $W))) {
+    foreach ($y in $ys) { , @($x, $y, (($x - $NearX) * ($x - $NearX) + ($y - $NearY) * ($y - $NearY))) }
   }
-  $cands = for ($x = $wa.Left + 20; $x + $W -le $wa.Right - 20; $x += 40) {
-    for ($y = $wa.Top + 20; $y + $H -le $wa.Bottom - 20; $y += 40) { , @($x, $y, (($x - $NearX) * ($x - $NearX) + ($y - $NearY) * ($y - $NearY))) }
-  }
+  $dxs = @(for ($d = 0; $d -lt $W; $d += 40) { $d }) + $W
+  $dys = @(for ($d = 0; $d -lt $H; $d += 40) { $d }) + $H
   foreach ($c in ($cands | Sort-Object { $_[2] })) {
     $ok = $true
-    for ($x = $c[0]; $x -le $c[0] + $W -and $ok; $x += 40) {
-      for ($y = $c[1]; $y -le $c[1] + $H; $y += 40) { if (-not $bare["$x,$y"]) { $ok = $false; break } }
+    foreach ($dx in $dxs) {
+      foreach ($dy in $dys) { if (-not (& $isBare ($c[0] + $dx) ($c[1] + $dy))) { $ok = $false; break } }
+      if (-not $ok) { break }
     }
     if ($ok) { Log "FreeRect ${W}x${H} near $NearX,$NearY -> $($c[0]),$($c[1])"; return @($c[0], $c[1], ($c[0] + $W), ($c[1] + $H)) }
   }
