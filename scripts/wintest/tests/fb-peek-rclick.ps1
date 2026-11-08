@@ -81,8 +81,9 @@ function OpenSearch($q) {
   return ([M]::BoxText() -eq $q)
 }
 # Row i's middle (one result row and the show-all row: no group headings).
-# Row $i of the first group: under the 56 px box, the 4 px gap and the group heading (24 px).
-function RowPt($i) { return @(($script:box.L + 200), ($script:box.T + 106 + 44 * $i)) }
+# Row $i of the first group: under the 56 px box, the 38 px type tabs, the 4 px gap and the
+# group heading (24 px).
+function RowPt($i) { return @(($script:box.L + 200), ($script:box.T + 144 + 44 * $i)) }
 function RightClickRow($i) {
   $p = RowPt $i
   [G]::RClick($p[0], $p[1]); Start-Sleep -Milliseconds 900
@@ -176,7 +177,7 @@ if ($Part -eq 'k') {
   OpenSearch "rkkr$Tag" | Out-Null
   [G]::Press(0x27); Start-Sleep -Milliseconds 900
   $m = MenuWin 3; $at = MenuAt $m
-  $under = ($m -ne [IntPtr]::Zero) -and ([Math]::Abs((Rect $m).L - ($box.L + 16)) -le 12) -and ([Math]::Abs((Rect $m).T - ($box.T + 128)) -le 12)
+  $under = ($m -ne [IntPtr]::Zero) -and ([Math]::Abs((Rect $m).L - ($box.L + 16)) -le 12) -and ([Math]::Abs((Rect $m).T - ($box.T + 166)) -le 12)
   MenuPick '^复制路径' $m | Out-Null; Start-Sleep -Milliseconds 600
   Check '→ at the end: the menu under the row, 复制路径' ($under -and (ClipText) -eq $p) "menu at=$at box=$($box.L),$($box.T) clip='$(ClipText)'"
   EndSearch

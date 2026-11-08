@@ -31,7 +31,7 @@ Check 'while the box is open the title is the plain name' ($w.title -eq $P) $w.t
 [G]::Press(0x0D); Start-Sleep -Milliseconds 500
 Check 'Enter closes the box and keeps the filter' (-not (FilterBoxOpen) -and (FilterOf $P).text -eq 'pdf') ((FilterOf $P) | ConvertTo-Json -Compress)
 $w = DumpOf $P
-Check 'the title stays, a tag says what it is filtered by and how many show' ($w.title -eq $P -and $w.raw -match ' filtered=true' -and $w.raw -match 'filter_tag=Some\(\("pdf", "3 / \d+"\)\)') ([regex]::Match($w.raw, 'filter_tag=\S+ \S+').Value)
+Check 'the title stays, a tag says what it is filtered by and how many show' ($w.title -eq $P -and $w.raw -match ' filtered=true' -and $w.raw -match 'filter_tag=Some\(\("", "pdf", "3 / \d+"\)\)') ([regex]::Match($w.raw, 'filter_tag=\S+ \S+ \S+').Value)
 Shot 'r02-filtered'
 Check 'the folder itself is untouched' (@(Get-ChildItem -LiteralPath $PfDl).Count -eq $all) "items=$all files=$(@(Get-ChildItem -LiteralPath $PfDl).Count)"
 FocusFence $P
