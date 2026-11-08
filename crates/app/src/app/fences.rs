@@ -488,11 +488,13 @@ impl App {
             .collect();
         // 自由摆放: the cells the icons were saved at on these monitors (not while a folder
         // opened inside 「桌面」 is shown: its entries stand down the columns).
-        let free = self
+        let mut free = self
             .state
             .fence(id)
             .filter(|f| f.free_placement && self.state.portal_path(id).is_none())
             .map(|f| f.desktop_cells.clone());
+        // None saved yet: the places Windows' own desktop has the icons at (#204).
+        let windows = self.windows_places_for(id, &mut free);
         let Some(w) = self.fences.get(&id) else {
             return;
         };
@@ -500,6 +502,7 @@ impl App {
             work,
             covered,
             free,
+            windows,
         }));
         if let Some(a) = self.anchor.borrow_mut().as_mut() {
             a.lower_desktop_fence();

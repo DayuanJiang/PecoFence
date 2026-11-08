@@ -191,7 +191,8 @@ this is also how to keep the inbox, which cannot be deleted, out of sight), `des
 only: no title row, glass or edges; its icons stand down columns from the top-left of the monitor
 like the Windows desktop, around the other fences), `freePlacement` (the inbox only, while
 `desktopLayout` is on: an icon dropped on the desktop stays in that grid cell, as on a Windows desktop
-with auto arrange off; on in a new configuration; new icons take the first free cell down the columns; `fence get` lists each
+with auto arrange off; on in a new configuration; with no cells saved yet the icons start in the cells of
+their places on the Windows desktop; new icons take the first free cell down the columns; `fence get` lists each
 icon's `[column, row]` on the current monitors in `desktopCells`), `noteText` (note fences: the whole text; a line
 starting with `[ ]` or `[x]` is a to-do), `scriptPath` (script fences: the full path of the script;
 it runs at once) and `scriptInterval` (script fences: minutes between runs, 1 to 1440).

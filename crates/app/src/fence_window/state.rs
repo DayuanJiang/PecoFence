@@ -12,6 +12,35 @@ pub struct DesktopArea {
     /// 自由摆放: the saved grid cell `[column, row]` of each icon (the fence's
     /// `desktop_cells`); None = the icons stand down the columns in their order.
     pub free: Option<BTreeMap<ItemId, [u16; 2]>>,
+    /// 自由摆放 with no saved cells yet: where Windows' own desktop has the icons, so they keep
+    /// those places (#204). Icons with a saved cell keep theirs.
+    pub windows: Option<WindowsIconPlaces>,
+}
+
+/// Windows' own desktop icons, as Explorer's desktop view had them when PecoFence read it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct WindowsIconPlaces {
+    /// The spacing of Windows' icon grid as Explorer reports it (px at `explorer_dpi`).
+    pub spacing: (i32, i32),
+    /// The scale Explorer started at, which its reported spacing stays in.
+    pub explorer_dpi: Option<u32>,
+    /// The top-left of each icon's place on Windows' desktop (screen px).
+    pub places: BTreeMap<ItemId, (i32, i32)>,
+}
+
+impl WindowsIconPlaces {
+    /// Windows' grid spacing in px on a monitor at `scale` (its DPI / 96): Explorer reports it
+    /// in the scale it started at, while the icons stand at the monitor's scale.
+    pub fn spacing_at(&self, scale: f32) -> (i32, i32) {
+        let k = self
+            .explorer_dpi
+            .filter(|d| *d > 0)
+            .map_or(1.0, |d| scale * 96.0 / d as f32);
+        (
+            (self.spacing.0 as f32 * k).round() as i32,
+            (self.spacing.1 as f32 * k).round() as i32,
+        )
+    }
 }
 
 pub struct FenceViewState {

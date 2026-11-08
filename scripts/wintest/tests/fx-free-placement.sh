@@ -3,7 +3,8 @@
 # PecoFence runs. The job asks for one by writing C:\pf\resize-want.txt (WIDTHxHEIGHT or
 # WIDTHxHEIGHT@SCALE); this script reconnects the box's RDP session so and removes the file.
 # Ends with the session back at WINTEST_SIZE and 100 %.
-#   tests/fx-free-placement.sh [--box ec2-2] [--part B|C] [run.sh options ...]
+#   tests/fx-free-placement.sh [--box ec2-2] [--part B|C] [--steps FILE] [run.sh options ...]
+# --steps runs another steps file that asks the same way (tests/fb-free-place-import.ps1).
 set -uo pipefail
 KIT=$(cd "$(dirname "$0")/.." && pwd)
 CONF=${WINTEST_CONF:-$HOME/.config/pecofence-wintest}
@@ -12,6 +13,8 @@ BOX=ec2-2
 PART=B
 [ "${1:-}" = --box ] && { BOX=$2; shift 2; }
 [ "${1:-}" = --part ] && { PART=$2; shift 2; }
+STEPS=$KIT/tests/fx-free-placement.ps1
+[ "${1:-}" = --steps ] && { STEPS=$(realpath "$2"); shift 2; }
 IP=$(awk -v b="$BOX" '$1 == b {print $3}' "$CONF/boxes")
 [ -n "$IP" ] || { echo "no box $BOX"; exit 2; }
 
@@ -27,7 +30,7 @@ rdp_at() {
   echo "rdp session for $BOX at $1"
 }
 
-"$KIT/run.sh" --box "$BOX" --var Part="$PART" "$@" "$KIT/tests/fx-free-placement.ps1" &
+"$KIT/run.sh" --box "$BOX" --var Part="$PART" "$@" "$STEPS" &
 RUN=$!
 while kill -0 "$RUN" 2>/dev/null; do
   want=$("$KIT/box.sh" ssh "$BOX" 'if (Test-Path C:\pf\resize-want.txt) { Get-Content C:\pf\resize-want.txt }' 2>/dev/null | tr -d '\r ')

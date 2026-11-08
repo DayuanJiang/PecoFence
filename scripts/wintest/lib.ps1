@@ -831,6 +831,15 @@ function WaitRule($id, [scriptblock]$ok, $sec = 8) {
 function ItemPt($fence, $name) {
   $f = TJson fence get $fence
   $items = @(TJson item list --fence $fence)
+  # 自由摆放: the icon's own cell (80 x 96, 4 px in from the window's top-left, the work area's).
+  if ($f.fence) { $f = $f.fence }
+  $it = @($items | Where-Object { $_.name -eq $name }) | Select-Object -First 1
+  if ($f.desktopLayout -and $f.freePlacement -and $f.desktopCells -and $it -and $f.desktopCells."$($it.id)") {
+    $c = $f.desktopCells."$($it.id)"
+    $p = @([int]($f.windowRect.x + 4 + $c[0] * 80 + 40), [int]($f.windowRect.y + 4 + $c[1] * 96 + 30))
+    Log "ItemPt '$name' in '$fence': cell $($c -join ',') -> $($p -join ',')"
+    return $p
+  }
   # As a fence sorted by name shows them: arranged like the desktop (desktopLayout), This PC and
   # the Recycle Bin come first as on the desktop; any other fence sorts them among the files.
   $ns = if ($f.desktopLayout) { @($items | Where-Object { $_.kind -eq 'namespace' } | Sort-Object name) } else { @() }
