@@ -10,7 +10,6 @@ foreach ($p in $paths) { foreach ($c in 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 
 Set-Culture en-US
 PfStart
 Pf settings set tools.dialogJump true | Out-Null
-Pf settings set peek.doubleCtrl true | Out-Null
 Start-Process notepad.exe -WorkingDirectory C:\pf
 Start-Sleep -Seconds 2
 $np = [G]::FindWindowW('Notepad', [NullString]::Value)
@@ -45,6 +44,10 @@ function CloseBox() { for ($i = 0; $i -lt 3 -and [M]::BoxText() -ne $null; $i++)
 foreach ($p in $paths) {
   $h = $how[$p]
   Case "opened by $h"
+  # 「双击 Ctrl」 replaces the key combination (since 0.3.0, FEATURES.md 双击 Ctrl): the
+  # Ctrl+Alt+Space groups run with it off, the double Ctrl groups with it on.
+  $dc = if ($p -in 'y', 'z') { 'true' } else { 'false' }
+  Pf settings set peek.doubleCtrl $dc | Out-Null; Start-Sleep -Milliseconds 800
   OpenBox $p; [G]::Type("q${p}a oneq"); Start-Sleep -Milliseconds 400; [G]::Press(0x08); Start-Sleep -Milliseconds 400
   $t = [M]::BoxText(); Check 'Backspace' ($t -eq "q${p}a one") "box='$t'"
   [G]::Press(0x0D); $r = Opened "q${p}a one"; Check 'Enter after Backspace' $r[0] "notepad=$($r[1])"
@@ -95,6 +98,7 @@ foreach ($p in $paths) {
 }
 
 Case 'note editor during the Peek'
+Pf settings set peek.doubleCtrl false | Out-Null; Start-Sleep -Milliseconds 800
 Pf settings set tools.enabled true | Out-Null
 Pf fence create --tool note --title PeekNote --text first --rect '760,500,300,160' | Out-Null
 Start-Sleep -Seconds 1
