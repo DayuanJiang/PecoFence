@@ -789,7 +789,7 @@
   "今天和明天的天气，每 30 分钟更新，数据来自 wttr.in。添加后右键它选「编辑脚本」，把 Tokyo 换成你的城市": "Today’s and tomorrow’s weather, updated every 30 minutes, from wttr.in. After adding it, right-click it, choose Edit script and replace Tokyo with your city",
   "一个仓库最新的 issue 和 PR，点一行在浏览器里打开。添加后右键它选「编辑脚本」，换成你关心的仓库": "A repository’s newest issues and pull requests. Click a row to open it in your browser. After adding it, right-click it, choose Edit script and put in the repository you follow",
   "电脑状态": "PC status",
-  "一直运行，每 2 秒更新 CPU、内存和 C 盘剩余空间。点一行可以复制本机 IP 或打开任务管理器": "Keeps running and updates CPU, memory and free space on drive C every 2 seconds. Click a row to copy this PC’s IP address or open Task Manager",
+  "一直运行，每 2 秒更新 CPU、内存和每个磁盘的剩余空间。点一行可以复制本机 IP 或打开任务管理器": "Keeps running and updates CPU, memory and the free space on each drive every 2 seconds. Click a row to copy this PC’s IP address or open Task Manager",
   "用自己的脚本": "Your own script",
   "用自己的脚本…": "Your own script…",
   "运行你选的脚本（PowerShell、Python、批处理等），把它打印的文字显示在栅栏里。脚本最多运行 10 秒（一直运行的除外），不弹出窗口。PecoFence 本身不会为脚本联网": "Runs a script you choose (PowerShell, Python, batch files and more) and shows the text it prints in a fence. A script runs for up to 10 seconds (unless it is marked to keep running) and opens no window. PecoFence never goes online for scripts",
