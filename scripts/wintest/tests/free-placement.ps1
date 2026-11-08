@@ -1,10 +1,10 @@
 # 自由摆放 (free placement) of the 「桌面」 fence arranged like the desktop, with the real mouse.
-#   run.sh tests/fx-free-placement.ps1                        drags, menus, keys, restart, fences, files
-#   run.sh --var Build=old tests/fx-free-placement.ps1        the same drags on a build without it
-#   tests/fx-free-placement.sh [--part C]                      part B: the RDP size changes mid-run
+#   run.sh tests/free-placement.ps1                        drags, menus, keys, restart, fences, files
+#   run.sh --var Build=old tests/free-placement.ps1        the same drags on a build without it
+#   tests/free-placement.sh [--part C]                      part B: the RDP size changes mid-run
 #                                                              part C: the scale goes to 150 %
 # Parts B and C need the dev box to change the RDP session while the job waits:
-# fx-free-placement.sh runs run.sh --var Part=B (or C) and answers C:\pf\resize-want.txt.
+# free-placement.sh runs run.sh --var Part=B (or C) and answers C:\pf\resize-want.txt.
 if (-not (Get-Variable Part -ErrorAction SilentlyContinue)) { $Part = 'A' }
 if (-not (Get-Variable Build -ErrorAction SilentlyContinue)) { $Build = 'new' }
 $New = $Build -ne 'old'
@@ -52,7 +52,7 @@ function FpSinkOn() {
   return $false
 }
 function FpLog($what) { Log "$what :: $(FpAll)" }
-function Park() { [G]::MoveTo(1560, 820); Start-Sleep -Milliseconds 300 }
+function Park() { ParkMouse 1560 820 }
 
 Case 'seed'
 foreach ($n in $FpNames + $FpExtra) { Remove-Item -LiteralPath (Join-Path $PfDesk $n) -Force -ErrorAction SilentlyContinue }
@@ -144,7 +144,7 @@ if ($Part -eq 'A' -and $New) {
   $tries = 0
   for ($k = 0; $k -lt 3; $k++) {
     $tries++
-    [G]::Click(700, 120); Start-Sleep -Milliseconds 800
+    DeskClick 700 120 | Out-Null; Start-Sleep -Milliseconds 300
     if (FpSinkOn) { break }
     $p = FpAt '10,4'; [G]::Click($p[0], $p[1]); Start-Sleep -Milliseconds 500
   }

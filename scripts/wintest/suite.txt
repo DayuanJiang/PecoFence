@@ -1,0 +1,60 @@
+# The desktop suite: every steps file in tests/, one job per line, for suite.sh.
+#   name     a short name for the table
+#   min      about how long the job runs (minutes); suite.sh starts the longest first
+#   where    ec2 (any EC2 box), vm (a Hyper-V guest, --vm), resize (an EC2 box whose RDP size or
+#            scale changes mid-run, tests/free-placement.sh), unit (unit.sh), manual (skipped,
+#            the reason is in the steps file's header), signed (skipped unless --signed: the
+#            setup edition turns autostart on, which Defender flags on unsigned builds)
+#   build    release or debug (the settings page over CDP needs debug)
+#   file     the steps file in tests/
+#   options  run.sh options; @installers is the folder from installers.sh (--installers)
+#
+# name             min where  build   file                           options
+matrix             5   ec2    release 186-matrix.ps1
+search             2   ec2    release 186-search.ps1
+dialog-jump        2   ec2    release 186-dialog.ps1
+edge-cases         1   ec2    release 186-edge.ps1
+tool-fences        2   ec2    release 186-tools.ps1
+install-upgrade    3   signed release 186-install.ps1                --extra @installers
+shortcut-menu      2   ec2    release 190-shortcut-menu.ps1
+tools-030          2   ec2    debug   030-tools.ps1
+everything-15      2   manual release 030-everything15.ps1
+tabs               4   ec2    release holdout-tabs.ps1
+users-day          4   signed release holdout-day.ps1                --extra @installers
+rules              2   ec2    debug   holdout-rules.ps1
+fixes-024-A        3   ec2    release holdout2-fixes.ps1             --var Part=A
+fixes-024-B        3   ec2    release holdout2-fixes.ps1             --var Part=B
+fixes-024-C        2   ec2    release holdout2-fixes.ps1             --var Part=C
+config-undo        4   ec2    release config-and-undo.ps1
+watchdog           5   ec2    release watchdog-restart.ps1
+desktop-input-A    2   ec2    release desktop-clicks-and-focus.ps1   --var Part=A
+desktop-input-B    3   ec2    release desktop-clicks-and-focus.ps1   --var Part=B
+desktop-input-C    3   ec2    release desktop-clicks-and-focus.ps1   --var Part=C
+explorer-freeze    2   ec2    release explorer-busy.ps1              --var Part=freeze
+explorer-burst     3   ec2    release explorer-busy.ps1              --var Part=burst
+explorer-start     3   ec2    release explorer-busy.ps1              --var Part=start
+explorer-wallpaper 1   ec2    release explorer-busy.ps1              --var Part=wallpaper
+explorer-drop      2   ec2    release explorer-busy.ps1              --var Part=drop
+explorer-quit      2   ec2    release explorer-busy.ps1              --var Part=quit
+free-placement     2   ec2    release free-placement.ps1             --var Part=A
+free-place-size    3   resize release free-placement.ps1             --part B
+free-place-scale   3   resize release free-placement.ps1             --part C
+first-run-layout   1   ec2    release first-run-layout.ps1
+fence-menus        2   ec2    release fence-menu-and-tips.ps1        --var Part=M
+tips               2   ec2    release fence-menu-and-tips.ps1        --var Part=T
+tips-chinese       2   ec2    release fence-menu-and-tips.ps1        --var Part=TZ
+tips-off           2   ec2    release fence-menu-and-tips.ps1        --var Part=S
+tips-switch        2   ec2    debug   fence-menu-and-tips.ps1        --var Part=P
+menus-foreground   5   ec2    release menus-foreground.ps1
+frame-pacing       2   ec2    release frame-pacing.ps1
+render-memory      5   ec2    release software-render-memory.ps1
+rolled-AB          4   ec2    release rolled-fences.ps1              --var Part=AB
+rolled-CD          3   ec2    release rolled-fences.ps1              --var Part=CD
+keys-A             3   ec2    release keyboard-and-menu-items.ps1    --var Part=A
+keys-B             2   ec2    release keyboard-and-menu-items.ps1    --var Part=B
+keys-C             2   ec2    release keyboard-and-menu-items.ps1    --var Part=C
+keys-D             2   ec2    release keyboard-and-menu-items.ps1    --var Part=D
+snap-and-fit       2   ec2    release snap-and-fit.ps1
+new-icons-drops    3   ec2    release new-icons-and-drops.ps1
+desktop-fence      1   ec2    release desktop-fence-clicks.ps1
+unit               1   unit   release unit.ps1

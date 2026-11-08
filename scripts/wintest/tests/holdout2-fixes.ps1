@@ -2,16 +2,17 @@
 # each retested the way the reporter hit it, with the real mouse and keyboard where a user would
 # click or drag. Every check states the fixed behaviour: on 0.2.3 (run.sh --bin <0.2.3 folder>)
 # a FAIL is the bug showing, on main every check should pass.
-# Three parts, each under 9 minutes: run.sh --extra <folder holding part.txt with A, B or C>
-# (all three when there is no part.txt).
+# Three parts, each under 9 minutes: run.sh --var Part=A (or B, C; all three by default), as the
+# other steps files. A part.txt in --extra still works.
 
 # ---- lib candidates
 
-# Which parts run: the letters in C:\pf\extra\part.txt. Each part is a function with a trap of
-# its own: an error inside a block (if, function) skips the rest of that block, so the steps of a
-# part must be flat lines of a function, not of an if block.
+# Which parts run: $Part (run.sh --var), else the letters in C:\pf\extra\part.txt. Each part is a
+# function with a trap of its own: an error inside a block (if, function) skips the rest of that
+# block, so the steps of a part must be flat lines of a function, not of an if block.
 $H2Part = 'ABC'
 if (Test-Path "$PfExtra\part.txt") { $H2Part = (Get-Content "$PfExtra\part.txt" -Raw).Trim() }
+if ($Part) { $H2Part = $Part }
 function InPart($p) { return $H2Part.Contains($p) }
 Add-Type -AssemblyName WindowsBase, Microsoft.VisualBasic
 
@@ -251,7 +252,8 @@ Pf item move "$PfDesk\h2-out.lnk" --to Progs2 | Out-Null
 Start-Sleep -Seconds 2
 $where = @('h2-sel-a.txt', 'h2-d1.txt', 'h2-sel-b.txt', 'h2-one.txt', 'h2same', 'h2same.lnk', 'H2README', 'H2README.bat', 'h2-out.lnk' | ForEach-Object { "$_=$(ItemFence $_)" })
 Check 'the test icons are in their fences' (($where -join ' ') -match 'h2-sel-a.txt=Sel1' -and ($where -join ' ') -match 'H2README.bat=Same' -and ($where -join ' ') -match 'h2-out.lnk=Progs2') ($where -join ', ')
-$empty = @(700, 780)
+$empty = FreeSpot 700 780
+if (-not $empty) { $empty = @(700, 780) }
 
 Case '1 a double-click on the empty desktop still hides and shows the fences'
 # The desktop comes to the front from another window, as after any other program (0.2.3 follows
@@ -396,7 +398,7 @@ $du = DumpOf Upper; $dl1 = DumpOf Lower
 Shot '38-expanded'
 Check 'the locked fence below moves out of the way while the upper one is expanded' ($du -and -not $du.rolled -and $dl1 -and $dl1.t -ge $du.b) "Upper window $($du.t)..$($du.b) rolled=$($du.rolled); Lower top $($dl0.t) -> $($dl1.t)"
 # Off both fences: over Lower, which Upper pushed, the hover peek stays open.
-[G]::MoveTo(700, 780); Start-Sleep -Seconds 2
+ParkMouse 700 780; Start-Sleep -Seconds 2
 $dl2 = DumpOf Lower; $lo2 = FenceGet Lower
 Check 'and goes back to its place, its saved place unchanged' ($dl2 -and [math]::Abs($dl2.t - $dl0.t) -le 2 -and $lo2.rect.y -eq $lo0.rect.y) "Lower top $($dl2.t), saved y $($lo0.rect.y) -> $($lo2.rect.y)"
 # Saved expanded, then a restart: the locked fence keeps its saved place.
@@ -419,14 +421,14 @@ $ti = [array]::IndexOf(@($d.tabs), 'h2portal')
 Check 'the portal is the second tab of Host' ($ti -ge 0 -and @($d.tabs).Count -eq 2) "tabs=$($d.tabs -join ',') rects=$((@($d.rects) | ForEach-Object { "$($_[0])+$($_[1])" }) -join ' ')"
 $tx = [int]($d.l + $d.ox + $d.rects[$ti][0]); $tw = [int]$d.rects[$ti][1]; $ty = [int]($d.t + $d.oy)
 [G]::Click($tx + [int]($tw / 2), $ty + 18); Start-Sleep -Milliseconds 900
-[G]::MoveTo(200, 780); Start-Sleep -Milliseconds 400
+ParkMouse 200 780; Start-Sleep -Milliseconds 400
 $g0 = Crop '51-tab-root' $tx $ty $tw 36
 # A hosted tab has no window rect of its own: its items show in Host's window ('sub' before 'top').
 $p = CellPt Host 0
 DblClick $p[0] $p[1]; Start-Sleep -Seconds 2
 $cur = (FenceGet h2portal).portal.current
 Check 'a double-click on its subfolder goes into it' ("$cur" -match 'sub$') "current=$cur"
-[G]::MoveTo(200, 780); Start-Sleep -Milliseconds 500
+ParkMouse 200 780; Start-Sleep -Milliseconds 500
 $g1 = Crop '51-tab-sub' $tx $ty $tw 36
 $first = [Px]::FirstInk($g1, 0, $tw - 1, 8, 28, 60)
 $diff = [Px]::Diff($g0, $g1, [math]::Max(0, $first), [math]::Max(0, $first + 14), 4, 32)
@@ -537,10 +539,11 @@ if ($curs.Count -eq 2) { Pf item move "$PfDesk\h2-$($curs[0].Name)" "$PfDesk\h2-
 Pf item move "$PfDesk\h2-peek.txt" "$PfDesk\h2-peek2.txt" --to Peeky | Out-Null
 Start-Sleep -Seconds 3
 Log ("items: " + ((@(PfJson item list) | ForEach-Object { "$($_.name)@$($_.fenceTitle)" }) -join ', '))
-$empty = @(700, 780)
+$empty = FreeSpot 700 780
+if (-not $empty) { $empty = @(700, 780) }
 
 Case '45 files show their own thumbnail or icon, as in Explorer'
-[G]::MoveTo(200, 780); Start-Sleep -Seconds 4
+ParkMouse 200 780; Start-Sleep -Seconds 4
 $red = IconCrop Pics 1 '45-red'; $blue = IconCrop Pics 0 '45-blue'
 $cr = MeanRgb $red; $cb = MeanRgb $blue
 $f0 = IconCrop Fonts 0 '45-font0'; $f1 = IconCrop Fonts 1 '45-font1'

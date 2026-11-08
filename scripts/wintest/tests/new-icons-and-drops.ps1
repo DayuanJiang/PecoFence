@@ -27,7 +27,7 @@ Pf fence create --title Docs --rect '480,120,300,330' | Out-Null
 Pf item move "$PfDesk\fxb Alpha.txt" "$PfDesk\fxb Delta.txt" "$PfDesk\fxb Kilo.txt" --to Docs | Out-Null
 Pf rule add --name 'fxb txt to Docs' --ext txt --to Docs --index 0 | Out-Null
 Start-Sleep -Seconds 2
-[G]::MoveTo(1100, 830)
+ParkMouse 1100 830
 
 Case 'U8 new files in a fence never arranged by hand (手动)'
 $o0 = Order 'Docs'

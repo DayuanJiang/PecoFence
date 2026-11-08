@@ -5,7 +5,7 @@
 #   P4  a push animation does not re-arrange the Desktop fence (desktop layout) every frame
 #   P6  a Liquid Glass title drag moves the window on every mouse move
 #   P8  the end of a Peek redraws no opaque fence
-#   S15 (memory) is in fx-render-perf-memory.ps1
+#   S15 (memory) is in software-render-memory.ps1
 $PfAllowLogErrors = $true
 [Anim]::Set($true)
 

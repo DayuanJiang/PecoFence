@@ -70,7 +70,8 @@ function KxWaitOffer($sec = 3) {
   for ($i = 0; $i -lt $sec * 20; $i++) { $h = KxOffer; if ($h -ne [IntPtr]::Zero) { return $h }; Start-Sleep -Milliseconds 50 }
   return [IntPtr]::Zero
 }
-function KxMarquee() { DragTo 820 120 1120 380 }
+# A 300 x 260 rectangle of empty desktop near 820,120; $script:KxM keeps where it was drawn.
+function KxMarquee() { $script:KxM = FreeRect 300 260 820 120; if (-not $script:KxM) { $script:KxM = @(820, 120, 1120, 380) }; DragTo $script:KxM[0] $script:KxM[1] $script:KxM[2] $script:KxM[3] }
 # The fences the desktop marquee selected (white ring), from the newest dump.
 function KxGroupSelected() {
   Start-Sleep -Milliseconds 700
@@ -89,7 +90,7 @@ function KxOfferClick($which) {
 }
 function KxFenceHwnd($t) { return (@([W]::Tops('PecoFence.Fence') | Where-Object { [W]::Title($_) -eq $t }) | Select-Object -First 1) }
 # A click on the empty desktop: every fence's icons lose their selection.
-function KxDeskClick() { [G]::Click(1000, 800); Start-Sleep -Milliseconds 700 }
+function KxDeskClick() { DeskClick 1000 800 | Out-Null; Start-Sleep -Milliseconds 200 }
 
 Case 'setup'
 CloseWindows
@@ -117,7 +118,7 @@ Start-Sleep -Seconds 2
 FenceIds
 Log "fences: $((@(PfJson fence list) | ForEach-Object { "$($_.title) $($_.windowRect.x),$($_.windowRect.y) rolled=$($_.rolledUp) n=$($_.itemCount)" }) -join ' ; ')"
 Check 'four test fences, the first-start ones rolled up' ($Id['Alpha'] -and $Id['Beta'] -and $Id['Gamma'] -and $Id['kx root']) "$($Id.Keys -join ', ')"
-[G]::MoveTo(1000, 850)
+ParkMouse 1000 850
 
 # Each part is a function with its own trap: a failed line is a failed check and the next line
 # of the part runs (a plain if block would skip the rest of the part).
@@ -360,7 +361,7 @@ Start-Sleep -Seconds 2
 $nf = @(PfJson fence list) | Where-Object { $_.title -eq 'Sub B' } | Select-Object -First 1
 $nr = $nf.windowRect
 Shot 'u14-folder-fence-in-rect'
-Check 'a folder fence for the picked folder fills the drawn rectangle' ($nf -and [math]::Abs($nr.x - 820) -le 24 -and [math]::Abs($nr.y - 120) -le 24 -and [math]::Abs($nr.w - 300) -le 48 -and @(PfJson fence list).Count -eq $c0 + 1) "dialog=$dlg fence=$($nf.title) rect=$($nr.x),$($nr.y),$($nr.w),$($nr.h)"
+Check 'a folder fence for the picked folder fills the drawn rectangle' ($nf -and [math]::Abs($nr.x - $script:KxM[0]) -le 24 -and [math]::Abs($nr.y - $script:KxM[1]) -le 24 -and [math]::Abs($nr.w - 300) -le 48 -and @(PfJson fence list).Count -eq $c0 + 1) "dialog=$dlg fence=$($nf.title) rect=$($nr.x),$($nr.y),$($nr.w),$($nr.h)"
 if ($nf) { Pf fence delete 'Sub B' | Out-Null }
 
 Case 'U16 rename box centred on the icon'
@@ -433,7 +434,7 @@ $b = (FenceGet 'Beta').windowRect
 $res = @{}
 foreach ($speed in 'fast', 'normal', 'slow') {
   $set = Pf settings set rollUp.hoverSpeed $speed
-  [G]::MoveTo(1000, 850); Start-Sleep -Milliseconds 1500
+  ParkMouse 1000 850; Start-Sleep -Milliseconds 1500
   $h0 = [Kx.W]::Height($bh)
   $sw2 = [Diagnostics.Stopwatch]::StartNew()
   [G]::MoveTo($b.x + 150, $b.y + 16)
@@ -441,7 +442,7 @@ foreach ($speed in 'fast', 'normal', 'slow') {
   while ($sw2.ElapsedMilliseconds -lt 3000) { if ([Kx.W]::Height($bh) -gt $h0 + 20) { $ms = $sw2.ElapsedMilliseconds; break }; Start-Sleep -Milliseconds 10 }
   $res[$speed] = $ms
   Log "hover $speed : expands after $ms ms (h0=$h0) set: $($set.Trim())"
-  [G]::MoveTo(1000, 850); Start-Sleep -Milliseconds 1500
+  ParkMouse 1000 850; Start-Sleep -Milliseconds 1500
 }
 Check 'fast < normal < slow, about 150 / 400 / 1000 ms' ($res['fast'] -gt 0 -and $res['fast'] -lt $res['normal'] - 100 -and $res['normal'] -lt $res['slow'] - 300) "fast=$($res['fast']) normal=$($res['normal']) slow=$($res['slow'])"
 Pf settings set rollUp.hoverSpeed normal | Out-Null
@@ -484,8 +485,8 @@ $or = Rect $off
 $menu = MenuWin 1
 $fgc = [L]::Cls([L]::GetForegroundWindow())
 Shot 'u10-offer'
-Crop 'u10-offer-crop' 700 80 520 380 | Out-Null
-Check 'small buttons at the bottom-right corner of the rectangle (right edges lined up)' ($off -ne [IntPtr]::Zero -and [math]::Abs($or.R - 1120) -le 4 -and $or.T -ge 380 -and $or.T -le 400 -and ($or.B - $or.T) -le 40) "offer=$off rect=$($or.L),$($or.T),$($or.R),$($or.B)"
+Crop 'u10-offer-crop' ($script:KxM[0] - 120) ($script:KxM[1] - 40) 520 380 | Out-Null
+Check 'small buttons at the bottom-right corner of the rectangle (right edges lined up)' ($off -ne [IntPtr]::Zero -and [math]::Abs($or.R - $script:KxM[2]) -le 4 -and $or.T -ge $script:KxM[3] -and $or.T -le ($script:KxM[3] + 20) -and ($or.B - $or.T) -le 40) "offer=$off rect=$($or.L),$($or.T),$($or.R),$($or.B)"
 Check 'no popup menu, the foreground stays with the desktop' ($menu -eq [IntPtr]::Zero -and $fgc -match '^(Progman|WorkerW)$') "menu=$menu fg=$fgc"
 while ((KxOffer) -ne [IntPtr]::Zero -and $sw.ElapsedMilliseconds -lt 6000) { Start-Sleep -Milliseconds 50 }
 $gone = $sw.ElapsedMilliseconds + 800
@@ -498,7 +499,7 @@ Check 'Esc: the buttons go' ($on -and (KxOffer) -eq [IntPtr]::Zero) "shown=$on a
 CloseMenus
 KxMarquee
 $on = (KxWaitOffer) -ne [IntPtr]::Zero
-[G]::Click(1000, 780); Start-Sleep -Milliseconds 500
+DeskClick 1000 780 | Out-Null
 Check 'a click elsewhere on the desktop: the buttons go' ($on -and (KxOffer) -eq [IntPtr]::Zero) "shown=$on after the click=$(KxOffer)"
 CloseMenus
 KxMarquee
@@ -538,7 +539,7 @@ $ren = WaitWin 'PecoFence.Rename' 3
 [G]::Type('Offer fence'); [G]::Press(0x0D); Start-Sleep -Seconds 2
 $nf = FenceGet 'Offer fence'; $nr = $nf.windowRect
 Shot 'u10-new-fence'
-Check 'New fence: a fence in the rectangle, its name typed straight away' ($clicked -and $nf.title -eq 'Offer fence' -and [math]::Abs($nr.x - 820) -le 24 -and [math]::Abs($nr.y - 120) -le 24 -and @(PfJson fence list).Count -eq $c0 + 1) "rename=$ren rect=$($nr.x),$($nr.y),$($nr.w),$($nr.h)"
+Check 'New fence: a fence in the rectangle, its name typed straight away' ($clicked -and $nf.title -eq 'Offer fence' -and [math]::Abs($nr.x - $script:KxM[0]) -le 24 -and [math]::Abs($nr.y - $script:KxM[1]) -le 24 -and @(PfJson fence list).Count -eq $c0 + 1) "rename=$ren rect=$($nr.x),$($nr.y),$($nr.w),$($nr.h)"
 if ($nf.title -eq 'Offer fence') { Pf fence delete 'Offer fence' | Out-Null }
 Case 'U10 no buttons when the rectangle touches a fence, or with the setting off'
 KxDeskClick
@@ -556,7 +557,7 @@ Pf settings set themeStyle liquidGlass | Out-Null; Start-Sleep -Seconds 2
 KxDeskClick
 KxMarquee
 $off = KxWaitOffer
-Crop 'u10-offer-glass-crop' 700 80 520 380 | Out-Null
+Crop 'u10-offer-glass-crop' ($script:KxM[0] - 120) ($script:KxM[1] - 40) 520 380 | Out-Null
 Check 'Liquid Glass: the buttons show too' ($off -ne [IntPtr]::Zero) "offer=$off"
 [G]::Press(0x1B); Start-Sleep -Milliseconds 400
 Pf settings set themeStyle fluent | Out-Null; Start-Sleep -Seconds 2

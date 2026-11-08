@@ -111,7 +111,7 @@ function StealTry($what, $delay, $duration, $hide, [scriptblock]$open) {
   [G]::Press(0x1B); Start-Sleep -Milliseconds 400
   $openAfterEsc = (PfMenu) -ne [IntPtr]::Zero
   if ($openBeforeEsc -and $openAfterEsc) { $script:EscIgnored++ }
-  [G]::Click(1000, 800); Start-Sleep -Milliseconds 800
+  DeskClick 1000 800 | Out-Null; Start-Sleep -Milliseconds 300
   [G]::Press(0x1B); Start-Sleep -Milliseconds 400
   if ($script:TryNo -eq 1) { Shot 's14-try1-after-esc-and-desktop-click' }
   $still = (PfMenu) -ne [IntPtr]::Zero
@@ -147,11 +147,11 @@ Check 'fence menu opens' ($t -ne '') $t
 Check 'Esc closes it' ((PfMenu) -eq [IntPtr]::Zero)
 & $script:OpenTray; $m = MenuWin 3; $t = if ($m -ne [IntPtr]::Zero) { MenuTexts $m } else { '' }
 Check 'tray menu opens' ($t -ne '') $t
-[G]::Click(1000, 800); Start-Sleep -Milliseconds 600
+DeskClick 1000 800 | Out-Null; Start-Sleep -Milliseconds 100
 Check 'a desktop click closes it' ((PfMenu) -eq [IntPtr]::Zero)
 & $script:OpenItem; $m = MenuWin 3; $t = if ($m -ne [IntPtr]::Zero) { MenuTexts $m } else { '' }
 Check 'item menu opens' ($t -ne '') $t
-[G]::Click(1000, 800); Start-Sleep -Milliseconds 600
+DeskClick 1000 800 | Out-Null; Start-Sleep -Milliseconds 100
 Check 'a desktop click closes it' ((PfMenu) -eq [IntPtr]::Zero)
 & $script:OpenFence; $m = MenuWin 3
 $p = MenuPoint $m 'Roll up'; if ($p) { [G]::Click($p[0], $p[1]) }; Start-Sleep -Milliseconds 900
@@ -165,7 +165,7 @@ Check 'Photos window found' ($script:Ph -ne [IntPtr]::Zero)
 # One try: Photos rolled up, the pointer onto its title, and as soon as it starts to grow the
 # menu opens; heights sampled every 50 ms for 1.5 s with the menu open, a CLI status sent then.
 function ExpandTry($what, [scriptblock]$open) {
-  [G]::MoveTo(1100, 830); Start-Sleep -Milliseconds 800
+  ParkMouse 1100 830; Start-Sleep -Milliseconds 500
   Pf fence unroll Photos | Out-Null; Start-Sleep -Milliseconds 500
   Pf fence roll Photos | Out-Null; Start-Sleep -Milliseconds 1200
   $rolled = WinH $script:Ph
@@ -209,7 +209,7 @@ $script:Lines = @(); $script:Max = @(); $script:Moved = @()
 foreach ($k in 1, 2, 3) { ExpandTry "fence menu $k" $script:OpenWork }
 $moving = @($script:Moved | Where-Object { $_ -ge 20 }).Count
 Check 'Photos goes on moving (20 px or more) with the Work fence menu open' ($moving -eq 3) "$moving of 3 (moved $($script:Moved -join ', ') px); $($script:Lines -join ' || ')"
-[G]::MoveTo(1100, 830); Start-Sleep -Milliseconds 800
+ParkMouse 1100 830; Start-Sleep -Milliseconds 500
 Pf fence unroll Photos | Out-Null
 
 # ---- P9
@@ -242,6 +242,6 @@ $slow = @(for ($i = 0; $i -lt $build1.Count; $i++) { if ($build1[$i] -gt 2 * $bu
 Check 'the first item menu is built about as fast as the second (handlers loaded in the background)' ($build1.Count -eq 5 -and $slow -eq 0) "first $($build1 -join ', ') ms, second $($build2 -join ', ') ms"
 
 Case 'cleanup'
-[G]::MoveTo(1100, 830)
+ParkMouse 1100 830
 PfQuit
 Get-ChildItem $PfDesk -Filter 'fxm-*' -Force -ErrorAction SilentlyContinue | Remove-Item -Force

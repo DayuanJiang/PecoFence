@@ -164,7 +164,7 @@ function MeanRgb($b) {
 # Text on screen by Windows' OCR (Windows.Media.Ocr), for what UI Automation cannot see: a toast
 # sits in a window band a normal program cannot read, the settings page of a release build.
 # The crop is enlarged twice first; '' when no OCR language is installed.
-function OcrText($x, $y, $w, $h, $name = 'ocr') {
+function OcrRead($x, $y, $w, $h, $name = 'ocr') {
   Add-Type -AssemblyName System.Runtime.WindowsRuntime
   $null = [Windows.Media.Ocr.OcrEngine, Windows.Foundation, ContentType = WindowsRuntime]
   $null = [Windows.Graphics.Imaging.BitmapDecoder, Windows.Graphics, ContentType = WindowsRuntime]
@@ -176,14 +176,53 @@ function OcrText($x, $y, $w, $h, $name = 'ocr') {
   $g = [Drawing.Graphics]::FromImage($big); $g.InterpolationMode = 'HighQualityBicubic'; $g.DrawImage($src, 0, 0, $w * 2, $h * 2); $g.Dispose()
   $path = "$PfShots\$name.png"; $big.Save($path); $big.Dispose(); $src.Dispose()
   $eng = [Windows.Media.Ocr.OcrEngine]::TryCreateFromUserProfileLanguages()
-  if (-not $eng) { Log 'ocr: no OCR language'; return '' }
+  if (-not $eng) { Log 'ocr: no OCR language'; return $null }
   $file = & $await ([Windows.Storage.StorageFile]::GetFileFromPathAsync($path)) ([Windows.Storage.StorageFile])
   $stream = & $await ($file.OpenAsync([Windows.Storage.FileAccessMode]::Read)) ([Windows.Storage.Streams.IRandomAccessStream])
   $dec = & $await ([Windows.Graphics.Imaging.BitmapDecoder]::CreateAsync($stream)) ([Windows.Graphics.Imaging.BitmapDecoder])
   $bmp = & $await ($dec.GetSoftwareBitmapAsync()) ([Windows.Graphics.Imaging.SoftwareBitmap])
   $res = & $await ($eng.RecognizeAsync($bmp)) ([Windows.Media.Ocr.OcrResult])
   $stream.Dispose()
-  return "$($res.Text)"
+  return $res
+}
+function OcrText($x, $y, $w, $h, $name = 'ocr') { $r = OcrRead $x $y $w $h $name; if ($r) { return "$($r.Text)" }; return '' }
+# Where a text is on screen: the centre of the first, shortest run of OCR words in the box that
+# matches $want (a regex: anchor it, '^Fluent$', when a line may hold more), as @(x, y) in screen
+# pixels, or $null. Settings pages, dialogs and cards move their controls between builds; their
+# labels stay, so a release build can be clicked by label.
+function OcrFind($want, $x = 0, $y = 0, $w = 0, $h = 0) {
+  if ($w -le 0) { $w = [G]::GetSystemMetrics(0) - $x }
+  if ($h -le 0) { $h = [G]::GetSystemMetrics(1) - $y }
+  $r = OcrRead $x $y $w $h 'ocr-find'
+  if (-not $r) { return $null }
+  foreach ($line in $r.Lines) {
+    if ($line.Text -notmatch $want) { continue }
+    $words = @($line.Words)
+    for ($n = 1; $n -le $words.Count; $n++) {
+      for ($i = 0; $i + $n -le $words.Count; $i++) {
+        $run = @($words[$i..($i + $n - 1)])
+        if ((($run | ForEach-Object { $_.Text }) -join ' ') -notmatch $want) { continue }
+        $b = @($run | ForEach-Object { $_.BoundingRect })
+        $l = ($b | ForEach-Object { $_.X } | Measure-Object -Minimum).Minimum
+        $t = ($b | ForEach-Object { $_.Y } | Measure-Object -Minimum).Minimum
+        $rr = ($b | ForEach-Object { $_.X + $_.Width } | Measure-Object -Maximum).Maximum
+        $bb = ($b | ForEach-Object { $_.Y + $_.Height } | Measure-Object -Maximum).Maximum
+        # The crop was enlarged twice for OCR.
+        $pt = @([int]($x + ($l + $rr) / 4), [int]($y + ($t + $bb) / 4))
+        Log "OcrFind '$want' -> $($pt -join ',') (in '$($line.Text)')"
+        return $pt
+      }
+    }
+  }
+  Log "OcrFind '$want': not found in '$($r.Text)'"
+  return $null
+}
+# Clicks the label found by OcrFind; $false when it is not on screen.
+function OcrClick($want, $x = 0, $y = 0, $w = 0, $h = 0) {
+  $pt = OcrFind $want $x $y $w $h
+  if (-not $pt) { return $false }
+  [G]::Click($pt[0], $pt[1]); Start-Sleep -Milliseconds 400
+  return $true
 }
 # The toast at the bottom right, read by OCR until it says `$want` (or $sec run out).
 function ToastOcr($want = 'PecoFence', $sec = 8) {
