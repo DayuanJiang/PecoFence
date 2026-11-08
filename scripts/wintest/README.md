@@ -137,6 +137,38 @@ new one and compose them side by side:
   Screen grabs load the box: timing effects (frame gaps, drag lag) look smaller while recording, so
   show them with a metric and slow motion, and check the sheet before using the animation.
 
+## Hyper-V guests on the home PC (Windows 11 and Windows 10)
+
+```bash
+scripts/wintest/hyperv/run-hyperv.sh --vm PF-Win11-2 scripts/wintest/tests/186-search.ps1
+scripts/wintest/hyperv/run-hyperv.sh --vm PF-Win10 --extra <dir> scripts/wintest/tests/186-install.ps1
+```
+
+`run-hyperv.sh` runs the same steps files in a Hyper-V guest of the Windows PC (`ssh win`, or
+`WINTEST_HV_SSH`) for what a Server 2025 box cannot show: Windows 11's own shell and Windows 10.
+It copies the kit, the build and `--extra` to a folder of its own under the PC's `%TEMP%`, starts
+`hyperv/guest-run.ps1` there outside the ssh session (so a dropped connection does not end the
+run), waits for it and prints the same table as `run.sh`. Run it as the background command itself.
+The guest runner:
+
+- needs the guest Off with no checkpoint (another session's checkpoint means it is in use);
+- takes a checkpoint, sets the guest's video to 1600x900 (`Set-VMVideo`; the steps expect the EC2
+  box's size), boots it and waits for pf's desktop;
+- points the guest's PFJob task at a hidden launcher with normal priority, turns Spotlight off and
+  removes the Store Notepad, which restores earlier jobs' tabs and shows "Cannot find" boxes over
+  the Open dialog (`--keep-notepad` keeps it);
+- runs one PFJob job per steps file, with the kit's `ctl.ps1 reset` before each, and packs
+  `C:\pf\run` as `run.sh` does;
+- turns the guest off, restores the checkpoint and the video settings and deletes the checkpoint.
+
+All steps files take about 30 minutes in one guest; a Win11 and a Win10 guest can run at the same
+time (keep at most four guests running across sessions). Where the guests differ from the EC2 box:
+they are no Remote Desktop session (the feedback form's "remote desktop" fact), pf is an
+administrator there (no UAC prompt for the Public Desktop), and Windows 10 keeps the tray icon in
+the overflow window, which `TrayPick` does not open yet. Windows 10 also reports the desktop
+coming to the front late or not at all now and then: a step that clicks the desktop and acts at
+once can see that.
+
 ## The boxes
 
 `box.sh create <name>` launches a box from `~/.config/pecofence-wintest/userdata.ps1` (OpenSSH
