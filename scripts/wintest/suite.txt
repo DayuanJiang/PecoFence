@@ -3,7 +3,8 @@
 #   min      about how long the job runs (minutes); suite.sh starts the longest first
 #   where    ec2 (any EC2 box), vm (a Hyper-V guest, --vm), resize (an EC2 box whose RDP size or
 #            scale changes mid-run, tests/free-placement.sh), unit (unit.sh), manual (skipped,
-#            the reason is in the steps file's header)
+#            the reason is in the steps file's header), signed (skipped unless --signed: the
+#            setup edition turns autostart on, which Defender flags on unsigned builds)
 #   build    release or debug (the settings page over CDP needs debug)
 #   file     the steps file in tests/
 #   options  run.sh options; @installers is the folder from installers.sh (--installers)
@@ -14,12 +15,12 @@ search             2   ec2    release 186-search.ps1
 dialog-jump        2   ec2    release 186-dialog.ps1
 edge-cases         1   ec2    release 186-edge.ps1
 tool-fences        2   ec2    release 186-tools.ps1
-install-upgrade    3   ec2    release 186-install.ps1                --extra @installers
+install-upgrade    3   signed release 186-install.ps1                --extra @installers
 shortcut-menu      2   ec2    release 190-shortcut-menu.ps1
 tools-030          2   ec2    debug   030-tools.ps1
 everything-15      2   manual release 030-everything15.ps1
 tabs               4   ec2    release holdout-tabs.ps1
-users-day          4   ec2    release holdout-day.ps1                --extra @installers
+users-day          4   signed release holdout-day.ps1                --extra @installers
 rules              2   ec2    debug   holdout-rules.ps1
 fixes-024-A        3   ec2    release holdout2-fixes.ps1             --var Part=A
 fixes-024-B        3   ec2    release holdout2-fixes.ps1             --var Part=B

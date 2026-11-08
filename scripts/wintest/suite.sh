@@ -1,11 +1,14 @@
 #!/bin/bash
 # Runs the desktop suite (suite.txt) on several EC2 boxes at once and prints one table.
 #   suite.sh [--boxes ec2-2,ec2-3,ec2-4] [--vm PF-Win11-2] [--in-vm] [--bin DIR] [--debug-bin DIR]
-#            [--installers DIR] [--only REGEX] [--out DIR]
+#            [--installers DIR] [--signed] [--only REGEX] [--out DIR]
 # --bin / --debug-bin  the release and debug builds (default target/wintest-bin and
 #                      target/wintest-bin-debug: build.sh, build.sh --debug); give an older
 #                      release's folder to see which checks fail there.
 # --installers DIR     the folder of installers.sh; without it the lines that need it are skipped.
+# --signed             also the `signed` lines: they install the setup edition, which turns
+#                      autostart on; Defender flags that on unsigned builds, so they wait for
+#                      signed ones.
 # --vm NAME            runs the `vm` lines in that Hyper-V guest; with --in-vm every ec2 line too.
 # --only REGEX         only the lines whose name matches.
 # Each box takes the longest job still waiting when it gets free. Run this as the background
@@ -14,7 +17,7 @@
 set -uo pipefail
 KIT=$(cd "$(dirname "$0")" && pwd)
 REPO=$(cd "$KIT/../.." && pwd)
-BOXES=ec2-2,ec2-3,ec2-4; VM=; INVM=0; ONLY=.; INST=
+BOXES=ec2-2,ec2-3,ec2-4; VM=; INVM=0; ONLY=.; INST=; SIGNED=0
 BIN=$REPO/target/wintest-bin; DBIN=$REPO/target/wintest-bin-debug
 OUT=${CLAUDE_JOB_DIR:-/tmp}/tmp/suite-$(date +%m%d-%H%M%S)
 while [ $# -gt 0 ]; do
@@ -25,6 +28,7 @@ while [ $# -gt 0 ]; do
     --bin) BIN=$2; shift 2 ;;
     --debug-bin) DBIN=$2; shift 2 ;;
     --installers) INST=$2; shift 2 ;;
+    --signed) SIGNED=1; shift ;;
     --only) ONLY=$2; shift 2 ;;
     --out) OUT=$2; shift 2 ;;
     *) sed -n '2,14p' "$0"; exit 2 ;;
@@ -39,6 +43,10 @@ T0=$(date +%s)
 grep -v -E '^\s*(#|$)' "$KIT/suite.txt" | sort -k2,2nr | while read -r name min where build file opts; do
   [[ "$name" =~ $ONLY ]] || continue
   if [ "$where" = manual ]; then echo "$name	manual: see the header of tests/$file" >> "$OUT/skipped"; continue; fi
+  if [ "$where" = signed ]; then
+    if [ "$SIGNED" = 0 ]; then echo "$name	installs the setup edition (autostart on): only for signed builds, --signed" >> "$OUT/skipped"; continue; fi
+    where=ec2
+  fi
   if [[ "$opts" == *@installers* && -z "$INST" ]]; then echo "$name	needs --installers (installers.sh)" >> "$OUT/skipped"; continue; fi
   line="$name	$where	$build	$file	${opts//@installers/$INST}"
   if [ "$where" = vm ] || { [ "$where" = ec2 ] && [ "$INVM" = 1 ]; }; then

@@ -39,7 +39,8 @@ scripts/wintest/suite.sh --only 'tabs|rolled' --bin <older release>    # a few l
 run.sh options). `suite.sh` spreads the lines over the boxes (`--boxes ec2-2,ec2-3,ec2-4`, each
 takes the longest job still waiting), runs the `vm` lines in a Hyper-V guest with `--vm`
 (`--in-vm` sends the ec2 lines there too), skips the lines that need `--installers` without it
-and the `manual` ones, and prints one table: passed and failed per job, the failures, what it
+the `manual` ones and, without `--signed`, the `signed` ones (they install the setup edition, which
+turns autostart on: wait for signed builds), and prints one table: passed and failed per job, the failures, what it
 skipped. Run it as the background command. A new steps file gets a line in `suite.txt`.
 `installers.sh` downloads the build under test from a CI run (default: the latest green run on
 main) and the release a user upgrades from (`--old v0.2.5`).
