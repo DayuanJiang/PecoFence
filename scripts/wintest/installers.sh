@@ -1,7 +1,8 @@
 #!/bin/bash
 # Makes the folder the install tests take with --extra (holdout-day.ps1, 186-install.ps1):
 # new-setup.exe and portable.zip from a CI run's pecofence-windows artifact (the build under
-# test), old-setup.exe from a release (the version a user upgrades from).
+# test), old-setup.exe from a release (the version a user upgrades from), and bin/ with the CI
+# build's exes for --bin.
 #   installers.sh [--run ID] [--old v0.2.5] [--out DIR]
 # Default run: the latest successful CI run on main. Prints the folder on its last line.
 set -euo pipefail
@@ -22,6 +23,10 @@ DL=$(mktemp -d)
 gh run download "$RUN" -n pecofence-windows -D "$DL"
 cp "$DL"/pecofence-v*-x64-setup.exe "$OUT/new-setup.exe"
 cp "$DL"/pecofence-v*-x64-portable.zip "$OUT/portable.zip"
+# The CI build itself, for run.sh / suite.sh / run-hyperv.sh --bin: Defender's machine-learning
+# verdicts that take dev-box builds away now and then in the guests left it alone (2026-11-08).
+mkdir -p "$OUT/bin"
+unzip -o -q "$OUT/portable.zip" pecofence.exe pecofence-cli.exe pecofence-watchdog.exe WebView2Loader.dll -d "$OUT/bin"
 gh release download "$OLD" -p '*-x64-setup.exe' -D "$DL" --clobber
 cp "$DL"/pecofence-"$OLD"-x64-setup.exe "$OUT/old-setup.exe"
 rm -r "$DL"

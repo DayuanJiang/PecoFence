@@ -43,7 +43,8 @@ the `manual` ones and, without `--signed`, the `signed` ones (they install the s
 turns autostart on: wait for signed builds), and prints one table: passed and failed per job, the failures, what it
 skipped. Run it as the background command. A new steps file gets a line in `suite.txt`.
 `installers.sh` downloads the build under test from a CI run (default: the latest green run on
-main) and the release a user upgrades from (`--old v0.2.5`).
+main) and the release a user upgrades from (`--old v0.2.5`), and unpacks the CI build into
+`bin/` for `--bin`.
 
 ## Rules for test rounds
 
@@ -145,7 +146,9 @@ Check 'new-note opens the editor' ($ed -ne [IntPtr]::Zero) "editor=$ed"
   every job ends with a `Windows Defender left the test files alone` row that names any detection
   of `C:\pf` files during the job. Its machine-learning verdicts (`Trojan:Win32/Bearfoos.A!ml`,
   `Behavior:Win32/Persistence.A!ml`) take unsigned builds away now and then, mostly in the
-  Hyper-V guests; build again (another hash) and rerun.
+  Hyper-V guests. In a guest, run the CI build (`installers.sh` unpacks it into `<folder>/bin`
+  for `--bin`): on 2026-11-08 Defender removed the dev-box build of main there mid-run and left
+  the CI build of the same commit alone.
 - Each job starts with fresh PecoFence data and ends Edge, Notepad and setup programs, but the
   desktop's files and an installed PecoFence stay: steps remove what they create and install.
 - Files the steps need (installers, test programs) go in a folder given with `--extra`; on the box
