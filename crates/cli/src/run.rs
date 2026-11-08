@@ -246,14 +246,12 @@ fn run_fence(ctx: &Ctx, cmd: FenceCmd) -> Result<Reply, IpcError> {
                     all_of.push(pecofence_core::Cond::Ext(ext.clone()));
                 }
                 Box::new(pecofence_core::smart::SmartSpec {
-                    template: None,
-                    folder: smart_folder.clone().map(absolute),
-                    subfolders: true,
+                    folders: smart_folder.clone().map(absolute).into_iter().collect(),
                     all_of,
                     within_days,
                     name: name_matches.clone(),
                     everything: everything.clone(),
-                    limit: pecofence_core::smart::SmartSpec::DEFAULT_LIMIT,
+                    ..Default::default()
                 })
             });
             let portal = portal.map(absolute);

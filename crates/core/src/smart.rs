@@ -1,8 +1,9 @@
 //! Smart fences (智能栅栏): a fence that shows the live result of a saved search instead of
-//! desktop items. The search is a folder (or every drive), the conditions of the sorting rules
-//! and a time window; with Everything running it becomes an Everything search, without it the
-//! app reads the folder and tests the same conditions itself (`matches`). The files are never
-//! moved: the fence lists them where they are.
+//! desktop items. The search is one or more folders (or every drive), the conditions of the
+//! sorting rules and a time window, all of them or any one of them (`match`); with Everything
+//! running it becomes an Everything search, without it the app reads the folders and tests the
+//! same conditions itself (`matches`). The files are never moved: the fence lists them where
+//! they are.
 
 use crate::rules::{self, Cond, ItemFacts, StrOp, TypeCategory};
 use serde::{Deserialize, Serialize};
@@ -16,13 +17,24 @@ pub struct SmartSpec {
     /// The template it was made from ([`Template::key`]); None for one written by hand.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub template: Option<String>,
-    /// The folder searched; None = every drive (only with Everything).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub folder: Option<String>,
-    /// Subfolders of `folder` too.
+    /// The folders searched, together; empty = every drive (only with Everything). A search
+    /// saved before there could be several has one `folder`, read as the only one.
+    #[serde(
+        default,
+        alias = "folder",
+        deserialize_with = "one_or_many",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub folders: Vec<String>,
+    /// Subfolders of the folders too.
     #[serde(default = "default_true")]
     pub subfolders: bool,
-    /// Every condition must hold (the conditions of the sorting rules).
+    /// Whether a file must meet every condition, the time window, the name and the Everything
+    /// text, or one of them is enough. The folders and subfolders always apply. Not written
+    /// when it is `all`, so a search saved before `any` reads and writes back the same.
+    #[serde(default, rename = "match", skip_serializing_if = "SmartMatch::is_all")]
+    pub matching: SmartMatch,
+    /// The conditions of the sorting rules (all of them, or one with `match` any).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub all_of: Vec<Cond>,
     /// Only what was created or written in the last this many days (the later of the two: a
@@ -33,13 +45,62 @@ pub struct SmartSpec {
     /// pinyin too, not the loosest letters-in-order match). Tested by the app on every file.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
-    /// An Everything search typed by the user, sent with the folder, the conditions and the
-    /// time window, which all still apply (as does the name). Needs Everything.
+    /// An Everything search typed by the user, sent with the folders, the conditions and the
+    /// time window, which all still apply (as does the name; with `match` any, one of them is
+    /// enough). Needs Everything.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub everything: Option<String>,
     /// Most results shown, newest first.
     #[serde(default = "default_limit")]
     pub limit: u32,
+}
+
+/// 全部 / 任一 of a smart fence's search.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase")]
+pub enum SmartMatch {
+    /// Every condition must hold.
+    #[default]
+    All,
+    /// One condition is enough.
+    Any,
+}
+
+impl SmartMatch {
+    pub fn is_all(&self) -> bool {
+        *self == SmartMatch::All
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            SmartMatch::All => "all",
+            SmartMatch::Any => "any",
+        }
+    }
+
+    pub fn parse(text: &str) -> Option<Self> {
+        match text {
+            "all" => Some(SmartMatch::All),
+            "any" => Some(SmartMatch::Any),
+            _ => None,
+        }
+    }
+}
+
+/// `folders` as a list, or one folder as text (`folder` of a search saved before there could
+/// be several).
+fn one_or_many<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Vec<String>, D::Error> {
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum OneOrMany {
+        One(Option<String>),
+        Many(Vec<String>),
+    }
+    Ok(match OneOrMany::deserialize(d)? {
+        OneOrMany::One(one) => one.into_iter().collect(),
+        OneOrMany::Many(many) => many,
+    })
 }
 
 fn default_true() -> bool {
@@ -48,6 +109,23 @@ fn default_true() -> bool {
 
 fn default_limit() -> u32 {
     SmartSpec::DEFAULT_LIMIT
+}
+
+/// An empty search: every drive, every file (with Everything), subfolders, newest 200.
+impl Default for SmartSpec {
+    fn default() -> Self {
+        Self {
+            template: None,
+            folders: Vec::new(),
+            subfolders: true,
+            matching: SmartMatch::All,
+            all_of: Vec::new(),
+            within_days: None,
+            name: None,
+            everything: None,
+            limit: Self::DEFAULT_LIMIT,
+        }
+    }
 }
 
 impl SmartSpec {
@@ -60,7 +138,7 @@ impl SmartSpec {
     /// Whether the search can run without Everything: it has a folder to read and no
     /// Everything-only text.
     pub fn works_without_everything(&self) -> bool {
-        self.folder.is_some() && self.everything.is_none()
+        !self.folders.is_empty() && self.everything.is_none()
     }
 
     /// Whether a condition looks at shortcut targets (the target condition, the program type),
@@ -73,22 +151,50 @@ impl SmartSpec {
         })
     }
 
-    /// The Everything search text: the folder, the user's own Everything text, the conditions
-    /// Everything can test, the time window (`since_date`, see [`everything_date`]) and, over
-    /// every drive, the system folders left out. The app tests every condition again on the
-    /// answer (`matches`), so a condition left out here only costs results.
+    /// Whether only the app can tell which files match: the name filter, or a condition
+    /// Everything has no term for (shortcut target, creation time or weekday, idle days).
+    /// Everything's count is then more than the fence shows.
+    pub fn app_checks(&self) -> bool {
+        self.name.as_deref().is_some_and(|n| !n.trim().is_empty())
+            || self.all_of.iter().any(|c| everything_term(c).is_none())
+    }
+
+    /// Why the search cannot be saved (a 来源 condition, which says where a desktop icon came
+    /// from and means nothing for files found anywhere; a limit out of range). None when it can.
+    pub fn problem(&self) -> Option<String> {
+        if self.all_of.iter().any(|c| matches!(c, Cond::Origin(_))) {
+            return Some("origin is not a smart fence condition".into());
+        }
+        if !(1..=2000).contains(&self.limit) {
+            return Some(format!("limit {} is not in 1..2000", self.limit));
+        }
+        if self.folders.iter().any(|f| f.trim().is_empty()) {
+            return Some("an empty folder".into());
+        }
+        None
+    }
+
+    /// The Everything search text: the folders (always), then the user's own Everything text,
+    /// the conditions Everything can test and the time window (`since_date`, see
+    /// [`everything_date`]): all of them, or with `any` one of them; over every drive, the
+    /// system folders are left out. The app tests every condition again on the answer
+    /// (`matches`), so a condition left out here only costs results.
     pub fn everything_query(&self, since_date: Option<&str>) -> String {
         let mut terms: Vec<String> = Vec::new();
-        match &self.folder {
-            Some(folder) => {
-                let folder = folder.trim_end_matches('\\');
+        let folders: Vec<String> = self
+            .folders
+            .iter()
+            .map(|f| {
+                let f = f.trim_end_matches('\\');
                 if self.subfolders {
-                    terms.push(quote(&format!("{folder}\\")));
+                    quote(&format!("{f}\\"))
                 } else {
-                    terms.push(format!("parent:{}", quote(folder)));
+                    format!("parent:{}", quote(f))
                 }
-            }
-            None => {
+            })
+            .collect();
+        match folders.len() {
+            0 => {
                 // Every drive: not Windows itself, program data or the Recycle Bin.
                 terms.extend(
                     [
@@ -99,49 +205,96 @@ impl SmartSpec {
                     .map(str::to_string),
                 );
             }
+            1 => terms.extend(folders),
+            _ => terms.push(format!("<{}>", folders.join("|"))),
         }
+        // The other rows: None for one only the app can test.
+        let mut rows: Vec<Option<String>> = Vec::new();
         if let Some(raw) = self.everything.as_deref().map(str::trim)
             && !raw.is_empty()
         {
-            terms.push(raw.to_string());
+            rows.push(Some(raw.to_string()));
         }
-        for cond in &self.all_of {
-            if let Some(t) = everything_term(cond) {
-                terms.push(t);
+        rows.extend(self.all_of.iter().map(everything_term));
+        if self.within_days.is_some() {
+            rows.push(since_date.map(|date| format!("<dm:>={date}|dc:>={date}>")));
+        }
+        if self.name.as_deref().is_some_and(|n| !n.trim().is_empty()) {
+            rows.push(None);
+        }
+        match self.matching {
+            SmartMatch::All => terms.extend(rows.into_iter().flatten()),
+            // One row is enough: Everything can narrow the search only when it can test every
+            // row (a row only the app tests may hold for any file). Each row is grouped on its
+            // own: Everything's `|` binds closer than a space.
+            SmartMatch::Any => {
+                if let Some(rows) = rows.into_iter().collect::<Option<Vec<String>>>() {
+                    match rows.len() {
+                        0 => {}
+                        1 => terms.extend(rows),
+                        _ => terms.push(format!(
+                            "<{}>",
+                            rows.iter()
+                                .map(|r| format!("<{r}>"))
+                                .collect::<Vec<_>>()
+                                .join("|")
+                        )),
+                    }
+                }
             }
-        }
-        if let (Some(_), Some(date)) = (self.within_days, since_date) {
-            terms.push(format!("<dm:>={date}|dc:>={date}>"));
         }
         terms.join(" ")
     }
 
-    /// Whether one file found (by Everything or in the folder) belongs in the fence: every
-    /// condition holds and it was created or written inside the time window. `newest` (the
-    /// later of creation and last write) and `now` are Unix seconds.
+    /// Whether one file found (by Everything or in the folders) belongs in the fence: it was
+    /// created or written inside the time window, its name matches and every condition holds,
+    /// or with `any` one of these holds. `newest` (the later of creation and last write) and
+    /// `now` are Unix seconds. With `any` and an Everything text, Everything's answer is taken
+    /// as it is: the app cannot tell which row a file matched.
     pub fn matches(&self, facts: &ItemFacts, newest: i64, now: i64) -> bool {
         if rules::is_temporary(&facts.file_name, facts.age_secs) {
             return false;
         }
-        if let Some(days) = self.within_days
-            && newest < now - i64::from(days) * 86_400
-        {
-            return false;
+        let window = self
+            .within_days
+            .map(|days| newest >= now - i64::from(days) * 86_400);
+        let name = self
+            .name
+            .as_deref()
+            .map(|q| q.trim().to_lowercase())
+            .filter(|q| !q.is_empty())
+            .map(|q| {
+                crate::matcher::match_name(&facts.file_name, &q)
+                    .is_some_and(|m| !crate::matcher::is_loose_score(m.score))
+            });
+        let mut tests = window
+            .into_iter()
+            .chain(name)
+            .chain(self.all_of.iter().map(|c| rules::cond_matches(c, facts)));
+        match self.matching {
+            SmartMatch::All => tests.all(|ok| ok),
+            SmartMatch::Any => {
+                let typed = self
+                    .everything
+                    .as_deref()
+                    .is_some_and(|t| !t.trim().is_empty());
+                let mut any_row = false;
+                for ok in tests {
+                    if ok {
+                        return true;
+                    }
+                    any_row = true;
+                }
+                // No row at all, or one only Everything tested: what was found matches.
+                typed || !any_row
+            }
         }
-        if let Some(q) = self.name.as_deref().map(|q| q.trim().to_lowercase())
-            && !q.is_empty()
-            && !crate::matcher::match_name(&facts.file_name, &q)
-                .is_some_and(|m| !crate::matcher::is_loose_score(m.score))
-        {
-            return false;
-        }
-        self.all_of.iter().all(|c| rules::cond_matches(c, facts))
     }
 
     /// How many results to ask Everything for: the name filter and the conditions Everything
     /// cannot test are tested here on the answer, so it takes more than the fence shows.
     pub fn everything_max(&self) -> u32 {
-        if self.name.is_some() || self.all_of.iter().any(|c| everything_term(c).is_none()) {
+        if self.app_checks() {
             self.limit.max(Self::NAME_FILTER_ASK)
         } else {
             self.limit
@@ -260,7 +413,7 @@ pub fn everything_date(d: crate::CivilDate) -> String {
     format!("{:04}-{:02}-{:02}", d.year, d.month, d.day)
 }
 
-/// The searches offered by 「新建智能栅栏」.
+/// The searches offered by the editor of a new smart fence (新建智能栅栏…).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Template {
     /// 最近 7 天下载的文件: the Downloads folder, files written in the last 7 days.
@@ -326,21 +479,16 @@ impl Template {
     pub fn spec(self, folders: &KnownFolders) -> Option<SmartSpec> {
         let mut spec = SmartSpec {
             template: Some(self.key().to_string()),
-            folder: None,
-            subfolders: true,
             all_of: vec![Cond::FilesOnly],
-            within_days: None,
-            name: None,
-            everything: None,
-            limit: SmartSpec::DEFAULT_LIMIT,
+            ..SmartSpec::default()
         };
         match self {
             Template::Downloads => {
-                spec.folder = Some(folders.downloads.clone()?);
+                spec.folders = vec![folders.downloads.clone()?];
                 spec.within_days = Some(7);
             }
             Template::Screenshots => {
-                spec.folder = Some(folders.screenshots.clone()?);
+                spec.folders = vec![folders.screenshots.clone()?];
                 spec.within_days = Some(7);
                 spec.all_of.push(Cond::Type(vec![TypeCategory::Images]));
             }
@@ -352,7 +500,7 @@ impl Template {
             }
             Template::Psd => spec.all_of.push(Cond::Ext(vec![".psd".into()])),
             Template::Recent => {
-                spec.folder = Some(folders.recent.clone()?);
+                spec.folders = vec![folders.recent.clone()?];
                 spec.subfolders = false;
                 spec.all_of.push(Cond::Ext(vec![".lnk".into()]));
                 spec.limit = 40;
@@ -546,9 +694,115 @@ mod tests {
         let spec: SmartSpec = serde_json::from_str(r#"{"folder":"D:\\x"}"#).unwrap();
         assert!(spec.subfolders);
         assert_eq!(spec.limit, SmartSpec::DEFAULT_LIMIT);
+        assert_eq!(spec.folders, vec![r"D:\x".to_string()]);
+        assert_eq!(spec.matching, SmartMatch::All);
         assert!(spec.works_without_everything());
         let back: SmartSpec = serde_json::from_value(serde_json::to_value(&spec).unwrap()).unwrap();
         assert_eq!(back, spec);
+        // `all` is not written: a search without `match` reads and writes back the same.
+        let json = serde_json::to_value(&spec).unwrap();
+        assert!(json.get("match").is_none(), "{json}");
+        assert_eq!(json["folders"], serde_json::json!([r"D:\x"]));
+        let every: SmartSpec = serde_json::from_str(r#"{"folder":null}"#).unwrap();
+        assert!(every.folders.is_empty());
+        let any: SmartSpec =
+            serde_json::from_str(r#"{"folders":["D:\\a","E:\\b"],"match":"any"}"#).unwrap();
+        assert_eq!(any.matching, SmartMatch::Any);
+        assert_eq!(serde_json::to_value(&any).unwrap()["match"], "any");
+        assert_eq!(any.folders.len(), 2);
+    }
+
+    /// Several folders are searched together, with or without their subfolders; the
+    /// conditions go after them as before.
+    #[test]
+    fn several_folders_are_one_search() {
+        let mut spec = Template::Downloads.spec(&folders()).unwrap();
+        spec.folders.push(r"D:\Inbox\".into());
+        assert_eq!(
+            spec.everything_query(Some("2026-10-31")),
+            r#"<"C:\Users\pf\Downloads\"|"D:\Inbox\"> file: <dm:>=2026-10-31|dc:>=2026-10-31>"#
+        );
+        spec.subfolders = false;
+        assert!(
+            spec.everything_query(None)
+                .starts_with(r#"<parent:"C:\Users\pf\Downloads"|parent:"D:\Inbox">"#),
+            "{}",
+            spec.everything_query(None)
+        );
+    }
+
+    /// 任一: the folders always apply, one of the other rows is enough. Everything gets the
+    /// rows OR'ed, each grouped on its own; a row only the app can test leaves Everything the
+    /// folders alone and the app decides.
+    #[test]
+    fn any_needs_one_row_and_keeps_the_folders() {
+        let mut spec = SmartSpec {
+            template: None,
+            folders: vec![r"C:\Docs".into()],
+            subfolders: true,
+            matching: SmartMatch::Any,
+            all_of: vec![
+                Cond::Ext(vec!["pdf".into(), "docx".into()]),
+                Cond::Name {
+                    op: StrOp::Contains,
+                    value: "发票".into(),
+                },
+            ],
+            within_days: None,
+            name: None,
+            everything: None,
+            limit: 200,
+        };
+        assert_eq!(
+            spec.everything_query(None),
+            r#""C:\Docs\" <<ext:pdf;docx>|<"发票">>"#
+        );
+        assert!(!spec.app_checks());
+        let now = 1_800_000_000;
+        let f = |n: &str| ItemFacts {
+            file_name: n.into(),
+            ..Default::default()
+        };
+        assert!(spec.matches(&f("report.pdf"), now, now));
+        assert!(spec.matches(&f("发票 2026.png"), now, now));
+        assert!(!spec.matches(&f("photo.png"), now, now));
+        assert!(
+            !spec.matches(&f("setup.pdf.crdownload"), now, now),
+            "temporary"
+        );
+        // The time window is one row like the others.
+        spec.within_days = Some(7);
+        assert!(spec.matches(&f("photo.png"), now - 86_400, now));
+        assert!(!spec.matches(&f("photo.png"), now - 8 * 86_400, now));
+        assert_eq!(
+            spec.everything_query(Some("2026-10-31")),
+            r#""C:\Docs\" <<ext:pdf;docx>|<"发票">|<<dm:>=2026-10-31|dc:>=2026-10-31>>>"#
+        );
+        // A row only the app tests: Everything is asked for the folder, the app decides.
+        spec.all_of.push(Cond::IdleDays { min: 30 });
+        assert_eq!(spec.everything_query(Some("2026-10-31")), r#""C:\Docs\""#);
+        assert!(spec.app_checks());
+        assert_eq!(spec.everything_max(), SmartSpec::NAME_FILTER_ASK);
+        // No row at all: everything in the folders.
+        spec.all_of.clear();
+        spec.within_days = None;
+        assert!(spec.matches(&f("photo.png"), now, now));
+        // A typed Everything text: Everything's answer stands.
+        spec.everything = Some("invoice".into());
+        spec.all_of.push(Cond::Ext(vec!["pdf".into()]));
+        assert!(spec.matches(&f("invoice.png"), now, now));
+        assert_eq!(
+            spec.everything_query(None),
+            r#""C:\Docs\" <<invoice>|<ext:pdf>>"#
+        );
+    }
+
+    #[test]
+    fn a_search_with_origin_cannot_be_saved() {
+        let mut spec = Template::Downloads.spec(&folders()).unwrap();
+        assert_eq!(spec.problem(), None);
+        spec.all_of.push(Cond::Origin(crate::Origin::PublicDesktop));
+        assert!(spec.problem().is_some());
     }
 
     #[test]

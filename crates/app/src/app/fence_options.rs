@@ -87,6 +87,7 @@ pub(super) const FENCE_PROPS: &[&str] = &[
     "scriptPath",
     "scriptInterval",
     "smartFolder",
+    "smartMatch",
     "smartSubfolders",
     "smartWithinDays",
     "smartConditions",
@@ -99,8 +100,10 @@ pub(super) const FENCE_PROPS: &[&str] = &[
 /// 智能栅栏: one change to a smart fence's search (`fence set` / the settings page).
 #[derive(Clone, Debug, PartialEq)]
 pub(super) enum SmartChange {
-    /// None = every drive (needs Everything).
-    Folder(Option<String>),
+    /// The folders searched together; none = every drive (needs Everything).
+    Folders(Vec<String>),
+    /// 全部 / 任一 of the conditions (the folders always apply).
+    Match(pecofence_core::smart::SmartMatch),
     Subfolders(bool),
     WithinDays(Option<u32>),
     Conditions(Vec<pecofence_core::Cond>),
@@ -376,25 +379,46 @@ pub(super) fn parse_fence_prop(
             Some(m @ 1..=1440) => FenceProp::ScriptInterval(m as u32),
             _ => return Err(bad(&["1..1440 (minutes)"])),
         },
-        "smartFolder" => FenceProp::Smart(SmartChange::Folder(match value {
-            serde_json::Value::Null => None,
-            serde_json::Value::String(s) if s.trim().is_empty() => None,
-            serde_json::Value::String(s) => {
+        "smartFolder" => {
+            const ALLOWED: &[&str] = &[
+                "<full path of a folder>",
+                r#"["<folder>", "<folder>"] (searched together)"#,
+                "null (every drive)",
+            ];
+            let texts: Vec<&str> = match value {
+                serde_json::Value::Null => Vec::new(),
+                serde_json::Value::String(s) if s.trim().is_empty() => Vec::new(),
+                serde_json::Value::String(s) => vec![s.as_str()],
+                serde_json::Value::Array(list) => list
+                    .iter()
+                    .map(|v| v.as_str().ok_or_else(|| bad(ALLOWED)))
+                    .collect::<std::result::Result<_, _>>()?,
+                _ => return Err(bad(ALLOWED)),
+            };
+            let mut folders: Vec<String> = Vec::new();
+            for s in texts {
                 let dir = std::path::Path::new(s.trim());
                 if !dir.is_absolute() || !dir.is_dir() {
                     return Err(IpcError::invalid_value(
                         format!("no folder at {s}"),
-                        &["<full path of a folder>", "null (every drive)"],
+                        ALLOWED,
                     ));
                 }
-                Some(
-                    crate::state::canonical_path(dir.to_path_buf())
-                        .to_string_lossy()
-                        .into_owned(),
-                )
+                let dir = crate::state::canonical_path(dir.to_path_buf())
+                    .to_string_lossy()
+                    .into_owned();
+                if !folders.iter().any(|f| f.eq_ignore_ascii_case(&dir)) {
+                    folders.push(dir);
+                }
             }
-            _ => return Err(bad(&["<full path of a folder>", "null (every drive)"])),
-        })),
+            FenceProp::Smart(SmartChange::Folders(folders))
+        }
+        "smartMatch" => FenceProp::Smart(SmartChange::Match(
+            value
+                .as_str()
+                .and_then(pecofence_core::smart::SmartMatch::parse)
+                .ok_or_else(|| bad(&["all", "any"]))?,
+        )),
         "smartSubfolders" => FenceProp::Smart(SmartChange::Subfolders(as_bool()?)),
         "smartWithinDays" => FenceProp::Smart(SmartChange::WithinDays(match value {
             serde_json::Value::Null => None,
@@ -404,13 +428,20 @@ pub(super) fn parse_fence_prop(
             },
         })),
         "smartConditions" => {
-            let conds: Vec<pecofence_core::Cond> =
-                serde_json::from_value(value.clone()).map_err(|e| {
-                    IpcError::invalid_value(
-                        format!("smartConditions: {e}"),
-                        &[r#"[{"cond":"ext","value":["pdf"]}, ...] (rule conditions)"#],
-                    )
-                })?;
+            const ALLOWED: &[&str] =
+                &[r#"[{"cond":"ext","value":["pdf"]}, ...] (rule conditions but origin)"#];
+            let conds: Vec<pecofence_core::Cond> = serde_json::from_value(value.clone())
+                .map_err(|e| IpcError::invalid_value(format!("smartConditions: {e}"), ALLOWED))?;
+            // 来源 says which desktop an icon came from: nothing a found file has.
+            if conds
+                .iter()
+                .any(|c| matches!(c, pecofence_core::Cond::Origin(_)))
+            {
+                return Err(IpcError::invalid_value(
+                    "origin is not a smart fence condition",
+                    ALLOWED,
+                ));
+            }
             FenceProp::Smart(SmartChange::Conditions(conds))
         }
         "smartName" | "smartEverything" => {

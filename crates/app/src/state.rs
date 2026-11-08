@@ -1742,7 +1742,7 @@ impl AppState {
     ) -> Option<FenceId> {
         let id = self.new_fence(title, rect)?;
         if let Some(f) = self.fence_mut(id) {
-            tracing::info!(%id, template = ?spec.template, folder = ?spec.folder, subfolders = spec.subfolders, conditions = spec.all_of.len(), within_days = ?spec.within_days, everything = ?spec.everything, limit = spec.limit, "smart fence created");
+            tracing::info!(%id, template = ?spec.template, folders = ?spec.folders, matching = spec.matching.as_str(), subfolders = spec.subfolders, conditions = spec.all_of.len(), within_days = ?spec.within_days, everything = ?spec.everything, limit = spec.limit, "smart fence created");
             f.smart = Some(spec);
             f.view.sort = SortMode::Date;
         }
@@ -3415,14 +3415,9 @@ mod tests {
         let inbox = state.inbox_id().unwrap();
         let docs = add_item(&mut state, inbox, "Docs");
         let spec = pecofence_core::smart::SmartSpec {
-            template: None,
-            folder: None,
-            subfolders: true,
-            all_of: Vec::new(),
-            within_days: None,
-            name: None,
             everything: Some("x".into()),
             limit: 10,
+            ..Default::default()
         };
         let smart = state
             .new_smart_fence("Smart", RECT::default(), spec)

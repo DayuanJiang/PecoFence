@@ -71,7 +71,7 @@ $moved = $json.Replace(($PfDl -replace '\\', '\\'), 'C:\\Users\\someone-else\\Do
 Check 'the export names another Downloads folder now' ($moved -match 'someone-else') ''
 Pf config import $exp | Out-Null
 Start-Sleep -Seconds 3
-Check 'the template fence searches pf''s Downloads again' (WaitSmart $Dl { $s.spec.folder -eq $PfDl -and $s.shown -ge 6 } 20) "$((SmartOf $Dl).spec.folder) $(SmartLine $Dl)"
+Check 'the template fence searches pf''s Downloads again' (WaitSmart $Dl { @($s.folders) -join '|' -eq $PfDl -and $s.shown -ge 6 } 20) "$(@((SmartOf $Dl).folders) -join '|') $(SmartLine $Dl)"
 $log = (PfLogAll) -join "`n"
 Check 'log: the template folder was found on this computer' ($log -match "smart fence: the template's folder found on this computer") ''
 PfQuit

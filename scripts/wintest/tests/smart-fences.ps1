@@ -202,7 +202,7 @@ Check 'a search property on a plain fence is refused' ($LASTEXITCODE -ne 0 -and 
 $bad = & "$PfApp\pecofence-cli.exe" fence set $Seven smartFolder 'C:\no\such\folder' 2>&1 | Out-String
 Check 'a folder that is not there is refused' ($LASTEXITCODE -ne 0 -and $bad -match 'no folder') $bad
 $log = (PfLogAll) -join "`n"
-Check 'log: each change with what changed' ($log -match 'smart fence search changed.*what="within days"' -and $log -match 'what="conditions"' -and $log -match 'what="folder"') ''
+Check 'log: each change with what changed' ($log -match 'smart fence search changed.*what="within days"' -and $log -match 'what="conditions"' -and $log -match 'what="folders"') ''
 
 Case 'Peek search: put this search on the desktop'
 Pf settings set tools.everything true | Out-Null

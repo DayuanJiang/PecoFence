@@ -783,7 +783,7 @@ async function runTests() {
   await test('A smart fence shows its 搜索条件 group and posts every change', async () => {
     const win = frame.contentWindow;
     try {
-    const spec = { template: 'downloads', folder: 'C:\\Users\\me\\Downloads', subfolders: true, allOf: [{ cond: 'filesOnly', value: null }], withinDays: 7, limit: 200 };
+    const spec = { template: 'downloads', folders: ['C:\\Users\\me\\Downloads'], subfolders: true, allOf: [{ cond: 'filesOnly', value: null }], withinDays: 7, limit: 200 };
     const base = current().fences.find(f => f.id === 'fence-a');
     win.testState.fences.push({ ...structuredClone(base), id: 'smart', title: 'Recent downloads', smart: { spec, source: 'everything', total: 6, shown: 6, query: 'q', titleIcon: true } });
     win.testRefresh(); await settle();
@@ -837,7 +837,7 @@ async function runTests() {
     assert(!win.testMessages.slice(mark2).some(m => m.prop === 'smartConditions') && errorShown(doc), 'An empty extension was saved');
     // Every drive without Everything: the card offers to start or install it.
     const smart = win.testState.fences.find(f => f.id === 'smart');
-    smart.smart.spec = { ...spec, folder: null }; smart.smart.source = 'needsEverything'; smart.smart.shown = 0;
+    smart.smart.spec = { ...spec, folders: [] }; smart.smart.source = 'needsEverything'; smart.smart.shown = 0;
     win.testState.everything = { state: 'installed' };
     win.testRefresh(); await settle();
     const evBtn = doc.getElementById('smartEverythingBtn');

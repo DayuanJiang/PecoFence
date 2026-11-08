@@ -1876,11 +1876,11 @@
     const group = document.getElementById('fenceSmartGroup');
     group.style.display = f.smart ? '' : 'none';
     if (!f.smart) return;
-    const spec = f.smart.spec, all = !spec.folder;
+    const spec = f.smart.spec, folders = spec.folders || [], all = !folders.length;
     const set = (prop, value) => setFence(f.id, prop, value);
     document.getElementById('smartWhereText').textContent = all
       ? t("整台电脑，不含 Windows、AppData 和回收站")
-      : spec.folder + (spec.subfolders ? t("，包含子文件夹") : '');
+      : folders.join(t("、")) + (spec.subfolders ? t("，包含子文件夹") : '');
     const scope = document.getElementById('smartScope');
     scope.value = all ? 'all' : 'folder';
     scope.onchange = () => { if (scope.value === 'all') set('smartFolder', null); else send({ type: 'action', name: 'pickSmartFolder', id: f.id }); };

@@ -2045,9 +2045,10 @@ impl App {
             }
             (None, None) => return Err(unsupported("no search given")),
         };
-        if let Some(folder) = &spec.folder
-            && !Path::new(folder).is_dir()
-        {
+        if let Some(problem) = spec.problem() {
+            return Err(IpcError::invalid_value(problem, &[]));
+        }
+        if let Some(folder) = spec.folders.iter().find(|f| !Path::new(f).is_dir()) {
             return Err(IpcError::invalid_value(
                 format!("no folder at {folder}"),
                 &[],

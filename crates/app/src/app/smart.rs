@@ -96,10 +96,10 @@ pub(super) struct SmartState {
     /// fences whose search waits for its answer.
     in_flight: Option<(FenceId, u16, Instant)>,
     waiting: VecDeque<FenceId>,
-    /// One watcher per smart fence with a folder (its subfolders too when it searches them),
-    /// and the fences whose watcher saw a change since the last look. Kept apart from the
-    /// desktop's batch: a change (or an overflow) there never syncs the desktop.
-    watchers: HashMap<FenceId, (PathBuf, DirWatcher)>,
+    /// One watcher per folder of a smart fence (its subfolders too when the search takes
+    /// them), and the fences whose watcher saw a change since the last look. Kept apart from
+    /// the desktop's batch: a change (or an overflow) there never syncs the desktop.
+    watchers: HashMap<(FenceId, PathBuf), (bool, DirWatcher)>,
     changed: Arc<Mutex<HashSet<FenceId>>>,
     /// Fences to run again when `TIMER_SMART_SOON` fires, and whether a second run follows.
     soon: HashSet<FenceId>,
@@ -285,13 +285,12 @@ impl App {
         self.read_folder_later(id, spec, why);
     }
 
-    /// Reads smart fence `id`'s folder on a worker (a big folder tree takes a while).
+    /// Reads smart fence `id`'s folders on a worker (a big folder tree takes a while).
     fn read_folder_later(&mut self, id: FenceId, spec: SmartSpec, why: &str) {
-        tracing::info!(%id, why, "smart fence: reading the folder without Everything");
+        tracing::info!(%id, why, folders = spec.folders.len(), "smart fence: reading the folders without Everything");
         let limit = spec.limit as usize;
         self.smart_work_later(id, SmartSource::Folder, move || {
-            let folder = PathBuf::from(spec.folder.as_deref().unwrap_or_default());
-            let (mut entries, scanned) = read_folder(&spec, &folder);
+            let (mut entries, scanned) = read_folders(&spec);
             let kept = entries.len();
             entries.sort_by_key(|e| std::cmp::Reverse(e.mtime));
             entries.truncate(limit);
@@ -537,27 +536,32 @@ impl App {
         }
     }
 
-    /// Starts and stops the folder watchers of the smart fences.
+    /// Starts and stops the folder watchers of the smart fences: one per folder searched.
     pub(super) fn ensure_smart_watchers(&mut self) {
         let wanted: Vec<(FenceId, PathBuf, bool)> = self
             .state
             .fences()
             .iter()
-            .filter_map(|f| {
-                let spec = f.smart.as_ref()?;
-                Some((f.id, PathBuf::from(spec.folder.as_ref()?), spec.subfolders))
+            .filter_map(|f| f.smart.as_ref().map(|spec| (f.id, spec)))
+            .flat_map(|(id, spec)| {
+                spec.folders
+                    .iter()
+                    .map(move |dir| (id, PathBuf::from(dir), spec.subfolders))
             })
             .collect();
-        self.smart.watchers.retain(|id, (dir, w)| {
-            w.is_running() && wanted.iter().any(|(wid, wdir, _)| wid == id && wdir == dir)
+        self.smart.watchers.retain(|(id, dir), (tree, w)| {
+            w.is_running()
+                && wanted
+                    .iter()
+                    .any(|(wid, wdir, sub)| wid == id && wdir == dir && sub == tree)
         });
         for (id, dir, subfolders) in wanted {
-            if self.smart.watchers.contains_key(&id) {
+            if self.smart.watchers.contains_key(&(id, dir.clone())) {
                 continue;
             }
             let changed = self.smart.changed.clone();
             let control = self.control.hwnd().0 as isize;
-            // Every event of this watcher lies in the fence's folder: the fence is all it names.
+            // Every event of this watcher lies in a folder of the fence: the fence is all it names.
             let on_events = move |events: Vec<FsEvent>| {
                 if events.iter().any(|e| matches!(e, FsEvent::Overflow)) {
                     tracing::info!(%id, "smart fence watcher overflowed; its search runs again");
@@ -580,7 +584,7 @@ impl App {
             match started {
                 Ok(w) => {
                     tracing::info!(%id, dir = %dir.display(), subfolders, "smart fence watcher started");
-                    self.smart.watchers.insert(id, (dir, w));
+                    self.smart.watchers.insert((id, dir), (subfolders, w));
                 }
                 Err(e) => {
                     tracing::warn!(%id, dir = %dir.display(), error = %e, "smart fence watcher failed")
@@ -589,8 +593,8 @@ impl App {
         }
     }
 
-    /// A watcher batch named `dirs` (`all`: it overflowed): the smart fences whose folder holds
-    /// one of them run again shortly.
+    /// A watcher batch named `dirs` (`all`: it overflowed): the smart fences with a folder that
+    /// holds one of them run again shortly.
     pub(super) fn smart_folders_changed(&mut self, dirs: &[PathBuf], all: bool) {
         let lower = |p: &Path| p.to_string_lossy().to_lowercase();
         let dirs: Vec<String> = dirs.iter().map(|d| lower(d)).collect();
@@ -600,13 +604,14 @@ impl App {
             .iter()
             .filter_map(|f| {
                 let spec = f.smart.as_ref()?;
-                let folder = spec
-                    .folder
-                    .as_deref()?
-                    .trim_end_matches('\\')
-                    .to_lowercase();
-                let inside = dirs.iter().any(|d| {
-                    *d == folder || (spec.subfolders && d.starts_with(&format!("{folder}\\")))
+                if spec.folders.is_empty() {
+                    return None;
+                }
+                let inside = spec.folders.iter().any(|folder| {
+                    let folder = folder.trim_end_matches('\\').to_lowercase();
+                    dirs.iter().any(|d| {
+                        *d == folder || (spec.subfolders && d.starts_with(&format!("{folder}\\")))
+                    })
                 });
                 (all || inside).then_some(f.id)
             })
@@ -672,9 +677,13 @@ impl App {
         };
         let before = spec.clone();
         let what = match change {
-            C::Folder(folder) => {
-                spec.folder = folder;
-                "folder"
+            C::Folders(folders) => {
+                spec.folders = folders;
+                "folders"
+            }
+            C::Match(matching) => {
+                spec.matching = matching;
+                "match"
             }
             C::Subfolders(on) => {
                 spec.subfolders = on;
@@ -705,16 +714,17 @@ impl App {
             return false;
         }
         // A folder picked by hand is the user's own: an import keeps it as it is.
-        if spec.folder != before.folder {
+        if spec.folders != before.folders {
             spec.template = None;
         }
-        let (folder, days, conds, limit) = (
-            spec.folder.is_some(),
+        let (folders, matching, days, conds, limit) = (
+            spec.folders.len(),
+            spec.matching.as_str(),
             spec.within_days,
             spec.all_of.len(),
             spec.limit,
         );
-        tracing::info!(%fence, what, folder, within_days = ?days, conditions = conds, limit, "smart fence search changed");
+        tracing::info!(%fence, what, folders, matching, within_days = ?days, conditions = conds, limit, "smart fence search changed");
         self.state.mark_dirty();
         self.schedule_save();
         self.ensure_smart_watchers();
@@ -725,11 +735,12 @@ impl App {
 
     /// A template's folder that is not on this computer (a configuration imported from another
     /// one, a moved Downloads folder): this computer's folder of the same kind takes its place.
+    /// A template's search has one folder; a second one makes it the user's own.
     fn refind_template_folder(&mut self, id: FenceId) {
         let Some(spec) = self.state.smart_spec(id) else {
             return;
         };
-        let (Some(key), Some(folder)) = (spec.template.clone(), spec.folder.clone()) else {
+        let (Some(key), [folder]) = (spec.template.clone(), spec.folders.as_slice()) else {
             return;
         };
         if Path::new(&folder).is_dir() {
@@ -737,7 +748,7 @@ impl App {
         }
         let found = Template::parse(&key)
             .and_then(|t| t.spec(&known_folders()))
-            .and_then(|s| s.folder)
+            .and_then(|s| s.folders.into_iter().next())
             .filter(|f| Path::new(f).is_dir());
         let Some(found) = found else {
             tracing::info!(%id, template = %key, "smart fence: the template's folder is missing here too");
@@ -745,7 +756,7 @@ impl App {
         };
         tracing::info!(%id, template = %key, "smart fence: the template's folder found on this computer");
         if let Some(spec) = self.state.fence_mut(id).and_then(|f| f.smart.as_mut()) {
-            spec.folder = Some(found);
+            spec.folders = vec![found];
         }
         self.state.mark_dirty();
         self.schedule_save();
@@ -754,7 +765,10 @@ impl App {
 
     /// The settings page's 「选择文件夹…」 for smart fence `fence`.
     pub(super) fn pick_smart_folder(&mut self, fence: FenceId) {
-        let start = self.state.smart_spec(fence).and_then(|s| s.folder.clone());
+        let start = self
+            .state
+            .smart_spec(fence)
+            .and_then(|s| s.folders.first().cloned());
         tracing::info!(%fence, has_folder = start.is_some(), "smart fence: picking a folder");
         let owner = self.settings.as_ref().map(|h| h.hwnd());
         match pecofence_platform::filedialog::pick_folder(
@@ -765,7 +779,7 @@ impl App {
                 let dir = crate::state::canonical_path(dir)
                     .to_string_lossy()
                     .into_owned();
-                self.change_smart(fence, super::fence_options::SmartChange::Folder(Some(dir)));
+                self.change_smart(fence, super::fence_options::SmartChange::Folders(vec![dir]));
             }
             Ok(None) => tracing::info!(%fence, "smart fence: folder picker cancelled"),
             Err(e) => tracing::warn!(error = %e, "smart fence: folder picker failed"),
@@ -820,14 +834,10 @@ impl App {
                 ..spec.clone()
             },
             (None, Some(dir)) => SmartSpec {
-                template: None,
-                folder: Some(dir.to_string_lossy().into_owned()),
+                folders: vec![dir.to_string_lossy().into_owned()],
                 subfolders: false,
-                all_of: Vec::new(),
-                within_days: None,
                 name: Some(filter.clone()),
-                everything: None,
-                limit: SmartSpec::DEFAULT_LIMIT,
+                ..SmartSpec::default()
             },
             (None, None) => return,
         };
@@ -837,11 +847,11 @@ impl App {
             .map(|f| self.state.display_title(f))
             .unwrap_or_default();
         let title = pecofence_core::i18n::format("{0}：{1}", &[base, filter]);
-        let folder = spec.folder.is_some();
+        let folders = spec.folders.len();
         let typed = spec.everything.is_some();
         let conditions = spec.all_of.len();
         if let Some(id) = self.create_smart_fence(spec, Some(&title), None, x, y) {
-            tracing::info!(from = %fence, %id, folder, typed, conditions, "filter saved as a smart fence");
+            tracing::info!(from = %fence, %id, folders, typed, conditions, "filter saved as a smart fence");
         }
     }
 
@@ -853,14 +863,8 @@ impl App {
             return;
         };
         let spec = SmartSpec {
-            template: None,
-            folder: None,
-            subfolders: true,
-            all_of: Vec::new(),
-            within_days: None,
-            name: None,
             everything: Some(ev::search_text(query, instance.supports_pinyin())),
-            limit: SmartSpec::DEFAULT_LIMIT,
+            ..SmartSpec::default()
         };
         let title = pecofence_core::i18n::format("搜索“{0}”", &[query.to_string()]);
         let (x, y) = self
@@ -908,6 +912,9 @@ impl App {
         let run = self.smart.runs.get(&id);
         Some(serde_json::json!({
             "spec": spec,
+            // Said in full here: the saved search leaves out `match` when it is `all`.
+            "match": spec.matching.as_str(),
+            "folders": spec.folders,
             "source": run.map_or("waiting", |r| r.source.as_str()),
             "total": run.map_or(0, |r| r.total),
             "shown": self.state.fence(id).map_or(0, |f| self.state.items_of(f).len()),
@@ -932,15 +939,18 @@ fn entry_matches(spec: &SmartSpec, e: &DesktopEntry, targets: bool, now: i64) ->
     spec.matches(&facts, e.mtime.max(e.created), now)
 }
 
-/// Reads `folder` (and its subfolders when the search takes them) without Everything, at most
-/// `SmartSpec::MAX_SCANNED` entries, and keeps what matches. Hidden and system entries, and
-/// folder links (which may loop), are left out. Returns the matches and how many were read.
-fn read_folder(spec: &SmartSpec, folder: &Path) -> (Vec<DesktopEntry>, usize) {
+/// Reads the search's folders (and their subfolders when the search takes them) without
+/// Everything, at most `SmartSpec::MAX_SCANNED` entries in all, and keeps what matches.
+/// Hidden and system entries, and folder links (which may loop), are left out; a file in two
+/// of the folders (one inside the other) counts once. Returns the matches and how many entries
+/// were read.
+fn read_folders(spec: &SmartSpec) -> (Vec<DesktopEntry>, usize) {
     let now = pecofence_core::now_unix();
     let targets = spec.needs_shortcut_targets();
     let mut found = Vec::new();
+    let mut seen: HashSet<String> = HashSet::new();
     let mut scanned = 0usize;
-    let mut stack = vec![folder.to_path_buf()];
+    let mut stack: Vec<PathBuf> = spec.folders.iter().rev().map(PathBuf::from).collect();
     while let Some(dir) = stack.pop() {
         for e in shell::enumerate_folder(&dir) {
             scanned += 1;
@@ -951,7 +961,9 @@ fn read_folder(spec: &SmartSpec, folder: &Path) -> (Vec<DesktopEntry>, usize) {
             if e.is_folder && spec.subfolders && e.attributes & REPARSE_POINT == 0 {
                 stack.push(e.path.clone());
             }
-            if entry_matches(spec, &e, targets, now) {
+            if entry_matches(spec, &e, targets, now)
+                && seen.insert(e.path.to_string_lossy().to_lowercase())
+            {
                 found.push(e);
             }
         }

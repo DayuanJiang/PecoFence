@@ -86,7 +86,7 @@ MenuPick '^Save filter as a smart fence' $m | Out-Null
 Start-Sleep -Seconds 2
 $Saved = 'Downloads: pdf'
 $spec = (SmartOf $Saved).spec
-Check 'a smart fence of the folder and the filter' ($spec -and $spec.folder -eq $PfDl -and $spec.name -eq 'pdf' -and -not $spec.subfolders) ($spec | ConvertTo-Json -Compress)
+Check 'a smart fence of the folder and the filter' ($spec -and @($spec.folders) -join '|' -eq $PfDl -and $spec.name -eq 'pdf' -and -not $spec.subfolders) ($spec | ConvertTo-Json -Compress)
 Check 'it shows the same three PDFs' (WaitSmart $Saved { $s.shown -eq 3 } 20) (SmartLine $Saved)
 AgedFile $PfDl 'fresh.pdf' 0 | Out-Null
 Check 'a new PDF joins it' (WaitSmart $Saved { $n -match 'fresh' } 15) (SmartLine $Saved)

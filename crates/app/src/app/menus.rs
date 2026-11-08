@@ -727,7 +727,7 @@ impl App {
                 false,
             )
             .icon(glyph::REFRESH);
-            if spec.folder.is_some() {
+            if !spec.folders.is_empty() {
                 menu.item(
                     CMD_FENCE_SMART_FOLDER,
                     pecofence_core::i18n::text("在资源管理器中打开文件夹"),
@@ -1226,7 +1226,14 @@ impl App {
             CMD_FENCE_SAVE_SMART => self.save_filter_as_smart(fence, x, y),
             CMD_FENCE_SMART_REFRESH => self.run_smart(fence, "fence menu"),
             CMD_FENCE_SMART_FOLDER => {
-                if let Some(dir) = self.state.smart_spec(fence).and_then(|s| s.folder.clone()) {
+                // Each folder the search takes in its own Explorer window.
+                let dirs = self
+                    .state
+                    .smart_spec(fence)
+                    .map(|s| s.folders.clone())
+                    .unwrap_or_default();
+                tracing::info!(%fence, folders = dirs.len(), "smart fence: its folders opened in Explorer");
+                for dir in dirs {
                     let _ = shell::shell_execute(std::path::Path::new(&dir), None, None);
                 }
             }
