@@ -5,6 +5,9 @@ Case 'setup'
 $paths = @('w', 'x', 'y', 'z')
 $how = @{ w = 'Ctrl+Alt+Space, wait'; x = 'Ctrl+Alt+Space, at once'; y = 'double Ctrl, wait'; z = 'double Ctrl, at once' }
 $made = @()
+# Files an earlier failed run left (Notepad saves of typed queries, qwd.txt and so on) rank
+# above the test's own as exact names: start from none.
+Get-ChildItem $PfDesk -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '^q[wxyz]' } | Remove-Item -Force -Recurse -ErrorAction SilentlyContinue
 foreach ($p in $paths) { foreach ($c in 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'k') { foreach ($n in 'one', 'two') {
   $f = "$PfDesk\q$p$c $n.txt"; Set-Content $f $n; $made += $f } } }
 Set-Culture en-US
