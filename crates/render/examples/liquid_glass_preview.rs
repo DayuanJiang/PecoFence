@@ -168,6 +168,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 title,
                 None,
                 None,
+                None,
                 false,
                 0.0,
                 1.0,
