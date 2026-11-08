@@ -39,7 +39,7 @@ while ($true) {
   }
   "---"
   if ($ip) {
-    "IP address $ip | copy=$ip icon=📋 tooltip=Click to copy"
+    "IP address $ip | copy=$ip icon=📋 tooltip=""Click to copy"""
   } else {
     "IP address: not connected | color=gray icon=📋"
   }

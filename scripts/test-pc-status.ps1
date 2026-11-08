@@ -196,6 +196,15 @@ foreach ($language in 'en', 'zh') {
             Write-Host "PASS $language / local disks, removable media, colors and open paths"
         }
         if ($lines[$lines.Count - 1] -ne '~~~') { throw 'Incomplete status frame' }
+        # The app reads parameters after a ' | ' only when all of them are key=value pairs (a
+        # value with spaces needs quotes); otherwise the row is plain text and does nothing.
+        foreach ($row in @($lines | Where-Object { $_ -match ' \| ' })) {
+            $params = $row.Substring($row.IndexOf(' | ') + 3)
+            if ($params -notmatch '^\s*(\w+=("[^"]*"|''[^'']*''|\S+)\s*)+$') {
+                Write-Host "FAIL $language / $($case.Name): parameters the app would show as text: $row"
+                $failures++
+            }
+        }
     }
 }
 if ($failures) { throw "$failures PC status cases failed" }
