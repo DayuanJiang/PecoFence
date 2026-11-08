@@ -391,11 +391,23 @@ fn paint_box(hwnd: HWND) {
         // The type tabs: the chosen one in an accent-tinted capsule, the keys at the right.
         let tabs_top = box_h;
         let tint = if s.dark { 0x0060_4A33 } else { 0x00F7_E8D9 };
-        let mut x = px(ROW_PAD) - px(TAB_PAD / 2.0);
+        // The key in the UI language (Strg+Tab); the tabs give up some of their padding before
+        // it runs out of room (long labels at 640 DIPs).
+        let hint = format!("{}+Tab", pecofence_core::i18n::text("键名\x04Ctrl"));
+        let tabs = type_filter::TABS.len() as i32 + 1;
+        let labels_w: i32 = (0..=type_filter::TABS.len())
+            .map(|i| p.text_width(tab_label(i), &s.detail_font))
+            .sum();
+        let spare = w - px(ROW_PAD) * 2 - p.text_width(&hint, &s.detail_font) - px(8.0)
+            - px(2.0) * (tabs - 1)
+            - labels_w;
+        // The strip takes 2 pads per tab less half a pad at the left: 2 * spare / (4 * tabs - 1).
+        let pad = (2 * spare / (4 * tabs - 1)).clamp(px(4.0), px(TAB_PAD));
+        let mut x = px(ROW_PAD) - pad / 2;
         s.tab_spans.clear();
         for i in 0..=type_filter::TABS.len() {
             let label = tab_label(i);
-            let tw = p.text_width(label, &s.detail_font) + px(TAB_PAD * 2.0);
+            let tw = p.text_width(label, &s.detail_font) + pad * 2;
             let r = RECT {
                 left: x,
                 top: tabs_top + px(6.0),
@@ -416,7 +428,7 @@ fn paint_box(hwnd: HWND) {
             s.tab_spans.push((r.left, r.right));
             x = r.right + px(2.0);
         }
-        tracing::debug!(spans = ?s.tab_spans, tab = tab_label(s.tab), "search tabs drawn");
+        tracing::debug!(spans = ?s.tab_spans, tab = tab_label(s.tab), pad, hint_room = w - px(ROW_PAD) - x - p.text_width(&hint, &s.detail_font), "search tabs drawn");
         p.text(
             RECT {
                 left: x,
@@ -424,7 +436,7 @@ fn paint_box(hwnd: HWND) {
                 right: w - px(ROW_PAD),
                 bottom: tabs_top + px(TABS_H),
             },
-            "Ctrl+Tab",
+            &hint,
             &s.detail_font,
             s.dim_color,
             Align::Right,
