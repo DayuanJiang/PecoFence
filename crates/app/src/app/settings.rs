@@ -1188,8 +1188,12 @@ impl App {
             .set(new.roll_up.hide_count_and_chevron);
         // Only whole rows show with 「调整大小时按整行整列对齐」 on: redraw.
         self.ctx.behavior.idle_opacity.set(new.idle_opacity);
-        let chrome_changed = new.idle_opacity != old.idle_opacity
-            || new.roll_up.title_on_hover != old.roll_up.title_on_hover
+        if new.idle_opacity != old.idle_opacity {
+            for w in self.fences.values() {
+                w.refresh_idle_opacity();
+            }
+        }
+        let chrome_changed = new.roll_up.title_on_hover != old.roll_up.title_on_hover
             || new.title_align != old.title_align
             || new.label_color != old.label_color
             || new.roll_up.hide_inactive_scrollbar != old.roll_up.hide_inactive_scrollbar

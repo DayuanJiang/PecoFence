@@ -80,10 +80,10 @@ def main():
     sample("keyboard", "input HoverProbe activate 1 0", "input HoverProbe key 36 0")
     sample("blur", "input HoverProbe activate 0 0")
     sample("rename", "edit-item HoverProbe Sample", "input HoverProbe hover 0 0")
-    sample("rename-end", "cancel-rename", "input HoverProbe activate 0 0")
+    sample("rename-end", "cancel-rename")
     sample("rolled-focus", "input HoverProbe activate 1 0", "input HoverProbe key 36 0", "roll HoverProbe")
     sample("rolled-blur", "input HoverProbe kill-focus 0 0")
-    sample("rolled", "roll HoverProbe")
+    sample("rolled", "unroll HoverProbe", "sleep 450", "roll HoverProbe")
     sample("rolled-hover", "input HoverProbe hover 1 0")
     sample("expanded", "input HoverProbe hover 0 0", "unroll HoverProbe")
     sample("peek", "peek")
@@ -116,6 +116,9 @@ def main():
         assert len(rows) == 1, (tag, rows)
         actual = float(re.search(r"idle_opacity=([\d.]+)", rows[0])[1])
         assert abs(actual - opacity) < .015, (tag, actual, opacity, rows[0])
+        shadow = int(re.search(r"shadow_alpha=(\d+)", rows[0])[1])
+        plate = float(re.search(r"plate_alpha=([\d.]+)", rows[0])[1])
+        assert abs(shadow - round(255 * opacity * plate)) <= 1, (tag, "shadow", shadow)
         checks[tag] = actual
     assert re.search(r'\[hidden\] live.*visible=false.*title="HoverProbe"', log), "Quick Hide failed"
     saved = json.loads(config_path.read_text(encoding="utf-8"))
