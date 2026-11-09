@@ -175,7 +175,7 @@ Signature de code gratuite fournie par [SignPath.io](https://about.signpath.io/)
 
 Seuls les fichiers que GitHub Actions compile à partir d'un tag de version de ce dépôt sont signés. Chaque signature est approuvée à la main.
 
-**Confidentialité :** ce programme ne transmet aucune information à d'autres systèmes en réseau, sauf si l'utilisateur ou la personne qui l'installe ou l'utilise le demande expressément. Une fois par jour, PecoFence demande à l'API GitHub si une nouvelle version est sortie, en n'envoyant que son numéro de version ; vous pouvez désactiver cela avec **Rechercher automatiquement les mises à jour** dans Paramètres → À propos. Ce que vous envoyez depuis **Commentaires** arrive au service de commentaires de PecoFence. La fenêtre des paramètres repose sur Microsoft Edge WebView2, soumis à la [déclaration de confidentialité de Microsoft](https://privacy.microsoft.com/privacystatement).
+**Confidentialité :** ce programme ne transmet aucune information à d'autres systèmes en réseau, sauf si l'utilisateur ou la personne qui l'installe ou l'utilise le demande expressément. **Rechercher des mises à jour** interroge l'API GitHub. Ce que vous envoyez depuis **Commentaires** arrive au service de commentaires de PecoFence. La fenêtre des paramètres repose sur Microsoft Edge WebView2, soumis à la [déclaration de confidentialité de Microsoft](https://privacy.microsoft.com/privacystatement).
 
 ---
 

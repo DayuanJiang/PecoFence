@@ -175,7 +175,7 @@ Kostenlose Codesignatur durch [SignPath.io](https://about.signpath.io/), Zertifi
 
 Signiert werden nur Dateien, die GitHub Actions aus einem Versions-Tag dieses Repositorys baut. Jede Signatur wird von Hand freigegeben.
 
-**Datenschutz:** Dieses Programm überträgt keine Informationen an andere vernetzte Systeme, es sei denn, der Benutzer oder die Person, die es installiert oder bedient, verlangt das ausdrücklich. Einmal am Tag fragt PecoFence die GitHub-API, ob eine neuere Version erschienen ist, und sendet dabei nur seine Versionsnummer; das kannst du unter Einstellungen → Info mit **Automatisch nach Updates suchen** ausschalten. Was du unter **Feedback** sendest, geht an den Feedback-Dienst von PecoFence. Das Einstellungsfenster läuft auf Microsoft Edge WebView2. Dafür gilt die [Datenschutzerklärung von Microsoft](https://privacy.microsoft.com/privacystatement).
+**Datenschutz:** Dieses Programm überträgt keine Informationen an andere vernetzte Systeme, es sei denn, der Benutzer oder die Person, die es installiert oder bedient, verlangt das ausdrücklich. **Nach Updates suchen** fragt die GitHub-API ab. Was du unter **Feedback** sendest, geht an den Feedback-Dienst von PecoFence. Das Einstellungsfenster läuft auf Microsoft Edge WebView2. Dafür gilt die [Datenschutzerklärung von Microsoft](https://privacy.microsoft.com/privacystatement).
 
 ---
 

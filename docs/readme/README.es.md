@@ -174,7 +174,7 @@ Firma de código gratuita de [SignPath.io](https://about.signpath.io/), con cert
 
 Solo se firman los archivos que GitHub Actions compila a partir de una etiqueta de versión de este repositorio. Cada firma se aprueba a mano.
 
-**Privacidad:** este programa no transfiere ninguna información a otros sistemas en red, salvo que lo pida expresamente el usuario o la persona que lo instala o lo usa. Una vez al día, PecoFence pregunta a la API de GitHub si hay una versión nueva y solo envía su número de versión; puedes desactivarlo con **Buscar actualizaciones automáticamente** en Configuración → Acerca de. Lo que envías desde **Comentarios** llega al servicio de comentarios de PecoFence. La ventana de configuración funciona con Microsoft Edge WebView2, al que se aplica la [Declaración de privacidad de Microsoft](https://privacy.microsoft.com/privacystatement).
+**Privacidad:** este programa no transfiere ninguna información a otros sistemas en red, salvo que lo pida expresamente el usuario o la persona que lo instala o lo usa. **Buscar actualizaciones** consulta la API de GitHub. Lo que envías desde **Comentarios** llega al servicio de comentarios de PecoFence. La ventana de configuración funciona con Microsoft Edge WebView2, al que se aplica la [Declaración de privacidad de Microsoft](https://privacy.microsoft.com/privacystatement).
 
 ---
 
