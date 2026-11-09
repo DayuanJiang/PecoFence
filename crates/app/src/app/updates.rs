@@ -2,12 +2,12 @@
 //! itself. Checking and downloading run on a worker thread. An installed copy then starts the
 //! new setup and exits; setup waits for it, installs and starts PecoFence again.
 //!
-//! 自动检查更新 (on by default): about a minute after start and then once a day the same check
-//! runs by itself (installer and ZIP editions; never the Store edition or a named test
-//! instance), quietly: a failure only logs a line and the next day tries again. A newer version
-//! is announced once (never over a full-screen app, during Focus or the Peek) and stays at the
-//! top of the tray menu. How it is announced is a sample for now (`PECOFENCE_SAMPLE_UPDATE`):
-//! A a card in the corner, B a Windows notification, C a dot on the tray icon.
+//! 自动检查更新 (Settings → 关于, on by default; the installer and ZIP editions, never the Store
+//! edition, a named test instance only with the test feed): about a minute after start and then
+//! once a day the same request runs by itself. Offline, an error or a rate limit only logs a line
+//! and the next day tries again. A newer version gets a card in the corner once per version
+//! (`notices.json`), never over a full-screen app, during Focus, the Peek or another card (it
+//! waits and tries again), and stays at the top of the tray menu until it is installed.
 
 use super::*;
 use pecofence_core::updates::{self, Release};
@@ -16,21 +16,41 @@ use pecofence_core::updates::{self, Release};
 /// `PECOFENCE_INSTANCE`): the updater's end-to-end test serves a release from a local server.
 const URL_VAR: &str = "PECOFENCE_UPDATE_URL";
 const MAX_RELEASE_JSON: usize = 1024 * 1024;
-/// The automatic check (`TIMER_UPDATE_CHECK`); retried while the App is borrowed.
+/// The automatic check, and a card that waits (`TIMER_UPDATE_CHECK`, `TIMER_UPDATE_CARD`);
+/// retried while the App is borrowed.
 pub(super) const TIMER_UPDATE_CHECK: usize = 97;
+pub(super) const TIMER_UPDATE_CARD: usize = 98;
 const FIRST_CHECK_MS: u32 = 60_000;
 const DAILY_CHECK_MS: u32 = 24 * 60 * 60 * 1000;
-/// Samples: the first check comes sooner.
-const SAMPLE_FIRST_CHECK_MS: u32 = 5_000;
+/// A card that may not show yet tries again this much later.
+const CARD_RETRY_MS: u32 = 10_000;
+/// The card's line from the notes stops about here (three lines of the card).
+const CARD_LINE_CHARS: usize = 110;
 
-/// `PECOFENCE_SAMPLE_UPDATE=A|B|C`: which announcement to show (temporary, for the samples);
-/// it also lets a named test instance check by itself.
-fn sample() -> Option<char> {
-    pecofence_core::brand::var("PECOFENCE_SAMPLE_UPDATE")
-        .ok()
-        .and_then(|v| v.trim().chars().next())
-        .map(|c| c.to_ascii_uppercase())
-        .filter(|c| matches!(c, 'A' | 'B' | 'C'))
+/// The automatic check's delays (after start, between checks). Debug builds take
+/// `PECOFENCE_TEST_UPDATE_MS=<after start>[,<between checks>]` (the kit's update-check).
+fn check_delays() -> (u32, u32) {
+    #[cfg(debug_assertions)]
+    if let Ok(v) = pecofence_core::brand::var("PECOFENCE_TEST_UPDATE_MS") {
+        let mut parts = v.split(',').map(|p| p.trim().parse::<u32>().ok());
+        if let Some(Some(first)) = parts.next() {
+            return (first, parts.next().flatten().unwrap_or(DAILY_CHECK_MS));
+        }
+    }
+    (FIRST_CHECK_MS, DAILY_CHECK_MS)
+}
+
+/// The test feed is set (`PECOFENCE_UPDATE_URL`, `http://127.0.0.1:` only).
+fn test_feed() -> bool {
+    pecofence_core::brand::var(URL_VAR).is_ok_and(|u| u.starts_with("http://127.0.0.1:"))
+}
+
+/// The release page in the browser (the ZIP edition's download, 「查看新功能」).
+fn open_release_page(page: &str) {
+    match shell::shell_execute(Path::new(page), None, None) {
+        Ok(_) => tracing::info!("update: release page opened"),
+        Err(e) => tracing::warn!(error = %e, "opening the release page failed"),
+    }
 }
 const MAX_SETUP_BYTES: usize = 64 * 1024 * 1024;
 
@@ -54,13 +74,13 @@ enum Done {
 #[derive(Default)]
 pub(super) struct Updates {
     status: Status,
-    /// The check running now started by itself (quiet, announces what it finds).
+    /// The check running now started by itself (quiet; it shows a card for what it finds).
     auto: bool,
-    /// The version announced in this run (once per version).
-    announced: Option<String>,
-    /// A newer version waits for a moment it may be announced (a full-screen app, the Peek).
-    pending: bool,
-    /// Sample A's card.
+    /// The newer version the last check found: the tray item and the card offer it, and a
+    /// failed later check keeps it.
+    found: Option<Release>,
+    /// The automatic check found a version whose card has not shown yet.
+    card_waiting: bool,
     notice: Option<crate::notice::Notice>,
     /// Finished jobs; the error text goes to the log, the page only says which step failed.
     done: Arc<Mutex<Vec<std::result::Result<Done, String>>>>,
@@ -222,12 +242,7 @@ impl App {
                 let job_release = release.clone();
                 self.run_update_job(Status::Downloading(release), move || download(&job_release));
             }
-            ("openReleasePage", Status::Available(release)) => {
-                let page = release.page.clone();
-                if let Err(e) = shell::shell_execute(Path::new(&page), None, None) {
-                    tracing::warn!(error = %e, "opening the release page failed");
-                }
-            }
+            ("openReleasePage", Status::Available(release)) => open_release_page(&release.page),
             _ => {}
         }
     }
@@ -251,19 +266,27 @@ impl App {
             self.updates.status = match outcome {
                 // Setup is running and PecoFence is quitting.
                 Ok(None) => return,
-                Ok(Some(None)) => Status::UpToDate,
+                Ok(Some(None)) => {
+                    tracing::info!(auto, "update: up to date");
+                    self.updates.found = None;
+                    Status::UpToDate
+                }
                 Ok(Some(Some(release))) => {
                     tracing::info!(version = %release.version, auto, "update available");
+                    self.updates.found = Some(release.clone());
                     if auto {
-                        self.updates.pending = true;
+                        self.updates.card_waiting = true;
                     }
                     Status::Available(release)
                 }
-                // Offline, a metered connection Windows holds back, GitHub down: quiet, the next
-                // day tries again.
+                // Offline, an error or a rate limit: nothing shown, a version found before stays
+                // offered, the next day tries again.
                 Err(e) if auto => {
                     tracing::info!(error = %e, "update: the automatic check failed; next try tomorrow");
-                    Status::Idle
+                    match &self.updates.found {
+                        Some(r) => Status::Available(r.clone()),
+                        None => Status::Idle,
+                    }
                 }
                 Err(e) => {
                     tracing::warn!(error = %e, checking, "update failed");
@@ -276,147 +299,140 @@ impl App {
             };
             self.post_update();
         }
-        self.announce_update();
+        self.show_update_card();
     }
 
     /// Arms the automatic check: the first about a minute after start, then once a day.
     pub(super) fn arm_update_check(&self, first: bool) {
-        let ms = match (first, sample()) {
-            (false, _) => DAILY_CHECK_MS,
-            (true, Some(_)) => SAMPLE_FIRST_CHECK_MS,
-            (true, None) => FIRST_CHECK_MS,
-        };
+        let (after_start, every) = check_delays();
+        let ms = if first { after_start } else { every };
         window::set_timer(self.control.hwnd(), TIMER_UPDATE_CHECK, ms);
     }
 
-    /// `TIMER_UPDATE_CHECK`: the automatic check, when it is on and this edition checks.
+    /// `TIMER_UPDATE_CHECK`: the automatic check, when 自动检查更新 is on and this edition
+    /// checks (the installer and ZIP editions; a named test instance only with the test feed).
     pub(super) fn auto_check_updates(&mut self) {
         self.arm_update_check(false);
-        let on = self.state.config.settings.auto_check_updates;
-        let edition = self.update_edition();
-        let test_instance = self.instance.is_some();
-        if !on || edition.is_none() || (test_instance && sample().is_none()) {
-            tracing::info!(
-                on,
-                store = edition.is_none(),
-                test_instance,
-                "update: no automatic check"
-            );
-            return;
-        }
-        if matches!(
+        let why = if !self.state.config.settings.auto_check_updates {
+            Some("switched off")
+        } else if self.update_edition().is_none() {
+            Some("Store edition")
+        } else if self.instance.is_some() && !test_feed() {
+            Some("test instance")
+        } else if matches!(
             self.updates.status,
             Status::Checking | Status::Downloading(_)
         ) {
+            Some("a check or download is running")
+        } else {
+            None
+        };
+        if let Some(why) = why {
+            tracing::info!(why, "update: automatic check skipped");
             return;
         }
         tracing::info!("update: automatic check");
         self.updates.auto = true;
+        let test_instance = self.instance.is_some();
         self.run_update_job(Status::Checking, move || check(test_instance));
     }
 
-    /// The newer version the tray menu offers (「更新到 0.3.3」).
+    /// The newer version the tray menu offers at its top (「更新到 0.3.3」) until it is installed.
     pub(super) fn update_offered(&self) -> Option<String> {
-        match &self.updates.status {
-            Status::Available(r) => Some(r.version.clone()),
-            _ => None,
-        }
+        self.updates.found.as_ref().map(|r| r.version.clone())
     }
 
-    /// 「更新」 (tray item, the card): the installer edition downloads and installs, the ZIP
+    /// 「更新」 (the tray item, the card): the installer edition downloads and installs, the ZIP
     /// edition opens the download page.
     pub(super) fn update_now(&mut self, by: &'static str) {
-        let installer = self.update_edition() == Some("installer")
-            && matches!(&self.updates.status, Status::Available(r) if r.setup.is_some());
-        tracing::info!(by, installer, "update: update now");
-        self.on_update_action(if installer {
+        let Some(release) = self.updates.found.clone() else {
+            return;
+        };
+        match self.updates.status {
+            Status::Checking | Status::Downloading(_) => {
+                tracing::info!(
+                    by,
+                    "update: update now waits for the check or download running"
+                );
+                return;
+            }
+            Status::Available(_) => {}
+            // A later check failed: the version found before is still the one offered.
+            _ => self.updates.status = Status::Available(release.clone()),
+        }
+        let install = self.update_edition() == Some("installer") && release.setup.is_some();
+        tracing::info!(by, installs = install, version = %release.version, "update: update now");
+        self.on_update_action(if install {
             "installUpdate"
         } else {
             "openReleasePage"
         });
     }
 
-    /// Housekeeping and after a check: a newer version found by the automatic check is
-    /// announced once, when it may be (no full-screen app, Focus or presentation, no Peek, no
-    /// other notice).
-    pub(super) fn announce_update(&mut self) {
-        if !self.updates.pending {
+    /// After the automatic check found a newer version, and on `TIMER_UPDATE_CARD`: its card,
+    /// once per version, when it may show. A full-screen app or presentation, Focus, the Peek
+    /// or another card make it wait and try again.
+    pub(super) fn show_update_card(&mut self) {
+        if !self.updates.card_waiting {
             return;
         }
-        let Status::Available(release) = &self.updates.status else {
-            self.updates.pending = false;
+        let Some(release) = self.updates.found.clone() else {
+            self.updates.card_waiting = false;
+            tracing::info!("update card: no newer version any more");
             return;
         };
-        if self.updates.announced.as_deref() == Some(release.version.as_str()) {
-            self.updates.pending = false;
+        if self.update_card_shown_for().as_deref() == Some(release.version.as_str()) {
+            self.updates.card_waiting = false;
+            tracing::info!(version = %release.version, "update card: already shown for this version");
             return;
         }
-        if !pecofence_platform::store::user_accepts_notifications()
-            || self.peek.is_some()
-            || self.notice_showing()
-        {
-            tracing::info!("update: announcement waits (full screen, Focus, Peek or a notice)");
+        let busy = if !pecofence_platform::store::user_accepts_notifications() {
+            Some("full screen, presentation or Focus")
+        } else if self.peek.is_some() {
+            Some("Peek")
+        } else if self.notice_showing() {
+            Some("another card")
+        } else {
+            None
+        };
+        if let Some(why) = busy {
+            tracing::info!(why, "update card waits");
+            window::set_timer(self.control.hwnd(), TIMER_UPDATE_CARD, CARD_RETRY_MS);
             return;
         }
-        let release = release.clone();
-        self.updates.pending = false;
-        self.updates.announced = Some(release.version.clone());
-        let zip = self.update_edition() == Some("zip") || release.setup.is_none();
+        self.updates.card_waiting = false;
+        let install = self.update_edition() == Some("installer") && release.setup.is_some();
         let title = pecofence_core::i18n::format(
             "PecoFence {0} 已发布",
             std::slice::from_ref(&release.version),
         );
-        let body = if release.summary.is_empty() {
-            pecofence_core::i18n::text("看看这次更新了什么。").to_string()
+        // The notes are written in English or Chinese: other UI languages get the general line.
+        let body = updates::card_line(
+            &release.summary,
+            pecofence_core::i18n::language().tag(),
+            CARD_LINE_CHARS,
+        )
+        .unwrap_or_else(|| pecofence_core::i18n::text("看看这次更新了什么。").to_string());
+        let action = if install {
+            pecofence_core::i18n::text("按钮\x04更新")
         } else {
-            release.summary.clone()
+            pecofence_core::i18n::text("去下载")
         };
-        let how = sample().unwrap_or('C');
-        tracing::info!(version = %release.version, how = %how, zip, "update: announced");
-        match how {
-            'A' => {
-                let action = if zip {
-                    pecofence_core::i18n::text("去下载")
-                } else {
-                    pecofence_core::i18n::text("更新")
-                };
-                match crate::notice::Notice::show_with(
-                    &self.ctx,
-                    &title,
-                    &body,
-                    action,
-                    Some(pecofence_core::i18n::text("查看新功能")),
-                    crate::notice::locale(),
-                    &self.notice_avoid_rects(),
-                ) {
-                    Ok(n) => self.updates.notice = Some(n),
-                    Err(e) => tracing::warn!(error = %e, "update notice not shown"),
-                }
+        match crate::notice::Notice::show_with(
+            &self.ctx,
+            &title,
+            &body,
+            action,
+            Some(pecofence_core::i18n::text("查看新功能")),
+            crate::notice::locale(),
+            &self.notice_avoid_rects(),
+        ) {
+            Ok(n) => {
+                self.updates.notice = Some(n);
+                self.remember_update_card(&release.version);
+                tracing::info!(version = %release.version, installs = install, "update card shown");
             }
-            'B' => {
-                if let Some(t) = &self.tray {
-                    t.show_info(&title, &body, false);
-                }
-            }
-            _ => self.set_tray_dot(true),
-        }
-    }
-
-    /// Sample C: the tray icon with (or without) its dot.
-    fn set_tray_dot(&mut self, on: bool) {
-        let px = (16.0 * (monitors::system_dpi().max(96) as f32 / 96.0)).round() as i32;
-        let image = if on {
-            super::visuals::tray_icon_with_dot(px, [0, 0, 0], false)
-        } else {
-            super::visuals::tray_icon_image(px, [0, 0, 0], false)
-        };
-        match tray::icon_from_bgra(px, px, &image) {
-            Ok(icon) => {
-                if let Some(t) = self.tray.as_mut() {
-                    t.set_icon(icon);
-                }
-            }
-            Err(e) => tracing::warn!(error = %e, "tray icon with a dot failed"),
+            Err(e) => tracing::warn!(error = %e, "update card not shown"),
         }
     }
 
@@ -424,21 +440,21 @@ impl App {
         self.updates.notice.is_some()
     }
 
-    /// Sample A's card: 「更新」, 「查看新功能」 (the release page), × (later: the tray item
-    /// stays).
+    /// The card's buttons: 「更新」 / 「去下载」, 「查看新功能」 (the release page); × or the
+    /// timeout leave it for later (the tray item stays).
     pub(super) fn on_update_notice(&mut self, event: crate::notice::NoticeEvent) {
         self.updates.notice = None;
         match event {
-            crate::notice::NoticeEvent::Action => self.update_now("update notice"),
+            crate::notice::NoticeEvent::Action => self.update_now("update card"),
             crate::notice::NoticeEvent::Declined => {
-                if let Status::Available(r) = &self.updates.status {
-                    let page = r.page.clone();
-                    if let Err(e) = shell::shell_execute(Path::new(&page), None, None) {
-                        tracing::warn!(error = %e, "opening the release page failed");
-                    }
+                tracing::info!("update card: what's new");
+                if let Some(r) = &self.updates.found {
+                    open_release_page(&r.page);
                 }
             }
-            crate::notice::NoticeEvent::Dismissed => tracing::info!("update notice: later"),
+            crate::notice::NoticeEvent::Dismissed => {
+                tracing::info!("update card: later (closed or timed out)")
+            }
         }
     }
 

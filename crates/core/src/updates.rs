@@ -48,16 +48,15 @@ struct ApiAsset {
     browser_download_url: String,
 }
 
-/// The first sentence of release notes in Markdown: the first line with words (headings,
-/// list marks and emphasis taken off), up to its first full stop.
+/// The first sentence of release notes in Markdown: the first line with words that is no
+/// heading (list marks and emphasis taken off), up to its first full stop.
 pub fn first_sentence(notes: &str) -> String {
     let line = notes
         .lines()
-        .map(|l| {
-            l.trim()
-                .trim_start_matches(['#', '-', '*', '>', ' '])
-                .replace("**", "")
-        })
+        .map(str::trim)
+        // Headings are titles, not sentences.
+        .filter(|l| !l.starts_with('#'))
+        .map(|l| l.trim_start_matches(['-', '*', '>', ' ']).replace("**", ""))
         .find(|l| !l.trim().is_empty())
         .unwrap_or_default();
     let end = line
@@ -67,6 +66,36 @@ pub fn first_sentence(notes: &str) -> String {
         .or_else(|| line.find(". ").map(|i| i + 1))
         .unwrap_or(line.len());
     line[..end].trim().to_string()
+}
+
+/// The update card's line from the notes' first sentence: only when it is in the UI's language
+/// (Han text for a Chinese UI, other text for English; the notes are written in one of them),
+/// cut after about `max_chars` characters at a word with "…". None: the card says something
+/// general instead.
+pub fn card_line(summary: &str, ui_language: &str, max_chars: usize) -> Option<String> {
+    let han = summary
+        .chars()
+        .any(|c| ('\u{4E00}'..='\u{9FFF}').contains(&c));
+    let fits = if han {
+        ui_language.starts_with("zh")
+    } else {
+        ui_language == "en"
+    };
+    if summary.trim().is_empty() || !fits {
+        return None;
+    }
+    if summary.chars().count() <= max_chars {
+        return Some(summary.trim().to_string());
+    }
+    let cut: String = summary.chars().take(max_chars).collect();
+    let cut = match cut.rfind(' ') {
+        Some(i) if !han && i > max_chars / 2 => &cut[..i],
+        _ => &cut[..],
+    };
+    Some(format!(
+        "{}…",
+        cut.trim_end_matches([',', ';', ' ', '，', '；'])
+    ))
 }
 
 pub fn setup_name(version: &str) -> String {
@@ -228,5 +257,37 @@ mod tests {
         assert_eq!(parse_release(&climbing, BASE).unwrap().setup, None);
         assert!(parse_release(&release_json("nightly", &[]), BASE).is_err());
         assert!(parse_release("not json", BASE).is_err());
+    }
+
+    /// The card's line: the notes' first sentence in the UI's language, cut when long.
+    #[test]
+    fn the_card_takes_the_notes_first_sentence_in_the_ui_language() {
+        assert_eq!(
+            first_sentence("## 0.3.3\n\n这一版修好了速览卡顿。还有别的。"),
+            "这一版修好了速览卡顿。"
+        );
+        assert_eq!(
+            first_sentence("PecoFence 0.3.3 fixes the Peek. It also checks for updates."),
+            "PecoFence 0.3.3 fixes the Peek."
+        );
+        assert_eq!(first_sentence(""), "");
+        assert_eq!(
+            card_line("修好了卡顿。", "zh-CN", 110).as_deref(),
+            Some("修好了卡顿。")
+        );
+        assert_eq!(card_line("修好了卡顿。", "en", 110), None);
+        assert_eq!(card_line("Fixes the Peek.", "zh-CN", 110), None);
+        assert_eq!(
+            card_line("Fixes the Peek.", "en", 110).as_deref(),
+            Some("Fixes the Peek.")
+        );
+        assert_eq!(card_line("Fixes the Peek.", "de", 110), None);
+        let long = "PecoFence 0.3.2 lets the icons outside your fences stay wherever you put them on the desktop, adds smart fences";
+        let cut = card_line(long, "en", 60).unwrap();
+        assert!(
+            cut.ends_with('…') && cut.chars().count() <= 61 && !cut.contains("  "),
+            "{cut}"
+        );
+        assert!(long.starts_with(cut.trim_end_matches('…')), "{cut}");
     }
 }

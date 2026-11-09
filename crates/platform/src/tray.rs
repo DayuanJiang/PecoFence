@@ -176,23 +176,6 @@ impl TrayIcon {
         Ok(())
     }
 
-    /// Shows `icon` from now on (the old one stays the caller's to destroy).
-    pub fn set_icon(&mut self, icon: HICON) {
-        self.icon = icon;
-        let data = NOTIFYICONDATAW {
-            cbSize: size_of::<NOTIFYICONDATAW>() as u32,
-            hWnd: self.hwnd,
-            uID: self.id,
-            uFlags: NIF_ICON as u32,
-            hIcon: icon,
-            ..Default::default()
-        };
-        // SAFETY: fully initialized structure.
-        unsafe {
-            let _ = Shell_NotifyIconW(NIM_MODIFY as u32, &data);
-        }
-    }
-
     pub fn set_tip(&self, tip: &str) {
         let mut data = NOTIFYICONDATAW {
             cbSize: size_of::<NOTIFYICONDATAW>() as u32,

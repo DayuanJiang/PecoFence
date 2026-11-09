@@ -36,6 +36,8 @@ struct Saved {
     roll_tip_shown: bool,
     folder_tip_shown: bool,
     rule_tip_shown: bool,
+    /// The version whose update card showed (once per version).
+    update_card: String,
 }
 
 /// 功能提示: the roll-up tip shows once this many fences with their own window hold items
@@ -105,6 +107,17 @@ impl App {
             .ok()
             .and_then(|bytes| serde_json::from_slice::<Saved>(&bytes).ok())
             .unwrap_or_default()
+    }
+
+    /// The version whose update card showed, if any.
+    pub(super) fn update_card_shown_for(&self) -> Option<String> {
+        Some(self.load_notices().update_card).filter(|v| !v.is_empty())
+    }
+
+    pub(super) fn remember_update_card(&self, version: &str) {
+        let mut saved = self.load_notices();
+        saved.update_card = version.to_string();
+        self.save_notices(&saved);
     }
 
     fn save_notices(&self, saved: &Saved) {

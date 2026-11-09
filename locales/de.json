@@ -956,5 +956,13 @@
   "操作": "Aktionen",
   "{0} 个结果": "Treffer: {0}",
   "类型\u0004全部": "Alle",
-  "类型：{0}": "Art: {0}"
+  "类型：{0}": "Art: {0}",
+  "更新到 {0}": "Auf {0} aktualisieren",
+  "PecoFence {0} 已发布": "PecoFence {0} ist da",
+  "看看这次更新了什么。": "Sieh dir an, was neu ist.",
+  "按钮\u0004更新": "Aktualisieren",
+  "去下载": "Herunterladen",
+  "查看新功能": "Neuerungen",
+  "自动检查更新": "Automatisch nach Updates suchen",
+  "每天检查一次有没有新版本，有新版本时提醒一次": "Sucht einmal am Tag nach einer neuen Version und sagt dir einmal Bescheid, wenn es eine gibt"
 }

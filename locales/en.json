@@ -956,5 +956,13 @@
   "操作": "Actions",
   "{0} 个结果": "Results: {0}",
   "类型\u0004全部": "All",
-  "类型：{0}": "Type: {0}"
+  "类型：{0}": "Type: {0}",
+  "更新到 {0}": "Update to {0}",
+  "PecoFence {0} 已发布": "PecoFence {0} is out",
+  "看看这次更新了什么。": "See what's new in this version.",
+  "按钮\u0004更新": "Update",
+  "去下载": "Download",
+  "查看新功能": "What's new",
+  "自动检查更新": "Check for updates automatically",
+  "每天检查一次有没有新版本，有新版本时提醒一次": "Looks for a new version once a day and tells you once when there is one"
 }
