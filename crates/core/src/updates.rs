@@ -53,14 +53,14 @@ struct ApiAsset {
 }
 
 /// The first sentence of release notes in Markdown: the first line with words that is no
-/// heading (list marks and emphasis taken off), up to its first full stop.
+/// heading (list marks, links, code marks and bold taken off), up to its first full stop.
 pub fn first_sentence(notes: &str) -> String {
     let line = notes
         .lines()
         .map(str::trim)
         // Headings are titles, not sentences.
         .filter(|l| !l.starts_with('#'))
-        .map(|l| l.trim_start_matches(['-', '*', '>', ' ']).replace("**", ""))
+        .map(|l| plain_text(l.trim_start_matches(['-', '*', '>', ' '])))
         .find(|l| !l.trim().is_empty())
         .unwrap_or_default();
     let end = line
@@ -72,16 +72,45 @@ pub fn first_sentence(notes: &str) -> String {
     line[..end].trim().to_string()
 }
 
+/// A line of Markdown as plain text: a link `[text](url)` (or image) keeps its text, code
+/// marks and bold go.
+fn plain_text(line: &str) -> String {
+    let mut out = String::new();
+    let mut rest = line;
+    while let Some(open) = rest.find('[') {
+        let link = rest[open..].find(']').map(|i| open + i).and_then(|close| {
+            let url = rest[close + 1..].strip_prefix('(')?;
+            let end = url.find(')')?;
+            Some((close, rest.len() - url.len() + end + 1))
+        });
+        match link {
+            Some((close, after)) => {
+                let before = &rest[..open];
+                out.push_str(before.strip_suffix('!').unwrap_or(before));
+                out.push_str(&rest[open + 1..close]);
+                rest = &rest[after..];
+            }
+            None => {
+                out.push_str(&rest[..=open]);
+                rest = &rest[open + 1..];
+            }
+        }
+    }
+    out.push_str(rest);
+    out.replace("**", "").replace('`', "")
+}
+
 /// The update card's line from the notes' first sentence: only when it is in the UI's language
-/// (Han text for a Chinese UI, other text for English; the notes are written in one of them),
-/// cut after about `max_chars` characters at a word with "…". None: the card says something
-/// general instead.
+/// (Simplified Chinese text for the zh-CN UI, other text for English; the notes are written in
+/// one of them), cut after about `max_chars` characters at a word with "…". None: the card
+/// says something general instead.
 pub fn card_line(summary: &str, ui_language: &str, max_chars: usize) -> Option<String> {
     let han = summary
         .chars()
         .any(|c| ('\u{4E00}'..='\u{9FFF}').contains(&c));
+    // The notes are Simplified Chinese: a zh-TW UI gets its line from its own Store notes.
     let fits = if han {
-        ui_language.starts_with("zh")
+        ui_language == "zh-CN"
     } else {
         ui_language == "en"
     };
@@ -315,10 +344,23 @@ mod tests {
             "PecoFence 0.3.3 fixes the Peek."
         );
         assert_eq!(first_sentence(""), "");
+        // Links keep their text; code marks and bold go.
+        assert_eq!(
+            first_sentence(
+                "- See [the manual](https://x.io/m.html) for `pecofence-cli`, **Peek** and ![](i.png)[x] marks. More."
+            ),
+            "See the manual for pecofence-cli, Peek and [x] marks."
+        );
+        assert_eq!(
+            first_sentence("* 新增 [智能栅栏](https://x.io/a)，用 `Ctrl+F` 筛选。还有。"),
+            "新增 智能栅栏，用 Ctrl+F 筛选。"
+        );
         assert_eq!(
             card_line("修好了卡顿。", "zh-CN", 110).as_deref(),
             Some("修好了卡顿。")
         );
+        // The notes are Simplified Chinese: not for a Traditional Chinese UI.
+        assert_eq!(card_line("修好了卡顿。", "zh-TW", 110), None);
         assert_eq!(card_line("修好了卡顿。", "en", 110), None);
         assert_eq!(card_line("Fixes the Peek.", "zh-CN", 110), None);
         assert_eq!(
