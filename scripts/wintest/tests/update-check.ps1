@@ -1,4 +1,5 @@
-# 自动检查更新 against a local release feed that says v0.3.3 is out (PECOFENCE_UPDATE_URL, a named
+# 自动检查更新 against a local release feed that says the next patch version is out (one above the
+# build's version, so the test keeps working after a version bump; PECOFENCE_UPDATE_URL, a named
 # instance; the debug build's PECOFENCE_TEST_UPDATE_MS makes the first check come 8 s after start,
 # the retry after a failure 6 s later and the check after a resume 3 s after it): the first check
 # after start, the card once per version when someone was there (a restart shows none), a card
@@ -6,13 +7,17 @@
 # for a full-screen app and for the Peek (one log line for the wait and one for its end), the
 # switch turned off while the card waits, the installer card's two buttons and the ZIP card's one,
 # the tray item, the switch off (no request), offline (nothing shown, one retry), a resume (a
-# check when none succeeded, none after a recent one), and the card's line from the Store notes
-# of the UI language (en-US and zh-CN served; German falls back to the general line).
+# check when none succeeded, none after a recent one), the card's line from the Store notes of
+# the UI language (en-US and zh-CN served; German falls back to the general line), and the card
+# going below the taskbar's hidden icons (the tray icon is put there) so the icon can be reached.
 # English UI (the card is read by OCR). Debug build.
 Add-Type @"
 using System; using System.Runtime.InteropServices;
 public static class Qn { [DllImport("shell32.dll")] public static extern int SHQueryUserNotificationState(out int state); }
+public static class Zo { [DllImport("user32.dll")] public static extern IntPtr GetWindow(IntPtr h, uint cmd); }
 "@
+# Whether window $upper is above window $lower in the z-order.
+function IsAbove($upper, $lower) { $h = $lower; for ($i = 0; $i -lt 5000; $i++) { $h = [Zo]::GetWindow($h, 3); if ($h -eq [IntPtr]::Zero) { return $false }; if ($h -eq $upper) { return $true } }; return $false }
 function NoticeWin() { $n = [G]::FindWindowW('PecoFence.Notice', [NullString]::Value); if ($n -ne [IntPtr]::Zero -and [G]::IsWindowVisible($n)) { return $n }; return [IntPtr]::Zero }
 function Lines($re) { return @(PfLogAll | Where-Object { $_ -match $re -and $_ -notmatch 'omitted' } | Sort-Object -Unique) }
 function FeedHits() { return @(Get-Content "$PfRun\feed.log" -ErrorAction SilentlyContinue | Where-Object { $_ -match 'releases/latest' }).Count }
@@ -45,12 +50,23 @@ function Record() { $j = Get-Content $script:Notices -Raw -ErrorAction SilentlyC
 
 Case 'setup'
 CloseWindows
-$feed = Start-Process powershell.exe -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', 'C:\pf\kit\assets\serve-update.ps1', '-Port', '8721' -WindowStyle Hidden -PassThru
+# The feed offers the build's version plus one patch.
+# The CLI says its version without the app (kit builds have no version resource).
+$v = [version]((& "$PfBin\pecofence-cli.exe" describe 2>$null | Out-String) | ConvertFrom-Json).cli
+$script:Next = "$($v.Major).$($v.Minor).$($v.Build + 1)"
+$script:NextRe = [regex]::Escape($script:Next)
+Log "build $v, the feed offers $script:Next"
+$feed = Start-Process powershell.exe -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', 'C:\pf\kit\assets\serve-update.ps1', '-Port', '8721', '-Tag', "v$script:Next" -WindowStyle Hidden -PassThru
 Start-Sleep -Seconds 1
 Restart
 $script:Notices = NoticesFile
 Log "notices: $script:Notices"
 Check 'the feed runs and PecoFence starts' ($feed -and -not $feed.HasExited -and $script:Notices) ''
+# The tray icon goes to the taskbar's hidden icons (Windows 11 puts new icons there too): the
+# tray steps open that flyout while the card shows in the same corner.
+$keys = @(Get-ChildItem 'HKCU:\Control Panel\NotifyIconSettings' -ErrorAction SilentlyContinue | Where-Object { (Get-ItemProperty $_.PSPath).ExecutablePath -like '*\pecofence.exe' })
+foreach ($k in $keys) { New-ItemProperty -Path $k.PSPath -Name IsPromoted -Value 0 -PropertyType DWord -Force | Out-Null }
+Log "tray: $($keys.Count) PecoFence icon entries set to the hidden icons"
 
 Case 'the first check comes after start and shows the card (ZIP edition)'
 $check = WaitLine 'update: automatic check$'
@@ -59,22 +75,52 @@ Start-Sleep -Milliseconds 800
 $t = CardText 'card-zip'
 Shot 'u01-card-zip'
 Check 'the first automatic check runs a moment after start (test delay) and asks the feed' ($check -and (FeedHits) -ge 1) "$check feed=$(FeedHits)"
-Check 'the ZIP card says 0.3.3 is out with one button, Download' ($card -and $t -match '0\.3\.3' -and $t -match 'Download' -and $t -notmatch "What.s new") "ocr: $t"
+Check 'the ZIP card says the new version is out with one button, Download' ($card -and $t -match $script:NextRe -and $t -match 'Download' -and $t -notmatch "What.s new") "ocr: $t"
 Check 'its line is the first point of the en-US Store notes' ($t -match 'Typing Chinese in the Peek search' -and (Since 'update card: its line line_from="Store notes"').Count -ge 1 -and @(Get-Content "$PfRun\feed.log" | Where-Object { $_ -match 'v2-i18n/en-US\.json HTTP/1\.1 -> 200' }).Count -ge 1) "ocr: $t"
 $m = TrayMenu; Start-Sleep -Milliseconds 500
 $menu = if ($m -ne [IntPtr]::Zero) { MenuTexts $m } else { '' }
 [G]::Press(0x1B); Start-Sleep -Milliseconds 400; [G]::Press(0x1B); [G]::MoveTo(700, 450)
-Check 'the tray menu offers Update to 0.3.3 at the top' ($menu -match '^Update to 0\.3\.3') $menu
+Check 'the tray menu offers Update to the new version at the top' ($menu -match "^Update to $script:NextRe") $menu
 # The card goes by itself after 30 s, as later; the menu above was the user being there.
 for ($i = 0; $i -lt 40 -and (NoticeWin) -ne [IntPtr]::Zero; $i++) { Start-Sleep -Seconds 1 }
 $rec = WaitLine 'update card: recorded' 5
-Check 'the card leaves after its 30 s and counts as seen (input while it showed)' ((NoticeWin) -eq [IntPtr]::Zero -and (Since 'update card: later').Count -ge 1 -and $rec -match 'there=true' -and (Record).updateCard -eq '0.3.3') "$rec"
+Check 'the card leaves after its 30 s and counts as seen (input while it showed)' ((NoticeWin) -eq [IntPtr]::Zero -and (Since 'update card: later').Count -ge 1 -and $rec -match 'there=true' -and (Record).updateCard -eq $script:Next) "$rec"
 
 Case 'once per version: a restart shows no card'
 Restart -KeepNotices
 $skip = WaitLine 'update card: already shown for this version' 15
 Start-Sleep -Seconds 2
-Check 'no second card for 0.3.3' ($skip -and (NoticeWin) -eq [IntPtr]::Zero) "$skip"
+Check 'no second card for the same version' ($skip -and (NoticeWin) -eq [IntPtr]::Zero) "$skip"
+
+Case 'the card goes below the hidden icons, and is clickable after they close'
+Restart
+$card = WaitLine 'update card shown' 15
+Start-Sleep -Milliseconds 800
+$n = NoticeWin
+# Opens the hidden icons when the icon is there (not on the taskbar).
+$r = TrayIconRect
+Start-Sleep -Milliseconds 600
+$ov = [G]::FindWindowW('TopLevelWindowForOverflowXamlIsland', [NullString]::Value)
+$opened = $ov -ne [IntPtr]::Zero -and [G]::IsWindowVisible($ov)
+$below = WaitLine 'notice goes below the front window' 5
+Shot 'u05-hidden-icons-over-card'
+Check 'the tray icon is in the hidden icons, and they open over the card' ($card -and $r -and $opened -and $n -ne [IntPtr]::Zero) "card=$([bool]$card) icon=$r flyout=$opened"
+Check 'the card goes below them' ($below -match 'TopLevelWindowForOverflowXamlIsland' -and (IsAbove $ov $n)) "$below | above=$(IsAbove $ov $n)"
+$menu = ''
+if ($r) {
+  [G]::RClick([int]($r.X + $r.Width / 2), [int]($r.Y + $r.Height / 2))
+  $m = MenuWin 5; Start-Sleep -Milliseconds 400
+  $menu = if ($m -ne [IntPtr]::Zero) { MenuTexts $m } else { '' }
+}
+Shot 'u06-tray-menu-over-card'
+[G]::Press(0x1B); Start-Sleep -Milliseconds 400; [G]::Press(0x1B); Start-Sleep -Milliseconds 400; [G]::MoveTo(700, 450)
+Check 'a right-click on the icon there opens the tray menu' ($menu -match "^Update to $script:NextRe") "menu: $menu"
+Start-Sleep -Seconds 1
+$n = NoticeWin
+Check 'the card is still there after they close' ($n -ne [IntPtr]::Zero) ''
+if ($n -ne [IntPtr]::Zero) { $rc = Rect $n; [G]::Click($rc.R - 70, $rc.B - 34); Start-Sleep -Seconds 2 }
+Check 'and its Download button works' ((Since 'update: update now').Count -ge 1 -and (Since 'update: release page opened').Count -ge 1) ((Since 'update: update now|release page') -join ' | ')
+Get-Process msedge -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 
 Case 'a card nobody was there for comes once more a day later'
 Restart
@@ -83,7 +129,7 @@ $card = WaitLine 'update card shown' 15
 for ($i = 0; $i -lt 40 -and (NoticeWin) -ne [IntPtr]::Zero; $i++) { Start-Sleep -Seconds 1 }
 $rec = WaitLine 'update card: recorded' 5
 $r1 = Record
-Check 'without input during its 30 s the card is not counted as seen' ($card -and $rec -match 'there=false' -and $r1.updateCard -ne '0.3.3' -and $r1.updateCardUnseen -eq '0.3.3' -and $r1.updateCardUnseenAt -gt 0) "$rec | $(Get-Content $script:Notices -Raw)"
+Check 'without input during its 30 s the card is not counted as seen' ($card -and $rec -match 'there=false' -and $r1.updateCard -ne $script:Next -and $r1.updateCardUnseen -eq $script:Next -and $r1.updateCardUnseenAt -gt 0) "$rec | $(Get-Content $script:Notices -Raw)"
 Restart -KeepNotices
 $skip = WaitLine 'update card: shown while nobody was there' 15
 Start-Sleep -Seconds 2
@@ -101,7 +147,7 @@ $rec = WaitLine 'update card: recorded' 5
 Restart -KeepNotices
 $skip = WaitLine 'update card: already shown for this version' 15
 Start-Sleep -Seconds 2
-Check 'after its second offer the version counts as seen, with or without input' ($rec -match 'last_offer=true' -and (Record).updateCard -eq '0.3.3' -and $skip -and (NoticeWin) -eq [IntPtr]::Zero) "$rec | $skip"
+Check 'after its second offer the version counts as seen, with or without input' ($rec -match 'last_offer=true' -and (Record).updateCard -eq $script:Next -and $skip -and (NoticeWin) -eq [IntPtr]::Zero) "$rec | $skip"
 
 Case 'the card waits for a full-screen app'
 Restart
@@ -161,7 +207,7 @@ Check 'Update starts the download from the feed (a test release without a setup 
 Case 'ZIP edition: the tray item opens the download page'
 Restart -KeepNotices
 WaitLine 'update available' 15 | Out-Null
-TrayPick '^Update to 0\.3\.3' | Out-Null
+TrayPick "^Update to $script:NextRe" | Out-Null
 Start-Sleep -Seconds 2
 Check 'the tray item opens the download page in the ZIP edition' ((Since 'update: update now').Count -ge 1 -and (Since 'update: release page opened').Count -ge 1) ((Since 'update: update now|release page') -join ' | ')
 Get-Process msedge -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue

@@ -1,8 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.3.3
 
-- PecoFence checks for a new version by itself (installer and ZIP editions, about a minute after start and then once a day): a card in the corner says so once per version, with 「更新」 or 「去下载」 and 「查看新功能」, and the tray menu offers 「更新到 …」 until it is installed; 「自动检查更新」 on Settings › 关于 turns it off.
+- PecoFence checks for a new version by itself (installer and ZIP editions, about a minute after start and then once a day): a card in the corner says so once per version, with the first line of that version's notes, 「更新」 and 「查看新功能」 (the ZIP edition: 「去下载」), and the tray menu offers 「更新到 …」 until it is installed; 「自动检查更新」 on Settings › 关于 turns it off. Before, a new version showed only when you clicked 「检查更新」 there. The Store edition is updated by the Store.
+- The cards in the screen corner (feature tips, the rating card and now the update card) no longer cover the taskbar's hidden icons, the Start menu or the notification center: such a window opened over a card stays on top, and the card can be clicked again once it closes.
 
 ## 0.3.2
 

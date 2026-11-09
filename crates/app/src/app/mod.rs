@@ -1327,6 +1327,9 @@ impl App {
                                 } else {
                                     "registry"
                                 });
+                                if wparam == 1 {
+                                    app.notices_below(HWND(lparam as *mut core::ffi::c_void));
+                                }
                             }
                             if wparam == 1 {
                                 // A foreground change: a desktop switch announcing itself. It

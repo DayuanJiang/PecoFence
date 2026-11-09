@@ -245,12 +245,41 @@ impl Notice {
             v.start_fade(hwnd, 1.0);
         }
         window.set_timer(TIMER_DISMISS, SHOW_FOR_MS);
-        Ok(Self {
+        let notice = Self {
             window,
             _target: target,
             view: shared,
             _class: class,
-        })
+        };
+        // A flyout already open over the corner (the taskbar's hidden icons) stays on top.
+        notice.go_below(desktop::foreground_window());
+        Ok(notice)
+    }
+
+    /// The front window changed: another program's topmost window over the card (the
+    /// taskbar's hidden icons, Start, the notification centre) gets the card and its shadow
+    /// just below it, so the card covers none of it. The card stays topmost, and clickable
+    /// once that window closes.
+    pub fn go_below(&self, foreground: HWND) {
+        let hwnd = self.window.hwnd();
+        let front = desktop::root_ancestor(foreground);
+        if front.0.is_null() || front == hwnd || desktop::window_pid(front) == std::process::id() {
+            return;
+        }
+        let class = desktop::class_name(front);
+        let (card, other) = (window::window_rect(hwnd), window::window_rect(front));
+        let over = card.left < other.right
+            && other.left < card.right
+            && card.top < other.bottom
+            && other.top < card.bottom;
+        let topmost = desktop::is_topmost(front);
+        if !(topmost && over) {
+            tracing::info!(%class, topmost, over, "notice stays above: the front window does not cover it");
+            return;
+        }
+        let moved = desktop::insert_after(hwnd, front).is_ok();
+        let _ = desktop::insert_after(self.view.borrow().shadow.hwnd(), hwnd);
+        tracing::info!(%class, moved, "notice goes below the front window over it");
     }
 
     /// The app rebuilt the render stack (device loss): the card moves to a surface of the new
