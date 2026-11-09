@@ -72,7 +72,9 @@ impl App {
     /// Shortcut targets were read (`TIMER_LNK_TARGETS`): the Peek list with a type tab and the
     /// fences filtered by a type show the rows they held back.
     pub(super) fn lnk_targets_read(&mut self) {
-        super::lnk_targets::taken();
+        if !super::lnk_targets::taken() {
+            return;
+        }
         if crate::peek_search::is_open() && crate::peek_search::type_tab().is_some() {
             let query = crate::peek_search::query()
                 .map(|q| q.trim().to_lowercase())

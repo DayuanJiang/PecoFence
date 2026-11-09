@@ -247,6 +247,17 @@ impl App {
         };
         tracing::debug!(total, got = hits.len(), "search: Everything answered");
         self.search.asked_at = None;
+        // 程序: Everything's hits come without their times, so each shortcut whose target is
+        // known gets it checked against its file once per answer (on its drive's thread).
+        let types = peek_types();
+        for h in &hits {
+            if !h.is_folder
+                && type_filter::needs_target(&types, &h.path, false)
+                && super::lnk_targets::known(&h.path, None).is_some()
+            {
+                super::lnk_targets::ask(&h.path, None);
+            }
+        }
         self.search.everything = hits;
         self.search.everything_total = total;
         self.refresh_search_rows();

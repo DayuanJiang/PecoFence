@@ -25,6 +25,7 @@
 use crate::commands::{Command, CommandQueue};
 use pecofence_core::rules::TypeCategory;
 use pecofence_core::type_filter;
+use pecofence_platform::com::{StaGuard, StaSender, sta_channel};
 use pecofence_platform::fileinfo::{self, FileIcon};
 use pecofence_platform::paint::{self, Align, Font};
 use pecofence_platform::window::{
@@ -35,7 +36,6 @@ use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
-use std::sync::mpsc::{Sender, channel};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
@@ -135,7 +135,7 @@ thread_local! {
 /// meanwhile. Each icon read is posted to the box.
 struct IconWorker {
     /// The thread of each drive ("C:", "network", "other").
-    threads: RefCell<HashMap<String, Sender<(PathBuf, bool, isize)>>>,
+    threads: RefCell<HashMap<String, StaSender<(PathBuf, bool, isize)>>>,
     /// The paths the rows show now: a request for a row gone meanwhile is skipped.
     wanted: Arc<Mutex<HashSet<PathBuf>>>,
     /// Icons read, waiting for the box to take them.
@@ -168,18 +168,19 @@ impl IconWorker {
             }
         }
         if let Some(tx) = threads.get(&drive) {
-            let _ = tx.send((path, is_folder, hwnd.0 as isize));
+            tx.send((path, is_folder, hwnd.0 as isize));
         }
     }
 
-    fn spawn(&self, drive: &str) -> Option<Sender<(PathBuf, bool, isize)>> {
-        let (tx, rx) = channel::<(PathBuf, bool, isize)>();
+    fn spawn(&self, drive: &str) -> Option<StaSender<(PathBuf, bool, isize)>> {
+        let (tx, rx) = sta_channel::<(PathBuf, bool, isize)>();
         let (w, d) = (self.wanted.clone(), self.done.clone());
         let spawned = std::thread::Builder::new()
             .name(format!("pecofence-peek-icons-{drive}"))
             .spawn(move || {
-                let _sta = pecofence_platform::com::OleGuard::init();
-                for (path, is_folder, hwnd) in rx {
+                let _sta = StaGuard::init();
+                loop {
+                    let (path, is_folder, hwnd) = rx.recv();
                     if !w.lock().unwrap_or_else(|e| e.into_inner()).contains(&path) {
                         continue;
                     }
