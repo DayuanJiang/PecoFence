@@ -7,7 +7,8 @@ use super::*;
 use crate::filter_box;
 
 /// Whether `item` stays in a fence filtered by `query` (lower case, trimmed): matching the text
-/// and of its 类型 (the `kind:` words). The text first: 程序 reads a shortcut's target.
+/// and of its 类型 (the `kind:` words). The text first: 程序 needs a shortcut's target, and a
+/// shortcut whose target is still being read stays out until it is known.
 pub(super) fn filter_keeps(item: &pecofence_core::Item, query: &str) -> bool {
     let (types, text) = pecofence_core::type_filter::split(query);
     let named = text.is_empty()
@@ -21,7 +22,7 @@ pub(super) fn filter_keeps(item: &pecofence_core::Item, query: &str) -> bool {
         .and_then(|p| std::path::Path::new(p).file_name())
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_else(|| item.display_name.clone());
-    is_of_types(&types, &file, item.is_folder, item.path(), Some(item.mtime))
+    type_fit(&types, &file, item.is_folder, item.path(), Some(item.mtime)) == Some(true)
 }
 
 /// A filter's text as the UI shows it: its `kind:` words as their labels (类型：PDF, in the UI
@@ -36,67 +37,79 @@ pub(super) fn filter_words(text: &str) -> String {
         .join(" ")
 }
 
-/// Whether the file `file` at `path` (last written at `mtime`, unix seconds; None: read it) is
+/// Whether the file `file` at `path` (last written at `mtime`, unix seconds; None: any time) is
 /// of `types`, a shortcut by its real target as the rules read it (so the filter, the Peek's
-/// type tab, Everything's words and a saved smart fence agree).
-pub(super) fn is_of_types(
+/// type tab, Everything's words and a saved smart fence agree). None while a shortcut's target
+/// is being read off the UI thread: the row is held back until it is known.
+pub(super) fn type_fit(
     types: &[pecofence_core::type_filter::TypeToken],
     file: &str,
     is_folder: bool,
     path: Option<&str>,
     mtime: Option<i64>,
-) -> bool {
-    pecofence_core::type_filter::matches(types, file, is_folder, || {
-        path.and_then(|p| shortcut_target_cached(p, mtime))
-    })
-}
-
-thread_local! {
-    /// Shortcut targets read for 类型：程序, by lower-case path, with the mtime they were read
-    /// at: IShellLink is a COM round trip per file (slow on a share), and the filter and the
-    /// Peek test every item on each key and each folder refresh.
-    static TARGETS: std::cell::RefCell<HashMap<String, (i64, Option<String>)>> =
-        std::cell::RefCell::new(HashMap::new());
-}
-
-/// The cache stops here and starts over (a folder of shortcuts is a few hundred).
-const TARGETS_MAX: usize = 4096;
-
-/// [`shell::shortcut_target`] of `path`, read again only once the file changed.
-fn shortcut_target_cached(path: &str, mtime: Option<i64>) -> Option<String> {
-    let mtime = mtime
-        .or_else(|| {
-            let m = std::fs::metadata(path).ok()?.modified().ok()?;
-            Some(m.duration_since(std::time::UNIX_EPOCH).ok()?.as_secs() as i64)
-        })
-        .unwrap_or(0);
-    let key = path.to_lowercase();
-    let known = TARGETS.with(|c| {
-        c.borrow()
-            .get(&key)
-            .filter(|(m, _)| *m == mtime)
-            .map(|(_, t)| t.clone())
-    });
-    if let Some(target) = known {
-        return target;
-    }
-    let target = shell::shortcut_target(std::path::Path::new(path));
-    TARGETS.with(|c| {
-        let mut c = c.borrow_mut();
-        if c.len() >= TARGETS_MAX {
-            c.clear();
+) -> Option<bool> {
+    let target = match path {
+        Some(p) if pecofence_core::type_filter::needs_target(types, file, is_folder) => {
+            match super::lnk_targets::known(p, mtime) {
+                Some(t) => t,
+                None => {
+                    super::lnk_targets::ask(p, mtime);
+                    return None;
+                }
+            }
         }
-        tracing::debug!(
-            cached = c.len() + 1,
-            found = target.is_some(),
-            "type filter: shortcut target read"
-        );
-        c.insert(key, (mtime, target.clone()));
-    });
-    target
+        _ => None,
+    };
+    Some(pecofence_core::type_filter::matches(
+        types,
+        file,
+        is_folder,
+        || target,
+    ))
 }
 
 impl App {
+    /// Shortcut targets were read (`TIMER_LNK_TARGETS`): the Peek list with a type tab and the
+    /// fences filtered by a type show the rows they held back.
+    pub(super) fn lnk_targets_read(&mut self) {
+        super::lnk_targets::taken();
+        if crate::peek_search::is_open() && crate::peek_search::type_tab().is_some() {
+            let query = crate::peek_search::query()
+                .map(|q| q.trim().to_lowercase())
+                .unwrap_or_default();
+            self.rank_fence_matches(&query);
+            self.refresh_search_rows();
+        }
+        let typed: Vec<FenceId> = self
+            .fence_filters
+            .iter()
+            .filter(|(_, t)| !pecofence_core::type_filter::split(t).0.is_empty())
+            .map(|(id, _)| *id)
+            .collect();
+        for id in typed {
+            self.refresh_fence(id);
+            self.sync_filter_view(id);
+        }
+    }
+
+    /// The Peek began: the fences' shortcuts get their targets read, so 程序 has them at hand.
+    pub(super) fn prefetch_lnk_targets(&self) {
+        let mut asked = 0;
+        for f in self.state.fences() {
+            for it in self.state.items_of(f) {
+                if let Some(p) = it.path()
+                    && !it.is_folder
+                    && p.to_lowercase().ends_with(".lnk")
+                    && super::lnk_targets::known(p, Some(it.mtime)).is_none()
+                {
+                    super::lnk_targets::ask(p, Some(it.mtime));
+                    asked += 1;
+                }
+            }
+        }
+        tracing::debug!(asked, "type filter: the fences' shortcut targets asked for");
+    }
+
     /// Fences that can be filtered: those showing a folder, and smart fences.
     pub(super) fn filterable(&self, id: FenceId) -> bool {
         self.state.portal_path(id).is_some() || self.state.smart_spec(id).is_some()

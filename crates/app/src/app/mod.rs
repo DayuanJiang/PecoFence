@@ -69,6 +69,7 @@ mod ipc;
 mod items;
 mod keyfocus;
 mod live_wallpaper;
+mod lnk_targets;
 mod menu_frames;
 mod menus;
 mod motion;
@@ -884,6 +885,10 @@ impl App {
                             window::set_timer(hwnd, TIMER_SMART_FS, 1);
                             Some(0)
                         }
+                        lnk_targets::WM_APP_LNK_TARGETS => {
+                            window::set_timer(hwnd, lnk_targets::TIMER_LNK_TARGETS, 1);
+                            Some(0)
+                        }
                         // Everything's answer to a smart fence's search.
                         pecofence_platform::everything::WM_COPYDATA_MSG => {
                             if let Some((kind, bytes)) =
@@ -1052,6 +1057,7 @@ impl App {
                                 | TIMER_SMART_SOON
                                 | TIMER_SMART_READ
                                 | TIMER_SMART_FS
+                                | lnk_targets::TIMER_LNK_TARGETS
                                 | TIMER_PORTAL_BACK
                                 | TIMER_CONFIG_LOCKED
                                 | desktop_import::TIMER_WINDOWS_PLACES
@@ -1086,6 +1092,9 @@ impl App {
                                             TIMER_SMART_SOON => app.run_soon_smart(),
                                             TIMER_SMART_READ => app.drain_smart_reads(),
                                             TIMER_SMART_FS => app.smart_watchers_fired(),
+                                            lnk_targets::TIMER_LNK_TARGETS => {
+                                                app.lnk_targets_read()
+                                            }
                                             TIMER_PORTAL_BACK => app.check_missing_portals(),
                                             TIMER_CONFIG_LOCKED => app.retry_locked_config(),
                                             desktop_import::TIMER_WINDOWS_PLACES => {
@@ -1491,6 +1500,7 @@ impl App {
             tracing::warn!("session change notifications unavailable");
         }
         queue.attach(&control);
+        lnk_targets::init(control.hwnd());
         std::mem::forget(control_class); // class lives for the process
         // The Recycle Bin is asked on a worker; a new answer means listing the desktop again.
         shell::notify_recycle_bin_changes(control.hwnd(), WM_APP_FS_CHANGED);

@@ -151,13 +151,22 @@ pub fn matches(
     target: impl FnOnce() -> Option<String>,
 ) -> bool {
     let ext = rules::ext_of(name);
-    let needs_target =
-        !is_folder && ext == ".lnk" && tokens.contains(&TypeToken::Cat(TypeCategory::Programs));
-    let target = if needs_target { target() } else { None };
+    let target = if needs_target(tokens, name, is_folder) {
+        target()
+    } else {
+        None
+    };
     tokens.iter().all(|t| match t {
         TypeToken::Ext(e) => !is_folder && ext == format!(".{e}"),
         TypeToken::Cat(c) => rules::file_in_category(*c, name, is_folder, target.as_deref()),
     })
+}
+
+/// Whether testing `name` against `tokens` needs the shortcut's target (程序 and a .lnk).
+pub fn needs_target(tokens: &[TypeToken], name: &str, is_folder: bool) -> bool {
+    !is_folder
+        && rules::ext_of(name) == ".lnk"
+        && tokens.contains(&TypeToken::Cat(TypeCategory::Programs))
 }
 
 /// Everything's own words for `tokens` (`ext:pdf`, `folder:`), added to what it is asked.
@@ -250,6 +259,15 @@ mod tests {
     #[test]
     fn a_shortcut_is_a_program_by_its_target() {
         let programs = [TypeToken::Cat(TypeCategory::Programs)];
+        // Only 程序 and a .lnk need the target (the app reads it off the UI thread).
+        assert!(needs_target(&programs, "微信.LNK", false));
+        assert!(!needs_target(&programs, "微信.exe", false));
+        assert!(!needs_target(&programs, "快捷.lnk", true));
+        assert!(!needs_target(
+            &[TypeToken::Cat(TypeCategory::Documents)],
+            "a.lnk",
+            false
+        ));
         let to = |t: &'static str| move || Some(t.to_string());
         assert!(matches(
             &programs,

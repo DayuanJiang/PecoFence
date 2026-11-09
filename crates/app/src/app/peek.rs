@@ -338,6 +338,7 @@ impl App {
         let over = overlay.hwnds();
         let animating = overlay.animating(Instant::now());
         self.peek = Some(overlay);
+        self.prefetch_lnk_targets();
         self.ctx.behavior.floating.set(true);
         self.redraw_for_floating();
         if let Some(a) = self.anchor.borrow_mut().as_mut() {

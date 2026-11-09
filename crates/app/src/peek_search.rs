@@ -64,7 +64,7 @@ fn log_stage(stage: &'static str, took: std::time::Duration) {
 }
 
 /// [`SLOW_STAGE_MS`], or in debug builds the kit's `PECOFENCE_TEST_SLOW_MS` (as the box's own).
-fn slow_limit() -> u128 {
+pub(crate) fn slow_limit() -> u128 {
     if cfg!(debug_assertions) {
         edit::slow_ms()
     } else {
@@ -184,15 +184,7 @@ impl IconWorker {
                         continue;
                     }
                     let started = Instant::now();
-                    // Debug builds: PECOFENCE_TEST_ICON_DELAY_MS stands in for a slow or
-                    // sleeping drive (the kit's peek-cold-icons).
-                    #[cfg(debug_assertions)]
-                    if let Some(ms) = std::env::var("PECOFENCE_TEST_ICON_DELAY_MS")
-                        .ok()
-                        .and_then(|v| v.parse::<u64>().ok())
-                    {
-                        std::thread::sleep(std::time::Duration::from_millis(ms));
-                    }
+                    test_slow_read();
                     let icon = fileinfo::small_icon(&path, is_folder, true);
                     let took = started.elapsed();
                     if took.as_millis() > slow_limit() || slow_limit() == 0 {
@@ -215,8 +207,21 @@ impl IconWorker {
     }
 }
 
+/// Debug builds: `PECOFENCE_TEST_SLOW_READ_MS` makes every read off the UI thread (a row's own
+/// icon, a shortcut's target) take that long, standing in for a slow or sleeping drive (the
+/// kit's peek-cold-icons and peek-chinese-input).
+pub(crate) fn test_slow_read() {
+    #[cfg(debug_assertions)]
+    if let Some(ms) = std::env::var("PECOFENCE_TEST_SLOW_READ_MS")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+    {
+        std::thread::sleep(std::time::Duration::from_millis(ms));
+    }
+}
+
 /// The drive of `path` for the log ("C:", "network", "other"): never its name.
-fn drive_of(path: &Path) -> String {
+pub(crate) fn drive_of(path: &Path) -> String {
     let s = path.to_string_lossy();
     match s.as_bytes() {
         [l, b':', ..] if l.is_ascii_alphabetic() => {
