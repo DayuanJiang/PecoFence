@@ -878,6 +878,57 @@ pub(super) fn shadow_style_for(theme: &Theme) -> ShadowStyle {
     shadow
 }
 
+/// [`tray_icon_image`] with a small orange dot at the top right (a new version is out), with a
+/// white ring so it reads on the plate and on any taskbar. Premultiplied BGRA.
+pub(super) fn tray_icon_with_dot(size: i32, accent: [u8; 3], dark: bool) -> Vec<u8> {
+    let mut img = tray_icon_image(size, accent, dark);
+    let side = size as f32;
+    let (cx, cy, r) = (side * 0.76, side * 0.24, side * 0.21);
+    let ring = (side / 16.0).max(1.0);
+    const SS: i32 = 4;
+    for y in 0..size {
+        for x in 0..size {
+            let (mut dot, mut halo) = (0.0f32, 0.0f32);
+            for sy in 0..SS {
+                for sx in 0..SS {
+                    let px = x as f32 + (sx as f32 + 0.5) / SS as f32;
+                    let py = y as f32 + (sy as f32 + 0.5) / SS as f32;
+                    let d = ((px - cx).powi(2) + (py - cy).powi(2)).sqrt();
+                    if d <= r {
+                        dot += 1.0;
+                    } else if d <= r + ring {
+                        halo += 1.0;
+                    }
+                }
+            }
+            let n = (SS * SS) as f32;
+            let (dot, halo) = (dot / n, halo / n);
+            if dot + halo == 0.0 {
+                continue;
+            }
+            let i = ((y * size + x) * 4) as usize;
+            // Orange (#FF8C00) over white over what was there, premultiplied.
+            let over = |dst: &mut [u8], c: [f32; 3], a: f32| {
+                for k in 0..3 {
+                    dst[k] = (c[k] * a + dst[k] as f32 * (1.0 - a)).round() as u8;
+                }
+                dst[3] = (255.0 * a + dst[3] as f32 * (1.0 - a)).round() as u8;
+            };
+            over(
+                &mut img[i..i + 4],
+                [255.0, 255.0, 255.0],
+                (dot + halo).min(1.0),
+            );
+            over(
+                &mut img[i..i + 4],
+                [0x00 as f32, 0x8C as f32, 0xFF as f32],
+                dot,
+            );
+        }
+    }
+    img
+}
+
 pub(super) fn tray_icon_image(size: i32, _accent: [u8; 3], _dark: bool) -> Vec<u8> {
     // The product mark, variant E: white corner brackets and a 2×2 grid on an indigo rounded
     // plate. Same geometry as scripts/make-msix-assets.py (64-unit mark), so the tray, the

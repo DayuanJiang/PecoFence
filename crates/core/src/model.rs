@@ -189,6 +189,10 @@ pub struct Settings {
     /// type dragged into one fence). Off shows none of them; the first start's tips stay.
     #[serde(default = "default_true")]
     pub feature_tips: bool,
+    /// 自动检查更新 (installer and ZIP editions): about a minute after start and then once a day,
+    /// one request to GitHub's latest release; a new version is announced once.
+    #[serde(default = "default_true")]
+    pub auto_check_updates: bool,
     /// Unused (see [`UNUSED_SETTINGS`]).
     #[serde(default)]
     #[cfg_attr(feature = "schema", schemars(skip))]
@@ -417,6 +421,7 @@ impl Default for Settings {
             offer_new_fence: true,
             per_desktop_fences: false,
             feature_tips: true,
+            auto_check_updates: true,
             show_real_icons_when_fences_hidden: false,
             snapping: SnappingSettings::default(),
             zorder: ZOrderSetting::InsertAboveHost,

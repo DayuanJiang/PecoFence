@@ -1058,6 +1058,7 @@ impl App {
                                 | TIMER_SMART_READ
                                 | TIMER_SMART_FS
                                 | lnk_targets::TIMER_LNK_TARGETS
+                                | updates::TIMER_UPDATE_CHECK
                                 | TIMER_PORTAL_BACK
                                 | TIMER_CONFIG_LOCKED
                                 | desktop_import::TIMER_WINDOWS_PLACES
@@ -1095,6 +1096,7 @@ impl App {
                                             lnk_targets::TIMER_LNK_TARGETS => {
                                                 app.lnk_targets_read()
                                             }
+                                            updates::TIMER_UPDATE_CHECK => app.auto_check_updates(),
                                             TIMER_PORTAL_BACK => app.check_missing_portals(),
                                             TIMER_CONFIG_LOCKED => app.retry_locked_config(),
                                             desktop_import::TIMER_WINDOWS_PLACES => {
@@ -2045,6 +2047,7 @@ impl App {
         }
 
         app.remove_old_update_downloads();
+        app.arm_update_check(true);
         // Last of the startup balloons, so it is the one left showing.
         app.offer_crash_feedback();
         app.offer_welcome();
@@ -2126,6 +2129,8 @@ impl App {
         // 智能栅栏: files age out of a time window, Everything may have started or stopped,
         // and a folder without a watcher changes unseen.
         self.run_all_smart("minute");
+        // A newer version found while a full-screen app or the Peek was up.
+        self.announce_update();
         if self.state.is_dirty() {
             self.state.save_if_dirty();
             self.notice_save_failure();

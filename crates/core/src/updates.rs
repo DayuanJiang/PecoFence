@@ -21,6 +21,8 @@ pub struct Release {
     pub version: String,
     /// The release page, opened by the ZIP edition.
     pub page: String,
+    /// The release notes' first sentence (a notice's body); empty when they have none.
+    pub summary: String,
     /// The setup EXE, when the release has one.
     pub setup: Option<SetupAsset>,
 }
@@ -35,6 +37,8 @@ pub struct SetupAsset {
 struct ApiRelease {
     tag_name: String,
     #[serde(default)]
+    body: Option<String>,
+    #[serde(default)]
     assets: Vec<ApiAsset>,
 }
 
@@ -42,6 +46,27 @@ struct ApiRelease {
 struct ApiAsset {
     name: String,
     browser_download_url: String,
+}
+
+/// The first sentence of release notes in Markdown: the first line with words (headings,
+/// list marks and emphasis taken off), up to its first full stop.
+pub fn first_sentence(notes: &str) -> String {
+    let line = notes
+        .lines()
+        .map(|l| {
+            l.trim()
+                .trim_start_matches(['#', '-', '*', '>', ' '])
+                .replace("**", "")
+        })
+        .find(|l| !l.trim().is_empty())
+        .unwrap_or_default();
+    let end = line
+        .char_indices()
+        .find(|(_, c)| matches!(c, '。' | '！' | '？'))
+        .map(|(i, c)| i + c.len_utf8())
+        .or_else(|| line.find(". ").map(|i| i + 1))
+        .unwrap_or(line.len());
+    line[..end].trim().to_string()
 }
 
 pub fn setup_name(version: &str) -> String {
@@ -68,6 +93,7 @@ pub fn parse_release(json: &str, download_base: &str) -> Result<Release, String>
     let setup = asset(&name).map(|url| SetupAsset { name, url });
     Ok(Release {
         version: version.to_string(),
+        summary: first_sentence(api.body.as_deref().unwrap_or("")),
         page: format!(
             "https://github.com/{REPOSITORY}/releases/tag/{}",
             api.tag_name
