@@ -11,7 +11,6 @@ pub const COPYDATA_QUERY2W: usize = 18;
 /// Everything indexes that property (Tools > Options > Indexes).
 pub const SORT_NAME_ASCENDING: u32 = 1;
 pub const SORT_DATE_MODIFIED_DESCENDING: u32 = 14;
-pub const SORT_RUN_COUNT_DESCENDING: u32 = 20;
 pub const SORT_DATE_RUN_DESCENDING: u32 = 26;
 
 const REQUEST_NAME: u32 = 0x1;

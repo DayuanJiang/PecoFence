@@ -159,30 +159,6 @@ fn find_child(parent: HWND, class: &str) -> HWND {
     unsafe { FindWindowExW(Some(parent), None, PCWSTR(class.as_ptr()), PCWSTR::null()) }
 }
 
-/// Direct child windows of `parent` (class, rect, visible), for diagnostics.
-pub fn child_windows(parent: HWND) -> Vec<(HWND, String, RECT, bool)> {
-    let mut out = Vec::new();
-    let mut prev: Option<HWND> = None;
-    loop {
-        // SAFETY: plain FFI enumeration.
-        let child = unsafe { FindWindowExW(Some(parent), prev, PCWSTR::null(), PCWSTR::null()) };
-        if child.0.is_null() {
-            break;
-        }
-        let mut rect = RECT::default();
-        // SAFETY: out-pointer to a local.
-        unsafe {
-            let _ = GetWindowRect(child, &mut rect);
-        }
-        out.push((child, class_name(child), rect, is_visible(child)));
-        prev = Some(child);
-        if out.len() > 64 {
-            break;
-        }
-    }
-    out
-}
-
 /// The top-level windows of `class`, in z-order (top to bottom): what filtering
 /// `top_level_windows` by `class_name` gives, without a class lookup per window.
 pub fn windows_of_class(class: &str) -> Vec<HWND> {
@@ -444,15 +420,6 @@ pub fn is_below(host: HWND, class: &str) -> bool {
     !found.0.is_null()
 }
 
-/// The lowest visible `WS_EX_TOPMOST` window, i.e. the boundary between the topmost band and
-/// the normal band. Inserting after it puts a window on top of all normal windows.
-pub fn lowest_topmost_window() -> Option<HWND> {
-    top_level_windows()
-        .into_iter()
-        .filter(|&h| is_visible(h) && (ex_style(h) & WS_EX_TOPMOST as u32) != 0)
-        .last()
-}
-
 pub fn is_cloaked(hwnd: HWND) -> bool {
     let mut cloaked: u32 = 0;
     // SAFETY: out-pointer sized for a DWORD.
@@ -488,19 +455,6 @@ pub fn hide_window(hwnd: HWND) {
     }
 }
 
-/// Injects a left double-click at screen coordinates (test tooling only).
-pub fn send_double_click(x: i32, y: i32) {
-    // SAFETY: synthesizes input for the current session.
-    unsafe {
-        let _ = SetCursorPos(x, y);
-        for _ in 0..2 {
-            mouse_event(MOUSEEVENTF_LEFTDOWN as u32, 0, 0, 0, 0);
-            mouse_event(MOUSEEVENTF_LEFTUP as u32, 0, 0, 0, 0);
-            std::thread::sleep(std::time::Duration::from_millis(60));
-        }
-    }
-}
-
 pub fn show_no_activate(hwnd: HWND) {
     // SAFETY: plain FFI call.
     unsafe {
@@ -513,18 +467,6 @@ pub fn taskbar_created_message() -> u32 {
     let name = to_wide("TaskbarCreated");
     // SAFETY: string outlives the call.
     unsafe { RegisterWindowMessageW(PCWSTR(name.as_ptr())) }
-}
-
-/// Injects a Win+D keystroke (test tooling only).
-pub fn send_win_d() {
-    const VK_D: u8 = 0x44;
-    // SAFETY: plain FFI calls; synthesizes keyboard input for the current session.
-    unsafe {
-        keybd_event(VK_LWIN as u8, 0, 0, 0);
-        keybd_event(VK_D, 0, 0, 0);
-        keybd_event(VK_D, 0, KEYEVENTF_KEYUP as u32, 0);
-        keybd_event(VK_LWIN as u8, 0, KEYEVENTF_KEYUP as u32, 0);
-    }
 }
 
 /// Taps the unassigned virtual key 0xE8 while Alt is held, so that releasing Alt is not a lone

@@ -155,12 +155,6 @@ fn on_key(vk: u32) -> bool {
     false
 }
 
-/// The note whose editor is open, if one is.
-#[allow(dead_code)]
-pub fn active_fence() -> Option<FenceId> {
-    ACTIVE.with(|a| a.borrow().as_ref().map(|s| s.fence))
-}
-
 /// Closes the editor (if open); `commit` hands its text to the App.
 pub fn end_active(commit: bool) {
     let session = ACTIVE.with(|a| a.borrow_mut().take());

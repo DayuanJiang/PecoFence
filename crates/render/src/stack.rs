@@ -218,12 +218,6 @@ impl RenderStack {
         !self.is_warp && self.gpu.borrow().is_warp
     }
 
-    /// Increments every time the device is rebuilt; surfaces created under an older generation
-    /// are dead and must be recreated.
-    pub fn device_generation(&self) -> u32 {
-        self.gpu.borrow().generation
-    }
-
     /// Rebuilds the D3D/D2D device and the composition graphics device after device loss
     /// (sleep, driver update), or to hand back GPU memory the old device kept. Callers must
     /// then recreate every drawing surface. A stack that started on hardware falls back to

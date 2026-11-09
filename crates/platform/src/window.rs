@@ -780,23 +780,6 @@ pub fn move_window_to(hwnd: HWND, x: i32, y: i32) -> Result<()> {
     }
 }
 
-/// Moves `hwnd` to the top of the non-topmost band without activating it.
-pub fn set_window_bounds_z_top(hwnd: HWND) -> Result<()> {
-    // SAFETY: plain FFI call.
-    unsafe {
-        SetWindowPos(
-            hwnd,
-            Some(HWND_TOP),
-            0,
-            0,
-            0,
-            0,
-            swp::NOACTIVATE | swp::NOMOVE | swp::NOSIZE | swp::NOOWNERZORDER,
-        )
-        .ok()
-    }
-}
-
 /// Inside a `WM_GETMINMAXINFO` handler: sets the minimum tracking size in pixels.
 ///
 /// # Safety
@@ -888,22 +871,6 @@ pub fn run_message_loop() -> i32 {
             DispatchMessageW(&msg);
         }
         msg.wParam.0 as i32
-    }
-}
-
-/// Dispatches pending messages without blocking. Returns `false` once `WM_QUIT` was seen.
-pub fn pump_messages() -> bool {
-    // SAFETY: standard non-blocking pump.
-    unsafe {
-        let mut msg = MSG::default();
-        while PeekMessageW(&mut msg, None, 0, 0, PM_REMOVE as u32).as_bool() {
-            if msg.message == WM_QUIT as u32 {
-                return false;
-            }
-            let _ = TranslateMessage(&msg);
-            DispatchMessageW(&msg);
-        }
-        true
     }
 }
 

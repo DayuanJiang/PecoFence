@@ -563,12 +563,6 @@ impl ShadowWindow {
     }
 }
 
-/// Class check used by hit-testing code.
-#[allow(dead_code)]
-pub fn is_shadow_class(hwnd: HWND) -> bool {
-    pecofence_platform::desktop::class_name(hwnd) == SHADOW_CLASS
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -112,7 +112,6 @@ pub fn scroll_duration(distance_px: f32) -> Duration {
 pub enum Prop {
     Opacity,
     Offset,
-    Size,
     Scale,
 }
 
@@ -121,7 +120,6 @@ impl Prop {
         match self {
             Prop::Opacity => "Opacity",
             Prop::Offset => "Offset",
-            Prop::Size => "Size",
             Prop::Scale => "Scale",
         }
     }
@@ -201,18 +199,6 @@ impl Motion {
         Ok(a)
     }
 
-    fn vector2(
-        &self,
-        to: Vector2,
-        dur: Duration,
-        curve: Curve,
-    ) -> Result<comp::Vector2KeyFrameAnimation> {
-        let a = self.raw.CreateVector2KeyFrameAnimation()?;
-        a.InsertKeyFrameWithEasingFunction(1.0, to, &self.easing(curve)?)?;
-        a.SetDuration(timespan(dur))?;
-        Ok(a)
-    }
-
     /// Animates `Opacity` from its current (possibly mid-animation) value to `to`.
     pub fn fade_to(&self, v: &Visual, to: f32, dur: Duration, curve: Curve) -> Result<()> {
         if !self.enabled.get() {
@@ -234,18 +220,6 @@ impl Motion {
         raw_visual(v)?.StartAnimation(
             &HSTRING::from(Prop::Offset.name()),
             &self.vector3(Vector3::new(x, y, 0.0), dur, curve)?,
-        )
-    }
-
-    /// Animates `Size` from its current value to `(w, h)`.
-    pub fn resize_to(&self, v: &Visual, w: f32, h: f32, dur: Duration, curve: Curve) -> Result<()> {
-        if !self.enabled.get() {
-            v.set_size(w, h);
-            return Ok(());
-        }
-        raw_visual(v)?.StartAnimation(
-            &HSTRING::from(Prop::Size.name()),
-            &self.vector2(Vector2::new(w, h), dur, curve)?,
         )
     }
 
@@ -274,79 +248,6 @@ impl Motion {
     /// Sets a uniform scale immediately (the resting value before / after [`Motion::scale_to`]).
     pub fn set_scale(&self, v: &Visual, s: f32) {
         v.set_scale(Vector3::new(s, s, 1.0));
-    }
-
-    /// Installs implicit animations: from now on any `set_*` of the listed properties on `v`
-    /// animates to the new value (`this.FinalValue`) instead of snapping. This is the WinUI
-    /// way to animate layout changes without touching every call site.
-    pub fn set_implicit(&self, v: &Visual, specs: &[(Prop, Duration, Curve)]) -> Result<()> {
-        let raw = raw_visual(v)?;
-        if !self.enabled.get() || specs.is_empty() {
-            return raw.SetImplicitAnimations(None::<&comp::ImplicitAnimationCollection>);
-        }
-        let coll = self.raw.CreateImplicitAnimationCollection()?;
-        let expr = HSTRING::from("this.FinalValue");
-        for &(prop, dur, curve) in specs {
-            let target = HSTRING::from(prop.name());
-            let easing = self.easing(curve)?;
-            let anim: comp::ICompositionAnimationBase = match prop {
-                Prop::Opacity => {
-                    let a = self.raw.CreateScalarKeyFrameAnimation()?;
-                    a.InsertExpressionKeyFrameWithEasingFunction(1.0, &expr, &easing)?;
-                    a.SetDuration(timespan(dur))?;
-                    a.SetTarget(&target)?;
-                    a.cast()?
-                }
-                Prop::Size => {
-                    let a = self.raw.CreateVector2KeyFrameAnimation()?;
-                    a.InsertExpressionKeyFrameWithEasingFunction(1.0, &expr, &easing)?;
-                    a.SetDuration(timespan(dur))?;
-                    a.SetTarget(&target)?;
-                    a.cast()?
-                }
-                Prop::Offset | Prop::Scale => {
-                    let a = self.raw.CreateVector3KeyFrameAnimation()?;
-                    a.InsertExpressionKeyFrameWithEasingFunction(1.0, &expr, &easing)?;
-                    a.SetDuration(timespan(dur))?;
-                    a.SetTarget(&target)?;
-                    a.cast()?
-                }
-            };
-            coll.Insert(&target, &anim)?;
-        }
-        raw.SetImplicitAnimations(&coll)
-    }
-
-    /// Clips `v` to its bounds minus the given insets (DIPs of the visual's own space).
-    /// Negative insets grow the clip. Use with `Size` animations to reveal / conceal content.
-    pub fn clip_insets(
-        &self,
-        v: &Visual,
-        left: f32,
-        top: f32,
-        right: f32,
-        bottom: f32,
-    ) -> Result<()> {
-        let clip = self
-            .raw
-            .CreateInsetClipWithInsets(left, top, right, bottom)?;
-        raw_visual(v)?.SetClip(&clip)
-    }
-
-    /// Animates the bottom inset of an existing inset clip on `v` (installed with
-    /// [`Motion::clip_insets`]); used to reveal content top-down.
-    pub fn animate_clip_bottom(
-        &self,
-        v: &Visual,
-        to: f32,
-        dur: Duration,
-        curve: Curve,
-    ) -> Result<()> {
-        let clip = raw_visual(v)?.Clip()?.cast::<comp::InsetClip>()?;
-        if !self.enabled.get() {
-            return clip.SetBottomInset(to);
-        }
-        clip.StartAnimation(&HSTRING::from("BottomInset"), &self.scalar(to, dur, curve)?)
     }
 
     pub fn clear_clip(&self, v: &Visual) -> Result<()> {

@@ -3,7 +3,6 @@
 use super::*;
 
 pub struct FenceWindow {
-    #[allow(dead_code)]
     pub id: FenceId,
     pub(super) window: Window,
     pub(super) view: Rc<RefCell<Option<FenceViewState>>>,

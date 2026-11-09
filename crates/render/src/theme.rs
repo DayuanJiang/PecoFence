@@ -271,13 +271,6 @@ impl Theme {
         }
     }
 
-    pub const fn mica_tint(&self) -> MicaTint {
-        match self.mode {
-            ThemeMode::Dark => MicaTint::MICA_DARK,
-            ThemeMode::Light => MicaTint::MICA_LIGHT,
-        }
-    }
-
     pub const fn acrylic_tint(&self) -> MicaTint {
         self.material
     }

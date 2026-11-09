@@ -531,11 +531,6 @@ impl Template {
         }
     }
 
-    /// Whether it searches every drive, which only Everything can do.
-    pub fn needs_everything(self) -> bool {
-        matches!(self, Template::Large | Template::Psd)
-    }
-
     /// The search; None when its folder is not known on this computer.
     pub fn spec(self, folders: &KnownFolders) -> Option<SmartSpec> {
         let mut spec = SmartSpec {

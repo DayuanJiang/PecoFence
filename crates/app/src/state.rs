@@ -2468,17 +2468,6 @@ impl AppState {
         geometry::denormalize(&fence.geometry, &work)
     }
 
-    #[allow(dead_code)]
-    pub fn toggle_rolled(&mut self, id: FenceId) -> Option<bool> {
-        let rolled = {
-            let f = self.fence_mut(id)?;
-            f.rolled_up = !f.rolled_up;
-            f.rolled_up
-        };
-        self.dirty = true;
-        Some(rolled)
-    }
-
     pub fn rename_fence(&mut self, id: FenceId, title: &str) {
         if let Some(f) = self.fence_mut(id)
             && f.title != title

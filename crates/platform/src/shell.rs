@@ -1123,17 +1123,6 @@ pub fn move_to_folder(paths: &[PathBuf], dest: &Path, owner: Option<HWND>) -> Re
     transfer_to_folder(paths, dest, owner, false, false)
 }
 
-/// Copies files/folders into `dest` (Ctrl held while dropping, like Explorer).
-pub fn copy_to_folder(paths: &[PathBuf], dest: &Path, owner: Option<HWND>) -> Result<bool> {
-    transfer_to_folder(paths, dest, owner, true, false)
-}
-
-/// Copies into `dest` renaming on collision (`FOF_RENAMEONCOLLISION`): pasting a file into its
-/// own folder yields Explorer's "name - 副本" duplicate instead of a prompt.
-pub fn duplicate_in_folder(paths: &[PathBuf], dest: &Path, owner: Option<HWND>) -> Result<bool> {
-    transfer_to_folder(paths, dest, owner, true, true)
-}
-
 /// One shell file operation (`IFileOperation`, with undo and the shell's own conflict /
 /// progress UI): moves or copies `paths` into `dest`. Blocks until it finishes — callers on
 /// the UI thread run it on a worker thread with its own STA (the operation takes hundreds of
