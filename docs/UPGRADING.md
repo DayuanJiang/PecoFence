@@ -98,6 +98,22 @@ in `config.bak` next to `config.json` while 0.2.5 has saved only once: copy that
 file somewhere else before you start the later version again (its first save
 replaces `config.bak`), then import the copy.
 
+## Going back to 0.3.1
+
+0.3.1 reads a configuration 0.3.2 has saved, but it does not know what 0.3.2 added, and
+its first save drops it:
+
+- A 智能栅栏 shows as an empty ordinary fence at its place, and its search is dropped.
+  Back in 0.3.2 it stays an ordinary fence.
+- Fences set to show on one virtual desktop show on every desktop, and which desktop
+  they belong to is dropped, together with the switch 每个虚拟桌面各用一套栅栏.
+- 自由摆放 on the 「桌面」 fence is off, and the places of its icons are dropped.
+
+0.3.1 keeps no copy of the newer file (only later versions do, see below). To get these
+back when you return to 0.3.2, restore the daily backup from before the downgrade in
+Settings → 布局与备份, or export the configuration with 导出 / 导入配置文件 before going
+back and import that file when you return.
+
 ## Going back to an earlier version from a later one
 
 Versions after 0.3.1 record at every save which version made it (`savedBy` in
