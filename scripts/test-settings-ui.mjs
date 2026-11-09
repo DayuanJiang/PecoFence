@@ -14,7 +14,7 @@ const fixture = {
   locale: 'zh-CN', translations: {},
   settings: {
     language: 'zh-CN',
-    autostart: false, hideRealIcons: false, keepIconsHidden: false, hideInboxWhenIconsShown: false, offerNewFence: true, featureTips: true, perDesktopFences: false, quickHide: { enabled: true },
+    autostart: false, hideRealIcons: false, keepIconsHidden: false, hideInboxWhenIconsShown: false, offerNewFence: true, featureTips: true, autoCheckUpdates: true, perDesktopFences: false, quickHide: { enabled: true },
     showDesktop: 'keepVisible', theme: 'dark', themeStyle: 'fluent', labelColor: 'auto', titleAlign: 'left', tabBar: 'top', backdrop: 'acrylic', iconSize: 48,
     icons: { tintRgb: null, tintStrength: 0.6, chameleon: false, shortcutArrows: true },
     rollUp: { hoverPeek: true, clickToExpand: false, pushNeighbors: true, titleOnHover: false, hideInactiveScrollbar: false, switchTabOnHover: false, hideCountAndChevron: false },
@@ -1958,11 +1958,18 @@ async function runTests() {
     const card = doc.getElementById('updateCard'), button = doc.getElementById('updateAction');
     const status = doc.getElementById('updateStatus');
     const lastAction = () => frame.contentWindow.testMessages.filter(m => m.type === 'action').at(-1)?.name;
+    const autoCard = doc.getElementById('updateAutoCard'), autoSwitch = doc.querySelector('[data-bind=autoCheckUpdates]');
     assert(card.hidden, 'Update card shown without update info (Store edition)');
+    assert(autoCard.hidden, 'The automatic check switch shown in the Store edition');
     const show = async update => { current().update = update; frame.contentWindow.testUpdate(update); await settle(); };
     const installer = { edition: 'installer', version: '0.1.4', hasSetup: true };
     await show({ ...installer, state: 'idle', version: null });
     assert(!card.hidden && button.textContent === '检查更新' && !button.disabled && !button.classList.contains('accent') && status.textContent === '', 'Idle card wrong');
+    assert(!autoCard.hidden && autoSwitch.getAttribute('aria-checked') === 'true', 'The automatic check switch not shown on');
+    autoSwitch.click(); await settle();
+    assert(current().settings.autoCheckUpdates === false, 'The automatic check switch did not post');
+    autoSwitch.click(); await settle();
+    assert(current().settings.autoCheckUpdates === true, 'The automatic check switch did not turn back on');
     button.click(); assert(lastAction() === 'checkUpdate', 'Check not requested');
     await show({ ...installer, state: 'checking', version: null });
     assert(button.disabled && status.textContent === '正在检查更新…', 'Checking state wrong');
