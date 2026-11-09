@@ -1675,6 +1675,20 @@ impl FenceChrome {
         }
     }
 
+    /// The render stack was rebuilt: drops the kept text layouts. Direct2D keeps what it drew
+    /// for a layout with the layout, so kept layouts held the old device's memory after a
+    /// rebuild that should hand it back (the S15 memory check went from 15 to 20 MB).
+    pub fn forget_text_layouts(&self) {
+        if let Ok(mut layouts) = self.text_layouts.try_borrow_mut() {
+            let n = layouts.len();
+            layouts.clear();
+            tracing::debug!(
+                layouts = n,
+                "text layouts dropped with the old render stack"
+            );
+        }
+    }
+
     pub fn new() -> Result<Self> {
         let locale = text_locale();
         // WinUI type ramp: Body Strong 14/600 for the title, Caption 12 (Small optical size) for
