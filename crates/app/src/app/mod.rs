@@ -1058,6 +1058,9 @@ impl App {
                                 | TIMER_SMART_READ
                                 | TIMER_SMART_FS
                                 | lnk_targets::TIMER_LNK_TARGETS
+                                | updates::TIMER_UPDATE_CHECK
+                                | updates::TIMER_UPDATE_CARD
+                                | updates::TIMER_UPDATE_RESUME
                                 | TIMER_PORTAL_BACK
                                 | TIMER_CONFIG_LOCKED
                                 | desktop_import::TIMER_WINDOWS_PLACES
@@ -1094,6 +1097,11 @@ impl App {
                                             TIMER_SMART_FS => app.smart_watchers_fired(),
                                             lnk_targets::TIMER_LNK_TARGETS => {
                                                 app.lnk_targets_read()
+                                            }
+                                            updates::TIMER_UPDATE_CHECK => app.auto_check_updates(),
+                                            updates::TIMER_UPDATE_CARD => app.show_update_card(),
+                                            updates::TIMER_UPDATE_RESUME => {
+                                                app.update_check_after_resume()
                                             }
                                             TIMER_PORTAL_BACK => app.check_missing_portals(),
                                             TIMER_CONFIG_LOCKED => app.retry_locked_config(),
@@ -1479,7 +1487,16 @@ impl App {
                             // Display changes and a lost GPU device often follow a wake.
                             match wparam {
                                 PBT_APMSUSPEND => tracing::info!("system suspending"),
-                                PBT_APMRESUMEAUTOMATIC => tracing::info!("system resumed"),
+                                PBT_APMRESUMEAUTOMATIC => {
+                                    tracing::info!("system resumed");
+                                    // 自动检查更新: a check once the network is back, when the
+                                    // last one is over a day old.
+                                    window::set_timer(
+                                        hwnd,
+                                        updates::TIMER_UPDATE_RESUME,
+                                        updates::resume_check_ms(),
+                                    );
+                                }
                                 _ => {}
                             }
                             None
@@ -2045,6 +2062,7 @@ impl App {
         }
 
         app.remove_old_update_downloads();
+        app.arm_update_check(true);
         // Last of the startup balloons, so it is the one left showing.
         app.offer_crash_feedback();
         app.offer_welcome();

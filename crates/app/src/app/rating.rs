@@ -139,6 +139,10 @@ impl App {
             self.on_welcome_notice(which, event);
             return;
         }
+        if self.update_notice_open() {
+            self.on_update_notice(event);
+            return;
+        }
         self.rating.notice = None;
         if event == crate::notice::NoticeEvent::Action {
             self.open_store_rating();
@@ -147,7 +151,10 @@ impl App {
 
     /// A welcome, what's-new, 对话框跳转 or rating notice is on screen.
     pub(super) fn notice_showing(&self) -> bool {
-        self.welcome.is_some() || self.rating.notice.is_some() || self.undo_notice.is_some()
+        self.welcome.is_some()
+            || self.rating.notice.is_some()
+            || self.undo_notice.is_some()
+            || self.update_notice_open()
     }
 
     /// After a render stack rebuild: the notice on screen draws on the new device.

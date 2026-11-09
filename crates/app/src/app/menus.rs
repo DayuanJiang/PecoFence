@@ -22,6 +22,8 @@ const CMD_NEW_TOOL: u32 = 20;
 const CMD_SHOW_FOLDER: u32 = 11;
 /// The tray's 新建智能栅栏…: the smart fence editor for a new fence.
 const CMD_NEW_SMART: u32 = 30;
+/// 「更新到 0.3.3」 while a newer version is known.
+const CMD_UPDATE: u32 = 31;
 const CMD_ITEM_OPEN: u32 = 100;
 const CMD_ITEM_LOCATION: u32 = 101;
 /// Canonical verb of Windows' 打开文件所在的位置 on a shortcut (its target's folder).
@@ -197,6 +199,17 @@ impl App {
             .as_ref()
             .is_some_and(|a| a.fences_hidden());
         let menu = PopupMenu::new();
+        // A newer version stays offered at the top until it is installed.
+        if let Some(version) = self.update_offered() {
+            menu.item(
+                CMD_UPDATE,
+                &pecofence_core::i18n::format("更新到 {0}", &[version]),
+                false,
+                false,
+            )
+            .icon(glyph::REFRESH)
+            .separator();
+        }
         // While 「临时显示 Windows 桌面」 is on, 「回到栅栏」 is the one way back: 「显示所有栅栏」
         // would do the same, and 「重新隐藏桌面图标」 would leave neither fences nor icons.
         menu.item(
@@ -344,6 +357,7 @@ impl App {
                 by: "tray menu",
             }),
             CMD_APPLY_RULES => self.queue.push(Command::ApplyRulesNow),
+            CMD_UPDATE => self.update_now("tray menu"),
             CMD_REPAIR_ICONS => self.set_desktop_icons_hidden(false),
             CMD_HIDE_ICONS_AGAIN => {
                 self.set_desktop_icons_hidden(

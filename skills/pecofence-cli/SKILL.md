@@ -79,6 +79,7 @@ pecofence-cli item rename "C:\Users\me\Desktop\IMG_2031.pdf" "2026-09 electricit
 pecofence-cli rule add --name PDFs --ext pdf --to Docs         # or --type, --name-contains, --glob, --json '[Cond...]'
 pecofence-cli rule apply --dry-run && pecofence-cli rule apply
 pecofence-cli settings set theme dark                          # dotted camelCase path; `settings get` shows them
+pecofence-cli settings set autoCheckUpdates false              # 自动检查更新: no daily check of GitHub for a new version
 pecofence-cli fence create --tool note --title Today --text "[ ] Pay rent"   # 小工具: note, clock, or --script <file>
 pecofence-cli fence set Today noteText "[x] Pay rent`n[ ] Call Anna"           # whole text; `n = new line in PowerShell
 pecofence-cli fence refresh Weather                            # script fence: run its script now; smart fence: search again

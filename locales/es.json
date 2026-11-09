@@ -956,5 +956,13 @@
   "操作": "Acciones",
   "{0} 个结果": "Resultados: {0}",
   "类型\u0004全部": "Todo",
-  "类型：{0}": "Tipo: {0}"
+  "类型：{0}": "Tipo: {0}",
+  "更新到 {0}": "Actualizar a {0}",
+  "PecoFence {0} 已发布": "Ya está disponible PecoFence {0}",
+  "看看这次更新了什么。": "Mira las novedades de esta versión.",
+  "按钮\u0004更新": "Actualizar",
+  "去下载": "Descargar",
+  "查看新功能": "Novedades",
+  "自动检查更新": "Buscar actualizaciones automáticamente",
+  "每天检查一次有没有新版本，有新版本时提醒一次": "Busca una versión nueva una vez al día y te avisa una vez cuando la hay"
 }

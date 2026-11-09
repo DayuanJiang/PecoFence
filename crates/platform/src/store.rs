@@ -56,8 +56,9 @@ pub fn request_rating(
     })
 }
 
-/// Whether Windows would show a notification now: no full-screen app or presentation, no
-/// Focus session, nobody away from a locked screen. A fair moment to ask for something.
+/// Whether Windows would show a notification now: no full-screen app or presentation, nobody
+/// away from a locked screen. A fair moment to ask for something. Windows 11's Do not disturb
+/// and Focus sessions are not reported here (measured: the state stays at accepts).
 pub fn user_accepts_notifications() -> bool {
     // SAFETY: plain FFI call with an out parameter.
     unsafe { SHQueryUserNotificationState() }.is_ok_and(|state| state == QUNS_ACCEPTS_NOTIFICATIONS)
