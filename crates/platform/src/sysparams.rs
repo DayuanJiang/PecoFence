@@ -105,6 +105,25 @@ pub fn mouse_hover_rect() -> (i32, i32) {
     )
 }
 
+/// When the user last pressed a key or moved or clicked the mouse in this session
+/// (`GetTickCount` milliseconds); None when Windows does not say.
+pub fn last_input_tick() -> Option<u32> {
+    #[repr(C)]
+    struct LastInputInfo {
+        size: u32,
+        time: u32,
+    }
+    windows_core::link!("user32.dll" "system" fn GetLastInputInfo(info: *mut LastInputInfo) -> windows_core::BOOL);
+    let mut info = LastInputInfo {
+        size: size_of::<LastInputInfo>() as u32,
+        time: 0,
+    };
+    // SAFETY: a live struct of the declared size.
+    unsafe { GetLastInputInfo(&mut info) }
+        .as_bool()
+        .then_some(info.time)
+}
+
 /// Settings › Accessibility › Text size, in percent (100–225; 100 when unset). The slider
 /// stores `HKCU\Software\Microsoft\Accessibility\TextScaleFactor` (WinRT
 /// `UISettings.TextScaleFactor`); its 「应用」 also rewrites the system fonts, the icon-title
