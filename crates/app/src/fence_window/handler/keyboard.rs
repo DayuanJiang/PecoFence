@@ -42,9 +42,11 @@ pub(super) fn on_killfocus(
     if let Ok(mut guard) = view.try_borrow_mut()
         && let Some(v) = guard.as_mut()
         && std::mem::take(&mut v.focus_visible)
-        && !v.rolled_up
     {
-        let _ = v.redraw_content();
+        v.sync_idle_fade(Instant::now());
+        if !v.rolled_up {
+            let _ = v.redraw_content();
+        }
     }
     None
 }

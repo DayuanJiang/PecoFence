@@ -227,6 +227,7 @@ impl FenceWindow {
             root,
             idle_layer,
             idle_fade: Tween::at(1.0, Instant::now()),
+            idle_opacity_applied: 1.0,
             chrome: ctx.chrome.clone(),
             icons: ctx.icons.clone(),
             bitmaps: ctx.bitmaps.clone(),
@@ -629,6 +630,7 @@ impl FenceWindow {
                     "escape" => (msg::WM_KEYDOWN, msg::VK_ESCAPE as usize, (0, 0)),
                     "key" => (msg::WM_KEYDOWN, x as usize, (0, 0)),
                     "activate" => (msg::WM_ACTIVATE, x as usize, (0, 0)),
+                    "kill-focus" => (msg::WM_KILLFOCUS, 0, (0, 0)),
                     "right" => (msg::WM_RBUTTONDOWN, 0, (x, y)),
                     _ => return,
                 };

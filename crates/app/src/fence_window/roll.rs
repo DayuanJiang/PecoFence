@@ -177,8 +177,12 @@ impl FenceViewState {
             self.idle_fade
                 .retarget(target, motion::FAST, Curve::Linear, now);
         }
-        self.idle_layer.set_opacity(self.idle_fade.value_at(now));
-        self.apply_shadow_alpha(now);
+        let opacity = self.idle_fade.value_at(now);
+        if opacity != self.idle_opacity_applied {
+            self.idle_layer.set_opacity(opacity);
+            self.idle_opacity_applied = opacity;
+            self.apply_shadow_alpha(now);
+        }
         let busy = !self.idle_fade.is_done(now);
         if busy {
             self.frames.request();

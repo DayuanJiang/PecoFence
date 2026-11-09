@@ -13,7 +13,7 @@ const fixture = {
   type: 'state',
   locale: 'zh-CN', translations: {},
   settings: {
-    language: 'zh-CN',
+    language: 'zh-CN', idleOpacity: 1,
     autostart: false, hideRealIcons: false, keepIconsHidden: false, hideInboxWhenIconsShown: false, offerNewFence: true, featureTips: true, autoCheckUpdates: true, perDesktopFences: false, quickHide: { enabled: true },
     showDesktop: 'keepVisible', theme: 'dark', themeStyle: 'fluent', labelColor: 'auto', titleAlign: 'left', tabBar: 'top', backdrop: 'acrylic', iconSize: 48,
     icons: { tintRgb: null, tintStrength: 0.6, chameleon: false, shortcutArrows: true },
@@ -272,6 +272,26 @@ async function runTests() {
       const label = el.getAttribute('aria-label') || doc.getElementById(el.getAttribute('aria-labelledby'))?.textContent;
       assert(label?.trim(), 'Unnamed control: ' + (el.id || el.dataset.bind));
     }
+  });
+  await test('Idle opacity preserves presets, f32 rounding and custom values', async () => {
+    doc = await reset();
+    const win = frame.contentWindow;
+    const select = () => doc.querySelector('[data-bind=idleOpacity]');
+    assert(select().value === '1', 'Idle fading must default to off');
+    win.testState.settings.idleOpacity = 0.44999998807907104;
+    win.testRefresh(); await settle();
+    assert(select().value === '0.45', 'Rounded f32 must select the 45% preset');
+    win.testState.settings.idleOpacity = 0.37;
+    win.testRefresh(); await settle();
+    win.testRefresh(); await settle();
+    assert(select().value === '0.37', 'Custom CLI opacity must stay selected');
+    assert(select().querySelectorAll('[data-custom]').length === 1, 'Refresh duplicated the custom option');
+    select().value = '0.25';
+    select().dispatchEvent(new win.Event('change', { bubbles: true }));
+    await settle();
+    const message = win.testMessages.filter(m => m.type === 'patchSettings').at(-1);
+    assert(message?.settings.idleOpacity === 0.25, 'Dropdown must post a number, not a string');
+    doc = await reset();
   });
   await test('Notification icons render glyphs rather than escaped code text', async () => {
     const toast = doc.getElementById('toast');
@@ -2628,4 +2648,4 @@ const server = http.createServer(async (request, response) => {
     response.end(String(error));
   }
 });
-server.listen(port, '127.0.0.1', () => console.log(`Settings UI tests: http://127.0.0.1:${port}`));
+server.listen(port, '127.0.0.1', () => console.log(`Settings UI tests: http://127.0.0.1:${server.address().port}`));

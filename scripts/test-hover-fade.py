@@ -81,6 +81,8 @@ def main():
     sample("blur", "input HoverProbe activate 0 0")
     sample("rename", "edit-item HoverProbe Sample", "input HoverProbe hover 0 0")
     sample("rename-end", "cancel-rename", "input HoverProbe activate 0 0")
+    sample("rolled-focus", "input HoverProbe activate 1 0", "input HoverProbe key 36 0", "roll HoverProbe")
+    sample("rolled-blur", "input HoverProbe kill-focus 0 0")
     sample("rolled", "roll HoverProbe")
     sample("rolled-hover", "input HoverProbe hover 1 0")
     sample("expanded", "input HoverProbe hover 0 0", "unroll HoverProbe")
@@ -105,7 +107,7 @@ def main():
     expected = dict(disabled=1, idle=.45, hover=1, leave=.45, reverse=.45, keyboard=1, blur=.45,
                     rolled=.45, expanded=.45, peek=1, shown=.45, tab=.45, off=1, saved=.45)
     expected.update({"rolled-hover": 1, "end-peek": .45, "tab-hover": 1, "tab-idle": .45,
-                     "rename": 1, "rename-end": .45})
+                     "rename": 1, "rename-end": .45, "rolled-focus": 1, "rolled-blur": .45})
     for tag, opacity in expected.items():
         # After tab activation the host window reports the active tab's title.
         rows = [line for line in log.splitlines() if f"[{tag}] live" in line

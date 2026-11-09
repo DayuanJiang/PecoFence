@@ -281,6 +281,7 @@ pub struct FenceViewState {
     /// Independent of root show/hide fades and content tab/roll transitions.
     pub(super) idle_layer: ContainerVisual,
     pub(super) idle_fade: Tween,
+    pub(super) idle_opacity_applied: f32,
     pub(super) chrome: Rc<FenceChrome>,
     pub(super) icons: Rc<RefCell<IconCache>>,
     pub(super) bitmaps: Rc<RefCell<BitmapCache>>,
