@@ -18,7 +18,7 @@ pub(super) fn snap_gap_dip(snapping: &pecofence_core::SnappingSettings) -> i32 {
 /// A script error on the settings page (`pageError`): its JavaScript error type and position
 /// go to the log as fixed names and numbers; the page never sends the message, which can
 /// quote what the user typed.
-fn log_page_error(v: &serde_json::Value) {
+pub(super) fn log_page_error(v: &serde_json::Value) {
     const KINDS: &[&str] = &[
         "Error",
         "TypeError",
@@ -356,27 +356,8 @@ impl App {
             window::bring_to_front(h.hwnd());
             return;
         }
-        if self.web_env.is_none() {
-            match WebEnvironment::create() {
-                Ok(env) => self.web_env = Some(env),
-                // WebView2's wait for its callback pumps messages and ends with an error when
-                // it takes a WM_QUIT (the session ends): quit after all.
-                Err(_) if window::quit_posted() => {
-                    window::post_quit(0);
-                    return;
-                }
-                Err(e) => {
-                    tracing::error!(error = %e, "WebView2 environment failed");
-                    if let Some(t) = &self.tray {
-                        t.show_info(
-                            "PecoFence",
-                            pecofence_core::i18n::text("无法创建 WebView2 环境，请确认已安装 Microsoft Edge WebView2 运行时。"),
-                            true,
-                        );
-                    }
-                    return;
-                }
-            }
+        if !self.ensure_web_env() {
+            return;
         }
         match SettingsHost::open(
             &self.settings_class,
@@ -384,18 +365,12 @@ impl App {
             self.theme_mode,
             self.ctx.theme.borrow().liquid_glass,
             self.queue.clone(),
+            HostKind::Settings,
+            pecofence_core::i18n::text("PecoFence 设置"),
+            None,
         ) {
             Ok(mut host) => {
-                // Caption icon: the same drawn fence glyph as the tray, at 16/32 DIP.
-                let scale = monitors::dpi_for_window(host.hwnd()).max(96) as f32 / 96.0;
-                let accent = self.ctx.theme.borrow().accent_rgb8();
-                let dark = self.theme_mode == ThemeMode::Dark;
-                let small = (16.0 * scale).round() as i32;
-                let big = (32.0 * scale).round() as i32;
-                host.set_icons(
-                    (small, tray_icon_image(small, accent, dark)),
-                    (big, tray_icon_image(big, accent, dark)),
-                );
+                self.set_host_icons(&mut host);
                 self.settings = Some(host);
             }
             Err(_) if window::quit_posted() => window::post_quit(0),
@@ -410,6 +385,53 @@ impl App {
                 }
             }
         }
+    }
+
+    /// The WebView2 environment the settings and the smart fence editor share, made on first
+    /// use. False when it cannot be made (the tray says why).
+    pub(super) fn ensure_web_env(&mut self) -> bool {
+        if self.web_env.is_some() {
+            return true;
+        }
+        match WebEnvironment::create() {
+            Ok(env) => {
+                self.web_env = Some(env);
+                true
+            }
+            // WebView2's wait for its callback pumps messages and ends with an error when it
+            // takes a WM_QUIT (the session ends): quit after all.
+            Err(_) if window::quit_posted() => {
+                window::post_quit(0);
+                false
+            }
+            Err(e) => {
+                tracing::error!(error = %e, "WebView2 environment failed");
+                if let Some(t) = &self.tray {
+                    t.show_info(
+                        "PecoFence",
+                        pecofence_core::i18n::text(
+                            "无法创建 WebView2 环境，请确认已安装 Microsoft Edge WebView2 运行时。",
+                        ),
+                        true,
+                    );
+                }
+                false
+            }
+        }
+    }
+
+    /// Caption icon of a settings or editor window: the same drawn fence glyph as the tray,
+    /// at 16/32 DIP.
+    pub(super) fn set_host_icons(&self, host: &mut SettingsHost) {
+        let scale = monitors::dpi_for_window(host.hwnd()).max(96) as f32 / 96.0;
+        let accent = self.ctx.theme.borrow().accent_rgb8();
+        let dark = self.theme_mode == ThemeMode::Dark;
+        let small = (16.0 * scale).round() as i32;
+        let big = (32.0 * scale).round() as i32;
+        host.set_icons(
+            (small, tray_icon_image(small, accent, dark)),
+            (big, tray_icon_image(big, accent, dark)),
+        );
     }
 
     pub(super) fn settings_state_json(&self) -> String {
@@ -470,6 +492,12 @@ impl App {
             "backups": backups,
             "monitors": monitors,
             "tintPalette": fence_options::tint_palette_json(),
+            // 在哪个虚拟桌面显示: the desktops in Task View order.
+            "virtualDesktops": self
+                .desktop_labels()
+                .into_iter()
+                .map(|(id, name, current)| serde_json::json!({ "id": id, "name": name, "current": current }))
+                .collect::<Vec<_>>(),
             "pickedColors": self.picked_colors,
             "version": env!("CARGO_PKG_VERSION"),
             "storeEdition": pecofence_platform::process::is_packaged(),
@@ -778,6 +806,31 @@ impl App {
                                 None => tracing::warn!("unknown script example on the page"),
                             },
                         }
+                    }
+                }
+                Some(name @ ("editSmart" | "refreshSmart")) => {
+                    let fence = v
+                        .get("id")
+                        .and_then(|i| i.as_str())
+                        .and_then(|i| uuid::Uuid::parse_str(i).ok())
+                        .filter(|id| self.state.smart_spec(*id).is_some());
+                    match (name, fence) {
+                        // 编辑条件…: the editor opens on the settings window's monitor.
+                        ("editSmart", Some(id)) => {
+                            let at = self
+                                .settings
+                                .as_ref()
+                                .map(|h| window::window_rect(h.hwnd()))
+                                .map_or((0, 0), |r| {
+                                    ((r.left + r.right) / 2, (r.top + r.bottom) / 2)
+                                });
+                            self.open_smart_editor(Some(id), at, "settings page");
+                        }
+                        (_, Some(id)) => {
+                            self.run_smart(id, "settings page");
+                            self.push_settings_state();
+                        }
+                        (_, None) => tracing::warn!(name, "smart fence action for no smart fence"),
                     }
                 }
                 Some("installEverything") => self.install_everything(),
@@ -1170,6 +1223,14 @@ impl App {
             new.hide_inbox_when_icons_shown != old.hide_inbox_when_icons_shown;
         // A tool switched on brings its fences back; switched off, they go.
         let tools_changed = new.tools != old.tools;
+        let per_desktop_changed = new.per_desktop_fences != old.per_desktop_fences;
+        if per_desktop_changed {
+            tracing::info!(
+                on = new.per_desktop_fences,
+                desktop = ?self.state.current_desktop,
+                "per-desktop fences switched"
+            );
+        }
         // 「调整大小时按整行整列对齐」 switched on keeps every rectangle: the rows fill any
         // height with whole icons (redrawn above), and rounding would undo fences lined up.
         self.state.config.settings = new;
@@ -1199,6 +1260,10 @@ impl App {
             self.refresh_tool_views();
             self.run_due_scripts();
         }
+        if per_desktop_changed {
+            // New fences follow the current desktop from now on: it is followed while on.
+            self.apply_desktop_visibility("per-desktop fences switched");
+        }
         self.push_settings_state();
     }
 
@@ -1216,12 +1281,13 @@ impl App {
         tracing::info!(language = language.tag(), "interface language changed");
         self.localize_auto_names();
         if let Some(host) = &self.settings {
-            host.update_language();
+            host.set_title(pecofence_core::i18n::text("PecoFence 设置"));
         }
         for window in self.fences.values() {
             window.redraw();
         }
         self.push_settings_state();
+        self.smart_editor_language_changed();
     }
 }
 

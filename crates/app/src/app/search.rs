@@ -7,6 +7,7 @@ use super::*;
 use crate::peek_search::Row;
 use pecofence_core::everything as ev;
 use pecofence_core::matcher;
+use pecofence_core::type_filter;
 use pecofence_platform::{clipboard, dialogs, everything};
 use std::ops::Range;
 use std::os::windows::process::CommandExt;
@@ -38,6 +39,8 @@ pub(super) enum RowKind {
     },
     /// 「在 Everything 里查看全部结果」.
     ShowAll,
+    /// 「把这次搜索放到桌面」: a smart fence with this search.
+    ToDesktop,
 }
 
 #[derive(Default)]
@@ -49,9 +52,15 @@ pub(super) struct SearchState {
     /// Everything's last answer for the current text, and how many it found in all.
     pub everything: Vec<ev::Hit>,
     pub everything_total: u32,
+    /// How many results the search has in all (the bottom bar): the fences' matches and
+    /// Everything's, less those of its answer already in a fence or not of the type tab.
+    pub total: usize,
     /// Sequence number of the last query sent, and its text.
     pub seq: u32,
     pub sent: String,
+    /// When that query went to Everything, until its answer is in: the smart fences' searches
+    /// wait meanwhile (Everything answers one search at a time, a new one cancels the last).
+    pub asked_at: Option<Instant>,
     /// The Open / Save dialog in front when the Peek began.
     pub dialog: Option<isize>,
     /// The window in front when the Peek began (double Ctrl gives the foreground back to it).
@@ -105,6 +114,12 @@ impl App {
     /// Ranks the fence matches for `query` (lower case): best match first, then the ones opened
     /// most from the search, then reading order. Fills `peek_hits` and their highlights.
     pub(super) fn rank_fence_matches(&mut self, query: &str) {
+        let started = Instant::now();
+        self.rank_fence_matches_now(query);
+        crate::peek_search::slow_stage("rank_fence_matches", started);
+    }
+
+    fn rank_fence_matches_now(&mut self, query: &str) {
         let mut found: Vec<(
             u32,
             u32,
@@ -112,6 +127,8 @@ impl App {
             (FenceId, FenceId, ItemId),
             Vec<Range<usize>>,
         )> = Vec::new();
+        // The type tab keeps the matches to its type (as the rule conditions test it).
+        let types = peek_types();
         if !query.is_empty() {
             let mut windows: Vec<(RECT, FenceId)> =
                 self.fences.iter().map(|(id, w)| (w.rect(), *id)).collect();
@@ -127,6 +144,10 @@ impl App {
                         else {
                             continue;
                         };
+                        // After the name: 程序 reads a shortcut's target.
+                        if !types.is_empty() && !item_is_of(&types, it) {
+                            continue;
+                        }
                         let uses = it
                             .path()
                             .map(|p| self.state.config.search_count(p))
@@ -148,8 +169,10 @@ impl App {
             self.search.everything.clear();
             self.search.everything_total = 0;
             self.search.sent.clear();
+            self.search.asked_at = None;
             // An answer still on its way is for text that is gone.
             self.search.seq = self.search.seq.wrapping_add(1);
+            self.ask_next_smart();
             return;
         }
         window::set_timer(self.control.hwnd(), TIMER_EVERYTHING, EVERYTHING_DELAY_MS);
@@ -163,7 +186,9 @@ impl App {
         let Some(reply_to) = crate::peek_search::hwnd() else {
             return;
         };
-        if query.is_empty() || query == self.search.sent {
+        // The type tab is part of what was asked.
+        let asked = with_type_words(query.clone());
+        if query.is_empty() || asked == self.search.sent {
             return;
         }
         let Some(instance) = everything::find() else {
@@ -173,7 +198,10 @@ impl App {
             self.refresh_search_rows();
             return;
         };
-        let text = ev::search_text(&query, instance.supports_pinyin());
+        let text = with_type_words(ev::search_text(&query, instance.supports_pinyin()));
+        // The Peek search goes first: a smart fence's search out now would be cancelled by
+        // this one, so that fence asks again after the Peek's answer.
+        self.smart_yield_to_peek();
         self.search.seq = self.search.seq.wrapping_add(1);
         let kind = REPLY_TAG | (self.search.seq as usize & 0xFFFF);
         let payload = ev::query2w(
@@ -191,7 +219,8 @@ impl App {
             "search: Everything asked"
         );
         if sent {
-            self.search.sent = query;
+            self.search.sent = asked;
+            self.search.asked_at = Some(Instant::now());
         }
     }
 
@@ -201,9 +230,11 @@ impl App {
             return;
         }
         // The box changed after the query went out: the next query answers for it.
-        let now = crate::peek_search::query()
-            .map(|q| q.trim().to_string())
-            .unwrap_or_default();
+        let now = with_type_words(
+            crate::peek_search::query()
+                .map(|q| q.trim().to_string())
+                .unwrap_or_default(),
+        );
         if now != self.search.sent {
             return;
         }
@@ -215,17 +246,38 @@ impl App {
             return;
         };
         tracing::debug!(total, got = hits.len(), "search: Everything answered");
+        self.search.asked_at = None;
+        // 程序: Everything's hits come without their times, so each shortcut whose target is
+        // known gets it checked against its file once per answer (on its drive's thread).
+        let types = peek_types();
+        for h in &hits {
+            if !h.is_folder
+                && type_filter::needs_target(&types, &h.path, false)
+                && super::lnk_targets::known(&h.path, None).is_some()
+            {
+                super::lnk_targets::ask(&h.path, None);
+            }
+        }
         self.search.everything = hits;
         self.search.everything_total = total;
         self.refresh_search_rows();
+        // Smart fences that waited for the Peek search ask now.
+        self.ask_next_smart();
     }
 
     /// Rebuilds the list from `peek_hits` and Everything's results, keeps the highlighted row
     /// when it is still there, and shows it.
     pub(super) fn refresh_search_rows(&mut self) {
+        let started = Instant::now();
+        self.refresh_search_rows_now();
+        crate::peek_search::slow_stage("refresh_search_rows", started);
+    }
+
+    fn refresh_search_rows_now(&mut self) {
         let query = crate::peek_search::query()
             .map(|q| q.trim().to_lowercase())
             .unwrap_or_default();
+        let types = peek_types();
         let before = self.search.rows.get(self.search.sel).cloned();
         let before_hit = match before {
             Some(RowKind::Fence(i)) => self.peek_hits.get(i).copied(),
@@ -238,8 +290,10 @@ impl App {
             .collect();
         // Everything's results, ranked here: Everything sorts by date only.
         let mut files: Vec<(u32, u32, usize, PathBuf, bool)> = Vec::new();
+        let mut skipped = 0;
         for (order, hit) in self.search.everything.iter().enumerate() {
             if fence_paths.contains(&hit.path.to_lowercase()) {
+                skipped += 1;
                 continue;
             }
             let path = PathBuf::from(&hit.path);
@@ -247,6 +301,14 @@ impl App {
                 .file_name()
                 .map(|n| n.to_string_lossy().to_string())
                 .unwrap_or_else(|| hit.path.clone());
+            // Asked with the type's words already; the same test as the fences' items.
+            // A shortcut whose target is being read waits (held back, as not of the type).
+            if super::filter::type_fit(&types, &name, hit.is_folder, Some(&hit.path), None)
+                != Some(true)
+            {
+                skipped += 1;
+                continue;
+            }
             let score = matcher::match_name(&name, &query).map_or(0, |m| m.score);
             let uses = self.state.config.search_count(&hit.path);
             files.push((score, uses, order, path, hit.is_folder));
@@ -255,16 +317,23 @@ impl App {
         // As many rows as fit under the box: Everything's rows bring two headings and the
         // "show all" row.
         let show_all = self.search.everything_total > 0;
-        let max_rows = crate::peek_search::row_room(if files.is_empty() { 0 } else { 2 })
-            .saturating_sub(usize::from(show_all))
+        // Headings: 栅栏里, 整台电脑 when Everything found some, 操作 before the action rows.
+        let headings = 1 + usize::from(!files.is_empty()) + usize::from(show_all);
+        let max_rows = crate::peek_search::row_room(headings)
+            .saturating_sub(2 * usize::from(show_all))
             .clamp(1, MAX_ROWS);
         let fence_room = if files.is_empty() {
             max_rows
         } else {
             FENCE_ROWS_WITH_EVERYTHING.min(max_rows)
         };
-        let mut rows: Vec<RowKind> = (0..self.peek_hits.len())
+        let in_fences: Vec<usize> = (0..self.peek_hits.len())
             .filter(|&i| self.state.item(self.peek_hits[i].2).is_some())
+            .collect();
+        self.search.total =
+            in_fences.len() + (self.search.everything_total as usize).saturating_sub(skipped);
+        let mut rows: Vec<RowKind> = in_fences
+            .into_iter()
             .take(fence_room)
             .map(RowKind::Fence)
             .collect();
@@ -275,6 +344,7 @@ impl App {
         }));
         if show_all {
             rows.push(RowKind::ShowAll);
+            rows.push(RowKind::ToDesktop);
         }
         self.search.sel = rows
             .iter()
@@ -297,31 +367,24 @@ impl App {
         let query = crate::peek_search::query().unwrap_or_default();
         let searching = !query.trim().is_empty();
         self.show_peek_hits(searching);
-        let both = self
-            .search
-            .rows
-            .iter()
-            .any(|r| matches!(r, RowKind::Fence(_)))
-            && self
-                .search
-                .rows
-                .iter()
-                .any(|r| matches!(r, RowKind::File { .. }));
         let mut rows = Vec::with_capacity(self.search.rows.len());
         let mut last_group = None;
         for (i, kind) in self.search.rows.iter().enumerate() {
-            let group = matches!(kind, RowKind::Fence(_));
-            let heading = (both && last_group != Some(group) && !matches!(kind, RowKind::ShowAll))
-                .then(|| {
-                    if group {
-                        pecofence_core::i18n::text("栅栏里").to_string()
-                    } else {
-                        pecofence_core::i18n::text("整台电脑（Everything）").to_string()
-                    }
-                });
-            if !matches!(kind, RowKind::ShowAll) {
-                last_group = Some(group);
-            }
+            // Every group under its heading, the two action rows too.
+            let group = match kind {
+                RowKind::Fence(_) => 0,
+                RowKind::File { .. } => 1,
+                RowKind::ShowAll | RowKind::ToDesktop => 2,
+            };
+            let heading = (last_group != Some(group)).then(|| {
+                match group {
+                    0 => pecofence_core::i18n::text("栅栏里"),
+                    1 => pecofence_core::i18n::text("整台电脑（Everything）"),
+                    _ => pecofence_core::i18n::text("操作"),
+                }
+                .to_string()
+            });
+            last_group = Some(group);
             let shortcut = (i < MAX_ROWS).then_some(i as u8 + 1);
             let row = match kind {
                 RowKind::Fence(h) => {
@@ -337,6 +400,7 @@ impl App {
                             exact_icon: false,
                             heading,
                             shortcut,
+                            glyph: None,
                         });
                         continue;
                     };
@@ -354,6 +418,7 @@ impl App {
                         is_folder: it.is_folder,
                         heading,
                         shortcut,
+                        glyph: None,
                     }
                 }
                 RowKind::File { path, is_folder } => {
@@ -376,6 +441,7 @@ impl App {
                         is_folder: *is_folder,
                         heading,
                         shortcut,
+                        glyph: None,
                     }
                 }
                 RowKind::ShowAll => Row {
@@ -388,14 +454,29 @@ impl App {
                     icon_path: None,
                     is_folder: false,
                     exact_icon: false,
-                    heading: None,
+                    heading,
                     shortcut,
+                    // Search (E721): more of the same search, in Everything.
+                    glyph: Some("\u{E721}"),
+                },
+                RowKind::ToDesktop => Row {
+                    name: pecofence_core::i18n::text("把这次搜索放到桌面").to_string(),
+                    marks: Vec::new(),
+                    detail: pecofence_core::i18n::text("新建一个智能栅栏，结果跟着文件自动更新")
+                        .to_string(),
+                    icon_path: None,
+                    is_folder: false,
+                    exact_icon: false,
+                    heading,
+                    shortcut,
+                    // Pin (E718): the search stays on the desktop.
+                    glyph: Some("\u{E718}"),
                 },
             };
             rows.push(row);
         }
         let selected = (!rows.is_empty()).then_some(self.search.sel);
-        crate::peek_search::set_rows(rows, selected);
+        crate::peek_search::set_rows(rows, selected, self.search.total);
     }
 
     /// Up / Down (Ctrl+P / Ctrl+N) in the box: the previous / next row, wrapping around.
@@ -418,7 +499,7 @@ impl App {
                 (!shell::is_namespace_path(Path::new(p))).then(|| (PathBuf::from(p), it.is_folder))
             }
             RowKind::File { path, is_folder } => Some((path.clone(), *is_folder)),
-            RowKind::ShowAll => None,
+            RowKind::ShowAll | RowKind::ToDesktop => None,
         }
     }
 
@@ -460,13 +541,26 @@ impl App {
             .filter(|d| desktop::is_window(hwnd_of(*d)) && dialogs::is_file_dialog(hwnd_of(*d)));
         tracing::info!(row = ?row, dialog = dialog.is_some(), "search row opened");
         match (&row, path, dialog) {
+            (RowKind::ToDesktop, _, _) => {
+                // Read before the box closes with the Peek.
+                let tab = crate::peek_search::type_tab();
+                self.end_peek("search: put on the desktop");
+                self.search_to_desktop(&query, tab);
+            }
             (RowKind::ShowAll, _, _) => {
+                // Read before the box closes with the Peek.
+                let types = peek_types();
                 self.end_peek("search: show all in Everything");
-                // The same search as the list (pinyin included), in Everything's window.
+                // The same search as the list (pinyin included, the type tab's words too), in
+                // Everything's window.
                 let found = everything::find().and_then(|i| Some((i.exe()?, i.supports_pinyin())));
                 match found {
                     Some((exe, pinyin)) => {
-                        let text = ev::search_text(&query, pinyin);
+                        let mut text = ev::search_text(&query, pinyin);
+                        if !types.is_empty() {
+                            text = format!("{text} {}", type_filter::everything_words(&types));
+                        }
+                        tracing::info!(search = %text, types = types.len(), "search: shown in Everything");
                         let started = std::process::Command::new(exe)
                             .arg("-search")
                             .arg(text)
@@ -542,6 +636,7 @@ impl App {
             } => "Everything, folder",
             RowKind::File { .. } => "Everything, file",
             RowKind::ShowAll => "show all in Everything",
+            RowKind::ToDesktop => "put the search on the desktop",
         }
     }
 
@@ -698,4 +793,33 @@ fn open_containing_folder(path: &Path) {
     if let Err(e) = spawned {
         tracing::warn!(error = %e, "search: Explorer did not start");
     }
+}
+
+/// The Peek search's type tab as tokens (none on 全部).
+fn peek_types() -> Vec<type_filter::TypeToken> {
+    crate::peek_search::type_tab()
+        .map(type_filter::TypeToken::Cat)
+        .into_iter()
+        .collect()
+}
+
+/// Whether a fence's item is of `types` (its file name with the extension).
+fn item_is_of(types: &[type_filter::TypeToken], it: &pecofence_core::Item) -> bool {
+    let file = it
+        .key
+        .as_path()
+        .and_then(|p| Path::new(p).file_name())
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| it.display_name.clone());
+    super::filter::type_fit(types, &file, it.is_folder, it.key.as_path(), Some(it.mtime))
+        == Some(true)
+}
+
+/// `text` with Everything's words for the type tab after it.
+fn with_type_words(text: String) -> String {
+    let types = peek_types();
+    if types.is_empty() {
+        return text;
+    }
+    format!("{text} {}", type_filter::everything_words(&types))
 }

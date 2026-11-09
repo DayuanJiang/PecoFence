@@ -144,6 +144,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     title_color: None,
                     folder_icon: false,
                     up_button: false,
+                    desktop_icon: false,
                     active: i == if tab_mode == "second" { 1 } else { 0 },
                     hover: if tab_mode == "hover" && i == 1 {
                         1.0
@@ -198,6 +199,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 )
             },
             "文件与文档",
+            None,
+            None,
             None,
             false,
             0.0,

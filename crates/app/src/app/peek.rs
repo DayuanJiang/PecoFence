@@ -338,6 +338,7 @@ impl App {
         let over = overlay.hwnds();
         let animating = overlay.animating(Instant::now());
         self.peek = Some(overlay);
+        self.prefetch_lnk_targets();
         self.ctx.behavior.floating.set(true);
         self.redraw_for_floating();
         if let Some(a) = self.anchor.borrow_mut().as_mut() {
@@ -415,6 +416,7 @@ impl App {
         self.rank_fence_matches(&query);
         self.schedule_everything(typed.trim());
         self.refresh_search_rows();
+        crate::peek_search::rows_shown_for_change();
     }
 
     /// Shows the matches: each fence switches to the tab holding its highlighted match, else
@@ -422,6 +424,12 @@ impl App {
     /// it showed before comes back once it has none, and when the search ends). Then the marks
     /// go to every fence and the match count to the box.
     pub(super) fn show_peek_hits(&mut self, searching: bool) {
+        let started = std::time::Instant::now();
+        self.show_peek_hits_now(searching);
+        crate::peek_search::slow_stage("fence_marks", started);
+    }
+
+    fn show_peek_hits_now(&mut self, searching: bool) {
         let current = self.peek_hits.get(self.peek_hit).copied();
         let hosts: Vec<FenceId> = self.fences.keys().copied().collect();
         for host in hosts {
@@ -472,14 +480,18 @@ impl App {
             .search
             .rows
             .iter()
-            .filter(|r| !matches!(r, super::search::RowKind::ShowAll))
+            .filter(|r| {
+                !matches!(
+                    r,
+                    super::search::RowKind::ShowAll | super::search::RowKind::ToDesktop
+                )
+            })
             .count();
-        let status = if !searching {
-            String::new()
-        } else if rows == 0 {
+        // The bottom bar says how many there are; the box says it only when there are none.
+        let status = if searching && rows == 0 {
             pecofence_core::i18n::text("没有匹配的文件").to_string()
         } else {
-            format!("{} / {}", (self.search.sel + 1).min(rows), rows)
+            String::new()
         };
         crate::peek_search::set_status(&status);
     }
@@ -491,7 +503,12 @@ impl App {
         self.peek_hits.clear();
         self.peek_hit = 0;
         let (dialog, before) = (self.search.dialog, self.search.before);
+        let waited = self.search.asked_at.is_some();
         self.search = Default::default();
+        // Smart fences that waited for an answer the closed search box will not get.
+        if waited {
+            self.ask_next_smart();
+        }
         // What was in front stays noted until the next Peek notes it again.
         self.search.dialog = dialog;
         self.search.before = before;

@@ -88,7 +88,73 @@ pub(super) const FENCE_PROPS: &[&str] = &[
     "noteText",
     "scriptPath",
     "scriptInterval",
+    "smartFolder",
+    "smartMatch",
+    "smartSubfolders",
+    "smartWithinDays",
+    "smartConditions",
+    "smartName",
+    "smartEverything",
+    "smartLimit",
+    "virtualDesktops",
 ];
+
+/// 智能栅栏: one change to a smart fence's search (`fence set` / the settings page).
+#[derive(Clone, Debug, PartialEq)]
+pub(super) enum SmartChange {
+    /// The folders searched together; none = every drive (needs Everything).
+    Folders(Vec<String>),
+    /// 全部 / 任一 of the conditions (the folders always apply).
+    Match(pecofence_core::smart::SmartMatch),
+    Subfolders(bool),
+    WithinDays(Option<u32>),
+    Conditions(Vec<pecofence_core::Cond>),
+    /// The name filter (matched as the Peek search and 筛选 match names).
+    Name(Option<String>),
+    /// A typed Everything search in place of the conditions.
+    Everything(Option<String>),
+    Limit(u32),
+}
+
+impl SmartChange {
+    /// Makes the change to `spec`; what changed, for the log.
+    pub(super) fn apply(self, spec: &mut pecofence_core::smart::SmartSpec) -> &'static str {
+        match self {
+            SmartChange::Folders(folders) => {
+                spec.folders = folders;
+                "folders"
+            }
+            SmartChange::Match(matching) => {
+                spec.matching = matching;
+                "match"
+            }
+            SmartChange::Subfolders(on) => {
+                spec.subfolders = on;
+                "subfolders"
+            }
+            SmartChange::WithinDays(days) => {
+                spec.within_days = days;
+                "within days"
+            }
+            SmartChange::Conditions(conds) => {
+                spec.all_of = conds;
+                "conditions"
+            }
+            SmartChange::Name(name) => {
+                spec.name = name;
+                "name"
+            }
+            SmartChange::Everything(text) => {
+                spec.everything = text;
+                "everything search"
+            }
+            SmartChange::Limit(n) => {
+                spec.limit = n;
+                "limit"
+            }
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum TitleColorChoice {
@@ -148,6 +214,11 @@ pub(super) enum FenceProp {
     ScriptPath(String),
     /// 脚本栅栏: minutes between runs, 1 to 1440.
     ScriptInterval(u32),
+    /// 智能栅栏: a change to its search.
+    Smart(SmartChange),
+    /// 在哪个虚拟桌面显示, as given: `all`, `current`, numbers, names or keys (see
+    /// `App::resolve_desktop_specs`).
+    VirtualDesktops(Vec<String>),
 }
 
 impl FenceProp {
@@ -361,6 +432,114 @@ pub(super) fn parse_fence_prop(
             Some(m @ 1..=1440) => FenceProp::ScriptInterval(m as u32),
             _ => return Err(bad(&["1..1440 (minutes)"])),
         },
+        "smartFolder" => {
+            const ALLOWED: &[&str] = &[
+                "<full path of a folder>",
+                r#"["<folder>", "<folder>"] (searched together)"#,
+                "null (every drive)",
+            ];
+            let texts: Vec<&str> = match value {
+                serde_json::Value::Null => Vec::new(),
+                serde_json::Value::String(s) if s.trim().is_empty() => Vec::new(),
+                serde_json::Value::String(s) => vec![s.as_str()],
+                serde_json::Value::Array(list) => list
+                    .iter()
+                    .map(|v| v.as_str().ok_or_else(|| bad(ALLOWED)))
+                    .collect::<std::result::Result<_, _>>()?,
+                _ => return Err(bad(ALLOWED)),
+            };
+            let mut folders: Vec<String> = Vec::new();
+            for s in texts {
+                let dir = std::path::Path::new(s.trim());
+                if !dir.is_absolute() || !dir.is_dir() {
+                    return Err(IpcError::invalid_value(
+                        format!("no folder at {s}"),
+                        ALLOWED,
+                    ));
+                }
+                let dir = crate::state::canonical_path(dir.to_path_buf())
+                    .to_string_lossy()
+                    .into_owned();
+                if !folders.iter().any(|f| f.eq_ignore_ascii_case(&dir)) {
+                    folders.push(dir);
+                }
+            }
+            FenceProp::Smart(SmartChange::Folders(folders))
+        }
+        "smartMatch" => FenceProp::Smart(SmartChange::Match(
+            value
+                .as_str()
+                .and_then(pecofence_core::smart::SmartMatch::parse)
+                .ok_or_else(|| bad(&["all", "any"]))?,
+        )),
+        "smartSubfolders" => FenceProp::Smart(SmartChange::Subfolders(as_bool()?)),
+        "smartWithinDays" => FenceProp::Smart(SmartChange::WithinDays(match value {
+            serde_json::Value::Null => None,
+            v => match v.as_u64() {
+                Some(d @ 1..=36500) => Some(d as u32),
+                _ => return Err(bad(&["1..36500 (days)", "null (any time)"])),
+            },
+        })),
+        "smartConditions" => {
+            const ALLOWED: &[&str] =
+                &[r#"[{"cond":"ext","value":["pdf"]}, ...] (rule conditions but origin)"#];
+            let conds: Vec<pecofence_core::Cond> = serde_json::from_value(value.clone())
+                .map_err(|e| IpcError::invalid_value(format!("smartConditions: {e}"), ALLOWED))?;
+            // 来源 says which desktop an icon came from: nothing a found file has.
+            if conds
+                .iter()
+                .any(|c| matches!(c, pecofence_core::Cond::Origin(_)))
+            {
+                return Err(IpcError::invalid_value(
+                    "origin is not a smart fence condition",
+                    ALLOWED,
+                ));
+            }
+            FenceProp::Smart(SmartChange::Conditions(conds))
+        }
+        "smartName" | "smartEverything" => {
+            let text = match value {
+                serde_json::Value::Null => None,
+                serde_json::Value::String(s) => {
+                    Some(s.trim().to_string()).filter(|s| !s.is_empty())
+                }
+                _ => return Err(bad(&["<text>", "null"])),
+            };
+            FenceProp::Smart(if prop == "smartName" {
+                SmartChange::Name(text)
+            } else {
+                SmartChange::Everything(text)
+            })
+        }
+        "smartLimit" => match value.as_u64() {
+            Some(n @ 1..=2000) => FenceProp::Smart(SmartChange::Limit(n as u32)),
+            _ => return Err(bad(&["1..2000"])),
+        },
+        "virtualDesktops" => {
+            const ALLOWED: &[&str] = &[
+                "all",
+                "current",
+                "<desktop numbers, names or ids, comma-separated>",
+            ];
+            let specs: Vec<String> = match value {
+                serde_json::Value::String(s) => vec![s.clone()],
+                serde_json::Value::Number(n) => vec![n.to_string()],
+                serde_json::Value::Array(a) => a
+                    .iter()
+                    .map(|v| match v {
+                        serde_json::Value::String(s) => Some(s.clone()),
+                        serde_json::Value::Number(n) => Some(n.to_string()),
+                        _ => None,
+                    })
+                    .collect::<Option<_>>()
+                    .ok_or_else(|| bad(ALLOWED))?,
+                _ => return Err(bad(ALLOWED)),
+            };
+            if specs.iter().all(|s| s.trim().is_empty()) {
+                return Err(bad(ALLOWED));
+            }
+            FenceProp::VirtualDesktops(specs)
+        }
         _ => {
             return Err(IpcError::invalid_value(
                 format!("unknown fence property {prop:?}"),
@@ -753,7 +932,15 @@ impl App {
             "desktopLayout": f.desktop_layout,
             "freePlacement": f.free_placement,
             "openFoldersInside": f.open_folders_inside,
+            "virtualDesktops": h.virtual_desktops,
+            // 「桌面」 or a window holding it: always on every virtual desktop.
+            "inboxWindow": self.state.window_holds_inbox(f.id),
             "portal": portal,
+            // 智能栅栏: its search and the last run (see `App::smart_dto`), and the magnifier.
+            "smart": self.smart_dto(f.id).map(|mut s| {
+                s["titleIcon"] = serde_json::Value::Bool(!f.hide_title_icon);
+                s
+            }),
         })
     }
 
@@ -812,6 +999,16 @@ impl App {
                 return changed;
             }
             FenceProp::ScriptPath(path) => return self.set_script_path(fence, &path),
+            FenceProp::Smart(change) => return self.change_smart(fence, change),
+            FenceProp::VirtualDesktops(specs) => {
+                return match self.resolve_desktop_specs(&specs) {
+                    Ok(keys) => self.set_fence_desktops(fence, keys, "settings or CLI"),
+                    Err(error) => {
+                        tracing::warn!(%error, "virtual desktops not set");
+                        false
+                    }
+                };
+            }
             FenceProp::ScriptInterval(minutes) => {
                 let old = self
                     .state
@@ -829,6 +1026,7 @@ impl App {
                     w.redraw();
                 }
                 self.schedule_save();
+                self.smart_editor_fence_changed(fence);
             }
             FenceProp::IconSize(size) => self.apply_icon_size(fence, size),
             FenceProp::Spacing(spacing) => self.set_fence_spacing(fence, spacing),

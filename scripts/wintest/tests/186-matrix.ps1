@@ -19,9 +19,11 @@ $np = [G]::FindWindowW('Notepad', [NullString]::Value)
 [L]::MoveWindow($np, 10, 40, 700, 600, $true) | Out-Null; Start-Sleep -Milliseconds 500
 Check 'Notepad is there' ($np -ne [IntPtr]::Zero)
 
-# Opens the box the given way, with Notepad in front first.
+# Opens the box the given way, with Notepad in front first. A Notepad with unsaved text (keys
+# that missed the box) would open its save prompt and Save As dialog on the next Ctrl+N or
+# Enter, and an open dialog takes the search's Enter (dialog jump): start a clean one then.
 function OpenBox($p) {
-  Get-Process notepad -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle -like 'q*' } | Stop-Process -Force
+  Get-Process notepad -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle -like 'q*' -or $_.MainWindowTitle -like '`**' } | Stop-Process -Force
   (New-Object -ComObject Shell.Application).Windows() | ForEach-Object { $_.Quit() }
   Start-Sleep -Milliseconds 300
   $script:np = [G]::FindWindowW('Notepad', [NullString]::Value)

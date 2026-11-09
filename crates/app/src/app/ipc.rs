@@ -17,7 +17,8 @@ use pecofence_ipc::{
     AdjustedDto, BIG_MOVE_SNAPSHOT_ITEMS, BackupDto, EVENT_HEARTBEAT_SECS, EVENT_NAMES, ErrorCode,
     EventDto, FenceDto, FitDto, IpcError, ItemDto, ItemMovePlanDto, MAX_SUBSCRIBERS, Method,
     MonitorDto, PROTOCOL_VERSION, PlannedMoveDto, PortalDto, Rect, Response, RuleEntry,
-    RuleListDto, SnapshotDto, SnapshotFenceDto, StatusDto, dotted_to_pointer, mutation,
+    RuleListDto, SnapshotDto, SnapshotFenceDto, StatusDto, VirtualDesktopDto, dotted_to_pointer,
+    mutation,
 };
 use serde_json::{Value, json};
 use std::sync::mpsc;
@@ -686,6 +687,20 @@ impl App {
         match m {
             Method::StatusGet => to_json(&self.status_dto()),
             Method::MonitorsList => to_json(&self.monitor_dtos()),
+            Method::VirtualDesktopsList => {
+                let list: Vec<VirtualDesktopDto> = self
+                    .desktop_labels()
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, (id, name, current))| VirtualDesktopDto {
+                        id,
+                        number: i + 1,
+                        name,
+                        current,
+                    })
+                    .collect();
+                to_json(&list)
+            }
             Method::FencesList => {
                 let list: Vec<FenceDto> = self
                     .state
@@ -742,7 +757,23 @@ impl App {
                 tool,
                 text,
                 script,
+                smart,
+                smart_spec,
+                smart_match,
             } => {
+                if smart.is_some() || smart_spec.is_some() {
+                    return self.ipc_create_smart(
+                        title.as_deref(),
+                        *rect,
+                        smart.as_deref(),
+                        smart_spec.as_deref().cloned(),
+                        *smart_match,
+                    );
+                }
+                if smart_match.is_some() {
+                    return Err(IpcError::usage("smartMatch goes with a smart fence")
+                        .hint("Give --smart TEMPLATE or --smart-folder, --ext and the like"));
+                }
                 let tool = match tool.as_deref() {
                     None => None,
                     Some(name) => {
@@ -760,6 +791,10 @@ impl App {
             Method::FencesDelete { fence } => self.ipc_delete_fence(fence),
             Method::FencesRefresh { fence } => {
                 let id = self.resolve_fence(fence)?;
+                if self.state.smart_spec(id).is_some() {
+                    self.run_smart(id, "cli");
+                    return Ok(mutation(true, None, self.fence_extra(id)?));
+                }
                 if self
                     .state
                     .fence(id)
@@ -853,11 +888,65 @@ impl App {
                 let id = self.resolve_fence(fence)?;
                 let prop_name = prop.as_str();
                 let prop = parse_fence_prop(prop, value)?;
+                if let fence_options::FenceProp::VirtualDesktops(specs) = &prop {
+                    if self.state.window_holds_inbox(id) {
+                        return Err(unsupported(
+                            "the inbox, and a window that holds it as a tab, shows on every virtual desktop: new desktop items land in it",
+                        )
+                        .hint("fence detach the inbox (or this fence) from the window first"));
+                    }
+                    let keys = self.resolve_desktop_specs(specs).map_err(|message| {
+                        IpcError::invalid_value(
+                            message,
+                            &[
+                                "all",
+                                "current",
+                                "<numbers, names or ids from virtual-desktop list>",
+                            ],
+                        )
+                        .hint("Run `pecofence-cli virtual-desktop list`")
+                    })?;
+                    // From the CLI the reply says where it went: no notice on the desktop.
+                    let changed = self.set_fence_desktops(id, keys, "CLI");
+                    self.push_settings_state();
+                    return Ok(mutation(changed, None, self.fence_extra(id)?));
+                }
                 if prop.is_about_icons() && self.fence_or_err(id)?.tool.is_some() {
                     return Err(unsupported(format!(
                         "{prop_name} is about icons, and a tool fence (note, clock, script) has none"
                     ))
                     .hint("Set it on a fence that shows items"));
+                }
+                if matches!(prop, super::fence_options::FenceProp::Smart(_))
+                    && self.fence_or_err(id)?.smart.is_none()
+                {
+                    return Err(unsupported(format!("{prop_name} is for smart fences"))
+                        .hint("fence list shows the smart fences (their `smart` field)"));
+                }
+                // The search as it would be after the change must be one a smart fence can run.
+                if let super::fence_options::FenceProp::Smart(change) = &prop
+                    && let Some(mut spec) = self.state.smart_spec(id).cloned()
+                {
+                    change.clone().apply(&mut spec);
+                    if let Some(problem) = spec.problem() {
+                        return Err(IpcError::invalid_value(problem, &[]).hint(
+                            "Use smartMatch all, or leave out the Everything search or that condition",
+                        ));
+                    }
+                    // Files only is one of the rows: with any, every file of the folders passes.
+                    if spec.matching == pecofence_core::smart::SmartMatch::Any
+                        && spec.rows() > 1
+                        && spec
+                            .all_of
+                            .iter()
+                            .any(|c| matches!(c, pecofence_core::Cond::FilesOnly))
+                    {
+                        self.ipc_warnings.push(
+                            "with smartMatch any, the filesOnly condition lets every file of the folders in; \
+                             leave it out of smartConditions to show only what the other conditions find"
+                                .to_string(),
+                        );
+                    }
                 }
                 if let Some(tool) = prop.tool()
                     && self.fence_or_err(id)?.tool != Some(tool)
@@ -1601,6 +1690,11 @@ impl App {
             }),
             note_text: self.state.note_text(f.id).map(str::to_string),
             script: self.script_dto(f.id),
+            smart: self.smart_dto(f.id),
+            filter: self
+                .fence_filters
+                .get(&f.id)
+                .map(|text| json!({ "text": text, "shown": self.item_views(f).len() })),
             // A tab is shown in its host's window, so that is where it is on screen.
             rect: connected.then(|| Rect::from(self.state.fence_px_rect(host))),
             // 「桌面」 arranged like the desktop is shown on a connected monitor even while the
@@ -1665,6 +1759,8 @@ impl App {
                 .then(|| self.state.portal_path(f.id))
                 .flatten()
                 .map(|p| p.to_string_lossy().into_owned()),
+            virtual_desktops: host.virtual_desktops.clone(),
+            on_current_desktop: self.on_current_desktop(f.id),
             portal,
             // Only the fence the window currently shows has a measured layout.
             fit: (connected && measure)
@@ -1713,6 +1809,9 @@ impl App {
     fn assignment_of(&self, f: &Fence, item: ItemId) -> (&'static str, Option<String>) {
         if f.kind == FenceKind::FolderPortal {
             return ("portal", None);
+        }
+        if f.smart.is_some() {
+            return ("smart", None);
         }
         match f
             .items
@@ -1970,6 +2069,70 @@ impl App {
                 &["note", "clock", "script"],
             )),
         }
+    }
+
+    /// `fences.create` with `smart` (a template) or `smartSpec` (a whole search), and
+    /// `smartMatch` for either.
+    fn ipc_create_smart(
+        &mut self,
+        title: Option<&str>,
+        rect: Option<Rect>,
+        template: Option<&str>,
+        spec: Option<pecofence_core::smart::SmartSpec>,
+        matching: Option<pecofence_core::smart::SmartMatch>,
+    ) -> IpcResult {
+        use pecofence_core::smart::Template;
+        let title = title.map(|t| checked_name("title", t)).transpose()?;
+        let (mut spec, default_title) = match (template, spec) {
+            (_, Some(spec)) => (spec, None),
+            (Some(key), None) => {
+                let keys: Vec<&str> = Template::ALL.iter().map(|t| t.key()).collect();
+                let t = Template::parse(key).ok_or_else(|| {
+                    IpcError::invalid_value(format!("unknown smart fence template {key:?}"), &keys)
+                })?;
+                let spec = t.spec(&super::smart::known_folders()).ok_or_else(|| {
+                    unsupported("the template's folder is unknown on this computer")
+                })?;
+                (spec, Some(t.title()))
+            }
+            (None, None) => return Err(unsupported("no search given")),
+        };
+        if let Some(m) = matching {
+            spec.matching = m;
+            // A template keeps to files with a row of its own: with any, that row would let
+            // every file of its folders in (a written search leaves it out the same way).
+            if template.is_some() && m == pecofence_core::smart::SmartMatch::Any {
+                spec.all_of
+                    .retain(|c| !matches!(c, pecofence_core::Cond::FilesOnly));
+            }
+        }
+        if let Some(problem) = spec.problem() {
+            return Err(IpcError::invalid_value(problem, &[]));
+        }
+        if let Some(folder) = spec.folders.iter().find(|f| !Path::new(f).is_dir()) {
+            return Err(IpcError::invalid_value(
+                format!("no folder at {folder}"),
+                &[],
+            ));
+        }
+        let rect = match rect {
+            Some(r) => {
+                validate_rect(r, &self.state.work_areas)?;
+                Some(rect_to_win(r))
+            }
+            None => None,
+        };
+        let (cx, cy) = self
+            .state
+            .work_areas
+            .first()
+            .map(|a| ((a.left + a.right) / 2, (a.top + a.bottom) / 2))
+            .ok_or_else(|| unsupported("no monitor is connected"))?;
+        let id = self
+            .create_smart_fence(spec, title.as_deref().or(default_title), rect, cx, cy)
+            .ok_or_else(|| unsupported("no room for another fence"))?;
+        self.push_settings_state();
+        Ok(mutation(true, None, self.fence_extra(id)?))
     }
 
     fn ipc_create_fence(
@@ -2328,6 +2491,12 @@ impl App {
             return Err(
                 unsupported("a tool fence (note, clock, script) holds no desktop items")
                     .hint("Move the items to a virtual fence or `inbox`"),
+            );
+        }
+        if self.fence_or_err(to)?.smart.is_some() {
+            return Err(
+                unsupported("a smart fence shows a search and holds no desktop items")
+                    .hint("Move the items to a virtual fence or `inbox`; `fence set` changes what a smart fence finds"),
             );
         }
         let mut ids: Vec<ItemId> = Vec::new();

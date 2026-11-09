@@ -103,7 +103,8 @@ impl App {
         (settings::snap_gap_dip(&self.state.config.settings.snapping) as f32 * scale).round() as i32
     }
 
-    /// Screen rectangles of the other fence windows that are showing.
+    /// Screen rectangles of the other fence windows that are showing, and that `id` is ever
+    /// on screen with (a fence of another virtual desktop may take the same spot).
     pub(super) fn other_fence_rects(&self, id: FenceId) -> Vec<RECT> {
         self.fences
             .iter()
@@ -111,6 +112,7 @@ impl App {
                 **fid != id
                     && pecofence_platform::desktop::is_visible(w.hwnd())
                     && !crate::anchor::is_desktop_fence(w.hwnd())
+                    && self.share_a_desktop(id, **fid)
             })
             .map(|(_, w)| w.rect())
             .collect()
@@ -228,10 +230,11 @@ impl App {
     /// whose monitor is connected, then those whose monitor is gone.
     fn resolve_overlaps(&mut self, movers: &[FenceId], all: bool) {
         // 像桌面一样排列 lies under the others and flows around them: not a fence to pull apart.
+        // Fences of other virtual desktops are never on screen with these: they may share a spot.
         let fences: Vec<(FenceId, clearance::Resting)> = self
             .fences
             .iter()
-            .filter(|(_, w)| !w.is_desktop_arranged())
+            .filter(|(id, w)| !w.is_desktop_arranged() && self.on_current_desktop(**id))
             .map(|(id, w)| {
                 let rect = w.rect();
                 let connected = |f: &pecofence_core::Fence| {

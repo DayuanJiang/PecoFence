@@ -53,6 +53,9 @@ pub struct AppState {
         PathBuf,
         pecofence_core::config_store::ReadError,
     )>,
+    /// The current Windows virtual desktop's key (`None`: Windows names none, there is one
+    /// desktop). The App keeps it current while it follows the switches (`vdesktops.rs`).
+    pub current_desktop: Option<String>,
     /// A config file another program held open at load (see `ConfigStore::load_waiting`):
     /// what shows came from a file further down the line or is the defaults, and no save may
     /// replace or rotate the files until this one is read (`load_after_lock`).
@@ -209,6 +212,7 @@ impl AppState {
             recovered_from,
             unreadable_moved_to: report.moved_to,
             load_failures: report.failures,
+            current_desktop: None,
             locked_config: report.locked,
         };
         // A newer version saved this file: what it keeps that this one does not know (the text
@@ -460,6 +464,7 @@ impl AppState {
             recovered_from: None,
             unreadable_moved_to: None,
             load_failures: Vec::new(),
+            current_desktop: None,
             locked_config: None,
         };
         scratch.apply_snapshot_layouts(snap.layouts.clone());
@@ -828,7 +833,43 @@ impl AppState {
         self.normalize_tabs();
         self.dirty = true;
         tracing::info!(%fence, %host, tabs = self.tabs_of(host).len(), "tab attached");
+        // The window's virtual desktops apply to every tab in it; a window that holds the inbox
+        // shows on every desktop (new desktop items land in the inbox).
+        let host_desktops = self
+            .fence(host)
+            .map(|h| h.virtual_desktops.clone())
+            .unwrap_or_default();
+        let holds_inbox = self.window_holds_inbox(host);
+        let desktops = if holds_inbox {
+            Vec::new()
+        } else {
+            host_desktops.clone()
+        };
+        let differ = self
+            .tabs_of(host)
+            .iter()
+            .filter_map(|t| self.fence(*t))
+            .any(|f| f.virtual_desktops != desktops);
+        if differ {
+            tracing::info!(
+                %host,
+                window = ?host_desktops,
+                holds_inbox,
+                to = ?desktops,
+                "the tabs take their window's virtual desktops"
+            );
+            self.set_virtual_desktops(host, desktops);
+        }
         true
+    }
+
+    /// Whether the window `fence` is shown in holds the inbox (as its host or as a tab): such a
+    /// window shows on every virtual desktop.
+    pub fn window_holds_inbox(&self, fence: FenceId) -> bool {
+        self.tabs_of(self.host_of(fence))
+            .iter()
+            .filter_map(|t| self.fence(*t))
+            .any(|f| f.kind == FenceKind::Inbox)
     }
 
     pub fn detach_tab(&mut self, fence: FenceId) -> Option<pecofence_core::TabDetach> {
@@ -1116,22 +1157,34 @@ impl AppState {
         last_opened: Option<i64>,
         now: i64,
     ) -> pecofence_core::ItemFacts {
+        let mut facts = Self::plain_facts(entry, last_opened, now);
         let lower = entry.file_name.to_lowercase();
-        let (shortcut_target, shortcut_target_ext) = if lower.ends_with(".lnk") {
-            let t = shell::shortcut_target(&entry.path);
-            let ext = t.as_deref().map(pecofence_core::rules::target_ext);
-            (t, ext)
+        if lower.ends_with(".lnk") {
+            facts.shortcut_target = shell::shortcut_target(&entry.path);
+            facts.shortcut_target_ext = facts
+                .shortcut_target
+                .as_deref()
+                .map(pecofence_core::rules::target_ext);
         } else if lower.ends_with(".url") {
-            (shell::url_shortcut_target(&entry.path), Some(".url".into()))
-        } else {
-            (None, None)
-        };
+            facts.shortcut_target = shell::url_shortcut_target(&entry.path);
+            facts.shortcut_target_ext = Some(".url".into());
+        }
+        facts
+    }
+
+    /// [`Self::facts_at`] without reading shortcut targets (a COM round trip per shortcut):
+    /// enough for every condition but the shortcut target and the program type.
+    pub(crate) fn plain_facts(
+        entry: &DesktopEntry,
+        last_opened: Option<i64>,
+        now: i64,
+    ) -> pecofence_core::ItemFacts {
         pecofence_core::ItemFacts {
             file_name: entry.file_name.clone(),
             is_folder: entry.is_folder,
             size_bytes: entry.size,
-            shortcut_target,
-            shortcut_target_ext,
+            shortcut_target: None,
+            shortcut_target_ext: None,
             created_minutes_local: pecofence_platform::fileinfo::local_time_parts(entry.created)
                 .map(|(m, _)| m),
             created_weekday: pecofence_platform::fileinfo::local_time_parts(entry.created)
@@ -1517,7 +1570,8 @@ impl AppState {
         } else {
             self.folder_root(fence.id)
         };
-        if folder.is_some() {
+        // A smart fence's search results live with the portal items (paths, rebuilt each run).
+        if folder.is_some() || fence.smart.is_some() {
             self.portal_members
                 .get(&fence.id)
                 .map(|ids| {
@@ -1901,20 +1955,7 @@ impl AppState {
         let started = std::time::Instant::now();
         let was_missing = self.portal_missing.contains(&id);
         let old_items = self.evict_portal_members(id);
-        // Display names survive a re-read: asking the shell costs several ms per item on a
-        // OneDrive folder, and an unchanged file (same path, same mtime) has the same name.
-        let known: HashMap<(ItemKey, i64), String> = old_items
-            .iter()
-            .map(|it| ((it.key.clone(), it.mtime), it.display_name.clone()))
-            .collect();
-        let known_name = |key: &ItemKey, entry: &DesktopEntry| {
-            known
-                .get(&(key.clone(), entry.mtime))
-                // ItemKey ignores case. A case-only rename leaves that key and mtime
-                // unchanged, but the old display spelling must not be reused.
-                .filter(|name| entry.file_name.starts_with(name.as_str()))
-                .cloned()
-        };
+        let known = KnownNames::of(&old_items);
         let entries = shell::enumerate_folder(&dir);
         // A folder that is gone lists as empty; the fence must say which of the two it is. Only
         // an empty listing asks (one more round trip on an unreachable share otherwise).
@@ -1924,10 +1965,7 @@ impl AppState {
         } else {
             self.portal_missing.remove(&id);
         }
-        let unnamed = entries
-            .iter()
-            .filter(|e| known_name(&ItemKey::from_path(&e.path.to_string_lossy()), e).is_none())
-            .count();
+        let unnamed = entries.iter().filter(|e| known.get(e).is_none()).count();
         // A first read (startup, a subfolder entered) names the whole folder in one go.
         let listed = if unnamed > 2 {
             shell::display_names_in(&dir)
@@ -1937,44 +1975,13 @@ impl AppState {
         let mut ids = Vec::new();
         let mut new_items = Vec::new();
         for entry in entries {
-            let path_str = entry.path.to_string_lossy().to_string();
-            let item_id = portal_item_id(&path_str);
-            let (icon_key, _) =
-                crate::icons::icon_key_for(&entry.path, entry.is_folder, entry.mtime);
-            let key = ItemKey::from_path(&path_str);
-            let display_name = known_name(&key, &entry)
-                .or_else(|| listed.get(&entry.file_name.to_lowercase()).cloned())
-                .unwrap_or_else(|| {
-                    shell::display_name(&entry.path).unwrap_or_else(|| {
-                        if entry.is_folder {
-                            entry.file_name.clone()
-                        } else {
-                            Path::new(&entry.file_name)
-                                .file_stem()
-                                .map(|s| s.to_string_lossy().to_string())
-                                .unwrap_or_else(|| entry.file_name.clone())
-                        }
-                    })
-                });
-            let item = Item {
-                id: item_id,
-                key,
-                origin: Origin::Namespace,
-                display_name,
-                file_id: None,
-                mtime: entry.mtime,
-                is_folder: entry.is_folder,
-                attrs: entry.attributes,
-                icon_key,
-                orphaned_since: None,
-                size: entry.size,
-                open_count: 0,
-                last_opened: None,
-                path: Some(path_str),
-            };
+            let name = known
+                .get(&entry)
+                .or_else(|| listed.get(&entry.file_name.to_lowercase()).cloned());
+            let item = runtime_item(entry, name);
             new_items.push(item.clone());
-            self.portal_items.insert(item_id, item);
-            ids.push(item_id);
+            ids.push(item.id);
+            self.portal_items.insert(item.id, item);
         }
         let changed = old_items != new_items || missing != was_missing;
         let ms = crate::share_log::millis(started.elapsed());
@@ -1985,6 +1992,65 @@ impl AppState {
         }
         self.portal_members.insert(id, ids);
         changed
+    }
+
+    /// The search of smart fence `id` (智能栅栏); None for any other fence.
+    pub fn smart_spec(&self, id: FenceId) -> Option<&pecofence_core::smart::SmartSpec> {
+        self.fence(id)?.smart.as_ref()
+    }
+
+    /// Creates a smart fence showing the results of `spec`, newest first. The results come
+    /// later ([`Self::set_smart_results`]).
+    pub fn new_smart_fence(
+        &mut self,
+        title: &str,
+        rect: RECT,
+        spec: pecofence_core::smart::SmartSpec,
+    ) -> Option<FenceId> {
+        let id = self.new_fence(title, rect)?;
+        if let Some(f) = self.fence_mut(id) {
+            tracing::info!(%id, template = ?spec.template, folders = ?spec.folders, matching = spec.matching.as_str(), subfolders = spec.subfolders, conditions = spec.all_of.len(), within_days = ?spec.within_days, everything = ?spec.everything, limit = spec.limit, "smart fence created");
+            f.smart = Some(spec);
+            f.view.sort = SortMode::Date;
+        }
+        Some(id)
+    }
+
+    /// Replaces smart fence `id`'s results, each with its display name (named on the worker
+    /// that found them, see [`Self::smart_known_names`]). Returns true when they changed (set,
+    /// order or content), so the window must redraw.
+    pub fn set_smart_results(&mut self, id: FenceId, entries: Vec<(DesktopEntry, String)>) -> bool {
+        if self.smart_spec(id).is_none() {
+            return false;
+        }
+        let old_items = self.evict_portal_members(id);
+        let mut ids = Vec::with_capacity(entries.len());
+        let mut new_items = Vec::with_capacity(entries.len());
+        for (entry, name) in entries {
+            let item = runtime_item(entry, Some(name));
+            if ids.contains(&item.id) {
+                continue;
+            }
+            new_items.push(item.clone());
+            ids.push(item.id);
+            self.portal_items.insert(item.id, item);
+        }
+        self.portal_members.insert(id, ids);
+        old_items != new_items
+    }
+
+    /// The display names smart fence `id` shows now, for the worker naming its next results:
+    /// an unchanged file keeps its name without asking the shell again.
+    pub(crate) fn smart_known_names(&self, id: FenceId) -> KnownNames {
+        KnownNames(
+            self.portal_members
+                .get(&id)
+                .into_iter()
+                .flatten()
+                .filter_map(|i| self.portal_items.get(i))
+                .map(|it| ((it.key.clone(), it.mtime), it.display_name.clone()))
+                .collect(),
+        )
     }
 
     /// Re-reads every folder a fence shows (startup, watcher batches). Returns the fences that
@@ -2002,7 +2068,7 @@ impl AppState {
         let stale: Vec<FenceId> = self
             .portal_members
             .keys()
-            .filter(|id| !portals.contains(id))
+            .filter(|id| !portals.contains(id) && self.smart_spec(**id).is_none())
             .copied()
             .collect();
         for id in stale {
@@ -2089,9 +2155,11 @@ impl AppState {
         if self.move_target_folder(to).is_some() {
             return 0;
         }
-        // A tool fence (便签) shows its tool, never desktop items.
-        if self.fence(to).is_some_and(|f| f.tool.is_some()) {
-            tracing::info!(fence = %to, items = items.len(), "move into a tool fence refused");
+        // A tool fence (便签) shows its tool and a smart fence its search, never desktop items:
+        // an item moved there would vanish from every fence.
+        if let Some(f) = self.fence(to).filter(|f| !f.holds_items()) {
+            let kind = if f.smart.is_some() { "smart" } else { "tool" };
+            tracing::info!(fence = %to, kind, items = items.len(), "move into a fence that holds no items refused");
             return 0;
         }
         // A fence that shows icons takes the moved ones after them (手动 order).
@@ -2507,6 +2575,30 @@ impl AppState {
         }
     }
 
+    /// Whether the window of `fence` (its host's, for a tab) shows on the current virtual
+    /// desktop.
+    pub fn on_current_desktop(&self, fence: FenceId) -> bool {
+        self.fence(self.host_of(fence)).is_none_or(|f| {
+            f.shows_on_desktop(
+                self.current_desktop.as_deref(),
+                &self.config.virtual_desktops,
+            )
+        })
+    }
+
+    /// 在哪个虚拟桌面显示, for the window of `id`: its host and every tab of it (empty: every
+    /// desktop), so a tab split out later keeps the window's choice.
+    pub fn set_virtual_desktops(&mut self, id: FenceId, desktops: Vec<String>) {
+        for tab in self.tabs_of(self.host_of(id)) {
+            if let Some(f) = self.fence_mut(tab)
+                && f.virtual_desktops != desktops
+            {
+                f.virtual_desktops = desktops.clone();
+                self.dirty = true;
+            }
+        }
+    }
+
     /// 自由摆放 for the 「桌面」 fence arranged like the desktop. The icon cells stay saved
     /// while it is off, so switching it on again puts the icons back where they were.
     pub fn set_free_placement(&mut self, id: FenceId, on: bool) {
@@ -2770,13 +2862,21 @@ impl AppState {
         let geo = geometry::normalize(px, &work);
         let mut fence = Fence::new(title, FenceKind::Virtual, geo);
         fence.view.icon_size = self.config.settings.icon_size;
+        // 每个虚拟桌面各用一套栅栏: it shows on the desktop it is made on.
+        if self.config.settings.per_desktop_fences
+            && let Some(desktop) = &self.current_desktop
+        {
+            fence.virtual_desktops = vec![desktop.clone()];
+        }
         let id = fence.id;
+        let desktops = fence.virtual_desktops.clone();
         self.config.layouts[self.layout].fences.push(fence);
         self.dirty = true;
         tracing::info!(
             %id,
             rect = ?(rect.left, rect.top, rect.right, rect.bottom),
             fences = self.fences().len(),
+            ?desktops,
             "fence created"
         );
         Some(id)
@@ -3130,6 +3230,71 @@ struct OpenedFolder {
     opened_by: Option<ItemId>,
 }
 
+/// Display names of runtime items that survive a re-read: asking the shell costs several ms per
+/// item on a OneDrive folder, and an unchanged file (same path, same mtime) has the same name.
+pub(crate) struct KnownNames(HashMap<(ItemKey, i64), String>);
+
+impl KnownNames {
+    fn of(old: &[Item]) -> Self {
+        Self(
+            old.iter()
+                .map(|it| ((it.key.clone(), it.mtime), it.display_name.clone()))
+                .collect(),
+        )
+    }
+
+    pub(crate) fn get(&self, entry: &DesktopEntry) -> Option<String> {
+        self.0
+            .get(&(
+                ItemKey::from_path(&entry.path.to_string_lossy()),
+                entry.mtime,
+            ))
+            // ItemKey ignores case. A case-only rename leaves that key and mtime unchanged, but
+            // the old display spelling must not be reused.
+            .filter(|name| entry.file_name.starts_with(name.as_str()))
+            .cloned()
+    }
+}
+
+/// The name a folder entry shows: the shell's (no extension, a localized folder's own name),
+/// else the file name without its extension. Asks the shell (COM).
+pub(crate) fn entry_display_name(entry: &DesktopEntry) -> String {
+    shell::display_name(&entry.path).unwrap_or_else(|| {
+        if entry.is_folder {
+            entry.file_name.clone()
+        } else {
+            Path::new(&entry.file_name)
+                .file_stem()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_else(|| entry.file_name.clone())
+        }
+    })
+}
+
+/// The runtime item of a folder portal's entry or a smart fence's result; `display_name` when
+/// already known, else the shell's name for it.
+fn runtime_item(entry: DesktopEntry, display_name: Option<String>) -> Item {
+    let path_str = entry.path.to_string_lossy().to_string();
+    let (icon_key, _) = crate::icons::icon_key_for(&entry.path, entry.is_folder, entry.mtime);
+    let display_name = display_name.unwrap_or_else(|| entry_display_name(&entry));
+    Item {
+        id: portal_item_id(&path_str),
+        key: ItemKey::from_path(&path_str),
+        origin: Origin::Namespace,
+        display_name,
+        file_id: None,
+        mtime: entry.mtime,
+        is_folder: entry.is_folder,
+        attrs: entry.attributes,
+        icon_key,
+        orphaned_since: None,
+        size: entry.size,
+        open_count: 0,
+        last_opened: None,
+        path: Some(path_str),
+    }
+}
+
 /// Stable id for a portal item derived from its (case-folded) path, so selections and pending
 /// icon lookups survive a folder refresh.
 pub(crate) fn portal_item_id(path: &str) -> ItemId {
@@ -3195,6 +3360,7 @@ mod tests {
             recovered_from: None,
             unreadable_moved_to: None,
             load_failures: Vec::new(),
+            current_desktop: None,
             locked_config: None,
         };
         state.ensure_layout();
@@ -3780,6 +3946,32 @@ mod tests {
         std::fs::remove_dir_all(root).unwrap();
     }
 
+    /// A smart fence shows a search and a tool fence its tool: an icon moved there would show
+    /// in no fence, so the move is refused and the icon stays where it was.
+    #[test]
+    fn nothing_moves_into_a_smart_or_tool_fence() {
+        let mut state = test_state();
+        let inbox = state.inbox_id().unwrap();
+        let docs = add_item(&mut state, inbox, "Docs");
+        let spec = pecofence_core::smart::SmartSpec {
+            everything: Some("x".into()),
+            limit: 10,
+            ..Default::default()
+        };
+        let smart = state
+            .new_smart_fence("Smart", RECT::default(), spec)
+            .unwrap();
+        let note = state
+            .new_tool_fence("Note", RECT::default(), FenceTool::Note)
+            .unwrap();
+        assert!(state.move_target_folder(smart).is_none());
+        assert_eq!(state.move_items(&[docs], smart), 0);
+        assert_eq!(state.move_items(&[docs], note), 0);
+        assert!(state.fence(inbox).unwrap().contains_item(docs));
+        assert!(!state.fence(smart).unwrap().contains_item(docs));
+        assert!(state.routable_fence(smart).is_none());
+    }
+
     #[test]
     fn an_opened_folder_replaces_the_one_before_and_portals_keep_to_their_own() {
         let base = std::env::temp_dir().join(format!("pecofence-browse-{}", uuid::Uuid::new_v4()));
@@ -4334,6 +4526,39 @@ mod tests {
         state.sync_desktop(&[folder]);
         assert_eq!(state.item_id_for_path(&path), Some(id));
         assert!(state.config.items[&id].is_folder);
+    }
+
+    /// Review finding 4: a window that holds the inbox shows on every virtual desktop. A bound
+    /// fence merged with the inbox loses its binding, and so does a bound window the inbox joins;
+    /// other tabs take their window's desktops.
+    #[test]
+    fn a_window_with_the_inbox_stays_on_every_virtual_desktop() {
+        let mut state = test_state();
+        let inbox = state.inbox_id().unwrap();
+        let others: Vec<FenceId> = state
+            .fences()
+            .iter()
+            .filter(|f| f.id != inbox)
+            .map(|f| f.id)
+            .collect();
+        let (a, b, c) = (others[0], others[1], others[2]);
+        let bound = vec!["{D2}".to_string()];
+        state.set_virtual_desktops(a, bound.clone());
+        assert!(!state.window_holds_inbox(a));
+        // A plain fence joining a bound window takes its desktops.
+        state.attach_tab(b, a);
+        assert_eq!(state.fence(b).unwrap().virtual_desktops, bound);
+        // The inbox joining the bound window: every tab shows everywhere.
+        state.attach_tab(inbox, a);
+        assert!(state.window_holds_inbox(b));
+        for id in [a, b, inbox] {
+            assert!(state.fence(id).unwrap().virtual_desktops.is_empty(), "{id}");
+        }
+        // A bound fence merged into the inbox's window: no binding either.
+        state.set_virtual_desktops(c, bound.clone());
+        assert_eq!(state.fence(c).unwrap().virtual_desktops, bound);
+        state.attach_tab(c, inbox);
+        assert!(state.fence(c).unwrap().virtual_desktops.is_empty());
     }
 
     /// Fence review S13: deleting many files a rule or the default placed must not grow the

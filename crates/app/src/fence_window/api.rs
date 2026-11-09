@@ -189,6 +189,11 @@ impl FenceWindow {
             script_rows: Vec::new(),
             script_hover: None,
             portal_missing: false,
+            empty_override: None,
+            title_count: None,
+            filter_active: false,
+            filter_tag: None,
+            refuses_drops: false,
             label_w: 0.0,
             icons_pending: false,
             hover: None,
@@ -291,6 +296,8 @@ impl FenceWindow {
             vis_deadline: None,
             fade_trace: FadeTrace::default(),
             retired: false,
+            off_desktop: false,
+            desktop_tip: None,
             outgoing: Vec::new(),
             spares: Vec::new(),
             swap_gen: 0,
@@ -372,6 +379,44 @@ impl FenceWindow {
         show_with_fade(&self.view, self.hwnd(), entrance);
     }
 
+    /// 在哪个虚拟桌面显示: `tip` names the desktops of a window that shows on some of them only
+    /// (the Task View glyph before its title, the text its infotip shows); `None` for one on
+    /// every desktop.
+    pub fn set_desktop_mark(&self, tip: Option<String>) {
+        self.with_view(|v| {
+            if v.desktop_tip == tip {
+                return;
+            }
+            v.deco.desktop_icon = tip.is_some();
+            v.desktop_tip = tip;
+            let _ = v.redraw_chrome_only();
+        });
+    }
+
+    /// The fence belongs (or no longer belongs) to other virtual desktops than the current one:
+    /// off, it fades out as for quick hide and nothing shows it until this is cleared; the
+    /// caller shows it again when it is back (unless quick hide holds it). Returns whether the
+    /// flag changed.
+    pub fn set_off_desktop(&self, off: bool) -> bool {
+        let hwnd = self.hwnd();
+        let changed = match self.view.borrow_mut().as_mut() {
+            Some(v) if v.off_desktop != off => {
+                v.off_desktop = off;
+                true
+            }
+            _ => false,
+        };
+        if let Ok(mut guard) = self.anchor.try_borrow_mut()
+            && let Some(a) = guard.as_mut()
+        {
+            a.set_off_desktop(hwnd, off);
+        }
+        if changed && off {
+            hide_with_fade(&self.view, hwnd, false, false);
+        }
+        changed
+    }
+
     /// Fades the window out (167 ms, shrinking to 0.97) ahead of its destruction. Returns
     /// true when the fade runs — the owner must keep the `FenceWindow` alive until
     /// `Command::FadeOutDone` arrives for its hwnd; false = already hidden, drop it now.
@@ -421,8 +466,10 @@ impl FenceWindow {
             },
         );
         format!(
-            "title={:?} opacity={:.2} scale={:.3} fade={fade} retired={} rolled={} rolling={} peeking={} items={} tabs={} selected={} focused={:?} shadow_visible={} shadow_alpha={} layout={:?} locked={} auto_height={} active={} scroll={:.1} client={:?} client_offset=({},{}) chrome={:?} glass={:?} wallpaper_uploads={} title_size={} tab_fonts={:?} tab_rects={:?} content_x={} content={:?} capture={} tab_drag={} window_drag={} detach_pending={} plate_inset={} plate_alpha={:.2} mouse_inside={} content_y={} text_size={} clock_text={}/{} note_boxes={} script_rows={}",
+            "title={:?} title_count={:?} filtered={} opacity={:.2} scale={:.3} fade={fade} retired={} rolled={} rolling={} peeking={} items={} tabs={} selected={} focused={:?} shadow_visible={} shadow_alpha={} layout={:?} locked={} auto_height={} active={} scroll={:.1} client={:?} client_offset=({},{}) chrome={:?} glass={:?} wallpaper_uploads={} title_size={} tab_fonts={:?} tab_rects={:?} content_x={} content={:?} capture={} tab_drag={} window_drag={} detach_pending={} plate_inset={} plate_alpha={:.2} mouse_inside={} content_y={} text_size={} clock_text={}/{} note_boxes={} script_rows={} off_desktop={} desktop_tip={:?} filter_tag={:?} badge={} rolled_count={} tag_fit={:?}",
             v.title,
+            v.title_count,
+            v.filter_active,
             v.root.opacity(),
             v.root.scale().x,
             v.retired,
@@ -469,6 +516,15 @@ impl FenceWindow {
             v.clock_text.1,
             dump_rects(&v.note_boxes),
             dump_rects(&v.script_rows),
+            v.off_desktop,
+            v.desktop_tip,
+            v.filter_tag,
+            // 智能栅栏's folder glyph with the magnifier badge is drawn.
+            v.deco.search_glyph && v.deco.folder_icon && !v.deco.up_button,
+            // The rolled title's 「N 项」 is drawn (while rolled).
+            v.rolled_up && v.shows_rolled_count(),
+            // What of the filter tag fits (its box in DIPs, the text, the count, the chip).
+            v.filter_tag_fit(),
         )
     }
 
@@ -984,6 +1040,7 @@ impl FenceWindow {
                         && a.title_size == b.title_size
                         && a.title_color == b.title_color
                         && a.folder_icon == b.folder_icon
+                        && a.desktop_icon == b.desktop_icon
                         && a.up_button == b.up_button
                 });
             let same_set = v.tabs.len() == tabs.len()
@@ -1247,10 +1304,12 @@ impl FenceWindow {
         });
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn set_portal_deco(
         &self,
         is_portal: bool,
         folder_icon: bool,
+        search_glyph: bool,
         up_button: bool,
         navigate_folders: bool,
         folder_missing: bool,
@@ -1260,6 +1319,8 @@ impl FenceWindow {
             let deco = TitleDeco {
                 folder_icon,
                 up_button,
+                search_glyph,
+                desktop_icon: v.deco.desktop_icon,
             };
             let changed = v.deco != deco || v.navigate_folders != navigate_folders;
             let portal_changed = v.is_portal != is_portal || v.portal_missing != folder_missing;
@@ -1284,6 +1345,44 @@ impl FenceWindow {
                 let _ = v.redraw_content();
             }
         });
+    }
+
+    /// What the fence says while it shows nothing (`empty`: a smart fence searching, finding
+    /// nothing or needing Everything, a filter matching nothing; None = the usual text) and a
+    /// smart fence's count in its capsule at the right of the title row (`count`, "6"; None
+    /// for any other fence).
+    pub fn set_status_view(&self, empty: Option<&'static str>, count: Option<String>) {
+        self.with_view(|v| {
+            if v.empty_override == empty && v.title_count == count {
+                return;
+            }
+            v.empty_override = empty;
+            v.title_count = count;
+            let _ = v.redraw_chrome_only();
+            if v.items.is_empty() && !v.rolled_up {
+                let _ = v.redraw_content();
+            }
+        });
+    }
+
+    /// 筛选: whether the fence is filtered (Esc in it then clears the filter).
+    pub fn set_filtered(&self, active: bool) {
+        self.with_view(|v| v.filter_active = active);
+    }
+
+    /// 筛选: the tag in the title row (`tag`: the type, the text and the count; None: no tag).
+    pub fn set_filter_tag(&self, tag: Option<(String, String, String)>) {
+        self.with_view(|v| {
+            if v.filter_tag != tag {
+                v.filter_tag = tag;
+                let _ = v.redraw_chrome_only();
+            }
+        });
+    }
+
+    /// 智能栅栏: the fence shown takes no drops (it shows a search).
+    pub fn set_refuses_drops(&self, on: bool) {
+        self.with_view(|v| v.refuses_drops = on);
     }
 
     /// The fence whose items this window currently shows (host or active tab).

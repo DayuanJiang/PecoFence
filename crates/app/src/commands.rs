@@ -58,6 +58,11 @@ pub const WM_APP_SCRIPT_DONE: u32 = msg::WM_APP + 20;
 pub const WM_APP_EVERYTHING_SETUP: u32 = msg::WM_APP + 21;
 /// 对话框跳转 offer: a file dialog and an Explorer folder to offer (`dialog_jump::take_offer`).
 pub const WM_APP_DIALOG_OFFER: u32 = msg::WM_APP + 22;
+/// 智能栅栏: a folder read without Everything finished on its worker.
+pub const WM_APP_SMART_READ: u32 = msg::WM_APP + 32;
+/// 智能栅栏: a smart fence's own folder watcher saw a change (the fences wait in
+/// `SmartState::changed`).
+pub const WM_APP_SMART_FS: u32 = msg::WM_APP + 33;
 
 /// What a file drop does with the dropped paths (Explorer's Move / Copy / Create shortcut, the
 /// effect the drop target reported).
@@ -322,6 +327,30 @@ pub enum Command {
         x: i32,
         y: i32,
     },
+    /// 新建智能栅栏… (`fence` None; the new fence goes near the screen point) or 编辑条件… of a
+    /// smart fence: the smart fence editor.
+    OpenSmartEditor {
+        fence: Option<FenceId>,
+        x: i32,
+        y: i32,
+        by: &'static str,
+    },
+    /// Everything answered a smart fence's search (`WM_COPYDATA` to the control window).
+    SmartResults {
+        kind: usize,
+        bytes: Vec<u8>,
+    },
+    /// Ctrl+F or 筛选… in a folder fence or a smart fence: open its filter box.
+    OpenFenceFilter(FenceId),
+    /// The filter box's text changed (empty: no filter).
+    FenceFilterText {
+        fence: FenceId,
+        text: String,
+    },
+    /// The filter box closed (the filter stays as typed).
+    FenceFilterClosed(FenceId),
+    /// Esc in a filtered fence, or 清除筛选 in its menu: the fence shows everything again.
+    ClearFenceFilter(FenceId),
     /// A click on a note's text: open its editor.
     EditNote {
         fence: FenceId,
@@ -420,6 +449,8 @@ pub enum Command {
     },
     /// JSON message from the settings page.
     SettingsMessage(String),
+    /// JSON message from the smart fence editor's page.
+    EditorMessage(String),
     /// The rating notice was clicked or went away (see `notice.rs`).
     Notice(crate::notice::NoticeEvent),
     /// Ctrl+Z in a fence (see `app/undo.rs`).

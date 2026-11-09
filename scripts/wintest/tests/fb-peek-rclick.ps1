@@ -81,7 +81,9 @@ function OpenSearch($q) {
   return ([M]::BoxText() -eq $q)
 }
 # Row i's middle (one result row and the show-all row: no group headings).
-function RowPt($i) { return @(($script:box.L + 200), ($script:box.T + 82 + 44 * $i)) }
+# Row $i of the first group: under the 56 px box, the 38 px type tabs, the 4 px gap and the
+# group heading (24 px).
+function RowPt($i) { return @(($script:box.L + 200), ($script:box.T + 144 + 44 * $i)) }
 function RightClickRow($i) {
   $p = RowPt $i
   [G]::RClick($p[0], $p[1]); Start-Sleep -Milliseconds 900
@@ -175,7 +177,7 @@ if ($Part -eq 'k') {
   OpenSearch "rkkr$Tag" | Out-Null
   [G]::Press(0x27); Start-Sleep -Milliseconds 900
   $m = MenuWin 3; $at = MenuAt $m
-  $under = ($m -ne [IntPtr]::Zero) -and ([Math]::Abs((Rect $m).L - ($box.L + 16)) -le 12) -and ([Math]::Abs((Rect $m).T - ($box.T + 104)) -le 12)
+  $under = ($m -ne [IntPtr]::Zero) -and ([Math]::Abs((Rect $m).L - ($box.L + 16)) -le 12) -and ([Math]::Abs((Rect $m).T - ($box.T + 166)) -le 12)
   MenuPick '^复制路径' $m | Out-Null; Start-Sleep -Milliseconds 600
   Check '→ at the end: the menu under the row, 复制路径' ($under -and (ClipText) -eq $p) "menu at=$at box=$($box.L),$($box.T) clip='$(ClipText)'"
   EndSearch
@@ -238,14 +240,22 @@ if ($Part -eq 'k') {
   $m = MenuWin 1
   Check 'a right-click on the box around the text: no menu, the search stays' ($m -eq [IntPtr]::Zero -and [M]::BoxText() -eq "rkke$Tag") "menu=$(MenuTexts $m) box='$([M]::BoxText())'"
   CloseMenus
-  # The show-all row is the last one (no group headings: 44 px rows under the 56 px box).
-  $rows = [int](($box.B - $box.T - 68) / 44)
-  $q = RowPt ($rows - 1)
-  [G]::RClick($q[0], $q[1]); Start-Sleep -Milliseconds 900
-  $m = MenuWin 1
-  $line = @(PfLogAll | Where-Object { $_ -match 'the row has no file path' -and $_ -match 'show all in Everything' }).Count
-  Check 'a right-click on 在 Everything 里查看全部结果: no menu, the search stays' ($m -eq [IntPtr]::Zero -and [M]::BoxText() -eq "rkke$Tag" -and $line -gt 0) "menu=$(MenuTexts $m) box='$([M]::BoxText())' log lines=$line rows=$rows"
-  CloseMenus
+  # The list ends with the show-all row and 把这次搜索放到桌面, over the 8 px gap and the 36 px
+  # bottom bar: 44 px rows counted from the window's bottom.
+  $rows = 'from the bottom'
+  foreach ($foot in @(@(2, 'show all in Everything', '在 Everything 里查看全部结果'), @(1, 'put the search on the desktop', '把这次搜索放到桌面'))) {
+    $q = @(($box.L + 200), ($box.B - 66 - 44 * ($foot[0] - 1)))
+    [G]::RClick($q[0], $q[1]); Start-Sleep -Milliseconds 900
+    $m = MenuWin 1
+    $line = @(PfLogAll | Where-Object { $_ -match 'the row has no file path' -and $_ -match $foot[1] }).Count
+    Check "a right-click on $($foot[2]): no menu, the search stays" ($m -eq [IntPtr]::Zero -and [M]::BoxText() -eq "rkke$Tag" -and $line -gt 0) "menu=$(MenuTexts $m) box='$([M]::BoxText())' log lines=$line rows=$rows"
+    CloseMenus
+    # The right-click highlighted the row: Ctrl+O on it has no menu either.
+    Chord 0x11 0x4F; Start-Sleep -Milliseconds 900
+    $m = MenuWin 1
+    Check "Ctrl+O on $($foot[2]): no menu, the search stays" ($m -eq [IntPtr]::Zero -and [M]::BoxText() -eq "rkke$Tag") "menu=$(MenuTexts $m) box='$([M]::BoxText())'"
+    CloseMenus
+  }
   EndSearch
 
   Case 'a folder row'
@@ -304,6 +314,14 @@ if ($Part -eq 'k') {
   $m = RightClickRow 0
   Shot 'k06-rclick-row'
   Check 'a right-click on a row opens its menu at the pointer' ($m -ne [IntPtr]::Zero -and $script:near -and (MenuTexts $m) -match '复制路径') "menu at=$(MenuAt $m) items=$(MenuTexts $m)"
+  # PopupMenu shows item tooltips only where an entry has one: none here.
+  $tips = 0; $swept = @(MenuRows $m | Where-Object { $_.text })
+  foreach ($r in $swept) {
+    [G]::MoveTo([int](($r.L + $r.R) / 2), [int](($r.T + $r.B) / 2)); Start-Sleep -Milliseconds 300
+    $tips = [math]::Max($tips, @([W]::Tops('tooltips_class32') | Where-Object { [W]::ProcOf($_) -eq 'pecofence' }).Count)
+  }
+  Check 'no PecoFence tooltip over the rows of the row menu' ($tips -eq 0 -and $swept.Count -gt 5) "tips=$tips rows=$($swept.Count)"
+  CloseAllMenus
   EndSearch
 }
 

@@ -14,7 +14,7 @@ const fixture = {
   locale: 'zh-CN', translations: {},
   settings: {
     language: 'zh-CN',
-    autostart: false, hideRealIcons: false, keepIconsHidden: false, hideInboxWhenIconsShown: false, offerNewFence: true, featureTips: true, quickHide: { enabled: true },
+    autostart: false, hideRealIcons: false, keepIconsHidden: false, hideInboxWhenIconsShown: false, offerNewFence: true, featureTips: true, perDesktopFences: false, quickHide: { enabled: true },
     showDesktop: 'keepVisible', theme: 'dark', themeStyle: 'fluent', labelColor: 'auto', titleAlign: 'left', tabBar: 'top', backdrop: 'acrylic', iconSize: 48,
     icons: { tintRgb: null, tintStrength: 0.6, chameleon: false, shortcutArrows: true },
     rollUp: { hoverPeek: true, clickToExpand: false, pushNeighbors: true, titleOnHover: false, hideInactiveScrollbar: false, switchTabOnHover: false, hideCountAndChevron: false },
@@ -29,7 +29,7 @@ const fixture = {
     ],
   },
   fences: [
-    { id: 'fence-a', title: 'Documents', kind: 'virtual', host: null, iconSize: 48, spacing: 'normal', spacingPx: 0, labelLines: 2, layout: 'icons', iconAlign: 'left', autoHeight: false, locked: false, excludeFromQuickHide: false, opacity: 'default', tint: null, titleColor: 'theme', titleSize: 'normal', titleOnHover: 'default', openFoldersInside: false, portal: null },
+    { id: 'fence-a', title: 'Documents', kind: 'virtual', host: null, virtualDesktops: ['{B}'], iconSize: 48, spacing: 'normal', spacingPx: 0, labelLines: 2, layout: 'icons', iconAlign: 'left', autoHeight: false, locked: false, excludeFromQuickHide: false, opacity: 'default', tint: null, titleColor: 'theme', titleSize: 'normal', titleOnHover: 'default', openFoldersInside: false, portal: null },
     { id: 'fence-b', title: 'Images', kind: 'virtual', host: 'Documents', iconSize: 96, spacing: 'loose', spacingPx: 16, labelLines: 1, layout: 'list', autoHeight: true, locked: false, excludeFromQuickHide: false, opacity: 'transparent', tint: null, tabColor: 'E74856', titleColor: 'theme', titleSize: 'normal', titleOnHover: 'default', portal: null },
     { id: 'inbox', title: 'Desktop', kind: 'inbox', host: null, iconSize: 48, spacing: 'normal', spacingPx: 0, labelLines: 3, layout: 'icons', autoHeight: false, locked: true, excludeFromQuickHide: true, opacity: 'solid', tint: '0078D4', tintTitleOnly: true, titleColor: 'tint', titleSize: 'large', titleOnHover: 'hover', hideWhenEmpty: true, desktopLayout: true, openFoldersInside: true, expandUpward: true, portal: null },
     { id: 'portal', title: 'Portal', kind: 'portal', host: null, iconSize: 32, spacing: 'compact', spacingPx: -12, labelLines: 0, layout: 'icons', iconAlign: 'center', autoHeight: false, locked: false, excludeFromQuickHide: false, opacity: 'clear', tint: '123456', titleColor: 'ABCDEF', titleSize: 'small', titleOnHover: 'always', portal: { navigate: true, titleIcon: false } },
@@ -38,6 +38,7 @@ const fixture = {
   snapshots: [{ id: 'snapshot-a', name: 'Before changes', date: '2026-09-09', fenceCount: 4 }],
   backups: [{ name: '2026-09-09', path: 'C:\\PecoFence\\backups\\2026-09-09.json' }],
   monitors: [{ id: 'one', label: 'Display 1' }, { id: 'two', label: 'Display 2' }],
+  virtualDesktops: [{ id: '{A}', name: 'Work', current: true }, { id: '{B}', name: 'Games', current: false }],
   desktopIconsHidden: false,
   version: 'test', configPath: 'C:\\PecoFence\\config.json', memoryMb: 28, itemCount: 12,
   themeMode: 'dark', accent: '#60CDFF',
@@ -149,7 +150,9 @@ function bridge() {
           // Mirror the host: a portal flag lands in `portal`, everything else on the fence.
           const fence = state.fences.find(f => f.id === message.id);
           if (message.prop === 'portalNavigate') fence.portal.navigate = message.value;
-          else if (message.prop === 'portalTitleIcon') fence.portal.titleIcon = message.value;
+          else if (message.prop === 'portalTitleIcon') (fence.portal || fence.smart).titleIcon = message.value;
+          // 在哪个虚拟桌面显示: `all` or one desktop's id, kept as the list of ids.
+          else if (message.prop === 'virtualDesktops') fence.virtualDesktops = message.value === 'all' ? [] : [message.value];
           else if (message.prop !== 'dockTop') fence[message.prop] = message.value;
           if (message.prop === 'spacingPx') fence.spacing = message.value <= -8 ? 'compact' : message.value >= 12 ? 'loose' : 'normal';
         }
@@ -171,6 +174,61 @@ function bridge() {
         if (['ready', 'patchSettings', 'setRules', 'setFence'].includes(message.type) || message.type === 'action') {
           setTimeout(window.testRefresh, 0);
         }
+      },
+    },
+  };
+}
+
+// 智能栅栏编辑器: what the host sends the editor's page (`editor`), for a new fence, for 最近 7 天下载
+// and for a search that uses every kind of row.
+const editorDl = 'C:\\Users\\me\\Downloads';
+const editorTemplates = [
+  { key: 'downloads', title: '最近 7 天下载', spec: { template: 'downloads', folders: [editorDl], subfolders: true, allOf: [{ cond: 'filesOnly', value: null }], withinDays: 7, limit: 200 } },
+  { key: 'screenshots', title: '最近一周的截图', spec: null },
+  { key: 'large', title: '大于 1 GB 的文件', spec: { template: 'large', subfolders: true, allOf: [{ cond: 'filesOnly', value: null }, { cond: 'sizeMb', value: { min: 1024, max: null } }], limit: 200 } },
+  { key: 'psd', title: '所有 .psd 文件', spec: { template: 'psd', subfolders: true, allOf: [{ cond: 'filesOnly', value: null }, { cond: 'ext', value: ['.psd'] }], limit: 200 } },
+  { key: 'recent', title: '最近打开的文件', spec: { template: 'recent', folders: ['C:\\Users\\me\\Recent'], subfolders: false, allOf: [{ cond: 'filesOnly', value: null }, { cond: 'ext', value: ['.lnk'] }], limit: 40 } },
+];
+const editorFixtures = {
+  // Saved by an older build or the CLI: plain files, a dotted extension, an origin condition.
+  odd: { type: 'editor', fence: 'smart-odd', isNew: false, title: 'Odd', templates: editorTemplates, everything: { state: 'running' },
+    spec: { folders: ['D:\\Odd'], subfolders: true, allOf: [{ cond: 'filesOnly', value: null, plain: true }, { cond: 'ext', value: ['.psd'] }, { cond: 'origin', value: 'publicDesktop' }], limit: 200 } },
+  new: { type: 'editor', fence: null, isNew: true, title: '', spec: { subfolders: true, limit: 200 }, templates: editorTemplates, everything: { state: 'running' } },
+  dl: { type: 'editor', fence: 'smart-dl', isNew: false, title: '最近 7 天下载', spec: editorTemplates[0].spec, templates: editorTemplates, everything: { state: 'running' } },
+  every: { type: 'editor', fence: 'smart-all', isNew: false, title: 'Every row', templates: editorTemplates, everything: { state: 'running' },
+    spec: { folders: ['D:\\Work', 'E:\\Archive'], subfolders: false, withinDays: 30, name: 'bg', everything: 'invoice|receipt', limit: 500,
+      allOf: [
+        { cond: 'type', value: ['images', 'music'] }, { cond: 'ext', value: ['pdf', 'tar.gz'] }, { cond: 'name', value: { op: 'startsWith', value: 'IMG_' } },
+        { cond: 'sizeMb', value: { min: 1024, max: null } }, { cond: 'sizeMb', value: { min: 1.5, max: 20 } }, { cond: 'createdTime', value: { from_min: 1320, to_min: 360 } },
+        { cond: 'createdWeekday', value: [5, 6] }, { cond: 'shortcutTarget', value: { op: 'contains', value: 'steam' } }, { cond: 'idleDays', value: { min: 45 } },
+        { cond: 'glob', value: '*.bak' },
+      ] } },
+};
+
+function editorBridge() {
+  const state = JSON.parse(document.getElementById('fixture').textContent);
+  window.testEditor = JSON.parse(document.getElementById('fixture-editor').textContent);
+  window.testMessages = [];
+  let receive;
+  window.testReceive = data => receive({ data: structuredClone(data) });
+  window.testState = state;
+  delete Crypto.prototype.randomUUID;
+  window.chrome = {
+    webview: {
+      addEventListener(_type, handler) { receive = handler; },
+      postMessage(message) {
+        window.testMessages.push(structuredClone(message));
+        // Mirror the host: the page's language and theme first, then the fence.
+        if (message.type === 'ready') setTimeout(() => { receive({ data: structuredClone(state) }); receive({ data: structuredClone(window.testEditor) }); }, 0);
+        // The count: testCount(spec) gives the answer ({source, n, approx}); testHoldCount keeps
+        // the answers back for the test to send (out of order, say).
+        if (message.type === 'editorCount') {
+          const answer = { type: 'editorCount', seq: message.seq, everything: { state: 'running' }, ...(window.testCount ? window.testCount(message.spec) : { source: 'everything', n: 37, approx: false }) };
+          if (window.testHoldCount) window.testHeld = [...(window.testHeld || []), answer];
+          else setTimeout(() => receive({ data: answer }), 0);
+        }
+        // The folder picker answers with testPickPath (null: cancelled).
+        if (message.type === 'editorPickFolder') setTimeout(() => receive({ data: { type: 'editorFolder', row: message.row, path: window.testPickPath === undefined ? 'D:\\Picked' : window.testPickPath } }), 0);
       },
     },
   };
@@ -479,6 +537,47 @@ async function runTests() {
     change(doc, 'fenceIconAlign', 'center'); await settle();
     assert(messages().at(-1).id === 'fence-a' && messages().at(-1).prop === 'iconAlign' && messages().at(-1).value === 'center', 'Icon alignment not posted');
   });
+  await test('在哪个虚拟桌面显示 lists the desktops, shows the choice and posts it; none for the inbox or one desktop', async () => {
+    doc.querySelector('[data-page=fences]').click();
+    const messages = () => frame.contentWindow.testMessages.filter(m => m.type === 'setFence' && m.prop === 'virtualDesktops');
+    change(doc, 'fenceSel', 'fence-a');
+    const card = doc.getElementById('fenceVdCard'), sel = doc.getElementById('fenceVd');
+    assert(card.style.display !== 'none', 'Card hidden with two desktops');
+    const names = [...sel.options].map(o => o.textContent).join('|');
+    assert(names === '所有虚拟桌面|Work（当前）|Games', 'Options: ' + names);
+    assert(sel.value === '{B}', 'The desktop the fence is on is not chosen: ' + sel.value);
+    change(doc, 'fenceVd', ''); await settle();
+    assert(messages().at(-1).id === 'fence-a' && messages().at(-1).value === 'all', '所有虚拟桌面 not posted as all');
+    assert(doc.getElementById('fenceVd').value === '', 'Every desktop not shown after the refresh');
+    change(doc, 'fenceVd', '{A}'); await settle();
+    assert(messages().at(-1).value === '{A}' && doc.getElementById('fenceVd').value === '{A}', 'A desktop not posted or not shown');
+    change(doc, 'fenceSel', 'inbox');
+    assert(doc.getElementById('fenceVdCard').style.display === 'none', 'The inbox offers a choice');
+    const tabbed = current().fences.find(f => f.id === 'fence-b');
+    tabbed.inboxWindow = true;
+    change(doc, 'fenceSel', 'fence-b');
+    frame.contentWindow.testRefresh(); await settle();
+    assert(doc.getElementById('fenceVdCard').style.display === 'none', 'A tab in a window with the inbox offers a choice');
+    delete tabbed.inboxWindow;
+    const desktops = current().virtualDesktops;
+    current().virtualDesktops = [];
+    change(doc, 'fenceSel', 'fence-b');
+    frame.contentWindow.testRefresh(); await settle();
+    assert(doc.getElementById('fenceVdCard').style.display === 'none', 'Card shown with one desktop');
+    current().virtualDesktops = desktops;
+    change(doc, 'fenceSel', 'fence-a');
+    frame.contentWindow.testRefresh(); await settle();
+    assert(doc.getElementById('fenceVdCard').style.display !== 'none', 'A bound fence lost its card');
+  });
+  await test('每个虚拟桌面各用一套栅栏 is posted from the General page', async () => {
+    doc.querySelector('[data-page=general]').click();
+    const toggle = doc.querySelector('[data-bind=perDesktopFences]');
+    assert(toggle && !toggle.classList.contains('on'), 'Switch missing or on by default');
+    toggle.click(); await settle();
+    assert(current().settings.perDesktopFences === true, 'Turning it on was not posted');
+    toggle.click(); await settle();
+    assert(current().settings.perDesktopFences === false, 'Turning it off was not posted');
+  });
   await test('Icon labels grey out with a reason where no icons show, and stay live on a desktop-arranged inbox', async () => {
     doc.querySelector('[data-page=fences]').click();
     const card = doc.getElementById('fenceNameLines'), select = doc.getElementById('fenceLabelLines');
@@ -768,6 +867,56 @@ async function runTests() {
     const fence = current().fences.find(f => f.id === 'fence-a');
     fence.iconSize = 48; fence.spacingPx = 0; fence.spacing = 'normal';
     frame.contentWindow.testRefresh();
+  });
+  await test('A smart fence shows its search in one line, with 编辑条件…, 立即刷新 and Everything', async () => {
+    const win = frame.contentWindow;
+    try {
+    const spec = { template: 'downloads', folders: ['C:\\Users\\me\\Downloads'], subfolders: true, allOf: [{ cond: 'filesOnly', value: null }], withinDays: 7, limit: 200 };
+    const base = current().fences.find(f => f.id === 'fence-a');
+    win.testState.fences.push({ ...structuredClone(base), id: 'smart', title: 'Recent downloads', smart: { spec, match: 'all', folders: spec.folders, source: 'everything', total: 6, shown: 6, query: 'q', titleIcon: true } });
+    win.testRefresh(); await settle();
+    doc.querySelector('[data-page=fences]').click();
+    change(doc, 'fenceSel', 'fence-a');
+    assert(doc.getElementById('fenceSmartGroup').style.display === 'none', 'Search conditions shown for an ordinary fence');
+    change(doc, 'fenceSel', 'smart');
+    assert(doc.getElementById('fenceSmartGroup').style.display === '', 'Search conditions hidden for a smart fence');
+    assert(doc.getElementById('fenceOpenFolders').style.display === 'none', 'Open-folders-inside offered for a smart fence');
+    const summary = () => doc.getElementById('smartSummary').textContent;
+    assert(summary() === 'Downloads 文件夹（含子文件夹） · 最近 7 天 · 仅文件', 'Summary: ' + summary());
+    assert(doc.getElementById('smartStatus').textContent.startsWith('现在显示 6 个文件 · 由 Everything 搜索') && doc.getElementById('smartEverythingBtn').hidden, 'Status wrong: ' + doc.getElementById('smartStatus').textContent);
+    for (const gone of ['smartScope', 'smartDays', 'smartConds', 'smartLimit', 'smartName', 'smartEverything']) assert(!doc.getElementById(gone), gone + ' is still on the page');
+    const before = win.testMessages.length;
+    doc.getElementById('smartEdit').click();
+    doc.getElementById('smartRefresh').click();
+    doc.querySelector('#fenceSmartGroup [data-fence=portalTitleIcon]').click(); await settle();
+    const got = win.testMessages.slice(before).filter(m => m.type === 'setFence' || m.type === 'action').map(m => m.type === 'setFence' ? `${m.prop}=${JSON.stringify(m.value)}` : `${m.name}:${m.id}`).join(' | ');
+    assert(got === 'editSmart:smart | refreshSmart:smart | portalTitleIcon=false', 'Posted: ' + got);
+    // A save in the editor comes back as new state: the line follows.
+    const smart = win.testState.fences.find(f => f.id === 'smart');
+    smart.smart.spec = { folders: ['D:\\Work', 'E:\\Archive\\'], subfolders: false, match: 'any', allOf: [{ cond: 'ext', value: ['pdf', 'docx'] }, { cond: 'name', value: { op: 'contains', value: '发票' } }], name: 'bg', limit: 200 };
+    win.testRefresh(); await settle();
+    assert(summary() === 'Work、Archive 文件夹 · 任一条件：扩展名：pdf、docx · 名称包含“发票” · 名称匹配“bg”', 'Summary after a save: ' + summary());
+    smart.smart.spec = { allOf: [{ cond: 'ext', value: ['.psd'] }], everything: 'x', limit: 200 };
+    win.testRefresh(); await settle();
+    assert(summary() === '整台电脑 · 扩展名：.psd · Everything 搜索“x”', 'Whole computer: ' + summary());
+    // Every drive without Everything: the card offers to start or install it.
+    smart.smart.source = 'needsEverything'; smart.smart.shown = 0;
+    win.testState.everything = { state: 'installed' };
+    win.testRefresh(); await settle();
+    const evBtn = doc.getElementById('smartEverythingBtn');
+    assert(!evBtn.hidden && evBtn.textContent === '启动 Everything', 'Start button missing: ' + evBtn.textContent);
+    evBtn.click();
+    win.testState.everything = { state: 'missing' }; win.testRefresh(); await settle();
+    assert(evBtn.textContent === '安装 Everything', 'Install button missing');
+    evBtn.click(); await settle();
+    const actions = win.testMessages.filter(m => m.type === 'action').slice(-2).map(m => m.name).join();
+    assert(actions === 'startEverything,installEverything', 'Everything actions: ' + actions);
+    } finally {
+      win.testState.fences = win.testState.fences.filter(f => f.id !== 'smart');
+      win.testState.everything = { state: 'missing' };
+      win.testRefresh(); await settle();
+      change(doc, 'fenceSel', 'fence-a');
+    }
   });
   await test('showFence opens the fence page with that fence selected', async () => {
     doc.querySelector('[data-page=general]').click();
@@ -2125,6 +2274,292 @@ async function runTests() {
     }
   });
 
+  // ---- 智能栅栏编辑器 (the page in the editor's own window, with a mock host) ----
+  const openEditor = async (query) => {
+    await new Promise(resolve => { frame.onload = resolve; frame.src = '/editor?' + query; });
+    await settle(); await settle();
+    return frame.contentDocument;
+  };
+  const ew = () => frame.contentWindow;
+  const posted = (type, since = 0) => ew().testMessages.slice(since).filter(m => m.type === type);
+  const rowsOf = d => [...d.querySelectorAll('#seWindow .se-row')];
+  const kindsOf = d => rowsOf(d).map(r => r.dataset.kind).join(',');
+  const seKey = (d, k, opts = {}) => d.activeElement.dispatchEvent(new (ew().KeyboardEvent)('keydown', { key: k, bubbles: true, cancelable: true, ...opts }));
+  const sePick = (el, value) => { el.value = value; el.dispatchEvent(new (ew().Event)('change', { bubbles: true })); };
+  const seType = (el, text) => { el.focus(); el.value = text; el.dispatchEvent(new (ew().Event)('input', { bubbles: true })); };
+  const saved = (since = 0) => posted('editorSave', since).at(-1);
+  await test('Smart fence editor: a new fence starts blank and Enter creates it only when every row is filled in', async () => {
+    doc = await openEditor('fence=new');
+    const w = doc.getElementById('seWindow');
+    assert(doc.body.classList.contains('se-only') && ew().getComputedStyle(doc.querySelector('.app')).display === 'none', 'The settings show behind the editor');
+    assert(w.querySelector('h2').textContent === '新建智能栅栏' && w.querySelector('.se-ok').textContent === '创建', 'Not the new-fence editor');
+    assert(doc.activeElement === w.querySelector('.se-name') && w.querySelector('.se-name').value === '', 'The name box does not have the cursor');
+    assert(kindsOf(doc) === 'where,name' && w.querySelector('.se-where').value === 'all', 'Rows of a new fence: ' + kindsOf(doc));
+    assert(w.querySelectorAll('[data-preset]').length === 5 && w.querySelector('[data-preset=screenshots]').disabled, 'Templates wrong (a template without its folder must be off)');
+    assert(!posted('editorDirty').length, 'Unsaved before any change');
+    seKey(doc, 'Enter'); await settle();
+    assert(!saved() && w.querySelector('.se-msg').textContent === '请输入关键字' && rowsOf(doc)[1].classList.contains('bad'), 'An empty row was saved: ' + w.querySelector('.se-msg').textContent);
+    assert(doc.activeElement === rowsOf(doc)[1].querySelector('.se-text'), 'The cursor is not in the empty box');
+    seType(rowsOf(doc)[1].querySelector('.se-text'), ' 发票 ');
+    assert(posted('editorDirty').length === 1 && posted('editorDirty')[0].dirty === true, 'editorDirty not posted once');
+    assert(!w.querySelector('.se-msg').textContent && !rowsOf(doc)[1].classList.contains('bad'), 'The error stays after typing');
+    seKey(doc, 'Enter'); await settle();
+    const s = saved();
+    assert(s && s.title === '' && JSON.stringify(s.spec) === JSON.stringify({ template: null, folders: [], subfolders: true, match: 'all', allOf: [{ cond: 'name', value: { op: 'contains', value: '发票' } }], withinDays: null, name: null, everything: null, limit: 200 }), 'Saved: ' + JSON.stringify(s));
+  });
+  await test('Smart fence editor: a template fills the rows and the name, and keeps a name the user typed', async () => {
+    doc = await openEditor('fence=new');
+    const w = doc.getElementById('seWindow'), name = w.querySelector('.se-name');
+    w.querySelector('[data-preset=downloads]').click(); await settle();
+    assert(name.value === '最近 7 天下载' && kindsOf(doc) === 'where,sub,time,type', 'Downloads template: ' + name.value + ' ' + kindsOf(doc));
+    assert(rowsOf(doc)[0].querySelector('.se-path').textContent === 'C:\\Users\\me\\Downloads' && rowsOf(doc)[2].querySelector('.se-days').value === '7', 'Folder or days wrong');
+    w.querySelector('.se-ok').click(); await settle();
+    assert(JSON.stringify(saved().spec) === JSON.stringify({ template: 'downloads', folders: ['C:\\Users\\me\\Downloads'], subfolders: true, match: 'all', allOf: [{ cond: 'filesOnly', value: null }], withinDays: 7, name: null, everything: null, limit: 200 }), 'Saved: ' + JSON.stringify(saved().spec));
+    w.querySelector('[data-preset=recent]').click(); await settle();
+    assert(name.value === '最近打开的文件' && w.querySelector('.se-limit select').value === '40' && rowsOf(doc)[1].querySelector('.se-sub').value === 'off', 'The second template did not take the name, limit or subfolders');
+    seType(name, 'My big files');
+    w.querySelector('[data-preset=large]').click(); await settle();
+    assert(name.value === 'My big files' && kindsOf(doc) === 'where,type,size', 'A typed name was replaced or rows wrong: ' + kindsOf(doc));
+    const size = rowsOf(doc)[2];
+    assert(size.querySelector('.se-n1').value === '1' && size.querySelector('.se-unit').value === 'gb', '1024 MB not shown as 1 GB');
+    w.querySelector('.se-ok').click(); await settle();
+    assert(saved().title === 'My big files' && JSON.stringify(saved().spec.allOf) === '[{"cond":"filesOnly","value":null},{"cond":"sizeMb","value":{"min":1024,"max":null}}]' && saved().spec.folders.length === 0, 'Saved: ' + JSON.stringify(saved()));
+  });
+  await test('Smart fence editor: every kind of row reads and saves back unchanged', async () => {
+    doc = await openEditor('fence=every');
+    const w = doc.getElementById('seWindow');
+    assert(w.querySelector('h2').textContent === '编辑智能栅栏' && w.querySelector('.se-ok').textContent === '好' && !w.querySelector('.se-presets'), 'Not the edit editor');
+    assert(kindsOf(doc) === 'where,where,sub,time,type,ext,name,size,size,created,weekday,target,idle,keep,name,everything', 'Rows: ' + kindsOf(doc));
+    assert(w.querySelector('.se-all').value === 'all' && w.querySelector('.se-always').hidden, '全部 not shown, or the note of 任一 shown');
+    assert(rowsOf(doc)[13].querySelector('.se-kind').disabled && rowsOf(doc)[13].textContent.includes('*.bak'), 'A condition the editor has no row for is not kept as it is');
+    w.querySelector('.se-ok').click(); await settle();
+    const want = { template: null, folders: ['D:\\Work', 'E:\\Archive'], subfolders: false, match: 'all', allOf: ew().testEditor.spec.allOf, withinDays: 30, name: 'bg', everything: 'invoice|receipt', limit: 500 };
+    assert(JSON.stringify(saved().spec) === JSON.stringify(want), 'Changed on the way: ' + JSON.stringify(saved().spec));
+    assert(saved().title === 'Every row' && !posted('editorDirty').length, 'Title or dirty wrong');
+  });
+  await test('Smart fence editor: kind menus, + and -, the once-only kinds, 文件 alone and 介于', async () => {
+    doc = await openEditor('fence=dl');
+    const w = doc.getElementById('seWindow');
+    const time = rowsOf(doc)[2];
+    assert(rowsOf(doc)[3].querySelector('.se-kind option[value=time]').disabled && !time.querySelector('.se-kind option[value=time]').disabled, '时间 offered twice');
+    rowsOf(doc)[3].querySelector('.se-plus').click(); await settle();
+    assert(kindsOf(doc) === 'where,sub,time,type,name' && doc.activeElement === rowsOf(doc)[4].querySelector('.se-text'), '+ did not add a name row with the cursor');
+    sePick(rowsOf(doc)[4].querySelector('.se-kind'), 'ext'); await settle();
+    assert(kindsOf(doc) === 'where,sub,time,type,ext', 'Kind change: ' + kindsOf(doc));
+    seType(rowsOf(doc)[4].querySelector('.se-text'), '.PNG, jpg  tar.gz');
+    sePick(rowsOf(doc)[3].querySelector('.se-kind'), 'size'); await settle();
+    sePick(rowsOf(doc)[3].querySelector('.se-op'), 'between'); await settle();
+    const size = rowsOf(doc)[3];
+    assert(size.querySelectorAll('input[type=number]').length === 2, '介于 has no second number');
+    size.querySelector('.se-n1').value = '5'; size.querySelector('.se-n2').value = '2';
+    w.querySelector('.se-ok').click(); await settle();
+    assert(w.querySelector('.se-msg').textContent === '最大大小不能小于最小大小' && !saved(), 'A wrong size range was saved');
+    size.querySelector('.se-n2').value = '2'; size.querySelectorAll('.se-unit')[1].value = 'gb';
+    sePick(rowsOf(doc)[0].querySelector('.se-where'), 'all'); await settle();
+    assert(kindsOf(doc) === 'where,time,size,ext', '整台电脑 left other 位置 or 子文件夹 rows: ' + kindsOf(doc));
+    w.querySelector('.se-ok').click(); await settle();
+    const s = saved().spec;
+    assert(s.folders.length === 0 && JSON.stringify(s.allOf) === '[{"cond":"sizeMb","value":{"min":5,"max":2048}},{"cond":"ext","value":["PNG","jpg","tar.gz"]}]' && s.template === 'downloads', 'Saved: ' + JSON.stringify(s));
+    // - removes a row, never the last one (the 位置 row stays).
+    while (rowsOf(doc).length > 1) { rowsOf(doc).at(-1).querySelector('.se-minus').click(); await settle(); }
+    rowsOf(doc)[0].querySelector('.se-minus').click(); await settle();
+    assert(rowsOf(doc).length === 1 && rowsOf(doc)[0].dataset.kind === 'where', 'The last row went');
+    // 文件 goes alone among the types.
+    rowsOf(doc)[0].querySelector('.se-plus').click(); await settle();
+    sePick(rowsOf(doc)[1].querySelector('.se-kind'), 'type'); await settle();
+    const chip = v => rowsOf(doc)[1].querySelector(`.se-cats input[value=${v}]`);
+    const tick = v => { chip(v).checked = true; chip(v).dispatchEvent(new (ew().Event)('change', { bubbles: true })); };
+    tick('images'); tick('music'); tick('files');
+    assert(chip('files').checked && !chip('images').checked && !chip('music').checked && chip('files').parentElement.classList.contains('on'), '文件 kept other types');
+    tick('video');
+    assert(!chip('files').checked && chip('video').checked, 'Another type kept 文件');
+  });
+  await test('Smart fence editor: 位置 asks the host for a folder; several folders are searched together', async () => {
+    doc = await openEditor('fence=new');
+    const w = doc.getElementById('seWindow');
+    const mark = ew().testMessages.length;
+    sePick(rowsOf(doc)[0].querySelector('.se-where'), 'folder'); await settle(); await settle();
+    assert(posted('editorPickFolder', mark).length === 1, 'No folder picker asked for');
+    assert(rowsOf(doc)[0].querySelector('.se-path').textContent === 'D:\\Picked', 'The picked folder is not shown');
+    rowsOf(doc)[0].querySelector('.se-plus').click(); await settle();
+    ew().testPickPath = null;
+    sePick(rowsOf(doc)[1].querySelector('.se-kind'), 'where'); await settle();
+    rowsOf(doc)[1].querySelector('.se-pick').click(); await settle(); await settle();
+    assert(rowsOf(doc)[1].querySelector('.se-path').classList.contains('none'), 'A cancelled pick filled the row');
+    w.querySelector('.se-ok').click(); await settle();
+    assert(w.querySelector('.se-msg').textContent === '请选择文件夹' && doc.activeElement === rowsOf(doc)[1].querySelector('.se-pick'), 'A row without its folder was not pointed at');
+    ew().testPickPath = 'E:\\Two';
+    rowsOf(doc)[1].querySelector('.se-pick').click(); await settle(); await settle();
+    seType(rowsOf(doc)[2].querySelector('.se-text'), 'x');
+    sePick(w.querySelector('.se-all'), 'any'); await settle();
+    w.querySelector('.se-ok').click(); await settle();
+    const s = saved().spec;
+    assert(JSON.stringify(s.folders) === '["D:\\\\Picked","E:\\\\Two"]' && s.match === 'any' && s.subfolders === true, 'Saved: ' + JSON.stringify(s));
+  });
+  await test('Smart fence editor: Esc cancels, Enter on a button is that button, a host error shows', async () => {
+    doc = await openEditor('fence=dl');
+    const w = doc.getElementById('seWindow');
+    w.querySelector('.se-cancel').focus();
+    seKey(doc, 'Enter'); await settle();
+    assert(!saved(), 'Enter on 取消 saved');
+    rowsOf(doc)[0].querySelector('.se-kind').focus();
+    seKey(doc, 'Enter'); await settle();
+    assert(saved(), 'Enter on a menu did not save');
+    seKey(doc, 'Escape'); await settle();
+    assert(posted('editorCancel').length === 1, 'Esc did not cancel');
+    w.querySelector('.se-cancel').click(); await settle();
+    assert(posted('editorCancel').length === 2, '取消 did not cancel');
+    ew().testReceive({ type: 'editorError', text: '找不到文件夹 D:\\Gone' }); await settle();
+    assert(w.querySelector('.se-msg').textContent === '找不到文件夹 D:\\Gone', 'Host error not shown');
+    const errors = ew().testMessages.filter(m => m.name === 'pageError');
+    assert(!errors.length, 'Page error: ' + JSON.stringify(errors));
+  });
+  await test('Smart fence editor: 任一 with Everything syntax refuses a row only PecoFence tests, and says which', async () => {
+    doc = await openEditor('fence=new');
+    const w = doc.getElementById('seWindow');
+    sePick(rowsOf(doc)[1].querySelector('.se-kind'), 'everything'); await settle();
+    seType(rowsOf(doc)[1].querySelector('.se-text'), 'invoice');
+    rowsOf(doc)[1].querySelector('.se-plus').click(); await settle();
+    sePick(rowsOf(doc)[2].querySelector('.se-kind'), 'idle'); await settle();
+    sePick(w.querySelector('.se-all'), 'any'); await settle();
+    await new Promise(r => setTimeout(r, 420));
+    const asked = posted('editorCount').length;
+    assert(w.querySelector('.se-count').textContent.includes('Everything 语法不能和这一行一起用'), 'The count does not say why: ' + w.querySelector('.se-count').textContent);
+    w.querySelector('.se-ok').click(); await settle();
+    assert(!saved() && w.querySelector('.se-msg').textContent === '选「任一」时，Everything 语法不能和这一行一起用' && rowsOf(doc)[2].classList.contains('bad'), 'Saved or the row not marked: ' + w.querySelector('.se-msg').textContent);
+    for (const [kind, ok] of [['target', false], ['ext', true]]) {
+      sePick(rowsOf(doc)[2].querySelector('.se-kind'), kind); await settle();
+      if (kind === 'target' || kind === 'ext') seType(rowsOf(doc)[2].querySelector('.se-text'), 'x');
+      w.querySelector('.se-ok').click(); await settle();
+      assert(!!saved() === ok, kind + ': saved=' + !!saved());
+    }
+    // 全部 with the same rows is fine.
+    const n = posted('editorSave').length;
+    sePick(rowsOf(doc)[2].querySelector('.se-kind'), 'idle'); await settle();
+    sePick(w.querySelector('.se-all'), 'all'); await settle();
+    w.querySelector('.se-ok').click(); await settle();
+    assert(posted('editorSave').length === n + 1 && saved().spec.match === 'all', '全部 was refused');
+    assert(asked >= 0 && !ew().testMessages.some(m => m.name === 'pageError'), 'page error');
+  });
+  await test('Smart fence editor: the live count follows the search, a moment after the last change', async () => {
+    doc = await openEditor('fence=dl');
+    const w = doc.getElementById('seWindow'), line = () => w.querySelector('.se-count').textContent;
+    await new Promise(r => setTimeout(r, 50));
+    assert(posted('editorCount').length === 1 && line().includes('现在找到 37 个文件') && line().includes('由 Everything 搜索'), 'First count: ' + line());
+    assert(JSON.stringify(posted('editorCount')[0].spec.folders) === '["C:\\\\Users\\\\me\\\\Downloads"]', 'Counted another search');
+    // Three quick changes are one request.
+    rowsOf(doc)[3].querySelector('.se-plus').click();
+    for (const text of ['r', 're', 'rep']) seType(rowsOf(doc)[4].querySelector('.se-text'), text);
+    await new Promise(r => setTimeout(r, 120));
+    assert(posted('editorCount').length === 1 && w.querySelector('.se-count').classList.contains('busy') === false, 'Asked before the typing paused');
+    await new Promise(r => setTimeout(r, 400));
+    assert(posted('editorCount').length === 2 && posted('editorCount')[1].spec.allOf.at(-1).value.value === 'rep', 'Not one request after typing: ' + posted('editorCount').length);
+    // Only the newest answer shows.
+    ew().testHoldCount = true;
+    seType(rowsOf(doc)[4].querySelector('.se-text'), 'repo'); await new Promise(r => setTimeout(r, 420));
+    seType(rowsOf(doc)[4].querySelector('.se-text'), 'report'); await new Promise(r => setTimeout(r, 420));
+    const [older, newer] = ew().testHeld;
+    ew().testReceive({ ...newer, n: 4 }); await settle();
+    ew().testReceive({ ...older, n: 99 }); await settle();
+    assert(line().includes('现在找到 4 个文件') && !line().includes('99'), 'An older answer replaced the newer one: ' + line());
+    ew().testHoldCount = false;
+    // Only the newest files checked, the folder read and where it stopped, more than the
+    // limit, Everything needed (for the whole computer, or for the syntax of a folder search).
+    ew().testCount = () => ({ source: 'everything', n: 1234, checkedNewest: 5000 });
+    seType(rowsOf(doc)[4].querySelector('.se-text'), 'x'); await new Promise(r => setTimeout(r, 420));
+    assert(line().includes('现在找到 1234 个文件') && line().includes('只检查了最新的 5000 个') && line().includes('栅栏里显示最新的 200 个') && !line().includes('约'), 'Newest checked: ' + line());
+    ew().testCount = () => ({ source: 'folder', n: 6, readOnly: 20000 });
+    seType(rowsOf(doc)[4].querySelector('.se-text'), 'y'); await new Promise(r => setTimeout(r, 420));
+    assert(line().includes('现在找到 6 个文件') && line().includes('Everything 没有运行') && line().includes('只读了其中的 20000 个'), 'Folder read: ' + line());
+    ew().testCount = () => ({ source: 'needsEverything', n: 0 });
+    rowsOf(doc)[4].querySelector('.se-plus').click(); await settle();
+    sePick(rowsOf(doc)[5].querySelector('.se-kind'), 'everything'); await settle();
+    seType(rowsOf(doc)[5].querySelector('.se-text'), 'invoice'); await new Promise(r => setTimeout(r, 420));
+    assert(line().includes('用了 Everything 语法，需要先打开 Everything'), 'Folder with Everything syntax: ' + line());
+    rowsOf(doc)[5].querySelector('.se-minus').click(); await settle();
+    sePick(rowsOf(doc)[0].querySelector('.se-where'), 'all'); await new Promise(r => setTimeout(r, 420));
+    assert(line().includes('要搜索整台电脑，需要先打开 Everything'), 'Everything needed: ' + line());
+    // An unfinished row is not counted.
+    const asked = posted('editorCount').length;
+    seType(rowsOf(doc).at(-1).querySelector('.se-text'), ''); await new Promise(r => setTimeout(r, 420));
+    assert(posted('editorCount').length === asked && line().includes('填好条件后'), 'An unfinished search was counted: ' + line());
+    ew().testCount = null;
+  });
+  await test('Smart fence editor: unchanged rows keep their conditions as saved; an origin row is named; a location stays', async () => {
+    doc = await openEditor('fence=odd');
+    const w = doc.getElementById('seWindow');
+    await new Promise(r => setTimeout(r, 420));
+    assert(w.querySelector('.se-count').textContent.includes('「来源」不能作为智能栅栏的条件'), 'The count does not name the origin row: ' + w.querySelector('.se-count').textContent);
+    w.querySelector('.se-ok').click(); await settle();
+    const origin = rowsOf(doc).find(r => r.dataset.kind === 'keep' && r.textContent.includes('来源'));
+    assert(!saved() && origin.classList.contains('bad') && w.querySelector('.se-msg').textContent.includes('请删掉这一行'), 'The origin row was not named');
+    origin.querySelector('.se-minus').click(); await settle();
+    w.querySelector('.se-ok').click(); await settle();
+    assert(JSON.stringify(saved().spec.allOf) === '[{"cond":"filesOnly","value":null,"plain":true},{"cond":"ext","value":[".psd"]}]', 'Unchanged rows changed: ' + JSON.stringify(saved().spec.allOf));
+    // A changed row is read again.
+    seType(rowsOf(doc).find(r => r.dataset.kind === 'ext').querySelector('.se-text'), 'psd, ai');
+    w.querySelector('.se-ok').click(); await settle();
+    assert(JSON.stringify(saved().spec.allOf[1]) === '{"cond":"ext","value":["psd","ai"]}', 'A changed row was not read: ' + JSON.stringify(saved().spec.allOf));
+    // The only 位置 row cannot be removed; turned into another kind, 整台电脑 comes back on top.
+    const where = rowsOf(doc)[0];
+    assert(where.dataset.kind === 'where' && where.querySelector('.se-minus').disabled, 'The only location row can be removed');
+    sePick(where.querySelector('.se-kind'), 'name'); await settle();
+    assert(rowsOf(doc)[0].dataset.kind === 'where' && rowsOf(doc)[0].querySelector('.se-where').value === 'all', 'No location row after a kind change: ' + kindsOf(doc));
+  });
+  await test('Smart fence editor: a change made elsewhere stays said until 好 or 取消; plain files count as a rough row', async () => {
+    doc = await openEditor('fence=dl');
+    const w = doc.getElementById('seWindow');
+    ew().testReceive({ type: 'editorNotice', text: '这个栅栏的条件刚在别处改过，按「好」会换成这里的条件' }); await settle();
+    seType(w.querySelector('.se-name'), 'typed after');
+    await new Promise(r => setTimeout(r, 420));
+    assert(w.querySelector('.se-msg').textContent.includes('刚在别处改过'), 'The notice went with the next edit: ' + w.querySelector('.se-msg').textContent);
+    // A smart spec writes plain files as plainFiles: with 任一 and Everything syntax it is refused.
+    ew().testReceive({ type: 'editor', fence: 'p', isNew: false, title: 'P', templates: [], everything: { state: 'running' },
+      spec: { folders: ['D:\\P'], subfolders: true, match: 'any', allOf: [{ cond: 'plainFiles', value: null }], everything: 'invoice', limit: 200 } }); await settle();
+    await new Promise(r => setTimeout(r, 420));
+    assert(w.querySelector('.se-count').textContent.includes('Everything 语法不能和这一行一起用') && !w.querySelector('.se-msg').textContent, 'plainFiles not refused, or an old notice kept: ' + w.querySelector('.se-count').textContent);
+    w.querySelector('.se-ok').click(); await settle();
+    assert(rowsOf(doc).find(r => r.dataset.kind === 'type').classList.contains('bad'), 'The plain files row is not marked');
+  });
+  await test('Smart fence editor: a late count of the fence shown before does not show on the next one', async () => {
+    doc = await openEditor('fence=dl');
+    const w = doc.getElementById('seWindow');
+    await new Promise(r => setTimeout(r, 100));
+    ew().testHoldCount = true; ew().testHeld = [];
+    seType(w.querySelector('.se-name'), 'x'); await new Promise(r => setTimeout(r, 420));
+    const late = ew().testHeld.at(-1);
+    ew().testReceive({ type: 'editor', fence: 'other', isNew: false, title: 'Other', spec: { folders: ['D:\\Other'], subfolders: true, limit: 200 }, templates: [], everything: { state: 'running' } }); await settle();
+    ew().testReceive({ ...late, n: 99 }); await settle();
+    assert(w.querySelector('.se-name').value === 'Other' && !w.querySelector('.se-count').textContent.includes('99'), 'The old fence\'s count shows on the new one: ' + w.querySelector('.se-count').textContent);
+    const mine = ew().testHeld.at(-1);
+    ew().testReceive({ ...mine, n: 5 }); await settle();
+    assert(w.querySelector('.se-count').textContent.includes('现在找到 5 个文件'), 'The new fence\'s count does not show');
+    ew().testHoldCount = false;
+  });
+  await test('Smart fence editor: fits its window in every language and keeps the rows when the language changes', async () => {
+    doc = await openEditor('fence=every');
+    frame.style.width = '680px'; frame.style.height = '560px';
+    try {
+      const w = doc.getElementById('seWindow');
+      seType(w.querySelector('.se-name'), 'Kept name');
+      rowsOf(doc)[6].querySelector('.se-text').value = 'kept text';
+      for (const language of ['en', 'ja', 'zh-TW', 'ko', 'de', 'fr', 'es', 'pt-BR', 'ru', 'it', 'zh-CN']) {
+        const catalogs = JSON.parse(doc.getElementById('fixture-catalogs').textContent);
+        ew().testReceive({ ...ew().testState, locale: language, translations: catalogs[language] || {} }); await settle();
+        const w2 = doc.getElementById('seWindow');
+        assert(w2.scrollWidth <= w2.clientWidth + 1, language + ': the editor overflows sideways');
+        for (const el of w2.querySelectorAll('.se-row select, .se-row button, .se-foot button, .se-foot select')) {
+          const box = el.getBoundingClientRect();
+          assert(box.right <= w2.getBoundingClientRect().right + 1, language + ': a control is outside the window');
+        }
+        assert(w2.querySelector('.se-foot .se-ok').getBoundingClientRect().bottom <= 560, language + ': 好 is below the window');
+        assert(w2.querySelector('.se-name').value === 'Kept name' && rowsOf(doc)[6].querySelector('.se-text').value === 'kept text' && rowsOf(doc).length === 16, language + ': the rows were not kept');
+        assert(w2.querySelector('h2').textContent === ew().PecoFenceI18n.text('编辑智能栅栏'), language + ': title not translated');
+      }
+    } finally { frame.style.width = ''; frame.style.height = ''; }
+    doc = await reset();
+  });
+
   document.getElementById('summary').textContent = `${passed} passed; ${failed} failed`;
   document.title = failed ? 'FAIL — settings UI regressions' : 'PASS — settings UI regressions';
   window.testResults = { passed, failed };
@@ -2137,6 +2572,22 @@ const server = http.createServer(async (request, response) => {
     if (url.pathname === '/i18n.js') {
       response.setHeader('Content-Type', 'text/javascript; charset=utf-8');
       response.end(await readFile(new URL('../ui/i18n.js', import.meta.url), 'utf8'));
+      return;
+    }
+    if (url.pathname === '/editor') {
+      // The smart fence editor: ?fence=new|dl|every, &language=, &mode=light.
+      const language = url.searchParams.get('language') || 'zh-CN';
+      const initial = structuredClone(fixture);
+      initial.settings.language = language;
+      initial.locale = language;
+      initial.translations = catalogs[language] || {};
+      if (url.searchParams.get('mode') === 'light') { initial.settings.theme = 'light'; initial.themeMode = 'light'; initial.accent = '#005FB8'; }
+      const editor = editorFixtures[url.searchParams.get('fence') || 'new'];
+      const safeJson = value => JSON.stringify(value).replace(/</g, '\\u003c');
+      let html = await readFile(settingsUrl, 'utf8');
+      html = html.replace('<!-- PECOFENCE_LOCALE -->', `<script>window.PECOFENCE_LOCALE=${safeJson({ locale: language, translations: initial.translations })};window.PECOFENCE_MODE='smartEditor';</script>`);
+      const setup = `<script type="application/json" id="fixture">${safeJson(initial)}</script><script type="application/json" id="fixture-editor">${safeJson(editor)}</script><script type="application/json" id="fixture-catalogs">${safeJson(catalogs)}</script><script>(${editorBridge})();</script>`;
+      response.end(html.replace('<body>', '<body>' + setup).replace('<html lang="zh-CN">', '<html lang="zh-CN" class="no-mica">'));
       return;
     }
     if (url.pathname === '/settings' || url.pathname === '/preview') {

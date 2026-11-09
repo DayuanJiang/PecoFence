@@ -17,17 +17,34 @@ impl App {
         };
         let folder = self.state.portal_path(active);
         let is_portal = folder.is_some();
+        // 智能栅栏: the folder glyph with a magnifier badge.
+        let smart = f.smart.is_some();
         w.set_portal_deco(
             is_portal,
-            f.kind == FenceKind::FolderPortal && !f.hide_title_icon,
+            (f.kind == FenceKind::FolderPortal || smart) && !f.hide_title_icon,
+            smart,
             self.state.can_go_up(active),
             is_portal && f.navigates_folders(),
             is_portal && self.state.portal_missing(active),
             folder,
         );
+        let (empty, count) = self.smart_view(f);
+        let filtered = self.fence_filter(active).is_some();
+        let empty = if filtered {
+            Some(pecofence_core::i18n::text("没有符合筛选的文件。"))
+        } else {
+            empty
+        };
+        // The count belongs to a single title; in a tab strip the tab shows the name only.
+        let count = count.filter(|_| active == host && self.state.tabs_of(host).len() <= 1);
+        w.set_status_view(empty, count);
+        w.set_filtered(filtered);
+        // The tag's count follows what the fence shows (files come and go).
+        self.sync_filter_view(active);
+        w.set_refuses_drops(smart);
         if let Some(h) = self.state.fence(host) {
             let title = if active == host {
-                self.state.display_title(h)
+                self.filter_title(host, self.state.display_title(h))
             } else {
                 h.title.clone()
             };
@@ -37,6 +54,7 @@ impl App {
 
     /// Starts/stops folder watchers so every portal fence follows its folder.
     pub(super) fn ensure_portal_watchers(&mut self) {
+        self.ensure_smart_watchers();
         let portals: Vec<(FenceId, PathBuf)> = self
             .state
             .fences()
@@ -351,6 +369,7 @@ impl App {
         dir: i8,
         select: Option<ItemId>,
     ) {
+        self.clear_fence_filter(fence, "another folder shown");
         self.ensure_portal_watchers();
         if let Some(w) = self.window_for(fence)
             && w.active_fence() == fence

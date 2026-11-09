@@ -294,6 +294,7 @@ impl App {
                 }
             }
         }
+        self.smart_folders_changed(&dirs, all);
         // A batch that touched only portal folders (a download landing in one) leaves the
         // desktop alone, unless a shell notice (the Recycle Bin after a delete in that portal)
         // or a menu landed in the same batch; an empty batch is one of those on its own.

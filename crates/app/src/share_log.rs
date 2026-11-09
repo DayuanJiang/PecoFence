@@ -700,6 +700,8 @@ mod tests {
         ("hotkey", "%h"),               // Hotkey
         ("host_kind", "?host_kind"),    // Option<HostKind> enum
         ("install", "install.as_str()"), // feedback::install_kind: fixed names
+        ("source", "source.as_str()"),  // smart fence: where its results came from (fixed names)
+        ("source", "r.source.as_str()"), // the same, of a smart fence worker's result
         ("language", "language.tag()"), // BCP 47 tag of a Language variant
         ("location", "%location"),      // panic `file:line`
         ("memory", "%m.summary()"),     // MemoryStats::summary: numbers only

@@ -49,6 +49,12 @@ pub enum Command {
         #[command(subcommand)]
         cmd: MonitorCmd,
     },
+    /// Windows virtual desktops (a fence can show on all of them or only on some)
+    #[command(name = "virtual-desktop")]
+    VirtualDesktop {
+        #[command(subcommand)]
+        cmd: VirtualDesktopCmd,
+    },
     /// Machine-readable catalog of commands, exit codes and JSON Schemas (works offline)
     #[command(after_help = "Example: pecofence-cli describe --schema Settings")]
     Describe {
@@ -148,6 +154,13 @@ pub enum MonitorCmd {
 }
 
 #[derive(Subcommand, Debug)]
+pub enum VirtualDesktopCmd {
+    /// Virtual desktops in Task View order with id, number, name and which one is current
+    #[command(after_help = "Example: pecofence-cli virtual-desktop list")]
+    List,
+}
+
+#[derive(Subcommand, Debug)]
 pub enum FenceCmd {
     /// Fences of the active layout with geometry and options
     #[command(after_help = "Example: pecofence-cli fence list")]
@@ -165,7 +178,7 @@ pub enum FenceCmd {
     #[command(group(ArgGroup::new("place").multiple(false)))]
     Create {
         /// Title of the new fence (defaults to the folder name with --portal, the tool or script name with --tool / --script)
-        #[arg(long, value_name = "TITLE", required_unless_present_any = ["portal", "tool", "script"])]
+        #[arg(long, value_name = "TITLE", required_unless_present_any = ["portal", "tool", "script", "template"])]
         title: Option<String>,
         #[arg(long, value_name = "X,Y,W,H", value_parser = Rect::parse, allow_hyphen_values = true, group = "place", help = RECT_HELP)]
         rect: Option<Rect>,
@@ -199,6 +212,9 @@ pub enum FenceCmd {
         /// Script a new script fence runs (implies --tool script): .ps1 .py .pyw .cmd .bat .js .exe
         #[arg(long, value_name = "FILE", conflicts_with = "portal")]
         script: Option<String>,
+        /// 智能栅栏 (a smart fence) options
+        #[command(flatten)]
+        smart: Box<SmartArgs>,
     },
     /// Delete a fence; its items return to the desktop (inbox) fence, rules targeting it are removed
     #[command(after_help = "Example: pecofence-cli fence delete Temp")]
@@ -290,7 +306,7 @@ pub enum FenceCmd {
         #[arg(long, group = "size")]
         h: Option<i32>,
     },
-    /// Set a per-fence option (title, iconSize, spacing, spacingPx, iconAlign, autoHeight, locked, expandUpward, excludeFromQuickHide, opacity, tint, tintTitleOnly, tabColor, titleColor, titleSize, textSize, titleOnHover, layout, sort, reverse, groupByDate, foldersFirst, labelLines, openFoldersInside, portalNavigate, portalTitleIcon, hideWhenEmpty, desktopLayout, freePlacement, noteText, scriptPath, scriptInterval); `fence rename` is the friendlier way to set title
+    /// Set a per-fence option (title, iconSize, spacing, spacingPx, iconAlign, autoHeight, locked, expandUpward, excludeFromQuickHide, opacity, tint, tintTitleOnly, tabColor, titleColor, titleSize, textSize, titleOnHover, layout, sort, reverse, groupByDate, foldersFirst, labelLines, openFoldersInside, portalNavigate, portalTitleIcon, hideWhenEmpty, desktopLayout, freePlacement, noteText, scriptPath, scriptInterval, virtualDesktops); `fence rename` is the friendlier way to set title
     #[command(
         override_usage = "pecofence-cli fence set [OPTIONS] <FENCE> <PROP> <VALUE>\n       pecofence-cli fence set [OPTIONS] --all <PROP> <VALUE>",
         after_help = "Arguments:\n  <FENCE>  Fence: id, unique id prefix (>=6 hex), or title (exact, then unique substring)\n  <PROP>   Option name as shown by `fence get` (title: prefer `fence rename`)\n  <VALUE>  JSON value or bare text: 48, true, list, null; quote # colours: \"#ff8800\" or '\"#ff8800\"'\n\nExample: pecofence-cli fence set Work layout list\n         pecofence-cli fence set Work tint \"#ff8800\"\n         pecofence-cli fence set --all opacity clear"
@@ -654,6 +670,34 @@ pub enum WindowsDesktopCmd {
     /// Show the fences and hide the Windows desktop icons again
     #[command(after_help = "Example: pecofence-cli windows-desktop end")]
     End,
+}
+
+/// `fence create` options that make a smart fence (智能栅栏).
+#[derive(Args, Debug, Default)]
+pub struct SmartArgs {
+    /// A smart fence showing a saved search: downloads, screenshots, large, psd or recent
+    #[arg(long = "smart", id = "template", value_name = "TEMPLATE", value_parser = ["downloads", "screenshots", "large", "psd", "recent"], conflicts_with_all = ["portal", "tool", "script"])]
+    pub template: Option<String>,
+    /// A smart fence over this folder (with --everything, --within-days, --ext); repeat it to
+    /// search several folders together
+    #[arg(long, value_name = "DIR", conflicts_with_all = ["portal", "tool", "script", "template"])]
+    pub smart_folder: Vec<String>,
+    /// Smart fence: all (every condition must hold, the default) or any (one is enough); the
+    /// folders always apply
+    #[arg(long = "match", value_name = "all|any", value_parser = ["all", "any"], conflicts_with_all = ["portal", "tool", "script"])]
+    pub smart_match: Option<String>,
+    /// Smart fence: an Everything search, narrowed by the other options too (needs Everything)
+    #[arg(long, value_name = "SEARCH", conflicts_with_all = ["portal", "tool", "script", "template"])]
+    pub everything: Option<String>,
+    /// Smart fence: only files written in the last N days
+    #[arg(long, value_name = "N", conflicts_with_all = ["portal", "tool", "script", "template"])]
+    pub within_days: Option<u32>,
+    /// Smart fence: only names matching this text, as the Peek search matches (pinyin too)
+    #[arg(long, value_name = "TEXT", conflicts_with_all = ["portal", "tool", "script", "template"])]
+    pub name_matches: Option<String>,
+    /// Smart fence: only these extensions (comma-separated, e.g. pdf,docx)
+    #[arg(long, value_name = "EXTS", value_delimiter = ',', conflicts_with_all = ["portal", "tool", "script", "template"])]
+    pub ext: Vec<String>,
 }
 
 /// `W,H` for `fence create --size`: two positive integers.

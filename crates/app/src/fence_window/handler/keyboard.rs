@@ -85,6 +85,7 @@ pub(super) fn on_keydown(
     const VK_A: u32 = 0x41;
     const VK_C: u32 = 0x43;
     const VK_D: u32 = 0x44;
+    const VK_F: u32 = 0x46;
     const VK_N: u32 = 0x4E;
     const VK_V: u32 = 0x56;
     const VK_X: u32 = 0x58;
@@ -141,6 +142,7 @@ pub(super) fn on_keydown(
             }
         }
         VK_V if ctrl => queue.push(Command::Paste { fence: v.active }),
+        VK_F if ctrl => queue.push(Command::OpenFenceFilter(v.active)),
         // Ctrl+Z undoes the last fence move, resize, icon move or fence delete (app/undo.rs);
         // a held key undoes once.
         VK_Z if ctrl && !shift && lparam & (1 << 30) == 0 => queue.push(Command::Undo),
@@ -223,6 +225,10 @@ pub(super) fn on_keydown(
                 drop(guard);
                 window::release_capture();
                 return Some(0);
+            }
+            // A filtered fence: Esc clears the filter first.
+            if v.filter_active {
+                queue.push(Command::ClearFenceFilter(v.active));
             }
             v.selected.clear();
             v.type_ahead.clear();

@@ -213,8 +213,8 @@ foreach ($combo in @(@('fluent', 'en'), @('liquidGlass', 'en'), @('fluent', 'zh-
   $sub = MenuWith 'New fence|新建栅栏'
   $subLine = if ($sub -ne [IntPtr]::Zero) { MenuLine $sub } else { '' }
   Log "submenu $style $lang : $subLine"
-  if ($lang -eq 'en') { $wantSub = 'New fence | New note | New tool | Show a folder on the desktop' } else { $wantSub = '新建栅栏 | 新建便签 | 新建小工具 | 在桌面显示文件夹' }
-  Check "$style $lang Add to desktop holds the four global entries" ($subLine -eq $wantSub) $subLine
+  if ($lang -eq 'en') { $wantSub = 'New fence | New note | New tool | Show a folder on the desktop | New smart fence…' } else { $wantSub = '新建栅栏 | 新建便签 | 新建小工具 | 在桌面显示文件夹 | 新建智能栅栏…' }
+  Check "$style $lang Add to desktop holds the five global entries, as in the tray menu" ($subLine -eq $wantSub) $subLine
   Shot "m-$style-$lang-submenu"
   CloseMenus
   ParkPointer
@@ -226,7 +226,7 @@ Start-Sleep -Seconds 1
 Case 'every kind of fence'
 $kinds = @(
   @('Work', 'tab fence', 'Roll up \| Rename \| - \| View \| Sort by \| New \| Paste \| Tabs \| - \| (Fit to content \| )?Lock position and size \| Fence options… \| Delete fence \| - \| Add to desktop$'),
-  @('Shared docs', 'folder fence', '^Roll up \| Rename \| Open folder in File Explorer .*\| - \| View .*\| - \| (Fit to content \| )?Lock position and size \| Fence options… \| Delete fence \| - \| Add to desktop$'),
+  @('Shared docs', 'folder fence', '^Roll up \| Rename \| Filter… ~ Ctrl\+F \| Open folder in File Explorer .*\| - \| View .*\| - \| (Fit to content \| )?Lock position and size \| Fence options… \| Delete fence \| - \| Add to desktop$'),
   @('Today', 'note', '^Roll up \| Rename \| - \| Edit note \| - \| Lock position and size \| Fence options… \| Delete fence \| - \| Add to desktop$'),
   @('Clock', 'clock', '^Roll up \| Rename \| - \| Show seconds \| - \| Lock position and size \| Fence options… \| Delete fence \| - \| Add to desktop$')
 )

@@ -338,6 +338,12 @@ impl App {
                     }
                 }
                 ["peek"] => self.queue.push(Command::TogglePeek),
+                // The Store edition gets no registry notifications: follow virtual-desktop
+                // switches by the poll alone, as it does.
+                ["vd-poll-only"] => {
+                    self.vd_poll_only = true;
+                    tracing::info!("virtual desktops: only the poll is followed from now on");
+                }
                 ["pin-test-windows"] | ["pin-test-windows", "raw"] => {
                     if cfg!(debug_assertions)
                         && pecofence_core::brand::var_os("PECOFENCE_UI_TEST_WINDOWS").is_some()

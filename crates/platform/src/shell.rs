@@ -14,6 +14,9 @@ const FOLDERID_PUBLIC_DESKTOP: GUID = GUID::from_u128(0xC4AA340D_F20F_4863_AFEF_
 const FOLDERID_DOCUMENTS: GUID = GUID::from_u128(0xFDD39AD0_238F_46AF_ADB4_6C85480369C7);
 const FOLDERID_DOWNLOADS: GUID = GUID::from_u128(0x374DE290_123F_4565_9164_39C4925E467B);
 const FOLDERID_PICTURES: GUID = GUID::from_u128(0x33E28130_4E1E_4676_835A_98395C3BC3BB);
+// FOLDERID_Screenshots / FOLDERID_Recent (KnownFolders.h).
+const FOLDERID_SCREENSHOTS: GUID = GUID::from_u128(0xB7BEDE81_DF94_4682_A7D8_57A52620B86F);
+const FOLDERID_RECENT: GUID = GUID::from_u128(0xAE50C081_EBD2_438A_8655_8A092E34987A);
 
 pub(crate) fn take_string(pwstr: PWSTR) -> String {
     if pwstr.is_null() {
@@ -57,6 +60,16 @@ pub fn user_downloads() -> Option<PathBuf> {
 /// The user's Pictures folder (may be redirected, e.g. OneDrive).
 pub fn user_pictures() -> Option<PathBuf> {
     known_folder(&FOLDERID_PICTURES)
+}
+
+/// Where Win+PrtScn saves screenshots (Pictures\Screenshots unless moved).
+pub fn user_screenshots() -> Option<PathBuf> {
+    known_folder(&FOLDERID_SCREENSHOTS).or_else(|| user_pictures().map(|p| p.join("Screenshots")))
+}
+
+/// Windows' Recent Items folder: a shortcut per file and folder opened lately.
+pub fn user_recent() -> Option<PathBuf> {
+    known_folder(&FOLDERID_RECENT)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

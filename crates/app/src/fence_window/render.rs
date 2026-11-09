@@ -262,6 +262,8 @@ impl FenceViewState {
             pecofence_core::i18n::text("没有未归类的项目")
         } else if self.drop_hover {
             pecofence_core::i18n::text("松开即可放入")
+        } else if let Some(text) = self.empty_override {
+            text
         } else if self.is_portal && self.portal_missing {
             pecofence_core::i18n::text("找不到此文件夹。")
         } else if self.is_portal {
@@ -407,8 +409,12 @@ impl FenceViewState {
         let roll_t = self.roll_t.value_at(now);
         // The count is drawn while it fades out after expanding, not only while rolled.
         // A note (便签) has no items to count.
-        let count = ((rolled || state.count > 0.0) && !self.shows_tool())
+        // A smart fence shows its count after the name, rolled or not: no second one. A
+        // filter tag carries the count too.
+        let count = ((rolled || state.count > 0.0) && self.shows_rolled_count())
             .then(|| pecofence_core::i18n::format("{0} 项", &[format!("{}", self.items.len())]));
+        let title_count = self.title_count.clone();
+        let filter_tag = self.filter_tag.clone();
         let opacity = self.material_opacity();
         // Titles and tabs without a 「标题颜色」 of their own follow 「文字颜色」 (#141).
         let theme = self
@@ -464,6 +470,7 @@ impl FenceViewState {
                 title_color: t.title_color,
                 folder_icon: t.folder_icon,
                 up_button: i == active && t.up_button,
+                desktop_icon: t.desktop_icon,
                 active: i == active,
                 hover: self.chrome_fades.value(&ChromeKey::Tab(i), now),
                 pressed: pressed_tab == Some(i),
@@ -485,6 +492,10 @@ impl FenceViewState {
                 hd,
                 backdrop,
                 &title,
+                title_count.as_deref(),
+                filter_tag
+                    .as_ref()
+                    .map(|(k, t, c)| (k.as_str(), t.as_str(), c.as_str())),
                 count.as_deref(),
                 rolled,
                 roll_t,

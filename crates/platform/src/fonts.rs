@@ -101,6 +101,15 @@ pub fn display_face() -> &'static str {
     pick(&FACE, "Segoe UI Variable Display", "Segoe UI")
 }
 
+/// Han text drawn with GDI (the Peek search list) as the fence titles draw it with DirectWrite:
+/// the face `pecofence_core::i18n::han_for` gives the UI language (GDI's own fallback on an
+/// English Windows drew 下载 in Japanese or Traditional forms). Segoe UI when it is missing.
+pub fn han_text_face() -> &'static str {
+    static FACE: OnceLock<&'static str> = OnceLock::new();
+    let (_, preferred) = pecofence_core::i18n::han_for(crate::locale::ui_language());
+    pick(&FACE, preferred, text_face())
+}
+
 /// Glyph font: Segoe Fluent Icons, or Segoe MDL2 Assets on Windows 10. The two fonts share
 /// their code points for everything this app draws except `Hide` (see `fluent_icons`).
 pub fn icon_face() -> &'static str {

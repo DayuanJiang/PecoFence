@@ -101,15 +101,17 @@ unique id prefix, or a name (only while that name is unique).
 |---|---|
 | `status` | `pecofence-cli status` (version, config path, counts, and per monitor `liveWallpapers`) |
 | `monitor list` | `pecofence-cli monitor list` |
+| `virtual-desktop list` | `pecofence-cli virtual-desktop list` (Windows virtual desktops in Task View order: `id`, `number`, `name`, `current`) |
 | `describe [--schema <NAME>]` | `pecofence-cli describe --schema Settings` |
 | `skill` | `pecofence-cli skill > SKILL.md` |
 | `fence list` | `pecofence-cli fence list` |
 | `fence get <FENCE>` | `pecofence-cli fence get Work` |
 | `fence create (--title <T> \| --portal <DIR>) [--rect x,y,w,h \| --monitor <ID> \| --below/--above/--right-of/--left-of <FENCE> [--size w,h]]` | `pecofence-cli fence create --title Work --rect 100,100,600,400` |
 | `fence create --tool note [--text <TEXT>] \| --tool clock \| --script <FILE>` (小工具, see below) | `pecofence-cli fence create --tool note --title Today --text "[ ] Pay rent"` |
+| `fence create --smart <TEMPLATE>` \| `--title <T> [--smart-folder <DIR> ...] [--within-days <N>] [--ext <EXTS>] [--name-matches <TEXT>] [--everything <SEARCH>]`, both with `[--match all\|any]` (智能栅栏, see below) | `pecofence-cli fence create --smart downloads` |
 | `fence delete <FENCE>` | `pecofence-cli fence delete Temp` |
 | `fence rename <FENCE> <TITLE>` | `pecofence-cli fence rename Work Projects` |
-| `fence refresh <FENCE>` | `pecofence-cli fence refresh Weather` (script fences: run the script now; other fences are `unsupported`) |
+| `fence refresh <FENCE>` | `pecofence-cli fence refresh Weather` (script fences: run the script now; smart fences: search again now; other fences are `unsupported`) |
 | `fence open-folder <FENCE> <FOLDER>` | `pecofence-cli fence open-folder Projects 2026` (as a double-click on the folder: a subfolder in a folder fence, or any folder in a fence of icons, shown in place of its icons; a relative `FOLDER` starts at the folder the fence shows; not saved) |
 | `fence up <FENCE>` / `fence forward <FENCE>` | `pecofence-cli fence up Projects` (one folder up, as Backspace and the mouse's back button; `forward` goes back into the folder `up` left, as the forward button; `fence get` shows the folder in `portal.current` or `openedFolder`) |
 | `fence move <FENCE> (--rect x,y,w,h \| --x <N> --y <N> \| --monitor <ID>)` | `pecofence-cli fence move Work --x 1200 --y 80` |
@@ -198,9 +200,32 @@ with auto arrange off; on in a new configuration; with no cells saved yet the ic
 their places on the Windows desktop; new icons take the first free cell down the columns; `fence get` lists each
 icon's `[column, row]` on the current monitors in `desktopCells`), `noteText` (note fences: the whole text; a line
 starting with `[ ]` or `[x]` is a to-do), `scriptPath` (script fences: the full path of the script;
-it runs at once) and `scriptInterval` (script fences: minutes between runs, 1 to 1440).
+it runs at once), `scriptInterval` (script fences: minutes between runs, 1 to 1440),
+`virtualDesktops` (see *Virtual desktops* below) and the search of a smart fence (see
+[Smart fences](#smart-fences-智能栅栏)): `smartFolder`, `smartMatch`, `smartSubfolders`,
+`smartWithinDays`, `smartConditions`, `smartName`, `smartEverything`, `smartLimit`; on any other fence these are
+`unsupported`. `portalTitleIcon` also switches a smart fence's magnifier.
 `--all` applies the option to every fence one call at a time and
 skips tabs hosted inside another fence (their options belong to the host).
+
+### Virtual desktops
+
+A fence shows on every Windows virtual desktop (the default) or only on some; switching desktops
+(Win+Ctrl+Left/Right, Task View) fades the other desktops' fences out, as quick hide does.
+`virtual-desktop list` (method `virtualDesktops.list`) prints the desktops in Task View order:
+`id` (Explorer's `{GUID}`), `number` (from 1), `name` (the Task View name, else `Desktop N`) and
+`current`. With one desktop the list is empty: Windows keeps none until the second exists.
+`fence set <FENCE> virtualDesktops <VALUE>` takes `all`, `current`, or desktops by number, name or
+id, comma-separated (`virtualDesktops 1,3`, `virtualDesktops Games`); naming every desktop is
+`all`, and a name two desktops share is `invalid_value` (give the number). It acts on the whole
+window: a tab sets its host and every tab, and a fence merged into a window takes the window's
+desktops. The inbox shows on every desktop (`unsupported`), and so does a window that holds it as a
+tab: merging the inbox into a bound window makes the window show on every desktop. `fence get` reports
+`virtualDesktops` (the ids, empty for every desktop) and `onCurrentDesktop` (false: hidden until a
+switch there). The setting `perDesktopFences` (Settings › 常规, 「每个虚拟桌面各用一套栅栏」) makes
+every new fence, `fence create` too, belong to the current desktop. When a desktop is closed its
+fences go to the desktop Windows moves its windows to (the left neighbour); a configuration from
+another PC (`config import`) is matched to this PC's desktops by name, then by position.
 
 `item list` describes every item with `kind` (`folders`, `programs`, `installers`, `shortcuts`,
 `documents`, `images`, `music`, `video`, `archives`, `namespace`, `other`; the same tests the `type`
@@ -502,6 +527,72 @@ reports that folder, or the subfolder of it shown, as `openedFolder` (`null` oth
 fence's own icons: `item move --to` that fence only changes membership and never moves a file into
 the folder it shows, and `watch` reports the change as `fence.changed` with `openedFolder` in
 `changed`.
+
+## Smart fences (智能栅栏)
+
+A smart fence shows the live result of a saved search instead of icons of its own: the newest files
+that match, where they are (nothing is moved or copied). It holds no items, so rules, `item move
+--to` and drops never put anything into it; `item list --fence <FENCE>` lists its results with
+`"assignedBy": "smart"`, and they open, move, rename and delete like a folder fence's files.
+
+`fence create --smart <TEMPLATE>` makes one from a template (titled in the UI language):
+`downloads` (the Downloads folder and its subfolders, files of the last 7 days), `screenshots` (the
+Screenshots folder, images of the last 7 days), `large` (every drive, files over 1 GB), `psd` (every
+drive, `.psd` files) and `recent` (Windows' Recent Items, its shortcuts, at most 40). Or write the
+search: `--title` and any of `--smart-folder <DIR>` (repeat it to search several folders together;
+absent: every drive), `--within-days <N>` (created or written in the last N days), `--ext pdf,docx`,
+`--name-matches <TEXT>` (names matched as the Peek search matches them, pinyin too) and
+`--everything <SEARCH>` (Everything syntax, needs Everything). `--match all` (the default) wants
+every one of these; `--match any` takes a file that meets one of them (the time window, the
+extensions, the name, the Everything text), and goes with a template too. The folders always
+apply. With `any`, `--everything` cannot go with `--name-matches` or with a condition PecoFence
+tests itself (shortcut target, creation time or weekday, idle days, programs or installers):
+Everything would have to return every file of the folders for that row, and PecoFence cannot tell
+which of them the Everything text matched, so such a search is refused (`invalidValue`), also
+when `fence set` would make one. A written search keeps to files, unless it is `--match any`: then a folder whose name
+matches shows as well. A template with `--match any` leaves out its files-only row the same way
+(`--smart downloads --match any` is anything new or changed in the last 7 days, folders too), and
+`fence set <fence> smartMatch any` on a search whose conditions include `filesOnly` and others
+warns that the files-only row lets every file of the folders in.
+
+```powershell
+pecofence-cli fence create --smart downloads
+pecofence-cli fence create --title Invoices --smart-folder "$env:USERPROFILE\Documents" --ext pdf --name-matches invoice
+pecofence-cli fence create --title Papers --smart-folder D:\Work --smart-folder E:\Archive --ext pdf,docx --everything 发票 --match any
+pecofence-cli fence set Invoices smartWithinDays 90
+pecofence-cli fence set Papers smartMatch all
+pecofence-cli fence set Invoices smartConditions '[{\"cond\":\"ext\",\"value\":[\"pdf\"]},{\"cond\":\"sizeMb\",\"value\":{\"min\":1,\"max\":null}}]'
+pecofence-cli fence refresh Invoices
+```
+
+`fence get` has a `smart` object: `match` (`all` or `any`) and `folders` (none: every drive), then
+`spec` (the saved search: `folders`, `subfolders`, `match` only when it is `any`, `allOf` (rule
+conditions, as in `rule list`), `withinDays`, `name`, `everything`, `limit`, `template`; a search
+saved with one `folder` reads as that one folder), `source` (`everything`, `folder` when PecoFence read the folders itself because
+Everything does not run, `needsEverything` for a whole-computer or Everything-syntax search while
+Everything does not run, `waiting` before the first answer), `total` (matches in all; with a
+condition PecoFence tests itself (shortcut target, creation time or weekday, idle days, programs,
+installers, `--name-matches`), the matches among the newest 5000 files Everything gives, which are
+all it checks: Everything first narrows a shortcut target to `.lnk` files and idle days to files
+written before that day), `shown` and
+`query` (the search sent to Everything). The search runs with Everything when it runs, one search at
+a time; without it a folder search reads the folder on a worker (at most 20000 entries). It runs
+again 1 s and 4 s after a change in the folder, once a minute, after `fence refresh`, an import, a
+snapshot restore or a monitor layout change, and as soon as Everything starts. `fence set` changes
+the search (`smartFolder` a full path, a JSON array of full paths searched together, or `null`;
+`smartMatch` `all` or `any`; `smartSubfolders`, `smartWithinDays` 1 to 36500 or `null`,
+`smartConditions` a JSON array of rule conditions (not `origin`), `smartName` and `smartEverything`
+text or `null`, `smartLimit` 1 to 2000); a folder set this way is no longer the template's, so an import on
+another PC keeps it (a template's own folder is replaced there by that PC's Downloads, Screenshots or
+Recent Items).
+
+In the app, 新建智能栅栏… (tray menu, fence menu › 添加到桌面) and 编辑条件… (a smart fence's menu, Settings ›
+栅栏) open the smart fence editor, a small window with the same search in rows and a live count; the
+CLI does not open it.
+
+A fence that shows a folder (a folder fence, a folder opened in a fence, a smart fence) can be
+filtered with Ctrl+F or its menu's 筛选…; `fence get` then has `filter` (`text`, `shown`). The filter
+is not saved and the CLI does not set it.
 
 ## Watching for changes
 

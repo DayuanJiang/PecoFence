@@ -67,6 +67,10 @@ pub fn type_name(path: &Path, is_folder: bool) -> Option<String> {
 /// A shell icon (HICON), destroyed on drop.
 pub struct FileIcon(HICON);
 
+// SAFETY: an HICON is a process-wide USER handle, not tied to the thread that made it: the
+// Peek list reads icons on a worker thread and draws and destroys them on the UI thread.
+unsafe impl Send for FileIcon {}
+
 impl FileIcon {
     pub(crate) fn handle(&self) -> HICON {
         self.0

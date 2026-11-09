@@ -87,6 +87,10 @@ pub enum Method {
     /// Connected monitors with virtual-screen rectangles. Result: `[MonitorDto]`.
     #[serde(rename = "monitors.list")]
     MonitorsList,
+    /// Windows virtual desktops in Task View order (a fence's `virtualDesktops` names them by
+    /// `id`). Result: `[VirtualDesktopDto]`.
+    #[serde(rename = "virtualDesktops.list")]
+    VirtualDesktopsList,
     /// Fences of the active layout (the current monitor set). Result: `[FenceDto]`.
     #[serde(rename = "fences.list")]
     FencesList,
@@ -139,6 +143,18 @@ pub enum Method {
         /// Script a new script fence runs (.ps1, .py, .pyw, .cmd, .bat, .js or .exe).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         script: Option<String>,
+        /// 智能栅栏: a template (`downloads`, `screenshots`, `large`, `psd`, `recent`) makes a
+        /// smart fence showing that search instead.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        smart: Option<String>,
+        /// 智能栅栏: the whole search (`{folders?, subfolders?, match?, allOf?, withinDays?,
+        /// name?, everything?, limit?}`), in place of a template.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        smart_spec: Option<Box<pecofence_core::smart::SmartSpec>>,
+        /// 智能栅栏: `all` (every condition, the default) or `any` (one is enough) for the
+        /// template's or the given search; the folders always apply.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        smart_match: Option<pecofence_core::smart::SmartMatch>,
     },
     /// Items return to the 「桌面」 (inbox) fence; rules targeting the fence are removed. The
     /// inbox itself cannot be deleted. Result: `{changed, deleted: uuid, snapshotId?}`.
@@ -388,6 +404,7 @@ impl Method {
             self,
             Method::StatusGet
                 | Method::MonitorsList
+                | Method::VirtualDesktopsList
                 | Method::FencesList
                 | Method::FencesGet { .. }
                 | Method::ItemsList { .. }
@@ -632,6 +649,7 @@ mod tests {
         vec![
             Method::StatusGet,
             Method::MonitorsList,
+            Method::VirtualDesktopsList,
             Method::FencesList,
             Method::FencesGet {
                 fence: "Work".into(),
@@ -659,6 +677,9 @@ mod tests {
                 tool: None,
                 text: None,
                 script: None,
+                smart: None,
+                smart_spec: None,
+                smart_match: None,
             },
             Method::FencesDelete {
                 fence: "Work".into(),
@@ -831,6 +852,9 @@ mod tests {
                 tool: None,
                 text: None,
                 script: None,
+                smart: None,
+                smart_spec: None,
+                smart_match: None,
             }
             .name(),
             "fences.create"

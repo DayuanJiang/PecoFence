@@ -1,0 +1,295 @@
+# 智能栅栏 with Everything 1.4 or 1.5 (installed on the box, see smart.ps1): every way to make one (CLI
+# template, CLI conditions, the Peek search's last row; the editor's window from the tray and
+# fence menus opens and closes by keys here, smart-editor.ps1 tests it in full) and what a smart
+# fence does: Everything's results, the count after the name, live updates (new, subfolder,
+# deleted, written again, a download in flight), F5 and 立即刷新, fence set on each search
+# property, no drops or paste into it, files left where they are, a restart, deleting it.
+Case 'setup'
+CloseWindows
+DownloadsScene
+AgedFile $PfDocs 'poster design.psd' 30 | Out-Null
+AgedFile $PfDocs '封面.psd' 3 | Out-Null
+Add-Type @"
+using System; using System.Runtime.InteropServices;
+public static class Rd { [DllImport("shell32.dll", CharSet = CharSet.Unicode)] public static extern void SHAddToRecentDocs(uint flags, string path); }
+"@
+$recent = [Environment]::GetFolderPath('Recent')
+foreach ($n in @('weekly.docx', 'budget.xlsx', 'slides.pptx')) { [Rd]::SHAddToRecentDocs(3, (AgedFile $PfDocs $n 1)) }
+Check 'Everything runs in pf session' (EvStart) "installed=$(EvInstalled)"
+PfStart -Lang en -Script (DumpScript 500 20)
+Start-Sleep -Seconds 2
+$Dl = 'Downloads of the last 7 days'
+
+Case 'CLI: fence create --smart downloads'
+$r = Pf fence create --smart downloads --rect '420,140,560,330'
+$f = FenceGet $Dl
+Check 'a virtual fence with the downloads search' ($f -and $f.kind -eq 'virtual' -and $f.smart.spec.template -eq 'downloads' -and $f.smart.spec.withinDays -eq 7) $r
+Check 'Everything answers with the six files of the last week' (WaitSmart $Dl { $s.source -eq 'everything' -and $s.shown -eq 6 } 40) (SmartLine $Dl)
+$n = SmartNames $Dl
+Check 'none of the older files, newest first' (-not ($n -match 'old contract|annual|drivers|readme|wallpaper|简历') -and $n[0] -match 'quarterly' -and $n[-1] -match 'photos') ($n -join ', ')
+$q = (SmartOf $Dl).query
+Check 'the search names the folder, files and both dates' ($q -match 'Downloads\\' -and $q -match 'file:' -and $q -match '<dm:>=\d{4}-\d\d-\d\d\|dc:>=') $q
+$w = DumpOf $Dl
+Check 'the count is drawn in its capsule, the name stays the name, the folder has the magnifier badge' ($w -and $w.title -eq $Dl -and $w.raw -match 'title_count=Some\("6"\)' -and $w.raw -match ' badge=true') ($w.raw.Substring(0, [math]::Min(220, $w.raw.Length)))
+Check 'a smart fence holds no items of its own (item list says smart)' (@(@(PfJson item list --fence $Dl) | Where-Object { $_ -and $_.assignedBy -ne 'smart' }).Count -eq 0) ''
+Shot 's01-downloads'
+
+Case 'live updates'
+AgedFile $PfDl 'new invoice.pdf' 0 | Out-Null
+$t0 = Get-Date
+Check 'a new download shows (within 15 s)' (WaitSmart $Dl { $n -match 'new invoice' } 15) "$([int]((Get-Date) - $t0).TotalSeconds) s; $(SmartLine $Dl)"
+$w = DumpOf $Dl
+Check 'the count follows: 7' ($w.raw -match 'title_count=Some\("7"\)') ([regex]::Match($w.raw, 'title_count=\S+ \S*').Value)
+AgedFile "$PfDl\project" 'requirements.docx' 0.2 | Out-Null
+Check 'a new file in a subfolder shows' (WaitSmart $Dl { $n -match 'requirements' } 15) (SmartLine $Dl)
+Remove-Item -LiteralPath (Join-Path $PfDl '数据表.xlsx')
+Check 'a deleted file leaves' (WaitSmart $Dl { -not ($n -match '数据表') } 15) (SmartLine $Dl)
+(Get-Item -LiteralPath (Join-Path $PfDl 'readme.txt')).LastWriteTime = Get-Date
+Check 'an old file written again comes in' (WaitSmart $Dl { $n -match 'readme' } 15) (SmartLine $Dl)
+AgedFile $PfDl 'big.iso.crdownload' 0 | Out-Null
+Start-Sleep -Seconds 7
+Check 'a download in flight stays out' (-not ((SmartNames $Dl) -match 'crdownload')) (SmartLine $Dl)
+Remove-Item -LiteralPath (Join-Path $PfDl 'big.iso.crdownload')
+
+Case 'F5 and fence refresh run the search again'
+FocusFence $Dl
+[G]::Press(0x74); Start-Sleep -Milliseconds 800
+Pf fence refresh $Dl | Out-Null; Start-Sleep -Milliseconds 800
+$log = (PfLogAll) -join "`n"
+# A run of the fence still being checked takes F5 after it (one worker per fence).
+Check 'F5 asks Everything again (at once, or right after the run in progress)' ($log -match 'smart fence: Everything asked.*why="f5"' -or ($log -match 'it runs again after them.*why="f5"' -and $log -match 'smart fence: Everything asked.*why="after the results in progress"')) ''
+Check 'fence refresh asks Everything again' ($log -match 'smart fence: Everything asked.*why="cli"') ''
+
+Case 'nothing is dropped or pasted into it, nothing is moved'
+$desk = DeskFile 'smart-drop-test.txt'
+$from = $null
+for ($i = 0; $i -lt 10 -and -not $from; $i++) { Start-Sleep -Seconds 1; $from = ItemFence 'smart-drop-test.txt' }
+$src = ItemPt $from 'smart-drop-test'
+$wr = (FenceGet $Dl).windowRect
+if ($src) { DragTo $src[0] $src[1] ([int]($wr.x + $wr.w / 2)) ([int]($wr.y + $wr.h - 40)); Start-Sleep -Seconds 1 }
+Check 'a desktop item dragged onto it stays where it was' ($from -and (ItemFence 'smart-drop-test.txt') -eq $from -and (Test-Path -LiteralPath $desk)) "from=$from now=$(ItemFence 'smart-drop-test.txt') src=$src"
+Set-Clipboard -LiteralPath $desk
+FocusFence $Dl
+Chord 0x11 0x56; Start-Sleep -Seconds 1
+Check 'Ctrl+V into it pastes nothing' (-not (Test-Path -LiteralPath (Join-Path $PfDl 'smart-drop-test.txt')) -and ((PfLogAll) -join "`n") -match 'paste into a tool or smart fence ignored') ''
+Remove-Item -LiteralPath $desk
+Check 'the files are still in Downloads, none on the desktop' ((Test-Path -LiteralPath (Join-Path $PfDl 'quarterly report.pdf')) -and -not (Get-ChildItem -LiteralPath $PfDesk | Where-Object { $_.Name -match 'quarterly' })) ''
+
+Case 'a link dragged onto a smart fence''s tab lands nowhere'
+# A browser-like drag source (a WinForms window offering UniformResourceLocatorW) in its own
+# process: the real mouse drags from it. First onto the shown plain tab (a .url is made), then
+# onto the smart fence's pill next to it (refused: before the fix it landed in the shown tab).
+Pf fence create --title Links --rect '60,520,420,220' | Out-Null
+Pf fence create --title 'Smart tab' --smart-folder $PfDocs --rect '520,560,300,200' | Out-Null
+Pf fence merge 'Smart tab' --into Links | Out-Null
+Start-Sleep -Seconds 1
+$links = (FenceGet Links).id
+function PillPt($d, $name) { $i = [array]::IndexOf(@($d.tabs), $name); if ($i -lt 0) { return $null }; return @([int]($d.l + $d.ox + $d.rects[$i][0] + $d.rects[$i][1] / 2), [int]($d.t + $d.oy + 18)) }
+$d = DumpOf Links
+if ($d -and $d.active -ne $links) { $pt = PillPt $d 'Links'; if ($pt) { [G]::Click($pt[0], $pt[1]); Start-Sleep -Seconds 1; $d = DumpOf Links } }
+Check 'Links shows its own tab, the smart fence is the tab next to it' ($d -and $d.active -eq $links -and @($d.tabs) -contains 'Smart tab') "tabs=$(@($d.tabs) -join ',') active=$($d.active)"
+$src = "$PfRun\urlsrc.ps1"
+@'
+Add-Type -AssemblyName System.Windows.Forms
+$url = 'https://example.com/smart-tab-drop'
+$f = New-Object Windows.Forms.Form
+$f.Text = 'pf-url-source'; $f.StartPosition = 'Manual'; $f.TopMost = $true
+$f.Location = New-Object Drawing.Point(1180, 600); $f.Size = New-Object Drawing.Size(260, 160)
+$l = New-Object Windows.Forms.Label; $l.Text = 'drag me'; $l.Dock = 'Fill'; $f.Controls.Add($l)
+$l.Add_MouseDown({
+  $d = New-Object Windows.Forms.DataObject
+  $d.SetData('UniformResourceLocatorW', (New-Object IO.MemoryStream (, [Text.Encoding]::Unicode.GetBytes($url + [char]0))))
+  $d.SetData('UniformResourceLocator', (New-Object IO.MemoryStream (, [Text.Encoding]::ASCII.GetBytes($url + [char]0))))
+  $r = $l.DoDragDrop($d, [Windows.Forms.DragDropEffects]'Copy, Link')
+  Add-Content 'C:\pf\run\urlsrc.txt' "$r"
+})
+# Started hidden (no console window over the fences): the process's first ShowWindow takes
+# that hidden state, so the window shows on the later ones.
+$f.Show(); $f.Hide()
+[Windows.Forms.Application]::Run($f)
+'@ | Set-Content -LiteralPath $src -Encoding UTF8
+$proc = Start-Process powershell -ArgumentList '-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-File', $src -WindowStyle Hidden -PassThru
+$sw = [IntPtr]::Zero
+for ($i = 0; $i -lt 50 -and $sw -eq [IntPtr]::Zero; $i++) { Start-Sleep -Milliseconds 200; $sw = [G]::FindWindowW([NullString]::Value, 'pf-url-source') }
+Check 'the link source window is up' ($sw -ne [IntPtr]::Zero) ''
+function DragLink($x, $y) {
+  [G]::MoveTo(1310, 690); Start-Sleep -Milliseconds 300
+  MDown; Start-Sleep -Milliseconds 300
+  Glide 1310 690 $x $y 20 30; Start-Sleep -Milliseconds 500
+  MUp; Start-Sleep -Seconds 2
+  return (@(Get-Content 'C:\pf\run\urlsrc.txt' -ErrorAction SilentlyContinue) | Select-Object -Last 1)
+}
+# The links this case makes (also ones an earlier run left behind).
+function DropLinks() { Get-ChildItem -LiteralPath $PfDesk -Filter *.url | Where-Object { (Get-Content -LiteralPath $_.FullName -Raw) -match 'smart-tab-drop' } | Remove-Item -Force -ErrorAction SilentlyContinue }
+DropLinks
+$urls0 = @(Get-ChildItem -LiteralPath $PfDesk -Filter *.url).Count
+$r1 = DragLink ([int]($d.l + 210)) ([int]($d.t + 140))
+$urls1 = @(Get-ChildItem -LiteralPath $PfDesk -Filter *.url).Count
+Check 'onto the shown plain tab: a link is made' ($r1 -match 'Link|Copy' -and $urls1 -eq $urls0 + 1) "effect=$r1 urls $urls0 -> $urls1"
+$pt = PillPt (DumpOf Links) 'Smart tab'
+$r2 = if ($pt) { DragLink $pt[0] $pt[1] } else { 'no pill' }
+$urls2 = @(Get-ChildItem -LiteralPath $PfDesk -Filter *.url).Count
+Check 'onto the smart fence''s pill: refused, no link in the shown tab' ($r2 -eq 'None' -and $urls2 -eq $urls1) "effect=$r2 urls $urls1 -> $urls2 pill=$pt"
+if ($proc) { Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue }
+Start-Sleep -Seconds 1; DropLinks
+Pf fence delete 'Smart tab' | Out-Null; Pf fence delete Links | Out-Null
+Start-Sleep -Seconds 1
+
+Case 'its menu: edit conditions, refresh, folder, no New or Paste'
+$m = FenceMenuOf $Dl
+$t = MenuTexts $m
+Check 'Edit conditions…, Refresh now F5 and Open folder in File Explorer' ($t -match 'Edit conditions… \| Refresh now ~ F5' -and $t -match 'Open folder in File Explorer') $t
+Check 'no New and no Paste' (-not ($t -match '(^| )New \|') -and -not ($t -match 'Paste')) $t
+$sub = OpenSubmenu $m '^Add to desktop' 'New smart fence'
+$st = if ($sub -ne [IntPtr]::Zero) { MenuTexts $sub } else { '' }
+Check 'New smart fence… is one entry of Add to desktop, no submenu' ($st -match 'New smart fence…$' -and -not ($st -match 'Downloads of the last 7 days') -and -not ($t -match 'New smart fence')) "top: $t; Add to desktop: $st"
+Shot 's02-fence-menu'
+CloseAllMenus
+
+Case 'tray menu: New smart fence… opens the editor, Esc closes it'
+$before = @(@(PfJson fence list) | Where-Object { $_ -and $_.smart }).Count
+$m = TrayMenu
+$t = MenuTexts $m
+Check 'New smart fence… follows Show a folder on the desktop' ($t -match 'Show a folder on the desktop \| New smart fence…') $t
+MenuPick '^New smart fence' $m | Out-Null
+$ed = WaitWin 'PecoFence.SmartEditor' 20
+Check 'the editor window opens: New smart fence' ($ed -ne [IntPtr]::Zero -and [W]::Title($ed) -eq 'New smart fence') "$ed $([W]::Title($ed))"
+Start-Sleep -Seconds 1
+Shot 's03-tray-editor'
+# The name box has the keyboard; the empty name row keeps Enter from saving.
+[G]::Press(0x0D); Start-Sleep -Milliseconds 600
+Check 'Enter with a row not filled in: the editor stays' ([G]::IsWindowVisible($ed)) ''
+[G]::Press(0x1B)
+Check 'Esc closes it and makes nothing' ((WaitGoneWin 'PecoFence.SmartEditor' 10) -and @(@(PfJson fence list) | Where-Object { $_ -and $_.smart }).Count -eq $before) ''
+Pf fence create --smart recent --rect '40,420,400,300' | Out-Null
+Check 'recent files: the three documents opened' (WaitSmart 'Recently opened files' { $s.source -eq 'everything' -and (($n -join ',') -match 'weekly') -and (($n -join ',') -match 'slides') } 30) (SmartLine 'Recently opened files')
+
+Case 'fence menu: New smart fence… and Edit conditions…'
+$m = FenceMenuOf $Dl
+PickNewSmart $m | Out-Null
+$ed = WaitWin 'PecoFence.SmartEditor' 20
+Check 'New smart fence… in Add to desktop of a fence''s menu opens the editor' ($ed -ne [IntPtr]::Zero -and [W]::Title($ed) -eq 'New smart fence') ([W]::Title($ed))
+Start-Sleep -Milliseconds 800
+[G]::Press(0x1B)
+Check 'Esc closes it' (WaitGoneWin 'PecoFence.SmartEditor' 10) ''
+$m = FenceMenuOf $Dl
+MenuPick '^Edit conditions' $m | Out-Null
+$ed = WaitWin 'PecoFence.SmartEditor' 20
+Check 'Edit conditions… opens it on the fence' ($ed -ne [IntPtr]::Zero -and [W]::Title($ed) -eq 'Edit smart fence') ([W]::Title($ed))
+Start-Sleep -Milliseconds 800
+[G]::Press(0x0D)
+Check 'Enter is OK: it closes and the search stays as it was' ((WaitGoneWin 'PecoFence.SmartEditor' 10) -and ((PfLogAll) -join "`n") -match 'smart fence editor: the search is unchanged') ''
+Pf fence create --smart psd --rect '480,420,400,300' | Out-Null
+Check 'both .psd files of Documents, from the whole computer' (WaitSmart 'All .psd files' { $s.source -eq 'everything' -and ($n -match 'poster') -and ($n -match '封面') } 30) (SmartLine 'All .psd files')
+Check 'Windows, AppData and the Recycle Bin are left out' ((SmartOf 'All .psd files').query -match '^!"C:\\Windows\\" !\\AppData\\ ') (SmartOf 'All .psd files').query
+CloseMenus
+
+Case 'fence set: each search property'
+$Seven = 'Downloads of the last 7 days'
+Pf fence set $Seven smartWithinDays 30 | Out-Null
+Check 'smartWithinDays 30: the files of 12 and 25 days come in' (WaitSmart $Seven { $n -match 'old contract' -and $n -match 'wallpaper' -and -not ($n -match 'drivers') } 15) (SmartLine $Seven)
+Pf fence set $Seven smartWithinDays null | Out-Null
+Check 'smartWithinDays null: every file' (WaitSmart $Seven { $n -match 'drivers' -and $n -match '简历' } 15) (SmartLine $Seven)
+Pf fence set $Seven smartConditions '[{\"cond\":\"ext\",\"value\":[\"pdf\"]}]' | Out-Null
+Check 'smartConditions ext pdf: only PDFs' (WaitSmart $Seven { $n.Count -ge 2 -and -not ($n | Where-Object { $_ -notmatch 'pdf|quarterly|invoice|contract' }) } 15) (SmartLine $Seven)
+Pf fence set $Seven smartName 'quart' | Out-Null
+Check 'smartName quart: one file' (WaitSmart $Seven { $n.Count -eq 1 -and $n[0] -match 'quarterly' } 15) (SmartLine $Seven)
+Pf fence set $Seven smartName null | Out-Null
+Pf fence set $Seven smartLimit 2 | Out-Null
+Check 'smartLimit 2: two shown, the count says more' (WaitSmart $Seven { $s.shown -eq 2 } 15) (SmartLine $Seven)
+$w = DumpOf $Seven
+Check 'the count capsule reads 2+' ($w.raw -match 'title_count=Some\("2\+"\)') ([regex]::Match($w.raw, 'title_count=\S+ \S*').Value)
+Pf fence set $Seven smartLimit 200 | Out-Null
+Pf fence set $Seven smartConditions '[]' | Out-Null
+Pf fence set $Seven smartSubfolders false | Out-Null
+Check 'smartSubfolders false: the subfolder file leaves' (WaitSmart $Seven { -not ($n -match 'requirements') -and ($n -match 'quarterly') } 15) (SmartLine $Seven)
+Pf fence set $Seven smartFolder $PfDocs | Out-Null
+Check 'smartFolder Documents: the documents, no downloads' (WaitSmart $Seven { $n -match 'weekly' -and -not ($n -match 'quarterly') } 15) (SmartLine $Seven)
+Check 'a folder picked by hand drops the template' ($null -eq (SmartOf $Seven).spec.template) ((SmartOf $Seven).spec | ConvertTo-Json -Compress)
+Pf fence set $Seven smartEverything 'quarterly' | Out-Null
+Pf fence set $Seven smartFolder $PfDl | Out-Null
+Check 'smartEverything: the typed search in the folder' (WaitSmart $Seven { $n.Count -eq 1 -and $n[0] -match 'quarterly' } 15) (SmartLine $Seven)
+# The typed search narrows the other conditions, it does not replace them.
+Pf fence set $Seven smartEverything 'pdf' | Out-Null
+Check 'smartEverything pdf: the three PDFs' (WaitSmart $Seven { $n.Count -eq 3 -and $n -match 'old contract' } 15) (SmartLine $Seven)
+Pf fence set $Seven smartWithinDays 7 | Out-Null
+Check 'with smartWithinDays 7 the time window still applies' (WaitSmart $Seven { $n.Count -eq 2 -and -not ($n -match 'old contract') } 15) (SmartLine $Seven)
+Pf fence set $Seven smartWithinDays null | Out-Null
+Pf fence set $Seven smartName 'contract' | Out-Null
+Check 'and the name filter too' (WaitSmart $Seven { $n.Count -eq 1 -and $n[0] -match 'old contract' } 15) (SmartLine $Seven)
+Pf fence set $Seven smartName null | Out-Null
+Pf fence set $Seven smartEverything null | Out-Null
+$bad = & "$PfApp\pecofence-cli.exe" fence set Programs smartWithinDays 7 2>&1 | Out-String
+Check 'a search property on a plain fence is refused' ($LASTEXITCODE -ne 0 -and $bad -match 'smart fences') $bad
+$bad = & "$PfApp\pecofence-cli.exe" fence set $Seven smartFolder 'C:\no\such\folder' 2>&1 | Out-String
+Check 'a folder that is not there is refused' ($LASTEXITCODE -ne 0 -and $bad -match 'no folder') $bad
+$log = (PfLogAll) -join "`n"
+Check 'log: each change with what changed' ($log -match 'smart fence search changed.*what="within days"' -and $log -match 'what="conditions"' -and $log -match 'what="folders"') ''
+
+Case 'CLI: several folders, --match any, smartMatch and smartFolder as a list'
+Pf fence create --title 'Two places' --smart-folder $PfDl --smart-folder $PfDocs --ext pdf --name-matches weekly --match any --rect '40,60,400,260' | Out-Null
+$s = SmartOf 'Two places'
+Check 'fence get: match any and both folders' ($s.match -eq 'any' -and @($s.folders).Count -eq 2 -and $s.spec.match -eq 'any' -and -not (@($s.spec.allOf) | Where-Object { $_.cond -eq 'filesOnly' })) ($s | ConvertTo-Json -Compress -Depth 5)
+Check 'any: the PDFs of Downloads and weekly.docx of Documents' (WaitSmart 'Two places' { $n -match 'weekly' -and $n -match 'quarterly' -and $n -match 'old contract' -and -not ($n -match 'budget|meeting') } 20) (SmartLine 'Two places')
+Pf fence set 'Two places' smartMatch all | Out-Null
+Check 'smartMatch all: no PDF is named weekly' (WaitSmart 'Two places' { $s.match -eq 'all' -and $s.shown -eq 0 } 15) (SmartLine 'Two places')
+Check 'all is not written into the saved search' ($null -eq (SmartOf 'Two places').spec.match) ((SmartOf 'Two places').spec | ConvertTo-Json -Compress -Depth 5)
+$docs = '[\"' + ($PfDocs -replace '\\', '\\') + '\"]'
+Pf fence set 'Two places' smartMatch any | Out-Null
+Pf fence set 'Two places' smartFolder $docs | Out-Null
+Check 'smartFolder as a list of one: Documents only' (WaitSmart 'Two places' { @($s.folders).Count -eq 1 -and $n -match 'weekly' -and -not ($n -match 'quarterly') } 15) (SmartLine 'Two places')
+$bad = & "$PfApp\pecofence-cli.exe" fence set 'Two places' smartMatch some 2>&1 | Out-String
+Check 'smartMatch some is refused' ($LASTEXITCODE -ne 0 -and $bad -match 'any') $bad
+$bad = & "$PfApp\pecofence-cli.exe" fence set 'Two places' smartConditions '[{\"cond\":\"origin\",\"value\":\"publicDesktop\"}]' 2>&1 | Out-String
+Check 'an origin condition is refused' ($LASTEXITCODE -ne 0 -and $bad -match 'origin') $bad
+$bad = & "$PfApp\pecofence-cli.exe" fence create --title Nope --match any 2>&1 | Out-String
+Check '--match without a smart fence is refused' ($LASTEXITCODE -ne 0 -and $bad -match 'match') $bad
+# 任一 with Everything syntax and the name filter would let every file in: refused.
+$bad = & "$PfApp\pecofence-cli.exe" fence create --title Wide --smart-folder $PfDl --everything invoice --name-matches inv --match any 2>&1 | Out-String
+Check 'create: --match any with --everything and --name-matches is refused' ($LASTEXITCODE -ne 0 -and $bad -match 'cannot go with') $bad
+$bad = & "$PfApp\pecofence-cli.exe" fence set 'Two places' smartEverything invoice 2>&1 | Out-String
+Check 'set: an Everything search on an any fence with a name filter is refused, the search stays' ($LASTEXITCODE -ne 0 -and $bad -match 'cannot go with' -and $null -eq (SmartOf 'Two places').spec.everything) $bad
+Pf fence create --smart large --match any --rect '40,60,400,260' --title 'Large any' | Out-Null
+$la = SmartOf 'Large any'
+Check '--match any goes with a template too, without its files-only row' ($la.match -eq 'any' -and (@($la.spec.allOf) | ForEach-Object { $_.cond }) -join ',' -eq 'sizeMb') ($la | ConvertTo-Json -Compress -Depth 5)
+Pf fence create --smart downloads --title 'Files any' --rect '40,60,400,260' | Out-Null
+$r = Pf fence set 'Files any' smartMatch any
+Check 'fence set smartMatch any on a search with files only and another row: a warning says so' ($r -match 'filesOnly condition lets every file') $r
+Pf fence delete 'Files any' | Out-Null
+Pf fence delete 'Two places' | Out-Null; Pf fence delete 'Large any' | Out-Null
+$log = (PfLogAll) -join "`n"
+Check 'log: match and folders changed' ($log -match 'what="match".*matching="all"' -and $log -match 'what="folders".*folders=1') ''
+
+Case 'Peek search: put this search on the desktop'
+Pf settings set tools.everything true | Out-Null
+Start-Sleep -Milliseconds 500
+PeekKey
+$box = WaitWin 'PecoFence.PeekSearch' 5
+Start-Sleep -Milliseconds 400
+[G]::Type('quarterly'); Start-Sleep -Seconds 2
+Shot 's04-peek-rows'
+[G]::Press(0x26); Start-Sleep -Milliseconds 300
+[G]::Press(0x0D); Start-Sleep -Seconds 2
+# The same search as the list: with Everything 1.5 it carries the pinyin forms as well
+# (<quarterly|py:quarterly|pyj:quarterly>).
+$made = @(@(PfJson fence list) | Where-Object { $_ -and $_.smart -and $_.smart.spec.everything -match '^<?quarterly(\||$)' })
+Check 'the last row makes a smart fence with that search' ($made.Count -eq 1 -and $made[0].title -match 'quarterly') (($made | ForEach-Object { $_.title }) -join ', ')
+if ($made.Count -eq 1) { Check 'it finds the file' (WaitSmart $made[0].title { $n -match 'quarterly' } 20) (SmartLine $made[0].title) }
+
+Case 'a restart keeps the smart fences'
+PfQuit
+PfStart -Lang '' -Script (DumpScript 500 10)
+Check 'the downloads fence searches again after the restart' (WaitSmart $Dl { $s.source -eq 'everything' -and $s.shown -ge 6 } 30) (SmartLine $Dl)
+Shot 's05-after-restart'
+
+Case 'delete a smart fence'
+Pf fence delete 'All .psd files' | Out-Null
+Start-Sleep -Seconds 1
+Check 'the .psd files stay in Documents' ((Test-Path -LiteralPath (Join-Path $PfDocs 'poster design.psd')) -and (Test-Path -LiteralPath (Join-Path $PfDocs '封面.psd'))) ''
+Check 'no .psd went to a fence of icons' (@(@(PfJson item list) | Where-Object { $_ -and $_.name -match 'poster|封面' }).Count -eq 0) ''
+$log = (PfLogAll) -join "`n"
+Check 'log: created, asked, answered, changed, watcher' ($log -match 'smart fence created' -and $log -match 'smart fence: Everything answered' -and $log -match 'smart fence results changed' -and $log -match 'smart fence watcher started.*subfolders=true') ''
+PfQuit
+Remove-Item -LiteralPath (Join-Path $PfDocs 'poster design.psd'), (Join-Path $PfDocs '封面.psd') -ErrorAction SilentlyContinue
+foreach ($n in @('weekly.docx', 'budget.xlsx', 'slides.pptx')) { Remove-Item -LiteralPath (Join-Path $PfDocs $n) -ErrorAction SilentlyContinue; Remove-Item -LiteralPath (Join-Path $recent "$n.lnk") -ErrorAction SilentlyContinue }
+ClearDownloads

@@ -351,6 +351,69 @@ pub struct PopupMenu {
     hmenu: HMENU,
     /// Item bitmaps from `icon`, its submenus' included: a menu does not own them.
     bitmaps: RefCell<Vec<HBITMAP>>,
+    /// Item tooltips from `tip`: the item id and its text.
+    tips: RefCell<Vec<(u32, String)>>,
+}
+
+/// The tooltips of the menu shown now, with the tip window, while its `TrackPopupMenuEx` runs
+/// (the hook that sees the menu's highlight moving reads them).
+struct MenuTips {
+    tips: Vec<(u32, String)>,
+    tooltip: crate::tooltip::Tooltip,
+}
+
+thread_local! {
+    static MENU_TIPS: RefCell<Option<MenuTips>> = const { RefCell::new(None) };
+}
+
+/// `WH_CALLWNDPROC` while a menu with tooltips is open: `WM_MENUSELECT` (sent to the menu's
+/// owner as the highlight moves, a disabled item's too) shows the item's tip beside it, or hides
+/// the tip.
+unsafe extern "system" fn menu_tip_hook(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+    if code >= 0 {
+        // SAFETY: for WH_CALLWNDPROC, lParam points to a CWPSTRUCT for the call.
+        let cwp = unsafe { &*(lparam.0 as *const CWPSTRUCT) };
+        if cwp.message == WM_MENUSELECT as u32 {
+            let id = (cwp.wParam.0 & 0xFFFF) as u32;
+            let flags = ((cwp.wParam.0 >> 16) & 0xFFFF) as u32;
+            let hmenu = HMENU(cwp.lParam.0 as *mut core::ffi::c_void);
+            let _ = MENU_TIPS.try_with(|t| {
+                if let Ok(mut t) = t.try_borrow_mut()
+                    && let Some(t) = t.as_mut()
+                {
+                    t.select(id, flags, hmenu);
+                }
+            });
+        }
+    }
+    // SAFETY: passes the call on, as a hook must.
+    unsafe { CallNextHookEx(None, code, wparam, lparam) }
+}
+
+impl MenuTips {
+    fn select(&mut self, id: u32, flags: u32, hmenu: HMENU) {
+        let tip = (flags & MF_POPUP as u32 == 0 && !hmenu.0.is_null())
+            .then(|| self.tips.iter().find(|(i, _)| *i == id))
+            .flatten();
+        let Some((_, text)) = tip else {
+            self.tooltip.hide();
+            return;
+        };
+        // SAFETY: plain FFI calls on the menu being shown; the rect is a local.
+        unsafe {
+            let count = GetMenuItemCount(Some(hmenu)).max(0);
+            for pos in 0..count {
+                if GetMenuItemID(hmenu, pos) == id {
+                    let mut r = RECT::default();
+                    if GetMenuItemRect(None, hmenu, pos as u32, &mut r).as_bool() {
+                        let text = text.clone();
+                        self.tooltip.show(&text, r.right + 4, r.top);
+                    }
+                    return;
+                }
+            }
+        }
+    }
 }
 
 impl Default for PopupMenu {
@@ -365,6 +428,7 @@ impl PopupMenu {
         Self {
             hmenu: unsafe { CreatePopupMenu() },
             bitmaps: RefCell::default(),
+            tips: RefCell::default(),
         }
     }
 
@@ -391,6 +455,18 @@ impl PopupMenu {
         unsafe {
             let _ = AppendMenuW(self.hmenu, flags, id as usize, PCWSTR(w.as_ptr()));
         }
+        self
+    }
+
+    /// A tooltip for the item added last, shown beside it while it is highlighted: why a
+    /// disabled item is off, say.
+    pub fn tip(&self, text: &str) -> &Self {
+        let Some(pos) = self.len().checked_sub(1) else {
+            return self;
+        };
+        // SAFETY: plain FFI call on a menu we own.
+        let id = unsafe { GetMenuItemID(self.hmenu, pos as i32) };
+        self.tips.borrow_mut().push((id, text.to_string()));
         self
     }
 
@@ -462,6 +538,8 @@ impl PopupMenu {
         let h = sub.hmenu;
         // `take` leaves `sub` an empty Vec without a buffer for `forget` to leak.
         self.bitmaps.borrow_mut().extend(sub.bitmaps.take());
+        // The hook of the menu shown looks a highlighted item's tip up by id, submenus' too.
+        self.tips.borrow_mut().extend(sub.tips.take());
         std::mem::forget(sub);
         // SAFETY: string outlives the call; submenu handle is now owned by the parent.
         unsafe {
@@ -567,9 +645,32 @@ impl PopupMenu {
             return 0;
         };
         MENU_FOREGROUND_LOST.with(|n| n.set(0));
+        // Items with tooltips: a hook on this thread sees the highlight move for as long as
+        // the menu is open.
+        let tips = self.tips.borrow().clone();
+        let hook = if tips.is_empty() {
+            None
+        } else {
+            match crate::tooltip::Tooltip::create(owner, DARK_MENUS.load(Ordering::Relaxed)) {
+                Ok(tooltip) => {
+                    MENU_TIPS.with(|t| *t.borrow_mut() = Some(MenuTips { tips, tooltip }));
+                    // SAFETY: a hook of this thread, removed below before the state goes.
+                    let hook = unsafe {
+                        SetWindowsHookExW(
+                            WH_CALLWNDPROC,
+                            Some(menu_tip_hook),
+                            None,
+                            GetCurrentThreadId(),
+                        )
+                    };
+                    (!hook.0.is_null()).then_some(hook)
+                }
+                Err(_) => None,
+            }
+        };
         // SAFETY: plain FFI calls; WM_NULL nudge is the documented tray-menu workaround. The
         // timer's procedure runs on this thread inside the menu's message loop.
-        unsafe {
+        let cmd = unsafe {
             let timer = SetTimer(
                 Some(owner),
                 MENU_FOREGROUND_TIMER,
@@ -594,7 +695,16 @@ impl PopupMenu {
                 "popup menu closed"
             );
             cmd.0 as u32
+        };
+        if let Some(hook) = hook {
+            // SAFETY: the hook set above.
+            unsafe {
+                let _ = UnhookWindowsHookEx(hook);
+            }
         }
+        // The tip window goes with the state.
+        MENU_TIPS.with(|t| t.borrow_mut().take());
+        cmd
     }
 }
 

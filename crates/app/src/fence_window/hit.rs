@@ -133,6 +133,7 @@ impl FenceViewState {
                 tab_w,
                 &t.title,
                 t.title_size,
+                t.desktop_icon,
                 badge.as_deref(),
             )
         } else if self.tabs_on_rail() {
@@ -141,24 +142,71 @@ impl FenceViewState {
                 None => return false,
             }
         } else if self.deco.folder_icon {
-            // The title moves aside for the rolled item count, as drawn.
+            // The title moves aside for the rolled item count and the filter tag, as drawn;
+            // the tag over the glyph of a narrow fence takes the click.
+            if self.on_filter_tag(x, y) {
+                return false;
+            }
             let width = self.chrome_panel.size_px().0 as f32 / scale;
-            let reserve = if self.roll_target() && !self.behavior.hide_count_and_chevron.get() {
+            let reserve = if self.roll_target()
+                && !self.behavior.hide_count_and_chevron.get()
+                && self.filter_tag.is_none()
+            {
                 pecofence_render::fence_chrome::header_count_width(width, 1, self.deco.title_x())
             } else {
                 0.0
             };
             self.chrome.lone_up_box(
                 &self.title,
+                self.filter_tag_ref(),
                 self.style.title_size,
                 self.behavior.title_align.get(),
                 width,
+                self.deco.desktop_icon,
                 reserve,
                 self.theme.title_height,
             )
         } else {
             TitleDeco::up_box(self.theme.title_height)
         };
+        x >= r.left && x < r.right && y >= r.top && y < r.bottom
+    }
+
+    /// Is the client-pixel point on the Task View glyph of a single title (a window bound to
+    /// virtual desktops; its infotip names them)? A tab strip has it on every pill, where the
+    /// tab's own infotip names them.
+    pub(super) fn desktop_glyph_at(&self, x_px: i32, y_px: i32) -> bool {
+        if !self.deco.desktop_icon || self.title_row_strip() || self.tabs_on_rail() {
+            return false;
+        }
+        let scale = self.scale();
+        let (x, y) = (x_px as f32 / scale, y_px as f32 / scale);
+        let width = self.chrome_panel.size_px().0 as f32 / scale;
+        if self.on_filter_tag(x, y) {
+            return false;
+        }
+        // As drawn: a smart fence's count is its capsule and a filter tag carries one, so no
+        // rolled count at the right.
+        let reserve = if self.roll_target()
+            && !self.behavior.hide_count_and_chevron.get()
+            && self.title_count.is_none()
+            && self.filter_tag.is_none()
+        {
+            pecofence_render::fence_chrome::header_count_width(width, 1, self.deco.title_x())
+        } else {
+            0.0
+        };
+        let r = self.chrome.lone_desktop_box(
+            &self.title,
+            self.title_count.as_deref(),
+            self.filter_tag_ref(),
+            self.style.title_size,
+            self.behavior.title_align.get(),
+            width,
+            self.deco,
+            reserve,
+            self.theme.title_height,
+        );
         x >= r.left && x < r.right && y >= r.top && y < r.bottom
     }
 
@@ -188,6 +236,69 @@ impl FenceViewState {
         } else {
             y_px >= 0 && y_px < self.title_h_px()
         }
+    }
+
+    /// The filter tag of a single title (筛选), as drawn.
+    fn filter_tag_ref(&self) -> Option<(&str, &str, &str)> {
+        self.filter_tag
+            .as_ref()
+            .map(|(k, t, c)| (k.as_str(), t.as_str(), c.as_str()))
+    }
+
+    /// What of the filter tag a single title shows, as drawn (None: no tag, or not even its
+    /// magnifier and × fit).
+    pub(super) fn filter_tag_fit(&self) -> Option<pecofence_render::fence_chrome::TagFit> {
+        let tag = self.filter_tag_ref()?;
+        if self.title_row_strip() || self.tabs_on_rail() || self.bare() {
+            return None;
+        }
+        let width = self.chrome_panel.size_px().0 as f32 / self.scale();
+        self.chrome.filter_tag_fit(
+            width,
+            self.theme.title_height,
+            tag,
+            self.title_count.as_deref(),
+        )
+    }
+
+    /// The filter tag's box (DIPs) when a single title shows one.
+    fn filter_tag_box(&self) -> Option<Rect> {
+        self.filter_tag_fit().map(|f| f.rect)
+    }
+
+    /// Is the DIP point on the filter tag?
+    fn on_filter_tag(&self, x: f32, y: f32) -> bool {
+        self.filter_tag_box()
+            .is_some_and(|r| x >= r.left && x < r.right && y >= r.top && y < r.bottom)
+    }
+
+    /// Is the client-pixel point on a filter tag that shows only part of the filter (its
+    /// infotip names all of it)?
+    pub(super) fn cut_filter_tag_at(&self, x_px: i32, y_px: i32) -> bool {
+        let scale = self.scale();
+        let (x, y) = (x_px as f32 / scale, y_px as f32 / scale);
+        match (self.filter_tag_fit(), self.filter_tag_ref()) {
+            (Some(f), Some(tag)) => {
+                !f.whole(tag)
+                    && x >= f.rect.left
+                    && x < f.rect.right
+                    && y >= f.rect.top
+                    && y < f.rect.bottom
+            }
+            _ => false,
+        }
+    }
+
+    /// Is the client-pixel point on the × of the filter tag (筛选, a single title)?
+    pub(super) fn filter_tag_clear_at(&self, x_px: i32, y_px: i32) -> bool {
+        let scale = self.scale();
+        let (x, y) = (x_px as f32 / scale, y_px as f32 / scale);
+        self.filter_tag_box().is_some_and(|r| {
+            x >= r.right - pecofence_render::fence_chrome::TAG_CLEAR_W
+                && x < r.right
+                && y >= r.top
+                && y < r.bottom
+        })
     }
 
     /// Is the client-pixel point on the roll-up chevron button (right end of the title row)?

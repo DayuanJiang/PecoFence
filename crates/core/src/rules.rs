@@ -289,6 +289,53 @@ pub fn category_name(cat: TypeCategory) -> &'static str {
     }
 }
 
+/// The extensions (lower case, with the dot) that make a file a document, image, music, video
+/// or archive; empty for the categories that look at more than the extension.
+pub fn category_exts(cat: TypeCategory) -> &'static [&'static str] {
+    match cat {
+        TypeCategory::Documents => &[
+            ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".pdf", ".txt", ".md", ".rtf",
+            ".odt", ".ods", ".odp", ".csv", ".tsv", ".one", ".epub", ".json", ".xml",
+        ],
+        TypeCategory::Images => &[
+            ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".heic", ".svg", ".tif", ".tiff",
+            ".ico", ".psd", ".raw", ".avif",
+        ],
+        TypeCategory::Music => &[
+            ".mp3", ".flac", ".wav", ".m4a", ".aac", ".ogg", ".wma", ".opus",
+        ],
+        TypeCategory::Video => &[
+            ".mp4", ".mkv", ".avi", ".mov", ".wmv", ".webm", ".m4v", ".ts",
+        ],
+        TypeCategory::Archives => &[
+            ".zip", ".7z", ".rar", ".tar", ".gz", ".bz2", ".xz", ".iso", ".cab",
+        ],
+        TypeCategory::Programs
+        | TypeCategory::Folders
+        | TypeCategory::Shortcuts
+        | TypeCategory::Installers => &[],
+    }
+}
+
+/// Whether a file `file_name` (a folder when `is_folder`) is in `cat`, by the tests the `type`
+/// rule condition uses: a shortcut by its `shortcut_target` (one whose target is unknown counts
+/// as a program, as there).
+pub fn file_in_category(
+    cat: TypeCategory,
+    file_name: &str,
+    is_folder: bool,
+    shortcut_target: Option<&str>,
+) -> bool {
+    let facts = ItemFacts {
+        file_name: file_name.to_string(),
+        is_folder,
+        shortcut_target: shortcut_target.map(str::to_string),
+        shortcut_target_ext: shortcut_target.map(target_ext),
+        ..ItemFacts::default()
+    };
+    category_matches(cat, &facts)
+}
+
 fn category_matches(cat: TypeCategory, facts: &ItemFacts) -> bool {
     let ext = ext_of(&facts.file_name);
     let target_ext = facts.shortcut_target_ext.as_deref().unwrap_or("");
@@ -308,72 +355,11 @@ fn category_matches(cat: TypeCategory, facts: &ItemFacts) -> bool {
         TypeCategory::Shortcuts => {
             !facts.is_folder && matches!(ext.as_str(), ".lnk" | ".url" | ".website")
         }
-        TypeCategory::Documents => {
-            !facts.is_folder
-                && matches!(
-                    ext.as_str(),
-                    ".doc"
-                        | ".docx"
-                        | ".xls"
-                        | ".xlsx"
-                        | ".ppt"
-                        | ".pptx"
-                        | ".pdf"
-                        | ".txt"
-                        | ".md"
-                        | ".rtf"
-                        | ".odt"
-                        | ".ods"
-                        | ".odp"
-                        | ".csv"
-                        | ".tsv"
-                        | ".one"
-                        | ".epub"
-                        | ".json"
-                        | ".xml"
-                )
-        }
-        TypeCategory::Images => {
-            !facts.is_folder
-                && matches!(
-                    ext.as_str(),
-                    ".png"
-                        | ".jpg"
-                        | ".jpeg"
-                        | ".gif"
-                        | ".bmp"
-                        | ".webp"
-                        | ".heic"
-                        | ".svg"
-                        | ".tif"
-                        | ".tiff"
-                        | ".ico"
-                        | ".psd"
-                        | ".raw"
-                        | ".avif"
-                )
-        }
-        TypeCategory::Music => {
-            !facts.is_folder
-                && matches!(
-                    ext.as_str(),
-                    ".mp3" | ".flac" | ".wav" | ".m4a" | ".aac" | ".ogg" | ".wma" | ".opus"
-                )
-        }
-        TypeCategory::Video => {
-            !facts.is_folder
-                && matches!(
-                    ext.as_str(),
-                    ".mp4" | ".mkv" | ".avi" | ".mov" | ".wmv" | ".webm" | ".m4v" | ".ts"
-                )
-        }
-        TypeCategory::Archives => {
-            !facts.is_folder
-                && matches!(
-                    ext.as_str(),
-                    ".zip" | ".7z" | ".rar" | ".tar" | ".gz" | ".bz2" | ".xz" | ".iso" | ".cab"
-                )
-        }
+        TypeCategory::Documents
+        | TypeCategory::Images
+        | TypeCategory::Music
+        | TypeCategory::Video
+        | TypeCategory::Archives => !facts.is_folder && category_exts(cat).contains(&ext.as_str()),
         TypeCategory::Installers => {
             if facts.is_folder {
                 return false;

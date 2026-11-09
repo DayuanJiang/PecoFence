@@ -310,6 +310,8 @@
   .cond-list-h, .c-and { color: var(--text2); font-size: 12px; line-height: 16px; }
   .cond { display: flex; flex-direction: column; gap: 8px; }
   .c-and { padding-left: 12px; }
+  /* 智能栅栏: its conditions in a card of their own, the Everything text under its summary. */
+  #smartSummary span { display: inline-block; max-width: 100%; }
   .cond-list-h + .cond > .c-and { display: none; }
   .c-box { display: flex; align-items: flex-start; gap: 8px; padding: 10px 8px 10px 12px; border-radius: var(--r-card); background: var(--subtle); border: 1px solid var(--card-stroke); }
   .c-main { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px 12px; }
@@ -437,6 +439,57 @@
   .dj-pic text { fill: var(--text); font-size: 10px; font-family: inherit; }
   .dj-pic text.hot { fill: var(--accent); font-weight: 600; }
   .dj-pic .cursor { fill: var(--text); stroke: var(--dj-panel); stroke-width: 1; }
+
+  /* 智能栅栏编辑器: the page in a small window of its own (body.se-only) shows only the editor.
+     One row per condition: the first menu is the kind, the rest of the row follows it; - and +
+     at the end. The rows scroll; the name above and the count and buttons below stay. */
+  body.se-only .app { display: none; }
+  #seWindow { display: none; }
+  body.se-only #seWindow { display: flex; flex-direction: column; height: 100vh; box-sizing: border-box; padding: 20px 24px 18px; gap: 12px; }
+  #seWindow h2 { font-size: 20px; line-height: 28px; margin: 0; font-weight: 600; }
+  .se-namel { display: flex; align-items: center; gap: 12px; }
+  .se-namel > span { flex: none; min-width: 56px; color: var(--text2); }
+  .se-namel input { flex: 1; min-width: 0; }
+  .se-presets { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .se-presets .chip { height: 28px; font-size: 13px; }
+  .se-cap { color: var(--text2); flex: none; }
+  .se-match { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .se-match select { min-width: 88px; }
+  .se-match .s { color: var(--text2); font-size: 12px; }
+  .se-rows { flex: 1 1 auto; min-height: 96px; overflow: auto; display: flex; flex-direction: column; border: 1px solid var(--card-stroke); border-radius: var(--r-card); background: var(--control-alt); }
+  .se-row { display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 10px; min-height: 48px; box-sizing: border-box; flex: none; }
+  .se-row + .se-row { border-top: 1px solid var(--line); }
+  .se-row.bad { background: var(--error-bg); }
+  .se-row > .se-kind { flex: none; width: 132px; min-width: 0; }
+  .se-val { flex: 1; min-width: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; }
+  .se-val select { min-width: 0; flex: none; }
+  .se-val input[type=text] { flex: 1 1 140px; min-width: 0; }
+  .se-val input[type=number] { width: 84px; min-width: 0; }
+  .se-val input[type=time] { width: 104px; min-width: 0; }
+  .se-path { flex: 1 1 120px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text2); }
+  .se-path.none { font-style: italic; }
+  .se-val button { min-width: 0; }
+  .se-fixed { flex: 1 1 auto; min-width: 0; }
+  .se-fixed .s { color: var(--text2); font-size: 12px; }
+  .se-chips { flex: 1 1 200px; display: flex; flex-wrap: wrap; gap: 4px; }
+  .se-chips label { position: relative; display: inline-flex; align-items: center; height: 24px; padding: 0 9px; border-radius: 12px; font-size: 12px; border: 1px solid var(--control-stroke); background: var(--control); cursor: pointer; }
+  .se-chips label.on { background: var(--accent); color: var(--on-accent); border-color: transparent; }
+  .se-chips label:focus-within { outline: 2px solid var(--text); outline-offset: 1px; }
+  .se-chips input { position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0; pointer-events: none; }
+  .se-row .iconbtn { flex: none; height: 28px; width: 28px; font-size: 12px; border: 1px solid var(--control-stroke); background: var(--control); }
+  .se-msg { color: var(--error); font-size: 13px; }
+  .se-msg:empty { display: none; }
+  .se-foot { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 16px; }
+  .se-count { flex: 1 1 180px; display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .se-count > div { display: flex; flex-direction: column; min-width: 0; }
+  .se-count .ic { color: var(--accent); }
+  .se-count b { font-weight: 600; }
+  .se-count .s { color: var(--text2); font-size: 12px; }
+  .se-count button { min-width: 0; height: 26px; font-size: 12px; align-self: flex-start; margin-top: 2px; }
+  .se-count.busy .se-n { opacity: .55; }
+  .se-limit { display: flex; align-items: center; gap: 8px; color: var(--text2); }
+  .se-limit select { min-width: 96px; color: var(--text); }
+  .se-btns { display: flex; gap: 8px; margin-left: auto; }
 </style>
 </head>
 <body>
@@ -508,6 +561,7 @@
         <div class="card child" id="keepIconsCard"><div class="l"><div><div class="t">关闭 PecoFence 时保持 Windows 桌面图标隐藏</div><div class="s">登录时 Windows 会先显示桌面图标，等 PecoFence 启动后才隐藏。打开后，退出或注销时图标保持隐藏，下次登录就不会闪现；PecoFence 没有运行时，桌面上不显示图标。要让图标重新显示，右键桌面，选“查看”→“显示桌面图标”</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="keepIconsHidden"></div></div>
       </div>
       <div class="card"><div class="l"><span class="ic">&#xE8B3;</span><div><div class="t">在桌面空白处拖出矩形时显示“新建栅栏”按钮</div><div class="s">矩形没有碰到任何栅栏时，在它的右下角显示“新建栅栏”和“在此显示文件夹…”两个小按钮，不点的话几秒后消失；关闭后拖出矩形只用来框选，仍可从托盘菜单新建栅栏</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="offerNewFence"></div></div>
+      <div class="card" id="perDesktopCard"><div class="l"><span class="ic">&#xE7C4;</span><div><div class="t">每个虚拟桌面各用一套栅栏</div><div class="s">打开后，新建的栅栏只在当前虚拟桌面显示。已有的栅栏不变，可以在栅栏右键菜单或“栅栏”页里改</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="perDesktopFences"></div></div>
       <div class="card"><div class="l"><span class="ic">&#xE82F;</span><div><div class="t">功能提示</div><div class="s">用得上某个功能时提示一次，例如栅栏多了可以收起、常开的文件夹可以放到桌面上。每条只出现一次</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="featureTips"></div></div>
       <h3>隐藏栅栏</h3>
       <div class="card"><div class="l"><span class="ic">&#xE890;</span><div><div class="t">双击桌面空白处隐藏或显示栅栏</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="quickHide.enabled"></div></div>
@@ -576,6 +630,12 @@
       <div class="card"><div class="l"><span class="ic">&#xE8AC;</span><div><div class="t">栅栏名称</div></div></div>
         <input type="text" id="fenceTitle" data-fence="title" maxlength="120"></div>
       <div class="card" id="fenceAutoHeight"><div class="l"><span class="ic">&#xE745;</span><div><div class="t">自动高度</div><div class="s">高度跟随内容行数，内容增减时平滑过渡</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="autoHeight"></div></div>
+      <div id="fenceSmartGroup">
+      <h3>搜索条件</h3>
+      <div class="card" id="smartSummaryCard"><div class="l"><span class="ic">&#xE721;</span><div><div class="t" id="smartSummary"></div><div class="s" id="smartStatus"></div></div></div>
+        <div class="actions"><button id="smartEverythingBtn" hidden></button><button id="smartRefresh">立即刷新</button><button class="accent" id="smartEdit">编辑条件…</button></div></div>
+      <div class="card"><div class="l"><span class="ic">&#xE721;</span><div><div class="t">标题前显示放大镜</div><div class="s">一眼看出这个栅栏会自己更新</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="portalTitleIcon"></div></div>
+      </div>
       <h3>外观</h3>
       <div class="card"><div class="l"><span class="ic">&#xE744;</span><div><div class="t">不透明度</div><div class="s">默认：透出桌面。更厚实：多一层底色。全透明：鼠标悬停时才显示玻璃。</div></div></div>
         <select id="fenceOpacity" data-fence="opacity"><option value="transparent">全透明</option><option value="clear">更透明</option><option value="default">默认</option><option value="solid">更厚实</option></select></div>
@@ -608,6 +668,8 @@
       <h3>行为</h3>
       <div class="card"><div class="l"><span class="ic">&#xE72E;</span><div><div class="t">锁定位置和大小</div><div class="s">边框不再可拖动缩放；标题仍可点击、右键、双击</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="locked"></div></div>
       <div class="card"><div class="l"><span class="ic">&#xE70E;</span><div><div class="t">向上展开</div><div class="s">上方放得下时向上展开，放不下就向下展开；标题栏留在原处。适合放在任务栏上方的栅栏</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="expandUpward"></div></div>
+      <div class="card" id="fenceVdCard"><div class="l"><span class="ic">&#xE7C4;</span><div><div class="t">在哪个虚拟桌面显示</div><div class="s">按 Win+Ctrl+左右键切换虚拟桌面时，不属于那个桌面的栅栏会淡出</div></div></div>
+        <select id="fenceVd" aria-label="在哪个虚拟桌面显示"></select></div>
       <div class="card"><div class="l"><span class="ic">&#xE890;</span><div><div class="t">双击桌面隐藏时保留此栅栏</div><div class="s">其他栅栏隐藏时，这个栅栏仍留在桌面上</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="excludeFromQuickHide"></div></div>
       <div class="card" id="fenceHideEmpty"><div class="l"><span class="ic">&#xED1A;</span><div><div class="t">为空时自动隐藏</div><div class="s">里面没有图标时就不显示；桌面上一出现新图标，它会自己回来</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="hideWhenEmpty"></div></div>
       <div class="card" id="fenceDesktopLayout"><div class="l"><span class="ic">&#xE80A;</span><div><div class="t">像桌面一样排列</div><div class="s">图标像 Windows 桌面上一样从屏幕左上角一列一列往下排，绕开其他栅栏。关闭后“桌面”变回普通栅栏，可以移动和调整大小</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="desktopLayout"></div></div>
@@ -742,6 +804,7 @@
     </section>
   </main>
 </div>
+<div id="seWindow"></div>
 <div class="infobar" id="toast" role="status"><span class="ic" aria-hidden="true"></span><span id="toastText"></span></div>
 <script>
 (() => {
@@ -766,6 +829,9 @@
   const wv = window.chrome && window.chrome.webview;
   const send = (m) => wv && wv.postMessage(m);
   let state = null;
+  // The smart fence editor's window (see seRender): the page shows only the editor.
+  const EDITOR = window.PECOFENCE_MODE === 'smartEditor';
+  if (EDITOR) document.body.classList.add('se-only');
 
   // Wires the range input of a .slider and returns { input, value, set(value, force), onInput,
   // onChange }. A dragged thumb closer than `snap` to a tick lands on it. Arrow keys move by
@@ -1734,7 +1800,8 @@
     document.querySelector('#fenceHideEmpty .s').textContent = f.kind === 'inbox'
       ? t("里面没有图标时就不显示；桌面上一出现新图标，它会自己回来")
       : t("里面没有图标时就不显示；有图标归到这里时，它会自己回来");
-    document.getElementById('fenceOpenFolders').style.display = f.portal || f.tool ? 'none' : '';
+    document.getElementById('fenceOpenFolders').style.display = f.portal || f.tool || f.smart ? 'none' : '';
+    renderSmart(f);
     // A tool fence (小工具) never holds icons: hiding it while empty would hide it for good.
     document.getElementById('fenceHideEmpty').style.display = f.tool ? 'none' : '';
     // Icon size, spacing, names, alignment and auto height are about icons.
@@ -1765,7 +1832,7 @@
     document.getElementById('fenceTabColor').style.display = f.host || f.tabbed ? '' : 'none';
     document.querySelectorAll('[data-fence]').forEach(el => {
       const prop = el.dataset.fence;
-      const cur = prop === 'portalNavigate' ? !!(f.portal && f.portal.navigate) : prop === 'portalTitleIcon' ? !!(f.portal && f.portal.titleIcon) : f[prop];
+      const cur = prop === 'portalNavigate' ? !!(f.portal && f.portal.navigate) : prop === 'portalTitleIcon' ? !!((f.portal || f.smart || {}).titleIcon) : f[prop];
       if (el.classList.contains('toggle')) {
         el.classList.toggle('on', !!cur); el.setAttribute('aria-checked', String(!!cur));
         el.onclick = () => { const on = !el.classList.contains('on'); el.classList.toggle('on', on); el.setAttribute('aria-checked', String(on)); setFence(f.id, prop, on); };
@@ -1792,7 +1859,57 @@
     renderSwatches(fenceTintSwatches, tintSel, 'fenceTint');
     renderSwatches(fenceTabColorSwatches, tabSel, 'tabColor');
     document.getElementById('fenceDock').onclick = () => { setFence(f.id, 'dockTop', null); toast(t("已停靠到屏幕顶部")); };
+    // 在哪个虚拟桌面显示: once there is more than one desktop; 「桌面」 shows on every one.
+    const desktops = state.virtualDesktops || [];
+    const bound = f.virtualDesktops || [];
+    document.getElementById('fenceVdCard').style.display = f.kind !== 'inbox' && !f.inboxWindow && (desktops.length > 1 || bound.length) ? '' : 'none';
+    const vdSel = document.getElementById('fenceVd');
+    const vdOptions = `<option value="">${esc(t("所有虚拟桌面"))}</option>` + desktops.map(d => `<option value="${esc(d.id)}">${esc(d.current ? tf("{0}（当前）", d.name) : d.name)}</option>`).join('');
+    if (vdSel.innerHTML !== vdOptions) vdSel.innerHTML = vdOptions;
+    const vdOn = desktops.find(d => bound.some(b => b.toUpperCase() === d.id.toUpperCase()));
+    vdSel.value = vdOn ? vdOn.id : '';
+    vdSel.onchange = () => setFence(f.id, 'virtualDesktops', vdSel.value || 'all');
     ringFence();
+  }
+  // 智能栅栏: the 「搜索条件」 group of the selected fence: the search in one line, what the last
+  // run found, and 编辑条件… (the smart fence editor's window), 立即刷新 and Everything's button.
+  function renderSmart(f) {
+    const group = document.getElementById('fenceSmartGroup');
+    group.style.display = f.smart ? '' : 'none';
+    if (!f.smart) return;
+    // One part per box: a part goes to the next line whole when it does not fit.
+    const summary = document.getElementById('smartSummary');
+    const parts = smartSummary(f.smart.spec);
+    summary.replaceChildren(...parts.flatMap((part, i) => [...(i ? [document.createTextNode(' · ')] : []), Object.assign(document.createElement('span'), { textContent: part })]));
+    summary.title = summary.textContent;
+    const everything = (state.everything || {}).state;
+    const shown = f.smart.shown || 0;
+    const status = { everything: tf("现在显示 {0} 个文件", shown), folder: tf("现在显示 {0} 个文件", shown), needsEverything: t("没有找到文件"), waiting: t("正在搜索…") }[f.smart.source] || '';
+    const needsText = (f.smart.spec.folders || []).length ? t("用了 Everything 语法，需要先打开 Everything") : t("要搜索整台电脑，需要先打开 Everything");
+    const help = { everything: t("由 Everything 搜索；文件夹有变化或每过一分钟就重新搜一次"), folder: t("Everything 没有运行，由 PecoFence 读这个文件夹；有变化时自动更新"), needsEverything: needsText, waiting: '' }[f.smart.source] || '';
+    document.getElementById('smartStatus').textContent = [status, help].filter(Boolean).join(' · ');
+    const evBtn = document.getElementById('smartEverythingBtn');
+    const needs = f.smart.source === 'needsEverything' && (everything === 'installed' || everything === 'missing');
+    evBtn.hidden = !needs;
+    evBtn.textContent = everything === 'installed' ? t("启动 Everything") : t("安装 Everything");
+    evBtn.onclick = () => send({ type: 'action', name: everything === 'installed' ? 'startEverything' : 'installEverything' });
+    document.getElementById('smartRefresh').onclick = () => send({ type: 'action', name: 'refreshSmart', id: f.id });
+    document.getElementById('smartEdit').onclick = () => send({ type: 'action', name: 'editSmart', id: f.id });
+  }
+  // A smart fence's search in plain words, in parts: where (always), then the time window, the
+  // conditions, the name and the Everything text: all of them, or 任一条件 for one of them.
+  function smartSummary(spec) {
+    const folders = spec.folders || [];
+    const where = !folders.length ? t("整台电脑")
+      : tf("{0} 文件夹", folders.map(p => p.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || p).join(t("、"))) + (spec.subfolders !== false ? t("（含子文件夹）") : '');
+    const rest = [
+      spec.withinDays != null ? tf("最近 {0} 天", spec.withinDays) : '',
+      ...(spec.allOf || []).map(condLabel),
+      spec.name ? tf("名称匹配“{0}”", spec.name) : '',
+      spec.everything ? tf("Everything 搜索“{0}”", spec.everything) : '',
+    ].filter(Boolean);
+    if (spec.match === 'any' && rest.length > 1) rest[0] = t("任一条件：") + rest[0];
+    return [where, ...rest];
   }
   // While 「栅栏」 is open, the fence it edits wears the desktop's selection ring.
   function ringFence() {
@@ -2473,6 +2590,446 @@
     }, 1800);
   }
 
+
+  // ---- 智能栅栏编辑器: this page in a small window of its own (the host sets
+  // window.PECOFENCE_MODE = 'smartEditor' and sends { type: 'editor', fence, isNew, title, spec,
+  // templates, everything }). Like the Notes app's smart folder dialog: the name, the templates
+  // for a new fence, 全部 / 任一, one row per condition (the first menu picks the kind, the rest
+  // of the row follows it, - and + at the end), the live count and 取消 / 创建 (好). 位置 and
+  // 子文件夹 always apply; 全部 / 任一 decides the other rows. 创建 / 好 and Enter post
+  // editorSave with the whole search; 取消 and Esc post editorCancel; editorDirty tells the
+  // host whether something is unsaved.
+  const SE_KINDS = () => [['where', t("位置")], ['sub', t("子文件夹")], ['time', t("时间")], ['type', t("类型")], ['ext', t("扩展名")], ['name', t("名称")], ['size', t("大小")],
+    ['created', t("创建时段")], ['weekday', t("创建于星期")], ['target', t("快捷方式目标")], ['idle', t("闲置天数")], ['everything', t("Everything 语法")]];
+  // Kinds the search holds once: a second row cannot take them.
+  const SE_ONCE = ['sub', 'time', 'everything'];
+  const SE_STR_OPS = () => [['contains', t("包含")], ['notContains', t("不包含")], ['startsWith', t("开头是")], ['endsWith', t("结尾是")], ['is', t("等于")]];
+  const SE_DAYS = () => [[1, t("最近 1 天")], [3, t("最近 3 天")], [7, t("最近 7 天")], [30, t("最近 30 天")], [90, t("最近 90 天")], [365, t("最近一年")]];
+  const SE_LIMITS = [50, 100, 200, 500, 1000];
+  const seOpts = (list, cur) => list.map(([v, l]) => `<option value="${esc(String(v))}"${String(v) === String(cur) ? ' selected' : ''}>${esc(l)}</option>`).join('');
+  // A sentence of the page language with a control in the place of its {0}.
+  const seAround = (text, control) => { const [a, b] = text.split('{0}'); return (a.trim() ? `<span class="se-cap">${esc(a.trim())}</span>` : '') + control + (b && b.trim() ? `<span class="se-cap">${esc(b.trim())}</span>` : ''); };
+  const seChips = (list, on) => list.map(([v, l]) => `<label class="${on.includes(String(v)) ? 'on' : ''}"><input type="checkbox" value="${esc(String(v))}"${on.includes(String(v)) ? ' checked' : ''}>${esc(l)}</label>`).join('');
+  // The editor's state: the fence (null for a new one), whether it is new, the templates, the
+  // template the search came from, whether something is unsaved, and the next row's number.
+  let se = null;
+  // The rows of a search: its folders (every drive when there are none), subfolders, the time
+  // window, each condition, the name filter and the Everything text.
+  function seRowsOf(spec) {
+    const rows = [], folders = spec.folders || [];
+    if (folders.length) folders.forEach(folder => rows.push({ kind: 'where', folder }));
+    else rows.push({ kind: 'where', all: true });
+    if (folders.length) rows.push({ kind: 'sub', on: spec.subfolders !== false });
+    if (spec.withinDays != null) rows.push({ kind: 'time', days: spec.withinDays });
+    for (const c of spec.allOf || []) {
+      const v = c.value, at = rows.length;
+      switch (c.cond) {
+        case 'filesOnly': case 'plainFiles': rows.push({ kind: 'type', cats: ['files'] }); break;
+        case 'foldersOnly': rows.push({ kind: 'type', cats: ['folders'] }); break;
+        case 'type': rows.push({ kind: 'type', cats: v }); break;
+        case 'ext': rows.push({ kind: 'ext', text: v.map(x => x.replace(/^\./, '')).join(', ') }); break;
+        case 'name': rows.push({ kind: 'name', op: v.op, text: v.value }); break;
+        case 'sizeMb': rows.push({ kind: 'size', min: v.min, max: v.max }); break;
+        case 'createdTime': rows.push({ kind: 'created', from: hm(v.from_min), to: hm(v.to_min) }); break;
+        case 'createdWeekday': rows.push({ kind: 'weekday', days: v }); break;
+        case 'shortcutTarget': rows.push({ kind: 'target', op: v.op, text: v.value }); break;
+        case 'idleDays': rows.push({ kind: 'idle', days: v.min }); break;
+        default: rows.push({ kind: 'keep', cond: c });
+      }
+      // The condition as saved, kept while its row is not changed (plain files, `.psd`).
+      rows[at].cond0 = c;
+    }
+    if (spec.name) rows.push({ kind: 'name', op: 'matches', text: spec.name });
+    if (spec.everything) rows.push({ kind: 'everything', text: spec.everything });
+    return rows;
+  }
+  // A size in MB as the row shows it: whole GB in GB.
+  const seSize = mb => mb != null && mb >= 1024 && mb % 1024 === 0 ? [mb / 1024, 'gb'] : [mb ?? '', 'mb'];
+  // The rest of a row after its kind menu.
+  function seVal(row) {
+    const text = (ph) => `<input type="text" class="se-text" value="${esc(row.text || '')}" placeholder="${esc(ph)}" aria-label="${esc(t("条件的内容"))}">`;
+    switch (row.kind) {
+      case 'where': {
+        const all = !!row.all;
+        return `<select class="se-where" aria-label="${esc(t("位置"))}">${seOpts([['folder', t("位置\x04文件夹")], ['all', t("整台电脑")]], all ? 'all' : 'folder')}</select>`
+          + (all ? `<span class="se-path">${esc(t("不含 Windows、AppData 和回收站"))}</span>`
+            : `<span class="se-path${row.folder ? '' : ' none'}" title="${esc(row.folder || '')}">${esc(row.folder || t("还没有选择文件夹"))}</span><button class="se-pick">${esc(t("选择…"))}</button>`);
+      }
+      case 'sub': return `<select class="se-sub" aria-label="${esc(t("子文件夹"))}">${seOpts([['on', t("包含子文件夹")], ['off', t("不含子文件夹")]], row.on === false ? 'off' : 'on')}</select>`;
+      case 'time': {
+        const days = row.days ?? 7, list = SE_DAYS();
+        if (!list.some(([d]) => d === days)) list.push([days, tf("最近 {0} 天", days)]);
+        return seAround(t("新建或改过于{0}"), `<select class="se-days" aria-label="${esc(t("时间"))}">${seOpts(list, days)}</select>`);
+      }
+      case 'type': return `<span class="se-cap">${esc(t("是"))}</span><div class="se-chips se-cats">${seChips([['files', t("文件")], ...CATS()], (row.cats || []).map(String))}</div>`;
+      case 'ext': return `<span class="se-cap">${esc(t("是"))}</span>` + text('pdf, docx');
+      case 'name': return `<select class="se-op" aria-label="${esc(t("怎么比较"))}">${seOpts([...SE_STR_OPS(), ['matches', t("像速览一样匹配")]], row.op || 'contains')}</select>` + text(t("示例\x04发票"));
+      case 'target': return `<select class="se-op" aria-label="${esc(t("怎么比较"))}">${seOpts(SE_STR_OPS(), row.op || 'contains')}</select>` + text('steam');
+      case 'size': {
+        const op = row.op || (row.min != null && row.max != null ? 'between' : row.max != null ? 'lt' : 'gt');
+        const [a, ua] = seSize(op === 'lt' ? row.max : row.min), [b, ub] = seSize(row.max);
+        const units = u => `<select class="se-unit" aria-label="${esc(t("单位"))}">${seOpts([['mb', 'MB'], ['gb', 'GB']], u)}</select>`;
+        return `<select class="se-op" aria-label="${esc(t("怎么比较"))}">${seOpts([['gt', t("大于")], ['lt', t("小于")], ['between', t("介于")]], op)}</select>`
+          + `<input type="number" class="se-n1" value="${esc(String(a))}" min="0" aria-label="${esc(t("大小"))}">${units(ua)}`
+          + (op === 'between' ? `<span class="se-cap">${esc(t("范围\x04到"))}</span><input type="number" class="se-n2" value="${esc(String(op === 'between' ? b : ''))}" min="0" aria-label="${esc(t("大小"))}">${units(ub)}` : '');
+      }
+      case 'created': return `<span class="se-cap">${esc(t("从"))}</span><input type="time" class="se-from" value="${esc(row.from || '18:00')}" aria-label="${esc(t("开始时间"))}"><span class="se-cap">${esc(t("到"))}</span><input type="time" class="se-to" value="${esc(row.to || '06:00')}" aria-label="${esc(t("结束时间"))}">`;
+      case 'weekday': return `<div class="se-chips se-week">${seChips(WEEKDAYS(), (row.days || []).map(String))}</div>`;
+      case 'idle': return seAround(t("至少 {0} 天没有改过或打开"), `<input type="number" class="se-n1" value="${esc(String(row.days ?? 30))}" min="1" max="${MAX_IDLE_DAYS}" aria-label="${esc(t("闲置天数"))}">`);
+      case 'everything': return text('*.pdf invoice');
+      default: return `<div class="se-fixed">${esc(condLabel(row.cond))}<div class="s">${esc(t("这个条件只能用命令行修改"))}</div></div>`;
+    }
+  }
+  // What a row holds now, as seRow takes it (also an unfinished row: the language can change
+  // while one is being filled in), with the condition it was made from while unchanged.
+  function seRaw(el) {
+    const r = seValues(el);
+    return el.cond0 ? { ...r, cond0: el.cond0, raw0: el.raw0 } : r;
+  }
+  function seValues(el) {
+    const q = sel => el.querySelector(sel), kind = el.dataset.kind;
+    const checked = sel => [...el.querySelectorAll(sel + ' input:checked')].map(i => i.value);
+    const text = () => q('.se-text').value;
+    const mb = (n, u) => { const v = q(n).value.trim(); if (!v) return null; const x = Number(v); return Number.isFinite(x) ? (q(u).value === 'gb' ? x * 1024 : x) : NaN; };
+    switch (kind) {
+      case 'where': return q('.se-where').value === 'all' ? { kind, all: true } : { kind, folder: el.folder || null };
+      case 'sub': return { kind, on: q('.se-sub').value === 'on' };
+      case 'time': return { kind, days: Number(q('.se-days').value) };
+      case 'type': return { kind, cats: checked('.se-cats') };
+      case 'weekday': return { kind, days: checked('.se-week').map(Number) };
+      case 'ext': case 'everything': return { kind, text: text() };
+      case 'name': case 'target': return { kind, op: q('.se-op').value, text: text() };
+      case 'size': {
+        const op = q('.se-op').value, nums = el.querySelectorAll('input[type=number]'), units = el.querySelectorAll('.se-unit');
+        const mb = i => { const v = nums[i] ? nums[i].value.trim() : ''; if (!v) return null; const x = Number(v); return Number.isFinite(x) ? x * (units[i].value === 'gb' ? 1024 : 1) : NaN; };
+        const a = mb(0), b = mb(1);
+        return { kind, op, min: op === 'lt' ? null : a, max: op === 'gt' ? null : op === 'lt' ? a : b };
+      }
+      case 'created': return { kind, from: q('.se-from').value, to: q('.se-to').value };
+      case 'idle': return { kind, days: q('.se-n1').value };
+      default: return { kind, cond: el.cond };
+    }
+  }
+  // The part of the search a row gives ({ cond } or { where, sub, days, name, everything }),
+  // or { error, at } naming what is missing and the box to fix.
+  function seRead(el) {
+    const r = seValues(el), q = sel => el.querySelector(sel);
+    const need = (text, at) => ({ error: text, at: q(at) });
+    // A row not changed gives back the condition it was made from, as it was saved.
+    if (el.cond0 && r.kind !== 'keep' && JSON.stringify(r) === el.raw0) return { cond: el.cond0 };
+    switch (r.kind) {
+      case 'where': return r.all ? { all: true } : r.folder ? { folder: r.folder } : need(t("请选择文件夹"), '.se-pick');
+      case 'sub': return { sub: r.on };
+      case 'time': return { days: r.days };
+      case 'type': return !r.cats.length ? need(t("请选择至少一种类型"), '.se-cats input')
+        : { cond: r.cats.includes('files') ? { cond: 'filesOnly', value: null } : { cond: 'type', value: r.cats } };
+      case 'weekday': return r.days.length ? { cond: { cond: 'createdWeekday', value: r.days } } : need(t("请选择至少一天"), '.se-week input');
+      case 'ext': { const e = readExts(r.text); return e.length ? { cond: { cond: 'ext', value: e } } : need(t("请输入扩展名"), '.se-text'); }
+      case 'name': {
+        const v = r.op === 'matches' ? r.text.trim() : unquote(r.text.trim());
+        if (!v) return need(t("请输入关键字"), '.se-text');
+        return r.op === 'matches' ? { name: v } : { cond: { cond: 'name', value: { op: r.op, value: v } } };
+      }
+      case 'target': { const v = unquote(r.text.trim()); return v ? { cond: { cond: 'shortcutTarget', value: { op: r.op, value: v } } } : need(t("请输入目标路径中的关键字"), '.se-text'); }
+      case 'everything': { const v = r.text.trim(); return v ? { everything: v } : need(t("请输入 Everything 的搜索语法"), '.se-text'); }
+      case 'size': {
+        const bad = x => x != null && (!Number.isFinite(x) || x < 0);
+        if (r.op === 'between') {
+          if (r.min == null || bad(r.min)) return need(t("最小大小必须是大于或等于 0 的数字"), '.se-n1');
+          if (r.max == null || bad(r.max)) return need(t("最大大小必须是大于或等于 0 的数字"), '.se-n2');
+          if (r.min > r.max) return need(t("最大大小不能小于最小大小"), '.se-n2');
+        } else if ((r.op === 'gt' ? r.min : r.max) == null || bad(r.op === 'gt' ? r.min : r.max)) return need(t("请填写大小范围"), '.se-n1');
+        return { cond: { cond: 'sizeMb', value: { min: r.min, max: r.max } } };
+      }
+      case 'created': {
+        if (!r.from || !q('.se-from').validity.valid) return need(t("请输入开始时间"), '.se-from');
+        if (!r.to || !q('.se-to').validity.valid) return need(t("请输入结束时间"), '.se-to');
+        return { cond: { cond: 'createdTime', value: { from_min: toMin(r.from), to_min: toMin(r.to) } } };
+      }
+      case 'idle': {
+        const days = Number(r.days);
+        if (!String(r.days).trim() || !Number.isFinite(days)) return need(t("请输入闲置天数"), '.se-n1');
+        if (days < 1 || days > MAX_IDLE_DAYS) return need(tf("闲置天数必须在 1 到 {0} 之间", MAX_IDLE_DAYS), '.se-n1');
+        return { cond: { cond: 'idleDays', value: { min: Math.floor(days) } } };
+      }
+      // 来源 says where a desktop icon came from: nothing a found file has.
+      default: return r.cond.cond === 'origin' ? { error: t("「来源」不能作为智能栅栏的条件，请删掉这一行"), at: q('.se-minus'), lasting: true } : { cond: r.cond };
+    }
+  }
+  // The whole search, or { error, at, row } for the first row that is not filled in.
+  function seSpec() {
+    const w = document.getElementById('seWindow');
+    const spec = { template: se.template || null, folders: [], subfolders: true, match: w.querySelector('.se-all').value, allOf: [], withinDays: null, name: null, everything: null, limit: Number(w.querySelector('.se-limit select').value) };
+    let all = false;
+    for (const el of w.querySelectorAll('.se-row')) {
+      const r = seRead(el);
+      if (r.error) return { ...r, row: el };
+      if (r.cond) spec.allOf.push(r.cond);
+      else if (r.all) all = true;
+      else if (r.folder) { if (!spec.folders.some(f => f.toLowerCase() === r.folder.toLowerCase())) spec.folders.push(r.folder); }
+      else if ('sub' in r) spec.subfolders = r.sub;
+      else if ('days' in r) spec.withinDays = r.days;
+      else if (r.name) spec.name = r.name;
+      else if (r.everything) spec.everything = r.everything;
+    }
+    if (all) spec.folders = [];
+    // 任一 with an Everything text: a row only PecoFence tests (or Everything only roughly) would
+    // let every file of the folders in, so the host refuses such a search (SmartSpec::problem).
+    if (spec.match === 'any' && spec.everything) {
+      const rough = [...w.querySelectorAll('.se-row')].find(el => {
+        const k = el.dataset.kind, r = seRead(el);
+        return ['target', 'created', 'weekday', 'idle'].includes(k) || (k === 'name' && r.name)
+          || (r.cond && ((r.cond.cond === 'type' && r.cond.value.some(v => v === 'programs' || v === 'installers')) || r.cond.cond === 'plainFiles' || (r.cond.cond === 'filesOnly' && r.cond.plain)));
+      });
+      if (rough) return { error: t("选「任一」时，Everything 语法不能和这一行一起用"), at: rough.querySelector('.se-kind'), row: rough, lasting: true };
+    }
+    return { spec };
+  }
+  // One row: its kind menu, its value boxes, - and +.
+  function seRow(row) {
+    const el = document.createElement('div');
+    el.className = 'se-row';
+    el.dataset.kind = row.kind;
+    el.dataset.row = String(se.nextRow++);
+    if (row.kind === 'where') el.folder = row.all ? null : row.folder || null;
+    if (row.kind === 'keep') el.cond = row.cond;
+    if (row.cond0) el.cond0 = row.cond0;
+    const kinds = row.kind === 'keep' ? [['keep', t("其他")]] : SE_KINDS();
+    el.innerHTML = `<select class="se-kind" aria-label="${esc(t("条件"))}"${row.kind === 'keep' ? ' disabled' : ''}>${seOpts(kinds, row.kind)}</select><div class="se-val">${seVal(row)}</div>`
+      + `<button class="iconbtn se-minus" title="${esc(t("删除这一行"))}" aria-label="${esc(t("删除这一行"))}">&#xE738;</button>`
+      + `<button class="iconbtn se-plus" title="${esc(t("在下面加一行"))}" aria-label="${esc(t("在下面加一行"))}">&#xE710;</button>`;
+    if (el.cond0) el.raw0 = row.raw0 || JSON.stringify(seValues(el));
+    const q = sel => el.querySelector(sel);
+    q('.se-kind').onchange = e => {
+      const next = seRow({ kind: e.target.value, ...(e.target.value === 'name' || e.target.value === 'target' ? { op: 'contains' } : {}) });
+      el.replaceWith(next);
+      seChanged();
+      (next.querySelector('.se-val input:not([type=checkbox]), .se-val .se-pick') || next.querySelector('.se-kind')).focus();
+    };
+    q('.se-minus').onclick = () => {
+      const list = el.parentElement;
+      if (list.children.length < 2) return;
+      const near = el.nextElementSibling || el.previousElementSibling;
+      el.remove();
+      seChanged();
+      near.querySelector('.se-minus').focus();
+    };
+    q('.se-plus').onclick = () => {
+      const next = seRow({ kind: 'name', op: 'contains' });
+      el.after(next);
+      seChanged();
+      next.querySelector('.se-text').focus();
+    };
+    // 文件 takes in every other type: it goes alone.
+    el.querySelectorAll('.se-chips input').forEach(i => {
+      i.onchange = () => {
+        if (i.closest('.se-cats') && i.checked) el.querySelectorAll('.se-cats input').forEach(o => { if (o !== i && (i.value === 'files' || o.value === 'files')) o.checked = false; });
+        el.querySelectorAll('.se-chips label').forEach(l => l.classList.toggle('on', l.querySelector('input').checked));
+      };
+    });
+    const where = q('.se-where');
+    if (where) where.onchange = () => {
+      const next = seRow(where.value === 'all' ? { kind: 'where', all: true } : { kind: 'where' });
+      el.replaceWith(next);
+      if (where.value === 'all') seOnlyWhere(next);
+      seChanged();
+      // 文件夹 asks for the folder at once.
+      if (where.value === 'folder') next.querySelector('.se-pick').click(); else next.querySelector('.se-where').focus();
+    };
+    const pick = q('.se-pick');
+    if (pick) pick.onclick = () => send({ type: 'editorPickFolder', row: el.dataset.row });
+    // 介于 brings a second number.
+    if (row.kind === 'size') q('.se-op').onchange = () => {
+      const op = q('.se-op').value, nums = el.querySelectorAll('input[type=number]'), units = el.querySelectorAll('.se-unit');
+      const mb = i => { const v = nums[i] ? Number(nums[i].value) : NaN; return nums[i] && nums[i].value.trim() && Number.isFinite(v) ? v * (units[i].value === 'gb' ? 1024 : 1) : null; };
+      const a = mb(0), b = mb(1);
+      const next = seRow({ kind: 'size', op, min: op === 'lt' ? null : a, max: op === 'gt' ? null : op === 'lt' ? a : b });
+      el.replaceWith(next);
+      seChanged();
+      next.querySelector('.se-op').focus();
+    };
+    return el;
+  }
+  // 整台电脑 in one 位置 row: the other 位置 rows and 子文件夹 go.
+  function seOnlyWhere(keep) {
+    document.querySelectorAll('#seWindow .se-row').forEach(r => { if (r !== keep && (r.dataset.kind === 'where' || r.dataset.kind === 'sub')) r.remove(); });
+  }
+  // A kind the search holds once is offered to one row only; so is 像速览一样匹配.
+  function seKindsOnce() {
+    // The search always says where it looks: the last 位置 row cannot go, and a kind change that
+    // took it brings back 整台电脑 at the top.
+    const list = document.querySelector('#seWindow .se-rows');
+    if (list && list.children.length && !list.querySelector('.se-row[data-kind=where]')) list.prepend(seRow({ kind: 'where', all: true }));
+    const wheres = [...document.querySelectorAll('#seWindow .se-row[data-kind=where]')];
+    wheres.forEach(w => { const m = w.querySelector('.se-minus'); m.disabled = wheres.length === 1; m.title = wheres.length === 1 ? t("至少要有一行位置") : t("删除这一行"); });
+    const rows = [...document.querySelectorAll('#seWindow .se-row')];
+    for (const el of rows) {
+      const others = rows.filter(r => r !== el);
+      el.querySelectorAll('.se-kind option').forEach(o => { o.disabled = SE_ONCE.includes(o.value) && others.some(r => r.dataset.kind === o.value); });
+      const op = el.dataset.kind === 'name' && el.querySelector('.se-op [value=matches]');
+      if (op) op.disabled = others.some(r => r.dataset.kind === 'name' && r.querySelector('.se-op').value === 'matches');
+    }
+  }
+  // Something changed: unsaved now, the menus follow, an old error goes, the count follows.
+  function seChanged() {
+    if (!se) return;
+    seKindsOnce();
+    seShowError(null);
+    if (!se.dirty) { se.dirty = true; send({ type: 'editorDirty', dirty: true }); }
+    seCountSoon();
+  }
+  // The live count: the host counts the search a moment after the last change (typing does
+  // not ask for every key); only the answer to the newest request is shown.
+  function seCountSoon() {
+    clearTimeout(se.countTimer);
+    se.countTimer = setTimeout(seCount, 350);
+  }
+  function seCount() {
+    if (!se) return;
+    const r = seSpec(), box = document.querySelector('#seWindow .se-count');
+    box.hidden = false;
+    // A row not filled in yet waits; a search that cannot be saved says why at once.
+    if (r.error) { se.countSeq++; seCountLine(esc(r.lasting ? r.error : t("填好条件后显示找到几个文件")), ''); return; }
+    se.countSeq++;
+    se.countSpec = r.spec;
+    send({ type: 'editorCount', seq: se.countSeq, spec: r.spec });
+    // The last number stays (dimmed) until the new one comes.
+    box.classList.add('busy');
+    if (!box.querySelector('b')) seCountLine(t("正在搜索…"), '');
+  }
+  function seCountLine(main, how, button) {
+    const box = document.querySelector('#seWindow .se-count');
+    box.innerHTML = `<span class="ic" aria-hidden="true">&#xE721;</span><div><span class="se-n">${main}</span>${how ? `<span class="s se-how">${esc(how)}</span>` : ''}</div>`;
+    if (button) { const b = document.createElement('button'); b.textContent = button.text; b.onclick = button.click; box.querySelector('div').append(b); }
+  }
+  // The host's count, of the files the fence will show: Everything's total, or what matched
+  // among the newest files the app checked itself (said when not all were checked), the folder
+  // read without Everything (said when it stopped early), or Everything needed.
+  function seCounted(m) {
+    if (!se || m.seq !== se.countSeq) return;
+    const box = document.querySelector('#seWindow .se-count');
+    box.classList.remove('busy');
+    const limit = Number(document.querySelector('#seWindow .se-limit select').value);
+    const num = text => esc(text).replace('{0}', `<b>${esc(String(m.n))}</b>`);
+    const more = m.n > limit ? tf("栅栏里显示最新的 {0} 个", limit) : '';
+    const how = (...parts) => parts.filter(Boolean).join(' · ');
+    const ev = (m.everything || {}).state;
+    if (m.source === 'needsEverything') {
+      const button = ev === 'installed' ? { text: t("启动 Everything"), click: () => send({ type: 'action', name: 'startEverything' }) }
+        : ev === 'missing' ? { text: t("安装 Everything"), click: () => send({ type: 'action', name: 'installEverything' }) } : null;
+      // A folder search needs Everything only for its Everything syntax.
+      const folders = se.countSpec && se.countSpec.folders.length;
+      seCountLine(esc(folders ? t("用了 Everything 语法，需要先打开 Everything") : t("要搜索整台电脑，需要先打开 Everything")), '', button);
+    } else if (m.source === 'folder') seCountLine(num(t("现在找到 {0} 个文件")), how(t("Everything 没有运行，由 PecoFence 读文件夹"), m.readOnly ? tf("文件很多，只读了其中的 {0} 个", m.readOnly) : '', more));
+    else seCountLine(num(t("现在找到 {0} 个文件")), how(t("由 Everything 搜索"), m.checkedNewest ? tf("文件很多，只检查了最新的 {0} 个", m.checkedNewest) : '', more));
+  }
+  function seShowError(text, at, row) {
+    const w = document.getElementById('seWindow');
+    w.querySelectorAll('.se-row.bad').forEach(r => r.classList.remove('bad'));
+    // A change made elsewhere stays said until 好 or 取消.
+    w.querySelector('.se-msg').textContent = text || (se && se.notice) || '';
+    if (row) row.classList.add('bad');
+    if (at) at.focus();
+  }
+  function seSave() {
+    const r = seSpec();
+    if (r.error) { seShowError(r.error, r.at, r.row); return; }
+    send({ type: 'editorSave', title: document.querySelector('#seWindow .se-name').value.trim(), spec: r.spec });
+  }
+  function seCancel() { send({ type: 'editorCancel' }); }
+  // 包含符合以下{0}条件的文件 with the 全部 / 任一 menu in its place.
+  function seMatchLine(match) {
+    const [before, after] = t("包含符合以下{0}条件的文件").split('{0}');
+    return `<span>${esc(before || '')}</span><select class="se-all" aria-label="${esc(t("全部或任一"))}">${seOpts([['all', t("全部")], ['any', t("任一")]], match || 'all')}</select><span>${esc(after || '')}</span>`
+      + `<span class="s se-always"${match === 'any' ? '' : ' hidden'}>${esc(t("位置和子文件夹总是生效"))}</span>`;
+  }
+  // Builds the editor for the host's `editor` message (or again after a language switch, from
+  // what the rows hold now).
+  function seRender(m, keep) {
+    const w = document.getElementById('seWindow');
+    const isNew = m.isNew;
+    if (se) clearTimeout(se.countTimer);
+    se = { fence: m.fence || null, isNew, templates: m.templates || [], template: keep ? keep.template : (m.spec && m.spec.template) || null, dirty: keep ? keep.dirty : false, nextRow: 1, lastTemplateTitle: keep ? keep.lastTemplateTitle : null, msg: m, countSeq: se ? se.countSeq : 0, countTimer: 0 };
+    const spec = m.spec || {};
+    const presets = isNew ? `<div class="se-presets"><span class="se-cap">${esc(t("从模板开始"))}</span>${se.templates.map(tp => `<button class="chip" data-preset="${esc(tp.key)}"${tp.spec ? '' : ` disabled title="${esc(t("这台电脑上没有这个文件夹"))}"`}>${esc(tp.title)}</button>`).join('')}</div>` : '';
+    const limit = keep ? keep.limit : spec.limit || 200;
+    const limits = SE_LIMITS.includes(limit) ? SE_LIMITS : [...SE_LIMITS, limit].sort((a, b) => a - b);
+    w.innerHTML = `<h2>${esc(isNew ? t("新建智能栅栏") : t("编辑智能栅栏"))}</h2>`
+      + `<label class="se-namel"><span>${esc(t("名称"))}</span><input type="text" class="se-name" maxlength="120" placeholder="${esc(t("智能栅栏"))}"></label>`
+      + presets
+      + `<div class="se-match">${seMatchLine(keep ? keep.match : spec.match)}</div>`
+      + `<div class="se-rows" role="list"></div>`
+      + `<div class="se-msg" role="alert"></div>`
+      + `<div class="se-foot"><div class="se-count" hidden></div>`
+      + `<label class="se-limit">${esc(t("最多显示"))}<select aria-label="${esc(t("最多显示"))}">${seOpts(limits.map(n => [n, tf("{0} 个", n)]), limit)}</select></label>`
+      + `<div class="se-btns"><button class="se-cancel">${esc(t("取消"))}</button><button class="accent se-ok">${esc(isNew ? t("创建") : t("好"))}</button></div></div>`;
+    const name = w.querySelector('.se-name');
+    name.value = keep ? keep.title : m.title || '';
+    const rows = w.querySelector('.se-rows');
+    let list = keep ? keep.rows : seRowsOf(spec);
+    // A new fence starts with every drive and an empty 名称 row to type into.
+    if (!keep && isNew && list.length === 1) list = [...list, { kind: 'name', op: 'contains', text: '' }];
+    list.forEach(r => rows.append(seRow(r)));
+    seKindsOnce();
+    const all = w.querySelector('.se-all');
+    all.onchange = () => { w.querySelector('.se-always').hidden = all.value !== 'any'; seChanged(); };
+    w.querySelector('.se-ok').onclick = seSave;
+    w.querySelector('.se-cancel').onclick = seCancel;
+    // Any typing or choice is a change (the rows' own handlers rebuild what follows from it).
+    w.oninput = w.onchange = e => { if (e.target.closest('.se-name, .se-row, .se-limit')) seChanged(); };
+    w.querySelectorAll('[data-preset]').forEach(b => b.onclick = () => seTemplate(b.dataset.preset));
+    if (!keep) name.focus();
+    seCount();
+  }
+  // A template chip: its rows, 全部, its limit, and its name while the name box is empty or
+  // still holds the name of the chip picked before.
+  function seTemplate(key) {
+    const tp = se.templates.find(x => x.key === key);
+    if (!tp || !tp.spec) return;
+    const w = document.getElementById('seWindow');
+    const rows = w.querySelector('.se-rows');
+    rows.replaceChildren(...seRowsOf(tp.spec).map(seRow));
+    w.querySelector('.se-all').value = 'all';
+    w.querySelector('.se-always').hidden = true;
+    const limit = w.querySelector('.se-limit select');
+    if (![...limit.options].some(o => o.value === String(tp.spec.limit))) limit.add(new Option(tf("{0} 个", tp.spec.limit), String(tp.spec.limit)));
+    limit.value = String(tp.spec.limit);
+    const name = w.querySelector('.se-name');
+    if (!name.value.trim() || name.value === se.lastTemplateTitle) name.value = tp.title;
+    se.template = key;
+    se.lastTemplateTitle = tp.title;
+    seChanged();
+  }
+  // A language switch: the editor is built again around what it holds.
+  function seRelabel() {
+    if (!se) return;
+    const w = document.getElementById('seWindow');
+    const keep = { rows: [...w.querySelectorAll('.se-row')].map(seRaw), title: w.querySelector('.se-name').value, match: w.querySelector('.se-all').value,
+      limit: Number(w.querySelector('.se-limit select').value), template: se.template, dirty: se.dirty, lastTemplateTitle: se.lastTemplateTitle, countSeq: se.countSeq };
+    seRender(se.msg, keep);
+  }
+  // The folder the host's picker returned for a 位置 row (null: cancelled).
+  function seFolder(m) {
+    const el = document.querySelector(`#seWindow .se-row[data-row="${CSS.escape(String(m.row))}"]`);
+    if (!el || !m.path) { el?.querySelector('.se-pick')?.focus(); return; }
+    const next = seRow({ kind: 'where', folder: m.path });
+    el.replaceWith(next);
+    // A folder and 整台电脑 do not go together.
+    document.querySelectorAll('#seWindow .se-row[data-kind=where]').forEach(r => { if (r !== next && r.querySelector('.se-where').value === 'all') r.remove(); });
+    seChanged();
+    next.querySelector('.se-pick').focus();
+  }
+  // Enter is 好 (a button takes its own Enter); Esc is 取消.
+  if (EDITOR) document.addEventListener('keydown', e => {
+    if (!se || e.isComposing) return;
+    if (e.key === 'Escape') { e.preventDefault(); seCancel(); }
+    else if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {
+      if (document.activeElement && document.activeElement.tagName === 'BUTTON') return;
+      e.preventDefault();
+      seSave();
+    }
+  });
+
   if (wv) wv.addEventListener('message', e => {
     const m = e.data;
     if (m.type === 'state') {
@@ -2502,6 +3059,12 @@
       if (m.accent) {
         document.documentElement.style.setProperty('--accent', m.accent);
         document.documentElement.style.setProperty('--accent-hover', m.accent + 'E6');
+      }
+      // The smart fence editor takes the language and the theme; the editor message brings the rest.
+      if (EDITOR) {
+        if (languageChanged) seRelabel();
+        requestAnimationFrame(() => requestAnimationFrame(() => document.documentElement.classList.add('ready')));
+        return;
       }
       document.getElementById('ver').textContent = 'v' + m.version;
       // Only the Store edition has the Store's rating dialog.
@@ -2533,6 +3096,11 @@
     else if (m.type === 'peekHotkeyResult') { peekRecorder.result(m); renderPeekHotkey(); }
     else if (m.type === 'pinyin') { pinyinMap = m.map || {}; if (!searchList.hidden) renderSearch(); }
     else if (m.type === 'windowsDesktopHotkeyResult') wdRecorder.result(m);
+    else if (m.type === 'editor') seRender(m);
+    else if (m.type === 'editorFolder') seFolder(m);
+    else if (m.type === 'editorError') seShowError(m.text);
+    else if (m.type === 'editorNotice') { if (se) se.notice = m.text; seShowError(m.text); }
+    else if (m.type === 'editorCount') seCounted(m);
   });
   send({ type: 'ready' });
 })();

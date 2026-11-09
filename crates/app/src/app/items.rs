@@ -30,9 +30,16 @@ fn rename_error(e: std::io::Error) -> RenameError {
 
 impl App {
     pub(super) fn item_views(&self, fence: &pecofence_core::Fence) -> Vec<ItemView> {
+        // 筛选: only what matches the fence's filter.
+        let filter = self.fence_filter(fence.id);
         self.state
             .items_of(fence)
             .into_iter()
+            .filter(|it| {
+                filter
+                    .as_deref()
+                    .is_none_or(|q| filter::filter_keeps(it, q))
+            })
             .map(|it| {
                 let path = PathBuf::from(it.path().unwrap_or(""));
                 let (_, icon_only) = crate::icons::icon_key_for(&path, it.is_folder, it.mtime);
@@ -54,6 +61,15 @@ impl App {
     /// asked for it; the watcher's next Added event routes it there and opens rename.
     pub(super) fn create_desktop_item(&mut self, fence: FenceId, folder: bool) {
         let portal_dir = self.state.portal_path(fence);
+        // Ctrl+Shift+N in a smart or tool fence: it has no folder to make it in and would not
+        // show a desktop item routed to it.
+        if portal_dir.is_none()
+            && let Some(f) = self.state.fence(fence).filter(|f| !f.holds_items())
+        {
+            let kind = if f.smart.is_some() { "smart" } else { "tool" };
+            tracing::info!(%fence, kind, folder, "new item refused: the fence holds no items");
+            return;
+        }
         let Some(dir) = portal_dir.clone().or_else(shell::user_desktop) else {
             return;
         };
@@ -534,8 +550,12 @@ impl App {
     /// the rules, since their names are only known to the shell).
     pub(super) fn paste_into(&mut self, fence: FenceId) {
         // A note (便签) holds no files: Ctrl+V on it does nothing.
-        if self.state.fence(fence).is_some_and(|f| f.tool.is_some()) {
-            tracing::info!(%fence, "paste into a tool fence ignored");
+        if self
+            .state
+            .fence(fence)
+            .is_some_and(|f| f.tool.is_some() || f.smart.is_some())
+        {
+            tracing::info!(%fence, "paste into a tool or smart fence ignored");
             return;
         }
         let Some((paths, cut)) = clipboard::file_list() else {
@@ -691,6 +711,15 @@ impl App {
 
     /// [`Self::move_items`] without the undo step; returns how many fence entries moved.
     pub(super) fn move_items_unrecorded(&mut self, items: &[ItemId], to: FenceId) -> usize {
+        // A smart or tool fence takes nothing: refused before a folder fence's file is moved
+        // out to the desktop on its way there.
+        if self.state.move_target_folder(to).is_none()
+            && let Some(f) = self.state.fence(to).filter(|f| !f.holds_items())
+        {
+            let kind = if f.smart.is_some() { "smart" } else { "tool" };
+            tracing::info!(fence = %to, kind, items = items.len(), "move refused: the fence holds no items");
+            return 0;
+        }
         if self.state.move_target_folder(to).is_some() {
             // Namespace items cannot be moved into a folder; they stay where they are.
             let paths: Vec<PathBuf> = items

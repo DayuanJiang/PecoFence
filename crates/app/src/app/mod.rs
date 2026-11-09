@@ -5,8 +5,8 @@ use crate::commands::{
     Command, CommandQueue, TransferMode, WM_APP_COMMAND, WM_APP_DIALOG_OFFER,
     WM_APP_EVERYTHING_SETUP, WM_APP_FRAME, WM_APP_FS_CHANGED, WM_APP_LIVE_WALLPAPER,
     WM_APP_PEEK_FOCUSED, WM_APP_PREWARM_DONE, WM_APP_SCRIPT_DONE, WM_APP_SHELL_CHANGED,
-    WM_APP_STARTUP_BACKDROPS, WM_APP_STARTUP_TASK, WM_APP_THEMES_CHANGED, WM_APP_TRAY,
-    WM_APP_WALLPAPER, WM_APP_WALLPAPER_READ,
+    WM_APP_SMART_FS, WM_APP_SMART_READ, WM_APP_STARTUP_BACKDROPS, WM_APP_STARTUP_TASK,
+    WM_APP_THEMES_CHANGED, WM_APP_TRAY, WM_APP_WALLPAPER, WM_APP_WALLPAPER_READ,
 };
 use crate::fence_window::{
     BackdropMode, BackdropSets, Behavior, FenceContext, FenceWindow, ItemView, SearchMarks, TabView,
@@ -15,7 +15,7 @@ use crate::icons::{IconCache, IconVariant, WM_APP_ICON_READY};
 use crate::ipc_server::{IpcServer, PendingQueue};
 use crate::layout::GridSpec;
 use crate::peek::PeekOverlay;
-use crate::settings_host::{SettingsHost, WebEnvironment};
+use crate::settings_host::{HostKind, SettingsHost, WebEnvironment};
 use crate::shadow::{ShadowStyle, ShadowWindow};
 use crate::state::AppState;
 use pecofence_core::geometry::WorkArea;
@@ -63,11 +63,13 @@ mod feedback;
 mod fence_options;
 mod fences;
 mod fileops;
+mod filter;
 mod group;
 mod ipc;
 mod items;
 mod keyfocus;
 mod live_wallpaper;
+mod lnk_targets;
 mod menu_frames;
 mod menus;
 mod motion;
@@ -77,6 +79,8 @@ mod push;
 mod rating;
 mod search;
 mod settings;
+mod smart;
+mod smart_editor;
 mod sync;
 mod tabs;
 #[cfg(test)]
@@ -85,6 +89,7 @@ mod testscript;
 mod tools;
 mod undo;
 mod updates;
+mod vdesktops;
 mod visuals;
 mod wallpaper_refresh;
 mod welcome;
@@ -184,6 +189,13 @@ const TIMER_EVERYTHING_SETUP: usize = 71;
 /// 对话框跳转 offer: a dialog to offer it to (`WM_APP_DIALOG_OFFER`); retried while the App is
 /// borrowed.
 const TIMER_DIALOG_OFFER: usize = 73;
+/// 智能栅栏: a watched folder changed; the searches of its fences run again.
+const TIMER_SMART_SOON: usize = 93;
+/// 智能栅栏: a folder read finished (`WM_APP_SMART_READ`); retried while the App is borrowed.
+const TIMER_SMART_READ: usize = 94;
+/// 智能栅栏: a smart fence's watcher saw a change (`WM_APP_SMART_FS`); retried while the App is
+/// borrowed.
+const TIMER_SMART_FS: usize = 95;
 /// A folder shown in a fence is gone: look for it again soon (`check_missing_portals`), not
 /// only at the minute's housekeeping.
 const TIMER_PORTAL_BACK: usize = 80;
@@ -293,6 +305,10 @@ pub struct App {
     /// One watcher per folder-portal fence on the folder it currently shows (kept in sync by
     /// `ensure_portal_watchers`; navigating swaps the watcher).
     portal_watchers: HashMap<FenceId, (PathBuf, DirWatcher)>,
+    /// 智能栅栏: each smart fence's last run and folder watcher.
+    smart: smart::SmartState,
+    /// 筛选: the text each filtered fence is filtered by (runtime only).
+    fence_filters: HashMap<FenceId, String>,
     /// Per fence, the folders an up (Backspace, the back button) left, newest last: the
     /// forward button goes back into them. Any other navigation forgets them.
     portal_forward: HashMap<FenceId, Vec<PathBuf>>,
@@ -354,6 +370,9 @@ pub struct App {
     settings_ring: Option<FenceId>,
     web_env: Option<WebEnvironment>,
     settings_class: WindowClass,
+    /// 智能栅栏编辑器: its window class and the editor while it is open (one at a time).
+    editor_class: WindowClass,
+    smart_editor: Option<smart_editor::SmartEditor>,
     theme_mode: ThemeMode,
     /// The user's accent palette at the last visual refresh (None = built-in default look).
     accent: Option<systheme::AccentPalette>,
@@ -457,6 +476,10 @@ pub struct App {
     /// 「临时显示 Windows 桌面」 is on: every fence hidden, the icons PecoFence hid shown. Never
     /// saved.
     windows_desktop: bool,
+    /// 在哪个虚拟桌面显示 (see `vdesktops.rs`): whether the virtual-desktop poll runs, and (a
+    /// test-script switch) whether only the poll is followed, as the Store edition must.
+    desktop_poll: bool,
+    vd_poll_only: bool,
     /// Its shortcut as registered (None = none chosen, or taken).
     windows_desktop_hotkey: Option<Hotkey>,
     /// The chosen shortcut last found taken, so a lasting conflict is told once.
@@ -534,6 +557,7 @@ fn log_start_state(state: &AppState) {
         hover_peek = s.roll_up.hover_peek,
         snapping = s.snapping.enabled,
         offer_new_fence = s.offer_new_fence,
+        per_desktop_fences = s.per_desktop_fences,
         feature_tips = s.feature_tips,
         liquid_glass = s.theme_style == pecofence_core::ThemeStyle::LiquidGlass,
         custom_theme = s.custom_theme.is_some(),
@@ -556,6 +580,7 @@ fn log_start_state(state: &AppState) {
         rolled = count(&|f| f.rolled_up),
         locked = count(&|f| f.locked),
         desktop_layout = count(&|f| f.desktop_layout),
+        on_some_desktops = count(&|f| !f.virtual_desktops.is_empty()),
         items = state.config.items.len(),
         layouts = state.config.layouts.len(),
         layout = state.layout,
@@ -852,6 +877,27 @@ impl App {
                             window::set_timer(hwnd, TIMER_DIALOG_OFFER, 1);
                             Some(0)
                         }
+                        WM_APP_SMART_READ => {
+                            window::set_timer(hwnd, TIMER_SMART_READ, 1);
+                            Some(0)
+                        }
+                        WM_APP_SMART_FS => {
+                            window::set_timer(hwnd, TIMER_SMART_FS, 1);
+                            Some(0)
+                        }
+                        lnk_targets::WM_APP_LNK_TARGETS => {
+                            window::set_timer(hwnd, lnk_targets::TIMER_LNK_TARGETS, 1);
+                            Some(0)
+                        }
+                        // Everything's answer to a smart fence's search.
+                        pecofence_platform::everything::WM_COPYDATA_MSG => {
+                            if let Some((kind, bytes)) =
+                                pecofence_platform::everything::copydata(lparam)
+                            {
+                                queue.push(Command::SmartResults { kind, bytes });
+                            }
+                            Some(1)
+                        }
                         desktop_import::WM_APP_WINDOWS_PLACES => {
                             window::set_timer(hwnd, desktop_import::TIMER_WINDOWS_PLACES, 1);
                             Some(0)
@@ -1008,6 +1054,10 @@ impl App {
                                 | TIMER_EVERYTHING_STATUS
                                 | TIMER_EVERYTHING_SETUP
                                 | TIMER_DIALOG_OFFER
+                                | TIMER_SMART_SOON
+                                | TIMER_SMART_READ
+                                | TIMER_SMART_FS
+                                | lnk_targets::TIMER_LNK_TARGETS
                                 | TIMER_PORTAL_BACK
                                 | TIMER_CONFIG_LOCKED
                                 | desktop_import::TIMER_WINDOWS_PLACES
@@ -1025,7 +1075,12 @@ impl App {
                                             TIMER_THEMES => app.on_themes_changed(),
                                             TIMER_SCRIPT_DONE => app.drain_scripts(),
                                             TIMER_EVERYTHING => app.send_everything_query(),
-                                            TIMER_EVERYTHING_STATUS => app.push_settings_state(),
+                                            TIMER_EVERYTHING_STATUS => {
+                                                // Everything was started or installed: the
+                                                // smart fences waiting for it search now.
+                                                app.run_waiting_smart();
+                                                app.push_settings_state();
+                                            }
                                             TIMER_EVERYTHING_SETUP => app.on_everything_setup(
                                                 everything_setup::SETUP_RESULT
                                                     .load(std::sync::atomic::Ordering::Relaxed),
@@ -1034,6 +1089,12 @@ impl App {
                                                 app.finish_startup_backdrops()
                                             }
                                             TIMER_DIALOG_OFFER => app.offer_dialog_jump(),
+                                            TIMER_SMART_SOON => app.run_soon_smart(),
+                                            TIMER_SMART_READ => app.drain_smart_reads(),
+                                            TIMER_SMART_FS => app.smart_watchers_fired(),
+                                            lnk_targets::TIMER_LNK_TARGETS => {
+                                                app.lnk_targets_read()
+                                            }
                                             TIMER_PORTAL_BACK => app.check_missing_portals(),
                                             TIMER_CONFIG_LOCKED => app.retry_locked_config(),
                                             desktop_import::TIMER_WINDOWS_PLACES => {
@@ -1115,6 +1176,13 @@ impl App {
                                         && let Some(app) = guard.as_mut()
                                     {
                                         app.check_wallpaper("poll");
+                                    }
+                                }
+                                vdesktops::TIMER_VD_POLL => {
+                                    if let Ok(mut guard) = cell.try_borrow_mut()
+                                        && let Some(app) = guard.as_mut()
+                                    {
+                                        app.check_virtual_desktop("poll");
                                     }
                                 }
                                 TIMER_DESKTOP_ID => {
@@ -1241,6 +1309,17 @@ impl App {
                             Some(0)
                         }
                         WM_APP_WALLPAPER => {
+                            // A virtual-desktop switch shows other fences (the poll catches
+                            // it when the App is busy now).
+                            if let Ok(mut guard) = cell.try_borrow_mut()
+                                && let Some(app) = guard.as_mut()
+                            {
+                                app.check_virtual_desktop(if wparam == 1 {
+                                    "foreground"
+                                } else {
+                                    "registry"
+                                });
+                            }
                             if wparam == 1 {
                                 // A foreground change: a desktop switch announcing itself. It
                                 // cannot change the picture while every desktop shows the same,
@@ -1421,6 +1500,7 @@ impl App {
             tracing::warn!("session change notifications unavailable");
         }
         queue.attach(&control);
+        lnk_targets::init(control.hwnd());
         std::mem::forget(control_class); // class lives for the process
         // The Recycle Bin is asked on a worker; a new answer means listing the desktop again.
         shell::notify_recycle_bin_changes(control.hwnd(), WM_APP_FS_CHANGED);
@@ -1574,7 +1654,8 @@ impl App {
             .map_err(|e| tracing::warn!(error = %e, "shell change notifications unavailable"))
             .ok();
 
-        let settings_class = SettingsHost::register_class()?;
+        let settings_class = SettingsHost::register_class(HostKind::Settings)?;
+        let editor_class = SettingsHost::register_class(HostKind::SmartEditor)?;
         let peek_class = PeekOverlay::register_class()?;
 
         // CLI named pipe: requests land in `ipc_pending`, the control window is poked.
@@ -1604,6 +1685,8 @@ impl App {
             watchers,
             _shell_watch: shell_watch,
             portal_watchers: HashMap::new(),
+            smart: Default::default(),
+            fence_filters: HashMap::new(),
             portal_forward: HashMap::new(),
             watcher_retry: HashMap::new(),
             portal_back_armed: false,
@@ -1634,6 +1717,8 @@ impl App {
             settings_ring: None,
             web_env: None,
             settings_class,
+            editor_class,
+            smart_editor: None,
             theme_mode,
             accent,
             custom_theme,
@@ -1681,6 +1766,8 @@ impl App {
             peek_hotkey_wanted: None,
             hotkeys_paused: false,
             windows_desktop: false,
+            desktop_poll: false,
+            vd_poll_only: false,
             windows_desktop_hotkey: None,
             windows_desktop_hotkey_taken: None,
             desktop_unavailable: false,
@@ -1705,6 +1792,7 @@ impl App {
             live_capture: None,
             live_abandoned: None,
         };
+        app.state.current_desktop = App::read_current_desktop();
         // Watch the wallpaper settings, virtual-desktop state and Explorer's copies of the
         // picture; any signal starts a bounded burst of fast reads, because the image may arrive
         // after the notification.
@@ -1932,6 +2020,8 @@ impl App {
         window::set_coalescable_timer(app.control.hwnd(), TIMER_HOUSEKEEPING, 60_000, 5_000);
         // 脚本栅栏: the first results, without waiting for the minute.
         app.run_due_scripts();
+        // 智能栅栏: the first search, likewise.
+        app.run_all_smart("startup");
         window::set_coalescable_timer(app.control.hwnd(), TIMER_WALLPAPER_POLL, 5_000, 500);
         sync_desktops_differ(app.control.hwnd(), &desktops_differ);
         // Close the gap between the startup snapshot and installing the registry watchers.
@@ -2033,6 +2123,9 @@ impl App {
     fn housekeeping(&mut self) {
         self.check_cut_clipboard();
         self.run_due_scripts();
+        // 智能栅栏: files age out of a time window, Everything may have started or stopped,
+        // and a folder without a watcher changes unseen.
+        self.run_all_smart("minute");
         if self.state.is_dirty() {
             self.state.save_if_dirty();
             self.notice_save_failure();
@@ -2435,6 +2528,16 @@ impl App {
                     }
                 }
             }
+            // Dropped on a smart fence's tab (its window refuses drops already): no file is moved
+            // to the desktop for a fence that would not show it.
+            Command::ExternalDrop { to, .. }
+            | Command::ExternalUrlDrop {
+                to, folder: None, ..
+            } if self.state.portal_path(to).is_none()
+                && self.state.fence(to).is_some_and(|f| !f.holds_items()) =>
+            {
+                tracing::info!(fence = %to, "drop refused: the fence holds no items");
+            }
             Command::ExternalDrop { paths, to, mode } if self.state.portal_path(to).is_some() => {
                 self.transfer_files_into_portal(paths, to, mode);
             }
@@ -2546,6 +2649,10 @@ impl App {
             Command::NewFolder { fence } => self.create_desktop_item(fence, true),
             Command::StepIconSize { fence, larger } => self.step_icon_size(fence, larger),
             Command::ItemProperties { fence, items } => self.show_properties(fence, &items),
+            // F5 in a smart fence runs its search again.
+            Command::RefreshFence(fence) if self.state.smart_spec(fence).is_some() => {
+                self.run_smart(fence, "f5")
+            }
             Command::RefreshFence(fence) => self.manual_refresh(fence),
             Command::RenameFence { fence, title } => {
                 self.end_item_rename_visuals();
@@ -2564,6 +2671,22 @@ impl App {
             Command::NewFence { x, y } => self.new_fence_near(x, y),
             Command::NewNote { x, y } => self.new_note_near(x, y),
             Command::NewClock { x, y } => self.new_clock_near(x, y),
+            Command::OpenSmartEditor { fence, x, y, by } => {
+                self.open_smart_editor(fence, (x, y), by)
+            }
+            Command::SmartResults { kind, bytes } => self.on_smart_results(kind, &bytes),
+            Command::OpenFenceFilter(fence) => self.open_fence_filter(fence, "ctrl+f"),
+            Command::FenceFilterText { fence, text } => {
+                self.set_fence_filter(fence, text, "filter box")
+            }
+            Command::FenceFilterClosed(fence) => {
+                tracing::info!(%fence, filtered = self.fence_filter(fence).is_some(), "filter box closed");
+                self.sync_filter_view(fence);
+                self.apply_portal_deco(self.state.host_of(fence));
+            }
+            Command::ClearFenceFilter(fence) => {
+                self.set_fence_filter(fence, String::new(), "esc in the fence")
+            }
             Command::NewScriptExample { example, x, y } => {
                 self.new_script_example_of(example, x, y)
             }
@@ -2677,12 +2800,14 @@ impl App {
                     self.set_settings_ring(None);
                     self.resume_hotkeys();
                 }
+                self.smart_editor_gone(hwnd);
             }
             Command::FadeOutDone(hwnd) => {
                 // Dropping the window destroys it (RevokeDragDrop + DestroyWindow).
                 self.dying.retain(|w| w.hwnd() != hwnd);
             }
             Command::SettingsMessage(json) => self.on_settings_message(&json),
+            Command::EditorMessage(json) => self.on_editor_message(&json),
             Command::Notice(event) => self.on_notice(event),
             Command::Undo => self.undo_last("Ctrl+Z"),
         }

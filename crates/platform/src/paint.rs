@@ -1,5 +1,5 @@
-//! Small GDI painting for the native popups (the Peek search box): solid fills and one line of
-//! text between `BeginPaint` / `EndPaint`.
+//! Small GDI painting for the native popups (the Peek search box, the filter box): solid and
+//! rounded fills and one line of text between `BeginPaint` / `EndPaint`.
 
 use crate::bindings::*;
 use crate::wide::to_wide;
@@ -108,6 +108,34 @@ impl Paint {
 }
 
 impl Paint {
+    /// A rounded rectangle `r` (corner radius `radius` px) filled with `fill` and outlined 1 px
+    /// in `border` (COLORREF 0x00BBGGRR).
+    pub fn round_rect(&self, r: RECT, radius: i32, fill: u32, border: u32) {
+        windows_core::link!("gdi32.dll" "system" fn CreatePen(style: i32, width: i32, color: u32) -> isize);
+        windows_core::link!("gdi32.dll" "system" fn RoundRect(hdc: HDC, l: i32, t: i32, r: i32, b: i32, w: i32, h: i32) -> windows_core::BOOL);
+        // SAFETY: plain GDI calls on the paint DC; the pen and brush are selected out and
+        // deleted before returning.
+        unsafe {
+            let pen = HGDIOBJ(CreatePen(0, 1, border) as *mut core::ffi::c_void);
+            let brush = CreateSolidBrush(COLORREF(fill));
+            let old_pen = SelectObject(self.hdc, pen);
+            let old_brush = SelectObject(self.hdc, HGDIOBJ(brush.0));
+            let _ = RoundRect(
+                self.hdc,
+                r.left,
+                r.top,
+                r.right,
+                r.bottom,
+                radius * 2,
+                radius * 2,
+            );
+            SelectObject(self.hdc, old_pen);
+            SelectObject(self.hdc, old_brush);
+            let _ = DeleteObject(pen);
+            let _ = DeleteObject(HGDIOBJ(brush.0));
+        }
+    }
+
     /// Width in pixels of `text` in `font` (one line, no clipping).
     pub fn text_width(&self, text: &str, font: &Font) -> i32 {
         if text.is_empty() {
@@ -149,6 +177,14 @@ impl Drop for Paint {
         unsafe {
             let _ = EndPaint(self.hwnd, &self.ps);
         }
+    }
+}
+
+/// Asks for a repaint of `rect` (client pixels, background included).
+pub fn invalidate_rect(hwnd: HWND, rect: RECT) {
+    // SAFETY: plain FFI call; the rect outlives it.
+    unsafe {
+        let _ = InvalidateRect(Some(hwnd), Some(&rect), true);
     }
 }
 

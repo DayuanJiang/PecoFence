@@ -86,6 +86,10 @@ pub struct FenceChrome {
     group_format: TextFormat,
     /// Tab match badge number: 11 / 600, centred.
     badge_format: TextFormat,
+    /// 智能栅栏: the 10 px magnifier over the lower right of the folder glyph.
+    folder_badge_format: TextFormat,
+    /// 筛选's tag: the text, 13 px, leading.
+    tag_format: TextFormat,
     /// Note and script fence lines (便签与待办, 脚本栅栏) at each 文字大小: leading, wrapped.
     tool_text: [ToolText; 4],
     /// A script fence's footer: Caption 12, leading, top-aligned.
@@ -382,13 +386,18 @@ pub const RAIL_ROW_RIGHT: f32 = 6.0;
 pub const RAIL_BOTTOM: f32 = 44.0;
 pub const RAIL_COLLAPSED_BOTTOM: f32 = RAIL_TOP;
 
-/// Title-row decorations of a folder portal: a folder glyph before the title and, once the
-/// portal has navigated into a subfolder, an "up" button: the folder glyph itself, or one at the
-/// far left while the glyph is hidden.
+/// Title-row decorations of a single title: a folder portal's folder glyph before the title
+/// and, once the portal has navigated into a subfolder, an "up" button (the folder glyph itself,
+/// or one at the far left while the glyph is hidden); after the folder glyph's slot, the Task
+/// View glyph of a fence that shows on some virtual desktops only.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct TitleDeco {
     pub folder_icon: bool,
     pub up_button: bool,
+    /// 智能栅栏: the folder glyph carries a magnifier badge (a saved search, as Windows' Saved
+    /// Searches and Outlook's Search Folders show it) and is no button.
+    pub search_glyph: bool,
+    pub desktop_icon: bool,
 }
 
 /// Interaction state of the title row, sampled per draw: fade alphas (0..=1) from the app's
@@ -482,7 +491,46 @@ fn push_strip_fade(
     Ok(brush)
 }
 
-/// Ends the layer `push_strip_fade` started.
+/// A layer over `bounds` that leaves a clear disc of `radius` around `center`: what is drawn
+/// inside stops short of a badge drawn there afterwards, over any title background (a fixed
+/// ring colour smudged on tinted, Mica or glass titles). End it with `pop_strip_fade`.
+fn push_cut_out(
+    session: &DrawingSession<'_>,
+    bounds: Rect,
+    center: Vector2,
+    radius: f32,
+) -> Result<b::ID2D1Brush> {
+    let opaque = ColorF::new(0.0, 0.0, 0.0, 1.0);
+    let gradient = session.create_radial_gradient(
+        center,
+        radius,
+        radius,
+        &[
+            GradientStop::new(0.0, ColorF::TRANSPARENT),
+            GradientStop::new(0.82, ColorF::TRANSPARENT),
+            GradientStop::new(1.0, opaque),
+        ],
+    )?;
+    let brush: b::ID2D1Brush = gradient.as_raw_brush().cast()?;
+    let context: b::ID2D1DeviceContext = session.raw().cast()?;
+    let params = b::D2D1_LAYER_PARAMETERS1 {
+        contentBounds: b::D2D_RECT_F {
+            left: bounds.left,
+            top: bounds.top,
+            right: bounds.right,
+            bottom: bounds.bottom,
+        },
+        maskTransform: windows_numerics::Matrix3x2::identity(),
+        opacity: 1.0,
+        opacityBrush: ManuallyDrop::new(Some(brush.clone())),
+        ..Default::default()
+    };
+    unsafe { context.PushLayer(&params, None::<&b::ID2D1Layer>) };
+    drop(ManuallyDrop::into_inner(params.opacityBrush));
+    Ok(brush)
+}
+
+/// Ends the layer `push_strip_fade` (or `push_cut_out`) started.
 fn pop_strip_fade(session: &DrawingSession<'_>, _brush: b::ID2D1Brush) {
     if let Ok(context) = session.raw().cast::<b::ID2D1DeviceContext>() {
         unsafe { context.PopLayer() };
@@ -553,12 +601,43 @@ impl TitleDeco {
         if self.folder_icon {
             x += Self::ICON_W;
         }
+        if self.desktop_icon {
+            x += Self::ICON_W;
+        }
         x
+    }
+
+    /// Room the glyphs before a single title take (folder, then Task View).
+    pub fn glyphs_w(&self) -> f32 {
+        (u8::from(self.folder_icon) + u8::from(self.desktop_icon)) as f32 * Self::ICON_W
     }
 }
 
+/// Task View (Segoe Fluent E7C4): the glyph of a fence that shows on some virtual desktops only.
+pub const DESKTOP_GLYPH: &str = "\u{E7C4}";
+
 /// Least room kept free at the right end of the title row: the roll-up chevron.
 pub const TITLE_RIGHT_RESERVE: f32 = 40.0;
+
+/// A filter tag never reaches left of this (the title's left padding).
+const TAG_LEFT_LIMIT: f32 = 16.0;
+
+/// What of a filter tag fits its title row (`FenceChrome::filter_tag_fit`): its box, the text as
+/// shown, and whether the count and the type chip are.
+#[derive(Clone, Debug, PartialEq)]
+pub struct TagFit {
+    pub rect: Rect,
+    pub text: String,
+    pub count: bool,
+    pub kind: bool,
+}
+
+impl TagFit {
+    /// Everything of `tag` shows (no tooltip needed).
+    pub fn whole(&self, (kind, text, count): (&str, &str, &str)) -> bool {
+        self.text == text && (self.count || count.is_empty()) && (self.kind || kind.is_empty())
+    }
+}
 
 /// Left edge of a title-row unit `unit_w` DIPs wide (the title with its folder glyph, or the
 /// whole tab strip) that may occupy `start..end` of a row `width` DIPs wide. Centred means
@@ -591,6 +670,9 @@ pub struct TabDraw<'a> {
     /// The shown tab of a folder portal inside a subfolder: its folder glyph is drawn as the up
     /// button (`FenceChrome::tab_up_box`), with the up button's hover and pressed looks.
     pub up_button: bool,
+    /// The window shows on some virtual desktops only: the Task View glyph follows the folder
+    /// glyph's slot (`TAB_ICON_W` wider again).
+    pub desktop_icon: bool,
     pub active: bool,
     /// PointerOver pill alpha 0..=1.
     pub hover: f32,
@@ -616,6 +698,12 @@ pub const ROLLED_COUNT_W: f32 = 64.0;
 
 /// Tab match badge (WinUI InfoBadge): 16 DIPs high, 5 DIPs of padding beside the number, 6 DIPs
 /// after the caption.
+/// 筛选's tag (DIPs): height and the × at its right end.
+pub const TAG_H: f32 = 22.0;
+pub const TAG_CLEAR_W: f32 = 22.0;
+/// 智能栅栏's count capsule (DIPs): height and text padding.
+const COUNT_CAPSULE_H: f32 = 18.0;
+const COUNT_CAPSULE_PAD: f32 = 7.0;
 const TAB_BADGE_H: f32 = 16.0;
 const TAB_BADGE_PAD: f32 = 5.0;
 const TAB_BADGE_GAP: f32 = 6.0;
@@ -640,6 +728,11 @@ pub fn tab_icon_w(folder_icon: bool) -> f32 {
     if folder_icon { TAB_ICON_W } else { 0.0 }
 }
 
+/// Width the glyphs before a tab caption take: the folder glyph, then the Task View glyph.
+pub fn tab_glyphs_w(folder_icon: bool, desktop_icon: bool) -> f32 {
+    tab_icon_w(folder_icon) + tab_icon_w(desktop_icon)
+}
+
 /// A tab pill's caption as `FenceChrome::draw` lays it out: where it starts, how wide it is
 /// drawn, its fitted text and the badge's width after it.
 struct TabCaption {
@@ -661,9 +754,10 @@ fn tab_glyph_centre(caption_x: f32) -> f32 {
 }
 
 /// Where captions start in a left tab column row: after the colour dot when any tab has a
-/// colour, and after the folder glyph when any tab has one, so the names stay aligned.
-fn rail_text_left(colored: bool, folders: bool) -> f32 {
-    (if colored { 24.0 } else { 10.0 }) + tab_icon_w(folders)
+/// colour, and after the folder and Task View glyphs when any tab has them, so the names stay
+/// aligned.
+fn rail_text_left(colored: bool, folders: bool, desktops: bool) -> f32 {
+    (if colored { 24.0 } else { 10.0 }) + tab_glyphs_w(folders, desktops)
 }
 
 pub fn tab_text_padding(theme: &Theme) -> f32 {
@@ -1542,12 +1636,7 @@ fn draw_scrollbar(
 /// everything else gets Microsoft YaHei UI (upstream's `en-us` would pick Yu Gothic UI and draw
 /// Chinese names with Japanese glyph forms).
 fn text_locale() -> &'static str {
-    match pecofence_platform::locale::ui_language() {
-        "zh-TW" => "zh-TW",
-        "ja" => "ja-JP",
-        "ko" => "ko-KR",
-        _ => "zh-CN",
-    }
+    pecofence_core::i18n::han_for(pecofence_platform::locale::ui_language()).0
 }
 
 impl FenceChrome {
@@ -1733,6 +1822,15 @@ impl FenceChrome {
             .with_alignment(TextAlignment::Center)
             .with_paragraph_alignment(ParagraphAlignment::Center)
             .with_word_wrapping(WordWrapping::NoWrap);
+        let folder_badge_format =
+            TextFormat::with_locale(crate::theme::font_icons(), 10.0, FontWeight::NORMAL, locale)?
+                .with_alignment(TextAlignment::Center)
+                .with_paragraph_alignment(ParagraphAlignment::Center)
+                .with_word_wrapping(WordWrapping::NoWrap);
+        let tag_format = TextFormat::with_locale(font_text(), 13.0, FontWeight::NORMAL, locale)?
+            .with_alignment(TextAlignment::Leading)
+            .with_paragraph_alignment(ParagraphAlignment::Center)
+            .with_word_wrapping(WordWrapping::NoWrap);
         let tool_text = |size: f32| -> Result<ToolText> {
             let k = size / TOOL_TEXT_SIZES[1];
             Ok(ToolText {
@@ -1774,6 +1872,8 @@ impl FenceChrome {
             title_glyph_format,
             group_format,
             badge_format,
+            folder_badge_format,
+            tag_format,
             tool_text,
             note_footer_format,
             clock_time_format,
@@ -1977,11 +2077,11 @@ impl FenceChrome {
         title: &str,
         w: f32,
         size: u8,
-        folder_icon: bool,
+        (folder_icon, desktop_icon): (bool, bool),
         theme: &Theme,
     ) -> bool {
-        let content_w =
-            crate::text::measure_width(title, &self.tab_format(size)) + tab_icon_w(folder_icon);
+        let content_w = crate::text::measure_width(title, &self.tab_format(size))
+            + tab_glyphs_w(folder_icon, desktop_icon);
         content_w <= (w - tab_text_inset(theme, w, content_w)).max(0.0)
     }
 
@@ -1994,18 +2094,18 @@ impl FenceChrome {
         w: f32,
         title: &str,
         size: u8,
-        folder_icon: bool,
+        (folder_icon, desktop_icon): (bool, bool),
         badge: Option<&str>,
     ) -> TabCaption {
         let fmt = &self.tab_format(size);
         let badge_w = badge.map_or(0.0, |b| self.tab_badge_width(b));
-        let icon_w = tab_icon_w(folder_icon);
+        let icon_w = tab_glyphs_w(folder_icon, desktop_icon);
         let title_w = crate::text::measure_width(title, fmt);
         let padding = tab_text_inset(theme, w - badge_w, title_w + icon_w);
         let caption_w = (w - badge_w - icon_w - padding).max(0.0);
         let fitted = crate::text::fit_width(title, fmt, caption_w);
         // An unelided caption keeps the width measured above.
-        let shown_w = if badge.is_some() || folder_icon {
+        let shown_w = if badge.is_some() || icon_w > 0.0 {
             if fitted == title {
                 title_w
             } else {
@@ -2032,18 +2132,243 @@ impl FenceChrome {
         w: f32,
         title: &str,
         size: u8,
+        desktop_icon: bool,
         badge: Option<&str>,
     ) -> Rect {
-        let caption = self.tab_caption(theme, w, title, size, true, badge);
-        glyph_up_square(tab_glyph_centre(x + caption.x), theme.title_height)
+        let caption = self.tab_caption(theme, w, title, size, (true, desktop_icon), badge);
+        // The folder glyph comes first, the Task View glyph between it and the caption.
+        glyph_up_square(
+            tab_glyph_centre(x + caption.x - tab_icon_w(desktop_icon)),
+            theme.title_height,
+        )
+    }
+
+    /// Room a smart fence's count capsule takes at the right end of the title row (its gap
+    /// before the chevron included).
+    fn count_capsule_w(&self, count: &str) -> f32 {
+        crate::text::measure_width(count, &self.badge_format) + COUNT_CAPSULE_PAD * 2.0 + 8.0
+    }
+
+    /// 智能栅栏: the count as a grey capsule right before the chevron's place, so it never reads
+    /// as part of the name (mail apps show a folder's count the same way).
+    #[allow(clippy::too_many_arguments)]
+    fn draw_count_capsule(
+        &self,
+        session: &DrawingSession<'_>,
+        theme: &Theme,
+        foreground: &Theme,
+        count: &str,
+        width: f32,
+        title_h: f32,
+        alpha: f32,
+        legible: Option<&Legible>,
+    ) -> Result<()> {
+        let w = crate::text::measure_width(count, &self.badge_format) + COUNT_CAPSULE_PAD * 2.0;
+        let right = TitleDeco::chevron_box(width, title_h).left - 2.0;
+        let r = Rect::from_xywh(
+            right - w,
+            ((title_h - COUNT_CAPSULE_H) * 0.5).round(),
+            w,
+            COUNT_CAPSULE_H,
+        );
+        // ControlFillColorSecondary-like: a faint wash of the text colour.
+        let wash = if theme.mode == crate::theme::ThemeMode::Dark {
+            ColorF::from_rgba8(0xFF, 0xFF, 0xFF, 0x1A)
+        } else {
+            ColorF::from_rgba8(0, 0, 0, 0x0F)
+        };
+        let fill = session.create_solid_brush(with_alpha(wash, alpha))?;
+        session.fill_rounded_rect(&RoundedRect::uniform(r, COUNT_CAPSULE_H * 0.5), &fill);
+        let ink = session.create_solid_brush(with_alpha(foreground.text_secondary, alpha))?;
+        let fx = legible.map(|l| l.fx(theme, foreground.text_secondary, alpha, false));
+        self.draw_caption(session, count, &self.badge_format, &r, &ink, fx);
+        Ok(())
+    }
+
+    /// 智能栅栏: the folder glyph in `slot` with the 10 px magnifier over its lower right, in
+    /// the accent. The folder is drawn with a clear disc around the magnifier, so its lines
+    /// stop short of it over any title background; the magnifier is drawn twice half a DIP
+    /// apart for the folder's weight.
+    #[allow(clippy::too_many_arguments)]
+    fn draw_badged_folder(
+        &self,
+        session: &DrawingSession<'_>,
+        theme: &Theme,
+        slot: Rect,
+        x: f32,
+        title_h: f32,
+        alpha: f32,
+        folder: &Brush,
+    ) -> Result<()> {
+        let r = Rect::from_xywh(x + 8.0, title_h * 0.5 - 2.0, 12.0, 12.0);
+        let center = Vector2::new(r.left + 6.0, r.top + 6.0);
+        let layer = push_cut_out(session, slot, center, 7.5)?;
+        session.draw_text("\u{E8B7}", &self.title_glyph_format, &slot, folder);
+        pop_strip_fade(session, layer);
+        let accent = session.create_solid_brush(with_alpha(theme.accent, alpha))?;
+        session.draw_text("\u{E721}", &self.folder_badge_format, &r, &accent);
+        let r2 = Rect::from_xywh(r.left + 0.5, r.top, r.width(), r.height());
+        session.draw_text("\u{E721}", &self.folder_badge_format, &r2, &accent);
+        Ok(())
+    }
+
+    /// 筛选: the tag a filtered fence shows after its box closed (magnifier, the type in a chip
+    /// of its own, the text, the count when not already in the capsule, ×), right before the
+    /// capsule (or the chevron's place), and how much of it fits: the text is shortened to about
+    /// 60 % of the row, then the parts give way in order (the text, the count, the type chip)
+    /// down to the magnifier and ×, never past the title's left padding. None when not even
+    /// those fit. The app hit-tests its × in the same box: the rightmost `TAG_CLEAR_W` DIPs.
+    pub fn filter_tag_fit(
+        &self,
+        width: f32,
+        title_h: f32,
+        tag: (&str, &str, &str),
+        title_count: Option<&str>,
+    ) -> Option<TagFit> {
+        let (kind, text, count) = tag;
+        let capsule = title_count.map_or(0.0, |c| self.count_capsule_w(c));
+        let right = TitleDeco::chevron_box(width, title_h).left - 2.0 - capsule;
+        let room = right - TAG_LEFT_LIMIT;
+        let kind_w = self.tag_kind_w(kind);
+        let count_w = if count.is_empty() {
+            0.0
+        } else {
+            8.0 + crate::text::measure_width(count, &self.count_format)
+        };
+        let ends = 22.0 + TAG_CLEAR_W;
+        let text_room = (width * 0.6 - capsule).min(room) - ends - kind_w - count_w;
+        let fitted = crate::text::fit_width(text, &self.tag_format, text_room.max(0.0));
+        // A lone "…" says nothing: the text goes instead.
+        let fitted = if fitted == "…" {
+            String::new()
+        } else {
+            fitted
+        };
+        let fitted_w = crate::text::measure_width(&fitted, &self.tag_format);
+        let shown_kind = !kind.is_empty();
+        let shown_count = !count.is_empty();
+        [
+            (fitted, fitted_w, shown_count, shown_kind),
+            (String::new(), 0.0, shown_count, shown_kind),
+            (String::new(), 0.0, false, shown_kind),
+            (String::new(), 0.0, false, false),
+        ]
+        .into_iter()
+        .map(|(text, text_w, count, kind)| {
+            let w =
+                ends + text_w + if count { count_w } else { 0.0 } + if kind { kind_w } else { 0.0 };
+            (
+                w,
+                TagFit {
+                    rect: Rect::from_xywh(right - w, ((title_h - TAG_H) * 0.5).round(), w, TAG_H),
+                    text,
+                    count,
+                    kind,
+                },
+            )
+        })
+        .find(|(w, _)| *w <= room)
+        .map(|(_, fit)| fit)
+    }
+
+    /// The type chip's room in the tag (its gap after it included); 0 without a type.
+    fn tag_kind_w(&self, kind: &str) -> f32 {
+        if kind.is_empty() {
+            0.0
+        } else {
+            crate::text::measure_width(kind, &self.badge_format) + 12.0 + 6.0
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn draw_filter_tag(
+        &self,
+        session: &DrawingSession<'_>,
+        theme: &Theme,
+        foreground: &Theme,
+        width: f32,
+        title_h: f32,
+        tag: (&str, &str, &str),
+        title_count: Option<&str>,
+        alpha: f32,
+        legible: Option<&Legible>,
+    ) -> Result<()> {
+        let Some(fit) = self.filter_tag_fit(width, title_h, tag, title_count) else {
+            return Ok(());
+        };
+        let kind = if fit.kind { tag.0 } else { "" };
+        let count = if fit.count { tag.2 } else { "" };
+        let text = &fit.text;
+        let r = fit.rect;
+        let accent_fx = || legible.map(|l| l.fx(theme, theme.accent, alpha, false));
+        let tint = session.create_solid_brush(with_alpha(theme.accent, 0.14 * alpha))?;
+        session.fill_rounded_rect(&RoundedRect::uniform(r, TAG_H * 0.5), &tint);
+        let accent = session.create_solid_brush(with_alpha(theme.accent, alpha))?;
+        let dim = session.create_solid_brush(with_alpha(foreground.text_secondary, alpha))?;
+        session.draw_text(
+            "\u{E721}",
+            &self.glyph_format,
+            &Rect::from_xywh(r.left + 4.0, r.top, 18.0, TAG_H),
+            &accent,
+        );
+        // The type in a chip of its own, a step stronger than the tag's wash.
+        let kind_w = self.tag_kind_w(kind);
+        if kind_w > 0.0 {
+            let chip = Rect::from_xywh(r.left + 22.0, r.top + 3.0, kind_w - 6.0, TAG_H - 6.0);
+            let strong = session.create_solid_brush(with_alpha(theme.accent, 0.22 * alpha))?;
+            session.fill_rounded_rect(&RoundedRect::uniform(chip, (TAG_H - 6.0) * 0.5), &strong);
+            self.draw_caption(
+                session,
+                kind,
+                &self.badge_format,
+                &chip,
+                &accent,
+                accent_fx(),
+            );
+        }
+        let text_x = r.left + 22.0 + kind_w;
+        let text_w = crate::text::measure_width(text, &self.tag_format);
+        self.draw_caption(
+            session,
+            text,
+            &self.tag_format,
+            &Rect::from_xywh(text_x, r.top, text_w + 2.0, TAG_H),
+            &accent,
+            accent_fx(),
+        );
+        if !count.is_empty() {
+            let cw = crate::text::measure_width(count, &self.count_format);
+            let gap = if text.is_empty() { 0.0 } else { 8.0 };
+            self.draw_caption(
+                session,
+                count,
+                &self.count_format,
+                &Rect::from_xywh(text_x + text_w + gap, r.top, cw + 2.0, TAG_H),
+                &dim,
+                legible.map(|l| l.fx(theme, foreground.text_secondary, alpha, false)),
+            );
+        }
+        // Cancel (E711): a click clears the filter.
+        session.draw_text(
+            "\u{E711}",
+            &self.sort_glyph_format,
+            &Rect::from_xywh(r.right - TAG_CLEAR_W, r.top, TAG_CLEAR_W - 4.0, TAG_H),
+            &accent,
+        );
+        Ok(())
     }
 
     /// Lays out a single title (no tab strip) in a title row `width` wide that keeps `reserve`
-    /// DIPs free for the rolled item count: where its unit (the folder glyph, then the title)
-    /// starts, the fitted title and the room the title gets.
+    /// DIPs free for the rolled item count: where its unit (the folder glyph, the title) starts,
+    /// the fitted title and the room the title gets. A smart fence's `count` capsule and a
+    /// filter `tag` sit at the right end; the title gives way first, they stay whole. Drawing
+    /// and the app's hit tests share it.
+    #[allow(clippy::too_many_arguments)]
     fn lone_title_place(
         &self,
         title: &str,
+        count: Option<&str>,
+        tag: Option<(&str, &str, &str)>,
         size: u8,
         align: pecofence_core::TitleAlign,
         width: f32,
@@ -2056,12 +2381,16 @@ impl FenceChrome {
         } else {
             16.0
         };
-        let glyph_w = if deco.folder_icon {
-            TitleDeco::ICON_W
-        } else {
-            0.0
-        };
-        let end = width - TITLE_RIGHT_RESERVE - reserve;
+        let glyph_w = deco.glyphs_w();
+        // A smart fence's count is a capsule at the right end, before the chevron.
+        let tag_w = tag
+            .and_then(|t| self.filter_tag_fit(width, 0.0, t, count))
+            .map_or(0.0, |f| f.rect.width() + 6.0);
+        let end = width
+            - TITLE_RIGHT_RESERVE
+            - reserve
+            - tag_w
+            - count.map_or(0.0, |c| self.count_capsule_w(c));
         let title_w = (end - start - glyph_w).max(0.0);
         let fitted = crate::text::fit_width(title, fmt, title_w);
         let unit_w = glyph_w + crate::text::measure_width(&fitted, fmt).min(title_w);
@@ -2070,21 +2399,51 @@ impl FenceChrome {
 
     /// The up button of a single folder title inside a subfolder: the square around its folder
     /// glyph, which moves with the title's alignment. The app hit-tests the same box.
+    #[allow(clippy::too_many_arguments)]
     pub fn lone_up_box(
         &self,
         title: &str,
+        tag: Option<(&str, &str, &str)>,
         size: u8,
         align: pecofence_core::TitleAlign,
         width: f32,
+        desktop_icon: bool,
         reserve: f32,
         title_h: f32,
     ) -> Rect {
         let deco = TitleDeco {
             folder_icon: true,
             up_button: true,
+            search_glyph: false,
+            desktop_icon,
         };
-        let (x, _, _) = self.lone_title_place(title, size, align, width, deco, reserve);
+        let (x, _, _) = self.lone_title_place(title, None, tag, size, align, width, deco, reserve);
         glyph_up_square(x + 8.0, title_h)
+    }
+
+    /// The Task View glyph of a single title laid out with `deco` (its infotip names the
+    /// desktops), as drawn: the slot after the folder glyph's.
+    #[allow(clippy::too_many_arguments)]
+    pub fn lone_desktop_box(
+        &self,
+        title: &str,
+        count: Option<&str>,
+        tag: Option<(&str, &str, &str)>,
+        size: u8,
+        align: pecofence_core::TitleAlign,
+        width: f32,
+        deco: TitleDeco,
+        reserve: f32,
+        title_h: f32,
+    ) -> Rect {
+        let (x, _, _) = self.lone_title_place(title, count, tag, size, align, width, deco, reserve);
+        let x = x + if deco.folder_icon {
+            TitleDeco::ICON_W
+        } else {
+            0.0
+        };
+        // The glyph's slot as drawn: 20 DIPs from 2 before its place.
+        Rect::from_xywh(x - 2.0, 0.0, 20.0, title_h)
     }
 
     /// Width a caption gets in a row of a `rail_w` DIP left tab column: after the colour dot's
@@ -2094,12 +2453,12 @@ impl FenceChrome {
         &self,
         rail_w: f32,
         colored: bool,
-        folders: bool,
+        (folders, desktops): (bool, bool),
         badge: Option<&str>,
         up: bool,
     ) -> f32 {
         let row_w = (rail_w - RAIL_ROW_INSET - RAIL_ROW_RIGHT).max(0.0);
-        let text_left = rail_text_left(colored, folders);
+        let text_left = rail_text_left(colored, folders, desktops);
         let badge_w = badge.map_or(0.0, |b| self.tab_badge_width(b) - TAB_BADGE_GAP);
         let badge_gap = if badge_w > 0.0 { 6.0 } else { 0.0 };
         let up_w = if up { 26.0 } else { 0.0 };
@@ -2139,6 +2498,8 @@ impl FenceChrome {
         height: f32,
         backdrop: Backdrop<'_>,
         title: &str,
+        title_count: Option<&str>,
+        filter_tag: Option<(&str, &str, &str)>,
         caption: Option<&str>,
         rolled_up: bool,
         roll_t: f32,
@@ -2447,7 +2808,9 @@ impl FenceChrome {
                     session.draw_rounded_rect(&px.ring(rect, radius), &ring, px.hair());
                 }
                 let fmt = &self.tab_format(tab.title_size);
-                let icon_w = tab_icon_w(tab.folder_icon);
+                let icon_w = tab_glyphs_w(tab.folder_icon, tab.desktop_icon);
+                // The Task View glyph sits right before the caption, the folder glyph before it.
+                let desktop_w = tab_icon_w(tab.desktop_icon);
                 let TabCaption {
                     x: caption_dx,
                     w: shown_w,
@@ -2458,7 +2821,7 @@ impl FenceChrome {
                     tab.w,
                     tab.title,
                     tab.title_size,
-                    tab.folder_icon,
+                    (tab.folder_icon, tab.desktop_icon),
                     tab.badge,
                 );
                 let caption_x = tab.x + caption_dx;
@@ -2492,13 +2855,19 @@ impl FenceChrome {
                 };
                 let brush = session.create_solid_brush(with_alpha(color, ta))?;
                 let fx = legible.as_ref().map(|l| l.fx(theme, color, ta, false));
+                if tab.desktop_icon {
+                    let slot =
+                        Rect::from_xywh(caption_x - TAB_ICON_W - 2.0, 0.0, TAB_ICON_W, title_h);
+                    session.draw_text(DESKTOP_GLYPH, &self.title_glyph_format, &slot, &brush);
+                }
                 if tab.folder_icon {
-                    let slot = Rect::from_xywh(caption_x - icon_w - 2.0, 0.0, icon_w, title_h);
+                    let slot = Rect::from_xywh(caption_x - icon_w - 2.0, 0.0, TAB_ICON_W, title_h);
                     if tab.up_button {
                         // Inside a subfolder the folder glyph is the up button: Up (Segoe
                         // Fluent E74A) in the caption's ink, with the lone portal button's
                         // hover fill and pressed look in a square around it.
-                        let box_r = glyph_up_square(tab_glyph_centre(caption_x), title_h);
+                        let box_r =
+                            glyph_up_square(tab_glyph_centre(caption_x - desktop_w), title_h);
                         draw_up_box_fill(session, &backdrop, theme, scale, box_r, state, ta)?;
                         let ink = session.create_solid_brush(with_alpha(
                             if state.up_pressed {
@@ -2570,6 +2939,8 @@ impl FenceChrome {
             // button stays at the far left.
             let (mut x, fitted, title_w) = self.lone_title_place(
                 title,
+                title_count,
+                filter_tag,
                 style.title_size,
                 style.title_align,
                 width,
@@ -2581,22 +2952,33 @@ impl FenceChrome {
                 // the up button (E74A), as in a folder tab; at the root it opens the folder in
                 // Explorer, with the same hover fill and pressed look.
                 let slot = Rect::from_xywh(x - 2.0, 0.0, 20.0, title_h);
-                let box_r = glyph_up_square(x + 8.0, title_h);
-                draw_up_box_fill(session, &backdrop, theme, scale, box_r, state, title_a)?;
-                session.draw_text(
-                    if deco.up_button {
-                        "\u{E74A}"
-                    } else {
-                        "\u{E8B7}"
-                    },
-                    &self.title_glyph_format,
-                    &slot,
-                    if state.up_pressed {
-                        &tertiary
-                    } else {
-                        &secondary
-                    },
-                );
+                // 智能栅栏: the folder with a magnifier badge, not a button (a smart fence shows
+                // no folder of its own to open).
+                if deco.search_glyph && !deco.up_button {
+                    self.draw_badged_folder(session, theme, slot, x, title_h, title_a, &secondary)?;
+                } else {
+                    let box_r = glyph_up_square(x + 8.0, title_h);
+                    draw_up_box_fill(session, &backdrop, theme, scale, box_r, state, title_a)?;
+                    session.draw_text(
+                        if deco.up_button {
+                            "\u{E74A}"
+                        } else {
+                            "\u{E8B7}"
+                        },
+                        &self.title_glyph_format,
+                        &slot,
+                        if state.up_pressed {
+                            &tertiary
+                        } else {
+                            &secondary
+                        },
+                    );
+                }
+                x += TitleDeco::ICON_W;
+            }
+            if deco.desktop_icon {
+                let slot = Rect::from_xywh(x - 2.0, 0.0, 20.0, title_h);
+                session.draw_text(DESKTOP_GLYPH, &self.title_glyph_format, &slot, &secondary);
                 x += TitleDeco::ICON_W;
             }
             let fx = legible
@@ -2610,6 +2992,40 @@ impl FenceChrome {
                 &text,
                 fx,
             );
+            // The capsule's and the tag's texts get a halo as the title does, and on Liquid
+            // Glass too (their washes are faint over a bright or busy wallpaper).
+            let chip_legible = if legible.is_none() && theme.liquid_glass {
+                Some(Legible::new(session)?)
+            } else {
+                None
+            };
+            let chip_legible = legible.as_ref().or(chip_legible.as_ref());
+            // 智能栅栏: the number of files shown, in its capsule at the right end.
+            if let Some(count) = title_count {
+                self.draw_count_capsule(
+                    session,
+                    theme,
+                    &foreground,
+                    count,
+                    width,
+                    title_h,
+                    title_a,
+                    chip_legible,
+                )?;
+            }
+            if let Some(tag) = filter_tag {
+                self.draw_filter_tag(
+                    session,
+                    theme,
+                    &foreground,
+                    width,
+                    title_h,
+                    tag,
+                    title_count,
+                    title_a,
+                    chip_legible,
+                )?;
+            }
         }
         if count_a > 0.0
             && count_w > 0.0
@@ -2818,7 +3234,8 @@ impl FenceChrome {
         }
         let colored = tabs.iter().any(|t| t.color.is_some());
         let folders = tabs.iter().any(|t| t.folder_icon);
-        let text_left = rail_text_left(colored, folders);
+        let desktops = tabs.iter().any(|t| t.desktop_icon);
+        let text_left = rail_text_left(colored, folders, desktops);
         // A dragged tab is always above its neighbours.
         for tab in tabs
             .iter()
@@ -2876,12 +3293,26 @@ impl FenceChrome {
             // A navigated portal's up button ends the shown tab's row (its room stays while the
             // fence collapses, so the caption does not re-fit at the end).
             let up = tab.active && deco.up_button;
-            let room = self.rail_title_room(rail_w, colored, folders, tab.badge, up);
+            let room = self.rail_title_room(rail_w, colored, (folders, desktops), tab.badge, up);
             let caption = Rect::from_xywh(rect.left + text_left, rect.top, room, rect.height());
             if tab.folder_icon {
                 let brush = session.create_solid_brush(with_alpha(color, ta))?;
                 session.draw_text(
                     "\u{E8B7}",
+                    &self.title_glyph_format,
+                    &Rect::from_xywh(
+                        caption.left - tab_icon_w(desktops) - TAB_ICON_W - 2.0,
+                        rect.top,
+                        TAB_ICON_W,
+                        rect.height(),
+                    ),
+                    &brush,
+                );
+            }
+            if tab.desktop_icon {
+                let brush = session.create_solid_brush(with_alpha(color, ta))?;
+                session.draw_text(
+                    DESKTOP_GLYPH,
                     &self.title_glyph_format,
                     &Rect::from_xywh(
                         caption.left - TAB_ICON_W - 2.0,
@@ -4110,16 +4541,25 @@ mod tests {
             // padding shrinks so the two characters still fit.
             let squeezed = caption + TAB_TEXT_MIN_PADDING + 1.0;
             assert!(tab_text_inset(&theme, squeezed, caption) < full);
-            assert!(chrome.tab_title_fits("游戏", squeezed, 1, false, &theme));
+            assert!(chrome.tab_title_fits("游戏", squeezed, 1, (false, false), &theme));
             // Below the minimum padding the caption is elided, never drawn over the edge.
             assert_eq!(
                 tab_text_inset(&theme, caption, caption),
                 TAB_TEXT_MIN_PADDING
             );
-            assert!(!chrome.tab_title_fits("游戏", caption, 1, false, &theme));
+            assert!(!chrome.tab_title_fits("游戏", caption, 1, (false, false), &theme));
             // A folder tab's glyph takes its room from the caption.
-            assert!(chrome.tab_title_fits("游戏", squeezed + TAB_ICON_W, 1, true, &theme));
-            assert!(!chrome.tab_title_fits("游戏", squeezed, 1, true, &theme));
+            assert!(chrome.tab_title_fits("游戏", squeezed + TAB_ICON_W, 1, (true, false), &theme));
+            assert!(!chrome.tab_title_fits("游戏", squeezed, 1, (true, false), &theme));
+            // So does the Task View glyph, and both take two slots.
+            assert!(!chrome.tab_title_fits("游戏", squeezed + TAB_ICON_W, 1, (true, true), &theme));
+            assert!(chrome.tab_title_fits(
+                "游戏",
+                squeezed + 2.0 * TAB_ICON_W,
+                1,
+                (true, true),
+                &theme
+            ));
         }
     }
 
@@ -4129,7 +4569,7 @@ mod tests {
         for theme in [Theme::dark().with_liquid_glass(), Theme::dark()] {
             let caption = crate::text::measure_width("项目", &chrome.tab_format(1));
             let w = caption + TAB_ICON_W + tab_text_padding(&theme);
-            let r = chrome.tab_up_box(&theme, 100.0, w, "项目", 1, None);
+            let r = chrome.tab_up_box(&theme, 100.0, w, "项目", 1, false, None);
             // The glyph starts the centred group (glyph, then caption) and keeps its slot.
             let glyph_mid = 100.0 + (w - TAB_ICON_W - caption) * 0.5 - 2.0 + TAB_ICON_W * 0.5;
             assert_eq!((r.width(), r.height()), (20.0, 20.0));
@@ -4137,6 +4577,104 @@ mod tests {
             assert_eq!(r.top + 10.0, theme.title_height * 0.5);
             assert!(r.left >= 100.0 && r.right <= 100.0 + w);
         }
+    }
+
+    /// The Task View glyph of a window bound to virtual desktops follows the folder glyph's slot:
+    /// the folder glyph (the up button) stays first, the caption moves one slot on.
+    #[test]
+    fn the_desktop_glyph_takes_the_slot_after_the_folder_glyph() {
+        use pecofence_core::TitleAlign::Left;
+        let chrome = FenceChrome::new().unwrap();
+        let theme = Theme::dark();
+        let caption = crate::text::measure_width("项目", &chrome.tab_format(1));
+        let w = caption + 2.0 * TAB_ICON_W + tab_text_padding(&theme);
+        let r = chrome.tab_up_box(&theme, 100.0, w, "项目", 1, true, None);
+        let glyph_mid = 100.0 + (w - 2.0 * TAB_ICON_W - caption) * 0.5 - 2.0 + TAB_ICON_W * 0.5;
+        assert!((r.left + 10.0 - glyph_mid).abs() < 0.01);
+        let both = TitleDeco {
+            folder_icon: true,
+            up_button: false,
+            search_glyph: false,
+            desktop_icon: true,
+        };
+        assert_eq!(both.title_x(), 16.0 + 2.0 * TitleDeco::ICON_W);
+        let glyph = chrome.lone_desktop_box("2026", None, None, 1, Left, 300.0, both, 0.0, 36.0);
+        assert_eq!(glyph.left, 16.0 + TitleDeco::ICON_W - 2.0);
+        let alone = TitleDeco {
+            desktop_icon: true,
+            ..TitleDeco::default()
+        };
+        let glyph = chrome.lone_desktop_box("2026", None, None, 1, Left, 300.0, alone, 0.0, 36.0);
+        assert_eq!(
+            (glyph.left, alone.title_x()),
+            (14.0, 16.0 + TitleDeco::ICON_W)
+        );
+        // The lone up button keeps its glyph's place with the Task View glyph after it.
+        let up = chrome.lone_up_box("2026", None, 1, Left, 300.0, true, 0.0, 36.0);
+        assert_eq!(up.left, 14.0);
+    }
+
+    /// A long filter text is shortened so the tag leaves the title room; the type chip, the
+    /// count and × stay whole.
+    #[test]
+    fn a_long_filter_text_is_shortened_in_the_tag() {
+        let chrome = FenceChrome::new().unwrap();
+        let long = (
+            "类型：PDF",
+            "季度报告 2026 第三季度 预算 草稿 修改版",
+            "3 / 31",
+        );
+        let fit = |w: f32| chrome.filter_tag_fit(w, 36.0, long, None);
+        // Wide: all of it, no tooltip needed.
+        let wide = fit(1200.0).unwrap();
+        assert!(wide.whole(long) && wide.text == long.1, "{wide:?}");
+        // Medium: the text shortened, the tag within 60 % of the row.
+        let medium = fit(400.0).unwrap();
+        assert!(medium.rect.width() <= 400.0 * 0.6 + 1.0, "{medium:?}");
+        assert!(
+            medium.text.ends_with('…') && medium.text.chars().count() > 1,
+            "{medium:?}"
+        );
+        assert!(medium.count && medium.kind && !medium.whole(long));
+        // Narrower: the text goes first, then the count, then the type chip; never past the
+        // title's left padding.
+        // 200: the type chip stays, the text is gone; 120: the magnifier and × only; 64: none.
+        let f200 = fit(200.0).unwrap();
+        assert!(f200.kind && f200.text.is_empty(), "{f200:?}");
+        let f120 = fit(120.0).unwrap();
+        assert!(
+            !f120.kind && !f120.count && f120.text.is_empty(),
+            "{f120:?}"
+        );
+        assert_eq!(fit(64.0), None);
+        // From wide to narrow the parts only go, in order (text, count, chip).
+        let mut last = (true, true, true);
+        for w in (60..=1200).rev().step_by(4).map(|w| w as f32) {
+            let Some(f) = fit(w) else {
+                assert!(w < 100.0, "{w}: no tag");
+                continue;
+            };
+            assert!(f.rect.left >= TAG_LEFT_LIMIT, "{w}: {f:?}");
+            assert!(
+                f.rect.right <= TitleDeco::chevron_box(w, 36.0).left,
+                "{w}: {f:?}"
+            );
+            let now = (!f.text.is_empty(), f.count, f.kind);
+            assert!(
+                (!now.0 || now.1) && (!now.1 || now.2),
+                "{w}: out of order {f:?}"
+            );
+            assert!(now <= last, "{w}: a part came back {f:?}");
+            last = now;
+        }
+        // A smart fence's capsule takes its room first.
+        let with_capsule = chrome
+            .filter_tag_fit(200.0, 36.0, long, Some("200+"))
+            .unwrap();
+        assert!(
+            with_capsule.rect.left >= TAG_LEFT_LIMIT && !with_capsule.kind,
+            "{with_capsule:?}"
+        );
     }
 
     #[test]
@@ -4147,21 +4685,30 @@ mod tests {
         let up = TitleDeco {
             folder_icon: true,
             up_button: true,
+            search_glyph: false,
+            desktop_icon: false,
         };
         assert_eq!(up.title_x(), 16.0 + TitleDeco::ICON_W);
-        let left = chrome.lone_up_box("2026", 1, Left, 300.0, 0.0, 36.0);
+        let left = chrome.lone_up_box("2026", None, 1, Left, 300.0, false, 0.0, 36.0);
         assert_eq!(
             (left.left, left.top, left.right, left.bottom),
             (14.0, 8.0, 34.0, 28.0)
         );
         // It moves with the title, which keeps clear of the rolled count.
-        let right = chrome.lone_up_box("2026", 1, Right, 300.0, ROLLED_COUNT_W, 36.0);
+        let right = chrome.lone_up_box("2026", None, 1, Right, 300.0, false, ROLLED_COUNT_W, 36.0);
         assert!(right.left > left.left);
         assert!(right.right <= 300.0 - TITLE_RIGHT_RESERVE - ROLLED_COUNT_W);
+        // And of a filter tag, as drawn (one layout for both).
+        let tag = ("", "pdf", "3 / 31");
+        let tag_r = chrome.filter_tag_fit(300.0, 36.0, tag, None).unwrap().rect;
+        let tagged = chrome.lone_up_box("2026", Some(tag), 1, Right, 300.0, false, 0.0, 36.0);
+        assert!(tagged.right <= tag_r.left, "{tagged:?} {tag_r:?}");
         // With the glyph hidden, the button stays at the far left.
         let hidden = TitleDeco {
             folder_icon: false,
             up_button: true,
+            search_glyph: false,
+            desktop_icon: false,
         };
         assert!(hidden.up_at_left());
         assert_eq!(hidden.title_x(), 16.0 + TitleDeco::UP_W);
@@ -4169,14 +4716,17 @@ mod tests {
 
     #[test]
     fn left_column_names_stay_aligned_after_a_dot_and_a_folder_glyph() {
-        assert_eq!(rail_text_left(false, false), 10.0);
-        assert_eq!(rail_text_left(true, false), 24.0);
-        assert_eq!(rail_text_left(false, true), 10.0 + TAB_ICON_W);
-        assert_eq!(rail_text_left(true, true), 24.0 + TAB_ICON_W);
+        assert_eq!(rail_text_left(false, false, false), 10.0);
+        assert_eq!(rail_text_left(true, false, false), 24.0);
+        assert_eq!(rail_text_left(false, true, false), 10.0 + TAB_ICON_W);
+        assert_eq!(rail_text_left(true, true, false), 24.0 + TAB_ICON_W);
+        // The Task View glyph takes the slot after the folder glyph's.
+        assert_eq!(rail_text_left(false, true, true), 10.0 + 2.0 * TAB_ICON_W);
+        assert_eq!(rail_text_left(true, false, true), 24.0 + TAB_ICON_W);
         let chrome = FenceChrome::new().unwrap();
         assert_eq!(
-            chrome.rail_title_room(160.0, true, false, None, false)
-                - chrome.rail_title_room(160.0, true, true, None, false),
+            chrome.rail_title_room(160.0, true, (false, false), None, false)
+                - chrome.rail_title_room(160.0, true, (true, false), None, false),
             TAB_ICON_W
         );
     }

@@ -584,8 +584,10 @@ impl FenceViewState {
         } else {
             0.0
         };
-        let glyph =
-            pecofence_render::fence_chrome::tab_icon_w(self.tabs.iter().any(|t| t.folder_icon));
+        let glyph = pecofence_render::fence_chrome::tab_glyphs_w(
+            self.tabs.iter().any(|t| t.folder_icon),
+            self.tabs.iter().any(|t| t.desktop_icon),
+        );
         let room = TAB_RAIL_TEXT_ROOM + RAIL_ROW_INSET + RAIL_ROW_RIGHT;
         let fence = self.expanded_w_px as f32 / self.scale();
         (widest + dot + glyph + room)
@@ -698,12 +700,12 @@ impl FenceViewState {
         let mut cache = self.tab_natural_w.borrow_mut();
         let glass = self.theme.liquid_glass;
         let badges: Vec<Option<String>> = self.tabs.iter().map(|t| self.tab_badge(t.id)).collect();
-        type Entry = (String, u8, bool, bool, Option<String>, f32);
-        let same = |(c, size, g, icon, badge, _): &Entry, t: &TabView, b: &Option<String>| {
+        type Entry = (String, u8, bool, (bool, bool), Option<String>, f32);
+        let same = |(c, size, g, icons, badge, _): &Entry, t: &TabView, b: &Option<String>| {
             *c == t.title
                 && *size == t.title_size
                 && *g == glass
-                && *icon == t.folder_icon
+                && *icons == (t.folder_icon, t.desktop_icon)
                 && badge == b
         };
         let hit = cache.len() == self.tabs.len()
@@ -723,8 +725,10 @@ impl FenceViewState {
                             (pecofence_render::text::measure_width(
                                 &t.title,
                                 &self.chrome.tab_format(t.title_size),
-                            ) + pecofence_render::fence_chrome::tab_icon_w(t.folder_icon)
-                                + pecofence_render::fence_chrome::tab_text_padding(&self.theme))
+                            ) + pecofence_render::fence_chrome::tab_glyphs_w(
+                                t.folder_icon,
+                                t.desktop_icon,
+                            ) + pecofence_render::fence_chrome::tab_text_padding(&self.theme))
                             .clamp(TAB_MIN_W, TAB_MAX_W)
                                 + badge
                                     .as_deref()
@@ -736,7 +740,7 @@ impl FenceViewState {
                         t.title.clone(),
                         t.title_size,
                         glass,
-                        t.folder_icon,
+                        (t.folder_icon, t.desktop_icon),
                         badge,
                         w,
                     )

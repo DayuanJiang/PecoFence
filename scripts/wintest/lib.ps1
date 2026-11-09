@@ -267,6 +267,8 @@ public static class QS {
     return old;
   }
   public static void SetFileName(IntPtr dlg, string text) { var e = FileNameEdit(dlg); if (e != IntPtr.Zero) SendMessageW(e, 0x0C, IntPtr.Zero, text); }
+  // The folder picker's Folder: box (then IDOK picks what it names).
+  public static bool SetPickerFolder(IntPtr dlg, string text) { var e = FileNameEdit(dlg, true); if (e == IntPtr.Zero) return false; SendMessageW(e, 0x0C, IntPtr.Zero, text); return true; }
   // The tab window (ShellTabWindowClass) of one ShellWindows item.
   public static IntPtr TabWindow(object item) {
     var sp = item as IServiceProviderX;
@@ -1139,11 +1141,15 @@ function ProcTops($cls, $proc) { return @([W]::Tops($cls) | Where-Object { [W]::
 . "$PSScriptRoot\page.ps1"
 . "$PSScriptRoot\pixels.ps1"
 . "$PSScriptRoot\user.ps1"
+. "$PSScriptRoot\smart.ps1"
+. "$PSScriptRoot\vdesk.ps1"
 
 # ---- job start: a known desktop
 
 [G]::Press(0x1B)
 CloseWindows
+# One virtual desktop: an earlier job may have left more.
+VdOnlyOne
 $wp = @('C:\Windows\Web\Wallpaper\Windows\img0.jpg', 'C:\Windows\Web\Screen\img100.jpg') | Where-Object { Test-Path $_ } | Select-Object -First 1
 if ($wp) { [G]::SystemParametersInfoW(0x14, 0, $wp, 3) | Out-Null }
 # A job before may have ended PecoFence the hard way (ctl.ps1 reset), which leaves Windows'

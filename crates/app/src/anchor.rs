@@ -25,6 +25,18 @@ const TIMER_FOREGROUND_LATER: usize = 14;
 /// front (sign-in, the end of a process whose window was in front). A light poll catches it.
 const TIMER_FOREGROUND_POLL: usize = 15;
 const FOREGROUND_POLL_MS: u32 = 250;
+/// Win+Ctrl+←/→ puts Windows' switcher window in front, and when it goes the desktop gets the
+/// foreground back without an event: the double-click (quick hide) went unseen after every
+/// virtual-desktop switch. A few looks at the foreground catch it.
+const TIMER_FOREGROUND_AFTER_SWITCH: usize = 18;
+const AFTER_SWITCH_LOOK_MS: u32 = 300;
+const AFTER_SWITCH_LOOKS: u8 = 6;
+const SWITCHER_CLASS: &str = "VirtualDesktopHotkeySwitcher";
+/// Windows 10: the desktop's clicks followed after a switch (`follow_desktop_after_switch`)
+/// stop being followed this long after it unless the desktop came to the front meanwhile: the
+/// sink gets every mouse move while it is on.
+const TIMER_SWITCH_FOLLOW_END: usize = 19;
+const SWITCH_FOLLOW_MS: u32 = 10_000;
 /// Explorer reordered windows while the anchor was busy (`on_shell_reorder` after all).
 const TIMER_REORDER_LATER: usize = 16;
 /// Explorer's z-order changes are checked while the desktop is in front and this long after a
@@ -65,6 +77,11 @@ fn set_fence_visible(fence: HWND, shadow: Option<HWND>, show: bool) {
             desktop::hide_window(h);
         }
     }
+}
+
+/// The taskbar (it keeps the foreground after a Windows 10 virtual-desktop switch).
+fn is_taskbar(class: &str) -> bool {
+    class == "Shell_TrayWnd" || class == "Shell_SecondaryTrayWnd"
 }
 
 /// Our own click-through drag feedback (the drop outline sits directly below the dragged fence,
@@ -330,6 +347,9 @@ pub struct DesktopAnchor {
     pub on_marquee: Option<Box<dyn Fn(MarqueeEvent)>>,
     /// Fence windows (as raw handles) that stay visible during quick hide.
     quick_hide_excluded: std::collections::HashSet<isize>,
+    /// Fence windows of other virtual desktops than the current one: hidden, and not shown
+    /// again by the anchor's own checks.
+    off_desktop: std::collections::HashSet<isize>,
     /// Peek in progress: fences are topmost and anchoring is suspended.
     peeking: bool,
     /// Fences (hidden by quick hide) that Peek showed and must hide again afterwards.
@@ -354,6 +374,11 @@ pub struct DesktopAnchor {
     covered_by: Option<isize>,
     /// The window the last `on_foreground` was about (the poll compares with it).
     last_foreground: isize,
+    /// Looks at the foreground left after a virtual-desktop switch (`TIMER_FOREGROUND_AFTER_SWITCH`).
+    switch_looks: u8,
+    /// Windows 10 (the legacy desktop): the virtual desktop the foreground poll saw last (see
+    /// `follow_desktop_after_switch`).
+    poll_desktop: Option<[u8; 16]>,
     /// That window was the desktop (its comings and goings are logged, and the poll catches the
     /// ones Windows does not report).
     desktop_front: bool,
@@ -511,6 +536,7 @@ impl DesktopAnchor {
             quit_requested: false,
             on_marquee: None,
             quick_hide_excluded: std::collections::HashSet::new(),
+            off_desktop: std::collections::HashSet::new(),
             peeking: false,
             peek_shown: Vec::new(),
             on_peek_interrupted: None,
@@ -521,6 +547,8 @@ impl DesktopAnchor {
             placed_above: None,
             covered_by: None,
             last_foreground: 0,
+            switch_looks: 0,
+            poll_desktop: pecofence_platform::wallpaper::desktop_id(),
             desktop_front: false,
             dialog_from: None,
             last_foreground_at: Instant::now(),
@@ -645,7 +673,53 @@ impl DesktopAnchor {
 
     pub fn unregister_fence(&mut self, hwnd: HWND) {
         self.fences.retain(|(h, _)| *h != hwnd);
+        self.off_desktop.remove(&(hwnd.0 as isize));
         self.hover_raised.retain(|(h, _)| *h != hwnd);
+    }
+
+    /// Windows 10, a virtual-desktop switch seen by the foreground poll: the desktop's clicks are
+    /// followed now (the raw-input sink, which takes only presses on the bare desktop), so the
+    /// click that brings the desktop to the front counts for a double-click, until another window
+    /// comes to the front (`on_foreground`).
+    fn follow_desktop_after_switch(&mut self) {
+        let front = desktop::foreground_window();
+        let root = desktop::root_ancestor(front);
+        let cls = desktop::class_name(root);
+        self.last_foreground = front.0 as isize;
+        // An ordinary program in front (Windows gave it the new desktop's foreground): its
+        // clicks are the program's, and a click on the desktop brings the desktop to the front
+        // with an event, as without a switch.
+        let program = !front.0.is_null()
+            && !self.is_desktop_window(front)
+            && !is_taskbar(&cls)
+            && desktop::window_pid(root) != std::process::id();
+        tracing::info!(
+            class = %cls,
+            following = self.quick.sink_registered,
+            program,
+            "virtual desktop switch seen by the foreground poll"
+        );
+        if program || self.quick.sink_registered {
+            return;
+        }
+        self.set_raw_input_sink(true);
+        self.sentinel
+            .set_timer(TIMER_SWITCH_FOLLOW_END, SWITCH_FOLLOW_MS);
+    }
+
+    /// Marks a fence window as belonging to other virtual desktops (`FenceWindow` hides it).
+    pub fn set_off_desktop(&mut self, hwnd: HWND, off: bool) {
+        if off {
+            self.off_desktop.insert(hwnd.0 as isize);
+        } else {
+            self.off_desktop.remove(&(hwnd.0 as isize));
+        }
+    }
+
+    /// Whether quick hide (or 「临时显示 Windows 桌面」, `every`) keeps this fence hidden now.
+    pub fn quick_hides(&self, hwnd: HWND, every: bool) -> bool {
+        self.quick.fences_hidden
+            && (every || !self.quick_hide_excluded.contains(&(hwnd.0 as isize)))
     }
 
     /// Puts `hwnd` above the other fences (clicked / newly created), keeping all of them just
@@ -1122,6 +1196,11 @@ impl DesktopAnchor {
         let held = window::primary_button_down_async();
         let back_to = self.fence_after_dialog(held);
         tracing::debug!(?hwnd, %cls, is_desktop, raised, "foreground changed");
+        if cls == SWITCHER_CLASS {
+            self.switch_looks = AFTER_SWITCH_LOOKS;
+            self.sentinel
+                .set_timer(TIMER_FOREGROUND_AFTER_SWITCH, AFTER_SWITCH_LOOK_MS);
+        }
         // Only the changes to and from the desktop, once each: they say what was in front and
         // whether the desktop's clicks (quick hide, marquee) are followed. Leaving the desktop,
         // the line also counts what raw input reported since the last such line.
@@ -1316,7 +1395,10 @@ impl DesktopAnchor {
                         tracing::warn!(hwnd = ?w, error = %e, "uncloaking a fence failed");
                     }
                 }
-                if (!desktop::is_visible(w) || desktop::is_iconic(w)) && !self.quick.fences_hidden {
+                if (!desktop::is_visible(w) || desktop::is_iconic(w))
+                    && !self.quick.fences_hidden
+                    && !self.off_desktop.contains(&(w.0 as isize))
+                {
                     tracing::info!(hwnd = ?w, "fence hidden/minimized; showing");
                     desktop::show_no_activate(w);
                 }
@@ -1783,6 +1865,17 @@ impl DesktopAnchor {
         match id {
             TIMER_ANCHOR_CHECK => self.ensure_anchored("periodic check"),
             TIMER_FOREGROUND_POLL => {
+                // Windows 10 reports no foreground change when Win+Ctrl+Left/Right shows another
+                // virtual desktop, and the desktop comes to the front only with the first click on
+                // it: that click went unseen and the first double-click hid nothing. The current
+                // desktop is one registry read, so the poll notices the switch itself.
+                let current = pecofence_platform::wallpaper::desktop_id();
+                if current != self.poll_desktop {
+                    let before = std::mem::replace(&mut self.poll_desktop, current);
+                    if before.is_some() && current.is_some() {
+                        self.follow_desktop_after_switch();
+                    }
+                }
                 let front = desktop::foreground_window();
                 if front.0 as isize == self.last_foreground {
                     return;
@@ -1825,6 +1918,38 @@ impl DesktopAnchor {
                     self.on_foreground(front);
                 } else {
                     self.last_foreground = front.0 as isize;
+                }
+            }
+            TIMER_SWITCH_FOLLOW_END => {
+                self.sentinel.kill_timer(TIMER_SWITCH_FOLLOW_END);
+                let front = desktop::foreground_window();
+                if self.quick.sink_registered && !self.follows_desktop_clicks(front) {
+                    let cls = desktop::class_name(desktop::root_ancestor(front));
+                    tracing::info!(
+                        class = %cls,
+                        "the desktop did not come to the front after the switch; its clicks are no longer followed"
+                    );
+                    self.set_raw_input_sink(false);
+                }
+            }
+            TIMER_FOREGROUND_AFTER_SWITCH => {
+                let front = desktop::foreground_window();
+                self.switch_looks = self.switch_looks.saturating_sub(1);
+                let missed = !front.0.is_null()
+                    && front.0 as isize != self.last_foreground
+                    && (self.is_desktop_window(front) != self.desktop_front
+                        || self.follows_desktop_clicks(front) != self.quick.sink_registered);
+                if missed || self.switch_looks == 0 {
+                    self.sentinel.kill_timer(TIMER_FOREGROUND_AFTER_SWITCH);
+                }
+                if missed {
+                    let cls = desktop::class_name(desktop::root_ancestor(front));
+                    tracing::info!(
+                        class = %cls,
+                        looks_left = self.switch_looks,
+                        "foreground after a virtual desktop switch caught"
+                    );
+                    self.on_foreground(front);
                 }
             }
             TIMER_REORDER_LATER => {
@@ -1999,6 +2124,12 @@ mod tests {
         let mut q = QuickHide::default();
         q.desktop_activated(false, false, t, pt(390, 204));
         assert_eq!(q.desktop_press(ms(t, 120), pt(390, 204), 500, (2, 2)), None);
+    }
+
+    #[test]
+    fn after_a_windows_10_switch_only_the_taskbar_counts_as_no_program_in_front() {
+        assert!(is_taskbar("Shell_TrayWnd") && is_taskbar("Shell_SecondaryTrayWnd"));
+        assert!(!is_taskbar("Notepad") && !is_taskbar("Progman") && !is_taskbar(""));
     }
 
     #[test]

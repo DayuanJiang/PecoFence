@@ -104,8 +104,10 @@ pub(super) fn on_nchittest(
     // free part of a left tab column. A fence collapsed to its column has no
     // resize edges.
     let in_rail = left < v.content_x;
-    let on_control =
-        v.tab_at(left, top).is_some() || v.up_button_at(left, top) || v.chevron_at(left, top);
+    let on_control = v.tab_at(left, top).is_some()
+        || v.up_button_at(left, top)
+        || v.chevron_at(left, top)
+        || v.filter_tag_clear_at(left, top);
     let clear_of_edges = if in_rail {
         rolled || (left >= border && bottom > border)
     } else {
@@ -196,6 +198,23 @@ pub(super) fn on_ncmousemove(
         if title {
             let _ = v.redraw_chrome_only();
         }
+        // The Task View glyph of a single title lies on the caption: its infotip (the desktops
+        // the fence shows on) is armed here, as is a cut filter tag's (the whole filter);
+        // elsewhere on the caption no infotip shows.
+        let pt = window::screen_to_client(
+            hwnd,
+            pecofence_platform::POINT {
+                x: msg::lo_i16(lparam),
+                y: msg::hi_i16(lparam),
+            },
+        );
+        let tip = if v.desktop_glyph_at(pt.x, pt.y) {
+            Some(TipTarget::Desktops)
+        } else {
+            v.cut_filter_tag_at(pt.x, pt.y)
+                .then_some(TipTarget::FilterTag)
+        };
+        v.update_tip_target(tip, pt.x, pt.y);
         if item && !v.rolled_up {
             let _ = v.redraw_content();
         }
@@ -260,6 +279,14 @@ pub(super) fn on_ncmouseleave(
         }
         if !inside {
             v.set_mouse_inside(false);
+        }
+        // Off the Task View glyph's or the filter tag's caption spot: its infotip goes
+        // (WM_MOUSEMOVE decides over the client area).
+        if matches!(
+            v.tip_target,
+            Some(TipTarget::Desktops | TipTarget::FilterTag)
+        ) {
+            v.hide_tip();
         }
         // Onto a control of the title row (a tab, the chevron box): still the row. This
         // message can come after the WM_MOUSEMOVE there, which already counted the row as

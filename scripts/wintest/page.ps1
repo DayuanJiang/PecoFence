@@ -6,17 +6,26 @@
 # Whether the build under test is a debug build (only those honour PECOFENCE_WEBVIEW_ARGS).
 function IsDebugBuild() { return [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes("$PfBin\pecofence.exe")).Contains('PECOFENCE_WEBVIEW_ARGS') }
 
+# The window whose page Js and PageRect reach: the settings, or the smart fence editor (its page
+# is the settings page in an editor-only mode, titled 'PecoFence smart fence editor').
+$script:PageClass = 'PecoFence.Settings'
 # CDP: connects to the settings page of a debug build started with
-# PECOFENCE_WEBVIEW_ARGS=--remote-debugging-port=9352; $true when connected.
-function CdpOpen($port = 9352, $sec = 30) {
+# PECOFENCE_WEBVIEW_ARGS=--remote-debugging-port=9352 (-Editor: the smart fence editor's page);
+# $true when connected.
+function CdpOpen($port = 9352, $sec = 30, [switch]$Editor) {
+  if ($script:Cdp) { try { $script:Cdp.Dispose() } catch { }; $script:Cdp = $null }
   for ($i = 0; $i -lt $sec; $i++) {
     try {
       $list = (New-Object Net.WebClient).DownloadString("http://127.0.0.1:$port/json") | ConvertFrom-Json
-      $page = @($list | Where-Object { $_.type -eq 'page' }) | Select-Object -First 1
+      $page = @($list | Where-Object { $_.type -eq 'page' -and (($_.title -eq 'PecoFence smart fence editor') -eq [bool]$Editor) }) | Select-Object -First 1
       if ($page) {
         $ws = New-Object Net.WebSockets.ClientWebSocket
         $ws.ConnectAsync([Uri]$page.webSocketDebuggerUrl, [Threading.CancellationToken]::None).Wait(10000) | Out-Null
-        if ($ws.State -eq 'Open') { $script:Cdp = $ws; $script:CdpN = 0; Log "cdp connected: $($page.webSocketDebuggerUrl)"; return $true }
+        if ($ws.State -eq 'Open') {
+          $script:Cdp = $ws; $script:CdpN = 0
+          $script:PageClass = if ($Editor) { 'PecoFence.SmartEditor' } else { 'PecoFence.Settings' }
+          Log "cdp connected: $($page.title) $($page.webSocketDebuggerUrl)"; return $true
+        }
       }
     } catch { Log "cdp: $($_.Exception.Message)" }
     Start-Sleep -Seconds 1
@@ -58,7 +67,7 @@ function PageRect([string]$sel, [int]$i = 0) {
   $q = $sel | ConvertTo-Json
   $r = Js "(() => { const e = document.querySelectorAll($q)[$i]; if (!e) return null; let b = e.getBoundingClientRect(); if (b.top < 0 || b.bottom > innerHeight) { e.scrollIntoView({ block: 'center', behavior: 'instant' }); b = e.getBoundingClientRect(); } const d = devicePixelRatio; return { x: b.left * d, y: b.top * d, w: b.width * d, h: b.height * d }; })()"
   if (-not $r) { return $null }
-  $o = ClientOrigin ([G]::FindWindowW('PecoFence.Settings', [NullString]::Value))
+  $o = ClientOrigin ([G]::FindWindowW($script:PageClass, [NullString]::Value))
   return @{ x = [int]($o.X + $r.x); y = [int]($o.Y + $r.y); w = [int]$r.w; h = [int]$r.h
     cx = [int]($o.X + $r.x + $r.w / 2); cy = [int]($o.Y + $r.y + $r.h / 2); client = "$([int]($r.x + $r.w / 2)),$([int]($r.y + $r.h / 2))" }
 }
@@ -86,7 +95,7 @@ function PagePick([string]$sel, [string]$value, [int]$i = 0) {
   PageRect $sel $i | Out-Null
   $lab = Js "(() => { const l = document.querySelectorAll($q)[$i].closest('label'); if (!l) return null; const b = l.getBoundingClientRect(), d = devicePixelRatio; return { x: (b.left + 6) * d, y: (b.top + 6) * d }; })()"
   if (-not $lab) { throw "no label around $sel [$i]" }
-  $o = ClientOrigin ([G]::FindWindowW('PecoFence.Settings', [NullString]::Value))
+  $o = ClientOrigin ([G]::FindWindowW($script:PageClass, [NullString]::Value))
   [G]::Click([int]($o.X + $lab.x), [int]($o.Y + $lab.y)); Start-Sleep -Milliseconds 300
   if (-not (Js "document.activeElement === document.querySelectorAll($q)[$i]")) { throw "a click on the caption did not focus $sel [$i]" }
   $n = $ix[1] - $ix[0]
@@ -108,5 +117,17 @@ function PfSettings([string]$ReadyJs = 'true') {
   if (-not (CdpOpen)) { return $false }
   return [bool](JsWait "document.documentElement.classList.contains('ready') && ($ReadyJs)" 20)
 }
+
+# The smart fence editor's window once it is open and, on a debug build, its page over CDP
+# (shown: the host shows the window when the page is ready); [IntPtr]::Zero when it did not open.
+function EditorWin($sec = 20) {
+  $h = WaitWin 'PecoFence.SmartEditor' $sec
+  if ($h -eq [IntPtr]::Zero -or -not $PfDebugBuild) { return $h }
+  if (-not (CdpOpen -Editor)) { return [IntPtr]::Zero }
+  if (-not (JsWait "!!document.querySelector('#seWindow .se-row')" 15)) { return [IntPtr]::Zero }
+  return $h
+}
+# How many editor windows are shown (there is at most one).
+function EditorCount() { return @([W]::Tops('PecoFence.SmartEditor')).Count }
 
 $PfDebugBuild = IsDebugBuild

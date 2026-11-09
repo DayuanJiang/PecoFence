@@ -24,7 +24,8 @@ struct SendHandle(HANDLE);
 unsafe impl Send for SendHandle {}
 unsafe impl Sync for SendHandle {}
 
-/// Watches a single directory (non-recursive). Dropping stops the thread.
+/// Watches a single directory (non-recursive; [`DirWatcher::start_tree`] takes its subfolders
+/// too). Dropping stops the thread.
 pub struct DirWatcher {
     handle: Arc<SendHandle>,
     stop: Arc<AtomicBool>,
@@ -36,6 +37,22 @@ pub struct DirWatcher {
 impl DirWatcher {
     /// Starts watching `dir`; `on_events` runs on the watcher thread for every batch.
     pub fn start(dir: &Path, on_events: impl Fn(Vec<FsEvent>) + Send + 'static) -> Result<Self> {
+        Self::start_with(dir, false, on_events)
+    }
+
+    /// [`Self::start`] for `dir` and every folder under it (event paths name the subfolder).
+    pub fn start_tree(
+        dir: &Path,
+        on_events: impl Fn(Vec<FsEvent>) + Send + 'static,
+    ) -> Result<Self> {
+        Self::start_with(dir, true, on_events)
+    }
+
+    fn start_with(
+        dir: &Path,
+        subtree: bool,
+        on_events: impl Fn(Vec<FsEvent>) + Send + 'static,
+    ) -> Result<Self> {
         use std::os::windows::ffi::OsStrExt;
         let wide: Vec<u16> = dir
             .as_os_str()
@@ -67,7 +84,7 @@ impl DirWatcher {
             std::thread::Builder::new()
                 .name(format!("pecofence-watch-{}", dir.display()))
                 .stack_size(256 * 1024)
-                .spawn(move || watch_loop(handle, dir, stop, on_events))
+                .spawn(move || watch_loop(handle, dir, subtree, stop, on_events))
         };
         let thread = match thread {
             Ok(t) => t,
@@ -136,6 +153,7 @@ const FILTER: u32 = (FILE_NOTIFY_CHANGE_FILE_NAME
 fn watch_loop(
     handle: Arc<SendHandle>,
     dir: PathBuf,
+    subtree: bool,
     stop: Arc<AtomicBool>,
     on_events: impl Fn(Vec<FsEvent>),
 ) {
@@ -148,7 +166,7 @@ fn watch_loop(
                 handle.0,
                 buf.as_mut_ptr().cast(),
                 buf.len() as u32,
-                false,
+                subtree,
                 FILTER,
                 Some(&mut returned),
                 None,

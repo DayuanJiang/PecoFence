@@ -421,7 +421,7 @@ impl FenceDropHandler {
         let candidate = if self.path_drag {
             pt.and_then(|pt| {
                 let guard = self.view.try_borrow().ok()?;
-                let v = guard.as_ref().filter(|v| !v.shows_tool())?;
+                let v = guard.as_ref().filter(|v| !v.takes_no_drops())?;
                 let rect = window::window_rect(v.hwnd);
                 let i = v.hit_item(pt.x - rect.left, pt.y - rect.top)?;
                 let item = v.items.get(i)?;
@@ -551,8 +551,9 @@ impl FenceDropHandler {
                 ..none
             };
         };
-        // A tool fence (便签, 时钟) holds no items: nothing drops on it.
-        if v.shows_tool() {
+        // A tool fence (便签, 时钟) holds no items and a smart fence shows a search: nothing
+        // drops on them.
+        if v.takes_no_drops() {
             return Feedback {
                 hwnd: v.hwnd,
                 ..none
@@ -569,6 +570,9 @@ impl FenceDropHandler {
             .is_some_and(|it| pecofence_platform::shell::is_recycle_bin_path(&it.path));
         let effect = match self.kind {
             DropKind::None => DropEffect::None,
+            // A smart fence's pill takes no link and no shell items either (they would land in
+            // the tab shown instead).
+            DropKind::Url | DropKind::Shell if spot.self_drop => DropEffect::None,
             // A link is written as a new file: into a folder item, but not into the bin.
             DropKind::Url if on_bin => DropEffect::None,
             // A browser usually offers COPY|LINK: Link when it may, else the best it allows.
@@ -786,7 +790,7 @@ impl DropHandler for FenceDropHandler {
         let internal = Self::internal();
         // Resolve the target and clear the highlights under one borrow.
         let resolved = self.view.try_borrow_mut().ok().and_then(|mut g| {
-            g.as_mut().filter(|v| !v.shows_tool()).map(|v| {
+            g.as_mut().filter(|v| !v.takes_no_drops()).map(|v| {
                 let spot = v.drop_spot_at(pt.x, pt.y, internal.as_ref());
                 let tab_fence = spot.tab.and_then(|i| v.tabs.get(i)).map(|t| t.id);
                 let folder = spot.folder.and_then(|i| v.item_drop_folder(i));
@@ -824,6 +828,16 @@ impl DropHandler for FenceDropHandler {
             let same_volume =
                 dragdrop::same_volume(self.source_volume.take().as_deref(), dest.as_deref());
             let to = tab_fence.unwrap_or(active);
+            // Over its own fence, or over a pill that takes nothing (a smart fence's): whatever
+            // the drag carries, nothing lands in the tab shown instead.
+            if spot.self_drop {
+                tracing::info!(
+                    ?kind,
+                    internal = internal.is_some(),
+                    "drop refused: its own fence or a tab that takes nothing"
+                );
+                break 'resolve DropEffect::None;
+            }
             match kind {
                 DropKind::None => DropEffect::None,
                 DropKind::Url => {
@@ -1168,6 +1182,15 @@ impl FenceViewState {
             // "not allowed" for a same-folder drop, and the drop would be a no-op anyway.
             if let (Some(i), Some(d)) = (spot.tab, internal)
                 && self.tabs.get(i).map(|t| t.id) == Some(d.from)
+            {
+                spot.tab = None;
+                spot.self_drop = true;
+                return spot;
+            }
+            // A smart fence's pill takes nothing: "not allowed", as over the fence itself.
+            if spot
+                .tab
+                .is_some_and(|i| self.tabs.get(i).is_some_and(|t| !t.takes_drops))
             {
                 spot.tab = None;
                 spot.self_drop = true;

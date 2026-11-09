@@ -117,6 +117,20 @@ pub struct MonitorDto {
     pub primary: bool,
 }
 
+/// One Windows virtual desktop (Task View order).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "describe", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct VirtualDesktopDto {
+    /// Explorer's id (`{GUID}`), what a fence's `virtualDesktops` holds.
+    pub id: String,
+    /// Position in Task View, from 1 (`fence set ... virtualDesktops 2`).
+    pub number: usize,
+    /// The name given in Task View, else `Desktop N` as Task View shows it.
+    pub name: String,
+    pub current: bool,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "describe", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
@@ -171,6 +185,17 @@ pub struct FenceDto {
     /// A script fence's script and its last run.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub script: Option<ScriptDto>,
+    /// 智能栅栏: `{spec, source, total, shown, query}`: the saved search, where the last run's
+    /// results came from (`everything`, `folder`, `needsEverything`, `waiting`), how many
+    /// matched in all and are shown, and the Everything search sent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "describe", schemars(with = "Option<serde_json::Value>"))]
+    pub smart: Option<serde_json::Value>,
+    /// 筛选: `{text, shown}` while the fence is filtered (runtime only): the typed text and
+    /// how many items the fence shows.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "describe", schemars(with = "Option<serde_json::Value>"))]
+    pub filter: Option<serde_json::Value>,
     /// Expanded geometry in physical px (what `fences.setBounds` sets). A hosted tab reports its
     /// host's rect (the window it is shown in). `null` while the fence's monitor is disconnected.
     pub rect: Option<Rect>,
@@ -269,6 +294,13 @@ pub struct FenceDto {
     /// to the fence's own icons meanwhile.
     #[serde(default)]
     pub opened_folder: Option<String>,
+    /// The virtual desktops (ids, see `virtualDesktops.list`) its window shows on; empty = every
+    /// desktop. A tab reports its window's.
+    #[serde(default)]
+    pub virtual_desktops: Vec<String>,
+    /// Its window shows on the current virtual desktop (false: hidden until a switch there).
+    #[serde(default = "super::default_true")]
+    pub on_current_desktop: bool,
     pub portal: Option<PortalDto>,
     /// How the items fit the window; `null` for a tab that is not the one currently shown and
     /// for fences without a window (disconnected monitor).

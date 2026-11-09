@@ -132,12 +132,16 @@ impl App {
             ) {
                 Ok(w) => {
                     w.set_tabs(tabs, active);
+                    // A fence of another virtual desktop is created hidden and stays so.
+                    w.set_off_desktop(!self.on_current_desktop(fence.id));
                     self.fences.insert(fence.id, w);
                     self.apply_fence_view(fence.id);
                 }
                 Err(e) => tracing::error!(title = %fence.title, error = %e, "fence window failed"),
             }
         }
+        // A window kept across a merge or a layout switch may now belong to other desktops.
+        self.apply_desktop_visibility("windows synced");
     }
 
     /// The window a fence is shown in (its own, or its tab host's).
@@ -480,11 +484,12 @@ impl App {
         };
         // Where the other fences rest: one hover-peeking open over the icons does not move them.
         // Windows not shown yet count too (startup creates them hidden), so the first arrange
-        // is already the right one; a fence with no window (为空时自动隐藏) takes no cells.
+        // is already the right one; a fence with no window (为空时自动隐藏) takes no cells, nor
+        // one of another virtual desktop.
         let covered: Vec<RECT> = self
             .fences
             .iter()
-            .filter(|(fid, _)| **fid != id)
+            .filter(|(fid, _)| **fid != id && self.on_current_desktop(**fid))
             .map(|(_, o)| o.resting_rect())
             .collect();
         // 自由摆放: the cells the icons were saved at on these monitors (not while a folder
@@ -726,6 +731,8 @@ impl App {
     pub(super) fn relayout_from_state(&mut self) {
         self.clear_undo("layout replaced");
         self.state.ensure_layout();
+        // Restored or imported fences may name virtual desktops that are gone.
+        self.follow_desktops_after("fences replaced");
         self.resync_windows();
         for fence in self.state.host_fences() {
             if self.fences.contains_key(&fence.id) {
@@ -735,6 +742,8 @@ impl App {
         }
         self.settle_unplaced(false);
         self.refresh_all();
+        // Smart fences of an imported file, a snapshot or another monitor layout search now.
+        self.run_all_smart("layout replaced");
         self.push_settings_state();
     }
 
@@ -1241,7 +1250,7 @@ impl App {
     }
 }
 
-fn fence_limit_text() -> String {
+pub(super) fn fence_limit_text() -> String {
     pecofence_core::i18n::format(
         "最多只能有 {0} 个栅栏（含标签页），请先删除或合并一些。",
         &[pecofence_core::config_store::MAX_FENCES.to_string()],

@@ -1001,6 +1001,23 @@ pub unsafe fn GetMenuItemID(hmenu: HMENU, npos: i32) -> u32 {
     unsafe { GetMenuItemID(hmenu, npos) }
 }
 #[inline]
+pub unsafe fn GetMenuItemRect(
+    hwnd: Option<HWND>,
+    hmenu: HMENU,
+    uitem: u32,
+    lprcitem: *mut RECT,
+) -> windows_core::BOOL {
+    windows_core::link!("user32.dll" "system" fn GetMenuItemRect(hwnd : HWND, hmenu : HMENU, uitem : u32, lprcitem : *mut RECT) -> windows_core::BOOL);
+    unsafe {
+        GetMenuItemRect(
+            hwnd.unwrap_or(core::mem::zeroed()) as _,
+            hmenu,
+            uitem,
+            lprcitem as _,
+        )
+    }
+}
+#[inline]
 pub unsafe fn GetMessageW(
     lpmsg: *mut MSG,
     hwnd: Option<HWND>,
@@ -3339,6 +3356,14 @@ pub const CREATE_WAITABLE_TIMER_HIGH_RESOLUTION: i32 = 2;
 pub const CS_DBLCLKS: i32 = 8;
 pub const CS_HREDRAW: i32 = 2;
 pub const CS_VREDRAW: i32 = 1;
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct CWPSTRUCT {
+    pub lParam: LPARAM,
+    pub wParam: WPARAM,
+    pub message: u32,
+    pub hwnd: HWND,
+}
 pub const CW_USEDEFAULT: i32 = -2147483648;
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -19155,6 +19180,7 @@ pub const WAIT_FAILED: u32 = 4294967295;
 pub const WAIT_OBJECT_0: i32 = 0;
 pub const WAIT_TIMEOUT: i32 = 258;
 pub const WHEEL_DELTA: i32 = 120;
+pub const WH_CALLWNDPROC: i32 = 4;
 pub const WH_MOUSE_LL: i32 = 14;
 pub type WICBitmapAlphaChannelOption = i32;
 pub type WICBitmapCreateCacheOption = i32;

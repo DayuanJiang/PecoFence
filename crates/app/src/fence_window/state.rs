@@ -70,7 +70,7 @@ pub struct FenceViewState {
     /// aside. None = no hint, or a plain (single-tab) title.
     pub(super) merge_gap: Option<usize>,
     /// Natural pill widths by caption (folder glyph and search badge), see `tab_natural_widths`.
-    pub(super) tab_natural_w: RefCell<Vec<(String, u8, bool, bool, Option<String>, f32)>>,
+    pub(super) tab_natural_w: RefCell<Vec<(String, u8, bool, (bool, bool), Option<String>, f32)>>,
     /// How far (DIPs) a title-row strip too wide for its room is scrolled, see `tab_rects`.
     pub(super) tab_scroll: Cell<f32>,
     /// Last frame of the strip's edge auto-scroll (`tab_strip_autoscroll`); None while idle.
@@ -96,8 +96,12 @@ pub struct FenceViewState {
     pub(super) detach_pending: bool,
     pub(super) detach_cancelled: bool,
     pub(super) remote_drag: Option<RemoteDrag>,
-    /// Portal title decorations (folder glyph, up button) for the fence being shown.
+    /// Title decorations of the fence being shown: the portal's folder glyph and up button, the
+    /// Task View glyph of a window bound to virtual desktops.
     pub(super) deco: TitleDeco,
+    /// The infotip of the Task View glyph (the desktops it shows on), `None` while it shows on
+    /// every desktop.
+    pub(super) desktop_tip: Option<String>,
     pub(super) up_hovered: bool,
     pub(super) chevron_hovered: bool,
     /// Control the mouse button is held on, and whether the pointer is still over it (Win32
@@ -199,6 +203,18 @@ pub struct FenceViewState {
     pub(super) script_hover: Option<usize>,
     /// The portal's folder could not be found (its empty state says so).
     pub(super) portal_missing: bool,
+    /// The empty-state text in place of the usual one (a smart fence's state, a filter that
+    /// matches nothing), and a smart fence's count in its capsule at the right ("6"; see
+    /// `FenceWindow::set_status_view`).
+    pub(super) empty_override: Option<&'static str>,
+    pub(super) title_count: Option<String>,
+    /// 筛选: the fence is filtered right now (Esc clears it).
+    pub(super) filter_active: bool,
+    /// 筛选: the tag of a filtered single title once its box closed: the type (「类型：PDF」, or
+    /// empty), the text and the count (empty when the count capsule shows it).
+    pub(super) filter_tag: Option<(String, String, String)>,
+    /// 智能栅栏: the fence shows a search, so nothing is dropped into it.
+    pub(super) refuses_drops: bool,
     /// Width the cached labels were fitted for; a change invalidates them.
     pub(super) label_w: f32,
     /// An item near the viewport was still waiting for its icon at the last content draw
@@ -402,6 +418,9 @@ pub struct FenceViewState {
     /// `FenceWindow::retire` was called: the window is fading out for good and lives only in
     /// `App::dying`. Nothing may show it again, and every hide must end in `FadeOutDone`.
     pub(super) retired: bool,
+    /// The fence belongs to other virtual desktops than the current one (在哪个虚拟桌面显示):
+    /// it stays hidden, whoever asks to show it (quick hide, Peek, a new window).
+    pub(super) off_desktop: bool,
     /// Outgoing content panels of tab switches, still fading out under the new panel (a
     /// second switch mid-swap hands off from the current opacity instead of snapping, so more
     /// than one can be in flight); all parked in `spares` when `WM_APP_TAB_SWAP_DONE` arrives
@@ -641,6 +660,17 @@ impl FenceViewState {
     /// marquee, and counts no items.
     pub(super) fn shows_tool(&self) -> bool {
         self.note.is_some() || self.clock.is_some() || self.script.is_some()
+    }
+
+    /// The rolled title shows 「N 项」 before the chevron: not for a tool (no items), a smart
+    /// fence (its capsule counts) or a filter tag (it carries the count).
+    pub(super) fn shows_rolled_count(&self) -> bool {
+        !self.shows_tool() && self.title_count.is_none() && self.filter_tag.is_none()
+    }
+
+    /// Nothing can be dropped here: a tool fence, or a smart fence (it shows a search).
+    pub(super) fn takes_no_drops(&self) -> bool {
+        self.shows_tool() || self.refuses_drops
     }
 
     /// Arms TIMER_CLOCK for just after the next minute (or second) boundary, or stops it when
