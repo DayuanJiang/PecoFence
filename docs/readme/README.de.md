@@ -121,6 +121,8 @@ Hol dir, was du brauchst, und kehre mit **Esc** zurück.
 | :--- | :--- |
 | **KI + CLI** | `pecofence-cli`: **Mit eigenen Worten konfigurieren.** Ändere Design, Transparenz, Symbolgröße und globale Einstellungen oder passe alle Bereiche auf einmal an. |
 | **Weniger sortieren** | Regeln nach Dateityp, Endung, Name, Platzhalter, Verknüpfungsziel, Zeit und Größe. Neue Dateien finden ihren Bereich von selbst. |
+| **Intelligente Bereiche** | Ein Bereich, der das aktuelle Ergebnis einer Suche zeigt, etwa die Downloads der letzten 7 Tage oder alle Dateien über 1 GB. Die Dateien bleiben, wo sie sind. Strg+F filtert einen Ordnerbereich oder intelligenten Bereich beim Tippen. |
+| **Eigene Bereiche je virtuellem Desktop** | Jeder virtuelle Desktop von Windows kann eigene Bereiche haben. Wechselst du den Desktop, blenden sich seine Bereiche ein. |
 | **Glas, das zu deinem Desktop passt** | Die Designs Fluent und Liquid Glass, heller und dunkler Modus, Farbton, Deckkraft und Symbolfärbung je Bereich. |
 | **Vertraute Dateiverwaltung** | Explorer-Kontextmenüs, Drag & Drop, Kopieren/Einfügen, Mehrfachauswahl, Miniaturansichten sowie Symbol-, Listen- und Detailansicht. |
 | **Ordner in Reichweite** | Hol dir einen Live-Ordner auf den Desktop. Stöbere in Unterordnern und sieh Änderungen sofort. Die Zurück-Taste der Maus geht einen Ordner hoch, die Vorwärts-Taste wieder hinein. |
