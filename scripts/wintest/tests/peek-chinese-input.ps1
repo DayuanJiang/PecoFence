@@ -4,7 +4,7 @@
 # the file cache), with fences holding Chinese names and a few thousand Chinese file names
 # indexed. A probe thread sends WM_NULL to the control window every few ms; each keystroke's
 # longest wait is logged. Two rounds: as the disk is (EC2's answers in a millisecond or two),
-# then with PECOFENCE_TEST_ICON_DELAY_MS=400 standing in for a drive that spins up (debug
+# then with PECOFENCE_TEST_SLOW_READ_MS=400 standing in for a drive that spins up (debug
 # builds). The app's own "a stage was slow" lines are summed per stage. The pf user's language
 # list gets zh-Hans-CN for the run and loses it again at the end. Chinese UI, debug build.
 $Zh = Join-Path $PfDocs 'pf-zh'
@@ -135,9 +135,9 @@ Check 'disk as it is: no keystroke keeps the UI thread over 100 ms' ($r.worst -l
 
 Case 'Chinese input, a drive that spins up: each own icon 400 ms'
 PfQuit
-$env:PECOFENCE_TEST_ICON_DELAY_MS = '400'
+$env:PECOFENCE_TEST_SLOW_READ_MS = '400'
 PfStart -Lang zh-CN
-Remove-Item Env:\PECOFENCE_TEST_ICON_DELAY_MS
+Remove-Item Env:\PECOFENCE_TEST_SLOW_READ_MS
 Start-Sleep -Seconds 3
 $ctl = [G]::FindWindowW('PecoFence.Control', [NullString]::Value)
 $r = Round 'slow' $ctl
