@@ -121,6 +121,8 @@ en cours. Prenez ce qu’il vous faut, puis appuyez sur **Échap** pour y reveni
 | :--- | :--- |
 | **IA + CLI** | `pecofence-cli` : **Configurez avec vos propres mots.** Modifiez le thème, la transparence, la taille des icônes et les paramètres généraux, ou ajustez tous les groupes à la fois. |
 | **Moins de tri** | Des règles par type de fichier, extension, nom, motif, cible de raccourci, date et taille. Les nouveaux fichiers trouvent leur groupe tout seuls. |
+| **Groupes intelligents** | Un groupe qui affiche en direct le résultat d’une recherche, comme les téléchargements des 7 derniers jours ou tous les fichiers de plus de 1 Go. Les fichiers restent à leur place. Ctrl+F filtre un groupe de dossier ou un groupe intelligent pendant la frappe. |
+| **Des groupes pour chaque bureau virtuel** | Chaque bureau virtuel de Windows peut avoir ses propres groupes. Changez de bureau, et ses groupes apparaissent en fondu. |
 | **Un verre assorti à votre fond d’écran** | Thèmes Fluent et Liquid Glass, modes clair et sombre, couleur, opacité et teinte des icônes réglables groupe par groupe. |
 | **Des fichiers qui se manipulent comme d’habitude** | Menus contextuels de l’Explorateur, glisser-déposer, copier-coller, sélection multiple, miniatures et affichages Icônes, Liste ou Détails. |
 | **Gardez vos dossiers à portée de main** | Posez un dossier en direct sur votre Bureau. Parcourez ses sous-dossiers et voyez les changements au moment où ils se produisent. Le bouton Précédent de la souris remonte d'un dossier, Suivant y revient. |

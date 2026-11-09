@@ -120,6 +120,8 @@ Toma lo que necesites y presiona **Esc** para volver.
 | :--- | :--- |
 | **IA + CLI** | `pecofence-cli`: **Configura con tus propias palabras.** Cambia temas, transparencia, tamaño de los iconos y ajustes globales, o modifica todos los grupos a la vez. |
 | **Menos tiempo ordenando** | Reglas por tipo de archivo, extensión, nombre, comodines, destino del acceso directo, hora y tamaño. Los archivos nuevos encuentran su grupo solos. |
+| **Grupos inteligentes** | Un grupo que muestra al momento el resultado de una búsqueda, como las descargas de los últimos 7 días o todos los archivos de más de 1 GB. Los archivos se quedan donde están. Ctrl+F filtra un grupo de carpeta o un grupo inteligente mientras escribes. |
+| **Grupos para cada escritorio virtual** | Cada escritorio virtual de Windows puede tener sus propios grupos. Al cambiar de escritorio, aparecen poco a poco los grupos de ese escritorio. |
 | **Cristal a la medida de tu escritorio** | Temas Fluent y Liquid Glass, modos claro y oscuro, colores por grupo, opacidad y tinte de iconos. |
 | **Archivos como siempre** | Menús contextuales del Explorador de archivos, arrastrar y soltar, copiar y pegar, selección múltiple, miniaturas y vistas de iconos, lista y detalles. |
 | **Ten tus carpetas a mano** | Coloca una carpeta en vivo sobre el escritorio. Navega por sus subcarpetas y ve los cambios al momento. El botón Atrás del ratón sube una carpeta y Adelante vuelve a entrar. |

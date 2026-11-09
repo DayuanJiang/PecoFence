@@ -120,6 +120,8 @@ Pegue o que precisa e pressione **Esc** para voltar.
 | :--- | :--- |
 | **IA + CLI** | `pecofence-cli`: **Configure com suas próprias palavras.** Altere temas, transparência, tamanho dos ícones e configurações globais, ou ajuste todos os grupos de uma vez. |
 | **Menos arrumação** | Regras por tipo de arquivo, extensão, nome, curinga, destino do atalho, horário e tamanho. Arquivos novos encontram seu grupo sozinhos. |
+| **Grupos inteligentes** | Um grupo que mostra sempre atualizado o resultado de uma pesquisa, como os downloads dos últimos 7 dias ou todos os arquivos com mais de 1 GB. Os arquivos ficam onde estão. Ctrl+F filtra um grupo de pasta ou um grupo inteligente enquanto você digita. |
+| **Grupos para cada área de trabalho virtual** | Cada área de trabalho virtual do Windows pode ter seus próprios grupos. Ao trocar de área de trabalho, os grupos dela aparecem aos poucos. |
 | **Vidro que combina com sua área de trabalho** | Temas Fluent e Liquid Glass, modos claro e escuro, cor por grupo, opacidade e cor dos ícones. |
 | **Arquivos do jeito que você conhece** | Menus de contexto do Explorador de Arquivos, arrastar e soltar, copiar e colar, seleção múltipla, miniaturas e exibição em ícones, lista ou detalhes. |
 | **Pastas sempre à mão** | Coloque na área de trabalho uma pasta de verdade, sempre atualizada. Navegue pelas subpastas e veja as mudanças na hora. O botão Voltar do mouse sobe uma pasta e o Avançar volta para dentro. |

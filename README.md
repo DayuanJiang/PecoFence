@@ -120,6 +120,8 @@ Grab what you need, then press **Esc** to return.
 | :--- | :--- |
 | **AI + CLI** | `pecofence-cli`: **Configure it in your own words.** Change themes, transparency, icon sizes and global settings, or adjust every fence at once. |
 | **Less sorting** | Rules for file types, extensions, names, wildcards, shortcut targets, time and size. New files find their fence automatically. |
+| **Smart fences** | A fence that shows the live result of a search, such as the downloads of the last 7 days or every file over 1 GB. The files stay where they are. Press Ctrl+F in a folder fence or smart fence to filter it as you type. |
+| **A set for each virtual desktop** | Each Windows virtual desktop can have its own fences. Switch desktops, and the fences of that desktop fade in. |
 | **Glass that fits your desktop** | Fluent and Liquid Glass themes, light/dark modes, per-fence colors, opacity and icon tinting. |
 | **Familiar file handling** | File Explorer context menus, drag and drop, copy/paste, multi-select, thumbnails and icon/list/details views. |
 | **Keep folders close** | Put a live folder on your desktop. Browse subfolders and see changes as they happen. The mouse's back button goes up a folder and forward goes back in. |

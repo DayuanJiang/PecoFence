@@ -121,6 +121,8 @@ Prendi quello che ti serve, poi premi **Esc** per tornare indietro.
 | :--- | :--- |
 | **IA + CLI** | `pecofence-cli`: **Configuralo con parole tue.** Cambia temi, trasparenza, dimensioni delle icone e impostazioni globali, oppure modifica tutti i riquadri contemporaneamente. |
 | **Meno ordine manuale** | Regole per tipo di file, estensione, nome, caratteri jolly, destinazione dei collegamenti, data e dimensione. I nuovi file trovano da soli il loro riquadro. |
+| **Riquadri intelligenti** | Un riquadro che mostra sempre aggiornato il risultato di una ricerca, come i download degli ultimi 7 giorni o tutti i file oltre 1 GB. I file restano dove sono. Ctrl+F filtra un riquadro cartella o un riquadro intelligente mentre scrivi. |
+| **Riquadri per ogni desktop virtuale** | Ogni desktop virtuale di Windows può avere i suoi riquadri. Quando cambi desktop, compaiono in dissolvenza i riquadri di quel desktop. |
 | **Un vetro che si adatta al desktop** | Temi Fluent e Liquid Glass, modalità chiara e scura, colori, opacità e colorazione delle icone per ogni riquadro. |
 | **Gestione dei file familiare** | Menu contestuali di Esplora file, trascinamento, copia e incolla, selezione multipla, miniature e viste a icone, elenco o dettagli. |
 | **Le cartelle a portata di mano** | Metti una cartella attiva sul desktop. Sfoglia le sottocartelle e guarda le modifiche comparire man mano che avvengono. Il tasto Indietro del mouse sale di una cartella, Avanti ci rientra. |
