@@ -415,6 +415,7 @@ impl App {
         self.rank_fence_matches(&query);
         self.schedule_everything(typed.trim());
         self.refresh_search_rows();
+        crate::peek_search::rows_shown_for_change();
     }
 
     /// Shows the matches: each fence switches to the tab holding its highlighted match, else
@@ -422,6 +423,12 @@ impl App {
     /// it showed before comes back once it has none, and when the search ends). Then the marks
     /// go to every fence and the match count to the box.
     pub(super) fn show_peek_hits(&mut self, searching: bool) {
+        let started = std::time::Instant::now();
+        self.show_peek_hits_now(searching);
+        crate::peek_search::slow_stage("fence_marks", started);
+    }
+
+    fn show_peek_hits_now(&mut self, searching: bool) {
         let current = self.peek_hits.get(self.peek_hit).copied();
         let hosts: Vec<FenceId> = self.fences.keys().copied().collect();
         for host in hosts {

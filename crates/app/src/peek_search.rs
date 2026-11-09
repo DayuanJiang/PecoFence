@@ -42,8 +42,35 @@ use std::time::Instant;
 pub const SEARCH_CLASS: &str = "PecoFence.PeekSearch";
 /// A row's own icon is ready: the worker posts it to the box.
 const WM_ROW_ICON: u32 = msg::WM_APP + 40;
-/// An own icon slower than this is logged (the time and the drive only).
-const SLOW_ICON_MS: u128 = 30;
+/// A stage of the search slower than this is logged (its name and ms only; an own icon also
+/// names its drive letter).
+const SLOW_STAGE_MS: u128 = 30;
+
+/// Logs `stage` when it took over [`SLOW_STAGE_MS`] (debug builds: `PECOFENCE_TEST_SLOW_MS`).
+pub fn slow_stage(stage: &'static str, started: Instant) {
+    log_stage(stage, started.elapsed());
+}
+
+fn log_stage(stage: &'static str, took: std::time::Duration) {
+    let limit = slow_limit();
+    if took.as_millis() > limit || limit == 0 {
+        tracing::info!(
+            stage,
+            ms = took.as_millis() as u64,
+            us = took.as_micros() as u64,
+            "search: a stage was slow"
+        );
+    }
+}
+
+/// [`SLOW_STAGE_MS`], or in debug builds the kit's `PECOFENCE_TEST_SLOW_MS` (as the box's own).
+fn slow_limit() -> u128 {
+    if cfg!(debug_assertions) {
+        edit::slow_ms()
+    } else {
+        SLOW_STAGE_MS
+    }
+}
 const WA_INACTIVE: usize = 0;
 const VK_UP: u32 = 0x26;
 const VK_DOWN: u32 = 0x28;
@@ -98,13 +125,17 @@ pub struct Row {
 thread_local! {
     static ACTIVE: RefCell<Option<Session>> = const { RefCell::new(None) };
     static CLASS: RefCell<Option<WindowClass>> = const { RefCell::new(None) };
-    static ICON_WORKER: IconWorker = IconWorker::start();
+    static ICON_WORKER: IconWorker = IconWorker::new();
+    /// When the box's text changed and the rows for it are not shown yet.
+    static CHANGED_AT: std::cell::Cell<Option<Instant>> = const { std::cell::Cell::new(None) };
 }
 
-/// Reads rows' own icons off the UI thread (its own STA, as Explorer reads icons), one at a
-/// time, and posts each to the box.
+/// Reads rows' own icons off the UI thread, one thread per drive (its own STA, as Explorer reads
+/// icons): a drive spinning up for seconds holds only its own rows, which keep their type's icon
+/// meanwhile. Each icon read is posted to the box.
 struct IconWorker {
-    tx: Sender<(PathBuf, bool, isize)>,
+    /// The thread of each drive ("C:", "network", "other").
+    threads: RefCell<HashMap<String, Sender<(PathBuf, bool, isize)>>>,
     /// The paths the rows show now: a request for a row gone meanwhile is skipped.
     wanted: Arc<Mutex<HashSet<PathBuf>>>,
     /// Icons read, waiting for the box to take them.
@@ -112,13 +143,40 @@ struct IconWorker {
 }
 
 impl IconWorker {
-    fn start() -> Self {
+    fn new() -> Self {
+        Self {
+            threads: RefCell::new(HashMap::new()),
+            wanted: Arc::default(),
+            done: Arc::default(),
+        }
+    }
+
+    /// Asks the thread of `path`'s drive for its own icon (made on first use).
+    fn ask(&self, path: PathBuf, is_folder: bool, hwnd: HWND) {
+        self.wanted
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(path.clone());
+        let drive = drive_of(&path);
+        let mut threads = self.threads.borrow_mut();
+        if !threads.contains_key(&drive) {
+            match self.spawn(&drive) {
+                Some(tx) => {
+                    threads.insert(drive.clone(), tx);
+                }
+                None => return,
+            }
+        }
+        if let Some(tx) = threads.get(&drive) {
+            let _ = tx.send((path, is_folder, hwnd.0 as isize));
+        }
+    }
+
+    fn spawn(&self, drive: &str) -> Option<Sender<(PathBuf, bool, isize)>> {
         let (tx, rx) = channel::<(PathBuf, bool, isize)>();
-        let wanted: Arc<Mutex<HashSet<PathBuf>>> = Arc::default();
-        let done: Arc<Mutex<Vec<(PathBuf, Option<FileIcon>)>>> = Arc::default();
-        let (w, d) = (wanted.clone(), done.clone());
+        let (w, d) = (self.wanted.clone(), self.done.clone());
         let spawned = std::thread::Builder::new()
-            .name("pecofence-peek-icons".into())
+            .name(format!("pecofence-peek-icons-{drive}"))
             .spawn(move || {
                 let _sta = pecofence_platform::com::OleGuard::init();
                 for (path, is_folder, hwnd) in rx {
@@ -136,18 +194,24 @@ impl IconWorker {
                         std::thread::sleep(std::time::Duration::from_millis(ms));
                     }
                     let icon = fileinfo::small_icon(&path, is_folder, true);
-                    let ms = started.elapsed().as_millis();
-                    if ms > SLOW_ICON_MS {
-                        tracing::info!(ms = ms as u64, drive = %drive_of(&path), "search: a row's own icon was slow to read");
+                    let took = started.elapsed();
+                    if took.as_millis() > slow_limit() || slow_limit() == 0 {
+                        tracing::info!(stage = "own_icon", ms = took.as_millis() as u64, us = took.as_micros() as u64, drive = %drive_of(&path), "search: a stage was slow");
                     }
                     d.lock().unwrap_or_else(|e| e.into_inner()).push((path, icon));
                     window::post_message(HWND(hwnd as *mut core::ffi::c_void), WM_ROW_ICON, 0, 0);
                 }
             });
-        if let Err(e) = spawned {
-            tracing::warn!(error = %e, "search: no thread for the rows' icons; rows keep their type's icon");
+        match spawned {
+            Ok(_) => {
+                tracing::info!(drive, "search: a thread reads this drive's row icons");
+                Some(tx)
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "search: no thread for the rows' icons; rows keep their type's icon");
+                None
+            }
         }
-        Self { tx, wanted, done }
     }
 }
 
@@ -321,6 +385,11 @@ pub fn open(text: &str, queue: CommandQueue, dark: bool) {
             move |hwnd: HWND, message: u32, wparam: usize, lparam: isize| -> Option<isize> {
                 match message {
                     msg::WM_COMMAND if msg::hi_u16(wparam) == edit::EN_CHANGE => {
+                        CHANGED_AT.with(|c| {
+                            if c.get().is_none() {
+                                c.set(Some(Instant::now()));
+                            }
+                        });
                         queue.push(Command::PeekSearchChanged);
                         Some(0)
                     }
@@ -477,6 +546,9 @@ pub fn open(text: &str, queue: CommandQueue, dark: bool) {
 }
 
 fn paint_box(hwnd: HWND) {
+    let started = Instant::now();
+    // The rows' icons apart from the rest (text, its layout and the fonts' fallback).
+    let mut icons_time = std::time::Duration::ZERO;
     let p = paint::Paint::begin(hwnd);
     ACTIVE.with(|a| {
         let Ok(mut a) = a.try_borrow_mut() else {
@@ -627,18 +699,12 @@ fn paint_box(hwnd: HWND) {
                 // Its own icon reads the file (local drives; a namespace item asks its folder):
                 // the worker does that, and the type's icon, which reads nothing, stands in.
                 let namespace = pecofence_platform::shell::is_namespace_path(&path);
+                let icon_started = Instant::now();
                 if (row.exact_icon || namespace)
                     && !s.icons.contains_key(&path)
                     && s.asked.insert(path.clone())
                 {
-                    let hwnd_raw = hwnd.0 as isize;
-                    ICON_WORKER.with(|w| {
-                        w.wanted
-                            .lock()
-                            .unwrap_or_else(|e| e.into_inner())
-                            .insert(path.clone());
-                        let _ = w.tx.send((path.clone(), is_folder, hwnd_raw));
-                    });
+                    ICON_WORKER.with(|w| w.ask(path.clone(), is_folder, hwnd));
                 }
                 let ico = match s.icons.get(&path) {
                     Some(i) => i.as_ref(),
@@ -652,6 +718,7 @@ fn paint_box(hwnd: HWND) {
                 if let Some(ico) = ico {
                     p.icon(pad, mid - icon / 2, icon, ico);
                 }
+                icons_time += icon_started.elapsed();
             } else if let Some(g) = row.glyph {
                 p.text(
                     RECT {
@@ -764,6 +831,17 @@ fn paint_box(hwnd: HWND) {
             Align::Right,
         );
     });
+    drop(p);
+    let text_time = started.elapsed().saturating_sub(icons_time);
+    log_stage("paint_text", text_time);
+    log_stage("paint_icons", icons_time);
+}
+
+/// The rows for the box's last text are shown: logs how long that took from its EN_CHANGE.
+pub fn rows_shown_for_change() {
+    if let Some(at) = CHANGED_AT.with(|c| c.take()) {
+        slow_stage("change_to_rows", at);
+    }
 }
 
 /// 「↵ 打开   Ctrl+Enter 打开所在文件夹   → 更多操作」 in the UI language (the key names as the
@@ -1072,6 +1150,7 @@ pub fn raise() {
 
 pub fn close() {
     let session = ACTIVE.with(|a| a.borrow_mut().take());
+    CHANGED_AT.with(|c| c.set(None));
     // Nothing more to read; icons read meanwhile are dropped.
     ICON_WORKER.with(|w| {
         w.wanted.lock().unwrap_or_else(|e| e.into_inner()).clear();
@@ -1080,5 +1159,26 @@ pub fn close() {
     if let Some(s) = session {
         drop(s.edit);
         drop(s.window);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Each drive gets a thread of its own (a spin-up holds only its rows); the log names the
+    /// drive, never the file.
+    #[test]
+    fn rows_icons_go_by_drive_and_type() {
+        assert_eq!(drive_of(Path::new(r"F:\Games\新年.exe")), "F:");
+        assert_eq!(drive_of(Path::new(r"c:\Windows\notepad.exe")), "C:");
+        assert_eq!(drive_of(Path::new(r"\\nas\share\a.exe")), "network");
+        assert_eq!(
+            drive_of(Path::new("::{645FF040-5081-101B-9F08-00AA002F954E}")),
+            "other"
+        );
+        assert_eq!(type_key(Path::new(r"C:\a\季度报告.PDF"), false), "pdf");
+        assert_eq!(type_key(Path::new(r"C:\a\下载"), true), "<folder>");
+        assert_eq!(type_key(Path::new(r"C:\a\README"), false), "");
     }
 }

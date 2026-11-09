@@ -114,6 +114,12 @@ impl App {
     /// Ranks the fence matches for `query` (lower case): best match first, then the ones opened
     /// most from the search, then reading order. Fills `peek_hits` and their highlights.
     pub(super) fn rank_fence_matches(&mut self, query: &str) {
+        let started = Instant::now();
+        self.rank_fence_matches_now(query);
+        crate::peek_search::slow_stage("rank_fence_matches", started);
+    }
+
+    fn rank_fence_matches_now(&mut self, query: &str) {
         let mut found: Vec<(
             u32,
             u32,
@@ -251,6 +257,12 @@ impl App {
     /// Rebuilds the list from `peek_hits` and Everything's results, keeps the highlighted row
     /// when it is still there, and shows it.
     pub(super) fn refresh_search_rows(&mut self) {
+        let started = Instant::now();
+        self.refresh_search_rows_now();
+        crate::peek_search::slow_stage("refresh_search_rows", started);
+    }
+
+    fn refresh_search_rows_now(&mut self) {
         let query = crate::peek_search::query()
             .map(|q| q.trim().to_lowercase())
             .unwrap_or_default();

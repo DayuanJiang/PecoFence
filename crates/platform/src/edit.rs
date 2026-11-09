@@ -335,6 +335,26 @@ impl Drop for EditControl {
     }
 }
 
+/// A key or IME message the box handled slower than this is logged (its name and ms only).
+const SLOW_MESSAGE_MS: u128 = 30;
+
+/// [`SLOW_MESSAGE_MS`]; debug builds take `PECOFENCE_TEST_SLOW_MS` (0 logs every message, for
+/// the kit's per-stage numbers).
+pub fn slow_ms() -> u128 {
+    #[cfg(debug_assertions)]
+    {
+        static MS: std::sync::OnceLock<u128> = std::sync::OnceLock::new();
+        *MS.get_or_init(|| {
+            std::env::var("PECOFENCE_TEST_SLOW_MS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(SLOW_MESSAGE_MS)
+        })
+    }
+    #[cfg(not(debug_assertions))]
+    SLOW_MESSAGE_MS
+}
+
 unsafe extern "system" fn subclass_proc(
     hwnd: HWND,
     msg: u32,
@@ -343,6 +363,31 @@ unsafe extern "system" fn subclass_proc(
     _id: usize,
     refdata: usize,
 ) -> LRESULT {
+    let started = std::time::Instant::now();
+    // SAFETY: as `handle`'s.
+    let result = unsafe { handle(hwnd, msg, wparam, lparam, refdata) };
+    let stage = match msg {
+        0x0100 => "edit_keydown",
+        0x0102 => "edit_char",
+        0x010F => "edit_ime_composition",
+        0x0286 => "edit_ime_char",
+        _ => return result,
+    };
+    let elapsed = started.elapsed();
+    if elapsed.as_millis() > slow_ms() || slow_ms() == 0 {
+        tracing::info!(
+            stage,
+            ms = elapsed.as_millis() as u64,
+            us = elapsed.as_micros() as u64,
+            "edit: a message was slow"
+        );
+    }
+    result
+}
+
+/// The subclass's own handling of one message (the key handler, Enter / Esc / Tab, the rest to
+/// the EDIT control, which sends EN_CHANGE to the owner from inside WM_CHAR).
+unsafe fn handle(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM, refdata: usize) -> LRESULT {
     // SAFETY: refdata is the `KeyHandler` fn pointer registered in `create`.
     unsafe {
         if msg == WM_KEYDOWN as u32 && refdata != 0 {
