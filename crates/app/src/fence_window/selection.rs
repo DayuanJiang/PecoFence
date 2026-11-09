@@ -452,6 +452,7 @@ impl FenceViewState {
             return false;
         }
         self.win_active = on;
+        self.sync_idle_fade(Instant::now());
         let to = if on { 0.0 } else { 1.0 };
         let now = Instant::now();
         if self.selected.is_empty() || !self.motion.enabled() {
@@ -497,6 +498,7 @@ impl FenceViewState {
             return;
         }
         self.mouse_inside = inside;
+        self.sync_idle_fade(Instant::now());
         if self.title_on_hover() || self.is_clear() {
             let _ = self.redraw_chrome_only();
         }

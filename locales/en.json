@@ -1,4 +1,6 @@
 {
+  "闲置时的不透明度": "Idle opacity",
+  "鼠标移开时淡化背景、图标和文字；悬停或操作时恢复正常": "Fade backgrounds, icons and labels when idle; restore normal opacity on hover or interaction",
   "桌面": "Desktop",
   "栅栏": "Fences",
   "程序": "Programs",

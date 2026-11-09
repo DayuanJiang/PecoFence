@@ -112,6 +112,8 @@ pub struct FenceContext {
 
 /// Live-tunable behaviour flags shared by all fence windows (mirrors `Settings`).
 pub struct Behavior {
+    pub idle_opacity: std::cell::Cell<f32>,
+    pub menu_open: std::cell::Cell<bool>,
     /// Temporary readability backing while fences float over other applications.
     pub floating: std::cell::Cell<bool>,
     pub hover_peek: std::cell::Cell<bool>,

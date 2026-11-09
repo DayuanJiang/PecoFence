@@ -278,6 +278,9 @@ pub struct FenceViewState {
     pub(super) _target: DesktopWindowTarget,
     /// Root of the window's visual tree: whole-window fades / scales animate this.
     pub(super) root: ContainerVisual,
+    /// Independent of root show/hide fades and content tab/roll transitions.
+    pub(super) idle_layer: ContainerVisual,
+    pub(super) idle_fade: Tween,
     pub(super) chrome: Rc<FenceChrome>,
     pub(super) icons: Rc<RefCell<IconCache>>,
     pub(super) bitmaps: Rc<RefCell<BitmapCache>>,

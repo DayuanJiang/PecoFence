@@ -143,6 +143,13 @@ pub struct Settings {
     pub language: crate::i18n::Language,
     pub backdrop: Backdrop,
     pub theme: ThemeSetting,
+    /// Whole-fence opacity while idle (0.1..1); 1 disables hover fading.
+    #[serde(
+        default = "default_idle_opacity",
+        deserialize_with = "read_idle_opacity"
+    )]
+    #[cfg_attr(feature = "schema", schemars(range(min = 0.1, max = 1.0)))]
+    pub idle_opacity: f32,
     /// Material style is independent of the light/dark preference.
     #[serde(default)]
     pub theme_style: ThemeStyle,
@@ -400,12 +407,27 @@ impl PeekHotkey {
     }
 }
 
+fn default_idle_opacity() -> f32 {
+    1.0
+}
+
+fn read_idle_opacity<'de, D: serde::Deserializer<'de>>(d: D) -> Result<f32, D::Error> {
+    let value = f32::deserialize(d)?;
+    if !value.is_finite() || !(0.1..=1.0).contains(&value) {
+        return Err(serde::de::Error::custom(
+            "idleOpacity must be between 0.1 and 1",
+        ));
+    }
+    Ok(value)
+}
+
 impl Default for Settings {
     fn default() -> Self {
         Self {
             language: crate::i18n::Language::System,
             backdrop: Backdrop::Acrylic,
             theme: ThemeSetting::FollowWindowsMode,
+            idle_opacity: 1.0,
             theme_style: ThemeStyle::Fluent,
             custom_theme: None,
             label_color: LabelColor::Auto,
@@ -2277,6 +2299,35 @@ mod tests {
         assert_eq!(item.key, ItemKey::from_path(r"C:\D\ABC.zip"));
         let back: Item = serde_json::from_value(serde_json::to_value(&item).unwrap()).unwrap();
         assert_eq!(back.path(), Some(r"C:\D\ABC.zip"));
+    }
+
+    #[test]
+    fn idle_opacity_defaults_off_and_validates_saved_values() {
+        let mut json = serde_json::to_value(Settings::default()).unwrap();
+        json.as_object_mut().unwrap().remove("idleOpacity");
+        assert_eq!(
+            serde_json::from_value::<Settings>(json.clone())
+                .unwrap()
+                .idle_opacity,
+            1.0
+        );
+        for value in [0.1, 0.25, 0.45, 0.7, 1.0] {
+            json["idleOpacity"] = serde_json::json!(value);
+            let settings: Settings = serde_json::from_value(json.clone()).unwrap();
+            assert_eq!(settings.idle_opacity, value as f32);
+            let saved = serde_json::to_value(&settings).unwrap();
+            assert_eq!(serde_json::from_value::<Settings>(saved).unwrap(), settings);
+        }
+        for value in [
+            serde_json::json!(0),
+            serde_json::json!(-0.5),
+            serde_json::json!(1.01),
+            serde_json::json!("0.45"),
+            serde_json::Value::Null,
+        ] {
+            json["idleOpacity"] = value;
+            assert!(serde_json::from_value::<Settings>(json.clone()).is_err());
+        }
     }
 
     #[test]

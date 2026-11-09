@@ -51,7 +51,15 @@ impl App {
                 ended: None,
             })
         });
+        let was_open = self.ctx.behavior.menu_open.replace(true);
+        for fence in self.fences.values() {
+            fence.refresh_idle_opacity();
+        }
         let cmd = show();
+        self.ctx.behavior.menu_open.set(was_open);
+        for fence in self.fences.values() {
+            fence.refresh_idle_opacity();
+        }
         let Some(run) = MENU_FRAMES.with(|m| m.borrow_mut().take()) else {
             return cmd;
         };
