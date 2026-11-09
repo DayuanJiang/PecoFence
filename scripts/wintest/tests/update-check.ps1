@@ -1,4 +1,5 @@
-# 自动检查更新 against a local release feed that says v0.3.3 is out (PECOFENCE_UPDATE_URL, a named
+# 自动检查更新 against a local release feed that says the next patch version is out (one above the
+# build's version, so the test keeps working after a version bump; PECOFENCE_UPDATE_URL, a named
 # instance; the debug build's PECOFENCE_TEST_UPDATE_MS makes the first check come 8 s after start,
 # the retry after a failure 6 s later and the check after a resume 3 s after it): the first check
 # after start, the card once per version when someone was there (a restart shows none), a card
@@ -45,7 +46,13 @@ function Record() { $j = Get-Content $script:Notices -Raw -ErrorAction SilentlyC
 
 Case 'setup'
 CloseWindows
-$feed = Start-Process powershell.exe -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', 'C:\pf\kit\assets\serve-update.ps1', '-Port', '8721' -WindowStyle Hidden -PassThru
+# The feed offers the build's version plus one patch.
+# The CLI says its version without the app (kit builds have no version resource).
+$v = [version]((& "$PfBin\pecofence-cli.exe" describe 2>$null | Out-String) | ConvertFrom-Json).cli
+$script:Next = "$($v.Major).$($v.Minor).$($v.Build + 1)"
+$script:NextRe = [regex]::Escape($script:Next)
+Log "build $v, the feed offers $script:Next"
+$feed = Start-Process powershell.exe -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', 'C:\pf\kit\assets\serve-update.ps1', '-Port', '8721', '-Tag', "v$script:Next" -WindowStyle Hidden -PassThru
 Start-Sleep -Seconds 1
 Restart
 $script:Notices = NoticesFile
@@ -59,22 +66,22 @@ Start-Sleep -Milliseconds 800
 $t = CardText 'card-zip'
 Shot 'u01-card-zip'
 Check 'the first automatic check runs a moment after start (test delay) and asks the feed' ($check -and (FeedHits) -ge 1) "$check feed=$(FeedHits)"
-Check 'the ZIP card says 0.3.3 is out with one button, Download' ($card -and $t -match '0\.3\.3' -and $t -match 'Download' -and $t -notmatch "What.s new") "ocr: $t"
+Check 'the ZIP card says the new version is out with one button, Download' ($card -and $t -match $script:NextRe -and $t -match 'Download' -and $t -notmatch "What.s new") "ocr: $t"
 Check 'its line is the first point of the en-US Store notes' ($t -match 'Typing Chinese in the Peek search' -and (Since 'update card: its line line_from="Store notes"').Count -ge 1 -and @(Get-Content "$PfRun\feed.log" | Where-Object { $_ -match 'v2-i18n/en-US\.json HTTP/1\.1 -> 200' }).Count -ge 1) "ocr: $t"
 $m = TrayMenu; Start-Sleep -Milliseconds 500
 $menu = if ($m -ne [IntPtr]::Zero) { MenuTexts $m } else { '' }
 [G]::Press(0x1B); Start-Sleep -Milliseconds 400; [G]::Press(0x1B); [G]::MoveTo(700, 450)
-Check 'the tray menu offers Update to 0.3.3 at the top' ($menu -match '^Update to 0\.3\.3') $menu
+Check 'the tray menu offers Update to the new version at the top' ($menu -match "^Update to $script:NextRe") $menu
 # The card goes by itself after 30 s, as later; the menu above was the user being there.
 for ($i = 0; $i -lt 40 -and (NoticeWin) -ne [IntPtr]::Zero; $i++) { Start-Sleep -Seconds 1 }
 $rec = WaitLine 'update card: recorded' 5
-Check 'the card leaves after its 30 s and counts as seen (input while it showed)' ((NoticeWin) -eq [IntPtr]::Zero -and (Since 'update card: later').Count -ge 1 -and $rec -match 'there=true' -and (Record).updateCard -eq '0.3.3') "$rec"
+Check 'the card leaves after its 30 s and counts as seen (input while it showed)' ((NoticeWin) -eq [IntPtr]::Zero -and (Since 'update card: later').Count -ge 1 -and $rec -match 'there=true' -and (Record).updateCard -eq $script:Next) "$rec"
 
 Case 'once per version: a restart shows no card'
 Restart -KeepNotices
 $skip = WaitLine 'update card: already shown for this version' 15
 Start-Sleep -Seconds 2
-Check 'no second card for 0.3.3' ($skip -and (NoticeWin) -eq [IntPtr]::Zero) "$skip"
+Check 'no second card for the same version' ($skip -and (NoticeWin) -eq [IntPtr]::Zero) "$skip"
 
 Case 'a card nobody was there for comes once more a day later'
 Restart
@@ -83,7 +90,7 @@ $card = WaitLine 'update card shown' 15
 for ($i = 0; $i -lt 40 -and (NoticeWin) -ne [IntPtr]::Zero; $i++) { Start-Sleep -Seconds 1 }
 $rec = WaitLine 'update card: recorded' 5
 $r1 = Record
-Check 'without input during its 30 s the card is not counted as seen' ($card -and $rec -match 'there=false' -and $r1.updateCard -ne '0.3.3' -and $r1.updateCardUnseen -eq '0.3.3' -and $r1.updateCardUnseenAt -gt 0) "$rec | $(Get-Content $script:Notices -Raw)"
+Check 'without input during its 30 s the card is not counted as seen' ($card -and $rec -match 'there=false' -and $r1.updateCard -ne $script:Next -and $r1.updateCardUnseen -eq $script:Next -and $r1.updateCardUnseenAt -gt 0) "$rec | $(Get-Content $script:Notices -Raw)"
 Restart -KeepNotices
 $skip = WaitLine 'update card: shown while nobody was there' 15
 Start-Sleep -Seconds 2
@@ -101,7 +108,7 @@ $rec = WaitLine 'update card: recorded' 5
 Restart -KeepNotices
 $skip = WaitLine 'update card: already shown for this version' 15
 Start-Sleep -Seconds 2
-Check 'after its second offer the version counts as seen, with or without input' ($rec -match 'last_offer=true' -and (Record).updateCard -eq '0.3.3' -and $skip -and (NoticeWin) -eq [IntPtr]::Zero) "$rec | $skip"
+Check 'after its second offer the version counts as seen, with or without input' ($rec -match 'last_offer=true' -and (Record).updateCard -eq $script:Next -and $skip -and (NoticeWin) -eq [IntPtr]::Zero) "$rec | $skip"
 
 Case 'the card waits for a full-screen app'
 Restart
@@ -161,7 +168,7 @@ Check 'Update starts the download from the feed (a test release without a setup 
 Case 'ZIP edition: the tray item opens the download page'
 Restart -KeepNotices
 WaitLine 'update available' 15 | Out-Null
-TrayPick '^Update to 0\.3\.3' | Out-Null
+TrayPick "^Update to $script:NextRe" | Out-Null
 Start-Sleep -Seconds 2
 Check 'the tray item opens the download page in the ZIP edition' ((Since 'update: update now').Count -ge 1 -and (Since 'update: release page opened').Count -ge 1) ((Since 'update: update now|release page') -join ' | ')
 Get-Process msedge -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
