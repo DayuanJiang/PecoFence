@@ -614,6 +614,10 @@ impl App {
         self.updates.notice.is_some()
     }
 
+    pub(super) fn update_notice(&self) -> Option<&crate::notice::Notice> {
+        self.updates.notice.as_ref()
+    }
+
     /// The card's buttons: 「更新」 / 「去下载」, 「查看新功能」 (the release page); × or the
     /// timeout leave it for later (the tray item stays).
     pub(super) fn on_update_notice(&mut self, event: crate::notice::NoticeEvent) {

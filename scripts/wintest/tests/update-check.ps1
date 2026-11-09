@@ -7,13 +7,17 @@
 # for a full-screen app and for the Peek (one log line for the wait and one for its end), the
 # switch turned off while the card waits, the installer card's two buttons and the ZIP card's one,
 # the tray item, the switch off (no request), offline (nothing shown, one retry), a resume (a
-# check when none succeeded, none after a recent one), and the card's line from the Store notes
-# of the UI language (en-US and zh-CN served; German falls back to the general line).
+# check when none succeeded, none after a recent one), the card's line from the Store notes of
+# the UI language (en-US and zh-CN served; German falls back to the general line), and the card
+# going below the taskbar's hidden icons (the tray icon is put there) so the icon can be reached.
 # English UI (the card is read by OCR). Debug build.
 Add-Type @"
 using System; using System.Runtime.InteropServices;
 public static class Qn { [DllImport("shell32.dll")] public static extern int SHQueryUserNotificationState(out int state); }
+public static class Zo { [DllImport("user32.dll")] public static extern IntPtr GetWindow(IntPtr h, uint cmd); }
 "@
+# Whether window $upper is above window $lower in the z-order.
+function IsAbove($upper, $lower) { $h = $lower; for ($i = 0; $i -lt 5000; $i++) { $h = [Zo]::GetWindow($h, 3); if ($h -eq [IntPtr]::Zero) { return $false }; if ($h -eq $upper) { return $true } }; return $false }
 function NoticeWin() { $n = [G]::FindWindowW('PecoFence.Notice', [NullString]::Value); if ($n -ne [IntPtr]::Zero -and [G]::IsWindowVisible($n)) { return $n }; return [IntPtr]::Zero }
 function Lines($re) { return @(PfLogAll | Where-Object { $_ -match $re -and $_ -notmatch 'omitted' } | Sort-Object -Unique) }
 function FeedHits() { return @(Get-Content "$PfRun\feed.log" -ErrorAction SilentlyContinue | Where-Object { $_ -match 'releases/latest' }).Count }
@@ -58,6 +62,11 @@ Restart
 $script:Notices = NoticesFile
 Log "notices: $script:Notices"
 Check 'the feed runs and PecoFence starts' ($feed -and -not $feed.HasExited -and $script:Notices) ''
+# The tray icon goes to the taskbar's hidden icons (Windows 11 puts new icons there too): the
+# tray steps open that flyout while the card shows in the same corner.
+$keys = @(Get-ChildItem 'HKCU:\Control Panel\NotifyIconSettings' -ErrorAction SilentlyContinue | Where-Object { (Get-ItemProperty $_.PSPath).ExecutablePath -like '*\pecofence.exe' })
+foreach ($k in $keys) { New-ItemProperty -Path $k.PSPath -Name IsPromoted -Value 0 -PropertyType DWord -Force | Out-Null }
+Log "tray: $($keys.Count) PecoFence icon entries set to the hidden icons"
 
 Case 'the first check comes after start and shows the card (ZIP edition)'
 $check = WaitLine 'update: automatic check$'
@@ -82,6 +91,36 @@ Restart -KeepNotices
 $skip = WaitLine 'update card: already shown for this version' 15
 Start-Sleep -Seconds 2
 Check 'no second card for the same version' ($skip -and (NoticeWin) -eq [IntPtr]::Zero) "$skip"
+
+Case 'the card goes below the hidden icons, and is clickable after they close'
+Restart
+$card = WaitLine 'update card shown' 15
+Start-Sleep -Milliseconds 800
+$n = NoticeWin
+# Opens the hidden icons when the icon is there (not on the taskbar).
+$r = TrayIconRect
+Start-Sleep -Milliseconds 600
+$ov = [G]::FindWindowW('TopLevelWindowForOverflowXamlIsland', [NullString]::Value)
+$opened = $ov -ne [IntPtr]::Zero -and [G]::IsWindowVisible($ov)
+$below = WaitLine 'notice goes below the front window' 5
+Shot 'u05-hidden-icons-over-card'
+Check 'the tray icon is in the hidden icons, and they open over the card' ($card -and $r -and $opened -and $n -ne [IntPtr]::Zero) "card=$([bool]$card) icon=$r flyout=$opened"
+Check 'the card goes below them' ($below -match 'TopLevelWindowForOverflowXamlIsland' -and (IsAbove $ov $n)) "$below | above=$(IsAbove $ov $n)"
+$menu = ''
+if ($r) {
+  [G]::RClick([int]($r.X + $r.Width / 2), [int]($r.Y + $r.Height / 2))
+  $m = MenuWin 5; Start-Sleep -Milliseconds 400
+  $menu = if ($m -ne [IntPtr]::Zero) { MenuTexts $m } else { '' }
+}
+Shot 'u06-tray-menu-over-card'
+[G]::Press(0x1B); Start-Sleep -Milliseconds 400; [G]::Press(0x1B); Start-Sleep -Milliseconds 400; [G]::MoveTo(700, 450)
+Check 'a right-click on the icon there opens the tray menu' ($menu -match "^Update to $script:NextRe") "menu: $menu"
+Start-Sleep -Seconds 1
+$n = NoticeWin
+Check 'the card is still there after they close' ($n -ne [IntPtr]::Zero) ''
+if ($n -ne [IntPtr]::Zero) { $rc = Rect $n; [G]::Click($rc.R - 70, $rc.B - 34); Start-Sleep -Seconds 2 }
+Check 'and its Download button works' ((Since 'update: update now').Count -ge 1 -and (Since 'update: release page opened').Count -ge 1) ((Since 'update: update now|release page') -join ' | ')
+Get-Process msedge -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 
 Case 'a card nobody was there for comes once more a day later'
 Restart
