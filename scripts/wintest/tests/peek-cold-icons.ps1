@@ -74,7 +74,7 @@ foreach ($k in 'q', 'j', 'x') {
 $warm = Waited $ctl { [G]::Type('q') }
 Shot 'c02-warm-q'
 Log "longest UI wait per keystroke, cold q / j / x: $($cold -join ' / ') ms; warm q: $warm ms"
-$slow = @(PfLogAll | Where-Object { $_ -match "a row's own icon was slow to read" -and $_ -notmatch 'omitted' })
+$slow = @(PfLogAll | Where-Object { $_ -match 'a stage was slow stage="own_icon"' -and $_ -notmatch 'omitted' })
 $swapped = @(PfLogAll | Where-Object { $_ -match "rows' own icons swapped in taken=[1-9]" })
 Check 'the rows show Everything''s cold programs' (@(PfLogAll | Where-Object { $_ -match 'search list laid out rows=[1-9]' }).Count -ge 1) ''
 Check 'the own icons came from the worker and were swapped in' ($swapped.Count -ge 1) "swapped=$($swapped.Count) slow=$($slow.Count) $(($slow | Select-Object -Last 1) -replace '^.*search: ', '')"
@@ -101,7 +101,7 @@ foreach ($k in 'q', 'j') {
 Shot 'c04-slow-x-type-icons'
 Start-Sleep -Seconds 4
 Shot 'c05-slow-x-own-icons'
-$late = @(PfLogAll | Where-Object { $_ -match "a row's own icon was slow to read ms=(\d+) drive=C:" -and [int]$Matches[1] -ge 400 })
+$late = @(PfLogAll | Where-Object { $_ -match 'a stage was slow stage="own_icon" ms=(\d+) us=\d+ drive=C:' -and [int]$Matches[1] -ge 400 })
 $n1 = @(PfLogAll | Where-Object { $_ -match "rows' own icons swapped in taken=[1-9]" }).Count
 Log "a slow drive, longest UI wait per keystroke q / j: $($slowKeys -join ' / ') ms; slow icons logged: $($late.Count)"
 Check 'with 400 ms per icon the box still answers each key at once' (($slowKeys | Measure-Object -Maximum).Maximum -lt 100) "q / j: $($slowKeys -join ' / ') ms"
