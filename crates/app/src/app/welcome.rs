@@ -36,8 +36,21 @@ struct Saved {
     roll_tip_shown: bool,
     folder_tip_shown: bool,
     rule_tip_shown: bool,
-    /// The version whose update card showed (once per version).
+    /// The version whose update card the user saw (it is not shown again).
     update_card: String,
+    /// The version whose card showed while nobody was there, and when (unix seconds): it is
+    /// offered once more a day later.
+    update_card_unseen: String,
+    update_card_unseen_at: i64,
+}
+
+/// What the update card did for which version (kept in `notices.json`; the app keeps a copy
+/// in memory, so a failed write cannot bring the card back in the same run).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub(super) struct UpdateCardRecord {
+    pub seen: String,
+    pub unseen: String,
+    pub unseen_at: i64,
 }
 
 /// 功能提示: the roll-up tip shows once this many fences with their own window hold items
@@ -109,14 +122,20 @@ impl App {
             .unwrap_or_default()
     }
 
-    /// The version whose update card showed, if any.
-    pub(super) fn update_card_shown_for(&self) -> Option<String> {
-        Some(self.load_notices().update_card).filter(|v| !v.is_empty())
+    pub(super) fn load_update_card_record(&self) -> UpdateCardRecord {
+        let saved = self.load_notices();
+        UpdateCardRecord {
+            seen: saved.update_card,
+            unseen: saved.update_card_unseen,
+            unseen_at: saved.update_card_unseen_at,
+        }
     }
 
-    pub(super) fn remember_update_card(&self, version: &str) {
+    pub(super) fn save_update_card_record(&self, record: &UpdateCardRecord) {
         let mut saved = self.load_notices();
-        saved.update_card = version.to_string();
+        saved.update_card = record.seen.clone();
+        saved.update_card_unseen = record.unseen.clone();
+        saved.update_card_unseen_at = record.unseen_at;
         self.save_notices(&saved);
     }
 
