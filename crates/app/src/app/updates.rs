@@ -109,7 +109,9 @@ fn source(test_instance: bool) -> (String, String) {
     }
 }
 
-fn check(test_instance: bool) -> std::result::Result<Done, String> {
+/// The latest release; for a newer one also the first point of its Store notes in the UI
+/// language `ui_language` (one more request, only then; a failure only loses that line).
+fn check(test_instance: bool, ui_language: &str) -> std::result::Result<Done, String> {
     let (url, base) = source(test_instance);
     let body = pecofence_platform::http::get(
         &url,
@@ -117,10 +119,35 @@ fn check(test_instance: bool) -> std::result::Result<Done, String> {
         "Accept: application/vnd.github+json",
         MAX_RELEASE_JSON,
     )?;
-    let release = updates::parse_release(&String::from_utf8_lossy(&body), &base)?;
-    Ok(Done::Checked(
-        updates::is_newer(&release.version, env!("CARGO_PKG_VERSION")).then_some(release),
-    ))
+    let mut release = updates::parse_release(&String::from_utf8_lossy(&body), &base)?;
+    if !updates::is_newer(&release.version, env!("CARGO_PKG_VERSION")) {
+        return Ok(Done::Checked(None));
+    }
+    // The test feed serves the notes too; GitHub's raw files otherwise.
+    let raw_base = if base.starts_with("http://127.0.0.1:") {
+        base.clone()
+    } else {
+        updates::RAW_BASE.to_string()
+    };
+    match updates::store_notes_url(&raw_base, &release.version, ui_language) {
+        None => tracing::info!(ui_language, "update: no Store notes for this language"),
+        Some(notes) => {
+            match pecofence_platform::http::get(&notes, &user_agent(), "", MAX_RELEASE_JSON) {
+                Ok(bytes) => {
+                    release.store_line =
+                        updates::store_notes_line(&String::from_utf8_lossy(&bytes));
+                    tracing::info!(
+                        found = release.store_line.is_some(),
+                        "update: Store notes read"
+                    );
+                }
+                Err(e) => {
+                    tracing::info!(error = %e, "update: Store notes not read; the card says something general")
+                }
+            }
+        }
+    }
+    Ok(Done::Checked(Some(release)))
 }
 
 /// No checksum of our own: HTTPS covers the transfer, and setup checks its own data before
@@ -232,7 +259,8 @@ impl App {
             (_, Status::Checking | Status::Downloading(_)) => {}
             ("checkUpdate", _) => {
                 let test_instance = self.instance.is_some();
-                self.run_update_job(Status::Checking, move || check(test_instance));
+                let lang = pecofence_core::i18n::language().tag();
+                self.run_update_job(Status::Checking, move || check(test_instance, lang));
             }
             ("installUpdate", Status::Available(release))
                 if edition == "installer" && release.setup.is_some() =>
@@ -334,7 +362,8 @@ impl App {
         tracing::info!("update: automatic check");
         self.updates.auto = true;
         let test_instance = self.instance.is_some();
-        self.run_update_job(Status::Checking, move || check(test_instance));
+        let lang = pecofence_core::i18n::language().tag();
+        self.run_update_job(Status::Checking, move || check(test_instance, lang));
     }
 
     /// The newer version the tray menu offers at its top (「更新到 0.3.3」) until it is installed.
@@ -406,13 +435,23 @@ impl App {
             "PecoFence {0} 已发布",
             std::slice::from_ref(&release.version),
         );
-        // The notes are written in English or Chinese: other UI languages get the general line.
-        let body = updates::card_line(
-            &release.summary,
-            pecofence_core::i18n::language().tag(),
-            CARD_LINE_CHARS,
-        )
-        .unwrap_or_else(|| pecofence_core::i18n::text("看看这次更新了什么。").to_string());
+        // The Store notes' first point in the UI language; else the release notes' first
+        // sentence when it is in the UI language (they are English); else a general line.
+        let (body, line_from) = match &release.store_line {
+            Some(line) => (updates::shorten(line, CARD_LINE_CHARS), "Store notes"),
+            None => match updates::card_line(
+                &release.summary,
+                pecofence_core::i18n::language().tag(),
+                CARD_LINE_CHARS,
+            ) {
+                Some(line) => (line, "release notes"),
+                None => (
+                    pecofence_core::i18n::text("看看这次更新了什么。").to_string(),
+                    "general",
+                ),
+            },
+        };
+        tracing::info!(line_from, "update card: its line");
         let action = if install {
             pecofence_core::i18n::text("按钮\x04更新")
         } else {

@@ -2,8 +2,9 @@
 # instance; the debug build's PECOFENCE_TEST_UPDATE_MS makes the first check come 8 s after start):
 # the first check after start, the card once per version (a restart shows none), the card waiting
 # for a full-screen app and for the Peek, its buttons in the installer and ZIP editions, the tray
-# item, the switch off (no request), offline (nothing shown). English UI (the card is read by
-# OCR). Debug build.
+# item, the switch off (no request), offline (nothing shown), and the card's line from the Store
+# notes of the UI language (en-US and zh-CN served; German falls back to the general line).
+# English UI (the card is read by OCR). Debug build.
 Add-Type @"
 using System; using System.Runtime.InteropServices;
 public static class Qn { [DllImport("shell32.dll")] public static extern int SHQueryUserNotificationState(out int state); }
@@ -13,7 +14,7 @@ function Lines($re) { return @(PfLogAll | Where-Object { $_ -match $re -and $_ -
 function FeedHits() { return @(Get-Content "$PfRun\feed.log" -ErrorAction SilentlyContinue | Where-Object { $_ -match 'releases/latest' }).Count }
 function NoticesFile() { $st = PfJson status; return (Join-Path (Split-Path $st.configPath) 'notices.json') }
 # PecoFence again with a clean notice record (or not) and the given feed; waits for the first check.
-function Restart([string]$url = '', [switch]$Installer, [switch]$KeepNotices) {
+function Restart([string]$url = '', [switch]$Installer, [switch]$KeepNotices, [string]$Lang = 'en') {
   # The kit runs the lines before the first case apart: the feed's address is spelled out here.
   if (-not $url) { $url = 'http://127.0.0.1:8721/repos/DayuanJiang/PecoFence/releases/latest' }
   PfQuit
@@ -23,7 +24,7 @@ function Restart([string]$url = '', [switch]$Installer, [switch]$KeepNotices) {
   $env:PECOFENCE_UPDATE_URL = $url
   $env:PECOFENCE_TEST_UPDATE_MS = '8000,600000'
   $script:Since = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ss.ffffff') + 'Z'
-  PfStart
+  PfStart -Lang $Lang
   Pf settings set featureTips false | Out-Null
   [G]::MoveTo(700, 450)
 }
@@ -48,6 +49,7 @@ $t = CardText 'card-zip'
 Shot 'u01-card-zip'
 Check 'the first automatic check runs a moment after start (test delay) and asks the feed' ($check -and (FeedHits) -ge 1) "$check feed=$(FeedHits)"
 Check 'the card says 0.3.3 is out with Download and What''s new' ($card -and $t -match '0\.3\.3' -and $t -match 'Download' -and $t -match "What.s new") "ocr: $t"
+Check 'its line is the first point of the en-US Store notes' ($t -match 'Typing Chinese in the Peek search' -and (Since 'update card: its line line_from="Store notes"').Count -ge 1 -and @(Get-Content "$PfRun\feed.log" | Where-Object { $_ -match 'v2-i18n/en-US\.json HTTP/1\.1 -> 200' }).Count -ge 1) "ocr: $t"
 $m = TrayMenu; Start-Sleep -Milliseconds 500
 $menu = if ($m -ne [IntPtr]::Zero) { MenuTexts $m } else { '' }
 [G]::Press(0x1B); Start-Sleep -Milliseconds 400; [G]::Press(0x1B); [G]::MoveTo(700, 450)
@@ -109,6 +111,18 @@ TrayPick '^Update to 0\.3\.3' | Out-Null
 Start-Sleep -Seconds 2
 Check 'the tray item opens the download page in the ZIP edition' ((Since 'update: update now').Count -ge 1 -and (Since 'update: release page opened').Count -ge 1) ((Since 'update: update now|release page') -join ' | ')
 Get-Process msedge -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+
+Case 'the card''s line in Chinese and in German'
+Restart -Lang 'zh-CN'
+$card = WaitLine 'update card shown' 15
+Shot 'u04-card-zh'
+Check 'Chinese: the first point of the zh-CN Store notes' ($card -and (Since 'update card: its line line_from="Store notes"').Count -ge 1 -and @(Get-Content "$PfRun\feed.log" | Where-Object { $_ -match 'v2-i18n/zh-CN\.json HTTP/1\.1 -> 200' }).Count -ge 1) ((Since 'Store notes|its line') -join ' | ')
+CloseNotice | Out-Null
+Restart -Lang 'de'
+$card = WaitLine 'update card shown' 15
+Check 'German (no file in the feed): the general line, after one quiet log line' ($card -and (Since 'Store notes not read').Count -ge 1 -and (Since 'update card: its line line_from="general"').Count -ge 1) ((Since 'Store notes|its line') -join ' | ')
+CloseNotice | Out-Null
+Pf settings set language en | Out-Null
 
 Case 'the switch off: no check'
 Pf settings set autoCheckUpdates false | Out-Null

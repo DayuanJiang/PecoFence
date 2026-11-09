@@ -21,8 +21,12 @@ pub struct Release {
     pub version: String,
     /// The release page, opened by the ZIP edition.
     pub page: String,
-    /// The release notes' first sentence (a notice's body); empty when they have none.
+    /// The release notes' first sentence (the card's line when it is in the UI's language);
+    /// empty when they have none.
     pub summary: String,
+    /// The first point of the release's Store notes in the UI's language (the card's line),
+    /// filled in by the app once a newer version is found.
+    pub store_line: Option<String>,
     /// The setup EXE, when the release has one.
     pub setup: Option<SetupAsset>,
 }
@@ -84,18 +88,57 @@ pub fn card_line(summary: &str, ui_language: &str, max_chars: usize) -> Option<S
     if summary.trim().is_empty() || !fits {
         return None;
     }
-    if summary.chars().count() <= max_chars {
-        return Some(summary.trim().to_string());
+    Some(shorten(summary, max_chars))
+}
+
+/// `text` cut after about `max_chars` characters with "…" (at a word in text with spaces).
+pub fn shorten(text: &str, max_chars: usize) -> String {
+    let text = text.trim();
+    if text.chars().count() <= max_chars {
+        return text.to_string();
     }
-    let cut: String = summary.chars().take(max_chars).collect();
+    let cut: String = text.chars().take(max_chars).collect();
     let cut = match cut.rfind(' ') {
-        Some(i) if !han && i > max_chars / 2 => &cut[..i],
+        Some(i) if i > max_chars / 2 => &cut[..i],
         _ => &cut[..],
     };
-    Some(format!(
+    format!(
         "{}…",
-        cut.trim_end_matches([',', ';', ' ', '，', '；'])
+        cut.trim_end_matches([',', ';', ' ', '，', '；', '、'])
+    )
+}
+
+/// Where the raw files of a tag are (`<base><repository>/<tag>/<path>`).
+pub const RAW_BASE: &str = "https://raw.githubusercontent.com/";
+
+/// The Store notes of release `version` for the UI language `ui_language` (the files of
+/// `docs/store/v2-i18n`; English is `en-US`); None for a language without a file.
+pub fn store_notes_url(raw_base: &str, version: &str, ui_language: &str) -> Option<String> {
+    let file = match ui_language {
+        "en" => "en-US",
+        "zh-CN" | "zh-TW" | "ja" | "ko" | "de" | "fr" | "es" | "it" | "pt-BR" | "ru" => ui_language,
+        _ => return None,
+    };
+    Some(format!(
+        "{raw_base}{REPOSITORY}/v{version}/docs/store/v2-i18n/{file}.json"
     ))
+}
+
+/// The first point of a Store notes file's `releaseNotes`: the first line after its heading
+/// (「本次更新：」, "What's new:"), without the bullet mark.
+pub fn store_notes_line(json: &str) -> Option<String> {
+    let file: serde_json::Value = serde_json::from_str(json).ok()?;
+    file.get("releaseNotes")?
+        .as_str()?
+        .lines()
+        .skip(1)
+        .map(|l| {
+            l.trim()
+                .trim_start_matches(['·', '•', '・', '-', '*'])
+                .trim()
+        })
+        .find(|l| !l.is_empty())
+        .map(str::to_string)
 }
 
 pub fn setup_name(version: &str) -> String {
@@ -123,6 +166,7 @@ pub fn parse_release(json: &str, download_base: &str) -> Result<Release, String>
     Ok(Release {
         version: version.to_string(),
         summary: first_sentence(api.body.as_deref().unwrap_or("")),
+        store_line: None,
         page: format!(
             "https://github.com/{REPOSITORY}/releases/tag/{}",
             api.tag_name
@@ -289,5 +333,45 @@ mod tests {
             "{cut}"
         );
         assert!(long.starts_with(cut.trim_end_matches('…')), "{cut}");
+    }
+
+    /// The card's line from the Store notes: the first point after the heading, for the UI
+    /// language's file (English is en-US). The text is 0.3.2's zh-CN.json.
+    #[test]
+    fn the_card_takes_the_store_notes_first_point() {
+        let zh = r#"{"releaseNotes": "本次更新：\n· 「自由摆放」：不在栅栏里的图标，拖到桌面哪里就留在哪里，和 Windows 桌面一样。在其中一个图标上点右键，选「自由摆放」就能打开。\n· 新增智能栅栏：显示一个搜索的最新结果，比如「最近 7 天下载」。在托盘菜单选「新建智能栅栏…」就能新建。\n· 在文件夹栅栏或智能栅栏里按 Ctrl+F，边打字边筛选。\n· 每个虚拟桌面可以有自己的栅栏：右键点栅栏，在「在哪个虚拟桌面显示」里选。\n· 速览搜索多了类型标签，比如「文档」「图片」。每个结果都能右键打开菜单。\n· 把文件拖到栅栏里的程序上，就用这个程序打开。\n· 「适应内容大小」让栅栏的高度正好放下图标。Ctrl+Z 能撤销移动或删除栅栏。\n· 资源管理器忙的时候，栅栏不再卡住。在较慢的电脑上，滚动更流畅。\n修复：\n· 刚登录或刚切换虚拟桌面时，双击桌面又能隐藏栅栏了。\n· 指向文件夹的快捷方式按「快捷方式」规则整理，不再混进程序里。\n· 改了显示缩放以后，栅栏不再叠在一起。\n· 启动时如果杀毒软件正占用配置文件，布局不会再被换成默认的栅栏。"}"#;
+        assert_eq!(
+            store_notes_line(zh).as_deref(),
+            Some(
+                "「自由摆放」：不在栅栏里的图标，拖到桌面哪里就留在哪里，和 Windows 桌面一样。在其中一个图标上点右键，选「自由摆放」就能打开。"
+            )
+        );
+        assert_eq!(
+            shorten(
+                "「自由摆放」：不在栅栏里的图标，拖到桌面哪里就留在哪里，和 Windows 桌面一样。在其中一个图标上点右键，选「自由摆放」就能打开。",
+                110
+            ),
+            "「自由摆放」：不在栅栏里的图标，拖到桌面哪里就留在哪里，和 Windows 桌面一样。在其中一个图标上点右键，选「自由摆放」就能打开。"
+        );
+        let en = r#"{"releaseNotes":"What's new:\n· Typing Chinese in the Peek search no longer stutters.\n· More."}"#;
+        assert_eq!(
+            store_notes_line(en).as_deref(),
+            Some("Typing Chinese in the Peek search no longer stutters.")
+        );
+        assert_eq!(store_notes_line(r#"{"releaseNotes":"Heading only"}"#), None);
+        assert_eq!(store_notes_line("not json"), None);
+        assert_eq!(
+            store_notes_url(RAW_BASE, "0.3.3", "en").as_deref(),
+            Some(
+                "https://raw.githubusercontent.com/DayuanJiang/PecoFence/v0.3.3/docs/store/v2-i18n/en-US.json"
+            )
+        );
+        assert_eq!(
+            store_notes_url("http://127.0.0.1:8721/", "0.3.3", "zh-CN").as_deref(),
+            Some(
+                "http://127.0.0.1:8721/DayuanJiang/PecoFence/v0.3.3/docs/store/v2-i18n/zh-CN.json"
+            )
+        );
+        assert_eq!(store_notes_url(RAW_BASE, "0.3.3", "system"), None);
     }
 }
