@@ -124,8 +124,20 @@ $ids1 = @(Rules | ForEach-Object { $_.id })
 Check 'rule list: new name, target and condition' ($r1.name -eq 'Alpha notes' -and $r1.target.fence -eq $alpha.id -and $r1.targetTitle -eq 'Alpha' -and ($r1.allOf | ConvertTo-Json -Compress -Depth 5) -eq '{"cond":"name","value":{"op":"contains","value":"alpha"}}' -and $r1.priorityClass -eq 'name') (RuleSig $r1)
 Check 'rule list: same id, place and switch' ($r1.id -eq $before.id -and $r1.enabled -eq $before.enabled -and [array]::IndexOf($ids1, $docs.id) -eq $docsIx -and $ids1.Count -eq 3) "index=$([array]::IndexOf($ids1, $docs.id)) (was $docsIx) enabled=$($r1.enabled) count=$($ids1.Count)"
 Check 'saving does not move items by itself' ((ItemFence 'hr-alpha.txt') -eq $docs.targetTitle) "hr-alpha.txt in '$(ItemFence 'hr-alpha.txt')'"
+# Since #210 an Apply now that moves icons says so in the desktop card with Undo; the page's own
+# message comes only when there is no card. Either counts; the card is closed for the next steps.
+$cards0 = @(PfLogAll | Where-Object { $_ -match 'undo notice shown for the rules applied' }).Count
 if ($PfDebugBuild) { PageClick '#applyRules' } else { FixedClick apply }
-if ($PfDebugBuild) { $ok = JsWait "document.getElementById('toastText').textContent.startsWith('Rules applied')" 5; Check 'Apply now reports what it sorted' $ok "toast='$((PageToast).text)'" }
+if ($PfDebugBuild) {
+  $card = $false
+  for ($i = 0; $i -lt 25 -and -not $card; $i++) {
+    $card = @(PfLogAll | Where-Object { $_ -match 'undo notice shown for the rules applied' }).Count -gt $cards0
+    if (-not $card) { Start-Sleep -Milliseconds 200 }
+  }
+  $ok = $card -or (JsWait "document.getElementById('toastText').textContent.startsWith('Rules applied')" 2)
+  Check 'Apply now reports what it sorted (the card with Undo, or the page)' $ok "card=$card toast='$((PageToast).text)'"
+  CloseNotice | Out-Null
+}
 $fl = PfJson fence list
 $inbox = @($fl.fences) + @($fl) | Where-Object { $_ -and $_.kind -eq 'inbox' } | Select-Object -First 1
 Check 'Apply now moves the matching item into Alpha' ((WaitItemFence 'hr-alpha.txt' 'Alpha' 8) -eq 'Alpha') "hr-alpha.txt in '$(ItemFence 'hr-alpha.txt')'"
