@@ -180,6 +180,14 @@ impl Drop for Paint {
     }
 }
 
+/// Asks for a repaint of `rect` (client pixels, background included).
+pub fn invalidate_rect(hwnd: HWND, rect: RECT) {
+    // SAFETY: plain FFI call; the rect outlives it.
+    unsafe {
+        let _ = InvalidateRect(Some(hwnd), Some(&rect), true);
+    }
+}
+
 /// Asks for a repaint of the whole client area (background included).
 pub fn invalidate(hwnd: HWND) {
     // SAFETY: plain FFI call.

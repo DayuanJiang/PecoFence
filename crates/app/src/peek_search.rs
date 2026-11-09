@@ -18,7 +18,9 @@
 //! A small activatable popup hosting an EDIT control, like the rename popup, so IME input,
 //! the caret and clipboard keys work as in any text box. The popup paints its background, the
 //! search glyph, the match count and the list itself (GDI). Everything's answers come to this
-//! window as `WM_COPYDATA`.
+//! window as `WM_COPYDATA`. A row shows its type's icon at once; its own icon (a program's, a
+//! shortcut target's) is read on a worker thread and swapped in, since reading a cold file
+//! (another drive, a sleeping disk) took from a tenth of a second to seconds.
 
 use crate::commands::{Command, CommandQueue};
 use pecofence_core::rules::TypeCategory;
@@ -30,11 +32,18 @@ use pecofence_platform::window::{
 };
 use pecofence_platform::{HWND, POINT, RECT, desktop, dwm, edit, everything, fonts, monitors, msg};
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ops::Range;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::mpsc::{Sender, channel};
+use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 pub const SEARCH_CLASS: &str = "PecoFence.PeekSearch";
+/// A row's own icon is ready: the worker posts it to the box.
+const WM_ROW_ICON: u32 = msg::WM_APP + 40;
+/// An own icon slower than this is logged (the time and the drive only).
+const SLOW_ICON_MS: u128 = 30;
 const WA_INACTIVE: usize = 0;
 const VK_UP: u32 = 0x26;
 const VK_DOWN: u32 = 0x28;
@@ -89,6 +98,121 @@ pub struct Row {
 thread_local! {
     static ACTIVE: RefCell<Option<Session>> = const { RefCell::new(None) };
     static CLASS: RefCell<Option<WindowClass>> = const { RefCell::new(None) };
+    static ICON_WORKER: IconWorker = IconWorker::start();
+}
+
+/// Reads rows' own icons off the UI thread (its own STA, as Explorer reads icons), one at a
+/// time, and posts each to the box.
+struct IconWorker {
+    tx: Sender<(PathBuf, bool, isize)>,
+    /// The paths the rows show now: a request for a row gone meanwhile is skipped.
+    wanted: Arc<Mutex<HashSet<PathBuf>>>,
+    /// Icons read, waiting for the box to take them.
+    done: Arc<Mutex<Vec<(PathBuf, Option<FileIcon>)>>>,
+}
+
+impl IconWorker {
+    fn start() -> Self {
+        let (tx, rx) = channel::<(PathBuf, bool, isize)>();
+        let wanted: Arc<Mutex<HashSet<PathBuf>>> = Arc::default();
+        let done: Arc<Mutex<Vec<(PathBuf, Option<FileIcon>)>>> = Arc::default();
+        let (w, d) = (wanted.clone(), done.clone());
+        let spawned = std::thread::Builder::new()
+            .name("pecofence-peek-icons".into())
+            .spawn(move || {
+                let _sta = pecofence_platform::com::OleGuard::init();
+                for (path, is_folder, hwnd) in rx {
+                    if !w.lock().unwrap_or_else(|e| e.into_inner()).contains(&path) {
+                        continue;
+                    }
+                    let started = Instant::now();
+                    // Debug builds: PECOFENCE_TEST_ICON_DELAY_MS stands in for a slow or
+                    // sleeping drive (the kit's peek-cold-icons).
+                    #[cfg(debug_assertions)]
+                    if let Some(ms) = std::env::var("PECOFENCE_TEST_ICON_DELAY_MS")
+                        .ok()
+                        .and_then(|v| v.parse::<u64>().ok())
+                    {
+                        std::thread::sleep(std::time::Duration::from_millis(ms));
+                    }
+                    let icon = fileinfo::small_icon(&path, is_folder, true);
+                    let ms = started.elapsed().as_millis();
+                    if ms > SLOW_ICON_MS {
+                        tracing::info!(ms = ms as u64, drive = %drive_of(&path), "search: a row's own icon was slow to read");
+                    }
+                    d.lock().unwrap_or_else(|e| e.into_inner()).push((path, icon));
+                    window::post_message(HWND(hwnd as *mut core::ffi::c_void), WM_ROW_ICON, 0, 0);
+                }
+            });
+        if let Err(e) = spawned {
+            tracing::warn!(error = %e, "search: no thread for the rows' icons; rows keep their type's icon");
+        }
+        Self { tx, wanted, done }
+    }
+}
+
+/// The drive of `path` for the log ("C:", "network", "other"): never its name.
+fn drive_of(path: &Path) -> String {
+    let s = path.to_string_lossy();
+    match s.as_bytes() {
+        [l, b':', ..] if l.is_ascii_alphabetic() => {
+            format!("{}:", (*l as char).to_ascii_uppercase())
+        }
+        [b'\\', b'\\', ..] => "network".into(),
+        _ => "other".into(),
+    }
+}
+
+/// The key a type's icon is kept under: a folder, or a file's extension.
+fn type_key(path: &Path, is_folder: bool) -> String {
+    if is_folder {
+        "<folder>".into()
+    } else {
+        path.extension()
+            .map(|e| e.to_string_lossy().to_lowercase())
+            .unwrap_or_default()
+    }
+}
+
+/// Takes the icons the worker read: those of rows still shown replace the type's icon (their
+/// rows repaint), the rest are dropped.
+fn take_row_icons(hwnd: HWND) {
+    ACTIVE.with(|a| {
+        let Ok(mut a) = a.try_borrow_mut() else {
+            // The box is busy (a nested loop): ask again once it is free.
+            window::post_message(hwnd, WM_ROW_ICON, 0, 0);
+            return;
+        };
+        let Some(s) = a.as_mut() else { return };
+        let ready = ICON_WORKER
+            .with(|w| std::mem::take(&mut *w.done.lock().unwrap_or_else(|e| e.into_inner())));
+        let (w, _) = window::window_rect_size(hwnd);
+        let mut taken = 0;
+        for (path, icon) in ready {
+            s.asked.remove(&path);
+            let Some(i) = s
+                .rows
+                .iter()
+                .position(|r| r.icon_path.as_ref() == Some(&path))
+            else {
+                continue;
+            };
+            s.icons.insert(path, icon);
+            taken += 1;
+            if let Some(&(top, bottom)) = s.row_spans.get(i) {
+                paint::invalidate_rect(
+                    hwnd,
+                    RECT {
+                        left: 0,
+                        top,
+                        right: w,
+                        bottom,
+                    },
+                );
+            }
+        }
+        tracing::debug!(taken, "search: rows' own icons swapped in");
+    });
 }
 
 struct Session {
@@ -124,7 +248,11 @@ struct Session {
     /// (client pixels) as last drawn.
     tab: usize,
     tab_spans: Vec<(i32, i32)>,
+    /// Rows' own icons, read by the worker; `asked` are on their way.
     icons: HashMap<PathBuf, Option<FileIcon>>,
+    asked: HashSet<PathBuf>,
+    /// Types' icons by extension (or folder), which read no file.
+    type_icons: HashMap<String, Option<FileIcon>>,
 }
 
 impl Session {
@@ -249,6 +377,10 @@ pub fn open(text: &str, queue: CommandQueue, dark: bool) {
                         }
                         Some(0)
                     }
+                    WM_ROW_ICON => {
+                        take_row_icons(hwnd);
+                        Some(0)
+                    }
                     everything::WM_COPYDATA_MSG => {
                         if let Some((kind, bytes)) = everything::copydata(lparam) {
                             queue.push(Command::EverythingResults { kind, bytes });
@@ -327,6 +459,8 @@ pub fn open(text: &str, queue: CommandQueue, dark: bool) {
             tab: 0,
             tab_spans: Vec::new(),
             icons: HashMap::new(),
+            asked: HashSet::new(),
+            type_icons: HashMap::new(),
         })
     });
     window::show_normal(hwnd);
@@ -489,11 +623,32 @@ fn paint_box(hwnd: HWND) {
             }
             let mid = (top + bottom) / 2;
             if let Some(path) = row.icon_path.clone() {
-                let (is_folder, exact) = (row.is_folder, row.exact_icon);
-                let ico = s
-                    .icons
-                    .entry(path.clone())
-                    .or_insert_with(|| fileinfo::small_icon(&path, is_folder, exact));
+                let is_folder = row.is_folder;
+                // Its own icon reads the file (local drives; a namespace item asks its folder):
+                // the worker does that, and the type's icon, which reads nothing, stands in.
+                let namespace = pecofence_platform::shell::is_namespace_path(&path);
+                if (row.exact_icon || namespace)
+                    && !s.icons.contains_key(&path)
+                    && s.asked.insert(path.clone())
+                {
+                    let hwnd_raw = hwnd.0 as isize;
+                    ICON_WORKER.with(|w| {
+                        w.wanted
+                            .lock()
+                            .unwrap_or_else(|e| e.into_inner())
+                            .insert(path.clone());
+                        let _ = w.tx.send((path.clone(), is_folder, hwnd_raw));
+                    });
+                }
+                let ico = match s.icons.get(&path) {
+                    Some(i) => i.as_ref(),
+                    None if namespace => None,
+                    None => s
+                        .type_icons
+                        .entry(type_key(&path, is_folder))
+                        .or_insert_with(|| fileinfo::small_icon(&path, is_folder, false))
+                        .as_ref(),
+                };
                 if let Some(ico) = ico {
                     p.icon(pad, mid - icon / 2, icon, ico);
                 }
@@ -828,9 +983,14 @@ pub fn set_rows(rows: Vec<Row>, selected: Option<usize>, total: usize) {
         s.rows = rows;
         s.total = total;
         s.selected = selected.filter(|&i| i < s.rows.len());
-        // Icons of rows that went away are dropped (they are cheap to get again).
-        let keep: Vec<PathBuf> = s.rows.iter().filter_map(|r| r.icon_path.clone()).collect();
+        // Icons of rows that went away are dropped, and the worker skips them if not read yet.
+        let keep: HashSet<PathBuf> = s.rows.iter().filter_map(|r| r.icon_path.clone()).collect();
         s.icons.retain(|p, _| keep.contains(p));
+        s.asked.retain(|p| keep.contains(p));
+        ICON_WORKER.with(|w| {
+            let mut wanted = w.wanted.lock().unwrap_or_else(|e| e.into_inner());
+            wanted.retain(|p| keep.contains(p));
+        });
         let h = s.layout();
         tracing::debug!(
             rows = s.rows.len(),
@@ -912,6 +1072,11 @@ pub fn raise() {
 
 pub fn close() {
     let session = ACTIVE.with(|a| a.borrow_mut().take());
+    // Nothing more to read; icons read meanwhile are dropped.
+    ICON_WORKER.with(|w| {
+        w.wanted.lock().unwrap_or_else(|e| e.into_inner()).clear();
+        w.done.lock().unwrap_or_else(|e| e.into_inner()).clear();
+    });
     if let Some(s) = session {
         drop(s.edit);
         drop(s.window);
