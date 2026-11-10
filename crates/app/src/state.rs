@@ -1860,31 +1860,32 @@ impl AppState {
         })
     }
 
-    pub fn set_portal_navigate(&mut self, id: FenceId, on: bool) {
-        if let Some(f) = self.fence_mut(id)
-            && f.portal_navigate != on
-        {
-            f.portal_navigate = on;
-            self.dirty = true;
+    /// Sets one field of a fence and marks the config dirty when the value changed.
+    fn set_fence_field<T: PartialEq>(
+        &mut self,
+        id: FenceId,
+        field: impl FnOnce(&mut Fence) -> &mut T,
+        value: T,
+    ) {
+        if let Some(f) = self.fence_mut(id) {
+            let slot = field(f);
+            if *slot != value {
+                *slot = value;
+                self.dirty = true;
+            }
         }
+    }
+
+    pub fn set_portal_navigate(&mut self, id: FenceId, on: bool) {
+        self.set_fence_field(id, |f| &mut f.portal_navigate, on);
     }
 
     pub fn set_open_folders_inside(&mut self, id: FenceId, on: bool) {
-        if let Some(f) = self.fence_mut(id)
-            && f.open_folders_inside != on
-        {
-            f.open_folders_inside = on;
-            self.dirty = true;
-        }
+        self.set_fence_field(id, |f| &mut f.open_folders_inside, on);
     }
 
     pub fn set_hide_title_icon(&mut self, id: FenceId, on: bool) {
-        if let Some(f) = self.fence_mut(id)
-            && f.hide_title_icon != on
-        {
-            f.hide_title_icon = on;
-            self.dirty = true;
-        }
+        self.set_fence_field(id, |f| &mut f.hide_title_icon, on);
     }
 
     /// Title shown for a fence: one showing a subfolder, or a folder opened in it, shows that
@@ -2478,21 +2479,11 @@ impl AppState {
     }
 
     pub fn set_icon_size(&mut self, id: FenceId, size: u32) {
-        if let Some(f) = self.fence_mut(id)
-            && f.view.icon_size != size
-        {
-            f.view.icon_size = size;
-            self.dirty = true;
-        }
+        self.set_fence_field(id, |f| &mut f.view.icon_size, size);
     }
 
     pub fn set_auto_height(&mut self, id: FenceId, on: bool) {
-        if let Some(f) = self.fence_mut(id)
-            && f.view.auto_height != on
-        {
-            f.view.auto_height = on;
-            self.dirty = true;
-        }
+        self.set_fence_field(id, |f| &mut f.view.auto_height, on);
     }
 
     /// The catalogued item for a desktop path, if known.
@@ -2538,30 +2529,15 @@ impl AppState {
     }
 
     pub fn set_locked(&mut self, id: FenceId, on: bool) {
-        if let Some(f) = self.fence_mut(id)
-            && f.locked != on
-        {
-            f.locked = on;
-            self.dirty = true;
-        }
+        self.set_fence_field(id, |f| &mut f.locked, on);
     }
 
     pub fn set_exclude_from_quick_hide(&mut self, id: FenceId, on: bool) {
-        if let Some(f) = self.fence_mut(id)
-            && f.exclude_from_quick_hide != on
-        {
-            f.exclude_from_quick_hide = on;
-            self.dirty = true;
-        }
+        self.set_fence_field(id, |f| &mut f.exclude_from_quick_hide, on);
     }
 
     pub fn set_desktop_layout(&mut self, id: FenceId, on: bool) {
-        if let Some(f) = self.fence_mut(id)
-            && f.desktop_layout != on
-        {
-            f.desktop_layout = on;
-            self.dirty = true;
-        }
+        self.set_fence_field(id, |f| &mut f.desktop_layout, on);
     }
 
     /// Whether the window of `fence` (its host's, for a tab) shows on the current virtual
@@ -2591,12 +2567,7 @@ impl AppState {
     /// 自由摆放 for the 「桌面」 fence arranged like the desktop. The icon cells stay saved
     /// while it is off, so switching it on again puts the icons back where they were.
     pub fn set_free_placement(&mut self, id: FenceId, on: bool) {
-        if let Some(f) = self.fence_mut(id)
-            && f.free_placement != on
-        {
-            f.free_placement = on;
-            self.dirty = true;
-        }
+        self.set_fence_field(id, |f| &mut f.free_placement, on);
     }
 
     /// 自由摆放: the grid cells `cells` of the fence's icons on this monitor setup, merged into
@@ -2637,21 +2608,11 @@ impl AppState {
     }
 
     pub fn set_hide_when_empty(&mut self, id: FenceId, on: bool) {
-        if let Some(f) = self.fence_mut(id)
-            && f.hide_when_empty != on
-        {
-            f.hide_when_empty = on;
-            self.dirty = true;
-        }
+        self.set_fence_field(id, |f| &mut f.hide_when_empty, on);
     }
 
     pub fn set_expand_upward(&mut self, id: FenceId, on: bool) {
-        if let Some(f) = self.fence_mut(id)
-            && f.expand_upward != on
-        {
-            f.expand_upward = on;
-            self.dirty = true;
-        }
+        self.set_fence_field(id, |f| &mut f.expand_upward, on);
     }
 
     /// Changes a fence's appearance override; one left at every default is dropped (None =
@@ -2721,21 +2682,11 @@ impl AppState {
     }
 
     pub fn set_spacing(&mut self, id: FenceId, spacing: i32) {
-        if let Some(f) = self.fence_mut(id)
-            && f.view.spacing != spacing
-        {
-            f.view.spacing = spacing;
-            self.dirty = true;
-        }
+        self.set_fence_field(id, |f| &mut f.view.spacing, spacing);
     }
 
     pub fn set_icon_align(&mut self, id: FenceId, align: pecofence_core::IconAlign) {
-        if let Some(f) = self.fence_mut(id)
-            && f.view.icon_align != align
-        {
-            f.view.icon_align = align;
-            self.dirty = true;
-        }
+        self.set_fence_field(id, |f| &mut f.view.icon_align, align);
     }
 
     pub fn set_columns_visible(&mut self, id: FenceId, visible: [bool; 3]) {
@@ -2759,12 +2710,7 @@ impl AppState {
     }
 
     pub fn set_layout(&mut self, id: FenceId, layout: pecofence_core::ViewLayout) {
-        if let Some(f) = self.fence_mut(id)
-            && f.view.layout != layout
-        {
-            f.view.layout = layout;
-            self.dirty = true;
-        }
+        self.set_fence_field(id, |f| &mut f.view.layout, layout);
     }
 
     /// Any order but by date ends Group by date (sections only make sense in date order), and
