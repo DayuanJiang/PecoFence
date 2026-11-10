@@ -86,7 +86,7 @@ impl App {
         let gone: Vec<FenceId> = self
             .fences
             .iter()
-            .filter(|(id, w)| !ids.contains(id) || !window::is_window(w.hwnd()))
+            .filter(|(id, w)| !ids.contains(id) || !desktop::is_window(w.hwnd()))
             .map(|(id, _)| *id)
             .collect();
         for id in gone {

@@ -401,12 +401,6 @@ pub fn get_capture() -> HWND {
     unsafe { GetCapture() }
 }
 
-/// True while `hwnd` still identifies a live window.
-pub fn is_window(hwnd: HWND) -> bool {
-    // SAFETY: plain FFI call; IsWindow tolerates stale handles.
-    unsafe { IsWindow(Some(hwnd)).as_bool() }
-}
-
 pub fn release_capture() {
     // SAFETY: plain FFI call.
     unsafe {
@@ -780,23 +774,6 @@ pub fn move_window_to(hwnd: HWND, x: i32, y: i32) -> Result<()> {
     }
 }
 
-/// Moves `hwnd` to the top of the non-topmost band without activating it.
-pub fn set_window_bounds_z_top(hwnd: HWND) -> Result<()> {
-    // SAFETY: plain FFI call.
-    unsafe {
-        SetWindowPos(
-            hwnd,
-            Some(HWND_TOP),
-            0,
-            0,
-            0,
-            0,
-            swp::NOACTIVATE | swp::NOMOVE | swp::NOSIZE | swp::NOOWNERZORDER,
-        )
-        .ok()
-    }
-}
-
 /// Inside a `WM_GETMINMAXINFO` handler: sets the minimum tracking size in pixels.
 ///
 /// # Safety
@@ -891,22 +868,6 @@ pub fn run_message_loop() -> i32 {
     }
 }
 
-/// Dispatches pending messages without blocking. Returns `false` once `WM_QUIT` was seen.
-pub fn pump_messages() -> bool {
-    // SAFETY: standard non-blocking pump.
-    unsafe {
-        let mut msg = MSG::default();
-        while PeekMessageW(&mut msg, None, 0, 0, PM_REMOVE as u32).as_bool() {
-            if msg.message == WM_QUIT as u32 {
-                return false;
-            }
-            let _ = TranslateMessage(&msg);
-            DispatchMessageW(&msg);
-        }
-        true
-    }
-}
-
 /// Whether the session is signing out or shutting down (`SM_SHUTTINGDOWN`).
 pub fn session_ending() -> bool {
     // SAFETY: plain FFI call.
@@ -950,6 +911,25 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             None => DefWindowProcW(hwnd, msg, wparam, lparam),
         }
     }
+}
+
+/// A 1x1 layered popup that the mouse passes through and that never takes focus: the base of
+/// the drop preview, the marquee, the drag guides and the fence shadows.
+pub fn create_click_through(class: &WindowClass, title: &str) -> Result<Window> {
+    let handler: MessageHandler = Box::new(|_hwnd, message, _wparam, _lparam| match message {
+        crate::msg::WM_MOUSEACTIVATE => Some(crate::msg::MA_NOACTIVATE),
+        crate::msg::WM_NCHITTEST => Some(crate::msg::HTTRANSPARENT),
+        crate::msg::WM_DESTROY => Some(0),
+        _ => None,
+    });
+    WindowBuilder::new(class)
+        .title(title)
+        .style(style::POPUP)
+        .ex_style(
+            style::EX_LAYERED | style::EX_TRANSPARENT | style::EX_NOACTIVATE | style::EX_TOOLWINDOW,
+        )
+        .bounds(0, 0, 1, 1)
+        .create(handler)
 }
 
 #[cfg(test)]

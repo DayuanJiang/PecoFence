@@ -1353,13 +1353,6 @@ pub struct Assignment {
     pub rule_id: Option<RuleId>,
 }
 
-/// Runtime-only: a "New → …" created from fence X's background menu should land in X.
-#[derive(Clone, Debug, PartialEq)]
-pub struct PendingCreation {
-    pub fence_id: FenceId,
-    pub since: std::time::Instant,
-}
-
 /// Reversible change of tab ownership. Content, names and appearance are deliberately
 /// excluded: cancelling a drag must not undo filesystem refreshes or unrelated edits.
 #[derive(Clone, Debug)]

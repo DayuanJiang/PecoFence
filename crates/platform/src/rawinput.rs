@@ -174,12 +174,6 @@ pub fn buttons_swapped() -> bool {
     unsafe { GetSystemMetrics(SM_SWAPBUTTON) != 0 }
 }
 
-/// System double-click interval in milliseconds.
-pub fn double_click_time_ms() -> u32 {
-    // SAFETY: plain FFI call.
-    unsafe { GetDoubleClickTime() }
-}
-
 /// Half the system double-click rectangle (pixels) — the max distance between the two clicks.
 pub fn double_click_slop_px() -> (i32, i32) {
     // SAFETY: plain FFI calls.

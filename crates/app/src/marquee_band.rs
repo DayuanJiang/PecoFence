@@ -7,10 +7,8 @@
 //! fences, where Explorer's own band would be.
 
 use pecofence_platform::layered::LayeredImage;
-use pecofence_platform::window::{
-    self, ClassOptions, MessageHandler, Window, WindowBuilder, WindowClass, style,
-};
-use pecofence_platform::{HWND, RECT, desktop, msg};
+use pecofence_platform::window::{self, ClassOptions, Window, WindowClass};
+use pecofence_platform::{HWND, RECT, desktop};
 use windows_core::Result;
 
 pub const MARQUEE_BAND_CLASS: &str = "PecoFence.MarqueeBand";
@@ -51,26 +49,7 @@ impl MarqueeBand {
                 background: Some(0x00FF_FFFF),
             },
         )?;
-        let make = || -> Result<Window> {
-            let handler: MessageHandler =
-                Box::new(|_hwnd, message, _wparam, _lparam| match message {
-                    msg::WM_MOUSEACTIVATE => Some(msg::MA_NOACTIVATE),
-                    msg::WM_NCHITTEST => Some(msg::HTTRANSPARENT),
-                    msg::WM_DESTROY => Some(0),
-                    _ => None,
-                });
-            WindowBuilder::new(&class)
-                .title("marquee")
-                .style(style::POPUP)
-                .ex_style(
-                    style::EX_LAYERED
-                        | style::EX_TRANSPARENT
-                        | style::EX_NOACTIVATE
-                        | style::EX_TOOLWINDOW,
-                )
-                .bounds(0, 0, 1, 1)
-                .create(handler)
-        };
+        let make = || -> Result<Window> { window::create_click_through(&class, "marquee") };
         let fill = make()?;
         window::set_layered_alpha(fill.hwnd(), FILL_ALPHA);
         Ok(Self {

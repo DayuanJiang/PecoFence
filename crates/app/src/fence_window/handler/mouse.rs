@@ -545,7 +545,7 @@ pub(super) fn on_lbuttonup(
             window::set_timer(
                 hwnd,
                 TIMER_RENAME,
-                pecofence_platform::rawinput::double_click_time_ms(),
+                pecofence_platform::sysparams::double_click_time_ms(),
             );
         }
         // Explorer's single-click open: a click without a drag opens the item.

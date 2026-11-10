@@ -2,10 +2,8 @@
 //! HWND stays exactly the size of its visible body (plan review: no dead zones around fences).
 
 use pecofence_platform::layered::{self, LayeredImage};
-use pecofence_platform::window::{
-    self, ClassOptions, MessageHandler, Window, WindowBuilder, WindowClass, style,
-};
-use pecofence_platform::{HWND, RECT, msg};
+use pecofence_platform::window::{self, ClassOptions, Window, WindowClass};
+use pecofence_platform::{HWND, RECT};
 use pecofence_render::Image;
 use std::cell::RefCell;
 use std::rc::{Rc, Weak};
@@ -334,23 +332,7 @@ impl ShadowWindow {
     }
 
     pub fn create(class: &WindowClass, style: ShadowStyle) -> Result<Self> {
-        let handler: MessageHandler = Box::new(|_hwnd, message, _wparam, _lparam| match message {
-            msg::WM_MOUSEACTIVATE => Some(msg::MA_NOACTIVATE),
-            msg::WM_NCHITTEST => Some(msg::HTTRANSPARENT),
-            msg::WM_DESTROY => Some(0),
-            _ => None,
-        });
-        let window = WindowBuilder::new(class)
-            .title("shadow")
-            .style(style::POPUP)
-            .ex_style(
-                style::EX_LAYERED
-                    | style::EX_TRANSPARENT
-                    | style::EX_NOACTIVATE
-                    | style::EX_TOOLWINDOW,
-            )
-            .bounds(0, 0, 1, 1)
-            .create(handler)?;
+        let window = window::create_click_through(class, "shadow")?;
         Ok(Self {
             window,
             style,
@@ -561,12 +543,6 @@ impl ShadowWindow {
     pub fn hide(&self) {
         self.window.hide();
     }
-}
-
-/// Class check used by hit-testing code.
-#[allow(dead_code)]
-pub fn is_shadow_class(hwnd: HWND) -> bool {
-    pecofence_platform::desktop::class_name(hwnd) == SHADOW_CLASS
 }
 
 #[cfg(test)]

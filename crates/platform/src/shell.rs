@@ -254,7 +254,7 @@ pub fn paths_for_shell(paths: Vec<PathBuf>) -> Vec<PathBuf> {
 }
 
 /// Reads `HKxx\key\name` as a DWORD; `None` when absent or not a DWORD.
-fn reg_dword(root: HKEY, key: &str, name: &str) -> Option<u32> {
+pub(crate) fn reg_dword(root: HKEY, key: &str, name: &str) -> Option<u32> {
     let key = to_wide(key);
     let name = to_wide(name);
     let mut value: u32 = 0;
@@ -1121,17 +1121,6 @@ fn fit_within(w: u32, h: u32, max_px: u32) -> Option<(u32, u32)> {
 /// Returns `Ok(false)` when the user cancelled.
 pub fn move_to_folder(paths: &[PathBuf], dest: &Path, owner: Option<HWND>) -> Result<bool> {
     transfer_to_folder(paths, dest, owner, false, false)
-}
-
-/// Copies files/folders into `dest` (Ctrl held while dropping, like Explorer).
-pub fn copy_to_folder(paths: &[PathBuf], dest: &Path, owner: Option<HWND>) -> Result<bool> {
-    transfer_to_folder(paths, dest, owner, true, false)
-}
-
-/// Copies into `dest` renaming on collision (`FOF_RENAMEONCOLLISION`): pasting a file into its
-/// own folder yields Explorer's "name - 副本" duplicate instead of a prompt.
-pub fn duplicate_in_folder(paths: &[PathBuf], dest: &Path, owner: Option<HWND>) -> Result<bool> {
-    transfer_to_folder(paths, dest, owner, true, true)
 }
 
 /// One shell file operation (`IFileOperation`, with undo and the shell's own conflict /

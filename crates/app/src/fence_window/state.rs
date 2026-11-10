@@ -44,7 +44,6 @@ impl WindowsIconPlaces {
 }
 
 pub struct FenceViewState {
-    #[allow(dead_code)]
     pub fence_id: FenceId,
     pub title: String,
     pub rolled_up: bool,
@@ -281,7 +280,6 @@ pub struct FenceViewState {
     pub(super) chrome: Rc<FenceChrome>,
     pub(super) icons: Rc<RefCell<IconCache>>,
     pub(super) bitmaps: Rc<RefCell<BitmapCache>>,
-    #[allow(dead_code)]
     pub(super) queue: CommandQueue,
     pub(super) drag: Option<DragState>,
     /// An OLE drag started from this window is running: hover is suppressed, the selection keeps

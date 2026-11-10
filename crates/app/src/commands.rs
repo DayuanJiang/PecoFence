@@ -83,7 +83,6 @@ pub struct DesktopDrop {
 }
 
 #[derive(Debug)]
-#[allow(dead_code)]
 pub enum Command {
     /// A fence window finished a move/resize; persist its geometry.
     FenceBoundsChanged {
@@ -382,7 +381,6 @@ pub enum Command {
     EndItemSelection {
         except: HWND,
     },
-    ToggleAllFences,
     /// Peek hotkey: float all fences above the current windows (again = end).
     TogglePeek,
     /// End the peek; the reason (a fixed text) goes to the log.

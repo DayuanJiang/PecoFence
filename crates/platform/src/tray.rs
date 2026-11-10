@@ -176,21 +176,6 @@ impl TrayIcon {
         Ok(())
     }
 
-    pub fn set_tip(&self, tip: &str) {
-        let mut data = NOTIFYICONDATAW {
-            cbSize: size_of::<NOTIFYICONDATAW>() as u32,
-            hWnd: self.hwnd,
-            uID: self.id,
-            uFlags: (NIF_TIP | NIF_SHOWTIP) as u32,
-            ..Default::default()
-        };
-        copy_tip(&mut data.szTip, tip);
-        // SAFETY: fully initialized structure.
-        unsafe {
-            let _ = Shell_NotifyIconW(NIM_MODIFY as u32, &data);
-        }
-    }
-
     /// Shows a toast/balloon notification.
     pub fn show_info(&self, title: &str, text: &str, warning: bool) {
         let mut data = NOTIFYICONDATAW {

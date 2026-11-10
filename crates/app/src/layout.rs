@@ -503,9 +503,6 @@ pub struct Grid {
     /// whole columns, so the grid fills any fence width (Explorer's auto-arrange). Cells keep
     /// `metrics.cell_w` and sit centred in their pitch.
     pub pitch: f32,
-    /// Rows over all groups.
-    #[allow(dead_code)]
-    pub rows: usize,
     pub content_height: f32,
     bands: Bands,
     /// 图标对齐 居中: a row with fewer items than columns sits in the middle (`centred`).
@@ -531,7 +528,6 @@ impl Grid {
             metrics,
             columns,
             pitch: usable / columns as f32,
-            rows: bands.total_rows(),
             content_height: bands.content_height,
             bands,
             centre: false,
@@ -1812,7 +1808,7 @@ mod tests {
     fn columns_and_hit_test() {
         let g = Grid::new(GridMetrics::for_icon_size(48, 2), 320.0, 7);
         assert_eq!(g.columns, 4);
-        assert_eq!(g.rows, 2);
+        assert_eq!(g.bands.total_rows(), 2);
         let c = g.cell(4);
         assert_eq!(g.hit_test(c.x + 1.0, c.y + 1.0, 7), Some(4));
         assert_eq!(g.hit_test(1.0, 1.0, 7), None);
@@ -2087,7 +2083,7 @@ mod tests {
         // 48 px: 64 x 64 cells and 8 side padding, five columns in 336 DIPs.
         let bare = GridMetrics::for_icon_size(48, 0);
         let g = Grid::new(bare, 336.0, 7);
-        assert_eq!((g.columns, g.rows), (5, 2));
+        assert_eq!((g.columns, g.bands.total_rows()), (5, 2));
         let c = g.cell(6);
         assert_eq!((c.x, c.y, c.h), (8.0 + 64.0, 8.0 + 64.0, 64.0));
         assert_eq!(g.hit_test(c.x + 32.0, c.y + 32.0, 7), Some(6));
@@ -2424,7 +2420,7 @@ mod tests {
         );
         for g in [&plain, &one, &broken] {
             assert_eq!(g.columns, 4);
-            assert_eq!(g.rows, 2);
+            assert_eq!(g.bands.total_rows(), 2);
             assert_eq!(g.content_height, m.pad_y * 2.0 + 2.0 * m.cell_h);
             for i in 0..7 {
                 assert_eq!(g.cell(i), plain.cell(i));

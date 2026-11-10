@@ -12,10 +12,6 @@ const EDGE_DIP: f32 = 4.0;
 /// Columns tried at most (a very full desktop runs off the right edge, as Explorer's does).
 const MAX_COLUMNS: i32 = 256;
 
-fn overlaps(a: &RECT, b: &RECT) -> bool {
-    a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom
-}
-
 /// Cells (screen px) for `count` items plus one more for a drop after the last: down each
 /// column of `work`, then the next column to the right, skipping cells that touch `covered`.
 pub(super) fn desktop_cells(
@@ -39,7 +35,10 @@ pub(super) fn desktop_cells(
                 right: left + cw,
                 bottom: top + ch,
             };
-            if covered.iter().any(|c| overlaps(c, &r)) {
+            if covered
+                .iter()
+                .any(|c| crate::layout::clearance::overlaps(c, &r, 0))
+            {
                 continue;
             }
             cells.push(r);
@@ -79,7 +78,9 @@ impl FreeGrid {
             .flat_map(|c| (0..grid.rows).map(move |r| (c, r)))
             .map(|c| {
                 let r = grid.rect(c);
-                covered.iter().any(|o| overlaps(o, &r))
+                covered
+                    .iter()
+                    .any(|o| crate::layout::clearance::overlaps(o, &r, 0))
             })
             .collect();
         grid.blocked = blocked;

@@ -2766,7 +2766,6 @@ impl App {
                 permanent,
             } => self.delete_items(fence, &items, permanent),
             Command::DeviceLost => self.recover_device(),
-            Command::ToggleAllFences => self.toggle_all_fences("command"),
             Command::TogglePeek => self.toggle_peek(),
             Command::EndPeek(reason) => self.end_peek(reason),
             Command::PeekDragStarted => self.peek_drag(true),

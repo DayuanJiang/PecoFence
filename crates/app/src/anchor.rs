@@ -43,7 +43,6 @@ const TIMER_REORDER_LATER: usize = 16;
 /// foreground change: show desktop raises the desktop over the fences and lowers it again then.
 const SHELL_REORDER_WATCH_MS: u128 = 1000;
 const QUICKHIDE_DELAY_MS: u32 = 300;
-pub const TIMER_TEST: usize = 20;
 
 const RETRY_DELAYS_MS: [u32; 6] = [50, 150, 350, 750, 1500, 1200];
 /// Retries of a failed "hide desktop icons" request (logon: Explorer's desktop not ready yet),
@@ -138,7 +137,6 @@ pub enum ShowDesktopBehavior {
 }
 
 pub type AnchorCell = Rc<RefCell<Option<DesktopAnchor>>>;
-pub type TestHook = Box<dyn FnMut(&mut DesktopAnchor) -> Option<u32>>;
 
 /// Double-click-on-empty-desktop quick hide (plan §5.4).
 #[derive(Default)]
@@ -338,11 +336,6 @@ pub struct DesktopAnchor {
     /// `Settings::keep_icons_hidden`: exit leaves the icons hidden (`release_desktop_icons`).
     pub keep_icons_hidden: bool,
     pub quick_hide_enabled: bool,
-    /// Optional test script driven by TIMER_TEST on the sentinel window.
-    pub test_hook: Option<TestHook>,
-    /// Set by the test hook / owner to request process exit.
-    #[allow(dead_code)]
-    pub quit_requested: bool,
     /// Presses, drags and releases on the empty desktop (fence selection / new fence).
     pub on_marquee: Option<Box<dyn Fn(MarqueeEvent)>>,
     /// Fence windows (as raw handles) that stay visible during quick hide.
@@ -532,8 +525,6 @@ impl DesktopAnchor {
             icons: DesktopIcons::new(),
             keep_icons_hidden: false,
             quick_hide_enabled,
-            test_hook: None,
-            quit_requested: false,
             on_marquee: None,
             quick_hide_excluded: std::collections::HashSet::new(),
             off_desktop: std::collections::HashSet::new(),
@@ -808,12 +799,6 @@ impl DesktopAnchor {
         back.then_some(d.fence)
     }
 
-    #[allow(dead_code)]
-    pub fn sentinel_window(&self) -> &Window {
-        &self.sentinel
-    }
-
-    #[allow(dead_code)]
     pub fn host(&self) -> Option<IconHost> {
         self.host
     }
@@ -1472,7 +1457,7 @@ impl DesktopAnchor {
             tracing::debug!(?pt, "press on the bare desktop; quick hide is off");
             return;
         }
-        let limit = rawinput::double_click_time_ms() as u128;
+        let limit = pecofence_platform::sysparams::double_click_time_ms() as u128;
         let slop = rawinput::double_click_slop_px();
         if let Some((interval_ms, first)) =
             self.quick.desktop_press(Instant::now(), pt, limit, slop)
@@ -1984,24 +1969,8 @@ impl DesktopAnchor {
                     }
                 }
             }
-            TIMER_TEST => {
-                self.sentinel.kill_timer(TIMER_TEST);
-                if let Some(mut hook) = self.test_hook.take() {
-                    let next = hook(self);
-                    self.test_hook = Some(hook);
-                    if let Some(ms) = next {
-                        self.sentinel.set_timer(TIMER_TEST, ms);
-                    }
-                }
-            }
             _ => {}
         }
-    }
-
-    /// Starts the test script after `delay_ms`.
-    #[allow(dead_code)]
-    pub fn start_test(&self, delay_ms: u32) {
-        self.sentinel.set_timer(TIMER_TEST, delay_ms);
     }
 
     pub fn zorder_report(&self, all_visible: bool) -> String {

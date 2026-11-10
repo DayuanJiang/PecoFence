@@ -86,30 +86,3 @@ pub fn set_transitions_disabled(hwnd: HWND, disabled: bool) -> Result<()> {
     let value: i32 = disabled as i32;
     set_attribute(hwnd, DWMWA_TRANSITIONS_FORCEDISABLED, &value)
 }
-
-/// Excludes the window from Aero Peek / "Show desktop" preview.
-pub fn set_excluded_from_peek(hwnd: HWND, excluded: bool) -> Result<()> {
-    let value: i32 = excluded as i32;
-    set_attribute(hwnd, DWMWA_EXCLUDED_FROM_PEEK, &value)
-}
-
-/// Extends the DWM frame into the whole client area (sheet-of-glass).
-pub fn extend_frame_into_entire_client_area(hwnd: HWND) -> Result<()> {
-    let margins = MARGINS {
-        cxLeftWidth: -1,
-        cxRightWidth: -1,
-        cyTopHeight: -1,
-        cyBottomHeight: -1,
-    };
-    // SAFETY: margins outlives the call.
-    unsafe { DwmExtendFrameIntoClientArea(hwnd, &margins).ok() }
-}
-
-pub fn is_composition_enabled() -> bool {
-    // SAFETY: plain FFI call.
-    unsafe {
-        DwmIsCompositionEnabled()
-            .map(|b| b.as_bool())
-            .unwrap_or(false)
-    }
-}

@@ -6,11 +6,12 @@ use windows_core::{Error, PCWSTR, PWSTR, Result};
 
 const SYNCHRONIZE: u32 = 0x0010_0000;
 
+windows_core::link!("kernel32.dll" "system" fn GetProcessTimes(process: HANDLE, created: *mut u64, exited: *mut u64, kernel: *mut u64, user: *mut u64) -> windows_core::BOOL);
+const PROCESS_QUERY_LIMITED_INFORMATION: u32 = 0x1000;
+
 /// Blocks until the process with `pid` exits, then returns its exit code and how long it ran.
 /// Returns `None` at once if it cannot be opened.
 pub fn wait_for_process_exit(pid: u32) -> Option<(u32, std::time::Duration)> {
-    windows_core::link!("kernel32.dll" "system" fn GetProcessTimes(process: HANDLE, created: *mut u64, exited: *mut u64, kernel: *mut u64, user: *mut u64) -> windows_core::BOOL);
-    const PROCESS_QUERY_LIMITED_INFORMATION: u32 = 0x1000;
     let (mut code, mut created, mut exited, mut unused) = (0u32, 0u64, 0u64, 0u64);
     // SAFETY: plain FFI calls; FILETIMEs are written as u64 (same layout); the handle is
     // closed afterwards.
@@ -33,7 +34,7 @@ pub fn wait_for_process_exit(pid: u32) -> Option<(u32, std::time::Duration)> {
 pub fn image_path(pid: u32) -> Option<std::path::PathBuf> {
     // SAFETY: plain FFI calls; the handle is closed before returning.
     unsafe {
-        let process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION as u32, false, pid);
+        let process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid);
         if process.0.is_null() {
             return None;
         }
@@ -64,9 +65,7 @@ pub fn allow_foreground_handoff() {
 pub fn pipe_server_age(pipe: &std::fs::File) -> Option<std::time::Duration> {
     use std::os::windows::io::AsRawHandle;
     windows_core::link!("kernel32.dll" "system" fn GetNamedPipeServerProcessId(pipe: HANDLE, pid: *mut u32) -> windows_core::BOOL);
-    windows_core::link!("kernel32.dll" "system" fn GetProcessTimes(process: HANDLE, created: *mut u64, exited: *mut u64, kernel: *mut u64, user: *mut u64) -> windows_core::BOOL);
     windows_core::link!("kernel32.dll" "system" fn GetSystemTimeAsFileTime(now: *mut u64));
-    const PROCESS_QUERY_LIMITED_INFORMATION: u32 = 0x1000;
     let (mut pid, mut created, mut now, mut unused) = (0u32, 0u64, 0u64, 0u64);
     // SAFETY: plain FFI calls on a live pipe handle; FILETIMEs are written as u64 (same layout);
     // the process handle is closed before returning.
@@ -92,7 +91,6 @@ pub fn pipe_server_age(pipe: &std::fs::File) -> Option<std::time::Duration> {
 /// Whether process `pid` runs elevated (as administrator). `None` when its token cannot be
 /// read, which for another user's or an elevated process is the usual answer.
 pub fn is_elevated(pid: u32) -> Option<bool> {
-    const PROCESS_QUERY_LIMITED_INFORMATION: u32 = 0x1000;
     // TOKEN_INFORMATION_CLASS::TokenElevation; the answer is a TOKEN_ELEVATION (one u32).
     const TOKEN_ELEVATION_CLASS: TOKEN_INFORMATION_CLASS = 20;
     // SAFETY: plain FFI calls; the process (unless it is the pseudo handle) and token handles
@@ -132,8 +130,6 @@ pub fn is_elevated(pid: u32) -> Option<bool> {
 /// Seconds from the start of process `pid` to the start of this one (negative when `pid`
 /// started later), e.g. how long after Explorer a launch at sign-in came.
 pub fn seconds_after_start_of(pid: u32) -> Option<f64> {
-    windows_core::link!("kernel32.dll" "system" fn GetProcessTimes(process: HANDLE, created: *mut u64, exited: *mut u64, kernel: *mut u64, user: *mut u64) -> windows_core::BOOL);
-    const PROCESS_QUERY_LIMITED_INFORMATION: u32 = 0x1000;
     // SAFETY: FILETIMEs are written as u64 (same layout) into locals.
     let created = |process: HANDLE| unsafe {
         let (mut created, mut unused) = (0u64, 0u64);

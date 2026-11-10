@@ -5,8 +5,7 @@
 //! transitions, and one who set the wheel to 5 lines gets 5 lines here too.
 
 use crate::bindings::*;
-use crate::wide::to_wide;
-use windows_core::{BOOL, PCWSTR};
+use windows_core::BOOL;
 
 /// A Remote Desktop session: the monitors and their scale are the other computer's window.
 pub fn remote_session() -> bool {
@@ -129,26 +128,10 @@ pub fn last_input_tick() -> Option<u32> {
 /// `UISettings.TextScaleFactor`); its 「应用」 also rewrites the system fonts, the icon-title
 /// `LOGFONT` included (-12 becomes -15 at 125 %).
 pub fn text_scale_percent() -> u32 {
-    let key = to_wide(r"Software\Microsoft\Accessibility");
-    let value = to_wide("TextScaleFactor");
-    let mut data: u32 = 0;
-    let mut size: u32 = size_of::<u32>() as u32;
-    // SAFETY: out-pointers reference locals; RRF_RT_REG_DWORD constrains the type.
-    let status = unsafe {
-        RegGetValueW(
-            HKEY_CURRENT_USER,
-            PCWSTR(key.as_ptr()),
-            PCWSTR(value.as_ptr()),
-            RRF_RT_REG_DWORD as u32,
-            None,
-            Some((&mut data as *mut u32).cast()),
-            Some(&mut size),
-        )
-    };
-    if status.0 == 0 && data != 0 {
-        data.clamp(100, 225)
-    } else {
-        100
+    let key = r"Software\Microsoft\Accessibility";
+    match crate::shell::reg_dword(HKEY_CURRENT_USER, key, "TextScaleFactor") {
+        Some(data) if data != 0 => data.clamp(100, 225),
+        _ => 100,
     }
 }
 

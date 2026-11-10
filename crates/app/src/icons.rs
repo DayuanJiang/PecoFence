@@ -617,7 +617,7 @@ impl IconCache {
         key.starts_with("file:") || key.starts_with("ext:")
     }
 
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn len(&self) -> usize {
         self.map.len()
     }

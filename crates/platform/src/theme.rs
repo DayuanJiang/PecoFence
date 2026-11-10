@@ -70,23 +70,7 @@ pub fn accent_palette() -> Option<AccentPalette> {
 }
 
 fn read_dword(value: &str) -> Option<u32> {
-    let key = to_wide(PERSONALIZE);
-    let value = to_wide(value);
-    let mut data: u32 = 0;
-    let mut size: u32 = size_of::<u32>() as u32;
-    // SAFETY: out-pointers reference locals; RRF_RT_REG_DWORD constrains the type.
-    let status = unsafe {
-        RegGetValueW(
-            HKEY_CURRENT_USER,
-            PCWSTR(key.as_ptr()),
-            PCWSTR(value.as_ptr()),
-            RRF_RT_REG_DWORD as u32,
-            None,
-            Some((&mut data as *mut u32).cast()),
-            Some(&mut size),
-        )
-    };
-    (status.0 == 0).then_some(data)
+    crate::shell::reg_dword(HKEY_CURRENT_USER, PERSONALIZE, value)
 }
 
 /// `SystemUsesLightTheme` — what the taskbar / Start use. Defaults to dark when unreadable.

@@ -363,41 +363,6 @@ impl Drop for DropTargetRegistration {
     }
 }
 
-/// A handler that only logs. Useful for spikes and for windows that accept nothing.
-pub struct LoggingDropHandler;
-
-impl DropHandler for LoggingDropHandler {
-    fn drag_enter(
-        &mut self,
-        _data: &IDataObject,
-        key_state: u32,
-        pt: DragPoint,
-        allowed: u32,
-    ) -> DropEffect {
-        tracing::info!(key_state, ?pt, allowed, "drag enter");
-        resolve(DropEffect::Link, allowed)
-    }
-
-    fn drag_over(&mut self, _key_state: u32, _pt: DragPoint, allowed: u32) -> DropEffect {
-        resolve(DropEffect::Link, allowed)
-    }
-
-    fn drag_leave(&mut self) {
-        tracing::info!("drag leave");
-    }
-
-    fn drop(
-        &mut self,
-        _data: &IDataObject,
-        key_state: u32,
-        pt: DragPoint,
-        allowed: u32,
-    ) -> DropEffect {
-        tracing::info!(key_state, ?pt, "drop");
-        resolve(DropEffect::Link, allowed)
-    }
-}
-
 const CF_HDROP_FORMAT: u16 = CF_HDROP as u16;
 const DVASPECT_CONTENT_VALUE: u32 = 1;
 

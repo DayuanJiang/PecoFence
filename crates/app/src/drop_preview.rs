@@ -4,10 +4,8 @@
 //! below the dragged fence (so above the fence it outlines).
 
 use pecofence_platform::layered::LayeredImage;
-use pecofence_platform::window::{
-    self, ClassOptions, MessageHandler, Window, WindowBuilder, WindowClass, style,
-};
-use pecofence_platform::{HWND, RECT, desktop, msg};
+use pecofence_platform::window::{self, ClassOptions, Window, WindowClass};
+use pecofence_platform::{HWND, RECT, desktop};
 use windows_core::Result;
 
 pub const DROP_PREVIEW_CLASS: &str = "PecoFence.DropPreview";
@@ -67,23 +65,7 @@ fn render(w: i32, h: i32, scale: f32, radius_dip: f32) -> Vec<u8> {
 impl DropPreview {
     pub fn create() -> Result<Self> {
         let class = WindowClass::register(DROP_PREVIEW_CLASS, ClassOptions::default())?;
-        let handler: MessageHandler = Box::new(|_hwnd, message, _wparam, _lparam| match message {
-            msg::WM_MOUSEACTIVATE => Some(msg::MA_NOACTIVATE),
-            msg::WM_NCHITTEST => Some(msg::HTTRANSPARENT),
-            msg::WM_DESTROY => Some(0),
-            _ => None,
-        });
-        let window = WindowBuilder::new(&class)
-            .title("drop preview")
-            .style(style::POPUP)
-            .ex_style(
-                style::EX_LAYERED
-                    | style::EX_TRANSPARENT
-                    | style::EX_NOACTIVATE
-                    | style::EX_TOOLWINDOW,
-            )
-            .bounds(0, 0, 1, 1)
-            .create(handler)?;
+        let window = window::create_click_through(&class, "drop preview")?;
         Ok(Self {
             _class: class,
             window,
