@@ -23,6 +23,8 @@
 //!                            WM_SIZING, as the size loop does; `size-end <title>` releases it
 //! input <title> <action> <x> <y>  debug-only native mouse/cancel regression input
 //!                            (`hover 1 0` / `hover 0 0`: the pointer enters / leaves)
+//!                            (`key <vk> 0`, `activate <0|1> 0`: keyboard / activation messages)
+//!                            (`kill-focus 0 0`: keyboard focus leaves, including to a child)
 //! pace <ms>                  debug-only script timer interval (default 50 ms)
 //! reorder <title> <index>    same command as the tab menu
 //! detach <title>             tear the tab out into its own fence (menu path)

@@ -10,7 +10,8 @@ impl FenceViewState {
     /// window geometry or send messages synchronously (posting is fine) — the caller does
     /// that with no borrow held.
     pub(super) fn tick(&mut self, now: Instant, draw_chrome: bool) -> bool {
-        let mut more = self.tick_shadow_alpha(now);
+        let mut more = self.sync_idle_fade(now);
+        more |= self.tick_shadow_alpha(now);
         let mut content = false;
         let mut glide_done = false;
         if let Some(t) = self.scroll_anim {

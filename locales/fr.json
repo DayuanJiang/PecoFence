@@ -1,4 +1,6 @@
 {
+  "闲置时的不透明度": "Opacité au repos",
+  "鼠标移开时淡化背景、图标和文字；悬停或操作时恢复正常": "Estomper les arrière-plans, icônes et textes au repos ; rétablir leur opacité au survol ou pendant une interaction",
   "桌面": "Bureau",
   "栅栏": "Groupes",
   "程序": "Applications",

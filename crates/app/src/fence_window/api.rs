@@ -99,10 +99,12 @@ impl FenceWindow {
         let target = ctx.stack.create_target(hwnd)?;
         let root = ctx.stack.compositor.create_container_visual();
         target.set_root(&root);
+        let idle_layer = ctx.stack.compositor.create_container_visual();
+        root.children().insert_at_top(&idle_layer);
         let chrome_panel = Panel::new(&ctx.stack)?;
         let content_panel = Panel::new(&ctx.stack)?;
-        root.children().insert_at_top(&chrome_panel.visual);
-        root.children().insert_at_top(&content_panel.visual);
+        idle_layer.children().insert_at_top(&chrome_panel.visual);
+        idle_layer.children().insert_at_top(&content_panel.visual);
 
         let dpi = window.dpi().max(96);
         // Re-derive the rolled height with the window's real DPI.
@@ -222,6 +224,9 @@ impl FenceWindow {
             column_collapsed: false,
             _target: target,
             root,
+            idle_layer,
+            idle_fade: Tween::at(1.0, Instant::now()),
+            idle_opacity_applied: 1.0,
             chrome: ctx.chrome.clone(),
             icons: ctx.icons.clone(),
             bitmaps: ctx.bitmaps.clone(),
@@ -465,8 +470,9 @@ impl FenceWindow {
             },
         );
         format!(
-            "title={:?} title_count={:?} filtered={} opacity={:.2} scale={:.3} fade={fade} retired={} rolled={} rolling={} peeking={} items={} tabs={} selected={} focused={:?} shadow_visible={} shadow_alpha={} layout={:?} locked={} auto_height={} active={} scroll={:.1} client={:?} client_offset=({},{}) chrome={:?} glass={:?} wallpaper_uploads={} title_size={} tab_fonts={:?} tab_rects={:?} content_x={} content={:?} capture={} tab_drag={} window_drag={} detach_pending={} plate_inset={} plate_alpha={:.2} mouse_inside={} content_y={} text_size={} clock_text={}/{} note_boxes={} script_rows={} off_desktop={} desktop_tip={:?} filter_tag={:?} badge={} rolled_count={} tag_fit={:?}",
+            "title={:?} idle_opacity={:.2} title_count={:?} filtered={} opacity={:.2} scale={:.3} fade={fade} retired={} rolled={} rolling={} peeking={} items={} tabs={} selected={} focused={:?} shadow_visible={} shadow_alpha={} layout={:?} locked={} auto_height={} active={} scroll={:.1} client={:?} client_offset=({},{}) chrome={:?} glass={:?} wallpaper_uploads={} title_size={} tab_fonts={:?} tab_rects={:?} content_x={} content={:?} capture={} tab_drag={} window_drag={} detach_pending={} plate_inset={} plate_alpha={:.2} mouse_inside={} content_y={} text_size={} clock_text={}/{} note_boxes={} script_rows={} off_desktop={} desktop_tip={:?} filter_tag={:?} badge={} rolled_count={} tag_fit={:?}",
             v.title,
+            v.idle_layer.opacity(),
             v.title_count,
             v.filter_active,
             v.root.opacity(),
@@ -621,6 +627,9 @@ impl FenceWindow {
                         (msg::WM_LBUTTONUP, 0, (p.x, p.y))
                     }
                     "escape" => (msg::WM_KEYDOWN, msg::VK_ESCAPE as usize, (0, 0)),
+                    "key" => (msg::WM_KEYDOWN, x as usize, (0, 0)),
+                    "activate" => (msg::WM_ACTIVATE, x as usize, (0, 0)),
+                    "kill-focus" => (msg::WM_KILLFOCUS, 0, (0, 0)),
                     "right" => (msg::WM_RBUTTONDOWN, 0, (x, y)),
                     _ => return,
                 };
@@ -2270,12 +2279,20 @@ impl FenceWindow {
     pub fn redraw_for_floating(&self) -> bool {
         let mut changes = false;
         self.with_view(|v| {
+            v.sync_idle_fade(Instant::now());
             changes = v.floating_changes_look();
             if changes {
                 let _ = v.redraw();
             }
         });
         changes
+    }
+
+    /// Popup menus suspend the App's normal frame dispatch, but keep their fences readable.
+    pub fn refresh_idle_opacity(&self) {
+        self.with_view(|v| {
+            v.sync_idle_fade(Instant::now());
+        });
     }
 
     /// The icon cache has new pictures for these draw keys (`IconCache::take_replaced`):

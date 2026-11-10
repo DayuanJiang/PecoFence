@@ -363,6 +363,7 @@ impl FenceViewState {
 
     /// Draws the chrome (backdrop, tabs or title, rim, chevron).
     pub(super) fn draw_chrome_panel(&mut self) -> Result<()> {
+        self.sync_idle_fade(Instant::now());
         let now = Instant::now();
         // The tab rects first: they bring the strip's scroll up to this size (the active tab in
         // view), and the strip's clip in `title_state` reads that scroll. In the other order a
@@ -976,6 +977,7 @@ impl FenceViewState {
     }
 
     pub(super) fn redraw_content(&mut self) -> Result<()> {
+        self.sync_idle_fade(Instant::now());
         if self.note.is_some() {
             return self.redraw_note();
         }

@@ -146,6 +146,50 @@ pub(super) fn show_shadow(shadow: HWND, fence: HWND) {
 }
 
 impl FenceViewState {
+    /// Update only compositor opacity and the cached shadow, never rasterize icons per frame.
+    pub(super) fn sync_idle_fade(&mut self, now: Instant) -> bool {
+        let engaged = self.mouse_inside
+            || (self.win_active && self.focus_visible)
+            || self.drag.is_some()
+            || self.remote_drag.is_some()
+            || self.tab_drag.is_some()
+            || self.col_drag.is_some()
+            || self.scrollbar_pressed()
+            || self.ole_drag
+            || self.marquee.is_some()
+            || self.title_renaming
+            || self.renaming.is_some()
+            || self.merge_hint
+            || self.drop_hover
+            || self.drop_item.is_some()
+            || self.drop_insert.is_some()
+            || self.drop_tab.is_some()
+            || self.behavior.floating.get()
+            || self.behavior.menu_open.get();
+        let target = if self.bare() || engaged {
+            1.0
+        } else {
+            self.behavior.idle_opacity.get()
+        };
+        if !self.motion.enabled() {
+            self.idle_fade = Tween::at(target, now);
+        } else if self.idle_fade.target() != target {
+            self.idle_fade
+                .retarget(target, motion::FAST, Curve::Linear, now);
+        }
+        let opacity = self.idle_fade.value_at(now);
+        if opacity != self.idle_opacity_applied {
+            self.idle_layer.set_opacity(opacity);
+            self.idle_opacity_applied = opacity;
+            self.apply_shadow_alpha(now);
+        }
+        let busy = !self.idle_fade.is_done(now);
+        if busy {
+            self.frames.request();
+        }
+        busy
+    }
+
     pub(super) fn update_shadow(&mut self) {
         if pecofence_core::brand::var_os("PECOFENCE_NO_SHADOW").is_some() {
             self.shadow.hide();
@@ -209,7 +253,9 @@ impl FenceViewState {
     /// The shadow's constant alpha: the whole-window fade times the plate's own alpha, so a
     /// fully transparent fence casts no shadow until its plate shows.
     pub(super) fn apply_shadow_alpha(&mut self, now: Instant) {
-        let a = self.shadow_alpha.value_at(now).clamp(0.0, 1.0) * self.plate_alpha;
+        let a = self.shadow_alpha.value_at(now).clamp(0.0, 1.0)
+            * self.plate_alpha
+            * self.idle_fade.value_at(now);
         self.shadow.set_alpha((a * 255.0).round() as u8);
     }
 

@@ -1611,6 +1611,8 @@ impl App {
                     state.config.settings.roll_up.click_to_expand,
                 ),
                 hover_speed: std::cell::Cell::new(state.config.settings.roll_up.hover_speed),
+                idle_opacity: std::cell::Cell::new(state.config.settings.idle_opacity),
+                menu_open: std::cell::Cell::new(false),
                 title_on_hover: std::cell::Cell::new(state.config.settings.roll_up.title_on_hover),
                 title_align: std::cell::Cell::new(state.config.settings.title_align),
                 tab_bar: std::cell::Cell::new(state.config.settings.tab_bar),

@@ -297,7 +297,7 @@ impl FenceViewState {
         }
         incoming.visual.set_opacity(0.0);
         incoming.visual.set_visible(true);
-        self.root.children().insert_at_top(&incoming.visual);
+        self.idle_layer.children().insert_at_top(&incoming.visual);
         let outgoing = std::mem::replace(&mut self.content_panel, incoming);
         let (o, n) = (outgoing.visual.clone(), self.content_panel.visual.clone());
         self.outgoing.push(outgoing);
@@ -348,7 +348,7 @@ impl FenceViewState {
     pub(super) fn park_panel(&mut self, mut o: Panel) {
         let _ = self.motion.stop(&o.visual, Prop::Opacity);
         let _ = self.motion.stop(&o.visual, Prop::Offset);
-        self.root.children().remove(&o.visual);
+        self.idle_layer.children().remove(&o.visual);
         o.visual.set_opacity(1.0);
         o.visual.set_visible(false);
         if self.spares.len() < 2 {
