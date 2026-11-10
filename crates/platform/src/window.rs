@@ -401,12 +401,6 @@ pub fn get_capture() -> HWND {
     unsafe { GetCapture() }
 }
 
-/// True while `hwnd` still identifies a live window.
-pub fn is_window(hwnd: HWND) -> bool {
-    // SAFETY: plain FFI call; IsWindow tolerates stale handles.
-    unsafe { IsWindow(Some(hwnd)).as_bool() }
-}
-
 pub fn release_capture() {
     // SAFETY: plain FFI call.
     unsafe {
@@ -917,6 +911,25 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             None => DefWindowProcW(hwnd, msg, wparam, lparam),
         }
     }
+}
+
+/// A 1x1 layered popup that the mouse passes through and that never takes focus: the base of
+/// the drop preview, the marquee, the drag guides and the fence shadows.
+pub fn create_click_through(class: &WindowClass, title: &str) -> Result<Window> {
+    let handler: MessageHandler = Box::new(|_hwnd, message, _wparam, _lparam| match message {
+        crate::msg::WM_MOUSEACTIVATE => Some(crate::msg::MA_NOACTIVATE),
+        crate::msg::WM_NCHITTEST => Some(crate::msg::HTTRANSPARENT),
+        crate::msg::WM_DESTROY => Some(0),
+        _ => None,
+    });
+    WindowBuilder::new(class)
+        .title(title)
+        .style(style::POPUP)
+        .ex_style(
+            style::EX_LAYERED | style::EX_TRANSPARENT | style::EX_NOACTIVATE | style::EX_TOOLWINDOW,
+        )
+        .bounds(0, 0, 1, 1)
+        .create(handler)
 }
 
 #[cfg(test)]

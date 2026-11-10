@@ -254,7 +254,7 @@ pub fn paths_for_shell(paths: Vec<PathBuf>) -> Vec<PathBuf> {
 }
 
 /// Reads `HKxx\key\name` as a DWORD; `None` when absent or not a DWORD.
-fn reg_dword(root: HKEY, key: &str, name: &str) -> Option<u32> {
+pub(crate) fn reg_dword(root: HKEY, key: &str, name: &str) -> Option<u32> {
     let key = to_wide(key);
     let name = to_wide(name);
     let mut value: u32 = 0;

@@ -1625,7 +1625,7 @@ impl AppState {
     fn sorted_members(&self, fence: &Fence, held: bool) -> Vec<&Item> {
         let mut items = self.fence_members(fence, held);
         match fence.view.sort {
-            SortMode::Manual => items.sort_by_key(|(r, it)| {
+            SortMode::Manual => items.sort_by_cached_key(|(r, it)| {
                 (
                     r.and_then(|r| r.manual_index).unwrap_or(u32::MAX),
                     it.display_name.to_lowercase(),

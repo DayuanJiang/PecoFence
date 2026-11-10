@@ -1457,7 +1457,7 @@ impl DesktopAnchor {
             tracing::debug!(?pt, "press on the bare desktop; quick hide is off");
             return;
         }
-        let limit = rawinput::double_click_time_ms() as u128;
+        let limit = pecofence_platform::sysparams::double_click_time_ms() as u128;
         let slop = rawinput::double_click_slop_px();
         if let Some((interval_ms, first)) =
             self.quick.desktop_press(Instant::now(), pt, limit, slop)

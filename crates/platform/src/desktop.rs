@@ -92,8 +92,9 @@ pub fn is_iconic(hwnd: HWND) -> bool {
     unsafe { IsIconic(hwnd).as_bool() }
 }
 
+/// True while `hwnd` still identifies a live window.
 pub fn is_window(hwnd: HWND) -> bool {
-    // SAFETY: plain FFI call.
+    // SAFETY: plain FFI call; IsWindow tolerates stale handles.
     unsafe { IsWindow(Some(hwnd)).as_bool() }
 }
 
