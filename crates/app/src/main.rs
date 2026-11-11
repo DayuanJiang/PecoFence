@@ -28,7 +28,7 @@ mod shadow;
 mod share_log;
 mod state;
 
-use pecofence_core::log_file::{self, LINE_WAIT};
+use pecofence_core::log_file::{self, EXIT_WAIT};
 use pecofence_platform::com::OleGuard;
 use pecofence_platform::window;
 use windows_core::Result;
@@ -166,7 +166,7 @@ fn install_panic_hook() {
         let command = pecofence_platform::hangwatch::running_command();
         tracing::error!(%location, payload, command = command.as_deref(), detail = %info, backtrace = %bt, "PANIC");
         // The process ends when this returns: the line has to be in the file by then.
-        log_file::written(LINE_WAIT);
+        log_file::written(EXIT_WAIT);
     }));
 }
 
@@ -199,17 +199,12 @@ fn show_running_settings(instance: Option<&str>) {
     }
 }
 
-/// How long the end of the process waits for the log's last lines to be written: the next
-/// start reads `process exiting` as a normal end (`feedback::log_ends_normally`). The disk can
-/// keep a write waiting most of a minute while Windows writes out a large file it copied.
-const LOG_EXIT_WAIT: std::time::Duration = std::time::Duration::from_secs(90);
-
 /// Waits for the log's writer threads when dropped.
 struct LogWritten;
 
 impl Drop for LogWritten {
     fn drop(&mut self) {
-        log_file::written(LOG_EXIT_WAIT);
+        log_file::written(EXIT_WAIT);
     }
 }
 
@@ -287,6 +282,7 @@ fn main() -> Result<()> {
         icons_hidden = pecofence_platform::shell_icons::desktop_icons_hidden(),
         "process exiting"
     );
-    log_file::written(LOG_EXIT_WAIT);
+    // The next start reads this line as a normal end (`feedback::log_ends_normally`).
+    log_file::written(EXIT_WAIT);
     std::process::exit(code);
 }

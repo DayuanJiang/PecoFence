@@ -240,7 +240,7 @@ unsafe extern "system" fn filter(info: *const EXCEPTION_POINTERS) -> i32 {
         "CRASH (unhandled exception)"
     );
     // The process ends when this returns: the line has to be in the file by then.
-    pecofence_core::log_file::written(pecofence_core::log_file::LINE_WAIT);
+    pecofence_core::log_file::written(pecofence_core::log_file::EXIT_WAIT);
     EXCEPTION_CONTINUE_SEARCH
 }
 

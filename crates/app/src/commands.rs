@@ -63,6 +63,9 @@ pub const WM_APP_SMART_READ: u32 = msg::WM_APP + 32;
 /// 智能栅栏: a smart fence's own folder watcher saw a change (the fences wait in
 /// `SmartState::changed`).
 pub const WM_APP_SMART_FS: u32 = msg::WM_APP + 33;
+/// A save of the configuration failed on the saver thread (`state::saver_for`); the App takes
+/// the failure and says so on the tray.
+pub const WM_APP_SAVE_FAILED: u32 = msg::WM_APP + 23;
 
 /// What a file drop does with the dropped paths (Explorer's Move / Copy / Create shortcut, the
 /// effect the drop target reported).

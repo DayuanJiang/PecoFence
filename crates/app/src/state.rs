@@ -29,6 +29,9 @@ pub struct AppState {
     pub layout: usize,
     /// The configuration has changes that were not handed to `saver`, or whose save failed.
     dirty: bool,
+    /// A save failed on the saver thread and the tray has not been asked to say so yet
+    /// ([`Self::take_save_failure`]).
+    save_failed: bool,
     catalog: HashMap<ItemKey, ItemId>,
     /// Runtime-only items of folder portals (never persisted; rebuilt from the folder).
     portal_items: HashMap<ItemId, Item>,
@@ -156,6 +159,16 @@ fn in_package_folder(path: &Path) -> bool {
 /// copy, a scan).
 const SLOW_SAVE: std::time::Duration = std::time::Duration::from_secs(1);
 
+/// The control window, told when a save fails on the saver thread; 0 until
+/// [`wake_on_save_failure`] names it.
+static SAVE_FAILED_WAKE: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsize::new(0);
+
+/// From now on a save that fails posts `WM_APP_SAVE_FAILED` to `control`, so the App takes
+/// the failure right away; until then it takes it with its next save.
+pub fn wake_on_save_failure(control: pecofence_platform::HWND) {
+    SAVE_FAILED_WAKE.store(control.0 as isize, std::sync::atomic::Ordering::Relaxed);
+}
+
 /// The saver thread for `store`'s files. It logs how every write ended.
 fn saver_for(store: &ConfigStore) -> ConfigSaver {
     let files = store.clone();
@@ -169,15 +182,26 @@ fn saver_for(store: &ConfigStore) -> ConfigSaver {
             Ok(()) => tracing::debug!(ms, path = %primary.display(), "config saved"),
             // Where config.json and its temp file really are: one inside the Store
             // package's copy of %APPDATA% and one outside would explain a refused rename.
-            Err(e) => tracing::error!(
-                what = e.step,
-                error = %e.error,
-                ms,
-                config_in_package = in_package_folder(&primary),
-                temp_in_package = in_package_folder(&files.tmp_path()),
-                place = shell::path_place(&primary),
-                "config save failed"
-            ),
+            Err(e) => {
+                tracing::error!(
+                    what = e.step,
+                    error = %e.error,
+                    ms,
+                    config_in_package = in_package_folder(&primary),
+                    temp_in_package = in_package_folder(&files.tmp_path()),
+                    place = shell::path_place(&primary),
+                    "config save failed"
+                );
+                let control = SAVE_FAILED_WAKE.load(std::sync::atomic::Ordering::Relaxed);
+                if control != 0 {
+                    pecofence_platform::window::post_message(
+                        pecofence_platform::HWND(control as *mut core::ffi::c_void),
+                        crate::commands::WM_APP_SAVE_FAILED,
+                        0,
+                        0,
+                    );
+                }
+            }
         }
     };
     ConfigSaver::new(store.clone(), Box::new(done))
@@ -236,6 +260,7 @@ impl AppState {
             store,
             layout: 0,
             dirty: false,
+            save_failed: false,
             catalog: HashMap::new(),
             portal_items: HashMap::new(),
             portal_members: HashMap::new(),
@@ -489,6 +514,7 @@ impl AppState {
             saver: saver_for(&ConfigStore::new(PathBuf::new())),
             layout: 0,
             dirty: false,
+            save_failed: false,
             catalog: HashMap::new(),
             portal_items: HashMap::new(),
             portal_members: HashMap::new(),
@@ -1044,7 +1070,7 @@ impl AppState {
     /// hold the configuration as it is now. `by` names the caller in the log.
     pub fn save_and_wait(&mut self, by: &'static str) -> bool {
         // A save that failed earlier is tried again here.
-        self.take_save_failure();
+        self.note_save_failure();
         self.save_if_dirty();
         let started = std::time::Instant::now();
         self.saver.wait();
@@ -1053,16 +1079,34 @@ impl AppState {
             let ms = crate::share_log::millis(waited);
             tracing::info!(by, ms, "waited for the config save");
         }
-        self.take_save_failure();
+        self.note_save_failure();
+        if !self.dirty {
+            // The files hold everything: a failure before this save needs no notice now.
+            self.save_failed = false;
+        }
         !self.dirty
     }
 
-    /// Whether a save failed on the saver thread since the last call. Its changes count as
-    /// unsaved again, so the next save writes them.
+    /// Takes a failed save from the saver thread: its changes count as unsaved again, so
+    /// the next save writes them, and the failure waits for [`Self::take_save_failure`].
+    fn note_save_failure(&mut self) {
+        if self.saver.take_failed() {
+            self.dirty = true;
+            self.save_failed = true;
+        }
+    }
+
+    /// Whether a save failed on the saver thread since the last call (the tray then says
+    /// so). The changes it held are unsaved again.
     pub fn take_save_failure(&mut self) -> bool {
-        let failed = self.saver.take_failed();
-        self.dirty |= failed;
-        failed
+        self.note_save_failure();
+        std::mem::take(&mut self.save_failed)
+    }
+
+    /// Waits until the configurations handed to the saver thread are written, for the
+    /// control window when a menu or dialog holds the App at the end of the session.
+    pub fn save_waiter(&self) -> pecofence_core::config_store::SaveWaiter {
+        self.saver.waiter()
     }
 
     // ---- desktop items ---------------------------------------------------------------------
@@ -3333,6 +3377,7 @@ mod tests {
             store: ConfigStore::new(dir),
             layout: 0,
             dirty: false,
+            save_failed: false,
             catalog: HashMap::new(),
             portal_items: HashMap::new(),
             portal_members: HashMap::new(),
@@ -3390,12 +3435,18 @@ mod tests {
         assert!(state.take_save_failure());
         assert!(state.is_dirty(), "unsaved again");
         assert!(!state.take_save_failure(), "told once");
-        // Tried again and waited for: it fails again.
+        // Tried again and waited for: it fails again, and the notice still gets to know.
         assert!(!state.save_and_wait("test"));
         assert!(state.is_dirty());
+        assert!(state.take_save_failure());
+        // A failure followed by a waited save that works: nothing is lost, nothing to tell.
+        state.mark_dirty();
+        state.save_if_dirty();
+        state.saver.wait();
         std::fs::remove_file(&dir).unwrap();
         assert!(state.save_and_wait("test"));
         assert!(!state.is_dirty());
+        assert!(!state.take_save_failure());
         assert!(matches!(
             state.store.load(),
             pecofence_core::LoadOutcome::Primary(_)

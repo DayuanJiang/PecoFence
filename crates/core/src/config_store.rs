@@ -397,7 +397,8 @@ pub struct ConfigSaver {
 }
 
 /// What a [`ConfigSaver`] calls on its thread after every write: how long the write took and
-/// how it ended.
+/// how it ended. [`ConfigSaver::take_failed`] already knows the outcome; [`ConfigSaver::wait`]
+/// returns once this has run.
 pub type SaveDone = dyn Fn(Duration, &Result<(), SaveError>) + Send + Sync;
 
 struct SaverShared {
@@ -459,9 +460,14 @@ impl ConfigSaver {
 
     /// Waits until every configuration handed over is written, or its write has failed.
     pub fn wait(&self) {
-        let mut state = self.shared.lock();
-        while state.next.is_some() || state.writing {
-            state = self.shared.wait(state);
+        self.shared.wait_idle();
+    }
+
+    /// A handle that waits like [`Self::wait`], for a caller that cannot reach the saver
+    /// when it has to wait (the saver's owner is borrowed elsewhere).
+    pub fn waiter(&self) -> SaveWaiter {
+        SaveWaiter {
+            shared: self.shared.clone(),
         }
     }
 
@@ -469,6 +475,18 @@ impl ConfigSaver {
     /// false until another write fails.
     pub fn take_failed(&self) -> bool {
         std::mem::take(&mut self.shared.lock().failed)
+    }
+}
+
+/// See [`ConfigSaver::waiter`].
+pub struct SaveWaiter {
+    shared: Arc<SaverShared>,
+}
+
+impl SaveWaiter {
+    /// [`ConfigSaver::wait`].
+    pub fn wait(&self) {
+        self.shared.wait_idle();
     }
 }
 
@@ -493,6 +511,13 @@ impl SaverShared {
             .unwrap_or_else(PoisonError::into_inner)
     }
 
+    fn wait_idle(&self) {
+        let mut state = self.lock();
+        while state.next.is_some() || state.writing {
+            state = self.wait(state);
+        }
+    }
+
     fn run(&self) {
         loop {
             let mut state = self.lock();
@@ -515,11 +540,11 @@ impl SaverShared {
     fn write(&self, cfg: &Config) {
         let started = Instant::now();
         let result = self.store.save(cfg);
-        (self.done)(started.elapsed(), &result);
-        let mut state = self.lock();
-        state.writing = false;
-        state.failed = result.is_err();
-        drop(state);
+        let took = started.elapsed();
+        // Before `done`: it may tell the owner's thread, which then asks `take_failed`.
+        self.lock().failed = result.is_err();
+        (self.done)(took, &result);
+        self.lock().writing = false;
         self.changed.notify_all();
     }
 }
@@ -1051,6 +1076,30 @@ mod tests {
         });
         assert!(*waited.lock().unwrap());
         assert_eq!(saved_title(&store), "b");
+    }
+
+    #[test]
+    fn a_waiter_waits_like_the_saver_itself() {
+        let store = ConfigStore::new(tmpdir("saver-waiter"));
+        let (saver, wrote, release) = held_saver(&store);
+        let waiter = saver.waiter();
+        waiter.wait(); // nothing handed over: returns at once
+        saver.save(titled("a"));
+        assert!(wrote.recv().unwrap());
+        let waited = Arc::new(Mutex::new(false));
+        std::thread::scope(|scope| {
+            let flag = waited.clone();
+            let waiter = &waiter;
+            scope.spawn(move || {
+                waiter.wait();
+                *flag.lock().unwrap() = true;
+            });
+            std::thread::sleep(Duration::from_millis(200));
+            assert!(!*waited.lock().unwrap(), "wait returned during a write");
+            release.send(()).unwrap();
+        });
+        assert!(*waited.lock().unwrap());
+        assert_eq!(saved_title(&store), "a");
     }
 
     #[test]

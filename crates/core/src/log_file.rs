@@ -5,7 +5,7 @@
 //! disk waits, however small (36 seconds for one log line on a test PC with a 6 GB copy), and
 //! the fences stopped for as long. [`background`] hands each line to a thread that does the
 //! waiting. What must be in the file before the process goes on (the last line of an exit, a
-//! panic, a crash) calls [`written`] after it.
+//! panic, a crash, the end of the session) calls [`written`] after it.
 
 use std::fs::File;
 use std::io::{self, Write};
@@ -13,8 +13,14 @@ use std::sync::Mutex;
 use std::sync::mpsc::{Sender, channel};
 use std::time::{Duration, Instant};
 
-/// How long a panic, a crash or the end of the session waits for its line to be written
-/// before the process may end.
+/// How long the end of the process (an exit, a panic, a crash) waits for its last lines to
+/// be written: the next start reads them to tell how this run ended. The disk can keep a
+/// write waiting most of a minute while Windows writes out a large file.
+pub const EXIT_WAIT: Duration = Duration::from_secs(90);
+
+/// How long the thread that owns the windows waits for the lines so far where it could go
+/// on without them: at the end of the session, which Windows cuts short anyway, and before
+/// the log is read for a feedback report.
 pub const LINE_WAIT: Duration = Duration::from_secs(5);
 
 enum Msg {
@@ -58,6 +64,14 @@ pub fn background(file: File) -> LogFile {
     LogFile { tx }
 }
 
+impl LogFile {
+    /// Waits until every line handed to this file so far is written, `timeout` at most.
+    /// False when the time ran out first (the disk is busy).
+    pub fn written(&self, timeout: Duration) -> bool {
+        all_written(std::slice::from_ref(&self.tx), timeout)
+    }
+}
+
 impl Write for LogFile {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         let _ = self.tx.send(Msg::Bytes(buf.to_vec()));
@@ -69,11 +83,14 @@ impl Write for LogFile {
     }
 }
 
-/// Waits until every line logged so far is written to its file, `timeout` at most. False
-/// when the time ran out first (the disk is busy).
+/// [`LogFile::written`] for every file started with [`background`].
 pub fn written(timeout: Duration) -> bool {
-    let deadline = Instant::now() + timeout;
     let writers = WRITERS.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    all_written(&writers, timeout)
+}
+
+fn all_written(writers: &[Sender<Msg>], timeout: Duration) -> bool {
+    let deadline = Instant::now() + timeout;
     let (done, answers) = channel();
     let asked = writers
         .iter()
@@ -94,6 +111,9 @@ mod tests {
         std::env::temp_dir().join(format!("pecofence-log-test-{name}-{}", std::process::id()))
     }
 
+    // The tests wait for their own file: the files of the other tests in this process are
+    // in the same list, and one of them stands for a busy disk.
+
     #[test]
     fn lines_reach_the_file_in_order_once_written_returns() {
         let path = temp_file("order");
@@ -101,7 +121,7 @@ mod tests {
         for i in 0..500 {
             writeln!(log, "line {i}").unwrap();
         }
-        assert!(written(Duration::from_secs(10)));
+        assert!(log.written(Duration::from_secs(10)));
         let text = std::fs::read_to_string(&path).unwrap();
         let expected: String = (0..500).map(|i| format!("line {i}\n")).collect();
         assert_eq!(text, expected);
@@ -122,7 +142,7 @@ mod tests {
                 });
             }
         });
-        assert!(written(Duration::from_secs(10)));
+        assert!(log.lock().unwrap().written(Duration::from_secs(10)));
         let text = std::fs::read_to_string(&path).unwrap();
         assert_eq!(text.lines().count(), 800);
         for t in 0..4 {
@@ -148,6 +168,8 @@ mod tests {
                 log.write_all(&block).unwrap();
             }
             assert!(started.elapsed() < Duration::from_secs(2));
+            assert!(!log.written(Duration::from_millis(300)));
+            // Every file, this one among them: the time runs out as well.
             assert!(!written(Duration::from_millis(300)));
             // Read to the end on another thread: the writer thread gets through.
             let drain = std::thread::spawn(move || {
@@ -159,7 +181,7 @@ mod tests {
                 }
                 total
             });
-            assert!(written(Duration::from_secs(20)));
+            assert!(log.written(Duration::from_secs(20)));
             assert_eq!(drain.join().unwrap(), 64 * 64 * 1024);
         }
     }

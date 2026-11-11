@@ -4,9 +4,10 @@ use crate::anchor::{self, AnchorCell, DesktopAnchor, ShowDesktopBehavior, ZMode}
 use crate::commands::{
     Command, CommandQueue, TransferMode, WM_APP_COMMAND, WM_APP_DIALOG_OFFER,
     WM_APP_EVERYTHING_SETUP, WM_APP_FRAME, WM_APP_FS_CHANGED, WM_APP_LIVE_WALLPAPER,
-    WM_APP_PEEK_FOCUSED, WM_APP_PREWARM_DONE, WM_APP_SCRIPT_DONE, WM_APP_SHELL_CHANGED,
-    WM_APP_SMART_FS, WM_APP_SMART_READ, WM_APP_STARTUP_BACKDROPS, WM_APP_STARTUP_TASK,
-    WM_APP_THEMES_CHANGED, WM_APP_TRAY, WM_APP_WALLPAPER, WM_APP_WALLPAPER_READ,
+    WM_APP_PEEK_FOCUSED, WM_APP_PREWARM_DONE, WM_APP_SAVE_FAILED, WM_APP_SCRIPT_DONE,
+    WM_APP_SHELL_CHANGED, WM_APP_SMART_FS, WM_APP_SMART_READ, WM_APP_STARTUP_BACKDROPS,
+    WM_APP_STARTUP_TASK, WM_APP_THEMES_CHANGED, WM_APP_TRAY, WM_APP_WALLPAPER,
+    WM_APP_WALLPAPER_READ,
 };
 use crate::fence_window::{
     BackdropMode, BackdropSets, Behavior, FenceContext, FenceWindow, ItemView, SearchMarks, TabView,
@@ -839,6 +840,9 @@ impl App {
             let last_desktop_id = Cell::new(wallpaper::desktop_id());
             let desktops_differ = desktops_differ.clone();
             let session_anchor = session_anchor.clone();
+            // Waits for the saver thread when a menu or dialog holds the App at the end of
+            // the session (WM_QUERYENDSESSION).
+            let save_waiter = state.save_waiter();
             let queue = queue.clone();
             // Asks which virtual desktop a foreground window is on (see WM_APP_WALLPAPER);
             // started the first time desktops keep different pictures.
@@ -922,6 +926,16 @@ impl App {
                         }
                         WM_APP_SCRIPT_DONE => {
                             window::set_timer(hwnd, TIMER_SCRIPT_DONE, 1);
+                            Some(0)
+                        }
+                        WM_APP_SAVE_FAILED => {
+                            // While a menu or dialog holds the App, the next save takes
+                            // the failure.
+                            if let Ok(mut guard) = cell.try_borrow_mut()
+                                && let Some(app) = guard.as_mut()
+                            {
+                                app.notice_save_failure();
+                            }
                             Some(0)
                         }
                         WM_APP_EVERYTHING_SETUP => {
@@ -1480,12 +1494,18 @@ impl App {
                                 if let Some(a) = app.anchor.borrow_mut().as_mut() {
                                     a.release_desktop_icons();
                                 }
-                            } else if let Some(anchor) = session_anchor.get()
-                                && let Ok(mut guard) = anchor.try_borrow_mut()
-                                && let Some(a) = guard.as_mut()
-                            {
+                            } else {
                                 // The session may end before the menu or dialog returns.
-                                a.release_desktop_icons();
+                                if let Some(anchor) = session_anchor.get()
+                                    && let Ok(mut guard) = anchor.try_borrow_mut()
+                                    && let Some(a) = guard.as_mut()
+                                {
+                                    a.release_desktop_icons();
+                                }
+                                // What changed before the menu opened went to the saver
+                                // thread then (every menu saves first): the files are
+                                // written before Windows is told to go on.
+                                save_waiter.wait();
                             }
                             Some(1)
                         }
@@ -1583,6 +1603,7 @@ impl App {
         // The Recycle Bin is asked on a worker; a new answer means listing the desktop again.
         shell::notify_recycle_bin_changes(control.hwnd(), WM_APP_FS_CHANGED);
         pecofence_platform::hangwatch::start(control.hwnd());
+        crate::state::wake_on_save_failure(control.hwnd());
         // Before any item menu can be built: see `prepare_handler_cache`.
         pecofence_platform::shell_menu::prepare_handler_cache();
 
@@ -2185,9 +2206,10 @@ impl App {
         window::set_timer(self.control.hwnd(), TIMER_SAVE, 800);
     }
 
-    /// Before a save: asks whether one failed on the saver thread since the last call (its
-    /// changes are unsaved again, so the save that follows writes them). The first time in a
-    /// run the tray says so, since the changes are lost at exit and only the log had the reason.
+    /// Asks whether a save failed on the saver thread since the last call: when one fails
+    /// (`WM_APP_SAVE_FAILED`) and before every save, which then writes its changes again. The
+    /// first time in a run the tray says so, since the changes are lost at exit and only the
+    /// log had the reason.
     fn notice_save_failure(&mut self) {
         if !self.state.take_save_failure() || self.save_failure_shown {
             return;
