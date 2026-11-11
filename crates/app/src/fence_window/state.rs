@@ -43,6 +43,29 @@ impl WindowsIconPlaces {
     }
 }
 
+/// A window on its way from `from` to `to` (screen px of its top-left corner); `t` runs 0 to 1.
+#[derive(Clone, Copy, Debug)]
+pub(super) struct WindowGlide {
+    pub(super) from: (i32, i32),
+    pub(super) to: (i32, i32),
+    pub(super) t: Tween,
+}
+
+impl WindowGlide {
+    /// Where the window is at `now`, and whether it has arrived.
+    pub(super) fn at(&self, now: Instant) -> ((i32, i32), bool) {
+        if self.t.is_done(now) {
+            return (self.to, true);
+        }
+        let p = self.t.value_at(now);
+        let along = |a: i32, b: i32| a + ((b - a) as f32 * p).round() as i32;
+        (
+            (along(self.from.0, self.to.0), along(self.from.1, self.to.1)),
+            false,
+        )
+    }
+}
+
 pub struct FenceViewState {
     pub fence_id: FenceId,
     pub title: String,
@@ -497,6 +520,9 @@ pub struct FenceViewState {
     /// `expanded_h_px` keeps the full height, which is what is saved and what the fence opens
     /// to again once there is room. None when the window is as tall as `expanded_h_px`.
     pub(super) capped_h_px: Option<i32>,
+    /// Let go over another fence: the window glides from where it was dropped to the free
+    /// spot it lands on (`FenceWindow::glide_to`), ticked by the frame clock.
+    pub(super) glide: Option<WindowGlide>,
     /// The app is placing the window (`FenceWindow::place_window`, a cancelled drag put back):
     /// the rect it sets is already in the target monitor's pixels, so a WM_DPICHANGED sent
     /// inside that SetWindowPos (a move onto a monitor with another scale) must not scale it

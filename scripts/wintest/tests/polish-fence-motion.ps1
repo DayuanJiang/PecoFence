@@ -5,8 +5,9 @@
 #   B  an open fence stops where the fences it pushes can go no lower (the push overlap open
 #      since 0.3.1): by click and CLI, with one and two fences below, auto height, a restart;
 #      a hover peek still opens in full above them (#197)
+#   C  a fence let go a little over another one glides to its landing place
 # Default: all parts. Runs on a 1600x900 box at 100 %.
-if (-not $Part) { $Part = 'AB' }
+if (-not $Part) { $Part = 'ABC' }
 trap { PfTrap $_; continue }
 . C:\pf\kit\pixels.ps1
 
@@ -279,6 +280,44 @@ if ($Part -match 'B') {
   $p = ChevronPt Top; [G]::Click($p[0], $p[1]); Start-Sleep -Milliseconds 900; Park
   Check 'two fences below: rolled up again, both are back' ((Win Mid).T -eq 348 -and (Win Low).T -eq 510) (State @('Top', 'Mid', 'Low'))
   Pf fence delete Top | Out-Null; Pf fence delete Mid | Out-Null; Pf fence delete Low | Out-Null; Start-Sleep -Milliseconds 600
+}
+
+if ($Part -match 'C') {
+  # ---- a fence let go a little over another one glides to its landing place
+  Pf fence create --title Alpha --rect '300,200,300,250' | Out-Null
+  Pf fence create --title Beta --rect '700,200,300,250' | Out-Null
+  Start-Sleep -Seconds 1; Park
+  foreach ($k in 1..2) {
+    Case "C dropped 10 px over the other fence ($k)"
+    Pf fence move Alpha --rect '300,200,300,250' | Out-Null; Start-Sleep -Milliseconds 700
+    $p = TitlePt Alpha
+    [PmTrack]::Start((Hw Alpha))
+    DragTo $p[0] $p[1] ($p[0] + 110) $p[1] 16
+    Start-Sleep -Milliseconds 300
+    $rows = Rows ([PmTrack]::Stop())
+    $end = $rows[-1]
+    # The moves of the last 300 ms before the window came to rest: the trip from where it was
+    # let go (the drag's last move is 400 ms older) to where it landed.
+    $trip = @($rows | Where-Object { $_.ms -ge $end.ms - 300 })
+    $from = @($rows | Where-Object { $_.ms -lt $end.ms - 300 })[-1]
+    $f = FenceGet Alpha
+    Log "drop $k`: let go at x $($from.L), landed at x $($end.L); steps: $(($trip | ForEach-Object { "+$($_.ms - $trip[0].ms):$($_.L)" }) -join ' ')"
+    Check "dropped over Beta ($k): it lands clear of Beta and is saved there" ($end.R -le 700 -and $f.rect.x -eq $end.L -and $f.windowRect.x -eq $end.L) "landed at $($end.L)..$($end.R), saved x $($f.rect.x)"
+    Check "dropped over Beta ($k): the window travels there" ($from.L -ne $end.L -and $trip.Count -ge 4 -and ($trip[-1].ms - $trip[0].ms) -ge 80 -and ($trip[-1].ms - $trip[0].ms) -le 300) "from x $($from.L) to $($end.L) in $($trip.Count) steps over $($trip[-1].ms - $trip[0].ms) ms"
+  }
+  Case 'C animations off'
+  [Anim]::Set($false); Start-Sleep -Milliseconds 800
+  Pf fence move Alpha --rect '300,200,300,250' | Out-Null; Start-Sleep -Milliseconds 700
+  $p = TitlePt Alpha
+  [PmTrack]::Start((Hw Alpha))
+  DragTo $p[0] $p[1] ($p[0] + 110) $p[1] 16
+  Start-Sleep -Milliseconds 300
+  $rows = Rows ([PmTrack]::Stop())
+  $end = $rows[-1]
+  $trip = @($rows | Where-Object { $_.ms -ge $end.ms - 300 })
+  Check 'animations off: the fence is placed at once' ($end.R -le 700 -and $trip.Count -le 2) "landed at $($end.L)..$($end.R) in $($trip.Count) step(s)"
+  [Anim]::Set($true); Start-Sleep -Milliseconds 800
+  Pf fence delete Alpha | Out-Null; Pf fence delete Beta | Out-Null; Start-Sleep -Milliseconds 600
 }
 
 Case 'cleanup'

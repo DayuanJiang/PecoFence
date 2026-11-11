@@ -372,6 +372,7 @@ pub(super) fn on_nclbuttondown(
                 }
                 if v.theme.liquid_glass {
                     v.height_anim = None;
+                    v.glide = None;
                     v.remote_drag = Some(RemoteDrag {
                         hwnd,
                         fence: v.fence_id,
@@ -716,11 +717,13 @@ pub(super) fn on_entersizemove(
     } = h;
     in_size_move.set(true);
     TITLE_MIN_LOGGED.set(false);
-    // The user owns the rect now: an auto-height settle must not fight it.
+    // The user owns the rect now: an auto-height settle must not fight it, nor a glide to
+    // the spot of the last drop.
     if let Ok(mut guard) = view.try_borrow_mut()
         && let Some(v) = guard.as_mut()
     {
         v.height_anim = None;
+        v.glide = None;
     }
     let (r, pt) = (window::window_rect(hwnd), window::cursor_pos());
     let caption = move_start.take();

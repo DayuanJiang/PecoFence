@@ -139,7 +139,9 @@ impl App {
     /// Moves host `id` so that its resting rect `from` goes to `to`, and records it there (it
     /// rests there now). The window keeps its size: a hover peek or a roll in flight goes on
     /// from the new spot.
-    fn relocate(&mut self, id: FenceId, from: RECT, to: RECT) {
+    /// `glide`: the user just dropped it, so the window travels there (`FenceWindow::glide_to`)
+    /// instead of jumping.
+    fn relocate(&mut self, id: FenceId, from: RECT, to: RECT, glide: bool) {
         let Some(w) = self.fences.get(&id) else {
             return;
         };
@@ -158,7 +160,9 @@ impl App {
         if !rolled {
             rect.bottom = rect.top + (to.bottom - to.top);
         }
-        w.set_bounds(rect);
+        if !(glide && w.glide_to(rect)) {
+            w.set_bounds(rect);
+        }
         // Made shorter to fit a spot (`clearance::pull_apart`): the height it opens to as well.
         // One that is open only as far as the fences below leave room keeps its full height.
         if !rolled
@@ -229,7 +233,7 @@ impl App {
             return;
         };
         tracing::info!(%id, off_screen, ?hang, from = ?(r.left, r.top), to = ?(spot.left, spot.top), "fence moved out of an overlap");
-        self.relocate(id, r, spot);
+        self.relocate(id, r, spot, true);
     }
 
     /// Pulls overlapping fences apart ([`clearance::pull_apart`]): any fence with `all` (at
@@ -290,7 +294,7 @@ impl App {
             let (from_h, to_h) = (from.bottom - from.top, spot.bottom - spot.top);
             // `shorter`: no spot had room for its height (a screen made smaller).
             tracing::info!(%id, from = ?(from.left, from.top), to = ?(spot.left, spot.top), from_h, to_h, shorter = to_h < from_h, hang = ?fences[i].1.hang, "overlapping fence moved");
-            self.relocate(id, from, spot);
+            self.relocate(id, from, spot, false);
         }
     }
 

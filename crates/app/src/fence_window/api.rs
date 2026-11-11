@@ -330,6 +330,7 @@ impl FenceWindow {
             hover_raised: false,
             peek_blocked: false,
             capped_h_px: None,
+            glide: None,
             placing: false,
             behavior: ctx.behavior.clone(),
         };
@@ -687,6 +688,7 @@ impl FenceWindow {
     fn place_window(&self, r: RECT) {
         self.with_view(|v| {
             v.height_anim = None;
+            v.glide = None;
             v.placing = true;
         });
         let _ = self
@@ -1855,19 +1857,58 @@ impl FenceWindow {
     }
 
     /// Windows a title or tear-off drag driven by this window moves right now (the dragged one
-    /// and the selection moving along); empty when none runs.
+    /// and the selection moving along), and this window while it glides to the spot it was
+    /// dropped for (`glide_to`: not at rest yet); empty when none runs.
     pub fn dragged_windows(&self) -> Vec<HWND> {
         self.view
             .try_borrow()
             .ok()
             .and_then(|g| {
-                g.as_ref()?.remote_drag.as_ref().map(|rd| {
+                let v = g.as_ref()?;
+                if v.glide.is_some() {
+                    return Some(vec![v.hwnd]);
+                }
+                v.remote_drag.as_ref().map(|rd| {
                     std::iter::once(rd.hwnd)
                         .chain(rd.group.iter().map(|m| m.hwnd))
                         .collect()
                 })
             })
             .unwrap_or_default()
+    }
+
+    /// Moves the window to `to` with a glide from where it is now (167 ms, decelerate): a
+    /// fence let go a little over another one arrives at its free spot instead of jumping
+    /// there. False when the caller should place it at once: animations off, a hidden window,
+    /// another size, or 2 px or less to go.
+    pub fn glide_to(&self, to: RECT) -> bool {
+        let hwnd = self.hwnd();
+        let r = self.window.window_rect();
+        let same_size =
+            r.right - r.left == to.right - to.left && r.bottom - r.top == to.bottom - to.top;
+        let far = (to.left - r.left).abs() > 2 || (to.top - r.top).abs() > 2;
+        self.view.borrow_mut().as_mut().is_some_and(|v| {
+            let glide =
+                same_size && far && v.motion.enabled() && !v.retired && desktop::is_visible(hwnd);
+            tracing::debug!(
+                fence = %v.fence_id,
+                from = ?(r.left, r.top),
+                to = ?(to.left, to.top),
+                same_size,
+                glide,
+                "dropped fence goes to its landing place"
+            );
+            if glide {
+                v.glide = Some(WindowGlide {
+                    from: (r.left, r.top),
+                    to: (to.left, to.top),
+                    t: v.motion
+                        .tween(0.0, 1.0, motion::FAST, Curve::Decelerate, Instant::now()),
+                });
+                v.frames.request();
+            }
+            glide
+        })
     }
 
     pub fn expanded_height_px(&self) -> i32 {
