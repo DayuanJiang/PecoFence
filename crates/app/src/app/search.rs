@@ -111,6 +111,14 @@ impl App {
         self.update_peek_search();
     }
 
+    /// The empty box says what can be typed: the whole computer too when that search is on and
+    /// Everything is running.
+    pub(super) fn show_search_cue(&self) {
+        let whole_pc = self.state.config.settings.tools.everything && everything::find().is_some();
+        tracing::debug!(whole_pc, "search: the empty box shows its hint");
+        crate::peek_search::set_cue(whole_pc);
+    }
+
     /// Ranks the fence matches for `query` (lower case): best match first, then the ones opened
     /// most from the search, then reading order. Fills `peek_hits` and their highlights.
     pub(super) fn rank_fence_matches(&mut self, query: &str) {

@@ -549,6 +549,9 @@ impl App {
     /// (fences in reading order: left to right, then top down; tabs in strip order).
     pub(super) fn update_peek_search(&mut self) {
         let typed = crate::peek_search::query().unwrap_or_default();
+        if typed.is_empty() {
+            self.show_search_cue();
+        }
         let query = typed.trim().to_lowercase();
         self.rank_fence_matches(&query);
         self.schedule_everything(typed.trim());

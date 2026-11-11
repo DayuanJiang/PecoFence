@@ -1241,6 +1241,21 @@ pub fn set_text(text: &str) {
     });
 }
 
+/// The hint in the empty box, in the colour of the glyph beside it: what can be searched
+/// (`whole_pc`: Everything answers too).
+pub fn set_cue(whole_pc: bool) {
+    ACTIVE.with(|a| {
+        if let Some(s) = a.borrow().as_ref() {
+            let hint = if whole_pc {
+                pecofence_core::i18n::text("搜索栅栏和整台电脑，可以用拼音")
+            } else {
+                pecofence_core::i18n::text("搜索栅栏里的文件，可以用拼音")
+            };
+            s.edit.set_hint(hint, s.dim_color);
+        }
+    });
+}
+
 /// Shows `text` at the right end of the box.
 pub fn set_status(text: &str) {
     let hwnd = ACTIVE.with(|a| {

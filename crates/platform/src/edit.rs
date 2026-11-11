@@ -397,6 +397,26 @@ impl EditControl {
         }
     }
 
+    /// Hint text shown while the box is empty, like [`Self::set_cue`], but drawn here in
+    /// `color` (COLORREF): Windows draws its own in one grey, too dark to read on a dark box.
+    pub fn set_hint(&self, text: &str, color: u32) {
+        let hint = Hint {
+            text: text.encode_utf16().collect(),
+            color,
+            shown: std::cell::Cell::new(false),
+            composing: std::cell::Cell::new(false),
+        };
+        let _ = HINTS.try_with(|h| {
+            if let Ok(mut h) = h.try_borrow_mut() {
+                h.insert(self.hwnd.0 as isize, hint);
+            }
+        });
+        // SAFETY: plain FFI call on our control.
+        unsafe {
+            let _ = InvalidateRect(Some(self.hwnd), None, true);
+        }
+    }
+
     /// Background colour (COLORREF), for a parent that paints around the control.
     pub fn back_color(&self) -> u32 {
         self.back_color
@@ -582,6 +602,13 @@ unsafe fn make_font(face: &str, font_dip: f32, dpi: u32) -> HFONT {
 
 impl Drop for EditControl {
     fn drop(&mut self) {
+        // `try_with`: a box still open when the program ends is dropped while the thread's
+        // values go, and the hints may be gone before it.
+        let _ = HINTS.try_with(|h| {
+            if let Ok(mut h) = h.try_borrow_mut() {
+                h.remove(&(self.hwnd.0 as isize));
+            }
+        });
         // SAFETY: we own these GDI objects; the control dies with its parent window.
         unsafe {
             let _ = RemoveWindowSubclass(self.hwnd, Some(notify_proc), 2);
@@ -633,6 +660,119 @@ unsafe extern "system" fn notify_proc(
     result
 }
 
+/// A control's own hint (`set_hint`).
+struct Hint {
+    text: Vec<u16>,
+    color: u32,
+    /// Whether it is on screen now.
+    shown: std::cell::Cell<bool>,
+    /// An input method is composing in the control: its letters stand where the hint would,
+    /// while the control's own text is still empty.
+    composing: std::cell::Cell<bool>,
+}
+
+thread_local! {
+    /// The hints of the controls that have one, by window.
+    static HINTS: std::cell::RefCell<std::collections::HashMap<isize, Hint>> =
+        std::cell::RefCell::new(std::collections::HashMap::new());
+    /// Set while `hint_after` works: the text length it asks for is a message to the control.
+    static IN_HINT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+const WM_IME_STARTCOMPOSITION: u32 = 0x010D;
+
+/// An input method is about to show its letters where the hint stands: the hint goes first,
+/// in a paint of its own before the input method draws (a repaint after that would wipe the
+/// letters it shows).
+///
+/// # Safety
+/// `hwnd` is the EDIT control this subclass belongs to.
+unsafe fn hint_before_composition(hwnd: HWND) {
+    windows_core::link!("user32.dll" "system" fn UpdateWindow(hwnd: HWND) -> windows_core::BOOL);
+    let _ = HINTS.try_with(|h| {
+        let Ok(h) = h.try_borrow() else { return };
+        let Some(hint) = h.get(&(hwnd.0 as isize)) else {
+            return;
+        };
+        hint.composing.set(true);
+        if hint.shown.get() {
+            // SAFETY: plain FFI calls on our control; the paint runs before they return.
+            unsafe {
+                let _ = InvalidateRect(Some(hwnd), None, true);
+                let _ = UpdateWindow(hwnd);
+            }
+        }
+    });
+}
+
+/// Keeps a control's own hint right after the control handled `msg`. After `WM_PAINT` the
+/// hint is drawn over the empty control, unless an input method is composing there. The control
+/// also draws typing and deleting without `WM_PAINT`, so after any other message a hint that
+/// should show and does not (the text went), or still shows beside text, makes the control
+/// paint again.
+///
+/// # Safety
+/// `hwnd` is the EDIT control this subclass belongs to.
+unsafe fn hint_after(hwnd: HWND, msg: u32) {
+    windows_core::link!("user32.dll" "system" fn HideCaret(hwnd: HWND) -> windows_core::BOOL);
+    windows_core::link!("user32.dll" "system" fn ShowCaret(hwnd: HWND) -> windows_core::BOOL);
+    const WM_GETFONT: u32 = 0x0031;
+    const EM_GETMARGINS: u32 = 0x00D4;
+    if IN_HINT.get() {
+        return;
+    }
+    // `try_with`: a control destroyed while the program ends gets its last messages after the
+    // thread's values went.
+    let _ = HINTS.try_with(|h| {
+        let Ok(h) = h.try_borrow() else { return };
+        let Some(hint) = h.get(&(hwnd.0 as isize)) else {
+            return;
+        };
+        IN_HINT.set(true);
+        if msg == WM_IME_ENDCOMPOSITION {
+            hint.composing.set(false);
+        }
+        // SAFETY: plain GDI and message calls on our control; the DC is released, the font
+        // selected out again, and the text buffer outlives the call.
+        unsafe {
+            let wanted = GetWindowTextLengthW(hwnd) == 0 && !hint.composing.get();
+            if msg != WM_PAINT as u32 {
+                if wanted != hint.shown.get() {
+                    let _ = InvalidateRect(Some(hwnd), None, true);
+                }
+            } else {
+                hint.shown.set(wanted);
+                if wanted {
+                    let mut rc = RECT::default();
+                    let _ = GetClientRect(hwnd, &mut rc);
+                    let margins =
+                        SendMessageW(hwnd, EM_GETMARGINS, WPARAM(0), LPARAM(0)).0 as usize;
+                    rc.left += (margins & 0xFFFF) as i32;
+                    rc.right -= ((margins >> 16) & 0xFFFF) as i32;
+                    let font = SendMessageW(hwnd, WM_GETFONT, WPARAM(0), LPARAM(0));
+                    let hdc = GetDC(Some(hwnd));
+                    let old = SelectObject(hdc, HGDIOBJ(font.0 as *mut core::ffi::c_void));
+                    SetBkMode(hdc, TRANSPARENT);
+                    let _ = SetTextColor(hdc, COLORREF(hint.color));
+                    // The caret blinks by inverting pixels: out of the way while text is drawn.
+                    let _ = HideCaret(hwnd);
+                    DrawTextW(
+                        hdc,
+                        PCWSTR(hint.text.as_ptr()),
+                        hint.text.len() as i32,
+                        &mut rc,
+                        (DT_LEFT | DT_SINGLELINE | DT_NOPREFIX | DT_END_ELLIPSIS) as u32,
+                    );
+                    let _ = ShowCaret(hwnd);
+                    SelectObject(hdc, old);
+                    ReleaseDC(Some(hwnd), hdc);
+                }
+            }
+        }
+        IN_HINT.set(false);
+    });
+}
+
 /// A key or IME message the box handled slower than this is logged (its name and ms only).
 const SLOW_MESSAGE_MS: u128 = 30;
 
@@ -662,8 +802,14 @@ unsafe extern "system" fn subclass_proc(
     refdata: usize,
 ) -> LRESULT {
     let started = std::time::Instant::now();
+    if msg == WM_IME_STARTCOMPOSITION {
+        // SAFETY: plain calls on the control's own window.
+        unsafe { hint_before_composition(hwnd) };
+    }
     // SAFETY: as `handle`'s.
     let result = unsafe { handle(hwnd, msg, wparam, lparam, refdata) };
+    // SAFETY: plain calls on the control's own window.
+    unsafe { hint_after(hwnd, msg) };
     let stage = match msg {
         0x0100 => "edit_keydown",
         0x0102 => "edit_char",
