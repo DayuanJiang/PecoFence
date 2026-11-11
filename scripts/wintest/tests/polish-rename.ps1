@@ -5,8 +5,10 @@
 #   B  the item rename box (MC2 / V3): inside the cell, as tall as the wrapped name, the name
 #      under it hidden, grows and shrinks while typing, Enter / Ctrl+Enter / Esc, list rows
 #   F  the name box of a fence just made waits for the fence's fade-in (MF-6 b)
+#   W  the box is as wide as the name is drawn: a name fitted to the wider box (one line
+#      in place of two) gets a box that wide, others and a fence that scrolls the usual one
 # Default: all parts.
-if (-not $Part) { $Part = 'IBF' }
+if (-not $Part) { $Part = 'IBFW' }
 trap { PfTrap $_; continue }
 $PrNames = @('a1 报告.txt', 'b2 预算表.txt', '04 新年活动安排与分工.txt', 'd4 设计稿 v3 final.txt', 'e5 合同扫描件.txt')
 function PrClean() {
@@ -184,6 +186,62 @@ if ($Part -match 'B') {
   Check 'MC2 a list row gets a one-line box' ($box -ne [IntPtr]::Zero -and $lines -eq 1 -and ($r.B - $r.T) -le 28) "box $($r.R - $r.L) x $($r.B - $r.T) px, lines $lines"
   PrKey 0x1B 500
   Pf fence delete Box | Out-Null
+  Start-Sleep -Milliseconds 800
+}
+
+if ($Part -match 'W') {
+  Case 'follow-up: the box is as wide as the name is drawn'
+  DeskFile 'README.md' | Out-Null
+  foreach ($k in 1..9) { DeskFile "文件 $k 说明.txt" | Out-Null }
+  Start-Sleep -Seconds 2
+  # A fence that does not scroll: 「README.md」 is drawn on one line in the wider box.
+  Pf fence create --title Wide --rect '300,120,420,300' | Out-Null
+  Pf item move (Join-Path $PfDesk 'README.md') (Join-Path $PfDesk 'a1 报告.txt') (Join-Path $PfDesk 'b2 预算表.txt') --to Wide | Out-Null
+  ParkMouse; Start-Sleep -Seconds 3
+  $order = @(@(PfJson item list --fence Wide) | ForEach-Object { $_.name })
+  $i = 0; foreach ($k in 0..($order.Count - 1)) { if ($order[$k] -match '^README') { $i = $k } }
+  $p = CellPt 'Wide' $i
+  [G]::Click($p[0], $p[1]); Start-Sleep -Milliseconds 500
+  ParkMouse; Start-Sleep -Milliseconds 300
+  # The name as drawn: one line of ink under the icon, none on the second label line.
+  $second = [Px]::Grab($p[0] - 36, $p[1] + 46, 72, 12)
+  $ink2 = [Px]::MaxInk($second, 0, 71, 0, 11)
+  PrKey 0x71 700
+  $box = PrWaitRename; $r = Rect $box
+  $lines = PrEdit $box 0xBA
+  Shot 'fu-wide-box'
+  Check 'follow-up: a name drawn on one line in the wider box gets a one-line box that wide' ($box -ne [IntPtr]::Zero -and $ink2 -lt 40 -and $lines -eq 1 -and ($r.R - $r.L) -ge 80) "name '$($order[$i])': ink on the second label line $ink2, box $($r.R - $r.L) x $($r.B - $r.T) px, lines $lines"
+  $w0 = $r.R - $r.L; $h0 = $r.B - $r.T
+  [G]::Type('README 的中文说明和更新记录'); Start-Sleep -Milliseconds 500
+  $r1 = Rect $box
+  Check 'follow-up: the box keeps that width while a longer name is typed' (($r1.R - $r1.L) -eq $w0 -and ($r1.B - $r1.T) -gt $h0) "box $w0 x $h0 -> $($r1.R - $r1.L) x $($r1.B - $r1.T) px"
+  PrKey 0x1B 600
+  # A short name in the same fence is drawn in the usual box: so is its rename box.
+  $i = [array]::IndexOf($order, 'a1 报告'); $p = CellPt 'Wide' $i
+  [G]::Click($p[0], $p[1]); Start-Sleep -Milliseconds 500
+  PrKey 0x71 700
+  $box = PrWaitRename; $r = Rect $box
+  Check 'follow-up: a name drawn in the usual box gets the usual box' ($box -ne [IntPtr]::Zero -and ($r.R - $r.L) -le 74) "box $($r.R - $r.L) x $($r.B - $r.T) px"
+  PrKey 0x1B 600
+  Pf fence delete Wide | Out-Null
+  Start-Sleep -Milliseconds 800
+  # A fence that scrolls draws no name in the wider box: 「README.md」 takes two lines there.
+  Pf fence create --title Scrolls --rect '300,120,420,150' | Out-Null
+  $move = @((Join-Path $PfDesk 'README.md'), (Join-Path $PfDesk 'a1 报告.txt'), (Join-Path $PfDesk 'b2 预算表.txt')) + @(1..9 | ForEach-Object { Join-Path $PfDesk "文件 $_ 说明.txt" })
+  Pf item move $move --to Scrolls | Out-Null
+  ParkMouse; Start-Sleep -Seconds 3
+  $f = FenceGet 'Scrolls'
+  $order = @(@(PfJson item list --fence Scrolls) | ForEach-Object { $_.name })
+  $i = 0; foreach ($k in 0..($order.Count - 1)) { if ($order[$k] -match '^README') { $i = $k } }
+  $p = CellPt 'Scrolls' $i
+  [G]::Click($p[0], $p[1]); Start-Sleep -Milliseconds 500
+  PrKey 0x71 700
+  $box = PrWaitRename; $r = Rect $box
+  $lines = PrEdit $box 0xBA
+  Shot 'fu-scrolling-box'
+  Check 'follow-up: in a fence that scrolls the same name gets the usual box, on two lines' ($box -ne [IntPtr]::Zero -and [bool]$f.fit.overflow -and $i -lt 5 -and ($r.R - $r.L) -le 74 -and $lines -eq 2) "fence scrolls: $($f.fit.overflow); name '$($order[$i])' at index $i; box $($r.R - $r.L) x $($r.B - $r.T) px, lines $lines"
+  PrKey 0x1B 600
+  Pf fence delete Scrolls | Out-Null
   Start-Sleep -Milliseconds 800
 }
 

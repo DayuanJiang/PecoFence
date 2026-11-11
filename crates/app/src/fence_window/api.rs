@@ -2314,6 +2314,18 @@ impl FenceWindow {
         true
     }
 
+    /// Room on each side of `item`'s name inside its cell as the name is drawn now (icons
+    /// layout): the smaller one when it was fitted to the wider box (`ItemView::label_wide`).
+    /// The rename box takes the same, so the name wraps in it as it does under the icon.
+    pub fn item_label_inset(&self, item: ItemId) -> f32 {
+        let wide = self.view.borrow().as_ref().is_some_and(|v| {
+            v.items
+                .iter()
+                .any(|it| it.id == item && it.label.is_some() && it.label_wide)
+        });
+        label_inset(wide)
+    }
+
     /// Screen rectangle of an item's label, for the rename popup.
     pub fn item_label_rect(&self, item: ItemId) -> Option<RECT> {
         self.view
