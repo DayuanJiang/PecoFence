@@ -208,6 +208,18 @@ if ($Part -match 'B') {
   Case 'B the fence below makes room'
   Pf fence unroll Pusher | Out-Null; Start-Sleep -Milliseconds 1300
   $held = WinH Pusher
+  # The fence below in the user's hands (dragged a little and put back): the open fence above
+  # waits, it neither grows over it nor shrinks back afterwards.
+  [PmTrack]::Start((Hw Pusher))
+  $p = TitlePt Pushed
+  [G]::MoveTo($p[0], $p[1]); Start-Sleep -Milliseconds 150; MDown; Start-Sleep -Milliseconds 200
+  Glide $p[0] $p[1] ($p[0] + 30) $p[1] 6 40; Start-Sleep -Milliseconds 500
+  Glide ($p[0] + 30) $p[1] $p[0] $p[1] 6 40; Start-Sleep -Milliseconds 300
+  MUp; Start-Sleep -Milliseconds 900
+  $rows = @(Rows ([PmTrack]::Stop()))
+  Park
+  Check 'the fence below dragged a little and put back: the open fence above waits' ($rows.Count -eq 1 -and (WinH Pusher) -eq $room) "Pusher's heights meanwhile: $(($rows | ForEach-Object { "+$($_.ms):$($_.B - $_.T)" }) -join ' ')"
+  Clean 'after the fence below was dragged and put back' @('Pusher', 'Pushed')
   Pf fence move Pushed --rect '600,488,300,280' | Out-Null; Start-Sleep -Milliseconds 1200
   Check 'the fence below is moved away: the open fence grows to its full height' ($held -eq $room -and (WinH Pusher) -eq 300) "held at $held px, then $(WinH Pusher) px"
   Pf fence roll Pusher | Out-Null; Start-Sleep -Milliseconds 800

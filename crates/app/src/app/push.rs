@@ -248,14 +248,18 @@ fn down_slack(a: &Slot, b: &Slot) -> i32 {
 /// resting under its title row, slid down as far as they can go (each at its resting gap under
 /// the next, the lowest one at the bottom of the work area; fixed ones not at all), leave room
 /// for it. `stack` stops a pushed fence at the bottom of the work area, so a
-/// fence taller than this would cover the ones it pushed.
-fn rooms_below(slots: &[Slot]) -> Vec<(HWND, i32)> {
+/// fence taller than this would cover the ones it pushed. The second list: the fences with one
+/// in the user's hands under them. That one limits nothing (where it is dropped is settled
+/// then), and until it is dropped the fence above keeps the height it has: grown into the
+/// room at once, it would cover the dragged fence's place and push it aside at the drop.
+fn rooms_below(slots: &[Slot]) -> (Vec<(HWND, i32)>, Vec<HWND>) {
     // Lowest resting place first: a fence's reach comes from the ones resting below it.
     let mut order: Vec<usize> = (0..slots.len()).collect();
     order.sort_by_key(|&i| std::cmp::Reverse(slots[i].base));
     // The lowest top each fence can be pushed to.
     let mut deepest = vec![0; slots.len()];
     let mut rooms = Vec::new();
+    let mut waiting = Vec::new();
     for k in 0..order.len() {
         let j = order[k];
         let a = &slots[j];
@@ -266,15 +270,16 @@ fn rooms_below(slots: &[Slot]) -> Vec<(HWND, i32)> {
         // The lowest bottom edge the fences below leave to `a`.
         let mut reach = work_bottom;
         let mut limited = false;
+        let mut held_below = false;
         for &i in &order[..k] {
             let b = &slots[i];
             let below = b.work.map(|w| w.0) == Some(work)
                 && a.left < b.right
                 && b.left < a.right
                 && b.base >= a.base + a.title_h;
-            // One in the user's hands is not pushed and limits nothing: where it is dropped
-            // is settled then.
-            if below && b.role != Role::Held {
+            if below && b.role == Role::Held {
+                held_below = true;
+            } else if below {
                 reach = reach.min(deepest[i] - down_slack(a, b));
                 limited = true;
             }
@@ -290,8 +295,11 @@ fn rooms_below(slots: &[Slot]) -> Vec<(HWND, i32)> {
         if a.pushes && limited {
             rooms.push((a.hwnd, reach - a.base));
         }
+        if a.pushes && held_below {
+            waiting.push(a.hwnd);
+        }
     }
-    rooms
+    (rooms, waiting)
 }
 
 impl App {
@@ -405,10 +413,10 @@ impl App {
             }
         }
         stack(&mut slots, enabled);
-        let below = if enabled {
+        let (below, waiting) = if enabled {
             rooms_below(&slots)
         } else {
-            Vec::new()
+            (Vec::new(), Vec::new())
         };
         self.keep_expand_rooms(enabled.then(|| rooms(&slots)), &below);
         // No borrow held: SetWindowPos runs the fences' handlers synchronously.
@@ -455,10 +463,13 @@ impl App {
         // An open fence stays inside the room the fences below leave it (one saved open over
         // them at a restart, a fence below that got taller), and one held short opens further
         // when they make room, in full when none is left under it. Not while it is in the
-        // user's hands. A window that changed height without an animation is laid out for it
-        // at once.
+        // user's hands, nor while a fence under it is. A window that changed height without an
+        // animation is laid out for it at once.
         let mut refit = false;
-        for s in slots.iter().filter(|s| s.pushes && s.role != Role::Held) {
+        for s in slots
+            .iter()
+            .filter(|s| s.pushes && s.role != Role::Held && !waiting.contains(&s.hwnd))
+        {
             let room = below
                 .iter()
                 .find(|(h, _)| *h == s.hwnd)
@@ -725,6 +736,7 @@ mod tests {
 
     fn room_below(slots: &[Slot], n: u128) -> Option<i32> {
         rooms_below(slots)
+            .0
             .into_iter()
             .find(|(h, _)| *h == hwnd(n))
             .map(|(_, r)| r)
@@ -781,8 +793,11 @@ mod tests {
         let mut s = vec![slot(1, 0, 100, TITLE, 300), slot(2, 0, 144, 200, 200)];
         get(&mut s, 2).role = Role::Held;
         assert_eq!(room_below(&s, 1), None);
+        // Until it is dropped, the fence above waits at the height it has.
+        assert_eq!(rooms_below(&s).1, vec![hwnd(1)]);
         get(&mut s, 2).role = Role::Fixed;
         assert_eq!(room_below(&s, 1), Some(36));
+        assert!(rooms_below(&s).1.is_empty());
         // Three open fences 12 px apart, the last one ending at the work area's bottom.
         let s = vec![
             slot(1, 0, 164, 188, 188),
