@@ -770,6 +770,34 @@ impl FenceWindow {
         }
     }
 
+    /// Where the icons of a drop just made on this window were let go (`drop_landing`), taken
+    /// out: a drop whose icons arrive later (their files are on the way to the desktop) hands
+    /// each place back with `set_drop_landing` when its icon comes in.
+    pub fn take_drop_landing(&self) -> HashMap<ItemId, (f32, f32)> {
+        let mut places = HashMap::new();
+        self.with_view(|v| {
+            if let Some((_, from)) = v.drop_landing.take() {
+                places = from;
+            }
+        });
+        places
+    }
+
+    /// The icon `id`, about to be listed, was let go at `from` (centre, unscrolled content
+    /// DIPs): the list refresh that brings it in starts it there (`replace_items`).
+    pub fn set_drop_landing(&self, id: ItemId, from: (f32, f32)) {
+        self.with_view(|v| {
+            let now = Instant::now();
+            match v.drop_landing.as_mut() {
+                Some((at, places)) => {
+                    *at = now;
+                    places.insert(id, from);
+                }
+                None => v.drop_landing = Some((now, HashMap::from([(id, from)]))),
+            }
+        });
+    }
+
     /// The window already shows exactly `items` (same order, names, icons and details).
     pub fn shows_items(&self, items: &[ItemView]) -> bool {
         self.view.borrow().as_ref().is_some_and(|v| {

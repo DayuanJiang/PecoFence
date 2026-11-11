@@ -5,19 +5,27 @@
 #   UX7  icons of another fence dropped between the icons of a 手动 fence show the insertion
 #        line and land there (icons, list, details); Ctrl+Z puts them back
 #   UX6  a drag that starts in a fence shows the target's text beside the badge ("Move to Bravo")
+#   follow-up: an icon dragged out of a folder fence and let go between the icons of a 手动
+#        fence lands there too, once its file is on the desktop, and Ctrl+Z puts the file back
 # Parts (run.sh --var Part=...): L landing and the late fade-in, I insertion, T badge text,
-# R the recordings for a before / after clip (not part of the suite). Default: LIT.
+# F icons out of a folder fence, R the recordings for a before / after clip (not part of the
+# suite). Default: LITF.
 # 1600x900 at 100 %; fences have no left tab column (window x + content x are the same).
-if (-not $Part) { $Part = 'LIT' }
+if (-not $Part) { $Part = 'LITF' }
 trap { PfTrap $_; continue }
 
 $PdTxt = @('a1 报告', 'a2 预算表', 'a3 会议纪要 11月', 'a4 照片说明', 'a5 待办', 'b1 发票', 'b2 行程安排', 'b3 清单')
+# A folder shown as a folder fence (part F): its files move to the desktop when dragged out.
+$PdPapers = @('p1 合同', 'p2 报价单', 'p3 名单')
+$PdDir = "$PfRun\pd-papers"
 $PdMd = @('01 甲', '02 乙', '04 丁', '05 戊', '06 己', '07 庚')
 function PdClean() {
   foreach ($n in $PdTxt) { Remove-Item -LiteralPath (Join-Path $PfDesk "$n.txt") -Force -ErrorAction SilentlyContinue }
   foreach ($n in $PdMd + @('03 丙', '00 新文件')) { Remove-Item -LiteralPath (Join-Path $PfDesk "$n.md") -Force -ErrorAction SilentlyContinue }
   Remove-Item -LiteralPath (Join-Path $PfDesk 'pd Archive') -Recurse -Force -ErrorAction SilentlyContinue
   Remove-Item -LiteralPath (Join-Path $PfDesk '08 末尾.md') -Force -ErrorAction SilentlyContinue
+  foreach ($n in $PdPapers) { Remove-Item -LiteralPath (Join-Path $PfDesk "$n.txt") -Force -ErrorAction SilentlyContinue }
+  Remove-Item -LiteralPath $PdDir -Recurse -Force -ErrorAction SilentlyContinue
 }
 function Order($t) { return ((@(PfJson item list --fence $t) | Where-Object { $_ -and $_.name } | ForEach-Object { $_.name }) -join ' | ') }
 function FR($t) { return (FenceGet $t).windowRect }
@@ -329,6 +337,57 @@ if ($Part -match 'T') {
   Pf settings set language zh-CN | Out-Null
 }
 
+if ($Part -match 'F') {
+  Case 'folder fence: setup'
+  Pf settings set language zh-CN | Out-Null
+  Pf fence delete Names 2>$null | Out-Null
+  Layout
+  New-Item -ItemType Directory -Force $PdDir | Out-Null
+  foreach ($n in $PdPapers) { Set-Content -LiteralPath (Join-Path $PdDir "$n.txt") "polish-drop $n" -Encoding UTF8 }
+  Pf fence create --portal $PdDir --title Papers --rect '200,440,340,200' | Out-Null
+  Start-Sleep -Seconds 2
+  $b = FR 'Bravo'
+  function InDir($n) { return (Test-Path -LiteralPath (Join-Path $PdDir "$n.txt")) }
+  function OnDesk($n) { return (Test-Path -LiteralPath (Join-Path $PfDesk "$n.txt")) }
+  Check 'folder fence: it shows the three files' ((Order 'Papers') -eq 'p1 合同 | p2 报价单 | p3 名单') (Order 'Papers')
+
+  Case 'folder fence: one icon let go between two icons'
+  $from = CellPt 'Papers' 0; $q = CellPt 'Bravo' 1; $rx = $q[0] - 30; $ry = $q[1]
+  $pos = LogPos
+  Hold $from[0] $from[1] $rx $ry 900
+  Shot 'f-hold-between'
+  MUp
+  foreach ($k in 1..50) { if ((Order 'Bravo') -match 'p1 合同') { break }; Start-Sleep -Milliseconds 200 }
+  Start-Sleep -Milliseconds 800
+  $l = @(Landed $pos 'Bravo')
+  Check 'folder fence: the icon lands between b1 and b2, where the line was' ((Order 'Bravo') -eq 'b1 发票 | p1 合同 | b2 行程安排 | b3 清单') (Order 'Bravo')
+  Check 'folder fence: its file moved to the desktop' ((OnDesk 'p1 合同') -and -not (InDir 'p1 合同')) "on the desktop $(OnDesk 'p1 合同'), in the folder $(InDir 'p1 合同')"
+  Check 'folder fence: the icon glides in from where it was let go' ($l.Count -eq 1 -and (Near $l[0].fx $l[0].fy $rx $ry 24)) "let go at $rx,$ry; $(LandText $l)"
+
+  Case 'folder fence: Ctrl+Z'
+  FocusIn 'Bravo'
+  Chord 0x11 0x5A
+  foreach ($k in 1..40) { if (InDir 'p1 合同') { break }; Start-Sleep -Milliseconds 200 }
+  Start-Sleep -Milliseconds 1200
+  Check 'folder fence: Ctrl+Z puts the file back into the folder' ((InDir 'p1 合同') -and -not (OnDesk 'p1 合同') -and (Order 'Bravo') -eq 'b1 发票 | b2 行程安排 | b3 清单') "in the folder $(InDir 'p1 合同'), on the desktop $(OnDesk 'p1 合同'); Bravo [$(Order 'Bravo')]"
+
+  Case 'folder fence: two icons let go between two icons'
+  foreach ($k in 1..25) { if ((Order 'Papers') -eq 'p1 合同 | p2 报价单 | p3 名单') { break }; Start-Sleep -Milliseconds 200 }
+  $p0 = CellPt 'Papers' 0; $p1 = CellPt 'Papers' 1; $q = CellPt 'Bravo' 2; $rx = $q[0] - 30; $ry = $q[1]
+  [G]::Click($p0[0], $p0[1]); Start-Sleep -Milliseconds 200
+  [G]::KeyDown(0x11); [G]::Click($p1[0], $p1[1]); [G]::KeyUp(0x11)
+  Start-Sleep -Milliseconds 300
+  $pos = LogPos
+  Hold $p0[0] $p0[1] $rx $ry 900
+  MUp
+  foreach ($k in 1..50) { if ((Order 'Bravo') -match 'p1 合同' -and (Order 'Bravo') -match 'p2 报价单') { break }; Start-Sleep -Milliseconds 200 }
+  Start-Sleep -Milliseconds 800
+  $l = @(Landed $pos 'Bravo')
+  Check 'folder fence: two icons land there in their order' ((Order 'Bravo') -eq 'b1 发票 | b2 行程安排 | p1 合同 | p2 报价单 | b3 清单') (Order 'Bravo')
+  Check 'folder fence: both glide in from where they were let go' ($l.Count -eq 2) (LandText $l)
+  Check 'folder fence: the third file stays in the folder' ((Order 'Papers') -eq 'p3 名单' -and (InDir 'p3 名单')) (Order 'Papers')
+}
+
 if ($Part -match 'R') {
   # Recordings for the before / after clips: the same steps on any build.
   . C:\pf\kit\rec.ps1
@@ -401,5 +460,5 @@ Case 'cleanup'
 [Anim]::Set($AnimWas)
 PfQuit
 PdClean
-$left = @(Get-ChildItem -LiteralPath $PfDesk | Where-Object { $_.Name -match '^(a\d |b\d |0\d |pd )' })
+$left = @(Get-ChildItem -LiteralPath $PfDesk | Where-Object { $_.Name -match '^(a\d |b\d |p\d |0\d |pd )' })
 Check 'cleanup: no test file left on the desktop' ($left.Count -eq 0) (($left | ForEach-Object { $_.Name }) -join ', ')

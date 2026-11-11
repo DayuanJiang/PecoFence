@@ -145,8 +145,57 @@ impl App {
                 }
                 None => true,
             });
+        // The places kept for routes that just landed (`RoutePlace`), and none for a route
+        // that is gone (expired; a failed or cancelled move takes its own away).
+        let mut places: HashMap<ItemId, RoutePlace> = HashMap::new();
+        let arrived: Vec<PathBuf> = self
+            .route_places
+            .keys()
+            .filter(|p| self.state.item_id_for_path(p).is_some())
+            .cloned()
+            .collect();
+        for path in arrived {
+            if let (Some(id), Some(place)) = (
+                self.state.item_id_for_path(&path),
+                self.route_places.remove(&path),
+            ) {
+                places.insert(id, place);
+            }
+        }
+        self.route_places
+            .retain(|p, _| self.pending_routes.iter().any(|r| r.path == *p));
         for (id, fence, rename) in landed {
-            self.move_items_unrecorded(&[id], fence);
+            // Let go between the icons of the fence: in front of the icon the line stood
+            // before, wherever that icon is by now (after the others when it is gone), and
+            // gliding in from where it was let go.
+            let place = places.remove(&id);
+            let at = place.as_ref().and_then(|p| p.before).and_then(|anchor| {
+                self.state
+                    .fence(fence)
+                    .and_then(|f| self.state.items_of(f).iter().position(|it| it.id == anchor))
+            });
+            if let Some(place) = &place {
+                tracing::debug!(
+                    %fence,
+                    anchor = place.before.is_some(),
+                    at = ?at,
+                    glide = place.from.is_some(),
+                    "routed icon lands where it was let go"
+                );
+                if let (Some(from), Some(w)) = (place.from, self.window_for(fence)) {
+                    w.set_drop_landing(id, from);
+                }
+            }
+            let moved = self.move_items_placed(&[id], fence, at);
+            // Already in this fence when it came back (the rules filed it here, or the fence
+            // still knew it from before): nothing moved, only its place changes.
+            if moved == 0
+                && let Some(index) = at
+                && self.state.reorder_items(fence, &[id], index)
+            {
+                self.refresh_fence(fence);
+                self.schedule_save();
+            }
             if rename {
                 // The rules may have filed the item here already: then nothing moved, the
                 // window does not list it yet, and the label the edit box needs has no rect.
@@ -157,7 +206,12 @@ impl App {
     }
 
     /// Moves portal items out to the real desktop and routes them into `to` once they appear.
-    pub(super) fn move_portal_items_to_desktop(&mut self, items: &[ItemId], to: FenceId) {
+    pub(super) fn move_portal_items_to_desktop(
+        &mut self,
+        items: &[ItemId],
+        to: FenceId,
+        at: Option<usize>,
+    ) {
         let Some(desktop) = shell::user_desktop() else {
             return;
         };
@@ -185,6 +239,40 @@ impl App {
                 rename: false,
             });
         }
+        // Dragged onto the fence: once its file is on the desktop each icon lands in front of
+        // the icon the insertion line stood before (`at`, a display index of `to` now) and
+        // glides in from where it was let go, as an icon of a virtual fence does at once.
+        let before = at.and_then(|i| {
+            self.state
+                .fence(to)
+                .and_then(|f| self.state.items_of(f).get(i).map(|it| it.id))
+        });
+        let mut let_go = self
+            .window_for(to)
+            .map(|w| w.take_drop_landing())
+            .unwrap_or_default();
+        for id in items {
+            let from = let_go.remove(id);
+            let path = self
+                .state
+                .item(*id)
+                .and_then(|it| it.path().map(PathBuf::from))
+                .and_then(|p| p.file_name().map(|n| desktop.join(n)));
+            if let Some(path) = path
+                && routed.contains(&path)
+                && (before.is_some() || from.is_some())
+            {
+                self.route_places.insert(path, RoutePlace { before, from });
+            }
+        }
+        tracing::debug!(
+            fence = %to,
+            routed = routed.len(),
+            at = ?at,
+            anchor = before.is_some(),
+            places = self.route_places.len(),
+            "files leave a folder fence for the desktop: where their icons will land is kept with the routes"
+        );
         let owner = self.window_for(to).map(|w| w.hwnd());
         // Worker thread; a cancelled / failed move withdraws only our own routes (other
         // fences' 新建 claims / drop routes stay queued) — see `on_fileop_done`.
@@ -897,7 +985,7 @@ impl App {
             .copied()
             .partition(|id| self.state.is_portal_item(*id));
         if !portal_items.is_empty() {
-            self.move_portal_items_to_desktop(&portal_items, to);
+            self.move_portal_items_to_desktop(&portal_items, to, at);
         }
         if desktop_items.is_empty() {
             return 0;

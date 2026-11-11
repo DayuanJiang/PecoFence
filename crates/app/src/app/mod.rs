@@ -252,6 +252,17 @@ struct PendingRoute {
     rename: bool,
 }
 
+/// Runtime-only: where the icon of a `PendingRoute` lands in its fence when it was let go
+/// between the icons there (dragged out of a folder fence, its file first moves to the
+/// desktop). Kept by the route's path in `App::route_places`; goes when the route does.
+struct RoutePlace {
+    /// In front of this icon, the one the insertion line stood before; None = after the others.
+    before: Option<ItemId>,
+    /// Centre of its drag picture at the release (unscrolled content DIPs of the fence's
+    /// window): it glides in from there (`FenceWindow::set_drop_landing`).
+    from: Option<(f32, f32)>,
+}
+
 /// Runtime-only: a paste that copies files within the folder they already live in
 /// (`FileOpThen::Duplicate`). Only the shell knows the copies' names ("xxx - 副本"), so they
 /// are found as the folder's new entries (`claim_pasted_duplicates`).
@@ -416,6 +427,7 @@ pub struct App {
     theme_watcher: Option<DirWatcher>,
     wallpaper_override: Option<String>,
     pending_routes: Vec<PendingRoute>,
+    route_places: HashMap<PathBuf, RoutePlace>,
     /// The virtual fence a shell drop just went to, and when: the first desktop change batch
     /// within `SHELL_DROP_CLAIM_SECS` that adds shortcuts puts them into it (the shell writes
     /// some after `Drop` returned), see `on_fs_changed`.
@@ -1787,6 +1799,7 @@ impl App {
             theme_watcher: None,
             wallpaper_override: args.wallpaper_override.clone(),
             pending_routes: Vec::new(),
+            route_places: HashMap::new(),
             shell_drop_claim: None,
             paste_dups: Vec::new(),
             pasted: None,

@@ -315,10 +315,12 @@ impl App {
                     Ok(false) => {
                         tracing::info!("move to desktop cancelled by user");
                         self.pending_routes.retain(|r| !routed.contains(&r.path));
+                        self.route_places.retain(|p, _| !routed.contains(p));
                     }
                     Err(e) => {
                         tracing::warn!(error = %e, "move to desktop failed");
                         self.pending_routes.retain(|r| !routed.contains(&r.path));
+                        self.route_places.retain(|p, _| !routed.contains(p));
                         self.toast(pecofence_core::i18n::format(
                             "移动到桌面失败：{0}",
                             std::slice::from_ref(&e),
