@@ -357,8 +357,23 @@ function PsEndSearch() {
   Start-Sleep -Milliseconds 800
 }
 
+# The fence window of $title as the dumps name it ("0x..."), and what its latest dump says:
+# rolled, how many items the tab on show has, the scroll offset.
+function PsHwnd($title) {
+  $m = [regex]::Matches((PsLogText), '(?m)^\S+Z\s[^\n]*\[s\] live hwnd=(0x[0-9a-f]+) [^\n]*title="' + [regex]::Escape($title) + '"')
+  if ($m.Count -eq 0) { return $null }
+  return $m[$m.Count - 1].Groups[1].Value
+}
+function PsState($hwnd) {
+  $m = [regex]::Matches((PsLogText), '(?m)^\S+Z\s[^\n]*\[s\] live hwnd=' + $hwnd + ' [^\n]* rolled=(\w+) [^\n]* items=(\d+) [^\n]* scroll=(-?[\d.]+)')
+  if ($m.Count -eq 0) { return @{ rolled = $null; items = -1; scroll = -1 } }
+  $g = $m[$m.Count - 1].Groups
+  return @{ rolled = ($g[1].Value -eq 'true'); items = [int]$g[2].Value; scroll = [double]$g[3].Value }
+}
+
 # A Peek search scrolls a fence to its match; when the search ends the fence goes back to where
 # it was (as the tabs it switched and the fences it expanded do), unless the user scrolled it.
+# That holds for a fence the search opened and let roll back up, and for every tab it scrolled.
 function PartN() {
   trap { PfTrap $_; continue }
   PfStart -Script (PsDumpScript 9000 120) -Lang 'zh-CN'
@@ -400,6 +415,28 @@ function PartN() {
   Log "N3 offset during the third search $third, after it $still"
   Check 'N3 the search scrolled the fence again' ($third -ne $kept) "offset $third"
   Check 'N3 after it the fence is back at the place the user scrolled to' ($still -eq $kept) "offset $still, before the search $kept"
+
+  Case 'N4 a rolled fence the search opened, scrolled and let roll back up'
+  $hw = PsHwnd $PsTitle
+  ParkMouse | Out-Null; Start-Sleep -Milliseconds 400
+  $base = (PsState $hw).scroll
+  Pf fence roll $PsTitle | Out-Null; Start-Sleep -Milliseconds 900
+  $shut0 = PsState $hw
+  PsSearch 'ps0001'
+  $open = PsState $hw
+  # One more letter leaves the fence without a match (no name holds a q; an x would match the
+  # x of .txt): it rolls back up while the search goes on.
+  [G]::Type('q'); Start-Sleep -Milliseconds 1700
+  $shut = PsState $hw
+  PsEndSearch
+  $after = PsState $hw
+  Pf fence unroll $PsTitle | Out-Null; Start-Sleep -Milliseconds 900
+  $opened = PsState $hw
+  Log "N4 before $base; rolled $($shut0.rolled); the search opened it (rolled $($open.rolled)) at $($open.scroll); without a match rolled $($shut.rolled) at $($shut.scroll); after the search rolled $($after.rolled) at $($after.scroll); opened again at $($opened.scroll)"
+  Check 'N4 the search opened the rolled fence and scrolled it to its match' ($shut0.rolled -eq $true -and $open.rolled -eq $false -and $base -gt 0 -and $open.scroll -ne $base) "before $base, during the search $($open.scroll), rolled $($shut0.rolled) then $($open.rolled)"
+  Check 'N4 left without a match, the fence rolled back up during the search' ($shut.rolled -eq $true) "rolled $($shut.rolled)"
+  Check 'N4 after the search the rolled fence has its place from before the search' ($after.rolled -eq $true -and $after.scroll -eq $base) "offset $($after.scroll), before the search $base"
+  Check 'N4 opened again, the fence shows where it was before the search' ($opened.rolled -eq $false -and $opened.scroll -eq $base) "offset $($opened.scroll), before the search $base"
   [G]::Press(0x1B); Start-Sleep -Milliseconds 500
   PfQuit
 }

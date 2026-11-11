@@ -49,9 +49,13 @@ impl FenceViewState {
             content = true;
         }
         if self.rolled_up && self.roll_anim.is_none() {
-            // Rolled: nothing is visible, and a glide must not keep moving the hidden offset.
+            // Rolled: nothing is visible. A glide caught by the roll ends on its destination
+            // at once: the fence opens where its content was heading (back to its place after
+            // a Peek search, the row a wheel notch asked for), not part of the way there.
             self.content_busy = false;
-            self.scroll_anim = None;
+            if let Some(glide) = self.scroll_anim.take() {
+                self.scroll_y = glide.target();
+            }
             content = false;
         }
         if content {

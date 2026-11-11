@@ -1048,7 +1048,13 @@ impl FenceWindow {
                     back,
                     "peek search ended: a fence it scrolled goes back to where it was, or keeps the user's place"
                 );
-                if back {
+                if back && v.rolled_up && v.roll_anim.is_none() {
+                    // Rolled up again (further typing left it without a match): nothing to
+                    // glide, and `scroll_to` leaves a hidden offset alone. Written back, so
+                    // the fence opens where it was before the search.
+                    v.scroll_anim = None;
+                    v.scroll_y = from.clamp(0.0, v.scroll_max());
+                } else if back {
                     v.scroll_to(from, motion::SLOW);
                 }
             }
