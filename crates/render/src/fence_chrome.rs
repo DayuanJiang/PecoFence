@@ -4072,6 +4072,10 @@ const SCRIPT_ARROW_W: f32 = 18.0;
 const CLOCK_TIME_DIP: f32 = 40.0;
 const CLOCK_DATE_DIP: f32 = 14.0;
 const CLOCK_BASE_H: f32 = 104.0;
+/// The width a clock's texts are fitted to leaves this much at each side: the side inset
+/// the texts had before they moved to the fence's one left edge (`NOTE_PAD_X`), so a clock
+/// whose width sets its size keeps the size it had.
+const CLOCK_FIT_PAD_X: f32 = 14.0;
 /// How far the clock's text shrinks and grows from the sizes above.
 const CLOCK_SCALE_MIN: f32 = 0.6;
 const CLOCK_SCALE_MAX: f32 = 4.0;
@@ -4418,7 +4422,7 @@ impl FenceChrome {
     /// still fits the width, from 0.6 to 4 times (the date never under 11). The time size is
     /// whole DIPs, so the text keeps its size while the strings change by a digit.
     pub fn clock_text_sizes(&self, width: f32, height: f32, time: &str, date: &str) -> (f32, f32) {
-        let w = (width - 2.0 * NOTE_PAD_X).max(1.0);
+        let w = (width - 2.0 * CLOCK_FIT_PAD_X).max(1.0);
         let need = crate::text::measure_width(time, &self.clock_time_format)
             .max(crate::text::measure_width(date, &self.clock_date_format))
             .max(1.0);
@@ -4472,7 +4476,8 @@ impl FenceChrome {
         };
         let primary = session.create_solid_brush(theme.text_primary)?;
         let secondary = session.create_solid_brush(theme.text_secondary)?;
-        let w = (width - 2.0 * NOTE_PAD_X).max(1.0);
+        // As wide as the sizes were fitted to, from the texts' left edge.
+        let w = (width - 2.0 * CLOCK_FIT_PAD_X).max(1.0);
         let layout = TextLayout::new(time, &fonts.time_format, w, f32::MAX)?;
         let time_h = layout.metrics().height;
         session.draw_text_layout(Vector2::new(NOTE_PAD_X, 0.0), &layout, &primary);
