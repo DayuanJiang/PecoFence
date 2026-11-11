@@ -990,7 +990,7 @@ pub(super) fn on_mousewheel(
         } else {
             motion::NORMAL
         };
-        v.scroll_to(v.scroll_target() - step, cap);
+        v.scroll_to_by_wheel(v.scroll_target() - step, cap);
         if v.scroll_anim.is_none() {
             // Animations off: the offset snapped, draw it now.
             if v.marquee.is_some() {

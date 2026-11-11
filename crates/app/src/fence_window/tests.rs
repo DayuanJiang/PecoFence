@@ -571,6 +571,180 @@ fn scroll_duration_is_capped_per_input() {
     assert!(t.is_done(t0));
 }
 
+/// Content shift per 60 Hz frame for a wheel turned `n` notches `gap_ms` apart (96 DIP per
+/// notch, the 250 ms wheel cap), until the glide has ended. `carry` false restarts the
+/// decelerate curve at every notch, as before `ScrollGlide::notch`.
+fn wheel_frames(n: u32, gap_ms: u64, carry: bool) -> Vec<f32> {
+    let t0 = Instant::now();
+    let frame = Duration::from_micros(16_667);
+    let mut glide: Option<ScrollGlide> = None;
+    let (mut drawn, mut target) = (0.0f32, 0.0f32);
+    let (mut notches, mut frames) = (0u32, 1u32);
+    let mut shifts = Vec::new();
+    loop {
+        let frame_at = t0 + frame * frames;
+        let notch_at = t0 + Duration::from_millis(5 + gap_ms * notches as u64);
+        if notches < n && notch_at <= frame_at {
+            notches += 1;
+            target += 96.0;
+            let dur = scroll_anim_duration(target - drawn, motion::NORMAL);
+            match glide.as_mut() {
+                Some(g) if !g.is_done(notch_at) && carry => {
+                    g.notch(target, dur, notch_at);
+                }
+                Some(g) if !g.is_done(notch_at) => g.retarget(target, dur, notch_at),
+                _ => glide = Some(ScrollGlide::new(drawn, target, dur, notch_at)),
+            }
+            continue;
+        }
+        frames += 1;
+        let Some(g) = glide else {
+            if notches >= n {
+                return shifts;
+            }
+            shifts.push(0.0);
+            continue;
+        };
+        let value = if g.is_done(frame_at) {
+            glide = None;
+            g.target()
+        } else {
+            g.value_at(frame_at)
+        };
+        assert!(value <= target + 0.01, "passed the destination: {value}");
+        shifts.push(value - drawn);
+        drawn = value;
+    }
+}
+
+/// Smallest and largest ratio between a frame's shift and the one before it.
+fn frame_ratios(shifts: &[f32]) -> (f32, f32) {
+    shifts
+        .windows(2)
+        .map(|w| w[1] / w[0])
+        .fold((f32::MAX, 0.0), |(lo, hi), r| (lo.min(r), hi.max(r)))
+}
+
+/// One notch from rest is the decelerate curve it always was.
+#[test]
+fn one_wheel_notch_glides_as_before() {
+    let t0 = Instant::now();
+    let dur = Duration::from_millis(250);
+    let glide = ScrollGlide::new(40.0, 136.0, dur, t0);
+    let tween = Tween::new(40.0, 136.0, dur, Curve::Decelerate, t0);
+    for ms in [0, 1, 16, 33, 100, 200, 249, 250, 400] {
+        let at = t0 + Duration::from_millis(ms);
+        assert_eq!(glide.value_at(at), tween.value_at(at), "{ms} ms");
+        assert_eq!(glide.is_done(at), tween.is_done(at), "{ms} ms");
+    }
+    assert_eq!(glide.target(), 136.0);
+    assert_eq!(wheel_frames(1, 35, true), wheel_frames(1, 35, false));
+}
+
+/// A wheel kept turning scrolls at an even speed: once the second notch has taken over, no
+/// frame moves a tenth less than the one before it until the last notch has arrived. The
+/// decelerate curve restarted at every notch swung by more than a third.
+#[test]
+fn a_turning_wheel_scrolls_at_an_even_speed() {
+    // Ten notches 35 ms apart: the second lands at 40 ms (frame 3), the last at 320 ms.
+    let new = wheel_frames(10, 35, true);
+    let old = wheel_frames(10, 35, false);
+    assert!((new.iter().sum::<f32>() - 960.0).abs() < 0.01);
+    assert!(new.iter().all(|s| *s >= 0.0), "moved backwards: {new:?}");
+    let (drop, jump) = frame_ratios(&new[3..19]);
+    assert!(drop > 0.9 && jump < 1.34, "{drop} {jump} in {new:?}");
+    let (old_drop, _) = frame_ratios(&old[3..19]);
+    assert!(old_drop < 0.67, "the old curve no longer pulses: {old:?}");
+    // The whole scroll takes as long as it did: the last glide runs its 250 ms.
+    assert_eq!(new.len(), old.len());
+
+    // Three notches 70 ms apart: the second lands at 75 ms (frame 5), the third at 145 ms.
+    let new = wheel_frames(3, 70, true);
+    let old = wheel_frames(3, 70, false);
+    assert!((new.iter().sum::<f32>() - 288.0).abs() < 0.01);
+    let (drop, jump) = frame_ratios(&new[5..11]);
+    assert!(drop > 0.9 && jump < 1.34, "{drop} {jump} in {new:?}");
+    let (old_drop, old_jump) = frame_ratios(&old[5..11]);
+    assert!(old_drop < 0.67 && old_jump > 1.5, "{old:?}");
+}
+
+/// A glide a notch has retargeted moves one way only, never passes its destination and ends
+/// on it at rest, whatever speed it took over and however near or far the destination is.
+#[test]
+fn a_wheel_glide_ends_at_rest_on_its_destination() {
+    let t0 = Instant::now();
+    let dur = Duration::from_millis(250);
+    for after_ms in [1, 5, 35, 70, 100] {
+        for step in [-960.0f32, -96.0, 4.0, 96.0, 960.0] {
+            let way = step.signum();
+            let mut glide = ScrollGlide::new(0.0, way * 96.0, dur, t0);
+            let at = t0 + Duration::from_millis(after_ms);
+            let from = glide.value_at(at);
+            let to = glide.target() + step;
+            let carried = glide.notch(to, dur, at);
+            let label = format!("{after_ms} ms, step {step}, carried {carried:?}");
+            // One more notch on a glide in its first 100 ms keeps the speed.
+            assert!(carried.is_some() || step.abs() > 96.0, "{label}");
+            assert!(carried.is_none_or(|c| (1.5..=3.0).contains(&c)), "{label}");
+            assert_eq!(glide.target(), to);
+            assert_eq!(glide.value_at(at), from, "{label}");
+            let mut prev = from;
+            for ms in 1..=250 {
+                let v = glide.value_at(at + Duration::from_millis(ms));
+                assert!((v - prev) * way >= -0.01, "{label}: back at {ms} ms");
+                assert!((to - v) * way >= -0.01, "{label}: passed at {ms} ms");
+                prev = v;
+            }
+            assert!((prev - to).abs() < 0.01, "{label}: ends at {prev}");
+            assert!(glide.is_done(at + dur));
+            let last = glide.speed_at(at + Duration::from_millis(249));
+            assert!(
+                last.abs() < (to - from).abs() / 0.25 * 0.05,
+                "{label}: {last}"
+            );
+        }
+    }
+}
+
+/// A notch the other way, or one that finds the glide all but spent, starts the decelerate
+/// curve from where the content is; a notch pinned at the end changes nothing.
+#[test]
+fn a_wheel_notch_without_speed_to_carry_starts_from_rest() {
+    let t0 = Instant::now();
+    let dur = Duration::from_millis(250);
+    let fresh = |from: f32, to: f32, at: Instant, after: u64| {
+        ScrollGlide::new(from, to, dur, at).value_at(at + Duration::from_millis(after))
+    };
+    // The other way.
+    let mut glide = ScrollGlide::new(0.0, 96.0, dur, t0);
+    let at = t0 + Duration::from_millis(35);
+    let from = glide.value_at(at);
+    assert_eq!(glide.notch(0.0, dur, at), None);
+    assert_eq!(
+        glide.value_at(at + Duration::from_millis(50)),
+        fresh(from, 0.0, at, 50)
+    );
+    // 200 ms into a 250 ms glide the content crawls.
+    let mut glide = ScrollGlide::new(0.0, 96.0, dur, t0);
+    let at = t0 + Duration::from_millis(200);
+    let from = glide.value_at(at);
+    assert_eq!(glide.notch(192.0, dur, at), None);
+    assert_eq!(
+        glide.value_at(at + Duration::from_millis(16)),
+        fresh(from, 192.0, at, 16)
+    );
+    // Pinned at the end of the content: the destination stays, the glide is left alone.
+    let mut glide = ScrollGlide::new(0.0, 96.0, dur, t0);
+    let at = t0 + Duration::from_millis(35);
+    let before = glide.value_at(at + Duration::from_millis(50));
+    assert_eq!(glide.notch(96.0, dur, at), None);
+    assert_eq!(glide.value_at(at + Duration::from_millis(50)), before);
+    // A touchpad delta (no duration) lands on the next frame.
+    assert_eq!(glide.notch(120.0, Duration::ZERO, at), None);
+    assert!((glide.value_at(at) - 120.0).abs() < 0.001);
+    assert!(glide.is_done(at));
+}
+
 /// While a roll is in flight the chrome shows its end state (chevron direction, count,
 /// tab reserve) so those animate with the height instead of flipping when it lands; the
 /// progress tween is phase-locked with the height (167 ms collapse curve reaches 1 exactly

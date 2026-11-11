@@ -257,7 +257,7 @@ pub struct FenceViewState {
     /// the surface is redrawn per frame from `tick`). Its target is where pending input
     /// accumulates: a second wheel notch retargets from the anticipated end, not from the
     /// current frame.
-    pub(super) scroll_anim: Option<Tween>,
+    pub(super) scroll_anim: Option<ScrollGlide>,
     pub(super) dpi: u32,
     pub(super) theme: Theme,
     /// Last contrast choice for a clear plate; interior mutability keeps the draw API read-only.

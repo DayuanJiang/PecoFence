@@ -1,0 +1,236 @@
+# Fence polish 2026-11-12, package scroll. Parts (run.sh --var Part=...), default W:
+#   W  the wheel: a wheel kept turning scrolls at an even speed (no kick at every notch), one
+#      notch, a turn the other way, PageDown / End / Home and the scrollbar track as before,
+#      the content rests on whole pixels
+#   P  work per animation frame with 60 and with 6000 files (numbers into the job log)
+#   R  recordings of the wheel for a before/after animation (no checks)
+# The scroll offset is read from the app itself: the test script logs a `dump` on every timer
+# tick (`pace 10`), each with the fence's `scroll=`; a frame is 16.7 ms, a tick 10 to 16 ms.
+# `pace` is a debug build's line: part W needs `run.sh --bin target/wintest-bin-debug`.
+if (-not $Part) { $Part = 'W' }
+trap { PfTrap $_; continue }
+
+Add-Type -Namespace PfPolish -Name Clock -MemberDefinition '[DllImport("kernel32.dll")] public static extern void GetSystemTimePreciseAsFileTime(out long ft);'
+# Now, in ms (UTC file time), on the scale of the app log's timestamps.
+function PsNow() { $ft = [long]0; [PfPolish.Clock]::GetSystemTimePreciseAsFileTime([ref]$ft); return $ft / 10000.0 }
+function PsClean() { Get-ChildItem $PfDesk -Filter 'ps*.txt' -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue }
+function PsFiles($n) {
+  $words = '季度报告', '年度预算', '工作计划', '会议记录', '新年活动安排与分工', '文件整理', '图片素材', '报销单', '发票', '合同', '项目进度', '说明'
+  for ($i = 1; $i -le $n; $i++) { Set-Content -LiteralPath (Join-Path $PfDesk ("ps{0:d4} {1}.txt" -f $i, $words[$i % 12])) 'x' }
+}
+# Test-script lines: a dump on every timer tick from $first ms on, for about $seconds.
+function PsDumpScript($first, $seconds) {
+  $n = [int]($seconds * 1000 / 14)
+  return @('pace 10', "sleep $first") + (1..$n | ForEach-Object { 'dump s'; 'sleep 1' }) + @('sleep 3600000')
+}
+# The app's log as one string (the app keeps the file open).
+function PsLogText() {
+  $fs = [IO.File]::Open((PfLogPath), 'Open', 'Read', 'ReadWrite')
+  try { return (New-Object IO.StreamReader($fs, [Text.Encoding]::UTF8)).ReadToEnd() } finally { $fs.Close() }
+}
+function PsLogMs($stamp) { return [DateTimeOffset]::Parse($stamp).UtcDateTime.ToFileTimeUtc() / 10000.0 }
+# The fence's scroll offset over time from the dumps logged since $from: @(@(ms, offset), ...).
+function PsSamples($title, $from) {
+  $out = New-Object System.Collections.ArrayList
+  $re = '(?m)^(\S+Z)\s[^\n]*\[s\] live [^\n]*title="' + [regex]::Escape($title) + '"[^\n]* scroll=(-?[\d.]+)'
+  foreach ($m in [regex]::Matches((PsLogText), $re)) {
+    $ms = PsLogMs $m.Groups[1].Value
+    if ($ms -ge $from) { [void]$out.Add(@($ms, [double]$m.Groups[2].Value)) }
+  }
+  return , $out.ToArray()
+}
+# The offset drawn at time $t: the last sample at or before it.
+function PsAt($samples, $t) {
+  $v = $null
+  foreach ($s in $samples) { if ($s[0] -le $t) { $v = $s[1] } else { break } }
+  return $v
+}
+function PsEnd($samples) { return (PsAt $samples ((PsNow))) }
+# Turns the wheel: $count notches $gap ms apart ($dir -1 scrolls down); the time of each notch.
+function PsTurn($count, $gap, $dir = -1) {
+  $times = @()
+  for ($i = 0; $i -lt $count; $i++) {
+    [CW]::Wheel($dir); $times += PsNow
+    if ($i -lt $count - 1) { Start-Sleep -Milliseconds $gap }
+  }
+  return , $times
+}
+# Back to the top and at rest; the time after which samples belong to the next step.
+function PsTop() {
+  [CW]::Wheel(40); Start-Sleep -Milliseconds 700
+  return (PsNow)
+}
+# For the notches after the first: the share of the distance still to go at the notch that the
+# content covers in the next $ms. The decelerate curve started again covers more than half
+# of it in 50 ms (a kick); a glide that carries its speed on covers about a third.
+function PsKicks($samples, $times, $row, $ms = 50) {
+  $shares = @()
+  for ($k = 1; $k -lt $times.Count; $k++) {
+    $at = PsAt $samples $times[$k]; $later = PsAt $samples ($times[$k] + $ms)
+    $left = ($k + 1) * $row - $at
+    if ($null -ne $at -and $null -ne $later -and $left -gt 1) { $shares += [math]::Abs($later - $at) / $left }
+  }
+  return , $shares
+}
+function PsMean($a) { if (@($a).Count -eq 0) { return -1 }; return [math]::Round((@($a) | Measure-Object -Average).Average, 3) }
+function PsFmt($a) { return (@($a) | ForEach-Object { '{0:n2}' -f $_ }) -join ' ' }
+function PsPeak($samples) { return (@($samples | ForEach-Object { $_[1] }) | Measure-Object -Maximum).Maximum }
+# Largest step back between two samples (0 when the offset only ever grew).
+function PsBack($samples) {
+  $worst = 0.0
+  for ($i = 1; $i -lt $samples.Count; $i++) { $d = $samples[$i - 1][1] - $samples[$i][1]; if ($d -gt $worst) { $worst = $d } }
+  return $worst
+}
+# A fence of $n text files at a fixed place, sorted by name; its window rect.
+function PsFence($n) {
+  PsFiles $n
+  ClearFences | Out-Null
+  Pf fence create --title $PsTitle --rect '200,120,360,330' | Out-Null
+  Pf item move --glob 'ps*.txt' --to $PsTitle | Out-Null
+  Pf fence set $PsTitle sort name | Out-Null
+  Start-Sleep -Seconds 2
+  return (FenceGet $PsTitle).windowRect
+}
+
+function PartW() {
+  trap { PfTrap $_; continue }
+  Check 'W a debug build runs (the test script needs its pace line)' $PfDebugBuild "debug=$PfDebugBuild"
+  $env:PECOFENCE_UI_TEST_WINDOWS = '1'
+  $t0 = PsNow
+  PfStart -Script (PsDumpScript 14000 75) -Lang 'zh-CN'
+  $r = PsFence 60
+  $cx = $r.x + 140; $cy = $r.y + 180
+  [G]::MoveTo($cx, $cy)
+  $wait = 17000 - ((PsNow) - $t0); if ($wait -gt 0) { Start-Sleep -Milliseconds $wait }
+  Log "fence $($r.x),$($r.y),$($r.w),$($r.h); dumps run from about 15 s to 90 s after the start; now $([int]((PsNow) - $t0)) ms"
+
+  Case 'W1 one notch from rest'
+  $from = PsTop
+  $t = PsTurn 1 0
+  Start-Sleep -Milliseconds 700
+  $s = PsSamples $PsTitle $from
+  $row = PsEnd $s
+  $first = (PsAt $s ($t[0] + 50)) / [math]::Max(1, $row)
+  Log "W1 row=$row share after 50 ms=$('{0:n2}' -f $first) samples=$($s.Count)"
+  Check 'W1 one notch scrolls one row of icons' ($row -ge 60 -and $row -le 140) "offset $row"
+  Check 'W1 one notch answers at once, as before (over 30 % of the row within 50 ms)' ($first -ge 0.3) "share $('{0:n2}' -f $first)"
+  Check 'W1 at rest on the row 320 ms after the notch' ((PsAt $s ($t[0] + 320)) -eq $row) "offset at 320 ms $(PsAt $s ($t[0] + 320))"
+
+  Case 'W2 three notches 70 ms apart'
+  $from = PsTop
+  $t = PsTurn 3 60
+  Start-Sleep -Milliseconds 800
+  $s = PsSamples $PsTitle $from
+  $k = PsKicks $s $t $row
+  Log "W2 gaps $([int]($t[1] - $t[0])) $([int]($t[2] - $t[1])) ms; shares $(PsFmt $k); end $(PsEnd $s)"
+  Check 'W2 no kick at the second and third notch (mean share within 50 ms under 0.42)' ((PsMean $k) -ge 0 -and (PsMean $k) -lt 0.42) "shares $(PsFmt $k), mean $(PsMean $k)"
+  Check 'W2 ends three rows down' ((PsEnd $s) -eq 3 * $row) "offset $(PsEnd $s)"
+  Check 'W2 never a step back' ((PsBack $s) -eq 0) "largest step back $(PsBack $s)"
+
+  Case 'W3 eight notches 70 ms apart'
+  $from = PsTop
+  $t = PsTurn 8 60
+  Start-Sleep -Milliseconds 800
+  $s = PsSamples $PsTitle $from
+  $k = PsKicks $s $t $row
+  $end = PsEnd $s
+  Log "W3 took $([int]($t[7] - $t[0])) ms; shares $(PsFmt $k); end $end"
+  Check 'W3 a wheel kept turning has no kick per notch (mean share within 50 ms under 0.42)' ((PsMean $k) -ge 0 -and (PsMean $k) -lt 0.42) "shares $(PsFmt $k), mean $(PsMean $k)"
+  Check 'W3 ends eight rows down' ($end -eq 8 * $row) "offset $end"
+  Check 'W3 never a step back and never past the end' ((PsBack $s) -eq 0 -and (PsPeak $s) -le $end) "largest step back $(PsBack $s), peak $(PsPeak $s)"
+
+  Case 'W4 ten notches 35 ms apart'
+  $from = PsTop
+  $t = PsTurn 10 30
+  Start-Sleep -Milliseconds 800
+  $s = PsSamples $PsTitle $from
+  $end = PsEnd $s
+  Log "W4 took $([int]($t[9] - $t[0])) ms for ten notches; end $end; at the last notch $(PsAt $s $t[9]); 320 ms later $(PsAt $s ($t[9] + 320))"
+  Check 'W4 ends ten rows down' ($end -eq 10 * $row) "offset $end"
+  Check 'W4 never a step back' ((PsBack $s) -eq 0) "largest step back $(PsBack $s)"
+  Check 'W4 at rest 320 ms after the last notch, as before' ((PsAt $s ($t[9] + 320)) -eq $end) "offset then $(PsAt $s ($t[9] + 320))"
+
+  Case 'W5 three notches down, then two up'
+  $from = PsTop
+  PsTurn 3 60 | Out-Null
+  Start-Sleep -Milliseconds 90
+  $u = PsTurn 2 60 1
+  Start-Sleep -Milliseconds 800
+  $s = PsSamples $PsTitle $from
+  $end = PsEnd $s
+  # The first notch up takes a row off the way still to go (the content may still be short of
+  # the new end); after the second one the end lies behind the content, which turns at once.
+  $turn = (PsAt $s $u[1]) - (PsAt $s ($u[1] + 60))
+  Log "W5 peak $(PsPeak $s) end $end; at the notches up $(PsAt $s $u[0]) $(PsAt $s $u[1]); moved back $turn within 60 ms of the second"
+  Check 'W5 ends one row down' ($end -eq $row) "offset $end"
+  Check 'W5 never past three rows' ((PsPeak $s) -le 3 * $row) "peak $(PsPeak $s)"
+  Check 'W5 a notch the other way turns the content back at once' ($turn -gt 0.15 * $row) "moved back $turn of a $row row"
+
+  Case 'W6 keyboard paging and the scrollbar track, as before'
+  $from = PsTop
+  $p = CellPt $PsTitle 1
+  [G]::Click($p[0], $p[1]); Start-Sleep -Milliseconds 400
+  $keys0 = PsNow
+  [G]::Press(0x22); Start-Sleep -Milliseconds 80; [G]::Press(0x22); $second = PsNow
+  Start-Sleep -Milliseconds 900
+  $s = PsSamples $PsTitle $from
+  $page2 = PsEnd $s
+  $at = PsAt $s $second; $share = ((PsAt $s ($second + 50)) - $at) / [math]::Max(1, $page2 - $at)
+  Log "W6 two PageDown: end $page2; at the second press $at; share within 50 ms of it $('{0:n2}' -f $share)"
+  Check 'W6 PageDown twice ends more than three rows down' ($page2 -gt 3 * $row) "offset $page2"
+  [G]::Press(0x23); Start-Sleep -Milliseconds 900
+  $endAt = PsEnd (PsSamples $PsTitle $from)
+  [G]::Press(0x24); Start-Sleep -Milliseconds 900
+  $homeAt = PsEnd (PsSamples $PsTitle $from)
+  Check 'W6 End goes to the last row, Home to the top' ($endAt -gt $page2 -and $homeAt -eq 0) "End $endAt, Home $homeAt"
+  # One press on the track below the thumb: a page.
+  [G]::MoveTo($r.x + $r.w - 5, $r.y + $r.h - 40); Start-Sleep -Milliseconds 300
+  MDown; Start-Sleep -Milliseconds 60; MUp; Start-Sleep -Milliseconds 900
+  $paged = PsEnd (PsSamples $PsTitle $from)
+  Check 'W6 a press on the scrollbar track pages down' ($paged -gt 2 * $row) "offset $paged"
+  $keys1 = PsNow
+  [G]::MoveTo($cx, $cy); Start-Sleep -Milliseconds 300
+  # Keys and the scrollbar never take the wheel's path (the line exists only in builds that carry the speed on).
+  $wheelLines = @([regex]::Matches((PsLogText), '(?m)^(\S+Z)\s[^\n]*wheel notch on a running glide[^\n]*') | ForEach-Object { , @((PsLogMs $_.Groups[1].Value), $_.Value) })
+  $inKeys = @($wheelLines | Where-Object { $_[0] -ge $keys0 -and $_[0] -le $keys1 })
+  Check 'W6 keys and the scrollbar keep the decelerate curve (no wheel carry in the log)' ($inKeys.Count -eq 0) "lines $($inKeys.Count)"
+
+  Case 'W7 every rest is on a whole pixel'
+  $rests = @($row, $page2, $endAt, $paged)
+  Check 'W7 whole pixels' (@($rests | Where-Object { $_ -ne [math]::Round($_) }).Count -eq 0) "rests $($rests -join ' ')"
+  Log "W7 notches on a running glide in the log: $($wheelLines.Count), of them carried: $(@($wheelLines | Where-Object { $_[1] -match 'carried=Some' }).Count)"
+  PfQuit
+}
+
+function PartR() {
+  trap { PfTrap $_; continue }
+  . C:\pf\kit\rec.ps1
+  PfStart -Lang 'zh-CN'
+  $r = PsFence 60
+  [G]::MoveTo($r.x + 140, $r.y + 180); Start-Sleep -Milliseconds 500
+  Case 'R wheel recordings'
+  foreach ($run in @(@('wheel10', 10, 30, '滚轮连续转 10 格'), @('wheel6', 6, 60, '滚轮慢一点转 6 格'))) {
+    [CW]::Wheel(40); Start-Sleep -Milliseconds 900
+    RecStart $run[0] -X ($r.x - 10) -Y ($r.y - 10) -W ($r.w + 20) -H ($r.h + 20) -Fps 60
+    Start-Sleep -Milliseconds 400
+    RecMark $run[3]
+    PsTurn $run[1] $run[2] | Out-Null
+    Start-Sleep -Milliseconds 900
+    RecMark '停下'
+    Start-Sleep -Milliseconds 300
+    RecStop
+  }
+  Check 'R recorded' $true (Get-Content "$PfShots\rec-wheel10\stats.txt")
+  PfQuit
+}
+
+Case 'setup'
+CloseWindows
+PsClean
+$AnimWas = [Anim]::Get(); [Anim]::Set($true)
+$PsTitle = '很多文件'
+if ($Part -match 'W') { PartW }
+if ($Part -match 'R') { PartR }
+Case 'cleanup'
+[Anim]::Set($AnimWas)
+PsClean
