@@ -122,6 +122,37 @@ pub(super) fn apply_window_shape(hwnd: HWND) {
     let _ = dwm::set_corner_preference(hwnd, dwm::CornerPreference::DoNotRound);
 }
 
+/// Indices that hold every item whose cell crosses the band `top..bottom` (content DIPs, ends
+/// excluded). Cells run down the content in list order, so the band's rows are found by
+/// bisection, without a look at every item of a fence with thousands. Where the cells stand
+/// anywhere (像桌面一样排列) every index is returned; callers test the cells they get.
+pub(super) fn band_range(
+    layout: &ItemLayout,
+    count: usize,
+    top: f32,
+    bottom: f32,
+) -> std::ops::Range<usize> {
+    if matches!(layout, ItemLayout::Grid(g) if g.has_slots()) {
+        return 0..count;
+    }
+    // The first index `above` no longer holds for (it holds for a run of leading indices).
+    let first = |above: &dyn Fn(CellRect) -> bool| {
+        let (mut lo, mut hi) = (0, count);
+        while lo < hi {
+            let mid = lo + (hi - lo) / 2;
+            if above(layout.cell(mid)) {
+                lo = mid + 1;
+            } else {
+                hi = mid;
+            }
+        }
+        lo
+    };
+    let start = first(&|c| c.y + c.h <= top);
+    let end = first(&|c| c.y < bottom);
+    start..end.max(start)
+}
+
 impl FenceViewState {
     /// Opacity multiplier the plate is drawn with. A fully transparent fence draws the
     /// default plate while it shows it (its alpha comes from `plate_reveal`).
@@ -185,45 +216,68 @@ impl FenceViewState {
     }
 
     /// Syncs the per-item hover / selection / drop-target / search-dim fades from the logical
-    /// state and samples them: one `(hover, selection, drop_target, item alpha)` per item.
-    /// During a Peek search the matches show a lighter selection, the current match the full
-    /// one, and the rest fade to `SEARCH_DIM_ALPHA`. Called at the top of every content draw.
-    pub(super) fn item_alphas(&mut self, now: Instant) -> Vec<(f32, f32, f32, f32)> {
+    /// state and samples them for the items drawn: one `(hover, selection, drop_target, item
+    /// alpha)` per index of `drawn`, in its order. During a Peek search the matches show a
+    /// lighter selection, the current match the full one, and the rest fade to
+    /// `SEARCH_DIM_ALPHA`. Called at the top of every content draw, so outside a search it
+    /// touches only the items that are on (hovered, selected, the drop target) and the fades
+    /// still in the maps, never every item of a fence with thousands.
+    pub(super) fn item_alphas(
+        &mut self,
+        now: Instant,
+        drawn: impl Iterator<Item = usize>,
+    ) -> Vec<(f32, f32, f32, f32)> {
         let animate = self.motion.enabled();
         let dragging = self.ole_drag;
-        for (i, it) in self.items.iter().enumerate() {
-            let mut hover = (self.hover == Some(i) && !dragging) as u8 as f32;
-            let mut sel = self.selected.contains(&i) as u8 as f32;
-            let mut dim = 0.0;
-            if let Some(m) = &self.search {
+        if let Some(m) = &self.search {
+            for (i, it) in self.items.iter().enumerate() {
                 let hit = m.matches.contains(&it.id);
-                sel = if m.current == Some(it.id) {
+                let hover = (self.hover == Some(i) && !dragging && !hit) as u8 as f32;
+                let sel = if m.current == Some(it.id) {
                     1.0
                 } else if hit {
                     SEARCH_MATCH_SELECTION
                 } else {
                     0.0
                 };
-                if hit {
-                    hover = 0.0;
-                }
-                dim = (!hit) as u8 as f32;
+                self.item_hover.set(animate, it.id, hover, now);
+                self.item_sel.set(animate, it.id, sel, now);
+                let drop = (self.drop_item == Some(i)) as u8 as f32;
+                self.drop_fades.set(animate, it.id, drop, now);
+                self.search_dim
+                    .set(animate, it.id, (!hit) as u8 as f32, now);
             }
-            self.item_hover.set(animate, it.id, hover, now);
-            self.item_sel.set(animate, it.id, sel, now);
-            let drop = (self.drop_item == Some(i)) as u8 as f32;
-            self.drop_fades.set(animate, it.id, drop, now);
-            self.search_dim.set(animate, it.id, dim, now);
+        } else {
+            let id_at = |i: usize| self.items.get(i).map(|it| it.id);
+            let hover = self.hover.filter(|_| !dragging).and_then(id_at);
+            if let Some(id) = hover {
+                self.item_hover.set(animate, id, 1.0, now);
+            }
+            self.item_hover
+                .release_unless(animate, now, |id| Some(*id) == hover);
+            let selected: HashSet<ItemId> =
+                self.selected.iter().filter_map(|&i| id_at(i)).collect();
+            for id in &selected {
+                self.item_sel.set(animate, *id, 1.0, now);
+            }
+            self.item_sel
+                .release_unless(animate, now, |id| selected.contains(id));
+            let drop = self.drop_item.and_then(id_at);
+            if let Some(id) = drop {
+                self.drop_fades.set(animate, id, 1.0, now);
+            }
+            self.drop_fades
+                .release_unless(animate, now, |id| Some(*id) == drop);
+            self.search_dim.release_unless(animate, now, |_| false);
         }
-        let out = self
-            .items
-            .iter()
-            .map(|it| {
-                let dim = self.search_dim.value(&it.id, now);
+        let out = drawn
+            .map(|i| {
+                let id = &self.items[i].id;
+                let dim = self.search_dim.value(id, now);
                 (
-                    self.item_hover.value(&it.id, now),
-                    self.item_sel.value(&it.id, now),
-                    self.drop_fades.value(&it.id, now),
+                    self.item_hover.value(id, now),
+                    self.item_sel.value(id, now),
+                    self.drop_fades.value(id, now),
                     1.0 - dim * (1.0 - SEARCH_DIM_ALPHA),
                 )
             })
@@ -235,6 +289,22 @@ impl FenceViewState {
         self.drop_fades.prune(now, |_| true);
         self.search_dim.prune(now, |_| true);
         out
+    }
+
+    /// Indices of the items a content draw has to look at: the rows that cross the viewport,
+    /// or every item while some glide to new cells (one may be drawn far from its cell).
+    pub(super) fn rows_drawn(
+        &self,
+        layout: &ItemLayout,
+        scroll: f32,
+        view_h: f32,
+    ) -> std::ops::Range<usize> {
+        let count = self.items.len();
+        if self.item_motion.is_empty() {
+            band_range(layout, count, scroll - 1.0, scroll + view_h + 1.0)
+        } else {
+            0..count
+        }
     }
 
     /// Drops finished layout / icon motion before a content draw (a finished tween sits at its
@@ -1159,15 +1229,35 @@ impl FenceViewState {
         // running glide ends (End, PageDown, a thumb drag, a Peek reveal).
         let target = self.scroll_target();
         let near = |y: f32, h: f32, at: f32| y + h > at - view_h && y < at + 2.0 * view_h;
+        let count = self.items.len();
+        let rows_near = |at: f32| band_range(&layout, count, at - view_h, at + 2.0 * view_h);
+        let (here, there) = (rows_near(scroll), rows_near(target));
         self.ensure_icons_and_labels(label_w, wide_w, |i| {
-            let c = grid.cell(i);
-            near(c.y, c.h, scroll) || near(c.y, c.h, target)
+            (here.contains(&i) || there.contains(&i)) && {
+                let c = grid.cell(i);
+                near(c.y, c.h, scroll) || near(c.y, c.h, target)
+            }
         });
 
         let now = Instant::now();
         self.prune_content_motion(now);
         self.sync_scrollbar_alpha();
-        let alphas = self.item_alphas(now);
+        // Only the cells in the viewport are prepared (`draw_content` skips the others anyway);
+        // an item gliding in from outside counts where it is drawn.
+        let placed: Vec<(usize, f32, f32, f32)> = self
+            .rows_drawn(&layout, scroll, view_h)
+            .filter_map(|i| {
+                let item = &self.items[i];
+                let c = grid.cell(i);
+                let (x, y, alpha) = match self.item_motion.get(&item.id) {
+                    Some(m) => (m.x.value_at(now), m.y.value_at(now), m.alpha.value_at(now)),
+                    None => (c.x, c.y, 1.0),
+                };
+                let y = y - scroll;
+                (y + c.h >= 0.0 && y <= view_h).then_some((i, x, y, alpha))
+            })
+            .collect();
+        let alphas = self.item_alphas(now, placed.iter().map(|&(i, ..)| i));
         let dragging = self.ole_drag;
         let cut = self.cut.clone();
         let pressed = match self.pressed {
@@ -1199,22 +1289,6 @@ impl FenceViewState {
                 .filter(|c| c.id == id)
                 .map(|c| (c.text.as_str(), c.lines))
         });
-        // Only the cells in the viewport are prepared (`draw_content` skips the others anyway);
-        // an item gliding in from outside counts where it is drawn.
-        let placed: Vec<(usize, f32, f32, f32)> = self
-            .items
-            .iter()
-            .enumerate()
-            .filter_map(|(i, item)| {
-                let c = grid.cell(i);
-                let (x, y, alpha) = match self.item_motion.get(&item.id) {
-                    Some(m) => (m.x.value_at(now), m.y.value_at(now), m.alpha.value_at(now)),
-                    None => (c.x, c.y, 1.0),
-                };
-                let y = y - scroll;
-                (y + c.h >= 0.0 && y <= view_h).then_some((i, x, y, alpha))
-            })
-            .collect();
         let keys: Vec<String> = {
             let icons = self.icons.borrow();
             placed
@@ -1247,7 +1321,8 @@ impl FenceViewState {
                 label_inset: label_inset(l.label_wide),
             })
             .collect();
-        cells.extend(placed.iter().zip(&keys).map(|(&(i, x, y, alpha), key)| {
+        let drawn = placed.iter().zip(&keys).zip(&alphas);
+        cells.extend(drawn.map(|((&(i, x, y, alpha), key), fade)| {
             let item = &self.items[i];
             let c = grid.cell(i);
             ItemCell {
@@ -1263,21 +1338,21 @@ impl FenceViewState {
                 } else {
                     item.label.as_deref().unwrap_or(&item.name)
                 },
-                hover: alphas[i].0,
-                selection: alphas[i].1,
+                hover: fade.0,
+                selection: fade.1,
                 pressed: pressed == Some(i) && !dragging,
                 focused: focused == Some(i),
                 dimmed: cut.contains(&item.id),
                 failed: item.icon_failed,
-                drop_target: alphas[i].2,
-                alpha: alpha * alphas[i].3,
+                drop_target: fade.2,
+                alpha: alpha * fade.3,
                 icon_alpha: item.icon_fade.map_or(1.0, |t| t.value_at(now)),
                 full_label: if unfold == Some(i) { full } else { None },
                 label_inset: label_inset(item.label_wide),
             }
         }));
         let group_headers = group_header_draws(&layout, scroll, 0.0);
-        let scrollbar = self.scrollbar_draw();
+        let scrollbar = self.scrollbar_draw_in(&layout, view_h);
         let content = ContentDraw {
             items: &cells,
             group_headers: &group_headers,
@@ -1351,15 +1426,36 @@ impl FenceViewState {
         // running glide ends (as in `redraw_content`).
         let target = self.scroll_target();
         let near = |y: f32, h: f32, at: f32| y + h > at - view_h && y < at + 2.0 * view_h;
+        let count = self.items.len();
+        let rows_near = |at: f32| band_range(&layout, count, at - view_h, at + 2.0 * view_h);
+        let (here, there) = (rows_near(scroll), rows_near(target));
         self.ensure_icons_and_labels(text_w, text_w, |i| {
-            let c = layout.cell(i);
-            near(c.y, c.h, scroll) || near(c.y, c.h, target)
+            (here.contains(&i) || there.contains(&i)) && {
+                let c = layout.cell(i);
+                near(c.y, c.h, scroll) || near(c.y, c.h, target)
+            }
         });
 
         let now = Instant::now();
         self.prune_content_motion(now);
         self.sync_scrollbar_alpha();
-        let alphas = self.item_alphas(now);
+        // Only the rows in the viewport are prepared (`draw_rows` skips the others anyway); a
+        // row gliding in from outside counts where it is drawn.
+        let placed: Vec<(usize, f32, f32)> = self
+            .rows_drawn(&layout, scroll, view_h)
+            .filter_map(|i| {
+                let item = &self.items[i];
+                let c = layout.cell(i);
+                let (y, alpha) = match self.item_motion.get(&item.id) {
+                    Some(m) => (m.y.value_at(now), m.alpha.value_at(now)),
+                    None => (c.y, 1.0),
+                };
+                let y = y - scroll + metrics.header_h;
+                (y + c.h > metrics.header_h && y <= metrics.header_h + view_h)
+                    .then_some((i, y, alpha))
+            })
+            .collect();
+        let alphas = self.item_alphas(now, placed.iter().map(|&(i, ..)| i));
         let dragging = self.ole_drag;
         let cut = self.cut.clone();
         let pressed_item = match self.pressed {
@@ -1396,23 +1492,6 @@ impl FenceViewState {
             self.header_fades.clear();
             Vec::new()
         };
-        // Only the rows in the viewport are prepared (`draw_rows` skips the others anyway); a
-        // row gliding in from outside counts where it is drawn.
-        let placed: Vec<(usize, f32, f32)> = self
-            .items
-            .iter()
-            .enumerate()
-            .filter_map(|(i, item)| {
-                let c = layout.cell(i);
-                let (y, alpha) = match self.item_motion.get(&item.id) {
-                    Some(m) => (m.y.value_at(now), m.alpha.value_at(now)),
-                    None => (c.y, 1.0),
-                };
-                let y = y - scroll + metrics.header_h;
-                (y + c.h > metrics.header_h && y <= metrics.header_h + view_h)
-                    .then_some((i, y, alpha))
-            })
-            .collect();
         let keys: Vec<String> = {
             let icons = self.icons.borrow();
             placed
@@ -1444,7 +1523,8 @@ impl FenceViewState {
                 icon_alpha: 1.0,
             })
             .collect();
-        rows.extend(placed.iter().zip(&keys).map(|(&(i, y, alpha), key)| {
+        let drawn = placed.iter().zip(&keys).zip(&alphas);
+        rows.extend(drawn.map(|((&(i, y, alpha), key), fade)| {
             let item = &self.items[i];
             let c = layout.cell(i);
             RowCell {
@@ -1456,19 +1536,19 @@ impl FenceViewState {
                 date: item.date_label.as_deref().unwrap_or(""),
                 type_name: item.type_label.as_deref().unwrap_or(""),
                 size: item.size_label.as_deref().unwrap_or(""),
-                hover: alphas[i].0,
-                selection: alphas[i].1,
+                hover: fade.0,
+                selection: fade.1,
                 pressed: pressed_item == Some(i) && !dragging,
                 focused: focused == Some(i),
                 dimmed: cut.contains(&item.id),
                 failed: item.icon_failed,
-                drop_target: alphas[i].2,
-                alpha: alpha * alphas[i].3,
+                drop_target: fade.2,
+                alpha: alpha * fade.3,
                 icon_alpha: item.icon_fade.map_or(1.0, |t| t.value_at(now)),
             }
         }));
         let group_headers = group_header_draws(&layout, scroll, metrics.header_h);
-        let scrollbar = self.scrollbar_draw();
+        let scrollbar = self.scrollbar_draw_in(&layout, view_h);
         // `rows` holds the viewport only; the hint is for a fence without items.
         let empty_text = self.items.is_empty().then(|| self.empty_text());
         let marquee = self.marquee_rect_dip().map(|m| Rect {

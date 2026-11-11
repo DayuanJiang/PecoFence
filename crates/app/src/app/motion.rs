@@ -350,6 +350,7 @@ impl App {
         }
         let spent = now.elapsed();
         self.frame_run.max_frame = self.frame_run.max_frame.max(spent);
+        self.frame_run.work += spent;
         if more {
             self.ctx.frames.request();
         } else {
@@ -380,6 +381,7 @@ impl App {
                 max_gap_ms = ms(r.max_gap),
                 max_frame_ms = ms(r.max_frame),
                 timer_frames,
+                work_ms = ms(r.work),
                 "animation run stuttered"
             );
         } else {
@@ -389,6 +391,7 @@ impl App {
                 max_gap_ms = ms(r.max_gap),
                 max_frame_ms = ms(r.max_frame),
                 timer_frames,
+                work_ms = ms(r.work),
                 "animation run"
             );
         }

@@ -237,6 +237,9 @@ struct FrameRun {
     frames: u32,
     max_gap: Duration,
     max_frame: Duration,
+    /// UI-thread time of all its frames together: divided by the frames it is the mean work
+    /// per frame, which a fast machine's even frame gaps do not show.
+    work: Duration,
 }
 
 /// Runtime-only: a desktop path we expect to appear shortly (created from a fence's "新建" menu,

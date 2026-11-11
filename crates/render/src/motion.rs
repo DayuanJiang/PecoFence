@@ -462,6 +462,23 @@ impl<K: Hash + Eq + Copy> Fades<K> {
         }
     }
 
+    /// Drives every fade whose key `on` rejects towards 0, exactly as `set(animate, key, 0.0,
+    /// now)` would for each of them. A caller with thousands of keys then only has to `set`
+    /// the few that are on, not every key each frame.
+    pub fn release_unless(&mut self, animate: bool, now: Instant, on: impl Fn(&K) -> bool) {
+        let dur = if animate {
+            self.dur_out
+        } else {
+            Duration::ZERO
+        };
+        let curve = self.curve;
+        for (key, t) in &mut self.map {
+            if t.target() > f32::EPSILON && !on(key) {
+                t.retarget(0.0, dur, curve, now);
+            }
+        }
+    }
+
     /// Places `key` at `value` immediately (no transition), e.g. when the thing it describes
     /// was rebuilt and the old fade would be misleading.
     pub fn snap(&mut self, key: K, value: f32, now: Instant) {
@@ -600,6 +617,39 @@ mod tests {
         assert!((f.value(&8, mid) - 0.5).abs() < 1e-3);
         f.rekey(&2, 6);
         assert_eq!(f.map.len(), 1);
+    }
+
+    #[test]
+    fn release_unless_fades_out_the_keys_that_are_no_longer_on() {
+        let t0 = Instant::now();
+        let ms = Duration::from_millis;
+        let mut f: Fades<usize> = Fades::new(ms(100), ms(200), Curve::Linear);
+        let mut by_set: Fades<usize> = Fades::new(ms(100), ms(200), Curve::Linear);
+        for fades in [&mut f, &mut by_set] {
+            fades.set(true, 1, 1.0, t0);
+            fades.set(true, 2, 1.0, t0);
+            fades.set(true, 3, 1.0, t0);
+        }
+        // Key 2 stays on; 1 and 3 go off halfway through their fade-in. The same by `set`.
+        let mid = t0 + ms(50);
+        f.release_unless(true, mid, |k| *k == 2);
+        by_set.set(true, 1, 0.0, mid);
+        by_set.set(true, 2, 1.0, mid);
+        by_set.set(true, 3, 0.0, mid);
+        for at in [mid, mid + ms(100), mid + ms(200), mid + ms(300)] {
+            for key in 1..=3 {
+                assert_eq!(f.value(&key, at), by_set.value(&key, at), "key {key}");
+            }
+            assert_eq!(f.busy(at), by_set.busy(at));
+        }
+        assert!((f.value(&1, mid + ms(100)) - 0.25).abs() < 1e-3);
+        assert_eq!(f.value(&2, mid + ms(100)), 1.0);
+        // Called again it restarts nothing, and with animations off it snaps.
+        f.release_unless(true, mid + ms(100), |k| *k == 2);
+        assert!((f.value(&1, mid + ms(100)) - 0.25).abs() < 1e-3);
+        f.release_unless(false, mid + ms(100), |_| false);
+        assert_eq!(f.value(&2, mid + ms(100)), 0.0);
+        assert!(!f.busy(mid + ms(100)));
     }
 
     #[test]

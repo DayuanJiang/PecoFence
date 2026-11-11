@@ -571,6 +571,37 @@ fn scroll_duration_is_capped_per_input() {
     assert!(t.is_done(t0));
 }
 
+/// The rows a draw looks at, found by bisection, are the cells a look at every item finds.
+#[test]
+fn band_range_holds_exactly_the_cells_that_cross_the_band() {
+    let grid = ItemLayout::Grid(Grid::new(GridMetrics::for_icon_size(48, 2), 360.0, 61));
+    let rows = ItemLayout::rows(RowMetrics::list(16.0), 360.0, 61);
+    for layout in [&grid, &rows] {
+        let height = layout.content_height();
+        for (top, bottom) in [
+            (-50.0, -1.0),
+            (-10.0, 0.0),
+            (0.0, 1.0),
+            (0.0, 300.0),
+            (95.9, 96.1),
+            (130.0, 131.0),
+            (250.0, 900.0),
+            (height - 1.0, height + 200.0),
+            (height + 10.0, height + 20.0),
+        ] {
+            let crossing: Vec<usize> = (0..61)
+                .filter(|&i| {
+                    let c = layout.cell(i);
+                    c.y + c.h > top && c.y < bottom
+                })
+                .collect();
+            let range: Vec<usize> = band_range(layout, 61, top, bottom).collect();
+            assert_eq!(range, crossing, "band {top}..{bottom}");
+        }
+        assert!(band_range(layout, 0, 0.0, 100.0).is_empty());
+    }
+}
+
 /// Content shift per 60 Hz frame for a wheel turned `n` notches `gap_ms` apart (96 DIP per
 /// notch, the 250 ms wheel cap), until the glide has ended. `carry` false restarts the
 /// decelerate curve at every notch, as before `ScrollGlide::notch`.

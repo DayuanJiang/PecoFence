@@ -372,7 +372,8 @@ impl FenceViewState {
                     dist,
                     speed,
                     dur_ms = dur.as_millis() as u64,
-                    carried = ?carried,
+                    // The start speed as a multiple of the mean speed; 0: started from rest.
+                    carried = carried.unwrap_or(0.0),
                     "wheel notch on a running glide: speed carried on, or started again from rest"
                 );
             }
@@ -449,13 +450,27 @@ impl FenceViewState {
             return None;
         }
         let (layout, view_h) = self.scroll_extent();
+        self.scrollbar_geometry_in(&layout, view_h, scroll_y)
+    }
+
+    /// `scrollbar_geometry_for` with the layout and viewport height the caller already has (a
+    /// content draw builds the layout once; with 按时间分组 building it walks every item).
+    pub(super) fn scrollbar_geometry_in(
+        &self,
+        layout: &ItemLayout,
+        view_h: f32,
+        scroll_y: f32,
+    ) -> Option<ScrollbarGeom> {
+        if self.rolled_up {
+            return None;
+        }
         let max_scroll = layout.max_scroll(view_h);
         if max_scroll <= 0.0 {
             return None;
         }
         // The bar spans the whole band, the empty height under the whole rows included.
         let band_top = layout.fixed_top();
-        let band_h = self.band_h(&layout);
+        let band_h = self.band_h(layout);
         let (track_top, track_h) = scrollbar_track(band_top, band_h);
         let content_h = layout.content_height();
         let thumb_h = scrollbar_thumb_h(track_h, view_h, content_h);
@@ -520,8 +535,12 @@ impl FenceViewState {
 
     /// The bar to draw: width, alpha, the track / arrow reveal and the arrow hover fades
     /// sampled from their tweens (None once faded out).
-    pub(super) fn scrollbar_draw(&self) -> Option<ScrollbarDraw> {
-        let g = self.scrollbar_geometry()?;
+    pub(super) fn scrollbar_draw_in(
+        &self,
+        layout: &ItemLayout,
+        view_h: f32,
+    ) -> Option<ScrollbarDraw> {
+        let g = self.scrollbar_geometry_in(layout, view_h, self.scroll_y)?;
         let now = Instant::now();
         let alpha = self.sb_alpha.value_at(now);
         if alpha <= 0.0 {

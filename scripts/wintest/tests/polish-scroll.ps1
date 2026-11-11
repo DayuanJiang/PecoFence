@@ -3,6 +3,8 @@
 #      notch, a turn the other way, PageDown / End / Home and the scrollbar track as before,
 #      the content rests on whole pixels
 #   P  work per animation frame with 60 and with 6000 files (numbers into the job log)
+#   F  the fills of the icon under the pointer and of selected icons show, go and are there
+#      for icons that scroll into view (the per-frame sync touches only the icons that are on)
 #   R  recordings of the wheel for a before/after animation (no checks)
 # The scroll offset is read from the app itself: the test script logs a `dump` on every timer
 # tick (`pace 10`), each with the fence's `scroll=`; a frame is 16.7 ms, a tick 10 to 16 ms.
@@ -198,7 +200,147 @@ function PartW() {
   Case 'W7 every rest is on a whole pixel'
   $rests = @($row, $page2, $endAt, $paged)
   Check 'W7 whole pixels' (@($rests | Where-Object { $_ -ne [math]::Round($_) }).Count -eq 0) "rests $($rests -join ' ')"
-  Log "W7 notches on a running glide in the log: $($wheelLines.Count), of them carried: $(@($wheelLines | Where-Object { $_[1] -match 'carried=Some' }).Count)"
+  Log "W7 notches on a running glide in the log: $($wheelLines.Count), of them carried: $(@($wheelLines | Where-Object { $_[1] -match 'carried=[1-9]' }).Count)"
+  PfQuit
+}
+
+# The app's "animation run" lines logged between $from and $to (ms): frames, the slowest
+# frame's work (ms) and, in builds that log it, the work of all frames together (ms).
+function PsRuns($from, $to) {
+  $runs = @()
+  foreach ($m in [regex]::Matches((PsLogText), '(?m)^(\S+Z)\s[^\n]*animation run(?: stuttered)?[^\n]* frames=(\d+) [^\n]*max_frame_ms=([\d.]+)(?:[^\n]*work_ms=([\d.]+))?')) {
+    $ms = PsLogMs $m.Groups[1].Value
+    if ($ms -lt $from -or $ms -gt $to -or [int]$m.Groups[2].Value -lt 3) { continue }
+    $work = if ($m.Groups[4].Success) { [double]$m.Groups[4].Value } else { -1 }
+    $runs += , @([int]$m.Groups[2].Value, [double]$m.Groups[3].Value, $work)
+  }
+  return , $runs
+}
+function PsMedian($a) { $v = @($a | Sort-Object); if ($v.Count -eq 0) { return -1 }; return $v[[int][math]::Floor(($v.Count - 1) / 2)] }
+# One phase of pointer or wheel work on a fence: the median of the slowest frame per run, and
+# the mean work per frame over all runs (-1 when the build does not log the sum).
+function PsPhase($name, [scriptblock]$body) {
+  $from = PsNow
+  & $body
+  Start-Sleep -Milliseconds 700
+  $runs = PsRuns $from (PsNow)
+  $frames = (@($runs | ForEach-Object { $_[0] }) | Measure-Object -Sum).Sum
+  $sum = (@($runs | Where-Object { $_[2] -ge 0 } | ForEach-Object { $_[2] }) | Measure-Object -Sum).Sum
+  $mean = if ($runs.Count -gt 0 -and $runs[0][2] -ge 0 -and $frames -gt 0) { [math]::Round($sum / $frames, 3) } else { -1 }
+  $slowest = PsMedian @($runs | ForEach-Object { $_[1] })
+  Log "P $name runs=$($runs.Count) frames=$frames slowest frame per run (median)=$slowest ms, mean work per frame=$mean ms"
+  return @{ runs = $runs.Count; slowest = $slowest; mean = $mean }
+}
+function PsFolder($name, $n) {
+  $d = Join-Path "$PfRun\psdata" $name
+  New-Item -ItemType Directory -Force $d | Out-Null
+  $kinds = @('会议记录', '预算表', '设计稿 第二版', '合同扫描件', '周报', '项目计划书 最终版')
+  for ($i = 1; $i -le $n; $i++) { [IO.File]::WriteAllText((Join-Path $d ("项目文档 {0:D4} {1}.txt" -f $i, $kinds[$i % $kinds.Count])), "ps $i") }
+  return $d
+}
+# The pointer goes between two icons of the first row 14 times: a hover fade each.
+function PsHover($x, $y) { for ($k = 0; $k -lt 14; $k++) { [G]::MoveTo($x + 40 + 84 * ($k % 2), $y + 36 + 40); Start-Sleep -Milliseconds 350 } }
+# One notch down, then up, 8 times: a glide each.
+function PsWheel($x, $y) {
+  [G]::MoveTo($x + 250, $y + 200); Start-Sleep -Milliseconds 300
+  for ($k = 0; $k -lt 8; $k++) { [CW]::Wheel(-1); Start-Sleep -Milliseconds 500; [CW]::Wheel(1); Start-Sleep -Milliseconds 500 }
+}
+
+function PartP() {
+  trap { PfTrap $_; continue }
+  Case 'P work per frame with 6000 files and with 60'
+  $big = PsFolder 'big' 6000
+  $small = PsFolder 'small' 60
+  PfStart
+  Start-Sleep -Seconds 4
+  ClearFences | Out-Null
+  Pf fence create --portal $big --rect '80,120,504,420' | Out-Null
+  Pf fence create --portal $small --rect '700,120,504,420' | Out-Null
+  Start-Sleep -Seconds 12
+  ParkMouse; Start-Sleep -Milliseconds 800
+  $hb = PsPhase 'hover, 6000 files' { PsHover 80 120 }
+  $hs = PsPhase 'hover, 60 files' { PsHover 700 120 }
+  $wb = PsPhase 'wheel, 6000 files' { PsWheel 80 120 }
+  $ws = PsPhase 'wheel, 60 files' { PsWheel 700 120 }
+  $hb2 = PsPhase 'hover again, 6000 files' { PsHover 80 120 }
+  $hs2 = PsPhase 'hover again, 60 files' { PsHover 700 120 }
+  ParkMouse
+  Check 'P every phase had animation runs' (@($hb, $hs, $wb, $ws, $hb2, $hs2 | Where-Object { $_.runs -lt 5 }).Count -eq 0) "runs $($hb.runs) $($hs.runs) $($wb.runs) $($ws.runs) $($hb2.runs) $($hs2.runs)"
+  Check 'P the animation run lines carry the work of all frames (work_ms), so the mean per frame can be read' ($wb.mean -ge 0 -and $ws.mean -ge 0) "mean work per frame: wheel $($wb.mean) / $($ws.mean) ms, hover $($hb.mean) / $($hs.mean) ms (6000 / 60 files)"
+  $hover = [math]::Max($hb.slowest, $hb2.slowest) - [math]::Min($hs.slowest, $hs2.slowest)
+  $wheel = $wb.slowest - $ws.slowest
+  Check 'P a hover fade costs under 0.3 ms more per frame with 6000 files than with 60' ($hover -lt 0.3) "slowest frame per run: $($hb.slowest) and $($hb2.slowest) ms against $($hs.slowest) and $($hs2.slowest) ms; mean work per frame $($hb.mean) against $($hs.mean) ms"
+  Check 'P a wheel glide costs under 0.3 ms more per frame with 6000 files than with 60' ($wheel -lt 0.3) "slowest frame per run: $($wb.slowest) ms against $($ws.slowest) ms; mean work per frame $($wb.mean) against $($ws.mean) ms"
+  PfQuit
+}
+
+# Mean colour of the i-th cell of the fence as it is on screen now (its icon and name; the
+# pointer must be elsewhere): "r g b".
+function PsCell($i) {
+  $p = CellPt $PsTitle $i
+  $b = [Px]::Grab($p[0] - 36, $p[1] - 30, 72, 76)
+  $m = (MeanRgb $b) -join ' '; $b.Dispose()
+  return $m
+}
+# How far two "r g b" colours are apart (largest channel difference).
+function PsFar($a, $b) {
+  $x = @($a -split ' ' | ForEach-Object { [double]$_ }); $y = @($b -split ' ' | ForEach-Object { [double]$_ })
+  return [math]::Round((@(0, 1, 2 | ForEach-Object { [math]::Abs($x[$_] - $y[$_]) }) | Measure-Object -Maximum).Maximum, 1)
+}
+
+# The fills an icon gets (pointer over it, selected) follow the same rules whether the fence
+# syncs every icon per frame or only those that are on: they show, they go, and an icon that
+# scrolls into view already has the state it should have.
+function PartF() {
+  trap { PfTrap $_; continue }
+  PfStart -Lang 'zh-CN'
+  $r = PsFence 60
+  $park = @(($r.x + $r.w + 60), ($r.y + 200))
+  [G]::MoveTo($park[0], $park[1]); Start-Sleep -Milliseconds 600
+  $plain = @(0..7 | ForEach-Object { PsCell $_ })
+
+  Case 'F1 the pointer over an icon'
+  $p1 = CellPt $PsTitle 1
+  [G]::MoveTo($p1[0], $p1[1]); Start-Sleep -Milliseconds 250
+  $over = PsCell 1; $other = PsCell 2
+  [G]::MoveTo($park[0], $park[1]); Start-Sleep -Milliseconds 500
+  $left = PsCell 1
+  Check 'F1 the icon under the pointer gets its fill, its neighbour none' ((PsFar $over $plain[1]) -gt 3 -and (PsFar $other $plain[2]) -lt 1) "under the pointer $(PsFar $over $plain[1]), neighbour $(PsFar $other $plain[2])"
+  Check 'F1 the fill goes when the pointer leaves' ((PsFar $left $plain[1]) -lt 1) "left over $(PsFar $left $plain[1])"
+
+  Case 'F2 selecting one icon, then another'
+  [G]::Click($p1[0], $p1[1]); [G]::MoveTo($park[0], $park[1]); Start-Sleep -Milliseconds 500
+  $sel1 = PsCell 1
+  $p5 = CellPt $PsTitle 5
+  [G]::Click($p5[0], $p5[1]); [G]::MoveTo($park[0], $park[1]); Start-Sleep -Milliseconds 500
+  $was1 = PsCell 1; $sel5 = PsCell 5
+  Check 'F2 the selected icon gets its fill' ((PsFar $sel1 $plain[1]) -gt 6) "selected $(PsFar $sel1 $plain[1])"
+  Check 'F2 selecting another icon moves the fill there' ((PsFar $was1 $plain[1]) -lt 1 -and (PsFar $sel5 $plain[5]) -gt 6) "first icon $(PsFar $was1 $plain[1]), second $(PsFar $sel5 $plain[5])"
+
+  Case 'F3 everything selected, then scrolled'
+  [G]::KeyDown(0x11); [G]::Press(0x41); [G]::KeyUp(0x11); Start-Sleep -Milliseconds 500
+  $all = @(0..7 | ForEach-Object { PsFar (PsCell $_) $plain[$_] })
+  [G]::MoveTo($p1[0], $p1[1]); Start-Sleep -Milliseconds 100
+  [CW]::Wheel(-4); [G]::MoveTo($park[0], $park[1]); Start-Sleep -Milliseconds 120
+  # Rows 4 and 5 of the list now stand where rows 0 and 1 stood: seen 120 ms into the glide and
+  # at rest, a selected icon that scrolls in is selected from its first frame, not fading in.
+  $mid = [Px]::Grab($r.x + 8, $r.y + 44, $r.w - 24, $r.h - 52)
+  Start-Sleep -Milliseconds 700
+  $rest = @(0..7 | ForEach-Object { PsFar (PsCell $_) $plain[$_] })
+  $blue = (MeanRgb $mid) -join ' '; $mid.Dispose()
+  $restArea = [Px]::Grab($r.x + 8, $r.y + 44, $r.w - 24, $r.h - 52); $restBlue = (MeanRgb $restArea) -join ' '; $restArea.Dispose()
+  Check 'F3 Ctrl+A fills every icon in view' (@($all | Where-Object { $_ -le 6 }).Count -eq 0) "change per icon $($all -join ' ')"
+  Check 'F3 the icons that scrolled in are selected' (@($rest | Where-Object { $_ -le 4 }).Count -eq 0) "change per place $($rest -join ' ')"
+  Check 'F3 they are selected while they scroll in, not fading in' ((PsFar $blue $restBlue) -lt 4) "the icon area 120 ms into the glide $blue, at rest $restBlue"
+
+  Case 'F4 the selection dropped, scrolled back'
+  [G]::Press(0x1B); Start-Sleep -Milliseconds 300
+  [G]::MoveTo($p1[0], $p1[1]); Start-Sleep -Milliseconds 100
+  [CW]::Wheel(40); [G]::MoveTo($park[0], $park[1]); Start-Sleep -Milliseconds 900
+  $back = @(0..7 | ForEach-Object { PsFar (PsCell $_) $plain[$_] })
+  # The icon clicked last keeps the keyboard's focus ring after Esc (a change of about 5), no fill (over 20).
+  $fills = @(0..7 | Where-Object { $back[$_] -ge $(if ($_ -eq 5) { 10 } else { 1 }) })
+  Check 'F4 no fill is left on the icons that were out of view' ($fills.Count -eq 0) "change per icon $($back -join ' ')"
   PfQuit
 }
 
@@ -209,7 +351,7 @@ function PartR() {
   $r = PsFence 60
   [G]::MoveTo($r.x + 140, $r.y + 180); Start-Sleep -Milliseconds 500
   Case 'R wheel recordings'
-  foreach ($run in @(@('wheel10', 10, 30, '滚轮连续转 10 格'), @('wheel6', 6, 60, '滚轮慢一点转 6 格'))) {
+  foreach ($run in @(@('wheel8', 8, 80, '把滚轮一格一格连续转 8 格'), @('wheel10', 10, 30, '把滚轮快速转 10 格'))) {
     [CW]::Wheel(40); Start-Sleep -Milliseconds 900
     RecStart $run[0] -X ($r.x - 10) -Y ($r.y - 10) -W ($r.w + 20) -H ($r.h + 20) -Fps 60
     Start-Sleep -Milliseconds 400
@@ -230,6 +372,8 @@ PsClean
 $AnimWas = [Anim]::Get(); [Anim]::Set($true)
 $PsTitle = '很多文件'
 if ($Part -match 'W') { PartW }
+if ($Part -match 'P') { PartP }
+if ($Part -match 'F') { PartF }
 if ($Part -match 'R') { PartR }
 Case 'cleanup'
 [Anim]::Set($AnimWas)
